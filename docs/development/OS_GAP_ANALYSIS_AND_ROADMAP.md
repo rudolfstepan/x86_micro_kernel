@@ -84,7 +84,7 @@ Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
-`R2.1-vfs-shadow-fat12-parser` ist derzeit kein Paket aktiv.
+Nach Abschluss von `R2.1-vfs-fat-stat-authority` ist derzeit kein Paket aktiv.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -454,7 +454,7 @@ und 10 verbindlich.
     Ring-3-Storage-Service; Veröffentlichung nur bei bytegenauer
     Legacy-Äquivalenz
   - [x] kontrollierter Cutover des kurzlebigen `STAT.PRG`, inzwischen auf die
-    generische FAT-Parseroperation 3, mit fester Pfadnormalisierung, monotoner
+    autoritative FAT-Parseroperation 4, mit fester Pfadnormalisierung, monotoner
     Deadline, vollständiger Antwortvalidierung und ohne Legacy-Fallback;
     weitere langlebige Clients warten auf ihre getrennte Umstellung
   - [x] append-only Syscall 118 für generation- und handlegebundenes
@@ -466,6 +466,8 @@ und 10 verbindlich.
     wiederholten Betrieb, Ring-3-Erfolgsmarker und Rückkehr zur Shell
   - [x] append-only Operation 3 und begrenzter FAT12-Parser mit
     fester Rootdirectory, 12-Bit-Clusterketten und echtem QEMU-FDD-Stat-Nachweis
+  - [x] append-only Operation 4 als autoritativer, ausschließlich
+    parserbasierter FAT12-/FAT32-`stat`-Pfad ohne `SYS_STAT`-Ergebnisabhängigkeit
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1536,7 +1538,11 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Als erster lang laufender Verbraucher ist `HTTPD.PRG` für Metadaten unter
   `/htdocs` umgestellt. Append-only Operation 3 erweitert den kontrollierten
   Parser um FAT12-BPB, feste Rootdirectory und 12-Bit-Clusterketten; Operation 2
-  bleibt FAT32-spezifisch unverändert. `open`, `read`, `readdir`, Shell,
+  bleibt FAT32-spezifisch unverändert. Append-only Operation 4 verwendet den
+  begrenzten FAT-Parser autoritativ und lässt `SYS_STAT` vollständig aus ihrem
+  Ergebnisweg; Operationen 1 bis 3 bleiben unverändert. Der normale Gast
+  vergleicht Operation 4 als unabhängige Testevidenz weiterhin bytegenau mit
+  Legacy-`stat`. `open`, `read`, `readdir`, Shell,
   Desktop und EXT2 bleiben in getrennten Folgepaketen.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
@@ -2088,7 +2094,10 @@ unabhängige, feste FAT12-/FAT32-/ASCII-VFAT-Parsersemantik publiziert nur
 bytegenaue Legacy-Äquivalenz. Operation 2 bleibt FAT32-spezifisch; die neue
 append-only Operation 3 wählt FAT12/FAT32, weist FAT16 ab und behandelt die
 feste FAT12-Rootdirectory sowie 12-Bit-Ketten einschließlich Sektorgrenzen.
-`STAT.PRG` ist als erster kurzlebiger Client kontrolliert auf Operation 3
+Append-only Operation 4 publiziert denselben begrenzten Parser autoritativ,
+ohne `SYS_STAT` aufzurufen oder darauf zurückzufallen; Operationen 1 bis 3
+bleiben eingefroren. `STAT.PRG` ist als erster kurzlebiger Client kontrolliert
+auf Operation 4
 umgestellt: feste Pfadnormalisierung, monotone Deadline,
 vollständige Antwortvalidierung und kein Legacy-Fallback. Der QEMU-Gast startet
 das wirklich paketierte Programm auf einer FAT32-Testdatei. Weitere und

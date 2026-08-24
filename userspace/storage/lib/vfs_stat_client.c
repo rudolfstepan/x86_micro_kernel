@@ -1,6 +1,6 @@
 /**
  * @file userspace/storage/lib/vfs_stat_client.c
- * @brief Fixed-storage client for generic VFS shadow FAT stat operation 3.
+ * @brief Fixed-storage client for authoritative VFS FAT stat operation 4.
  */
 #include "../include/reist/vfs_stat_client.h"
 
@@ -127,7 +127,7 @@ static int client_frame_valid(const x86os_vfs_shadow_frame_t *frame,
                               const char *path, uint32_t path_length) {
     if (frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame->struct_size != sizeof(*frame) ||
-        frame->operation != X86OS_VFS_SHADOW_FAT_STAT ||
+        frame->operation != X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY ||
         frame->flags != 0U || frame->path_length != path_length ||
         frame->path[path_length] != '\0') return 0;
     for (uint32_t index = 0U; index < path_length; ++index)
@@ -164,7 +164,7 @@ int reist_vfs_stat(const char *path, x86os_file_info_t *info,
     if (status != 0) return status;
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
     frame.struct_size = sizeof(frame);
-    frame.operation = X86OS_VFS_SHADOW_FAT_STAT;
+    frame.operation = X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY;
     frame.path_length = path_length;
     client_copy(frame.path, resolved, path_length + 1U);
 

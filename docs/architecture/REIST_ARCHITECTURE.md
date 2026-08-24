@@ -121,8 +121,14 @@ Unterverzeichnisketten. FAT16 und EXT2 werden fail-closed abgewiesen. Operation
 den Kernel nur maximal 64 validierte Sektoren, begrenzt Ressourcen,
 Pfadkomponenten und Clusterketten statisch und publiziert ausschließlich eine
 bytegenaue Übereinstimmung mit `SYS_STAT`.
+Die append-only Operation 4 entzieht dem produktiven FAT-`stat`-Ergebnisweg
+diesen Legacy-Vergleich: Sie publiziert direkt den begrenzten FAT12-/FAT32-
+Parserstatus und dessen Metadaten und besitzt keinen `SYS_STAT`-Aufruf oder
+Fallback. Operationen 1 bis 3 bleiben semantisch unverändert; der normale
+QEMU-Gast vergleicht Operation 4 weiterhin außerhalb des Dienstpfads
+bytegenau mit dem Legacy-Ergebnis.
 Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
-`STAT.PRG` an Operation 3. Ein fester Adapter normalisiert Pfade, wartet
+`STAT.PRG` an Operation 4. Ein fester Adapter normalisiert Pfade, wartet
 mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt
 bei Fehlern nie auf `SYS_STAT` zurück. Der Prozess beendet sich anschließend,
 sodass seine generationgebundenen Requests durch die vorhandene
@@ -139,7 +145,7 @@ Handles und Mutationen verbleiben bis zu getrennten Nachweispaketen im Kernel.
 Neue Mutationsautorität entsteht nicht.
 
 Als erster lang laufender Verbraucher nutzt der bounded `HTTPD.PRG`-
-Vordergrundserver diese Metadatenoperation für `/htdocs`. Zwölf echte
+Vordergrundserver Operation 4 für `/htdocs`. Zwölf echte
 HTTP/TCP-Transaktionen im QEMU-Gast belegen wiederholte FAT32-Directory-
 Entscheidungen, fortbestehenden Serverbetrieb bis `Ctrl+C` und die Rückkehr zur
 Userspace-Shell. Der einmalige Marker `HTTPD_VFS_STAT_CLIENT_OK` folgt erst auf

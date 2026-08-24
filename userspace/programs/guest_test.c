@@ -204,7 +204,9 @@ static int guest_vfs_shadow_stat(const char *path, x86os_file_info_t *info,
     if (path == NULL || info == NULL || timeout_ms == 0U ||
         timeout_ms > 60000U ||
         (operation != X86OS_VFS_SHADOW_STAT &&
-         operation != X86OS_VFS_SHADOW_FAT32_STAT)) return -22;
+         operation != X86OS_VFS_SHADOW_FAT32_STAT &&
+         operation != X86OS_VFS_SHADOW_FAT_STAT &&
+         operation != X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY)) return -22;
     uint32_t length = 0U;
     while (length < X86OS_VFS_SHADOW_PATH_CAPACITY && path[length] != '\0')
         ++length;
@@ -328,15 +330,22 @@ static int test_file_io(void) {
     int stat_result = x86os_stat(path, &info);
     x86os_file_info_t shadow_info;
     x86os_file_info_t parser_info;
+    x86os_file_info_t authority_info;
     int shadow_stat_result = guest_vfs_shadow_stat(
         "/GUEST.TMP", &shadow_info, 1000U, X86OS_VFS_SHADOW_STAT);
     int parser_stat_result = guest_vfs_shadow_stat(
         "/GUEST.TMP", &parser_info, 1000U, X86OS_VFS_SHADOW_FAT32_STAT);
+    int authority_stat_result = guest_vfs_shadow_stat(
+        "/GUEST.TMP", &authority_info, 1000U,
+        X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY);
     if (amount != (int)sizeof(actual) || eof != 0 || close_result != 0 ||
         stat_result != 0 || shadow_stat_result != 0 || parser_stat_result != 0 ||
+        authority_stat_result != 0 ||
         !bytes_equal((const char *)&info, (const char *)&shadow_info,
                      sizeof(info)) ||
         !bytes_equal((const char *)&info, (const char *)&parser_info,
+                     sizeof(info)) ||
+        !bytes_equal((const char *)&info, (const char *)&authority_info,
                      sizeof(info)) || info.type != X86OS_FILE ||
         info.size != sizeof(expected) ||
         !bytes_equal(actual, expected, sizeof(actual))) {
@@ -1118,6 +1127,7 @@ int main(int argc, char **argv) {
     x86os_puts("TEST_STAGE FILE_IO_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_FAT32_PARSER_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_VFS_FAT_STAT_AUTHORITY_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_STAT_CLIENT_OK\n");
 
     if (test_scheduler_time() != 0) {

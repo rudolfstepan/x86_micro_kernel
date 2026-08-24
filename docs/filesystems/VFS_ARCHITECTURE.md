@@ -35,12 +35,14 @@ höchstens 22 Ressourcen, 32 Pfadkomponenten, 32 Verzeichniscluster und 64
 vermittelte Sektorreads untersuchen und verwendet keinen Heap. Sein Ergebnis
 wird nur veröffentlicht, wenn Status und sämtliche öffentlichen Metadatenbytes
 exakt mit `SYS_STAT` übereinstimmen; eine Abweichung liefert den
-Integritätsfehler `-84`. `open`, Mutationen, Controllerzugriff und DMA bleiben
-verboten.
+Integritätsfehler `-84`. Die append-only Operation 4 verwendet denselben
+begrenzten FAT12-/FAT32-Parser autoritativ und ruft weder `SYS_STAT` auf noch
+fällt sie darauf zurück. Die Operationen 1 bis 3 behalten ihre bisherige
+Semantik. `open`, Mutationen, Controllerzugriff und DMA bleiben verboten.
 
 Damit besitzt Ring 3 echte FAT12-/FAT32-Parsersemantik. Als erster
 kontrollierter Cutover verwendet das kurzlebige `STAT.PRG` ausschließlich
-Operation 3 und
+Operation 4 und
 übernimmt deren Ergebnis ohne Rückfall auf `SYS_STAT`. Der feste Clientadapter
 normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
 Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
@@ -54,7 +56,7 @@ ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
 EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
 
 `HTTPD.PRG` ist der erste lang laufende Client dieser ABI. Der sequenzielle,
-fest begrenzte Vordergrundserver verwendet Operation 3 für jede
+fest begrenzte Vordergrundserver verwendet Operation 4 für jede
 `/htdocs`-Metadatenentscheidung, besitzt keinen Legacy-`stat`-Fallback und
 widerruft offene Requests über Syscall 118. `open`, `read` und `readdir` bleiben
 in diesem Paket am Kernel-VFS. Der HTTP-Cutover gilt nur für den nachgewiesenen
@@ -113,8 +115,11 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
 4. [x] Generation- und handlegebundene Cancel-ABI mit sicherer
    Dienstquittierung ergänzen.
 5. [x] `HTTPD.PRG` als ersten lang laufenden FAT32-Metadatenclient umstellen.
-6. [~] Append-only Operation 3 und FAT12-Parser einschließlich fester Root-
+6. [x] Append-only Operation 3 und FAT12-Parser einschließlich fester Root-
    Directory und 12-Bit-Clusterketten; EXT2 bleibt offen.
-7. Handles, Lesen und Verzeichnisiteration migrieren.
-8. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+7. [x] Append-only Operation 4 als parser-autoritatives FAT-`stat`; der
+   Äquivalenzvergleich findet nur noch im Gasttest statt.
+8. EXT2-Metadatenparser ergänzen und danach Handles, Lesen und
+   Verzeichnisiteration migrieren.
+9. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.

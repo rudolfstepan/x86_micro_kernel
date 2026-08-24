@@ -259,7 +259,7 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   autoritativ.
 - `STAT.PRG` ist der erste kontrolliert umgestellte Client. Sein separater,
   heapfreier Adapter normalisiert relative, absolute und DOS-Pfade, verwendet
-  ausschließlich die append-only FAT-Parseroperation 3, wartet mit monotoner
+  ausschließlich die append-only autoritative FAT-Parseroperation 4, wartet mit monotoner
   Deadline und
   validiert den vollständigen Antwortframe ohne Legacy-Fallback. Der normale
   QEMU-Gast startet das paketierte Programm auf `/GUEST.TMP` und markiert den
@@ -279,8 +279,14 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   `/mnt/fdd0/HOTPLUG.TXT` aus und prüft Name, Größe und Shell-Rückkehr. Die
   erkannte 80x2x18-Geometrie wird dabei als feste Grenze von 2880 Sektoren an
   Ring 3 publiziert.
+- Append-only Operation 4 macht denselben begrenzten FAT12-/FAT32-Parser zum
+  autoritativen read-only `stat`-Ergebnisweg. Sie ruft `SYS_STAT` nicht auf und
+  besitzt keinen Legacy-Fallback; Operationen 1 bis 3 bleiben unverändert. Der
+  normale QEMU-Gast vergleicht Operation 4 außerhalb dieses Produktionspfads
+  bytegenau mit Legacy-`stat` und markiert den Erfolg mit
+  `STORAGE_VFS_FAT_STAT_AUTHORITY_OK`.
 - `HTTPD.PRG` ist der erste lang laufende Nutzer des Ring-3-FAT-`stat`-
-  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 3 und
+  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 4 und
   besitzt keinen Legacy-Fallback; `open`, `read` und `readdir` bleiben vorerst
   am Kernel-VFS. Der QEMU-Modus `http-server` führt zwölf echte eingehende
   HTTP/TCP-Verzeichnisanfragen aus, verlangt `HTTPD_VFS_STAT_CLIENT_OK`, prüft

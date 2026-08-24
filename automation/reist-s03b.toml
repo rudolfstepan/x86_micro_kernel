@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-vfs-fat-stat-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-vfs-fat-stat-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Authoritative bounded Ring-3 FAT stat path"
@@ -63,7 +63,15 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: make Ring-3 FAT stat authoritative"
-evidence = []
+evidence = [
+  "python test/test_reist_vfs_stat_client.py -v: PASS (4 tests)",
+  "python test/test_reist_storage_service.py -v: PASS (6 tests)",
+  "python test/test_reist_vfs_shadow_fat32.py -v: PASS (3 tests)",
+  "python test/test_network_tools.py -v: PASS (8 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (53s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal: PASS (14s, STORAGE_VFS_FAT_STAT_AUTHORITY_OK and TEST_OK)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode http-server: PASS (22s, 12 requests, HTTPD_VFS_STAT_CLIENT_OK, Ctrl+C and userspace shell return)"
+]
 
 [[packages]]
 id = "R2.1-vfs-shadow-fat12-parser"
