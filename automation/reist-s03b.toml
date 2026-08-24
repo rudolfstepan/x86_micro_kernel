@@ -49,6 +49,7 @@ invariants = [
 ]
 targeted_tests = [
   "python test/test_truncate_zero.py -v",
+  "python test/test_open_flags.py -v",
   "python test/test_fs_host.py -v"
 ]
 package_tests = [
