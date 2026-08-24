@@ -65,6 +65,16 @@ class ReistStorageServiceTests(unittest.TestCase):
                       service)
         self.assertIn("X86OS_VFS_SHADOW_OBJECT_OPEN", service)
         self.assertIn("X86OS_VFS_SHADOW_OBJECT_READ", service)
+        self.assertIn("X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS", service)
+        self.assertIn("X86OS_VFS_SHADOW_OBJECT_DELEGATE", service)
+        self.assertIn("X86OS_VFS_SHADOW_OBJECT_ADOPT", service)
+        self.assertIn("VFS_OBJECT_DELEGATION_TIMEOUT_MS 5000U", service)
+        self.assertIn("vfs_object_slot_for_owner", service)
+        self.assertIn("slot->pending_deadline_ms", service)
+        self.assertIn("STORAGE_VFS_DELEGATION_OK", service)
+        self.assertIn("owned >= VFS_OBJECT_MAX_PER_CLIENT", service)
+        self.assertIn("x86os_monotonic_ms(&now_ms)", service)
+        self.assertIn("now_ms >= slot->pending_deadline_ms", service)
         self.assertIn("STORAGE_VFS_OBJECT_HANDLE_OK", service)
         self.assertIn("STORAGE_CLAIM_IDENTITY_OK", service)
         self.assertIn("request.client_generation", service)
@@ -87,6 +97,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK", guest)
         self.assertIn("TEST_STAGE STORAGE_CLAIM_IDENTITY_OK", guest)
         self.assertIn("TEST_STAGE STORAGE_VFS_OBJECT_HANDLE_OK", guest)
+        self.assertIn("TEST_STAGE STORAGE_VFS_DELEGATION_OK", guest)
 
     def test_vfs_shadow_frame_is_fixed_validated_and_read_only(self):
         sdk = read("userspace/sdk/include/x86os.h")
@@ -94,6 +105,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         service = read("userspace/programs/storage_service.c")
         self.assertIn("X86OS_VFS_SHADOW_PATH_CAPACITY 192U", sdk)
         self.assertIn("x86os_vfs_shadow_frame_t", sdk)
+        self.assertIn("x86os_vfs_shadow_object_delegate_frame_t", sdk)
         self.assertIn("sizeof(x86os_vfs_shadow_frame_t) == "
                       "X86OS_STORAGE_BLOCK_SIZE", wrapper)
         self.assertIn("frame->path[0] != '/'", service)

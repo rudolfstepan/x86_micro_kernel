@@ -9,6 +9,7 @@
 #include <stdbool.h>
 
 #include "x86os.h"
+#include "reist/vfs_file_client.h"
 
 #define WAIT_STRESS_ITERATIONS 64
 #define GUEST_TEST_TASK_CAPACITY_LIMIT 32U
@@ -190,6 +191,54 @@ static int ipc_child_main(const char *mode, const char *handle_text) {
 
     if (text_equal(mode, "IPC_EXIT")) return 54;
     return 75;
+}
+
+static int vfs_delegation_child_main(void) {
+    if (x86os_sleep_ms(2000U) != 0) return 80;
+    for (uint32_t delegated = 0U; delegated < 4U; ++delegated) {
+        reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+        for (uint32_t attempt = 0U; attempt < 100U; ++attempt) {
+            int status = reist_vfs_file_adopt(
+                REIST_VFS_FILE_DEFAULT_TIMEOUT_MS, &handle);
+            if (status == 0) break;
+            if (status != -11 || x86os_sleep_ms(10U) != 0) return 81;
+        }
+        if (handle == REIST_VFS_FILE_INVALID_HANDLE) return 82;
+        uint32_t rights = 0U;
+        uint8_t byte = 0U;
+        x86os_file_info_t info;
+        uint32_t offset = 0U;
+        if (reist_vfs_file_rights(handle, &rights) != 0 ||
+            rights != REIST_VFS_FILE_RIGHT_READ ||
+            reist_vfs_file_read(handle, &byte, 1U) != 1 || byte == 0U ||
+            reist_vfs_file_fstat(handle, &info) != -13 ||
+            reist_vfs_file_seek(handle, 0, REIST_VFS_SEEK_SET, &offset) !=
+                -13 || reist_vfs_file_close(handle) != 0) return 83;
+    }
+    reist_vfs_file_handle_t duplicate = REIST_VFS_FILE_INVALID_HANDLE;
+    return reist_vfs_file_adopt(REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+                                &duplicate) == -11 ? 57 : 84;
+}
+
+static int vfs_delegation_fail(uint32_t stage, int status) {
+    x86os_puts("VFS_DELEGATION_FAIL stage=");
+    x86os_print_number((int)stage);
+    x86os_puts(" status=");
+    x86os_print_number(status);
+    x86os_putchar('\n');
+    return -1;
+}
+
+static int vfs_delegation_expiry_child_main(void) {
+    if (x86os_sleep_ms(7000U) != 0) return 85;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int status = reist_vfs_file_adopt(
+        REIST_VFS_FILE_DEFAULT_TIMEOUT_MS, &handle);
+    if (status == -11) return 58;
+    (void)vfs_delegation_fail(11U, status);
+    if (handle != REIST_VFS_FILE_INVALID_HANDLE)
+        (void)reist_vfs_file_close(handle);
+    return 86;
 }
 
 static int bytes_equal(const char *left, const char *right, size_t length) {
@@ -470,6 +519,74 @@ static int wait_for_ipc_child(int pid, int expected_status) {
     int status = -1;
     return pid > 0 && x86os_wait(pid, &status) == pid &&
            status == expected_status ? 0 : -1;
+}
+
+static int test_vfs_object_delegation(void) {
+    reist_vfs_file_handle_t source = REIST_VFS_FILE_INVALID_HANDLE;
+    if (reist_vfs_file_open_rights(
+            "/README.TXT", REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+            REIST_VFS_FILE_RIGHT_ALL, &source) != 0)
+        return vfs_delegation_fail(1U, -1);
+    const char *arguments[] = {"GTEST.PRG", "VFS_ADOPT"};
+    int child = x86os_spawnv("GTEST.PRG", 2, arguments);
+    x86os_process_identity_t target;
+    if (child <= 0 || x86os_process_identity_of(child, &target) != 0 ||
+        target.version != 1U || target.struct_size != sizeof(target) ||
+        target.pid != child || target.generation == 0U) {
+        if (child > 0) {
+            (void)x86os_kill(child);
+            int status;
+            (void)x86os_wait(child, &status);
+        }
+        (void)reist_vfs_file_close(source);
+        return vfs_delegation_fail(2U, child);
+    }
+    for (uint32_t index = 0U; index < 4U; ++index)
+        {
+            int delegated = reist_vfs_file_delegate(
+                source, &target, REIST_VFS_FILE_RIGHT_READ);
+            if (delegated == 0) continue;
+            (void)x86os_kill(child);
+            int child_status;
+            (void)x86os_wait(child, &child_status);
+            (void)reist_vfs_file_close(source);
+            return vfs_delegation_fail(3U + index, delegated);
+        }
+    int excess = reist_vfs_file_delegate(
+        source, &target, REIST_VFS_FILE_RIGHT_READ);
+    if (excess != -24) {
+        (void)x86os_kill(child);
+        int child_status;
+        (void)x86os_wait(child, &child_status);
+        (void)reist_vfs_file_close(source);
+        return vfs_delegation_fail(7U, excess);
+    }
+    x86os_file_info_t info;
+    int status = -1;
+    int result = reist_vfs_file_fstat(source, &info) == 0 &&
+        info.type == X86OS_FILE && x86os_wait(child, &status) == child &&
+        status == 57 ? 0 : -1;
+    if (reist_vfs_file_close(source) != 0) result = -1;
+    if (result != 0) return vfs_delegation_fail(8U, status);
+
+    source = REIST_VFS_FILE_INVALID_HANDLE;
+    if (reist_vfs_file_open_rights(
+            "/README.TXT", REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+            REIST_VFS_FILE_RIGHT_ALL, &source) != 0)
+        return vfs_delegation_fail(9U, -1);
+    const char *expiry_arguments[] = {"GTEST.PRG", "VFS_EXPIRE"};
+    child = x86os_spawnv("GTEST.PRG", 2, expiry_arguments);
+    if (child <= 0 || x86os_process_identity_of(child, &target) != 0 ||
+        reist_vfs_file_delegate(source, &target,
+                                REIST_VFS_FILE_RIGHT_READ) != 0 ||
+        x86os_wait(child, &status) != child || status != 58)
+        result = -1;
+    if (child > 0 && status != 58) {
+        (void)x86os_kill(child);
+        (void)x86os_wait(child, &status);
+    }
+    if (reist_vfs_file_close(source) != 0) result = -1;
+    return result == 0 ? 0 : vfs_delegation_fail(10U, status);
 }
 
 static int test_ipc_capabilities(void) {
@@ -1133,6 +1250,10 @@ int main(int argc, char **argv) {
         return ipc_child_main(argv[1], argv[2]);
     if (argc == 3 && text_equal(argv[1], "IPC_EXIT"))
         return ipc_child_main(argv[1], argv[2]);
+    if (argc == 2 && text_equal(argv[1], "VFS_ADOPT"))
+        return vfs_delegation_child_main();
+    if (argc == 2 && text_equal(argv[1], "VFS_EXPIRE"))
+        return vfs_delegation_expiry_child_main();
 
     x86os_puts("GUEST_TEST_BEGIN\n");
 
@@ -1156,6 +1277,12 @@ int main(int argc, char **argv) {
     x86os_puts("TEST_STAGE STORAGE_VFS_READ_SESSION_OK\n");
     x86os_puts("TEST_STAGE STORAGE_CLAIM_IDENTITY_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_OBJECT_HANDLE_OK\n");
+
+    if (test_vfs_object_delegation() != 0) {
+        x86os_puts("TEST_FAIL STORAGE_VFS_DELEGATION\n");
+        return 9;
+    }
+    x86os_puts("TEST_STAGE STORAGE_VFS_DELEGATION_OK\n");
 
     if (test_scheduler_time() != 0) {
         x86os_puts("TEST_FAIL SCHED_TIME\n");

@@ -671,6 +671,18 @@ typedef struct {
 #define X86OS_VFS_SHADOW_OBJECT_READ 9U
 #define X86OS_VFS_SHADOW_OBJECT_FSTAT 10U
 #define X86OS_VFS_SHADOW_OBJECT_CLOSE 11U
+#define X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS 12U
+#define X86OS_VFS_SHADOW_OBJECT_DELEGATE 13U
+#define X86OS_VFS_SHADOW_OBJECT_ADOPT 14U
+#define X86OS_VFS_OBJECT_RIGHT_READ     (1U << 0)
+#define X86OS_VFS_OBJECT_RIGHT_SEEK     (1U << 1)
+#define X86OS_VFS_OBJECT_RIGHT_STAT     (1U << 2)
+#define X86OS_VFS_OBJECT_RIGHT_DELEGATE (1U << 3)
+#define X86OS_VFS_OBJECT_RIGHT_DATA \
+    (X86OS_VFS_OBJECT_RIGHT_READ | X86OS_VFS_OBJECT_RIGHT_SEEK | \
+     X86OS_VFS_OBJECT_RIGHT_STAT)
+#define X86OS_VFS_OBJECT_RIGHT_ALL \
+    (X86OS_VFS_OBJECT_RIGHT_DATA | X86OS_VFS_OBJECT_RIGHT_DELEGATE)
 #define X86OS_VFS_SHADOW_PATH_CAPACITY 192U
 #define X86OS_VFS_SHADOW_READ_CAPACITY 256U
 typedef struct {
@@ -741,6 +753,20 @@ typedef struct {
     uint8_t data[X86OS_VFS_SHADOW_READ_CAPACITY];
     uint32_t reserved[54];
 } x86os_vfs_shadow_object_read_frame_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    int32_t result;
+    uint32_t object_token;
+    uint32_t service_generation;
+    int32_t target_pid;
+    uint32_t target_generation;
+    uint32_t rights;
+    uint32_t reserved[118];
+} x86os_vfs_shadow_object_delegate_frame_t;
 
 typedef uint32_t x86os_ipc_handle_t;
 

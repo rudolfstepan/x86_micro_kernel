@@ -329,12 +329,14 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Tote Owner werden inkrementell reap-t; Service-Restart, Medienwechsel und
   Locator-Reuse können alte Handles nicht neu autorisieren. Normaler FAT-,
   echter EXT2- und Storage-Recovery-QEMU-Lauf bestehen.
-- Aktiv ist die append-only Ergänzung expliziter READ-/SEEK-/STAT-/DELEGATE-
-  Rechte und einer auf exakte Ziel-PID/-Generation gebundenen, abschwächenden
-  Objektübergabe. Das Ziel muss die Übergabe innerhalb einer festen Deadline
-  aktiv übernehmen; ambiente Spawn-Vererbung bleibt ausgeschlossen. Das
-  gemessene Storage-Image benötigt dafür 116 KiB im unveränderten festen
-  272-KiB-Rescue-Gesamtpool.
+- Append-only Operationen 12 bis 14 ergänzen explizite READ-/SEEK-/STAT-/
+  DELEGATE-Rechte und eine auf exakte Ziel-PID/-Generation gebundene,
+  abschwächende Objektübergabe. Das Ziel übernimmt innerhalb einer monotonen
+  Fünf-Sekunden-Deadline aktiv; tote, abgelaufene und service-stale Slots
+  werden begrenzt widerrufen. Der echte QEMU-Gast weist Vier-Slot-Quota,
+  Rechteabschwächung, Quellhandle-Erhalt und Ablauf nach. Ambiente Spawn-
+  Vererbung bleibt ausgeschlossen. Das gemessene Storage-Image benötigt
+  116 KiB im unveränderten festen 272-KiB-Rescue-Gesamtpool.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

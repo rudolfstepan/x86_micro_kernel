@@ -72,6 +72,10 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("service_generation != current_service_generation",
                       service)
         self.assertIn("vfs_object_release(slot)", service)
+        self.assertIn("slot->pending_deadline_ms", service)
+        self.assertIn("slot->owner_generation != owner_generation", service)
+        self.assertIn("delegated->owner_generation = frame->target_generation",
+                      service)
 
     def test_runner_requires_ordered_recovery_markers(self):
         lines = [

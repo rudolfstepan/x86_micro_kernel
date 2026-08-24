@@ -87,9 +87,10 @@ offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 pfadgebundenen Read-Sessions ist auch
 `R2.1-storage-claim-client-identity` als Voraussetzung stabiler
 serviceeigener Objekt-Handles umgesetzt. Auch der stabile read-only Objekt-
-Layer für FAT und EXT2 ist abgenommen. Aktiv ist nun die explizite
-Rechteabschwächung und generationgebundene Übergabe dieser Objekte;
-automatische Spawn-Vererbung, Standard-FDs und `dup` bleiben getrennt offen.
+Layer für FAT und EXT2 ist abgenommen. Auch explizite Rechteabschwächung und
+generationgebundene Übergabe dieser Objekte sind abgenommen. Die ausführbare
+Queue ist leer; Standard-FDs, `dup` und kontrollierte Spawn-Vererbung bleiben
+als nächste getrennte R2.1-/R3.1-Schnitte offen.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -488,7 +489,7 @@ und 10 verbindlich.
   - [x] fester ownergebundener Service-Handlepool mit
     FAT-Directory-Entry- beziehungsweise EXT2-Inode-Locatoren, Medienidentität
     und pfadfreien read-only Folgeoperationen 9 bis 11 nach einmaligem Open
-  - [ ] **in Arbeit:** explizite READ-/SEEK-/STAT-/DELEGATE-Rechte und
+  - [x] explizite READ-/SEEK-/STAT-/DELEGATE-Rechte und
     abschwächende Übergabe an eine exakt generationgebundene Zielidentität;
     keine ambiente Spawn-Vererbung; das gewachsene Storage-Rescue-Image erhält
     ausschließlich 116 KiB Einzellimit, der 272-KiB-Gesamtpool bleibt fest

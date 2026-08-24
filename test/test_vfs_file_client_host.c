@@ -10,6 +10,9 @@ static int read_failure;
 static uint32_t observed_offset;
 static uint32_t open_calls;
 static uint32_t close_calls;
+static uint32_t delegate_calls;
+static uint32_t delegated_rights;
+static int delegation_pending;
 static uint32_t next_request = 1U;
 static char opened_path[X86OS_VFS_SHADOW_PATH_CAPACITY];
 
@@ -33,7 +36,8 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
     if (operation == X86OS_VFS_SHADOW_OBJECT_READ) {
         x86os_vfs_shadow_object_read_frame_t *frame =
             (x86os_vfs_shadow_object_read_frame_t *)(uintptr_t)data;
-        if (frame->object_token != 77U || frame->service_generation != 9U)
+        if ((frame->object_token != 77U && frame->object_token != 88U) ||
+            frame->service_generation != 9U)
             return -9;
         observed_offset = frame->offset;
         if (read_failure) {
@@ -46,10 +50,20 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
             for (uint32_t index = 0U; index < frame->transferred; ++index)
                 frame->data[index] = (uint8_t)('0' + frame->offset + index);
         }
+    } else if (operation == X86OS_VFS_SHADOW_OBJECT_DELEGATE) {
+        x86os_vfs_shadow_object_delegate_frame_t *frame =
+            (x86os_vfs_shadow_object_delegate_frame_t *)(uintptr_t)data;
+        if (frame->object_token != 77U || frame->service_generation != 9U ||
+            frame->target_pid != 42 || frame->target_generation != 7U ||
+            frame->rights == 0U) return -22;
+        delegated_rights = frame->rights;
+        delegation_pending = 1;
+        ++delegate_calls;
     } else {
         x86os_vfs_shadow_object_frame_t *frame =
             (x86os_vfs_shadow_object_frame_t *)(uintptr_t)data;
-        if (operation == X86OS_VFS_SHADOW_OBJECT_OPEN) {
+        if (operation == X86OS_VFS_SHADOW_OBJECT_OPEN ||
+            operation == X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS) {
             ++open_calls;
             strcpy(opened_path, frame->path);
             if (strstr(frame->path, "DIR") != 0) {
@@ -61,8 +75,18 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
                 frame->info.size = 10U;
                 strcpy(frame->info.name, "FILE.TXT");
             }
+        } else if (operation == X86OS_VFS_SHADOW_OBJECT_ADOPT) {
+            if (!delegation_pending) {
+                frame->result = -11;
+            } else {
+                delegation_pending = 0;
+                frame->object_token = 88U;
+                frame->service_generation = 9U;
+                frame->flags = delegated_rights;
+            }
         } else if (operation == X86OS_VFS_SHADOW_OBJECT_FSTAT) {
-            if (frame->object_token != 77U || frame->service_generation != 9U)
+            if ((frame->object_token != 77U && frame->object_token != 88U) ||
+                frame->service_generation != 9U)
                 return -9;
             if (stat_failure) {
                 frame->result = -2;
@@ -71,7 +95,8 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
                 frame->info.size = 10U;
             }
         } else if (operation == X86OS_VFS_SHADOW_OBJECT_CLOSE) {
-            if (frame->object_token != 77U || frame->service_generation != 9U)
+            if ((frame->object_token != 77U && frame->object_token != 88U) ||
+                frame->service_generation != 9U)
                 return -9;
             ++close_calls;
         } else {
@@ -139,12 +164,39 @@ int main(void) {
     x86os_file_info_t info;
     if (reist_vfs_file_fstat(first, &info) != 0 || info.size != 10U)
         return 11;
+    uint32_t rights = 0U;
+    x86os_process_identity_t target = {1U, sizeof(target), 42, 7U};
+    if (reist_vfs_file_rights(first, &rights) != 0 ||
+        rights != REIST_VFS_FILE_RIGHT_DATA ||
+        reist_vfs_file_delegate(first, &target,
+                                REIST_VFS_FILE_RIGHT_READ) != -13)
+        return 18;
     if (reist_vfs_file_seek(first, -11, REIST_VFS_SEEK_END, &position) != -22 ||
         reist_vfs_file_seek(first, INT64_MAX, REIST_VFS_SEEK_CUR,
                             &position) != -75) return 12;
     if (reist_vfs_file_close(first) != 0 || close_calls != 1U ||
         reist_vfs_file_read(first, data, sizeof(data)) != -9 ||
         reist_vfs_file_close(first) != -9) return 13;
+
+    reist_vfs_file_handle_t source = REIST_VFS_FILE_INVALID_HANDLE;
+    reist_vfs_file_handle_t adopted = REIST_VFS_FILE_INVALID_HANDLE;
+    if (reist_vfs_file_open_rights(
+            "FILE.TXT", 1000U, REIST_VFS_FILE_RIGHT_ALL, &source) != 0 ||
+        reist_vfs_file_delegate(source, &target,
+                                REIST_VFS_FILE_RIGHT_READ) != 0 ||
+        delegate_calls != 1U ||
+        reist_vfs_file_adopt(1000U, &adopted) != 0 || adopted == 0U ||
+        reist_vfs_file_rights(adopted, &rights) != 0 ||
+        rights != REIST_VFS_FILE_RIGHT_READ ||
+        reist_vfs_file_read(adopted, data, 1U) != 1 ||
+        reist_vfs_file_fstat(adopted, &info) != -13 ||
+        reist_vfs_file_seek(adopted, 0, REIST_VFS_SEEK_SET, &position) != -13)
+        return 19;
+    reist_vfs_file_handle_t duplicate = 99U;
+    if (reist_vfs_file_adopt(1000U, &duplicate) != -11 || duplicate != 0U ||
+        reist_vfs_file_close(adopted) != 0 ||
+        reist_vfs_file_fstat(source, &info) != 0 ||
+        reist_vfs_file_close(source) != 0) return 20;
 
     reist_vfs_file_handle_t handles[REIST_VFS_FILE_CAPACITY];
     for (uint32_t index = 0U; index < REIST_VFS_FILE_CAPACITY; ++index)

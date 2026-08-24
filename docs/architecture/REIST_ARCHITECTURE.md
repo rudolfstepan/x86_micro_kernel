@@ -154,10 +154,11 @@ enthalten keinen Pfad. Das ist noch keine POSIX-Binärkompatibilität oder
 Deskriptorvererbung. `CAT.PRG`,
 `LS.PRG` und der vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen
 Kernel-VFS-Fallback. Mutationen bleiben ein getrenntes Folgepaket.
-Der aktive Folgeschnitt ergänzt explizite READ-/SEEK-/STAT-/DELEGATE-Rechte
-und ausschließlich abschwächende Übergaben an eine exakt validierte
-Prozessgeneration. Ein Spawn erbt weiterhin keine Objekt- oder
-Delegationsautorität ambient.
+Append-only Operationen 12 bis 14 ergänzen explizite READ-/SEEK-/STAT-/
+DELEGATE-Rechte und ausschließlich abschwächende Übergaben an eine exakt
+validierte Prozessgeneration. Eine Übergabe belegt einen eigenen Zielslot,
+verfällt nach fünf monotonen Sekunden und verändert das Quellhandle nicht.
+Ein Spawn erbt weiterhin keine Objekt- oder Delegationsautorität ambient.
 Der zusätzliche Servicepfad belegt ein 116-KiB-Rescue-Image; der statische
 Gesamtpool bleibt unverändert auf 272 KiB begrenzt.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem

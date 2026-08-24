@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-vfs-object-rights-delegation"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-vfs-object-rights-delegation"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Attenuating read-only VFS object rights and explicit delegation"
@@ -70,7 +70,13 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: add attenuating VFS object delegation"
-evidence = []
+evidence = [
+  "29 final host tests passed for client rights service enforcement quota deadline restart and rescue bounds",
+  "QEMU VGA package gate passed in 8 seconds with a 116 KiB storage image inside the unchanged 272 KiB rescue pool",
+  "normal QEMU runtime passed in 24 seconds after exact-target four-slot delegation attenuation adoption expiry and TEST_OK",
+  "EXT2 QEMU stat cat and ls runtime passed in 12 seconds with the rights-aware object service",
+  "storage-recovery QEMU runtime passed in 25 seconds with service-generation fencing"
+]
 
 [[packages]]
 id = "R2.1-vfs-stable-object-handles"

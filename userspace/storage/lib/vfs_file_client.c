@@ -11,6 +11,7 @@ typedef struct {
     uint32_t service_generation;
     uint32_t offset;
     uint32_t timeout_ms;
+    uint32_t rights;
     uint32_t generation;
     uint8_t in_use;
     uint8_t retired;
@@ -27,6 +28,13 @@ static void file_copy(void *target, const void *source, uint32_t length) {
     uint8_t *out = target;
     const uint8_t *in = source;
     for (uint32_t index = 0U; index < length; ++index) out[index] = in[index];
+}
+
+static int file_bytes_zero(const void *source, uint32_t length) {
+    const uint8_t *bytes = source;
+    for (uint32_t index = 0U; index < length; ++index)
+        if (bytes[index] != 0U) return 0;
+    return 1;
 }
 
 static reist_vfs_file_handle_t file_handle(uint32_t slot,
@@ -114,6 +122,7 @@ static void file_release(file_session_t *session) {
     session->service_generation = 0U;
     session->offset = 0U;
     session->timeout_ms = 0U;
+    session->rights = 0U;
     session->in_use = 0U;
     if (session->generation == FILE_HANDLE_GENERATION_MAX) {
         session->retired = 1U;
@@ -122,9 +131,12 @@ static void file_release(file_session_t *session) {
     }
 }
 
-int reist_vfs_file_open(const char *path, uint32_t timeout_ms,
-                        reist_vfs_file_handle_t *handle) {
-    if (handle == 0 || timeout_ms == 0U || timeout_ms > 60000U) return -22;
+static int file_open(const char *path, uint32_t timeout_ms, uint32_t rights,
+                     uint32_t operation, reist_vfs_file_handle_t *handle) {
+    if (handle == 0 || timeout_ms == 0U || timeout_ms > 60000U ||
+        rights == 0U || (rights & ~X86OS_VFS_OBJECT_RIGHT_ALL) != 0U ||
+        (operation != X86OS_VFS_SHADOW_OBJECT_OPEN &&
+         operation != X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS)) return -22;
     *handle = REIST_VFS_FILE_INVALID_HANDLE;
     uint32_t free_slot = UINT32_MAX;
     for (uint32_t slot = 0U; slot < REIST_VFS_FILE_CAPACITY; ++slot)
@@ -141,15 +153,18 @@ int reist_vfs_file_open(const char *path, uint32_t timeout_ms,
     file_zero(&frame, sizeof(frame));
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
     frame.struct_size = sizeof(frame);
-    frame.operation = X86OS_VFS_SHADOW_OBJECT_OPEN;
+    frame.operation = operation;
+    frame.flags = operation == X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS
+        ? rights : 0U;
     frame.path_length = length;
     file_copy(frame.path, resolved, length + 1U);
     status = file_transact(&frame, timeout_ms);
     if (status != 0) return status;
     if (frame.version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame.struct_size != sizeof(frame) ||
-        frame.operation != X86OS_VFS_SHADOW_OBJECT_OPEN ||
-        frame.flags != 0U || frame.path_length != length ||
+        frame.operation != operation ||
+        frame.flags != (operation == X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS
+            ? rights : 0U) || frame.path_length != length ||
         frame.result != 0 || frame.object_token == 0U ||
         frame.service_generation == 0U) return frame.result != 0
             ? frame.result : -84;
@@ -160,9 +175,23 @@ int reist_vfs_file_open(const char *path, uint32_t timeout_ms,
     session->service_generation = frame.service_generation;
     session->offset = 0U;
     session->timeout_ms = timeout_ms;
+    session->rights = rights;
     session->in_use = 1U;
     *handle = file_handle(free_slot, session->generation);
     return 0;
+}
+
+int reist_vfs_file_open(const char *path, uint32_t timeout_ms,
+                        reist_vfs_file_handle_t *handle) {
+    return file_open(path, timeout_ms, X86OS_VFS_OBJECT_RIGHT_DATA,
+                     X86OS_VFS_SHADOW_OBJECT_OPEN, handle);
+}
+
+int reist_vfs_file_open_rights(const char *path, uint32_t timeout_ms,
+                               uint32_t rights,
+                               reist_vfs_file_handle_t *handle) {
+    return file_open(path, timeout_ms, rights,
+                     X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS, handle);
 }
 
 int reist_vfs_file_read(reist_vfs_file_handle_t handle, void *data,
@@ -174,6 +203,7 @@ int reist_vfs_file_read(reist_vfs_file_handle_t handle, void *data,
     int status = file_resolve(handle, &slot, &session);
     (void)slot;
     if (status != 0) return status;
+    if ((session->rights & X86OS_VFS_OBJECT_RIGHT_READ) == 0U) return -13;
     x86os_vfs_shadow_object_read_frame_t frame;
     file_zero(&frame, sizeof(frame));
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
@@ -208,6 +238,7 @@ int reist_vfs_file_fstat(reist_vfs_file_handle_t handle,
     int status = file_resolve(handle, &slot, &session);
     (void)slot;
     if (status != 0) return status;
+    if ((session->rights & X86OS_VFS_OBJECT_RIGHT_STAT) == 0U) return -13;
     return file_control(session, X86OS_VFS_SHADOW_OBJECT_FSTAT, info);
 }
 
@@ -220,6 +251,7 @@ int reist_vfs_file_seek(reist_vfs_file_handle_t handle, int64_t offset,
     int status = file_resolve(handle, &slot, &session);
     (void)slot;
     if (status != 0) return status;
+    if ((session->rights & X86OS_VFS_OBJECT_RIGHT_SEEK) == 0U) return -13;
     uint32_t base = whence == REIST_VFS_SEEK_CUR ? session->offset : 0U;
     if (whence == REIST_VFS_SEEK_END) {
         x86os_file_info_t info;
@@ -240,6 +272,103 @@ int reist_vfs_file_seek(reist_vfs_file_handle_t handle, int64_t offset,
     }
     session->offset = candidate;
     *new_offset = candidate;
+    return 0;
+}
+
+int reist_vfs_file_rights(reist_vfs_file_handle_t handle,
+                          uint32_t *rights) {
+    if (rights == 0) return -22;
+    *rights = 0U;
+    uint32_t slot = 0U;
+    file_session_t *session = 0;
+    int status = file_resolve(handle, &slot, &session);
+    (void)slot;
+    if (status != 0) return status;
+    *rights = session->rights;
+    return 0;
+}
+
+int reist_vfs_file_delegate(
+        reist_vfs_file_handle_t handle,
+        const x86os_process_identity_t *target, uint32_t rights) {
+    if (target == 0 || target->version != 1U ||
+        target->struct_size != sizeof(*target) || target->pid <= 0 ||
+        target->generation == 0U || rights == 0U ||
+        (rights & ~X86OS_VFS_OBJECT_RIGHT_ALL) != 0U) return -22;
+    uint32_t slot = 0U;
+    file_session_t *session = 0;
+    int status = file_resolve(handle, &slot, &session);
+    (void)slot;
+    if (status != 0) return status;
+    if ((session->rights & X86OS_VFS_OBJECT_RIGHT_DELEGATE) == 0U ||
+        (rights & ~session->rights) != 0U) return -13;
+    x86os_vfs_shadow_object_delegate_frame_t frame;
+    file_zero(&frame, sizeof(frame));
+    frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
+    frame.struct_size = sizeof(frame);
+    frame.operation = X86OS_VFS_SHADOW_OBJECT_DELEGATE;
+    frame.object_token = session->object_token;
+    frame.service_generation = session->service_generation;
+    frame.target_pid = target->pid;
+    frame.target_generation = target->generation;
+    frame.rights = rights;
+    status = file_transact(&frame, session->timeout_ms);
+    if (status != 0) return status;
+    if (frame.version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame.struct_size != sizeof(frame) ||
+        frame.operation != X86OS_VFS_SHADOW_OBJECT_DELEGATE ||
+        frame.flags != 0U || frame.object_token != session->object_token ||
+        frame.service_generation != session->service_generation ||
+        frame.target_pid != target->pid ||
+        frame.target_generation != target->generation ||
+        frame.rights != rights ||
+        !file_bytes_zero(frame.reserved, sizeof(frame.reserved))) return -84;
+    return frame.result;
+}
+
+int reist_vfs_file_adopt(uint32_t timeout_ms,
+                         reist_vfs_file_handle_t *handle) {
+    if (handle == 0 || timeout_ms == 0U || timeout_ms > 60000U) return -22;
+    *handle = REIST_VFS_FILE_INVALID_HANDLE;
+    uint32_t free_slot = UINT32_MAX;
+    for (uint32_t slot = 0U; slot < REIST_VFS_FILE_CAPACITY; ++slot)
+        if (sessions[slot].in_use == 0U && sessions[slot].retired == 0U) {
+            free_slot = slot;
+            break;
+        }
+    if (free_slot == UINT32_MAX) return -24;
+    x86os_vfs_shadow_object_frame_t frame;
+    file_zero(&frame, sizeof(frame));
+    frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
+    frame.struct_size = sizeof(frame);
+    frame.operation = X86OS_VFS_SHADOW_OBJECT_ADOPT;
+    int status = file_transact(&frame, timeout_ms);
+    if (status != 0) return status;
+    if (frame.version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame.struct_size != sizeof(frame) ||
+        frame.operation != X86OS_VFS_SHADOW_OBJECT_ADOPT ||
+        frame.path_length != 0U ||
+        !file_bytes_zero(frame.path, sizeof(frame.path)) ||
+        !file_bytes_zero(&frame.info, sizeof(frame.info)) ||
+        !file_bytes_zero(frame.reserved, sizeof(frame.reserved))) return -84;
+    if (frame.result != 0) return frame.result;
+    if (frame.object_token == 0U || frame.service_generation == 0U ||
+        frame.flags == 0U ||
+        (frame.flags & ~X86OS_VFS_OBJECT_RIGHT_ALL) != 0U) return -84;
+    for (uint32_t slot = 0U; slot < REIST_VFS_FILE_CAPACITY; ++slot)
+        if (sessions[slot].in_use != 0U &&
+            sessions[slot].object_token == frame.object_token &&
+            sessions[slot].service_generation == frame.service_generation)
+            return -17;
+    file_session_t *session = &sessions[free_slot];
+    if (session->generation == 0U) session->generation = 1U;
+    session->object_token = frame.object_token;
+    session->service_generation = frame.service_generation;
+    session->offset = 0U;
+    session->timeout_ms = timeout_ms;
+    session->rights = frame.flags;
+    session->in_use = 1U;
+    *handle = file_handle(free_slot, session->generation);
     return 0;
 }
 

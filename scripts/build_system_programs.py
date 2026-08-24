@@ -107,7 +107,11 @@ PROGRAMS = {
     "FAULTUD.PRG": ROOT / "userspace/programs/fault_ud.c",
     "FAULTPF.PRG": ROOT / "userspace/programs/fault_pf.c",
     "FAULTSTK.PRG": ROOT / "userspace/programs/fault_stack.c",
-    "GTEST.PRG": ROOT / "userspace/programs/guest_test.c",
+    "GTEST.PRG": (
+        ROOT / "userspace/programs/guest_test.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "REIST.PRG": ROOT / "userspace/programs/reist_probe.c",
     "STORAGE.PRG": (
         ROOT / "userspace/programs/storage_service.c",
@@ -193,7 +197,7 @@ def main() -> None:
             if name in {"CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
-                        "LS.PRG"}:
+                        "LS.PRG", "GTEST.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)
