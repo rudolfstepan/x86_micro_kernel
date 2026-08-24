@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-vfs-shadow-read-directory"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,77 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-vfs-shadow-read-directory"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bounded authoritative Ring-3 file reads and directory iteration"
+scope = "Extend the fixed 512-byte VFS shadow protocol append-only with operation 6 read-at and operation 7 readdir-at. Resolve FAT12/FAT32 and EXT2 paths only through the existing independent Ring-3 parsers, then read regular-file bytes or one directory entry through mediated sectors under explicit per-request bounds. Preserve operations 1 through 5 exactly and never invoke or fall back to SYS_OPEN, SYS_READ, SYS_READDIR or SYS_STAT. Add a fixed client adapter with canonical path resolution, monotonic deadlines, cancellation and complete response validation. Cut over only packaged CAT.PRG and LS.PRG to the new path-based read-only adapter; keep the public x86os open/read/close/readdir ABI and all mutation users unchanged. Prove FAT12/FAT32 and EXT2 partial reads, EOF, cross-sector reads, directory indexing, malformed chains and records, budget exhaustion and response rejection on the host. Extend the real second-IDE QEMU EXT2 proof to execute packaged CAT.PRG and LS.PRG and regain the userspace shell after each command. Persistent open handles, seek state, descriptor inheritance, mutation, shell and desktop cutovers remain out of scope."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/sdk/include/x86os.h",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/include/reist/vfs_read_client.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "userspace/storage/lib/vfs_read_client.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/cat.c",
+  "userspace/programs/ls.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_ext2_stat.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_vfs_shadow_ext2_host.c",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_vfs_read_client_host.c",
+  "test/test_reist_vfs_read_client.py",
+  "test/test_reist_storage_service.py",
+  "test/test_qemu_ext2_stat.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "operations 6 and 7 are append-only and operations 1 through 5 retain their exact ABI values frame layouts and semantics",
+  "read-at and readdir-at obtain every decision and byte only from bounded FAT or EXT2 parsers and never invoke or fall back to SYS_OPEN SYS_READ SYS_READDIR or SYS_STAT",
+  "every request retains its canonical path and validates version size operation flags offsets capacities result lengths response path and zero reserved fields before publication",
+  "read-at transfers at most 256 bytes and directory iteration returns exactly one fixed public entry per request with monotonic deadline and request cancellation",
+  "FAT chain traversal remains bounded to 32 clusters and 64 mediated sector reads while EXT2 remains bounded to 16 components 32 directory blocks and 128 sector reads",
+  "partial reads cross-sector reads EOF invalid links malformed directory records unsupported features and exhausted bounds fail with deterministic status and no stale output",
+  "CAT.PRG and LS.PRG use only the new read-only adapter while public x86os descriptor and mutation APIs remain unchanged",
+  "the QEMU proof uses the real second IDE EXT2 image packaged CAT.PRG and LS.PRG then regains the userspace shell",
+  "persistent handles seek descriptor inheritance mutation shell desktop raw controller DMA and new syscall authority remain unchanged"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_vfs_read_client.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_qemu_ext2_stat.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode ext2-stat"
+]
+stop_conditions = [
+  "read or directory parsing requires heap allocation unbounded traversal direct controller authority or unsupported on-disk semantics",
+  "an operation requires a legacy VFS syscall fallback or changes an existing operation",
+  "CAT.PRG or LS.PRG cannot complete against the real QEMU EXT2 disk and return to the shell",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add bounded Ring-3 VFS read primitives"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-shadow-ext2-parser"
