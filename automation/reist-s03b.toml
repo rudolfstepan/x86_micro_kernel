@@ -16,7 +16,7 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Attenuating read-only VFS object rights and explicit delegation"
-scope = "Extend the service-owned stable VFS object layer append-only with explicit READ SEEK STAT and DELEGATE rights. Preserve operation 8 as the legacy default READ SEEK STAT open, add operation 12 for an explicitly rights-scoped open, operation 13 for delegation to one exact live target PID and generation, and operation 14 for active target adoption. A delegated object is a distinct fixed service slot with a nonempty subset of source rights, a five-second pending deadline, unchanged source authority and no implicit DELEGATE grant. Bind all enforcement to Claim-v2 client and service generations; deny read stat seek or redelegation before side effects when the local or service right is absent. Keep sixteen service slots, four slots per exact client generation and four process-local sessions, reap at most one expired or dead-owner slot per service loop and publish no token on failed quota identity rights or locator validation. Prove legacy open compatibility rights attenuation exact-target adoption pending expiry duplicate-adoption rejection quota rollback stale service generation and real parent-to-child QEMU transfer using the existing GTEST image. This package adds no write mutation truncate standard descriptors dup dup2 ambient spawn inheritance kernel VFS fallback raw controller or DMA authority."
+scope = "Extend the service-owned stable VFS object layer append-only with explicit READ SEEK STAT and DELEGATE rights. Preserve operation 8 as the legacy default READ SEEK STAT open, add operation 12 for an explicitly rights-scoped open, operation 13 for delegation to one exact live target PID and generation, and operation 14 for active target adoption. A delegated object is a distinct fixed service slot with a nonempty subset of source rights, a five-second pending deadline, unchanged source authority and no implicit DELEGATE grant. Bind all enforcement to Claim-v2 client and service generations; deny read stat seek or redelegation before side effects when the local or service right is absent. Keep sixteen service slots, four slots per exact client generation and four process-local sessions, reap at most one expired or dead-owner slot per service loop and publish no token on failed quota identity rights or locator validation. Prove legacy open compatibility rights attenuation exact-target adoption pending expiry duplicate-adoption rejection quota rollback stale service generation and real parent-to-child QEMU transfer using the existing GTEST image. Raise only the fixed rescue per-image bound from 112 to 116 KiB for the measured 116 KiB storage image while retaining the 272 KiB aggregate pool. This package adds no write mutation truncate standard descriptors dup dup2 ambient spawn inheritance kernel VFS fallback raw controller or DMA authority."
 allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/sdk/include/x86os.h",
@@ -25,6 +25,7 @@ allowed_files = [
   "userspace/programs/storage_service.c",
   "userspace/programs/guest_test.c",
   "scripts/build_system_programs.py",
+  "kernel/proc/process.c",
   "test/test_vfs_file_client_host.c",
   "test/test_reist_vfs_file_client.py",
   "test/test_reist_storage_service.py",
@@ -44,6 +45,7 @@ invariants = [
   "sixteen service slots four slots per exact client generation and four local sessions remain fixed with generation retirement instead of wrap",
   "failed identity rights quota locator or response validation leaks no local handle and publishes no usable remote token",
   "the real GTEST parent delegates attenuated read authority to a child that actively adopts reads and closes it before TEST_OK",
+  "the rescue per-image bound is exactly 116 KiB while the aggregate rescue pool remains exactly 272 KiB and the measured eleven-image set fits",
   "no write mutation truncate standard descriptor dup dup2 ambient spawn inheritance kernel VFS fallback controller or DMA authority is added"
 ]
 targeted_tests = [

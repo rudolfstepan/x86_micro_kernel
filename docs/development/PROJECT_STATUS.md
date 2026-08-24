@@ -332,7 +332,9 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
 - Aktiv ist die append-only Ergänzung expliziter READ-/SEEK-/STAT-/DELEGATE-
   Rechte und einer auf exakte Ziel-PID/-Generation gebundenen, abschwächenden
   Objektübergabe. Das Ziel muss die Übergabe innerhalb einer festen Deadline
-  aktiv übernehmen; ambiente Spawn-Vererbung bleibt ausgeschlossen.
+  aktiv übernehmen; ambiente Spawn-Vererbung bleibt ausgeschlossen. Das
+  gemessene Storage-Image benötigt dafür 116 KiB im unveränderten festen
+  272-KiB-Rescue-Gesamtpool.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

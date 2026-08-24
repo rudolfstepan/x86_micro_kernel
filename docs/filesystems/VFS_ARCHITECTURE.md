@@ -77,7 +77,9 @@ Bootrecord-Signatur; EXT2 adressiert Inode-Nummer und Inodegeneration unter
 einer Superblock-Signatur. Medien- oder Locatorwechsel liefert `ESTALE`.
 Als nächster aktiver Schnitt werden read-only Rechte explizit und eine
 generationgebundene, abschwächende Übergabe ergänzt. Deskriptorvererbung beim
-Spawn bleibt davon getrennt und ist noch nicht migriert.
+Spawn bleibt davon getrennt und ist noch nicht migriert. Das Storage-Rescue-
+Image bleibt im festen Gesamtpool; nur sein Einzelimage-Limit steigt gemessen
+von 112 auf 116 KiB.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus

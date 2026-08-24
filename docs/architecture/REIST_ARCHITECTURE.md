@@ -158,6 +158,8 @@ Der aktive Folgeschnitt ergänzt explizite READ-/SEEK-/STAT-/DELEGATE-Rechte
 und ausschließlich abschwächende Übergaben an eine exakt validierte
 Prozessgeneration. Ein Spawn erbt weiterhin keine Objekt- oder
 Delegationsautorität ambient.
+Der zusätzliche Servicepfad belegt ein 116-KiB-Rescue-Image; der statische
+Gesamtpool bleibt unverändert auf 272 KiB begrenzt.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

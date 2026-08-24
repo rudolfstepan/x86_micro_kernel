@@ -490,7 +490,8 @@ und 10 verbindlich.
     und pfadfreien read-only Folgeoperationen 9 bis 11 nach einmaligem Open
   - [ ] **in Arbeit:** explizite READ-/SEEK-/STAT-/DELEGATE-Rechte und
     abschwächende Übergabe an eine exakt generationgebundene Zielidentität;
-    keine ambiente Spawn-Vererbung
+    keine ambiente Spawn-Vererbung; das gewachsene Storage-Rescue-Image erhält
+    ausschließlich 116 KiB Einzellimit, der 272-KiB-Gesamtpool bleibt fest
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
