@@ -321,6 +321,9 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   revalidiert Client-Liveness und beide Generationen vor dem Dispatch.
   Syscall 68 und der 28-Byte-Claim-v1-Vertrag bleiben unverändert. Hosttests,
   QEMU-Paketbuild, normaler Gastlauf und Storage-Recovery-Gastlauf bestehen.
+- Aktiv ist der nächste R2.1-Schnitt: sechzehn feste, ownergebundene
+  serviceeigene read-only Objekt-Slots sollen den Pfad nur beim Öffnen
+  auflösen und FAT über Directory-Entry-Locatoren sowie EXT2 über Inodes lesen.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

@@ -86,8 +86,8 @@ offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt. Nach Abschluss der
 pfadgebundenen Read-Sessions ist auch
 `R2.1-storage-claim-client-identity` als Voraussetzung stabiler
-serviceeigener Objekt-Handles umgesetzt. Die ausführbare Queue ist leer; als
-nächster R2.1-Schnitt folgt die serviceeigene stabile Objektidentität.
+serviceeigener Objekt-Handles umgesetzt. Aktiv ist nun der serviceeigene
+stabile read-only Objekt-Layer für FAT und EXT2; Vererbung bleibt getrennt.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -483,6 +483,9 @@ und 10 verbindlich.
     Servicegeneration als fehlende Besitzergrenze für stabile Objekt-Handles;
     Syscall 119 liefert einen getrennten 40-Byte-v2-Deskriptor, während
     Syscall 68 und Claim v1 bytegenau 28 Byte groß bleiben
+  - [ ] **in Arbeit:** fester ownergebundener Service-Handlepool mit
+    FAT-Directory-Entry- beziehungsweise EXT2-Inode-Locatoren, Medienidentität
+    und pfadfreien read-only Folgeoperationen
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY

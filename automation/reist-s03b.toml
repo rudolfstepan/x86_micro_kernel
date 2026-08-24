@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-vfs-stable-object-handles"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,74 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-vfs-stable-object-handles"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Owner-bound stable read-only VFS object handles"
+scope = "Replace path re-resolution inside Ring-3 read sessions with a fixed service-owned read-only object table. Append VFS shadow frame operations 8 through 11 for object open read fstat and close without changing storage request operation 31 or frame operations 1 through 7. Resolve a path exactly once: FAT12/FAT32 records a validated directory-entry sector offset starting cluster creation guard and boot-record signature while EXT2 records the inode number inode generation and superblock identity. Subsequent reads and fstat address only that locator and fail stale if media identity or object guard changes. Bind every one of sixteen static service slots to the Claim-v2 client PID and generation allow at most four per client encode slot generation separately from the full service generation and reap dead owners incrementally without heap allocation. Preserve the public process-local four-slot file API while storing the remote service token and generation so old handles cannot alias after service restart. Prove path rename independence locator tamper and media-change rejection quota stale close client exit cleanup FAT and EXT2 reads normal QEMU EXT2 QEMU and storage restart. This package remains read-only and adds no descriptor inheritance cross-process delegation mutation unlink semantics POSIX binary compatibility kernel VFS fallback controller or DMA authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/sdk/include/x86os.h",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/include/reist/vfs_file_client.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "userspace/storage/lib/vfs_file_client.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/guest_test.c",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_vfs_shadow_ext2_host.c",
+  "test/test_vfs_file_client_host.c",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_vfs_file_client.py",
+  "test/test_reist_storage_service.py",
+  "test/test_reist_storage_recovery.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "VFS shadow frame operations 1 through 7 and storage request operation 31 remain byte exact",
+  "object open resolves one canonical path once and all later read fstat and close requests contain no path authority",
+  "FAT object locators are directory-entry and media-signature scoped while EXT2 locators are inode inode-generation and superblock-identity scoped",
+  "sixteen fixed service slots permit no more than four live objects per exact client PID and generation and use no heap allocation",
+  "every operation validates Claim-v2 owner service generation slot generation media identity object guard ranges and fixed reserved fields before publication",
+  "service restart and slot reuse cannot make an old client handle name a new object",
+  "dead clients are reaped with one bounded liveness check per service loop and cleanup is idempotent",
+  "the process-local four-slot API preserves seek offset publication only after successful object reads",
+  "no mutation inheritance delegation kernel VFS fallback raw controller or DMA authority is added"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_storage_recovery.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode ext2-stat",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode storage-recovery"
+]
+stop_conditions = [
+  "a post-open read still requires path lookup or cannot distinguish media replacement from the opened object",
+  "FAT object identity requires claiming unsupported inode semantics or mutable global parser state",
+  "owner cleanup requires an unbounded scan blocking wait heap allocation or authority outside the storage service",
+  "an existing frame operation public file API or Claim-v2 ABI must be changed incompatibly",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add stable Ring-3 VFS object handles"
+evidence = []
 
 [[packages]]
 id = "R2.1-storage-claim-client-identity"
