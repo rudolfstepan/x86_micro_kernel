@@ -12,6 +12,11 @@ echte Deskriptoren 0/1/2 mit richtungsgebundenen Terminalrechten. Der
 Tastaturpfad bleibt bis zu einer eigenen TTY-/Deadline-ABI nichtblockierend;
 `dup`, Pipes und Spawn-Vererbung waren nicht Teil dieses Schnitts.
 
+Aktiv ist `R2.1-shared-syscall-abi`: Die doppelte Kernel-/SDK-Pflege der
+Syscallnummern wird durch einen versionierten gemeinsamen Header und
+deterministisch geprüfte Kompatibilitätsprojektionen ersetzt. Der Schnitt
+ändert weder Nummern noch Dispatchersemantik.
+
 ## Arbeitscheckpoint 16. August 2026
 
 Dieser historische Hardware-Checkpoint basiert auf Commit `0a2c08e`. Das reale

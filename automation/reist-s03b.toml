@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-shared-syscall-abi"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,58 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-shared-syscall-abi"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Unify syscall numbers and base errors"
+scope = "Replace the independently maintained Kernel and SDK syscall-number lists with one versioned append-only common ABI header covering every index 0 through 119, including reserved index 8 and the previously subsystem-local administrative indices 90 and 91. Keep every existing SYS_* and X86OS_SYS_* spelling and numeric value as deterministic generated compatibility output so source and binary behavior remains unchanged. Add the standard errno subset already used at the syscall boundary without claiming that all legacy handlers have been migrated. A bounded generator writes only marked regions, check mode performs no writes, rejects gaps duplicates renumbering malformed names and generated drift, and both Makefile and Windows builds fail closed on drift before compilation. Specialized subsystem constants become aliases of the common source. This package adds no syscall, dispatcher behavior, filesystem operation, process authority or runtime wait."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/reist/abi/syscall.h",
+  "scripts/generate_syscall_abi.py",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "include/kernel/admin_maintenance.h",
+  "include/kernel/component_control.h",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "test/test_syscall_abi_source.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the common ABI version is one and contains each syscall index zero through 119 exactly once with no gap or duplicate",
+  "all pre-existing SYS and X86OS_SYS names retain their exact numeric values and no dispatcher entry or syscall signature changes",
+  "reserved index eight remains named reserved and unavailable to Ring 3",
+  "administrative indices 90 and 91 are sourced from the common ABI rather than independent subsystem literals",
+  "generated Kernel and SDK compatibility regions are deterministic exact projections of the common header",
+  "check mode writes no file and both supported build paths reject generated drift before compilation",
+  "the common error subset uses established errno numbers but does not silently translate existing subsystem-specific errors",
+  "all parsing generation and validation are bounded by the fixed 120-entry ABI"
+]
+targeted_tests = [
+  "python test/test_syscall_abi_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "any existing public syscall name number or signature would change",
+  "a build could consume stale generated compatibility definitions",
+  "generation would rewrite text outside explicit marked regions",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "abi: unify syscall number source"
+evidence = []
 
 [[packages]]
 id = "R2.1-standard-descriptors"
