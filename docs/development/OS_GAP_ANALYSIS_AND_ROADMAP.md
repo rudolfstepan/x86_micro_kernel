@@ -84,7 +84,7 @@ Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
-`R2.1-httpd-vfs-stat-cutover` ist derzeit kein Paket aktiv.
+`R2.1-vfs-shadow-fat12-parser` ist derzeit **in Arbeit**.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 

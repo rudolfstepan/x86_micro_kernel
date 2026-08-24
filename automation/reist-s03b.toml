@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-vfs-shadow-fat12-parser"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,66 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-vfs-shadow-fat12-parser"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bounded Ring-3 FAT12 metadata parser and generic FAT stat operation"
+scope = "Extend the existing fixed-storage Ring-3 metadata parser with Microsoft FAT12 BPB, fixed-root-directory and 12-bit cluster-chain semantics while retaining FAT32 behavior and every authority/work bound. Preserve operation 2 as the existing FAT32-only ABI and append operation 3 as the generic FAT12/FAT32 stat contract; move the controlled stat client to operation 3 without fallback. The storage service continues exact result-and-byte equivalence against legacy SYS_STAT before publishing any parsed result. Prove FAT12 root, nested directory, VFAT name, malformed BPB, invalid chain and bounded-read behavior on the host, then hotplug a real FAT12 floppy in QEMU and run packaged STAT.PRG against /mnt/fdd0/HOTPLUG.TXT after reintegration. Keep FAT16, EXT2, open, read, readdir, mutation paths, shell and desktop cutovers out of scope."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/sdk/include/x86os.h",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/programs/storage_service.c",
+  "scripts/run_qemu_fdd_hotplug.py",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_vfs_stat_client_host.c",
+  "test/test_reist_vfs_stat_client.py",
+  "test/test_reist_storage_service.py",
+  "test/test_qemu_fdd_hotplug.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "operation 2 and every existing ABI value remain unchanged while generic FAT stat is appended as operation 3",
+  "FAT type selection follows BPB layout and Microsoft FAT cluster-count semantics and rejects FAT16",
+  "FAT12 fixed root directories and subdirectory cluster chains are both supported without heap allocation",
+  "12-bit FAT entries including sector-boundary entries are decoded with bounded mediated reads",
+  "resource component chain and sector-read limits remain fixed and all malformed BPBs chains entries and paths fail closed",
+  "the generic client uses operation 3 and has no operation 2 or SYS_STAT fallback",
+  "the storage service publishes a parsed result only after exact status and x86os_file_info byte equivalence with legacy stat",
+  "the QEMU proof uses the real hotplug FAT12 image packaged STAT.PRG and /mnt/fdd0/HOTPLUG.TXT then regains the userspace shell",
+  "FAT16 EXT2 open read readdir mutations shell desktop kernel VFS and syscall authority remain unchanged"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_vfs_stat_client.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_qemu_fdd_hotplug.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode fdd-hotplug"
+]
+stop_conditions = [
+  "FAT12 support requires heap allocation unbounded traversal or direct device authority",
+  "operation 2 must change meaning or an existing ABI value must be renumbered",
+  "legacy equivalence cannot be retained before publication",
+  "the QEMU FAT12 volume is not mounted at /mnt/fdd0 or packaged STAT.PRG cannot reach it",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add bounded FAT12 Ring-3 metadata parsing"
+evidence = []
 
 [[packages]]
 id = "R2.1-httpd-vfs-stat-cutover"
