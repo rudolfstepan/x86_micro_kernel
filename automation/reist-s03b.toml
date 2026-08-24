@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-open-flags-rights"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,67 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-open-flags-rights"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Append-only open flags and descriptor rights"
+scope = "Append syscall 120 as OPEN_FLAGS without changing legacy OPEN 14 CREATE 19 READ 15 WRITE 20 or CLOSE 16. Add one standard-shaped access-mode API with RDONLY WRONLY RDWR CREAT TRUNC and APPEND flag values. Validate the complete flag word and descriptor capacity before path or filesystem side effects; grant each resulting process-local descriptor only its requested read and write rights. CREAT opens an existing regular file or creates exactly one missing file with bounded rollback if installation fails. APPEND selects the current node size before every write so one-process writes cannot overwrite earlier data. TRUNC is published for source compatibility but rejected with ENOTSUP before lookup creation opening or mutation until a dedicated filesystem-transaction package implements it. Preserve the fixed eight dynamic descriptors at 3 through 10, grant syscall 120 only to the compatibility profile by default, and return stable negated errno values from the new entry point. This package adds no seek fstat truncate implementation inheritance delegation service object mutation raw controller or DMA authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/reist/abi/syscall.h",
+  "userspace/sdk/include/reist/abi/syscall.h",
+  "scripts/generate_syscall_abi.py",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/programs/guest_test.c",
+  "test/test_open_flags.py",
+  "test/test_syscall_abi_source.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_reist_wcet.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "syscall 120 is appended and every existing syscall number signature and legacy return behavior remains byte exact",
+  "only RDONLY WRONLY and RDWR are valid access modes and unknown bits invalid combinations and APPEND without write authority fail with EINVAL before side effects",
+  "TRUNC always returns ENOTSUP before path resolution creation opening descriptor publication or filesystem mutation",
+  "descriptor capacity is reserved before CREAT can mutate the namespace and a newly created file is removed if subsequent opening or installation fails",
+  "each descriptor grants exactly the requested read and write rights and denied operations fail with EBADF before data publication",
+  "APPEND derives its offset from the current node size immediately before every write and updates the descriptor offset only after successful bytes",
+  "the eight dynamic slots remain fixed at descriptors 3 through 10 and teardown clears the append state",
+  "only the compatibility profile receives OPEN_FLAGS by default while every restricted profile remains default deny",
+  "all loops copies and path operations remain bounded by existing fixed capacities"
+]
+targeted_tests = [
+  "python test/test_open_flags.py -v",
+  "python test/test_syscall_abi_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "an existing syscall or legacy wrapper would require incompatible behavior",
+  "TRUNC cannot remain fail closed before every side effect",
+  "CREAT rollback cannot be bounded within the existing VFS contract",
+  "a restricted process profile would acquire the new syscall implicitly",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "vfs: add bounded open flags and rights"
+evidence = []
 
 [[packages]]
 id = "R2.1-shared-syscall-abi"
