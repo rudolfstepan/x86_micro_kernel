@@ -53,6 +53,10 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY", service)
         self.assertIn("X86OS_VFS_SHADOW_FS_STAT_AUTHORITY", service)
         self.assertIn("vfs_shadow_stat", service)
+        self.assertIn("vfs_shadow_read_at", service)
+        self.assertIn("vfs_shadow_readdir_at", service)
+        self.assertIn("X86OS_VFS_SHADOW_FS_READ_AT", service)
+        self.assertIn("X86OS_VFS_SHADOW_FS_READDIR_AT", service)
         self.assertIn("vfs_shadow_fat32.c", read("scripts/build_system_programs.py"))
         self.assertIn('"STORAGE.PRG"', read("scripts/build_system_programs.py"))
         self.assertEqual(read("Makefile").count(
@@ -102,6 +106,9 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY", guest)
         self.assertIn("STORAGE_VFS_FAT_STAT_AUTHORITY_OK", guest)
         self.assertIn("STORAGE_VFS_FS_STAT_AUTHORITY_OK", guest)
+        self.assertIn("STORAGE_VFS_READ_CLIENT_OK", guest)
+        self.assertIn('"/bin/cat.prg", "/README.TXT"', guest)
+        self.assertIn('"/bin/ls.prg", "/"', guest)
 
 
 if __name__ == "__main__":

@@ -152,6 +152,23 @@ static int stat_path(test_context_t *context, const char *path,
         &io, path, (uint32_t)strlen(path), info);
 }
 
+static int read_path(test_context_t *context, const char *path,
+                     uint32_t offset, uint8_t *data, uint32_t capacity,
+                     uint32_t *transferred) {
+    const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
+    context->reads = 0U;
+    return reist_vfs_shadow_ext2_read(
+        &io, path, (uint32_t)strlen(path), offset, data, capacity, transferred);
+}
+
+static int readdir_path(test_context_t *context, const char *path,
+                        uint32_t index, x86os_file_info_t *info) {
+    const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
+    context->reads = 0U;
+    return reist_vfs_shadow_ext2_readdir(
+        &io, path, (uint32_t)strlen(path), index, info);
+}
+
 int main(void) {
     static test_context_t context;
     x86os_file_info_t info;
@@ -168,22 +185,41 @@ int main(void) {
     if (stat_path(&context, "/mnt/ext2/big/deep.txt", &info) != 0 ||
         info.size != 5U) return 4;
     if (stat_path(&context, "/mnt/ext2/README.TXT", &info) != -2) return 5;
+    uint8_t data[16];
+    uint32_t transferred = 0U;
+    if (read_path(&context, "/mnt/ext2/readme.txt", 5U, data, 10U,
+                  &transferred) != 0 || transferred != 10U ||
+        memcmp(data, "AUTHORITY\n", 10U) != 0 ||
+        context.reads > REIST_VFS_SHADOW_EXT2_MAX_SECTOR_READS) return 11;
+    if (read_path(&context, "/mnt/ext2/readme.txt", 15U, data, 10U,
+                  &transferred) != 0 || transferred != 0U) return 12;
+    if (read_path(&context, "/mnt/ext2/dir", 0U, data, 10U,
+                  &transferred) != -21) return 13;
+    if (readdir_path(&context, "/mnt/ext2", 0U, &info) != 0 ||
+        strcmp(info.name, "readme.txt") != 0) return 14;
+    if (readdir_path(&context, "/mnt/ext2", 1U, &info) != 0 ||
+        strcmp(info.name, "dir") != 0 || info.type != X86OS_DIRECTORY)
+        return 15;
+    if (readdir_path(&context, "/mnt/ext2", 3U, &info) != 1 ||
+        info.name[0U] != '\0') return 16;
+    if (readdir_path(&context, "/mnt/ext2/readme.txt", 0U, &info) != -20)
+        return 17;
 
     initialize(&context);
     put16(block_at(&context, 1U) + 56U, 0U);
-    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2) return 6;
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2) return 18;
     initialize(&context);
     put32(block_at(&context, 1U) + 96U, 0x40U);
-    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2) return 7;
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2) return 19;
     initialize(&context);
     put16(block_at(&context, 21U) + 4U, 6U);
-    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -5) return 8;
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -5) return 20;
     initialize(&context);
     put32(block_at(&context, 2U) + 8U, 127U);
-    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -5) return 9;
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -5) return 21;
     initialize(&context);
     put32(inode_at(&context, 15U) + 4U, 33U * TEST_BLOCK_SIZE);
     if (stat_path(&context, "/mnt/ext2/big/missing", &info) != -110)
-        return 10;
+        return 22;
     return 0;
 }

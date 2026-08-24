@@ -292,6 +292,13 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Sektorreads. HTree, Extents, Symlinks und 64-Bit-Größen bleiben fail-closed.
   Der QEMU-Nachweis hängt eine deterministische zweite IDE-Platte ein und führt
   das paketierte `STAT.PRG` auf `/mnt/hdd1/readme.txt` aus.
+- Append-only Operationen 6 und 7 liefern autoritatives, pfadbasiertes
+  `read-at` mit höchstens 256 Byte beziehungsweise genau einen indexierten
+  Verzeichniseintrag. FAT12/FAT32 und EXT2 nutzen nur vermittelte Sektorreads
+  mit festen Parsergrenzen; Fehler veröffentlichen keine Teilbytes. `CAT.PRG`
+  und `LS.PRG` besitzen in diesem Pfad keinen Kernel-VFS-Fallback. Der normale
+  Gast prüft den FAT-Pfad, der zweite QEMU-IDE-Datenträger `stat`, `cat`, `ls`
+  und die jeweilige Rückkehr zur Userspace-Shell.
 - `HTTPD.PRG` ist der erste lang laufende Nutzer des Ring-3-FAT-`stat`-
   Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 5 und
   besitzt keinen Legacy-Fallback; `open`, `read` und `readdir` bleiben vorerst

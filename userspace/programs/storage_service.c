@@ -45,6 +45,15 @@
 #define BOOT_CONTROL_ATTEMPT_LIMIT 2U
 #define BOOT_STATUS_ACK_TIMEOUT_MS 30000U
 
+_Static_assert(sizeof(x86os_vfs_shadow_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
+               "VFS stat frame must fill one request payload");
+_Static_assert(sizeof(x86os_vfs_shadow_read_frame_t) ==
+                   X86OS_STORAGE_BLOCK_SIZE,
+               "VFS read frame must fill one request payload");
+_Static_assert(sizeof(x86os_vfs_shadow_readdir_frame_t) ==
+                   X86OS_STORAGE_BLOCK_SIZE,
+               "VFS readdir frame must fill one request payload");
+
 static void put16(uint8_t *p, uint32_t value) {
     p[0] = (uint8_t)value; p[1] = (uint8_t)(value >> 8U);
 }
@@ -5682,6 +5691,100 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
     return 0;
 }
 
+static int vfs_shadow_read_at(x86os_vfs_shadow_read_frame_t *frame) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) ||
+        frame->operation != X86OS_VFS_SHADOW_FS_READ_AT ||
+        frame->flags != 0U || frame->path_length == 0U ||
+        frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
+        frame->path[0U] != '/' || frame->path[frame->path_length] != '\0' ||
+        frame->requested == 0U ||
+        frame->requested > X86OS_VFS_SHADOW_READ_CAPACITY ||
+        frame->result != 0 || frame->transferred != 0U) return -22;
+    for (uint32_t cursor = 0U; cursor < frame->path_length; ++cursor)
+        if (frame->path[cursor] == '\0') return -22;
+    for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
+        if (frame->data[index] != 0U) return -22;
+    for (uint32_t index = 0U; index < 7U; ++index)
+        if (frame->reserved[index] != 0U) return -22;
+    const reist_vfs_shadow_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    uint32_t transferred = 0U;
+    int status = reist_vfs_shadow_fat_read(
+        &io, frame->path, frame->path_length, frame->offset, frame->data,
+        frame->requested, &transferred);
+    if (status == -2) {
+        for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
+            frame->data[index] = 0U;
+        status = reist_vfs_shadow_ext2_read(
+            &io, frame->path, frame->path_length, frame->offset, frame->data,
+            frame->requested, &transferred);
+    }
+    if (status != 0) {
+        for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
+            frame->data[index] = 0U;
+        transferred = 0U;
+    } else {
+        for (uint32_t index = transferred; index < sizeof(frame->data); ++index)
+            frame->data[index] = 0U;
+    }
+    frame->result = status;
+    frame->transferred = transferred;
+    return 0;
+}
+
+static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) ||
+        frame->operation != X86OS_VFS_SHADOW_FS_READDIR_AT ||
+        frame->flags != 0U || frame->path_length == 0U ||
+        frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
+        frame->path[0U] != '/' || frame->path[frame->path_length] != '\0' ||
+        frame->result != 0) return -22;
+    for (uint32_t cursor = 0U; cursor < frame->path_length; ++cursor)
+        if (frame->path[cursor] == '\0') return -22;
+    const uint8_t *input = (const uint8_t *)&frame->info;
+    for (uint32_t index = 0U; index < sizeof(frame->info); ++index)
+        if (input[index] != 0U) return -22;
+    for (uint32_t index = 0U; index < 4U; ++index)
+        if (frame->reserved[index] != 0U) return -22;
+    const reist_vfs_shadow_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    x86os_file_info_t parsed;
+    uint8_t *bytes = (uint8_t *)&parsed;
+    for (uint32_t index = 0U; index < sizeof(parsed); ++index) bytes[index] = 0U;
+    int status = reist_vfs_shadow_fat_readdir(
+        &io, frame->path, frame->path_length, frame->index, &parsed);
+    if (status == -2)
+        status = reist_vfs_shadow_ext2_readdir(
+            &io, frame->path, frame->path_length, frame->index, &parsed);
+    frame->result = status;
+    for (uint32_t index = 0U; index < sizeof(frame->info); ++index)
+        ((uint8_t *)&frame->info)[index] = status == 0 ? bytes[index] : 0U;
+    return 0;
+}
+
+typedef union {
+    x86os_vfs_shadow_frame_t stat;
+    x86os_vfs_shadow_read_frame_t read;
+    x86os_vfs_shadow_readdir_frame_t readdir;
+} vfs_shadow_request_t;
+
+static int vfs_shadow_request(vfs_shadow_request_t *request) {
+    if (request == 0) return -22;
+    if (request->stat.operation == X86OS_VFS_SHADOW_FS_READ_AT)
+        return vfs_shadow_read_at(&request->read);
+    if (request->stat.operation == X86OS_VFS_SHADOW_FS_READDIR_AT)
+        return vfs_shadow_readdir_at(&request->readdir);
+    return vfs_shadow_stat(&request->stat);
+}
+
 int main(void) {
     int bind = x86os_storage_bind();
     if (bind != 0) {
@@ -5719,11 +5822,11 @@ int main(void) {
         }
         if (request.operation == X86OS_STORAGE_VFS_SHADOW_STAT &&
             request.length == X86OS_STORAGE_BLOCK_SIZE) {
-            x86os_vfs_shadow_frame_t frame;
+            vfs_shadow_request_t frame;
             uint8_t *frame_bytes = (uint8_t *)&frame;
             for (uint32_t index = 0U; index < sizeof(frame); ++index)
                 frame_bytes[index] = data[index];
-            result = vfs_shadow_stat(&frame);
+            result = vfs_shadow_request(&frame);
             if (result == 0)
                 for (uint32_t index = 0U; index < sizeof(frame); ++index)
                     data[index] = frame_bytes[index];

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run packaged STAT.PRG against a deterministic second-disk EXT2 volume."""
+"""Run packaged stat/cat/ls clients against a deterministic EXT2 disk."""
 
 from __future__ import annotations
 
@@ -22,6 +22,10 @@ SECTORS = BLOCKS * 2
 STAT_NAME = "Name: readme.txt"
 STAT_SIZE = "Size: 15 bytes"
 STAT_COMMAND = "stat /mnt/hdd1/readme.txt"
+CAT_COMMAND = "cat /mnt/hdd1/readme.txt"
+CAT_TEXT = "EXT2 AUTHORITY"
+LS_COMMAND = "ls /mnt/hdd1"
+LS_NAME = "readme.txt"
 
 
 def put16(image: bytearray, offset: int, value: int) -> None:
@@ -114,6 +118,34 @@ def qemu_command(qemu: Path, image: Path, ext2_image: Path) -> list[str]:
     return command
 
 
+def wait_for_text(process: subprocess.Popen[str], chunks: queue.Queue[str],
+                  transcript: list[str], finished: threading.Event,
+                  expected: str, deadline: float, *, after: int = -1
+                  ) -> tuple[str | None, int]:
+    while time.monotonic() < deadline:
+        smoke.drain(chunks, transcript)
+        text = "".join(transcript)
+        failed = smoke.failure_marker(text)
+        if failed is not None:
+            return f"guest emitted failure marker {failed!r}", -1
+        position = text.find(expected, after + 1)
+        if position >= 0:
+            return None, position
+        if process.poll() is not None:
+            finished.wait(timeout=0.25)
+            smoke.drain(chunks, transcript)
+            text = "".join(transcript)
+            position = text.find(expected, after + 1)
+            if position >= 0:
+                return None, position
+            return f"QEMU exited before {expected}", -1
+        try:
+            transcript.append(chunks.get(timeout=0.05))
+        except queue.Empty:
+            pass
+    return f"timeout before {expected}", -1
+
+
 def run(qemu: Path, image: Path, ext2_image: Path, timeout: float,
         log: Path) -> int:
     if image == ext2_image:
@@ -154,9 +186,27 @@ def run(qemu: Path, image: Path, ext2_image: Path, timeout: float,
                 process, chunks, transcript, finished, STAT_SIZE, deadline,
                 after=name_marker)
         if error is None:
-            error, _ = smoke.wait_for_line(
+            error, stat_prompt = smoke.wait_for_line(
                 process, chunks, transcript, finished, smoke.SHELL_PROMPT,
                 deadline, after=size_marker)
+        if error is None:
+            smoke.inject_ps2_command(process, CAT_COMMAND)
+            error, cat_marker = smoke.wait_for_line(
+                process, chunks, transcript, finished, CAT_TEXT, deadline,
+                after=stat_prompt)
+        if error is None:
+            error, cat_prompt = smoke.wait_for_line(
+                process, chunks, transcript, finished, smoke.SHELL_PROMPT,
+                deadline, after=cat_marker)
+        if error is None:
+            smoke.inject_ps2_command(process, LS_COMMAND)
+            error, ls_marker = wait_for_text(
+                process, chunks, transcript, finished, LS_NAME, deadline,
+                after=cat_prompt)
+        if error is None:
+            error, _ = smoke.wait_for_line(
+                process, chunks, transcript, finished, smoke.SHELL_PROMPT,
+                deadline, after=ls_marker)
     except (OSError, RuntimeError, ValueError) as caught:
         error = str(caught)
     finally:

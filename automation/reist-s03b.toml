@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-vfs-shadow-read-directory"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-vfs-shadow-read-directory"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Bounded authoritative Ring-3 file reads and directory iteration"

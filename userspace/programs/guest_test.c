@@ -369,6 +369,22 @@ static int test_file_io(void) {
         (void)x86os_unlink(path);
         return -1;
     }
+    const char *cat_arguments[] = {"/bin/cat.prg", "/README.TXT"};
+    int cat_pid = x86os_spawnv(cat_arguments[0], 2, cat_arguments);
+    int cat_status = -1;
+    if (cat_pid <= 0 || x86os_wait(cat_pid, &cat_status) != cat_pid ||
+        cat_status != 0) {
+        (void)x86os_unlink(path);
+        return -1;
+    }
+    const char *ls_arguments[] = {"/bin/ls.prg", "/"};
+    int ls_pid = x86os_spawnv(ls_arguments[0], 2, ls_arguments);
+    int ls_status = -1;
+    if (ls_pid <= 0 || x86os_wait(ls_pid, &ls_status) != ls_pid ||
+        ls_status != 0) {
+        (void)x86os_unlink(path);
+        return -1;
+    }
     static const char replacement_path[] = "GSTNEW.TMP";
     static const char replacement[] = "REIST atomic rename replacement";
     (void)x86os_unlink(replacement_path);
@@ -1136,6 +1152,7 @@ int main(int argc, char **argv) {
     x86os_puts("TEST_STAGE STORAGE_VFS_FAT_STAT_AUTHORITY_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_FS_STAT_AUTHORITY_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_STAT_CLIENT_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_VFS_READ_CLIENT_OK\n");
 
     if (test_scheduler_time() != 0) {
         x86os_puts("TEST_FAIL SCHED_TIME\n");

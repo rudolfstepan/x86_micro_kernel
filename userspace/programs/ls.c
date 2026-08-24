@@ -7,6 +7,8 @@
  * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
  */
 #include "x86os.h"
+#include "reist/vfs_read_client.h"
+#include "reist/vfs_stat_client.h"
 
 #define LS_COLUMNS 4U
 #define LS_COLUMN_WIDTH 19U
@@ -161,7 +163,8 @@ int main(int argc, char **argv) {
     if (parsed < 0) { x86os_puts("ls: invalid option or too many paths\n"); usage(); return 2; }
 
     x86os_file_info_t target;
-    if (x86os_stat(path, &target) < 0) {
+    if (reist_vfs_stat(path, &target,
+                       REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) < 0) {
         x86os_puts("ls: path not found\n");
         return 1;
     }
@@ -175,16 +178,17 @@ int main(int argc, char **argv) {
         target.name[length] = '\0';
         (void)emit_entry(&target, &options, &column, &lines);
     } else {
-        for (uint32_t index = 0;;) {
-            x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
-            int result = x86os_readdir_batch(path, index, entries);
+        for (uint32_t index = 0U;; ++index) {
+            x86os_file_info_t entry;
+            int result = reist_vfs_readdir_at(
+                path, index, &entry, REIST_VFS_READ_DEFAULT_TIMEOUT_MS);
             if (result < 0) { x86os_puts("ls: read error\n"); return 1; }
             if (result == 0) break;
-            for (int item = 0; item < result; ++item) {
-                if (!emit_entry(&entries[item], &options, &column, &lines))
-                    return 0;
+            if (!emit_entry(&entry, &options, &column, &lines)) return 0;
+            if (index == UINT32_MAX) {
+                x86os_puts("ls: directory is too large\n");
+                return 1;
             }
-            index += (uint32_t)result;
         }
     }
     if (column != 0U) x86os_putchar('\n');

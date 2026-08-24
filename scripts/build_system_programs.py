@@ -26,11 +26,18 @@ PROGRAMS = {
     "UPTIME.PRG": ROOT / "userspace/programs/uptime.c",
     "MEMINFO.PRG": ROOT / "userspace/programs/meminfo.c",
     "ASCII.PRG": ROOT / "userspace/programs/ascii.c",
-    "CAT.PRG": ROOT / "userspace/programs/cat.c",
+    "CAT.PRG": (
+        ROOT / "userspace/programs/cat.c",
+        ROOT / "userspace/storage/lib/vfs_read_client.c",
+    ),
     "CHKDSK.PRG": ROOT / "userspace/programs/chkdsk.c",
     "FDISK.PRG": ROOT / "userspace/programs/fdisk.c",
     "FORMAT.PRG": ROOT / "userspace/programs/format.c",
-    "LS.PRG": ROOT / "userspace/programs/ls.c",
+    "LS.PRG": (
+        ROOT / "userspace/programs/ls.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_read_client.c",
+    ),
     "SAVE.PRG": ROOT / "userspace/programs/save.c",
     "BASIC.PRG": ROOT / "userspace/bin/basic.c",
     "SPAWN.PRG": ROOT / "userspace/programs/spawn.c",
@@ -177,7 +184,8 @@ def main() -> None:
             dependency_files = [*core_headers]
             if name in {"CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
-            if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG"}:
+            if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
+                        "LS.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)

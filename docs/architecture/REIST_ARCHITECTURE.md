@@ -135,6 +135,14 @@ Pfadkomponenten, 32 Verzeichnisblöcke und 128 vermittelte Sektorreads begrenzt.
 Direkte und einfach-indirekte Directory-Blöcke sind unterstützt; HTree,
 Extents, Symlinkauflösung, 64-Bit-Größen und unbekannte Features werden
 fail-closed abgewiesen. Auch dieser Pfad ruft `SYS_STAT` nicht auf.
+Append-only Operationen 6 und 7 erweitern denselben festen 512-Byte-Transport
+um pfadbasiertes `read-at` mit maximal 256 Byte und um genau einen indexierten
+Verzeichniseintrag. Beide Pfade verwenden nur die unabhängigen FAT12/FAT32-
+und EXT2-Parser sowie vermittelte Sektorreads. Eingaben und vollständige
+Antwortframes werden validiert; Fehler publizieren weder Teilbytes noch einen
+Teileintrag. `CAT.PRG` und `LS.PRG` sind die einzigen umgestellten Clients und
+besitzen dort keinen Kernel-VFS-Fallback. Persistente Handles und Mutationen
+bleiben getrennte Folgepakete.
 Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
 `STAT.PRG` inzwischen an Operation 5. Ein fester Adapter normalisiert Pfade, wartet
 mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt

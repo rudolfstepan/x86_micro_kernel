@@ -33,11 +33,14 @@ class QemuExt2StatTests(unittest.TestCase):
         self.assertIn("if=ide,index=1", joined)
         self.assertIn("-snapshot", command)
         self.assertEqual(MODULE.STAT_COMMAND, "stat /mnt/hdd1/readme.txt")
+        self.assertEqual(MODULE.CAT_COMMAND, "cat /mnt/hdd1/readme.txt")
+        self.assertEqual(MODULE.LS_COMMAND, "ls /mnt/hdd1")
 
     def test_runner_requires_metadata_and_shell_return(self):
         source = SCRIPT.read_text(encoding="utf-8")
         for marker in ("Name: readme.txt", "Size: 15 bytes",
-                       "smoke.SHELL_PROMPT", "EXT2 STAT PASS"):
+                       "CAT_TEXT", "LS_NAME", "smoke.SHELL_PROMPT",
+                       "EXT2 STAT PASS"):
             self.assertIn(marker, source)
         self.assertIn("smoke.BOOT_MARKER", source)
         self.assertNotIn("smoke.TEST_MARKER", source)

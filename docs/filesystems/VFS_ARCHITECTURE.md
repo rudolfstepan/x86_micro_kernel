@@ -8,7 +8,7 @@ nicht zum aktuellen Design.
 
 ```text
 Ring-3-Programm / Shell
-          |--------------------- read-only stat shadow --------------------|
+          |---------------- read-only metadata/content shadow ------------|
           |                                                               v
       Syscall-/FD-Schicht                                      Storage-Service
           |                                                     (Ring 3)
@@ -41,7 +41,12 @@ fällt sie darauf zurück. Die Operationen 1 bis 3 behalten ihre bisherige
 Semantik. Append-only Operation 5 ist der autoritative generische
 Dateisystempfad: Sie verwendet ausschließlich die unabhängigen FAT- und
 EXT2-Parser und besitzt ebenfalls keinen `SYS_STAT`-Aufruf oder Fallback.
-`open`, Mutationen, Controllerzugriff und DMA bleiben verboten.
+Operation 6 liest ab einem expliziten 32-Bit-Offset höchstens 256 Byte einer
+regulären Datei; Operation 7 liefert genau einen Eintrag anhand eines
+32-Bit-Index und blendet `.` sowie `..` aus. Beide verwenden ausschließlich
+die FAT12/FAT32- und EXT2-Parser, veröffentlichen bei Fehlern keine Teilwerte
+und rufen weder `SYS_OPEN`, `SYS_READ`, `SYS_READDIR` noch `SYS_STAT` auf.
+Persistente Handles, Mutationen, Controllerzugriff und DMA bleiben verboten.
 
 Damit besitzt Ring 3 echte FAT12-/FAT32-Parsersemantik. Als erster
 kontrollierter Cutover verwendet das kurzlebige `STAT.PRG` inzwischen
@@ -50,14 +55,15 @@ ausschließlich Operation 5 und
 normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
 Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
 oder Protokollfehler beendet sich das Programm; die Prozessbereinigung widerruft
-den generationsgebundenen Request. Andere Clients und der Kernelpfad bleiben
-weiterhin unverändert autoritativ. Append-only Syscall 118 stellt inzwischen
+den generationsgebundenen Request. `CAT.PRG` und `LS.PRG` sind zusätzlich auf
+Operation 6/7 umgestellt; andere Clients und der Kernelpfad bleiben
+unverändert. Append-only Syscall 118 stellt inzwischen
 eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
 sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
 Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
 ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
-EXT2-`stat` ist damit migriert; Handles, Lesen und Verzeichnisiteration sind
-noch nicht migriert.
+EXT2-`stat`, pfadbasiertes Lesen in `CAT.PRG` und Verzeichnisiteration in
+`LS.PRG` sind damit migriert; persistente Handles sind noch nicht migriert.
 
 `HTTPD.PRG` ist der erste lang laufende Client dieser ABI. Der sequenzielle,
 fest begrenzte Vordergrundserver verwendet Operation 5 für jede
@@ -125,9 +131,10 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
    Äquivalenzvergleich findet nur noch im Gasttest statt.
 8. [x] Begrenzter read-only EXT2-Metadatenparser und append-only Operation 5;
    die reale QEMU-Abnahme läuft auf einer zweiten IDE-Platte.
-9. Danach Handles, Lesen und
-   Verzeichnisiteration migrieren.
-10. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+9. [x] Append-only Operationen 6/7 für begrenztes `read-at` und indexiertes
+   `readdir-at`; kontrollierter `CAT.PRG`-/`LS.PRG`-Cutover.
+10. Danach persistente Handles, Seek-Zustand und Vererbung migrieren.
+11. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
 
 ### Begrenzter EXT2-Subset in Ring 3

@@ -29,6 +29,8 @@ class ReistVfsShadowExt2Tests(unittest.TestCase):
         self.assertIn("EXT2_SIGNATURE 0xEF53U", source)
         self.assertIn("EXT2_INCOMPAT_FILETYPE", source)
         self.assertIn("EXT2_SINGLE_INDIRECT_INDEX", source)
+        self.assertIn("reist_vfs_shadow_ext2_read", source)
+        self.assertIn("reist_vfs_shadow_ext2_readdir", source)
         self.assertIn("volume->reads >= REIST_VFS_SHADOW_EXT2_MAX_SECTOR_READS",
                       source)
         self.assertNotIn("malloc(", source)

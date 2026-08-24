@@ -366,31 +366,30 @@ static void ext2_inode_info(const ext2_shadow_inode_t *inode,
     info->modify_time = ext2_get32(inode->bytes + 16U);
 }
 
-int reist_vfs_shadow_ext2_stat(const reist_vfs_shadow_io_t *io,
-                               const char *absolute_path,
-                               uint32_t path_length,
-                               x86os_file_info_t *info) {
+static int ext2_resolve(const reist_vfs_shadow_io_t *io,
+                        const char *absolute_path, uint32_t path_length,
+                        ext2_shadow_volume_t *volume,
+                        ext2_shadow_inode_t *inode, char visible[256]) {
     if (io == 0 || io->drive_info == 0 || io->read_sector == 0 ||
-        absolute_path == 0 || info == 0 || path_length == 0U ||
+        absolute_path == 0 || volume == 0 || inode == 0 || visible == 0 ||
+        path_length == 0U ||
         path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
         absolute_path[0] != '/' || absolute_path[path_length] != '\0')
         return -22;
     for (uint32_t index = 0U; index < path_length; ++index)
         if (absolute_path[index] == '\0') return -22;
-    ext2_zero(info, sizeof(*info));
-    ext2_shadow_volume_t volume;
+    ext2_zero(visible, 256U);
     uint32_t cursor = 0U;
-    int status = ext2_mount(&volume, io, absolute_path, path_length, &cursor);
+    int status = ext2_mount(volume, io, absolute_path, path_length, &cursor);
     if (status != 0) return status;
-    status = ext2_parse_superblock(&volume);
+    status = ext2_parse_superblock(volume);
     if (status != 0) return status;
-    ext2_shadow_inode_t inode;
-    status = ext2_read_inode(&volume, EXT2_ROOT_INODE, &inode);
+    status = ext2_read_inode(volume, EXT2_ROOT_INODE, inode);
     if (status != 0 ||
-        (ext2_get16(inode.bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFDIR)
+        (ext2_get16(inode->bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFDIR)
         return status != 0 ? status : -5;
     if (cursor >= path_length) {
-        ext2_inode_info(&inode, "/", info);
+        visible[0U] = '/';
         return 0;
     }
     for (uint32_t component = 0U;
@@ -403,19 +402,136 @@ int reist_vfs_shadow_ext2_stat(const reist_vfs_shadow_io_t *io,
         ext2_zero(wanted, sizeof(wanted));
         ext2_copy(wanted, absolute_path + start, length);
         uint32_t found_inode = 0U;
-        char visible[256];
-        status = ext2_find_entry(&volume, &inode, wanted, &found_inode,
+        status = ext2_find_entry(volume, inode, wanted, &found_inode,
                                  visible);
         if (status != 0) return status;
-        status = ext2_read_inode(&volume, found_inode, &inode);
+        status = ext2_read_inode(volume, found_inode, inode);
         if (status != 0) return status;
         while (cursor < path_length && absolute_path[cursor] == '/') ++cursor;
-        if (cursor >= path_length) {
-            ext2_inode_info(&inode, visible, info);
-            return 0;
-        }
-        if ((ext2_get16(inode.bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFDIR)
+        if (cursor >= path_length) return 0;
+        if ((ext2_get16(inode->bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFDIR)
             return -2;
     }
     return -110;
+}
+
+int reist_vfs_shadow_ext2_stat(const reist_vfs_shadow_io_t *io,
+                               const char *absolute_path,
+                               uint32_t path_length,
+                               x86os_file_info_t *info) {
+    if (info == 0) return -22;
+    ext2_zero(info, sizeof(*info));
+    ext2_shadow_volume_t volume;
+    ext2_shadow_inode_t inode;
+    char visible[256];
+    int status = ext2_resolve(io, absolute_path, path_length, &volume, &inode,
+                              visible);
+    if (status == 0) ext2_inode_info(&inode, visible, info);
+    return status;
+}
+
+int reist_vfs_shadow_ext2_read(const reist_vfs_shadow_io_t *io,
+                               const char *absolute_path,
+                               uint32_t path_length, uint32_t offset,
+                               uint8_t *data, uint32_t capacity,
+                               uint32_t *transferred) {
+    if (data == 0 || transferred == 0 || capacity == 0U ||
+        capacity > X86OS_VFS_SHADOW_READ_CAPACITY) return -22;
+    ext2_zero(data, capacity);
+    *transferred = 0U;
+    ext2_shadow_volume_t volume;
+    ext2_shadow_inode_t inode;
+    char visible[256];
+    int status = ext2_resolve(io, absolute_path, path_length, &volume, &inode,
+                              visible);
+    if (status != 0) return status;
+    if ((ext2_get16(inode.bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFREG)
+        return -21;
+    uint32_t size = ext2_get32(inode.bytes + 4U);
+    if (offset >= size) return 0;
+    uint32_t amount = size - offset < capacity ? size - offset : capacity;
+    uint8_t scratch[X86OS_VFS_SHADOW_READ_CAPACITY];
+    ext2_zero(scratch, sizeof(scratch));
+    uint32_t completed = 0U;
+    uint8_t block_data[REIST_VFS_SHADOW_EXT2_MAX_BLOCK_SIZE];
+    while (completed < amount) {
+        uint32_t position = offset + completed;
+        uint32_t logical = position / volume.block_size;
+        uint32_t in_block = position % volume.block_size;
+        uint32_t block = 0U;
+        status = ext2_inode_block(&volume, &inode, logical, &block);
+        if (status != 0) return status;
+        status = ext2_read_block(&volume, block, block_data);
+        if (status != 0) return status;
+        uint32_t chunk = volume.block_size - in_block;
+        if (chunk > amount - completed) chunk = amount - completed;
+        ext2_copy(scratch + completed, block_data + in_block, chunk);
+        completed += chunk;
+    }
+    ext2_copy(data, scratch, completed);
+    *transferred = completed;
+    return 0;
+}
+
+int reist_vfs_shadow_ext2_readdir(const reist_vfs_shadow_io_t *io,
+                                  const char *absolute_path,
+                                  uint32_t path_length, uint32_t index,
+                                  x86os_file_info_t *info) {
+    if (info == 0) return -22;
+    ext2_zero(info, sizeof(*info));
+    ext2_shadow_volume_t volume;
+    ext2_shadow_inode_t directory;
+    char visible[256];
+    int status = ext2_resolve(io, absolute_path, path_length, &volume,
+                              &directory, visible);
+    if (status != 0) return status;
+    if ((ext2_get16(directory.bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFDIR)
+        return -20;
+    uint32_t size = ext2_get32(directory.bytes + 4U);
+    uint32_t blocks = ext2_div_ceil_u32(size, volume.block_size);
+    if (blocks == 0U || blocks > REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS)
+        return -110;
+    uint32_t current = 0U;
+    uint8_t block_data[REIST_VFS_SHADOW_EXT2_MAX_BLOCK_SIZE];
+    for (uint32_t logical = 0U; logical < blocks; ++logical) {
+        uint32_t block = 0U;
+        status = ext2_inode_block(&volume, &directory, logical, &block);
+        if (status != 0) return status;
+        status = ext2_read_block(&volume, block, block_data);
+        if (status != 0) return status;
+        uint32_t remaining = size - logical * volume.block_size;
+        uint32_t limit = remaining < volume.block_size
+            ? remaining : volume.block_size;
+        for (uint32_t cursor = 0U; cursor < limit;) {
+            if (limit - cursor < 8U) return -5;
+            uint32_t child_number = ext2_get32(block_data + cursor);
+            uint32_t record_length = ext2_get16(block_data + cursor + 4U);
+            uint32_t name_length = volume.has_file_type != 0U
+                ? block_data[cursor + 6U]
+                : ext2_get16(block_data + cursor + 6U);
+            if (record_length < 8U || (record_length & 3U) != 0U ||
+                record_length > limit - cursor || name_length > 255U ||
+                name_length > record_length - 8U ||
+                (child_number != 0U && child_number > volume.inodes_count))
+                return -5;
+            const char *name = (const char *)(block_data + cursor + 8U);
+            int dot = name_length == 1U && name[0] == '.';
+            int dotdot = name_length == 2U && name[0] == '.' && name[1] == '.';
+            if (child_number != 0U && !dot && !dotdot) {
+                if (!ext2_component_valid(name, name_length)) return -5;
+                if (current++ == index) {
+                    ext2_shadow_inode_t child;
+                    status = ext2_read_inode(&volume, child_number, &child);
+                    if (status != 0) return status;
+                    char child_name[256];
+                    ext2_zero(child_name, sizeof(child_name));
+                    ext2_copy(child_name, name, name_length);
+                    ext2_inode_info(&child, child_name, info);
+                    return 0;
+                }
+            }
+            cursor += record_length;
+        }
+    }
+    return 1;
 }

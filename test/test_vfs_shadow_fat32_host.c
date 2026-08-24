@@ -93,8 +93,9 @@ static void initialize_fat32(test_context_t *context) {
                 X86OS_STORAGE_BLOCK_SIZE;
         put32(fat + 0U, 0x0FFFFFF8U);
         put32(fat + 4U, 0x0FFFFFFFU);
-        for (uint32_t cluster = 2U; cluster <= 5U; ++cluster)
+        for (uint32_t cluster = 2U; cluster <= 7U; ++cluster)
             put32(fat + cluster * 4U, 0x0FFFFFFFU);
+        put32(fat + 6U * 4U, 7U);
     }
 
     uint8_t *root = context->image +
@@ -104,10 +105,20 @@ static void initialize_fat32(test_context_t *context) {
     static const char usr[11] = {'U','S','R',' ',' ',' ',' ',' ',' ',' ',' '};
     static const uint8_t long_short[11] =
         {'L','O','N','G','N','A','~','1','T','X','T'};
+    static const char cross[11] = {'C','R','O','S','S',' ',' ',' ',
+                                   'B','I','N'};
     make_entry(root, readme, 0x20U, 3U, 7U);
     make_entry(root + 32U, usr, 0x10U, 4U, 0U);
     make_lfn(root + 64U, "Long Name.txt", long_short);
     make_entry(root + 96U, (const char *)long_short, 0x20U, 5U, 11U);
+    make_entry(root + 128U, cross, 0x20U, 6U, 700U);
+
+    uint8_t *cross_first = context->image +
+        (TEST_DATA_START + 4U) * X86OS_STORAGE_BLOCK_SIZE;
+    uint8_t *cross_second = context->image +
+        (TEST_DATA_START + 5U) * X86OS_STORAGE_BLOCK_SIZE;
+    memset(cross_first, 'A', X86OS_STORAGE_BLOCK_SIZE);
+    memset(cross_second, 'B', X86OS_STORAGE_BLOCK_SIZE);
 
     uint8_t *nested = context->image +
         (TEST_DATA_START + 2U) * X86OS_STORAGE_BLOCK_SIZE;
@@ -242,6 +253,23 @@ static int fat32_stat_path(test_context_t *context, const char *path,
         &io, path, (uint32_t)strlen(path), info);
 }
 
+static int read_path(test_context_t *context, const char *path,
+                     uint32_t offset, uint8_t *data, uint32_t capacity,
+                     uint32_t *transferred) {
+    const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
+    context->reads = 0U;
+    return reist_vfs_shadow_fat_read(
+        &io, path, (uint32_t)strlen(path), offset, data, capacity, transferred);
+}
+
+static int readdir_path(test_context_t *context, const char *path,
+                        uint32_t index, x86os_file_info_t *info) {
+    const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
+    context->reads = 0U;
+    return reist_vfs_shadow_fat_readdir(
+        &io, path, (uint32_t)strlen(path), index, info);
+}
+
 int main(void) {
     static test_context_t context;
     x86os_file_info_t info;
@@ -260,6 +288,24 @@ int main(void) {
     if (stat_path(&context, "/mnt/README.TXT", &info) != 0 ||
         info.size != 7U) return 5;
     if (stat_path(&context, "/missing", &info) != -2) return 6;
+    uint8_t data[32];
+    uint32_t transferred = 0U;
+    if (read_path(&context, "/CROSS.BIN", 500U, data, sizeof(data),
+                  &transferred) != 0 || transferred != sizeof(data) ||
+        data[0U] != 'A' || data[11U] != 'A' || data[12U] != 'B' ||
+        data[31U] != 'B' ||
+        context.reads > REIST_VFS_SHADOW_MAX_SECTOR_READS) return 16;
+    if (read_path(&context, "/CROSS.BIN", 700U, data, sizeof(data),
+                  &transferred) != 0 || transferred != 0U) return 17;
+    if (read_path(&context, "/USR", 0U, data, sizeof(data),
+                  &transferred) != -21) return 18;
+    if (readdir_path(&context, "/", 0U, &info) != 0 ||
+        strcmp(info.name, "README.TXT") != 0) return 19;
+    if (readdir_path(&context, "/", 2U, &info) != 0 ||
+        strcmp(info.name, "Long Name.txt") != 0) return 20;
+    if (readdir_path(&context, "/", 4U, &info) != 1 ||
+        info.name[0U] != '\0') return 21;
+    if (readdir_path(&context, "/README.TXT", 0U, &info) != -20) return 22;
     if (stat_path(&context, "/../README.TXT", &info) != -22) return 7;
     context.image[510U] = 0U;
     if (stat_path(&context, "/README.TXT", &info) != -2) return 8;
