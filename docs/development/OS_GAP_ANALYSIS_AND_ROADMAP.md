@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 23. August 2026
+Stand: 24. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -34,11 +34,13 @@ verbrauchen.
 
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
 Technology**. Die aktuelle Architektur ist trotz des neuen Namens noch ein
-modularer monolithischer Kernel: Scheduler, Speicherverwaltung, Dateisysteme,
-Netzwerk und Treiber werden gemeinsam in `kernel.bin` gelinkt. Ring-3-Programme
-sind isoliert, Hardware- und Dateisystemdienste laufen aber noch nicht als
-Userspace-Server. Für das High-Assurance-Ziel werden Nachrichten-IPC,
-Capabilities und isolierte, neu startbare Dienste nun in S0.3 verbindlich.
+modularer monolithischer Kernel: Scheduler, Speicherverwaltung und erhebliche
+VFS-/Dateisystempolicy werden weiterhin in `kernel.bin` gelinkt. Ring-3-
+Programme sind isoliert; Netzwerk, Storage, HDA und VMware-SVGA-II besitzen
+bereits überwachte Userspace-Dienste beziehungsweise Treiber, nutzen aber noch
+kleine oder migrationsbedingt spezialisierte Kernelmediatoren. Für das
+High-Assurance-Ziel werden diese Restpfade schrittweise auf wenige generische
+IPC-, Capability- und Resource-Primitiven zurückgeführt.
 
 ## 2. Zusammenfassung
 
@@ -81,7 +83,8 @@ werden nicht durch die Emulatorabnahme ersetzt.
 Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
-`automation/reist-s03b.toml` auf genau dieses Paket zeigt; derzeit ist er leer.
+`automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
+`R2.1-vfs-shadow-stat-ring3` ist derzeit kein Paket aktiv.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -444,6 +447,9 @@ und 10 verbindlich.
 #### Funktionsroadmap nach dem S0-Gate
 
 - [ ] R2.1 Gemeinsame ABI v1 und vollständige Dateideskriptoren
+  - [x] generationsgebundener Ring-3-Shadowpfad für `stat` über
+    den bestehenden festen Storage-Request-Pool; Legacy-VFS bleibt bis zum
+    Äquivalenznachweis autoritativ
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -454,6 +460,21 @@ und 10 verbindlich.
 - [ ] R5.1 ACPI-, DMA- und Plattformbasis
 - [ ] R5.2 xHCI/USB in überprüfbaren Stufen
 - [ ] R6 Optionale Modernisierung: UEFI, SMP, 64 Bit und Highmem
+
+#### Verbindliche Priorität nach dem S0-Gate
+
+1. VFS- und FAT-Policy vertikal aus Ring 0 migrieren: erst read-only Shadow-
+   Äquivalenz, danach parser-eigene Ring-3-Autorität und erst zuletzt Mutation.
+2. Die bereits produktiven HDA- und SVGA2-Treiber weiter unter dem gemeinsamen
+   Driver-Host-/Resource-Mediator-Modell vereinheitlichen.
+3. Nach stabiler Dienstmigration spezialisierte Übergangs-Syscalls auf wenige
+   generische IPC-, Capability- und Resource-Primitiven konsolidieren.
+4. Desktop-/Compositor-Crash, Generationstausch und Client-Reintegration als
+   demonstrierbaren Recovery-Fall umsetzen.
+5. TCB-Inventar und Kernel-Restbestand maschinenlesbar machen und gegen jeden
+   neuen Bestandteil prüfen.
+6. Erst danach größere Featureblöcke wie zusätzliche Controls, IPv6, TLS oder
+   UEFI priorisieren.
 
 ## 3. Verifizierter Ist-Zustand
 
@@ -1479,6 +1500,11 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 
 #### R2.1 ABI v1 und vollständige Dateideskriptoren — L
 
+- [ ] Read-only VFS-Metadaten schrittweise in den überwachten Ring-3-Storage-
+  Service verlagern. Das erste Paket verwendet einen exakt 512 Byte großen,
+  CRC-redundant geschützten Shadow-Frame für `stat`, eine maximale absolute
+  Pfadlänge von 191 Byte und eine monotone 1000-ms-Gastdeadline. Es entfernt
+  noch keine Kernelautorität.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 - Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
@@ -2023,9 +2049,12 @@ S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
 Monitorhardware, elektrisches Fence-Readback und physische Fault-Injection
 prüft der Benutzer manuell und QEMU-/Hostevidenz ersetzt diese Auswahl nicht.
-Als nächstes kann R2.1 für die generische Forschungsbaseline beginnen. Die
-folgende Detailchronik dokumentiert die abgeschlossenen IPC-, Dienst-,
-Netzwerk- und Storage-Inkremente.
+R2.1 hat mit `R2.1-vfs-shadow-stat-ring3` begonnen. Der erste vertikale Schritt
+führt einen read-only `stat`-Shadowrequest über den vorhandenen statischen,
+generationsgebundenen Storage-Pool zum überwachten Ring-3-Storage-Service. Der
+QEMU-Gast vergleicht dessen komplette Metadatenstruktur mit dem weiterhin
+autoritativen Legacy-VFS-Ergebnis. Ein Folgepaket darf Kernelautorität erst
+nach eigener Ring-3-Parsersemantik und erweitertem Äquivalenznachweis entziehen.
 
 R1.8 ist ebenfalls abgeschlossen: Der generationsgebundene Ring-3-SVGA-II-
 Treiber nutzt ausschließlich den festen Kernelmediator für Aktivierung,

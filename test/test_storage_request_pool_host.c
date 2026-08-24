@@ -81,6 +81,25 @@ int main(void) {
         storage_request_collect(3, 5U, read_handle, &result, transfer) != 0 ||
         memcmp(read_data, transfer, sizeof(read_data)) != 0) return 7;
 
+    storage_request_submit_t shadow_stat = {
+        STORAGE_REQUEST_VERSION, sizeof(shadow_stat),
+        STORAGE_REQUEST_VFS_SHADOW_STAT, 0U, 0U,
+        STORAGE_REQUEST_BLOCK_SIZE, 1000U,
+    };
+    fill(write_data, 17U);
+    storage_request_handle_t shadow_handle = 0U;
+    if (storage_request_submit(3, 5U, &shadow_stat, write_data, 45U,
+                               &shadow_handle) != 0 ||
+        storage_request_claim(7, 11U, 46U, &descriptor, transfer) != 0 ||
+        descriptor.operation != STORAGE_REQUEST_VFS_SHADOW_STAT ||
+        memcmp(write_data, transfer, sizeof(write_data)) != 0) return 22;
+    fill(read_data, 71U);
+    if (storage_request_complete(
+            7, 11U, shadow_handle, 0, read_data) != 0 ||
+        storage_request_collect(
+            3, 5U, shadow_handle, &result, transfer) != 0 || result != 0 ||
+        memcmp(read_data, transfer, sizeof(read_data)) != 0) return 23;
+
     if (storage_request_submit(3, 5U, &read, 0, 100U, &read_handle) != 0 ||
         storage_request_claim(7, 11U, 1100U, &descriptor, 0) != -11 ||
         storage_request_collect(3, 5U, read_handle, &result, transfer) != 0 ||

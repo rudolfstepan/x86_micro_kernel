@@ -475,6 +475,8 @@ _Static_assert(sizeof(x86os_storage_submit_t) == 28U,
                "storage submit ABI changed");
 _Static_assert(sizeof(x86os_storage_descriptor_t) == 28U,
                "storage descriptor ABI changed");
+_Static_assert(sizeof(x86os_vfs_shadow_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
+               "VFS shadow frame must fill one protected request payload");
 
 int x86os_storage_bind(void) {
     return (int)x86os_syscall(X86OS_SYS_STORAGE_BIND, 0, 0, 0);

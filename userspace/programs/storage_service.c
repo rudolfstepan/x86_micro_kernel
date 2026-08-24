@@ -5547,6 +5547,39 @@ static int format_fat12(uint32_t resource) {
     return format_equal(sector, expected, sizeof(sector)) ? 0 : -84;
 }
 
+_Static_assert(sizeof(x86os_vfs_shadow_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
+               "VFS shadow frame must fill one storage payload");
+
+static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) ||
+        frame->operation != X86OS_VFS_SHADOW_STAT || frame->flags != 0U ||
+        frame->path_length == 0U ||
+        frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
+        frame->path[0] != '/' || frame->path[frame->path_length] != '\0')
+        return -22;
+    for (uint32_t index = 0U; index < frame->path_length; ++index)
+        if (frame->path[index] == '\0') return -22;
+    for (uint32_t index = 0U; index < 5U; ++index)
+        if (frame->reserved[index] != 0U) return -22;
+
+    x86os_file_info_t info;
+    uint8_t *info_bytes = (uint8_t *)&info;
+    for (uint32_t index = 0U; index < sizeof(info); ++index)
+        info_bytes[index] = 0U;
+    int status = (int)x86os_syscall(
+        X86OS_SYS_STAT, (uintptr_t)frame->path, (uintptr_t)&info, 0U);
+    frame->result = status;
+    for (uint32_t index = 0U; index < sizeof(frame->info.name); ++index)
+        frame->info.name[index] = status == 0 ? info.name[index] : '\0';
+    frame->info.type = status == 0 ? info.type : 0U;
+    frame->info.size = status == 0 ? info.size : 0U;
+    frame->info.create_time = status == 0 ? info.create_time : 0U;
+    frame->info.modify_time = status == 0 ? info.modify_time : 0U;
+    frame->info.access_time = status == 0 ? info.access_time : 0U;
+    return 0;
+}
+
 int main(void) {
     int bind = x86os_storage_bind();
     if (bind != 0) {
@@ -5581,6 +5614,17 @@ int main(void) {
             request.length == X86OS_STORAGE_BLOCK_SIZE) {
             result = x86os_storage_block_write(request.resource,
                                                 request.offset, data);
+        }
+        if (request.operation == X86OS_STORAGE_VFS_SHADOW_STAT &&
+            request.length == X86OS_STORAGE_BLOCK_SIZE) {
+            x86os_vfs_shadow_frame_t frame;
+            uint8_t *frame_bytes = (uint8_t *)&frame;
+            for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                frame_bytes[index] = data[index];
+            result = vfs_shadow_stat(&frame);
+            if (result == 0)
+                for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                    data[index] = frame_bytes[index];
         }
         if (request.operation == X86OS_STORAGE_FORMAT_FAT12 &&
             request.length == 0U)

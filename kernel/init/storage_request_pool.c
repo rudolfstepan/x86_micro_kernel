@@ -130,7 +130,7 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR)
+        value->operation > STORAGE_REQUEST_VFS_SHADOW_STAT)
         return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         value->operation == STORAGE_REQUEST_VFS_SYNC ||
@@ -170,14 +170,16 @@ static uint64_t deadline_after(uint64_t now_ms, uint32_t timeout_ms) {
         ? UINT64_MAX : now_ms + timeout_ms;
 }
 
-static bool operation_is_write(uint32_t operation) {
+static bool operation_has_input(uint32_t operation) {
     return operation == STORAGE_REQUEST_BLOCK_WRITE ||
-           operation == STORAGE_REQUEST_VFS_WRITE;
+           operation == STORAGE_REQUEST_VFS_WRITE ||
+           operation == STORAGE_REQUEST_VFS_SHADOW_STAT;
 }
 
-static bool operation_is_read(uint32_t operation) {
+static bool operation_has_output(uint32_t operation) {
     return operation == STORAGE_REQUEST_BLOCK_READ ||
-           operation == STORAGE_REQUEST_VFS_READ;
+           operation == STORAGE_REQUEST_VFS_READ ||
+           operation == STORAGE_REQUEST_VFS_SHADOW_STAT;
 }
 
 static bool identity_valid(const void *payload, size_t length) {
@@ -317,7 +319,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR ||
+        request->operation > STORAGE_REQUEST_VFS_SHADOW_STAT ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
@@ -356,8 +358,10 @@ static int submit_locked(int client_pid, uint32_t client_generation,
          request->operation == STORAGE_REQUEST_VFS_WRITE) &&
         (request->length == 0U ||
          request->length > STORAGE_REQUEST_BLOCK_SIZE)) return STORAGE_EMSGSIZE;
+    if (request->operation == STORAGE_REQUEST_VFS_SHADOW_STAT &&
+        request->length != STORAGE_REQUEST_BLOCK_SIZE) return STORAGE_EMSGSIZE;
     if (request->length != expected) return STORAGE_EMSGSIZE;
-    if (operation_is_write(request->operation) && block_data == NULL)
+    if (operation_has_input(request->operation) && block_data == NULL)
         return STORAGE_EINVAL;
     uint32_t client_requests = 0U;
     for (size_t slot = 0U; slot < STORAGE_REQUEST_POOL_CAPACITY; ++slot) {
@@ -400,9 +404,9 @@ static int submit_locked(int client_pid, uint32_t client_generation,
             .length = expected,
             .deadline_ms = deadline_after(now_ms, request->timeout_ms),
         };
-        store_data(slot, operation_is_write(request->operation)
+        store_data(slot, operation_has_input(request->operation)
                                   ? block_data : NULL,
-                   operation_is_write(request->operation) ? expected : 0U);
+                   operation_has_input(request->operation) ? expected : 0U);
         result = store_metadata(slot, &metadata);
         if (result != 0) {
             clear_data(slot);
@@ -437,7 +441,7 @@ static int claim_locked(int service_pid, uint32_t service_generation,
             if (result != 0) return result;
             continue;
         }
-        if (operation_is_write(metadata.operation) &&
+        if (operation_has_input(metadata.operation) &&
             load_data(slot, block_data_out, metadata.length) != 0)
             return STORAGE_EINTEGRITY;
         metadata.state = STORAGE_SLOT_CLAIMED;
@@ -470,7 +474,7 @@ static int complete_locked(int service_pid, uint32_t service_generation,
         metadata.service_pid != service_pid ||
         metadata.service_generation != service_generation)
         return STORAGE_EACCES;
-    if (result_code == 0 && operation_is_read(metadata.operation)) {
+    if (result_code == 0 && operation_has_output(metadata.operation)) {
         if (block_data == NULL) return STORAGE_EINVAL;
         store_data(slot, block_data, metadata.length);
     }
@@ -492,8 +496,8 @@ static int collect_locked(int client_pid, uint32_t client_generation,
         return STORAGE_EACCES;
     if (metadata.state != STORAGE_SLOT_COMPLETE) return STORAGE_EAGAIN;
     uint32_t data_length = metadata.result == 0 &&
-        operation_is_read(metadata.operation) ? metadata.length : 0U;
-    if (metadata.result == 0 && operation_is_read(metadata.operation)) {
+        operation_has_output(metadata.operation) ? metadata.length : 0U;
+    if (metadata.result == 0 && operation_has_output(metadata.operation)) {
         if (block_data_out == NULL) return STORAGE_EINVAL;
         result = load_data(slot, block_data_out, metadata.length);
         if (result != 0) return result;

@@ -244,6 +244,12 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
 - ATA, AHCI, Partitionen und FDD verwenden die gemeinsame Blockgeräteschicht.
 - Der Storage-Service vermittelt generationgebundene Requests, Quarantäne,
   Requalifizierung, Flush, Schreib-Fencing sowie FAT12-/FAT32-Formatierung.
+- Der erste VFS-Migrationspfad transportiert `stat` als exakt 512 Byte großen,
+  voll-duplexen Shadow-Frame zum Storage-Service. Der normale QEMU-Gast
+  vergleicht Typ, Größe und Zeitfelder mit dem weiterhin autoritativen Kernel-
+  VFS und publiziert `STORAGE_VFS_SHADOW_STAT_OK`. Der Dienst erhält dafür nur
+  `SYS_STAT`; Parserautorität und sämtliche Mutationen verbleiben vorerst im
+  Kernel und sind sichtbare Migrationsschuld.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

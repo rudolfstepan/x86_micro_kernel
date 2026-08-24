@@ -11,6 +11,65 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.1-vfs-shadow-stat-ring3"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Generation-scoped Ring-3 VFS stat shadow path"
+scope = "Add one bounded full-duplex VFS metadata frame to the existing storage request pool. A normal Ring-3 client submits an absolute path, the supervised least-privilege storage service performs the current read-only stat operation through its explicitly allowed legacy bridge, and the client validates the returned fixed-size frame. The QEMU guest compares shadow and legacy metadata before any authority is removed. This is a migration proof only: the kernel VFS remains authoritative and no mutation, raw controller access, DMA authority or fallback removal is introduced. Document the ordered post-S0 migration priorities and this exact residual kernel dependency."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "kernel/proc/process.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/guest_test.c",
+  "test/test_storage_request_pool_host.c",
+  "test/test_reist_storage_request_pool.py",
+  "test/test_reist_storage_service.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the VFS shadow frame is exactly one protected 512-byte request payload",
+  "path lengths versions operation and reserved fields are validated before stat",
+  "request input and response output retain pool CRC redundancy and generation ownership",
+  "the storage service gains only read-only SYS_STAT legacy bridge authority",
+  "the kernel VFS remains authoritative until a later parser-equivalence and cutover package",
+  "all waits use a finite monotonic deadline and pool capacities remain unchanged",
+  "no filesystem mutation controller access DMA or new syscall is introduced"
+]
+targeted_tests = [
+  "python test/test_reist_storage_request_pool.py -v",
+  "python test/test_reist_storage_service.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "the shadow path requires direct filesystem parser authority in a normal client",
+  "the service requires write open controller or DMA authority",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "shadow and legacy metadata differ in QEMU"
+]
+commit_message = "feat: add Ring-3 VFS stat shadow path"
+evidence = [
+  "python test/test_reist_storage_request_pool.py -v: PASS (5 tests)",
+  "python test/test_reist_storage_service.py -v: PASS (6 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (26s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal: PASS (15s, STORAGE_VFS_SHADOW_STAT_OK and TEST_OK)"
+]
+
+[[packages]]
 id = "R1.9-notepad-resize-dialog-surface"
 status = "done"
 phase = "post-s0"

@@ -16,7 +16,7 @@ class ReistStorageServiceTests(unittest.TestCase):
                           process.index("if (kind == PROCESS_DOMAIN_ADMIN)")]
         for syscall in ("SYS_STORAGE_BIND", "SYS_STORAGE_CLAIM",
                         "SYS_STORAGE_BLOCK_READ", "SYS_STORAGE_COMPLETE",
-                        "SYS_BOOT_STATUS"):
+                        "SYS_BOOT_STATUS", "SYS_STAT"):
             self.assertIn(syscall, profile)
         for forbidden in ("SYS_OPEN", "SYS_WRITE", "SYS_KILL",
                           "SYS_STORAGE_SUBMIT", "SYS_STORAGE_COLLECT"):
@@ -47,6 +47,8 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("x86os_storage_claim", service)
         self.assertIn("x86os_storage_block_read", service)
         self.assertIn("x86os_storage_complete", service)
+        self.assertIn("X86OS_STORAGE_VFS_SHADOW_STAT", service)
+        self.assertIn("vfs_shadow_stat", service)
         self.assertIn('"STORAGE.PRG"', read("scripts/build_system_programs.py"))
         self.assertEqual(read("Makefile").count(
             "libexec/reist/storage.prg="), 1)
@@ -58,6 +60,20 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("TEST_STAGE STORAGE_SERVICE_OK", guest)
         self.assertIn("sector[510] == 0x55U", guest)
         self.assertIn("sector[511] == 0xAAU", guest)
+        self.assertIn("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK", guest)
+
+    def test_vfs_shadow_frame_is_fixed_validated_and_read_only(self):
+        sdk = read("userspace/sdk/include/x86os.h")
+        wrapper = read("userspace/sdk/x86os.c")
+        service = read("userspace/programs/storage_service.c")
+        self.assertIn("X86OS_VFS_SHADOW_PATH_CAPACITY 192U", sdk)
+        self.assertIn("x86os_vfs_shadow_frame_t", sdk)
+        self.assertIn("sizeof(x86os_vfs_shadow_frame_t) == "
+                      "X86OS_STORAGE_BLOCK_SIZE", wrapper)
+        self.assertIn("frame->path[0] != '/'", service)
+        self.assertIn("frame->reserved[index] != 0U", service)
+        self.assertIn("X86OS_SYS_STAT", service)
+        self.assertNotIn("X86OS_SYS_OPEN", service)
 
 
 if __name__ == "__main__":

@@ -593,6 +593,7 @@ typedef struct {
 #define X86OS_STORAGE_REPAIR_FAT12_DIRECTORY_TOPOLOGY 28U
 #define X86OS_STORAGE_SALVAGE_FAT12_ORPHANS 29U
 #define X86OS_STORAGE_RECORD_FAT12_BAD_SECTOR 30U
+#define X86OS_STORAGE_VFS_SHADOW_STAT 31U
 #define X86OS_FAT12_RESULT_MIRROR_MISMATCH (1U << 0)
 #define X86OS_FAT12_RESULT_PRIMARY_INVALID (1U << 1)
 #define X86OS_FAT12_RESULT_SECONDARY_INVALID (1U << 2)
@@ -642,6 +643,21 @@ typedef struct {
     uint32_t offset;
     uint32_t length;
 } x86os_storage_descriptor_t;
+
+#define X86OS_VFS_SHADOW_FRAME_VERSION 1U
+#define X86OS_VFS_SHADOW_STAT 1U
+#define X86OS_VFS_SHADOW_PATH_CAPACITY 192U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    uint32_t path_length;
+    int32_t result;
+    char path[X86OS_VFS_SHADOW_PATH_CAPACITY];
+    x86os_file_info_t info;
+    uint32_t reserved[5];
+} x86os_vfs_shadow_frame_t;
 
 typedef uint32_t x86os_ipc_handle_t;
 

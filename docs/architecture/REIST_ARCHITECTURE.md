@@ -108,6 +108,14 @@ NX, SMEP/SMAP, IOMMU und später CET werden nur auf Zielplattformen verwendet,
 die diese Funktionen nachweislich besitzen. Für den aktuellen i386-Pfad sind
 fehlende Hardwareeigenschaften explizite Grenzen, keine stillen Annahmen.
 
+Die Storage-Migration verwendet dieselbe schrittweise Entzugsstrategie wie der
+Netzwerkpfad. Der erste VFS-Shadowvertrag transportiert eine feste read-only
+`stat`-Anfrage generationsgebunden zum Ring-3-Storage-Service und vergleicht
+dessen Antwort im QEMU-Gast vollständig mit dem Legacy-Ergebnis. Diese Brücke
+ist ausdrücklich noch kein Ring-3-Dateisystem: Pfad-/Mountauflösung und FAT-
+Parserautorität verbleiben bis zu einem späteren Äquivalenz- und Cutoverpaket
+im Kernel. Neue Mutationsautorität entsteht dadurch nicht.
+
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter
 256-Byte-Kernelsignatur. Es bindet das Kernelartefakt mit SHA-256 gemäß NIST

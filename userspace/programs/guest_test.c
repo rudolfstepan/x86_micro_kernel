@@ -199,6 +199,69 @@ static int bytes_equal(const char *left, const char *right, size_t length) {
     return 1;
 }
 
+static int guest_vfs_shadow_stat(const char *path, x86os_file_info_t *info,
+                                 uint32_t timeout_ms) {
+    if (path == NULL || info == NULL || timeout_ms == 0U ||
+        timeout_ms > 60000U) return -22;
+    uint32_t length = 0U;
+    while (length < X86OS_VFS_SHADOW_PATH_CAPACITY && path[length] != '\0')
+        ++length;
+    if (length == 0U || length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
+        path[0] != '/') return -22;
+
+    x86os_vfs_shadow_frame_t frame;
+    uint8_t *frame_bytes = (uint8_t *)&frame;
+    for (uint32_t index = 0U; index < sizeof(frame); ++index)
+        frame_bytes[index] = 0U;
+    frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
+    frame.struct_size = sizeof(frame);
+    frame.operation = X86OS_VFS_SHADOW_STAT;
+    frame.path_length = length;
+    for (uint32_t index = 0U; index <= length; ++index)
+        frame.path[index] = path[index];
+    x86os_storage_submit_t request = {
+        X86OS_STORAGE_REQUEST_VERSION, sizeof(request),
+        X86OS_STORAGE_VFS_SHADOW_STAT, 0U, 0U, sizeof(frame), timeout_ms,
+    };
+    x86os_storage_handle_t handle = 0U;
+    int status = x86os_storage_submit(&request, &frame, &handle);
+    if (status != 0 || handle == 0U) return status != 0 ? status : -5;
+
+    uint64_t now = 0U;
+    if (x86os_monotonic_ms(&now) != 0) return -5;
+    uint64_t deadline = UINT64_MAX - now < timeout_ms
+        ? UINT64_MAX : now + timeout_ms;
+    int32_t service_result = -5;
+    for (;;) {
+        status = x86os_storage_collect(handle, &service_result, &frame);
+        if (status == 0) break;
+        if (status != -11 || x86os_monotonic_ms(&now) != 0) return status;
+        if (now >= deadline) return -110;
+        if (x86os_sleep_ms(1U) != 0) return -5;
+    }
+    if (service_result != 0) return service_result;
+    if (frame.version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame.struct_size != sizeof(frame) ||
+        frame.operation != X86OS_VFS_SHADOW_STAT || frame.flags != 0U ||
+        frame.path_length != length || frame.path[length] != '\0') return -84;
+    for (uint32_t index = 0U; index < length; ++index)
+        if (frame.path[index] != path[index]) return -84;
+    for (uint32_t index = 0U; index < 5U; ++index)
+        if (frame.reserved[index] != 0U) return -84;
+    if (frame.result == 0 && frame.info.type != X86OS_FILE &&
+        frame.info.type != X86OS_DIRECTORY) return -84;
+    if (frame.result == 0) {
+        for (uint32_t index = 0U; index < sizeof(info->name); ++index)
+            info->name[index] = frame.info.name[index];
+        info->type = frame.info.type;
+        info->size = frame.info.size;
+        info->create_time = frame.info.create_time;
+        info->modify_time = frame.info.modify_time;
+        info->access_time = frame.info.access_time;
+    }
+    return frame.result;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -261,8 +324,13 @@ static int test_file_io(void) {
     int close_result = x86os_close(descriptor);
     x86os_file_info_t info;
     int stat_result = x86os_stat(path, &info);
+    x86os_file_info_t shadow_info;
+    int shadow_stat_result = guest_vfs_shadow_stat(
+        "/GUEST.TMP", &shadow_info, 1000U);
     if (amount != (int)sizeof(actual) || eof != 0 || close_result != 0 ||
-        stat_result != 0 || info.type != X86OS_FILE ||
+        stat_result != 0 || shadow_stat_result != 0 ||
+        !bytes_equal((const char *)&info, (const char *)&shadow_info,
+                     sizeof(info)) || info.type != X86OS_FILE ||
         info.size != sizeof(expected) ||
         !bytes_equal(actual, expected, sizeof(actual))) {
         (void)x86os_unlink(path);
@@ -1022,6 +1090,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     x86os_puts("TEST_STAGE FILE_IO_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK\n");
 
     if (test_scheduler_time() != 0) {
         x86os_puts("TEST_FAIL SCHED_TIME\n");

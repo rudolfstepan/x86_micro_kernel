@@ -1,6 +1,6 @@
 # VFS-Architektur
 
-Stand: 16. August 2026.
+Stand: 24. August 2026.
 
 VFS ist die einzige reguläre Dateisystemschnittstelle für Shell,
 Programmlader und Ring-3-Datei-ABI. Direkte globale FAT-Sonderpfade gehören
@@ -8,10 +8,11 @@ nicht zum aktuellen Design.
 
 ```text
 Ring-3-Programm / Shell
-          |
-      Syscall-/FD-Schicht
-          |
-          VFS
+          |--------------------- read-only stat shadow --------------------|
+          |                                                               v
+      Syscall-/FD-Schicht                                      Storage-Service
+          |                                                     (Ring 3)
+          VFS                                                       |
        /   |   \
    FAT32 FAT12 EXT2
           |
@@ -19,6 +20,15 @@ Ring-3-Programm / Shell
        /    |    \
    ATA-PIO AHCI  FDD
 ```
+
+Der Shadowzweig ist der erste Migrationsnachweis, noch nicht der Zielpfad. Ein
+normaler Ring-3-Testclient übergibt einen absoluten Pfad in einem exakt 512 Byte
+großen, versionierten Frame über den bestehenden Storage-Request-Pool. Dessen
+Primär-/Schattenkopie ist CRC-geschützt und an Client- sowie Dienstgeneration
+gebunden. Der Storage-Service besitzt dafür ausschließlich die read-only
+Legacy-Brücke `SYS_STAT`; `open`, Mutationen, Controllerzugriff und DMA bleiben
+verboten. QEMU vergleicht Typ, Größe und alle drei Zeitfelder. Der Parser und
+die autoritative VFS-Entscheidung liegen in diesem Paket weiterhin in Ring 0.
 
 ## Operationen
 
@@ -60,3 +70,13 @@ ebenfalls read-only. Ein unklarer Commit darf nicht als Erfolg erscheinen.
 Hosttests prüfen Mountpräfixe, Lebenszyklen und Adapterinvarianten. QEMU-
 Gasttests bleiben erforderlich, weil nur sie Treiber, Partitionstransport,
 VFS, Syscalls und Ring 3 gemeinsam ausführen.
+
+## Migrationsreihenfolge
+
+1. `stat`-Shadowtransport und vollständige Metadatenäquivalenz.
+2. Ring-3-eigene read-only Pfad-/Mount- und FAT-Metadatenparser.
+3. Umschalten read-only Operationen bei getesteter Äquivalenz; Legacy-Pfad nur
+   als explizit begrenzter Degradationsmodus.
+4. Handles, Lesen und Verzeichnisiteration migrieren.
+5. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+   Nachweis aus Ring 0 entfernen.
