@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-standard-descriptors"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,55 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-standard-descriptors"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Install bounded standard process descriptors"
+scope = "Complete the next isolated R2.1 descriptor slice by making descriptors 0, 1 and 2 real process-local entries in the existing fixed descriptor table. Descriptor 0 grants terminal READ only; descriptors 1 and 2 grant terminal WRITE only. Preserve the eight existing allocatable file/socket slots and their numeric range 3 through 10, all existing syscall numbers, legacy direct terminal calls and current file/socket cleanup. Route SYS_READ on descriptor 0 through one bounded nonblocking keyboard poll and return EAGAIN when no byte is available; route SYS_WRITE on 1 or 2 through the existing bounded terminal writer. Reject wrong-direction, closed and unknown descriptors with EBADF before data publication, make close process-local, initialize a fresh standard set for every process generation and clear every descriptor on teardown. Prove rights, zero-length validation, independent closure, unchanged first dynamic descriptor and real QEMU stdout/stderr behavior. This package adds no dup, dup2, pipe, signal, TTY line discipline, ambient spawn inheritance, open flags, filesystem mutation, syscall number or new Ring-0 policy."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/guest_test.c",
+  "test/test_standard_descriptors.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "each fresh process generation owns exactly stdin 0 stdout 1 and stderr 2 before any dynamic descriptor is installed",
+  "stdin grants read only while stdout and stderr grant write only and every wrong-direction or closed use returns EBADF without publishing bytes",
+  "stdin performs at most one nonblocking keyboard poll per read and returns EAGAIN when no byte is available",
+  "the eight existing dynamic slots remain fixed at descriptors 3 through 10 and file and socket ABI behavior remains compatible",
+  "closing one standard descriptor affects only that exact process descriptor and repeated close returns EBADF",
+  "process teardown clears all standard file and socket descriptors through the common bounded cleanup path",
+  "SYS_READ SYS_WRITE SYS_CLOSE and legacy direct terminal syscall numbers and signatures remain byte exact",
+  "no descriptor is inherited delegated duplicated or rebound by this package"
+]
+targeted_tests = [
+  "python test/test_standard_descriptors.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "standard input would introduce an unbounded wait or busy-poll loop",
+  "a dynamic descriptor number or existing syscall ABI would change",
+  "descriptor closure could revoke another process generation or underlying unrelated resource",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "process: install bounded standard descriptors"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-object-rights-delegation"

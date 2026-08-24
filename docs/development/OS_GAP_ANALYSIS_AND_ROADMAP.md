@@ -88,9 +88,9 @@ pfadgebundenen Read-Sessions ist auch
 `R2.1-storage-claim-client-identity` als Voraussetzung stabiler
 serviceeigener Objekt-Handles umgesetzt. Auch der stabile read-only Objekt-
 Layer für FAT und EXT2 ist abgenommen. Auch explizite Rechteabschwächung und
-generationgebundene Übergabe dieser Objekte sind abgenommen. Die ausführbare
-Queue ist leer; Standard-FDs, `dup` und kontrollierte Spawn-Vererbung bleiben
-als nächste getrennte R2.1-/R3.1-Schnitte offen.
+generationgebundene Übergabe dieser Objekte sind abgenommen. Der getrennte
+R2.1-Schnitt für echte, feste Standard-FDs 0/1/2 ist **in Arbeit**;
+`dup` und kontrollierte Spawn-Vererbung bleiben anschließende R3.1-Schnitte.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -493,6 +493,9 @@ und 10 verbindlich.
     abschwächende Übergabe an eine exakt generationgebundene Zielidentität;
     keine ambiente Spawn-Vererbung; das gewachsene Storage-Rescue-Image erhält
     ausschließlich 116 KiB Einzellimit, der 272-KiB-Gesamtpool bleibt fest
+  - [ ] **in Arbeit:** echte prozesslokale Standarddeskriptoren 0/1/2 mit
+    READ-only `stdin`, WRITE-only `stdout`/`stderr`, nichtblockierendem
+    Tastaturpoll und unveränderten acht dynamischen Slots 3 bis 10
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1582,7 +1585,8 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Folgepakete.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
-- Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
+- Open-Flags und Rechte je Handle ergänzen; Standarddeskriptoren 0/1/2 werden
+  im aktiven getrennten Schnitt umgesetzt.
 - `lseek`, `fstat` und `truncate` implementieren; die bestehenden Rename- und
    `fsync`-Syscalls in den gemeinsamen ABI-Header überführen.
 - Teilzugriffe, EOF, ungültige Handles und Prozess-Exit vollständig testen.
