@@ -28,12 +28,17 @@ class ReistVfsShadowFat32Tests(unittest.TestCase):
             self.assertIn(bound, header)
         self.assertIn("volume->reads >= REIST_VFS_SHADOW_MAX_SECTOR_READS", source)
         self.assertIn("visited[REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS]", source)
+        self.assertIn("FAT12_CLUSTER_LIMIT 4085U", source)
+        self.assertIn("cluster + cluster / 2U", source)
+        self.assertIn("volume->root_dir_start + index", source)
+        self.assertIn("reist_vfs_shadow_fat_stat", header)
         self.assertNotIn("malloc(", source)
         self.assertNotIn("x86os_syscall", source)
 
     def test_service_publishes_only_exact_legacy_equivalence(self):
         service = (ROOT / "userspace/programs/storage_service.c").read_text()
         self.assertIn("reist_vfs_shadow_fat32_stat", service)
+        self.assertIn("reist_vfs_shadow_fat_stat", service)
         self.assertIn("parsed_status != legacy_status", service)
         self.assertIn("format_equal(\n                parsed_bytes, legacy_bytes", service)
         self.assertIn("status = -84", service)

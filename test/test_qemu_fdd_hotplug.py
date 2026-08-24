@@ -38,6 +38,21 @@ class QemuFddHotplugTests(unittest.TestCase):
         self.assertIn("-qmp tcp:127.0.0.1:43123,server=on,wait=off", joined)
         self.assertIn("-snapshot", command)
 
+    def test_runtime_deadline_remains_fixed_and_covers_slow_tcg_boot(self):
+        source = SCRIPT.read_text("utf-8")
+        self.assertIn('parser.add_argument("--timeout", type=float, default=150.0)',
+                      source)
+
+    def test_guest_commands_use_qmp_keyboard_instead_of_output_only_com1(self):
+        self.assertEqual(
+            RUNNER.qmp_key_commands("stat /mnt/fdd0/hotplug.txt")[-4:],
+            ["t", "x", "t", "ret"],
+        )
+        self.assertIn("shift-minus", RUNNER.qmp_key_commands(
+            "gtest fdd_hotplug"))
+        self.assertIn("shift-f", RUNNER.qmp_key_commands(
+            "gtest FDD_HOTPLUG"))
+
     def test_guest_contract_waits_for_real_disconnect_and_reintegration(self):
         guest = (ROOT / "userspace/programs/guest_test.c").read_text("utf-8")
         self.assertIn('text_equal(argv[1], "FDD_HOTPLUG")', guest)
@@ -46,6 +61,13 @@ class QemuFddHotplugTests(unittest.TestCase):
         reintegrated = guest.index('"TEST_STAGE FDD_HOTPLUG_REINTEGRATED_OK')
         self.assertLess(armed, disconnected)
         self.assertLess(disconnected, reintegrated)
+
+    def test_runtime_executes_packaged_stat_on_reintegrated_fat12(self):
+        source = SCRIPT.read_text("utf-8")
+        self.assertIn('send_qmp_command(qmp, "stat /mnt/fdd0/hotplug.txt", deadline)',
+                      source)
+        self.assertIn('FAT12_STAT_NAME = "Name: HOTPLUG.TXT"', source)
+        self.assertIn('FAT12_STAT_SIZE = "Size: 14 bytes"', source)
 
     def test_hotplug_gate_and_hazard_are_part_of_the_reist_contract(self):
         makefile = (ROOT / "Makefile").read_text("utf-8")
@@ -56,6 +78,15 @@ class QemuFddHotplugTests(unittest.TestCase):
         self.assertIn("'fdd-hotplug'", runtime)
         self.assertIn('id = "HZ-MEDIA-001"', hazards)
         self.assertIn("RESOURCE_REINTEGRATED_RW 1", roadmap)
+
+    def test_runtime_wrapper_requires_explicit_runner_success(self):
+        runtime = (ROOT / "scripts/test-reist-runtime.ps1").read_text("utf-8")
+        body = runtime.split("function Invoke-FddHotplug", 1)[1].split(
+            "function Invoke-SataHotplug", 1
+        )[0]
+        self.assertIn("'FDD HOTPLUG PASS' -Quiet", body)
+        self.assertIn("'FDD HOTPLUG FAIL' -Quiet", body)
+        self.assertIn("(!$runnerPassed -or $runnerFailed)", body)
 
 
 if __name__ == "__main__":

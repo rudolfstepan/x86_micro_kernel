@@ -12,7 +12,7 @@ Ring-3-Programm / Shell
           |                                                               v
       Syscall-/FD-Schicht                                      Storage-Service
           |                                                     (Ring 3)
-          VFS                                              FAT32/VFAT-Parser
+          VFS                                          FAT12/FAT32/VFAT-Parser
        /   |   \                                                   |
    FAT32 FAT12 EXT2                                      mediated Block Read
           |                                                       |
@@ -26,17 +26,21 @@ normaler Ring-3-Testclient übergibt einen absoluten Pfad in einem exakt 512 Byt
 großen, versionierten Frame über den bestehenden Storage-Request-Pool. Dessen
 Primär-/Schattenkopie ist CRC-geschützt und an Client- sowie Dienstgeneration
 gebunden. Operation 1 benutzt weiterhin ausschließlich die read-only
-Legacy-Brücke `SYS_STAT`. Die append-only Operation 2 löst dagegen Mountpräfix,
-FAT32-BPB, ASCII-8.3-/VFAT-Namen, Verzeichniscluster und Metadaten selbst im
-Storage-Service auf. Sie darf höchstens 22 Ressourcen, 32 Pfadkomponenten, 32
-Verzeichniscluster und 64 vermittelte Sektorreads untersuchen und verwendet
-keinen Heap. Ihr Ergebnis wird nur veröffentlicht, wenn Status und sämtliche
-öffentlichen Metadatenbytes exakt mit `SYS_STAT` übereinstimmen; eine Abweichung
-liefert den Integritätsfehler `-84`. `open`, Mutationen, Controllerzugriff und
-DMA bleiben verboten.
+Legacy-Brücke `SYS_STAT`. Die append-only Operation 2 bleibt der eingefrorene
+FAT32-Kompatibilitätspfad. Operation 3 löst Mountpräfix, FAT12- oder FAT32-BPB,
+ASCII-8.3-/VFAT-Namen, die feste FAT12-Rootdirectory beziehungsweise
+Verzeichniscluster und Metadaten selbst im Storage-Service auf. FAT16 wird
+anhand des standardisierten Clusterzahlbereichs abgewiesen. Der Parser darf
+höchstens 22 Ressourcen, 32 Pfadkomponenten, 32 Verzeichniscluster und 64
+vermittelte Sektorreads untersuchen und verwendet keinen Heap. Sein Ergebnis
+wird nur veröffentlicht, wenn Status und sämtliche öffentlichen Metadatenbytes
+exakt mit `SYS_STAT` übereinstimmen; eine Abweichung liefert den
+Integritätsfehler `-84`. `open`, Mutationen, Controllerzugriff und DMA bleiben
+verboten.
 
-Damit besitzt Ring 3 echte FAT32-Parsersemantik. Als erster kontrollierter
-Cutover verwendet das kurzlebige `STAT.PRG` ausschließlich Operation 2 und
+Damit besitzt Ring 3 echte FAT12-/FAT32-Parsersemantik. Als erster
+kontrollierter Cutover verwendet das kurzlebige `STAT.PRG` ausschließlich
+Operation 3 und
 übernimmt deren Ergebnis ohne Rückfall auf `SYS_STAT`. Der feste Clientadapter
 normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
 Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
@@ -47,14 +51,18 @@ eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
 sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
 Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
 ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
-FAT12, EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
+EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
 
 `HTTPD.PRG` ist der erste lang laufende Client dieser ABI. Der sequenzielle,
-fest begrenzte Vordergrundserver verwendet Operation 2 für jede
+fest begrenzte Vordergrundserver verwendet Operation 3 für jede
 `/htdocs`-Metadatenentscheidung, besitzt keinen Legacy-`stat`-Fallback und
 widerruft offene Requests über Syscall 118. `open`, `read` und `readdir` bleiben
 in diesem Paket am Kernel-VFS. Der HTTP-Cutover gilt nur für den nachgewiesenen
-FAT32-Rootpfad; Shell, Desktop sowie FAT12/EXT2 bleiben unverändert.
+FAT32-Rootpfad; Shell und Desktop bleiben unverändert. Der FAT12-Nachweis
+erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
+QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits
+erkannte CHS-Geometrie als 2880 LBA-Sektoren; der vermittelte Blockread prüft
+weiterhin jede angeforderte LBA gegen diese feste Grenze.
 
 ## Operationen
 
@@ -101,11 +109,12 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
 
 1. [x] `stat`-Shadowtransport und vollständige Metadatenäquivalenz.
 2. [x] Ring-3-eigene read-only Mount- und FAT32-Metadatenparser.
-3. [x] Kontrollierter `STAT.PRG`-Cutover auf Operation 2 ohne Legacy-Fallback.
+3. [x] Kontrollierter `STAT.PRG`-Cutover ohne Legacy-Fallback.
 4. [x] Generation- und handlegebundene Cancel-ABI mit sicherer
    Dienstquittierung ergänzen.
-5. [~] `HTTPD.PRG` als ersten lang laufenden FAT32-Metadatenclient umstellen;
-   weitere Clients erst mit passender Dateisystemabdeckung.
-6. Handles, Lesen und Verzeichnisiteration migrieren.
-7. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+5. [x] `HTTPD.PRG` als ersten lang laufenden FAT32-Metadatenclient umstellen.
+6. [~] Append-only Operation 3 und FAT12-Parser einschließlich fester Root-
+   Directory und 12-Bit-Clusterketten; EXT2 bleibt offen.
+7. Handles, Lesen und Verzeichnisiteration migrieren.
+8. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.

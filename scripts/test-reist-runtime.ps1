@@ -213,6 +213,13 @@ function Invoke-FddHotplug {
     finally {
         $watch.Stop()
     }
+    $runnerPassed = Select-String -LiteralPath $gateLog -SimpleMatch `
+        'FDD HOTPLUG PASS' -Quiet
+    $runnerFailed = Select-String -LiteralPath $gateLog -SimpleMatch `
+        'FDD HOTPLUG FAIL' -Quiet
+    if ($exitCode -eq 0 -and (!$runnerPassed -or $runnerFailed)) {
+        $exitCode = 1
+    }
     if ($exitCode -ne 0) {
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
         Get-Content -LiteralPath $gateLog -Tail 40

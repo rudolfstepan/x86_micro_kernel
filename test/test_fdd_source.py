@@ -6,6 +6,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FloppyDriverSourceTests(unittest.TestCase):
+    def test_detected_geometry_publishes_bounded_lba_sector_count(self):
+        source = (ROOT / "drivers/block/fdd.c").read_text(encoding="utf-8")
+        registration = source.split(
+            "drive_t *detected_drive = &detected_drives[drive_count];", 1
+        )[1].split("drive_count++;", 1)[0]
+        self.assertIn("detected_drive->cylinder = 80;", registration)
+        self.assertIn("detected_drive->head = 2;", registration)
+        self.assertIn("detected_drive->sector = 18;", registration)
+        self.assertIn("detected_drive->sectors = detected_drive->cylinder *",
+                      registration)
+        self.assertIn("detected_drive->head * detected_drive->sector;",
+                      registration)
+
     def test_sector_io_does_not_spin_up_for_every_successful_sector(self):
         source = (ROOT / "drivers" / "block" / "fdd.c").read_text(
             encoding="utf-8"

@@ -709,6 +709,8 @@ static void fdd_detect_drives_impl(void) {
         detected_drive->cylinder = 80;  // 80 tracks
         detected_drive->head = 2;       // double-sided
         detected_drive->sector = 18;    // 18 sectors per track
+        detected_drive->sectors = detected_drive->cylinder *
+            detected_drive->head * detected_drive->sector;
         drive_count++;
         fdd_count++;
 

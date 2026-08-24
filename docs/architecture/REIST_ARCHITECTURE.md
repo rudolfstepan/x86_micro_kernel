@@ -113,11 +113,16 @@ Netzwerkpfad. Der erste VFS-Shadowvertrag transportiert eine feste read-only
 `stat`-Anfrage generationsgebunden zum Ring-3-Storage-Service und vergleicht
 dessen Antwort im QEMU-Gast vollständig mit dem Legacy-Ergebnis. Der zweite
 Shadow-Schritt besitzt eine unabhängige, heapfreie FAT32-/VFAT-Parsersemantik
-im Storage-Service. Sie liest über den Kernel nur maximal 64 validierte
-Sektoren, begrenzt Ressourcen, Pfadkomponenten und Clusterketten statisch und
-publiziert ausschließlich eine bytegenaue Übereinstimmung mit `SYS_STAT`.
+im Storage-Service. Die append-only Operation 3 erweitert sie um
+Microsoft-FAT12: BPB-Typauswahl über Layout und Clusterzahl, feste
+Root-Directory, 12-Bit-FAT-Einträge einschließlich Sektorgrenze sowie begrenzte
+Unterverzeichnisketten. FAT16 und EXT2 werden fail-closed abgewiesen. Operation
+2 bleibt als FAT32-spezifischer ABI-Vertrag unverändert. Der Parser liest über
+den Kernel nur maximal 64 validierte Sektoren, begrenzt Ressourcen,
+Pfadkomponenten und Clusterketten statisch und publiziert ausschließlich eine
+bytegenaue Übereinstimmung mit `SYS_STAT`.
 Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
-`STAT.PRG` an diese Operation 2. Ein fester Adapter normalisiert Pfade, wartet
+`STAT.PRG` an Operation 3. Ein fester Adapter normalisiert Pfade, wartet
 mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt
 bei Fehlern nie auf `SYS_STAT` zurück. Der Prozess beendet sich anschließend,
 sodass seine generationgebundenen Requests durch die vorhandene
@@ -128,8 +133,10 @@ Clientgeneration darf ihr Handle canceln. Queued und vollständige Requests
 werden sofort freigegeben; ein bereits geclaimter Request bleibt bis zur
 Quittierung der gebundenen Dienstgeneration `cancel-pending`, sein Ergebnis
 wird verworfen. Der Vertrag beendet oder reversiert keinen physischen I/O.
-Mountpublikation, FAT12/EXT2, Handles und Mutationen verbleiben bis zu getrennten
-Nachweispaketen im Kernel. Neue Mutationsautorität entsteht nicht.
+Ein QEMU-Hotplug-Test reintegriert ein echtes FAT12-Image und führt das
+paketierte `STAT.PRG` auf `/mnt/fdd0/HOTPLUG.TXT` aus. Mountpublikation, EXT2,
+Handles und Mutationen verbleiben bis zu getrennten Nachweispaketen im Kernel.
+Neue Mutationsautorität entsteht nicht.
 
 Als erster lang laufender Verbraucher nutzt der bounded `HTTPD.PRG`-
 Vordergrundserver diese Metadatenoperation für `/htdocs`. Zwölf echte
@@ -138,7 +145,7 @@ Entscheidungen, fortbestehenden Serverbetrieb bis `Ctrl+C` und die Rückkehr zur
 Userspace-Shell. Der einmalige Marker `HTTPD_VFS_STAT_CLIENT_OK` folgt erst auf
 eine erfolgreiche Ring-3-Antwort. Dateiinhalt und Verzeichnisiteration laufen
 noch über `open`/`read`/`readdir` des Kernel-VFS; daraus folgt kein allgemeiner
-FAT12-, EXT2- oder VFS-Cutover.
+EXT2- oder VFS-Cutover.
 
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter

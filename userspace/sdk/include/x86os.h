@@ -648,6 +648,7 @@ typedef struct {
 #define X86OS_VFS_SHADOW_FRAME_VERSION 1U
 #define X86OS_VFS_SHADOW_STAT 1U
 #define X86OS_VFS_SHADOW_FAT32_STAT 2U
+#define X86OS_VFS_SHADOW_FAT_STAT 3U
 #define X86OS_VFS_SHADOW_PATH_CAPACITY 192U
 typedef struct {
     uint32_t version;

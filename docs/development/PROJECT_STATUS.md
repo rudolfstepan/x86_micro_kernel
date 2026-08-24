@@ -249,8 +249,9 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   vergleicht Typ, Größe und Zeitfelder mit dem weiterhin autoritativen Kernel-
   VFS und publiziert `STORAGE_VFS_SHADOW_STAT_OK`. Der Dienst erhält dafür nur
   `SYS_STAT`.
-- Der zweite Shadowmodus parst den längsten Mountpräfix, eine vollständig
-  geprüfte FAT32-BPB, ASCII-8.3-/VFAT-Namen und begrenzte Verzeichniscluster im
+- Der zweite Shadowmodus parst den längsten Mountpräfix, vollständig geprüfte
+  FAT12-/FAT32-BPBs, ASCII-8.3-/VFAT-Namen, die feste FAT12-Rootdirectory und
+  begrenzte Verzeichniscluster im
   Ring-3-Storage-Service selbst. Maximal 64 vermittelte Sektorreads und feste
   Stackpuffer begrenzen die Arbeit. Nur eine bytegenaue Übereinstimmung mit dem
   Legacy-`SYS_STAT` wird publiziert; der QEMU-Gast markiert dies mit
@@ -258,7 +259,8 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   autoritativ.
 - `STAT.PRG` ist der erste kontrolliert umgestellte Client. Sein separater,
   heapfreier Adapter normalisiert relative, absolute und DOS-Pfade, verwendet
-  ausschließlich Parseroperation 2, wartet mit monotoner Deadline und
+  ausschließlich die append-only FAT-Parseroperation 3, wartet mit monotoner
+  Deadline und
   validiert den vollständigen Antwortframe ohne Legacy-Fallback. Der normale
   QEMU-Gast startet das paketierte Programm auf `/GUEST.TMP` und markiert den
   Erfolg mit `STORAGE_VFS_STAT_CLIENT_OK`. Andere Clients bleiben bis zu einer
@@ -270,8 +272,15 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   die Statistik weiterhin und publizieren weder Status noch Daten. Der normale
   Gast markiert den ABI-Nachweis mit `STORAGE_REQUEST_CANCEL_OK`. Dies ist kein
   physischer I/O-Abbruch und kein Rollbackvertrag.
-- `HTTPD.PRG` ist der erste lang laufende Nutzer des Ring-3-FAT32-`stat`-
-  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 2 und
+- Operation 2 bleibt ABI-kompatibel FAT32-spezifisch. Operation 3 ergänzt
+  FAT12 mit standardisierter Clusterzahl-Typauswahl, 12-Bit-FAT-Einträgen und
+  fester Rootdirectory; FAT16 und EXT2 werden abgewiesen. Der QEMU-FDD-Test
+  führt nach echter Medienreintegrierung das paketierte `STAT.PRG` auf
+  `/mnt/fdd0/HOTPLUG.TXT` aus und prüft Name, Größe und Shell-Rückkehr. Die
+  erkannte 80x2x18-Geometrie wird dabei als feste Grenze von 2880 Sektoren an
+  Ring 3 publiziert.
+- `HTTPD.PRG` ist der erste lang laufende Nutzer des Ring-3-FAT-`stat`-
+  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 3 und
   besitzt keinen Legacy-Fallback; `open`, `read` und `readdir` bleiben vorerst
   am Kernel-VFS. Der QEMU-Modus `http-server` führt zwölf echte eingehende
   HTTP/TCP-Verzeichnisanfragen aus, verlangt `HTTPD_VFS_STAT_CLIENT_OK`, prüft

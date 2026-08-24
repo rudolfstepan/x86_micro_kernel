@@ -1,6 +1,6 @@
 /**
  * @file userspace/storage/include/reist/vfs_shadow_fat32.h
- * @brief Bounded read-only FAT32 metadata parser for the storage service.
+ * @brief Bounded read-only FAT12/FAT32 metadata parser for the storage service.
  */
 #ifndef REIST_VFS_SHADOW_FAT32_H
 #define REIST_VFS_SHADOW_FAT32_H
@@ -31,5 +31,11 @@ int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
                                 const char *absolute_path,
                                 uint32_t path_length,
                                 x86os_file_info_t *info);
+
+/** Auto-detects Microsoft FAT12 or FAT32; FAT16 is rejected. */
+int reist_vfs_shadow_fat_stat(const reist_vfs_shadow_io_t *io,
+                              const char *absolute_path,
+                              uint32_t path_length,
+                              x86os_file_info_t *info);
 
 #endif

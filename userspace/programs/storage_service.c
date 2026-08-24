@@ -5567,7 +5567,8 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
     if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame->struct_size != sizeof(*frame) ||
         (frame->operation != X86OS_VFS_SHADOW_STAT &&
-         frame->operation != X86OS_VFS_SHADOW_FAT32_STAT) ||
+         frame->operation != X86OS_VFS_SHADOW_FAT32_STAT &&
+         frame->operation != X86OS_VFS_SHADOW_FAT_STAT) ||
         frame->flags != 0U ||
         frame->path_length == 0U ||
         frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
@@ -5591,14 +5592,18 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
         parsed_bytes[index] = 0U;
     int status = legacy_status;
     const x86os_file_info_t *selected = &legacy_info;
-    if (frame->operation == X86OS_VFS_SHADOW_FAT32_STAT) {
+    if (frame->operation == X86OS_VFS_SHADOW_FAT32_STAT ||
+        frame->operation == X86OS_VFS_SHADOW_FAT_STAT) {
         const reist_vfs_shadow_io_t io = {
             .context = 0,
             .drive_info = vfs_shadow_drive_info,
             .read_sector = vfs_shadow_read_sector,
         };
-        int parsed_status = reist_vfs_shadow_fat32_stat(
-            &io, frame->path, frame->path_length, &parsed_info);
+        int parsed_status = frame->operation == X86OS_VFS_SHADOW_FAT32_STAT
+            ? reist_vfs_shadow_fat32_stat(
+                &io, frame->path, frame->path_length, &parsed_info)
+            : reist_vfs_shadow_fat_stat(
+                &io, frame->path, frame->path_length, &parsed_info);
         if (parsed_status != legacy_status ||
             (parsed_status == 0 && !format_equal(
                 parsed_bytes, legacy_bytes, sizeof(parsed_info)))) {

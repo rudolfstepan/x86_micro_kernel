@@ -21,6 +21,8 @@ import run_qemu_smoke as smoke
 ARMED = "REIST_FDD HOTPLUG_ARMED"
 DISCONNECTED = "REIST_FDD DISCONNECT_DETECTED"
 REINTEGRATED = "TEST_STAGE FDD_HOTPLUG_REINTEGRATED_OK"
+FAT12_STAT_NAME = "Name: HOTPLUG.TXT"
+FAT12_STAT_SIZE = "Size: 14 bytes"
 
 
 def file_sha256(path: Path) -> str:
@@ -139,12 +141,34 @@ def qemu_command(qemu: Path, image: Path, floppy: Path,
     ]
 
 
-def send_paced(process: subprocess.Popen[str], command: str) -> None:
-    assert process.stdin is not None
-    for character in command + "\n":
-        process.stdin.write(character)
-        process.stdin.flush()
-        time.sleep(0.075)
+def qmp_key_commands(text: str) -> list[str]:
+    keys: list[str] = []
+    for character in text:
+        if "a" <= character <= "z" or "0" <= character <= "9":
+            key = character
+        elif "A" <= character <= "Z":
+            key = f"shift-{character.lower()}"
+        elif character == " ":
+            key = "spc"
+        elif character == ".":
+            key = "dot"
+        elif character == "/":
+            key = "slash"
+        elif character == "_":
+            key = "shift-minus"
+        else:
+            raise ValueError(f"unsupported QMP key character {character!r}")
+        keys.append(key)
+    keys.append("ret")
+    return keys
+
+
+def send_qmp_command(qmp: QmpClient, command: str, deadline: float) -> None:
+    for key in qmp_key_commands(command):
+        if time.monotonic() >= deadline:
+            raise TimeoutError("timeout while injecting guest command")
+        qmp.hmp(f"sendkey {key}", deadline)
+        time.sleep(0.03)
 
 
 def run(qemu: Path, image: Path, floppy: Path, timeout: float,
@@ -176,7 +200,7 @@ def run(qemu: Path, image: Path, floppy: Path, timeout: float,
         error, _ = smoke.wait_for_line(process, chunks, transcript, finished,
                                        smoke.SHELL_PROMPT, deadline)
         if error is None:
-            send_paced(process, "GTEST FDD_HOTPLUG")
+            send_qmp_command(qmp, "gtest FDD_HOTPLUG", deadline)
             error, _ = smoke.wait_for_line(process, chunks, transcript,
                                            finished, ARMED, deadline)
         if error is None:
@@ -192,10 +216,23 @@ def run(qemu: Path, image: Path, floppy: Path, timeout: float,
             error, marker = smoke.wait_for_line(
                 process, chunks, transcript, finished, smoke.TEST_MARKER,
                 deadline)
-            if error is None:
-                error, _ = smoke.wait_for_line(
-                    process, chunks, transcript, finished, smoke.SHELL_PROMPT,
-                    deadline, after=marker)
+        if error is None:
+            error, prompt = smoke.wait_for_line(
+                process, chunks, transcript, finished, smoke.SHELL_PROMPT,
+                deadline, after=marker)
+        if error is None:
+            send_qmp_command(qmp, "stat /mnt/fdd0/hotplug.txt", deadline)
+            error, name_marker = smoke.wait_for_line(
+                process, chunks, transcript, finished, FAT12_STAT_NAME,
+                deadline, after=prompt)
+        if error is None:
+            error, size_marker = smoke.wait_for_line(
+                process, chunks, transcript, finished, FAT12_STAT_SIZE,
+                deadline, after=name_marker)
+        if error is None:
+            error, _ = smoke.wait_for_line(
+                process, chunks, transcript, finished, smoke.SHELL_PROMPT,
+                deadline, after=size_marker)
     except (OSError, RuntimeError, TimeoutError, ValueError) as caught:
         error = str(caught)
     finally:
@@ -225,7 +262,7 @@ def main() -> int:
                         default=Path("build/fdd-hotplug.img"))
     parser.add_argument("--log", type=Path,
                         default=Path("build/test-results/fdd-hotplug.log"))
-    parser.add_argument("--timeout", type=float, default=45.0)
+    parser.add_argument("--timeout", type=float, default=150.0)
     args = parser.parse_args()
     if not args.qemu.is_file() or not args.image.is_file() or args.timeout <= 0:
         parser.error("qemu/image must exist and timeout must be positive")

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-vfs-shadow-fat12-parser"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-vfs-shadow-fat12-parser"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Bounded Ring-3 FAT12 metadata parser and generic FAT stat operation"
@@ -72,7 +72,15 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: add bounded FAT12 Ring-3 metadata parsing"
-evidence = []
+evidence = [
+  "python test/test_reist_vfs_shadow_fat32.py -v: PASS (3 tests)",
+  "python test/test_reist_vfs_stat_client.py -v: PASS (4 tests)",
+  "python test/test_reist_storage_service.py -v: PASS (6 tests)",
+  "python test/test_qemu_fdd_hotplug.py -v: PASS (8 tests)",
+  "python test/test_fdd_source.py -v: PASS (7 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (7s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode fdd-hotplug: PASS (103s, disconnect, reintegration, packaged FAT12 STAT.PRG result and userspace shell return)"
+]
 
 [[packages]]
 id = "R2.1-httpd-vfs-stat-cutover"

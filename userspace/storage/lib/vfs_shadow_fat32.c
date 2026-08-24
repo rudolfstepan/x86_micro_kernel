@@ -1,10 +1,11 @@
 /**
  * @file userspace/storage/lib/vfs_shadow_fat32.c
- * @brief Independent bounded FAT32/VFAT stat parser for Ring 3.
+ * @brief Independent bounded FAT12/FAT32/VFAT stat parser for Ring 3.
  *
- * The parser follows the Microsoft FAT32 on-disk terminology. It accepts the
- * current REIST ASCII pathname subset and consumes only fixed stack storage
- * and a fixed number of mediated sector reads.
+ * The parser follows the Microsoft FAT on-disk terminology and determines FAT
+ * type from the BPB layout and data-cluster count. It accepts the current
+ * REIST ASCII pathname subset and consumes only fixed stack storage and a
+ * fixed number of mediated sector reads.
  */
 #include "../include/reist/vfs_shadow_fat32.h"
 
@@ -16,6 +17,14 @@
 #define FAT32_RESERVED_MIN 0x0FFFFFF0U
 #define FAT32_LFN_CHARS_PER_ENTRY 13U
 #define FAT32_MAX_LFN_ENTRIES 20U
+#define FAT_TYPE_ANY 0U
+#define FAT_TYPE_12 12U
+#define FAT_TYPE_32 32U
+#define FAT12_CLUSTER_LIMIT 4085U
+#define FAT32_CLUSTER_MINIMUM 65525U
+#define FAT12_EOC_MIN 0x0FF8U
+#define FAT12_BAD_CLUSTER 0x0FF7U
+#define FAT12_RESERVED_MIN 0x0FF0U
 
 typedef struct {
     uint32_t resource;
@@ -25,10 +34,13 @@ typedef struct {
     uint32_t data_start;
     uint32_t cluster_count;
     uint32_t root_cluster;
+    uint32_t root_dir_start;
+    uint32_t root_dir_sectors;
     uint32_t active_fat;
     uint32_t reads;
     uint8_t sectors_per_cluster;
     uint8_t fat_count;
+    uint8_t fat_type;
     const reist_vfs_shadow_io_t *io;
 } shadow_volume_t;
 
@@ -189,47 +201,87 @@ static int shadow_mount(shadow_volume_t *volume, const reist_vfs_shadow_io_t *io
     return 0;
 }
 
-static int shadow_parse_bpb(shadow_volume_t *volume) {
+static int shadow_parse_bpb(shadow_volume_t *volume, uint8_t required_type) {
     uint8_t sector[X86OS_STORAGE_BLOCK_SIZE];
     int status = shadow_read(volume, 0U, sector);
     if (status != 0) return status;
-    uint32_t total = shadow_get32(sector + 32U);
-    uint32_t fat_sectors = shadow_get32(sector + 36U);
+    uint32_t total16 = shadow_get16(sector + 19U);
+    uint32_t total32 = shadow_get32(sector + 32U);
+    uint32_t total = total16 != 0U ? total16 : total32;
+    uint32_t fat16_sectors = shadow_get16(sector + 22U);
+    uint32_t fat32_sectors = shadow_get32(sector + 36U);
     uint32_t reserved = shadow_get16(sector + 14U);
     uint32_t fat_count = sector[16U];
     uint32_t sectors_per_cluster = sector[13U];
-    uint32_t root_cluster = shadow_get32(sector + 44U);
-    uint32_t flags = shadow_get16(sector + 40U);
-    uint64_t metadata = (uint64_t)reserved +
-        (uint64_t)fat_count * fat_sectors;
+    uint32_t root_entries = shadow_get16(sector + 17U);
     if (sector[510U] != 0x55U || sector[511U] != 0xAAU ||
         shadow_get16(sector + 11U) != X86OS_STORAGE_BLOCK_SIZE ||
         sectors_per_cluster == 0U || sectors_per_cluster > 128U ||
         (sectors_per_cluster & (sectors_per_cluster - 1U)) != 0U ||
         reserved == 0U || fat_count == 0U || fat_count > 2U ||
-        shadow_get16(sector + 17U) != 0U ||
-        shadow_get16(sector + 19U) != 0U ||
-        shadow_get16(sector + 22U) != 0U || fat_sectors == 0U ||
-        total == 0U || total > volume->sectors || metadata >= total ||
-        (flags & 0xFF70U) != 0U) return -2;
-    uint32_t active_fat = (flags & 0x0080U) != 0U ? flags & 0x000FU : 0U;
+        total == 0U || total > volume->sectors ||
+        (total16 != 0U && total32 != 0U)) return -2;
+
+    uint32_t fat_sectors = 0U;
+    uint32_t root_dir_sectors = 0U;
+    uint32_t root_cluster = 0U;
+    uint32_t active_fat = 0U;
+    uint8_t fat_type = FAT_TYPE_ANY;
+    if (root_entries != 0U && fat16_sectors != 0U) {
+        uint64_t root_bytes = (uint64_t)root_entries * 32U;
+        root_dir_sectors = (uint32_t)((root_bytes +
+            X86OS_STORAGE_BLOCK_SIZE - 1U) / X86OS_STORAGE_BLOCK_SIZE);
+        fat_sectors = fat16_sectors;
+        fat_type = FAT_TYPE_12;
+    } else if (root_entries == 0U && fat16_sectors == 0U &&
+               fat32_sectors != 0U && total16 == 0U) {
+        uint32_t flags = shadow_get16(sector + 40U);
+        if ((flags & 0xFF70U) != 0U) return -2;
+        active_fat = (flags & 0x0080U) != 0U ? flags & 0x000FU : 0U;
+        root_cluster = shadow_get32(sector + 44U);
+        fat_sectors = fat32_sectors;
+        fat_type = FAT_TYPE_32;
+    } else {
+        return -2;
+    }
+
+    uint64_t root_start = (uint64_t)reserved +
+        (uint64_t)fat_count * fat_sectors;
+    uint64_t metadata = root_start + root_dir_sectors;
+    if (fat_sectors == 0U || metadata >= total ||
+        metadata > UINT32_MAX || root_start > UINT32_MAX) return -2;
     uint32_t cluster_count = (total - (uint32_t)metadata) /
         sectors_per_cluster;
-    uint64_t fat_entries = (uint64_t)fat_sectors *
-        X86OS_STORAGE_BLOCK_SIZE / sizeof(uint32_t);
-    if (active_fat >= fat_count || cluster_count == 0U ||
-        cluster_count >= FAT32_RESERVED_MIN - 1U ||
-        fat_entries < (uint64_t)cluster_count + 2U ||
-        root_cluster < 2U || root_cluster > cluster_count + 1U)
-        return -2;
+    if (cluster_count == 0U || active_fat >= fat_count) return -2;
+    if (fat_type == FAT_TYPE_12) {
+        uint64_t fat_entries = (uint64_t)fat_sectors *
+            X86OS_STORAGE_BLOCK_SIZE * 2U / 3U;
+        if (cluster_count >= FAT12_CLUSTER_LIMIT ||
+            fat_entries < (uint64_t)cluster_count + 2U ||
+            root_dir_sectors == 0U ||
+            root_dir_sectors > REIST_VFS_SHADOW_MAX_SECTOR_READS)
+            return -2;
+    } else {
+        uint64_t fat_entries = (uint64_t)fat_sectors *
+            X86OS_STORAGE_BLOCK_SIZE / sizeof(uint32_t);
+        if (cluster_count < FAT32_CLUSTER_MINIMUM ||
+            cluster_count >= FAT32_RESERVED_MIN - 1U ||
+            fat_entries < (uint64_t)cluster_count + 2U ||
+            root_cluster < 2U || root_cluster > cluster_count + 1U)
+            return -2;
+    }
+    if (required_type != FAT_TYPE_ANY && fat_type != required_type) return -2;
     volume->reserved_sectors = reserved;
     volume->fat_sectors = fat_sectors;
     volume->data_start = (uint32_t)metadata;
     volume->cluster_count = cluster_count;
     volume->root_cluster = root_cluster;
+    volume->root_dir_start = (uint32_t)root_start;
+    volume->root_dir_sectors = root_dir_sectors;
     volume->active_fat = active_fat;
     volume->sectors_per_cluster = (uint8_t)sectors_per_cluster;
     volume->fat_count = (uint8_t)fat_count;
+    volume->fat_type = fat_type;
     return 0;
 }
 
@@ -241,7 +293,9 @@ static int shadow_cluster_valid(const shadow_volume_t *volume,
 static int shadow_next_cluster(shadow_volume_t *volume, uint32_t cluster,
                                uint32_t *next) {
     uint8_t sector[X86OS_STORAGE_BLOCK_SIZE];
-    uint64_t byte_offset = (uint64_t)cluster * sizeof(uint32_t);
+    uint64_t byte_offset = volume->fat_type == FAT_TYPE_12
+        ? (uint64_t)cluster + cluster / 2U
+        : (uint64_t)cluster * sizeof(uint32_t);
     uint64_t sector_index = byte_offset / X86OS_STORAGE_BLOCK_SIZE;
     if (sector_index >= volume->fat_sectors) return -5;
     uint32_t lba = volume->reserved_sectors +
@@ -249,8 +303,37 @@ static int shadow_next_cluster(shadow_volume_t *volume, uint32_t cluster,
     int status = shadow_read(volume, lba, sector);
     if (status != 0) return status;
     uint32_t offset = (uint32_t)(byte_offset % X86OS_STORAGE_BLOCK_SIZE);
-    *next = shadow_get32(sector + offset) & 0x0FFFFFFFU;
+    if (volume->fat_type == FAT_TYPE_12) {
+        uint16_t packed = sector[offset];
+        if (offset + 1U == X86OS_STORAGE_BLOCK_SIZE) {
+            if (sector_index + 1U >= volume->fat_sectors) return -5;
+            status = shadow_read(volume, lba + 1U, sector);
+            if (status != 0) return status;
+            packed |= (uint16_t)sector[0U] << 8U;
+        } else {
+            packed |= (uint16_t)sector[offset + 1U] << 8U;
+        }
+        *next = (cluster & 1U) != 0U ? packed >> 4U : packed & 0x0FFFU;
+    } else {
+        if (offset + sizeof(uint32_t) > X86OS_STORAGE_BLOCK_SIZE) return -5;
+        *next = shadow_get32(sector + offset) & 0x0FFFFFFFU;
+    }
     return 0;
+}
+
+static int shadow_end_of_chain(const shadow_volume_t *volume,
+                               uint32_t cluster) {
+    return volume->fat_type == FAT_TYPE_12
+        ? cluster >= FAT12_EOC_MIN && cluster <= 0x0FFFU
+        : cluster >= FAT32_EOC_MIN && cluster <= 0x0FFFFFFFU;
+}
+
+static int shadow_invalid_link(const shadow_volume_t *volume,
+                               uint32_t cluster) {
+    if (cluster == 0U) return 1;
+    if (volume->fat_type == FAT_TYPE_12)
+        return cluster == FAT12_BAD_CLUSTER || cluster >= FAT12_RESERVED_MIN;
+    return cluster == FAT32_BAD_CLUSTER || cluster >= FAT32_RESERVED_MIN;
 }
 
 static uint8_t shadow_short_checksum(const uint8_t name[11]) {
@@ -340,6 +423,51 @@ static void shadow_lfn_consume(shadow_lfn_t *lfn, const uint8_t *entry) {
     --lfn->expected_order;
 }
 
+/* Returns 0 to continue, 1 on match, and 2 at the directory end marker. */
+static int shadow_scan_entries(const uint8_t sector[X86OS_STORAGE_BLOCK_SIZE],
+                               const char *wanted,
+                               shadow_dir_entry_t *found,
+                               char visible[256], shadow_lfn_t *lfn) {
+    for (uint32_t offset = 0U;
+         offset < X86OS_STORAGE_BLOCK_SIZE; offset += 32U) {
+        const uint8_t *candidate = sector + offset;
+        if (candidate[0U] == 0x00U) return 2;
+        if (candidate[0U] == 0xE5U) {
+            shadow_lfn_reset(lfn);
+            continue;
+        }
+        if (candidate[11U] == FAT32_ATTR_LONG_NAME) {
+            shadow_lfn_consume(lfn, candidate);
+            continue;
+        }
+        if ((candidate[11U] & FAT32_ATTR_VOLUME_ID) != 0U) {
+            shadow_lfn_reset(lfn);
+            continue;
+        }
+        shadow_dir_entry_t entry;
+        shadow_copy(entry.bytes, candidate, sizeof(entry.bytes));
+        char short_name[13];
+        shadow_short_name(&entry, short_name);
+        const char *resolved = short_name;
+        if (lfn->active != 0U && lfn->expected_order == 0U &&
+            lfn->name[0U] != '\0' &&
+            lfn->checksum == shadow_short_checksum(candidate))
+            resolved = lfn->name;
+        int match = shadow_name_equal(resolved, wanted) ||
+                    shadow_name_equal(short_name, wanted);
+        if (match) {
+            *found = entry;
+            uint32_t length = shadow_text_length(resolved, 256U);
+            if (length >= 256U) return -5;
+            shadow_zero(visible, 256U);
+            shadow_copy(visible, resolved, length + 1U);
+            return 1;
+        }
+        shadow_lfn_reset(lfn);
+    }
+    return 0;
+}
+
 static int shadow_scan_directory(shadow_volume_t *volume, uint32_t first,
                                  const char *wanted,
                                  shadow_dir_entry_t *found,
@@ -350,6 +478,17 @@ static int shadow_scan_directory(shadow_volume_t *volume, uint32_t first,
     uint32_t cluster = first;
     shadow_lfn_t lfn;
     shadow_lfn_reset(&lfn);
+    if (volume->fat_type == FAT_TYPE_12 && first == 0U) {
+        for (uint32_t index = 0U; index < volume->root_dir_sectors; ++index) {
+            int status = shadow_read(volume, volume->root_dir_start + index,
+                                     sector);
+            if (status != 0) return status;
+            int scan = shadow_scan_entries(sector, wanted, found, visible,
+                                           &lfn);
+            if (scan != 0) return scan == 2 ? 0 : scan;
+        }
+        return 0;
+    }
     for (;;) {
         if (!shadow_cluster_valid(volume, cluster) ||
             visited_count >= REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS) return -5;
@@ -365,50 +504,16 @@ static int shadow_scan_directory(shadow_volume_t *volume, uint32_t first,
             int status = shadow_read(volume,
                 (uint32_t)cluster_lba + sector_index, sector);
             if (status != 0) return status;
-            for (uint32_t offset = 0U;
-                 offset < X86OS_STORAGE_BLOCK_SIZE; offset += 32U) {
-                const uint8_t *candidate = sector + offset;
-                if (candidate[0U] == 0x00U) return 0;
-                if (candidate[0U] == 0xE5U) {
-                    shadow_lfn_reset(&lfn);
-                    continue;
-                }
-                if (candidate[11U] == FAT32_ATTR_LONG_NAME) {
-                    shadow_lfn_consume(&lfn, candidate);
-                    continue;
-                }
-                if ((candidate[11U] & FAT32_ATTR_VOLUME_ID) != 0U) {
-                    shadow_lfn_reset(&lfn);
-                    continue;
-                }
-                shadow_dir_entry_t entry;
-                shadow_copy(entry.bytes, candidate, sizeof(entry.bytes));
-                char short_name[13];
-                shadow_short_name(&entry, short_name);
-                const char *resolved = short_name;
-                if (lfn.active != 0U && lfn.expected_order == 0U &&
-                    lfn.name[0U] != '\0' &&
-                    lfn.checksum == shadow_short_checksum(candidate))
-                    resolved = lfn.name;
-                int match = shadow_name_equal(resolved, wanted) ||
-                            shadow_name_equal(short_name, wanted);
-                if (match) {
-                    *found = entry;
-                    uint32_t length = shadow_text_length(resolved, 256U);
-                    if (length >= 256U) return -5;
-                    shadow_zero(visible, 256U);
-                    shadow_copy(visible, resolved, length + 1U);
-                    return 1;
-                }
-                shadow_lfn_reset(&lfn);
-            }
+            int scan = shadow_scan_entries(sector, wanted, found, visible,
+                                           &lfn);
+            if (scan != 0) return scan == 2 ? 0 : scan;
         }
         uint32_t next = 0U;
         int status = shadow_next_cluster(volume, cluster, &next);
         if (status != 0) return status;
-        if (next >= FAT32_EOC_MIN && next <= 0x0FFFFFFFU) return 0;
-        if (next == 0U || next == FAT32_BAD_CLUSTER ||
-            next >= FAT32_RESERVED_MIN || !shadow_cluster_valid(volume, next))
+        if (shadow_end_of_chain(volume, next)) return 0;
+        if (shadow_invalid_link(volume, next) ||
+            !shadow_cluster_valid(volume, next))
             return -5;
         cluster = next;
     }
@@ -431,10 +536,18 @@ static void shadow_entry_info(const shadow_dir_entry_t *entry,
         shadow_get16(entry->bytes + 18U), 0U);
 }
 
-int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
-                                const char *absolute_path,
-                                uint32_t path_length,
-                                x86os_file_info_t *info) {
+static int shadow_entry_cluster(const shadow_volume_t *volume,
+                                const shadow_dir_entry_t *entry,
+                                uint32_t *cluster) {
+    uint32_t high = shadow_get16(entry->bytes + 20U);
+    if (volume->fat_type == FAT_TYPE_12 && high != 0U) return -5;
+    *cluster = shadow_get16(entry->bytes + 26U) | (high << 16U);
+    return 0;
+}
+
+static int shadow_stat(const reist_vfs_shadow_io_t *io,
+                       const char *absolute_path, uint32_t path_length,
+                       x86os_file_info_t *info, uint8_t required_type) {
     if (io == 0 || io->drive_info == 0 || io->read_sector == 0 ||
         absolute_path == 0 || info == 0 || path_length == 0U ||
         path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
@@ -449,7 +562,7 @@ int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
     uint32_t cursor = 0U;
     int status = shadow_mount(&volume, io, absolute_path, path_length, &cursor);
     if (status != 0) return status;
-    status = shadow_parse_bpb(&volume);
+    status = shadow_parse_bpb(&volume, required_type);
     if (status != 0) return status;
     if (cursor >= path_length) {
         shadow_zero(info, sizeof(*info));
@@ -458,7 +571,8 @@ int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
         return 0;
     }
 
-    uint32_t directory = volume.root_cluster;
+    uint32_t directory = volume.fat_type == FAT_TYPE_12
+        ? 0U : volume.root_cluster;
     for (uint32_t component = 0U;
          component < REIST_VFS_SHADOW_MAX_COMPONENTS; ++component) {
         uint32_t start = cursor;
@@ -473,15 +587,31 @@ int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
         int lookup = shadow_scan_directory(&volume, directory, wanted,
                                            &found, visible);
         if (lookup <= 0) return lookup == 0 ? -2 : lookup;
+        uint32_t found_cluster = 0U;
+        if (shadow_entry_cluster(&volume, &found, &found_cluster) != 0)
+            return -5;
         while (cursor < path_length && absolute_path[cursor] == '/') ++cursor;
         if (cursor >= path_length) {
             shadow_entry_info(&found, visible, info);
             return 0;
         }
         if ((found.bytes[11U] & FAT32_ATTR_DIRECTORY) == 0U) return -2;
-        directory = (uint32_t)shadow_get16(found.bytes + 26U) |
-                    ((uint32_t)shadow_get16(found.bytes + 20U) << 16U);
+        directory = found_cluster;
         if (!shadow_cluster_valid(&volume, directory)) return -5;
     }
     return -110;
+}
+
+int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
+                                const char *absolute_path,
+                                uint32_t path_length,
+                                x86os_file_info_t *info) {
+    return shadow_stat(io, absolute_path, path_length, info, FAT_TYPE_32);
+}
+
+int reist_vfs_shadow_fat_stat(const reist_vfs_shadow_io_t *io,
+                              const char *absolute_path,
+                              uint32_t path_length,
+                              x86os_file_info_t *info) {
+    return shadow_stat(io, absolute_path, path_length, info, FAT_TYPE_ANY);
 }
