@@ -23,6 +23,7 @@ allowed_files = [
   "scripts/generate_syscall_abi.py",
   "lib/libc/stdlib.h",
   "userspace/sdk/include/x86os.h",
+  "userspace/sdk/include/reist/abi/syscall.h",
   "include/kernel/admin_maintenance.h",
   "include/kernel/component_control.h",
   "Makefile",
