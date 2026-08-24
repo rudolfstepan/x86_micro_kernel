@@ -21,6 +21,16 @@ der alten Clusterkette. `O_TRUNC` verlangt Schreibrechte und läuft vor
 Descriptorpublikation. EXT2, fremde/read-only Medien, kritische FAT12-Replikate
 und Ziellängen ungleich null bleiben ausdrücklich nicht unterstützt.
 
+`R2.1-descriptor-seek-fstat` ergänzt append-only Syscalls 121/122 für
+`lseek` und `fstat`. Alle Berechnungen verwenden signierte 64-Bit-
+Zwischenwerte; negative Positionen, 32-Bit-Überläufe und nicht seekbare
+Terminal-/Socket-Deskriptoren ändern den gespeicherten Offset nicht. Positionen
+hinter EOF sind bis `INT32_MAX` zulässig und nutzen beim folgenden FAT-Write
+den vorhandenen Vertrag für genullte Lücken. `fstat` fragt ausschließlich den
+geöffneten VFS-Node ab: FAT12 revalidiert Directory-Sektor und Slot, FAT32 die
+gehaltene Directory-Identität und EXT2 die Inode-Nummer. Eine erneute
+Pfadauflösung oder zusätzliche Mutationsautorität entsteht nicht.
+
 `R2.1-standard-descriptors` erweitert die bestehende feste Prozesstabelle um
 echte Deskriptoren 0/1/2 mit richtungsgebundenen Terminalrechten. Der
 Tastaturpfad bleibt bis zu einer eigenen TTY-/Deadline-ABI nichtblockierend;

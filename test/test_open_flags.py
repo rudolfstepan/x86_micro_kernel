@@ -69,7 +69,7 @@ class OpenFlagsTests(unittest.TestCase):
         self.assertIn(".readable = readable", self.process)
         self.assertIn(".writable = writable", self.process)
         self.assertNotIn("SYS_OPEN_FLAGS,", self.process)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 121U", self.header)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 123U", self.header)
 
     def test_guest_proves_rights_append_validation_and_no_truncation(self) -> None:
         for marker in (

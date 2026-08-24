@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-descriptor-seek-fstat"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-descriptor-seek-fstat"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Append-only descriptor seek and fstat"
@@ -81,7 +81,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "vfs: add descriptor seek and fstat"
-evidence = []
+evidence = [
+  "six focused descriptor contract tests five shared ABI tests and five open-flags regressions passed",
+  "all twelve filesystem host tests passed after one focused FAT32 canonical open-name refresh repair",
+  "FAT12 FAT32 and VFS host behavior proved node metadata refresh zero-size visibility and missing-callback rejection",
+  "QEMU VGA package gate passed in 34 seconds with append-only syscalls 121 LSEEK and 122 FSTAT",
+  "normal QEMU runtime passed in 25 seconds with DESCRIPTOR_SEEK_FSTAT_OK and TEST_OK after partial EOF gap append rights overflow and metadata checks"
+]
 
 [[packages]]
 id = "R2.1-fat-truncate-zero"

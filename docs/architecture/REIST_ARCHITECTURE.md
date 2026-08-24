@@ -193,6 +193,17 @@ private alte Kette frei. Read-only/EXT2, nicht markierte Medien, replizierte
 kritische FAT12-Dateien und beliebige Truncate-Ziellängen bleiben fail-closed.
 Nur das Kompatibilitätsprofil erhält Syscall 120 automatisch; eingeschränkte
 Prozessprofile bleiben Default-Deny.
+Append-only Syscalls 121 `LSEEK` und 122 `FSTAT` vervollständigen den
+nichtmutierenden Teil des Prozessdeskriptorvertrags. `LSEEK` berechnet
+`SET`/`CUR`/`END` mit signierten 64-Bit-Zwischenwerten, erlaubt Positionen bis
+`INT32_MAX` auch hinter EOF und publiziert den neuen Offset erst nach allen
+Prüfungen. Negative Ergebnisse liefern `EINVAL`, Überläufe `EOVERFLOW` und
+gültige nicht seekbare Deskriptoren `ESPIPE`. `FSTAT` benötigt keine
+READ-/WRITE-Berechtigung, sondern nur einen lebenden regulären
+Dateideskriptor. Beide Pfade beziehen aktuelle Metadaten über den bereits
+geöffneten VFS-Node; FAT12, FAT32 und EXT2 revalidieren ihre gebundene
+On-Disk-Identität ohne erneute Pfadauflösung. Nur das Kompatibilitätsprofil
+erhält diese beiden Syscalls automatisch.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

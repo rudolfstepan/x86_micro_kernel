@@ -57,6 +57,16 @@ static int fake_truncate(vfs_node_t* node, uint32_t size) {
     return VFS_OK;
 }
 
+static int fake_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
+    if (!node || !stat) return VFS_ERR_INVALID;
+    memset(stat, 0, sizeof(*stat));
+    strcpy(stat->name, node->name);
+    stat->type = node->type;
+    stat->size = node->size;
+    stat->inode = 42U;
+    return VFS_OK;
+}
+
 static vfs_filesystem_ops_t fake_ops = {
     .mount = fake_mount,
     .unmount = fake_unmount,
@@ -91,7 +101,13 @@ int main(void) {
     node->size = 123U;
     CHECK(vfs_truncate(node, 1U) == VFS_ERR_UNSUPPORTED);
     CHECK(vfs_truncate(node, 0U) == VFS_ERR_UNSUPPORTED);
+    vfs_dir_entry_t info;
+    CHECK(vfs_fstat(node, &info) == VFS_ERR_UNSUPPORTED);
     fake_ops.truncate = fake_truncate;
+    fake_ops.fstat = fake_fstat;
+    CHECK(vfs_fstat(node, &info) == VFS_OK);
+    CHECK(strcmp(info.name, "file") == 0 && info.type == VFS_FILE &&
+          info.size == 123U && info.inode == 42U);
     CHECK(vfs_truncate(node, 0U) == VFS_OK && node->size == 0U);
     CHECK(vfs_truncate(nested->root, 0U) == VFS_ERR_IS_DIR);
     CHECK(vfs_unmount("/mnt/data") == VFS_ERR_BUSY);

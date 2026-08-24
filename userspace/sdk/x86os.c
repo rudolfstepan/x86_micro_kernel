@@ -703,6 +703,16 @@ int x86os_stat(const char* path, x86os_file_info_t* info) {
                               (uintptr_t)info, 0);
 }
 
+int32_t x86os_lseek(int descriptor, int32_t offset, uint32_t whence) {
+    return (int32_t)x86os_syscall(X86OS_SYS_LSEEK, (uintptr_t)descriptor,
+                                  (uintptr_t)offset, whence);
+}
+
+int x86os_fstat(int descriptor, x86os_file_info_t* info) {
+    return (int)x86os_syscall(X86OS_SYS_FSTAT, (uintptr_t)descriptor,
+                              (uintptr_t)info, 0);
+}
+
 int x86os_readdir(const char* path, uint32_t index, x86os_file_info_t* info) {
     return (int)x86os_syscall(X86OS_SYS_READDIR, (uintptr_t)path, index,
                               (uintptr_t)info);

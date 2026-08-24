@@ -1061,6 +1061,31 @@ static int fat12_vfs_stat(vfs_filesystem_t* fs, const char* path,
     return VFS_OK;
 }
 
+static int fat12_vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
+    if (!node || !node->fs || !node->fs_specific || !stat ||
+        node->type != VFS_FILE) return VFS_ERR_INVALID;
+    fat12_file* handle = (fat12_file*)node->fs_specific;
+    if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U)
+        return VFS_ERR_IO;
+    uint8_t sector[FAT12_SECTOR_SIZE];
+    if (!fat12_read_logical_sectors(handle->directory_sector, 1U, sector))
+        return VFS_ERR_IO;
+    directory_entry entry =
+        ((directory_entry*)sector)[handle->directory_slot];
+    char name[13];
+    fat12_entry_name(&entry, name);
+    if (entry.filename[0] == 0x00 || entry.filename[0] == 0xE5 ||
+        (entry.attributes & FILE_ATTR_DIRECTORY) != 0U ||
+        strcmp(name, (char*)handle->name) != 0) return VFS_ERR_NOT_FOUND;
+    fat12_fill_stat(&entry, stat);
+    node->inode = entry.first_cluster_low;
+    node->size = entry.file_size;
+    handle->start_cluster = entry.first_cluster_low;
+    handle->size = entry.file_size;
+    handle->attributes = entry.attributes;
+    return VFS_OK;
+}
+
 static int fat12_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
     if (!fs || !fs->fs_data || !info) return VFS_ERR_INVALID;
     fat12_t* volume = (fat12_t*)fs->fs_data;
@@ -1106,6 +1131,7 @@ vfs_filesystem_ops_t fat12_vfs_ops = {
     .read = fat12_vfs_read,
     .write = fat12_vfs_write,
     .truncate = fat12_vfs_truncate,
+    .fstat = fat12_vfs_fstat,
     .readdir = fat12_vfs_readdir,
     .finddir = fat12_vfs_finddir,
     .mkdir = fat12_vfs_mkdir,

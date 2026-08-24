@@ -29,8 +29,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscall 120 is append-only OPEN_FLAGS. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 121U
+/* Exclusive upper bound; syscalls 121/122 are append-only LSEEK/FSTAT. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 123U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -51,6 +51,7 @@ typedef struct {
 } process_domain_profile_t;
 
 struct vfs_node;
+struct vfs_dir_entry;
 
 typedef struct {
     uint32_t address;
@@ -80,6 +81,10 @@ typedef struct {
 #define PROCESS_OPEN_ALLOWED_FLAGS \
     (PROCESS_OPEN_ACCMODE | PROCESS_OPEN_CREAT | PROCESS_OPEN_TRUNC | \
      PROCESS_OPEN_APPEND)
+
+#define PROCESS_SEEK_SET 0U
+#define PROCESS_SEEK_CUR 1U
+#define PROCESS_SEEK_END 2U
 
 enum {
     PROCESS_DESCRIPTOR_FILE = 1U,
@@ -163,6 +168,10 @@ int process_file_read(Process* process, int descriptor, void* buffer,
 int process_file_create(Process* process, const char* path);
 int process_file_write(Process* process, int descriptor, const void* buffer,
                        size_t size);
+int process_file_seek(Process* process, int descriptor, int32_t offset,
+                      uint32_t whence);
+int process_file_fstat(Process* process, int descriptor,
+                       struct vfs_dir_entry* entry);
 int process_file_sync(Process* process, int descriptor);
 int process_file_unlink(Process* process, const char* path);
 int process_file_close(Process* process, int descriptor);

@@ -437,6 +437,92 @@ failed:
     return -1;
 }
 
+static int test_descriptor_seek_fstat(void) {
+    static const char path[] = "SEEKFD.TMP";
+    static const char initial[] = "ABCDE";
+    static const char expected[] = {
+        'A', 'B', 'C', 'D', 'E', 0, 0, 0, 'Z', 'Q'
+    };
+    char actual[sizeof(expected)];
+    char partial[2];
+    char byte = 0;
+    x86os_file_info_t descriptor_info;
+    x86os_file_info_t path_info;
+
+    (void)x86os_unlink(path);
+    int descriptor = x86os_open_flags(path, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor < 0 ||
+        x86os_write(descriptor, initial, sizeof(initial) - 1U) !=
+            (int)(sizeof(initial) - 1U) ||
+        x86os_fstat(descriptor, &descriptor_info) != 0 ||
+        x86os_stat(path, &path_info) != 0 ||
+        !bytes_equal((const char*)&descriptor_info, (const char*)&path_info,
+                     sizeof(path_info)) ||
+        descriptor_info.type != X86OS_FILE ||
+        descriptor_info.size != sizeof(initial) - 1U) goto failed;
+
+    if (x86os_lseek(descriptor, 1, X86OS_SEEK_SET) != 1 ||
+        x86os_read(descriptor, partial, sizeof(partial)) != 2 ||
+        partial[0] != 'B' || partial[1] != 'C' ||
+        x86os_lseek(descriptor, -1, X86OS_SEEK_CUR) != 2 ||
+        x86os_read(descriptor, &byte, 1U) != 1 || byte != 'C' ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_END) != 5 ||
+        x86os_read(descriptor, &byte, 1U) != 0) goto failed;
+
+    if (x86os_lseek(descriptor, -1, X86OS_SEEK_SET) != -REIST_EINVAL ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 5 ||
+        x86os_lseek(descriptor, 0, 3U) != -REIST_EINVAL ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 5 ||
+        x86os_lseek(descriptor, INT32_MAX, X86OS_SEEK_SET) != INT32_MAX ||
+        x86os_lseek(descriptor, 1, X86OS_SEEK_CUR) != -REIST_EOVERFLOW ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != INT32_MAX ||
+        x86os_lseek(descriptor, 8, X86OS_SEEK_SET) != 8 ||
+        x86os_write(descriptor, "Z", 1U) != 1 ||
+        x86os_fsync(descriptor) != 0 ||
+        x86os_fstat(descriptor, &descriptor_info) != 0 ||
+        descriptor_info.size != 9U || x86os_close(descriptor) != 0)
+        goto failed;
+
+    descriptor = x86os_open_flags(path, X86OS_O_WRONLY | X86OS_O_APPEND);
+    if (descriptor < 0 ||
+        x86os_fstat(descriptor, &descriptor_info) != 0 ||
+        descriptor_info.size != 9U ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_SET) != 0 ||
+        x86os_write(descriptor, "Q", 1U) != 1 ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 10 ||
+        x86os_fstat(descriptor, &descriptor_info) != 0 ||
+        descriptor_info.size != sizeof(expected) ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 ||
+        x86os_fstat(descriptor,
+                    (x86os_file_info_t*)(uintptr_t)0x1000U) !=
+            -REIST_EFAULT ||
+        x86os_read(descriptor, actual, sizeof(actual)) !=
+            (int)sizeof(actual) ||
+        !bytes_equal(actual, expected, sizeof(expected)) ||
+        x86os_read(descriptor, &byte, 1U) != 0 ||
+        x86os_fstat(descriptor, &descriptor_info) != 0 ||
+        x86os_stat(path, &path_info) != 0 ||
+        !bytes_equal((const char*)&descriptor_info, (const char*)&path_info,
+                     sizeof(path_info)) ||
+        x86os_close(descriptor) != 0 ||
+        x86os_lseek(descriptor, 0, X86OS_SEEK_SET) != -REIST_EBADF ||
+        x86os_lseek(X86OS_STDERR_FILENO, 0, X86OS_SEEK_SET) !=
+            -REIST_ESPIPE ||
+        x86os_fstat(X86OS_STDERR_FILENO, &descriptor_info) !=
+            -REIST_ESPIPE ||
+        x86os_unlink(path) != 0) goto failed;
+    return 0;
+
+failed:
+    if (descriptor >= 0) (void)x86os_close(descriptor);
+    (void)x86os_unlink(path);
+    return -1;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -1389,6 +1475,12 @@ int main(int argc, char **argv) {
         return 11;
     }
     x86os_puts("TEST_STAGE OPEN_FLAGS_OK\n");
+
+    if (test_descriptor_seek_fstat() != 0) {
+        x86os_puts("TEST_FAIL DESCRIPTOR_SEEK_FSTAT\n");
+        return 12;
+    }
+    x86os_puts("TEST_STAGE DESCRIPTOR_SEEK_FSTAT_OK\n");
 
     if (test_wait_wakeup() != 0) {
         x86os_puts("TEST_FAIL WAIT\n");

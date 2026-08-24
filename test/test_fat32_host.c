@@ -619,6 +619,11 @@ int main(void) {
         CHECK(memcmp(contents, readme, sizeof(contents)) == 0);
         CHECK(vfs_read(node, sizeof(contents), 1,
                        (uint8_t*)contents) == 0);
+        vfs_dir_entry_t open_info;
+        CHECK(vfs_fstat(node, &open_info) == VFS_OK);
+        CHECK(strcmp(open_info.name, "README.TXT") == 0 &&
+              open_info.type == VFS_FILE &&
+              open_info.size == sizeof(readme) - 1);
         CHECK(vfs_sync(node) == VFS_OK);
         CHECK(vfs_close(node) == VFS_OK);
     }
@@ -636,6 +641,8 @@ int main(void) {
     CHECK(vfs_truncate(truncate_node, 1U) == VFS_ERR_UNSUPPORTED);
     CHECK(vfs_truncate(truncate_node, 0U) == VFS_OK);
     CHECK(truncate_node->inode == 0U && truncate_node->size == 0U);
+    CHECK(vfs_fstat(truncate_node, &listed) == VFS_OK &&
+          listed.size == 0U && listed.inode == 0U);
     CHECK(count_allocated_clusters() == allocated_before_truncate);
     CHECK(vfs_read(truncate_node, 0U, 1U, truncate_payload) == 0);
     CHECK(vfs_close(truncate_node) == VFS_OK);

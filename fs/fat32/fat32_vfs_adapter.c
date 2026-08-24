@@ -406,13 +406,16 @@ static int fat32_refresh_file_node(vfs_node_t* node) {
     if (!node || !node->fs_specific) return VFS_ERR_INVALID;
     fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
     struct fat32_dir_entry current;
-    fat32_lookup_result_t result = fat32_lookup_entry_in_directory(
-        handle->parent_cluster, handle->name, &current);
+    char resolved_name[MAX_PATH_LENGTH];
+    fat32_lookup_result_t result = fat32_lookup_entry_named(
+        handle->parent_cluster, handle->name, &current, resolved_name);
     if (result == FAT32_LOOKUP_NOT_FOUND) return VFS_ERR_NOT_FOUND;
     if (result != FAT32_LOOKUP_FOUND || (current.attr & ATTR_DIRECTORY)) {
         return VFS_ERR_IO;
     }
     handle->entry = current;
+    strcpy(handle->name, resolved_name);
+    strcpy(node->name, resolved_name);
     node->inode = read_start_cluster(&current);
     node->size = current.file_size;
     return VFS_OK;
@@ -982,6 +985,19 @@ static int fat32_vfs_stat_unlocked(vfs_filesystem_t* fs, const char* path,
     return VFS_OK;
 }
 
+static int fat32_vfs_fstat_unlocked(vfs_node_t* node,
+                                    vfs_dir_entry_t* stat) {
+    if (!node || !node->fs || !node->fs_specific || !stat ||
+        node->type != VFS_FILE) return VFS_ERR_INVALID;
+    fat32_activate(node->fs);
+    int refresh = fat32_refresh_file_node(node);
+    if (refresh != VFS_OK) return refresh;
+    fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    fat32_entry_to_vfs_entry(&handle->entry, stat);
+    strcpy(stat->name, handle->name);
+    return VFS_OK;
+}
+
 static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
     uint32_t flags = fat32_operation_begin();
     struct fat32_boot_sector saved_boot = boot_sector;
@@ -1050,6 +1066,13 @@ static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
 static int fat32_vfs_truncate(vfs_node_t* node, uint32_t size) {
     uint32_t flags = fat32_operation_begin();
     int result = fat32_vfs_truncate_unlocked(node, size);
+    fat32_operation_end(flags);
+    return result;
+}
+
+static int fat32_vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_fstat_unlocked(node, stat);
     fat32_operation_end(flags);
     return result;
 }
@@ -1193,6 +1216,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .read = fat32_vfs_read,
     .write = fat32_vfs_write,
     .truncate = fat32_vfs_truncate,
+    .fstat = fat32_vfs_fstat,
     .sync = fat32_vfs_sync,
     .readdir = fat32_vfs_readdir,
     .readdir_batch = fat32_vfs_readdir_batch,

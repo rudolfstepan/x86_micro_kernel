@@ -241,6 +241,25 @@ static int ext2_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return VFS_ERR_READ_ONLY;
 }
 
+static int ext2_vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
+    if (!node || !node->fs || !node->fs->fs_data || !stat)
+        return VFS_ERR_INVALID;
+    ext2_inode_t inode;
+    if (!ext2_read_inode((ext2_fs_t*)node->fs->fs_data, node->inode, &inode))
+        return VFS_ERR_IO;
+    ext2_dir_entry_t entry;
+    memset(&entry, 0, sizeof(entry));
+    entry.inode = node->inode;
+    size_t length = strlen(node->name);
+    if (length > sizeof(entry.name)) length = sizeof(entry.name);
+    entry.name_len = (uint8_t)length;
+    memcpy(entry.name, node->name, length);
+    ext2_fill_stat(&entry, &inode, stat);
+    node->size = inode.i_size;
+    node->type = ext2_mode_to_vfs(inode.i_mode);
+    return VFS_OK;
+}
+
 static int ext2_vfs_readdir(vfs_node_t* node, uint32_t index,
                             vfs_dir_entry_t* entry) {
     if (!node || !node->fs || !node->fs->fs_data || !entry)
@@ -321,6 +340,7 @@ static vfs_filesystem_ops_t ext2_vfs_ops = {
     .close = ext2_vfs_close,
     .read = ext2_vfs_read,
     .write = ext2_vfs_write,
+    .fstat = ext2_vfs_fstat,
     .readdir = ext2_vfs_readdir,
     .finddir = ext2_vfs_finddir,
     .mkdir = ext2_vfs_mkdir,

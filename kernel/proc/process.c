@@ -1253,6 +1253,42 @@ int process_file_write(Process *process, int descriptor, const void *buffer,
     return result;
 }
 
+int process_file_seek(Process *process, int descriptor, int32_t offset,
+                      uint32_t whence) {
+    if (process == NULL || descriptor < 0 ||
+        descriptor >= MAX_PROCESS_DESCRIPTORS ||
+        !process->files[descriptor].in_use) return -REIST_EBADF;
+    process_file_t *file = &process->files[descriptor];
+    if (file->kind != PROCESS_DESCRIPTOR_FILE) return -REIST_ESPIPE;
+    if (whence > PROCESS_SEEK_END) return -REIST_EINVAL;
+
+    int64_t base = 0;
+    if (whence == PROCESS_SEEK_CUR) {
+        base = (int64_t)file->offset;
+    } else if (whence == PROCESS_SEEK_END) {
+        vfs_dir_entry_t entry;
+        int result = vfs_fstat(file->node, &entry);
+        if (result != VFS_OK) return process_vfs_errno(result);
+        base = (int64_t)entry.size;
+    }
+    int64_t candidate = base + (int64_t)offset;
+    if (candidate < 0) return -REIST_EINVAL;
+    if (candidate > INT32_MAX) return -REIST_EOVERFLOW;
+    file->offset = (uint32_t)candidate;
+    return (int)candidate;
+}
+
+int process_file_fstat(Process *process, int descriptor,
+                       vfs_dir_entry_t *entry) {
+    if (process == NULL || entry == NULL || descriptor < 0 ||
+        descriptor >= MAX_PROCESS_DESCRIPTORS ||
+        !process->files[descriptor].in_use) return -REIST_EBADF;
+    process_file_t *file = &process->files[descriptor];
+    if (file->kind != PROCESS_DESCRIPTOR_FILE) return -REIST_ESPIPE;
+    int result = vfs_fstat(file->node, entry);
+    return result == VFS_OK ? 0 : process_vfs_errno(result);
+}
+
 int process_file_sync(Process *process, int descriptor) {
     int slot = descriptor;
     if (process == NULL || slot < PROCESS_FD_BASE ||

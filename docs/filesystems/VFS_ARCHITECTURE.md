@@ -123,6 +123,19 @@ EXT2, fremde/read-only FAT-Medien, kritische FAT12-Replikate und Werte ungleich
 null liefern vor Erfolg einen Fehler. Alte `open`-/`create`-Syscalls und die
 serviceeigenen read-only Objekt-Handles werden dadurch nicht verändert.
 
+Append-only Syscalls 121 und 122 stellen denselben Prozessdeskriptoren
+`lseek` und `fstat` bereit. `SEEK_SET=0`, `SEEK_CUR=1` und `SEEK_END=2`
+entsprechen der üblichen POSIX-Terminologie; gerechnet wird mit signierten
+64-Bit-Zwischenwerten und veröffentlicht wird nur ein nichtnegativer,
+darstellbarer 32-Bit-Offset. Positionen hinter EOF sind erlaubt. Ein Fehler
+belässt den alten Offset, gültige Terminal-/Socket-Deskriptoren liefern
+`ESPIPE`. `SEEK_END` und `fstat` verwenden die node-basierte
+`vfs_fstat()`-Operation ohne Pfadauflösung. FAT12 revalidiert den beim Öffnen
+gebundenen Directory-Slot, FAT32 aktualisiert seine gehaltene
+Directory-Identität und EXT2 liest den gehaltenen Inode erneut. Die Ausgabe
+behält das bestehende feste `x86os_file_info_t`-Layout; ungültige
+Userspacebereiche werden vor Dateisystemarbeit abgewiesen.
+
 ## Mountvertrag
 
 - Mountpfade und Tabellen sind fest begrenzt.

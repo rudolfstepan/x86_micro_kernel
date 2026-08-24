@@ -1961,6 +1961,24 @@ static int syscall_stat(const char *user_path, void *user_info) {
     return syscall_copy_file_info(user_info, &entry);
 }
 
+static int syscall_lseek(int descriptor, int32_t offset, uint32_t whence) {
+    return process_file_seek(scheduler_current_process(), descriptor, offset,
+                             whence);
+}
+
+static int syscall_fstat(int descriptor, void *user_info) {
+    if (!user_range_accessible(paging_current_directory(),
+                               (uint32_t)(uintptr_t)user_info,
+                               sizeof(syscall_file_info_t), true)) {
+        return -REIST_EFAULT;
+    }
+    vfs_dir_entry_t entry;
+    int result = process_file_fstat(scheduler_current_process(), descriptor,
+                                    &entry);
+    if (result != 0) return result;
+    return syscall_copy_file_info(user_info, &entry);
+}
+
 static int syscall_readdir(const char *user_path, uint32_t index,
                            void *user_info) {
     char path[PROCESS_PATH_MAX];
@@ -3196,6 +3214,8 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_cancel,      // Syscall 118: Revoke owned request
     (void*)&syscall_storage_claim_identity, // Syscall 119: Owner-aware claim
     (void*)&syscall_open_flags,          // Syscall 120: Rights-scoped open
+    (void*)&syscall_lseek,               // Syscall 121: File position
+    (void*)&syscall_fstat,               // Syscall 122: Open-file metadata
     // Add more syscalls here as needed
 };
 
@@ -3323,6 +3343,17 @@ void syscall_handler(Registers* regs) {
             scheduler_preempt_disable();
             result = (uint32_t)syscall_open_flags(
                 (const char*)(uintptr_t)arg1, arg2);
+            scheduler_preempt_enable();
+            break;
+        case SYS_LSEEK:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_lseek((int)arg1, (int32_t)arg2, arg3);
+            scheduler_preempt_enable();
+            break;
+        case SYS_FSTAT:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_fstat(
+                (int)arg1, (void*)(uintptr_t)arg2);
             scheduler_preempt_enable();
             break;
         case SYS_TOUCH:

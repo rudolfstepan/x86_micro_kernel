@@ -275,11 +275,17 @@ int main(void) {
     CHECK(fs.ops->read(node, 0, sizeof(verify), verify) ==
           (int)sizeof(verify));
     CHECK(memcmp(payload, verify, sizeof(payload)) == 0);
+    vfs_dir_entry_t open_info;
+    CHECK(fs.ops->fstat(node, &open_info) == VFS_OK);
+    CHECK(strcmp(open_info.name, "NEW.TXT") == 0 &&
+          open_info.type == VFS_FILE && open_info.size == sizeof(payload));
     uint16_t truncated_start = (uint16_t)node->inode;
     CHECK(truncated_start >= FAT12_MIN_CLUSTER);
     CHECK(fs.ops->truncate(node, 1U) == VFS_ERR_UNSUPPORTED);
     CHECK(fs.ops->truncate(node, 0U) == VFS_OK);
     CHECK(node->inode == 0U && node->size == 0U);
+    CHECK(fs.ops->fstat(node, &open_info) == VFS_OK &&
+          open_info.size == 0U && open_info.inode == 0U);
     CHECK(fat12_get_fat_entry(truncated_start) == FAT12_FREE_CLUSTER);
     CHECK(fs.ops->read(node, 0, sizeof(verify), verify) == 0);
     CHECK(fs.ops->close(node) == VFS_OK);
