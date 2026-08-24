@@ -107,6 +107,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("STORAGE_VFS_FAT_STAT_AUTHORITY_OK", guest)
         self.assertIn("STORAGE_VFS_FS_STAT_AUTHORITY_OK", guest)
         self.assertIn("STORAGE_VFS_READ_CLIENT_OK", guest)
+        self.assertIn("STORAGE_VFS_READ_SESSION_OK", guest)
         self.assertIn('"/bin/cat.prg", "/README.TXT"', guest)
         self.assertIn('"/bin/ls.prg", "/"', guest)
 

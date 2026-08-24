@@ -140,9 +140,14 @@ um pfadbasiertes `read-at` mit maximal 256 Byte und um genau einen indexierten
 Verzeichniseintrag. Beide Pfade verwenden nur die unabhängigen FAT12/FAT32-
 und EXT2-Parser sowie vermittelte Sektorreads. Eingaben und vollständige
 Antwortframes werden validiert; Fehler publizieren weder Teilbytes noch einen
-Teileintrag. `CAT.PRG` und `LS.PRG` sind die einzigen umgestellten Clients und
-besitzen dort keinen Kernel-VFS-Fallback. Persistente Handles und Mutationen
-bleiben getrennte Folgepakete.
+Teileintrag. Ein prozesslokaler Vier-Slot-Layer ergänzt generationcodierte,
+kanonisch pfadgebundene Read-only-Sessions mit Offset, Seek, Fstat und Close.
+Er veröffentlicht Offsetänderungen erst nach Erfolg und legt einen Slot bei
+Generationserschöpfung still. Das ist ausdrücklich keine stabile Inode-
+Identität, POSIX-Binärkompatibilität oder Deskriptorvererbung. `CAT.PRG`,
+`LS.PRG` und der vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen
+Kernel-VFS-Fallback. Stabile Objekt-Handles und Mutationen bleiben getrennte
+Folgepakete.
 Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
 `STAT.PRG` inzwischen an Operation 5. Ein fester Adapter normalisiert Pfade, wartet
 mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt
@@ -160,14 +165,11 @@ paketierte `STAT.PRG` auf `/mnt/fdd0/HOTPLUG.TXT` aus. Mountpublikation, EXT2,
 Handles und Mutationen verbleiben bis zu getrennten Nachweispaketen im Kernel.
 Neue Mutationsautorität entsteht nicht.
 
-Als erster lang laufender Verbraucher nutzt der bounded `HTTPD.PRG`-
-Vordergrundserver Operation 5 für `/htdocs`. Zwölf echte
-HTTP/TCP-Transaktionen im QEMU-Gast belegen wiederholte FAT32-Directory-
-Entscheidungen, fortbestehenden Serverbetrieb bis `Ctrl+C` und die Rückkehr zur
-Userspace-Shell. Der einmalige Marker `HTTPD_VFS_STAT_CLIENT_OK` folgt erst auf
-eine erfolgreiche Ring-3-Antwort. Dateiinhalt und Verzeichnisiteration laufen
-noch über `open`/`read`/`readdir` des Kernel-VFS; daraus folgt kein allgemeiner
-EXT2- oder VFS-Cutover.
+Als erster vollständig umgestellter lang laufender Verbraucher nutzt der
+begrenzte `HTTPD.PRG`-Vordergrundserver Operation 5 für Metadaten, Operation 6
+über Sessions für Inhalte und Operation 7 für Listings. Zwölf echte QEMU-
+HTTP/TCP-Transaktionen wechseln zwischen Datei und Verzeichnis, prüfen beide
+Ring-3-Erfolgsmarker, den Betrieb bis `Ctrl+C` und die Shell-Rückkehr.
 
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter
@@ -1316,7 +1318,7 @@ Rescue-Allowlist-Abbild in RAM: `/bin/shell.prg`, `/sbin/devctl.prg`,
 `/sbin/mount.prg`, `/sbin/umount.prg`, `/sbin/svcctl.prg`,
 `/libexec/reist/storage.prg`, `/libexec/reist/reist.prg`, `/sbin/drives.prg`,
 `/bin/ls.prg`, `/bin/cat.prg` und `/sbin/chkdsk.prg`. Jedes Image ist auf
-96 KiB, der gesamte statische Pool auf 224 KiB begrenzt. Die größere
+112 KiB, der gesamte statische Pool auf 272 KiB begrenzt. Die größere
 Einzelgrenze nimmt den gewachsenen, weiterhin isolierten Storage-Dienst auf;
 die seitenbündige Gesamtgrenze nimmt die vollständige Allowlist auf und bleibt
 fest. Die Programme werden vor der Aufnahme als

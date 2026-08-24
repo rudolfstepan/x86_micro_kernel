@@ -7,7 +7,7 @@
  * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
  */
 #include "x86os.h"
-#include "reist/vfs_read_client.h"
+#include "reist/vfs_file_client.h"
 
 #define PATH_CAPACITY 256
 
@@ -45,22 +45,26 @@ int main(int argc, char **argv) {
         requested_path = path;
     }
 
-    uint32_t offset = 0U;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    if (reist_vfs_file_open(requested_path,
+                            REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+                            &handle) != 0) {
+        x86os_puts("cat: cannot open file\n");
+        return 1;
+    }
     for (;;) {
-        int count = reist_vfs_read_at(requested_path, offset, buffer,
-                                      sizeof(buffer),
-                                      REIST_VFS_READ_DEFAULT_TIMEOUT_MS);
+        int count = reist_vfs_file_read(handle, buffer, sizeof(buffer));
         if (count < 0) {
             x86os_puts("cat: read error\n");
+            (void)reist_vfs_file_close(handle);
             return 1;
         }
         if (count == 0) break;
         for (int i = 0; i < count; ++i) x86os_putchar(buffer[i]);
-        if (UINT32_MAX - offset < (uint32_t)count) {
-            x86os_puts("cat: file is too large\n");
-            return 1;
-        }
-        offset += (uint32_t)count;
+    }
+    if (reist_vfs_file_close(handle) != 0) {
+        x86os_puts("cat: close error\n");
+        return 1;
     }
     return 0;
 }

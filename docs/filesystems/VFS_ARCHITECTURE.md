@@ -46,7 +46,13 @@ regulären Datei; Operation 7 liefert genau einen Eintrag anhand eines
 32-Bit-Index und blendet `.` sowie `..` aus. Beide verwenden ausschließlich
 die FAT12/FAT32- und EXT2-Parser, veröffentlichen bei Fehlern keine Teilwerte
 und rufen weder `SYS_OPEN`, `SYS_READ`, `SYS_READDIR` noch `SYS_STAT` auf.
-Persistente Handles, Mutationen, Controllerzugriff und DMA bleiben verboten.
+Ein darüberliegender prozesslokaler Vier-Slot-Sessionlayer hält kanonischen
+Pfad, Offset, Deadline und Slotgeneration. Er bietet read-only `open`, `read`,
+`SEEK_SET`/`SEEK_CUR`/`SEEK_END`, `fstat` und `close`; stale Handles werden
+abgewiesen und bei Generationserschöpfung wird der Slot stillgelegt. Weil jede
+Operation den Pfad erneut auflöst, ist dies keine stabile Inode-Identität und
+keine POSIX-Binärkompatibilität. Mutationen, Vererbung, Controllerzugriff und
+DMA bleiben verboten.
 
 Damit besitzt Ring 3 echte FAT12-/FAT32-Parsersemantik. Als erster
 kontrollierter Cutover verwendet das kurzlebige `STAT.PRG` inzwischen
@@ -62,15 +68,15 @@ eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
 sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
 Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
 ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
-EXT2-`stat`, pfadbasiertes Lesen in `CAT.PRG` und Verzeichnisiteration in
-`LS.PRG` sind damit migriert; persistente Handles sind noch nicht migriert.
+EXT2-`stat`, Lesen in `CAT.PRG`, Verzeichnisiteration in `LS.PRG` und die
+pfadgebundenen Read-only-Sessions sind damit migriert; stabile Objekt-Handles
+und Vererbung sind noch nicht migriert.
 
-`HTTPD.PRG` ist der erste lang laufende Client dieser ABI. Der sequenzielle,
-fest begrenzte Vordergrundserver verwendet Operation 5 für jede
-`/htdocs`-Metadatenentscheidung, besitzt keinen Legacy-`stat`-Fallback und
-widerruft offene Requests über Syscall 118. `open`, `read` und `readdir` bleiben
-in diesem Paket am Kernel-VFS. Der HTTP-Cutover gilt nur für den nachgewiesenen
-FAT32-Rootpfad; Shell und Desktop bleiben unverändert. Der FAT12-Nachweis
+`HTTPD.PRG` ist der erste vollständig umgestellte lang laufende Client dieser
+read-only ABI. Metadaten, Datei-Sessions und Verzeichnisiteration verwenden
+ausschließlich Operationen 5 bis 7. Zwölf QEMU-HTTP-Transaktionen wechseln
+zwischen Dateiinhalt und Listing; der Server bleibt bis `Ctrl+C` aktiv und
+kehrt danach zur Shell zurück. Shell und Desktop bleiben unverändert. Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits
 erkannte CHS-Geometrie als 2880 LBA-Sektoren; der vermittelte Blockread prüft
@@ -133,8 +139,10 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
    die reale QEMU-Abnahme läuft auf einer zweiten IDE-Platte.
 9. [x] Append-only Operationen 6/7 für begrenztes `read-at` und indexiertes
    `readdir-at`; kontrollierter `CAT.PRG`-/`LS.PRG`-Cutover.
-10. Danach persistente Handles, Seek-Zustand und Vererbung migrieren.
-11. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+10. [x] Vier feste generationcodierte, kanonisch pfadgebundene Read-only-
+    Sessions mit Seek/Fstat/Close und vollständigem `HTTPD.PRG`-Cutover.
+11. Danach stabile Objekt-Handles und Deskriptorvererbung migrieren.
+12. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
 
 ### Begrenzter EXT2-Subset in Ring 3

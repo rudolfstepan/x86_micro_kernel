@@ -9,6 +9,8 @@
  * paths are rejected before VFS access.
  */
 #include "x86os.h"
+#include "../storage/include/reist/vfs_file_client.h"
+#include "../storage/include/reist/vfs_read_client.h"
 #include "../storage/include/reist/vfs_stat_client.h"
 
 #define HTTP_REQUEST_CAPACITY 1024U
@@ -36,6 +38,7 @@ static const char response_bad_request[] =
     "Connection: close\r\n\r\nbad request\n";
 
 static int metadata_client_reported;
+static int read_session_reported;
 
 typedef struct {
     char uri[HTTP_PATH_CAPACITY];
@@ -173,22 +176,21 @@ static int serve_directory(x86os_tcp_socket_t socket, const char *path,
         append_text(body, &used, "\n\n") != 0) return -90;
     uint32_t index = 0U, emitted = 0U; int truncated = 0;
     while (emitted < HTTP_DIRECTORY_MAX_ENTRIES) {
-        x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
-        int count = x86os_readdir_batch(path, index, entries);
-        if (count < 0) return count;
-        if (count == 0) break;
-        for (int item = 0; item < count; ++item) {
-            if (emitted >= HTTP_DIRECTORY_MAX_ENTRIES ||
-                append_text(body, &used, entries[item].name) != 0 ||
-                (entries[item].type == X86OS_DIRECTORY &&
-                 append_char(body, &used, '/') != 0) ||
-                append_char(body, &used, '\n') != 0) {
-                truncated = 1; break;
-            }
-            ++emitted;
+        x86os_file_info_t entry;
+        int present = reist_vfs_readdir_at(
+            path, index, &entry, REIST_VFS_READ_DEFAULT_TIMEOUT_MS);
+        if (present < 0) return present;
+        if (present == 0) break;
+        if (append_text(body, &used, entry.name) != 0 ||
+            (entry.type == X86OS_DIRECTORY &&
+             append_char(body, &used, '/') != 0) ||
+            append_char(body, &used, '\n') != 0) {
+            truncated = 1;
+            break;
         }
-        if (truncated) break;
-        index += (uint32_t)count;
+        ++emitted;
+        if (index == UINT32_MAX) return -75;
+        ++index;
     }
     if (truncated && used + 16U < sizeof(body))
         (void)append_text(body, &used, "[truncated]\n");
@@ -203,18 +205,25 @@ static int serve_file(x86os_tcp_socket_t socket, const char *path,
         socket, response_too_large);
     int result = send_text(socket, header_ok);
     if (result != 0 || head) return result;
-    int descriptor = x86os_open(path);
-    if (descriptor < 0) return descriptor;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int opened = reist_vfs_file_open(
+        path, REIST_VFS_FILE_DEFAULT_TIMEOUT_MS, &handle);
+    if (opened != 0) return opened;
     uint8_t buffer[X86OS_TCP_MAX_SEGMENT]; uint32_t total = 0U;
     while (result == 0 && total < info->size) {
         uint32_t amount = info->size - total;
-        if (amount > sizeof(buffer)) amount = sizeof(buffer);
-        int received = x86os_read(descriptor, buffer, amount);
+        if (amount > X86OS_VFS_SHADOW_READ_CAPACITY)
+            amount = X86OS_VFS_SHADOW_READ_CAPACITY;
+        int received = reist_vfs_file_read(handle, buffer, amount);
         if (received <= 0) { result = received == 0 ? -5 : received; break; }
         result = send_bytes(socket, buffer, (uint32_t)received);
         total += (uint32_t)received;
     }
-    if (x86os_close(descriptor) < 0 && result == 0) result = -5;
+    if (reist_vfs_file_close(handle) != 0 && result == 0) result = -5;
+    if (result == 0 && !read_session_reported) {
+        read_session_reported = 1;
+        x86os_puts("HTTPD_VFS_READ_SESSION_OK\n");
+    }
     return result;
 }
 

@@ -28,7 +28,10 @@ PROGRAMS = {
     "ASCII.PRG": ROOT / "userspace/programs/ascii.c",
     "CAT.PRG": (
         ROOT / "userspace/programs/cat.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
         ROOT / "userspace/storage/lib/vfs_read_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "CHKDSK.PRG": ROOT / "userspace/programs/chkdsk.c",
     "FDISK.PRG": ROOT / "userspace/programs/fdisk.c",
@@ -37,6 +40,7 @@ PROGRAMS = {
         ROOT / "userspace/programs/ls.c",
         ROOT / "userspace/storage/lib/vfs_stat_client.c",
         ROOT / "userspace/storage/lib/vfs_read_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "SAVE.PRG": ROOT / "userspace/programs/save.c",
     "BASIC.PRG": ROOT / "userspace/bin/basic.c",
@@ -70,6 +74,7 @@ PROGRAMS = {
     "STAT.PRG": (
         ROOT / "userspace/programs/stat.c",
         ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "DF.PRG": ROOT / "userspace/programs/df.c",
     "TOUCH.PRG": ROOT / "userspace/programs/touch.c",
@@ -91,7 +96,10 @@ PROGRAMS = {
     "NC.PRG": ROOT / "userspace/programs/nc.c",
     "HTTPD.PRG": (
         ROOT / "userspace/programs/httpd.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_read_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "EDIT.PRG": ROOT / "userspace/bin/edit.c",
     "CHILDEX.PRG": ROOT / "userspace/programs/child_exit.c",
@@ -195,7 +203,7 @@ def main() -> None:
                 dependency_files.extend(image_headers)
             build(
                 sources, output, zig, incremental=args.incremental,
-                include_dirs=[sdk.include_dir],
+                include_dirs=[sdk.include_dir, STORAGE_INCLUDE_ROOT],
                 libraries=link_libraries or None,
                 runtime_objects=[sdk.startup_object],
                 runtime_libraries=runtime_libraries,

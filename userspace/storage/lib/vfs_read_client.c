@@ -3,6 +3,7 @@
  * @brief Fixed-storage client for VFS read-at and readdir-at operations 6/7.
  */
 #include "../include/reist/vfs_read_client.h"
+#include "../include/reist/vfs_path.h"
 
 _Static_assert(sizeof(x86os_vfs_shadow_read_frame_t) ==
                    X86OS_STORAGE_BLOCK_SIZE,
@@ -27,93 +28,6 @@ static uint32_t read_length(const char *text, uint32_t capacity) {
     if (text == 0) return capacity;
     while (length < capacity && text[length] != '\0') ++length;
     return length;
-}
-
-static int read_append(char *output, uint32_t *length, const char *path) {
-    uint32_t cursor = 0U;
-    while (path[cursor] != '\0') {
-        while (path[cursor] == '/' || path[cursor] == '\\') ++cursor;
-        if (path[cursor] == '\0') break;
-        uint32_t start = cursor;
-        while (path[cursor] != '\0' && path[cursor] != '/' &&
-               path[cursor] != '\\') ++cursor;
-        uint32_t amount = cursor - start;
-        if (amount == 1U && path[start] == '.') continue;
-        if (amount == 2U && path[start] == '.' && path[start + 1U] == '.') {
-            while (*length > 1U && output[*length - 1U] != '/') --*length;
-            if (*length > 1U) --*length;
-            output[*length] = '\0';
-            continue;
-        }
-        if (amount == 0U || amount >= X86OS_VFS_SHADOW_PATH_CAPACITY)
-            return -22;
-        if (*length > 1U) {
-            if (*length + 1U >= X86OS_VFS_SHADOW_PATH_CAPACITY) return -36;
-            output[(*length)++] = '/';
-        }
-        if (amount >= X86OS_VFS_SHADOW_PATH_CAPACITY - *length) return -36;
-        read_copy(output + *length, path + start, amount);
-        *length += amount;
-        output[*length] = '\0';
-    }
-    return 0;
-}
-
-static int read_drive_mount(char drive_letter, char output[192],
-                            uint32_t *length) {
-    if (drive_letter >= 'a' && drive_letter <= 'z')
-        drive_letter = (char)(drive_letter - ('a' - 'A'));
-    for (uint32_t resource = 0U; resource < 22U; ++resource) {
-        x86os_drive_info_t drive;
-        read_zero(&drive, sizeof(drive));
-        int status = x86os_drive_info(resource, &drive);
-        if (status == 0) break;
-        if (status < 0) return -5;
-        uint32_t mount_length = read_length(drive.mount_point,
-                                            sizeof(drive.mount_point));
-        uint32_t name_length = read_length(drive.name, sizeof(drive.name));
-        if (mount_length == 0U || mount_length >= sizeof(drive.mount_point) ||
-            mount_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
-            drive.mount_point[0U] != '/') continue;
-        char mapped = '\0';
-        if (mount_length == 1U && drive_letter == 'C') mapped = 'C';
-        if (name_length == 4U && drive.name[3U] >= '0' &&
-            drive.name[3U] <= '9') {
-            if (drive.type == X86OS_DRIVE_FDD)
-                mapped = (char)('A' + drive.name[3U] - '0');
-            if (drive.type == X86OS_DRIVE_ATA || drive.type == X86OS_DRIVE_AHCI)
-                mapped = (char)('C' + drive.name[3U] - '0');
-        }
-        if (mapped != drive_letter) continue;
-        read_zero(output, X86OS_VFS_SHADOW_PATH_CAPACITY);
-        read_copy(output, drive.mount_point, mount_length);
-        *length = mount_length;
-        return 0;
-    }
-    return -2;
-}
-
-static int read_resolve_path(const char *path, char output[192],
-                             uint32_t *length) {
-    if (path == 0 || output == 0 || length == 0 || path[0U] == '\0') return -22;
-    if (read_length(path, X86OS_VFS_SHADOW_PATH_CAPACITY) >=
-        X86OS_VFS_SHADOW_PATH_CAPACITY) return -36;
-    read_zero(output, X86OS_VFS_SHADOW_PATH_CAPACITY);
-    output[0U] = '/'; output[1U] = '\0'; *length = 1U;
-    const char *components = path;
-    if (path[1U] == ':') {
-        int status = read_drive_mount(path[0U], output, length);
-        if (status != 0) return status;
-        components = path + 2U;
-    } else if (path[0U] != '/' && path[0U] != '\\') {
-        char current[X86OS_VFS_SHADOW_PATH_CAPACITY];
-        read_zero(current, sizeof(current));
-        if (x86os_getcwd(current, sizeof(current)) != 0 || current[0U] != '/' ||
-            read_length(current, sizeof(current)) >= sizeof(current)) return -36;
-        int status = read_append(output, length, current);
-        if (status != 0) return status;
-    }
-    return read_append(output, length, components);
 }
 
 static int read_request(void *frame, uint32_t timeout_ms) {
@@ -161,7 +75,7 @@ int reist_vfs_read_at(const char *path, uint32_t offset, void *data,
     x86os_vfs_shadow_read_frame_t frame;
     read_zero(&frame, sizeof(frame));
     char resolved[192]; uint32_t length = 0U;
-    int status = read_resolve_path(path, resolved, &length);
+    int status = reist_vfs_resolve_path(path, resolved, &length);
     if (status != 0) return status;
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
     frame.struct_size = sizeof(frame);
@@ -197,7 +111,7 @@ int reist_vfs_readdir_at(const char *path, uint32_t index,
     x86os_vfs_shadow_readdir_frame_t frame;
     read_zero(&frame, sizeof(frame));
     char resolved[192]; uint32_t length = 0U;
-    int status = read_resolve_path(path, resolved, &length);
+    int status = reist_vfs_resolve_path(path, resolved, &length);
     if (status != 0) return status;
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
     frame.struct_size = sizeof(frame);

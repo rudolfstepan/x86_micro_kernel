@@ -474,6 +474,9 @@ und 10 verbindlich.
   - [x] append-only Operationen 6/7 für begrenztes `read-at`
     und indexiertes `readdir-at`; `CAT.PRG` und `LS.PRG` werden ohne
     Kernel-VFS-Fallback umgestellt
+  - [ ] **in Arbeit:** vier feste, generationsgeschützte und kanonisch
+    pfadgebundene Read-only-Sessions mit `read`, `seek`, `fstat`, `close` sowie
+    vollständiger HTTPD-Umstellung; stabile Inode-Handles und Vererbung folgen
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1554,8 +1557,13 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   einen indexierten Verzeichniseintrag. FAT12/FAT32 und EXT2 werden dabei
   ausschließlich über die unabhängigen Ring-3-Parser gelesen. `CAT.PRG` und
   `LS.PRG` nutzen diesen Pfad ohne `SYS_OPEN`, `SYS_READ`, `SYS_READDIR` oder
-  Legacy-Fallback. Persistente Handles, Shell und Desktop bleiben in
-  getrennten Folgepaketen.
+  Legacy-Fallback. Darauf liegt ein pro Prozess fester Vier-Slot-Sessionlayer:
+  kanonischer Pfad, 32-Bit-Offset, generationcodiertes Handle sowie
+  `SEEK_SET`/`SEEK_CUR`/`SEEK_END`, `fstat` und `close`. `HTTPD.PRG` verwendet
+  damit auch für Dateiinhalt und Operation 7 für Listings keinen Kernel-VFS-
+  Fallback mehr. Die Session ist bewusst pfadgebunden und revalidiert; stabile
+  Inode-Identität, Deskriptorvererbung, Shell und Desktop bleiben getrennte
+  Folgepakete.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 - Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.

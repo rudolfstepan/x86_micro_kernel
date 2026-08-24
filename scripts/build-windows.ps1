@@ -252,19 +252,22 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Floppy stage 1 assembly failed.' }
 
     New-Item -ItemType Directory -Force -Path $UserProgramDir | Out-Null
-    & $Python 'scripts/build_system_programs.py' `
-        --output-dir $UserProgramDir `
-        --zig $Zig `
-        --incremental
-    if ($LASTEXITCODE -ne 0) {
-        throw "System program build failed with exit code $LASTEXITCODE."
+    $systemProgramExitCode = Invoke-PythonProcess -Arguments @(
+        'scripts/build_system_programs.py',
+        '--output-dir', $UserProgramDir,
+        '--zig', $Zig,
+        '--incremental'
+    )
+    if ($systemProgramExitCode -ne 0) {
+        throw "System program build failed with exit code $systemProgramExitCode."
     }
     $programBuildArguments = @(
         'scripts/build_user_program.py'
     ) + $ProgramSource + @('--output', $UserPrg, '--zig', $Zig, '--incremental')
-    & $Python @programBuildArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Example user program build failed with exit code $LASTEXITCODE."
+    $exampleProgramExitCode = Invoke-PythonProcess `
+        -Arguments $programBuildArguments
+    if ($exampleProgramExitCode -ne 0) {
+        throw "Example user program build failed with exit code $exampleProgramExitCode."
     }
 
     $systemLayout = [ordered]@{

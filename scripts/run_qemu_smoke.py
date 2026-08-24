@@ -133,6 +133,7 @@ HTTP_TEST_TARGET = bytes((10, 0, 2, 100))
 HTTP_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x05))
 HTTP_TEST_READY_MARKER = "httpd: listening"
 HTTP_VFS_STAT_MARKER = "HTTPD_VFS_STAT_CLIENT_OK"
+HTTP_VFS_READ_SESSION_MARKER = "HTTPD_VFS_READ_SESSION_OK"
 GUEST_IP = bytes((10, 0, 2, 15))
 GUEST_MAC = bytes((0x52, 0x54, 0x00, 0x12, 0x34, 0x56))
 QEMU_MUX_SWITCH = "\x01c"
@@ -803,7 +804,9 @@ def serve_http_test_client(connection: socket.socket, deadline: float,
         return "valid HTTP server SYN/ACK was not observed"
     server_next = syn_ack[2] + 1
     client_next = client_sequence + 1
-    request = b"GET / HTTP/1.0\r\nHost: test.reist\r\n\r\n"
+    directory_request = (request_index & 1) == 0
+    target = b"/" if directory_request else b"/about.txt"
+    request = b"GET " + target + b" HTTP/1.0\r\nHost: test.reist\r\n\r\n"
     # A valid third handshake ACK may carry application data. One frame makes
     # the socket-hub proof deterministic and also covers that TCP server path.
     if not inject_ethernet_frame(
@@ -838,9 +841,13 @@ def serve_http_test_client(connection: socket.socket, deadline: float,
             fin = segment
             break
     expected = b"HTTP/1.0 200 OK\r\n"
-    if (not response.startswith(expected) or b"Index of /\n" not in response or
+    if not response.startswith(expected):
+        return "bounded HTTP success response was not observed"
+    if directory_request and (b"Index of /\n" not in response or
             b"about.txt\n" not in response or b"status.jsn\n" not in response):
         return "bounded /htdocs directory listing was not observed"
+    if not directory_request and b"REIST OS demo HTTP server\n" not in response:
+        return "bounded /htdocs file content was not observed"
     if fin is None:
         return "HTTP server FIN was not observed"
     server_next += 1
@@ -1465,9 +1472,14 @@ def run(
                         if error is not None:
                             break
                 if error is None:
-                    error, _ = wait_for_line(
+                    error, stat_marker = wait_for_line(
                         process, chunks, transcript, finished,
                         HTTP_VFS_STAT_MARKER, deadline, after=http_ready)
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        HTTP_VFS_READ_SESSION_MARKER, deadline,
+                        after=stat_marker)
                 if error is None:
                     # The default service has no request-count lifetime. It
                     # must still own the foreground after the stress sequence.

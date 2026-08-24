@@ -27,6 +27,22 @@ class BuildDependencyTests(unittest.TestCase):
         self.assertNotIn("$requiresClean = $Clean -or", script)
         self.assertIn("--incremental", script)
 
+    def test_windows_userspace_builds_capture_process_exit_codes(self) -> None:
+        script = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        self.assertIn(
+            "$systemProgramExitCode = Invoke-PythonProcess -Arguments @(",
+            script)
+        self.assertIn("if ($systemProgramExitCode -ne 0)", script)
+        self.assertIn(
+            "$exampleProgramExitCode = Invoke-PythonProcess", script)
+        self.assertIn("if ($exampleProgramExitCode -ne 0)", script)
+        system_build = script[
+            script.index("$systemProgramExitCode ="):
+            script.index("$systemLayout =")
+        ]
+        self.assertNotIn("& $Python", system_build)
+
     def test_userspace_incremental_dependencies_include_sdk_and_linker(self) -> None:
         builder = (ROOT / "scripts/build_user_program.py").read_text(
             encoding="utf-8")

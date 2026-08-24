@@ -224,8 +224,8 @@ Online-Verteilung, TUF-/Uptane-Metadaten, unveränderliches Recovery,
 Release-Key-Verwahrung und Anti-Rollback bleiben ausdrücklich offen.
 
 `S0.3c-admin1` stellt sichere Storage-Operationen (`device down/up`, `mount`,
-`umount`) und einen festen, integritätsgeprüften 224-KiB-RAM-Rescue-Pool mit
-96 KiB Einzelgrenze aus
+`umount`) und einen festen, integritätsgeprüften 272-KiB-RAM-Rescue-Pool mit
+112 KiB Einzelgrenze aus
 Shell, Anzeige-, Diagnose-, Dienst- und Adminprogrammen bereit. `S0.3c-admin2`
 ergänzt eine statische, abhängigkeitsbewusste Lifecycle-Steuerung für
 ausdrücklich unterstützte Treiber und überwachte Dienste. Der reale QEMU-Lauf
@@ -299,16 +299,22 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   und `LS.PRG` besitzen in diesem Pfad keinen Kernel-VFS-Fallback. Der normale
   Gast prüft den FAT-Pfad, der zweite QEMU-IDE-Datenträger `stat`, `cat`, `ls`
   und die jeweilige Rückkehr zur Userspace-Shell.
-- `HTTPD.PRG` ist der erste lang laufende Nutzer des Ring-3-FAT-`stat`-
-  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 5 und
-  besitzt keinen Legacy-Fallback; `open`, `read` und `readdir` bleiben vorerst
-  am Kernel-VFS. Der QEMU-Modus `http-server` führt zwölf echte eingehende
-  HTTP/TCP-Verzeichnisanfragen aus, verlangt `HTTPD_VFS_STAT_CLIENT_OK`, prüft
-  den fortbestehenden Vordergrundserver bis `Ctrl+C` und anschließend die
-  Rückkehr zur Userspace-Shell.
-- Der feste Rescue-Programmpool umfasst nun 240 KiB für weiterhin genau elf
-  geschützte Programme; die Einzelgrenze bleibt 96 KiB. Das schafft begrenzten
+- Ein fester prozesslokaler Read-only-Sessionlayer verwaltet vier
+  generationcodierte Slots mit beim Öffnen kanonisiertem Pfad, 32-Bit-Offset,
+  `read`, `SEEK_SET`/`SEEK_CUR`/`SEEK_END`, `fstat` und `close`. Fehler ändern
+  den Offset nicht; stale Handles bleiben ungültig und Generationen laufen
+  nicht über. Das ist bewusst keine stabile Inode- oder POSIX-Deskriptor-
+  Identität und besitzt keine Vererbung.
+- `HTTPD.PRG` nutzt für `/htdocs` ausschließlich Operation 5, die Sessions
+  über Operation 6 und Listings über Operation 7. Der QEMU-Modus `http-server`
+  führt zwölf abwechselnde echte Datei- und Verzeichnisanfragen aus, verlangt
+  die Ring-3-Marker und gewinnt nach `Ctrl+C` die Userspace-Shell zurück.
+- Der feste Rescue-Programmpool umfasst nun 272 KiB für weiterhin genau elf
+  geschützte Programme; die Einzelgrenze beträgt 112 KiB. Das schafft begrenzten
   Raum für den isolierten Parser, ohne dynamische Cacheallokation einzuführen.
+- Der Windows-Build wertet die Exitcodes der System- und Beispielprogramm-
+  Builder über explizite Child-Prozesse aus. Ein fehlgeschlagener PRG-Build kann
+  daher kein scheinbar erfolgreiches Image aus veralteten Artefakten erzeugen.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

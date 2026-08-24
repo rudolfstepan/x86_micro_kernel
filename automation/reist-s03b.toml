@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-vfs-read-session-handles"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,11 +12,11 @@ push = false
 
 [[packages]]
 id = "R2.1-vfs-read-session-handles"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
-title = "Generation-safe Ring-3 read sessions and complete HTTP read cutover"
-scope = "Add a fixed-capacity process-local read-only session layer over authoritative VFS shadow operations 5 through 7. Centralize canonical relative absolute and DOS path resolution so a session retains the path resolved at open even if the process working directory later changes. Provide four generation-encoded slots with open read seek fstat and close semantics, publish offsets only after successful reads, reject stale handles and overflow, and retire a slot rather than wrap its generation. This layer is explicitly path-backed and revalidates metadata; it does not claim stable inode identity POSIX binary compatibility descriptor inheritance or cross-process delegation. Cut over CAT.PRG and every HTTPD.PRG metadata content and directory operation to the Ring-3 clients with no SYS_OPEN SYS_READ SYS_READDIR SYS_STAT or legacy fallback. Prove capacity exhaustion stale-handle rejection SEEK_SET SEEK_CUR SEEK_END bounds failed-read offset stability path retention and full HTTP directory/file behavior on the host and in QEMU. Preserve operations 1 through 7 public x86os descriptor APIs all mutation users shell desktop and kernel VFS unchanged."
+title = "Generation-safe Ring-3 read sessions and boot-safe HTTP read cutover"
+scope = "Add a fixed-capacity process-local read-only session layer over authoritative VFS shadow operations 5 through 7. Centralize canonical relative absolute and DOS path resolution so a session retains the path resolved at open even if the process working directory later changes. Provide four generation-encoded slots with open read seek fstat and close semantics, publish offsets only after successful reads, reject stale handles and overflow, and retire a slot rather than wrap its generation. This layer is explicitly path-backed and revalidates metadata; it does not claim stable inode identity POSIX binary compatibility descriptor inheritance or cross-process delegation. Cut over CAT.PRG and every HTTPD.PRG metadata content and directory operation to the Ring-3 clients with no SYS_OPEN SYS_READ SYS_READDIR SYS_STAT or legacy fallback. Keep the eleven-image rescue allowlist bootable after the authoritative parser growth by raising only its fixed per-image and aggregate static bounds, and make Windows Python build steps consume an explicit child-process exit code so a failed system-program build cannot reuse stale PRGs. Prove capacity exhaustion stale-handle rejection SEEK_SET SEEK_CUR SEEK_END bounds failed-read offset stability path retention full HTTP directory/file behavior fixed rescue admission and fail-closed build execution on the host and in QEMU. Preserve operations 1 through 7 public x86os descriptor APIs all mutation users shell desktop and kernel VFS unchanged."
 allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/storage/include/reist/vfs_path.h",
@@ -30,8 +30,12 @@ allowed_files = [
   "userspace/programs/cat.c",
   "userspace/programs/httpd.c",
   "userspace/programs/guest_test.c",
+  "kernel/proc/process.c",
+  "scripts/build-windows.ps1",
   "scripts/build_system_programs.py",
   "scripts/run_qemu_smoke.py",
+  "test/test_admin_maintenance.py",
+  "test/test_build_dependencies.py",
   "test/test_vfs_stat_client_host.c",
   "test/test_reist_vfs_stat_client.py",
   "test/test_vfs_read_client_host.c",
@@ -54,6 +58,8 @@ invariants = [
   "generation exhaustion retires a slot and stale malformed closed or foreign handles never regain authority",
   "HTTPD.PRG uses only Ring-3 stat read session and readdir clients for metadata file content and listings and retains all existing request byte entry and file size bounds",
   "CAT.PRG uses the session API and closes its handle on every success and error path",
+  "the rescue allowlist remains exactly eleven entries with one fixed 112 KiB image bound and one fixed 272 KiB aggregate pool without heap allocation",
+  "Windows system and example program builds use an explicitly captured native process exit code and stop before image publication on failure",
   "operations 1 through 7 x86os descriptor calls mutations shell desktop kernel VFS and service authority remain unchanged",
   "the adapter is documented as a path-backed REIST session and does not claim stable inode identity POSIX binary compatibility inheritance or delegation"
 ]
@@ -63,7 +69,9 @@ targeted_tests = [
   "python test/test_reist_vfs_file_client.py -v",
   "python test/test_reist_storage_service.py -v",
   "python test/test_network_tools.py -v",
-  "python test/test_qemu_ext2_stat.py -v"
+  "python test/test_qemu_ext2_stat.py -v",
+  "python test/test_admin_maintenance.py -v",
+  "python test/test_build_dependencies.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
@@ -81,7 +89,20 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: add generation-safe Ring-3 VFS read sessions"
-evidence = []
+evidence = [
+  "python test/test_reist_vfs_stat_client.py -v: PASS (4 tests)",
+  "python test/test_reist_vfs_read_client.py -v: PASS (3 tests)",
+  "python test/test_reist_vfs_file_client.py -v: PASS (3 tests)",
+  "python test/test_reist_storage_service.py -v: PASS (6 tests)",
+  "python test/test_network_tools.py -v: PASS (8 tests)",
+  "python test/test_qemu_ext2_stat.py -v: PASS (3 tests)",
+  "python test/test_admin_maintenance.py -v: PASS (8 tests)",
+  "python test/test_build_dependencies.py -v: PASS (6 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (6s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal: PASS (14s, eleven-image 272 KiB rescue cache, read-session marker and TEST_OK)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode ext2-stat: PASS (12s, packaged stat cat ls and shell return)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode http-server: PASS (22s, twelve alternating directory and file requests, stat and read-session markers, Ctrl+C and shell return)"
+]
 
 [[packages]]
 id = "R2.1-vfs-shadow-read-directory"

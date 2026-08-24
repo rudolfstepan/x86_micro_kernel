@@ -20,6 +20,7 @@ class ReistVfsReadClientTests(unittest.TestCase):
                 f"-I{ROOT}", f"-I{ROOT / 'userspace/sdk/include'}",
                 str(ROOT / "test/test_vfs_read_client_host.c"),
                 str(ROOT / "userspace/storage/lib/vfs_read_client.c"),
+                str(ROOT / "userspace/storage/lib/vfs_path.c"),
                 "-o", str(executable),
             ], check=True, cwd=ROOT)
             subprocess.run([str(executable)], check=True, cwd=ROOT)
@@ -38,7 +39,7 @@ class ReistVfsReadClientTests(unittest.TestCase):
         cat = read("userspace/programs/cat.c")
         ls = read("userspace/programs/ls.c")
         build = read("scripts/build_system_programs.py")
-        self.assertIn("reist_vfs_read_at(", cat)
+        self.assertIn("reist_vfs_file_read(", cat)
         for forbidden in ("x86os_open(", "x86os_read(", "x86os_close("):
             self.assertNotIn(forbidden, cat)
         self.assertIn("reist_vfs_stat(", ls)
@@ -47,7 +48,7 @@ class ReistVfsReadClientTests(unittest.TestCase):
         self.assertNotIn("x86os_readdir", ls)
         self.assertIn('"CAT.PRG": (', build)
         self.assertIn('"LS.PRG": (', build)
-        self.assertGreaterEqual(build.count("vfs_read_client.c"), 2)
+        self.assertGreaterEqual(build.count("vfs_read_client.c"), 3)
 
 
 if __name__ == "__main__":

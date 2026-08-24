@@ -20,6 +20,7 @@ class ReistVfsStatClientTests(unittest.TestCase):
                 f"-I{ROOT}", f"-I{ROOT / 'userspace/sdk/include'}",
                 str(ROOT / "test/test_vfs_stat_client_host.c"),
                 str(ROOT / "userspace/storage/lib/vfs_stat_client.c"),
+                str(ROOT / "userspace/storage/lib/vfs_path.c"),
                 "-o", str(executable),
             ], check=True, cwd=ROOT)
             subprocess.run([str(executable)], check=True, cwd=ROOT)
