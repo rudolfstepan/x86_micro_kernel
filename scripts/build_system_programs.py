@@ -88,7 +88,10 @@ PROGRAMS = {
     "FAULTSTK.PRG": ROOT / "userspace/programs/fault_stack.c",
     "GTEST.PRG": ROOT / "userspace/programs/guest_test.c",
     "REIST.PRG": ROOT / "userspace/programs/reist_probe.c",
-    "STORAGE.PRG": ROOT / "userspace/programs/storage_service.c",
+    "STORAGE.PRG": (
+        ROOT / "userspace/programs/storage_service.c",
+        ROOT / "userspace/storage/lib/vfs_shadow_fat32.c",
+    ),
     "HDA.PRG": ROOT / "userspace/drivers/audio/hda_driver.c",
     "SVGA2D.PRG": ROOT / "userspace/drivers/video/vmware_svga2d.c",
     "AUDIO.PRG": ROOT / "userspace/services/audio/audio_service.c",
@@ -112,6 +115,7 @@ AUDIO_PROGRAMS = {
 AUDIO_CLIENT_PROGRAMS = {
     "AUDIOINFO.PRG", "AUDIOTEST.PRG", "WAVPLAY.PRG", "SOUNDPLAYER.PRG",
 }
+STORAGE_INCLUDE_ROOT = ROOT / "userspace/storage/include"
 MAX_SYSTEM_BUILD_WORKERS = 8
 DEFAULT_SYSTEM_BUILD_WORKERS = min(
     MAX_SYSTEM_BUILD_WORKERS, max(1, os.cpu_count() or 1))
@@ -141,6 +145,7 @@ def main() -> None:
             output_dir.parent / "sdk", zig, incremental=args.incremental,
             cache_directory=global_cache_directory)
         core_headers = list(CORE_INCLUDE_ROOT.rglob("*.h"))
+        storage_headers = list(STORAGE_INCLUDE_ROOT.rglob("*.h"))
         gui_headers = list(GUI_INCLUDE_ROOT.rglob("*.h"))
         audio_headers = list(AUDIO_INCLUDE_ROOT.rglob("*.h"))
         image_headers = list(IMAGE_INCLUDE_ROOT.rglob("*.h"))
@@ -165,6 +170,8 @@ def main() -> None:
             dependency_files = [*core_headers]
             if name in {"CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
+            if name == "STORAGE.PRG":
+                dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)
             if name in AUDIO_PROGRAMS:

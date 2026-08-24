@@ -98,7 +98,7 @@ class AdminMaintenanceContracts(unittest.TestCase):
         admin = self.read("kernel/init/admin_maintenance.c")
         self.assertIn("RESCUE_PROGRAM_CACHE_CAPACITY", process)
         self.assertIn("RESCUE_PROGRAM_CACHE_CAPACITY (96U * 1024U)", process)
-        self.assertIn("RESCUE_PROGRAM_POOL_CAPACITY (224U * 1024U)", process)
+        self.assertIn("RESCUE_PROGRAM_POOL_CAPACITY (240U * 1024U)", process)
         self.assertIn("critical_object_read(&rescue_program_meta", process)
         self.assertIn("RESCUE_PROGRAM_POOL_CAPACITY", process)
         self.assertIn("rescue_crc32(rescue_program_pool + meta.offset", process)

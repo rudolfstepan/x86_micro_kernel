@@ -12,10 +12,10 @@ Ring-3-Programm / Shell
           |                                                               v
       Syscall-/FD-Schicht                                      Storage-Service
           |                                                     (Ring 3)
-          VFS                                                       |
-       /   |   \
-   FAT32 FAT12 EXT2
-          |
+          VFS                                              FAT32/VFAT-Parser
+       /   |   \                                                   |
+   FAT32 FAT12 EXT2                                      mediated Block Read
+          |                                                       |
   Blockgerät / Partition
        /    |    \
    ATA-PIO AHCI  FDD
@@ -25,10 +25,20 @@ Der Shadowzweig ist der erste Migrationsnachweis, noch nicht der Zielpfad. Ein
 normaler Ring-3-Testclient übergibt einen absoluten Pfad in einem exakt 512 Byte
 großen, versionierten Frame über den bestehenden Storage-Request-Pool. Dessen
 Primär-/Schattenkopie ist CRC-geschützt und an Client- sowie Dienstgeneration
-gebunden. Der Storage-Service besitzt dafür ausschließlich die read-only
-Legacy-Brücke `SYS_STAT`; `open`, Mutationen, Controllerzugriff und DMA bleiben
-verboten. QEMU vergleicht Typ, Größe und alle drei Zeitfelder. Der Parser und
-die autoritative VFS-Entscheidung liegen in diesem Paket weiterhin in Ring 0.
+gebunden. Operation 1 benutzt weiterhin ausschließlich die read-only
+Legacy-Brücke `SYS_STAT`. Die append-only Operation 2 löst dagegen Mountpräfix,
+FAT32-BPB, ASCII-8.3-/VFAT-Namen, Verzeichniscluster und Metadaten selbst im
+Storage-Service auf. Sie darf höchstens 22 Ressourcen, 32 Pfadkomponenten, 32
+Verzeichniscluster und 64 vermittelte Sektorreads untersuchen und verwendet
+keinen Heap. Ihr Ergebnis wird nur veröffentlicht, wenn Status und sämtliche
+öffentlichen Metadatenbytes exakt mit `SYS_STAT` übereinstimmen; eine Abweichung
+liefert den Integritätsfehler `-84`. `open`, Mutationen, Controllerzugriff und
+DMA bleiben verboten.
+
+Damit besitzt Ring 3 nun echte FAT32-Parsersemantik, aber noch keine
+autoritative VFS-Entscheidung. `SYS_STAT` bleibt Vergleichsorakel und der
+Kernelpfad bleibt bis zu einem getrennten Cutoverpaket maßgeblich. FAT12,
+EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
 
 ## Operationen
 
@@ -73,8 +83,8 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
 
 ## Migrationsreihenfolge
 
-1. `stat`-Shadowtransport und vollständige Metadatenäquivalenz.
-2. Ring-3-eigene read-only Pfad-/Mount- und FAT-Metadatenparser.
+1. [x] `stat`-Shadowtransport und vollständige Metadatenäquivalenz.
+2. [x] Ring-3-eigene read-only Mount- und FAT32-Metadatenparser.
 3. Umschalten read-only Operationen bei getesteter Äquivalenz; Legacy-Pfad nur
    als explizit begrenzter Degradationsmodus.
 4. Handles, Lesen und Verzeichnisiteration migrieren.

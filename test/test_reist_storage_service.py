@@ -48,7 +48,9 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("x86os_storage_block_read", service)
         self.assertIn("x86os_storage_complete", service)
         self.assertIn("X86OS_STORAGE_VFS_SHADOW_STAT", service)
+        self.assertIn("X86OS_VFS_SHADOW_FAT32_STAT", service)
         self.assertIn("vfs_shadow_stat", service)
+        self.assertIn("vfs_shadow_fat32.c", read("scripts/build_system_programs.py"))
         self.assertIn('"STORAGE.PRG"', read("scripts/build_system_programs.py"))
         self.assertEqual(read("Makefile").count(
             "libexec/reist/storage.prg="), 1)
@@ -73,6 +75,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("frame->path[0] != '/'", service)
         self.assertIn("frame->reserved[index] != 0U", service)
         self.assertIn("X86OS_SYS_STAT", service)
+        self.assertIn("reist_vfs_shadow_fat32_stat", service)
         self.assertNotIn("X86OS_SYS_OPEN", service)
 
 

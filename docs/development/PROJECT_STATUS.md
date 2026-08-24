@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 23. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
+Stand: 24. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
 aktive Paketqueue in `automation/reist-s03b.toml`.
 
 REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
@@ -248,8 +248,16 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   voll-duplexen Shadow-Frame zum Storage-Service. Der normale QEMU-Gast
   vergleicht Typ, Größe und Zeitfelder mit dem weiterhin autoritativen Kernel-
   VFS und publiziert `STORAGE_VFS_SHADOW_STAT_OK`. Der Dienst erhält dafür nur
-  `SYS_STAT`; Parserautorität und sämtliche Mutationen verbleiben vorerst im
-  Kernel und sind sichtbare Migrationsschuld.
+  `SYS_STAT`.
+- Der zweite Shadowmodus parst den längsten Mountpräfix, eine vollständig
+  geprüfte FAT32-BPB, ASCII-8.3-/VFAT-Namen und begrenzte Verzeichniscluster im
+  Ring-3-Storage-Service selbst. Maximal 64 vermittelte Sektorreads und feste
+  Stackpuffer begrenzen die Arbeit. Nur eine bytegenaue Übereinstimmung mit dem
+  Legacy-`SYS_STAT` wird publiziert; der QEMU-Gast markiert dies mit
+  `STORAGE_VFS_FAT32_PARSER_OK`. Der Kernel bleibt bis zum Cutover autoritativ.
+- Der feste Rescue-Programmpool umfasst nun 240 KiB für weiterhin genau elf
+  geschützte Programme; die Einzelgrenze bleibt 96 KiB. Das schafft begrenzten
+  Raum für den isolierten Parser, ohne dynamische Cacheallokation einzuführen.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

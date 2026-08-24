@@ -111,10 +111,14 @@ fehlende Hardwareeigenschaften explizite Grenzen, keine stillen Annahmen.
 Die Storage-Migration verwendet dieselbe schrittweise Entzugsstrategie wie der
 Netzwerkpfad. Der erste VFS-Shadowvertrag transportiert eine feste read-only
 `stat`-Anfrage generationsgebunden zum Ring-3-Storage-Service und vergleicht
-dessen Antwort im QEMU-Gast vollständig mit dem Legacy-Ergebnis. Diese Brücke
-ist ausdrücklich noch kein Ring-3-Dateisystem: Pfad-/Mountauflösung und FAT-
-Parserautorität verbleiben bis zu einem späteren Äquivalenz- und Cutoverpaket
-im Kernel. Neue Mutationsautorität entsteht dadurch nicht.
+dessen Antwort im QEMU-Gast vollständig mit dem Legacy-Ergebnis. Der zweite
+Shadow-Schritt besitzt eine unabhängige, heapfreie FAT32-/VFAT-Parsersemantik
+im Storage-Service. Sie liest über den Kernel nur maximal 64 validierte
+Sektoren, begrenzt Ressourcen, Pfadkomponenten und Clusterketten statisch und
+publiziert ausschließlich eine bytegenaue Übereinstimmung mit `SYS_STAT`.
+Diese Vergleichsbrücke ist weiterhin kein autoritatives Ring-3-Dateisystem:
+Mountpublikation, Cutover, FAT12/EXT2, Handles und Mutationen verbleiben bis zu
+getrennten Nachweispaketen im Kernel. Neue Mutationsautorität entsteht nicht.
 
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter

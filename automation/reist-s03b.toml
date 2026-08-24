@@ -11,6 +11,66 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.1-vfs-shadow-fat32-parser"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Bounded Ring-3 FAT32 stat parser with legacy equivalence"
+scope = "Add an internal fixed-work FAT32 metadata parser to the supervised Ring-3 storage service. The parser selects the longest mounted resource through the existing drive-info ABI, validates the FAT32 BPB, resolves bounded ASCII 8.3/VFAT path components through mediated sector reads, and produces stat metadata without invoking the kernel VFS parser. A new append-only shadow-frame operation compares the independent Ring-3 result against legacy SYS_STAT and publishes only an exact match. Keep the kernel VFS authoritative and retain the old legacy-only shadow operation; introduce no mutation, raw controller, DMA, heap, unbounded traversal or new syscall."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/proc/process.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_reist_storage_service.py",
+  "test/test_admin_maintenance.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "all FAT32 BPB geometry mount prefixes path components directory chains and FAT successors are validated before use",
+  "directory and FAT traversal consume a fixed sector-read budget and fixed stack storage with no heap allocation",
+  "only the supervised storage service can invoke mediated block reads and SYS_STAT remains comparison-only for the new operation",
+  "the new parser result is published only when status and every public metadata byte equal the legacy result",
+  "the legacy shadow operation remains ABI-compatible and the kernel VFS remains authoritative",
+  "ASCII VFAT long-name sequences require descending order checksum and exact short-entry binding",
+  "no filesystem mutation raw controller DMA new syscall or ambient authority is introduced",
+  "rescue cache growth if required remains fixed and is proven by the package boot gate"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_storage_service.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "the parser requires direct VFS filesystem callbacks raw controller or DMA authority",
+  "the fixed read budget cannot resolve the reference root and nested QEMU paths",
+  "Ring-3 and legacy metadata differ in QEMU",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add bounded Ring-3 FAT32 stat parser"
+evidence = [
+  "python test/test_reist_vfs_shadow_fat32.py -v: PASS (3 tests)",
+  "python test/test_reist_storage_service.py -v: PASS (6 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (29s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal: PASS (15s, STORAGE_VFS_FAT32_PARSER_OK and TEST_OK)"
+]
+
+[[packages]]
 id = "R2.1-vfs-shadow-stat-ring3"
 status = "done"
 phase = "post-s0"

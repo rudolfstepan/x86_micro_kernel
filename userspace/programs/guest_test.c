@@ -200,9 +200,11 @@ static int bytes_equal(const char *left, const char *right, size_t length) {
 }
 
 static int guest_vfs_shadow_stat(const char *path, x86os_file_info_t *info,
-                                 uint32_t timeout_ms) {
+                                 uint32_t timeout_ms, uint32_t operation) {
     if (path == NULL || info == NULL || timeout_ms == 0U ||
-        timeout_ms > 60000U) return -22;
+        timeout_ms > 60000U ||
+        (operation != X86OS_VFS_SHADOW_STAT &&
+         operation != X86OS_VFS_SHADOW_FAT32_STAT)) return -22;
     uint32_t length = 0U;
     while (length < X86OS_VFS_SHADOW_PATH_CAPACITY && path[length] != '\0')
         ++length;
@@ -215,7 +217,7 @@ static int guest_vfs_shadow_stat(const char *path, x86os_file_info_t *info,
         frame_bytes[index] = 0U;
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
     frame.struct_size = sizeof(frame);
-    frame.operation = X86OS_VFS_SHADOW_STAT;
+    frame.operation = operation;
     frame.path_length = length;
     for (uint32_t index = 0U; index <= length; ++index)
         frame.path[index] = path[index];
@@ -242,7 +244,7 @@ static int guest_vfs_shadow_stat(const char *path, x86os_file_info_t *info,
     if (service_result != 0) return service_result;
     if (frame.version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame.struct_size != sizeof(frame) ||
-        frame.operation != X86OS_VFS_SHADOW_STAT || frame.flags != 0U ||
+        frame.operation != operation || frame.flags != 0U ||
         frame.path_length != length || frame.path[length] != '\0') return -84;
     for (uint32_t index = 0U; index < length; ++index)
         if (frame.path[index] != path[index]) return -84;
@@ -325,11 +327,16 @@ static int test_file_io(void) {
     x86os_file_info_t info;
     int stat_result = x86os_stat(path, &info);
     x86os_file_info_t shadow_info;
+    x86os_file_info_t parser_info;
     int shadow_stat_result = guest_vfs_shadow_stat(
-        "/GUEST.TMP", &shadow_info, 1000U);
+        "/GUEST.TMP", &shadow_info, 1000U, X86OS_VFS_SHADOW_STAT);
+    int parser_stat_result = guest_vfs_shadow_stat(
+        "/GUEST.TMP", &parser_info, 1000U, X86OS_VFS_SHADOW_FAT32_STAT);
     if (amount != (int)sizeof(actual) || eof != 0 || close_result != 0 ||
-        stat_result != 0 || shadow_stat_result != 0 ||
+        stat_result != 0 || shadow_stat_result != 0 || parser_stat_result != 0 ||
         !bytes_equal((const char *)&info, (const char *)&shadow_info,
+                     sizeof(info)) ||
+        !bytes_equal((const char *)&info, (const char *)&parser_info,
                      sizeof(info)) || info.type != X86OS_FILE ||
         info.size != sizeof(expected) ||
         !bytes_equal(actual, expected, sizeof(actual))) {
@@ -1091,6 +1098,7 @@ int main(int argc, char **argv) {
     }
     x86os_puts("TEST_STAGE FILE_IO_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_VFS_FAT32_PARSER_OK\n");
 
     if (test_scheduler_time() != 0) {
         x86os_puts("TEST_FAIL SCHED_TIME\n");

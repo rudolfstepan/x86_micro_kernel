@@ -1,0 +1,35 @@
+/**
+ * @file userspace/storage/include/reist/vfs_shadow_fat32.h
+ * @brief Bounded read-only FAT32 metadata parser for the storage service.
+ */
+#ifndef REIST_VFS_SHADOW_FAT32_H
+#define REIST_VFS_SHADOW_FAT32_H
+
+#include <stdint.h>
+
+#include "x86os.h"
+
+#define REIST_VFS_SHADOW_MAX_RESOURCES 22U
+#define REIST_VFS_SHADOW_MAX_COMPONENTS 32U
+#define REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS 32U
+#define REIST_VFS_SHADOW_MAX_SECTOR_READS 64U
+
+typedef int (*reist_vfs_shadow_drive_info_fn)(
+    void *context, uint32_t resource, x86os_drive_info_t *info);
+typedef int (*reist_vfs_shadow_read_sector_fn)(
+    void *context, uint32_t resource, uint32_t sector,
+    uint8_t data[X86OS_STORAGE_BLOCK_SIZE]);
+
+typedef struct {
+    void *context;
+    reist_vfs_shadow_drive_info_fn drive_info;
+    reist_vfs_shadow_read_sector_fn read_sector;
+} reist_vfs_shadow_io_t;
+
+/** Returns the public SYS_STAT error convention: 0, -2, -5, -22 or -110. */
+int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
+                                const char *absolute_path,
+                                uint32_t path_length,
+                                x86os_file_info_t *info);
+
+#endif

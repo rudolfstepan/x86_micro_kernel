@@ -84,7 +84,7 @@ Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
-`R2.1-vfs-shadow-stat-ring3` ist derzeit kein Paket aktiv.
+`R2.1-vfs-shadow-fat32-parser` ist derzeit kein Paket aktiv.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -450,6 +450,9 @@ und 10 verbindlich.
   - [x] generationsgebundener Ring-3-Shadowpfad für `stat` über
     den bestehenden festen Storage-Request-Pool; Legacy-VFS bleibt bis zum
     Äquivalenznachweis autoritativ
+  - [x] heapfreier, fest begrenzter FAT32-/ASCII-VFAT-`stat`-Parser im
+    Ring-3-Storage-Service; Veröffentlichung nur bei bytegenauer
+    Legacy-Äquivalenz, Cutover bleibt offen
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1505,6 +1508,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   CRC-redundant geschützten Shadow-Frame für `stat`, eine maximale absolute
   Pfadlänge von 191 Byte und eine monotone 1000-ms-Gastdeadline. Es entfernt
   noch keine Kernelautorität.
+  Der zweite Schritt verwendet append-only Frameoperation 2: Ring 3 wählt den
+  längsten Mount, validiert FAT32-BPB/FAT-Ketten und löst 8.3-/ASCII-VFAT-
+  Komponenten mit höchstens 64 Sektorreads auf. Status und öffentliche
+  Metadaten müssen bytegenau mit `SYS_STAT` übereinstimmen; erst dann wird das
+  unabhängig geparste Ergebnis zurückgegeben. FAT12/EXT2 und der eigentliche
+  Cutover bleiben offen.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 - Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
@@ -2053,8 +2062,11 @@ R2.1 hat mit `R2.1-vfs-shadow-stat-ring3` begonnen. Der erste vertikale Schritt
 führt einen read-only `stat`-Shadowrequest über den vorhandenen statischen,
 generationsgebundenen Storage-Pool zum überwachten Ring-3-Storage-Service. Der
 QEMU-Gast vergleicht dessen komplette Metadatenstruktur mit dem weiterhin
-autoritativen Legacy-VFS-Ergebnis. Ein Folgepaket darf Kernelautorität erst
-nach eigener Ring-3-Parsersemantik und erweitertem Äquivalenznachweis entziehen.
+autoritativen Legacy-VFS-Ergebnis. `R2.1-vfs-shadow-fat32-parser` ergänzt nun
+die unabhängige, feste FAT32-/ASCII-VFAT-Parsersemantik im Ring-3-Dienst und
+publiziert nur bytegenaue Übereinstimmung. Kernelautorität darf erst ein
+Folgepaket nach erweitertem Fehler-, Mountwechsel- und Cutovernachweis
+entziehen; FAT12 und EXT2 sind noch nicht Teil dieses Parsers.
 
 R1.8 ist ebenfalls abgeschlossen: Der generationsgebundene Ring-3-SVGA-II-
 Treiber nutzt ausschließlich den festen Kernelmediator für Aktivierung,

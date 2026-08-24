@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "x86os.h"
+#include "../storage/include/reist/vfs_shadow_fat32.h"
 
 #define FORMAT32_RESERVED 32U
 #define FORMAT32_BACKUP_BOOT 6U
@@ -5550,10 +5551,24 @@ static int format_fat12(uint32_t resource) {
 _Static_assert(sizeof(x86os_vfs_shadow_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
                "VFS shadow frame must fill one storage payload");
 
+static int vfs_shadow_drive_info(void *context, uint32_t resource,
+                                 x86os_drive_info_t *info) {
+    (void)context;
+    return x86os_drive_info(resource, info);
+}
+
+static int vfs_shadow_read_sector(void *context, uint32_t resource,
+                                  uint32_t sector, uint8_t *data) {
+    (void)context;
+    return x86os_storage_block_read(resource, sector, data);
+}
+
 static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
     if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame->struct_size != sizeof(*frame) ||
-        frame->operation != X86OS_VFS_SHADOW_STAT || frame->flags != 0U ||
+        (frame->operation != X86OS_VFS_SHADOW_STAT &&
+         frame->operation != X86OS_VFS_SHADOW_FAT32_STAT) ||
+        frame->flags != 0U ||
         frame->path_length == 0U ||
         frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
         frame->path[0] != '/' || frame->path[frame->path_length] != '\0')
@@ -5563,20 +5578,44 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
     for (uint32_t index = 0U; index < 5U; ++index)
         if (frame->reserved[index] != 0U) return -22;
 
-    x86os_file_info_t info;
-    uint8_t *info_bytes = (uint8_t *)&info;
-    for (uint32_t index = 0U; index < sizeof(info); ++index)
-        info_bytes[index] = 0U;
-    int status = (int)x86os_syscall(
-        X86OS_SYS_STAT, (uintptr_t)frame->path, (uintptr_t)&info, 0U);
+    x86os_file_info_t legacy_info;
+    uint8_t *legacy_bytes = (uint8_t *)&legacy_info;
+    for (uint32_t index = 0U; index < sizeof(legacy_info); ++index)
+        legacy_bytes[index] = 0U;
+    int legacy_status = (int)x86os_syscall(
+        X86OS_SYS_STAT, (uintptr_t)frame->path,
+        (uintptr_t)&legacy_info, 0U);
+    x86os_file_info_t parsed_info;
+    uint8_t *parsed_bytes = (uint8_t *)&parsed_info;
+    for (uint32_t index = 0U; index < sizeof(parsed_info); ++index)
+        parsed_bytes[index] = 0U;
+    int status = legacy_status;
+    const x86os_file_info_t *selected = &legacy_info;
+    if (frame->operation == X86OS_VFS_SHADOW_FAT32_STAT) {
+        const reist_vfs_shadow_io_t io = {
+            .context = 0,
+            .drive_info = vfs_shadow_drive_info,
+            .read_sector = vfs_shadow_read_sector,
+        };
+        int parsed_status = reist_vfs_shadow_fat32_stat(
+            &io, frame->path, frame->path_length, &parsed_info);
+        if (parsed_status != legacy_status ||
+            (parsed_status == 0 && !format_equal(
+                parsed_bytes, legacy_bytes, sizeof(parsed_info)))) {
+            status = -84;
+        } else {
+            status = parsed_status;
+            selected = &parsed_info;
+        }
+    }
     frame->result = status;
     for (uint32_t index = 0U; index < sizeof(frame->info.name); ++index)
-        frame->info.name[index] = status == 0 ? info.name[index] : '\0';
-    frame->info.type = status == 0 ? info.type : 0U;
-    frame->info.size = status == 0 ? info.size : 0U;
-    frame->info.create_time = status == 0 ? info.create_time : 0U;
-    frame->info.modify_time = status == 0 ? info.modify_time : 0U;
-    frame->info.access_time = status == 0 ? info.access_time : 0U;
+        frame->info.name[index] = status == 0 ? selected->name[index] : '\0';
+    frame->info.type = status == 0 ? selected->type : 0U;
+    frame->info.size = status == 0 ? selected->size : 0U;
+    frame->info.create_time = status == 0 ? selected->create_time : 0U;
+    frame->info.modify_time = status == 0 ? selected->modify_time : 0U;
+    frame->info.access_time = status == 0 ? selected->access_time : 0U;
     return 0;
 }
 
