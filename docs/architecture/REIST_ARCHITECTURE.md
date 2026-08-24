@@ -116,9 +116,15 @@ Shadow-Schritt besitzt eine unabhängige, heapfreie FAT32-/VFAT-Parsersemantik
 im Storage-Service. Sie liest über den Kernel nur maximal 64 validierte
 Sektoren, begrenzt Ressourcen, Pfadkomponenten und Clusterketten statisch und
 publiziert ausschließlich eine bytegenaue Übereinstimmung mit `SYS_STAT`.
-Diese Vergleichsbrücke ist weiterhin kein autoritatives Ring-3-Dateisystem:
-Mountpublikation, Cutover, FAT12/EXT2, Handles und Mutationen verbleiben bis zu
-getrennten Nachweispaketen im Kernel. Neue Mutationsautorität entsteht nicht.
+Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
+`STAT.PRG` an diese Operation 2. Ein fester Adapter normalisiert Pfade, wartet
+mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt
+bei Fehlern nie auf `SYS_STAT` zurück. Der Prozess beendet sich anschließend,
+sodass seine generationgebundenen Requests durch die vorhandene
+Prozessbereinigung widerrufen werden. Andere und insbesondere langlebige
+Clients bleiben bis zu einer expliziten requestbezogenen Cancel-ABI am
+Kernel-VFS. Mountpublikation, FAT12/EXT2, Handles und Mutationen verbleiben bis
+zu getrennten Nachweispaketen im Kernel. Neue Mutationsautorität entsteht nicht.
 
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter

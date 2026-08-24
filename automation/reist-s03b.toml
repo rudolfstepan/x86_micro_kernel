@@ -11,6 +11,60 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.1-vfs-stat-client-cutover"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Controlled STAT.PRG cutover to the Ring-3 FAT32 metadata path"
+scope = "Move exactly the short-lived STAT.PRG system client from legacy x86os_stat/SYS_STAT to a separate fixed-storage client adapter using VFS shadow frame operation 2. The adapter normalizes relative, absolute and DOS drive-letter paths into the 191-byte absolute protocol bound, submits through the existing generation-scoped storage pool, waits with a finite monotonic deadline, validates the complete response frame, and never falls back to the legacy syscall. A QEMU guest creates a real FAT32 file and requires the packaged STAT.PRG child to complete successfully before cleanup. Keep all other clients and the kernel VFS unchanged; general long-lived client adoption waits for an explicit per-request cancellation ABI."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/storage/include/reist/vfs_stat_client.h",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/programs/stat.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "test/test_vfs_stat_client_host.c",
+  "test/test_reist_vfs_stat_client.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "STAT.PRG never calls x86os_stat or SYS_STAT and has no legacy fallback",
+  "client paths are normalized into one absolute NUL-terminated path shorter than 192 bytes before submit",
+  "dot dot-dot repeated separators backslashes and supported DOS drive letters are resolved with fixed storage",
+  "submit collect and sleep are bounded by a saturating monotonic deadline and no busy-wait or heap allocation is used",
+  "the complete returned frame version size operation flags path reserved fields result and metadata type are revalidated",
+  "timeout or malformed response fails closed and STAT.PRG exits so process cleanup revokes any outstanding generation-scoped request",
+  "all other clients and legacy SYS_STAT remain ABI-compatible and the kernel VFS remains authoritative",
+  "no mutation raw block controller DMA new syscall or cache-capacity change is introduced"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_stat_client.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "STAT.PRG requires a legacy fallback to pass",
+  "the client adapter would be linked into unrelated rescue programs",
+  "the QEMU child cannot resolve the real FAT32 test path through operation 2",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: cut over stat client to Ring-3 VFS metadata"
+evidence = [
+  "python test/test_reist_vfs_stat_client.py -v: PASS (4 tests, 1s)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (12s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal: PASS (15s, STORAGE_VFS_STAT_CLIENT_OK and TEST_OK)"
+]
+
+[[packages]]
 id = "R2.1-vfs-shadow-fat32-parser"
 status = "done"
 phase = "post-s0"

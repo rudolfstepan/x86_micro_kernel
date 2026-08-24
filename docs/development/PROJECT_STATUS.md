@@ -254,7 +254,15 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Ring-3-Storage-Service selbst. Maximal 64 vermittelte Sektorreads und feste
   Stackpuffer begrenzen die Arbeit. Nur eine bytegenaue Übereinstimmung mit dem
   Legacy-`SYS_STAT` wird publiziert; der QEMU-Gast markiert dies mit
-  `STORAGE_VFS_FAT32_PARSER_OK`. Der Kernel bleibt bis zum Cutover autoritativ.
+  `STORAGE_VFS_FAT32_PARSER_OK`. Für bestehende Clients bleibt der Kernel
+  autoritativ.
+- `STAT.PRG` ist der erste kontrolliert umgestellte Client. Sein separater,
+  heapfreier Adapter normalisiert relative, absolute und DOS-Pfade, verwendet
+  ausschließlich Parseroperation 2, wartet mit monotoner Deadline und
+  validiert den vollständigen Antwortframe ohne Legacy-Fallback. Der normale
+  QEMU-Gast startet das paketierte Programm auf `/GUEST.TMP` und markiert den
+  Erfolg mit `STORAGE_VFS_STAT_CLIENT_OK`. Andere Clients bleiben bis zu einer
+  expliziten requestbezogenen Cancel-ABI am Kernel-VFS.
 - Der feste Rescue-Programmpool umfasst nun 240 KiB für weiterhin genau elf
   geschützte Programme; die Einzelgrenze bleibt 96 KiB. Das schafft begrenzten
   Raum für den isolierten Parser, ohne dynamische Cacheallokation einzuführen.

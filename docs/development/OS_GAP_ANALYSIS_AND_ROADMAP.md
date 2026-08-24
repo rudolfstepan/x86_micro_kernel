@@ -84,7 +84,7 @@ Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
-`R2.1-vfs-shadow-fat32-parser` ist derzeit kein Paket aktiv.
+`R2.1-vfs-stat-client-cutover` ist derzeit kein Paket aktiv.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -452,7 +452,11 @@ und 10 verbindlich.
     Äquivalenznachweis autoritativ
   - [x] heapfreier, fest begrenzter FAT32-/ASCII-VFAT-`stat`-Parser im
     Ring-3-Storage-Service; Veröffentlichung nur bei bytegenauer
-    Legacy-Äquivalenz, Cutover bleibt offen
+    Legacy-Äquivalenz
+  - [x] kontrollierter Cutover des kurzlebigen `STAT.PRG` auf Parseroperation 2
+    mit fester Pfadnormalisierung, monotoner Deadline, vollständiger
+    Antwortvalidierung und ohne Legacy-Fallback; allgemeine langlebige Clients
+    warten auf eine requestbezogene Cancel-ABI
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1512,8 +1516,11 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   längsten Mount, validiert FAT32-BPB/FAT-Ketten und löst 8.3-/ASCII-VFAT-
   Komponenten mit höchstens 64 Sektorreads auf. Status und öffentliche
   Metadaten müssen bytegenau mit `SYS_STAT` übereinstimmen; erst dann wird das
-  unabhängig geparste Ergebnis zurückgegeben. FAT12/EXT2 und der eigentliche
-  Cutover bleiben offen.
+  unabhängig geparste Ergebnis zurückgegeben. Das kurzlebige `STAT.PRG` nutzt
+  diesen Pfad inzwischen ohne Legacy-Fallback und beendet sich nach Timeout,
+  damit die Prozessbereinigung offene Requests widerruft. Der allgemeine
+  Cutover langlebiger Clients, FAT12 und EXT2 bleiben offen; er benötigt zuvor
+  eine explizite requestbezogene Cancel-ABI.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 - Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
@@ -2058,15 +2065,15 @@ S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
 Monitorhardware, elektrisches Fence-Readback und physische Fault-Injection
 prüft der Benutzer manuell und QEMU-/Hostevidenz ersetzt diese Auswahl nicht.
-R2.1 hat mit `R2.1-vfs-shadow-stat-ring3` begonnen. Der erste vertikale Schritt
-führt einen read-only `stat`-Shadowrequest über den vorhandenen statischen,
-generationsgebundenen Storage-Pool zum überwachten Ring-3-Storage-Service. Der
-QEMU-Gast vergleicht dessen komplette Metadatenstruktur mit dem weiterhin
-autoritativen Legacy-VFS-Ergebnis. `R2.1-vfs-shadow-fat32-parser` ergänzt nun
-die unabhängige, feste FAT32-/ASCII-VFAT-Parsersemantik im Ring-3-Dienst und
-publiziert nur bytegenaue Übereinstimmung. Kernelautorität darf erst ein
-Folgepaket nach erweitertem Fehler-, Mountwechsel- und Cutovernachweis
-entziehen; FAT12 und EXT2 sind noch nicht Teil dieses Parsers.
+R2.1 transportiert read-only `stat` über den statischen,
+generationsgebundenen Storage-Pool zum überwachten Ring-3-Storage-Service. Die
+unabhängige, feste FAT32-/ASCII-VFAT-Parsersemantik publiziert nur bytegenaue
+Legacy-Äquivalenz. `STAT.PRG` ist als erster kurzlebiger Client kontrolliert auf
+Operation 2 umgestellt: feste Pfadnormalisierung, monotone Deadline,
+vollständige Antwortvalidierung und kein Legacy-Fallback. Der QEMU-Gast startet
+das wirklich paketierte Programm auf einer FAT32-Testdatei. Weitere und
+insbesondere langlebige Clients bleiben bis zu einer requestbezogenen
+Cancel-ABI am Kernel-VFS; FAT12 und EXT2 sind noch nicht Teil des Parsers.
 
 R1.8 ist ebenfalls abgeschlossen: Der generationsgebundene Ring-3-SVGA-II-
 Treiber nutzt ausschließlich den festen Kernelmediator für Aktivierung,

@@ -60,7 +60,10 @@ PROGRAMS = {
     "DEL.PRG": ROOT / "userspace/programs/del.c",
     "COPY.PRG": ROOT / "userspace/programs/copy.c",
     "RENAME.PRG": ROOT / "userspace/programs/rename.c",
-    "STAT.PRG": ROOT / "userspace/programs/stat.c",
+    "STAT.PRG": (
+        ROOT / "userspace/programs/stat.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+    ),
     "DF.PRG": ROOT / "userspace/programs/df.c",
     "TOUCH.PRG": ROOT / "userspace/programs/touch.c",
     "TREE.PRG": ROOT / "userspace/programs/tree.c",
@@ -170,7 +173,7 @@ def main() -> None:
             dependency_files = [*core_headers]
             if name in {"CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
-            if name == "STORAGE.PRG":
+            if name in {"STORAGE.PRG", "STAT.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)

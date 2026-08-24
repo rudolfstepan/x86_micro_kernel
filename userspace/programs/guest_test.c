@@ -344,6 +344,16 @@ static int test_file_io(void) {
         return -1;
     }
 
+    const char *stat_arguments[] = {"/bin/stat.prg", "/GUEST.TMP"};
+    int stat_pid = x86os_spawnv(
+        stat_arguments[0], 2, stat_arguments);
+    int stat_status = -1;
+    if (stat_pid <= 0 || x86os_wait(stat_pid, &stat_status) != stat_pid ||
+        stat_status != 0) {
+        (void)x86os_unlink(path);
+        return -1;
+    }
+
     static const char replacement_path[] = "GSTNEW.TMP";
     static const char replacement[] = "REIST atomic rename replacement";
     (void)x86os_unlink(replacement_path);
@@ -1099,6 +1109,7 @@ int main(int argc, char **argv) {
     x86os_puts("TEST_STAGE FILE_IO_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_FAT32_PARSER_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_VFS_STAT_CLIENT_OK\n");
 
     if (test_scheduler_time() != 0) {
         x86os_puts("TEST_FAIL SCHED_TIME\n");

@@ -35,10 +35,16 @@ keinen Heap. Ihr Ergebnis wird nur veröffentlicht, wenn Status und sämtliche
 liefert den Integritätsfehler `-84`. `open`, Mutationen, Controllerzugriff und
 DMA bleiben verboten.
 
-Damit besitzt Ring 3 nun echte FAT32-Parsersemantik, aber noch keine
-autoritative VFS-Entscheidung. `SYS_STAT` bleibt Vergleichsorakel und der
-Kernelpfad bleibt bis zu einem getrennten Cutoverpaket maßgeblich. FAT12,
-EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
+Damit besitzt Ring 3 echte FAT32-Parsersemantik. Als erster kontrollierter
+Cutover verwendet das kurzlebige `STAT.PRG` ausschließlich Operation 2 und
+übernimmt deren Ergebnis ohne Rückfall auf `SYS_STAT`. Der feste Clientadapter
+normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
+Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
+oder Protokollfehler beendet sich das Programm; die Prozessbereinigung widerruft
+den generationsgebundenen Request. Andere Clients und der Kernelpfad bleiben
+weiterhin unverändert autoritativ. Für langlebige Clients ist vor dem Cutover
+eine explizite requestbezogene Cancel-ABI erforderlich. FAT12, EXT2, Handles,
+Lesen und Verzeichnisiteration sind noch nicht migriert.
 
 ## Operationen
 
@@ -85,8 +91,9 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
 
 1. [x] `stat`-Shadowtransport und vollständige Metadatenäquivalenz.
 2. [x] Ring-3-eigene read-only Mount- und FAT32-Metadatenparser.
-3. Umschalten read-only Operationen bei getesteter Äquivalenz; Legacy-Pfad nur
-   als explizit begrenzter Degradationsmodus.
-4. Handles, Lesen und Verzeichnisiteration migrieren.
-5. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+3. [x] Kontrollierter `STAT.PRG`-Cutover auf Operation 2 ohne Legacy-Fallback.
+4. Requestbezogene Cancel-ABI ergänzen, danach weitere und insbesondere
+   langlebige read-only Clients umstellen.
+5. Handles, Lesen und Verzeichnisiteration migrieren.
+6. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.

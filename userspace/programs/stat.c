@@ -1,5 +1,6 @@
 /** @file userspace/programs/stat.c @brief Zeigt begrenzte Dateimetadaten. */
 #include "x86os.h"
+#include "../storage/include/reist/vfs_stat_client.h"
 
 static void print_unsigned(uint32_t value) {
     char digits[10];
@@ -21,7 +22,8 @@ int main(int argc, char **argv) {
         return 2;
     }
     x86os_file_info_t info;
-    if (x86os_stat(argv[1], &info) < 0) {
+    if (reist_vfs_stat(argv[1], &info,
+                       REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) < 0) {
         x86os_puts("stat: path not found\n");
         return 1;
     }
