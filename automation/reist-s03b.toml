@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-descriptor-seek-fstat"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,79 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-descriptor-seek-fstat"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Append-only descriptor seek and fstat"
+scope = "Complete the non-mutating descriptor-position and metadata half of the remaining R2.1 file API. Append syscall 121 LSEEK and syscall 122 FSTAT without changing any existing number signature structure or wrapper. LSEEK uses signed 32-bit POSIX-shaped offsets and SEEK_SET SEEK_CUR SEEK_END values 0 1 2, computes in signed 64-bit arithmetic, permits positions beyond EOF through INT32_MAX, rejects negative results with EINVAL and unrepresentable results with EOVERFLOW, returns ESPIPE for valid terminal or socket descriptors and never changes the stored offset on failure. SEEK_END obtains the current open-object size through the same node-based fstat path. FSTAT accepts every live regular-file descriptor independent of read or write rights, validates the complete userspace output range before filesystem work, resolves no path, and copies the existing fixed x86os_file_info_t only after success. Add a read-only node fstat operation to VFS and exact FAT12 FAT32 and EXT2 adapters: FAT12 revalidates its fixed directory slot, FAT32 refreshes the held directory identity, and EXT2 rereads the held inode. Grant both syscalls only to the compatibility profile by default. Prove partial reads EOF seeking beyond EOF append interaction write-only fstat stale and nonseekable descriptors overflow failure atomicity exact metadata and real QEMU persistence. This package adds no truncate length mutation ftruncate dup inheritance service mutation raw controller or DMA authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/reist/abi/syscall.h",
+  "userspace/sdk/include/reist/abi/syscall.h",
+  "scripts/generate_syscall_abi.py",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "fs/vfs/vfs.h",
+  "fs/vfs/vfs.c",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "fs/ext2/ext2_vfs_adapter.c",
+  "userspace/programs/guest_test.c",
+  "test/test_descriptor_seek_fstat.py",
+  "test/test_syscall_abi_source.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_reist_wcet.py",
+  "test/test_open_flags.py",
+  "test/test_vfs_host.c",
+  "test/test_fat12_host.c",
+  "test/test_fat32_host.c",
+  "test/test_ext2_host.c",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "syscalls 121 LSEEK and 122 FSTAT are append-only and every existing syscall number signature wrapper and fixed x86os_file_info_t layout remains unchanged",
+  "LSEEK implements SEEK_SET SEEK_CUR and SEEK_END with signed 64-bit intermediate arithmetic and publishes the new process-local offset only after every validation succeeds",
+  "negative positions return EINVAL unrepresentable signed 32-bit positions return EOVERFLOW and valid non-file descriptors return ESPIPE without changing descriptor state",
+  "positions beyond EOF through INT32_MAX are permitted and a later FAT write retains the existing zero-filled gap contract",
+  "SEEK_END and FSTAT use current metadata from the exact open node and never introduce path authority or path re-resolution",
+  "FSTAT requires a live regular-file descriptor but no read or write right and copies no bytes to userspace on validation or filesystem failure",
+  "FAT12 revalidates the recorded directory sector and slot FAT32 refreshes the held directory identity and EXT2 rereads the held inode before returning metadata",
+  "stale replaced deleted malformed or unreadable open identities fail closed and never fabricate metadata",
+  "only the compatibility profile receives LSEEK and FSTAT by default while restricted profiles remain default deny",
+  "all work storage arithmetic and filesystem reads remain bounded by existing descriptor and filesystem capacities"
+]
+targeted_tests = [
+  "python test/test_descriptor_seek_fstat.py -v",
+  "python test/test_syscall_abi_source.py -v",
+  "python test/test_open_flags.py -v",
+  "python test/test_fs_host.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "FSTAT requires path re-resolution or a new unbounded object table",
+  "LSEEK would publish an offset before validation or require filesystem mutation",
+  "an adapter cannot validate its existing open-node identity without new ambient authority",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "vfs: add descriptor seek and fstat"
+evidence = []
 
 [[packages]]
 id = "R2.1-fat-truncate-zero"
