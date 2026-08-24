@@ -51,6 +51,37 @@ static void format_ipc_handle(x86os_ipc_handle_t handle, char text[11]) {
     text[length] = '\0';
 }
 
+static int test_standard_descriptors(void) {
+    static const char stdout_marker[] = "STDOUT_FD_OK\n";
+    static const char stderr_marker[] = "STDERR_FD_OK\n";
+    static const char independent_marker[] =
+        "STDERR_AFTER_STDOUT_CLOSE_OK\n";
+    char byte = 0;
+
+    if (x86os_read(X86OS_STDIN_FILENO, &byte, 0U) != 0) return -1;
+    if (x86os_write(X86OS_STDIN_FILENO, &byte, 0U) != -9) return -2;
+    if (x86os_read(X86OS_STDOUT_FILENO, &byte, 0U) != -9) return -3;
+    if (x86os_read(X86OS_STDERR_FILENO, &byte, 0U) != -9) return -4;
+    if (x86os_write(X86OS_STDOUT_FILENO, stdout_marker,
+                    sizeof(stdout_marker) - 1U) !=
+        (int)(sizeof(stdout_marker) - 1U)) return -5;
+    if (x86os_write(X86OS_STDERR_FILENO, stderr_marker,
+                    sizeof(stderr_marker) - 1U) !=
+        (int)(sizeof(stderr_marker) - 1U)) return -6;
+
+    int descriptor = x86os_open("/readme.txt");
+    if (descriptor != 3 || x86os_close(descriptor) != 0) return -7;
+
+    if (x86os_close(X86OS_STDOUT_FILENO) != 0) return -8;
+    if (x86os_close(X86OS_STDOUT_FILENO) != -9) return -9;
+    if (x86os_write(X86OS_STDOUT_FILENO, stdout_marker,
+                    sizeof(stdout_marker) - 1U) != -9) return -10;
+    if (x86os_write(X86OS_STDERR_FILENO, independent_marker,
+                    sizeof(independent_marker) - 1U) !=
+        (int)(sizeof(independent_marker) - 1U)) return -11;
+    return 0;
+}
+
 static void ipc_message_prepare(x86os_ipc_message_t *message) {
     message->version = X86OS_IPC_MESSAGE_VERSION;
     message->struct_size = sizeof(*message);
@@ -1256,6 +1287,12 @@ int main(int argc, char **argv) {
         return vfs_delegation_expiry_child_main();
 
     x86os_puts("GUEST_TEST_BEGIN\n");
+
+    if (test_standard_descriptors() != 0) {
+        x86os_puts("TEST_FAIL STANDARD_DESCRIPTORS\n");
+        return 10;
+    }
+    x86os_puts("TEST_STAGE STANDARD_DESCRIPTORS_OK\n");
 
     if (test_wait_wakeup() != 0) {
         x86os_puts("TEST_FAIL WAIT\n");

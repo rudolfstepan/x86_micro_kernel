@@ -7,11 +7,10 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
-Aktiv ist `R2.1-standard-descriptors`: Die bestehende feste Prozesstabelle wird
-um echte Deskriptoren 0/1/2 mit richtungsgebundenen Terminalrechten erweitert.
-Der Tastaturpfad bleibt bis zu einer eigenen TTY-/Deadline-ABI
-nichtblockierend; `dup`, Pipes und Spawn-Vererbung sind nicht Teil dieses
-Schnitts.
+`R2.1-standard-descriptors` erweitert die bestehende feste Prozesstabelle um
+echte Deskriptoren 0/1/2 mit richtungsgebundenen Terminalrechten. Der
+Tastaturpfad bleibt bis zu einer eigenen TTY-/Deadline-ABI nichtblockierend;
+`dup`, Pipes und Spawn-Vererbung waren nicht Teil dieses Schnitts.
 
 ## Arbeitscheckpoint 16. August 2026
 

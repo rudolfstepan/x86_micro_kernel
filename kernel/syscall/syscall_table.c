@@ -1866,12 +1866,23 @@ static int syscall_open(const char *user_path) {
 static int syscall_read(int descriptor, void *user_buffer, size_t size) {
     Process *process = scheduler_current_process();
     if (process == NULL) return -9; /* EBADF */
+    uint8_t kind = 0U;
+    if (process_descriptor_validate_access(process, descriptor, false,
+                                           &kind) != 0) return -9;
     if (size == 0) return 0;
     if (size > INT_MAX ||
         !user_range_accessible(paging_current_directory(),
                                (uint32_t)(uintptr_t)user_buffer, size, true)) {
         return -14; /* EFAULT */
     }
+
+    if (kind == PROCESS_DESCRIPTOR_TERMINAL_INPUT) {
+        int character = getchar_nonblocking();
+        if (character == 0) return -11; /* EAGAIN: bounded terminal poll. */
+        uint8_t byte = (uint8_t)character;
+        return copy_to_user(user_buffer, &byte, sizeof(byte)) == 0 ? 1 : -14;
+    }
+    if (kind != PROCESS_DESCRIPTOR_FILE) return -9;
 
     /* The complete destination range belongs to the current process and was
      * validated writable above; REIST currently has no concurrent threads
@@ -2427,7 +2438,13 @@ static int syscall_touch(const char *user_path) {
 static int syscall_write(int descriptor, const void *user_buffer, size_t size) {
     Process *process = scheduler_current_process();
     if (process == NULL) return -9;
+    uint8_t kind = 0U;
+    if (process_descriptor_validate_access(process, descriptor, true,
+                                           &kind) != 0) return -9;
     if (size == 0) return 0;
+    if (kind == PROCESS_DESCRIPTOR_TERMINAL_OUTPUT)
+        return syscall_terminal_write(user_buffer, size);
+    if (kind != PROCESS_DESCRIPTOR_FILE) return -9;
     if (size > INT_MAX ||
         !user_range_accessible(paging_current_directory(),
                                (uint32_t)(uintptr_t)user_buffer, size, false)) {

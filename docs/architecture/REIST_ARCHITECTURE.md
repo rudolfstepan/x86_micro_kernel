@@ -161,6 +161,14 @@ verfällt nach fünf monotonen Sekunden und verändert das Quellhandle nicht.
 Ein Spawn erbt weiterhin keine Objekt- oder Delegationsautorität ambient.
 Der zusätzliche Servicepfad belegt ein 116-KiB-Rescue-Image; der statische
 Gesamtpool bleibt unverändert auf 272 KiB begrenzt.
+Der gemeinsame feste Prozess-Deskriptorraum reserviert 0 für READ-only
+Terminaleingabe sowie 1 und 2 für WRITE-only Terminalausgabe. Acht dynamische
+Datei-/Socket-Slots behalten unverändert die Nummern 3 bis 10. Jede neue
+Prozessgeneration erhält eigene Standarddeskriptoren; `close` entfernt nur den
+lokalen Eintrag. Bis eine begrenzte TTY-Warte-ABI existiert, liest FD 0 mit
+genau einem nichtblockierenden Tastaturpoll und liefert ohne Byte `EAGAIN`.
+Das ist noch keine POSIX-Kompatibilitätsbehauptung; `dup`, Pipes,
+Line-Discipline und explizite Spawn-Vererbung folgen getrennt.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

@@ -13,6 +13,12 @@
 #include <stdint.h>
 
 enum {
+    X86OS_STDIN_FILENO = 0,
+    X86OS_STDOUT_FILENO = 1,
+    X86OS_STDERR_FILENO = 2,
+};
+
+enum {
     X86OS_SYS_PUTCHAR = 0,
     X86OS_SYS_PRINT_NUMBER = 1,
     X86OS_SYS_DELAY = 2,

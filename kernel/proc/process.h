@@ -20,7 +20,10 @@
 #define MAX_PROGRAMS 256 // Maximum number of running programs
 #define MAX_USER_ALLOCATIONS 16
 #define MAX_PROCESS_FILES 8
-#define PROCESS_FD_BASE 3
+#define PROCESS_STANDARD_DESCRIPTOR_COUNT 3
+#define PROCESS_FD_BASE PROCESS_STANDARD_DESCRIPTOR_COUNT
+#define MAX_PROCESS_DESCRIPTORS \
+    (PROCESS_STANDARD_DESCRIPTOR_COUNT + MAX_PROCESS_FILES)
 #define PROCESS_PATH_MAX 256
 #define SUPERVISED_PROCESS_RESERVE 1U
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
@@ -62,6 +65,7 @@ typedef struct {
     uint32_t resource_handle;
     uint8_t kind;
     bool in_use;
+    bool readable;
     bool writable;
 } process_file_t;
 
@@ -69,6 +73,8 @@ enum {
     PROCESS_DESCRIPTOR_FILE = 1U,
     PROCESS_DESCRIPTOR_UDP_SOCKET = 2U,
     PROCESS_DESCRIPTOR_TCP_SOCKET = 3U,
+    PROCESS_DESCRIPTOR_TERMINAL_INPUT = 4U,
+    PROCESS_DESCRIPTOR_TERMINAL_OUTPUT = 5U,
 };
 
 typedef struct Process {
@@ -85,7 +91,7 @@ typedef struct Process {
     bool uses_shared_program_image;
     uint32_t heap_next;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
-    process_file_t files[MAX_PROCESS_FILES];
+    process_file_t files[MAX_PROCESS_DESCRIPTORS];
     process_domain_profile_t domain_profile;
     ipc_capability_t ipc_capabilities[IPC_MAX_CAPABILITIES_PER_PROCESS];
     char working_directory[PROCESS_PATH_MAX];
@@ -150,6 +156,8 @@ int process_descriptor_install(Process *process, uint8_t kind,
                                uint32_t resource_handle);
 int process_descriptor_resolve(const Process *process, int descriptor,
                                uint8_t kind, uint32_t *resource_handle_out);
+int process_descriptor_validate_access(const Process *process, int descriptor,
+                                       bool write_access, uint8_t *kind_out);
 int process_descriptor_release(Process *process, int descriptor, uint8_t kind);
 void process_close_all_files(Process* process);
 int process_revoke_files_for_resource(uint32_t resource,

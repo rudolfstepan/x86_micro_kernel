@@ -514,6 +514,24 @@ static void release_process_slot(Process *process) {
     irq_restore(flags);
 }
 
+static void initialize_standard_descriptors(Process *process) {
+    process->files[0] = (process_file_t){
+        .kind = PROCESS_DESCRIPTOR_TERMINAL_INPUT,
+        .in_use = true,
+        .readable = true,
+    };
+    process->files[1] = (process_file_t){
+        .kind = PROCESS_DESCRIPTOR_TERMINAL_OUTPUT,
+        .in_use = true,
+        .writable = true,
+    };
+    process->files[2] = (process_file_t){
+        .kind = PROCESS_DESCRIPTOR_TERMINAL_OUTPUT,
+        .in_use = true,
+        .writable = true,
+    };
+}
+
 /* Reserve list state atomically, but do slow file/heap work with IRQs enabled. */
 static int claim_process_slot(const char *name, bool shared_image,
                               int parent_pid, uint32_t parent_generation,
@@ -568,6 +586,7 @@ static int claim_process_slot(const char *name, bool shared_image,
             memset(process->user_allocations, 0,
                    sizeof(process->user_allocations));
             memset(process->files, 0, sizeof(process->files));
+            initialize_standard_descriptors(process);
             if (!initialize_domain_profile(&process->domain_profile,
                                            domain_kind)) {
                 process->is_running = false;
@@ -1064,7 +1083,7 @@ int process_file_open(Process *process, const char *path) {
     if (process_resolve_path(process, path, resolved) != 0) return -1;
 
     int slot = -1;
-    for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
+    for (int i = PROCESS_FD_BASE; i < MAX_PROCESS_DESCRIPTORS; ++i) {
         if (!process->files[i].in_use) {
             slot = i;
             break;
@@ -1083,16 +1102,18 @@ int process_file_open(Process *process, const char *path) {
     process->files[slot].offset = 0;
     process->files[slot].kind = PROCESS_DESCRIPTOR_FILE;
     process->files[slot].in_use = true;
+    process->files[slot].readable = true;
     process->files[slot].writable = false;
-    return slot + PROCESS_FD_BASE;
+    return slot;
 }
 
 int process_file_read(Process *process, int descriptor, void *buffer,
                       size_t size) {
-    int slot = descriptor - PROCESS_FD_BASE;
-    if (process == NULL || buffer == NULL || slot < 0 ||
-        slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+    int slot = descriptor;
+    if (process == NULL || buffer == NULL || slot < PROCESS_FD_BASE ||
+        slot >= MAX_PROCESS_DESCRIPTORS || !process->files[slot].in_use ||
         process->files[slot].kind != PROCESS_DESCRIPTOR_FILE ||
+        !process->files[slot].readable ||
         size > UINT32_MAX) {
         return -1;
     }
@@ -1110,7 +1131,7 @@ int process_file_create(Process *process, const char *path) {
     if (process_resolve_path(process, path, resolved) != 0) return -1;
 
     int slot = -1;
-    for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
+    for (int i = PROCESS_FD_BASE; i < MAX_PROCESS_DESCRIPTORS; ++i) {
         if (!process->files[i].in_use) { slot = i; break; }
     }
     if (slot < 0 || vfs_create(resolved) != VFS_OK) return -1;
@@ -1126,15 +1147,16 @@ int process_file_create(Process *process, const char *path) {
     process->files[slot].offset = 0;
     process->files[slot].kind = PROCESS_DESCRIPTOR_FILE;
     process->files[slot].in_use = true;
+    process->files[slot].readable = true;
     process->files[slot].writable = true;
-    return slot + PROCESS_FD_BASE;
+    return slot;
 }
 
 int process_file_write(Process *process, int descriptor, const void *buffer,
                        size_t size) {
-    int slot = descriptor - PROCESS_FD_BASE;
-    if (process == NULL || buffer == NULL || slot < 0 ||
-        slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+    int slot = descriptor;
+    if (process == NULL || buffer == NULL || slot < PROCESS_FD_BASE ||
+        slot >= MAX_PROCESS_DESCRIPTORS || !process->files[slot].in_use ||
         process->files[slot].kind != PROCESS_DESCRIPTOR_FILE ||
         !process->files[slot].writable || size > UINT32_MAX) return -1;
     if (size == 0) return 0;
@@ -1145,8 +1167,9 @@ int process_file_write(Process *process, int descriptor, const void *buffer,
 }
 
 int process_file_sync(Process *process, int descriptor) {
-    int slot = descriptor - PROCESS_FD_BASE;
-    if (process == NULL || slot < 0 || slot >= MAX_PROCESS_FILES ||
+    int slot = descriptor;
+    if (process == NULL || slot < PROCESS_FD_BASE ||
+        slot >= MAX_PROCESS_DESCRIPTORS ||
         !process->files[slot].in_use || !process->files[slot].writable) {
         return -1;
     }
@@ -1162,15 +1185,18 @@ int process_file_unlink(Process *process, const char *path) {
 }
 
 int process_file_close(Process *process, int descriptor) {
-    int slot = descriptor - PROCESS_FD_BASE;
-    if (process == NULL || slot < 0 || slot >= MAX_PROCESS_FILES ||
+    int slot = descriptor;
+    if (process == NULL || slot < 0 || slot >= MAX_PROCESS_DESCRIPTORS ||
         !process->files[slot].in_use) {
         return -1;
     }
 
     process_file_t *file = &process->files[slot];
     int result = -1;
-    if (file->kind == PROCESS_DESCRIPTOR_FILE)
+    if (file->kind == PROCESS_DESCRIPTOR_TERMINAL_INPUT ||
+        file->kind == PROCESS_DESCRIPTOR_TERMINAL_OUTPUT)
+        result = 0;
+    else if (file->kind == PROCESS_DESCRIPTOR_FILE)
         result = vfs_close(file->node) == VFS_OK ? 0 : -1;
     else if (file->kind == PROCESS_DESCRIPTOR_UDP_SOCKET)
         result = net_socket_close(process->pid, process->generation,
@@ -1188,24 +1214,37 @@ int process_descriptor_install(Process *process, uint8_t kind,
     if (process == NULL || resource_handle == 0U ||
         (kind != PROCESS_DESCRIPTOR_UDP_SOCKET &&
          kind != PROCESS_DESCRIPTOR_TCP_SOCKET)) return -22;
-    for (int slot = 0; slot < MAX_PROCESS_FILES; ++slot) {
+    for (int slot = PROCESS_FD_BASE; slot < MAX_PROCESS_DESCRIPTORS; ++slot) {
         if (process->files[slot].in_use) continue;
         process->files[slot] = (process_file_t){
             .resource_handle = resource_handle, .kind = kind, .in_use = true,
         };
-        return slot + PROCESS_FD_BASE;
+        return slot;
     }
     return -24;
 }
 
 int process_descriptor_resolve(const Process *process, int descriptor,
                                uint8_t kind, uint32_t *resource_handle_out) {
-    int slot = descriptor - PROCESS_FD_BASE;
-    if (process == NULL || resource_handle_out == NULL || slot < 0 ||
-        slot >= MAX_PROCESS_FILES || !process->files[slot].in_use ||
+    int slot = descriptor;
+    if (process == NULL || resource_handle_out == NULL ||
+        slot < PROCESS_FD_BASE || slot >= MAX_PROCESS_DESCRIPTORS ||
+        !process->files[slot].in_use ||
         process->files[slot].kind != kind ||
         process->files[slot].resource_handle == 0U) return -9;
     *resource_handle_out = process->files[slot].resource_handle; return 0;
+}
+
+int process_descriptor_validate_access(const Process *process, int descriptor,
+                                       bool write_access, uint8_t *kind_out) {
+    if (process == NULL || kind_out == NULL || descriptor < 0 ||
+        descriptor >= MAX_PROCESS_DESCRIPTORS ||
+        !process->files[descriptor].in_use) return -9;
+    const process_file_t *entry = &process->files[descriptor];
+    if ((write_access && !entry->writable) ||
+        (!write_access && !entry->readable)) return -9;
+    *kind_out = entry->kind;
+    return 0;
 }
 
 int process_descriptor_release(Process *process, int descriptor, uint8_t kind) {
@@ -1213,16 +1252,15 @@ int process_descriptor_release(Process *process, int descriptor, uint8_t kind) {
     if (process_descriptor_resolve(process, descriptor, kind, &handle) != 0)
         return -9;
     (void)handle;
-    memset(&process->files[descriptor - PROCESS_FD_BASE], 0,
-           sizeof(process_file_t));
+    memset(&process->files[descriptor], 0, sizeof(process_file_t));
     return 0;
 }
 
 void process_close_all_files(Process *process) {
     if (process == NULL) return;
-    for (int i = 0; i < MAX_PROCESS_FILES; ++i) {
+    for (int i = 0; i < MAX_PROCESS_DESCRIPTORS; ++i) {
         if (process->files[i].in_use) {
-            (void)process_file_close(process, i + PROCESS_FD_BASE);
+            (void)process_file_close(process, i);
         }
     }
 }
@@ -1238,7 +1276,8 @@ int process_revoke_files_for_resource(uint32_t resource,
          ++process_index) {
         Process *process = &process_list[process_index];
         if (!process->is_running && !process->has_exited) continue;
-        for (int file_index = 0; file_index < MAX_PROCESS_FILES;
+        for (int file_index = PROCESS_FD_BASE;
+             file_index < MAX_PROCESS_DESCRIPTORS;
              ++file_index) {
             process_file_t *file = &process->files[file_index];
             if (!file->in_use || file->kind != PROCESS_DESCRIPTOR_FILE ||
