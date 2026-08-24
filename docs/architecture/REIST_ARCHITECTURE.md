@@ -178,6 +178,17 @@ lokalen Eintrag. Bis eine begrenzte TTY-Warte-ABI existiert, liest FD 0 mit
 genau einem nichtblockierenden Tastaturpoll und liefert ohne Byte `EAGAIN`.
 Das ist noch keine POSIX-Kompatibilitätsbehauptung; `dup`, Pipes,
 Line-Discipline und explizite Spawn-Vererbung folgen getrennt.
+Append-only Syscall 120 ergänzt darauf `open` mit den POSIX-nahen
+Zugriffsmodi `RDONLY`, `WRONLY`, `RDWR` und den Flagwerten `CREAT`, `TRUNC`
+und `APPEND`. Alte Syscalls 14 und 19 bleiben semantisch unverändert. Der neue
+Pfad prüft Flagwort und freien der acht dynamischen Slots vor einer
+Dateisystemwirkung und publiziert nur die angeforderten READ-/WRITE-Rechte.
+`APPEND` wählt vor jedem Schreibaufruf die aktuelle Größe des geöffneten
+VFS-Nodes; Offsetfortschritt erscheint erst nach erfolgreich geschriebenen
+Bytes. `TRUNC` ist ABI-seitig reserviert, liefert aber vor Pfadauflösung oder
+Mutation `ENOTSUP`, bis FAT12 und FAT32 einen eigenen transaktionalen
+Kürzungsvertrag besitzen. Nur das Kompatibilitätsprofil erhält Syscall 120
+automatisch; eingeschränkte Prozessprofile bleiben Default-Deny.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

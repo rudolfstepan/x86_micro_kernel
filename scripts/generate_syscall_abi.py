@@ -14,7 +14,7 @@ SOURCE = ROOT / "include/reist/abi/syscall.h"
 KERNEL_HEADER = ROOT / "lib/libc/stdlib.h"
 SDK_HEADER = ROOT / "userspace/sdk/include/x86os.h"
 SDK_COMMON_HEADER = ROOT / "userspace/sdk/include/reist/abi/syscall.h"
-COUNT = 120
+COUNT = 121
 ENTRY = re.compile(
     r"^\s*X\(([A-Z][A-Z0-9_]*), ([A-Z][A-Z0-9_]*), ([0-9]+)U\)"
     r"\s*(?:\\)?\s*$",
@@ -30,7 +30,8 @@ def entries() -> list[tuple[str, str, int]]:
         raise ValueError(f"expected {COUNT} syscalls, found {len(parsed)}")
     numbers = [item[2] for item in parsed]
     if numbers != list(range(COUNT)):
-        raise ValueError("syscall indexes must be contiguous 0..119")
+        raise ValueError(
+            f"syscall indexes must be contiguous 0..{COUNT - 1}")
     kernel_names = [item[0] for item in parsed]
     sdk_names = [item[1] for item in parsed]
     if len(set(kernel_names)) != COUNT or len(set(sdk_names)) != COUNT:

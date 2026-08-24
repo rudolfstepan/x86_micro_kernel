@@ -29,8 +29,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscall 119 is owner-aware STORAGE_CLAIM. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 120U
+/* Exclusive upper bound; syscall 120 is append-only OPEN_FLAGS. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 121U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -67,7 +67,19 @@ typedef struct {
     bool in_use;
     bool readable;
     bool writable;
+    bool append;
 } process_file_t;
+
+#define PROCESS_OPEN_RDONLY  0x0000U
+#define PROCESS_OPEN_WRONLY  0x0001U
+#define PROCESS_OPEN_RDWR    0x0002U
+#define PROCESS_OPEN_ACCMODE 0x0003U
+#define PROCESS_OPEN_CREAT   0x0040U
+#define PROCESS_OPEN_TRUNC   0x0200U
+#define PROCESS_OPEN_APPEND  0x0400U
+#define PROCESS_OPEN_ALLOWED_FLAGS \
+    (PROCESS_OPEN_ACCMODE | PROCESS_OPEN_CREAT | PROCESS_OPEN_TRUNC | \
+     PROCESS_OPEN_APPEND)
 
 enum {
     PROCESS_DESCRIPTOR_FILE = 1U,
@@ -144,6 +156,8 @@ void* process_user_malloc(size_t size);
 int process_user_free(void* pointer);
 void* process_user_realloc(void* pointer, size_t size);
 int process_file_open(Process* process, const char* path);
+int process_file_open_flags(Process* process, const char* path,
+                            uint32_t flags);
 int process_file_read(Process* process, int descriptor, void* buffer,
                       size_t size);
 int process_file_create(Process* process, const char* path);

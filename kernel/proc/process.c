@@ -1104,6 +1104,83 @@ int process_file_open(Process *process, const char *path) {
     process->files[slot].in_use = true;
     process->files[slot].readable = true;
     process->files[slot].writable = false;
+    process->files[slot].append = false;
+    return slot;
+}
+
+static int process_vfs_errno(int result) {
+    switch (result) {
+        case VFS_ERR_NOT_FOUND: return -REIST_ENOENT;
+        case VFS_ERR_NO_MEMORY: return -REIST_ENOMEM;
+        case VFS_ERR_INVALID: return -REIST_EINVAL;
+        case VFS_ERR_IO: return -REIST_EIO;
+        case VFS_ERR_EXISTS: return -REIST_EEXIST;
+        case VFS_ERR_NOT_DIR: return -REIST_ENOTDIR;
+        case VFS_ERR_IS_DIR: return -REIST_EISDIR;
+        case VFS_ERR_NO_SPACE: return -REIST_ENOSPC;
+        case VFS_ERR_READ_ONLY: return -REIST_EROFS;
+        case VFS_ERR_UNSUPPORTED: return -REIST_ENOTSUP;
+        case VFS_ERR_BUSY: return -REIST_EBUSY;
+        default: return -REIST_EIO;
+    }
+}
+
+int process_file_open_flags(Process *process, const char *path,
+                            uint32_t flags) {
+    uint32_t access_mode = flags & PROCESS_OPEN_ACCMODE;
+    if ((flags & ~PROCESS_OPEN_ALLOWED_FLAGS) != 0U ||
+        access_mode == PROCESS_OPEN_ACCMODE ||
+        ((flags & PROCESS_OPEN_APPEND) != 0U &&
+         access_mode == PROCESS_OPEN_RDONLY)) return -REIST_EINVAL;
+    /* Truncation needs a separate persistent transaction contract. Reject it
+     * before descriptor search, path resolution, opening or creation. */
+    if ((flags & PROCESS_OPEN_TRUNC) != 0U) return -REIST_ENOTSUP;
+    if (process == NULL || path == NULL) return -REIST_EINVAL;
+
+    int slot = -1;
+    for (int i = PROCESS_FD_BASE; i < MAX_PROCESS_DESCRIPTORS; ++i) {
+        if (!process->files[i].in_use) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) return -REIST_EMFILE;
+
+    char resolved[PROCESS_PATH_MAX];
+    if (process_resolve_path(process, path, resolved) != 0)
+        return -REIST_EINVAL;
+
+    bool created = false;
+    vfs_node_t *node = NULL;
+    int result = vfs_open(resolved, &node);
+    if (result == VFS_ERR_NOT_FOUND && (flags & PROCESS_OPEN_CREAT) != 0U) {
+        result = vfs_create(resolved);
+        if (result != VFS_OK) return process_vfs_errno(result);
+        created = true;
+        result = vfs_open(resolved, &node);
+    }
+    if (result != VFS_OK || node == NULL) {
+        if (node != NULL) (void)vfs_close(node);
+        if (created) (void)vfs_delete(resolved);
+        return result == VFS_OK ? -REIST_EIO : process_vfs_errno(result);
+    }
+    if (node->type != VFS_FILE) {
+        (void)vfs_close(node);
+        if (created) (void)vfs_delete(resolved);
+        return -REIST_EISDIR;
+    }
+
+    bool readable = access_mode != PROCESS_OPEN_WRONLY;
+    bool writable = access_mode != PROCESS_OPEN_RDONLY;
+    process->files[slot] = (process_file_t){
+        .node = node,
+        .offset = 0U,
+        .kind = PROCESS_DESCRIPTOR_FILE,
+        .in_use = true,
+        .readable = readable,
+        .writable = writable,
+        .append = (flags & PROCESS_OPEN_APPEND) != 0U,
+    };
     return slot;
 }
 
@@ -1149,6 +1226,7 @@ int process_file_create(Process *process, const char *path) {
     process->files[slot].in_use = true;
     process->files[slot].readable = true;
     process->files[slot].writable = true;
+    process->files[slot].append = false;
     return slot;
 }
 
@@ -1161,8 +1239,10 @@ int process_file_write(Process *process, int descriptor, const void *buffer,
         !process->files[slot].writable || size > UINT32_MAX) return -1;
     if (size == 0) return 0;
     process_file_t *file = &process->files[slot];
-    int result = vfs_write(file->node, file->offset, (uint32_t)size, buffer);
-    if (result > 0) file->offset += (uint32_t)result;
+    uint32_t write_offset = file->offset;
+    if (file->append) write_offset = file->node->size;
+    int result = vfs_write(file->node, write_offset, (uint32_t)size, buffer);
+    if (result > 0) file->offset = write_offset + (uint32_t)result;
     return result;
 }
 

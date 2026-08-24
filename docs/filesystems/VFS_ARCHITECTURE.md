@@ -109,6 +109,17 @@ Die Adapter stellen die jeweils unterstützten Varianten von `open`, `close`,
 Operationen liefern einen eindeutigen Fehler und dürfen keine Teilwirkung
 veröffentlichen.
 
+Der prozesslokale Legacy-Deskriptorpfad besitzt zusätzlich append-only Syscall
+120 und `x86os_open_flags()`. Seine POSIX-nahen Werte sind `RDONLY=0`,
+`WRONLY=1`, `RDWR=2`, `CREAT=0x40`, `TRUNC=0x200` und `APPEND=0x400`.
+Unbekannte Bits, der reservierte Zugriffsmodus 3 und `APPEND` ohne Schreibrecht
+liefern vor Wirkung `EINVAL`. Ein voller fester Deskriptorpool liefert vor
+einem möglichen `CREAT` `EMFILE`. `TRUNC` bleibt bis zum separaten
+dateisystemspezifischen Journal-/Rollback-Paket wirkungslos und liefert
+`ENOTSUP`; die Flagdefinition ist keine Behauptung implementierter Kürzung.
+Alte `open`-/`create`-Syscalls und die serviceeigenen read-only Objekt-Handles
+werden dadurch nicht verändert.
+
 ## Mountvertrag
 
 - Mountpfade und Tabellen sind fest begrenzt.

@@ -140,7 +140,8 @@ enum {
     X86OS_SYS_RUNTIME_TIMING = 116,
     X86OS_SYS_BOOT_STATUS = 117,
     X86OS_SYS_STORAGE_CANCEL = 118,
-    X86OS_SYS_STORAGE_CLAIM_IDENTITY = 119
+    X86OS_SYS_STORAGE_CLAIM_IDENTITY = 119,
+    X86OS_SYS_OPEN_FLAGS = 120
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -299,6 +300,16 @@ enum {
     X86OS_FILE = 1,
     X86OS_DIRECTORY = 2
 };
+
+/* POSIX-shaped access and status flags for x86os_open_flags(). O_TRUNC is
+ * reserved by ABI v1 and currently fails closed with REIST_ENOTSUP. */
+#define X86OS_O_RDONLY  0x0000U
+#define X86OS_O_WRONLY  0x0001U
+#define X86OS_O_RDWR    0x0002U
+#define X86OS_O_ACCMODE 0x0003U
+#define X86OS_O_CREAT   0x0040U
+#define X86OS_O_TRUNC   0x0200U
+#define X86OS_O_APPEND  0x0400U
 
 typedef struct {
     char name[256];
@@ -1682,6 +1693,7 @@ uint32_t x86os_get_time(void);
 uint32_t x86os_uptime_ms(void);
 uint32_t x86os_memory_kb(void);
 int x86os_open(const char* path);
+int x86os_open_flags(const char* path, uint32_t flags);
 int x86os_read(int descriptor, void* buffer, size_t size);
 int x86os_close(int descriptor);
 int x86os_stat(const char* path, x86os_file_info_t* info);

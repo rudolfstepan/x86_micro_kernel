@@ -7,6 +7,13 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R2.1-open-flags-rights` hängt Syscall 120 für POSIX-nahe Open-Modi an. Neue
+Deskriptoren erhalten exakt angeforderte READ-/WRITE-Rechte; `CREAT` prüft die
+feste Slotquote vor Namespace-Wirkung und `APPEND` bestimmt den Schreiboffset
+für jeden Aufruf neu. Die alten Open-/Create-Syscalls bleiben unverändert.
+`TRUNC` ist bereits als ABI-Flag reserviert, wird aber bis zum getrennten
+FAT12-/FAT32-Transaktionspaket vor jeder Wirkung mit `ENOTSUP` abgewiesen.
+
 `R2.1-standard-descriptors` erweitert die bestehende feste Prozesstabelle um
 echte Deskriptoren 0/1/2 mit richtungsgebundenen Terminalrechten. Der
 Tastaturpfad bleibt bis zu einer eigenen TTY-/Deadline-ABI nichtblockierend;

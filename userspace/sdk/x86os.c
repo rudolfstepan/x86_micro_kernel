@@ -685,6 +685,10 @@ int x86os_open(const char* path) {
     return (int)x86os_syscall(X86OS_SYS_OPEN, (uintptr_t)path, 0, 0);
 }
 
+int x86os_open_flags(const char* path, uint32_t flags) {
+    return (int)x86os_syscall(X86OS_SYS_OPEN_FLAGS, (uintptr_t)path, flags, 0);
+}
+
 int x86os_read(int descriptor, void* buffer, size_t size) {
     return (int)x86os_syscall(X86OS_SYS_READ, (uintptr_t)descriptor,
                               (uintptr_t)buffer, size);

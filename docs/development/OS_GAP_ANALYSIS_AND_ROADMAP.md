@@ -497,6 +497,9 @@ und 10 verbindlich.
   - [x] echte prozesslokale Standarddeskriptoren 0/1/2 mit
     READ-only `stdin`, WRITE-only `stdout`/`stderr`, nichtblockierendem
     Tastaturpoll und unveränderten acht dynamischen Slots 3 bis 10
+  - [x] append-only Syscall 120 mit `RDONLY`/`WRONLY`/`RDWR`, exakten
+    Descriptorrechten, `CREAT` und per Schreibaufruf neu bestimmtem `APPEND`;
+    `TRUNC` bleibt bis zum Transaktionspaket vor jeder Wirkung `ENOTSUP`
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1586,9 +1589,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Folgepakete.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
-  lückenlose v1-Indizes 0 bis 119 und beide Buildpfade prüfen Drift fail-closed
-- Open-Flags und Rechte je Handle ergänzen; Standarddeskriptoren 0/1/2 sind
-  als getrennte feste, richtungsgebundene Einträge umgesetzt.
+  lückenlose v1-Indizes 0 bis 120 und beide Buildpfade prüfen Drift fail-closed
+- [x] Open-Flags und Rechte je Handle ergänzen; Standarddeskriptoren 0/1/2 sind
+  als getrennte feste, richtungsgebundene Einträge umgesetzt. Syscall 120
+  ergänzt `RDONLY`/`WRONLY`/`RDWR`, `CREAT` und `APPEND` ohne Änderung der
+  Legacy-Syscalls 14/19. `TRUNC` ist definiert, wird aber vor jeder Wirkung mit
+  `ENOTSUP` abgewiesen und bleibt Teil des nächsten Persistenzschnitts.
 - `lseek`, `fstat` und `truncate` implementieren; die bestehenden Rename- und
    `fsync`-Syscalls in den gemeinsamen ABI-Header überführen.
 - Teilzugriffe, EOF, ungültige Handles und Prozess-Exit vollständig testen.

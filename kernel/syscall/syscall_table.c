@@ -1863,6 +1863,16 @@ static int syscall_open(const char *user_path) {
     return descriptor < 0 ? -2 : descriptor; /* ENOENT/resource failure */
 }
 
+static int syscall_open_flags(const char *user_path, uint32_t flags) {
+    char path[PROCESS_PATH_MAX];
+    Process *process = scheduler_current_process();
+    if (process == NULL ||
+        copy_string_from_user(path, sizeof(path), user_path) < 0) {
+        return -REIST_EFAULT;
+    }
+    return process_file_open_flags(process, path, flags);
+}
+
 static int syscall_read(int descriptor, void *user_buffer, size_t size) {
     Process *process = scheduler_current_process();
     if (process == NULL) return -9; /* EBADF */
@@ -3185,6 +3195,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_boot_status,         // Syscall 117: Validated boot status
     (void*)&syscall_storage_cancel,      // Syscall 118: Revoke owned request
     (void*)&syscall_storage_claim_identity, // Syscall 119: Owner-aware claim
+    (void*)&syscall_open_flags,          // Syscall 120: Rights-scoped open
     // Add more syscalls here as needed
 };
 
@@ -3306,6 +3317,12 @@ void syscall_handler(Registers* regs) {
         case SYS_CREATE:
             scheduler_preempt_disable();
             result = (uint32_t)syscall_create((const char*)(uintptr_t)arg1);
+            scheduler_preempt_enable();
+            break;
+        case SYS_OPEN_FLAGS:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_open_flags(
+                (const char*)(uintptr_t)arg1, arg2);
             scheduler_preempt_enable();
             break;
         case SYS_TOUCH:

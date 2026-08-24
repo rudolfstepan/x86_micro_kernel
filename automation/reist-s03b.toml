@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-open-flags-rights"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-open-flags-rights"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Append-only open flags and descriptor rights"
@@ -69,7 +69,11 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "vfs: add bounded open flags and rights"
-evidence = []
+evidence = [
+  "five focused open-flags source tests passed after one whitespace-only assertion repair and five shared-ABI tests passed with contiguous indices zero through 120",
+  "QEMU VGA package gate passed in 35 seconds with the generated syscall ABI and rebuilt guest image",
+  "normal QEMU runtime passed in 24 seconds with OPEN_FLAGS_OK and TEST_OK after rights append quota and fail-closed TRUNC checks"
+]
 
 [[packages]]
 id = "R2.1-shared-syscall-abi"

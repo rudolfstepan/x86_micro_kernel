@@ -138,6 +138,7 @@
 #define SYS_BOOT_STATUS 117
 #define SYS_STORAGE_CANCEL 118
 #define SYS_STORAGE_CLAIM_IDENTITY 119
+#define SYS_OPEN_FLAGS 120
 /* END GENERATED REIST SYSCALLS */
 
 // // Macros for try-catch handling

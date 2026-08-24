@@ -13,6 +13,7 @@
 
 #define WAIT_STRESS_ITERATIONS 64
 #define GUEST_TEST_TASK_CAPACITY_LIMIT 32U
+#define OPEN_FLAGS_DESCRIPTOR_CAPACITY 8
 
 static int text_equal(const char *left, const char *right) {
     if (left == NULL || right == NULL) return 0;
@@ -345,6 +346,79 @@ static int guest_vfs_shadow_stat(const char *path, x86os_file_info_t *info,
         info->access_time = frame.info.access_time;
     }
     return frame.result;
+}
+
+static int test_open_flags(void) {
+    static const char path[] = "OPENFLG.TMP";
+    static const char full[] = "BASE+END";
+    static const char absent[] = "NOFILE.TMP";
+    int held[OPEN_FLAGS_DESCRIPTOR_CAPACITY];
+    char actual[sizeof(full) - 1U];
+    char byte = 0;
+
+    (void)x86os_unlink(path);
+    (void)x86os_unlink(absent);
+    int descriptor = x86os_open_flags(
+        path, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor != 3 ||
+        x86os_write(descriptor, full, 4U) != 4 ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 || x86os_write(descriptor, &byte, 1U) !=
+            -REIST_EBADF ||
+        x86os_read(descriptor, actual, 4U) != 4 ||
+        !bytes_equal(actual, full, 4U) || x86os_close(descriptor) != 0)
+        goto failed;
+
+    descriptor = x86os_open_flags(
+        path, X86OS_O_WRONLY | X86OS_O_APPEND);
+    if (descriptor < 0 || x86os_read(descriptor, &byte, 1U) !=
+            -REIST_EBADF ||
+        x86os_write(descriptor, full + 4U, 1U) != 1 ||
+        x86os_write(descriptor, full + 5U, 3U) != 3 ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+
+    if (x86os_open_flags(path, X86OS_O_RDONLY | X86OS_O_APPEND) !=
+            -REIST_EINVAL ||
+        x86os_open_flags(path, X86OS_O_ACCMODE) != -REIST_EINVAL ||
+        x86os_open_flags(path, 0x80000000U) != -REIST_EINVAL ||
+        x86os_open_flags(path, X86OS_O_WRONLY | X86OS_O_TRUNC) !=
+            -REIST_ENOTSUP) goto failed;
+
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 ||
+        x86os_read(descriptor, actual, sizeof(actual)) !=
+            (int)sizeof(actual) ||
+        !bytes_equal(actual, full, sizeof(actual)) ||
+        x86os_close(descriptor) != 0) goto failed;
+
+    for (int index = 0; index < OPEN_FLAGS_DESCRIPTOR_CAPACITY; ++index) {
+        held[index] = x86os_open_flags(path, X86OS_O_RDONLY);
+        if (held[index] < 0) {
+            while (index-- > 0) (void)x86os_close(held[index]);
+            goto failed;
+        }
+    }
+    if (x86os_open_flags(absent, X86OS_O_CREAT | X86OS_O_RDWR) !=
+            -REIST_EMFILE) {
+        for (int index = 0; index < OPEN_FLAGS_DESCRIPTOR_CAPACITY; ++index)
+            (void)x86os_close(held[index]);
+        goto failed;
+    }
+    for (int index = 0; index < OPEN_FLAGS_DESCRIPTOR_CAPACITY; ++index) {
+        if (x86os_close(held[index]) != 0) goto failed;
+    }
+    x86os_file_info_t info;
+    if (x86os_stat(absent, &info) == 0 || x86os_unlink(path) != 0) goto failed;
+    return 0;
+
+failed:
+    (void)x86os_unlink(absent);
+    (void)x86os_unlink(path);
+    return -1;
 }
 
 static int wait_for_expected(const char *path, int expected_status) {
@@ -1293,6 +1367,12 @@ int main(int argc, char **argv) {
         return 10;
     }
     x86os_puts("TEST_STAGE STANDARD_DESCRIPTORS_OK\n");
+
+    if (test_open_flags() != 0) {
+        x86os_puts("TEST_FAIL OPEN_FLAGS\n");
+        return 11;
+    }
+    x86os_puts("TEST_STAGE OPEN_FLAGS_OK\n");
 
     if (test_wait_wakeup() != 0) {
         x86os_puts("TEST_FAIL WAIT\n");
