@@ -24,6 +24,8 @@ allowed_files = [
   "userspace/storage/lib/vfs_shadow_fat32.c",
   "userspace/storage/lib/vfs_stat_client.c",
   "userspace/programs/storage_service.c",
+  "drivers/block/fdd.c",
+  "scripts/test-reist-runtime.ps1",
   "scripts/run_qemu_fdd_hotplug.py",
   "test/test_vfs_shadow_fat32_host.c",
   "test/test_reist_vfs_shadow_fat32.py",
@@ -31,6 +33,7 @@ allowed_files = [
   "test/test_reist_vfs_stat_client.py",
   "test/test_reist_storage_service.py",
   "test/test_qemu_fdd_hotplug.py",
+  "test/test_fdd_source.py",
   "docs/filesystems/VFS_ARCHITECTURE.md",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
@@ -51,7 +54,8 @@ targeted_tests = [
   "python test/test_reist_vfs_shadow_fat32.py -v",
   "python test/test_reist_vfs_stat_client.py -v",
   "python test/test_reist_storage_service.py -v",
-  "python test/test_qemu_fdd_hotplug.py -v"
+  "python test/test_qemu_fdd_hotplug.py -v",
+  "python test/test_fdd_source.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
