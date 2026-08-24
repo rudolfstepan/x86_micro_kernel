@@ -1,0 +1,189 @@
+/** Host behavior test for the bounded Ring-3 EXT2 stat parser. */
+#include <stdint.h>
+#include <string.h>
+
+#include "userspace/storage/include/reist/vfs_shadow_ext2.h"
+
+#define TEST_BLOCK_SIZE 1024U
+#define TEST_BLOCKS 128U
+#define TEST_SECTORS (TEST_BLOCKS * 2U)
+
+typedef struct {
+    uint8_t image[TEST_SECTORS * X86OS_STORAGE_BLOCK_SIZE];
+    uint32_t reads;
+} test_context_t;
+
+static void put16(uint8_t *data, uint16_t value) {
+    data[0] = (uint8_t)value;
+    data[1] = (uint8_t)(value >> 8U);
+}
+
+static void put32(uint8_t *data, uint32_t value) {
+    data[0] = (uint8_t)value;
+    data[1] = (uint8_t)(value >> 8U);
+    data[2] = (uint8_t)(value >> 16U);
+    data[3] = (uint8_t)(value >> 24U);
+}
+
+static uint8_t *block_at(test_context_t *context, uint32_t block) {
+    return context->image + block * TEST_BLOCK_SIZE;
+}
+
+static uint8_t *inode_at(test_context_t *context, uint32_t number) {
+    uint32_t offset = (number - 1U) * 128U;
+    return block_at(context, 5U + offset / TEST_BLOCK_SIZE) +
+        offset % TEST_BLOCK_SIZE;
+}
+
+static void make_inode(test_context_t *context, uint32_t number,
+                       uint16_t mode, uint32_t size, uint32_t block) {
+    uint8_t *inode = inode_at(context, number);
+    put16(inode + 0U, mode);
+    put32(inode + 4U, size);
+    put32(inode + 8U, 1700000001U);
+    put32(inode + 12U, 1700000002U);
+    put32(inode + 16U, 1700000003U);
+    put16(inode + 26U, 1U);
+    put32(inode + 28U, block == 0U ? 0U : 2U);
+    put32(inode + 40U, block);
+}
+
+static uint32_t add_entry(uint8_t *directory, uint32_t offset,
+                          uint32_t inode, const char *name,
+                          uint8_t type, uint16_t record_length) {
+    uint32_t length = (uint32_t)strlen(name);
+    put32(directory + offset, inode);
+    put16(directory + offset + 4U, record_length);
+    directory[offset + 6U] = (uint8_t)length;
+    directory[offset + 7U] = type;
+    memcpy(directory + offset + 8U, name, length);
+    return offset + record_length;
+}
+
+static void fill_empty_directory_block(uint8_t *block) {
+    put16(block + 4U, TEST_BLOCK_SIZE);
+}
+
+static void initialize(test_context_t *context) {
+    memset(context, 0, sizeof(*context));
+    uint8_t *superblock = block_at(context, 1U);
+    put32(superblock + 0U, 128U);
+    put32(superblock + 4U, TEST_BLOCKS);
+    put32(superblock + 20U, 1U);
+    put32(superblock + 24U, 0U);
+    put32(superblock + 28U, 0U);
+    put32(superblock + 32U, TEST_BLOCKS);
+    put32(superblock + 36U, TEST_BLOCKS);
+    put32(superblock + 40U, 128U);
+    put16(superblock + 56U, 0xEF53U);
+    put16(superblock + 58U, 1U);
+    put32(superblock + 76U, 1U);
+    put32(superblock + 84U, 11U);
+    put16(superblock + 88U, 128U);
+    put32(superblock + 96U, 2U);
+
+    uint8_t *descriptor = block_at(context, 2U);
+    put32(descriptor + 0U, 3U);
+    put32(descriptor + 4U, 4U);
+    put32(descriptor + 8U, 5U);
+
+    make_inode(context, 2U, 0x41EDU, TEST_BLOCK_SIZE, 21U);
+    put16(inode_at(context, 2U) + 26U, 4U);
+    make_inode(context, 12U, 0x81A4U, 15U, 22U);
+    make_inode(context, 13U, 0x41EDU, TEST_BLOCK_SIZE, 23U);
+    put16(inode_at(context, 13U) + 26U, 2U);
+    make_inode(context, 14U, 0x81A4U, 4U, 24U);
+    make_inode(context, 15U, 0x41EDU, 13U * TEST_BLOCK_SIZE, 25U);
+    put16(inode_at(context, 15U) + 26U, 2U);
+    for (uint32_t index = 0U; index < 12U; ++index) {
+        put32(inode_at(context, 15U) + 40U + index * 4U, 25U + index);
+        fill_empty_directory_block(block_at(context, 25U + index));
+    }
+    put32(inode_at(context, 15U) + 40U + 12U * 4U, 38U);
+    put32(block_at(context, 38U), 39U);
+    make_inode(context, 16U, 0x81A4U, 5U, 40U);
+
+    uint8_t *root = block_at(context, 21U);
+    uint32_t offset = add_entry(root, 0U, 2U, ".", 2U, 12U);
+    offset = add_entry(root, offset, 2U, "..", 2U, 12U);
+    offset = add_entry(root, offset, 12U, "readme.txt", 1U, 20U);
+    offset = add_entry(root, offset, 13U, "dir", 2U, 12U);
+    add_entry(root, offset, 15U, "big", 2U,
+              (uint16_t)(TEST_BLOCK_SIZE - offset));
+    memcpy(block_at(context, 22U), "EXT2 AUTHORITY\n", 15U);
+
+    uint8_t *directory = block_at(context, 23U);
+    offset = add_entry(directory, 0U, 13U, ".", 2U, 12U);
+    offset = add_entry(directory, offset, 2U, "..", 2U, 12U);
+    add_entry(directory, offset, 14U, "nested.bin", 1U,
+              (uint16_t)(TEST_BLOCK_SIZE - offset));
+    memcpy(block_at(context, 24U), "nest", 4U);
+    add_entry(block_at(context, 39U), 0U, 16U, "deep.txt", 1U,
+              TEST_BLOCK_SIZE);
+    memcpy(block_at(context, 40U), "deep\n", 5U);
+}
+
+static int drive_info(void *opaque, uint32_t resource,
+                      x86os_drive_info_t *info) {
+    (void)opaque;
+    memset(info, 0, sizeof(*info));
+    if (resource > 1U) return 0;
+    info->type = X86OS_DRIVE_ATA;
+    info->sectors = TEST_SECTORS;
+    strcpy(info->mount_point, resource == 0U ? "/" : "/mnt/ext2");
+    return 1;
+}
+
+static int read_sector(void *opaque, uint32_t resource, uint32_t sector,
+                       uint8_t *data) {
+    test_context_t *context = opaque;
+    if (resource != 1U || sector >= TEST_SECTORS) return -5;
+    ++context->reads;
+    memcpy(data, context->image + sector * X86OS_STORAGE_BLOCK_SIZE,
+           X86OS_STORAGE_BLOCK_SIZE);
+    return 0;
+}
+
+static int stat_path(test_context_t *context, const char *path,
+                     x86os_file_info_t *info) {
+    const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
+    context->reads = 0U;
+    return reist_vfs_shadow_ext2_stat(
+        &io, path, (uint32_t)strlen(path), info);
+}
+
+int main(void) {
+    static test_context_t context;
+    x86os_file_info_t info;
+    initialize(&context);
+    if (stat_path(&context, "/mnt/ext2", &info) != 0 ||
+        strcmp(info.name, "/") != 0 || info.type != X86OS_DIRECTORY)
+        return 1;
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != 0 ||
+        strcmp(info.name, "readme.txt") != 0 || info.type != X86OS_FILE ||
+        info.size != 15U || info.create_time != 1700000002U ||
+        context.reads > REIST_VFS_SHADOW_EXT2_MAX_SECTOR_READS) return 2;
+    if (stat_path(&context, "/mnt/ext2/dir/nested.bin", &info) != 0 ||
+        info.size != 4U) return 3;
+    if (stat_path(&context, "/mnt/ext2/big/deep.txt", &info) != 0 ||
+        info.size != 5U) return 4;
+    if (stat_path(&context, "/mnt/ext2/README.TXT", &info) != -2) return 5;
+
+    initialize(&context);
+    put16(block_at(&context, 1U) + 56U, 0U);
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2) return 6;
+    initialize(&context);
+    put32(block_at(&context, 1U) + 96U, 0x40U);
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2) return 7;
+    initialize(&context);
+    put16(block_at(&context, 21U) + 4U, 6U);
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -5) return 8;
+    initialize(&context);
+    put32(block_at(&context, 2U) + 8U, 127U);
+    if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -5) return 9;
+    initialize(&context);
+    put32(inode_at(&context, 15U) + 4U, 33U * TEST_BLOCK_SIZE);
+    if (stat_path(&context, "/mnt/ext2/big/missing", &info) != -110)
+        return 10;
+    return 0;
+}

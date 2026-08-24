@@ -127,8 +127,16 @@ Parserstatus und dessen Metadaten und besitzt keinen `SYS_STAT`-Aufruf oder
 Fallback. Operationen 1 bis 3 bleiben semantisch unverändert; der normale
 QEMU-Gast vergleicht Operation 4 weiterhin außerhalb des Dienstpfads
 bytegenau mit dem Legacy-Ergebnis.
+Append-only Operation 5 erweitert diesen autoritativen read-only Vertrag auf
+EXT2. Der Ring-3-Dienst wählt weiterhin das längste Mountpräfix und versucht
+nur die unabhängigen FAT12/FAT32- beziehungsweise EXT2-Parser. Der EXT2-Subset
+ist fest auf Revision 0/1, 1--4-KiB-Blöcke, lineare Verzeichnisse, 16
+Pfadkomponenten, 32 Verzeichnisblöcke und 128 vermittelte Sektorreads begrenzt.
+Direkte und einfach-indirekte Directory-Blöcke sind unterstützt; HTree,
+Extents, Symlinkauflösung, 64-Bit-Größen und unbekannte Features werden
+fail-closed abgewiesen. Auch dieser Pfad ruft `SYS_STAT` nicht auf.
 Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
-`STAT.PRG` an Operation 4. Ein fester Adapter normalisiert Pfade, wartet
+`STAT.PRG` inzwischen an Operation 5. Ein fester Adapter normalisiert Pfade, wartet
 mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt
 bei Fehlern nie auf `SYS_STAT` zurück. Der Prozess beendet sich anschließend,
 sodass seine generationgebundenen Requests durch die vorhandene
@@ -145,7 +153,7 @@ Handles und Mutationen verbleiben bis zu getrennten Nachweispaketen im Kernel.
 Neue Mutationsautorität entsteht nicht.
 
 Als erster lang laufender Verbraucher nutzt der bounded `HTTPD.PRG`-
-Vordergrundserver Operation 4 für `/htdocs`. Zwölf echte
+Vordergrundserver Operation 5 für `/htdocs`. Zwölf echte
 HTTP/TCP-Transaktionen im QEMU-Gast belegen wiederholte FAT32-Directory-
 Entscheidungen, fortbestehenden Serverbetrieb bis `Ctrl+C` und die Rückkehr zur
 Userspace-Shell. Der einmalige Marker `HTTPD_VFS_STAT_CLIENT_OK` folgt erst auf

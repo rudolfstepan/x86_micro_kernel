@@ -33,9 +33,9 @@ class ReistVfsStatClientTests(unittest.TestCase):
         mapping = build[build.index('"STAT.PRG"'):build.index('"DF.PRG"')]
         self.assertIn("vfs_stat_client.c", mapping)
 
-    def test_adapter_is_fixed_bounded_and_authoritative_fat_only(self):
+    def test_adapter_is_fixed_bounded_and_authoritative_filesystem_only(self):
         source = read("userspace/storage/lib/vfs_stat_client.c")
-        self.assertIn("X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY", source)
+        self.assertIn("X86OS_VFS_SHADOW_FS_STAT_AUTHORITY", source)
         self.assertNotIn("X86OS_VFS_SHADOW_FAT32_STAT", source)
         self.assertIn("now >= deadline", source)
         self.assertIn("x86os_sleep_ms(1U)", source)
@@ -48,6 +48,7 @@ class ReistVfsStatClientTests(unittest.TestCase):
         guest = read("userspace/programs/guest_test.c")
         self.assertIn('"/bin/stat.prg", "/GUEST.TMP"', guest)
         self.assertIn("STORAGE_VFS_FAT_STAT_AUTHORITY_OK", guest)
+        self.assertIn("STORAGE_VFS_FS_STAT_AUTHORITY_OK", guest)
         self.assertIn("STORAGE_VFS_STAT_CLIENT_OK", guest)
 
 

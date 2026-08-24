@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-vfs-shadow-ext2-parser"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-vfs-shadow-ext2-parser"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Bounded authoritative Ring-3 EXT2 metadata parser"
@@ -73,7 +73,16 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: add authoritative bounded Ring-3 EXT2 stat"
-evidence = []
+evidence = [
+  "python test/test_reist_vfs_shadow_ext2.py -v: PASS (2 tests)",
+  "python test/test_reist_vfs_shadow_fat32.py -v: PASS (3 tests)",
+  "python test/test_reist_vfs_stat_client.py -v: PASS (4 tests)",
+  "python test/test_reist_storage_service.py -v: PASS (6 tests)",
+  "python test/test_qemu_ext2_stat.py -v: PASS (3 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (8s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal: PASS (13s, operation 5 FAT regression and TEST_OK)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode ext2-stat: PASS (9s, second IDE EXT2 metadata and shell return)"
+]
 
 [[packages]]
 id = "R2.1-vfs-fat-stat-authority"

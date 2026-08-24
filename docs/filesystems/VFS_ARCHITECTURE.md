@@ -38,11 +38,14 @@ exakt mit `SYS_STAT` übereinstimmen; eine Abweichung liefert den
 Integritätsfehler `-84`. Die append-only Operation 4 verwendet denselben
 begrenzten FAT12-/FAT32-Parser autoritativ und ruft weder `SYS_STAT` auf noch
 fällt sie darauf zurück. Die Operationen 1 bis 3 behalten ihre bisherige
-Semantik. `open`, Mutationen, Controllerzugriff und DMA bleiben verboten.
+Semantik. Append-only Operation 5 ist der autoritative generische
+Dateisystempfad: Sie verwendet ausschließlich die unabhängigen FAT- und
+EXT2-Parser und besitzt ebenfalls keinen `SYS_STAT`-Aufruf oder Fallback.
+`open`, Mutationen, Controllerzugriff und DMA bleiben verboten.
 
 Damit besitzt Ring 3 echte FAT12-/FAT32-Parsersemantik. Als erster
-kontrollierter Cutover verwendet das kurzlebige `STAT.PRG` ausschließlich
-Operation 4 und
+kontrollierter Cutover verwendet das kurzlebige `STAT.PRG` inzwischen
+ausschließlich Operation 5 und
 übernimmt deren Ergebnis ohne Rückfall auf `SYS_STAT`. Der feste Clientadapter
 normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
 Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
@@ -53,10 +56,11 @@ eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
 sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
 Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
 ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
-EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
+EXT2-`stat` ist damit migriert; Handles, Lesen und Verzeichnisiteration sind
+noch nicht migriert.
 
 `HTTPD.PRG` ist der erste lang laufende Client dieser ABI. Der sequenzielle,
-fest begrenzte Vordergrundserver verwendet Operation 4 für jede
+fest begrenzte Vordergrundserver verwendet Operation 5 für jede
 `/htdocs`-Metadatenentscheidung, besitzt keinen Legacy-`stat`-Fallback und
 widerruft offene Requests über Syscall 118. `open`, `read` und `readdir` bleiben
 in diesem Paket am Kernel-VFS. Der HTTP-Cutover gilt nur für den nachgewiesenen
@@ -119,7 +123,23 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
    Directory und 12-Bit-Clusterketten; EXT2 bleibt offen.
 7. [x] Append-only Operation 4 als parser-autoritatives FAT-`stat`; der
    Äquivalenzvergleich findet nur noch im Gasttest statt.
-8. EXT2-Metadatenparser ergänzen und danach Handles, Lesen und
+8. [x] Begrenzter read-only EXT2-Metadatenparser und append-only Operation 5;
+   die reale QEMU-Abnahme läuft auf einer zweiten IDE-Platte.
+9. Danach Handles, Lesen und
    Verzeichnisiteration migrieren.
-9. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+10. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
+
+### Begrenzter EXT2-Subset in Ring 3
+
+Der Parser folgt dem Linux-EXT2-On-Disk-Format, akzeptiert aber nur Revision 0
+oder 1 mit 1, 2 oder 4 KiB großen Blöcken und festen, potenz-of-two großen
+Inodes. Er verarbeitet lineare Verzeichnisse über zwölf direkte und einen
+einfach-indirekten Blockzeiger. Höchstens 22 Ressourcen, 16 Pfadkomponenten,
+32 Verzeichnisblöcke und 128 vermittelte 512-Byte-Sektorreads werden besucht;
+der größte feste Stackpuffer ist 4096 Byte. Namen sind im öffentlichen REIST-
+Pfadvertrag druckbares ASCII und werden EXT2-konform case-sensitive verglichen.
+Unbekannte Incompat-/Read-only-Compat-Features, HTree-Verzeichnisse, Extents,
+Symlinkauflösung, doppelt oder dreifach indirekte Verzeichnisblöcke und
+64-Bit-Dateigrößen werden fail-closed abgewiesen. Schreibautorität entsteht
+daraus nicht.

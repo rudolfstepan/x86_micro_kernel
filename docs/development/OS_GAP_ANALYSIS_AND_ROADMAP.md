@@ -83,8 +83,8 @@ werden nicht durch die Emulatorabnahme ersetzt.
 Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
-`automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
-Nach Abschluss von `R2.1-vfs-fat-stat-authority` ist derzeit kein Paket aktiv.
+`automation/reist-s03b.toml` auf genau dieses Paket zeigt. Nach Abschluss von
+`R2.1-vfs-shadow-ext2-parser` besitzt die Queue derzeit kein aktives Paket.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -468,6 +468,8 @@ und 10 verbindlich.
     fester Rootdirectory, 12-Bit-Clusterketten und echtem QEMU-FDD-Stat-Nachweis
   - [x] append-only Operation 4 als autoritativer, ausschließlich
     parserbasierter FAT12-/FAT32-`stat`-Pfad ohne `SYS_STAT`-Ergebnisabhängigkeit
+  - [x] begrenzter read-only EXT2-Parser und append-only
+    Operation 5 als autoritativer generischer FAT12/FAT32/EXT2-`stat`-Pfad
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1542,8 +1544,9 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   begrenzten FAT-Parser autoritativ und lässt `SYS_STAT` vollständig aus ihrem
   Ergebnisweg; Operationen 1 bis 3 bleiben unverändert. Der normale Gast
   vergleicht Operation 4 als unabhängige Testevidenz weiterhin bytegenau mit
-  Legacy-`stat`. `open`, `read`, `readdir`, Shell,
-  Desktop und EXT2 bleiben in getrennten Folgepaketen.
+  Legacy-`stat`. Append-only Operation 5 ergänzt den festen EXT2-Subset und
+  wird der gemeinsame autoritative Clientpfad. `open`, `read`, `readdir`,
+  Shell und Desktop bleiben in getrennten Folgepaketen.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 - Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
@@ -2112,7 +2115,14 @@ QEMU-FDD-Hotplug-Lauf prüft das paketierte `STAT.PRG` auf
 `/htdocs`, ohne Legacy-`stat`-Fallback. Ein eigener QEMU-Modus führt zwölf echte
 HTTP/TCP-Anfragen aus, verlangt `HTTPD_VFS_STAT_CLIENT_OK`, hält den Server bis
 `Ctrl+C` aktiv und gewinnt anschließend die Userspace-Shell zurück. Weitere
-Clients warten auf die jeweils benötigte FAT12-/EXT2- oder Handle-Abdeckung.
+Operation 5 ergänzt nun einen heapfreien EXT2-Parser für Revision 0/1,
+1--4-KiB-Blöcke und lineare Directories mit direkten oder einfach-indirekten
+Directory-Blöcken. Der feste Vertrag begrenzt Ressourcen, Komponenten,
+Directory-Blöcke und Sektorreads; HTree, Extents, Symlinks und 64-Bit-Größen
+werden abgewiesen. Der eigene QEMU-Modus hängt eine deterministische zweite
+IDE-Platte ein und führt das paketierte `STAT.PRG` auf
+`/mnt/hdd1/readme.txt` aus. Weitere Clients warten auf die jeweils benötigte
+Handle-Abdeckung.
 
 R1.8 ist ebenfalls abgeschlossen: Der generationsgebundene Ring-3-SVGA-II-
 Treiber nutzt ausschließlich den festen Kernelmediator für Aktivierung,

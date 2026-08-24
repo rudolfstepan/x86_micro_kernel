@@ -285,8 +285,15 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   normale QEMU-Gast vergleicht Operation 4 außerhalb dieses Produktionspfads
   bytegenau mit Legacy-`stat` und markiert den Erfolg mit
   `STORAGE_VFS_FAT_STAT_AUTHORITY_OK`.
+- Append-only Operation 5 ergänzt einen unabhängigen, heapfreien EXT2-Parser
+  und ist der autoritative generische FAT12/FAT32/EXT2-`stat`-Pfad. Der
+  unterstützte EXT2-Subset umfasst Revision 0/1, 1--4-KiB-Blöcke, lineare
+  Directories sowie direkte und einfach-indirekte Directory-Blöcke unter 128
+  Sektorreads. HTree, Extents, Symlinks und 64-Bit-Größen bleiben fail-closed.
+  Der QEMU-Nachweis hängt eine deterministische zweite IDE-Platte ein und führt
+  das paketierte `STAT.PRG` auf `/mnt/hdd1/readme.txt` aus.
 - `HTTPD.PRG` ist der erste lang laufende Nutzer des Ring-3-FAT-`stat`-
-  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 4 und
+  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 5 und
   besitzt keinen Legacy-Fallback; `open`, `read` und `readdir` bleiben vorerst
   am Kernel-VFS. Der QEMU-Modus `http-server` führt zwölf echte eingehende
   HTTP/TCP-Verzeichnisanfragen aus, verlangt `HTTPD_VFS_STAT_CLIENT_OK`, prüft

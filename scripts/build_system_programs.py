@@ -97,6 +97,7 @@ PROGRAMS = {
     "STORAGE.PRG": (
         ROOT / "userspace/programs/storage_service.c",
         ROOT / "userspace/storage/lib/vfs_shadow_fat32.c",
+        ROOT / "userspace/storage/lib/vfs_shadow_ext2.c",
     ),
     "HDA.PRG": ROOT / "userspace/drivers/audio/hda_driver.c",
     "SVGA2D.PRG": ROOT / "userspace/drivers/video/vmware_svga2d.c",

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -20,6 +20,7 @@ $BootSuccessRunner = Join-Path $RepoRoot 'scripts\run_qemu_boot_success.py'
 $RuntimeDesktopRunner = Join-Path $RepoRoot 'scripts\run_qemu_runtime_desktop.py'
 $BuildScript = Join-Path $RepoRoot 'scripts\build-windows.ps1'
 $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
+$Ext2StatRunner = Join-Path $RepoRoot 'scripts\run_qemu_ext2_stat.py'
 $SataHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_sata_hotplug.py'
 $AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenance.py'
 $ComponentControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_component_control.py'
@@ -224,6 +225,44 @@ function Invoke-FddHotplug {
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
         Get-Content -LiteralPath $gateLog -Tail 40
         throw "REIST runtime smoke 'fdd-hotplug' failed with exit $exitCode."
+    }
+    Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
+function Invoke-Ext2Stat {
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-ext2-stat"
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $exitCode = 0
+    try {
+        $LASTEXITCODE = 0
+        & $Python $Ext2StatRunner `
+            --qemu $Qemu `
+            --image $Image `
+            --disk (Join-Path $RepoRoot 'build\ext2-stat.img') `
+            --log (Join-Path $RepoRoot 'build\guest-ext2-stat.log') `
+            *> $gateLog
+        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+    }
+    catch {
+        $exitCode = 1
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+    }
+    finally {
+        $watch.Stop()
+    }
+    $runnerPassed = Select-String -LiteralPath $gateLog -SimpleMatch `
+        'EXT2 STAT PASS' -Quiet
+    $runnerFailed = Select-String -LiteralPath $gateLog -SimpleMatch `
+        'EXT2 STAT FAIL' -Quiet
+    if ($exitCode -eq 0 -and (!$runnerPassed -or $runnerFailed)) {
+        $exitCode = 1
+    }
+    if ($exitCode -ne 0) {
+        Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw "REIST runtime smoke 'ext2-stat' failed with exit $exitCode."
     }
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
@@ -958,6 +997,9 @@ switch ($Mode) {
     }
     'fdd-hotplug' {
         Invoke-FddHotplug
+    }
+    'ext2-stat' {
+        Invoke-Ext2Stat
     }
     'sata-hotplug' {
         Invoke-SataHotplug

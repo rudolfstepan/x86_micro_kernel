@@ -51,6 +51,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("X86OS_VFS_SHADOW_FAT32_STAT", service)
         self.assertIn("X86OS_VFS_SHADOW_FAT_STAT", service)
         self.assertIn("X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY", service)
+        self.assertIn("X86OS_VFS_SHADOW_FS_STAT_AUTHORITY", service)
         self.assertIn("vfs_shadow_stat", service)
         self.assertIn("vfs_shadow_fat32.c", read("scripts/build_system_programs.py"))
         self.assertIn('"STORAGE.PRG"', read("scripts/build_system_programs.py"))
@@ -79,6 +80,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("X86OS_SYS_STAT", service)
         self.assertIn("reist_vfs_shadow_fat32_stat", service)
         self.assertIn("reist_vfs_shadow_fat_stat", service)
+        self.assertIn("reist_vfs_shadow_ext2_stat", service)
         self.assertNotIn("X86OS_SYS_OPEN", service)
 
         authority = service[service.index(
@@ -88,9 +90,18 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertNotIn("X86OS_SYS_STAT", authority)
         self.assertNotIn("x86os_syscall", authority)
 
+        filesystem_authority = service[service.index(
+            "static int vfs_shadow_authoritative_filesystem_stat"):
+            service.index("static int vfs_shadow_stat")]
+        self.assertIn("reist_vfs_shadow_fat_stat", filesystem_authority)
+        self.assertIn("reist_vfs_shadow_ext2_stat", filesystem_authority)
+        self.assertNotIn("X86OS_SYS_STAT", filesystem_authority)
+        self.assertNotIn("x86os_syscall", filesystem_authority)
+
         guest = read("userspace/programs/guest_test.c")
         self.assertIn("X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY", guest)
         self.assertIn("STORAGE_VFS_FAT_STAT_AUTHORITY_OK", guest)
+        self.assertIn("STORAGE_VFS_FS_STAT_AUTHORITY_OK", guest)
 
 
 if __name__ == "__main__":

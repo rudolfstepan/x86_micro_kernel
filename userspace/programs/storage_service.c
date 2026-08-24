@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "x86os.h"
+#include "../storage/include/reist/vfs_shadow_ext2.h"
 #include "../storage/include/reist/vfs_shadow_fat32.h"
 
 #define FORMAT32_RESERVED 32U
@@ -5592,13 +5593,42 @@ static int vfs_shadow_authoritative_fat_stat(
     return 0;
 }
 
+static int vfs_shadow_authoritative_filesystem_stat(
+        x86os_vfs_shadow_frame_t *frame) {
+    static uint8_t ext2_authority_reported;
+    x86os_file_info_t parsed_info;
+    uint8_t *parsed_bytes = (uint8_t *)&parsed_info;
+    for (uint32_t index = 0U; index < sizeof(parsed_info); ++index)
+        parsed_bytes[index] = 0U;
+    const reist_vfs_shadow_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    int status = reist_vfs_shadow_fat_stat(
+        &io, frame->path, frame->path_length, &parsed_info);
+    if (status == -2) {
+        for (uint32_t index = 0U; index < sizeof(parsed_info); ++index)
+            parsed_bytes[index] = 0U;
+        status = reist_vfs_shadow_ext2_stat(
+            &io, frame->path, frame->path_length, &parsed_info);
+        if (status == 0 && ext2_authority_reported == 0U) {
+            ext2_authority_reported = 1U;
+            x86os_puts("STORAGE_VFS_EXT2_STAT_AUTHORITY_OK\n");
+        }
+    }
+    vfs_shadow_publish(frame, status, &parsed_info);
+    return 0;
+}
+
 static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
     if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame->struct_size != sizeof(*frame) ||
         (frame->operation != X86OS_VFS_SHADOW_STAT &&
          frame->operation != X86OS_VFS_SHADOW_FAT32_STAT &&
          frame->operation != X86OS_VFS_SHADOW_FAT_STAT &&
-         frame->operation != X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY) ||
+         frame->operation != X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY &&
+         frame->operation != X86OS_VFS_SHADOW_FS_STAT_AUTHORITY) ||
         frame->flags != 0U ||
         frame->path_length == 0U ||
         frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
@@ -5611,6 +5641,8 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
 
     if (frame->operation == X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY)
         return vfs_shadow_authoritative_fat_stat(frame);
+    if (frame->operation == X86OS_VFS_SHADOW_FS_STAT_AUTHORITY)
+        return vfs_shadow_authoritative_filesystem_stat(frame);
 
     x86os_file_info_t legacy_info;
     uint8_t *legacy_bytes = (uint8_t *)&legacy_info;

@@ -96,7 +96,7 @@ int main(void) {
     reset(MODE_OK);
     if (reist_vfs_stat("../README.TXT", &info, 1000U) != 0 ||
         strcmp(captured.path, "/USR/README.TXT") != 0 ||
-        captured.operation != X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY ||
+        captured.operation != X86OS_VFS_SHADOW_FS_STAT_AUTHORITY ||
         strcmp(info.name, "README.TXT") != 0 || info.size != 7U ||
         sleep_calls != 1U) return 1;
 

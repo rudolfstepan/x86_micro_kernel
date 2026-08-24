@@ -246,6 +246,8 @@ def monitor_key_commands(text: str) -> list[str]:
             key = "spc"
         elif character == ".":
             key = "dot"
+        elif character == "/":
+            key = "slash"
         else:
             raise ValueError("unsupported PS/2 guest command character")
         commands.append(f"sendkey {key}\n")
