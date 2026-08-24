@@ -11,6 +11,65 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R1.8a-vmware-svga2d-console-lifecycle"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Restore VGA shell ownership around VMware SVGA-II desktop sessions"
+scope = "Correct the supervised VMware SVGA-II lifecycle so the boot self-test always disables SVGA and returns the visible console to VGA before publishing driver readiness. The desktop must activate through the generation-scoped driver endpoint and release the same driver on every normal or setup-error exit; generic deactivation must not leave the driver state stale. Prove one bounded shell-to-desktop-to-shell cycle under QEMU vmware-vga and prove real VMware register-readback deactivation before BOOT_OK. Preserve the fixed FIFO mediator, software fallback and no-DMA boundary."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/video/display_control.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/init/supervisor.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/drivers/video/vmware_svga2d.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/run_vmware_svga2d.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_vmware_svga2d.py",
+  "test/test_runtime_graphics_switch.py",
+  "test/test_usb_mouse.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the boot self-test deactivates SVGA with register readback before driver READY and BOOT_OK",
+  "the VGA shell is the visible console before a desktop client requests graphics",
+  "desktop activation and deactivation use the same generation-scoped driver endpoint",
+  "all desktop setup-error exits release an activation owned by that desktop",
+  "a second desktop activation cannot observe stale active state from the prior client",
+  "QEMU vmware-vga proves shell desktop accelerated copy desktop exit and restored shell in one run",
+  "VMware Workstation proves SVGA disable readback and console-ready before BOOT_OK",
+  "no DMA GMR 3D arbitrary FIFO mapping or new ambient display authority is introduced"
+]
+targeted_tests = [
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_usb_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode vmware-svga2d-lifecycle",
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Video vga -Mode vmware-svga2d-lifecycle"
+]
+stop_conditions = [
+  "SVGA disable readback fails on QEMU or VMware",
+  "the desktop cannot return to the same visible VGA shell without bypassing the driver",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: restore VMware VGA console lifecycle"
+evidence = []
+
+[[packages]]
 id = "R1.8-vmware-svga2d-ring3"
 status = "done"
 phase = "post-s0"

@@ -730,6 +730,7 @@ int display_control_deactivate(void) {
     __asm__ __volatile__("push %0\n popf" :: "r"(old_flags) : "memory");
 
     int result = -19;
+    bool was_vmware = active_backend == DISPLAY_BACKEND_VMWARE;
     (void)framebuffer_cursor_update(0, 0, false);
     if (active_backend == DISPLAY_BACKEND_QEMU) {
         dispi_write(DISPI_ENABLE, 0U);
@@ -753,6 +754,7 @@ int display_control_deactivate(void) {
         vmware_height = 0U;
         vmware_rect_copy_reported = false;
         active_backend = DISPLAY_BACKEND_NONE;
+        if (was_vmware) printf("REIST_VIDEO SVGA2D_INACTIVE\n");
     }
     __asm__ __volatile__("cli" ::: "memory");
     activation_busy = false;

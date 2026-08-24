@@ -79,8 +79,73 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertNotIn("while (1)", driver)
         self.assertIn('"svga2d-ring3"', kernel)
         self.assertIn("REIST_SERVICE_DISPLAY_DRIVER", supervisor)
-        self.assertIn('strcmp(client->name, "/usr/gui/bin/desktop.prg")',
+        self.assertIn('strcmp(client->image_path, "/usr/gui/bin/desktop.prg")',
                       supervisor)
+
+    def test_desktop_authority_uses_canonical_executable_identity(self):
+        process_h = (ROOT / "kernel/proc/process.h").read_text(encoding="utf-8")
+        process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8")
+        self.assertIn("char image_path[PROCESS_PATH_MAX]", process_h)
+        self.assertIn("strcpy(process->image_path, filename)", process)
+        self.assertIn(
+            'strcmp(client->image_path, "/usr/gui/bin/desktop.prg")',
+            supervisor)
+        self.assertIn(
+            'strcmp(desktop->image_path, "/usr/gui/bin/desktop.prg")',
+            syscalls)
+        self.assertNotIn(
+            'strcmp(client->name, "/usr/gui/bin/desktop.prg")', supervisor)
+
+    def test_boot_self_test_restores_vga_before_ready(self):
+        driver = (ROOT / "userspace/drivers/video/vmware_svga2d.c").read_text(
+            encoding="utf-8")
+        display = (ROOT / "drivers/video/display_control.c").read_text(
+            encoding="utf-8")
+        self_test = driver.index("self_test.operation = REIST_SVGA2D_RECT_COPY")
+        deactivate = driver.index("status = deactivate(driver)", self_test)
+        ready = driver.index("X86OS_DEVICE_DRIVER_REPORT_SELF_TEST", deactivate)
+        self.assertLess(self_test, deactivate)
+        self.assertLess(deactivate, ready)
+        self.assertIn("SVGA_REG_ENABLE, 0U", display)
+        self.assertIn("SVGA2D_INACTIVE", display)
+
+    def test_desktop_releases_the_generation_scoped_driver(self):
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
+            encoding="utf-8")
+        helper = desktop[
+            desktop.index("static int desktop_display_deactivate"):
+            desktop.index("enum {", desktop.index(
+                "static int desktop_display_deactivate"))
+        ]
+        self.assertIn("REIST_SVGA2D_DEACTIVATE", helper)
+        self.assertIn("desktop_svga2d_transact", helper)
+        self.assertIn("x86os_display_deactivate", helper)
+        self.assertIn("desktop_display_deactivate()", desktop)
+
+    def test_desktop_reconnects_after_a_stale_driver_generation(self):
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
+            encoding="utf-8")
+        self.assertIn("DESKTOP_SVGA2D_CONNECT_ATTEMPTS 3U", desktop)
+        self.assertIn("DESKTOP_SVGA2D_RETRY_MS 50U", desktop)
+        self.assertIn("x86os_ipc_release(desktop_svga2d_endpoint)", desktop)
+        helper = desktop[
+            desktop.index("static int desktop_svga2d_activate_bounded"):
+            desktop.index("static int desktop_svga2d_rect_copy")
+        ]
+        self.assertIn("desktop_svga2d_forget_endpoint()", helper)
+        self.assertIn("x86os_sleep_ms(DESKTOP_SVGA2D_RETRY_MS)", helper)
+        self.assertIn("desktop_svga2d_activate_bounded()", desktop)
+        transact = desktop[
+            desktop.index("static int desktop_svga2d_transact"):
+            desktop.index("static int desktop_svga2d_connect")
+        ]
+        self.assertIn("ipc.length != sizeof(*wire)) {", transact)
+        self.assertIn("response.flags != REIST_SVGA2D_FLAG_RESPONSE) {",
+                      transact)
 
     def test_geometry_is_validated_before_fifo_publication(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(
@@ -117,12 +182,19 @@ class VmwareSvga2dTests(unittest.TestCase):
             encoding="utf-8")
         vmware = (ROOT / "scripts/run_vmware_svga2d.ps1").read_text(
             encoding="utf-8")
+        lifecycle = (ROOT / "scripts/run_qemu_runtime_desktop.py").read_text(
+            encoding="utf-8")
         for marker in ("SVGA2D_ACTIVE", "SVGA2D_RECT_COPY_OK",
                        "SVGA2D_READY"):
             self.assertIn(marker, qemu)
             self.assertIn(marker, vmware)
         self.assertIn('"--vmware-vga"', qemu)
         self.assertIn("'vmware-svga2d'", runtime)
+        self.assertIn("'vmware-svga2d-lifecycle'", runtime)
+        self.assertIn("require_svga2d_console_lifecycle", lifecycle)
+        for marker in ("SVGA2D_INACTIVE", "SVGA2D_READY"):
+            self.assertIn(marker, vmware)
+            self.assertIn(marker, lifecycle)
         self.assertIn("TimeoutSeconds = 60", vmware)
 
 

@@ -577,6 +577,7 @@ static int claim_process_slot(const char *name, bool shared_image,
                    sizeof(process->ipc_capabilities));
             wait_queue_init(&process->exit_waiters);
             strcpy(process->working_directory, "/");
+            process->image_path[0] = '\0';
             strncpy(process->name, name, sizeof(process->name) - 1U);
             process->name[sizeof(process->name) - 1U] = '\0';
             process->is_running = true;
@@ -650,6 +651,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
     if (filename == NULL || *filename == '\0') {
         return -22;
     }
+    if (strlen(filename) >= PROCESS_PATH_MAX) return -36;
 
     /* Reclaim stacks and address spaces before this spawn needs new frames.
      * Exit status remains in the Process zombie until its parent waits. */
@@ -676,6 +678,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         return -22;
     }
     strcpy(process->working_directory, working_directory);
+    strcpy(process->image_path, filename);
     int pid = process->pid;
     uint8_t *program_image = NULL;
     int loaded_size = load_program_file(filename, &program_image);

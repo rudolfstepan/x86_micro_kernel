@@ -297,7 +297,7 @@ class UsbMouseTests(unittest.TestCase):
             source.index("static uint32_t desktop_try_exit") :
             source.index("static int launch_program")
         ]
-        deactivate = exit_helper.index("x86os_display_deactivate()")
+        deactivate = exit_helper.index("desktop_display_deactivate()")
         metrics = exit_helper.index("print_render_metrics(metrics)")
         marker = exit_helper.index('x86os_puts("DESKTOP_EXIT_OK\\n")')
         self.assertLess(deactivate, metrics)

@@ -79,6 +79,7 @@ typedef struct Process {
     int task_id;
     int exit_status;
     char name[32];
+    char image_path[PROCESS_PATH_MAX];
     bool is_running;
     bool has_exited;
     bool uses_shared_program_image;

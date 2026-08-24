@@ -22,6 +22,8 @@
 
 #define DESKTOP_ICON_COUNT 3U
 #define DESKTOP_ICON_WIDTH 176U
+#define DESKTOP_SVGA2D_CONNECT_ATTEMPTS 3U
+#define DESKTOP_SVGA2D_RETRY_MS 50U
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 1U
 #define DESKTOP_METRICS_VERSION 1U
@@ -81,6 +83,13 @@ static x86os_ipc_handle_t desktop_svga2d_endpoint;
 static uint32_t desktop_svga2d_request_id;
 static uint32_t desktop_svga2d_capabilities;
 
+static void desktop_svga2d_forget_endpoint(void) {
+    if (desktop_svga2d_endpoint != X86OS_IPC_INVALID_HANDLE)
+        (void)x86os_ipc_release(desktop_svga2d_endpoint);
+    desktop_svga2d_endpoint = X86OS_IPC_INVALID_HANDLE;
+    desktop_svga2d_capabilities = 0U;
+}
+
 static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
     if (wire == 0 || desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE)
         return -19;
@@ -95,14 +104,18 @@ static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
     };
     for (uint32_t index = 0U; index < sizeof(*wire); ++index)
         ipc.payload[index] = ((const uint8_t *)wire)[index];
-    if (x86os_ipc_send_timeout(desktop_svga2d_endpoint, &ipc, 50U) != 0)
+    if (x86os_ipc_send_timeout(desktop_svga2d_endpoint, &ipc, 50U) != 0) {
+        desktop_svga2d_forget_endpoint();
         return -11;
+    }
     ipc.version = X86OS_IPC_MESSAGE_VERSION;
     ipc.struct_size = sizeof(ipc);
     if (x86os_ipc_receive_timeout(desktop_svga2d_endpoint, &ipc, 100U) != 0 ||
         ipc.version != X86OS_IPC_MESSAGE_VERSION ||
-        ipc.struct_size != sizeof(ipc) || ipc.length != sizeof(*wire))
+        ipc.struct_size != sizeof(ipc) || ipc.length != sizeof(*wire)) {
+        desktop_svga2d_forget_endpoint();
         return -11;
+    }
     reist_svga2d_message_t response;
     for (uint32_t index = 0U; index < sizeof(response); ++index)
         ((uint8_t *)&response)[index] = ipc.payload[index];
@@ -110,22 +123,49 @@ static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
         response.struct_size != sizeof(response) ||
         response.request_id != desktop_svga2d_request_id ||
         response.operation != wire->operation ||
-        response.flags != REIST_SVGA2D_FLAG_RESPONSE)
+        response.flags != REIST_SVGA2D_FLAG_RESPONSE) {
+        desktop_svga2d_forget_endpoint();
         return -84;
+    }
     *wire = response;
     desktop_svga2d_capabilities = response.capabilities;
     return response.status;
 }
 
 static int desktop_svga2d_connect(uint32_t activate) {
-    if (desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE &&
-        x86os_service_connect(X86OS_SERVICE_DISPLAY_DRIVER,
-                              &desktop_svga2d_endpoint) != 0)
-        return -19;
+    if (desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE) {
+        int status = x86os_service_connect(
+            X86OS_SERVICE_DISPLAY_DRIVER, &desktop_svga2d_endpoint);
+        if (status != 0) {
+            x86os_puts("desktop: SVGA2D-Service status=");
+            x86os_print_number(status);
+            x86os_putchar('\n');
+            return status;
+        }
+    }
     reist_svga2d_message_t request = {0};
     request.operation = activate != 0U
         ? REIST_SVGA2D_ACTIVATE : REIST_SVGA2D_INFO;
-    return desktop_svga2d_transact(&request);
+    int status = desktop_svga2d_transact(&request);
+    if (status != 0 && activate != 0U) {
+        x86os_puts("desktop: SVGA2D-Transaktion status=");
+        x86os_print_number(status);
+        x86os_putchar('\n');
+    }
+    return status;
+}
+
+static int desktop_svga2d_activate_bounded(void) {
+    int status = -19;
+    for (uint32_t attempt = 0U;
+         attempt < DESKTOP_SVGA2D_CONNECT_ATTEMPTS; ++attempt) {
+        status = desktop_svga2d_connect(1U);
+        if (status == 0) return 0;
+        desktop_svga2d_forget_endpoint();
+        if (attempt + 1U < DESKTOP_SVGA2D_CONNECT_ATTEMPTS)
+            (void)x86os_sleep_ms(DESKTOP_SVGA2D_RETRY_MS);
+    }
+    return status;
 }
 
 static int desktop_svga2d_rect_copy(uint32_t source_x, uint32_t source_y,
@@ -143,6 +183,15 @@ static int desktop_svga2d_rect_copy(uint32_t source_x, uint32_t source_y,
     request.width = width;
     request.height = height;
     return desktop_svga2d_transact(&request);
+}
+
+static int desktop_display_deactivate(void) {
+    if (desktop_svga2d_endpoint != X86OS_IPC_INVALID_HANDLE) {
+        reist_svga2d_message_t request = {0};
+        request.operation = REIST_SVGA2D_DEACTIVATE;
+        return desktop_svga2d_transact(&request);
+    }
+    return x86os_display_deactivate();
 }
 
 enum {
@@ -2706,7 +2755,7 @@ static uint32_t desktop_try_exit(
     int32_t pointer_x, int32_t pointer_y, uint32_t runtime_activated,
     const desktop_render_metrics_t *metrics) {
     (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-    if (runtime_activated && x86os_display_deactivate() != 0) {
+    if (runtime_activated && desktop_display_deactivate() != 0) {
         x86os_puts("desktop: VGA-Rueckkehr fehlgeschlagen\n");
         (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         return 0U;
@@ -4253,9 +4302,14 @@ int main(int argc, char **argv) {
 
     int display_status = x86os_display_info(&display);
     if (display_status != 0) {
-        if (desktop_svga2d_connect(1U) == 0 ||
-            x86os_display_activate() == 0)
+        int svga2d_status = desktop_svga2d_activate_bounded();
+        if (svga2d_status == 0 || x86os_display_activate() == 0) {
             runtime_activated = 1U;
+        } else {
+            x86os_puts("desktop: SVGA2D-Aktivierung fehlgeschlagen status=");
+            x86os_print_number(svga2d_status);
+            x86os_putchar('\n');
+        }
         display_status = x86os_display_info(&display);
     }
     if (display_status != 0 ||
@@ -4288,7 +4342,7 @@ int main(int argc, char **argv) {
             &empty_trash_dialog_model, &dialog_layout, &ui.dialog) != 0 ||
         reist_gui_dialog_validate(
             &ui.error_model, &dialog_layout, &ui.dialog) != 0) {
-        if (runtime_activated) (void)x86os_display_deactivate();
+        if (runtime_activated) (void)desktop_display_deactivate();
         x86os_puts("desktop: GUI-API/Layout nicht kompatibel\n");
         return 1;
     }
@@ -4298,7 +4352,7 @@ int main(int argc, char **argv) {
                           max_u32(display.font_height + 8U, 24U));
     desktop_surface_initialize(&surfaces);
     if (desktop_surface_runtime_initialize(&surface_runtime) != 0) {
-        if (runtime_activated) (void)x86os_display_deactivate();
+        if (runtime_activated) (void)desktop_display_deactivate();
         x86os_puts("desktop: Surface-IPC konnte nicht gestartet werden\n");
         return 1;
     }
@@ -4334,7 +4388,7 @@ int main(int argc, char **argv) {
             trash_confirm_probe, &initial_target) != 0) {
         x86os_puts("DESKTOP_TRASH_PROBE_FAIL setup\n");
         desktop_surface_runtime_shutdown(&surface_runtime);
-        if (runtime_activated) (void)x86os_display_deactivate();
+        if (runtime_activated) (void)desktop_display_deactivate();
         return 1;
     }
     desktop_clock_refresh(&display, &initial_dirty, 1U);
@@ -4381,7 +4435,7 @@ int main(int argc, char **argv) {
                     ? "DESKTOP_SURFACE_FAIL launch\n"
                     : "DESKTOP_NOTEPAD_FAIL launch\n"));
             desktop_surface_runtime_shutdown(&surface_runtime);
-            if (runtime_activated) (void)x86os_display_deactivate();
+            if (runtime_activated) (void)desktop_display_deactivate();
             return 1;
         }
         x86os_puts(control_probe
@@ -4410,7 +4464,7 @@ int main(int argc, char **argv) {
             x86os_print_number(surface_poll_status);
             x86os_putchar('\n');
             desktop_surface_runtime_shutdown(&surface_runtime);
-            if (runtime_activated) (void)x86os_display_deactivate();
+            if (runtime_activated) (void)desktop_display_deactivate();
             return 1;
         }
         int key = read_key();

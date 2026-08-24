@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -162,7 +162,8 @@ function Invoke-RuntimeDesktop(
     [bool]$ExpectFailure = $false,
     [bool]$RenderProbe = $false,
     [bool]$SurfaceProbe = $false,
-    [bool]$ControlProbe = $false
+    [bool]$ControlProbe = $false,
+    [bool]$VmwareSvga2d = $false
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
             [int]$ControlProbe) -gt 1) {
@@ -180,6 +181,7 @@ function Invoke-RuntimeDesktop(
     }
     if ($SurfaceProbe) { $arguments += '--surface-probe' }
     if ($ControlProbe) { $arguments += '--control-probe' }
+    if ($VmwareSvga2d) { $arguments += '--vmware-vga' }
     & $Python $RuntimeDesktopRunner @arguments
     if ($ExpectFailure) {
         if ($LASTEXITCODE -eq 0) { throw 'Runtime graphics failure was not rejected.' }
@@ -997,6 +999,16 @@ switch ($Mode) {
         } else {
             & $VmwareSvga2dRunner
             if ($LASTEXITCODE -ne 0) { throw 'VMware SVGA2D runtime failed.' }
+        }
+    }
+    'vmware-svga2d-lifecycle' {
+        if ($Target -eq 'qemu') {
+            Invoke-RuntimeDesktop $false $true $false $false $true
+        } else {
+            & $VmwareSvga2dRunner
+            if ($LASTEXITCODE -ne 0) {
+                throw 'VMware SVGA2D console lifecycle failed.'
+            }
         }
     }
     'runtime-desktop' {

@@ -88,6 +88,15 @@ static int activate(svga2d_driver_t *driver) {
     return 0;
 }
 
+static int deactivate(svga2d_driver_t *driver) {
+    if (driver->active == 0U) return 0;
+    int status = driver_command(
+        driver, X86OS_DISPLAY_DRIVER_DEACTIVATE,
+        0U, 0U, 0U, 0U, 0U, 0U, 0U, NULL);
+    if (status == 0) driver->active = 0U;
+    return status;
+}
+
 static int submit_2d(svga2d_driver_t *driver,
                      const reist_svga2d_message_t *request) {
     uint32_t command = request->operation == REIST_SVGA2D_RECT_COPY
@@ -125,10 +134,7 @@ static int handle_request(svga2d_driver_t *driver,
     if (request->operation == REIST_SVGA2D_ACTIVATE) {
         response->status = driver->active != 0U ? 0 : activate(driver);
     } else if (request->operation == REIST_SVGA2D_DEACTIVATE) {
-        response->status = driver_command(
-            driver, X86OS_DISPLAY_DRIVER_DEACTIVATE,
-            0U, 0U, 0U, 0U, 0U, 0U, 0U, NULL);
-        if (response->status == 0) driver->active = 0U;
+        response->status = deactivate(driver);
     } else if (request->operation == REIST_SVGA2D_RECT_FILL ||
                request->operation == REIST_SVGA2D_RECT_COPY) {
         response->status = submit_2d(driver, request);
@@ -206,6 +212,13 @@ static int driver_initialize(svga2d_driver_t *driver) {
                 0x52000000U | ((uint32_t)(-status) & 0x0000FFFFU));
             return status;
         }
+    }
+    status = deactivate(driver);
+    if (status != 0) {
+        (void)x86os_device_driver_report(
+            &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+            0x53000000U | ((uint32_t)(-status) & 0x0000FFFFU));
+        return status;
     }
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

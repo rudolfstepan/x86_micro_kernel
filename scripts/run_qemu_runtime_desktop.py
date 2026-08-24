@@ -53,7 +53,9 @@ def parse_render_metrics(text: str) -> tuple[dict[str, int], str]:
     if (metrics["fallback_frames"] != 0 or
             metrics["clock_errors"] != 0 or
             metrics["probe_errors"] != 0):
-        raise RuntimeError("desktop render probe reported an error")
+        raise RuntimeError(
+            "desktop render probe reported an error: " + match.group(0)
+        )
     if not 1 <= metrics["damage_max"] <= 8:
         raise RuntimeError("desktop render damage bound is invalid")
     total_frames = metrics["full_frames"] + metrics["dirty_frames"]
@@ -224,19 +226,47 @@ def capture_screenshot(process: subprocess.Popen[str],
     convert_screenshot_if_png(screenshot)
 
 
+def require_svga2d_console_lifecycle(text: str) -> None:
+    if text.count("REIST_VIDEO SVGA2D_ACTIVE") < 2:
+        raise RuntimeError("SVGA2D was not activated for the desktop")
+    if text.count("REIST_VIDEO SVGA2D_INACTIVE") < 2:
+        raise RuntimeError("SVGA2D did not restore VGA after both sessions")
+    for marker in ("REIST_VIDEO SVGA2D_RECT_COPY_OK", "SVGA2D_READY",
+                   "DESKTOP_EXIT_OK"):
+        if marker not in text:
+            raise RuntimeError(f"missing lifecycle marker: {marker}")
+    first_inactive = text.index("REIST_VIDEO SVGA2D_INACTIVE")
+    ready = text.index("REIST_VIDEO SVGA2D_READY")
+    shell = text.index(SHELL_PROMPT)
+    desktop_active = text.index("REIST_VIDEO SVGA2D_ACTIVE", shell)
+    second_inactive = text.index("REIST_VIDEO SVGA2D_INACTIVE",
+                                 desktop_active)
+    desktop_exit = text.index("DESKTOP_EXIT_OK", second_inactive)
+    if not (first_inactive < ready < shell < desktop_active <
+            second_inactive < desktop_exit):
+        raise RuntimeError("SVGA2D console lifecycle markers are out of order")
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool,
         control_probe: bool, trash_context_probe: bool,
         trash_confirm_probe: bool,
-        metrics_log: pathlib.Path | None) -> int:
+        metrics_log: pathlib.Path | None, vmware_vga: bool) -> int:
     command = [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
-        "-device", "VGA,vgamem_mb=1" if expect_failure else "VGA",
+    ]
+    if vmware_vga:
+        command.extend(["-vga", "vmware"])
+    else:
+        command.extend([
+            "-device", "VGA,vgamem_mb=1" if expect_failure else "VGA"
+        ])
+    command.extend([
         "-m", "512M", "-display", "none",
         "-monitor", "none", "-serial", "mon:stdio", "-no-reboot",
         "-snapshot", "-drive", f"file={image},format=raw,if=ide,index=0",
-    ]
+    ])
     process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True,
@@ -296,6 +326,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                     metrics_log.write_text(
                                         metric_line + "\n", encoding="utf-8"
                                     )
+                                if vmware_vga:
+                                    require_svga2d_console_lifecycle(probe_text)
                                 print(
                                     "runtime-desktop-metrics: PASS "
                                     f"full_max_ms={metrics['full_max_ms']} "
@@ -435,8 +467,12 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             return 0
                     time.sleep(0.02)
                 raise RuntimeError("desktop did not restore the VGA shell")
-            if "DISPLAY_CONTROL: native graphics unavailable" in text:
-                raise RuntimeError("native runtime graphics activation failed")
+            if "desktop: Grafikmodus nicht verfuegbar" in text:
+                tail = text[-1600:].replace("\r", "")
+                raise RuntimeError(
+                    "native runtime graphics activation failed; "
+                    f"guest tail:\n{tail}"
+                )
             time.sleep(0.02)
         drain(output, transcript)
         tail = "".join(transcript)[-1200:].replace("\r", "")
@@ -459,6 +495,7 @@ def main() -> int:
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
+    parser.add_argument("--vmware-vga", action="store_true")
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.control_probe,
@@ -471,7 +508,7 @@ def main() -> int:
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
-                   args.metrics_log)
+                   args.metrics_log, args.vmware_vga)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

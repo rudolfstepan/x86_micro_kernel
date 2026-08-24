@@ -75,10 +75,17 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
     def test_desktop_restores_vga_after_runtime_activation(self):
         self.assertIn("runtime_activated", self.desktop)
         self.assertIn("x86os_display_deactivate()", self.desktop)
+        self.assertIn("REIST_SVGA2D_DEACTIVATE", self.desktop)
+        self.assertIn("desktop_display_deactivate()", self.desktop)
         self.assertIn("display_control_deactivate()", self.syscalls)
         self.assertIn("framebuffer_shutdown()", self.control)
         self.assertIn("SVGA_REG_ENABLE, 0U", self.control)
         self.assertIn("dispi_write(DISPI_ENABLE, 0U)", self.control)
+
+    def test_vmware_lifecycle_runs_desktop_between_vga_shells(self):
+        self.assertIn("--vmware-vga", self.runtime_runner)
+        self.assertIn("require_svga2d_console_lifecycle", self.runtime_runner)
+        self.assertIn("vmware-svga2d-lifecycle", self.runtime_script)
 
     def test_console_backend_is_runtime_selected(self):
         self.assertIn("framebuffer_available()", self.display)

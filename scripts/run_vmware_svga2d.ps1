@@ -34,6 +34,7 @@ $required = @(
     'REIST_VIDEO SVGA2D_PROFILE pci=15AD:0405',
     'REIST_VIDEO SVGA2D_ACTIVE',
     'REIST_VIDEO SVGA2D_RECT_COPY_OK',
+    'REIST_VIDEO SVGA2D_INACTIVE',
     'REIST_VIDEO SVGA2D_READY',
     'BOOT_OK'
 )
@@ -89,6 +90,12 @@ try {
         }
         $missing = @($required | Where-Object { !$text.Contains($_) })
         if ($missing.Count -eq 0) {
+            $inactive = $text.IndexOf('REIST_VIDEO SVGA2D_INACTIVE')
+            $ready = $text.IndexOf('REIST_VIDEO SVGA2D_READY')
+            $boot = $text.IndexOf('BOOT_OK')
+            if (!($inactive -lt $ready -and $ready -lt $boot)) {
+                throw 'VMware SVGA2D console lifecycle markers are out of order.'
+            }
             $text | Set-Content -LiteralPath $GateLog -Encoding utf8
             Write-Output "VMWARE SVGA2D PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$GateLog"
             return

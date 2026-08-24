@@ -1998,7 +1998,7 @@ static int syscall_display_control(display_control_request_t *user_request) {
         display_frame_request_t request;
         Process *desktop = scheduler_current_process();
         if (desktop == NULL ||
-            strcmp(desktop->name, "/usr/gui/bin/desktop.prg") != 0)
+            strcmp(desktop->image_path, "/usr/gui/bin/desktop.prg") != 0)
             return -13;
         if (base.struct_size < sizeof(request) ||
             copy_from_user(&request, user_request, sizeof(request)) != 0)

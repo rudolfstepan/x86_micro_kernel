@@ -44,6 +44,16 @@ heartbeat or invalid report enters the normal device-domain sequence:
 deactivate display, fence, revoke, reap, reset, restart, self-test and only
 then reintegrate. VGA text and serial output remain the rescue paths.
 
+Driver readiness does not imply ownership of the visible display. At boot the
+driver activates SVGA only for its bounded `RECT_COPY` self-test, disables the
+device again with register readback and publishes `SVGA2D_READY` only after the
+VGA console has been restored. A desktop session obtains the driver endpoint
+through its canonical executable identity, activates SVGA, and sends
+`DEACTIVATE` through the same generation-scoped endpoint on every exit path.
+Failed or stale IPC drops the delegated capability and permits at most three
+reconnect attempts separated by 50 ms. Thus the shell owns VGA before and
+after a desktop session; the background driver remains supervised but idle.
+
 VMware Workstation exposes the tested SVGA-II function without a usable PCI
 INTx masking path. The exact `MEDIATED_IO` profile therefore registers as
 IRQ-less and never grants an IRQ resource. Bus mastering is still disabled and
@@ -58,7 +68,8 @@ VMware Workstation serial-marker run. Physical hardware is outside this
 profile and is tested manually by the user without changing the assurance
 claim.
 
-The automated run on 23 August 2026 observed `SVGA2D_ACTIVE caps=2` and
-`SVGA2D_RECT_COPY_OK` on VMware Workstation, followed by `SVGA2D_READY` and
-`BOOT_OK`. QEMU `-vga vmware` reported capabilities `3` and the same successful
-copy/self-test markers.
+The automated lifecycle run on 24 August 2026 proves under QEMU `-vga vmware`
+the ordered sequence boot self-test activation, `SVGA2D_INACTIVE`, driver
+readiness, visible shell, desktop activation and accelerated copy, desktop
+deactivation, `DESKTOP_EXIT` and restored shell. VMware Workstation separately
+requires successful disable readback before `SVGA2D_READY` and `BOOT_OK`.

@@ -1941,7 +1941,8 @@ nebenbei in die 32-Bit-Basis eingebaut werden.
 - [x] **8c · R1.7 PCI-HDA und Userspace-Audiobibliothek** — Größe XL;
   abhängig von R1.6
 - [x] **8d · R1.8 Überwachter VMware-SVGA-II-2D-Treiber** — Größe L;
-  `RECT_COPY` und Software-Fallback in QEMU und VMware abgenommen, ohne DMA
+  `RECT_COPY`, Software-Fallback und der VGA-Shell-/Desktop-Lifecycle in QEMU
+  und VMware abgenommen, ohne DMA
 - [x] **9 · S0.1 Profil/Gefahren/Assurance Case** — Größe M;
   abhängig von R1.3
 - [x] **10 · S0.2 Stack/Exception/Panic-Containment (QEMU/VMware)** — Größe L;
@@ -2033,6 +2034,14 @@ Workstation bestätigen Aktivierung, Kopier-Selbsttest und `BOOT_OK`; bei
 fehlender Capability oder Treiberfehler bleibt der Shadow-Framebuffer-
 Softwarepfad maßgeblich. Direkte FIFO-/Framebuffer-Mappings, DMA, GMR, 3D und
 Multi-Monitor bleiben ausgeschlossen.
+
+Die Lifecycle-Korrektur R1.8a lässt den Boot-Selbsttest SVGA vor `READY` mit
+Register-Readback deaktivieren. Nur der kanonisch identifizierte Desktop erhält
+den generationgebundenen Service-Endpunkt; er aktiviert den Modus und gibt ihn
+auf allen Ausstiegspfaden über denselben Ring-3-Treiber wieder frei. Der
+begrenzte QEMU-`vmware-vga`-Lauf weist die Reihenfolge VGA-Shell, beschleunigter
+Desktop und wiederhergestellte VGA-Shell maschinenlesbar nach; der VMware-Lauf
+prüft die Deaktivierung vor `BOOT_OK`.
 
 Phase 0, R1.1 bis R1.4, **S0.3a Bounded IPC/Capabilities v1** und
 **S0.3b Supervised Userspace Probe Domain** sind umgesetzt und abgenommen.

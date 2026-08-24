@@ -54,7 +54,10 @@ SATA-Hardwarefreigabe.
 - VFS mit FAT12, FAT32 und EXT2 sowie DOS-artiger Ring-3-Shell
 - E1000, RTL8139, RTL8168/8111G und NE2000 hinter einer gemeinsamen
   Netzgeräteschicht
-- VGA-Text als Standard und optionaler VBE-Framebuffer mit Ring-3-Desktop
+- VGA-Text als Standard und optionaler VBE-/VMware-SVGA-II-Framebuffer mit
+  Ring-3-Desktop; der SVGA-II-Bootselbsttest gibt die Anzeige vor der Shell
+  zurück und der Desktop deaktiviert sie beim Sitzungsende über denselben
+  generationgebundenen Treiberkanal
 
 Der SATA-Pfad leitet partition-relative Zugriffe anhand des Elterntransports an
 AHCI statt an den ATA-PIO-Kompatibilitätspfad weiter. Der vollständige
