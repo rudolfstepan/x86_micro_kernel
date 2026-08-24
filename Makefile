@@ -284,7 +284,7 @@ DEPS := $(C_OBJ:.o=.d)
 
 # Ensure the generated directory tree exists before any object is built.
 # This also makes direct and parallel `make kernel` invocations reliable.
-$(ALL_OBJ): $(CONFIG_STAMP) | prepare
+$(ALL_OBJ): $(CONFIG_STAMP) | prepare check-syscall-abi
 
 # Object paths are shared across configurations.  A target/video switch must
 # therefore invalidate all objects even when no source timestamp changed.
@@ -297,9 +297,12 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel signed-kernel check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-runtime-degradation test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel signed-kernel check-syscall-abi check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-runtime-degradation test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
+
+check-syscall-abi:
+	@$(PYTHON) scripts/generate_syscall_abi.py --check
 
 # Build specifically for QEMU (relaxed timing)
 build-qemu:
@@ -573,7 +576,7 @@ $(BUILD_LIB_DIR)/libk/%.o: $(LIB_DIR)/libk/%.c
 check-kernel-dependencies: $(ALL_OBJ)
 	@$(PYTHON) scripts/validate_build_dependencies.py $(DEPS)
 
-kernel: check-kernel-dependencies $(OUTPUT_DIR)/kernel.bin
+kernel: check-syscall-abi check-kernel-dependencies $(OUTPUT_DIR)/kernel.bin
 
 $(OUTPUT_DIR)/kernel.bin: $(ALL_OBJ) $(KERNEL_LDSCRIPT)
 	@echo "Linking kernel..."
@@ -710,7 +713,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 
 bootdisk: native-image
 
-user-sdk:
+user-sdk: check-syscall-abi
 	@$(PYTHON) scripts/build_user_sdk.py --output-dir $(USER_SDK_DIR) --zig $(ZIG) --incremental
 
 user-program: user-sdk
@@ -720,7 +723,7 @@ user-program: user-sdk
 		--output $(USER_PROGRAM_OUTPUT) --zig $(ZIG) \
 		--sysroot $(USER_SDK_DIR) --incremental $(USER_PROGRAM_LIBS)
 
-system-programs:
+system-programs: check-syscall-abi
 	@echo "Building standard Ring-3 system programs..."
 	@$(PYTHON) scripts/build_system_programs.py \
 		--output-dir $(SYSTEM_PROGRAM_DIR) --zig $(ZIG) --incremental

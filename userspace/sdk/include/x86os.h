@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "reist/abi/syscall.h"
 
 enum {
     X86OS_STDIN_FILENO = 0,
@@ -18,6 +19,7 @@ enum {
     X86OS_STDERR_FILENO = 2,
 };
 
+/* BEGIN GENERATED REIST SYSCALLS - DO NOT EDIT */
 enum {
     X86OS_SYS_PUTCHAR = 0,
     X86OS_SYS_PRINT_NUMBER = 1,
@@ -27,6 +29,7 @@ enum {
     X86OS_SYS_FREE = 5,
     X86OS_SYS_REALLOC = 6,
     X86OS_SYS_GETCHAR = 7,
+    X86OS_SYS_RESERVED_INSTALL_IRQ = 8,
     X86OS_SYS_EXIT = 9,
     X86OS_SYS_GET_DATE = 10,
     X86OS_SYS_GET_TIME = 11,
@@ -139,6 +142,7 @@ enum {
     X86OS_SYS_STORAGE_CANCEL = 118,
     X86OS_SYS_STORAGE_CLAIM_IDENTITY = 119
 };
+/* END GENERATED REIST SYSCALLS */
 
 #define X86OS_TCP_SOCKET_VERSION 1U
 #define X86OS_TCP_MAX_SEGMENT 512U

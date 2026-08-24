@@ -51,7 +51,8 @@ class ComponentControlContracts(unittest.TestCase):
         sdk = self.read("userspace/sdk/include/x86os.h")
         process = self.read("kernel/proc/process.c")
         syscall = self.read("kernel/syscall/syscall_table.c")
-        self.assertIn("COMPONENT_CONTROL_SYSCALL 91U", header)
+        self.assertIn(
+            "COMPONENT_CONTROL_SYSCALL REIST_SYS_COMPONENT_CONTROL", header)
         self.assertIn("X86OS_SYS_COMPONENT_CONTROL = 91", sdk)
         self.assertIn("PROCESS_DOMAIN_COMPONENT_ADMIN", process)
         self.assertIn('strcmp(resolved, "/sbin/svcctl.prg") == 0', process)

@@ -89,10 +89,9 @@ pfadgebundenen Read-Sessions ist auch
 serviceeigener Objekt-Handles umgesetzt. Auch der stabile read-only Objekt-
 Layer für FAT und EXT2 ist abgenommen. Auch explizite Rechteabschwächung und
 generationgebundene Übergabe dieser Objekte sind abgenommen. Auch der
-getrennte R2.1-Schnitt für echte, feste Standard-FDs 0/1/2 ist umgesetzt. Die
-gemeinsame, generierte Syscall-/Fehlerquelle ist als nächster R2.1-Schnitt
-**in Arbeit**; `dup` und kontrollierte Spawn-Vererbung bleiben anschließende
-R3.1-Schnitte.
+getrennte R2.1-Schnitt für echte, feste Standard-FDs 0/1/2 ist umgesetzt. Auch
+die gemeinsame, generierte Syscall-/Fehlerquelle ist umgesetzt; `dup` und
+kontrollierte Spawn-Vererbung bleiben anschließende R3.1-Schnitte.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -1585,8 +1584,9 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Fallback mehr. Die Session ist bewusst pfadgebunden und revalidiert; stabile
   Inode-Identität, Deskriptorvererbung, Shell und Desktop bleiben getrennte
   Folgepakete.
-- **In Arbeit:** Syscallnummern und der bestehende Fehlercode-Subset aus einem
-  gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren.
+- [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
+  gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
+  lückenlose v1-Indizes 0 bis 119 und beide Buildpfade prüfen Drift fail-closed
 - Open-Flags und Rechte je Handle ergänzen; Standarddeskriptoren 0/1/2 sind
   als getrennte feste, richtungsgebundene Einträge umgesetzt.
 - `lseek`, `fstat` und `truncate` implementieren; die bestehenden Rename- und

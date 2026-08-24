@@ -130,6 +130,12 @@ New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ZigLocalCache, $ZigGlobalCache | Out-Null
 Push-Location $RepoRoot
 try {
+    $syscallAbiExitCode = Invoke-PythonProcess -Arguments @(
+        'scripts/generate_syscall_abi.py', '--check'
+    )
+    if ($syscallAbiExitCode -ne 0) {
+        throw "Shared syscall ABI check failed with exit code $syscallAbiExitCode."
+    }
     # GNU Make may execute simple recipe commands directly instead of through
     # SHELL, so the native MSYS2 mkdir/rm/touch/cp tools must also be on PATH.
     $env:Path = "$MsysBin;$env:Path"

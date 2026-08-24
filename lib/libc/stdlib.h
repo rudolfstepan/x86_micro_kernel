@@ -11,12 +11,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../../include/reist/abi/syscall.h"
 
 #define SUCCESS 0
 #define FAILURE -1
 
 // define syscall indexes
-#define SYS_TERMINAL_PUTCHAR 0 // One argument syscall
+/* BEGIN GENERATED REIST SYSCALLS - DO NOT EDIT */
+#define SYS_TERMINAL_PUTCHAR 0
 #define SYS_PRINT 1
 #define SYS_DELAY 2
 #define SYS_WAIT_ENTER 3
@@ -106,6 +108,8 @@
 #define SYS_STORAGE_MAINT_RENEW 87
 #define SYS_STORAGE_MAINT_RELEASE 88
 #define SYS_DRIVE_STATUS 89
+#define SYS_ADMIN_STORAGE 90
+#define SYS_COMPONENT_CONTROL 91
 #define SYS_PARTITION_CREATE 92
 #define SYS_STORAGE_BLOCK_FLUSH 93
 #define SYS_STORAGE_MEDIA_COMMIT 94
@@ -134,6 +138,7 @@
 #define SYS_BOOT_STATUS 117
 #define SYS_STORAGE_CANCEL 118
 #define SYS_STORAGE_CLAIM_IDENTITY 119
+/* END GENERATED REIST SYSCALLS */
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)

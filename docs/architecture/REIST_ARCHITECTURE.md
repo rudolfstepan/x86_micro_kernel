@@ -28,6 +28,15 @@ Kernschnittstellen kopiert. Wo bestehende Software solche Eigenschaften
 erwartet, kapselt ein dokumentierter Userspace-Adapter die Differenz; der
 begrenzte Kernelvertrag bleibt eindeutig und klein.
 
+Die append-only Syscall-ABI v1 besitzt genau eine autoritative Liste in
+`include/reist/abi/syscall.h`. Sie umfasst lückenlos die unveränderten Indizes
+0 bis 119 einschließlich des gesperrten IRQ-Slots 8. Ein begrenzter Generator
+projiziert daraus die historischen `SYS_*`- und `X86OS_SYS_*`-Namen; Make- und
+Windows-Build prüfen diese Projektionen vor der Kompilierung fail-closed auf
+Drift. Derselbe Header benennt den bereits verwendeten POSIX-`errno`-Subset,
+ohne damit alte grobe VFS-Fehler oder subsystemeigene Fehler stillschweigend
+umzudeuten. Neue Nummern dürfen weiterhin nur am Ende angefügt werden.
+
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
 Technology**. Das zentrale Architekturprinzip lautet:
 
