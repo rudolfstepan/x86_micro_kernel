@@ -148,6 +148,11 @@ Identität, POSIX-Binärkompatibilität oder Deskriptorvererbung. `CAT.PRG`,
 `LS.PRG` und der vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen
 Kernel-VFS-Fallback. Stabile Objekt-Handles und Mutationen bleiben getrennte
 Folgepakete.
+Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
+exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
+Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-
+Deskriptor bleibt unverändert; Benutzerfelder dürfen keine Besitzeridentität
+vorgeben.
 Der erste kontrollierte Client-Cutover bindet ausschließlich das kurzlebige
 `STAT.PRG` inzwischen an Operation 5. Ein fester Adapter normalisiert Pfade, wartet
 mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt

@@ -84,8 +84,9 @@ Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt. Nach Abschluss von
-Nach Abschluss von `R2.1-vfs-shadow-read-directory` besitzt die Queue derzeit
-kein aktives Paket.
+Nach Abschluss der pfadgebundenen Read-Sessions ist
+`R2.1-storage-claim-client-identity` als Voraussetzung stabiler
+serviceeigener Objekt-Handles aktiv.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -474,9 +475,12 @@ und 10 verbindlich.
   - [x] append-only Operationen 6/7 für begrenztes `read-at`
     und indexiertes `readdir-at`; `CAT.PRG` und `LS.PRG` werden ohne
     Kernel-VFS-Fallback umgestellt
-  - [ ] **in Arbeit:** vier feste, generationsgeschützte und kanonisch
+  - [x] vier feste, generationsgeschützte und kanonisch
     pfadgebundene Read-only-Sessions mit `read`, `seek`, `fstat`, `close` sowie
     vollständiger HTTPD-Umstellung; stabile Inode-Handles und Vererbung folgen
+  - [ ] **in Arbeit:** append-only Claim-v2-Mediation der exakten Client- und
+    Servicegeneration als fehlende Besitzergrenze für stabile Objekt-Handles;
+    Claim v1 bleibt bytegenau erhalten
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY

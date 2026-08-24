@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-storage-claim-client-identity"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,70 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-storage-claim-client-identity"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Owner-aware append-only storage claim ABI"
+scope = "Prepare stable Ring-3 VFS object handles with the smallest missing mediation primitive. Append syscall 119 and a separate fixed 40-byte claim-v2 descriptor that gives only the authorized supervised storage service the exact client PID client generation and claiming service generation already protected by the kernel request slot. Keep syscall 68 the 28-byte claim-v1 descriptor request submission collection cancellation operations 1 through 7 and all existing clients byte-exact. The storage service moves to claim v2 validates every identity before dispatch and emits a marker only after a real VFS shadow request completed through that owner-aware path. Prove v1 compatibility foreign-service rejection stale client cleanup default-deny profiles syscall-table append-only ordering normal QEMU progress and storage-service crash restart. This package grants no object handle file mutation inheritance raw controller DMA or new client authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "lib/libc/stdlib.h",
+  "kernel/syscall/syscall_table.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/guest_test.c",
+  "test/test_storage_request_pool_host.c",
+  "test/test_reist_storage_request_pool.py",
+  "test/test_reist_storage_service.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_reist_wcet.py",
+  "test/test_reist_storage_recovery.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "syscall 68 and storage_request_descriptor_t remain version 1 and exactly 28 bytes with unchanged claim behavior",
+  "syscall 119 is append-only and returns a distinct version 2 descriptor of exactly 40 bytes",
+  "claim v2 copies client PID client generation and claiming service generation from protected kernel metadata rather than user input",
+  "only the exact bound storage-service generation can claim either descriptor and only the storage domain receives syscall 119",
+  "failed validation publishes no descriptor or payload and request cleanup remains generation scoped and bounded",
+  "the storage service validates descriptor version size owner identity and its own generation before dispatch",
+  "normal process exit cancellation service unbind and restart retain their existing slot retirement semantics",
+  "no VFS frame operation object handle mutation inheritance controller DMA or client authority is added"
+]
+targeted_tests = [
+  "python test/test_reist_storage_request_pool.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_probe_domain.py -v",
+  "python test/test_reist_wcet.py -v",
+  "python test/test_reist_storage_recovery.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode storage-recovery"
+]
+stop_conditions = [
+  "client identity cannot be delivered without changing syscall 68 or accepting user-supplied owner fields",
+  "claim v2 requires heap allocation an unbounded scan or authority outside the storage-service generation",
+  "the existing service restart path can accept a stale claimant or publish stale request data",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add owner-aware storage claim ABI"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-read-session-handles"

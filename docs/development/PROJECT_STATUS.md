@@ -315,6 +315,9 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
 - Der Windows-Build wertet die Exitcodes der System- und Beispielprogramm-
   Builder über explizite Child-Prozesse aus. Ein fehlgeschlagener PRG-Build kann
   daher kein scheinbar erfolgreiches Image aus veralteten Artefakten erzeugen.
+- Aktiv ist nun die append-only Claim-v2-Mediation der vom Kernel geschützten
+  Client- und Servicegeneration. Sie ist die fehlende Besitzergrenze vor
+  stabilen serviceeigenen VFS-Objekt-Handles; Claim v1 bleibt unverändert.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.
