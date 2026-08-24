@@ -116,6 +116,8 @@ int storage_request_collect_ex(int client_pid, uint32_t client_generation,
                                storage_request_handle_t handle,
                                int32_t *result_out, uint8_t *block_data_out,
                                uint32_t *data_length_out);
+int storage_request_cancel(int client_pid, uint32_t client_generation,
+                           storage_request_handle_t handle);
 void storage_request_cancel_process(int pid, uint32_t generation);
 int storage_request_stats(storage_request_stats_t *stats_out);
 

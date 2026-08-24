@@ -32,6 +32,7 @@ static void storage_pool_unlock(uint32_t flags) { irq_restore(flags); }
 #define STORAGE_ENOSPC (-28)
 #define STORAGE_EINTEGRITY (-84)
 #define STORAGE_EMSGSIZE (-90)
+#define STORAGE_ECANCELED (-125)
 
 typedef enum {
     STORAGE_SLOT_FREE = 0,
@@ -39,6 +40,7 @@ typedef enum {
     STORAGE_SLOT_CLAIMED = 2,
     STORAGE_SLOT_COMPLETE = 3,
     STORAGE_SLOT_RETIRED = 4,
+    STORAGE_SLOT_CANCEL_PENDING = 5,
 } storage_slot_state_t;
 
 typedef struct {
@@ -115,7 +117,7 @@ static bool metadata_valid(const void *payload, size_t length) {
     if (payload == NULL || length != sizeof(storage_slot_metadata_t))
         return false;
     const storage_slot_metadata_t *value = payload;
-    if (value->state > STORAGE_SLOT_RETIRED ||
+    if (value->state > STORAGE_SLOT_CANCEL_PENDING ||
         value->generation > STORAGE_HANDLE_GENERATION_MAX ||
         value->length > STORAGE_REQUEST_BLOCK_SIZE) return false;
     if (value->state == STORAGE_SLOT_FREE ||
@@ -131,6 +133,17 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
         value->operation > STORAGE_REQUEST_VFS_SHADOW_STAT)
+        return false;
+    if (value->state == STORAGE_SLOT_QUEUED &&
+        (value->service_pid != 0 || value->service_generation != 0U))
+        return false;
+    if ((value->state == STORAGE_SLOT_CLAIMED ||
+         value->state == STORAGE_SLOT_CANCEL_PENDING) &&
+        (value->service_pid <= 0 || value->service_generation == 0U))
+        return false;
+    if (value->state == STORAGE_SLOT_COMPLETE &&
+        !((value->service_pid == 0 && value->service_generation == 0U) ||
+          (value->service_pid > 0 && value->service_generation != 0U)))
         return false;
     if (value->operation == STORAGE_REQUEST_BLOCK_FLUSH ||
         value->operation == STORAGE_REQUEST_VFS_SYNC ||
@@ -265,6 +278,22 @@ static int resolve_handle(storage_request_handle_t handle, size_t *slot_out,
         metadata->state == STORAGE_SLOT_RETIRED) return STORAGE_EINVAL;
     *slot_out = slot;
     return 0;
+}
+
+static int release_slot(size_t slot,
+                        const storage_slot_metadata_t *metadata) {
+    uint32_t generation = metadata->generation;
+    storage_slot_metadata_t replacement =
+        generation == STORAGE_HANDLE_GENERATION_MAX
+        ? (storage_slot_metadata_t){
+            .state = STORAGE_SLOT_RETIRED,
+            .generation = STORAGE_HANDLE_GENERATION_MAX,
+        }
+        : (storage_slot_metadata_t){.generation = generation + 1U};
+    clear_data(slot);
+    int result = store_metadata(slot, &replacement);
+    if (result == 0) request_removed();
+    return result;
 }
 
 int storage_request_pool_init(void) {
@@ -470,10 +499,13 @@ static int complete_locked(int service_pid, uint32_t service_generation,
     storage_slot_metadata_t metadata;
     int result = resolve_handle(handle, &slot, &metadata);
     if (result != 0) return result;
-    if (metadata.state != STORAGE_SLOT_CLAIMED ||
+    if ((metadata.state != STORAGE_SLOT_CLAIMED &&
+         metadata.state != STORAGE_SLOT_CANCEL_PENDING) ||
         metadata.service_pid != service_pid ||
         metadata.service_generation != service_generation)
         return STORAGE_EACCES;
+    if (metadata.state == STORAGE_SLOT_CANCEL_PENDING)
+        return release_slot(slot, &metadata);
     if (result_code == 0 && operation_has_output(metadata.operation)) {
         if (block_data == NULL) return STORAGE_EINVAL;
         store_data(slot, block_data, metadata.length);
@@ -494,6 +526,8 @@ static int collect_locked(int client_pid, uint32_t client_generation,
     if (metadata.client_pid != client_pid ||
         metadata.client_generation != client_generation)
         return STORAGE_EACCES;
+    if (metadata.state == STORAGE_SLOT_CANCEL_PENDING)
+        return STORAGE_ECANCELED;
     if (metadata.state != STORAGE_SLOT_COMPLETE) return STORAGE_EAGAIN;
     uint32_t data_length = metadata.result == 0 &&
         operation_has_output(metadata.operation) ? metadata.length : 0U;
@@ -504,12 +538,27 @@ static int collect_locked(int client_pid, uint32_t client_generation,
     }
     *result_out = metadata.result;
     if (data_length_out != NULL) *data_length_out = data_length;
-    uint32_t generation = metadata.generation;
-    metadata = (storage_slot_metadata_t){.generation = generation};
-    clear_data(slot);
-    result = store_metadata(slot, &metadata);
-    if (result == 0) request_removed();
-    return result;
+    return release_slot(slot, &metadata);
+}
+
+static int cancel_locked(int client_pid, uint32_t client_generation,
+                         storage_request_handle_t handle) {
+    if (client_pid <= 0 || client_generation == 0U)
+        return STORAGE_EINVAL;
+    size_t slot = 0U;
+    storage_slot_metadata_t metadata;
+    int result = resolve_handle(handle, &slot, &metadata);
+    if (result != 0) return result;
+    if (metadata.client_pid != client_pid ||
+        metadata.client_generation != client_generation)
+        return STORAGE_EACCES;
+    if (metadata.state == STORAGE_SLOT_CANCEL_PENDING) return 0;
+    if (metadata.state == STORAGE_SLOT_QUEUED ||
+        metadata.state == STORAGE_SLOT_COMPLETE)
+        return release_slot(slot, &metadata);
+    if (metadata.state != STORAGE_SLOT_CLAIMED) return STORAGE_EINVAL;
+    metadata.state = STORAGE_SLOT_CANCEL_PENDING;
+    return store_metadata(slot, &metadata);
 }
 
 static void cancel_process_locked(int pid, uint32_t generation) {
@@ -521,17 +570,7 @@ static void cancel_process_locked(int pid, uint32_t generation) {
              metadata.client_generation == generation) ||
             (metadata.service_pid == pid &&
              metadata.service_generation == generation)) {
-            uint32_t saved_generation = metadata.generation;
-            metadata = saved_generation == STORAGE_HANDLE_GENERATION_MAX
-                ? (storage_slot_metadata_t){
-                    .state = STORAGE_SLOT_RETIRED,
-                    .generation = STORAGE_HANDLE_GENERATION_MAX,
-                }
-                : (storage_slot_metadata_t){
-                    .generation = saved_generation + 1U,
-                };
-            clear_data(slot);
-            if (store_metadata(slot, &metadata) == 0) request_removed();
+            (void)release_slot(slot, &metadata);
         }
     }
 }
@@ -588,7 +627,8 @@ int storage_request_completion_context(int service_pid,
     storage_slot_metadata_t metadata;
     int result = resolve_handle(handle, &slot, &metadata);
     if (result == 0 &&
-        (metadata.state != STORAGE_SLOT_CLAIMED ||
+        ((metadata.state != STORAGE_SLOT_CLAIMED &&
+          metadata.state != STORAGE_SLOT_CANCEL_PENDING) ||
          metadata.service_pid != service_pid ||
          metadata.service_generation != service_generation))
         result = STORAGE_EACCES;
@@ -613,6 +653,14 @@ int storage_request_collect_ex(int client_pid, uint32_t client_generation,
     uint32_t flags = storage_pool_lock();
     int result = collect_locked(client_pid, client_generation, handle,
                                 result_out, block_data_out, data_length_out);
+    storage_pool_unlock(flags);
+    return result;
+}
+
+int storage_request_cancel(int client_pid, uint32_t client_generation,
+                           storage_request_handle_t handle) {
+    uint32_t flags = storage_pool_lock();
+    int result = cancel_locked(client_pid, client_generation, handle);
     storage_pool_unlock(flags);
     return result;
 }

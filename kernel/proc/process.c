@@ -368,7 +368,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             0U, 1U, SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS,
             SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_DRIVE_INFO,
             SYS_DRIVE_STATUS, SYS_ADMIN_STORAGE, SYS_PARTITION_CREATE,
-            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL
         };
         for (size_t index = 0;
              index < sizeof(admin_syscalls) / sizeof(admin_syscalls[0]);
@@ -382,7 +382,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             0U, 1U, SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS,
             SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_OPEN, SYS_READ,
             SYS_CLOSE, SYS_STAT, SYS_READDIR_BATCH, SYS_DRIVE_INFO,
-            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL
         };
         for (size_t index = 0;
              index < sizeof(maintenance_syscalls) /

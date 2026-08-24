@@ -129,7 +129,8 @@ enum {
     X86OS_SYS_PROCESS_IDENTITY = 114,
     X86OS_SYS_DRAW_TEXT_CLIPPED = 115,
     X86OS_SYS_RUNTIME_TIMING = 116,
-    X86OS_SYS_BOOT_STATUS = 117
+    X86OS_SYS_BOOT_STATUS = 117,
+    X86OS_SYS_STORAGE_CANCEL = 118
 };
 
 #define X86OS_TCP_SOCKET_VERSION 1U
@@ -1486,6 +1487,7 @@ int x86os_storage_complete(x86os_storage_handle_t handle, int32_t result,
                            const void *data);
 int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
                           void *data);
+int x86os_storage_cancel(x86os_storage_handle_t handle);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
 int x86os_reist_report(uint32_t report_type, uint32_t value);

@@ -122,9 +122,14 @@ mit monotoner Deadline, revalidiert den vollständigen Antwortframe und fällt
 bei Fehlern nie auf `SYS_STAT` zurück. Der Prozess beendet sich anschließend,
 sodass seine generationgebundenen Requests durch die vorhandene
 Prozessbereinigung widerrufen werden. Andere und insbesondere langlebige
-Clients bleiben bis zu einer expliziten requestbezogenen Cancel-ABI am
-Kernel-VFS. Mountpublikation, FAT12/EXT2, Handles und Mutationen verbleiben bis
-zu getrennten Nachweispaketen im Kernel. Neue Mutationsautorität entsteht nicht.
+Clients bleiben zunächst am Kernel-VFS. Append-only Syscall 118 ergänzt nun den
+fehlenden requestbezogenen Widerruf für ihre spätere Umstellung. Nur die exakte
+Clientgeneration darf ihr Handle canceln. Queued und vollständige Requests
+werden sofort freigegeben; ein bereits geclaimter Request bleibt bis zur
+Quittierung der gebundenen Dienstgeneration `cancel-pending`, sein Ergebnis
+wird verworfen. Der Vertrag beendet oder reversiert keinen physischen I/O.
+Mountpublikation, FAT12/EXT2, Handles und Mutationen verbleiben bis zu getrennten
+Nachweispaketen im Kernel. Neue Mutationsautorität entsteht nicht.
 
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter

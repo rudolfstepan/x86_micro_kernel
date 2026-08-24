@@ -51,6 +51,21 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("client_capacity_rejections", source)
         self.assertIn("pool_capacity_rejections", source)
 
+    def test_per_handle_cancel_is_owner_scoped_and_acknowledged(self):
+        header = (ROOT / "include/kernel/storage_request_pool.h").read_text()
+        source = (ROOT / "kernel/init/storage_request_pool.c").read_text()
+        syscall = (ROOT / "kernel/syscall/syscall_table.c").read_text()
+        sdk_h = (ROOT / "userspace/sdk/include/x86os.h").read_text()
+        sdk_c = (ROOT / "userspace/sdk/x86os.c").read_text()
+        self.assertIn("int storage_request_cancel(", header)
+        self.assertIn("STORAGE_SLOT_CANCEL_PENDING", source)
+        self.assertIn("metadata.client_generation != client_generation", source)
+        self.assertIn("return STORAGE_ECANCELED", source)
+        self.assertIn("X86OS_SYS_STORAGE_CANCEL = 118", sdk_h)
+        self.assertIn("x86os_storage_cancel", sdk_c)
+        self.assertIn("(void*)&syscall_storage_cancel", syscall)
+        self.assertIn("case SYS_STORAGE_CANCEL", syscall)
+
     def test_payload_has_crc_and_redundant_copy(self):
         source = (ROOT / "kernel/init/storage_request_pool.c").read_text()
         self.assertIn("storage_data_copy_t primary", source)

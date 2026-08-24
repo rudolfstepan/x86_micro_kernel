@@ -957,6 +957,15 @@ static int test_storage_service(void) {
         .length = sizeof(sector),
         .timeout_ms = 1000U,
     };
+    x86os_storage_handle_t cancel_handle = 0U;
+    if (x86os_storage_cancel(0U) != -22 ||
+        x86os_storage_submit(&request, 0, &cancel_handle) != 0 ||
+        cancel_handle == 0U || x86os_storage_cancel(cancel_handle) != 0)
+        return -1;
+    int canceled_collect = x86os_storage_collect(
+        cancel_handle, &result, sector);
+    if (canceled_collect != -22 && canceled_collect != -125) return -1;
+
     if (x86os_storage_bind() != -13 ||
         x86os_storage_claim((x86os_storage_descriptor_t*)(uintptr_t)0x1000U,
                             sector) != -13 ||
@@ -1141,6 +1150,7 @@ int main(int argc, char **argv) {
         return 7;
     }
     x86os_puts("TEST_STAGE STORAGE_SERVICE_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_REQUEST_CANCEL_OK\n");
 
     if (test_task_capacity_and_parenting() != 0) {
         x86os_puts("TEST_FAIL TASK_CAPACITY\n");

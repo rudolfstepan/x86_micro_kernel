@@ -10,6 +10,7 @@ static int mode;
 static uint32_t collect_calls;
 static uint32_t submit_calls;
 static uint32_t sleep_calls;
+static uint32_t cancel_calls;
 static uint64_t clock_ms;
 static x86os_vfs_shadow_frame_t captured;
 
@@ -74,11 +75,18 @@ int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
     return 0;
 }
 
+int x86os_storage_cancel(x86os_storage_handle_t handle) {
+    if (handle != 0x101U) return -22;
+    ++cancel_calls;
+    return 0;
+}
+
 static void reset(int selected_mode) {
     mode = selected_mode;
     collect_calls = 0U;
     submit_calls = 0U;
     sleep_calls = 0U;
+    cancel_calls = 0U;
     clock_ms = 0U;
     memset(&captured, 0, sizeof(captured));
 }
@@ -106,7 +114,8 @@ int main(void) {
 
     reset(MODE_TIMEOUT);
     if (reist_vfs_stat("/README.TXT", &info, 3U) != -110 ||
-        collect_calls > 3U || sleep_calls > 3U) return 5;
+        collect_calls > 3U || sleep_calls > 3U || cancel_calls != 1U)
+        return 5;
 
     char long_path[193];
     long_path[0U] = '/';

@@ -548,6 +548,10 @@ int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
                               (uintptr_t)result, (uintptr_t)data);
 }
 
+int x86os_storage_cancel(x86os_storage_handle_t handle) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_CANCEL, handle, 0U, 0U);
+}
+
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights) {
     return (int)x86os_syscall(X86OS_SYS_IPC_DELEGATE, handle,

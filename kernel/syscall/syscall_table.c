@@ -1608,6 +1608,12 @@ static int syscall_storage_collect(storage_request_handle_t handle,
     return 0;
 }
 
+static int syscall_storage_cancel(storage_request_handle_t handle) {
+    Process *process = scheduler_current_process();
+    if (process == NULL) return -13;
+    return storage_request_cancel(process->pid, process->generation, handle);
+}
+
 static int syscall_service_connect(uint32_t service_id,
                                    ipc_handle_t *user_handle) {
     Process *process = scheduler_current_process();
@@ -3126,6 +3132,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_display_draw_text_clipped, // Syscall 115: Damage-safe text
     (void*)&syscall_runtime_timing,      // Syscall 116: Empirical timing stats
     (void*)&syscall_boot_status,         // Syscall 117: Validated boot status
+    (void*)&syscall_storage_cancel,      // Syscall 118: Revoke owned request
     // Add more syscalls here as needed
 };
 
@@ -3675,6 +3682,9 @@ void syscall_handler(Registers* regs) {
         case SYS_BOOT_STATUS:
             result = (uint32_t)syscall_boot_status(
                 (boot_health_status_t*)(uintptr_t)arg1);
+            break;
+        case SYS_STORAGE_CANCEL:
+            result = (uint32_t)syscall_storage_cancel(arg1);
             break;
         default:
             result = (uint32_t)-1;

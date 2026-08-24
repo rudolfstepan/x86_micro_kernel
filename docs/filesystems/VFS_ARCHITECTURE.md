@@ -42,9 +42,12 @@ normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
 Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
 oder Protokollfehler beendet sich das Programm; die Prozessbereinigung widerruft
 den generationsgebundenen Request. Andere Clients und der Kernelpfad bleiben
-weiterhin unverändert autoritativ. Für langlebige Clients ist vor dem Cutover
-eine explizite requestbezogene Cancel-ABI erforderlich. FAT12, EXT2, Handles,
-Lesen und Verzeichnisiteration sind noch nicht migriert.
+weiterhin unverändert autoritativ. Append-only Syscall 118 stellt inzwischen
+eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
+sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
+Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
+ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
+FAT12, EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
 
 ## Operationen
 
@@ -92,8 +95,9 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
 1. [x] `stat`-Shadowtransport und vollständige Metadatenäquivalenz.
 2. [x] Ring-3-eigene read-only Mount- und FAT32-Metadatenparser.
 3. [x] Kontrollierter `STAT.PRG`-Cutover auf Operation 2 ohne Legacy-Fallback.
-4. Requestbezogene Cancel-ABI ergänzen, danach weitere und insbesondere
-   langlebige read-only Clients umstellen.
-5. Handles, Lesen und Verzeichnisiteration migrieren.
-6. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+4. [x] Generation- und handlegebundene Cancel-ABI mit sicherer
+   Dienstquittierung ergänzen.
+5. Weitere und insbesondere langlebige read-only Clients umstellen.
+6. Handles, Lesen und Verzeichnisiteration migrieren.
+7. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.

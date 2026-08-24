@@ -262,7 +262,14 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   validiert den vollständigen Antwortframe ohne Legacy-Fallback. Der normale
   QEMU-Gast startet das paketierte Programm auf `/GUEST.TMP` und markiert den
   Erfolg mit `STORAGE_VFS_STAT_CLIENT_OK`. Andere Clients bleiben bis zu einer
-  expliziten requestbezogenen Cancel-ABI am Kernel-VFS.
+  getrennten Umstellung am Kernel-VFS.
+- Append-only Syscall 118 und `x86os_storage_cancel` widerrufen genau ein
+  owner- und generationsgebundenes Requesthandle. Queued und vollständige
+  Requests geben ihren Slot sofort frei. Bereits geclaimte Requests bleiben
+  bis zur Quittierung der gebundenen Dienstgeneration `cancel-pending`, belegen
+  die Statistik weiterhin und publizieren weder Status noch Daten. Der normale
+  Gast markiert den ABI-Nachweis mit `STORAGE_REQUEST_CANCEL_OK`. Dies ist kein
+  physischer I/O-Abbruch und kein Rollbackvertrag.
 - Der feste Rescue-Programmpool umfasst nun 240 KiB für weiterhin genau elf
   geschützte Programme; die Einzelgrenze bleibt 96 KiB. Das schafft begrenzten
   Raum für den isolierten Parser, ohne dynamische Cacheallokation einzuführen.

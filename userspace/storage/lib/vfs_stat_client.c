@@ -146,6 +146,12 @@ static int client_frame_valid(const x86os_vfs_shadow_frame_t *frame,
         sizeof(frame->info.name);
 }
 
+static int client_cancel_failure(x86os_storage_handle_t handle,
+                                 int failure) {
+    int cancel = x86os_storage_cancel(handle);
+    return cancel == 0 || cancel == -22 ? failure : cancel;
+}
+
 int reist_vfs_stat(const char *path, x86os_file_info_t *info,
                    uint32_t timeout_ms) {
     if (info == 0 || timeout_ms == 0U || timeout_ms > 60000U) return -22;
@@ -176,12 +182,15 @@ int reist_vfs_stat(const char *path, x86os_file_info_t *info,
 
     int32_t service_result = -5;
     for (;;) {
-        if (x86os_monotonic_ms(&now) != 0) return -5;
-        if (now >= deadline) return -110;
+        if (x86os_monotonic_ms(&now) != 0)
+            return client_cancel_failure(handle, -5);
+        if (now >= deadline)
+            return client_cancel_failure(handle, -110);
         status = x86os_storage_collect(handle, &service_result, &frame);
         if (status == 0) break;
-        if (status != -11) return status;
-        if (x86os_sleep_ms(1U) != 0 && x86os_yield() != 0) return -5;
+        if (status != -11) return client_cancel_failure(handle, status);
+        if (x86os_sleep_ms(1U) != 0 && x86os_yield() != 0)
+            return client_cancel_failure(handle, -5);
     }
     if (service_result != 0) return service_result;
     if (!client_frame_valid(&frame, resolved, path_length)) return -84;

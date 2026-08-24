@@ -38,6 +38,7 @@ class ReistVfsStatClientTests(unittest.TestCase):
         self.assertIn("X86OS_VFS_SHADOW_FAT32_STAT", source)
         self.assertIn("now >= deadline", source)
         self.assertIn("x86os_sleep_ms(1U)", source)
+        self.assertIn("x86os_storage_cancel(handle)", source)
         self.assertIn("client_frame_valid", source)
         self.assertNotIn("x86os_stat(", source)
         self.assertNotIn("malloc(", source)

@@ -26,8 +26,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscall 117 is the storage-only BOOT_STATUS ABI. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 118U
+/* Exclusive upper bound; syscall 118 is client-scoped STORAGE_CANCEL. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 119U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,

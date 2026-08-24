@@ -81,6 +81,42 @@ int main(void) {
         storage_request_collect(3, 5U, read_handle, &result, transfer) != 0 ||
         memcmp(read_data, transfer, sizeof(read_data)) != 0) return 7;
 
+    storage_request_handle_t queued_cancel = 0U;
+    if (storage_request_submit(3, 5U, &read, 0, 42U,
+                               &queued_cancel) != 0 ||
+        storage_request_cancel(4, 5U, queued_cancel) != -13 ||
+        storage_request_cancel(3, 5U, queued_cancel) != 0 ||
+        storage_request_collect(3, 5U, queued_cancel, &result,
+                                transfer) != -22)
+        return 24;
+
+    storage_request_handle_t claimed_cancel = 0U;
+    if (storage_request_submit(3, 5U, &read, 0, 43U,
+                               &claimed_cancel) != 0 ||
+        storage_request_claim(7, 11U, 44U, &descriptor, 0) != 0 ||
+        descriptor.handle != claimed_cancel ||
+        storage_request_cancel(3, 5U, claimed_cancel) != 0 ||
+        storage_request_cancel(3, 5U, claimed_cancel) != 0 ||
+        storage_request_collect(3, 5U, claimed_cancel, &result,
+                                transfer) != -125 ||
+        storage_request_stats(&stats) != 0 || stats.active_requests != 1U ||
+        storage_request_complete(7, 11U, claimed_cancel, 0, 0) != 0 ||
+        storage_request_stats(&stats) != 0 || stats.active_requests != 0U ||
+        storage_request_collect(3, 5U, claimed_cancel, &result,
+                                transfer) != -22)
+        return 25;
+
+    storage_request_handle_t completed_cancel = 0U;
+    if (storage_request_submit(3, 5U, &read, 0, 45U,
+                               &completed_cancel) != 0 ||
+        storage_request_claim(7, 11U, 46U, &descriptor, 0) != 0 ||
+        storage_request_complete(7, 11U, completed_cancel, -5, 0) != 0 ||
+        storage_request_cancel(3, 6U, completed_cancel) != -13 ||
+        storage_request_cancel(3, 5U, completed_cancel) != 0 ||
+        storage_request_collect(3, 5U, completed_cancel, &result,
+                                transfer) != -22)
+        return 26;
+
     storage_request_submit_t shadow_stat = {
         STORAGE_REQUEST_VERSION, sizeof(shadow_stat),
         STORAGE_REQUEST_VFS_SHADOW_STAT, 0U, 0U,
@@ -88,9 +124,9 @@ int main(void) {
     };
     fill(write_data, 17U);
     storage_request_handle_t shadow_handle = 0U;
-    if (storage_request_submit(3, 5U, &shadow_stat, write_data, 45U,
+    if (storage_request_submit(3, 5U, &shadow_stat, write_data, 47U,
                                &shadow_handle) != 0 ||
-        storage_request_claim(7, 11U, 46U, &descriptor, transfer) != 0 ||
+        storage_request_claim(7, 11U, 48U, &descriptor, transfer) != 0 ||
         descriptor.operation != STORAGE_REQUEST_VFS_SHADOW_STAT ||
         memcmp(write_data, transfer, sizeof(write_data)) != 0) return 22;
     fill(read_data, 71U);

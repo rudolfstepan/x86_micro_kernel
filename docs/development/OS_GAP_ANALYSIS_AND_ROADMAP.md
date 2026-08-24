@@ -84,7 +84,7 @@ Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
-`R2.1-vfs-stat-client-cutover` ist derzeit kein Paket aktiv.
+`R2.1-storage-request-cancel` ist derzeit kein Paket aktiv.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -456,7 +456,11 @@ und 10 verbindlich.
   - [x] kontrollierter Cutover des kurzlebigen `STAT.PRG` auf Parseroperation 2
     mit fester Pfadnormalisierung, monotoner Deadline, vollständiger
     Antwortvalidierung und ohne Legacy-Fallback; allgemeine langlebige Clients
-    warten auf eine requestbezogene Cancel-ABI
+    warten auf ihre getrennte Umstellung
+  - [x] append-only Syscall 118 für generation- und handlegebundenes
+    Request-Cancel; geclaimte Requests bleiben bis zur Dienstquittierung
+    `cancel-pending`, Ergebnisautorität wird widerrufen, physischer I/O-Abbruch
+    oder Rollback wird nicht behauptet
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1520,7 +1524,10 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   diesen Pfad inzwischen ohne Legacy-Fallback und beendet sich nach Timeout,
   damit die Prozessbereinigung offene Requests widerruft. Der allgemeine
   Cutover langlebiger Clients, FAT12 und EXT2 bleiben offen; er benötigt zuvor
-  eine explizite requestbezogene Cancel-ABI.
+  eine explizite requestbezogene Cancel-ABI. Diese Voraussetzung ist mit
+  append-only Syscall 118 umgesetzt: queued/complete werden sofort widerrufen,
+  claimed bleibt bis zur Dienstquittierung `cancel-pending` und publiziert kein
+  Ergebnis. Das beendet oder reversiert keinen physischen I/O.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 - Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
@@ -2072,8 +2079,12 @@ Legacy-Äquivalenz. `STAT.PRG` ist als erster kurzlebiger Client kontrolliert au
 Operation 2 umgestellt: feste Pfadnormalisierung, monotone Deadline,
 vollständige Antwortvalidierung und kein Legacy-Fallback. Der QEMU-Gast startet
 das wirklich paketierte Programm auf einer FAT32-Testdatei. Weitere und
-insbesondere langlebige Clients bleiben bis zu einer requestbezogenen
-Cancel-ABI am Kernel-VFS; FAT12 und EXT2 sind noch nicht Teil des Parsers.
+insbesondere langlebige Clients bleiben bis zu getrennten Cutoverpaketen am
+Kernel-VFS. Die dafür erforderliche generation- und handlegebundene Cancel-ABI
+ist mit append-only Syscall 118 vorhanden. Geclaimte Requests bleiben bis zur
+Dienstquittierung `cancel-pending`; ihre Ergebnisse werden verworfen, ohne
+einen physischen I/O-Abbruch oder Rollback zu behaupten. FAT12 und EXT2 sind
+noch nicht Teil des Parsers.
 
 R1.8 ist ebenfalls abgeschlossen: Der generationsgebundene Ring-3-SVGA-II-
 Treiber nutzt ausschließlich den festen Kernelmediator für Aktivierung,

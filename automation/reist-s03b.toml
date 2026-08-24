@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-storage-request-cancel"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-storage-request-cancel"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Generation-scoped per-request cancellation for long-lived storage clients"
@@ -71,7 +71,14 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: add generation-scoped storage request cancellation"
-evidence = []
+evidence = [
+  "python test/test_reist_storage_request_pool.py -v: PASS (6 tests)",
+  "python test/test_reist_vfs_stat_client.py -v: PASS (4 tests)",
+  "python test/test_reist_probe_domain.py -v: PASS (8 tests)",
+  "python test/test_reist_wcet.py -v: PASS (5 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (34s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal: PASS (15s, STORAGE_REQUEST_CANCEL_OK and TEST_OK)"
+]
 
 [[packages]]
 id = "R2.1-vfs-stat-client-cutover"

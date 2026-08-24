@@ -132,6 +132,7 @@
 #define SYS_DRAW_TEXT_CLIPPED 115
 #define SYS_RUNTIME_TIMING 116
 #define SYS_BOOT_STATUS 117
+#define SYS_STORAGE_CANCEL 118
 
 // // Macros for try-catch handling
 // #define try(ctx) if (setjmp(&(ctx)) == 0)
