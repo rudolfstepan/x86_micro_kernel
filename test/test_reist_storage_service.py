@@ -57,6 +57,15 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("vfs_shadow_stat", service)
         self.assertIn("vfs_shadow_read_at", service)
         self.assertIn("vfs_shadow_readdir_at", service)
+        self.assertIn("VFS_OBJECT_CAPACITY 16U", service)
+        self.assertIn("VFS_OBJECT_MAX_PER_CLIENT 4U", service)
+        self.assertIn("vfs_object_reap_one", service)
+        self.assertIn("slot->owner_generation", service)
+        self.assertIn("service_generation != current_service_generation",
+                      service)
+        self.assertIn("X86OS_VFS_SHADOW_OBJECT_OPEN", service)
+        self.assertIn("X86OS_VFS_SHADOW_OBJECT_READ", service)
+        self.assertIn("STORAGE_VFS_OBJECT_HANDLE_OK", service)
         self.assertIn("STORAGE_CLAIM_IDENTITY_OK", service)
         self.assertIn("request.client_generation", service)
         self.assertIn("request.service_generation", service)
@@ -77,6 +86,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("sector[511] == 0xAAU", guest)
         self.assertIn("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK", guest)
         self.assertIn("TEST_STAGE STORAGE_CLAIM_IDENTITY_OK", guest)
+        self.assertIn("TEST_STAGE STORAGE_VFS_OBJECT_HANDLE_OK", guest)
 
     def test_vfs_shadow_frame_is_fixed_validated_and_read_only(self):
         sdk = read("userspace/sdk/include/x86os.h")

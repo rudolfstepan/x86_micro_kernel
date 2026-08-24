@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-vfs-stable-object-handles"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-vfs-stable-object-handles"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Owner-bound stable read-only VFS object handles"
@@ -76,7 +76,13 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: add stable Ring-3 VFS object handles"
-evidence = []
+evidence = [
+  "31 frozen host tests passed for FAT EXT2 client service ownership and recovery contracts",
+  "QEMU VGA package gate passed in 12 seconds after removing an implicit freestanding memcpy",
+  "normal QEMU runtime passed in 24 seconds with STORAGE_VFS_OBJECT_HANDLE_OK and TEST_OK",
+  "EXT2 QEMU stat cat and ls runtime passed in 12 seconds through the inode object path",
+  "storage-recovery QEMU runtime passed in 14 seconds with service-generation restart fencing"
+]
 
 [[packages]]
 id = "R2.1-storage-claim-client-identity"

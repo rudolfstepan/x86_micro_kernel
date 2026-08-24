@@ -31,6 +31,11 @@ class ReistVfsShadowExt2Tests(unittest.TestCase):
         self.assertIn("EXT2_SINGLE_INDIRECT_INDEX", source)
         self.assertIn("reist_vfs_shadow_ext2_read", source)
         self.assertIn("reist_vfs_shadow_ext2_readdir", source)
+        self.assertIn("reist_vfs_shadow_ext2_object_open", header)
+        self.assertIn("reist_vfs_shadow_ext2_object_read", header)
+        self.assertIn("volume->signature", source)
+        self.assertIn("object->locator_a", source)
+        self.assertIn("inode->bytes + 100U", source)
         self.assertIn("volume->reads >= REIST_VFS_SHADOW_EXT2_MAX_SECTOR_READS",
                       source)
         self.assertNotIn("malloc(", source)

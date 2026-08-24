@@ -143,11 +143,17 @@ Antwortframes werden validiert; Fehler publizieren weder Teilbytes noch einen
 Teileintrag. Ein prozesslokaler Vier-Slot-Layer ergänzt generationcodierte,
 kanonisch pfadgebundene Read-only-Sessions mit Offset, Seek, Fstat und Close.
 Er veröffentlicht Offsetänderungen erst nach Erfolg und legt einen Slot bei
-Generationserschöpfung still. Das ist ausdrücklich keine stabile Inode-
-Identität, POSIX-Binärkompatibilität oder Deskriptorvererbung. `CAT.PRG`,
+Generationserschöpfung still. Append-only Frameoperationen 8 bis 11 ersetzen
+inzwischen die Pfadwiederauflösung durch sechzehn feste serviceeigene Slots.
+Jeder Slot ist auf Client-PID/-Generation, Slotgeneration und die vollständige
+Servicegeneration gebunden; pro Client sind vier Slots zulässig, tote Owner
+werden mit genau einer Liveness-Prüfung pro Dienstschleife inkrementell
+bereinigt. FAT verwendet einen Directory-Entry-Locator mit Medien- und
+Erzeugungsschutz, EXT2 Inode-Nummer und Inodegeneration. Folgeoperationen
+enthalten keinen Pfad. Das ist noch keine POSIX-Binärkompatibilität oder
+Deskriptorvererbung. `CAT.PRG`,
 `LS.PRG` und der vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen
-Kernel-VFS-Fallback. Stabile Objekt-Handles und Mutationen bleiben getrennte
-Folgepakete.
+Kernel-VFS-Fallback. Mutationen bleiben ein getrenntes Folgepaket.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

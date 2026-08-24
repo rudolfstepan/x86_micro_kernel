@@ -24,18 +24,23 @@ class ReistVfsFileClientTests(unittest.TestCase):
             ], check=True, cwd=ROOT)
             subprocess.run([str(executable)], check=True, cwd=ROOT)
 
-    def test_session_is_fixed_generation_safe_and_path_backed(self):
+    def test_session_is_fixed_generation_safe_and_service_object_backed(self):
         source = read("userspace/storage/lib/vfs_file_client.c")
         header = read("userspace/storage/include/reist/vfs_file_client.h")
         for token in ("REIST_VFS_FILE_CAPACITY 4U", "REIST_VFS_SEEK_SET",
                       "REIST_VFS_SEEK_CUR", "REIST_VFS_SEEK_END"):
             self.assertIn(token, header)
         for token in ("FILE_HANDLE_GENERATION_MAX", "session->retired = 1U",
-                      "reist_vfs_resolve_path", "reist_vfs_read_at",
-                      "reist_vfs_stat"):
+                      "reist_vfs_resolve_path", "session->object_token",
+                      "session->service_generation",
+                      "X86OS_VFS_SHADOW_OBJECT_OPEN",
+                      "X86OS_VFS_SHADOW_OBJECT_READ",
+                      "X86OS_VFS_SHADOW_OBJECT_FSTAT",
+                      "X86OS_VFS_SHADOW_OBJECT_CLOSE"):
             self.assertIn(token, source)
         for forbidden in ("malloc(", "free(", "x86os_open(", "x86os_read(",
-                          "x86os_close(", "x86os_readdir"):
+                          "x86os_close(", "x86os_readdir", "reist_vfs_read_at",
+                          "reist_vfs_stat", "char path["):
             self.assertNotIn(forbidden, source)
 
     def test_cat_and_http_use_only_ring3_read_clients(self):

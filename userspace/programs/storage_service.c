@@ -53,6 +53,12 @@ _Static_assert(sizeof(x86os_vfs_shadow_read_frame_t) ==
 _Static_assert(sizeof(x86os_vfs_shadow_readdir_frame_t) ==
                    X86OS_STORAGE_BLOCK_SIZE,
                "VFS readdir frame must fill one request payload");
+_Static_assert(sizeof(x86os_vfs_shadow_object_frame_t) ==
+                   X86OS_STORAGE_BLOCK_SIZE,
+               "VFS object frame must fill one request payload");
+_Static_assert(sizeof(x86os_vfs_shadow_object_read_frame_t) ==
+                   X86OS_STORAGE_BLOCK_SIZE,
+               "VFS object read frame must fill one request payload");
 
 static void put16(uint8_t *p, uint32_t value) {
     p[0] = (uint8_t)value; p[1] = (uint8_t)(value >> 8U);
@@ -5774,10 +5780,241 @@ typedef union {
     x86os_vfs_shadow_frame_t stat;
     x86os_vfs_shadow_read_frame_t read;
     x86os_vfs_shadow_readdir_frame_t readdir;
+    x86os_vfs_shadow_object_frame_t object;
+    x86os_vfs_shadow_object_read_frame_t object_read;
 } vfs_shadow_request_t;
 
-static int vfs_shadow_request(vfs_shadow_request_t *request) {
+#define VFS_OBJECT_CAPACITY 16U
+#define VFS_OBJECT_MAX_PER_CLIENT 4U
+#define VFS_OBJECT_SLOT_MASK 0xFFU
+#define VFS_OBJECT_GENERATION_MAX 0x00FFFFFFU
+
+typedef struct {
+    reist_vfs_shadow_object_t locator;
+    int32_t owner_pid;
+    uint32_t owner_generation;
+    uint32_t generation;
+    uint8_t in_use;
+    uint8_t retired;
+} vfs_object_slot_t;
+
+static vfs_object_slot_t vfs_objects[VFS_OBJECT_CAPACITY];
+static uint32_t vfs_object_reap_cursor;
+
+static void vfs_object_zero(void *target, uint32_t length) {
+    uint8_t *bytes = (uint8_t *)target;
+    for (uint32_t index = 0U; index < length; ++index) bytes[index] = 0U;
+}
+
+static uint32_t vfs_object_token(uint32_t slot, uint32_t generation) {
+    return (generation << 8U) | (slot + 1U);
+}
+
+static void vfs_object_release(vfs_object_slot_t *slot) {
+    if (slot == 0 || slot->in_use == 0U) return;
+    vfs_object_zero(&slot->locator, sizeof(slot->locator));
+    slot->owner_pid = 0;
+    slot->owner_generation = 0U;
+    slot->in_use = 0U;
+    if (slot->generation == VFS_OBJECT_GENERATION_MAX) {
+        slot->retired = 1U;
+    } else {
+        ++slot->generation;
+    }
+}
+
+static int vfs_object_resolve(uint32_t token, uint32_t service_generation,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t current_service_generation, vfs_object_slot_t **slot_out) {
+    uint32_t encoded_slot = token & VFS_OBJECT_SLOT_MASK;
+    uint32_t generation = token >> 8U;
+    if (slot_out == 0 || encoded_slot == 0U ||
+        encoded_slot > VFS_OBJECT_CAPACITY || generation == 0U ||
+        service_generation == 0U ||
+        service_generation != current_service_generation) return -9;
+    vfs_object_slot_t *slot = &vfs_objects[encoded_slot - 1U];
+    if (slot->in_use == 0U || slot->retired != 0U ||
+        slot->generation != generation || slot->owner_pid != owner_pid ||
+        slot->owner_generation != owner_generation) return -9;
+    *slot_out = slot;
+    return 0;
+}
+
+static void vfs_object_reap_one(void) {
+    uint32_t slot_index = vfs_object_reap_cursor++ % VFS_OBJECT_CAPACITY;
+    vfs_object_slot_t *slot = &vfs_objects[slot_index];
+    if (slot->in_use == 0U) return;
+    x86os_process_identity_t identity;
+    if (x86os_process_identity_of(slot->owner_pid, &identity) != 0 ||
+        identity.version != 1U || identity.struct_size != sizeof(identity) ||
+        identity.pid != slot->owner_pid ||
+        identity.generation != slot->owner_generation)
+        vfs_object_release(slot);
+}
+
+static int vfs_object_reserved_zero(const uint32_t *reserved,
+                                    uint32_t count) {
+    for (uint32_t index = 0U; index < count; ++index)
+        if (reserved[index] != 0U) return 0;
+    return 1;
+}
+
+static int vfs_object_open(x86os_vfs_shadow_object_frame_t *frame,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t service_generation) {
+    if (frame->path_length == 0U ||
+        frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
+        frame->path[0U] != '/' || frame->path[frame->path_length] != '\0' ||
+        frame->object_token != 0U || frame->service_generation != 0U)
+        return -22;
+    for (uint32_t index = 0U; index < frame->path_length; ++index)
+        if (frame->path[index] == '\0') return -22;
+    const uint8_t *input_info = (const uint8_t *)&frame->info;
+    for (uint32_t index = 0U; index < sizeof(frame->info); ++index)
+        if (input_info[index] != 0U) return -22;
+    uint32_t owned = 0U;
+    uint32_t free_slot = UINT32_MAX;
+    for (uint32_t index = 0U; index < VFS_OBJECT_CAPACITY; ++index) {
+        vfs_object_slot_t *slot = &vfs_objects[index];
+        if (slot->in_use != 0U && slot->owner_pid == owner_pid &&
+            slot->owner_generation == owner_generation) ++owned;
+        if (free_slot == UINT32_MAX && slot->in_use == 0U &&
+            slot->retired == 0U) free_slot = index;
+    }
+    if (owned >= VFS_OBJECT_MAX_PER_CLIENT || free_slot == UINT32_MAX) {
+        frame->result = -24;
+        return 0;
+    }
+    const reist_vfs_shadow_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    reist_vfs_shadow_object_t locator;
+    x86os_file_info_t info;
+    int status = reist_vfs_shadow_fat_object_open(
+        &io, frame->path, frame->path_length, &locator, &info);
+    if (status == -2)
+        status = reist_vfs_shadow_ext2_object_open(
+            &io, frame->path, frame->path_length, &locator, &info);
+    if (status != 0) {
+        frame->result = status;
+        return 0;
+    }
+    vfs_object_slot_t *slot = &vfs_objects[free_slot];
+    if (slot->generation == 0U) slot->generation = 1U;
+    vfs_object_zero(&slot->locator, sizeof(slot->locator));
+    for (uint32_t index = 0U; index < sizeof(slot->locator); ++index)
+        ((uint8_t *)&slot->locator)[index] = ((uint8_t *)&locator)[index];
+    slot->owner_pid = owner_pid;
+    slot->owner_generation = owner_generation;
+    slot->in_use = 1U;
+    frame->object_token = vfs_object_token(free_slot, slot->generation);
+    frame->service_generation = service_generation;
+    for (uint32_t index = 0U; index < sizeof(frame->info); ++index)
+        ((uint8_t *)&frame->info)[index] = ((uint8_t *)&info)[index];
+    frame->result = 0;
+    return 0;
+}
+
+static int vfs_object_control(x86os_vfs_shadow_object_frame_t *frame,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t service_generation) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) || frame->flags != 0U ||
+        frame->result != 0 ||
+        !vfs_object_reserved_zero(frame->reserved, 3U)) return -22;
+    if (frame->operation == X86OS_VFS_SHADOW_OBJECT_OPEN)
+        return vfs_object_open(frame, owner_pid, owner_generation,
+                               service_generation);
+    if (frame->operation != X86OS_VFS_SHADOW_OBJECT_FSTAT &&
+        frame->operation != X86OS_VFS_SHADOW_OBJECT_CLOSE) return -22;
+    if (frame->path_length != 0U) return -22;
+    for (uint32_t index = 0U; index < sizeof(frame->path); ++index)
+        if (frame->path[index] != '\0') return -22;
+    const uint8_t *input_info = (const uint8_t *)&frame->info;
+    for (uint32_t index = 0U; index < sizeof(frame->info); ++index)
+        if (input_info[index] != 0U) return -22;
+    vfs_object_slot_t *slot = 0;
+    int status = vfs_object_resolve(
+        frame->object_token, frame->service_generation, owner_pid,
+        owner_generation, service_generation, &slot);
+    if (status != 0) { frame->result = status; return 0; }
+    if (frame->operation == X86OS_VFS_SHADOW_OBJECT_CLOSE) {
+        vfs_object_release(slot);
+        frame->result = 0;
+        return 0;
+    }
+    const reist_vfs_shadow_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    status = slot->locator.filesystem == REIST_VFS_SHADOW_OBJECT_FAT
+        ? reist_vfs_shadow_fat_object_stat(&io, &slot->locator, &frame->info)
+        : reist_vfs_shadow_ext2_object_stat(&io, &slot->locator, &frame->info);
+    frame->result = status;
+    if (status == -116) vfs_object_release(slot);
+    return 0;
+}
+
+static int vfs_object_read(x86os_vfs_shadow_object_read_frame_t *frame,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t service_generation) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) ||
+        frame->operation != X86OS_VFS_SHADOW_OBJECT_READ ||
+        frame->flags != 0U || frame->result != 0 ||
+        frame->requested == 0U ||
+        frame->requested > X86OS_VFS_SHADOW_READ_CAPACITY ||
+        frame->transferred != 0U ||
+        !vfs_object_reserved_zero(frame->reserved, 54U)) return -22;
+    for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
+        if (frame->data[index] != 0U) return -22;
+    vfs_object_slot_t *slot = 0;
+    int status = vfs_object_resolve(
+        frame->object_token, frame->service_generation, owner_pid,
+        owner_generation, service_generation, &slot);
+    if (status != 0) { frame->result = status; return 0; }
+    const reist_vfs_shadow_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    uint32_t transferred = 0U;
+    status = slot->locator.filesystem == REIST_VFS_SHADOW_OBJECT_FAT
+        ? reist_vfs_shadow_fat_object_read(
+            &io, &slot->locator, frame->offset, frame->data,
+            frame->requested, &transferred)
+        : reist_vfs_shadow_ext2_object_read(
+            &io, &slot->locator, frame->offset, frame->data,
+            frame->requested, &transferred);
+    if (status != 0) {
+        for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
+            frame->data[index] = 0U;
+        transferred = 0U;
+        if (status == -116) vfs_object_release(slot);
+    } else {
+        for (uint32_t index = transferred; index < sizeof(frame->data); ++index)
+            frame->data[index] = 0U;
+    }
+    frame->result = status;
+    frame->transferred = transferred;
+    return 0;
+}
+
+static int vfs_shadow_request(vfs_shadow_request_t *request,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t service_generation) {
     if (request == 0) return -22;
+    if (request->stat.operation == X86OS_VFS_SHADOW_OBJECT_READ)
+        return vfs_object_read(&request->object_read, owner_pid,
+                               owner_generation, service_generation);
+    if (request->stat.operation == X86OS_VFS_SHADOW_OBJECT_OPEN ||
+        request->stat.operation == X86OS_VFS_SHADOW_OBJECT_FSTAT ||
+        request->stat.operation == X86OS_VFS_SHADOW_OBJECT_CLOSE)
+        return vfs_object_control(&request->object, owner_pid,
+                                  owner_generation, service_generation);
     if (request->stat.operation == X86OS_VFS_SHADOW_FS_READ_AT)
         return vfs_shadow_read_at(&request->read);
     if (request->stat.operation == X86OS_VFS_SHADOW_FS_READDIR_AT)
@@ -5803,7 +6040,9 @@ int main(void) {
         x86os_uptime_ms() + BOOT_STATUS_ACK_TIMEOUT_MS;
     uint8_t boot_ack_active = 1U;
     uint8_t identity_marker_emitted = 0U;
+    uint8_t object_marker_emitted = 0U;
     for (;;) {
+        vfs_object_reap_one();
         boot_success_ack_poll(boot_ack_deadline, &boot_ack_active);
         x86os_storage_descriptor_v2_t request;
         uint8_t data[X86OS_STORAGE_BLOCK_SIZE];
@@ -5834,6 +6073,7 @@ int main(void) {
         }
 
         int result = -95;
+        uint8_t object_open_completed = 0U;
         if (request.operation == X86OS_STORAGE_BLOCK_READ &&
             request.length == X86OS_STORAGE_BLOCK_SIZE) {
             result = x86os_storage_block_read(request.resource,
@@ -5850,7 +6090,13 @@ int main(void) {
             uint8_t *frame_bytes = (uint8_t *)&frame;
             for (uint32_t index = 0U; index < sizeof(frame); ++index)
                 frame_bytes[index] = data[index];
-            result = vfs_shadow_request(&frame);
+            result = vfs_shadow_request(
+                &frame, request.client_pid, request.client_generation,
+                request.service_generation);
+            if (result == 0 &&
+                frame.stat.operation == X86OS_VFS_SHADOW_OBJECT_OPEN &&
+                frame.object.result == 0)
+                object_open_completed = 1U;
             if (result == 0)
                 for (uint32_t index = 0U; index < sizeof(frame); ++index)
                     data[index] = frame_bytes[index];
@@ -5941,6 +6187,10 @@ int main(void) {
             request.operation == X86OS_STORAGE_VFS_SHADOW_STAT) {
             x86os_puts("STORAGE_CLAIM_IDENTITY_OK\n");
             identity_marker_emitted = 1U;
+        }
+        if (object_marker_emitted == 0U && object_open_completed != 0U) {
+            x86os_puts("STORAGE_VFS_OBJECT_HANDLE_OK\n");
+            object_marker_emitted = 1U;
         }
     }
 }

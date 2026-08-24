@@ -69,6 +69,9 @@ class StorageRecoveryContracts(unittest.TestCase):
         self.assertIn("client_identity.generation != "
                       "request.client_generation", service)
         self.assertIn("completion != 0 && completion != -22", service)
+        self.assertIn("service_generation != current_service_generation",
+                      service)
+        self.assertIn("vfs_object_release(slot)", service)
 
     def test_runner_requires_ordered_recovery_markers(self):
         lines = [

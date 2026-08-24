@@ -321,9 +321,14 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   revalidiert Client-Liveness und beide Generationen vor dem Dispatch.
   Syscall 68 und der 28-Byte-Claim-v1-Vertrag bleiben unverändert. Hosttests,
   QEMU-Paketbuild, normaler Gastlauf und Storage-Recovery-Gastlauf bestehen.
-- Aktiv ist der nächste R2.1-Schnitt: sechzehn feste, ownergebundene
-  serviceeigene read-only Objekt-Slots sollen den Pfad nur beim Öffnen
-  auflösen und FAT über Directory-Entry-Locatoren sowie EXT2 über Inodes lesen.
+- Sechzehn feste, ownergebundene serviceeigene read-only Objekt-Slots sind
+  umgesetzt; höchstens vier gehören einer Clientgeneration. Operation 8 löst
+  den Pfad einmal auf, Operationen 9 bis 11 verwenden nur Servicehandle und
+  Servicegeneration. FAT bindet Directory-Entry, Startcluster und
+  Bootrecord-Signatur, EXT2 Inode, Inodegeneration und Superblock-Signatur.
+  Tote Owner werden inkrementell reap-t; Service-Restart, Medienwechsel und
+  Locator-Reuse können alte Handles nicht neu autorisieren. Normaler FAT-,
+  echter EXT2- und Storage-Recovery-QEMU-Lauf bestehen.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

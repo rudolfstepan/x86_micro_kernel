@@ -1,6 +1,6 @@
 /**
  * @file userspace/storage/include/reist/vfs_file_client.h
- * @brief Fixed-capacity path-backed Ring-3 read sessions.
+ * @brief Fixed-capacity Ring-3 sessions over service-owned VFS objects.
  */
 #ifndef REIST_VFS_FILE_CLIENT_H
 #define REIST_VFS_FILE_CLIENT_H
@@ -19,8 +19,9 @@
 
 typedef uint32_t reist_vfs_file_handle_t;
 
-/* These are process-local, canonical-path-backed sessions. They deliberately
- * do not promise stable inode identity or cross-process descriptor sharing. */
+/* The path is resolved only by open. Follow-up operations carry an owner-bound
+ * service token and service generation, never path authority. Handles remain
+ * process-local and are not cross-process descriptors. */
 
 int reist_vfs_file_open(const char *path, uint32_t timeout_ms,
                         reist_vfs_file_handle_t *handle);

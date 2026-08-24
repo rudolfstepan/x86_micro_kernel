@@ -29,4 +29,16 @@ int reist_vfs_shadow_ext2_readdir(const reist_vfs_shadow_io_t *io,
                                   uint32_t path_length, uint32_t index,
                                   x86os_file_info_t *info);
 
+int reist_vfs_shadow_ext2_object_open(
+    const reist_vfs_shadow_io_t *io, const char *absolute_path,
+    uint32_t path_length, reist_vfs_shadow_object_t *object,
+    x86os_file_info_t *info);
+int reist_vfs_shadow_ext2_object_stat(
+    const reist_vfs_shadow_io_t *io,
+    const reist_vfs_shadow_object_t *object, x86os_file_info_t *info);
+int reist_vfs_shadow_ext2_object_read(
+    const reist_vfs_shadow_io_t *io,
+    const reist_vfs_shadow_object_t *object, uint32_t offset, uint8_t *data,
+    uint32_t capacity, uint32_t *transferred);
+
 #endif

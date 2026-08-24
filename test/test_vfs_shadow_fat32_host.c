@@ -306,6 +306,38 @@ int main(void) {
     if (readdir_path(&context, "/", 4U, &info) != 1 ||
         info.name[0U] != '\0') return 21;
     if (readdir_path(&context, "/README.TXT", 0U, &info) != -20) return 22;
+    const reist_vfs_shadow_io_t object_io = {
+        &context, drive_info, read_sector
+    };
+    reist_vfs_shadow_object_t object;
+    if (reist_vfs_shadow_fat_object_open(
+            &object_io, "/CROSS.BIN", 10U, &object, &info) != 0 ||
+        object.filesystem != REIST_VFS_SHADOW_OBJECT_FAT ||
+        object.locator_a != TEST_DATA_START || object.locator_b != 128U)
+        return 23;
+    uint8_t *cross_entry = context.image +
+        TEST_DATA_START * X86OS_STORAGE_BLOCK_SIZE + 128U;
+    static const char moved[11] = {'M','O','V','E','D',' ',' ',' ',
+                                   'B','I','N'};
+    memcpy(cross_entry, moved, sizeof(moved));
+    if (reist_vfs_shadow_fat_object_read(
+            &object_io, &object, 500U, data, sizeof(data), &transferred) != 0 ||
+        transferred != sizeof(data) || data[12U] != 'B' ||
+        stat_path(&context, "/CROSS.BIN", &info) != -2 ||
+        stat_path(&context, "/MOVED.BIN", &info) != 0)
+        return 24;
+    context.image[3U] ^= 0x5AU;
+    if (reist_vfs_shadow_fat_object_read(
+            &object_io, &object, 0U, data, sizeof(data), &transferred) != -116)
+        return 25;
+    initialize_fat32(&context);
+    if (reist_vfs_shadow_fat_object_open(
+            &object_io, "/README.TXT", 11U, &object, &info) != 0)
+        return 26;
+    context.image[TEST_DATA_START * X86OS_STORAGE_BLOCK_SIZE + 14U] ^= 1U;
+    if (reist_vfs_shadow_fat_object_stat(&object_io, &object, &info) != -116)
+        return 27;
+    initialize_fat32(&context);
     if (stat_path(&context, "/../README.TXT", &info) != -22) return 7;
     context.image[510U] = 0U;
     if (stat_path(&context, "/README.TXT", &info) != -2) return 8;

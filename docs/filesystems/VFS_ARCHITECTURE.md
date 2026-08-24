@@ -69,8 +69,13 @@ sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu desse
 Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
 ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
 EXT2-`stat`, Lesen in `CAT.PRG`, Verzeichnisiteration in `LS.PRG` und die
-pfadgebundenen Read-only-Sessions sind damit migriert; stabile Objekt-Handles
-und Vererbung sind noch nicht migriert.
+Read-only-Sessions sind damit migriert. Append-only Frameoperationen 8 bis 11
+stellen `open`, objektbezogenes `read`, `fstat` und `close` bereit. Der Pfad
+wird nur beim Öffnen aufgelöst. Danach adressiert FAT den validierten
+Directory-Entry über Sektor/Offset, Startcluster, Erzeugungsschutz und
+Bootrecord-Signatur; EXT2 adressiert Inode-Nummer und Inodegeneration unter
+einer Superblock-Signatur. Medien- oder Locatorwechsel liefert `ESTALE`.
+Deskriptorvererbung ist noch nicht migriert.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus
@@ -151,7 +156,7 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
     Sessions mit Seek/Fstat/Close und vollständigem `HTTPD.PRG`-Cutover.
 11. [x] Als kleinsten Mediationsschritt Claim v2 mit kernelgeschützter Client-
     und Servicegeneration ergänzen; Claim v1 bleibt bytegenau erhalten.
-12. [ ] **In Arbeit:** stabile, ownergebundene read-only Objekt-Handles für
+12. [x] Stabile, ownergebundene read-only Objekt-Handles für
     FAT und EXT2; Deskriptorvererbung bleibt ein getrenntes Folgepaket.
 13. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.

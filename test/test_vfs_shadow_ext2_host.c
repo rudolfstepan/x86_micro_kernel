@@ -205,6 +205,35 @@ int main(void) {
     if (readdir_path(&context, "/mnt/ext2/readme.txt", 0U, &info) != -20)
         return 17;
 
+    const reist_vfs_shadow_io_t object_io = {
+        &context, drive_info, read_sector
+    };
+    reist_vfs_shadow_object_t object;
+    if (reist_vfs_shadow_ext2_object_open(
+            &object_io, "/mnt/ext2/readme.txt", 20U, &object, &info) != 0 ||
+        object.filesystem != REIST_VFS_SHADOW_OBJECT_EXT2 ||
+        object.locator_a != 12U)
+        return 23;
+    memcpy(block_at(&context, 21U) + 32U, "renamed.tx", 10U);
+    if (reist_vfs_shadow_ext2_object_read(
+            &object_io, &object, 5U, data, 10U, &transferred) != 0 ||
+        transferred != 10U || memcmp(data, "AUTHORITY\n", 10U) != 0 ||
+        stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2 ||
+        stat_path(&context, "/mnt/ext2/renamed.tx", &info) != 0)
+        return 24;
+    block_at(&context, 1U)[200U] ^= 0x5AU;
+    if (reist_vfs_shadow_ext2_object_stat(
+            &object_io, &object, &info) != -116)
+        return 25;
+    initialize(&context);
+    if (reist_vfs_shadow_ext2_object_open(
+            &object_io, "/mnt/ext2/readme.txt", 20U, &object, &info) != 0)
+        return 26;
+    put32(inode_at(&context, 12U) + 100U, 1U);
+    if (reist_vfs_shadow_ext2_object_read(
+            &object_io, &object, 0U, data, 10U, &transferred) != -116)
+        return 27;
+
     initialize(&context);
     put16(block_at(&context, 1U) + 56U, 0U);
     if (stat_path(&context, "/mnt/ext2/readme.txt", &info) != -2) return 18;

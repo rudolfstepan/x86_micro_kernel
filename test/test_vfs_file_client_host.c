@@ -1,4 +1,4 @@
-/** Host behavior test for generation-safe path-backed VFS read sessions. */
+/** Host behavior test for stable service-owned VFS read objects. */
 #include <stdint.h>
 #include <string.h>
 
@@ -8,7 +8,10 @@ static int cwd_variant;
 static int stat_failure;
 static int read_failure;
 static uint32_t observed_offset;
-static char observed_path[X86OS_VFS_SHADOW_PATH_CAPACITY];
+static uint32_t open_calls;
+static uint32_t close_calls;
+static uint32_t next_request = 1U;
+static char opened_path[X86OS_VFS_SHADOW_PATH_CAPACITY];
 
 int reist_vfs_resolve_path(const char *path, char *output, uint32_t *length) {
     if (path == 0 || output == 0 || length == 0) return -22;
@@ -21,39 +24,95 @@ int reist_vfs_resolve_path(const char *path, char *output, uint32_t *length) {
     return 0;
 }
 
-int reist_vfs_stat(const char *path, x86os_file_info_t *info,
-                   uint32_t timeout_ms) {
-    if (stat_failure) { memset(info, 0, sizeof(*info)); return -2; }
-    if (timeout_ms != 1000U) return -22;
-    memset(info, 0, sizeof(*info));
-    info->type = strstr(path, "DIR") != 0 ? X86OS_DIRECTORY : X86OS_FILE;
-    info->size = 10U;
-    strcpy(info->name, info->type == X86OS_FILE ? "FILE.TXT" : "DIR");
+int x86os_storage_submit(const x86os_storage_submit_t *request,
+                         const void *data, x86os_storage_handle_t *handle) {
+    if (request == 0 || data == 0 || handle == 0 ||
+        request->operation != X86OS_STORAGE_VFS_SHADOW_STAT ||
+        request->length != X86OS_STORAGE_BLOCK_SIZE) return -22;
+    uint32_t operation = ((const x86os_vfs_shadow_object_frame_t *)data)->operation;
+    if (operation == X86OS_VFS_SHADOW_OBJECT_READ) {
+        x86os_vfs_shadow_object_read_frame_t *frame =
+            (x86os_vfs_shadow_object_read_frame_t *)(uintptr_t)data;
+        if (frame->object_token != 77U || frame->service_generation != 9U)
+            return -9;
+        observed_offset = frame->offset;
+        if (read_failure) {
+            frame->result = -5;
+        } else {
+            uint32_t remaining = frame->offset < 10U
+                ? 10U - frame->offset : 0U;
+            frame->transferred = remaining < frame->requested
+                ? remaining : frame->requested;
+            for (uint32_t index = 0U; index < frame->transferred; ++index)
+                frame->data[index] = (uint8_t)('0' + frame->offset + index);
+        }
+    } else {
+        x86os_vfs_shadow_object_frame_t *frame =
+            (x86os_vfs_shadow_object_frame_t *)(uintptr_t)data;
+        if (operation == X86OS_VFS_SHADOW_OBJECT_OPEN) {
+            ++open_calls;
+            strcpy(opened_path, frame->path);
+            if (strstr(frame->path, "DIR") != 0) {
+                frame->result = -21;
+            } else {
+                frame->object_token = 77U;
+                frame->service_generation = 9U;
+                frame->info.type = X86OS_FILE;
+                frame->info.size = 10U;
+                strcpy(frame->info.name, "FILE.TXT");
+            }
+        } else if (operation == X86OS_VFS_SHADOW_OBJECT_FSTAT) {
+            if (frame->object_token != 77U || frame->service_generation != 9U)
+                return -9;
+            if (stat_failure) {
+                frame->result = -2;
+            } else {
+                frame->info.type = X86OS_FILE;
+                frame->info.size = 10U;
+            }
+        } else if (operation == X86OS_VFS_SHADOW_OBJECT_CLOSE) {
+            if (frame->object_token != 77U || frame->service_generation != 9U)
+                return -9;
+            ++close_calls;
+        } else {
+            return -22;
+        }
+    }
+    *handle = next_request++;
     return 0;
 }
 
-int reist_vfs_read_at(const char *path, uint32_t offset, void *data,
-                      size_t capacity, uint32_t timeout_ms) {
-    observed_offset = offset;
-    strcpy(observed_path, path);
-    memset(data, 0, capacity);
-    if (read_failure) return -5;
-    if (timeout_ms != 1000U) return -22;
-    uint32_t remaining = offset < 10U ? 10U - offset : 0U;
-    uint32_t amount = remaining < capacity ? remaining : (uint32_t)capacity;
-    for (uint32_t index = 0U; index < amount; ++index)
-        ((uint8_t *)data)[index] = (uint8_t)('0' + offset + index);
-    return (int)amount;
+int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
+                          void *data) {
+    (void)data;
+    if (handle == 0U || result == 0) return -22;
+    *result = 0;
+    return 0;
 }
+
+int x86os_storage_cancel(x86os_storage_handle_t handle) {
+    return handle == 0U ? -22 : 0;
+}
+
+uint32_t x86os_uptime_ms(void) {
+    static uint32_t now;
+    return ++now;
+}
+
+int x86os_sleep_ms(uint32_t milliseconds) {
+    return milliseconds == 0U ? -22 : 0;
+}
+
+int x86os_yield(void) { return 0; }
 
 int main(void) {
     reist_vfs_file_handle_t first = 0U;
     uint8_t data[3];
-    if (reist_vfs_file_open("FILE.TXT", 1000U, &first) != 0 || first == 0U)
-        return 1;
+    if (reist_vfs_file_open("FILE.TXT", 1000U, &first) != 0 || first == 0U ||
+        strcmp(opened_path, "/A/FILE.TXT") != 0) return 1;
     cwd_variant = 1;
     if (reist_vfs_file_read(first, data, sizeof(data)) != 3 ||
-        observed_offset != 0U || strcmp(observed_path, "/A/FILE.TXT") != 0 ||
+        observed_offset != 0U || strcmp(opened_path, "/A/FILE.TXT") != 0 ||
         memcmp(data, "012", 3U) != 0) return 2;
     if (reist_vfs_file_read(first, data, sizeof(data)) != 3 ||
         observed_offset != 3U || memcmp(data, "345", 3U) != 0) return 3;
@@ -83,7 +142,7 @@ int main(void) {
     if (reist_vfs_file_seek(first, -11, REIST_VFS_SEEK_END, &position) != -22 ||
         reist_vfs_file_seek(first, INT64_MAX, REIST_VFS_SEEK_CUR,
                             &position) != -75) return 12;
-    if (reist_vfs_file_close(first) != 0 ||
+    if (reist_vfs_file_close(first) != 0 || close_calls != 1U ||
         reist_vfs_file_read(first, data, sizeof(data)) != -9 ||
         reist_vfs_file_close(first) != -9) return 13;
 
@@ -92,8 +151,10 @@ int main(void) {
         if (reist_vfs_file_open("FILE.TXT", 1000U, &handles[index]) != 0)
             return 14;
     reist_vfs_file_handle_t excess = 123U;
+    uint32_t calls_before_excess = open_calls;
     if (reist_vfs_file_open("FILE.TXT", 1000U, &excess) != -24 ||
-        excess != REIST_VFS_FILE_INVALID_HANDLE) return 15;
+        excess != REIST_VFS_FILE_INVALID_HANDLE ||
+        open_calls != calls_before_excess) return 15;
     for (uint32_t index = 0U; index < REIST_VFS_FILE_CAPACITY; ++index)
         if (reist_vfs_file_close(handles[index]) != 0) return 16;
     if (reist_vfs_file_open("/DIR", 1000U, &excess) != -21) return 17;

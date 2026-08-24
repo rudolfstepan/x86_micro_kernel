@@ -13,6 +13,21 @@
 #define REIST_VFS_SHADOW_MAX_COMPONENTS 32U
 #define REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS 32U
 #define REIST_VFS_SHADOW_MAX_SECTOR_READS 64U
+#define REIST_VFS_SHADOW_OBJECT_VERSION 1U
+#define REIST_VFS_SHADOW_OBJECT_FAT 1U
+#define REIST_VFS_SHADOW_OBJECT_EXT2 2U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t filesystem;
+    uint32_t resource;
+    uint32_t volume_signature;
+    uint32_t locator_a;
+    uint32_t locator_b;
+    uint32_t locator_c;
+    uint32_t object_generation;
+} reist_vfs_shadow_object_t;
 
 typedef int (*reist_vfs_shadow_drive_info_fn)(
     void *context, uint32_t resource, x86os_drive_info_t *info);
@@ -48,5 +63,17 @@ int reist_vfs_shadow_fat_readdir(const reist_vfs_shadow_io_t *io,
                                  const char *absolute_path,
                                  uint32_t path_length, uint32_t index,
                                  x86os_file_info_t *info);
+
+int reist_vfs_shadow_fat_object_open(
+    const reist_vfs_shadow_io_t *io, const char *absolute_path,
+    uint32_t path_length, reist_vfs_shadow_object_t *object,
+    x86os_file_info_t *info);
+int reist_vfs_shadow_fat_object_stat(
+    const reist_vfs_shadow_io_t *io,
+    const reist_vfs_shadow_object_t *object, x86os_file_info_t *info);
+int reist_vfs_shadow_fat_object_read(
+    const reist_vfs_shadow_io_t *io,
+    const reist_vfs_shadow_object_t *object, uint32_t offset, uint8_t *data,
+    uint32_t capacity, uint32_t *transferred);
 
 #endif

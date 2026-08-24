@@ -32,6 +32,11 @@ class ReistVfsShadowFat32Tests(unittest.TestCase):
         self.assertIn("cluster + cluster / 2U", source)
         self.assertIn("volume->root_dir_start + index", source)
         self.assertIn("reist_vfs_shadow_fat_stat", header)
+        self.assertIn("reist_vfs_shadow_fat_object_open", header)
+        self.assertIn("reist_vfs_shadow_fat_object_read", header)
+        self.assertIn("volume->signature", source)
+        self.assertIn("object->locator_a", source)
+        self.assertIn("shadow_entry_generation", source)
         self.assertNotIn("malloc(", source)
         self.assertNotIn("x86os_syscall", source)
 
