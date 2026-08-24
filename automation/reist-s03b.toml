@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-vfs-read-session-handles"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,79 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-vfs-read-session-handles"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Generation-safe Ring-3 read sessions and complete HTTP read cutover"
+scope = "Add a fixed-capacity process-local read-only session layer over authoritative VFS shadow operations 5 through 7. Centralize canonical relative absolute and DOS path resolution so a session retains the path resolved at open even if the process working directory later changes. Provide four generation-encoded slots with open read seek fstat and close semantics, publish offsets only after successful reads, reject stale handles and overflow, and retire a slot rather than wrap its generation. This layer is explicitly path-backed and revalidates metadata; it does not claim stable inode identity POSIX binary compatibility descriptor inheritance or cross-process delegation. Cut over CAT.PRG and every HTTPD.PRG metadata content and directory operation to the Ring-3 clients with no SYS_OPEN SYS_READ SYS_READDIR SYS_STAT or legacy fallback. Prove capacity exhaustion stale-handle rejection SEEK_SET SEEK_CUR SEEK_END bounds failed-read offset stability path retention and full HTTP directory/file behavior on the host and in QEMU. Preserve operations 1 through 7 public x86os descriptor APIs all mutation users shell desktop and kernel VFS unchanged."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/storage/include/reist/vfs_path.h",
+  "userspace/storage/include/reist/vfs_stat_client.h",
+  "userspace/storage/include/reist/vfs_read_client.h",
+  "userspace/storage/include/reist/vfs_file_client.h",
+  "userspace/storage/lib/vfs_path.c",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/storage/lib/vfs_read_client.c",
+  "userspace/storage/lib/vfs_file_client.c",
+  "userspace/programs/cat.c",
+  "userspace/programs/httpd.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_smoke.py",
+  "test/test_vfs_stat_client_host.c",
+  "test/test_reist_vfs_stat_client.py",
+  "test/test_vfs_read_client_host.c",
+  "test/test_reist_vfs_read_client.py",
+  "test/test_vfs_file_client_host.c",
+  "test/test_reist_vfs_file_client.py",
+  "test/test_reist_storage_service.py",
+  "test/test_network_tools.py",
+  "test/test_qemu_ext2_stat.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "session handles are process-local generation-encoded and drawn from exactly four fixed slots without heap allocation global authority or cross-process delegation",
+  "open canonicalizes once and admits only regular files through authoritative operation 5 while every read uses operation 6 and advances offset only by validated transferred bytes",
+  "seek follows SEEK_SET SEEK_CUR SEEK_END terminology rejects negative or greater-than-32-bit results and changes offset only after complete validation",
+  "fstat revalidates the retained canonical path and close invalidates the exact generation before a slot can be reused",
+  "generation exhaustion retires a slot and stale malformed closed or foreign handles never regain authority",
+  "HTTPD.PRG uses only Ring-3 stat read session and readdir clients for metadata file content and listings and retains all existing request byte entry and file size bounds",
+  "CAT.PRG uses the session API and closes its handle on every success and error path",
+  "operations 1 through 7 x86os descriptor calls mutations shell desktop kernel VFS and service authority remain unchanged",
+  "the adapter is documented as a path-backed REIST session and does not claim stable inode identity POSIX binary compatibility inheritance or delegation"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_stat_client.py -v",
+  "python test/test_reist_vfs_read_client.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_network_tools.py -v",
+  "python test/test_qemu_ext2_stat.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode ext2-stat",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode http-server"
+]
+stop_conditions = [
+  "a correct handle requires service-side owner identity stable inode authority a new syscall or a file outside allowed_files",
+  "an adapter path invokes or falls back to SYS_OPEN SYS_READ SYS_READDIR or SYS_STAT",
+  "a session operation requires heap allocation unbounded requests generation wrap or offset publication before success",
+  "HTTPD file or directory responses fail the existing twelve-request QEMU proof or do not return to the shell",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "feat: add generation-safe Ring-3 VFS read sessions"
+evidence = []
 
 [[packages]]
 id = "R2.1-vfs-shadow-read-directory"
