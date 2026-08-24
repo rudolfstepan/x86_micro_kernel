@@ -1131,10 +1131,9 @@ int process_file_open_flags(Process *process, const char *path,
     if ((flags & ~PROCESS_OPEN_ALLOWED_FLAGS) != 0U ||
         access_mode == PROCESS_OPEN_ACCMODE ||
         ((flags & PROCESS_OPEN_APPEND) != 0U &&
+         access_mode == PROCESS_OPEN_RDONLY) ||
+        ((flags & PROCESS_OPEN_TRUNC) != 0U &&
          access_mode == PROCESS_OPEN_RDONLY)) return -REIST_EINVAL;
-    /* Truncation needs a separate persistent transaction contract. Reject it
-     * before descriptor search, path resolution, opening or creation. */
-    if ((flags & PROCESS_OPEN_TRUNC) != 0U) return -REIST_ENOTSUP;
     if (process == NULL || path == NULL) return -REIST_EINVAL;
 
     int slot = -1;
@@ -1168,6 +1167,14 @@ int process_file_open_flags(Process *process, const char *path,
         (void)vfs_close(node);
         if (created) (void)vfs_delete(resolved);
         return -REIST_EISDIR;
+    }
+    if ((flags & PROCESS_OPEN_TRUNC) != 0U) {
+        result = vfs_truncate(node, 0U);
+        if (result != VFS_OK) {
+            (void)vfs_close(node);
+            if (created) (void)vfs_delete(resolved);
+            return process_vfs_errno(result);
+        }
     }
 
     bool readable = access_mode != PROCESS_OPEN_WRONLY;

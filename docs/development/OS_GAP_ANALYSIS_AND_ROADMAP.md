@@ -499,7 +499,8 @@ und 10 verbindlich.
     Tastaturpoll und unveränderten acht dynamischen Slots 3 bis 10
   - [x] append-only Syscall 120 mit `RDONLY`/`WRONLY`/`RDWR`, exakten
     Descriptorrechten, `CREAT` und per Schreibaufruf neu bestimmtem `APPEND`;
-    `TRUNC` bleibt bis zum Transaktionspaket vor jeder Wirkung `ENOTSUP`
+    `TRUNC` setzt journalmarkierte REIST-FAT12-/FAT32-Dateien inzwischen
+    transaktional auf Länge null; andere Adapter bleiben fail-closed
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1593,9 +1594,10 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 - [x] Open-Flags und Rechte je Handle ergänzen; Standarddeskriptoren 0/1/2 sind
   als getrennte feste, richtungsgebundene Einträge umgesetzt. Syscall 120
   ergänzt `RDONLY`/`WRONLY`/`RDWR`, `CREAT` und `APPEND` ohne Änderung der
-  Legacy-Syscalls 14/19. `TRUNC` ist definiert, wird aber vor jeder Wirkung mit
-  `ENOTSUP` abgewiesen und bleibt Teil des nächsten Persistenzschnitts.
-- `lseek`, `fstat` und `truncate` implementieren; die bestehenden Rename- und
+  Legacy-Syscalls 14/19. `TRUNC` ist für journalmarkierte REIST-FAT12/FAT32
+  als Nullschnitt umgesetzt; read-only/EXT2 und beliebige Längen bleiben
+  fail-closed.
+- `lseek`, `fstat` und beliebige `truncate`-Längen implementieren; die bestehenden Rename- und
    `fsync`-Syscalls in den gemeinsamen ABI-Header überführen.
 - Teilzugriffe, EOF, ungültige Handles und Prozess-Exit vollständig testen.
 

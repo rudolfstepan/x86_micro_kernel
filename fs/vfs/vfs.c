@@ -439,6 +439,14 @@ static int vfs_write_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
     return node->fs->ops->write(node, offset, size, buffer);
 }
 
+static int vfs_truncate_locked(vfs_node_t* node, uint32_t size) {
+    if (!node || !node->fs || !node->fs->ops) return VFS_ERR_INVALID;
+    if (node->type != VFS_FILE) return VFS_ERR_IS_DIR;
+    if (size != 0U || !node->fs->ops->truncate)
+        return VFS_ERR_UNSUPPORTED;
+    return node->fs->ops->truncate(node, size);
+}
+
 // ===========================================================================
 // Directory Operations
 // ===========================================================================
@@ -818,6 +826,16 @@ int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     vfs_operation_begin();
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_write_locked(node, offset, size, buffer)
+                       : VFS_ERR_READ_ONLY;
+    result = vfs_mutation_finish(armed, result);
+    vfs_operation_end();
+    return result;
+}
+
+int vfs_truncate(vfs_node_t* node, uint32_t size) {
+    vfs_operation_begin();
+    bool armed = vfs_mutation_begin();
+    int result = armed ? vfs_truncate_locked(node, size)
                        : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();

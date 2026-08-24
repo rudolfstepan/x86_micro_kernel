@@ -624,6 +624,41 @@ int main(void) {
     }
     CHECK(cache_flushes == 2);
 
+    uint8_t truncate_payload[700];
+    memset(truncate_payload, 'T', sizeof(truncate_payload));
+    unsigned int allocated_before_truncate = count_allocated_clusters();
+    CHECK(vfs_create("/TRUNCVFS.TMP") == VFS_OK);
+    vfs_node_t* truncate_node = NULL;
+    CHECK(vfs_open("/TRUNCVFS.TMP", &truncate_node) == VFS_OK);
+    CHECK(vfs_write(truncate_node, 0U, sizeof(truncate_payload),
+                    truncate_payload) == (int)sizeof(truncate_payload));
+    CHECK(count_allocated_clusters() == allocated_before_truncate + 2U);
+    CHECK(vfs_truncate(truncate_node, 1U) == VFS_ERR_UNSUPPORTED);
+    CHECK(vfs_truncate(truncate_node, 0U) == VFS_OK);
+    CHECK(truncate_node->inode == 0U && truncate_node->size == 0U);
+    CHECK(count_allocated_clusters() == allocated_before_truncate);
+    CHECK(vfs_read(truncate_node, 0U, 1U, truncate_payload) == 0);
+    CHECK(vfs_close(truncate_node) == VFS_OK);
+    CHECK(vfs_delete("/TRUNCVFS.TMP") == VFS_OK);
+
+    CHECK(vfs_create("/TRFAIL.TMP") == VFS_OK);
+    vfs_node_t* failed_truncate = NULL;
+    CHECK(vfs_open("/TRFAIL.TMP", &failed_truncate) == VFS_OK);
+    CHECK(vfs_write(failed_truncate, 0U, sizeof(truncate_payload),
+                    truncate_payload) == (int)sizeof(truncate_payload));
+    unsigned int allocated_before_failure = count_allocated_clusters();
+    fail_directory_write_once = true;
+    CHECK(vfs_truncate(failed_truncate, 0U) == VFS_ERR_IO);
+    CHECK(failed_truncate->size == sizeof(truncate_payload));
+    CHECK(count_allocated_clusters() == allocated_before_failure);
+    uint8_t truncate_verify[sizeof(truncate_payload)];
+    CHECK(vfs_read(failed_truncate, 0U, sizeof(truncate_verify),
+                   truncate_verify) == (int)sizeof(truncate_verify));
+    CHECK(memcmp(truncate_verify, truncate_payload,
+                 sizeof(truncate_verify)) == 0);
+    CHECK(vfs_close(failed_truncate) == VFS_OK);
+    CHECK(vfs_delete("/TRFAIL.TMP") == VFS_OK);
+
     CHECK(vfs_create("/long vfs filename.txt") == VFS_OK);
     CHECK(vfs_readdir("/", 1, &listed) == VFS_OK);
     CHECK(strcmp(listed.name, "long vfs filename.txt") == 0);
@@ -722,6 +757,7 @@ int main(void) {
     const uint8_t rejected_write = 'X';
     CHECK(vfs_write(foreign_file, 0, 1, &rejected_write) ==
           VFS_ERR_READ_ONLY);
+    CHECK(vfs_truncate(foreign_file, 0U) == VFS_ERR_READ_ONLY);
     CHECK(vfs_close(foreign_file) == VFS_OK);
     CHECK(vfs_create("/NEW.TXT") == VFS_ERR_READ_ONLY);
     CHECK(vfs_mkdir("/NEWDIR") == VFS_ERR_READ_ONLY);

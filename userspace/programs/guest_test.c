@@ -351,6 +351,7 @@ static int guest_vfs_shadow_stat(const char *path, x86os_file_info_t *info,
 static int test_open_flags(void) {
     static const char path[] = "OPENFLG.TMP";
     static const char full[] = "BASE+END";
+    static const char reset[] = "RESET";
     static const char absent[] = "NOFILE.TMP";
     int held[OPEN_FLAGS_DESCRIPTOR_CAPACITY];
     char actual[sizeof(full) - 1U];
@@ -385,14 +386,30 @@ static int test_open_flags(void) {
             -REIST_EINVAL ||
         x86os_open_flags(path, X86OS_O_ACCMODE) != -REIST_EINVAL ||
         x86os_open_flags(path, 0x80000000U) != -REIST_EINVAL ||
-        x86os_open_flags(path, X86OS_O_WRONLY | X86OS_O_TRUNC) !=
-            -REIST_ENOTSUP) goto failed;
+        x86os_open_flags(path, X86OS_O_RDONLY | X86OS_O_TRUNC) !=
+            -REIST_EINVAL) goto failed;
 
     descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
     if (descriptor < 0 ||
         x86os_read(descriptor, actual, sizeof(actual)) !=
             (int)sizeof(actual) ||
         !bytes_equal(actual, full, sizeof(actual)) ||
+        x86os_close(descriptor) != 0) goto failed;
+
+    descriptor = x86os_open_flags(
+        path, X86OS_O_WRONLY | X86OS_O_TRUNC);
+    x86os_file_info_t info;
+    if (descriptor < 0 || x86os_stat(path, &info) != 0 || info.size != 0U ||
+        x86os_write(descriptor, reset, sizeof(reset) - 1U) !=
+            (int)(sizeof(reset) - 1U) ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 ||
+        x86os_read(descriptor, actual, sizeof(reset) - 1U) !=
+            (int)(sizeof(reset) - 1U) ||
+        !bytes_equal(actual, reset, sizeof(reset) - 1U) ||
+        x86os_read(descriptor, &byte, 1U) != 0 ||
         x86os_close(descriptor) != 0) goto failed;
 
     for (int index = 0; index < OPEN_FLAGS_DESCRIPTOR_CAPACITY; ++index) {
@@ -411,7 +428,6 @@ static int test_open_flags(void) {
     for (int index = 0; index < OPEN_FLAGS_DESCRIPTOR_CAPACITY; ++index) {
         if (x86os_close(held[index]) != 0) goto failed;
     }
-    x86os_file_info_t info;
     if (x86os_stat(absent, &info) == 0 || x86os_unlink(path) != 0) goto failed;
     return 0;
 

@@ -11,8 +11,15 @@ sonstige sicherheitsbezogene Freigabe verstanden werden.
 Deskriptoren erhalten exakt angeforderte READ-/WRITE-Rechte; `CREAT` prüft die
 feste Slotquote vor Namespace-Wirkung und `APPEND` bestimmt den Schreiboffset
 für jeden Aufruf neu. Die alten Open-/Create-Syscalls bleiben unverändert.
-`TRUNC` ist bereits als ABI-Flag reserviert, wird aber bis zum getrennten
-FAT12-/FAT32-Transaktionspaket vor jeder Wirkung mit `ENOTSUP` abgewiesen.
+`TRUNC` wurde dabei zunächst als ABI-Flag reserviert und bis zum getrennten
+FAT12-/FAT32-Transaktionspaket wirkungslos mit `ENOTSUP` abgewiesen.
+
+`R2.1-fat-truncate-zero` aktiviert dieses Flag jetzt für journalmarkierte
+REIST-FAT12-/FAT32-Dateien. FAT12 journalisiert beide FAT-Kopien und den
+Directory-Sektor gemeinsam; FAT32 trennt den Nullgrößen-Eintrag vor Freigabe
+der alten Clusterkette. `O_TRUNC` verlangt Schreibrechte und läuft vor
+Descriptorpublikation. EXT2, fremde/read-only Medien, kritische FAT12-Replikate
+und Ziellängen ungleich null bleiben ausdrücklich nicht unterstützt.
 
 `R2.1-standard-descriptors` erweitert die bestehende feste Prozesstabelle um
 echte Deskriptoren 0/1/2 mit richtungsgebundenen Terminalrechten. Der

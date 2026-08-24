@@ -275,6 +275,13 @@ int main(void) {
     CHECK(fs.ops->read(node, 0, sizeof(verify), verify) ==
           (int)sizeof(verify));
     CHECK(memcmp(payload, verify, sizeof(payload)) == 0);
+    uint16_t truncated_start = (uint16_t)node->inode;
+    CHECK(truncated_start >= FAT12_MIN_CLUSTER);
+    CHECK(fs.ops->truncate(node, 1U) == VFS_ERR_UNSUPPORTED);
+    CHECK(fs.ops->truncate(node, 0U) == VFS_OK);
+    CHECK(node->inode == 0U && node->size == 0U);
+    CHECK(fat12_get_fat_entry(truncated_start) == FAT12_FREE_CLUSTER);
+    CHECK(fs.ops->read(node, 0, sizeof(verify), verify) == 0);
     CHECK(fs.ops->close(node) == VFS_OK);
 
     CHECK(fs.ops->mkdir(&fs, "/EMPTY") == VFS_OK);
@@ -296,13 +303,26 @@ int main(void) {
 
     /* Force the next two allocations to be non-contiguous and verify that
        normal file I/O follows the resulting fragmented chain. */
-    CHECK(fat12_set_fat_entry(20, FAT12_EOC_MAX));
+    uint16_t first_free = 0U;
+    for (uint32_t cluster = FAT12_MIN_CLUSTER;
+         cluster < fat12_cluster_count() + 2U; ++cluster) {
+        if (fat12_get_fat_entry((uint16_t)cluster) == FAT12_FREE_CLUSTER) {
+            first_free = (uint16_t)cluster;
+            break;
+        }
+    }
+    uint16_t blocked_successor = (uint16_t)(first_free + 1U);
+    CHECK(first_free >= FAT12_MIN_CLUSTER &&
+          blocked_successor < fat12_cluster_count() + 2U &&
+          fat12_get_fat_entry(blocked_successor) == FAT12_FREE_CLUSTER);
+    CHECK(fat12_set_fat_entry(blocked_successor, FAT12_EOC_MAX));
     CHECK(fat12_sync_fat());
     CHECK(fs.ops->create(&fs, "/FRAG.BIN") == VFS_OK);
     CHECK(fs.ops->open(&fs, "/FRAG.BIN", &node) == VFS_OK);
     CHECK(fs.ops->write(node, 0, sizeof(payload), payload) ==
           (int)sizeof(payload));
-    CHECK(fat12_get_fat_entry((uint16_t)node->inode) != node->inode + 1U);
+    CHECK(node->inode == first_free &&
+          fat12_get_fat_entry((uint16_t)node->inode) != node->inode + 1U);
     memset(verify, 0, sizeof(verify));
     CHECK(fs.ops->read(node, 0, sizeof(verify), verify) ==
           (int)sizeof(verify));
@@ -341,6 +361,7 @@ int main(void) {
     CHECK(fs.ops->read(node, 600, sizeof(slice), slice) ==
           (int)sizeof(slice));
     CHECK(fs.ops->write(node, 0, 1, payload) == VFS_ERR_READ_ONLY);
+    CHECK(fs.ops->truncate(node, 0U) == VFS_ERR_READ_ONLY);
     CHECK(fs.ops->close(node) == VFS_OK);
     CHECK(fs.ops->create(&fs, "/DENIED.TXT") == VFS_ERR_READ_ONLY);
     CHECK(fs.ops->mkdir(&fs, "/DENIED") == VFS_ERR_READ_ONLY);

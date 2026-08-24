@@ -57,8 +57,9 @@ class OpenFlagsTests(unittest.TestCase):
         self.assertLess(validation, slot)
         self.assertLess(slot, resolution)
         self.assertLess(resolution, opening)
-        self.assertIn("return -REIST_ENOTSUP", body)
-        self.assertLess(body.index("return -REIST_ENOTSUP"), resolution)
+        self.assertIn("vfs_truncate(node, 0U)", body)
+        self.assertLess(body.index("vfs_truncate(node, 0U)"),
+                        body.index("process->files[slot] ="))
         self.assertIn("created", body)
         self.assertIn("vfs_delete(resolved)", body)
 
@@ -81,7 +82,7 @@ class OpenFlagsTests(unittest.TestCase):
             self.assertIn(marker, self.guest)
         self.assertRegex(self.guest, r"!=\s+-REIST_EBADF")
         self.assertRegex(self.guest, r"!=\s+-REIST_EINVAL")
-        self.assertRegex(self.guest, r"!=\s+-REIST_ENOTSUP")
+        self.assertIn("info.size != 0U", self.guest)
 
 
 if __name__ == "__main__":

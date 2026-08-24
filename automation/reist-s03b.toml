@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-fat-truncate-zero"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-fat-truncate-zero"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Transactional FAT truncate-to-zero and O_TRUNC"
@@ -68,7 +68,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "vfs: implement transactional FAT O_TRUNC"
-evidence = []
+evidence = [
+  "ten focused truncate and open-flags source tests passed and twelve filesystem host tests passed after one geometry-independent FAT12 fragmentation-test repair",
+  "FAT12 host behavior proved zero size full chain reclamation unsupported nonzero length and foreign-media read-only rejection",
+  "FAT32 host behavior proved two-cluster reclamation zero-size publication failed directory-write preservation and foreign-media read-only rejection",
+  "QEMU VGA package gate passed in 14 seconds with the extended internal VFS operations table",
+  "normal QEMU runtime passed in 24 seconds with persistent O_TRUNC rewrite OPEN_FLAGS_OK and TEST_OK"
+]
 
 [[packages]]
 id = "R2.1-open-flags-rights"

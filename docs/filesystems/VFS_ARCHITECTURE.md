@@ -114,11 +114,14 @@ Der prozesslokale Legacy-Deskriptorpfad besitzt zusätzlich append-only Syscall
 `WRONLY=1`, `RDWR=2`, `CREAT=0x40`, `TRUNC=0x200` und `APPEND=0x400`.
 Unbekannte Bits, der reservierte Zugriffsmodus 3 und `APPEND` ohne Schreibrecht
 liefern vor Wirkung `EINVAL`. Ein voller fester Deskriptorpool liefert vor
-einem möglichen `CREAT` `EMFILE`. `TRUNC` bleibt bis zum separaten
-dateisystemspezifischen Journal-/Rollback-Paket wirkungslos und liefert
-`ENOTSUP`; die Flagdefinition ist keine Behauptung implementierter Kürzung.
-Alte `open`-/`create`-Syscalls und die serviceeigenen read-only Objekt-Handles
-werden dadurch nicht verändert.
+einem möglichen `CREAT` `EMFILE`. `TRUNC` verlangt Schreibrechte und führt vor
+Descriptorpublikation die interne node-basierte `truncate(..., 0)`-Operation
+aus. Nur journalmarkierte REIST-FAT12-/FAT32-Adapter implementieren diesen
+Nullschnitt: FAT12 schreibt beide FAT-Kopien und den Directory-Eintrag in einer
+Undo-Transaktion, FAT32 trennt den Directory-Eintrag vor der Kettenfreigabe.
+EXT2, fremde/read-only FAT-Medien, kritische FAT12-Replikate und Werte ungleich
+null liefern vor Erfolg einen Fehler. Alte `open`-/`create`-Syscalls und die
+serviceeigenen read-only Objekt-Handles werden dadurch nicht verändert.
 
 ## Mountvertrag
 

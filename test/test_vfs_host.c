@@ -51,6 +51,12 @@ static int fake_close(vfs_node_t* node) {
     return VFS_OK;
 }
 
+static int fake_truncate(vfs_node_t* node, uint32_t size) {
+    if (!node || size != 0U) return VFS_ERR_INVALID;
+    node->size = 0U;
+    return VFS_OK;
+}
+
 static vfs_filesystem_ops_t fake_ops = {
     .mount = fake_mount,
     .unmount = fake_unmount,
@@ -82,6 +88,12 @@ int main(void) {
     vfs_node_t* node = NULL;
     CHECK(vfs_open("/mnt/data/file", &node) == VFS_OK);
     CHECK(node != NULL && nested->open_nodes == 1);
+    node->size = 123U;
+    CHECK(vfs_truncate(node, 1U) == VFS_ERR_UNSUPPORTED);
+    CHECK(vfs_truncate(node, 0U) == VFS_ERR_UNSUPPORTED);
+    fake_ops.truncate = fake_truncate;
+    CHECK(vfs_truncate(node, 0U) == VFS_OK && node->size == 0U);
+    CHECK(vfs_truncate(nested->root, 0U) == VFS_ERR_IS_DIR);
     CHECK(vfs_unmount("/mnt/data") == VFS_ERR_BUSY);
     CHECK(vfs_close(node) == VFS_OK);
     CHECK(nested->open_nodes == 0);

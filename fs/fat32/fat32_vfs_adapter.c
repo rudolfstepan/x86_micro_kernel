@@ -669,6 +669,46 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
     return written;
 }
 
+static int fat32_vfs_truncate_unlocked(vfs_node_t* node, uint32_t size) {
+    if (!node || !node->fs || !node->fs_specific)
+        return VFS_ERR_INVALID;
+    if (node->type != VFS_FILE) return VFS_ERR_IS_DIR;
+    if (size != 0U) return VFS_ERR_UNSUPPORTED;
+    int admission = fat32_require_write(node->fs);
+    if (admission != VFS_OK) return admission;
+    int refresh = fat32_refresh_file_node(node);
+    if (refresh != VFS_OK) return refresh;
+
+    fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    if ((handle->entry.attr & ATTR_READ_ONLY) != 0U)
+        return VFS_ERR_READ_ONLY;
+    struct fat32_dir_entry original_entry = handle->entry;
+    uint32_t original_cluster = read_start_cluster(&original_entry);
+    uint32_t original_size = node->size;
+    uint32_t original_tail = INVALID_CLUSTER;
+    if (is_valid_cluster(&boot_sector, original_cluster)) {
+        if (!fat32_get_chain_tail(&boot_sector, original_cluster,
+                                  &original_tail)) return VFS_ERR_IO;
+    } else if (original_cluster != 0U || original_size != 0U) {
+        return VFS_ERR_IO;
+    }
+
+    /* Detach the directory identity first. The old chain is private only
+     * after the zero-cluster, zero-size entry is journaled successfully. */
+    if (!fat32_commit_node_data(node, 0U, 0U, original_tail, true))
+        return VFS_ERR_IO;
+    if (is_valid_cluster(&boot_sector, original_cluster) &&
+        !free_cluster_chain(&boot_sector, original_cluster)) {
+        handle->entry = original_entry;
+        node->inode = original_cluster;
+        node->size = original_size;
+        return VFS_ERR_IO;
+    }
+    (void)write_fsinfo();
+    fat32_flush_context(node->fs);
+    return VFS_OK;
+}
+
 static int fat32_vfs_readdir_batch_unlocked(vfs_node_t* node, uint32_t index,
                                             vfs_dir_entry_t* entries_out,
                                             uint32_t capacity) {
@@ -1007,6 +1047,13 @@ static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return result;
 }
 
+static int fat32_vfs_truncate(vfs_node_t* node, uint32_t size) {
+    uint32_t flags = fat32_operation_begin();
+    int result = fat32_vfs_truncate_unlocked(node, size);
+    fat32_operation_end(flags);
+    return result;
+}
+
 static int fat32_vfs_sync(vfs_node_t* node) {
     if (!node || !node->fs || !node->fs->drive) return VFS_ERR_INVALID;
     drive_t* drive = node->fs->drive;
@@ -1145,6 +1192,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .close = fat32_vfs_close,
     .read = fat32_vfs_read,
     .write = fat32_vfs_write,
+    .truncate = fat32_vfs_truncate,
     .sync = fat32_vfs_sync,
     .readdir = fat32_vfs_readdir,
     .readdir_batch = fat32_vfs_readdir_batch,

@@ -185,10 +185,14 @@ Pfad prüft Flagwort und freien der acht dynamischen Slots vor einer
 Dateisystemwirkung und publiziert nur die angeforderten READ-/WRITE-Rechte.
 `APPEND` wählt vor jedem Schreibaufruf die aktuelle Größe des geöffneten
 VFS-Nodes; Offsetfortschritt erscheint erst nach erfolgreich geschriebenen
-Bytes. `TRUNC` ist ABI-seitig reserviert, liefert aber vor Pfadauflösung oder
-Mutation `ENOTSUP`, bis FAT12 und FAT32 einen eigenen transaktionalen
-Kürzungsvertrag besitzen. Nur das Kompatibilitätsprofil erhält Syscall 120
-automatisch; eingeschränkte Prozessprofile bleiben Default-Deny.
+Bytes. `TRUNC` setzt auf journalmarkierten REIST-FAT12-/FAT32-Medien Größe und
+Startcluster vor der Descriptorpublikation auf null. FAT12 hält beide
+FAT-Kopien und den Directory-Sektor in einer festen Undo-Transaktion; FAT32
+publiziert zuerst den abgetrennten Directory-Eintrag und gibt danach dessen
+private alte Kette frei. Read-only/EXT2, nicht markierte Medien, replizierte
+kritische FAT12-Dateien und beliebige Truncate-Ziellängen bleiben fail-closed.
+Nur das Kompatibilitätsprofil erhält Syscall 120 automatisch; eingeschränkte
+Prozessprofile bleiben Default-Deny.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

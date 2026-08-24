@@ -750,6 +750,82 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return (int)size;
 }
 
+static int fat12_vfs_truncate(vfs_node_t* node, uint32_t size) {
+    if (!node || !node->fs || !node->fs_specific ||
+        node->type != VFS_FILE) return VFS_ERR_INVALID;
+    if (size != 0U) return VFS_ERR_UNSUPPORTED;
+    int admission = fat12_require_mutation(node->fs);
+    if (admission != VFS_OK) return admission;
+
+    fat12_file* handle = (fat12_file*)node->fs_specific;
+    if (handle->attributes & FILE_ATTR_READONLY) return VFS_ERR_READ_ONLY;
+    if (fat12_is_critical_name((char*)handle->name))
+        return VFS_ERR_UNSUPPORTED;
+
+    uint8_t entry_sector[FAT12_SECTOR_SIZE];
+    if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U ||
+        !fat12_read_logical_sectors(handle->directory_sector, 1,
+                                    entry_sector)) return VFS_ERR_IO;
+    directory_entry entry =
+        ((directory_entry*)entry_sector)[handle->directory_slot];
+    char current_name[13];
+    fat12_entry_name(&entry, current_name);
+    if (entry.filename[0] == 0x00 || entry.filename[0] == 0xE5)
+        return VFS_ERR_NOT_FOUND;
+    if ((entry.attributes & FILE_ATTR_DIRECTORY) != 0U)
+        return VFS_ERR_IS_DIR;
+    if ((entry.attributes & FILE_ATTR_READONLY) != 0U)
+        return VFS_ERR_READ_ONLY;
+    if (!fat12_names_equal(current_name, (char*)handle->name))
+        return VFS_ERR_NOT_FOUND;
+
+    bool chain_valid = false;
+    (void)fat12_chain_length(entry.first_cluster_low, &chain_valid);
+    if (!chain_valid || (entry.file_size != 0U &&
+        !is_valid_cluster_fat12(entry.first_cluster_low))) return VFS_ERR_IO;
+
+    uint32_t fat_bytes = (uint32_t)fat12->boot_sector.sectors_per_fat *
+                         FAT12_SECTOR_SIZE;
+    uint8_t* original_fat = (uint8_t*)malloc(fat_bytes);
+    if (!original_fat) return VFS_ERR_NO_MEMORY;
+    memcpy(original_fat, fat12->fat, fat_bytes);
+
+    uint32_t transaction_sectors =
+        (uint32_t)fat12->boot_sector.fat_count *
+        fat12->boot_sector.sectors_per_fat + 1U;
+    if (transaction_sectors > FAT12_JOURNAL_MAX_ENTRIES ||
+        !fat12_transaction_begin(transaction_sectors)) {
+        free(original_fat);
+        return VFS_ERR_IO;
+    }
+
+    bool changed = entry.first_cluster_low != 0U;
+    bool ok = !changed || (fat12_free_chain(entry.first_cluster_low) &&
+                           fat12_sync_fat());
+    if (ok) {
+        entry.first_cluster_low = 0U;
+        entry.file_size = 0U;
+        fat12_set_current_time(&entry);
+        fat12_entry_location_t location = {
+            .sector = handle->directory_sector,
+            .slot = handle->directory_slot,
+        };
+        ok = fat12_write_entry(&location, &entry);
+    }
+    if (!ok || !fat12_transaction_commit()) {
+        if (fat12->transaction_active) fat12_transaction_fail();
+        memcpy(fat12->fat, original_fat, fat_bytes);
+        free(original_fat);
+        return VFS_ERR_IO;
+    }
+    free(original_fat);
+    node->inode = 0U;
+    node->size = 0U;
+    handle->start_cluster = 0U;
+    handle->size = 0U;
+    return VFS_OK;
+}
+
 static int fat12_vfs_readdir(vfs_node_t* node, uint32_t index,
                              vfs_dir_entry_t* entry) {
     if (!node || !entry) return VFS_ERR_INVALID;
@@ -1029,6 +1105,7 @@ vfs_filesystem_ops_t fat12_vfs_ops = {
     .close = fat12_vfs_close,
     .read = fat12_vfs_read,
     .write = fat12_vfs_write,
+    .truncate = fat12_vfs_truncate,
     .readdir = fat12_vfs_readdir,
     .finddir = fat12_vfs_finddir,
     .mkdir = fat12_vfs_mkdir,
