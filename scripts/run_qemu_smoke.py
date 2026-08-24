@@ -132,6 +132,7 @@ HTTP_TEST_COMMAND = "httpd 8080"
 HTTP_TEST_TARGET = bytes((10, 0, 2, 100))
 HTTP_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x05))
 HTTP_TEST_READY_MARKER = "httpd: listening"
+HTTP_VFS_STAT_MARKER = "HTTPD_VFS_STAT_CLIENT_OK"
 GUEST_IP = bytes((10, 0, 2, 15))
 GUEST_MAC = bytes((0x52, 0x54, 0x00, 0x12, 0x34, 0x56))
 QEMU_MUX_SWITCH = "\x01c"
@@ -1461,6 +1462,10 @@ def run(
                             injection_connection, deadline, request_index)
                         if error is not None:
                             break
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished,
+                        HTTP_VFS_STAT_MARKER, deadline, after=http_ready)
                 if error is None:
                     # The default service has no request-count lifetime. It
                     # must still own the foreground after the stress sequence.

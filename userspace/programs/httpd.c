@@ -9,6 +9,7 @@
  * paths are rejected before VFS access.
  */
 #include "x86os.h"
+#include "../storage/include/reist/vfs_stat_client.h"
 
 #define HTTP_REQUEST_CAPACITY 1024U
 #define HTTP_PATH_CAPACITY 256U
@@ -33,6 +34,8 @@ static const char response_too_large[] =
 static const char response_bad_request[] =
     "HTTP/1.0 400 Bad Request\r\nContent-Type: text/plain\r\n"
     "Connection: close\r\n\r\nbad request\n";
+
+static int metadata_client_reported;
 
 typedef struct {
     char uri[HTTP_PATH_CAPACITY];
@@ -224,8 +227,13 @@ static int dispatch_request(x86os_tcp_socket_t socket, const uint8_t *request,
     if (map_path(target.uri, path) != 0)
         return send_text(socket, response_bad_request);
     x86os_file_info_t info;
-    if (x86os_stat(path, &info) < 0)
+    if (reist_vfs_stat(path, &info,
+                       REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) < 0)
         return send_text(socket, response_not_found);
+    if (!metadata_client_reported) {
+        metadata_client_reported = 1;
+        x86os_puts("HTTPD_VFS_STAT_CLIENT_OK\n");
+    }
     return info.type == X86OS_DIRECTORY
         ? serve_directory(socket, path, &target)
         : serve_file(socket, path, &info, target.head);

@@ -270,6 +270,13 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   die Statistik weiterhin und publizieren weder Status noch Daten. Der normale
   Gast markiert den ABI-Nachweis mit `STORAGE_REQUEST_CANCEL_OK`. Dies ist kein
   physischer I/O-Abbruch und kein Rollbackvertrag.
+- `HTTPD.PRG` ist der erste lang laufende Nutzer des Ring-3-FAT32-`stat`-
+  Clients. Der Server verwendet für `/htdocs` ausschließlich Operation 2 und
+  besitzt keinen Legacy-Fallback; `open`, `read` und `readdir` bleiben vorerst
+  am Kernel-VFS. Der QEMU-Modus `http-server` führt zwölf echte eingehende
+  HTTP/TCP-Verzeichnisanfragen aus, verlangt `HTTPD_VFS_STAT_CLIENT_OK`, prüft
+  den fortbestehenden Vordergrundserver bis `Ctrl+C` und anschließend die
+  Rückkehr zur Userspace-Shell.
 - Der feste Rescue-Programmpool umfasst nun 240 KiB für weiterhin genau elf
   geschützte Programme; die Einzelgrenze bleibt 96 KiB. Das schafft begrenzten
   Raum für den isolierten Parser, ohne dynamische Cacheallokation einzuführen.

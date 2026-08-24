@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.1-httpd-vfs-stat-cutover"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.1-httpd-vfs-stat-cutover"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Long-lived HTTPD metadata cutover to Ring-3 FAT32 stat"
@@ -56,7 +56,11 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "feat: cut over HTTP metadata to Ring-3 VFS stat"
-evidence = []
+evidence = [
+  "python test/test_network_tools.py -v: PASS (8 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (9s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode http-server: PASS (22s, 12 HTTP requests, HTTPD_VFS_STAT_CLIENT_OK and userspace shell return)"
+]
 
 [[packages]]
 id = "R2.1-storage-request-cancel"

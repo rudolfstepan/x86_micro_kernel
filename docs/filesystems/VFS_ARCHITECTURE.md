@@ -49,6 +49,13 @@ Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
 ein Widerruf der Ergebnisautorität, kein physischer I/O-Abbruch oder Rollback.
 FAT12, EXT2, Handles, Lesen und Verzeichnisiteration sind noch nicht migriert.
 
+`HTTPD.PRG` ist der erste lang laufende Client dieser ABI. Der sequenzielle,
+fest begrenzte Vordergrundserver verwendet Operation 2 für jede
+`/htdocs`-Metadatenentscheidung, besitzt keinen Legacy-`stat`-Fallback und
+widerruft offene Requests über Syscall 118. `open`, `read` und `readdir` bleiben
+in diesem Paket am Kernel-VFS. Der HTTP-Cutover gilt nur für den nachgewiesenen
+FAT32-Rootpfad; Shell, Desktop sowie FAT12/EXT2 bleiben unverändert.
+
 ## Operationen
 
 Die Adapter stellen die jeweils unterstützten Varianten von `open`, `close`,
@@ -97,7 +104,8 @@ VFS, Syscalls und Ring 3 gemeinsam ausführen.
 3. [x] Kontrollierter `STAT.PRG`-Cutover auf Operation 2 ohne Legacy-Fallback.
 4. [x] Generation- und handlegebundene Cancel-ABI mit sicherer
    Dienstquittierung ergänzen.
-5. Weitere und insbesondere langlebige read-only Clients umstellen.
+5. [~] `HTTPD.PRG` als ersten lang laufenden FAT32-Metadatenclient umstellen;
+   weitere Clients erst mit passender Dateisystemabdeckung.
 6. Handles, Lesen und Verzeichnisiteration migrieren.
 7. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.

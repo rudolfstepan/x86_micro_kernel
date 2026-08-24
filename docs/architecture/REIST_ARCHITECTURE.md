@@ -131,6 +131,15 @@ wird verworfen. Der Vertrag beendet oder reversiert keinen physischen I/O.
 Mountpublikation, FAT12/EXT2, Handles und Mutationen verbleiben bis zu getrennten
 Nachweispaketen im Kernel. Neue Mutationsautorität entsteht nicht.
 
+Als erster lang laufender Verbraucher nutzt der bounded `HTTPD.PRG`-
+Vordergrundserver diese Metadatenoperation für `/htdocs`. Zwölf echte
+HTTP/TCP-Transaktionen im QEMU-Gast belegen wiederholte FAT32-Directory-
+Entscheidungen, fortbestehenden Serverbetrieb bis `Ctrl+C` und die Rückkehr zur
+Userspace-Shell. Der einmalige Marker `HTTPD_VFS_STAT_CLIENT_OK` folgt erst auf
+eine erfolgreiche Ring-3-Antwort. Dateiinhalt und Verzeichnisiteration laufen
+noch über `open`/`read`/`readdir` des Kernel-VFS; daraus folgt kein allgemeiner
+FAT12-, EXT2- oder VFS-Cutover.
+
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter
 256-Byte-Kernelsignatur. Es bindet das Kernelartefakt mit SHA-256 gemäß NIST

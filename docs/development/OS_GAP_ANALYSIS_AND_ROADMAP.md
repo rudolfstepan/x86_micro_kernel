@@ -84,7 +84,7 @@ Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
 umgesetzt und mit den im Paket genannten Tests abgenommen. `[ ]` bedeutet
 offen. Ein Zusatz **in Arbeit** ist nur zulässig, wenn `active_id` in
 `automation/reist-s03b.toml` auf genau dieses Paket zeigt; nach Abschluss von
-`R2.1-storage-request-cancel` ist derzeit kein Paket aktiv.
+`R2.1-httpd-vfs-stat-cutover` ist derzeit kein Paket aktiv.
 Detailbeschreibung, Restrisiken und Abnahmekriterien bleiben in Abschnitt 7
 und 10 verbindlich.
 
@@ -461,6 +461,9 @@ und 10 verbindlich.
     Request-Cancel; geclaimte Requests bleiben bis zur Dienstquittierung
     `cancel-pending`, Ergebnisautorität wird widerrufen, physischer I/O-Abbruch
     oder Rollback wird nicht behauptet
+  - [x] `HTTPD.PRG` als erster lang laufender FAT32-Metadatenclient ohne
+    Legacy-`stat`-Fallback; zwölf echte QEMU-HTTP/TCP-Anfragen belegen
+    wiederholten Betrieb, Ring-3-Erfolgsmarker und Rückkehr zur Shell
 - [ ] R2.2 VFS-/FAT-Zuverlässigkeit und vollständige Sync-Semantik
 - [x] R2.3 Blockgeräte, Partitionen und moderne Storage-Abstraktion
 - [ ] R3.1 Pipes, Signale, Prozessgruppen und TTY
@@ -1528,6 +1531,9 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   append-only Syscall 118 umgesetzt: queued/complete werden sofort widerrufen,
   claimed bleibt bis zur Dienstquittierung `cancel-pending` und publiziert kein
   Ergebnis. Das beendet oder reversiert keinen physischen I/O.
+  Als erster lang laufender Verbraucher ist `HTTPD.PRG` für Metadaten unter
+  `/htdocs` auf Operation 2 umgestellt. `open`, `read`, `readdir`, Shell,
+  Desktop, FAT12 und EXT2 bleiben in getrennten Folgepaketen.
 - Syscallnummern, Strukturen und Fehlercodes aus einem gemeinsamen ABI-Header
    für Kernel und SDK generieren bzw. teilen.
 - Open-Flags, Rechte je Handle und Standarddeskriptoren 0/1/2 ergänzen.
@@ -2085,6 +2091,11 @@ ist mit append-only Syscall 118 vorhanden. Geclaimte Requests bleiben bis zur
 Dienstquittierung `cancel-pending`; ihre Ergebnisse werden verworfen, ohne
 einen physischen I/O-Abbruch oder Rollback zu behaupten. FAT12 und EXT2 sind
 noch nicht Teil des Parsers.
+`HTTPD.PRG` nutzt den Pfad inzwischen als erster lang laufender Client für
+`/htdocs`, ohne Legacy-`stat`-Fallback. Ein eigener QEMU-Modus führt zwölf echte
+HTTP/TCP-Anfragen aus, verlangt `HTTPD_VFS_STAT_CLIENT_OK`, hält den Server bis
+`Ctrl+C` aktiv und gewinnt anschließend die Userspace-Shell zurück. Weitere
+Clients warten auf die jeweils benötigte FAT12-/EXT2- oder Handle-Abdeckung.
 
 R1.8 ist ebenfalls abgeschlossen: Der generationsgebundene Ring-3-SVGA-II-
 Treiber nutzt ausschließlich den festen Kernelmediator für Aktivierung,

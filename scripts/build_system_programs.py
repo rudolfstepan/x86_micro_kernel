@@ -82,7 +82,10 @@ PROGRAMS = {
     "UDP.PRG": ROOT / "userspace/programs/udp.c",
     "NSLOOKUP.PRG": ROOT / "userspace/programs/nslookup.c",
     "NC.PRG": ROOT / "userspace/programs/nc.c",
-    "HTTPD.PRG": ROOT / "userspace/programs/httpd.c",
+    "HTTPD.PRG": (
+        ROOT / "userspace/programs/httpd.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+    ),
     "EDIT.PRG": ROOT / "userspace/bin/edit.c",
     "CHILDEX.PRG": ROOT / "userspace/programs/child_exit.c",
     "FAULTDE.PRG": ROOT / "userspace/programs/fault_de.c",
@@ -173,7 +176,7 @@ def main() -> None:
             dependency_files = [*core_headers]
             if name in {"CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
-            if name in {"STORAGE.PRG", "STAT.PRG"}:
+            if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)

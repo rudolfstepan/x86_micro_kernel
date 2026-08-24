@@ -84,6 +84,9 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn("x86os_tcp_listen", source)
         self.assertIn("x86os_tcp_accept", source)
         self.assertIn("x86os_readdir_batch", source)
+        self.assertIn("reist_vfs_stat", source)
+        self.assertNotIn("x86os_stat(", source)
+        self.assertIn("HTTPD_VFS_STAT_CLIENT_OK", source)
         self.assertIn('static const char root[] = "/htdocs"', source)
         self.assertIn("HTTP/1.0 200 OK", source)
         self.assertIn("port_value = 8080U, requests = 0U", source)
@@ -98,6 +101,8 @@ class NetworkToolsSourceTests(unittest.TestCase):
             self.assertIn(f"htdocs/{name}=htdocs/{name}", makefile)
             self.assertIn(name, windows)
         runner = (ROOT / "scripts/run_qemu_smoke.py").read_text()
+        runtime = (ROOT / "scripts/test-reist-runtime.ps1").read_text()
+        programs = (ROOT / "scripts/build_system_programs.py").read_text()
         detach = runner.index(
             'qemu_monitor_command(process, "netdev_del reistuserport")')
         launch = runner.index("inject_ps2_command(process, HTTP_TEST_COMMAND)")
@@ -109,6 +114,12 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn('inject_ps2_key(process, "ctrl-c")', runner)
         self.assertIn('error = "httpd exited before Ctrl+C"', runner)
         self.assertIn('b"about.txt\\n"', runner)
+        self.assertIn("HTTP_VFS_STAT_MARKER", runner)
+        self.assertIn("'http-server'", runtime)
+        self.assertIn("'--expect-http-server'", runtime)
+        mapping = programs[programs.index('"HTTPD.PRG"'):
+                           programs.index('"EDIT.PRG"')]
+        self.assertIn("vfs_stat_client.c", mapping)
 
     @unittest.skipUnless(shutil.which("gcc"), "gcc is required")
     def test_dns_cname_and_compression_parser(self):
