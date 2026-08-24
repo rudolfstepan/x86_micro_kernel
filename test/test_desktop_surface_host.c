@@ -13,6 +13,20 @@ int main(void) {
         &handle, &configure) == 0);
     assert(desktop_surface_ack_configure(&manager, owner, handle,
         configure.serial) == 0);
+    reist_gui_surface_handle_t dialog;
+    reist_gui_surface_configure_t dialog_configure;
+    assert(desktop_surface_create_dialog(&manager, owner, handle,
+        300U, 160U, &dialog, &dialog_configure) == 0);
+    assert(manager.slots[dialog.id - 1U].role ==
+        REIST_GUI_SURFACE_ROLE_DIALOG);
+    assert(manager.slots[dialog.id - 1U].parent.id == handle.id);
+    assert(desktop_surface_create_dialog(&manager, owner, handle,
+        300U, 160U, &dialog, &dialog_configure) == DESKTOP_SURFACE_ESTATE);
+    assert(desktop_surface_destroy(&manager, owner, handle) ==
+        DESKTOP_SURFACE_ESTATE);
+    assert(desktop_surface_ack_configure(&manager, owner, dialog,
+        dialog_configure.serial) == 0);
+    assert(desktop_surface_destroy(&manager, owner, dialog) == 0);
     assert(desktop_surface_set_title(
         &manager, owner, handle, "Editor", 6U) == 0);
     assert(desktop_surface_paint_begin(&manager, owner, handle) == 0);
@@ -80,9 +94,20 @@ int main(void) {
     assert(desktop_surface_reconfigure(
         &manager, owner, handle, 400U, 260U, &resized) == 0);
     assert(resized.width == 400U && resized.height == 260U);
-    assert(manager.slots[handle.id - 1U].configure_sent == 0U);
+    desktop_surface_slot_t *resizing = &manager.slots[handle.id - 1U];
+    assert(resizing->configure_sent == 0U);
+    assert(resizing->width == 320U && resizing->height == 200U);
+    assert(resizing->pending_width == 400U &&
+           resizing->pending_height == 260U);
+    assert(desktop_surface_paint_begin(&manager, owner, handle) == 0);
+    assert(desktop_surface_paint_fill(&manager, owner, handle,
+        (reist_gui_rect_t){0, 0, 320U, 200U}, 0U) == 0);
+    assert(desktop_surface_paint_commit(&manager, owner, handle) == 0);
     assert(desktop_surface_ack_configure(
         &manager, owner, handle, resized.serial) == 0);
+    assert(resizing->width == 400U && resizing->height == 260U);
+    assert(resizing->pending_width == 0U &&
+           resizing->pending_height == 0U);
     assert(desktop_surface_ack_configure(&manager, owner, handle,
         resized.serial + 1U) < 0);
     assert(desktop_surface_destroy(&manager, owner, handle) == 0);

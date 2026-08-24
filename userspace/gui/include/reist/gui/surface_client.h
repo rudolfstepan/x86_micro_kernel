@@ -25,11 +25,16 @@ typedef struct reist_gui_surface_client {
         REIST_GUI_SURFACE_MAX_PENDING_EVENTS];
     uint32_t deferred_head;
     uint32_t deferred_count;
+    struct reist_gui_surface_client *event_owner;
 } reist_gui_surface_client_t;
 
 /** Initialize a client around a capability delegated by the compositor. */
 int reist_gui_surface_client_init(reist_gui_surface_client_t *client,
                                   x86os_ipc_handle_t endpoint);
+/** Initialize another Surface on the same endpoint and shared event queue. */
+int reist_gui_surface_client_init_shared(
+    reist_gui_surface_client_t *client,
+    reist_gui_surface_client_t *event_owner);
 /** Parse the bounded compositor argument: --reist-surface=<handle>. */
 int reist_gui_surface_endpoint_from_argv(int argc, char **argv,
                                          x86os_ipc_handle_t *endpoint);
@@ -39,6 +44,10 @@ int reist_gui_surface_buffer_validate(const reist_gui_surface_buffer_t *buffer);
 int reist_gui_surface_client_create(reist_gui_surface_client_t *client,
                                     uint32_t role, uint32_t width,
                                     uint32_t height);
+/** Create a transient dialog Surface bound to one live top-level parent. */
+int reist_gui_surface_client_create_dialog(
+    reist_gui_surface_client_t *client,
+    reist_gui_surface_handle_t parent, uint32_t width, uint32_t height);
 int reist_gui_surface_client_ack_configure(reist_gui_surface_client_t *client,
                                            uint32_t serial);
 /** Validate, adopt and acknowledge a later compositor resize configure. */

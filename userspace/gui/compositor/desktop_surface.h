@@ -43,11 +43,14 @@ typedef struct desktop_surface_slot {
     reist_gui_surface_owner_t owner;
     reist_gui_surface_handle_t handle;
     uint32_t role;
+    reist_gui_surface_handle_t parent;
     uint32_t configured_serial;
     uint32_t acknowledged_serial;
     uint32_t configure_sent;
     uint32_t width;
     uint32_t height;
+    uint32_t pending_width;
+    uint32_t pending_height;
     uint32_t attached_buffer;
     uint32_t attached_generation;
     uint32_t attached;
@@ -99,6 +102,12 @@ int desktop_surface_create(desktop_surface_manager_t *manager,
                            uint32_t width, uint32_t height,
                            reist_gui_surface_handle_t *handle,
                            reist_gui_surface_configure_t *configure);
+int desktop_surface_create_dialog(desktop_surface_manager_t *manager,
+                                  reist_gui_surface_owner_t owner,
+                                  reist_gui_surface_handle_t parent,
+                                  uint32_t width, uint32_t height,
+                                  reist_gui_surface_handle_t *handle,
+                                  reist_gui_surface_configure_t *configure);
 int desktop_surface_ack_configure(desktop_surface_manager_t *manager,
                                   reist_gui_surface_owner_t owner,
                                   reist_gui_surface_handle_t handle,

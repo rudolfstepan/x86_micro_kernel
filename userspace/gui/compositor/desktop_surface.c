@@ -154,15 +154,36 @@ void desktop_surface_initialize(desktop_surface_manager_t *manager) {
     manager->next_configure_serial = 0U;
 }
 
-int desktop_surface_create(desktop_surface_manager_t *manager,
-                           reist_gui_surface_owner_t owner, uint32_t role,
-                           uint32_t width, uint32_t height,
-                           reist_gui_surface_handle_t *handle,
-                           reist_gui_surface_configure_t *configure) {
-    if (!manager || !valid_owner(owner) || role == REIST_GUI_SURFACE_ROLE_NONE ||
+static int create_surface(desktop_surface_manager_t *manager,
+                          reist_gui_surface_owner_t owner, uint32_t role,
+                          reist_gui_surface_handle_t parent,
+                          uint32_t width, uint32_t height,
+                          reist_gui_surface_handle_t *handle,
+                          reist_gui_surface_configure_t *configure) {
+    if (!manager || !valid_owner(owner) ||
+        (role != REIST_GUI_SURFACE_ROLE_TOPLEVEL &&
+         role != REIST_GUI_SURFACE_ROLE_DIALOG) ||
         !handle || !configure || width == 0U || height == 0U ||
         width > REIST_GUI_SURFACE_MAX_WIDTH ||
         height > REIST_GUI_SURFACE_MAX_HEIGHT) return DESKTOP_SURFACE_EINVAL;
+    if (role == REIST_GUI_SURFACE_ROLE_TOPLEVEL) {
+        if (parent.id != 0U || parent.generation != 0U)
+            return DESKTOP_SURFACE_EINVAL;
+    } else {
+        int parent_index = find_slot(manager, owner, parent);
+        if (parent_index < 0 ||
+            manager->slots[parent_index].role !=
+                REIST_GUI_SURFACE_ROLE_TOPLEVEL)
+            return DESKTOP_SURFACE_ESTALE;
+        for (uint32_t i = 0U; i < DESKTOP_SURFACE_CAPACITY; ++i) {
+            const desktop_surface_slot_t *candidate = &manager->slots[i];
+            if (candidate->active &&
+                candidate->role == REIST_GUI_SURFACE_ROLE_DIALOG &&
+                candidate->parent.id == parent.id &&
+                candidate->parent.generation == parent.generation)
+                return DESKTOP_SURFACE_ESTATE;
+        }
+    }
     for (uint32_t index = 0U; index < DESKTOP_SURFACE_CAPACITY; ++index) {
         desktop_surface_slot_t *slot = &manager->slots[index];
         if (slot->active) continue;
@@ -173,6 +194,7 @@ int desktop_surface_create(desktop_surface_manager_t *manager,
         slot->handle.id = index + 1U;
         slot->handle.generation = next_nonzero(&manager->next_generation);
         slot->role = role;
+        slot->parent = parent;
         slot->width = width;
         slot->height = height;
         slot->configured_serial = next_nonzero(&manager->next_configure_serial);
@@ -193,6 +215,28 @@ int desktop_surface_create(desktop_surface_manager_t *manager,
     return DESKTOP_SURFACE_ECAPACITY;
 }
 
+int desktop_surface_create(desktop_surface_manager_t *manager,
+                           reist_gui_surface_owner_t owner, uint32_t role,
+                           uint32_t width, uint32_t height,
+                           reist_gui_surface_handle_t *handle,
+                           reist_gui_surface_configure_t *configure) {
+    if (role != REIST_GUI_SURFACE_ROLE_TOPLEVEL)
+        return DESKTOP_SURFACE_EINVAL;
+    return create_surface(manager, owner, role,
+        (reist_gui_surface_handle_t){0U, 0U}, width, height,
+        handle, configure);
+}
+
+int desktop_surface_create_dialog(desktop_surface_manager_t *manager,
+                                  reist_gui_surface_owner_t owner,
+                                  reist_gui_surface_handle_t parent,
+                                  uint32_t width, uint32_t height,
+                                  reist_gui_surface_handle_t *handle,
+                                  reist_gui_surface_configure_t *configure) {
+    return create_surface(manager, owner, REIST_GUI_SURFACE_ROLE_DIALOG,
+                          parent, width, height, handle, configure);
+}
+
 int desktop_surface_ack_configure(desktop_surface_manager_t *manager,
                                   reist_gui_surface_owner_t owner,
                                   reist_gui_surface_handle_t handle,
@@ -201,8 +245,17 @@ int desktop_surface_ack_configure(desktop_surface_manager_t *manager,
     if (index < 0 || serial == 0U ||
         serial != manager->slots[index].configured_serial)
         return DESKTOP_SURFACE_ESTALE;
-    manager->slots[index].acknowledged_serial = serial;
-    manager->slots[index].configure_sent = 1U;
+    desktop_surface_slot_t *slot = &manager->slots[index];
+    if ((slot->pending_width == 0U) != (slot->pending_height == 0U))
+        return DESKTOP_SURFACE_ESTATE;
+    if (slot->pending_width != 0U) {
+        slot->width = slot->pending_width;
+        slot->height = slot->pending_height;
+        slot->pending_width = 0U;
+        slot->pending_height = 0U;
+    }
+    slot->acknowledged_serial = serial;
+    slot->configure_sent = 1U;
     return DESKTOP_SURFACE_OK;
 }
 
@@ -219,13 +272,14 @@ int desktop_surface_reconfigure(desktop_surface_manager_t *manager,
     desktop_surface_slot_t *slot = &manager->slots[index];
     if (slot->acknowledged_serial != slot->configured_serial)
         return DESKTOP_SURFACE_ESTATE;
-    slot->width = width;
-    slot->height = height;
+    /* Keep the last acknowledged dimensions authoritative until the client
+     * acknowledges this configure.  Commands already queued for the old
+     * dimensions therefore remain valid and a resize cannot tear down an
+     * in-flight paint transaction. */
+    slot->pending_width = width;
+    slot->pending_height = height;
     slot->configured_serial = next_nonzero(&manager->next_configure_serial);
-    slot->acknowledged_serial = 0U;
     slot->configure_sent = 0U;
-    slot->pending_paint_count = 0U;
-    slot->paint_active = 0U;
     *configure = (reist_gui_surface_configure_t){
         slot->configured_serial, width, height, 0U, 0U};
     return DESKTOP_SURFACE_OK;
@@ -463,6 +517,15 @@ int desktop_surface_destroy(desktop_surface_manager_t *manager,
                             reist_gui_surface_handle_t handle) {
     int index = find_slot(manager, owner, handle);
     if (index < 0) return DESKTOP_SURFACE_ESTALE;
+    if (manager->slots[index].role == REIST_GUI_SURFACE_ROLE_TOPLEVEL) {
+        for (uint32_t i = 0U; i < DESKTOP_SURFACE_CAPACITY; ++i) {
+            if (manager->slots[i].active &&
+                manager->slots[i].role == REIST_GUI_SURFACE_ROLE_DIALOG &&
+                manager->slots[i].parent.id == handle.id &&
+                manager->slots[i].parent.generation == handle.generation)
+                return DESKTOP_SURFACE_ESTATE;
+        }
+    }
     uint8_t *bytes = (uint8_t *)&manager->slots[index];
     for (uint32_t i = 0U; i < sizeof(manager->slots[index]); ++i)
         bytes[i] = 0U;
@@ -485,9 +548,14 @@ int desktop_surface_dispatch_message(
     int result = DESKTOP_SURFACE_EINVAL;
     if (request->type == REIST_GUI_SURFACE_CREATE) {
         reist_gui_surface_configure_t configure;
-        result = desktop_surface_create(
-            manager, owner, request->flags, request->width, request->height,
-            &response->surface, &configure);
+        result = request->flags == REIST_GUI_SURFACE_ROLE_DIALOG
+            ? desktop_surface_create_dialog(
+                manager, owner, request->parent_surface,
+                request->width, request->height,
+                &response->surface, &configure)
+            : desktop_surface_create(
+                manager, owner, request->flags, request->width,
+                request->height, &response->surface, &configure);
         if (result == DESKTOP_SURFACE_OK) {
             response->type = REIST_GUI_SURFACE_CONFIGURE;
             response->serial = configure.serial;

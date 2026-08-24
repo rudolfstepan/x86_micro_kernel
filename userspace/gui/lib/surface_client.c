@@ -99,12 +99,14 @@ static int receive_wire_message(reist_gui_surface_client_t *client,
 static int defer_message(reist_gui_surface_client_t *client,
                          const reist_gui_surface_message_t *message) {
     if (!valid_client(client) || message == 0) return -22;
-    if (client->deferred_count >= REIST_GUI_SURFACE_MAX_PENDING_EVENTS)
+    reist_gui_surface_client_t *queue = client->event_owner;
+    if (queue == 0 || queue->deferred_count >=
+            REIST_GUI_SURFACE_MAX_PENDING_EVENTS)
         return -75;
-    uint32_t tail = (client->deferred_head + client->deferred_count) %
+    uint32_t tail = (queue->deferred_head + queue->deferred_count) %
         REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
-    client->deferred[tail] = *message;
-    ++client->deferred_count;
+    queue->deferred[tail] = *message;
+    ++queue->deferred_count;
     return 0;
 }
 
@@ -112,14 +114,46 @@ static int receive_message(reist_gui_surface_client_t *client,
                            reist_gui_surface_message_t *message,
                            uint32_t timeout_ms) {
     if (!valid_client(client) || message == 0) return -22;
-    if (client->deferred_count != 0U) {
-        *message = client->deferred[client->deferred_head];
-        client->deferred_head = (client->deferred_head + 1U) %
+    reist_gui_surface_client_t *queue = client->event_owner;
+    if (queue == 0) return -22;
+    if (queue->deferred_count != 0U) {
+        *message = queue->deferred[queue->deferred_head];
+        queue->deferred_head = (queue->deferred_head + 1U) %
             REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
-        --client->deferred_count;
+        --queue->deferred_count;
         return 0;
     }
     return receive_wire_message(client, message, timeout_ms);
+}
+
+static uint32_t deferred_response_type(uint32_t type) {
+    return type == REIST_GUI_SURFACE_INPUT ||
+        type == REIST_GUI_SURFACE_CLOSE ||
+        type == REIST_GUI_SURFACE_CONFIGURE ||
+        type == REIST_GUI_SURFACE_ACK_CONFIGURE ||
+        type == REIST_GUI_SURFACE_BUFFER_CREATE ||
+        type == REIST_GUI_SURFACE_BUFFER_DESTROY ||
+        type == REIST_GUI_SURFACE_SET_TITLE ||
+        type == REIST_GUI_SURFACE_PAINT_BEGIN ||
+        type == REIST_GUI_SURFACE_PAINT_FILL ||
+        type == REIST_GUI_SURFACE_PAINT_TEXT ||
+        type == REIST_GUI_SURFACE_PAINT_COMMIT ||
+        type == REIST_GUI_SURFACE_ATTACH ||
+        type == REIST_GUI_SURFACE_DAMAGE ||
+        type == REIST_GUI_SURFACE_BUFFER_RELEASE ||
+        type == REIST_GUI_SURFACE_DESTROY;
+}
+
+static int asynchronous_paint_error(
+    const reist_gui_surface_client_t *client,
+    const reist_gui_surface_message_t *response) {
+    if (client == 0 || response == 0 ||
+        (response->type != REIST_GUI_SURFACE_PAINT_FILL &&
+         response->type != REIST_GUI_SURFACE_PAINT_TEXT) ||
+        response->surface.id != client->surface.id ||
+        response->surface.generation != client->surface.generation)
+        return 0;
+    return (int32_t)response->flags;
 }
 
 static int transact_response(reist_gui_surface_client_t *client,
@@ -139,10 +173,9 @@ static int transact_response(reist_gui_surface_client_t *client,
             if (response_out != 0) *response_out = response;
             return (int32_t)response.flags;
         }
-        if (response.type != REIST_GUI_SURFACE_INPUT &&
-            response.type != REIST_GUI_SURFACE_CLOSE &&
-            response.type != REIST_GUI_SURFACE_CONFIGURE)
-            return -84;
+        int asynchronous_error = asynchronous_paint_error(client, &response);
+        if (asynchronous_error != 0) return asynchronous_error;
+        if (!deferred_response_type(response.type)) return -84;
         result = defer_message(client, &response);
         if (result != 0) return result;
     }
@@ -168,34 +201,80 @@ int reist_gui_surface_client_init(reist_gui_surface_client_t *client,
     clear_bytes(client, sizeof(*client));
     client->endpoint = endpoint;
     client->connected = 1U;
+    client->event_owner = client;
     return 0;
+}
+
+int reist_gui_surface_client_init_shared(
+    reist_gui_surface_client_t *client,
+    reist_gui_surface_client_t *event_owner) {
+    if (client == 0 || !valid_client(event_owner) ||
+        event_owner->event_owner == 0) return -22;
+    clear_bytes(client, sizeof(*client));
+    client->endpoint = event_owner->endpoint;
+    client->connected = 1U;
+    client->event_owner = event_owner->event_owner;
+    return 0;
+}
+
+static int create_surface(reist_gui_surface_client_t *client, uint32_t role,
+                          reist_gui_surface_handle_t parent,
+                          uint32_t width, uint32_t height) {
+    if (!valid_client(client) ||
+        (role != REIST_GUI_SURFACE_ROLE_TOPLEVEL &&
+         role != REIST_GUI_SURFACE_ROLE_DIALOG) || width == 0U ||
+        height == 0U || width > REIST_GUI_SURFACE_MAX_WIDTH ||
+        height > REIST_GUI_SURFACE_MAX_HEIGHT ||
+        (role == REIST_GUI_SURFACE_ROLE_TOPLEVEL &&
+         (parent.id != 0U || parent.generation != 0U)) ||
+        (role == REIST_GUI_SURFACE_ROLE_DIALOG &&
+         (parent.id == 0U || parent.generation == 0U))) return -22;
+    reist_gui_surface_message_t request;
+    prepare(&request, REIST_GUI_SURFACE_CREATE, client);
+    request.flags = role;
+    request.parent_surface = parent;
+    request.width = width;
+    request.height = height;
+    int result = send_message(client, &request);
+    if (result != 0) return result;
+    for (uint32_t attempt = 0U;
+         attempt <= REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++attempt) {
+        reist_gui_surface_message_t response;
+        result = receive_wire_message(client, &response, 500U);
+        if (result != 0) return result;
+        if (response.type == REIST_GUI_SURFACE_CONFIGURE &&
+            (int32_t)response.flags == 0 && response.surface.id != 0U &&
+            response.surface.generation != 0U && response.serial != 0U &&
+            response.width != 0U && response.height != 0U &&
+            (role != REIST_GUI_SURFACE_ROLE_DIALOG ||
+             (response.surface.id != parent.id ||
+              response.surface.generation != parent.generation))) {
+            client->surface = response.surface;
+            client->configured_serial = response.serial;
+            client->width = response.width;
+            client->height = response.height;
+            return 0;
+        }
+        if (!deferred_response_type(response.type)) return -84;
+        result = defer_message(client, &response);
+        if (result != 0) return result;
+    }
+    return -75;
 }
 
 int reist_gui_surface_client_create(reist_gui_surface_client_t *client,
                                     uint32_t role, uint32_t width,
                                     uint32_t height) {
-    if (!valid_client(client) || role == REIST_GUI_SURFACE_ROLE_NONE ||
-        width == 0U || height == 0U || width > REIST_GUI_SURFACE_MAX_WIDTH ||
-        height > REIST_GUI_SURFACE_MAX_HEIGHT) return -22;
-    reist_gui_surface_message_t request;
-    prepare(&request, REIST_GUI_SURFACE_CREATE, client);
-    request.flags = role;
-    request.width = width;
-    request.height = height;
-    int result = send_message(client, &request);
-    if (result != 0) return result;
-    reist_gui_surface_message_t response;
-    result = receive_message(client, &response, 500U);
-    if (result != 0 || response.type != REIST_GUI_SURFACE_CONFIGURE ||
-        (int32_t)response.flags != 0 ||
-        response.surface.id == 0U || response.surface.generation == 0U ||
-        response.serial == 0U || response.width == 0U || response.height == 0U)
-        return result != 0 ? result : -84;
-    client->surface = response.surface;
-    client->configured_serial = response.serial;
-    client->width = response.width;
-    client->height = response.height;
-    return 0;
+    if (role != REIST_GUI_SURFACE_ROLE_TOPLEVEL) return -22;
+    return create_surface(client, role,
+        (reist_gui_surface_handle_t){0U, 0U}, width, height);
+}
+
+int reist_gui_surface_client_create_dialog(
+    reist_gui_surface_client_t *client,
+    reist_gui_surface_handle_t parent, uint32_t width, uint32_t height) {
+    return create_surface(client, REIST_GUI_SURFACE_ROLE_DIALOG,
+                          parent, width, height);
 }
 
 int reist_gui_surface_client_ack_configure(reist_gui_surface_client_t *client,
@@ -226,10 +305,9 @@ int reist_gui_surface_client_ack_configure(reist_gui_surface_client_t *client,
             if (result == 0) client->acknowledged_serial = serial;
             return result;
         }
-        if (response.type != REIST_GUI_SURFACE_INPUT &&
-            response.type != REIST_GUI_SURFACE_CLOSE &&
-            response.type != REIST_GUI_SURFACE_CONFIGURE)
-            return -84;
+        int asynchronous_error = asynchronous_paint_error(client, &response);
+        if (asynchronous_error != 0) return asynchronous_error;
+        if (!deferred_response_type(response.type)) return -84;
         result = defer_message(client, &response);
         if (result != 0) return result;
     }

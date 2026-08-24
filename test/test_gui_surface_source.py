@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -48,6 +51,38 @@ class GuiSurfaceSourceTests(unittest.TestCase):
             ack.index("receive_wire_message(client, &response, 500U)"),
             ack.index("client->acknowledged_serial = serial"),
         )
+
+    def test_dialog_surface_is_parented_and_generation_scoped(self):
+        protocol = (ROOT / "userspace/gui/include/reist/gui/surface.h").read_text()
+        client = (ROOT / "userspace/gui/lib/surface_client.c").read_text()
+        manager = (ROOT / "userspace/gui/compositor/desktop_surface.c").read_text()
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text()
+        self.assertIn("REIST_GUI_SURFACE_ROLE_DIALOG", protocol)
+        self.assertIn("parent_surface", protocol)
+        self.assertIn("reist_gui_surface_client_init_shared", client)
+        self.assertIn("reist_gui_surface_client_create_dialog", client)
+        self.assertIn("deferred_response_type", client)
+        self.assertIn("asynchronous_paint_error", client)
+        self.assertIn("desktop_surface_create_dialog", manager)
+        self.assertIn("candidate->parent.generation == parent.generation", manager)
+        self.assertIn("surface->role == REIST_GUI_SURFACE_ROLE_DIALOG", desktop)
+
+    def test_surface_manager_host_behavior(self):
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        for source in ("test/test_desktop_surface_host.c",
+                       "test/test_desktop_surface_dispatch.c"):
+            with tempfile.TemporaryDirectory(prefix="reist-surface-") as temp:
+                executable = Path(temp) / "surface-test.exe"
+                subprocess.run([
+                    compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                    "-I.", "-Iuserspace/gui/include", source,
+                    "userspace/gui/compositor/desktop_surface.c",
+                    "-o", str(executable)], cwd=ROOT, check=True,
+                    capture_output=True, text=True)
+                subprocess.run([str(executable)], cwd=ROOT, check=True,
+                               capture_output=True, text=True, timeout=5)
 
     def test_endpoint_bootstrap_is_fail_closed(self):
         client = (ROOT / "userspace/gui/lib/surface_client.c").read_text()

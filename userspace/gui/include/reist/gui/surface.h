@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 #define REIST_GUI_SURFACE_API_VERSION 2U
-#define REIST_GUI_SURFACE_PROTOCOL_VERSION 4U
+#define REIST_GUI_SURFACE_PROTOCOL_VERSION 5U
 #define REIST_GUI_SURFACE_MAX_DAMAGE 8U
 #define REIST_GUI_SURFACE_MAX_PENDING_EVENTS 16U
 #define REIST_GUI_SURFACE_MAX_CLIENTS 8U
@@ -56,7 +56,8 @@ enum reist_gui_surface_message_type {
 
 enum reist_gui_surface_role {
     REIST_GUI_SURFACE_ROLE_NONE = 0U,
-    REIST_GUI_SURFACE_ROLE_TOPLEVEL = 1U
+    REIST_GUI_SURFACE_ROLE_TOPLEVEL = 1U,
+    REIST_GUI_SURFACE_ROLE_DIALOG = 2U
 };
 
 enum reist_gui_surface_input_type {
@@ -137,6 +138,7 @@ typedef struct reist_gui_surface_message {
     uint32_t format;
     uint32_t byte_size;
     uint32_t reserved;
+    reist_gui_surface_handle_t parent_surface;
     /* One damage rectangle per wire message; the compositor aggregates at
      * most REIST_GUI_SURFACE_MAX_DAMAGE rectangles per pending commit. */
     reist_gui_rect_t damage;

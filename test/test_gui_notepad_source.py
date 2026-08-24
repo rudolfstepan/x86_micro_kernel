@@ -50,6 +50,7 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("NOTEPAD_SURFACE_HOVER_READY", self.source)
         self.assertIn("NOTEPAD_PAINT_RETRY_LIMIT 3U", self.source)
         self.assertIn("paint_status_retryable", self.source)
+        self.assertIn("status == -110 || status == -114", self.source)
         self.assertIn(
             "paint_surface != 0 ? color_face : color_desktop", self.source
         )
@@ -76,6 +77,21 @@ class GuiNotepadSourceTests(unittest.TestCase):
             self.assertIn(contract, self.source)
         self.assertIn("NOTEPAD_MOUSE_BATCH_LIMIT 32U", self.source)
         self.assertIn('"/untitled.txt"', self.source)
+
+    def test_resize_is_recoverable_and_dialog_is_a_separate_surface(self):
+        self.assertIn("accept_configure_bounded", self.source)
+        self.assertIn('"notepad: Resize verzoegert: "', self.source)
+        self.assertNotIn(
+            "reist_gui_surface_client_accept_configure(\n"
+            "                            &surface_client, &message) != 0) {\n"
+            "                        application.exit_requested = 1U",
+            self.source)
+        self.assertIn("reist_gui_surface_client_create_dialog", self.source)
+        self.assertIn("render_separate_dialog", self.source)
+        self.assertIn("close_dialog_surface", self.source)
+        self.assertIn("if (!dialog_surface_active) render_dialog", self.source)
+        self.assertIn("NOTEPAD_SURFACE_DIALOG_READY", self.source)
+        self.assertIn("NOTEPAD_SURFACE_RESIZE_OK", self.source)
 
     def test_source_is_valid_freestanding_c11(self):
         compiler = shutil.which("gcc") or shutil.which("clang")

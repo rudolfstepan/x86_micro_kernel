@@ -166,6 +166,8 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
                       self.runtime_script)
         self.assertIn('"desktop.prg --surface-probe"', self.runtime_runner)
         self.assertIn("DESKTOP_SURFACE_OK", self.runtime_runner)
+        self.assertIn("NOTEPAD_SURFACE_DIALOG_READY", self.runtime_runner)
+        self.assertIn("NOTEPAD_SURFACE_RESIZE_OK", self.runtime_runner)
         self.assertIn("screenshot_has_menu_text", self.runtime_runner)
         self.assertIn("desktop screenshot contains no menu text",
                       self.runtime_runner)

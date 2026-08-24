@@ -158,10 +158,35 @@ typedef struct notepad_state {
 static notepad_state_t application;
 static char serialized[REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY + 1U];
 static reist_gui_surface_client_t *paint_surface;
+static reist_gui_surface_client_t *main_surface;
+static reist_gui_surface_client_t dialog_surface;
+static x86os_display_info_t dialog_display;
+static uint32_t dialog_surface_active;
 static int paint_status;
 
 static uint32_t paint_status_retryable(int status) {
-    return status == -11 || status == -110;
+    return status == -11 || status == -22 || status == -75 ||
+        status == -110 || status == -114;
+}
+
+static uint32_t same_surface(reist_gui_surface_handle_t left,
+                             reist_gui_surface_handle_t right) {
+    return left.id == right.id && left.generation == right.generation;
+}
+
+static int accept_configure_bounded(
+    reist_gui_surface_client_t *client,
+    const reist_gui_surface_message_t *message) {
+    int status = -11;
+    for (uint32_t attempt = 0U; attempt < NOTEPAD_PAINT_RETRY_LIMIT;
+         ++attempt) {
+        status = reist_gui_surface_client_accept_configure(client, message);
+        if (status == 0) return 0;
+        if (!paint_status_retryable(status)) return status;
+        if (attempt + 1U < NOTEPAD_PAINT_RETRY_LIMIT)
+            (void)x86os_sleep_ms(5U);
+    }
+    return status;
 }
 
 static void report_paint_failure(const char *message, int status) {
@@ -332,12 +357,19 @@ static reist_gui_dialog_layout_t dialog_layout(
     uint32_t width = display->width > 48U ? display->width - 48U : 1U;
     if (width > 620U) width = 620U;
     uint32_t height = work_height > 230U ? 230U : work_height;
+    reist_gui_rect_t work = {0, (int32_t)top, display->width, work_height};
+    reist_gui_rect_t initial = {
+        (int32_t)((display->width - width) / 2U),
+        (int32_t)(top + (work_height - height) / 2U), width, height};
+    if (dialog_surface_active &&
+        (paint_surface == &dialog_surface || display == &dialog_display)) {
+        work = (reist_gui_rect_t){0, 0, display->width, display->height};
+        initial = work;
+    }
     return (reist_gui_dialog_layout_t){
         REIST_GUI_DIALOG_API_VERSION, sizeof(reist_gui_dialog_layout_t),
         display->width, display->height,
-        {0, (int32_t)top, display->width, work_height},
-        {(int32_t)((display->width - width) / 2U),
-         (int32_t)(top + (work_height - height) / 2U), width, height},
+        work, initial,
         menu_height(display), 3U, display->font_width, display->font_height,
         88U, max_u32(display->font_height + 10U, 26U),
         8U, 8U, 12U, 6U, {0U, 0U, 0U, 0U}};
@@ -513,22 +545,28 @@ static void render_dialog(const x86os_display_info_t *display,
             model, &layout, &state->dialog, &title) != 0 ||
         reist_gui_dialog_close_rect(
             model, &layout, &state->dialog, &close) != 0) return;
-    fill((reist_gui_rect_t){frame.x + 5, frame.y + 5,
-                            frame.width, frame.height}, color_dark);
-    bevel(frame, color_face, 1U);
-    fill(title, color_active);
-    bevel(close, color_face,
-          state->dialog.capture_kind != REIST_GUI_DIALOG_CAPTURE_CLOSE);
-    if (close.width > 8U && close.height > 8U)
-        fill((reist_gui_rect_t){close.x + 4, close.y + 4,
-             close.width - 8U, close.height - 8U}, color_dark);
-    uint32_t title_y = title.height > display->font_height
-        ? (title.height - display->font_height) / 2U : 0U;
-    text(display, title.x + (int32_t)close.width + 8,
-         title.y + (int32_t)title_y, model->title,
-         title.width > close.width + 16U
-            ? title.width - close.width - 16U : 1U,
-         color_title_text, color_active);
+    uint32_t separate = dialog_surface_active &&
+        paint_surface == &dialog_surface;
+    if (separate) {
+        fill(frame, color_face);
+    } else {
+        fill((reist_gui_rect_t){frame.x + 5, frame.y + 5,
+                                frame.width, frame.height}, color_dark);
+        bevel(frame, color_face, 1U);
+        fill(title, color_active);
+        bevel(close, color_face,
+              state->dialog.capture_kind != REIST_GUI_DIALOG_CAPTURE_CLOSE);
+        if (close.width > 8U && close.height > 8U)
+            fill((reist_gui_rect_t){close.x + 4, close.y + 4,
+                 close.width - 8U, close.height - 8U}, color_dark);
+        uint32_t title_y = title.height > display->font_height
+            ? (title.height - display->font_height) / 2U : 0U;
+        text(display, title.x + (int32_t)close.width + 8,
+             title.y + (int32_t)title_y, model->title,
+             title.width > close.width + 16U
+                ? title.width - close.width - 16U : 1U,
+             color_title_text, color_active);
+    }
     int32_t content_x = frame.x + 14;
     int32_t content_y = title.y + (int32_t)title.height + 14;
     uint32_t content_width = frame.width > 28U ? frame.width - 28U : 1U;
@@ -633,8 +671,19 @@ static void render_scene(const x86os_display_info_t *display,
          paint_surface != 0 ? color_face : color_desktop);
     render_editor(display, state);
     render_menu(display, state);
-    render_dialog(display, state);
+    if (!dialog_surface_active) render_dialog(display, state);
     render_file_dialog(display, state);
+}
+
+static void render_separate_dialog(const notepad_state_t *state) {
+    if (!dialog_surface_active || !state->dialog.visible) return;
+    reist_gui_surface_client_t *saved = paint_surface;
+    paint_surface = &dialog_surface;
+    paint_status = reist_gui_surface_client_paint_begin(&dialog_surface);
+    if (paint_status == 0) render_dialog(&dialog_display, state);
+    if (paint_status == 0)
+        paint_status = reist_gui_surface_client_paint_commit(&dialog_surface);
+    paint_surface = saved;
 }
 
 static void render(const x86os_display_info_t *display,
@@ -765,20 +814,63 @@ static void initialize_error_model(notepad_state_t *state,
         {0U, 0U, 0U, 0U}};
 }
 
+static void close_dialog_surface(void) {
+    if (!dialog_surface_active) return;
+    (void)reist_gui_surface_client_destroy(&dialog_surface);
+    dialog_surface_active = 0U;
+}
+
+static int create_dialog_surface(const x86os_display_info_t *display,
+                                 const reist_gui_dialog_model_t *model) {
+    if (main_surface == 0 || display == 0 || model == 0) return -22;
+    close_dialog_surface();
+    int status = reist_gui_surface_client_init_shared(
+        &dialog_surface, main_surface);
+    if (status == 0)
+        status = reist_gui_surface_client_create_dialog(
+            &dialog_surface, main_surface->surface, 560U, 220U);
+    if (status == 0)
+        status = reist_gui_surface_client_ack_configure(
+            &dialog_surface, dialog_surface.configured_serial);
+    if (status == 0)
+        status = reist_gui_surface_client_set_title(
+            &dialog_surface, model->title);
+    if (status != 0) {
+        if (dialog_surface.surface.id != 0U)
+            (void)reist_gui_surface_client_destroy(&dialog_surface);
+        return status;
+    }
+    dialog_display = *display;
+    dialog_display.width = dialog_surface.width;
+    dialog_display.height = dialog_surface.height;
+    dialog_surface_active = 1U;
+    return 0;
+}
+
 static void open_dialog(notepad_state_t *state,
                         const x86os_display_info_t *display,
                         uint32_t kind) {
     const reist_gui_dialog_model_t *model;
     state->dialog_kind = kind;
     model = dialog_model(state);
-    reist_gui_dialog_layout_t layout = dialog_layout(display);
+    if (main_surface != 0 && create_dialog_surface(display, model) != 0)
+        dialog_surface_active = 0U;
+    reist_gui_surface_client_t *saved = paint_surface;
+    const x86os_display_info_t *layout_display = display;
+    if (dialog_surface_active) {
+        paint_surface = &dialog_surface;
+        layout_display = &dialog_display;
+    }
+    reist_gui_dialog_layout_t layout = dialog_layout(layout_display);
     reist_gui_dialog_result_t result;
     reist_gui_dialog_result_initialize(&result);
     if (model == 0 || reist_gui_dialog_open(
             model, &layout, &state->dialog, &result) != 0) {
         reist_gui_dialog_state_initialize(&state->dialog);
         state->dialog_kind = NOTEPAD_DIALOG_NONE;
+        close_dialog_surface();
     }
+    paint_surface = saved;
     state->redraw = 1U;
 }
 
@@ -865,6 +957,7 @@ static void complete_dialog(notepad_state_t *state,
                             const x86os_display_info_t *display,
                             uint32_t kind, uint32_t response) {
     state->dialog_kind = NOTEPAD_DIALOG_NONE;
+    close_dialog_surface();
     state->redraw = 1U;
     if (kind != NOTEPAD_DIALOG_CONFIRM_EXIT) return;
     if (response == REIST_GUI_DIALOG_RESPONSE_DISCARD)
@@ -1302,6 +1395,7 @@ int main(int argc, char **argv) {
     uint32_t menu_probe = 0U;
     uint32_t file_dialog_probe = 0U;
     uint32_t hover_probe = 0U;
+    uint32_t dialog_probe = 0U;
     for (int argument = 1; argument < argc; ++argument) {
         if (is_surface_argument(argv[argument])) continue;
         if (text_equal(argv[argument], "--menu-probe")) {
@@ -1314,6 +1408,10 @@ int main(int argc, char **argv) {
         }
         if (text_equal(argv[argument], "--hover-probe")) {
             hover_probe = 1U;
+            continue;
+        }
+        if (text_equal(argv[argument], "--dialog-probe")) {
+            dialog_probe = 1U;
             continue;
         }
         if (document_seen) {
@@ -1371,6 +1469,7 @@ int main(int argc, char **argv) {
         display.width = surface_client.width;
         display.height = surface_client.height;
         paint_surface = &surface_client;
+        main_surface = &surface_client;
     }
 
     int load_status = initialize(&application, &display, path);
@@ -1416,11 +1515,14 @@ int main(int argc, char **argv) {
         x86os_puts("notepad: Dateidialog-Probe fehlgeschlagen\n");
         return 1;
     }
+    if (dialog_probe)
+        open_dialog(&application, &display, NOTEPAD_DIALOG_ABOUT);
 
     int32_t pointer_x = (int32_t)(display.width / 2U);
     int32_t pointer_y = (int32_t)(display.height / 2U);
     uint32_t previous_buttons = 0U;
     render(&display, &application);
+    render_separate_dialog(&application);
     if (surface_mode && paint_status != 0) {
         (void)reist_gui_surface_client_destroy(&surface_client);
         (void)x86os_ipc_release(surface_endpoint);
@@ -1445,11 +1547,14 @@ int main(int argc, char **argv) {
         if (file_dialog_probe)
             x86os_puts("NOTEPAD_SURFACE_FILE_DIALOG_READY\n");
         if (hover_probe) x86os_puts("NOTEPAD_SURFACE_HOVER_READY\n");
+        if (dialog_probe && dialog_surface_active)
+            x86os_puts("NOTEPAD_SURFACE_DIALOG_READY\n");
     }
     application.redraw = 0U;
     if (!surface_mode) (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
 
     uint32_t paint_failures = 0U;
+    uint32_t resize_marker_pending = 0U;
     while (!application.exit_requested) {
         int key = NOTEPAD_KEY_NONE;
         uint32_t mouse_count = 0U;
@@ -1466,46 +1571,97 @@ int main(int argc, char **argv) {
                     break;
                 }
                 if (message.type == REIST_GUI_SURFACE_CONFIGURE) {
-                    if (reist_gui_surface_client_accept_configure(
-                            &surface_client, &message) != 0) {
-                        application.exit_requested = 1U;
-                        break;
+                    uint32_t is_dialog = dialog_surface_active &&
+                        same_surface(message.surface,
+                                     dialog_surface.surface);
+                    reist_gui_surface_client_t *configured = is_dialog
+                        ? &dialog_surface : &surface_client;
+                    int configure_status = accept_configure_bounded(
+                        configured, &message);
+                    if (configure_status != 0) {
+                        report_paint_failure(
+                            "notepad: Resize verzoegert: ",
+                            configure_status);
+                        continue;
                     }
-                    display.width = surface_client.width;
-                    display.height = surface_client.height;
-                    update_editor_model(&application, &display);
-                    if (application.dialog.visible) {
+                    if (is_dialog) {
+                        dialog_display.width = dialog_surface.width;
+                        dialog_display.height = dialog_surface.height;
+                    } else {
+                        display.width = surface_client.width;
+                        display.height = surface_client.height;
+                        update_editor_model(&application, &display);
+                        resize_marker_pending = 1U;
+                    }
+                    if (application.dialog.visible &&
+                        (!dialog_surface_active || is_dialog)) {
                         uint32_t dialog_kind = application.dialog_kind;
                         reist_gui_dialog_state_initialize(
                             &application.dialog);
-                        open_dialog(
-                            &application, &display, dialog_kind);
+                        if (is_dialog) {
+                            reist_gui_surface_client_t *saved = paint_surface;
+                            paint_surface = &dialog_surface;
+                            reist_gui_dialog_layout_t layout =
+                                dialog_layout(&dialog_display);
+                            reist_gui_dialog_result_t result;
+                            reist_gui_dialog_result_initialize(&result);
+                            application.dialog_kind = dialog_kind;
+                            (void)reist_gui_dialog_open(
+                                dialog_model(&application), &layout,
+                                &application.dialog, &result);
+                            paint_surface = saved;
+                        } else {
+                            open_dialog(
+                                &application, &display, dialog_kind);
+                        }
                     }
                     application.redraw = 1U;
                 } else if (message.type == REIST_GUI_SURFACE_CLOSE) {
-                    request_exit(&application, &display);
+                    if (dialog_surface_active &&
+                        same_surface(message.surface,
+                                     dialog_surface.surface)) {
+                        uint32_t kind = application.dialog_kind;
+                        uint32_t response = dialog_model(&application)
+                            ? dialog_model(&application)->cancel_response : 0U;
+                        reist_gui_dialog_state_initialize(&application.dialog);
+                        complete_dialog(
+                            &application, &display, kind, response);
+                    } else request_exit(&application, &display);
                 } else if (message.type == REIST_GUI_SURFACE_INPUT &&
+                           (!dialog_surface_active ||
+                            same_surface(message.surface,
+                                         dialog_surface.surface)) &&
                            message.input.type ==
                                REIST_GUI_SURFACE_INPUT_POINTER_MOTION) {
                     pointer_x = message.input.x;
                     pointer_y = message.input.y;
                     (void)dispatch_pointer(
-                        &application, &display,
+                        &application, dialog_surface_active
+                            ? &dialog_display : &display,
                         pointer_x, pointer_y, 0U, 0U);
                 } else if (message.type == REIST_GUI_SURFACE_INPUT &&
+                           (!dialog_surface_active ||
+                            same_surface(message.surface,
+                                         dialog_surface.surface)) &&
                            message.input.type ==
                                REIST_GUI_SURFACE_INPUT_POINTER_BUTTON) {
                     pointer_x = message.input.x;
                     pointer_y = message.input.y;
                     (void)dispatch_pointer(
-                        &application, &display, pointer_x, pointer_y,
+                        &application, dialog_surface_active
+                            ? &dialog_display : &display, pointer_x, pointer_y,
                         1U, message.input.pressed);
                 } else if (message.type == REIST_GUI_SURFACE_INPUT &&
+                           (!dialog_surface_active ||
+                            same_surface(message.surface,
+                                         dialog_surface.surface)) &&
                            message.input.type ==
                                REIST_GUI_SURFACE_INPUT_KEYBOARD &&
                            message.input.pressed) {
                     (void)dispatch_keyboard(
-                        &application, &display, (int)message.input.key);
+                        &application, dialog_surface_active
+                            ? &dialog_display : &display,
+                        (int)message.input.key);
                 }
             }
         } else {
@@ -1538,11 +1694,16 @@ int main(int argc, char **argv) {
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             render(&display, &application);
+            if (paint_status == 0) render_separate_dialog(&application);
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
             if (paint_status == 0) {
                 application.redraw = 0U;
                 paint_failures = 0U;
+                if (resize_marker_pending) {
+                    x86os_puts("NOTEPAD_SURFACE_RESIZE_OK\n");
+                    resize_marker_pending = 0U;
+                }
             } else if (surface_mode && paint_status_retryable(paint_status)) {
                 if (paint_failures < NOTEPAD_PAINT_RETRY_LIMIT)
                     ++paint_failures;
@@ -1566,6 +1727,7 @@ int main(int argc, char **argv) {
     }
 
     if (surface_mode) {
+        close_dialog_surface();
         (void)reist_gui_surface_client_destroy(&surface_client);
         (void)x86os_ipc_release(surface_endpoint);
     } else (void)x86os_pointer_update(pointer_x, pointer_y, 0U);

@@ -11,6 +11,62 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R1.9-notepad-resize-dialog-surface"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Keep Notepad alive during resize and render dialogs as transient surfaces"
+scope = "Make configure handling resilient to bounded transient resize pressure and add a generation-scoped dialog Surface role parented to one top-level Surface. Notepad dialogs must be painted into the separate compositor-managed Surface and keep parent input inert while visible. Preserve fixed capacities, synchronous bounded IPC and the fullscreen fallback."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/include/reist/gui/surface_client.h",
+  "userspace/gui/lib/surface_client.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/apps/notepad/main.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_surface_dispatch.c",
+  "test/test_gui_surface_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "a dialog Surface has one live same-owner top-level parent",
+  "the compositor owns dialog placement z-order focus and decoration",
+  "notepad never paints a desktop-mode dialog into its parent content",
+  "transient configure pressure is bounded and cannot terminate notepad",
+  "all retries queues surfaces and paint commands remain fixed-capacity",
+  "fullscreen notepad retains its in-surface dialog fallback"
+]
+targeted_tests = [
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_gui_notepad_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode runtime-desktop-surface"
+]
+stop_conditions = [
+  "dialog ownership can escape the creating process generation",
+  "resize recovery requires an unbounded retry or nested event loop",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "fix: stabilize notepad resize and surface dialogs"
+evidence = [
+  "python test/test_gui_surface_source.py -v: PASS (7 tests)",
+  "python test/test_gui_notepad_source.py -v: PASS (6 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (20s)",
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode runtime-desktop-surface: PASS (3 consecutive fresh QEMU boots)"
+]
+
+[[packages]]
 id = "R1.8a-vmware-svga2d-console-lifecycle"
 status = "done"
 phase = "post-s0"

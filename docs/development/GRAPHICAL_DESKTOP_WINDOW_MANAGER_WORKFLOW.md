@@ -385,6 +385,10 @@ zeichnet darin und erhält nur die für ihn bestimmten lokalen Eingaben.
   bleiben fail-closed.
 - [x] Surface-Protokoll auf Version 4 anheben und Buffer-Release erst nach dem
   atomaren Austausch des vorherigen Compositor-Puffers melden.
+- [x] Surface-Protokoll auf Version 5 anheben: `DIALOG`-Surfaces tragen ein
+  generationsgebundenes Eltern-Handle, teilen sich den begrenzten Eventkanal
+  ihres Clientprozesses und werden vom Compositor über dem Elternfenster
+  platziert, dekoriert und fokussiert.
 - [x] Client kennt nur lokale Koordinaten; Platzierung und Dekoration bleiben
   vollständig beim Compositor.
 - [x] Keyboardfokus und Pointerfokus getrennt und generationsgebunden an den
@@ -402,7 +406,10 @@ zeichnet darin und erhält nur die für ihn bestimmten lokalen Eingaben.
   skalierbares sowie schließbares WM-Fenster darstellen.
 - [x] Clientgelieferten Inhalt mit atomaren, doppelt gepufferten Paint-Listen
   darstellen; Fensterbewegung und Überdeckung verwenden ausschließlich den
-  committed Frame. Resize wird per `configure`/`ack_configure` ausgehandelt.
+  committed Frame. Resize wird per `configure`/`ack_configure` ausgehandelt;
+  die zuletzt bestätigte Größe und Serial bleiben bis zum ACK gültig. Erst das
+  ACK übernimmt die ausstehende Größe atomar, sodass bereits eingereichte
+  Paint-Kommandos beim Resize weder verworfen noch nachträglich ungültig werden.
 - [x] Acht feste WM-/Explorer-Slots bereitstellen, damit die Navigation bis
   `/usr/gui/bin` nicht bereits alle Fensterplätze vor dem Clientstart belegt.
 
@@ -459,7 +466,9 @@ inkompatibler Fensterrahmen.
   Verzeichnis-Snapshot, Ordner-/Dateiicons und neuen Ordnerfenstern.
 - [x] Editor als separaten, asynchronen Surface-Client mit begrenztem
   Textpuffer, Speichern, Dirty-Anzeige, lokalen Eingaben, Resize-Configure und
-  modalem Close-/Save-Vertrag betreiben.
+  modalem Close-/Save-Vertrag betreiben. Seine Dialoge sind eigene, an die
+  Editor-Surface gebundene Desktopfenster; vorübergehende Configure-/Paint-
+  Fehler werden begrenzt wiederholt und beenden den Editor nicht.
 - [x] Bildbetrachter als separaten Surface-Client mit validierten,
   generationengebundenen XRGB8888-Buffern betreiben.
 - [ ] Sound Player und Control Gallery auf Surface-Clients migrieren.
@@ -524,7 +533,9 @@ Der Format- und Pfadvertrag steht in
 - [x] Compositor-eigene Hilfe als modeless und Info als application-modal über
   die öffentliche Dialog-API zeichnen; Responses und Pointer-Capture bleiben
   im Controller gebunden.
-- [ ] Modale Dialoge bleiben an ihren Besitzer gebunden und darüber gestapelt.
+- [x] Modale Clientdialoge bleiben generationsgebunden an ihren Besitzer,
+  werden darüber gestapelt und erhalten den Desktopfokus, solange sie aktiv
+  sind.
 - [ ] Tastaturkürzel für Fensterwechsel, Schließen und Menübedienung.
 - [ ] Klick-, Popup-, Dialog- und Tastaturnachweis manuell unter VMware führen.
 - [ ] Optionales Double-Click erst mit monotoner Zeit und fester Schwelle.
@@ -662,6 +673,15 @@ gerendert werden. Der Compositor clippt diese Kommandos nun zusätzlich auf die
 aktuelle Clientgeometrie; der störende grüne Editor-Surface-Rand wurde entfernt.
 Der anschließende manuelle VMware-Sichttest mit dem neu gebauten Image wurde am
 20. August 2026 erfolgreich abgenommen.
+
+Am 24. August 2026 wurde zusätzlich der sporadische Editorabbruch beim Resize
+behoben. Der Compositor hält während eines ausstehenden Configure die alte,
+bestätigte Clientgröße weiter gültig und übernimmt die neue Größe erst beim
+passenden `ack_configure`. Der automatisierte QEMU-Surface-Probe erzwingt eine
+Größenänderung, verlangt `NOTEPAD_SURFACE_RESIZE_OK` und öffnet parallel einen
+About-Dialog als eigene `DIALOG`-Surface. Der Nachweis verlangt außerdem
+`NOTEPAD_SURFACE_DIALOG_READY`; beide Marker und der vollständige sichtbare
+Surface-Vertrag bestanden.
 
 Der reproduzierbare Gastnachweis für Frame-Publikation und Resize verwendet
 keine reale Host-Eingabe und führt jeweils genau acht Move- und Resize-Frames

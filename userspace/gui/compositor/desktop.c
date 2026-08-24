@@ -2615,6 +2615,13 @@ static void sync_surface_windows(
         desktop_surface_slot_t *surface = &surfaces->slots[index];
         if (!surface->active) continue;
         if (surface->window_index != DESKTOP_SURFACE_NO_SLOT) {
+            if (surface->role == REIST_GUI_SURFACE_ROLE_DIALOG &&
+                surface->window_index < DESKTOP_WM_CAPACITY &&
+                manager->windows[surface->window_index].visible &&
+                manager->keyboard_focus != (int32_t)surface->window_index) {
+                (void)desktop_wm_select(manager, surface->window_index);
+                desktop_dirty_full(dirty);
+            }
             if (surface->window_index < DESKTOP_WM_CAPACITY &&
                 manager->windows[surface->window_index].visible &&
                 !surface->close_sent) {
@@ -2633,8 +2640,12 @@ static void sync_surface_windows(
                         surface->configured_serial &&
                     !surface->configure_sent) {
                     reist_gui_surface_configure_t configure = {
-                        surface->configured_serial, surface->width,
-                        surface->height, 0U, 0U,
+                        surface->configured_serial,
+                        surface->pending_width != 0U
+                            ? surface->pending_width : surface->width,
+                        surface->pending_height != 0U
+                            ? surface->pending_height : surface->height,
+                        0U, 0U,
                     };
                     if (desktop_surface_runtime_send_configure(
                             runtime, surface->owner, surface->handle,
@@ -2699,10 +2710,34 @@ static void sync_surface_windows(
         if (decorated_height > available_height) decorated_height = available_height;
         window->width = decorated_width;
         window->height = decorated_height;
-        window->x = manager->work_left +
-            (int32_t)((available_width - decorated_width) / 2U);
-        window->y = manager->work_top +
-            (int32_t)((available_height - decorated_height) / 2U);
+        if (surface->role == REIST_GUI_SURFACE_ROLE_DIALOG &&
+            surface->parent.id != 0U &&
+            surface->parent.id <= DESKTOP_SURFACE_CAPACITY) {
+            desktop_surface_slot_t *parent =
+                &surfaces->slots[surface->parent.id - 1U];
+            if (parent->active &&
+                parent->handle.generation == surface->parent.generation &&
+                parent->window_index < DESKTOP_WM_CAPACITY) {
+                desktop_window_t *parent_window =
+                    &manager->windows[parent->window_index];
+                window->x = parent_window->x +
+                    (int32_t)((parent_window->width > decorated_width
+                        ? parent_window->width - decorated_width : 0U) / 2U);
+                window->y = parent_window->y +
+                    (int32_t)((parent_window->height > decorated_height
+                        ? parent_window->height - decorated_height : 0U) / 2U);
+            } else {
+                window->x = manager->work_left +
+                    (int32_t)((available_width - decorated_width) / 2U);
+                window->y = manager->work_top +
+                    (int32_t)((available_height - decorated_height) / 2U);
+            }
+        } else {
+            window->x = manager->work_left +
+                (int32_t)((available_width - decorated_width) / 2U);
+            window->y = manager->work_top +
+                (int32_t)((available_height - decorated_height) / 2U);
+        }
         window->content_id = DESKTOP_SURFACE_CONTENT_TAG | surface->handle.id;
         surface->window_index = chosen;
         (void)desktop_wm_open(manager, chosen);
@@ -4274,6 +4309,7 @@ int main(int argc, char **argv) {
     uint32_t trash_confirm_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
+    uint32_t surface_resize_requested = 0U;
 
     if (argc == 2 && argv != 0 && text_equal(argv[1], "--render-probe")) {
         render_probe = 1U;
@@ -4425,8 +4461,12 @@ int main(int argc, char **argv) {
             if (probe_status == 0)
                 probe_status = launch_surface_probe_client(
                     &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--dialog-probe", 5U);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
                     "/USR/GUI/BIN/IMAGEVIEWER.PRG",
-                    "/USR/SHARE/IMAGES/DEMO-COLORS.GIF", 5U);
+                    "/USR/SHARE/IMAGES/DEMO-COLORS.GIF", 7U);
         }
         if (probe_status != 0) {
             x86os_puts(control_probe
@@ -4473,6 +4513,26 @@ int main(int argc, char **argv) {
         desktop_clock_refresh(&display, &dirty, 0U);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
+        if (surface_probe && !surface_resize_requested) {
+            for (uint32_t surface_index = 0U;
+                 surface_index < DESKTOP_SURFACE_CAPACITY; ++surface_index) {
+                desktop_surface_slot_t *surface = &surfaces.slots[surface_index];
+                if (!surface->active ||
+                    surface->role != REIST_GUI_SURFACE_ROLE_TOPLEVEL ||
+                    surface->window_index >= DESKTOP_WM_CAPACITY) continue;
+                desktop_window_t *window =
+                    &manager.windows[surface->window_index];
+                if (window->width + 16U <=
+                    (uint32_t)(manager.work_right - window->x)) {
+                    window->width += 16U;
+                    desktop_dirty_add(
+                        &dirty, desktop_wm_window_bounds(
+                            &manager, surface->window_index));
+                    surface_resize_requested = 1U;
+                }
+                break;
+            }
+        }
         if ((surface_probe || control_probe) && !surface_probe_reported) {
             for (uint32_t surface_index = 0U;
                  surface_index < DESKTOP_SURFACE_CAPACITY; ++surface_index) {

@@ -357,7 +357,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             raise RuntimeError(
                                 f"Surface probe failed: {marker}"
                             )
-                        if "notepad: Surface" in probe_text:
+                        if ("notepad: Surface-Frame dauerhaft" in probe_text or
+                                "notepad: Surface-Frame konnte" in probe_text or
+                                "notepad: Surface konnte" in probe_text):
                             marker = re.findall(
                                 r"notepad: Surface[^\r\n]*", probe_text
                             )[-1]
@@ -372,7 +374,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 "NOTEPAD_SURFACE_MENU_READY" in probe_text and
                                 "NOTEPAD_SURFACE_FILE_DIALOG_READY" in
                                 probe_text and
-                                "NOTEPAD_SURFACE_HOVER_READY" in probe_text):
+                                "NOTEPAD_SURFACE_HOVER_READY" in probe_text and
+                                "NOTEPAD_SURFACE_DIALOG_READY" in probe_text and
+                                "NOTEPAD_SURFACE_RESIZE_OK" in probe_text):
                             time.sleep(0.2)
                             capture_screenshot(process, screenshot, deadline)
                             print("runtime-desktop-surface: PASS")
@@ -389,7 +393,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         probe_text = "".join(transcript)
                         if "DESKTOP_NOTEPAD_FAIL" in probe_text:
                             raise RuntimeError("Notepad probe launch failed")
-                        if "notepad: Surface" in probe_text:
+                        if ("notepad: Surface-Frame dauerhaft" in probe_text or
+                                "notepad: Surface-Frame konnte" in probe_text or
+                                "notepad: Surface konnte" in probe_text):
                             marker = re.findall(
                                 r"notepad: Surface[^\r\n]*", probe_text
                             )[-1]

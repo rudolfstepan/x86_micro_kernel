@@ -17,11 +17,30 @@ int main(void) {
     assert(desktop_surface_dispatch_message(
         &manager, owner, &request, &response) == 0);
     assert(response.type == REIST_GUI_SURFACE_CONFIGURE);
+    reist_gui_surface_handle_t parent = response.surface;
     request.type = REIST_GUI_SURFACE_ACK_CONFIGURE;
     request.surface = response.surface;
     request.serial = response.serial;
     assert(desktop_surface_dispatch_message(
         &manager, owner, &request, &response) == 0);
+    request = (reist_gui_surface_message_t){
+        .protocol_version = REIST_GUI_SURFACE_PROTOCOL_VERSION,
+        .message_size = sizeof(request),
+        .type = REIST_GUI_SURFACE_CREATE,
+        .flags = REIST_GUI_SURFACE_ROLE_DIALOG,
+        .parent_surface = parent,
+        .width = 300U,
+        .height = 160U,
+    };
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    assert(response.type == REIST_GUI_SURFACE_CONFIGURE);
+    reist_gui_surface_handle_t dialog = response.surface;
+    request.type = REIST_GUI_SURFACE_DESTROY;
+    request.surface = dialog;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.surface = parent;
     request.type = REIST_GUI_SURFACE_PAINT_BEGIN;
     assert(desktop_surface_dispatch_message(
         &manager, owner, &request, &response) == 0);
