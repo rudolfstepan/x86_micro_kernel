@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.1-fat-truncate-zero"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,65 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.1-fat-truncate-zero"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Transactional FAT truncate-to-zero and O_TRUNC"
+scope = "Complete the destructive half of the published OPEN_FLAGS contract without adding or renumbering a syscall. Add one node-based VFS truncate operation whose first bounded implementation accepts only length zero. Route O_TRUNC through it only after flag rights descriptor capacity path and regular-file validation but before descriptor publication. Require WRONLY or RDWR; O_TRUNC with RDONLY returns EINVAL before filesystem effects. FAT12 detaches the complete cluster chain and publishes zero start cluster size and updated write time inside one existing bounded undo-journal transaction, rejecting critical replicated files until an empty-replica contract exists. FAT32 first publishes a zero-size zero-cluster directory entry then reclaims the detached chain under the existing volume journal and restores in-memory node state on failure. Both adapters reject directories read-only attributes foreign unmarked media stale or corrupt chain state before success; EXT2 and every adapter without truncate remain ENOTSUP. Preserve old OPEN CREATE WRITE FSYNC and all syscall numbers. Prove normal zeroing reclaimed capacity read-only rejection failed directory publication no partial node publication and real QEMU O_TRUNC persistence. This package adds no arbitrary-length truncate ftruncate lseek fstat service mutation inheritance raw controller or DMA authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/vfs/vfs.h",
+  "fs/vfs/vfs.c",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "kernel/proc/process.c",
+  "userspace/programs/guest_test.c",
+  "test/test_vfs_host.c",
+  "test/test_fat12_host.c",
+  "test/test_fat32_host.c",
+  "test/test_open_flags.py",
+  "test/test_truncate_zero.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "all public syscall numbers structures wrappers and legacy OPEN CREATE WRITE and FSYNC behavior remain unchanged",
+  "the VFS truncate callback accepts a validated open regular node and length zero only while missing callbacks and nonzero lengths return UNSUPPORTED before mutation",
+  "O_TRUNC requires write access and completes truncate before descriptor publication; failure closes the node and rolls back a newly created name",
+  "FAT12 records both FAT copies and the directory sector in one bounded existing journal transaction before publishing zero cluster and size",
+  "FAT12 critical replicated files remain unsupported because a zero-length replica is not a valid protected object",
+  "FAT32 publishes the detached zero-size directory identity before reclaiming its private old chain under the existing mutation journal",
+  "adapter failure publishes neither a successful descriptor nor advanced in-memory node metadata and VFS IO failure fences mutation",
+  "foreign FAT read-only files directories EXT2 and adapters without truncate cannot gain mutation authority",
+  "successful truncate reclaims the complete old chain updates observable size to zero and leaves a writable O_TRUNC descriptor at offset zero",
+  "all chain walks transaction capacity and cleanup remain bounded by validated filesystem geometry"
+]
+targeted_tests = [
+  "python test/test_truncate_zero.py -v",
+  "python test/test_fs_host.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "truncate requires delete and recreate or can expose a partially published directory identity",
+  "the FAT12 mutation cannot fit the fixed existing journal capacity",
+  "FAT32 chain reclamation can precede durable namespace detachment",
+  "an adapter without an explicit transaction would receive write authority",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "vfs: implement transactional FAT O_TRUNC"
+evidence = []
 
 [[packages]]
 id = "R2.1-open-flags-rights"
