@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2-unicode-nfc-casefold"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,68 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2-unicode-nfc-casefold"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Unicode 15 NFC and full case-fold VFAT identity"
+scope = "Complete the remaining R2.2 Unicode name-identity gap with generated Unicode 15.0.0 data and a fixed-storage implementation of canonical caseless matching. Generate checked-in deterministic canonical decomposition combining-class canonical composition and Default Case Folding tables from Python's pinned Unicode 15.0.0 database. Decode each already bounded RFC 3629 UTF-8 component, apply full default case folding, recursive canonical decomposition including algorithmic Hangul, stable canonical ordering, and NFC recomposition including algorithmic Hangul, then compare exact normalized UTF-8 keys. Derive and freeze capacities from the existing 255-byte component limit: at most 382 decomposed scalars and 762 normalized key bytes plus NUL. Overflow or malformed input yields non-equality before namespace effects. Preserve the original caller spelling on disk and in readdir; use normalized identity only for lookup duplicate detection open-object locks rename and delete through the existing FAT32 lookup path. Apply the same header-only normalizer to the independent Ring-3 FAT shadow parser. Prove composed/decomposed equivalence non-ASCII full case folding supplementary preservation canonical-order equivalence duplicate rejection lookup read readdir delete malformed rejection table reproducibility and one normal QEMU alternate-spelling path. Add no syscall VFS ABI persistent-format heap allocation locale dependency FAT12 mutation or compatibility claim with Windows collation beyond the documented Unicode 15 canonical caseless contract."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/generate_unicode_tables.py",
+  "include/reist/utf.h",
+  "include/reist/unicode_tables_15_0.h",
+  "include/reist/unicode_norm.h",
+  "fs/fat32/fat32_files.c",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/programs/guest_test.c",
+  "test/test_fat32_host.c",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_unicode_normalization.py",
+  "test/test_fs_host.py",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "Unicode data is pinned to version 15.0.0 generated deterministically and checked in so target builds never depend on host locale or runtime data files",
+  "the normalizer is header-only allocation-free and bounded by 255 source bytes 382 decomposed scalars and 763 key bytes including NUL",
+  "matching performs full default case folding recursive canonical decomposition stable canonical ordering and canonical composition with algorithmic Hangul",
+  "malformed UTF-8 unknown table state or any capacity exhaustion returns non-equality without namespace or media effects",
+  "the exact original valid UTF-8 spelling remains the on-disk and readdir spelling while only identity comparison uses the normalized key",
+  "composed decomposed reordered-combining and full-fold spellings cannot create duplicate FAT32 objects or bypass open-object locks",
+  "ASCII behavior short-name aliases checksum validation LFN publication and the prior UTF-16 roundtrip remain unchanged",
+  "the Ring-3 shadow parser applies the same pinned normalizer without allocation syscall fallback or mutable global state",
+  "public path metadata and syscall structures and all FAT persistent bytes remain unchanged",
+  "FAT12 and EXT2 gain no mutation authority and Windows collation compatibility is not claimed"
+]
+targeted_tests = [
+  "python test/test_unicode_normalization.py -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v",
+  "python test/test_reist_vfs_shadow_fat32.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "generated tables differ under the pinned Unicode 15.0.0 database",
+  "the proven 382-scalar or 763-byte bounds are insufficient for any valid 255-byte component",
+  "normalization changes persisted or readdir spelling instead of identity only",
+  "a canonical or full-casefold alias can bypass duplicate or open-object identity checks",
+  "the production and Ring-3 parser disagree on Unicode identity",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fs: add bounded Unicode NFC case folding"
+evidence = []
 
 [[packages]]
 id = "R2.2-vfat-utf8-roundtrip"
