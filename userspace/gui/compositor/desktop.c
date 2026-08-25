@@ -176,6 +176,26 @@ static int desktop_svga2d_activate_bounded(void) {
     return status;
 }
 
+static int desktop_activate_with_fallback(void) {
+    int driver_status = desktop_svga2d_activate_bounded();
+    if (driver_status == 0) return 0;
+
+    /* The supervised endpoint is an optional acceleration path.  Its absence
+     * must never suppress the validated VBE/software desktop. */
+    desktop_svga2d_forget_endpoint();
+    int fallback_status = x86os_display_activate();
+    if (fallback_status == 0) {
+        x86os_puts("desktop: DISPLAY_SOFTWARE_FALLBACK\n");
+        return 0;
+    }
+    x86os_puts("desktop: Display-Aktivierung fehlgeschlagen driver=");
+    x86os_print_number(driver_status);
+    x86os_puts(" fallback=");
+    x86os_print_number(fallback_status);
+    x86os_putchar('\n');
+    return fallback_status;
+}
+
 static int desktop_svga2d_activate_until_ready(uint32_t deadline_ms) {
     if (deadline_ms == 0U) return -22;
     uint64_t started = 0U;
@@ -216,7 +236,9 @@ static int desktop_display_deactivate(void) {
     if (desktop_svga2d_endpoint != X86OS_IPC_INVALID_HANDLE) {
         reist_svga2d_message_t request = {0};
         request.operation = REIST_SVGA2D_DEACTIVATE;
-        return desktop_svga2d_transact(&request);
+        int status = desktop_svga2d_transact(&request);
+        if (status == 0) return 0;
+        desktop_svga2d_forget_endpoint();
     }
     return x86os_display_deactivate();
 }
@@ -4470,19 +4492,10 @@ int main(int argc, char **argv) {
         return 2;
     }
 
+    int activation_status = desktop_activate_with_fallback();
+    if (activation_status == 0) runtime_activated = 1U;
     int display_status = x86os_display_info(&display);
-    if (display_status != 0) {
-        int svga2d_status = desktop_svga2d_activate_bounded();
-        if (svga2d_status == 0 || x86os_display_activate() == 0) {
-            runtime_activated = 1U;
-        } else {
-            x86os_puts("desktop: SVGA2D-Aktivierung fehlgeschlagen status=");
-            x86os_print_number(svga2d_status);
-            x86os_putchar('\n');
-        }
-        display_status = x86os_display_info(&display);
-    }
-    if (display_status != 0 ||
+    if (activation_status != 0 || display_status != 0 ||
         display.version != X86OS_DISPLAY_ABI_VERSION ||
         display.struct_size < sizeof(display) ||
         display.width < 320U || display.height < 240U ||

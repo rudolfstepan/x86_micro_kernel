@@ -2238,6 +2238,10 @@ Nichtregressionsgates bleibt daher genau ein manueller ASUS-Image-Lauf für die 
 darf erst auf dieser Evidenz einen festen GPFIFO-Kanal, kernelvalidierte
 FERMI_TWOD_A-Methoden und einen deadlinebegrenzten Fence aktivieren. Bis dahin
 bleiben die Capabilitybits null und der CPU-/Shadow-Framebuffer verbindlich.
+Der erste ASUS-Lauf meldete den optionalen Dienst als nicht vorhanden. Das
+abgeschlossene Paket `R2.2a-nvidia-vbe-fallback` trennt deshalb veröffentlichte
+Boot-Framebuffer-Metadaten vom tatsächlich aktiven Hardwaremodus und
+reaktiviert bei `ENODEV` ausdrücklich den versiegelten VBE-/Softwarepfad.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

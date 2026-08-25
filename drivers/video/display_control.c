@@ -682,7 +682,13 @@ vmware_disable:
 #endif
 
 int display_control_activate(void) {
-    if (framebuffer_available()) return 0;
+    /* A framebuffer published by the BIOS loader does not prove that its
+     * graphics mode is still the visible hardware mode.  In particular the
+     * rescue shell may have restored VGA text while the bounded framebuffer
+     * metadata remains available.  Only an explicitly active runtime backend
+     * may make activation idempotent. */
+    if (active_backend != DISPLAY_BACKEND_NONE && framebuffer_available())
+        return 0;
     printf("DISPLAY_CONTROL: activation requested\n");
     uint32_t old_flags;
     __asm__ __volatile__("pushf\n pop %0\n cli" : "=r"(old_flags) :: "memory");

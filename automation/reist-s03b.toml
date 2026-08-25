@@ -11,6 +11,56 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2a-nvidia-vbe-fallback"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Keep the desktop usable when the GK208 probe is unavailable"
+scope = "Repair the physical NVIDIA fallback exposed by the first ASUS run. Treat the supervised display-driver endpoint as optional acceleration: when it is absent, fenced or not yet ready, explicitly reactivate the loader-sealed VBE mode instead of trusting stale framebuffer publication left from boot. Preserve bounded retries, software rendering and VGA restoration, and do not weaken the passive GK208 probe or advertise acceleration. Prove the state transition in source tests and retain QEMU and VMware framebuffer non-regression before producing a replacement real-hardware image."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/video/display_control.c",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_nvidia_gk208.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "an absent or rejected NVIDIA service never prevents direct VBE activation and software desktop rendering",
+  "stale framebuffer publication cannot be mistaken for an active display backend",
+  "desktop shutdown restores VGA even if the optional driver endpoint disappears",
+  "the GK208 probe remains passive and native acceleration capabilities remain zero",
+  "VMware supervised acceleration remains compatible"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-nvidia-vbe-fallback.log"
+]
+stop_conditions = [
+  "fallback would bypass the sealed VBE validation path or expose a raw framebuffer address",
+  "the fix requires weakening driver generation fencing or enabling unproven GPU commands",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: preserve VBE desktop without GK208 service"
+evidence = [
+  "python test/test_nvidia_gk208.py -v: PASS (8 tests)",
+  "python test/test_vmware_svga2d.py -v: PASS (13 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (29s)",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PASS (26s)",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-nvidia-vbe-fallback-retry.log: PASS after one unchanged retry (desktop recovery, TEST_OK and guest-smoke PASS); the first attempt stopped before desktop in transient /libexec/reist/reist.prg image validation"
+]
+
+[[packages]]
 id = "R2.2-nvidia-gk208-bringup"
 status = "done"
 phase = "post-s0"

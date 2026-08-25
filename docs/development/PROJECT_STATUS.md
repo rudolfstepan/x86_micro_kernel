@@ -15,6 +15,11 @@ bleiben maßgeblich; Beschleunigungs-Capabilities bleiben bis zu einem echten,
 deadlinebegrenzten GPU-Fence absichtlich null. QEMU/VMware prüfen Build,
 Lifecycle und Rückfall, der abschließende Probe-Nachweis bleibt ein manueller
 ASUS-Lauf. Die ausführbare Paketqueue ist danach leer.
+Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
+Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
+bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung
+mit Software-Rendering aus. Veraltete Boot-Framebuffer-Metadaten können diese
+Modusumschaltung nicht mehr überspringen.
 
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die

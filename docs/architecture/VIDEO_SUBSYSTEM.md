@@ -106,3 +106,12 @@ QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both image layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and
 `NVIDIA_GK208_READY` markers require one final manual boot on the ASUS target.
+
+The first ASUS run also established that the optional driver may be absent
+while loader framebuffer metadata is still published.  Published metadata is
+not evidence that the corresponding graphics mode remains visible after the
+rescue shell used VGA text.  Runtime activation is therefore idempotent only
+when an explicit backend is active.  If the supervised endpoint returns
+`ENODEV`, the desktop now re-enters the sealed VBE mode, emits
+`DISPLAY_SOFTWARE_FALLBACK`, and renders in software.  Shutdown likewise uses
+the direct validated VGA restoration path if the endpoint disappears.

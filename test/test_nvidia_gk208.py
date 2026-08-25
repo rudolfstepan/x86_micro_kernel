@@ -82,6 +82,27 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertLess(profile.index("VIDEO_DEVICE_BACKEND_VMWARE_SVGA2"),
                         profile.index("VIDEO_DEVICE_BACKEND_NVIDIA_GK208"))
 
+    def test_stale_boot_framebuffer_does_not_suppress_vbe_activation(self):
+        display = (ROOT / "drivers/video/display_control.c").read_text(
+            encoding="utf-8")
+        start = display.index("int display_control_activate(void)")
+        end = display.index("int display_control_deactivate(void)", start)
+        activate = display[start:end]
+        self.assertIn(
+            "active_backend != DISPLAY_BACKEND_NONE && framebuffer_available()",
+            activate)
+        self.assertNotIn("if (framebuffer_available()) return 0;", activate)
+
+    def test_desktop_uses_vbe_when_optional_driver_is_missing(self):
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
+            encoding="utf-8")
+        self.assertIn("desktop_activate_with_fallback", desktop)
+        self.assertIn("x86os_display_activate()", desktop)
+        self.assertIn(
+            "activation_status != 0 || display_status != 0", desktop)
+        self.assertIn("desktop_display_deactivate", desktop)
+        self.assertIn("x86os_display_deactivate()", desktop)
+
 
 if __name__ == "__main__":
     unittest.main()
