@@ -35,9 +35,11 @@ Die passive GK208-Probe liest `10DE:1280`, 16 MiB BAR0 und den PTIMER korrekt,
 aber `nvidia-gk208-ring3` überschreitet einschließlich NUL die bisherige
 16-Byte-Supervisor-Namenskapazität. Deshalb entsteht vor dem Treiber-Spawn
 `REIST_VIDEO DRIVER_DEGRADED result=-36`. Das abgeschlossene `R2.2c` hebt den
-gemeinsamen festen Namenspuffer auf 32 Bytes an, bewahrt die Nicht-Trunkierung und prüft weiter
-die 64-Byte-Grenze des geschützten Deskriptors. Die danach sichtbaren
-ANSI-Sequenzen im VFS-Status folgen als aktives `R2.2d`. Die absichtlichen
+gemeinsamen festen Namenspuffer auf 32 Bytes an, bewahrt die Nicht-Trunkierung
+und prüft weiter die 64-Byte-Grenze des geschützten Deskriptors. Die danach
+sichtbaren ANSI-Sequenzen im VFS-Status entfernt das abgeschlossene `R2.2d`
+durch eine portable Klartextzeile für serielle und Framebuffer-Ausgabe; Mount-
+und Fehlerzahlen bleiben erhalten. Die absichtlichen
 Crash-, Hang- und Invalid-Reply-Proben mit abschließendem
 `RECOVERY_SEQUENCE_OK` sind weiterhin erwartete Selbsttests.
 

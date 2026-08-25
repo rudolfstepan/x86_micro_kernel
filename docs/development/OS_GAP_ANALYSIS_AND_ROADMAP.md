@@ -2254,8 +2254,9 @@ Die kanonische Identität `nvidia-gk208-ring3` passt nicht in den bisherigen
 abgeschlossene Paket `R2.2c-nvidia-driver-name-capacity` hebt die feste Grenze
 auf 32 Bytes an, bewahrt die Nicht-Trunkierung und hält den geschützten
 Deskriptor unter 64 Bytes, bevor ein neues Hardwareimage erzeugt wird. Das
-aktive `R2.2d` entfernt die terminalabhängigen ANSI-Farbcodes aus der frühen
-Framebuffer-VFS-Ausgabe.
+abgeschlossene `R2.2d` ersetzt die terminalabhängigen ANSI-Farbcodes in der
+frühen Framebuffer-VFS-Ausgabe durch portablen Klartext bei unveränderten
+Zählern.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2d-framebuffer-console-status"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -121,7 +121,7 @@ evidence = [
 
 [[packages]]
 id = "R2.2d-framebuffer-console-status"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "low"
 title = "Keep the framebuffer boot status free of raw ANSI escapes"
@@ -154,7 +154,11 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "fix: print portable framebuffer filesystem status"
-evidence = []
+evidence = [
+  "python test/test_vfs_console_status.py -v: PASS (3 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (24s)",
+  "manual ASUS evidence before repair: framebuffer rendered literal ESC[32m, ESC[31m and ESC[0m bytes around the filesystem summary"
+]
 
 [[packages]]
 id = "R2.2a-nvidia-vbe-fallback"

@@ -455,9 +455,12 @@ void auto_mount_all_drives(int boot_floppy_drive) {
         }
     }
     
-    printf("\n\x1B[32mFilesystem Status:\x1B[0m %d/%d drives mounted", mounted_count, drive_count);
+    /* Early framebuffer and serial sinks share this stream.  Keep the mount
+     * summary portable instead of leaking terminal-only ANSI bytes. */
+    printf("\nFilesystem Status: %d/%d drives mounted",
+           mounted_count, drive_count);
     if (failed_count > 0) {
-        printf(" \x1B[31m(%d failed)\x1B[0m", failed_count);
+        printf(" (%d failed)", failed_count);
     }
     printf("\n");
     

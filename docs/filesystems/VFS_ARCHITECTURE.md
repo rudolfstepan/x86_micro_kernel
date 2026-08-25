@@ -215,6 +215,10 @@ Node vollständig gesperrt.
   späteres Laufwerk ersetzt.
 - Dateisystemspezifische Aktivierung während weiterer Mounts darf die
   tatsächliche Root-/Defaultressource nicht überschreiben.
+- Die frühe Mountzusammenfassung ist portabler Klartext ohne ANSI-Steuerbytes,
+  da serielle Ausgabe und Framebuffer-Konsole denselben Strom erhalten. Die
+  Anzahl gemounteter, vorhandener und fehlgeschlagener Laufwerke bleibt
+  vollständig sichtbar; ein Terminalparser gehört nicht in den VFS-Pfad.
 
 ## Fehler- und Schreibgrenze
 
