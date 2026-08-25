@@ -2250,10 +2250,12 @@ Desktop-Frame angezeigt. Fehlende oder ungültige Bilddaten bleiben nicht
 fatal; Decoder- und Fontinitialisierung teilen sich statische Startpuffer.
 Der reale ASUS-Nachweis hat zugleich `DRIVER_DEGRADED result=-36` aufgedeckt:
 Die kanonische Identität `nvidia-gk208-ring3` passt nicht in den bisherigen
-16-Byte-Supervisor-Namenspuffer und wird vor dem Spawn abgewiesen. Das aktive
-Paket `R2.2c-nvidia-driver-name-capacity` korrigiert genau diese feste Grenze,
-bevor ein neues Hardwareimage erzeugt wird. Anschließend entfernt `R2.2d` die
-terminalabhängigen ANSI-Farbcodes aus der frühen Framebuffer-VFS-Ausgabe.
+16-Byte-Supervisor-Namenspuffer und wird vor dem Spawn abgewiesen. Das
+abgeschlossene Paket `R2.2c-nvidia-driver-name-capacity` hebt die feste Grenze
+auf 32 Bytes an, bewahrt die Nicht-Trunkierung und hält den geschützten
+Deskriptor unter 64 Bytes, bevor ein neues Hardwareimage erzeugt wird. Das
+aktive `R2.2d` entfernt die terminalabhängigen ANSI-Farbcodes aus der frühen
+Framebuffer-VFS-Ausgabe.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

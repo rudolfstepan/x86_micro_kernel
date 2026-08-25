@@ -31,6 +31,8 @@ class ReistSupervisorTests(unittest.TestCase):
         header = (ROOT / "include/kernel/supervisor.h").read_text(encoding="utf-8")
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
         self.assertIn("SUPERVISOR_MAX_DOMAINS 8U", header)
+        self.assertIn("SUPERVISOR_NAME_CAPACITY 32U", header)
+        self.assertIn("supervisor descriptor exceeds protected payload", source)
         self.assertIn("critical_object_t protected_state", source)
         self.assertIn("critical_object_t protected_fence_ops", source)
         self.assertIn("critical_object_t protected_descriptor", source)

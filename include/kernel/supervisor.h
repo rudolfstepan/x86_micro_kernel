@@ -19,7 +19,9 @@
 struct Process;
 
 #define SUPERVISOR_MAX_DOMAINS 8U
-#define SUPERVISOR_NAME_CAPACITY 16U
+/* Canonical built-in component identities are never truncated.  The longest
+ * current name is "nvidia-gk208-ring3" (18 bytes plus NUL). */
+#define SUPERVISOR_NAME_CAPACITY 32U
 #define SUPERVISOR_DRIVER_PATH_CAPACITY 96U
 #define SUPERVISOR_MAX_DEVICE_DRIVERS 4U
 #define SUPERVISOR_STATE_VERSION 1U

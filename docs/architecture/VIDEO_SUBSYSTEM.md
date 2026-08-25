@@ -116,6 +116,14 @@ when an explicit backend is active.  If the supervised endpoint returns
 `DISPLAY_SOFTWARE_FALLBACK`, and renders in software.  Shutdown likewise uses
 the direct validated VGA restoration path if the endpoint disappears.
 
+The subsequent ASUS diagnostics exposed an independent admission defect:
+the canonical identity `nvidia-gk208-ring3` needs 19 bytes including NUL, but
+the common supervisor name buffer previously held only 16. The fixed capacity
+is now 32 bytes, still rejects truncation, and keeps the protected descriptor
+within its 64-byte critical-object payload. This permits the already bounded
+driver to spawn; it does not change the passive probe, GPU authority or zero
+acceleration capabilities.
+
 ## Desktop startup splash
 
 After successful display activation and validation, the Ring-3 desktop now

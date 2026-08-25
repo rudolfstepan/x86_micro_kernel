@@ -47,6 +47,10 @@ typedef struct {
     char name[SUPERVISOR_NAME_CAPACITY];
 } supervisor_descriptor_t;
 
+_Static_assert(sizeof(supervisor_descriptor_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "supervisor descriptor exceeds protected payload");
+
 _Static_assert(sizeof(supervisor_probe_authority_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
                "probe authority exceeds critical object payload");

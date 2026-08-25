@@ -35,7 +35,8 @@ int main(void) {
         .apply = apply_fence, .verify = verify_fence, .context = 0,
     };
     supervisor_init();
-    if (supervisor_register("storage", &config, &fence_ops, 1000U, &handle) != 0) return 1;
+    if (supervisor_register("nvidia-gk208-ring3", &config, &fence_ops,
+                            1000U, &handle) != 0) return 1;
     if (supervisor_output_allowed(handle)) return 2;
     if (supervisor_report_progress(handle, 1U, 1010U) != 0) return 3;
     if (!supervisor_output_allowed(handle)) return 4;

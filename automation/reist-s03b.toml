@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2c-nvidia-driver-name-capacity"
+active_id = "R2.2d-framebuffer-console-status"
 
 [policy]
 one_package_per_run = true
@@ -67,7 +67,7 @@ evidence = [
 
 [[packages]]
 id = "R2.2c-nvidia-driver-name-capacity"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Admit the exact NVIDIA GK208 driver identity to supervision"
@@ -110,11 +110,18 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "fix: admit NVIDIA driver identity to supervisor"
-evidence = []
+evidence = [
+  "python test/test_reist_supervisor.py -v: PASS (6 tests)",
+  "python test/test_nvidia_gk208.py -v: PASS (9 tests)",
+  "python test/test_vmware_svga2d.py -v: PASS (13 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (24s)",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PASS (27s)",
+  "manual ASUS evidence before repair: exact 10DE:1280 probe with 16 MiB BAR0 and live PTIMER followed by DRIVER_DEGRADED result=-36; replacement-image NVIDIA_GK208_READY remains the user's final hardware check"
+]
 
 [[packages]]
 id = "R2.2d-framebuffer-console-status"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "low"
 title = "Keep the framebuffer boot status free of raw ANSI escapes"

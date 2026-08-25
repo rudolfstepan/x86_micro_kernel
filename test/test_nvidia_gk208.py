@@ -62,6 +62,25 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertGreaterEqual(
             supervisor.count('"nvidia-gk208-ring3"'), 5)
 
+    def test_canonical_driver_identity_fits_without_truncation(self):
+        header = (ROOT / "include/kernel/supervisor.h").read_text(
+            encoding="utf-8")
+        supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        host = (ROOT / "test/test_supervisor_host.c").read_text(
+            encoding="utf-8")
+        self.assertIn("#define SUPERVISOR_NAME_CAPACITY 32U", header)
+        self.assertLess(len("nvidia-gk208-ring3"), 32)
+        self.assertIn(
+            "sizeof(supervisor_descriptor_t) <=\n"
+            "                   CRITICAL_OBJECT_MAX_PAYLOAD",
+            supervisor)
+        copy = supervisor[supervisor.index("static bool copy_driver_string") :]
+        copy = copy[:copy.index("static bool driver_spawn_next")]
+        self.assertIn("length >= capacity", copy)
+        self.assertNotIn("capacity - 1U", copy)
+        self.assertIn('supervisor_register("nvidia-gk208-ring3"', host)
+
     def test_images_package_both_display_drivers(self):
         programs = (ROOT / "scripts/build_system_programs.py").read_text(
             encoding="utf-8")
