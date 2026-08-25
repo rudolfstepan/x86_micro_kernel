@@ -30,6 +30,7 @@ BOOT_CONTROL_SECONDARY_RELATIVE_LBA = 98
 KERNEL_B_RELATIVE_LBA = 3136
 PARTITION_TYPE = 0xDA  # Non-filesystem raw boot partition
 DATA_PARTITION_TYPE = 0x0C  # FAT32 with LBA addressing
+NATIVE_SYSTEM_DIRECTORIES = ("trash/files", "trash/info")
 MANIFEST_MAGIC = b"X86BOOT2"
 MANIFEST_VERSION = 3
 MANIFEST_HEADER_SIZE = 336
@@ -301,7 +302,10 @@ def write_fat32_volume(image, partition_lba: int, total_sectors: int,
         if "readme.txt" in data_files:
             raise ValueError("duplicate FAT32 path: 'readme.txt'")
         files.update(data_files)
-    tree = build_tree(files)
+    # Empty service-owned directories cannot be inferred from packaged files.
+    # Provision the canonical trash hierarchy in the immutable image layout so
+    # desktop startup never depends on an early filesystem mutation.
+    tree = build_tree(files, NATIVE_SYSTEM_DIRECTORIES)
     directories = walk_directories(tree)
     next_cluster = 2
     for directory in directories:

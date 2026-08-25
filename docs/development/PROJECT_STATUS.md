@@ -60,6 +60,17 @@ folgt weiterhin der Timerauflösung. Die gezielten Tests, beide
 Framebuffer-Paketbuilds und der QEMU-Runtime-Lauf bis `TEST_OK` sind grün; der
 abschließende Sichtnachweis auf dem ASUS-System bleibt manuell.
 
+Der anschließende ASUS-Test meldete `/trash` als nicht vorhanden. Ursache war
+kein Desktop-Pfadfehler, sondern die Ableitung des nativen FAT32-Verzeichnisbaums
+ausschließlich aus Dateien: Ein leer ausgelieferter Papierkorb erzeugte daher
+keinen Eintrag und war von einem erfolgreichen Laufzeit-`mkdir` abhängig.
+`R2.2f` provisioniert `/trash/files` und `/trash/info` nun als echte leere
+Verzeichnisse in jedem nativen HDD-Image. Pfad-, Tiefen-, Slot- und
+Kollisionsgrenzen gelten unverändert; das Floppy-Image bleibt unverändert.
+Die Layout-, Native-Image- und Papierkorbtests sowie beide vollständigen
+Framebuffer-Paketbuilds bestehen. Der Ersatzimage-Test auf ASUS bleibt
+manuell.
+
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
 unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und

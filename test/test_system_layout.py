@@ -11,6 +11,7 @@ from scripts.create_floppy_boot_image import create_floppy_image
 from scripts.create_native_boot_image import (
     DATA_PARTITION_START,
     IMAGE_SIZE,
+    NATIVE_SYSTEM_DIRECTORIES,
     write_fat32_volume,
 )
 from scripts.fat_image_tree import build_tree
@@ -42,6 +43,21 @@ class SystemLayoutContracts(unittest.TestCase):
             build_tree({"bin/../shell.prg": b"x"})
         with self.assertRaisesRegex(ValueError, "collides"):
             build_tree({"bin": b"x", "bin/tool.prg": b"y"})
+
+    def test_tree_supports_bounded_empty_directories(self):
+        tree = build_tree({}, NATIVE_SYSTEM_DIRECTORIES)
+        trash = next(item for item in tree.directories
+                     if item.name == "trash")
+        self.assertEqual(
+            [item.name for item in trash.directories], ["files", "info"]
+        )
+        self.assertTrue(all(not item.files for item in trash.directories))
+        with self.assertRaisesRegex(ValueError, "lowercase"):
+            build_tree({}, ["TRASH/files"])
+        with self.assertRaisesRegex(ValueError, "depth"):
+            build_tree({}, ["a/b/c/d/e"])
+        with self.assertRaisesRegex(ValueError, "collides"):
+            build_tree({"trash": b"file"}, ["trash/files"])
 
     def test_reist_configuration_defaults_are_versioned_and_bounded(self):
         required = {
@@ -138,6 +154,16 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertEqual(root[b"SBIN       "][12], 0x08)
         self.assertEqual(root[b"USR        "][12], 0x08)
         self.assertEqual(root[b"ETC        "][12], 0x08)
+        self.assertEqual(root[b"TRASH      "][11], 0x10)
+        trash_cluster = struct.unpack_from("<H", root[b"TRASH      "], 26)[0]
+        trash = cluster_entries(trash_cluster)
+        self.assertEqual(trash[b"FILES      "][11], 0x10)
+        self.assertEqual(trash[b"INFO       "][11], 0x10)
+        for name in (b"FILES      ", b"INFO       "):
+            cluster = struct.unpack_from("<H", trash[name], 26)[0]
+            self.assertEqual(
+                set(cluster_entries(cluster)), {b".          ", b"..         "}
+            )
         sbin_cluster = struct.unpack_from("<H", root[b"SBIN       "], 26)[0]
         sbin = cluster_entries(sbin_cluster)
         self.assertEqual(sbin[b"SVCCTL  PRG"][12], 0x18)
@@ -184,6 +210,12 @@ class SystemLayoutContracts(unittest.TestCase):
     def test_builds_and_runtime_use_only_canonical_targets(self):
         makefile = self.read("Makefile")
         windows = self.read("scripts/build-windows.ps1")
+        native_builder = "scripts/create_native_boot_image.py"
+        self.assertIn(native_builder, makefile)
+        self.assertIn(native_builder, windows)
+        self.assertEqual(
+            NATIVE_SYSTEM_DIRECTORIES, ("trash/files", "trash/info")
+        )
         for target in (
             "bin/shell.prg", "sbin/svcctl.prg",
             "libexec/reist/storage.prg",

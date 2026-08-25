@@ -260,6 +260,16 @@ Hosttests prüfen Mountpräfixe, Lebenszyklen und Adapterinvarianten. QEMU-
 Gasttests bleiben erforderlich, weil nur sie Treiber, Partitionstransport,
 VFS, Syscalls und Ring 3 gemeinsam ausführen.
 
+Native FAT32-HDD-Images enthalten bereits im frisch erzeugten Zustand die
+leeren Verzeichnisse `/trash/files` und `/trash/info`. Der begrenzte
+Imagebaum nimmt solche expliziten Verzeichnisse unter denselben Regeln wie
+Dateipfade an: kleingeschriebenes kanonisches VFAT, höchstens vier Ebenen,
+begrenzte Directory-Slots und Ablehnung jeder Datei-/Verzeichniskollision.
+Dadurch hängt der Desktopstart nicht von einer frühen Mutation des
+Bootmediums ab; `desktop_trash_prepare` bleibt als idempotenter Fallback für
+ältere, schreibbare Images bestehen. Das Rettungs-Floppy erhält diese
+HDD-Verzeichnisse nicht.
+
 VFAT-Langnamen verwenden in der bestehenden 256-Byte-Pfad-ABI validiertes
 RFC-3629-UTF-8 und auf dem Medium UTF-16LE. Ein gemeinsamer fester Codec
 verwirft Overlong-Sequenzen, Surrogatskalare, Werte über U+10FFFF und

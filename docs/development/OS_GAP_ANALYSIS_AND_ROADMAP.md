@@ -2270,6 +2270,14 @@ Scheduling-Punkte, ohne die Heartbeat- oder WCET-Deadline aufzuweichen.
 Gezielte Regressionen, QEMU- und VMware-Framebuffer-Pakete sowie der
 QEMU-Runtime-Lauf bis `TEST_OK` bestehen; der sichtbare Übergang auf dem ASUS-
 Ziel bleibt der abschließende manuelle Hardware-Nachweis.
+Der nächste Hardwarelauf zeigte einen fehlenden `/trash`-Root. Das
+abgeschlossene `R2.2f` erweitert den gemeinsamen nativen FAT32-Imagebaum um
+explizite, leere und weiterhin begrenzte Verzeichnisse. `/trash/files` und
+`/trash/info` sind
+damit bereits vor dem ersten Desktopstart vorhanden; der Laufzeit-`mkdir`
+bleibt nur Kompatibilitätsfallback für ältere schreibbare Medien.
+Die Hostregressionen und beide vollständigen Framebuffer-Paketbuilds bestehen;
+der ASUS-Ersatzimage-Test bleibt der manuelle Hardware-Nachweis.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

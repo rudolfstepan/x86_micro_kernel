@@ -129,7 +129,8 @@ def read_fat32_root_files(image, partition_lba):
         entry = root_data[offset:offset + 32]
         if entry[0] == 0:
             break
-        if entry[0] == 0xE5 or entry[11] == 0x0F or entry[11] & 0x08:
+        if (entry[0] == 0xE5 or entry[11] == 0x0F or
+                entry[11] & 0x08 or entry[11] & 0x10):
             continue
         start_cluster = (
             struct.unpack_from("<H", entry, 20)[0] << 16
@@ -369,9 +370,9 @@ class NativeBootImageTests(unittest.TestCase):
                          - first_data_sector)
         self.assertEqual(
             struct.unpack_from("<I", fsinfo, 488)[0],
-            cluster_count - 5,
+            cluster_count - 8,
         )
-        self.assertEqual(struct.unpack_from("<I", fsinfo, 492)[0], 7)
+        self.assertEqual(struct.unpack_from("<I", fsinfo, 492)[0], 10)
 
     def test_root_directory_chain_grows_for_many_data_files(self):
         extra_files = {f"f{index:02}.txt": b"" for index in range(16)}

@@ -11,6 +11,58 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2f-native-trash-layout"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Provision the empty trash hierarchy in native FAT32 images"
+scope = "Repair the real-hardware desktop failure where /trash is absent. The native FAT32 image tree currently derives directories only from packaged files, so an intentionally empty trash has no on-disk representation and depends on a startup mutation. Extend the bounded image-tree builder with explicit empty directories and provision /trash/files plus /trash/info in every native HDD image. Preserve lowercase canonical paths, depth and directory-entry bounds, collision rejection, an initially empty trash indication, unchanged floppy size, and runtime mkdir fallback for older writable media. Prove the exact FAT32 directory entries, Make/Windows common-builder coverage, desktop contract, and QEMU/VMware framebuffer packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/fat_image_tree.py",
+  "scripts/create_native_boot_image.py",
+  "test/test_system_layout.py",
+  "test/test_native_boot_image.py",
+  "test/test_desktop_trash_source.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "every native FAT32 image contains empty /trash/files and /trash/info directories",
+  "the trash directories contain only FAT dot entries before first use",
+  "explicit directories obey the same lowercase path depth collision and entry-capacity bounds as files",
+  "the floppy image layout and capacity remain unchanged",
+  "desktop runtime preparation remains an idempotent fallback for older writable images"
+]
+targeted_tests = [
+  "python test/test_system_layout.py -v",
+  "python test/test_native_boot_image.py -v",
+  "python test/test_desktop_trash_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the fix requires a placeholder file that makes an empty trash appear full",
+  "the image builder accepts an unbounded noncanonical or colliding directory path",
+  "the floppy image grows or changes its packaged hierarchy",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "fix: provision trash directories in native images"
+evidence = [
+  "python test/test_system_layout.py -v: PASS (6 tests), including exact empty TRASH/FILES and TRASH/INFO FAT32 entries plus bounded collision rejection",
+  "python test/test_native_boot_image.py -v: PASS (17 tests), including adjusted allocation accounting and unchanged VMware/native boot contracts",
+  "python test/test_desktop_trash_source.py -v: PASS (3 tests), including recoverable bounded trash behavior and both image icon layouts",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PACKAGE PASS in 24s; log build/codex-agent/20260825-201843-package-qemu-framebuffer.log",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PACKAGE PASS in 26s; log build/codex-agent/20260825-201915-package-vmware-framebuffer.log",
+  "manual ASUS acceptance remains: the replacement HDD image must open an initially empty trash without reporting /trash missing"
+]
+
+[[packages]]
 id = "R2.2e-nvidia-vbe-restart-preservation"
 status = "done"
 phase = "post-s0"
