@@ -7,6 +7,16 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R2.2-fat-timestamp-completion` schließt die verbliebene FAT12-Lücke im bereits
+öffentlichen Zeitstempelvertrag. Neue Dateien, Verzeichnisse sowie `.`/`..`
+erhalten Create-, Write- und date-only Access-Felder vor ihrer Publikation;
+erfolgreiche Inhalts- und Größenänderungen tragen mtime im selben
+Directory-Write nach. `touch` bewahrt Create-Felder, Inhalt und Identität und
+setzt mtime sowie date-only atime. FAT32s bestehender Pfad ist durch denselben
+Hostvertrag abgesichert. FAT-Kalender bleiben lokale, nicht näher
+spezifizierte Zeit mit Zwei-Sekunden-mtime und Tages-atime; Reads und
+Metadatenabfragen verursachen keine Medienwrites.
+
 `R2.2-fat32-ata-image-fault-campaign` schließt die zweite Hälfte der
 vollständigen Sektorwrite-Fehlermatrix. Der unveränderte Journal-v2-Datensatz
 liegt jetzt in einem festen transportneutralen Kern, den ATA/AHCI und der
@@ -468,7 +478,11 @@ Systemhierarchie verfügbar: `/bin/rename.prg`, `/bin/stat.prg`,
 gemeinsamen Konverter `fs/vfs/vfs_time.h`; `x86os_touch()` verwendet den
 append-only Syscall 108, um mtime und atime zu aktualisieren. FAT begrenzt
 mtime auf zwei Sekunden und atime auf ein Datum ohne Uhrzeit. EXT2 liefert
-seine vorhandenen Inode-Zeiten, bleibt für `touch` jedoch read-only.
+seine vorhandenen Inode-Zeiten, bleibt für `touch` jedoch read-only. Ungültige
+FAT-Kalenderfelder werden als Zeitwert null veröffentlicht. Die Werte werden
+als lokale, nicht näher spezifizierte FAT-Zeit interpretiert; eine
+Zeitzonenverschiebung wird nicht geraten. Nur Erzeugung, Write/Truncate und
+explizites `touch` ändern Zeitfelder, nie Read/Stat/Readdir.
 
 ### FAT12
 

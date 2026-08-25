@@ -77,6 +77,11 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f6s` sowie die Schreibzulassung
     erfolgreicher Mount muss danach das vollständig alte oder neue Abbild samt
     Kette, Nullbytes, FAT-Spiegeln und unabhängiger Datei zeigen. Echte
     Headerambiguität wird getrennt als fail-closed Mountablehnung gezählt.
+20. vollständige Zeitstempelpublikation: Erzeugung initialisiert Create-,
+    Write- und date-only Access-Felder auch für Verzeichnisse und Dot-Einträge;
+    Write/Truncate aktualisieren mtime im bestehenden Directory-Journalwrite,
+    `touch` zusätzlich date-only atime. Read, Stat und Readdir schreiben keine
+    Zugriffszeit auf das Medium.
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen

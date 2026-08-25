@@ -8,6 +8,7 @@
  */
 #include "fs/fat12/fat12.h"
 #include "fs/vfs/vfs.h"
+#include "fs/vfs/vfs_time.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -37,6 +38,12 @@ static bool campaign_fault_armed;
 static bool campaign_power_cut;
 static uint32_t campaign_cut_after_write;
 static uint32_t campaign_write_count;
+static int test_year = 2026;
+static int test_month = 8;
+static int test_day = 23;
+static int test_hour = 12;
+static int test_minute;
+static int test_second;
 extern int get_next_cluster(int current_cluster);
 extern fat12_t* fat12;
 extern vfs_filesystem_ops_t fat12_vfs_ops;
@@ -48,15 +55,25 @@ int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
 }
 
 void read_date(int* year, int* month, int* day) {
-    if (year) *year = 2026;
-    if (month) *month = 8;
-    if (day) *day = 23;
+    if (year) *year = test_year;
+    if (month) *month = test_month;
+    if (day) *day = test_day;
 }
 
 void read_time(int* hours, int* minutes, int* seconds) {
-    if (hours) *hours = 12;
-    if (minutes) *minutes = 0;
-    if (seconds) *seconds = 0;
+    if (hours) *hours = test_hour;
+    if (minutes) *minutes = test_minute;
+    if (seconds) *seconds = test_second;
+}
+
+static void set_test_clock(int year, int month, int day, int hour,
+                           int minute, int second) {
+    test_year = year;
+    test_month = month;
+    test_day = day;
+    test_hour = hour;
+    test_minute = minute;
+    test_second = second;
 }
 
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
@@ -422,6 +439,30 @@ int main(void) {
     CHECK(fs.ops->create(&fs, "/NEW.TXT") == VFS_OK);
     vfs_node_t* node = NULL;
     CHECK(fs.ops->open(&fs, "/NEW.TXT", &node) == VFS_OK && node != NULL);
+    vfs_dir_entry_t open_info;
+    const uint32_t created_at =
+        vfs_time_from_calendar(2026, 8, 23, 12, 0, 0);
+    const uint32_t accessed_at_create =
+        vfs_time_from_calendar(2026, 8, 23, 0, 0, 0);
+    CHECK(fs.ops->fstat(node, &open_info) == VFS_OK);
+    CHECK(open_info.create_time == created_at &&
+          open_info.modify_time == created_at &&
+          open_info.access_time == accessed_at_create);
+    directory_entry* raw_new = NULL;
+    directory_entry* root_entries =
+        (directory_entry*)floppy[TEST_ROOT_SECTOR];
+    for (uint32_t index = 0U; index < FAT12_MAX_ROOT_ENTRIES; ++index) {
+        if (root_entries[index].filename[0] == 0x00) break;
+        if (memcmp(root_entries[index].filename, "NEW     ", 8) == 0) {
+            raw_new = &root_entries[index];
+            break;
+        }
+    }
+    CHECK(raw_new != NULL);
+    CHECK(raw_new->create_date != 0U && raw_new->create_time != 0U &&
+          raw_new->last_write_date == raw_new->create_date &&
+          raw_new->last_write_time == raw_new->create_time &&
+          raw_new->last_access_date == raw_new->create_date);
     vfs_node_t* alias_node = NULL;
     CHECK(fs.ops->open(&fs, "/new.txt", &alias_node) == VFS_OK &&
           alias_node != NULL);
@@ -430,17 +471,36 @@ int main(void) {
     uint8_t payload[900];
     for (uint32_t i = 0; i < sizeof(payload); ++i)
         payload[i] = (uint8_t)(i * 17u + 3u);
+    set_test_clock(2026, 8, 23, 12, 1, 5);
     CHECK(fs.ops->write(node, 0, sizeof(payload), payload) ==
           (int)sizeof(payload));
+    const uint32_t modified_after_write =
+        vfs_time_from_calendar(2026, 8, 23, 12, 1, 4);
+    CHECK(fs.ops->fstat(node, &open_info) == VFS_OK);
+    CHECK(open_info.create_time == created_at &&
+          open_info.modify_time == modified_after_write &&
+          open_info.access_time == accessed_at_create);
+    directory_entry raw_before_read = *raw_new;
+    set_test_clock(2026, 8, 24, 7, 8, 9);
     uint8_t verify[900];
     memset(verify, 0, sizeof(verify));
     CHECK(fs.ops->read(node, 0, sizeof(verify), verify) ==
           (int)sizeof(verify));
     CHECK(memcmp(payload, verify, sizeof(payload)) == 0);
-    vfs_dir_entry_t open_info;
     CHECK(fs.ops->fstat(node, &open_info) == VFS_OK);
     CHECK(strcmp(open_info.name, "NEW.TXT") == 0 &&
           open_info.type == VFS_FILE && open_info.size == sizeof(payload));
+    CHECK(memcmp(&raw_before_read, raw_new, sizeof(raw_before_read)) == 0);
+    CHECK(fs.ops->close(node) == VFS_OK);
+    CHECK(fs.ops->touch(&fs, "/NEW.TXT") == VFS_OK);
+    CHECK(fs.ops->stat(&fs, "/NEW.TXT", &open_info) == VFS_OK);
+    CHECK(open_info.create_time == created_at &&
+          open_info.modify_time ==
+              vfs_time_from_calendar(2026, 8, 24, 7, 8, 8) &&
+          open_info.access_time ==
+              vfs_time_from_calendar(2026, 8, 24, 0, 0, 0) &&
+          open_info.size == sizeof(payload));
+    CHECK(fs.ops->open(&fs, "/NEW.TXT", &node) == VFS_OK && node != NULL);
     uint16_t truncated_start = (uint16_t)node->inode;
     CHECK(truncated_start >= FAT12_MIN_CLUSTER);
     uint16_t truncated_second = fat12_get_fat_entry(truncated_start);
@@ -468,6 +528,7 @@ int main(void) {
     CHECK(fat12_get_fat_entry(truncated_start) == FAT12_FREE_CLUSTER);
     CHECK(fs.ops->read(node, 0, sizeof(verify), verify) == 0);
     CHECK(fs.ops->close(node) == VFS_OK);
+    set_test_clock(2026, 8, 23, 12, 0, 0);
     CHECK(run_fat12_image_fault_campaign(&fs, &drive) == 0);
 
     CHECK(fs.ops->mkdir(&fs, "/EMPTY") == VFS_OK);

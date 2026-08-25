@@ -245,6 +245,14 @@ werden als `EIO` gemeldet und sperren weitere VFS-Mutationen, statt veraltete
 In-Memory-Größen zu restaurieren. Kritische FAT12-Replikate, fremde FAT-Medien
 und EXT2 erhalten keine neue Schreibautorität. Nur das Kompatibilitätsprofil
 erhält Syscall 123 automatisch.
+Der R2.2-Zeitstempelabschluss behält das bestehende Metadaten-ABI aus drei
+32-Bit-Unix-Sekundenwerten bei. FAT12 und FAT32 initialisieren Create-, Write-
+und date-only Access-Felder vor der Directory-Publikation; Write/Truncate
+nehmen mtime in dieselbe journalgeschützte Metadatenmutation auf. `TOUCH`
+ändert nur mtime und date-only atime. Reads und Metadatenabfragen erzeugen
+keinen impliziten Medienwrite. Beschädigte FAT-Kalenderwerte werden null;
+FAT-Zeit bleibt lokal/zeitzonenunspezifiziert mit Zwei-Sekunden-mtime und
+Tages-atime. EXT2 erhält dadurch keine Schreibautorität.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

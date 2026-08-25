@@ -590,6 +590,56 @@ failed:
     return -1;
 }
 
+static int test_fat_timestamps(void) {
+    static const char path[] = "FATTIME.TMP";
+    static const char payload[] = "timestamp";
+    x86os_file_info_t created;
+    x86os_file_info_t written;
+    x86os_file_info_t touched;
+    x86os_file_info_t observed;
+    char actual[sizeof(payload) - 1U];
+
+    (void)x86os_unlink(path);
+    int descriptor = x86os_open_flags(path, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor < 0 || x86os_fstat(descriptor, &created) != 0 ||
+        created.create_time == 0U || created.modify_time == 0U ||
+        created.access_time == 0U ||
+        x86os_write(descriptor, payload, sizeof(payload) - 1U) !=
+            (int)(sizeof(payload) - 1U) ||
+        x86os_fstat(descriptor, &written) != 0 ||
+        written.create_time != created.create_time ||
+        written.modify_time < created.modify_time ||
+        written.access_time != created.access_time ||
+        written.size != sizeof(payload) - 1U ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+    descriptor = -1;
+
+    if (x86os_touch(path) != 0 || x86os_stat(path, &touched) != 0 ||
+        touched.create_time != created.create_time ||
+        touched.modify_time < written.modify_time ||
+        touched.access_time == 0U || touched.size != written.size)
+        goto failed;
+
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 ||
+        x86os_read(descriptor, actual, sizeof(actual)) !=
+            (int)sizeof(actual) ||
+        !bytes_equal(actual, payload, sizeof(actual)) ||
+        x86os_fstat(descriptor, &observed) != 0 ||
+        observed.create_time != touched.create_time ||
+        observed.modify_time != touched.modify_time ||
+        observed.access_time != touched.access_time ||
+        x86os_close(descriptor) != 0 || x86os_unlink(path) != 0)
+        goto failed;
+    return 0;
+
+failed:
+    if (descriptor >= 0) (void)x86os_close(descriptor);
+    (void)x86os_unlink(path);
+    return -1;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -1621,6 +1671,12 @@ int main(int argc, char **argv) {
         return 13;
     }
     x86os_puts("TEST_STAGE FTRUNCATE_OK\n");
+
+    if (test_fat_timestamps() != 0) {
+        x86os_puts("TEST_FAIL FAT_TIMESTAMPS\n");
+        return 14;
+    }
+    x86os_puts("TEST_STAGE FAT_TIMESTAMPS_OK\n");
 
     if (test_open_namespace_locks() != 0) {
         x86os_puts("TEST_FAIL OPEN_NAMESPACE_LOCKS\n");

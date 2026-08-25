@@ -151,6 +151,17 @@ Fehler bei dieser nachgelagerten Rückgewinnung liefert `EIO` und aktiviert den
 VFS-Schreibzaun, ohne veraltete Node-Metadaten wiederherzustellen. EXT2 liefert
 `EROFS`; 64-Bit-Größen und Sparse-Extents sind nicht Teil dieser ABI.
 
+Der feste Metadatenvertrag veröffentlicht `create_time`, `modify_time` und
+`access_time` als Unix-Sekunden, ohne das ABI zu erweitern. FAT12 und FAT32
+validieren Kalenderfelder vor der Konvertierung; ungültige Werte werden null.
+Neue Directory-Einträge erhalten Create-, Write- und date-only Access-Felder
+vor ihrer Publikation. Write und Truncate aktualisieren mtime in demselben
+journalgeschützten Directory-Write wie Größe und Clusteridentität. Explizites
+`touch` bewahrt Create-Felder, Inhalt, Größe und Identität und setzt mtime sowie
+date-only atime. Read, `stat`, `fstat` und `readdir` bleiben ohne Medienwirkung,
+insbesondere auf fremden oder read-only FAT-Medien. FAT-Zeit ist lokal und
+ohne spezifizierte Zeitzone; mtime hat Zwei-Sekunden-, atime Tagesauflösung.
+
 Offene Nicht-Root-Nodes belegen zusätzlich genau einen von 256 statischen
 VFS-Registrierungsslots. Vor `unlink`, `rmdir` sowie Quell- und Zielseite von
 `rename` löst VFS den aktuellen Pfad einmal begrenzt auf und vergleicht die

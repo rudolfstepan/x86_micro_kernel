@@ -258,13 +258,35 @@ static void fat12_fill_stat(const directory_entry* source,
     target->access_time = vfs_time_from_fat(source->last_access_date, 0);
 }
 
-static void fat12_set_current_time(directory_entry* entry) {
+static void fat12_current_fields(uint16_t* date, uint16_t* time) {
     int year, month, day, hours, minutes, seconds;
     read_date(&year, &month, &day);
     read_time(&hours, &minutes, &seconds);
-    entry->last_write_date = vfs_fat_date(year, month, day);
-    entry->last_write_time = vfs_fat_time(hours, minutes, seconds);
-    entry->last_access_date = entry->last_write_date;
+    if (date) *date = vfs_fat_date(year, month, day);
+    if (time) *time = vfs_fat_time(hours, minutes, seconds);
+}
+
+static void fat12_set_creation_time(directory_entry* entry) {
+    uint16_t date, time;
+    fat12_current_fields(&date, &time);
+    entry->create_time_tenths = 0U;
+    entry->create_time = time;
+    entry->create_date = date;
+    entry->last_write_time = time;
+    entry->last_write_date = date;
+    entry->last_access_date = date;
+}
+
+static void fat12_set_modified_time(directory_entry* entry) {
+    fat12_current_fields(&entry->last_write_date, &entry->last_write_time);
+}
+
+static void fat12_set_touch_time(directory_entry* entry) {
+    uint16_t date, time;
+    fat12_current_fields(&date, &time);
+    entry->last_write_time = time;
+    entry->last_write_date = date;
+    entry->last_access_date = date;
 }
 
 static int fat12_resolve_parent(const char* path, uint16_t* parent,
@@ -734,6 +756,7 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     if (ok) {
         entry.first_cluster_low = start;
         if (end > entry.file_size) entry.file_size = end;
+        fat12_set_modified_time(&entry);
         fat12_entry_location_t location;
         memset(&location, 0, sizeof(location));
         location.sector = handle->directory_sector;
@@ -855,7 +878,7 @@ static int fat12_vfs_truncate(vfs_node_t* node, uint32_t size) {
     if (ok) {
         entry.first_cluster_low = start_cluster;
         entry.file_size = size;
-        fat12_set_current_time(&entry);
+        fat12_set_modified_time(&entry);
         fat12_entry_location_t location = {
             .sector = handle->directory_sector,
             .slot = handle->directory_slot,
@@ -946,12 +969,14 @@ static int fat12_vfs_mkdir(vfs_filesystem_t* fs, const char* path) {
         dots[0].filename[0] = '.';
         dots[0].attributes = FILE_ATTR_DIRECTORY;
         dots[0].first_cluster_low = cluster;
+        fat12_set_creation_time(&dots[0]);
         memset(dots[1].filename, ' ', 8);
         memset(dots[1].extension, ' ', 3);
         dots[1].filename[0] = '.';
         dots[1].filename[1] = '.';
         dots[1].attributes = FILE_ATTR_DIRECTORY;
         dots[1].first_cluster_low = parent;
+        fat12_set_creation_time(&dots[1]);
         if (!fat12_write_logical_sectors(fat12_cluster_sector(cluster), 1,
                                          sector)) status = VFS_ERR_IO;
     }
@@ -963,6 +988,7 @@ static int fat12_vfs_mkdir(vfs_filesystem_t* fs, const char* path) {
         memcpy(entry.extension, name + 8, 3);
         entry.attributes = FILE_ATTR_DIRECTORY;
         entry.first_cluster_low = cluster;
+        fat12_set_creation_time(&entry);
         if (!fat12_write_entry(&slot, &entry)) status = VFS_ERR_IO;
     }
     if (status != VFS_OK) {
@@ -1039,7 +1065,7 @@ static int fat12_vfs_create(vfs_filesystem_t* fs, const char* path) {
         status = VFS_ERR_IO;
     if (status == VFS_OK) {
         entry.attributes = FILE_ATTR_ARCHIVE;
-        fat12_set_current_time(&entry);
+        fat12_set_creation_time(&entry);
         if (!fat12_write_entry(&slot, &entry)) status = VFS_ERR_IO;
     }
     if (status != VFS_OK) {
@@ -1091,7 +1117,7 @@ static int fat12_vfs_touch(vfs_filesystem_t* fs, const char* path) {
     if (location.entry.attributes & FILE_ATTR_DIRECTORY) return VFS_ERR_IS_DIR;
     if (location.entry.attributes & FILE_ATTR_READONLY)
         return VFS_ERR_READ_ONLY;
-    fat12_set_current_time(&location.entry);
+    fat12_set_touch_time(&location.entry);
     return fat12_write_entry(&location, &location.entry) ? VFS_OK : VFS_ERR_IO;
 }
 

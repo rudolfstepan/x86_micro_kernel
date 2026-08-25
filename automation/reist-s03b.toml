@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2-fat-timestamp-completion"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2-fat-timestamp-completion"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Complete FAT timestamp publication through VFS"
@@ -67,7 +67,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "fs: complete FAT timestamp publication"
-evidence = []
+evidence = [
+  "six FAT timestamp source contracts passed after one focused test-slice repair",
+  "FAT12 host behavior passed creation write truncate touch read-side-effect and raw-directory timestamp checks",
+  "FAT32 host behavior passed existing creation and mutation semantics plus failed-directory-write timestamp rollback",
+  "QEMU VGA package gate passed in 5 seconds",
+  "normal QEMU runtime passed in 27 seconds with FAT_TIMESTAMPS_OK and TEST_OK"
+]
 
 [[packages]]
 id = "R2.2-fat32-ata-image-fault-campaign"

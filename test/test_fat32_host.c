@@ -8,6 +8,7 @@
  */
 #include "fs/fat32/fat32.h"
 #include "fs/vfs/vfs.h"
+#include "fs/vfs/vfs_time.h"
 #include "drivers/block/ata_journal.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -21,6 +22,12 @@
 static uint8_t test_disk[TEST_SECTORS][SECTOR_SIZE];
 static unsigned int root_read_failures;
 static bool fail_directory_write_once;
+static int test_year = 2026;
+static int test_month = 8;
+static int test_day = 3;
+static int test_hour = 12;
+static int test_minute = 34;
+static int test_second = 56;
 static bool fail_directory_verify_once;
 static int payload_writes_before_failure = -1;
 static int fat_writes_before_verify_failure = -1;
@@ -216,15 +223,25 @@ bool vfs_host_mutation_end(bool commit) {
 }
 
 void read_date(int* year, int* month, int* day) {
-    *year = 2026;
-    *month = 8;
-    *day = 3;
+    *year = test_year;
+    *month = test_month;
+    *day = test_day;
 }
 
 void read_time(int* hours, int* minutes, int* seconds) {
-    *hours = 12;
-    *minutes = 34;
-    *seconds = 56;
+    *hours = test_hour;
+    *minutes = test_minute;
+    *seconds = test_second;
+}
+
+static void set_test_clock(int year, int month, int day, int hour,
+                           int minute, int second) {
+    test_year = year;
+    test_month = month;
+    test_day = day;
+    test_hour = hour;
+    test_minute = minute;
+    test_second = second;
 }
 
 static void make_test_volume(void) {
@@ -245,6 +262,7 @@ static void make_test_volume(void) {
     fat_writes_before_verify_failure = -1;
     fat_verify_read_failures = 0;
     fat_verify_failure_burst = 1;
+    set_test_clock(2026, 8, 3, 12, 34, 56);
     struct fat32_boot_sector boot;
     memset(&boot, 0, sizeof(boot));
     boot.bytes_per_sector = SECTOR_SIZE;
@@ -892,6 +910,67 @@ int main(void) {
         CHECK(vfs_close(node) == VFS_OK);
     }
     CHECK(cache_flushes == 2);
+
+    /* FAT timestamps are published with the directory entry. Reads and
+     * metadata queries never synthesize an implicit access-time write. */
+    CHECK(vfs_create("/TIME.TMP") == VFS_OK);
+    vfs_dir_entry_t timestamp_info;
+    CHECK(vfs_stat("/TIME.TMP", &timestamp_info) == VFS_OK);
+    const uint32_t timestamp_created =
+        vfs_time_from_calendar(2026, 8, 3, 12, 34, 56);
+    const uint32_t timestamp_accessed =
+        vfs_time_from_calendar(2026, 8, 3, 0, 0, 0);
+    CHECK(timestamp_info.create_time == timestamp_created &&
+          timestamp_info.modify_time == timestamp_created &&
+          timestamp_info.access_time == timestamp_accessed);
+    struct fat32_dir_entry* raw_timestamp = find_raw_root_entry("TIME.TMP");
+    CHECK(raw_timestamp != NULL && raw_timestamp->crt_date != 0U &&
+          raw_timestamp->crt_time != 0U &&
+          raw_timestamp->write_date == raw_timestamp->crt_date &&
+          raw_timestamp->write_time == raw_timestamp->crt_time &&
+          raw_timestamp->last_access_date == raw_timestamp->crt_date);
+    set_test_clock(2026, 8, 3, 12, 36, 59);
+    vfs_node_t* timestamp_node = NULL;
+    CHECK(vfs_open("/TIME.TMP", &timestamp_node) == VFS_OK);
+    const uint8_t timestamp_payload = 'T';
+    CHECK(vfs_write(timestamp_node, 0U, 1U, &timestamp_payload) == 1);
+    CHECK(vfs_close(timestamp_node) == VFS_OK);
+    CHECK(vfs_stat("/TIME.TMP", &timestamp_info) == VFS_OK);
+    CHECK(timestamp_info.create_time == timestamp_created &&
+          timestamp_info.modify_time ==
+              vfs_time_from_calendar(2026, 8, 3, 12, 36, 58) &&
+          timestamp_info.access_time == timestamp_accessed);
+    struct fat32_dir_entry timestamp_before_read = *raw_timestamp;
+    set_test_clock(2026, 8, 4, 1, 2, 3);
+    CHECK(vfs_open("/TIME.TMP", &timestamp_node) == VFS_OK);
+    uint8_t timestamp_read = 0U;
+    CHECK(vfs_read(timestamp_node, 0U, 1U, &timestamp_read) == 1 &&
+          timestamp_read == timestamp_payload);
+    CHECK(vfs_fstat(timestamp_node, &timestamp_info) == VFS_OK);
+    CHECK(vfs_close(timestamp_node) == VFS_OK);
+    CHECK(memcmp(&timestamp_before_read, raw_timestamp,
+                 sizeof(timestamp_before_read)) == 0);
+    CHECK(vfs_touch("/TIME.TMP") == VFS_OK);
+    CHECK(vfs_stat("/TIME.TMP", &timestamp_info) == VFS_OK);
+    CHECK(timestamp_info.create_time == timestamp_created &&
+          timestamp_info.modify_time ==
+              vfs_time_from_calendar(2026, 8, 4, 1, 2, 2) &&
+          timestamp_info.access_time ==
+              vfs_time_from_calendar(2026, 8, 4, 0, 0, 0) &&
+          timestamp_info.size == 1U);
+    CHECK(vfs_open("/TIME.TMP", &timestamp_node) == VFS_OK);
+    const vfs_dir_entry_t timestamp_before_failure = timestamp_info;
+    set_test_clock(2026, 8, 4, 1, 4, 5);
+    fail_directory_write_once = true;
+    CHECK(vfs_truncate(timestamp_node, 0U) == VFS_ERR_IO);
+    CHECK(vfs_close(timestamp_node) == VFS_OK);
+    CHECK(vfs_stat("/TIME.TMP", &timestamp_info) == VFS_OK);
+    CHECK(timestamp_info.size == timestamp_before_failure.size &&
+          timestamp_info.create_time == timestamp_before_failure.create_time &&
+          timestamp_info.modify_time == timestamp_before_failure.modify_time &&
+          timestamp_info.access_time == timestamp_before_failure.access_time);
+    CHECK(vfs_delete("/TIME.TMP") == VFS_OK);
+    set_test_clock(2026, 8, 3, 12, 34, 56);
 
     uint8_t truncate_payload[700];
     memset(truncate_payload, 'T', sizeof(truncate_payload));
