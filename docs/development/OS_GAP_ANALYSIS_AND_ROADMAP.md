@@ -1603,7 +1603,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   ebenfalls ausschließlich Operationen 5 und 7. Zusätzlich zu 256 Byte Pfad,
   16 Ebenen und 512 Knoten begrenzt eine absolute monotone Fünf-Sekunden-
   Deadline den vollständigen Lauf; jeder Request erhält höchstens eine Sekunde
-  der verbleibenden Zeit. Mutierende Shellpfade und der Desktop bleiben
+  der verbleibenden Zeit. Der Desktop-Explorer verwendet für
+  Verzeichnisvalidierung, Einträge und Leer/Voll-Ordnerproben nun ebenfalls
+  ausschließlich Operationen 5 und 7. Pro atomarem Snapshot gelten 32
+  sichtbare und 128 gescannte Einträge sowie eine absolute monotone
+  Fünf-Sekunden-Deadline; Fehler bewahren das zuvor veröffentlichte Fenster.
+  Mutierende Shell-/Papierkorbpfade und große Desktop-Ressourcen bleiben
   getrennte Folgepakete.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;

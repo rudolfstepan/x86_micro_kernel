@@ -20,10 +20,16 @@ class DesktopExplorerSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_EXPLORER_WINDOW_CAPACITY 8U", header)
         self.assertIn("DESKTOP_EXPLORER_ENTRY_CAPACITY 32U", header)
         self.assertIn("DESKTOP_EXPLORER_DOUBLE_CLICK_MS 500U", header)
-        self.assertIn("x86os_readdir_batch", source)
-        self.assertIn("x86os_stat", source)
-        self.assertIn("if (explorer->staging_truncated) break", source)
-        self.assertIn("DESKTOP_EXPLORER_DIRECTORY_PROBE_BATCHES 2U", header)
+        self.assertIn("reist_vfs_readdir_at", source)
+        self.assertIn("reist_vfs_stat", source)
+        self.assertNotIn("x86os_readdir", source)
+        self.assertNotIn("x86os_stat", source)
+        self.assertIn("DESKTOP_EXPLORER_SCAN_CAPACITY 128U", header)
+        self.assertIn("DESKTOP_EXPLORER_DIRECTORY_PROBE_ENTRIES 8U", header)
+        self.assertIn("DESKTOP_EXPLORER_SNAPSHOT_TIMEOUT_MS 5000U", header)
+        self.assertIn("DESKTOP_EXPLORER_REQUEST_TIMEOUT_MS 1000U", header)
+        self.assertIn("snapshot_remaining_timeout", source)
+        self.assertIn("UINT64_MAX - started", source)
         self.assertIn("entry_is_dot_name", source)
         self.assertIn("entry_is_trash_storage_name", source)
         self.assertIn("desktop_explorer_icon_kind", source)
@@ -39,6 +45,13 @@ class DesktopExplorerSourceTests(unittest.TestCase):
             render, r"\b(x86os_open|x86os_read|reist_image_decode|malloc)\s*\("
         )
         self.assertNotRegex(source, r"\b(malloc|calloc|realloc|free)\s*\(")
+        build = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8")
+        mapping = build[build.index('"DESKTOP.PRG": ('):
+                        build.index('"GUIDEMO.PRG"')]
+        for client in ("vfs_stat_client.c", "vfs_read_client.c", "vfs_path.c"):
+            self.assertIn(client, mapping)
+        self.assertIn("DESKTOP_EXPLORER_VFS_OK", desktop)
 
     def test_host_behavior(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
@@ -49,6 +62,7 @@ class DesktopExplorerSourceTests(unittest.TestCase):
             subprocess.run(
                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
                  "-Iuserspace/sdk/include", "-Iuserspace/gui/compositor",
+                 "-Iuserspace/storage/include",
                  str(SOURCE),
                  "userspace/gui/compositor/desktop_drag.c",
                  str(HOST), "-o", str(executable)],

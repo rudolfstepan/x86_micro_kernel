@@ -14,31 +14,42 @@ static const x86os_file_info_t root_entries[] = {
     {"RT12AB34.TRS", X86OS_FILE, 42U, 0U, 0U, 0U},
 };
 
-int x86os_stat(const char *path, x86os_file_info_t *info) {
+static uint64_t monotonic_now = 100U;
+static uint32_t monotonic_calls;
+static uint32_t expire_call;
+
+int x86os_monotonic_ms(uint64_t *value) {
+    assert(value != NULL);
+    ++monotonic_calls;
+    if (monotonic_calls == expire_call) monotonic_now += 6000U;
+    *value = monotonic_now++;
+    return 0;
+}
+
+int reist_vfs_stat(const char *path, x86os_file_info_t *info,
+                   uint32_t timeout_ms) {
+    assert(timeout_ms != 0U && timeout_ms <= 1000U);
     if (strcmp(path, "/") != 0 && strcmp(path, "/Docs") != 0 &&
-        strcmp(path, "/BIN") != 0) return -1;
+        strcmp(path, "/BIN") != 0) return -2;
     memset(info, 0, sizeof(*info));
     strcpy(info->name, path);
     info->type = X86OS_DIRECTORY;
     return 0;
 }
 
-int x86os_readdir_batch(const char *path, uint32_t index,
-                        x86os_file_info_t *entries) {
+int reist_vfs_readdir_at(const char *path, uint32_t index,
+                         x86os_file_info_t *entry, uint32_t timeout_ms) {
+    assert(timeout_ms != 0U && timeout_ms <= 1000U);
     if (strcmp(path, "/Docs") == 0) return 0;
     if (strcmp(path, "/BIN") == 0) {
         if (index != 0U) return 0;
-        entries[0] = (x86os_file_info_t){
+        *entry = (x86os_file_info_t){
             "TOOL.PRG", X86OS_FILE, 1U, 0U, 0U, 0U};
         return 1;
     }
     if (strcmp(path, "/") != 0 || index >= 7U) return 0;
-    uint32_t count = 7U - index;
-    if (count > X86OS_READDIR_BATCH_CAPACITY)
-        count = X86OS_READDIR_BATCH_CAPACITY;
-    for (uint32_t item = 0U; item < count; ++item)
-        entries[item] = root_entries[index + item];
-    return (int)count;
+    *entry = root_entries[index];
+    return 1;
 }
 
 static void test_directory_snapshot_is_sorted_and_atomic(void) {
@@ -60,6 +71,20 @@ static void test_directory_snapshot_is_sorted_and_atomic(void) {
     assert(desktop_explorer_open(&explorer, 0U, "/missing") ==
            DESKTOP_EXPLORER_ENOENT);
     assert(strcmp(explorer.windows[0].path, "/") == 0);
+}
+
+static void test_deadline_failure_keeps_published_snapshot(void) {
+    desktop_explorer_t explorer;
+    desktop_explorer_initialize(&explorer);
+    assert(desktop_explorer_open(&explorer, 0U, "/") == 0);
+    uint32_t generation = explorer.windows[0].snapshot_generation;
+    expire_call = monotonic_calls + 2U;
+    assert(desktop_explorer_open(&explorer, 0U, "/") ==
+           DESKTOP_EXPLORER_ETIMEDOUT);
+    expire_call = 0U;
+    assert(explorer.windows[0].snapshot_generation == generation);
+    assert(strcmp(explorer.windows[0].path, "/") == 0);
+    assert(explorer.windows[0].entry_count == 4U);
 }
 
 static void test_extension_icons_are_case_insensitive(void) {
@@ -172,6 +197,7 @@ static void test_drag_object_is_bound_to_snapshot_generation(void) {
 
 int main(void) {
     test_directory_snapshot_is_sorted_and_atomic();
+    test_deadline_failure_keeps_published_snapshot();
     test_extension_icons_are_case_insensitive();
     test_child_path_and_window_capacity();
     test_same_item_double_click_activates_once();

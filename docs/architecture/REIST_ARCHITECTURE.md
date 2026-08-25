@@ -165,6 +165,13 @@ vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen Kernel-VFS-
 Fallback. Die beiden Baumläufe reichen eine absolute monotone
 Fünf-Sekunden-Deadline als höchstens einsekündige Restbudgets an Operationen 5
 und 7 weiter. Mutationen bleiben ein getrenntes Folgepaket.
+Der Desktop-Explorer verwendet dieselbe Autoritätsgrenze für Verzeichnis-
+`stat`, indexierte Einträge und die Leer/Voll-Ordnerentscheidung. Ein Snapshot
+publiziert höchstens 32 sichtbare Einträge, scannt höchstens 128 und besitzt
+eine absolute monotone Fünf-Sekunden-Deadline. Fehler lassen den zuvor
+publizierten Pfad, Inhalt und die Snapshotgeneration unverändert. Große Font-,
+Icon- und Konfigurationsdateien bleiben auf dem vorhandenen, schedulerfreundlich
+geschnittenen Legacy-Lesepfad, bis ein begrenzter Bulk-Transport existiert.
 Append-only Operationen 12 bis 14 ergänzen explizite READ-/SEEK-/STAT-/
 DELEGATE-Rechte und ausschließlich abschwächende Übergaben an eine exakt
 validierte Prozessgeneration. Eine Übergabe belegt einen eigenen Zielslot,

@@ -11,6 +11,62 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.1-desktop-explorer-vfs-cutover"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Authoritative Ring-3 VFS namespace browsing for Desktop Explorer"
+scope = "Move Desktop Explorer directory validation enumeration and empty/full folder probes from legacy kernel stat/readdir calls to the existing authoritative Ring-3 storage-service operations 5 and 7. Preserve atomic fixed-capacity snapshots sorting hidden trash-name filtering per-window generations and the current 32-visible-entry UI limit. Replace legacy batches with individually validated entries under one absolute five-second monotonic snapshot deadline, cap each request at one second and cap total scanned entries at 128; a timeout or malformed service reply must leave the prior published window unchanged. Link only DESKTOP.PRG to the existing stat/read/path clients and extend the existing guest desktop probe to require a real root snapshot. Large font icon and configuration file reads remain on their sliced legacy read path because the current service data frame carries only 256 bytes; mutation and trash paths remain out of scope."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop_explorer.h",
+  "userspace/gui/compositor/desktop_explorer.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/build_system_programs.py",
+  "test/test_desktop_explorer_source.py",
+  "test/test_desktop_explorer_host.c",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "desktop_explorer.c contains no x86os_stat x86os_readdir or other legacy namespace-read fallback",
+  "one snapshot is bounded by 32 published entries 128 scanned entries and one absolute five-second monotonic deadline",
+  "every operation-5 or operation-7 request receives only the remaining snapshot budget capped at one second",
+  "snapshot staging is published atomically only after target validation enumeration folder probes sorting and path copy all succeed",
+  "folder-probe errors remain conservative as full while a consumed deadline prevents snapshot publication",
+  "large resource reads mutation APIs syscall ABI storage frames and filesystem formats remain unchanged"
+]
+targeted_tests = [
+  "python test/test_desktop_explorer_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-desktop-explorer-vfs.log"
+]
+stop_conditions = [
+  "the authoritative storage service cannot snapshot the packaged FAT32 root within five seconds",
+  "the desktop requires a larger storage frame ABI solely to preserve current startup latency",
+  "a failed staged refresh can alter the prior published window or generation",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "desktop: browse through ring3 storage service"
+evidence = [
+  "both focused Desktop Explorer source and host behavior tests passed, including atomic preservation of the published snapshot after deadline expiry",
+  "the QEMU VGA package build passed in 9 seconds with DESKTOP.PRG linked against the authoritative stat read and path clients",
+  "the final QEMU VMware-SVGA2D guest opened the real packaged FAT32 root, found htdocs and emitted DESKTOP_EXPLORER_VFS_OK and TEST_OK",
+  "each snapshot remains bounded by 32 published entries, 128 scanned entries, an absolute five-second monotonic deadline and at most one-second request slices",
+  "desktop_explorer.c contains no x86os_stat, x86os_readdir or another legacy namespace-read fallback",
+  "no queued package remains and active_id is empty"
+]
+
+[[packages]]
 id = "R2.1-vfs-readonly-walker-cutover"
 status = "done"
 phase = "post-s0"

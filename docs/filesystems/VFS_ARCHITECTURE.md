@@ -62,8 +62,10 @@ normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
 Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
 oder Protokollfehler beendet sich das Programm; die Prozessbereinigung widerruft
 den generationsgebundenen Request. `CAT.PRG`, `LS.PRG`, `FIND.PRG` und
-`TREE.PRG` sind zusätzlich auf Operation 6/7 umgestellt; andere Clients und der Kernelpfad bleiben
-unverändert. Append-only Syscall 118 stellt inzwischen
+`TREE.PRG` sind zusätzlich auf Operation 6/7 umgestellt. Auch der
+compositorinterne Desktop-Explorer validiert Verzeichnisse mit Operation 5 und
+bezieht Einträge samt Leer/Voll-Ordnerprobe ausschließlich über Operation 7;
+andere Clients und der Kernelpfad bleiben unverändert. Append-only Syscall 118 stellt inzwischen
 eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
 sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
 Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
@@ -100,8 +102,12 @@ kehrt danach zur Shell zurück. Die read-only Shell-Walker `find` und `tree`
 verwenden ebenfalls ausschließlich Operationen 5 und 7. Ihre vorhandenen
 256-Byte-Pfad-, 16-Level- und 512-Node-Grenzen werden durch eine absolute
 monotone Fünf-Sekunden-Gesamtdeadline ergänzt; jeder Einzelrequest erhält nur
-die Restzeit, höchstens eine Sekunde. Mutierende Shellwerkzeuge und der Desktop
-bleiben unverändert. Der FAT12-Nachweis
+die Restzeit, höchstens eine Sekunde. Der Desktop-Explorer veröffentlicht je
+Snapshot höchstens 32 sichtbare Einträge, scannt höchstens 128 und verwendet
+ebenfalls eine absolute monotone Fünf-Sekunden-Deadline mit einsekündigen
+Restbudgets. Fehler verändern das bereits veröffentlichte Fenster und seine
+Generation nicht. Mutierende Shell-/Papierkorbpfade sowie große Desktop-
+Ressourcenstreams bleiben unverändert. Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits
 erkannte CHS-Geometrie als 2880 LBA-Sektoren; der vermittelte Blockread prüft
@@ -272,7 +278,9 @@ Schlüsselbytes. Gespeicherter Name und Readdir bewahren die Originalbytes.
     an eine exakte Prozessgeneration; keine ambiente Spawn-Vererbung.
 14. [x] Read-only-Baumläufe von `FIND.PRG` und `TREE.PRG` ohne Legacy-Fallback
     und mit einer absoluten Gesamtdeadline auf Operationen 5/7 umstellen.
-15. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+15. [x] Desktop-Explorer-Snapshots einschließlich Leer/Voll-Ordnerprobe ohne
+    Legacy-Namespace-Fallback und mit atomarer Fünf-Sekunden-Grenze umstellen.
+16. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
 
 ### Begrenzter EXT2-Subset in Ring 3

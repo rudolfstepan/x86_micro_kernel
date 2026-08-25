@@ -1,5 +1,7 @@
 #include "desktop_explorer.h"
 #include "desktop_trash.h"
+#include "reist/vfs_read_client.h"
+#include "reist/vfs_stat_client.h"
 
 _Static_assert(sizeof(desktop_explorer_drag_file_t) <=
                    DESKTOP_DRAG_DATA_CAPACITY,
@@ -226,26 +228,37 @@ static int build_child_path(const char *parent, const char *name,
     return DESKTOP_EXPLORER_OK;
 }
 
+static int snapshot_remaining_timeout(uint64_t deadline,
+                                      uint32_t *timeout) {
+    uint64_t now = 0U;
+    if (timeout == 0 || x86os_monotonic_ms(&now) != 0)
+        return DESKTOP_EXPLORER_EIO;
+    if (now >= deadline) return DESKTOP_EXPLORER_ETIMEDOUT;
+    uint64_t remaining = deadline - now;
+    *timeout = remaining < DESKTOP_EXPLORER_REQUEST_TIMEOUT_MS
+        ? (uint32_t)remaining : DESKTOP_EXPLORER_REQUEST_TIMEOUT_MS;
+    return *timeout != 0U ? DESKTOP_EXPLORER_OK
+                          : DESKTOP_EXPLORER_ETIMEDOUT;
+}
+
 static uint8_t probe_directory_nonempty(const char *parent,
-                                        const x86os_file_info_t *entry) {
+                                        const x86os_file_info_t *entry,
+                                        uint64_t deadline) {
     char path[DESKTOP_EXPLORER_PATH_CAPACITY];
     if (entry == 0 || entry->type != X86OS_DIRECTORY ||
         build_child_path(parent, entry->name, path, sizeof(path)) !=
             DESKTOP_EXPLORER_OK) return 1U;
-    uint32_t offset = 0U;
-    for (uint32_t attempt = 0U;
-         attempt < DESKTOP_EXPLORER_DIRECTORY_PROBE_BATCHES; ++attempt) {
-        x86os_file_info_t batch[X86OS_READDIR_BATCH_CAPACITY];
-        int count = x86os_readdir_batch(path, offset, batch);
-        if (count < 0 || (uint32_t)count > X86OS_READDIR_BATCH_CAPACITY)
-            return 1U;
-        if (count == 0) return 0U;
-        for (int index = 0; index < count; ++index) {
-            if (!entry_name_valid(&batch[index])) return 1U;
-            if (!entry_is_hidden_name(&batch[index])) return 1U;
-        }
-        if (offset > UINT32_MAX - (uint32_t)count) return 1U;
-        offset += (uint32_t)count;
+    for (uint32_t index = 0U;
+         index < DESKTOP_EXPLORER_DIRECTORY_PROBE_ENTRIES; ++index) {
+        uint32_t timeout = 0U;
+        if (snapshot_remaining_timeout(deadline, &timeout) !=
+            DESKTOP_EXPLORER_OK) return 1U;
+        x86os_file_info_t child;
+        int present = reist_vfs_readdir_at(path, index, &child, timeout);
+        if (present < 0) return 1U;
+        if (present == 0) return 0U;
+        if (!entry_name_valid(&child)) return 1U;
+        if (!entry_is_hidden_name(&child)) return 1U;
     }
     return 1U;
 }
@@ -305,39 +318,51 @@ static int stage_directory(desktop_explorer_t *explorer, const char *path) {
     if (explorer == 0 || !text_length(
             path, DESKTOP_EXPLORER_PATH_CAPACITY, &path_length) ||
         path_length == 0U) return DESKTOP_EXPLORER_EINVAL;
+    uint64_t started = 0U;
+    if (x86os_monotonic_ms(&started) != 0) return DESKTOP_EXPLORER_EIO;
+    uint64_t deadline = UINT64_MAX - started <
+        DESKTOP_EXPLORER_SNAPSHOT_TIMEOUT_MS
+        ? UINT64_MAX : started + DESKTOP_EXPLORER_SNAPSHOT_TIMEOUT_MS;
+    uint32_t timeout = 0U;
+    int remaining_status = snapshot_remaining_timeout(deadline, &timeout);
+    if (remaining_status != DESKTOP_EXPLORER_OK) return remaining_status;
     x86os_file_info_t target;
-    if (x86os_stat(path, &target) != 0) return DESKTOP_EXPLORER_ENOENT;
+    int stat_status = reist_vfs_stat(path, &target, timeout);
+    if (stat_status == -110) return DESKTOP_EXPLORER_ETIMEDOUT;
+    if (stat_status == -2) return DESKTOP_EXPLORER_ENOENT;
+    if (stat_status != 0) return DESKTOP_EXPLORER_EIO;
     if (target.type != X86OS_DIRECTORY) return DESKTOP_EXPLORER_ENOTDIR;
 
     explorer->staging_count = 0U;
     explorer->staging_truncated = 0U;
-    uint32_t offset = 0U;
+    uint32_t index = 0U;
+    uint32_t scanned = 0U;
     for (;;) {
-        x86os_file_info_t batch[X86OS_READDIR_BATCH_CAPACITY];
-        int count = x86os_readdir_batch(path, offset, batch);
-        if (count < 0) return DESKTOP_EXPLORER_EIO;
-        if (count == 0) break;
-        if ((uint32_t)count > X86OS_READDIR_BATCH_CAPACITY)
-            return DESKTOP_EXPLORER_EIO;
-        for (int index = 0; index < count; ++index) {
-            if (!entry_name_valid(&batch[index]))
-                return DESKTOP_EXPLORER_EIO;
-            if (entry_is_hidden_name(&batch[index])) continue;
-            if (explorer->staging_count < DESKTOP_EXPLORER_ENTRY_CAPACITY) {
-                uint32_t staging_index = explorer->staging_count;
-                copy_entry(&explorer->staging[staging_index], &batch[index]);
-                explorer->staging_directory_nonempty[staging_index] =
-                    batch[index].type == X86OS_DIRECTORY
-                        ? probe_directory_nonempty(path, &batch[index]) : 0U;
-                ++explorer->staging_count;
-            } else explorer->staging_truncated = 1U;
+        if (scanned >= DESKTOP_EXPLORER_SCAN_CAPACITY) {
+            explorer->staging_truncated = 1U;
+            break;
         }
-        offset += (uint32_t)count;
-        /* One batch beyond capacity is sufficient to report truncation; do
-         * not walk an arbitrarily large or hostile directory in one event. */
-        if (explorer->staging_truncated) break;
-        if (offset > UINT32_MAX - X86OS_READDIR_BATCH_CAPACITY)
-            return DESKTOP_EXPLORER_ECAPACITY;
+        remaining_status = snapshot_remaining_timeout(deadline, &timeout);
+        if (remaining_status != DESKTOP_EXPLORER_OK) return remaining_status;
+        x86os_file_info_t entry;
+        int present = reist_vfs_readdir_at(path, index, &entry, timeout);
+        if (present == -110) return DESKTOP_EXPLORER_ETIMEDOUT;
+        if (present < 0) return DESKTOP_EXPLORER_EIO;
+        if (present == 0) break;
+        ++scanned;
+        ++index;
+        if (!entry_name_valid(&entry)) return DESKTOP_EXPLORER_EIO;
+        if (entry_is_hidden_name(&entry)) continue;
+        if (explorer->staging_count >= DESKTOP_EXPLORER_ENTRY_CAPACITY) {
+            explorer->staging_truncated = 1U;
+            break;
+        }
+        uint32_t staging_index = explorer->staging_count;
+        copy_entry(&explorer->staging[staging_index], &entry);
+        explorer->staging_directory_nonempty[staging_index] =
+            entry.type == X86OS_DIRECTORY
+                ? probe_directory_nonempty(path, &entry, deadline) : 0U;
+        ++explorer->staging_count;
     }
     for (uint32_t index = 0U; index <= path_length; ++index)
         explorer->staging_path[index] = path[index];

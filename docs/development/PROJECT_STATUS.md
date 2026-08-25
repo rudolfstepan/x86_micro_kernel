@@ -491,6 +491,15 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Fünf-Sekunden-Deadline; Einzelrequests erhalten höchstens eine Sekunde der
   Restzeit. Der normale FAT32-Gast startet beide paketierten Programme auf
   `/htdocs` und markiert `VFS_READONLY_WALKERS_OK`.
+- Der Desktop-Explorer bezieht Verzeichnis-`stat`, einzelne Einträge und
+  Leer/Voll-Ordnerproben ausschließlich aus den autoritativen Ring-3-
+  Operationen 5 und 7. Ein atomarer Snapshot publiziert höchstens 32 sichtbare
+  Einträge, scannt höchstens 128 und läuft unter einer absoluten monotonen
+  Fünf-Sekunden-Deadline mit höchstens einsekündigen Requests. Timeout und
+  Protokollfehler bewahren das zuvor veröffentlichte Fenster samt Generation.
+  Der normale Gast weist den realen Root-Eintrag `htdocs` mit
+  `DESKTOP_EXPLORER_VFS_OK` nach. Font-, Icon- und Konfigurationsstreams bleiben
+  bis zu einem begrenzten Bulk-Transport auf dem 64-KiB-Slice-Pfad.
 - Der feste Rescue-Programmpool umfasst nun 352 KiB für weiterhin genau elf
   geschützte Programme; die Einzelgrenze beträgt 192 KiB. Damit passen die
   vollständigen Unicode-15-Tabellen des isolierten Storage-Dienstes in die

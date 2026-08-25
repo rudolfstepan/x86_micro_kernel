@@ -4526,12 +4526,24 @@ int main(int argc, char **argv) {
                 0, 0, malformed, sizeof(malformed) - 1U,
                 0x00FFFFFFU, 0x00000000U)
             : probe_activate_status;
+        desktop_explorer_initialize(&explorer);
+        int explorer_status = desktop_explorer_open(&explorer, 0U, "/");
+        uint32_t explorer_htdocs = 0U;
+        if (explorer_status == DESKTOP_EXPLORER_OK) {
+            const desktop_explorer_window_t *root = &explorer.windows[0];
+            for (uint32_t index = 0U; index < root->entry_count; ++index) {
+                if (root->entries[index].type == X86OS_DIRECTORY &&
+                    text_equal(root->entries[index].name, "htdocs"))
+                    explorer_htdocs = 1U;
+            }
+        }
         int deactivate_status = runtime_activated
             ? desktop_display_deactivate() : 0;
         if (valid_status != (int)(sizeof(valid) - 1U) || font_status != 0 ||
             font_overlay_status != 8 || fallback_lookup_status != 0 ||
             fallback_glyph != desktop_font.fallback_glyph ||
-            malformed_status != -22 ||
+            malformed_status != -22 || explorer_status != 0 ||
+            explorer.windows[0].active == 0U || explorer_htdocs == 0U ||
             deactivate_status != 0) {
             x86os_puts("DESKTOP_UNICODE_FAIL valid=");
             x86os_print_number(valid_status);
@@ -4543,6 +4555,8 @@ int main(int argc, char **argv) {
             x86os_print_number(fallback_lookup_status);
             x86os_puts(" overlay=");
             x86os_print_number(font_overlay_status);
+            x86os_puts(" explorer=");
+            x86os_print_number(explorer_status);
             x86os_puts(" activate=");
             x86os_print_number(probe_activate_status);
             x86os_puts(" deactivate=");
@@ -4553,6 +4567,7 @@ int main(int argc, char **argv) {
         x86os_puts("DESKTOP_FONT_BMP_OK\n");
         x86os_puts("DESKTOP_FONT_SUPPLEMENTARY_OK\n");
         x86os_puts("DESKTOP_FONT_FALLBACK_OK\n");
+        x86os_puts("DESKTOP_EXPLORER_VFS_OK\n");
         x86os_puts("DESKTOP_UNICODE_OK\n");
         return 0;
     }
