@@ -64,6 +64,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/compositor/desktop_filetypes.c",
         ROOT / "userspace/gui/compositor/desktop_surface.c",
         ROOT / "userspace/gui/compositor/desktop_surface_runtime.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_stat_client.c",
         ROOT / "userspace/storage/lib/vfs_read_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",

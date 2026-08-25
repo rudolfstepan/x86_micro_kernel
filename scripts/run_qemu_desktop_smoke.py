@@ -16,7 +16,8 @@ from pathlib import Path
 
 
 BOOT_MARKER = "BOOT_OK"
-FRAMEBUFFER_PREFIX = "Framebuffer initialized:"
+BOOT_FRAMEBUFFER_PREFIX = "Framebuffer initialized:"
+RUNTIME_FRAMEBUFFER_PREFIX = "DISPLAY_CONTROL: QEMU framebuffer ready"
 DESKTOP_MARKER = "DESKTOP_OK"
 FAIL_MARKERS = (
     "PANIC:",
@@ -56,16 +57,21 @@ def validate(transcript: str) -> str | None:
     failed = failure_marker(transcript)
     if failed is not None:
         return f"guest emitted failure marker {failed!r}"
-    framebuffer = prefix_line_position(transcript, FRAMEBUFFER_PREFIX)
+    boot_framebuffer = prefix_line_position(transcript, BOOT_FRAMEBUFFER_PREFIX)
+    runtime_framebuffer = prefix_line_position(
+        transcript, RUNTIME_FRAMEBUFFER_PREFIX)
     boot = exact_line_position(transcript, BOOT_MARKER)
     desktop = exact_line_position(transcript, DESKTOP_MARKER)
-    if framebuffer < 0:
-        return f"missing {FRAMEBUFFER_PREFIX} line"
+    if boot_framebuffer < 0 and runtime_framebuffer < 0:
+        return "missing framebuffer-ready line"
     if boot < 0:
         return f"missing {BOOT_MARKER} marker"
     if desktop < 0:
         return f"missing {DESKTOP_MARKER} marker"
-    if not framebuffer < boot < desktop:
+    boot_ordered = boot_framebuffer >= 0 and boot_framebuffer < boot < desktop
+    runtime_ordered = (runtime_framebuffer >= 0 and
+                       boot < runtime_framebuffer < desktop)
+    if not boot_ordered and not runtime_ordered:
         return "desktop markers appeared out of order"
     return None
 

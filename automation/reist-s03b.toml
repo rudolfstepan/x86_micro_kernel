@@ -11,6 +11,71 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.3a-desktop-startup-bulk"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Accelerate desktop startup with bounded VFS I/O and lazy Unicode"
+scope = "Reduce the observed roughly five-second VMware desktop startup without weakening service scheduling or filesystem bounds. Link the existing generation-scoped Ring-3 file object client and load packaged resources through at most 128-KiB CRC-checked requests. Extend only the FAT file-content traversal bound from 2176 to 6400 clusters and replace the proportional file-chain visited array with bounded constant-storage Brent cycle detection. Defer the measured 2.5-MiB full-Unicode font load during a normal desktop start while retaining the built-in VGA font, then load and validate the full font on the first text containing a scalar outside the VGA glyph set; Unicode diagnostic mode must still preload and prove it. Preserve service generation checks, parser budgets, fixed buffers, visible resource fallbacks and EXT2 behavior. Compare QEMU startup against the 8280-ms baseline and prove QEMU/VMware framebuffer packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_desktop_smoke.py",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "test/test_gui_bmp_font.py",
+  "test/test_desktop_source.py",
+  "test/test_qemu_desktop_smoke.py",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_vfs_shadow_fat32_host.c",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "desktop startup performs no legacy x86os open read stat or close operation for packaged resources",
+  "each startup transfer is at most 128 KiB and the existing fixed resource buffers remain unchanged",
+  "FAT file reads visit at most 6400 clusters with constant-storage cycle detection",
+  "FAT directory walks remain limited to 128 clusters and all FAT operations remain limited to 320 sector reads",
+  "all object operations remain owner generation scoped CRC checked and deadline bounded",
+  "missing invalid or oversized optional resources retain their visible fixed-cost fallbacks",
+  "normal startup defers the full Unicode font while Unicode diagnostics and first non-VGA text still load and validate it",
+  "a missing or invalid lazy font is attempted once and then retains the visible built-in glyph fallback",
+  "EXT2 behavior and public filesystem ABI remain unchanged"
+]
+targeted_tests = [
+  "python test/test_gui_bmp_font.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_qemu_desktop_smoke.py -v",
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_vfs_file_client.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_desktop_smoke.py --qemu C:\\tmp\\qemu-portable\\qemu-system-i386.exe --image build/reist-os.img --log build/codex-agent/r3.3a-desktop-startup-smoke.log"
+]
+stop_conditions = [
+  "the optimization adds an unbounded allocation wait parser loop or cache",
+  "desktop startup falls back to legacy kernel-VFS resource reads",
+  "the file-content increase weakens directory enumeration or sector-read bounds",
+  "the storage service stack grows with the maximum file size",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "perf: accelerate desktop startup resource loading"
+evidence = [
+  "targeted GUI font desktop smoke FAT32-shadow and VFS-client tests passed",
+  "QEMU framebuffer package passed in 32 seconds",
+  "three clean QEMU desktop runs reported 1907 to 1984 ms versus the 8280-ms baseline without storage quarantine or fallback",
+  "QEMU VMware-SVGA2D guest runtime emitted DESKTOP_FONT_BMP_OK DESKTOP_FONT_SUPPLEMENTARY_OK DESKTOP_FONT_FALLBACK_OK DESKTOP_UNICODE_OK UNICODE_RASTER_OK and TEST_OK",
+  "VMware framebuffer package passed in 26 seconds"
+]
+
+[[packages]]
 id = "R3.3-imageviewer-bulk-io"
 status = "done"
 phase = "post-s0"

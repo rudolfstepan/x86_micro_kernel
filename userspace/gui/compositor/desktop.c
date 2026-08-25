@@ -16,6 +16,7 @@
 #include "desktop_surface.h"
 #include "desktop_surface_runtime.h"
 #include "reist/image.h"
+#include "reist/vfs_file_client.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/font.h"
 #include "reist/gui/menu.h"
@@ -38,8 +39,7 @@
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
-#define DESKTOP_FILE_READ_CHUNK 24576U
-#define DESKTOP_FILE_READ_PAUSE_MS 1U
+#define DESKTOP_FILE_READ_TIMEOUT_MS 2000U
 #define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 262144U
 #define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode.psf"
@@ -466,6 +466,7 @@ static desktop_font_file_storage_t desktop_font_file;
 static uint32_t desktop_font_pixels[
     REIST_GUI_FONT_MAX_WIDTH * REIST_GUI_FONT_MAX_HEIGHT];
 static uint32_t desktop_font_ready;
+static uint32_t desktop_font_attempted;
 static const char *const desktop_file_icon_paths[
     DESKTOP_EXPLORER_ICON_COUNT] = {
         "/usr/share/icons/folder-empty.ico",
@@ -674,34 +675,47 @@ static uint32_t intersect_rects(desktop_rect_t left, desktop_rect_t right,
 static int read_file_bounded(const char *path, uint8_t *bytes,
                              size_t capacity, size_t *size_out) {
     if (path == 0 || bytes == 0 || capacity == 0U || size_out == 0) return -22;
-    int descriptor = x86os_open(path);
-    if (descriptor < 0) return descriptor;
-    size_t used = 0U;
-    while (used < capacity) {
-        size_t remaining = capacity - used;
-        size_t request = remaining < DESKTOP_FILE_READ_CHUNK
-            ? remaining : DESKTOP_FILE_READ_CHUNK;
-        /* Bound kernel serialization and leave the runnable set after each
-         * slice. A plain yield can immediately select this application class
-         * again and starve supervised driver heartbeats during large fonts. */
-        int amount = x86os_read(descriptor, bytes + used, request);
-        if (amount < 0 || (size_t)amount > capacity - used) {
-            (void)x86os_close(descriptor);
-            return -5;
-        }
-        if (amount == 0) break;
-        used += (size_t)amount;
-        if (x86os_sleep_ms(DESKTOP_FILE_READ_PAUSE_MS) != 0) {
-            (void)x86os_close(descriptor);
-            return -5;
-        }
+    *size_out = 0U;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int status = reist_vfs_file_open(
+        path, DESKTOP_FILE_READ_TIMEOUT_MS, &handle);
+    if (status != 0) return status;
+    x86os_file_info_t info;
+    status = reist_vfs_file_fstat(handle, &info);
+    if (status != 0 || info.type != X86OS_FILE || info.size == 0U ||
+        info.size > capacity) {
+        (void)reist_vfs_file_close(handle);
+        return status != 0 ? status : -75;
     }
-    uint8_t extra = 0U;
-    int extra_read = x86os_read(descriptor, &extra, 1U);
-    int close_status = x86os_close(descriptor);
-    if (extra_read != 0 || close_status < 0 || used == 0U) return -75;
+    size_t used = 0U;
+    while (used < info.size) {
+        size_t request = info.size - used;
+        if (request > X86OS_STORAGE_BULK_MAX_BYTES)
+            request = X86OS_STORAGE_BULK_MAX_BYTES;
+        int amount = reist_vfs_file_read_bulk(handle, bytes + used, request);
+        if (amount <= 0 || (size_t)amount > request) {
+            (void)reist_vfs_file_close(handle);
+            return -5;
+        }
+        used += (size_t)amount;
+    }
+    int close_status = reist_vfs_file_close(handle);
+    if (close_status != 0) return close_status;
     *size_out = used;
     return 0;
+}
+
+static void desktop_startup_phase_metric(const char *phase,
+                                         uint64_t started_ms) {
+    uint64_t finished_ms = 0U;
+    if (phase == 0 || x86os_monotonic_ms(&finished_ms) != 0 ||
+        finished_ms < started_ms || finished_ms - started_ms > INT32_MAX)
+        return;
+    x86os_puts("DESKTOP_STARTUP_PHASE name=");
+    x86os_puts(phase);
+    x86os_puts(" ms=");
+    x86os_print_number((int)(finished_ms - started_ms));
+    x86os_putchar('\n');
 }
 
 static int32_t desktop_splash_center_x(
@@ -782,17 +796,23 @@ static void desktop_splash_show(const x86os_display_info_t *display) {
 
 static int desktop_font_load(const x86os_display_info_t *display) {
     desktop_font_ready = 0U;
+    desktop_font_attempted = 1U;
     if (display == 0) return -22;
+    uint64_t phase_started = 0U;
+    (void)x86os_monotonic_ms(&phase_started);
     size_t size = 0U;
     int status = read_file_bounded(
         DESKTOP_FONT_PATH, desktop_font_file.bytes,
         sizeof(desktop_font_file.bytes), &size);
+    desktop_startup_phase_metric("font-io", phase_started);
     if (status != 0) return status;
+    (void)x86os_monotonic_ms(&phase_started);
     reist_gui_font_t candidate = {0};
     status = reist_gui_font_open_psf2(
         &candidate, desktop_font_file.bytes, size,
         desktop_startup_workspace.font_mappings,
         DESKTOP_FONT_MAPPING_CAPACITY, 0x25A0U);
+    desktop_startup_phase_metric("font-parse", phase_started);
     if (status != 0 || candidate.width != display->font_width ||
         candidate.height != display->font_height) return status != 0
             ? status : -84;
@@ -906,8 +926,29 @@ static int desktop_font_overlay_extensions(
     const desktop_render_context_t *context, int32_t x, int32_t y,
     const char *text, size_t length, uint32_t foreground,
     uint32_t background) {
-    if (!desktop_font_ready || context == 0 || context->display == 0 ||
-        text == 0) return 0;
+    if (context == 0 || context->display == 0 || text == 0) return 0;
+    if (!desktop_font_ready) {
+        size_t scan = 0U;
+        uint32_t extension_needed = 0U;
+        while (scan < length) {
+            size_t consumed = 0U;
+            uint32_t scalar = 0U;
+            if (!reist_utf8_decode_one(text + scan, length - scan,
+                                       &consumed, &scalar)) return -84;
+            if (!reist_unicode_vga_has_glyph(scalar)) extension_needed = 1U;
+            scan += consumed;
+        }
+        if (!extension_needed) return 0;
+        if (desktop_font_attempted) return 0;
+        int load_status = desktop_font_load(context->display);
+        if (load_status != 0) {
+            x86os_puts("DESKTOP_FONT_LAZY_FALLBACK status=");
+            x86os_print_number(load_status);
+            x86os_putchar('\n');
+            return 0;
+        }
+        x86os_puts("DESKTOP_FONT_LAZY_READY\n");
+    }
     size_t source = 0U;
     size_t cell = 0U;
     int overlays = 0;
@@ -3083,24 +3124,10 @@ static int copy_launch_text(char *destination, uint32_t capacity,
 
 static int load_filetypes(desktop_filetypes_t *filetypes) {
     desktop_filetypes_initialize(filetypes);
-    int descriptor = x86os_open("/etc/reist/filetypes.conf");
-    if (descriptor < 0) return -1;
     size_t used = 0U;
-    while (used < DESKTOP_FILETYPES_CONFIG_CAPACITY) {
-        int amount = x86os_read(
-            descriptor, filetypes_config + used,
-            DESKTOP_FILETYPES_CONFIG_CAPACITY - used);
-        if (amount < 0) {
-            (void)x86os_close(descriptor);
-            return -1;
-        }
-        if (amount == 0) break;
-        used += (size_t)amount;
-    }
-    char extra;
-    int extra_read = x86os_read(descriptor, &extra, 1U);
-    int close_status = x86os_close(descriptor);
-    if (extra_read != 0 || close_status < 0 || used == 0U) return -1;
+    if (read_file_bounded(
+            "/etc/reist/filetypes.conf", (uint8_t *)filetypes_config,
+            DESKTOP_FILETYPES_CONFIG_CAPACITY, &used) != 0) return -1;
     return desktop_filetypes_parse(filetypes, filetypes_config, used) == 0
         ? 0 : -1;
 }
@@ -4568,6 +4595,9 @@ int main(int argc, char **argv) {
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
     uint32_t surface_resize_requested = 0U;
+    uint64_t startup_started_ms = 0U;
+    uint32_t startup_clock_valid =
+        x86os_monotonic_ms(&startup_started_ms) == 0;
 
     if (argc == 2 && argv != 0 && text_equal(argv[1], "--render-probe")) {
         render_probe = 1U;
@@ -4610,9 +4640,14 @@ int main(int argc, char **argv) {
     }
     /* Diagnostic modes are timing probes, not interactive desktop sessions;
      * keep their established runtime envelope free of presentation I/O. */
+    uint64_t phase_started_ms = 0U;
+    (void)x86os_monotonic_ms(&phase_started_ms);
     if (argc == 1) desktop_splash_show(&display);
+    desktop_startup_phase_metric("splash", phase_started_ms);
     (void)desktop_svga2d_connect(0U);
-    int font_status = desktop_font_load(&display);
+    (void)x86os_monotonic_ms(&phase_started_ms);
+    int font_status = unicode_probe ? desktop_font_load(&display) : 0;
+    desktop_startup_phase_metric("font", phase_started_ms);
     if (unicode_probe) {
         static const char valid[] =
             "A\xC3\x84\xE2\x82\xAC"
@@ -4733,10 +4768,23 @@ int main(int argc, char **argv) {
     int trash_status = desktop_trash_prepare(&desktop_trash);
     /* Optional assets are read and decoded exactly once before the first
      * frame. Missing or malformed files leave fixed-cost vector fallbacks. */
+    (void)x86os_monotonic_ms(&phase_started_ms);
     desktop_file_icon_cache_initialize();
+    desktop_startup_phase_metric("icons", phase_started_ms);
+    (void)x86os_monotonic_ms(&phase_started_ms);
     int filetypes_status = load_filetypes(&filetypes);
+    desktop_startup_phase_metric("filetypes", phase_started_ms);
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
+    uint64_t startup_ready_ms = 0U;
+    if (startup_clock_valid &&
+        x86os_monotonic_ms(&startup_ready_ms) == 0 &&
+        startup_ready_ms >= startup_started_ms &&
+        startup_ready_ms - startup_started_ms <= INT32_MAX) {
+        x86os_puts("DESKTOP_STARTUP_MS value=");
+        x86os_print_number((int)(startup_ready_ms - startup_started_ms));
+        x86os_putchar('\n');
+    }
     x86os_puts("DESKTOP_OK\n");
     desktop_dirty_region_t initial_dirty;
     desktop_dirty_initialize(&initial_dirty, display.width, display.height);

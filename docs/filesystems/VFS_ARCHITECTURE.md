@@ -99,9 +99,10 @@ widerrufen Slot und Handle; Erschöpfung liefert `ENOSPC`. Die große Kopie läu
 mit erlaubten Interrupts, aber ohne Schedulerwechsel, und hält den IRQ-Lock nur
 für kleine Metadatenübergänge. Der bisherige 256-Byte-Pfad bleibt unverändert.
 FAT-Verzeichnisläufe sind dafür auf 128 Cluster und alle FAT-Operationen auf
-320 Sektorreads begrenzt; nur Dateiinhalte dürfen bis zu 2176 Cluster besuchen.
-Ein operationseigener FAT-Sektorcache macht späte 128-KiB-Lesezugriffe auf
-1-MiB-Dateien innerhalb dieses Budgets möglich. EXT2 bleibt auf 192
+320 Sektorreads begrenzt; nur Dateiinhalte dürfen bis zu 6400 Cluster besuchen.
+Eine konstante Brent-Zykluswache ersetzt dabei das proportional zur Dateigröße
+wachsende Clusterarray. Ein operationseigener FAT-Sektorcache macht auch späte
+128-KiB-Lesezugriffe auf 3-MiB-Dateien innerhalb dieses Budgets möglich. EXT2 bleibt auf 192
 Sektorreads pro Operation fest begrenzt.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen

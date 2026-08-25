@@ -45,8 +45,8 @@ class DesktopSmokeRunnerTests(unittest.TestCase):
                 "if \"%FAKE_QEMU_MODE%\"==\"timeout\" goto timeout\n"
                 "exit /b 99\n"
                 ":success\n"
-                "echo Framebuffer initialized: 1024x768x32 at 0x10000000\n"
                 "echo BOOT_OK\n"
+                "echo DISPLAY_CONTROL: QEMU framebuffer ready\n"
                 "echo DESKTOP_OK\n"
                 ":success_hold\n"
                 "goto success_hold\n"
@@ -87,7 +87,7 @@ class DesktopSmokeRunnerTests(unittest.TestCase):
             "#!/bin/sh\n"
             "printf '%s\\n' \"$@\" > \"$FAKE_QEMU_ARGS\"\n"
             "case \"$FAKE_QEMU_MODE\" in\n"
-            " success) printf 'Framebuffer initialized: 1024x768x32 at 0x10000000\\nBOOT_OK\\nDESKTOP_OK\\n'; while :; do :; done ;;\n"
+            " success) printf 'BOOT_OK\\nDISPLAY_CONTROL: QEMU framebuffer ready\\nDESKTOP_OK\\n'; while :; do :; done ;;\n"
             " not-exact) printf 'Framebuffer initialized: 1024x768x32\\nBOOT_OK\\nNOT_DESKTOP_OK\\n' ;;\n"
             " missing-fb) printf 'BOOT_OK\\nDESKTOP_OK\\n' ;;\n"
             " reverse) printf 'Framebuffer initialized: 1024x768x32\\nDESKTOP_OK\\nBOOT_OK\\n' ;;\n"
@@ -129,9 +129,9 @@ class DesktopSmokeRunnerTests(unittest.TestCase):
         result = self.run_smoke("success")
         self.assertEqual(result.returncode, 0, self.output(result))
         transcript = self.log_file.read_text(encoding="utf-8")
-        self.assertLess(transcript.index("Framebuffer initialized:"),
-                        transcript.index("BOOT_OK"))
         self.assertLess(transcript.index("BOOT_OK"),
+                        transcript.index("DISPLAY_CONTROL: QEMU framebuffer ready"))
+        self.assertLess(transcript.index("DISPLAY_CONTROL: QEMU framebuffer ready"),
                         transcript.index("DESKTOP_OK"))
 
     def test_desktop_substring_is_not_accepted(self) -> None:

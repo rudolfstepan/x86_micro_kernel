@@ -43,6 +43,11 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn(
             'ROOT / "userspace/gui/compositor/desktop_surface.c"', programs
         )
+        desktop_build = programs[
+            programs.index('"DESKTOP.PRG"'):
+            programs.index('"GUIDEMO.PRG"')
+        ]
+        self.assertIn("vfs_file_client.c", desktop_build)
         self.assertIn('#include "desktop_surface.h"', self.source)
         self.assertIn("desktop_surface_initialize(&surfaces)", self.source)
 
@@ -323,6 +328,15 @@ class DesktopSourceTests(unittest.TestCase):
         main = self.source[self.source.index("int main(") :]
         first_render = main.index("render_desktop_measured(")
         marker = main.index('x86os_puts("DESKTOP_OK\\n")')
+        self.assertIn('x86os_puts("DESKTOP_STARTUP_MS value=")', main)
+        self.assertIn('desktop_startup_phase_metric("font-io"', self.source)
+        self.assertIn('desktop_startup_phase_metric("font-parse"', self.source)
+        self.assertIn("unicode_probe ? desktop_font_load(&display) : 0",
+                      self.source)
+        self.assertIn("if (!extension_needed) return 0", self.source)
+        self.assertIn("if (desktop_font_attempted) return 0", self.source)
+        self.assertIn("DESKTOP_FONT_LAZY_READY", self.source)
+        self.assertIn("DESKTOP_FONT_LAZY_FALLBACK", self.source)
         self.assertLess(marker, first_render)
         startup = main[:main.index("for (;;)")]
         self.assertEqual(startup.count("render_desktop_measured("), 1)
@@ -427,7 +441,13 @@ class DesktopSourceTests(unittest.TestCase):
 
     def test_file_associations_are_bounded_and_pass_the_document_as_argv(self):
         self.assertIn('#include "desktop_filetypes.h"', self.source)
-        self.assertIn('x86os_open("/etc/reist/filetypes.conf")', self.source)
+        load_filetypes = self.source[
+            self.source.index("static int load_filetypes"):
+            self.source.index("static int format_surface_argument")
+        ]
+        self.assertIn("read_file_bounded(", load_filetypes)
+        self.assertNotIn("x86os_open(", load_filetypes)
+        self.assertNotIn("x86os_read(", load_filetypes)
         self.assertIn("DESKTOP_FILETYPES_CONFIG_CAPACITY", self.source)
         self.assertIn("desktop_filetypes_parse", self.source)
         self.assertIn("desktop_filetypes_lookup", self.source)

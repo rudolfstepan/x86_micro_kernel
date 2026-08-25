@@ -81,18 +81,18 @@ class GuiUnicodeFontTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)",
                       desktop)
-        self.assertIn("DESKTOP_FILE_READ_CHUNK 24576U", desktop)
-        self.assertIn("DESKTOP_FILE_READ_PAUSE_MS 1U", desktop)
+        self.assertIn('#include "reist/vfs_file_client.h"', desktop)
         bounded_read = desktop[desktop.index("static int read_file_bounded"):
                                desktop.index("static int desktop_font_load")]
-        self.assertIn("remaining < DESKTOP_FILE_READ_CHUNK", bounded_read)
-        self.assertIn("x86os_read(descriptor, bytes + used, request)",
-                      bounded_read)
-        self.assertIn("x86os_sleep_ms(DESKTOP_FILE_READ_PAUSE_MS)",
-                      bounded_read)
+        self.assertIn("reist_vfs_file_open", bounded_read)
+        self.assertIn("reist_vfs_file_fstat", bounded_read)
+        self.assertIn("reist_vfs_file_read_bulk", bounded_read)
+        self.assertIn("reist_vfs_file_close", bounded_read)
+        self.assertIn("X86OS_STORAGE_BULK_MAX_BYTES", bounded_read)
+        for legacy_call in ("x86os_open(", "x86os_read(", "x86os_stat(",
+                            "x86os_close("):
+            self.assertNotIn(legacy_call, bounded_read)
         self.assertNotIn("x86os_yield()", bounded_read)
-        self.assertNotIn("x86os_read(descriptor, bytes + used, capacity - used)",
-                         bounded_read)
         self.assertIn("DESKTOP_FONT_MAPPING_CAPACITY 262144U", desktop)
         self.assertIn("/usr/share/fonts/reist-unicode.psf", desktop)
         self.assertIn("!reist_unicode_vga_has_glyph(scalar)", desktop)

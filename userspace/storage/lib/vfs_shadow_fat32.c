@@ -55,6 +55,13 @@ typedef struct {
 } shadow_dir_entry_t;
 
 typedef struct {
+    uint32_t anchor;
+    uint32_t power;
+    uint32_t distance;
+    uint32_t visited;
+} shadow_file_chain_guard_t;
+
+typedef struct {
     char name[256];
     uint16_t units[FAT32_MAX_LFN_ENTRIES * FAT32_LFN_CHARS_PER_ENTRY];
     uint8_t checksum;
@@ -316,6 +323,31 @@ static int shadow_parse_bpb(shadow_volume_t *volume, uint8_t required_type) {
 static int shadow_cluster_valid(const shadow_volume_t *volume,
                                 uint32_t cluster) {
     return cluster >= 2U && cluster <= volume->cluster_count + 1U;
+}
+
+static void shadow_file_chain_guard_initialize(
+        shadow_file_chain_guard_t *guard, uint32_t first) {
+    guard->anchor = first;
+    guard->power = 1U;
+    guard->distance = 0U;
+    guard->visited = 1U;
+}
+
+static int shadow_file_chain_advance(shadow_file_chain_guard_t *guard,
+                                     uint32_t next) {
+    if (guard == 0 ||
+        guard->visited >= REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS)
+        return -110;
+    if (next == guard->anchor) return -5;
+    ++guard->visited;
+    ++guard->distance;
+    if (guard->distance == guard->power) {
+        guard->anchor = next;
+        guard->distance = 0U;
+        guard->power = guard->power <= UINT32_MAX / 2U
+            ? guard->power * 2U : UINT32_MAX;
+    }
+    return 0;
 }
 
 static int shadow_fat_sector(shadow_volume_t *volume, uint32_t lba,
@@ -761,22 +793,20 @@ static int shadow_read_file(shadow_volume_t *volume,
         X86OS_STORAGE_BLOCK_SIZE;
     uint32_t skip = offset / cluster_bytes;
     uint32_t in_cluster = offset % cluster_bytes;
-    uint32_t visited[REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS];
-    uint32_t visited_count = 0U;
+    shadow_file_chain_guard_t guard;
+    shadow_file_chain_guard_initialize(&guard, cluster);
     int status = 0;
     for (;;) {
-        if (!shadow_cluster_valid(volume, cluster) ||
-            visited_count >= REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS)
-            return -110;
-        for (uint32_t seen = 0U; seen < visited_count; ++seen)
-            if (visited[seen] == cluster) return -5;
-        visited[visited_count++] = cluster;
+        if (!shadow_cluster_valid(volume, cluster)) return -5;
         if (skip == 0U) break;
         uint32_t next = 0U;
         status = shadow_next_cluster(volume, cluster, &next);
         if (status != 0) return status;
         if (shadow_end_of_chain(volume, next) ||
-            shadow_invalid_link(volume, next)) return -5;
+            shadow_invalid_link(volume, next) ||
+            !shadow_cluster_valid(volume, next)) return -5;
+        status = shadow_file_chain_advance(&guard, next);
+        if (status != 0) return status;
         cluster = next;
         --skip;
     }
@@ -803,11 +833,9 @@ static int shadow_read_file(shadow_volume_t *volume,
         if (status != 0) return status;
         if (shadow_end_of_chain(volume, next) ||
             shadow_invalid_link(volume, next) ||
-            visited_count >= REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS)
-            return -110;
-        for (uint32_t seen = 0U; seen < visited_count; ++seen)
-            if (visited[seen] == next) return -5;
-        visited[visited_count++] = next;
+            !shadow_cluster_valid(volume, next)) return -5;
+        status = shadow_file_chain_advance(&guard, next);
+        if (status != 0) return status;
         cluster = next;
         in_cluster = 0U;
     }

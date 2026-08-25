@@ -51,12 +51,10 @@ SVGA-Scanout beim Fence weiterhin;
 GK208 behält den kernelverwalteten VBE-Scanout, durchläuft aber unverändert
 Quieszenz, Generation-Fence, Reap und Device-Recovery. `DESKTOP_OK` bleibt
 damit nach einem Restart sichtbar statt nur im VGA-Textmodus zu erscheinen.
-Die reproduzierte Restart-Serie während des Fontladens ist ebenfalls behoben:
-Zwischen festen 24-KiB-Leseabschnitten schläft der Desktop nun 1 ms, statt sich
-mit einem wirkungslosen Yield sofort wieder einplanen zu lassen. Damit erhalten
-die überwachten Serviceklassen verlässlich Heartbeat-Zeit. Der maximale
-3-MiB-Font bietet damit 128 Scheduling-Punkte; die tatsächliche Wecklatenz
-folgt weiterhin der Timerauflösung. Die gezielten Tests, beide
+Die reproduzierte Restart-Serie während des Fontladens wurde zunächst durch
+feste 24-KiB-Leseabschnitte mit Scheduling-Punkten behoben. Der nachfolgende
+Bulk-Dateipfad ersetzt diese Übergangslösung inzwischen ohne die künstliche
+Timerlatenz. Die gezielten Tests, beide
 Framebuffer-Paketbuilds und der QEMU-Runtime-Lauf bis `TEST_OK` sind grün; der
 abschließende Sichtnachweis auf dem ASUS-System bleibt manuell.
 
@@ -81,6 +79,23 @@ liest 128 KiB am Ende einer synthetischen 1-MiB-FAT32-Datei mit höchstens 280
 Sektorzugriffen. Verzeichnisgrenzen, EXT2-Verhalten und Decodergrenzen bleiben
 unverändert. Die gezielten Tests und beide vollständigen Framebuffer-
 Paketbuilds sind grün; die Queue ist wieder leer.
+
+`R3.3a-desktop-startup-bulk` stellt die Desktopressourcen auf denselben
+generationgebundenen Ring-3-Bulkpfad um. Splash, Icons und
+Dateitypzuordnungen werden ohne künstliche Millisekundenpause in höchstens
+128-KiB-Transfers geladen. Der 2,5-MiB-Voll-Unicode-Font wird beim normalen
+Start nicht mehr vorsorglich gelesen: Der eingebaute VGA-Font deckt die
+Startoberfläche ab, während der vollständige Font beim ersten Zeichen außerhalb
+dieses Satzes einmalig geladen und validiert wird. Ein fehlgeschlagener Versuch
+behält den sichtbaren eingebauten Fallback und wird nicht bei jedem Redraw
+wiederholt. Der Unicode-Probelauf lädt ihn
+weiterhin zwingend. Wiederholte QEMU-Messungen reduzierten
+`DESKTOP_STARTUP_MS` von 8280 ms auf 1907 bis 1984 ms, also um rund 76 bis
+77 Prozent. FAT-
+Dateiinhalte dürfen bis zu 6400 Cluster besuchen; eine konstante
+Brent-Zykluswache hält den Userspace-Stack unabhängig von der Dateigröße klein.
+Die 128-Cluster-Grenze für Verzeichnisse und das 320-Sektor-Budget pro Operation
+bleiben unverändert.
 
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
@@ -584,8 +599,9 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   `STORAGE_VFS_BULK_READ_OK`. Der Bildbetrachter ist als erster großer
   Desktop-Client vollständig auf diesen API-Aufruf umgestellt: Sein fester
   1-MiB-Puffer benötigt höchstens acht Requests. Ein operationseigener
-  FAT-Sektorcache und ein getrenntes 2176-Cluster-Dateibudget halten auch einen
-  128-KiB-Lesezugriff am Dateiende unter 280 physischen Sektorzugriffen;
+  FAT-Sektorcache und ein getrenntes 6400-Cluster-Dateibudget halten auch einen
+  128-KiB-Lesezugriff am Ende einer 3-MiB-Datei unter 310 physischen
+  Sektorzugriffen; die Zykluserkennung benötigt dabei konstanten Speicher und
   Verzeichnisgrenzen bleiben unverändert.
 - Die langlebige Userspace-Shell löst Programmdateien über Ring-3-Operation 5
   auf und enumeriert Tab-Vervollständigungen über Operation 7. Alle Kandidaten

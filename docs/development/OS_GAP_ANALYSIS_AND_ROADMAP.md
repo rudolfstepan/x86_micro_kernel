@@ -1623,9 +1623,13 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   markiert `STORAGE_VFS_BULK_READ_OK`. Der Bildbetrachter verwendet diesen Pfad
   nun für höchstens acht 128-KiB-Requests je 1-MiB-Datei. Ein requestlokaler
   FAT-Sektorcache hält späte Reads trotz vollständiger Zyklusprüfung unter dem
-  unveränderten 320-Sektor-Limit; die größere 2176-Cluster-Grenze gilt nur für
-  Dateiinhalte, nicht für Verzeichnisläufe. Weitere große Desktop-Ressourcen
-  bleiben getrennte Folgepakete.
+  unveränderten 320-Sektor-Limit. Die anschließend auf 6400 Cluster erweiterte
+  Dateiinhaltsgrenze verwendet eine konstante Brent-Zykluswache und gilt nicht
+  für Verzeichnisläufe. Splash, Icons und Dateitypzuordnungen des Desktops
+  verwenden denselben 128-KiB-Bulkpfad ohne künstliche Lesepause. Der
+  2,5-MiB-Voll-Unicode-Font wird erst beim ersten Nicht-VGA-Zeichen geladen;
+  der Unicode-Probelauf fordert ihn weiterhin explizit an. Dadurch sank der
+  gemessene QEMU-Desktopstart von 8280 ms reproduzierbar auf 1907 bis 1984 ms.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
   lückenlose v1-Indizes 0 bis 124 und beide Buildpfade prüfen Drift fail-closed

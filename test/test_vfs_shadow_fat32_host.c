@@ -9,7 +9,7 @@
 #define TEST_FAT_SECTORS 600U
 #define TEST_DATA_START (TEST_RESERVED + 2U * TEST_FAT_SECTORS)
 #define LARGE_FILE_FIRST_CLUSTER 8U
-#define LARGE_FILE_SIZE (1024U * 1024U)
+#define LARGE_FILE_SIZE (3U * 1024U * 1024U)
 #define LARGE_FILE_CLUSTER_COUNT \
     (LARGE_FILE_SIZE / X86OS_STORAGE_BLOCK_SIZE)
 #define LARGE_FILE_LAST_CLUSTER \
@@ -411,7 +411,7 @@ int main(void) {
     if (reist_vfs_shadow_fat_object_read(
             &object_io, &object, bulk_offset, bulk_data, sizeof(bulk_data),
             &transferred) != 0 || transferred != sizeof(bulk_data) ||
-        context.reads > 280U) return 33;
+        context.reads > 310U) return 33;
     for (uint32_t index = 0U; index < sizeof(bulk_data); ++index)
         if (bulk_data[index] != (uint8_t)(
                 (bulk_offset + index) / X86OS_STORAGE_BLOCK_SIZE)) return 34;
