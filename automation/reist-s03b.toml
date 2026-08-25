@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2-open-namespace-locks"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,66 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2-open-namespace-locks"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bounded open-node namespace mutation locks"
+scope = "Close the first R2.2 open-handle reliability slice without pretending to support POSIX orphaned-file lifetime. Track every successfully opened non-root VFS node in a fixed 256-slot kernel table, bounded by the existing 32-task by 8-dynamic-descriptor ceiling, and fail file opens with BUSY before publication when that table is full. Before unlink, rmdir, source rename or destination replacement, resolve the current path to a temporary node and compare its adapter-owned stable locator against all open nodes on the same mounted filesystem. FAT12 identity is directory sector plus slot; FAT32 identity is parent cluster plus canonical short directory name, so case and VFAT aliases cannot evade the lock. A matching open object returns BUSY before namespace or allocation-chain mutation; unrelated open objects do not block progress. Missing optional identity comparison fails closed when the filesystem has open nodes. Close releases exactly one registered node only after backend close succeeds, and unmount and exclusive maintenance retain their existing all-open-node BUSY rule. Prove alias-aware source, destination and delete rejection, post-close success, table exhaustion, close-failure retention, unrelated-object progress and normal QEMU persistence. This package adds no unlink-while-open lifetime, dup, descriptor inheritance, cross-directory rename, FAT12 rename, new syscall or ABI renumbering."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/vfs/vfs.h",
+  "fs/vfs/vfs.c",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "safety/resource_budgets.toml",
+  "userspace/programs/guest_test.c",
+  "test/test_open_namespace_locks.py",
+  "test/test_vfs_host.c",
+  "test/test_fat12_host.c",
+  "test/test_fat32_host.c",
+  "test/test_fs_host.py",
+  "test/test_reist_resource_budgets.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the fixed open-node table has exactly 256 slots and a non-root node is not published or counted unless one slot owns it",
+  "close removes exactly one matching registration and decrements open_nodes only after the backend reports success",
+  "unlink rmdir source rename and destination replacement resolve and compare the exact current object before any namespace mutation",
+  "FAT12 compares directory sector and slot while FAT32 compares parent cluster and canonical short entry name so aliases cannot bypass an open lock",
+  "a matching open object returns BUSY and leaves directory entries cluster chains node state and descriptor offsets unchanged",
+  "an unrelated open object does not block mutation and a successfully closed final handle immediately releases the namespace lock",
+  "a filesystem with open nodes but no identity comparator fails namespace mutation closed rather than guessing from path text",
+  "unmount and exclusive maintenance continue to reject every nonzero open-node count and no stale registration survives successful close or initialization",
+  "all scans and comparisons are fixed-capacity allocation-free after the one bounded temporary backend open and add no syscall or userspace authority",
+  "unlink-while-open orphan lifetime dup inheritance and cross-directory semantics remain explicitly unsupported"
+]
+targeted_tests = [
+  "python test/test_open_namespace_locks.py -v",
+  "python test/test_fs_host.py -v",
+  "python test/test_reist_resource_budgets.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "a path alias can identify an open object without being rejected",
+  "a close failure can release a registration or open-node count",
+  "namespace mutation can begin before exact object comparison completes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "vfs: lock open objects against namespace mutation"
+evidence = []
 
 [[packages]]
 id = "R2.1-fat-ftruncate"
