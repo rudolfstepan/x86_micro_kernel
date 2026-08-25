@@ -415,6 +415,68 @@ static uint32_t visible_columns(const reist_gui_text_editor_model_t *model) {
     return columns == 0U ? 1U : columns;
 }
 
+static uint32_t maximum_line_columns(
+    const reist_gui_text_editor_state_t *state) {
+    uint32_t maximum = 0U;
+    for (uint32_t line = 0U; line < state->line_count; ++line) {
+        uint32_t columns = line_scalar_count(state->lines[line]);
+        if (columns > maximum) maximum = columns;
+    }
+    return maximum;
+}
+
+int reist_gui_text_editor_get_viewport(
+    const reist_gui_text_editor_model_t *model,
+    const reist_gui_text_editor_state_t *state,
+    reist_gui_text_editor_viewport_t *viewport) {
+    if (reist_gui_text_editor_validate(model, state) != 0 ||
+        !state->configured || viewport == NULL)
+        return REIST_GUI_TEXT_EDITOR_EINVAL;
+    clear_bytes(viewport, sizeof(*viewport));
+    viewport->version = REIST_GUI_TEXT_EDITOR_API_VERSION;
+    viewport->struct_size = sizeof(*viewport);
+    viewport->visible_lines = visible_rows(model);
+    viewport->visible_columns = visible_columns(model);
+    viewport->maximum_first_line = state->line_count > viewport->visible_lines
+        ? state->line_count - viewport->visible_lines : 0U;
+    uint32_t maximum_columns = maximum_line_columns(state);
+    viewport->maximum_first_column =
+        maximum_columns > viewport->visible_columns
+            ? maximum_columns - viewport->visible_columns : 0U;
+    viewport->first_line = state->first_line > viewport->maximum_first_line
+        ? viewport->maximum_first_line : state->first_line;
+    viewport->first_column =
+        state->first_column > viewport->maximum_first_column
+            ? viewport->maximum_first_column : state->first_column;
+    return REIST_GUI_TEXT_EDITOR_OK;
+}
+
+int reist_gui_text_editor_scroll_to(
+    const reist_gui_text_editor_model_t *model,
+    reist_gui_text_editor_state_t *state,
+    uint32_t first_line, uint32_t first_column,
+    reist_gui_text_editor_result_t *result) {
+    if (reist_gui_text_editor_validate(model, state) != 0 ||
+        !state->configured || !result_valid(result))
+        return REIST_GUI_TEXT_EDITOR_EINVAL;
+    reist_gui_text_editor_viewport_t viewport;
+    if (reist_gui_text_editor_get_viewport(model, state, &viewport) != 0)
+        return REIST_GUI_TEXT_EDITOR_EINVAL;
+    if (first_line > viewport.maximum_first_line)
+        first_line = viewport.maximum_first_line;
+    if (first_column > viewport.maximum_first_column)
+        first_column = viewport.maximum_first_column;
+    publish_state(model, state, result);
+    if (state->first_line != first_line ||
+        state->first_column != first_column) {
+        state->first_line = first_line;
+        state->first_column = first_column;
+        request_full(model, result);
+    }
+    publish_state(model, state, result);
+    return REIST_GUI_TEXT_EDITOR_OK;
+}
+
 static uint32_t keep_cursor_visible(
     const reist_gui_text_editor_model_t *model,
     reist_gui_text_editor_state_t *state) {

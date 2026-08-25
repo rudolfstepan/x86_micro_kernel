@@ -97,6 +97,15 @@ Brent-Zykluswache hält den Userspace-Stack unabhängig von der Dateigröße kle
 Die 128-Cluster-Grenze für Verzeichnisse und das 320-Sektor-Budget pro Operation
 bleiben unverändert.
 
+`R3.4-notepad-scrollbars` ergänzt den REIST Editor um horizontale und
+vertikale Scrollleisten. Der öffentliche Texteditor liefert dafür begrenzte
+Viewport-Metriken und setzt einen geklemmten Ursprung, ohne Cursor, UTF-8-
+Dokument oder Dirty-State zu verändern. Der Editor zeichnet klassische
+Pfeilfelder, Seitentracks und proportionale Thumbs; Maus-Drag, Laden,
+Editieren, Cursor-Navigation und Fenster-Resize halten beide Achsen synchron.
+Dokument- und Eingabekapazitäten sowie der heapfreie Ring-3-Vertrag bleiben
+unverändert.
+
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
 unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und

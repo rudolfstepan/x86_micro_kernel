@@ -7612,3 +7612,54 @@ stop_conditions = [
 ]
 commit_message = "safety: contain irq storms and clock regressions"
 evidence = []
+
+[[packages]]
+id = "R3.4-notepad-scrollbars"
+status = "done"
+phase = "post-s0"
+risk = "low"
+title = "Add bounded scrollbars to the graphical text editor"
+scope = "Compose the existing fixed-capacity UTF-8 text editor with horizontal and vertical scrollbar state in NOTEPAD.PRG. Reserve scrollbar space in the editor layout, render classic arrow buttons, tracks and proportional thumbs, and support bounded arrow, page and thumb-drag pointer interaction. Add a public text-editor viewport operation that clamps requested origins to document and visible-cell limits without moving or modifying the cursor or document. Keep keyboard cursor navigation authoritative and synchronize both thumbs after edits, loads, resizes and automatic cursor scrolling. Preserve the heap-free 200-line by 256-byte document contract, Surface/fullscreen paths, modal input routing and persistence behavior."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/include/reist/gui/text_editor.h",
+  "userspace/gui/lib/text_editor.c",
+  "userspace/gui/apps/notepad/main.c",
+  "test/test_gui_text_editor_host.c",
+  "test/test_gui_text_editor_source.py",
+  "test/test_gui_notepad_source.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "scroll requests are clamped to the fixed document and visible-cell bounds before viewport publication",
+  "scrolling never moves the cursor modifies document bytes or changes the dirty flag",
+  "vertical and horizontal thumbs remain synchronized after load edit cursor navigation resize and pointer scrolling",
+  "pointer work is constant-time except for the existing bounded 200-line UTF-8 width scan",
+  "modal dialogs and open menus retain input priority over both scrollbars",
+  "the editor remains heap-free and the public API is append-only"
+]
+targeted_tests = [
+  "python test/test_gui_text_editor_source.py -v",
+  "python test/test_gui_notepad_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "scroll input can escape the bounded editor viewport or alter document content",
+  "a scrollbar can retain pointer capture after release cancel menu or dialog activation",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: add notepad scrollbars"
+evidence = [
+  "text-editor host behavior and API source tests passed including clamped document-neutral viewport scrolling",
+  "Notepad freestanding C11 and source contract tests passed with horizontal and vertical scrollbar composition",
+  "QEMU framebuffer package passed in 3 seconds after the focused freestanding division repair",
+  "VMware framebuffer package passed in 26 seconds"
+]

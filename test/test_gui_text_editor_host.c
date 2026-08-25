@@ -202,6 +202,45 @@ static void test_utf8_scalars_roundtrip_and_edit_atomically(void) {
     assert_document(&state, edited);
 }
 
+static void test_viewport_scrolling_is_clamped_and_document_neutral(void) {
+    static const char document[] =
+        "012345678901234567890123456789012345678901234567\n"
+        "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11";
+    reist_gui_text_editor_state_t state;
+    reist_gui_text_editor_result_t result;
+    reist_gui_text_editor_viewport_t viewport;
+    initialize(&state);
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_set_text(
+        &model, &state, document, sizeof(document) - 1U, &result) == 0);
+    assert(reist_gui_text_editor_get_viewport(
+        &model, &state, &viewport) == 0);
+    assert(viewport.visible_lines == 10U);
+    assert(viewport.visible_columns == 40U);
+    assert(viewport.maximum_first_line == 2U);
+    assert(viewport.maximum_first_column == 8U);
+
+    uint32_t cursor_line = state.cursor_line;
+    uint32_t cursor_column = state.cursor_column;
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_scroll_to(
+        &model, &state, UINT32_MAX, UINT32_MAX, &result) == 0);
+    assert(state.first_line == 2U && state.first_column == 8U);
+    assert(state.cursor_line == cursor_line &&
+           state.cursor_column == cursor_column);
+    assert(!state.modified && !result.changed && result.full_redraw);
+    assert_document(&state, document);
+
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_scroll_to(
+        &model, &state, 2U, 8U, &result) == 0);
+    assert(!result.full_redraw);
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_scroll_to(
+        &model, &state, 0U, 0U, &result) == 0);
+    assert(state.first_line == 0U && state.first_column == 0U);
+}
+
 int main(void) {
     test_replace_normalizes_and_fails_closed();
     test_multiline_editing_and_navigation();
@@ -209,5 +248,6 @@ int main(void) {
     test_line_capacity_is_rejected_before_replacement();
     test_saved_marker_changes_only_after_explicit_commit();
     test_utf8_scalars_roundtrip_and_edit_atomically();
+    test_viewport_scrolling_is_clamped_and_document_neutral();
     return 0;
 }

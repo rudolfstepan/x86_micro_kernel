@@ -138,6 +138,19 @@ typedef struct reist_gui_text_editor_result {
     uint32_t reserved[4];
 } reist_gui_text_editor_result_t;
 
+/** Bounded document/viewport metrics for composing external scrollbars. */
+typedef struct reist_gui_text_editor_viewport {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t visible_lines;
+    uint32_t visible_columns;
+    uint32_t maximum_first_line;
+    uint32_t maximum_first_column;
+    uint32_t first_line;
+    uint32_t first_column;
+    uint32_t reserved[4];
+} reist_gui_text_editor_viewport_t;
+
 /** Initialize an unconfigured empty state. @param[out] state NULL-safe. */
 void reist_gui_text_editor_state_initialize(
     reist_gui_text_editor_state_t *state);
@@ -190,6 +203,25 @@ int reist_gui_text_editor_get_text(
 int reist_gui_text_editor_mark_saved(
     const reist_gui_text_editor_model_t *model,
     reist_gui_text_editor_state_t *state,
+    reist_gui_text_editor_result_t *result);
+
+/** Query clamped viewport limits for scrollbar composition.
+ * The maximum column is derived from the longest validated document line.
+ * Work is bounded by the fixed line and line-byte capacities.
+ * @return OK or EINVAL without mutation. */
+int reist_gui_text_editor_get_viewport(
+    const reist_gui_text_editor_model_t *model,
+    const reist_gui_text_editor_state_t *state,
+    reist_gui_text_editor_viewport_t *viewport);
+
+/** Set the viewport origin without moving the cursor or editing the document.
+ * Requested origins are clamped to the current document and visible-cell
+ * limits. A changed origin requests one complete editor repaint.
+ * @return OK or EINVAL before mutation. */
+int reist_gui_text_editor_scroll_to(
+    const reist_gui_text_editor_model_t *model,
+    reist_gui_text_editor_state_t *state,
+    uint32_t first_line, uint32_t first_column,
     reist_gui_text_editor_result_t *result);
 
 /** Dispatch one event through focus, pointer capture and editing semantics.

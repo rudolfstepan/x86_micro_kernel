@@ -14,6 +14,7 @@
 #include "reist/gui/menu.h"
 #include "reist/gui/surface_client.h"
 #include "reist/gui/text_editor.h"
+#include "reist/gui/value_controls.h"
 
 #include "../../../../include/reist/utf.h"
 
@@ -22,6 +23,8 @@
 #define NOTEPAD_TEXT_LIMIT 256U
 #define NOTEPAD_MOUSE_BATCH_LIMIT 32U
 #define NOTEPAD_PAINT_RETRY_LIMIT 3U
+#define NOTEPAD_SCROLLBAR_EXTENT 18U
+#define NOTEPAD_SCROLLBAR_MIN_THUMB 8U
 
 enum {
     NOTEPAD_KEY_NONE = 0x100,
@@ -50,6 +53,17 @@ enum {
     NOTEPAD_DIALOG_CONFIRM_EXIT,
     NOTEPAD_DIALOG_ERROR,
     NOTEPAD_DIALOG_ABOUT
+};
+
+enum {
+    NOTEPAD_SCROLL_NONE = 0U,
+    NOTEPAD_SCROLL_VERTICAL,
+    NOTEPAD_SCROLL_HORIZONTAL
+};
+
+enum {
+    NOTEPAD_CONTROL_VERTICAL_SCROLL = 2U,
+    NOTEPAD_CONTROL_HORIZONTAL_SCROLL
 };
 
 static const uint32_t color_desktop = 0x00006E8EU;
@@ -145,6 +159,11 @@ typedef struct notepad_state {
     reist_gui_dialog_model_t error_model;
     reist_gui_text_editor_state_t editor;
     reist_gui_text_editor_model_t editor_model;
+    reist_gui_range_state_t vertical_scroll;
+    reist_gui_range_state_t horizontal_scroll;
+    reist_gui_range_model_t vertical_scroll_model;
+    reist_gui_range_model_t horizontal_scroll_model;
+    reist_gui_text_editor_viewport_t viewport;
     char path[NOTEPAD_PATH_CAPACITY];
     char status[NOTEPAD_STATUS_CAPACITY];
     char error_detail[NOTEPAD_STATUS_CAPACITY];
@@ -154,6 +173,8 @@ typedef struct notepad_state {
     uint32_t io_blocked;
     uint32_t redraw;
     uint32_t exit_requested;
+    uint32_t scroll_drag;
+    uint32_t scroll_drag_offset;
 } notepad_state_t;
 
 /* Large document storage remains static so the process stack stays bounded. */
@@ -456,6 +477,153 @@ static reist_gui_rect_t editor_frame(const x86os_display_info_t *display) {
         display->height > top + 4U ? display->height - top - 4U : 1U};
 }
 
+typedef struct notepad_scrollbar_geometry {
+    reist_gui_rect_t decrement;
+    reist_gui_rect_t increment;
+    reist_gui_rect_t track;
+    reist_gui_rect_t thumb;
+    uint32_t travel;
+} notepad_scrollbar_geometry_t;
+
+static uint32_t point_inside(reist_gui_rect_t rect, int32_t x, int32_t y) {
+    if (x < rect.x || y < rect.y) return 0U;
+    return (uint32_t)(x - rect.x) < rect.width &&
+           (uint32_t)(y - rect.y) < rect.height;
+}
+
+static uint32_t range_model_matches(
+    const reist_gui_range_model_t *left,
+    const reist_gui_range_model_t *right) {
+    return left->version == right->version &&
+        left->struct_size == right->struct_size && left->id == right->id &&
+        left->bounds.x == right->bounds.x && left->bounds.y == right->bounds.y &&
+        left->bounds.width == right->bounds.width &&
+        left->bounds.height == right->bounds.height &&
+        left->minimum == right->minimum && left->maximum == right->maximum &&
+        left->step == right->step && left->page_step == right->page_step &&
+        left->role == right->role &&
+        left->orientation == right->orientation &&
+        left->flags == right->flags;
+}
+
+static int synchronize_range(reist_gui_range_model_t *model,
+                             reist_gui_range_state_t *range,
+                             const reist_gui_range_model_t *next,
+                             uint32_t value) {
+    reist_gui_value_result_t result;
+    reist_gui_value_result_initialize(&result);
+    if (!range->configured || !range_model_matches(model, next)) {
+        *model = *next;
+        reist_gui_range_state_initialize(range);
+        return reist_gui_range_configure(
+            model, range, (int32_t)value, &result);
+    }
+    return reist_gui_range_set(model, range, (int32_t)value, &result);
+}
+
+static int synchronize_scrollbars(notepad_state_t *state) {
+    reist_gui_text_editor_viewport_t viewport;
+    if (reist_gui_text_editor_get_viewport(
+            &state->editor_model, &state->editor, &viewport) != 0)
+        return -1;
+    reist_gui_text_editor_result_t editor_result;
+    reist_gui_text_editor_result_initialize(&editor_result);
+    if (reist_gui_text_editor_scroll_to(
+            &state->editor_model, &state->editor,
+            viewport.first_line, viewport.first_column,
+            &editor_result) != 0)
+        return -1;
+
+    uint32_t vertical_maximum = viewport.maximum_first_line;
+    uint32_t horizontal_maximum = viewport.maximum_first_column;
+    reist_gui_rect_t editor = state->editor_model.bounds;
+    reist_gui_range_model_t vertical = {
+        REIST_GUI_VALUE_API_VERSION, sizeof(reist_gui_range_model_t),
+        NOTEPAD_CONTROL_VERTICAL_SCROLL, "Vertikal scrollen",
+        {editor.x + (int32_t)editor.width + 2, editor.y,
+         NOTEPAD_SCROLLBAR_EXTENT, editor.height},
+        0, (int32_t)(vertical_maximum ? vertical_maximum : 1U),
+        1U, viewport.visible_lines,
+        REIST_GUI_RANGE_SCROLLBAR, REIST_GUI_VERTICAL,
+        REIST_GUI_VALUE_VISIBLE |
+            (vertical_maximum ? REIST_GUI_VALUE_ENABLED : 0U),
+        {0U, 0U, 0U, 0U}};
+    reist_gui_range_model_t horizontal = {
+        REIST_GUI_VALUE_API_VERSION, sizeof(reist_gui_range_model_t),
+        NOTEPAD_CONTROL_HORIZONTAL_SCROLL, "Horizontal scrollen",
+        {editor.x, editor.y + (int32_t)editor.height + 2,
+         editor.width, NOTEPAD_SCROLLBAR_EXTENT},
+        0, (int32_t)(horizontal_maximum ? horizontal_maximum : 1U),
+        1U, viewport.visible_columns,
+        REIST_GUI_RANGE_SCROLLBAR, REIST_GUI_HORIZONTAL,
+        REIST_GUI_VALUE_VISIBLE |
+            (horizontal_maximum ? REIST_GUI_VALUE_ENABLED : 0U),
+        {0U, 0U, 0U, 0U}};
+    if (synchronize_range(&state->vertical_scroll_model,
+                          &state->vertical_scroll, &vertical,
+                          viewport.first_line) != 0 ||
+        synchronize_range(&state->horizontal_scroll_model,
+                          &state->horizontal_scroll, &horizontal,
+                          viewport.first_column) != 0)
+        return -1;
+    state->viewport = viewport;
+    if (editor_result.full_redraw) state->redraw = 1U;
+    return 0;
+}
+
+static notepad_scrollbar_geometry_t scrollbar_geometry(
+    const reist_gui_range_model_t *model,
+    const reist_gui_range_state_t *range,
+    uint32_t maximum) {
+    notepad_scrollbar_geometry_t geometry = {0};
+    uint32_t extent = model->orientation == REIST_GUI_HORIZONTAL
+        ? model->bounds.width : model->bounds.height;
+    uint32_t cross = model->orientation == REIST_GUI_HORIZONTAL
+        ? model->bounds.height : model->bounds.width;
+    uint32_t button = cross;
+    if (button * 2U > extent) button = extent / 2U;
+    uint32_t track_extent = extent > button * 2U
+        ? extent - button * 2U : 1U;
+    if (model->orientation == REIST_GUI_HORIZONTAL) {
+        geometry.decrement = (reist_gui_rect_t){
+            model->bounds.x, model->bounds.y, button, model->bounds.height};
+        geometry.increment = (reist_gui_rect_t){
+            model->bounds.x + (int32_t)extent - (int32_t)button,
+            model->bounds.y, button, model->bounds.height};
+        geometry.track = (reist_gui_rect_t){
+            model->bounds.x + (int32_t)button, model->bounds.y,
+            track_extent, model->bounds.height};
+    } else {
+        geometry.decrement = (reist_gui_rect_t){
+            model->bounds.x, model->bounds.y, model->bounds.width, button};
+        geometry.increment = (reist_gui_rect_t){
+            model->bounds.x,
+            model->bounds.y + (int32_t)extent - (int32_t)button,
+            model->bounds.width, button};
+        geometry.track = (reist_gui_rect_t){
+            model->bounds.x, model->bounds.y + (int32_t)button,
+            model->bounds.width, track_extent};
+    }
+    uint32_t page = model->page_step ? model->page_step : 1U;
+    uint32_t thumb_extent = maximum == 0U ? track_extent :
+        track_extent * page / (maximum + page);
+    if (thumb_extent < NOTEPAD_SCROLLBAR_MIN_THUMB)
+        thumb_extent = NOTEPAD_SCROLLBAR_MIN_THUMB;
+    if (thumb_extent > track_extent) thumb_extent = track_extent;
+    geometry.travel = track_extent - thumb_extent;
+    uint32_t offset = maximum && geometry.travel
+        ? geometry.travel * (uint32_t)range->value / maximum : 0U;
+    if (model->orientation == REIST_GUI_HORIZONTAL)
+        geometry.thumb = (reist_gui_rect_t){
+            geometry.track.x + (int32_t)offset, geometry.track.y,
+            thumb_extent, geometry.track.height};
+    else
+        geometry.thumb = (reist_gui_rect_t){
+            geometry.track.x, geometry.track.y + (int32_t)offset,
+            geometry.track.width, thumb_extent};
+    return geometry;
+}
+
 static const reist_gui_dialog_model_t *dialog_model(
     const notepad_state_t *state) {
     if (state->dialog_kind == NOTEPAD_DIALOG_CONFIRM_EXIT)
@@ -510,6 +678,41 @@ static void render_menu(const x86os_display_info_t *display,
     }
 }
 
+static void render_scrollbar(const x86os_display_info_t *display,
+                             const reist_gui_range_model_t *model,
+                             const reist_gui_range_state_t *range,
+                             uint32_t maximum) {
+    notepad_scrollbar_geometry_t geometry =
+        scrollbar_geometry(model, range, maximum);
+    uint32_t enabled = maximum != 0U;
+    bevel(model->bounds, color_face, 0U);
+    fill(geometry.track, color_light);
+    bevel(geometry.decrement, color_face, 1U);
+    bevel(geometry.increment, color_face, 1U);
+    bevel(geometry.thumb, color_face, enabled ? 1U : 0U);
+    const char *decrement = model->orientation == REIST_GUI_HORIZONTAL
+        ? "<" : "^";
+    const char *increment = model->orientation == REIST_GUI_HORIZONTAL
+        ? ">" : "v";
+    uint32_t foreground = enabled ? color_text : color_shadow;
+    int32_t decrement_x = geometry.decrement.x +
+        (int32_t)((geometry.decrement.width > display->font_width
+            ? geometry.decrement.width - display->font_width : 0U) / 2U);
+    int32_t decrement_y = geometry.decrement.y +
+        (int32_t)((geometry.decrement.height > display->font_height
+            ? geometry.decrement.height - display->font_height : 0U) / 2U);
+    int32_t increment_x = geometry.increment.x +
+        (int32_t)((geometry.increment.width > display->font_width
+            ? geometry.increment.width - display->font_width : 0U) / 2U);
+    int32_t increment_y = geometry.increment.y +
+        (int32_t)((geometry.increment.height > display->font_height
+            ? geometry.increment.height - display->font_height : 0U) / 2U);
+    text(display, decrement_x, decrement_y, decrement,
+         display->font_width, foreground, color_face);
+    text(display, increment_x, increment_y, increment,
+         display->font_width, foreground, color_face);
+}
+
 static void render_editor(const x86os_display_info_t *display,
                           const notepad_state_t *state) {
     reist_gui_rect_t frame = editor_frame(display);
@@ -552,6 +755,19 @@ static void render_editor(const x86os_display_info_t *display,
                 editor.y + (int32_t)(row * display->font_height),
                 2U, display->font_height}, color_dark);
     }
+
+    render_scrollbar(display, &state->vertical_scroll_model,
+                     &state->vertical_scroll,
+                     state->viewport.maximum_first_line);
+    render_scrollbar(display, &state->horizontal_scroll_model,
+                     &state->horizontal_scroll,
+                     state->viewport.maximum_first_column);
+    bevel((reist_gui_rect_t){
+              state->vertical_scroll_model.bounds.x,
+              state->horizontal_scroll_model.bounds.y,
+              state->vertical_scroll_model.bounds.width,
+              state->horizontal_scroll_model.bounds.height},
+          color_face, 1U);
 
     reist_gui_rect_t status = {
         frame.x + 6,
@@ -900,6 +1116,8 @@ static void open_dialog(notepad_state_t *state,
                         const x86os_display_info_t *display,
                         uint32_t kind) {
     const reist_gui_dialog_model_t *model;
+    state->scroll_drag = NOTEPAD_SCROLL_NONE;
+    state->scroll_drag_offset = 0U;
     state->dialog_kind = kind;
     model = dialog_model(state);
     if (main_surface != 0 && create_dialog_surface(display, model) != 0)
@@ -939,6 +1157,8 @@ static const reist_gui_file_dialog_model_t *active_file_dialog_model(
 static void open_file_dialog(notepad_state_t *state,
                              const x86os_display_info_t *display,
                              uint32_t mode) {
+    state->scroll_drag = NOTEPAD_SCROLL_NONE;
+    state->scroll_drag_offset = 0U;
     reist_gui_file_dialog_state_initialize(&state->file_dialog);
     state->file_dialog_mode = mode;
     reist_gui_file_dialog_layout_t layout = file_dialog_layout(display);
@@ -974,7 +1194,7 @@ static void complete_file_dialog(
             return;
         }
         if (!copy_text(state->path, sizeof(state->path), result->path) ||
-            load_document(state) != 0)
+            load_document(state) != 0 || synchronize_scrollbars(state) != 0)
             open_error(state, display, "Datei konnte nicht gelesen werden.",
                        result->path);
     } else {
@@ -1037,11 +1257,162 @@ static void apply_menu_result(notepad_state_t *state,
         open_dialog(state, display, NOTEPAD_DIALOG_ABOUT);
 }
 
+static uint32_t dispatch_editor_pointer(notepad_state_t *state,
+                                        int32_t x, int32_t y,
+                                        uint32_t button_event,
+                                        uint32_t pressed) {
+    reist_gui_text_editor_event_t event;
+    reist_gui_text_editor_event_initialize(&event);
+    event.type = button_event ? REIST_GUI_TEXT_EDITOR_EVENT_POINTER_BUTTON
+                              : REIST_GUI_TEXT_EDITOR_EVENT_POINTER_MOTION;
+    event.x = x;
+    event.y = y;
+    event.button = button_event ? REIST_GUI_TEXT_EDITOR_BUTTON_LEFT : 0U;
+    event.pressed = pressed;
+    reist_gui_text_editor_result_t result;
+    reist_gui_text_editor_result_initialize(&result);
+    if (reist_gui_text_editor_dispatch(
+            &state->editor_model, &state->editor,
+            &event, &result) != 0) return 1U;
+    if (synchronize_scrollbars(state) != 0) return 1U;
+    if (result.damage_count || result.full_redraw) state->redraw = 1U;
+    return result.consumed;
+}
+
+static uint32_t scroll_coordinate(
+    const reist_gui_range_model_t *model, int32_t x, int32_t y) {
+    int32_t coordinate = model->orientation == REIST_GUI_HORIZONTAL ? x : y;
+    return coordinate < 0 ? 0U : (uint32_t)coordinate;
+}
+
+static uint32_t apply_scroll_value(notepad_state_t *state,
+                                   uint32_t axis, uint32_t value) {
+    reist_gui_range_model_t *model = axis == NOTEPAD_SCROLL_VERTICAL
+        ? &state->vertical_scroll_model : &state->horizontal_scroll_model;
+    reist_gui_range_state_t *range = axis == NOTEPAD_SCROLL_VERTICAL
+        ? &state->vertical_scroll : &state->horizontal_scroll;
+    uint32_t maximum = axis == NOTEPAD_SCROLL_VERTICAL
+        ? state->viewport.maximum_first_line
+        : state->viewport.maximum_first_column;
+    if (value > maximum) value = maximum;
+    reist_gui_value_result_t range_result;
+    reist_gui_value_result_initialize(&range_result);
+    if (reist_gui_range_set(model, range, (int32_t)value,
+                            &range_result) != 0)
+        return 0U;
+    reist_gui_text_editor_result_t editor_result;
+    reist_gui_text_editor_result_initialize(&editor_result);
+    uint32_t first_line = axis == NOTEPAD_SCROLL_VERTICAL
+        ? value : (uint32_t)state->vertical_scroll.value;
+    uint32_t first_column = axis == NOTEPAD_SCROLL_HORIZONTAL
+        ? value : (uint32_t)state->horizontal_scroll.value;
+    if (reist_gui_text_editor_scroll_to(
+            &state->editor_model, &state->editor,
+            first_line, first_column, &editor_result) != 0 ||
+        synchronize_scrollbars(state) != 0)
+        return 0U;
+    if (range_result.changed || editor_result.full_redraw)
+        state->redraw = 1U;
+    return 1U;
+}
+
+static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
+                                       uint32_t axis,
+                                       int32_t x, int32_t y,
+                                       uint32_t button_event,
+                                       uint32_t pressed) {
+    reist_gui_range_model_t *model = axis == NOTEPAD_SCROLL_VERTICAL
+        ? &state->vertical_scroll_model : &state->horizontal_scroll_model;
+    reist_gui_range_state_t *range = axis == NOTEPAD_SCROLL_VERTICAL
+        ? &state->vertical_scroll : &state->horizontal_scroll;
+    uint32_t maximum = axis == NOTEPAD_SCROLL_VERTICAL
+        ? state->viewport.maximum_first_line
+        : state->viewport.maximum_first_column;
+    notepad_scrollbar_geometry_t geometry =
+        scrollbar_geometry(model, range, maximum);
+    if (!button_event && state->scroll_drag == axis) {
+        uint32_t coordinate = scroll_coordinate(model, x, y);
+        uint32_t track_origin = model->orientation == REIST_GUI_HORIZONTAL
+            ? (uint32_t)geometry.track.x : (uint32_t)geometry.track.y;
+        uint32_t position = coordinate > track_origin +
+                state->scroll_drag_offset
+            ? coordinate - track_origin - state->scroll_drag_offset : 0U;
+        if (position > geometry.travel) position = geometry.travel;
+        uint32_t value = maximum && geometry.travel
+            ? (maximum * position + geometry.travel / 2U) /
+                geometry.travel : 0U;
+        (void)apply_scroll_value(state, axis, value);
+        return 1U;
+    }
+    if (!button_event)
+        return point_inside(model->bounds, x, y);
+    if (!pressed) {
+        if (state->scroll_drag == axis) {
+            state->scroll_drag = NOTEPAD_SCROLL_NONE;
+            state->scroll_drag_offset = 0U;
+            state->redraw = 1U;
+            return 1U;
+        }
+        return point_inside(model->bounds, x, y);
+    }
+    if (!point_inside(model->bounds, x, y)) return 0U;
+    if (maximum == 0U) return 1U;
+    uint32_t value = (uint32_t)range->value;
+    if (point_inside(geometry.decrement, x, y)) {
+        if (value != 0U) --value;
+    } else if (point_inside(geometry.increment, x, y)) {
+        if (value < maximum) ++value;
+    } else if (point_inside(geometry.thumb, x, y)) {
+        uint32_t coordinate = scroll_coordinate(model, x, y);
+        uint32_t thumb_origin = model->orientation == REIST_GUI_HORIZONTAL
+            ? (uint32_t)geometry.thumb.x : (uint32_t)geometry.thumb.y;
+        state->scroll_drag = axis;
+        state->scroll_drag_offset = coordinate - thumb_origin;
+        state->redraw = 1U;
+        return 1U;
+    } else {
+        uint32_t coordinate = scroll_coordinate(model, x, y);
+        uint32_t thumb_origin = model->orientation == REIST_GUI_HORIZONTAL
+            ? (uint32_t)geometry.thumb.x : (uint32_t)geometry.thumb.y;
+        uint32_t page = model->page_step;
+        if (coordinate < thumb_origin)
+            value = value > page ? value - page : 0U;
+        else
+            value = maximum - value > page ? value + page : maximum;
+    }
+    (void)apply_scroll_value(state, axis, value);
+    return 1U;
+}
+
+static uint32_t dispatch_scrollbars(notepad_state_t *state,
+                                    int32_t x, int32_t y,
+                                    uint32_t button_event,
+                                    uint32_t pressed) {
+    if (state->scroll_drag == NOTEPAD_SCROLL_VERTICAL)
+        return dispatch_one_scrollbar(
+            state, NOTEPAD_SCROLL_VERTICAL, x, y,
+            button_event, pressed);
+    if (state->scroll_drag == NOTEPAD_SCROLL_HORIZONTAL)
+        return dispatch_one_scrollbar(
+            state, NOTEPAD_SCROLL_HORIZONTAL, x, y,
+            button_event, pressed);
+    if (point_inside(state->vertical_scroll_model.bounds, x, y))
+        return dispatch_one_scrollbar(
+            state, NOTEPAD_SCROLL_VERTICAL, x, y,
+            button_event, pressed);
+    if (point_inside(state->horizontal_scroll_model.bounds, x, y))
+        return dispatch_one_scrollbar(
+            state, NOTEPAD_SCROLL_HORIZONTAL, x, y,
+            button_event, pressed);
+    return 0U;
+}
+
 static uint32_t dispatch_pointer(notepad_state_t *state,
                                  const x86os_display_info_t *display,
                                  int32_t x, int32_t y,
                                  uint32_t button_event, uint32_t pressed) {
     if (state->file_dialog.visible) {
+        state->scroll_drag = NOTEPAD_SCROLL_NONE;
         reist_gui_file_dialog_event_t event;
         reist_gui_file_dialog_event_initialize(&event);
         event.type = button_event
@@ -1064,6 +1435,7 @@ static uint32_t dispatch_pointer(notepad_state_t *state,
         return 1U;
     }
     if (state->dialog.visible) {
+        state->scroll_drag = NOTEPAD_SCROLL_NONE;
         uint32_t kind = state->dialog_kind;
         const reist_gui_dialog_model_t *model = dialog_model(state);
         reist_gui_dialog_layout_t layout = dialog_layout(display);
@@ -1101,23 +1473,15 @@ static uint32_t dispatch_pointer(notepad_state_t *state,
             &menu_model, &layout, &state->menu,
             &menu_event, &menu_result) != 0) return 1U;
     apply_menu_result(state, display, &menu_result);
-    if (menu_result.consumed) return 1U;
-
-    reist_gui_text_editor_event_t event;
-    reist_gui_text_editor_event_initialize(&event);
-    event.type = button_event ? REIST_GUI_TEXT_EDITOR_EVENT_POINTER_BUTTON
-                              : REIST_GUI_TEXT_EDITOR_EVENT_POINTER_MOTION;
-    event.x = x;
-    event.y = y;
-    event.button = button_event ? REIST_GUI_TEXT_EDITOR_BUTTON_LEFT : 0U;
-    event.pressed = pressed;
-    reist_gui_text_editor_result_t result;
-    reist_gui_text_editor_result_initialize(&result);
-    if (reist_gui_text_editor_dispatch(
-            &state->editor_model, &state->editor,
-            &event, &result) != 0) return 1U;
-    if (result.damage_count || result.full_redraw) state->redraw = 1U;
-    return result.consumed;
+    if (menu_result.consumed) {
+        state->scroll_drag = NOTEPAD_SCROLL_NONE;
+        return 1U;
+    }
+    if (state->editor.captured)
+        return dispatch_editor_pointer(
+            state, x, y, button_event, pressed);
+    if (dispatch_scrollbars(state, x, y, button_event, pressed)) return 1U;
+    return dispatch_editor_pointer(state, x, y, button_event, pressed);
 }
 
 static uint32_t dialog_key(int key) {
@@ -1258,6 +1622,7 @@ static uint32_t dispatch_keyboard(notepad_state_t *state,
     if (reist_gui_text_editor_dispatch(
             &state->editor_model, &state->editor,
             &event, &result) != 0) return 1U;
+    if (synchronize_scrollbars(state) != 0) return 1U;
     if (result.damage_count || result.full_redraw) state->redraw = 1U;
     if (result.changed)
         (void)copy_text(state->status, sizeof(state->status), "Geaendert");
@@ -1368,17 +1733,26 @@ static void move_pointer(const x86os_display_info_t *display,
 
 static void update_editor_model(notepad_state_t *state,
                                 const x86os_display_info_t *display) {
+    state->scroll_drag = NOTEPAD_SCROLL_NONE;
+    state->scroll_drag_offset = 0U;
     reist_gui_rect_t frame = editor_frame(display);
     uint32_t status = display->font_height + 12U;
     int32_t top = frame.y + 7;
     int32_t bottom = frame.y + (int32_t)frame.height -
         (int32_t)status - 6;
+    uint32_t available_width = frame.width > 16U
+        ? frame.width - 16U : 1U;
+    uint32_t available_height = bottom > top
+        ? (uint32_t)(bottom - top) : 1U;
+    uint32_t scrollbar_space = NOTEPAD_SCROLLBAR_EXTENT + 2U;
     state->editor_model = (reist_gui_text_editor_model_t){
         REIST_GUI_TEXT_EDITOR_API_VERSION,
         sizeof(reist_gui_text_editor_model_t), 1U, "Dokumenttext",
         {frame.x + 8, top,
-         frame.width > 16U ? frame.width - 16U : 1U,
-         bottom > top ? (uint32_t)(bottom - top) : 1U},
+         available_width > scrollbar_space
+             ? available_width - scrollbar_space : 1U,
+         available_height > scrollbar_space
+             ? available_height - scrollbar_space : 1U},
         display->font_width, display->font_height,
         REIST_GUI_TEXT_EDITOR_VISIBLE | REIST_GUI_TEXT_EDITOR_ENABLED,
         {0U, 0U, 0U, 0U}};
@@ -1393,6 +1767,8 @@ static int initialize(notepad_state_t *state,
     reist_gui_dialog_state_initialize(&state->dialog);
     reist_gui_file_dialog_state_initialize(&state->file_dialog);
     reist_gui_text_editor_state_initialize(&state->editor);
+    reist_gui_range_state_initialize(&state->vertical_scroll);
+    reist_gui_range_state_initialize(&state->horizontal_scroll);
     if (!copy_text(state->path, sizeof(state->path), path)) return -4;
     update_editor_model(state, display);
     reist_gui_text_editor_result_t result;
@@ -1410,7 +1786,9 @@ static int initialize(notepad_state_t *state,
     state->dialog_kind = NOTEPAD_DIALOG_NONE;
     state->file_dialog_mode = REIST_GUI_FILE_DIALOG_OPEN;
     state->redraw = 1U;
-    return load_document(state);
+    int load_status = load_document(state);
+    if (synchronize_scrollbars(state) != 0) return -4;
+    return load_status;
 }
 
 static uint32_t is_surface_argument(const char *argument) {
@@ -1551,7 +1929,13 @@ int main(int argc, char **argv) {
         reist_gui_file_dialog_validate(
             &save_file_model, &file_metrics, &application.file_dialog) != 0 ||
         reist_gui_text_editor_validate(
-            &application.editor_model, &application.editor) != 0) {
+            &application.editor_model, &application.editor) != 0 ||
+        reist_gui_range_validate(
+            &application.vertical_scroll_model,
+            &application.vertical_scroll) != 0 ||
+        reist_gui_range_validate(
+            &application.horizontal_scroll_model,
+            &application.horizontal_scroll) != 0) {
         if (runtime_activated) (void)x86os_display_deactivate();
         x86os_puts("notepad: GUI-API/Layout nicht kompatibel\n");
         return 1;
@@ -1641,6 +2025,10 @@ int main(int argc, char **argv) {
                         display.width = surface_client.width;
                         display.height = surface_client.height;
                         update_editor_model(&application, &display);
+                        if (synchronize_scrollbars(&application) != 0) {
+                            application.exit_requested = 1U;
+                            break;
+                        }
                         resize_marker_pending = 1U;
                     }
                     if (application.dialog.visible &&

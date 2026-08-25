@@ -775,8 +775,9 @@ ist noch offen und wird nicht behauptet.
   und Entwurfswiederherstellung ist umgesetzt
 - Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
   Deskriptoren, Wait-Queues und Signalen
-- Editor: das sichere `TEMP -> fsync -> close -> rename` sowie vollständig
-  validiertes RFC-3629-UTF-8 mit Skalarcursor und bytegenauer Persistenz sind
+- Editor: das sichere `TEMP -> fsync -> close -> rename`, vollständig
+  validiertes RFC-3629-UTF-8 mit Skalarcursor, bytegenaue Persistenz sowie
+  horizontale und vertikale Scrollleisten mit geklemmtem Viewport sind
   umgesetzt; dynamischer Puffer, Suche, Auswahl/Clipboard, Graphemnavigation,
   Bidi/Shaping/IME und die Aufhebung des Limits von 200 Zeilen fehlen
 - ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel

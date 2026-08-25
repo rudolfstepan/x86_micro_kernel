@@ -67,7 +67,7 @@ der betroffenen Surface an.
 | verschachtelte Container | ja | Control Gallery | adressierter Eventpfad | Parent-Capture/Target/Bubble | [x] Parent-lokale Geometrie und Ancestry-Clip |
 | Tabs | ja | Control Gallery | Capture/Auswahl | Links/Rechts, Home/End, Enter/Space | [x] vier interaktive Seiten |
 | einzeiliges Textfeld | ja | Control Gallery | Fokus/Cursor-Capture | Cursor, Editieren, Enter | [x] begrenztes ASCII-v1-Textfeld |
-| mehrzeiliger Texteditor | ja | REIST Editor | Click/Cursor | Cursor, Editieren, Zeilenwechsel | [x] fester UTF-8/LF-Puffer, Skalarcursor, Laden/Speichern und Dirty-State |
+| mehrzeiliger Texteditor | ja | REIST Editor | Click/Cursor und zwei Scrollleisten | Cursor, Editieren, Zeilenwechsel | [x] fester UTF-8/LF-Puffer, Skalarcursor, Laden/Speichern, Dirty-State und horizontaler/vertikaler Viewport |
 | Liste und Listenauswahl | ja | Control Gallery | Capture/Auswahl | Pfeile, Home/End, Page, Enter | [x] feste Itemkapazität |
 | Scrollbar | ja | Control Gallery | Drag-Capture | Pfeile, Page, Home/End | [x] gemeinsame Range-API |
 | ScrollView | nein | nein | nein | nein | [ ] Containerkopplung noch offen |
@@ -324,6 +324,17 @@ validierten UTF-8-Bytes. `/usr/share/fonts/unicode.txt` ist damit direkt im
 REIST Editor sichtbar. Graphemnavigation, Bidi und Shaping werden dadurch
 nicht vorgetäuscht.
 
+`reist_gui_text_editor_get_viewport()` liefert die sichtbaren Zeilen und
+Skalarspalten sowie die aus dem festen Dokument abgeleiteten maximalen
+Viewport-Ursprünge. `reist_gui_text_editor_scroll_to()` begrenzt externe
+Scrollanforderungen darauf, ohne Cursor, Dokument oder Dirty-State zu ändern.
+Der REIST Editor komponiert damit zwei Range-Scrollbars: klassische
+Pfeilfelder verschieben um eine Zelle, ein Klick in den Track um eine Seite,
+und ein proportionaler Thumb ist mit begrenztem Pointer-Capture ziehbar.
+Laden, Editieren, Cursor-Navigation und Resize synchronisieren beide Thumbs.
+Die allgemeine Container-`ScrollView` bleibt davon getrennt und weiterhin
+offen.
+
 ## Umsetzungsreihenfolge
 
 - [x] GUI-Quellen, öffentliche Header, Bibliothek und Beispiele trennen.
@@ -340,8 +351,8 @@ nicht vorgetäuscht.
 - [x] Einzeiliges Textfeld samt Cursor und expliziter Clipboard-/IME-Grenze spezifizieren.
 - [x] Liste, Scrollbar, Slider, SpinBox und Progress gemeinsam implementieren.
 - [x] Mehrzeiligen Texteditor mit realer GUI-App, Dirty-State, modalen
-  Save/Discard/Cancel-Dialogen, skalarbasiertem UTF-8-Cursor und begrenzter
-  Persistenz bereitstellen.
+  Save/Discard/Cancel-Dialogen, skalarbasiertem UTF-8-Cursor, horizontaler und
+  vertikaler Scrollbar sowie begrenzter Persistenz bereitstellen.
 - [ ] ScrollView aus Container, Viewport und Scrollbar zusammensetzen.
 - [x] Surface-/Event-IPC generationsgebunden veröffentlichen; lokale
   Fill-/Text-Paintframes werden begrenzt und atomar committed.

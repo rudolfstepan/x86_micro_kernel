@@ -21,6 +21,7 @@ class GuiNotepadSourceTests(unittest.TestCase):
             '#include "reist/gui/menu.h"',
             '#include "reist/gui/surface_client.h"',
             '#include "reist/gui/text_editor.h"',
+            '#include "reist/gui/value_controls.h"',
         ):
             self.assertIn(include, self.source)
         self.assertNotIn("desktop_wm", self.source)
@@ -84,6 +85,25 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("utf8_slice", self.source)
         self.assertIn("scalar_amount * display->font_width", self.source)
         self.assertNotIn("line + state->editor.first_column", self.source)
+
+    def test_editor_has_bounded_horizontal_and_vertical_scrollbars(self):
+        for contract in (
+            "vertical_scroll_model",
+            "horizontal_scroll_model",
+            "reist_gui_text_editor_get_viewport",
+            "reist_gui_text_editor_scroll_to",
+            "reist_gui_range_configure",
+            "reist_gui_range_set",
+            "scrollbar_geometry",
+            "NOTEPAD_SCROLLBAR_MIN_THUMB",
+            "NOTEPAD_SCROLL_VERTICAL",
+            "NOTEPAD_SCROLL_HORIZONTAL",
+            "scroll_drag_offset",
+        ):
+            self.assertIn(contract, self.source)
+        self.assertIn("maximum + page", self.source)
+        self.assertIn("model->page_step", self.source)
+        self.assertIn("synchronize_scrollbars(state)", self.source)
 
     def test_resize_is_recoverable_and_dialog_is_a_separate_surface(self):
         self.assertIn("accept_configure_bounded", self.source)
