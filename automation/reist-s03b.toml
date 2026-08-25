@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.2-unifont-bmp-coverage"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,72 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.2-unifont-bmp-coverage"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Bounded GNU Unifont BMP fallback coverage"
+scope = "Extend the existing kernel-CP437 plus Ring-3-PSF2 text cascade with broad Basic Multilingual Plane glyph coverage from the official GNU Unifont 16.0.04 HEX release. Vendor the exact gzip source with its SIL OFL 1.1 license and pinned SHA-256, then deterministically generate one standard PSF2 resource containing every one of the 57086 source mappings. Preserve native 8 by 16 glyphs and reduce 16 by 16 glyphs to the existing 8 by 16 desktop cell by OR-compressing adjacent source columns; document this bounded low-resolution adaptation rather than claiming typographic fidelity. Add an explicit generated CP437 membership helper so the desktop retains the single fast kernel draw for ASCII and CP437 and overlays only exact non-CP437 BMP mappings from fixed Ring-3 font and index storage. Missing malformed oversized or capacity-exceeding resources leave the prior visible kernel replacement path active. Package source license and generated font identically in Windows and Makefile HDD images but keep them off the capacity-limited rescue floppy. Prove deterministic generation exact coverage representative Latin Cyrillic Hebrew Arabic Devanagari CJK and Hangul mappings malformed fallback and a supervised QEMU SVGA2D runtime probe. This package covers standalone source glyph selection across the BMP only; supplementary planes grapheme clustering combining placement bidirectional layout shaping and IME remain separate Ring-3 packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "assets/fonts/README.md",
+  "assets/fonts/source/unifont-16.0.04.hex.gz",
+  "assets/fonts/source/OFL-1.1.txt",
+  "assets/fonts/reist-unicode-bmp.psf",
+  "scripts/generate_unifont_psf2.py",
+  "scripts/generate_cp437_unicode.py",
+  "include/reist/unicode_vga_font.h",
+  "scripts/build-windows.ps1",
+  "Makefile",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_gui_bmp_font.py",
+  "test/test_gui_font.py",
+  "test/test_unicode_text.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the vendored GNU Unifont gzip has pinned SHA-256 F9C8C7802453F47BE02677176AEAC2342EE96D354FAD7A26CEDCCE48E68E1D9F and is accompanied by the unmodified SIL OFL 1.1 text",
+  "generation is deterministic host-locale-independent and maps each of the exact 57086 unique source code points once into a standard PSF2 Unicode table",
+  "8 by 16 source glyphs remain unchanged while every 16 by 16 row is reduced to 8 pixels by bounded adjacent-column OR compression",
+  "the generated PSF2 font remains below 2 MiB and the desktop uses at most a 2 MiB font byte buffer plus 65536 fixed mapping entries",
+  "the existing kernel whole-run draw remains the fast baseline and Ring 3 overlays only exact font mappings that the generated CP437 membership helper reports absent",
+  "font loading fully validates before publication and a missing malformed oversized or capacity-exceeding resource leaves the visible kernel fallback path intact",
+  "all glyph uploads remain clipped to the physical display and compositor damage rectangle and use the existing single 32 by 32 pixel scratch buffer",
+  "the full HDD image contains the generated font source attribution and license in both build systems while the rescue floppy excludes all broad-font files",
+  "no font parser glyph bitmap broad mapping table or new display ABI enters Ring 0",
+  "supplementary-plane coverage grapheme clustering combining placement bidirectional layout shaping and IME remain explicit later Ring-3 packages"
+]
+targeted_tests = [
+  "python test/test_gui_bmp_font.py -v",
+  "python test/test_gui_font.py -v",
+  "python test/test_unicode_text.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-unifont-bmp.log"
+]
+stop_conditions = [
+  "the external font source hash license provenance or exact mapping count cannot be reproduced",
+  "a source mapping is dropped duplicated or assigned to a different scalar",
+  "the broad font exceeds the bounded parser desktop process or HDD image capacity",
+  "an ASCII or CP437 scalar requires a Ring-3 pixel overlay or a missing BMP glyph loses the visible replacement cell",
+  "a glyph upload can escape the current damage or physical display clip",
+  "the implementation would require a complex font parser broad table or new rendering authority in Ring 0",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: add broad BMP fallback font coverage"
+evidence = []
 
 [[packages]]
 id = "R3.2-ring3-psf2-font-fallback"
