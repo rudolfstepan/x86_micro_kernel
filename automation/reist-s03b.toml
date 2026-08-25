@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.1-unicode-text-raster"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R3.1-unicode-text-raster"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Bounded UTF-8 scalar raster and VGA glyph fallback"
@@ -55,7 +55,7 @@ package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
 ]
 runtime_tests = [
-  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video framebuffer -Mode normal"
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-unicode-raster.log"
 ]
 stop_conditions = [
   "a valid scalar can be split counted as multiple cells or rejected by the raster path",
@@ -68,7 +68,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: add bounded Unicode scalar raster"
-evidence = []
+evidence = [
+  "five Unicode scalar scanner prefix CP437 generator mapping and integration contracts passed",
+  "sixteen display ABI and thirty-seven desktop source and host behavior regressions passed",
+  "final QEMU framebuffer package gate passed in 11 seconds",
+  "QEMU VMware-SVGA2D runtime passed in 24 seconds with DESKTOP_UNICODE_OK UNICODE_RASTER_OK and TEST_OK",
+  "the runtime probe used the existing supervised display service because the generic -nodefaults framebuffer wrapper attaches no display device"
+]
 
 [[packages]]
 id = "R2.2-unicode-nfc-casefold"

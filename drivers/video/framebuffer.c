@@ -11,6 +11,8 @@
 #include "frame_transaction.h"
 #include "arch/x86/mm/paging.h"
 #include "include/lib/spinlock.h"
+#include "include/reist/utf.h"
+#include "include/reist/unicode_vga_font.h"
 #include "lib/libc/string.h"
 
 // Framebuffer state
@@ -5427,9 +5429,9 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
     return true;
 }
 
-static void fb_draw_glyph_pixels(char c, int x, int y, uint32_t fg,
+static void fb_draw_glyph_pixels(uint8_t glyph_index, int x, int y, uint32_t fg,
                                  uint32_t bg) {
-    const uint8_t* glyph = &font_8x16[(unsigned char)c * FONT_HEIGHT];
+    const uint8_t* glyph = &font_8x16[(size_t)glyph_index * FONT_HEIGHT];
     uint32_t native_foreground = framebuffer_native_color(fg);
     uint32_t native_background = framebuffer_native_color(bg);
 
@@ -5450,9 +5452,9 @@ static void fb_draw_glyph_pixels(char c, int x, int y, uint32_t fg,
 }
 
 static void fb_draw_glyph_pixels_clipped(
-    char c, int x, int y, uint32_t fg, uint32_t bg,
+    uint8_t glyph_index, int x, int y, uint32_t fg, uint32_t bg,
     int clip_left, int clip_top, int clip_right, int clip_bottom) {
-    const uint8_t *glyph = &font_8x16[(unsigned char)c * FONT_HEIGHT];
+    const uint8_t *glyph = &font_8x16[(size_t)glyph_index * FONT_HEIGHT];
     uint32_t native_foreground = framebuffer_native_color(fg);
     uint32_t native_background = framebuffer_native_color(bg);
 
@@ -5474,7 +5476,7 @@ static void fb_draw_glyph_pixels_clipped(
 
 // Draw a character at a terminal-cell position.
 static void fb_draw_char(char c, int x, int y, uint32_t fg, uint32_t bg) {
-    fb_draw_glyph_pixels(c, x * FONT_WIDTH, y * FONT_HEIGHT, fg, bg);
+    fb_draw_glyph_pixels((uint8_t)c, x * FONT_WIDTH, y * FONT_HEIGHT, fg, bg);
 }
 
 bool framebuffer_get_display_info(framebuffer_display_info_t* info) {
@@ -5825,22 +5827,36 @@ bool framebuffer_draw_text_pixels(int32_t x, int32_t y, const char* text,
                                   size_t length, uint32_t foreground_rgb,
                                   uint32_t background_rgb) {
     if (!fb_address) return false;
-    if (!text && length != 0) return false;
+    size_t scalar_count = 0U;
+    if (!reist_utf8_scan(text, length, &scalar_count)) return false;
     foreground_rgb &= 0x00FFFFFFU;
     background_rgb &= 0x00FFFFFFU;
-    for (size_t index = 0; index < length; ++index) {
-        int64_t glyph_x = (int64_t)x + (int64_t)index * FONT_WIDTH;
+    size_t source = 0U;
+    size_t cell = 0U;
+    while (source < length) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(text + source, length - source,
+                                   &consumed, &scalar)) return false;
+        int64_t glyph_x = (int64_t)x + (int64_t)cell * FONT_WIDTH;
         if (glyph_x >= (int64_t)fb_width) break;
         if (glyph_x + FONT_WIDTH <= 0 ||
             (int64_t)y >= (int64_t)fb_height ||
-            (int64_t)y + FONT_HEIGHT <= 0) continue;
-        fb_draw_glyph_pixels(text[index], (int)glyph_x, (int)y,
-                             foreground_rgb, background_rgb);
+            (int64_t)y + FONT_HEIGHT <= 0) {
+            source += consumed;
+            ++cell;
+            continue;
+        }
+        fb_draw_glyph_pixels(reist_unicode_vga_glyph(scalar),
+                             (int)glyph_x, (int)y, foreground_rgb,
+                             background_rgb);
+        source += consumed;
+        ++cell;
     }
-    if (length != 0U) {
+    if (scalar_count != 0U) {
         int64_t left = x < 0 ? 0 : x;
         int64_t top = y < 0 ? 0 : y;
-        int64_t right = (int64_t)x + (int64_t)length * FONT_WIDTH;
+        int64_t right = (int64_t)x + (int64_t)scalar_count * FONT_WIDTH;
         int64_t bottom = (int64_t)y + FONT_HEIGHT;
         if (right > (int64_t)fb_width) right = fb_width;
         if (bottom > (int64_t)fb_height) bottom = fb_height;
@@ -5857,7 +5873,9 @@ bool framebuffer_draw_text_pixels_clipped(
     uint32_t foreground_rgb, uint32_t background_rgb,
     int32_t clip_x, int32_t clip_y, uint32_t clip_width,
     uint32_t clip_height) {
-    if (!fb_address || (!text && length != 0U)) return false;
+    if (!fb_address) return false;
+    size_t scalar_count = 0U;
+    if (!reist_utf8_scan(text, length, &scalar_count)) return false;
     if (length == 0U || clip_width == 0U || clip_height == 0U) return true;
 
     int64_t left = clip_x;
@@ -5872,23 +5890,35 @@ bool framebuffer_draw_text_pixels_clipped(
 
     foreground_rgb &= 0x00FFFFFFU;
     background_rgb &= 0x00FFFFFFU;
-    for (size_t index = 0U; index < length; ++index) {
-        int64_t glyph_x = (int64_t)x + (int64_t)index * FONT_WIDTH;
+    size_t source = 0U;
+    size_t cell = 0U;
+    while (source < length) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(text + source, length - source,
+                                   &consumed, &scalar)) return false;
+        int64_t glyph_x = (int64_t)x + (int64_t)cell * FONT_WIDTH;
         int64_t glyph_right = glyph_x + FONT_WIDTH;
         int64_t glyph_top = y;
         int64_t glyph_bottom = glyph_top + FONT_HEIGHT;
         if (glyph_x >= right) break;
         if (glyph_right <= left || glyph_top >= bottom ||
-            glyph_bottom <= top) continue;
+            glyph_bottom <= top) {
+            source += consumed;
+            ++cell;
+            continue;
+        }
         fb_draw_glyph_pixels_clipped(
-            text[index], (int)glyph_x, y,
+            reist_unicode_vga_glyph(scalar), (int)glyph_x, y,
             foreground_rgb, background_rgb,
             (int)left, (int)top, (int)right, (int)bottom);
+        source += consumed;
+        ++cell;
     }
 
     int64_t text_left = x;
     int64_t text_top = y;
-    int64_t text_right = text_left + (int64_t)length * FONT_WIDTH;
+    int64_t text_right = text_left + (int64_t)scalar_count * FONT_WIDTH;
     int64_t text_bottom = text_top + FONT_HEIGHT;
     if (text_left < left) text_left = left;
     if (text_top < top) text_top = top;

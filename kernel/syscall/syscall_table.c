@@ -37,6 +37,7 @@
 #include "include/kernel/component_control.h"
 #include "include/kernel/boot_health.h"
 #include "include/kernel/device_domain.h"
+#include "include/reist/utf.h"
 #include "arch/x86/mm/paging.h"
 #include "fs/vfs/vfs.h"
 #include "mm/kmalloc.h"
@@ -1770,6 +1771,8 @@ static int syscall_display_draw_text(const syscall_display_text_t *user_text) {
     char text[FRAMEBUFFER_DISPLAY_MAX_TEXT];
     if (copy_from_user(text, (const void*)(uintptr_t)request.text_address,
                        request.text_length) != 0) return -14;
+    size_t scalar_count = 0U;
+    if (!reist_utf8_scan(text, request.text_length, &scalar_count)) return -22;
     Process *process = scheduler_current_process();
     if (process == NULL) return -13;
     int reservation = framebuffer_frame_draw_enter(
@@ -1803,6 +1806,8 @@ static int syscall_display_draw_text_clipped(
     char text[FRAMEBUFFER_DISPLAY_MAX_TEXT];
     if (copy_from_user(text, (const void*)(uintptr_t)request.text_address,
                        request.text_length) != 0) return -14;
+    size_t scalar_count = 0U;
+    if (!reist_utf8_scan(text, request.text_length, &scalar_count)) return -22;
     Process *process = scheduler_current_process();
     if (process == NULL) return -13;
     int reservation = framebuffer_frame_draw_enter(

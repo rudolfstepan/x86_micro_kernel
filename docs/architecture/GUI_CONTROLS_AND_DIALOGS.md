@@ -284,10 +284,13 @@ explizite Default-/Cancel-Auswahl.
 Jedes neue Control muss bereits im Modell ein semantisches Role-, Name-,
 Value- und State-Konzept besitzen, auch wenn die systemweite Accessibility-API
 noch fehlt. Farbe allein darf Fokus, Fehler oder Auswahl nicht ausdrücken.
-Labels sind caller-owned, UTF-8-fähige API-Daten; der aktuelle VGA-Font deckt
-nur einen begrenzten Zeichensatz ab und ist deshalb noch kein vollständiger
-Internationalisierungsnachweis. Textlauf, Mnemonics und Rechts-nach-links-
-Layout bleiben explizit offen.
+Labels sind caller-owned UTF-8-Daten. Die Display-Primitive validiert den
+vollständigen RFC-3629-Lauf vor Pixelwirkung, zählt Unicode-Skalarwerte statt
+Bytes und bildet vorhandene CP437-Zeichen auf ihre echten 8x16-Glyphen ab.
+Jeder andere gültige Skalar erhält genau eine sichtbare Ersatzglyph-Zelle. Der
+aktuelle VGA-Font deckt damit weiterhin nur einen begrenzten Zeichensatz ab;
+Font-Fallback, Text-Shaping, Grapheme, Mnemonics und Rechts-nach-links-Layout
+bleiben explizit offen.
 
 ## Umsetzungsreihenfolge
 
@@ -309,6 +312,8 @@ Layout bleiben explizit offen.
 - [ ] ScrollView aus Container, Viewport und Scrollbar zusammensetzen.
 - [x] Surface-/Event-IPC generationsgebunden veröffentlichen; lokale
   Fill-/Text-Paintframes werden begrenzt und atomar committed.
+- [x] Grafische Textläufe als validiertes UTF-8 nach Unicode-Skalarzellen
+  rasterisieren und fehlende VGA-Glyphen deterministisch ersetzen.
 - [ ] Accessibility-Baum und assistive Eventausgabe versionieren.
 - [ ] Theme-, Font-, Icon- und Lokalisierungsressourcen versionieren.
 - [ ] Dateimanager, Terminal und Systeminfo als getrennte GUI-Clients portieren;

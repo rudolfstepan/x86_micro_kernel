@@ -7,6 +7,17 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
+einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
+unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und
+Damage zählen Unicode-Skalarzellen. Eine reproduzierbare Tabelle bildet alle
+im vorhandenen IBM-PC-8x16-Font darstellbaren Unicode-Zeichen auf CP437 ab.
+Jeder andere gültige Skalar bis U+10FFFF erhält genau eine sichtbare
+Ersatzglyph; fehlerhafte Folgen scheitern vor Frame-Reservierung und
+Pixelwirkung. Der Desktop trennt beim Begrenzen keine UTF-8-Sequenzen mehr.
+Breite Fontabdeckung, Shaping, Bidi, Grapheme und IME bleiben ausdrücklich
+offen und gehören nicht als komplexe Parser in Ring 0.
+
 `R2.2-unicode-nfc-casefold` ergänzt vollständige kanonische
 Unicode-15-Dateinamenidentität. Ein reproduzierbarer Generator fixiert 2.061
 kanonische Zerlegungen, 1.530 Default-Casefold-Abbildungen, 922

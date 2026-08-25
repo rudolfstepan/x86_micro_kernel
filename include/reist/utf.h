@@ -55,6 +55,48 @@ static inline int reist_utf8_decode_one(const char *input, size_t length,
     return 1;
 }
 
+static inline int reist_utf8_scan(const char *input, size_t input_bytes,
+                                  size_t *scalar_count) {
+    if ((input == NULL && input_bytes != 0U) || scalar_count == NULL) return 0;
+    size_t source = 0U;
+    size_t count = 0U;
+    while (source < input_bytes) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(input + source, input_bytes - source,
+                                   &consumed, &scalar)) return 0;
+        source += consumed;
+        ++count;
+    }
+    *scalar_count = count;
+    return 1;
+}
+
+static inline int reist_utf8_prefix(const char *input, size_t input_bytes,
+                                    size_t maximum_scalars,
+                                    size_t *prefix_bytes,
+                                    size_t *prefix_scalars) {
+    if ((input == NULL && input_bytes != 0U) || prefix_bytes == NULL ||
+        prefix_scalars == NULL) return 0;
+    size_t source = 0U;
+    size_t selected_bytes = 0U;
+    size_t selected_scalars = 0U;
+    while (source < input_bytes) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(input + source, input_bytes - source,
+                                   &consumed, &scalar)) return 0;
+        source += consumed;
+        if (selected_scalars < maximum_scalars) {
+            selected_bytes = source;
+            ++selected_scalars;
+        }
+    }
+    *prefix_bytes = selected_bytes;
+    *prefix_scalars = selected_scalars;
+    return 1;
+}
+
 static inline int reist_utf8_to_utf16(const char *input, size_t input_bytes,
                                       uint16_t *output,
                                       size_t output_capacity,

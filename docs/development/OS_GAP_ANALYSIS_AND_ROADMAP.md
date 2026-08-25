@@ -1103,6 +1103,11 @@ Die angehängten Syscalls 44 bis 46 bilden eine versionierte Ring-3-Display-ABI
 für Modusinformationen, geclippte Rechtecke und geclippte Pixelschrift. Farben
 verwenden `0x00RRGGBB`; alle Userdaten werden geprüft kopiert und der LFB bleibt
 Supervisor-only. Framebuffer-Console-Ausgaben erscheinen zusätzlich auf COM1.
+Die Pixelschrift interpretiert Textbytes nun als vollständig vorvalidiertes
+RFC-3629-UTF-8, zählt Skalarzellen für Clipping und Damage und verwendet eine
+generierte Unicode-zu-CP437-Abbildung samt sichtbarer Ersatzglyph. ABI-Längen
+und Erfolgswerte bleiben Bytezahlen. Breite Fonts und Text-Shaping bleiben
+außerhalb dieser schmalen Kernelprimitive.
 
 `DESKTOP.PRG` wird nur bei einem echten Framebuffer vor `SHELL.PRG` gestartet.
 Vier tastaturbediente Karten öffnen Shell, Dateiliste, Editor oder
@@ -1651,9 +1656,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 - [x] Unicode-15-NFC und vollständiges Default Case Folding als heapfreien,
   tabellengebundenen Identitätsvergleich für FAT32 und Shadowparser umsetzen;
   Originalschreibweise auf Medium und in Readdir bewahren.
+- [x] Grafische Textprimitive und Desktop-Clipping auf vollständig validierte
+  Unicode-Skalarläufe mit CP437- und sichtbarer Ersatzglyph abbilden.
 - Danach atomaren LFN-Replace ergänzen; EXT2 vorerst ausdrücklich read-only
-  mounten. Systemweite Unicode-Glyphen, Font-Fallback, Eingabemethoden,
-  Bidirektionalität und Graphemnavigation bleiben eigene GUI-/Textpakete.
+  mounten. Breite Unicode-Fonts, Font-Fallback, Eingabemethoden,
+  Bidirektionalität, Shaping und Graphemnavigation bleiben eigene
+  Ring-3-GUI-/Textpakete.
 
 #### R2.3 Blockgeräte und Partitionen — L
 

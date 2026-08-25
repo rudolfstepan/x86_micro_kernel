@@ -687,6 +687,16 @@ failed:
     return -1;
 }
 
+static int test_unicode_raster(void) {
+    static const char program[] = "/usr/gui/bin/desktop.prg";
+    static const char probe[] = "--unicode-probe";
+    const char *arguments[] = {program, probe};
+    int pid = x86os_spawnv(program, 2, arguments);
+    if (pid <= 0) return -1;
+    int status = -1;
+    return x86os_wait(pid, &status) == pid && status == 0 ? 0 : -1;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -1730,6 +1740,12 @@ int main(int argc, char **argv) {
         return 15;
     }
     x86os_puts("TEST_STAGE VFAT_UTF8_OK\n");
+
+    if (test_unicode_raster() != 0) {
+        x86os_puts("TEST_FAIL UNICODE_RASTER\n");
+        return 16;
+    }
+    x86os_puts("TEST_STAGE UNICODE_RASTER_OK\n");
 
     if (test_open_namespace_locks() != 0) {
         x86os_puts("TEST_FAIL OPEN_NAMESPACE_LOCKS\n");

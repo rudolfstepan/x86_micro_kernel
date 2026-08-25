@@ -267,6 +267,14 @@ Casefold-Tabellen speisen einen heapfreien Normalisierer mit aus der
 Originalschreibweisen bleiben persistent und sichtbar; nur FAT32- und
 Shadowparser-Identität wird normalisiert. Das ist keine Behauptung über
 systemweite Glyphen-, Font-, Bidi-, Eingabemethoden- oder Graphemabdeckung.
+Die grafische Display-Primitive verarbeitet inzwischen jeden gültigen
+RFC-3629-Lauf skalarweise. Sie validiert höchstens 256 Bytes vollständig vor
+Frame-Reservierung und Pixelwirkung, bewahrt die bytezählende v1-ABI, bildet
+Unicode auf vorhandene CP437-Glyphen ab und zeichnet für jeden anderen
+gültigen Skalar genau eine sichtbare Ersatzzelle. Der Desktop misst und clippt
+dieselben Skalarzellen ohne UTF-8-Sequenzen zu teilen. Breite Fontabdeckung,
+Shaping, Grapheme, Bidi und IME bleiben Ring-3-Dienste beziehungsweise
+GUI-Textpakete; sie werden nicht in den Framebuffer-Treiber verlagert.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

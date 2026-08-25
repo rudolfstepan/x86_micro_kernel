@@ -125,6 +125,9 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("request.struct_size < sizeof(request)", text)
         self.assertIn("request.text_length > FRAMEBUFFER_DISPLAY_MAX_TEXT", text)
         self.assertIn("user_range_accessible(", text)
+        self.assertIn("reist_utf8_scan(", text)
+        self.assertLess(text.index("reist_utf8_scan("),
+                        text.index("framebuffer_frame_draw_enter("))
         self.assertIn("framebuffer_draw_text_pixels(", text)
         clipped = function(
             self.syscalls, "static int syscall_display_draw_text_clipped("
@@ -132,6 +135,9 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertGreaterEqual(clipped.count("copy_from_user("), 2)
         self.assertIn("request.struct_size < sizeof(request)", clipped)
         self.assertIn("user_range_accessible(", clipped)
+        self.assertIn("reist_utf8_scan(", clipped)
+        self.assertLess(clipped.index("reist_utf8_scan("),
+                        clipped.index("framebuffer_frame_draw_enter("))
         self.assertIn("framebuffer_draw_text_pixels_clipped(", clipped)
 
     def test_no_framebuffer_reports_enodev(self) -> None:
@@ -160,6 +166,8 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         )
         self.assertIn("fb_width", glyphs)
         self.assertIn("fb_height", glyphs)
+        self.assertIn("scalar_count", glyphs)
+        self.assertIn("reist_unicode_vga_glyph(scalar)", glyphs)
         self.assertIn("fb_draw_glyph_pixels(", glyphs)
         clipped_glyphs = function(
             self.framebuffer, "bool framebuffer_draw_text_pixels_clipped("

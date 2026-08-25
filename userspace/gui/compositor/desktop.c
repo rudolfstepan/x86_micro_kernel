@@ -19,6 +19,7 @@
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
 #include "../../video/include/reist/svga2d.h"
+#include "../../../include/reist/utf.h"
 
 #define DESKTOP_ICON_COUNT 3U
 #define DESKTOP_ICON_WIDTH 176U
@@ -491,6 +492,18 @@ static size_t bounded_text_length(const char *text, size_t maximum) {
     return length;
 }
 
+static uint32_t unicode_text_measure(const char *text, size_t maximum_bytes,
+                                     size_t *byte_length,
+                                     size_t *scalar_count) {
+    if (text == 0 || byte_length == 0 || scalar_count == 0) return 0U;
+    size_t length = bounded_text_length(text, maximum_bytes);
+    size_t count = 0U;
+    if (!reist_utf8_scan(text, length, &count)) return 0U;
+    *byte_length = length;
+    *scalar_count = count;
+    return 1U;
+}
+
 static uint32_t text_equal(const char *left, const char *right) {
     if (left == 0 || right == 0) return 0U;
     for (uint32_t index = 0U; index < DESKTOP_ARGUMENT_LIMIT; ++index) {
@@ -715,28 +728,15 @@ static void draw_text_clipped(const desktop_render_context_t *context,
     int64_t text_top = y;
     int64_t text_bottom = text_top + display->font_height;
     if (text_top >= clip_bottom || text_bottom <= clip_top) return;
-    size_t capacity = maximum_width / display->font_width;
-    if (capacity > X86OS_DISPLAY_MAX_TEXT)
-        capacity = X86OS_DISPLAY_MAX_TEXT;
-    size_t length = bounded_text_length(text, capacity);
-    size_t first = 0U;
-    while (first < length) {
-        int64_t glyph_left = (int64_t)x + first * display->font_width;
-        int64_t glyph_right = glyph_left + display->font_width;
-        if (glyph_left < clip_right && glyph_right > clip_left) break;
-        ++first;
-    }
-    size_t end = first;
-    while (end < length) {
-        int64_t glyph_left = (int64_t)x + end * display->font_width;
-        int64_t glyph_right = glyph_left + display->font_width;
-        if (glyph_left >= clip_right || glyph_right <= clip_left) break;
-        ++end;
-    }
-    if (end != first)
+    size_t length = bounded_text_length(text, X86OS_DISPLAY_MAX_TEXT);
+    size_t prefix_bytes = 0U;
+    size_t prefix_scalars = 0U;
+    size_t maximum_scalars = maximum_width / display->font_width;
+    if (reist_utf8_prefix(text, length, maximum_scalars,
+                          &prefix_bytes, &prefix_scalars) &&
+        prefix_scalars != 0U)
         (void)x86os_draw_text_pixels_clipped(
-            x + (int32_t)(first * display->font_width), y,
-            text + first, end - first, foreground, background,
+            x, y, text, prefix_bytes, foreground, background,
             context->clip.x, context->clip.y,
             context->clip.width, context->clip.height);
 }
@@ -1634,10 +1634,13 @@ static int32_t centered_text_x(
         return bounds.x;
     uint32_t usable = bounds.width - horizontal_padding * 2U;
     size_t maximum_chars = usable / display->font_width;
-    size_t length = bounded_text_length(text, maximum_chars + 1U);
-    if (length > maximum_chars)
+    size_t byte_length = 0U;
+    size_t scalar_count = 0U;
+    if (!unicode_text_measure(text, X86OS_DISPLAY_MAX_TEXT,
+                              &byte_length, &scalar_count) ||
+        scalar_count > maximum_chars)
         return bounds.x + (int32_t)horizontal_padding;
-    uint32_t text_width = (uint32_t)length * display->font_width;
+    uint32_t text_width = (uint32_t)scalar_count * display->font_width;
     return bounds.x + (int32_t)horizontal_padding +
         (int32_t)((usable - text_width) / 2U);
 }
@@ -1993,8 +1996,11 @@ static void render_window(const desktop_render_context_t *context,
             trash_restore_pressed_window == window_index;
         draw_bevel(context, action, color_face, !pressed);
         const char *label = "Wiederherstellen";
-        size_t label_length = bounded_text_length(label, 32U);
-        uint32_t label_width = (uint32_t)label_length * display->font_width;
+        size_t label_bytes = 0U;
+        size_t label_scalars = 0U;
+        (void)unicode_text_measure(
+            label, 32U, &label_bytes, &label_scalars);
+        uint32_t label_width = (uint32_t)label_scalars * display->font_width;
         int32_t label_x = action.x + (int32_t)((action.width > label_width
             ? action.width - label_width : 0U) / 2U);
         int32_t label_y = action.y + (int32_t)((action.height >
@@ -2258,9 +2264,12 @@ static void render_system_dialog(const desktop_render_context_t *context,
             draw_bevel(context, focus, color_dark, 0U);
         }
         draw_bevel(context, button, color_face, !pressed);
-        size_t label_length = bounded_text_length(
-            model->buttons[index].label, REIST_GUI_DIALOG_LABEL_LIMIT);
-        uint64_t measured = (uint64_t)label_length * display->font_width;
+        size_t label_bytes = 0U;
+        size_t label_scalars = 0U;
+        (void)unicode_text_measure(
+            model->buttons[index].label, REIST_GUI_DIALOG_LABEL_LIMIT,
+            &label_bytes, &label_scalars);
+        uint64_t measured = (uint64_t)label_scalars * display->font_width;
         uint32_t label_width = measured > UINT32_MAX
             ? UINT32_MAX : (uint32_t)measured;
         int32_t label_x = button.x + (int32_t)((button.width > label_width
@@ -4307,6 +4316,7 @@ int main(int argc, char **argv) {
     uint32_t control_probe = 0U;
     uint32_t trash_context_probe = 0U;
     uint32_t trash_confirm_probe = 0U;
+    uint32_t unicode_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
     uint32_t surface_resize_requested = 0U;
@@ -4328,11 +4338,14 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--trash-confirm-probe")) {
         trash_confirm_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--unicode-probe")) {
+        unicode_probe = 1U;
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--surface-probe|"
             "--notepad-probe|--control-probe|--trash-context-probe|"
-            "--trash-confirm-probe]\n");
+            "--trash-confirm-probe|--unicode-probe]\n");
         return 2;
     }
 
@@ -4357,6 +4370,32 @@ int main(int argc, char **argv) {
         return 1;
     }
     (void)desktop_svga2d_connect(0U);
+    if (unicode_probe) {
+        static const char valid[] =
+            "A\xC3\x84\xF0\x9F\x9A\x80";
+        static const char malformed[] = "\xF0\x28\x8C\x28";
+        int valid_status = x86os_draw_text_pixels(
+            (int32_t)(display.width - display.font_width), 0,
+            valid, sizeof(valid) - 1U, 0x00FFFFFFU, 0x00000000U);
+        int malformed_status = x86os_draw_text_pixels(
+            0, 0, malformed, sizeof(malformed) - 1U,
+            0x00FFFFFFU, 0x00000000U);
+        int deactivate_status = runtime_activated
+            ? desktop_display_deactivate() : 0;
+        if (valid_status != (int)(sizeof(valid) - 1U) ||
+            malformed_status != -22 || deactivate_status != 0) {
+            x86os_puts("DESKTOP_UNICODE_FAIL valid=");
+            x86os_print_number(valid_status);
+            x86os_puts(" malformed=");
+            x86os_print_number(malformed_status);
+            x86os_puts(" deactivate=");
+            x86os_print_number(deactivate_status);
+            x86os_putchar('\n');
+            return 1;
+        }
+        x86os_puts("DESKTOP_UNICODE_OK\n");
+        return 0;
+    }
 
     uint32_t taskbar = taskbar_height(&display);
     desktop_ui_initialize(&ui);

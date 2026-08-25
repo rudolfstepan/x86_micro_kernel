@@ -508,15 +508,10 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn(
             "text_top >= clip_bottom || text_bottom <= clip_top", text_draw
         )
-        self.assertIn(
-            "glyph_left < clip_right && glyph_right > clip_left", text_draw
-        )
-        self.assertIn(
-            "glyph_left >= clip_right || glyph_right <= clip_left", text_draw
-        )
-        self.assertNotIn(
-            "glyph_left >= clip_left && glyph_right <= clip_right", text_draw
-        )
+        self.assertIn("reist_utf8_prefix(", text_draw)
+        self.assertIn("maximum_scalars", text_draw)
+        self.assertIn("text, prefix_bytes", text_draw)
+        self.assertNotIn("text + first", text_draw)
         self.assertIn("x86os_draw_text_pixels_clipped(", text_draw)
         self.assertIn("context->clip.width, context->clip.height", text_draw)
         self.assertNotIn("x86os_draw_text_pixels(", text_draw)
