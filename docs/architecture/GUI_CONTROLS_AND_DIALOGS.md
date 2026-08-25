@@ -289,22 +289,24 @@ vollständigen RFC-3629-Lauf vor Pixelwirkung, zählt Unicode-Skalarwerte statt
 Bytes und bildet vorhandene CP437-Zeichen auf ihre echten 8x16-Glyphen ab.
 Jeder andere gültige Skalar erhält zunächst genau eine sichtbare
 Ersatzglyph-Zelle. Zusätzlich lädt der Desktop einmalig den standardisierten
-PSF2-Font `/usr/share/fonts/reist-unicode-bmp.psf` in feste Ring-3-Speicher.
-Der vollständig vor Publikation validierte Unicode-Index enthält alle 57.086
-Abbildungen der eingebetteten GNU-Unifont-16.0.04-BMP-Quelle. CP437 bleibt im
-schnellen Kernel-Lauf; nur dort fehlende, exakt gemappte BMP-Glyphen werden
+PSF2-Font `/usr/share/fonts/reist-unicode.psf` in feste Ring-3-Speicher. Der
+vollständig vor Publikation validierte Unicode-Index enthält alle 126.086
+Abbildungen der eingebetteten GNU-Unifont-16.0.04-All-Quelle: 60.518 in der
+BMP und 65.568 in Supplementary Planes. CP437 bleibt im schnellen Kernel-Lauf;
+nur dort fehlende, exakt gemappte Glyphen werden
 über geclippte Pixeluploads überlagert. Native 8x16-Glyphen bleiben
 unverändert, 16x16-Glyphen werden für die aktuelle Zelle durch OR-Verknüpfung
 benachbarter Spalten deterministisch auf 8x16 verdichtet. Fehlt der optionale
-Font oder ist er ungültig, bleibt der Kernel-Ersatzpfad aktiv. Supplementary
-Planes, Text-Shaping, Grapheme, Mnemonics und Rechts-nach-links-Layout bleiben
-explizit offen.
+Font oder ist er ungültig, bleibt der Kernel-Ersatzpfad aktiv. Auch gültige,
+aber in der Quelle nicht gemappte Skalare erhalten weiterhin U+25A0 sichtbar.
+Text-Shaping, Combining-Positionierung, Grapheme, Mnemonics und
+Rechts-nach-links-Layout bleiben explizit offen.
 
-Auch die feste 2-MiB-Dateikapazität ist kein einzelner ununterbrechbarer
+Auch die feste 3-MiB-Dateikapazität ist kein einzelner ununterbrechbarer
 VFS-Aufruf: Der Desktop liest Font- und Iconressourcen in höchstens 65.536 Byte
 großen Syscall-Abschnitten und gibt die CPU nach jedem erfolgreichen Abschnitt
-explizit ab. Der rund 1,14 MiB große Referenzfont benötigt dadurch nur etwa 18
-statt rund 280 Schedulerabschnitte. Gleichzeitig monopolisiert kein einzelner
+explizit ab. Der rund 2,47 MiB große Referenzfont benötigt dadurch etwa 40
+Schedulerabschnitte. Gleichzeitig monopolisiert kein einzelner
 serialisierter VFS-Aufruf die gesamte Ressource oder das Heartbeat-Budget.
 
 Eine nackte Escape-Taste beendet die grafische Sitzung nicht. Sie bricht einen

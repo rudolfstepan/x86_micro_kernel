@@ -39,9 +39,9 @@
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
 #define DESKTOP_FILE_READ_CHUNK 65536U
-#define DESKTOP_FONT_FILE_CAPACITY (2U * 1024U * 1024U)
-#define DESKTOP_FONT_MAPPING_CAPACITY 65536U
-#define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode-bmp.psf"
+#define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
+#define DESKTOP_FONT_MAPPING_CAPACITY 262144U
+#define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode.psf"
 #define DESKTOP_CLOCK_TEXT_CAPACITY 17U
 #define DESKTOP_CLOCK_POLL_MS 1000U
 #define DESKTOP_CLOCK_FALLBACK_POLLS 200U
@@ -4516,6 +4516,11 @@ int main(int argc, char **argv) {
                 &probe_context, 0, 0, valid, sizeof(valid) - 1U,
                 0x00FFFFFFU, 0x00000000U)
             : probe_activate_status;
+        uint32_t fallback_glyph = 0U;
+        int fallback_lookup_status = font_status == 0
+            ? reist_gui_font_lookup(
+                &desktop_font, 0x10FFFDU, &fallback_glyph)
+            : font_status;
         int malformed_status = probe_activate_status == 0
             ? x86os_draw_text_pixels(
                 0, 0, malformed, sizeof(malformed) - 1U,
@@ -4524,7 +4529,9 @@ int main(int argc, char **argv) {
         int deactivate_status = runtime_activated
             ? desktop_display_deactivate() : 0;
         if (valid_status != (int)(sizeof(valid) - 1U) || font_status != 0 ||
-            font_overlay_status != 7 || malformed_status != -22 ||
+            font_overlay_status != 8 || fallback_lookup_status != 0 ||
+            fallback_glyph != desktop_font.fallback_glyph ||
+            malformed_status != -22 ||
             deactivate_status != 0) {
             x86os_puts("DESKTOP_UNICODE_FAIL valid=");
             x86os_print_number(valid_status);
@@ -4532,6 +4539,8 @@ int main(int argc, char **argv) {
             x86os_print_number(malformed_status);
             x86os_puts(" font=");
             x86os_print_number(font_status);
+            x86os_puts(" fallback=");
+            x86os_print_number(fallback_lookup_status);
             x86os_puts(" overlay=");
             x86os_print_number(font_overlay_status);
             x86os_puts(" activate=");
@@ -4542,6 +4551,7 @@ int main(int argc, char **argv) {
             return 1;
         }
         x86os_puts("DESKTOP_FONT_BMP_OK\n");
+        x86os_puts("DESKTOP_FONT_SUPPLEMENTARY_OK\n");
         x86os_puts("DESKTOP_FONT_FALLBACK_OK\n");
         x86os_puts("DESKTOP_UNICODE_OK\n");
         return 0;

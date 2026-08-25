@@ -1,5 +1,5 @@
-REIST OS Unicode BMP-Anzeigetest
-================================
+REIST OS Unicode-Anzeigetest
+============================
 
 Latin:       Ä Ö Ü ä ö ü ß À Á Â Ã Å Æ Ç È É Ê Ë Ø Œ €
 Griechisch:  Α Β Γ Δ Ε Ζ Η Θ Ι Κ Λ Μ Ν Ξ Ο Π Ρ Σ Τ Υ Φ Χ Ψ Ω
@@ -15,5 +15,5 @@ Combining:   é Å ö   (Glyphen vorhanden; Positionierung noch offen)
 Bidi-Test:   ABC אבג DEF   (logische Reihenfolge; Bidi noch offen)
 Shaping:     العربية हिन्दी   (Glyphen vorhanden; Shaping noch offen)
 
-Supplementary-Fallback: 😀 🚀 𐍈
-(UTF-8 wird verarbeitet; Supplementary-Glyphen sind noch nicht im BMP-Font.)
+Supplementary: 😀 🚀 𐍈 𝄞 𠀀
+(Eigenständige Glyphen vorhanden; komplexes Textlayout bleibt separat.)

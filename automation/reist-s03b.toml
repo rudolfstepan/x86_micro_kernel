@@ -11,6 +11,69 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.2-unifont-supplementary-coverage"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Bounded supplementary-plane GNU Unifont coverage"
+scope = "Replace the BMP-only desktop fallback asset with one reproducible PSF2 derived from the pinned official GNU Unifont 16.0.04 all-plane HEX release. Preserve the complete existing BMP coverage and add every unique source mapping above U+FFFF through U+10FFFF while retaining the current 8x16 bounded raster policy, caller-owned storage, full-file validation, CP437 fast path and visible fallback for unmapped valid scalars. Raise only the desktop's fixed file and hash-index capacities needed for the 126086-entry source, keep sliced reads and scheduler yields, package the same asset in Windows and Make images, and prove a real supplementary glyph through the existing guest Unicode probe. This package adds glyph selection only; it does not claim shaping, bidirectional layout, grapheme navigation, combining positioning, IME support or glyph coverage for unassigned scalars."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "assets/fonts/source/unifont_all-16.0.04.hex.gz",
+  "assets/fonts/source/unifont-16.0.04.hex.gz",
+  "assets/fonts/reist-unicode.psf",
+  "assets/fonts/reist-unicode-bmp.psf",
+  "assets/fonts/README.md",
+  "assets/fonts/unicode.txt",
+  "scripts/generate_unifont_psf2.py",
+  "scripts/build-windows.ps1",
+  "Makefile",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_gui_bmp_font.py",
+  "test/test_gui_font.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the pinned compressed source hash glyph count scalar order and U+10FFFF bound are validated before any derived asset is written",
+  "the generated PSF2 remains below 3 MiB and contains exactly one mapping for every non-surrogate source scalar",
+  "the desktop uses fixed caller-owned storage a bounded hash table below one-half load and 64 KiB read slices with an explicit yield between slices",
+  "CP437 keeps the kernel text fast path while every mapped extension including a supplementary scalar is overlaid from Ring 3",
+  "missing valid scalars retain the visible U+25A0 fallback and malformed UTF-8 still fails before pixel publication",
+  "no kernel ABI process ABI PSF2 format filesystem format or complex text-layout authority changes"
+]
+targeted_tests = [
+  "python test/test_gui_bmp_font.py -v",
+  "python test/test_gui_font.py -v",
+  "python test/test_unicode_text.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-unifont-supplementary.log"
+]
+stop_conditions = [
+  "the combined desktop image exceeds the fixed 8 MiB Ring-3 loader region",
+  "the source contains duplicate unordered surrogate or out-of-range scalar mappings",
+  "the generated font or fixed mapping table exceeds the frozen capacity",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: add supplementary-plane font coverage"
+evidence = [
+  "all 16 focused GNU Unifont PSF2 parser and UTF-8 host tests passed",
+  "the pinned all-plane source contains 126086 unique ordered mappings with 60518 BMP and 65568 supplementary entries and generates a byte-reproducible 2585144-byte PSF2",
+  "the QEMU VGA package build passed and the desktop image uses 5867272 of 8388608 loader bytes leaving 2521336 bytes headroom",
+  "the final QEMU VMware-SVGA2D guest run emitted DESKTOP_FONT_SUPPLEMENTARY_OK DESKTOP_FONT_FALLBACK_OK DESKTOP_UNICODE_OK and TEST_OK",
+  "the desktop retains 64 KiB read slices with scheduler yields and a fixed 262144-slot caller-owned mapping table below one-half load",
+  "no queued package remains and active_id is empty"
+]
+
+[[packages]]
 id = "R2.2-fat32-lfn-atomic-replace"
 status = "done"
 phase = "post-s0"

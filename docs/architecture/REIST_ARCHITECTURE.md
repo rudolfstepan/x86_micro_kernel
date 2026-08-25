@@ -277,8 +277,8 @@ heapfreier Ring-3-PSF2-Decoder validiert Header, Glyphdaten und die vollständig
 Unicode-Tabelle vor Publikation in caller-owned Speicher. Der Desktop behält
 den schnellen Kernel-Lauf bei und überlagert nur Font-Erweiterungsglyphen über
 geclippte XRGB-Uploads. Der reproduzierbare Fallback wird aus der gepinnten,
-OFL-lizenzierten GNU-Unifont-16.0.04-HEX-Quelle erzeugt und enthält deren
-57.086 eindeutige BMP-Abbildungen. Native 8x16-Raster bleiben bytegleich;
+OFL-lizenzierten GNU-Unifont-16.0.04-All-HEX-Quelle erzeugt und enthält 126.086
+eindeutige Abbildungen, davon 65.568 oberhalb U+FFFF. Native 8x16-Raster bleiben bytegleich;
 16x16-Raster werden für die bestehende Zelle durch OR-Verdichtung je zweier
 Nachbarspalten auf acht Pixel reduziert. Quelle, Lizenz und abgeleitetes PSF2
 liegen nur im vollständigen HDD-Image. Ein fehlender oder ungültiger Font fällt
@@ -286,7 +286,7 @@ ohne neue Pixelwirkung auf die sichtbare Kernel-Ersatzglyph zurück.
 Font- und Icondateien werden trotz fester großer Zielpuffer in höchstens
 65.536-Byte-großen Read-Syscalls geladen und nach jedem erfolgreichen Abschnitt
 explizit an den Scheduler abgegeben. Damit bleibt jeder VFS-Aufruf begrenzt,
-ohne den rund 1,14 MiB großen Referenzfont durch mehrere hundert freiwillige
+ohne den rund 2,47 MiB großen Referenzfont durch mehrere hundert freiwillige
 Scheduling-Umläufe unnötig zu verzögern.
 Eine ungebundene Escape-Taste ist im Desktop kein Sitzungs-Exit. Escape bleibt
 lokaler Abbruch für Drag, Menü, Dialog oder fokussierten Surface-Client; der
@@ -298,9 +298,10 @@ Skalarzellen und bewahrt die UTF-8-Bytes beim Speichern. Seine festen 200
 Zeilen zu je 256 Bytes bleiben unverändert. Mehrbytefolgen werden bei
 Cursorbewegung, Löschen und Surface-Paint-Clipping nicht geteilt; komplexes
 Layout und Eingabemethoden bleiben außerhalb dieses Controllers.
-Supplementary-Plane-Abdeckung, Shaping, Grapheme, Bidi und IME bleiben
-Ring-3-Dienste beziehungsweise GUI-Textpakete; sie werden nicht in den
-Framebuffer-Treiber verlagert.
+Shaping, Combining-Positionierung, Grapheme, Bidi und IME bleiben Ring-3-Dienste
+beziehungsweise GUI-Textpakete; sie werden nicht in den Framebuffer-Treiber
+verlagert. Die Supplementary-Plane-Abdeckung ist eine Glyphauswahl, keine
+Behauptung vollständiger Unicode-Textdarstellung.
 Der überwachte Lauf lädt und validiert den großen Font vor der Gerätebindung.
 Er verbindet sich danach innerhalb einer festen Zwei-Sekunden-Deadline neu
 mit der aktuell freigegebenen SVGA2D-Servicegeneration; alte IPC-Fähigkeiten

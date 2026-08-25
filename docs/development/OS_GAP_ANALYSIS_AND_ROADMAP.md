@@ -1669,6 +1669,10 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Ressourcen in 65.536-Byte-Syscall-Abschnitten mit expliziter
   Schedulerabgabe laden, damit unabhängige Supervisor-Heartbeats planbar
   bleiben, ohne den Desktopstart durch hunderte Scheduling-Umläufe zu bremsen.
+- [x] Den Desktopfont auf die gepinnte GNU-Unifont-16.0.04-All-Quelle mit
+  126.086 eindeutigen Abbildungen und 65.568 Supplementary-Plane-Mappings
+  erweitern; die 2,47-MiB-Ressource in festen 64-KiB-Abschnitten laden und
+  nicht gemappte gültige Skalare weiterhin sichtbar ersetzen.
 - [x] Eine nackte Escape-Taste auf lokale Menü-, Dialog-, Drag- und
   Surface-Abbrüche begrenzen; den Desktop nur über den expliziten
   Startmenüeintrag mit validierter Display-Deaktivierung beenden.
@@ -1678,9 +1682,8 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 - [x] Atomaren Same-Directory-LFN-Replace für bestehende reguläre Ziele durch
   Erhalt der Ziel-LFN-Folge, journalisierte Metadatenpublikation,
   Quelltombstone und nachgelagerte Kettenfreigabe ergänzen.
-- EXT2 weiterhin ausdrücklich read-only mounten. Supplementary-Plane-
-  Fontpakete, Eingabemethoden,
-  Bidirektionalität, Shaping und Graphemnavigation bleiben eigene
+- EXT2 weiterhin ausdrücklich read-only mounten. Eingabemethoden,
+  Bidirektionalität, Shaping, Combining-Positionierung und Graphemnavigation bleiben eigene
   Ring-3-GUI-/Textpakete.
 
 #### R2.3 Blockgeräte und Partitionen — L

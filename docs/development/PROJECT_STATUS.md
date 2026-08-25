@@ -44,6 +44,15 @@ nach jedem erfolgreichen Abschnitt explizit an den Scheduler abgegeben. Das
 reduziert den Start von rund 280 auf etwa 18 Scheduling-Abschnitte, während der
 synchron serialisierte VFS-Pfad weiterhin nie die gesamte Ressource in einem
 einzigen Aufruf hält.
+`R3.2-unifont-supplementary-coverage` ersetzt dieses BMP-Artefakt durch die
+gepinnten 126.086 eindeutigen Abbildungen der offiziellen GNU-Unifont-16.0.04-
+All-Quelle. 60.518 Abbildungen liegen in der BMP und 65.568 darüber. Das rund
+2,47 MiB große PSF2 bleibt unter einer festen 3-MiB-Dateigrenze; der Desktop
+verwendet einen caller-owned 262.144-Slot-Index mit weniger als halber Last und
+weiterhin 64-KiB-Leseabschnitte mit Schedulerabgabe. Der Gastprobe weist 🚀 als
+echte Supplementary-Glyphe sowie U+10FFFD als weiterhin sichtbaren Fallback
+nach. Das vervollständigt nicht Shaping, Bidi, Combining-Positionierung,
+Graphemnavigation oder Eingabemethoden.
 Eine nackte Escape-Taste beendet die grafische Sitzung nicht mehr. Sie bleibt
 lokaler Abbruch für Drag, Menü, Dialog und fokussierte Surface-Anwendungen. Der
 kontrollierte Desktop-Exit erfolgt ausschließlich über `Desktop beenden` im
@@ -53,9 +62,9 @@ wartet dabei höchstens zwei Sekunden auf eine neue freigegebene
 SVGA2D-Servicegeneration. Dadurch kann ein gleichzeitig überwachter
 Treiberneustart keine alte Endpoint-Fähigkeit bis zur Pixelwirkung tragen.
 Die Datei `/usr/share/fonts/unicode.txt` liegt im vollständigen HDD-Image und zeigt
-die BMP-Abdeckung mit realen lateinischen, griechischen, kyrillischen,
+die BMP- und Supplementary-Abdeckung mit realen lateinischen, griechischen, kyrillischen,
 hebräischen, arabischen, Devanagari-, CJK- und Hangul-Zeichen. Offen gebliebene
-Combining-, Bidi-, Shaping- und Supplementary-Fälle sind darin ausdrücklich
+Combining-, Bidi- und Shaping-Fälle sind darin ausdrücklich
 markiert, damit Ersatzdarstellung nicht mit fertigem Layout verwechselt wird.
 Der REIST Editor akzeptiert diese Datei nun als vollständig validiertes
 RFC-3629-UTF-8. Sein fester Puffer speichert weiterhin Bytes, während Cursor,

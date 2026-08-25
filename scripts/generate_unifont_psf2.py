@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the bounded 8x16 REIST BMP fallback from GNU Unifont HEX."""
+"""Generate the bounded 8x16 REIST Unicode fallback from GNU Unifont HEX."""
 
 from __future__ import annotations
 
@@ -11,12 +11,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE = ROOT / "assets/fonts/source/unifont-16.0.04.hex.gz"
-DEFAULT_OUTPUT = ROOT / "assets/fonts/reist-unicode-bmp.psf"
-SOURCE_SHA256 = "f9c8c7802453f47be02677176aeac2342ee96d354fad7a26cedcce48e68e1d9f"
+DEFAULT_SOURCE = ROOT / "assets/fonts/source/unifont_all-16.0.04.hex.gz"
+DEFAULT_OUTPUT = ROOT / "assets/fonts/reist-unicode.psf"
+SOURCE_SHA256 = "20e8b505f602488697979eefc69857f7f6106bceab702f5ac559f4f84e0e7494"
 PSF2_MAGIC = 0x864AB572
-EXPECTED_GLYPHS = 57086
-MAX_OUTPUT_BYTES = 2 * 1024 * 1024
+EXPECTED_GLYPHS = 126086
+EXPECTED_BMP_GLYPHS = 60518
+EXPECTED_SUPPLEMENTARY_GLYPHS = 65568
+MAX_OUTPUT_BYTES = 3 * 1024 * 1024
 
 
 def compress_wide_row(row: int) -> int:
@@ -43,7 +45,8 @@ def load_glyphs(source: Path) -> list[tuple[int, bytes]]:
             bitmap = bytes.fromhex(bitmap_text)
         except ValueError as error:
             raise RuntimeError(f"malformed Unifont line {line_number}") from error
-        if scalar <= previous or scalar > 0xFFFF or 0xD800 <= scalar <= 0xDFFF:
+        if (scalar <= previous or scalar > 0x10FFFF or
+                0xD800 <= scalar <= 0xDFFF):
             raise RuntimeError(f"invalid or unordered scalar on line {line_number}")
         if len(bitmap) == 16:
             raster = bitmap
@@ -59,8 +62,20 @@ def load_glyphs(source: Path) -> list[tuple[int, bytes]]:
     if len(glyphs) != EXPECTED_GLYPHS:
         raise RuntimeError(
             f"expected {EXPECTED_GLYPHS} Unifont glyphs, found {len(glyphs)}")
+    bmp_count = sum(scalar <= 0xFFFF for scalar, _ in glyphs)
+    supplementary_count = len(glyphs) - bmp_count
+    if (bmp_count != EXPECTED_BMP_GLYPHS or
+            supplementary_count != EXPECTED_SUPPLEMENTARY_GLYPHS):
+        raise RuntimeError(
+            "unexpected BMP/supplementary split "
+            f"{bmp_count}/{supplementary_count}")
     if not any(scalar == 0x25A0 for scalar, _ in glyphs):
         raise RuntimeError("fallback U+25A0 is absent")
+    for scalar in (0x10348, 0x1D11E, 0x1F600, 0x1F680, 0x20000):
+        if not any(candidate == scalar for candidate, _ in glyphs):
+            raise RuntimeError(f"required supplementary sample U+{scalar:X} is absent")
+    if any(scalar == 0x10FFFD for scalar, _ in glyphs):
+        raise RuntimeError("fallback probe scalar U+10FFFD unexpectedly mapped")
     return glyphs
 
 
@@ -73,7 +88,7 @@ def generate(source: Path) -> bytes:
         "<8I", PSF2_MAGIC, 0, 32, 1, len(glyphs), 16, 16, 8)
     output = header + rasters + unicode_table
     if len(output) >= MAX_OUTPUT_BYTES:
-        raise RuntimeError("generated BMP font exceeds the 2 MiB contract")
+        raise RuntimeError("generated Unicode font exceeds the 3 MiB contract")
     return output
 
 
@@ -86,7 +101,7 @@ def main() -> None:
     generated = generate(arguments.source)
     if arguments.check:
         if not arguments.output.is_file() or arguments.output.read_bytes() != generated:
-            raise SystemExit("REIST GNU Unifont PSF2 asset is stale")
+            raise SystemExit("REIST GNU Unifont all-plane PSF2 asset is stale")
         return
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_bytes(generated)

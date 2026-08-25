@@ -623,8 +623,8 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/images/demo-desktop.bmp=assets/images/demo-desktop.bmp \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
 	usr/share/fonts/reist-vga.psf=assets/fonts/reist-vga.psf \
-	usr/share/fonts/reist-unicode-bmp.psf=assets/fonts/reist-unicode-bmp.psf \
-	usr/share/fonts/unifont-16.0.04.hex.gz=assets/fonts/source/unifont-16.0.04.hex.gz \
+	usr/share/fonts/reist-unicode.psf=assets/fonts/reist-unicode.psf \
+	usr/share/fonts/unifont_all-16.0.04.hex.gz=assets/fonts/source/unifont_all-16.0.04.hex.gz \
 	usr/share/fonts/ofl-1.1.txt=assets/fonts/source/OFL-1.1.txt \
 	usr/share/fonts/readme.txt=assets/fonts/README.md \
 	usr/share/fonts/unicode.txt=assets/fonts/unicode.txt \
@@ -709,8 +709,8 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
 	usr/share/sounds/440hz.wav=% usr/share/images/demo-desktop.bmp=% \
 	usr/share/images/demo-colors.gif=% \
-	usr/share/fonts/reist-unicode-bmp.psf=% \
-	usr/share/fonts/unifont-16.0.04.hex.gz=% \
+	usr/share/fonts/reist-unicode.psf=% \
+	usr/share/fonts/unifont_all-16.0.04.hex.gz=% \
 	usr/share/fonts/ofl-1.1.txt=% usr/share/fonts/readme.txt=% \
 	usr/share/fonts/unicode.txt=% \
 	usr/share/icons/folder-empty.ico=% usr/share/icons/folder-full.ico=% \
