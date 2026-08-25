@@ -334,6 +334,10 @@ int main(void) {
         "Gr\xC3\xBCn-\xF0\x9F\x9A\x80.txt";
     if (stat_path(&context, unicode_path, &info) != 0 ||
         strcmp(info.name, unicode_name) != 0 || info.size != 4U) return 28;
+    static const char unicode_alternate[] =
+        "/GRU\xCC\x88N-\xF0\x9F\x9A\x80.TXT";
+    if (stat_path(&context, unicode_alternate, &info) != 0 ||
+        strcmp(info.name, unicode_name) != 0) return 31;
     if (readdir_path(&context, "/", 4U, &info) != 0 ||
         strcmp(info.name, unicode_name) != 0) return 29;
     if (readdir_path(&context, "/", 5U, &info) != 1 ||

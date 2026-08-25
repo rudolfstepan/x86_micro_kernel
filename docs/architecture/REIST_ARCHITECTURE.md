@@ -168,8 +168,9 @@ DELEGATE-Rechte und ausschließlich abschwächende Übergaben an eine exakt
 validierte Prozessgeneration. Eine Übergabe belegt einen eigenen Zielslot,
 verfällt nach fünf monotonen Sekunden und verändert das Quellhandle nicht.
 Ein Spawn erbt weiterhin keine Objekt- oder Delegationsautorität ambient.
-Der zusätzliche Servicepfad belegt ein 116-KiB-Rescue-Image; der statische
-Gesamtpool bleibt unverändert auf 272 KiB begrenzt.
+Der zusätzliche Servicepfad einschließlich vollständiger Unicode-15-Tabellen
+bleibt unter der festen 192-KiB-Einzelgrenze; der statische Gesamtpool ist auf
+352 KiB begrenzt.
 Der gemeinsame feste Prozess-Deskriptorraum reserviert 0 für READ-only
 Terminaleingabe sowie 1 und 2 für WRITE-only Terminalausgabe. Acht dynamische
 Datei-/Socket-Slots behalten unverändert die Nummern 3 bis 10. Jede neue
@@ -259,8 +260,13 @@ Eingabe-, Ausgabe-, 255-Codeunit- und 20-Slot-Grenzen gebunden; ungültige
 Skalare oder Surrogatfolgen scheitern vor Directory-Wirkung. Produktions-FAT32
 und der Ring-3-Shadowparser publizieren nur vollständig checksumgebundene,
 zurückkonvertierbare Namen. Das ABI und das FAT-Format bleiben unverändert.
-ASCII-Groß-/Kleinschreibung wird gefaltet, Nicht-ASCII bleibt exakt; NFC und
-vollständiges Unicode-Casefolding sind ausdrücklich noch keine Eigenschaft.
+Die Namensidentität verwendet Unicode-15.0.0-NFC plus Full Default Case
+Folding. Generierte Zerlegungs-, Combining-Class-, Kompositions- und
+Casefold-Tabellen speisen einen heapfreien Normalisierer mit aus der
+255-Byte-Pfadgrenze bewiesenen 382 Skalar- und 763 Schlüsselbyte-Slots.
+Originalschreibweisen bleiben persistent und sichtbar; nur FAT32- und
+Shadowparser-Identität wird normalisiert. Das ist keine Behauptung über
+systemweite Glyphen-, Font-, Bidi-, Eingabemethoden- oder Graphemabdeckung.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-
@@ -1440,8 +1446,9 @@ Rescue-Allowlist-Abbild in RAM: `/bin/shell.prg`, `/sbin/devctl.prg`,
 `/sbin/mount.prg`, `/sbin/umount.prg`, `/sbin/svcctl.prg`,
 `/libexec/reist/storage.prg`, `/libexec/reist/reist.prg`, `/sbin/drives.prg`,
 `/bin/ls.prg`, `/bin/cat.prg` und `/sbin/chkdsk.prg`. Jedes Image ist auf
-112 KiB, der gesamte statische Pool auf 272 KiB begrenzt. Die größere
-Einzelgrenze nimmt den gewachsenen, weiterhin isolierten Storage-Dienst auf;
+192 KiB, der gesamte statische Pool auf 352 KiB begrenzt. Die größere
+Einzelgrenze nimmt den gewachsenen, weiterhin isolierten Storage-Dienst mit
+seinen vollständigen Unicode-15-Normalisierungstabellen auf;
 die seitenbündige Gesamtgrenze nimmt die vollständige Allowlist auf und bleibt
 fest. Die Programme werden vor der Aufnahme als
 MYPR-Abbild validiert und vor jedem Start erneut gegen CRC und redundant

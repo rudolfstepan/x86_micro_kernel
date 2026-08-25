@@ -7,6 +7,18 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R2.2-unicode-nfc-casefold` ergänzt vollständige kanonische
+Unicode-15-Dateinamenidentität. Ein reproduzierbarer Generator fixiert 2.061
+kanonische Zerlegungen, 1.530 Default-Casefold-Abbildungen, 922
+Combining-Class-Einträge und die zulässigen Kompositionspaare. Der heapfreie
+Laufzeitpfad führt Full Case Folding, rekursive Zerlegung, stabile kanonische
+Sortierung und NFC-Komposition einschließlich Hangul für alle gültigen
+Skalarwerte bis U+10FFFF aus. Aus der 255-Byte-Komponentengrenze sind 382
+Zwischenskalare und 763 Schlüsselbytes fest hergeleitet. Originalnamen bleiben
+auf dem Medium und in Readdir unverändert; nur Lookup-Identität wird
+normalisiert. Das schließt nicht automatisch Font-Fallback, Glyphenabdeckung,
+Bidirektionalität, Eingabemethoden oder Graphemnavigation der GUI ein.
+
 `R2.2-vfat-utf8-roundtrip` ersetzt den bisherigen ASCII-only-LFN-Pfad durch
 eine gemeinsame heapfreie RFC-3629-/UTF-16-Konvertierung. FAT32 zählt Slots
 nach UTF-16-Codeunits, schreibt und liest BMP-Zeichen sowie gültige
@@ -14,8 +26,7 @@ Surrogatpaare und verwirft überlange UTF-8-Sequenzen, Surrogatskalare,
 unvollständige Paare, verbotene FAT-Zeichen und Kapazitätsüberschreitungen vor
 Namespacewirkung. Der unabhängige Ring-3-FAT-Parser verwendet dieselben festen
 Codecgrenzen. Die bestehende 256-Byte-Pfad-ABI bleibt unverändert. Nicht-ASCII
-wird derzeit bytegenau verglichen; NFC-Normalisierung und vollständiges
-Unicode-Casefolding werden noch nicht behauptet.
+wird über Unicode-15-NFC und vollständiges Default Case Folding verglichen.
 
 `R2.2-fat-timestamp-completion` schließt die verbliebene FAT12-Lücke im bereits
 öffentlichen Zeitstempelvertrag. Neue Dateien, Verzeichnisse sowie `.`/`..`
@@ -408,9 +419,10 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   über Operation 6 und Listings über Operation 7. Der QEMU-Modus `http-server`
   führt zwölf abwechselnde echte Datei- und Verzeichnisanfragen aus, verlangt
   die Ring-3-Marker und gewinnt nach `Ctrl+C` die Userspace-Shell zurück.
-- Der feste Rescue-Programmpool umfasst nun 272 KiB für weiterhin genau elf
-  geschützte Programme; die Einzelgrenze beträgt 112 KiB. Das schafft begrenzten
-  Raum für den isolierten Parser, ohne dynamische Cacheallokation einzuführen.
+- Der feste Rescue-Programmpool umfasst nun 352 KiB für weiterhin genau elf
+  geschützte Programme; die Einzelgrenze beträgt 192 KiB. Damit passen die
+  vollständigen Unicode-15-Tabellen des isolierten Storage-Dienstes in die
+  Allowlist, ohne dynamische Cacheallokation einzuführen.
 - Der Windows-Build wertet die Exitcodes der System- und Beispielprogramm-
   Builder über explizite Child-Prozesse aus. Ein fehlgeschlagener PRG-Build kann
   daher kein scheinbar erfolgreiches Image aus veralteten Artefakten erzeugen.
@@ -434,8 +446,8 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Fünf-Sekunden-Deadline aktiv; tote, abgelaufene und service-stale Slots
   werden begrenzt widerrufen. Der echte QEMU-Gast weist Vier-Slot-Quota,
   Rechteabschwächung, Quellhandle-Erhalt und Ablauf nach. Ambiente Spawn-
-  Vererbung bleibt ausgeschlossen. Das gemessene Storage-Image benötigt
-  116 KiB im unveränderten festen 272-KiB-Rescue-Gesamtpool.
+  Vererbung bleibt ausgeschlossen. Das Storage-Image bleibt unter der festen
+  192-KiB-Einzelgrenze im festen 352-KiB-Rescue-Gesamtpool.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

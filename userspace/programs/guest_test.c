@@ -665,11 +665,25 @@ static int test_vfat_utf8(void) {
         !bytes_equal(actual, payload, sizeof(actual)) ||
         x86os_close(descriptor) != 0 || x86os_unlink(path) != 0)
         goto failed;
+    descriptor = -1;
+
+    static const char composed[] = "N-\xC3\x84-\xC3\x9F.TMP";
+    static const char alternate[] = "n-A\xCC\x88-ss.tmp";
+    (void)x86os_unlink(composed);
+    descriptor = x86os_open_flags(composed, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor < 0 || x86os_close(descriptor) != 0) goto failed;
+    descriptor = -1;
+    if (x86os_stat(alternate, &info) != 0 ||
+        !bytes_equal(info.name, composed, sizeof(composed))) goto failed;
+    descriptor = x86os_open_flags(alternate, X86OS_O_RDONLY);
+    if (descriptor < 0 || x86os_close(descriptor) != 0 ||
+        x86os_unlink(alternate) != 0) goto failed;
     return 0;
 
 failed:
     if (descriptor >= 0) (void)x86os_close(descriptor);
     (void)x86os_unlink(path);
+    (void)x86os_unlink("N-\xC3\x84-\xC3\x9F.TMP");
     return -1;
 }
 

@@ -9,6 +9,7 @@
  */
 #include "../include/reist/vfs_shadow_fat32.h"
 #include "../../../include/reist/utf.h"
+#include "../../../include/reist/unicode_norm.h"
 
 #define FAT32_ATTR_DIRECTORY 0x10U
 #define FAT32_ATTR_VOLUME_ID 0x08U
@@ -110,12 +111,7 @@ static char shadow_lower(char value) {
 }
 
 static int shadow_name_equal(const char *left, const char *right) {
-    uint32_t index = 0U;
-    while (left[index] != '\0' && right[index] != '\0') {
-        if (shadow_lower(left[index]) != shadow_lower(right[index])) return 0;
-        ++index;
-    }
-    return left[index] == '\0' && right[index] == '\0';
+    return reist_unicode_caseless_nfc_equal(left, right);
 }
 
 static int shadow_path_prefix(const char *path, uint32_t path_length,

@@ -492,8 +492,9 @@ und 10 verbindlich.
     und pfadfreien read-only Folgeoperationen 9 bis 11 nach einmaligem Open
   - [x] explizite READ-/SEEK-/STAT-/DELEGATE-Rechte und
     abschwächende Übergabe an eine exakt generationgebundene Zielidentität;
-    keine ambiente Spawn-Vererbung; das gewachsene Storage-Rescue-Image erhält
-    ausschließlich 116 KiB Einzellimit, der 272-KiB-Gesamtpool bleibt fest
+    keine ambiente Spawn-Vererbung; das Storage-Rescue-Image mit vollständigen
+    Unicode-15-Tabellen bleibt durch 192 KiB Einzellimit und den statischen
+    352-KiB-Gesamtpool fest begrenzt
   - [x] echte prozesslokale Standarddeskriptoren 0/1/2 mit
     READ-only `stdin`, WRITE-only `stdout`/`stderr`, nichtblockierendem
     Tastaturpoll und unveränderten acht dynamischen Slots 3 bis 10
@@ -1626,8 +1627,9 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 - **Teilstatus:** FAT32-LFN akzeptiert validiertes RFC-3629-UTF-8 und bildet es
   begrenzt auf Microsoft-kompatibles UTF-16 samt Surrogatpaaren und
   checksum-validiertem 8.3-Fallback ab. Die unabhängige Ring-3-Auswertung
-  dekodiert identisch fail-closed. Unicode-NFC-/Casefold-Gleichheit und
-  atomarer LFN-Replace auf existierende Ziele fehlen weiterhin.
+  dekodiert identisch fail-closed. Unicode-15-NFC-/Full-Casefold-Gleichheit ist
+  über generierte, feste Tabellen umgesetzt; atomarer LFN-Replace auf
+  existierende Ziele fehlt weiterhin.
 - [x] Open/Delete/Unmount-Regeln für den vorhandenen FAT-Vertrag vereinheitlichen:
   erfolgreiche Opens registrieren exakt einen festen Node, Close-Fehler halten
   die Sperre, Objektmutationen liefern vor Wirkung `BUSY`, und Unmount bleibt
@@ -1646,8 +1648,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   atime. Lese- und Stat-Pfade bleiben medienseitig wirkungsfrei.
 - [x] VFAT-Namen als begrenztes UTF-8↔UTF-16-Roundtrip einschließlich
   Surrogatpaaren, Fehlkodierungsablehnung und 255-UTF-16-Unit-Grenze umsetzen.
-- Danach tabellengebundene Unicode-NFC-/Casefold-Gleichheit ergänzen; EXT2
-  vorerst ausdrücklich read-only mounten.
+- [x] Unicode-15-NFC und vollständiges Default Case Folding als heapfreien,
+  tabellengebundenen Identitätsvergleich für FAT32 und Shadowparser umsetzen;
+  Originalschreibweise auf Medium und in Readdir bewahren.
+- Danach atomaren LFN-Replace ergänzen; EXT2 vorerst ausdrücklich read-only
+  mounten. Systemweite Unicode-Glyphen, Font-Fallback, Eingabemethoden,
+  Bidirektionalität und Graphemnavigation bleiben eigene GUI-/Textpakete.
 
 #### R2.3 Blockgeräte und Partitionen — L
 

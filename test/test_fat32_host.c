@@ -975,6 +975,30 @@ int main(void) {
     CHECK(count_allocated_clusters() == allocated_before_invalid);
     CHECK(vfs_delete(unicode_path) == VFS_OK);
 
+    static const char composed_path[] =
+        "/\xC3\x84rger-\xC3\x9F.txt";
+    static const char composed_name[] =
+        "\xC3\x84rger-\xC3\x9F.txt";
+    static const char folded_decomposed_path[] =
+        "/a\xCC\x88RGER-SS.TXT";
+    CHECK(vfs_create(composed_path) == VFS_OK);
+    CHECK(vfs_stat(folded_decomposed_path, &listed) == VFS_OK &&
+          strcmp(listed.name, composed_name) == 0);
+    CHECK(vfs_create(folded_decomposed_path) == VFS_ERR_EXISTS);
+    CHECK(vfs_open(folded_decomposed_path, &unicode_node) == VFS_OK &&
+          unicode_node != NULL);
+    CHECK(vfs_close(unicode_node) == VFS_OK);
+    CHECK(vfs_delete(folded_decomposed_path) == VFS_OK);
+
+    static const char unordered_marks[] =
+        "/mark-a\xCC\x95\xCC\x80.txt";
+    static const char ordered_marks[] =
+        "/MARK-A\xCC\x80\xCC\x95.TXT";
+    CHECK(vfs_create(unordered_marks) == VFS_OK);
+    CHECK(vfs_stat(ordered_marks, &listed) == VFS_OK);
+    CHECK(vfs_create(ordered_marks) == VFS_ERR_EXISTS);
+    CHECK(vfs_delete(ordered_marks) == VFS_OK);
+
     /* FAT timestamps are published with the directory entry. Reads and
      * metadata queries never synthesize an implicit access-time write. */
     CHECK(vfs_create("/TIME.TMP") == VFS_OK);

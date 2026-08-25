@@ -80,8 +80,9 @@ Read-only Rechte und eine generationgebundene, abschwächende Übergabe sind
 SEEK-/STAT-Open; DELEGATE wird nur explizit vergeben. Das Ziel übernimmt einen
 eigenen Slot innerhalb von fünf monotonen Sekunden. Deskriptorvererbung beim
 Spawn bleibt davon getrennt und ist noch nicht migriert. Das Storage-Rescue-
-Image bleibt im festen Gesamtpool; nur sein Einzelimage-Limit steigt gemessen
-von 112 auf 116 KiB.
+Image bleibt im festen Gesamtpool. Mit den vollständigen Unicode-15-Tabellen
+beträgt die feste Einzelgrenze nun 192 KiB; der weiterhin statische
+Allowlist-Gesamtpool ist auf 352 KiB begrenzt.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus
@@ -227,8 +228,13 @@ unvollständige UTF-16-Paare. Vor Directory-Allokation müssen sowohl die
 255-Byte-Komponentengrenze als auch höchstens 255 UTF-16-Codeunits feststehen;
 die maximal 20 LFN-Slots werden nach Codeunits berechnet. BMP-Zeichen und
 Supplementary Planes werden verlustfrei zurückgegeben. ASCII bleibt
-case-insensitive, Nicht-ASCII vorerst bytegenau. NFC und vollständiges
-Unicode-Casefolding sind sichtbar offene, tabellengebundene Arbeit.
+case-insensitive. Für alle Unicode-Skalarwerte verwendet die FAT32-Identität
+Unicode 15.0.0 mit Full Default Case Folding, rekursiver kanonischer
+Zerlegung, stabiler Combining-Class-Sortierung und NFC-Komposition samt
+algorithmischem Hangul. Die generierten Tabellen sind reproduzierbar
+eingecheckt; Laufzeitdaten, Locale und Heap werden nicht benötigt. Die
+255-Byte-Grenze beweist feste Maxima von 382 Zwischenskalaren und 763
+Schlüsselbytes. Gespeicherter Name und Readdir bewahren die Originalbytes.
 
 ## Migrationsreihenfolge
 

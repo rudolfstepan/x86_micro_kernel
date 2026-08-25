@@ -8,6 +8,7 @@
  */
 #include "fat32.h"
 #include "include/reist/utf.h"
+#include "include/reist/unicode_norm.h"
 #include "lib/libc/stdio.h"
 
 // Function to read a file's data into a buffer
@@ -236,15 +237,7 @@ static void fat32_lfn_reset(fat32_lfn_reader_t* reader) {
 }
 
 static bool fat32_names_equal(const char* left, const char* right) {
-    if (!left || !right) return false;
-    while (*left && *right) {
-        unsigned char lhs = (unsigned char)*left++;
-        unsigned char rhs = (unsigned char)*right++;
-        if (lhs >= 'A' && lhs <= 'Z') lhs = (unsigned char)(lhs + 0x20U);
-        if (rhs >= 'A' && rhs <= 'Z') rhs = (unsigned char)(rhs + 0x20U);
-        if (lhs != rhs) return false;
-    }
-    return *left == '\0' && *right == '\0';
+    return reist_unicode_caseless_nfc_equal(left, right) != 0;
 }
 
 static uint16_t fat32_lfn_character(const struct fat32_lfn_entry* entry,
