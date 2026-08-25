@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2-vfat-utf8-roundtrip"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,68 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2-vfat-utf8-roundtrip"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Bounded UTF-8 and UTF-16 VFAT long-name roundtrip"
+scope = "Replace the current printable-ASCII-only FAT32 LFN path with one shared fixed-storage Unicode scalar codec. Treat the existing VFS and userspace path bytes as RFC 3629 UTF-8 and the Microsoft FAT long-name fields as little-endian UTF-16 code units. Validate the complete component before namespace or media side effects; reject overlong UTF-8 encodings surrogate scalars values above U+10FFFF embedded NUL forbidden FAT characters trailing space or dot unpaired UTF-16 surrogates noncharacters only where the standard forbids their encoding and any name exceeding either the existing 255-byte VFS component buffer or FAT's 255 UTF-16-code-unit ceiling. Encode supplementary scalars as surrogate pairs and decode validated pairs back to the exact UTF-8 byte sequence. LFN slot count and termination are based on UTF-16 units rather than UTF-8 bytes. Keep ASCII case-insensitive matching and exact-byte matching for non-ASCII; do not claim Unicode case folding or NFC equivalence in this package. Apply equivalent decoding and rejection in the independent Ring-3 FAT shadow parser. Prove BMP and supplementary roundtrip lookup readdir read delete and malformed input and disk rejection on host plus one normal QEMU UTF-8 create write stat read unlink path. Add no syscall VFS structure persistent-format extension heap allocation in the codec FAT12 mutation or normalization table."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/reist/utf.h",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32.c",
+  "fs/fat32/fat32_files.c",
+  "fs/fat32/fat32_dir.c",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/programs/guest_test.c",
+  "test/test_fat32_host.c",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_fat_vfat_utf.py",
+  "test/test_fs_host.py",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "public VFS syscall and userspace metadata layouts remain byte-for-byte unchanged and path storage remains 256 bytes",
+  "the shared codec is header-only fixed-storage allocation-free and bounded by explicit input output and UTF-16 unit capacities",
+  "UTF-8 validation follows RFC 3629 including shortest-form scalar surrogate and U+10FFFF checks",
+  "VFAT on-disk names remain Microsoft-compatible UTF-16LE with validated surrogate pairing terminator fill order checksum and 20-slot ceiling",
+  "a complete UTF-8 component and its UTF-16 unit count are validated before allocation journal or directory side effects",
+  "LFN slot count is derived from UTF-16 units and supplementary scalars are never split or miscounted",
+  "LFN decoding publishes exact canonical UTF-8 bytes only after the complete checksum-bound descending slot sequence validates",
+  "malformed UTF-8 malformed UTF-16 forbidden FAT characters trailing space or dot and capacity exhaustion fail closed",
+  "ASCII matching remains case-insensitive while non-ASCII matching is exact until a separate bounded normalization and case-fold table package",
+  "the Ring-3 shadow parser independently enforces the same codec and malformed-media rejection without allocation or syscall fallback",
+  "FAT12 behavior write authority and all persistent structures remain unchanged"
+]
+targeted_tests = [
+  "python test/test_fat_vfat_utf.py -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v",
+  "python test/test_reist_vfs_shadow_fat32.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "UTF-8 support would require expanding a public path or metadata ABI",
+  "normalization or case-fold claims would require an unbounded or incomplete implicit table",
+  "a malformed name can reach allocation journal or directory publication",
+  "the production and Ring-3 parser disagree on accepted UTF-16 or emitted UTF-8",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fs: add bounded UTF-8 VFAT roundtrip"
+evidence = []
 
 [[packages]]
 id = "R2.2-fat-timestamp-completion"
