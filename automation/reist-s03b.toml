@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.2-ring3-psf2-font-fallback"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,68 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.2-ring3-psf2-font-fallback"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Bounded Ring-3 PSF2 font fallback"
+scope = "Establish the first standard file-backed Unicode glyph fallback outside Ring 0. Add a public fixed-storage PSF version 2 decoder to libreistgui using the Linux kbd PSF2 header and Unicode-table semantics. Validate the complete at-most-4-MiB caller-owned font before publication, require bounded dimensions and glyph counts, decode scalar aliases with RFC 3629, ignore but validate multi-scalar sequence entries until a later shaping package, and build an open-addressed caller-owned scalar index with fail-closed duplicate and capacity handling. Generate and check in one reproducible PSF2 font from the existing IBM-PC 8x16 bitmap plus a real Euro glyph outside CP437, package it identically in Windows and Makefile images, and load it once into fixed Desktop storage before rendering. Preserve the existing fast kernel text call for whole runs and overlay only mapped extension glyphs through bounded Ring-3 XRGB raster uploads clipped to the compositor damage rectangle. Extend the existing Unicode desktop probe to prove the PSF2 Euro mapping raster and supervised QEMU SVGA2D lifecycle. This package adds a replaceable Ring-3 font contract and one observable fallback glyph; it does not claim broad script coverage shaping grapheme layout bidirectional layout or IME support."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/generate_psf2_font.py",
+  "assets/fonts/reist-vga.psf",
+  "userspace/gui/include/reist/gui/font.h",
+  "userspace/gui/lib/font.c",
+  "scripts/build_user_sdk.py",
+  "scripts/build-windows.ps1",
+  "Makefile",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_gui_font_host.c",
+  "test/test_gui_font.py",
+  "test/test_unicode_text.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "PSF2 bytes and the scalar index remain caller-owned fixed storage and parsing performs no allocation VFS access locale lookup or global mutation",
+  "magic version header size flags dimensions glyph count char size glyph extent and complete Unicode table are validated before the font becomes usable",
+  "font input is bounded to 4 MiB dimensions to 32 by 32 pixels glyphs to 131072 and every parser loop to the supplied file or mapping capacity",
+  "Unicode aliases use strict RFC 3629 decoding ambiguous scalar duplicates fail closed and PSF2 sequence entries are validated but never misrepresented as scalar shaping",
+  "the generated font is deterministic contains the unchanged 256 IBM-PC bitmaps plus one real indexed Euro glyph and is packaged at /usr/share/fonts/reist-vga.psf by both image builds",
+  "the Desktop loads the font once before rendering into fixed storage and a missing malformed or oversized optional font leaves the prior kernel fallback path intact",
+  "existing CP437 and ABI-compatible whole-run kernel rasterization remains the fast baseline while only extension glyphs are overlaid in Ring 3",
+  "extension overlays are clipped to both the physical display and current compositor damage rectangle and use at most one 32 by 32 fixed pixel scratch buffer",
+  "no font parser table glyph bitmap or cache is added to Ring 0 and no syscall display ABI or persistent filesystem format changes",
+  "broad script coverage shaping grapheme layout bidirectional layout and IME remain explicit later Ring-3 packages"
+]
+targeted_tests = [
+  "python test/test_gui_font.py -v",
+  "python test/test_unicode_text.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-psf2-font.log"
+]
+stop_conditions = [
+  "PSF2 sequence semantics or an ambiguous scalar mapping would need to be silently treated as a single glyph",
+  "a malformed or oversized font can publish partial context state or trigger pixel output",
+  "an extension glyph can draw outside the current damage clip or require unbounded per-frame storage",
+  "the generated PSF2 asset differs without a generator source change or is absent from either full image layout",
+  "the implementation would require a complex font parser or broad font table in Ring 0",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: add bounded Ring-3 PSF2 fallback"
+evidence = []
 
 [[packages]]
 id = "R3.1-unicode-text-raster"
