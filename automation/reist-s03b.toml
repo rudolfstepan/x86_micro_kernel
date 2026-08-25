@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2-fat32-ata-image-fault-campaign"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,66 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2-fat32-ata-image-fault-campaign"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Exhaustive FAT32 ATA-journal image write-cut campaign"
+scope = "Close the FAT32/ATA half of the R2.2 per-sector-write fault campaign against one complete production VFS transaction. Extract the existing fixed ATA undo-journal state machine into a transport-neutral kernel module without changing its version-2 on-disk record, public ATA API, write ordering, partition translation, AHCI routing, fencing or transaction ownership. The production ATA driver supplies its existing raw ATA/AHCI transport while the FAT32 host harness supplies a fixed memory transport to the same journal module. Starting from a closed zero-length regular file on a journal-marked FAT32 image, execute a healthy VFS extension to 700 zero bytes to capture the committed image and actual raw-sector write count. Restore the exact baseline and cut power after every completed raw 512-byte write through that measured count, bounded by FAT32_FAULT_CAMPAIGN_MAX_WRITES. After each cut all later reads and writes fail until a fresh journal instance and mount. Before recovery, every non-journal sector must equal the corresponding whole sector in the baseline or committed image. A successful fresh production FAT32 mount must recover one exact whole baseline or committed non-journal image and expose matching file size, chain, zero data, mirrored FATs and an unrelated file; an intrinsically ambiguous redundant-header state may reject mount fail-closed and is counted separately. Retain the real QEMU journal-recovery smoke and all current ATA/AHCI authority boundaries. Add no runtime fault hook, persistent-format change, syscall or userspace authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/block/ata.c",
+  "drivers/block/ata.h",
+  "drivers/block/ata_journal.c",
+  "drivers/block/ata_journal.h",
+  "fs/vfs/vfs.c",
+  "test/test_fat32_host.c",
+  "test/test_fat32_image_fault_campaign.py",
+  "test/test_fs_host.py",
+  "test/test_reist_undo_journal.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the extracted journal core is fixed-storage allocation-free and preserves version-2 record bytes CRC selection recovery order and the 20-entry ceiling",
+  "production ATA and AHCI transports retain partition translation controller serialization storage supervision flush semantics and global write fencing",
+  "the host campaign invokes the same journal core used by production and adds no production runtime fault-injection control",
+  "each case completes exactly one selected whole 512-byte raw transport write then rejects every later read and write until power restoration",
+  "the healthy operation determines the actual raw write count and the campaign rejects counts above its fixed compile-time ceiling",
+  "every write index from one through the measured count is exercised exactly once from the identical closed-file baseline image",
+  "the pre-recovery verifier accepts each non-journal sector only when it byte-matches that sector in the exact baseline or committed image",
+  "a successful fresh mount produces one whole old or whole committed non-journal image never a mixture and exposes matching size chain and zero data",
+  "an ambiguous valid-header disagreement may refuse mount fail-closed but is recorded separately and never reported as recovered",
+  "both FAT copies unrelated files and all sectors outside the transaction remain protected by whole-image comparison",
+  "the existing QEMU injected-journal recovery proof remains green and no public ABI or persistent format changes"
+]
+targeted_tests = [
+  "python test/test_fat32_image_fault_campaign.py -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v",
+  "python test/test_reist_undo_journal.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "the extraction changes journal record bytes write ordering recovery selection or transport authority",
+  "any cut is skipped duplicated or exceeds the fixed campaign ceiling",
+  "a non-journal sector contains bytes outside its exact old or committed whole-sector value",
+  "a successful mount exposes a mixed non-journal image invalid chain nonzero extension byte or changed unrelated file",
+  "the campaign would require a production fault hook or another persistent-format version",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "test: exhaust FAT32 ATA journal write cuts"
+evidence = []
 
 [[packages]]
 id = "R2.2-fat12-image-fault-campaign"
