@@ -738,6 +738,73 @@ static int test_file_io(void) {
            x86os_unlink(path) == 0 ? 0 : -1;
 }
 
+static int test_open_namespace_locks(void) {
+    static const char target[] = "OPNLCK.TMP";
+    static const char target_alias[] = "opnlck.tmp";
+    static const char source[] = "OPNSRC.TMP";
+    static const char moved[] = "OPNMOV.TMP";
+    static const char unrelated[] = "OPNOTHR.TMP";
+    static const char original[] = "open target";
+    static const char replacement[] = "replacement";
+    int held = -1;
+    int descriptor = -1;
+
+    (void)x86os_unlink(target);
+    (void)x86os_unlink(source);
+    (void)x86os_unlink(moved);
+    (void)x86os_unlink(unrelated);
+    descriptor = x86os_create(target);
+    if (descriptor < 0 ||
+        x86os_write(descriptor, original, sizeof(original) - 1U) !=
+            (int)(sizeof(original) - 1U) ||
+        x86os_close(descriptor) != 0) goto failed;
+    descriptor = -1;
+    descriptor = x86os_create(source);
+    if (descriptor < 0 ||
+        x86os_write(descriptor, replacement, sizeof(replacement) - 1U) !=
+            (int)(sizeof(replacement) - 1U) ||
+        x86os_close(descriptor) != 0) goto failed;
+    descriptor = -1;
+    descriptor = x86os_create(unrelated);
+    if (descriptor < 0 || x86os_close(descriptor) != 0) goto failed;
+    descriptor = -1;
+
+    held = x86os_open_flags(target, X86OS_O_RDWR);
+    if (held < 0 || x86os_unlink(target_alias) == 0 ||
+        x86os_rename(target_alias, moved) == 0 ||
+        x86os_rename(source, target_alias) == 0 ||
+        x86os_unlink(unrelated) != 0) goto failed;
+
+    char observed[sizeof(original) - 1U];
+    x86os_file_info_t info;
+    if (x86os_fstat(held, &info) != 0 || info.size != sizeof(original) - 1U ||
+        x86os_read(held, observed, sizeof(observed)) != (int)sizeof(observed) ||
+        !bytes_equal(observed, original, sizeof(observed)) ||
+        x86os_close(held) != 0) goto failed;
+    held = -1;
+
+    if (x86os_rename(source, target) != 0 ||
+        x86os_stat(source, &info) == 0) goto failed;
+    descriptor = x86os_open(target);
+    char replaced[sizeof(replacement) - 1U];
+    if (descriptor < 0 ||
+        x86os_read(descriptor, replaced, sizeof(replaced)) !=
+            (int)sizeof(replaced) ||
+        !bytes_equal(replaced, replacement, sizeof(replaced)) ||
+        x86os_close(descriptor) != 0 || x86os_unlink(target) != 0)
+        goto failed;
+    return 0;
+
+failed:
+    if (held >= 0) (void)x86os_close(held);
+    if (descriptor >= 0) (void)x86os_close(descriptor);
+    (void)x86os_unlink(target);
+    (void)x86os_unlink(source);
+    (void)x86os_unlink(moved);
+    (void)x86os_unlink(unrelated);
+    return -1;
+}
+
 static int process_state_for_pid(int pid) {
     for (uint32_t index = 0; index < 32U; ++index) {
         x86os_process_info_t info;
@@ -1554,6 +1621,12 @@ int main(int argc, char **argv) {
         return 13;
     }
     x86os_puts("TEST_STAGE FTRUNCATE_OK\n");
+
+    if (test_open_namespace_locks() != 0) {
+        x86os_puts("TEST_FAIL OPEN_NAMESPACE_LOCKS\n");
+        return 1;
+    }
+    x86os_puts("TEST_STAGE OPEN_NAMESPACE_LOCKS_OK\n");
 
     if (test_wait_wakeup() != 0) {
         x86os_puts("TEST_FAIL WAIT\n");

@@ -19,6 +19,9 @@ struct vfs_filesystem;
 struct vfs_file;
 struct vfs_dir_entry;
 
+/* One non-root record for every possible dynamic descriptor of 32 tasks. */
+#define VFS_OPEN_NODE_CAPACITY 256U
+
 // ===========================================================================
 // VFS File Types
 // ===========================================================================
@@ -80,6 +83,7 @@ typedef struct vfs_filesystem_ops {
     int (*truncate)(vfs_node_t* node, uint32_t size);
     int (*fstat)(vfs_node_t* node, vfs_dir_entry_t* stat);
     int (*sync)(vfs_node_t* node);
+    bool (*same_object)(const vfs_node_t* first, const vfs_node_t* second);
     
     // Directory operations
     int (*readdir)(vfs_node_t* node, uint32_t index, vfs_dir_entry_t* entry);

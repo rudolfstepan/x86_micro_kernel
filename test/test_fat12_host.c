@@ -265,6 +265,11 @@ int main(void) {
     CHECK(fs.ops->create(&fs, "/NEW.TXT") == VFS_OK);
     vfs_node_t* node = NULL;
     CHECK(fs.ops->open(&fs, "/NEW.TXT", &node) == VFS_OK && node != NULL);
+    vfs_node_t* alias_node = NULL;
+    CHECK(fs.ops->open(&fs, "/new.txt", &alias_node) == VFS_OK &&
+          alias_node != NULL);
+    CHECK(fs.ops->same_object(node, alias_node));
+    CHECK(fs.ops->close(alias_node) == VFS_OK);
     uint8_t payload[900];
     for (uint32_t i = 0; i < sizeof(payload); ++i)
         payload[i] = (uint8_t)(i * 17u + 3u);

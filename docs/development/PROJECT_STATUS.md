@@ -7,6 +7,15 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R2.2-open-namespace-locks` schließt die erste offene Handle-Lücke der FAT-
+Namespace-Mutation. Bis zu 256 Nicht-Root-Nodes werden statisch registriert.
+Vor `unlink`, `rmdir` und beiden Seiten von `rename` vergleicht VFS die aktuelle
+FAT12-Directory-Sektor/-Slot- beziehungsweise FAT32-Elterncluster-/Kurznamen-
+Identität mit den offenen Nodes. Treffer liefern `BUSY` vor Wirkung, auch über
+Groß-/Kleinschreibungs- oder VFAT-Aliase. Nur ein erfolgreiches Backend-`close`
+gibt Registrierung und Mountzähler frei; Unmount bleibt bei offenen Nodes
+gesperrt. Eine POSIX-artige Unlink-while-open-Lebensdauer wird nicht behauptet.
+
 `R2.1-open-flags-rights` hängt Syscall 120 für POSIX-nahe Open-Modi an. Neue
 Deskriptoren erhalten exakt angeforderte READ-/WRITE-Rechte; `CREAT` prüft die
 feste Slotquote vor Namespace-Wirkung und `APPEND` bestimmt den Schreiboffset

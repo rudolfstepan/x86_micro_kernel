@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2-open-namespace-locks"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2-open-namespace-locks"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Bounded open-node namespace mutation locks"
@@ -68,7 +68,12 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "vfs: lock open objects against namespace mutation"
-evidence = []
+evidence = [
+  "five focused namespace-lock tests and seven resource-budget tests passed",
+  "all twelve filesystem host tests passed with table exhaustion close-failure retention FAT12 locator equality and FAT32 case-alias rejection",
+  "QEMU VGA package gate passed in 30 seconds with the fixed 256-node registry",
+  "normal QEMU runtime passed in 27 seconds with OPEN_NAMESPACE_LOCKS_OK and TEST_OK"
+]
 
 [[packages]]
 id = "R2.1-fat-ftruncate"

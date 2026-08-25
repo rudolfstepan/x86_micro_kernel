@@ -1053,6 +1053,21 @@ static int fat32_vfs_fstat_unlocked(vfs_node_t* node,
     return VFS_OK;
 }
 
+static bool fat32_vfs_same_object(const vfs_node_t* first,
+                                  const vfs_node_t* second) {
+    if (!first || !second || first->fs != second->fs) return false;
+    if (first == first->fs->root || second == second->fs->root)
+        return first == second;
+    if (!first->fs_specific || !second->fs_specific) return false;
+    const fat32_vfs_handle_t* left =
+        (const fat32_vfs_handle_t*)first->fs_specific;
+    const fat32_vfs_handle_t* right =
+        (const fat32_vfs_handle_t*)second->fs_specific;
+    return left->parent_cluster == right->parent_cluster &&
+           memcmp(left->entry.name, right->entry.name,
+                  sizeof(left->entry.name)) == 0;
+}
+
 static int fat32_vfs_mount(vfs_filesystem_t* fs, drive_t* drive) {
     uint32_t flags = fat32_operation_begin();
     struct fat32_boot_sector saved_boot = boot_sector;
@@ -1272,6 +1287,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .write = fat32_vfs_write,
     .truncate = fat32_vfs_truncate,
     .fstat = fat32_vfs_fstat,
+    .same_object = fat32_vfs_same_object,
     .sync = fat32_vfs_sync,
     .readdir = fat32_vfs_readdir,
     .readdir_batch = fat32_vfs_readdir_batch,

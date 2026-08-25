@@ -1613,13 +1613,19 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 #### R2.2 VFS- und FAT-Zuverlässigkeit — L
 
 - **Teilstatus:** Atomisches Same-Directory-Rename/Replace ist für FAT32
-   umgesetzt; Cross-Directory, FAT12 und offene Handle-Semantik fehlen.
+   umgesetzt. Offene FAT12-/FAT32-Objekte sperren jetzt aliasfest `unlink`,
+   `rmdir` sowie Quell- und Zielseite von Rename/Replace über eine feste
+   256-Slot-VFS-Tabelle. Cross-Directory, FAT12-Rename und POSIX-artige
+   Unlink-while-open-Lebensdauer fehlen weiterhin.
 - **Teilstatus:** Der Editor nutzt `TEMP -> fsync -> close -> rename`; FAT12
    und künftige Blockgeräte benötigen noch einen gleichwertigen Sync-Vertrag.
 - **Teilstatus:** FAT32-LFN ist für druckbares ASCII bis 255 Zeichen samt
   checksum-validiertem 8.3-Fallback umgesetzt; Unicode-Normalisierung und
   atomarer LFN-Replace auf existierende Ziele fehlen.
-- Open/Delete/Unmount-Regeln und Locking vereinheitlichen.
+- [x] Open/Delete/Unmount-Regeln für den vorhandenen FAT-Vertrag vereinheitlichen:
+  erfolgreiche Opens registrieren exakt einen festen Node, Close-Fehler halten
+  die Sperre, Objektmutationen liefern vor Wirkung `BUSY`, und Unmount bleibt
+  bis zum letzten offenen Node gesperrt.
 - Fehler nach jedem einzelnen Sektorwrite injizieren und das resultierende
    Image mit einem Hostprüfer untersuchen.
 - Danach Zeitstempel und vollständige Unicode-Normalisierung ergänzen; EXT2

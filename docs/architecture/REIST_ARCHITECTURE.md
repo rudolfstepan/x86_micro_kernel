@@ -204,6 +204,18 @@ Dateideskriptor. Beide Pfade beziehen aktuelle Metadaten über den bereits
 geöffneten VFS-Node; FAT12, FAT32 und EXT2 revalidieren ihre gebundene
 On-Disk-Identität ohne erneute Pfadauflösung. Nur das Kompatibilitätsprofil
 erhält diese beiden Syscalls automatisch.
+
+R2.2 bindet destruktive Namespace-Operationen an offene Objektidentitäten.
+Eine feste Tabelle mit 256 Nicht-Root-Nodes entspricht der Obergrenze aus 32
+Tasks mit je acht dynamischen Deskriptoren. `unlink`, `rmdir` und beide Seiten
+von `rename` werden vor Wirkung gegen FAT12-Directory-Sektor/-Slot oder
+FAT32-Elterncluster plus kanonischen Directory-Namen geprüft. Ein offenes Ziel
+liefert `BUSY`; Aliasnamen ändern diese Entscheidung nicht. Erst ein
+erfolgreiches Backend-`close` widerruft den Tabelleneintrag. Damit können
+veraltete namensgebundene FAT-Nodes weder eine Ersatzdatei übernehmen noch
+freigegebene Cluster weiterverwenden. POSIX-artige gelöschte, aber offene
+Objekte bleiben bis zu einem eigenen Lebensdauer- und Recovery-Vertrag
+ausdrücklich nicht unterstützt.
 Append-only Syscall 123 `FTRUNCATE` ergänzt die schreibbare
 Deskriptorgrößenoperation ohne Offsetänderung. FAT12 führt jede akzeptierte
 Schrumpfung oder Erweiterung einschließlich Nullung, beider FAT-Kopien und

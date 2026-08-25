@@ -29,6 +29,14 @@ static int fake_unmount(vfs_filesystem_t* fs) {
     return VFS_OK;
 }
 
+static bool fake_close_fails;
+static unsigned int fake_delete_calls;
+static unsigned int fake_rename_calls;
+static unsigned int fake_rmdir_calls;
+
+static int fake_identity(const char* path, vfs_node_type_t* type,
+                         uint32_t* inode);
+
 static int fake_open(vfs_filesystem_t* fs, const char* path,
                      vfs_node_t** result) {
     if (!result) return VFS_ERR_INVALID;
@@ -38,8 +46,12 @@ static int fake_open(vfs_filesystem_t* fs, const char* path,
     }
     vfs_node_t* node = (vfs_node_t*)calloc(1, sizeof(*node));
     if (!node) return VFS_ERR_NO_MEMORY;
-    strcpy(node->name, "file");
-    node->type = VFS_FILE;
+    if (fake_identity(path, &node->type, &node->inode) != VFS_OK) {
+        free(node);
+        return VFS_ERR_INVALID;
+    }
+    const char* name = path[0] == '/' ? path + 1 : path;
+    strncpy(node->name, name, sizeof(node->name) - 1U);
     node->fs = fs;
     *result = node;
     return VFS_OK;
@@ -47,6 +59,7 @@ static int fake_open(vfs_filesystem_t* fs, const char* path,
 
 static int fake_close(vfs_node_t* node) {
     if (!node || !node->fs) return VFS_ERR_INVALID;
+    if (fake_close_fails) return VFS_ERR_IO;
     if (node != node->fs->root) free(node);
     return VFS_OK;
 }
@@ -67,11 +80,60 @@ static int fake_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
     return VFS_OK;
 }
 
+static int fake_identity(const char* path, vfs_node_type_t* type,
+                         uint32_t* inode) {
+    if (!path || !type || !inode) return VFS_ERR_INVALID;
+    if (path[0] == '/') ++path;
+    *type = VFS_FILE;
+    if (strcmp(path, "file") == 0 || strcmp(path, "alias") == 0) {
+        *inode = 42U;
+    } else if (strcmp(path, "dir") == 0 || strcmp(path, "dir-alias") == 0) {
+        *type = VFS_DIRECTORY;
+        *inode = 84U;
+    } else {
+        *inode = 126U;
+    }
+    return VFS_OK;
+}
+
+static bool fake_same_object(const vfs_node_t* first,
+                             const vfs_node_t* second) {
+    return first && second && first->fs == second->fs &&
+           first->type == second->type && first->inode == second->inode;
+}
+
+static int fake_delete(vfs_filesystem_t* fs, const char* path) {
+    (void)fs;
+    (void)path;
+    ++fake_delete_calls;
+    return VFS_OK;
+}
+
+static int fake_rename(vfs_filesystem_t* fs, const char* old_path,
+                       const char* new_path) {
+    (void)fs;
+    (void)old_path;
+    (void)new_path;
+    ++fake_rename_calls;
+    return VFS_OK;
+}
+
+static int fake_rmdir(vfs_filesystem_t* fs, const char* path) {
+    (void)fs;
+    (void)path;
+    ++fake_rmdir_calls;
+    return VFS_OK;
+}
+
 static vfs_filesystem_ops_t fake_ops = {
     .mount = fake_mount,
     .unmount = fake_unmount,
     .open = fake_open,
-    .close = fake_close
+    .close = fake_close,
+    .same_object = fake_same_object,
+    .rmdir = fake_rmdir,
+    .delete = fake_delete,
+    .rename = fake_rename
 };
 
 int main(void) {
@@ -112,10 +174,54 @@ int main(void) {
     CHECK(vfs_truncate(node, 0U) == VFS_OK && node->size == 0U);
     CHECK(vfs_truncate(nested->root, 0U) == VFS_ERR_IS_DIR);
     CHECK(vfs_unmount("/mnt/data") == VFS_ERR_BUSY);
+
+    CHECK(vfs_delete("/mnt/data/alias") == VFS_ERR_BUSY);
+    CHECK(fake_delete_calls == 0U);
+    CHECK(vfs_delete("/mnt/data/other") == VFS_OK);
+    CHECK(fake_delete_calls == 1U);
+    CHECK(vfs_rename("/mnt/data/alias", "/mnt/data/new") ==
+          VFS_ERR_BUSY);
+    CHECK(vfs_rename("/mnt/data/new", "/mnt/data/alias") ==
+          VFS_ERR_BUSY);
+    CHECK(fake_rename_calls == 0U);
+
+    fake_close_fails = true;
+    CHECK(vfs_close(node) == VFS_ERR_IO);
+    CHECK(nested->open_nodes == 1U);
+    fake_close_fails = false;
+    CHECK(vfs_delete("/mnt/data/alias") == VFS_ERR_BUSY);
     CHECK(vfs_close(node) == VFS_OK);
     CHECK(nested->open_nodes == 0);
+    CHECK(vfs_delete("/mnt/data/alias") == VFS_OK);
+    CHECK(fake_delete_calls == 2U);
+
+    vfs_node_t* directory = NULL;
+    CHECK(vfs_open("/mnt/data/dir", &directory) == VFS_OK);
+    CHECK(directory != NULL && directory->type == VFS_DIRECTORY);
+    CHECK(vfs_rmdir("/mnt/data/dir-alias") == VFS_ERR_BUSY);
+    CHECK(fake_rmdir_calls == 0U);
+    CHECK(vfs_close(directory) == VFS_OK);
+    CHECK(vfs_rmdir("/mnt/data/dir-alias") == VFS_OK);
+    CHECK(fake_rmdir_calls == 1U);
+
+    CHECK(vfs_open("/mnt/data/file", &node) == VFS_OK);
+    fake_ops.same_object = NULL;
+    CHECK(vfs_delete("/mnt/data/other") == VFS_ERR_BUSY);
+    CHECK(fake_delete_calls == 2U);
+    fake_ops.same_object = fake_same_object;
+    CHECK(vfs_close(node) == VFS_OK);
     CHECK(vfs_unmount("/mnt/data") == VFS_OK);
     CHECK(vfs_get_filesystem("/mnt/data/file") == root);
+
+    vfs_node_t* capacity[VFS_OPEN_NODE_CAPACITY];
+    for (uint32_t index = 0U; index < VFS_OPEN_NODE_CAPACITY; ++index)
+        CHECK(vfs_open("/file", &capacity[index]) == VFS_OK);
+    vfs_node_t* rejected = NULL;
+    CHECK(vfs_open("/other", &rejected) == VFS_ERR_BUSY);
+    CHECK(rejected == NULL);
+    for (uint32_t index = 0U; index < VFS_OPEN_NODE_CAPACITY; ++index)
+        CHECK(vfs_close(capacity[index]) == VFS_OK);
+    CHECK(root->open_nodes == 0U);
     CHECK(vfs_unmount("/") == VFS_OK);
     CHECK(vfs_get_filesystem("/anything") == NULL);
     return 0;

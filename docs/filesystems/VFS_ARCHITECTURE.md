@@ -151,6 +151,19 @@ Fehler bei dieser nachgelagerten Rückgewinnung liefert `EIO` und aktiviert den
 VFS-Schreibzaun, ohne veraltete Node-Metadaten wiederherzustellen. EXT2 liefert
 `EROFS`; 64-Bit-Größen und Sparse-Extents sind nicht Teil dieser ABI.
 
+Offene Nicht-Root-Nodes belegen zusätzlich genau einen von 256 statischen
+VFS-Registrierungsslots. Vor `unlink`, `rmdir` sowie Quell- und Zielseite von
+`rename` löst VFS den aktuellen Pfad einmal begrenzt auf und vergleicht die
+adaptereigene Objektidentität mit allen offenen Nodes desselben Mounts. FAT12
+verwendet Directory-Sektor und -Slot, FAT32 Elterncluster und kanonischen
+8.3-Eintragsnamen; Groß-/Kleinschreibung und VFAT-Aliase umgehen die Sperre
+daher nicht. Ein Treffer liefert `EBUSY` vor Namespace- oder Kettenwirkung.
+Nach erfolgreichem `close` wird genau der zugehörige Slot freigegeben;
+Close-Fehler behalten Slot und Mountzähler. Das ist bewusst keine
+POSIX-Orphan-Lebensdauer: Löschen oder Ersetzen einer noch offenen Datei wird
+fail-closed verweigert. Unmount und exklusive Wartung bleiben bei jedem offenen
+Node vollständig gesperrt.
+
 ## Mountvertrag
 
 - Mountpfade und Tabellen sind fest begrenzt.

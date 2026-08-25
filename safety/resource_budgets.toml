@@ -21,6 +21,15 @@ unit = "bytes/task"
 verification = ["test/test_reist_stack_budget.py", "test/test_reist_user_stack_guards.py"]
 
 [[budget]]
+id = "RB-VFS-OPEN-NODES"
+description = "Globale registrierte nicht-root VFS-Nodes"
+source = "fs/vfs/vfs.h"
+symbol = "VFS_OPEN_NODE_CAPACITY"
+limit = 256
+unit = "nodes"
+verification = ["test/test_open_namespace_locks.py", "test/test_vfs_host.c"]
+
+[[budget]]
 id = "RB-IPC-ENDPOINTS"
 description = "Globale statische IPC-Endpunkte"
 source = "include/kernel/ipc.h"

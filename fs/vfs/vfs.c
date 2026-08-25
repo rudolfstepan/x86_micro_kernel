@@ -35,6 +35,32 @@ static vfs_mount_t* mount_list = NULL;
 static int fs_count = 0;
 static int mount_count = 0;
 
+typedef struct {
+    vfs_filesystem_t* fs;
+    vfs_node_t* node;
+} vfs_open_node_record_t;
+
+static vfs_open_node_record_t open_node_records[VFS_OPEN_NODE_CAPACITY];
+
+static int vfs_open_record_free_slot(void) {
+    for (uint32_t index = 0U; index < VFS_OPEN_NODE_CAPACITY; ++index)
+        if (open_node_records[index].node == NULL) return (int)index;
+    return -1;
+}
+
+static int vfs_open_record_find(vfs_node_t* node) {
+    for (uint32_t index = 0U; index < VFS_OPEN_NODE_CAPACITY; ++index)
+        if (open_node_records[index].node == node) return (int)index;
+    return -1;
+}
+
+static bool vfs_filesystem_has_registered_nodes(vfs_filesystem_t* fs) {
+    for (uint32_t index = 0U; index < VFS_OPEN_NODE_CAPACITY; ++index)
+        if (open_node_records[index].fs == fs &&
+            open_node_records[index].node != NULL) return true;
+    return false;
+}
+
 /*
  * VFS state is serialized on the current uniprocessor by suppressing task
  * preemption while leaving hardware interrupts enabled.  The scheduler guard
@@ -122,6 +148,7 @@ static void vfs_init_locked(void) {
     mount_list = NULL;
     fs_count = 0;
     mount_count = 0;
+    memset(open_node_records, 0, sizeof(open_node_records));
     
     printf("VFS: Initialization complete.\n");
 }
@@ -362,6 +389,7 @@ static int vfs_open_locked(const char* path, vfs_node_t** node) {
     if (!path || !node) {
         return VFS_ERR_INVALID;
     }
+    *node = NULL;
     
     vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) {
@@ -373,8 +401,12 @@ static int vfs_open_locked(const char* path, vfs_node_t** node) {
     if (!fs->ops->open) {
         return VFS_ERR_UNSUPPORTED;
     }
+
+    bool root_path = strcmp(relative_path, "/") == 0 ||
+                     relative_path[0] == '\0';
+    int record_slot = root_path ? -1 : vfs_open_record_free_slot();
+    if (!root_path && record_slot < 0) return VFS_ERR_BUSY;
     
-    *node = NULL;
     int result = fs->ops->open(fs, relative_path, node);
     if (result != VFS_OK) {
         return result;
@@ -392,6 +424,15 @@ static int vfs_open_locked(const char* path, vfs_node_t** node) {
         *node = NULL;
         return VFS_ERR_BUSY;
     }
+    if (*node != fs->root) {
+        if (record_slot < 0 || vfs_open_record_find(*node) >= 0) {
+            if (fs->ops->close) fs->ops->close(*node);
+            *node = NULL;
+            return VFS_ERR_IO;
+        }
+        open_node_records[record_slot].fs = fs;
+        open_node_records[record_slot].node = *node;
+    }
     fs->open_nodes++;
     return VFS_OK;
 }
@@ -406,11 +447,47 @@ static int vfs_close_locked(vfs_node_t* node) {
         return VFS_ERR_UNSUPPORTED;
     }
     
+    int record_slot = node == fs->root ? -1 : vfs_open_record_find(node);
+    if (node != fs->root && record_slot < 0) return VFS_ERR_INVALID;
+    if (fs->open_nodes == 0U) return VFS_ERR_INVALID;
+
     int result = fs->ops->close(node);
     if (result == VFS_OK && fs->open_nodes > 0) {
+        if (record_slot >= 0) {
+            open_node_records[record_slot].fs = NULL;
+            open_node_records[record_slot].node = NULL;
+        }
         fs->open_nodes--;
     }
     return result;
+}
+
+static int vfs_path_open_locked(vfs_filesystem_t* fs, const char* path,
+                                bool* open) {
+    if (!fs || !path || !open) return VFS_ERR_INVALID;
+    *open = false;
+    if (!vfs_filesystem_has_registered_nodes(fs)) return VFS_OK;
+    if (!fs->ops || !fs->ops->open || !fs->ops->close ||
+        !fs->ops->same_object) return VFS_ERR_BUSY;
+
+    vfs_node_t* probe = NULL;
+    int result = fs->ops->open(fs, path, &probe);
+    if (result == VFS_ERR_NOT_FOUND) return VFS_OK;
+    if (result != VFS_OK) return result;
+    if (!probe || probe->fs != fs) {
+        if (probe) (void)fs->ops->close(probe);
+        return VFS_ERR_IO;
+    }
+
+    for (uint32_t index = 0U; index < VFS_OPEN_NODE_CAPACITY; ++index) {
+        if (open_node_records[index].fs == fs &&
+            open_node_records[index].node != NULL &&
+            fs->ops->same_object(open_node_records[index].node, probe)) {
+            *open = true;
+            break;
+        }
+    }
+    return fs->ops->close(probe) == VFS_OK ? VFS_OK : VFS_ERR_IO;
 }
 
 static int vfs_read_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
@@ -576,6 +653,11 @@ static int vfs_rmdir_locked(const char* path) {
     if (!fs->ops->rmdir) {
         return VFS_ERR_UNSUPPORTED;
     }
+
+    bool open = false;
+    int lock_result = vfs_path_open_locked(fs, relative_path, &open);
+    if (lock_result != VFS_OK) return lock_result;
+    if (open) return VFS_ERR_BUSY;
     
     return fs->ops->rmdir(fs, relative_path);
 }
@@ -624,6 +706,11 @@ static int vfs_delete_locked(const char* path) {
     if (!fs->ops->delete) {
         return VFS_ERR_UNSUPPORTED;
     }
+
+    bool open = false;
+    int lock_result = vfs_path_open_locked(fs, relative_path, &open);
+    if (lock_result != VFS_OK) return lock_result;
+    if (open) return VFS_ERR_BUSY;
     
     return fs->ops->delete(fs, relative_path);
 }
@@ -657,6 +744,13 @@ static int vfs_rename_locked(const char* old_path, const char* new_path) {
 
     const char* old_relative = vfs_get_relative_path_locked(old_path, old_fs);
     const char* new_relative = vfs_get_relative_path_locked(new_path, new_fs);
+    bool open = false;
+    int lock_result = vfs_path_open_locked(old_fs, old_relative, &open);
+    if (lock_result != VFS_OK) return lock_result;
+    if (open) return VFS_ERR_BUSY;
+    lock_result = vfs_path_open_locked(new_fs, new_relative, &open);
+    if (lock_result != VFS_OK) return lock_result;
+    if (open) return VFS_ERR_BUSY;
     return old_fs->ops->rename(old_fs, old_relative, new_relative);
 }
 

@@ -222,25 +222,23 @@ static vfs_node_t* fat12_make_node(vfs_filesystem_t* fs,
     node->size = entry->file_size;
     node->fs = fs;
 
-    if (node->type == VFS_FILE) {
-        fat12_file* file = (fat12_file*)malloc(sizeof(fat12_file));
-        if (!file) {
-            free(node);
-            return NULL;
-        }
-        memset(file, 0, sizeof(*file));
-        file->start_cluster = entry->first_cluster_low;
-        file->size = entry->file_size;
-        strcpy(file->mode, "r");
-        file->fat12_instance = fat12;
-        file->attributes = entry->attributes;
-        if (location) {
-            file->directory_sector = location->sector;
-            file->directory_slot = location->slot;
-        }
-        strcpy((char*)file->name, name);
-        node->fs_specific = file;
+    fat12_file* handle = (fat12_file*)malloc(sizeof(fat12_file));
+    if (!handle) {
+        free(node);
+        return NULL;
     }
+    memset(handle, 0, sizeof(*handle));
+    handle->start_cluster = entry->first_cluster_low;
+    handle->size = entry->file_size;
+    strcpy(handle->mode, "r");
+    handle->fat12_instance = fat12;
+    handle->attributes = entry->attributes;
+    if (location) {
+        handle->directory_sector = location->sector;
+        handle->directory_slot = location->slot;
+    }
+    strcpy((char*)handle->name, name);
+    node->fs_specific = handle;
     return node;
 }
 
@@ -1138,6 +1136,18 @@ static int fat12_vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
     return VFS_OK;
 }
 
+static bool fat12_vfs_same_object(const vfs_node_t* first,
+                                  const vfs_node_t* second) {
+    if (!first || !second || first->fs != second->fs) return false;
+    if (first == first->fs->root || second == second->fs->root)
+        return first == second;
+    if (!first->fs_specific || !second->fs_specific) return false;
+    const fat12_file* left = (const fat12_file*)first->fs_specific;
+    const fat12_file* right = (const fat12_file*)second->fs_specific;
+    return left->directory_sector == right->directory_sector &&
+           left->directory_slot == right->directory_slot;
+}
+
 static int fat12_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
     if (!fs || !fs->fs_data || !info) return VFS_ERR_INVALID;
     fat12_t* volume = (fat12_t*)fs->fs_data;
@@ -1184,6 +1194,7 @@ vfs_filesystem_ops_t fat12_vfs_ops = {
     .write = fat12_vfs_write,
     .truncate = fat12_vfs_truncate,
     .fstat = fat12_vfs_fstat,
+    .same_object = fat12_vfs_same_object,
     .readdir = fat12_vfs_readdir,
     .finddir = fat12_vfs_finddir,
     .mkdir = fat12_vfs_mkdir,

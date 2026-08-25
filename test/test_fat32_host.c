@@ -700,6 +700,11 @@ int main(void) {
     CHECK(vfs_create("/lower.txt") == VFS_OK);
     CHECK(vfs_stat("/LOWER.TXT", &listed) == VFS_OK);
     CHECK(strcmp(listed.name, "lower.txt") == 0);
+    vfs_node_t* lower_node = NULL;
+    CHECK(vfs_open("/LOWER.TXT", &lower_node) == VFS_OK);
+    CHECK(vfs_delete("/lower.txt") == VFS_ERR_BUSY);
+    CHECK(vfs_rename("/lower.txt", "/LOWER2.TXT") == VFS_ERR_BUSY);
+    CHECK(vfs_close(lower_node) == VFS_OK);
     CHECK(vfs_delete("/lower.txt") == VFS_OK);
     CHECK(vfs_mkdir("/long directory name") == VFS_OK);
     CHECK(vfs_create("/long directory name/nested long file.txt") == VFS_OK);
