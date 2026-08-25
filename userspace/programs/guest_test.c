@@ -750,6 +750,23 @@ static int test_unicode_raster(void) {
     return x86os_wait(pid, &status) == pid && status == 0 ? 0 : -1;
 }
 
+static int test_vfs_readonly_walkers(void) {
+    static const char tree_program[] = "/bin/tree.prg";
+    static const char find_program[] = "/bin/find.prg";
+    static const char root[] = "/htdocs";
+    static const char match[] = "about.txt";
+    const char *tree_arguments[] = {tree_program, root};
+    int pid = x86os_spawnv(tree_program, 2, tree_arguments);
+    int status = -1;
+    if (pid <= 0 || x86os_wait(pid, &status) != pid || status != 0)
+        return -1;
+    const char *find_arguments[] = {find_program, root, match};
+    pid = x86os_spawnv(find_program, 3, find_arguments);
+    status = -1;
+    return pid > 0 && x86os_wait(pid, &status) == pid && status == 0
+        ? 0 : -1;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -1817,6 +1834,11 @@ int main(int argc, char **argv) {
         return 2;
     }
     x86os_puts("TEST_STAGE FILE_IO_OK\n");
+    if (test_vfs_readonly_walkers() != 0) {
+        x86os_puts("TEST_FAIL VFS_READONLY_WALKERS\n");
+        return 18;
+    }
+    x86os_puts("TEST_STAGE VFS_READONLY_WALKERS_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_FAT32_PARSER_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_FAT_STAT_AUTHORITY_OK\n");

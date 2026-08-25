@@ -61,8 +61,8 @@ ausschließlich Operation 5 und
 normalisiert relative, absolute und DOS-Pfade, validiert den vollständigen
 Antwortframe und wartet höchstens bis zu einer monotonen Deadline. Bei Timeout
 oder Protokollfehler beendet sich das Programm; die Prozessbereinigung widerruft
-den generationsgebundenen Request. `CAT.PRG` und `LS.PRG` sind zusätzlich auf
-Operation 6/7 umgestellt; andere Clients und der Kernelpfad bleiben
+den generationsgebundenen Request. `CAT.PRG`, `LS.PRG`, `FIND.PRG` und
+`TREE.PRG` sind zusätzlich auf Operation 6/7 umgestellt; andere Clients und der Kernelpfad bleiben
 unverändert. Append-only Syscall 118 stellt inzwischen
 eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
 sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
@@ -96,7 +96,12 @@ bleiben Version 1 und exakt 28 Byte groß.
 read-only ABI. Metadaten, Datei-Sessions und Verzeichnisiteration verwenden
 ausschließlich Operationen 5 bis 7. Zwölf QEMU-HTTP-Transaktionen wechseln
 zwischen Dateiinhalt und Listing; der Server bleibt bis `Ctrl+C` aktiv und
-kehrt danach zur Shell zurück. Shell und Desktop bleiben unverändert. Der FAT12-Nachweis
+kehrt danach zur Shell zurück. Die read-only Shell-Walker `find` und `tree`
+verwenden ebenfalls ausschließlich Operationen 5 und 7. Ihre vorhandenen
+256-Byte-Pfad-, 16-Level- und 512-Node-Grenzen werden durch eine absolute
+monotone Fünf-Sekunden-Gesamtdeadline ergänzt; jeder Einzelrequest erhält nur
+die Restzeit, höchstens eine Sekunde. Mutierende Shellwerkzeuge und der Desktop
+bleiben unverändert. Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits
 erkannte CHS-Geometrie als 2880 LBA-Sektoren; der vermittelte Blockread prüft
@@ -265,7 +270,9 @@ Schlüsselbytes. Gespeicherter Name und Readdir bewahren die Originalbytes.
     FAT und EXT2; Deskriptorvererbung bleibt ein getrenntes Folgepaket.
 13. [x] Explizite read-only Rechte und abschwächende Übergabe
     an eine exakte Prozessgeneration; keine ambiente Spawn-Vererbung.
-13. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+14. [x] Read-only-Baumläufe von `FIND.PRG` und `TREE.PRG` ohne Legacy-Fallback
+    und mit einer absoluten Gesamtdeadline auf Operationen 5/7 umstellen.
+15. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
 
 ### Begrenzter EXT2-Subset in Ring 3

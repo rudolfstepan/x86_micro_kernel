@@ -1599,6 +1599,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Fallback mehr. Die Session ist bewusst pfadgebunden und revalidiert; stabile
   Inode-Identität, Deskriptorvererbung, Shell und Desktop bleiben getrennte
   Folgepakete.
+  Die read-only Shell-Walker `FIND.PRG` und `TREE.PRG` verwenden inzwischen
+  ebenfalls ausschließlich Operationen 5 und 7. Zusätzlich zu 256 Byte Pfad,
+  16 Ebenen und 512 Knoten begrenzt eine absolute monotone Fünf-Sekunden-
+  Deadline den vollständigen Lauf; jeder Request erhält höchstens eine Sekunde
+  der verbleibenden Zeit. Mutierende Shellpfade und der Desktop bleiben
+  getrennte Folgepakete.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
   lückenlose v1-Indizes 0 bis 123 und beide Buildpfade prüfen Drift fail-closed

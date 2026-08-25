@@ -484,6 +484,13 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   über Operation 6 und Listings über Operation 7. Der QEMU-Modus `http-server`
   führt zwölf abwechselnde echte Datei- und Verzeichnisanfragen aus, verlangt
   die Ring-3-Marker und gewinnt nach `Ctrl+C` die Userspace-Shell zurück.
+- `FIND.PRG` und `TREE.PRG` verwenden für ihre vollständigen read-only-
+  Baumläufe nur noch die autoritativen Operationen 5 und 7. Relative Pfade
+  laufen weiterhin durch die gemeinsame Ring-3-Kanonisierung. Neben 256 Byte
+  Pfad, 16 Ebenen und 512 Knoten gilt nun eine absolute monotone
+  Fünf-Sekunden-Deadline; Einzelrequests erhalten höchstens eine Sekunde der
+  Restzeit. Der normale FAT32-Gast startet beide paketierten Programme auf
+  `/htdocs` und markiert `VFS_READONLY_WALKERS_OK`.
 - Der feste Rescue-Programmpool umfasst nun 352 KiB für weiterhin genau elf
   geschützte Programme; die Einzelgrenze beträgt 192 KiB. Damit passen die
   vollständigen Unicode-15-Tabellen des isolierten Storage-Dienstes in die

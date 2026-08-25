@@ -78,8 +78,18 @@ PROGRAMS = {
     ),
     "DF.PRG": ROOT / "userspace/programs/df.c",
     "TOUCH.PRG": ROOT / "userspace/programs/touch.c",
-    "TREE.PRG": ROOT / "userspace/programs/tree.c",
-    "FIND.PRG": ROOT / "userspace/programs/find.c",
+    "TREE.PRG": (
+        ROOT / "userspace/programs/tree.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_read_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
+    "FIND.PRG": (
+        ROOT / "userspace/programs/find.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_read_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "RM.PRG": ROOT / "userspace/programs/rm.c",
     "ECHO.PRG": ROOT / "userspace/programs/echo.c",
     "CLS.PRG": ROOT / "userspace/programs/cls.c",
@@ -197,7 +207,7 @@ def main() -> None:
             if name in {"CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
-                        "LS.PRG", "GTEST.PRG"}:
+                        "LS.PRG", "TREE.PRG", "FIND.PRG", "GTEST.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)

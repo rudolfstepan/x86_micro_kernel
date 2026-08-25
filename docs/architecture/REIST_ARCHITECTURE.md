@@ -160,9 +160,11 @@ werden mit genau einer Liveness-Prüfung pro Dienstschleife inkrementell
 bereinigt. FAT verwendet einen Directory-Entry-Locator mit Medien- und
 Erzeugungsschutz, EXT2 Inode-Nummer und Inodegeneration. Folgeoperationen
 enthalten keinen Pfad. Das ist noch keine POSIX-Binärkompatibilität oder
-Deskriptorvererbung. `CAT.PRG`,
-`LS.PRG` und der vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen
-Kernel-VFS-Fallback. Mutationen bleiben ein getrenntes Folgepaket.
+Deskriptorvererbung. `CAT.PRG`, `LS.PRG`, `FIND.PRG`, `TREE.PRG` und der
+vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen Kernel-VFS-
+Fallback. Die beiden Baumläufe reichen eine absolute monotone
+Fünf-Sekunden-Deadline als höchstens einsekündige Restbudgets an Operationen 5
+und 7 weiter. Mutationen bleiben ein getrenntes Folgepaket.
 Append-only Operationen 12 bis 14 ergänzen explizite READ-/SEEK-/STAT-/
 DELEGATE-Rechte und ausschließlich abschwächende Übergaben an eine exakt
 validierte Prozessgeneration. Eine Übergabe belegt einen eigenen Zielslot,

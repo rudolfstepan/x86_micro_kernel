@@ -11,6 +11,60 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.1-vfs-readonly-walker-cutover"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Authoritative Ring-3 VFS cutover for read-only filesystem walkers"
+scope = "Move the packaged FIND.PRG and TREE.PRG traversal paths from legacy kernel stat/readdir calls to the existing authoritative Ring-3 storage-service operations 5 and 7. Preserve their public command syntax and fixed 256-byte path, 16-level and 512-node limits, but replace batched ambient VFS reads with one validated service entry at a time and add one absolute five-second monotonic traversal deadline so per-request timeouts cannot accumulate without bound. Link both programs against the existing fixed-storage stat/read/path clients, keep all mutation commands and filesystem formats unchanged, and prove both packaged commands against the real FAT32 system image in the normal QEMU guest."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/programs/find.c",
+  "userspace/programs/tree.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "test/test_reist_vfs_read_client.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "FIND.PRG and TREE.PRG contain no x86os_stat x86os_readdir or other legacy read fallback",
+  "each traversal remains bounded by 256 path bytes 16 levels 512 nodes and one absolute five-second monotonic deadline",
+  "each service call receives only the remaining traversal budget capped at the existing one-second client maximum",
+  "directory entries are accepted only through the existing fully validated operation-7 response and no partial entry is published on error",
+  "relative paths retain the existing current-directory canonicalization in the shared Ring-3 path adapter",
+  "no syscall ABI storage frame persistent format mutation authority or kernel parser is added"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_read_client.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-vfs-walkers.log"
+]
+stop_conditions = [
+  "the authoritative storage service cannot enumerate the packaged FAT32 /htdocs directory within the absolute deadline",
+  "the cutover requires a storage frame ABI or parser format change",
+  "a traversal can continue after its deadline or exceed the existing path depth or node capacities",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "vfs: move read-only walkers to storage service"
+evidence = [
+  "all four focused VFS read-client and walker-cutover host tests passed",
+  "the QEMU VGA package build passed with FIND.PRG and TREE.PRG linked against the authoritative stat read and path clients",
+  "the final QEMU VMware-SVGA2D guest ran tree /htdocs and find /htdocs about.txt through the packaged programs and emitted VFS_READONLY_WALKERS_OK and TEST_OK",
+  "both walkers retain 256-byte paths 16 levels and 512 nodes and now enforce one absolute five-second monotonic traversal deadline with at most one-second request slices",
+  "neither walker contains x86os_stat x86os_readdir or another legacy read fallback",
+  "no queued package remains and active_id is empty"
+]
+
+[[packages]]
 id = "R3.2-unifont-supplementary-coverage"
 status = "done"
 phase = "post-s0"

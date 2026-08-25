@@ -50,6 +50,30 @@ class ReistVfsReadClientTests(unittest.TestCase):
         self.assertIn('"LS.PRG": (', build)
         self.assertGreaterEqual(build.count("vfs_read_client.c"), 3)
 
+    def test_find_and_tree_use_authoritative_bounded_walks(self):
+        build = read("scripts/build_system_programs.py")
+        guest = read("userspace/programs/guest_test.c")
+        for name in ("find", "tree"):
+            source = read(f"userspace/programs/{name}.c")
+            self.assertIn("reist_vfs_stat(", source)
+            self.assertIn("reist_vfs_readdir_at(", source)
+            self.assertIn("x86os_monotonic_ms(", source)
+            self.assertIn("DEADLINE_MS 5000U", source)
+            self.assertIn("REQUEST_TIMEOUT_MS 1000U", source)
+            self.assertIn("UINT64_MAX - started", source)
+            self.assertNotIn("x86os_stat(", source)
+            self.assertNotIn("x86os_readdir", source)
+        for program in ("TREE.PRG", "FIND.PRG"):
+            start = build.index(f'"{program}": (')
+            end = build.index("),", start)
+            mapping = build[start:end]
+            self.assertIn("vfs_stat_client.c", mapping)
+            self.assertIn("vfs_read_client.c", mapping)
+            self.assertIn("vfs_path.c", mapping)
+        self.assertIn("TEST_STAGE VFS_READONLY_WALKERS_OK", guest)
+        self.assertIn('static const char root[] = "/htdocs"', guest)
+        self.assertIn('static const char match[] = "about.txt"', guest)
+
 
 if __name__ == "__main__":
     unittest.main()
