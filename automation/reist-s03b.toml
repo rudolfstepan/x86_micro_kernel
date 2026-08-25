@@ -11,6 +11,62 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.1-shell-vfs-namespace-cutover"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Authoritative Ring-3 VFS namespace lookup for the userspace shell"
+scope = "Move the long-lived userspace shell's executable-file lookup and tab-completion directory enumeration from legacy kernel stat/readdir calls to authoritative Ring-3 storage-service operations 5 and 7. Add one fixed-storage shell namespace budget shared across every candidate of one program lookup or completion attempt: one absolute five-second monotonic deadline, at most one second per request and at most 128 accepted directory entries plus a bounded EOF check. Completion remains atomic at the input-line boundary and publishes no partial suffix after timeout, capacity exhaustion or malformed service replies. Preserve command syntax, PATH order, case-insensitive .PRG handling and the protected resident-program rescue fallback. Add a focused probe mode and invoke it from the normal guest regression. Mutation commands, working-directory changes, file contents, storage frame ABI and filesystem formats remain unchanged."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/bin/shell.c",
+  "userspace/bin/shell_vfs.h",
+  "userspace/bin/shell_vfs.c",
+  "userspace/programs/guest_test.c",
+  "scripts/build_system_programs.py",
+  "test/test_shell_source.py",
+  "test/test_shell_vfs_host.c",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "userspace shell executable lookup and completion contain no x86os_stat x86os_readdir or legacy namespace fallback",
+  "one lookup or completion attempt has one absolute five-second monotonic deadline and gives each operation-5 or operation-7 request at most one second of remaining time",
+  "completion accepts at most 128 entries across all searched directories and changes the input line only after every required scan succeeds",
+  "timeout protocol failure and capacity exhaustion publish no partial completion suffix",
+  "PATH order aliases optional PRG extension and protected resident rescue fallback remain unchanged",
+  "mutation APIs cwd behavior file-content paths syscall ABI storage frames and filesystem formats remain unchanged"
+]
+targeted_tests = [
+  "python test/test_shell_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-shell-vfs.log"
+]
+stop_conditions = [
+  "the authoritative storage service cannot resolve and enumerate the packaged shell program namespace within five seconds",
+  "the protected resident rescue fallback can no longer start after namespace-service failure",
+  "a failed completion attempt can alter the input line",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "shell: resolve programs through ring3 storage service"
+evidence = [
+  "all 23 focused shell source and host behavior tests passed, including shared deadline, one-second request slices, protocol error propagation and the fixed 128-entry acceptance limit",
+  "the QEMU VGA package build passed after replacing one freestanding aggregate initializer that emitted an unavailable memset call",
+  "the final QEMU VMware-SVGA2D guest launched the packaged shell probe, resolved and completed gtest through operations 5 and 7, and emitted SHELL_VFS_NAMESPACE_OK and TEST_OK",
+  "program lookup and completion share one absolute five-second monotonic budget and completion modifies the line only after all namespace scans succeed",
+  "userspace/bin/shell.c contains no x86os_stat, x86os_readdir or legacy namespace-read fallback while the protected resident rescue mapping remains intact",
+  "no queued package remains and active_id is empty"
+]
+
+[[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
 status = "done"
 phase = "post-s0"

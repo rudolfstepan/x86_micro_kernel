@@ -172,6 +172,12 @@ eine absolute monotone Fünf-Sekunden-Deadline. Fehler lassen den zuvor
 publizierten Pfad, Inhalt und die Snapshotgeneration unverändert. Große Font-,
 Icon- und Konfigurationsdateien bleiben auf dem vorhandenen, schedulerfreundlich
 geschnittenen Legacy-Lesepfad, bis ein begrenzter Bulk-Transport existiert.
+Die langlebige Userspace-Shell verwendet Operation 5 für die Programmsuche und
+Operation 7 für Tab-Vervollständigungen. Alle PATH-Kandidaten beziehungsweise
+Verzeichnisse einer Aktion teilen eine absolute monotone Fünf-Sekunden-
+Deadline und höchstens 128 akzeptierte Einträge; Einzelrequests erhalten
+höchstens eine Sekunde. Fehler verändern die Eingabezeile nicht. Der feste
+Resident-Programmpool bleibt als getrennte, geschützte Rescue-Quelle erhalten.
 Append-only Operationen 12 bis 14 ergänzen explizite READ-/SEEK-/STAT-/
 DELEGATE-Rechte und ausschließlich abschwächende Übergaben an eine exakt
 validierte Prozessgeneration. Eine Übergabe belegt einen eigenen Zielslot,

@@ -65,7 +65,9 @@ den generationsgebundenen Request. `CAT.PRG`, `LS.PRG`, `FIND.PRG` und
 `TREE.PRG` sind zusätzlich auf Operation 6/7 umgestellt. Auch der
 compositorinterne Desktop-Explorer validiert Verzeichnisse mit Operation 5 und
 bezieht Einträge samt Leer/Voll-Ordnerprobe ausschließlich über Operation 7;
-andere Clients und der Kernelpfad bleiben unverändert. Append-only Syscall 118 stellt inzwischen
+die Userspace-Shell verwendet dieselben Operationen für Programmsuche und
+Tab-Vervollständigung. Andere Clients und der Kernelpfad bleiben unverändert.
+Append-only Syscall 118 stellt inzwischen
 eine requestbezogene Cancel-ABI bereit: queued und vollständige Requests werden
 sofort widerrufen; bereits vom Dienst übernommene Requests bleiben bis zu dessen
 Quittierung `cancel-pending` und können kein Ergebnis mehr publizieren. Das ist
@@ -107,7 +109,11 @@ Snapshot höchstens 32 sichtbare Einträge, scannt höchstens 128 und verwendet
 ebenfalls eine absolute monotone Fünf-Sekunden-Deadline mit einsekündigen
 Restbudgets. Fehler verändern das bereits veröffentlichte Fenster und seine
 Generation nicht. Mutierende Shell-/Papierkorbpfade sowie große Desktop-
-Ressourcenstreams bleiben unverändert. Der FAT12-Nachweis
+Ressourcenstreams bleiben unverändert. Programmsuche und Completion der Shell
+teilen pro Aktion eine absolute monotone Fünf-Sekunden-Deadline, höchstens
+einsekündige Requests und eine feste Grenze von 128 akzeptierten Einträgen.
+Fehler oder Kapazitätserschöpfung publizieren kein Teilergebnis in die
+Eingabezeile; der geschützte Resident-Fallback bleibt davon unabhängig. Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits
 erkannte CHS-Geometrie als 2880 LBA-Sektoren; der vermittelte Blockread prüft
@@ -280,7 +286,9 @@ Schlüsselbytes. Gespeicherter Name und Readdir bewahren die Originalbytes.
     und mit einer absoluten Gesamtdeadline auf Operationen 5/7 umstellen.
 15. [x] Desktop-Explorer-Snapshots einschließlich Leer/Voll-Ordnerprobe ohne
     Legacy-Namespace-Fallback und mit atomarer Fünf-Sekunden-Grenze umstellen.
-16. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+16. [x] Userspace-Shell-Programmsuche und Tab-Vervollständigung mit einer
+    gemeinsamen begrenzten Deadline auf Operationen 5/7 umstellen.
+17. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
 
 ### Begrenzter EXT2-Subset in Ring 3

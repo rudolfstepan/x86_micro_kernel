@@ -1,4 +1,7 @@
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -118,6 +121,51 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn('program_alias', shell)
         self.assertIn('text_equal(command, "dir")', shell)
         self.assertIn('text_equal(command, "type")', shell)
+
+    def test_userspace_shell_namespace_uses_bounded_ring3_clients(self):
+        programs = (ROOT / "scripts/build_system_programs.py").read_text(
+            encoding="utf-8"
+        )
+        shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        adapter = (ROOT / "userspace/bin/shell_vfs.c").read_text(
+            encoding="utf-8"
+        )
+        header = (ROOT / "userspace/bin/shell_vfs.h").read_text(
+            encoding="utf-8"
+        )
+        mapping = programs[programs.index('"SHELL.PRG": ('):
+                           programs.index('"DESKTOP.PRG"')]
+        for source in ("shell_vfs.c", "vfs_stat_client.c",
+                       "vfs_read_client.c", "vfs_path.c"):
+            self.assertIn(source, mapping)
+        self.assertNotIn("x86os_stat(", shell)
+        self.assertNotIn("x86os_readdir", shell)
+        self.assertIn("shell_vfs_executable", shell)
+        self.assertIn("shell_vfs_readdir", shell)
+        self.assertIn("reist_vfs_stat", adapter)
+        self.assertIn("reist_vfs_readdir_at", adapter)
+        self.assertIn("SHELL_VFS_OPERATION_TIMEOUT_MS 5000U", header)
+        self.assertIn("SHELL_VFS_REQUEST_TIMEOUT_MS 1000U", header)
+        self.assertIn("SHELL_VFS_DIRECTORY_ENTRY_CAPACITY 128U", header)
+        self.assertIn("SHELL_VFS_NAMESPACE_OK", shell)
+        guest = (ROOT / "userspace/programs/guest_test.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("TEST_STAGE SHELL_VFS_NAMESPACE_OK", guest)
+
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "shell-vfs-host"
+            subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
+                 "-Iuserspace/bin", "userspace/bin/shell_vfs.c",
+                 "test/test_shell_vfs_host.c", "-o", str(executable)],
+                cwd=ROOT, check=True,
+            )
+            subprocess.run([str(executable)], cwd=ROOT, check=True)
 
     def test_text_editor_is_built_as_a_system_program(self):
         programs = (ROOT / "scripts/build_system_programs.py").read_text(

@@ -767,6 +767,16 @@ static int test_vfs_readonly_walkers(void) {
         ? 0 : -1;
 }
 
+static int test_shell_vfs_namespace(void) {
+    static const char program[] = "/bin/shell.prg";
+    static const char probe[] = "--vfs-probe";
+    const char *arguments[] = {program, probe};
+    int pid = x86os_spawnv(program, 2, arguments);
+    int status = -1;
+    return pid > 0 && x86os_wait(pid, &status) == pid && status == 0
+        ? 0 : -1;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -1839,6 +1849,11 @@ int main(int argc, char **argv) {
         return 18;
     }
     x86os_puts("TEST_STAGE VFS_READONLY_WALKERS_OK\n");
+    if (test_shell_vfs_namespace() != 0) {
+        x86os_puts("TEST_FAIL SHELL_VFS_NAMESPACE\n");
+        return 19;
+    }
+    x86os_puts("TEST_STAGE SHELL_VFS_NAMESPACE_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_SHADOW_STAT_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_FAT32_PARSER_OK\n");
     x86os_puts("TEST_STAGE STORAGE_VFS_FAT_STAT_AUTHORITY_OK\n");

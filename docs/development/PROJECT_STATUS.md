@@ -500,6 +500,12 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Der normale Gast weist den realen Root-Eintrag `htdocs` mit
   `DESKTOP_EXPLORER_VFS_OK` nach. Font-, Icon- und Konfigurationsstreams bleiben
   bis zu einem begrenzten Bulk-Transport auf dem 64-KiB-Slice-Pfad.
+- Die langlebige Userspace-Shell löst Programmdateien über Ring-3-Operation 5
+  auf und enumeriert Tab-Vervollständigungen über Operation 7. Alle Kandidaten
+  einer Aktion teilen eine absolute monotone Fünf-Sekunden-Deadline,
+  einsekündige Requestgrenzen und höchstens 128 akzeptierte Einträge. Fehler
+  übernehmen keine Teilvervollständigung. Der geschützte Resident-Fallback
+  bleibt verfügbar; der normale Gast markiert `SHELL_VFS_NAMESPACE_OK`.
 - Der feste Rescue-Programmpool umfasst nun 352 KiB für weiterhin genau elf
   geschützte Programme; die Einzelgrenze beträgt 192 KiB. Damit passen die
   vollständigen Unicode-15-Tabellen des isolierten Storage-Dienstes in die

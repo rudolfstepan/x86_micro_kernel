@@ -1608,8 +1608,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   ausschließlich Operationen 5 und 7. Pro atomarem Snapshot gelten 32
   sichtbare und 128 gescannte Einträge sowie eine absolute monotone
   Fünf-Sekunden-Deadline; Fehler bewahren das zuvor veröffentlichte Fenster.
-  Mutierende Shell-/Papierkorbpfade und große Desktop-Ressourcen bleiben
-  getrennte Folgepakete.
+  Die langlebige Userspace-Shell verwendet für Programmsuche und
+  Tab-Vervollständigung nun ebenfalls ausschließlich diese Operationen. Eine
+  Aktion teilt eine absolute monotone Fünf-Sekunden-Deadline, einsekündige
+  Requestgrenzen und höchstens 128 akzeptierte Verzeichniseinträge; Fehler
+  verändern die Eingabezeile nicht. Mutierende Shell-/Papierkorbpfade und große
+  Desktop-Ressourcen bleiben getrennte Folgepakete.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
   lückenlose v1-Indizes 0 bis 123 und beide Buildpfade prüfen Drift fail-closed

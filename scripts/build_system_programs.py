@@ -48,7 +48,13 @@ PROGRAMS = {
     "PS.PRG": ROOT / "userspace/programs/ps.c",
     "KILL.PRG": ROOT / "userspace/programs/kill.c",
     "PWD.PRG": ROOT / "userspace/programs/pwd.c",
-    "SHELL.PRG": ROOT / "userspace/bin/shell.c",
+    "SHELL.PRG": (
+        ROOT / "userspace/bin/shell.c",
+        ROOT / "userspace/bin/shell_vfs.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_read_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "DESKTOP.PRG": (
         ROOT / "userspace/gui/compositor/desktop.c",
         ROOT / "userspace/gui/compositor/desktop_drag.c",
@@ -211,7 +217,7 @@ def main() -> None:
                 dependency_files.extend(config_headers)
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
-                        "GTEST.PRG"}:
+                        "SHELL.PRG", "GTEST.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)

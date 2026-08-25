@@ -7,6 +7,7 @@
  * Safety: Puffer und History sind fest begrenzt; Fehler beenden nur das aktuelle Kommando.
  */
 #include "x86os.h"
+#include "shell_vfs.h"
 
 #define SHELL_LINE_CAPACITY 256
 #define SHELL_PATH_CAPACITY 256
@@ -470,9 +471,8 @@ static int join_program_path(const char* directory, const char* program,
     return 0;
 }
 
-static int executable_file(const char* path) {
-    x86os_file_info_t info;
-    return x86os_stat(path, &info) == 0 && info.type == X86OS_FILE;
+static int executable_file(shell_vfs_budget_t* budget, const char* path) {
+    return shell_vfs_executable(budget, path);
 }
 
 static int explicit_program_path(const char* path) {
@@ -570,35 +570,40 @@ static void consider_completion(completion_t* completion, const char* name,
     ++completion->count;
 }
 
-static void scan_completion_directory(const char* directory,
-                                      const char* prefix,
-                                      int programs_only,
-                                      completion_t* completion) {
+static int scan_completion_directory(const char* directory,
+                                     const char* prefix,
+                                     int programs_only,
+                                     completion_t* completion,
+                                     shell_vfs_budget_t* budget) {
     for (uint32_t index = 0;;) {
-        x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
-        int count = x86os_readdir_batch(directory, index, entries);
-        if (count <= 0) break;
-        for (int entry_index = 0; entry_index < count; ++entry_index) {
-            x86os_file_info_t* entry = &entries[entry_index];
-            unsigned length = text_length(entry->name);
-            if (programs_only) {
-                if (entry->type == X86OS_FILE) {
-                    if (!has_program_extension(entry->name)) continue;
-                    length -= 4U;
-                } else if (entry->type != X86OS_DIRECTORY) {
+        x86os_file_info_t entry;
+        int present = shell_vfs_readdir(
+            budget, directory, index, &entry);
+        if (present < 0) return present;
+        if (present == 0) return 0;
+        unsigned length = text_length(entry.name);
+        if (programs_only) {
+            if (entry.type == X86OS_FILE) {
+                if (!has_program_extension(entry.name)) {
+                    ++index;
                     continue;
                 }
-            }
-            if (text_starts_with(entry->name, prefix)) {
-                consider_completion(completion, entry->name, length,
-                                    entry->type == X86OS_DIRECTORY);
+                length -= 4U;
+            } else if (entry.type != X86OS_DIRECTORY) {
+                ++index;
+                continue;
             }
         }
-        index += (uint32_t)count;
+        if (text_starts_with(entry.name, prefix)) {
+            consider_completion(completion, entry.name, length,
+                                entry.type == X86OS_DIRECTORY);
+        }
+        ++index;
     }
 }
 
-static void complete_command(const char* prefix, completion_t* completion) {
+static int complete_command(const char* prefix, completion_t* completion,
+                            shell_vfs_budget_t* budget) {
     static const char* commands[] = {
         "CD", "CHDIR", "PWD", "HELP", "HISTORY", "PATH", "EXIT",
         "DIR", "TYPE", "MD", "RD", "ERASE", "CLEAR", "NET",
@@ -614,13 +619,18 @@ static void complete_command(const char* prefix, completion_t* completion) {
 
     char cwd[SHELL_PATH_CAPACITY];
     int have_cwd = x86os_getcwd(cwd, sizeof(cwd)) == 0;
-    scan_completion_directory(have_cwd ? cwd : ".", prefix, 1, completion);
+    int status = scan_completion_directory(
+        have_cwd ? cwd : ".", prefix, 1, completion, budget);
+    if (status != 0) return status;
     for (unsigned index = 0; index < search_path_count; ++index) {
         /* PATH commonly starts with the current directory. Avoid counting
          * the same program twice, which would suppress unique completion. */
         if (have_cwd && text_equal(cwd, search_paths[index])) continue;
-        scan_completion_directory(search_paths[index], prefix, 1, completion);
+        status = scan_completion_directory(
+            search_paths[index], prefix, 1, completion, budget);
+        if (status != 0) return status;
     }
+    return 0;
 }
 
 static void complete_line(char line[SHELL_LINE_CAPACITY], unsigned* length) {
@@ -649,9 +659,11 @@ static void complete_line(char line[SHELL_LINE_CAPACITY], unsigned* length) {
     completion.length = 0;
     completion.count = 0;
     completion.directory = 0;
+    shell_vfs_budget_t budget;
+    if (shell_vfs_budget_begin(&budget) != 0) return;
     int command = token_start == 0U;
     if (command && name_start == token_start) {
-        complete_command(prefix, &completion);
+        if (complete_command(prefix, &completion, &budget) != 0) return;
     } else {
         char directory[SHELL_PATH_CAPACITY];
         char resolved[SHELL_PATH_CAPACITY];
@@ -666,16 +678,19 @@ static void complete_line(char line[SHELL_LINE_CAPACITY], unsigned* length) {
             directory[directory_length] = '\0';
         }
         if (resolve_shell_path(directory, resolved) < 0) return;
-        scan_completion_directory(resolved, prefix, command, &completion);
+        if (scan_completion_directory(
+                resolved, prefix, command, &completion, &budget) != 0) return;
     }
 
     if (completion.count == 0U || completion.length < prefix_length) return;
+    unsigned suffix_length = completion.length - prefix_length;
+    if (completion.count == 1U) ++suffix_length;
+    if (suffix_length >= SHELL_LINE_CAPACITY - *length) return;
     for (unsigned index = prefix_length; index < completion.length; ++index) {
-        if (*length + 1U >= SHELL_LINE_CAPACITY) return;
         line[(*length)++] = completion.common[index];
         x86os_putchar(completion.common[index]);
     }
-    if (completion.count == 1U && *length + 1U < SHELL_LINE_CAPACITY) {
+    if (completion.count == 1U) {
         char suffix = completion.directory ? '\\' : ' ';
         line[(*length)++] = suffix;
         x86os_putchar(suffix);
@@ -928,17 +943,28 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
 
     char executable[SHELL_PATH_CAPACITY];
     int found = 0;
-    if (explicit_program_path(program)) {
-        found = executable_file(program) &&
-                copy_text(executable, sizeof(executable), program) == 0;
-    } else if (executable_file(program)) {
-        found = copy_text(executable, sizeof(executable), program) == 0;
-    } else {
-        for (unsigned index = 0; index < search_path_count; ++index) {
-            if (join_program_path(search_paths[index], program, executable) == 0 &&
-                executable_file(executable)) {
-                found = 1;
-                break;
+    shell_vfs_budget_t budget;
+    int lookup_status = shell_vfs_budget_begin(&budget);
+    if (lookup_status == 0) {
+        if (explicit_program_path(program)) {
+            lookup_status = executable_file(&budget, program);
+            found = lookup_status == 1 &&
+                    copy_text(executable, sizeof(executable), program) == 0;
+        } else {
+            lookup_status = executable_file(&budget, program);
+            if (lookup_status == 1) {
+                found = copy_text(executable, sizeof(executable), program) == 0;
+            } else if (lookup_status == 0) {
+                for (unsigned index = 0; index < search_path_count; ++index) {
+                    if (join_program_path(search_paths[index], program,
+                                          executable) != 0) continue;
+                    lookup_status = executable_file(&budget, executable);
+                    if (lookup_status < 0) break;
+                    if (lookup_status == 1) {
+                        found = 1;
+                        break;
+                    }
+                }
             }
         }
     }
@@ -951,7 +977,9 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
         }
     }
     if (!found) {
-        x86os_puts("Bad command or program file.\n");
+        x86os_puts(lookup_status < 0
+            ? "Program lookup unavailable.\n"
+            : "Bad command or program file.\n");
         return;
     }
 
@@ -967,7 +995,27 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
     if (x86os_wait(pid, &status) < 0) x86os_puts("Unable to wait for program.\n");
 }
 
-int main(void) {
+static int shell_vfs_probe(void) {
+    shell_vfs_budget_t budget;
+    completion_t completion;
+    completion.common[0] = '\0';
+    completion.length = 0U;
+    completion.count = 0U;
+    completion.directory = 0;
+    if (shell_vfs_budget_begin(&budget) != 0 ||
+        executable_file(&budget, "/libexec/reist/gtest.prg") != 1 ||
+        scan_completion_directory("/libexec/reist", "gtest", 1,
+                                  &completion, &budget) != 0 ||
+        completion.count != 1U || completion.length != 5U ||
+        !text_equal(completion.common, "gtest") || completion.directory)
+        return 1;
+    x86os_puts("SHELL_VFS_NAMESPACE_OK\n");
+    return 0;
+}
+
+int main(int argc, char **startup_argv) {
+    if (argc == 2 && text_equal(startup_argv[1], "--vfs-probe"))
+        return shell_vfs_probe();
     char line[SHELL_LINE_CAPACITY];
     const char* argv[SHELL_MAX_ARGUMENTS];
     x86os_puts("REIST OS userspace shell\nType HELP for available commands.\n");
