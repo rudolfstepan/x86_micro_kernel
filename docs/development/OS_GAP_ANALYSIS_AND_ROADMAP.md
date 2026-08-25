@@ -1665,8 +1665,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 - [x] Breite BMP-Glyphabdeckung aus allen 57.086 eindeutigen Abbildungen der
   gepinnten GNU-Unifont-16.0.04-Quelle erzeugen, im HDD-Image lizenzkonform
   ausliefern und nur für nicht durch CP437 gedeckte Skalare überlagern; große
-  Ressourcen in 4096-Byte-Syscall-Abschnitten mit expliziter Schedulerabgabe
-  laden, damit unabhängige Supervisor-Heartbeats planbar bleiben.
+  Ressourcen in 65.536-Byte-Syscall-Abschnitten mit expliziter
+  Schedulerabgabe laden, damit unabhängige Supervisor-Heartbeats planbar
+  bleiben, ohne den Desktopstart durch hunderte Scheduling-Umläufe zu bremsen.
+- [x] Eine nackte Escape-Taste auf lokale Menü-, Dialog-, Drag- und
+  Surface-Abbrüche begrenzen; den Desktop nur über den expliziten
+  Startmenüeintrag mit validierter Display-Deaktivierung beenden.
 - [x] Den festen mehrzeiligen Editor auf vorvalidierte UTF-8-Dokumente,
   Skalarspalten sowie sequenzsicheres Editieren und Clipping umstellen; die
   visuelle Beispieldatei unter `/usr/share/fonts/unicode.txt` damit öffnen.

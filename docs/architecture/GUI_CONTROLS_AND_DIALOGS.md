@@ -301,12 +301,17 @@ Planes, Text-Shaping, Grapheme, Mnemonics und Rechts-nach-links-Layout bleiben
 explizit offen.
 
 Auch die feste 2-MiB-Dateikapazität ist kein einzelner ununterbrechbarer
-VFS-Aufruf: Der Desktop liest Font- und Iconressourcen in höchstens 4096 Byte
+VFS-Aufruf: Der Desktop liest Font- und Iconressourcen in höchstens 65.536 Byte
 großen Syscall-Abschnitten und gibt die CPU nach jedem erfolgreichen Abschnitt
-explizit ab. So erhält der Scheduler unabhängig vom Timerzeitpunkt wiederholt
-Gelegenheit, Treiber- und Dienst-Heartbeats zu bedienen; eine große optionale
-Schrift monopolisiert keinen einzelnen serialisierten VFS-Aufruf über deren
-gesamtes Heartbeat-Budget.
+explizit ab. Der rund 1,14 MiB große Referenzfont benötigt dadurch nur etwa 18
+statt rund 280 Schedulerabschnitte. Gleichzeitig monopolisiert kein einzelner
+serialisierter VFS-Aufruf die gesamte Ressource oder das Heartbeat-Budget.
+
+Eine nackte Escape-Taste beendet die grafische Sitzung nicht. Sie bricht einen
+aktiven Drag ab, schließt beziehungsweise verwirft das aktive Menü oder den
+aktiven Dialog und darf an den fokussierten Surface-Client gehen. Nur der
+explizite Startmenüeintrag `Desktop beenden` fordert den kontrollierten
+Sitzungsausstieg mit validierter Rückkehr zum vorherigen Anzeigemodus an.
 
 Der mehrzeilige Texteditor übernimmt denselben RFC-3629-Vertrag für Dateien:
 Er validiert einen vollständigen, fest begrenzten Inhalt vor dem Austausch des

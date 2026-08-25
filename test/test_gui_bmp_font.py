@@ -73,7 +73,7 @@ class GuiBmpFontTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("DESKTOP_FONT_FILE_CAPACITY (2U * 1024U * 1024U)",
                       desktop)
-        self.assertIn("DESKTOP_FILE_READ_CHUNK 4096U", desktop)
+        self.assertIn("DESKTOP_FILE_READ_CHUNK 65536U", desktop)
         bounded_read = desktop[desktop.index("static int read_file_bounded"):
                                desktop.index("static int desktop_font_load")]
         self.assertIn("remaining < DESKTOP_FILE_READ_CHUNK", bounded_read)

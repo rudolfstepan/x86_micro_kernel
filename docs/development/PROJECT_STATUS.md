@@ -39,11 +39,15 @@ und 65.536 Indexeinträge, zeichnet ASCII/CP437 weiterhin mit einem Kernel-Lauf
 und lädt nur dort fehlende BMP-Glyphen geclippt aus Ring 3 nach. Das ist breite
 Standalone-BMP-Glyphauswahl, aber noch kein Supplementary-Plane-Font, Shaping,
 Bidi-, Graphem- oder IME-Vertrag.
-Der große Font wird in höchstens 4096 Byte großen Read-Syscalls geladen und
-nach jedem erfolgreichen Abschnitt explizit an den Scheduler abgegeben. Diese
-Scheduling-Grenzen verhindern, dass der synchron serialisierte VFS-Pfad beim
-Fontstart einen einzelnen Aufruf über das gesamte Heartbeat-Budget einer
-unabhängigen überwachten Dienstgeneration hält.
+Der große Font wird in höchstens 65.536 Byte großen Read-Syscalls geladen und
+nach jedem erfolgreichen Abschnitt explizit an den Scheduler abgegeben. Das
+reduziert den Start von rund 280 auf etwa 18 Scheduling-Abschnitte, während der
+synchron serialisierte VFS-Pfad weiterhin nie die gesamte Ressource in einem
+einzigen Aufruf hält.
+Eine nackte Escape-Taste beendet die grafische Sitzung nicht mehr. Sie bleibt
+lokaler Abbruch für Drag, Menü, Dialog und fokussierte Surface-Anwendungen. Der
+kontrollierte Desktop-Exit erfolgt ausschließlich über `Desktop beenden` im
+Startmenü und stellt den vorherigen Anzeigemodus weiterhin validiert wieder her.
 Der Runtime-Probe bindet die Anzeige erst nach dem vollständigen Fontload und
 wartet dabei höchstens zwei Sekunden auf eine neue freigegebene
 SVGA2D-Servicegeneration. Dadurch kann ein gleichzeitig überwachter

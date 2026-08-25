@@ -11,6 +11,57 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.2-desktop-lifecycle-startup"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Explicit desktop exit and bounded fast resource loading"
+scope = "Keep a bare Escape key inside the running graphical session: active menus dialogs and drag operations may consume it as cancel, and focused surface clients may receive it, but an otherwise unhandled Escape must not request global desktop termination. Preserve the existing explicit Start-menu Desktop beenden action as the only normal interactive session-exit route and retain validated display deactivation before returning to the shell. Reduce broad-font startup latency by increasing each still-bounded resource read from 4096 to 65536 bytes while retaining an explicit scheduler yield after every successful slice, complete size validation and fixed storage. Prove the source routing and supervised QEMU SVGA2D desktop probe without changing the display VFS GUI or window-manager ABI."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_desktop_source.py",
+  "test/test_gui_bmp_font.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "an unhandled bare Escape never emits DESKTOP_WM_KEY_ESCAPE or DESKTOP_WM_RESULT_EXIT from the desktop main loop",
+  "Escape remains available to cancel the active menu dialog or drag operation and may be delivered to the focused surface client",
+  "the Start-menu Desktop beenden action remains the explicit normal route to DESKTOP_WM_RESULT_EXIT and validated display deactivation",
+  "resource reads request at most 65536 bytes per syscall yield after every successful slice reject overflow trailing data empty input and close failure and publish no partial font",
+  "all resource storage and loops remain fixed-capacity and no display VFS GUI or window-manager ABI changes"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v",
+  "python test/test_gui_bmp_font.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-desktop-lifecycle.log"
+]
+stop_conditions = [
+  "a bare Escape can still reach the global desktop-exit result outside an explicit menu action",
+  "font loading can monopolize one unbounded VFS request or omit its explicit scheduling boundary",
+  "the explicit Start-menu exit no longer restores the prior display mode before shell return",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: require explicit desktop exit and speed startup"
+evidence = [
+  "all 43 focused desktop lifecycle and broad-font source tests passed",
+  "QEMU framebuffer package build passed in 31 seconds",
+  "the VMware-SVGA2D runtime smoke passed with DESKTOP_FONT_BMP_OK DESKTOP_FONT_FALLBACK_OK DESKTOP_UNICODE_OK OPEN_NAMESPACE_LOCKS_OK and TEST_OK",
+  "the desktop main loop no longer routes unhandled Escape to DESKTOP_WM_KEY_ESCAPE while the explicit Start-menu exit remains intact",
+  "no queued package remains and active_id is empty"
+]
+
+[[packages]]
 id = "R3.2-unifont-bmp-coverage"
 status = "done"
 phase = "post-s0"

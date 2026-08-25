@@ -38,7 +38,7 @@
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
-#define DESKTOP_FILE_READ_CHUNK 4096U
+#define DESKTOP_FILE_READ_CHUNK 65536U
 #define DESKTOP_FONT_FILE_CAPACITY (2U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 65536U
 #define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode-bmp.psf"
@@ -351,7 +351,7 @@ static const reist_gui_dialog_model_t help_dialog_model = {
     .struct_size = sizeof(reist_gui_dialog_model_t),
     .title = "Desktop-Hilfe",
     .message = "Startmenue: Klick, Pfeile und Enter",
-    .detail = "Fenster: Titelleiste/Rand ziehen; ESC schliesst",
+    .detail = "ESC: Menue, Dialog oder Ziehen abbrechen",
     .buttons = help_dialog_buttons,
     .button_count = 1U,
     .modality = REIST_GUI_DIALOG_MODELESS,
@@ -2630,7 +2630,7 @@ static int read_key(void) {
     if (prefix == 0) return DESKTOP_KEY_ESCAPE;
     if (prefix != '[') return DESKTOP_KEY_NONE;
 
-    /* Consume a complete ANSI CSI sequence. Only a bare Escape exits. */
+    /* Consume a complete ANSI CSI sequence. A bare Escape is a local cancel. */
     for (unsigned int byte = 0U; byte < 16U; ++byte) {
         value = read_escape_byte();
         if (value == 0) return DESKTOP_KEY_NONE;
@@ -4894,14 +4894,6 @@ int main(int argc, char **argv) {
                 collect_explorer_pointer_result(
                     &display, &manager, &dirty, &explorer_result, 0U,
                     &activation);
-            } else if (!surface_key_consumed && key == DESKTOP_KEY_ESCAPE) {
-                desktop_wm_event_t keyboard = {
-                    .type = DESKTOP_WM_EVENT_KEYBOARD,
-                    .key = DESKTOP_WM_KEY_ESCAPE,
-                };
-                actions |= dispatch_desktop_event(
-                    &manager, &display, &dirty, &keyboard,
-                    &action_target);
             }
         }
 

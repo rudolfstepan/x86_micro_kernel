@@ -284,11 +284,14 @@ Nachbarspalten auf acht Pixel reduziert. Quelle, Lizenz und abgeleitetes PSF2
 liegen nur im vollständigen HDD-Image. Ein fehlender oder ungültiger Font fällt
 ohne neue Pixelwirkung auf die sichtbare Kernel-Ersatzglyph zurück.
 Font- und Icondateien werden trotz fester großer Zielpuffer in höchstens
-4096-Byte-großen Read-Syscalls geladen und nach jedem erfolgreichen Abschnitt
-explizit an den Scheduler abgegeben. Damit kann der Ring-3-Loader die
-Heartbeat-Gelegenheiten unabhängiger Supervisor-Domänen weder durch einen
-einzelnen langen VFS-Aufruf noch durch eine lückenlose Folge sofort
-fortgesetzter kurzer Aufrufe verdrängen.
+65.536-Byte-großen Read-Syscalls geladen und nach jedem erfolgreichen Abschnitt
+explizit an den Scheduler abgegeben. Damit bleibt jeder VFS-Aufruf begrenzt,
+ohne den rund 1,14 MiB großen Referenzfont durch mehrere hundert freiwillige
+Scheduling-Umläufe unnötig zu verzögern.
+Eine ungebundene Escape-Taste ist im Desktop kein Sitzungs-Exit. Escape bleibt
+lokaler Abbruch für Drag, Menü, Dialog oder fokussierten Surface-Client; der
+normale globale Exit wird ausschließlich über `Desktop beenden` im Startmenü
+angefordert und durchläuft weiterhin die validierte Display-Deaktivierung.
 Der öffentliche mehrzeilige Ring-3-Texteditor validiert Dokumente ebenfalls
 vollständig nach RFC 3629, verwaltet Cursor und horizontalen Viewport in
 Skalarzellen und bewahrt die UTF-8-Bytes beim Speichern. Seine festen 200

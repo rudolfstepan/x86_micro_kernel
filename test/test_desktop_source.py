@@ -238,7 +238,7 @@ class DesktopSourceTests(unittest.TestCase):
         for ansi in ("'A'", "'B'", "'C'", "'D'"):
             self.assertIn(ansi, self.source)
 
-    def test_only_a_bare_escape_leaves_the_desktop(self):
+    def test_bare_escape_is_local_cancel_not_global_desktop_exit(self):
         decoder = self.source[self.source.index("static int read_key") :]
         decoder = decoder[: decoder.index("\n}") + 2]
         self.assertIn("if (prefix == 0) return DESKTOP_KEY_ESCAPE;", decoder)
@@ -246,6 +246,14 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("value < 0x40 || value > 0x7E", decoder)
         self.assertGreaterEqual(decoder.count("return DESKTOP_KEY_NONE;"), 3)
         self.assertEqual(decoder.count("return DESKTOP_KEY_ESCAPE;"), 1)
+        main_loop = self.source[self.source.index("for (;;) {") :]
+        self.assertNotIn(".key = DESKTOP_WM_KEY_ESCAPE", main_loop)
+        self.assertIn("desktop_ui_keyboard_event", main_loop)
+        self.assertIn("enqueue_surface_keyboard", main_loop)
+        self.assertIn('"Desktop beenden", DESKTOP_MENU_ACTION_EXIT', self.source)
+        self.assertIn(
+            "menu_result->action == DESKTOP_MENU_ACTION_EXIT", self.source
+        )
 
     def test_program_activation_spawns_and_waits_for_the_selected_child(self):
         launch = self.source[self.source.index("static int launch_program") :]
