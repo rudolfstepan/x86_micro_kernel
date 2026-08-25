@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2-fat12-image-fault-campaign"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,62 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2-fat12-image-fault-campaign"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Exhaustive FAT12 image write-cut campaign"
+scope = "Close the FAT12 half of the R2.2 per-sector-write fault campaign against the complete production VFS transaction rather than only the isolated journal primitive. Extend the memory-backed FAT12 host medium with a deterministic power-cut transport that completes exactly the selected sector write and rejects every subsequent read or write until a fresh mount. Starting from one closed zero-length regular file, first execute a healthy cross-cluster extension to 700 zero bytes to capture the exact committed image and actual write count. Then restore the exact baseline and cut power after every write index from one through that measured count, bounded by FAT12_FAULT_CAMPAIGN_MAX_WRITES. A host image verifier must inspect every non-journal sector before recovery and reject any byte pattern that is neither the corresponding old nor committed whole sector. A fresh production FAT12 mount must either recover to the exact old or exact committed non-journal image and expose matching file size chain and zero data, or reject an intrinsically ambiguous dual-header state fail-closed; rejection may not be counted as successful recovery. Both FAT copies and an unrelated pre-existing file remain protected by whole-image equivalence. Retain the existing low-level omitted partial and removed-media journal campaign. Restore and remount the baseline after the campaign so all existing FAT12 behavior tests continue. This package changes no on-disk format syscall VFS ABI FAT32 path or production fault-injection surface."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/fat12/fat12.c",
+  "fs/fat12/fat12.h",
+  "fs/fat12/fat12_journal.c",
+  "fs/fat12/fat12_journal.h",
+  "test/test_fat12_host.c",
+  "test/test_fat12_image_fault_campaign.py",
+  "test/test_fs_host.py",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the campaign cuts only the host memory transport and adds no production runtime fault-injection control",
+  "each case completes exactly one selected whole 512-byte sector write then rejects all subsequent reads and writes until power restoration",
+  "the healthy operation determines the actual write count and the campaign rejects counts above its fixed compile-time ceiling",
+  "every write index from one through the measured count is exercised exactly once from the identical closed-file baseline image",
+  "the pre-recovery verifier accepts each non-journal sector only when it byte-matches that sector in the exact baseline or committed image",
+  "a successful fresh mount produces one whole old or whole committed non-journal image never a mixture and exposes matching size cluster chain and zero data",
+  "an ambiguous valid-header disagreement may refuse mount fail-closed but is recorded separately and never reported as recovered",
+  "both FAT copies unrelated files and all sectors outside the transaction remain protected by whole-image comparison",
+  "the existing low-level journal campaign continues to cover omitted partial and removed-media writes plus CRC and readback faults",
+  "the baseline is restored and mounted after the bounded campaign and no public ABI persistent format or production authority changes"
+]
+targeted_tests = [
+  "python test/test_fat12_image_fault_campaign.py -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat12_cluster_chain_seek_and_subdirectory_lifetime -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat12_journal_recovery_and_readback_failure -v",
+  "python test/test_fat12_journal.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "any cut is skipped duplicated or exceeds the fixed campaign ceiling",
+  "a non-journal sector contains bytes outside its exact old or committed whole-sector value",
+  "a successful mount exposes a mixed non-journal image invalid chain nonzero extension byte or changed unrelated file",
+  "the campaign would require a production fault hook or an on-disk format change",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "test: exhaust FAT12 sector-write cuts"
+evidence = []
 
 [[packages]]
 id = "R2.2-open-namespace-locks"
