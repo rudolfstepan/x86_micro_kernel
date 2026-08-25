@@ -807,6 +807,7 @@ static int test_file_io(void) {
     static const char path[] = "GUEST.TMP";
     static char expected[1537];
     static char actual[1537];
+    static char bulk_actual[1537];
 
     for (size_t index = 0; index < sizeof(expected); ++index) {
         expected[index] = (char)('A' + index % 23U);
@@ -866,6 +867,23 @@ static int test_file_io(void) {
                      sizeof(info)) || info.type != X86OS_FILE ||
         info.size != sizeof(expected) ||
         !bytes_equal(actual, expected, sizeof(actual))) {
+        (void)x86os_unlink(path);
+        return -1;
+    }
+
+    reist_vfs_file_handle_t bulk_handle = REIST_VFS_FILE_INVALID_HANDLE;
+    char bulk_extra = 0;
+    if (reist_vfs_file_open("/GUEST.TMP",
+                            REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+                            &bulk_handle) != 0 ||
+        reist_vfs_file_read_bulk(bulk_handle, bulk_actual,
+                                 sizeof(bulk_actual)) !=
+            (int)sizeof(bulk_actual) ||
+        !bytes_equal(bulk_actual, expected, sizeof(bulk_actual)) ||
+        reist_vfs_file_read_bulk(bulk_handle, &bulk_extra, 1U) != 0 ||
+        reist_vfs_file_close(bulk_handle) != 0) {
+        if (bulk_handle != REIST_VFS_FILE_INVALID_HANDLE)
+            (void)reist_vfs_file_close(bulk_handle);
         (void)x86os_unlink(path);
         return -1;
     }
@@ -1844,6 +1862,7 @@ int main(int argc, char **argv) {
         return 2;
     }
     x86os_puts("TEST_STAGE FILE_IO_OK\n");
+    x86os_puts("TEST_STAGE STORAGE_VFS_BULK_READ_OK\n");
     if (test_vfs_readonly_walkers() != 0) {
         x86os_puts("TEST_FAIL VFS_READONLY_WALKERS\n");
         return 18;

@@ -455,8 +455,6 @@ static int ext2_read_file(ext2_shadow_volume_t *volume,
     uint32_t size = ext2_get32(inode->bytes + 4U);
     if (offset >= size) return 0;
     uint32_t amount = size - offset < capacity ? size - offset : capacity;
-    uint8_t scratch[X86OS_VFS_SHADOW_READ_CAPACITY];
-    ext2_zero(scratch, sizeof(scratch));
     uint32_t completed = 0U;
     uint8_t block_data[REIST_VFS_SHADOW_EXT2_MAX_BLOCK_SIZE];
     while (completed < amount) {
@@ -470,10 +468,9 @@ static int ext2_read_file(ext2_shadow_volume_t *volume,
         if (status != 0) return status;
         uint32_t chunk = volume->block_size - in_block;
         if (chunk > amount - completed) chunk = amount - completed;
-        ext2_copy(scratch + completed, block_data + in_block, chunk);
+        ext2_copy(data + completed, block_data + in_block, chunk);
         completed += chunk;
     }
-    ext2_copy(data, scratch, completed);
     *transferred = completed;
     return 0;
 }
@@ -493,8 +490,13 @@ int reist_vfs_shadow_ext2_read(const reist_vfs_shadow_io_t *io,
     int status = ext2_resolve(io, absolute_path, path_length, &volume, &inode,
                               visible, 0);
     if (status != 0) return status;
-    return ext2_read_file(&volume, &inode, offset, data, capacity,
-                          transferred);
+    status = ext2_read_file(&volume, &inode, offset, data, capacity,
+                            transferred);
+    if (status != 0) {
+        ext2_zero(data, capacity);
+        *transferred = 0U;
+    }
+    return status;
 }
 
 int reist_vfs_shadow_ext2_readdir(const reist_vfs_shadow_io_t *io,
@@ -636,13 +638,18 @@ int reist_vfs_shadow_ext2_object_read(
         const reist_vfs_shadow_object_t *object, uint32_t offset,
         uint8_t *data, uint32_t capacity, uint32_t *transferred) {
     if (data == 0 || transferred == 0 || capacity == 0U ||
-        capacity > X86OS_VFS_SHADOW_READ_CAPACITY) return -22;
+        capacity > X86OS_STORAGE_BULK_MAX_BYTES) return -22;
     ext2_zero(data, capacity);
     *transferred = 0U;
     ext2_shadow_volume_t volume;
     ext2_shadow_inode_t inode;
     int status = ext2_object_inode(io, object, &volume, &inode);
     if (status != 0) return status;
-    return ext2_read_file(&volume, &inode, offset, data, capacity,
-                          transferred);
+    status = ext2_read_file(&volume, &inode, offset, data, capacity,
+                            transferred);
+    if (status != 0) {
+        ext2_zero(data, capacity);
+        *transferred = 0U;
+    }
+    return status;
 }

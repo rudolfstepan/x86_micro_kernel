@@ -126,8 +126,9 @@ im Storage-Service. Die append-only Operation 3 erweitert sie um
 Microsoft-FAT12: BPB-Typauswahl über Layout und Clusterzahl, feste
 Root-Directory, 12-Bit-FAT-Einträge einschließlich Sektorgrenze sowie begrenzte
 Unterverzeichnisketten. FAT16 und EXT2 werden fail-closed abgewiesen. Operation
-2 bleibt als FAT32-spezifischer ABI-Vertrag unverändert. Der Parser liest über
-den Kernel nur maximal 64 validierte Sektoren, begrenzt Ressourcen,
+2 bleibt als FAT32-spezifischer ABI-Vertrag unverändert. Der Metadatenpfad
+bleibt kurz; objektbezogene Bulk-Leseoperationen sind fest auf 128 Cluster und
+320 validierte FAT-Sektorreads begrenzt und begrenzen Ressourcen,
 Pfadkomponenten und Clusterketten statisch und publiziert ausschließlich eine
 bytegenaue Übereinstimmung mit `SYS_STAT`.
 Die append-only Operation 4 entzieht dem produktiven FAT-`stat`-Ergebnisweg
@@ -171,7 +172,8 @@ publiziert höchstens 32 sichtbare Einträge, scannt höchstens 128 und besitzt
 eine absolute monotone Fünf-Sekunden-Deadline. Fehler lassen den zuvor
 publizierten Pfad, Inhalt und die Snapshotgeneration unverändert. Große Font-,
 Icon- und Konfigurationsdateien bleiben auf dem vorhandenen, schedulerfreundlich
-geschnittenen Legacy-Lesepfad, bis ein begrenzter Bulk-Transport existiert.
+geschnittenen Legacy-Lesepfad, bis sie einzeln auf den nun vorhandenen
+begrenzten Bulk-Transport umgestellt werden.
 Die langlebige Userspace-Shell verwendet Operation 5 für die Programmsuche und
 Operation 7 für Tab-Vervollständigungen. Alle PATH-Kandidaten beziehungsweise
 Verzeichnisse einer Aktion teilen eine absolute monotone Fünf-Sekunden-
@@ -183,6 +185,14 @@ DELEGATE-Rechte und ausschließlich abschwächende Übergaben an eine exakt
 validierte Prozessgeneration. Eine Übergabe belegt einen eigenen Zielslot,
 verfällt nach fünf monotonen Sekunden und verändert das Quellhandle nicht.
 Ein Spawn erbt weiterhin keine Objekt- oder Delegationsautorität ambient.
+Objektoperation 15 transportiert bis zu 64 KiB über zwei feste kernel-eigene
+Bulk-Slots. Der 512-Byte-Kontrollframe bleibt redundant CRC-geschützt;
+Nutzdaten besitzen eine unabhängige CRC und werden nur zwischen der exakten
+Service- und Clientgeneration ausgetauscht. Syscall 124 ist append-only,
+versioniert und prüft den vollständigen Userbereich vor einer Kopie. Große
+Kopien halten Interrupts offen; nur kleine Slotzustände liegen unter dem
+IRQ-Lock. Erschöpfung, Integritätsfehler, Deadline, Cancel und Lifecycle-
+Widerruf scheitern geschlossen und ändern keinen Clientoffset.
 Der zusätzliche Servicepfad einschließlich vollständiger Unicode-15-Tabellen
 bleibt unter der festen 192-KiB-Einzelgrenze; der statische Gesamtpool ist auf
 352 KiB begrenzt.

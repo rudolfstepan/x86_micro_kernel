@@ -1,6 +1,6 @@
 # VFS-Architektur
 
-Stand: 24. August 2026.
+Stand: 25. August 2026.
 
 VFS ist die einzige reguläre Dateisystemschnittstelle für Shell,
 Programmlader und Ring-3-Datei-ABI. Direkte globale FAT-Sonderpfade gehören
@@ -31,7 +31,7 @@ FAT32-Kompatibilitätspfad. Operation 3 löst Mountpräfix, FAT12- oder FAT32-BP
 ASCII-8.3-/VFAT-Namen, die feste FAT12-Rootdirectory beziehungsweise
 Verzeichniscluster und Metadaten selbst im Storage-Service auf. FAT16 wird
 anhand des standardisierten Clusterzahlbereichs abgewiesen. Der Parser darf
-höchstens 22 Ressourcen, 32 Pfadkomponenten, 32 Verzeichniscluster und 64
+höchstens 22 Ressourcen, 32 Pfadkomponenten, 128 Verzeichniscluster und 320
 vermittelte Sektorreads untersuchen und verwendet keinen Heap. Sein Ergebnis
 wird nur veröffentlicht, wenn Status und sämtliche öffentlichen Metadatenbytes
 exakt mit `SYS_STAT` übereinstimmen; eine Abweichung liefert den
@@ -87,6 +87,19 @@ Spawn bleibt davon getrennt und ist noch nicht migriert. Das Storage-Rescue-
 Image bleibt im festen Gesamtpool. Mit den vollständigen Unicode-15-Tabellen
 beträgt die feste Einzelgrenze nun 192 KiB; der weiterhin statische
 Allowlist-Gesamtpool ist auf 352 KiB begrenzt.
+
+Append-only Frameoperation 15 und Storage-Operation 32 ergänzen einen
+objektbezogenen Bulk-Lesepfad. Der 512-Byte-Kontrollframe bleibt im
+redundanten Request-Pool; die Nutzdaten liegen in genau zwei kernel-eigenen,
+statischen Slots mit höchstens 64 KiB. Append-only Syscall 124 erlaubt nur der
+gebundenen Servicegeneration die Publikation und nur der exakten
+Clientgeneration die atomare Abholung. Kernel- und Frame-CRC werden vor
+Offsetfortschritt geprüft. Timeout, Cancel, Prozessende und Serviceverlust
+widerrufen Slot und Handle; Erschöpfung liefert `ENOSPC`. Die große Kopie läuft
+mit erlaubten Interrupts, aber ohne Schedulerwechsel, und hält den IRQ-Lock nur
+für kleine Metadatenübergänge. Der bisherige 256-Byte-Pfad bleibt unverändert.
+FAT ist dafür auf 128 Cluster und 320 Sektorreads, EXT2 auf 192 Sektorreads pro
+Operation fest begrenzt.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus
@@ -288,7 +301,9 @@ Schlüsselbytes. Gespeicherter Name und Readdir bewahren die Originalbytes.
     Legacy-Namespace-Fallback und mit atomarer Fünf-Sekunden-Grenze umstellen.
 16. [x] Userspace-Shell-Programmsuche und Tab-Vervollständigung mit einer
     gemeinsamen begrenzten Deadline auf Operationen 5/7 umstellen.
-17. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
+17. [x] Zwei feste 64-KiB-Bulk-Slots mit CRC, ownergebundener Publikation und
+    atomarer Sammlung für Objektoperation 15 ergänzen.
+18. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.
 
 ### Begrenzter EXT2-Subset in Ring 3

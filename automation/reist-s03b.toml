@@ -11,6 +11,88 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.1-vfs-bounded-bulk-read"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Bounded bulk reads through the Ring-3 storage service"
+scope = "Add an append-only, versioned bulk-transfer syscall and a fixed two-slot kernel staging pool for service-owned VFS object reads of at most 64 KiB. Requests retain the existing 512-byte control frame, exact client/service generations, deadlines and cancellation state; payload publication and collection validate full user ranges, CRC32 and object rights before offset advancement. FAT12/FAT32 and EXT2 parsers remain read-only and sector-bounded. The legacy 256-byte object read remains ABI-compatible, while a new explicit client API and real guest proof transfer a 1537-byte file in one service request without heap allocation or a kernel-VFS fallback."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/reist/abi/syscall.h",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/reist/abi/syscall.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "scripts/generate_syscall_abi.py",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "userspace/programs/storage_service.c",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "userspace/storage/include/reist/vfs_file_client.h",
+  "userspace/storage/lib/vfs_file_client.c",
+  "userspace/programs/guest_test.c",
+  "safety/resource_budgets.toml",
+  "test/test_storage_request_pool_host.c",
+  "test/test_reist_storage_request_pool.py",
+  "test/test_vfs_file_client_host.c",
+  "test/test_reist_vfs_file_client.py",
+  "test/test_syscall_abi_source.py",
+  "test/test_ftruncate.py",
+  "test/test_open_flags.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_reist_wcet.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "bulk storage is fixed at two 64-KiB slots and exhaustion fails before a request becomes visible",
+  "only the exact claimed storage-service generation may publish and only the exact client generation may collect",
+  "the 512-byte control frame and bulk bytes are published atomically to the client only after structural and CRC validation",
+  "timeouts cancellation service loss and process exit revoke the request and its bulk slot without stale-handle reuse",
+  "a failed malformed or short transfer never advances the client file offset",
+  "FAT and EXT2 work remains bounded by existing sector-read limits and grants no raw block or kernel-VFS authority to clients",
+  "syscall and shadow-frame changes are append-only and the existing 256-byte read path remains compatible"
+]
+targeted_tests = [
+  "python test/test_reist_storage_request_pool.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_syscall_abi_source.py -v",
+  "python test/test_reist_resource_budgets.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-vfs-bulk-read.log"
+]
+stop_conditions = [
+  "bulk publication would expose a raw kernel address physical address or ambient storage authority",
+  "payload copying requires heap allocation an unbounded loop or interrupts disabled for the 64-KiB copy",
+  "FAT or EXT2 parser bounds cannot cover the 64-KiB request under their fixed sector budgets",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: add bounded ring3 bulk reads"
+evidence = [
+  "python test/test_reist_storage_request_pool.py -v: PASS (8 tests)",
+  "python test/test_reist_vfs_file_client.py -v: PASS (6 tests)",
+  "python test/test_syscall_abi_source.py -v: PASS (5 tests)",
+  "python test/test_reist_resource_budgets.py -v: PASS (7 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga: PASS (39s)",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-vfs-bulk-read.log: PASS (STORAGE_VFS_BULK_READ_OK and TEST_OK)"
+]
+
+[[packages]]
 id = "R2.1-shell-vfs-namespace-cutover"
 status = "done"
 phase = "post-s0"

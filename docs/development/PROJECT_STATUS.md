@@ -499,7 +499,15 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Protokollfehler bewahren das zuvor veröffentlichte Fenster samt Generation.
   Der normale Gast weist den realen Root-Eintrag `htdocs` mit
   `DESKTOP_EXPLORER_VFS_OK` nach. Font-, Icon- und Konfigurationsstreams bleiben
-  bis zu einem begrenzten Bulk-Transport auf dem 64-KiB-Slice-Pfad.
+  bis zu ihrer einzelnen Umstellung auf dem 64-KiB-Slice-Pfad.
+- Der begrenzte Ring-3-Bulk-Lesetransport ist vorhanden. Storage-Operation 32
+  und Objektoperation 15 behalten einen 512-Byte-Kontrollframe und verwenden
+  genau zwei feste kernel-eigene 64-KiB-Slots. Append-only Syscall 124 bindet
+  Publikation und Abholung an die exakten Service-/Clientgenerationen. CRC,
+  Userbereich, Deadline und Cancel werden vor Offsetfortschritt geprüft; der
+  normale Gast liest 1537 Byte in einem Request und markiert
+  `STORAGE_VFS_BULK_READ_OK`. Große Desktop-Ressourcen sind noch nicht auf den
+  neuen API-Aufruf umgestellt.
 - Die langlebige Userspace-Shell löst Programmdateien über Ring-3-Operation 5
   auf und enumeriert Tab-Vervollständigungen über Operation 7. Alle Kandidaten
   einer Aktion teilen eine absolute monotone Fünf-Sekunden-Deadline,

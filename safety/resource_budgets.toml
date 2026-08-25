@@ -84,6 +84,51 @@ unit = "requests/client"
 verification = ["test/test_reist_storage_request_pool.py"]
 
 [[budget]]
+id = "RB-STORAGE-BULK-SLOTS"
+description = "Globale statische Bulk-Leseslots"
+source = "include/kernel/storage_request_pool.h"
+symbol = "STORAGE_REQUEST_BULK_CAPACITY"
+limit = 2
+unit = "transfers"
+verification = ["test/test_reist_storage_request_pool.py"]
+
+[[budget]]
+id = "RB-STORAGE-BULK-BYTES"
+description = "Maximale Nutzdaten pro Bulk-Lesetransfer"
+source = "include/kernel/storage_request_pool.h"
+symbol = "STORAGE_REQUEST_BULK_MAX_BYTES"
+limit = 65536
+unit = "bytes/transfer"
+verification = ["test/test_reist_storage_request_pool.py"]
+
+[[budget]]
+id = "RB-VFS-SHADOW-FAT-SECTOR-READS"
+description = "Vermittelte FAT-Sektorreads pro Shadow-Operation"
+source = "userspace/storage/include/reist/vfs_shadow_fat32.h"
+symbol = "REIST_VFS_SHADOW_MAX_SECTOR_READS"
+limit = 320
+unit = "sector reads/operation"
+verification = ["test/test_reist_vfs_file_client.py"]
+
+[[budget]]
+id = "RB-VFS-SHADOW-FAT-CHAIN"
+description = "Besuchte FAT-Cluster pro Shadow-Operation"
+source = "userspace/storage/include/reist/vfs_shadow_fat32.h"
+symbol = "REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS"
+limit = 128
+unit = "clusters/operation"
+verification = ["test/test_reist_vfs_file_client.py"]
+
+[[budget]]
+id = "RB-VFS-SHADOW-EXT2-SECTOR-READS"
+description = "Vermittelte EXT2-Sektorreads pro Shadow-Operation"
+source = "userspace/storage/include/reist/vfs_shadow_ext2.h"
+symbol = "REIST_VFS_SHADOW_EXT2_MAX_SECTOR_READS"
+limit = 192
+unit = "sector reads/operation"
+verification = ["test/test_reist_vfs_file_client.py"]
+
+[[budget]]
 id = "RB-DEVICE-DMA-POOLS"
 description = "Kernel-eigene mediated-DMA-Pools für Ring-3-Treiber"
 source = "include/kernel/device_domain.h"

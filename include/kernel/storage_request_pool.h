@@ -21,6 +21,9 @@
 #define STORAGE_REQUEST_MAX_TIMEOUT_MS 60000U
 #define STORAGE_REQUEST_INVALID_HANDLE 0U
 #define STORAGE_REQUEST_STATS_VERSION 1U
+#define STORAGE_REQUEST_BULK_VERSION 1U
+#define STORAGE_REQUEST_BULK_CAPACITY 2U
+#define STORAGE_REQUEST_BULK_MAX_BYTES (64U * 1024U)
 
 typedef uint32_t storage_request_handle_t;
 
@@ -56,6 +59,7 @@ typedef enum {
     STORAGE_REQUEST_SALVAGE_FAT12_ORPHANS = 29,
     STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR = 30,
     STORAGE_REQUEST_VFS_SHADOW_STAT = 31,
+    STORAGE_REQUEST_VFS_BULK_READ = 32,
 } storage_request_operation_t;
 
 #define STORAGE_REQUEST_READ STORAGE_REQUEST_BLOCK_READ
@@ -104,6 +108,20 @@ typedef struct {
     uint32_t pool_capacity_rejections;
 } storage_request_stats_t;
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    storage_request_handle_t handle;
+    uint32_t length;
+    int32_t result;
+    uint32_t transferred;
+    uint32_t reserved;
+} storage_request_bulk_control_t;
+
+#define STORAGE_REQUEST_BULK_PUBLISH 1U
+#define STORAGE_REQUEST_BULK_COLLECT 2U
+
 int storage_request_pool_init(void);
 int storage_request_bind_service(int pid, uint32_t generation);
 void storage_request_unbind_service(int pid, uint32_t generation);
@@ -134,6 +152,14 @@ int storage_request_collect_ex(int client_pid, uint32_t client_generation,
                                storage_request_handle_t handle,
                                int32_t *result_out, uint8_t *block_data_out,
                                uint32_t *data_length_out);
+int storage_request_bulk_publish(int service_pid, uint32_t service_generation,
+                                 storage_request_handle_t handle,
+                                 const uint8_t *data, uint32_t length);
+int storage_request_bulk_collect(int client_pid, uint32_t client_generation,
+                                 storage_request_handle_t handle,
+                                 int32_t *result_out, uint8_t *frame_out,
+                                 uint8_t *data_out, uint32_t capacity,
+                                 uint32_t *transferred_out);
 int storage_request_cancel(int client_pid, uint32_t client_generation,
                            storage_request_handle_t handle);
 void storage_request_cancel_process(int pid, uint32_t generation);
@@ -144,6 +170,7 @@ int storage_request_test_corrupt_data(storage_request_handle_t handle,
                                       bool corrupt_both_copies);
 int storage_request_test_corrupt_metadata(storage_request_handle_t handle,
                                           bool corrupt_both_copies);
+int storage_request_test_corrupt_bulk(storage_request_handle_t handle);
 #endif
 
 #endif

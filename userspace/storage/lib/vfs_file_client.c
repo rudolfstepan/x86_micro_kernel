@@ -18,6 +18,7 @@ typedef struct {
 } file_session_t;
 
 static file_session_t sessions[REIST_VFS_FILE_CAPACITY];
+static uint8_t file_bulk_staging[X86OS_STORAGE_BULK_MAX_BYTES];
 
 static void file_zero(void *target, uint32_t length) {
     uint8_t *bytes = target;
@@ -35,6 +36,17 @@ static int file_bytes_zero(const void *source, uint32_t length) {
     for (uint32_t index = 0U; index < length; ++index)
         if (bytes[index] != 0U) return 0;
     return 1;
+}
+
+static uint32_t file_crc32(const uint8_t *data, uint32_t length) {
+    uint32_t crc = 0xFFFFFFFFU;
+    for (uint32_t index = 0U; index < length; ++index) {
+        crc ^= data[index];
+        for (uint32_t bit = 0U; bit < 8U; ++bit)
+            crc = (crc >> 1U) ^ (0xEDB88320U &
+                  (uint32_t)-(int32_t)(crc & 1U));
+    }
+    return crc ^ 0xFFFFFFFFU;
 }
 
 static reist_vfs_file_handle_t file_handle(uint32_t slot,
@@ -227,6 +239,82 @@ int reist_vfs_file_read(reist_vfs_file_handle_t handle, void *data,
     file_copy(data, frame.data, frame.transferred);
     session->offset += frame.transferred;
     return (int)frame.transferred;
+}
+
+int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data,
+                             size_t capacity) {
+    if (data == 0 || capacity == 0U ||
+        capacity > X86OS_STORAGE_BULK_MAX_BYTES) return -22;
+    uint32_t slot = 0U;
+    file_session_t *session = 0;
+    int status = file_resolve(handle, &slot, &session);
+    (void)slot;
+    if (status != 0) return status;
+    if ((session->rights & X86OS_VFS_OBJECT_RIGHT_READ) == 0U) return -13;
+
+    x86os_vfs_shadow_object_bulk_read_frame_t frame;
+    file_zero(&frame, sizeof(frame));
+    frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
+    frame.struct_size = sizeof(frame);
+    frame.operation = X86OS_VFS_SHADOW_OBJECT_BULK_READ;
+    frame.object_token = session->object_token;
+    frame.service_generation = session->service_generation;
+    frame.offset = session->offset;
+    frame.requested = (uint32_t)capacity;
+    x86os_storage_submit_t request = {
+        .version = X86OS_STORAGE_REQUEST_VERSION,
+        .struct_size = sizeof(request),
+        .operation = X86OS_STORAGE_VFS_BULK_READ,
+        .resource = 0U,
+        .offset = 0U,
+        .length = X86OS_STORAGE_BLOCK_SIZE,
+        .timeout_ms = session->timeout_ms,
+    };
+    x86os_storage_handle_t request_handle = 0U;
+    status = x86os_storage_submit(&request, &frame, &request_handle);
+    if (status != 0 || request_handle == 0U)
+        return status != 0 ? status : -5;
+    uint32_t start = x86os_uptime_ms();
+    uint32_t deadline = start + session->timeout_ms;
+    if (deadline < start) deadline = UINT32_MAX;
+    uint32_t transferred = 0U;
+    int32_t service_result = 0;
+    for (;;) {
+        uint32_t now = x86os_uptime_ms();
+        if (now < start) { (void)x86os_storage_cancel(request_handle); return -5; }
+        if (now >= deadline) {
+            (void)x86os_storage_cancel(request_handle);
+            return -110;
+        }
+        status = x86os_storage_bulk_collect(
+            request_handle, &service_result, &frame, file_bulk_staging,
+            (uint32_t)capacity, &transferred);
+        if (status == 0) break;
+        if (status != -11) {
+            (void)x86os_storage_cancel(request_handle);
+            return status;
+        }
+        if (x86os_sleep_ms(1U) != 0 && x86os_yield() != 0) {
+            (void)x86os_storage_cancel(request_handle);
+            return -5;
+        }
+    }
+    if (service_result != 0) return service_result;
+    if (frame.version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame.struct_size != sizeof(frame) ||
+        frame.operation != X86OS_VFS_SHADOW_OBJECT_BULK_READ ||
+        frame.flags != 0U || frame.object_token != session->object_token ||
+        frame.service_generation != session->service_generation ||
+        frame.offset != session->offset || frame.requested != capacity ||
+        frame.transferred != transferred || transferred > capacity ||
+        !file_bytes_zero(frame.reserved, sizeof(frame.reserved)) ||
+        frame.data_crc32 != file_crc32(file_bulk_staging, transferred))
+        return -84;
+    if (frame.result != 0) return frame.result;
+    if (UINT32_MAX - session->offset < transferred) return -75;
+    file_copy(data, file_bulk_staging, transferred);
+    session->offset += transferred;
+    return (int)transferred;
 }
 
 int reist_vfs_file_fstat(reist_vfs_file_handle_t handle,

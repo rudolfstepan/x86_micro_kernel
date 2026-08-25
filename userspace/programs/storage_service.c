@@ -62,6 +62,11 @@ _Static_assert(sizeof(x86os_vfs_shadow_object_read_frame_t) ==
 _Static_assert(sizeof(x86os_vfs_shadow_object_delegate_frame_t) ==
                    X86OS_STORAGE_BLOCK_SIZE,
                "VFS object delegate frame must fill one request payload");
+_Static_assert(sizeof(x86os_vfs_shadow_object_bulk_read_frame_t) ==
+                   X86OS_STORAGE_BLOCK_SIZE,
+               "VFS bulk-read frame must fill one request payload");
+
+static uint8_t vfs_bulk_data[X86OS_STORAGE_BULK_MAX_BYTES];
 
 static void put16(uint8_t *p, uint32_t value) {
     p[0] = (uint8_t)value; p[1] = (uint8_t)(value >> 8U);
@@ -5786,6 +5791,7 @@ typedef union {
     x86os_vfs_shadow_object_frame_t object;
     x86os_vfs_shadow_object_read_frame_t object_read;
     x86os_vfs_shadow_object_delegate_frame_t object_delegate;
+    x86os_vfs_shadow_object_bulk_read_frame_t object_bulk_read;
 } vfs_shadow_request_t;
 
 #define VFS_OBJECT_CAPACITY 16U
@@ -6082,6 +6088,50 @@ static int vfs_object_read(x86os_vfs_shadow_object_read_frame_t *frame,
     return 0;
 }
 
+static int vfs_object_bulk_read(
+        x86os_vfs_shadow_object_bulk_read_frame_t *frame,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t service_generation) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) ||
+        frame->operation != X86OS_VFS_SHADOW_OBJECT_BULK_READ ||
+        frame->flags != 0U || frame->result != 0 ||
+        frame->requested == 0U ||
+        frame->requested > X86OS_STORAGE_BULK_MAX_BYTES ||
+        frame->transferred != 0U || frame->data_crc32 != 0U ||
+        !vfs_object_reserved_zero(frame->reserved, 117U)) return -22;
+    vfs_object_slot_t *slot = 0;
+    int status = vfs_object_resolve(
+        frame->object_token, frame->service_generation, owner_pid,
+        owner_generation, service_generation, &slot);
+    if (status != 0) { frame->result = status; return 0; }
+    if ((slot->rights & X86OS_VFS_OBJECT_RIGHT_READ) == 0U) {
+        frame->result = -13;
+        return 0;
+    }
+    const reist_vfs_shadow_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    uint32_t transferred = 0U;
+    status = slot->locator.filesystem == REIST_VFS_SHADOW_OBJECT_FAT
+        ? reist_vfs_shadow_fat_object_read(
+            &io, &slot->locator, frame->offset, vfs_bulk_data,
+            frame->requested, &transferred)
+        : reist_vfs_shadow_ext2_object_read(
+            &io, &slot->locator, frame->offset, vfs_bulk_data,
+            frame->requested, &transferred);
+    if (status != 0) {
+        transferred = 0U;
+        if (status == -116) vfs_object_release(slot);
+    }
+    frame->result = status;
+    frame->transferred = transferred;
+    frame->data_crc32 = format_crc32(vfs_bulk_data, transferred);
+    return 0;
+}
+
 static int vfs_object_delegate(
         x86os_vfs_shadow_object_delegate_frame_t *frame,
         int32_t owner_pid, uint32_t owner_generation,
@@ -6264,6 +6314,22 @@ int main(void) {
                 frame.stat.operation == X86OS_VFS_SHADOW_OBJECT_ADOPT &&
                 frame.object.result == 0)
                 object_adopt_completed = 1U;
+            if (result == 0)
+                for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                    data[index] = frame_bytes[index];
+        }
+        if (request.operation == X86OS_STORAGE_VFS_BULK_READ &&
+            request.length == X86OS_STORAGE_BLOCK_SIZE) {
+            vfs_shadow_request_t frame;
+            uint8_t *frame_bytes = (uint8_t *)&frame;
+            for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                frame_bytes[index] = data[index];
+            result = vfs_object_bulk_read(
+                &frame.object_bulk_read, request.client_pid,
+                request.client_generation, request.service_generation);
+            if (result == 0) result = x86os_storage_bulk_publish(
+                request.handle, vfs_bulk_data,
+                frame.object_bulk_read.transferred);
             if (result == 0)
                 for (uint32_t index = 0U; index < sizeof(frame); ++index)
                     data[index] = frame_bytes[index];

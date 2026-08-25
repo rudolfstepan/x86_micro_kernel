@@ -142,6 +142,7 @@
 #define SYS_LSEEK 121
 #define SYS_FSTAT 122
 #define SYS_FTRUNCATE 123
+#define SYS_STORAGE_BULK 124
 /* END GENERATED REIST SYSCALLS */
 
 // // Macros for try-catch handling

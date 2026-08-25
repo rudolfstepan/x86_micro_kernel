@@ -17,6 +17,8 @@ static void fill(uint8_t block[STORAGE_REQUEST_BLOCK_SIZE], uint8_t seed) {
 }
 
 int main(void) {
+    static uint8_t bulk_source[STORAGE_REQUEST_BULK_MAX_BYTES];
+    static uint8_t bulk_target[STORAGE_REQUEST_BULK_MAX_BYTES];
     if (storage_request_pool_init() != 0) return 100;
     storage_request_stats_t stats;
     if (storage_request_stats(0) != -22 ||
@@ -155,6 +157,59 @@ int main(void) {
         storage_request_collect(
             3, 5U, shadow_handle, &result, transfer) != 0 || result != 0 ||
         memcmp(read_data, transfer, sizeof(read_data)) != 0) return 23;
+
+    storage_request_submit_t bulk_read = {
+        STORAGE_REQUEST_VERSION, sizeof(bulk_read),
+        STORAGE_REQUEST_VFS_BULK_READ, 0U, 0U,
+        STORAGE_REQUEST_BLOCK_SIZE, 1000U,
+    };
+    fill(write_data, 29U);
+    for (uint32_t index = 0U; index < sizeof(bulk_source); ++index)
+        bulk_source[index] = (uint8_t)(index * 17U + 3U);
+    storage_request_handle_t bulk_handle = 0U;
+    uint32_t bulk_amount = 0U;
+    if (storage_request_submit(3, 5U, &bulk_read, write_data, 49U,
+                               &bulk_handle) != 0 ||
+        storage_request_claim_v2(7, 11U, 50U, &descriptor_v2,
+                                 transfer) != 0 ||
+        descriptor_v2.operation != STORAGE_REQUEST_VFS_BULK_READ ||
+        storage_request_bulk_publish(8, 12U, bulk_handle, bulk_source,
+                                     sizeof(bulk_source)) != -13 ||
+        storage_request_bulk_publish(7, 11U, bulk_handle, bulk_source,
+                                     sizeof(bulk_source)) != 0 ||
+        storage_request_complete(7, 11U, bulk_handle, 0, read_data) != 0 ||
+        storage_request_collect(3, 5U, bulk_handle, &result, transfer) != -22 ||
+        storage_request_bulk_collect(4, 5U, bulk_handle, &result, transfer,
+                                     bulk_target, sizeof(bulk_target),
+                                     &bulk_amount) != -13 ||
+        storage_request_bulk_collect(3, 5U, bulk_handle, &result, transfer,
+                                     bulk_target, sizeof(bulk_target),
+                                     &bulk_amount) != 0 ||
+        result != 0 || bulk_amount != sizeof(bulk_source) ||
+        memcmp(bulk_source, bulk_target, sizeof(bulk_source)) != 0 ||
+        memcmp(read_data, transfer, sizeof(read_data)) != 0) return 28;
+
+    if (storage_request_submit(3, 5U, &bulk_read, write_data, 51U,
+                               &bulk_handle) != 0 ||
+        storage_request_claim(7, 11U, 52U, &descriptor, transfer) != 0 ||
+        storage_request_bulk_publish(7, 11U, bulk_handle, bulk_source,
+                                     sizeof(bulk_source)) != 0 ||
+        storage_request_test_corrupt_bulk(bulk_handle) != 0 ||
+        storage_request_complete(7, 11U, bulk_handle, 0, read_data) != 0 ||
+        storage_request_bulk_collect(3, 5U, bulk_handle, &result, transfer,
+                                     bulk_target, sizeof(bulk_target),
+                                     &bulk_amount) != -84) return 29;
+
+    storage_request_handle_t bulk_slots[STORAGE_REQUEST_BULK_CAPACITY];
+    storage_request_handle_t bulk_excess = 0U;
+    for (uint32_t index = 0U; index < STORAGE_REQUEST_BULK_CAPACITY; ++index)
+        if (storage_request_submit(20 + (int)index, 5U, &bulk_read,
+                                   write_data, 53U, &bulk_slots[index]) != 0)
+            return 30;
+    if (storage_request_submit(30, 5U, &bulk_read, write_data, 53U,
+                               &bulk_excess) != -28) return 31;
+    for (uint32_t index = 0U; index < STORAGE_REQUEST_BULK_CAPACITY; ++index)
+        storage_request_cancel_process(20 + (int)index, 5U);
 
     if (storage_request_submit(3, 5U, &read, 0, 100U, &read_handle) != 0 ||
         storage_request_claim(7, 11U, 1100U, &descriptor, 0) != -11 ||

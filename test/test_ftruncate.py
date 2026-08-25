@@ -41,7 +41,7 @@ class FtruncateTests(unittest.TestCase):
         self.assertIn("!file->writable", body)
         self.assertIn("vfs_truncate(file->node, size)", body)
         self.assertNotIn("file->offset =", body)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 124U", self.process_h)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 125U", self.process_h)
 
     def test_vfs_delegates_every_uint32_target_under_mutation_fence(self) -> None:
         start = self.vfs_c.index("static int vfs_truncate_locked(")

@@ -1213,6 +1213,8 @@ _Static_assert(sizeof(storage_request_descriptor_t) == 28U,
                "storage descriptor ABI changed");
 _Static_assert(sizeof(storage_request_descriptor_v2_t) == 40U,
                "storage descriptor v2 ABI changed");
+_Static_assert(sizeof(storage_request_bulk_control_t) == 32U,
+               "storage bulk control ABI changed");
 
 static int syscall_storage_bind(void) {
     Process *process = scheduler_current_process();
@@ -1263,7 +1265,8 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
     const uint8_t *data_argument = NULL;
     if (request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
         request.operation == STORAGE_REQUEST_VFS_WRITE ||
-        request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT) {
+        request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
+        request.operation == STORAGE_REQUEST_VFS_BULK_READ) {
         uint32_t data_address = (uint32_t)(uintptr_t)user_data;
         if (request.length > sizeof(data) ||
             !user_range_accessible(directory, data_address, request.length,
@@ -1308,7 +1311,8 @@ static int syscall_storage_claim(storage_request_descriptor_t *user_request,
                            sizeof(request)) != 0 ||
         ((request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
           request.operation == STORAGE_REQUEST_VFS_WRITE ||
-          request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT) &&
+          request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
+          request.operation == STORAGE_REQUEST_VFS_BULK_READ) &&
          copy_to_user_space(directory, data_address, data,
                             request.length) != 0)) return -14;
     return 0;
@@ -1334,7 +1338,8 @@ static int syscall_storage_claim_identity(
     if (result != 0) return result;
     bool has_payload = request.operation == STORAGE_REQUEST_BLOCK_WRITE ||
         request.operation == STORAGE_REQUEST_VFS_WRITE ||
-        request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT;
+        request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
+        request.operation == STORAGE_REQUEST_VFS_BULK_READ;
     if ((has_payload && copy_to_user_space(directory, data_address, data,
                                            request.length) != 0) ||
         copy_to_user_space(directory, request_address, &request,
@@ -1647,6 +1652,56 @@ static int syscall_storage_cancel(storage_request_handle_t handle) {
     Process *process = scheduler_current_process();
     if (process == NULL) return -13;
     return storage_request_cancel(process->pid, process->generation, handle);
+}
+
+static int syscall_storage_bulk(storage_request_bulk_control_t *user_control,
+        uint8_t *user_frame, uint8_t *user_data) {
+    Process *process = scheduler_current_process();
+    page_directory_t *directory = paging_current_directory();
+    uint32_t control_address = (uint32_t)(uintptr_t)user_control;
+    if (process == NULL ||
+        !user_range_accessible(directory, control_address,
+                               sizeof(*user_control), true)) return -14;
+    storage_request_bulk_control_t control;
+    if (copy_from_user(&control, user_control, sizeof(control)) != 0)
+        return -14;
+    if (control.version != STORAGE_REQUEST_BULK_VERSION ||
+        control.struct_size != sizeof(control) || control.handle == 0U ||
+        control.length > STORAGE_REQUEST_BULK_MAX_BYTES ||
+        control.result != 0 || control.transferred != 0U ||
+        control.reserved != 0U) return -22;
+    if (control.operation == STORAGE_REQUEST_BULK_PUBLISH) {
+        if (!storage_service_authorized(process->pid, process->generation))
+            return -13;
+        uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+        if (control.length != 0U &&
+            !user_range_accessible(directory, data_address, control.length,
+                                   false)) return -14;
+        return storage_request_bulk_publish(
+            process->pid, process->generation, control.handle,
+            control.length == 0U ? NULL : user_data, control.length);
+    }
+    if (control.operation != STORAGE_REQUEST_BULK_COLLECT ||
+        control.length == 0U) return -22;
+    uint32_t frame_address = (uint32_t)(uintptr_t)user_frame;
+    uint32_t data_address = (uint32_t)(uintptr_t)user_data;
+    if (!user_range_accessible(directory, frame_address,
+                               STORAGE_REQUEST_BLOCK_SIZE, true) ||
+        !user_range_accessible(directory, data_address, control.length, true))
+        return -14;
+    uint8_t frame[STORAGE_REQUEST_BLOCK_SIZE];
+    int32_t result_code = 0;
+    uint32_t transferred = 0U;
+    int result = storage_request_bulk_collect(
+        process->pid, process->generation, control.handle, &result_code,
+        frame, user_data, control.length, &transferred);
+    if (result != 0) return result;
+    control.result = result_code;
+    control.transferred = transferred;
+    if (copy_to_user_space(directory, frame_address, frame, sizeof(frame)) != 0 ||
+        copy_to_user_space(directory, control_address, &control,
+                           sizeof(control)) != 0) return -14;
+    return 0;
 }
 
 static int syscall_service_connect(uint32_t service_id,
@@ -3227,6 +3282,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_lseek,               // Syscall 121: File position
     (void*)&syscall_fstat,               // Syscall 122: Open-file metadata
     (void*)&syscall_ftruncate,           // Syscall 123: Set file size
+    (void*)&syscall_storage_bulk,        // Syscall 124: Bounded bulk transfer
     // Add more syscalls here as needed
 };
 
@@ -3806,6 +3862,13 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_storage_claim_identity(
                 (storage_request_descriptor_v2_t*)(uintptr_t)arg1,
                 (uint8_t*)(uintptr_t)arg2);
+            break;
+        case SYS_STORAGE_BULK:
+            scheduler_preempt_disable();
+            result = (uint32_t)syscall_storage_bulk(
+                (storage_request_bulk_control_t*)(uintptr_t)arg1,
+                (uint8_t*)(uintptr_t)arg2, (uint8_t*)(uintptr_t)arg3);
+            scheduler_preempt_enable();
             break;
         default:
             result = (uint32_t)-1;

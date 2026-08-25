@@ -1614,9 +1614,17 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Requestgrenzen und höchstens 128 akzeptierte Verzeichniseinträge; Fehler
   verändern die Eingabezeile nicht. Mutierende Shell-/Papierkorbpfade und große
   Desktop-Ressourcen bleiben getrennte Folgepakete.
+  Der begrenzte Bulk-Transport ist nun als append-only Storage-Operation 32,
+  Frameoperation 15 und Syscall 124 umgesetzt. Zwei feste kernel-eigene Slots
+  transportieren je höchstens 64 KiB; Client- und Servicegeneration, CRC,
+  Deadline und Cancel werden vor Veröffentlichung geprüft. Der Objektclient
+  verschiebt seinen Offset erst nach vollständiger Frame- und Datenprüfung.
+  Der normale Gast liest `GUEST.TMP` mit 1537 Byte in genau einem Request und
+  markiert `STORAGE_VFS_BULK_READ_OK`. Die Umstellung einzelner großer Desktop-
+  Ressourcen bleibt ein Folgepaket.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
-  lückenlose v1-Indizes 0 bis 123 und beide Buildpfade prüfen Drift fail-closed
+  lückenlose v1-Indizes 0 bis 124 und beide Buildpfade prüfen Drift fail-closed
 - [x] Open-Flags und Rechte je Handle ergänzen; Standarddeskriptoren 0/1/2 sind
   als getrennte feste, richtungsgebundene Einträge umgesetzt. Syscall 120
   ergänzt `RDONLY`/`WRONLY`/`RDWR`, `CREAT` und `APPEND` ohne Änderung der

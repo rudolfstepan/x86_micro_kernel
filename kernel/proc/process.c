@@ -357,7 +357,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             SYS_STORAGE_COMPLETE, SYS_STORAGE_BLOCK_FLUSH,
             SYS_STORAGE_MEDIA_COMMIT, SYS_STORAGE_FORMAT_PROBE,
             SYS_BOOT_STATUS, SYS_STAT, SYS_PROCESS_IDENTITY,
-            SYS_STORAGE_CLAIM_IDENTITY
+            SYS_STORAGE_CLAIM_IDENTITY, SYS_STORAGE_BULK
         };
         for (size_t index = 0;
              index < sizeof(storage_syscalls) / sizeof(storage_syscalls[0]);
@@ -369,7 +369,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             0U, 1U, SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS,
             SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_DRIVE_INFO,
             SYS_DRIVE_STATUS, SYS_ADMIN_STORAGE, SYS_PARTITION_CREATE,
-            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL,
+            SYS_STORAGE_BULK
         };
         for (size_t index = 0;
              index < sizeof(admin_syscalls) / sizeof(admin_syscalls[0]);
@@ -383,7 +384,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             0U, 1U, SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS,
             SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_OPEN, SYS_READ,
             SYS_CLOSE, SYS_STAT, SYS_READDIR_BATCH, SYS_DRIVE_INFO,
-            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL,
+            SYS_STORAGE_BULK
         };
         for (size_t index = 0;
              index < sizeof(maintenance_syscalls) /

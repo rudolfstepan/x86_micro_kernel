@@ -25,14 +25,14 @@ class SyscallAbiSourceTests(unittest.TestCase):
 
     def test_common_list_is_complete_append_only_v1(self) -> None:
         self.assertIn("REIST_SYSCALL_ABI_VERSION 1U", self.common)
-        self.assertIn("REIST_SYSCALL_COUNT 124U", self.common)
+        self.assertIn("REIST_SYSCALL_COUNT 125U", self.common)
         entries = re.findall(
             r"^\s*X\(([A-Z][A-Z0-9_]*), ([A-Z][A-Z0-9_]*), "
             r"([0-9]+)U\)", self.common, re.MULTILINE)
-        self.assertEqual(len(entries), 124)
-        self.assertEqual([int(item[2]) for item in entries], list(range(124)))
-        self.assertEqual(len({item[0] for item in entries}), 124)
-        self.assertEqual(len({item[1] for item in entries}), 124)
+        self.assertEqual(len(entries), 125)
+        self.assertEqual([int(item[2]) for item in entries], list(range(125)))
+        self.assertEqual(len({item[0] for item in entries}), 125)
+        self.assertEqual(len({item[1] for item in entries}), 125)
         self.assertEqual(entries[8],
                          ("INSTALL_IRQ", "RESERVED_INSTALL_IRQ", "8"))
         self.assertEqual(entries[90], ("ADMIN_STORAGE", "ADMIN_STORAGE", "90"))
@@ -43,6 +43,8 @@ class SyscallAbiSourceTests(unittest.TestCase):
         self.assertEqual(entries[122], ("FSTAT", "FSTAT", "122"))
         self.assertEqual(entries[123],
                          ("FTRUNCATE", "FTRUNCATE", "123"))
+        self.assertEqual(entries[124],
+                         ("STORAGE_BULK", "STORAGE_BULK", "124"))
 
     def test_generated_compatibility_names_remain_exact(self) -> None:
         entries = re.findall(
@@ -66,7 +68,7 @@ class SyscallAbiSourceTests(unittest.TestCase):
             [sys.executable, "scripts/generate_syscall_abi.py", "--check"],
             cwd=ROOT, capture_output=True, text=True, timeout=10, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("SYSCALL_ABI_CHECK_OK count=124", result.stdout)
+        self.assertIn("SYSCALL_ABI_CHECK_OK count=125", result.stdout)
         after = [hashlib.sha256(path.read_bytes()).digest() for path in paths]
         self.assertEqual(after, before)
         self.assertIn("replacements != 1", self.generator)

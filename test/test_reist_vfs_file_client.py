@@ -41,6 +41,10 @@ class ReistVfsFileClientTests(unittest.TestCase):
                       "X86OS_VFS_SHADOW_OBJECT_DELEGATE",
                       "X86OS_VFS_SHADOW_OBJECT_ADOPT"):
             self.assertIn(token, source)
+        for token in ("reist_vfs_file_read_bulk",
+                      "X86OS_VFS_SHADOW_OBJECT_BULK_READ",
+                      "X86OS_STORAGE_VFS_BULK_READ", "file_crc32"):
+            self.assertIn(token, source)
         for forbidden in ("malloc(", "free(", "x86os_open(", "x86os_read(",
                           "x86os_close(", "x86os_readdir", "reist_vfs_read_at",
                           "reist_vfs_stat", "char path["):

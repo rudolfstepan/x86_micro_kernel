@@ -33,6 +33,9 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_VFS_WRITE", header)
         self.assertIn("STORAGE_REQUEST_VFS_SYNC", header)
         self.assertIn("STORAGE_REQUEST_VFS_SHADOW_STAT = 31", header)
+        self.assertIn("STORAGE_REQUEST_VFS_BULK_READ = 32", header)
+        self.assertIn("STORAGE_REQUEST_BULK_CAPACITY 2U", header)
+        self.assertIn("STORAGE_REQUEST_BULK_MAX_BYTES (64U * 1024U)", header)
         self.assertIn("operation_has_input", source)
         self.assertIn("operation_has_output", source)
         self.assertNotIn("k_malloc", source)
@@ -94,6 +97,20 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("storage_data_copy_t shadow", source)
         self.assertIn("crc32_bytes", source)
         self.assertIn("if (!primary_valid && !shadow_valid)", source)
+
+    def test_bulk_transfer_is_fixed_crc_checked_and_owner_scoped(self):
+        header = (ROOT / "include/kernel/storage_request_pool.h").read_text()
+        source = (ROOT / "kernel/init/storage_request_pool.c").read_text()
+        syscall = (ROOT / "kernel/syscall/syscall_table.c").read_text()
+        for token in ("storage_request_bulk_publish",
+                      "storage_request_bulk_collect"):
+            self.assertIn(token, header)
+            self.assertIn(token, source)
+        self.assertIn("STORAGE_BULK_REVOKED", source)
+        self.assertIn("crc32_bytes(bulk->bytes, length)", source)
+        self.assertNotIn("k_malloc", source)
+        self.assertIn("case SYS_STORAGE_BULK", syscall)
+        self.assertIn("scheduler_preempt_disable", syscall)
 
     def test_process_exit_cancels_generation_scoped_requests(self):
         process = (ROOT / "kernel/proc/process.c").read_text()

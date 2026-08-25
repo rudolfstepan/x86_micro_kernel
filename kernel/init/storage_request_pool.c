@@ -75,7 +75,25 @@ typedef struct {
     storage_data_copy_t shadow;
 } storage_slot_t;
 
+typedef enum {
+    STORAGE_BULK_FREE = 0,
+    STORAGE_BULK_RESERVED = 1,
+    STORAGE_BULK_WRITING = 2,
+    STORAGE_BULK_PUBLISHED = 3,
+    STORAGE_BULK_READING = 4,
+    STORAGE_BULK_REVOKED = 5,
+} storage_bulk_state_t;
+
+typedef struct {
+    uint32_t state;
+    storage_request_handle_t request_handle;
+    uint32_t length;
+    uint32_t crc32;
+    uint8_t bytes[STORAGE_REQUEST_BULK_MAX_BYTES];
+} storage_bulk_slot_t;
+
 static storage_slot_t slots[STORAGE_REQUEST_POOL_CAPACITY];
+static storage_bulk_slot_t bulk_slots[STORAGE_REQUEST_BULK_CAPACITY];
 static critical_object_t protected_service_identity;
 static storage_request_stats_t request_stats;
 
@@ -132,7 +150,7 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_VFS_SHADOW_STAT)
+        value->operation > STORAGE_REQUEST_VFS_BULK_READ)
         return false;
     if (value->state == STORAGE_SLOT_QUEUED &&
         (value->service_pid != 0 || value->service_generation != 0U))
@@ -186,13 +204,15 @@ static uint64_t deadline_after(uint64_t now_ms, uint32_t timeout_ms) {
 static bool operation_has_input(uint32_t operation) {
     return operation == STORAGE_REQUEST_BLOCK_WRITE ||
            operation == STORAGE_REQUEST_VFS_WRITE ||
-           operation == STORAGE_REQUEST_VFS_SHADOW_STAT;
+           operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
+           operation == STORAGE_REQUEST_VFS_BULK_READ;
 }
 
 static bool operation_has_output(uint32_t operation) {
     return operation == STORAGE_REQUEST_BLOCK_READ ||
            operation == STORAGE_REQUEST_VFS_READ ||
-           operation == STORAGE_REQUEST_VFS_SHADOW_STAT;
+           operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
+           operation == STORAGE_REQUEST_VFS_BULK_READ;
 }
 
 static bool identity_valid(const void *payload, size_t length) {
@@ -264,6 +284,47 @@ static storage_request_handle_t make_handle(size_t slot, uint32_t generation) {
     return (generation << 8U) | (uint32_t)(slot + 1U);
 }
 
+static storage_bulk_slot_t *bulk_find(storage_request_handle_t handle) {
+    for (size_t slot = 0U; slot < STORAGE_REQUEST_BULK_CAPACITY; ++slot)
+        if (bulk_slots[slot].state != STORAGE_BULK_FREE &&
+            bulk_slots[slot].request_handle == handle) return &bulk_slots[slot];
+    return NULL;
+}
+
+static storage_bulk_slot_t *bulk_reserve(storage_request_handle_t handle) {
+    for (size_t slot = 0U; slot < STORAGE_REQUEST_BULK_CAPACITY; ++slot) {
+        if (bulk_slots[slot].state != STORAGE_BULK_FREE) continue;
+        bulk_slots[slot].state = STORAGE_BULK_RESERVED;
+        bulk_slots[slot].request_handle = handle;
+        bulk_slots[slot].length = 0U;
+        bulk_slots[slot].crc32 = 0U;
+        return &bulk_slots[slot];
+    }
+    return NULL;
+}
+
+static void bulk_release(storage_request_handle_t handle) {
+    storage_bulk_slot_t *bulk = bulk_find(handle);
+    if (bulk == NULL) return;
+    if (bulk->state == STORAGE_BULK_WRITING ||
+        bulk->state == STORAGE_BULK_READING) {
+        bulk->state = STORAGE_BULK_REVOKED;
+        return;
+    }
+    bulk->state = STORAGE_BULK_FREE;
+    bulk->request_handle = 0U;
+    bulk->length = 0U;
+    bulk->crc32 = 0U;
+}
+
+static void bulk_clear(storage_bulk_slot_t *bulk) {
+    if (bulk == NULL) return;
+    bulk->state = STORAGE_BULK_FREE;
+    bulk->request_handle = 0U;
+    bulk->length = 0U;
+    bulk->crc32 = 0U;
+}
+
 static int resolve_handle(storage_request_handle_t handle, size_t *slot_out,
                           storage_slot_metadata_t *metadata) {
     uint32_t encoded_slot = handle & STORAGE_HANDLE_SLOT_MASK;
@@ -290,6 +351,7 @@ static int release_slot(size_t slot,
             .generation = STORAGE_HANDLE_GENERATION_MAX,
         }
         : (storage_slot_metadata_t){.generation = generation + 1U};
+    bulk_release(make_handle(slot, metadata->generation));
     clear_data(slot);
     int result = store_metadata(slot, &replacement);
     if (result == 0) request_removed();
@@ -309,6 +371,7 @@ int storage_request_pool_init(void) {
                 sizeof(metadata)) != 0) return STORAGE_EINTEGRITY;
         clear_data(slot);
     }
+    memset(bulk_slots, 0, sizeof(bulk_slots));
     request_stats = (storage_request_stats_t){
         .version = STORAGE_REQUEST_STATS_VERSION,
         .struct_size = sizeof(storage_request_stats_t),
@@ -348,7 +411,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_VFS_SHADOW_STAT ||
+        request->operation > STORAGE_REQUEST_VFS_BULK_READ ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
@@ -387,7 +450,8 @@ static int submit_locked(int client_pid, uint32_t client_generation,
          request->operation == STORAGE_REQUEST_VFS_WRITE) &&
         (request->length == 0U ||
          request->length > STORAGE_REQUEST_BLOCK_SIZE)) return STORAGE_EMSGSIZE;
-    if (request->operation == STORAGE_REQUEST_VFS_SHADOW_STAT &&
+    if ((request->operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
+         request->operation == STORAGE_REQUEST_VFS_BULK_READ) &&
         request->length != STORAGE_REQUEST_BLOCK_SIZE) return STORAGE_EMSGSIZE;
     if (request->length != expected) return STORAGE_EMSGSIZE;
     if (operation_has_input(request->operation) && block_data == NULL)
@@ -406,6 +470,18 @@ static int submit_locked(int client_pid, uint32_t client_generation,
     if (client_requests >= STORAGE_REQUEST_MAX_PER_CLIENT) {
         increment_saturating(&request_stats.client_capacity_rejections);
         return STORAGE_ENOSPC;
+    }
+    if (request->operation == STORAGE_REQUEST_VFS_BULK_READ) {
+        bool bulk_available = false;
+        for (size_t slot = 0U; slot < STORAGE_REQUEST_BULK_CAPACITY; ++slot)
+            if (bulk_slots[slot].state == STORAGE_BULK_FREE) {
+                bulk_available = true;
+                break;
+            }
+        if (!bulk_available) {
+            increment_saturating(&request_stats.pool_capacity_rejections);
+            return STORAGE_ENOSPC;
+        }
     }
     for (size_t slot = 0U; slot < STORAGE_REQUEST_POOL_CAPACITY; ++slot) {
         storage_slot_metadata_t metadata;
@@ -441,8 +517,17 @@ static int submit_locked(int client_pid, uint32_t client_generation,
             clear_data(slot);
             return result;
         }
+        storage_request_handle_t handle = make_handle(slot, generation);
+        if (request->operation == STORAGE_REQUEST_VFS_BULK_READ &&
+            bulk_reserve(handle) == NULL) {
+            storage_slot_metadata_t replacement = {.generation = generation + 1U};
+            clear_data(slot);
+            (void)store_metadata(slot, &replacement);
+            increment_saturating(&request_stats.pool_capacity_rejections);
+            return STORAGE_ENOSPC;
+        }
         request_added();
-        *handle_out = make_handle(slot, generation);
+        *handle_out = handle;
         return 0;
     }
     increment_saturating(&request_stats.pool_capacity_rejections);
@@ -524,6 +609,15 @@ static int complete_locked(int service_pid, uint32_t service_generation,
         return STORAGE_EACCES;
     if (metadata.state == STORAGE_SLOT_CANCEL_PENDING)
         return release_slot(slot, &metadata);
+    if (result_code == 0 &&
+        metadata.operation == STORAGE_REQUEST_VFS_BULK_READ) {
+        storage_bulk_slot_t *bulk = bulk_find(handle);
+        if (bulk == NULL || bulk->state != STORAGE_BULK_PUBLISHED)
+            return STORAGE_EINVAL;
+    }
+    if (result_code != 0 &&
+        metadata.operation == STORAGE_REQUEST_VFS_BULK_READ)
+        bulk_release(handle);
     if (result_code == 0 && operation_has_output(metadata.operation)) {
         if (block_data == NULL) return STORAGE_EINVAL;
         store_data(slot, block_data, metadata.length);
@@ -547,6 +641,8 @@ static int collect_locked(int client_pid, uint32_t client_generation,
     if (metadata.state == STORAGE_SLOT_CANCEL_PENDING)
         return STORAGE_ECANCELED;
     if (metadata.state != STORAGE_SLOT_COMPLETE) return STORAGE_EAGAIN;
+    if (metadata.operation == STORAGE_REQUEST_VFS_BULK_READ)
+        return STORAGE_EINVAL;
     uint32_t data_length = metadata.result == 0 &&
         operation_has_output(metadata.operation) ? metadata.length : 0U;
     if (metadata.result == 0 && operation_has_output(metadata.operation)) {
@@ -685,6 +781,122 @@ int storage_request_collect_ex(int client_pid, uint32_t client_generation,
     return result;
 }
 
+int storage_request_bulk_publish(int service_pid, uint32_t service_generation,
+        storage_request_handle_t handle, const uint8_t *data,
+        uint32_t length) {
+    if (service_pid <= 0 || service_generation == 0U ||
+        length > STORAGE_REQUEST_BULK_MAX_BYTES ||
+        (length != 0U && data == NULL)) return STORAGE_EINVAL;
+    uint32_t flags = storage_pool_lock();
+    size_t request_slot = 0U;
+    storage_slot_metadata_t metadata;
+    int result = resolve_handle(handle, &request_slot, &metadata);
+    (void)request_slot;
+    storage_bulk_slot_t *bulk = result == 0 ? bulk_find(handle) : NULL;
+    if (result == 0 &&
+        (metadata.operation != STORAGE_REQUEST_VFS_BULK_READ ||
+         metadata.state != STORAGE_SLOT_CLAIMED ||
+         metadata.service_pid != service_pid ||
+         metadata.service_generation != service_generation))
+        result = STORAGE_EACCES;
+    if (result == 0 &&
+        (bulk == NULL || bulk->state != STORAGE_BULK_RESERVED))
+        result = STORAGE_EINVAL;
+    if (result == 0) bulk->state = STORAGE_BULK_WRITING;
+    storage_pool_unlock(flags);
+    if (result != 0) return result;
+
+    if (length != 0U) memcpy(bulk->bytes, data, length);
+    uint32_t crc = crc32_bytes(bulk->bytes, length);
+
+    flags = storage_pool_lock();
+    if (bulk->request_handle != handle || bulk->state == STORAGE_BULK_REVOKED) {
+        bulk_clear(bulk);
+        result = STORAGE_ECANCELED;
+    } else if (bulk->state != STORAGE_BULK_WRITING) {
+        bulk_clear(bulk);
+        result = STORAGE_EINTEGRITY;
+    } else {
+        bulk->length = length;
+        bulk->crc32 = crc;
+        bulk->state = STORAGE_BULK_PUBLISHED;
+        result = 0;
+    }
+    storage_pool_unlock(flags);
+    return result;
+}
+
+int storage_request_bulk_collect(int client_pid, uint32_t client_generation,
+        storage_request_handle_t handle, int32_t *result_out,
+        uint8_t *frame_out, uint8_t *data_out, uint32_t capacity,
+        uint32_t *transferred_out) {
+    if (client_pid <= 0 || client_generation == 0U || result_out == NULL ||
+        frame_out == NULL || transferred_out == NULL ||
+        capacity > STORAGE_REQUEST_BULK_MAX_BYTES ||
+        (capacity != 0U && data_out == NULL)) return STORAGE_EINVAL;
+    uint32_t flags = storage_pool_lock();
+    size_t request_slot = 0U;
+    storage_slot_metadata_t metadata;
+    int result = resolve_handle(handle, &request_slot, &metadata);
+    if (result == 0 &&
+        (metadata.client_pid != client_pid ||
+         metadata.client_generation != client_generation))
+        result = STORAGE_EACCES;
+    if (result == 0 && metadata.state != STORAGE_SLOT_COMPLETE)
+        result = STORAGE_EAGAIN;
+    if (result == 0 && metadata.operation != STORAGE_REQUEST_VFS_BULK_READ)
+        result = STORAGE_EINVAL;
+    storage_bulk_slot_t *bulk = result == 0 ? bulk_find(handle) : NULL;
+    uint32_t length = 0U;
+    uint32_t crc = 0U;
+    if (result == 0 && metadata.result == 0) {
+        if (bulk == NULL || bulk->state != STORAGE_BULK_PUBLISHED)
+            result = STORAGE_EINTEGRITY;
+        else if (bulk->length > capacity)
+            result = STORAGE_EMSGSIZE;
+        else {
+            length = bulk->length;
+            crc = bulk->crc32;
+            bulk->state = STORAGE_BULK_READING;
+        }
+    }
+    if (result == 0 && load_data(request_slot, frame_out,
+                                  STORAGE_REQUEST_BLOCK_SIZE) != 0)
+        result = STORAGE_EINTEGRITY;
+    if (result != 0) {
+        storage_pool_unlock(flags);
+        return result;
+    }
+    if (metadata.result != 0) {
+        *result_out = metadata.result;
+        *transferred_out = 0U;
+        result = release_slot(request_slot, &metadata);
+        storage_pool_unlock(flags);
+        return result;
+    }
+    storage_pool_unlock(flags);
+
+    bool payload_valid = crc == crc32_bytes(bulk->bytes, length);
+    if (payload_valid && length != 0U) memcpy(data_out, bulk->bytes, length);
+
+    flags = storage_pool_lock();
+    if (bulk->request_handle != handle || bulk->state == STORAGE_BULK_REVOKED) {
+        bulk_clear(bulk);
+        result = STORAGE_ECANCELED;
+    } else if (bulk->state != STORAGE_BULK_READING || !payload_valid) {
+        bulk_clear(bulk);
+        (void)release_slot(request_slot, &metadata);
+        result = STORAGE_EINTEGRITY;
+    } else {
+        bulk_clear(bulk);
+        *result_out = metadata.result;
+        *transferred_out = length;
+        result = release_slot(request_slot, &metadata);
+    }
+    storage_pool_unlock(flags);
+    return result;
+}
+
 int storage_request_cancel(int client_pid, uint32_t client_generation,
                            storage_request_handle_t handle) {
     uint32_t flags = storage_pool_lock();
@@ -727,6 +939,14 @@ int storage_request_test_corrupt_metadata(storage_request_handle_t handle,
     size_t slot = encoded_slot - 1U;
     slots[slot].metadata.primary.crc32 ^= 1U;
     if (corrupt_both_copies) slots[slot].metadata.shadow.crc32 ^= 2U;
+    return 0;
+}
+
+int storage_request_test_corrupt_bulk(storage_request_handle_t handle) {
+    storage_bulk_slot_t *bulk = bulk_find(handle);
+    if (bulk == NULL || bulk->state != STORAGE_BULK_PUBLISHED)
+        return STORAGE_EINVAL;
+    bulk->bytes[0] ^= 1U;
     return 0;
 }
 #endif

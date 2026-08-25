@@ -477,6 +477,8 @@ _Static_assert(sizeof(x86os_storage_descriptor_t) == 28U,
                "storage descriptor ABI changed");
 _Static_assert(sizeof(x86os_storage_descriptor_v2_t) == 40U,
                "storage descriptor v2 ABI changed");
+_Static_assert(sizeof(x86os_storage_bulk_control_t) == 32U,
+               "storage bulk control ABI changed");
 _Static_assert(sizeof(x86os_vfs_shadow_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
                "VFS shadow frame must fill one protected request payload");
 
@@ -558,6 +560,48 @@ int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
 
 int x86os_storage_cancel(x86os_storage_handle_t handle) {
     return (int)x86os_syscall(X86OS_SYS_STORAGE_CANCEL, handle, 0U, 0U);
+}
+
+int x86os_storage_bulk_publish(x86os_storage_handle_t handle,
+                               const void *data, uint32_t length) {
+    if (handle == 0U || (length != 0U && data == NULL) ||
+        length > X86OS_STORAGE_BULK_MAX_BYTES) return -22;
+    x86os_storage_bulk_control_t control = {
+        .version = X86OS_STORAGE_BULK_VERSION,
+        .struct_size = sizeof(control),
+        .operation = X86OS_STORAGE_BULK_PUBLISH,
+        .handle = handle,
+        .length = length,
+    };
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_BULK,
+                              (uintptr_t)&control, 0U, (uintptr_t)data);
+}
+
+int x86os_storage_bulk_collect(x86os_storage_handle_t handle,
+                               int32_t *result, void *frame, void *data,
+                               uint32_t capacity, uint32_t *transferred) {
+    if (handle == 0U || result == NULL || frame == NULL || data == NULL ||
+        transferred == NULL || capacity == 0U ||
+        capacity > X86OS_STORAGE_BULK_MAX_BYTES) return -22;
+    x86os_storage_bulk_control_t control = {
+        .version = X86OS_STORAGE_BULK_VERSION,
+        .struct_size = sizeof(control),
+        .operation = X86OS_STORAGE_BULK_COLLECT,
+        .handle = handle,
+        .length = capacity,
+    };
+    int status = (int)x86os_syscall(X86OS_SYS_STORAGE_BULK,
+                                    (uintptr_t)&control,
+                                    (uintptr_t)frame, (uintptr_t)data);
+    if (status != 0) return status;
+    if (control.version != X86OS_STORAGE_BULK_VERSION ||
+        control.struct_size != sizeof(control) ||
+        control.operation != X86OS_STORAGE_BULK_COLLECT ||
+        control.handle != handle || control.length != capacity ||
+        control.reserved != 0U || control.transferred > capacity) return -84;
+    *result = control.result;
+    *transferred = control.transferred;
+    return 0;
 }
 
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,

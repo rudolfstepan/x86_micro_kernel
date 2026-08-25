@@ -144,7 +144,8 @@ enum {
     X86OS_SYS_OPEN_FLAGS = 120,
     X86OS_SYS_LSEEK = 121,
     X86OS_SYS_FSTAT = 122,
-    X86OS_SYS_FTRUNCATE = 123
+    X86OS_SYS_FTRUNCATE = 123,
+    X86OS_SYS_STORAGE_BULK = 124
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -624,6 +625,11 @@ typedef struct {
 #define X86OS_STORAGE_SALVAGE_FAT12_ORPHANS 29U
 #define X86OS_STORAGE_RECORD_FAT12_BAD_SECTOR 30U
 #define X86OS_STORAGE_VFS_SHADOW_STAT 31U
+#define X86OS_STORAGE_VFS_BULK_READ 32U
+#define X86OS_STORAGE_BULK_VERSION 1U
+#define X86OS_STORAGE_BULK_PUBLISH 1U
+#define X86OS_STORAGE_BULK_COLLECT 2U
+#define X86OS_STORAGE_BULK_MAX_BYTES (64U * 1024U)
 #define X86OS_FAT12_RESULT_MIRROR_MISMATCH (1U << 0)
 #define X86OS_FAT12_RESULT_PRIMARY_INVALID (1U << 1)
 #define X86OS_FAT12_RESULT_SECONDARY_INVALID (1U << 2)
@@ -685,6 +691,16 @@ typedef struct {
     uint32_t client_generation;
     uint32_t service_generation;
 } x86os_storage_descriptor_v2_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    x86os_storage_handle_t handle;
+    uint32_t length;
+    int32_t result;
+    uint32_t transferred;
+    uint32_t reserved;
+} x86os_storage_bulk_control_t;
 
 #define X86OS_VFS_SHADOW_FRAME_VERSION 1U
 #define X86OS_VFS_SHADOW_STAT 1U
@@ -701,6 +717,7 @@ typedef struct {
 #define X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS 12U
 #define X86OS_VFS_SHADOW_OBJECT_DELEGATE 13U
 #define X86OS_VFS_SHADOW_OBJECT_ADOPT 14U
+#define X86OS_VFS_SHADOW_OBJECT_BULK_READ 15U
 #define X86OS_VFS_OBJECT_RIGHT_READ     (1U << 0)
 #define X86OS_VFS_OBJECT_RIGHT_SEEK     (1U << 1)
 #define X86OS_VFS_OBJECT_RIGHT_STAT     (1U << 2)
@@ -780,6 +797,21 @@ typedef struct {
     uint8_t data[X86OS_VFS_SHADOW_READ_CAPACITY];
     uint32_t reserved[54];
 } x86os_vfs_shadow_object_read_frame_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    int32_t result;
+    uint32_t object_token;
+    uint32_t service_generation;
+    uint32_t offset;
+    uint32_t requested;
+    uint32_t transferred;
+    uint32_t data_crc32;
+    uint32_t reserved[117];
+} x86os_vfs_shadow_object_bulk_read_frame_t;
 
 typedef struct {
     uint32_t version;
@@ -1624,6 +1656,11 @@ int x86os_storage_complete(x86os_storage_handle_t handle, int32_t result,
 int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
                           void *data);
 int x86os_storage_cancel(x86os_storage_handle_t handle);
+int x86os_storage_bulk_publish(x86os_storage_handle_t handle,
+                               const void *data, uint32_t length);
+int x86os_storage_bulk_collect(x86os_storage_handle_t handle,
+                               int32_t *result, void *frame, void *data,
+                               uint32_t capacity, uint32_t *transferred);
 int x86os_ipc_delegate(x86os_ipc_handle_t handle, int target_pid,
                        uint32_t rights);
 int x86os_reist_report(uint32_t report_type, uint32_t value);

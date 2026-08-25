@@ -760,8 +760,6 @@ static int shadow_read_file(shadow_volume_t *volume,
         --skip;
     }
     uint32_t amount = size - offset < capacity ? size - offset : capacity;
-    uint8_t scratch[X86OS_VFS_SHADOW_READ_CAPACITY];
-    shadow_zero(scratch, sizeof(scratch));
     uint32_t completed = 0U;
     uint8_t sector[X86OS_STORAGE_BLOCK_SIZE];
     while (completed < amount) {
@@ -775,7 +773,7 @@ static int shadow_read_file(shadow_volume_t *volume,
         if (status != 0) return status;
         uint32_t chunk = X86OS_STORAGE_BLOCK_SIZE - in_sector;
         if (chunk > amount - completed) chunk = amount - completed;
-        shadow_copy(scratch + completed, sector + in_sector, chunk);
+        shadow_copy(data + completed, sector + in_sector, chunk);
         completed += chunk;
         in_cluster += chunk;
         if (in_cluster < cluster_bytes || completed == amount) continue;
@@ -791,7 +789,6 @@ static int shadow_read_file(shadow_volume_t *volume,
         cluster = next;
         in_cluster = 0U;
     }
-    shadow_copy(data, scratch, completed);
     *transferred = completed;
     return 0;
 }
@@ -811,8 +808,13 @@ int reist_vfs_shadow_fat_read(const reist_vfs_shadow_io_t *io,
     int status = shadow_resolve(io, absolute_path, path_length, &volume,
                                 &entry, visible, 0, 0);
     if (status != 0) return status;
-    return shadow_read_file(&volume, &entry, offset, data, capacity,
-                            transferred);
+    status = shadow_read_file(&volume, &entry, offset, data, capacity,
+                              transferred);
+    if (status != 0) {
+        shadow_zero(data, capacity);
+        *transferred = 0U;
+    }
+    return status;
 }
 
 static int shadow_readdir_sector(const uint8_t sector[512], uint32_t wanted,
@@ -1024,7 +1026,7 @@ int reist_vfs_shadow_fat_object_read(
         const reist_vfs_shadow_object_t *object, uint32_t offset,
         uint8_t *data, uint32_t capacity, uint32_t *transferred) {
     if (data == 0 || transferred == 0 || capacity == 0U ||
-        capacity > X86OS_VFS_SHADOW_READ_CAPACITY) return -22;
+        capacity > X86OS_STORAGE_BULK_MAX_BYTES) return -22;
     shadow_zero(data, capacity);
     *transferred = 0U;
     shadow_volume_t volume;
@@ -1034,6 +1036,11 @@ int reist_vfs_shadow_fat_object_read(
     char visible[256];
     status = shadow_object_entry(&volume, object, &entry, visible);
     if (status != 0) return status;
-    return shadow_read_file(&volume, &entry, offset, data, capacity,
-                            transferred);
+    status = shadow_read_file(&volume, &entry, offset, data, capacity,
+                              transferred);
+    if (status != 0) {
+        shadow_zero(data, capacity);
+        *transferred = 0U;
+    }
+    return status;
 }
