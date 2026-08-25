@@ -188,7 +188,12 @@ Cross-Cluster-VFS-Erweiterung nach jedem tatsächlich abgeschlossenen
 exakten alten oder finalen Wert entsprechen. Ein erfolgreicher frischer Mount
 muss anschließend das ganze alte oder ganze neue Abbild liefern; eine
 intrinsisch uneindeutige redundante Headerlage bleibt sichtbar fail-closed.
-Die getrennte FAT32-Abbildkampagne bleibt offen.
+FAT32/ATA erfüllt denselben vollständigen Abbildvertrag über den auch im
+Produktionscontroller verwendeten transportneutralen Journal-v2-Kern. Eine
+feste 20-Sektor-Pending-Ablage beantwortet Reads innerhalb der Transaktion und
+publiziert pro Zielsektor erst beim Commit dessen endgültige 512 Bytes unter
+Storage-Supervision. Die Hostkampagne prüft jeden gemessenen Rohwrite-Cut,
+beide FAT-Kopien, die Zweicluster-Nullerweiterung und eine unabhängige Datei.
 
 ## Adapterstatus
 

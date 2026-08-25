@@ -1,11 +1,25 @@
 # Projektstatus
 
-Stand: 24. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
+Stand: 25. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
 aktive Paketqueue in `automation/reist-s03b.toml`.
 
 REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
+
+`R2.2-fat32-ata-image-fault-campaign` schließt die zweite Hälfte der
+vollständigen Sektorwrite-Fehlermatrix. Der unveränderte Journal-v2-Datensatz
+liegt jetzt in einem festen transportneutralen Kern, den ATA/AHCI und der
+FAT32-Hostharness gemeinsam verwenden. Bis zu 20 Zielsektoren werden nach
+persistiertem Undo und `ACTIVE` in fester Pending-Ablage zusammengeführt;
+transaktionsinterne Reads sehen den letzten Stand, physisch wird beim Commit
+nur die endgültige Fassung unter Storage-Supervision publiziert. Eine echte
+0→700-Byte-VFS-Erweiterung wird nach jedem gemessenen Rohwrite gekappt. Der
+Abbildprüfer verlangt vor Recovery alte oder finale ganze Nichtjournalsektoren
+und nach frischem Mount ein vollständig altes oder neues Image einschließlich
+Nullbytes, Kette, FAT-Spiegel und unabhängiger Datei; echte Headerambiguität
+bleibt separat fail-closed. Es gibt keinen Produktions-Fault-Hook und keine
+Format- oder ABI-Änderung.
 
 `R2.2-fat12-image-fault-campaign` ergänzt die bisherige isolierte
 Journal-Fehlermatrix um eine vollständige VFS-Transaktion. Eine gesunde
@@ -16,7 +30,7 @@ Der Abbildprüfer lässt außerhalb des Journals nur ganze alte oder finale
 Sektoren zu. Erfolgreiche frische Mounts müssen vollständig alten oder neuen
 Zustand einschließlich Nullbytes, Kette, FAT-Spiegel und unabhängiger Datei
 zeigen; echte Headerambiguität zählt separat als fail-closed Ablehnung. Es gibt
-keinen Produktions-Fault-Hook. Die FAT32-/ATA-Hälfte folgt getrennt.
+keinen Produktions-Fault-Hook.
 
 `R2.2-open-namespace-locks` schließt die erste offene Handle-Lücke der FAT-
 Namespace-Mutation. Bis zu 256 Nicht-Root-Nodes werden statisch registriert.

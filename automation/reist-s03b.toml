@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2-fat32-ata-image-fault-campaign"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2-fat32-ata-image-fault-campaign"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Exhaustive FAT32 ATA-journal image write-cut campaign"
@@ -68,7 +68,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "test: exhaust FAT32 ATA journal write cuts"
-evidence = []
+evidence = [
+  "seven focused full-image campaign contracts and nine ATA journal contracts passed",
+  "the complete FAT32 VFS host campaign passed in 1.2 seconds across every measured raw-sector write cut",
+  "the shared fixed journal core coalesces repeated target writes and preserves old-or-final whole-sector images with no ABI or format change",
+  "QEMU VGA package gate passed in 4 seconds",
+  "normal QEMU runtime passed in 27 seconds with TEST_OK"
+]
 
 [[packages]]
 id = "R2.2-fat12-image-fault-campaign"

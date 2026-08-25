@@ -2,12 +2,15 @@ import binascii
 import io
 import pathlib
 import struct
+import sys
 import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from scripts.create_native_boot_image import write_fat32_volume
 
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
 SECTOR = 512
 MAGIC = 0x4A545352
 
@@ -32,56 +35,69 @@ class ReistUndoJournalTests(unittest.TestCase):
         self.assertEqual(image.read(SECTOR), header)
 
     def test_kernel_orders_undo_data_active_target_then_clean(self):
-        source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
-        start = source.index("static bool ata_write_sector_journaled")
-        end = source.index("bool ata_journal_attach", start)
+        source = (ROOT / "drivers/block/ata_journal.c").read_text(
+            encoding="utf-8")
+        start = source.index("bool ata_undo_journal_write_sector")
+        end = source.index("bool ata_undo_journal_attach", start)
         body = source[start:end]
         body = body[body.index("uint8_t old_data"):]
         ordered = [
-            "ata_journal_read_transport(base, lba",
-            "ata_journal_write_transport(base, ata_journal.data_lba + slot",
-            "ata_journal_write_active()",
-            "ata_journal_write_transport(base, lba, buffer",
-            "ata_journal_transaction_end(result)",
+            "read_sector(journal, base, lba",
+            "write_sector(journal, base, journal->data_lba + slot",
+            "memcpy(journal->pending_data[slot]",
+            "write_active(journal)",
         ]
         position = -1
         for token in ordered:
             next_position = body.index(token)
             self.assertGreater(next_position, position, token)
             position = next_position
+        commit = source[source.index("static bool transaction_end"):
+                        source.index("bool ata_undo_journal_transaction_end")]
+        self.assertLess(commit.index("commit_write("),
+                        commit.index("clear_journal(journal)"))
 
     def test_recovery_validates_crc_before_restoring_and_clearing(self):
-        source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
-        start = source.index("bool ata_journal_attach")
-        end = source.index("bool ata_write_sector(", start)
+        source = (ROOT / "drivers/block/ata_journal.c").read_text(
+            encoding="utf-8")
+        start = source.index("bool ata_undo_journal_attach")
+        end = source.index("bool ata_undo_journal_is_attached", start)
         body = source[start:end]
         self.assertIn("primary.magic == ATA_JOURNAL_MAGIC", body)
         self.assertIn("mirror.magic == ATA_JOURNAL_MAGIC", body)
-        self.assertIn("ata_journal_record_valid(&record)", body)
+        self.assertIn("record_valid(&record)", body)
         self.assertIn("record.entries[index].data_crc32", body)
         self.assertIn("data_lba + index", body)
-        self.assertIn("ata_journal_write_transport(base, target, data", body)
-        self.assertIn("if (!result) ata_fence_writes();", body)
+        self.assertIn("write_sector(journal, base, target, data", body)
+        ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        self.assertIn("if (!result) ata_fence_writes();", ata)
 
     def test_vfs_transaction_spans_multiple_unique_sector_updates(self):
-        ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        ata = (ROOT / "drivers/block/ata_journal.c").read_text(
+            encoding="utf-8")
+        header = (ROOT / "drivers/block/ata_journal.h").read_text(
+            encoding="utf-8")
         fs = (ROOT / "kernel/init/filesystem_safety.c").read_text(encoding="utf-8")
-        self.assertIn("#define ATA_JOURNAL_MAX_ENTRIES 20U", ata)
-        self.assertIn("ata_journal.entries[i].target_lba == lba", ata)
-        self.assertIn("ata_journal.entry_count >= ATA_JOURNAL_MAX_ENTRIES", ata)
+        self.assertIn("#define ATA_JOURNAL_MAX_ENTRIES 20U", header)
+        self.assertIn("journal->entries[i].target_lba == lba", ata)
+        self.assertIn("journal->entry_count >= ATA_JOURNAL_MAX_ENTRIES", ata)
         self.assertIn("ata_journal_transaction_begin()", fs)
         self.assertIn("ata_journal_transaction_end(commit)", fs)
 
     def test_redundant_headers_select_conservatively_and_self_repair(self):
-        source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
-        self.assertIn("#define ATA_JOURNAL_MIRROR_OFFSET 31U", source)
+        source = (ROOT / "drivers/block/ata_journal.c").read_text(
+            encoding="utf-8")
+        header = (ROOT / "drivers/block/ata_journal.h").read_text(
+            encoding="utf-8")
+        self.assertIn("#define ATA_JOURNAL_MIRROR_OFFSET 31U", header)
         self.assertIn("primary.state != mirror.state", source)
         self.assertIn("primary.state == ATA_JOURNAL_ACTIVE ? primary : mirror", source)
-        self.assertIn("else if (result && repair_headers)", source)
-        writer = source[source.index("static bool ata_journal_write_record"):
-                        source.index("static bool ata_journal_clear")]
-        self.assertIn("ata_journal.header_lba", writer)
-        self.assertIn("ata_journal.mirror_lba", writer)
+        self.assertIn("record.state == ATA_JOURNAL_ACTIVE || repair_headers",
+                      source)
+        writer = source[source.index("static bool write_record"):
+                        source.index("void ata_undo_journal_make_clean")]
+        self.assertIn("journal->header_lba", writer)
+        self.assertIn("journal->mirror_lba", writer)
 
     def test_recovery_runs_before_mutable_fat_metadata_is_consumed(self):
         source = (ROOT / "fs/fat32/fat32.c").read_text(encoding="utf-8")
@@ -90,17 +106,18 @@ class ReistUndoJournalTests(unittest.TestCase):
 
     def test_fat32_writes_require_the_exact_current_journal_binding(self):
         ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
-        query = ata[ata.index("static bool ata_journal_is_attached_impl"):
-                    ata.index("bool ata_journal_recover_resource")]
+        core = (ROOT / "drivers/block/ata_journal.c").read_text(
+            encoding="utf-8")
+        query = core[core.index("bool ata_undo_journal_is_attached"):]
         for token in (
-            "ata_journal.enabled",
-            "ata_journal.base == base",
-            "ata_journal.is_master == is_master",
-            "ata_journal.volume_start_lba == partition_lba",
-            "ata_journal.volume_end_lba == partition_lba + volume_sectors",
-            "ata_partition_translate(partition, partition_lba",
+            "journal->enabled",
+            "journal->base == base",
+            "journal->is_master == is_master",
+            "journal->volume_start_lba == partition_lba",
+            "journal->volume_end_lba == partition_lba + volume_sectors",
         ):
             self.assertIn(token, query)
+        self.assertIn("ata_partition_translate(partition, partition_lba", ata)
 
         fat32 = (ROOT / "fs/fat32/fat32.c").read_text(encoding="utf-8")
         prepare = fat32[fat32.index("bool fat32_prepare_write"):
@@ -109,17 +126,17 @@ class ReistUndoJournalTests(unittest.TestCase):
                         prepare.index("ata_journal_attach("))
         self.assertIn("fat32_write_supported = false", prepare)
 
-        transaction = ata[ata.index("bool ata_journal_transaction_begin"):
-                          ata.index("static bool ata_write_sector_journaled")]
-        self.assertNotIn("if (!ata_journal.enabled) return true", transaction)
-        self.assertIn("ata_journal.transaction_depth++", transaction)
-        self.assertIn("if (!ata_journal.enabled)", transaction)
-        attach = ata[ata.index("static bool ata_journal_attach_impl"):
-                     ata.index("bool ata_journal_attach(")]
-        self.assertIn("inherited_transaction_depth", attach)
-        self.assertIn("ata_journal.entry_count != 0U", attach)
-        self.assertIn("ata_journal.transaction_depth = inherited_transaction_depth",
-                      attach)
+        transaction = core[
+            core.index("bool ata_undo_journal_transaction_begin"):
+            core.index("bool ata_undo_journal_write_sector")]
+        self.assertNotIn("if (!journal->enabled) return true", transaction)
+        self.assertIn("journal->transaction_depth++", transaction)
+        self.assertIn("if (!journal->enabled)", transaction)
+        attach = core[core.index("bool ata_undo_journal_attach"):
+                      core.index("bool ata_undo_journal_is_attached")]
+        self.assertIn("inherited_depth", attach)
+        self.assertIn("journal->entry_count != 0U", attach)
+        self.assertIn("journal->transaction_depth = inherited_depth", attach)
 
         direct_writes = []
         for path in (ROOT / "fs/fat32").glob("*.c"):

@@ -8,11 +8,14 @@
  */
 #include "fs/fat32/fat32.h"
 #include "fs/vfs/vfs.h"
+#include "drivers/block/ata_journal.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define TEST_SECTORS 128u
 #define ROOT_DIRECTORY_LBA 3u
+#define FAT32_FAULT_CAMPAIGN_MAX_WRITES 384u
 #define CHECK(condition) do { if (!(condition)) return __LINE__; } while (0)
 
 static uint8_t test_disk[TEST_SECTORS][SECTOR_SIZE];
@@ -31,11 +34,21 @@ static unsigned short journal_base;
 static bool journal_master;
 static uint32_t journal_partition_lba;
 static uint32_t journal_volume_sectors;
+static bool use_production_journal;
+static ata_undo_journal_t host_journal;
+static uint32_t root_directory_lba = ROOT_DIRECTORY_LBA;
+static bool campaign_power_cut;
+static bool campaign_fault_armed;
+static unsigned int campaign_cut_after_write;
+static unsigned int campaign_write_count;
+static uint8_t campaign_baseline[TEST_SECTORS][SECTOR_SIZE];
+static uint8_t campaign_committed[TEST_SECTORS][SECTOR_SIZE];
 drive_t* current_drive;
 
 bool ata_flush_cache(unsigned short base, bool is_master) {
     (void)base;
     (void)is_master;
+    if (campaign_power_cut) return false;
     ++cache_flushes;
     return true;
 }
@@ -48,16 +61,16 @@ static bool sector_has_nonzero_data(const void* buffer) {
     return false;
 }
 
-bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
-                     bool is_master) {
+static bool host_disk_read(unsigned short base, unsigned int lba, void* buffer,
+                           bool is_master) {
     (void)base;
     (void)is_master;
-    if (lba >= TEST_SECTORS || !buffer) return false;
+    if (campaign_power_cut || lba >= TEST_SECTORS || !buffer) return false;
     if (lba == 1 && fat_verify_read_failures > 0) {
         --fat_verify_read_failures;
         return false;
     }
-    if (lba == ROOT_DIRECTORY_LBA && root_read_failures > 0) {
+    if (lba == root_directory_lba && root_read_failures > 0) {
         --root_read_failures;
         return false;
     }
@@ -65,16 +78,17 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
     return true;
 }
 
-bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
-                      bool is_master) {
+static bool host_raw_write(void *context, unsigned short base, uint32_t lba,
+                           const void *buffer, bool is_master) {
+    (void)context;
     (void)base;
     (void)is_master;
-    if (lba >= TEST_SECTORS || !buffer) return false;
-    if (lba == ROOT_DIRECTORY_LBA && fail_directory_write_once) {
+    if (campaign_power_cut || lba >= TEST_SECTORS || !buffer) return false;
+    if (lba == root_directory_lba && fail_directory_write_once) {
         fail_directory_write_once = false;
         return false;
     }
-    if (lba > ROOT_DIRECTORY_LBA && payload_writes_before_failure >= 0 &&
+    if (lba > root_directory_lba && payload_writes_before_failure >= 0 &&
         sector_has_nonzero_data(buffer)) {
         if (payload_writes_before_failure-- == 0) {
             payload_writes_before_failure = -1;
@@ -82,6 +96,11 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
         }
     }
     memcpy(test_disk[lba], buffer, SECTOR_SIZE);
+    if (campaign_fault_armed) {
+        ++campaign_write_count;
+        if (campaign_write_count == campaign_cut_after_write)
+            campaign_power_cut = true;
+    }
     if (lba == 1 && fat_writes_before_verify_failure >= 0) {
         if (fat_writes_before_verify_failure-- == 0) {
             fat_writes_before_verify_failure = -1;
@@ -89,11 +108,39 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
             fat_verify_failure_burst = 1;
         }
     }
-    if (lba == ROOT_DIRECTORY_LBA && fail_directory_verify_once) {
+    if (lba == root_directory_lba && fail_directory_verify_once) {
         fail_directory_verify_once = false;
         root_read_failures = 1;
     }
     return true;
+}
+
+static bool host_raw_read(void *context, unsigned short base, uint32_t lba,
+                          void *buffer, bool is_master) {
+    (void)context;
+    return host_disk_read(base, lba, buffer, is_master);
+}
+
+static const ata_journal_transport_t host_journal_transport = {
+    .read = host_raw_read,
+    .write = host_raw_write,
+    .commit_write = host_raw_write,
+};
+
+bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
+                     bool is_master) {
+    return use_production_journal
+        ? ata_undo_journal_read_sector(&host_journal, base, lba, buffer,
+                                       is_master)
+        : host_disk_read(base, lba, buffer, is_master);
+}
+
+bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
+                      bool is_master) {
+    return use_production_journal
+        ? ata_undo_journal_write_sector(&host_journal, base, lba, buffer,
+                                        is_master)
+        : host_raw_write(NULL, base, lba, buffer, is_master);
 }
 
 bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
@@ -129,23 +176,43 @@ bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
 bool ata_journal_attach(unsigned short base, bool is_master,
                         uint32_t partition_lba, uint32_t volume_sectors,
                         uint16_t reserved_sectors) {
-    (void)reserved_sectors;
     ++journal_attach_count;
-    journal_attached = journal_volume_marked;
-    journal_base = base;
-    journal_master = is_master;
-    journal_partition_lba = partition_lba;
-    journal_volume_sectors = volume_sectors;
-    return true;
+    if (!use_production_journal) {
+        journal_attached = journal_volume_marked;
+        journal_base = base;
+        journal_master = is_master;
+        journal_partition_lba = partition_lba;
+        journal_volume_sectors = volume_sectors;
+        return true;
+    }
+    if (!journal_volume_marked) {
+        ata_undo_journal_init(&host_journal, &host_journal_transport, NULL);
+        return true;
+    }
+    return ata_undo_journal_attach(&host_journal, base, is_master,
+        partition_lba, volume_sectors, reserved_sectors);
 }
 
 bool ata_journal_is_attached(unsigned short base, bool is_master,
                              uint32_t partition_lba,
                              uint32_t volume_sectors) {
-    return journal_attached && base == journal_base &&
-           is_master == journal_master &&
-           partition_lba == journal_partition_lba &&
-           volume_sectors == journal_volume_sectors;
+    if (!use_production_journal)
+        return journal_attached && base == journal_base &&
+            is_master == journal_master &&
+            partition_lba == journal_partition_lba &&
+            volume_sectors == journal_volume_sectors;
+    return ata_undo_journal_is_attached(&host_journal, base, is_master,
+        partition_lba, volume_sectors);
+}
+
+bool vfs_host_mutation_begin(void) {
+    return !use_production_journal ||
+           ata_undo_journal_transaction_begin(&host_journal);
+}
+
+bool vfs_host_mutation_end(bool commit) {
+    return !use_production_journal ||
+           ata_undo_journal_transaction_end(&host_journal, commit);
 }
 
 void read_date(int* year, int* month, int* day) {
@@ -164,6 +231,13 @@ static void make_test_volume(void) {
     memset(test_disk, 0, sizeof(test_disk));
     journal_volume_marked = true;
     journal_attached = false;
+    use_production_journal = false;
+    root_directory_lba = ROOT_DIRECTORY_LBA;
+    campaign_power_cut = false;
+    campaign_fault_armed = false;
+    campaign_cut_after_write = 0U;
+    campaign_write_count = 0U;
+    ata_undo_journal_init(&host_journal, &host_journal_transport, NULL);
     root_read_failures = 0;
     fail_directory_write_once = false;
     fail_directory_verify_once = false;
@@ -206,7 +280,7 @@ static struct fat32_dir_entry* find_raw_root_entry(const char* filename) {
     uint8_t fat_name[11];
     convert_to_83_format(fat_name, filename);
     struct fat32_dir_entry* entries =
-        (struct fat32_dir_entry*)test_disk[ROOT_DIRECTORY_LBA];
+        (struct fat32_dir_entry*)test_disk[root_directory_lba];
     for (size_t i = 0; i < SECTOR_SIZE / sizeof(*entries); ++i) {
         if (entries[i].name[0] == 0x00) break;
         if (entries[i].name[0] != 0xE5 &&
@@ -223,7 +297,7 @@ static unsigned int count_raw_root_entries(const char* filename) {
     uint8_t fat_name[11];
     convert_to_83_format(fat_name, filename);
     struct fat32_dir_entry* entries =
-        (struct fat32_dir_entry*)test_disk[ROOT_DIRECTORY_LBA];
+        (struct fat32_dir_entry*)test_disk[root_directory_lba];
     unsigned int count = 0;
     for (size_t i = 0; i < SECTOR_SIZE / sizeof(*entries); ++i) {
         if (entries[i].name[0] == 0x00) break;
@@ -235,6 +309,196 @@ static unsigned int count_raw_root_entries(const char* filename) {
         }
     }
     return count;
+}
+
+#define CAMPAIGN_RESERVED_SECTORS 32U
+#define CAMPAIGN_FAT1_LBA 32U
+#define CAMPAIGN_FAT2_LBA 33U
+#define CAMPAIGN_ROOT_LBA 34U
+
+static drive_t campaign_drive;
+
+static void make_campaign_volume(void) {
+    memset(test_disk, 0, sizeof(test_disk));
+    memset(&campaign_drive, 0, sizeof(campaign_drive));
+    root_directory_lba = CAMPAIGN_ROOT_LBA;
+    journal_volume_marked = true;
+    use_production_journal = true;
+    campaign_power_cut = false;
+    campaign_fault_armed = false;
+    campaign_cut_after_write = 0U;
+    campaign_write_count = 0U;
+    ata_undo_journal_init(&host_journal, &host_journal_transport, NULL);
+
+    struct fat32_boot_sector boot;
+    memset(&boot, 0, sizeof(boot));
+    boot.bytes_per_sector = SECTOR_SIZE;
+    boot.sectors_per_cluster = 1U;
+    boot.reserved_sector_count = CAMPAIGN_RESERVED_SECTORS;
+    boot.number_of_fats = 2U;
+    boot.total_sectors_32 = TEST_SECTORS;
+    boot.fat_size_32 = 1U;
+    boot.root_cluster = 2U;
+    boot.fs_info = 0U;
+    boot.boot_sector_signature = 0xAA55U;
+    memcpy(test_disk[0], &boot, sizeof(boot));
+
+    uint32_t *fat = (uint32_t *)test_disk[CAMPAIGN_FAT1_LBA];
+    fat[0] = 0x0FFFFFF8U;
+    fat[1] = FAT32_EOC_MAX;
+    fat[2] = FAT32_EOC_MAX;
+    memcpy(test_disk[CAMPAIGN_FAT2_LBA],
+           test_disk[CAMPAIGN_FAT1_LBA], SECTOR_SIZE);
+
+    ata_journal_record_t clean;
+    ata_undo_journal_make_clean(&clean, 0U);
+    memcpy(test_disk[ATA_JOURNAL_HEADER_OFFSET], &clean, sizeof(clean));
+    memcpy(test_disk[ATA_JOURNAL_MIRROR_OFFSET], &clean, sizeof(clean));
+
+    campaign_drive.type = DRIVE_TYPE_ATA;
+    campaign_drive.base = 0x1F0U;
+    campaign_drive.is_master = true;
+    campaign_drive.sectors = TEST_SECTORS;
+    strcpy(campaign_drive.name, "hdd0");
+}
+
+static bool campaign_mount(void) {
+    ata_undo_journal_init(&host_journal, &host_journal_transport, NULL);
+    vfs_init();
+    fat32_register_vfs();
+    return vfs_mount(&campaign_drive, "fat32", "/") == VFS_OK;
+}
+
+static bool campaign_journal_sector(uint32_t sector) {
+    return (sector >= ATA_JOURNAL_HEADER_OFFSET &&
+            sector < ATA_JOURNAL_DATA_OFFSET + ATA_JOURNAL_MAX_ENTRIES) ||
+           sector == ATA_JOURNAL_MIRROR_OFFSET;
+}
+
+static bool campaign_image_uses_known_sectors(void) {
+    for (uint32_t sector = 0U; sector < TEST_SECTORS; ++sector) {
+        if (campaign_journal_sector(sector)) continue;
+        if (memcmp(test_disk[sector], campaign_baseline[sector], SECTOR_SIZE) !=
+                0 &&
+            memcmp(test_disk[sector], campaign_committed[sector], SECTOR_SIZE) !=
+                0) return false;
+    }
+    return true;
+}
+
+static bool campaign_image_matches(
+        const uint8_t expected[TEST_SECTORS][SECTOR_SIZE]) {
+    for (uint32_t sector = 0U; sector < TEST_SECTORS; ++sector) {
+        if (!campaign_journal_sector(sector) &&
+            memcmp(test_disk[sector], expected[sector], SECTOR_SIZE) != 0)
+            return false;
+    }
+    return true;
+}
+
+static bool campaign_verify_mounted_state(bool committed) {
+    if (memcmp(test_disk[CAMPAIGN_FAT1_LBA],
+               test_disk[CAMPAIGN_FAT2_LBA], SECTOR_SIZE) != 0) return false;
+
+    vfs_node_t *cut = NULL;
+    if (vfs_open("/CUT.TMP", &cut) != VFS_OK || cut == NULL) return false;
+    bool valid = committed ? cut->size == 700U :
+                             (cut->size == 0U && cut->inode == 0U);
+    uint8_t zeroes[700];
+    memset(zeroes, 0xA5, sizeof(zeroes));
+    if (valid && committed) {
+        valid = cut->inode >= 3U &&
+            vfs_read(cut, 0U, sizeof(zeroes), zeroes) ==
+                (int)sizeof(zeroes);
+        for (uint32_t i = 0U; valid && i < sizeof(zeroes); ++i)
+            valid = zeroes[i] == 0U;
+        const uint32_t *fat =
+            (const uint32_t *)test_disk[CAMPAIGN_FAT1_LBA];
+        uint32_t next = fat[cut->inode] & 0x0FFFFFFFU;
+        valid = valid && next >= 3U && next < FAT32_EOC_MIN &&
+            (fat[next] & 0x0FFFFFFFU) >= FAT32_EOC_MIN;
+    }
+    if (vfs_close(cut) != VFS_OK) valid = false;
+
+    vfs_node_t *keep = NULL;
+    uint8_t expected[700];
+    uint8_t observed[700];
+    for (uint32_t i = 0U; i < sizeof(expected); ++i)
+        expected[i] = (uint8_t)(i * 37U + 11U);
+    if (vfs_open("/KEEP.BIN", &keep) != VFS_OK || keep == NULL ||
+        keep->size != sizeof(expected) ||
+        vfs_read(keep, 0U, sizeof(observed), observed) !=
+            (int)sizeof(observed) ||
+        memcmp(observed, expected, sizeof(expected)) != 0) valid = false;
+    if (keep != NULL && vfs_close(keep) != VFS_OK) valid = false;
+    return valid;
+}
+
+static int run_fat32_image_fault_campaign(void) {
+    make_campaign_volume();
+    CHECK(campaign_mount());
+
+    uint8_t keep[700];
+    for (uint32_t i = 0U; i < sizeof(keep); ++i)
+        keep[i] = (uint8_t)(i * 37U + 11U);
+    CHECK(vfs_create("/KEEP.BIN") == VFS_OK);
+    vfs_node_t *node = NULL;
+    CHECK(vfs_open("/KEEP.BIN", &node) == VFS_OK);
+    CHECK(vfs_write(node, 0U, sizeof(keep), keep) == (int)sizeof(keep));
+    CHECK(vfs_close(node) == VFS_OK);
+    CHECK(vfs_create("/CUT.TMP") == VFS_OK);
+    CHECK(vfs_open("/CUT.TMP", &node) == VFS_OK);
+    CHECK(node->size == 0U && node->inode == 0U);
+    CHECK(vfs_close(node) == VFS_OK);
+    memcpy(campaign_baseline, test_disk, sizeof(test_disk));
+
+    CHECK(vfs_open("/CUT.TMP", &node) == VFS_OK);
+    campaign_fault_armed = true;
+    campaign_cut_after_write = UINT_MAX;
+    campaign_write_count = 0U;
+    CHECK(vfs_truncate(node, 700U) == VFS_OK);
+    campaign_fault_armed = false;
+    unsigned int measured_writes = campaign_write_count;
+    CHECK(measured_writes > 0U &&
+          measured_writes <= FAT32_FAULT_CAMPAIGN_MAX_WRITES);
+    CHECK(vfs_close(node) == VFS_OK);
+    memcpy(campaign_committed, test_disk, sizeof(test_disk));
+    CHECK(campaign_verify_mounted_state(true));
+    CHECK(vfs_unmount("/") == VFS_OK);
+
+    unsigned int recovered = 0U;
+    unsigned int rejected = 0U;
+    for (unsigned int cut = 1U; cut <= measured_writes; ++cut) {
+        memcpy(test_disk, campaign_baseline, sizeof(test_disk));
+        campaign_power_cut = false;
+        campaign_fault_armed = false;
+        campaign_write_count = 0U;
+        CHECK(campaign_mount());
+        CHECK(vfs_open("/CUT.TMP", &node) == VFS_OK);
+        campaign_cut_after_write = cut;
+        campaign_fault_armed = true;
+        (void)vfs_truncate(node, 700U);
+        campaign_fault_armed = false;
+        CHECK(campaign_power_cut && campaign_write_count == cut);
+        CHECK(campaign_image_uses_known_sectors());
+
+        campaign_power_cut = false;
+        CHECK(vfs_close(node) == VFS_OK);
+        CHECK(vfs_unmount("/") == VFS_OK);
+        if (!campaign_mount()) {
+            ++rejected;
+            continue;
+        }
+        bool old_image = campaign_image_matches(campaign_baseline);
+        bool new_image = campaign_image_matches(campaign_committed);
+        CHECK(old_image != new_image);
+        CHECK(campaign_verify_mounted_state(new_image));
+        ++recovered;
+        CHECK(vfs_unmount("/") == VFS_OK);
+    }
+    CHECK(recovered + rejected == measured_writes);
+    CHECK(recovered != 0U);
+    return 0;
 }
 
 int main(void) {
@@ -817,5 +1081,5 @@ int main(void) {
                                   TEST_SECTORS));
     CHECK(vfs_delete("/REBOUND.TXT") == VFS_OK);
     CHECK(vfs_unmount("/") == VFS_OK);
-    return 0;
+    return run_fat32_image_fault_campaign();
 }

@@ -87,11 +87,22 @@ static void vfs_operation_end(void) {
 #endif
 }
 
+#ifdef KERNEL_HOST_TEST
+__attribute__((weak)) bool vfs_host_mutation_begin(void) {
+    return true;
+}
+
+__attribute__((weak)) bool vfs_host_mutation_end(bool commit) {
+    (void)commit;
+    return true;
+}
+#endif
+
 static bool vfs_mutation_begin(void) {
 #ifndef KERNEL_HOST_TEST
     return filesystem_mutation_begin(pit_monotonic_ms());
 #else
-    return true;
+    return vfs_host_mutation_begin();
 #endif
 }
 
@@ -99,8 +110,7 @@ static bool vfs_mutation_end(bool commit) {
 #ifndef KERNEL_HOST_TEST
     return filesystem_mutation_end(commit);
 #else
-    (void)commit;
-    return true;
+    return vfs_host_mutation_end(commit);
 #endif
 }
 

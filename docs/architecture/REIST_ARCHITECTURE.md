@@ -225,6 +225,15 @@ Sektoren. Nach frischem Mount sind nur das vollständige alte oder vollständige
 neue Abbild zulässig; uneindeutige redundante Header werden als Mountablehnung
 und nicht als Recovery-Erfolg klassifiziert. Dieser Testhook existiert nur im
 Hostharness und erweitert keine Produktionsautorität.
+Die FAT32-/ATA-Seite verwendet denselben transportneutral extrahierten
+Journal-v2-Kern im Controller und im Hostharness. Bis zu 20 endgültige
+Zielsektoren liegen während der VFS-Transaktion in fester Pending-Ablage;
+journalbewusste Reads sehen diese Bytes, das Gerät erhält pro Zielsektor erst
+beim Commit dessen endgültige Fassung. Die Hostkampagne kappt auch hier nach
+jedem tatsächlich abgeschlossenen Rohwrite. Vor Recovery sind Nichtjournal-
+sektoren damit ausschließlich alt oder final, ein frischer Mount liefert nur
+das vollständige Basis- oder Commitabbild oder lehnt eine echte
+Headerambiguität fail-closed ab.
 Append-only Syscall 123 `FTRUNCATE` ergänzt die schreibbare
 Deskriptorgrößenoperation ohne Offsetänderung. FAT12 führt jede akzeptierte
 Schrumpfung oder Erweiterung einschließlich Nullung, beider FAT-Kopien und
@@ -1676,10 +1685,13 @@ Softwareinterlock schließt das Zeitfenster während des Fence-Vorgangs.
 
 Native REIST-FAT32-Images reservieren zusätzlich BPB-Sektor 8 für den primären
 Header, 9 bis 28 für Undo-Daten und 31 für den gespiegelten Header eines
-CRC-geschützten Undo-Journals. Vor jedem einzelnen Sektorwrite wird
-das alte Abbild dauerhaft geschrieben, anschließend ein `ACTIVE`-Record
-geflusht, erst dann der Zielsektor geändert und zuletzt der Record als `CLEAN`
-markiert. Beim Mount wird ein gültiger aktiver Record vor dem Lesen veränderter
+CRC-geschützten Undo-Journals. Beim ersten Write auf einen Zielsektor wird das
+alte Abbild dauerhaft geschrieben und anschließend ein `ACTIVE`-Record
+geflusht. Eine feste Ablage hält danach pro Undo-Slot die jeweils letzte
+Sektorfassung und beantwortet transaktionsinterne Reads. Beim Commit werden
+die höchstens 20 endgültigen Zielsektoren unter der bestehenden Storage-
+Supervision geschrieben und zuletzt beide Header als `CLEAN` markiert. Beim
+Mount wird ein gültiger aktiver Record vor dem Lesen veränderter
 FAT-/FSInfo-/Verzeichnismetadaten zurückgerollt. Ziel-LBA, Volumegrenzen sowie
 Header- und Daten-CRC werden geprüft; ein Fehler verriegelt Storage und
 verweigert den Mount. Nur Medien mit dem expliziten Builder-Marker aktivieren
@@ -1692,7 +1704,8 @@ durch ein anderes Volume verdrängte Bindung wird innerhalb der bereits
 geöffneten VFS-Transaktion ohne Übernahme alter Einträge neu validiert und
 wiederhergestellt. Das liefert
 atomare VFS-Mutationen mit bis zu 20 unterschiedlichen Sektoren. Wiederholte
-Writes desselben Sektors benötigen nur einen Undo-Slot. Die VFS-Klammer hält
+Writes desselben Sektors benötigen nur einen Undo-Slot und erzeugen physisch
+keine Zwischenfassung. Die VFS-Klammer hält
 den Record über die komplette Operation `ACTIVE` und setzt `CLEAN` erst nach
 erfolgreichem Abschluss. Kapazitätsüberschreitung oder ein I/O-Fehler lassen
 den Undo-Satz für Boot-Recovery stehen und schalten das VFS Read-only. Größere

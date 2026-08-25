@@ -84,6 +84,7 @@ class FilesystemHostTests(unittest.TestCase):
                 "fs/fat32/fat32_files.c",
                 "fs/fat32/fat32_vfs_adapter.c",
                 "fs/vfs/vfs.c",
+                "drivers/block/ata_journal.c",
             ],
         )
 
