@@ -519,12 +519,17 @@ read-only. Jede Mutation prüft vor dem ersten Sektorwrite die exakte
 Journalbindung an Gerät, Partition und Volumegrenze erneut; eine durch ein
 anderes Mount verdrängte globale Bindung wird sicher neu aufgebaut.
 
-VFAT Long File Names sind für druckbares ASCII bis 255 Zeichen implementiert.
+VFAT Long File Names transportieren validiertes RFC-3629-UTF-8 innerhalb der
+255-Byte-/255-UTF-16-Codeunit-Grenzen einschließlich Surrogatpaaren.
 LFN-Slotfolge, Reihenfolge und 8.3-Prüfsumme werden vor Veröffentlichung
 validiert; ungültige oder nicht unterstützte Unicode-Folgen fallen auf den
 checksum-gebundenen 8.3-Alias zurück. Create, Lookup, `readdir`, Datei-I/O,
-Delete, lange Verzeichnispfade und Same-Directory-Rename sind abgedeckt. Ein
-LFN-Replace auf ein bereits bestehendes Ziel bleibt fail-closed unsupported.
+Delete, lange Verzeichnispfade und Same-Directory-Rename sind abgedeckt. Beim
+Replace eines bestehenden regulären LFN-Ziels bleibt dessen validierte LFN-
+Folge samt Alias erhalten. Der Alias übernimmt in derselben Undo-Journal-
+Transaktion die Quellmetadaten, anschließend wird die vollständige Quellfolge
+tombstoned und erst danach die alte Zielkette freigegeben. Verzeichnisse,
+offene Objekte und Cross-Directory-Rename bleiben fail-closed ausgeschlossen.
 
 `FORMAT.PRG` unterstützt auf einer veröffentlichten, nicht gemounteten
 Partition zwei explizit bestätigte Modi:

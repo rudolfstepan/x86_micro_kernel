@@ -1775,6 +1775,10 @@ Operationen benötigen künftig ein skalierbares Journal beziehungsweise COW.
 Journal-v1-Medien werden rückwärtskompatibel wiederhergestellt und anschließend
 mit einem sauberen v2-Header migriert.
 FAT32 Same-Directory-Rename und Replace laufen als eine solche VFS-Transaktion.
+Das umfasst bestehende VFAT-Langnamenziele regulärer Dateien: Ihre validierte
+LFN-Folge und der checksum-gebundene Alias bleiben erhalten, der Alias übernimmt
+zuerst die Quellmetadaten, danach wird die vollständige Quellfolge tombstoned
+und erst anschließend die alte Zielkette freigegeben.
 Der Editor schreibt zuerst eine PID-spezifische 8.3-Tempdatei, fordert über
 Prozess-FD und VFS einen begrenzten ATA-`FLUSH CACHE` an und ersetzt das Ziel
 erst nach erfolgreichem `fsync` und Close per Rename. Ein Fehler vor dem Commit lässt
@@ -1804,10 +1808,12 @@ Lookup und `readdir` akzeptieren den langen Namen nur bei gültiger Reihenfolge,
 Slotanzahl, Attributbelegung, Startcluster-Nullfeld und Prüfsumme; andernfalls
 ist ausschließlich der 8.3-Alias sichtbar. Schreibpfade erzeugen eindeutige
 `~n`-Aliase und schreiben den Kurzeintrag als letzten Publikationsanker. Die
-aktuelle Pfad-ABI bildet druckbares ASCII auf UTF-16LE ab; nicht unterstützte
-Unicode-Namen erhalten keine falsch dekodierte Autorität. LFN-Rename auf einen
-freien Namen ist transaktional geklammert, LFN-Replace eines existierenden
-Ziels bleibt bis zu einem atomaren variablen Slot-Replace fail-closed gesperrt.
+aktuelle Pfad-ABI transportiert validiertes RFC-3629-UTF-8 und bildet es
+begrenzt auf UTF-16LE einschließlich Surrogatpaaren ab; ungültige Unicode-Namen
+erhalten keine falsch dekodierte Autorität. LFN-Rename auf einen freien Namen
+und Replace eines bestehenden regulären Ziels sind transaktional geklammert.
+Verzeichnisse, offene Objekte, Cross-Directory und Cross-Volume bleiben
+fail-closed außerhalb dieses Vertrags.
 
 Der v2-Superblock liegt redundant in den reservierten Sektoren 8 und 31. Jeder
 Statuswechsel wird primär und gespiegelt mit identischer Sequenz und CRC

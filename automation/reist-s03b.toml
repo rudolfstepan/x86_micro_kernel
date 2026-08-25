@@ -11,6 +11,62 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2-fat32-lfn-atomic-replace"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Journal-backed FAT32 LFN replace"
+scope = "Close the remaining FAT32 same-directory rename gap by allowing a regular-file source whose source or destination uses VFAT long-name slots to replace an existing regular-file destination. Reuse the existing VFS-wide ATA undo-journal transaction: retain the destination's validated LFN sequence and checksum-bound 8.3 alias, publish the complete source metadata under that alias, tombstone the complete source LFN/alias sequence, and reclaim the old destination chain only after publication. Preserve source and destination on a pre-publication I/O failure; journal capacity or commit failure remains fail-closed and fences later mutation through the existing VFS safety path. Directories, cross-directory moves, read-only entries, open source or destination nodes and foreign unjournaled media keep their current rejection semantics. Add host behavior and real QEMU guest coverage including UTF-8 VFAT names without changing VFS syscall on-disk journal or persistent directory formats."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "test/test_fat32_host.c",
+  "test/test_fat32_image_fault_campaign.py",
+  "test/test_reist_atomic_rename.py",
+  "userspace/programs/guest_test.c",
+  "docs/filesystems/FAT32_OPTIMIZATIONS.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the destination LFN slots and checksum-bound short alias remain byte-identical while only the alias entry metadata is replaced from the source",
+  "destination publication precedes source-sequence tombstoning and old destination cluster reclamation occurs only after both directory updates succeed",
+  "one VFS mutation envelope owns the complete rename so a journal failure cannot commit a mixed old and new visible namespace",
+  "source and destination directories read-only entries open nodes cross-parent paths and foreign unjournaled media retain their current fail-closed results",
+  "all slot chain I/O journal and path bounds remain unchanged and no ABI syscall persistent format or new kernel authority is added"
+]
+targeted_tests = [
+  "python test/test_reist_atomic_rename.py -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v",
+  "python test/test_fat32_image_fault_campaign.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-fat32-lfn-replace.log"
+]
+stop_conditions = [
+  "replacement would require changing the VFAT slot journal or VFS persistent format",
+  "a failure can expose a destination with source metadata while leaving the source name live after recovery",
+  "the old destination chain can be reclaimed before the namespace publication commits",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fat32: replace existing VFAT long names atomically"
+evidence = [
+  "all 15 focused rename host and fault-campaign tests passed",
+  "the dedicated production-journal LFN replace campaign cut power after every measured raw sector write and recovered only the exact old or exact new image",
+  "final QEMU VGA package build passed in 4 seconds",
+  "the final QEMU VMware-SVGA2D guest run passed with VFAT_LFN_REPLACE_OK VFAT_UTF8_OK DESKTOP_UNICODE_OK OPEN_NAMESPACE_LOCKS_OK and TEST_OK",
+  "the production tombstone path uses journal-aware bounded sector reads so it cannot overwrite a pending destination alias update with a stale whole-cluster view",
+  "no queued package remains and active_id is empty"
+]
+
+[[packages]]
 id = "R3.2-desktop-lifecycle-startup"
 status = "done"
 phase = "post-s0"

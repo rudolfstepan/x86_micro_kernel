@@ -1634,8 +1634,9 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   begrenzt auf Microsoft-kompatibles UTF-16 samt Surrogatpaaren und
   checksum-validiertem 8.3-Fallback ab. Die unabhängige Ring-3-Auswertung
   dekodiert identisch fail-closed. Unicode-15-NFC-/Full-Casefold-Gleichheit ist
-  über generierte, feste Tabellen umgesetzt; atomarer LFN-Replace auf
-  existierende Ziele fehlt weiterhin.
+  über generierte, feste Tabellen umgesetzt. Ein bestehendes reguläres
+  LFN-Ziel wird nun innerhalb der vorhandenen VFS-/Undo-Journal-Transaktion
+  ersetzt, ohne seine validierte LFN-/Aliasidentität neu zu erzeugen.
 - [x] Open/Delete/Unmount-Regeln für den vorhandenen FAT-Vertrag vereinheitlichen:
   erfolgreiche Opens registrieren exakt einen festen Node, Close-Fehler halten
   die Sperre, Objektmutationen liefern vor Wirkung `BUSY`, und Unmount bleibt
@@ -1674,8 +1675,11 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 - [x] Den festen mehrzeiligen Editor auf vorvalidierte UTF-8-Dokumente,
   Skalarspalten sowie sequenzsicheres Editieren und Clipping umstellen; die
   visuelle Beispieldatei unter `/usr/share/fonts/unicode.txt` damit öffnen.
-- Danach atomaren LFN-Replace ergänzen; EXT2 vorerst ausdrücklich read-only
-  mounten. Supplementary-Plane-Fontpakete, Eingabemethoden,
+- [x] Atomaren Same-Directory-LFN-Replace für bestehende reguläre Ziele durch
+  Erhalt der Ziel-LFN-Folge, journalisierte Metadatenpublikation,
+  Quelltombstone und nachgelagerte Kettenfreigabe ergänzen.
+- EXT2 weiterhin ausdrücklich read-only mounten. Supplementary-Plane-
+  Fontpakete, Eingabemethoden,
   Bidirektionalität, Shaping und Graphemnavigation bleiben eigene
   Ring-3-GUI-/Textpakete.
 

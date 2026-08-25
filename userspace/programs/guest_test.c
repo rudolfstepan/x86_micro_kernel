@@ -678,12 +678,65 @@ static int test_vfat_utf8(void) {
     descriptor = x86os_open_flags(alternate, X86OS_O_RDONLY);
     if (descriptor < 0 || x86os_close(descriptor) != 0 ||
         x86os_unlink(alternate) != 0) goto failed;
+
+    static const char rename_source[] =
+        "Quelle-\xC3\xBC-\xF0\x9F\x9A\x80.tmp";
+    static const char rename_target[] =
+        "Ziel-\xC3\x84-\xF0\x9F\x8C\x8D.tmp";
+    static const char source_payload[] = "unicode LFN replacement";
+    static const char target_payload[] = "old unicode target";
+    (void)x86os_unlink(rename_source);
+    (void)x86os_unlink(rename_target);
+    descriptor = x86os_open_flags(
+        rename_target, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor < 0 ||
+        x86os_write(descriptor, target_payload, sizeof(target_payload) - 1U) !=
+            (int)(sizeof(target_payload) - 1U) ||
+        x86os_close(descriptor) != 0) goto failed;
+    descriptor = x86os_open_flags(
+        rename_source, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor < 0 ||
+        x86os_write(descriptor, source_payload, sizeof(source_payload) - 1U) !=
+            (int)(sizeof(source_payload) - 1U) ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+    if (x86os_rename(rename_source, rename_target) != 0) {
+        x86os_puts("VFAT_LFN_FAIL rename\n");
+        goto failed;
+    }
+    int source_stat = x86os_stat(rename_source, &info);
+    int target_stat = x86os_stat(rename_target, &info);
+    if (source_stat == 0 || target_stat != 0 ||
+        info.size != sizeof(source_payload) - 1U) {
+        x86os_puts("VFAT_LFN_FAIL stat source=");
+        x86os_print_number(source_stat);
+        x86os_puts(" target=");
+        x86os_print_number(target_stat);
+        x86os_puts(" size=");
+        x86os_print_number((int)info.size);
+        x86os_putchar('\n');
+        goto failed;
+    }
+    descriptor = x86os_open_flags(rename_target, X86OS_O_RDONLY);
+    char renamed_payload[sizeof(source_payload) - 1U];
+    if (descriptor < 0 ||
+        x86os_read(descriptor, renamed_payload, sizeof(renamed_payload)) !=
+            (int)sizeof(renamed_payload) ||
+        !bytes_equal(renamed_payload, source_payload,
+                     sizeof(renamed_payload)) ||
+        x86os_close(descriptor) != 0 || x86os_unlink(rename_target) != 0) {
+        x86os_puts("VFAT_LFN_FAIL read\n");
+        goto failed;
+    }
+    x86os_puts("VFAT_LFN_REPLACE_OK\n");
     return 0;
 
 failed:
     if (descriptor >= 0) (void)x86os_close(descriptor);
     (void)x86os_unlink(path);
     (void)x86os_unlink("N-\xC3\x84-\xC3\x9F.TMP");
+    (void)x86os_unlink("Quelle-\xC3\xBC-\xF0\x9F\x9A\x80.tmp");
+    (void)x86os_unlink("Ziel-\xC3\x84-\xF0\x9F\x8C\x8D.tmp");
     return -1;
 }
 

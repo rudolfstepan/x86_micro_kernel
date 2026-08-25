@@ -22,6 +22,7 @@
 static uint8_t test_disk[TEST_SECTORS][SECTOR_SIZE];
 static unsigned int root_read_failures;
 static bool fail_directory_write_once;
+static bool fail_any_write_once;
 static int test_year = 2026;
 static int test_month = 8;
 static int test_day = 3;
@@ -91,6 +92,10 @@ static bool host_raw_write(void *context, unsigned short base, uint32_t lba,
     (void)base;
     (void)is_master;
     if (campaign_power_cut || lba >= TEST_SECTORS || !buffer) return false;
+    if (fail_any_write_once) {
+        fail_any_write_once = false;
+        return false;
+    }
     if (lba == root_directory_lba && fail_directory_write_once) {
         fail_directory_write_once = false;
         return false;
@@ -249,6 +254,7 @@ static void make_test_volume(void) {
     journal_volume_marked = true;
     journal_attached = false;
     use_production_journal = false;
+    fail_any_write_once = false;
     root_directory_lba = ROOT_DIRECTORY_LBA;
     campaign_power_cut = false;
     campaign_fault_armed = false;
@@ -533,6 +539,94 @@ static int run_fat32_image_fault_campaign(void) {
         bool new_image = campaign_image_matches(campaign_committed);
         CHECK(old_image != new_image);
         CHECK(campaign_verify_mounted_state(new_image));
+        ++recovered;
+        CHECK(vfs_unmount("/") == VFS_OK);
+    }
+    CHECK(recovered + rejected == measured_writes);
+    CHECK(recovered != 0U);
+    return 0;
+}
+
+static bool campaign_verify_lfn_replace(bool committed) {
+    static const char source[] = "/source long name.txt";
+    static const char target[] = "/target long name.txt";
+    static const uint8_t source_data[] = "source-data";
+    static const uint8_t target_data[] = "target-data";
+    vfs_dir_entry_t info;
+    int source_status = vfs_stat(source, &info);
+    if ((committed && source_status != VFS_ERR_NOT_FOUND) ||
+        (!committed && (source_status != VFS_OK ||
+                        info.size != sizeof(source_data) - 1U))) return false;
+    vfs_node_t *node = NULL;
+    uint8_t observed[sizeof(source_data) - 1U];
+    const uint8_t *expected = committed ? source_data : target_data;
+    bool valid = vfs_open(target, &node) == VFS_OK && node != NULL &&
+        node->size == sizeof(source_data) - 1U &&
+        vfs_read(node, 0U, sizeof(observed), observed) ==
+            (int)sizeof(observed) &&
+        memcmp(observed, expected, sizeof(observed)) == 0;
+    if (node != NULL && vfs_close(node) != VFS_OK) valid = false;
+    return valid;
+}
+
+static int run_fat32_lfn_replace_fault_campaign(void) {
+    static const char source[] = "/source long name.txt";
+    static const char target[] = "/target long name.txt";
+    static const uint8_t source_data[] = "source-data";
+    static const uint8_t target_data[] = "target-data";
+    make_campaign_volume();
+    CHECK(campaign_mount());
+    CHECK(vfs_create(source) == VFS_OK);
+    CHECK(vfs_create(target) == VFS_OK);
+    vfs_node_t *node = NULL;
+    CHECK(vfs_open(source, &node) == VFS_OK);
+    CHECK(vfs_write(node, 0U, sizeof(source_data) - 1U, source_data) ==
+          (int)(sizeof(source_data) - 1U));
+    CHECK(vfs_close(node) == VFS_OK);
+    CHECK(vfs_open(target, &node) == VFS_OK);
+    CHECK(vfs_write(node, 0U, sizeof(target_data) - 1U, target_data) ==
+          (int)(sizeof(target_data) - 1U));
+    CHECK(vfs_close(node) == VFS_OK);
+    CHECK(campaign_verify_lfn_replace(false));
+    memcpy(campaign_baseline, test_disk, sizeof(test_disk));
+
+    campaign_fault_armed = true;
+    campaign_cut_after_write = UINT_MAX;
+    campaign_write_count = 0U;
+    CHECK(vfs_rename(source, target) == VFS_OK);
+    campaign_fault_armed = false;
+    unsigned int measured_writes = campaign_write_count;
+    CHECK(measured_writes > 0U &&
+          measured_writes <= FAT32_FAULT_CAMPAIGN_MAX_WRITES);
+    memcpy(campaign_committed, test_disk, sizeof(test_disk));
+    CHECK(campaign_verify_lfn_replace(true));
+    CHECK(vfs_unmount("/") == VFS_OK);
+
+    unsigned int recovered = 0U;
+    unsigned int rejected = 0U;
+    for (unsigned int cut = 1U; cut <= measured_writes; ++cut) {
+        memcpy(test_disk, campaign_baseline, sizeof(test_disk));
+        campaign_power_cut = false;
+        campaign_fault_armed = false;
+        campaign_write_count = 0U;
+        CHECK(campaign_mount());
+        campaign_cut_after_write = cut;
+        campaign_fault_armed = true;
+        (void)vfs_rename(source, target);
+        campaign_fault_armed = false;
+        CHECK(campaign_power_cut && campaign_write_count == cut);
+        CHECK(campaign_image_uses_known_sectors());
+
+        campaign_power_cut = false;
+        CHECK(vfs_unmount("/") == VFS_OK);
+        if (!campaign_mount()) {
+            ++rejected;
+            continue;
+        }
+        bool old_image = campaign_image_matches(campaign_baseline);
+        bool new_image = campaign_image_matches(campaign_committed);
+        CHECK(old_image != new_image);
+        CHECK(campaign_verify_lfn_replace(new_image));
         ++recovered;
         CHECK(vfs_unmount("/") == VFS_OK);
     }
@@ -1128,6 +1222,46 @@ int main(void) {
     CHECK(vfs_stat("/renamed long vfs filename.txt", &listed) == VFS_OK);
     CHECK(strcmp(listed.name, "renamed long vfs filename.txt") == 0);
     CHECK(vfs_delete("/renamed long vfs filename.txt") == VFS_OK);
+
+    static const char lfn_source[] = "/source long replacement name.txt";
+    static const char lfn_target[] = "/existing long destination name.txt";
+    static const uint8_t lfn_source_data[] = "new long-name payload";
+    static const uint8_t lfn_target_data[] = "old payload";
+    CHECK(vfs_create(lfn_source) == VFS_OK);
+    CHECK(vfs_create(lfn_target) == VFS_OK);
+    vfs_node_t* lfn_node = NULL;
+    CHECK(vfs_open(lfn_source, &lfn_node) == VFS_OK);
+    CHECK(vfs_write(lfn_node, 0U, sizeof(lfn_source_data) - 1U,
+                    lfn_source_data) == (int)(sizeof(lfn_source_data) - 1U));
+    CHECK(vfs_close(lfn_node) == VFS_OK);
+    CHECK(vfs_open(lfn_target, &lfn_node) == VFS_OK);
+    CHECK(vfs_write(lfn_node, 0U, sizeof(lfn_target_data) - 1U,
+                    lfn_target_data) == (int)(sizeof(lfn_target_data) - 1U));
+    CHECK(vfs_close(lfn_node) == VFS_OK);
+    unsigned int allocated_before_lfn_replace = count_allocated_clusters();
+    CHECK(vfs_rename(lfn_source, lfn_target) == VFS_OK);
+    CHECK(vfs_stat(lfn_source, &listed) == VFS_ERR_NOT_FOUND);
+    CHECK(vfs_stat(lfn_target, &listed) == VFS_OK &&
+          listed.size == sizeof(lfn_source_data) - 1U);
+    CHECK(count_allocated_clusters() == allocated_before_lfn_replace - 1U);
+    uint8_t lfn_loaded[sizeof(lfn_source_data) - 1U];
+    CHECK(vfs_open(lfn_target, &lfn_node) == VFS_OK);
+    CHECK(vfs_read(lfn_node, 0U, sizeof(lfn_loaded), lfn_loaded) ==
+          (int)sizeof(lfn_loaded));
+    CHECK(memcmp(lfn_loaded, lfn_source_data, sizeof(lfn_loaded)) == 0);
+    CHECK(vfs_close(lfn_node) == VFS_OK);
+    CHECK(vfs_delete(lfn_target) == VFS_OK);
+
+    static const char failed_lfn_source[] = "/failed long source.txt";
+    static const char failed_lfn_target[] = "/failed long target.txt";
+    CHECK(vfs_create(failed_lfn_source) == VFS_OK);
+    CHECK(vfs_create(failed_lfn_target) == VFS_OK);
+    fail_any_write_once = true;
+    CHECK(vfs_rename(failed_lfn_source, failed_lfn_target) == VFS_ERR_IO);
+    CHECK(vfs_stat(failed_lfn_source, &listed) == VFS_OK);
+    CHECK(vfs_stat(failed_lfn_target, &listed) == VFS_OK);
+    CHECK(vfs_delete(failed_lfn_source) == VFS_OK);
+    CHECK(vfs_delete(failed_lfn_target) == VFS_OK);
     CHECK(vfs_create("/lower.txt") == VFS_OK);
     CHECK(vfs_stat("/LOWER.TXT", &listed) == VFS_OK);
     CHECK(strcmp(listed.name, "lower.txt") == 0);
@@ -1248,5 +1382,6 @@ int main(void) {
                                   TEST_SECTORS));
     CHECK(vfs_delete("/REBOUND.TXT") == VFS_OK);
     CHECK(vfs_unmount("/") == VFS_OK);
-    return run_fat32_image_fault_campaign();
+    CHECK(run_fat32_image_fault_campaign() == 0);
+    return run_fat32_lfn_replace_fault_campaign();
 }

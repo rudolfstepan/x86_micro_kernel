@@ -212,6 +212,11 @@ beide FAT-Kopien, die Zweicluster-Nullerweiterung und eine unabhängige Datei.
 - FAT32: Lesen auf validen Standardvolumes; Schreiben, Verzeichnisse, Truncate,
   `fsync`, Rename/Replace ausschließlich mit exakt gebundenem Undo-Journal
   markierter REIST-Images. Ein Volumewechsel erzwingt Rebinding vor Mutation.
+  Ein bestehendes VFAT-Langnamenziel kann durch eine reguläre Datei desselben
+  Verzeichnisses ersetzt werden: Ziel-LFN und Zielalias bleiben die
+  Namensidentität, der Alias übernimmt die Quellmetadaten, die Quellfolge wird
+  danach vollständig tombstoned und erst dann wird die alte Zielkette
+  freigegeben. Die gesamte Reihenfolge liegt in einer VFS-Journaltransaktion.
 - FAT12: Lesen auf validen Standardmedien; Schreiben, Verzeichnismutationen,
   beide FAT-Kopien, REIST-Journal, Remap und kritische Replikate ausschließlich
   auf explizit markierten und erfolgreich wiederhergestellten Medien.

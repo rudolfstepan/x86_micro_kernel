@@ -902,6 +902,92 @@ static int fat32_vfs_delete_unlocked(vfs_filesystem_t* fs, const char* path) {
     return VFS_OK;
 }
 
+typedef struct {
+    uint32_t sector;
+    uint32_t index;
+} fat32_rename_slot_t;
+
+/* Rename runs inside one VFS/ATA journal transaction. Use journal-aware
+ * single-sector reads here: a whole-cluster transport read may not include a
+ * destination alias update that is still pending in that transaction. */
+static bool fat32_tombstone_rename_source(
+        uint32_t parent_cluster, const struct fat32_dir_entry* source) {
+    if (!source || !is_valid_cluster(&boot_sector, parent_cluster) ||
+        boot_sector.bytes_per_sector != SECTOR_SIZE) return false;
+    fat32_rename_slot_t slots[FAT32_MAX_LFN_ENTRIES + 1U];
+    uint32_t slot_count = 0U;
+    uint32_t current = parent_cluster;
+    uint32_t traversed = 0U;
+    uint32_t cluster_limit = get_total_clusters(&boot_sector);
+    struct fat32_dir_entry entries[
+        SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
+    struct fat32_dir_entry verify[
+        SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
+
+    while (is_valid_cluster(&boot_sector, current) &&
+           traversed++ < cluster_limit) {
+        uint32_t first_sector = cluster_to_sector(&boot_sector, current);
+        if (first_sector == INVALID_CLUSTER) return false;
+        for (uint32_t sector_index = 0U;
+             sector_index < boot_sector.sectors_per_cluster;
+             ++sector_index) {
+            uint32_t sector = first_sector + sector_index;
+            if (!ata_read_sector(ata_base_address, sector, entries,
+                                 ata_is_master)) return false;
+            for (uint32_t index = 0U;
+                 index < SECTOR_SIZE / sizeof(struct fat32_dir_entry);
+                 ++index) {
+                if (entries[index].name[0] == 0x00U) return false;
+                if (entries[index].name[0] == 0xE5U) {
+                    slot_count = 0U;
+                    continue;
+                }
+                if (entries[index].attr == ATTR_LONG_NAME) {
+                    if (slot_count == FAT32_MAX_LFN_ENTRIES)
+                        slot_count = 0U;
+                    slots[slot_count++] = (fat32_rename_slot_t){
+                        .sector = sector,
+                        .index = index,
+                    };
+                    continue;
+                }
+                if (memcmp(&entries[index], source, sizeof(*source)) != 0) {
+                    slot_count = 0U;
+                    continue;
+                }
+                slots[slot_count++] = (fat32_rename_slot_t){
+                    .sector = sector,
+                    .index = index,
+                };
+                uint32_t first = 0U;
+                while (first < slot_count) {
+                    uint32_t target = slots[first].sector;
+                    if (!ata_read_sector(ata_base_address, target, entries,
+                                         ata_is_master)) return false;
+                    uint32_t cursor = first;
+                    while (cursor < slot_count &&
+                           slots[cursor].sector == target) {
+                        entries[slots[cursor].index].name[0] = 0xE5U;
+                        ++cursor;
+                    }
+                    if (!fat32_write_sector(target, entries) ||
+                        !ata_read_sector(ata_base_address, target, verify,
+                                         ata_is_master) ||
+                        memcmp(entries, verify, SECTOR_SIZE) != 0)
+                        return false;
+                    first = cursor;
+                }
+                return true;
+            }
+        }
+        uint32_t next = get_next_cluster_in_chain(&boot_sector, current);
+        if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next))
+            return false;
+        current = next;
+    }
+    return false;
+}
+
 static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
                                      const char* old_path,
                                      const char* new_path) {
@@ -946,7 +1032,7 @@ static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
     if (destination_result == FAT32_LOOKUP_FOUND &&
         (destination.attr & ATTR_READ_ONLY)) return VFS_ERR_READ_ONLY;
     /* A directory may be renamed inside its current parent without changing
-     * either dot entry. Replacing any existing entry remains fail-closed;
+     * either dot entry. Replacing an existing directory remains fail-closed;
      * cross-parent directory moves are rejected above because they would
      * require a bounded update of the child's dot-dot authority. */
     if ((source.attr & ATTR_DIRECTORY) &&
@@ -957,10 +1043,30 @@ static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
         return VFS_OK;
 
     if (!short_rename) {
-        /* Until replacement can publish both variable-length slot sequences
-         * in one bounded primitive, preserve an existing destination. */
-        if (destination_result == FAT32_LOOKUP_FOUND)
-            return VFS_ERR_UNSUPPORTED;
+        if (destination_result == FAT32_LOOKUP_FOUND) {
+            /* Keep the destination's validated LFN slots and checksum-bound
+             * alias. The enclosing VFS mutation journal publishes this alias
+             * update and the complete source-sequence tombstone together. */
+            uint32_t replaced_cluster = read_start_cluster(&destination);
+            struct fat32_dir_entry replacement = source;
+            memcpy(replacement.name, destination.name,
+                   sizeof(replacement.name));
+            replacement.nt_res = destination.nt_res;
+            if (!update_directory_entry(new_parent, destination.name,
+                                        &replacement))
+                return VFS_ERR_IO;
+            if (!fat32_tombstone_rename_source(old_parent, &source))
+                return VFS_ERR_IO;
+
+            uint32_t source_cluster = read_start_cluster(&source);
+            if (is_valid_cluster(&boot_sector, replaced_cluster) &&
+                replaced_cluster != source_cluster &&
+                !free_cluster_chain(&boot_sector, replaced_cluster))
+                return VFS_ERR_IO;
+            (void)write_fsinfo();
+            fat32_flush_context(fs);
+            return VFS_OK;
+        }
         if (!add_entry_to_directory(&boot_sector, new_parent, new_leaf,
                                     read_start_cluster(&source), source.attr))
             return VFS_ERR_IO;
@@ -975,7 +1081,7 @@ static int fat32_vfs_rename_unlocked(vfs_filesystem_t* fs,
                                               &published);
             return VFS_ERR_IO;
         }
-        if (!remove_entry_from_directory(&boot_sector, old_parent, &source))
+        if (!fat32_tombstone_rename_source(old_parent, &source))
             return VFS_ERR_IO;
         (void)write_fsinfo();
         fat32_flush_context(fs);

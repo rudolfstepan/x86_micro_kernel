@@ -74,6 +74,19 @@ class Fat32ImageFaultCampaignTests(unittest.TestCase):
         self.assertIn("++rejected", campaign)
         self.assertIn("recovered + rejected == measured_writes", campaign)
 
+    def test_lfn_replace_has_its_own_complete_write_cut_campaign(self) -> None:
+        campaign = self.host[self.host.index(
+            "run_fat32_lfn_replace_fault_campaign"):]
+        self.assertIn("vfs_rename(source, target)", campaign)
+        self.assertIn("campaign_verify_lfn_replace(false)", campaign)
+        self.assertIn("campaign_verify_lfn_replace(true)", campaign)
+        self.assertIn(
+            "for (unsigned int cut = 1U; cut <= measured_writes; ++cut)",
+            campaign,
+        )
+        self.assertIn("old_image != new_image", campaign)
+        self.assertIn("campaign_verify_lfn_replace(new_image)", campaign)
+
 
 if __name__ == "__main__":
     unittest.main()

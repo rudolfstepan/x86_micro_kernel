@@ -46,13 +46,44 @@ class ReistAtomicRenameTests(unittest.TestCase):
         tombstone = rename.index(
             "update_directory_entry(old_parent, source.name, &tombstone)"
         )
-        reclaim = rename.index("free_cluster_chain(&boot_sector, replaced_cluster)")
+        reclaim = rename.index(
+            "free_cluster_chain(&boot_sector, replaced_cluster)", tombstone
+        )
         self.assertLess(destination, tombstone)
         self.assertLess(tombstone, reclaim)
         self.assertIn("old_parent != new_parent", rename)
         self.assertNotIn(
             "if (source.attr & ATTR_DIRECTORY) return VFS_ERR_IS_DIR", rename
         )
+
+    def test_fat32_lfn_replace_reuses_the_validated_destination_alias(self) -> None:
+        adapter = read("fs/fat32/fat32_vfs_adapter.c")
+        start = adapter.index("static int fat32_vfs_rename_unlocked(")
+        end = adapter.index("static int fat32_vfs_stat_unlocked(", start)
+        rename = adapter[start:end]
+        self.assertIn("struct fat32_dir_entry replacement = source", rename)
+        self.assertIn("memcpy(replacement.name, destination.name,", rename)
+        self.assertIn("sizeof(replacement.name))", rename)
+        self.assertIn("replacement.nt_res = destination.nt_res", rename)
+        publish = rename.index(
+            "update_directory_entry(new_parent, destination.name,"
+        )
+        self.assertIn("&replacement", rename[publish:publish + 160])
+        tombstone = rename.index(
+            "fat32_tombstone_rename_source(old_parent, &source)", publish
+        )
+        reclaim = rename.index(
+            "free_cluster_chain(&boot_sector, replaced_cluster)", tombstone
+        )
+        self.assertLess(publish, tombstone)
+        self.assertLess(tombstone, reclaim)
+        helper = adapter[
+            adapter.index("static bool fat32_tombstone_rename_source("):
+            start
+        ]
+        self.assertIn("ata_read_sector", helper)
+        self.assertIn("fat32_write_sector", helper)
+        self.assertNotIn("read_cluster", helper)
 
     def test_editor_never_unlinks_original_before_commit(self) -> None:
         editor = read("userspace/bin/edit.c")
