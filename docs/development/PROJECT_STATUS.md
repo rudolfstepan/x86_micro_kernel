@@ -43,6 +43,23 @@ und Fehlerzahlen bleiben erhalten. Die absichtlichen
 Crash-, Hang- und Invalid-Reply-Proben mit abschließendem
 `RECOVERY_SEQUENCE_OK` sind weiterhin erwartete Selbsttests.
 
+Der zweite ASUS-Lauf erreichte anschließend `NVIDIA_GK208_READY`, zeigte den
+Splash und verlor den sichtbaren VBE-Modus erst bei zwei überwachten
+NVIDIA-Treiberrestarts. Das abgeschlossene `R2.2e` trennt deshalb
+Gerätemodusbesitz von passiver VBE-Nutzung: VMware deaktiviert seinen
+SVGA-Scanout beim Fence weiterhin;
+GK208 behält den kernelverwalteten VBE-Scanout, durchläuft aber unverändert
+Quieszenz, Generation-Fence, Reap und Device-Recovery. `DESKTOP_OK` bleibt
+damit nach einem Restart sichtbar statt nur im VGA-Textmodus zu erscheinen.
+Die reproduzierte Restart-Serie während des Fontladens ist ebenfalls behoben:
+Zwischen festen 24-KiB-Leseabschnitten schläft der Desktop nun 1 ms, statt sich
+mit einem wirkungslosen Yield sofort wieder einplanen zu lassen. Damit erhalten
+die überwachten Serviceklassen verlässlich Heartbeat-Zeit. Der maximale
+3-MiB-Font bietet damit 128 Scheduling-Punkte; die tatsächliche Wecklatenz
+folgt weiterhin der Timerauflösung. Die gezielten Tests, beide
+Framebuffer-Paketbuilds und der QEMU-Runtime-Lauf bis `TEST_OK` sind grün; der
+abschließende Sichtnachweis auf dem ASUS-System bleibt manuell.
+
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
 unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und

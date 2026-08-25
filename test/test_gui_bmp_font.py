@@ -81,13 +81,16 @@ class GuiUnicodeFontTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)",
                       desktop)
-        self.assertIn("DESKTOP_FILE_READ_CHUNK 65536U", desktop)
+        self.assertIn("DESKTOP_FILE_READ_CHUNK 24576U", desktop)
+        self.assertIn("DESKTOP_FILE_READ_PAUSE_MS 1U", desktop)
         bounded_read = desktop[desktop.index("static int read_file_bounded"):
                                desktop.index("static int desktop_font_load")]
         self.assertIn("remaining < DESKTOP_FILE_READ_CHUNK", bounded_read)
         self.assertIn("x86os_read(descriptor, bytes + used, request)",
                       bounded_read)
-        self.assertIn("x86os_yield()", bounded_read)
+        self.assertIn("x86os_sleep_ms(DESKTOP_FILE_READ_PAUSE_MS)",
+                      bounded_read)
+        self.assertNotIn("x86os_yield()", bounded_read)
         self.assertNotIn("x86os_read(descriptor, bytes + used, capacity - used)",
                          bounded_read)
         self.assertIn("DESKTOP_FONT_MAPPING_CAPACITY 262144U", desktop)

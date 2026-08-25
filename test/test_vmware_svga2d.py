@@ -9,6 +9,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class VmwareSvga2dTests(unittest.TestCase):
+
+    def test_driver_fence_still_disables_device_owned_scanout(self):
+        supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        start = supervisor.index("static bool driver_fence_until(")
+        end = supervisor.index("static bool driver_fence_apply(", start)
+        fence = supervisor[start:end]
+        self.assertIn(
+            'bool owns_device_scanout = strcmp(runtime->name, '
+            '"svga2d-ring3") == 0;', fence)
+        self.assertIn(
+            "if (owns_device_scanout && display_control_graphics_active() &&",
+            fence)
+        self.assertIn("display_control_deactivate() != 0", fence)
+        self.assertLess(fence.index("display_control_deactivate()"),
+                        fence.index("device_domain_mark_mediated_io_quiesced("))
+
     def test_irqless_device_domain_lifecycle(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:

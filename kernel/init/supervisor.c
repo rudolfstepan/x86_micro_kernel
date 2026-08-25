@@ -4843,16 +4843,22 @@ static bool driver_fence_until(supervisor_driver_runtime_t *runtime,
     if (control.pid == 0)
         return control.fenced != 0U && control.device == 0U;
     if (deadline_ms == 0U || pit_monotonic_ms() >= deadline_ms) return false;
-    if (strcmp(runtime->name, "svga2d-ring3") == 0 ||
-        strcmp(runtime->name, "nvidia-gk208-ring3") == 0) {
-        if (display_control_graphics_active() &&
-            display_control_deactivate() != 0)
-            return false;
-        if (device_domain_mark_mediated_io_quiesced(
-                control.pid, control.process_generation,
-                control.device) != 0)
-            return false;
-    }
+    bool owns_device_scanout = strcmp(runtime->name, "svga2d-ring3") == 0;
+    bool passive_vbe_client =
+        strcmp(runtime->name, "nvidia-gk208-ring3") == 0;
+    /* VMware owns the active SVGA mode and must disable it before recovery.
+     * The passive GK208 service owns no scanout or GPU command state: its
+     * zero-capability endpoint only asks the kernel to retain the sealed VBE
+     * mode.  Deactivating that kernel-owned mode here would erase an unrelated
+     * software desktop merely because the policy process changed generation. */
+    if (owns_device_scanout && display_control_graphics_active() &&
+        display_control_deactivate() != 0)
+        return false;
+    if ((owns_device_scanout || passive_vbe_client) &&
+        device_domain_mark_mediated_io_quiesced(
+            control.pid, control.process_generation,
+            control.device) != 0)
+        return false;
     bool fenced = device_domain_fence(
         control.pid, control.process_generation, control.device) == 0;
     bool stopped = !process_identity_alive(

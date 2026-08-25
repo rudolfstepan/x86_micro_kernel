@@ -2257,6 +2257,19 @@ Deskriptor unter 64 Bytes, bevor ein neues Hardwareimage erzeugt wird. Das
 abgeschlossene `R2.2d` ersetzt die terminalabhängigen ANSI-Farbcodes in der
 frühen Framebuffer-VFS-Ausgabe durch portablen Klartext bei unveränderten
 Zählern.
+Der zweite ASUS-Lauf erreichte danach `NVIDIA_GK208_READY`, aber ein
+Treiberrestart deaktivierte den weiterhin kernelverwalteten VBE-Scanout und
+ließ `DESKTOP_OK` nur im VGA-Textmodus sichtbar. Das abgeschlossene `R2.2e`
+beschränkt die Scanout-Deaktivierung auf den tatsächlich gerätemodusbesitzenden
+VMware-Treiber. Der passive GK208-Pfad behält VBE, ohne Quieszenz,
+Generation-Fence oder Device-Recovery abzuschwächen.
+Die QEMU-Reproduktion zeigte zusätzlich, dass ein Yield zwischen den festen
+Fontreads keinen Service-Zeitslot garantiert. Feste 24-KiB-Abschnitte mit
+einem begrenzten 1-ms-Sleep liefern beim 3-MiB-Maximalfont 128
+Scheduling-Punkte, ohne die Heartbeat- oder WCET-Deadline aufzuweichen.
+Gezielte Regressionen, QEMU- und VMware-Framebuffer-Pakete sowie der
+QEMU-Runtime-Lauf bis `TEST_OK` bestehen; der sichtbare Übergang auf dem ASUS-
+Ziel bleibt der abschließende manuelle Hardware-Nachweis.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

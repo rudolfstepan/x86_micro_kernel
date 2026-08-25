@@ -122,6 +122,31 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("desktop_display_deactivate", desktop)
         self.assertIn("x86os_display_deactivate()", desktop)
 
+    def test_passive_driver_restart_preserves_kernel_owned_vbe(self):
+        supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        start = supervisor.index("static bool driver_fence_until(")
+        end = supervisor.index("static bool driver_fence_apply(", start)
+        fence = supervisor[start:end]
+        self.assertIn(
+            'bool owns_device_scanout = strcmp(runtime->name, '
+            '"svga2d-ring3") == 0;', fence)
+        self.assertIn(
+            'strcmp(runtime->name, "nvidia-gk208-ring3") == 0;', fence)
+        self.assertIn(
+            "if (owns_device_scanout && display_control_graphics_active() &&",
+            fence)
+        self.assertIn("owns_device_scanout || passive_vbe_client", fence)
+        self.assertIn("device_domain_mark_mediated_io_quiesced(", fence)
+        self.assertLess(
+            fence.index("device_domain_mark_mediated_io_quiesced("),
+            fence.index("device_domain_fence("))
+        nvidia = fence[fence.index("bool passive_vbe_client") :]
+        self.assertNotIn(
+            'strcmp(runtime->name, "nvidia-gk208-ring3") == 0) {\n'
+            "        if (display_control_graphics_active()",
+            nvidia)
+
 
 if __name__ == "__main__":
     unittest.main()

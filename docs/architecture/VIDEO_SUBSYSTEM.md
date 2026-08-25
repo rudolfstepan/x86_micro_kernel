@@ -124,6 +124,26 @@ within its 64-byte critical-object payload. This permits the already bounded
 driver to spawn; it does not change the passive probe, GPU authority or zero
 acceleration capabilities.
 
+The admitted driver also exposed a scanout-ownership distinction during the
+second ASUS run. A supervised process restart fenced both VMware and NVIDIA by
+calling the generic display deactivation path. That is required for VMware,
+whose driver owns the active SVGA mode, but it incorrectly restored VGA text
+for passive GK208 while the desktop still used the kernel-owned VBE scanout.
+Recovery now deactivates scanout only for `svga2d-ring3`. Both drivers still
+prove mediated-I/O quiescence before device fencing, process reaping and owner
+recovery. Since GK208 continues to advertise zero capabilities and owns no GPU
+command state, retaining sealed VBE across its generation change grants no
+stale driver output authority. Explicit desktop shutdown still restores VGA.
+
+The same reproduction showed why the generation changed during startup. The
+desktop already split font and asset reads into fixed calls, but a voluntary
+yield between calls could immediately select the application class again and
+did not guarantee time for supervised driver heartbeats. Startup reads now
+use 24-KiB chunks and sleep for one bounded millisecond between them. The
+3-MiB maximum font therefore exposes 128 scheduling points while each storage
+syscall and the overall initialization remain bounded; actual wake latency is
+allowed to follow the system timer resolution.
+
 ## Desktop startup splash
 
 After successful display activation and validation, the Ring-3 desktop now

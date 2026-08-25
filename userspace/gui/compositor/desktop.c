@@ -38,7 +38,8 @@
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
-#define DESKTOP_FILE_READ_CHUNK 65536U
+#define DESKTOP_FILE_READ_CHUNK 24576U
+#define DESKTOP_FILE_READ_PAUSE_MS 1U
 #define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 262144U
 #define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode.psf"
@@ -680,8 +681,9 @@ static int read_file_bounded(const char *path, uint8_t *bytes,
         size_t remaining = capacity - used;
         size_t request = remaining < DESKTOP_FILE_READ_CHUNK
             ? remaining : DESKTOP_FILE_READ_CHUNK;
-        /* Bound kernel serialization and explicitly yield after each slice;
-         * a multi-megabyte font must not starve supervised heartbeats. */
+        /* Bound kernel serialization and leave the runnable set after each
+         * slice. A plain yield can immediately select this application class
+         * again and starve supervised driver heartbeats during large fonts. */
         int amount = x86os_read(descriptor, bytes + used, request);
         if (amount < 0 || (size_t)amount > capacity - used) {
             (void)x86os_close(descriptor);
@@ -689,7 +691,7 @@ static int read_file_bounded(const char *path, uint8_t *bytes,
         }
         if (amount == 0) break;
         used += (size_t)amount;
-        if (x86os_yield() != 0) {
+        if (x86os_sleep_ms(DESKTOP_FILE_READ_PAUSE_MS) != 0) {
             (void)x86os_close(descriptor);
             return -5;
         }

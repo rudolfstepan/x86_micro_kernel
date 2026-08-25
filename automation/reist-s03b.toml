@@ -11,6 +11,67 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2e-nvidia-vbe-restart-preservation"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Preserve the kernel-owned VBE desktop across passive NVIDIA restarts"
+scope = "Repair the second ASUS desktop failure observed after NVIDIA admission. The passive nvidia-gk208-ring3 service can restart during boot load; its generic driver fence currently calls display_control_deactivate and restores VGA text even though GK208 advertises zero acceleration capabilities and owns neither scanout nor GPU command state. Split the display-driver recovery policy: VMware continues to disable its device-owned SVGA scanout before quiescence, while passive NVIDIA keeps the kernel-owned sealed VBE mode visible and performs the same mediated-I/O quiescence, generation fence, process reap and device recovery. The reproduced QEMU restart storm also proves that yielding between large desktop startup reads does not give supervised service classes a guaranteed heartbeat slot. Use fixed 24-KiB read chunks and replace the yield with a bounded 1-ms sleep between chunks. The 3-MiB font therefore exposes 128 scheduling points while every storage syscall remains small and bounded. Explicit desktop shutdown still restores VGA through the existing driver command or direct fallback. Prove branch separation, retained NVIDIA fencing, startup scheduling fairness, VMware non-regression and QEMU/VMware framebuffer builds. Final ASUS evidence must show that NVIDIA restarts no longer erase the splash or first desktop frame."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/supervisor.c",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "test/test_gui_bmp_font.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a passive NVIDIA generation restart never deactivates the kernel-owned VBE scanout",
+  "NVIDIA recovery still quiesces mediated I/O before generation fencing and owner recovery",
+  "VMware recovery still disables device-owned SVGA scanout before quiescence",
+  "explicit desktop shutdown still restores VGA text",
+  "NVIDIA acceleration capabilities remain zero",
+  "all waits and recovery deadlines remain bounded",
+  "desktop startup file reads sleep for one bounded millisecond between fixed 24-KiB chunks so service heartbeats can run"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_gui_bmp_font.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-nvidia-vbe-restart-24k.log"
+]
+stop_conditions = [
+  "the repair would skip NVIDIA device-domain quiescence fencing or generation recovery",
+  "the VMware device-owned scanout would remain active after its driver is fenced",
+  "the repair would advertise unproven NVIDIA acceleration",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: preserve VBE across passive NVIDIA restart"
+evidence = [
+  "python test/test_nvidia_gk208.py -v: PASS (10 tests), including passive NVIDIA restart VBE preservation and retained device fencing",
+  "python test/test_vmware_svga2d.py -v: PASS (14 tests), including device-owned SVGA scanout deactivation before fencing",
+  "python test/test_reist_supervisor.py -v: PASS (6 tests)",
+  "python test/test_gui_bmp_font.py -v: PASS (6 tests), including fixed 24-KiB startup reads with bounded sleep instead of yield",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PACKAGE PASS in 30s; log build/codex-agent/20260825-200410-package-qemu-framebuffer.log",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PACKAGE PASS in 25s; log build/codex-agent/20260825-200644-package-vmware-framebuffer.log",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-nvidia-vbe-restart-24k.log: PASS through TEST_OK with desktop font, supplementary fallback and Unicode probes",
+  "intermediate QEMU runtime runs exposed the startup heartbeat/WCET starvation caused by yield and validated the final 24-KiB plus bounded-sleep repair",
+  "manual ASUS acceptance remains: splash must transition to the desktop after NVIDIA_GK208_READY even if the passive driver generation restarts"
+]
+
+[[packages]]
 id = "R2.2b-desktop-startup-splash"
 status = "done"
 phase = "post-s0"
