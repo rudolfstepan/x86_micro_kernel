@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2c-nvidia-driver-name-capacity"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,145 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2b-desktop-startup-splash"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Keep a branded REIST OS splash visible during desktop initialization"
+scope = "Replace the blank framebuffer interval after graphics activation with one bounded REIST OS startup splash. Package a fixed 512x288 uncompressed BMP3 in the full native image, clear to a deterministic dark background immediately, decode and center the image through the existing Ring-3 image library, and overlay exact REIST OS loading text with the trusted framebuffer font. Reuse the desktop font file and mapping storage before font initialization so the feature adds no heap use or permanent large pixel buffer. Missing, oversized or malformed artwork remains non-fatal and leaves a visible text fallback; the first complete desktop frame replaces the splash. Keep the rescue floppy unchanged and prove packaging, asset format, startup ordering and QEMU/VMware framebuffer non-regression."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "assets/images/reist-splash.bmp",
+  "userspace/gui/compositor/desktop.c",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "test/test_desktop_splash.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a validated graphics mode receives an immediate visible REIST OS fallback before optional startup file I/O",
+  "the fixed BMP is decoded in Ring 3 with bounded caller-owned storage and no heap allocation",
+  "missing malformed or oversized artwork cannot prevent the software desktop from starting",
+  "the splash remains visible until the first complete desktop frame replaces it",
+  "the optional VMware and NVIDIA services retain their existing fallback and lifecycle behavior",
+  "the rescue floppy does not grow"
+]
+targeted_tests = [
+  "python test/test_desktop_splash.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-desktop-splash.log"
+]
+stop_conditions = [
+  "the splash would require an unbounded decoder heap allocation or a new kernel image parser",
+  "the asset cannot fit the existing full image without displacing required system files",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "feat: show REIST OS splash during desktop startup"
+evidence = [
+  "python test/test_desktop_splash.py -v: PASS (5 tests)",
+  "python test/test_nvidia_gk208.py -v: PASS (8 tests)",
+  "python test/test_vmware_svga2d.py -v: PASS (13 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (31s final candidate)",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PASS (26s)",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-desktop-splash-retry.log: PASS with WCET baseline, desktop Unicode probe and TEST_OK; initial run exposed probe-only presentation I/O consuming the existing WCET window, corrected by limiting the splash to interactive argc=1 sessions"
+]
+
+[[packages]]
+id = "R2.2c-nvidia-driver-name-capacity"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Admit the exact NVIDIA GK208 driver identity to supervision"
+scope = "Repair the physical ASUS boot failure REIST_VIDEO DRIVER_DEGRADED result=-36. The canonical driver identity nvidia-gk208-ring3 is longer than the frozen 16-byte supervisor name buffer and is currently rejected before spawn. Raise the single fixed supervisor name capacity to a documented bound that contains every built-in service and driver identity plus NUL, retain strict non-truncating copy validation, prove all protected descriptor payloads still fit, and add a regression that checks the exact canonical NVIDIA identity can be represented. Preserve passive GK208 probing, zero acceleration capabilities, generation fencing and every VMware lifecycle path. Automated QEMU and VMware gates prove compilation and non-regression; the replacement ASUS image must emit NVIDIA_GK208_READY without DRIVER_DEGRADED result=-36 before any later engine work."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_reist_supervisor.py",
+  "test/test_supervisor_host.c",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the exact nvidia-gk208-ring3 identity including NUL fits without truncation",
+  "oversized and empty supervisor names remain rejected before state publication",
+  "protected supervisor descriptors remain within the fixed critical-object payload",
+  "the driver lifecycle stays generation-scoped and fail-closed",
+  "the passive probe and zero native acceleration capabilities are unchanged",
+  "VMware supervision remains compatible"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the capacity increase would exceed the critical-object payload or alter a public userspace ABI",
+  "the fix would shorten or alias the canonical NVIDIA driver identity",
+  "the real hardware result indicates a second failure after the driver is admitted",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: admit NVIDIA driver identity to supervisor"
+evidence = []
+
+[[packages]]
+id = "R2.2d-framebuffer-console-status"
+status = "queued"
+phase = "post-s0"
+risk = "low"
+title = "Keep the framebuffer boot status free of raw ANSI escapes"
+scope = "Remove terminal-only ANSI color sequences from the early VFS filesystem summary because the VGA/framebuffer console deliberately renders bytes and does not implement an ANSI terminal. Preserve the exact mounted and failed counts in plain text for serial, framebuffer and automated logs. Add a source regression that rejects control sequences in the boot summary and document the portable console contract. Do not add an escape parser to Ring 0."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/vfs/filesystem.c",
+  "test/test_vfs_console_status.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the boot filesystem summary contains no terminal control sequence",
+  "mounted total and failed drive counts remain visible",
+  "serial and framebuffer consoles receive the same portable text",
+  "no ANSI parser or other complex presentation policy enters Ring 0"
+]
+targeted_tests = [
+  "python test/test_vfs_console_status.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the change would suppress a drive failure count or mount diagnostic",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: print portable framebuffer filesystem status"
+evidence = []
 
 [[packages]]
 id = "R2.2a-nvidia-vbe-fallback"

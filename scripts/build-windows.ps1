@@ -336,6 +336,7 @@ try {
     $testTonePath = Join-Path $RepoRoot 'assets\audio\testtone-440hz-mono-48k-s16.wav'
     $imageDataArguments += @(
         '--data-file', "usr/share/sounds/440hz.wav=$testTonePath"
+        '--data-file', "usr/share/images/reist-splash.bmp=$(Join-Path $RepoRoot 'assets\images\reist-splash.bmp')"
         '--data-file', "usr/share/images/demo-desktop.bmp=$(Join-Path $RepoRoot 'assets\images\demo-desktop.bmp')"
         '--data-file', "usr/share/images/demo-colors.gif=$(Join-Path $RepoRoot 'assets\images\demo-colors.gif')"
         '--data-file', "usr/share/fonts/reist-vga.psf=$(Join-Path $RepoRoot 'assets\fonts\reist-vga.psf')"

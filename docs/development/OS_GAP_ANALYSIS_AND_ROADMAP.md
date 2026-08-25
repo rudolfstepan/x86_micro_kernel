@@ -2242,6 +2242,18 @@ Der erste ASUS-Lauf meldete den optionalen Dienst als nicht vorhanden. Das
 abgeschlossene Paket `R2.2a-nvidia-vbe-fallback` trennt deshalb veröffentlichte
 Boot-Framebuffer-Metadaten vom tatsächlich aktiven Hardwaremodus und
 reaktiviert bei `ENODEV` ausdrücklich den versiegelten VBE-/Softwarepfad.
+Das abgeschlossene Paket `R2.2b-desktop-startup-splash` nutzt diesen validierten
+Framebuffer unmittelbar nach der Aktivierung: Noch vor optionalem Datei-I/O
+wird ein sichtbarer REIST-OS-Textfallback publiziert, anschließend ein fest
+begrenztes 512x288-BMP in Ring 3 decodiert und bis zum ersten vollständigen
+Desktop-Frame angezeigt. Fehlende oder ungültige Bilddaten bleiben nicht
+fatal; Decoder- und Fontinitialisierung teilen sich statische Startpuffer.
+Der reale ASUS-Nachweis hat zugleich `DRIVER_DEGRADED result=-36` aufgedeckt:
+Die kanonische Identität `nvidia-gk208-ring3` passt nicht in den bisherigen
+16-Byte-Supervisor-Namenspuffer und wird vor dem Spawn abgewiesen. Das aktive
+Paket `R2.2c-nvidia-driver-name-capacity` korrigiert genau diese feste Grenze,
+bevor ein neues Hardwareimage erzeugt wird. Anschließend entfernt `R2.2d` die
+terminalabhängigen ANSI-Farbcodes aus der frühen Framebuffer-VFS-Ausgabe.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

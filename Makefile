@@ -620,6 +620,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/icons/trash-empty.ico=assets/icons/trash-empty.ico \
 	usr/share/icons/trash-full.ico=assets/icons/trash-full.ico \
 	usr/share/sounds/440hz.wav=assets/audio/testtone-440hz-mono-48k-s16.wav \
+	usr/share/images/reist-splash.bmp=assets/images/reist-splash.bmp \
 	usr/share/images/demo-desktop.bmp=assets/images/demo-desktop.bmp \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
 	usr/share/fonts/reist-vga.psf=assets/fonts/reist-vga.psf \
@@ -709,6 +710,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
 	usr/share/sounds/440hz.wav=% usr/share/images/demo-desktop.bmp=% \
+	usr/share/images/reist-splash.bmp=% \
 	usr/share/images/demo-colors.gif=% \
 	usr/share/fonts/reist-unicode.psf=% \
 	usr/share/fonts/unifont_all-16.0.04.hex.gz=% \

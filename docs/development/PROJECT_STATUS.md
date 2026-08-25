@@ -21,6 +21,24 @@ bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung
 mit Software-Rendering aus. Veraltete Boot-Framebuffer-Metadaten können diese
 Modusumschaltung nicht mehr überspringen.
 
+Das abgeschlossene `R2.2b-desktop-startup-splash` beseitigt den schwarzen
+Übergang zwischen Grafikaktivierung und erstem Desktop-Frame. Der Desktop
+zeigt sofort einen dunklen REIST-OS-Fallback und lädt danach das feste 512x288-BMP aus dem
+vollständigen Systemimage. Decoder-, Pixel- und Fontdaten verwenden in dieser
+Startphase überlappungsfreie Bereiche bereits vorhandener, fest begrenzter
+Puffer; Heap-Allokation oder ein Kernel-Bildparser kommen nicht hinzu. Fehlt
+die Ressource oder ist sie ungültig, startet der Desktop mit dem sichtbaren
+Textfallback weiter. Die Rettungsdiskette bleibt unverändert klein.
+
+Der nachgereichte ASUS-Bootnachweis identifiziert den nächsten Fehler exakt:
+Die passive GK208-Probe liest `10DE:1280`, 16 MiB BAR0 und den PTIMER korrekt,
+aber `nvidia-gk208-ring3` überschreitet einschließlich NUL die bisherige
+16-Byte-Supervisor-Namenskapazität. Deshalb entsteht vor dem Treiber-Spawn
+`REIST_VIDEO DRIVER_DEGRADED result=-36`. `R2.2c` korrigiert diesen festen
+Kapazitätsvertrag; die danach sichtbaren ANSI-Sequenzen im VFS-Status folgen
+getrennt als `R2.2d`. Die absichtlichen Crash-, Hang- und Invalid-Reply-Proben
+mit abschließendem `RECOVERY_SEQUENCE_OK` sind weiterhin erwartete Selbsttests.
+
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
 unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und

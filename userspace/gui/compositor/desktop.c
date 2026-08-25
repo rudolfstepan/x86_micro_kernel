@@ -42,6 +42,15 @@
 #define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 262144U
 #define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode.psf"
+#define DESKTOP_SPLASH_PATH "/usr/share/images/reist-splash.bmp"
+#define DESKTOP_SPLASH_WIDTH 512U
+#define DESKTOP_SPLASH_HEIGHT 288U
+#define DESKTOP_SPLASH_ENCODED_CAPACITY (512U * 1024U)
+#define DESKTOP_SPLASH_PIXEL_OFFSET DESKTOP_SPLASH_ENCODED_CAPACITY
+#define DESKTOP_SPLASH_PIXEL_CAPACITY \
+    (DESKTOP_SPLASH_WIDTH * DESKTOP_SPLASH_HEIGHT)
+#define DESKTOP_SPLASH_BACKGROUND 0x00040A18U
+#define DESKTOP_SPLASH_FOREGROUND 0x00E8FAFFU
 #define DESKTOP_CLOCK_TEXT_CAPACITY 17U
 #define DESKTOP_CLOCK_POLL_MS 1000U
 #define DESKTOP_CLOCK_FALLBACK_POLLS 200U
@@ -443,9 +452,16 @@ static desktop_file_icon_cache_entry_t
 static uint8_t desktop_file_icon_encoded[DESKTOP_FILE_ICON_ENCODED_CAPACITY];
 static uint32_t desktop_file_icon_decoded[DESKTOP_FILE_ICON_PIXELS];
 static reist_gui_font_t desktop_font;
-static reist_gui_font_mapping_t
-    desktop_font_mappings[DESKTOP_FONT_MAPPING_CAPACITY];
-static uint8_t desktop_font_file[DESKTOP_FONT_FILE_CAPACITY];
+typedef union desktop_startup_workspace {
+    reist_gui_font_mapping_t font_mappings[DESKTOP_FONT_MAPPING_CAPACITY];
+    reist_image_workspace_t splash_decode;
+} desktop_startup_workspace_t;
+typedef union desktop_font_file_storage {
+    uint8_t bytes[DESKTOP_FONT_FILE_CAPACITY];
+    uint32_t alignment;
+} desktop_font_file_storage_t;
+static desktop_startup_workspace_t desktop_startup_workspace;
+static desktop_font_file_storage_t desktop_font_file;
 static uint32_t desktop_font_pixels[
     REIST_GUI_FONT_MAX_WIDTH * REIST_GUI_FONT_MAX_HEIGHT];
 static uint32_t desktop_font_ready;
@@ -469,6 +485,16 @@ _Static_assert(sizeof(desktop_file_icon_paths) /
                    sizeof(desktop_file_icon_paths[0]) ==
                    DESKTOP_EXPLORER_ICON_COUNT,
                "file icon path table is incomplete");
+_Static_assert(DESKTOP_SPLASH_PIXEL_OFFSET % sizeof(uint32_t) == 0U,
+               "splash pixel storage must remain aligned");
+_Static_assert(DESKTOP_SPLASH_PIXEL_OFFSET +
+                   DESKTOP_SPLASH_PIXEL_CAPACITY * sizeof(uint32_t) <=
+                   DESKTOP_FONT_FILE_CAPACITY,
+               "splash buffers exceed shared font-file storage");
+_Static_assert(DESKTOP_FONT_MAPPING_CAPACITY *
+                   sizeof(reist_gui_font_mapping_t) >=
+                   sizeof(reist_image_workspace_t),
+               "font mapping storage is too small for splash decoding");
 
 typedef struct {
     const x86os_display_info_t *display;
@@ -676,17 +702,94 @@ static int read_file_bounded(const char *path, uint8_t *bytes,
     return 0;
 }
 
+static int32_t desktop_splash_center_x(
+    const x86os_display_info_t *display, size_t text_length) {
+    uint64_t width = (uint64_t)text_length * display->font_width;
+    return width < display->width
+        ? (int32_t)((display->width - (uint32_t)width) / 2U) : 0;
+}
+
+static void desktop_splash_show(const x86os_display_info_t *display) {
+    static const char title[] = "REIST OS";
+    static const char loading[] = "System wird geladen ...";
+    if (display == 0) return;
+
+    /* Publish a useful fallback before touching the filesystem.  The image
+     * path is optional and must never turn desktop startup into a blank or
+     * failed screen. */
+    (void)x86os_fill_rect(
+        0, 0, display->width, display->height, DESKTOP_SPLASH_BACKGROUND);
+    int32_t fallback_y = (int32_t)((display->height - display->font_height) /
+                                   2U);
+    (void)x86os_draw_text_pixels(
+        desktop_splash_center_x(display, sizeof(title) - 1U), fallback_y,
+        title, sizeof(title) - 1U,
+        DESKTOP_SPLASH_FOREGROUND, DESKTOP_SPLASH_BACKGROUND);
+
+    size_t encoded_size = 0U;
+    int status = read_file_bounded(
+        DESKTOP_SPLASH_PATH, desktop_font_file.bytes,
+        DESKTOP_SPLASH_ENCODED_CAPACITY, &encoded_size);
+    uint32_t *pixels = (uint32_t *)(void *)(
+        desktop_font_file.bytes + DESKTOP_SPLASH_PIXEL_OFFSET);
+    reist_image_info_t info = {0};
+    if (status == 0)
+        status = reist_image_decode(
+            desktop_font_file.bytes, encoded_size, pixels,
+            DESKTOP_SPLASH_PIXEL_CAPACITY,
+            &desktop_startup_workspace.splash_decode, &info);
+
+    uint32_t text_gap = display->font_height + 12U;
+    uint32_t group_height = DESKTOP_SPLASH_HEIGHT + text_gap +
+                            display->font_height * 2U;
+    if (status != 0 || info.width != DESKTOP_SPLASH_WIDTH ||
+        info.height != DESKTOP_SPLASH_HEIGHT ||
+        info.stride_pixels != DESKTOP_SPLASH_WIDTH ||
+        info.format != REIST_IMAGE_FORMAT_BMP || info.flags != 0U ||
+        display->width < DESKTOP_SPLASH_WIDTH ||
+        display->height < group_height) {
+        x86os_puts("DESKTOP_SPLASH_FALLBACK status=");
+        x86os_print_number(status != 0 ? status : -84);
+        x86os_putchar('\n');
+        return;
+    }
+
+    int32_t image_x = (int32_t)((display->width - DESKTOP_SPLASH_WIDTH) / 2U);
+    int32_t image_y = (int32_t)((display->height - group_height) / 2U);
+    status = x86os_draw_pixels(
+        image_x, image_y, DESKTOP_SPLASH_WIDTH, DESKTOP_SPLASH_HEIGHT,
+        pixels, DESKTOP_SPLASH_WIDTH);
+    if (status != 0) {
+        x86os_puts("DESKTOP_SPLASH_FALLBACK status=");
+        x86os_print_number(status);
+        x86os_putchar('\n');
+        return;
+    }
+    int32_t title_y = image_y + (int32_t)DESKTOP_SPLASH_HEIGHT + 12;
+    (void)x86os_draw_text_pixels(
+        desktop_splash_center_x(display, sizeof(title) - 1U), title_y,
+        title, sizeof(title) - 1U,
+        DESKTOP_SPLASH_FOREGROUND, DESKTOP_SPLASH_BACKGROUND);
+    (void)x86os_draw_text_pixels(
+        desktop_splash_center_x(display, sizeof(loading) - 1U),
+        title_y + (int32_t)display->font_height,
+        loading, sizeof(loading) - 1U,
+        DESKTOP_SPLASH_FOREGROUND, DESKTOP_SPLASH_BACKGROUND);
+    x86os_puts("DESKTOP_SPLASH_READY\n");
+}
+
 static int desktop_font_load(const x86os_display_info_t *display) {
     desktop_font_ready = 0U;
     if (display == 0) return -22;
     size_t size = 0U;
     int status = read_file_bounded(
-        DESKTOP_FONT_PATH, desktop_font_file,
-        sizeof(desktop_font_file), &size);
+        DESKTOP_FONT_PATH, desktop_font_file.bytes,
+        sizeof(desktop_font_file.bytes), &size);
     if (status != 0) return status;
     reist_gui_font_t candidate = {0};
     status = reist_gui_font_open_psf2(
-        &candidate, desktop_font_file, size, desktop_font_mappings,
+        &candidate, desktop_font_file.bytes, size,
+        desktop_startup_workspace.font_mappings,
         DESKTOP_FONT_MAPPING_CAPACITY, 0x25A0U);
     if (status != 0 || candidate.width != display->font_width ||
         candidate.height != display->font_height) return status != 0
@@ -4503,6 +4606,9 @@ int main(int argc, char **argv) {
         x86os_puts("desktop: Grafikmodus nicht verfuegbar\n");
         return 1;
     }
+    /* Diagnostic modes are timing probes, not interactive desktop sessions;
+     * keep their established runtime envelope free of presentation I/O. */
+    if (argc == 1) desktop_splash_show(&display);
     (void)desktop_svga2d_connect(0U);
     int font_status = desktop_font_load(&display);
     if (unicode_probe) {

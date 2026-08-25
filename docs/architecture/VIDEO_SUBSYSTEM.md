@@ -115,3 +115,23 @@ when an explicit backend is active.  If the supervised endpoint returns
 `ENODEV`, the desktop now re-enters the sealed VBE mode, emits
 `DISPLAY_SOFTWARE_FALLBACK`, and renders in software.  Shutdown likewise uses
 the direct validated VGA restoration path if the endpoint disappears.
+
+## Desktop startup splash
+
+After successful display activation and validation, the Ring-3 desktop now
+publishes a deterministic dark background and the exact `REIST OS` title
+before performing optional filesystem reads. It then reads the fixed
+`/usr/share/images/reist-splash.bmp`, decodes the 512x288 uncompressed BMP3
+through `libreistimage`, centers it, and adds the loading label with the trusted
+framebuffer font. The splash remains the visible scanout while the Unicode
+font, icon cache, trash state and file associations initialize; the first full
+desktop frame replaces it.
+
+The artwork is presentation data, not boot authority. Reads are chunked and
+bounded to 512 KiB, dimensions and format are checked after decoding, and all
+decoder memory is caller-owned. During this phase the decoder shares the
+later font-mapping workspace, while encoded and decoded data occupy disjoint
+regions of the existing aligned font-file buffer. There is no startup heap or
+kernel image parser. A missing, malformed, oversized or display-incompatible
+asset leaves the already visible title fallback and does not block desktop
+startup. The rescue floppy intentionally omits the artwork.
