@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.1-unicode-text-raster"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,66 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.1-unicode-text-raster"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Bounded UTF-8 scalar raster and VGA glyph fallback"
+scope = "Replace byte-wise graphical text rasterization with one bounded RFC 3629 scalar run while preserving the existing display syscall ABI where text_length and successful return values remain byte counts. Extend the shared heap-free UTF helper with complete preflight scanning and scalar-bounded prefix selection. Generate a deterministic checked-in Unicode-to-IBM-PC CP437 mapping for the existing 256-glyph 8x16 bitmap font; ASCII and every representable CP437 Unicode scalar select their real glyph while every other valid scalar selects one visible missing-glyph cell. Validate the entire at-most-256-byte run before framebuffer effects, then decode each scalar exactly once for unclipped and clipped drawing and derive present damage from scalar count rather than byte count. Malformed overlong truncated surrogate or above-U+10FFFF input returns EINVAL before frame reservation or pixel effects. Update the Ring-3 desktop clipping centering icon labels task labels and dialogs to measure scalar cells and never split a UTF-8 sequence. Prove all one-to-four-byte scalar classes supplementary values CP437 mappings fallback malformed rejection byte-count ABI preservation codepoint clipping and a QEMU framebuffer runtime call. This package establishes safe scalar processing and deterministic fallback only; it does not claim glyph coverage beyond the embedded CP437 font shaping grapheme clustering bidirectional layout IME support or a font service."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/generate_cp437_unicode.py",
+  "include/reist/utf.h",
+  "include/reist/unicode_vga_font.h",
+  "drivers/video/framebuffer.c",
+  "drivers/video/framebuffer.h",
+  "kernel/syscall/syscall_table.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/programs/guest_test.c",
+  "test/test_unicode_text_host.c",
+  "test/test_unicode_text.py",
+  "test/test_display_abi_minimal.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "draw-text ABI version structure sizes syscall numbers text byte lengths and successful byte-count returns remain unchanged",
+  "every graphical text run is completely validated as RFC 3629 UTF-8 before frame reservation or framebuffer effects",
+  "work is bounded by FRAMEBUFFER_DISPLAY_MAX_TEXT bytes and at most the same number of scalar cells with no heap allocation locale or runtime file access",
+  "ASCII and mapped CP437 Unicode scalars preserve their existing 8x16 glyphs while every unsupported valid scalar consumes exactly one visible fallback cell",
+  "clipping centering damage and desktop maximum width use decoded scalar cells and never begin or end inside a UTF-8 sequence",
+  "malformed overlong truncated surrogate and above-U+10FFFF sequences fail closed with EINVAL",
+  "the kernel receives no complex font parser dynamic font authority shaping engine or unbounded glyph cache",
+  "graphemes combining-mark placement bidirectional layout IME and broad font coverage remain explicit Ring-3 follow-up work"
+]
+targeted_tests = [
+  "python test/test_unicode_text.py -v",
+  "python test/test_display_abi_minimal.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video framebuffer -Mode normal"
+]
+stop_conditions = [
+  "a valid scalar can be split counted as multiple cells or rejected by the raster path",
+  "malformed UTF-8 can reserve a frame or publish pixels",
+  "ASCII output or public display ABI behavior regresses",
+  "the generated CP437 mapping is not reproducible or aliases two Unicode scalars ambiguously",
+  "the implementation requires a font parser heap allocation runtime VFS access or mutable unbounded cache in Ring 0",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: add bounded Unicode scalar raster"
+evidence = []
 
 [[packages]]
 id = "R2.2-unicode-nfc-casefold"
