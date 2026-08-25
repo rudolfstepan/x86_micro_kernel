@@ -54,6 +54,7 @@ GUI_LIBRARY_SOURCES = (
     ROOT / "userspace" / "gui" / "lib" / "tabs.c",
     ROOT / "userspace" / "gui" / "lib" / "value_controls.c",
     ROOT / "userspace" / "gui" / "lib" / "text_editor.c",
+    ROOT / "userspace" / "gui" / "lib" / "font.c",
 )
 AUDIO_LIBRARY_SOURCES = (
     ROOT / "userspace" / "audio" / "lib" / "audio.c",

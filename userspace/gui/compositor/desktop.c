@@ -17,6 +17,7 @@
 #include "desktop_surface_runtime.h"
 #include "reist/image.h"
 #include "reist/gui/dialog.h"
+#include "reist/gui/font.h"
 #include "reist/gui/menu.h"
 #include "../../video/include/reist/svga2d.h"
 #include "../../../include/reist/utf.h"
@@ -35,6 +36,10 @@
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
+#define DESKTOP_FONT_FILE_CAPACITY 16384U
+#define DESKTOP_FONT_MAPPING_CAPACITY 512U
+#define DESKTOP_FONT_EXTENSION_FIRST_GLYPH 256U
+#define DESKTOP_FONT_PATH "/usr/share/fonts/reist-vga.psf"
 #define DESKTOP_CLOCK_TEXT_CAPACITY 17U
 #define DESKTOP_CLOCK_POLL_MS 1000U
 #define DESKTOP_CLOCK_FALLBACK_POLLS 200U
@@ -394,6 +399,13 @@ static desktop_file_icon_cache_entry_t
     desktop_trash_icon_cache[DESKTOP_TRASH_ICON_COUNT];
 static uint8_t desktop_file_icon_encoded[DESKTOP_FILE_ICON_ENCODED_CAPACITY];
 static uint32_t desktop_file_icon_decoded[DESKTOP_FILE_ICON_PIXELS];
+static reist_gui_font_t desktop_font;
+static reist_gui_font_mapping_t
+    desktop_font_mappings[DESKTOP_FONT_MAPPING_CAPACITY];
+static uint8_t desktop_font_file[DESKTOP_FONT_FILE_CAPACITY];
+static uint32_t desktop_font_pixels[
+    REIST_GUI_FONT_MAX_WIDTH * REIST_GUI_FONT_MAX_HEIGHT];
+static uint32_t desktop_font_ready;
 static const char *const desktop_file_icon_paths[
     DESKTOP_EXPLORER_ICON_COUNT] = {
         "/usr/share/icons/folder-empty.ico",
@@ -612,6 +624,26 @@ static int read_file_bounded(const char *path, uint8_t *bytes,
     return 0;
 }
 
+static int desktop_font_load(const x86os_display_info_t *display) {
+    desktop_font_ready = 0U;
+    if (display == 0) return -22;
+    size_t size = 0U;
+    int status = read_file_bounded(
+        DESKTOP_FONT_PATH, desktop_font_file,
+        sizeof(desktop_font_file), &size);
+    if (status != 0) return status;
+    reist_gui_font_t candidate = {0};
+    status = reist_gui_font_open_psf2(
+        &candidate, desktop_font_file, size, desktop_font_mappings,
+        DESKTOP_FONT_MAPPING_CAPACITY, 0x25A0U);
+    if (status != 0 || candidate.width != display->font_width ||
+        candidate.height != display->font_height) return status != 0
+            ? status : -84;
+    desktop_font = candidate;
+    desktop_font_ready = 1U;
+    return 0;
+}
+
 static uint32_t compose_icon_pixel(uint32_t argb, uint32_t background) {
     uint32_t alpha = argb >> 24U;
     uint32_t inverse = 255U - alpha;
@@ -713,6 +745,63 @@ static void fill_rect_clipped(const desktop_render_context_t *context,
                           color);
 }
 
+static int desktop_font_overlay_extensions(
+    const desktop_render_context_t *context, int32_t x, int32_t y,
+    const char *text, size_t length, uint32_t foreground,
+    uint32_t background) {
+    if (!desktop_font_ready || context == 0 || context->display == 0 ||
+        text == 0) return 0;
+    size_t source = 0U;
+    size_t cell = 0U;
+    int overlays = 0;
+    desktop_rect_t physical = {
+        0, 0, context->display->width, context->display->height
+    };
+    while (source < length) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(
+                text + source, length - source, &consumed, &scalar))
+            return -84;
+        uint32_t glyph_index = 0U;
+        int mapped = reist_gui_font_lookup(
+            &desktop_font, scalar, &glyph_index);
+        if (mapped < 0) return mapped;
+        if (mapped == 1 &&
+            glyph_index >= DESKTOP_FONT_EXTENSION_FIRST_GLYPH) {
+            int64_t glyph_x64 = (int64_t)x +
+                (int64_t)cell * desktop_font.width;
+            if (glyph_x64 >= INT32_MIN && glyph_x64 <= INT32_MAX) {
+                desktop_rect_t glyph = {
+                    (int32_t)glyph_x64, y,
+                    desktop_font.width, desktop_font.height
+                };
+                desktop_rect_t clipped;
+                if (intersect_rects(glyph, context->clip, &clipped) &&
+                    intersect_rects(clipped, physical, &clipped)) {
+                    uint32_t source_x = (uint32_t)(clipped.x - glyph.x);
+                    uint32_t source_y = (uint32_t)(clipped.y - glyph.y);
+                    int raster = reist_gui_font_raster_xrgb_region(
+                        &desktop_font, glyph_index, source_x, source_y,
+                        clipped.width, clipped.height, foreground, background,
+                        desktop_font_pixels, clipped.width,
+                        sizeof(desktop_font_pixels) /
+                            sizeof(desktop_font_pixels[0]));
+                    if (raster != 0) return raster;
+                    int draw = x86os_draw_pixels(
+                        clipped.x, clipped.y, clipped.width, clipped.height,
+                        desktop_font_pixels, clipped.width);
+                    if (draw != 0) return draw;
+                    ++overlays;
+                }
+            }
+        }
+        source += consumed;
+        ++cell;
+    }
+    return overlays;
+}
+
 static void draw_text_clipped(const desktop_render_context_t *context,
                               int32_t x, int32_t y, const char *text,
                               uint32_t maximum_width, uint32_t foreground,
@@ -734,11 +823,14 @@ static void draw_text_clipped(const desktop_render_context_t *context,
     size_t maximum_scalars = maximum_width / display->font_width;
     if (reist_utf8_prefix(text, length, maximum_scalars,
                           &prefix_bytes, &prefix_scalars) &&
-        prefix_scalars != 0U)
+        prefix_scalars != 0U) {
         (void)x86os_draw_text_pixels_clipped(
             x, y, text, prefix_bytes, foreground, background,
             context->clip.x, context->clip.y,
             context->clip.width, context->clip.height);
+        (void)desktop_font_overlay_extensions(
+            context, x, y, text, prefix_bytes, foreground, background);
+    }
 }
 
 static uint32_t menu_height(const x86os_display_info_t *display) {
@@ -4370,29 +4462,43 @@ int main(int argc, char **argv) {
         return 1;
     }
     (void)desktop_svga2d_connect(0U);
+    int font_status = desktop_font_load(&display);
     if (unicode_probe) {
         static const char valid[] =
-            "A\xC3\x84\xF0\x9F\x9A\x80";
+            "A\xC3\x84\xE2\x82\xAC\xF0\x9F\x9A\x80";
         static const char malformed[] = "\xF0\x28\x8C\x28";
         int valid_status = x86os_draw_text_pixels(
             (int32_t)(display.width - display.font_width), 0,
             valid, sizeof(valid) - 1U, 0x00FFFFFFU, 0x00000000U);
+        desktop_render_context_t probe_context = {
+            .display = &display,
+            .clip = {0, 0, display.width, display.height},
+        };
+        int font_overlay_status = desktop_font_overlay_extensions(
+            &probe_context, 0, 0, valid, sizeof(valid) - 1U,
+            0x00FFFFFFU, 0x00000000U);
         int malformed_status = x86os_draw_text_pixels(
             0, 0, malformed, sizeof(malformed) - 1U,
             0x00FFFFFFU, 0x00000000U);
         int deactivate_status = runtime_activated
             ? desktop_display_deactivate() : 0;
-        if (valid_status != (int)(sizeof(valid) - 1U) ||
-            malformed_status != -22 || deactivate_status != 0) {
+        if (valid_status != (int)(sizeof(valid) - 1U) || font_status != 0 ||
+            font_overlay_status != 1 || malformed_status != -22 ||
+            deactivate_status != 0) {
             x86os_puts("DESKTOP_UNICODE_FAIL valid=");
             x86os_print_number(valid_status);
             x86os_puts(" malformed=");
             x86os_print_number(malformed_status);
+            x86os_puts(" font=");
+            x86os_print_number(font_status);
+            x86os_puts(" overlay=");
+            x86os_print_number(font_overlay_status);
             x86os_puts(" deactivate=");
             x86os_print_number(deactivate_status);
             x86os_putchar('\n');
             return 1;
         }
+        x86os_puts("DESKTOP_FONT_FALLBACK_OK\n");
         x86os_puts("DESKTOP_UNICODE_OK\n");
         return 0;
     }

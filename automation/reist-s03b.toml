@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.2-ring3-psf2-font-fallback"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R3.2-ring3-psf2-font-fallback"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Bounded Ring-3 PSF2 font fallback"
@@ -70,7 +70,12 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "gui: add bounded Ring-3 PSF2 fallback"
-evidence = []
+evidence = [
+  "five PSF2 generator parser lookup raster fixed-storage image-layout and desktop integration contracts passed",
+  "five Unicode raster and thirty-seven desktop source regressions remained passed",
+  "final QEMU framebuffer package gate passed in 11 seconds",
+  "QEMU VMware-SVGA2D runtime passed in 27 seconds with DESKTOP_FONT_FALLBACK_OK DESKTOP_UNICODE_OK UNICODE_RASTER_OK and TEST_OK"
+]
 
 [[packages]]
 id = "R3.1-unicode-text-raster"

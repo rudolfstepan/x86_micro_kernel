@@ -287,10 +287,14 @@ noch fehlt. Farbe allein darf Fokus, Fehler oder Auswahl nicht ausdrücken.
 Labels sind caller-owned UTF-8-Daten. Die Display-Primitive validiert den
 vollständigen RFC-3629-Lauf vor Pixelwirkung, zählt Unicode-Skalarwerte statt
 Bytes und bildet vorhandene CP437-Zeichen auf ihre echten 8x16-Glyphen ab.
-Jeder andere gültige Skalar erhält genau eine sichtbare Ersatzglyph-Zelle. Der
-aktuelle VGA-Font deckt damit weiterhin nur einen begrenzten Zeichensatz ab;
-Font-Fallback, Text-Shaping, Grapheme, Mnemonics und Rechts-nach-links-Layout
-bleiben explizit offen.
+Jeder andere gültige Skalar erhält zunächst genau eine sichtbare
+Ersatzglyph-Zelle. Zusätzlich lädt der Desktop einmalig den standardisierten
+PSF2-Font `/usr/share/fonts/reist-vga.psf` in feste Ring-3-Speicher. Der
+vollständig vor Publikation validierte Unicode-Index kann echte
+Erweiterungsglyphen über geclippte Pixeluploads überlagern; die erste
+Referenzglyph ist U+20AC. Fehlt der optionale Font oder ist er ungültig,
+bleibt der Kernel-Ersatzpfad aktiv. Breite Schriftabdeckung, Text-Shaping,
+Grapheme, Mnemonics und Rechts-nach-links-Layout bleiben explizit offen.
 
 ## Umsetzungsreihenfolge
 
@@ -314,6 +318,8 @@ bleiben explizit offen.
   Fill-/Text-Paintframes werden begrenzt und atomar committed.
 - [x] Grafische Textläufe als validiertes UTF-8 nach Unicode-Skalarzellen
   rasterisieren und fehlende VGA-Glyphen deterministisch ersetzen.
+- [x] Einen begrenzten, heapfreien PSF2-Decoder und geclippten Ring-3-
+  Erweiterungsglyphpfad bereitstellen.
 - [ ] Accessibility-Baum und assistive Eventausgabe versionieren.
 - [ ] Theme-, Font-, Icon- und Lokalisierungsressourcen versionieren.
 - [ ] Dateimanager, Terminal und Systeminfo als getrennte GUI-Clients portieren;

@@ -622,6 +622,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/sounds/440hz.wav=assets/audio/testtone-440hz-mono-48k-s16.wav \
 	usr/share/images/demo-desktop.bmp=assets/images/demo-desktop.bmp \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
+	usr/share/fonts/reist-vga.psf=assets/fonts/reist-vga.psf \
 	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
 	bin/ls.prg=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 	bin/cat.prg=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
@@ -793,6 +794,7 @@ test-unit:
 # Bounded inner loop for desktop/menu implementation work.
 test-desktop-host:
 	@$(PYTHON) test/test_display_abi_minimal.py -q
+	@$(PYTHON) test/test_gui_font.py -q
 	@$(PYTHON) test/test_desktop_source.py -q
 	@$(PYTHON) test/test_desktop_explorer_source.py -q
 	@$(PYTHON) test/test_desktop_filetypes_source.py -q

@@ -18,6 +18,17 @@ Pixelwirkung. Der Desktop trennt beim Begrenzen keine UTF-8-Sequenzen mehr.
 Breite Fontabdeckung, Shaping, Bidi, Grapheme und IME bleiben ausdrücklich
 offen und gehören nicht als komplexe Parser in Ring 0.
 
+`R3.2-ring3-psf2-font-fallback` ergänzt darauf einen öffentlichen,
+heapfreien PSF2-Decoder in `libreistgui`. Er validiert die vollständige, auf
+4 MiB begrenzte Datei samt Unicode-Tabelle vor Publikation und baut seinen
+Index ausschließlich in caller-owned Festkapazität auf. Der reproduzierbare
+Referenzfont bewahrt die 256 IBM-PC-Glyphen und ergänzt U+20AC als echte
+Erweiterungsglyph. Der Desktop lädt ihn einmalig, behält den schnellen
+Kernel-Textlauf bei und überlagert nur Erweiterungen über geclippte
+Ring-3-XRGB-Uploads. Fehlende oder ungültige Fontdaten lassen den bisherigen
+sichtbaren Ersatzpfad aktiv; breite Schriftpakete und komplexes Textlayout
+bleiben offen.
+
 `R2.2-unicode-nfc-casefold` ergänzt vollständige kanonische
 Unicode-15-Dateinamenidentität. Ein reproduzierbarer Generator fixiert 2.061
 kanonische Zerlegungen, 1.530 Default-Casefold-Abbildungen, 922

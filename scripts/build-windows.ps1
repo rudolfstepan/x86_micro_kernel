@@ -337,6 +337,7 @@ try {
         '--data-file', "usr/share/sounds/440hz.wav=$testTonePath"
         '--data-file', "usr/share/images/demo-desktop.bmp=$(Join-Path $RepoRoot 'assets\images\demo-desktop.bmp')"
         '--data-file', "usr/share/images/demo-colors.gif=$(Join-Path $RepoRoot 'assets\images\demo-colors.gif')"
+        '--data-file', "usr/share/fonts/reist-vga.psf=$(Join-Path $RepoRoot 'assets\fonts\reist-vga.psf')"
     )
     $floppyDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"

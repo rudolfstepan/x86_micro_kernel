@@ -272,9 +272,15 @@ RFC-3629-Lauf skalarweise. Sie validiert höchstens 256 Bytes vollständig vor
 Frame-Reservierung und Pixelwirkung, bewahrt die bytezählende v1-ABI, bildet
 Unicode auf vorhandene CP437-Glyphen ab und zeichnet für jeden anderen
 gültigen Skalar genau eine sichtbare Ersatzzelle. Der Desktop misst und clippt
-dieselben Skalarzellen ohne UTF-8-Sequenzen zu teilen. Breite Fontabdeckung,
-Shaping, Grapheme, Bidi und IME bleiben Ring-3-Dienste beziehungsweise
-GUI-Textpakete; sie werden nicht in den Framebuffer-Treiber verlagert.
+dieselben Skalarzellen ohne UTF-8-Sequenzen zu teilen. Ein öffentlicher,
+heapfreier Ring-3-PSF2-Decoder validiert Header, Glyphdaten und die vollständige
+Unicode-Tabelle vor Publikation in caller-owned Speicher. Der Desktop behält
+den schnellen Kernel-Lauf bei und überlagert nur Font-Erweiterungsglyphen über
+geclippte XRGB-Uploads; der reproduzierbare Referenzfont ergänzt U+20AC. Ein
+fehlender oder ungültiger Font fällt ohne neue Pixelwirkung auf die sichtbare
+Kernel-Ersatzglyph zurück. Breite Fontabdeckung, Shaping, Grapheme, Bidi und
+IME bleiben Ring-3-Dienste beziehungsweise GUI-Textpakete; sie werden nicht in
+den Framebuffer-Treiber verlagert.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

@@ -1658,10 +1658,13 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Originalschreibweise auf Medium und in Readdir bewahren.
 - [x] Grafische Textprimitive und Desktop-Clipping auf vollständig validierte
   Unicode-Skalarläufe mit CP437- und sichtbarer Ersatzglyph abbilden.
+- [x] Einen standardisierten, fest begrenzten Ring-3-PSF2-Decoder einführen,
+  den Referenzfont in beiden Images verankern und Erweiterungsglyphen geclippt
+  überlagern; U+20AC beweist den Pfad außerhalb CP437.
 - Danach atomaren LFN-Replace ergänzen; EXT2 vorerst ausdrücklich read-only
-  mounten. Breite Unicode-Fonts, Font-Fallback, Eingabemethoden,
-  Bidirektionalität, Shaping und Graphemnavigation bleiben eigene
-  Ring-3-GUI-/Textpakete.
+  mounten. Breite Unicode-Fontpakete, kaskadierender Font-Fallback,
+  Eingabemethoden, Bidirektionalität, Shaping und Graphemnavigation bleiben
+  eigene Ring-3-GUI-/Textpakete.
 
 #### R2.3 Blockgeräte und Partitionen — L
 
