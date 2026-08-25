@@ -11,6 +11,63 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2g-nvidia-gk208-engine-contract"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Freeze the bounded GK208 2D command and engine-preflight contract"
+scope = "Prepare the next native NVIDIA GK208 acceleration step without publishing unproved hardware capability. Add a fixed-storage FERMI_TWOD_A pushbuffer compiler for only XRGB8888 pitch-linear RECT_FILL and overlap-safe RECT_COPY, with a parser that rejects every non-whitelisted packet, method, subchannel, value and surface range. Link it into the supervised Ring-3 driver and run a deterministic software command-contract self-test. Add an append-only read-only engine-preflight command that samples the exact BAR0 identity, live PTIMER and PFIFO/PGRAPH interrupt state twice across a bounded one-millisecond Ring-3 sleep. No GPU register write, bus master, DMA, IRQ, VRAM mapping, GPFIFO submission or capability publication is permitted in this package. Preserve VBE software scanout and VMware acceleration. QEMU and VMware prove compilation and non-regression; the later hardware engine package remains responsible for GPU VM, FECS/GPCCS, one fixed GPFIFO channel and a real deadline-bounded fence."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/video/display_control.h",
+  "drivers/video/display_control.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "scripts/build_system_programs.py",
+  "test/test_nvidia_gk208.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "only exact PCI 10de:1280 is admitted and the existing loader-sealed VBE scanout remains authoritative",
+  "the preflight path performs read-only BAR0 access and has one bounded sleep rather than an unbounded poll",
+  "the command compiler uses fixed storage and emits only documented FERMI_TWOD_A methods on one fixed subchannel",
+  "all surfaces are 40-bit aligned XRGB8888 pitch-linear ranges and every rectangle is overflow-safe and in bounds",
+  "the parser rejects unknown opcodes subchannels methods packet lengths and values before any future submission",
+  "Ring 3 receives no raw BAR VRAM physical address DMA IRQ bus-master or arbitrary command authority",
+  "NVIDIA RECT_FILL and RECT_COPY remain ENOTSUP and capability bits remain zero until a real hardware fence passes",
+  "VMware RECT_FILL and RECT_COPY behavior remains unchanged"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the package writes any NVIDIA register or enables bus master DMA IRQ or raw mappings",
+  "the compiler accepts a method or value outside the frozen 2D whitelist",
+  "the driver advertises acceleration without a submitted and observed hardware fence",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "video: freeze bounded GK208 2D engine contract"
+evidence = [
+  "python test/test_nvidia_gk208.py -v: PASS (12 tests), including the host command compiler/parser and live-preflight source contract",
+  "python test/test_vmware_svga2d.py -v: PASS (14 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (39s)",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PASS (26s)",
+  "NVIDIA capabilities remain zero; real GK208 GR GPFIFO and fence acceptance remains a manual ASUS hardware boundary"
+]
+
+[[packages]]
 id = "R3.3a-desktop-startup-bulk"
 status = "done"
 phase = "post-s0"

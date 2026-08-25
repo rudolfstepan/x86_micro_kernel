@@ -102,6 +102,24 @@ real fence before a monotonic deadline.  Until then `NVIDIA_GK208_READY` means
 only that exact identity and passive register access passed; it is not an
 acceleration claim.
 
+`R2.2g` freezes the command side of that later engine boundary without
+submitting it.  A heap-free 64-dword compiler emits exactly one of two
+accepted `FERMI_TWOD_A` packet shapes on fixed subchannel 3: pitch-linear
+XRGB8888 rectangle fill or overlap-safe same-surface rectangle copy.  Its
+second parser verifies every packet opcode, count, subchannel, method, fixed
+value, 40-bit aligned surface range, pitch and rectangle before a future
+kernel mediator may consume the stream.  The method and DMA-packet terminology
+follows the upstream Nouveau `cl902d.h` and `cl906f.h` class headers.
+
+The same package adds a read-only live engine preflight.  Ring 3 requests two
+coherent BAR0 snapshots separated by one bounded millisecond sleep and
+requires stable PMC identity/BAR geometry plus a strictly advancing PTIMER.
+PFIFO and PGRAPH interrupt registers are sampled only for diagnostics.  This
+does not initialize PGRAPH: GK208 still needs its documented register packs,
+FECS/GPCCS firmware and graphics context, GPU virtual memory, one fixed
+Kepler GPFIFO channel and a real fence.  Bus mastering, DMA, IRQs, VRAM and
+all acceleration capability bits therefore remain disabled in this package.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both image layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

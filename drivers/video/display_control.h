@@ -26,6 +26,8 @@
 #define DISPLAY_DRIVER_BUSY_QUERY 5U
 /** Passive, read-only hardware identity snapshot; never enables an engine. */
 #define DISPLAY_DRIVER_PROBE 6U
+/** Live read-only engine snapshot used for bounded Ring-3 preflight. */
+#define DISPLAY_DRIVER_ENGINE_PREFLIGHT 7U
 #define DISPLAY_DRIVER_CAP_RECT_FILL (1U << 0U)
 #define DISPLAY_DRIVER_CAP_RECT_COPY (1U << 1U)
 

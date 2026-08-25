@@ -2287,6 +2287,17 @@ damit bereits vor dem ersten Desktopstart vorhanden; der Laufzeit-`mkdir`
 bleibt nur Kompatibilitätsfallback für ältere schreibbare Medien.
 Die Hostregressionen und beide vollständigen Framebuffer-Paketbuilds bestehen;
 der ASUS-Ersatzimage-Test bleibt der manuelle Hardware-Nachweis.
+Das abgeschlossene `R2.2g` friert als nächsten sicheren Schnitt die
+`FERMI_TWOD_A`-Kommandoseite ein: Ein fester 64-Dword-Puffer erlaubt nur
+pitch-lineares XRGB8888-Fill und überlappungssicheres Same-Surface-Copy und
+wird vor jeder späteren Übergabe nochmals gegen exakte Paket-, Methoden-,
+Wert- und Bereichsregeln geparst. Zwei read-only BAR0-Snapshots mit genau
+einer begrenzten Millisekundenpause müssen zusätzlich stabile Identität und
+einen fortschreitenden PTIMER zeigen. Dieses Paket schreibt keine GPU-Register
+und aktiviert weder Busmaster noch DMA, IRQ, GPFIFO oder Capabilitybits.
+Das anschließende Hardware-Engine-Paket bleibt für GPU-VM, GK208-GR-
+Initialisierung einschließlich FECS/GPCCS, einen festen Kepler-GPFIFO-Kanal
+und einen echten deadlinebegrenzten Fence verantwortlich.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

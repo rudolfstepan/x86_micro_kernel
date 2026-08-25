@@ -1,3 +1,6 @@
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -6,6 +9,36 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NvidiaGk208BringupTests(unittest.TestCase):
+    def test_fermi_twod_command_contract(self):
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "nvidia-gk208-2d-test.exe"
+            subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-I", str(ROOT),
+                 str(ROOT / "userspace/video/lib/nvidia_gk208_2d.c"),
+                 str(ROOT / "test/test_nvidia_gk208_2d_host.c"),
+                 "-o", str(executable)],
+                check=True, capture_output=True, text=True, timeout=30,
+            )
+            result = subprocess.run([str(executable)], timeout=10)
+            self.assertEqual(result.returncode, 0)
+
+        header = (ROOT /
+                  "userspace/video/include/reist/nvidia_gk208_2d.h").read_text(
+                      encoding="utf-8")
+        source = (ROOT /
+                  "userspace/video/lib/nvidia_gk208_2d.c").read_text(
+                      encoding="utf-8")
+        self.assertIn("REIST_NVIDIA_GK208_FERMI_TWOD_A 0x0000902DU", header)
+        self.assertIn("REIST_NVIDIA_GK208_PUSHBUF_WORD_CAPACITY 64U", header)
+        self.assertIn("NV902D_SET_DST_FORMAT 0x0200U", source)
+        self.assertIn("NV902D_RENDER_SOLID_PRIM_MODE 0x0580U", source)
+        self.assertIn("NV902D_SET_PIXELS_FROM_MEMORY_DST_X0 0x08B0U", source)
+        self.assertNotIn("malloc", source)
+
     def test_profile_is_exact_and_irqless(self):
         source = (ROOT / "kernel/init/video_device_profile.c").read_text(
             encoding="utf-8")
@@ -34,6 +67,20 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("NVIDIA_WRITE", probe)
         self.assertNotIn("= value", probe)
 
+    def test_engine_preflight_is_live_read_only_and_bounded(self):
+        display = (ROOT / "drivers/video/display_control.c").read_text(
+            encoding="utf-8")
+        driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(
+            encoding="utf-8")
+        self.assertIn("DISPLAY_DRIVER_ENGINE_PREFLIGHT", display)
+        self.assertIn("nvidia_read_live_probe", display)
+        self.assertIn("NVIDIA_PREFLIGHT_DELAY_MS 1U", driver)
+        self.assertIn("x86os_sleep_ms(NVIDIA_PREFLIGHT_DELAY_MS)", driver)
+        self.assertIn("nvidia_gk208_timer_after", driver)
+        self.assertNotIn("x86os_device_open_region", driver)
+        self.assertNotIn("x86os_device_bind_dma", driver)
+        self.assertNotIn("x86os_device_bind_irq", driver)
+
     def test_driver_never_advertises_unproven_acceleration(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(
             encoding="utf-8")
@@ -46,6 +93,7 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("x86os_device_open_region", driver)
         self.assertNotIn("x86os_device_bind_dma", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
+        self.assertIn("reist_nvidia_gk208_command_self_test", driver)
 
     def test_driver_is_supervised_and_deadlines_are_bounded(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(
@@ -89,6 +137,7 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn('"NVIDIA.PRG"', programs)
         self.assertIn("userspace/drivers/video/nvidia_gk208.c", programs)
+        self.assertIn("userspace/video/lib/nvidia_gk208_2d.c", programs)
         for source in (windows, makefile):
             self.assertIn("libexec/reist/nvidia.prg", source)
             self.assertIn("NVIDIA.PRG", source)

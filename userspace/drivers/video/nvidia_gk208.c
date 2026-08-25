@@ -2,22 +2,26 @@
  * @file nvidia_gk208.c
  * @brief Supervised Ring-3 policy driver for native GK208 2D bring-up.
  *
- * The first hardware gate is intentionally passive.  Ring 0 returns a fixed
- * read-only identity/status snapshot; this process owns the endpoint,
- * lifecycle and bounded request policy.  No acceleration capability is
- * published until a later GPFIFO self-test completes a real GPU fence.
+ * Ring 0 returns fixed and live read-only identity/status snapshots; this
+ * process owns the endpoint, lifecycle and bounded request policy.  The
+ * FERMI_TWOD_A compiler is exercised in software, but no acceleration
+ * capability is published until a later GPFIFO self-test completes a real
+ * GPU fence.
  */
 #include <stddef.h>
 #include <stdint.h>
 
 #include "x86os.h"
 #include "../../video/include/reist/svga2d.h"
+#include "../../video/include/reist/nvidia_gk208_2d.h"
 
-#define NVIDIA_DRIVER_PROBE 6U
 #define NVIDIA_HEARTBEAT_MS 500U
 #define NVIDIA_IPC_TIMEOUT_MS 20U
 #define NVIDIA_REPLY_TIMEOUT_MS 100U
+#define NVIDIA_PREFLIGHT_DELAY_MS 1U
 #define NVIDIA_DIAGNOSTIC_PROBE 0x4E560000U
+#define NVIDIA_DIAGNOSTIC_PREFLIGHT 0x4E570000U
+#define NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT 0x4E580000U
 
 typedef struct {
     x86os_device_driver_bootstrap_t bootstrap;
@@ -49,7 +53,7 @@ static int driver_command(nvidia_driver_t *driver, uint32_t command,
 
 static int probe(nvidia_driver_t *driver) {
     x86os_display_driver_request_t response;
-    int status = driver_command(driver, NVIDIA_DRIVER_PROBE, &response);
+    int status = driver_command(driver, X86OS_DISPLAY_DRIVER_PROBE, &response);
     if (status != 0 || response.capabilities != 0U ||
         response.source_x == 0U || response.source_x == UINT32_MAX ||
         response.width < 0x00400104U)
@@ -58,6 +62,51 @@ static int probe(nvidia_driver_t *driver) {
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_PROBE | (response.source_x & 0x0000FFFFU));
+}
+
+static uint64_t nvidia_gk208_timer_value(
+    const x86os_display_driver_request_t *response) {
+    return ((uint64_t)response->destination_y << 32U) |
+           response->destination_x;
+}
+
+static int nvidia_gk208_timer_after(
+    const x86os_display_driver_request_t *later,
+    const x86os_display_driver_request_t *earlier) {
+    return nvidia_gk208_timer_value(later) >
+           nvidia_gk208_timer_value(earlier);
+}
+
+static int engine_preflight(nvidia_driver_t *driver) {
+    x86os_display_driver_request_t first;
+    x86os_display_driver_request_t second;
+    int status = driver_command(
+        driver, X86OS_DISPLAY_DRIVER_ENGINE_PREFLIGHT, &first);
+    if (status != 0 || first.capabilities != 0U) return status != 0 ? status : -84;
+    if (x86os_sleep_ms(NVIDIA_PREFLIGHT_DELAY_MS) != 0) return -5;
+    status = driver_command(
+        driver, X86OS_DISPLAY_DRIVER_ENGINE_PREFLIGHT, &second);
+    if (status != 0 || second.capabilities != 0U) return status != 0 ? status : -84;
+    if (first.source_x == 0U || first.source_x == UINT32_MAX ||
+        first.source_x != second.source_x || first.source_y != second.source_y ||
+        first.width < 0x00400104U || first.width != second.width ||
+        first.color == UINT32_MAX || second.color == UINT32_MAX ||
+        first.busy == UINT32_MAX || second.busy == UINT32_MAX ||
+        !nvidia_gk208_timer_after(&second, &first))
+        return -84;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_PREFLIGHT |
+            (uint32_t)(nvidia_gk208_timer_value(&second) & 0xFFFFU));
+}
+
+static int command_contract_self_test(nvidia_driver_t *driver) {
+    int status = reist_nvidia_gk208_command_self_test();
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT |
+            REIST_NVIDIA_GK208_FERMI_TWOD_A);
 }
 
 static int activate(nvidia_driver_t *driver) {
@@ -160,6 +209,10 @@ static int driver_initialize(nvidia_driver_t *driver) {
             driver->control) != 0)
         return -5;
     int status = probe(driver);
+    if (status != 0) return status;
+    status = engine_preflight(driver);
+    if (status != 0) return status;
+    status = command_contract_self_test(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

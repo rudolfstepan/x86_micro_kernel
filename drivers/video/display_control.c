@@ -88,6 +88,8 @@ static bool qemu_prepared;
 static bool vmware_prepared;
 static bool vmware_supervised;
 static bool nvidia_prepared;
+static volatile uint8_t *nvidia_registers;
+static uint32_t nvidia_bar0_bytes;
 static bool vbe_prepared;
 static vbe_runtime_info_t vbe_runtime_info;
 static uint32_t vbe_reject_reason;
@@ -225,6 +227,45 @@ static pci_device_t *find_nvidia_gk208(void) {
     return NULL;
 }
 
+static bool nvidia_read_live_probe(nvidia_probe_t *probe) {
+    if (probe == NULL || nvidia_registers == NULL ||
+        nvidia_bar0_bytes < NVIDIA_PROBE_MAP_BYTES)
+        return false;
+#define NVIDIA_LIVE_READ32(offset) \
+    (*(const volatile uint32_t *)(nvidia_registers + (offset)))
+    uint32_t timer_high_before = 0U;
+    uint32_t timer_high_after = 0U;
+    uint32_t timer_low = 0U;
+    bool coherent = false;
+    /* A PTIMER high-word rollover may race one low-word read.  Four fixed
+     * attempts are sufficient to obtain one coherent snapshot without an
+     * unbounded poll or a register write. */
+    for (uint32_t attempt = 0U; attempt < 4U; ++attempt) {
+        timer_high_before = NVIDIA_LIVE_READ32(NVIDIA_PTIMER_TIME_1);
+        timer_low = NVIDIA_LIVE_READ32(NVIDIA_PTIMER_TIME_0);
+        timer_high_after = NVIDIA_LIVE_READ32(NVIDIA_PTIMER_TIME_1);
+        if (timer_high_before == timer_high_after) {
+            coherent = true;
+            break;
+        }
+    }
+    if (!coherent) return false;
+    *probe = (nvidia_probe_t){
+        .boot0 = NVIDIA_LIVE_READ32(NVIDIA_PMC_BOOT_0),
+        .enable = NVIDIA_LIVE_READ32(NVIDIA_PMC_ENABLE),
+        .timer_low = timer_low,
+        .timer_high = timer_high_after,
+        .pfifo_intr = NVIDIA_LIVE_READ32(NVIDIA_PFIFO_INTR),
+        .pgraph_intr = NVIDIA_LIVE_READ32(NVIDIA_PGRAPH_INTR),
+        .bar0_bytes = nvidia_bar0_bytes,
+    };
+#undef NVIDIA_LIVE_READ32
+    return probe->boot0 != 0U && probe->boot0 != UINT32_MAX &&
+        probe->enable != UINT32_MAX && probe->timer_low != UINT32_MAX &&
+        probe->timer_high != UINT32_MAX && probe->pfifo_intr != UINT32_MAX &&
+        probe->pgraph_intr != UINT32_MAX;
+}
+
 static void prepare_nvidia_gk208(void) {
     pci_device_t *device = find_nvidia_gk208();
     pci_bar_info_t bar0;
@@ -239,6 +280,8 @@ static void prepare_nvidia_gk208(void) {
     volatile uint8_t *registers = (volatile uint8_t *)map_mmio_region(
         bar0.base_low, NVIDIA_PROBE_MAP_BYTES);
     if (registers == NULL) return;
+    nvidia_registers = registers;
+    nvidia_bar0_bytes = bar0.size_low;
 #define NVIDIA_READ32(offset) \
     (*(const volatile uint32_t *)(registers + (offset)))
     nvidia_probe = (nvidia_probe_t){
@@ -258,6 +301,8 @@ static void prepare_nvidia_gk208(void) {
         nvidia_probe.pfifo_intr == UINT32_MAX ||
         nvidia_probe.pgraph_intr == UINT32_MAX) {
         memset(&nvidia_probe, 0, sizeof(nvidia_probe));
+        nvidia_registers = NULL;
+        nvidia_bar0_bytes = 0U;
         return;
     }
     nvidia_prepared = true;
@@ -875,6 +920,21 @@ int display_control_driver_command(display_driver_request_t *request) {
                 request->height = 0U;
                 request->color = nvidia_probe.pfifo_intr;
                 request->busy = nvidia_probe.pgraph_intr;
+                result = 0;
+            }
+        } else if (request->command == DISPLAY_DRIVER_ENGINE_PREFLIGHT) {
+            nvidia_probe_t live_probe;
+            if (!nvidia_prepared || !nvidia_read_live_probe(&live_probe)) {
+                result = -19;
+            } else {
+                request->source_x = live_probe.boot0;
+                request->source_y = live_probe.enable;
+                request->destination_x = live_probe.timer_low;
+                request->destination_y = live_probe.timer_high;
+                request->width = live_probe.bar0_bytes;
+                request->height = 0U;
+                request->color = live_probe.pfifo_intr;
+                request->busy = live_probe.pgraph_intr;
                 result = 0;
             }
         } else if (request->command == DISPLAY_DRIVER_ACTIVATE) {

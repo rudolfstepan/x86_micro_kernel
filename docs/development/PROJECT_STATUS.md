@@ -14,7 +14,17 @@ PTIMER-, PFIFO- und PGRAPH-Diagnose. VBE-Scanout und Software-Framebuffer
 bleiben maßgeblich; Beschleunigungs-Capabilities bleiben bis zu einem echten,
 deadlinebegrenzten GPU-Fence absichtlich null. QEMU/VMware prüfen Build,
 Lifecycle und Rückfall, der abschließende Probe-Nachweis bleibt ein manueller
-ASUS-Lauf. Die ausführbare Paketqueue ist danach leer.
+ASUS-Lauf.
+
+`R2.2g-nvidia-gk208-engine-contract` bereitet den nächsten Engine-Schritt
+fail-closed vor. Ein fester 64-Dword-Compiler und ein unabhängiger Parser
+akzeptieren ausschließlich dokumentierte `FERMI_TWOD_A`-Methoden für
+pitch-lineares XRGB8888-Fill und überlappungssicheres Same-Surface-Copy. Der
+Ring-3-Treiber prüft diesen Vertrag ohne Hardwarewirkung und verifiziert über
+zwei read-only BAR0-Snapshots mit einer begrenzten Millisekundenpause einen
+fortschreitenden PTIMER. GPU-VM, GR-/FECS-/GPCCS-Initialisierung, GPFIFO,
+Busmaster, DMA, IRQ und Fence sind noch nicht aktiviert; deshalb bleiben die
+NVIDIA-Capabilities null und VBE verbindlich.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung
@@ -79,6 +89,9 @@ liest 128 KiB am Ende einer synthetischen 1-MiB-FAT32-Datei mit höchstens 280
 Sektorzugriffen. Verzeichnisgrenzen, EXT2-Verhalten und Decodergrenzen bleiben
 unverändert. Die gezielten Tests und beide vollständigen Framebuffer-
 Paketbuilds sind grün; die Queue ist wieder leer.
+Der anschließende reale Desktop-Test bestätigt, dass ein Bild nach dem Klick
+nun praktisch sofort geladen wird; das ursprünglich beobachtete mehrsekündige
+Ladeproblem ist damit auch außerhalb der Hostmessung behoben.
 
 `R3.3a-desktop-startup-bulk` stellt die Desktopressourcen auf denselben
 generationgebundenen Ring-3-Bulkpfad um. Splash, Icons und
