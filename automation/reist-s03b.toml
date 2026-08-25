@@ -7778,3 +7778,53 @@ evidence = [
   "QEMU framebuffer package passed in 25 seconds",
   "VMware framebuffer package passed in 26 seconds"
 ]
+
+[[packages]]
+id = "R2.2i-nvidia-gk208-submission-contract"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Freeze the sealed GK208 GPFIFO and fence submission contract"
+scope = "Extend the heap-free GK208 command compiler with one independently validated Kepler submission envelope derived from the MIT-licensed NVIDIA cl906f class contract and upstream Nouveau chan506f semantics. The envelope binds FERMI_TWOD_A on fixed subchannel 3, copies exactly one already validated fill or copy stream, appends one four-method WFI semaphore release to a 4-byte aligned nonzero 40-bit fence address and emits exactly one 8-byte main-level user GPFIFO entry for the complete pushbuffer. Reject reserved privilege, subroutine, conditional-fetch, sync-wait, address, length, sequence, padding and cross-field mismatches. Exercise the envelope in the supervised Ring-3 self-test only. This package performs no MMIO write, DMA binding, GPU-VM construction, GR/FECS/GPCCS initialization, USERD kick, bus-master activation or capability publication."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the submission uses fixed storage and contains exactly one class bind one validated 2D stream one WFI semaphore release and one GPFIFO entry",
+  "the GPFIFO entry is main-level user nonconditional and proceed-only with a 40-bit aligned address and exact dword length",
+  "the fence address is nonzero 4-byte aligned and below 40 bits and the fence sequence is nonzero",
+  "the independent validator rejects every reserved privilege subroutine conditional-fetch sync-wait padding and cross-field mutation",
+  "the supervised driver executes only the software self-test and advertises zero acceleration capabilities",
+  "no MMIO write DMA IRQ GPU VM firmware load USERD kick bus mastering or hardware submission occurs"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the contract requires an unverified register write firmware image GPU page table or physical DMA address",
+  "the submission validator accepts a privileged subroutine conditional or unbounded entry",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: seal GK208 GPFIFO submissions"
+evidence = [
+  "NVIDIA GK208 source and host contract passed 12 tests in 0.332 seconds",
+  "VMware SVGA-II non-regression contract passed 14 tests in 0.431 seconds",
+  "QEMU framebuffer package passed in 25 seconds",
+  "VMware framebuffer package passed in 27 seconds"
+]

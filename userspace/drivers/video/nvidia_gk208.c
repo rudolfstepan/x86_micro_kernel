@@ -196,6 +196,7 @@ static int engine_preflight(nvidia_driver_t *driver) {
 
 static int command_contract_self_test(nvidia_driver_t *driver) {
     int status = reist_nvidia_gk208_command_self_test();
+    if (status == 0) status = reist_nvidia_gk208_submission_self_test();
     if (status != 0) return status;
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,

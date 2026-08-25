@@ -127,6 +127,19 @@ all acceleration capability bits therefore remain disabled in this package.
 PTIMER rollover handling is bounded to four high-low-high attempts per
 snapshot; failure closes the driver generation instead of polling forever.
 
+`R2.2i` seals the next hardware-effect-free boundary: a fixed 72-dword
+submission envelope binds `FERMI_TWOD_A` to subchannel 3, embeds exactly one
+already validated fill or copy stream, appends one four-method, wait-for-idle
+4-byte semaphore release and describes the result with exactly one Kepler
+GPFIFO entry. The entry carries only a nonzero aligned 40-bit GPU address and
+the exact dword length; conditional fetch, privileged execution, subroutine
+level, sync wait, padding and every cross-field mismatch are rejected by an
+independent validator. The packet and fence fields follow NVIDIA's
+MIT-licensed `cl906f` class contract and Nouveau's `chan506f` GPFIFO encoding.
+The supervised process exercises this only as a software self-test. It does
+not allocate GPU addresses, create a channel, write USERD, load firmware or
+submit work, so acceleration capabilities remain zero.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both image layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

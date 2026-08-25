@@ -2303,6 +2303,15 @@ Byte von BAR0 lesbar und keine Schreibregeln installiert. Alle Registerreads
 sind ausgerichtet und generationgebunden, PTIMER-Kohärenz ist auf vier
 Versuche begrenzt. Mapping-, DMA-, IRQ-, Busmaster- und Capabilityrechte
 bleiben null.
+Das abgeschlossene `R2.2i` friert zusätzlich den hardwarewirkungslosen
+Submission-Vertrag ein. Ein fester 72-Dword-Umschlag bindet
+`FERMI_TWOD_A` auf Subchannel 3, übernimmt genau einen validierten Fill- oder
+Copy-Strom, hängt eine wait-for-idle 4-Byte-Fence-Freigabe an und erzeugt
+genau einen Kepler-GPFIFO-Eintrag mit ausgerichteter 40-Bit-Adresse und exakter
+Dword-Länge. Ein unabhängiger Parser verwirft reservierte Privileg-,
+Subroutine-, Conditional-Fetch- und Sync-Wait-Bits sowie Padding- und
+Querverweisabweichungen. Der Ring-3-Selbsttest führt den Strom nicht aus und
+erteilt keine neue Geräteautorität.
 Das anschließende Hardware-Engine-Paket bleibt für GPU-VM, GK208-GR-
 Initialisierung einschließlich FECS/GPCCS, einen festen Kepler-GPFIFO-Kanal
 und einen echten deadlinebegrenzten Fence verantwortlich.

@@ -32,6 +32,14 @@ den 16-MiB-BAR vor dem Mapping auf die unveränderliche read-only Apertur
 selbst mit generationsgebundenem Handle. PTIMER-Kohärenz ist auf vier
 high-low-high-Versuche begrenzt. Schreib-, Mapping-, DMA-, IRQ-, Busmaster-
 und Beschleunigungsrechte bleiben ausgeschlossen.
+`R2.2i-nvidia-gk208-submission-contract` versiegelt nun auch die spätere
+Einreichungsform ohne Hardwarewirkung. Ein fester 72-Dword-Umschlag enthält
+genau einen Klassen-Bind, einen bereits unabhängig validierten 2D-Strom, eine
+wait-for-idle 4-Byte-Semaphorfreigabe und einen exakten Kepler-GPFIFO-Eintrag.
+Der zweite Parser weist Adress-, Längen-, Padding-, Privileg-, Subroutine-,
+Conditional-Fetch-, Sync-Wait- und Fence-Abweichungen zurück. GPU-VM,
+Kanalerzeugung, USERD-Kick, Firmware, Busmaster und echte GPU-Ausführung sind
+weiterhin nicht aktiv; NVIDIA-Capabilities bleiben deshalb null.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

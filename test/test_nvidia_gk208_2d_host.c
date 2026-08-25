@@ -68,9 +68,88 @@ static void test_stream_tampering_is_rejected(void) {
     assert(reist_nvidia_gk208_validate_pushbuf(&pushbuf) == -84);
 }
 
+static void test_submission_envelope_is_sealed(void) {
+    reist_nvidia_gk208_pushbuf_t pushbuf;
+    reist_nvidia_gk208_submission_t submission;
+    reist_nvidia_gk208_surface_t target = surface();
+    reist_nvidia_gk208_rect_t source = {1U, 2U, 8U, 8U};
+    reist_nvidia_gk208_rect_t destination = {10U, 20U, 8U, 8U};
+    const uint64_t push_address = 0x0000000020000000ULL;
+    const uint64_t fence_address = 0x0000000020001000ULL;
+    assert(reist_nvidia_gk208_encode_copy(
+        &pushbuf, &target, &source, &destination) == 0);
+    assert(reist_nvidia_gk208_prepare_submission(
+        &submission, &pushbuf, push_address, fence_address, 7U) == 0);
+    assert(submission.word_count == pushbuf.word_count + 7U);
+    assert(submission.gpfifo_entry[0] == (uint32_t)push_address);
+    assert(submission.gpfifo_entry[1] ==
+        ((uint32_t)(push_address >> 32U) |
+         (submission.word_count << 10U)));
+    assert(reist_nvidia_gk208_validate_submission(
+        &submission, push_address, fence_address, 7U) == 0);
+
+    reist_nvidia_gk208_submission_t mutated = submission;
+    mutated.words[0] ^= 1U << 13U;
+    assert(reist_nvidia_gk208_validate_submission(
+        &mutated, push_address, fence_address, 7U) == -84);
+    mutated = submission;
+    mutated.words[mutated.word_count - 1U] ^= 1U << 20U;
+    assert(reist_nvidia_gk208_validate_submission(
+        &mutated, push_address, fence_address, 7U) == -84);
+    mutated = submission;
+    mutated.gpfifo_entry[0] |= 1U;
+    assert(reist_nvidia_gk208_validate_submission(
+        &mutated, push_address, fence_address, 7U) == -84);
+    for (uint32_t flag = 8U; flag <= 9U; ++flag) {
+        mutated = submission;
+        mutated.gpfifo_entry[1] |= 1U << flag;
+        assert(reist_nvidia_gk208_validate_submission(
+            &mutated, push_address, fence_address, 7U) == -84);
+    }
+    mutated = submission;
+    mutated.gpfifo_entry[1] |= 1U << 31U;
+    assert(reist_nvidia_gk208_validate_submission(
+        &mutated, push_address, fence_address, 7U) == -84);
+    mutated = submission;
+    mutated.gpfifo_entry[1] ^= 1U << 10U;
+    assert(reist_nvidia_gk208_validate_submission(
+        &mutated, push_address, fence_address, 7U) == -84);
+    mutated = submission;
+    mutated.words[REIST_NVIDIA_GK208_SUBMISSION_WORD_CAPACITY - 1U] = 1U;
+    assert(reist_nvidia_gk208_validate_submission(
+        &mutated, push_address, fence_address, 7U) == -84);
+    assert(reist_nvidia_gk208_validate_submission(
+        &submission, push_address + 4U, fence_address, 7U) == -84);
+    assert(reist_nvidia_gk208_validate_submission(
+        &submission, push_address, fence_address, 8U) == -84);
+}
+
+static void test_submission_ranges_fail_closed(void) {
+    reist_nvidia_gk208_pushbuf_t pushbuf;
+    reist_nvidia_gk208_submission_t submission;
+    reist_nvidia_gk208_surface_t target = surface();
+    reist_nvidia_gk208_rect_t rect = {0U, 0U, 8U, 8U};
+    assert(reist_nvidia_gk208_encode_fill(
+        &pushbuf, &target, &rect, 0U) == 0);
+    assert(reist_nvidia_gk208_prepare_submission(
+        &submission, &pushbuf, 0U, 0x20001000ULL, 1U) == -84);
+    assert(reist_nvidia_gk208_prepare_submission(
+        &submission, &pushbuf, 0x20000002ULL, 0x20001000ULL, 1U) == -84);
+    assert(reist_nvidia_gk208_prepare_submission(
+        &submission, &pushbuf, 0x20000000ULL, 0x20001002ULL, 1U) == -84);
+    assert(reist_nvidia_gk208_prepare_submission(
+        &submission, &pushbuf, 0x20000000ULL,
+        0x0000010000000000ULL, 1U) == -84);
+    assert(reist_nvidia_gk208_prepare_submission(
+        &submission, &pushbuf, 0x20000000ULL, 0x20001000ULL, 0U) == -84);
+}
+
 int main(void) {
     test_fill_and_copy_are_bounded_and_validated();
     test_invalid_ranges_fail_closed();
     test_stream_tampering_is_rejected();
+    test_submission_envelope_is_sealed();
+    test_submission_ranges_fail_closed();
+    assert(reist_nvidia_gk208_submission_self_test() == 0);
     return 0;
 }

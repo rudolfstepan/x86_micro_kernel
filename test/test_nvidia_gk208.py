@@ -34,9 +34,17 @@ class NvidiaGk208BringupTests(unittest.TestCase):
                       encoding="utf-8")
         self.assertIn("REIST_NVIDIA_GK208_FERMI_TWOD_A 0x0000902DU", header)
         self.assertIn("REIST_NVIDIA_GK208_PUSHBUF_WORD_CAPACITY 64U", header)
+        self.assertIn(
+            "REIST_NVIDIA_GK208_SUBMISSION_WORD_CAPACITY 72U", header)
         self.assertIn("NV902D_SET_DST_FORMAT 0x0200U", source)
         self.assertIn("NV902D_RENDER_SOLID_PRIM_MODE 0x0580U", source)
         self.assertIn("NV902D_SET_PIXELS_FROM_MEMORY_DST_X0 0x08B0U", source)
+        self.assertIn("NV906F_SEMAPHOREA 0x00000010U", source)
+        self.assertIn(
+            "NV906F_SEMAPHORED_RELEASE_SIZE_4BYTE (1U << 24U)", source)
+        self.assertIn("reist_nvidia_gk208_prepare_submission", source)
+        self.assertIn("reist_nvidia_gk208_validate_submission", source)
+        self.assertIn("submission->word_count << 10U", source)
         self.assertNotIn("malloc", source)
 
     def test_profile_is_exact_and_irqless(self):
@@ -105,6 +113,7 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("x86os_device_bind_dma", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertIn("reist_nvidia_gk208_command_self_test", driver)
+        self.assertIn("reist_nvidia_gk208_submission_self_test", driver)
 
     def test_driver_is_supervised_and_deadlines_are_bounded(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(

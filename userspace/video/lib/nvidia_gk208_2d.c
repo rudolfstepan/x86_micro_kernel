@@ -54,10 +54,16 @@
 #define NV902D_OPERATION_SRCCOPY 0x00000003U
 #define NV902D_SOLID_PRIM_RECTS 0x00000004U
 #define NV902D_SAFE_OVERLAP_TRUE 0x00000001U
+#define NV906F_SET_OBJECT 0x00000000U
+#define NV906F_SEMAPHOREA 0x00000010U
+#define NV906F_SEMAPHORED_OPERATION_RELEASE 0x00000002U
+#define NV906F_SEMAPHORED_RELEASE_SIZE_4BYTE (1U << 24U)
 #define NV906F_DMA_SEC_OP_INC_METHOD 0x00000001U
 #define NVIDIA_GK208_PACKET_WORDS 2U
 #define NVIDIA_GK208_FILL_PACKET_COUNT 16U
 #define NVIDIA_GK208_COPY_PACKET_COUNT 29U
+#define NVIDIA_GK208_CLASS_BIND_WORDS 2U
+#define NVIDIA_GK208_FENCE_WORDS 5U
 #define NVIDIA_GK208_ADDRESS_LIMIT (1ULL << 40U)
 
 static const uint16_t fill_methods[NVIDIA_GK208_FILL_PACKET_COUNT] = {
@@ -104,10 +110,16 @@ static void pushbuf_reset(reist_nvidia_gk208_pushbuf_t *pushbuf) {
     pushbuf->word_count = 0U;
 }
 
-static uint32_t method_header(uint32_t method) {
+static uint32_t method_header_for(uint32_t method, uint32_t subchannel,
+                                  uint32_t count) {
     return (NV906F_DMA_SEC_OP_INC_METHOD << 29U) |
-           (1U << 16U) | (REIST_NVIDIA_GK208_2D_SUBCHANNEL << 13U) |
+           (count << 16U) | (subchannel << 13U) |
            (method >> 2U);
+}
+
+static uint32_t method_header(uint32_t method) {
+    return method_header_for(
+        method, REIST_NVIDIA_GK208_2D_SUBCHANNEL, 1U);
 }
 
 static int emit(reist_nvidia_gk208_pushbuf_t *pushbuf,
@@ -337,6 +349,124 @@ int reist_nvidia_gk208_validate_pushbuf(
     return -84;
 }
 
+static void submission_reset(reist_nvidia_gk208_submission_t *submission) {
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_SUBMISSION_WORD_CAPACITY; ++index)
+        submission->words[index] = 0U;
+    submission->word_count = 0U;
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_GPFIFO_ENTRY_WORDS; ++index)
+        submission->gpfifo_entry[index] = 0U;
+}
+
+static int gpu_range_valid(uint64_t address, uint32_t bytes) {
+    return address != 0U && (address & 3U) == 0U &&
+        address < NVIDIA_GK208_ADDRESS_LIMIT && bytes != 0U &&
+        bytes <= NVIDIA_GK208_ADDRESS_LIMIT - address;
+}
+
+static uint32_t submission_engine_words(
+        const reist_nvidia_gk208_submission_t *submission) {
+    const uint32_t envelope_words = NVIDIA_GK208_CLASS_BIND_WORDS +
+        NVIDIA_GK208_FENCE_WORDS;
+    return submission->word_count >= envelope_words
+        ? submission->word_count - envelope_words : 0U;
+}
+
+int reist_nvidia_gk208_prepare_submission(
+    reist_nvidia_gk208_submission_t *submission,
+    const reist_nvidia_gk208_pushbuf_t *commands,
+    uint64_t pushbuf_gpu_address, uint64_t fence_gpu_address,
+    uint32_t fence_sequence) {
+    if (submission == NULL || commands == NULL) return -22;
+    submission_reset(submission);
+    if (reist_nvidia_gk208_validate_pushbuf(commands) != 0 ||
+        fence_sequence == 0U ||
+        !gpu_range_valid(fence_gpu_address, sizeof(uint32_t)) ||
+        commands->word_count > REIST_NVIDIA_GK208_SUBMISSION_WORD_CAPACITY -
+            NVIDIA_GK208_CLASS_BIND_WORDS - NVIDIA_GK208_FENCE_WORDS)
+        return -84;
+    uint32_t total_words = NVIDIA_GK208_CLASS_BIND_WORDS +
+        commands->word_count + NVIDIA_GK208_FENCE_WORDS;
+    if (!gpu_range_valid(
+            pushbuf_gpu_address, total_words * sizeof(uint32_t)))
+        return -84;
+
+    uint32_t cursor = 0U;
+    submission->words[cursor++] = method_header_for(
+        NV906F_SET_OBJECT, REIST_NVIDIA_GK208_2D_SUBCHANNEL, 1U);
+    submission->words[cursor++] = REIST_NVIDIA_GK208_FERMI_TWOD_A;
+    for (uint32_t index = 0U; index < commands->word_count; ++index)
+        submission->words[cursor++] = commands->words[index];
+    submission->words[cursor++] = method_header_for(
+        NV906F_SEMAPHOREA, 0U, 4U);
+    submission->words[cursor++] = (uint32_t)(fence_gpu_address >> 32U);
+    submission->words[cursor++] = (uint32_t)fence_gpu_address;
+    submission->words[cursor++] = fence_sequence;
+    submission->words[cursor++] =
+        NV906F_SEMAPHORED_RELEASE_SIZE_4BYTE |
+        NV906F_SEMAPHORED_OPERATION_RELEASE;
+    submission->word_count = cursor;
+    submission->gpfifo_entry[0] = (uint32_t)pushbuf_gpu_address;
+    submission->gpfifo_entry[1] =
+        (uint32_t)(pushbuf_gpu_address >> 32U) |
+        (submission->word_count << 10U);
+    return reist_nvidia_gk208_validate_submission(
+        submission, pushbuf_gpu_address, fence_gpu_address, fence_sequence);
+}
+
+int reist_nvidia_gk208_validate_submission(
+    const reist_nvidia_gk208_submission_t *submission,
+    uint64_t pushbuf_gpu_address, uint64_t fence_gpu_address,
+    uint32_t fence_sequence) {
+    if (submission == NULL || fence_sequence == 0U ||
+        submission->word_count >
+            REIST_NVIDIA_GK208_SUBMISSION_WORD_CAPACITY)
+        return -84;
+    uint32_t engine_words = submission_engine_words(submission);
+    if (engine_words == 0U ||
+        engine_words > REIST_NVIDIA_GK208_PUSHBUF_WORD_CAPACITY ||
+        !gpu_range_valid(fence_gpu_address, sizeof(uint32_t)) ||
+        !gpu_range_valid(pushbuf_gpu_address,
+            submission->word_count * sizeof(uint32_t)))
+        return -84;
+    for (uint32_t index = submission->word_count;
+         index < REIST_NVIDIA_GK208_SUBMISSION_WORD_CAPACITY; ++index)
+        if (submission->words[index] != 0U) return -84;
+
+    if (submission->words[0] != method_header_for(
+            NV906F_SET_OBJECT, REIST_NVIDIA_GK208_2D_SUBCHANNEL, 1U) ||
+        submission->words[1] != REIST_NVIDIA_GK208_FERMI_TWOD_A)
+        return -84;
+    reist_nvidia_gk208_pushbuf_t commands;
+    pushbuf_reset(&commands);
+    commands.word_count = engine_words;
+    for (uint32_t index = 0U; index < engine_words; ++index)
+        commands.words[index] =
+            submission->words[NVIDIA_GK208_CLASS_BIND_WORDS + index];
+    if (reist_nvidia_gk208_validate_pushbuf(&commands) != 0) return -84;
+
+    uint32_t fence = NVIDIA_GK208_CLASS_BIND_WORDS + engine_words;
+    if (submission->words[fence] != method_header_for(
+            NV906F_SEMAPHOREA, 0U, 4U) ||
+        submission->words[fence + 1U] !=
+            (uint32_t)(fence_gpu_address >> 32U) ||
+        submission->words[fence + 2U] !=
+            (uint32_t)fence_gpu_address ||
+        submission->words[fence + 3U] != fence_sequence ||
+        submission->words[fence + 4U] !=
+            (NV906F_SEMAPHORED_RELEASE_SIZE_4BYTE |
+             NV906F_SEMAPHORED_OPERATION_RELEASE))
+        return -84;
+
+    uint32_t expected_entry0 = (uint32_t)pushbuf_gpu_address;
+    uint32_t expected_entry1 =
+        (uint32_t)(pushbuf_gpu_address >> 32U) |
+        (submission->word_count << 10U);
+    return submission->gpfifo_entry[0] == expected_entry0 &&
+        submission->gpfifo_entry[1] == expected_entry1 ? 0 : -84;
+}
+
 int reist_nvidia_gk208_command_self_test(void) {
     reist_nvidia_gk208_pushbuf_t pushbuf;
     const reist_nvidia_gk208_surface_t surface = {
@@ -356,4 +486,28 @@ int reist_nvidia_gk208_command_self_test(void) {
         reist_nvidia_gk208_validate_pushbuf(&pushbuf) != 0)
         return -84;
     return 0;
+}
+
+int reist_nvidia_gk208_submission_self_test(void) {
+    reist_nvidia_gk208_pushbuf_t commands;
+    reist_nvidia_gk208_submission_t submission;
+    const reist_nvidia_gk208_surface_t surface = {
+        .gpu_address = 0x10000000ULL,
+        .width = 1024U,
+        .height = 768U,
+        .pitch = 4096U,
+    };
+    const reist_nvidia_gk208_rect_t rect = {8U, 8U, 16U, 16U};
+    const uint64_t push_address = 0x0000000020000000ULL;
+    const uint64_t fence_address = 0x0000000020001000ULL;
+    if (reist_nvidia_gk208_encode_fill(
+            &commands, &surface, &rect, 0x00010203U) != 0 ||
+        reist_nvidia_gk208_prepare_submission(
+            &submission, &commands, push_address, fence_address, 1U) != 0 ||
+        reist_nvidia_gk208_validate_submission(
+            &submission, push_address, fence_address, 1U) != 0)
+        return -84;
+    submission.gpfifo_entry[1] |= 1U << 8U;
+    return reist_nvidia_gk208_validate_submission(
+        &submission, push_address, fence_address, 1U) == -84 ? 0 : -84;
 }
