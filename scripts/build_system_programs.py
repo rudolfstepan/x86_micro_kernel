@@ -71,7 +71,11 @@ PROGRAMS = {
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
     "NOTEPAD.PRG": ROOT / "userspace/gui/apps/notepad/main.c",
     "SOUNDPLAYER.PRG": ROOT / "userspace/gui/apps/sound_player/main.c",
-    "IMAGEVIEWER.PRG": ROOT / "userspace/gui/apps/image_viewer/main.c",
+    "IMAGEVIEWER.PRG": (
+        ROOT / "userspace/gui/apps/image_viewer/main.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "SURFACEDEMO.PRG": ROOT / "userspace/gui/apps/surface_demo/main.c",
     "CONTROL.PRG": ROOT / "userspace/gui/apps/control_panel/main.c",
     "CONFIG.PRG": ROOT / "userspace/services/config/config_service.c",
@@ -218,7 +222,7 @@ def main() -> None:
                 dependency_files.extend(config_headers)
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
-                        "SHELL.PRG", "GTEST.PRG"}:
+                        "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)

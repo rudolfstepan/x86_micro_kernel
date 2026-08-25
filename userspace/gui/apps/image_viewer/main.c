@@ -10,6 +10,7 @@
 
 #include "x86os.h"
 #include "reist/image.h"
+#include "reist/vfs_file_client.h"
 #include "reist/gui/surface.h"
 #include "reist/gui/surface_client.h"
 
@@ -44,24 +45,35 @@ static const char *image_path_from_argv(int argc, char **argv) {
 }
 
 static int load_file(const char *path, size_t *size_out) {
+    if (path == 0 || size_out == 0) return -22;
+    *size_out = 0U;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int result = reist_vfs_file_open(
+        path, REIST_VFS_FILE_DEFAULT_TIMEOUT_MS, &handle);
+    if (result != 0) return result;
     x86os_file_info_t info;
-    if (path == 0 || size_out == 0 || x86os_stat(path, &info) != 0 ||
-        info.type != X86OS_FILE || info.size == 0U ||
-        info.size > sizeof(encoded)) return -2;
-    int descriptor = x86os_open(path);
-    if (descriptor < 0) return descriptor;
+    result = reist_vfs_file_fstat(handle, &info);
+    if (result != 0 || info.type != X86OS_FILE || info.size == 0U ||
+        info.size > sizeof(encoded)) {
+        (void)reist_vfs_file_close(handle);
+        return result != 0 ? result : -2;
+    }
     size_t done = 0U;
     while (done < info.size) {
-        int result = x86os_read(descriptor, &encoded[done], info.size - done);
-        if (result <= 0) {
-            (void)x86os_close(descriptor);
+        size_t amount = info.size - done;
+        if (amount > X86OS_STORAGE_BULK_MAX_BYTES)
+            amount = X86OS_STORAGE_BULK_MAX_BYTES;
+        result = reist_vfs_file_read_bulk(handle, &encoded[done], amount);
+        if (result <= 0 || (size_t)result > amount) {
+            (void)reist_vfs_file_close(handle);
             return -5;
         }
         done += (size_t)result;
     }
-    int result = x86os_close(descriptor);
+    result = reist_vfs_file_close(handle);
     if (result != 0) return result;
     *size_out = done;
+    x86os_puts("IMAGEVIEWER_BULK_LOAD_OK\n");
     return 0;
 }
 

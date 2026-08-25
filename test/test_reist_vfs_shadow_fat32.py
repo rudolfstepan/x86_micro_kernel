@@ -24,10 +24,15 @@ class ReistVfsShadowFat32Tests(unittest.TestCase):
         source = (ROOT / "userspace/storage/lib/vfs_shadow_fat32.c").read_text()
         header = (ROOT / "userspace/storage/include/reist/vfs_shadow_fat32.h").read_text()
         for bound in ("MAX_RESOURCES 22U", "MAX_COMPONENTS 32U",
-                      "MAX_CHAIN_CLUSTERS 32U", "MAX_SECTOR_READS 64U"):
+                      "MAX_CHAIN_CLUSTERS 128U",
+                      "MAX_FILE_CHAIN_CLUSTERS 2176U",
+                      "MAX_SECTOR_READS 320U"):
             self.assertIn(bound, header)
         self.assertIn("volume->reads >= REIST_VFS_SHADOW_MAX_SECTOR_READS", source)
         self.assertIn("visited[REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS]", source)
+        self.assertIn("visited[REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS]", source)
+        self.assertIn("shadow_fat_sector", source)
+        self.assertIn("volume->fat_cache_lba == lba", source)
         self.assertIn("FAT12_CLUSTER_LIMIT 4085U", source)
         self.assertIn("cluster + cluster / 2U", source)
         self.assertIn("volume->root_dir_start + index", source)

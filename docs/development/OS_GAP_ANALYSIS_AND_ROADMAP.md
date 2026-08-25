@@ -1616,12 +1616,16 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Desktop-Ressourcen bleiben getrennte Folgepakete.
   Der begrenzte Bulk-Transport ist nun als append-only Storage-Operation 32,
   Frameoperation 15 und Syscall 124 umgesetzt. Zwei feste kernel-eigene Slots
-  transportieren je höchstens 64 KiB; Client- und Servicegeneration, CRC,
+  transportieren je höchstens 128 KiB; Client- und Servicegeneration, CRC,
   Deadline und Cancel werden vor Veröffentlichung geprüft. Der Objektclient
   verschiebt seinen Offset erst nach vollständiger Frame- und Datenprüfung.
   Der normale Gast liest `GUEST.TMP` mit 1537 Byte in genau einem Request und
-  markiert `STORAGE_VFS_BULK_READ_OK`. Die Umstellung einzelner großer Desktop-
-  Ressourcen bleibt ein Folgepaket.
+  markiert `STORAGE_VFS_BULK_READ_OK`. Der Bildbetrachter verwendet diesen Pfad
+  nun für höchstens acht 128-KiB-Requests je 1-MiB-Datei. Ein requestlokaler
+  FAT-Sektorcache hält späte Reads trotz vollständiger Zyklusprüfung unter dem
+  unveränderten 320-Sektor-Limit; die größere 2176-Cluster-Grenze gilt nur für
+  Dateiinhalte, nicht für Verzeichnisläufe. Weitere große Desktop-Ressourcen
+  bleiben getrennte Folgepakete.
 - [x] Syscallnummern und den bestehenden Fehlercode-Subset aus einem
   gemeinsamen ABI-Header für Kernel und SDK deterministisch generieren;
   lückenlose v1-Indizes 0 bis 124 und beide Buildpfade prüfen Drift fail-closed

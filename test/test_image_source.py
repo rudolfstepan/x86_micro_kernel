@@ -33,7 +33,19 @@ class ImageLibraryTests(unittest.TestCase):
         syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text()
         associations = (ROOT / "config/etc/reist/filetypes.conf").read_text()
         self.assertIn('#include "reist/image.h"', viewer)
+        self.assertIn('#include "reist/vfs_file_client.h"', viewer)
         self.assertIn("reist_image_decode", viewer)
+        self.assertIn("reist_vfs_file_open", viewer)
+        self.assertIn("reist_vfs_file_fstat", viewer)
+        self.assertIn("reist_vfs_file_read_bulk", viewer)
+        self.assertIn("reist_vfs_file_close", viewer)
+        self.assertIn("X86OS_STORAGE_BULK_MAX_BYTES", viewer)
+        load_file = viewer[
+            viewer.index("static int load_file"):
+            viewer.index("static void fit_image")]
+        for legacy_call in ("x86os_stat(", "x86os_open(", "x86os_read(",
+                            "x86os_close("):
+            self.assertNotIn(legacy_call, load_file)
         self.assertIn("x86os_draw_pixels", viewer)
         self.assertIn("reist_gui_surface_endpoint_from_argv", viewer)
         self.assertIn("x86os_display_surface_buffer_create", viewer)
@@ -48,6 +60,10 @@ class ImageLibraryTests(unittest.TestCase):
         self.assertNotIn("gif_lzw", viewer)
         self.assertIn("libreistimage.a", sdk)
         self.assertIn('"IMAGEVIEWER.PRG"', programs)
+        imageviewer_build = programs[programs.index('"IMAGEVIEWER.PRG"'):
+                                     programs.index('"SURFACEDEMO.PRG"')]
+        self.assertIn("vfs_file_client.c", imageviewer_build)
+        self.assertIn("vfs_path.c", imageviewer_build)
         self.assertIn(".bmp=/usr/gui/bin/imageviewer.prg", associations)
         self.assertIn(".gif=/usr/gui/bin/imageviewer.prg", associations)
         self.assertIn("FILE_READ_CHUNK_CAPACITY = 16U * 1024U", syscalls)

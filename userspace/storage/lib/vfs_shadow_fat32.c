@@ -41,9 +41,12 @@ typedef struct {
     uint32_t active_fat;
     uint32_t reads;
     uint32_t signature;
+    uint32_t fat_cache_lba;
     uint8_t sectors_per_cluster;
     uint8_t fat_count;
     uint8_t fat_type;
+    uint8_t fat_cache_valid;
+    uint8_t fat_cache[X86OS_STORAGE_BLOCK_SIZE];
     const reist_vfs_shadow_io_t *io;
 } shadow_volume_t;
 
@@ -315,9 +318,24 @@ static int shadow_cluster_valid(const shadow_volume_t *volume,
     return cluster >= 2U && cluster <= volume->cluster_count + 1U;
 }
 
+static int shadow_fat_sector(shadow_volume_t *volume, uint32_t lba,
+                             const uint8_t **sector) {
+    if (volume == 0 || sector == 0) return -5;
+    if (volume->fat_cache_valid != 0U && volume->fat_cache_lba == lba) {
+        *sector = volume->fat_cache;
+        return 0;
+    }
+    volume->fat_cache_valid = 0U;
+    int status = shadow_read(volume, lba, volume->fat_cache);
+    if (status != 0) return status;
+    volume->fat_cache_lba = lba;
+    volume->fat_cache_valid = 1U;
+    *sector = volume->fat_cache;
+    return 0;
+}
+
 static int shadow_next_cluster(shadow_volume_t *volume, uint32_t cluster,
                                uint32_t *next) {
-    uint8_t sector[X86OS_STORAGE_BLOCK_SIZE];
     uint64_t byte_offset = volume->fat_type == FAT_TYPE_12
         ? (uint64_t)cluster + cluster / 2U
         : (uint64_t)cluster * sizeof(uint32_t);
@@ -325,16 +343,18 @@ static int shadow_next_cluster(shadow_volume_t *volume, uint32_t cluster,
     if (sector_index >= volume->fat_sectors) return -5;
     uint32_t lba = volume->reserved_sectors +
         volume->active_fat * volume->fat_sectors + (uint32_t)sector_index;
-    int status = shadow_read(volume, lba, sector);
+    const uint8_t *sector = 0;
+    int status = shadow_fat_sector(volume, lba, &sector);
     if (status != 0) return status;
     uint32_t offset = (uint32_t)(byte_offset % X86OS_STORAGE_BLOCK_SIZE);
     if (volume->fat_type == FAT_TYPE_12) {
         uint16_t packed = sector[offset];
         if (offset + 1U == X86OS_STORAGE_BLOCK_SIZE) {
             if (sector_index + 1U >= volume->fat_sectors) return -5;
-            status = shadow_read(volume, lba + 1U, sector);
+            const uint8_t low = (uint8_t)packed;
+            status = shadow_fat_sector(volume, lba + 1U, &sector);
             if (status != 0) return status;
-            packed |= (uint16_t)sector[0U] << 8U;
+            packed = (uint16_t)low | (uint16_t)sector[0U] << 8U;
         } else {
             packed |= (uint16_t)sector[offset + 1U] << 8U;
         }
@@ -741,12 +761,13 @@ static int shadow_read_file(shadow_volume_t *volume,
         X86OS_STORAGE_BLOCK_SIZE;
     uint32_t skip = offset / cluster_bytes;
     uint32_t in_cluster = offset % cluster_bytes;
-    uint32_t visited[REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS];
+    uint32_t visited[REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS];
     uint32_t visited_count = 0U;
     int status = 0;
     for (;;) {
         if (!shadow_cluster_valid(volume, cluster) ||
-            visited_count >= REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS) return -110;
+            visited_count >= REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS)
+            return -110;
         for (uint32_t seen = 0U; seen < visited_count; ++seen)
             if (visited[seen] == cluster) return -5;
         visited[visited_count++] = cluster;
@@ -782,7 +803,8 @@ static int shadow_read_file(shadow_volume_t *volume,
         if (status != 0) return status;
         if (shadow_end_of_chain(volume, next) ||
             shadow_invalid_link(volume, next) ||
-            visited_count >= REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS) return -110;
+            visited_count >= REIST_VFS_SHADOW_MAX_FILE_CHAIN_CLUSTERS)
+            return -110;
         for (uint32_t seen = 0U; seen < visited_count; ++seen)
             if (visited[seen] == next) return -5;
         visited[visited_count++] = next;
@@ -927,6 +949,7 @@ static int shadow_object_volume(const reist_vfs_shadow_io_t *io,
         object->struct_size != sizeof(*object) ||
         object->filesystem != REIST_VFS_SHADOW_OBJECT_FAT ||
         object->resource >= REIST_VFS_SHADOW_MAX_RESOURCES) return -22;
+    shadow_zero(volume, sizeof(*volume));
     x86os_drive_info_t drive;
     shadow_zero(&drive, sizeof(drive));
     int available = io->drive_info(io->context, object->resource, &drive);

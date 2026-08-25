@@ -11,6 +11,68 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.3-imageviewer-bulk-io"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Move image loading to bounded cached Ring-3 bulk I/O"
+scope = "Make image opening usable on real hardware. IMAGEVIEWER.PRG currently issues one legacy kernel-VFS read for the remaining encoded file, which serializes 16-KiB chunks in Ring 0 and repeatedly walks FAT chains. Link the existing generation-scoped Ring-3 VFS object client, open/fstat/close through the supervised storage service, and transfer at most 128 KiB per bulk request into the fixed 1-MiB encoded buffer. Increase the existing two fixed bulk slots compatibly from 64 KiB to 128 KiB: this halves request count while a worst-case 512-byte-cluster transfer still consumes only 256 data-sector reads and remains inside the existing 320-read parser budget. Make late sequential FAT reads practical without weakening bounds: cache one validated FAT sector per parser operation and use a separate fixed 2176-cluster file-read visit budget sufficient for a 1-MiB file plus one bulk window on 512-byte clusters. Preserve the smaller directory-chain bound, cycle detection, CRC publication, service deadlines, fixed storage, EXT2 behavior, decoder limits and software-rendering fallback. Prove a real 1-MiB synthetic FAT32 object read near EOF uses bounded physical sector reads, viewer source/build cutover, the fixed bulk pool behavior, and QEMU/VMware framebuffer packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/gui/apps/image_viewer/main.c",
+  "scripts/build_system_programs.py",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "test/test_image_source.py",
+  "test/test_reist_storage_request_pool.py",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_vfs_shadow_fat32_host.c",
+  "docs/architecture/IMAGE_SUBSYSTEM.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the image viewer performs no legacy x86os open read stat or close operation",
+  "encoded image storage remains fixed at 1 MiB and each service transfer is at most 128 KiB",
+  "the kernel bulk pool remains exactly two fixed slots with 256 KiB aggregate payload capacity",
+  "all VFS object operations remain owner generation scoped CRC checked and deadline bounded",
+  "FAT directory walks retain the existing 128-cluster bound",
+  "FAT file reads reject cycles and visit at most 2176 clusters per operation",
+  "the FAT sector cache is operation-local and never survives volume validation",
+  "EXT2 and decoder format contracts remain unchanged"
+]
+targeted_tests = [
+  "python test/test_image_source.py -v",
+  "python test/test_reist_storage_request_pool.py -v",
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_vfs_file_client.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the optimization adds an unbounded cache allocation wait or parser loop",
+  "the viewer falls back to legacy kernel-VFS file reads",
+  "the file-chain increase also weakens directory enumeration bounds",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "perf: load images through cached VFS bulk reads"
+evidence = [
+  "python test/test_image_source.py -v: PASS (2 tests)",
+  "python test/test_reist_storage_request_pool.py -v: PASS (8 tests)",
+  "python test/test_reist_vfs_shadow_fat32.py -v: PASS (3 tests; 128 KiB near-EOF read <= 280 sectors)",
+  "python test/test_reist_vfs_file_client.py -v: PASS (6 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (42s)",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PASS (27s)"
+]
+
+[[packages]]
 id = "R2.2f-native-trash-layout"
 status = "done"
 phase = "post-s0"

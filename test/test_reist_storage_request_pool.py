@@ -25,6 +25,7 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
     def test_pool_is_static_versioned_and_generation_scoped(self):
         header = (ROOT / "include/kernel/storage_request_pool.h").read_text()
         source = (ROOT / "kernel/init/storage_request_pool.c").read_text()
+        sdk_h = (ROOT / "userspace/sdk/include/x86os.h").read_text()
         self.assertIn("STORAGE_REQUEST_POOL_CAPACITY 8U", header)
         self.assertIn("STORAGE_REQUEST_BLOCK_SIZE 512U", header)
         self.assertIn("STORAGE_REQUEST_VERSION 1U", header)
@@ -35,7 +36,8 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_VFS_SHADOW_STAT = 31", header)
         self.assertIn("STORAGE_REQUEST_VFS_BULK_READ = 32", header)
         self.assertIn("STORAGE_REQUEST_BULK_CAPACITY 2U", header)
-        self.assertIn("STORAGE_REQUEST_BULK_MAX_BYTES (64U * 1024U)", header)
+        self.assertIn("STORAGE_REQUEST_BULK_MAX_BYTES (128U * 1024U)", header)
+        self.assertIn("X86OS_STORAGE_BULK_MAX_BYTES (128U * 1024U)", sdk_h)
         self.assertIn("operation_has_input", source)
         self.assertIn("operation_has_output", source)
         self.assertNotIn("k_malloc", source)

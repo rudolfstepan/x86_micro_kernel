@@ -71,6 +71,17 @@ Die Layout-, Native-Image- und Papierkorbtests sowie beide vollständigen
 Framebuffer-Paketbuilds bestehen. Der Ersatzimage-Test auf ASUS bleibt
 manuell.
 
+`R3.3-imageviewer-bulk-io` beseitigt den ungeeigneten Legacy-Lesepfad des
+Bildbetrachters. `IMAGEVIEWER.PRG` verwendet nun ausschließlich das
+generationgebundene Ring-3-Dateiobjekt und liest seinen festen 1-MiB-Puffer in
+höchstens acht CRC-geschützten 128-KiB-Bulk-Requests. Die weiterhin genau zwei
+kernel-eigenen Slots belegen zusammen fest 256 KiB. Ein requestlokaler
+FAT-Sektorcache verhindert wiederholte physische FAT-Zugriffe; der Hosttest
+liest 128 KiB am Ende einer synthetischen 1-MiB-FAT32-Datei mit höchstens 280
+Sektorzugriffen. Verzeichnisgrenzen, EXT2-Verhalten und Decodergrenzen bleiben
+unverändert. Die gezielten Tests und beide vollständigen Framebuffer-
+Paketbuilds sind grün; die Queue ist wieder leer.
+
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
 unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und
@@ -563,15 +574,19 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   Protokollfehler bewahren das zuvor veröffentlichte Fenster samt Generation.
   Der normale Gast weist den realen Root-Eintrag `htdocs` mit
   `DESKTOP_EXPLORER_VFS_OK` nach. Font-, Icon- und Konfigurationsstreams bleiben
-  bis zu ihrer einzelnen Umstellung auf dem 64-KiB-Slice-Pfad.
+  bis zu ihrer einzelnen Umstellung auf dem bestehenden Slice-Pfad.
 - Der begrenzte Ring-3-Bulk-Lesetransport ist vorhanden. Storage-Operation 32
   und Objektoperation 15 behalten einen 512-Byte-Kontrollframe und verwenden
-  genau zwei feste kernel-eigene 64-KiB-Slots. Append-only Syscall 124 bindet
+  genau zwei feste kernel-eigene 128-KiB-Slots. Append-only Syscall 124 bindet
   Publikation und Abholung an die exakten Service-/Clientgenerationen. CRC,
   Userbereich, Deadline und Cancel werden vor Offsetfortschritt geprüft; der
   normale Gast liest 1537 Byte in einem Request und markiert
-  `STORAGE_VFS_BULK_READ_OK`. Große Desktop-Ressourcen sind noch nicht auf den
-  neuen API-Aufruf umgestellt.
+  `STORAGE_VFS_BULK_READ_OK`. Der Bildbetrachter ist als erster großer
+  Desktop-Client vollständig auf diesen API-Aufruf umgestellt: Sein fester
+  1-MiB-Puffer benötigt höchstens acht Requests. Ein operationseigener
+  FAT-Sektorcache und ein getrenntes 2176-Cluster-Dateibudget halten auch einen
+  128-KiB-Lesezugriff am Dateiende unter 280 physischen Sektorzugriffen;
+  Verzeichnisgrenzen bleiben unverändert.
 - Die langlebige Userspace-Shell löst Programmdateien über Ring-3-Operation 5
   auf und enumeriert Tab-Vervollständigungen über Operation 7. Alle Kandidaten
   einer Aktion teilen eine absolute monotone Fünf-Sekunden-Deadline,

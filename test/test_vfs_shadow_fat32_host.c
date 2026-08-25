@@ -8,6 +8,12 @@
 #define TEST_RESERVED 32U
 #define TEST_FAT_SECTORS 600U
 #define TEST_DATA_START (TEST_RESERVED + 2U * TEST_FAT_SECTORS)
+#define LARGE_FILE_FIRST_CLUSTER 8U
+#define LARGE_FILE_SIZE (1024U * 1024U)
+#define LARGE_FILE_CLUSTER_COUNT \
+    (LARGE_FILE_SIZE / X86OS_STORAGE_BLOCK_SIZE)
+#define LARGE_FILE_LAST_CLUSTER \
+    (LARGE_FILE_FIRST_CLUSTER + LARGE_FILE_CLUSTER_COUNT - 1U)
 #define FAT12_SECTORS 2880U
 #define FAT12_ROOT_START 19U
 #define FAT12_DATA_START 33U
@@ -114,6 +120,11 @@ static void initialize_fat32(test_context_t *context) {
         for (uint32_t cluster = 2U; cluster <= 7U; ++cluster)
             put32(fat + cluster * 4U, 0x0FFFFFFFU);
         put32(fat + 6U * 4U, 7U);
+        for (uint32_t cluster = LARGE_FILE_FIRST_CLUSTER;
+             cluster <= LARGE_FILE_LAST_CLUSTER; ++cluster)
+            put32(fat + cluster * 4U,
+                  cluster == LARGE_FILE_LAST_CLUSTER
+                      ? 0x0FFFFFFFU : cluster + 1U);
     }
 
     uint8_t *root = context->image +
@@ -127,6 +138,8 @@ static void initialize_fat32(test_context_t *context) {
                                    'B','I','N'};
     static const uint8_t unicode_short[11] =
         {'U','N','I','C','O','D','~','1','T','X','T'};
+    static const char large[11] =
+        {'L','A','R','G','E',' ',' ',' ','B','M','P'};
     static const uint16_t unicode_name[11] =
         {0x0047U, 0x0072U, 0x00FCU, 0x006EU, 0x002DU, 0xD83DU,
          0xDE80U, 0x002EU, 0x0074U, 0x0078U, 0x0074U};
@@ -137,6 +150,16 @@ static void initialize_fat32(test_context_t *context) {
     make_entry(root + 128U, cross, 0x20U, 6U, 700U);
     make_lfn_units(root + 160U, unicode_name, 11U, unicode_short);
     make_entry(root + 192U, (const char *)unicode_short, 0x20U, 7U, 4U);
+    make_entry(root + 224U, large, 0x20U, LARGE_FILE_FIRST_CLUSTER,
+               LARGE_FILE_SIZE);
+
+    for (uint32_t cluster = LARGE_FILE_FIRST_CLUSTER;
+         cluster <= LARGE_FILE_LAST_CLUSTER; ++cluster) {
+        uint8_t *sector = context->image +
+            (TEST_DATA_START + cluster - 2U) * X86OS_STORAGE_BLOCK_SIZE;
+        memset(sector, (uint8_t)(cluster - LARGE_FILE_FIRST_CLUSTER),
+               X86OS_STORAGE_BLOCK_SIZE);
+    }
 
     uint8_t *cross_first = context->image +
         (TEST_DATA_START + 4U) * X86OS_STORAGE_BLOCK_SIZE;
@@ -340,7 +363,10 @@ int main(void) {
         strcmp(info.name, unicode_name) != 0) return 31;
     if (readdir_path(&context, "/", 4U, &info) != 0 ||
         strcmp(info.name, unicode_name) != 0) return 29;
-    if (readdir_path(&context, "/", 5U, &info) != 1 ||
+    if (readdir_path(&context, "/", 5U, &info) != 0 ||
+        strcmp(info.name, "LARGE.BMP") != 0 ||
+        info.size != LARGE_FILE_SIZE) return 21;
+    if (readdir_path(&context, "/", 6U, &info) != 1 ||
         info.name[0U] != '\0') return 21;
     if (readdir_path(&context, "/README.TXT", 0U, &info) != -20) return 22;
     uint8_t *unicode_lfn = context.image +
@@ -375,6 +401,22 @@ int main(void) {
         return 25;
     initialize_fat32(&context);
     if (reist_vfs_shadow_fat_object_open(
+            &object_io, "/LARGE.BMP", 10U, &object, &info) != 0 ||
+        info.size != LARGE_FILE_SIZE || object.locator_b != 224U)
+        return 32;
+    static uint8_t bulk_data[X86OS_STORAGE_BULK_MAX_BYTES];
+    const uint32_t bulk_offset =
+        LARGE_FILE_SIZE - X86OS_STORAGE_BULK_MAX_BYTES;
+    context.reads = 0U;
+    if (reist_vfs_shadow_fat_object_read(
+            &object_io, &object, bulk_offset, bulk_data, sizeof(bulk_data),
+            &transferred) != 0 || transferred != sizeof(bulk_data) ||
+        context.reads > 280U) return 33;
+    for (uint32_t index = 0U; index < sizeof(bulk_data); ++index)
+        if (bulk_data[index] != (uint8_t)(
+                (bulk_offset + index) / X86OS_STORAGE_BLOCK_SIZE)) return 34;
+    initialize_fat32(&context);
+    if (reist_vfs_shadow_fat_object_open(
             &object_io, "/README.TXT", 11U, &object, &info) != 0)
         return 26;
     context.image[TEST_DATA_START * X86OS_STORAGE_BLOCK_SIZE + 14U] ^= 1U;
@@ -397,7 +439,7 @@ int main(void) {
         info.size != 21U) return 12;
     if (stat_path(&context, "/BAD/MISSING.TXT", &info) != -5) return 13;
     if (fat32_stat_path(&context, "/HOTPLUG.TXT", &info) != -2) return 14;
-    put16(context.image + 17U, 5000U);
+    put16(context.image + 17U, 65535U);
     if (stat_path(&context, "/HOTPLUG.TXT", &info) != -2) return 15;
     return 0;
 }

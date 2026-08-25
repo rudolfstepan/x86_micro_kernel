@@ -91,15 +91,18 @@ Allowlist-Gesamtpool ist auf 352 KiB begrenzt.
 Append-only Frameoperation 15 und Storage-Operation 32 ergänzen einen
 objektbezogenen Bulk-Lesepfad. Der 512-Byte-Kontrollframe bleibt im
 redundanten Request-Pool; die Nutzdaten liegen in genau zwei kernel-eigenen,
-statischen Slots mit höchstens 64 KiB. Append-only Syscall 124 erlaubt nur der
+statischen Slots mit höchstens 128 KiB. Append-only Syscall 124 erlaubt nur der
 gebundenen Servicegeneration die Publikation und nur der exakten
 Clientgeneration die atomare Abholung. Kernel- und Frame-CRC werden vor
 Offsetfortschritt geprüft. Timeout, Cancel, Prozessende und Serviceverlust
 widerrufen Slot und Handle; Erschöpfung liefert `ENOSPC`. Die große Kopie läuft
 mit erlaubten Interrupts, aber ohne Schedulerwechsel, und hält den IRQ-Lock nur
 für kleine Metadatenübergänge. Der bisherige 256-Byte-Pfad bleibt unverändert.
-FAT ist dafür auf 128 Cluster und 320 Sektorreads, EXT2 auf 192 Sektorreads pro
-Operation fest begrenzt.
+FAT-Verzeichnisläufe sind dafür auf 128 Cluster und alle FAT-Operationen auf
+320 Sektorreads begrenzt; nur Dateiinhalte dürfen bis zu 2176 Cluster besuchen.
+Ein operationseigener FAT-Sektorcache macht späte 128-KiB-Lesezugriffe auf
+1-MiB-Dateien innerhalb dieses Budgets möglich. EXT2 bleibt auf 192
+Sektorreads pro Operation fest begrenzt.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus
@@ -315,7 +318,7 @@ Schlüsselbytes. Gespeicherter Name und Readdir bewahren die Originalbytes.
     Legacy-Namespace-Fallback und mit atomarer Fünf-Sekunden-Grenze umstellen.
 16. [x] Userspace-Shell-Programmsuche und Tab-Vervollständigung mit einer
     gemeinsamen begrenzten Deadline auf Operationen 5/7 umstellen.
-17. [x] Zwei feste 64-KiB-Bulk-Slots mit CRC, ownergebundener Publikation und
+17. [x] Zwei feste 128-KiB-Bulk-Slots mit CRC, ownergebundener Publikation und
     atomarer Sammlung für Objektoperation 15 ergänzen.
 18. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
    Nachweis aus Ring 0 entfernen.

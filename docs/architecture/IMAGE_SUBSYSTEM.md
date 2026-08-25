@@ -1,6 +1,6 @@
 # REIST Image-Library und Bildbetrachter
 
-Stand: 20. August 2026.
+Stand: 25. August 2026.
 
 ## Schichten und Verantwortung
 
@@ -68,13 +68,22 @@ PC-Framebuffern werden bereits validierte Pixel zeilenweise direkt in den
 Shadow-Framebuffer kopiert. Die generische Kanalumrechnung bleibt als
 Fallback für abweichende Pixelformate erhalten.
 
-Große Bilddateien werden im Syscallpfad in maximal 16-KiB-Abschnitten gelesen.
-Der Zielbereich wird vollständig als schreibbarer Ring-3-Bereich validiert;
-die begrenzten Direkttransfers vermeiden anschließend sektorweise
-Bounce-Buffer-Kopien und wiederholte FAT-Kettenläufe. Falls REIST später
-mehrere Threads pro Adressraum unterstützt, muss dieser Vertrag durch echtes
-Page-Pinning ersetzt werden, bevor parallele Mapping-Änderungen zugelassen
-werden.
+Bilddateien werden nicht mehr über den Legacy-Kernel-VFS-Pfad geladen. Der
+Viewer öffnet einmalig ein owner- und generationgebundenes Ring-3-Objekt,
+validiert Typ und Größe mit `fstat` und liest anschließend höchstens 128 KiB
+pro Bulk-Request in seinen festen 1-MiB-Eingabepuffer. Eine maximale Datei
+benötigt damit acht statt 64 serialisierte 16-KiB-Abschnitte. Kontrollframe,
+CRC, Deadline, Cancel und Offsetfortschritt bleiben Teil des vorhandenen
+Storage-Service-Vertrags; ein Fehler veröffentlicht keine Teilabbildung.
+
+Der FAT-Parser hält pro Operation genau einen validierten 512-Byte-FAT-Sektor
+im Stackcache. Verzeichnisläufe bleiben auf 128 Cluster begrenzt; nur der
+Dateilesepfad besitzt eine getrennte feste Grenze von 2176 besuchten Clustern.
+Damit benötigt ein 128-KiB-Transfer bei der kleinsten Clustergröße höchstens
+256 Datensektoren und bleibt einschließlich FAT-Weg innerhalb des bestehenden
+320-Sektor-Budgets. Der Cache überlebt weder Volumevalidierung noch Request.
+Die zwei kernel-eigenen Bulk-Slots belegen zusammen fest 256 KiB; dynamische
+Cacheallokation und ungebundene Vorablesezugriffe werden nicht eingeführt.
 
 Während einer zur Laufzeit aktivierten Grafiksitzung bleiben normale Kernel-
 und Dienstausgaben im seriellen Diagnosekanal. Sie werden nicht als
