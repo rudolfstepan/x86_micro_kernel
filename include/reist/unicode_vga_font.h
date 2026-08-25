@@ -179,8 +179,7 @@ static const reist_unicode_vga_mapping_t reist_unicode_vga_mappings[] = {
     (sizeof(reist_unicode_vga_mappings) / \
      sizeof(reist_unicode_vga_mappings[0]))
 
-static inline uint8_t reist_unicode_vga_glyph(uint32_t scalar) {
-    if (scalar <= 0x7FU) return (uint8_t)scalar;
+static inline size_t reist_unicode_vga_mapping_index(uint32_t scalar) {
     size_t low = 0U;
     size_t high = REIST_UNICODE_VGA_MAPPING_COUNT;
     while (low < high) {
@@ -190,9 +189,22 @@ static inline uint8_t reist_unicode_vga_glyph(uint32_t scalar) {
         else
             high = middle;
     }
-    return low < REIST_UNICODE_VGA_MAPPING_COUNT &&
-           reist_unicode_vga_mappings[low].scalar == scalar
-        ? reist_unicode_vga_mappings[low].glyph
+    return low;
+}
+
+static inline int reist_unicode_vga_has_glyph(uint32_t scalar) {
+    if (scalar <= 0x7FU) return 1;
+    size_t index = reist_unicode_vga_mapping_index(scalar);
+    return index < REIST_UNICODE_VGA_MAPPING_COUNT &&
+           reist_unicode_vga_mappings[index].scalar == scalar;
+}
+
+static inline uint8_t reist_unicode_vga_glyph(uint32_t scalar) {
+    if (scalar <= 0x7FU) return (uint8_t)scalar;
+    size_t index = reist_unicode_vga_mapping_index(scalar);
+    return index < REIST_UNICODE_VGA_MAPPING_COUNT &&
+           reist_unicode_vga_mappings[index].scalar == scalar
+        ? reist_unicode_vga_mappings[index].glyph
         : REIST_UNICODE_VGA_MISSING_GLYPH;
 }
 

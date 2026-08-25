@@ -623,6 +623,11 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/images/demo-desktop.bmp=assets/images/demo-desktop.bmp \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
 	usr/share/fonts/reist-vga.psf=assets/fonts/reist-vga.psf \
+	usr/share/fonts/reist-unicode-bmp.psf=assets/fonts/reist-unicode-bmp.psf \
+	usr/share/fonts/unifont-16.0.04.hex.gz=assets/fonts/source/unifont-16.0.04.hex.gz \
+	usr/share/fonts/ofl-1.1.txt=assets/fonts/source/OFL-1.1.txt \
+	usr/share/fonts/readme.txt=assets/fonts/README.md \
+	usr/share/fonts/unicode.txt=assets/fonts/unicode.txt \
 	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
 	bin/ls.prg=$(SYSTEM_PROGRAM_DIR)/LS.PRG \
 	bin/cat.prg=$(SYSTEM_PROGRAM_DIR)/CAT.PRG \
@@ -704,6 +709,10 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
 	usr/share/sounds/440hz.wav=% usr/share/images/demo-desktop.bmp=% \
 	usr/share/images/demo-colors.gif=% \
+	usr/share/fonts/reist-unicode-bmp.psf=% \
+	usr/share/fonts/unifont-16.0.04.hex.gz=% \
+	usr/share/fonts/ofl-1.1.txt=% usr/share/fonts/readme.txt=% \
+	usr/share/fonts/unicode.txt=% \
 	usr/share/icons/folder-empty.ico=% usr/share/icons/folder-full.ico=% \
 	usr/share/icons/program.ico=% usr/share/icons/text.ico=% \
 	usr/share/icons/audio.ico=% usr/share/icons/image.ico=% \
@@ -795,6 +804,7 @@ test-unit:
 test-desktop-host:
 	@$(PYTHON) test/test_display_abi_minimal.py -q
 	@$(PYTHON) test/test_gui_font.py -q
+	@$(PYTHON) test/test_gui_bmp_font.py -q
 	@$(PYTHON) test/test_desktop_source.py -q
 	@$(PYTHON) test/test_desktop_explorer_source.py -q
 	@$(PYTHON) test/test_desktop_filetypes_source.py -q

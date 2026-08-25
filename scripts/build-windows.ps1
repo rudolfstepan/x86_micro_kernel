@@ -338,6 +338,11 @@ try {
         '--data-file', "usr/share/images/demo-desktop.bmp=$(Join-Path $RepoRoot 'assets\images\demo-desktop.bmp')"
         '--data-file', "usr/share/images/demo-colors.gif=$(Join-Path $RepoRoot 'assets\images\demo-colors.gif')"
         '--data-file', "usr/share/fonts/reist-vga.psf=$(Join-Path $RepoRoot 'assets\fonts\reist-vga.psf')"
+        '--data-file', "usr/share/fonts/reist-unicode-bmp.psf=$(Join-Path $RepoRoot 'assets\fonts\reist-unicode-bmp.psf')"
+        '--data-file', "usr/share/fonts/unifont-16.0.04.hex.gz=$(Join-Path $RepoRoot 'assets\fonts\source\unifont-16.0.04.hex.gz')"
+        '--data-file', "usr/share/fonts/ofl-1.1.txt=$(Join-Path $RepoRoot 'assets\fonts\source\OFL-1.1.txt')"
+        '--data-file', "usr/share/fonts/readme.txt=$(Join-Path $RepoRoot 'assets\fonts\README.md')"
+        '--data-file', "usr/share/fonts/unicode.txt=$(Join-Path $RepoRoot 'assets\fonts\unicode.txt')"
     )
     $floppyDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"

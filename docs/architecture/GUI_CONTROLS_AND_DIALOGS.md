@@ -67,7 +67,7 @@ der betroffenen Surface an.
 | verschachtelte Container | ja | Control Gallery | adressierter Eventpfad | Parent-Capture/Target/Bubble | [x] Parent-lokale Geometrie und Ancestry-Clip |
 | Tabs | ja | Control Gallery | Capture/Auswahl | Links/Rechts, Home/End, Enter/Space | [x] vier interaktive Seiten |
 | einzeiliges Textfeld | ja | Control Gallery | Fokus/Cursor-Capture | Cursor, Editieren, Enter | [x] begrenztes ASCII-v1-Textfeld |
-| mehrzeiliger Texteditor | ja | REIST Editor | Click/Cursor | Cursor, Editieren, Zeilenwechsel | [x] fester ASCII/LF-Puffer, Laden/Speichern und Dirty-State |
+| mehrzeiliger Texteditor | ja | REIST Editor | Click/Cursor | Cursor, Editieren, Zeilenwechsel | [x] fester UTF-8/LF-Puffer, Skalarcursor, Laden/Speichern und Dirty-State |
 | Liste und Listenauswahl | ja | Control Gallery | Capture/Auswahl | Pfeile, Home/End, Page, Enter | [x] feste Itemkapazität |
 | Scrollbar | ja | Control Gallery | Drag-Capture | Pfeile, Page, Home/End | [x] gemeinsame Range-API |
 | ScrollView | nein | nein | nein | nein | [ ] Containerkopplung noch offen |
@@ -289,12 +289,33 @@ vollständigen RFC-3629-Lauf vor Pixelwirkung, zählt Unicode-Skalarwerte statt
 Bytes und bildet vorhandene CP437-Zeichen auf ihre echten 8x16-Glyphen ab.
 Jeder andere gültige Skalar erhält zunächst genau eine sichtbare
 Ersatzglyph-Zelle. Zusätzlich lädt der Desktop einmalig den standardisierten
-PSF2-Font `/usr/share/fonts/reist-vga.psf` in feste Ring-3-Speicher. Der
-vollständig vor Publikation validierte Unicode-Index kann echte
-Erweiterungsglyphen über geclippte Pixeluploads überlagern; die erste
-Referenzglyph ist U+20AC. Fehlt der optionale Font oder ist er ungültig,
-bleibt der Kernel-Ersatzpfad aktiv. Breite Schriftabdeckung, Text-Shaping,
-Grapheme, Mnemonics und Rechts-nach-links-Layout bleiben explizit offen.
+PSF2-Font `/usr/share/fonts/reist-unicode-bmp.psf` in feste Ring-3-Speicher.
+Der vollständig vor Publikation validierte Unicode-Index enthält alle 57.086
+Abbildungen der eingebetteten GNU-Unifont-16.0.04-BMP-Quelle. CP437 bleibt im
+schnellen Kernel-Lauf; nur dort fehlende, exakt gemappte BMP-Glyphen werden
+über geclippte Pixeluploads überlagert. Native 8x16-Glyphen bleiben
+unverändert, 16x16-Glyphen werden für die aktuelle Zelle durch OR-Verknüpfung
+benachbarter Spalten deterministisch auf 8x16 verdichtet. Fehlt der optionale
+Font oder ist er ungültig, bleibt der Kernel-Ersatzpfad aktiv. Supplementary
+Planes, Text-Shaping, Grapheme, Mnemonics und Rechts-nach-links-Layout bleiben
+explizit offen.
+
+Auch die feste 2-MiB-Dateikapazität ist kein einzelner ununterbrechbarer
+VFS-Aufruf: Der Desktop liest Font- und Iconressourcen in höchstens 4096 Byte
+großen Syscall-Abschnitten und gibt die CPU nach jedem erfolgreichen Abschnitt
+explizit ab. So erhält der Scheduler unabhängig vom Timerzeitpunkt wiederholt
+Gelegenheit, Treiber- und Dienst-Heartbeats zu bedienen; eine große optionale
+Schrift monopolisiert keinen einzelnen serialisierten VFS-Aufruf über deren
+gesamtes Heartbeat-Budget.
+
+Der mehrzeilige Texteditor übernimmt denselben RFC-3629-Vertrag für Dateien:
+Er validiert einen vollständigen, fest begrenzten Inhalt vor dem Austausch des
+Dokuments, hält Cursor- und Viewportspalten als Unicode-Skalarindizes und
+verschiebt, löscht oder clippt niemals innerhalb einer Mehrbytefolge. Die
+Zeilen- und Dokumentgrenzen bleiben Bytekapazitäten; Speichern erhält die
+validierten UTF-8-Bytes. `/usr/share/fonts/unicode.txt` ist damit direkt im
+REIST Editor sichtbar. Graphemnavigation, Bidi und Shaping werden dadurch
+nicht vorgetäuscht.
 
 ## Umsetzungsreihenfolge
 
@@ -312,7 +333,8 @@ Grapheme, Mnemonics und Rechts-nach-links-Layout bleiben explizit offen.
 - [x] Einzeiliges Textfeld samt Cursor und expliziter Clipboard-/IME-Grenze spezifizieren.
 - [x] Liste, Scrollbar, Slider, SpinBox und Progress gemeinsam implementieren.
 - [x] Mehrzeiligen Texteditor mit realer GUI-App, Dirty-State, modalen
-  Save/Discard/Cancel-Dialogen und begrenzter Persistenz bereitstellen.
+  Save/Discard/Cancel-Dialogen, skalarbasiertem UTF-8-Cursor und begrenzter
+  Persistenz bereitstellen.
 - [ ] ScrollView aus Container, Viewport und Scrollbar zusammensetzen.
 - [x] Surface-/Event-IPC generationsgebunden veröffentlichen; lokale
   Fill-/Text-Paintframes werden begrenzt und atomar committed.
@@ -320,6 +342,8 @@ Grapheme, Mnemonics und Rechts-nach-links-Layout bleiben explizit offen.
   rasterisieren und fehlende VGA-Glyphen deterministisch ersetzen.
 - [x] Einen begrenzten, heapfreien PSF2-Decoder und geclippten Ring-3-
   Erweiterungsglyphpfad bereitstellen.
+- [x] Die vollständige GNU-Unifont-16.0.04-BMP-Quelle reproduzierbar als
+  begrenzte 8x16-Fallbackressource integrieren.
 - [ ] Accessibility-Baum und assistive Eventausgabe versionieren.
 - [ ] Theme-, Font-, Icon- und Lokalisierungsressourcen versionieren.
 - [ ] Dateimanager, Terminal und Systeminfo als getrennte GUI-Clients portieren;

@@ -775,9 +775,10 @@ ist noch offen und wird nicht behauptet.
   und Entwurfswiederherstellung ist umgesetzt
 - Pipes, Ein-/Ausgabeumleitung und Hintergrundjobs nach Fertigstellung von
   Deskriptoren, Wait-Queues und Signalen
-- Editor: das sichere `TEMP -> fsync -> close -> rename` ist umgesetzt;
-  dynamischer Puffer, Suche, Auswahl/Clipboard und die Aufhebung des
-  Limits von 200 Zeilen fehlen
+- Editor: das sichere `TEMP -> fsync -> close -> rename` sowie vollständig
+  validiertes RFC-3629-UTF-8 mit Skalarcursor und bytegenauer Persistenz sind
+  umgesetzt; dynamischer Puffer, Suche, Auswahl/Clipboard, Graphemnavigation,
+  Bidi/Shaping/IME und die Aufhebung des Limits von 200 Zeilen fehlen
 - ein kleines Ring-3-`init` als PID 1 statt direktem Shellstart durch den Kernel
 - Mausereignisse, Fokusmodell, Compositor und Windowmanager als getrenntes
   späteres Paket statt Erweiterung der schmalen Display-ABI
@@ -1661,10 +1662,18 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
 - [x] Einen standardisierten, fest begrenzten Ring-3-PSF2-Decoder einführen,
   den Referenzfont in beiden Images verankern und Erweiterungsglyphen geclippt
   überlagern; U+20AC beweist den Pfad außerhalb CP437.
+- [x] Breite BMP-Glyphabdeckung aus allen 57.086 eindeutigen Abbildungen der
+  gepinnten GNU-Unifont-16.0.04-Quelle erzeugen, im HDD-Image lizenzkonform
+  ausliefern und nur für nicht durch CP437 gedeckte Skalare überlagern; große
+  Ressourcen in 4096-Byte-Syscall-Abschnitten mit expliziter Schedulerabgabe
+  laden, damit unabhängige Supervisor-Heartbeats planbar bleiben.
+- [x] Den festen mehrzeiligen Editor auf vorvalidierte UTF-8-Dokumente,
+  Skalarspalten sowie sequenzsicheres Editieren und Clipping umstellen; die
+  visuelle Beispieldatei unter `/usr/share/fonts/unicode.txt` damit öffnen.
 - Danach atomaren LFN-Replace ergänzen; EXT2 vorerst ausdrücklich read-only
-  mounten. Breite Unicode-Fontpakete, kaskadierender Font-Fallback,
-  Eingabemethoden, Bidirektionalität, Shaping und Graphemnavigation bleiben
-  eigene Ring-3-GUI-/Textpakete.
+  mounten. Supplementary-Plane-Fontpakete, Eingabemethoden,
+  Bidirektionalität, Shaping und Graphemnavigation bleiben eigene
+  Ring-3-GUI-/Textpakete.
 
 #### R2.3 Blockgeräte und Partitionen — L
 

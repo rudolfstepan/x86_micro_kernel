@@ -276,11 +276,33 @@ dieselben Skalarzellen ohne UTF-8-Sequenzen zu teilen. Ein öffentlicher,
 heapfreier Ring-3-PSF2-Decoder validiert Header, Glyphdaten und die vollständige
 Unicode-Tabelle vor Publikation in caller-owned Speicher. Der Desktop behält
 den schnellen Kernel-Lauf bei und überlagert nur Font-Erweiterungsglyphen über
-geclippte XRGB-Uploads; der reproduzierbare Referenzfont ergänzt U+20AC. Ein
-fehlender oder ungültiger Font fällt ohne neue Pixelwirkung auf die sichtbare
-Kernel-Ersatzglyph zurück. Breite Fontabdeckung, Shaping, Grapheme, Bidi und
-IME bleiben Ring-3-Dienste beziehungsweise GUI-Textpakete; sie werden nicht in
-den Framebuffer-Treiber verlagert.
+geclippte XRGB-Uploads. Der reproduzierbare Fallback wird aus der gepinnten,
+OFL-lizenzierten GNU-Unifont-16.0.04-HEX-Quelle erzeugt und enthält deren
+57.086 eindeutige BMP-Abbildungen. Native 8x16-Raster bleiben bytegleich;
+16x16-Raster werden für die bestehende Zelle durch OR-Verdichtung je zweier
+Nachbarspalten auf acht Pixel reduziert. Quelle, Lizenz und abgeleitetes PSF2
+liegen nur im vollständigen HDD-Image. Ein fehlender oder ungültiger Font fällt
+ohne neue Pixelwirkung auf die sichtbare Kernel-Ersatzglyph zurück.
+Font- und Icondateien werden trotz fester großer Zielpuffer in höchstens
+4096-Byte-großen Read-Syscalls geladen und nach jedem erfolgreichen Abschnitt
+explizit an den Scheduler abgegeben. Damit kann der Ring-3-Loader die
+Heartbeat-Gelegenheiten unabhängiger Supervisor-Domänen weder durch einen
+einzelnen langen VFS-Aufruf noch durch eine lückenlose Folge sofort
+fortgesetzter kurzer Aufrufe verdrängen.
+Der öffentliche mehrzeilige Ring-3-Texteditor validiert Dokumente ebenfalls
+vollständig nach RFC 3629, verwaltet Cursor und horizontalen Viewport in
+Skalarzellen und bewahrt die UTF-8-Bytes beim Speichern. Seine festen 200
+Zeilen zu je 256 Bytes bleiben unverändert. Mehrbytefolgen werden bei
+Cursorbewegung, Löschen und Surface-Paint-Clipping nicht geteilt; komplexes
+Layout und Eingabemethoden bleiben außerhalb dieses Controllers.
+Supplementary-Plane-Abdeckung, Shaping, Grapheme, Bidi und IME bleiben
+Ring-3-Dienste beziehungsweise GUI-Textpakete; sie werden nicht in den
+Framebuffer-Treiber verlagert.
+Der überwachte Lauf lädt und validiert den großen Font vor der Gerätebindung.
+Er verbindet sich danach innerhalb einer festen Zwei-Sekunden-Deadline neu
+mit der aktuell freigegebenen SVGA2D-Servicegeneration; alte IPC-Fähigkeiten
+werden vor jedem Versuch verworfen und ein generischer Aktivierungsfallback
+wird für diesen Probe nicht verwendet.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

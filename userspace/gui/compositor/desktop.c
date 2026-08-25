@@ -21,11 +21,13 @@
 #include "reist/gui/menu.h"
 #include "../../video/include/reist/svga2d.h"
 #include "../../../include/reist/utf.h"
+#include "../../../include/reist/unicode_vga_font.h"
 
 #define DESKTOP_ICON_COUNT 3U
 #define DESKTOP_ICON_WIDTH 176U
 #define DESKTOP_SVGA2D_CONNECT_ATTEMPTS 3U
 #define DESKTOP_SVGA2D_RETRY_MS 50U
+#define DESKTOP_SVGA2D_PROBE_READY_DEADLINE_MS 2000U
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 1U
 #define DESKTOP_METRICS_VERSION 1U
@@ -36,10 +38,10 @@
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
-#define DESKTOP_FONT_FILE_CAPACITY 16384U
-#define DESKTOP_FONT_MAPPING_CAPACITY 512U
-#define DESKTOP_FONT_EXTENSION_FIRST_GLYPH 256U
-#define DESKTOP_FONT_PATH "/usr/share/fonts/reist-vga.psf"
+#define DESKTOP_FILE_READ_CHUNK 4096U
+#define DESKTOP_FONT_FILE_CAPACITY (2U * 1024U * 1024U)
+#define DESKTOP_FONT_MAPPING_CAPACITY 65536U
+#define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode-bmp.psf"
 #define DESKTOP_CLOCK_TEXT_CAPACITY 17U
 #define DESKTOP_CLOCK_POLL_MS 1000U
 #define DESKTOP_CLOCK_FALLBACK_POLLS 200U
@@ -172,6 +174,25 @@ static int desktop_svga2d_activate_bounded(void) {
             (void)x86os_sleep_ms(DESKTOP_SVGA2D_RETRY_MS);
     }
     return status;
+}
+
+static int desktop_svga2d_activate_until_ready(uint32_t deadline_ms) {
+    if (deadline_ms == 0U) return -22;
+    uint64_t started = 0U;
+    uint64_t now = 0U;
+    if (x86os_monotonic_ms(&started) != 0) return -5;
+    int status = -19;
+    for (;;) {
+        status = desktop_svga2d_connect(1U);
+        if (status == 0) return 0;
+        desktop_svga2d_forget_endpoint();
+        if (x86os_monotonic_ms(&now) != 0 || now < started ||
+            now - started >= deadline_ms) return status;
+        uint64_t remaining = deadline_ms - (now - started);
+        uint32_t delay = remaining < DESKTOP_SVGA2D_RETRY_MS
+            ? (uint32_t)remaining : DESKTOP_SVGA2D_RETRY_MS;
+        if (delay == 0U || x86os_sleep_ms(delay) != 0) return status;
+    }
 }
 
 static int desktop_svga2d_rect_copy(uint32_t source_x, uint32_t source_y,
@@ -608,13 +629,22 @@ static int read_file_bounded(const char *path, uint8_t *bytes,
     if (descriptor < 0) return descriptor;
     size_t used = 0U;
     while (used < capacity) {
-        int amount = x86os_read(descriptor, bytes + used, capacity - used);
+        size_t remaining = capacity - used;
+        size_t request = remaining < DESKTOP_FILE_READ_CHUNK
+            ? remaining : DESKTOP_FILE_READ_CHUNK;
+        /* Bound kernel serialization and explicitly yield after each slice;
+         * a multi-megabyte font must not starve supervised heartbeats. */
+        int amount = x86os_read(descriptor, bytes + used, request);
         if (amount < 0 || (size_t)amount > capacity - used) {
             (void)x86os_close(descriptor);
             return -5;
         }
         if (amount == 0) break;
         used += (size_t)amount;
+        if (x86os_yield() != 0) {
+            (void)x86os_close(descriptor);
+            return -5;
+        }
     }
     uint8_t extra = 0U;
     int extra_read = x86os_read(descriptor, &extra, 1U);
@@ -767,8 +797,7 @@ static int desktop_font_overlay_extensions(
         int mapped = reist_gui_font_lookup(
             &desktop_font, scalar, &glyph_index);
         if (mapped < 0) return mapped;
-        if (mapped == 1 &&
-            glyph_index >= DESKTOP_FONT_EXTENSION_FIRST_GLYPH) {
+        if (mapped == 1 && !reist_unicode_vga_has_glyph(scalar)) {
             int64_t glyph_x64 = (int64_t)x +
                 (int64_t)cell * desktop_font.width;
             if (glyph_x64 >= INT32_MIN && glyph_x64 <= INT32_MAX) {
@@ -4465,25 +4494,37 @@ int main(int argc, char **argv) {
     int font_status = desktop_font_load(&display);
     if (unicode_probe) {
         static const char valid[] =
-            "A\xC3\x84\xE2\x82\xAC\xF0\x9F\x9A\x80";
+            "A\xC3\x84\xE2\x82\xAC"
+            "\xD0\x96\xD7\x90\xD8\xA7"
+            "\xE0\xA4\x95\xE4\xB8\xAD\xEA\xB0\x80"
+            "\xF0\x9F\x9A\x80";
         static const char malformed[] = "\xF0\x28\x8C\x28";
-        int valid_status = x86os_draw_text_pixels(
-            (int32_t)(display.width - display.font_width), 0,
-            valid, sizeof(valid) - 1U, 0x00FFFFFFU, 0x00000000U);
+        int probe_activate_status = desktop_svga2d_activate_until_ready(
+            DESKTOP_SVGA2D_PROBE_READY_DEADLINE_MS);
+        if (probe_activate_status == 0) runtime_activated = 1U;
+        int valid_status = probe_activate_status == 0
+            ? x86os_draw_text_pixels(
+                (int32_t)(display.width - display.font_width), 0,
+                valid, sizeof(valid) - 1U, 0x00FFFFFFU, 0x00000000U)
+            : probe_activate_status;
         desktop_render_context_t probe_context = {
             .display = &display,
             .clip = {0, 0, display.width, display.height},
         };
-        int font_overlay_status = desktop_font_overlay_extensions(
-            &probe_context, 0, 0, valid, sizeof(valid) - 1U,
-            0x00FFFFFFU, 0x00000000U);
-        int malformed_status = x86os_draw_text_pixels(
-            0, 0, malformed, sizeof(malformed) - 1U,
-            0x00FFFFFFU, 0x00000000U);
+        int font_overlay_status = probe_activate_status == 0
+            ? desktop_font_overlay_extensions(
+                &probe_context, 0, 0, valid, sizeof(valid) - 1U,
+                0x00FFFFFFU, 0x00000000U)
+            : probe_activate_status;
+        int malformed_status = probe_activate_status == 0
+            ? x86os_draw_text_pixels(
+                0, 0, malformed, sizeof(malformed) - 1U,
+                0x00FFFFFFU, 0x00000000U)
+            : probe_activate_status;
         int deactivate_status = runtime_activated
             ? desktop_display_deactivate() : 0;
         if (valid_status != (int)(sizeof(valid) - 1U) || font_status != 0 ||
-            font_overlay_status != 1 || malformed_status != -22 ||
+            font_overlay_status != 7 || malformed_status != -22 ||
             deactivate_status != 0) {
             x86os_puts("DESKTOP_UNICODE_FAIL valid=");
             x86os_print_number(valid_status);
@@ -4493,11 +4534,14 @@ int main(int argc, char **argv) {
             x86os_print_number(font_status);
             x86os_puts(" overlay=");
             x86os_print_number(font_overlay_status);
+            x86os_puts(" activate=");
+            x86os_print_number(probe_activate_status);
             x86os_puts(" deactivate=");
             x86os_print_number(deactivate_status);
             x86os_putchar('\n');
             return 1;
         }
+        x86os_puts("DESKTOP_FONT_BMP_OK\n");
         x86os_puts("DESKTOP_FONT_FALLBACK_OK\n");
         x86os_puts("DESKTOP_UNICODE_OK\n");
         return 0;

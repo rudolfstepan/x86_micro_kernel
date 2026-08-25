@@ -78,6 +78,13 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("NOTEPAD_MOUSE_BATCH_LIMIT 32U", self.source)
         self.assertIn('"/untitled.txt"', self.source)
 
+    def test_editor_renders_utf8_on_scalar_boundaries(self):
+        self.assertIn("reist_utf8_prefix", self.source)
+        self.assertIn("reist_utf8_decode_one", self.source)
+        self.assertIn("utf8_slice", self.source)
+        self.assertIn("scalar_amount * display->font_width", self.source)
+        self.assertNotIn("line + state->editor.first_column", self.source)
+
     def test_resize_is_recoverable_and_dialog_is_a_separate_surface(self):
         self.assertIn("accept_configure_bounded", self.source)
         self.assertIn('"notepad: Resize verzoegert: "', self.source)

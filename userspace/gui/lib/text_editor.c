@@ -1,5 +1,7 @@
 #include "reist/gui/text_editor.h"
 
+#include "../../../include/reist/utf.h"
+
 static void clear_bytes(void *value, size_t size) {
     volatile uint8_t *bytes = (volatile uint8_t *)value;
     for (size_t index = 0U; index < size; ++index) bytes[index] = 0U;
@@ -95,7 +97,11 @@ static uint32_t event_valid(const reist_gui_text_editor_event_t *event) {
     if (event->type == REIST_GUI_TEXT_EDITOR_EVENT_TEXT)
         return event->button == 0U && event->pressed == 0U &&
                event->key == 0U && event->focused == 0U &&
-               event->codepoint >= 0x20U && event->codepoint <= 0x7EU;
+               event->codepoint >= 0x20U && event->codepoint <= 0x10FFFFU &&
+               !(event->codepoint >= 0x7FU &&
+                 event->codepoint <= 0x9FU) &&
+               !(event->codepoint >= 0xD800U &&
+                 event->codepoint <= 0xDFFFU);
     if (event->type == REIST_GUI_TEXT_EDITOR_EVENT_FOCUS)
         return event->button == 0U && event->pressed == 0U &&
                event->key == 0U && event->codepoint == 0U &&
@@ -112,6 +118,59 @@ static uint32_t line_length(const char *line) {
     while (length < REIST_GUI_TEXT_EDITOR_LINE_CAPACITY &&
            line[length] != '\0') ++length;
     return length;
+}
+
+static uint32_t scalar_printable(uint32_t scalar) {
+    return scalar >= 0x20U && !(scalar >= 0x7FU && scalar <= 0x9FU);
+}
+
+static uint32_t line_scalar_count(const char *line) {
+    uint32_t bytes = line_length(line);
+    size_t count = 0U;
+    if (!reist_utf8_scan(line, bytes, &count) || count > UINT32_MAX)
+        return UINT32_MAX;
+    return (uint32_t)count;
+}
+
+static uint32_t line_byte_offset(const char *line, uint32_t scalar_column) {
+    uint32_t bytes = line_length(line);
+    size_t offset = 0U;
+    uint32_t column = 0U;
+    while (offset < bytes && column < scalar_column) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(line + offset, bytes - offset,
+                                   &consumed, &scalar))
+            return UINT32_MAX;
+        offset += consumed;
+        ++column;
+    }
+    return column == scalar_column ? (uint32_t)offset : UINT32_MAX;
+}
+
+static uint32_t encode_scalar(uint32_t scalar, char bytes[4]) {
+    if (!scalar_printable(scalar) || scalar > 0x10FFFFU ||
+        (scalar >= 0xD800U && scalar <= 0xDFFFU)) return 0U;
+    if (scalar <= 0x7FU) {
+        bytes[0] = (char)scalar;
+        return 1U;
+    }
+    if (scalar <= 0x7FFU) {
+        bytes[0] = (char)(0xC0U | (scalar >> 6U));
+        bytes[1] = (char)(0x80U | (scalar & 0x3FU));
+        return 2U;
+    }
+    if (scalar <= 0xFFFFU) {
+        bytes[0] = (char)(0xE0U | (scalar >> 12U));
+        bytes[1] = (char)(0x80U | ((scalar >> 6U) & 0x3FU));
+        bytes[2] = (char)(0x80U | (scalar & 0x3FU));
+        return 3U;
+    }
+    bytes[0] = (char)(0xF0U | (scalar >> 18U));
+    bytes[1] = (char)(0x80U | ((scalar >> 12U) & 0x3FU));
+    bytes[2] = (char)(0x80U | ((scalar >> 6U) & 0x3FU));
+    bytes[3] = (char)(0x80U | (scalar & 0x3FU));
+    return 4U;
 }
 
 static void clear_line(char *line) {
@@ -203,12 +262,19 @@ int reist_gui_text_editor_validate(
         if (!bounded_length(state->lines[line],
                             REIST_GUI_TEXT_EDITOR_LINE_CAPACITY, &length))
             return REIST_GUI_TEXT_EDITOR_EINVAL;
-        for (uint32_t column = 0U; column < length; ++column) {
-            uint8_t value = (uint8_t)state->lines[line][column];
-            if (value < 0x20U || value > 0x7EU)
+        size_t offset = 0U;
+        uint32_t columns = 0U;
+        while (offset < length) {
+            size_t consumed = 0U;
+            uint32_t scalar = 0U;
+            if (!reist_utf8_decode_one(state->lines[line] + offset,
+                                       length - offset, &consumed, &scalar) ||
+                !scalar_printable(scalar))
                 return REIST_GUI_TEXT_EDITOR_EINVAL;
+            offset += consumed;
+            ++columns;
         }
-        if (line == state->cursor_line && state->cursor_column > length)
+        if (line == state->cursor_line && state->cursor_column > columns)
             return REIST_GUI_TEXT_EDITOR_EINVAL;
     }
     return REIST_GUI_TEXT_EDITOR_OK;
@@ -234,8 +300,8 @@ int reist_gui_text_editor_configure(
 static int validate_input_text(const char *text, size_t length) {
     if (text == NULL && length != 0U) return REIST_GUI_TEXT_EDITOR_EINVAL;
     uint32_t lines = 1U;
-    uint32_t column = 0U;
-    for (size_t index = 0U; index < length; ++index) {
+    uint32_t line_bytes = 0U;
+    for (size_t index = 0U; index < length;) {
         uint8_t value = (uint8_t)text[index];
         if (value == '\r' || value == '\n') {
             if (value == '\r' && index + 1U < length &&
@@ -243,13 +309,19 @@ static int validate_input_text(const char *text, size_t length) {
             if (lines == REIST_GUI_TEXT_EDITOR_MAX_LINES)
                 return REIST_GUI_TEXT_EDITOR_ECAPACITY;
             ++lines;
-            column = 0U;
+            line_bytes = 0U;
+            ++index;
         } else {
-            if (value < 0x20U || value > 0x7EU)
+            size_t consumed = 0U;
+            uint32_t scalar = 0U;
+            if (!reist_utf8_decode_one(text + index, length - index,
+                                       &consumed, &scalar) ||
+                !scalar_printable(scalar))
                 return REIST_GUI_TEXT_EDITOR_EINVAL;
-            if (column + 1U >= REIST_GUI_TEXT_EDITOR_LINE_CAPACITY)
+            if (consumed >= REIST_GUI_TEXT_EDITOR_LINE_CAPACITY - line_bytes)
                 return REIST_GUI_TEXT_EDITOR_ECAPACITY;
-            ++column;
+            line_bytes += (uint32_t)consumed;
+            index += consumed;
         }
     }
     return REIST_GUI_TEXT_EDITOR_OK;
@@ -363,25 +435,30 @@ static uint32_t keep_cursor_visible(
 }
 
 static void insert_character(reist_gui_text_editor_state_t *state,
-                             char value) {
+                             const char *value, uint32_t value_bytes) {
     char *line = state->lines[state->cursor_line];
     uint32_t length = line_length(line);
-    for (uint32_t index = length + 1U;
-         index > state->cursor_column; --index)
-        line[index] = line[index - 1U];
-    line[state->cursor_column++] = value;
+    uint32_t offset = line_byte_offset(line, state->cursor_column);
+    for (uint32_t index = length + 1U; index > offset; --index)
+        line[index + value_bytes - 1U] = line[index - 1U];
+    for (uint32_t index = 0U; index < value_bytes; ++index)
+        line[offset + index] = value[index];
+    ++state->cursor_column;
     state->preferred_column = state->cursor_column;
     state->modified = 1U;
 }
 
 static uint32_t insert_newline(reist_gui_text_editor_state_t *state) {
     if (state->line_count == REIST_GUI_TEXT_EDITOR_MAX_LINES) return 0U;
+    uint32_t split = line_byte_offset(
+        state->lines[state->cursor_line], state->cursor_column);
+    if (split == UINT32_MAX) return 0U;
     for (uint32_t index = state->line_count;
          index > state->cursor_line + 1U; --index)
         copy_line(state->lines[index], state->lines[index - 1U]);
     copy_line(state->lines[state->cursor_line + 1U],
-              state->lines[state->cursor_line] + state->cursor_column);
-    state->lines[state->cursor_line][state->cursor_column] = '\0';
+              state->lines[state->cursor_line] + split);
+    state->lines[state->cursor_line][split] = '\0';
     ++state->line_count;
     ++state->cursor_line;
     state->cursor_column = 0U;
@@ -393,9 +470,17 @@ static uint32_t insert_newline(reist_gui_text_editor_state_t *state) {
 static uint32_t delete_at_cursor(reist_gui_text_editor_state_t *state) {
     char *line = state->lines[state->cursor_line];
     uint32_t length = line_length(line);
-    if (state->cursor_column < length) {
-        for (uint32_t index = state->cursor_column; index < length; ++index)
-            line[index] = line[index + 1U];
+    uint32_t columns = line_scalar_count(line);
+    if (state->cursor_column < columns) {
+        uint32_t offset = line_byte_offset(line, state->cursor_column);
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (offset == UINT32_MAX ||
+            !reist_utf8_decode_one(line + offset, length - offset,
+                                   &consumed, &scalar)) return 0U;
+        for (uint32_t index = offset;
+             index + consumed <= length; ++index)
+            line[index] = line[index + consumed];
     } else if (state->cursor_line + 1U < state->line_count) {
         uint32_t next_length =
             line_length(state->lines[state->cursor_line + 1U]);
@@ -422,22 +507,25 @@ static uint32_t backspace(reist_gui_text_editor_state_t *state) {
     }
     if (state->cursor_line == 0U) return 0U;
     uint32_t previous = line_length(state->lines[state->cursor_line - 1U]);
+    uint32_t previous_columns =
+        line_scalar_count(state->lines[state->cursor_line - 1U]);
     uint32_t current = line_length(state->lines[state->cursor_line]);
     if (previous + current >= REIST_GUI_TEXT_EDITOR_LINE_CAPACITY) return 0U;
     --state->cursor_line;
-    state->cursor_column = previous;
-    state->preferred_column = previous;
+    state->cursor_column = previous_columns;
+    state->preferred_column = previous_columns;
     return delete_at_cursor(state);
 }
 
 static void move_cursor(reist_gui_text_editor_state_t *state,
                         uint32_t key, uint32_t page_rows) {
-    uint32_t length = line_length(state->lines[state->cursor_line]);
+    uint32_t length = line_scalar_count(state->lines[state->cursor_line]);
     if (key == REIST_GUI_TEXT_EDITOR_KEY_LEFT) {
         if (state->cursor_column != 0U) --state->cursor_column;
         else if (state->cursor_line != 0U) {
             --state->cursor_line;
-            state->cursor_column = line_length(state->lines[state->cursor_line]);
+            state->cursor_column =
+                line_scalar_count(state->lines[state->cursor_line]);
         }
         state->preferred_column = state->cursor_column;
     } else if (key == REIST_GUI_TEXT_EDITOR_KEY_RIGHT) {
@@ -463,7 +551,7 @@ static void move_cursor(reist_gui_text_editor_state_t *state,
             state->cursor_line = next >= state->line_count
                 ? state->line_count - 1U : (uint32_t)next;
         }
-        length = line_length(state->lines[state->cursor_line]);
+        length = line_scalar_count(state->lines[state->cursor_line]);
         state->cursor_column = state->preferred_column < length
             ? state->preferred_column : length;
     } else if (key == REIST_GUI_TEXT_EDITOR_KEY_HOME) {
@@ -479,7 +567,7 @@ static void move_cursor(reist_gui_text_editor_state_t *state,
     } else if (key == REIST_GUI_TEXT_EDITOR_KEY_DOCUMENT_END) {
         state->cursor_line = state->line_count - 1U;
         state->cursor_column =
-            line_length(state->lines[state->cursor_line]);
+            line_scalar_count(state->lines[state->cursor_line]);
         state->preferred_column = state->cursor_column;
     }
 }
@@ -494,7 +582,7 @@ static void place_cursor(const reist_gui_text_editor_model_t *model,
     state->cursor_line = line >= state->line_count
         ? state->line_count - 1U : (uint32_t)line;
     uint64_t requested = (uint64_t)state->first_column + column;
-    uint32_t length = line_length(state->lines[state->cursor_line]);
+    uint32_t length = line_scalar_count(state->lines[state->cursor_line]);
     state->cursor_column = requested > length ? length : (uint32_t)requested;
     state->preferred_column = state->cursor_column;
 }
@@ -561,10 +649,15 @@ int reist_gui_text_editor_dispatch(
     uint32_t old_column = state->cursor_column;
     uint32_t changed = 0U;
     if (event->type == REIST_GUI_TEXT_EDITOR_EVENT_TEXT) {
+        char encoded[4];
+        uint32_t encoded_bytes = encode_scalar(event->codepoint, encoded);
+        uint32_t current_bytes =
+            line_length(state->lines[state->cursor_line]);
         if ((model->flags & REIST_GUI_TEXT_EDITOR_READ_ONLY) == 0U &&
-            line_length(state->lines[state->cursor_line]) + 1U <
-                REIST_GUI_TEXT_EDITOR_LINE_CAPACITY) {
-            insert_character(state, (char)event->codepoint);
+            encoded_bytes != 0U &&
+            encoded_bytes < REIST_GUI_TEXT_EDITOR_LINE_CAPACITY -
+                                current_bytes) {
+            insert_character(state, encoded, encoded_bytes);
             changed = 1U;
         }
     } else if (event->type == REIST_GUI_TEXT_EDITOR_EVENT_KEYBOARD) {

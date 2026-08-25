@@ -60,8 +60,7 @@ class GuiFontTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("reist_gui_font_open_psf2", desktop)
         self.assertIn("reist_gui_font_raster_xrgb_region", desktop)
-        self.assertIn(
-            "glyph_index >= DESKTOP_FONT_EXTENSION_FIRST_GLYPH", desktop)
+        self.assertIn("!reist_unicode_vga_has_glyph(scalar)", desktop)
         self.assertIn("intersect_rects", desktop)
         self.assertIn("DESKTOP_FONT_FALLBACK_OK", desktop)
 

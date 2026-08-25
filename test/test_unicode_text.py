@@ -32,6 +32,7 @@ class UnicodeTextTests(unittest.TestCase):
             cwd=ROOT, check=True, capture_output=True)
         self.assertIn("REIST_UNICODE_VGA_MAPPING_COUNT", self.font)
         self.assertIn("REIST_UNICODE_VGA_MISSING_GLYPH 0xFEU", self.font)
+        self.assertIn("reist_unicode_vga_has_glyph", self.font)
 
     @unittest.skipUnless(GCC, "gcc is required for Unicode host behavior")
     def test_scalar_scan_prefix_and_glyph_behavior(self) -> None:

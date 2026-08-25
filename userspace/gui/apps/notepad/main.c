@@ -15,6 +15,8 @@
 #include "reist/gui/surface_client.h"
 #include "reist/gui/text_editor.h"
 
+#include "../../../../include/reist/utf.h"
+
 #define NOTEPAD_PATH_CAPACITY 256U
 #define NOTEPAD_STATUS_CAPACITY 128U
 #define NOTEPAD_TEXT_LIMIT 256U
@@ -116,7 +118,7 @@ static const reist_gui_dialog_model_t about_model = {
     REIST_GUI_DIALOG_API_VERSION, sizeof(reist_gui_dialog_model_t),
     "Ueber REIST Editor",
     "Grafischer Texteditor auf der oeffentlichen REIST GUI-API",
-    "Fester ASCII/LF-Puffer, atomarer FAT-Speicherpfad und modale Dialoge.",
+    "Fester UTF-8/LF-Puffer, atomarer FAT-Speicherpfad und modale Dialoge.",
     close_buttons, 1U, REIST_GUI_DIALOG_APPLICATION_MODAL,
     REIST_GUI_DIALOG_RESPONSE_CLOSE, REIST_GUI_DIALOG_RESPONSE_CLOSE,
     REIST_GUI_DIALOG_NO_OWNER, 0U,
@@ -233,6 +235,34 @@ static uint32_t line_length(const char *line) {
     return length;
 }
 
+static uint32_t utf8_slice(const char *value, size_t length,
+                           uint32_t first_scalar, uint32_t maximum_scalars,
+                           size_t *offset_out, size_t *bytes_out,
+                           uint32_t *scalars_out) {
+    if (value == 0 || offset_out == 0 || bytes_out == 0 ||
+        scalars_out == 0) return 0U;
+    size_t total_scalars = 0U;
+    if (!reist_utf8_scan(value, length, &total_scalars) ||
+        first_scalar > total_scalars) return 0U;
+    size_t offset = 0U;
+    for (uint32_t column = 0U; column < first_scalar; ++column) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(value + offset, length - offset,
+                                   &consumed, &scalar)) return 0U;
+        offset += consumed;
+    }
+    size_t bytes = 0U;
+    size_t scalars = 0U;
+    if (!reist_utf8_prefix(value + offset, length - offset,
+                           maximum_scalars, &bytes, &scalars) ||
+        scalars > UINT32_MAX) return 0U;
+    *offset_out = offset;
+    *bytes_out = bytes;
+    *scalars_out = (uint32_t)scalars;
+    return 1U;
+}
+
 static void append_text(char *output, size_t capacity, size_t *used,
                         const char *value) {
     if (output == 0 || used == 0 || value == 0) return;
@@ -290,34 +320,50 @@ static void text(const x86os_display_info_t *display,
                  uint32_t background) {
     if (display == 0 || value == 0 || display->font_width == 0U) return;
     size_t length = bounded_length(value, NOTEPAD_TEXT_LIMIT);
-    size_t capacity = maximum_width / display->font_width;
-    if (length > capacity) length = capacity;
-    if (!length) return;
     if (paint_surface != 0) {
         if (x < 0 || y < 0 || (uint32_t)x >= paint_surface->width ||
             (uint32_t)y >= paint_surface->height) return;
         uint32_t available = paint_surface->width - (uint32_t)x;
         if (maximum_width > available) maximum_width = available;
+    }
+    size_t capacity = maximum_width / display->font_width;
+    size_t selected_bytes = 0U;
+    size_t selected_scalars = 0U;
+    if (!reist_utf8_prefix(value, length, capacity,
+                           &selected_bytes, &selected_scalars) ||
+        selected_bytes == 0U) return;
+    if (paint_surface != 0) {
         size_t offset = 0U;
-        while (offset < length && paint_status == 0) {
-            uint32_t amount = (uint32_t)(length - offset);
-            if (amount >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY)
-                amount = REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U;
-            uint32_t chunk_width = amount * display->font_width;
-            uint32_t consumed_width = (uint32_t)offset * display->font_width;
-            if (consumed_width >= maximum_width) break;
-            if (chunk_width > maximum_width - consumed_width)
-                chunk_width = maximum_width - consumed_width;
+        uint32_t painted_scalars = 0U;
+        while (offset < selected_bytes && paint_status == 0) {
+            size_t chunk_bytes = 0U;
+            uint32_t chunk_scalars = 0U;
+            while (offset + chunk_bytes < selected_bytes) {
+                size_t consumed = 0U;
+                uint32_t scalar = 0U;
+                if (!reist_utf8_decode_one(
+                        value + offset + chunk_bytes,
+                        selected_bytes - offset - chunk_bytes,
+                        &consumed, &scalar) ||
+                    chunk_bytes + consumed >=
+                        REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY) break;
+                chunk_bytes += consumed;
+                ++chunk_scalars;
+            }
+            if (chunk_bytes == 0U) return;
+            uint32_t chunk_width = chunk_scalars * display->font_width;
             paint_status = reist_gui_surface_client_paint_text(
-                paint_surface, x + (int32_t)consumed_width, y,
-                chunk_width, value + offset, amount,
+                paint_surface,
+                x + (int32_t)(painted_scalars * display->font_width), y,
+                chunk_width, value + offset, (uint32_t)chunk_bytes,
                 foreground, background);
-            offset += amount;
+            offset += chunk_bytes;
+            painted_scalars += chunk_scalars;
         }
         return;
     }
     (void)x86os_draw_text_pixels(
-        x, y, value, length, foreground, background);
+        x, y, value, selected_bytes, foreground, background);
 }
 
 static void bevel(reist_gui_rect_t rect, uint32_t face, uint32_t raised) {
@@ -481,13 +527,16 @@ static void render_editor(const x86os_display_info_t *display,
         if (line_index >= state->editor.line_count) break;
         const char *line = state->editor.lines[line_index];
         uint32_t length = line_length(line);
-        if (state->editor.first_column >= length) continue;
-        uint32_t amount = length - state->editor.first_column;
-        if (amount > columns) amount = columns;
-        uint32_t line_width = amount * display->font_width;
+        size_t offset = 0U;
+        size_t amount = 0U;
+        uint32_t scalar_amount = 0U;
+        if (!utf8_slice(line, length, state->editor.first_column, columns,
+                        &offset, &amount, &scalar_amount) ||
+            amount == 0U) continue;
+        uint32_t line_width = scalar_amount * display->font_width;
         text(display, editor.x,
              editor.y + (int32_t)(row * display->font_height),
-             line + state->editor.first_column, line_width,
+             line + offset, line_width,
              color_text, color_editor);
     }
     if (state->editor.focused && !state->dialog.visible &&
@@ -1490,7 +1539,8 @@ int main(int argc, char **argv) {
                    "Datei ueberschreitet die Editorkapazitaet.", path);
     else if (load_status == -3)
         open_error(&application, &display,
-                   "Datei enthaelt nicht unterstuetzte Zeichen.", path);
+                   "Datei enthaelt ungueltiges UTF-8 oder Steuerzeichen.",
+                   path);
 
     reist_gui_menu_layout_t menu_metrics = menu_layout(&display);
     reist_gui_file_dialog_layout_t file_metrics = file_dialog_layout(&display);

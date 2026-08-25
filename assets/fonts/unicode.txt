@@ -1,0 +1,19 @@
+REIST OS Unicode BMP-Anzeigetest
+================================
+
+Latin:       Ä Ö Ü ä ö ü ß À Á Â Ã Å Æ Ç È É Ê Ë Ø Œ €
+Griechisch:  Α Β Γ Δ Ε Ζ Η Θ Ι Κ Λ Μ Ν Ξ Ο Π Ρ Σ Τ Υ Φ Χ Ψ Ω
+Kyrillisch:  А Б В Г Д Е Ж З И Й К Л М Н О П Р С Т У Ф Х Ц Ч
+Hebräisch:   א ב ג ד ה ו ז ח ט י כ ל מ נ ס ע פ צ ק ר ש ת
+Arabisch:    ا ب ت ث ج ح خ د ذ ر ز س ش ص ض ط ظ ع غ ف ق ك ل م ن
+Devanagari:  अ आ इ ई उ ऊ क ख ग घ च छ ज झ ट ठ ड ढ त थ द ध न प फ ब भ म
+CJK:         中文字符  日本語  한국어
+Symbole:     € © ® ™ ← ↑ → ↓ ↔ ∞ ≠ ≤ ≥ ✓ ■ □ ● ○ ♠ ♥ ♦ ♣
+
+Komponiert:  é Å ö
+Combining:   é Å ö   (Glyphen vorhanden; Positionierung noch offen)
+Bidi-Test:   ABC אבג DEF   (logische Reihenfolge; Bidi noch offen)
+Shaping:     العربية हिन्दी   (Glyphen vorhanden; Shaping noch offen)
+
+Supplementary-Fallback: 😀 🚀 𐍈
+(UTF-8 wird verarbeitet; Supplementary-Glyphen sind noch nicht im BMP-Font.)

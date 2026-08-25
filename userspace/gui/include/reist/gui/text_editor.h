@@ -5,8 +5,10 @@
  * The controller owns no window, renderer, file descriptor, allocator or
  * event loop. The caller owns the immutable model and mutable state, routes
  * normalized input, paints returned damage and performs persistence. Text is
- * printable ASCII with canonical LF line breaks; clipboard, selection, UTF-8,
- * IME and undo require later versioned contracts and are not approximated.
+ * validated RFC 3629 UTF-8 with canonical LF line breaks. Cursor and viewport
+ * columns count Unicode scalars while line and document capacities remain byte
+ * capacities. Clipboard, selection, grapheme-aware editing, bidirectional
+ * layout, shaping, IME and undo require later versioned contracts.
  *
  * Coordinates are caller-surface-local half-open pixels. Calls sharing one
  * state must be serialized. Every operation is bounded by the fixed line and
@@ -83,7 +85,7 @@ typedef struct reist_gui_text_editor_model {
     uint32_t reserved[4]; /**< Must be zero. */
 } reist_gui_text_editor_model_t;
 
-/** Caller-owned document, cursor, viewport and implicit pointer-grab state. */
+/** Caller-owned document, scalar cursor/viewport and pointer-grab state. */
 typedef struct reist_gui_text_editor_state {
     uint32_t version;
     uint32_t struct_size;
@@ -102,7 +104,7 @@ typedef struct reist_gui_text_editor_state {
     uint32_t reserved[4];
 } reist_gui_text_editor_state_t;
 
-/** One normalized event. TEXT accepts printable ASCII only. */
+/** One normalized event. TEXT accepts one printable Unicode scalar. */
 typedef struct reist_gui_text_editor_event {
     uint32_t version;
     uint32_t struct_size;
@@ -160,8 +162,8 @@ int reist_gui_text_editor_configure(
     reist_gui_text_editor_result_t *result);
 
 /** Replace the document after validating the complete input first.
- * CRLF, CR and LF are accepted and normalized to lines; other bytes must be
- * printable ASCII. The cursor and modified flag are reset.
+ * CRLF, CR and LF are accepted and normalized to lines; other bytes must form
+ * printable RFC 3629 UTF-8 scalars. The cursor and modified flag are reset.
  * @param[in] text Caller-owned bytes, valid for this call.
  * @param[in] length Number of input bytes.
  * @return OK, EINVAL or ECAPACITY without partial replacement. */

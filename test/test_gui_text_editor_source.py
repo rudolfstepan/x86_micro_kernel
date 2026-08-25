@@ -21,7 +21,10 @@ class GuiTextEditorSourceTests(unittest.TestCase):
         self.assertIn("reist_gui_text_editor_get_text", header)
         self.assertIn("reist_gui_text_editor_mark_saved", header)
         self.assertIn("reist_gui_text_editor_dispatch", header)
-        self.assertIn("clipboard, selection, UTF-8", header)
+        self.assertIn("validated RFC 3629 UTF-8", header)
+        self.assertIn("columns count Unicode scalars", header)
+        self.assertIn("reist_utf8_decode_one", source)
+        self.assertIn("line_byte_offset", source)
         self.assertNotRegex(source, r"\b(malloc|calloc|realloc|free)\s*\(")
         self.assertNotIn("x86os", source)
         self.assertNotIn("framebuffer", source)
@@ -38,7 +41,8 @@ class GuiTextEditorSourceTests(unittest.TestCase):
             executable = Path(directory) / "gui-text-editor-test.exe"
             subprocess.run(
                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-Iuserspace/gui/include", str(SOURCE), str(HOST),
+                 "-Iuserspace/gui/include", "-Iinclude",
+                 str(SOURCE), str(HOST),
                  "-o", str(executable)], cwd=ROOT, check=True,
                 capture_output=True, text=True,
             )

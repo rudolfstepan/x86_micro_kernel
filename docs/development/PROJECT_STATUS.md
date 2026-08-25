@@ -29,6 +29,36 @@ Ring-3-XRGB-Uploads. Fehlende oder ungültige Fontdaten lassen den bisherigen
 sichtbaren Ersatzpfad aktiv; breite Schriftpakete und komplexes Textlayout
 bleiben offen.
 
+`R3.2-unifont-bmp-coverage` erweitert die Kaskade um alle 57.086 eindeutigen
+BMP-Abbildungen der offiziellen GNU-Unifont-16.0.04-HEX-Quelle. Quelle,
+SHA-256, OFL-1.1-Lizenz und Generator sind im Repository fixiert. Das
+abgeleitete PSF2 ist rund 1,14 MiB groß; native 8x16-Glyphen bleiben
+unverändert und 16x16-Glyphen werden deterministisch durch OR-Verknüpfung
+benachbarter Spalten verdichtet. Der Desktop reserviert feste 2 MiB Fontdaten
+und 65.536 Indexeinträge, zeichnet ASCII/CP437 weiterhin mit einem Kernel-Lauf
+und lädt nur dort fehlende BMP-Glyphen geclippt aus Ring 3 nach. Das ist breite
+Standalone-BMP-Glyphauswahl, aber noch kein Supplementary-Plane-Font, Shaping,
+Bidi-, Graphem- oder IME-Vertrag.
+Der große Font wird in höchstens 4096 Byte großen Read-Syscalls geladen und
+nach jedem erfolgreichen Abschnitt explizit an den Scheduler abgegeben. Diese
+Scheduling-Grenzen verhindern, dass der synchron serialisierte VFS-Pfad beim
+Fontstart einen einzelnen Aufruf über das gesamte Heartbeat-Budget einer
+unabhängigen überwachten Dienstgeneration hält.
+Der Runtime-Probe bindet die Anzeige erst nach dem vollständigen Fontload und
+wartet dabei höchstens zwei Sekunden auf eine neue freigegebene
+SVGA2D-Servicegeneration. Dadurch kann ein gleichzeitig überwachter
+Treiberneustart keine alte Endpoint-Fähigkeit bis zur Pixelwirkung tragen.
+Die Datei `/usr/share/fonts/unicode.txt` liegt im vollständigen HDD-Image und zeigt
+die BMP-Abdeckung mit realen lateinischen, griechischen, kyrillischen,
+hebräischen, arabischen, Devanagari-, CJK- und Hangul-Zeichen. Offen gebliebene
+Combining-, Bidi-, Shaping- und Supplementary-Fälle sind darin ausdrücklich
+markiert, damit Ersatzdarstellung nicht mit fertigem Layout verwechselt wird.
+Der REIST Editor akzeptiert diese Datei nun als vollständig validiertes
+RFC-3629-UTF-8. Sein fester Puffer speichert weiterhin Bytes, während Cursor,
+Viewport und Statusspalte Unicode-Skalare zählen. Laden, Bearbeiten,
+horizontales Clipping und Speichern trennen keine Mehrbytefolge; ungültige
+Kodierungen und Steuerzeichen werden vor Dokumentmutation abgelehnt.
+
 `R2.2-unicode-nfc-casefold` ergänzt vollständige kanonische
 Unicode-15-Dateinamenidentität. Ein reproduzierbarer Generator fixiert 2.061
 kanonische Zerlegungen, 1.530 Default-Casefold-Abbildungen, 922

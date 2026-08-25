@@ -49,16 +49,20 @@ static void key(reist_gui_text_editor_state_t *state, uint32_t key_value) {
     assert(result.consumed);
 }
 
-static void text(reist_gui_text_editor_state_t *state, char value) {
+static void scalar(reist_gui_text_editor_state_t *state, uint32_t value) {
     reist_gui_text_editor_event_t event;
     reist_gui_text_editor_result_t result;
     reist_gui_text_editor_event_initialize(&event);
     event.type = REIST_GUI_TEXT_EDITOR_EVENT_TEXT;
-    event.codepoint = (uint8_t)value;
+    event.codepoint = value;
     reist_gui_text_editor_result_initialize(&result);
     assert(reist_gui_text_editor_dispatch(
         &model, state, &event, &result) == 0);
     assert(result.consumed && result.changed);
+}
+
+static void text(reist_gui_text_editor_state_t *state, char value) {
+    scalar(state, (uint8_t)value);
 }
 
 static void assert_document(const reist_gui_text_editor_state_t *state,
@@ -164,11 +168,46 @@ static void test_saved_marker_changes_only_after_explicit_commit(void) {
     assert_document(&state, "x");
 }
 
+static void test_utf8_scalars_roundtrip_and_edit_atomically(void) {
+    static const char original[] =
+        "A\xC3\x84\xE2\x82\xAC\xE4\xB8\xAD\xF0\x9F\x98\x80";
+    static const char without_emoji[] =
+        "A\xC3\x84\xE2\x82\xAC\xE4\xB8\xAD";
+    static const char edited[] =
+        "A\xCE\xA9\xE2\x82\xAC\xE4\xB8\xAD";
+    static const char malformed[] = {(char)0xE2, (char)0x82};
+    reist_gui_text_editor_state_t state;
+    reist_gui_text_editor_result_t result;
+    initialize(&state);
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_set_text(
+        &model, &state, original, sizeof(original) - 1U, &result) == 0);
+    focus(&state);
+    key(&state, REIST_GUI_TEXT_EDITOR_KEY_END);
+    assert(state.cursor_column == 5U);
+    key(&state, REIST_GUI_TEXT_EDITOR_KEY_BACKSPACE);
+    assert(state.cursor_column == 4U);
+    assert_document(&state, without_emoji);
+    key(&state, REIST_GUI_TEXT_EDITOR_KEY_HOME);
+    key(&state, REIST_GUI_TEXT_EDITOR_KEY_RIGHT);
+    key(&state, REIST_GUI_TEXT_EDITOR_KEY_DELETE);
+    scalar(&state, 0x03A9U);
+    assert(state.cursor_column == 2U);
+    assert_document(&state, edited);
+
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_set_text(
+        &model, &state, malformed, sizeof(malformed), &result) ==
+        REIST_GUI_TEXT_EDITOR_EINVAL);
+    assert_document(&state, edited);
+}
+
 int main(void) {
     test_replace_normalizes_and_fails_closed();
     test_multiline_editing_and_navigation();
     test_pointer_places_cursor_and_serialization_is_bounded();
     test_line_capacity_is_rejected_before_replacement();
     test_saved_marker_changes_only_after_explicit_commit();
+    test_utf8_scalars_roundtrip_and_edit_atomically();
     return 0;
 }
