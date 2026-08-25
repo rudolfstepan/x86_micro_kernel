@@ -7,6 +7,15 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R2.2-nvidia-gk208-bringup` ist als automatisierter Hardware-Schnitt für native
+2D-Beschleunigung auf dem ASUS-Board. Die exakte Karte `10de:1280` erhält eine
+überwachte Ring-3-Domäne und einen passiven, festen Kernelmediator für PMC-,
+PTIMER-, PFIFO- und PGRAPH-Diagnose. VBE-Scanout und Software-Framebuffer
+bleiben maßgeblich; Beschleunigungs-Capabilities bleiben bis zu einem echten,
+deadlinebegrenzten GPU-Fence absichtlich null. QEMU/VMware prüfen Build,
+Lifecycle und Rückfall, der abschließende Probe-Nachweis bleibt ein manueller
+ASUS-Lauf. Die ausführbare Paketqueue ist danach leer.
+
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
 unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und
@@ -738,6 +747,10 @@ Evidenz und VMware-Sicherheitsgrenze stehen in
   Ablehnung den CPU-/Shadow-Framebuffer-Pfad. DMA, GMR, 3D und beliebige FIFO-
   oder BAR-Autorität sind nicht Bestandteil des Profils. Details stehen im
   [Videovertrag](../architecture/VIDEO_SUBSYSTEM.md).
+- NVIDIA GK208 `10de:1280` besitzt nun den exakten überwachten Bring-up-Pfad
+  `nvidia-gk208-ring3`. Er verändert beim Boot keine GPU-Register und meldet
+  erst nach passiver BAR0-/Timerprüfung `NVIDIA_GK208_READY`. Native
+  `RECT_FILL`-/`RECT_COPY`-Ausführung bleibt bis zum GPFIFO-/Fence-Paket offen.
 - PCI-HDA läuft über getrennte überwachte Ring-3-Domänen; QEMU prüft den
   PCM-Pfad, VMware-Wiedergabe und Pegel wurden manuell bestätigt. Format,
   Lifecycle und Hardwaregrenzen stehen im

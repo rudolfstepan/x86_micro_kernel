@@ -73,3 +73,36 @@ the ordered sequence boot self-test activation, `SVGA2D_INACTIVE`, driver
 readiness, visible shell, desktop activation and accelerated copy, desktop
 deactivation, `DESKTOP_EXIT` and restored shell. VMware Workstation separately
 requires successful disable readback before `SVGA2D_READY` and `BOOT_OK`.
+
+## NVIDIA GK208 native 2D bring-up boundary
+
+The physical ASUS target contains NVIDIA PCI function `10de:1280`, identified
+by the upstream NVIDIA PCI list and Envytools as GK208/GeForce GT 635.  REIST
+binds only that exact `03:00` function to `nvidia-gk208-ring3`; no NVIDIA
+family wildcard is used.  The NVIDIA open kernel modules are not a usable
+implementation base for this card because their supported hardware begins at
+Turing, while GK208 is Kepler.  Register terminology therefore follows the
+upstream Nouveau/Envytools model.
+
+The first native gate is deliberately passive.  A fixed kernel mediator maps
+only enough BAR0 aperture to read PMC identity/enable, the free-running
+PTIMER sample, and PFIFO/PGRAPH interrupt state.  The values are emitted as
+`NVIDIA_GK208_PROBE`; Ring 3 receives neither BAR/VRAM mappings nor physical
+addresses, DMA, IRQ, bus-master or arbitrary command authority.  The
+loader-sealed VBE `1024x768x32` scanout remains active and is still restored to
+VGA text through the existing validated path.
+
+The driver exports the existing versioned desktop 2D endpoint so activation,
+deactivation, generation fencing and software fallback do not fork into a
+second compositor protocol.  It advertises zero acceleration capabilities:
+`RECT_FILL` and `RECT_COPY` return `ENOTSUP`.  Native acceleration may be
+enabled only after the follow-up gate constructs a bounded GK208 GPFIFO
+channel and GPU address space, submits only fixed 2D methods, and observes a
+real fence before a monotonic deadline.  Until then `NVIDIA_GK208_READY` means
+only that exact identity and passive register access passed; it is not an
+acceleration claim.
+
+QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
+contracts, driver lifecycle, both image layouts and non-regression of the
+VMware accelerated path.  The `NVIDIA_GK208_PROBE` and
+`NVIDIA_GK208_READY` markers require one final manual boot on the ASUS target.

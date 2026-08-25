@@ -24,6 +24,8 @@
 #define DISPLAY_DRIVER_RECT_FILL 3U
 #define DISPLAY_DRIVER_RECT_COPY 4U
 #define DISPLAY_DRIVER_BUSY_QUERY 5U
+/** Passive, read-only hardware identity snapshot; never enables an engine. */
+#define DISPLAY_DRIVER_PROBE 6U
 #define DISPLAY_DRIVER_CAP_RECT_FILL (1U << 0U)
 #define DISPLAY_DRIVER_CAP_RECT_COPY (1U << 1U)
 

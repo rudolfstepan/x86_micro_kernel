@@ -2955,7 +2955,9 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
         for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS;
              ++slot) {
             supervisor_driver_control_t driver;
-            if (strcmp(driver_runtimes[slot].name, "svga2d-ring3") != 0 ||
+            if ((strcmp(driver_runtimes[slot].name, "svga2d-ring3") != 0 &&
+                 strcmp(driver_runtimes[slot].name,
+                        "nvidia-gk208-ring3") != 0) ||
                 driver_control_read(&driver_runtimes[slot], &driver) != 0 ||
                 driver.active == 0U)
                 continue;
@@ -4837,7 +4839,8 @@ static bool driver_fence_until(supervisor_driver_runtime_t *runtime,
     if (control.pid == 0)
         return control.fenced != 0U && control.device == 0U;
     if (deadline_ms == 0U || pit_monotonic_ms() >= deadline_ms) return false;
-    if (strcmp(runtime->name, "svga2d-ring3") == 0) {
+    if (strcmp(runtime->name, "svga2d-ring3") == 0 ||
+        strcmp(runtime->name, "nvidia-gk208-ring3") == 0) {
         if (display_control_graphics_active() &&
             display_control_deactivate() != 0)
             return false;
@@ -5004,6 +5007,8 @@ int supervisor_device_driver_report(
             printf("REIST_DRIVER READY name=%s\n", runtime->name);
             if (strcmp(runtime->name, "svga2d-ring3") == 0)
                 printf("REIST_VIDEO SVGA2D_READY\n");
+            else if (strcmp(runtime->name, "nvidia-gk208-ring3") == 0)
+                printf("REIST_VIDEO NVIDIA_GK208_READY\n");
         }
     }
     if (result != 0) (void)supervisor_force_isolate(control.supervisor);
@@ -5023,7 +5028,9 @@ bool supervisor_device_driver_command_allowed(
     supervisor_driver_control_t control;
     supervisor_driver_runtime_t *runtime = driver_runtime_for_identity(
         pid, process_generation, &control);
-    return runtime != NULL && strcmp(runtime->name, "svga2d-ring3") == 0 &&
+    return runtime != NULL &&
+        (strcmp(runtime->name, "svga2d-ring3") == 0 ||
+         strcmp(runtime->name, "nvidia-gk208-ring3") == 0) &&
         control.device == device && control.pid == pid &&
         control.process_generation == process_generation &&
         process_identity_alive(pid, process_generation);
@@ -5346,7 +5353,9 @@ static bool driver_service_event(supervisor_event_t event) {
             (void)supervisor_force_isolate(event.handle);
         else if (strcmp(runtime->name, "hda-ring3") == 0)
             printf("REIST_AUDIO DRIVER_RESTARTED\n");
-        else if (restarted && strcmp(runtime->name, "svga2d-ring3") == 0)
+        else if (restarted &&
+                 (strcmp(runtime->name, "svga2d-ring3") == 0 ||
+                  strcmp(runtime->name, "nvidia-gk208-ring3") == 0))
             printf("REIST_VIDEO DRIVER_RESTARTED\n");
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
         if (restarted && strcmp(runtime->name,

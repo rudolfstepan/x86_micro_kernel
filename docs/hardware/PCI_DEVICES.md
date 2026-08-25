@@ -72,11 +72,16 @@ von `vmxnet3.c` ist ausdrücklich keine Unterstützungszusage.
 | `1234:1111`, Klasse `03:00` | QEMU Standard VGA/DISPI | Runtime-Grafik unterstützt |
 | `15AD:0405` | VMware SVGA II | Runtime-Grafik unterstützt |
 | `15AD:0710` | VMware Legacy SVGA | Runtime-Grafik unterstützt |
+| `10DE:1280`, Klasse `03:00` | NVIDIA GK208 / GeForce GT 635 | nativer, passiver Ring-3-Bring-up; VBE-Scanout, Beschleunigung noch gesperrt |
 | andere Klasse `03` | VBE-Kompatibilität | nur mit von Stage 2 validierter und versiegelter VBE-Information |
 
-Es existieren keine nativen NVIDIA-, AMD- oder Intel-GPU-Treiber. Eine Karte
-wie `10DE:1280` wird als Displaycontroller erkannt, aber nur über den expliziten
-Legacy-BIOS-VBE-Pfad verwendet; 2D/3D-Beschleunigung wird nicht behauptet.
+Für `10DE:1280` existiert jetzt eine exakte, überwachte native
+GK208-Bring-up-Domäne. Sie liest über einen festen Kernelmediator nur PMC,
+PTIMER, PFIFO und PGRAPH zur Identitäts- und Zustandsprüfung. Der sichtbare
+Scanout bleibt vorerst der explizite Legacy-BIOS-VBE-Pfad; der Treiber meldet
+keine `RECT_FILL`-/`RECT_COPY`-Capability, bevor ein echter GPFIFO-Fence auf
+der Zielkarte bestätigt ist. Andere NVIDIA-, AMD- oder Intel-GPUs besitzen
+weiterhin keinen nativen Treiber; 3D-Beschleunigung wird nicht behauptet.
 
 ### USB
 

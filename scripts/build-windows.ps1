@@ -325,6 +325,7 @@ try {
         'libexec/reist/storage.prg' = 'STORAGE.PRG'
         'libexec/reist/hda.prg' = 'HDA.PRG'
         'libexec/reist/svga2d.prg' = 'SVGA2D.PRG'
+        'libexec/reist/nvidia.prg' = 'NVIDIA.PRG'
         'libexec/reist/audio.prg' = 'AUDIO.PRG'
         'libexec/reist/sleeper.prg' = 'SLEEPER.PRG'
         'libexec/reist/satawr.prg' = 'SATAWR.PRG'
@@ -360,7 +361,7 @@ try {
         'sbin/audioinfo.prg', 'usr/bin/audiotest.prg', 'usr/bin/wavplay.prg',
         'usr/gui/bin/soundplayer.prg', 'usr/gui/bin/imageviewer.prg',
         'libexec/reist/hda.prg', 'libexec/reist/audio.prg',
-        'libexec/reist/svga2d.prg'
+        'libexec/reist/svga2d.prg', 'libexec/reist/nvidia.prg'
     )
     foreach ($entry in $systemLayout.GetEnumerator()) {
         $imageDataArguments += @(

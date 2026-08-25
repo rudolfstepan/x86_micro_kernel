@@ -194,10 +194,11 @@ static void hardware_init(void) {
         int video_result = video_device_profile_discover(&video_device_info);
         if (video_result == 1) {
             video_device_available = true;
-            printf("REIST_VIDEO SVGA2D_PROFILE pci=%04X:%04X\n",
+            printf("REIST_VIDEO DRIVER_PROFILE backend=%u pci=%04X:%04X\n",
+                   (unsigned)video_device_info.backend,
                    video_device_info.vendor_id, video_device_info.device_id);
         } else if (video_result < 0) {
-            printf("REIST_VIDEO SVGA2D_REJECTED result=%d\n", video_result);
+            printf("REIST_VIDEO DRIVER_REJECTED result=%d\n", video_result);
         }
         int audio_result = audio_device_profile_discover(&audio_device_info);
         if (audio_result == 1) {
@@ -740,10 +741,17 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
             .restart_budget = 3U,
         };
         supervisor_handle_t video_driver_handle;
-        boot_context("userspace-start", "SVGA-II driver", "spawn",
-                     "/libexec/reist/svga2d.prg");
+        const bool nvidia = video_device_info.backend ==
+            VIDEO_DEVICE_BACKEND_NVIDIA_GK208;
+        const char *driver_name = nvidia
+            ? "nvidia-gk208-ring3" : "svga2d-ring3";
+        const char *driver_path = nvidia
+            ? "/libexec/reist/nvidia.prg" : "/libexec/reist/svga2d.prg";
+        boot_context("userspace-start",
+                     nvidia ? "NVIDIA GK208 driver" : "SVGA-II driver",
+                     "spawn", driver_path);
         int video_driver_result = supervisor_start_device_driver(
-            "svga2d-ring3", "/libexec/reist/svga2d.prg",
+            driver_name, driver_path,
             video_device_info.device_index, DEVICE_DOMAIN_MODE_MEDIATED,
             &video_driver_config, pit_monotonic_ms(), &video_driver_handle);
         if (video_driver_result != 0)

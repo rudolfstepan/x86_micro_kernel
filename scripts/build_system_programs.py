@@ -139,6 +139,7 @@ PROGRAMS = {
     ),
     "HDA.PRG": ROOT / "userspace/drivers/audio/hda_driver.c",
     "SVGA2D.PRG": ROOT / "userspace/drivers/video/vmware_svga2d.c",
+    "NVIDIA.PRG": ROOT / "userspace/drivers/video/nvidia_gk208.c",
     "AUDIO.PRG": ROOT / "userspace/services/audio/audio_service.c",
     "AUDIOINFO.PRG": ROOT / "userspace/programs/audioinfo.c",
     "AUDIOTEST.PRG": ROOT / "userspace/programs/audiotest.c",

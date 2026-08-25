@@ -2227,6 +2227,18 @@ make test-fuzz
 
 ## 10. Unmittelbar nächster Schritt
 
+Der vom Benutzer gewählte nächste Hardwarepfad ist native NVIDIA-GK208-2D-
+Beschleunigung für das ASUS-Board. Das abgeschlossene Paket
+`R2.2-nvidia-gk208-bringup` bindet ausschließlich `10de:1280`, startet einen
+überwachten Ring-3-Treiber und prüft passive PMC-/PTIMER-/PFIFO-/PGRAPH-
+Erreichbarkeit, ohne VBE-Scanout, Busmaster oder DMA anzutasten. QEMU und
+VMware können GK208 nicht emulieren; nach den bestandenen automatisierten
+Nichtregressionsgates bleibt daher genau ein manueller ASUS-Image-Lauf für die Marker
+`NVIDIA_GK208_PROBE` und `NVIDIA_GK208_READY`. Das anschließende Engine-Paket
+darf erst auf dieser Evidenz einen festen GPFIFO-Kanal, kernelvalidierte
+FERMI_TWOD_A-Methoden und einen deadlinebegrenzten Fence aktivieren. Bis dahin
+bleiben die Capabilitybits null und der CPU-/Shadow-Framebuffer verbindlich.
+
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
 Monitorhardware, elektrisches Fence-Readback und physische Fault-Injection

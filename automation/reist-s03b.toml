@@ -11,6 +11,68 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2-nvidia-gk208-bringup"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Fail-closed NVIDIA GK208 native 2D bring-up gate"
+scope = "Bind only the physical ASUS target GPU 10de:1280 to a supervised Ring-3 NVIDIA driver and a fixed kernel display mediator. Preserve the loader-sealed VBE scanout while validating the complete PCI identity, BAR layout, PMC identity, free-running PTIMER and passive PFIFO/PGRAPH state before declaring the driver ready. Publish bounded serial diagnostics and a versioned desktop 2D endpoint, but advertise no RECT_FILL or RECT_COPY capability until a later hardware-proven GPFIFO channel, GPU address space and fence path exists. No raw MMIO, VRAM, DMA or IRQ authority reaches Ring 3; unsupported hardware and every failed read fall back to the existing software framebuffer without display side effects. Package the driver in both native image layouts and prove exact selection, lifecycle, command validation and QEMU/VMware non-regression. The final ASUS run is manual because neither QEMU nor VMware emulates GK208."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/video_device_profile.h",
+  "kernel/init/video_device_profile.c",
+  "kernel/init/kernel.c",
+  "kernel/init/supervisor.c",
+  "drivers/video/display_control.h",
+  "drivers/video/display_control.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "userspace/video/include/reist/svga2d.h",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "Makefile",
+  "test/test_nvidia_gk208.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/hardware/PCI_DEVICES.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "only PCI identity 10de:1280 class 03:00 is eligible for the GK208 profile",
+  "the native probe is read-only and grants Ring 3 no raw MMIO VRAM DMA IRQ or bus-master authority",
+  "the loader-sealed VBE framebuffer remains the scanout owner throughout probe and driver recovery",
+  "RECT_FILL and RECT_COPY remain unavailable until a real GPU fence has completed before a monotonic deadline",
+  "an absent rejected crashed or stale NVIDIA driver leaves the existing software framebuffer path usable",
+  "VMware SVGA-II selection lifecycle and acceleration ABI remain compatible"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-nvidia-gk208-nonregression.log"
+]
+stop_conditions = [
+  "native enablement would require undocumented writes before the passive hardware identity gate is proven",
+  "Ring 3 would receive a raw BAR framebuffer physical address or unrestricted GPU command interface",
+  "a failed probe can alter the active VBE mode or disable the VGA rescue path",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: add fail-closed GK208 bringup driver"
+evidence = [
+  "python test/test_nvidia_gk208.py -v: PASS (6 tests)",
+  "python test/test_vmware_svga2d.py -v: PASS (13 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (23s)",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer: PASS (26s)",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --expect-reist-probe --vmware-vga --log build/guest-smoke-nvidia-gk208-nonregression.log: PASS (SVGA2D_READY, TEST_OK and guest-smoke PASS)"
+]
+
+[[packages]]
 id = "R2.1-vfs-bounded-bulk-read"
 status = "done"
 phase = "post-s0"
