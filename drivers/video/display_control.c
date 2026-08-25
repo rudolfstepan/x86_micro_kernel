@@ -62,18 +62,12 @@
 #define SVGA_CAP_RECT_FILL (1U << 0U)
 #define SVGA_CAP_RECT_COPY (1U << 1U)
 
-/* NVIDIA GK208 (GeForce GT 635, PCI 10de:1280).  These offsets are passive
- * identity/status registers from the Nouveau/Envytools register model.  The
- * bring-up gate performs no GPU register write and never enables bus master. */
+/* NVIDIA GK208 (GeForce GT 635, PCI 10de:1280).  Ring 0 validates only the
+ * immutable PCI/BAR geometry needed by the VBE fallback.  Register probing is
+ * performed through the read-only device-domain aperture in Ring 3. */
 #define NVIDIA_VENDOR 0x10DEU
 #define NVIDIA_GK208_DEVICE 0x1280U
-#define NVIDIA_PMC_BOOT_0 0x000000U
-#define NVIDIA_PMC_ENABLE 0x000200U
-#define NVIDIA_PFIFO_INTR 0x002100U
-#define NVIDIA_PTIMER_TIME_0 0x009400U
-#define NVIDIA_PTIMER_TIME_1 0x009410U
-#define NVIDIA_PGRAPH_INTR 0x400100U
-#define NVIDIA_PROBE_MAP_BYTES (NVIDIA_PGRAPH_INTR + sizeof(uint32_t))
+#define NVIDIA_REQUIRED_BAR_BYTES 0x00400104U
 #define NVIDIA_BAR_MAX_BYTES (64U * 1024U * 1024U)
 
 typedef enum {
@@ -88,8 +82,6 @@ static bool qemu_prepared;
 static bool vmware_prepared;
 static bool vmware_supervised;
 static bool nvidia_prepared;
-static volatile uint8_t *nvidia_registers;
-static uint32_t nvidia_bar0_bytes;
 static bool vbe_prepared;
 static vbe_runtime_info_t vbe_runtime_info;
 static uint32_t vbe_reject_reason;
@@ -102,18 +94,6 @@ static uint32_t vmware_width;
 static uint32_t vmware_height;
 static bool vmware_rect_copy_reported;
 static spinlock_t vmware_fifo_lock;
-
-typedef struct {
-    uint32_t boot0;
-    uint32_t enable;
-    uint32_t timer_low;
-    uint32_t timer_high;
-    uint32_t pfifo_intr;
-    uint32_t pgraph_intr;
-    uint32_t bar0_bytes;
-} nvidia_probe_t;
-
-static nvidia_probe_t nvidia_probe;
 
 static void svga_write(uint16_t index_port, uint16_t value_port,
                        uint32_t index, uint32_t value);
@@ -227,45 +207,6 @@ static pci_device_t *find_nvidia_gk208(void) {
     return NULL;
 }
 
-static bool nvidia_read_live_probe(nvidia_probe_t *probe) {
-    if (probe == NULL || nvidia_registers == NULL ||
-        nvidia_bar0_bytes < NVIDIA_PROBE_MAP_BYTES)
-        return false;
-#define NVIDIA_LIVE_READ32(offset) \
-    (*(const volatile uint32_t *)(nvidia_registers + (offset)))
-    uint32_t timer_high_before = 0U;
-    uint32_t timer_high_after = 0U;
-    uint32_t timer_low = 0U;
-    bool coherent = false;
-    /* A PTIMER high-word rollover may race one low-word read.  Four fixed
-     * attempts are sufficient to obtain one coherent snapshot without an
-     * unbounded poll or a register write. */
-    for (uint32_t attempt = 0U; attempt < 4U; ++attempt) {
-        timer_high_before = NVIDIA_LIVE_READ32(NVIDIA_PTIMER_TIME_1);
-        timer_low = NVIDIA_LIVE_READ32(NVIDIA_PTIMER_TIME_0);
-        timer_high_after = NVIDIA_LIVE_READ32(NVIDIA_PTIMER_TIME_1);
-        if (timer_high_before == timer_high_after) {
-            coherent = true;
-            break;
-        }
-    }
-    if (!coherent) return false;
-    *probe = (nvidia_probe_t){
-        .boot0 = NVIDIA_LIVE_READ32(NVIDIA_PMC_BOOT_0),
-        .enable = NVIDIA_LIVE_READ32(NVIDIA_PMC_ENABLE),
-        .timer_low = timer_low,
-        .timer_high = timer_high_after,
-        .pfifo_intr = NVIDIA_LIVE_READ32(NVIDIA_PFIFO_INTR),
-        .pgraph_intr = NVIDIA_LIVE_READ32(NVIDIA_PGRAPH_INTR),
-        .bar0_bytes = nvidia_bar0_bytes,
-    };
-#undef NVIDIA_LIVE_READ32
-    return probe->boot0 != 0U && probe->boot0 != UINT32_MAX &&
-        probe->enable != UINT32_MAX && probe->timer_low != UINT32_MAX &&
-        probe->timer_high != UINT32_MAX && probe->pfifo_intr != UINT32_MAX &&
-        probe->pgraph_intr != UINT32_MAX;
-}
-
 static void prepare_nvidia_gk208(void) {
     pci_device_t *device = find_nvidia_gk208();
     pci_bar_info_t bar0;
@@ -274,44 +215,12 @@ static void prepare_nvidia_gk208(void) {
         (bar0.flags & PCI_BAR_INFO_MMIO) == 0U ||
         (bar0.flags & PCI_BAR_INFO_PIO) != 0U || bar0.base_high != 0U ||
         bar0.base_low == 0U || bar0.size_high != 0U ||
-        bar0.size_low < NVIDIA_PROBE_MAP_BYTES ||
+        bar0.size_low < NVIDIA_REQUIRED_BAR_BYTES ||
         bar0.size_low > NVIDIA_BAR_MAX_BYTES)
         return;
-    volatile uint8_t *registers = (volatile uint8_t *)map_mmio_region(
-        bar0.base_low, NVIDIA_PROBE_MAP_BYTES);
-    if (registers == NULL) return;
-    nvidia_registers = registers;
-    nvidia_bar0_bytes = bar0.size_low;
-#define NVIDIA_READ32(offset) \
-    (*(const volatile uint32_t *)(registers + (offset)))
-    nvidia_probe = (nvidia_probe_t){
-        .boot0 = NVIDIA_READ32(NVIDIA_PMC_BOOT_0),
-        .enable = NVIDIA_READ32(NVIDIA_PMC_ENABLE),
-        .timer_low = NVIDIA_READ32(NVIDIA_PTIMER_TIME_0),
-        .timer_high = NVIDIA_READ32(NVIDIA_PTIMER_TIME_1),
-        .pfifo_intr = NVIDIA_READ32(NVIDIA_PFIFO_INTR),
-        .pgraph_intr = NVIDIA_READ32(NVIDIA_PGRAPH_INTR),
-        .bar0_bytes = bar0.size_low,
-    };
-#undef NVIDIA_READ32
-    if (nvidia_probe.boot0 == 0U || nvidia_probe.boot0 == UINT32_MAX ||
-        nvidia_probe.enable == UINT32_MAX ||
-        nvidia_probe.timer_low == UINT32_MAX ||
-        nvidia_probe.timer_high == UINT32_MAX ||
-        nvidia_probe.pfifo_intr == UINT32_MAX ||
-        nvidia_probe.pgraph_intr == UINT32_MAX) {
-        memset(&nvidia_probe, 0, sizeof(nvidia_probe));
-        nvidia_registers = NULL;
-        nvidia_bar0_bytes = 0U;
-        return;
-    }
     nvidia_prepared = true;
-    printf("REIST_VIDEO NVIDIA_GK208_PROBE boot0=%08X enable=%08X "
-           "timer=%08X:%08X pfifo=%08X pgraph=%08X bar0=%u\n",
-           nvidia_probe.boot0, nvidia_probe.enable,
-           nvidia_probe.timer_high, nvidia_probe.timer_low,
-           nvidia_probe.pfifo_intr, nvidia_probe.pgraph_intr,
-           (unsigned)nvidia_probe.bar0_bytes);
+    printf("REIST_VIDEO NVIDIA_GK208_BAR_ADMITTED bytes=%u\n",
+           (unsigned)bar0.size_low);
 }
 
 static pci_device_t *find_vmware_vga(void) {
@@ -909,35 +818,7 @@ int display_control_driver_command(display_driver_request_t *request) {
     if (request == NULL) return -22;
     if (find_nvidia_gk208() != NULL) {
         int result = -95;
-        if (request->command == DISPLAY_DRIVER_PROBE) {
-            if (!nvidia_prepared) result = -19;
-            else {
-                request->source_x = nvidia_probe.boot0;
-                request->source_y = nvidia_probe.enable;
-                request->destination_x = nvidia_probe.timer_low;
-                request->destination_y = nvidia_probe.timer_high;
-                request->width = nvidia_probe.bar0_bytes;
-                request->height = 0U;
-                request->color = nvidia_probe.pfifo_intr;
-                request->busy = nvidia_probe.pgraph_intr;
-                result = 0;
-            }
-        } else if (request->command == DISPLAY_DRIVER_ENGINE_PREFLIGHT) {
-            nvidia_probe_t live_probe;
-            if (!nvidia_prepared || !nvidia_read_live_probe(&live_probe)) {
-                result = -19;
-            } else {
-                request->source_x = live_probe.boot0;
-                request->source_y = live_probe.enable;
-                request->destination_x = live_probe.timer_low;
-                request->destination_y = live_probe.timer_high;
-                request->width = live_probe.bar0_bytes;
-                request->height = 0U;
-                request->color = live_probe.pfifo_intr;
-                request->busy = live_probe.pgraph_intr;
-                result = 0;
-            }
-        } else if (request->command == DISPLAY_DRIVER_ACTIVATE) {
+        if (request->command == DISPLAY_DRIVER_ACTIVATE) {
             result = activate_vbe();
             if (result == 0) {
                 framebuffer_display_info_t info;

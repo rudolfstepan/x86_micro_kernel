@@ -7720,3 +7720,61 @@ evidence = [
   "QEMU framebuffer package passed in 3 seconds after the focused freestanding division repair",
   "VMware framebuffer package passed in 26 seconds"
 ]
+
+[[packages]]
+id = "R2.2h-nvidia-ring3-register-probe"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Move the bounded GK208 register probe into Ring 3"
+scope = "Replace the kernel's direct GK208 BAR0 register reads with one immutable generation-scoped read-only device-domain aperture used by the supervised nvidia-gk208-ring3 process. A large physical BAR may be admitted only through a clipped mediated aperture no larger than 8 MiB. The NVIDIA profile exposes exactly the bytes through PGRAPH_INTR and no write rule. Ring 3 performs aligned bounded reads and a four-attempt coherent PTIMER sample before and after one fixed 1-ms delay. This package grants no mapping, write, IRQ, DMA, bus-master or acceleration authority and leaves all 2D capabilities disabled."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.c",
+  "drivers/video/display_control.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a physical BAR larger than the mediated limit is never mapped or published in full and only the immutable policy aperture reaches platform preparation",
+  "the clipped aperture is bounded by both the physical BAR length and DEVICE_DOMAIN_MAX_REGION_BYTES before any resource is published",
+  "the exact NVIDIA profile exposes BAR0 read access only through PGRAPH_INTR and installs no write rule",
+  "the supervised Ring-3 driver requests only describe and read rights and performs only aligned 32-bit mediated reads",
+  "PTIMER coherence uses at most four high-low-high attempts and preflight waits exactly one bounded millisecond",
+  "display_control retains VBE ownership but performs no NVIDIA MMIO mapping or register dereference",
+  "no write mapping IRQ DMA bus-master or acceleration capability is granted"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the probe would require writable MMIO raw BAR mapping DMA IRQ or bus mastering",
+  "the physical BAR cannot be safely clipped before platform preparation and resource publication",
+  "the real NVIDIA register aperture exceeds the fixed 8-MiB mediator bound",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: move bounded GK208 probe to Ring 3"
+evidence = [
+  "device-domain host and source tests passed including 16-MiB physical BAR clipping to the exact 0x400104-byte read-only aperture and fail-closed rejection above 8 MiB",
+  "NVIDIA GK208 source and command-contract tests passed with all register reads in Ring 3 and no write mapping DMA IRQ bus-master or capability authority",
+  "VMware SVGA-II regression suite passed 14 tests",
+  "QEMU framebuffer package passed in 25 seconds",
+  "VMware framebuffer package passed in 26 seconds"
+]

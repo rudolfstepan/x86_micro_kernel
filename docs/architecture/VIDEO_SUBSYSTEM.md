@@ -84,11 +84,13 @@ implementation base for this card because their supported hardware begins at
 Turing, while GK208 is Kepler.  Register terminology therefore follows the
 upstream Nouveau/Envytools model.
 
-The first native gate is deliberately passive.  A fixed kernel mediator maps
-only enough BAR0 aperture to read PMC identity/enable, the free-running
-PTIMER sample, and PFIFO/PGRAPH interrupt state.  The values are emitted as
-`NVIDIA_GK208_PROBE`; Ring 3 receives neither BAR/VRAM mappings nor physical
-addresses, DMA, IRQ, bus-master or arbitrary command authority.  The
+The first native gate is deliberately passive.  The generic device-domain
+mediator clips the physical 16-MiB BAR0 to an immutable `0x400104`-byte
+read-only aperture.  The supervised Ring-3 driver reads PMC identity/enable,
+the free-running PTIMER and PFIFO/PGRAPH interrupt state through aligned
+32-bit Device-Control operations.  Its region descriptor grants no mapping
+or write right; Ring 3 receives no directly usable BAR/VRAM mapping, DMA, IRQ,
+bus-master or arbitrary command authority.  The
 loader-sealed VBE `1024x768x32` scanout remains active and is still restored to
 VGA text through the existing validated path.
 
@@ -111,14 +113,19 @@ value, 40-bit aligned surface range, pitch and rectangle before a future
 kernel mediator may consume the stream.  The method and DMA-packet terminology
 follows the upstream Nouveau `cl902d.h` and `cl906f.h` class headers.
 
-The same package adds a read-only live engine preflight.  Ring 3 requests two
-coherent BAR0 snapshots separated by one bounded millisecond sleep and
+`R2.2h` moves the read-only live engine preflight completely out of
+`display_control`.  Ring 0 now validates only exact PCI identity and BAR
+geometry; it neither maps nor dereferences NVIDIA registers.  Ring 3 requests
+the clipped generation-scoped aperture and obtains two coherent snapshots
+separated by one bounded millisecond sleep and
 requires stable PMC identity/BAR geometry plus a strictly advancing PTIMER.
 PFIFO and PGRAPH interrupt registers are sampled only for diagnostics.  This
 does not initialize PGRAPH: GK208 still needs its documented register packs,
 FECS/GPCCS firmware and graphics context, GPU virtual memory, one fixed
 Kepler GPFIFO channel and a real fence.  Bus mastering, DMA, IRQs, VRAM and
 all acceleration capability bits therefore remain disabled in this package.
+PTIMER rollover handling is bounded to four high-low-high attempts per
+snapshot; failure closes the driver generation instead of polling forever.
 
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both image layouts and non-regression of the

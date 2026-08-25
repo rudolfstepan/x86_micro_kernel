@@ -99,7 +99,12 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("device_domain_dma_write", source)
         self.assertIn("device_domain_dma_read", source)
         self.assertIn("DEVICE_DOMAIN_MAX_REGION_RULES 32U", header)
+        self.assertIn(
+            "DEVICE_DOMAIN_MAX_REGION_BYTES (8U * 1024U * 1024U)", header)
         self.assertIn("device_domain_install_region_policy", source)
+        self.assertIn("region_policy_aperture", source)
+        self.assertIn("regions[region].length_low = aperture", source)
+        self.assertIn("region.length_low = aperture", source)
         self.assertIn("device_domain_region_read", source)
         self.assertIn("device_domain_region_write", source)
         self.assertIn("device_domain_region_bind_dma", source)

@@ -21,6 +21,8 @@
 #define NVIDIA_VENDOR_ID 0x10DEU
 #define NVIDIA_GK208_DEVICE_ID 0x1280U
 #define DISPLAY_VGA_SUBCLASS 0x00U
+#define NVIDIA_PGRAPH_INTR 0x400100U
+#define NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + sizeof(uint32_t))
 
 static int register_profile(const pci_device_t *device, uint32_t backend,
                             video_device_profile_info_t *info) {
@@ -39,6 +41,17 @@ static int register_profile(const pci_device_t *device, uint32_t backend,
     int result = device_domain_register(
         &profile, pci_location(device), &device_index);
     if (result != 0) return result;
+    if (backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208) {
+        const device_domain_region_policy_t region_policy = {
+            .version = DEVICE_DOMAIN_ABI_VERSION,
+            .struct_size = sizeof(region_policy),
+            .readable_bytes = {NVIDIA_BAR0_READABLE_BYTES},
+            .rule_count = 0U,
+        };
+        result = device_domain_install_region_policy(
+            device_index, &region_policy);
+        if (result != 0) return result;
+    }
     *info = (video_device_profile_info_t){
         .device_index = device_index,
         .pci_location = pci_location(device),

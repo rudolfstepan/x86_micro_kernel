@@ -25,6 +25,13 @@ zwei read-only BAR0-Snapshots mit einer begrenzten Millisekundenpause einen
 fortschreitenden PTIMER. GPU-VM, GR-/FECS-/GPCCS-Initialisierung, GPFIFO,
 Busmaster, DMA, IRQ und Fence sind noch nicht aktiviert; deshalb bleiben die
 NVIDIA-Capabilities null und VBE verbindlich.
+`R2.2h-nvidia-ring3-register-probe` beseitigt dabei die verbliebene direkte
+NVIDIA-Registerprobe aus Ring 0. Der generische Device-Domain-Mediator clippt
+den 16-MiB-BAR vor dem Mapping auf die unveränderliche read-only Apertur
+`0x400104`; der überwachte Treiber liest PMC, PTIMER, PFIFO und PGRAPH nun
+selbst mit generationsgebundenem Handle. PTIMER-Kohärenz ist auf vier
+high-low-high-Versuche begrenzt. Schreib-, Mapping-, DMA-, IRQ-, Busmaster-
+und Beschleunigungsrechte bleiben ausgeschlossen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung
@@ -857,7 +864,8 @@ Evidenz und VMware-Sicherheitsgrenze stehen in
   [Videovertrag](../architecture/VIDEO_SUBSYSTEM.md).
 - NVIDIA GK208 `10de:1280` besitzt nun den exakten überwachten Bring-up-Pfad
   `nvidia-gk208-ring3`. Er verändert beim Boot keine GPU-Register und meldet
-  erst nach passiver BAR0-/Timerprüfung `NVIDIA_GK208_READY`. Native
+  erst nach der vollständig in Ring 3 vermittelten BAR0-/Timerprüfung
+  `NVIDIA_GK208_READY`. Native
   `RECT_FILL`-/`RECT_COPY`-Ausführung bleibt bis zum GPFIFO-/Fence-Paket offen.
 - PCI-HDA läuft über getrennte überwachte Ring-3-Domänen; QEMU prüft den
   PCM-Pfad, VMware-Wiedergabe und Pegel wurden manuell bestätigt. Format,

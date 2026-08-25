@@ -97,6 +97,15 @@ Richtung, Länge, Ausrichtung, Registerziel und Gerätegeneration. Ist das für
 einen Controller nicht vollständig möglich, lautet der Zustand
 `UNSUPPORTED`, nicht „unsicher unterstützt“.
 
+Auch ein großer physischer BAR wird nicht automatisch zum vermittelten
+Zugriffsbereich. Das unveränderliche Geräteprofil berechnet je Region die
+kleinste Apertur aus Leselimit und exakten Schreibregeln; nur diese Apertur
+wird vorbereitet und im generationgebundenen Ressourcenobjekt publiziert.
+Sie ist zusätzlich auf 8 MiB begrenzt und muss vollständig in der physischen
+BAR-Länge liegen. Das GK208-Profil nutzt davon `0x400104` Byte read-only und
+keine Schreibregel. Ein Describe-only-Deskriptor oder eine bekannte
+BAR-Basisadresse verleiht weiterhin weder Mapping- noch Zugriffsvollmacht.
+
 Die aktuelle mediated-DMA-ABI stellt einen kernel-eigenen, beim Binden und
 Entziehen vollständig genullten 64-KiB-Pool bereit. Ring 3 erhält weder dessen
 physische Adresse noch eine BAR-Abbildung. Ein unveränderliches Geräteprofil

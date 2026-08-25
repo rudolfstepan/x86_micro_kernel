@@ -2,8 +2,9 @@
  * @file nvidia_gk208.c
  * @brief Supervised Ring-3 policy driver for native GK208 2D bring-up.
  *
- * Ring 0 returns fixed and live read-only identity/status snapshots; this
- * process owns the endpoint, lifecycle and bounded request policy.  The
+ * Ring 3 reads a fixed read-only BAR0 aperture through generation-scoped
+ * device-domain mediation and owns the endpoint, lifecycle and bounded probe
+ * policy.  The
  * FERMI_TWOD_A compiler is exercised in software, but no acceleration
  * capability is published until a later GPFIFO self-test completes a real
  * GPU fence.
@@ -22,15 +23,34 @@
 #define NVIDIA_DIAGNOSTIC_PROBE 0x4E560000U
 #define NVIDIA_DIAGNOSTIC_PREFLIGHT 0x4E570000U
 #define NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT 0x4E580000U
+#define NVIDIA_PMC_BOOT_0 0x000000U
+#define NVIDIA_PMC_ENABLE 0x000200U
+#define NVIDIA_PFIFO_INTR 0x002100U
+#define NVIDIA_PTIMER_TIME_0 0x009400U
+#define NVIDIA_PTIMER_TIME_1 0x009410U
+#define NVIDIA_PGRAPH_INTR 0x400100U
+#define NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + sizeof(uint32_t))
+#define NVIDIA_PROBE_COHERENCE_ATTEMPTS 4U
 
 typedef struct {
     x86os_device_driver_bootstrap_t bootstrap;
     x86os_ipc_handle_t control;
+    x86os_device_resource_t registers;
+    uint32_t register_bytes;
     uint32_t width;
     uint32_t height;
     uint32_t active;
     uint32_t progress;
 } nvidia_driver_t;
+
+typedef struct {
+    uint32_t boot0;
+    uint32_t enable;
+    uint32_t timer_low;
+    uint32_t timer_high;
+    uint32_t pfifo_intr;
+    uint32_t pgraph_intr;
+} nvidia_probe_snapshot_t;
 
 static void bytes_zero(void *memory, size_t length) {
     uint8_t *bytes = memory;
@@ -51,47 +71,121 @@ static int driver_command(nvidia_driver_t *driver, uint32_t command,
     return status;
 }
 
+static int open_register_aperture(nvidia_driver_t *driver) {
+    x86os_device_region_info_t region;
+    bytes_zero(&region, sizeof(region));
+    const uint32_t rights = X86OS_DEVICE_REGION_DESCRIBE |
+        X86OS_DEVICE_REGION_ACCESS_READ;
+    int status = x86os_device_open_region(
+        driver->bootstrap.device, 0U, rights, &region);
+    if (status != 0) return status;
+    if (region.version != X86OS_DEVICE_ABI_VERSION ||
+        region.struct_size != sizeof(region) || region.resource == 0U ||
+        region.region_index != 0U || region.rights != rights ||
+        (region.flags & X86OS_DEVICE_REGION_MMIO) == 0U ||
+        (region.flags & X86OS_DEVICE_REGION_PIO) != 0U ||
+        region.length_high != 0U ||
+        region.length_low != NVIDIA_BAR0_READABLE_BYTES ||
+        region.reserved[0] != 0U || region.reserved[1] != 0U)
+        return -84;
+    driver->registers = region.resource;
+    driver->register_bytes = region.length_low;
+    return 0;
+}
+
+static int register_read32(const nvidia_driver_t *driver, uint32_t offset,
+                           uint32_t *value) {
+    if (driver == NULL || value == NULL || driver->registers == 0U ||
+        offset > driver->register_bytes ||
+        sizeof(uint32_t) > driver->register_bytes - offset)
+        return -22;
+    return x86os_device_region_read(
+        driver->registers, offset, sizeof(uint32_t), value);
+}
+
+static int read_coherent_timer(const nvidia_driver_t *driver,
+                               uint32_t *low_out, uint32_t *high_out) {
+    if (low_out == NULL || high_out == NULL) return -22;
+    for (uint32_t attempt = 0U;
+         attempt < NVIDIA_PROBE_COHERENCE_ATTEMPTS; ++attempt) {
+        uint32_t high_before = 0U;
+        uint32_t low = 0U;
+        uint32_t high_after = 0U;
+        int status = register_read32(
+            driver, NVIDIA_PTIMER_TIME_1, &high_before);
+        if (status != 0) return status;
+        status = register_read32(driver, NVIDIA_PTIMER_TIME_0, &low);
+        if (status != 0) return status;
+        status = register_read32(driver, NVIDIA_PTIMER_TIME_1, &high_after);
+        if (status != 0) return status;
+        if (high_before == high_after) {
+            *low_out = low;
+            *high_out = high_after;
+            return 0;
+        }
+    }
+    return -110;
+}
+
+static int read_probe_snapshot(const nvidia_driver_t *driver,
+                               nvidia_probe_snapshot_t *snapshot) {
+    if (snapshot == NULL) return -22;
+    bytes_zero(snapshot, sizeof(*snapshot));
+    int status = register_read32(driver, NVIDIA_PMC_BOOT_0, &snapshot->boot0);
+    if (status == 0)
+        status = register_read32(
+            driver, NVIDIA_PMC_ENABLE, &snapshot->enable);
+    if (status == 0)
+        status = read_coherent_timer(
+            driver, &snapshot->timer_low, &snapshot->timer_high);
+    if (status == 0)
+        status = register_read32(
+            driver, NVIDIA_PFIFO_INTR, &snapshot->pfifo_intr);
+    if (status == 0)
+        status = register_read32(
+            driver, NVIDIA_PGRAPH_INTR, &snapshot->pgraph_intr);
+    if (status != 0) return status;
+    if (snapshot->boot0 == 0U || snapshot->boot0 == UINT32_MAX ||
+        snapshot->enable == UINT32_MAX ||
+        snapshot->timer_low == UINT32_MAX ||
+        snapshot->timer_high == UINT32_MAX ||
+        snapshot->pfifo_intr == UINT32_MAX ||
+        snapshot->pgraph_intr == UINT32_MAX)
+        return -84;
+    return 0;
+}
+
 static int probe(nvidia_driver_t *driver) {
-    x86os_display_driver_request_t response;
-    int status = driver_command(driver, X86OS_DISPLAY_DRIVER_PROBE, &response);
-    if (status != 0 || response.capabilities != 0U ||
-        response.source_x == 0U || response.source_x == UINT32_MAX ||
-        response.width < 0x00400104U)
-        return status != 0 ? status : -84;
+    nvidia_probe_snapshot_t snapshot;
+    int status = read_probe_snapshot(driver, &snapshot);
+    if (status != 0) return status;
     /* Low 16 bits are diagnostic evidence only, never capability state. */
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
-        NVIDIA_DIAGNOSTIC_PROBE | (response.source_x & 0x0000FFFFU));
+        NVIDIA_DIAGNOSTIC_PROBE | (snapshot.boot0 & 0x0000FFFFU));
 }
 
 static uint64_t nvidia_gk208_timer_value(
-    const x86os_display_driver_request_t *response) {
-    return ((uint64_t)response->destination_y << 32U) |
-           response->destination_x;
+    const nvidia_probe_snapshot_t *snapshot) {
+    return ((uint64_t)snapshot->timer_high << 32U) | snapshot->timer_low;
 }
 
 static int nvidia_gk208_timer_after(
-    const x86os_display_driver_request_t *later,
-    const x86os_display_driver_request_t *earlier) {
+    const nvidia_probe_snapshot_t *later,
+    const nvidia_probe_snapshot_t *earlier) {
     return nvidia_gk208_timer_value(later) >
            nvidia_gk208_timer_value(earlier);
 }
 
 static int engine_preflight(nvidia_driver_t *driver) {
-    x86os_display_driver_request_t first;
-    x86os_display_driver_request_t second;
-    int status = driver_command(
-        driver, X86OS_DISPLAY_DRIVER_ENGINE_PREFLIGHT, &first);
-    if (status != 0 || first.capabilities != 0U) return status != 0 ? status : -84;
+    nvidia_probe_snapshot_t first;
+    nvidia_probe_snapshot_t second;
+    int status = read_probe_snapshot(driver, &first);
+    if (status != 0) return status;
     if (x86os_sleep_ms(NVIDIA_PREFLIGHT_DELAY_MS) != 0) return -5;
-    status = driver_command(
-        driver, X86OS_DISPLAY_DRIVER_ENGINE_PREFLIGHT, &second);
-    if (status != 0 || second.capabilities != 0U) return status != 0 ? status : -84;
-    if (first.source_x == 0U || first.source_x == UINT32_MAX ||
-        first.source_x != second.source_x || first.source_y != second.source_y ||
-        first.width < 0x00400104U || first.width != second.width ||
-        first.color == UINT32_MAX || second.color == UINT32_MAX ||
-        first.busy == UINT32_MAX || second.busy == UINT32_MAX ||
+    status = read_probe_snapshot(driver, &second);
+    if (status != 0) return status;
+    if (first.boot0 != second.boot0 || first.enable != second.enable ||
         !nvidia_gk208_timer_after(&second, &first))
         return -84;
     return x86os_device_driver_report(
@@ -203,12 +297,14 @@ static int driver_initialize(nvidia_driver_t *driver) {
     if (x86os_device_driver_bootstrap(&driver->bootstrap) != 0 ||
         driver->bootstrap.mode != X86OS_DEVICE_MODE_MEDIATED)
         return -13;
+    int status = open_register_aperture(driver);
+    if (status != 0) return status;
     if (x86os_ipc_create(&driver->control) != 0) return -5;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_CHANNEL,
             driver->control) != 0)
         return -5;
-    int status = probe(driver);
+    status = probe(driver);
     if (status != 0) return status;
     status = engine_preflight(driver);
     if (status != 0) return status;

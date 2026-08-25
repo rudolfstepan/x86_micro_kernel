@@ -823,6 +823,25 @@ static bool region_rule_struct_valid(const device_domain_region_rule_t *rule) {
         rule->writable_mask == 0U;
 }
 
+static bool region_policy_aperture(
+        const device_domain_region_policy_t *policy, uint32_t region_index,
+        uint32_t *aperture_out) {
+    if (policy == NULL || aperture_out == NULL || region_index >= 6U)
+        return false;
+    uint32_t aperture = policy->readable_bytes[region_index];
+    for (uint32_t index = 0U; index < policy->rule_count; ++index) {
+        const device_domain_region_rule_t *rule = &policy->rules[index];
+        if (rule->region_index != region_index) continue;
+        if (rule->offset > UINT32_MAX - rule->width) return false;
+        uint32_t end = rule->offset + rule->width;
+        if (end > aperture) aperture = end;
+    }
+    if (aperture == 0U || aperture > DEVICE_DOMAIN_MAX_REGION_BYTES)
+        return false;
+    *aperture_out = aperture;
+    return true;
+}
+
 int device_domain_install_region_policy(
         uint32_t device_index, const device_domain_region_policy_t *policy) {
     if (!initialized || policy == NULL || device_index >= device_count ||
@@ -868,15 +887,24 @@ int device_domain_install_region_policy(
         used[policy->rules[rule].region_index] = true;
     for (uint32_t region = 0U; region < 6U; ++region) {
         if (!used[region]) continue;
+        uint32_t aperture = 0U;
         if (!platform_ops.describe_region(
                 device->pci_location, region, &regions[region]) ||
-            regions[region].length_high != 0U ||
-            regions[region].length_low == 0U ||
-            regions[region].length_low > DEVICE_DOMAIN_MAX_REGION_BYTES ||
-            policy->readable_bytes[region] > regions[region].length_low) {
+            !region_policy_aperture(policy, region, &aperture)) {
             valid = false;
             break;
         }
+        uint64_t physical_length =
+            ((uint64_t)regions[region].length_high << 32U) |
+            regions[region].length_low;
+        if (physical_length == 0U || aperture > physical_length) {
+            valid = false;
+            break;
+        }
+        /* Platform preparation and every later mediated access receive only
+         * the immutable policy aperture, never the full physical BAR. */
+        regions[region].length_low = aperture;
+        regions[region].length_high = 0U;
     }
     for (uint32_t rule = 0U; valid && rule < policy->rule_count; ++rule) {
         const device_domain_region_rule_t *entry = &policy->rules[rule];
@@ -1016,6 +1044,22 @@ int device_domain_open_region(int pid, uint32_t process_generation,
         region.reserved[0] != 0U || region.reserved[1] != 0U) {
         end_operation();
         return -84;
+    }
+    uint32_t aperture = 0U;
+    bool has_aperture = device->region_policy_installed != 0U &&
+        region_policy_aperture(&device->region_policy,
+                               request->region_index, &aperture);
+    if ((read_requested || write_requested) && !has_aperture) {
+        end_operation();
+        return -13;
+    }
+    if (has_aperture) {
+        if ((uint64_t)aperture > length) {
+            end_operation();
+            return -84;
+        }
+        region.length_low = aperture;
+        region.length_high = 0U;
     }
     if ((read_requested || write_requested) &&
         !platform_ops.prepare_region(&region)) {

@@ -47,39 +47,51 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("device->class_code != VMWARE_DISPLAY_CLASS", source)
         self.assertIn("device->subclass_code != DISPLAY_VGA_SUBCLASS", source)
         self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_IO", source)
+        self.assertIn(
+            "NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + "
+            "sizeof(uint32_t))", source)
+        self.assertIn(
+            ".readable_bytes = {NVIDIA_BAR0_READABLE_BYTES}", source)
+        self.assertIn(".rule_count = 0U", source)
+        self.assertIn("device_domain_install_region_policy", source)
         self.assertNotIn("DEVICE_DOMAIN_PROFILE_MEDIATED_DMA", source)
 
-    def test_kernel_probe_is_passive_and_bounded(self):
+    def test_kernel_only_admits_bar_geometry(self):
         source = (ROOT / "drivers/video/display_control.c").read_text(
             encoding="utf-8")
         start = source.index("static void prepare_nvidia_gk208")
         end = source.index("static pci_device_t *find_vmware", start)
         probe = source[start:end]
-        for marker in (
-                "NVIDIA_PMC_BOOT_0", "NVIDIA_PMC_ENABLE",
-                "NVIDIA_PFIFO_INTR", "NVIDIA_PTIMER_TIME_0",
-                "NVIDIA_PTIMER_TIME_1", "NVIDIA_PGRAPH_INTR"):
-            self.assertIn(marker, probe)
-        self.assertIn("bar0.size_low < NVIDIA_PROBE_MAP_BYTES", probe)
+        self.assertIn("bar0.size_low < NVIDIA_REQUIRED_BAR_BYTES", probe)
         self.assertIn("bar0.size_low > NVIDIA_BAR_MAX_BYTES", probe)
+        self.assertIn("NVIDIA_GK208_BAR_ADMITTED", probe)
+        self.assertNotIn("map_mmio_region", probe)
+        self.assertNotIn("volatile", probe)
+        self.assertNotIn("NVIDIA_READ", source)
+        self.assertNotIn("NVIDIA_PMC_BOOT_0", source)
         self.assertNotIn("pci_enable_device", probe)
         self.assertNotIn("pci_set_bus_master", probe)
-        self.assertNotIn("NVIDIA_WRITE", probe)
-        self.assertNotIn("= value", probe)
 
-    def test_engine_preflight_is_live_read_only_and_bounded(self):
+    def test_engine_preflight_is_ring3_read_only_and_bounded(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(
             encoding="utf-8")
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(
             encoding="utf-8")
-        self.assertIn("DISPLAY_DRIVER_ENGINE_PREFLIGHT", display)
-        self.assertIn("nvidia_read_live_probe", display)
+        self.assertNotIn("nvidia_read_live_probe", display)
+        self.assertIn("x86os_device_open_region", driver)
+        self.assertIn("X86OS_DEVICE_REGION_DESCRIBE |", driver)
+        self.assertIn("X86OS_DEVICE_REGION_ACCESS_READ", driver)
+        self.assertIn("x86os_device_region_read", driver)
+        self.assertIn("NVIDIA_PROBE_COHERENCE_ATTEMPTS 4U", driver)
+        self.assertIn("attempt < NVIDIA_PROBE_COHERENCE_ATTEMPTS", driver)
         self.assertIn("NVIDIA_PREFLIGHT_DELAY_MS 1U", driver)
         self.assertIn("x86os_sleep_ms(NVIDIA_PREFLIGHT_DELAY_MS)", driver)
         self.assertIn("nvidia_gk208_timer_after", driver)
-        self.assertNotIn("x86os_device_open_region", driver)
+        self.assertNotIn("x86os_device_region_write", driver)
         self.assertNotIn("x86os_device_bind_dma", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
+        self.assertNotIn("X86OS_DEVICE_REGION_MAP_", driver)
+        self.assertNotIn("X86OS_DEVICE_REGION_ACCESS_WRITE", driver)
 
     def test_driver_never_advertises_unproven_acceleration(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(
@@ -89,8 +101,7 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("response->capabilities = 0U", driver)
         self.assertIn("response->status = -95", driver)
         self.assertIn("request->capabilities = 0U", display)
-        self.assertIn("DISPLAY_DRIVER_PROBE", display)
-        self.assertNotIn("x86os_device_open_region", driver)
+        self.assertIn("x86os_device_open_region", driver)
         self.assertNotIn("x86os_device_bind_dma", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertIn("reist_nvidia_gk208_command_self_test", driver)
@@ -147,8 +158,11 @@ class NvidiaGk208BringupTests(unittest.TestCase):
             encoding="utf-8")
         self.assertLess(profile.index("VMWARE_VENDOR_ID"),
                         profile.index("NVIDIA_VENDOR_ID"))
-        self.assertLess(profile.index("VIDEO_DEVICE_BACKEND_VMWARE_SVGA2"),
-                        profile.index("VIDEO_DEVICE_BACKEND_NVIDIA_GK208"))
+        discovery = profile[profile.index(
+            "int video_device_profile_discover") :]
+        self.assertLess(
+            discovery.index("VIDEO_DEVICE_BACKEND_VMWARE_SVGA2"),
+            discovery.index("VIDEO_DEVICE_BACKEND_NVIDIA_GK208"))
 
     def test_stale_boot_framebuffer_does_not_suppress_vbe_activation(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(

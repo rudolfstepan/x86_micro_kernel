@@ -27,6 +27,8 @@ static uint32_t dma_address_writes;
 static uint32_t last_region_value;
 static uint32_t pic_mask_calls;
 static uint32_t pic_unmask_calls;
+static uint32_t described_region_length = 0x4000U;
+static uint32_t last_prepared_length;
 
 pci_device_t pci_devices[2] = {
     {
@@ -153,13 +155,15 @@ static bool describe_region(uint32_t location, uint32_t region_index,
         .region_index = region_index,
         .flags = DEVICE_DOMAIN_REGION_MMIO,
         .base_low = 0xFEBF0000U,
-        .length_low = 0x4000U,
+        .length_low = described_region_length,
     };
     return true;
 }
 
 static bool prepare_region(const device_domain_region_info_t *region) {
-    return region != NULL && region->length_low != 0U;
+    if (region == NULL || region->length_low == 0U) return false;
+    last_prepared_length = region->length_low;
+    return true;
 }
 
 static bool read_region(const device_domain_region_info_t *region,
@@ -286,6 +290,8 @@ static void reset_counters(void) {
     last_region_value = 0U;
     pic_mask_calls = 0U;
     pic_unmask_calls = 0U;
+    described_region_length = 0x4000U;
+    last_prepared_length = 0U;
     pci_device_count = 1U;
     pci_devices[0].irq_line = 5U;
     pci_devices[1] = (pci_device_t){0};
@@ -506,7 +512,7 @@ static void test_mediated_lifecycle_and_stale_handle(void) {
     device_domain_region_info_t region;
     assert(device_domain_open_region(7, 3U, &region_request, &region) == 0);
     assert(region.resource != DEVICE_DOMAIN_INVALID_HANDLE);
-    assert(region.length_low == 0x4000U);
+    assert(region.length_low == 0x100U);
     const device_domain_region_access_t read_request = {
         .version = DEVICE_DOMAIN_ABI_VERSION,
         .struct_size = sizeof(read_request),
@@ -647,6 +653,65 @@ static void test_mediated_lifecycle_and_stale_handle(void) {
     assert(device_domain_resource_status(
         7, 3U, region.resource, &resource_status) == -9);
     assert(device_domain_dma_info(7, 3U, dma_resource, &dma_info) == -9);
+}
+
+static void test_large_bar_is_clipped_to_read_only_policy_aperture(void) {
+    reset_counters();
+    described_region_length = 16U * 1024U * 1024U;
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device_domain_profile_t video = profile(
+        3U, DEVICE_DOMAIN_PROFILE_MEDIATED_IO);
+    uint32_t device = UINT32_MAX;
+    assert(device_domain_register(&video, 0x00001B00U, &device) == 0);
+    const uint32_t aperture = 0x00400104U;
+    const device_domain_region_policy_t policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(policy),
+        .readable_bytes = {aperture},
+    };
+    assert(device_domain_install_region_policy(device, &policy) == 0);
+    assert(last_prepared_length == aperture);
+
+    device_domain_handle_t handle = DEVICE_DOMAIN_INVALID_HANDLE;
+    assert(device_domain_claim(
+        44, 9U, device, DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    const device_domain_region_request_t open_request = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(open_request),
+        .device = handle,
+        .region_index = 0U,
+        .rights = DEVICE_DOMAIN_REGION_DESCRIBE |
+                  DEVICE_DOMAIN_REGION_ACCESS_READ,
+    };
+    device_domain_region_info_t region;
+    assert(device_domain_open_region(
+        44, 9U, &open_request, &region) == 0);
+    assert(region.length_low == aperture && region.length_high == 0U);
+    assert(last_prepared_length == aperture);
+    const device_domain_region_access_t last_word = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(last_word),
+        .region = region.resource,
+        .offset = aperture - sizeof(uint32_t),
+        .width = sizeof(uint32_t),
+    };
+    device_domain_region_value_t value;
+    assert(device_domain_region_read(44, 9U, &last_word, &value) == 0);
+    device_domain_region_access_t outside = last_word;
+    outside.offset = aperture;
+    assert(device_domain_region_read(44, 9U, &outside, &value) == -22);
+
+    reset_counters();
+    described_region_length = 16U * 1024U * 1024U;
+    ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device = UINT32_MAX;
+    assert(device_domain_register(&video, 0x00001B00U, &device) == 0);
+    device_domain_region_policy_t oversized = policy;
+    oversized.readable_bytes[0] = DEVICE_DOMAIN_MAX_REGION_BYTES + 4U;
+    assert(device_domain_install_region_policy(device, &oversized) == -95);
+    assert(last_prepared_length == 0U);
 }
 
 static void test_group_exclusivity_and_failed_reset(void) {
@@ -966,6 +1031,7 @@ int main(void) {
     test_irq_storm_and_clock_regression_are_fenced();
     test_legacy_pic_fallback_masks_shared_irq();
     test_mediated_lifecycle_and_stale_handle();
+    test_large_bar_is_clipped_to_read_only_policy_aperture();
     test_group_exclusivity_and_failed_reset();
     test_direct_assignment_requires_both_proofs();
     test_every_fence_action_runs_after_partial_failure();

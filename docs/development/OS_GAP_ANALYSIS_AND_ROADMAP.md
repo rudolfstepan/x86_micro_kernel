@@ -2295,6 +2295,14 @@ Wert- und Bereichsregeln geparst. Zwei read-only BAR0-Snapshots mit genau
 einer begrenzten Millisekundenpause müssen zusätzlich stabile Identität und
 einen fortschreitenden PTIMER zeigen. Dieses Paket schreibt keine GPU-Register
 und aktiviert weder Busmaster noch DMA, IRQ, GPFIFO oder Capabilitybits.
+Das abgeschlossene `R2.2h` verschiebt anschließend auch die passive
+Registerprobe aus `display_control` in den überwachten Ring-3-Treiber. Der
+generische Device-Domain-Pfad darf große physische BARs nur als auf höchstens
+8 MiB geclippte Policy-Apertur vorbereiten; für GK208 sind exakt `0x400104`
+Byte von BAR0 lesbar und keine Schreibregeln installiert. Alle Registerreads
+sind ausgerichtet und generationgebunden, PTIMER-Kohärenz ist auf vier
+Versuche begrenzt. Mapping-, DMA-, IRQ-, Busmaster- und Capabilityrechte
+bleiben null.
 Das anschließende Hardware-Engine-Paket bleibt für GPU-VM, GK208-GR-
 Initialisierung einschließlich FECS/GPCCS, einen festen Kepler-GPFIFO-Kanal
 und einen echten deadlinebegrenzten Fence verantwortlich.
