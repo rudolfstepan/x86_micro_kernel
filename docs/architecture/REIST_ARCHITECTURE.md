@@ -216,6 +216,15 @@ veraltete namensgebundene FAT-Nodes weder eine Ersatzdatei übernehmen noch
 freigegebene Cluster weiterverwenden. POSIX-artige gelöschte, aber offene
 Objekte bleiben bis zu einem eigenen Lebensdauer- und Recovery-Vertrag
 ausdrücklich nicht unterstützt.
+Die FAT12-Seite der R2.2-Power-Loss-Matrix führt zusätzlich die echte
+node-basierte Erweiterung einer geschlossenen Nullgrößendatei auf zwei Cluster
+aus. Ein Hosttransport kappt nach jedem gemessenen vollständigen Sektorwrite
+alle weiteren Reads und Writes. Der unabhängige Abbildvergleich erlaubt vor
+Recovery außerhalb des Journals ausschließlich bytegenaue alte oder finale
+Sektoren. Nach frischem Mount sind nur das vollständige alte oder vollständige
+neue Abbild zulässig; uneindeutige redundante Header werden als Mountablehnung
+und nicht als Recovery-Erfolg klassifiziert. Dieser Testhook existiert nur im
+Hostharness und erweitert keine Produktionsautorität.
 Append-only Syscall 123 `FTRUNCATE` ergänzt die schreibbare
 Deskriptorgrößenoperation ohne Offsetänderung. FAT12 führt jede akzeptierte
 Schrumpfung oder Erweiterung einschließlich Nullung, beider FAT-Kopien und

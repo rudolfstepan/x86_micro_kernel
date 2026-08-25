@@ -182,6 +182,13 @@ durchgesetzt. Markierte FAT32- und FAT12-Volumes besitzen eigene
 Persistenzprotokolle. Fremde FAT12- und FAT32-Medien bleiben lesbar, sind aber
 ohne gültigen REIST-Journalmarker grundsätzlich read-only; EXT2 bleibt
 ebenfalls read-only. Ein unklarer Commit darf nicht als Erfolg erscheinen.
+Für FAT12 schneidet ein fest begrenzter Hosttest eine vollständige
+Cross-Cluster-VFS-Erweiterung nach jedem tatsächlich abgeschlossenen
+512-Byte-Write ab. Vor Recovery darf jeder Nicht-Journalsektor nur seinem
+exakten alten oder finalen Wert entsprechen. Ein erfolgreicher frischer Mount
+muss anschließend das ganze alte oder ganze neue Abbild liefern; eine
+intrinsisch uneindeutige redundante Headerlage bleibt sichtbar fail-closed.
+Die getrennte FAT32-Abbildkampagne bleibt offen.
 
 ## Adapterstatus
 

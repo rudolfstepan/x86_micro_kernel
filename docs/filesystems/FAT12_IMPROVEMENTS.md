@@ -1,6 +1,6 @@
 # FAT12-Status und Resilienz
 
-Stand: 23. August 2026.
+Stand: 25. August 2026.
 
 FAT12 dient vor allem bootfähigen 1,44-MB-Disketten und läuft vollständig über
 VFS und die gemeinsame Blockgeräteschicht. Klassische fremde FAT12-Medien
@@ -70,6 +70,13 @@ Die Pakete `S0.3c-6f1` bis `S0.3c-6f6s` sowie die Schreibzulassung
 18. zentrale fail-closed Schreibzulassung: Ein gültiges fremdes FAT12-Medium
     bleibt lesbar, aber VFS-, FAT- und logische Sektormutationen werden vor der
     ersten Zustandsänderung abgewiesen
+19. vollständige Host-Power-Cut-Kampagne für eine echte VFS-Erweiterung von
+    null auf 700 Byte: Nach jedem gemessenen abgeschlossenen Sektorwrite fällt
+    der Transport bis zum frischen Mount aus. Der Imageprüfer akzeptiert vor
+    Recovery nur ganze alte oder neue Sektorwerte außerhalb des Journals;
+    erfolgreicher Mount muss danach das vollständig alte oder neue Abbild samt
+    Kette, Nullbytes, FAT-Spiegeln und unabhängiger Datei zeigen. Echte
+    Headerambiguität wird getrennt als fail-closed Mountablehnung gezählt.
 
 Kapazität, Sektorarithmetik, Retryzahlen und Recoveryarbeit sind fest begrenzt.
 Uneindeutige Header, erschöpfte Tabellen oder fehlgeschlagener Readback führen

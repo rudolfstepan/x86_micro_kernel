@@ -7,6 +7,17 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R2.2-fat12-image-fault-campaign` ergänzt die bisherige isolierte
+Journal-Fehlermatrix um eine vollständige VFS-Transaktion. Eine gesunde
+Cross-Cluster-Erweiterung bestimmt zuerst ihre tatsächliche, fest auf 384
+begrenzte Zahl von Sektorwrites. Aus demselben Nullgrößen-Basisabbild wird dann
+nach jedem einzelnen abgeschlossenen Write der Hosttransport abgeschaltet.
+Der Abbildprüfer lässt außerhalb des Journals nur ganze alte oder finale
+Sektoren zu. Erfolgreiche frische Mounts müssen vollständig alten oder neuen
+Zustand einschließlich Nullbytes, Kette, FAT-Spiegel und unabhängiger Datei
+zeigen; echte Headerambiguität zählt separat als fail-closed Ablehnung. Es gibt
+keinen Produktions-Fault-Hook. Die FAT32-/ATA-Hälfte folgt getrennt.
+
 `R2.2-open-namespace-locks` schließt die erste offene Handle-Lücke der FAT-
 Namespace-Mutation. Bis zu 256 Nicht-Root-Nodes werden statisch registriert.
 Vor `unlink`, `rmdir` und beiden Seiten von `rename` vergleicht VFS die aktuelle

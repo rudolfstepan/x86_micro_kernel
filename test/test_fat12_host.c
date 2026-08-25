@@ -27,9 +27,16 @@
     (TEST_REPLICA_BASE - FAT12_REMAP_SPARE_COUNT - 3u)
 #define TEST_JOURNAL_BASE \
     (TEST_REMAP_BASE - 2u - FAT12_JOURNAL_MAX_ENTRIES * 2u)
+#define FAT12_FAULT_CAMPAIGN_MAX_WRITES 384u
 
 static uint8_t floppy[FLOPPY_SECTORS][FAT12_SECTOR_SIZE];
 static uint8_t foreign_snapshot[FLOPPY_SECTORS][FAT12_SECTOR_SIZE];
+static uint8_t campaign_baseline[FLOPPY_SECTORS][FAT12_SECTOR_SIZE];
+static uint8_t campaign_committed[FLOPPY_SECTORS][FAT12_SECTOR_SIZE];
+static bool campaign_fault_armed;
+static bool campaign_power_cut;
+static uint32_t campaign_cut_after_write;
+static uint32_t campaign_write_count;
 extern int get_next_cluster(int current_cluster);
 extern fat12_t* fat12;
 extern vfs_filesystem_ops_t fat12_vfs_ops;
@@ -55,7 +62,8 @@ void read_time(int* hours, int* minutes, int* seconds) {
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
                      uint8_t sector, void* output) {
     (void)drive;
-    if (!output || head >= 2 || sector == 0 || sector > 18) return false;
+    if (!output || campaign_power_cut || head >= 2 || sector == 0 ||
+        sector > 18) return false;
     uint32_t logical = ((uint32_t)track * 2u + head) * 18u + sector - 1u;
     if (logical >= FLOPPY_SECTORS) return false;
     memcpy(output, floppy[logical], FAT12_SECTOR_SIZE);
@@ -83,10 +91,17 @@ bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
 bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
                       uint8_t sector, const void* input) {
     (void)drive;
-    if (!input || head >= 2 || sector == 0 || sector > 18) return false;
+    if (!input || campaign_power_cut || head >= 2 || sector == 0 ||
+        sector > 18) return false;
     uint32_t logical = ((uint32_t)track * 2u + head) * 18u + sector - 1u;
     if (logical >= FLOPPY_SECTORS) return false;
     memcpy(floppy[logical], input, FAT12_SECTOR_SIZE);
+    if (campaign_fault_armed) {
+        ++campaign_write_count;
+        if (campaign_cut_after_write != 0U &&
+            campaign_write_count == campaign_cut_after_write)
+            campaign_power_cut = true;
+    }
     return true;
 }
 
@@ -226,6 +241,148 @@ static bool make_test_floppy(void) {
     return true;
 }
 
+static void campaign_prepare_mount(vfs_filesystem_t* fs, drive_t* drive) {
+    memset(fs, 0, sizeof(*fs));
+    memset(drive, 0, sizeof(*drive));
+    fs->ops = &fat12_vfs_ops;
+    drive->type = DRIVE_TYPE_FDD;
+    drive->fdd_drive_no = 0;
+}
+
+static bool campaign_journal_sector(uint32_t sector) {
+    return sector >= TEST_JOURNAL_BASE &&
+           sector < TEST_JOURNAL_BASE + 2U +
+                    FAT12_JOURNAL_MAX_ENTRIES * 2U;
+}
+
+static bool campaign_image_uses_known_sectors(void) {
+    for (uint32_t sector = 0U; sector < FLOPPY_SECTORS; ++sector) {
+        if (campaign_journal_sector(sector)) continue;
+        if (memcmp(floppy[sector], campaign_baseline[sector],
+                   FAT12_SECTOR_SIZE) != 0 &&
+            memcmp(floppy[sector], campaign_committed[sector],
+                   FAT12_SECTOR_SIZE) != 0) return false;
+    }
+    return true;
+}
+
+static bool campaign_image_matches(const uint8_t reference[][FAT12_SECTOR_SIZE]) {
+    for (uint32_t sector = 0U; sector < FLOPPY_SECTORS; ++sector) {
+        if (campaign_journal_sector(sector)) continue;
+        if (memcmp(floppy[sector], reference[sector],
+                   FAT12_SECTOR_SIZE) != 0) return false;
+    }
+    return true;
+}
+
+static bool campaign_verify_mounted_state(vfs_filesystem_t* fs) {
+    bool old_image = campaign_image_matches(campaign_baseline);
+    bool new_image = campaign_image_matches(campaign_committed);
+    if (!old_image && !new_image) return false;
+
+    vfs_node_t* node = NULL;
+    if (fs->ops->open(fs, "/NEW.TXT", &node) != VFS_OK || !node)
+        return false;
+    vfs_dir_entry_t info;
+    bool valid = fs->ops->fstat(node, &info) == VFS_OK;
+    if (valid && old_image)
+        valid = info.size == 0U && info.inode == 0U;
+    if (valid && new_image) {
+        uint8_t zeroes[700];
+        memset(zeroes, 0xA5, sizeof(zeroes));
+        uint16_t first = (uint16_t)node->inode;
+        uint16_t second = fat12_get_fat_entry(first);
+        valid = info.size == sizeof(zeroes) &&
+                first >= FAT12_MIN_CLUSTER &&
+                second >= FAT12_MIN_CLUSTER && second < FAT12_EOC_MIN &&
+                fat12_get_fat_entry(second) >= FAT12_EOC_MIN &&
+                fs->ops->read(node, 0U, sizeof(zeroes), zeroes) ==
+                    (int)sizeof(zeroes);
+        for (uint32_t index = 0U; valid && index < sizeof(zeroes); ++index)
+            if (zeroes[index] != 0U) valid = false;
+    }
+    if (fs->ops->close(node) != VFS_OK) valid = false;
+
+    node = NULL;
+    uint8_t unrelated[700];
+    if (!valid || fs->ops->open(fs, "/FILE.BIN", &node) != VFS_OK || !node)
+        return false;
+    if (fs->ops->read(node, 0U, sizeof(unrelated), unrelated) !=
+        (int)sizeof(unrelated)) valid = false;
+    for (uint32_t index = 0U; valid && index < sizeof(unrelated); ++index) {
+        uint8_t expected = index < FAT12_SECTOR_SIZE
+            ? (uint8_t)index
+            : (uint8_t)(0x80U + ((index - FAT12_SECTOR_SIZE) & 0x3FU));
+        if (unrelated[index] != expected) valid = false;
+    }
+    if (fs->ops->close(node) != VFS_OK) valid = false;
+    return valid &&
+        memcmp(floppy[TEST_FAT1_SECTOR], floppy[TEST_FAT2_SECTOR],
+               TEST_FAT_SECTORS * FAT12_SECTOR_SIZE) == 0;
+}
+
+static int run_fat12_image_fault_campaign(vfs_filesystem_t* fs,
+                                          drive_t* drive) {
+    if (fs->ops->unmount(fs) != VFS_OK) return 1;
+    memcpy(campaign_baseline, floppy, sizeof(campaign_baseline));
+
+    campaign_prepare_mount(fs, drive);
+    if (fs->ops->mount(fs, drive) != VFS_OK) return 2;
+    vfs_node_t* node = NULL;
+    if (fs->ops->open(fs, "/NEW.TXT", &node) != VFS_OK || !node) return 3;
+    campaign_fault_armed = true;
+    campaign_power_cut = false;
+    campaign_cut_after_write = 0U;
+    campaign_write_count = 0U;
+    int result = fs->ops->truncate(node, 700U);
+    campaign_fault_armed = false;
+    uint32_t write_count = campaign_write_count;
+    if (result != VFS_OK || write_count == 0U ||
+        write_count > FAT12_FAULT_CAMPAIGN_MAX_WRITES ||
+        fs->ops->close(node) != VFS_OK ||
+        fs->ops->unmount(fs) != VFS_OK) return 4;
+    memcpy(campaign_committed, floppy, sizeof(campaign_committed));
+
+    uint32_t recovered = 0U;
+    uint32_t rejected = 0U;
+    for (uint32_t cut = 1U; cut <= write_count; ++cut) {
+        memcpy(floppy, campaign_baseline, sizeof(floppy));
+        campaign_prepare_mount(fs, drive);
+        if (fs->ops->mount(fs, drive) != VFS_OK ||
+            fs->ops->open(fs, "/NEW.TXT", &node) != VFS_OK || !node)
+            return 5;
+        campaign_fault_armed = true;
+        campaign_power_cut = false;
+        campaign_cut_after_write = cut;
+        campaign_write_count = 0U;
+        result = fs->ops->truncate(node, 700U);
+        campaign_fault_armed = false;
+        campaign_power_cut = false;
+        if (campaign_write_count != cut) return 6;
+        if (cut < write_count && result == VFS_OK) return 7;
+        if (fs->ops->close(node) != VFS_OK ||
+            fs->ops->unmount(fs) != VFS_OK ||
+            !campaign_image_uses_known_sectors()) return 8;
+
+        campaign_prepare_mount(fs, drive);
+        if (fs->ops->mount(fs, drive) == VFS_OK) {
+            if (!campaign_verify_mounted_state(fs) ||
+                fs->ops->unmount(fs) != VFS_OK) return 9;
+            ++recovered;
+        } else {
+            if (!campaign_image_uses_known_sectors()) return 10;
+            ++rejected;
+        }
+    }
+    if (recovered == 0U || recovered + rejected != write_count) return 11;
+
+    memcpy(floppy, campaign_baseline, sizeof(floppy));
+    campaign_prepare_mount(fs, drive);
+    if (fs->ops->mount(fs, drive) != VFS_OK ||
+        !campaign_verify_mounted_state(fs)) return 12;
+    return 0;
+}
+
 int main(void) {
     CHECK(make_test_floppy());
     CHECK(floppy[TEST_FAT1_SECTOR][3] == 3 &&
@@ -311,6 +468,7 @@ int main(void) {
     CHECK(fat12_get_fat_entry(truncated_start) == FAT12_FREE_CLUSTER);
     CHECK(fs.ops->read(node, 0, sizeof(verify), verify) == 0);
     CHECK(fs.ops->close(node) == VFS_OK);
+    CHECK(run_fat12_image_fault_campaign(&fs, &drive) == 0);
 
     CHECK(fs.ops->mkdir(&fs, "/EMPTY") == VFS_OK);
     CHECK(fs.ops->create(&fs, "/EMPTY/ITEM.BIN") == VFS_OK);

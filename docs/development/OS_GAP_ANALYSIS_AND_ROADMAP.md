@@ -1626,8 +1626,12 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   erfolgreiche Opens registrieren exakt einen festen Node, Close-Fehler halten
   die Sperre, Objektmutationen liefern vor Wirkung `BUSY`, und Unmount bleibt
   bis zum letzten offenen Node gesperrt.
-- Fehler nach jedem einzelnen Sektorwrite injizieren und das resultierende
-   Image mit einem Hostprüfer untersuchen.
+- [ ] Fehler nach jedem einzelnen Sektorwrite injizieren und das resultierende
+  Image mit einem Hostprüfer untersuchen. Die FAT12-Hälfte ist für eine echte
+  0→700-Byte-VFS-Erweiterung umgesetzt: jeder gemessene Write-Cut wird aus
+  demselben Basisabbild gefahren und Recovery darf nur vollständig alt,
+  vollständig neu oder explizit fail-closed liefern. Die getrennte
+  FAT32-/ATA-Journal-Abbildkampagne bleibt offen.
 - Danach Zeitstempel und vollständige Unicode-Normalisierung ergänzen; EXT2
   vorerst ausdrücklich read-only mounten.
 

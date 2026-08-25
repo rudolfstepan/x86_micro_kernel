@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2-fat12-image-fault-campaign"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2-fat12-image-fault-campaign"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Exhaustive FAT12 image write-cut campaign"
@@ -64,7 +64,12 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "test: exhaust FAT12 sector-write cuts"
-evidence = []
+evidence = [
+  "six focused full-image campaign contracts and five FAT12 journal contracts passed",
+  "the complete FAT12 host VFS campaign passed in one second across every measured sector-write cut",
+  "the existing low-level omitted partial removed-media CRC and readback recovery harness remained green",
+  "QEMU VGA package gate passed in 3 seconds with unchanged production ABI and image format"
+]
 
 [[packages]]
 id = "R2.2-open-namespace-locks"
