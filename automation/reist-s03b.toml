@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2-fat-timestamp-completion"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,65 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2-fat-timestamp-completion"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Complete FAT timestamp publication through VFS"
+scope = "Close the remaining R2.2 FAT timestamp gap without changing the established VFS or userspace ABI. Preserve vfs_dir_entry_t create_time modify_time and access_time as unsigned Unix seconds and the existing validated FAT calendar conversion. FAT32 already initializes creation write and access fields on new entries and updates write time on content or size mutation; retain that behavior and prove it. Complete FAT12 by initializing creation date time and tenths together with write and access fields for every newly published file directory dot and dot-dot entry, updating only write date and time in the same directory-sector transaction as every successful content or size mutation, and making TOUCH update write time plus date-only access while preserving creation fields and file contents. Reads stat fstat and readdir remain side-effect-free: they convert stored fields but never mutate media, so foreign or read-only FAT volumes receive no implicit atime write. Invalid FAT calendar values map to zero, FAT mtime remains two-second resolution, FAT atime remains date-only midnight, and timezone interpretation remains explicitly local/unspecified. Prove exact host timestamps preservation failure atomicity read-only rejection and a normal QEMU create-write-touch-fstat path. Add no syscall ABI field persistent-format extension automatic read-time write or EXT2 mutation authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/vfs/vfs_time.h",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "fs/fat32/fat32_dir.c",
+  "userspace/programs/guest_test.c",
+  "test/test_fat12_host.c",
+  "test/test_fat32_host.c",
+  "test/test_fat_timestamps.py",
+  "test/test_fs_host.py",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "vfs_dir_entry_t and every syscall and userspace metadata structure remain byte-for-byte ABI compatible",
+  "FAT calendar decoding validates year month day hour minute and second before publishing Unix seconds",
+  "new FAT12 and FAT32 files and directories receive creation modification and access fields before their directory entry is published",
+  "FAT12 content writes and truncate publish write date and time atomically with size cluster and directory identity while preserving creation fields",
+  "TOUCH changes only write time and date-only access while preserving creation fields contents size chain and object identity",
+  "stat fstat readdir and file reads never write access time implicitly and foreign or read-only media remain physically unchanged",
+  "FAT modification time retains two-second resolution access time retains date-only midnight and timezone conversion remains unsupported rather than guessed",
+  "a failed timestamp-bearing directory write leaves the complete previous entry and in-memory node metadata authoritative",
+  "FAT32 existing timestamp behavior is retained and EXT2 gains no write authority",
+  "all timestamp work remains inside the existing bounded journaled VFS mutation and adds no independent media transaction"
+]
+targeted_tests = [
+  "python test/test_fat_timestamps.py -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat12_cluster_chain_seek_and_subdirectory_lifetime -v",
+  "python test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target qemu -Video vga -Mode normal"
+]
+stop_conditions = [
+  "timestamp completion would require changing a public metadata structure or syscall number",
+  "a read stat fstat or readdir path would write media implicitly",
+  "creation fields can change after initial entry publication",
+  "a timestamp write can escape the existing filesystem transaction or read-only admission",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "fs: complete FAT timestamp publication"
+evidence = []
 
 [[packages]]
 id = "R2.2-fat32-ata-image-fault-campaign"
