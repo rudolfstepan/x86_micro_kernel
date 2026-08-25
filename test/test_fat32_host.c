@@ -311,6 +311,28 @@ static struct fat32_dir_entry* find_raw_root_entry(const char* filename) {
     return NULL;
 }
 
+static bool raw_root_contains_utf16_pair(uint16_t high, uint16_t low) {
+    const struct fat32_dir_entry* entries =
+        (const struct fat32_dir_entry*)test_disk[root_directory_lba];
+    for (size_t slot = 0U; slot < SECTOR_SIZE / sizeof(*entries); ++slot) {
+        if (entries[slot].name[0] == 0x00U) break;
+        if (entries[slot].attr != ATTR_LONG_NAME) continue;
+        const struct fat32_lfn_entry* lfn =
+            (const struct fat32_lfn_entry*)&entries[slot];
+        uint16_t units[FAT32_LFN_CHARS_PER_ENTRY];
+        for (uint32_t index = 0U; index < 5U; ++index)
+            units[index] = lfn->name1[index];
+        for (uint32_t index = 0U; index < 6U; ++index)
+            units[5U + index] = lfn->name2[index];
+        for (uint32_t index = 0U; index < 2U; ++index)
+            units[11U + index] = lfn->name3[index];
+        for (uint32_t index = 0U; index + 1U < FAT32_LFN_CHARS_PER_ENTRY;
+             ++index)
+            if (units[index] == high && units[index + 1U] == low) return true;
+    }
+    return false;
+}
+
 static unsigned int count_raw_root_entries(const char* filename) {
     uint8_t fat_name[11];
     convert_to_83_format(fat_name, filename);
@@ -910,6 +932,48 @@ int main(void) {
         CHECK(vfs_close(node) == VFS_OK);
     }
     CHECK(cache_flushes == 2);
+
+    static const char unicode_path[] =
+        "/Gr\xC3\xBCn-\xF0\x9F\x9A\x80.txt";
+    static const char unicode_name[] =
+        "Gr\xC3\xBCn-\xF0\x9F\x9A\x80.txt";
+    static const uint8_t unicode_payload[] = {'U', 'T', 'F', '8'};
+    CHECK(vfs_create(unicode_path) == VFS_OK);
+    vfs_node_t* unicode_node = NULL;
+    CHECK(vfs_open(unicode_path, &unicode_node) == VFS_OK &&
+          unicode_node != NULL);
+    CHECK(vfs_write(unicode_node, 0U, sizeof(unicode_payload),
+                    unicode_payload) == (int)sizeof(unicode_payload));
+    uint8_t unicode_read[sizeof(unicode_payload)];
+    CHECK(vfs_read(unicode_node, 0U, sizeof(unicode_read), unicode_read) ==
+          (int)sizeof(unicode_read));
+    CHECK(memcmp(unicode_read, unicode_payload, sizeof(unicode_read)) == 0);
+    CHECK(vfs_close(unicode_node) == VFS_OK);
+    CHECK(vfs_stat(unicode_path, &listed) == VFS_OK &&
+          strcmp(listed.name, unicode_name) == 0 &&
+          listed.size == sizeof(unicode_payload));
+    bool unicode_listed = false;
+    for (uint32_t index = 0U; index < 32U; ++index) {
+        int result = vfs_readdir("/", index, &listed);
+        if (result == VFS_ERR_NOT_FOUND) break;
+        CHECK(result == VFS_OK);
+        if (strcmp(listed.name, unicode_name) == 0) unicode_listed = true;
+    }
+    CHECK(unicode_listed);
+    CHECK(raw_root_contains_utf16_pair(0xD83DU, 0xDE80U));
+    uint8_t root_before_invalid[SECTOR_SIZE];
+    memcpy(root_before_invalid, test_disk[root_directory_lba], SECTOR_SIZE);
+    unsigned int allocated_before_invalid = count_allocated_clusters();
+    static const char malformed_overlong[] = "/BAD-\xC0\xAF.TXT";
+    static const char malformed_surrogate[] = "/BAD-\xED\xA0\x80.TXT";
+    static const char malformed_truncated[] = "/BAD-\xF0\x9F\x9A";
+    CHECK(vfs_create(malformed_overlong) == VFS_ERR_INVALID);
+    CHECK(vfs_create(malformed_surrogate) == VFS_ERR_INVALID);
+    CHECK(vfs_create(malformed_truncated) == VFS_ERR_INVALID);
+    CHECK(memcmp(root_before_invalid, test_disk[root_directory_lba],
+                 SECTOR_SIZE) == 0);
+    CHECK(count_allocated_clusters() == allocated_before_invalid);
+    CHECK(vfs_delete(unicode_path) == VFS_OK);
 
     /* FAT timestamps are published with the directory entry. Reads and
      * metadata queries never synthesize an implicit access-time write. */

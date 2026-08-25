@@ -640,6 +640,39 @@ failed:
     return -1;
 }
 
+static int test_vfat_utf8(void) {
+    static const char path[] =
+        "U-\xC3\xBC-\xF0\x9F\x9A\x80.TMP";
+    static const char payload[] = "utf8-vfat";
+    x86os_file_info_t info;
+    char actual[sizeof(payload) - 1U];
+
+    (void)x86os_unlink(path);
+    int descriptor = x86os_open_flags(path, X86OS_O_CREAT | X86OS_O_RDWR);
+    if (descriptor < 0 ||
+        x86os_write(descriptor, payload, sizeof(payload) - 1U) !=
+            (int)(sizeof(payload) - 1U) ||
+        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
+        goto failed;
+    descriptor = -1;
+    if (x86os_stat(path, &info) != 0 ||
+        !bytes_equal(info.name, path, sizeof(path)) ||
+        info.size != sizeof(payload) - 1U) goto failed;
+    descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
+    if (descriptor < 0 ||
+        x86os_read(descriptor, actual, sizeof(actual)) !=
+            (int)sizeof(actual) ||
+        !bytes_equal(actual, payload, sizeof(actual)) ||
+        x86os_close(descriptor) != 0 || x86os_unlink(path) != 0)
+        goto failed;
+    return 0;
+
+failed:
+    if (descriptor >= 0) (void)x86os_close(descriptor);
+    (void)x86os_unlink(path);
+    return -1;
+}
+
 static int wait_for_expected(const char *path, int expected_status) {
     int pid = x86os_spawn(path);
     if (pid <= 0) return -1;
@@ -1677,6 +1710,12 @@ int main(int argc, char **argv) {
         return 14;
     }
     x86os_puts("TEST_STAGE FAT_TIMESTAMPS_OK\n");
+
+    if (test_vfat_utf8() != 0) {
+        x86os_puts("TEST_FAIL VFAT_UTF8\n");
+        return 15;
+    }
+    x86os_puts("TEST_STAGE VFAT_UTF8_OK\n");
 
     if (test_open_namespace_locks() != 0) {
         x86os_puts("TEST_FAIL OPEN_NAMESPACE_LOCKS\n");

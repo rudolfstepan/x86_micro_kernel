@@ -7,6 +7,7 @@
  * Safety: Mutationen folgen validierten Clusterketten und geordnetem Metadatencommit.
  */
 #include "fat32.h"
+#include "include/reist/utf.h"
 #include "lib/libc/stdio.h"
 
 // Function to read a file's data into a buffer
@@ -223,8 +224,10 @@ static int fat32_load_file_sized_unlocked(const char* filename,
 
 typedef struct {
     char name[MAX_PATH_LENGTH];
+    uint16_t units[FAT32_MAX_LFN_ENTRIES * FAT32_LFN_CHARS_PER_ENTRY];
     uint8_t checksum;
     uint8_t expected_order;
+    uint8_t slot_count;
     bool active;
 } fat32_lfn_reader_t;
 
@@ -235,8 +238,11 @@ static void fat32_lfn_reset(fat32_lfn_reader_t* reader) {
 static bool fat32_names_equal(const char* left, const char* right) {
     if (!left || !right) return false;
     while (*left && *right) {
-        if (tolower((unsigned char)*left++) !=
-            tolower((unsigned char)*right++)) return false;
+        unsigned char lhs = (unsigned char)*left++;
+        unsigned char rhs = (unsigned char)*right++;
+        if (lhs >= 'A' && lhs <= 'Z') lhs = (unsigned char)(lhs + 0x20U);
+        if (rhs >= 'A' && rhs <= 'Z') rhs = (unsigned char)(rhs + 0x20U);
+        if (lhs != rhs) return false;
     }
     return *left == '\0' && *right == '\0';
 }
@@ -263,6 +269,10 @@ static void fat32_lfn_consume(fat32_lfn_reader_t* reader,
         reader->active = true;
         reader->checksum = entry->checksum;
         reader->expected_order = order;
+        reader->slot_count = order;
+        for (uint32_t i = 0U;
+             i < FAT32_MAX_LFN_ENTRIES * FAT32_LFN_CHARS_PER_ENTRY; ++i)
+            reader->units[i] = 0xFFFFU;
     }
     if (!reader->active || reader->checksum != entry->checksum ||
         reader->expected_order != order) {
@@ -273,21 +283,39 @@ static void fat32_lfn_consume(fat32_lfn_reader_t* reader,
     for (uint32_t i = 0; i < FAT32_LFN_CHARS_PER_ENTRY; i++) {
         uint16_t value = fat32_lfn_character(entry, i);
         uint32_t position = base + i;
-        if (position >= FAT32_MAX_LFN_CHARS) {
-            if (value == 0x0000U || value == 0xFFFFU) continue;
+        if (position >= FAT32_MAX_LFN_ENTRIES *
+                        FAT32_LFN_CHARS_PER_ENTRY) {
             fat32_lfn_reset(reader);
             return;
         }
-        if (value == 0x0000U || value == 0xFFFFU) {
-            reader->name[position] = '\0';
-        } else if (value >= 0x20U && value <= 0x7EU) {
-            reader->name[position] = (char)value;
-        } else {
-            fat32_lfn_reset(reader);
-            return;
-        }
+        reader->units[position] = value;
     }
     reader->expected_order--;
+}
+
+static bool fat32_lfn_finish(fat32_lfn_reader_t* reader) {
+    if (!reader || !reader->active || reader->expected_order != 0U ||
+        reader->slot_count == 0U ||
+        reader->slot_count > FAT32_MAX_LFN_ENTRIES) return false;
+    size_t available = (size_t)reader->slot_count *
+                       FAT32_LFN_CHARS_PER_ENTRY;
+    size_t unit_count = available;
+    bool terminated = false;
+    for (size_t i = 0U; i < available; ++i) {
+        uint16_t value = reader->units[i];
+        if (!terminated && value == 0x0000U) {
+            unit_count = i;
+            terminated = true;
+        } else if ((!terminated && value == 0xFFFFU) ||
+                   (terminated && value != 0xFFFFU)) {
+            return false;
+        }
+    }
+    if (unit_count == 0U || unit_count > FAT32_MAX_LFN_CHARS) return false;
+    size_t output_bytes = 0U;
+    return reist_utf16_to_utf8(reader->units, unit_count, reader->name,
+                               sizeof(reader->name), &output_bytes) &&
+           output_bytes != 0U && fat32_is_valid_name(reader->name);
 }
 
 static fat32_lookup_result_t fat32_scan_directory(
@@ -344,9 +372,9 @@ static fat32_lookup_result_t fat32_scan_directory(
                 char visible_name[MAX_PATH_LENGTH];
                 fat32_format_short_name(candidate, short_name);
                 strcpy(visible_name, short_name);
-                if (lfn.active && lfn.expected_order == 0 &&
+                if (lfn.active &&
                     lfn.checksum == fat32_short_name_checksum(candidate->name) &&
-                    fat32_is_valid_name(lfn.name)) {
+                    fat32_lfn_finish(&lfn)) {
                     strcpy(visible_name, lfn.name);
                 }
                 bool match = by_index ? visible_index == wanted_index :

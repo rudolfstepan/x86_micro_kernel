@@ -7,6 +7,16 @@ REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
 
+`R2.2-vfat-utf8-roundtrip` ersetzt den bisherigen ASCII-only-LFN-Pfad durch
+eine gemeinsame heapfreie RFC-3629-/UTF-16-Konvertierung. FAT32 zählt Slots
+nach UTF-16-Codeunits, schreibt und liest BMP-Zeichen sowie gültige
+Surrogatpaare und verwirft überlange UTF-8-Sequenzen, Surrogatskalare,
+unvollständige Paare, verbotene FAT-Zeichen und Kapazitätsüberschreitungen vor
+Namespacewirkung. Der unabhängige Ring-3-FAT-Parser verwendet dieselben festen
+Codecgrenzen. Die bestehende 256-Byte-Pfad-ABI bleibt unverändert. Nicht-ASCII
+wird derzeit bytegenau verglichen; NFC-Normalisierung und vollständiges
+Unicode-Casefolding werden noch nicht behauptet.
+
 `R2.2-fat-timestamp-completion` schließt die verbliebene FAT12-Lücke im bereits
 öffentlichen Zeitstempelvertrag. Neue Dateien, Verzeichnisse sowie `.`/`..`
 erhalten Create-, Write- und date-only Access-Felder vor ihrer Publikation;

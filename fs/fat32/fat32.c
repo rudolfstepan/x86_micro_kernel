@@ -7,6 +7,7 @@
  * Safety: BPB und Mediengeometrie werden vor jedem berechneten Zugriff validiert.
  */
 #include "fat32.h"
+#include "include/reist/utf.h"
 #include "lib/libc/stdio.h"
 #include "drivers/bus/drives.h"
 #ifndef KERNEL_HOST_TEST
@@ -329,6 +330,7 @@ bool fat32_is_valid_short_name(const char* name) {
     const char* extra = "!#$%&'()-@^_`{}~";
     for (uint32_t i = 0; name[i] != '\0'; i++) {
         unsigned char character = (unsigned char)name[i];
+        if (character > 0x7FU) return false;
         if (character == '.') {
             if (extension || base_length == 0) return false;
             extension = true;
@@ -348,16 +350,23 @@ bool fat32_is_valid_name(const char* name) {
     if (!name || name[0] == '\0') return false;
     size_t length = strlen(name);
     if (length == 0 || length > FAT32_MAX_LFN_CHARS ||
-        strcmp(name, ".") == 0 || strcmp(name, "..") == 0 ||
-        name[length - 1] == ' ' || name[length - 1] == '.') {
+        strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
         return false;
     }
-    for (size_t i = 0; i < length; i++) {
-        unsigned char value = (unsigned char)name[i];
-        /* REIST currently exposes an ASCII pathname ABI.  Rejecting bytes
-         * outside it avoids silently writing malformed UTF-16 VFAT names. */
-        if (value < 0x20 || value > 0x7E ||
-            strchr("\"*/:<>?\\|", value) != NULL) {
+    uint16_t units[FAT32_MAX_LFN_CHARS];
+    size_t unit_count = 0U;
+    if (!reist_utf8_to_utf16(name, length, units,
+                             FAT32_MAX_LFN_CHARS, &unit_count) ||
+        unit_count == 0U || unit_count > FAT32_MAX_LFN_CHARS ||
+        units[unit_count - 1U] == (uint16_t)' ' ||
+        units[unit_count - 1U] == (uint16_t)'.') return false;
+    for (size_t i = 0; i < unit_count; i++) {
+        uint16_t value = units[i];
+        if (value < 0x20U || value == (uint16_t)'"' ||
+            value == (uint16_t)'*' || value == (uint16_t)'/' ||
+            value == (uint16_t)':' || value == (uint16_t)'<' ||
+            value == (uint16_t)'>' || value == (uint16_t)'?' ||
+            value == (uint16_t)'\\' || value == (uint16_t)'|') {
             return false;
         }
     }

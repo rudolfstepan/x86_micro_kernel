@@ -7,6 +7,7 @@
  * Safety: LFN/8.3-Einträge und Verzeichnisketten werden längenbegrenzt validiert.
  */
 #include "fat32.h"
+#include "include/reist/utf.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -272,7 +273,8 @@ static void fat32_set_lfn_character(struct fat32_lfn_entry* entry,
 }
 
 static void fat32_build_lfn_slot(struct fat32_lfn_entry* entry,
-                                 const char* name, uint8_t order,
+                                 const uint16_t* name, size_t length,
+                                 uint8_t order,
                                  uint8_t total, uint8_t checksum) {
     memset(entry, 0xFF, sizeof(*entry));
     entry->order = order | (order == total ? 0x40U : 0U);
@@ -280,11 +282,10 @@ static void fat32_build_lfn_slot(struct fat32_lfn_entry* entry,
     entry->type = 0;
     entry->checksum = checksum;
     entry->first_cluster_low = 0;
-    size_t length = strlen(name);
     size_t base = ((size_t)order - 1U) * FAT32_LFN_CHARS_PER_ENTRY;
     for (uint32_t i = 0; i < FAT32_LFN_CHARS_PER_ENTRY; i++) {
         size_t position = base + i;
-        uint16_t value = position < length ? (uint8_t)name[position] :
+        uint16_t value = position < length ? name[position] :
                          position == length ? 0x0000U : 0xFFFFU;
         fat32_set_lfn_character(entry, i, value);
     }
@@ -302,6 +303,12 @@ bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
         (new_dir_cluster != 0 && !is_valid_cluster(bs, new_dir_cluster))) {
         return false;
     }
+    uint16_t lfn_units[FAT32_MAX_LFN_CHARS];
+    size_t lfn_unit_count = 0U;
+    size_t dirname_bytes = strlen(dirname);
+    if (!reist_utf8_to_utf16(dirname, dirname_bytes, lfn_units,
+                             FAT32_MAX_LFN_CHARS, &lfn_unit_count) ||
+        lfn_unit_count == 0U) return false;
 
     struct fat32_dir_entry duplicate;
     fat32_lookup_result_t duplicate_result =
@@ -324,7 +331,7 @@ bool add_entry_to_directory_checked(struct fat32_boot_sector* bs,
     create_directory_entry(&new_entry, alias, new_dir_cluster, attributes);
     if (!long_name) new_entry.nt_res = nt_case;
     uint32_t lfn_count = long_name ?
-        ((uint32_t)strlen(dirname) + FAT32_LFN_CHARS_PER_ENTRY - 1U) /
+        ((uint32_t)lfn_unit_count + FAT32_LFN_CHARS_PER_ENTRY - 1U) /
             FAT32_LFN_CHARS_PER_ENTRY : 0U;
     uint32_t needed = lfn_count + 1U;
     fat32_slot_location_t locations[FAT32_MAX_LFN_ENTRIES + 1U];
@@ -411,8 +418,9 @@ publish_entry:
         uint8_t checksum = fat32_short_name_checksum(new_entry.name);
         for (uint32_t i = 0; i < lfn_count; i++) {
             uint8_t order = (uint8_t)(lfn_count - i);
-            fat32_build_lfn_slot((struct fat32_lfn_entry*)&raw[i], dirname,
-                                 order, (uint8_t)lfn_count, checksum);
+            fat32_build_lfn_slot((struct fat32_lfn_entry*)&raw[i], lfn_units,
+                                 lfn_unit_count, order,
+                                 (uint8_t)lfn_count, checksum);
         }
         raw[lfn_count] = new_entry;
 

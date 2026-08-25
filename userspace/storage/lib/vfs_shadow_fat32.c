@@ -8,6 +8,7 @@
  * fixed number of mediated sector reads.
  */
 #include "../include/reist/vfs_shadow_fat32.h"
+#include "../../../include/reist/utf.h"
 
 #define FAT32_ATTR_DIRECTORY 0x10U
 #define FAT32_ATTR_VOLUME_ID 0x08U
@@ -51,10 +52,11 @@ typedef struct {
 
 typedef struct {
     char name[256];
+    uint16_t units[FAT32_MAX_LFN_ENTRIES * FAT32_LFN_CHARS_PER_ENTRY];
     uint8_t checksum;
     uint8_t expected_order;
+    uint8_t slot_count;
     uint8_t active;
-    uint8_t terminated;
 } shadow_lfn_t;
 
 static uint16_t shadow_get16(const uint8_t *data) {
@@ -139,13 +141,20 @@ static int shadow_valid_component(const char *name, uint32_t length) {
     if (length == 0U || length > 255U ||
         (length == 1U && name[0] == '.') ||
         (length == 2U && name[0] == '.' && name[1] == '.')) return 0;
-    for (uint32_t index = 0U; index < length; ++index) {
-        uint8_t value = (uint8_t)name[index];
-        if (value < 0x20U || value > 0x7EU || value == '"' || value == '*' ||
-            value == '/' || value == ':' || value == '<' || value == '>' ||
-            value == '?' || value == '\\' || value == '|') return 0;
+    uint16_t units[255];
+    size_t unit_count = 0U;
+    if (!reist_utf8_to_utf16(name, length, units, 255U, &unit_count) ||
+        unit_count == 0U || units[unit_count - 1U] == (uint16_t)' ' ||
+        units[unit_count - 1U] == (uint16_t)'.') return 0;
+    for (size_t index = 0U; index < unit_count; ++index) {
+        uint16_t value = units[index];
+        if (value < 0x20U || value == (uint16_t)'"' ||
+            value == (uint16_t)'*' || value == (uint16_t)'/' ||
+            value == (uint16_t)':' || value == (uint16_t)'<' ||
+            value == (uint16_t)'>' || value == (uint16_t)'?' ||
+            value == (uint16_t)'\\' || value == (uint16_t)'|') return 0;
     }
-    return name[length - 1U] != ' ' && name[length - 1U] != '.';
+    return 1;
 }
 
 static uint32_t shadow_days_before_year(int year) {
@@ -412,6 +421,10 @@ static void shadow_lfn_consume(shadow_lfn_t *lfn, const uint8_t *entry) {
         lfn->active = 1U;
         lfn->checksum = entry[13U];
         lfn->expected_order = (uint8_t)order;
+        lfn->slot_count = (uint8_t)order;
+        for (uint32_t index = 0U;
+             index < FAT32_MAX_LFN_ENTRIES * FAT32_LFN_CHARS_PER_ENTRY;
+             ++index) lfn->units[index] = 0xFFFFU;
     }
     if (lfn->active == 0U || lfn->checksum != entry[13U] ||
         lfn->expected_order != order) {
@@ -422,25 +435,37 @@ static void shadow_lfn_consume(shadow_lfn_t *lfn, const uint8_t *entry) {
     for (uint32_t index = 0U; index < FAT32_LFN_CHARS_PER_ENTRY; ++index) {
         uint16_t value = shadow_lfn_character(entry, index);
         uint32_t position = base + index;
-        if (position >= sizeof(lfn->name) - 1U) {
-            if (value != 0U && value != 0xFFFFU) shadow_lfn_reset(lfn);
-            continue;
-        }
-        if (value == 0U || value == 0xFFFFU) {
-            lfn->name[position] = '\0';
-            lfn->terminated = 1U;
-        } else if (value >= 0x20U && value <= 0x7EU) {
-            if (lfn->terminated != 0U) {
-                shadow_lfn_reset(lfn);
-                return;
-            }
-            lfn->name[position] = (char)value;
-        } else {
+        if (position >= FAT32_MAX_LFN_ENTRIES *
+                        FAT32_LFN_CHARS_PER_ENTRY) {
             shadow_lfn_reset(lfn);
             return;
         }
+        lfn->units[position] = value;
     }
     --lfn->expected_order;
+}
+
+static int shadow_lfn_finish(shadow_lfn_t *lfn) {
+    if (lfn == 0 || lfn->active == 0U || lfn->expected_order != 0U ||
+        lfn->slot_count == 0U || lfn->slot_count > FAT32_MAX_LFN_ENTRIES)
+        return 0;
+    size_t available = (size_t)lfn->slot_count * FAT32_LFN_CHARS_PER_ENTRY;
+    size_t unit_count = available;
+    int terminated = 0;
+    for (size_t index = 0U; index < available; ++index) {
+        uint16_t value = lfn->units[index];
+        if (terminated == 0 && value == 0U) {
+            unit_count = index;
+            terminated = 1;
+        } else if ((terminated == 0 && value == 0xFFFFU) ||
+                   (terminated != 0 && value != 0xFFFFU)) return 0;
+    }
+    if (unit_count == 0U || unit_count > 255U) return 0;
+    size_t output_bytes = 0U;
+    return reist_utf16_to_utf8(lfn->units, unit_count, lfn->name,
+                               sizeof(lfn->name), &output_bytes) &&
+           output_bytes != 0U &&
+           shadow_valid_component(lfn->name, (uint32_t)output_bytes);
 }
 
 /* Returns 0 to continue, 1 on match, and 2 at the directory end marker. */
@@ -472,9 +497,9 @@ static int shadow_scan_entries(const uint8_t sector[X86OS_STORAGE_BLOCK_SIZE],
         char short_name[13];
         shadow_short_name(&entry, short_name);
         const char *resolved = short_name;
-        if (lfn->active != 0U && lfn->expected_order == 0U &&
-            lfn->name[0U] != '\0' &&
-            lfn->checksum == shadow_short_checksum(candidate))
+        if (lfn->active != 0U &&
+            lfn->checksum == shadow_short_checksum(candidate) &&
+            shadow_lfn_finish(lfn))
             resolved = lfn->name;
         int match = shadow_name_equal(resolved, wanted) ||
                     shadow_name_equal(short_name, wanted);
@@ -815,9 +840,9 @@ static int shadow_readdir_sector(const uint8_t sector[512], uint32_t wanted,
         char short_name[13];
         shadow_short_name(&parsed, short_name);
         const char *resolved = short_name;
-        if (lfn->active != 0U && lfn->expected_order == 0U &&
-            lfn->name[0U] != '\0' &&
-            lfn->checksum == shadow_short_checksum(candidate))
+        if (lfn->active != 0U &&
+            lfn->checksum == shadow_short_checksum(candidate) &&
+            shadow_lfn_finish(lfn))
             resolved = lfn->name;
         int dot = shadow_name_equal(resolved, ".") ||
             shadow_name_equal(resolved, "..");

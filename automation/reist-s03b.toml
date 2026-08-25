@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2-vfat-utf8-roundtrip"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2-vfat-utf8-roundtrip"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Bounded UTF-8 and UTF-16 VFAT long-name roundtrip"
@@ -70,7 +70,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "fs: add bounded UTF-8 VFAT roundtrip"
-evidence = []
+evidence = [
+  "seven UTF codec and VFAT source/host contracts passed after one focused test-capacity repair",
+  "the complete FAT32 host regression passed BMP supplementary malformed-input lookup readdir read delete and no-side-effect checks after one expected-error repair",
+  "three independent Ring-3 FAT shadow parser tests passed including supplementary UTF-16 and malformed-surrogate fallback",
+  "QEMU VGA package gate passed in 6 seconds after one userspace include-path repair",
+  "normal QEMU runtime passed in 27 seconds with VFAT_UTF8_OK and TEST_OK"
+]
 
 [[packages]]
 id = "R2.2-fat-timestamp-completion"

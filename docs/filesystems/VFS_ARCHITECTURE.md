@@ -220,6 +220,16 @@ Hosttests prüfen Mountpräfixe, Lebenszyklen und Adapterinvarianten. QEMU-
 Gasttests bleiben erforderlich, weil nur sie Treiber, Partitionstransport,
 VFS, Syscalls und Ring 3 gemeinsam ausführen.
 
+VFAT-Langnamen verwenden in der bestehenden 256-Byte-Pfad-ABI validiertes
+RFC-3629-UTF-8 und auf dem Medium UTF-16LE. Ein gemeinsamer fester Codec
+verwirft Overlong-Sequenzen, Surrogatskalare, Werte über U+10FFFF und
+unvollständige UTF-16-Paare. Vor Directory-Allokation müssen sowohl die
+255-Byte-Komponentengrenze als auch höchstens 255 UTF-16-Codeunits feststehen;
+die maximal 20 LFN-Slots werden nach Codeunits berechnet. BMP-Zeichen und
+Supplementary Planes werden verlustfrei zurückgegeben. ASCII bleibt
+case-insensitive, Nicht-ASCII vorerst bytegenau. NFC und vollständiges
+Unicode-Casefolding sind sichtbar offene, tabellengebundene Arbeit.
+
 ## Migrationsreihenfolge
 
 1. [x] `stat`-Shadowtransport und vollständige Metadatenäquivalenz.

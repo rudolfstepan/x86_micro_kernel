@@ -73,6 +73,24 @@ static void make_lfn(uint8_t *entry, const char *name,
     }
 }
 
+static void make_lfn_units(uint8_t *entry, const uint16_t *name,
+                           uint32_t length,
+                           const uint8_t short_name[11]) {
+    static const uint8_t offsets[13] =
+        {1U, 3U, 5U, 7U, 9U, 14U, 16U, 18U, 20U, 22U, 24U, 28U, 30U};
+    memset(entry, 0xFF, 32U);
+    entry[0U] = 0x41U;
+    entry[11U] = 0x0FU;
+    entry[12U] = 0U;
+    entry[13U] = checksum(short_name);
+    put16(entry + 26U, 0U);
+    for (uint32_t index = 0U; index < 13U; ++index) {
+        uint16_t value = index < length ? name[index] :
+            (index == length ? 0U : 0xFFFFU);
+        put16(entry + offsets[index], value);
+    }
+}
+
 static void initialize_fat32(test_context_t *context) {
     memset(context, 0, sizeof(*context));
     context->sectors = TEST_SECTORS;
@@ -107,11 +125,18 @@ static void initialize_fat32(test_context_t *context) {
         {'L','O','N','G','N','A','~','1','T','X','T'};
     static const char cross[11] = {'C','R','O','S','S',' ',' ',' ',
                                    'B','I','N'};
+    static const uint8_t unicode_short[11] =
+        {'U','N','I','C','O','D','~','1','T','X','T'};
+    static const uint16_t unicode_name[11] =
+        {0x0047U, 0x0072U, 0x00FCU, 0x006EU, 0x002DU, 0xD83DU,
+         0xDE80U, 0x002EU, 0x0074U, 0x0078U, 0x0074U};
     make_entry(root, readme, 0x20U, 3U, 7U);
     make_entry(root + 32U, usr, 0x10U, 4U, 0U);
     make_lfn(root + 64U, "Long Name.txt", long_short);
     make_entry(root + 96U, (const char *)long_short, 0x20U, 5U, 11U);
     make_entry(root + 128U, cross, 0x20U, 6U, 700U);
+    make_lfn_units(root + 160U, unicode_name, 11U, unicode_short);
+    make_entry(root + 192U, (const char *)unicode_short, 0x20U, 7U, 4U);
 
     uint8_t *cross_first = context->image +
         (TEST_DATA_START + 4U) * X86OS_STORAGE_BLOCK_SIZE;
@@ -303,9 +328,23 @@ int main(void) {
         strcmp(info.name, "README.TXT") != 0) return 19;
     if (readdir_path(&context, "/", 2U, &info) != 0 ||
         strcmp(info.name, "Long Name.txt") != 0) return 20;
-    if (readdir_path(&context, "/", 4U, &info) != 1 ||
+    static const char unicode_path[] =
+        "/Gr\xC3\xBCn-\xF0\x9F\x9A\x80.txt";
+    static const char unicode_name[] =
+        "Gr\xC3\xBCn-\xF0\x9F\x9A\x80.txt";
+    if (stat_path(&context, unicode_path, &info) != 0 ||
+        strcmp(info.name, unicode_name) != 0 || info.size != 4U) return 28;
+    if (readdir_path(&context, "/", 4U, &info) != 0 ||
+        strcmp(info.name, unicode_name) != 0) return 29;
+    if (readdir_path(&context, "/", 5U, &info) != 1 ||
         info.name[0U] != '\0') return 21;
     if (readdir_path(&context, "/README.TXT", 0U, &info) != -20) return 22;
+    uint8_t *unicode_lfn = context.image +
+        TEST_DATA_START * X86OS_STORAGE_BLOCK_SIZE + 160U;
+    put16(unicode_lfn + 16U, (uint16_t)'X');
+    if (stat_path(&context, unicode_path, &info) != -2 ||
+        stat_path(&context, "/UNICOD~1.TXT", &info) != 0) return 30;
+    initialize_fat32(&context);
     const reist_vfs_shadow_io_t object_io = {
         &context, drive_info, read_sector
     };

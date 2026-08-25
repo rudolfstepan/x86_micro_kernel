@@ -253,6 +253,14 @@ nehmen mtime in dieselbe journalgeschützte Metadatenmutation auf. `TOUCH`
 keinen impliziten Medienwrite. Beschädigte FAT-Kalenderwerte werden null;
 FAT-Zeit bleibt lokal/zeitzonenunspezifiziert mit Zwei-Sekunden-mtime und
 Tages-atime. EXT2 erhält dadurch keine Schreibautorität.
+Der anschließende VFAT-Unicode-Schnitt interpretiert Pfadbytes als validiertes
+RFC-3629-UTF-8 und LFN-Felder als UTF-16LE. Die heapfreie Konvertierung ist an
+Eingabe-, Ausgabe-, 255-Codeunit- und 20-Slot-Grenzen gebunden; ungültige
+Skalare oder Surrogatfolgen scheitern vor Directory-Wirkung. Produktions-FAT32
+und der Ring-3-Shadowparser publizieren nur vollständig checksumgebundene,
+zurückkonvertierbare Namen. Das ABI und das FAT-Format bleiben unverändert.
+ASCII-Groß-/Kleinschreibung wird gefaltet, Nicht-ASCII bleibt exakt; NFC und
+vollständiges Unicode-Casefolding sind ausdrücklich noch keine Eigenschaft.
 Der unmittelbar vorgeschaltete Claim-v2-Mediator liefert ausschließlich dem
 exakt gebundenen Storage-Dienst die bereits kernelgeschützte Client-PID,
 Clientgeneration und eigene Dienstgeneration. Der bestehende Claim-v1-

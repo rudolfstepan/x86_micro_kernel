@@ -1623,9 +1623,11 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
    Unlink-while-open-Lebensdauer fehlen weiterhin.
 - **Teilstatus:** Der Editor nutzt `TEMP -> fsync -> close -> rename`; FAT12
    und künftige Blockgeräte benötigen noch einen gleichwertigen Sync-Vertrag.
-- **Teilstatus:** FAT32-LFN ist für druckbares ASCII bis 255 Zeichen samt
-  checksum-validiertem 8.3-Fallback umgesetzt; Unicode-Normalisierung und
-  atomarer LFN-Replace auf existierende Ziele fehlen.
+- **Teilstatus:** FAT32-LFN akzeptiert validiertes RFC-3629-UTF-8 und bildet es
+  begrenzt auf Microsoft-kompatibles UTF-16 samt Surrogatpaaren und
+  checksum-validiertem 8.3-Fallback ab. Die unabhängige Ring-3-Auswertung
+  dekodiert identisch fail-closed. Unicode-NFC-/Casefold-Gleichheit und
+  atomarer LFN-Replace auf existierende Ziele fehlen weiterhin.
 - [x] Open/Delete/Unmount-Regeln für den vorhandenen FAT-Vertrag vereinheitlichen:
   erfolgreiche Opens registrieren exakt einen festen Node, Close-Fehler halten
   die Sperre, Objektmutationen liefern vor Wirkung `BUSY`, und Unmount bleibt
@@ -1642,8 +1644,10 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Create-/Write-/Access-Felder vor der Erzeugung, aktualisieren mtime mit
   Inhalts-/Größenmutationen und ändern über `touch` nur mtime plus date-only
   atime. Lese- und Stat-Pfade bleiben medienseitig wirkungsfrei.
-- Danach vollständige Unicode-Normalisierung ergänzen; EXT2 vorerst
-  ausdrücklich read-only mounten.
+- [x] VFAT-Namen als begrenztes UTF-8↔UTF-16-Roundtrip einschließlich
+  Surrogatpaaren, Fehlkodierungsablehnung und 255-UTF-16-Unit-Grenze umsetzen.
+- Danach tabellengebundene Unicode-NFC-/Casefold-Gleichheit ergänzen; EXT2
+  vorerst ausdrücklich read-only mounten.
 
 #### R2.3 Blockgeräte und Partitionen — L
 
