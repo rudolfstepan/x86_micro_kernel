@@ -409,6 +409,96 @@ static void test_gr_plan_is_pinned_bounded_and_hardware_inactive(void) {
     assert(reist_nvidia_gk208_gr_plan_self_test() == 0);
 }
 
+static void test_gr_execution_image_is_complete_sealed_and_unresolved(void) {
+    static reist_nvidia_gk208_gr_execution_image_t image;
+    reist_nvidia_gk208_gr_topology_t topology = {
+        .version = REIST_NVIDIA_GK208_GR_PLAN_VERSION,
+        .struct_size = sizeof(topology),
+        .gpc_count = 1U,
+        .rop_count = 2U,
+        .tpc_total = 2U,
+        .tpc_max = 2U,
+        .tpc_count = {2U},
+        .ppc_tpc_mask = {3U},
+    };
+    assert(sizeof(reist_nvidia_gk208_gr_execution_header_t) == 64U);
+    assert(sizeof(reist_nvidia_gk208_gr_execution_op_t) == 16U);
+    assert(REIST_NVIDIA_GK208_GR_VRAM_BUFFER_BYTES == 0x20000U);
+    assert(REIST_NVIDIA_GK208_GR_VRAM_BUFFER_ALIGNMENT == 0x20000U);
+    assert(reist_nvidia_gk208_gr_compile_execution_image(
+        &image, &topology) == 0);
+    assert(reist_nvidia_gk208_gr_validate_execution_image(
+        &image, &topology) == 0);
+    assert(image.header.version == REIST_NVIDIA_GK208_GR_EXECUTION_VERSION);
+    assert(image.header.header_size == 64U);
+    assert(image.header.used_bytes ==
+        64U + image.header.operation_count * 16U);
+    assert(image.header.operation_count > 400U);
+    assert(image.header.operation_count <=
+        REIST_NVIDIA_GK208_GR_EXECUTION_OP_CAPACITY);
+    assert(image.header.static_mmio_operation_count > 115U);
+    assert(image.header.zbc_operation_count == 237U);
+    assert(image.header.context_operation_count > 9U);
+    assert(image.header.vram_relocation_count == 2U);
+    assert(image.header.flags ==
+        (REIST_NVIDIA_GK208_GR_EXECUTION_FLAG_HARDWARE_INACTIVE |
+         REIST_NVIDIA_GK208_GR_EXECUTION_FLAG_NOFW |
+         REIST_NVIDIA_GK208_GR_EXECUTION_FLAG_UNRESOLVED_VRAM));
+    assert(REIST_NVIDIA_GK208_DMA_GR_EXECUTION_OFFSET +
+        image.header.used_bytes <= REIST_NVIDIA_GK208_DMA_POOL_BYTES);
+    assert(image.operations[0].opcode == REIST_NVIDIA_GK208_GR_OP_MASK32);
+    assert(image.operations[0].address == 0x0017EA44U);
+    assert(image.operations[0].value == 1U);
+    assert(image.operations[0].mask == 0xFU);
+
+    uint32_t relocation_count = 0U;
+    for (uint32_t index = 0U; index < image.header.operation_count; ++index) {
+        if (image.operations[index].opcode !=
+            REIST_NVIDIA_GK208_GR_OP_VRAM_OFFSET32)
+            continue;
+        ++relocation_count;
+        assert(image.operations[index].mask ==
+               REIST_NVIDIA_GK208_GR_VRAM_ADDRESS_SHIFT);
+        if (image.operations[index].value ==
+            REIST_NVIDIA_GK208_GR_VRAM_BUFFER_MMU_WRITE)
+            assert(image.operations[index].address == 0x004188B4U);
+        else {
+            assert(image.operations[index].value ==
+                   REIST_NVIDIA_GK208_GR_VRAM_BUFFER_MMU_READ);
+            assert(image.operations[index].address == 0x004188B8U);
+        }
+    }
+    assert(relocation_count == 2U);
+
+    const uint32_t crc = image.header.operation_crc32;
+    image.operations[image.header.operation_count - 1U].value ^= 1U;
+    assert(reist_nvidia_gk208_gr_validate_execution_image(
+        &image, &topology) == -84);
+    image.operations[image.header.operation_count - 1U].value ^= 1U;
+    assert(image.header.operation_crc32 == crc);
+    assert(reist_nvidia_gk208_gr_validate_execution_image(
+        &image, &topology) == 0);
+    ++topology.rop_count;
+    assert(reist_nvidia_gk208_gr_validate_execution_image(
+        &image, &topology) == -84);
+
+    topology.gpc_count = REIST_NVIDIA_GK208_MAX_GPCS;
+    topology.rop_count = REIST_NVIDIA_GK208_MAX_ROPS;
+    topology.tpc_total = REIST_NVIDIA_GK208_MAX_TOTAL_TPCS;
+    topology.tpc_max = 1U;
+    for (uint32_t gpc = 0U; gpc < REIST_NVIDIA_GK208_MAX_GPCS; ++gpc) {
+        topology.tpc_count[gpc] = 1U;
+        topology.ppc_tpc_mask[gpc] = 1U;
+    }
+    assert(reist_nvidia_gk208_gr_compile_execution_image(
+        &image, &topology) == 0);
+    assert(reist_nvidia_gk208_gr_validate_execution_image(
+        &image, &topology) == 0);
+    assert(image.header.operation_count <
+        REIST_NVIDIA_GK208_GR_EXECUTION_OP_CAPACITY);
+    assert(reist_nvidia_gk208_gr_execution_self_test() == 0);
+}
+
 int main(void) {
     test_fill_and_copy_are_bounded_and_validated();
     test_invalid_ranges_fail_closed();
@@ -420,11 +510,13 @@ int main(void) {
     test_gpu_vm_plans_are_exact_and_unrelocated();
     test_gr_firmware_manifest_is_exact_and_read_only();
     test_gr_plan_is_pinned_bounded_and_hardware_inactive();
+    test_gr_execution_image_is_complete_sealed_and_unresolved();
     assert(reist_nvidia_gk208_submission_self_test() == 0);
     assert(reist_nvidia_gk208_dma_staging_self_test() == 0);
     assert(reist_nvidia_gk208_channel_image_self_test() == 0);
     assert(reist_nvidia_gk208_vm_plan_self_test() == 0);
     assert(reist_nvidia_gk208_gr_firmware_self_test() == 0);
     assert(reist_nvidia_gk208_gr_plan_self_test() == 0);
+    assert(reist_nvidia_gk208_gr_execution_self_test() == 0);
     return 0;
 }

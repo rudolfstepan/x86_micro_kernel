@@ -122,6 +122,21 @@ Readiness-Ablauf ist als 64-Byte-Manifest eingefroren, wird aber noch nicht
 ausgeführt. Offen bleiben die dynamischen topologieabhängigen Registerwerte,
 deren rollback-fähige Kernelmediation, Falcon-Start, Channel-/Runlist-Bind,
 USERD-Kick, IRQ, echter Fence und Capabilityfreigabe.
+`R2.2r-nvidia-gk208-gr-execution-image` kompiliert den vollständigen
+Pre-Start-Ablauf nun in ein versiegelbares, weiterhin hardwareinaktives
+Abbild. Ein 64-Byte-Header schützt höchstens 2048 feste 16-Byte-Operationen mit
+Topologie- und Operations-CRC. Darin liegen die expandierten statischen
+Pakete, dynamische Copy/Mask-Abhängigkeiten, die exakt abgeleitete
+Tile-/ZCULL- und Exception-Konfiguration, sämtliche 15 nutzbaren
+LTC-/PGRAPH-ZBC-Farb- und Tiefenslots sowie alle fünf Kontextgruppen mit
+HUB-Start, Readiness und Kontextgrößen-Readback. Die beiden von Nouveau
+verlangten MMU-Faultbuffer bleiben getrennte, typisierte und ungelöste
+128-KiB-Geräte-VRAM-Offsets. Ring 3 staged nur die verwendeten Bytes ab
+`0x72000`, liest sie vor dem vorhandenen DMA-Seal vollständig zurück und führt
+keine der Operationen aus. Offen bleiben eine validierte FB-/LTC-Basis, die
+begrenzte VRAM-Reservierung und eine atomare Kerneltransaktion mit Deadline
+und GR-Reset-Rollback; danach erst dürfen Falcon-Start/Readiness und später
+Channel, Runlist, USERD, echter Fence und Capabilityfreigabe folgen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

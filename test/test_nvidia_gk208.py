@@ -209,6 +209,55 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("x86os_", plan)
         self.assertNotIn("volatile", plan)
 
+    def test_gr_execution_image_is_complete_bounded_and_hardware_inactive(self):
+        header = (ROOT /
+            "userspace/video/include/reist/nvidia_gk208_2d.h").read_text(
+                encoding="utf-8")
+        library = (ROOT /
+            "userspace/video/lib/nvidia_gk208_2d.c").read_text(
+                encoding="utf-8")
+        driver = (ROOT /
+            "userspace/drivers/video/nvidia_gk208.c").read_text(
+                encoding="utf-8")
+        for contract in (
+                "REIST_NVIDIA_GK208_GR_EXECUTION_OP_CAPACITY 2048U",
+                "REIST_NVIDIA_GK208_DMA_GR_EXECUTION_OFFSET 0x00072000U",
+                "REIST_NVIDIA_GK208_GR_VRAM_BUFFER_BYTES 0x00020000U",
+                "REIST_NVIDIA_GK208_GR_VRAM_BUFFER_ALIGNMENT 0x00020000U",
+                "REIST_NVIDIA_GK208_GR_OP_VRAM_OFFSET32",
+                "REIST_NVIDIA_GK208_GR_OP_CONTEXT_GROUP",
+                "REIST_NVIDIA_GK208_GR_OP_WAIT_IDLE"):
+            self.assertIn(contract, header)
+        self.assertIn("reist_nvidia_gk208_gr_compile_execution_image",
+                      library)
+        self.assertIn("reist_nvidia_gk208_gr_validate_execution_image",
+                      library)
+        self.assertIn("gr_execution_operation_crc32", library)
+        self.assertIn("gr_execution_topology_crc32", library)
+        self.assertIn("gf100_gr_init()", library)
+        self.assertIn("nvkm_ltc_init()", library)
+        self.assertIn("0x004188B4U", library)
+        self.assertIn("0x004188B8U", library)
+        self.assertIn("0x0017EA44U", library)
+        self.assertIn("0x00405824U", library)
+        self.assertIn("gr_build_tile_map", library)
+        self.assertIn("gr_execution_context", library)
+        self.assertIn("NVIDIA_DIAGNOSTIC_GR_EXECUTION_IMAGE", driver)
+        self.assertIn("gr_execution_image_dma_self_test", driver)
+        self.assertLess(
+            driver.index("gr_execution_image_dma_self_test(driver)"),
+            driver.index("gpu_vm_relocate_and_seal(driver)"))
+        image_stage = driver[driver.index(
+            "static int gr_execution_image_dma_self_test") :]
+        image_stage = image_stage[:image_stage.index(
+            "static int channel_image_dma_self_test")]
+        self.assertIn("dma_stage_and_verify", image_stage)
+        self.assertNotIn("x86os_device_region_write", image_stage)
+        self.assertNotIn("x86os_device_activate", image_stage)
+        self.assertNotIn("x86os_device_bind_irq", image_stage)
+        self.assertNotIn("x86os_device_gr_", image_stage)
+        self.assertNotIn("x86os_device_dma_relocate_and_seal", image_stage)
+
     def test_kernel_only_admits_bar_geometry(self):
         source = (ROOT / "drivers/video/display_control.c").read_text(
             encoding="utf-8")

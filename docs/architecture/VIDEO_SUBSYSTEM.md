@@ -250,6 +250,32 @@ none of those writes or transfers. Full topology-dependent dynamic register
 initialization, rollback-capable mediated execution, Falcon start, channel
 publication and a real fence remain prerequisites for capability publication.
 
+`R2.2r` turns that material into one complete, still hardware-inactive
+execution image. Its fixed 64-byte header binds the validated topology, exact
+used length, operation count, section counts and IEEE CRC32 to a stream of
+16-byte semantic operations with capacity 2048. The stream preserves the
+pinned `gf100_gr_init` order, expands every static tuple, derives Nouveau's
+tile map and ZCULL values, includes the GK208 exception loops and establishes
+all usable GK104 LTC/PGRAPH ZBC color/depth slots. Dynamic hardware inputs are
+not sampled early: typed copy/mask operations retain the source-register
+dependency until atomic execution. The two `gf100_gr_init_gpc_mmu` fault
+buffers remain distinct unresolved 128-KiB, 128-KiB-aligned device-VRAM offset
+operations; neither a CPU physical address nor the mediated system-memory DMA
+pool is substituted. The five context groups, HUB start, readiness wait and
+nonzero context-size readback are explicit final operations.
+
+Ring 3 recompiles the stream through an independent comparison sink, rejects
+every topology, order, operation or CRC mutation, and stages only the used
+prefix at pool offset `0x72000`. Every byte is read back before the existing
+relocation seal. No operation in the image is executed by this package and no
+new Device-Control command or authority is added. The next hardware package
+must first validate the FB/LTC prerequisites, reserve a bounded device-VRAM
+scratch region without exposing BAR1 or physical addresses, resolve both VRAM
+offsets, and execute the sealed image through one generation-scoped kernel
+transaction with monotonic deadlines and GR reset rollback. Only a successful
+FECS readiness/context-size result may permit the later channel/runlist/fence
+stage; NVIDIA acceleration capabilities remain zero meanwhile.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

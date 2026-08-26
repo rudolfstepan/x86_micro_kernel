@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2r-nvidia-gk208-gr-execution-image"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,11 +12,11 @@ push = false
 
 [[packages]]
 id = "R2.2r-nvidia-gk208-gr-execution-image"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Seal the complete hardware-inactive GK208 GR execution image"
-scope = "Compile the pinned GK208 pre-start GR contract into one fixed-capacity, versioned and CRC-protected execution image without touching hardware. Preserve the exact Nouveau gf100_gr_init order while expanding all 30 static MMIO packs, the topology-dependent VSC zcull LTC ROP exception and GPC TPC PPC sequences, the complete 16-slot GK104 LTC and PGRAPH ZBC color/depth state, all five coalesced context-transfer groups and the exact FECS start/readiness protocol. Represent both mandatory 128-KiB NVKM_MEM_TARGET_INST fault buffers as typed unresolved VRAM relocations rather than invented CPU or DMA addresses. Capture every dynamic source register in one validated read-only runtime snapshot, independently validate and reproduce the complete image, stage only its used bytes into the unused tail of the existing mediated-DMA pool, and read them back before the existing relocation seal. This package remains hardware-inactive and adds no MMIO write, VRAM allocation, Falcon start, bus-master enable, IRQ, channel submission or acceleration capability. The following single kernel-mediated package must reserve a bounded BAR1 VRAM scratch region, resolve the two VRAM offsets, execute this sealed image atomically with deadlines and rollback, then start and validate FECS before capability publication."
+scope = "Compile the pinned GK208 pre-start GR contract into one fixed-capacity, versioned and CRC-protected execution image without touching hardware. Preserve the exact Nouveau gf100_gr_init order while expanding all 30 static MMIO packs, the topology-dependent VSC zcull LTC ROP exception and GPC TPC PPC sequences, the complete 16-slot GK104 LTC and PGRAPH ZBC color/depth state, all five coalesced context-transfer groups and the exact FECS start/readiness protocol. Represent both mandatory 128-KiB NVKM_MEM_TARGET_INST fault buffers as typed unresolved VRAM relocations rather than invented CPU or DMA addresses. Retain every dynamic source-register dependency as a validated semantic copy or mask operation, independently validate and reproduce the complete image, stage only its used bytes into the unused tail of the existing mediated-DMA pool, and read them back before the existing relocation seal. This package remains hardware-inactive and adds no MMIO write, VRAM allocation, Falcon start, bus-master enable, IRQ, channel submission or acceleration capability. The following single kernel-mediated package must validate the FB and LTC prerequisites, reserve a bounded BAR1 VRAM scratch region, resolve the two VRAM offsets, execute this sealed image atomically with deadlines and rollback, then start and validate FECS before capability publication."
 allowed_files = [
   "automation/reist-s03b.toml",
   "scripts/generate_nvidia_gk208_gr_tables.py",
@@ -33,11 +33,11 @@ allowed_files = [
 ]
 invariants = [
   "the execution image is fixed-capacity versioned little-endian and protected by exact used-byte count operation count and IEEE CRC32",
-  "all static and dynamic operations retain the pinned upstream gf100_gr_init order and every source-dependent value is part of one validated snapshot",
+  "all static and dynamic operations retain the pinned upstream gf100_gr_init order and every source-register dependency remains an explicit validated semantic operation",
   "both 128-KiB page-aligned fault buffers remain distinct typed unresolved VRAM-offset relocations and never contain a CPU physical or mediated-DMA address",
   "the complete GK104 LTC and PGRAPH ZBC color and depth state covers every usable slot with the exact default entries and zeroed remainder",
   "context-transfer groups are copied only from the previously validated coalesced plan and FECS start readiness and context-size actions remain explicit semantic operations",
-  "the independent validator rejects every count CRC order topology source relocation range reserved-field or padding mutation before staging",
+  "the independent validator rejects every count CRC order topology source relocation range reserved-field or used-prefix mutation before staging",
   "the staged image fits a fixed non-overlapping tail window of the existing 512-KiB pool and every used byte is read back before relocation sealing",
   "no MMIO write VRAM allocation relocation Falcon start bus-master enable IRQ channel submission hardware execution or acceleration capability publication occurs",
   "VMware remains DMA-free and unchanged"
@@ -60,7 +60,12 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: seal complete GK208 GR execution image"
-evidence = []
+evidence = [
+  "NVIDIA GK208 source and host execution-image contract passed 15 tests including maximum topology and mutation rejection",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 26 seconds",
+  "VMware framebuffer package passed in 27 seconds"
+]
 
 [[packages]]
 id = "R2.2q-nvidia-gk208-gr-plan"

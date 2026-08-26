@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 24. August 2026
+Stand: 26. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -2385,9 +2385,23 @@ Counts/CRCs, eine begrenzte GPC/ROP/TPC/PPC-Topologievalidierung und der
 maximal 32 Register umfassende Kontexttransfer-Compiler laufen vollständig in
 Ring 3. Auch HUB-Start, Readiness-Maske, Kontextgrößen-Readback und 2000-ms-
 Referenzdeadline sind manifestiert, werden aber noch nicht ausgeführt. Als
-nächster gemeinsamer Slice bleiben die dynamischen topologieabhängigen Werte,
-ihr rückrollbarer kernelmediierter Commit, Falcon-Start und Readiness;
-Channel-Bind, Runlist und USERD folgen erst danach.
+nächster gemeinsamer Slice waren die dynamischen topologieabhängigen Werte und
+die vollständige Ausführungsreihenfolge offen. `R2.2r` schließt diese
+hardwareinaktive Lücke nun gemeinsam: Ein fester 64-Byte-Header und höchstens
+2048 jeweils 16 Byte große Operationen binden Topologie, benutzte Länge,
+Abschnittszähler und CRC. Der Compiler expandiert die statischen Tupel,
+berechnet Tile-Map/ZCULL, GPC/TPC/PPC/ROP-Exceptions, alle nutzbaren
+LTC-/PGRAPH-ZBC-Slots und die fünf Kontextgruppen in der gepinnten
+`gf100_gr_init`-Reihenfolge. Laufzeitregister bleiben als semantische
+Copy/Mask-Operationen erhalten. Zwei getrennte 128-KiB-Faultbuffer bleiben
+typisierte, ungelöste Geräte-VRAM-Offsets statt erfundener DMA-/CPU-Adressen.
+Ring 3 validiert das Abbild unabhängig, staged nur den belegten Präfix ab
+`0x72000` und liest ihn vor dem bestehenden Seal vollständig zurück; keine
+Operation wird ausgeführt. Als nächster gemeinsamer Slice bleiben damit die
+Prüfung der FB-/LTC-Voraussetzungen, eine begrenzte BAR1-VRAM-Reservierung und
+der atomare kernelmediierte Resolve/Commit mit Deadline, GR-Reset-Rollback,
+Falcon-Start und Readiness. Channel-Bind, Runlist, USERD, echter Fence und
+Capabilityfreigabe folgen erst nach diesem Hardwaregate.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
