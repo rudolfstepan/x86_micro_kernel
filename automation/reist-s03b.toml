@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2t-nvidia-gk208-gr-execution"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2t-nvidia-gk208-gr-execution"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Execute the validated GK208 LTC and GR pre-start transaction"
@@ -65,7 +65,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: execute bounded GK208 GR initialization"
-evidence = []
+evidence = [
+  "Device-domain source and lifecycle contract passed 10 tests including successful execution and timeout-reset-retry",
+  "NVIDIA GK208 source contract passed 15 tests with command-23 ordering and zero published acceleration capabilities",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 46 seconds",
+  "VMware framebuffer package passed in 28 seconds"
+]
 
 [[packages]]
 id = "R2.2s-nvidia-gk208-gr-prerequisites"

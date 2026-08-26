@@ -285,12 +285,20 @@ command 22 writes no VRAM or MMIO and starts no Falcon. For the exact profile,
 commands 20 and 21 reject attempts that bypass this prerequisite state. Fence
 and generation cleanup erase it idempotently.
 
-The next hardware package must revalidate the same opaque reservation and
-sealed image, initialize LTC/tag state, resolve both VRAM offsets, and execute
-the image through one transaction with monotonic deadlines and GR-reset
-rollback. Only successful FECS readiness and nonzero context-size results may
-permit the later channel/runlist/fence stage; NVIDIA acceleration capabilities
-remain zero meanwhile.
+`R2.2t` adds append-only Device-Control command 23 as that single hardware-active
+transaction. After commands 22, 20 and 21, Ring 0 re-samples topology and
+revalidates the sealed image and opaque VRAM/LTC plan before the first write.
+It zeroes only the two clipped 128-KiB fault-buffer windows, programs the pinned
+GK104 LTC count, tag-base and page-mode registers, clears the bounded CBC tag
+range, and then interprets every typed GR operation in order. Context groups
+consume exactly their immediately following transfers. CBC, idle and FECS
+readiness waits sleep or yield and share one monotonic five-second transaction
+deadline. Success exposes only operation count, a nonzero context size and a
+ready flag. Any partial failure performs a GR reset before retry or fencing,
+and generation cleanup clears all readiness and reservation state only after
+that reset. Channel/runlist binding, USERD kick, bus mastering, IRQs, command
+submission, fences and NVIDIA acceleration capabilities remain disabled for
+the next hardware gate.
 
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the

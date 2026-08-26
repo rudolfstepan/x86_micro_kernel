@@ -103,6 +103,7 @@ class DeviceDomainTests(unittest.TestCase):
             "DEVICE_DOMAIN_CONTROL_GR_FIRMWARE_UPLOAD = 21U", header)
         self.assertIn(
             "DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES = 22U", header)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_EXECUTE = 23U", header)
         self.assertIn("device_domain_dma_pool_stats_t", header)
         self.assertIn("capacity_rejections", header)
         self.assertIn("device_domain_dma_pool_stats", source)
@@ -124,6 +125,11 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("gr_execution_image_valid", source)
         self.assertIn("gr_build_prerequisite_plan", source)
         self.assertIn("clear_gr_prerequisite_state", source)
+        self.assertIn("device_domain_gr_execute", source)
+        self.assertIn("gr_initialize_ltc", source)
+        self.assertIn("gr_execute_operations", source)
+        self.assertIn("gr_execution_rollback", source)
+        self.assertIn("scheduler_sleep_ms(1U)", source)
         self.assertGreaterEqual(
             source.count("device->gr_prerequisite_active == 0U"), 2)
         self.assertIn("pool->sealed == 0U", source)
@@ -255,6 +261,7 @@ class DeviceDomainTests(unittest.TestCase):
                         "x86os_device_dma_vm_page_mode",
                         "x86os_device_gr_firmware_upload",
                         "x86os_device_gr_prerequisites",
+                        "x86os_device_gr_execute",
                         "x86os_device_dma_write", "x86os_device_dma_read",
                         "x86os_device_region_read",
                         "x86os_device_region_write",
@@ -270,6 +277,7 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("DEVICE_DOMAIN_CONTROL_DMA_VM_PAGE_MODE", syscall)
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_FIRMWARE_UPLOAD", syscall)
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES", syscall)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_EXECUTE", syscall)
         self.assertIn("x86os_device_driver_bootstrap", sdk_source)
         self.assertIn("x86os_device_driver_report", sdk_source)
         self.assertIn("supervisor_device_driver_output_allowed", syscall)

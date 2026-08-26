@@ -2404,10 +2404,16 @@ enthaltende PCI-BAR wird aus geprüfter Loader- und PCI-Geometrie gewählt; fest
 GK104/GK208-FB-/LTC-Proben begrenzen VRAM, aktive LTCs und Tag-RAM. Der Kernel
 merkt sich zwei ausgerichtete Faultbuffer und einen Nouveau-konform berechneten
 Tag-Bereich hinter dem sichtbaren Scanout, gibt aber keine Adresse an Ring 3
-zurück und verändert weder VRAM noch MMIO. Der nächste gemeinsame Slice ist
-damit der atomare kernelmediierte LTC-/Resolve-/GR-Commit mit Deadline,
-GR-Reset-Rollback, Falcon-Start und Readiness. Channel-Bind, Runlist, USERD,
-echter Fence und Capabilityfreigabe folgen erst nach diesem Hardwaregate.
+zurück und verändert weder VRAM noch MMIO. `R2.2t` schließt den gemeinsamen
+LTC-/Resolve-/GR-Commit nun über append-only Kommando 23: Ring 0 wiederholt vor
+dem ersten Schreibzugriff alle Image-, Topologie- und Planprüfungen, nullt nur
+die zwei zugeschnittenen Faultbuffer, initialisiert den gepinnten GK104-LTC-/CBC-
+Zustand und interpretiert den typisierten GR-Ablauf unter einer gemeinsamen
+monotonen 5-s-Deadline. Kontextgruppen sind unmittelbar und vollständig
+gerahmt; Erfolg verlangt FECS-Readiness und eine nichtleere Kontextgröße.
+Teilfehler lösen vor Retry/Fence einen GR-Reset aus. Channel-Bind, Runlist,
+USERD, Busmaster, IRQ, Submission, echter Fence und Capabilityfreigabe bilden
+weiterhin das nächste Hardwaregate.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

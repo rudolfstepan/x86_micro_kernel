@@ -186,6 +186,21 @@ gegeben. Diese generationgebundene Reservierung verändert keine Hardware und
 wird beim Fence vollständig verworfen; ein Profil ohne Kommando-22-Policy
 behält die bisherige ABI-Semantik.
 
+Append-only Device-Control-Kommando 23 ist die einzige hardwareaktive
+LTC-/GR-Pre-Start-Transaktion dieses Profils. Es ist erst nach den Kommandos
+22, 20 und 21 zulässig und wiederholt vor dem ersten Schreibzugriff die
+vollständige Image-, Topologie- und VRAM-/LTC-Planprüfung. Der Kernel nullt nur
+die zwei reservierten 128-KiB-Faultbuffer über zugeschnittene VRAM-Fenster,
+initialisiert LTC- und CBC-Tag-Zustand und interpretiert danach jede typisierte
+Operation in fester Reihenfolge. Kontextgruppen müssen ihre unmittelbar
+folgenden Transfers vollständig verbrauchen; Idle-, CBC- und FECS-Waits sind
+durch operationseigene Grenzen und eine gemeinsame monotone 5-s-Deadline
+begrenzt und geben zwischen Abfragen den Prozessor frei. Erfolg liefert nur
+Operationszahl, nichtnull Kontextgröße und ein Readiness-Bit. Jeder Teilfehler
+setzt GR zurück, bevor ein Wiederholungsversuch oder Fence zulässig ist;
+Adressen, Busmaster-, IRQ-, Channel-, Runlist-, USERD- oder Submission-
+Autorität werden nicht freigegeben.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden

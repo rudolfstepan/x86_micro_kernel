@@ -150,6 +150,17 @@ opak. Es erfolgen noch keine VRAM-/MMIO-Schreibzugriffe; Falcon, Channel,
 Runlist, USERD, Busmaster, IRQ und Capabilitybits bleiben inaktiv. Der nächste
 Slice ist die atomare kernelmediierte LTC-/Resolve-/GR-Ausführung mit Deadline,
 GR-Reset-Rollback sowie FECS-Readiness- und Kontextgrößenprüfung.
+`R2.2t-nvidia-gk208-gr-execution` führt diesen Slice nun über append-only
+Kommando 23 aus. Vor dem ersten Hardwareeffekt werden das versiegelte Abbild,
+die zweimal stabile Live-Topologie und der opake VRAM-/LTC-Plan erneut geprüft.
+Der Kernel nullt ausschließlich die beiden reservierten 128-KiB-Faultbuffer,
+programmiert die gepinnten GK104-LTC-/CBC-Register und interpretiert danach den
+vollständigen typisierten GR-Ablauf mit streng gerahmten Kontextgruppen. Alle
+CBC-, Idle- und FECS-Waits geben den Prozessor frei und sind zusätzlich durch
+eine gemeinsame monotone 5-s-Deadline begrenzt. Nur Readiness, Operationszahl
+und eine nichtleere Kontextgröße werden zurückgegeben. Teilfehler setzen GR vor
+Retry/Fence zurück; Channel, Runlist, USERD, Busmaster, IRQ, Submission, Fence
+und NVIDIA-Capabilitybits bleiben weiterhin gesperrt.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

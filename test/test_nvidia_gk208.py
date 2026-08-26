@@ -323,6 +323,8 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("x86os_device_gr_firmware_upload", driver)
         self.assertIn("gpu_gr_prerequisites", driver)
         self.assertIn("x86os_device_gr_prerequisites", driver)
+        self.assertIn("gpu_gr_execute", driver)
+        self.assertIn("x86os_device_gr_execute", driver)
         self.assertLess(driver.index("gpu_vm_relocate_and_seal(driver)"),
                         driver.index("gpu_vm_apply_page_mode(driver)"))
         self.assertLess(driver.index("gr_firmware_dma_stage_self_test(driver)"),
@@ -333,6 +335,10 @@ class NvidiaGk208BringupTests(unittest.TestCase):
                         driver.index("gpu_gr_prerequisites(driver)"))
         self.assertLess(driver.index("gpu_gr_prerequisites(driver)"),
                         driver.index("gpu_vm_apply_page_mode(driver)"))
+        self.assertLess(driver.index("gpu_gr_firmware_upload(driver)"),
+                        driver.index("gpu_gr_execute(driver)"))
+        self.assertLess(driver.index("gpu_gr_execute(driver)"),
+                        driver.index("X86OS_DEVICE_DRIVER_REPORT_SELF_TEST"))
         self.assertIn("X86OS_DEVICE_DMA_TRANSFER_MAX", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("x86os_device_activate", driver)

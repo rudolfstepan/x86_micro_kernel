@@ -1331,6 +1331,7 @@ enum {
     X86OS_DEVICE_CONTROL_DMA_VM_PAGE_MODE = 20U,
     X86OS_DEVICE_CONTROL_GR_FIRMWARE_UPLOAD = 21U,
     X86OS_DEVICE_CONTROL_GR_PREREQUISITES = 22U,
+    X86OS_DEVICE_CONTROL_GR_EXECUTE = 23U,
 };
 enum {
     X86OS_DEVICE_RESOURCE_REGION = 1U,
@@ -1529,6 +1530,29 @@ typedef struct {
     uint32_t flags;
     uint32_t reserved[3];
 } x86os_device_gr_prerequisite_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    x86os_device_resource_t region;
+    x86os_device_resource_t dma;
+    uint32_t policy_id;
+    uint32_t flags;
+    uint32_t reserved[3];
+} x86os_device_gr_execution_request_t;
+enum {
+    X86OS_DEVICE_GR_EXECUTION_READY = 1U << 0U,
+};
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t policy_id;
+    uint32_t operation_count;
+    uint32_t context_size;
+    uint32_t flags;
+    uint32_t reserved;
+} x86os_device_gr_execution_result_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -1874,6 +1898,10 @@ int x86os_device_gr_firmware_upload(
 int x86os_device_gr_prerequisites(
     x86os_device_handle_t device, x86os_device_resource_t region,
     x86os_device_resource_t dma, uint32_t policy_id);
+int x86os_device_gr_execute(
+    x86os_device_handle_t device, x86os_device_resource_t region,
+    x86os_device_resource_t dma, uint32_t policy_id,
+    x86os_device_gr_execution_result_t *result);
 /** Read one aligned 8-, 16- or 32-bit value through the installed policy. */
 int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
                              uint32_t width, uint32_t *value);

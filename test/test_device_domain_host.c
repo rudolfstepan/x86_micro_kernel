@@ -37,6 +37,8 @@ static uint32_t secondary_region_value;
 static bool region_write_result = true;
 static bool region_write_persists = true;
 static bool gr_prerequisite_test_mode;
+static bool gr_execution_test_mode;
+static bool gr_execution_ready;
 #define TEST_FECS_BASE 0x00409000U
 #define TEST_GPCCS_BASE 0x0041A000U
 #define TEST_FALCON_WORD_CAPACITY 1024U
@@ -212,6 +214,24 @@ static bool read_region(const device_domain_region_info_t *region,
         default: break;
         }
     }
+    if (gr_execution_test_mode) {
+        if (offset == 0x0040060CU) { *value = 0U; return true; }
+        if (offset == 0x00409800U) {
+            *value = gr_execution_ready ? 0x80000000U : 0U;
+            return true;
+        }
+        if (offset == 0x00409804U) { *value = 0x2000U; return true; }
+        if (offset == 0x004091C4U || offset == 0x0041A1C4U) {
+            *value = 0x100U;
+            return true;
+        }
+        if (offset >= 0x001410C8U && offset < 0x001510C8U &&
+            ((offset - 0x001410C8U) & 0x3FFU) == 0U) {
+            *value = 0U;
+            return true;
+        }
+        if (offset == 0x0017E8C0U) { *value = 0U; return true; }
+    }
     int falcon = falcon_index_for_offset(offset, 0x10CU);
     if (falcon >= 0) {
         *value = 0U;
@@ -243,15 +263,17 @@ static bool write_region(const device_domain_region_info_t *region,
     ++region_write_calls;
     last_region_value = value;
     if (!region_write_result) return false;
-    if (region_write_persists && offset == tracked_region_offset) {
+    const bool bar0 = region->region_index == 0U;
+    if (bar0 && region_write_persists && offset == tracked_region_offset) {
         tracked_region_value = value;
         if (offset == 0x00000200U && (value & 0x00001000U) == 0U) {
             memset(falcon_dmem, 0, sizeof(falcon_dmem));
             memset(falcon_imem, 0, sizeof(falcon_imem));
         }
     }
-    if (region_write_persists && offset == secondary_region_offset)
+    if (bar0 && region_write_persists && offset == secondary_region_offset)
         secondary_region_value = value;
+    if (!bar0) return true;
     int falcon = falcon_index_for_offset(offset, 0x1C0U);
     if (falcon >= 0) {
         falcon_dmem_control[falcon] = value;
@@ -401,6 +423,8 @@ static void reset_counters(void) {
     region_write_result = true;
     region_write_persists = true;
     gr_prerequisite_test_mode = false;
+    gr_execution_test_mode = false;
+    gr_execution_ready = true;
     memset(falcon_dmem, 0, sizeof(falcon_dmem));
     memset(falcon_imem, 0, sizeof(falcon_imem));
     memset(falcon_dmem_cursor, 0, sizeof(falcon_dmem_cursor));
@@ -1660,9 +1684,9 @@ static void test_gr_firmware_upload_is_sealed_verified_and_resettable(void) {
 
 static void build_gr_prerequisite_image(
         device_domain_gr_execution_header_t *header,
-        device_domain_gr_execution_op_t operations[13], bool corrupt) {
+        device_domain_gr_execution_op_t operations[17], bool corrupt) {
     memset(header, 0, sizeof(*header));
-    memset(operations, 0, sizeof(*operations) * 13U);
+    memset(operations, 0, sizeof(*operations) * 17U);
     operations[0] = (device_domain_gr_execution_op_t){
         DEVICE_DOMAIN_GR_OP_VRAM_OFFSET32, 0x004188B4U, 1U, 8U};
     operations[1] = (device_domain_gr_execution_op_t){
@@ -1672,22 +1696,30 @@ static void build_gr_prerequisite_image(
     operations[3] = (device_domain_gr_execution_op_t){
         DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x00409000U, 0U, 1U};
     operations[4] = (device_domain_gr_execution_op_t){
-        DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x0041A000U, 0U, 1U};
+        DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER, 0x004091C4U, 0x1234U, 0U};
     operations[5] = (device_domain_gr_execution_op_t){
         DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x0041A000U, 0U, 1U};
     operations[6] = (device_domain_gr_execution_op_t){
-        DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x0041A000U, 4U, 1U};
+        DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER, 0x0041A1C4U, 0x2345U, 0U};
     operations[7] = (device_domain_gr_execution_op_t){
-        DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x0041A000U, 8U, 1U};
+        DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x0041A000U, 0U, 1U};
     operations[8] = (device_domain_gr_execution_op_t){
-        DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER, 0x004091C4U, 0x1234U, 0U};
+        DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER, 0x0041A1C4U, 0x3456U, 0U};
     operations[9] = (device_domain_gr_execution_op_t){
-        DEVICE_DOMAIN_GR_OP_WRITE32, 0x0040910CU, 0U, 0U};
+        DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x0041A000U, 4U, 1U};
     operations[10] = (device_domain_gr_execution_op_t){
-        DEVICE_DOMAIN_GR_OP_WRITE32, 0x00409100U, 2U, 0U};
+        DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER, 0x0041A1C4U, 0x4567U, 0U};
     operations[11] = (device_domain_gr_execution_op_t){
-        DEVICE_DOMAIN_GR_OP_WAIT_MASK32, 0x00409800U, 0x80000000U, 2000U};
+        DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP, 0x0041A000U, 8U, 1U};
     operations[12] = (device_domain_gr_execution_op_t){
+        DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER, 0x0041A1C4U, 0x5678U, 0U};
+    operations[13] = (device_domain_gr_execution_op_t){
+        DEVICE_DOMAIN_GR_OP_WRITE32, 0x0040910CU, 0U, 0U};
+    operations[14] = (device_domain_gr_execution_op_t){
+        DEVICE_DOMAIN_GR_OP_WRITE32, 0x00409100U, 2U, 0U};
+    operations[15] = (device_domain_gr_execution_op_t){
+        DEVICE_DOMAIN_GR_OP_WAIT_MASK32, 0x00409800U, 0x80000000U, 2000U};
+    operations[16] = (device_domain_gr_execution_op_t){
         DEVICE_DOMAIN_GR_OP_READ32_NONZERO, 0x00409804U, 0U, 0U};
     if (corrupt) operations[1].address = 0x004188BCU;
 
@@ -1705,15 +1737,15 @@ static void build_gr_prerequisite_image(
         .version = 1U,
         .header_size = DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES,
         .used_bytes = DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES +
-            13U * DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES,
-        .operation_count = 13U,
+            17U * DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES,
+        .operation_count = 17U,
         .operation_crc32 = firmware_crc32(
-            (const uint32_t *)operations, 13U * 4U),
+            (const uint32_t *)operations, 17U * 4U),
         .topology_crc32 = firmware_crc32(topology,
             sizeof(topology) / sizeof(topology[0])),
         .static_mmio_operation_count = 1U,
         .zbc_operation_count = 1U,
-        .context_operation_count = 10U,
+        .context_operation_count = 14U,
         .vram_relocation_count = 2U,
         .flags = 7U,
         .gpc_count = 1U,
@@ -1757,6 +1789,49 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
     };
     assert(device_domain_install_dma_relocation_policy(
         device, &relocation_policy) == 0);
+    const device_domain_dma_vm_page_mode_policy_t page_mode_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(page_mode_policy),
+        .policy_count = 1U,
+        .policies = {{
+            .policy_id = 17U,
+            .region_index = 0U,
+            .register_offset = 0x00100C80U,
+            .width = sizeof(uint32_t),
+            .writable_mask = 1U,
+        }},
+    };
+    assert(device_domain_install_dma_vm_page_mode_policy(
+        device, &page_mode_policy) == 0);
+    uint32_t fecs_data[2] = {0x11223344U, 0x55667788U};
+    uint32_t fecs_code[64];
+    uint32_t gpccs_data[3] = {0x01020304U, 0xAABBCCDDU, 0x13579BDFU};
+    uint32_t gpccs_code[64];
+    for (uint32_t index = 0U; index < 64U; ++index) {
+        fecs_code[index] = 0x10000000U | index;
+        gpccs_code[index] = 0x20000000U | index;
+    }
+    const device_domain_gr_firmware_policy_t firmware_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(firmware_policy),
+        .policy_id = 1U,
+        .region_index = 0U,
+        .pmc_enable_offset = 0x00000200U,
+        .pmc_gr_mask = 0x00001000U,
+        .image_count = DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT,
+        .images = {
+            {0x00070000U, 2U, firmware_crc32(fecs_data, 2U),
+             TEST_FECS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_DMEM, {0U}},
+            {0x00070400U, 64U, firmware_crc32(fecs_code, 64U),
+             TEST_FECS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_IMEM, {0U}},
+            {0x00071000U, 3U, firmware_crc32(gpccs_data, 3U),
+             TEST_GPCCS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_DMEM, {0U}},
+            {0x00071400U, 64U, firmware_crc32(gpccs_code, 64U),
+             TEST_GPCCS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_IMEM, {0U}},
+        },
+    };
+    assert(device_domain_install_gr_firmware_policy(
+        device, &firmware_policy) == 0);
     const device_domain_gr_prerequisite_policy_t prerequisite_policy = {
         .version = DEVICE_DOMAIN_ABI_VERSION,
         .struct_size = sizeof(prerequisite_policy),
@@ -1784,7 +1859,8 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
     assert(device_domain_install_gr_prerequisite_policy(
         device, &prerequisite_policy) == -16);
 
-    for (uint32_t generation = 70U; generation < 72U; ++generation) {
+    for (uint32_t generation = 70U; generation < 73U; ++generation) {
+        const uint32_t writes_before_generation = region_write_calls;
         device_domain_handle_t handle = 0U;
         const int pid = (int)generation;
         assert(device_domain_claim(pid, generation, device,
@@ -1803,7 +1879,15 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
         device_domain_resource_handle_t dma = 0U;
         assert(bind_dma_resource(pid, generation, handle, 0U, &dma) == 0);
         device_domain_gr_execution_header_t header;
-        device_domain_gr_execution_op_t operations[13];
+        assert(device_domain_dma_write(pid, generation, dma, 0x00070000U,
+            fecs_data, sizeof(fecs_data)) == 0);
+        assert(device_domain_dma_write(pid, generation, dma, 0x00070400U,
+            fecs_code, sizeof(fecs_code)) == 0);
+        assert(device_domain_dma_write(pid, generation, dma, 0x00071000U,
+            gpccs_data, sizeof(gpccs_data)) == 0);
+        assert(device_domain_dma_write(pid, generation, dma, 0x00071400U,
+            gpccs_code, sizeof(gpccs_code)) == 0);
+        device_domain_gr_execution_op_t operations[17];
         build_gr_prerequisite_image(
             &header, operations, generation == 71U);
         assert(device_domain_dma_write(pid, generation, dma, 0x00072000U,
@@ -1833,13 +1917,70 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
             .dma = dma,
             .policy_id = 1U,
         };
-        const int expected = generation == 70U ? 0 : -84;
+        const int expected = generation == 71U ? -84 : 0;
         assert(device_domain_gr_prerequisites(
             pid, generation, &request) == expected);
-        if (expected == 0)
+        if (expected == 0) {
             assert(device_domain_gr_prerequisites(
                 pid, generation, &request) == -13);
-        assert(region_write_calls == 0U && enable_calls == 0U);
+            assert(region_write_calls == writes_before_generation &&
+                   enable_calls == 0U);
+            const device_domain_dma_vm_page_mode_request_t page_mode = {
+                .version = DEVICE_DOMAIN_ABI_VERSION,
+                .struct_size = sizeof(page_mode),
+                .device = handle,
+                .region = region.resource,
+                .dma = dma,
+                .policy_id = 17U,
+            };
+            assert(device_domain_dma_vm_page_mode(
+                pid, generation, &page_mode) == 0);
+            const device_domain_gr_firmware_request_t upload = {
+                .version = DEVICE_DOMAIN_ABI_VERSION,
+                .struct_size = sizeof(upload),
+                .device = handle,
+                .region = region.resource,
+                .dma = dma,
+                .policy_id = 1U,
+            };
+            tracked_region_offset = 0x00000200U;
+            tracked_region_value = 0xA5A51000U;
+            assert(device_domain_gr_firmware_upload(
+                pid, generation, &upload) == 0);
+            const device_domain_gr_execution_request_t execute = {
+                .version = DEVICE_DOMAIN_ABI_VERSION,
+                .struct_size = sizeof(execute),
+                .device = handle,
+                .region = region.resource,
+                .dma = dma,
+                .policy_id = 1U,
+            };
+            device_domain_gr_execution_result_t result;
+            gr_execution_test_mode = true;
+            if (generation == 72U) {
+                gr_execution_ready = false;
+                assert(device_domain_gr_execute(
+                    pid, generation, &execute, &result) == -110);
+                assert((tracked_region_value & 0x00001000U) == 0x00001000U);
+                gr_execution_ready = true;
+                gr_execution_test_mode = false;
+                assert(device_domain_gr_firmware_upload(
+                    pid, generation, &upload) == 0);
+                gr_execution_test_mode = true;
+            }
+            assert(device_domain_gr_execute(
+                pid, generation, &execute, &result) == 0);
+            assert(result.flags == DEVICE_DOMAIN_GR_EXECUTION_READY);
+            assert(result.operation_count == 17U);
+            assert(result.context_size == 0x2000U);
+            assert(device_domain_gr_execute(
+                pid, generation, &execute, &result) == -13);
+            assert(enable_calls == 0U && region_write_calls > 0U);
+            gr_execution_test_mode = false;
+        } else {
+            assert(region_write_calls == writes_before_generation &&
+                   enable_calls == 0U);
+        }
         assert(device_domain_release(pid, generation, handle, 100U) == 0);
     }
 }

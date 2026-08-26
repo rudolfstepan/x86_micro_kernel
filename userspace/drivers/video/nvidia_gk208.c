@@ -34,6 +34,7 @@
 #define NVIDIA_DIAGNOSTIC_GR_PLAN 0x4E610000U
 #define NVIDIA_DIAGNOSTIC_GR_EXECUTION_IMAGE 0x4E620000U
 #define NVIDIA_DIAGNOSTIC_GR_PREREQUISITES 0x4E630000U
+#define NVIDIA_DIAGNOSTIC_GR_EXECUTED 0x4E640000U
 #define NVIDIA_GR_PREREQUISITE_POLICY_ID 1U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
@@ -591,6 +592,17 @@ static int gpu_gr_firmware_upload(nvidia_driver_t *driver) {
             REIST_NVIDIA_GK208_GR_FIRMWARE_TOTAL_WORDS);
 }
 
+static int gpu_gr_execute(nvidia_driver_t *driver) {
+    x86os_device_gr_execution_result_t result;
+    int status = x86os_device_gr_execute(
+        driver->bootstrap.device, driver->registers, driver->dma,
+        NVIDIA_GR_PREREQUISITE_POLICY_ID, &result);
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_EXECUTED | (result.context_size & 0xFFFFU));
+}
+
 static int activate(nvidia_driver_t *driver) {
     x86os_display_driver_request_t response;
     int status = driver_command(
@@ -721,6 +733,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = gpu_vm_apply_page_mode(driver);
     if (status != 0) return status;
     status = gpu_gr_firmware_upload(driver);
+    if (status != 0) return status;
+    status = gpu_gr_execute(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

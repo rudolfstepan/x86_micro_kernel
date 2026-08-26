@@ -40,6 +40,7 @@
 #define DEVICE_DOMAIN_GR_EXECUTION_OP_CAPACITY 2048U
 #define DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES 64U
 #define DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES 16U
+#define DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS 5000U
 #define DEVICE_DOMAIN_GR_MAX_GPCS 32U
 #define DEVICE_DOMAIN_GR_MAX_FBPS 8U
 #define DEVICE_DOMAIN_GR_MAX_FBPAS 16U
@@ -82,6 +83,7 @@ enum {
     DEVICE_DOMAIN_CONTROL_DMA_VM_PAGE_MODE = 20U,
     DEVICE_DOMAIN_CONTROL_GR_FIRMWARE_UPLOAD = 21U,
     DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES = 22U,
+    DEVICE_DOMAIN_CONTROL_GR_EXECUTE = 23U,
 };
 
 enum {
@@ -500,6 +502,32 @@ typedef struct {
     uint32_t version;
     uint32_t struct_size;
     device_domain_handle_t device;
+    device_domain_resource_handle_t region;
+    device_domain_resource_handle_t dma;
+    uint32_t policy_id;
+    uint32_t flags;
+    uint32_t reserved[3];
+} device_domain_gr_execution_request_t;
+
+enum {
+    DEVICE_DOMAIN_GR_EXECUTION_READY = 1U << 0U,
+};
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    uint32_t policy_id;
+    uint32_t operation_count;
+    uint32_t context_size;
+    uint32_t flags;
+    uint32_t reserved;
+} device_domain_gr_execution_result_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
     uint32_t mode;
     uint32_t session_slot;
     uint32_t session_generation;
@@ -663,6 +691,10 @@ _Static_assert(sizeof(device_domain_gr_prerequisite_policy_t) == 72U,
                "device-domain GR prerequisite policy ABI changed");
 _Static_assert(sizeof(device_domain_gr_prerequisite_request_t) == 40U,
                "device-domain GR prerequisite request ABI changed");
+_Static_assert(sizeof(device_domain_gr_execution_request_t) == 40U,
+               "device-domain GR execution request ABI changed");
+_Static_assert(sizeof(device_domain_gr_execution_result_t) == 32U,
+               "device-domain GR execution result ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -792,6 +824,11 @@ int device_domain_gr_firmware_upload(
 int device_domain_gr_prerequisites(
     int pid, uint32_t process_generation,
     const device_domain_gr_prerequisite_request_t *request);
+/** Execute one validated GK208 LTC/GR pre-start transaction. */
+int device_domain_gr_execute(
+    int pid, uint32_t process_generation,
+    const device_domain_gr_execution_request_t *request,
+    device_domain_gr_execution_result_t *result);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);

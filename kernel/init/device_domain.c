@@ -39,6 +39,17 @@
 #define GK208_LTC_TAG_BLOCK_BYTES 0x00006000U
 #define GK208_LTC_TAG_MIN_MARGIN 0x00006000U
 #define GK208_LTC_TAG_ALIGN_PER_LTC 0x00000800U
+#define GK208_LTC_COUNT 0x0017E8D8U
+#define GK208_LTC_ACTIVE_COUNT 0x0017E000U
+#define GK208_LTC_TAG_BASE 0x0017E8D4U
+#define GK208_LTC_PAGE_MODE 0x0017E8C0U
+#define GK208_LTC_CBC_START 0x0017E8CCU
+#define GK208_LTC_CBC_LIMIT 0x0017E8D0U
+#define GK208_LTC_CBC_COMMAND 0x0017E8C8U
+#define GK208_LTC_CBC_STATUS_BASE 0x001410C8U
+#define GK208_LTC_CBC_STATUS_LTC_STRIDE 0x00002000U
+#define GK208_LTC_CBC_STATUS_SLICE_STRIDE 0x00000400U
+#define GK208_LTC_CBC_CLEAR_COMMAND 0x00000004U
 #define GK208_VRAM_VGA_HEAD_BYTES 0x00040000U
 #define GK208_VRAM_VBIOS_TAIL_BYTES 0x00100000U
 
@@ -97,6 +108,11 @@ typedef struct {
     uint32_t gr_prerequisite_tag_base;
     uint32_t gr_prerequisite_vram_bytes;
     uint32_t gr_prerequisite_ltc_count;
+    uint32_t gr_prerequisite_lts_count;
+    uint32_t gr_prerequisite_tag_count;
+    uint8_t gr_execution_active;
+    uint32_t gr_execution_operation_count;
+    uint32_t gr_execution_context_size;
 } device_slot_t;
 
 typedef struct {
@@ -847,6 +863,15 @@ static void clear_gr_prerequisite_state(device_slot_t *device) {
     device->gr_prerequisite_tag_base = 0U;
     device->gr_prerequisite_vram_bytes = 0U;
     device->gr_prerequisite_ltc_count = 0U;
+    device->gr_prerequisite_lts_count = 0U;
+    device->gr_prerequisite_tag_count = 0U;
+}
+
+static void clear_gr_execution_state(device_slot_t *device) {
+    if (device == NULL) return;
+    device->gr_execution_active = 0U;
+    device->gr_execution_operation_count = 0U;
+    device->gr_execution_context_size = 0U;
 }
 
 static bool fence_slot(device_slot_t *device) {
@@ -856,9 +881,10 @@ static bool fence_slot(device_slot_t *device) {
         platform_ops.set_bus_master(device->pci_location, false);
     bool gr_firmware_reset = mastering_disabled &&
         reset_gr_firmware_state(device);
+    if (gr_firmware_reset) clear_gr_execution_state(device);
     bool page_mode_restored = gr_firmware_reset &&
         restore_dma_vm_page_mode(device);
-    clear_gr_prerequisite_state(device);
+    if (gr_firmware_reset) clear_gr_prerequisite_state(device);
     bool irq_revoked = device->irq_bound == 0U || platform_ops.revoke_irq(
         device->pci_location, device->owner_pid, device->owner_generation,
         device->irq_capability);
@@ -2603,6 +2629,8 @@ typedef struct {
     uint32_t tag_base;
     uint32_t vram_bytes;
     uint32_t ltc_count;
+    uint32_t lts_count;
+    uint32_t tag_count;
 } gr_prerequisite_plan_t;
 
 _Static_assert(sizeof(gr_prerequisite_topology_t) ==
@@ -2749,6 +2777,9 @@ static bool gr_execution_image_valid(
     uint32_t hub_start = 0U;
     uint32_t ready_waits = 0U;
     uint32_t size_reads = 0U;
+    uint32_t context_base = 0U;
+    uint32_t context_remaining = 0U;
+    uint32_t context_stage = 0U;
     const uint8_t *operations = storage + policy->execution_pool_offset +
         DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES;
     for (uint32_t index = 0U; index < header.operation_count; ++index) {
@@ -2760,26 +2791,42 @@ static bool gr_execution_image_valid(
         crc = gr_crc32_word(crc, operation.address);
         crc = gr_crc32_word(crc, operation.value);
         crc = gr_crc32_word(crc, operation.mask);
+        if (context_remaining != 0U &&
+            operation.opcode != DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER)
+            return false;
         switch (operation.opcode) {
         case DEVICE_DOMAIN_GR_OP_WRITE32:
             if (!gr_operation_address_valid(region, operation.address) ||
                 operation.mask != 0U) return false;
-            if (operation.address == 0x0040910CU && operation.value == 0U)
+            if (operation.address == 0x0040910CU && operation.value == 0U) {
+                if (context_stage != 1U || context_remaining != 0U ||
+                    context_groups != 5U)
+                    return false;
+                context_stage = 2U;
                 ++hub_command;
-            if (operation.address == 0x00409100U && operation.value == 2U)
+            } else if (operation.address == 0x00409100U &&
+                       operation.value == 2U) {
+                if (context_stage != 2U) return false;
+                context_stage = 3U;
                 ++hub_start;
+            } else if (context_stage != 0U) {
+                return false;
+            }
             break;
         case DEVICE_DOMAIN_GR_OP_MASK32:
+            if (context_stage != 0U) return false;
             if (!gr_operation_address_valid(region, operation.address) ||
                 operation.mask == 0U ||
                 (operation.value & ~operation.mask) != 0U) return false;
             break;
         case DEVICE_DOMAIN_GR_OP_COPY_MASKED32:
+            if (context_stage != 0U) return false;
             if (!gr_operation_address_valid(region, operation.address) ||
                 !gr_operation_address_valid(region, operation.value) ||
                 operation.mask == 0U) return false;
             break;
         case DEVICE_DOMAIN_GR_OP_VRAM_OFFSET32:
+            if (context_stage != 0U) return false;
             if (operation.address == 0x004188B4U &&
                 operation.value == 1U && operation.mask == 8U)
                 vram_mask |= 1U;
@@ -2790,35 +2837,49 @@ static bool gr_execution_image_valid(
                 return false;
             break;
         case DEVICE_DOMAIN_GR_OP_WAIT_IDLE:
+            if (context_stage != 0U) return false;
             if (operation.address != 0x00400700U ||
                 operation.value != 0x0040060CU ||
                 operation.mask != 2000U) return false;
             ++idle_waits;
             break;
         case DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP:
-            if ((operation.address != 0x00409000U &&
+            if (context_remaining != 0U ||
+                (context_stage != 0U && context_stage != 1U) ||
+                (operation.address != 0x00409000U &&
                  operation.address != 0x0041A000U) ||
                 (operation.value != 0U && operation.value != 4U &&
                  operation.value != 8U) ||
                 operation.mask == 0U || operation.mask > 256U)
                 return false;
+            context_base = operation.address;
+            context_remaining = operation.mask;
+            context_stage = 1U;
             ++context_groups;
             break;
         case DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER:
             if ((operation.address != 0x004091C4U &&
-                 operation.address != 0x0041A1C4U) || operation.mask != 0U)
+                 operation.address != 0x0041A1C4U) || operation.mask != 0U ||
+                context_remaining == 0U ||
+                operation.address != context_base + 0x1C4U)
                 return false;
+            --context_remaining;
             ++context_transfers;
             break;
         case DEVICE_DOMAIN_GR_OP_WAIT_MASK32:
-            if (operation.address != 0x00409800U ||
+            if (context_stage != 3U ||
+                operation.address != 0x00409800U ||
                 operation.value != 0x80000000U ||
                 operation.mask != 2000U) return false;
+            context_stage = 4U;
             ++ready_waits;
             break;
         case DEVICE_DOMAIN_GR_OP_READ32_NONZERO:
-            if (operation.address != 0x00409804U || operation.value != 0U ||
-                operation.mask != 0U) return false;
+            if (context_stage != 4U ||
+                operation.address != 0x00409804U || operation.value != 0U ||
+                operation.mask != 0U || index + 1U != header.operation_count)
+                return false;
+            context_stage = 5U;
             ++size_reads;
             break;
         default:
@@ -2828,6 +2889,8 @@ static bool gr_execution_image_valid(
     crc = ~crc;
     if (crc != header.operation_crc32 || vram_mask != 3U ||
         idle_waits != 1U || context_groups != 5U ||
+        context_remaining != 0U ||
+        context_stage != 5U ||
         context_transfers == 0U || hub_command != 1U || hub_start != 1U ||
         ready_waits != 1U || size_reads != 1U ||
         header.context_operation_count !=
@@ -2932,6 +2995,8 @@ static bool gr_build_prerequisite_plan(
         .tag_base = (uint32_t)tag_base,
         .vram_bytes = (uint32_t)vram_bytes,
         .ltc_count = ltc_count,
+        .lts_count = lts_count,
+        .tag_count = (uint32_t)tag_count,
     };
     return true;
 }
@@ -3003,6 +3068,360 @@ int device_domain_gr_prerequisites(
     device->gr_prerequisite_tag_base = plan.tag_base;
     device->gr_prerequisite_vram_bytes = plan.vram_bytes;
     device->gr_prerequisite_ltc_count = plan.ltc_count;
+    device->gr_prerequisite_lts_count = plan.lts_count;
+    device->gr_prerequisite_tag_count = plan.tag_count;
+    end_operation();
+    return 0;
+}
+
+static bool gr_plan_matches_device(
+        const gr_prerequisite_plan_t *plan, const device_slot_t *device) {
+    return plan != NULL && device != NULL &&
+        plan->mmu_read_offset == device->gr_prerequisite_mmu_read_offset &&
+        plan->mmu_write_offset == device->gr_prerequisite_mmu_write_offset &&
+        plan->tag_offset == device->gr_prerequisite_tag_offset &&
+        plan->tag_bytes == device->gr_prerequisite_tag_bytes &&
+        plan->tag_base == device->gr_prerequisite_tag_base &&
+        plan->vram_bytes == device->gr_prerequisite_vram_bytes &&
+        plan->ltc_count == device->gr_prerequisite_ltc_count &&
+        plan->lts_count == device->gr_prerequisite_lts_count &&
+        plan->tag_count == device->gr_prerequisite_tag_count;
+}
+
+static bool gr_deadline_valid(uint64_t started, uint64_t deadline) {
+    const uint64_t now = platform_ops.monotonic_ms();
+    return now >= started && now < deadline;
+}
+
+static bool gr_wait_one_ms(uint64_t started, uint64_t deadline) {
+    if (!gr_deadline_valid(started, deadline)) return false;
+#ifndef REIST_HOST_TEST
+    if (scheduler_sleep_ms(1U) != 0 && scheduler_yield() != 0) return false;
+#endif
+    return true;
+}
+
+static int gr_zero_vram_buffer(
+        const device_domain_region_info_t *vram, uint32_t offset,
+        uint32_t bytes, uint64_t started, uint64_t deadline) {
+    if (vram == NULL || bytes == 0U || (offset & 3U) != 0U ||
+        (bytes & 3U) != 0U || vram->base_high != 0U ||
+        offset > vram->length_low || bytes > vram->length_low - offset ||
+        vram->base_low > UINT32_MAX - offset)
+        return -84;
+    device_domain_region_info_t window = *vram;
+    window.base_low += offset;
+    window.length_low = bytes;
+    window.length_high = 0U;
+    if (!platform_ops.prepare_region(&window)) return -5;
+    for (uint32_t cursor = 0U; cursor < bytes; cursor += 4U) {
+        if ((cursor & 0x3FFU) == 0U &&
+            !gr_deadline_valid(started, deadline))
+            return -110;
+        if (!platform_ops.write_region(
+                &window, cursor, sizeof(uint32_t), 0U))
+            return -5;
+    }
+    return 0;
+}
+
+static int gr_wait_mask(
+        const device_domain_region_info_t *region, uint32_t offset,
+        uint32_t mask, uint32_t expected, uint32_t timeout_ms,
+        uint64_t started, uint64_t deadline) {
+    if (region == NULL || mask == 0U || timeout_ms == 0U ||
+        timeout_ms > DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS)
+        return -84;
+    for (uint32_t attempt = 0U; attempt < timeout_ms; ++attempt) {
+        uint32_t value = 0U;
+        if (!gr_read32(region, offset, &value)) return -5;
+        if ((value & mask) == expected) return 0;
+        if (!gr_wait_one_ms(started, deadline)) return -110;
+    }
+    return -110;
+}
+
+static int gr_wait_idle(
+        const device_domain_region_info_t *region,
+        const device_domain_gr_execution_op_t *operation,
+        uint64_t started, uint64_t deadline) {
+    for (uint32_t attempt = 0U; attempt < operation->mask; ++attempt) {
+        uint32_t update = 0U;
+        uint32_t busy = 0U;
+        if (!gr_read32(region, operation->address, &update) ||
+            !gr_read32(region, operation->value, &busy))
+            return -5;
+        if ((busy & 1U) == 0U) return 0;
+        if (!gr_wait_one_ms(started, deadline)) return -110;
+    }
+    return -110;
+}
+
+static int gr_initialize_ltc(
+        const device_domain_region_info_t *region,
+        const gr_prerequisite_plan_t *plan,
+        uint64_t started, uint64_t deadline) {
+    uint32_t page = 0U;
+    uint32_t mode = 0U;
+    if (region == NULL || plan == NULL || plan->ltc_count == 0U ||
+        plan->lts_count == 0U || plan->tag_count == 0U ||
+        !gr_read32(region, GK208_FB_PAGE_CONFIG, &page) ||
+        !gr_read32(region, GK208_LTC_PAGE_MODE, &mode))
+        return -5;
+    const uint32_t lpg128 = (page & 1U) == 0U ? 2U : 0U;
+    const uint32_t target_mode = (mode & ~2U) | lpg128;
+    if (!platform_ops.write_region(region, GK208_LTC_COUNT,
+            sizeof(uint32_t), plan->ltc_count) ||
+        !platform_ops.write_region(region, GK208_LTC_ACTIVE_COUNT,
+            sizeof(uint32_t), plan->ltc_count) ||
+        !platform_ops.write_region(region, GK208_LTC_TAG_BASE,
+            sizeof(uint32_t), plan->tag_base) ||
+        !platform_ops.write_region(region, GK208_LTC_PAGE_MODE,
+            sizeof(uint32_t), target_mode) ||
+        !platform_ops.write_region(region, GK208_LTC_CBC_START,
+            sizeof(uint32_t), 0U) ||
+        !platform_ops.write_region(region, GK208_LTC_CBC_LIMIT,
+            sizeof(uint32_t), plan->tag_count - 1U) ||
+        !platform_ops.write_region(region, GK208_LTC_CBC_COMMAND,
+            sizeof(uint32_t), GK208_LTC_CBC_CLEAR_COMMAND))
+        return -5;
+    for (uint32_t ltc = 0U; ltc < plan->ltc_count; ++ltc) {
+        for (uint32_t slice = 0U; slice < plan->lts_count; ++slice) {
+            const uint32_t status = GK208_LTC_CBC_STATUS_BASE +
+                ltc * GK208_LTC_CBC_STATUS_LTC_STRIDE +
+                slice * GK208_LTC_CBC_STATUS_SLICE_STRIDE;
+            int result = gr_wait_mask(region, status, UINT32_MAX, 0U,
+                2000U, started, deadline);
+            if (result != 0) return result;
+        }
+    }
+    return 0;
+}
+
+static int gr_execute_operations(
+        const uint8_t *storage, uint32_t pool_offset,
+        const device_domain_gr_execution_header_t *header,
+        const device_domain_region_info_t *region,
+        const gr_prerequisite_plan_t *plan,
+        uint64_t started, uint64_t deadline, uint32_t *context_size) {
+    if (storage == NULL || header == NULL || region == NULL || plan == NULL ||
+        context_size == NULL)
+        return -22;
+    const uint8_t *operations = storage + pool_offset +
+        DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES;
+    uint32_t context_base = 0U;
+    uint32_t context_starstar = 0U;
+    uint32_t context_star = 0U;
+    uint32_t context_remaining = 0U;
+    for (uint32_t index = 0U; index < header->operation_count; ++index) {
+        if (!gr_deadline_valid(started, deadline)) return -110;
+        device_domain_gr_execution_op_t operation;
+        memcpy(&operation,
+               operations + index * DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES,
+               sizeof(operation));
+        uint32_t value = 0U;
+        int wait_result = 0;
+        switch (operation.opcode) {
+        case DEVICE_DOMAIN_GR_OP_WRITE32:
+            if (!platform_ops.write_region(region, operation.address,
+                    sizeof(uint32_t), operation.value))
+                return -5;
+            break;
+        case DEVICE_DOMAIN_GR_OP_MASK32:
+            if (!gr_read32(region, operation.address, &value) ||
+                !platform_ops.write_region(region, operation.address,
+                    sizeof(uint32_t),
+                    (value & ~operation.mask) | operation.value))
+                return -5;
+            break;
+        case DEVICE_DOMAIN_GR_OP_COPY_MASKED32:
+            if (!gr_read32(region, operation.value, &value) ||
+                !platform_ops.write_region(region, operation.address,
+                    sizeof(uint32_t), value & operation.mask))
+                return -5;
+            break;
+        case DEVICE_DOMAIN_GR_OP_VRAM_OFFSET32: {
+            const uint32_t offset = operation.value == 1U
+                ? plan->mmu_write_offset : plan->mmu_read_offset;
+            if (operation.mask >= 32U ||
+                (offset & ((1U << operation.mask) - 1U)) != 0U ||
+                !platform_ops.write_region(region, operation.address,
+                    sizeof(uint32_t), offset >> operation.mask))
+                return -5;
+            break;
+        }
+        case DEVICE_DOMAIN_GR_OP_WAIT_IDLE:
+            wait_result = gr_wait_idle(
+                region, &operation, started, deadline);
+            if (wait_result != 0) return wait_result;
+            break;
+        case DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP: {
+            uint32_t first = 0U;
+            uint32_t second = 0U;
+            context_base = operation.address;
+            context_starstar = operation.value;
+            if (!platform_ops.write_region(region, context_base + 0x1C0U,
+                    sizeof(uint32_t), 0x02000000U + context_starstar) ||
+                !gr_read32(region, context_base + 0x1C4U, &first) ||
+                !gr_read32(region, context_base + 0x1C4U, &second))
+                return -5;
+            context_star = first > second ? first : second;
+            if ((context_star & 3U) != 0U || context_star > 0x00FFFFFCU ||
+                !platform_ops.write_region(region, context_base + 0x1C0U,
+                    sizeof(uint32_t), 0x01000000U + context_star))
+                return -84;
+            context_remaining = operation.mask;
+            break;
+        }
+        case DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER:
+            if (context_remaining == 0U ||
+                operation.address != context_base + 0x1C4U ||
+                !platform_ops.write_region(region, operation.address,
+                    sizeof(uint32_t), operation.value))
+                return -5;
+            --context_remaining;
+            if (context_remaining == 0U &&
+                (!platform_ops.write_region(region, context_base + 0x1C0U,
+                    sizeof(uint32_t), 0x01000004U + context_starstar) ||
+                 !platform_ops.write_region(region, context_base + 0x1C4U,
+                    sizeof(uint32_t), context_star + 4U)))
+                return -5;
+            break;
+        case DEVICE_DOMAIN_GR_OP_WAIT_MASK32:
+            wait_result = gr_wait_mask(region, operation.address,
+                operation.value, operation.value, operation.mask,
+                started, deadline);
+            if (wait_result != 0) return wait_result;
+            break;
+        case DEVICE_DOMAIN_GR_OP_READ32_NONZERO:
+            if (!gr_read32(region, operation.address, &value)) return -5;
+            if (value == 0U) return -84;
+            *context_size = value;
+            break;
+        default:
+            return -84;
+        }
+    }
+    return context_remaining == 0U && *context_size != 0U ? 0 : -84;
+}
+
+static int gr_execution_rollback(device_slot_t *device, int status) {
+    if (reset_gr_firmware_state(device)) {
+        clear_gr_execution_state(device);
+        return status;
+    }
+    (void)fence_slot(device);
+    return -5;
+}
+
+int device_domain_gr_execute(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_execution_request_t *request,
+        device_domain_gr_execution_result_t *result) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || result == NULL ||
+        request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->policy_id == 0U || request->flags != 0U ||
+        request->reserved[0] != 0U || request->reserved[1] != 0U ||
+        request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(
+        pid, process_generation, request->device);
+    resource_slot_t *region = owned_resource_locked(
+        pid, process_generation, request->region,
+        DEVICE_DOMAIN_RESOURCE_REGION);
+    resource_slot_t *dma = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(dma);
+    if (device == NULL || region == NULL || dma == NULL) {
+        end_operation();
+        return -9;
+    }
+    const uint32_t device_index = (uint32_t)(device - devices);
+    const device_domain_gr_prerequisite_policy_t *policy =
+        &device->gr_prerequisite_policy;
+    if (region->device_slot != device_index || dma->device_slot != device_index ||
+        region->device_generation != device->generation ||
+        dma->device_generation != device->generation ||
+        device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
+        pool->sealed == 0U || device->gr_prerequisite_active == 0U ||
+        device->dma_vm_page_mode_active == 0U ||
+        device->gr_firmware_active == 0U ||
+        device->gr_execution_active != 0U ||
+        request->policy_id != policy->policy_id ||
+        region->region.region_index != policy->region_index ||
+        (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U) {
+        end_operation();
+        return -13;
+    }
+
+    const uint32_t pool_index = dma->platform_capability - 1U;
+    const uint8_t *storage = dma_pool_storage[pool_index];
+    gr_prerequisite_topology_t topology;
+    gr_prerequisite_topology_t confirmed_topology;
+    gr_prerequisite_plan_t plan;
+    uint32_t image_crc = 0U;
+    device_domain_gr_execution_header_t header;
+    memcpy(&header, storage + policy->execution_pool_offset, sizeof(header));
+    device_domain_region_info_t vram;
+    bool preflight = gr_sample_topology(&region->region, &topology) &&
+        gr_execution_image_valid(storage, pool->capacity, policy,
+            &region->region, &topology, &image_crc) &&
+        gr_build_prerequisite_plan(&region->region, policy, &plan) &&
+        gr_sample_topology(&region->region, &confirmed_topology) &&
+        memcmp(&topology, &confirmed_topology, sizeof(topology)) == 0 &&
+        gr_plan_matches_device(&plan, device) &&
+        image_crc == device->gr_prerequisite_image_crc &&
+        gr_topology_crc32(&topology) ==
+            device->gr_prerequisite_topology_crc &&
+        platform_ops.describe_region(device->pci_location,
+            policy->vram_region_index, &vram) &&
+        (vram.flags & DEVICE_DOMAIN_REGION_MMIO) != 0U &&
+        (vram.flags & DEVICE_DOMAIN_REGION_PIO) == 0U &&
+        vram.base_high == 0U && vram.length_high == 0U &&
+        vram.length_low == policy->vram_aperture_bytes;
+    if (!preflight) {
+        end_operation();
+        return -84;
+    }
+
+    const uint64_t started = platform_ops.monotonic_ms();
+    const uint64_t deadline = started >
+            UINT64_MAX - DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS
+        ? UINT64_MAX : started + DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS;
+    device->gr_execution_active = 1U;
+    int status = gr_zero_vram_buffer(&vram, plan.mmu_read_offset,
+        policy->fault_buffer_bytes, started, deadline);
+    if (status == 0)
+        status = gr_zero_vram_buffer(&vram, plan.mmu_write_offset,
+            policy->fault_buffer_bytes, started, deadline);
+    if (status == 0)
+        status = gr_initialize_ltc(
+            &region->region, &plan, started, deadline);
+    uint32_t context_size = 0U;
+    if (status == 0)
+        status = gr_execute_operations(storage, policy->execution_pool_offset,
+            &header, &region->region, &plan, started, deadline,
+            &context_size);
+    if (status != 0) {
+        status = gr_execution_rollback(device, status);
+        end_operation();
+        return status;
+    }
+    device->gr_execution_operation_count = header.operation_count;
+    device->gr_execution_context_size = context_size;
+    *result = (device_domain_gr_execution_result_t){
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(*result),
+        .device = request->device,
+        .policy_id = request->policy_id,
+        .operation_count = header.operation_count,
+        .context_size = context_size,
+        .flags = DEVICE_DOMAIN_GR_EXECUTION_READY,
+    };
     end_operation();
     return 0;
 }
