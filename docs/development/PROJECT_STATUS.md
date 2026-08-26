@@ -49,6 +49,17 @@ verborgen. Gleichzeitig weist der generische Mediator DMA-Binds von reinen
 `MEDIATED_IO`-Profilen jetzt vor einer Allokation ab; VMware bleibt dadurch
 unverändert DMA-frei. GPU-VM, RAMFC, Runlist, USERD, IRQ, Aktivierung,
 Busmaster und Capabilitybits bleiben offen.
+`R2.2k-nvidia-gk208-channel-image` ergänzt den exakten, weiterhin
+hardwareinaktiven Einzelkanal-Speichervertrag. Aus GK208s upstream Auswahl von
+`gk110_chan`/`gk110_runl` und deren GK104-Erbe entstehen ein vollständig
+validiertes 4-KiB-Instanz/RAMFC-Bild, 512 Byte nullinitialisiertes USERD und
+genau ein 8-Byte-Runlist-Eintrag für Kanal 1. Der 4-KiB-GPFIFO wird nur als
+GPU-VA-Platzierung beschrieben. Die physische USERD-Adresse bleibt in RAMFC
+null und wird durch genau eine noch ungelöste kernelverwaltete 64-Bit-
+Relokation bezeichnet. Ring 3 überträgt und verifiziert alle drei Bilder in
+höchstens 1024-Byte-Abschnitten, erhält aber weiterhin keine physische Adresse.
+GPU-VM, GR-Kontext, MMIO-Schreibrechte, Runlist-Commit, USERD-Kick, IRQ,
+Aktivierung, Busmaster und Capabilitybits bleiben offen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

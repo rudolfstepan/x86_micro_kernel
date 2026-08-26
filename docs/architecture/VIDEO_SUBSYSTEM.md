@@ -152,6 +152,20 @@ The fixed GPU virtual addresses are only a future page-table placement
 contract. No GPU mapping, RAMFC, runlist, DMA-address register, USERD kick,
 IRQ, activation or bus mastering exists yet, and capabilities remain zero.
 
+`R2.2k` seals the next hardware-inactive channel-memory boundary from the
+upstream Nouveau GK208 FIFO selection. GK208 uses `gk110_chan` and
+`gk110_runl`; its single-channel path inherits the GK104 4-KiB instance/RAMFC,
+512-byte USERD and 8-byte channel-runlist formats. REIST compiles one
+unprivileged channel ID 1 with a 4-KiB GPFIFO at the fixed placement VA,
+requires every unspecified word to remain zero and stages the three complete
+images in separate aligned DMA-pool windows. The two RAMFC USERD-address words
+remain zero. Exactly one symbolic 64-bit relocation names the kernel-owned
+USERD window, but this package deliberately does not resolve it or expose a
+physical address. The supervised self-test transfers and reads back each image
+in bounded chunks. GPU page directories, GR context pointers, channel binding,
+runlist commit, USERD PUT, register writes and hardware execution remain absent,
+so capabilities are still zero.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both image layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

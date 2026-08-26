@@ -7886,3 +7886,56 @@ evidence = [
   "QEMU framebuffer package passed in 25 seconds",
   "VMware framebuffer package passed in 26 seconds"
 ]
+
+[[packages]]
+id = "R2.2k-nvidia-gk208-channel-image"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Seal the fixed GK208 RAMFC USERD and runlist image"
+scope = "Extend the hardware-inactive GK208 staging contract with one fixed unprivileged single-channel image derived from upstream Nouveau's GK208 selection of gk110_chan/gk110_runl and the inherited GK104 RAMFC, USERD and channel-runlist formats. Reserve separate 4-KiB pool windows for zeroed USERD, one 4-KiB instance/RAMFC block and one single-entry runlist; compile only the exact documented RAMFC words, a 4-KiB GPFIFO GPU-VA placement and channel ID 1. Keep the USERD physical address words zero and describe exactly one unresolved kernel-owned 64-bit relocation instead of exposing or inventing a DMA address. Stage and read back all three images in the supervised Ring-3 self-test. This package performs no relocation, GPU page-table construction, GR context creation, MMIO write, USERD kick, IRQ bind, activation, bus-master enable, hardware submission or capability publication."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the image is the unprivileged single-channel GK208 path and uses the inherited GK104 0x1000-byte instance 0x200-byte USERD and 8-byte channel runlist formats",
+  "the fixed channel ID is nonzero and below the GK208 1024-channel limit and the runlist contains exactly that channel and no group entry",
+  "the 4-KiB GPFIFO length is a power of two and its RAMFC limit2 encoding is exact",
+  "all unspecified RAMFC USERD runlist and reserved words are zero and independently validated",
+  "the RAMFC USERD address remains zero with exactly one 64-bit kernel-owned relocation from the USERD pool window",
+  "all windows are 4-KiB aligned non-overlapping and remain inside the existing 64-KiB kernel-owned pool",
+  "Ring 3 stages and reads back the exact images but receives no physical address and performs no relocation",
+  "no MMIO write GPU VM GR context USERD kick IRQ activation bus mastering hardware submission or acceleration capability occurs"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the channel image requires a guessed physical address GR context pointer page-directory encoding or register write",
+  "the validator accepts a privileged RAMFC bit extra runlist entry nonzero unresolved address or nonzero padding",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: seal GK208 channel images"
+evidence = [
+  "NVIDIA GK208 host and source contract passed 12 tests including exact zero-padded RAMFC USERD runlist images and rejected mutations",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 24 seconds",
+  "VMware framebuffer package passed in 26 seconds"
+]

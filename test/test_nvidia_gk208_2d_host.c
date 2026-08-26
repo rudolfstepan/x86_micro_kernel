@@ -184,6 +184,51 @@ static void test_dma_staging_layout_is_fixed_and_nonoverlapping(void) {
         &mutated, &submission, 9U) == -84);
 }
 
+static void test_channel_image_is_exact_and_unrelocated(void) {
+    reist_nvidia_gk208_channel_image_t image;
+    assert(reist_nvidia_gk208_prepare_channel_image(&image) == 0);
+    assert(reist_nvidia_gk208_validate_channel_image(&image) == 0);
+    assert(image.ramfc_pool_offset == REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET);
+    assert(image.userd_pool_offset == REIST_NVIDIA_GK208_DMA_USERD_OFFSET);
+    assert(image.runlist_pool_offset ==
+           REIST_NVIDIA_GK208_DMA_RUNLIST_OFFSET);
+    assert(image.channel_id == REIST_NVIDIA_GK208_CHANNEL_ID);
+    assert(image.gpfifo_bytes == REIST_NVIDIA_GK208_GPFIFO_BYTES);
+    assert(image.ramfc[0x08U / sizeof(uint32_t)] == 0U);
+    assert(image.ramfc[0x0CU / sizeof(uint32_t)] == 0U);
+    assert(image.ramfc[0x10U / sizeof(uint32_t)] == 0x0000FACEU);
+    assert(image.ramfc[0x48U / sizeof(uint32_t)] ==
+           (uint32_t)REIST_NVIDIA_GK208_GPFIFO_GPU_ADDRESS);
+    assert(image.ramfc[0x4CU / sizeof(uint32_t)] == 0x00090000U);
+    assert(image.ramfc[0x94U / sizeof(uint32_t)] == 0x30000001U);
+    assert(image.ramfc[0xE4U / sizeof(uint32_t)] == 0U);
+    assert(image.ramfc[0xE8U / sizeof(uint32_t)] ==
+           REIST_NVIDIA_GK208_CHANNEL_ID);
+    assert(image.runlist[0] == REIST_NVIDIA_GK208_CHANNEL_ID);
+    assert(image.runlist[1] == 0U);
+    assert(image.userd_relocation.destination_pool_offset ==
+           REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET + 0x08U);
+    assert(image.userd_relocation.source_pool_offset ==
+           REIST_NVIDIA_GK208_DMA_USERD_OFFSET);
+    assert(image.userd_relocation.width == 8U);
+
+    reist_nvidia_gk208_channel_image_t mutated = image;
+    mutated.ramfc[0x14U / sizeof(uint32_t)] = 1U;
+    assert(reist_nvidia_gk208_validate_channel_image(&mutated) == -84);
+    mutated = image;
+    mutated.userd[0x40U / sizeof(uint32_t)] = 1U;
+    assert(reist_nvidia_gk208_validate_channel_image(&mutated) == -84);
+    mutated = image;
+    mutated.runlist[1] = 1U;
+    assert(reist_nvidia_gk208_validate_channel_image(&mutated) == -84);
+    mutated = image;
+    mutated.userd_relocation.destination_pool_offset += 4U;
+    assert(reist_nvidia_gk208_validate_channel_image(&mutated) == -84);
+    mutated = image;
+    mutated.ramfc_pool_offset = image.userd_pool_offset;
+    assert(reist_nvidia_gk208_validate_channel_image(&mutated) == -84);
+}
+
 int main(void) {
     test_fill_and_copy_are_bounded_and_validated();
     test_invalid_ranges_fail_closed();
@@ -191,7 +236,9 @@ int main(void) {
     test_submission_envelope_is_sealed();
     test_submission_ranges_fail_closed();
     test_dma_staging_layout_is_fixed_and_nonoverlapping();
+    test_channel_image_is_exact_and_unrelocated();
     assert(reist_nvidia_gk208_submission_self_test() == 0);
     assert(reist_nvidia_gk208_dma_staging_self_test() == 0);
+    assert(reist_nvidia_gk208_channel_image_self_test() == 0);
     return 0;
 }

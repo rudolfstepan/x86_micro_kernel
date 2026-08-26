@@ -49,6 +49,16 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET", header)
         self.assertIn("reist_nvidia_gk208_prepare_dma_staging", source)
         self.assertIn("reist_nvidia_gk208_validate_dma_staging", source)
+        self.assertIn("REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET", header)
+        self.assertIn("REIST_NVIDIA_GK208_DMA_USERD_OFFSET", header)
+        self.assertIn("REIST_NVIDIA_GK208_DMA_RUNLIST_OFFSET", header)
+        self.assertIn("REIST_NVIDIA_GK208_CHANNEL_LIMIT 1024U", header)
+        self.assertIn("reist_nvidia_gk208_prepare_channel_image", source)
+        self.assertIn("reist_nvidia_gk208_validate_channel_image", source)
+        self.assertIn("NVIDIA_GK208_GPFIFO_LIMIT2 9U", source)
+        self.assertIn("case 0x10U: return 0x0000FACEU", source)
+        self.assertIn("case 0xF8U: return 0x10003080U", source)
+        self.assertIn("case 0xFCU: return 0x10000010U", source)
         self.assertNotIn("malloc", source)
 
     def test_profile_is_exact_and_irqless(self):
@@ -118,12 +128,15 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("x86os_device_bind_dma_direction", driver)
         self.assertIn("x86os_device_dma_write", driver)
         self.assertIn("x86os_device_dma_read", driver)
+        self.assertIn("channel_image_dma_self_test", driver)
+        self.assertIn("X86OS_DEVICE_DMA_TRANSFER_MAX", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("x86os_device_activate", driver)
         self.assertNotIn("x86os_device_region_bind_dma", driver)
         self.assertIn("reist_nvidia_gk208_command_self_test", driver)
         self.assertIn("reist_nvidia_gk208_submission_self_test", driver)
         self.assertIn("reist_nvidia_gk208_dma_staging_self_test", driver)
+        self.assertIn("reist_nvidia_gk208_channel_image_self_test", driver)
 
     def test_driver_is_supervised_and_deadlines_are_bounded(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(

@@ -2321,6 +2321,16 @@ aber weder physische Adresse noch Mapping. Reine `MEDIATED_IO`-Profile können
 nun grundsätzlich keinen DMA-Pool mehr binden; nur die exakte GK208-Auswahl
 kombiniert IO und mediated DMA, während VMware DMA-frei bleibt. Die festen
 GPU-VAs sind lediglich der Platzierungsvertrag für das folgende GPU-VM-Paket.
+Das abgeschlossene `R2.2k` versiegelt außerdem das hardwareinaktive
+GK208-Einzelkanalbild. GK208 wählt upstream `gk110_chan` und `gk110_runl`; der
+Kanal übernimmt das GK104-RAMFC und verwendet für den nicht gruppierten Pfad
+genau einen 8-Byte-Runlist-Eintrag. Ein 4-KiB-Instanz/RAMFC-Block, 512 Byte
+USERD und die Runlist liegen in festen getrennten Poolfenstern, jedes
+nicht dokumentierte Wort muss null bleiben. Die RAMFC-USERD-Adresse bleibt
+ungesetzt und wird lediglich durch genau eine ungelöste kernelverwaltete
+64-Bit-Relokation beschrieben. Ring 3 liest die Bilder nach begrenztem
+Chunk-Staging bytegenau zurück, ohne Adresse, MMIO-Schreibrecht oder
+Hardwarewirkung zu erhalten.
 Das anschließende Hardware-Engine-Paket bleibt für GPU-VM, GK208-GR-
 Initialisierung einschließlich FECS/GPCCS, einen festen Kepler-GPFIFO-Kanal
 und einen echten deadlinebegrenzten Fence verantwortlich.

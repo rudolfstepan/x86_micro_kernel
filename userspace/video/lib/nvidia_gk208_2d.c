@@ -65,6 +65,16 @@
 #define NVIDIA_GK208_CLASS_BIND_WORDS 2U
 #define NVIDIA_GK208_FENCE_WORDS 5U
 #define NVIDIA_GK208_ADDRESS_LIMIT (1ULL << 40U)
+#define NVIDIA_GK208_GPFIFO_LIMIT2 9U
+#define NVIDIA_GK208_RAMFC_USERD_LOW_WORD (0x08U / sizeof(uint32_t))
+#define NVIDIA_GK208_RAMFC_USERD_HIGH_WORD (0x0CU / sizeof(uint32_t))
+
+_Static_assert(REIST_NVIDIA_GK208_GPFIFO_BYTES ==
+                   (8U << NVIDIA_GK208_GPFIFO_LIMIT2),
+               "GK208 GPFIFO limit2 no longer matches its fixed size");
+_Static_assert(REIST_NVIDIA_GK208_CHANNEL_ID <
+                   REIST_NVIDIA_GK208_CHANNEL_LIMIT,
+               "GK208 fixed channel ID is outside the hardware range");
 
 static const uint16_t fill_methods[NVIDIA_GK208_FILL_PACKET_COUNT] = {
     NV902D_SET_DST_FORMAT, NV902D_SET_DST_MEMORY_LAYOUT,
@@ -529,6 +539,104 @@ int reist_nvidia_gk208_prepare_dma_staging(
         staging, submission, fence_sequence);
 }
 
+static uint32_t channel_ramfc_expected_word(uint32_t index) {
+    switch (index * sizeof(uint32_t)) {
+        case 0x10U: return 0x0000FACEU;
+        case 0x30U: return 0xFFFFF902U;
+        case 0x48U:
+            return (uint32_t)REIST_NVIDIA_GK208_GPFIFO_GPU_ADDRESS;
+        case 0x4CU:
+            return (uint32_t)(REIST_NVIDIA_GK208_GPFIFO_GPU_ADDRESS >> 32U) |
+                (NVIDIA_GK208_GPFIFO_LIMIT2 << 16U);
+        case 0x84U: return 0x20400000U;
+        case 0x94U:
+            return 0x30000000U | REIST_NVIDIA_GK208_GR_DEVICE_MASK;
+        case 0x9CU: return 0x00000100U;
+        case 0xACU: return 0x0000001FU;
+        case 0xB8U: return 0xF8000000U;
+        case 0xE8U: return REIST_NVIDIA_GK208_CHANNEL_ID;
+        case 0xF8U: return 0x10003080U;
+        case 0xFCU: return 0x10000010U;
+        default: return 0U;
+    }
+}
+
+int reist_nvidia_gk208_validate_channel_image(
+        const reist_nvidia_gk208_channel_image_t *image) {
+    if (image == NULL ||
+        image->ramfc_pool_offset != REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET ||
+        image->ramfc_bytes != REIST_NVIDIA_GK208_RAMFC_BYTES ||
+        image->userd_pool_offset != REIST_NVIDIA_GK208_DMA_USERD_OFFSET ||
+        image->userd_bytes != REIST_NVIDIA_GK208_USERD_BYTES ||
+        image->runlist_pool_offset != REIST_NVIDIA_GK208_DMA_RUNLIST_OFFSET ||
+        image->runlist_bytes != REIST_NVIDIA_GK208_RUNLIST_BYTES ||
+        image->channel_id != REIST_NVIDIA_GK208_CHANNEL_ID ||
+        image->channel_id == 0U ||
+        image->channel_id >= REIST_NVIDIA_GK208_CHANNEL_LIMIT ||
+        image->gpfifo_bytes != REIST_NVIDIA_GK208_GPFIFO_BYTES)
+        return -84;
+    if (!dma_window_valid(image->ramfc_pool_offset, image->ramfc_bytes) ||
+        !dma_window_valid(image->userd_pool_offset, image->userd_bytes) ||
+        !dma_window_valid(image->runlist_pool_offset, image->runlist_bytes) ||
+        dma_windows_overlap(image->ramfc_pool_offset, image->ramfc_bytes,
+            image->userd_pool_offset, image->userd_bytes) ||
+        dma_windows_overlap(image->ramfc_pool_offset, image->ramfc_bytes,
+            image->runlist_pool_offset, image->runlist_bytes) ||
+        dma_windows_overlap(image->userd_pool_offset, image->userd_bytes,
+            image->runlist_pool_offset, image->runlist_bytes))
+        return -84;
+    if (image->userd_relocation.destination_pool_offset !=
+            REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET + 0x08U ||
+        image->userd_relocation.source_pool_offset !=
+            REIST_NVIDIA_GK208_DMA_USERD_OFFSET ||
+        image->userd_relocation.width !=
+            REIST_NVIDIA_GK208_ADDRESS_RELOCATION_WIDTH ||
+        image->userd_relocation.reserved != 0U)
+        return -84;
+
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_RAMFC_WORDS; ++index)
+        if (image->ramfc[index] != channel_ramfc_expected_word(index))
+            return -84;
+    if (image->ramfc[NVIDIA_GK208_RAMFC_USERD_LOW_WORD] != 0U ||
+        image->ramfc[NVIDIA_GK208_RAMFC_USERD_HIGH_WORD] != 0U)
+        return -84;
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_USERD_WORDS; ++index)
+        if (image->userd[index] != 0U) return -84;
+    if (image->runlist[0] != REIST_NVIDIA_GK208_CHANNEL_ID ||
+        image->runlist[1] != 0U)
+        return -84;
+    return 0;
+}
+
+int reist_nvidia_gk208_prepare_channel_image(
+        reist_nvidia_gk208_channel_image_t *image) {
+    if (image == NULL) return -22;
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_RAMFC_WORDS; ++index)
+        image->ramfc[index] = channel_ramfc_expected_word(index);
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_USERD_WORDS; ++index)
+        image->userd[index] = 0U;
+    image->runlist[0] = REIST_NVIDIA_GK208_CHANNEL_ID;
+    image->runlist[1] = 0U;
+    image->ramfc_pool_offset = REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET;
+    image->ramfc_bytes = REIST_NVIDIA_GK208_RAMFC_BYTES;
+    image->userd_pool_offset = REIST_NVIDIA_GK208_DMA_USERD_OFFSET;
+    image->userd_bytes = REIST_NVIDIA_GK208_USERD_BYTES;
+    image->runlist_pool_offset = REIST_NVIDIA_GK208_DMA_RUNLIST_OFFSET;
+    image->runlist_bytes = REIST_NVIDIA_GK208_RUNLIST_BYTES;
+    image->channel_id = REIST_NVIDIA_GK208_CHANNEL_ID;
+    image->gpfifo_bytes = REIST_NVIDIA_GK208_GPFIFO_BYTES;
+    image->userd_relocation = (reist_nvidia_gk208_address_relocation_t){
+        .destination_pool_offset = REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET + 0x08U,
+        .source_pool_offset = REIST_NVIDIA_GK208_DMA_USERD_OFFSET,
+        .width = REIST_NVIDIA_GK208_ADDRESS_RELOCATION_WIDTH,
+    };
+    return reist_nvidia_gk208_validate_channel_image(image);
+}
+
 int reist_nvidia_gk208_command_self_test(void) {
     reist_nvidia_gk208_pushbuf_t pushbuf;
     const reist_nvidia_gk208_surface_t surface = {
@@ -597,4 +705,19 @@ int reist_nvidia_gk208_dma_staging_self_test(void) {
     staging.pushbuf_offset = staging.gpfifo_offset;
     return reist_nvidia_gk208_validate_dma_staging(
         &staging, &submission, 1U) == -84 ? 0 : -84;
+}
+
+int reist_nvidia_gk208_channel_image_self_test(void) {
+    reist_nvidia_gk208_channel_image_t image;
+    if (reist_nvidia_gk208_prepare_channel_image(&image) != 0 ||
+        reist_nvidia_gk208_validate_channel_image(&image) != 0)
+        return -84;
+    image.ramfc[0x14U / sizeof(uint32_t)] = 1U;
+    if (reist_nvidia_gk208_validate_channel_image(&image) != -84)
+        return -84;
+    if (reist_nvidia_gk208_prepare_channel_image(&image) != 0)
+        return -84;
+    image.userd_relocation.source_pool_offset += 0x1000U;
+    return reist_nvidia_gk208_validate_channel_image(&image) == -84
+        ? 0 : -84;
 }

@@ -24,6 +24,7 @@
 #define NVIDIA_DIAGNOSTIC_PREFLIGHT 0x4E570000U
 #define NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT 0x4E580000U
 #define NVIDIA_DIAGNOSTIC_DMA_STAGING 0x4E590000U
+#define NVIDIA_DIAGNOSTIC_CHANNEL_IMAGE 0x4E5A0000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
@@ -208,6 +209,7 @@ static int command_contract_self_test(nvidia_driver_t *driver) {
     int status = reist_nvidia_gk208_command_self_test();
     if (status == 0) status = reist_nvidia_gk208_submission_self_test();
     if (status == 0) status = reist_nvidia_gk208_dma_staging_self_test();
+    if (status == 0) status = reist_nvidia_gk208_channel_image_self_test();
     if (status != 0) return status;
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
@@ -300,6 +302,48 @@ static int dma_staging_self_test(nvidia_driver_t *driver) {
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_DMA_STAGING | submission.word_count);
+}
+
+static int dma_stage_and_verify(nvidia_driver_t *driver, uint32_t offset,
+                                const void *data, uint32_t length) {
+    uint8_t readback[X86OS_DEVICE_DMA_TRANSFER_MAX];
+    const uint8_t *source = (const uint8_t *)data;
+    uint32_t transferred = 0U;
+    while (transferred < length) {
+        uint32_t chunk = length - transferred;
+        if (chunk > sizeof(readback)) chunk = sizeof(readback);
+        bytes_zero(readback, sizeof(readback));
+        int status = x86os_device_dma_write(
+            driver->dma, offset + transferred, source + transferred, chunk);
+        if (status == 0)
+            status = x86os_device_dma_read(
+                driver->dma, offset + transferred, readback, chunk);
+        if (status != 0 || !bytes_equal(
+                readback, source + transferred, chunk))
+            return status != 0 ? status : -84;
+        transferred += chunk;
+    }
+    return 0;
+}
+
+static int channel_image_dma_self_test(nvidia_driver_t *driver) {
+    reist_nvidia_gk208_channel_image_t image;
+    int status = reist_nvidia_gk208_prepare_channel_image(&image);
+    if (status != 0) return status;
+    status = dma_stage_and_verify(driver, image.userd_pool_offset,
+        image.userd, image.userd_bytes);
+    if (status == 0)
+        status = dma_stage_and_verify(driver, image.ramfc_pool_offset,
+            image.ramfc, image.ramfc_bytes);
+    if (status == 0)
+        status = dma_stage_and_verify(driver, image.runlist_pool_offset,
+            image.runlist, image.runlist_bytes);
+    if (status != 0 ||
+        reist_nvidia_gk208_validate_channel_image(&image) != 0)
+        return status != 0 ? status : -84;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_CHANNEL_IMAGE | image.channel_id);
 }
 
 static int activate(nvidia_driver_t *driver) {
@@ -412,6 +456,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = open_dma_pool(driver);
     if (status != 0) return status;
     status = dma_staging_self_test(driver);
+    if (status != 0) return status;
+    status = channel_image_dma_self_test(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||
