@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2t-nvidia-gk208-gr-execution"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,63 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2t-nvidia-gk208-gr-execution"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Execute the validated GK208 LTC and GR pre-start transaction"
+scope = "Add append-only Device Control command 23 as the single hardware-active, generation-scoped GK208 LTC/GR transaction. It accepts only the exact profile's same-device read-only BAR0 resource and sealed mediated-DMA pool after command 22, page-mode command 20 and firmware-upload command 21 are active. Before the first write, Ring 0 resamples topology, revalidates the full sealed operation image and independently rebuilds the exact opaque VRAM/LTC plan. It prepares only two clipped kernel VRAM windows, zeroes the two 128-KiB fault buffers under one absolute deadline, programs the pinned GK104 LTC count/tag-base/page-mode registers, clears the bounded CBC tag range and waits for every validated LTC slice without busy waiting. The kernel then interprets every typed operation in order, resolves only the two opaque VRAM offsets, enforces exact context-group framing, bounded idle/readiness waits and a nonzero FECS context-size readback. Any failure resets GR before retaining a fenced/retryable state; fence and generation cleanup reset GR before forgetting execution and reservation state. A fixed result exposes readiness, operation count and context size but no BAR, VRAM or physical address. Channel instance bind, runlist, USERD, bus mastering, IRQ, command submission, fence and acceleration capability publication remain absent."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "command 23 is append-only and accepts only one exact owner generation read-only BAR0 resource and sealed pool after prerequisite page-mode and firmware states are active",
+  "all topology image CRC semantic operation and opaque VRAM LTC plan checks complete before the first VRAM or MMIO write",
+  "only the two policy-sized fault buffers are CPU-zeroed through clipped kernel-only VRAM windows and no device address is returned to Ring 3",
+  "GK104 LTC count tag-base and page-mode programming plus CBC clear use the pinned upstream registers bounded tag count and validated LTC slice geometry",
+  "every wait sleeps or yields and is bounded by both its encoded timeout and one absolute transaction deadline",
+  "context groups consume exactly their declared immediately following transfer operations and FECS readiness requires a nonzero context-size readback",
+  "any partial failure resets GR before retry or fencing and generation cleanup cannot publish stale readiness or reservation authority",
+  "bus mastering IRQ channel runlist USERD submission fence and NVIDIA acceleration capabilities remain disabled",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the pinned LTC or GR sequence cannot be represented by the existing sealed semantic image",
+  "safe fault-buffer access would require exposing or guessing a BAR or VRAM address",
+  "rollback cannot confirm GR reset after a partial hardware effect",
+  "the package attempts channel runlist USERD submission bus mastering IRQ or capability publication",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: execute bounded GK208 GR initialization"
+evidence = []
 
 [[packages]]
 id = "R2.2s-nvidia-gk208-gr-prerequisites"
