@@ -38,8 +38,12 @@ typedef struct {
     uint32_t heartbeat_timeout_ms;
     uint32_t recovery_timeout_ms;
     uint32_t restart_budget;
+    uint32_t startup_timeout_ms;
     uint64_t deadline_ms;
 } supervisor_state_t;
+
+_Static_assert(sizeof(supervisor_state_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
+               "supervisor state exceeds protected payload");
 
 typedef struct {
     uint32_t active;
@@ -1608,6 +1612,7 @@ static bool state_valid(const void *payload, size_t length) {
            state->state <= SUPERVISOR_IDLE &&
            state->heartbeat_timeout_ms != 0 &&
            state->recovery_timeout_ms != 0 &&
+           state->startup_timeout_ms != 0 &&
            state->restart_count <= state->restart_budget;
 }
 
@@ -1918,6 +1923,8 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
         fence_ops->apply == 0 || fence_ops->verify == 0 || handle_out == 0 ||
         config->heartbeat_timeout_ms == 0 || config->recovery_timeout_ms == 0)
         return -1;
+    const uint32_t startup_timeout_ms = config->startup_timeout_ms != 0U
+        ? config->startup_timeout_ms : config->recovery_timeout_ms;
     uint32_t flags = supervisor_lock();
     uint32_t slot = 0;
     for (; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
@@ -1940,7 +1947,8 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
         .heartbeat_timeout_ms = config->heartbeat_timeout_ms,
         .recovery_timeout_ms = config->recovery_timeout_ms,
         .restart_budget = config->restart_budget,
-        .deadline_ms = deadline_after(now_ms, config->recovery_timeout_ms),
+        .startup_timeout_ms = startup_timeout_ms,
+        .deadline_ms = deadline_after(now_ms, startup_timeout_ms),
     };
     if (critical_object_init(&slots[slot].protected_state,
                              SUPERVISOR_STATE_VERSION, &state,
@@ -2387,7 +2395,7 @@ static int supervisor_admin_start(supervisor_handle_t handle,
     ++state.epoch;
     state.state = SUPERVISOR_STARTING;
     state.progress_marker = 0U;
-    state.deadline_ms = deadline_after(now_ms, state.recovery_timeout_ms);
+    state.deadline_ms = deadline_after(now_ms, state.startup_timeout_ms);
     int result = state_write(handle.slot, &state);
     if (result == 0) {
         *updated_out = (supervisor_handle_t){
@@ -5823,7 +5831,7 @@ supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,
         ++state.epoch;
         if (state.epoch == 0) state.epoch = 1U;
         state.state = SUPERVISOR_RECOVERING;
-        state.deadline_ms = deadline_after(now_ms, state.recovery_timeout_ms);
+        state.deadline_ms = deadline_after(now_ms, state.startup_timeout_ms);
         type = SUPERVISOR_EVENT_RESTART_REQUIRED;
     }
     if (state_write(handle.slot, &state) != 0)
@@ -5845,7 +5853,7 @@ int supervisor_report_self_test(supervisor_handle_t handle, bool passed,
     }
     state.state = passed ? SUPERVISOR_STARTING : SUPERVISOR_ISOLATED;
     state.progress_marker = 0;
-    state.deadline_ms = deadline_after(now_ms, state.recovery_timeout_ms);
+    state.deadline_ms = deadline_after(now_ms, state.startup_timeout_ms);
     int result = state_write(handle.slot, &state);
     supervisor_unlock(flags);
     return result;

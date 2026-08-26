@@ -322,6 +322,15 @@ bleibt die Gruppe isoliert. Die Komponente erreicht ihre im
 [Resilienz- und Degradierungsvertrag](RESILIENCE_AND_DEGRADATION_CONTRACT.md)
 festgelegte terminale Stufe.
 
+Der Supervisor unterscheidet dabei optional die Startfrist von der
+Recoveryfrist. `startup_timeout_ms` begrenzt die gesamte Konstruktion einer
+frischen Generation einschließlich des Selbsttests; der Wert null behält die
+bisherige `recovery_timeout_ms` als Startgrenze bei. Die Recoveryfrist begrenzt
+weiterhin Fencing und Geräterückgewinnung, die Heartbeatfrist überwacht nur die
+bereits gesunde Generation. Eine längere, hardwarebedingt notwendige
+Initialisierung schwächt damit weder Fehlererkennung noch Fencing ab und
+veröffentlicht vor erfolgreichem Selbsttest weiterhin keine Ausgabeautorität.
+
 ## Abnahme
 
 Die Treiberdomänen-Grundlage gilt erst als implementiert, wenn Runtime-Tests

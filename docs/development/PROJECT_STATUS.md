@@ -217,6 +217,15 @@ Sekunde erneut die generationsgebundene Dienstverbindung. Die Abschlusszeile
 enthält zusätzlich `observed_caps`, `reconnects`, `connect_status`,
 `copy_status` und `mark_status`. Damit sind späte Dienstbereitschaft,
 Treiberfehler und eine abgewiesene Scanout-Markierung getrennt sichtbar.
+Der folgende ASUS-Lauf lieferte damit `observed_caps=0`, `connect_status=-11`
+und `copy_status=-11`: Der Supervisor hielt die Ausgabeautorität korrekt
+geschlossen, beendete die gesamte GK208-Konstruktion aber nach der generischen
+einsekündigen Recoveryfrist, obwohl einzelne versiegelte GR-Phasen bis zu fünf
+Sekunden begrenzt sind. `R2.2ac-nvidia-startup-deadline` ergänzt deshalb eine
+optionale, geschützte Startfrist. Nur GK208 erhält 15 Sekunden für Konstruktion
+und Selbsttest; Heartbeatüberwachung bleibt bei zwei Sekunden und
+Fencing/Recovery bei einer Sekunde. Bestehende Komponenten mit Startfrist null
+behalten exakt die bisherige Recoveryfrist als Startgrenze.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

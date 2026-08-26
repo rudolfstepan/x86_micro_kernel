@@ -450,6 +450,9 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("while (1)", driver)
         self.assertIn('"nvidia-gk208-ring3"', kernel)
         self.assertIn('"/libexec/reist/nvidia.prg"', kernel)
+        self.assertIn("video_startup_timeout_ms", kernel)
+        self.assertIn("? 15000U : 1000U", kernel)
+        self.assertIn(".startup_timeout_ms = video_startup_timeout_ms", kernel)
         self.assertGreaterEqual(
             supervisor.count('"nvidia-gk208-ring3"'), 5)
 

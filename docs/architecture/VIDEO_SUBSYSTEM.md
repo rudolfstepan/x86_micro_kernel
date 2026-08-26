@@ -380,6 +380,17 @@ rollback. IRQs and arbitrary Ring-3 MMIO/DMA addresses remain unavailable.
 QEMU and VMware prove build, ABI, rollback and VMware non-regression; actual
 GK208 execution still requires the final ASUS hardware run.
 
+The first native acceleration measurement reported `observed_caps=0` with
+`connect_status=-11` for every retained drag. This was a supervisor admission
+deadline, not a 2D packet failure: the generic one-second recovery limit also
+bounded initial construction even though the sealed GR execution and golden
+context phases each have independent deadlines up to five seconds. GK208 now
+has a distinct 15-second aggregate startup/reinitialization deadline. Its
+healthy heartbeat remains two seconds and device fencing/recovery remains one
+second. The endpoint is still unavailable until channel self-test and progress
+validation complete; the desktop renders through VBE software and reconnects
+later without waiting for that startup window.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

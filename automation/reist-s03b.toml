@@ -11,6 +11,47 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2ac-nvidia-startup-deadline"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Separate bounded GK208 construction from recovery deadlines"
+scope = "Add an optional append-only supervisor startup deadline, retain the legacy recovery deadline as its default, and grant only the GK208 video profile a 15-second aggregate construction window while preserving one-second fencing recovery and two-second healthy heartbeat monitoring."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "kernel/init/kernel.c",
+  "test/test_supervisor_host.c",
+  "test/test_reist_supervisor.py",
+  "test/test_nvidia_gk208.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "zero startup_timeout_ms preserves the existing recovery-timeout behavior for all callers",
+  "startup construction and post-fence reinitialization remain bounded by a protected generation-scoped deadline",
+  "the longer GK208 startup window does not lengthen healthy heartbeat detection or device fencing recovery",
+  "output authority remains fenced until channel self-test and a strictly increasing progress report complete",
+  "the protected supervisor state remains within its fixed 64-byte payload"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_nvidia_gk208.py -v"
+]
+package_tests = []
+runtime_tests = []
+stop_conditions = [
+  "a starting driver can publish output before self-test and progress validation",
+  "a legacy supervisor caller receives a different startup deadline without opting in",
+  "the NVIDIA profile can initialize without an absolute deadline",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "the targeted gate still fails after one focused in-scope repair"
+]
+
+[[packages]]
 id = "R2.2ab-late-acceleration-reconnect"
 status = "done"
 phase = "post-s0"

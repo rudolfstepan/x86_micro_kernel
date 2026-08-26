@@ -24,7 +24,7 @@ struct Process;
 #define SUPERVISOR_NAME_CAPACITY 32U
 #define SUPERVISOR_DRIVER_PATH_CAPACITY 96U
 #define SUPERVISOR_MAX_DEVICE_DRIVERS 4U
-#define SUPERVISOR_STATE_VERSION 1U
+#define SUPERVISOR_STATE_VERSION 2U
 #define SUPERVISOR_FENCE_OPS_VERSION 1U
 #define SUPERVISOR_DESCRIPTOR_VERSION 1U
 #define SUPERVISOR_NETWORK_DEGRADATION_VERSION 1U
@@ -118,6 +118,9 @@ typedef struct {
     uint32_t heartbeat_timeout_ms;
     uint32_t recovery_timeout_ms;
     uint32_t restart_budget;
+    /* Optional distinct deadline for bounded component construction and
+     * post-fence reinitialization. Zero preserves the legacy recovery limit. */
+    uint32_t startup_timeout_ms;
 } supervisor_config_t;
 
 typedef bool (*supervisor_fence_fn_t)(void *context);

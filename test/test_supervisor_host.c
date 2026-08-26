@@ -97,6 +97,19 @@ int main(void) {
     safe = supervisor_service_one(4100U);
     if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) return 32;
 
+    /* A complex driver may need a longer bounded construction window without
+     * weakening its heartbeat or fencing/recovery deadline. */
+    supervisor_init();
+    config.startup_timeout_ms = 200U;
+    config.restart_budget = 1U;
+    if (supervisor_register("slow-start", &config, &fence_ops, 4500U,
+                            &handle) != 0 ||
+        supervisor_poll(4551U).type != SUPERVISOR_EVENT_NONE ||
+        supervisor_poll(4699U).type != SUPERVISOR_EVENT_NONE ||
+        supervisor_poll(4700U).type != SUPERVISOR_EVENT_FENCE_REQUIRED)
+        return 61;
+    config.startup_timeout_ms = 0U;
+
     supervisor_init();
     config.restart_budget = 1U;
     fence_applied = false;
