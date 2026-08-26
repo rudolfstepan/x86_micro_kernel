@@ -11,6 +11,41 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2aa-retained-resize-copy-acceleration"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Accelerate retained left and top resize transforms"
+scope = "Extend the atomic staged-copy compositor path to unobscured retained surfaces resized from the left or top edge, preserve local content coordinates through a bounded common rectangle copy, and recompose only disjoint old/new remainder strips. Also stop recomposing the overlapping source of ordinary window moves."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_desktop_source.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "only an unobscured topmost retained surface may use the resize copy cache",
+  "the copied rectangle uses the minimum old and new decorated dimensions and preserves local origin",
+  "old cleanup and new redraw each contain at most four disjoint rectangles outside the copied destination",
+  "ordinary moves no longer recompose their source and destination overlap",
+  "any invalid cache stage driver fence or concurrent scene mutation falls back to normal composition",
+  "client reconfiguration remains deferred until resize release"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v"
+]
+package_tests = []
+runtime_tests = []
+stop_conditions = [
+  "a cached resize can be used for an obscured or non-retained window",
+  "copy geometry can read or write beyond old new or display bounds",
+  "a remainder strip can overwrite the copied destination after commit",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "the targeted gate still fails after one focused in-scope repair"
+]
+
+[[packages]]
 id = "R2.2z-accelerated-scanout-publication"
 status = "done"
 phase = "post-s0"

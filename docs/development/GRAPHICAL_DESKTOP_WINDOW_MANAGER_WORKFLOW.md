@@ -332,11 +332,12 @@ bewusst keinen Rahmen- oder Drahtgittermodus. Die angehängte Operation
 `FRAME_STAGE_BLIT` von Syscall 109 kopiert höchstens ein geprüftes Rechteck aus
 dem aktuellen Kernel-Shadowbuffer in einen festen, nicht dynamisch allozierten
 Zwischenspeicher. Sie ist an PID, Prozessgeneration und Frame-Serial gebunden.
-Ring 3 komponiert anschließend nur die am alten Ort freigelegte Szene ohne das
-bewegte Objekt. Erst der Commit setzt den gespeicherten Fensterinhalt an die
-neue Position, vereinigt die begrenzten Damage-Rechtecke und publiziert den
-fertigen Zustand. Bei zusätzlichem Schaden, Resize, ungültiger Geometrie oder
-fehlendem Shadowbuffer wird ohne Zustandsverlust der normale Redraw verwendet.
+Ring 3 komponiert anschließend nur die am alten Ort freigelegten, nicht vom
+neuen Fenster überdeckten Randstreifen ohne das bewegte Objekt. Erst der Commit
+setzt den gespeicherten Fensterinhalt an die neue Position, vereinigt die
+begrenzten Damage-Rechtecke und publiziert den fertigen Zustand. Bei
+zusätzlichem Schaden, ungültiger Geometrie oder fehlendem Shadowbuffer wird
+ohne Zustandsverlust der normale Redraw verwendet.
 
 Automatischer QEMU-Nachweis vom 19. August 2026: ein Vollbildframe, acht
 Move-Frames und acht Resize-Frames; `full_max_ms=7`, `drag_max_ms=80`,
@@ -706,5 +707,8 @@ Schatten- und neu freigelegten Clientstreifen als Damage publiziert. Der
 unveränderte Notepad-Inhalt wird dadurch nicht mehr pro Mausbericht vollständig
 neu gerastert oder zum Scanout kopiert. Explorer und andere serverseitige
 Inhalte, deren Layout von der Fenstergröße abhängt, behalten vollständigen
-Resize-Repaint. Dasselbe gilt für linke und obere Kanten, weil sich dort der
-Ursprung des Clientbereichs verschiebt.
+Resize-Repaint. Linke und obere Kanten einer unverdeckten retained Surface
+verwenden nun eine atomare RECT_COPY des gemeinsamen alten/neuen Inhalts. Der
+Compositor zeichnet dabei auf beiden Seiten nur die höchstens vier
+nicht überlappenden Reststreifen; ein fehlender Treiber oder Fence fällt mit
+identischem Endbild auf die CPU-Publikation zurück.

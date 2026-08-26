@@ -384,6 +384,27 @@ class DesktopSourceTests(unittest.TestCase):
         )
         self.assertIn("window->flags = 0U;", self.source)
 
+    def test_retained_left_top_resize_uses_bounded_copy_cache(self):
+        self.assertIn("DESKTOP_MOVE_CACHE_RESIZE", self.source)
+        capture = self.source[
+            self.source.index("static void desktop_move_cache_capture") :
+            self.source.index("/* Relative USB reports are coalesced")
+        ]
+        self.assertIn("min_u32(source.width, destination.width)", capture)
+        self.assertIn("min_u32(source.height, destination.height)", capture)
+        self.assertIn("move->cleanup = source", capture)
+        self.assertIn("move->redraw = destination", capture)
+        cached = self.source[
+            self.source.index("static uint32_t render_desktop_cached_move_frame") :
+            self.source.index("static void record_render_metrics")
+        ]
+        self.assertGreaterEqual(
+            cached.count("render_desktop_rect_difference("), 2
+        )
+        self.assertIn("move->cleanup, move->destination", cached)
+        self.assertIn("move->redraw, move->destination", cached)
+        self.assertIn("manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE", self.source)
+
     def test_live_resize_never_reads_past_acknowledged_surface(self):
         render_window = self.source[
             self.source.index("static void render_window") :
@@ -550,8 +571,8 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("x86os_display_frame_begin", cached)
         self.assertIn("x86os_display_frame_stage_blit", cached)
         self.assertIn("x86os_display_frame_commit", cached)
-        self.assertIn("render_dirty_regions(", cached)
-        self.assertIn("move->kind, move->window_index", cached)
+        self.assertIn("render_desktop_rect_difference(", cached)
+        self.assertIn("omitted_kind, move->window_index", cached)
         self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG", self.source)
         self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_WINDOW", self.source)
         self.assertIn("ui->dialog.visible ||", self.source)

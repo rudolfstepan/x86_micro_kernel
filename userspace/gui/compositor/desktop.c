@@ -301,7 +301,8 @@ enum {
 enum {
     DESKTOP_MOVE_CACHE_NONE = 0U,
     DESKTOP_MOVE_CACHE_WINDOW,
-    DESKTOP_MOVE_CACHE_DIALOG
+    DESKTOP_MOVE_CACHE_DIALOG,
+    DESKTOP_MOVE_CACHE_RESIZE
 };
 
 /* Application policy stays outside libreistgui: the library returns these
@@ -566,6 +567,8 @@ typedef struct {
 typedef struct {
     desktop_rect_t source;
     desktop_rect_t destination;
+    desktop_rect_t cleanup;
+    desktop_rect_t redraw;
     uint32_t kind;
     uint32_t window_index;
     uint32_t valid;
@@ -2658,6 +2661,64 @@ static void render_desktop(const x86os_display_info_t *display,
         DESKTOP_MOVE_CACHE_NONE, DESKTOP_WM_NO_TARGET);
 }
 
+static void render_desktop_rect(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    const desktop_explorer_t *explorer,
+    const desktop_surface_manager_t *surfaces,
+    const desktop_ui_state_t *ui, desktop_rect_t rect,
+    uint32_t omitted_kind, uint32_t omitted_window) {
+    if (rect.width == 0U || rect.height == 0U) return;
+    desktop_dirty_region_t dirty;
+    desktop_dirty_initialize(&dirty, display->width, display->height);
+    desktop_dirty_add(&dirty, rect);
+    render_dirty_regions(
+        display, manager, explorer, surfaces, ui, &dirty,
+        omitted_kind, omitted_window);
+}
+
+/* Render outer minus excluded as at most four disjoint strips.  Keeping the
+ * strips separate avoids merging them back into a near-full window redraw. */
+static void render_desktop_rect_difference(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    const desktop_explorer_t *explorer,
+    const desktop_surface_manager_t *surfaces,
+    const desktop_ui_state_t *ui, desktop_rect_t outer,
+    desktop_rect_t excluded, uint32_t omitted_kind,
+    uint32_t omitted_window) {
+    desktop_rect_t overlap;
+    if (!intersect_rects(outer, excluded, &overlap)) {
+        render_desktop_rect(
+            display, manager, explorer, surfaces, ui, outer,
+            omitted_kind, omitted_window);
+        return;
+    }
+    int32_t outer_right = outer.x + (int32_t)outer.width;
+    int32_t outer_bottom = outer.y + (int32_t)outer.height;
+    int32_t overlap_right = overlap.x + (int32_t)overlap.width;
+    int32_t overlap_bottom = overlap.y + (int32_t)overlap.height;
+    render_desktop_rect(
+        display, manager, explorer, surfaces, ui,
+        (desktop_rect_t){outer.x, outer.y, outer.width,
+                         (uint32_t)(overlap.y - outer.y)},
+        omitted_kind, omitted_window);
+    render_desktop_rect(
+        display, manager, explorer, surfaces, ui,
+        (desktop_rect_t){outer.x, overlap_bottom, outer.width,
+                         (uint32_t)(outer_bottom - overlap_bottom)},
+        omitted_kind, omitted_window);
+    render_desktop_rect(
+        display, manager, explorer, surfaces, ui,
+        (desktop_rect_t){outer.x, overlap.y,
+                         (uint32_t)(overlap.x - outer.x), overlap.height},
+        omitted_kind, omitted_window);
+    render_desktop_rect(
+        display, manager, explorer, surfaces, ui,
+        (desktop_rect_t){overlap_right, overlap.y,
+                         (uint32_t)(outer_right - overlap_right),
+                         overlap.height},
+        omitted_kind, omitted_window);
+}
+
 static uint32_t render_desktop_frame(const x86os_display_info_t *display,
                                      const desktop_wm_t *manager,
                                      const desktop_explorer_t *explorer,
@@ -2691,7 +2752,8 @@ static uint32_t render_desktop_cached_move_frame(
     if (move == 0 || !move->valid)
         return render_desktop_frame(display, manager, explorer, surfaces, ui, dirty);
     if (move->kind != DESKTOP_MOVE_CACHE_DIALOG &&
-        (move->kind != DESKTOP_MOVE_CACHE_WINDOW ||
+        ((move->kind != DESKTOP_MOVE_CACHE_WINDOW &&
+          move->kind != DESKTOP_MOVE_CACHE_RESIZE) ||
          move->window_index >= DESKTOP_WM_CAPACITY))
         return render_desktop_frame(display, manager, explorer, surfaces, ui, dirty);
 
@@ -2721,13 +2783,17 @@ static uint32_t render_desktop_cached_move_frame(
             outcome |= DESKTOP_RENDER_ACCELERATED;
         else
             outcome |= DESKTOP_RENDER_ACCELERATION_FALLBACK;
-        desktop_dirty_region_t cleanup;
-        desktop_dirty_initialize(
-            &cleanup, display->width, display->height);
-        desktop_dirty_add(&cleanup, move->source);
-        render_dirty_regions(
-            display, manager, explorer, surfaces, ui, &cleanup,
-            move->kind, move->window_index);
+        uint32_t omitted_kind = move->kind == DESKTOP_MOVE_CACHE_DIALOG
+            ? DESKTOP_MOVE_CACHE_DIALOG : DESKTOP_MOVE_CACHE_WINDOW;
+        render_desktop_rect_difference(
+            display, manager, explorer, surfaces, ui,
+            move->cleanup, move->destination,
+            omitted_kind, move->window_index);
+        if (move->kind == DESKTOP_MOVE_CACHE_RESIZE)
+            render_desktop_rect_difference(
+                display, manager, explorer, surfaces, ui,
+                move->redraw, move->destination,
+                DESKTOP_MOVE_CACHE_NONE, DESKTOP_WM_NO_TARGET);
     }
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
@@ -3699,7 +3765,8 @@ static uint32_t desktop_move_capture_geometry(
         };
         return 1U;
     }
-    if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE ||
+    if ((manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE &&
+         manager->capture_kind != DESKTOP_WM_CAPTURE_RESIZE) ||
         manager->capture_window < 0 ||
         manager->capture_window >= (int32_t)DESKTOP_WM_CAPACITY)
         return 0U;
@@ -3712,7 +3779,12 @@ static uint32_t desktop_move_capture_geometry(
         return 0U;
     desktop_rect_t rect = desktop_wm_window_bounds(manager, index);
     if (rect.x < 0 || rect.y < 0) return 0U;
-    *kind = DESKTOP_MOVE_CACHE_WINDOW;
+    if (manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE &&
+        (manager->windows[index].flags &
+         DESKTOP_WM_WINDOW_RETAINED_RESIZE) == 0U)
+        return 0U;
+    *kind = manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE
+        ? DESKTOP_MOVE_CACHE_RESIZE : DESKTOP_MOVE_CACHE_WINDOW;
     *window_index = index;
     *bounds = rect;
     return 1U;
@@ -3724,11 +3796,24 @@ static void desktop_move_cache_capture(
     if (move == 0 || kind == DESKTOP_MOVE_CACHE_NONE ||
         source.x < 0 || source.y < 0 || destination.x < 0 ||
         destination.y < 0 || source.width == 0U || source.height == 0U ||
-        source.width != destination.width ||
-        source.height != destination.height ||
-        (source.x == destination.x && source.y == destination.y)) return;
-    move->source = source;
-    move->destination = destination;
+        destination.width == 0U || destination.height == 0U) return;
+    desktop_rect_t copy_source = source;
+    desktop_rect_t copy_destination = destination;
+    if (kind == DESKTOP_MOVE_CACHE_RESIZE) {
+        copy_source.width = min_u32(source.width, destination.width);
+        copy_source.height = min_u32(source.height, destination.height);
+        copy_destination.width = copy_source.width;
+        copy_destination.height = copy_source.height;
+    } else if (source.width != destination.width ||
+               source.height != destination.height) {
+        return;
+    }
+    if (copy_source.x == copy_destination.x &&
+        copy_source.y == copy_destination.y) return;
+    move->source = copy_source;
+    move->destination = copy_destination;
+    move->cleanup = source;
+    move->redraw = destination;
     move->kind = kind;
     move->window_index = window_index;
     move->valid = 1U;
@@ -5173,11 +5258,15 @@ int main(int argc, char **argv) {
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
 
-        /* The cached path represents exactly one unobscured move.  Any
-         * concurrent keyboard/action damage or resize falls back to the
-         * ordinary compositor so unrelated invalid regions are not lost. */
+        /* The cached path represents exactly one unobscured move or retained
+         * left/top resize. Concurrent state changes use normal composition. */
+        uint32_t cached_interaction = move_cache.kind ==
+                DESKTOP_MOVE_CACHE_RESIZE
+            ? resize_render &&
+                manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE
+            : drag_render && !resize_render;
         if (move_cache.valid &&
-            (!drag_render || resize_render || dirty.full ||
+            (!cached_interaction || dirty.full ||
              key != DESKTOP_KEY_NONE ||
              (actions & (DESKTOP_WM_RESULT_LAUNCH |
                          DESKTOP_WM_RESULT_EXIT)) != 0U))
