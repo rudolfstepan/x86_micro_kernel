@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2q-nvidia-gk208-gr-plan"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,61 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2q-nvidia-gk208-gr-plan"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Freeze the complete bounded GK208 pre-start GR plan"
+scope = "Combine the remaining hardware-inactive GK208 GR preparation into one cohesive Ring-3 contract. Generate and check in the exact 30 ordered static PGRAPH MMIO packs and the exact HUB GPC0 GPC1 TPC and PPC context-switch packs inherited by GK208 from the MIT-licensed Nouveau sources at pinned Linux commit 45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229. Flatten each source tuple only through a fixed-capacity accessor, retain pack boundaries and exact order, and protect every stream with fixed counts and IEEE CRC32. Extend the existing read-only mediated BAR aperture only far enough for a bounded GK208 topology snapshot: GPC and ROP counts from 0x409604 plus one TPC count and one PPC mask per validated GPC through the upstream GPC_UNIT layout. Validate nonzero architecture ceilings and cross-field totals before compiling the five context-switch transfer streams with Nouveau's 32-register coalescing rule. Freeze the exact future FECS start and readiness register protocol as an immutable software manifest. The supervised driver performs the topology read and complete software-plan self-test but executes no generated register write, context transfer or Falcon start. The following kernel-mediated package may execute only this validated immutable plan with rollback and deadlines."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/generate_nvidia_gk208_gr_tables.py",
+  "kernel/init/video_device_profile.c",
+  "userspace/video/lib/nvidia_gk208_gr_tables.h",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the generated immutable tables identify the exact pinned MIT-licensed upstream commit and retain all 30 MMIO pack boundaries and all five context-switch stream boundaries in exact order",
+  "every tuple has nonzero bounded count aligned address valid pitch and a stream count and IEEE CRC32 validated before use",
+  "the read-only aperture exposes no write mapping and topology reads are bounded by fixed GK208 GPC TPC PPC and ROP ceilings",
+  "topology rejects zero counts overflow impossible masks inconsistent totals and every read failure before plan publication",
+  "context-switch transfer compilation implements the exact upstream maximum-32 contiguous-register coalescing rule in fixed storage",
+  "the future start manifest names only the exact halted-state clear start command readiness mask and context-size readback protocol and is never executed by this package",
+  "no generated MMIO write context transfer Falcon start bus-master enable IRQ channel bind runlist USERD hardware submission or acceleration capability publication occurs",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "any generated tuple pack order count or CRC differs from the pinned upstream source",
+  "the topology cannot be read through one bounded read-only aperture or exceeds the fixed GK208 ceilings",
+  "the package attempts any register write context transfer Falcon start channel submission or capability publication",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: freeze bounded GK208 GR init plan"
+evidence = []
 
 [[packages]]
 id = "R2.2p-nvidia-gk208-falcon-upload"
