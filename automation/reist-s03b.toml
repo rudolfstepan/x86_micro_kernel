@@ -11,6 +11,43 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2ab-late-acceleration-reconnect"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Recover acceleration services that become ready after desktop startup"
+scope = "Keep the fast software desktop startup when the supervised display service is still initializing, retry acceleration only on eligible copy work with a monotonic one-second backoff, and expose persistent capability and failure diagnostics at session exit."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_vmware_svga2d.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "late driver readiness never delays initial software desktop presentation",
+  "reconnect work occurs only for an eligible retained copy and at most once per monotonic one-second interval",
+  "failed reconnect copy or accelerated publication retains the existing staged CPU fallback",
+  "a successful generation-scoped reconnect reuses the canonical supervised display endpoint",
+  "exit diagnostics preserve observed capabilities and distinguish connect copy and mark failures"
+]
+targeted_tests = [
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = []
+runtime_tests = []
+stop_conditions = [
+  "a reconnect can busy-wait or retry once per frame",
+  "the reconnect bypasses service discovery generation fencing or the versioned IPC protocol",
+  "a failed acceleration attempt can suppress the software frame commit",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "the targeted gate still fails after one focused in-scope repair"
+]
+
+[[packages]]
 id = "R2.2aa-retained-resize-copy-acceleration"
 status = "done"
 phase = "post-s0"

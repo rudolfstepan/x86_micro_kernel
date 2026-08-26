@@ -208,6 +208,15 @@ Zielrechteck wird aus allen überlappenden Scanout-Schadensbereichen
 herausgeschnitten statt nochmals vollständig über den VBE-BAR kopiert zu
 werden. `DESKTOP_ACCELERATION_READY` und die abschließenden Zähler für
 beschleunigte Frames und Fallbacks machen die tatsächliche Nutzung sichtbar.
+Der reale ASUS-Nachweis mit `drag_frames=673`, `accelerated_frames=0` und
+`fallbacks=673` zeigte anschließend, dass der Desktop den noch initialisierenden
+GK208-Dienst nach seinen kurzen Startversuchen dauerhaft aufgegeben hatte.
+`R2.2ab-late-acceleration-reconnect` hält den schnellen Softwarestart bei und
+versucht erst bei einer kopierbaren Bewegung höchstens einmal pro monotone
+Sekunde erneut die generationsgebundene Dienstverbindung. Die Abschlusszeile
+enthält zusätzlich `observed_caps`, `reconnects`, `connect_status`,
+`copy_status` und `mark_status`. Damit sind späte Dienstbereitschaft,
+Treiberfehler und eine abgewiesene Scanout-Markierung getrennt sichtbar.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

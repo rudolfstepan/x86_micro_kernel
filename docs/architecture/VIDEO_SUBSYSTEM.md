@@ -46,6 +46,17 @@ prints `DESKTOP_ACCELERATION_READY caps=3`; session exit prints bounded
 `DESKTOP_ACCELERATION accelerated_frames=N fallbacks=N` counters so availability
 and actual use are distinguishable without timing inference.
 
+The desktop does not make the optional accelerator a startup dependency. If
+the supervised NVIDIA service is still completing its bounded GR self-tests
+after the initial three short connection attempts, the first visible desktop
+continues through VBE/software rendering. An eligible retained copy later
+performs a quiet generation-scoped reconnect, limited to one attempt per
+monotonic second. A successful reconnect enables subsequent copies without a
+desktop restart. Exit diagnostics append the capability bits seen during the
+session, reconnect count, and the last connect, copy and accelerated-mark
+status. A session with no drag or left/top retained resize can therefore report
+zero accelerated frames without implying a driver failure.
+
 The endpoint is delegated only to `/usr/gui/bin/desktop.prg`. Device and IPC
 authority are bound to process generations. Crash, failed self-test, missed
 heartbeat or invalid report enters the normal device-domain sequence:

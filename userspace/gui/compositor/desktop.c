@@ -28,6 +28,7 @@
 #define DESKTOP_ICON_WIDTH 176U
 #define DESKTOP_SVGA2D_CONNECT_ATTEMPTS 3U
 #define DESKTOP_SVGA2D_RETRY_MS 50U
+#define DESKTOP_SVGA2D_RECONNECT_MS 1000U
 #define DESKTOP_SVGA2D_PROBE_READY_DEADLINE_MS 2000U
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 1U
@@ -103,6 +104,12 @@ static uint32_t trash_restore_pressed_window = DESKTOP_WM_NO_TARGET;
 static x86os_ipc_handle_t desktop_svga2d_endpoint;
 static uint32_t desktop_svga2d_request_id;
 static uint32_t desktop_svga2d_capabilities;
+static uint32_t desktop_svga2d_observed_capabilities;
+static uint32_t desktop_svga2d_reconnects;
+static uint64_t desktop_svga2d_next_reconnect_ms;
+static int32_t desktop_svga2d_last_connect_status;
+static int32_t desktop_svga2d_last_copy_status;
+static int32_t desktop_svga2d_last_mark_status;
 
 static void desktop_svga2d_forget_endpoint(void) {
     if (desktop_svga2d_endpoint != X86OS_IPC_INVALID_HANDLE)
@@ -150,17 +157,21 @@ static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
     }
     *wire = response;
     desktop_svga2d_capabilities = response.capabilities;
+    desktop_svga2d_observed_capabilities |= response.capabilities;
     return response.status;
 }
 
-static int desktop_svga2d_connect(uint32_t activate) {
+static int desktop_svga2d_connect(uint32_t activate, uint32_t report_error) {
     if (desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE) {
         int status = x86os_service_connect(
             X86OS_SERVICE_DISPLAY_DRIVER, &desktop_svga2d_endpoint);
         if (status != 0) {
-            x86os_puts("desktop: SVGA2D-Service status=");
-            x86os_print_number(status);
-            x86os_putchar('\n');
+            desktop_svga2d_last_connect_status = status;
+            if (report_error != 0U) {
+                x86os_puts("desktop: SVGA2D-Service status=");
+                x86os_print_number(status);
+                x86os_putchar('\n');
+            }
             return status;
         }
     }
@@ -168,7 +179,8 @@ static int desktop_svga2d_connect(uint32_t activate) {
     request.operation = activate != 0U
         ? REIST_SVGA2D_ACTIVATE : REIST_SVGA2D_INFO;
     int status = desktop_svga2d_transact(&request);
-    if (status != 0 && activate != 0U) {
+    desktop_svga2d_last_connect_status = status;
+    if (status != 0 && activate != 0U && report_error != 0U) {
         x86os_puts("desktop: SVGA2D-Transaktion status=");
         x86os_print_number(status);
         x86os_putchar('\n');
@@ -180,7 +192,7 @@ static int desktop_svga2d_activate_bounded(void) {
     int status = -19;
     for (uint32_t attempt = 0U;
          attempt < DESKTOP_SVGA2D_CONNECT_ATTEMPTS; ++attempt) {
-        status = desktop_svga2d_connect(1U);
+        status = desktop_svga2d_connect(1U, 1U);
         if (status == 0) return 0;
         desktop_svga2d_forget_endpoint();
         if (attempt + 1U < DESKTOP_SVGA2D_CONNECT_ATTEMPTS)
@@ -221,7 +233,7 @@ static int desktop_svga2d_activate_until_ready(uint32_t deadline_ms) {
     if (x86os_monotonic_ms(&started) != 0) return -5;
     int status = -19;
     for (;;) {
-        status = desktop_svga2d_connect(1U);
+        status = desktop_svga2d_connect(1U, 0U);
         if (status == 0) return 0;
         desktop_svga2d_forget_endpoint();
         if (x86os_monotonic_ms(&now) != 0 || now < started ||
@@ -233,12 +245,39 @@ static int desktop_svga2d_activate_until_ready(uint32_t deadline_ms) {
     }
 }
 
+static int desktop_svga2d_reconnect_if_ready(void) {
+    if ((desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) != 0U)
+        return 0;
+
+    uint64_t now = 0U;
+    if (x86os_monotonic_ms(&now) != 0) return -5;
+    if (desktop_svga2d_next_reconnect_ms != 0U &&
+        now < desktop_svga2d_next_reconnect_ms)
+        return desktop_svga2d_last_connect_status != 0
+            ? desktop_svga2d_last_connect_status : -95;
+
+    desktop_svga2d_next_reconnect_ms = now + DESKTOP_SVGA2D_RECONNECT_MS;
+    if (desktop_svga2d_next_reconnect_ms < now)
+        desktop_svga2d_next_reconnect_ms = ~(uint64_t)0U;
+    int status = desktop_svga2d_connect(1U, 0U);
+    if (status != 0) return status;
+    if ((desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) == 0U)
+        return -95;
+    desktop_svga2d_next_reconnect_ms = 0U;
+    if (desktop_svga2d_reconnects != 0xFFFFFFFFU)
+        ++desktop_svga2d_reconnects;
+    return 0;
+}
+
 static int desktop_svga2d_rect_copy(uint32_t source_x, uint32_t source_y,
                                     uint32_t destination_x,
                                     uint32_t destination_y,
                                     uint32_t width, uint32_t height) {
-    if ((desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) == 0U)
-        return -95;
+    int status = desktop_svga2d_reconnect_if_ready();
+    if (status != 0) {
+        desktop_svga2d_last_copy_status = status;
+        return status;
+    }
     reist_svga2d_message_t request = {0};
     request.operation = REIST_SVGA2D_RECT_COPY;
     request.source_x = source_x;
@@ -247,7 +286,9 @@ static int desktop_svga2d_rect_copy(uint32_t source_x, uint32_t source_y,
     request.destination_y = destination_y;
     request.width = width;
     request.height = height;
-    return desktop_svga2d_transact(&request);
+    status = desktop_svga2d_transact(&request);
+    desktop_svga2d_last_copy_status = status;
+    return status;
 }
 
 static int desktop_display_deactivate(void) {
@@ -2774,15 +2815,21 @@ static uint32_t render_desktop_cached_move_frame(
         outcome |= DESKTOP_RENDER_ACCELERATION_FALLBACK;
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
     } else {
-        if (desktop_svga2d_rect_copy(
+        int copy_status = desktop_svga2d_rect_copy(
                 (uint32_t)move->source.x, (uint32_t)move->source.y,
                 (uint32_t)move->destination.x,
                 (uint32_t)move->destination.y,
-                move->source.width, move->source.height) == 0 &&
-            x86os_display_frame_mark_accelerated(serial) == 0)
-            outcome |= DESKTOP_RENDER_ACCELERATED;
-        else
+                move->source.width, move->source.height);
+        if (copy_status == 0) {
+            desktop_svga2d_last_mark_status =
+                x86os_display_frame_mark_accelerated(serial);
+            if (desktop_svga2d_last_mark_status == 0)
+                outcome |= DESKTOP_RENDER_ACCELERATED;
+            else
+                outcome |= DESKTOP_RENDER_ACCELERATION_FALLBACK;
+        } else {
             outcome |= DESKTOP_RENDER_ACCELERATION_FALLBACK;
+        }
         uint32_t omitted_kind = move->kind == DESKTOP_MOVE_CACHE_DIALOG
             ? DESKTOP_MOVE_CACHE_DIALOG : DESKTOP_MOVE_CACHE_WINDOW;
         render_desktop_rect_difference(
@@ -3192,6 +3239,14 @@ static void print_render_metrics(const desktop_render_metrics_t *metrics) {
     x86os_puts("DESKTOP_ACCELERATION");
     print_metric("accelerated_frames", metrics->accelerated_frames);
     print_metric("fallbacks", metrics->acceleration_fallbacks);
+    print_metric("observed_caps", desktop_svga2d_observed_capabilities);
+    print_metric("reconnects", desktop_svga2d_reconnects);
+    x86os_puts(" connect_status=");
+    x86os_print_number(desktop_svga2d_last_connect_status);
+    x86os_puts(" copy_status=");
+    x86os_print_number(desktop_svga2d_last_copy_status);
+    x86os_puts(" mark_status=");
+    x86os_print_number(desktop_svga2d_last_mark_status);
     x86os_putchar('\n');
 }
 
@@ -4774,7 +4829,7 @@ int main(int argc, char **argv) {
     (void)x86os_monotonic_ms(&phase_started_ms);
     if (argc == 1) desktop_splash_show(&display);
     desktop_startup_phase_metric("splash", phase_started_ms);
-    (void)desktop_svga2d_connect(0U);
+    (void)desktop_svga2d_connect(0U, 0U);
     (void)x86os_monotonic_ms(&phase_started_ms);
     int font_status = unicode_probe ? desktop_font_load(&display) : 0;
     desktop_startup_phase_metric("font", phase_started_ms);

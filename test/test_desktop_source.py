@@ -486,6 +486,11 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('x86os_puts("DESKTOP_ACCELERATION")', metrics)
         self.assertIn('print_metric("accelerated_frames"', metrics)
         self.assertIn('print_metric("fallbacks"', metrics)
+        self.assertIn('print_metric("observed_caps"', metrics)
+        self.assertIn('print_metric("reconnects"', metrics)
+        self.assertIn('" connect_status="', metrics)
+        self.assertIn('" copy_status="', metrics)
+        self.assertIn('" mark_status="', metrics)
 
     def test_launcher_is_freestanding_and_has_no_host_libc_dependency(self):
         self.assertNotRegex(self.source, r"#include\s*<(stdio|stdlib|string)\.h>")

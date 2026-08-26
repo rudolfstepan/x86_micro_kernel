@@ -169,6 +169,25 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("response.flags != REIST_SVGA2D_FLAG_RESPONSE) {",
                       transact)
 
+    def test_desktop_recovers_late_acceleration_without_blocking_startup(self):
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
+            encoding="utf-8")
+        self.assertIn("DESKTOP_SVGA2D_RECONNECT_MS 1000U", desktop)
+        helper = desktop[
+            desktop.index("static int desktop_svga2d_reconnect_if_ready"):
+            desktop.index("static int desktop_svga2d_rect_copy")
+        ]
+        self.assertIn("x86os_monotonic_ms(&now)", helper)
+        self.assertIn("now < desktop_svga2d_next_reconnect_ms", helper)
+        self.assertIn("desktop_svga2d_connect(1U, 0U)", helper)
+        self.assertIn("desktop_svga2d_reconnects", helper)
+        copy = desktop[
+            desktop.index("static int desktop_svga2d_rect_copy"):
+            desktop.index("static int desktop_display_deactivate")
+        ]
+        self.assertIn("desktop_svga2d_reconnect_if_ready()", copy)
+        self.assertIn("desktop_svga2d_last_copy_status", copy)
+
     def test_geometry_is_validated_before_fifo_publication(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(
             encoding="utf-8")
@@ -193,6 +212,9 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("DESKTOP_ACCELERATION_READY caps=", desktop)
         self.assertIn("DESKTOP_RENDER_ACCELERATED", desktop)
         self.assertIn('"DESKTOP_ACCELERATION"', desktop)
+        for field in ("observed_caps", "reconnects", "connect_status",
+                      "copy_status", "mark_status"):
+            self.assertIn(field, desktop)
 
     def test_generic_activation_cannot_bypass_supervised_driver(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(
