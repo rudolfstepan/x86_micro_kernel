@@ -451,8 +451,14 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn('"nvidia-gk208-ring3"', kernel)
         self.assertIn('"/libexec/reist/nvidia.prg"', kernel)
         self.assertIn("video_startup_timeout_ms", kernel)
-        self.assertIn("? 25000U : 1000U", kernel)
+        self.assertIn("? 60000U : 1000U", kernel)
+        self.assertIn("? 6000U : 0U", kernel)
         self.assertIn(".startup_timeout_ms = video_startup_timeout_ms", kernel)
+        self.assertIn("X86OS_DEVICE_DRIVER_REPORT_STARTUP_PROGRESS", driver)
+        self.assertIn("complete_startup_phase", driver)
+        execute = driver[driver.index("static int gpu_gr_execute") :
+                         driver.index("static int gpu_channel_activate")]
+        self.assertGreaterEqual(execute.count("report_startup_diagnostic"), 4)
         self.assertIn("NVIDIA_GK208_INIT_FAILED status=", driver)
         self.assertGreaterEqual(
             supervisor.count('"nvidia-gk208-ring3"'), 5)

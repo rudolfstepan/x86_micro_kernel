@@ -118,9 +118,12 @@ typedef struct {
     uint32_t heartbeat_timeout_ms;
     uint32_t recovery_timeout_ms;
     uint32_t restart_budget;
-    /* Optional distinct deadline for bounded component construction and
-     * post-fence reinitialization. Zero preserves the legacy recovery limit. */
+    /* Hard upper bound for component construction and post-fence
+     * reinitialization. Zero preserves the legacy recovery limit. */
     uint32_t startup_timeout_ms;
+    /* Optional per-phase bound. Strictly increasing startup reports may move
+     * the current deadline, but never beyond startup_timeout_ms. */
+    uint32_t startup_progress_timeout_ms;
 } supervisor_config_t;
 
 typedef bool (*supervisor_fence_fn_t)(void *context);
@@ -749,6 +752,9 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
                         uint64_t now_ms, supervisor_handle_t *handle_out);
 int supervisor_report_progress(supervisor_handle_t handle,
                                uint64_t progress_marker, uint64_t now_ms);
+int supervisor_report_startup_progress(supervisor_handle_t handle,
+                                       uint64_t progress_marker,
+                                       uint64_t now_ms);
 int supervisor_report_idle(supervisor_handle_t handle);
 supervisor_event_t supervisor_poll(uint64_t now_ms);
 supervisor_event_t supervisor_service_one(uint64_t now_ms);

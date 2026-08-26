@@ -172,7 +172,7 @@ static int desktop_svga2d_connect(uint32_t activate, uint32_t report_error) {
         if (status != 0) {
             desktop_svga2d_last_connect_status = status;
             if (report_error != 0U) {
-                x86os_puts("desktop: SVGA2D-Service status=");
+                x86os_puts("desktop: Beschleunigungsdienst status=");
                 x86os_print_number(status);
                 x86os_putchar('\n');
             }

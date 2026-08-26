@@ -11,6 +11,66 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2ae-nvidia-phased-startup"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Keep progressing GK208 construction inside bounded supervision"
+scope = "Replace the single guessed GK208 construction deadline with an append-only startup-progress report. The supervisor accepts only strictly increasing phase markers while the generation remains fenced, refreshes a six-second phase watchdog, and never extends the immutable sixty-second aggregate ceiling. Report every completed Ring-3 construction phase, retain the existing two-second healthy heartbeat and one-second recovery fence, and rename the desktop's shared acceleration-service error so native NVIDIA hardware is not mislabeled as VMware SVGA-II."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/supervisor.h",
+  "include/kernel/device_domain.h",
+  "kernel/init/supervisor.c",
+  "kernel/init/kernel.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_supervisor_host.c",
+  "test/test_reist_supervisor.py",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "startup progress never grants output authority or changes a fenced generation to healthy",
+  "only a strictly increasing nonzero marker before the current phase deadline is accepted",
+  "each accepted marker advances the phase deadline by at most six seconds and never beyond the immutable sixty-second aggregate ceiling",
+  "restart and administrative start reset both the marker and aggregate ceiling for the new generation epoch",
+  "healthy NVIDIA and VMware drivers retain the existing two-second heartbeat and one-second fence/recovery limits",
+  "the desktop software path remains immediately available and the common service is not labeled as VMware-specific"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "a startup marker can prolong construction beyond the hard aggregate deadline",
+  "a startup marker can publish output authority before self-test and healthy progress",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "supervisor: track bounded GK208 startup phases"
+evidence = [
+  "Supervisor source and host behavior passed 6 tests including strict phase ordering phase expiry and immutable aggregate cutoff",
+  "NVIDIA GK208 source contract passed 16 tests with append-only startup-progress reporting across every construction phase",
+  "VMware SVGA-II non-regression passed 15 tests and desktop compositor source behavior passed 40 tests",
+  "QEMU framebuffer package passed in 27 seconds",
+  "VMware framebuffer package passed in 29 seconds"
+]
+
+[[packages]]
 id = "R3.4a-notepad-menu-overlay"
 status = "done"
 phase = "post-s0"

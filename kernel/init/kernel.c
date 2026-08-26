@@ -736,16 +736,22 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
     if (video_device_available) {
         /* GK208 executes several independently bounded GR construction
-         * phases before it may publish output authority. Keep fault fencing
-         * fast, but give that fail-closed startup its own aggregate bound. */
+         * phases before it may publish output authority. Each phase must
+         * advance within six seconds and the complete generation remains
+         * capped at one minute. Heartbeat and fencing stay fast. */
         const uint32_t video_startup_timeout_ms =
             video_device_info.backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208
-                ? 25000U : 1000U;
+                ? 60000U : 1000U;
+        const uint32_t video_startup_progress_timeout_ms =
+            video_device_info.backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208
+                ? 6000U : 0U;
         const supervisor_config_t video_driver_config = {
             .heartbeat_timeout_ms = 2000U,
             .recovery_timeout_ms = 1000U,
             .restart_budget = 3U,
             .startup_timeout_ms = video_startup_timeout_ms,
+            .startup_progress_timeout_ms =
+                video_startup_progress_timeout_ms,
         };
         supervisor_handle_t video_driver_handle;
         const bool nvidia = video_device_info.backend ==

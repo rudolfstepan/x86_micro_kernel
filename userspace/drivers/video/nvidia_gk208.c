@@ -63,6 +63,7 @@ typedef struct {
     uint32_t acceleration_ready;
     uint32_t fence_sequence;
     uint32_t progress;
+    uint32_t startup_phase;
     reist_nvidia_gk208_gr_topology_t gr_topology;
 } nvidia_driver_t;
 
@@ -88,6 +89,23 @@ static int bytes_equal(const void *first, const void *second, size_t length) {
     for (size_t index = 0U; index < length; ++index)
         if (left[index] != right[index]) return 0;
     return 1;
+}
+
+static int complete_startup_phase(nvidia_driver_t *driver, int status) {
+    if (status != 0) return status;
+    if (driver == NULL || driver->startup_phase == UINT32_MAX) return -75;
+    ++driver->startup_phase;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_STARTUP_PROGRESS,
+        driver->startup_phase);
+}
+
+static int report_startup_diagnostic(nvidia_driver_t *driver,
+                                     uint32_t diagnostic) {
+    int status = x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        diagnostic);
+    return complete_startup_phase(driver, status);
 }
 
 static int driver_command(nvidia_driver_t *driver, uint32_t command,
@@ -609,8 +627,7 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
         driver->bootstrap.device, driver->registers, driver->dma,
         NVIDIA_GR_PREREQUISITE_POLICY_ID, &result);
     if (status != 0) return status;
-    status = x86os_device_driver_report(
-        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+    status = report_startup_diagnostic(driver,
         NVIDIA_DIAGNOSTIC_GR_EXECUTED | (result.context_size & 0xFFFFU));
     if (status != 0) return status;
 
@@ -622,8 +639,7 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
     status = reist_nvidia_gk208_gr_compile_golden_plan(
         &golden, &driver->gr_topology, result.context_size);
     if (status != 0) return status;
-    status = x86os_device_driver_report(
-        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+    status = report_startup_diagnostic(driver,
         NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN |
             (golden.patch_count & 0xFFFFU));
     if (status != 0) return status;
@@ -641,8 +657,7 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
         reserved.golden_bytes != expected.golden_bytes ||
         reserved.total_bytes != expected.total_bytes)
         return -84;
-    status = x86os_device_driver_report(
-        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+    status = report_startup_diagnostic(driver,
         NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY |
             (reserved.total_bytes >> 12U));
     if (status != 0) return status;
@@ -657,8 +672,7 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
         retained.icmd_tuple_count != golden.icmd_tuple_count ||
         retained.method_tuple_count != golden.mthd_tuple_count)
         return status != 0 ? status : -84;
-    return x86os_device_driver_report(
-        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+    return report_startup_diagnostic(driver,
         NVIDIA_DIAGNOSTIC_GR_GOLDEN_CONTEXT |
             (retained.context_crc32 & 0xFFFFU));
 }
@@ -839,39 +853,54 @@ static int driver_initialize(nvidia_driver_t *driver) {
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_CHANNEL,
             driver->control) != 0)
         return -5;
-    status = probe(driver);
+    status = complete_startup_phase(driver, 0);
     if (status != 0) return status;
-    status = engine_preflight(driver);
+    status = complete_startup_phase(driver, probe(driver));
     if (status != 0) return status;
-    status = command_contract_self_test(driver);
+    status = complete_startup_phase(driver, engine_preflight(driver));
     if (status != 0) return status;
-    status = gr_firmware_contract_self_test(driver);
+    status = complete_startup_phase(
+        driver, command_contract_self_test(driver));
     if (status != 0) return status;
-    status = gr_plan_contract_self_test(driver);
+    status = complete_startup_phase(
+        driver, gr_firmware_contract_self_test(driver));
     if (status != 0) return status;
-    status = open_dma_pool(driver);
+    status = complete_startup_phase(
+        driver, gr_plan_contract_self_test(driver));
     if (status != 0) return status;
-    status = dma_staging_self_test(driver);
+    status = complete_startup_phase(driver, open_dma_pool(driver));
     if (status != 0) return status;
-    status = channel_image_dma_self_test(driver);
+    status = complete_startup_phase(
+        driver, dma_staging_self_test(driver));
     if (status != 0) return status;
-    status = gpu_vm_plan_dma_self_test(driver);
+    status = complete_startup_phase(
+        driver, channel_image_dma_self_test(driver));
     if (status != 0) return status;
-    status = gr_firmware_dma_stage_self_test(driver);
+    status = complete_startup_phase(
+        driver, gpu_vm_plan_dma_self_test(driver));
     if (status != 0) return status;
-    status = gr_execution_image_dma_self_test(driver);
+    status = complete_startup_phase(
+        driver, gr_firmware_dma_stage_self_test(driver));
     if (status != 0) return status;
-    status = gpu_vm_relocate_and_seal(driver);
+    status = complete_startup_phase(
+        driver, gr_execution_image_dma_self_test(driver));
     if (status != 0) return status;
-    status = gpu_gr_prerequisites(driver);
+    status = complete_startup_phase(
+        driver, gpu_vm_relocate_and_seal(driver));
     if (status != 0) return status;
-    status = gpu_vm_apply_page_mode(driver);
+    status = complete_startup_phase(
+        driver, gpu_gr_prerequisites(driver));
     if (status != 0) return status;
-    status = gpu_gr_firmware_upload(driver);
+    status = complete_startup_phase(
+        driver, gpu_vm_apply_page_mode(driver));
     if (status != 0) return status;
-    status = gpu_gr_execute(driver);
+    status = complete_startup_phase(
+        driver, gpu_gr_firmware_upload(driver));
     if (status != 0) return status;
-    status = gpu_channel_activate(driver);
+    status = complete_startup_phase(driver, gpu_gr_execute(driver));
+    if (status != 0) return status;
+    status = complete_startup_phase(
+        driver, gpu_channel_activate(driver));
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

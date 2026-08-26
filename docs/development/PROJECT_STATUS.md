@@ -237,6 +237,17 @@ Channel-Deadlines ab. `reconnect_attempts`, `service_status` und
 Ein fehlgeschlagener Treiberaufbau endet außerdem nicht mehr still, sondern
 meldet vor dem Prozessende `NVIDIA_GK208_INIT_FAILED status=N`; der unmittelbar
 vorherige geordnete Diagnosemarker bezeichnet die letzte abgeschlossene Phase.
+Der folgende Langlauf zeigte weiterhin `service_status=-11`, obwohl die
+Konstruktion geordnet voranschritt. Die angenommene 25-Sekunden-Summe war auf
+dem echten Board zu knapp. `R2.2ae-nvidia-phased-startup` ersetzt sie durch
+einen sechs Sekunden langen Phasenwatchdog unter einer unveränderlichen
+60-Sekunden-Gesamtgrenze. Nur streng steigende Startup-Marker der noch
+eingezäunten Generation erneuern die Phasenfrist; weder Healthy-Zustand noch
+Ausgabeautorität werden dadurch freigegeben. Restart und administrativer Start
+beginnen Marker und Gesamtgrenze neu, während Heartbeat und Recovery bei zwei
+beziehungsweise einer Sekunde bleiben. Die Desktopmeldung heißt nun
+`Beschleunigungsdienst`; der alte Text `SVGA2D-Service` war ein gemeinsamer,
+irreführender Clientname und keine VMware-Treiberauswahl auf dem ASUS-System.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

@@ -1657,7 +1657,9 @@ int x86os_device_driver_report(
         (report_type != X86OS_DEVICE_DRIVER_REPORT_SELF_TEST &&
          report_type != X86OS_DEVICE_DRIVER_REPORT_PROGRESS &&
          report_type != X86OS_DEVICE_DRIVER_REPORT_CHANNEL &&
-         report_type != X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC)) return -22;
+         report_type != X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC &&
+         report_type != X86OS_DEVICE_DRIVER_REPORT_STARTUP_PROGRESS))
+        return -22;
     const x86os_device_driver_report_t report = {
         .version = X86OS_DEVICE_ABI_VERSION,
         .struct_size = sizeof(report),

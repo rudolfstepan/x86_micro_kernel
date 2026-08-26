@@ -33,12 +33,14 @@ typedef struct {
     uint32_t generation;
     uint32_t state;
     uint32_t epoch;
-    uint64_t progress_marker;
     uint32_t restart_count;
+    uint64_t progress_marker;
     uint32_t heartbeat_timeout_ms;
     uint32_t recovery_timeout_ms;
     uint32_t restart_budget;
     uint32_t startup_timeout_ms;
+    uint32_t startup_progress_timeout_ms;
+    uint64_t startup_deadline_ms;
     uint64_t deadline_ms;
 } supervisor_state_t;
 
@@ -263,6 +265,23 @@ static void supervisor_unlock(uint32_t flags) {
 
 static uint64_t deadline_after(uint64_t now, uint32_t interval) {
     return UINT64_MAX - now < interval ? UINT64_MAX : now + interval;
+}
+
+static uint64_t startup_window_deadline(const supervisor_state_t *state,
+                                        uint64_t now_ms) {
+    uint32_t window = state->startup_progress_timeout_ms != 0U
+        ? state->startup_progress_timeout_ms : state->startup_timeout_ms;
+    uint64_t deadline = deadline_after(now_ms, window);
+    return deadline < state->startup_deadline_ms
+        ? deadline : state->startup_deadline_ms;
+}
+
+static void supervisor_begin_startup(supervisor_state_t *state,
+                                     uint64_t now_ms) {
+    state->progress_marker = 0U;
+    state->startup_deadline_ms = deadline_after(
+        now_ms, state->startup_timeout_ms);
+    state->deadline_ms = startup_window_deadline(state, now_ms);
 }
 
 #ifndef REIST_HOST_TEST
@@ -1613,6 +1632,8 @@ static bool state_valid(const void *payload, size_t length) {
            state->heartbeat_timeout_ms != 0 &&
            state->recovery_timeout_ms != 0 &&
            state->startup_timeout_ms != 0 &&
+           state->startup_progress_timeout_ms <= state->startup_timeout_ms &&
+           state->startup_deadline_ms != 0U && state->deadline_ms != 0U &&
            state->restart_count <= state->restart_budget;
 }
 
@@ -1925,6 +1946,12 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
         return -1;
     const uint32_t startup_timeout_ms = config->startup_timeout_ms != 0U
         ? config->startup_timeout_ms : config->recovery_timeout_ms;
+    if (config->startup_progress_timeout_ms > startup_timeout_ms) return -1;
+    const uint32_t startup_window_ms =
+        config->startup_progress_timeout_ms != 0U
+            ? config->startup_progress_timeout_ms : startup_timeout_ms;
+    const uint64_t startup_deadline_ms =
+        deadline_after(now_ms, startup_timeout_ms);
     uint32_t flags = supervisor_lock();
     uint32_t slot = 0;
     for (; slot < SUPERVISOR_MAX_DOMAINS; ++slot) {
@@ -1948,7 +1975,9 @@ int supervisor_register(const char *name, const supervisor_config_t *config,
         .recovery_timeout_ms = config->recovery_timeout_ms,
         .restart_budget = config->restart_budget,
         .startup_timeout_ms = startup_timeout_ms,
-        .deadline_ms = deadline_after(now_ms, startup_timeout_ms),
+        .startup_progress_timeout_ms = config->startup_progress_timeout_ms,
+        .startup_deadline_ms = startup_deadline_ms,
+        .deadline_ms = deadline_after(now_ms, startup_window_ms),
     };
     if (critical_object_init(&slots[slot].protected_state,
                              SUPERVISOR_STATE_VERSION, &state,
@@ -1998,6 +2027,30 @@ int supervisor_report_progress(supervisor_handle_t handle,
     state.progress_marker = progress_marker;
     state.state = SUPERVISOR_HEALTHY;
     state.deadline_ms = deadline_after(now_ms, state.heartbeat_timeout_ms);
+    int result = state_write(handle.slot, &state);
+    supervisor_unlock(flags);
+    return result;
+}
+
+int supervisor_report_startup_progress(supervisor_handle_t handle,
+                                       uint64_t progress_marker,
+                                       uint64_t now_ms) {
+    uint32_t flags = supervisor_lock();
+    supervisor_state_t state;
+    if (resolve(handle, &state) != 0 ||
+        (state.state != SUPERVISOR_STARTING &&
+         state.state != SUPERVISOR_RECOVERING) ||
+        state.startup_progress_timeout_ms == 0U ||
+        progress_marker <= state.progress_marker ||
+        now_ms >= state.deadline_ms || now_ms >= state.startup_deadline_ms) {
+        supervisor_unlock(flags);
+        return -1;
+    }
+    uint64_t next = deadline_after(
+        now_ms, state.startup_progress_timeout_ms);
+    if (next > state.startup_deadline_ms) next = state.startup_deadline_ms;
+    state.progress_marker = progress_marker;
+    state.deadline_ms = next;
     int result = state_write(handle.slot, &state);
     supervisor_unlock(flags);
     return result;
@@ -2394,8 +2447,7 @@ static int supervisor_admin_start(supervisor_handle_t handle,
     }
     ++state.epoch;
     state.state = SUPERVISOR_STARTING;
-    state.progress_marker = 0U;
-    state.deadline_ms = deadline_after(now_ms, state.startup_timeout_ms);
+    supervisor_begin_startup(&state, now_ms);
     int result = state_write(handle.slot, &state);
     if (result == 0) {
         *updated_out = (supervisor_handle_t){
@@ -4982,7 +5034,9 @@ int supervisor_device_driver_report(
         (report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_SELF_TEST &&
          report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_PROGRESS &&
          report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_CHANNEL &&
-         report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC))
+         report->report_type != DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC &&
+         report->report_type !=
+             DEVICE_DOMAIN_DRIVER_REPORT_STARTUP_PROGRESS))
         return -22;
     supervisor_driver_control_t control;
     supervisor_driver_runtime_t *runtime = driver_runtime_for_identity(
@@ -4998,6 +5052,12 @@ int supervisor_device_driver_report(
                    runtime->name, report->value);
             result = 0;
         }
+    } else if (report->report_type ==
+               DEVICE_DOMAIN_DRIVER_REPORT_STARTUP_PROGRESS) {
+        result = report->value != 0U
+            ? supervisor_report_startup_progress(
+                control.supervisor, report->value, now_ms)
+            : -22;
     } else if (report->report_type == DEVICE_DOMAIN_DRIVER_REPORT_CHANNEL) {
         if (report->value == IPC_INVALID_HANDLE || control.channel != 0U ||
             ipc_capability_validate_owner(
@@ -5831,7 +5891,7 @@ supervisor_event_t supervisor_apply_fence(supervisor_handle_t handle,
         ++state.epoch;
         if (state.epoch == 0) state.epoch = 1U;
         state.state = SUPERVISOR_RECOVERING;
-        state.deadline_ms = deadline_after(now_ms, state.startup_timeout_ms);
+        supervisor_begin_startup(&state, now_ms);
         type = SUPERVISOR_EVENT_RESTART_REQUIRED;
     }
     if (state_write(handle.slot, &state) != 0)
@@ -5845,7 +5905,8 @@ int supervisor_report_self_test(supervisor_handle_t handle, bool passed,
                                 uint64_t now_ms) {
     uint32_t flags = supervisor_lock();
     supervisor_state_t state;
-    if (resolve(handle, &state) != 0 ||
+    if (resolve(handle, &state) != 0 || now_ms >= state.deadline_ms ||
+        now_ms >= state.startup_deadline_ms ||
         (state.state != SUPERVISOR_RECOVERING &&
          state.state != SUPERVISOR_STARTING)) {
         supervisor_unlock(flags);
@@ -5853,7 +5914,7 @@ int supervisor_report_self_test(supervisor_handle_t handle, bool passed,
     }
     state.state = passed ? SUPERVISOR_STARTING : SUPERVISOR_ISOLATED;
     state.progress_marker = 0;
-    state.deadline_ms = deadline_after(now_ms, state.startup_timeout_ms);
+    state.deadline_ms = startup_window_deadline(&state, now_ms);
     int result = state_write(handle.slot, &state);
     supervisor_unlock(flags);
     return result;

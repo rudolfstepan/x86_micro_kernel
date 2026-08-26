@@ -97,10 +97,29 @@ int main(void) {
     safe = supervisor_service_one(4100U);
     if (safe.type != SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) return 32;
 
+    /* A finite construction can refresh a short per-phase watchdog without
+     * moving the immutable aggregate startup ceiling. */
+    supervisor_init();
+    config.startup_timeout_ms = 300U;
+    config.startup_progress_timeout_ms = 100U;
+    config.restart_budget = 1U;
+    if (supervisor_register("phased-start", &config, &fence_ops, 4300U,
+                            &handle) != 0 ||
+        supervisor_poll(4389U).type != SUPERVISOR_EVENT_NONE ||
+        supervisor_report_startup_progress(handle, 1U, 4390U) != 0 ||
+        supervisor_report_startup_progress(handle, 1U, 4391U) == 0 ||
+        supervisor_report_startup_progress(handle, 2U, 4489U) != 0 ||
+        supervisor_report_startup_progress(handle, 3U, 4588U) != 0 ||
+        supervisor_poll(4599U).type != SUPERVISOR_EVENT_NONE ||
+        supervisor_report_startup_progress(handle, 4U, 4600U) == 0 ||
+        supervisor_poll(4600U).type != SUPERVISOR_EVENT_FENCE_REQUIRED)
+        return 62;
+
     /* A complex driver may need a longer bounded construction window without
      * weakening its heartbeat or fencing/recovery deadline. */
     supervisor_init();
     config.startup_timeout_ms = 200U;
+    config.startup_progress_timeout_ms = 0U;
     config.restart_budget = 1U;
     if (supervisor_register("slow-start", &config, &fence_ops, 4500U,
                             &handle) != 0 ||
