@@ -16,6 +16,7 @@
 #include "drivers/char/rtc.h"
 #include "drivers/usb/hid_mouse.h"
 #include "drivers/usb/xhci.h"
+#include "drivers/usb/ohci.h"
 #include "drivers/bus/drives.h"
 #include "drivers/block/ata.h"
 #include "drivers/block/fdd.h"
@@ -2352,6 +2353,7 @@ static int syscall_mouse_event(hid_mouse_event_t *user_event) {
     if (header.version != HID_MOUSE_EVENT_VERSION ||
         header.struct_size < sizeof(hid_mouse_event_t)) return -22;
     xhci_poll();
+    ohci_poll();
     hid_mouse_event_t event;
     int result = hid_mouse_read_event(&event);
     if (result != 0) return result;
@@ -2411,15 +2413,20 @@ typedef struct {
     uint32_t device_subclass;
     uint32_t device_protocol;
     uint32_t configuration_length;
+    uint32_t backend;
 } syscall_usb_diagnostics_t;
 
-#define SYSCALL_USB_DIAGNOSTICS_VERSION 5U
+#define SYSCALL_USB_DIAGNOSTICS_VERSION 6U
 #define SYSCALL_USB_DIAGNOSTICS_V1_SIZE 96U
 #define SYSCALL_USB_DIAGNOSTICS_V2_SIZE 120U
 #define SYSCALL_USB_DIAGNOSTICS_V3_SIZE 148U
 #define SYSCALL_USB_DIAGNOSTICS_V4_SIZE 180U
+#define SYSCALL_USB_DIAGNOSTICS_V5_SIZE 208U
+#define SYSCALL_USB_BACKEND_NONE 0U
+#define SYSCALL_USB_BACKEND_XHCI 1U
+#define SYSCALL_USB_BACKEND_OHCI 2U
 
-_Static_assert(sizeof(syscall_usb_diagnostics_t) == 208U,
+_Static_assert(sizeof(syscall_usb_diagnostics_t) == 212U,
                "USB diagnostics syscall ABI size changed");
 _Static_assert(XHCI_DIAG_DISCONNECTED == 13U,
                "USB diagnostics state ABI changed");
@@ -2429,6 +2436,30 @@ _Static_assert(XHCI_DIAG_KEYBOARD_MOUSE_READY == 15U,
                "USB diagnostics dual-HID state ABI changed");
 _Static_assert(XHCI_FAILURE_RELEASE_SLOT == 12U,
                "USB diagnostics failure-stage ABI changed");
+
+static uint32_t ohci_syscall_state(uint32_t state) {
+    switch (state) {
+        case OHCI_DIAG_NOT_PROBED: return XHCI_DIAG_NOT_PROBED;
+        case OHCI_DIAG_PROBING: return XHCI_DIAG_PROBING;
+        case OHCI_DIAG_INVALID_BAR: return XHCI_DIAG_INVALID_BAR;
+        case OHCI_DIAG_MMIO_FAILED: return XHCI_DIAG_MMIO_FAILED;
+        case OHCI_DIAG_UNSUPPORTED_REVISION:
+        case OHCI_DIAG_NO_ROOT_PORTS:
+            return XHCI_DIAG_CAPABILITIES_REJECTED;
+        case OHCI_DIAG_DMA_REJECTED: return XHCI_DIAG_DMA_REJECTED;
+        case OHCI_DIAG_HANDOFF_FAILED: return XHCI_DIAG_HANDOFF_FAILED;
+        case OHCI_DIAG_RESET_FAILED: return XHCI_DIAG_START_FAILED;
+        case OHCI_DIAG_NO_CONNECTED_PORT: return XHCI_DIAG_NO_CONNECTED_PORT;
+        case OHCI_DIAG_PORT_RESET_FAILED: return XHCI_DIAG_START_FAILED;
+        case OHCI_DIAG_OPERATIONAL: return XHCI_DIAG_NO_SUPPORTED_HID;
+        case OHCI_DIAG_KEYBOARD_READY: return XHCI_DIAG_KEYBOARD_READY;
+        case OHCI_DIAG_MOUSE_READY: return XHCI_DIAG_MOUSE_READY;
+        case OHCI_DIAG_KEYBOARD_MOUSE_READY:
+            return XHCI_DIAG_KEYBOARD_MOUSE_READY;
+        case OHCI_DIAG_DISCONNECTED: return XHCI_DIAG_DISCONNECTED;
+        default: return XHCI_DIAG_CAPABILITIES_REJECTED;
+    }
+}
 
 static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     struct {
@@ -2449,6 +2480,9 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     } else if (header.version == 4U &&
                header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V4_SIZE) {
         result_size = SYSCALL_USB_DIAGNOSTICS_V4_SIZE;
+    } else if (header.version == 5U &&
+               header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V5_SIZE) {
+        result_size = SYSCALL_USB_DIAGNOSTICS_V5_SIZE;
     } else if (header.version == SYSCALL_USB_DIAGNOSTICS_VERSION &&
                header.struct_size >= sizeof(syscall_usb_diagnostics_t)) {
         result_size = sizeof(syscall_usb_diagnostics_t);
@@ -2457,13 +2491,17 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     }
 
     xhci_poll();
+    ohci_poll();
     xhci_diagnostics_t xhci_status;
-    if (!xhci_get_diagnostics(&xhci_status)) return -19;
+    const bool have_xhci = xhci_get_diagnostics(&xhci_status) &&
+        xhci_status.state != XHCI_DIAG_NOT_PROBED;
+    ohci_diagnostics_t ohci_status;
+    const bool have_ohci = ohci_get_diagnostics(&ohci_status) &&
+        ohci_status.state != OHCI_DIAG_NOT_PROBED;
 
     syscall_usb_diagnostics_t result = {0};
     result.version = header.version;
     result.struct_size = (uint32_t)result_size;
-    result.state = xhci_status.state;
     for (size_t index = 0U; index < pci_device_count; ++index) {
         const pci_device_t *device = &pci_devices[index];
         if (device->class_code != 0x0CU || device->subclass_code != 0x03U)
@@ -2474,50 +2512,94 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
         else if (device->prog_if == 0x30U) result.xhci_controllers++;
         else result.other_controllers++;
     }
-    result.port_count = xhci_status.port_count;
-    result.connected_ports = xhci_status.connected_ports;
-    result.attempts = xhci_status.attempts;
-    result.selected_port = xhci_status.selected_port;
-    result.hid_protocol = xhci_status.hid_protocol;
-    result.endpoint_id = xhci_status.endpoint_id;
-    result.report_size = xhci_status.report_size;
-    result.irq = xhci_status.irq;
-    result.transfer_events = xhci_status.transfer_events;
-    result.mouse_reports = xhci_status.mouse_reports;
-    result.rejected_mouse_reports = xhci_status.rejected_mouse_reports;
-    result.last_completion = xhci_status.last_completion;
-    result.last_actual_length = xhci_status.last_actual_length;
-    result.bus = xhci_status.bus;
-    result.slot = xhci_status.slot;
-    result.function = xhci_status.function;
-    result.cap_length = xhci_status.cap_length;
-    result.max_slots = xhci_status.max_slots;
-    result.scratchpad_count = xhci_status.scratchpad_count;
-    result.doorbell_offset = xhci_status.doorbell_offset;
-    result.runtime_offset = xhci_status.runtime_offset;
-    result.capability_rejections = xhci_status.capability_rejections;
-    result.vendor_id = xhci_status.vendor_id;
-    result.device_id = xhci_status.device_id;
-    result.intel_routing_flags = xhci_status.intel_routing_flags;
-    result.usb2_routing_mask = xhci_status.usb2_routing_mask;
-    result.usb2_routing = xhci_status.usb2_routing;
-    result.usb3_routing_mask = xhci_status.usb3_routing_mask;
-    result.usb3_routing = xhci_status.usb3_routing;
-    result.keyboard_port = xhci_status.keyboard_port;
-    result.keyboard_slot = xhci_status.keyboard_slot;
-    result.keyboard_endpoint = xhci_status.keyboard_endpoint;
-    result.mouse_port = xhci_status.mouse_port;
-    result.mouse_slot = xhci_status.mouse_slot;
-    result.mouse_endpoint = xhci_status.mouse_endpoint;
-    result.keyboard_reports = xhci_status.keyboard_reports;
-    result.rejected_keyboard_reports = xhci_status.rejected_keyboard_reports;
-    result.failure_stage = xhci_status.failure_stage;
-    result.candidate_port = xhci_status.candidate_port;
-    result.candidate_speed = xhci_status.candidate_speed;
-    result.device_class = xhci_status.device_class;
-    result.device_subclass = xhci_status.device_subclass;
-    result.device_protocol = xhci_status.device_protocol;
-    result.configuration_length = xhci_status.configuration_length;
+    const bool xhci_ready = have_xhci &&
+        (xhci_status.state == XHCI_DIAG_KEYBOARD_READY ||
+         xhci_status.state == XHCI_DIAG_MOUSE_READY ||
+         xhci_status.state == XHCI_DIAG_KEYBOARD_MOUSE_READY);
+    if (xhci_ready || (have_xhci && !have_ohci)) {
+        result.backend = SYSCALL_USB_BACKEND_XHCI;
+        result.state = xhci_status.state;
+        result.port_count = xhci_status.port_count;
+        result.connected_ports = xhci_status.connected_ports;
+        result.attempts = xhci_status.attempts;
+        result.selected_port = xhci_status.selected_port;
+        result.hid_protocol = xhci_status.hid_protocol;
+        result.endpoint_id = xhci_status.endpoint_id;
+        result.report_size = xhci_status.report_size;
+        result.irq = xhci_status.irq;
+        result.transfer_events = xhci_status.transfer_events;
+        result.mouse_reports = xhci_status.mouse_reports;
+        result.rejected_mouse_reports = xhci_status.rejected_mouse_reports;
+        result.last_completion = xhci_status.last_completion;
+        result.last_actual_length = xhci_status.last_actual_length;
+        result.bus = xhci_status.bus;
+        result.slot = xhci_status.slot;
+        result.function = xhci_status.function;
+        result.cap_length = xhci_status.cap_length;
+        result.max_slots = xhci_status.max_slots;
+        result.scratchpad_count = xhci_status.scratchpad_count;
+        result.doorbell_offset = xhci_status.doorbell_offset;
+        result.runtime_offset = xhci_status.runtime_offset;
+        result.capability_rejections = xhci_status.capability_rejections;
+        result.vendor_id = xhci_status.vendor_id;
+        result.device_id = xhci_status.device_id;
+        result.intel_routing_flags = xhci_status.intel_routing_flags;
+        result.usb2_routing_mask = xhci_status.usb2_routing_mask;
+        result.usb2_routing = xhci_status.usb2_routing;
+        result.usb3_routing_mask = xhci_status.usb3_routing_mask;
+        result.usb3_routing = xhci_status.usb3_routing;
+        result.keyboard_port = xhci_status.keyboard_port;
+        result.keyboard_slot = xhci_status.keyboard_slot;
+        result.keyboard_endpoint = xhci_status.keyboard_endpoint;
+        result.mouse_port = xhci_status.mouse_port;
+        result.mouse_slot = xhci_status.mouse_slot;
+        result.mouse_endpoint = xhci_status.mouse_endpoint;
+        result.keyboard_reports = xhci_status.keyboard_reports;
+        result.rejected_keyboard_reports =
+            xhci_status.rejected_keyboard_reports;
+        result.failure_stage = xhci_status.failure_stage;
+        result.candidate_port = xhci_status.candidate_port;
+        result.candidate_speed = xhci_status.candidate_speed;
+        result.device_class = xhci_status.device_class;
+        result.device_subclass = xhci_status.device_subclass;
+        result.device_protocol = xhci_status.device_protocol;
+        result.configuration_length = xhci_status.configuration_length;
+    } else if (have_ohci) {
+        result.backend = SYSCALL_USB_BACKEND_OHCI;
+        result.state = ohci_syscall_state(ohci_status.state);
+        result.port_count = ohci_status.port_count;
+        result.connected_ports = ohci_status.connected_ports;
+        result.attempts = ohci_status.reset_attempts;
+        result.selected_port = ohci_status.selected_port;
+        result.hid_protocol = ohci_status.hid_protocol;
+        result.endpoint_id = ohci_status.endpoint;
+        result.report_size = ohci_status.report_size;
+        result.transfer_events = ohci_status.keyboard_reports +
+            ohci_status.mouse_reports;
+        result.mouse_reports = ohci_status.mouse_reports;
+        result.rejected_mouse_reports =
+            ohci_status.rejected_mouse_reports;
+        result.bus = ohci_status.bus;
+        result.slot = ohci_status.slot;
+        result.function = ohci_status.function;
+        result.vendor_id = ohci_status.vendor_id;
+        result.device_id = ohci_status.device_id;
+        result.keyboard_port = ohci_status.keyboard_port;
+        result.keyboard_endpoint = ohci_status.keyboard_endpoint;
+        result.mouse_port = ohci_status.mouse_port;
+        result.mouse_endpoint = ohci_status.mouse_endpoint;
+        result.keyboard_reports = ohci_status.keyboard_reports;
+        result.rejected_keyboard_reports =
+            ohci_status.rejected_keyboard_reports;
+        result.candidate_port = ohci_status.selected_port;
+        result.candidate_speed = 1U;
+        result.device_class = 3U;
+        result.device_subclass = 1U;
+        result.device_protocol = ohci_status.hid_protocol;
+    } else {
+        result.backend = SYSCALL_USB_BACKEND_NONE;
+        result.state = XHCI_DIAG_NOT_PROBED;
+    }
     return copy_to_user(user_status, &result, result_size) == 0 ? 0 : -14;
 }
 

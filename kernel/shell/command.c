@@ -20,6 +20,8 @@
 #include "drivers/bus/drives.h"
 #include "drivers/bus/pci.h"
 #include "drivers/usb/xhci.h"
+#include "drivers/usb/ohci.h"
+#include "drivers/usb/ehci_companion.h"
 
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
@@ -2291,6 +2293,28 @@ static const char *xhci_failure_stage(uint32_t stage) {
     }
 }
 
+static const char *ohci_diagnostic_state(uint32_t state) {
+    switch (state) {
+        case OHCI_DIAG_NOT_PROBED: return "not-probed";
+        case OHCI_DIAG_PROBING: return "probing";
+        case OHCI_DIAG_INVALID_BAR: return "invalid-bar";
+        case OHCI_DIAG_MMIO_FAILED: return "mmio-failed";
+        case OHCI_DIAG_UNSUPPORTED_REVISION: return "unsupported-revision";
+        case OHCI_DIAG_DMA_REJECTED: return "dma-rejected";
+        case OHCI_DIAG_HANDOFF_FAILED: return "bios-handoff-failed";
+        case OHCI_DIAG_RESET_FAILED: return "controller-start-failed";
+        case OHCI_DIAG_NO_ROOT_PORTS: return "no-root-ports";
+        case OHCI_DIAG_NO_CONNECTED_PORT: return "no-connected-root-port";
+        case OHCI_DIAG_PORT_RESET_FAILED: return "port-reset-failed";
+        case OHCI_DIAG_OPERATIONAL: return "no-supported-boot-hid";
+        case OHCI_DIAG_KEYBOARD_READY: return "keyboard-ready";
+        case OHCI_DIAG_MOUSE_READY: return "mouse-ready";
+        case OHCI_DIAG_KEYBOARD_MOUSE_READY: return "keyboard-mouse-ready";
+        case OHCI_DIAG_DISCONNECTED: return "disconnected";
+        default: return "unknown";
+    }
+}
+
 void cmd_usbinfo(int arg_count, const char **args) {
     (void)arg_count;
     (void)args;
@@ -2310,72 +2334,119 @@ void cmd_usbinfo(int arg_count, const char **args) {
            (unsigned)xhci, (unsigned)ehci, (unsigned)ohci,
            (unsigned)uhci, (unsigned)other);
     xhci_poll();
+    ohci_poll();
     xhci_diagnostics_t status;
-    if (!xhci_get_diagnostics(&status)) {
-        printf("xHCI diagnostics unavailable\n\n");
-        return;
+    bool have_xhci_status = xhci_get_diagnostics(&status) &&
+        (xhci != 0U || status.state != XHCI_DIAG_NOT_PROBED);
+    if (!have_xhci_status) printf("xHCI diagnostics unavailable\n");
+    if (have_xhci_status) {
+        printf("xHCI state=%s bdf=%u:%u.%u ports=%u connected=%08X"
+               " attempts=%u\n",
+               xhci_diagnostic_state(status.state), (unsigned)status.bus,
+               (unsigned)status.slot, (unsigned)status.function,
+               (unsigned)status.port_count,
+               (unsigned)status.connected_ports,
+               (unsigned)status.attempts);
+        printf("     failure=%s candidate-port=%u speed=%u"
+               " class=%u/%u/%u config-len=%u\n",
+               xhci_failure_stage(status.failure_stage),
+               (unsigned)status.candidate_port,
+               (unsigned)status.candidate_speed,
+               (unsigned)status.device_class,
+               (unsigned)status.device_subclass,
+               (unsigned)status.device_protocol,
+               (unsigned)status.configuration_length);
+        printf("     selected=%u protocol=%u endpoint=%u report=%u irq=%u\n",
+               (unsigned)status.selected_port, (unsigned)status.hid_protocol,
+               (unsigned)status.endpoint_id, (unsigned)status.report_size,
+               (unsigned)status.irq);
+        printf("     keyboard port=%u slot=%u endpoint=%u"
+               " mouse port=%u slot=%u endpoint=%u\n",
+               (unsigned)status.keyboard_port,
+               (unsigned)status.keyboard_slot,
+               (unsigned)status.keyboard_endpoint,
+               (unsigned)status.mouse_port,
+               (unsigned)status.mouse_slot,
+               (unsigned)status.mouse_endpoint);
+        printf("     transfers=%u keyboard=%u key-rejected=%u"
+               " mouse=%u rejected=%u last-cc=%u last-len=%u\n",
+               (unsigned)status.transfer_events,
+               (unsigned)status.keyboard_reports,
+               (unsigned)status.rejected_keyboard_reports,
+               (unsigned)status.mouse_reports,
+               (unsigned)status.rejected_mouse_reports,
+               (unsigned)status.last_completion,
+               (unsigned)status.last_actual_length);
+        printf("     caplen=%u slots=%u scratch=%u db=%X rt=%X reject=%X\n",
+               (unsigned)status.cap_length, (unsigned)status.max_slots,
+               (unsigned)status.scratchpad_count,
+               (unsigned)status.doorbell_offset,
+               (unsigned)status.runtime_offset,
+               (unsigned)status.capability_rejections);
+        printf("     pci=%X:%X route-flags=%X\n",
+               (unsigned)status.vendor_id, (unsigned)status.device_id,
+               (unsigned)status.intel_routing_flags);
+        printf("     usb2-mask=%X routed=%X usb3-mask=%X enabled=%X\n",
+               (unsigned)status.usb2_routing_mask,
+               (unsigned)status.usb2_routing,
+               (unsigned)status.usb3_routing_mask,
+               (unsigned)status.usb3_routing);
+        if (status.state == XHCI_DIAG_KEYBOARD_MOUSE_READY &&
+            status.mouse_reports == 0U)
+            printf("Result: keyboard and mouse configured;"
+                   " no mouse reports yet.\n");
+        else if (status.state == XHCI_DIAG_KEYBOARD_MOUSE_READY)
+            printf("Result: xHCI keyboard and mouse are ready.\n");
+        else if (status.state == XHCI_DIAG_MOUSE_READY &&
+                 status.mouse_reports == 0U)
+            printf("Result: mouse configured,"
+                   " but no interrupt reports received.\n");
+        else if (status.state == XHCI_DIAG_MOUSE_READY)
+            printf("Result: xHCI mouse reports are reaching the kernel.\n");
+        else if (status.state == XHCI_DIAG_KEYBOARD_READY)
+            printf("Result: only a boot keyboard was selected;"
+                   " no root-port mouse.\n");
+        else
+            printf("Result: xHCI boot HID is not ready;"
+                   " state above is the failure stage.\n");
     }
-    printf("xHCI state=%s bdf=%u:%u.%u ports=%u connected=%08X attempts=%u\n",
-           xhci_diagnostic_state(status.state), (unsigned)status.bus,
-           (unsigned)status.slot, (unsigned)status.function,
-           (unsigned)status.port_count, (unsigned)status.connected_ports,
-           (unsigned)status.attempts);
-    printf("     failure=%s candidate-port=%u speed=%u"
-           " class=%u/%u/%u config-len=%u\n",
-           xhci_failure_stage(status.failure_stage),
-           (unsigned)status.candidate_port,
-           (unsigned)status.candidate_speed,
-           (unsigned)status.device_class,
-           (unsigned)status.device_subclass,
-           (unsigned)status.device_protocol,
-           (unsigned)status.configuration_length);
-    printf("     selected=%u protocol=%u endpoint=%u report=%u irq=%u\n",
-           (unsigned)status.selected_port, (unsigned)status.hid_protocol,
-           (unsigned)status.endpoint_id, (unsigned)status.report_size,
-           (unsigned)status.irq);
-    printf("     keyboard port=%u slot=%u endpoint=%u"
-           " mouse port=%u slot=%u endpoint=%u\n",
-           (unsigned)status.keyboard_port, (unsigned)status.keyboard_slot,
-           (unsigned)status.keyboard_endpoint, (unsigned)status.mouse_port,
-           (unsigned)status.mouse_slot, (unsigned)status.mouse_endpoint);
-    printf("     transfers=%u keyboard=%u key-rejected=%u"
-           " mouse=%u rejected=%u last-cc=%u last-len=%u\n",
-           (unsigned)status.transfer_events,
-           (unsigned)status.keyboard_reports,
-           (unsigned)status.rejected_keyboard_reports,
-           (unsigned)status.mouse_reports,
-           (unsigned)status.rejected_mouse_reports,
-           (unsigned)status.last_completion,
-           (unsigned)status.last_actual_length);
-    printf("     caplen=%u slots=%u scratch=%u db=%X rt=%X reject=%X\n",
-           (unsigned)status.cap_length, (unsigned)status.max_slots,
-           (unsigned)status.scratchpad_count,
-           (unsigned)status.doorbell_offset,
-           (unsigned)status.runtime_offset,
-           (unsigned)status.capability_rejections);
-    printf("     pci=%X:%X route-flags=%X\n",
-           (unsigned)status.vendor_id, (unsigned)status.device_id,
-           (unsigned)status.intel_routing_flags);
-    printf("     usb2-mask=%X routed=%X usb3-mask=%X enabled=%X\n",
-           (unsigned)status.usb2_routing_mask,
-           (unsigned)status.usb2_routing,
-           (unsigned)status.usb3_routing_mask,
-           (unsigned)status.usb3_routing);
-    if (status.state == XHCI_DIAG_KEYBOARD_MOUSE_READY &&
-        status.mouse_reports == 0U)
-        printf("Result: keyboard and mouse configured; no mouse reports yet.\n");
-    else if (status.state == XHCI_DIAG_KEYBOARD_MOUSE_READY)
-        printf("Result: xHCI keyboard and mouse are ready.\n");
-    else if (status.state == XHCI_DIAG_MOUSE_READY &&
-             status.mouse_reports == 0U)
-        printf("Result: mouse configured, but no interrupt reports received.\n");
-    else if (status.state == XHCI_DIAG_MOUSE_READY)
-        printf("Result: xHCI mouse reports are reaching the kernel.\n");
-    else if (xhci == 0U && (ehci != 0U || ohci != 0U || uhci != 0U))
-        printf("Result: only unsupported legacy USB controllers detected.\n");
-    else if (status.state == XHCI_DIAG_KEYBOARD_READY)
-        printf("Result: only a boot keyboard was selected; no root-port mouse.\n");
-    else
-        printf("Result: xHCI boot HID is not ready; state above is the failure stage.\n");
+
+    ohci_diagnostics_t ohci_status;
+    if (ohci_get_diagnostics(&ohci_status) &&
+        ohci_status.state != OHCI_DIAG_NOT_PROBED) {
+        printf("OHCI state=%s bdf=%u:%u.%u ports=%u connected=%08X"
+               " selected=%u protocol=%u endpoint=%u report=%u\n",
+               ohci_diagnostic_state(ohci_status.state),
+               (unsigned)ohci_status.bus, (unsigned)ohci_status.slot,
+               (unsigned)ohci_status.function,
+               (unsigned)ohci_status.port_count,
+               (unsigned)ohci_status.connected_ports,
+               (unsigned)ohci_status.selected_port,
+               (unsigned)ohci_status.hid_protocol,
+               (unsigned)ohci_status.endpoint,
+               (unsigned)ohci_status.report_size);
+        printf("     resets=%u keyboard=%u key-rejected=%u mouse=%u rejected=%u\n",
+               (unsigned)ohci_status.reset_attempts,
+               (unsigned)ohci_status.keyboard_reports,
+               (unsigned)ohci_status.rejected_keyboard_reports,
+               (unsigned)ohci_status.mouse_reports,
+               (unsigned)ohci_status.rejected_mouse_reports);
+        printf("     keyboard-port=%u endpoint=%u"
+               " mouse-port=%u endpoint=%u\n",
+               (unsigned)ohci_status.keyboard_port,
+               (unsigned)ohci_status.keyboard_endpoint,
+               (unsigned)ohci_status.mouse_port,
+               (unsigned)ohci_status.mouse_endpoint);
+    } else {
+        printf("OHCI diagnostics unavailable\n");
+    }
+    ehci_companion_diagnostics_t companion;
+    if (ehci_companion_get_diagnostics(&companion))
+        printf("EHCI companion controllers=%u routed=%u handoff-fail=%u"
+               " halt-fail=%u invalid-bar=%u\n",
+               (unsigned)companion.controllers, (unsigned)companion.routed,
+               (unsigned)companion.handoff_failures,
+               (unsigned)companion.halt_failures,
+               (unsigned)companion.invalid_bars);
     printf("\n");
 }

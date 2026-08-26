@@ -1042,7 +1042,10 @@ typedef struct {
     uint32_t reserved;
 } x86os_mouse_event_t;
 
-#define X86OS_USB_DIAGNOSTICS_VERSION 5U
+#define X86OS_USB_DIAGNOSTICS_VERSION 6U
+#define X86OS_USB_BACKEND_NONE 0U
+#define X86OS_USB_BACKEND_XHCI 1U
+#define X86OS_USB_BACKEND_OHCI 2U
 #define X86OS_USB_CAP_REJECT_PORT_COUNT       (1U << 0U)
 #define X86OS_USB_CAP_REJECT_SCRATCHPADS      (1U << 1U)
 #define X86OS_USB_CAP_REJECT_CAPLENGTH        (1U << 2U)
@@ -1145,6 +1148,7 @@ typedef struct {
     uint32_t device_subclass;
     uint32_t device_protocol;
     uint32_t configuration_length;
+    uint32_t backend;
 } x86os_usb_diagnostics_t;
 
 enum {

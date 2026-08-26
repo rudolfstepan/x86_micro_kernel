@@ -39,6 +39,9 @@
 #define NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN 0x4E660000U
 #define NVIDIA_DIAGNOSTIC_GR_GOLDEN_CONTEXT 0x4E670000U
 #define NVIDIA_DIAGNOSTIC_GR_CHANNEL_READY 0x4E680000U
+#define NVIDIA_DIAGNOSTIC_GR_TOPOLOGY_RAW 0x4E690000U
+#define NVIDIA_DIAGNOSTIC_GR_GPC_TPC_RAW 0x4E6A0000U
+#define NVIDIA_DIAGNOSTIC_GR_GPC_PPC_RAW 0x4E6B0000U
 #define NVIDIA_GR_PREREQUISITE_POLICY_ID 1U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
@@ -298,6 +301,26 @@ static int gr_plan_contract_self_test(nvidia_driver_t *driver) {
         topology->tpc_total += topology->tpc_count[gpc];
         if (topology->tpc_max < topology->tpc_count[gpc])
             topology->tpc_max = topology->tpc_count[gpc];
+    }
+    /* Reveal the live topology the card reported before the strict pinned
+     * validation rejects it, so a real mismatch is diagnosable off-hardware. */
+    (void)x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_TOPOLOGY_RAW |
+            ((topology->gpc_count & 0xFFU) << 8U) |
+            (topology->rop_count & 0xFFU));
+    for (uint32_t gpc = 0U; gpc < topology->gpc_count &&
+         gpc < REIST_NVIDIA_GK208_MAX_GPCS; ++gpc) {
+        (void)x86os_device_driver_report(
+            &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+            NVIDIA_DIAGNOSTIC_GR_GPC_TPC_RAW |
+                ((gpc & 0xFU) << 12U) |
+                (topology->tpc_count[gpc] & 0xFFFU));
+        (void)x86os_device_driver_report(
+            &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+            NVIDIA_DIAGNOSTIC_GR_GPC_PPC_RAW |
+                ((gpc & 0xFU) << 12U) |
+                (topology->ppc_tpc_mask[gpc] & 0xFFFU));
     }
     status = reist_nvidia_gk208_gr_validate_topology(topology);
     if (status == 0) status = reist_nvidia_gk208_gr_plan_self_test();

@@ -1,6 +1,6 @@
 /**
  * @file userspace/programs/usbinfo.c
- * @brief Zeigt den persistenten USB/xHCI-HID-Diagnose-Snapshot.
+ * @brief Zeigt den persistenten USB-HID-Diagnose-Snapshot.
  *
  * Layer: Ring-3 system program or command.
  * Contract: Nur die versionierte, vom Kernel kopierte Diagnose-ABI wird gelesen.
@@ -96,7 +96,9 @@ int main(void) {
     }
 
     print_controller_counts(&status);
-    x86os_puts("xHCI state=");
+    x86os_puts(status.backend == X86OS_USB_BACKEND_OHCI
+        ? "OHCI state=" : status.backend == X86OS_USB_BACKEND_XHCI
+        ? "xHCI state=" : "USB state=");
     x86os_puts(state_name(status.state));
     x86os_puts(" bdf=");
     print_unsigned(status.bus);
@@ -205,21 +207,22 @@ int main(void) {
         status.mouse_reports == 0U) {
         x86os_puts("Result: keyboard and mouse configured; no mouse reports yet.\n");
     } else if (status.state == X86OS_USB_STATE_KEYBOARD_MOUSE_READY) {
-        x86os_puts("Result: xHCI keyboard and mouse are ready.\n");
+        x86os_puts("Result: USB keyboard and mouse are ready.\n");
     } else if (status.state == X86OS_USB_STATE_MOUSE_READY &&
         status.mouse_reports == 0U) {
         x86os_puts("Result: mouse configured, no interrupt reports received.\n");
     } else if (status.state == X86OS_USB_STATE_MOUSE_READY) {
-        x86os_puts("Result: xHCI mouse reports reach the kernel.\n");
+        x86os_puts("Result: USB mouse reports reach the kernel.\n");
     } else if (status.xhci_controllers == 0U &&
+               status.backend == X86OS_USB_BACKEND_NONE &&
                (status.ehci_controllers != 0U ||
                 status.ohci_controllers != 0U ||
                 status.uhci_controllers != 0U)) {
-        x86os_puts("Result: only unsupported legacy USB controllers found.\n");
+        x86os_puts("Result: no supported boot HID is ready on legacy USB.\n");
     } else if (status.state == X86OS_USB_STATE_KEYBOARD_READY) {
         x86os_puts("Result: boot keyboard selected, no root-port mouse.\n");
     } else {
-        x86os_puts("Result: xHCI boot HID not ready; state is failure stage.\n");
+        x86os_puts("Result: selected USB backend is not ready; state is failure stage.\n");
     }
     return 0;
 }

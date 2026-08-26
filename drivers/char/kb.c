@@ -16,6 +16,7 @@
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
 #include "drivers/usb/xhci.h"
+#include "drivers/usb/ohci.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -704,6 +705,7 @@ static void kb_poll_controller(void) {
     irq_restore(flags);
     /* USB report and deferred port work share the console poll fallback. */
     xhci_poll();
+    ohci_poll();
 }
 
 /**
@@ -766,6 +768,7 @@ char getchar(void) {
          * queue lock is acquired because a USB report publishes through
          * kb_submit_key_event() into that queue. */
         xhci_poll();
+        ohci_poll();
         uint32_t flags = irq_save();
         kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
         kb_service_leds_locked();

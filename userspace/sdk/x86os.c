@@ -35,7 +35,7 @@ _Static_assert(sizeof(x86os_display_text_clipped_t) == 48U,
                "clipped display text ABI size changed");
 _Static_assert(sizeof(x86os_display_pixels_t) == 48U,
                "display pixels ABI size changed");
-_Static_assert(sizeof(x86os_usb_diagnostics_t) == 208U,
+_Static_assert(sizeof(x86os_usb_diagnostics_t) == 212U,
                "USB diagnostics ABI size changed");
 _Static_assert(sizeof(x86os_ipc_message_t) == 140U,
                "IPC message ABI size changed");

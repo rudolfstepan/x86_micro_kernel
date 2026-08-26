@@ -19,11 +19,11 @@
  */
 
 #include "drivers/bus/pci.h"
+#include "drivers/usb/ehci_companion.h"
+#include "drivers/usb/ohci.h"
+#include "drivers/usb/xhci.h"
 #include "lib/libc/stdio.h"
 #include <stdint.h>
-
-/* Forward declarations for more complete HCDs */
-int xhci_probe(pci_device_t *dev);
 
 /* Scan pci_devices[] (filled by pci_init()) and call probes for USB HCI */
 void usb_init(void) {
@@ -31,6 +31,9 @@ void usb_init(void) {
     extern size_t pci_device_count;
 
     printf("USB: Scanning PCI devices for USB host controllers (%u devices)\n", (unsigned)pci_device_count);
+    if (!ehci_route_ports_to_companions())
+        printf("USB: EHCI companion routing incomplete\n");
+    bool ohci_ready = false;
     for (size_t i = 0; i < pci_device_count; i++) {
         pci_device_t *dev = &pci_devices[i];
 
@@ -47,8 +50,23 @@ void usb_init(void) {
                 } else {
                     printf("USB: xHCI probe failed\n");
                 }
+            } else if (dev->prog_if == 0x10) {
+                // OHCI (USB 1.1)
+                if (ohci_ready) {
+                    printf("USB: OHCI skipped; HID controller already selected\n");
+                } else {
+                    int status = ohci_probe(dev);
+                    if (status == OHCI_PROBE_READY) {
+                        ohci_ready = true;
+                        printf("USB: OHCI HID probe succeeded\n");
+                    } else if (status == OHCI_PROBE_NO_SUPPORTED_DEVICE) {
+                        printf("USB: OHCI has no supported HID device\n");
+                    } else {
+                        printf("USB: OHCI probe failed\n");
+                    }
+                }
             } else {
-                printf("USB: Unsupported USB prog-if 0x%02X (EHCI/OHCI/UHCI not handled yet)\n", dev->prog_if);
+                printf("USB: Unsupported USB prog-if 0x%02X (EHCI/UHCI not handled yet)\n", dev->prog_if);
             }
         }
     }
