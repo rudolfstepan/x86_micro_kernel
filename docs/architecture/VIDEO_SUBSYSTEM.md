@@ -190,7 +190,20 @@ zero, then commits the complete set and seals the pool. Ring 3 receives only a
 status code and cannot read or mutate the resolved image afterward. The
 alternative policy 16 remains validated but unselected. Register `0x100c80`,
 GPU page-directory activation, runlist/USERD publication and bus mastering
-remain untouched for the following hardware package.
+remain untouched by that package.
+
+`R2.2n` now applies the matching framebuffer page mode through append-only
+Device Control command 20. The immutable GK208 profile permits only bit 0 of
+BAR0 register `0x100c80`: policy 16 sets it and the selected policy 17 clears
+it, matching Nouveau's `gf100_fb_init_page`. Device, read-only BAR resource and
+sealed DMA resource must belong to one owner generation. Ring 0 preserves and
+verifies every other register bit and records the original selected bit. A
+failed transaction rolls back immediately. Driver fencing disables bus
+mastering before restoring and verifying that original bit; a failed restore
+stays fenced and retryable. Ring 3 receives only status and still has no MMIO
+write right. The PGD becomes hardware-visible only through the later channel
+instance bind and runlist commit, which remain absent together with GR
+initialization, USERD kick, IRQs, bus mastering and acceleration capabilities.
 
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the

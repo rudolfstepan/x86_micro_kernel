@@ -91,6 +91,17 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("device_domain_install_dma_relocation_policy", source)
         self.assertIn(".policy_count = 2U", source)
         self.assertIn("page_shifts[2] = {16U, 17U}", source)
+        self.assertIn("NVIDIA_FB_PAGE_MODE_REGISTER 0x00100C80U", source)
+        self.assertIn("NVIDIA_FB_PAGE_MODE_MASK 0x00000001U", source)
+        self.assertIn("install_nvidia_dma_vm_page_mode_policy", source)
+        self.assertIn("device_domain_install_dma_vm_page_mode_policy", source)
+        page_mode = source[source.index(
+            "static int install_nvidia_dma_vm_page_mode_policy") :]
+        page_mode = page_mode[:page_mode.index("static int register_profile")]
+        self.assertIn(".policy_id = 16U", page_mode)
+        self.assertIn(".value = NVIDIA_FB_PAGE_MODE_MASK", page_mode)
+        self.assertIn(".policy_id = 17U", page_mode)
+        self.assertIn(".value = 0U", page_mode)
 
     def test_kernel_only_admits_bar_geometry(self):
         source = (ROOT / "drivers/video/display_control.c").read_text(
@@ -144,6 +155,10 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("gpu_vm_plan_dma_self_test", driver)
         self.assertIn("gpu_vm_relocate_and_seal", driver)
         self.assertIn("x86os_device_dma_relocate_and_seal", driver)
+        self.assertIn("gpu_vm_apply_page_mode", driver)
+        self.assertIn("x86os_device_dma_vm_page_mode", driver)
+        self.assertLess(driver.index("gpu_vm_relocate_and_seal(driver)"),
+                        driver.index("gpu_vm_apply_page_mode(driver)"))
         self.assertIn("X86OS_DEVICE_DMA_TRANSFER_MAX", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("x86os_device_activate", driver)

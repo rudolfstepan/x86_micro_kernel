@@ -1328,6 +1328,7 @@ enum {
     X86OS_DEVICE_CONTROL_DEACTIVATE = 17U,
     X86OS_DEVICE_CONTROL_DMA_POOL_STATS = 18U,
     X86OS_DEVICE_CONTROL_DMA_RELOCATE_AND_SEAL = 19U,
+    X86OS_DEVICE_CONTROL_DMA_VM_PAGE_MODE = 20U,
 };
 enum {
     X86OS_DEVICE_RESOURCE_REGION = 1U,
@@ -1496,6 +1497,16 @@ typedef struct {
     x86os_device_dma_relocation_rule_t
         rules[X86OS_DEVICE_DMA_RELOCATION_MAX_RULES];
 } x86os_device_dma_relocation_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    x86os_device_resource_t region;
+    x86os_device_resource_t dma;
+    uint32_t policy_id;
+    uint32_t flags;
+    uint32_t reserved[3];
+} x86os_device_dma_vm_page_mode_request_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -1829,6 +1840,10 @@ int x86os_device_dma_descriptor_set(x86os_device_resource_t dma,
 int x86os_device_dma_relocate_and_seal(
     x86os_device_resource_t dma, uint32_t policy_id,
     const x86os_device_dma_relocation_rule_t *rules, uint32_t rule_count);
+/** Apply one exact recoverable GPU-VM page mode to a sealed DMA image. */
+int x86os_device_dma_vm_page_mode(
+    x86os_device_handle_t device, x86os_device_resource_t region,
+    x86os_device_resource_t dma, uint32_t policy_id);
 /** Read one aligned 8-, 16- or 32-bit value through the installed policy. */
 int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
                              uint32_t width, uint32_t *value);

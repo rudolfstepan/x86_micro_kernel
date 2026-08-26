@@ -2348,7 +2348,17 @@ danach den Pool gegen weitere Ring-3-Lese- oder Schreibzugriffe. GK208 wählt
 Nouveaus Standard-Bigpage 17; Template 16 bleibt als geprüfte Alternative
 erhalten. Das folgende Paket ist daher noch für die kontrollierte
 Page-Mode-Registersetzung und GPU-VM-Aktivierung, GK208-GR-Initialisierung,
-Runlist-/USERD-Publikation und den echten Fence zuständig.
+Runlist-/USERD-Publikation und den echten Fence zuständig. `R2.2n` trennt den
+ersten dieser Seiteneffekte inzwischen als rückrollbare Transaktion ab:
+Kommando 20 akzeptiert nur Gerät, read-only BAR-Handle und bereits versiegelten
+DMA-Pool derselben Generation, ändert bei `0x100c80` ausschließlich das von der
+Policy vorgegebene Bit 0 und prüft alle erhaltenen Bits. Der ausgewählte
+Standard 17 löscht das Bit, Policy 16 setzt es. Fehlgeschlagene Aktivierung
+rollt sofort zurück; Fence/Release deaktivieren zuerst Busmaster, stellen das
+ursprüngliche Policy-Bit wieder her und bleiben bei fehlendem Readback gesperrt
+und wiederholbar. Der tatsächliche PGD-Verbrauch beginnt erst mit dem noch
+offenen Channel-Instance-Bind und Runlist-Commit; GR-Initialisierung,
+USERD-Publikation, echter Fence und Capabilityfreigabe bleiben ebenfalls offen.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

@@ -78,6 +78,16 @@ Menge. Ein erfolgreicher Seal sperrt Ring-3-Lesen, -Schreiben und
 Deskriptoränderungen bis zur generationgebundenen vollständigen Nullung.
 Physische Adressen werden nicht zurückgegeben. MMIO, Page-Mode-Umschaltung,
 GPU-VM-Aktivierung, USERD-Kick, IRQ, Busmaster und Capabilitybits bleiben offen.
+`R2.2n-nvidia-gk208-vm-page-mode` setzt anschließend ausschließlich die zur
+versiegelten Policy passende FB-Page-Auswahl. Append-only Kommando 20 bindet
+Gerät, read-only BAR-Handle und sealed DMA-Pool derselben Generation und ändert
+bei `0x100c80` nur Bit 0; der Standard 17 löscht es, Alternative 16 setzt es.
+Der Kernel prüft Ziel- und alle erhaltenen Bits. Fehler rollen sofort zurück;
+Fence und Cleanup deaktivieren zuerst Busmaster und stellen das ursprüngliche
+Policy-Bit mit Readback wieder her. Eine fehlgeschlagene Wiederherstellung
+bleibt gesperrt und wiederholbar. Ring 3 erhält kein Schreibrecht. Channel-/
+PGD-Bind, Runlist, GR/FECS/GPCCS, USERD-Kick, IRQ, Busmaster, echter Fence und
+Capabilitybits bleiben weiterhin offen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

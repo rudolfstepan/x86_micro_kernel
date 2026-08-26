@@ -29,6 +29,10 @@ static uint32_t pic_mask_calls;
 static uint32_t pic_unmask_calls;
 static uint32_t described_region_length = 0x4000U;
 static uint32_t last_prepared_length;
+static uint32_t tracked_region_offset = UINT32_MAX;
+static uint32_t tracked_region_value;
+static bool region_write_result = true;
+static bool region_write_persists = true;
 
 pci_device_t pci_devices[2] = {
     {
@@ -170,7 +174,8 @@ static bool read_region(const device_domain_region_info_t *region,
                         uint32_t offset, uint32_t width, uint32_t *value) {
     if (region == NULL || value == NULL || offset >= region->length_low ||
         (width != 1U && width != 2U && width != 4U)) return false;
-    *value = 0xA5000000U | offset | width;
+    *value = offset == tracked_region_offset
+        ? tracked_region_value : 0xA5000000U | offset | width;
     return true;
 }
 
@@ -180,6 +185,9 @@ static bool write_region(const device_domain_region_info_t *region,
         (width != 1U && width != 2U && width != 4U)) return false;
     ++region_write_calls;
     last_region_value = value;
+    if (!region_write_result) return false;
+    if (region_write_persists && offset == tracked_region_offset)
+        tracked_region_value = value;
     return true;
 }
 
@@ -292,6 +300,10 @@ static void reset_counters(void) {
     pic_unmask_calls = 0U;
     described_region_length = 0x4000U;
     last_prepared_length = 0U;
+    tracked_region_offset = UINT32_MAX;
+    tracked_region_value = 0U;
+    region_write_result = true;
+    region_write_persists = true;
     pci_device_count = 1U;
     pci_devices[0].irq_line = 5U;
     pci_devices[1] = (pci_device_t){0};
@@ -1229,6 +1241,133 @@ static void test_dma_relocation_seal_is_atomic_and_generation_scoped(void) {
     assert(device_domain_release(41, 31U, handle, 100U) == 0);
 }
 
+static void test_dma_vm_page_mode_is_exact_rollback_safe_and_retryable(void) {
+    reset_counters();
+    described_region_length = 0x00200000U;
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device_domain_profile_t video = profile(
+        3U, DEVICE_DOMAIN_PROFILE_MEDIATED_IO |
+            DEVICE_DOMAIN_PROFILE_MEDIATED_DMA);
+    uint32_t device = UINT32_MAX;
+    assert(device_domain_register(&video, 0x00001B00U, &device) == 0);
+    const device_domain_region_policy_t region_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(region_policy),
+        .readable_bytes = {0x00100C84U},
+    };
+    assert(device_domain_install_region_policy(device, &region_policy) == 0);
+    const device_domain_dma_relocation_policy_t relocation_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(relocation_policy),
+        .policy_count = 1U,
+        .policies = {{
+            .policy_id = 17U,
+            .rule_count = 1U,
+            .rules = {{
+                .destination_pool_offset = 0x5008U,
+                .source_pool_offset = 0x4000U,
+                .width = sizeof(uint64_t),
+            }},
+        }},
+    };
+    assert(device_domain_install_dma_relocation_policy(
+        device, &relocation_policy) == 0);
+    const device_domain_dma_vm_page_mode_policy_t page_mode_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(page_mode_policy),
+        .policy_count = 2U,
+        .policies = {
+            {
+                .policy_id = 16U,
+                .region_index = 0U,
+                .register_offset = 0x00100C80U,
+                .width = sizeof(uint32_t),
+                .writable_mask = 1U,
+                .value = 1U,
+            },
+            {
+                .policy_id = 17U,
+                .region_index = 0U,
+                .register_offset = 0x00100C80U,
+                .width = sizeof(uint32_t),
+                .writable_mask = 1U,
+            },
+        },
+    };
+    device_domain_dma_vm_page_mode_policy_t invalid_page_mode =
+        page_mode_policy;
+    invalid_page_mode.policies[1].writable_mask = 0U;
+    assert(device_domain_install_dma_vm_page_mode_policy(
+        device, &invalid_page_mode) == -22);
+    assert(device_domain_install_dma_vm_page_mode_policy(
+        device, &page_mode_policy) == 0);
+    assert(device_domain_install_dma_vm_page_mode_policy(
+        device, &page_mode_policy) == -16);
+
+    device_domain_handle_t handle = 0U;
+    assert(device_domain_claim(50, 40U, device,
+        DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    const device_domain_region_request_t region_request = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(region_request),
+        .device = handle,
+        .region_index = 0U,
+        .rights = DEVICE_DOMAIN_REGION_DESCRIBE |
+                  DEVICE_DOMAIN_REGION_ACCESS_READ,
+    };
+    device_domain_region_info_t region;
+    assert(device_domain_open_region(
+        50, 40U, &region_request, &region) == 0);
+    device_domain_resource_handle_t dma = 0U;
+    assert(bind_dma_resource(50, 40U, handle, 0U, &dma) == 0);
+    device_domain_dma_relocation_request_t relocation = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(relocation),
+        .dma = dma,
+        .policy_id = 17U,
+        .rule_count = 1U,
+        .rules = {{
+            .destination_pool_offset = 0x5008U,
+            .source_pool_offset = 0x4000U,
+            .width = sizeof(uint64_t),
+        }},
+    };
+    assert(device_domain_dma_relocate_and_seal(
+        50, 40U, &relocation) == 0);
+    device_domain_dma_vm_page_mode_request_t request = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = handle,
+        .region = region.resource,
+        .dma = dma,
+        .policy_id = 17U,
+    };
+    tracked_region_offset = 0x00100C80U;
+    tracked_region_value = 0xA5A50001U;
+    device_domain_dma_vm_page_mode_request_t unknown = request;
+    unknown.policy_id = 18U;
+    assert(device_domain_dma_vm_page_mode(50, 40U, &unknown) == -13);
+    assert(region_write_calls == 0U);
+
+    region_write_persists = false;
+    assert(device_domain_dma_vm_page_mode(50, 40U, &request) == -5);
+    assert(tracked_region_value == 0xA5A50001U);
+    region_write_persists = true;
+    assert(device_domain_dma_vm_page_mode(50, 40U, &request) == 0);
+    assert(tracked_region_value == 0xA5A50000U);
+    assert(last_region_value == 0xA5A50000U);
+    assert(device_domain_dma_vm_page_mode(50, 40U, &request) == -13);
+
+    region_write_result = false;
+    assert(device_domain_fence(50, 40U, handle) == -5);
+    assert(tracked_region_value == 0xA5A50000U);
+    region_write_result = true;
+    assert(device_domain_fence(50, 40U, handle) == 0);
+    assert(tracked_region_value == 0xA5A50001U);
+    assert(device_domain_release(50, 40U, handle, 100U) == 0);
+}
+
 int main(void) {
     test_irq_storm_and_clock_regression_are_fenced();
     test_legacy_pic_fallback_masks_shared_irq();
@@ -1243,5 +1382,6 @@ int main(void) {
     test_dma_pool_pressure_is_saturating_and_reclaimed();
     test_large_dma_pool_is_explicit_and_profile_scoped();
     test_dma_relocation_seal_is_atomic_and_generation_scoped();
+    test_dma_vm_page_mode_is_exact_rollback_safe_and_retryable();
     return 0;
 }

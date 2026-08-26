@@ -44,6 +44,14 @@ typedef struct {
     device_domain_region_policy_t region_policy;
     uint8_t dma_relocation_policy_installed;
     device_domain_dma_relocation_policy_t dma_relocation_policy;
+    uint8_t dma_vm_page_mode_policy_installed;
+    device_domain_dma_vm_page_mode_policy_t dma_vm_page_mode_policy;
+    uint8_t dma_vm_page_mode_active;
+    device_domain_region_info_t dma_vm_page_mode_region;
+    uint32_t dma_vm_page_mode_offset;
+    uint32_t dma_vm_page_mode_width;
+    uint32_t dma_vm_page_mode_mask;
+    uint32_t dma_vm_page_mode_original_bits;
 } device_slot_t;
 
 typedef struct {
@@ -708,11 +716,46 @@ static bool unmask_device_irq(const device_slot_t *device) {
         pic_unmask_location(device->pci_location);
 }
 
+static bool restore_dma_vm_page_mode(device_slot_t *device) {
+    if (device == NULL || device->dma_vm_page_mode_active == 0U) return true;
+    uint32_t current = 0U;
+    if (!platform_ops.read_region(
+            &device->dma_vm_page_mode_region,
+            device->dma_vm_page_mode_offset,
+            device->dma_vm_page_mode_width, &current))
+        return false;
+    const uint32_t preserved = current & ~device->dma_vm_page_mode_mask;
+    const uint32_t restored = preserved |
+        device->dma_vm_page_mode_original_bits;
+    uint32_t verified = 0U;
+    if (!platform_ops.write_region(
+            &device->dma_vm_page_mode_region,
+            device->dma_vm_page_mode_offset,
+            device->dma_vm_page_mode_width, restored) ||
+        !platform_ops.read_region(
+            &device->dma_vm_page_mode_region,
+            device->dma_vm_page_mode_offset,
+            device->dma_vm_page_mode_width, &verified) ||
+        (verified & device->dma_vm_page_mode_mask) !=
+            device->dma_vm_page_mode_original_bits ||
+        (verified & ~device->dma_vm_page_mode_mask) != preserved)
+        return false;
+    device->dma_vm_page_mode_active = 0U;
+    device->dma_vm_page_mode_region = (device_domain_region_info_t){0};
+    device->dma_vm_page_mode_offset = 0U;
+    device->dma_vm_page_mode_width = 0U;
+    device->dma_vm_page_mode_mask = 0U;
+    device->dma_vm_page_mode_original_bits = 0U;
+    return true;
+}
+
 static bool fence_slot(device_slot_t *device) {
     bool irq_masked = device_is_passive_mediated_io(device) ||
         mask_device_irq(device);
     bool mastering_disabled =
         platform_ops.set_bus_master(device->pci_location, false);
+    bool page_mode_restored = mastering_disabled &&
+        restore_dma_vm_page_mode(device);
     bool irq_revoked = device->irq_bound == 0U || platform_ops.revoke_irq(
         device->pci_location, device->owner_pid, device->owner_generation,
         device->irq_capability);
@@ -733,7 +776,8 @@ static bool fence_slot(device_slot_t *device) {
     device->irq_window_count = 0U;
     retire_device_resources((uint32_t)(device - devices), device->generation);
     device->state = DEVICE_DOMAIN_FENCED;
-    return irq_masked && mastering_disabled && irq_revoked && dma_revoked;
+    return irq_masked && mastering_disabled && page_mode_restored &&
+        irq_revoked && dma_revoked;
 }
 
 bool device_domain_init(const device_domain_platform_ops_t *ops,
@@ -1053,6 +1097,61 @@ int device_domain_install_dma_relocation_policy(
     }
     device->dma_relocation_policy = *policy;
     device->dma_relocation_policy_installed = 1U;
+    end_operation();
+    return 0;
+}
+
+static bool dma_vm_page_mode_template_zero(
+        const device_domain_dma_vm_page_mode_template_t *entry) {
+    return entry->policy_id == 0U && entry->region_index == 0U &&
+        entry->register_offset == 0U && entry->width == 0U &&
+        entry->writable_mask == 0U && entry->value == 0U;
+}
+
+int device_domain_install_dma_vm_page_mode_policy(
+        uint32_t device_index,
+        const device_domain_dma_vm_page_mode_policy_t *policy) {
+    if (!initialized || policy == NULL || device_index >= device_count ||
+        policy->version != DEVICE_DOMAIN_ABI_VERSION ||
+        policy->struct_size != sizeof(*policy) || policy->policy_count == 0U ||
+        policy->policy_count > DEVICE_DOMAIN_DMA_VM_PAGE_MODE_MAX_POLICIES ||
+        policy->reserved != 0U)
+        return -22;
+    const device_slot_t *registered = &devices[device_index];
+    if ((registered->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) == 0U ||
+        registered->region_policy_installed == 0U)
+        return -95;
+    for (uint32_t index = 0U; index < policy->policy_count; ++index) {
+        const device_domain_dma_vm_page_mode_template_t *entry =
+            &policy->policies[index];
+        if (entry->policy_id == 0U || entry->region_index >= 6U ||
+            entry->width != sizeof(uint32_t) ||
+            (entry->register_offset & (sizeof(uint32_t) - 1U)) != 0U ||
+            entry->writable_mask == 0U ||
+            (entry->value & ~entry->writable_mask) != 0U ||
+            entry->register_offset >
+                registered->region_policy.readable_bytes[entry->region_index] ||
+            entry->width > registered->region_policy
+                    .readable_bytes[entry->region_index] -
+                entry->register_offset)
+            return -22;
+        for (uint32_t prior = 0U; prior < index; ++prior)
+            if (policy->policies[prior].policy_id == entry->policy_id)
+                return -22;
+    }
+    for (uint32_t index = policy->policy_count;
+         index < DEVICE_DOMAIN_DMA_VM_PAGE_MODE_MAX_POLICIES; ++index)
+        if (!dma_vm_page_mode_template_zero(&policy->policies[index]))
+            return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = &devices[device_index];
+    if (device->registered == 0U || device->state != DEVICE_DOMAIN_AVAILABLE ||
+        device->dma_vm_page_mode_policy_installed != 0U) {
+        end_operation();
+        return -16;
+    }
+    device->dma_vm_page_mode_policy = *policy;
+    device->dma_vm_page_mode_policy_installed = 1U;
     end_operation();
     return 0;
 }
@@ -1386,7 +1485,8 @@ int device_domain_fence(int pid, uint32_t process_generation,
         end_operation();
         return -9;
     }
-    if (device->state == DEVICE_DOMAIN_FENCED) {
+    if (device->state == DEVICE_DOMAIN_FENCED &&
+        device->dma_vm_page_mode_active == 0U) {
         end_operation();
         return 0;
     }
@@ -1422,7 +1522,8 @@ int device_domain_release(int pid, uint32_t process_generation,
         end_operation();
         return -9;
     }
-    bool fenced = device->state == DEVICE_DOMAIN_FENCED
+    bool fenced = device->state == DEVICE_DOMAIN_FENCED &&
+            device->dma_vm_page_mode_active == 0U
         ? true : fence_slot(device);
     bool mediated_reset = profile_is_irqless_mediated_io(&device->profile) &&
         device->mediated_io_quiesced != 0U;
@@ -1950,6 +2051,88 @@ int device_domain_dma_relocate_and_seal(
                     [request->rules[index].destination_pool_offset],
                &encoded[index], sizeof(encoded[index]));
     pool->sealed = 1U;
+    end_operation();
+    return 0;
+}
+
+int device_domain_dma_vm_page_mode(
+        int pid, uint32_t process_generation,
+        const device_domain_dma_vm_page_mode_request_t *request) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->policy_id == 0U || request->flags != 0U ||
+        request->reserved[0] != 0U || request->reserved[1] != 0U ||
+        request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(
+        pid, process_generation, request->device);
+    resource_slot_t *region = owned_resource_locked(
+        pid, process_generation, request->region,
+        DEVICE_DOMAIN_RESOURCE_REGION);
+    resource_slot_t *dma = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(dma);
+    if (device == NULL || region == NULL || dma == NULL) {
+        end_operation();
+        return -9;
+    }
+    const uint32_t device_index = (uint32_t)(device - devices);
+    if (region->device_slot != device_index || dma->device_slot != device_index ||
+        region->device_generation != device->generation ||
+        dma->device_generation != device->generation ||
+        device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
+        pool->sealed == 0U || device->dma_vm_page_mode_active != 0U ||
+        device->dma_vm_page_mode_policy_installed == 0U ||
+        (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U) {
+        end_operation();
+        return -13;
+    }
+    const device_domain_dma_vm_page_mode_template_t *selected = NULL;
+    for (uint32_t index = 0U;
+         index < device->dma_vm_page_mode_policy.policy_count; ++index)
+        if (device->dma_vm_page_mode_policy.policies[index].policy_id ==
+            request->policy_id)
+            selected = &device->dma_vm_page_mode_policy.policies[index];
+    if (selected == NULL ||
+        selected->region_index != region->region.region_index ||
+        selected->register_offset > region->region.length_low ||
+        selected->width >
+            region->region.length_low - selected->register_offset) {
+        end_operation();
+        return -13;
+    }
+    uint32_t original = 0U;
+    if (!platform_ops.read_region(
+            &region->region, selected->register_offset, selected->width,
+            &original)) {
+        end_operation();
+        return -5;
+    }
+    const uint32_t preserved = original & ~selected->writable_mask;
+    const uint32_t target = preserved | selected->value;
+    device->dma_vm_page_mode_active = 1U;
+    device->dma_vm_page_mode_region = region->region;
+    device->dma_vm_page_mode_offset = selected->register_offset;
+    device->dma_vm_page_mode_width = selected->width;
+    device->dma_vm_page_mode_mask = selected->writable_mask;
+    device->dma_vm_page_mode_original_bits =
+        original & selected->writable_mask;
+    uint32_t verified = 0U;
+    if (!platform_ops.write_region(
+            &region->region, selected->register_offset, selected->width,
+            target) ||
+        !platform_ops.read_region(
+            &region->region, selected->register_offset, selected->width,
+            &verified) ||
+        (verified & selected->writable_mask) != selected->value ||
+        (verified & ~selected->writable_mask) != preserved) {
+        if (!restore_dma_vm_page_mode(device)) (void)fence_slot(device);
+        end_operation();
+        return -5;
+    }
     end_operation();
     return 0;
 }

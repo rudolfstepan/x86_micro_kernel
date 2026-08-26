@@ -33,6 +33,7 @@
 #define DEVICE_DOMAIN_DMA_DATA_OFFSET DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES
 #define DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES 8U
 #define DEVICE_DOMAIN_DMA_RELOCATION_MAX_POLICIES 2U
+#define DEVICE_DOMAIN_DMA_VM_PAGE_MODE_MAX_POLICIES 2U
 #define DEVICE_DOMAIN_MAX_REGION_RULES 32U
 #define DEVICE_DOMAIN_MAX_REGION_BYTES (8U * 1024U * 1024U)
 #define DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT 128U
@@ -69,6 +70,7 @@ enum {
     DEVICE_DOMAIN_CONTROL_DEACTIVATE = 17U,
     DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U,
     DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL = 19U,
+    DEVICE_DOMAIN_CONTROL_DMA_VM_PAGE_MODE = 20U,
 };
 
 enum {
@@ -349,6 +351,35 @@ typedef struct {
 } device_domain_dma_relocation_request_t;
 
 typedef struct {
+    uint32_t policy_id;
+    uint32_t region_index;
+    uint32_t register_offset;
+    uint32_t width;
+    uint32_t writable_mask;
+    uint32_t value;
+} device_domain_dma_vm_page_mode_template_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t policy_count;
+    uint32_t reserved;
+    device_domain_dma_vm_page_mode_template_t
+        policies[DEVICE_DOMAIN_DMA_VM_PAGE_MODE_MAX_POLICIES];
+} device_domain_dma_vm_page_mode_policy_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    device_domain_resource_handle_t region;
+    device_domain_resource_handle_t dma;
+    uint32_t policy_id;
+    uint32_t flags;
+    uint32_t reserved[3];
+} device_domain_dma_vm_page_mode_request_t;
+
+typedef struct {
     uint32_t version;
     uint32_t struct_size;
     device_domain_handle_t device;
@@ -495,6 +526,12 @@ _Static_assert(sizeof(device_domain_dma_relocation_policy_t) == 432U,
                "device-domain DMA relocation policy ABI changed");
 _Static_assert(sizeof(device_domain_dma_relocation_request_t) == 224U,
                "device-domain DMA relocation request ABI changed");
+_Static_assert(sizeof(device_domain_dma_vm_page_mode_template_t) == 24U,
+               "device-domain DMA VM page-mode template ABI changed");
+_Static_assert(sizeof(device_domain_dma_vm_page_mode_policy_t) == 64U,
+               "device-domain DMA VM page-mode policy ABI changed");
+_Static_assert(sizeof(device_domain_dma_vm_page_mode_request_t) == 40U,
+               "device-domain DMA VM page-mode request ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -529,6 +566,9 @@ int device_domain_install_region_policy(
 /** Install exact kernel-owned DMA relocation templates before first claim. */
 int device_domain_install_dma_relocation_policy(
     uint32_t device, const device_domain_dma_relocation_policy_t *policy);
+/** Install exact recoverable GPU-VM page-mode transactions before claim. */
+int device_domain_install_dma_vm_page_mode_policy(
+    uint32_t device, const device_domain_dma_vm_page_mode_policy_t *policy);
 /** Claim one function and its complete isolation group for a process generation. */
 int device_domain_claim(int pid, uint32_t process_generation, uint32_t device,
                         uint32_t mode, device_domain_handle_t *handle_out);
@@ -603,6 +643,10 @@ int device_domain_dma_descriptor_set(
 int device_domain_dma_relocate_and_seal(
     int pid, uint32_t process_generation,
     const device_domain_dma_relocation_request_t *request);
+/** Apply one exact masked page-mode write to a sealed same-device DMA image. */
+int device_domain_dma_vm_page_mode(
+    int pid, uint32_t process_generation,
+    const device_domain_dma_vm_page_mode_request_t *request);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);

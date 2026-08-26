@@ -27,6 +27,7 @@
 #define NVIDIA_DIAGNOSTIC_CHANNEL_IMAGE 0x4E5A0000U
 #define NVIDIA_DIAGNOSTIC_GPU_VM_PLAN 0x4E5B0000U
 #define NVIDIA_DIAGNOSTIC_DMA_SEALED 0x4E5C0000U
+#define NVIDIA_DIAGNOSTIC_VM_PAGE_MODE 0x4E5D0000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
@@ -416,6 +417,17 @@ static int gpu_vm_relocate_and_seal(nvidia_driver_t *driver) {
             REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT);
 }
 
+static int gpu_vm_apply_page_mode(nvidia_driver_t *driver) {
+    int status = x86os_device_dma_vm_page_mode(
+        driver->bootstrap.device, driver->registers, driver->dma,
+        REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT);
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_VM_PAGE_MODE |
+            REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT);
+}
+
 static int activate(nvidia_driver_t *driver) {
     x86os_display_driver_request_t response;
     int status = driver_command(
@@ -532,6 +544,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = gpu_vm_plan_dma_self_test(driver);
     if (status != 0) return status;
     status = gpu_vm_relocate_and_seal(driver);
+    if (status != 0) return status;
+    status = gpu_vm_apply_page_mode(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

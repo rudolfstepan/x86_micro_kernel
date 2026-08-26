@@ -97,6 +97,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U", header)
         self.assertIn(
             "DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL = 19U", header)
+        self.assertIn(
+            "DEVICE_DOMAIN_CONTROL_DMA_VM_PAGE_MODE = 20U", header)
         self.assertIn("device_domain_dma_pool_stats_t", header)
         self.assertIn("capacity_rejections", header)
         self.assertIn("device_domain_dma_pool_stats", source)
@@ -104,6 +106,16 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("device_domain_dma_read", source)
         self.assertIn("device_domain_install_dma_relocation_policy", source)
         self.assertIn("device_domain_dma_relocate_and_seal", source)
+        self.assertIn("device_domain_install_dma_vm_page_mode_policy", source)
+        self.assertIn("device_domain_dma_vm_page_mode", source)
+        self.assertIn("restore_dma_vm_page_mode", source)
+        self.assertIn("pool->sealed == 0U", source)
+        self.assertIn("verified & ~selected->writable_mask", source)
+        disable = source.index(
+            "platform_ops.set_bus_master(device->pci_location, false)",
+            source.index("static bool fence_slot"))
+        restore = source.index("restore_dma_vm_page_mode(device)", disable)
+        self.assertLess(disable, restore)
         self.assertIn("if (pool->sealed != 0U) return -16;", source)
         self.assertIn("current != 0U", source)
         self.assertIn("pool->sealed = 1U", source)
@@ -219,6 +231,7 @@ class DeviceDomainTests(unittest.TestCase):
                         "x86os_device_irq_complete", "x86os_device_dma_info",
                         "x86os_device_dma_pool_stats",
                         "x86os_device_dma_relocate_and_seal",
+                        "x86os_device_dma_vm_page_mode",
                         "x86os_device_dma_write", "x86os_device_dma_read",
                         "x86os_device_region_read",
                         "x86os_device_region_write",
@@ -231,6 +244,7 @@ class DeviceDomainTests(unittest.TestCase):
             self.assertIn(command, syscall)
         self.assertIn(
             "DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL", syscall)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_DMA_VM_PAGE_MODE", syscall)
         self.assertIn("x86os_device_driver_bootstrap", sdk_source)
         self.assertIn("x86os_device_driver_report", sdk_source)
         self.assertIn("supervisor_device_driver_output_allowed", syscall)

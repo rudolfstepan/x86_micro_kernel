@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2n-nvidia-gk208-vm-page-mode"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2n-nvidia-gk208-vm-page-mode"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Apply and recover the sealed GK208 VM page mode"
@@ -66,7 +66,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: mediate GK208 VM page mode"
-evidence = []
+evidence = [
+  "Device-domain contract passed 10 tests including exact sealed-DMA admission immediate readback rollback and retryable fence restoration",
+  "NVIDIA GK208 contract passed 12 tests including immutable policy 16/17 selection and command-20 invocation after relocation sealing",
+  "VMware SVGA-II read-only DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 39 seconds",
+  "VMware framebuffer package passed in 28 seconds"
+]
 
 [[packages]]
 id = "R2.2g-nvidia-gk208-engine-contract"

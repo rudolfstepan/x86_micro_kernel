@@ -145,6 +145,18 @@ gesamten gewählten Pool und entfernt damit auch die Versiegelung. Weder der
 Syscall-Rückgabewert noch eine öffentliche Struktur enthält eine physische
 Adresse oder den versiegelten Inhalt.
 
+Device-Control-Kommando 20 verbindet einen solchen versiegelten Pool mit genau
+einer vor dem Claim installierten, gerätespezifischen Page-Mode-Policy. Der
+Aufruf benennt Geräte-, read-only Region- und DMA-Handle derselben
+Eigentümergeneration sowie nur die Policy-ID. Ring 0 führt den einzigen
+maskierten 32-Bit-Read-Modify-Write aus, prüft Zielbits und alle unveränderten
+Bits und gibt weder Registerinhalt noch Schreibrecht zurück. Vor jedem Fence
+wird zuerst Bus Mastering deaktiviert; danach stellt der Mediator nur die
+ursprünglichen Policy-Bits wieder her, bewahrt die übrigen aktuellen Bits und
+prüft das Readback. Eine nicht bestätigte Wiederherstellung bleibt `FENCED`
+und wird beim nächsten Fence-/Release-Versuch erneut ausgeführt. Erst eine
+bestätigte Wiederherstellung erlaubt die nächste Gerätegeneration.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden

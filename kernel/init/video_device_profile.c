@@ -35,6 +35,8 @@
 #define NVIDIA_RAMFC_PGD_OFFSET 0x00000200U
 #define NVIDIA_VM_PTE_NCOH 0x0000000600000001ULL
 #define NVIDIA_VM_PTE_READ_ONLY (1ULL << 2U)
+#define NVIDIA_FB_PAGE_MODE_REGISTER 0x00100C80U
+#define NVIDIA_FB_PAGE_MODE_MASK 0x00000001U
 
 static device_domain_dma_relocation_rule_t nvidia_relocation(
         uint32_t destination, uint32_t source, uint32_t shift,
@@ -84,6 +86,34 @@ static int install_nvidia_dma_relocation_policy(uint32_t device_index) {
     return device_domain_install_dma_relocation_policy(device_index, &policy);
 }
 
+static int install_nvidia_dma_vm_page_mode_policy(uint32_t device_index) {
+    const device_domain_dma_vm_page_mode_policy_t policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(policy),
+        .policy_count = 2U,
+        .policies = {
+            {
+                .policy_id = 16U,
+                .region_index = 0U,
+                .register_offset = NVIDIA_FB_PAGE_MODE_REGISTER,
+                .width = sizeof(uint32_t),
+                .writable_mask = NVIDIA_FB_PAGE_MODE_MASK,
+                .value = NVIDIA_FB_PAGE_MODE_MASK,
+            },
+            {
+                .policy_id = 17U,
+                .region_index = 0U,
+                .register_offset = NVIDIA_FB_PAGE_MODE_REGISTER,
+                .width = sizeof(uint32_t),
+                .writable_mask = NVIDIA_FB_PAGE_MODE_MASK,
+                .value = 0U,
+            },
+        },
+    };
+    return device_domain_install_dma_vm_page_mode_policy(
+        device_index, &policy);
+}
+
 static int register_profile(const pci_device_t *device, uint32_t backend,
                             video_device_profile_info_t *info) {
     const device_domain_profile_t profile = {
@@ -115,6 +145,8 @@ static int register_profile(const pci_device_t *device, uint32_t backend,
             device_index, &region_policy);
         if (result != 0) return result;
         result = install_nvidia_dma_relocation_policy(device_index);
+        if (result != 0) return result;
+        result = install_nvidia_dma_vm_page_mode_policy(device_index);
         if (result != 0) return result;
     }
     *info = (video_device_profile_info_t){
