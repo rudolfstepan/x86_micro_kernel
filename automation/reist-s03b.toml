@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2v-nvidia-gk208-golden-context-plan"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,56 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2v-nvidia-gk208-golden-context-plan"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Seal the complete GK208 golden-context plan"
+scope = "Close the remaining hardware-inactive prerequisite for Nouveau's GK208 golden-context transaction. Extend the pinned table generator and immutable table image with the exact GK208 context-main ICMD and method packs. Compile and independently validate one fixed-capacity topology-bound plan that assigns non-overlapping 4-KiB GPU virtual ranges to the already reserved pagepool, bundle, attribute and temporary golden buffers, describes only opaque VRAM-backed PTE spans, and emits the exact GK104/GK208 global-buffer, GF117 attribute and LTC patch writes required around the existing context-main packs. The plan preserves explicit ordered phases for FE power/reset, SCC setup, direct context packs, bounded idle points, buffer patches, ICMD/method streams and FECS bind/save, but performs no DMA-pool mutation, PTE write, VRAM access, MMIO write or FECS method. The supervised driver validates the complete plan in software before command 24. A following kernel-mediated package must independently rebuild this plan, apply mappings, execute the transaction under one deadline, retain the resulting context image and roll back through GR reset before channel activation. Channel bind, runlist, USERD, bus mastering, IRQ, submission, fence and acceleration capabilities remain disabled."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/generate_nvidia_gk208_gr_tables.py",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/video/lib/nvidia_gk208_gr_tables.h",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all source tables remain generated from pinned Linux commit 45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229 with fixed counts and IEEE CRC32 values",
+  "the plan is accepted only for an exact validated GK208 topology and nonzero FECS-reported context size",
+  "pagepool bundle attribute and temporary golden GPU virtual spans are 4-KiB aligned non-overlapping bounded by one existing 128-MiB small-page table and never expose a physical BAR or VRAM address",
+  "the PTE span plan names opaque VRAM reservations and contains no Ring-3 supplied physical address or writable page-table word",
+  "the global-buffer attribute and LTC patch list follows the selected GK208 Nouveau callbacks exactly and is fixed-capacity overflow checked",
+  "the ordered plan includes context packs ICMD method FECS bind and golden-save phases without executing any phase",
+  "DMA pool PTE VRAM MMIO FECS channel runlist USERD bus mastering IRQ submission fence and NVIDIA acceleration capabilities remain unchanged",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the exact pinned ICMD method or selected GK208 callback semantics cannot be represented without guessing",
+  "the maximum supported topology exceeds one bounded small-page table or the fixed plan capacity",
+  "the package attempts a DMA-pool PTE VRAM MMIO FECS channel runlist USERD bus-master IRQ submission fence or capability side effect",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
 
 [[packages]]
 id = "R2.2u-nvidia-gk208-context-memory-plan"
