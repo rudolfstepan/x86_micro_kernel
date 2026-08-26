@@ -7,6 +7,7 @@
 #include "drivers/char/io.h"
 #include "drivers/video/framebuffer.h"
 #include "arch/x86/boot/vbe_runtime.h"
+#include "include/kernel/device_domain.h"
 #include "include/lib/spinlock.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
@@ -809,9 +810,12 @@ bool display_control_graphics_active(void) {
     return active_backend != DISPLAY_BACKEND_NONE && framebuffer_available();
 }
 
-bool display_control_vmware_acceleration_active(void) {
-    return active_backend == DISPLAY_BACKEND_VMWARE && vmware_fifo != NULL &&
-        (vmware_capabilities & SVGA_CAP_RECT_COPY) != 0U;
+bool display_control_acceleration_active(void) {
+    if (active_backend == DISPLAY_BACKEND_VMWARE)
+        return vmware_fifo != NULL &&
+            (vmware_capabilities & SVGA_CAP_RECT_COPY) != 0U;
+    return active_backend == DISPLAY_BACKEND_VBE &&
+        device_domain_gr_acceleration_active();
 }
 
 int display_control_driver_command(display_driver_request_t *request) {

@@ -265,6 +265,29 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             self.framebuffer, "static void framebuffer_publish_damage("
         )
         self.assertIn("display_control_present_rects", framebuffer_publish)
+        self.assertIn(
+            "framebuffer_blit_damage_excluding", framebuffer_publish
+        )
+        exclusion = function(
+            self.framebuffer,
+            "static void framebuffer_blit_damage_excluding("
+        )
+        self.assertGreaterEqual(exclusion.count("framebuffer_blit_rect("), 5)
+        self.assertIn("left >= right || top >= bottom", exclusion)
+        self.assertIn("bottom - top", exclusion)
+
+    def test_accelerated_frame_accepts_vmware_or_active_gr_channel(self) -> None:
+        self.assertIn(
+            "bool display_control_acceleration_active(void)",
+            self.display_control,
+        )
+        self.assertIn(
+            "device_domain_gr_acceleration_active()", self.display_control
+        )
+        mark = function(
+            self.framebuffer, "int framebuffer_frame_mark_accelerated("
+        )
+        self.assertIn("display_control_acceleration_active()", mark)
 
     def test_sdk_exposes_frame_transaction_without_new_syscall_number(self) -> None:
         for name in ("begin", "commit", "cancel"):

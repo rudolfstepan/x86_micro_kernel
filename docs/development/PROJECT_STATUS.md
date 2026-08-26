@@ -200,6 +200,14 @@ Semaphore-Fence-Selbsttests. Fehler und Timeouts leeren die Runlist,
 deaktivieren Busmastering, bereinigen privaten Zustand und rollen GR zurück.
 Der automatisierte Abschluss deckt Host, QEMU und VMware ab; die echte
 Beschleunigung muss anschließend einmal auf dem ASUS-GK208 bestätigt werden.
+`R2.2z-accelerated-scanout-publication` schließt die danach gefundene Lücke im
+Compositorpfad: Ein erfolgreicher Copy-Fence wird jetzt sowohl für VMware als
+auch für einen aktiven, generationsgebundenen GK208-GR-Kanal anerkannt. Die
+CPU-Schattenkopie bleibt konsistent, aber das bereits von der GPU geschriebene
+Zielrechteck wird aus allen überlappenden Scanout-Schadensbereichen
+herausgeschnitten statt nochmals vollständig über den VBE-BAR kopiert zu
+werden. `DESKTOP_ACCELERATION_READY` und die abschließenden Zähler für
+beschleunigte Frames und Fallbacks machen die tatsächliche Nutzung sichtbar.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

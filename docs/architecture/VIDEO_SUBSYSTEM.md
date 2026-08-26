@@ -34,9 +34,17 @@ The driver's completion loop sleeps between status samples and ends after
 50 ms. Queue pressure returns `EAGAIN`; an absent capability returns
 `ENOTSUP`. The compositor then keeps its existing staged shadow-buffer copy.
 After a successful synchronous `RECT_COPY`, the kernel still updates shadow
-state and omits the CPU scanout copy only when the destination remains one
-exact damage rectangle. Merged or overlapping damage safely performs the CPU
-copy again.
+state while omitting the accelerated destination from CPU scanout publication.
+
+The compositor integration now treats the completed driver fence as a generic
+VMware-or-native-GR acceleration proof. The staged copy still updates the CPU
+shadow at commit, but scanout publication subtracts the accelerated destination
+from every merged damage rectangle and copies only the remaining top, bottom,
+left and right strips. This preserves overlap correctness while avoiding the
+former near-full CPU copy after ordinary small window moves. Desktop startup
+prints `DESKTOP_ACCELERATION_READY caps=3`; session exit prints bounded
+`DESKTOP_ACCELERATION accelerated_frames=N fallbacks=N` counters so availability
+and actual use are distinguishable without timing inference.
 
 The endpoint is delegated only to `/usr/gui/bin/desktop.prg`. Device and IPC
 authority are bound to process generations. Crash, failed self-test, missed

@@ -2119,6 +2119,7 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
                     assert(device_domain_gr_channel_activate(
                         pid, generation, &context_request,
                         &channel_result) == 0);
+                    assert(device_domain_gr_acceleration_active());
                     assert(channel_result.capabilities ==
                         (DEVICE_DOMAIN_GR_2D_CAP_RECT_FILL |
                          DEVICE_DOMAIN_GR_2D_CAP_RECT_COPY |
@@ -2145,6 +2146,7 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
                     device_domain_gr_2d_result_t draw_result;
                     assert(device_domain_gr_2d_submit(pid, generation,
                         &draw, &draw_result) == 0);
+                    assert(device_domain_gr_acceleration_active());
                     assert(draw_result.fence_sequence == 3U);
                     draw.fence_sequence = 4U;
                     draw.destination_x = 1020U;
@@ -2165,6 +2167,7 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
                     draw.fence_sequence = 5U;
                     assert(device_domain_gr_2d_submit(pid, generation,
                         &draw, &draw_result) == -110);
+                    assert(!device_domain_gr_acceleration_active());
                     device_domain_test_set_gr_fence_completion(true);
                     assert(device_domain_gr_channel_deactivate(
                         pid, generation, &context_request) == 0);

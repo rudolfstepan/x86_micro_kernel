@@ -190,6 +190,9 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("desktop_svga2d_rect_copy", desktop)
         self.assertIn("x86os_display_frame_mark_accelerated", desktop)
         self.assertIn("render_desktop(display, manager, explorer", desktop)
+        self.assertIn("DESKTOP_ACCELERATION_READY caps=", desktop)
+        self.assertIn("DESKTOP_RENDER_ACCELERATED", desktop)
+        self.assertIn('"DESKTOP_ACCELERATION"', desktop)
 
     def test_generic_activation_cannot_bypass_supervised_driver(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(

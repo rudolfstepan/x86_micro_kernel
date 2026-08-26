@@ -32,6 +32,9 @@
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 1U
 #define DESKTOP_METRICS_VERSION 1U
+#define DESKTOP_RENDER_FALLBACK (1U << 0)
+#define DESKTOP_RENDER_ACCELERATED (1U << 1)
+#define DESKTOP_RENDER_ACCELERATION_FALLBACK (1U << 2)
 #define DESKTOP_RENDER_PROBE_STEPS 8U
 #define DESKTOP_RENDER_PROBE_STEP_X 4
 #define DESKTOP_MOUSE_BATCH_LIMIT 32U
@@ -188,7 +191,12 @@ static int desktop_svga2d_activate_bounded(void) {
 
 static int desktop_activate_with_fallback(void) {
     int driver_status = desktop_svga2d_activate_bounded();
-    if (driver_status == 0) return 0;
+    if (driver_status == 0) {
+        x86os_puts("DESKTOP_ACCELERATION_READY caps=");
+        x86os_print_number((int)desktop_svga2d_capabilities);
+        x86os_putchar('\n');
+        return 0;
+    }
 
     /* The supervised endpoint is an optional acceleration path.  Its absence
      * must never suppress the validated VBE/software desktop. */
@@ -519,6 +527,8 @@ typedef struct {
     uint32_t resize_total_ms;
     uint32_t resize_max_ms;
     uint32_t fallback_frames;
+    uint32_t accelerated_frames;
+    uint32_t acceleration_fallbacks;
     uint32_t damage_regions;
     uint32_t damage_max;
     uint32_t clock_errors;
@@ -2660,13 +2670,13 @@ static uint32_t render_desktop_frame(const x86os_display_info_t *display,
     if (begin != 0) {
         /* Oversized/direct framebuffers retain the compatible immediate path. */
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
-        return 1U;
+        return DESKTOP_RENDER_FALLBACK;
     }
     render_desktop(display, manager, explorer, surfaces, ui, dirty);
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
-        return 1U;
+        return DESKTOP_RENDER_FALLBACK;
     }
     return 0U;
 }
@@ -2685,11 +2695,13 @@ static uint32_t render_desktop_cached_move_frame(
          move->window_index >= DESKTOP_WM_CAPACITY))
         return render_desktop_frame(display, manager, explorer, surfaces, ui, dirty);
 
+    uint32_t outcome = 0U;
     uint32_t serial = 0U;
     int begin = x86os_display_frame_begin(&serial);
     if (begin != 0) {
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
-        return 1U;
+        return DESKTOP_RENDER_FALLBACK |
+            DESKTOP_RENDER_ACCELERATION_FALLBACK;
     }
     int staged = x86os_display_frame_stage_blit(
         serial, (uint32_t)move->source.x, (uint32_t)move->source.y,
@@ -2697,14 +2709,18 @@ static uint32_t render_desktop_cached_move_frame(
         (uint32_t)move->destination.y,
         move->source.width, move->source.height);
     if (staged != 0) {
+        outcome |= DESKTOP_RENDER_ACCELERATION_FALLBACK;
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
     } else {
         if (desktop_svga2d_rect_copy(
                 (uint32_t)move->source.x, (uint32_t)move->source.y,
                 (uint32_t)move->destination.x,
                 (uint32_t)move->destination.y,
-                move->source.width, move->source.height) == 0)
-            (void)x86os_display_frame_mark_accelerated(serial);
+                move->source.width, move->source.height) == 0 &&
+            x86os_display_frame_mark_accelerated(serial) == 0)
+            outcome |= DESKTOP_RENDER_ACCELERATED;
+        else
+            outcome |= DESKTOP_RENDER_ACCELERATION_FALLBACK;
         desktop_dirty_region_t cleanup;
         desktop_dirty_initialize(
             &cleanup, display->width, display->height);
@@ -2716,9 +2732,9 @@ static uint32_t render_desktop_cached_move_frame(
     if (x86os_display_frame_commit(serial) != 0) {
         (void)x86os_display_frame_cancel(serial);
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
-        return 1U;
+        return outcome | DESKTOP_RENDER_FALLBACK;
     }
-    return 0U;
+    return outcome;
 }
 
 static void record_render_metrics(desktop_render_metrics_t *metrics,
@@ -2732,7 +2748,12 @@ static void record_render_metrics(desktop_render_metrics_t *metrics,
         metrics->damage_regions, dirty->count);
     if (dirty->count > metrics->damage_max)
         metrics->damage_max = dirty->count;
-    if (fallback) saturating_increment(&metrics->fallback_frames);
+    if ((fallback & DESKTOP_RENDER_FALLBACK) != 0U)
+        saturating_increment(&metrics->fallback_frames);
+    if ((fallback & DESKTOP_RENDER_ACCELERATED) != 0U)
+        saturating_increment(&metrics->accelerated_frames);
+    if ((fallback & DESKTOP_RENDER_ACCELERATION_FALLBACK) != 0U)
+        saturating_increment(&metrics->acceleration_fallbacks);
 
     uint32_t *frames = dirty->full
         ? &metrics->full_frames : &metrics->dirty_frames;
@@ -3101,6 +3122,10 @@ static void print_render_metrics(const desktop_render_metrics_t *metrics) {
     print_metric("damage_max", metrics->damage_max);
     print_metric("clock_errors", metrics->clock_errors);
     print_metric("probe_errors", metrics->probe_errors);
+    x86os_putchar('\n');
+    x86os_puts("DESKTOP_ACCELERATION");
+    print_metric("accelerated_frames", metrics->accelerated_frames);
+    print_metric("fallbacks", metrics->acceleration_fallbacks);
     x86os_putchar('\n');
 }
 

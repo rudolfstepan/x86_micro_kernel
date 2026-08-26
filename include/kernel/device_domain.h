@@ -989,6 +989,8 @@ int device_domain_gr_2d_submit(
 int device_domain_gr_channel_deactivate(
     int pid, uint32_t process_generation,
     const device_domain_gr_channel_request_t *request);
+/** True only while a fenced, generation-owned GR 2D channel is executable. */
+bool device_domain_gr_acceleration_active(void);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);

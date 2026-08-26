@@ -5455,6 +5455,24 @@ int device_domain_gr_channel_deactivate(
     return status;
 }
 
+bool device_domain_gr_acceleration_active(void) {
+    if (!initialized || !begin_operation()) return false;
+    bool active = false;
+    for (uint32_t index = 0U; index < device_count; ++index) {
+        const device_slot_t *device = &devices[index];
+        if (device->registered != 0U && device->owner_pid > 0 &&
+            device->owner_generation != 0U &&
+            device->gr_channel_active != 0U &&
+            device->gr_channel_bus_master_active != 0U &&
+            device->gr_channel_policy_installed != 0U) {
+            active = true;
+            break;
+        }
+    }
+    end_operation();
+    return active;
+}
+
 static const device_domain_region_rule_t *region_write_rule(
         const device_slot_t *device, uint32_t region_index, uint32_t offset,
         uint32_t width, uint32_t kind) {

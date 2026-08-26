@@ -462,6 +462,9 @@ class DesktopSourceTests(unittest.TestCase):
             "clock_errors", "probe_errors",
         ):
             self.assertIn(f'print_metric("{field}"', metrics)
+        self.assertIn('x86os_puts("DESKTOP_ACCELERATION")', metrics)
+        self.assertIn('print_metric("accelerated_frames"', metrics)
+        self.assertIn('print_metric("fallbacks"', metrics)
 
     def test_launcher_is_freestanding_and_has_no_host_libc_dependency(self):
         self.assertNotRegex(self.source, r"#include\s*<(stdio|stdlib|string)\.h>")

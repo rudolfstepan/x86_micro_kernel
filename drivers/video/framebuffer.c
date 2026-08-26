@@ -4881,20 +4881,51 @@ static void framebuffer_restore_shadow_rect(uint32_t x, uint32_t y,
     }
 }
 
+static void framebuffer_blit_damage_excluding(
+        display_frame_rect_t damage,
+        const display_frame_rect_t *excluded) {
+    if (excluded == NULL) {
+        framebuffer_blit_rect(
+            damage.x, damage.y, damage.width, damage.height);
+        return;
+    }
+    uint32_t damage_right = damage.x + damage.width;
+    uint32_t damage_bottom = damage.y + damage.height;
+    uint32_t excluded_right = excluded->x + excluded->width;
+    uint32_t excluded_bottom = excluded->y + excluded->height;
+    uint32_t left = damage.x > excluded->x ? damage.x : excluded->x;
+    uint32_t top = damage.y > excluded->y ? damage.y : excluded->y;
+    uint32_t right = damage_right < excluded_right
+        ? damage_right : excluded_right;
+    uint32_t bottom = damage_bottom < excluded_bottom
+        ? damage_bottom : excluded_bottom;
+    if (left >= right || top >= bottom) {
+        framebuffer_blit_rect(
+            damage.x, damage.y, damage.width, damage.height);
+        return;
+    }
+
+    if (top > damage.y)
+        framebuffer_blit_rect(
+            damage.x, damage.y, damage.width, top - damage.y);
+    if (bottom < damage_bottom)
+        framebuffer_blit_rect(
+            damage.x, bottom, damage.width, damage_bottom - bottom);
+    if (left > damage.x)
+        framebuffer_blit_rect(
+            damage.x, top, left - damage.x, bottom - top);
+    if (right < damage_right)
+        framebuffer_blit_rect(
+            right, top, damage_right - right, bottom - top);
+}
+
 static void framebuffer_publish_damage(
         const display_frame_rect_t *damage, uint32_t count,
         const display_frame_rect_t *accelerated) {
     if (damage == NULL || count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
     display_control_rect_t updates[DISPLAY_FRAME_DAMAGE_CAPACITY];
     for (uint32_t index = 0U; index < count; ++index) {
-        bool skip = accelerated != NULL &&
-            damage[index].x == accelerated->x &&
-            damage[index].y == accelerated->y &&
-            damage[index].width == accelerated->width &&
-            damage[index].height == accelerated->height;
-        if (!skip)
-            framebuffer_blit_rect(damage[index].x, damage[index].y,
-                                  damage[index].width, damage[index].height);
+        framebuffer_blit_damage_excluding(damage[index], accelerated);
         updates[index] = (display_control_rect_t){
             .x = damage[index].x,
             .y = damage[index].y,
@@ -5045,7 +5076,7 @@ int framebuffer_frame_stage_blit(int owner_pid, uint32_t owner_generation,
 int framebuffer_frame_mark_accelerated(int owner_pid,
                                        uint32_t owner_generation,
                                        uint32_t serial) {
-    if (serial == 0U || !display_control_vmware_acceleration_active())
+    if (serial == 0U || !display_control_acceleration_active())
         return -95;
     uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
     int result = 0;

@@ -2454,6 +2454,15 @@ Zustand und setzt GR zurück. Automatisiert sind Host-, QEMU- und VMware-
 Nichtregression; der elektrische Fence- und Bildnachweis auf GK208 bleibt der
 abschließende manuelle ASUS-Test.
 
+`R2.2z` beseitigt die anschließend gemessene Publikationsbremse. Der Kernel
+akzeptiert einen beschleunigten Frame nun für VMware-RECT_COPY oder einen
+aktiven, eingezäunten GK208-GR-Kanal. Nach dem unverändert synchronen Fence
+wird die CPU-Schattenkopie aktualisiert, das bereits beschleunigte Ziel aber
+aus zusammengeführten Schadensrechtecken ausgeschnitten; nur höchstens vier
+Reststreifen gehen noch über die CPU zum Scanout. Fehler bleiben vollständige
+Software-Fallbacks. Start- und Sitzungsmarker unterscheiden angebotene von
+tatsächlich verwendeter Beschleunigung.
+
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
 Monitorhardware, elektrisches Fence-Readback und physische Fault-Injection

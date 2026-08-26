@@ -11,6 +11,55 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2z-accelerated-scanout-publication"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Preserve completed 2D copies through scanout publication"
+scope = "Accept a completed accelerated frame for either VMware RECT_COPY or an active generation-owned GK208 GR channel, retain the staged CPU shadow update, subtract the accelerated destination from overlapping merged damage during scanout publication, and expose bounded startup and session counters for actual acceleration and fallback."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "drivers/video/display_control.h",
+  "drivers/video/display_control.c",
+  "drivers/video/framebuffer.c",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_display_abi_minimal.py",
+  "test/test_vmware_svga2d.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "an accelerated mark is accepted only for VMware RECT_COPY or an active fenced generation-owned GR channel",
+  "the staged CPU shadow copy is applied before publication even when scanout already contains the GPU result",
+  "the accelerated destination is excluded from every intersecting merged damage rectangle",
+  "all nonaccelerated damage is copied completely and the exclusion emits at most four bounded remainder rectangles",
+  "driver or mark failure falls back to CPU publication without losing final frame contents",
+  "session diagnostics distinguish advertised acceleration successful accelerated frames and fallbacks"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_display_abi_minimal.py -v",
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = []
+runtime_tests = []
+stop_conditions = [
+  "a completed accelerated destination can still be recopied in full by CPU publication",
+  "the CPU shadow can diverge from the accelerated scanout",
+  "inactive or stale GR ownership can authorize an accelerated mark",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a targeted gate still fails after one focused in-scope repair"
+]
+
+[[packages]]
 id = "R2.2y-compositor-live-resize-performance"
 status = "done"
 phase = "post-s0"

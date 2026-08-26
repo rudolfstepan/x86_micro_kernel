@@ -156,7 +156,7 @@ void display_control_present_rect(uint32_t x, uint32_t y,
 void display_control_present_rects(const display_control_rect_t *rects,
                                    uint32_t count);
 bool display_control_graphics_active(void);
-bool display_control_vmware_acceleration_active(void);
+bool display_control_acceleration_active(void);
 int display_control_driver_command(display_driver_request_t *request);
 
 #endif

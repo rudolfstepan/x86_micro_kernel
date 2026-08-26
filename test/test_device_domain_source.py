@@ -145,6 +145,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("device_domain_gr_channel_activate", source)
         self.assertIn("device_domain_gr_2d_submit", source)
         self.assertIn("device_domain_gr_channel_deactivate", source)
+        self.assertIn("device_domain_gr_acceleration_active", source)
+        self.assertIn("device->gr_channel_bus_master_active != 0U", source)
         self.assertIn("gr_channel_commit_runlist", source)
         self.assertIn("gr_channel_hardware_stop", source)
         self.assertIn("GK208_CHANNEL_FENCE_GPU", source)
