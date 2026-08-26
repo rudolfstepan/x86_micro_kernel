@@ -28,7 +28,8 @@ NVIDIA-Capabilities null und VBE verbindlich.
 `R2.2h-nvidia-ring3-register-probe` beseitigt dabei die verbliebene direkte
 NVIDIA-Registerprobe aus Ring 0. Der generische Device-Domain-Mediator clippt
 den 16-MiB-BAR vor dem Mapping auf die unveränderliche read-only Apertur
-`0x400104`; der überwachte Treiber liest PMC, PTIMER, PFIFO und PGRAPH nun
+zunächst `0x400104`; `R2.2p` erweitert sie read-only bis zum GPCCS-DMEM-Port
+auf `0x41a1c8`. Der überwachte Treiber liest PMC, PTIMER, PFIFO und PGRAPH nun
 selbst mit generationsgebundenem Handle. PTIMER-Kohärenz ist auf vier
 high-low-high-Versuche begrenzt. Schreib-, Mapping-, DMA-, IRQ-, Busmaster-
 und Beschleunigungsrechte bleiben ausgeschlossen.
@@ -97,6 +98,18 @@ vor dem Öffnen des DMA-Pools. Der öffentliche Zugriff kopiert nur ein
 bereichsgeprüftes Wort und gibt keinen veränderlichen Zeiger frei. Upload,
 GR-Registerpakete, Firmware-Start, Kontextgenerierung, Channel-Bind, Runlist,
 USERD, IRQ, Busmaster, echter Fence und Capabilitybits bleiben offen.
+`R2.2p-nvidia-gk208-falcon-upload` schließt den gesamten sicheren
+Pre-Start-Slice: Alle vier Images liegen in festen, getrennten Fenstern des
+512-KiB-Pools und werden vor dessen Versiegelung in höchstens 1024-Byte-
+Abschnitten geschrieben und zurückgelesen. Append-only Kommando 21 prüft die
+vier CRCs erneut, resettiert nur das erhaltene GR-Bit, wartet höchstens 100 ms
+auf abgeschlossenes FECS-/GPCCS-Scrubbing, schreibt beide DMEM-/IMEM-Paare
+mit 256-Byte-Tags und liest jedes Wort zurück. Beide Falcons bleiben
+angehalten. Fehler/Fence deaktivieren Busmaster, resetten GR und stellen erst
+danach den Page-Mode wieder her; nicht bestätigte Bereinigung bleibt
+wiederholbar gesperrt. Offen sind nun die vollständigen topologyabhängigen
+MMIO-/Context-Switch-Listen, Falcon-Start, Channel-Bind, Runlist, USERD, IRQ,
+echter Fence und Capabilityfreigabe.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

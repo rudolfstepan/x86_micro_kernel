@@ -126,9 +126,8 @@ class NvidiaGk208BringupTests(unittest.TestCase):
             "backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208", source)
         self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_DMA", source)
         self.assertIn("DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL", source)
-        self.assertIn(
-            "NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + "
-            "sizeof(uint32_t))", source)
+        self.assertIn("NVIDIA_GPCCS_DMEMD 0x41A1C4U", source)
+        self.assertIn("(NVIDIA_GPCCS_DMEMD + sizeof(uint32_t))", source)
         self.assertIn(
             ".readable_bytes = {NVIDIA_BAR0_READABLE_BYTES}", source)
         self.assertIn(".rule_count = 0U", source)
@@ -141,6 +140,14 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("NVIDIA_FB_PAGE_MODE_MASK 0x00000001U", source)
         self.assertIn("install_nvidia_dma_vm_page_mode_policy", source)
         self.assertIn("device_domain_install_dma_vm_page_mode_policy", source)
+        self.assertIn("NVIDIA_GR_FIRMWARE_POLICY_ID 1U", source)
+        self.assertIn("NVIDIA_FECS_BASE 0x00409000U", source)
+        self.assertIn("NVIDIA_GPCCS_BASE 0x0041A000U", source)
+        self.assertIn("install_nvidia_gr_firmware_policy", source)
+        self.assertIn("device_domain_install_gr_firmware_policy", source)
+        for offset in ("0x00070000U", "0x00070400U",
+                       "0x00071000U", "0x00071400U"):
+            self.assertIn(offset, source)
         page_mode = source[source.index(
             "static int install_nvidia_dma_vm_page_mode_policy") :]
         page_mode = page_mode[:page_mode.index("static int register_profile")]
@@ -203,8 +210,15 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("x86os_device_dma_relocate_and_seal", driver)
         self.assertIn("gpu_vm_apply_page_mode", driver)
         self.assertIn("x86os_device_dma_vm_page_mode", driver)
+        self.assertIn("gr_firmware_dma_stage_self_test", driver)
+        self.assertIn("gpu_gr_firmware_upload", driver)
+        self.assertIn("x86os_device_gr_firmware_upload", driver)
         self.assertLess(driver.index("gpu_vm_relocate_and_seal(driver)"),
                         driver.index("gpu_vm_apply_page_mode(driver)"))
+        self.assertLess(driver.index("gr_firmware_dma_stage_self_test(driver)"),
+                        driver.index("gpu_vm_relocate_and_seal(driver)"))
+        self.assertLess(driver.index("gpu_vm_apply_page_mode(driver)"),
+                        driver.index("gpu_gr_firmware_upload(driver)"))
         self.assertIn("X86OS_DEVICE_DMA_TRANSFER_MAX", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("x86os_device_activate", driver)
@@ -214,6 +228,11 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("reist_nvidia_gk208_dma_staging_self_test", driver)
         self.assertIn("reist_nvidia_gk208_channel_image_self_test", driver)
         self.assertIn("reist_nvidia_gk208_vm_plan_self_test", driver)
+        upload = driver[driver.index("static int gpu_gr_firmware_upload") :]
+        upload = upload[:upload.index("static int activate")]
+        self.assertNotIn("x86os_device_bind_irq", upload)
+        self.assertNotIn("x86os_device_activate", upload)
+        self.assertNotIn("x86os_device_region_write", upload)
 
     def test_driver_is_supervised_and_deadlines_are_bounded(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(

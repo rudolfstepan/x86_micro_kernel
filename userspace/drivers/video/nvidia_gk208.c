@@ -29,13 +29,17 @@
 #define NVIDIA_DIAGNOSTIC_DMA_SEALED 0x4E5C0000U
 #define NVIDIA_DIAGNOSTIC_VM_PAGE_MODE 0x4E5D0000U
 #define NVIDIA_DIAGNOSTIC_GR_FIRMWARE 0x4E5E0000U
+#define NVIDIA_DIAGNOSTIC_GR_FIRMWARE_STAGED 0x4E5F0000U
+#define NVIDIA_DIAGNOSTIC_GR_FIRMWARE_UPLOADED 0x4E600000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
 #define NVIDIA_PTIMER_TIME_0 0x009400U
 #define NVIDIA_PTIMER_TIME_1 0x009410U
 #define NVIDIA_PGRAPH_INTR 0x400100U
-#define NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + sizeof(uint32_t))
+#define NVIDIA_GPCCS_DMEMD 0x41A1C4U
+#define NVIDIA_BAR0_READABLE_BYTES \
+    (NVIDIA_GPCCS_DMEMD + sizeof(uint32_t))
 #define NVIDIA_PROBE_COHERENCE_ATTEMPTS 4U
 
 typedef struct {
@@ -342,6 +346,58 @@ static int dma_stage_and_verify(nvidia_driver_t *driver, uint32_t offset,
     return 0;
 }
 
+static int gr_firmware_dma_stage_self_test(nvidia_driver_t *driver) {
+    typedef struct {
+        uint32_t component;
+        uint32_t section;
+        uint32_t pool_offset;
+        uint32_t word_count;
+    } firmware_image_t;
+    static const firmware_image_t images[] = {
+        {REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+         REIST_NVIDIA_GK208_GR_SECTION_DATA,
+         REIST_NVIDIA_GK208_DMA_FECS_DATA_OFFSET,
+         REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS},
+        {REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+         REIST_NVIDIA_GK208_GR_SECTION_CODE,
+         REIST_NVIDIA_GK208_DMA_FECS_CODE_OFFSET,
+         REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS},
+        {REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS,
+         REIST_NVIDIA_GK208_GR_SECTION_DATA,
+         REIST_NVIDIA_GK208_DMA_GPCCS_DATA_OFFSET,
+         REIST_NVIDIA_GK208_GR_GPCCS_DATA_WORDS},
+        {REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS,
+         REIST_NVIDIA_GK208_GR_SECTION_CODE,
+         REIST_NVIDIA_GK208_DMA_GPCCS_CODE_OFFSET,
+         REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS},
+    };
+    uint32_t words[X86OS_DEVICE_DMA_TRANSFER_MAX / sizeof(uint32_t)];
+    for (uint32_t image = 0U;
+         image < sizeof(images) / sizeof(images[0]); ++image) {
+        uint32_t copied = 0U;
+        while (copied < images[image].word_count) {
+            uint32_t chunk_words = images[image].word_count - copied;
+            if (chunk_words > sizeof(words) / sizeof(words[0]))
+                chunk_words = sizeof(words) / sizeof(words[0]);
+            for (uint32_t index = 0U; index < chunk_words; ++index) {
+                int status = reist_nvidia_gk208_gr_firmware_word(
+                    images[image].component, images[image].section,
+                    copied + index, &words[index]);
+                if (status != 0) return status;
+            }
+            int status = dma_stage_and_verify(driver,
+                images[image].pool_offset + copied * sizeof(uint32_t), words,
+                chunk_words * sizeof(uint32_t));
+            if (status != 0) return status;
+            copied += chunk_words;
+        }
+    }
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_FIRMWARE_STAGED |
+            REIST_NVIDIA_GK208_GR_FIRMWARE_TOTAL_WORDS);
+}
+
 static int channel_image_dma_self_test(nvidia_driver_t *driver) {
     reist_nvidia_gk208_channel_image_t image;
     int status = reist_nvidia_gk208_prepare_channel_image(&image);
@@ -438,6 +494,17 @@ static int gpu_vm_apply_page_mode(nvidia_driver_t *driver) {
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_VM_PAGE_MODE |
             REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT);
+}
+
+static int gpu_gr_firmware_upload(nvidia_driver_t *driver) {
+    int status = x86os_device_gr_firmware_upload(
+        driver->bootstrap.device, driver->registers, driver->dma,
+        REIST_NVIDIA_GK208_GR_FIRMWARE_POLICY_ID);
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_FIRMWARE_UPLOADED |
+            REIST_NVIDIA_GK208_GR_FIRMWARE_TOTAL_WORDS);
 }
 
 static int activate(nvidia_driver_t *driver) {
@@ -557,9 +624,13 @@ static int driver_initialize(nvidia_driver_t *driver) {
     if (status != 0) return status;
     status = gpu_vm_plan_dma_self_test(driver);
     if (status != 0) return status;
+    status = gr_firmware_dma_stage_self_test(driver);
+    if (status != 0) return status;
     status = gpu_vm_relocate_and_seal(driver);
     if (status != 0) return status;
     status = gpu_vm_apply_page_mode(driver);
+    if (status != 0) return status;
+    status = gpu_gr_firmware_upload(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

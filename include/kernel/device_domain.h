@@ -34,6 +34,9 @@
 #define DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES 8U
 #define DEVICE_DOMAIN_DMA_RELOCATION_MAX_POLICIES 2U
 #define DEVICE_DOMAIN_DMA_VM_PAGE_MODE_MAX_POLICIES 2U
+#define DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT 4U
+#define DEVICE_DOMAIN_GR_FIRMWARE_MAX_WORDS 1024U
+#define DEVICE_DOMAIN_GR_FIRMWARE_SCRUB_TIMEOUT_MS 100U
 #define DEVICE_DOMAIN_MAX_REGION_RULES 32U
 #define DEVICE_DOMAIN_MAX_REGION_BYTES (8U * 1024U * 1024U)
 #define DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT 128U
@@ -71,6 +74,7 @@ enum {
     DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U,
     DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL = 19U,
     DEVICE_DOMAIN_CONTROL_DMA_VM_PAGE_MODE = 20U,
+    DEVICE_DOMAIN_CONTROL_GR_FIRMWARE_UPLOAD = 21U,
 };
 
 enum {
@@ -115,6 +119,11 @@ enum {
 enum {
     DEVICE_DOMAIN_DMA_TO_DEVICE = 1U << 0U,
     DEVICE_DOMAIN_DMA_FROM_DEVICE = 1U << 1U,
+};
+
+enum {
+    DEVICE_DOMAIN_GR_FIRMWARE_DMEM = 1U,
+    DEVICE_DOMAIN_GR_FIRMWARE_IMEM = 2U,
 };
 
 enum {
@@ -380,6 +389,39 @@ typedef struct {
 } device_domain_dma_vm_page_mode_request_t;
 
 typedef struct {
+    uint32_t pool_offset;
+    uint32_t word_count;
+    uint32_t crc32;
+    uint32_t falcon_base;
+    uint32_t memory_kind;
+    uint32_t reserved[3];
+} device_domain_gr_firmware_image_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t policy_id;
+    uint32_t region_index;
+    uint32_t pmc_enable_offset;
+    uint32_t pmc_gr_mask;
+    uint32_t image_count;
+    uint32_t reserved;
+    device_domain_gr_firmware_image_t
+        images[DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT];
+} device_domain_gr_firmware_policy_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    device_domain_resource_handle_t region;
+    device_domain_resource_handle_t dma;
+    uint32_t policy_id;
+    uint32_t flags;
+    uint32_t reserved[3];
+} device_domain_gr_firmware_request_t;
+
+typedef struct {
     uint32_t version;
     uint32_t struct_size;
     device_domain_handle_t device;
@@ -532,6 +574,12 @@ _Static_assert(sizeof(device_domain_dma_vm_page_mode_policy_t) == 64U,
                "device-domain DMA VM page-mode policy ABI changed");
 _Static_assert(sizeof(device_domain_dma_vm_page_mode_request_t) == 40U,
                "device-domain DMA VM page-mode request ABI changed");
+_Static_assert(sizeof(device_domain_gr_firmware_image_t) == 32U,
+               "device-domain GR firmware image ABI changed");
+_Static_assert(sizeof(device_domain_gr_firmware_policy_t) == 160U,
+               "device-domain GR firmware policy ABI changed");
+_Static_assert(sizeof(device_domain_gr_firmware_request_t) == 40U,
+               "device-domain GR firmware request ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -569,6 +617,9 @@ int device_domain_install_dma_relocation_policy(
 /** Install exact recoverable GPU-VM page-mode transactions before claim. */
 int device_domain_install_dma_vm_page_mode_policy(
     uint32_t device, const device_domain_dma_vm_page_mode_policy_t *policy);
+/** Install one exact halted-Falcon upload policy before first claim. */
+int device_domain_install_gr_firmware_policy(
+    uint32_t device, const device_domain_gr_firmware_policy_t *policy);
 /** Claim one function and its complete isolation group for a process generation. */
 int device_domain_claim(int pid, uint32_t process_generation, uint32_t device,
                         uint32_t mode, device_domain_handle_t *handle_out);
@@ -647,6 +698,10 @@ int device_domain_dma_relocate_and_seal(
 int device_domain_dma_vm_page_mode(
     int pid, uint32_t process_generation,
     const device_domain_dma_vm_page_mode_request_t *request);
+/** Reset GR, upload and read back all policy-bound images without starting. */
+int device_domain_gr_firmware_upload(
+    int pid, uint32_t process_generation,
+    const device_domain_gr_firmware_request_t *request);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);

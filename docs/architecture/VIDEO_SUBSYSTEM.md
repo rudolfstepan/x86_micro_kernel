@@ -85,8 +85,9 @@ Turing, while GK208 is Kepler.  Register terminology therefore follows the
 upstream Nouveau/Envytools model.
 
 The first native gate is deliberately passive.  The generic device-domain
-mediator clips the physical 16-MiB BAR0 to an immutable `0x400104`-byte
-read-only aperture.  The supervised Ring-3 driver reads PMC identity/enable,
+mediator clips the physical 16-MiB BAR0 to an immutable `0x41a1c8`-byte
+read-only aperture, extended by `R2.2p` only through the GPCCS DMEM port. The
+supervised Ring-3 driver reads PMC identity/enable,
 the free-running PTIMER and PFIFO/PGRAPH interrupt state through aligned
 32-bit Device-Control operations.  Its region descriptor grants no mapping
 or write right; Ring 3 receives no directly usable BAR/VRAM mapping, DMA, IRQ,
@@ -217,6 +218,20 @@ image pointer. There is no runtime filesystem or network dependency. Firmware
 upload, topology-dependent GR register packs, FECS/GPCCS start, readiness
 polling, context generation, channel bind and hardware execution remain the
 responsibility of later rollback-capable packages.
+
+`R2.2p` completes the whole safe pre-start hardware slice. The four validated
+images occupy fixed non-overlapping windows from `0x70000` in the existing
+512-KiB mediated pool and are staged and read back before command 19 seals the
+pool. Append-only Device Control command 21 then revalidates all four CRCs,
+preserves every unrelated `PMC_ENABLE` bit while resetting only GR, and waits
+at most 100 monotonic milliseconds for FECS/GPCCS memory scrubbing. It uploads
+both DMEM/IMEM pairs using Nouveau's Falcon v1 auto-increment ports, emits one
+tag per 256-byte IMEM block and reads every word back. The Falcons remain
+halted. Failure or generation fencing disables bus mastering, resets the
+volatile upload and then restores command 20's page mode; an unverified reset
+remains fenced and retryable. The next package must compile the complete
+topology-dependent MMIO and context-switch lists before it may start FECS or
+publish any channel state.
 
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the

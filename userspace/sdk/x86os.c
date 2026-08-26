@@ -79,6 +79,8 @@ _Static_assert(sizeof(x86os_device_dma_relocation_request_t) == 224U,
                "device DMA relocation request ABI changed");
 _Static_assert(sizeof(x86os_device_dma_vm_page_mode_request_t) == 40U,
                "device DMA VM page-mode request ABI changed");
+_Static_assert(sizeof(x86os_device_gr_firmware_request_t) == 40U,
+               "device GR firmware request ABI changed");
 _Static_assert(sizeof(x86os_device_region_access_t) == 32U,
                "device region access ABI changed");
 _Static_assert(sizeof(x86os_device_region_value_t) == 32U,
@@ -1353,6 +1355,24 @@ int x86os_device_dma_vm_page_mode(
     };
     return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
         X86OS_DEVICE_CONTROL_DMA_VM_PAGE_MODE,
+        (uintptr_t)&request, 0U);
+}
+
+int x86os_device_gr_firmware_upload(
+        x86os_device_handle_t device, x86os_device_resource_t region,
+        x86os_device_resource_t dma, uint32_t policy_id) {
+    if (device == 0U || region == 0U || dma == 0U || policy_id == 0U)
+        return -22;
+    const x86os_device_gr_firmware_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .region = region,
+        .dma = dma,
+        .policy_id = policy_id,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_GR_FIRMWARE_UPLOAD,
         (uintptr_t)&request, 0U);
 }
 

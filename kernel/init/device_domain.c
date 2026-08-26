@@ -14,6 +14,7 @@
 #include "drivers/char/io.h"
 #include "lib/libc/stdio.h"
 #include "kernel/time/pit.h"
+#include "kernel/sched/scheduler.h"
 #endif
 
 typedef struct {
@@ -52,6 +53,13 @@ typedef struct {
     uint32_t dma_vm_page_mode_width;
     uint32_t dma_vm_page_mode_mask;
     uint32_t dma_vm_page_mode_original_bits;
+    uint8_t gr_firmware_policy_installed;
+    device_domain_gr_firmware_policy_t gr_firmware_policy;
+    uint8_t gr_firmware_active;
+    device_domain_region_info_t gr_firmware_region;
+    uint32_t gr_firmware_pmc_offset;
+    uint32_t gr_firmware_pmc_mask;
+    uint32_t gr_firmware_pmc_original_bits;
 } device_slot_t;
 
 typedef struct {
@@ -749,12 +757,55 @@ static bool restore_dma_vm_page_mode(device_slot_t *device) {
     return true;
 }
 
+static bool toggle_gr_reset(const device_domain_region_info_t *region,
+                            uint32_t pmc_offset, uint32_t pmc_mask,
+                            uint32_t restore_bits) {
+    uint32_t current = 0U;
+    if (region == NULL || pmc_mask == 0U ||
+        !platform_ops.read_region(
+            region, pmc_offset, sizeof(uint32_t), &current))
+        return false;
+    const uint32_t preserved = current & ~pmc_mask;
+    const uint32_t disabled = preserved;
+    const uint32_t restored = preserved | restore_bits;
+    uint32_t verified = 0U;
+    if (!platform_ops.write_region(
+            region, pmc_offset, sizeof(uint32_t), disabled) ||
+        !platform_ops.read_region(
+            region, pmc_offset, sizeof(uint32_t), &verified) ||
+        verified != disabled ||
+        !platform_ops.write_region(
+            region, pmc_offset, sizeof(uint32_t), restored) ||
+        !platform_ops.read_region(
+            region, pmc_offset, sizeof(uint32_t), &verified) ||
+        verified != restored)
+        return false;
+    return true;
+}
+
+static bool reset_gr_firmware_state(device_slot_t *device) {
+    if (device == NULL || device->gr_firmware_active == 0U) return true;
+    if (!toggle_gr_reset(&device->gr_firmware_region,
+            device->gr_firmware_pmc_offset,
+            device->gr_firmware_pmc_mask,
+            device->gr_firmware_pmc_original_bits))
+        return false;
+    device->gr_firmware_active = 0U;
+    device->gr_firmware_region = (device_domain_region_info_t){0};
+    device->gr_firmware_pmc_offset = 0U;
+    device->gr_firmware_pmc_mask = 0U;
+    device->gr_firmware_pmc_original_bits = 0U;
+    return true;
+}
+
 static bool fence_slot(device_slot_t *device) {
     bool irq_masked = device_is_passive_mediated_io(device) ||
         mask_device_irq(device);
     bool mastering_disabled =
         platform_ops.set_bus_master(device->pci_location, false);
-    bool page_mode_restored = mastering_disabled &&
+    bool gr_firmware_reset = mastering_disabled &&
+        reset_gr_firmware_state(device);
+    bool page_mode_restored = gr_firmware_reset &&
         restore_dma_vm_page_mode(device);
     bool irq_revoked = device->irq_bound == 0U || platform_ops.revoke_irq(
         device->pci_location, device->owner_pid, device->owner_generation,
@@ -776,7 +827,8 @@ static bool fence_slot(device_slot_t *device) {
     device->irq_window_count = 0U;
     retire_device_resources((uint32_t)(device - devices), device->generation);
     device->state = DEVICE_DOMAIN_FENCED;
-    return irq_masked && mastering_disabled && page_mode_restored &&
+    return irq_masked && mastering_disabled && gr_firmware_reset &&
+        page_mode_restored &&
         irq_revoked && dma_revoked;
 }
 
@@ -1152,6 +1204,89 @@ int device_domain_install_dma_vm_page_mode_policy(
     }
     device->dma_vm_page_mode_policy = *policy;
     device->dma_vm_page_mode_policy_installed = 1U;
+    end_operation();
+    return 0;
+}
+
+static bool gr_firmware_image_valid(
+        const device_domain_gr_firmware_image_t *image,
+        uint32_t readable_bytes) {
+    if (image == NULL || image->word_count == 0U ||
+        image->word_count > DEVICE_DOMAIN_GR_FIRMWARE_MAX_WORDS ||
+        image->crc32 == 0U || (image->pool_offset & 3U) != 0U ||
+        (image->falcon_base & 0xFFFU) != 0U ||
+        (image->memory_kind != DEVICE_DOMAIN_GR_FIRMWARE_DMEM &&
+         image->memory_kind != DEVICE_DOMAIN_GR_FIRMWARE_IMEM) ||
+        image->reserved[0] != 0U || image->reserved[1] != 0U ||
+        image->reserved[2] != 0U)
+        return false;
+    const uint32_t bytes = image->word_count * sizeof(uint32_t);
+    return image->pool_offset >= DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES &&
+        image->pool_offset <= DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES &&
+        bytes <= DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES - image->pool_offset &&
+        image->falcon_base <= readable_bytes &&
+        0x1C8U <= readable_bytes - image->falcon_base;
+}
+
+int device_domain_install_gr_firmware_policy(
+        uint32_t device_index,
+        const device_domain_gr_firmware_policy_t *policy) {
+    if (!initialized || policy == NULL || device_index >= device_count ||
+        policy->version != DEVICE_DOMAIN_ABI_VERSION ||
+        policy->struct_size != sizeof(*policy) || policy->policy_id == 0U ||
+        policy->region_index >= 6U || policy->image_count !=
+            DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT ||
+        (policy->pmc_enable_offset & 3U) != 0U ||
+        policy->pmc_gr_mask == 0U ||
+        (policy->pmc_gr_mask & (policy->pmc_gr_mask - 1U)) != 0U ||
+        policy->reserved != 0U)
+        return -22;
+    const device_slot_t *registered = &devices[device_index];
+    if ((registered->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) == 0U ||
+        registered->region_policy_installed == 0U)
+        return -95;
+    const uint32_t readable = registered->region_policy
+        .readable_bytes[policy->region_index];
+    if (policy->pmc_enable_offset > readable ||
+        sizeof(uint32_t) > readable - policy->pmc_enable_offset)
+        return -22;
+    for (uint32_t index = 0U;
+         index < DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT; ++index) {
+        const device_domain_gr_firmware_image_t *image =
+            &policy->images[index];
+        const uint32_t expected_kind = (index & 1U) == 0U
+            ? DEVICE_DOMAIN_GR_FIRMWARE_DMEM
+            : DEVICE_DOMAIN_GR_FIRMWARE_IMEM;
+        if (!gr_firmware_image_valid(image, readable) ||
+            image->memory_kind != expected_kind ||
+            (image->memory_kind == DEVICE_DOMAIN_GR_FIRMWARE_IMEM &&
+             (image->word_count & 0x3FU) != 0U) ||
+            ((index & 1U) != 0U && image->falcon_base !=
+                policy->images[index - 1U].falcon_base) ||
+            (index >= 2U &&
+             image->falcon_base == policy->images[0].falcon_base))
+            return -22;
+        const uint32_t image_end = image->pool_offset +
+            image->word_count * sizeof(uint32_t);
+        for (uint32_t prior = 0U; prior < index; ++prior) {
+            const device_domain_gr_firmware_image_t *other =
+                &policy->images[prior];
+            const uint32_t other_end = other->pool_offset +
+                other->word_count * sizeof(uint32_t);
+            if (image->pool_offset < other_end &&
+                other->pool_offset < image_end)
+                return -22;
+        }
+    }
+    if (!begin_operation()) return -16;
+    device_slot_t *device = &devices[device_index];
+    if (device->registered == 0U || device->state != DEVICE_DOMAIN_AVAILABLE ||
+        device->gr_firmware_policy_installed != 0U) {
+        end_operation();
+        return -16;
+    }
+    device->gr_firmware_policy = *policy;
+    device->gr_firmware_policy_installed = 1U;
     end_operation();
     return 0;
 }
@@ -2130,6 +2265,196 @@ int device_domain_dma_vm_page_mode(
         (verified & selected->writable_mask) != selected->value ||
         (verified & ~selected->writable_mask) != preserved) {
         if (!restore_dma_vm_page_mode(device)) (void)fence_slot(device);
+        end_operation();
+        return -5;
+    }
+    end_operation();
+    return 0;
+}
+
+static uint32_t gr_firmware_crc32(const uint8_t *pool,
+                                  const device_domain_gr_firmware_image_t *image) {
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < image->word_count; ++index) {
+        uint32_t word = 0U;
+        memcpy(&word, &pool[image->pool_offset + index * sizeof(uint32_t)],
+               sizeof(word));
+        for (uint32_t shift = 0U; shift < 32U; shift += 8U) {
+            crc ^= (word >> shift) & 0xFFU;
+            for (uint32_t bit = 0U; bit < 8U; ++bit) {
+                const uint32_t mask = 0U - (crc & 1U);
+                crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+            }
+        }
+    }
+    return ~crc;
+}
+
+static bool gr_firmware_runtime_policy_valid(
+        const device_domain_gr_firmware_policy_t *policy,
+        const device_domain_region_info_t *region, uint32_t pool_capacity) {
+    if (policy == NULL || region == NULL ||
+        policy->region_index != region->region_index ||
+        policy->pmc_enable_offset > region->length_low ||
+        sizeof(uint32_t) > region->length_low - policy->pmc_enable_offset)
+        return false;
+    for (uint32_t index = 0U;
+         index < DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT; ++index) {
+        const device_domain_gr_firmware_image_t *image =
+            &policy->images[index];
+        const uint32_t bytes = image->word_count * sizeof(uint32_t);
+        if (image->pool_offset > pool_capacity ||
+            bytes > pool_capacity - image->pool_offset ||
+            image->falcon_base > region->length_low ||
+            0x1C8U > region->length_low - image->falcon_base)
+            return false;
+    }
+    return true;
+}
+
+static bool gr_firmware_scrub_complete(
+        const device_domain_region_info_t *region,
+        const device_domain_gr_firmware_policy_t *policy) {
+    const uint64_t started = platform_ops.monotonic_ms();
+    const uint64_t deadline = started > UINT64_MAX -
+            DEVICE_DOMAIN_GR_FIRMWARE_SCRUB_TIMEOUT_MS
+        ? UINT64_MAX
+        : started + DEVICE_DOMAIN_GR_FIRMWARE_SCRUB_TIMEOUT_MS;
+    for (uint32_t attempt = 0U;
+         attempt < DEVICE_DOMAIN_GR_FIRMWARE_SCRUB_TIMEOUT_MS; ++attempt) {
+        uint32_t fecs = 0U;
+        uint32_t gpccs = 0U;
+        if (!platform_ops.read_region(region,
+                policy->images[0].falcon_base + 0x10CU,
+                sizeof(uint32_t), &fecs) ||
+            !platform_ops.read_region(region,
+                policy->images[2].falcon_base + 0x10CU,
+                sizeof(uint32_t), &gpccs))
+            return false;
+        if (((fecs | gpccs) & 0x00000006U) == 0U) return true;
+        const uint64_t now = platform_ops.monotonic_ms();
+        if (now < started || now >= deadline) return false;
+#ifndef REIST_HOST_TEST
+        if (scheduler_sleep_ms(1U) != 0) return false;
+#endif
+    }
+    return false;
+}
+
+static bool gr_firmware_upload_image(
+        const device_domain_region_info_t *region, const uint8_t *pool,
+        const device_domain_gr_firmware_image_t *image) {
+    const uint32_t control_offset = image->falcon_base +
+        (image->memory_kind == DEVICE_DOMAIN_GR_FIRMWARE_IMEM
+            ? 0x180U : 0x1C0U);
+    const uint32_t data_offset = control_offset + 4U;
+    const uint32_t tag_offset = control_offset + 8U;
+    if (!platform_ops.write_region(
+            region, control_offset, sizeof(uint32_t), 0x01000000U))
+        return false;
+    for (uint32_t index = 0U; index < image->word_count; ++index) {
+        uint32_t word = 0U;
+        memcpy(&word, &pool[image->pool_offset + index * sizeof(uint32_t)],
+               sizeof(word));
+        if (image->memory_kind == DEVICE_DOMAIN_GR_FIRMWARE_IMEM &&
+            (index & 0x3FU) == 0U &&
+            !platform_ops.write_region(region, tag_offset, sizeof(uint32_t),
+                                       index >> 6U))
+            return false;
+        if (!platform_ops.write_region(
+                region, data_offset, sizeof(uint32_t), word))
+            return false;
+    }
+    if (!platform_ops.write_region(
+            region, control_offset, sizeof(uint32_t), 0x02000000U))
+        return false;
+    for (uint32_t index = 0U; index < image->word_count; ++index) {
+        uint32_t expected = 0U;
+        uint32_t actual = 0U;
+        memcpy(&expected,
+            &pool[image->pool_offset + index * sizeof(uint32_t)],
+            sizeof(expected));
+        if (!platform_ops.read_region(
+                region, data_offset, sizeof(uint32_t), &actual) ||
+            actual != expected)
+            return false;
+    }
+    return true;
+}
+
+int device_domain_gr_firmware_upload(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_firmware_request_t *request) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->policy_id == 0U || request->flags != 0U ||
+        request->reserved[0] != 0U || request->reserved[1] != 0U ||
+        request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(
+        pid, process_generation, request->device);
+    resource_slot_t *region = owned_resource_locked(
+        pid, process_generation, request->region,
+        DEVICE_DOMAIN_RESOURCE_REGION);
+    resource_slot_t *dma = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(dma);
+    if (device == NULL || region == NULL || dma == NULL) {
+        end_operation();
+        return -9;
+    }
+    const uint32_t device_index = (uint32_t)(device - devices);
+    const device_domain_gr_firmware_policy_t *policy =
+        &device->gr_firmware_policy;
+    if (region->device_slot != device_index || dma->device_slot != device_index ||
+        region->device_generation != device->generation ||
+        dma->device_generation != device->generation ||
+        device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
+        pool->sealed == 0U || device->dma_vm_page_mode_active == 0U ||
+        device->gr_firmware_policy_installed == 0U ||
+        device->gr_firmware_active != 0U ||
+        request->policy_id != policy->policy_id ||
+        (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U ||
+        !gr_firmware_runtime_policy_valid(
+            policy, &region->region, pool->capacity)) {
+        end_operation();
+        return -13;
+    }
+    const uint32_t pool_index = dma->platform_capability - 1U;
+    const uint8_t *storage = dma_pool_storage[pool_index];
+    for (uint32_t index = 0U;
+         index < DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT; ++index)
+        if (gr_firmware_crc32(storage, &policy->images[index]) !=
+                policy->images[index].crc32) {
+            end_operation();
+            return -84;
+        }
+    uint32_t pmc_enable = 0U;
+    if (!platform_ops.read_region(&region->region,
+            policy->pmc_enable_offset, sizeof(uint32_t), &pmc_enable) ||
+        (pmc_enable & policy->pmc_gr_mask) != policy->pmc_gr_mask) {
+        end_operation();
+        return -13;
+    }
+    device->gr_firmware_active = 1U;
+    device->gr_firmware_region = region->region;
+    device->gr_firmware_pmc_offset = policy->pmc_enable_offset;
+    device->gr_firmware_pmc_mask = policy->pmc_gr_mask;
+    device->gr_firmware_pmc_original_bits =
+        pmc_enable & policy->pmc_gr_mask;
+    bool uploaded = toggle_gr_reset(&region->region,
+            policy->pmc_enable_offset, policy->pmc_gr_mask,
+            device->gr_firmware_pmc_original_bits) &&
+        gr_firmware_scrub_complete(&region->region, policy);
+    for (uint32_t index = 0U;
+         uploaded && index < DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT; ++index)
+        uploaded = gr_firmware_upload_image(
+            &region->region, storage, &policy->images[index]);
+    if (!uploaded) {
+        if (!reset_gr_firmware_state(device)) (void)fence_slot(device);
         end_operation();
         return -5;
     }

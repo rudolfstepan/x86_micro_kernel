@@ -299,6 +299,22 @@ static void test_gr_firmware_manifest_is_exact_and_read_only(void) {
     assert(manifest.gpccs_data_crc32 == 0xF7976F94U);
     assert(manifest.gpccs_code_crc32 == 0xF70A347FU);
     assert(manifest.total_words == 1244U);
+    assert(REIST_NVIDIA_GK208_DMA_FECS_DATA_OFFSET == 0x00070000U);
+    assert(REIST_NVIDIA_GK208_DMA_FECS_CODE_OFFSET == 0x00070400U);
+    assert(REIST_NVIDIA_GK208_DMA_GPCCS_DATA_OFFSET == 0x00071000U);
+    assert(REIST_NVIDIA_GK208_DMA_GPCCS_CODE_OFFSET == 0x00071400U);
+    assert(REIST_NVIDIA_GK208_DMA_FECS_DATA_OFFSET +
+        manifest.fecs_data_words * sizeof(uint32_t) <=
+        REIST_NVIDIA_GK208_DMA_FECS_CODE_OFFSET);
+    assert(REIST_NVIDIA_GK208_DMA_FECS_CODE_OFFSET +
+        manifest.fecs_code_words * sizeof(uint32_t) <=
+        REIST_NVIDIA_GK208_DMA_GPCCS_DATA_OFFSET);
+    assert(REIST_NVIDIA_GK208_DMA_GPCCS_DATA_OFFSET +
+        manifest.gpccs_data_words * sizeof(uint32_t) <=
+        REIST_NVIDIA_GK208_DMA_GPCCS_CODE_OFFSET);
+    assert(REIST_NVIDIA_GK208_DMA_GPCCS_CODE_OFFSET +
+        manifest.gpccs_code_words * sizeof(uint32_t) <=
+        REIST_NVIDIA_GK208_DMA_POOL_BYTES);
     for (uint32_t index = 0U;
          index < sizeof(manifest.reserved) / sizeof(manifest.reserved[0]);
          ++index)

@@ -2299,8 +2299,10 @@ und aktiviert weder Busmaster noch DMA, IRQ, GPFIFO oder Capabilitybits.
 Das abgeschlossene `R2.2h` verschiebt anschließend auch die passive
 Registerprobe aus `display_control` in den überwachten Ring-3-Treiber. Der
 generische Device-Domain-Pfad darf große physische BARs nur als auf höchstens
-8 MiB geclippte Policy-Apertur vorbereiten; für GK208 sind exakt `0x400104`
-Byte von BAR0 lesbar und keine Schreibregeln installiert. Alle Registerreads
+8 MiB geclippte Policy-Apertur vorbereiten; für GK208 waren zunächst exakt
+`0x400104` Byte von BAR0 lesbar. `R2.2p` erweitert das unverändert read-only
+Fenster bis `0x41a1c8` für den GPCCS-DMEM-Port. Keine Schreibregeln sind
+installiert. Alle Registerreads
 sind ausgerichtet und generationgebunden, PTIMER-Kohärenz ist auf vier
 Versuche begrenzt. Mapping-, DMA-, IRQ-, Busmaster- und Capabilityrechte
 bleiben null.
@@ -2365,11 +2367,18 @@ GPCCS sind auf Linux-Commit
 `45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229` festgelegt. Ein 64-Byte-Manifest
 und ein bounded Selbsttest prüfen 193/640/27/384 Dwords sowie vier feste
 IEEE-CRC32-Werte, bevor der Treiber den DMA-Pool öffnet. Es gibt weder
-Laufzeit-Dateizugriff noch einen veränderlichen Firmwarezeiger. Als nächster
-Hardware-Slice folgen damit topologyabhängige GR-Registerlisten,
-kernelmediierter Firmware-Upload, rückrollbarer FECS/GPCCS-Start und eine
-deadlinebegrenzte Bereitschaftsprüfung. Channel-Bind, Runlist und USERD dürfen
-erst danach folgen.
+Laufzeit-Dateizugriff noch einen veränderlichen Firmwarezeiger. `R2.2p`
+schließt inzwischen den gesamten sicheren Pre-Start-Hardware-Slice:
+Ring 3 staged alle vier Images in festen Poolfenstern vor dem Seal; Kommando 21
+prüft ihre CRCs, resettiert ausschließlich GR, wartet höchstens 100 ms auf
+beendetes Falcon-Scrubbing, lädt DMEM/IMEM samt Block-Tags und liest jedes Wort
+zurück. Cleanup deaktiviert Busmaster, resettiert den Upload und stellt danach
+den Page-Mode wieder her. FECS und GPCCS bleiben bewusst angehalten, weil die
+geprüfte Nouveau-Reihenfolge zuvor die vollständigen topologyabhängigen GR-
+MMIO- und Context-Switch-Listen verlangt. Diese Listen, ihr rückrollbarer
+kernelmediierter Commit, Falcon-Start und deadlinebegrenzte Readiness bilden
+den nächsten gemeinsamen Slice; Channel-Bind, Runlist und USERD folgen erst
+danach.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

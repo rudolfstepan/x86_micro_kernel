@@ -31,8 +31,21 @@ static uint32_t described_region_length = 0x4000U;
 static uint32_t last_prepared_length;
 static uint32_t tracked_region_offset = UINT32_MAX;
 static uint32_t tracked_region_value;
+static uint32_t secondary_region_offset = UINT32_MAX;
+static uint32_t secondary_region_value;
 static bool region_write_result = true;
 static bool region_write_persists = true;
+#define TEST_FECS_BASE 0x00409000U
+#define TEST_GPCCS_BASE 0x0041A000U
+#define TEST_FALCON_WORD_CAPACITY 1024U
+static uint32_t falcon_dmem[2][TEST_FALCON_WORD_CAPACITY];
+static uint32_t falcon_imem[2][TEST_FALCON_WORD_CAPACITY];
+static uint32_t falcon_dmem_cursor[2];
+static uint32_t falcon_imem_cursor[2];
+static uint32_t falcon_dmem_control[2];
+static uint32_t falcon_imem_control[2];
+static uint32_t falcon_tag_writes;
+static uint32_t falcon_last_tag[2];
 
 pci_device_t pci_devices[2] = {
     {
@@ -170,12 +183,37 @@ static bool prepare_region(const device_domain_region_info_t *region) {
     return true;
 }
 
+static int falcon_index_for_offset(uint32_t offset, uint32_t relative) {
+    if (offset == TEST_FECS_BASE + relative) return 0;
+    if (offset == TEST_GPCCS_BASE + relative) return 1;
+    return -1;
+}
+
 static bool read_region(const device_domain_region_info_t *region,
                         uint32_t offset, uint32_t width, uint32_t *value) {
     if (region == NULL || value == NULL || offset >= region->length_low ||
         (width != 1U && width != 2U && width != 4U)) return false;
+    int falcon = falcon_index_for_offset(offset, 0x10CU);
+    if (falcon >= 0) {
+        *value = 0U;
+        return true;
+    }
+    falcon = falcon_index_for_offset(offset, 0x1C4U);
+    if (falcon >= 0 && (falcon_dmem_control[falcon] & 0x02000000U) != 0U &&
+        falcon_dmem_cursor[falcon] < TEST_FALCON_WORD_CAPACITY) {
+        *value = falcon_dmem[falcon][falcon_dmem_cursor[falcon]++];
+        return true;
+    }
+    falcon = falcon_index_for_offset(offset, 0x184U);
+    if (falcon >= 0 && (falcon_imem_control[falcon] & 0x02000000U) != 0U &&
+        falcon_imem_cursor[falcon] < TEST_FALCON_WORD_CAPACITY) {
+        *value = falcon_imem[falcon][falcon_imem_cursor[falcon]++];
+        return true;
+    }
     *value = offset == tracked_region_offset
-        ? tracked_region_value : 0xA5000000U | offset | width;
+        ? tracked_region_value
+        : offset == secondary_region_offset
+            ? secondary_region_value : 0xA5000000U | offset | width;
     return true;
 }
 
@@ -186,8 +224,44 @@ static bool write_region(const device_domain_region_info_t *region,
     ++region_write_calls;
     last_region_value = value;
     if (!region_write_result) return false;
-    if (region_write_persists && offset == tracked_region_offset)
+    if (region_write_persists && offset == tracked_region_offset) {
         tracked_region_value = value;
+        if (offset == 0x00000200U && (value & 0x00001000U) == 0U) {
+            memset(falcon_dmem, 0, sizeof(falcon_dmem));
+            memset(falcon_imem, 0, sizeof(falcon_imem));
+        }
+    }
+    if (region_write_persists && offset == secondary_region_offset)
+        secondary_region_value = value;
+    int falcon = falcon_index_for_offset(offset, 0x1C0U);
+    if (falcon >= 0) {
+        falcon_dmem_control[falcon] = value;
+        falcon_dmem_cursor[falcon] = (value & 0x0000FFFFU) / 4U;
+        return true;
+    }
+    falcon = falcon_index_for_offset(offset, 0x180U);
+    if (falcon >= 0) {
+        falcon_imem_control[falcon] = value;
+        falcon_imem_cursor[falcon] = (value & 0x0000FFFFU) / 4U;
+        return true;
+    }
+    falcon = falcon_index_for_offset(offset, 0x1C4U);
+    if (falcon >= 0 && (falcon_dmem_control[falcon] & 0x01000000U) != 0U &&
+        falcon_dmem_cursor[falcon] < TEST_FALCON_WORD_CAPACITY) {
+        falcon_dmem[falcon][falcon_dmem_cursor[falcon]++] = value;
+        return true;
+    }
+    falcon = falcon_index_for_offset(offset, 0x184U);
+    if (falcon >= 0 && (falcon_imem_control[falcon] & 0x01000000U) != 0U &&
+        falcon_imem_cursor[falcon] < TEST_FALCON_WORD_CAPACITY) {
+        falcon_imem[falcon][falcon_imem_cursor[falcon]++] = value;
+        return true;
+    }
+    falcon = falcon_index_for_offset(offset, 0x188U);
+    if (falcon >= 0) {
+        ++falcon_tag_writes;
+        falcon_last_tag[falcon] = value;
+    }
     return true;
 }
 
@@ -302,8 +376,18 @@ static void reset_counters(void) {
     last_prepared_length = 0U;
     tracked_region_offset = UINT32_MAX;
     tracked_region_value = 0U;
+    secondary_region_offset = UINT32_MAX;
+    secondary_region_value = 0U;
     region_write_result = true;
     region_write_persists = true;
+    memset(falcon_dmem, 0, sizeof(falcon_dmem));
+    memset(falcon_imem, 0, sizeof(falcon_imem));
+    memset(falcon_dmem_cursor, 0, sizeof(falcon_dmem_cursor));
+    memset(falcon_imem_cursor, 0, sizeof(falcon_imem_cursor));
+    memset(falcon_dmem_control, 0, sizeof(falcon_dmem_control));
+    memset(falcon_imem_control, 0, sizeof(falcon_imem_control));
+    falcon_tag_writes = 0U;
+    memset(falcon_last_tag, 0, sizeof(falcon_last_tag));
     pci_device_count = 1U;
     pci_devices[0].irq_line = 5U;
     pci_devices[1] = (pci_device_t){0};
@@ -327,6 +411,20 @@ static device_domain_platform_ops_t test_platform_ops(void) {
         .revoke_dma = revoke_dma,
         .reset = reset_device,
     };
+}
+
+static uint32_t firmware_crc32(const uint32_t *words, uint32_t word_count) {
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < word_count; ++index) {
+        for (uint32_t shift = 0U; shift < 32U; shift += 8U) {
+            crc ^= (words[index] >> shift) & 0xFFU;
+            for (uint32_t bit = 0U; bit < 8U; ++bit) {
+                const uint32_t mask = 0U - (crc & 1U);
+                crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+            }
+        }
+    }
+    return ~crc;
 }
 
 static void activate_irq_test_device(
@@ -1368,6 +1466,177 @@ static void test_dma_vm_page_mode_is_exact_rollback_safe_and_retryable(void) {
     assert(device_domain_release(50, 40U, handle, 100U) == 0);
 }
 
+static void test_gr_firmware_upload_is_sealed_verified_and_resettable(void) {
+    reset_counters();
+    described_region_length = 0x0041A1C8U;
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device_domain_profile_t video = profile(
+        3U, DEVICE_DOMAIN_PROFILE_MEDIATED_IO |
+            DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+            DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL);
+    uint32_t device = UINT32_MAX;
+    assert(device_domain_register(&video, 0x00001B00U, &device) == 0);
+    const device_domain_region_policy_t region_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(region_policy),
+        .readable_bytes = {0x0041A1C8U},
+    };
+    assert(device_domain_install_region_policy(device, &region_policy) == 0);
+    const device_domain_dma_relocation_policy_t relocation_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(relocation_policy),
+        .policy_count = 1U,
+        .policies = {{
+            .policy_id = 17U,
+            .rule_count = 1U,
+            .rules = {{
+                .destination_pool_offset = 0x5008U,
+                .source_pool_offset = 0x4000U,
+                .width = sizeof(uint64_t),
+            }},
+        }},
+    };
+    assert(device_domain_install_dma_relocation_policy(
+        device, &relocation_policy) == 0);
+    const device_domain_dma_vm_page_mode_policy_t page_mode_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(page_mode_policy),
+        .policy_count = 1U,
+        .policies = {{
+            .policy_id = 17U,
+            .region_index = 0U,
+            .register_offset = 0x00100C80U,
+            .width = sizeof(uint32_t),
+            .writable_mask = 1U,
+        }},
+    };
+    assert(device_domain_install_dma_vm_page_mode_policy(
+        device, &page_mode_policy) == 0);
+
+    uint32_t fecs_data[2] = {0x11223344U, 0x55667788U};
+    uint32_t fecs_code[64];
+    uint32_t gpccs_data[3] = {0x01020304U, 0xAABBCCDDU, 0x13579BDFU};
+    uint32_t gpccs_code[64];
+    for (uint32_t index = 0U; index < 64U; ++index) {
+        fecs_code[index] = 0x10000000U | index;
+        gpccs_code[index] = 0x20000000U | index;
+    }
+    const device_domain_gr_firmware_policy_t firmware_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(firmware_policy),
+        .policy_id = 1U,
+        .region_index = 0U,
+        .pmc_enable_offset = 0x00000200U,
+        .pmc_gr_mask = 0x00001000U,
+        .image_count = DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT,
+        .images = {
+            {0x00070000U, 2U, firmware_crc32(fecs_data, 2U),
+             TEST_FECS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_DMEM, {0U}},
+            {0x00070400U, 64U, firmware_crc32(fecs_code, 64U),
+             TEST_FECS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_IMEM, {0U}},
+            {0x00071000U, 3U, firmware_crc32(gpccs_data, 3U),
+             TEST_GPCCS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_DMEM, {0U}},
+            {0x00071400U, 64U, firmware_crc32(gpccs_code, 64U),
+             TEST_GPCCS_BASE, DEVICE_DOMAIN_GR_FIRMWARE_IMEM, {0U}},
+        },
+    };
+    device_domain_gr_firmware_policy_t overlapping = firmware_policy;
+    overlapping.images[2].pool_offset = overlapping.images[1].pool_offset;
+    assert(device_domain_install_gr_firmware_policy(
+        device, &overlapping) == -22);
+    assert(device_domain_install_gr_firmware_policy(
+        device, &firmware_policy) == 0);
+    assert(device_domain_install_gr_firmware_policy(
+        device, &firmware_policy) == -16);
+
+    device_domain_handle_t handle = 0U;
+    assert(device_domain_claim(60, 50U, device,
+        DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    const device_domain_region_request_t region_request = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(region_request),
+        .device = handle,
+        .region_index = 0U,
+        .rights = DEVICE_DOMAIN_REGION_DESCRIBE |
+                  DEVICE_DOMAIN_REGION_ACCESS_READ,
+    };
+    device_domain_region_info_t region;
+    assert(device_domain_open_region(
+        60, 50U, &region_request, &region) == 0);
+    device_domain_resource_handle_t dma = 0U;
+    assert(bind_dma_resource(60, 50U, handle, 0U, &dma) == 0);
+    assert(device_domain_dma_write(60, 50U, dma, 0x00070000U,
+        fecs_data, sizeof(fecs_data)) == 0);
+    assert(device_domain_dma_write(60, 50U, dma, 0x00070400U,
+        fecs_code, sizeof(fecs_code)) == 0);
+    assert(device_domain_dma_write(60, 50U, dma, 0x00071000U,
+        gpccs_data, sizeof(gpccs_data)) == 0);
+    assert(device_domain_dma_write(60, 50U, dma, 0x00071400U,
+        gpccs_code, sizeof(gpccs_code)) == 0);
+    uint64_t zero = 0U;
+    assert(device_domain_dma_write(
+        60, 50U, dma, 0x5008U, &zero, sizeof(zero)) == 0);
+    device_domain_dma_relocation_request_t relocation = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(relocation),
+        .dma = dma,
+        .policy_id = 17U,
+        .rule_count = 1U,
+        .rules = {{
+            .destination_pool_offset = 0x5008U,
+            .source_pool_offset = 0x4000U,
+            .width = sizeof(uint64_t),
+        }},
+    };
+    assert(device_domain_dma_relocate_and_seal(
+        60, 50U, &relocation) == 0);
+    tracked_region_offset = 0x00000200U;
+    tracked_region_value = 0xA5A51000U;
+    secondary_region_offset = 0x00100C80U;
+    secondary_region_value = 0x5A5A0001U;
+    const device_domain_dma_vm_page_mode_request_t page_mode = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(page_mode),
+        .device = handle,
+        .region = region.resource,
+        .dma = dma,
+        .policy_id = 17U,
+    };
+    assert(device_domain_dma_vm_page_mode(60, 50U, &page_mode) == 0);
+    const device_domain_gr_firmware_request_t upload = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(upload),
+        .device = handle,
+        .region = region.resource,
+        .dma = dma,
+        .policy_id = 1U,
+    };
+    device_domain_gr_firmware_request_t unknown = upload;
+    unknown.policy_id = 2U;
+    const uint32_t writes_before = region_write_calls;
+    assert(device_domain_gr_firmware_upload(60, 50U, &unknown) == -13);
+    assert(region_write_calls == writes_before);
+    assert(device_domain_gr_firmware_upload(60, 50U, &upload) == 0);
+    assert(falcon_dmem[0][0] == fecs_data[0]);
+    assert(falcon_dmem[0][1] == fecs_data[1]);
+    assert(falcon_imem[0][63] == fecs_code[63]);
+    assert(falcon_dmem[1][2] == gpccs_data[2]);
+    assert(falcon_imem[1][63] == gpccs_code[63]);
+    assert(falcon_tag_writes == 2U);
+    assert(falcon_last_tag[0] == 0U && falcon_last_tag[1] == 0U);
+    assert(device_domain_gr_firmware_upload(60, 50U, &upload) == -13);
+
+    region_write_result = false;
+    assert(device_domain_fence(60, 50U, handle) == -5);
+    assert(falcon_imem[0][63] == fecs_code[63]);
+    region_write_result = true;
+    assert(device_domain_fence(60, 50U, handle) == 0);
+    assert(falcon_dmem[0][0] == 0U && falcon_imem[1][63] == 0U);
+    assert(secondary_region_value == 0x5A5A0001U);
+    assert(device_domain_release(60, 50U, handle, 100U) == 0);
+}
+
 int main(void) {
     test_irq_storm_and_clock_regression_are_fenced();
     test_legacy_pic_fallback_masks_shared_irq();
@@ -1383,5 +1652,6 @@ int main(void) {
     test_large_dma_pool_is_explicit_and_profile_scoped();
     test_dma_relocation_seal_is_atomic_and_generation_scoped();
     test_dma_vm_page_mode_is_exact_rollback_safe_and_retryable();
+    test_gr_firmware_upload_is_sealed_verified_and_resettable();
     return 0;
 }

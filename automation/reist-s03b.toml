@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2p-nvidia-gk208-falcon-upload"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2p-nvidia-gk208-falcon-upload"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Stage and verify both halted GK208 Falcon images"
@@ -69,7 +69,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: mediate GK208 Falcon firmware upload"
-evidence = []
+evidence = [
+  "Device-domain contract passed 10 tests including sealed four-image upload word readback IMEM tags immediate reset and retryable ordered fencing",
+  "NVIDIA GK208 contract passed 13 tests including fixed firmware windows command-21 ordering and zero capability publication",
+  "VMware SVGA-II read-only DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 40 seconds",
+  "VMware framebuffer package passed in 28 seconds"
+]
 
 [[packages]]
 id = "R2.2o-nvidia-gk208-gr-firmware-contract"

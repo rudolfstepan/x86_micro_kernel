@@ -22,8 +22,9 @@
 #define NVIDIA_VENDOR_ID 0x10DEU
 #define NVIDIA_GK208_DEVICE_ID 0x1280U
 #define DISPLAY_VGA_SUBCLASS 0x00U
-#define NVIDIA_PGRAPH_INTR 0x400100U
-#define NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + sizeof(uint32_t))
+#define NVIDIA_GPCCS_DMEMD 0x41A1C4U
+#define NVIDIA_BAR0_READABLE_BYTES \
+    (NVIDIA_GPCCS_DMEMD + sizeof(uint32_t))
 #define NVIDIA_DMA_USERD_OFFSET 0x00004000U
 #define NVIDIA_DMA_RAMFC_OFFSET 0x00005000U
 #define NVIDIA_DMA_PGD_OFFSET 0x00010000U
@@ -37,6 +38,15 @@
 #define NVIDIA_VM_PTE_READ_ONLY (1ULL << 2U)
 #define NVIDIA_FB_PAGE_MODE_REGISTER 0x00100C80U
 #define NVIDIA_FB_PAGE_MODE_MASK 0x00000001U
+#define NVIDIA_PMC_ENABLE_REGISTER 0x00000200U
+#define NVIDIA_PMC_ENABLE_GR_MASK 0x00001000U
+#define NVIDIA_FECS_BASE 0x00409000U
+#define NVIDIA_GPCCS_BASE 0x0041A000U
+#define NVIDIA_GR_FIRMWARE_POLICY_ID 1U
+#define NVIDIA_FECS_DATA_OFFSET 0x00070000U
+#define NVIDIA_FECS_CODE_OFFSET 0x00070400U
+#define NVIDIA_GPCCS_DATA_OFFSET 0x00071000U
+#define NVIDIA_GPCCS_CODE_OFFSET 0x00071400U
 
 static device_domain_dma_relocation_rule_t nvidia_relocation(
         uint32_t destination, uint32_t source, uint32_t shift,
@@ -114,6 +124,49 @@ static int install_nvidia_dma_vm_page_mode_policy(uint32_t device_index) {
         device_index, &policy);
 }
 
+static int install_nvidia_gr_firmware_policy(uint32_t device_index) {
+    const device_domain_gr_firmware_policy_t policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(policy),
+        .policy_id = NVIDIA_GR_FIRMWARE_POLICY_ID,
+        .region_index = 0U,
+        .pmc_enable_offset = NVIDIA_PMC_ENABLE_REGISTER,
+        .pmc_gr_mask = NVIDIA_PMC_ENABLE_GR_MASK,
+        .image_count = DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT,
+        .images = {
+            {
+                .pool_offset = NVIDIA_FECS_DATA_OFFSET,
+                .word_count = 193U,
+                .crc32 = 0x599287F1U,
+                .falcon_base = NVIDIA_FECS_BASE,
+                .memory_kind = DEVICE_DOMAIN_GR_FIRMWARE_DMEM,
+            },
+            {
+                .pool_offset = NVIDIA_FECS_CODE_OFFSET,
+                .word_count = 640U,
+                .crc32 = 0x761F1915U,
+                .falcon_base = NVIDIA_FECS_BASE,
+                .memory_kind = DEVICE_DOMAIN_GR_FIRMWARE_IMEM,
+            },
+            {
+                .pool_offset = NVIDIA_GPCCS_DATA_OFFSET,
+                .word_count = 27U,
+                .crc32 = 0xF7976F94U,
+                .falcon_base = NVIDIA_GPCCS_BASE,
+                .memory_kind = DEVICE_DOMAIN_GR_FIRMWARE_DMEM,
+            },
+            {
+                .pool_offset = NVIDIA_GPCCS_CODE_OFFSET,
+                .word_count = 384U,
+                .crc32 = 0xF70A347FU,
+                .falcon_base = NVIDIA_GPCCS_BASE,
+                .memory_kind = DEVICE_DOMAIN_GR_FIRMWARE_IMEM,
+            },
+        },
+    };
+    return device_domain_install_gr_firmware_policy(device_index, &policy);
+}
+
 static int register_profile(const pci_device_t *device, uint32_t backend,
                             video_device_profile_info_t *info) {
     const device_domain_profile_t profile = {
@@ -147,6 +200,8 @@ static int register_profile(const pci_device_t *device, uint32_t backend,
         result = install_nvidia_dma_relocation_policy(device_index);
         if (result != 0) return result;
         result = install_nvidia_dma_vm_page_mode_policy(device_index);
+        if (result != 0) return result;
+        result = install_nvidia_gr_firmware_policy(device_index);
         if (result != 0) return result;
     }
     *info = (video_device_profile_info_t){

@@ -157,6 +157,22 @@ prüft das Readback. Eine nicht bestätigte Wiederherstellung bleibt `FENCED`
 und wird beim nächsten Fence-/Release-Versuch erneut ausgeführt. Erst eine
 bestätigte Wiederherstellung erlaubt die nächste Gerätegeneration.
 
+Device-Control-Kommando 21 erweitert diesen geordneten Vertrag um einen
+hardwarewirksamen, aber noch nicht ausführenden Falcon-Upload. Ein vor dem
+Claim unveränderlich installiertes Profil bindet genau vier nicht
+überlappende Poolbereiche, deren Wortzahlen und CRC32-Werte, zwei Falcon-
+Basen sowie genau ein GR-Reset-Bit. Gerät, read-only Region und versiegelter
+DMA-Pool müssen derselben Generation gehören; Kommando 20 muss zuvor
+erfolgreich gewesen sein. Ring 0 prüft alle vier CRCs vor dem ersten
+Registerzugriff, toggelt ausschließlich das erhaltene GR-Bit, wartet mit
+monotoner 100-ms-Grenze auf beendetes IMEM-/DMEM-Scrubbing und überträgt die
+DMEM-/IMEM-Wörter samt 256-Byte-IMEM-Tags. Jedes Wort wird per PIO
+zurückgelesen. FECS und GPCCS werden dabei nicht gestartet. Fehler und Fence
+deaktivieren zuerst Bus Mastering, resetten den GR-Zustand und stellen erst
+danach den Page-Mode wieder her. Nicht bestätigte Schritte bleiben gesperrt
+und wiederholbar; Ring 3 erhält weder MMIO-Schreibrecht noch Firmware- oder
+physische Adressen.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden
