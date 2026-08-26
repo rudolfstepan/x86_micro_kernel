@@ -180,6 +180,18 @@ common `2^40-1` VM limit is staged into the instance image. No physical
 address is published or resolved, no page directory is activated and no
 hardware register is written.
 
+`R2.2m` resolves the previously symbolic addresses inside the kernel. The
+immutable GK208 device profile installs two exact six-rule templates: USERD,
+instance-to-PGD, PGD-to-PT and the three data PTEs for either 64-KiB or
+128-KiB FB pages. The supervised driver chooses policy 17, matching Nouveau's
+`default_bigpage = 17`, after staging and readback are complete. Command 19
+first compares every rule with the template and proves all destination words
+zero, then commits the complete set and seals the pool. Ring 3 receives only a
+status code and cannot read or mutate the resolved image afterward. The
+alternative policy 16 remains validated but unselected. Register `0x100c80`,
+GPU page-directory activation, runlist/USERD publication and bus mastering
+remain untouched for the following hardware package.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

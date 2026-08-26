@@ -24,6 +24,65 @@
 #define DISPLAY_VGA_SUBCLASS 0x00U
 #define NVIDIA_PGRAPH_INTR 0x400100U
 #define NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + sizeof(uint32_t))
+#define NVIDIA_DMA_USERD_OFFSET 0x00004000U
+#define NVIDIA_DMA_RAMFC_OFFSET 0x00005000U
+#define NVIDIA_DMA_PGD_OFFSET 0x00010000U
+#define NVIDIA_DMA_PGT_OFFSET 0x00030000U
+#define NVIDIA_DMA_GPFIFO_OFFSET 0x00001000U
+#define NVIDIA_DMA_PUSHBUF_OFFSET 0x00002000U
+#define NVIDIA_DMA_FENCE_OFFSET 0x00003000U
+#define NVIDIA_RAMFC_USERD_OFFSET 0x00000008U
+#define NVIDIA_RAMFC_PGD_OFFSET 0x00000200U
+#define NVIDIA_VM_PTE_NCOH 0x0000000600000001ULL
+#define NVIDIA_VM_PTE_READ_ONLY (1ULL << 2U)
+
+static device_domain_dma_relocation_rule_t nvidia_relocation(
+        uint32_t destination, uint32_t source, uint32_t shift,
+        uint64_t fixed_bits) {
+    return (device_domain_dma_relocation_rule_t){
+        .destination_pool_offset = destination,
+        .source_pool_offset = source,
+        .shift_right = shift,
+        .width = sizeof(uint64_t),
+        .fixed_bits = fixed_bits,
+    };
+}
+
+static int install_nvidia_dma_relocation_policy(uint32_t device_index) {
+    device_domain_dma_relocation_policy_t policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(policy),
+        .policy_count = 2U,
+    };
+    static const uint32_t page_shifts[2] = {16U, 17U};
+    static const uint32_t pgd_indices[2] = {8U, 4U};
+    for (uint32_t variant = 0U; variant < 2U; ++variant) {
+        device_domain_dma_relocation_template_t *relocation =
+            &policy.policies[variant];
+        relocation->policy_id = page_shifts[variant];
+        relocation->rule_count = 6U;
+        relocation->rules[0] = nvidia_relocation(
+            NVIDIA_DMA_RAMFC_OFFSET + NVIDIA_RAMFC_USERD_OFFSET,
+            NVIDIA_DMA_USERD_OFFSET, 0U, 0U);
+        relocation->rules[1] = nvidia_relocation(
+            NVIDIA_DMA_RAMFC_OFFSET + NVIDIA_RAMFC_PGD_OFFSET,
+            NVIDIA_DMA_PGD_OFFSET, 0U, 3U);
+        relocation->rules[2] = nvidia_relocation(
+            NVIDIA_DMA_PGD_OFFSET + pgd_indices[variant] * sizeof(uint64_t),
+            NVIDIA_DMA_PGT_OFFSET, 8U, 3U);
+        relocation->rules[3] = nvidia_relocation(
+            NVIDIA_DMA_PGT_OFFSET, NVIDIA_DMA_PUSHBUF_OFFSET, 8U,
+            NVIDIA_VM_PTE_NCOH | NVIDIA_VM_PTE_READ_ONLY);
+        relocation->rules[4] = nvidia_relocation(
+            NVIDIA_DMA_PGT_OFFSET + sizeof(uint64_t),
+            NVIDIA_DMA_FENCE_OFFSET, 8U, NVIDIA_VM_PTE_NCOH);
+        relocation->rules[5] = nvidia_relocation(
+            NVIDIA_DMA_PGT_OFFSET + 2U * sizeof(uint64_t),
+            NVIDIA_DMA_GPFIFO_OFFSET, 8U,
+            NVIDIA_VM_PTE_NCOH | NVIDIA_VM_PTE_READ_ONLY);
+    }
+    return device_domain_install_dma_relocation_policy(device_index, &policy);
+}
 
 static int register_profile(const pci_device_t *device, uint32_t backend,
                             video_device_profile_info_t *info) {
@@ -54,6 +113,8 @@ static int register_profile(const pci_device_t *device, uint32_t backend,
         };
         result = device_domain_install_region_policy(
             device_index, &region_policy);
+        if (result != 0) return result;
+        result = install_nvidia_dma_relocation_policy(device_index);
         if (result != 0) return result;
     }
     *info = (video_device_profile_info_t){

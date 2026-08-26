@@ -1123,6 +1123,112 @@ static void test_large_dma_pool_is_explicit_and_profile_scoped(void) {
     assert(device_domain_release(31, 21U, large_handle, 100U) == 0);
 }
 
+static void test_dma_relocation_seal_is_atomic_and_generation_scoped(void) {
+    reset_counters();
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device_domain_profile_t current = profile(
+        4U, DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+            DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL);
+    uint32_t device = 0U;
+    assert(device_domain_register(&current, 0x00013000U, &device) == 0);
+
+    device_domain_dma_relocation_policy_t policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(policy),
+        .policy_count = 1U,
+        .policies = {{
+            .policy_id = 17U,
+            .rule_count = 2U,
+            .rules = {
+                {
+                    .destination_pool_offset = 0x5008U,
+                    .source_pool_offset = 0x4000U,
+                    .width = sizeof(uint64_t),
+                },
+                {
+                    .destination_pool_offset = 0x5200U,
+                    .source_pool_offset = 0x10000U,
+                    .width = sizeof(uint64_t),
+                    .fixed_bits = 3U,
+                },
+            },
+        }},
+    };
+    device_domain_dma_relocation_policy_t invalid_policy = policy;
+    ++invalid_policy.policies[0].rules[0].source_pool_offset;
+    assert(device_domain_install_dma_relocation_policy(
+        device, &invalid_policy) == -22);
+    assert(device_domain_install_dma_relocation_policy(
+        device, &policy) == 0);
+    assert(device_domain_install_dma_relocation_policy(
+        device, &policy) == -16);
+
+    device_domain_handle_t handle = 0U;
+    assert(device_domain_claim(40, 30U, device,
+        DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    device_domain_resource_handle_t dma = 0U;
+    assert(bind_dma_resource(40, 30U, handle, 0U, &dma) == 0);
+    device_domain_dma_relocation_request_t request = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .dma = dma,
+        .policy_id = 17U,
+        .rule_count = 2U,
+    };
+    request.rules[0] = policy.policies[0].rules[0];
+    request.rules[1] = policy.policies[0].rules[1];
+
+    device_domain_dma_relocation_request_t mutated = request;
+    mutated.rules[1].fixed_bits = 7U;
+    assert(device_domain_dma_relocate_and_seal(
+        40, 30U, &mutated) == -13);
+    uint64_t word = UINT64_MAX;
+    assert(device_domain_test_dma_word(dma, 0x5008U, &word));
+    assert(word == 0U);
+
+    const uint64_t poison = 1U;
+    assert(device_domain_dma_write(
+        40, 30U, dma, 0x5200U, &poison, sizeof(poison)) == 0);
+    assert(device_domain_dma_relocate_and_seal(
+        40, 30U, &request) == -84);
+    assert(device_domain_test_dma_word(dma, 0x5008U, &word));
+    assert(word == 0U);
+    const uint64_t zero = 0U;
+    assert(device_domain_dma_write(
+        40, 30U, dma, 0x5200U, &zero, sizeof(zero)) == 0);
+    assert(device_domain_dma_relocate_and_seal(
+        40, 30U, &request) == 0);
+    assert(device_domain_test_dma_word(dma, 0x5008U, &word));
+    assert(word == 0x10004000ULL);
+    assert(device_domain_test_dma_word(dma, 0x5200U, &word));
+    assert(word == 0x10010003ULL);
+    assert(device_domain_dma_read(
+        40, 30U, dma, 0x5008U, &word, sizeof(word)) == -16);
+    assert(device_domain_dma_write(
+        40, 30U, dma, 0x6000U, &zero, sizeof(zero)) == -16);
+    assert(device_domain_dma_relocate_and_seal(
+        40, 30U, &request) == -16);
+    device_domain_dma_descriptor_t descriptor = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(descriptor),
+        .dma = dma,
+        .buffer_offset = 0x2000U,
+        .length = 128U,
+    };
+    assert(device_domain_dma_descriptor_set(40, 30U, &descriptor) == -16);
+    assert(device_domain_release(40, 30U, handle, 100U) == 0);
+
+    assert(device_domain_claim(41, 31U, device,
+        DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    assert(bind_dma_resource(41, 31U, handle, 0U, &dma) == 0);
+    word = UINT64_MAX;
+    assert(device_domain_dma_read(
+        41, 31U, dma, 0x5008U, &word, sizeof(word)) == 0);
+    assert(word == 0U);
+    assert(device_domain_release(41, 31U, handle, 100U) == 0);
+}
+
 int main(void) {
     test_irq_storm_and_clock_regression_are_fenced();
     test_legacy_pic_fallback_masks_shared_irq();
@@ -1136,5 +1242,6 @@ int main(void) {
     test_owner_recovery_is_atomic_and_deadline_bounded();
     test_dma_pool_pressure_is_saturating_and_reclaimed();
     test_large_dma_pool_is_explicit_and_profile_scoped();
+    test_dma_relocation_seal_is_atomic_and_generation_scoped();
     return 0;
 }

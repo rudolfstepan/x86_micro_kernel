@@ -58,6 +58,8 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("REIST_NVIDIA_GK208_DMA_PGD_OFFSET", header)
         self.assertIn("REIST_NVIDIA_GK208_DMA_PGT_OFFSET", header)
         self.assertIn("REIST_NVIDIA_GK208_VM_LIMIT", header)
+        self.assertIn("REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT", header)
+        self.assertIn("REIST_NVIDIA_GK208_SEAL_RELOCATION_COUNT 6U", header)
         self.assertIn("reist_nvidia_gk208_prepare_vm_plan", source)
         self.assertIn("reist_nvidia_gk208_validate_vm_plan", source)
         self.assertIn("NVIDIA_GK208_GPFIFO_LIMIT2 9U", source)
@@ -85,6 +87,10 @@ class NvidiaGk208BringupTests(unittest.TestCase):
             ".readable_bytes = {NVIDIA_BAR0_READABLE_BYTES}", source)
         self.assertIn(".rule_count = 0U", source)
         self.assertIn("device_domain_install_region_policy", source)
+        self.assertIn("install_nvidia_dma_relocation_policy", source)
+        self.assertIn("device_domain_install_dma_relocation_policy", source)
+        self.assertIn(".policy_count = 2U", source)
+        self.assertIn("page_shifts[2] = {16U, 17U}", source)
 
     def test_kernel_only_admits_bar_geometry(self):
         source = (ROOT / "drivers/video/display_control.c").read_text(
@@ -136,6 +142,8 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("x86os_device_dma_read", driver)
         self.assertIn("channel_image_dma_self_test", driver)
         self.assertIn("gpu_vm_plan_dma_self_test", driver)
+        self.assertIn("gpu_vm_relocate_and_seal", driver)
+        self.assertIn("x86os_device_dma_relocate_and_seal", driver)
         self.assertIn("X86OS_DEVICE_DMA_TRANSFER_MAX", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("x86os_device_activate", driver)

@@ -8,6 +8,11 @@
  */
 #include "x86os.h"
 
+static void x86os_zero_bytes(void *memory, size_t length) {
+    volatile uint8_t *bytes = (volatile uint8_t *)memory;
+    for (size_t index = 0U; index < length; ++index) bytes[index] = 0U;
+}
+
 _Static_assert(sizeof(x86os_memory_stats_t) == 120U,
                "memory statistics ABI size changed");
 _Static_assert(sizeof(x86os_scheduler_stats_t) == 32U,
@@ -68,6 +73,10 @@ _Static_assert(sizeof(x86os_device_dma_pool_stats_t) == 32U,
                "device DMA pool statistics ABI changed");
 _Static_assert(sizeof(x86os_device_dma_descriptor_t) == 32U,
                "device DMA descriptor ABI changed");
+_Static_assert(sizeof(x86os_device_dma_relocation_rule_t) == 24U,
+               "device DMA relocation rule ABI changed");
+_Static_assert(sizeof(x86os_device_dma_relocation_request_t) == 224U,
+               "device DMA relocation request ABI changed");
 _Static_assert(sizeof(x86os_device_region_access_t) == 32U,
                "device region access ABI changed");
 _Static_assert(sizeof(x86os_device_region_value_t) == 32U,
@@ -1304,6 +1313,27 @@ int x86os_device_dma_descriptor_set(x86os_device_resource_t dma,
     };
     return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
         X86OS_DEVICE_CONTROL_DMA_DESCRIPTOR_SET, (uintptr_t)&request, 0U);
+}
+
+int x86os_device_dma_relocate_and_seal(
+        x86os_device_resource_t dma, uint32_t policy_id,
+        const x86os_device_dma_relocation_rule_t *rules,
+        uint32_t rule_count) {
+    if (dma == 0U || policy_id == 0U || rules == NULL || rule_count == 0U ||
+        rule_count > X86OS_DEVICE_DMA_RELOCATION_MAX_RULES)
+        return -22;
+    x86os_device_dma_relocation_request_t request;
+    x86os_zero_bytes(&request, sizeof(request));
+    request.version = X86OS_DEVICE_ABI_VERSION;
+    request.struct_size = sizeof(request);
+    request.dma = dma;
+    request.policy_id = policy_id;
+    request.rule_count = rule_count;
+    for (uint32_t index = 0U; index < rule_count; ++index)
+        request.rules[index] = rules[index];
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_DMA_RELOCATE_AND_SEAL,
+        (uintptr_t)&request, 0U);
 }
 
 static int x86os_device_region_access_valid(

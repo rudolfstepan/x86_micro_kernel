@@ -231,6 +231,8 @@ static void test_channel_image_is_exact_and_unrelocated(void) {
 
 static void test_gpu_vm_plans_are_exact_and_unrelocated(void) {
     reist_nvidia_gk208_vm_plan_t plan;
+    assert(REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT == 17U);
+    assert(REIST_NVIDIA_GK208_SEAL_RELOCATION_COUNT == 6U);
     assert(reist_nvidia_gk208_prepare_vm_plan(
         &plan, REIST_NVIDIA_GK208_FB_PAGE_SHIFT_64K) == 0);
     assert(plan.gpu_page_shift == 12U);

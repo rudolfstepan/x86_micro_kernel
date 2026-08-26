@@ -1305,6 +1305,7 @@ typedef struct {
 #define X86OS_DEVICE_DMA_ADDRESS_ALIGNMENT 128U
 #define X86OS_DEVICE_DMA_DATA_OFFSET 4096U
 #define X86OS_DEVICE_DMA_DESCRIPTOR_CAPACITY 256U
+#define X86OS_DEVICE_DMA_RELOCATION_MAX_RULES 8U
 typedef uint32_t x86os_device_handle_t;
 typedef uint32_t x86os_device_resource_t;
 enum {
@@ -1326,6 +1327,7 @@ enum {
     X86OS_DEVICE_CONTROL_DMA_DESCRIPTOR_SET = 16U,
     X86OS_DEVICE_CONTROL_DEACTIVATE = 17U,
     X86OS_DEVICE_CONTROL_DMA_POOL_STATS = 18U,
+    X86OS_DEVICE_CONTROL_DMA_RELOCATE_AND_SEAL = 19U,
 };
 enum {
     X86OS_DEVICE_RESOURCE_REGION = 1U,
@@ -1476,6 +1478,24 @@ typedef struct {
     uint32_t flags;
     uint32_t reserved;
 } x86os_device_dma_descriptor_t;
+typedef struct {
+    uint32_t destination_pool_offset;
+    uint32_t source_pool_offset;
+    uint32_t shift_right;
+    uint32_t width;
+    uint64_t fixed_bits;
+} x86os_device_dma_relocation_rule_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_resource_t dma;
+    uint32_t policy_id;
+    uint32_t rule_count;
+    uint32_t flags;
+    uint32_t reserved[2];
+    x86os_device_dma_relocation_rule_t
+        rules[X86OS_DEVICE_DMA_RELOCATION_MAX_RULES];
+} x86os_device_dma_relocation_request_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -1805,6 +1825,10 @@ int x86os_device_dma_descriptor_set(x86os_device_resource_t dma,
                                     uint32_t descriptor_index,
                                     uint32_t buffer_offset,
                                     uint32_t length, uint32_t flags);
+/** Resolve one immutable relocation template and freeze Ring-3 pool access. */
+int x86os_device_dma_relocate_and_seal(
+    x86os_device_resource_t dma, uint32_t policy_id,
+    const x86os_device_dma_relocation_rule_t *rules, uint32_t rule_count);
 /** Read one aligned 8-, 16- or 32-bit value through the installed policy. */
 int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
                              uint32_t width, uint32_t *value);

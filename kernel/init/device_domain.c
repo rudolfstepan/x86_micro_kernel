@@ -42,6 +42,8 @@ typedef struct {
     uint32_t irq_storm_count;
     uint8_t region_policy_installed;
     device_domain_region_policy_t region_policy;
+    uint8_t dma_relocation_policy_installed;
+    device_domain_dma_relocation_policy_t dma_relocation_policy;
 } device_slot_t;
 
 typedef struct {
@@ -65,6 +67,7 @@ typedef struct {
 
 typedef struct {
     uint8_t active;
+    uint8_t sealed;
     uint32_t device_slot;
     uint32_t device_generation;
     int32_t owner_pid;
@@ -89,6 +92,16 @@ static device_domain_iommu_status_t iommu_status;
 static uint32_t irq_line_bindings[PCI_LEGACY_IRQ_COUNT];
 static volatile uint32_t pending_irq_lines;
 static device_domain_dma_pool_stats_t dma_pool_stats;
+
+static uint64_t dma_pool_physical_address(uint32_t pool_index,
+                                          uint32_t offset) {
+#ifdef REIST_HOST_TEST
+    return 0x10000000ULL +
+        (uint64_t)pool_index * DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES + offset;
+#else
+    return (uint64_t)(uintptr_t)&dma_pool_storage[pool_index][offset];
+#endif
+}
 
 static void increment_saturating(uint32_t *value) {
     if (value != NULL && *value != UINT32_MAX) ++*value;
@@ -943,6 +956,107 @@ int device_domain_install_region_policy(
     return 0;
 }
 
+static bool dma_relocation_rule_zero(
+        const device_domain_dma_relocation_rule_t *rule) {
+    return rule->destination_pool_offset == 0U &&
+        rule->source_pool_offset == 0U && rule->shift_right == 0U &&
+        rule->width == 0U && rule->fixed_bits == 0U;
+}
+
+static bool dma_relocation_rule_equal(
+        const device_domain_dma_relocation_rule_t *left,
+        const device_domain_dma_relocation_rule_t *right) {
+    return left->destination_pool_offset == right->destination_pool_offset &&
+        left->source_pool_offset == right->source_pool_offset &&
+        left->shift_right == right->shift_right &&
+        left->width == right->width && left->fixed_bits == right->fixed_bits;
+}
+
+static bool dma_relocation_rule_valid(
+        const device_domain_dma_relocation_rule_t *rule,
+        uint32_t capacity) {
+    if (rule == NULL || rule->width != sizeof(uint64_t) ||
+        rule->destination_pool_offset < DEVICE_DOMAIN_DMA_DATA_OFFSET ||
+        rule->destination_pool_offset > capacity - rule->width ||
+        (rule->destination_pool_offset & (sizeof(uint64_t) - 1U)) != 0U ||
+        rule->source_pool_offset < DEVICE_DOMAIN_DMA_DATA_OFFSET ||
+        rule->source_pool_offset > capacity - 4096U ||
+        (rule->source_pool_offset & 4095U) != 0U ||
+        rule->shift_right > 31U)
+        return false;
+    const uint64_t variable_address_bits =
+        ((uint64_t)UINT32_MAX & ~4095ULL) >> rule->shift_right;
+    return (rule->fixed_bits & variable_address_bits) == 0U;
+}
+
+int device_domain_install_dma_relocation_policy(
+        uint32_t device_index,
+        const device_domain_dma_relocation_policy_t *policy) {
+    if (!initialized || policy == NULL || device_index >= device_count ||
+        policy->version != DEVICE_DOMAIN_ABI_VERSION ||
+        policy->struct_size != sizeof(*policy) || policy->policy_count == 0U ||
+        policy->policy_count > DEVICE_DOMAIN_DMA_RELOCATION_MAX_POLICIES ||
+        policy->reserved != 0U)
+        return -22;
+    const device_slot_t *registered = &devices[device_index];
+    if ((registered->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) == 0U)
+        return -95;
+    const uint32_t capacity =
+        (registered->profile.flags & DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL) != 0U
+            ? DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES
+            : DEVICE_DOMAIN_DMA_POOL_BYTES;
+    for (uint32_t template_index = 0U;
+         template_index < policy->policy_count; ++template_index) {
+        const device_domain_dma_relocation_template_t *relocation =
+            &policy->policies[template_index];
+        if (relocation->policy_id == 0U || relocation->rule_count == 0U ||
+            relocation->rule_count > DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES ||
+            relocation->reserved[0] != 0U ||
+            relocation->reserved[1] != 0U)
+            return -22;
+        for (uint32_t prior = 0U; prior < template_index; ++prior)
+            if (policy->policies[prior].policy_id == relocation->policy_id)
+                return -22;
+        for (uint32_t rule = 0U; rule < relocation->rule_count; ++rule) {
+            if (!dma_relocation_rule_valid(&relocation->rules[rule], capacity))
+                return -22;
+            for (uint32_t prior = 0U; prior < rule; ++prior)
+                if (relocation->rules[prior].destination_pool_offset ==
+                    relocation->rules[rule].destination_pool_offset)
+                    return -22;
+        }
+        for (uint32_t rule = relocation->rule_count;
+             rule < DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES; ++rule)
+            if (!dma_relocation_rule_zero(&relocation->rules[rule]))
+                return -22;
+    }
+    for (uint32_t template_index = policy->policy_count;
+         template_index < DEVICE_DOMAIN_DMA_RELOCATION_MAX_POLICIES;
+         ++template_index) {
+        const device_domain_dma_relocation_template_t *relocation =
+            &policy->policies[template_index];
+        if (relocation->policy_id != 0U || relocation->rule_count != 0U ||
+            relocation->reserved[0] != 0U ||
+            relocation->reserved[1] != 0U)
+            return -22;
+        for (uint32_t rule = 0U;
+             rule < DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES; ++rule)
+            if (!dma_relocation_rule_zero(&relocation->rules[rule]))
+                return -22;
+    }
+    if (!begin_operation()) return -16;
+    device_slot_t *device = &devices[device_index];
+    if (device->registered == 0U || device->state != DEVICE_DOMAIN_AVAILABLE ||
+        device->dma_relocation_policy_installed != 0U) {
+        end_operation();
+        return -16;
+    }
+    device->dma_relocation_policy = *policy;
+    device->dma_relocation_policy_installed = 1U;
+    end_operation();
+    return 0;
+}
+
 int device_domain_claim(int pid, uint32_t process_generation, uint32_t device,
                         uint32_t mode, device_domain_handle_t *handle_out) {
     if (!initialized || pid <= 0 || process_generation == 0U ||
@@ -1672,6 +1786,7 @@ static int dma_transfer_locked(int pid, uint32_t process_generation,
     if (pool == NULL) return resource == NULL ? -9 : -95;
     if (offset > pool->capacity || length > pool->capacity - offset)
         return -22;
+    if (pool->sealed != 0U) return -16;
     const uint32_t needed = write_to_device
         ? DEVICE_DOMAIN_DMA_TO_DEVICE : DEVICE_DOMAIN_DMA_FROM_DEVICE;
     if ((pool->direction & needed) == 0U) return -13;
@@ -1734,6 +1849,10 @@ int device_domain_dma_descriptor_set(
         end_operation();
         return -22;
     }
+    if (pool->sealed != 0U) {
+        end_operation();
+        return -16;
+    }
     device_slot_t *device = &devices[resource->device_slot];
     if ((pool->direction & DEVICE_DOMAIN_DMA_TO_DEVICE) == 0U) {
         end_operation();
@@ -1746,14 +1865,91 @@ int device_domain_dma_descriptor_set(
     uint32_t pool_index = resource->platform_capability - 1U;
     uint32_t descriptor_offset = request->descriptor_index *
         DEVICE_DOMAIN_DMA_DESCRIPTOR_STRIDE;
-    uint64_t address = (uint64_t)(uintptr_t)&dma_pool_storage[pool_index]
-                                                   [request->buffer_offset];
+    uint64_t address = dma_pool_physical_address(
+        pool_index, request->buffer_offset);
     memcpy(&dma_pool_storage[pool_index][descriptor_offset], &address,
            sizeof(address));
     memcpy(&dma_pool_storage[pool_index][descriptor_offset + 8U],
            &request->length, sizeof(request->length));
     memcpy(&dma_pool_storage[pool_index][descriptor_offset + 12U],
            &request->flags, sizeof(request->flags));
+    end_operation();
+    return 0;
+}
+
+int device_domain_dma_relocate_and_seal(
+        int pid, uint32_t process_generation,
+        const device_domain_dma_relocation_request_t *request) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->dma == 0U ||
+        request->policy_id == 0U || request->rule_count == 0U ||
+        request->rule_count > DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES ||
+        request->flags != 0U || request->reserved[0] != 0U ||
+        request->reserved[1] != 0U)
+        return -22;
+    for (uint32_t rule = request->rule_count;
+         rule < DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES; ++rule)
+        if (!dma_relocation_rule_zero(&request->rules[rule])) return -22;
+    if (!begin_operation()) return -16;
+    resource_slot_t *resource = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(resource);
+    if (pool == NULL) {
+        end_operation();
+        return resource == NULL ? -9 : -95;
+    }
+    device_slot_t *device = &devices[resource->device_slot];
+    if (device->state != DEVICE_DOMAIN_DMA_BOUND || pool->sealed != 0U) {
+        end_operation();
+        return -16;
+    }
+    if (device->dma_relocation_policy_installed == 0U ||
+        (pool->direction & DEVICE_DOMAIN_DMA_TO_DEVICE) == 0U) {
+        end_operation();
+        return -95;
+    }
+    const device_domain_dma_relocation_template_t *selected = NULL;
+    for (uint32_t index = 0U;
+         index < device->dma_relocation_policy.policy_count; ++index)
+        if (device->dma_relocation_policy.policies[index].policy_id ==
+            request->policy_id)
+            selected = &device->dma_relocation_policy.policies[index];
+    if (selected == NULL || selected->rule_count != request->rule_count) {
+        end_operation();
+        return -13;
+    }
+    uint64_t encoded[DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES] = {0};
+    uint32_t pool_index = resource->platform_capability - 1U;
+    for (uint32_t index = 0U; index < request->rule_count; ++index) {
+        const device_domain_dma_relocation_rule_t *rule =
+            &request->rules[index];
+        if (!dma_relocation_rule_equal(rule, &selected->rules[index]) ||
+            !dma_relocation_rule_valid(rule, pool->capacity)) {
+            end_operation();
+            return -13;
+        }
+        uint64_t current = UINT64_MAX;
+        memcpy(&current,
+            &dma_pool_storage[pool_index][rule->destination_pool_offset],
+            sizeof(current));
+        if (current != 0U) {
+            end_operation();
+            return -84;
+        }
+        const uint64_t physical = dma_pool_physical_address(
+            pool_index, rule->source_pool_offset);
+        if (physical > UINT32_MAX) {
+            end_operation();
+            return -75;
+        }
+        encoded[index] = (physical >> rule->shift_right) | rule->fixed_bits;
+    }
+    for (uint32_t index = 0U; index < request->rule_count; ++index)
+        memcpy(&dma_pool_storage[pool_index]
+                    [request->rules[index].destination_pool_offset],
+               &encoded[index], sizeof(encoded[index]));
+    pool->sealed = 1U;
     end_operation();
     return 0;
 }
@@ -1903,11 +2099,10 @@ int device_domain_region_bind_dma(
         return -13;
     }
     uint32_t pool_index = dma->platform_capability - 1U;
-    uintptr_t address = (uintptr_t)&dma_pool_storage[pool_index]
-                                                 [request->buffer_offset];
+    uint64_t address = dma_pool_physical_address(
+        pool_index, request->buffer_offset);
     uint32_t address_low = (uint32_t)address;
-    uint32_t address_high = sizeof(uintptr_t) > sizeof(uint32_t)
-        ? (uint32_t)((uint64_t)address >> 32U) : 0U;
+    uint32_t address_high = (uint32_t)(address >> 32U);
     if (!platform_ops.write_dma_address(
             &region->region, request->register_offset,
             address_low, address_high)) {
@@ -1954,6 +2149,28 @@ int device_domain_resource_status(int pid, uint32_t process_generation,
 void device_domain_test_raise_irq(uint8_t irq) {
     if (irq < PCI_LEGACY_IRQ_COUNT)
         (void)__sync_fetch_and_or(&pending_irq_lines, 1U << irq);
+}
+
+bool device_domain_test_dma_word(device_domain_resource_handle_t handle,
+                                 uint32_t offset, uint64_t *value) {
+    uint32_t resource_index = 0U;
+    uint32_t generation = 0U;
+    if (value == NULL || !decode_resource_handle(
+            handle, &resource_index, &generation))
+        return false;
+    resource_slot_t *resource = &resources[resource_index];
+    if (resource->active == 0U || resource->generation != generation ||
+        resource->kind != DEVICE_DOMAIN_RESOURCE_DMA ||
+        resource->platform_capability == 0U ||
+        resource->platform_capability > DEVICE_DOMAIN_DMA_POOL_COUNT)
+        return false;
+    dma_pool_slot_t *pool =
+        &dma_pools[resource->platform_capability - 1U];
+    if (pool->active == 0U || offset > pool->capacity - sizeof(*value))
+        return false;
+    memcpy(value, &dma_pool_storage[resource->platform_capability - 1U]
+                                  [offset], sizeof(*value));
+    return true;
 }
 
 void device_domain_test_reset(void) {

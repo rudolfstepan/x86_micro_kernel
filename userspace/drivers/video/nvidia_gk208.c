@@ -26,6 +26,7 @@
 #define NVIDIA_DIAGNOSTIC_DMA_STAGING 0x4E590000U
 #define NVIDIA_DIAGNOSTIC_CHANNEL_IMAGE 0x4E5A0000U
 #define NVIDIA_DIAGNOSTIC_GPU_VM_PLAN 0x4E5B0000U
+#define NVIDIA_DIAGNOSTIC_DMA_SEALED 0x4E5C0000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
@@ -381,6 +382,40 @@ static int gpu_vm_plan_dma_self_test(nvidia_driver_t *driver) {
             REIST_NVIDIA_GK208_FB_PAGE_SHIFT_128K);
 }
 
+static int gpu_vm_relocate_and_seal(nvidia_driver_t *driver) {
+    reist_nvidia_gk208_vm_plan_t plan;
+    int status = reist_nvidia_gk208_prepare_vm_plan(
+        &plan, REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT);
+    if (status != 0) return status;
+    x86os_device_dma_relocation_rule_t
+        rules[REIST_NVIDIA_GK208_SEAL_RELOCATION_COUNT] = {0};
+    rules[0] = (x86os_device_dma_relocation_rule_t){
+        .destination_pool_offset = REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET + 0x08U,
+        .source_pool_offset = REIST_NVIDIA_GK208_DMA_USERD_OFFSET,
+        .width = REIST_NVIDIA_GK208_ADDRESS_RELOCATION_WIDTH,
+    };
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_VM_RELOCATION_COUNT; ++index) {
+        rules[index + 1U] = (x86os_device_dma_relocation_rule_t){
+            .destination_pool_offset =
+                plan.relocations[index].destination_pool_offset,
+            .source_pool_offset =
+                plan.relocations[index].source_pool_offset,
+            .shift_right = plan.relocations[index].shift_right,
+            .width = plan.relocations[index].width,
+            .fixed_bits = plan.relocations[index].fixed_bits,
+        };
+    }
+    status = x86os_device_dma_relocate_and_seal(
+        driver->dma, REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT,
+        rules, REIST_NVIDIA_GK208_SEAL_RELOCATION_COUNT);
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_DMA_SEALED |
+            REIST_NVIDIA_GK208_DEFAULT_FB_PAGE_SHIFT);
+}
+
 static int activate(nvidia_driver_t *driver) {
     x86os_display_driver_request_t response;
     int status = driver_command(
@@ -495,6 +530,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = channel_image_dma_self_test(driver);
     if (status != 0) return status;
     status = gpu_vm_plan_dma_self_test(driver);
+    if (status != 0) return status;
+    status = gpu_vm_relocate_and_seal(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

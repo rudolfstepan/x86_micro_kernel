@@ -31,6 +31,8 @@
 #define DEVICE_DOMAIN_DMA_DESCRIPTOR_CAPACITY \
     (DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES / DEVICE_DOMAIN_DMA_DESCRIPTOR_STRIDE)
 #define DEVICE_DOMAIN_DMA_DATA_OFFSET DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES
+#define DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES 8U
+#define DEVICE_DOMAIN_DMA_RELOCATION_MAX_POLICIES 2U
 #define DEVICE_DOMAIN_MAX_REGION_RULES 32U
 #define DEVICE_DOMAIN_MAX_REGION_BYTES (8U * 1024U * 1024U)
 #define DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT 128U
@@ -66,6 +68,7 @@ enum {
     DEVICE_DOMAIN_CONTROL_DMA_DESCRIPTOR_SET = 16U,
     DEVICE_DOMAIN_CONTROL_DEACTIVATE = 17U,
     DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U,
+    DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL = 19U,
 };
 
 enum {
@@ -309,6 +312,43 @@ typedef struct {
 } device_domain_dma_descriptor_t;
 
 typedef struct {
+    uint32_t destination_pool_offset;
+    uint32_t source_pool_offset;
+    uint32_t shift_right;
+    uint32_t width;
+    uint64_t fixed_bits;
+} device_domain_dma_relocation_rule_t;
+
+typedef struct {
+    uint32_t policy_id;
+    uint32_t rule_count;
+    uint32_t reserved[2];
+    device_domain_dma_relocation_rule_t
+        rules[DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES];
+} device_domain_dma_relocation_template_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t policy_count;
+    uint32_t reserved;
+    device_domain_dma_relocation_template_t
+        policies[DEVICE_DOMAIN_DMA_RELOCATION_MAX_POLICIES];
+} device_domain_dma_relocation_policy_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_resource_handle_t dma;
+    uint32_t policy_id;
+    uint32_t rule_count;
+    uint32_t flags;
+    uint32_t reserved[2];
+    device_domain_dma_relocation_rule_t
+        rules[DEVICE_DOMAIN_DMA_RELOCATION_MAX_RULES];
+} device_domain_dma_relocation_request_t;
+
+typedef struct {
     uint32_t version;
     uint32_t struct_size;
     device_domain_handle_t device;
@@ -447,6 +487,14 @@ _Static_assert(sizeof(device_domain_driver_report_t) == 32U,
                "device-domain driver report ABI changed");
 _Static_assert(sizeof(device_domain_dma_descriptor_t) == 32U,
                "device-domain DMA descriptor ABI changed");
+_Static_assert(sizeof(device_domain_dma_relocation_rule_t) == 24U,
+               "device-domain DMA relocation rule ABI changed");
+_Static_assert(sizeof(device_domain_dma_relocation_template_t) == 208U,
+               "device-domain DMA relocation template ABI changed");
+_Static_assert(sizeof(device_domain_dma_relocation_policy_t) == 432U,
+               "device-domain DMA relocation policy ABI changed");
+_Static_assert(sizeof(device_domain_dma_relocation_request_t) == 224U,
+               "device-domain DMA relocation request ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -478,6 +526,9 @@ int device_domain_register(const device_domain_profile_t *profile,
 /** Install immutable register-safety metadata before the first claim. */
 int device_domain_install_region_policy(
     uint32_t device, const device_domain_region_policy_t *policy);
+/** Install exact kernel-owned DMA relocation templates before first claim. */
+int device_domain_install_dma_relocation_policy(
+    uint32_t device, const device_domain_dma_relocation_policy_t *policy);
 /** Claim one function and its complete isolation group for a process generation. */
 int device_domain_claim(int pid, uint32_t process_generation, uint32_t device,
                         uint32_t mode, device_domain_handle_t *handle_out);
@@ -548,6 +599,10 @@ int device_domain_dma_read(int pid, uint32_t process_generation,
 int device_domain_dma_descriptor_set(
     int pid, uint32_t process_generation,
     const device_domain_dma_descriptor_t *request);
+/** Resolve one exact template atomically and freeze Ring-3 pool access. */
+int device_domain_dma_relocate_and_seal(
+    int pid, uint32_t process_generation,
+    const device_domain_dma_relocation_request_t *request);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);
@@ -566,6 +621,8 @@ bool device_domain_irq_storm_self_test(void);
 #ifdef REIST_HOST_TEST
 void device_domain_test_reset(void);
 void device_domain_test_raise_irq(uint8_t irq);
+bool device_domain_test_dma_word(device_domain_resource_handle_t resource,
+                                 uint32_t offset, uint64_t *value);
 #endif
 
 #endif

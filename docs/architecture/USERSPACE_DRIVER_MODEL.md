@@ -131,6 +131,20 @@ Ausrichtung, Anzahl und Generation, konstruiert daraus einen versiegelten
 16-Byte-Deskriptor mit physischer Adresse und veröffentlicht ausschließlich
 dessen DMA-Token. Der übrige Pool bleibt der beschreibbare Datenbereich.
 
+Device-Control-Kommando 19 ergänzt einen atomaren Relokations- und
+Versiegelungsschritt für Gerätebilder, die physische Adressen enthalten
+müssen. Vor dem ersten Claim installiert das unveränderliche Geräteprofil
+höchstens zwei feste Templates mit je höchstens acht Regeln. Ring 3 muss eine
+Regelmenge bytegenau wiederholen; der Kernel prüft Policy-ID, Anzahl,
+Ausrichtung, Bereiche, Shift, feste Bits, eindeutige Ziele, unbenutzte Felder
+und ausschließlich nullinitialisierte Zielwörter vollständig vor dem ersten
+Schreiben. Erst danach löst er die kernel-eigenen Pooladressen auf und schreibt
+alle 64-Bit-Werte. Erfolg sperrt weitere Ring-3-Reads, Writes und
+Deskriptoränderungen dieses Pools. Generationgebundene Freigabe nullt den
+gesamten gewählten Pool und entfernt damit auch die Versiegelung. Weder der
+Syscall-Rückgabewert noch eine öffentliche Struktur enthält eine physische
+Adresse oder den versiegelten Inhalt.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden

@@ -133,6 +133,70 @@ evidence = [
 ]
 
 [[packages]]
+id = "R2.2m-nvidia-gk208-dma-relocation-seal"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Resolve and seal the GK208 DMA image in the kernel"
+scope = "Append device-control command 19 for one atomic kernel-owned mediated-DMA relocation-and-seal operation. Install immutable per-device relocation templates before first claim, compare every requested rule byte-for-byte with one template, prevalidate all source and destination ranges and require every destination word to remain zero before resolving physical addresses. Commit the complete set only after validation, then reject every Ring-3 pool read, write and descriptor mutation until generation-scoped release zeroes the selected pool. The exact GK208 profile installs the two already validated 64-KiB and 128-KiB FB-page templates, each combining USERD with the five GPU-VM relocations; the supervised driver selects upstream Nouveau's default 128-KiB policy, seals it and receives only success or failure. This package performs no physical-address publication, MMIO write, page-mode register change, page-table activation, USERD kick, IRQ bind, bus-master enable, hardware submission or acceleration capability publication."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "control command 19 is append-only fixed-size versioned driver-only and returns no physical address or relocated contents",
+  "relocation templates are immutable before first claim and exact policy IDs rule counts fields unused entries and reserved bytes are validated",
+  "all source and destination ranges alignment shifts fixed-bit masks nonoverlap and zero destinations are validated before the first write",
+  "a successful seal applies the complete template atomically and blocks later Ring-3 DMA reads writes and descriptor mutation",
+  "generation-scoped release zeroes the complete selected pool and clears the seal before reuse",
+  "GK208 seals exactly six relocations using the upstream default 128-KiB FB-page policy while retaining the validated 64-KiB alternative",
+  "VMware remains DMA-free and no MMIO write page-mode change activation IRQ bus mastering hardware submission or capability publication occurs"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "a relocation can be applied without an exact immutable template or before every destination is proven zero",
+  "Ring 3 can read a resolved address or mutate a successfully sealed pool",
+  "the selected FB-page policy would require an undocumented runtime guess or immediate register write",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: seal GK208 DMA relocations"
+evidence = [
+  "Device-domain contract passed 10 tests including exact policy installation atomic zero-destination validation sealed access denial and generation-scoped reuse",
+  "NVIDIA GK208 contract passed 12 tests including the two six-rule templates and supervised default-policy sealing",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 14 seconds after one focused freestanding SDK zero-initialization repair",
+  "VMware framebuffer package passed in 26 seconds"
+]
+
+[[packages]]
 id = "R3.3-imageviewer-bulk-io"
 status = "done"
 phase = "post-s0"

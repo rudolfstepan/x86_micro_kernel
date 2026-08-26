@@ -2340,10 +2340,15 @@ upstream 14+14- oder 13+15-Bit-Geometrie für 4-KiB-GPU-Seiten. Genau fünf noch
 ungelöste Relokationen verbinden RAMFC, PGD, PT und die drei NCOH-Datenseiten;
 Pushbuffer und GPFIFO sind read-only, das Fence ist schreibbar. Alle
 Adressziele bleiben null, nur `2^40-1` wird als gemeinsames VM-Limit gestaged.
-Das anschließende Hardware-Engine-Paket bleibt für die kernelverwaltete
-Relokation und Aktivierung, GK208-GR-
-Initialisierung einschließlich FECS/GPCCS, einen festen Kepler-GPFIFO-Kanal
-und einen echten deadlinebegrenzten Fence verantwortlich.
+`R2.2m` hat den Relokationsteil inzwischen geschlossen. Das append-only
+Device-Control-Kommando 19 akzeptiert nur eine vor dem Claim installierte,
+bytegenau passende Regelmenge, validiert alle sechs Ziele vor der ersten
+Änderung, löst die Pooladressen ausschließlich in Ring 0 auf und versiegelt
+danach den Pool gegen weitere Ring-3-Lese- oder Schreibzugriffe. GK208 wählt
+Nouveaus Standard-Bigpage 17; Template 16 bleibt als geprüfte Alternative
+erhalten. Das folgende Paket ist daher noch für die kontrollierte
+Page-Mode-Registersetzung und GPU-VM-Aktivierung, GK208-GR-Initialisierung,
+Runlist-/USERD-Publikation und den echten Fence zuständig.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

@@ -69,6 +69,15 @@ kernelverwalteten Relokationen validiert. Pushbuffer und GPFIFO sind read-only,
 das Fence ist schreibbar, alle drei verwenden die NCOH-Apertur. Ring 3 prüft
 weiterhin nur null gelassene Adressziele und schreibt ausschließlich das feste
 VM-Limit `2^40-1`; Relokation, Aktivierung und GPU-Ausführung bleiben offen.
+`R2.2m-nvidia-gk208-dma-relocation-seal` löst diese sechs Adressen nun atomar
+im Kernel auf. Zwei vor dem ersten Claim installierte Templates decken die
+bereits validierten 64-/128-KiB-FB-Seitenvarianten ab; der Treiber wählt den
+upstream Standardwert 17. Kommando 19 vergleicht alle Regeln exakt, prüft
+sämtliche Zielwörter vorab auf null und schreibt erst danach die vollständige
+Menge. Ein erfolgreicher Seal sperrt Ring-3-Lesen, -Schreiben und
+Deskriptoränderungen bis zur generationgebundenen vollständigen Nullung.
+Physische Adressen werden nicht zurückgegeben. MMIO, Page-Mode-Umschaltung,
+GPU-VM-Aktivierung, USERD-Kick, IRQ, Busmaster und Capabilitybits bleiben offen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

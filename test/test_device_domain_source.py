@@ -95,11 +95,18 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES", header)
         self.assertIn("DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL", header)
         self.assertIn("DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U", header)
+        self.assertIn(
+            "DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL = 19U", header)
         self.assertIn("device_domain_dma_pool_stats_t", header)
         self.assertIn("capacity_rejections", header)
         self.assertIn("device_domain_dma_pool_stats", source)
         self.assertIn("device_domain_dma_write", source)
         self.assertIn("device_domain_dma_read", source)
+        self.assertIn("device_domain_install_dma_relocation_policy", source)
+        self.assertIn("device_domain_dma_relocate_and_seal", source)
+        self.assertIn("if (pool->sealed != 0U) return -16;", source)
+        self.assertIn("current != 0U", source)
+        self.assertIn("pool->sealed = 1U", source)
         self.assertIn(
             "device->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA",
             source)
@@ -211,6 +218,7 @@ class DeviceDomainTests(unittest.TestCase):
                         "x86os_device_resource_status",
                         "x86os_device_irq_complete", "x86os_device_dma_info",
                         "x86os_device_dma_pool_stats",
+                        "x86os_device_dma_relocate_and_seal",
                         "x86os_device_dma_write", "x86os_device_dma_read",
                         "x86os_device_region_read",
                         "x86os_device_region_write",
@@ -221,6 +229,8 @@ class DeviceDomainTests(unittest.TestCase):
                         "DEVICE_DOMAIN_CONTROL_REGION_BIND_DMA",
                         "DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS"):
             self.assertIn(command, syscall)
+        self.assertIn(
+            "DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL", syscall)
         self.assertIn("x86os_device_driver_bootstrap", sdk_source)
         self.assertIn("x86os_device_driver_report", sdk_source)
         self.assertIn("supervisor_device_driver_output_allowed", syscall)
