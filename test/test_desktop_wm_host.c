@@ -217,7 +217,7 @@ static uint32_t dirty_contains(const desktop_dirty_region_t *dirty,
     return 0U;
 }
 
-static void test_shrink_invalidates_complete_resize_sweep(void) {
+static void test_shrink_invalidates_only_current_resize_sweep(void) {
     desktop_wm_t manager;
     desktop_wm_initialize(&manager, 1024U, 768U, 32, 744, 24U);
     assert(desktop_wm_open(&manager, 0U) != 0U);
@@ -235,16 +235,27 @@ static void test_shrink_invalidates_complete_resize_sweep(void) {
         original_right - 180, original_bottom - 120, 0U, 0U, 0U, 0U};
     assert(desktop_wm_dispatch(&manager, &shrink, &result) == 0);
     assert(dirty_contains(&result.dirty, original_right, original_bottom));
+    assert(dirty_contains(
+        &result.dirty, original_right - 10, original_bottom - 10));
+    int32_t previous_right = window->x + (int32_t)window->width - 1;
+    int32_t previous_bottom = window->y + (int32_t)window->height - 1;
     shrink.x -= 80;
     shrink.y -= 60;
     assert(desktop_wm_dispatch(&manager, &shrink, &result) == 0);
-    assert(dirty_contains(&result.dirty, original_right, original_bottom));
+    assert(dirty_contains(&result.dirty, previous_right, previous_bottom));
+    assert(!dirty_contains(&result.dirty, original_right, original_bottom));
+    uint64_t damage_area = 0U;
+    for (uint32_t index = 0U; index < result.dirty.count; ++index)
+        damage_area += (uint64_t)result.dirty.rects[index].width *
+            result.dirty.rects[index].height;
+    assert(damage_area <
+           (uint64_t)window->width * (uint64_t)window->height);
 }
 
 int main(void) {
     test_dirty_regions_and_event_dispatch();
     test_edge_and_corner_resize();
-    test_shrink_invalidates_complete_resize_sweep();
+    test_shrink_invalidates_only_current_resize_sweep();
     desktop_wm_t manager;
     desktop_wm_initialize(&manager, 1024U, 768U, 36, 736, 24U);
 

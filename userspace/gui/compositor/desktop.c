@@ -2233,15 +2233,23 @@ static void render_window(const desktop_render_context_t *context,
     surface_context.clip = surface_clip;
     if (surface_visible && surface->committed &&
         surface->committed_buffer != 0U) {
+        desktop_rect_t committed_bounds = {
+            client.x, client.y,
+            client.width < surface->width ? client.width : surface->width,
+            client.height < surface->height ? client.height : surface->height,
+        };
+        desktop_rect_t buffer_clip = {0, 0, 0U, 0U};
+        if (intersect_rects(
+                committed_bounds, context->clip, &buffer_clip))
             (void)x86os_display_surface_buffer_draw(
                 (int)surface->owner.pid,
                 surface->owner.process_generation,
                 surface->committed_buffer,
                 surface->committed_buffer_generation,
-                (uint32_t)(surface_clip.x - client.x),
-                (uint32_t)(surface_clip.y - client.y),
-                surface_clip.x, surface_clip.y,
-                surface_clip.width, surface_clip.height);
+                (uint32_t)(buffer_clip.x - client.x),
+                (uint32_t)(buffer_clip.y - client.y),
+                buffer_clip.x, buffer_clip.y,
+                buffer_clip.width, buffer_clip.height);
     }
     if (surface_visible)
         for (uint32_t index = 0U;
@@ -2833,6 +2841,13 @@ static desktop_surface_slot_t *surface_for_window(
     return 0;
 }
 
+static uint32_t surface_window_is_live_resizing(
+    const desktop_wm_t *manager, uint32_t window_index) {
+    return manager != 0 &&
+        manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE &&
+        manager->capture_window == (int32_t)window_index;
+}
+
 static uint32_t next_surface_input_serial(void) {
     static uint32_t serial;
     ++serial;
@@ -2925,7 +2940,10 @@ static void sync_surface_windows(
                 !surface->close_sent) {
                 desktop_rect_t client = desktop_window_client_rect(
                     manager, surface->window_index);
-                if (surface->acknowledged_serial ==
+                uint32_t live_resize = surface_window_is_live_resizing(
+                    manager, surface->window_index);
+                if (!live_resize &&
+                    surface->acknowledged_serial ==
                         surface->configured_serial &&
                     (surface->width != client.width ||
                      surface->height != client.height)) {

@@ -11,6 +11,46 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2y-compositor-live-resize-performance"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Bound live-resize work and defer client reconfiguration"
+scope = "Keep retained application surfaces stable during pointer-captured resize, publish one final configure after release, clip buffer reads to the acknowledged surface, and damage only swept right/bottom edge bands while preserving full redraw for moving left/top edges."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_wm.c",
+  "test/test_desktop_source.py",
+  "test/test_desktop_wm_host.c",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "no application receives an unbounded configure stream during one resize capture",
+  "the final client geometry is configured after button release",
+  "retained buffer reads never exceed the last acknowledged surface dimensions",
+  "right and bottom resize redraw only swept bands while left and top retain full safe damage",
+  "all state and damage storage remains fixed-capacity"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-surface"
+]
+stop_conditions = [
+  "a retained buffer can be read outside acknowledged dimensions",
+  "button release can fail to publish the final configure",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "the targeted gate still fails after one focused in-scope repair"
+]
+
+[[packages]]
 id = "R2.2x-nvidia-gk208-2d-activation"
 status = "done"
 phase = "post-s0"

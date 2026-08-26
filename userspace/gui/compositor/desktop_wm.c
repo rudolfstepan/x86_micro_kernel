@@ -532,6 +532,53 @@ static desktop_rect_t snapshot_window_bounds(const desktop_window_t *window) {
     return rect;
 }
 
+static void collect_right_bottom_resize_damage(
+    const desktop_wm_t *manager, const desktop_window_t *before,
+    const desktop_window_t *after, desktop_dirty_region_t *dirty) {
+    desktop_rect_t old_bounds = snapshot_window_bounds(before);
+    desktop_rect_t new_bounds = snapshot_window_bounds(after);
+    int64_t old_right = (int64_t)before->x + before->width;
+    int64_t new_right = (int64_t)after->x + after->width;
+    int64_t old_bottom = (int64_t)before->y + before->height;
+    int64_t new_bottom = (int64_t)after->y + after->height;
+    int64_t maximum_right = (int64_t)old_bounds.x + old_bounds.width;
+    int64_t new_bounds_right = (int64_t)new_bounds.x + new_bounds.width;
+    int64_t maximum_bottom = (int64_t)old_bounds.y + old_bounds.height;
+    int64_t new_bounds_bottom = (int64_t)new_bounds.y + new_bounds.height;
+    int32_t minimum_y = old_bounds.y < new_bounds.y
+        ? old_bounds.y : new_bounds.y;
+    int32_t minimum_x = old_bounds.x < new_bounds.x
+        ? old_bounds.x : new_bounds.x;
+    uint32_t damage_inset = manager->frame_border;
+    if (manager->resize_margin <= UINT32_MAX / 2U &&
+        manager->resize_margin * 2U > damage_inset)
+        damage_inset = manager->resize_margin * 2U;
+    if (new_bounds_right > maximum_right) maximum_right = new_bounds_right;
+    if (new_bounds_bottom > maximum_bottom)
+        maximum_bottom = new_bounds_bottom;
+
+    if ((manager->resize_edges & DESKTOP_WM_RESIZE_RIGHT) != 0U) {
+        int64_t start = old_right < new_right ? old_right : new_right;
+        if (start >= (int64_t)damage_inset)
+            start -= damage_inset;
+        desktop_dirty_add(dirty, (desktop_rect_t){
+            (int32_t)start, minimum_y,
+            (uint32_t)(maximum_right - start),
+            (uint32_t)(maximum_bottom - minimum_y),
+        });
+    }
+    if ((manager->resize_edges & DESKTOP_WM_RESIZE_BOTTOM) != 0U) {
+        int64_t start = old_bottom < new_bottom ? old_bottom : new_bottom;
+        if (start >= (int64_t)damage_inset)
+            start -= damage_inset;
+        desktop_dirty_add(dirty, (desktop_rect_t){
+            minimum_x, (int32_t)start,
+            (uint32_t)(maximum_right - minimum_x),
+            (uint32_t)(maximum_bottom - start),
+        });
+    }
+}
+
 static void collect_state_damage(const desktop_wm_t *manager,
                                  const desktop_wm_snapshot_t *before,
                                  desktop_wm_dispatch_result_t *result) {
@@ -546,35 +593,33 @@ static void collect_state_damage(const desktop_wm_t *manager,
         uint32_t focus_changed =
             (before->keyboard_focus == (int32_t)index) !=
             (manager->keyboard_focus == (int32_t)index);
+        uint32_t edge_resize = geometry_changed && !order_changed &&
+            !focus_changed && old_window->visible && new_window->visible &&
+            manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE &&
+            manager->capture_window == (int32_t)index &&
+            (manager->resize_edges &
+                (DESKTOP_WM_RESIZE_LEFT | DESKTOP_WM_RESIZE_TOP)) == 0U &&
+            (manager->resize_edges &
+                (DESKTOP_WM_RESIZE_RIGHT | DESKTOP_WM_RESIZE_BOTTOM)) != 0U;
         /* Recompose both sides of geometry, order and focus transitions. */
         if (old_window->visible &&
-            (geometry_changed || order_changed || focus_changed)) {
+            (geometry_changed || order_changed || focus_changed) &&
+            !edge_resize) {
             desktop_dirty_add(&result->dirty,
                               snapshot_window_bounds(old_window));
         }
         if (new_window->visible &&
-            (geometry_changed || order_changed || focus_changed)) {
+            (geometry_changed || order_changed || focus_changed) &&
+            !edge_resize) {
             desktop_dirty_add(&result->dirty,
                               desktop_wm_window_bounds(manager, index));
         }
-        if (geometry_changed &&
-            manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE &&
-            manager->capture_window == (int32_t)index) {
-            /* Live resize can coalesce many pointer reports into one frame.
-             * Recompose the complete sweep from the button-down geometry to
-             * the current geometry. This closes a major invalidation gap;
-             * final framebuffer publication artifacts are tracked
-             * separately by the manual VMware resize test. */
-            desktop_window_t resize_origin = {
-                .x = manager->resize_window_x,
-                .y = manager->resize_window_y,
-                .width = manager->resize_window_width,
-                .height = manager->resize_window_height,
-                .visible = 1U,
-            };
-            desktop_dirty_add(
-                &result->dirty, snapshot_window_bounds(&resize_origin));
-        }
+        /* Right/bottom resizing leaves existing client pixels in place.
+         * Redraw only swept frame/shadow bands. Left/top resizing moves the
+         * client origin and therefore retains the safe full damage above. */
+        if (edge_resize)
+            collect_right_bottom_resize_damage(
+                manager, old_window, new_window, &result->dirty);
     }
     if (before->selected != manager->selected) {
         result->flags |= DESKTOP_WM_RESULT_SELECTION_CHANGED;

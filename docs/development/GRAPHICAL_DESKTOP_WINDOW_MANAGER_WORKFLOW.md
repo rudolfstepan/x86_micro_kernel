@@ -695,3 +695,14 @@ Er akzeptiert ausschließlich den vollständigen Metrikvertrag Version 1,
 keinen Immediate-Fallback, keine Zeitquellen- oder Probe-Fehler und höchstens
 acht Damage-Rechtecke je Frame. Die manuelle VMware-Checkbox bleibt davon
 getrennt, weil nur sie die sichtbare Interaktion und Flüssigkeit belegt.
+
+Seit dem Performance-Schnitt vom 26. August 2026 erzeugt ein Live-Resize keine
+Configure-/Ack-Kaskade mehr: Der Compositor zeigt während des Ziehens die
+zuletzt bestätigte Surface innerhalb der neuen Fenstergeometrie und sendet der
+Anwendung genau die abschließende Größe nach Button-Up. Für den üblichen
+Resize über die rechte oder untere Kante werden außerdem nur die tatsächlich
+verschobenen Rahmen-, Schatten- und neu freigelegten Clientstreifen als Damage
+publiziert. Der unveränderte Notepad-Inhalt wird dadurch nicht mehr pro
+Mausbericht vollständig neu gerastert oder zum Scanout kopiert. Resize über
+die linke oder obere Kante behält den vollständigen sicheren Redraw, weil sich
+dabei der Ursprung des Clientbereichs verschiebt.

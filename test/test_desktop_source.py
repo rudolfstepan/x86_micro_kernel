@@ -366,6 +366,28 @@ class DesktopSourceTests(unittest.TestCase):
             self.source,
         )
 
+    def test_live_resize_defers_client_reconfigure_and_bounds_damage(self):
+        self.assertIn("surface_window_is_live_resizing", self.source)
+        sync = self.source[
+            self.source.index("static void sync_surface_windows") :
+            self.source.index("static void print_render_metrics")
+        ]
+        self.assertIn("if (!live_resize &&", sync)
+        manager = WM_SOURCE.read_text(encoding="utf-8")
+        self.assertIn("collect_right_bottom_resize_damage", manager)
+        self.assertIn("Right/bottom resizing leaves", manager)
+        self.assertNotIn("resize_origin", manager)
+
+    def test_live_resize_never_reads_past_acknowledged_surface(self):
+        render_window = self.source[
+            self.source.index("static void render_window") :
+            self.source.index("static void render_taskbar")
+        ]
+        self.assertIn("desktop_rect_t committed_bounds", render_window)
+        self.assertIn("client.width < surface->width", render_window)
+        self.assertIn("client.height < surface->height", render_window)
+        self.assertIn("buffer_clip.width, buffer_clip.height", render_window)
+
     def test_surface_program_is_async_and_owned_by_the_compositor(self):
         self.assertIn('"/usr/gui/bin/surfacedemo.prg"', self.source)
         self.assertIn('"/usr/gui/bin/notepad.prg"', self.source)
