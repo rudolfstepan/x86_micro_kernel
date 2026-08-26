@@ -2359,6 +2359,17 @@ ursprüngliche Policy-Bit wieder her und bleiben bei fehlendem Readback gesperrt
 und wiederholbar. Der tatsächliche PGD-Verbrauch beginnt erst mit dem noch
 offenen Channel-Instance-Bind und Runlist-Commit; GR-Initialisierung,
 USERD-Publikation, echter Fence und Capabilityfreigabe bleiben ebenfalls offen.
+`R2.2o` schließt jetzt den unveränderlichen Firmwareeingang für die nächste
+GR-Stufe. Die vier MIT-lizenzierten Nouveau-GK208-nofw-Arrays für FECS und
+GPCCS sind auf Linux-Commit
+`45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229` festgelegt. Ein 64-Byte-Manifest
+und ein bounded Selbsttest prüfen 193/640/27/384 Dwords sowie vier feste
+IEEE-CRC32-Werte, bevor der Treiber den DMA-Pool öffnet. Es gibt weder
+Laufzeit-Dateizugriff noch einen veränderlichen Firmwarezeiger. Als nächster
+Hardware-Slice folgen damit topologyabhängige GR-Registerlisten,
+kernelmediierter Firmware-Upload, rückrollbarer FECS/GPCCS-Start und eine
+deadlinebegrenzte Bereitschaftsprüfung. Channel-Bind, Runlist und USERD dürfen
+erst danach folgen.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

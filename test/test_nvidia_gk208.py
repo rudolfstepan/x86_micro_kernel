@@ -68,6 +68,52 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("case 0xFCU: return 0x10000010U", source)
         self.assertNotIn("malloc", source)
 
+    def test_gr_firmware_contract_is_pinned_immutable_and_passive(self):
+        header = (ROOT /
+                  "userspace/video/include/reist/nvidia_gk208_2d.h").read_text(
+                      encoding="utf-8")
+        source = (ROOT /
+                  "userspace/video/lib/nvidia_gk208_2d.c").read_text(
+                      encoding="utf-8")
+        data = (ROOT /
+                "userspace/video/lib/nvidia_gk208_firmware_data.h").read_text(
+                    encoding="utf-8")
+        driver = (ROOT /
+                  "userspace/drivers/video/nvidia_gk208.c").read_text(
+                      encoding="utf-8")
+
+        self.assertIn("SPDX-License-Identifier: MIT", data)
+        self.assertIn(
+            "45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229", data)
+        for image in ("gk208_grhub_data", "gk208_grhub_code",
+                      "gk208_grgpc_data", "gk208_grgpc_code"):
+            self.assertIn(f"static const uint32_t {image}[]", data)
+            self.assertNotIn(f"static uint32_t {image}[]", data)
+        for value in ("193U", "640U", "27U", "384U",
+                      "0x599287F1U", "0x761F1915U",
+                      "0xF7976F94U", "0xF70A347FU", "1244U"):
+            self.assertIn(value, header)
+        self.assertIn("reist_nvidia_gk208_gr_firmware_manifest", source)
+        self.assertIn("reist_nvidia_gk208_gr_firmware_word", source)
+        self.assertIn("reist_nvidia_gk208_gr_firmware_self_test", source)
+        firmware = source[source.index("static int gr_firmware_image") :]
+        self.assertNotIn("malloc", firmware)
+        self.assertNotIn("fopen", firmware)
+        self.assertNotIn("x86os_", firmware)
+        self.assertNotIn("volatile", firmware)
+
+        self.assertIn("gr_firmware_contract_self_test", driver)
+        self.assertIn("NVIDIA_DIAGNOSTIC_GR_FIRMWARE", driver)
+        self.assertLess(
+            driver.index("gr_firmware_contract_self_test(driver)"),
+            driver.index("open_dma_pool(driver)"))
+        driver_contract = driver[
+            driver.index("static int gr_firmware_contract_self_test") :
+            driver.index("static int open_dma_pool")]
+        self.assertNotIn("x86os_device_dma_", driver_contract)
+        self.assertNotIn("x86os_device_region_", driver_contract)
+        self.assertNotIn("x86os_device_bind_irq", driver_contract)
+
     def test_profile_is_exact_and_irqless(self):
         source = (ROOT / "kernel/init/video_device_profile.c").read_text(
             encoding="utf-8")

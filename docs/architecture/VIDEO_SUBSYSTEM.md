@@ -205,6 +205,19 @@ write right. The PGD becomes hardware-visible only through the later channel
 instance bind and runlist commit, which remain absent together with GR
 initialization, USERD kick, IRQs, bus mastering and acceleration capabilities.
 
+`R2.2o` freezes the prerequisite GR firmware input without uploading it. The
+exact built-in Nouveau `hubgk208` (FECS) and `gpcgk208` (GPCCS) nofw data/code
+images come from pinned Linux commit
+`45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229` under its MIT SPDX license. They
+occupy 193/640 and 27/384 little-endian dwords respectively. A fixed 64-byte
+manifest records those lengths, the four IEEE CRC32 values and the total 1244
+dwords. The supervised driver validates all 4976 bytes before opening its DMA
+pool; callers can retrieve only one bounds-checked copied word, never a mutable
+image pointer. There is no runtime filesystem or network dependency. Firmware
+upload, topology-dependent GR register packs, FECS/GPCCS start, readiness
+polling, context generation, channel bind and hardware execution remain the
+responsibility of later rollback-capable packages.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

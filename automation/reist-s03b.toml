@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2o-nvidia-gk208-gr-firmware-contract"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2o-nvidia-gk208-gr-firmware-contract"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Freeze and validate the GK208 GR firmware contract"
@@ -56,7 +56,12 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: freeze GK208 GR firmware contract"
-evidence = []
+evidence = [
+  "NVIDIA GK208 contract passed 13 tests including exact pinned FECS/GPCCS word counts CRC32 validation immutable word access and passive driver ordering",
+  "VMware SVGA-II read-only DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 26 seconds",
+  "VMware framebuffer package passed in 27 seconds"
+]
 
 [[packages]]
 id = "R2.2n-nvidia-gk208-vm-page-mode"

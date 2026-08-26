@@ -58,6 +58,26 @@
     (REIST_NVIDIA_GK208_USERD_BYTES / sizeof(uint32_t))
 #define REIST_NVIDIA_GK208_RUNLIST_WORDS \
     (REIST_NVIDIA_GK208_RUNLIST_BYTES / sizeof(uint32_t))
+#define REIST_NVIDIA_GK208_GR_FIRMWARE_MANIFEST_VERSION 1U
+#define REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS 193U
+#define REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS 640U
+#define REIST_NVIDIA_GK208_GR_GPCCS_DATA_WORDS 27U
+#define REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS 384U
+#define REIST_NVIDIA_GK208_GR_FECS_DATA_CRC32 0x599287F1U
+#define REIST_NVIDIA_GK208_GR_FECS_CODE_CRC32 0x761F1915U
+#define REIST_NVIDIA_GK208_GR_GPCCS_DATA_CRC32 0xF7976F94U
+#define REIST_NVIDIA_GK208_GR_GPCCS_CODE_CRC32 0xF70A347FU
+#define REIST_NVIDIA_GK208_GR_FIRMWARE_TOTAL_WORDS 1244U
+
+enum {
+    REIST_NVIDIA_GK208_GR_COMPONENT_FECS = 1U,
+    REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS = 2U,
+};
+
+enum {
+    REIST_NVIDIA_GK208_GR_SECTION_DATA = 1U,
+    REIST_NVIDIA_GK208_GR_SECTION_CODE = 2U,
+};
 
 typedef struct {
     uint64_t gpu_address;
@@ -141,6 +161,21 @@ typedef struct {
         relocations[REIST_NVIDIA_GK208_VM_RELOCATION_COUNT];
 } reist_nvidia_gk208_vm_plan_t;
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t fecs_data_words;
+    uint32_t fecs_code_words;
+    uint32_t gpccs_data_words;
+    uint32_t gpccs_code_words;
+    uint32_t fecs_data_crc32;
+    uint32_t fecs_code_crc32;
+    uint32_t gpccs_data_crc32;
+    uint32_t gpccs_code_crc32;
+    uint32_t total_words;
+    uint32_t reserved[5];
+} reist_nvidia_gk208_gr_firmware_manifest_t;
+
 int reist_nvidia_gk208_encode_fill(
     reist_nvidia_gk208_pushbuf_t *pushbuf,
     const reist_nvidia_gk208_surface_t *surface,
@@ -178,10 +213,16 @@ int reist_nvidia_gk208_prepare_vm_plan(
     reist_nvidia_gk208_vm_plan_t *plan, uint32_t fb_page_shift);
 int reist_nvidia_gk208_validate_vm_plan(
     const reist_nvidia_gk208_vm_plan_t *plan);
+int reist_nvidia_gk208_gr_firmware_manifest(
+    reist_nvidia_gk208_gr_firmware_manifest_t *manifest);
+int reist_nvidia_gk208_gr_firmware_word(
+    uint32_t component, uint32_t section, uint32_t index,
+    uint32_t *word_out);
 int reist_nvidia_gk208_command_self_test(void);
 int reist_nvidia_gk208_submission_self_test(void);
 int reist_nvidia_gk208_dma_staging_self_test(void);
 int reist_nvidia_gk208_channel_image_self_test(void);
 int reist_nvidia_gk208_vm_plan_self_test(void);
+int reist_nvidia_gk208_gr_firmware_self_test(void);
 
 #endif

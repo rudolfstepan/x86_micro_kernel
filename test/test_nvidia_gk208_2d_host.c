@@ -283,6 +283,58 @@ static void test_gpu_vm_plans_are_exact_and_unrelocated(void) {
     assert(reist_nvidia_gk208_prepare_vm_plan(&plan, 18U) == -22);
 }
 
+static void test_gr_firmware_manifest_is_exact_and_read_only(void) {
+    reist_nvidia_gk208_gr_firmware_manifest_t manifest;
+    assert(sizeof(manifest) == 64U);
+    assert(reist_nvidia_gk208_gr_firmware_manifest(&manifest) == 0);
+    assert(manifest.version ==
+           REIST_NVIDIA_GK208_GR_FIRMWARE_MANIFEST_VERSION);
+    assert(manifest.struct_size == sizeof(manifest));
+    assert(manifest.fecs_data_words == 193U);
+    assert(manifest.fecs_code_words == 640U);
+    assert(manifest.gpccs_data_words == 27U);
+    assert(manifest.gpccs_code_words == 384U);
+    assert(manifest.fecs_data_crc32 == 0x599287F1U);
+    assert(manifest.fecs_code_crc32 == 0x761F1915U);
+    assert(manifest.gpccs_data_crc32 == 0xF7976F94U);
+    assert(manifest.gpccs_code_crc32 == 0xF70A347FU);
+    assert(manifest.total_words == 1244U);
+    for (uint32_t index = 0U;
+         index < sizeof(manifest.reserved) / sizeof(manifest.reserved[0]);
+         ++index)
+        assert(manifest.reserved[index] == 0U);
+
+    uint32_t word = 0U;
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+        REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, &word) == 0);
+    assert(word == 0x00000300U);
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+        REIST_NVIDIA_GK208_GR_SECTION_CODE, 0U, &word) == 0);
+    assert(word == 0x030E0EF5U);
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS,
+        REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, &word) == 0);
+    assert(word == 0x0000006CU);
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS,
+        REIST_NVIDIA_GK208_GR_SECTION_CODE, 0U, &word) == 0);
+    assert(word == 0x03140EF5U);
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        0U, REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, &word) == -34);
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        REIST_NVIDIA_GK208_GR_COMPONENT_FECS, 0U, 0U, &word) == -34);
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+        REIST_NVIDIA_GK208_GR_SECTION_DATA, 193U, &word) == -34);
+    assert(reist_nvidia_gk208_gr_firmware_word(
+        REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+        REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, NULL) == -22);
+    assert(reist_nvidia_gk208_gr_firmware_manifest(NULL) == -22);
+    assert(reist_nvidia_gk208_gr_firmware_self_test() == 0);
+}
+
 int main(void) {
     test_fill_and_copy_are_bounded_and_validated();
     test_invalid_ranges_fail_closed();
@@ -292,9 +344,11 @@ int main(void) {
     test_dma_staging_layout_is_fixed_and_nonoverlapping();
     test_channel_image_is_exact_and_unrelocated();
     test_gpu_vm_plans_are_exact_and_unrelocated();
+    test_gr_firmware_manifest_is_exact_and_read_only();
     assert(reist_nvidia_gk208_submission_self_test() == 0);
     assert(reist_nvidia_gk208_dma_staging_self_test() == 0);
     assert(reist_nvidia_gk208_channel_image_self_test() == 0);
     assert(reist_nvidia_gk208_vm_plan_self_test() == 0);
+    assert(reist_nvidia_gk208_gr_firmware_self_test() == 0);
     return 0;
 }

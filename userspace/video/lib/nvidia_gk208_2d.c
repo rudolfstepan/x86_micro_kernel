@@ -8,6 +8,7 @@
  * admitted here.
  */
 #include "../include/reist/nvidia_gk208_2d.h"
+#include "nvidia_gk208_firmware_data.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -75,6 +76,20 @@ _Static_assert(REIST_NVIDIA_GK208_GPFIFO_BYTES ==
 _Static_assert(REIST_NVIDIA_GK208_CHANNEL_ID <
                    REIST_NVIDIA_GK208_CHANNEL_LIMIT,
                "GK208 fixed channel ID is outside the hardware range");
+_Static_assert(sizeof(reist_nvidia_gk208_gr_firmware_manifest_t) == 64U,
+               "GK208 firmware manifest ABI must remain fixed");
+_Static_assert(sizeof(gk208_grhub_data) / sizeof(gk208_grhub_data[0]) ==
+                   REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS,
+               "GK208 FECS data image size changed");
+_Static_assert(sizeof(gk208_grhub_code) / sizeof(gk208_grhub_code[0]) ==
+                   REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS,
+               "GK208 FECS code image size changed");
+_Static_assert(sizeof(gk208_grgpc_data) / sizeof(gk208_grgpc_data[0]) ==
+                   REIST_NVIDIA_GK208_GR_GPCCS_DATA_WORDS,
+               "GK208 GPCCS data image size changed");
+_Static_assert(sizeof(gk208_grgpc_code) / sizeof(gk208_grgpc_code[0]) ==
+                   REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS,
+               "GK208 GPCCS code image size changed");
 
 static const uint16_t fill_methods[NVIDIA_GK208_FILL_PACKET_COUNT] = {
     NV902D_SET_DST_FORMAT, NV902D_SET_DST_MEMORY_LAYOUT,
@@ -887,4 +902,150 @@ int reist_nvidia_gk208_vm_plan_self_test(void) {
         return -84;
     ++plan.pgt_bytes;
     return reist_nvidia_gk208_validate_vm_plan(&plan) == -84 ? 0 : -84;
+}
+
+static int gr_firmware_image(uint32_t component, uint32_t section,
+                             const uint32_t **words_out,
+                             uint32_t *word_count_out) {
+    if (words_out == NULL || word_count_out == NULL) return -22;
+    *words_out = NULL;
+    *word_count_out = 0U;
+    if (component == REIST_NVIDIA_GK208_GR_COMPONENT_FECS) {
+        if (section == REIST_NVIDIA_GK208_GR_SECTION_DATA) {
+            *words_out = gk208_grhub_data;
+            *word_count_out = REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS;
+            return 0;
+        }
+        if (section == REIST_NVIDIA_GK208_GR_SECTION_CODE) {
+            *words_out = gk208_grhub_code;
+            *word_count_out = REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS;
+            return 0;
+        }
+        return -34;
+    }
+    if (component == REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS) {
+        if (section == REIST_NVIDIA_GK208_GR_SECTION_DATA) {
+            *words_out = gk208_grgpc_data;
+            *word_count_out = REIST_NVIDIA_GK208_GR_GPCCS_DATA_WORDS;
+            return 0;
+        }
+        if (section == REIST_NVIDIA_GK208_GR_SECTION_CODE) {
+            *words_out = gk208_grgpc_code;
+            *word_count_out = REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS;
+            return 0;
+        }
+        return -34;
+    }
+    return -34;
+}
+
+static uint32_t gr_firmware_crc32(const uint32_t *words,
+                                  uint32_t word_count) {
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < word_count; ++index) {
+        for (uint32_t shift = 0U; shift < 32U; shift += 8U) {
+            crc ^= (words[index] >> shift) & 0xFFU;
+            for (uint32_t bit = 0U; bit < 8U; ++bit) {
+                uint32_t polynomial_mask = 0U - (crc & 1U);
+                crc = (crc >> 1U) ^ (0xEDB88320U & polynomial_mask);
+            }
+        }
+    }
+    return ~crc;
+}
+
+int reist_nvidia_gk208_gr_firmware_manifest(
+    reist_nvidia_gk208_gr_firmware_manifest_t *manifest) {
+    if (manifest == NULL) return -22;
+    *manifest = (reist_nvidia_gk208_gr_firmware_manifest_t){
+        .version = REIST_NVIDIA_GK208_GR_FIRMWARE_MANIFEST_VERSION,
+        .struct_size = sizeof(*manifest),
+        .fecs_data_words = REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS,
+        .fecs_code_words = REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS,
+        .gpccs_data_words = REIST_NVIDIA_GK208_GR_GPCCS_DATA_WORDS,
+        .gpccs_code_words = REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS,
+        .fecs_data_crc32 = REIST_NVIDIA_GK208_GR_FECS_DATA_CRC32,
+        .fecs_code_crc32 = REIST_NVIDIA_GK208_GR_FECS_CODE_CRC32,
+        .gpccs_data_crc32 = REIST_NVIDIA_GK208_GR_GPCCS_DATA_CRC32,
+        .gpccs_code_crc32 = REIST_NVIDIA_GK208_GR_GPCCS_CODE_CRC32,
+        .total_words = REIST_NVIDIA_GK208_GR_FIRMWARE_TOTAL_WORDS,
+    };
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_firmware_word(
+    uint32_t component, uint32_t section, uint32_t index,
+    uint32_t *word_out) {
+    if (word_out == NULL) return -22;
+    const uint32_t *words = NULL;
+    uint32_t word_count = 0U;
+    int status = gr_firmware_image(
+        component, section, &words, &word_count);
+    if (status != 0 || index >= word_count)
+        return status != 0 ? status : -34;
+    *word_out = words[index];
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_firmware_self_test(void) {
+    reist_nvidia_gk208_gr_firmware_manifest_t manifest;
+    if (reist_nvidia_gk208_gr_firmware_manifest(&manifest) != 0 ||
+        manifest.version != REIST_NVIDIA_GK208_GR_FIRMWARE_MANIFEST_VERSION ||
+        manifest.struct_size != sizeof(manifest) ||
+        manifest.fecs_data_words != REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS ||
+        manifest.fecs_code_words != REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS ||
+        manifest.gpccs_data_words != REIST_NVIDIA_GK208_GR_GPCCS_DATA_WORDS ||
+        manifest.gpccs_code_words != REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS ||
+        manifest.total_words != REIST_NVIDIA_GK208_GR_FIRMWARE_TOTAL_WORDS ||
+        gr_firmware_crc32(gk208_grhub_data,
+            REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS) !=
+                manifest.fecs_data_crc32 ||
+        gr_firmware_crc32(gk208_grhub_code,
+            REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS) !=
+                manifest.fecs_code_crc32 ||
+        gr_firmware_crc32(gk208_grgpc_data,
+            REIST_NVIDIA_GK208_GR_GPCCS_DATA_WORDS) !=
+                manifest.gpccs_data_crc32 ||
+        gr_firmware_crc32(gk208_grgpc_code,
+            REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS) !=
+                manifest.gpccs_code_crc32)
+        return -84;
+    for (uint32_t index = 0U;
+         index < sizeof(manifest.reserved) / sizeof(manifest.reserved[0]);
+         ++index)
+        if (manifest.reserved[index] != 0U) return -84;
+
+    uint32_t word = 0U;
+    if (reist_nvidia_gk208_gr_firmware_word(
+            REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+            REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, &word) != 0 ||
+        word != gk208_grhub_data[0] ||
+        reist_nvidia_gk208_gr_firmware_word(
+            REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+            REIST_NVIDIA_GK208_GR_SECTION_CODE,
+            REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS - 1U, &word) != 0 ||
+        word != gk208_grhub_code[REIST_NVIDIA_GK208_GR_FECS_CODE_WORDS - 1U] ||
+        reist_nvidia_gk208_gr_firmware_word(
+            REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS,
+            REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, &word) != 0 ||
+        word != gk208_grgpc_data[0] ||
+        reist_nvidia_gk208_gr_firmware_word(
+            REIST_NVIDIA_GK208_GR_COMPONENT_GPCCS,
+            REIST_NVIDIA_GK208_GR_SECTION_CODE,
+            REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS - 1U, &word) != 0 ||
+        word != gk208_grgpc_code[
+            REIST_NVIDIA_GK208_GR_GPCCS_CODE_WORDS - 1U] ||
+        reist_nvidia_gk208_gr_firmware_word(0U,
+            REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, &word) != -34 ||
+        reist_nvidia_gk208_gr_firmware_word(
+            REIST_NVIDIA_GK208_GR_COMPONENT_FECS, 0U, 0U, &word) != -34 ||
+        reist_nvidia_gk208_gr_firmware_word(
+            REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+            REIST_NVIDIA_GK208_GR_SECTION_DATA,
+            REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS, &word) != -34 ||
+        reist_nvidia_gk208_gr_firmware_word(
+            REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
+            REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, NULL) != -22)
+        return -84;
+    return 0;
 }

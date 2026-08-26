@@ -28,6 +28,7 @@
 #define NVIDIA_DIAGNOSTIC_GPU_VM_PLAN 0x4E5B0000U
 #define NVIDIA_DIAGNOSTIC_DMA_SEALED 0x4E5C0000U
 #define NVIDIA_DIAGNOSTIC_VM_PAGE_MODE 0x4E5D0000U
+#define NVIDIA_DIAGNOSTIC_GR_FIRMWARE 0x4E5E0000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
@@ -219,6 +220,17 @@ static int command_contract_self_test(nvidia_driver_t *driver) {
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT |
             REIST_NVIDIA_GK208_FERMI_TWOD_A);
+}
+
+static int gr_firmware_contract_self_test(nvidia_driver_t *driver) {
+    reist_nvidia_gk208_gr_firmware_manifest_t manifest;
+    int status = reist_nvidia_gk208_gr_firmware_self_test();
+    if (status == 0)
+        status = reist_nvidia_gk208_gr_firmware_manifest(&manifest);
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_FIRMWARE | manifest.total_words);
 }
 
 static int open_dma_pool(nvidia_driver_t *driver) {
@@ -534,6 +546,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = engine_preflight(driver);
     if (status != 0) return status;
     status = command_contract_self_test(driver);
+    if (status != 0) return status;
+    status = gr_firmware_contract_self_test(driver);
     if (status != 0) return status;
     status = open_dma_pool(driver);
     if (status != 0) return status;

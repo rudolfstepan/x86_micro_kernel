@@ -88,6 +88,15 @@ Policy-Bit mit Readback wieder her. Eine fehlgeschlagene Wiederherstellung
 bleibt gesperrt und wiederholbar. Ring 3 erhält kein Schreibrecht. Channel-/
 PGD-Bind, Runlist, GR/FECS/GPCCS, USERD-Kick, IRQ, Busmaster, echter Fence und
 Capabilitybits bleiben weiterhin offen.
+`R2.2o-nvidia-gk208-gr-firmware-contract` bindet nun die exakten
+MIT-lizenzierten Nouveau-nofw-Abbilder für GK208 FECS und GPCCS an einen
+gepinnten Linux-Commit. Vier unveränderliche Arrays enthalten zusammen 1244
+Little-Endian-Dwords; ein fester 64-Byte-Manifestvertrag hält Wortzahlen und
+IEEE-CRC32-Werte fest. Der überwachte Treiber validiert alle 4976 Bytes noch
+vor dem Öffnen des DMA-Pools. Der öffentliche Zugriff kopiert nur ein
+bereichsgeprüftes Wort und gibt keinen veränderlichen Zeiger frei. Upload,
+GR-Registerpakete, Firmware-Start, Kontextgenerierung, Channel-Bind, Runlist,
+USERD, IRQ, Busmaster, echter Fence und Capabilitybits bleiben offen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung
