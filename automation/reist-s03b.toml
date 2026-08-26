@@ -11,6 +11,63 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.4a-notepad-menu-overlay"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Make Surface-client menu hover independently repaintable"
+scope = "Add one fixed-capacity retained overlay paint layer to the existing Surface command protocol while preserving the legacy base-layer API. Render base commands before overlay commands in the compositor and move Notepad menu and in-surface overlay rendering onto that layer, so pointer hover replaces only the bounded menu command list instead of retransmitting the complete editor scene. Keep fullscreen rendering and separate dialog surfaces compatible, and leave the transaction-safe Surface broker scheduling unchanged."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/include/reist/gui/surface_client.h",
+  "userspace/gui/lib/surface_client.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/apps/notepad/main.c",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_surface_dispatch.c",
+  "test/test_gui_surface_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the existing paint begin and commit API remains source compatible and selects the base layer",
+  "only base and overlay are accepted and an invalid layer is rejected before changing retained state",
+  "one Surface has one bounded pending transaction and an overlay contains at most 96 retained commands",
+  "committing one layer atomically replaces only that layer while preserving the other committed layer",
+  "the compositor always renders the retained base before the retained overlay",
+  "Notepad Surface hover updates only the overlay while fullscreen mode keeps complete frame rendering",
+  "separate dialog surfaces continue to use the legacy base layer",
+  "no heap allocation global coordinates display authority or unsafe input prioritization enters the Surface client"
+]
+targeted_tests = [
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = []
+runtime_tests = []
+stop_conditions = [
+  "the overlay can hide a missing base frame or survive Surface destruction outside its generation",
+  "menu hover still invokes a complete Surface base repaint",
+  "the change requires filling the IPC response queue with unsolicited input during a paint transaction",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a targeted gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: accelerate notepad menu hover"
+evidence = [
+  "Surface protocol and host behavior passed 7 tests including independent atomic base and overlay commits",
+  "Notepad source and freestanding syntax passed 9 tests including overlay-only menu hover",
+  "Desktop compositor source and host behavior passed 40 tests including clipped base-before-overlay rendering",
+  "all Ring-3 system programs including DESKTOP.PRG and NOTEPAD.PRG linked successfully in 10 seconds"
+]
+
+[[packages]]
 id = "R2.2ad-background-acceleration-readiness"
 status = "done"
 phase = "post-s0"

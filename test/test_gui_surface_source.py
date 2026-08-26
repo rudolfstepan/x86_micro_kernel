@@ -17,8 +17,12 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn("REIST_GUI_SURFACE_BUFFER_FORMAT_XRGB8888", header)
         self.assertIn("REIST_GUI_SURFACE_MAX_BUFFER_BYTES", header)
         self.assertIn("REIST_GUI_SURFACE_MAX_PAINT_COMMANDS 192U", header)
+        self.assertIn(
+            "REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS 96U", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_BEGIN", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_COMMIT", header)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN", header)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT", header)
         self.assertIn("sizeof(reist_gui_surface_message_t) <= 128U", header)
         self.assertIn("global window coordinates never cross the ABI", header)
 
@@ -36,6 +40,9 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn("reist_gui_surface_buffer_validate", client)
         self.assertIn("reist_gui_surface_client_paint_fill", client)
         self.assertIn("reist_gui_surface_client_paint_text", client)
+        self.assertIn("reist_gui_surface_client_paint_begin_layer", client)
+        self.assertIn("reist_gui_surface_client_paint_commit_layer", client)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY", client)
         self.assertIn("reist_gui_surface_client_accept_configure", client)
 
     def test_configure_ack_waits_for_compositor_confirmation(self):

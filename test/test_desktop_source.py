@@ -436,6 +436,10 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_surface_runtime_send_close", self.source)
 
     def test_retained_surface_paint_is_clipped_to_current_client(self):
+        paint_list = self.source[
+            self.source.index("static void render_surface_paint_list") :
+            self.source.index("static void render_window")
+        ]
         render_window = self.source[
             self.source.index("static void render_window") :
             self.source.index("static void render_taskbar")
@@ -445,13 +449,13 @@ class DesktopSourceTests(unittest.TestCase):
             render_window,
         )
         self.assertIn("surface_context.clip = surface_clip", render_window)
-        self.assertIn(
-            "fill_rect_clipped(\n                    &surface_context",
-            render_window,
-        )
-        self.assertIn(
-            "&surface_context, bounds.x, bounds.y", render_window
-        )
+        self.assertIn("fill_rect_clipped(context, bounds", paint_list)
+        self.assertIn("context, bounds.x, bounds.y", paint_list)
+        base = "surface->committed_paint_count"
+        overlay = "surface->committed_overlay_paint_count"
+        self.assertIn(base, render_window)
+        self.assertIn(overlay, render_window)
+        self.assertLess(render_window.index(base), render_window.index(overlay))
 
     def test_render_probe_is_fixed_bounded_and_reports_versioned_metrics(self):
         self.assertIn("#define DESKTOP_METRICS_VERSION 1U", self.source)

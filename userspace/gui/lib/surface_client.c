@@ -138,6 +138,8 @@ static uint32_t deferred_response_type(uint32_t type) {
         type == REIST_GUI_SURFACE_PAINT_FILL ||
         type == REIST_GUI_SURFACE_PAINT_TEXT ||
         type == REIST_GUI_SURFACE_PAINT_COMMIT ||
+        type == REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN ||
+        type == REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT ||
         type == REIST_GUI_SURFACE_ATTACH ||
         type == REIST_GUI_SURFACE_DAMAGE ||
         type == REIST_GUI_SURFACE_BUFFER_RELEASE ||
@@ -359,11 +361,23 @@ int reist_gui_surface_client_set_title(reist_gui_surface_client_t *client,
 }
 
 int reist_gui_surface_client_paint_begin(reist_gui_surface_client_t *client) {
+    return reist_gui_surface_client_paint_begin_layer(
+        client, REIST_GUI_SURFACE_PAINT_LAYER_BASE);
+}
+
+int reist_gui_surface_client_paint_begin_layer(
+    reist_gui_surface_client_t *client, uint32_t layer) {
     if (!valid_client(client) || client->acknowledged_serial == 0U)
         return -22;
+    if (layer != REIST_GUI_SURFACE_PAINT_LAYER_BASE &&
+        layer != REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY)
+        return -22;
+    uint32_t type = layer == REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY
+        ? REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN
+        : REIST_GUI_SURFACE_PAINT_BEGIN;
     reist_gui_surface_message_t request;
-    prepare(&request, REIST_GUI_SURFACE_PAINT_BEGIN, client);
-    return transact(client, &request, REIST_GUI_SURFACE_PAINT_BEGIN);
+    prepare(&request, type, client);
+    return transact(client, &request, type);
 }
 
 int reist_gui_surface_client_paint_fill(reist_gui_surface_client_t *client,
@@ -409,11 +423,23 @@ int reist_gui_surface_client_paint_text(reist_gui_surface_client_t *client,
 }
 
 int reist_gui_surface_client_paint_commit(reist_gui_surface_client_t *client) {
+    return reist_gui_surface_client_paint_commit_layer(
+        client, REIST_GUI_SURFACE_PAINT_LAYER_BASE);
+}
+
+int reist_gui_surface_client_paint_commit_layer(
+    reist_gui_surface_client_t *client, uint32_t layer) {
     if (!valid_client(client) || client->acknowledged_serial == 0U)
         return -22;
+    if (layer != REIST_GUI_SURFACE_PAINT_LAYER_BASE &&
+        layer != REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY)
+        return -22;
+    uint32_t type = layer == REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY
+        ? REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT
+        : REIST_GUI_SURFACE_PAINT_COMMIT;
     reist_gui_surface_message_t request;
-    prepare(&request, REIST_GUI_SURFACE_PAINT_COMMIT, client);
-    return transact(client, &request, REIST_GUI_SURFACE_PAINT_COMMIT);
+    prepare(&request, type, client);
+    return transact(client, &request, type);
 }
 
 int reist_gui_surface_client_buffer_create(

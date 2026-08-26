@@ -24,6 +24,7 @@ extern "C" {
 #define REIST_GUI_SURFACE_MAX_CLIENTS 8U
 #define REIST_GUI_SURFACE_MAX_SURFACES 8U
 #define REIST_GUI_SURFACE_MAX_PAINT_COMMANDS 192U
+#define REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS 96U
 #define REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY 40U
 #define REIST_GUI_SURFACE_MAX_WIDTH 1024U
 #define REIST_GUI_SURFACE_MAX_HEIGHT 768U
@@ -48,6 +49,10 @@ enum reist_gui_surface_message_type {
     REIST_GUI_SURFACE_PAINT_FILL,
     REIST_GUI_SURFACE_PAINT_TEXT,
     REIST_GUI_SURFACE_PAINT_COMMIT,
+    /* Append-only retained overlay extension. Legacy base frames keep their
+     * original message values and semantics. */
+    REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN,
+    REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT,
     REIST_GUI_SURFACE_CONFIGURE = 0x80U,
     REIST_GUI_SURFACE_INPUT,
     REIST_GUI_SURFACE_CLOSE,
@@ -64,6 +69,11 @@ enum reist_gui_surface_input_type {
     REIST_GUI_SURFACE_INPUT_POINTER_MOTION = 1U,
     REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
     REIST_GUI_SURFACE_INPUT_KEYBOARD
+};
+
+enum reist_gui_surface_paint_layer {
+    REIST_GUI_SURFACE_PAINT_LAYER_BASE = 0U,
+    REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY = 1U
 };
 
 /** Stable owner identity. A recycled PID with another generation is invalid. */
@@ -154,8 +164,11 @@ typedef struct reist_gui_surface_message {
  * ``buffer_id`` the text background color. PAINT_TEXT stores at most
  * REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY bytes in ``input`` and records the
  * exact byte count in ``byte_size``. SET_TITLE uses the same bounded byte
- * storage. Applications must use surface_client.h rather than constructing
- * this representation themselves.
+ * storage. BASE begin/commit retain the original complete-scene contract;
+ * OVERLAY begin/commit atomically replace a second, later-rendered list of at
+ * most REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS commands. Applications
+ * must use surface_client.h rather than constructing this representation
+ * themselves.
  */
 
 #ifdef __cplusplus

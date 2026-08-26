@@ -59,6 +59,9 @@ int reist_gui_surface_client_set_title(reist_gui_surface_client_t *client,
                                        const char *title);
 /** Start an atomic retained paint frame, replacing no visible content yet. */
 int reist_gui_surface_client_paint_begin(reist_gui_surface_client_t *client);
+/** Start an atomic frame for BASE or the bounded later-rendered OVERLAY. */
+int reist_gui_surface_client_paint_begin_layer(
+    reist_gui_surface_client_t *client, uint32_t layer);
 /** Append one clipped client-local solid rectangle to the pending frame. */
 int reist_gui_surface_client_paint_fill(reist_gui_surface_client_t *client,
                                         reist_gui_rect_t rect,
@@ -72,6 +75,9 @@ int reist_gui_surface_client_paint_text(reist_gui_surface_client_t *client,
                                         uint32_t background);
 /** Atomically publish the complete pending paint frame. */
 int reist_gui_surface_client_paint_commit(reist_gui_surface_client_t *client);
+/** Publish only the selected layer; the other committed layer is preserved. */
+int reist_gui_surface_client_paint_commit_layer(
+    reist_gui_surface_client_t *client, uint32_t layer);
 int reist_gui_surface_client_buffer_create(
     reist_gui_surface_client_t *client,
     const reist_gui_surface_buffer_t *buffer);

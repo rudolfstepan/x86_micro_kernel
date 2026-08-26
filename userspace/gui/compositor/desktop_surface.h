@@ -64,9 +64,13 @@ typedef struct desktop_surface_slot {
         REIST_GUI_SURFACE_MAX_PAINT_COMMANDS];
     desktop_surface_paint_command_t committed_paint[
         REIST_GUI_SURFACE_MAX_PAINT_COMMANDS];
+    desktop_surface_paint_command_t committed_overlay_paint[
+        REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS];
     uint32_t pending_paint_count;
     uint32_t committed_paint_count;
+    uint32_t committed_overlay_paint_count;
     uint32_t paint_active;
+    uint32_t pending_paint_layer;
     uint32_t paint_generation;
     uint32_t presented_generation;
     reist_gui_surface_damage_t damage;
@@ -157,6 +161,10 @@ int desktop_surface_set_title(desktop_surface_manager_t *manager,
 int desktop_surface_paint_begin(desktop_surface_manager_t *manager,
                                 reist_gui_surface_owner_t owner,
                                 reist_gui_surface_handle_t handle);
+int desktop_surface_paint_begin_layer(desktop_surface_manager_t *manager,
+                                      reist_gui_surface_owner_t owner,
+                                      reist_gui_surface_handle_t handle,
+                                      uint32_t layer);
 int desktop_surface_paint_fill(desktop_surface_manager_t *manager,
                                reist_gui_surface_owner_t owner,
                                reist_gui_surface_handle_t handle,
@@ -170,6 +178,10 @@ int desktop_surface_paint_text(desktop_surface_manager_t *manager,
 int desktop_surface_paint_commit(desktop_surface_manager_t *manager,
                                  reist_gui_surface_owner_t owner,
                                  reist_gui_surface_handle_t handle);
+int desktop_surface_paint_commit_layer(desktop_surface_manager_t *manager,
+                                       reist_gui_surface_owner_t owner,
+                                       reist_gui_surface_handle_t handle,
+                                       uint32_t layer);
 
 /** Validate and apply one complete wire message without partial mutation. */
 int desktop_surface_dispatch_message(

@@ -38,8 +38,37 @@ int main(void) {
         (reist_gui_rect_t){8, 8, 120U, 1U}, 0U, 0x00ffffffU,
         "Document", 8U) == 0);
     assert(desktop_surface_paint_commit(&manager, owner, handle) == 0);
-    assert(manager.slots[handle.id - 1U].committed_paint_count == 2U);
-    assert(manager.slots[handle.id - 1U].paint_generation != 0U);
+    desktop_surface_slot_t *painted = &manager.slots[handle.id - 1U];
+    assert(painted->committed_paint_count == 2U);
+    assert(painted->paint_generation != 0U);
+    uint32_t base_generation = painted->paint_generation;
+    assert(desktop_surface_paint_begin_layer(
+        &manager, owner, handle, 2U) == DESKTOP_SURFACE_EINVAL);
+    assert(!painted->paint_active &&
+           painted->paint_generation == base_generation);
+    assert(desktop_surface_paint_begin_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) == 0);
+    assert(desktop_surface_paint_begin(
+        &manager, owner, handle) == DESKTOP_SURFACE_ESTATE);
+    assert(desktop_surface_paint_fill(
+        &manager, owner, handle,
+        (reist_gui_rect_t){4, 4, 80U, 24U}, 0x00000080U) == 0);
+    assert(desktop_surface_paint_commit(
+        &manager, owner, handle) == DESKTOP_SURFACE_ESTATE);
+    assert(desktop_surface_paint_commit_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) == 0);
+    assert(painted->committed_paint_count == 2U);
+    assert(painted->committed_overlay_paint_count == 1U);
+    assert(painted->committed_overlay_paint[0].foreground == 0x00000080U);
+    assert(desktop_surface_paint_begin(&manager, owner, handle) == 0);
+    assert(desktop_surface_paint_fill(
+        &manager, owner, handle,
+        (reist_gui_rect_t){0, 0, 320U, 200U}, 0x00ffffffU) == 0);
+    assert(desktop_surface_paint_commit(&manager, owner, handle) == 0);
+    assert(painted->committed_paint_count == 1U);
+    assert(painted->committed_overlay_paint_count == 1U);
     reist_gui_surface_input_t input = {
         REIST_GUI_SURFACE_INPUT_POINTER_MOTION, 1U, 12, 8,
         1, -1, 0U, 0U, 0U, 0U};

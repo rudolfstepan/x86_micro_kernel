@@ -120,6 +120,24 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("NOTEPAD_SURFACE_DIALOG_READY", self.source)
         self.assertIn("NOTEPAD_SURFACE_RESIZE_OK", self.source)
 
+    def test_surface_menu_hover_repaints_only_the_retained_overlay(self):
+        apply_start = self.source.index("static void apply_menu_result(")
+        apply_end = self.source.index(
+            "static uint32_t dispatch_editor_pointer", apply_start)
+        apply_menu = self.source[apply_start:apply_end]
+        self.assertIn("request_overlay_redraw(state)", apply_menu)
+        self.assertNotIn("state->redraw = 1U", apply_menu)
+
+        overlay_start = self.source.index("static void render_overlay(")
+        overlay_end = self.source.index("static int write_all", overlay_start)
+        overlay = self.source[overlay_start:overlay_end]
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY", overlay)
+        self.assertIn("render_overlay_scene(display, state)", overlay)
+        self.assertNotIn("render_base_scene(display, state)", overlay)
+        self.assertIn(
+            "application.redraw || application.overlay_redraw", self.source)
+        self.assertIn('"notepad: Surface-Overlay verzoegert: "', self.source)
+
     def test_source_is_valid_freestanding_c11(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:

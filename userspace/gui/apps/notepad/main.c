@@ -172,6 +172,7 @@ typedef struct notepad_state {
     uint32_t exists;
     uint32_t io_blocked;
     uint32_t redraw;
+    uint32_t overlay_redraw;
     uint32_t exit_requested;
     uint32_t scroll_drag;
     uint32_t scroll_drag_offset;
@@ -186,6 +187,14 @@ static reist_gui_surface_client_t dialog_surface;
 static x86os_display_info_t dialog_display;
 static uint32_t dialog_surface_active;
 static int paint_status;
+
+static void request_overlay_redraw(notepad_state_t *state) {
+    if (state == 0) return;
+    if (main_surface != 0)
+        state->overlay_redraw = 1U;
+    else
+        state->redraw = 1U;
+}
 
 static uint32_t paint_status_retryable(int status) {
     return status == -11 || status == -22 || status == -75 ||
@@ -930,14 +939,24 @@ static void render_file_dialog(const x86os_display_info_t *display,
     }
 }
 
-static void render_scene(const x86os_display_info_t *display,
-                         const notepad_state_t *state) {
+static void render_base_scene(const x86os_display_info_t *display,
+                              const notepad_state_t *state) {
     fill((reist_gui_rect_t){0, 0, display->width, display->height},
          paint_surface != 0 ? color_face : color_desktop);
     render_editor(display, state);
+}
+
+static void render_overlay_scene(const x86os_display_info_t *display,
+                                 const notepad_state_t *state) {
     render_menu(display, state);
     if (!dialog_surface_active) render_dialog(display, state);
     render_file_dialog(display, state);
+}
+
+static void render_scene(const x86os_display_info_t *display,
+                         const notepad_state_t *state) {
+    render_base_scene(display, state);
+    render_overlay_scene(display, state);
 }
 
 static void render_separate_dialog(const notepad_state_t *state) {
@@ -954,11 +973,19 @@ static void render_separate_dialog(const notepad_state_t *state) {
 static void render(const x86os_display_info_t *display,
                    const notepad_state_t *state) {
     if (paint_surface != 0) {
-        paint_status = reist_gui_surface_client_paint_begin(paint_surface);
-        if (paint_status == 0) render_scene(display, state);
+        paint_status = reist_gui_surface_client_paint_begin_layer(
+            paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_BASE);
+        if (paint_status == 0) render_base_scene(display, state);
         if (paint_status == 0)
-            paint_status = reist_gui_surface_client_paint_commit(
-                paint_surface);
+            paint_status = reist_gui_surface_client_paint_commit_layer(
+                paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_BASE);
+        if (paint_status == 0)
+            paint_status = reist_gui_surface_client_paint_begin_layer(
+                paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
+        if (paint_status == 0) render_overlay_scene(display, state);
+        if (paint_status == 0)
+            paint_status = reist_gui_surface_client_paint_commit_layer(
+                paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
         return;
     }
     uint32_t serial = 0U;
@@ -968,6 +995,20 @@ static void render(const x86os_display_info_t *display,
         (void)x86os_display_frame_cancel(serial);
         render_scene(display, state);
     }
+}
+
+static void render_overlay(const x86os_display_info_t *display,
+                           const notepad_state_t *state) {
+    if (paint_surface == 0) {
+        render(display, state);
+        return;
+    }
+    paint_status = reist_gui_surface_client_paint_begin_layer(
+        paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
+    if (paint_status == 0) render_overlay_scene(display, state);
+    if (paint_status == 0)
+        paint_status = reist_gui_surface_client_paint_commit_layer(
+            paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
 }
 
 static int write_all(int descriptor, const char *data, size_t size) {
@@ -1241,7 +1282,8 @@ static void complete_dialog(notepad_state_t *state,
 static void apply_menu_result(notepad_state_t *state,
                               const x86os_display_info_t *display,
                               const reist_gui_menu_result_t *result) {
-    if (result->damage_count || result->full_redraw) state->redraw = 1U;
+    if (result->damage_count || result->full_redraw)
+        request_overlay_redraw(state);
     if (!result->activated) return;
     if (result->action == NOTEPAD_ACTION_OPEN) {
         open_file_dialog(state, display, REIST_GUI_FILE_DIALOG_OPEN);
@@ -1679,10 +1721,14 @@ static int run_hover_probe(notepad_state_t *state,
                 &menu_model, &layout, 0U, index, &item) != 0) return -1;
         (void)dispatch_pointer(
             state, display, item.x + 2, item.y + 2, 0U, 0U);
-        if (!state->redraw) return -1;
-        render(display, state);
+        if (!state->redraw && !state->overlay_redraw) return -1;
+        if (state->redraw)
+            render(display, state);
+        else
+            render_overlay(display, state);
         if (paint_status != 0) return paint_status;
         state->redraw = 0U;
+        state->overlay_redraw = 0U;
     }
     return 0;
 }
@@ -1985,6 +2031,7 @@ int main(int argc, char **argv) {
             x86os_puts("NOTEPAD_SURFACE_DIALOG_READY\n");
     }
     application.redraw = 0U;
+    application.overlay_redraw = 0U;
     if (!surface_mode) (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
 
     uint32_t paint_failures = 0U;
@@ -2128,27 +2175,39 @@ int main(int argc, char **argv) {
             if (key && key != NOTEPAD_KEY_NONE)
                 (void)dispatch_keyboard(&application, &display, key);
         }
-        if (application.redraw) {
+        if (application.redraw || application.overlay_redraw) {
+            uint32_t full_redraw = application.redraw;
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            render(&display, &application);
-            if (paint_status == 0) render_separate_dialog(&application);
+            if (full_redraw)
+                render(&display, &application);
+            else
+                render_overlay(&display, &application);
+            if (paint_status == 0 && full_redraw)
+                render_separate_dialog(&application);
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
             if (paint_status == 0) {
-                application.redraw = 0U;
+                if (full_redraw) application.redraw = 0U;
+                application.overlay_redraw = 0U;
                 paint_failures = 0U;
-                if (resize_marker_pending) {
+                if (full_redraw && resize_marker_pending) {
                     x86os_puts("NOTEPAD_SURFACE_RESIZE_OK\n");
                     resize_marker_pending = 0U;
                 }
             } else if (surface_mode && paint_status_retryable(paint_status)) {
                 if (paint_failures < NOTEPAD_PAINT_RETRY_LIMIT)
                     ++paint_failures;
-                application.redraw = 1U;
+                if (full_redraw)
+                    application.redraw = 1U;
+                else
+                    application.overlay_redraw = 1U;
                 if (paint_failures == 1U)
                     report_paint_failure(
-                        "notepad: Surface-Frame verzoegert: ", paint_status);
+                        full_redraw
+                            ? "notepad: Surface-Frame verzoegert: "
+                            : "notepad: Surface-Overlay verzoegert: ",
+                        paint_status);
                 (void)x86os_sleep_ms(5U);
             } else {
                 report_paint_failure(

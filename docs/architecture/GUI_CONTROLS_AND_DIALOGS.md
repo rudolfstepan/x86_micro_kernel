@@ -1,6 +1,6 @@
 # GUI-Komponenten, Controls und Dialoge
 
-Stand: 20. August 2026.
+Stand: 26. August 2026.
 
 Dieses Dokument ist der technische Katalog für sichtbare und interaktive
 REIST-GUI-Komponenten. Es trennt bereits nutzbare API von compositorinternen
@@ -50,6 +50,18 @@ begrenzt mit Button-Up, Abbruch oder Zerstörung. Keyboardnavigation verwendet
 eine deterministische Fokusreihenfolge. Zustandsänderungen liefern eine feste
 Anzahl lokaler Damage-Rechtecke; Überlauf fordert einen vollständigen Redraw
 der betroffenen Surface an.
+
+Retained-Command-Surfaces besitzen zusätzlich zur kompatiblen Basisliste eine
+append-only Protokollerweiterung für eine zweite Overlay-Liste. Basis und
+Overlay werden unabhängig atomar ersetzt; der Compositor zeichnet immer zuerst
+die höchstens 192 Basiskommandos und danach höchstens 96 Overlaykommandos.
+Ungültige Layer oder ein Commit für den falschen aktiven Layer scheitern vor
+einer sichtbaren Zustandsänderung. Der REIST Editor hält Dokument, Scrollleisten
+und Statuszeile in der Basis und Menü sowie eingebettete Overlays in der
+Overlay-Liste. Ein Wechsel des hervorgehobenen Menüeintrags überträgt dadurch
+nicht mehr die vollständige Editorfläche. Separate Dialog-Surfaces und ältere
+Clients verwenden unverändert die Basis-API; Eingaben werden nicht in laufende
+Transaktionsantworten umsortiert.
 
 ## Unterstützungsstatus
 

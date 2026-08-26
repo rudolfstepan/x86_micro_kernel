@@ -331,6 +331,16 @@ Editieren, Cursor-Navigation und Fenster-Resize halten beide Achsen synchron.
 Dokument- und Eingabekapazitäten sowie der heapfreie Ring-3-Vertrag bleiben
 unverändert.
 
+`R3.4a-notepad-menu-overlay` trennt den interaktiven Menüpfad von der großen
+retained Editor-Szene. Die append-only Surface-Erweiterung verwaltet eine
+zweite, auf 96 Kommandos begrenzte Overlay-Liste, die der Compositor nach der
+weiterhin höchstens 192 Kommandos großen Basis zeichnet. Notepad ersetzt beim
+Hover nur Menü und eingebettete Overlays; Dokument, Scrollleisten und
+Statuszeile werden dabei weder neu serialisiert noch erneut über IPC gesendet.
+Die bisherigen Paint-Begin/Commit-Funktionen bleiben als Basis-Layer erhalten,
+separate Dialog-Surfaces bleiben kompatibel und der vier Einträge tiefe
+Transaktions-Rückkanal wird nicht durch vorgezogene Eingaben gefährdet.
+
 `R3.1-unicode-text-raster` ersetzt die byteweise grafische Textausgabe durch
 einen vollständig vorvalidierten, auf 256 Bytes begrenzten RFC-3629-Lauf. Die
 unveränderte Display-v1-ABI zählt weiterhin Bytes; Rasterposition, Clipping und

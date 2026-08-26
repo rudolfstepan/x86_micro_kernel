@@ -2213,6 +2213,26 @@ static void render_explorer_entry(
         selected ? color_active : color_client);
 }
 
+static void render_surface_paint_list(
+    const desktop_render_context_t *context, desktop_rect_t client,
+    const desktop_surface_paint_command_t *commands, uint32_t count) {
+    if (context == 0 || commands == 0) return;
+    for (uint32_t index = 0U; index < count; ++index) {
+        const desktop_surface_paint_command_t *command = &commands[index];
+        desktop_rect_t bounds = {
+            client.x + command->rect.x,
+            client.y + command->rect.y,
+            command->rect.width, command->rect.height,
+        };
+        if (command->type == DESKTOP_SURFACE_PAINT_FILL)
+            fill_rect_clipped(context, bounds, command->foreground);
+        else if (command->type == DESKTOP_SURFACE_PAINT_TEXT)
+            draw_text_clipped(
+                context, bounds.x, bounds.y, command->text,
+                bounds.width, command->foreground, command->background);
+    }
+}
+
 static void render_window(const desktop_render_context_t *context,
                           const desktop_wm_t *manager,
                           const desktop_explorer_t *explorer,
@@ -2312,25 +2332,14 @@ static void render_window(const desktop_render_context_t *context,
                 buffer_clip.x, buffer_clip.y,
                 buffer_clip.width, buffer_clip.height);
     }
-    if (surface_visible)
-        for (uint32_t index = 0U;
-             index < surface->committed_paint_count; ++index) {
-            const desktop_surface_paint_command_t *command =
-                &surface->committed_paint[index];
-            desktop_rect_t bounds = {
-                client.x + command->rect.x,
-                client.y + command->rect.y,
-                command->rect.width, command->rect.height,
-            };
-            if (command->type == DESKTOP_SURFACE_PAINT_FILL)
-                fill_rect_clipped(
-                    &surface_context, bounds, command->foreground);
-            else if (command->type == DESKTOP_SURFACE_PAINT_TEXT)
-                draw_text_clipped(
-                    &surface_context, bounds.x, bounds.y, command->text,
-                    bounds.width, command->foreground,
-                    command->background);
-        }
+    if (surface_visible) {
+        render_surface_paint_list(
+            &surface_context, client, surface->committed_paint,
+            surface->committed_paint_count);
+        render_surface_paint_list(
+            &surface_context, client, surface->committed_overlay_paint,
+            surface->committed_overlay_paint_count);
+    }
     if (explorer_window != 0)
         for (uint32_t entry = 0U; entry < explorer_window->entry_count; ++entry)
             render_explorer_entry(

@@ -53,6 +53,21 @@ int main(void) {
     assert(desktop_surface_dispatch_message(
         &manager, owner, &request, &response) == 0);
     assert(response.type == REIST_GUI_SURFACE_PAINT_COMMIT);
+    request.type = REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    assert(response.type == REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN);
+    request.type = REIST_GUI_SURFACE_PAINT_FILL;
+    request.damage = (reist_gui_rect_t){8, 8, 80U, 20U};
+    request.flags = 0x00000080U;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    assert(response.type == REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT);
+    assert(manager.slots[parent.id - 1U].committed_paint_count == 1U);
+    assert(manager.slots[parent.id - 1U].committed_overlay_paint_count == 1U);
     request.type = REIST_GUI_SURFACE_BUFFER_CREATE;
     request.buffer_id = 1U;
     request.buffer_generation = 1U;
