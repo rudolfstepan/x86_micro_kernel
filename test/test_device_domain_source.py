@@ -92,6 +92,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("(void)fence_slot(device);", source[admission:notification])
         self.assertIn("dma_pool_storage", source)
         self.assertIn("DEVICE_DOMAIN_DMA_POOL_BYTES", header)
+        self.assertIn("DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES", header)
+        self.assertIn("DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL", header)
         self.assertIn("DEVICE_DOMAIN_CONTROL_DMA_POOL_STATS = 18U", header)
         self.assertIn("device_domain_dma_pool_stats_t", header)
         self.assertIn("capacity_rejections", header)
@@ -101,6 +103,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn(
             "device->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA",
             source)
+        self.assertIn(".capacity = pool->capacity", source)
+        self.assertIn("length > pool->capacity - offset", source)
         self.assertIn("DEVICE_DOMAIN_MAX_REGION_RULES 32U", header)
         self.assertIn(
             "DEVICE_DOMAIN_MAX_REGION_BYTES (8U * 1024U * 1024U)", header)

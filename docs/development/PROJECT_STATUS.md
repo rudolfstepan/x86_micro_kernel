@@ -60,6 +60,15 @@ Relokation bezeichnet. Ring 3 überträgt und verifiziert alle drei Bilder in
 höchstens 1024-Byte-Abschnitten, erhält aber weiterhin keine physische Adresse.
 GPU-VM, GR-Kontext, MMIO-Schreibrechte, Runlist-Commit, USERD-Kick, IRQ,
 Aktivierung, Busmaster und Capabilitybits bleiben offen.
+`R2.2l-nvidia-gk208-gpu-vm-plan` reserviert danach die vollständigen,
+festen Seitentabellenfenster. Nur GK208 wählt den 512-KiB-Pool; alle bisherigen
+mediated-DMA-Profile behalten 64 KiB. Für 64-KiB- und 128-KiB-FB-Seiten werden
+die beiden upstream GK104/GK208-Geometrien mit 4-KiB-GPU-Seiten, 40-Bit-VA,
+passenden 14+14- beziehungsweise 13+15-Bit-Indizes und exakt fünf
+kernelverwalteten Relokationen validiert. Pushbuffer und GPFIFO sind read-only,
+das Fence ist schreibbar, alle drei verwenden die NCOH-Apertur. Ring 3 prüft
+weiterhin nur null gelassene Adressziele und schreibt ausschließlich das feste
+VM-Limit `2^40-1`; Relokation, Aktivierung und GPU-Ausführung bleiben offen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung
@@ -451,7 +460,8 @@ erfunden und keine Hardwarequalifikation behauptet.
 
 `S0.4c-2b2c` ergänzt die Laufzeitdiagnostik des kernel-eigenen mediated-DMA-
 Pools. Eine append-only 32-Byte-Struktur meldet aktive und maximale Belegung
-der vier 64-KiB-Pools sowie saturierende echte Kapazitätsablehnungen, ohne
+der vier Slots, die 64-KiB-Standardgröße sowie saturierende echte
+Kapazitätsablehnungen, ohne
 physische Adressen oder Pooltokens offenzulegen. Hostseitig sind vollständige
 Erschöpfung, `ENOSPC`, generationgebundene Freigabe, Wiederverwendung und die
 Rückkehr auf null aktive Pools geprüft. Der QEMU-HDA-Treiber bestätigt seine

@@ -18,7 +18,7 @@
 #define REIST_NVIDIA_GK208_SURFACE_ALIGNMENT 256U
 #define REIST_NVIDIA_GK208_MAX_DIMENSION 4096U
 #define REIST_NVIDIA_GK208_MAX_PITCH 65536U
-#define REIST_NVIDIA_GK208_DMA_POOL_BYTES (64U * 1024U)
+#define REIST_NVIDIA_GK208_DMA_POOL_BYTES (512U * 1024U)
 #define REIST_NVIDIA_GK208_DMA_DESCRIPTOR_BYTES 4096U
 #define REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET 0x00001000U
 #define REIST_NVIDIA_GK208_DMA_PUSHBUF_OFFSET 0x00002000U
@@ -26,6 +26,10 @@
 #define REIST_NVIDIA_GK208_DMA_USERD_OFFSET 0x00004000U
 #define REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET 0x00005000U
 #define REIST_NVIDIA_GK208_DMA_RUNLIST_OFFSET 0x00006000U
+#define REIST_NVIDIA_GK208_DMA_PGD_OFFSET 0x00010000U
+#define REIST_NVIDIA_GK208_DMA_PGD_RESERVATION_BYTES 0x00020000U
+#define REIST_NVIDIA_GK208_DMA_PGT_OFFSET 0x00030000U
+#define REIST_NVIDIA_GK208_DMA_PGT_RESERVATION_BYTES 0x00040000U
 #define REIST_NVIDIA_GK208_PUSHBUF_GPU_ADDRESS 0x0000000020000000ULL
 #define REIST_NVIDIA_GK208_FENCE_GPU_ADDRESS 0x0000000020001000ULL
 #define REIST_NVIDIA_GK208_GPFIFO_GPU_ADDRESS 0x0000000020002000ULL
@@ -37,6 +41,14 @@
 #define REIST_NVIDIA_GK208_CHANNEL_LIMIT 1024U
 #define REIST_NVIDIA_GK208_GR_DEVICE_MASK 1U
 #define REIST_NVIDIA_GK208_ADDRESS_RELOCATION_WIDTH 8U
+#define REIST_NVIDIA_GK208_VM_RELOCATION_COUNT 5U
+#define REIST_NVIDIA_GK208_GPU_PAGE_SHIFT 12U
+#define REIST_NVIDIA_GK208_FB_PAGE_SHIFT_64K 16U
+#define REIST_NVIDIA_GK208_FB_PAGE_SHIFT_128K 17U
+#define REIST_NVIDIA_GK208_VM_ADDRESS_BITS 40U
+#define REIST_NVIDIA_GK208_VM_LIMIT 0x0000010000000000ULL
+#define REIST_NVIDIA_GK208_RAMFC_PGD_OFFSET 0x00000200U
+#define REIST_NVIDIA_GK208_RAMFC_VM_LIMIT_OFFSET 0x00000208U
 #define REIST_NVIDIA_GK208_RAMFC_WORDS \
     (REIST_NVIDIA_GK208_RAMFC_BYTES / sizeof(uint32_t))
 #define REIST_NVIDIA_GK208_USERD_WORDS \
@@ -102,6 +114,30 @@ typedef struct {
     reist_nvidia_gk208_address_relocation_t userd_relocation;
 } reist_nvidia_gk208_channel_image_t;
 
+typedef struct {
+    uint32_t destination_pool_offset;
+    uint32_t source_pool_offset;
+    uint32_t shift_right;
+    uint32_t width;
+    uint64_t fixed_bits;
+} reist_nvidia_gk208_vm_relocation_t;
+
+typedef struct {
+    uint32_t fb_page_shift;
+    uint32_t gpu_page_shift;
+    uint32_t pgd_bits;
+    uint32_t pgt_bits;
+    uint32_t pgd_pool_offset;
+    uint32_t pgd_bytes;
+    uint32_t pgt_pool_offset;
+    uint32_t pgt_bytes;
+    uint64_t vm_limit;
+    uint32_t relocation_count;
+    uint32_t reserved;
+    reist_nvidia_gk208_vm_relocation_t
+        relocations[REIST_NVIDIA_GK208_VM_RELOCATION_COUNT];
+} reist_nvidia_gk208_vm_plan_t;
+
 int reist_nvidia_gk208_encode_fill(
     reist_nvidia_gk208_pushbuf_t *pushbuf,
     const reist_nvidia_gk208_surface_t *surface,
@@ -135,9 +171,14 @@ int reist_nvidia_gk208_prepare_channel_image(
     reist_nvidia_gk208_channel_image_t *image);
 int reist_nvidia_gk208_validate_channel_image(
     const reist_nvidia_gk208_channel_image_t *image);
+int reist_nvidia_gk208_prepare_vm_plan(
+    reist_nvidia_gk208_vm_plan_t *plan, uint32_t fb_page_shift);
+int reist_nvidia_gk208_validate_vm_plan(
+    const reist_nvidia_gk208_vm_plan_t *plan);
 int reist_nvidia_gk208_command_self_test(void);
 int reist_nvidia_gk208_submission_self_test(void);
 int reist_nvidia_gk208_dma_staging_self_test(void);
 int reist_nvidia_gk208_channel_image_self_test(void);
+int reist_nvidia_gk208_vm_plan_self_test(void);
 
 #endif

@@ -111,7 +111,13 @@ oder ein Pooltoken verleiht weiterhin weder Mapping-, physische Adress-,
 Busmaster- noch Geräteaktivierungsvollmacht.
 
 Die aktuelle mediated-DMA-ABI stellt einen kernel-eigenen, beim Binden und
-Entziehen vollständig genullten 64-KiB-Pool bereit. Ring 3 erhält weder dessen
+Entziehen vollständig genullten Pool bereit. Der Standard bleibt exakt 64 KiB.
+Ein unveränderliches Profil darf zusätzlich den festen 512-KiB-Pool wählen,
+aber nur gemeinsam mit ausdrücklicher `MEDIATED_DMA`-Autorität; derzeit nutzt
+dies ausschließlich GK208 für seine bounded GPU-VM-Images. Die vier
+Allokationsslots und der standardisierte `pool_bytes`-Diagnosewert bleiben
+unverändert, während `DMA_INFO.capacity` die tatsächlich gewählte Kapazität
+meldet. Ring 3 erhält weder dessen
 physische Adresse noch eine BAR-Abbildung. Ein unveränderliches Geräteprofil
 definiert stattdessen begrenzte Lesefenster, einzelne maskierte
 Schreibregister und zulässige 64-Bit-DMA-Adressregister. Der Mediator löst erst
@@ -127,7 +133,7 @@ dessen DMA-Token. Der übrige Pool bleibt der beschreibbare Datenbereich.
 
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
-Belegung der vier Pools, Kapazität, feste Poolgröße und einen saturierenden
+Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden
 Zähler echter Kapazitätsablehnungen. Physische Adressen, Eigentümer und
 generationgebundene Pooltokens bleiben verborgen. Der Zähler ist beobachtbar,
 beeinflusst aber weder Zuteilung noch Bus-Mastering-Autorität.

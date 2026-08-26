@@ -7939,3 +7939,64 @@ evidence = [
   "QEMU framebuffer package passed in 24 seconds",
   "VMware framebuffer package passed in 26 seconds"
 ]
+
+[[packages]]
+id = "R2.2l-nvidia-gk208-gpu-vm-plan"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Validate the bounded GK208 GPU-VM image plan"
+scope = "Add one profile-selected 512-KiB kernel-owned mediated-DMA pool for the exact NVIDIA GK208 device while every existing mediated-DMA client retains the 64-KiB contract. Reserve fixed non-overlapping page-directory and page-table windows and compile both upstream Nouveau GK104/GK208 4-KiB GPU-page geometries for 64-KiB and 128-KiB FB pages. Describe only five kernel-owned relocations: instance-to-PGD, PGD-to-PT and three NCOH mappings for the pushbuffer, fence and GPFIFO windows; keep every physical address word zero in Ring 3 and validate the complete geometry, permissions, indices and 40-bit VM limit before staging the common non-address instance limit. This package performs no relocation, physical-address publication, page-table activation, MMIO write, USERD kick, IRQ bind, bus-master enable, hardware submission or acceleration capability publication."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "only an explicit MEDIATED_DMA profile may request the large fixed pool and the exact GK208 profile is the only built-in user",
+  "legacy mediated-DMA clients retain a 64-KiB reported capacity while GK208 receives exactly 512 KiB from the same four-slot fixed kernel pool",
+  "both upstream 64-KiB and 128-KiB FB-page variants cover a 40-bit VA with 4-KiB GPU pages and fit fixed aligned PGD and PT reservations",
+  "the plan contains exactly one instance-PGD one PGD-PT and three data-page relocations with NCOH aperture and read-only pushbuffer and GPFIFO mappings",
+  "all physical address destinations remain zero in Ring 3 and only the common 40-bit VM limit is staged and read back",
+  "pool zeroing release bounds transfer bounds descriptor bounds and DMA-register binding use the selected per-pool capacity",
+  "no relocation physical address publication MMIO write activation IRQ bus mastering hardware submission or acceleration capability occurs"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the GPU-VM image requires a guessed physical address register write or unverified page-table bit",
+  "a non-NVIDIA profile can select the large pool without explicit fixed-profile authority",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: validate GK208 GPU VM plans"
+evidence = [
+  "Device-domain contract passed 10 tests including explicit large-pool authorization per-pool transfer descriptor and release bounds",
+  "NVIDIA GK208 contract passed 12 tests including both exact zero-address 64-KiB and 128-KiB FB-page GPU-VM plans",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests after one focused assertion update for the combined NVIDIA flag mask",
+  "QEMU framebuffer package passed in 37 seconds",
+  "VMware framebuffer package passed in 26 seconds"
+]

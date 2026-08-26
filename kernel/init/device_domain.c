@@ -70,6 +70,7 @@ typedef struct {
     int32_t owner_pid;
     uint32_t owner_generation;
     uint32_t direction;
+    uint32_t capacity;
 } dma_pool_slot_t;
 
 static device_slot_t devices[DEVICE_DOMAIN_MAX_DEVICES];
@@ -77,7 +78,7 @@ static group_owner_t groups[DEVICE_DOMAIN_MAX_GROUPS];
 static resource_slot_t resources[DEVICE_DOMAIN_MAX_RESOURCES];
 static dma_pool_slot_t dma_pools[DEVICE_DOMAIN_DMA_POOL_COUNT];
 static uint8_t dma_pool_storage[DEVICE_DOMAIN_DMA_POOL_COUNT]
-                               [DEVICE_DOMAIN_DMA_POOL_BYTES]
+                               [DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES]
     __attribute__((aligned(4096)));
 static device_domain_platform_ops_t platform_ops;
 static uint32_t device_count;
@@ -573,7 +574,8 @@ static bool profile_valid(const device_domain_profile_t *profile) {
         DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT |
         DEVICE_DOMAIN_PROFILE_GROUP_ISOLATED |
         DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC |
-        DEVICE_DOMAIN_PROFILE_MEDIATED_IO;
+        DEVICE_DOMAIN_PROFILE_MEDIATED_IO |
+        DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL;
     return profile != NULL && profile->version == DEVICE_DOMAIN_ABI_VERSION &&
         profile->struct_size == sizeof(*profile) &&
         profile->isolation_group < DEVICE_DOMAIN_MAX_GROUPS &&
@@ -581,6 +583,8 @@ static bool profile_valid(const device_domain_profile_t *profile) {
         profile->vendor_id != 0xFFFFU && profile->device_id != 0xFFFFU &&
         (profile->flags & ~known_flags) == 0U &&
         ((profile->flags & DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC) == 0U ||
+         (profile->flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) != 0U) &&
+        ((profile->flags & DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL) == 0U ||
          (profile->flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) != 0U) &&
         profile->reserved_byte == 0U && profile->reserved[0] == 0U &&
         profile->reserved[1] == 0U && profile->reserved[2] == 0U;
@@ -627,7 +631,11 @@ static void release_mediated_dma_pool(device_slot_t *device) {
         pool->device_generation == device->generation &&
         pool->owner_pid == device->owner_pid &&
         pool->owner_generation == device->owner_generation) {
-        memset(dma_pool_storage[index], 0, DEVICE_DOMAIN_DMA_POOL_BYTES);
+        uint32_t capacity = pool->capacity;
+        if (capacity != DEVICE_DOMAIN_DMA_POOL_BYTES &&
+            capacity != DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES)
+            capacity = DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES;
+        memset(dma_pool_storage[index], 0, capacity);
         *pool = (dma_pool_slot_t){0};
         if (dma_pool_stats.active_pools != 0U)
             --dma_pool_stats.active_pools;
@@ -1170,7 +1178,11 @@ int device_domain_bind_dma(int pid, uint32_t process_generation,
         return -13;
     }
     if (pool_index >= 0) {
-        memset(dma_pool_storage[pool_index], 0, DEVICE_DOMAIN_DMA_POOL_BYTES);
+        uint32_t capacity =
+            (device->profile.flags & DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL) != 0U
+                ? DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES
+                : DEVICE_DOMAIN_DMA_POOL_BYTES;
+        memset(dma_pool_storage[pool_index], 0, capacity);
         dma_pools[pool_index] = (dma_pool_slot_t){
             .active = 1U,
             .device_slot = (uint32_t)(device - devices),
@@ -1178,6 +1190,7 @@ int device_domain_bind_dma(int pid, uint32_t process_generation,
             .owner_pid = pid,
             .owner_generation = process_generation,
             .direction = request->flags,
+            .capacity = capacity,
         };
         ++dma_pool_stats.active_pools;
         if (dma_pool_stats.active_pools > dma_pool_stats.peak_active_pools)
@@ -1621,7 +1634,7 @@ int device_domain_dma_info(int pid, uint32_t process_generation,
         .version = DEVICE_DOMAIN_ABI_VERSION,
         .struct_size = sizeof(*info),
         .resource = handle,
-        .capacity = DEVICE_DOMAIN_DMA_POOL_BYTES,
+        .capacity = pool->capacity,
         .alignment = 4096U,
         .direction = pool->direction,
     };
@@ -1652,13 +1665,13 @@ static int dma_transfer_locked(int pid, uint32_t process_generation,
         uint32_t length, bool write_to_device) {
     if (data == NULL || length == 0U ||
         length > DEVICE_DOMAIN_DMA_TRANSFER_MAX ||
-        offset < DEVICE_DOMAIN_DMA_DATA_OFFSET ||
-        offset > DEVICE_DOMAIN_DMA_POOL_BYTES ||
-        length > DEVICE_DOMAIN_DMA_POOL_BYTES - offset) return -22;
+        offset < DEVICE_DOMAIN_DMA_DATA_OFFSET) return -22;
     resource_slot_t *resource = owned_resource_locked(
         pid, process_generation, handle, DEVICE_DOMAIN_RESOURCE_DMA);
     dma_pool_slot_t *pool = dma_pool_for_resource(resource);
     if (pool == NULL) return resource == NULL ? -9 : -95;
+    if (offset > pool->capacity || length > pool->capacity - offset)
+        return -22;
     const uint32_t needed = write_to_device
         ? DEVICE_DOMAIN_DMA_TO_DEVICE : DEVICE_DOMAIN_DMA_FROM_DEVICE;
     if ((pool->direction & needed) == 0U) return -13;
@@ -1706,9 +1719,6 @@ int device_domain_dma_descriptor_set(
         (request->buffer_offset &
          (DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT - 1U)) != 0U ||
         request->length == 0U || (request->length & 3U) != 0U ||
-        request->buffer_offset >= DEVICE_DOMAIN_DMA_POOL_BYTES ||
-        request->length >
-            DEVICE_DOMAIN_DMA_POOL_BYTES - request->buffer_offset ||
         (request->flags & ~DEVICE_DOMAIN_DMA_DESCRIPTOR_INTERRUPT) != 0U ||
         request->reserved != 0U) return -22;
     if (!begin_operation()) return -16;
@@ -1718,6 +1728,11 @@ int device_domain_dma_descriptor_set(
     if (pool == NULL) {
         end_operation();
         return resource == NULL ? -9 : -95;
+    }
+    if (request->buffer_offset >= pool->capacity ||
+        request->length > pool->capacity - request->buffer_offset) {
+        end_operation();
+        return -22;
     }
     device_slot_t *device = &devices[resource->device_slot];
     if ((pool->direction & DEVICE_DOMAIN_DMA_TO_DEVICE) == 0U) {
@@ -1846,8 +1861,7 @@ int device_domain_region_bind_dma(
         request->dma == 0U || request->flags != 0U ||
         request->reserved != 0U ||
         (request->buffer_offset &
-         (DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT - 1U)) != 0U ||
-        request->buffer_offset >= DEVICE_DOMAIN_DMA_POOL_BYTES) return -22;
+         (DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT - 1U)) != 0U) return -22;
     if (!begin_operation()) return -16;
     resource_slot_t *region = owned_resource_locked(
         pid, process_generation, request->region,
@@ -1877,6 +1891,10 @@ int device_domain_region_bind_dma(
     if (rule == NULL || pool == NULL) {
         end_operation();
         return rule == NULL ? -13 : -95;
+    }
+    if (request->buffer_offset >= pool->capacity) {
+        end_operation();
+        return -22;
     }
     if ((descriptor_address && request->buffer_offset != 0U) ||
         (!descriptor_address &&

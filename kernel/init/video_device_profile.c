@@ -33,7 +33,8 @@ static int register_profile(const pci_device_t *device, uint32_t backend,
         .isolation_group = DEVICE_DOMAIN_MAX_GROUPS - 2U,
         .flags = DEVICE_DOMAIN_PROFILE_MEDIATED_IO |
             (backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208
-                ? DEVICE_DOMAIN_PROFILE_MEDIATED_DMA : 0U),
+                ? DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+                    DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL : 0U),
         .vendor_id = device->vendor_id,
         .device_id = device->device_id,
         .class_code = device->class_code,

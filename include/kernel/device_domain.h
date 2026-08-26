@@ -24,6 +24,7 @@
 #define DEVICE_DOMAIN_IRQ_WINDOW_LIMIT 128U
 #define DEVICE_DOMAIN_DMA_POOL_COUNT 4U
 #define DEVICE_DOMAIN_DMA_POOL_BYTES (64U * 1024U)
+#define DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES (512U * 1024U)
 #define DEVICE_DOMAIN_DMA_TRANSFER_MAX 1024U
 #define DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES 4096U
 #define DEVICE_DOMAIN_DMA_DESCRIPTOR_STRIDE 16U
@@ -42,6 +43,8 @@ enum {
     DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC = 1U << 3U,
     /** Fixed command mediator; grants neither DMA nor raw region mappings. */
     DEVICE_DOMAIN_PROFILE_MEDIATED_IO = 1U << 4U,
+    /** Select the fixed large pool for a vetted mediated-DMA profile. */
+    DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL = 1U << 5U,
 };
 
 enum {

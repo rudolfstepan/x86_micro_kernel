@@ -25,6 +25,7 @@
 #define NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT 0x4E580000U
 #define NVIDIA_DIAGNOSTIC_DMA_STAGING 0x4E590000U
 #define NVIDIA_DIAGNOSTIC_CHANNEL_IMAGE 0x4E5A0000U
+#define NVIDIA_DIAGNOSTIC_GPU_VM_PLAN 0x4E5B0000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
@@ -210,6 +211,7 @@ static int command_contract_self_test(nvidia_driver_t *driver) {
     if (status == 0) status = reist_nvidia_gk208_submission_self_test();
     if (status == 0) status = reist_nvidia_gk208_dma_staging_self_test();
     if (status == 0) status = reist_nvidia_gk208_channel_image_self_test();
+    if (status == 0) status = reist_nvidia_gk208_vm_plan_self_test();
     if (status != 0) return status;
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
@@ -346,6 +348,39 @@ static int channel_image_dma_self_test(nvidia_driver_t *driver) {
         NVIDIA_DIAGNOSTIC_CHANNEL_IMAGE | image.channel_id);
 }
 
+static int gpu_vm_plan_dma_self_test(nvidia_driver_t *driver) {
+    static const uint32_t variants[] = {
+        REIST_NVIDIA_GK208_FB_PAGE_SHIFT_64K,
+        REIST_NVIDIA_GK208_FB_PAGE_SHIFT_128K,
+    };
+    for (uint32_t variant = 0U;
+         variant < sizeof(variants) / sizeof(variants[0]); ++variant) {
+        reist_nvidia_gk208_vm_plan_t plan;
+        int status = reist_nvidia_gk208_prepare_vm_plan(
+            &plan, variants[variant]);
+        if (status != 0) return status;
+        for (uint32_t index = 0U; index < plan.relocation_count; ++index) {
+            uint64_t unresolved_address = UINT64_MAX;
+            status = x86os_device_dma_read(driver->dma,
+                plan.relocations[index].destination_pool_offset,
+                &unresolved_address, sizeof(unresolved_address));
+            if (status != 0 || unresolved_address != 0U)
+                return status != 0 ? status : -84;
+        }
+    }
+    const uint64_t vm_limit = REIST_NVIDIA_GK208_VM_LIMIT - 1U;
+    int status = dma_stage_and_verify(driver,
+        REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET +
+            REIST_NVIDIA_GK208_RAMFC_VM_LIMIT_OFFSET,
+        &vm_limit, sizeof(vm_limit));
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GPU_VM_PLAN |
+            (REIST_NVIDIA_GK208_FB_PAGE_SHIFT_64K << 8U) |
+            REIST_NVIDIA_GK208_FB_PAGE_SHIFT_128K);
+}
+
 static int activate(nvidia_driver_t *driver) {
     x86os_display_driver_request_t response;
     int status = driver_command(
@@ -458,6 +493,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = dma_staging_self_test(driver);
     if (status != 0) return status;
     status = channel_image_dma_self_test(driver);
+    if (status != 0) return status;
+    status = gpu_vm_plan_dma_self_test(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

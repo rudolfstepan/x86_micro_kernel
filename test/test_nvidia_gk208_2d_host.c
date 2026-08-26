@@ -229,6 +229,58 @@ static void test_channel_image_is_exact_and_unrelocated(void) {
     assert(reist_nvidia_gk208_validate_channel_image(&mutated) == -84);
 }
 
+static void test_gpu_vm_plans_are_exact_and_unrelocated(void) {
+    reist_nvidia_gk208_vm_plan_t plan;
+    assert(reist_nvidia_gk208_prepare_vm_plan(
+        &plan, REIST_NVIDIA_GK208_FB_PAGE_SHIFT_64K) == 0);
+    assert(plan.gpu_page_shift == 12U);
+    assert(plan.pgd_bits == 14U && plan.pgt_bits == 14U);
+    assert(plan.pgd_bytes == 0x00020000U);
+    assert(plan.pgt_bytes == 0x00020000U);
+    assert(plan.vm_limit == REIST_NVIDIA_GK208_VM_LIMIT);
+    assert(plan.relocation_count == REIST_NVIDIA_GK208_VM_RELOCATION_COUNT);
+    assert(plan.relocations[0].destination_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET +
+            REIST_NVIDIA_GK208_RAMFC_PGD_OFFSET);
+    assert(plan.relocations[0].source_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_PGD_OFFSET);
+    assert(plan.relocations[0].shift_right == 0U);
+    assert(plan.relocations[0].fixed_bits == 3ULL);
+    assert(plan.relocations[1].destination_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_PGD_OFFSET + 8U * 8U);
+    assert(plan.relocations[1].source_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_PGT_OFFSET);
+    assert(plan.relocations[1].shift_right == 8U);
+    assert(plan.relocations[1].fixed_bits == 3ULL);
+    assert(plan.relocations[2].source_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_PUSHBUF_OFFSET);
+    assert(plan.relocations[2].fixed_bits == 0x0000000600000005ULL);
+    assert(plan.relocations[3].source_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_FENCE_OFFSET);
+    assert(plan.relocations[3].fixed_bits == 0x0000000600000001ULL);
+    assert(plan.relocations[4].source_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET);
+    assert(plan.relocations[4].fixed_bits == 0x0000000600000005ULL);
+
+    assert(reist_nvidia_gk208_prepare_vm_plan(
+        &plan, REIST_NVIDIA_GK208_FB_PAGE_SHIFT_128K) == 0);
+    assert(plan.pgd_bits == 13U && plan.pgt_bits == 15U);
+    assert(plan.pgd_bytes == 0x00010000U);
+    assert(plan.pgt_bytes == 0x00040000U);
+    assert(plan.relocations[1].destination_pool_offset ==
+        REIST_NVIDIA_GK208_DMA_PGD_OFFSET + 4U * 8U);
+    reist_nvidia_gk208_vm_plan_t mutated = plan;
+    mutated.relocations[3].fixed_bits |= 4ULL;
+    assert(reist_nvidia_gk208_validate_vm_plan(&mutated) == -84);
+    mutated = plan;
+    mutated.relocations[4].destination_pool_offset += 8U;
+    assert(reist_nvidia_gk208_validate_vm_plan(&mutated) == -84);
+    mutated = plan;
+    ++mutated.pgt_bytes;
+    assert(reist_nvidia_gk208_validate_vm_plan(&mutated) == -84);
+    assert(reist_nvidia_gk208_prepare_vm_plan(&plan, 18U) == -22);
+}
+
 int main(void) {
     test_fill_and_copy_are_bounded_and_validated();
     test_invalid_ranges_fail_closed();
@@ -237,8 +289,10 @@ int main(void) {
     test_submission_ranges_fail_closed();
     test_dma_staging_layout_is_fixed_and_nonoverlapping();
     test_channel_image_is_exact_and_unrelocated();
+    test_gpu_vm_plans_are_exact_and_unrelocated();
     assert(reist_nvidia_gk208_submission_self_test() == 0);
     assert(reist_nvidia_gk208_dma_staging_self_test() == 0);
     assert(reist_nvidia_gk208_channel_image_self_test() == 0);
+    assert(reist_nvidia_gk208_vm_plan_self_test() == 0);
     return 0;
 }

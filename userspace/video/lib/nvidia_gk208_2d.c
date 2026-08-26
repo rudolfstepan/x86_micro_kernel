@@ -637,6 +637,156 @@ int reist_nvidia_gk208_prepare_channel_image(
     return reist_nvidia_gk208_validate_channel_image(image);
 }
 
+#define NVIDIA_GK208_VM_ENTRY_BYTES 8U
+#define NVIDIA_GK208_VM_INSTANCE_TARGET_NCOH 3ULL
+#define NVIDIA_GK208_VM_PDE_TARGET_NCOH 3ULL
+#define NVIDIA_GK208_VM_PTE_VALID 1ULL
+#define NVIDIA_GK208_VM_PTE_READ_ONLY (1ULL << 2U)
+#define NVIDIA_GK208_VM_PTE_APERTURE_NCOH (3ULL << 33U)
+
+static uint32_t vm_table_bytes(uint32_t bits) {
+    return (1U << bits) * NVIDIA_GK208_VM_ENTRY_BYTES;
+}
+
+static uint32_t vm_pgd_index(uint32_t pgt_bits) {
+    return (uint32_t)(REIST_NVIDIA_GK208_PUSHBUF_GPU_ADDRESS >>
+        (REIST_NVIDIA_GK208_GPU_PAGE_SHIFT + pgt_bits));
+}
+
+static reist_nvidia_gk208_vm_relocation_t vm_relocation(
+        uint32_t destination, uint32_t source, uint32_t shift,
+        uint64_t fixed_bits) {
+    return (reist_nvidia_gk208_vm_relocation_t){
+        .destination_pool_offset = destination,
+        .source_pool_offset = source,
+        .shift_right = shift,
+        .width = REIST_NVIDIA_GK208_ADDRESS_RELOCATION_WIDTH,
+        .fixed_bits = fixed_bits,
+    };
+}
+
+static int vm_plan_geometry(uint32_t fb_page_shift, uint32_t *pgd_bits,
+                            uint32_t *pgt_bits) {
+    if (pgd_bits == NULL || pgt_bits == NULL) return -22;
+    if (fb_page_shift == REIST_NVIDIA_GK208_FB_PAGE_SHIFT_64K) {
+        *pgd_bits = 14U;
+        *pgt_bits = 14U;
+        return 0;
+    }
+    if (fb_page_shift == REIST_NVIDIA_GK208_FB_PAGE_SHIFT_128K) {
+        *pgd_bits = 13U;
+        *pgt_bits = 15U;
+        return 0;
+    }
+    return -22;
+}
+
+static int build_vm_plan(
+        reist_nvidia_gk208_vm_plan_t *plan, uint32_t fb_page_shift) {
+    if (plan == NULL) return -22;
+    uint32_t pgd_bits = 0U;
+    uint32_t pgt_bits = 0U;
+    if (vm_plan_geometry(fb_page_shift, &pgd_bits, &pgt_bits) != 0)
+        return -22;
+    const uint32_t pgd_index = vm_pgd_index(pgt_bits);
+    *plan = (reist_nvidia_gk208_vm_plan_t){
+        .fb_page_shift = fb_page_shift,
+        .gpu_page_shift = REIST_NVIDIA_GK208_GPU_PAGE_SHIFT,
+        .pgd_bits = pgd_bits,
+        .pgt_bits = pgt_bits,
+        .pgd_pool_offset = REIST_NVIDIA_GK208_DMA_PGD_OFFSET,
+        .pgd_bytes = vm_table_bytes(pgd_bits),
+        .pgt_pool_offset = REIST_NVIDIA_GK208_DMA_PGT_OFFSET,
+        .pgt_bytes = vm_table_bytes(pgt_bits),
+        .vm_limit = REIST_NVIDIA_GK208_VM_LIMIT,
+        .relocation_count = REIST_NVIDIA_GK208_VM_RELOCATION_COUNT,
+    };
+    plan->relocations[0] = vm_relocation(
+        REIST_NVIDIA_GK208_DMA_RAMFC_OFFSET +
+            REIST_NVIDIA_GK208_RAMFC_PGD_OFFSET,
+        plan->pgd_pool_offset, 0U, NVIDIA_GK208_VM_INSTANCE_TARGET_NCOH);
+    plan->relocations[1] = vm_relocation(
+        plan->pgd_pool_offset + pgd_index * NVIDIA_GK208_VM_ENTRY_BYTES,
+        plan->pgt_pool_offset, 8U, NVIDIA_GK208_VM_PDE_TARGET_NCOH);
+    const uint64_t pte_bits = NVIDIA_GK208_VM_PTE_VALID |
+        NVIDIA_GK208_VM_PTE_APERTURE_NCOH;
+    plan->relocations[2] = vm_relocation(
+        plan->pgt_pool_offset, REIST_NVIDIA_GK208_DMA_PUSHBUF_OFFSET, 8U,
+        pte_bits | NVIDIA_GK208_VM_PTE_READ_ONLY);
+    plan->relocations[3] = vm_relocation(
+        plan->pgt_pool_offset + NVIDIA_GK208_VM_ENTRY_BYTES,
+        REIST_NVIDIA_GK208_DMA_FENCE_OFFSET, 8U, pte_bits);
+    plan->relocations[4] = vm_relocation(
+        plan->pgt_pool_offset + 2U * NVIDIA_GK208_VM_ENTRY_BYTES,
+        REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET, 8U,
+        pte_bits | NVIDIA_GK208_VM_PTE_READ_ONLY);
+    return 0;
+}
+
+int reist_nvidia_gk208_prepare_vm_plan(
+        reist_nvidia_gk208_vm_plan_t *plan, uint32_t fb_page_shift) {
+    int status = build_vm_plan(plan, fb_page_shift);
+    return status != 0 ? status : reist_nvidia_gk208_validate_vm_plan(plan);
+}
+
+static int vm_relocation_equal(
+        const reist_nvidia_gk208_vm_relocation_t *left,
+        const reist_nvidia_gk208_vm_relocation_t *right) {
+    return left->destination_pool_offset == right->destination_pool_offset &&
+        left->source_pool_offset == right->source_pool_offset &&
+        left->shift_right == right->shift_right &&
+        left->width == right->width && left->fixed_bits == right->fixed_bits;
+}
+
+int reist_nvidia_gk208_validate_vm_plan(
+        const reist_nvidia_gk208_vm_plan_t *plan) {
+    if (plan == NULL) return -22;
+    uint32_t pgd_bits = 0U;
+    uint32_t pgt_bits = 0U;
+    if (vm_plan_geometry(plan->fb_page_shift, &pgd_bits, &pgt_bits) != 0 ||
+        plan->gpu_page_shift != REIST_NVIDIA_GK208_GPU_PAGE_SHIFT ||
+        plan->pgd_bits != pgd_bits || plan->pgt_bits != pgt_bits ||
+        plan->pgd_bits + plan->pgt_bits + plan->gpu_page_shift !=
+            REIST_NVIDIA_GK208_VM_ADDRESS_BITS ||
+        plan->pgd_pool_offset != REIST_NVIDIA_GK208_DMA_PGD_OFFSET ||
+        plan->pgd_bytes != vm_table_bytes(pgd_bits) ||
+        plan->pgt_pool_offset != REIST_NVIDIA_GK208_DMA_PGT_OFFSET ||
+        plan->pgt_bytes != vm_table_bytes(pgt_bits) ||
+        plan->pgd_bytes > REIST_NVIDIA_GK208_DMA_PGD_RESERVATION_BYTES ||
+        plan->pgt_bytes > REIST_NVIDIA_GK208_DMA_PGT_RESERVATION_BYTES ||
+        plan->pgd_pool_offset +
+                REIST_NVIDIA_GK208_DMA_PGD_RESERVATION_BYTES !=
+            plan->pgt_pool_offset ||
+        plan->pgt_pool_offset +
+                REIST_NVIDIA_GK208_DMA_PGT_RESERVATION_BYTES >
+            REIST_NVIDIA_GK208_DMA_POOL_BYTES ||
+        plan->vm_limit != REIST_NVIDIA_GK208_VM_LIMIT ||
+        plan->relocation_count != REIST_NVIDIA_GK208_VM_RELOCATION_COUNT ||
+        plan->reserved != 0U)
+        return -84;
+
+    reist_nvidia_gk208_vm_plan_t expected;
+    if (build_vm_plan(&expected, plan->fb_page_shift) != 0)
+        return -84;
+    for (uint32_t index = 0U;
+         index < REIST_NVIDIA_GK208_VM_RELOCATION_COUNT; ++index) {
+        const reist_nvidia_gk208_vm_relocation_t *relocation =
+            &plan->relocations[index];
+        if (!vm_relocation_equal(relocation, &expected.relocations[index]) ||
+            relocation->width != NVIDIA_GK208_VM_ENTRY_BYTES ||
+            (relocation->destination_pool_offset &
+                (NVIDIA_GK208_VM_ENTRY_BYTES - 1U)) != 0U ||
+            (relocation->source_pool_offset &
+                ((1U << REIST_NVIDIA_GK208_GPU_PAGE_SHIFT) - 1U)) != 0U ||
+            relocation->destination_pool_offset >
+                REIST_NVIDIA_GK208_DMA_POOL_BYTES - relocation->width ||
+            relocation->source_pool_offset >=
+                REIST_NVIDIA_GK208_DMA_POOL_BYTES)
+            return -84;
+    }
+    return 0;
+}
+
 int reist_nvidia_gk208_command_self_test(void) {
     reist_nvidia_gk208_pushbuf_t pushbuf;
     const reist_nvidia_gk208_surface_t surface = {
@@ -720,4 +870,21 @@ int reist_nvidia_gk208_channel_image_self_test(void) {
     image.userd_relocation.source_pool_offset += 0x1000U;
     return reist_nvidia_gk208_validate_channel_image(&image) == -84
         ? 0 : -84;
+}
+
+int reist_nvidia_gk208_vm_plan_self_test(void) {
+    reist_nvidia_gk208_vm_plan_t plan;
+    if (reist_nvidia_gk208_prepare_vm_plan(
+            &plan, REIST_NVIDIA_GK208_FB_PAGE_SHIFT_64K) != 0 ||
+        reist_nvidia_gk208_validate_vm_plan(&plan) != 0)
+        return -84;
+    plan.relocations[3].fixed_bits |= NVIDIA_GK208_VM_PTE_READ_ONLY;
+    if (reist_nvidia_gk208_validate_vm_plan(&plan) != -84)
+        return -84;
+    if (reist_nvidia_gk208_prepare_vm_plan(
+            &plan, REIST_NVIDIA_GK208_FB_PAGE_SHIFT_128K) != 0 ||
+        reist_nvidia_gk208_validate_vm_plan(&plan) != 0)
+        return -84;
+    ++plan.pgt_bytes;
+    return reist_nvidia_gk208_validate_vm_plan(&plan) == -84 ? 0 : -84;
 }

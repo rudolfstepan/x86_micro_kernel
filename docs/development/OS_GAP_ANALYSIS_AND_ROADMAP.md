@@ -1385,7 +1385,8 @@ Supervisor-Konfiguration über eine zweite Fehlerdomäne.
    prüft die exakte Framebilanz und verwendet den Stackslot anschließend
    erneut. Das QEMU-Image erreicht danach weiterhin den vollständigen
   Ring-3-`TEST_OK`-Marker.
-- S0.4c-2b2c registriert die vier kernel-eigenen 64-KiB-mediated-DMA-Pools,
+- S0.4c-2b2c registriert die vier kernel-eigenen mediated-DMA-Slots mit
+  64-KiB-Standardkapazität,
   führt lockgeschützte aktive/maximale Belegung und saturierende echte
   Kapazitätsablehnungen und veröffentlicht die aggregierte 32-Byte-v1-
   Diagnose ausschließlich an Treiberdomänen. Der Hosttest erzwingt `4/4`,
@@ -2331,7 +2332,16 @@ ungesetzt und wird lediglich durch genau eine ungelöste kernelverwaltete
 64-Bit-Relokation beschrieben. Ring 3 liest die Bilder nach begrenztem
 Chunk-Staging bytegenau zurück, ohne Adresse, MMIO-Schreibrecht oder
 Hardwarewirkung zu erhalten.
-Das anschließende Hardware-Engine-Paket bleibt für GPU-VM, GK208-GR-
+Das abgeschlossene `R2.2l` beschreibt nun auch beide vollständigen
+GPU-VM-Imagevarianten. Das exakte GK208-Profil erhält dafür 512 KiB festen
+kernelverwalteten Pool, ohne die 64-KiB-Verträge anderer Treiber zu ändern.
+Feste PGD-/PT-Reservierungen tragen je nach 64-KiB- oder 128-KiB-FB-Seite die
+upstream 14+14- oder 13+15-Bit-Geometrie für 4-KiB-GPU-Seiten. Genau fünf noch
+ungelöste Relokationen verbinden RAMFC, PGD, PT und die drei NCOH-Datenseiten;
+Pushbuffer und GPFIFO sind read-only, das Fence ist schreibbar. Alle
+Adressziele bleiben null, nur `2^40-1` wird als gemeinsames VM-Limit gestaged.
+Das anschließende Hardware-Engine-Paket bleibt für die kernelverwaltete
+Relokation und Aktivierung, GK208-GR-
 Initialisierung einschließlich FECS/GPCCS, einen festen Kepler-GPFIFO-Kanal
 und einen echten deadlinebegrenzten Fence verantwortlich.
 

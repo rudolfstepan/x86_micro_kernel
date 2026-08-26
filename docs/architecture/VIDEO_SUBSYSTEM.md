@@ -166,8 +166,22 @@ in bounded chunks. GPU page directories, GR context pointers, channel binding,
 runlist commit, USERD PUT, register writes and hardware execution remain absent,
 so capabilities are still zero.
 
+`R2.2l` adds the bounded GPU-VM image plan without making it executable. The
+exact GK208 profile selects a fixed 512-KiB mediated-DMA pool; all other
+profiles keep the 64-KiB capacity. The original command and channel windows
+remain below 64 KiB, followed by a 128-KiB page-directory reservation and a
+256-KiB page-table reservation. Two independently validated plans implement
+Nouveau's GK104/GK208 4-KiB GPU-page geometries: 14+14 index bits for 64-KiB
+FB pages and 13+15 bits for 128-KiB FB pages, in both cases covering a 40-bit
+GPU VA. Exactly five symbolic relocations name the instance PGD, one PGD/PT
+link and NCOH mappings for the read-only pushbuffer, writable fence and
+read-only GPFIFO pages. Their destination words stay zero in Ring 3; only the
+common `2^40-1` VM limit is staged into the instance image. No physical
+address is published or resolved, no page directory is activated and no
+hardware register is written.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
-contracts, driver lifecycle, both image layouts and non-regression of the
+contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and
 `NVIDIA_GK208_READY` markers require one final manual boot on the ASUS target.
 

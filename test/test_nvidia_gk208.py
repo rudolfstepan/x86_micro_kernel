@@ -55,6 +55,11 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("REIST_NVIDIA_GK208_CHANNEL_LIMIT 1024U", header)
         self.assertIn("reist_nvidia_gk208_prepare_channel_image", source)
         self.assertIn("reist_nvidia_gk208_validate_channel_image", source)
+        self.assertIn("REIST_NVIDIA_GK208_DMA_PGD_OFFSET", header)
+        self.assertIn("REIST_NVIDIA_GK208_DMA_PGT_OFFSET", header)
+        self.assertIn("REIST_NVIDIA_GK208_VM_LIMIT", header)
+        self.assertIn("reist_nvidia_gk208_prepare_vm_plan", source)
+        self.assertIn("reist_nvidia_gk208_validate_vm_plan", source)
         self.assertIn("NVIDIA_GK208_GPFIFO_LIMIT2 9U", source)
         self.assertIn("case 0x10U: return 0x0000FACEU", source)
         self.assertIn("case 0xF8U: return 0x10003080U", source)
@@ -72,6 +77,7 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn(
             "backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208", source)
         self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_DMA", source)
+        self.assertIn("DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL", source)
         self.assertIn(
             "NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + "
             "sizeof(uint32_t))", source)
@@ -129,6 +135,7 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("x86os_device_dma_write", driver)
         self.assertIn("x86os_device_dma_read", driver)
         self.assertIn("channel_image_dma_self_test", driver)
+        self.assertIn("gpu_vm_plan_dma_self_test", driver)
         self.assertIn("X86OS_DEVICE_DMA_TRANSFER_MAX", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("x86os_device_activate", driver)
@@ -137,6 +144,7 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("reist_nvidia_gk208_submission_self_test", driver)
         self.assertIn("reist_nvidia_gk208_dma_staging_self_test", driver)
         self.assertIn("reist_nvidia_gk208_channel_image_self_test", driver)
+        self.assertIn("reist_nvidia_gk208_vm_plan_self_test", driver)
 
     def test_driver_is_supervised_and_deadlines_are_bounded(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(

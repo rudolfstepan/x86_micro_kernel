@@ -1055,6 +1055,74 @@ static void test_dma_pool_pressure_is_saturating_and_reclaimed(void) {
     assert(stats.capacity_rejections == 1U);
 }
 
+static void test_large_dma_pool_is_explicit_and_profile_scoped(void) {
+    reset_counters();
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+
+    device_domain_profile_t invalid = profile(
+        1U, DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL);
+    uint32_t unused = 0U;
+    assert(device_domain_register(&invalid, 0x00012000U, &unused) == -22);
+
+    device_domain_profile_t normal = profile(
+        2U, DEVICE_DOMAIN_PROFILE_MEDIATED_DMA);
+    device_domain_profile_t large = profile(
+        3U, DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+            DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL);
+    large.device_id = 0x2670U;
+    uint32_t normal_device = 0U;
+    uint32_t large_device = 0U;
+    assert(device_domain_register(
+        &normal, 0x00012001U, &normal_device) == 0);
+    assert(device_domain_register(
+        &large, 0x00012002U, &large_device) == 0);
+    device_domain_handle_t normal_handle = 0U;
+    device_domain_handle_t large_handle = 0U;
+    assert(device_domain_claim(30, 20U, normal_device,
+        DEVICE_DOMAIN_MODE_MEDIATED, &normal_handle) == 0);
+    assert(device_domain_claim(31, 21U, large_device,
+        DEVICE_DOMAIN_MODE_MEDIATED, &large_handle) == 0);
+    device_domain_resource_handle_t normal_dma = 0U;
+    device_domain_resource_handle_t large_dma = 0U;
+    assert(bind_dma_resource(
+        30, 20U, normal_handle, 0U, &normal_dma) == 0);
+    assert(bind_dma_resource(
+        31, 21U, large_handle, 0U, &large_dma) == 0);
+
+    device_domain_dma_info_t info;
+    assert(device_domain_dma_info(30, 20U, normal_dma, &info) == 0);
+    assert(info.capacity == DEVICE_DOMAIN_DMA_POOL_BYTES);
+    assert(device_domain_dma_info(31, 21U, large_dma, &info) == 0);
+    assert(info.capacity == DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES);
+
+    const uint32_t offset = DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES - 4U;
+    uint32_t value = 0xA55A5AA5U;
+    uint32_t readback = 0U;
+    assert(device_domain_dma_write(
+        30, 20U, normal_dma, offset, &value, sizeof(value)) == -22);
+    assert(device_domain_dma_write(
+        31, 21U, large_dma, offset, &value, sizeof(value)) == 0);
+    assert(device_domain_dma_read(
+        31, 21U, large_dma, offset, &readback, sizeof(readback)) == 0);
+    assert(readback == value);
+
+    device_domain_dma_descriptor_t descriptor = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(descriptor),
+        .dma = large_dma,
+        .descriptor_index = 0U,
+        .buffer_offset = DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES - 128U,
+        .length = 128U,
+    };
+    assert(device_domain_dma_descriptor_set(31, 21U, &descriptor) == 0);
+    descriptor.dma = normal_dma;
+    assert(device_domain_dma_descriptor_set(30, 20U, &descriptor) == -22);
+
+    assert(device_domain_release(30, 20U, normal_handle, 100U) == 0);
+    assert(device_domain_release(31, 21U, large_handle, 100U) == 0);
+}
+
 int main(void) {
     test_irq_storm_and_clock_regression_are_fenced();
     test_legacy_pic_fallback_masks_shared_irq();
@@ -1067,5 +1135,6 @@ int main(void) {
     test_registration_attempts_both_initial_fences();
     test_owner_recovery_is_atomic_and_deadline_bounded();
     test_dma_pool_pressure_is_saturating_and_reclaimed();
+    test_large_dma_pool_is_explicit_and_profile_scoped();
     return 0;
 }
