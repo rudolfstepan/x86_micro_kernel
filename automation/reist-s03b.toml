@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2o-nvidia-gk208-gr-firmware-contract"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,54 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2o-nvidia-gk208-gr-firmware-contract"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Freeze and validate the GK208 GR firmware contract"
+scope = "Vendor the exact MIT-licensed Nouveau GK208 nofw FECS and GPCCS data/code images from pinned Linux commit 45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229 into immutable local storage. Publish a fixed-size manifest and bounded read-only word accessor, validate exact image lengths and IEEE CRC32 values during the supervised Ring-3 NVIDIA software self-test, and reject every invalid component, section or index. This package performs no firmware upload, register write, DMA copy, bus-master enable, channel bind, runlist commit, USERD kick, IRQ bind, hardware submission or acceleration capability publication. The following hardware package must add topology discovery, upload and start sequencing with rollback and deadline-bounded readiness checks before any GR channel can execute."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/video/lib/nvidia_gk208_firmware_data.h",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the vendored FECS and GPCCS arrays are immutable and identify the exact pinned upstream commit and MIT license",
+  "the manifest records exact fixed word counts and IEEE CRC32 values for all four little-endian images",
+  "validation and read access are bounded use no heap VFS runtime download or mutable firmware pointer and reject every invalid selector or index",
+  "the supervised driver completes the software firmware self-test before reporting ready",
+  "no firmware upload register write DMA copy bus mastering IRQ channel runlist USERD hardware submission or capability publication occurs",
+  "VMware acceleration and the existing sealed GK208 VM state remain unchanged"
+]
+targeted_tests = [
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "an image differs in word count or CRC32 from the pinned upstream source",
+  "the implementation exposes a mutable firmware pointer or performs runtime filesystem or network loading",
+  "the package attempts firmware upload or any new GPU hardware side effect",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: freeze GK208 GR firmware contract"
+evidence = []
 
 [[packages]]
 id = "R2.2n-nvidia-gk208-vm-page-mode"
