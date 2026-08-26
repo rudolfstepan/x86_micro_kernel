@@ -212,6 +212,19 @@ noch MMIO und gibt keine Adresse zurück; sichtbar sind nur Größen, Topologie-
 CRC und Readiness. Fence oder Generationswechsel verwerfen den opaken Plan erst
 nach dem vorhandenen GR-Reset.
 
+Der anschließende hardwareinaktive `R2.2v`-Vertrag ergänzt die vollständigen,
+gepinnten Golden-Context-Eingaben: 245 ICMD-Tupel, 311 klassengebundene
+Methodentupel, feste CRC32-Werte, vier opake VRAM-zu-GPU-VA-Spannen und eine
+maximal 96 Einträge große Patchliste. Für die maximal 32 GPCs werden tatsächlich
+höchstens 80 Patches erzeugt. Alle Abbildungen liegen zusammenhängend im
+vorhandenen 128-MiB-Small-Page-Table-Fenster; Ring 3 benennt nur Puffertyp,
+virtuelle Adresse, PTE-Index und Seitenzahl, niemals eine physische Adresse
+oder einen PTE-Wert. Zwölf geordnete Phasen machen FE-Power/Reset, SCC,
+Kontextpacks, Idle-Grenzen, globale Patches, Floorsweep, ICMD, Methoden,
+Post-Context, FECS-Bind, Golden-Save und Retain explizit. Dieser Compiler hat
+keinen Hardwarezugriff. Erst ein nachfolgendes Kernelkommando darf den Plan
+unabhängig rekonstruieren und unter einer gemeinsamen Deadline ausführen.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden

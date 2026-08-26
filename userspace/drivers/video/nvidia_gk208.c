@@ -36,6 +36,7 @@
 #define NVIDIA_DIAGNOSTIC_GR_PREREQUISITES 0x4E630000U
 #define NVIDIA_DIAGNOSTIC_GR_EXECUTED 0x4E640000U
 #define NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY 0x4E650000U
+#define NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN 0x4E660000U
 #define NVIDIA_GR_PREREQUISITE_POLICY_ID 1U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
@@ -280,6 +281,8 @@ static int gr_plan_contract_self_test(nvidia_driver_t *driver) {
     if (status == 0) status = reist_nvidia_gk208_gr_execution_self_test();
     if (status == 0)
         status = reist_nvidia_gk208_gr_context_memory_self_test();
+    if (status == 0)
+        status = reist_nvidia_gk208_gr_golden_plan_self_test();
     if (status != 0) return status;
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
@@ -609,6 +612,15 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
     reist_nvidia_gk208_gr_context_memory_plan_t expected;
     status = reist_nvidia_gk208_gr_compile_context_memory_plan(
         &expected, &driver->gr_topology, result.context_size);
+    if (status != 0) return status;
+    reist_nvidia_gk208_gr_golden_plan_t golden;
+    status = reist_nvidia_gk208_gr_compile_golden_plan(
+        &golden, &driver->gr_topology, result.context_size);
+    if (status != 0) return status;
+    status = x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN |
+            (golden.patch_count & 0xFFFFU));
     if (status != 0) return status;
     x86os_device_gr_context_memory_result_t reserved;
     status = x86os_device_gr_context_memory(

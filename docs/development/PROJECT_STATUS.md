@@ -170,6 +170,18 @@ erneut und reserviert nicht überlappende Bereiche nur innerhalb des bereits
 geclippten opaken VRAM-Fensters. Keine Adresse wird veröffentlicht und weder
 VRAM noch MMIO werden geschrieben. Golden-Save, Channel-Bind, Runlist, USERD,
 Submission, Fence und Capabilityfreigabe bleiben offen.
+`R2.2v-nvidia-gk208-golden-context-plan` schließt jetzt den letzten
+hardwareinaktiven Golden-Context-Vertrag. Der gepinnte Generator übernimmt
+zusätzlich 245 ICMD- und 311 klassengebundene MTHD-Tupel mit festen CRC32-
+Werten. Ein topologiegebundener Compiler ordnet Pagepool, Bundle, Attribut- und
+temporären Kontextpuffer als vier 4-KiB-GPU-VA-Spannen innerhalb derselben
+128-MiB-Small-Page-Table an und erzeugt die exakten GK104/GF100/GF117-Patches
+in fester Kapazität; beim maximalen 32-GPC-Profil sind es 80 von 96 Einträgen.
+Zwölf Phasen decken den vollständigen Ablauf bis FECS-Bind, Golden-Save und
+Retain ab. Der NVIDIA-Dienst prüft diesen Plan vor Kommando 24, verändert aber
+weder DMA-Pool noch PTE, VRAM, MMIO oder FECS. Offen ist damit die unabhängige,
+deadlinebegrenzte Kernel-Ausführung mit GR-Reset-Rollback; Channel und
+Capabilityfreigabe bleiben danach weiterhin getrennte Gates.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

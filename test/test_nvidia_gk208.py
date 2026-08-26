@@ -288,6 +288,56 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("pci_enable_device", probe)
         self.assertNotIn("pci_set_bus_master", probe)
 
+    def test_golden_context_plan_is_pinned_opaque_and_hardware_inactive(self):
+        header = (ROOT /
+            "userspace/video/include/reist/nvidia_gk208_2d.h").read_text(
+                encoding="utf-8")
+        library = (ROOT /
+            "userspace/video/lib/nvidia_gk208_2d.c").read_text(
+                encoding="utf-8")
+        tables = (ROOT /
+            "userspace/video/lib/nvidia_gk208_gr_tables.h").read_text(
+                encoding="utf-8")
+        generator = (ROOT /
+            "scripts/generate_nvidia_gk208_gr_tables.py").read_text(
+                encoding="utf-8")
+        driver = (ROOT /
+            "userspace/drivers/video/nvidia_gk208.c").read_text(
+                encoding="utf-8")
+        for contract in (
+                "REIST_NVIDIA_GK208_GR_GOLDEN_GPU_BASE",
+                "REIST_NVIDIA_GK208_GR_SMALL_PAGE_TABLE_BYTES 0x08000000U",
+                "REIST_NVIDIA_GK208_GR_GOLDEN_MAP_COUNT 4U",
+                "REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_CAPACITY 96U",
+                "REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_COUNT 12U",
+                "REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_HARDWARE_INACTIVE",
+                "REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_OPAQUE_VRAM"):
+            self.assertIn(contract, header)
+        self.assertIn("gk208_grctx_pack_icmd", generator)
+        self.assertIn("gk110_grctx_pack_mthd", generator)
+        self.assertIn("TYPED_REF_RE", generator)
+        self.assertIn("REIST_GK208_GR_ICMD_TUPLE_COUNT 245U", tables)
+        self.assertIn("REIST_GK208_GR_ICMD_CRC32 0x317E156CU", tables)
+        self.assertIn("REIST_GK208_GR_MTHD_TUPLE_COUNT 311U", tables)
+        self.assertIn("REIST_GK208_GR_MTHD_CRC32 0x394772C1U", tables)
+        self.assertIn("reist_nvidia_gk208_gr_compile_golden_plan", library)
+        self.assertIn("reist_nvidia_gk208_gr_validate_golden_plan", library)
+        self.assertIn("gr_method_table_crc32", library)
+        self.assertIn("gr_icmd_tuple_valid", library)
+        self.assertIn("0x0040800CU", library)
+        self.assertIn("0x004064C8U", library)
+        self.assertIn("0x00418810U", library)
+        self.assertIn("0x0017E91CU", library)
+        self.assertIn("NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN", driver)
+        self.assertLess(
+            driver.index("reist_nvidia_gk208_gr_compile_golden_plan"),
+            driver.index("x86os_device_gr_context_memory"))
+        golden = library[library.index(
+            "static int gr_golden_plan_build") :]
+        golden = golden[:golden.index("static int gr_execution_emit")]
+        self.assertNotIn("x86os_", golden)
+        self.assertNotIn("volatile", golden)
+
     def test_engine_preflight_is_ring3_read_only_and_bounded(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(
             encoding="utf-8")

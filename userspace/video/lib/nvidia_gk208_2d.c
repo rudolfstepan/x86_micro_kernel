@@ -92,6 +92,14 @@ _Static_assert(sizeof(reist_nvidia_gk208_gr_execution_image_t) ==
                "GK208 GR execution image capacity must remain fixed");
 _Static_assert(sizeof(reist_nvidia_gk208_gr_context_memory_plan_t) == 64U,
                "GK208 context-memory plan ABI must remain fixed");
+_Static_assert(sizeof(reist_nvidia_gk208_gr_golden_map_t) == 32U,
+               "GK208 golden-context map ABI must remain fixed");
+_Static_assert(sizeof(reist_nvidia_gk208_gr_golden_patch_t) == 16U,
+               "GK208 golden-context patch ABI must remain fixed");
+_Static_assert(sizeof(reist_nvidia_gk208_gr_method_tuple_t) == 20U,
+               "GK208 golden-context method ABI must remain fixed");
+_Static_assert(sizeof(reist_nvidia_gk208_gr_golden_plan_t) == 1776U,
+               "GK208 golden-context plan ABI must remain fixed");
 _Static_assert(REIST_NVIDIA_GK208_DMA_GR_EXECUTION_OFFSET +
                    REIST_NVIDIA_GK208_GR_EXECUTION_MAX_BYTES <=
                    REIST_NVIDIA_GK208_DMA_POOL_BYTES,
@@ -102,6 +110,9 @@ _Static_assert(REIST_GK208_GR_MMIO_PACK_COUNT ==
 _Static_assert(REIST_GK208_GR_CONTEXT_PACK_COUNT ==
                    REIST_NVIDIA_GK208_GR_CONTEXT_PACK_COUNT,
                "GK208 context pack count changed");
+_Static_assert(REIST_GK208_GR_ICMD_TUPLE_COUNT != 0U &&
+                   REIST_GK208_GR_MTHD_TUPLE_COUNT != 0U,
+               "GK208 golden-context indirect tables are empty");
 _Static_assert(sizeof(gk208_grhub_data) / sizeof(gk208_grhub_data[0]) ==
                    REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS,
                "GK208 FECS data image size changed");
@@ -1105,6 +1116,15 @@ static int gr_tuple_valid(const reist_nvidia_gk208_gr_tuple_t *tuple) {
     return last <= 0x007FFFFCU;
 }
 
+static int gr_icmd_tuple_valid(
+        const reist_nvidia_gk208_gr_tuple_t *tuple) {
+    if (tuple == NULL || tuple->count == 0U || tuple->count > 255U ||
+        tuple->pitch != 1U)
+        return 0;
+    const uint64_t last = (uint64_t)tuple->address + tuple->count - 1U;
+    return last <= 0x001FFFFFULL;
+}
+
 int reist_nvidia_gk208_gr_plan_manifest(
     reist_nvidia_gk208_gr_plan_manifest_t *manifest) {
     if (manifest == NULL) return -22;
@@ -1506,6 +1526,257 @@ int reist_nvidia_gk208_gr_validate_context_memory_plan(
     if (plan == NULL || topology == NULL) return -22;
     reist_nvidia_gk208_gr_context_memory_plan_t expected;
     if (gr_context_memory_build(&expected, topology, context_size) != 0)
+        return -84;
+    const uint32_t *actual_words = (const uint32_t *)plan;
+    const uint32_t *expected_words = (const uint32_t *)&expected;
+    for (uint32_t index = 0U; index < sizeof(expected) / sizeof(uint32_t);
+         ++index)
+        if (actual_words[index] != expected_words[index]) return -84;
+    return 0;
+}
+
+static uint32_t gr_method_table_crc32(void) {
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_MTHD_TUPLE_COUNT;
+         ++index) {
+        const reist_nvidia_gk208_gr_method_tuple_t *method =
+            &reist_gk208_gr_mthd[index];
+        const uint32_t fields[5] = {
+            method->tuple.address, method->tuple.count,
+            method->tuple.pitch, method->tuple.value, method->class_id,
+        };
+        for (uint32_t field = 0U; field < 5U; ++field) {
+            for (uint32_t shift = 0U; shift < 32U; shift += 8U) {
+                crc ^= (fields[field] >> shift) & 0xFFU;
+                for (uint32_t bit = 0U; bit < 8U; ++bit) {
+                    const uint32_t mask = 0U - (crc & 1U);
+                    crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+                }
+            }
+        }
+    }
+    return ~crc;
+}
+
+static int gr_golden_emit_patch(
+        reist_nvidia_gk208_gr_golden_plan_t *plan, uint32_t opcode,
+        uint32_t address, uint32_t value) {
+    if (plan == NULL ||
+        (opcode != REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32 &&
+         opcode != REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_COPY32) ||
+        (address & 3U) != 0U || address > 0x007FFFFCU ||
+        plan->patch_count >= REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_CAPACITY)
+        return -84;
+    if (opcode == REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_COPY32 &&
+        ((value & 3U) != 0U || value > 0x007FFFFCU))
+        return -84;
+    plan->patches[plan->patch_count++] =
+        (reist_nvidia_gk208_gr_golden_patch_t){
+            .opcode = opcode,
+            .address = address,
+            .value = value,
+        };
+    return 0;
+}
+
+static int gr_golden_add_map(
+        reist_nvidia_gk208_gr_golden_plan_t *plan, uint32_t index,
+        uint32_t buffer_id, uint32_t bytes, uint64_t *cursor) {
+    const uint64_t page = 1ULL << REIST_NVIDIA_GK208_GPU_PAGE_SHIFT;
+    const uint64_t table_end =
+        REIST_NVIDIA_GK208_GR_SMALL_PAGE_TABLE_BASE +
+        REIST_NVIDIA_GK208_GR_SMALL_PAGE_TABLE_BYTES;
+    if (plan == NULL || cursor == NULL ||
+        index >= REIST_NVIDIA_GK208_GR_GOLDEN_MAP_COUNT || bytes == 0U ||
+        (*cursor & (page - 1ULL)) != 0ULL)
+        return -84;
+    const uint64_t mapped = ((uint64_t)bytes + page - 1ULL) & ~(page - 1ULL);
+    if (mapped == 0ULL || *cursor <
+            REIST_NVIDIA_GK208_GR_SMALL_PAGE_TABLE_BASE ||
+        *cursor > table_end || mapped > table_end - *cursor)
+        return -84;
+    const uint64_t pte = (*cursor -
+        REIST_NVIDIA_GK208_GR_SMALL_PAGE_TABLE_BASE) >>
+        REIST_NVIDIA_GK208_GPU_PAGE_SHIFT;
+    if (pte > UINT32_MAX || (mapped >>
+            REIST_NVIDIA_GK208_GPU_PAGE_SHIFT) > UINT32_MAX)
+        return -84;
+    plan->maps[index] = (reist_nvidia_gk208_gr_golden_map_t){
+        .gpu_address = *cursor,
+        .buffer_id = buffer_id,
+        .bytes = (uint32_t)mapped,
+        .pte_first = (uint32_t)pte,
+        .pte_count = (uint32_t)(mapped >>
+            REIST_NVIDIA_GK208_GPU_PAGE_SHIFT),
+        .flags = REIST_NVIDIA_GK208_GR_GOLDEN_MAP_VRAM |
+            REIST_NVIDIA_GK208_GR_GOLDEN_MAP_READ |
+            REIST_NVIDIA_GK208_GR_GOLDEN_MAP_WRITE,
+    };
+    *cursor += mapped;
+    return 0;
+}
+
+static int gr_golden_plan_build(
+        reist_nvidia_gk208_gr_golden_plan_t *plan,
+        const reist_nvidia_gk208_gr_topology_t *topology,
+        uint32_t context_size) {
+    if (plan == NULL || topology == NULL ||
+        reist_nvidia_gk208_gr_validate_topology(topology) != 0)
+        return -22;
+    reist_nvidia_gk208_gr_context_memory_plan_t memory;
+    if (gr_context_memory_build(&memory, topology, context_size) != 0)
+        return -84;
+    for (uint32_t index = 0U; index < sizeof(*plan) / sizeof(uint32_t);
+         ++index)
+        ((uint32_t *)plan)[index] = 0U;
+    plan->version = REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_VERSION;
+    plan->struct_size = sizeof(*plan);
+    plan->topology_crc32 = gr_execution_topology_crc32(topology);
+    plan->context_size = context_size;
+    plan->context_tuple_count = REIST_GK208_GR_CONTEXT_TUPLE_COUNT;
+    plan->context_crc32 = REIST_GK208_GR_CONTEXT_CRC32;
+    plan->icmd_tuple_count = REIST_GK208_GR_ICMD_TUPLE_COUNT;
+    plan->icmd_crc32 = REIST_GK208_GR_ICMD_CRC32;
+    plan->mthd_tuple_count = REIST_GK208_GR_MTHD_TUPLE_COUNT;
+    plan->mthd_crc32 = REIST_GK208_GR_MTHD_CRC32;
+    plan->map_count = REIST_NVIDIA_GK208_GR_GOLDEN_MAP_COUNT;
+    plan->phase_count = REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_COUNT;
+    plan->flags = REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_HARDWARE_INACTIVE |
+        REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_OPAQUE_VRAM |
+        REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_COMPLETE;
+    for (uint32_t phase = 0U;
+         phase < REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_COUNT; ++phase)
+        plan->phases[phase] = phase + 1U;
+
+    uint64_t cursor = REIST_NVIDIA_GK208_GR_GOLDEN_GPU_BASE;
+    if (gr_golden_add_map(plan, 0U,
+            REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_PAGEPOOL,
+            memory.pagepool_bytes, &cursor) != 0 ||
+        gr_golden_add_map(plan, 1U,
+            REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_BUNDLE,
+            memory.bundle_bytes, &cursor) != 0 ||
+        gr_golden_add_map(plan, 2U,
+            REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_ATTRIB,
+            memory.attrib_bytes, &cursor) != 0 ||
+        gr_golden_add_map(plan, 3U,
+            REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_CONTEXT,
+            memory.golden_bytes, &cursor) != 0)
+        return -84;
+
+    const uint32_t pagepool = (uint32_t)plan->maps[0].gpu_address;
+    const uint32_t bundle = (uint32_t)plan->maps[1].gpu_address;
+    const uint32_t attrib = (uint32_t)plan->maps[2].gpu_address;
+    if (gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x0040800CU, pagepool >> 8U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00408010U, 0x80000000U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00419004U, pagepool >> 8U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00419008U, 0U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x004064CCU, 0x80000000U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00408004U, bundle >> 8U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00408008U, 0x80000000U |
+                (REIST_NVIDIA_GK208_GR_BUNDLE_BYTES >> 8U)) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00418808U, bundle >> 8U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x0041880CU, 0x80000000U |
+                (REIST_NVIDIA_GK208_GR_BUNDLE_BYTES >> 8U)) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x004064C8U, (0xC2U << 16U) | 0x200U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00418810U, 0x80000000U | (attrib >> 12U)) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00419848U, 0x10000000U | (attrib >> 12U)) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x00405830U, (0x218U << 16U) | 0x648U) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+            0x004064C4U, ((0x648U / 4U) << 16U) | 0xFFFFU) != 0)
+        return -84;
+
+    uint32_t beta_offset = 0U;
+    uint32_t alpha_offset = REIST_NVIDIA_GK208_GR_ATTRIB_NR_MAX *
+        topology->tpc_total;
+    for (uint32_t gpc = 0U; gpc < topology->gpc_count; ++gpc) {
+        const uint32_t tpcs = topology->tpc_count[gpc];
+        const uint32_t ppc = 0x00503000U +
+            gpc * REIST_NVIDIA_GK208_GPC_UNIT_STRIDE;
+        if (gr_golden_emit_patch(plan,
+                REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+                ppc + 0xC0U,
+                (1U << 28U) | ((0x218U * tpcs) << 16U) |
+                    beta_offset) != 0)
+            return -84;
+        beta_offset += REIST_NVIDIA_GK208_GR_ATTRIB_NR_MAX * tpcs;
+        if (gr_golden_emit_patch(plan,
+                REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32,
+                ppc + 0xE4U,
+                ((0x648U * tpcs) << 16U) | alpha_offset) != 0)
+            return -84;
+        alpha_offset += REIST_NVIDIA_GK208_GR_ALPHA_NR_MAX * tpcs;
+    }
+    if (gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_COPY32,
+            0x0017E91CU, 0x0017E91CU) != 0 ||
+        gr_golden_emit_patch(plan,
+            REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_COPY32,
+            0x0017E920U, 0x0017E920U) != 0)
+        return -84;
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_compile_golden_plan(
+        reist_nvidia_gk208_gr_golden_plan_t *plan,
+        const reist_nvidia_gk208_gr_topology_t *topology,
+        uint32_t context_size) {
+    int status = gr_golden_plan_build(plan, topology, context_size);
+    return status != 0 ? status :
+        reist_nvidia_gk208_gr_validate_golden_plan(
+            plan, topology, context_size);
+}
+
+int reist_nvidia_gk208_gr_validate_golden_plan(
+        const reist_nvidia_gk208_gr_golden_plan_t *plan,
+        const reist_nvidia_gk208_gr_topology_t *topology,
+        uint32_t context_size) {
+    if (plan == NULL || topology == NULL ||
+        gr_table_crc32(reist_gk208_gr_context,
+            REIST_GK208_GR_CONTEXT_TUPLE_COUNT) !=
+                REIST_GK208_GR_CONTEXT_CRC32 ||
+        gr_table_crc32(reist_gk208_gr_icmd,
+            REIST_GK208_GR_ICMD_TUPLE_COUNT) !=
+                REIST_GK208_GR_ICMD_CRC32 ||
+        gr_method_table_crc32() != REIST_GK208_GR_MTHD_CRC32)
+        return -84;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_ICMD_TUPLE_COUNT;
+         ++index)
+        if (!gr_icmd_tuple_valid(&reist_gk208_gr_icmd[index])) return -84;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_MTHD_TUPLE_COUNT;
+         ++index)
+        if (!gr_tuple_valid(&reist_gk208_gr_mthd[index].tuple) ||
+            (reist_gk208_gr_mthd[index].class_id != 0x0000A197U &&
+             reist_gk208_gr_mthd[index].class_id != 0x0000902DU))
+            return -84;
+    reist_nvidia_gk208_gr_golden_plan_t expected;
+    if (gr_golden_plan_build(&expected, topology, context_size) != 0)
         return -84;
     const uint32_t *actual_words = (const uint32_t *)plan;
     const uint32_t *expected_words = (const uint32_t *)&expected;
@@ -2167,5 +2438,41 @@ int reist_nvidia_gk208_gr_context_memory_self_test(void) {
         return -84;
     plan.attrib_bytes += 0x1000U;
     return reist_nvidia_gk208_gr_validate_context_memory_plan(
+        &plan, &topology, 0x2000U) == -84 ? 0 : -84;
+}
+
+int reist_nvidia_gk208_gr_golden_plan_self_test(void) {
+    reist_nvidia_gk208_gr_topology_t topology;
+    topology.version = REIST_NVIDIA_GK208_GR_PLAN_VERSION;
+    topology.struct_size = sizeof(topology);
+    topology.gpc_count = 1U;
+    topology.rop_count = 2U;
+    topology.tpc_total = 2U;
+    topology.tpc_max = 2U;
+    for (uint32_t index = 0U; index < REIST_NVIDIA_GK208_MAX_GPCS;
+         ++index) {
+        topology.tpc_count[index] = 0U;
+        topology.ppc_tpc_mask[index] = 0U;
+    }
+    topology.tpc_count[0] = 2U;
+    topology.ppc_tpc_mask[0] = 3U;
+    topology.reserved[0] = 0U;
+    topology.reserved[1] = 0U;
+    reist_nvidia_gk208_gr_golden_plan_t plan;
+    if (reist_nvidia_gk208_gr_compile_golden_plan(
+            &plan, &topology, 0x2000U) != 0 ||
+        plan.map_count != REIST_NVIDIA_GK208_GR_GOLDEN_MAP_COUNT ||
+        plan.patch_count != 18U ||
+        plan.phase_count != REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_COUNT ||
+        plan.maps[0].gpu_address !=
+            REIST_NVIDIA_GK208_GR_GOLDEN_GPU_BASE ||
+        plan.maps[0].pte_first != 16U ||
+        plan.maps[2].bytes != 0x0002D000U ||
+        plan.maps[3].gpu_address != 0x0000000020048000ULL ||
+        plan.phases[REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_COUNT - 1U] !=
+            REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_RETAIN)
+        return -84;
+    plan.patches[0].value ^= 1U;
+    return reist_nvidia_gk208_gr_validate_golden_plan(
         &plan, &topology, 0x2000U) == -84 ? 0 : -84;
 }

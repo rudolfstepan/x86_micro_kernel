@@ -2420,9 +2420,19 @@ Topologie und FECS-Kontextgröße Pagepool, Bundle, Attributpuffer sowie die
 512-KiB-CB-Reserve mit ausgerichtetem Kontext ab. Der Kernel reserviert diese
 Fenster nach erneuter Image-/Topologieprüfung nur opak hinter dem Tag-Bereich;
 der Aufruf hat keinen Hardware-Schreibeffekt und veröffentlicht keine Adresse.
-Als nächstes folgen Golden-Context-Erzeugung und -Save samt GPU-VM-Mappings;
-erst danach dürfen Channel-Bind, Runlist, USERD-Kick, Submission und echter
-Fence in einem abschließenden Capability-Gate aktiviert werden.
+`R2.2v` versiegelt nun auch den vollständigen hardwareinaktiven
+Golden-Context-Plan. Der gepinnte Generator enthält zusätzlich 245 ICMD- und
+311 klassengebundene MTHD-Tupel mit festen CRC32-Werten. Vier opake,
+seitenweise GPU-VA-Spannen liegen gemeinsam im vorhandenen 128-MiB-Small-Page-
+Table-Fenster; der topologieabhängige Patchplan deckt die ausgewählten
+GK104/GF100/GF117-Callbacks mit maximal 80 von 96 Einträgen ab. Zwölf geordnete
+Phasen reichen von FE-Power/Reset bis FECS-Bind, Golden-Save und Retain. Ring 3
+prüft diesen Plan vor Kommando 24, führt aber keinen Teil davon aus.
+Als nächstes folgt die unabhängige Kernel-Rekonstruktion und atomare
+Golden-Context-Erzeugung samt PTE-Anwendung unter einer gemeinsamen Deadline
+und GR-Reset-Rollback. Erst danach dürfen Channel-Bind, Runlist, USERD-Kick,
+Submission und echter Fence in einem abschließenden Capability-Gate aktiviert
+werden.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

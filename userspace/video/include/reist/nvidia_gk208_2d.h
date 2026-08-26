@@ -107,6 +107,15 @@
 #define REIST_NVIDIA_GK208_GR_GOLDEN_CB_RESERVED 0x00080000U
 #define REIST_NVIDIA_GK208_GR_GOLDEN_ALIGNMENT 0x00001000U
 #define REIST_NVIDIA_GK208_GR_CONTEXT_MEMORY_PLAN_VERSION 1U
+#define REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_VERSION 1U
+#define REIST_NVIDIA_GK208_GR_GOLDEN_GPU_BASE \
+    0x0000000020010000ULL
+#define REIST_NVIDIA_GK208_GR_SMALL_PAGE_TABLE_BASE \
+    0x0000000020000000ULL
+#define REIST_NVIDIA_GK208_GR_SMALL_PAGE_TABLE_BYTES 0x08000000U
+#define REIST_NVIDIA_GK208_GR_GOLDEN_MAP_COUNT 4U
+#define REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_CAPACITY 96U
+#define REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_COUNT 12U
 #define REIST_NVIDIA_GK208_MAX_GPCS 32U
 #define REIST_NVIDIA_GK208_MAX_TPCS_PER_GPC 8U
 #define REIST_NVIDIA_GK208_MAX_TOTAL_TPCS 32U
@@ -244,6 +253,11 @@ typedef struct {
 } reist_nvidia_gk208_gr_tuple_t;
 
 typedef struct {
+    reist_nvidia_gk208_gr_tuple_t tuple;
+    uint32_t class_id;
+} reist_nvidia_gk208_gr_method_tuple_t;
+
+typedef struct {
     uint32_t first_tuple;
     uint32_t tuple_count;
 } reist_nvidia_gk208_gr_span_t;
@@ -346,6 +360,85 @@ typedef struct {
     uint32_t flags;
 } reist_nvidia_gk208_gr_context_memory_plan_t;
 
+enum {
+    REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_PAGEPOOL = 1U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_BUNDLE = 2U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_ATTRIB = 3U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_BUFFER_CONTEXT = 4U,
+};
+
+enum {
+    REIST_NVIDIA_GK208_GR_GOLDEN_MAP_VRAM = 1U << 0U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_MAP_READ = 1U << 1U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_MAP_WRITE = 1U << 2U,
+};
+
+enum {
+    REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_WRITE32 = 1U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_COPY32 = 2U,
+};
+
+enum {
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_FE_POWER_RESET = 1U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_SCC_SETUP = 2U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_CONTEXT_PACKS = 3U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_IDLE_GUARD = 4U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_GLOBAL_PATCHES = 5U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_FLOORSWEEP = 6U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_ICMD = 7U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_MTHD = 8U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_POST_CONTEXT = 9U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_FECS_BIND = 10U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_FECS_GOLDEN_SAVE = 11U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_RETAIN = 12U,
+};
+
+enum {
+    REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_HARDWARE_INACTIVE = 1U << 0U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_OPAQUE_VRAM = 1U << 1U,
+    REIST_NVIDIA_GK208_GR_GOLDEN_PLAN_COMPLETE = 1U << 2U,
+};
+
+typedef struct {
+    uint64_t gpu_address;
+    uint32_t buffer_id;
+    uint32_t bytes;
+    uint32_t pte_first;
+    uint32_t pte_count;
+    uint32_t flags;
+    uint32_t reserved;
+} reist_nvidia_gk208_gr_golden_map_t;
+
+typedef struct {
+    uint32_t opcode;
+    uint32_t address;
+    uint32_t value;
+    uint32_t reserved;
+} reist_nvidia_gk208_gr_golden_patch_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t topology_crc32;
+    uint32_t context_size;
+    uint32_t context_tuple_count;
+    uint32_t context_crc32;
+    uint32_t icmd_tuple_count;
+    uint32_t icmd_crc32;
+    uint32_t mthd_tuple_count;
+    uint32_t mthd_crc32;
+    uint32_t map_count;
+    uint32_t patch_count;
+    uint32_t phase_count;
+    uint32_t flags;
+    uint32_t reserved[2];
+    reist_nvidia_gk208_gr_golden_map_t
+        maps[REIST_NVIDIA_GK208_GR_GOLDEN_MAP_COUNT];
+    reist_nvidia_gk208_gr_golden_patch_t
+        patches[REIST_NVIDIA_GK208_GR_GOLDEN_PATCH_CAPACITY];
+    uint32_t phases[REIST_NVIDIA_GK208_GR_GOLDEN_PHASE_COUNT];
+} reist_nvidia_gk208_gr_golden_plan_t;
+
 int reist_nvidia_gk208_encode_fill(
     reist_nvidia_gk208_pushbuf_t *pushbuf,
     const reist_nvidia_gk208_surface_t *surface,
@@ -416,6 +509,14 @@ int reist_nvidia_gk208_gr_validate_context_memory_plan(
     const reist_nvidia_gk208_gr_context_memory_plan_t *plan,
     const reist_nvidia_gk208_gr_topology_t *topology,
     uint32_t context_size);
+int reist_nvidia_gk208_gr_compile_golden_plan(
+    reist_nvidia_gk208_gr_golden_plan_t *plan,
+    const reist_nvidia_gk208_gr_topology_t *topology,
+    uint32_t context_size);
+int reist_nvidia_gk208_gr_validate_golden_plan(
+    const reist_nvidia_gk208_gr_golden_plan_t *plan,
+    const reist_nvidia_gk208_gr_topology_t *topology,
+    uint32_t context_size);
 int reist_nvidia_gk208_command_self_test(void);
 int reist_nvidia_gk208_submission_self_test(void);
 int reist_nvidia_gk208_dma_staging_self_test(void);
@@ -425,5 +526,6 @@ int reist_nvidia_gk208_gr_firmware_self_test(void);
 int reist_nvidia_gk208_gr_plan_self_test(void);
 int reist_nvidia_gk208_gr_execution_self_test(void);
 int reist_nvidia_gk208_gr_context_memory_self_test(void);
+int reist_nvidia_gk208_gr_golden_plan_self_test(void);
 
 #endif

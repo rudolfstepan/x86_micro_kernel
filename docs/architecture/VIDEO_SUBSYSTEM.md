@@ -314,6 +314,23 @@ sizes, topology CRC and readiness; all offsets remain generation-scoped and
 kernel-private. Context generation/save, channel bind, runlist, USERD,
 submission, fence and capability publication remain the next hardware gate.
 
+`R2.2v` seals the complete hardware-inactive Golden-Context input contract.
+The pinned Nouveau generator now retains all 245 GK208 ICMD tuples and 311
+class-bound GK110 method tuples in addition to the existing context packs;
+counts and IEEE CRC32 values cover the immutable generated streams. For each
+validated topology and nonzero FECS context size, Ring 3 constructs four
+contiguous 4-KiB GPU-VA spans inside the existing 128-MiB small-page-table
+window for pagepool, bundle, attribute and temporary context storage. Span
+records identify only opaque VRAM reservation kinds and PTE indices, never a
+physical address or PTE value. A bounded patch list contains the exact selected
+GK104 pagepool/bundle, GF100 attribute-buffer, GF117 per-PPC attribute and
+GK104 LTC-copy callbacks; twelve ordered phase identifiers cover FE power and
+reset through FECS bind/save and retained-image handling. The driver validates
+this complete plan before command 24, but writes no DMA pool, PTE, VRAM, MMIO
+or FECS method. The next kernel package must independently rebuild and execute
+the contract under one deadline with GR-reset rollback before any channel is
+made runnable.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and
