@@ -90,6 +90,8 @@ _Static_assert(sizeof(reist_nvidia_gk208_gr_execution_header_t) ==
 _Static_assert(sizeof(reist_nvidia_gk208_gr_execution_image_t) ==
                    REIST_NVIDIA_GK208_GR_EXECUTION_MAX_BYTES,
                "GK208 GR execution image capacity must remain fixed");
+_Static_assert(sizeof(reist_nvidia_gk208_gr_context_memory_plan_t) == 64U,
+               "GK208 context-memory plan ABI must remain fixed");
 _Static_assert(REIST_NVIDIA_GK208_DMA_GR_EXECUTION_OFFSET +
                    REIST_NVIDIA_GK208_GR_EXECUTION_MAX_BYTES <=
                    REIST_NVIDIA_GK208_DMA_POOL_BYTES,
@@ -1414,6 +1416,105 @@ static uint32_t gr_execution_topology_crc32(
     return ~crc;
 }
 
+static int gr_context_align_up(uint32_t value, uint32_t alignment,
+                               uint32_t *result) {
+    if (result == NULL || alignment == 0U ||
+        (alignment & (alignment - 1U)) != 0U ||
+        value > UINT32_MAX - (alignment - 1U))
+        return -84;
+    *result = (value + alignment - 1U) & ~(alignment - 1U);
+    return 0;
+}
+
+static int gr_context_memory_build(
+        reist_nvidia_gk208_gr_context_memory_plan_t *plan,
+        const reist_nvidia_gk208_gr_topology_t *topology,
+        uint32_t context_size) {
+    if (plan == NULL || topology == NULL || context_size == 0U ||
+        reist_nvidia_gk208_gr_validate_topology(topology) != 0)
+        return -22;
+    const uint64_t attrib =
+        (uint64_t)REIST_NVIDIA_GK208_GR_ATTRIB_STRIDE *
+        (REIST_NVIDIA_GK208_GR_ATTRIB_NR_MAX +
+         REIST_NVIDIA_GK208_GR_ALPHA_NR_MAX) * topology->tpc_total;
+    uint32_t aligned_context = 0U;
+    if (attrib == 0U || attrib > UINT32_MAX ||
+        gr_context_align_up(context_size,
+            REIST_NVIDIA_GK208_GR_GOLDEN_ALIGNMENT,
+            &aligned_context) != 0 ||
+        aligned_context > UINT32_MAX -
+            REIST_NVIDIA_GK208_GR_GOLDEN_CB_RESERVED)
+        return -84;
+    const uint32_t golden =
+        REIST_NVIDIA_GK208_GR_GOLDEN_CB_RESERVED + aligned_context;
+    uint32_t cursor = 0U;
+    if (gr_context_align_up(cursor,
+            REIST_NVIDIA_GK208_GR_PAGEPOOL_ALIGNMENT, &cursor) != 0 ||
+        cursor > UINT32_MAX - REIST_NVIDIA_GK208_GR_PAGEPOOL_BYTES)
+        return -84;
+    cursor += REIST_NVIDIA_GK208_GR_PAGEPOOL_BYTES;
+    if (gr_context_align_up(cursor,
+            REIST_NVIDIA_GK208_GR_BUNDLE_ALIGNMENT, &cursor) != 0 ||
+        cursor > UINT32_MAX - REIST_NVIDIA_GK208_GR_BUNDLE_BYTES)
+        return -84;
+    cursor += REIST_NVIDIA_GK208_GR_BUNDLE_BYTES;
+    if (gr_context_align_up(cursor,
+            REIST_NVIDIA_GK208_GR_ATTRIB_ALIGNMENT, &cursor) != 0 ||
+        cursor > UINT32_MAX - (uint32_t)attrib)
+        return -84;
+    cursor += (uint32_t)attrib;
+    if (gr_context_align_up(cursor,
+            REIST_NVIDIA_GK208_GR_GOLDEN_ALIGNMENT, &cursor) != 0 ||
+        cursor > UINT32_MAX - golden)
+        return -84;
+    cursor += golden;
+    *plan = (reist_nvidia_gk208_gr_context_memory_plan_t){
+        .version = REIST_NVIDIA_GK208_GR_CONTEXT_MEMORY_PLAN_VERSION,
+        .struct_size = sizeof(*plan),
+        .topology_crc32 = gr_execution_topology_crc32(topology),
+        .tpc_total = topology->tpc_total,
+        .context_size = context_size,
+        .pagepool_bytes = REIST_NVIDIA_GK208_GR_PAGEPOOL_BYTES,
+        .pagepool_alignment = REIST_NVIDIA_GK208_GR_PAGEPOOL_ALIGNMENT,
+        .bundle_bytes = REIST_NVIDIA_GK208_GR_BUNDLE_BYTES,
+        .bundle_alignment = REIST_NVIDIA_GK208_GR_BUNDLE_ALIGNMENT,
+        .attrib_bytes = (uint32_t)attrib,
+        .attrib_alignment = REIST_NVIDIA_GK208_GR_ATTRIB_ALIGNMENT,
+        .golden_cb_reserved =
+            REIST_NVIDIA_GK208_GR_GOLDEN_CB_RESERVED,
+        .golden_bytes = golden,
+        .golden_alignment = REIST_NVIDIA_GK208_GR_GOLDEN_ALIGNMENT,
+        .total_bytes = cursor,
+    };
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_compile_context_memory_plan(
+        reist_nvidia_gk208_gr_context_memory_plan_t *plan,
+        const reist_nvidia_gk208_gr_topology_t *topology,
+        uint32_t context_size) {
+    int status = gr_context_memory_build(plan, topology, context_size);
+    return status != 0 ? status :
+        reist_nvidia_gk208_gr_validate_context_memory_plan(
+            plan, topology, context_size);
+}
+
+int reist_nvidia_gk208_gr_validate_context_memory_plan(
+        const reist_nvidia_gk208_gr_context_memory_plan_t *plan,
+        const reist_nvidia_gk208_gr_topology_t *topology,
+        uint32_t context_size) {
+    if (plan == NULL || topology == NULL) return -22;
+    reist_nvidia_gk208_gr_context_memory_plan_t expected;
+    if (gr_context_memory_build(&expected, topology, context_size) != 0)
+        return -84;
+    const uint32_t *actual_words = (const uint32_t *)plan;
+    const uint32_t *expected_words = (const uint32_t *)&expected;
+    for (uint32_t index = 0U; index < sizeof(expected) / sizeof(uint32_t);
+         ++index)
+        if (actual_words[index] != expected_words[index]) return -84;
+    return 0;
+}
+
 static int gr_execution_emit(gk208_gr_execution_builder_t *builder,
                              uint32_t opcode, uint32_t address,
                              uint32_t value, uint32_t mask) {
@@ -2037,4 +2138,34 @@ int reist_nvidia_gk208_gr_execution_self_test(void) {
             &image, &topology) != -84)
         return -84;
     return 0;
+}
+
+int reist_nvidia_gk208_gr_context_memory_self_test(void) {
+    reist_nvidia_gk208_gr_topology_t topology;
+    topology.version = REIST_NVIDIA_GK208_GR_PLAN_VERSION;
+    topology.struct_size = sizeof(topology);
+    topology.gpc_count = 1U;
+    topology.rop_count = 2U;
+    topology.tpc_total = 2U;
+    topology.tpc_max = 2U;
+    for (uint32_t index = 0U; index < REIST_NVIDIA_GK208_MAX_GPCS;
+         ++index) {
+        topology.tpc_count[index] = 0U;
+        topology.ppc_tpc_mask[index] = 0U;
+    }
+    topology.tpc_count[0] = 2U;
+    topology.ppc_tpc_mask[0] = 3U;
+    topology.reserved[0] = 0U;
+    topology.reserved[1] = 0U;
+    reist_nvidia_gk208_gr_context_memory_plan_t plan;
+    if (reist_nvidia_gk208_gr_compile_context_memory_plan(
+            &plan, &topology, 0x2000U) != 0 ||
+        plan.topology_crc32 != gr_execution_topology_crc32(&topology) ||
+        plan.attrib_bytes != 0x0002C8C0U ||
+        plan.golden_bytes != 0x00082000U ||
+        plan.total_bytes != 0x000BA000U)
+        return -84;
+    plan.attrib_bytes += 0x1000U;
+    return reist_nvidia_gk208_gr_validate_context_memory_plan(
+        &plan, &topology, 0x2000U) == -84 ? 0 : -84;
 }

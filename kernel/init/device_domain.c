@@ -52,6 +52,15 @@
 #define GK208_LTC_CBC_CLEAR_COMMAND 0x00000004U
 #define GK208_VRAM_VGA_HEAD_BYTES 0x00040000U
 #define GK208_VRAM_VBIOS_TAIL_BYTES 0x00100000U
+#define GK208_GR_PAGEPOOL_BYTES 0x00008000U
+#define GK208_GR_PAGEPOOL_ALIGNMENT 0x00000100U
+#define GK208_GR_BUNDLE_BYTES 0x00003000U
+#define GK208_GR_BUNDLE_ALIGNMENT 0x00000100U
+#define GK208_GR_ATTRIB_ALIGNMENT 0x00001000U
+#define GK208_GR_ATTRIB_STRIDE 0x00000020U
+#define GK208_GR_ATTRIB_TOTAL_MAX 0x00000B23U
+#define GK208_GR_GOLDEN_CB_RESERVED 0x00080000U
+#define GK208_GR_GOLDEN_ALIGNMENT 0x00001000U
 
 typedef struct {
     uint8_t registered;
@@ -113,6 +122,14 @@ typedef struct {
     uint8_t gr_execution_active;
     uint32_t gr_execution_operation_count;
     uint32_t gr_execution_context_size;
+    uint8_t gr_context_memory_active;
+    uint32_t gr_context_pagepool_offset;
+    uint32_t gr_context_bundle_offset;
+    uint32_t gr_context_attrib_offset;
+    uint32_t gr_context_attrib_bytes;
+    uint32_t gr_context_golden_offset;
+    uint32_t gr_context_golden_bytes;
+    uint32_t gr_context_total_bytes;
 } device_slot_t;
 
 typedef struct {
@@ -869,6 +886,14 @@ static void clear_gr_prerequisite_state(device_slot_t *device) {
 
 static void clear_gr_execution_state(device_slot_t *device) {
     if (device == NULL) return;
+    device->gr_context_memory_active = 0U;
+    device->gr_context_pagepool_offset = 0U;
+    device->gr_context_bundle_offset = 0U;
+    device->gr_context_attrib_offset = 0U;
+    device->gr_context_attrib_bytes = 0U;
+    device->gr_context_golden_offset = 0U;
+    device->gr_context_golden_bytes = 0U;
+    device->gr_context_total_bytes = 0U;
     device->gr_execution_active = 0U;
     device->gr_execution_operation_count = 0U;
     device->gr_execution_context_size = 0U;
@@ -2633,6 +2658,16 @@ typedef struct {
     uint32_t tag_count;
 } gr_prerequisite_plan_t;
 
+typedef struct {
+    uint32_t pagepool_offset;
+    uint32_t bundle_offset;
+    uint32_t attrib_offset;
+    uint32_t attrib_bytes;
+    uint32_t golden_offset;
+    uint32_t golden_bytes;
+    uint32_t total_bytes;
+} gr_context_memory_plan_t;
+
 _Static_assert(sizeof(gr_prerequisite_topology_t) ==
                    GK208_GR_PLAN_STRUCT_BYTES,
                "GK208 GR prerequisite topology changed");
@@ -2997,6 +3032,70 @@ static bool gr_build_prerequisite_plan(
         .ltc_count = ltc_count,
         .lts_count = lts_count,
         .tag_count = (uint32_t)tag_count,
+    };
+    return true;
+}
+
+static bool gr_build_context_memory_plan(
+        const gr_prerequisite_topology_t *topology,
+        const gr_prerequisite_plan_t *prerequisite,
+        const device_domain_gr_prerequisite_policy_t *policy,
+        uint32_t context_size, gr_context_memory_plan_t *plan) {
+    if (topology == NULL || prerequisite == NULL || policy == NULL ||
+        plan == NULL || topology->tpc_total == 0U || context_size == 0U)
+        return false;
+    const uint64_t attrib_bytes =
+        (uint64_t)GK208_GR_ATTRIB_STRIDE * GK208_GR_ATTRIB_TOTAL_MAX *
+        topology->tpc_total;
+    uint64_t aligned_context = 0U;
+    uint64_t cursor =
+        (uint64_t)prerequisite->tag_offset + prerequisite->tag_bytes;
+    if (attrib_bytes == 0U || attrib_bytes > UINT32_MAX ||
+        !gr_align_up_u64(context_size, GK208_GR_GOLDEN_ALIGNMENT,
+            &aligned_context) ||
+        aligned_context > UINT32_MAX - GK208_GR_GOLDEN_CB_RESERVED ||
+        cursor < prerequisite->tag_offset ||
+        !gr_align_up_u64(cursor, GK208_GR_PAGEPOOL_ALIGNMENT, &cursor) ||
+        cursor > UINT32_MAX)
+        return false;
+    const uint64_t pagepool_offset = cursor;
+    cursor += GK208_GR_PAGEPOOL_BYTES;
+    if (cursor < pagepool_offset ||
+        !gr_align_up_u64(cursor, GK208_GR_BUNDLE_ALIGNMENT, &cursor) ||
+        cursor > UINT32_MAX)
+        return false;
+    const uint64_t bundle_offset = cursor;
+    cursor += GK208_GR_BUNDLE_BYTES;
+    if (cursor < bundle_offset ||
+        !gr_align_up_u64(cursor, GK208_GR_ATTRIB_ALIGNMENT, &cursor) ||
+        cursor > UINT32_MAX)
+        return false;
+    const uint64_t attrib_offset = cursor;
+    cursor += attrib_bytes;
+    if (cursor < attrib_offset ||
+        !gr_align_up_u64(cursor, GK208_GR_GOLDEN_ALIGNMENT, &cursor) ||
+        cursor > UINT32_MAX)
+        return false;
+    const uint64_t golden_offset = cursor;
+    const uint64_t golden_bytes =
+        GK208_GR_GOLDEN_CB_RESERVED + aligned_context;
+    cursor += golden_bytes;
+    uint64_t usable_end = prerequisite->vram_bytes -
+        GK208_VRAM_VBIOS_TAIL_BYTES;
+    if (usable_end > policy->vram_aperture_bytes)
+        usable_end = policy->vram_aperture_bytes;
+    if (cursor < golden_offset || cursor > usable_end ||
+        cursor > UINT32_MAX || cursor < pagepool_offset ||
+        cursor - pagepool_offset > UINT32_MAX)
+        return false;
+    *plan = (gr_context_memory_plan_t){
+        .pagepool_offset = (uint32_t)pagepool_offset,
+        .bundle_offset = (uint32_t)bundle_offset,
+        .attrib_offset = (uint32_t)attrib_offset,
+        .attrib_bytes = (uint32_t)attrib_bytes,
+        .golden_offset = (uint32_t)golden_offset,
+        .golden_bytes = (uint32_t)golden_bytes,
+        .total_bytes = (uint32_t)(cursor - pagepool_offset),
     };
     return true;
 }
@@ -3421,6 +3520,106 @@ int device_domain_gr_execute(
         .operation_count = header.operation_count,
         .context_size = context_size,
         .flags = DEVICE_DOMAIN_GR_EXECUTION_READY,
+    };
+    end_operation();
+    return 0;
+}
+
+int device_domain_gr_context_memory(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_context_memory_request_t *request,
+        device_domain_gr_context_memory_result_t *result) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || result == NULL ||
+        request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->policy_id == 0U || request->flags != 0U ||
+        request->reserved[0] != 0U || request->reserved[1] != 0U ||
+        request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(
+        pid, process_generation, request->device);
+    resource_slot_t *region = owned_resource_locked(
+        pid, process_generation, request->region,
+        DEVICE_DOMAIN_RESOURCE_REGION);
+    resource_slot_t *dma = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(dma);
+    if (device == NULL || region == NULL || dma == NULL) {
+        end_operation();
+        return -9;
+    }
+    const uint32_t device_index = (uint32_t)(device - devices);
+    const device_domain_gr_prerequisite_policy_t *policy =
+        &device->gr_prerequisite_policy;
+    if (region->device_slot != device_index || dma->device_slot != device_index ||
+        region->device_generation != device->generation ||
+        dma->device_generation != device->generation ||
+        device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
+        pool->sealed == 0U || device->gr_prerequisite_active == 0U ||
+        device->dma_vm_page_mode_active == 0U ||
+        device->gr_firmware_active == 0U ||
+        device->gr_execution_active == 0U ||
+        device->gr_execution_context_size == 0U ||
+        device->gr_context_memory_active != 0U ||
+        request->policy_id != policy->policy_id ||
+        region->region.region_index != policy->region_index ||
+        (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U) {
+        end_operation();
+        return -13;
+    }
+
+    const uint8_t *storage =
+        dma_pool_storage[dma->platform_capability - 1U];
+    gr_prerequisite_topology_t topology;
+    gr_prerequisite_topology_t confirmed_topology;
+    gr_prerequisite_plan_t prerequisite;
+    gr_context_memory_plan_t context;
+    uint32_t image_crc = 0U;
+    device_domain_gr_execution_header_t header;
+    memcpy(&header, storage + policy->execution_pool_offset, sizeof(header));
+    bool valid = gr_sample_topology(&region->region, &topology) &&
+        gr_execution_image_valid(storage, pool->capacity, policy,
+            &region->region, &topology, &image_crc) &&
+        gr_build_prerequisite_plan(&region->region, policy, &prerequisite) &&
+        gr_sample_topology(&region->region, &confirmed_topology) &&
+        memcmp(&topology, &confirmed_topology, sizeof(topology)) == 0;
+    const uint32_t confirmed_crc = valid ? gr_topology_crc32(&topology) : 0U;
+    valid = valid && gr_plan_matches_device(&prerequisite, device) &&
+        image_crc == device->gr_prerequisite_image_crc &&
+        confirmed_crc != 0U &&
+        confirmed_crc == device->gr_prerequisite_topology_crc &&
+        header.operation_count == device->gr_execution_operation_count &&
+        gr_build_context_memory_plan(&topology, &prerequisite, policy,
+            device->gr_execution_context_size, &context);
+    if (!valid) {
+        end_operation();
+        return -84;
+    }
+    device->gr_context_memory_active = 1U;
+    device->gr_context_pagepool_offset = context.pagepool_offset;
+    device->gr_context_bundle_offset = context.bundle_offset;
+    device->gr_context_attrib_offset = context.attrib_offset;
+    device->gr_context_attrib_bytes = context.attrib_bytes;
+    device->gr_context_golden_offset = context.golden_offset;
+    device->gr_context_golden_bytes = context.golden_bytes;
+    device->gr_context_total_bytes = context.total_bytes;
+    *result = (device_domain_gr_context_memory_result_t){
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(*result),
+        .device = request->device,
+        .policy_id = request->policy_id,
+        .topology_crc32 = confirmed_crc,
+        .tpc_total = topology.tpc_total,
+        .pagepool_bytes = GK208_GR_PAGEPOOL_BYTES,
+        .bundle_bytes = GK208_GR_BUNDLE_BYTES,
+        .attrib_bytes = context.attrib_bytes,
+        .context_size = device->gr_execution_context_size,
+        .golden_bytes = context.golden_bytes,
+        .total_bytes = context.total_bytes,
+        .flags = DEVICE_DOMAIN_GR_CONTEXT_MEMORY_READY,
     };
     end_operation();
     return 0;

@@ -1430,6 +1430,40 @@ int x86os_device_gr_execute(
     return 0;
 }
 
+int x86os_device_gr_context_memory(
+        x86os_device_handle_t device, x86os_device_resource_t region,
+        x86os_device_resource_t dma, uint32_t policy_id,
+        x86os_device_gr_context_memory_result_t *result) {
+    if (device == 0U || region == 0U || dma == 0U || policy_id == 0U ||
+        result == NULL)
+        return -22;
+    const x86os_device_gr_context_memory_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .region = region,
+        .dma = dma,
+        .policy_id = policy_id,
+    };
+    x86os_zero_bytes(result, sizeof(*result));
+    int status = (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_GR_CONTEXT_MEMORY,
+        (uintptr_t)&request, (uintptr_t)result);
+    if (status != 0) return status;
+    if (result->version != X86OS_DEVICE_ABI_VERSION ||
+        result->struct_size != sizeof(*result) || result->device != device ||
+        result->policy_id != policy_id || result->topology_crc32 == 0U ||
+        result->tpc_total == 0U || result->pagepool_bytes == 0U ||
+        result->bundle_bytes == 0U || result->attrib_bytes == 0U ||
+        result->context_size == 0U || result->golden_bytes == 0U ||
+        result->total_bytes == 0U ||
+        result->flags != X86OS_DEVICE_GR_CONTEXT_MEMORY_READY ||
+        result->reserved[0] != 0U || result->reserved[1] != 0U ||
+        result->reserved[2] != 0U)
+        return -84;
+    return 0;
+}
+
 static int x86os_device_region_access_valid(
         x86os_device_resource_t region, uint32_t offset, uint32_t width) {
     return region != 0U &&

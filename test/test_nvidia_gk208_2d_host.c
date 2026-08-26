@@ -499,6 +499,38 @@ static void test_gr_execution_image_is_complete_sealed_and_unresolved(void) {
     assert(reist_nvidia_gk208_gr_execution_self_test() == 0);
 }
 
+static void test_gr_context_memory_plan_is_topology_bound_and_bounded(void) {
+    reist_nvidia_gk208_gr_topology_t topology = {
+        .version = REIST_NVIDIA_GK208_GR_PLAN_VERSION,
+        .struct_size = sizeof(topology),
+        .gpc_count = 1U,
+        .rop_count = 2U,
+        .tpc_total = 2U,
+        .tpc_max = 2U,
+        .tpc_count = {2U},
+        .ppc_tpc_mask = {3U},
+    };
+    reist_nvidia_gk208_gr_context_memory_plan_t plan;
+    assert(sizeof(plan) == 64U);
+    assert(reist_nvidia_gk208_gr_compile_context_memory_plan(
+        &plan, &topology, 0x2000U) == 0);
+    assert(plan.pagepool_bytes == 0x8000U);
+    assert(plan.bundle_bytes == 0x3000U);
+    assert(plan.attrib_bytes == 0x2C8C0U);
+    assert(plan.golden_cb_reserved == 0x80000U);
+    assert(plan.golden_bytes == 0x82000U);
+    assert(plan.total_bytes == 0xBA000U);
+    assert(reist_nvidia_gk208_gr_validate_context_memory_plan(
+        &plan, &topology, 0x2000U) == 0);
+    reist_nvidia_gk208_gr_context_memory_plan_t mutated = plan;
+    ++mutated.attrib_bytes;
+    assert(reist_nvidia_gk208_gr_validate_context_memory_plan(
+        &mutated, &topology, 0x2000U) == -84);
+    assert(reist_nvidia_gk208_gr_compile_context_memory_plan(
+        &plan, &topology, 0U) == -22);
+    assert(reist_nvidia_gk208_gr_context_memory_self_test() == 0);
+}
+
 int main(void) {
     test_fill_and_copy_are_bounded_and_validated();
     test_invalid_ranges_fail_closed();
@@ -511,6 +543,7 @@ int main(void) {
     test_gr_firmware_manifest_is_exact_and_read_only();
     test_gr_plan_is_pinned_bounded_and_hardware_inactive();
     test_gr_execution_image_is_complete_sealed_and_unresolved();
+    test_gr_context_memory_plan_is_topology_bound_and_bounded();
     assert(reist_nvidia_gk208_submission_self_test() == 0);
     assert(reist_nvidia_gk208_dma_staging_self_test() == 0);
     assert(reist_nvidia_gk208_channel_image_self_test() == 0);
@@ -518,5 +551,6 @@ int main(void) {
     assert(reist_nvidia_gk208_gr_firmware_self_test() == 0);
     assert(reist_nvidia_gk208_gr_plan_self_test() == 0);
     assert(reist_nvidia_gk208_gr_execution_self_test() == 0);
+    assert(reist_nvidia_gk208_gr_context_memory_self_test() == 0);
     return 0;
 }

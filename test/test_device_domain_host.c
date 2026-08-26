@@ -1975,6 +1975,32 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
             assert(result.context_size == 0x2000U);
             assert(device_domain_gr_execute(
                 pid, generation, &execute, &result) == -13);
+            const uint32_t writes_before_context_plan = region_write_calls;
+            const device_domain_gr_context_memory_request_t context_request = {
+                .version = DEVICE_DOMAIN_ABI_VERSION,
+                .struct_size = sizeof(context_request),
+                .device = handle,
+                .region = region.resource,
+                .dma = dma,
+                .policy_id = 1U,
+            };
+            device_domain_gr_context_memory_result_t context_result;
+            assert(device_domain_gr_context_memory(pid, generation,
+                &context_request, &context_result) == 0);
+            assert(context_result.flags ==
+                   DEVICE_DOMAIN_GR_CONTEXT_MEMORY_READY);
+            assert(context_result.topology_crc32 ==
+                   header.topology_crc32);
+            assert(context_result.tpc_total == 2U);
+            assert(context_result.pagepool_bytes == 0x8000U);
+            assert(context_result.bundle_bytes == 0x3000U);
+            assert(context_result.attrib_bytes == 0x2C8C0U);
+            assert(context_result.context_size == 0x2000U);
+            assert(context_result.golden_bytes == 0x82000U);
+            assert(context_result.total_bytes == 0xBA000U);
+            assert(region_write_calls == writes_before_context_plan);
+            assert(device_domain_gr_context_memory(pid, generation,
+                &context_request, &context_result) == -13);
             assert(enable_calls == 0U && region_write_calls > 0U);
             gr_execution_test_mode = false;
         } else {

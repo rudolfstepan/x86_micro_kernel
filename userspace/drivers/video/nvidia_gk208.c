@@ -35,6 +35,7 @@
 #define NVIDIA_DIAGNOSTIC_GR_EXECUTION_IMAGE 0x4E620000U
 #define NVIDIA_DIAGNOSTIC_GR_PREREQUISITES 0x4E630000U
 #define NVIDIA_DIAGNOSTIC_GR_EXECUTED 0x4E640000U
+#define NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY 0x4E650000U
 #define NVIDIA_GR_PREREQUISITE_POLICY_ID 1U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
@@ -277,6 +278,8 @@ static int gr_plan_contract_self_test(nvidia_driver_t *driver) {
     status = reist_nvidia_gk208_gr_validate_topology(topology);
     if (status == 0) status = reist_nvidia_gk208_gr_plan_self_test();
     if (status == 0) status = reist_nvidia_gk208_gr_execution_self_test();
+    if (status == 0)
+        status = reist_nvidia_gk208_gr_context_memory_self_test();
     if (status != 0) return status;
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
@@ -598,9 +601,33 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
         driver->bootstrap.device, driver->registers, driver->dma,
         NVIDIA_GR_PREREQUISITE_POLICY_ID, &result);
     if (status != 0) return status;
-    return x86os_device_driver_report(
+    status = x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_GR_EXECUTED | (result.context_size & 0xFFFFU));
+    if (status != 0) return status;
+
+    reist_nvidia_gk208_gr_context_memory_plan_t expected;
+    status = reist_nvidia_gk208_gr_compile_context_memory_plan(
+        &expected, &driver->gr_topology, result.context_size);
+    if (status != 0) return status;
+    x86os_device_gr_context_memory_result_t reserved;
+    status = x86os_device_gr_context_memory(
+        driver->bootstrap.device, driver->registers, driver->dma,
+        NVIDIA_GR_PREREQUISITE_POLICY_ID, &reserved);
+    if (status != 0) return status;
+    if (reserved.topology_crc32 != expected.topology_crc32 ||
+        reserved.tpc_total != expected.tpc_total ||
+        reserved.pagepool_bytes != expected.pagepool_bytes ||
+        reserved.bundle_bytes != expected.bundle_bytes ||
+        reserved.attrib_bytes != expected.attrib_bytes ||
+        reserved.context_size != expected.context_size ||
+        reserved.golden_bytes != expected.golden_bytes ||
+        reserved.total_bytes != expected.total_bytes)
+        return -84;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY |
+            (reserved.total_bytes >> 12U));
 }
 
 static int activate(nvidia_driver_t *driver) {

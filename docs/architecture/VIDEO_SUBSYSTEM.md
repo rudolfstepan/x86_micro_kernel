@@ -300,6 +300,20 @@ that reset. Channel/runlist binding, USERD kick, bus mastering, IRQs, command
 submission, fences and NVIDIA acceleration capabilities remain disabled for
 the next hardware gate.
 
+`R2.2u` adds the next hardware-inactive prerequisite through append-only
+Device-Control command 24. Ring 3 and Ring 0 independently derive the exact
+GK208 channel-context memory geometry from the retained live topology and the
+FECS-reported context size: a 32-KiB pagepool, 12-KiB bundle buffer, the
+topology-sized attribute buffer `0x20 * (0x324 + 0x7ff) * tpc_total`, and a
+temporary golden-context area containing the upstream 512-KiB CB reservation
+plus the page-aligned context image. The kernel revalidates the sealed image,
+stable topology and command-23 state before reserving aligned, non-overlapping
+windows after the existing tag region and below the clipped VRAM/VBIOS limit.
+The command writes no VRAM, MMIO, DMA image or channel state and returns only
+sizes, topology CRC and readiness; all offsets remain generation-scoped and
+kernel-private. Context generation/save, channel bind, runlist, USERD,
+submission, fence and capability publication remain the next hardware gate.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

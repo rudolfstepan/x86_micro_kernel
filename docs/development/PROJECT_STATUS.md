@@ -161,6 +161,15 @@ eine gemeinsame monotone 5-s-Deadline begrenzt. Nur Readiness, Operationszahl
 und eine nichtleere Kontextgröße werden zurückgegeben. Teilfehler setzen GR vor
 Retry/Fence zurück; Channel, Runlist, USERD, Busmaster, IRQ, Submission, Fence
 und NVIDIA-Capabilitybits bleiben weiterhin gesperrt.
+`R2.2u-nvidia-gk208-context-memory-plan` schließt nun die folgende
+Speicherabhängigkeit. Der Ring-3-Compiler und append-only Kommando 24 berechnen
+unabhängig 32-KiB-Pagepool, 12-KiB-Bundle, den exakten
+`0x20 * 0xb23 * TPC`-Attributpuffer sowie 512 KiB CB-Reserve plus ausgerichtete
+FECS-Kontextgröße. Ring 0 prüft Abbild, Live-Topologie und Kommando-23-Zustand
+erneut und reserviert nicht überlappende Bereiche nur innerhalb des bereits
+geclippten opaken VRAM-Fensters. Keine Adresse wird veröffentlicht und weder
+VRAM noch MMIO werden geschrieben. Golden-Save, Channel-Bind, Runlist, USERD,
+Submission, Fence und Capabilityfreigabe bleiben offen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

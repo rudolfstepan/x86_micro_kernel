@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2u-nvidia-gk208-context-memory-plan"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2u-nvidia-gk208-context-memory-plan"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Plan bounded GK208 channel-context memory"

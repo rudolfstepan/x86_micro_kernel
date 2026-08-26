@@ -104,6 +104,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn(
             "DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES = 22U", header)
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_EXECUTE = 23U", header)
+        self.assertIn(
+            "DEVICE_DOMAIN_CONTROL_GR_CONTEXT_MEMORY = 24U", header)
         self.assertIn("device_domain_dma_pool_stats_t", header)
         self.assertIn("capacity_rejections", header)
         self.assertIn("device_domain_dma_pool_stats", source)
@@ -129,6 +131,10 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("gr_initialize_ltc", source)
         self.assertIn("gr_execute_operations", source)
         self.assertIn("gr_execution_rollback", source)
+        self.assertIn("device_domain_gr_context_memory", source)
+        self.assertIn("gr_build_context_memory_plan", source)
+        self.assertIn("GK208_GR_GOLDEN_CB_RESERVED 0x00080000U", source)
+        self.assertIn("GK208_GR_ATTRIB_TOTAL_MAX 0x00000B23U", source)
         self.assertIn("scheduler_sleep_ms(1U)", source)
         self.assertGreaterEqual(
             source.count("device->gr_prerequisite_active == 0U"), 2)

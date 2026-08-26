@@ -201,6 +201,17 @@ setzt GR zurück, bevor ein Wiederholungsversuch oder Fence zulässig ist;
 Adressen, Busmaster-, IRQ-, Channel-, Runlist-, USERD- oder Submission-
 Autorität werden nicht freigegeben.
 
+Append-only Device-Control-Kommando 24 reserviert danach ausschließlich den
+Speicherplan für genau einen GK208-GR-Kanal. Der Kernel prüft erneut dieselbe
+Generation, versiegelte Ausführungsabbildung, zweimal stabile Topologie und den
+erfolgreichen Kommando-23-Zustand. Pagepool (32 KiB), Bundle-Puffer (12 KiB),
+der topologieabhängige Attributpuffer und der temporäre Golden-Context-Bereich
+mit 512-KiB-CB-Reserve werden unabhängig von Ring 3 berechnet und ausgerichtet
+hinter dem vorhandenen Tag-Bereich eingeplant. Der Aufruf schreibt weder VRAM
+noch MMIO und gibt keine Adresse zurück; sichtbar sind nur Größen, Topologie-
+CRC und Readiness. Fence oder Generationswechsel verwerfen den opaken Plan erst
+nach dem vorhandenen GR-Reset.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden

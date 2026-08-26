@@ -240,6 +240,14 @@ class NvidiaGk208BringupTests(unittest.TestCase):
                       library)
         self.assertIn("gr_execution_operation_crc32", library)
         self.assertIn("gr_execution_topology_crc32", library)
+        self.assertIn("reist_nvidia_gk208_gr_compile_context_memory_plan",
+                      library)
+        self.assertIn("REIST_NVIDIA_GK208_GR_GOLDEN_CB_RESERVED 0x00080000U",
+                      header)
+        self.assertIn("REIST_NVIDIA_GK208_GR_ATTRIB_NR_MAX 0x00000324U",
+                      header)
+        self.assertIn("REIST_NVIDIA_GK208_GR_ALPHA_NR_MAX 0x000007FFU",
+                      header)
         self.assertIn("gf100_gr_init()", library)
         self.assertIn("nvkm_ltc_init()", library)
         self.assertIn("0x004188B4U", library)
@@ -325,6 +333,8 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("x86os_device_gr_prerequisites", driver)
         self.assertIn("gpu_gr_execute", driver)
         self.assertIn("x86os_device_gr_execute", driver)
+        self.assertIn("x86os_device_gr_context_memory", driver)
+        self.assertIn("NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY", driver)
         self.assertLess(driver.index("gpu_vm_relocate_and_seal(driver)"),
                         driver.index("gpu_vm_apply_page_mode(driver)"))
         self.assertLess(driver.index("gr_firmware_dma_stage_self_test(driver)"),

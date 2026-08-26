@@ -2414,6 +2414,15 @@ gerahmt; Erfolg verlangt FECS-Readiness und eine nichtleere Kontextgröße.
 Teilfehler lösen vor Retry/Fence einen GR-Reset aus. Channel-Bind, Runlist,
 USERD, Busmaster, IRQ, Submission, echter Fence und Capabilityfreigabe bilden
 weiterhin das nächste Hardwaregate.
+`R2.2u` schließt davor die bislang fehlende Kontext-Speichergeometrie über
+append-only Kommando 24. Ring 3 und Ring 0 leiten unabhängig aus stabiler
+Topologie und FECS-Kontextgröße Pagepool, Bundle, Attributpuffer sowie die
+512-KiB-CB-Reserve mit ausgerichtetem Kontext ab. Der Kernel reserviert diese
+Fenster nach erneuter Image-/Topologieprüfung nur opak hinter dem Tag-Bereich;
+der Aufruf hat keinen Hardware-Schreibeffekt und veröffentlicht keine Adresse.
+Als nächstes folgen Golden-Context-Erzeugung und -Save samt GPU-VM-Mappings;
+erst danach dürfen Channel-Bind, Runlist, USERD-Kick, Submission und echter
+Fence in einem abschließenden Capability-Gate aktiviert werden.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
