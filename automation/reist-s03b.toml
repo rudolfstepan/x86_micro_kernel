@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2u-nvidia-gk208-context-memory-plan"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,62 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2u-nvidia-gk208-context-memory-plan"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Plan bounded GK208 channel-context memory"
+scope = "Add the hardware-inactive memory prerequisite for one GK208 GR channel after command 23. Compile and independently validate an exact topology-bound plan for Nouveau's GK208 global pagepool, bundle and attribute buffers plus the temporary 512-KiB CB reservation and the live FECS-reported context image. Append Device-Control command 24 to revalidate the same owner generation, sealed operation image, live topology and completed GR state, then reserve non-overlapping aligned windows inside the already clipped opaque VRAM interval without writing VRAM or MMIO and without returning an address to Ring 3. Record only fixed sizes, topology CRC and plan readiness. Fence and generation cleanup erase the reservation idempotently after GR reset. Channel binding, context generation/save, runlist, USERD, bus mastering, IRQ, submission, fence and acceleration capabilities remain disabled."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the plan is accepted only after command 23 for the exact same live owner generation read-only BAR0 resource and sealed DMA pool",
+  "the driver compiler and kernel validator independently derive pagepool bundle attribute CB reservation and context sizes from the exact validated GK208 topology and FECS result",
+  "all sizes additions alignments and interval placements are overflow checked and bounded by the clipped probed VRAM aperture",
+  "the attribute buffer follows the pinned GK208 formula 0x20 times 0xb23 times total TPC count and the temporary golden area reserves exactly 0x80000 plus aligned nonzero context size",
+  "command 24 writes no VRAM MMIO DMA image or channel state and returns no physical GPU or VRAM address",
+  "fence and generation cleanup erase the opaque reservation only after the existing GR reset path",
+  "bus mastering IRQ context generation channel runlist USERD submission fence and NVIDIA acceleration capabilities remain disabled",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the pinned GK208 buffer geometry cannot be derived from the retained topology and FECS context size",
+  "safe placement would require exposing or guessing a BAR VRAM or GPU address",
+  "the package attempts context generation channel runlist USERD submission bus mastering IRQ or capability publication",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
 
 [[packages]]
 id = "R2.2t-nvidia-gk208-gr-execution"
