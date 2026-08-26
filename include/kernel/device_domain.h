@@ -37,6 +37,12 @@
 #define DEVICE_DOMAIN_GR_FIRMWARE_IMAGE_COUNT 4U
 #define DEVICE_DOMAIN_GR_FIRMWARE_MAX_WORDS 1024U
 #define DEVICE_DOMAIN_GR_FIRMWARE_SCRUB_TIMEOUT_MS 100U
+#define DEVICE_DOMAIN_GR_EXECUTION_OP_CAPACITY 2048U
+#define DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES 64U
+#define DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES 16U
+#define DEVICE_DOMAIN_GR_MAX_GPCS 32U
+#define DEVICE_DOMAIN_GR_MAX_FBPS 8U
+#define DEVICE_DOMAIN_GR_MAX_FBPAS 16U
 #define DEVICE_DOMAIN_MAX_REGION_RULES 32U
 #define DEVICE_DOMAIN_MAX_REGION_BYTES (8U * 1024U * 1024U)
 #define DEVICE_DOMAIN_DMA_ADDRESS_ALIGNMENT 128U
@@ -75,6 +81,7 @@ enum {
     DEVICE_DOMAIN_CONTROL_DMA_RELOCATE_AND_SEAL = 19U,
     DEVICE_DOMAIN_CONTROL_DMA_VM_PAGE_MODE = 20U,
     DEVICE_DOMAIN_CONTROL_GR_FIRMWARE_UPLOAD = 21U,
+    DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES = 22U,
 };
 
 enum {
@@ -124,6 +131,18 @@ enum {
 enum {
     DEVICE_DOMAIN_GR_FIRMWARE_DMEM = 1U,
     DEVICE_DOMAIN_GR_FIRMWARE_IMEM = 2U,
+};
+
+enum {
+    DEVICE_DOMAIN_GR_OP_WRITE32 = 1U,
+    DEVICE_DOMAIN_GR_OP_MASK32 = 2U,
+    DEVICE_DOMAIN_GR_OP_COPY_MASKED32 = 3U,
+    DEVICE_DOMAIN_GR_OP_VRAM_OFFSET32 = 4U,
+    DEVICE_DOMAIN_GR_OP_WAIT_IDLE = 5U,
+    DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP = 6U,
+    DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER = 7U,
+    DEVICE_DOMAIN_GR_OP_WAIT_MASK32 = 8U,
+    DEVICE_DOMAIN_GR_OP_READ32_NONZERO = 9U,
 };
 
 enum {
@@ -422,6 +441,62 @@ typedef struct {
 } device_domain_gr_firmware_request_t;
 
 typedef struct {
+    uint32_t opcode;
+    uint32_t address;
+    uint32_t value;
+    uint32_t mask;
+} device_domain_gr_execution_op_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t header_size;
+    uint32_t used_bytes;
+    uint32_t operation_count;
+    uint32_t operation_crc32;
+    uint32_t topology_crc32;
+    uint32_t static_mmio_operation_count;
+    uint32_t zbc_operation_count;
+    uint32_t context_operation_count;
+    uint32_t vram_relocation_count;
+    uint32_t flags;
+    uint32_t gpc_count;
+    uint32_t tpc_total;
+    uint32_t rop_count;
+    uint32_t reserved[2];
+} device_domain_gr_execution_header_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t policy_id;
+    uint32_t region_index;
+    uint32_t vram_region_index;
+    uint32_t execution_pool_offset;
+    uint32_t execution_max_operations;
+    uint32_t execution_flags;
+    uint32_t scanout_offset;
+    uint32_t scanout_bytes;
+    uint32_t vram_aperture_bytes;
+    uint32_t fault_buffer_bytes;
+    uint32_t fault_buffer_alignment;
+    uint32_t fb_page_shift;
+    uint32_t fbp_max;
+    uint32_t fbpa_max;
+    uint32_t reserved[2];
+} device_domain_gr_prerequisite_policy_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    device_domain_resource_handle_t region;
+    device_domain_resource_handle_t dma;
+    uint32_t policy_id;
+    uint32_t flags;
+    uint32_t reserved[3];
+} device_domain_gr_prerequisite_request_t;
+
+typedef struct {
     uint32_t version;
     uint32_t struct_size;
     device_domain_handle_t device;
@@ -580,6 +655,14 @@ _Static_assert(sizeof(device_domain_gr_firmware_policy_t) == 160U,
                "device-domain GR firmware policy ABI changed");
 _Static_assert(sizeof(device_domain_gr_firmware_request_t) == 40U,
                "device-domain GR firmware request ABI changed");
+_Static_assert(sizeof(device_domain_gr_execution_op_t) == 16U,
+               "device-domain GR execution operation ABI changed");
+_Static_assert(sizeof(device_domain_gr_execution_header_t) == 64U,
+               "device-domain GR execution header ABI changed");
+_Static_assert(sizeof(device_domain_gr_prerequisite_policy_t) == 72U,
+               "device-domain GR prerequisite policy ABI changed");
+_Static_assert(sizeof(device_domain_gr_prerequisite_request_t) == 40U,
+               "device-domain GR prerequisite request ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -620,6 +703,9 @@ int device_domain_install_dma_vm_page_mode_policy(
 /** Install one exact halted-Falcon upload policy before first claim. */
 int device_domain_install_gr_firmware_policy(
     uint32_t device, const device_domain_gr_firmware_policy_t *policy);
+/** Install one exact read-only GR image/FB/LTC prerequisite policy. */
+int device_domain_install_gr_prerequisite_policy(
+    uint32_t device, const device_domain_gr_prerequisite_policy_t *policy);
 /** Claim one function and its complete isolation group for a process generation. */
 int device_domain_claim(int pid, uint32_t process_generation, uint32_t device,
                         uint32_t mode, device_domain_handle_t *handle_out);
@@ -702,6 +788,10 @@ int device_domain_dma_vm_page_mode(
 int device_domain_gr_firmware_upload(
     int pid, uint32_t process_generation,
     const device_domain_gr_firmware_request_t *request);
+/** Validate and reserve GR prerequisites without executing the image. */
+int device_domain_gr_prerequisites(
+    int pid, uint32_t process_generation,
+    const device_domain_gr_prerequisite_request_t *request);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);

@@ -17,6 +17,31 @@
 #include "kernel/sched/scheduler.h"
 #endif
 
+#define GK208_GR_EXECUTION_VERSION 1U
+#define GK208_GR_EXECUTION_FLAGS 0x00000007U
+#define GK208_GR_PLAN_VERSION 1U
+#define GK208_GR_PLAN_STRUCT_BYTES 288U
+#define GK208_GR_TOPOLOGY_REGISTER 0x00409604U
+#define GK208_GR_GPC_UNIT_BASE 0x00500000U
+#define GK208_GR_GPC_UNIT_STRIDE 0x00008000U
+#define GK208_GR_GPC_TPC_COUNT_OFFSET 0x00002608U
+#define GK208_GR_GPC_PPC_MASK_OFFSET 0x00000C30U
+#define GK208_GR_MAX_TPCS_PER_GPC 8U
+#define GK208_GR_MAX_TOTAL_TPCS 32U
+#define GK208_GR_MAX_ROPS 31U
+#define GK208_FB_PART_COUNT 0x00022438U
+#define GK208_FB_FBPA_COUNT 0x0002243CU
+#define GK208_FB_DISABLE_MASK 0x00022554U
+#define GK208_FB_PAGE_CONFIG 0x00100C80U
+#define GK208_FB_FBPA_SIZE_BASE 0x0011020CU
+#define GK208_FB_FBPA_SIZE_STRIDE 0x00001000U
+#define GK208_LTC_SLICE_COUNT 0x0017E8DCU
+#define GK208_LTC_TAG_BLOCK_BYTES 0x00006000U
+#define GK208_LTC_TAG_MIN_MARGIN 0x00006000U
+#define GK208_LTC_TAG_ALIGN_PER_LTC 0x00000800U
+#define GK208_VRAM_VGA_HEAD_BYTES 0x00040000U
+#define GK208_VRAM_VBIOS_TAIL_BYTES 0x00100000U
+
 typedef struct {
     uint8_t registered;
     uint32_t pci_location;
@@ -60,6 +85,18 @@ typedef struct {
     uint32_t gr_firmware_pmc_offset;
     uint32_t gr_firmware_pmc_mask;
     uint32_t gr_firmware_pmc_original_bits;
+    uint8_t gr_prerequisite_policy_installed;
+    device_domain_gr_prerequisite_policy_t gr_prerequisite_policy;
+    uint8_t gr_prerequisite_active;
+    uint32_t gr_prerequisite_image_crc;
+    uint32_t gr_prerequisite_topology_crc;
+    uint32_t gr_prerequisite_mmu_read_offset;
+    uint32_t gr_prerequisite_mmu_write_offset;
+    uint32_t gr_prerequisite_tag_offset;
+    uint32_t gr_prerequisite_tag_bytes;
+    uint32_t gr_prerequisite_tag_base;
+    uint32_t gr_prerequisite_vram_bytes;
+    uint32_t gr_prerequisite_ltc_count;
 } device_slot_t;
 
 typedef struct {
@@ -798,6 +835,20 @@ static bool reset_gr_firmware_state(device_slot_t *device) {
     return true;
 }
 
+static void clear_gr_prerequisite_state(device_slot_t *device) {
+    if (device == NULL) return;
+    device->gr_prerequisite_active = 0U;
+    device->gr_prerequisite_image_crc = 0U;
+    device->gr_prerequisite_topology_crc = 0U;
+    device->gr_prerequisite_mmu_read_offset = 0U;
+    device->gr_prerequisite_mmu_write_offset = 0U;
+    device->gr_prerequisite_tag_offset = 0U;
+    device->gr_prerequisite_tag_bytes = 0U;
+    device->gr_prerequisite_tag_base = 0U;
+    device->gr_prerequisite_vram_bytes = 0U;
+    device->gr_prerequisite_ltc_count = 0U;
+}
+
 static bool fence_slot(device_slot_t *device) {
     bool irq_masked = device_is_passive_mediated_io(device) ||
         mask_device_irq(device);
@@ -807,6 +858,7 @@ static bool fence_slot(device_slot_t *device) {
         reset_gr_firmware_state(device);
     bool page_mode_restored = gr_firmware_reset &&
         restore_dma_vm_page_mode(device);
+    clear_gr_prerequisite_state(device);
     bool irq_revoked = device->irq_bound == 0U || platform_ops.revoke_irq(
         device->pci_location, device->owner_pid, device->owner_generation,
         device->irq_capability);
@@ -1287,6 +1339,71 @@ int device_domain_install_gr_firmware_policy(
     }
     device->gr_firmware_policy = *policy;
     device->gr_firmware_policy_installed = 1U;
+    end_operation();
+    return 0;
+}
+
+int device_domain_install_gr_prerequisite_policy(
+        uint32_t device_index,
+        const device_domain_gr_prerequisite_policy_t *policy) {
+    if (!initialized || policy == NULL || device_index >= device_count ||
+        policy->version != DEVICE_DOMAIN_ABI_VERSION ||
+        policy->struct_size != sizeof(*policy) || policy->policy_id == 0U ||
+        policy->region_index >= 6U || policy->vram_region_index >= 6U ||
+        policy->region_index == policy->vram_region_index ||
+        policy->execution_pool_offset < DEVICE_DOMAIN_DMA_DESCRIPTOR_BYTES ||
+        policy->execution_max_operations !=
+            DEVICE_DOMAIN_GR_EXECUTION_OP_CAPACITY ||
+        policy->execution_flags != GK208_GR_EXECUTION_FLAGS ||
+        policy->scanout_bytes == 0U || policy->vram_aperture_bytes == 0U ||
+        policy->scanout_offset > policy->vram_aperture_bytes ||
+        policy->scanout_bytes >
+            policy->vram_aperture_bytes - policy->scanout_offset ||
+        policy->fault_buffer_bytes != (1U << policy->fb_page_shift) ||
+        policy->fault_buffer_alignment != policy->fault_buffer_bytes ||
+        policy->fb_page_shift != 17U ||
+        policy->fbp_max == 0U ||
+        policy->fbp_max > DEVICE_DOMAIN_GR_MAX_FBPS ||
+        policy->fbpa_max < policy->fbp_max ||
+        policy->fbpa_max > DEVICE_DOMAIN_GR_MAX_FBPAS ||
+        policy->reserved[0] != 0U || policy->reserved[1] != 0U)
+        return -22;
+    const uint32_t image_bytes = DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES +
+        policy->execution_max_operations * DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES;
+    if (policy->execution_pool_offset > DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES ||
+        image_bytes >
+            DEVICE_DOMAIN_DMA_LARGE_POOL_BYTES - policy->execution_pool_offset)
+        return -22;
+    const device_slot_t *registered = &devices[device_index];
+    if ((registered->profile.flags &
+            (DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+             DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL)) !=
+            (DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
+             DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL) ||
+        registered->region_policy_installed == 0U ||
+        registered->region_policy.readable_bytes[policy->region_index] <
+            GK208_GR_GPC_UNIT_BASE +
+                (DEVICE_DOMAIN_GR_MAX_GPCS - 1U) *
+                    GK208_GR_GPC_UNIT_STRIDE +
+                GK208_GR_GPC_TPC_COUNT_OFFSET + sizeof(uint32_t))
+        return -95;
+    device_domain_region_info_t vram;
+    if (!platform_ops.describe_region(registered->pci_location,
+            policy->vram_region_index, &vram) ||
+        (vram.flags & DEVICE_DOMAIN_REGION_MMIO) == 0U ||
+        (vram.flags & DEVICE_DOMAIN_REGION_PIO) != 0U ||
+        vram.length_high != 0U ||
+        vram.length_low != policy->vram_aperture_bytes)
+        return -95;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = &devices[device_index];
+    if (device->registered == 0U || device->state != DEVICE_DOMAIN_AVAILABLE ||
+        device->gr_prerequisite_policy_installed != 0U) {
+        end_operation();
+        return -16;
+    }
+    device->gr_prerequisite_policy = *policy;
+    device->gr_prerequisite_policy_installed = 1U;
     end_operation();
     return 0;
 }
@@ -2220,6 +2337,8 @@ int device_domain_dma_vm_page_mode(
         dma->device_generation != device->generation ||
         device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
         pool->sealed == 0U || device->dma_vm_page_mode_active != 0U ||
+        (device->gr_prerequisite_policy_installed != 0U &&
+         device->gr_prerequisite_active == 0U) ||
         device->dma_vm_page_mode_policy_installed == 0U ||
         (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U) {
         end_operation();
@@ -2414,6 +2533,8 @@ int device_domain_gr_firmware_upload(
         dma->device_generation != device->generation ||
         device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
         pool->sealed == 0U || device->dma_vm_page_mode_active == 0U ||
+        (device->gr_prerequisite_policy_installed != 0U &&
+         device->gr_prerequisite_active == 0U) ||
         device->gr_firmware_policy_installed == 0U ||
         device->gr_firmware_active != 0U ||
         request->policy_id != policy->policy_id ||
@@ -2458,6 +2579,430 @@ int device_domain_gr_firmware_upload(
         end_operation();
         return -5;
     }
+    end_operation();
+    return 0;
+}
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t gpc_count;
+    uint32_t rop_count;
+    uint32_t tpc_total;
+    uint32_t tpc_max;
+    uint32_t tpc_count[DEVICE_DOMAIN_GR_MAX_GPCS];
+    uint32_t ppc_tpc_mask[DEVICE_DOMAIN_GR_MAX_GPCS];
+    uint32_t reserved[2];
+} gr_prerequisite_topology_t;
+
+typedef struct {
+    uint32_t mmu_read_offset;
+    uint32_t mmu_write_offset;
+    uint32_t tag_offset;
+    uint32_t tag_bytes;
+    uint32_t tag_base;
+    uint32_t vram_bytes;
+    uint32_t ltc_count;
+} gr_prerequisite_plan_t;
+
+_Static_assert(sizeof(gr_prerequisite_topology_t) ==
+                   GK208_GR_PLAN_STRUCT_BYTES,
+               "GK208 GR prerequisite topology changed");
+
+static uint32_t gr_crc32_word(uint32_t crc, uint32_t word) {
+    for (uint32_t shift = 0U; shift < 32U; shift += 8U) {
+        crc ^= (word >> shift) & 0xFFU;
+        for (uint32_t bit = 0U; bit < 8U; ++bit) {
+            const uint32_t polynomial_mask = 0U - (crc & 1U);
+            crc = (crc >> 1U) ^ (0xEDB88320U & polynomial_mask);
+        }
+    }
+    return crc;
+}
+
+static uint32_t gr_topology_crc32(
+        const gr_prerequisite_topology_t *topology) {
+    uint32_t crc = UINT32_MAX;
+    crc = gr_crc32_word(crc, topology->version);
+    crc = gr_crc32_word(crc, topology->struct_size);
+    crc = gr_crc32_word(crc, topology->gpc_count);
+    crc = gr_crc32_word(crc, topology->rop_count);
+    crc = gr_crc32_word(crc, topology->tpc_total);
+    crc = gr_crc32_word(crc, topology->tpc_max);
+    for (uint32_t index = 0U; index < DEVICE_DOMAIN_GR_MAX_GPCS; ++index)
+        crc = gr_crc32_word(crc, topology->tpc_count[index]);
+    for (uint32_t index = 0U; index < DEVICE_DOMAIN_GR_MAX_GPCS; ++index)
+        crc = gr_crc32_word(crc, topology->ppc_tpc_mask[index]);
+    crc = gr_crc32_word(crc, topology->reserved[0]);
+    crc = gr_crc32_word(crc, topology->reserved[1]);
+    return ~crc;
+}
+
+static bool gr_read32(const device_domain_region_info_t *region,
+                      uint32_t offset, uint32_t *value) {
+    return region != NULL && value != NULL && (offset & 3U) == 0U &&
+        offset <= region->length_low &&
+        sizeof(uint32_t) <= region->length_low - offset &&
+        platform_ops.read_region(region, offset, sizeof(uint32_t), value);
+}
+
+static bool gr_sample_topology(
+        const device_domain_region_info_t *region,
+        gr_prerequisite_topology_t *topology) {
+    if (region == NULL || topology == NULL) return false;
+    memset(topology, 0, sizeof(*topology));
+    topology->version = GK208_GR_PLAN_VERSION;
+    topology->struct_size = sizeof(*topology);
+    uint32_t summary = 0U;
+    if (!gr_read32(region, GK208_GR_TOPOLOGY_REGISTER, &summary))
+        return false;
+    topology->gpc_count = summary & 0x1FU;
+    topology->rop_count = (summary >> 16U) & 0x1FU;
+    if (topology->gpc_count == 0U ||
+        topology->gpc_count > DEVICE_DOMAIN_GR_MAX_GPCS ||
+        topology->rop_count == 0U ||
+        topology->rop_count > GK208_GR_MAX_ROPS)
+        return false;
+    for (uint32_t gpc = 0U; gpc < topology->gpc_count; ++gpc) {
+        const uint32_t base = GK208_GR_GPC_UNIT_BASE +
+            gpc * GK208_GR_GPC_UNIT_STRIDE;
+        uint32_t tpcs = 0U;
+        uint32_t mask = 0U;
+        if (!gr_read32(region, base + GK208_GR_GPC_TPC_COUNT_OFFSET,
+                &tpcs) ||
+            !gr_read32(region, base + GK208_GR_GPC_PPC_MASK_OFFSET,
+                &mask) ||
+            tpcs == 0U || tpcs > GK208_GR_MAX_TPCS_PER_GPC ||
+            mask == 0U || (mask >> tpcs) != 0U ||
+            topology->tpc_total > GK208_GR_MAX_TOTAL_TPCS - tpcs)
+            return false;
+        uint32_t bits = 0U;
+        for (uint32_t value = mask; value != 0U; value >>= 1U)
+            bits += value & 1U;
+        if (bits != tpcs) return false;
+        topology->tpc_count[gpc] = tpcs;
+        topology->ppc_tpc_mask[gpc] = mask;
+        topology->tpc_total += tpcs;
+        if (topology->tpc_max < tpcs) topology->tpc_max = tpcs;
+    }
+    return topology->tpc_total != 0U &&
+        topology->tpc_total <= GK208_GR_MAX_TOTAL_TPCS &&
+        topology->tpc_max != 0U;
+}
+
+static bool gr_operation_address_valid(
+        const device_domain_region_info_t *region, uint32_t address) {
+    return region != NULL && (address & 3U) == 0U &&
+        address <= region->length_low &&
+        sizeof(uint32_t) <= region->length_low - address;
+}
+
+static bool gr_execution_image_valid(
+        const uint8_t *storage, uint32_t capacity,
+        const device_domain_gr_prerequisite_policy_t *policy,
+        const device_domain_region_info_t *region,
+        const gr_prerequisite_topology_t *topology,
+        uint32_t *image_crc_out) {
+    if (storage == NULL || policy == NULL || region == NULL ||
+        topology == NULL || image_crc_out == NULL ||
+        policy->execution_pool_offset > capacity ||
+        DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES >
+            capacity - policy->execution_pool_offset)
+        return false;
+    device_domain_gr_execution_header_t header;
+    memcpy(&header, storage + policy->execution_pool_offset, sizeof(header));
+    if (header.version != GK208_GR_EXECUTION_VERSION ||
+        header.header_size != DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES ||
+        header.operation_count == 0U ||
+        header.operation_count > policy->execution_max_operations ||
+        header.operation_count > DEVICE_DOMAIN_GR_EXECUTION_OP_CAPACITY ||
+        header.flags != policy->execution_flags ||
+        header.gpc_count != topology->gpc_count ||
+        header.tpc_total != topology->tpc_total ||
+        header.rop_count != topology->rop_count ||
+        header.topology_crc32 != gr_topology_crc32(topology) ||
+        header.vram_relocation_count != 2U ||
+        header.static_mmio_operation_count == 0U ||
+        header.zbc_operation_count == 0U ||
+        header.context_operation_count == 0U ||
+        header.reserved[0] != 0U || header.reserved[1] != 0U)
+        return false;
+    const uint32_t operations_bytes =
+        header.operation_count * DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES;
+    const uint32_t used = DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES +
+        operations_bytes;
+    if (header.used_bytes != used ||
+        used > capacity - policy->execution_pool_offset ||
+        header.static_mmio_operation_count > header.operation_count ||
+        header.zbc_operation_count > header.operation_count ||
+        header.context_operation_count > header.operation_count ||
+        header.static_mmio_operation_count + header.zbc_operation_count >
+            header.operation_count - header.context_operation_count)
+        return false;
+
+    uint32_t crc = UINT32_MAX;
+    uint32_t vram_mask = 0U;
+    uint32_t idle_waits = 0U;
+    uint32_t context_groups = 0U;
+    uint32_t context_transfers = 0U;
+    uint32_t hub_command = 0U;
+    uint32_t hub_start = 0U;
+    uint32_t ready_waits = 0U;
+    uint32_t size_reads = 0U;
+    const uint8_t *operations = storage + policy->execution_pool_offset +
+        DEVICE_DOMAIN_GR_EXECUTION_HEADER_BYTES;
+    for (uint32_t index = 0U; index < header.operation_count; ++index) {
+        device_domain_gr_execution_op_t operation;
+        memcpy(&operation,
+               operations + index * DEVICE_DOMAIN_GR_EXECUTION_OP_BYTES,
+               sizeof(operation));
+        crc = gr_crc32_word(crc, operation.opcode);
+        crc = gr_crc32_word(crc, operation.address);
+        crc = gr_crc32_word(crc, operation.value);
+        crc = gr_crc32_word(crc, operation.mask);
+        switch (operation.opcode) {
+        case DEVICE_DOMAIN_GR_OP_WRITE32:
+            if (!gr_operation_address_valid(region, operation.address) ||
+                operation.mask != 0U) return false;
+            if (operation.address == 0x0040910CU && operation.value == 0U)
+                ++hub_command;
+            if (operation.address == 0x00409100U && operation.value == 2U)
+                ++hub_start;
+            break;
+        case DEVICE_DOMAIN_GR_OP_MASK32:
+            if (!gr_operation_address_valid(region, operation.address) ||
+                operation.mask == 0U ||
+                (operation.value & ~operation.mask) != 0U) return false;
+            break;
+        case DEVICE_DOMAIN_GR_OP_COPY_MASKED32:
+            if (!gr_operation_address_valid(region, operation.address) ||
+                !gr_operation_address_valid(region, operation.value) ||
+                operation.mask == 0U) return false;
+            break;
+        case DEVICE_DOMAIN_GR_OP_VRAM_OFFSET32:
+            if (operation.address == 0x004188B4U &&
+                operation.value == 1U && operation.mask == 8U)
+                vram_mask |= 1U;
+            else if (operation.address == 0x004188B8U &&
+                     operation.value == 2U && operation.mask == 8U)
+                vram_mask |= 2U;
+            else
+                return false;
+            break;
+        case DEVICE_DOMAIN_GR_OP_WAIT_IDLE:
+            if (operation.address != 0x00400700U ||
+                operation.value != 0x0040060CU ||
+                operation.mask != 2000U) return false;
+            ++idle_waits;
+            break;
+        case DEVICE_DOMAIN_GR_OP_CONTEXT_GROUP:
+            if ((operation.address != 0x00409000U &&
+                 operation.address != 0x0041A000U) ||
+                (operation.value != 0U && operation.value != 4U &&
+                 operation.value != 8U) ||
+                operation.mask == 0U || operation.mask > 256U)
+                return false;
+            ++context_groups;
+            break;
+        case DEVICE_DOMAIN_GR_OP_CONTEXT_TRANSFER:
+            if ((operation.address != 0x004091C4U &&
+                 operation.address != 0x0041A1C4U) || operation.mask != 0U)
+                return false;
+            ++context_transfers;
+            break;
+        case DEVICE_DOMAIN_GR_OP_WAIT_MASK32:
+            if (operation.address != 0x00409800U ||
+                operation.value != 0x80000000U ||
+                operation.mask != 2000U) return false;
+            ++ready_waits;
+            break;
+        case DEVICE_DOMAIN_GR_OP_READ32_NONZERO:
+            if (operation.address != 0x00409804U || operation.value != 0U ||
+                operation.mask != 0U) return false;
+            ++size_reads;
+            break;
+        default:
+            return false;
+        }
+    }
+    crc = ~crc;
+    if (crc != header.operation_crc32 || vram_mask != 3U ||
+        idle_waits != 1U || context_groups != 5U ||
+        context_transfers == 0U || hub_command != 1U || hub_start != 1U ||
+        ready_waits != 1U || size_reads != 1U ||
+        header.context_operation_count !=
+            context_groups + context_transfers + 4U)
+        return false;
+    *image_crc_out = crc;
+    return true;
+}
+
+static bool gr_align_up_u64(uint64_t value, uint32_t alignment,
+                            uint64_t *result) {
+    if (result == NULL || alignment == 0U ||
+        (alignment & (alignment - 1U)) != 0U ||
+        value > UINT64_MAX - (alignment - 1U))
+        return false;
+    *result = (value + alignment - 1U) & ~(uint64_t)(alignment - 1U);
+    return true;
+}
+
+static bool gr_build_prerequisite_plan(
+        const device_domain_region_info_t *region,
+        const device_domain_gr_prerequisite_policy_t *policy,
+        gr_prerequisite_plan_t *plan) {
+    uint32_t fbp_count = 0U;
+    uint32_t fbpa_count = 0U;
+    uint32_t disable_mask = 0U;
+    uint32_t slice_value = 0U;
+    uint32_t page_config = 0U;
+    if (region == NULL || policy == NULL || plan == NULL ||
+        !gr_read32(region, GK208_FB_PART_COUNT, &fbp_count) ||
+        !gr_read32(region, GK208_FB_FBPA_COUNT, &fbpa_count) ||
+        !gr_read32(region, GK208_FB_DISABLE_MASK, &disable_mask) ||
+        !gr_read32(region, GK208_LTC_SLICE_COUNT, &slice_value) ||
+        !gr_read32(region, GK208_FB_PAGE_CONFIG, &page_config) ||
+        fbp_count == 0U || fbp_count > policy->fbp_max ||
+        fbpa_count < fbp_count || fbpa_count > policy->fbpa_max ||
+        (fbpa_count % fbp_count) != 0U)
+        return false;
+    uint32_t ltc_count = 0U;
+    for (uint32_t fbp = 0U; fbp < fbp_count; ++fbp)
+        if ((disable_mask & (1U << fbp)) == 0U) ++ltc_count;
+    const uint32_t lts_count = slice_value >> 28U;
+    if (ltc_count == 0U || lts_count == 0U || lts_count > 4U)
+        return false;
+
+    uint64_t total_mib = 0U;
+    for (uint32_t fbpa = 0U; fbpa < fbpa_count; ++fbpa) {
+        if ((disable_mask & (1U << fbpa)) != 0U) continue;
+        uint32_t amount_mib = 0U;
+        if (!gr_read32(region,
+                GK208_FB_FBPA_SIZE_BASE + fbpa * GK208_FB_FBPA_SIZE_STRIDE,
+                &amount_mib) || amount_mib == 0U || amount_mib > 4095U ||
+            total_mib > 4095U - amount_mib)
+            return false;
+        total_mib += amount_mib;
+    }
+    const uint64_t vram_bytes = total_mib << 20U;
+    if (vram_bytes <= GK208_VRAM_VGA_HEAD_BYTES +
+            GK208_VRAM_VBIOS_TAIL_BYTES || vram_bytes > UINT32_MAX)
+        return false;
+
+    uint64_t tag_count = (vram_bytes >> 17U) / 4U;
+    const uint32_t tag_bits = (page_config & 0x00001000U) != 0U ? 16U : 17U;
+    if (tag_count > (1U << tag_bits)) tag_count = 1U << tag_bits;
+    tag_count = (tag_count + 63U) & ~63ULL;
+    const uint64_t tag_alignment =
+        (uint64_t)ltc_count * GK208_LTC_TAG_ALIGN_PER_LTC;
+    const uint64_t tag_margin = tag_alignment < GK208_LTC_TAG_MIN_MARGIN
+        ? GK208_LTC_TAG_MIN_MARGIN : tag_alignment;
+    uint64_t tag_bytes = (tag_count / 64U) * GK208_LTC_TAG_BLOCK_BYTES +
+        tag_margin + tag_alignment;
+    if (!gr_align_up_u64(tag_bytes, 4096U, &tag_bytes)) return false;
+
+    uint64_t scanout_end =
+        (uint64_t)policy->scanout_offset + policy->scanout_bytes;
+    if (scanout_end < GK208_VRAM_VGA_HEAD_BYTES)
+        scanout_end = GK208_VRAM_VGA_HEAD_BYTES;
+    uint64_t mmu_read = 0U;
+    if (!gr_align_up_u64(scanout_end, policy->fault_buffer_alignment,
+            &mmu_read)) return false;
+    const uint64_t mmu_write = mmu_read + policy->fault_buffer_bytes;
+    uint64_t tag_offset = 0U;
+    if (!gr_align_up_u64(mmu_write + policy->fault_buffer_bytes, 4096U,
+            &tag_offset)) return false;
+    const uint64_t allocation_end = tag_offset + tag_bytes;
+    uint64_t usable_end = vram_bytes - GK208_VRAM_VBIOS_TAIL_BYTES;
+    if (usable_end > policy->vram_aperture_bytes)
+        usable_end = policy->vram_aperture_bytes;
+    if (allocation_end < tag_offset || allocation_end > usable_end ||
+        mmu_read > UINT32_MAX || mmu_write > UINT32_MAX ||
+        tag_offset > UINT32_MAX || tag_bytes > UINT32_MAX)
+        return false;
+    const uint64_t tag_address = tag_offset + tag_margin;
+    const uint64_t tag_base =
+        (tag_address + tag_alignment - 1U) / tag_alignment;
+    if (tag_base == 0U || tag_base > UINT32_MAX) return false;
+    *plan = (gr_prerequisite_plan_t){
+        .mmu_read_offset = (uint32_t)mmu_read,
+        .mmu_write_offset = (uint32_t)mmu_write,
+        .tag_offset = (uint32_t)tag_offset,
+        .tag_bytes = (uint32_t)tag_bytes,
+        .tag_base = (uint32_t)tag_base,
+        .vram_bytes = (uint32_t)vram_bytes,
+        .ltc_count = ltc_count,
+    };
+    return true;
+}
+
+int device_domain_gr_prerequisites(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_prerequisite_request_t *request) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->policy_id == 0U || request->flags != 0U ||
+        request->reserved[0] != 0U || request->reserved[1] != 0U ||
+        request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(
+        pid, process_generation, request->device);
+    resource_slot_t *region = owned_resource_locked(
+        pid, process_generation, request->region,
+        DEVICE_DOMAIN_RESOURCE_REGION);
+    resource_slot_t *dma = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(dma);
+    if (device == NULL || region == NULL || dma == NULL) {
+        end_operation();
+        return -9;
+    }
+    const uint32_t device_index = (uint32_t)(device - devices);
+    const device_domain_gr_prerequisite_policy_t *policy =
+        &device->gr_prerequisite_policy;
+    if (region->device_slot != device_index || dma->device_slot != device_index ||
+        region->device_generation != device->generation ||
+        dma->device_generation != device->generation ||
+        device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
+        pool->sealed == 0U || device->dma_vm_page_mode_active != 0U ||
+        device->gr_firmware_active != 0U ||
+        device->gr_prerequisite_policy_installed == 0U ||
+        device->gr_prerequisite_active != 0U ||
+        request->policy_id != policy->policy_id ||
+        region->region.region_index != policy->region_index ||
+        (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U) {
+        end_operation();
+        return -13;
+    }
+    const uint32_t pool_index = dma->platform_capability - 1U;
+    const uint8_t *storage = dma_pool_storage[pool_index];
+    gr_prerequisite_topology_t first;
+    gr_prerequisite_topology_t second;
+    uint32_t image_crc = 0U;
+    gr_prerequisite_plan_t plan;
+    bool valid = gr_sample_topology(&region->region, &first) &&
+        gr_execution_image_valid(storage, pool->capacity, policy,
+            &region->region, &first, &image_crc) &&
+        gr_build_prerequisite_plan(&region->region, policy, &plan) &&
+        gr_sample_topology(&region->region, &second) &&
+        memcmp(&first, &second, sizeof(first)) == 0;
+    if (!valid) {
+        end_operation();
+        return -84;
+    }
+    device->gr_prerequisite_active = 1U;
+    device->gr_prerequisite_image_crc = image_crc;
+    device->gr_prerequisite_topology_crc = gr_topology_crc32(&first);
+    device->gr_prerequisite_mmu_read_offset = plan.mmu_read_offset;
+    device->gr_prerequisite_mmu_write_offset = plan.mmu_write_offset;
+    device->gr_prerequisite_tag_offset = plan.tag_offset;
+    device->gr_prerequisite_tag_bytes = plan.tag_bytes;
+    device->gr_prerequisite_tag_base = plan.tag_base;
+    device->gr_prerequisite_vram_bytes = plan.vram_bytes;
+    device->gr_prerequisite_ltc_count = plan.ltc_count;
     end_operation();
     return 0;
 }

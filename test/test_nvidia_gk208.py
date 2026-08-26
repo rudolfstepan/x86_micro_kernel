@@ -145,6 +145,12 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("NVIDIA_GPCCS_BASE 0x0041A000U", source)
         self.assertIn("install_nvidia_gr_firmware_policy", source)
         self.assertIn("device_domain_install_gr_firmware_policy", source)
+        self.assertIn("install_nvidia_gr_prerequisite_policy", source)
+        self.assertIn("device_domain_install_gr_prerequisite_policy", source)
+        self.assertIn("VBE_RUNTIME_INFO_ADDRESS", source)
+        self.assertIn("vbe.framebuffer_address - selected.base_low", source)
+        self.assertIn(".fault_buffer_bytes = NVIDIA_GR_FAULT_BUFFER_BYTES",
+                      source)
         for offset in ("0x00070000U", "0x00070400U",
                        "0x00071000U", "0x00071400U"):
             self.assertIn(offset, source)
@@ -315,12 +321,18 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("gr_firmware_dma_stage_self_test", driver)
         self.assertIn("gpu_gr_firmware_upload", driver)
         self.assertIn("x86os_device_gr_firmware_upload", driver)
+        self.assertIn("gpu_gr_prerequisites", driver)
+        self.assertIn("x86os_device_gr_prerequisites", driver)
         self.assertLess(driver.index("gpu_vm_relocate_and_seal(driver)"),
                         driver.index("gpu_vm_apply_page_mode(driver)"))
         self.assertLess(driver.index("gr_firmware_dma_stage_self_test(driver)"),
                         driver.index("gpu_vm_relocate_and_seal(driver)"))
         self.assertLess(driver.index("gpu_vm_apply_page_mode(driver)"),
                         driver.index("gpu_gr_firmware_upload(driver)"))
+        self.assertLess(driver.index("gpu_vm_relocate_and_seal(driver)"),
+                        driver.index("gpu_gr_prerequisites(driver)"))
+        self.assertLess(driver.index("gpu_gr_prerequisites(driver)"),
+                        driver.index("gpu_vm_apply_page_mode(driver)"))
         self.assertIn("X86OS_DEVICE_DMA_TRANSFER_MAX", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("x86os_device_activate", driver)

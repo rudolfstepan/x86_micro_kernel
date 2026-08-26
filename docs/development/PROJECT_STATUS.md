@@ -137,6 +137,19 @@ keine der Operationen aus. Offen bleiben eine validierte FB-/LTC-Basis, die
 begrenzte VRAM-Reservierung und eine atomare Kerneltransaktion mit Deadline
 und GR-Reset-Rollback; danach erst dürfen Falcon-Start/Readiness und später
 Channel, Runlist, USERD, echter Fence und Capabilityfreigabe folgen.
+`R2.2s-nvidia-gk208-gr-prerequisites` schließt jetzt die FB-/LTC-Prüfung und
+die hardwareinaktive VRAM-Planung. Append-only Kommando 22 akzeptiert nur die
+versiegelte Ausführungsabbildung derselben Generation, validiert sie samt
+zweifach stabiler Live-Topologie erneut und ermittelt über feste
+GK104/GK208-Register Gesamt-VRAM, aktive LTCs und den Nouveau-konformen
+Tag-RAM-Bedarf. Das exakte Profil bestimmt den VRAM-BAR anhand des validierten
+VBE-Scanouts statt anhand einer angenommenen BAR-Nummer. Zwei getrennte,
+128-KiB-ausgerichtete Faultbuffer und der Tag-Bereich werden hinter dem
+sichtbaren Scanout logisch reserviert, bleiben für Ring 3 jedoch vollständig
+opak. Es erfolgen noch keine VRAM-/MMIO-Schreibzugriffe; Falcon, Channel,
+Runlist, USERD, Busmaster, IRQ und Capabilitybits bleiben inaktiv. Der nächste
+Slice ist die atomare kernelmediierte LTC-/Resolve-/GR-Ausführung mit Deadline,
+GR-Reset-Rollback sowie FECS-Readiness- und Kontextgrößenprüfung.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

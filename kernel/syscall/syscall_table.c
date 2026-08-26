@@ -3086,6 +3086,14 @@ static int syscall_device_control(uint32_t command, const void *user_request,
         return device_domain_gr_firmware_upload(
             process->pid, process->generation, &request);
     }
+    if (command == DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES) {
+        if (user_result != NULL) return -22;
+        device_domain_gr_prerequisite_request_t request;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        return device_domain_gr_prerequisites(
+            process->pid, process->generation, &request);
+    }
     if (command == DEVICE_DOMAIN_CONTROL_REGION_READ) {
         if (!device_output_accessible(
                 directory, user_result,

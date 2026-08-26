@@ -11,6 +11,7 @@
 
 #include <stddef.h>
 
+#include "arch/x86/boot/vbe_runtime.h"
 #include "drivers/bus/pci.h"
 #include "include/kernel/device_domain.h"
 #include "lib/libc/string.h"
@@ -47,6 +48,14 @@
 #define NVIDIA_FECS_CODE_OFFSET 0x00070400U
 #define NVIDIA_GPCCS_DATA_OFFSET 0x00071000U
 #define NVIDIA_GPCCS_CODE_OFFSET 0x00071400U
+#define NVIDIA_GR_EXECUTION_OFFSET 0x00072000U
+#define NVIDIA_GR_EXECUTION_OP_CAPACITY 2048U
+#define NVIDIA_GR_EXECUTION_FLAGS 0x00000007U
+#define NVIDIA_GR_PREREQUISITE_POLICY_ID 1U
+#define NVIDIA_GR_FAULT_BUFFER_BYTES 0x00020000U
+#define NVIDIA_GR_FB_PAGE_SHIFT 17U
+#define NVIDIA_GR_MAX_FBPS 8U
+#define NVIDIA_GR_MAX_FBPAS 16U
 
 static device_domain_dma_relocation_rule_t nvidia_relocation(
         uint32_t destination, uint32_t source, uint32_t shift,
@@ -167,6 +176,68 @@ static int install_nvidia_gr_firmware_policy(uint32_t device_index) {
     return device_domain_install_gr_firmware_policy(device_index, &policy);
 }
 
+static int install_nvidia_gr_prerequisite_policy(
+        uint32_t device_index, const pci_device_t *device) {
+    vbe_runtime_info_t vbe;
+    memcpy(&vbe, (const void *)(uintptr_t)VBE_RUNTIME_INFO_ADDRESS,
+           sizeof(vbe));
+    if (device == NULL || vbe.magic != VBE_RUNTIME_INFO_MAGIC ||
+        vbe.version != VBE_RUNTIME_INFO_VERSION ||
+        vbe.struct_size != sizeof(vbe) || vbe.reserved != 0U ||
+        vbe.framebuffer_address == 0U || vbe.pitch == 0U ||
+        vbe.width == 0U || vbe.height == 0U || vbe.bpp != 32U ||
+        vbe.memory_type != 1U || vbe.width > UINT32_MAX / 4U ||
+        vbe.pitch < vbe.width * 4U ||
+        vbe.height > UINT32_MAX / vbe.pitch)
+        return -95;
+    const uint32_t scanout_bytes = vbe.pitch * vbe.height;
+    const uint64_t scanout_end =
+        (uint64_t)vbe.framebuffer_address + scanout_bytes;
+    if (scanout_end > UINT32_MAX + 1ULL) return -95;
+
+    pci_bar_info_t selected = {0};
+    bool found = false;
+    for (uint32_t index = 0U; index < 6U; ++index) {
+        pci_bar_info_t bar;
+        if (!pci_describe_bar(device, index, &bar)) continue;
+        if ((bar.flags & PCI_BAR_INFO_MMIO) == 0U ||
+            (bar.flags & PCI_BAR_INFO_PIO) != 0U ||
+            bar.base_high != 0U || bar.size_high != 0U ||
+            bar.base_low == 0U || bar.size_low == 0U)
+            continue;
+        const uint64_t bar_end = (uint64_t)bar.base_low + bar.size_low;
+        if (vbe.framebuffer_address < bar.base_low ||
+            scanout_end > bar_end)
+            continue;
+        if (found) return -95;
+        selected = bar;
+        found = true;
+    }
+    if (!found || selected.index == 0U) return -95;
+    const uint32_t scanout_offset =
+        vbe.framebuffer_address - selected.base_low;
+    const device_domain_gr_prerequisite_policy_t policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(policy),
+        .policy_id = NVIDIA_GR_PREREQUISITE_POLICY_ID,
+        .region_index = 0U,
+        .vram_region_index = selected.index,
+        .execution_pool_offset = NVIDIA_GR_EXECUTION_OFFSET,
+        .execution_max_operations = NVIDIA_GR_EXECUTION_OP_CAPACITY,
+        .execution_flags = NVIDIA_GR_EXECUTION_FLAGS,
+        .scanout_offset = scanout_offset,
+        .scanout_bytes = scanout_bytes,
+        .vram_aperture_bytes = selected.size_low,
+        .fault_buffer_bytes = NVIDIA_GR_FAULT_BUFFER_BYTES,
+        .fault_buffer_alignment = NVIDIA_GR_FAULT_BUFFER_BYTES,
+        .fb_page_shift = NVIDIA_GR_FB_PAGE_SHIFT,
+        .fbp_max = NVIDIA_GR_MAX_FBPS,
+        .fbpa_max = NVIDIA_GR_MAX_FBPAS,
+    };
+    return device_domain_install_gr_prerequisite_policy(
+        device_index, &policy);
+}
+
 static int register_profile(const pci_device_t *device, uint32_t backend,
                             video_device_profile_info_t *info) {
     const device_domain_profile_t profile = {
@@ -202,6 +273,9 @@ static int register_profile(const pci_device_t *device, uint32_t backend,
         result = install_nvidia_dma_vm_page_mode_policy(device_index);
         if (result != 0) return result;
         result = install_nvidia_gr_firmware_policy(device_index);
+        if (result != 0) return result;
+        result = install_nvidia_gr_prerequisite_policy(
+            device_index, device);
         if (result != 0) return result;
     }
     *info = (video_device_profile_info_t){

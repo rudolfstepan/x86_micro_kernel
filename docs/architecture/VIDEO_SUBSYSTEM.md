@@ -268,13 +268,29 @@ Ring 3 recompiles the stream through an independent comparison sink, rejects
 every topology, order, operation or CRC mutation, and stages only the used
 prefix at pool offset `0x72000`. Every byte is read back before the existing
 relocation seal. No operation in the image is executed by this package and no
-new Device-Control command or authority is added. The next hardware package
-must first validate the FB/LTC prerequisites, reserve a bounded device-VRAM
-scratch region without exposing BAR1 or physical addresses, resolve both VRAM
-offsets, and execute the sealed image through one generation-scoped kernel
-transaction with monotonic deadlines and GR reset rollback. Only a successful
-FECS readiness/context-size result may permit the later channel/runlist/fence
-stage; NVIDIA acceleration capabilities remain zero meanwhile.
+new Device-Control command or authority is added.
+
+`R2.2s` adds append-only Device-Control command 22 as the hardware-inactive
+kernel acceptance boundary for that sealed image. The immutable physical
+profile derives the actual VRAM aperture containing the validated VBE scanout
+from PCI BAR geometry; it does not assume a BAR number. Ring 0 independently
+checks the 64-byte header, exact used prefix, operation CRC, a twice-sampled
+live topology CRC, all semantic opcode/address bounds and exactly the two
+distinct unresolved 128-KiB fault-buffer records. Fixed upstream GK104/GK208
+FB and LTC registers determine bounded partition, VRAM and tag-RAM geometry.
+The mediator records two aligned fault buffers and one tag region after visible
+scanout, below both the aperture and the probed VRAM limit, without returning
+an offset or BAR base to Ring 3. This is a logical generation reservation only:
+command 22 writes no VRAM or MMIO and starts no Falcon. For the exact profile,
+commands 20 and 21 reject attempts that bypass this prerequisite state. Fence
+and generation cleanup erase it idempotently.
+
+The next hardware package must revalidate the same opaque reservation and
+sealed image, initialize LTC/tag state, resolve both VRAM offsets, and execute
+the image through one transaction with monotonic deadlines and GR-reset
+rollback. Only successful FECS readiness and nonzero context-size results may
+permit the later channel/runlist/fence stage; NVIDIA acceleration capabilities
+remain zero meanwhile.
 
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2s-nvidia-gk208-gr-prerequisites"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2s-nvidia-gk208-gr-prerequisites"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Reserve validated GK208 GR device-memory prerequisites"
@@ -63,7 +63,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: reserve GK208 GR prerequisites"
-evidence = []
+evidence = [
+  "Device-domain source and host lifecycle contract passed 10 tests including read-only generation-scoped prerequisite validation",
+  "NVIDIA GK208 source and host contract passed 15 tests with prerequisite ordering and zero acceleration capabilities",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 42 seconds",
+  "VMware framebuffer package passed in 28 seconds"
+]
 
 [[packages]]
 id = "R2.2r-nvidia-gk208-gr-execution-image"

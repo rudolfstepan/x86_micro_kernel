@@ -2397,11 +2397,17 @@ Copy/Mask-Operationen erhalten. Zwei getrennte 128-KiB-Faultbuffer bleiben
 typisierte, ungelöste Geräte-VRAM-Offsets statt erfundener DMA-/CPU-Adressen.
 Ring 3 validiert das Abbild unabhängig, staged nur den belegten Präfix ab
 `0x72000` und liest ihn vor dem bestehenden Seal vollständig zurück; keine
-Operation wird ausgeführt. Als nächster gemeinsamer Slice bleiben damit die
-Prüfung der FB-/LTC-Voraussetzungen, eine begrenzte BAR1-VRAM-Reservierung und
-der atomare kernelmediierte Resolve/Commit mit Deadline, GR-Reset-Rollback,
-Falcon-Start und Readiness. Channel-Bind, Runlist, USERD, echter Fence und
-Capabilityfreigabe folgen erst nach diesem Hardwaregate.
+Operation wird ausgeführt. `R2.2s` validiert nun über append-only Kommando 22
+das versiegelte Abbild, seine semantischen Operationen und die zweimal stabil
+gelesene Live-Topologie nochmals in Ring 0. Der tatsächliche, den VBE-Scanout
+enthaltende PCI-BAR wird aus geprüfter Loader- und PCI-Geometrie gewählt; feste
+GK104/GK208-FB-/LTC-Proben begrenzen VRAM, aktive LTCs und Tag-RAM. Der Kernel
+merkt sich zwei ausgerichtete Faultbuffer und einen Nouveau-konform berechneten
+Tag-Bereich hinter dem sichtbaren Scanout, gibt aber keine Adresse an Ring 3
+zurück und verändert weder VRAM noch MMIO. Der nächste gemeinsame Slice ist
+damit der atomare kernelmediierte LTC-/Resolve-/GR-Commit mit Deadline,
+GR-Reset-Rollback, Falcon-Start und Readiness. Channel-Bind, Runlist, USERD,
+echter Fence und Capabilityfreigabe folgen erst nach diesem Hardwaregate.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

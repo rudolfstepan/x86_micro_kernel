@@ -174,6 +174,18 @@ danach den Page-Mode wieder her. Nicht bestätigte Schritte bleiben gesperrt
 und wiederholbar; Ring 3 erhält weder MMIO-Schreibrecht noch Firmware- oder
 physische Adressen.
 
+Device-Control-Kommando 22 liegt beim exakten GK208-Profil zwingend vor den
+Kommandos 20 und 21. Es akzeptiert nur dieselbe Gerätegeneration, die
+read-only BAR0-Region und den bereits versiegelten großen DMA-Pool. Ring 0
+validiert Header, belegten Präfix, CRC, zweimal gelesene Live-Topologie,
+semantische Operationsgrenzen und genau zwei ungelöste 128-KiB-Faultbuffer.
+Danach leitet der Mediator aus festen FB-/LTC-Registern eine begrenzte VRAM-
+und Tag-RAM-Geometrie ab und merkt sich nicht überlappende Bereiche hinter dem
+sichtbaren VBE-Scanout. Weder BAR-Basen noch VRAM-Offsets werden an Ring 3
+gegeben. Diese generationgebundene Reservierung verändert keine Hardware und
+wird beim Fence vollständig verworfen; ein Profil ohne Kommando-22-Policy
+behält die bisherige ABI-Semantik.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden
