@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2s-nvidia-gk208-gr-prerequisites"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,61 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2s-nvidia-gk208-gr-prerequisites"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Reserve validated GK208 GR device-memory prerequisites"
+scope = "Add append-only Device Control command 22 as a hardware-inactive, generation-scoped GK208 GR prerequisite transaction. The exact device profile derives one immutable VRAM aperture and visible VBE scanout range from validated PCI BAR and loader handoff geometry before claim. After the existing DMA image is sealed, Ring 0 independently validates its version, used length, operation CRC, live topology CRC, semantic operation bounds and the two unresolved fault-buffer records. It then probes the pinned Nouveau FB/LTC inputs through the already prepared read-only BAR0 aperture, derives bounded total VRAM, LTC count, tag-RAM requirements and two distinct 128-KiB fault buffers, and records one non-overlapping reservation after visible scanout without returning BAR bases or VRAM offsets to Ring 3. No VRAM byte, MMIO register, Falcon, channel, runlist, USERD, bus-master, IRQ or capability state is modified. The following execution package must revalidate this reservation and the exact image before any register write, initialize LTC/tag RAM, resolve the two offsets, execute with deadlines and GR-reset rollback, and prove FECS readiness."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "command 22 is append-only and accepts only an exact pre-claim policy on the same device generation read-only BAR resource and sealed mediated-DMA pool",
+  "the kernel independently validates the fixed 64-byte header exact used prefix IEEE CRC32 live topology binding semantic opcode bounds and exactly two distinct unresolved 128-KiB fault-buffer records",
+  "FB partition FBPA LTC slice and memory-size probes use only fixed upstream Nouveau registers fixed maxima and the existing prepared read-only aperture",
+  "the VRAM aperture must contain the validated VBE scanout and every reserved range is aligned non-overlapping after visible scanout below both aperture and probed VRAM bounds",
+  "the derived LTC tag allocation preserves the pinned Nouveau tag-count margin alignment and base calculation without exposing any BAR base or VRAM offset to Ring 3",
+  "reservation state is fixed-capacity generation-scoped idempotently cleared by fencing and cannot survive device recovery",
+  "no VRAM write MMIO write Falcon start channel runlist USERD bus mastering IRQ hardware execution or acceleration capability publication occurs",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "safe VRAM placement would require guessing a BAR-to-VRAM translation or overlapping the visible scanout",
+  "FB or LTC geometry is zero overflowing inconsistent or outside the pinned GK208 maxima",
+  "the image validator would accept an executable MMIO effect or return a device address to Ring 3",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: reserve GK208 GR prerequisites"
+evidence = []
 
 [[packages]]
 id = "R2.2r-nvidia-gk208-gr-execution-image"
