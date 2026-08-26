@@ -807,8 +807,8 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   einsekündige Requestgrenzen und höchstens 128 akzeptierte Einträge. Fehler
   übernehmen keine Teilvervollständigung. Der geschützte Resident-Fallback
   bleibt verfügbar; der normale Gast markiert `SHELL_VFS_NAMESPACE_OK`.
-- Der feste Rescue-Programmpool umfasst nun 352 KiB für weiterhin genau elf
-  geschützte Programme; die Einzelgrenze beträgt 192 KiB. Damit passen die
+- Der feste Rescue-Programmpool umfasst nun 448 KiB für weiterhin genau elf
+  geschützte Programme; die Einzelgrenze beträgt 224 KiB. Damit passen die
   vollständigen Unicode-15-Tabellen des isolierten Storage-Dienstes in die
   Allowlist, ohne dynamische Cacheallokation einzuführen.
 - Der Windows-Build wertet die Exitcodes der System- und Beispielprogramm-
@@ -835,7 +835,7 @@ Entladen von Kernel-Treibern ist nicht vorgesehen.
   werden begrenzt widerrufen. Der echte QEMU-Gast weist Vier-Slot-Quota,
   Rechteabschwächung, Quellhandle-Erhalt und Ablauf nach. Ambiente Spawn-
   Vererbung bleibt ausgeschlossen. Das Storage-Image bleibt unter der festen
-  192-KiB-Einzelgrenze im festen 352-KiB-Rescue-Gesamtpool.
+  224-KiB-Einzelgrenze im festen 448-KiB-Rescue-Gesamtpool.
 - `FDISK.PRG` erzeugt auf leeren, ungeschützten ATA-/AHCI-Medien eine
   ausgerichtete und rückgelesene MBR-Partition und veröffentlicht sie ohne
   Neustart. Root- und bereits partitionierte Medien bleiben geschützt.

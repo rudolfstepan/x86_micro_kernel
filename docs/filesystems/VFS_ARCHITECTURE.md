@@ -85,8 +85,12 @@ SEEK-/STAT-Open; DELEGATE wird nur explizit vergeben. Das Ziel übernimmt einen
 eigenen Slot innerhalb von fünf monotonen Sekunden. Deskriptorvererbung beim
 Spawn bleibt davon getrennt und ist noch nicht migriert. Das Storage-Rescue-
 Image bleibt im festen Gesamtpool. Mit den vollständigen Unicode-15-Tabellen
-beträgt die feste Einzelgrenze nun 192 KiB; der weiterhin statische
-Allowlist-Gesamtpool ist auf 352 KiB begrenzt.
+beträgt die feste Einzelgrenze nun 224 KiB; der weiterhin statische
+Allowlist-Gesamtpool ist auf 448 KiB begrenzt. Diese Kapazität enthält die
+aktuell 387088 Byte großen elf Images mit festem Wachstumsspielraum; eine
+erneute Überschreitung meldet nun ausdrücklich `resident rescue cache / capacity`
+statt den Namen des zuletzt erfolgreich validierten Programms irreführend als
+Imagefehler anzuzeigen.
 
 Append-only Frameoperation 15 und Storage-Operation 32 ergänzen einen
 objektbezogenen Bulk-Lesepfad. Der 512-Byte-Kontrollframe bleibt im

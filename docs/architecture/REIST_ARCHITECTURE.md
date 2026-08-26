@@ -194,8 +194,8 @@ Kopien halten Interrupts offen; nur kleine Slotzustände liegen unter dem
 IRQ-Lock. Erschöpfung, Integritätsfehler, Deadline, Cancel und Lifecycle-
 Widerruf scheitern geschlossen und ändern keinen Clientoffset.
 Der zusätzliche Servicepfad einschließlich vollständiger Unicode-15-Tabellen
-bleibt unter der festen 192-KiB-Einzelgrenze; der statische Gesamtpool ist auf
-352 KiB begrenzt.
+bleibt unter der festen 224-KiB-Einzelgrenze; der statische Gesamtpool ist auf
+448 KiB begrenzt.
 Der gemeinsame feste Prozess-Deskriptorraum reserviert 0 für READ-only
 Terminaleingabe sowie 1 und 2 für WRITE-only Terminalausgabe. Acht dynamische
 Datei-/Socket-Slots behalten unverändert die Nummern 3 bis 10. Jede neue
@@ -1511,7 +1511,7 @@ Rescue-Allowlist-Abbild in RAM: `/bin/shell.prg`, `/sbin/devctl.prg`,
 `/sbin/mount.prg`, `/sbin/umount.prg`, `/sbin/svcctl.prg`,
 `/libexec/reist/storage.prg`, `/libexec/reist/reist.prg`, `/sbin/drives.prg`,
 `/bin/ls.prg`, `/bin/cat.prg` und `/sbin/chkdsk.prg`. Jedes Image ist auf
-192 KiB, der gesamte statische Pool auf 352 KiB begrenzt. Die größere
+224 KiB, der gesamte statische Pool auf 448 KiB begrenzt. Die größere
 Einzelgrenze nimmt den gewachsenen, weiterhin isolierten Storage-Dienst mit
 seinen vollständigen Unicode-15-Normalisierungstabellen auf;
 die seitenbündige Gesamtgrenze nimmt die vollständige Allowlist auf und bleibt

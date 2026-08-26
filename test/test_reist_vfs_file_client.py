@@ -83,9 +83,9 @@ class ReistVfsFileClientTests(unittest.TestCase):
 
     def test_storage_rescue_growth_keeps_the_aggregate_pool_fixed(self):
         process = read("kernel/proc/process.c")
-        self.assertIn("RESCUE_PROGRAM_CACHE_CAPACITY (192U * 1024U)",
+        self.assertIn("RESCUE_PROGRAM_CACHE_CAPACITY (224U * 1024U)",
                       process)
-        self.assertIn("RESCUE_PROGRAM_POOL_CAPACITY (352U * 1024U)",
+        self.assertIn("RESCUE_PROGRAM_POOL_CAPACITY (448U * 1024U)",
                       process)
 
     def test_cat_and_http_use_only_ring3_read_clients(self):

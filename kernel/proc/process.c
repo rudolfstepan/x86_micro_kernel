@@ -34,8 +34,8 @@
 #define PROGRAM_REGION_SIZE PROGRAM_V1_REGION_SIZE
 #define RESCUE_PROGRAM_CACHE_VERSION 1U
 #define RESCUE_PROGRAM_CACHE_COUNT 11U
-#define RESCUE_PROGRAM_CACHE_CAPACITY (192U * 1024U)
-#define RESCUE_PROGRAM_POOL_CAPACITY (352U * 1024U)
+#define RESCUE_PROGRAM_CACHE_CAPACITY (224U * 1024U)
+#define RESCUE_PROGRAM_POOL_CAPACITY (448U * 1024U)
 
 typedef struct {
     const char *path;
@@ -287,9 +287,15 @@ bool process_cache_rescue_programs(void) {
         rescue_program_cache_t *cache = &rescue_program_cache[index];
         uint8_t *image = NULL;
         int size = load_program_file_uncached(cache->path, &image);
-        if (size <= 0 || (uint32_t)size > RESCUE_PROGRAM_CACHE_CAPACITY ||
-            used > RESCUE_PROGRAM_POOL_CAPACITY - (uint32_t)size ||
-            image == NULL) {
+        const bool capacity_failure = size > 0 &&
+            ((uint32_t)size > RESCUE_PROGRAM_CACHE_CAPACITY ||
+             used > RESCUE_PROGRAM_POOL_CAPACITY - (uint32_t)size);
+        if (size <= 0 || capacity_failure || image == NULL) {
+            if (capacity_failure) {
+                panic_context_set("program-load", "resident rescue cache",
+                                  "capacity", cache->path);
+                panic_context_set_result(-28, used, (uint32_t)size);
+            }
             printf("REIST_RESCUE CACHE_BUILD_FAIL path=%s size=%d used=%u "
                    "capacity=%u\n", cache->path, size, used,
                    RESCUE_PROGRAM_POOL_CAPACITY);

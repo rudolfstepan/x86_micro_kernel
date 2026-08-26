@@ -493,8 +493,8 @@ und 10 verbindlich.
   - [x] explizite READ-/SEEK-/STAT-/DELEGATE-Rechte und
     abschwächende Übergabe an eine exakt generationgebundene Zielidentität;
     keine ambiente Spawn-Vererbung; das Storage-Rescue-Image mit vollständigen
-    Unicode-15-Tabellen bleibt durch 192 KiB Einzellimit und den statischen
-    352-KiB-Gesamtpool fest begrenzt
+    Unicode-15-Tabellen bleibt durch 224 KiB Einzellimit und den statischen
+    448-KiB-Gesamtpool fest begrenzt
   - [x] echte prozesslokale Standarddeskriptoren 0/1/2 mit
     READ-only `stdin`, WRITE-only `stdout`/`stderr`, nichtblockierendem
     Tastaturpoll und unveränderten acht dynamischen Slots 3 bis 10
