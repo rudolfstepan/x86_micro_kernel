@@ -222,6 +222,7 @@ static void test_shrink_invalidates_only_current_resize_sweep(void) {
     desktop_wm_initialize(&manager, 1024U, 768U, 32, 744, 24U);
     assert(desktop_wm_open(&manager, 0U) != 0U);
     desktop_window_t *window = &manager.windows[0];
+    window->flags = DESKTOP_WM_WINDOW_RETAINED_RESIZE;
     int32_t original_right = window->x + (int32_t)window->width - 1;
     int32_t original_bottom = window->y + (int32_t)window->height - 1;
     desktop_wm_event_t press = {
@@ -252,10 +253,32 @@ static void test_shrink_invalidates_only_current_resize_sweep(void) {
            (uint64_t)window->width * (uint64_t)window->height);
 }
 
+static void test_layout_dependent_content_gets_full_resize_damage(void) {
+    desktop_wm_t manager;
+    desktop_wm_initialize(&manager, 1024U, 768U, 32, 744, 24U);
+    assert(desktop_wm_open(&manager, 0U) != 0U);
+    desktop_window_t *window = &manager.windows[0];
+    assert(window->flags == 0U);
+    int32_t right = window->x + (int32_t)window->width - 1;
+    int32_t bottom = window->y + (int32_t)window->height - 1;
+    desktop_wm_event_t press = {
+        DESKTOP_WM_EVENT_POINTER_BUTTON, right, bottom,
+        DESKTOP_WM_BUTTON_LEFT, 1U, 0U, 0U};
+    desktop_wm_dispatch_result_t result;
+    assert(desktop_wm_dispatch(&manager, &press, &result) == 0);
+    desktop_wm_event_t shrink = {
+        DESKTOP_WM_EVENT_POINTER_MOTION,
+        right - 80, bottom - 60, 0U, 0U, 0U, 0U};
+    assert(desktop_wm_dispatch(&manager, &shrink, &result) == 0);
+    assert(dirty_contains(
+        &result.dirty, window->x + 24, window->y + 48));
+}
+
 int main(void) {
     test_dirty_regions_and_event_dispatch();
     test_edge_and_corner_resize();
     test_shrink_invalidates_only_current_resize_sweep();
+    test_layout_dependent_content_gets_full_resize_damage();
     desktop_wm_t manager;
     desktop_wm_initialize(&manager, 1024U, 768U, 36, 736, 24U);
 

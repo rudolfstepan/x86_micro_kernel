@@ -700,9 +700,11 @@ Seit dem Performance-Schnitt vom 26. August 2026 erzeugt ein Live-Resize keine
 Configure-/Ack-Kaskade mehr: Der Compositor zeigt während des Ziehens die
 zuletzt bestätigte Surface innerhalb der neuen Fenstergeometrie und sendet der
 Anwendung genau die abschließende Größe nach Button-Up. Für den üblichen
-Resize über die rechte oder untere Kante werden außerdem nur die tatsächlich
-verschobenen Rahmen-, Schatten- und neu freigelegten Clientstreifen als Damage
-publiziert. Der unveränderte Notepad-Inhalt wird dadurch nicht mehr pro
-Mausbericht vollständig neu gerastert oder zum Scanout kopiert. Resize über
-die linke oder obere Kante behält den vollständigen sicheren Redraw, weil sich
-dabei der Ursprung des Clientbereichs verschiebt.
+Resize einer explizit als retained markierten Ring-3-Surface über die rechte
+oder untere Kante werden außerdem nur die tatsächlich verschobenen Rahmen-,
+Schatten- und neu freigelegten Clientstreifen als Damage publiziert. Der
+unveränderte Notepad-Inhalt wird dadurch nicht mehr pro Mausbericht vollständig
+neu gerastert oder zum Scanout kopiert. Explorer und andere serverseitige
+Inhalte, deren Layout von der Fenstergröße abhängt, behalten vollständigen
+Resize-Repaint. Dasselbe gilt für linke und obere Kanten, weil sich dort der
+Ursprung des Clientbereichs verschiebt.

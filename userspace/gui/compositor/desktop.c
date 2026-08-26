@@ -2921,6 +2921,7 @@ static void sync_surface_windows(
             !surface_uses_window(surfaces, index)) {
             (void)desktop_wm_close(manager, index);
             window->content_id = index;
+            window->flags = 0U;
             desktop_dirty_full(dirty);
         }
     }
@@ -3055,6 +3056,7 @@ static void sync_surface_windows(
                 (int32_t)((available_height - decorated_height) / 2U);
         }
         window->content_id = DESKTOP_SURFACE_CONTENT_TAG | surface->handle.id;
+        window->flags = DESKTOP_WM_WINDOW_RETAINED_RESIZE;
         surface->window_index = chosen;
         (void)desktop_wm_open(manager, chosen);
         desktop_dirty_full(dirty);

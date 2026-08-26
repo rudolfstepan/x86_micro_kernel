@@ -20,6 +20,7 @@ scope = "Keep retained application surfaces stable during pointer-captured resiz
 allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_wm.h",
   "userspace/gui/compositor/desktop_wm.c",
   "test/test_desktop_source.py",
   "test/test_desktop_wm_host.c",
@@ -30,6 +31,7 @@ invariants = [
   "the final client geometry is configured after button release",
   "retained buffer reads never exceed the last acknowledged surface dimensions",
   "right and bottom resize redraw only swept bands while left and top retain full safe damage",
+  "layout-dependent server content retains full resize repaint",
   "all state and damage storage remains fixed-capacity"
 ]
 targeted_tests = [

@@ -359,6 +359,7 @@ void desktop_wm_initialize(desktop_wm_t *manager, uint32_t screen_width,
         window->width = window_width;
         window->height = window_height;
         window->content_id = index;
+        window->flags = 0U;
         /* Slots are geometry only until a compositor client publishes valid
          * content and explicitly opens one.  This prevents placeholder
          * windows from becoming visible without a backing application. */
@@ -595,6 +596,7 @@ static void collect_state_damage(const desktop_wm_t *manager,
             (manager->keyboard_focus == (int32_t)index);
         uint32_t edge_resize = geometry_changed && !order_changed &&
             !focus_changed && old_window->visible && new_window->visible &&
+            (new_window->flags & DESKTOP_WM_WINDOW_RETAINED_RESIZE) != 0U &&
             manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE &&
             manager->capture_window == (int32_t)index &&
             (manager->resize_edges &

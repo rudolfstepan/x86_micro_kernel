@@ -37,6 +37,9 @@ enum desktop_wm_capture_kind {
 #define DESKTOP_WM_RESIZE_TOP (1U << 2)
 #define DESKTOP_WM_RESIZE_BOTTOM (1U << 3)
 
+/** Client pixels remain at the same origin during right/bottom live resize. */
+#define DESKTOP_WM_WINDOW_RETAINED_RESIZE (1U << 0)
+
 /** Normalized event kinds accepted by desktop_wm_dispatch(). */
 enum desktop_wm_event_type {
     DESKTOP_WM_EVENT_POINTER_MOTION = 1U, /**< Global pointer position. */
@@ -114,6 +117,7 @@ typedef struct desktop_window {
     uint32_t width;    /**< Decorated width. */
     uint32_t height;   /**< Decorated height. */
     uint32_t content_id; /**< Compositor-owned content-slot identity. */
+    uint32_t flags;    /**< DESKTOP_WM_WINDOW_* rendering capabilities. */
     uint32_t visible;  /**< Nonzero while included in composition. */
 } desktop_window_t;
 

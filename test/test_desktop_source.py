@@ -375,8 +375,14 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("if (!live_resize &&", sync)
         manager = WM_SOURCE.read_text(encoding="utf-8")
         self.assertIn("collect_right_bottom_resize_damage", manager)
+        self.assertIn("DESKTOP_WM_WINDOW_RETAINED_RESIZE", manager)
         self.assertIn("Right/bottom resizing leaves", manager)
         self.assertNotIn("resize_origin", manager)
+        self.assertIn(
+            "window->flags = DESKTOP_WM_WINDOW_RETAINED_RESIZE;",
+            self.source,
+        )
+        self.assertIn("window->flags = 0U;", self.source)
 
     def test_live_resize_never_reads_past_acknowledged_surface(self):
         render_window = self.source[
