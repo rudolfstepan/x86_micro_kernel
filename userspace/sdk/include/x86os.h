@@ -1334,6 +1334,9 @@ enum {
     X86OS_DEVICE_CONTROL_GR_EXECUTE = 23U,
     X86OS_DEVICE_CONTROL_GR_CONTEXT_MEMORY = 24U,
     X86OS_DEVICE_CONTROL_GR_GOLDEN_CONTEXT = 25U,
+    X86OS_DEVICE_CONTROL_GR_CHANNEL_ACTIVATE = 26U,
+    X86OS_DEVICE_CONTROL_GR_2D_SUBMIT = 27U,
+    X86OS_DEVICE_CONTROL_GR_CHANNEL_DEACTIVATE = 28U,
 };
 enum {
     X86OS_DEVICE_RESOURCE_REGION = 1U,
@@ -1598,6 +1601,59 @@ typedef struct {
     uint32_t flags;
     uint32_t reserved[3];
 } x86os_device_gr_golden_context_result_t;
+enum {
+    X86OS_DEVICE_GR_2D_RECT_FILL = 1U,
+    X86OS_DEVICE_GR_2D_RECT_COPY = 2U,
+};
+enum {
+    X86OS_DEVICE_GR_2D_CAP_RECT_FILL = 1U << 0U,
+    X86OS_DEVICE_GR_2D_CAP_RECT_COPY = 1U << 1U,
+    X86OS_DEVICE_GR_CHANNEL_READY = 1U << 2U,
+};
+typedef x86os_device_gr_execution_request_t
+    x86os_device_gr_channel_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t policy_id;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t capabilities;
+    uint32_t fence_sequence;
+    uint32_t flags;
+    uint32_t reserved[2];
+} x86os_device_gr_channel_result_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    x86os_device_resource_t region;
+    x86os_device_resource_t dma;
+    uint32_t policy_id;
+    uint32_t operation;
+    uint32_t fence_sequence;
+    uint32_t source_x;
+    uint32_t source_y;
+    uint32_t destination_x;
+    uint32_t destination_y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t color;
+    uint32_t flags;
+    uint32_t reserved[4];
+} x86os_device_gr_2d_request_t;
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t policy_id;
+    uint32_t fence_sequence;
+    uint32_t capabilities;
+    uint32_t flags;
+    uint32_t reserved[3];
+} x86os_device_gr_2d_result_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -1956,6 +2012,16 @@ int x86os_device_gr_golden_context(
     x86os_device_handle_t device, x86os_device_resource_t region,
     x86os_device_resource_t dma, uint32_t policy_id,
     x86os_device_gr_golden_context_result_t *result);
+int x86os_device_gr_channel_activate(
+    x86os_device_handle_t device, x86os_device_resource_t region,
+    x86os_device_resource_t dma, uint32_t policy_id,
+    x86os_device_gr_channel_result_t *result);
+int x86os_device_gr_2d_submit(
+    const x86os_device_gr_2d_request_t *request,
+    x86os_device_gr_2d_result_t *result);
+int x86os_device_gr_channel_deactivate(
+    x86os_device_handle_t device, x86os_device_resource_t region,
+    x86os_device_resource_t dma, uint32_t policy_id);
 /** Read one aligned 8-, 16- or 32-bit value through the installed policy. */
 int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
                              uint32_t width, uint32_t *value);

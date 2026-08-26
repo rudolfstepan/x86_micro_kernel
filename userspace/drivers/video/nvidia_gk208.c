@@ -38,6 +38,7 @@
 #define NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY 0x4E650000U
 #define NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN 0x4E660000U
 #define NVIDIA_DIAGNOSTIC_GR_GOLDEN_CONTEXT 0x4E670000U
+#define NVIDIA_DIAGNOSTIC_GR_CHANNEL_READY 0x4E680000U
 #define NVIDIA_GR_PREREQUISITE_POLICY_ID 1U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
@@ -57,7 +58,10 @@ typedef struct {
     uint32_t register_bytes;
     uint32_t width;
     uint32_t height;
+    uint32_t pitch;
     uint32_t active;
+    uint32_t acceleration_ready;
+    uint32_t fence_sequence;
     uint32_t progress;
     reist_nvidia_gk208_gr_topology_t gr_topology;
 } nvidia_driver_t;
@@ -659,13 +663,47 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
             (retained.context_crc32 & 0xFFFFU));
 }
 
+static int gpu_channel_activate(nvidia_driver_t *driver) {
+    x86os_device_gr_channel_result_t result;
+    int status = x86os_device_gr_channel_activate(
+        driver->bootstrap.device, driver->registers, driver->dma,
+        NVIDIA_GR_PREREQUISITE_POLICY_ID, &result);
+    if (status != 0) return status;
+    driver->width = result.width;
+    driver->height = result.height;
+    driver->pitch = result.pitch;
+    driver->fence_sequence = result.fence_sequence;
+    driver->acceleration_ready = 1U;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_CHANNEL_READY |
+            (result.fence_sequence & 0xFFFFU));
+}
+
 static int activate(nvidia_driver_t *driver) {
+    const uint32_t expected_width = driver->width;
+    const uint32_t expected_height = driver->height;
+    if (driver->acceleration_ready == 0U) {
+        int channel_status = gpu_channel_activate(driver);
+        if (channel_status != 0) return channel_status;
+    }
     x86os_display_driver_request_t response;
     int status = driver_command(
         driver, X86OS_DISPLAY_DRIVER_ACTIVATE, &response);
     if (status != 0 || response.capabilities != 0U ||
-        response.width == 0U || response.height == 0U)
-        return status != 0 ? status : -84;
+        response.width == 0U || response.height == 0U ||
+        (expected_width != 0U && response.width != expected_width) ||
+        (expected_height != 0U && response.height != expected_height)) {
+        const int failure = status != 0 ? status : -84;
+        if (driver->acceleration_ready != 0U) {
+            (void)x86os_device_gr_channel_deactivate(
+                driver->bootstrap.device, driver->registers, driver->dma,
+                NVIDIA_GR_PREREQUISITE_POLICY_ID);
+            driver->acceleration_ready = 0U;
+            driver->fence_sequence = 0U;
+        }
+        return failure;
+    }
     driver->width = response.width;
     driver->height = response.height;
     driver->active = 1U;
@@ -673,10 +711,49 @@ static int activate(nvidia_driver_t *driver) {
 }
 
 static int deactivate(nvidia_driver_t *driver) {
+    if (driver->acceleration_ready != 0U) {
+        int channel_status = x86os_device_gr_channel_deactivate(
+            driver->bootstrap.device, driver->registers, driver->dma,
+            NVIDIA_GR_PREREQUISITE_POLICY_ID);
+        if (channel_status != 0) return channel_status;
+        driver->acceleration_ready = 0U;
+        driver->fence_sequence = 0U;
+    }
     if (driver->active == 0U) return 0;
     int status = driver_command(
         driver, X86OS_DISPLAY_DRIVER_DEACTIVATE, NULL);
     if (status == 0) driver->active = 0U;
+    return status;
+}
+
+static int submit_2d(nvidia_driver_t *driver,
+                     const reist_svga2d_message_t *request) {
+    if (driver->active == 0U || driver->acceleration_ready == 0U)
+        return -13;
+    if (driver->fence_sequence == UINT32_MAX) return -75;
+    x86os_device_gr_2d_request_t command = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(command),
+        .device = driver->bootstrap.device,
+        .region = driver->registers,
+        .dma = driver->dma,
+        .policy_id = NVIDIA_GR_PREREQUISITE_POLICY_ID,
+        .operation = request->operation == REIST_SVGA2D_RECT_FILL
+            ? X86OS_DEVICE_GR_2D_RECT_FILL : X86OS_DEVICE_GR_2D_RECT_COPY,
+        .fence_sequence = driver->fence_sequence + 1U,
+        .source_x = request->source_x,
+        .source_y = request->source_y,
+        .destination_x = request->destination_x,
+        .destination_y = request->destination_y,
+        .width = request->width,
+        .height = request->height,
+        .color = request->color,
+    };
+    x86os_device_gr_2d_result_t result;
+    int status = x86os_device_gr_2d_submit(&command, &result);
+    if (status == 0) driver->fence_sequence = result.fence_sequence;
+    else if (status != -22 && status != -34)
+        driver->acceleration_ready = 0U;
     return status;
 }
 
@@ -699,16 +776,18 @@ static void handle_request(nvidia_driver_t *driver,
     response->status = request_valid(request);
     if (response->status == 0) {
         if (request->operation == REIST_SVGA2D_ACTIVATE)
-            response->status = driver->active != 0U ? 0 : activate(driver);
+            response->status = driver->active != 0U &&
+                driver->acceleration_ready != 0U ? 0 : activate(driver);
         else if (request->operation == REIST_SVGA2D_DEACTIVATE)
             response->status = deactivate(driver);
         else if (request->operation == REIST_SVGA2D_RECT_FILL ||
                  request->operation == REIST_SVGA2D_RECT_COPY)
-            response->status = -95;
+            response->status = submit_2d(driver, request);
     }
     response->width = driver->width;
     response->height = driver->height;
-    response->capabilities = 0U;
+    response->capabilities = driver->acceleration_ready != 0U
+        ? REIST_SVGA2D_CAP_RECT_FILL | REIST_SVGA2D_CAP_RECT_COPY : 0U;
 }
 
 static int ipc_decode(const x86os_ipc_message_t *ipc,
@@ -791,6 +870,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = gpu_gr_firmware_upload(driver);
     if (status != 0) return status;
     status = gpu_gr_execute(driver);
+    if (status != 0) return status;
+    status = gpu_channel_activate(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

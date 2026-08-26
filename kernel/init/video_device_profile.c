@@ -234,8 +234,19 @@ static int install_nvidia_gr_prerequisite_policy(
         .fbp_max = NVIDIA_GR_MAX_FBPS,
         .fbpa_max = NVIDIA_GR_MAX_FBPAS,
     };
-    return device_domain_install_gr_prerequisite_policy(
+    int result = device_domain_install_gr_prerequisite_policy(
         device_index, &policy);
+    if (result != 0) return result;
+    const device_domain_gr_channel_policy_t channel = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(channel),
+        .policy_id = NVIDIA_GR_PREREQUISITE_POLICY_ID,
+        .width = vbe.width,
+        .height = vbe.height,
+        .pitch = vbe.pitch,
+        .channel_id = 1U,
+    };
+    return device_domain_install_gr_channel_policy(device_index, &channel);
 }
 
 static int register_profile(const pci_device_t *device, uint32_t backend,

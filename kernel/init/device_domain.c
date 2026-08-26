@@ -100,6 +100,45 @@ typedef struct {
 #define GK208_GR_FECS_DATA 0x00409500U
 #define GK208_GR_FECS_METHOD 0x00409504U
 #define GK208_GR_FECS_CURRENT 0x00409B00U
+#define GK208_CHANNEL_ID 1U
+#define GK208_CHANNEL_LIMIT 1024U
+#define GK208_CHANNEL_USERD_BYTES 0x00001000U
+#define GK208_CHANNEL_RUNLIST_BYTES 0x00001000U
+#define GK208_CHANNEL_SURFACE_GPU 0x21000000U
+#define GK208_CHANNEL_PUSH_GPU 0x20000000U
+#define GK208_CHANNEL_FENCE_GPU 0x20001000U
+#define GK208_CHANNEL_GPFIFO_GPU 0x20002000U
+#define GK208_CHANNEL_GPFIFO_BYTES 0x00001000U
+#define GK208_CHANNEL_GPFIFO_ENTRIES (GK208_CHANNEL_GPFIFO_BYTES / 8U)
+#define GK208_CHANNEL_PUSH_POOL_OFFSET 0x00002000U
+#define GK208_CHANNEL_FENCE_POOL_OFFSET 0x00003000U
+#define GK208_CHANNEL_GPFIFO_POOL_OFFSET 0x00001000U
+#define GK208_CHANNEL_CAPABILITIES \
+    (DEVICE_DOMAIN_GR_2D_CAP_RECT_FILL | \
+     DEVICE_DOMAIN_GR_2D_CAP_RECT_COPY | DEVICE_DOMAIN_GR_CHANNEL_READY)
+#define GK208_FIFO_PMC_ENABLE 0x00000200U
+#define GK208_FIFO_PMC_MASK 0x00000100U
+#define GK208_FIFO_PBDMA_ENABLE 0x00000204U
+#define GK208_FIFO_PBDMA_CONTROL 0x00002A04U
+#define GK208_FIFO_INTR_STATUS 0x00002100U
+#define GK208_FIFO_INTR_ENABLE 0x00002140U
+#define GK208_FIFO_TOP_BASE 0x00022700U
+#define GK208_FIFO_TOP_COUNT 64U
+#define GK208_FIFO_RUNLIST_BASE 0x00002270U
+#define GK208_FIFO_RUNLIST_SUBMIT 0x00002274U
+#define GK208_FIFO_RUNLIST_PENDING_BASE 0x00002284U
+#define GK208_FIFO_RUNLIST_BLOCK 0x00002630U
+#define GK208_FIFO_CHANNEL_BASE 0x00800000U
+#define GK208_FIFO_CHANNEL_STRIDE 8U
+#define GK208_FIFO_PBDMA_BASE 0x00040100U
+#define GK208_FIFO_PBDMA_STRIDE 0x00002000U
+#define GK208_FIFO_USERD_GET 0x00000088U
+#define GK208_FIFO_USERD_PUT 0x0000008CU
+#define GK208_VM_PTE_NCOH 0x0000000600000001ULL
+#define GK208_VM_PTE_READ_ONLY (1ULL << 2U)
+#define GK208_2D_CLASS 0x0000902DU
+#define GK208_2D_SUBCHANNEL 3U
+#define GK208_2D_MAX_WORDS 72U
 
 typedef struct {
     uint8_t registered;
@@ -172,6 +211,24 @@ typedef struct {
     uint8_t gr_golden_context_active;
     uint32_t gr_golden_context_crc32;
     uint32_t gr_golden_context_retained_bytes;
+    uint8_t gr_channel_policy_installed;
+    device_domain_gr_channel_policy_t gr_channel_policy;
+    uint8_t gr_channel_active;
+    uint8_t gr_channel_bus_master_active;
+    uint32_t gr_channel_instance_offset;
+    uint32_t gr_channel_pgd_offset;
+    uint32_t gr_channel_pgt_offset;
+    uint32_t gr_channel_userd_offset;
+    uint32_t gr_channel_runlist_offset;
+    uint32_t gr_channel_private_end;
+    uint32_t gr_channel_runlist_id;
+    uint32_t gr_channel_pbdma_mask;
+    uint32_t gr_channel_original_pbdma_mask;
+    uint32_t gr_channel_original_pmc_bits;
+    uint32_t gr_channel_fence_sequence;
+    uint32_t gr_channel_gpfifo_put;
+    device_domain_region_info_t gr_channel_mmio;
+    device_domain_region_info_t gr_channel_vram_window;
 } device_slot_t;
 
 typedef struct {
@@ -910,6 +967,29 @@ static bool reset_gr_firmware_state(device_slot_t *device) {
     return true;
 }
 
+static bool gr_channel_hardware_stop(device_slot_t *device);
+static bool gr_channel_scrub_private(device_slot_t *device);
+
+static void clear_gr_channel_state(device_slot_t *device) {
+    if (device == NULL) return;
+    device->gr_channel_active = 0U;
+    device->gr_channel_bus_master_active = 0U;
+    device->gr_channel_instance_offset = 0U;
+    device->gr_channel_pgd_offset = 0U;
+    device->gr_channel_pgt_offset = 0U;
+    device->gr_channel_userd_offset = 0U;
+    device->gr_channel_runlist_offset = 0U;
+    device->gr_channel_private_end = 0U;
+    device->gr_channel_runlist_id = 0U;
+    device->gr_channel_pbdma_mask = 0U;
+    device->gr_channel_original_pbdma_mask = 0U;
+    device->gr_channel_original_pmc_bits = 0U;
+    device->gr_channel_fence_sequence = 0U;
+    device->gr_channel_gpfifo_put = 0U;
+    device->gr_channel_mmio = (device_domain_region_info_t){0};
+    device->gr_channel_vram_window = (device_domain_region_info_t){0};
+}
+
 static void clear_gr_prerequisite_state(device_slot_t *device) {
     if (device == NULL) return;
     device->gr_prerequisite_active = 0U;
@@ -947,8 +1027,12 @@ static void clear_gr_execution_state(device_slot_t *device) {
 static bool fence_slot(device_slot_t *device) {
     bool irq_masked = device_is_passive_mediated_io(device) ||
         mask_device_irq(device);
+    bool channel_stopped = gr_channel_hardware_stop(device);
     bool mastering_disabled =
         platform_ops.set_bus_master(device->pci_location, false);
+    bool channel_scrubbed = mastering_disabled &&
+        gr_channel_scrub_private(device);
+    if (mastering_disabled) clear_gr_channel_state(device);
     bool gr_firmware_reset = mastering_disabled &&
         reset_gr_firmware_state(device);
     if (gr_firmware_reset) clear_gr_execution_state(device);
@@ -975,8 +1059,8 @@ static bool fence_slot(device_slot_t *device) {
     device->irq_window_count = 0U;
     retire_device_resources((uint32_t)(device - devices), device->generation);
     device->state = DEVICE_DOMAIN_FENCED;
-    return irq_masked && mastering_disabled && gr_firmware_reset &&
-        page_mode_restored &&
+    return irq_masked && channel_stopped && mastering_disabled &&
+        channel_scrubbed && gr_firmware_reset && page_mode_restored &&
         irq_revoked && dma_revoked;
 }
 
@@ -1500,6 +1584,41 @@ int device_domain_install_gr_prerequisite_policy(
     }
     device->gr_prerequisite_policy = *policy;
     device->gr_prerequisite_policy_installed = 1U;
+    end_operation();
+    return 0;
+}
+
+int device_domain_install_gr_channel_policy(
+        uint32_t device_index,
+        const device_domain_gr_channel_policy_t *policy) {
+    if (!initialized || policy == NULL || device_index >= device_count ||
+        policy->version != DEVICE_DOMAIN_ABI_VERSION ||
+        policy->struct_size != sizeof(*policy) || policy->policy_id == 0U ||
+        policy->width == 0U || policy->height == 0U ||
+        policy->width > 4096U || policy->height > 4096U ||
+        policy->width > UINT32_MAX / 4U ||
+        policy->pitch < policy->width * 4U || policy->pitch > 65536U ||
+        (policy->pitch & 3U) != 0U ||
+        policy->height > UINT32_MAX / policy->pitch ||
+        policy->channel_id != GK208_CHANNEL_ID ||
+        policy->channel_id >= GK208_CHANNEL_LIMIT ||
+        policy->reserved[0] != 0U || policy->reserved[1] != 0U ||
+        policy->reserved[2] != 0U) return -22;
+    const device_slot_t *registered = &devices[device_index];
+    if (registered->gr_prerequisite_policy_installed == 0U ||
+        registered->gr_prerequisite_policy.policy_id != policy->policy_id ||
+        registered->gr_prerequisite_policy.scanout_bytes !=
+            policy->pitch * policy->height)
+        return -95;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = &devices[device_index];
+    if (device->registered == 0U || device->state != DEVICE_DOMAIN_AVAILABLE ||
+        device->gr_channel_policy_installed != 0U) {
+        end_operation();
+        return -16;
+    }
+    device->gr_channel_policy = *policy;
+    device->gr_channel_policy_installed = 1U;
     end_operation();
     return 0;
 }
@@ -4516,6 +4635,826 @@ int device_domain_gr_golden_context(
     return 0;
 }
 
+typedef struct {
+    uint32_t instance_offset;
+    uint32_t pgd_offset;
+    uint32_t pgt_offset;
+    uint32_t userd_offset;
+    uint32_t runlist_offset;
+    uint32_t end_offset;
+    uint32_t surface_gpu_address;
+    uint32_t surface_pte_first;
+    uint32_t surface_pte_count;
+    uint32_t surface_page_offset;
+} gr_channel_memory_plan_t;
+
+static bool gr_channel_build_memory_plan(
+        const gr_golden_memory_plan_t *golden,
+        const device_domain_gr_prerequisite_policy_t *prerequisite,
+        const device_domain_gr_channel_policy_t *policy,
+        gr_channel_memory_plan_t *plan) {
+    if (golden == NULL || prerequisite == NULL || policy == NULL ||
+        plan == NULL || golden->end_offset == 0U) return false;
+    uint64_t cursor = golden->end_offset;
+    const uint64_t userd = cursor;
+    cursor += GK208_CHANNEL_USERD_BYTES;
+    if (!gr_align_up_u64(cursor, 4096U, &cursor) || cursor > UINT32_MAX)
+        return false;
+    const uint64_t runlist = cursor;
+    cursor += GK208_CHANNEL_RUNLIST_BYTES;
+    uint64_t usable_end = prerequisite->vram_aperture_bytes;
+    if (usable_end > GK208_VRAM_VBIOS_TAIL_BYTES)
+        usable_end -= GK208_VRAM_VBIOS_TAIL_BYTES;
+    else return false;
+    const uint32_t page_offset = prerequisite->scanout_offset & 0xFFFU;
+    uint64_t mapped = (uint64_t)page_offset + prerequisite->scanout_bytes;
+    if (!gr_align_up_u64(mapped, 4096U, &mapped) || mapped == 0U ||
+        cursor > usable_end || mapped > UINT32_MAX) return false;
+    const uint64_t surface = (uint64_t)GK208_CHANNEL_SURFACE_GPU + page_offset;
+    const uint64_t first = (GK208_CHANNEL_SURFACE_GPU -
+        GK208_GR_GPU_TABLE_BASE) >> GK208_GR_GPU_PAGE_SHIFT;
+    const uint64_t count = mapped >> GK208_GR_GPU_PAGE_SHIFT;
+    if (surface > UINT32_MAX || (surface & 0xFFU) != 0U ||
+        first + count > GK208_GR_TEMP_PGT_BYTES / 8U ||
+        (uint64_t)policy->pitch * policy->height !=
+            prerequisite->scanout_bytes)
+        return false;
+    *plan = (gr_channel_memory_plan_t){
+        .instance_offset = golden->instance_offset,
+        .pgd_offset = golden->pgd_offset,
+        .pgt_offset = golden->pgt_offset,
+        .userd_offset = (uint32_t)userd,
+        .runlist_offset = (uint32_t)runlist,
+        .end_offset = (uint32_t)cursor,
+        .surface_gpu_address = (uint32_t)surface,
+        .surface_pte_first = (uint32_t)first,
+        .surface_pte_count = (uint32_t)count,
+        .surface_page_offset = prerequisite->scanout_offset - page_offset,
+    };
+    return true;
+}
+
+static bool gr_channel_vram_write64(
+        const device_domain_region_info_t *window, uint32_t base,
+        uint32_t offset, uint64_t value) {
+    return gr_golden_vram_write64(window, base, offset, value);
+}
+
+static bool gr_channel_zero_private(
+        const device_domain_region_info_t *window, uint32_t base,
+        const gr_channel_memory_plan_t *plan,
+        uint64_t started, uint64_t deadline) {
+    if (window == NULL || plan == NULL || plan->instance_offset < base ||
+        plan->end_offset <= plan->instance_offset) return false;
+    for (uint32_t offset = plan->instance_offset;
+         offset < plan->end_offset; offset += sizeof(uint32_t)) {
+        if ((offset & 0x3FFU) == 0U &&
+            !gr_deadline_valid(started, deadline)) return false;
+        if (!gr_golden_vram_write32(window, base, offset, 0U)) return false;
+    }
+    return true;
+}
+
+static bool gr_channel_map_pte(
+        const device_domain_region_info_t *window, uint32_t base,
+        uint32_t pgt_offset, uint32_t pte, uint64_t value) {
+    return pte < GK208_GR_TEMP_PGT_BYTES / 8U &&
+        gr_channel_vram_write64(window, base,
+            pgt_offset + pte * 8U, value);
+}
+
+static bool gr_channel_install_vm(
+        const device_domain_region_info_t *mmio,
+        const device_domain_region_info_t *window, uint32_t base,
+        const gr_golden_memory_plan_t *golden,
+        const gr_context_memory_plan_t *context,
+        const gr_channel_memory_plan_t *channel,
+        const device_domain_gr_prerequisite_policy_t *prerequisite,
+        uint32_t pool_index, uint64_t started, uint64_t deadline) {
+    const uint32_t pgd_index = GK208_GR_GPU_TABLE_BASE >> 27U;
+    if (!gr_channel_vram_write64(window, base,
+            channel->instance_offset + GK208_GR_INSTANCE_PGD,
+            channel->pgd_offset) ||
+        !gr_golden_vram_write32(window, base,
+            channel->instance_offset + GK208_GR_INSTANCE_VM_LIMIT,
+            0xFFFFFFFFU) ||
+        !gr_golden_vram_write32(window, base,
+            channel->instance_offset + GK208_GR_INSTANCE_VM_LIMIT + 4U,
+            0x000000FFU) ||
+        !gr_channel_vram_write64(window, base,
+            channel->pgd_offset + pgd_index * 8U,
+            ((uint64_t)channel->pgt_offset >> 8U) | 1ULL)) return false;
+    const uint64_t system_gpu[3] = {
+        GK208_CHANNEL_PUSH_GPU, GK208_CHANNEL_FENCE_GPU,
+        GK208_CHANNEL_GPFIFO_GPU,
+    };
+    const uint32_t system_pool[3] = {
+        GK208_CHANNEL_PUSH_POOL_OFFSET, GK208_CHANNEL_FENCE_POOL_OFFSET,
+        GK208_CHANNEL_GPFIFO_POOL_OFFSET,
+    };
+    for (uint32_t index = 0U; index < 3U; ++index) {
+        const uint64_t physical = dma_pool_physical_address(
+            pool_index, system_pool[index]);
+        const uint32_t pte = (uint32_t)((system_gpu[index] -
+            GK208_GR_GPU_TABLE_BASE) >> GK208_GR_GPU_PAGE_SHIFT);
+        uint64_t value = (physical >> 8U) | GK208_VM_PTE_NCOH;
+        if (index != 1U) value |= GK208_VM_PTE_READ_ONLY;
+        if ((physical & 0xFFFU) != 0U || physical >= (1ULL << 40U) ||
+            !gr_channel_map_pte(window, base, channel->pgt_offset,
+                pte, value)) return false;
+    }
+    for (uint32_t map = 0U; map < 4U; ++map) {
+        for (uint32_t page = 0U; page < golden->pte_count[map]; ++page) {
+            const uint32_t physical = golden->vram_offset[map] +
+                (page << GK208_GR_GPU_PAGE_SHIFT);
+            if (!gr_channel_map_pte(window, base, channel->pgt_offset,
+                    golden->pte_first[map] + page,
+                    ((uint64_t)physical >> 8U) | 1ULL)) return false;
+        }
+    }
+    for (uint32_t page = 0U; page < channel->surface_pte_count; ++page) {
+        const uint32_t physical = channel->surface_page_offset +
+            (page << GK208_GR_GPU_PAGE_SHIFT);
+        if (!gr_channel_map_pte(window, base, channel->pgt_offset,
+                channel->surface_pte_first + page,
+                ((uint64_t)physical >> 8U) | 1ULL)) return false;
+    }
+    if (!gr_channel_vram_write64(window, base,
+            channel->instance_offset + GK208_GR_INSTANCE_CONTEXT,
+            (uint64_t)(golden->gpu_address[3] +
+                GK208_GR_GOLDEN_CB_RESERVED) | 4ULL) ||
+        !gr_write32(mmio, 0x00100CB8U,
+            (channel->pgd_offset >> 12U) << 4U) ||
+        !gr_write32(mmio, 0x00100CBCU, 0x80000001U)) return false;
+    (void)context;
+    (void)prerequisite;
+    return gr_wait_mask(mmio, GK208_FB_PAGE_CONFIG, 0x00008000U,
+        0x00008000U, 2000U, started, deadline) == 0;
+}
+
+static bool gr_channel_write_ramfc(
+        const device_domain_region_info_t *window, uint32_t base,
+        const gr_channel_memory_plan_t *channel) {
+    const uint32_t ramfc = channel->instance_offset;
+    return gr_channel_vram_write64(window, base, ramfc + 0x08U,
+            channel->userd_offset) &&
+        gr_golden_vram_write32(window, base, ramfc + 0x10U, 0x0000FACEU) &&
+        gr_golden_vram_write32(window, base, ramfc + 0x30U, 0xFFFFF902U) &&
+        gr_channel_vram_write64(window, base, ramfc + 0x48U,
+            GK208_CHANNEL_GPFIFO_GPU |
+                ((uint64_t)9U << 48U)) &&
+        gr_golden_vram_write32(window, base, ramfc + 0x84U, 0x20400000U) &&
+        gr_golden_vram_write32(window, base, ramfc + 0x94U, 0x30000001U) &&
+        gr_golden_vram_write32(window, base, ramfc + 0x9CU, 0x00000100U) &&
+        gr_golden_vram_write32(window, base, ramfc + 0xACU, 0x0000001FU) &&
+        gr_golden_vram_write32(window, base, ramfc + 0xB8U, 0xF8000000U) &&
+        gr_golden_vram_write32(window, base, ramfc + 0xE4U, 0x00000020U) &&
+        gr_golden_vram_write32(window, base, ramfc + 0xE8U,
+            GK208_CHANNEL_ID) &&
+        gr_golden_vram_write32(window, base, ramfc + 0xF8U, 0x10003080U) &&
+        gr_golden_vram_write32(window, base, ramfc + 0xFCU, 0x10000010U);
+}
+
+static int gr_channel_find_runlist(
+        const device_domain_region_info_t *mmio, uint32_t *runlist_out) {
+    uint32_t type = UINT32_MAX;
+    uint32_t runlist = UINT32_MAX;
+    uint8_t record = 0U;
+    for (uint32_t index = 0U; index < GK208_FIFO_TOP_COUNT; ++index) {
+        uint32_t data = 0U;
+        if (!gr_read32(mmio, GK208_FIFO_TOP_BASE + index * 4U, &data))
+            return -5;
+        if ((data & 3U) == 0U) continue;
+        if (record == 0U) {
+            type = UINT32_MAX;
+            runlist = UINT32_MAX;
+            record = 1U;
+        }
+        if ((data & 3U) == 2U && (data & 0x10U) != 0U)
+            runlist = (data & 0x01E00000U) >> 21U;
+        else if ((data & 3U) == 3U)
+            type = (data & 0x7FFFFFFCU) >> 2U;
+        if ((data & 0x80000000U) != 0U) continue;
+        if (type == 0U && runlist < 16U) {
+            *runlist_out = runlist;
+            return 0;
+        }
+        record = 0U;
+    }
+    return -19;
+}
+
+static int gr_channel_prepare_bind_region(
+        const device_slot_t *device, device_domain_region_info_t *bind) {
+    device_domain_region_info_t full;
+    const uint32_t bytes = GK208_FIFO_CHANNEL_STRIDE * 2U;
+    if (device == NULL || bind == NULL ||
+        !platform_ops.describe_region(device->pci_location, 0U, &full) ||
+        full.base_high != 0U || full.length_high != 0U ||
+        (full.flags & DEVICE_DOMAIN_REGION_MMIO) == 0U ||
+        full.length_low < GK208_FIFO_CHANNEL_BASE + bytes ||
+        full.base_low > UINT32_MAX - GK208_FIFO_CHANNEL_BASE) return -95;
+    *bind = full;
+    bind->base_low += GK208_FIFO_CHANNEL_BASE;
+    bind->length_low = bytes;
+    bind->length_high = 0U;
+    return platform_ops.prepare_region(bind) ? 0 : -5;
+}
+
+static int gr_channel_wait_runlist(
+        const device_domain_region_info_t *mmio, uint32_t runlist,
+        uint64_t started, uint64_t deadline) {
+    for (uint32_t attempt = 0U; attempt < 2000U; ++attempt) {
+        uint32_t pending = 0U;
+        if (!gr_read32(mmio, GK208_FIFO_RUNLIST_PENDING_BASE +
+                runlist * 8U, &pending)) return -5;
+        if ((pending & 0x00100000U) == 0U) return 0;
+        if (!gr_wait_one_ms(started, deadline)) return -110;
+    }
+    return -110;
+}
+
+static int gr_channel_commit_runlist(
+        const device_domain_region_info_t *mmio, uint32_t runlist,
+        uint32_t offset, uint32_t count,
+        uint64_t started, uint64_t deadline) {
+    if (!gr_write32(mmio, GK208_FIFO_RUNLIST_BASE, offset >> 12U) ||
+        !gr_write32(mmio, GK208_FIFO_RUNLIST_SUBMIT,
+            (runlist << 20U) | count)) return -5;
+    return gr_channel_wait_runlist(mmio, runlist, started, deadline);
+}
+
+static int gr_channel_initialize_fifo(
+        const device_domain_region_info_t *mmio, uint32_t runlist,
+        uint32_t *pbdma_out, uint32_t *original_pbdma_out,
+        uint32_t *original_pmc_out) {
+    uint32_t pmc = 0U;
+    uint32_t original = 0U;
+    if (!gr_read32(mmio, GK208_FIFO_PMC_ENABLE, &pmc) ||
+        !gr_read32(mmio, GK208_FIFO_PBDMA_ENABLE, &original) ||
+        !gr_write32(mmio, GK208_FIFO_PMC_ENABLE,
+            pmc | GK208_FIFO_PMC_MASK) ||
+        !gr_write32(mmio, GK208_FIFO_PBDMA_ENABLE, UINT32_MAX)) return -5;
+    uint32_t supported = 0U;
+    if (!gr_read32(mmio, GK208_FIFO_PBDMA_ENABLE, &supported) ||
+        !gr_write32(mmio, GK208_FIFO_PBDMA_ENABLE, original) ||
+        supported == 0U) return -19;
+    uint32_t participating = 0U;
+    for (uint32_t id = 0U; id < 32U; ++id) {
+        if ((supported & (1U << id)) == 0U) continue;
+        uint32_t runlists = 0U;
+        if (!gr_read32(mmio, 0x00002390U + id * 4U, &runlists)) return -5;
+        if ((runlists & (1U << runlist)) == 0U) continue;
+        const uint32_t base = GK208_FIFO_PBDMA_BASE +
+            id * GK208_FIFO_PBDMA_STRIDE;
+        if (!gr_mask32(mmio, base + 0x3CU, 0x10000100U, 0U) ||
+            !gr_write32(mmio, base + 0x08U, UINT32_MAX) ||
+            !gr_write32(mmio, base + 0x0CU, 0U) ||
+            !gr_write32(mmio, base + 0x48U, UINT32_MAX) ||
+            !gr_write32(mmio, base + 0x4CU, 0U) ||
+            !gr_write32(mmio, base + 0x2CU, 0x000F4240U)) return -5;
+        participating |= 1U << id;
+    }
+    if (participating == 0U ||
+        !gr_write32(mmio, GK208_FIFO_PBDMA_ENABLE, supported) ||
+        !gr_mask32(mmio, GK208_FIFO_PBDMA_CONTROL,
+            0xBFFFFFFFU, 0xBFFFFFFFU) ||
+        !gr_write32(mmio, GK208_FIFO_INTR_STATUS, UINT32_MAX) ||
+        !gr_write32(mmio, GK208_FIFO_INTR_ENABLE, 0U) ||
+        !gr_mask32(mmio, GK208_FIFO_RUNLIST_BLOCK,
+            1U << runlist, 0U)) return -5;
+    *pbdma_out = participating;
+    *original_pbdma_out = original;
+    *original_pmc_out = pmc & GK208_FIFO_PMC_MASK;
+    return 0;
+}
+
+static uint32_t gr_channel_method_header(
+        uint32_t method, uint32_t subchannel, uint32_t count) {
+    return (1U << 29U) | (count << 16U) |
+        (subchannel << 13U) | (method >> 2U);
+}
+
+static bool gr_channel_emit(uint32_t *words, uint32_t *count,
+        uint32_t method, uint32_t value) {
+    if (*count > GK208_2D_MAX_WORDS - 2U) return false;
+    words[(*count)++] = gr_channel_method_header(
+        method, GK208_2D_SUBCHANNEL, 1U);
+    words[(*count)++] = value;
+    return true;
+}
+
+static bool gr_channel_emit_surface(uint32_t *words, uint32_t *count,
+        const device_slot_t *device, uint32_t gpu, bool source) {
+    const uint32_t base = source ? 0x0230U : 0x0200U;
+    return gr_channel_emit(words, count, base + 0x00U, 0xE6U) &&
+        gr_channel_emit(words, count, base + 0x04U, 1U) &&
+        gr_channel_emit(words, count, base + 0x14U,
+            device->gr_channel_policy.pitch) &&
+        gr_channel_emit(words, count, base + 0x18U,
+            device->gr_channel_policy.width) &&
+        gr_channel_emit(words, count, base + 0x1CU,
+            device->gr_channel_policy.height) &&
+        gr_channel_emit(words, count, base + 0x20U, 0U) &&
+        gr_channel_emit(words, count, base + 0x24U, gpu);
+}
+
+static bool gr_channel_rect_valid(const device_slot_t *device,
+        uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
+    return device != NULL && width != 0U && height != 0U &&
+        x < device->gr_channel_policy.width &&
+        y < device->gr_channel_policy.height &&
+        width <= device->gr_channel_policy.width - x &&
+        height <= device->gr_channel_policy.height - y;
+}
+
+static int gr_channel_compile_submission(const device_slot_t *device,
+        const device_domain_gr_2d_request_t *request,
+        uint32_t surface_gpu, uint32_t *words, uint32_t *word_count) {
+    if (device == NULL || request == NULL || words == NULL ||
+        word_count == NULL || !gr_channel_rect_valid(device,
+            request->destination_x, request->destination_y,
+            request->width, request->height)) return -34;
+    uint32_t count = 0U;
+    words[count++] = gr_channel_method_header(0U, GK208_2D_SUBCHANNEL, 1U);
+    words[count++] = GK208_2D_CLASS;
+    if (!gr_channel_emit_surface(words, &count, device, surface_gpu, false))
+        return -28;
+    if (request->operation == DEVICE_DOMAIN_GR_2D_RECT_FILL) {
+        if ((request->color & 0xFF000000U) != 0U ||
+            !gr_channel_emit(words, &count, 0x0290U, 0U) ||
+            !gr_channel_emit(words, &count, 0x02ACU, 3U) ||
+            !gr_channel_emit(words, &count, 0x0580U, 4U) ||
+            !gr_channel_emit(words, &count, 0x0584U, 0xE6U) ||
+            !gr_channel_emit(words, &count, 0x0588U, request->color) ||
+            !gr_channel_emit(words, &count, 0x0600U,
+                request->destination_x) ||
+            !gr_channel_emit(words, &count, 0x0604U,
+                request->destination_y) ||
+            !gr_channel_emit(words, &count, 0x0608U,
+                request->destination_x + request->width) ||
+            !gr_channel_emit(words, &count, 0x060CU,
+                request->destination_y + request->height)) return -28;
+    } else if (request->operation == DEVICE_DOMAIN_GR_2D_RECT_COPY) {
+        if (!gr_channel_rect_valid(device, request->source_x,
+                request->source_y, request->width, request->height) ||
+            !gr_channel_emit_surface(words, &count, device,
+                surface_gpu, true) ||
+            !gr_channel_emit(words, &count, 0x0290U, 0U) ||
+            !gr_channel_emit(words, &count, 0x02ACU, 3U) ||
+            !gr_channel_emit(words, &count, 0x0888U, 1U) ||
+            !gr_channel_emit(words, &count, 0x08B0U,
+                request->destination_x) ||
+            !gr_channel_emit(words, &count, 0x08B4U,
+                request->destination_y) ||
+            !gr_channel_emit(words, &count, 0x08B8U, request->width) ||
+            !gr_channel_emit(words, &count, 0x08BCU, request->height) ||
+            !gr_channel_emit(words, &count, 0x08C0U, 0U) ||
+            !gr_channel_emit(words, &count, 0x08C4U, 1U) ||
+            !gr_channel_emit(words, &count, 0x08C8U, 0U) ||
+            !gr_channel_emit(words, &count, 0x08CCU, 1U) ||
+            !gr_channel_emit(words, &count, 0x08D0U, 0U) ||
+            !gr_channel_emit(words, &count, 0x08D4U, request->source_x) ||
+            !gr_channel_emit(words, &count, 0x08D8U, 0U) ||
+            !gr_channel_emit(words, &count, 0x08DCU, request->source_y))
+            return -28;
+    } else return -22;
+    if (count > GK208_2D_MAX_WORDS - 5U) return -28;
+    words[count++] = gr_channel_method_header(0x10U, 0U, 4U);
+    words[count++] = 0U;
+    words[count++] = GK208_CHANNEL_FENCE_GPU;
+    words[count++] = request->fence_sequence;
+    words[count++] = 0x01000002U;
+    *word_count = count;
+    return 0;
+}
+
+#ifdef REIST_HOST_TEST
+static bool gr_channel_test_fence_completion = true;
+#endif
+
+static int gr_channel_submit_locked(device_slot_t *device,
+        dma_pool_slot_t *pool, const device_domain_gr_2d_request_t *request,
+        uint32_t surface_gpu, uint64_t started, uint64_t deadline) {
+    if (device == NULL || pool == NULL || request == NULL ||
+        device->gr_channel_active == 0U ||
+        device->gr_channel_bus_master_active == 0U ||
+        request->fence_sequence != device->gr_channel_fence_sequence + 1U)
+        return -13;
+    uint32_t words[GK208_2D_MAX_WORDS] = {0};
+    uint32_t word_count = 0U;
+    int status = gr_channel_compile_submission(
+        device, request, surface_gpu, words, &word_count);
+    if (status != 0) return status;
+    const uint32_t pool_index = (uint32_t)(pool - dma_pools);
+    uint8_t *storage = dma_pool_storage[pool_index];
+    const uint32_t entry = device->gr_channel_gpfifo_put %
+        GK208_CHANNEL_GPFIFO_ENTRIES;
+    const uint32_t next = (entry + 1U) % GK208_CHANNEL_GPFIFO_ENTRIES;
+    uint32_t fence = 0U;
+    memcpy(storage + GK208_CHANNEL_FENCE_POOL_OFFSET,
+        &fence, sizeof(fence));
+    memcpy(storage + GK208_CHANNEL_PUSH_POOL_OFFSET,
+        words, word_count * sizeof(uint32_t));
+    const uint32_t gpfifo[2] = {
+        GK208_CHANNEL_PUSH_GPU,
+        word_count << 10U,
+    };
+    memcpy(storage + GK208_CHANNEL_GPFIFO_POOL_OFFSET + entry * 8U,
+        gpfifo, sizeof(gpfifo));
+    __sync_synchronize();
+    if (!gr_write32(&device->gr_channel_mmio,
+            GK208_FIFO_INTR_STATUS, UINT32_MAX)) return -5;
+    for (uint32_t id = 0U; id < 32U; ++id) {
+        if ((device->gr_channel_pbdma_mask & (1U << id)) == 0U) continue;
+        const uint32_t base = GK208_FIFO_PBDMA_BASE +
+            id * GK208_FIFO_PBDMA_STRIDE;
+        if (!gr_write32(&device->gr_channel_mmio,
+                base + 0x08U, UINT32_MAX) ||
+            !gr_write32(&device->gr_channel_mmio,
+                base + 0x48U, UINT32_MAX)) return -5;
+    }
+    if (!gr_golden_vram_write32(&device->gr_channel_vram_window,
+            device->gr_channel_instance_offset,
+            device->gr_channel_userd_offset + GK208_FIFO_USERD_PUT,
+            next)) return -5;
+#ifdef REIST_HOST_TEST
+    if (gr_channel_test_fence_completion)
+        memcpy(storage + GK208_CHANNEL_FENCE_POOL_OFFSET,
+            &request->fence_sequence, sizeof(request->fence_sequence));
+#endif
+    for (uint32_t attempt = 0U; attempt < 500U; ++attempt) {
+        __sync_synchronize();
+        memcpy(&fence, storage + GK208_CHANNEL_FENCE_POOL_OFFSET,
+            sizeof(fence));
+        if (fence == request->fence_sequence) {
+            uint32_t fifo_fault = 0U;
+            uint32_t graph_fault = 0U;
+            if (!gr_read32(&device->gr_channel_mmio,
+                    GK208_FIFO_INTR_STATUS, &fifo_fault) ||
+                !gr_read32(&device->gr_channel_mmio,
+                    0x00400100U, &graph_fault) ||
+                fifo_fault != 0U || graph_fault != 0U) return -5;
+            for (uint32_t id = 0U; id < 32U; ++id) {
+                if ((device->gr_channel_pbdma_mask & (1U << id)) == 0U)
+                    continue;
+                const uint32_t base = GK208_FIFO_PBDMA_BASE +
+                    id * GK208_FIFO_PBDMA_STRIDE;
+                uint32_t pbdma_fault = 0U;
+                uint32_t pbdma_state = 0U;
+                if (!gr_read32(&device->gr_channel_mmio,
+                        base + 0x08U, &pbdma_fault) ||
+                    !gr_read32(&device->gr_channel_mmio,
+                        base + 0x48U, &pbdma_state) ||
+                    pbdma_fault != 0U || pbdma_state != 0U) return -5;
+            }
+            device->gr_channel_fence_sequence = request->fence_sequence;
+            device->gr_channel_gpfifo_put = next;
+            return 0;
+        }
+        if (!gr_wait_one_ms(started, deadline)) return -110;
+    }
+    return -110;
+}
+
+static bool gr_channel_hardware_stop(device_slot_t *device) {
+    if (device == NULL || device->gr_channel_bus_master_active == 0U)
+        return true;
+    device_domain_region_info_t bind;
+    const uint64_t started = platform_ops.monotonic_ms();
+    const uint64_t deadline = started > UINT64_MAX - 2000U
+        ? UINT64_MAX : started + 2000U;
+    bool clean = true;
+    const bool bind_ready = gr_channel_prepare_bind_region(device, &bind) == 0;
+    if (!bind_ready) clean = false;
+    uint32_t control = 0U;
+    if (bind_ready && (!gr_read32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE + 4U, &control) ||
+        !gr_write32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE + 4U,
+            control | 0x00000800U))) clean = false;
+    if (!gr_golden_vram_write32(&device->gr_channel_vram_window,
+            device->gr_channel_instance_offset,
+            device->gr_channel_runlist_offset, 0U) ||
+        !gr_golden_vram_write32(&device->gr_channel_vram_window,
+            device->gr_channel_instance_offset,
+            device->gr_channel_runlist_offset + 4U, 0U)) clean = false;
+    if (gr_channel_commit_runlist(&device->gr_channel_mmio,
+            device->gr_channel_runlist_id,
+            device->gr_channel_runlist_offset, 0U,
+            started, deadline) != 0) clean = false;
+    if (bind_ready && !gr_write32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE, 0U)) clean = false;
+    if (!gr_write32(&device->gr_channel_mmio, GK208_FIFO_PBDMA_ENABLE,
+            device->gr_channel_original_pbdma_mask)) clean = false;
+    if (!gr_mask32(&device->gr_channel_mmio, GK208_FIFO_PMC_ENABLE,
+            GK208_FIFO_PMC_MASK,
+            device->gr_channel_original_pmc_bits)) clean = false;
+    return clean;
+}
+
+static bool gr_channel_scrub_private(device_slot_t *device) {
+    if (device == NULL || device->gr_channel_private_end == 0U) return true;
+    bool clean = true;
+    for (uint32_t offset = device->gr_channel_instance_offset;
+         clean && offset < device->gr_channel_private_end;
+         offset += sizeof(uint32_t))
+        clean = gr_golden_vram_write32(&device->gr_channel_vram_window,
+            device->gr_channel_instance_offset, offset, 0U);
+    return clean;
+}
+
+static int gr_channel_validate_owner_locked(
+        int pid, uint32_t generation,
+        const device_domain_gr_channel_request_t *request,
+        device_slot_t **device_out, dma_pool_slot_t **pool_out) {
+    device_slot_t *device = owned_slot(pid, generation, request->device);
+    resource_slot_t *region = owned_resource_locked(pid, generation,
+        request->region, DEVICE_DOMAIN_RESOURCE_REGION);
+    resource_slot_t *dma = owned_resource_locked(pid, generation,
+        request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(dma);
+    if (device == NULL || region == NULL || dma == NULL) return -9;
+    const uint32_t index = (uint32_t)(device - devices);
+    if (region->device_slot != index || dma->device_slot != index ||
+        region->device_generation != device->generation ||
+        dma->device_generation != device->generation ||
+        device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
+        pool->sealed == 0U || request->policy_id == 0U ||
+        device->gr_channel_policy_installed == 0U ||
+        request->policy_id != device->gr_channel_policy.policy_id ||
+        region->region.region_index !=
+            device->gr_prerequisite_policy.region_index ||
+        (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U)
+        return -13;
+    *device_out = device;
+    *pool_out = pool;
+    return 0;
+}
+
+int device_domain_gr_channel_activate(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_channel_request_t *request,
+        device_domain_gr_channel_result_t *result) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || result == NULL ||
+        request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->flags != 0U || request->reserved[0] != 0U ||
+        request->reserved[1] != 0U || request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = NULL;
+    dma_pool_slot_t *pool = NULL;
+    int status = gr_channel_validate_owner_locked(pid, process_generation,
+        request, &device, &pool);
+    if (status != 0 || device->gr_golden_context_active == 0U ||
+        device->gr_channel_active != 0U) {
+        end_operation();
+        return status != 0 ? status : -13;
+    }
+    const device_domain_gr_prerequisite_policy_t *prerequisite =
+        &device->gr_prerequisite_policy;
+    const uint8_t *storage = dma_pool_storage[
+        (uint32_t)(pool - dma_pools)];
+    gr_prerequisite_topology_t topology;
+    gr_prerequisite_plan_t prerequisite_plan;
+    gr_context_memory_plan_t context;
+    gr_golden_memory_plan_t golden;
+    gr_channel_memory_plan_t channel;
+    device_domain_region_info_t vram;
+    device_domain_region_info_t window;
+    uint32_t image_crc = 0U;
+    bool valid = gr_sample_topology(&device->gr_firmware_region, &topology) &&
+        gr_execution_image_valid(storage, pool->capacity, prerequisite,
+            &device->gr_firmware_region, &topology, &image_crc) &&
+        gr_build_prerequisite_plan(&device->gr_firmware_region,
+            prerequisite, &prerequisite_plan) &&
+        gr_plan_matches_device(&prerequisite_plan, device) &&
+        image_crc == device->gr_prerequisite_image_crc &&
+        gr_build_context_memory_plan(&topology, &prerequisite_plan,
+            prerequisite, device->gr_execution_context_size, &context) &&
+        gr_golden_build_memory_plan(&context, &prerequisite_plan,
+            prerequisite, &golden) &&
+        gr_channel_build_memory_plan(&golden, prerequisite,
+            &device->gr_channel_policy, &channel) &&
+        platform_ops.describe_region(device->pci_location,
+            prerequisite->vram_region_index, &vram) &&
+        vram.base_high == 0U && vram.length_high == 0U &&
+        vram.length_low == prerequisite->vram_aperture_bytes &&
+        channel.end_offset <= vram.length_low &&
+        vram.base_low <= UINT32_MAX - channel.instance_offset;
+    if (!valid) {
+        end_operation();
+        return -84;
+    }
+    window = vram;
+    window.base_low += channel.instance_offset;
+    window.length_low = channel.end_offset - channel.instance_offset;
+    if (!platform_ops.prepare_region(&window)) {
+        end_operation();
+        return -5;
+    }
+    const uint64_t started = platform_ops.monotonic_ms();
+    const uint64_t deadline = started >
+            UINT64_MAX - DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS
+        ? UINT64_MAX : started + DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS;
+    uint32_t runlist = 0U;
+    uint32_t pbdma = 0U;
+    uint32_t original_pbdma = 0U;
+    uint32_t original_pmc = 0U;
+    device_domain_region_info_t bind;
+    status = gr_channel_zero_private(&window, channel.instance_offset,
+        &channel, started, deadline) ? 0 : -5;
+    if (status == 0 && !gr_channel_install_vm(&device->gr_firmware_region,
+            &window, channel.instance_offset, &golden, &context, &channel,
+            prerequisite, (uint32_t)(pool - dma_pools), started, deadline))
+        status = -5;
+    if (status == 0 && !gr_channel_write_ramfc(
+            &window, channel.instance_offset, &channel)) status = -5;
+    if (status == 0) status = gr_channel_find_runlist(
+        &device->gr_firmware_region, &runlist);
+    if (status == 0) status = gr_channel_prepare_bind_region(device, &bind);
+    if (status == 0) status = gr_channel_initialize_fifo(
+        &device->gr_firmware_region, runlist, &pbdma,
+        &original_pbdma, &original_pmc);
+    if (status == 0 && (!gr_golden_vram_write32(&window,
+            channel.instance_offset, channel.runlist_offset,
+            GK208_CHANNEL_ID) ||
+        !gr_golden_vram_write32(&window, channel.instance_offset,
+            channel.runlist_offset + 4U, 0U))) status = -5;
+    device->gr_channel_instance_offset = channel.instance_offset;
+    device->gr_channel_pgd_offset = channel.pgd_offset;
+    device->gr_channel_pgt_offset = channel.pgt_offset;
+    device->gr_channel_userd_offset = channel.userd_offset;
+    device->gr_channel_runlist_offset = channel.runlist_offset;
+    device->gr_channel_private_end = channel.end_offset;
+    device->gr_channel_runlist_id = runlist;
+    device->gr_channel_pbdma_mask = pbdma;
+    device->gr_channel_original_pbdma_mask = original_pbdma;
+    device->gr_channel_original_pmc_bits = original_pmc;
+    device->gr_channel_mmio = device->gr_firmware_region;
+    device->gr_channel_vram_window = window;
+    if (status == 0 && !platform_ops.set_bus_master(
+            device->pci_location, true)) status = -5;
+    if (status == 0) device->gr_channel_bus_master_active = 1U;
+    uint32_t control = 0U;
+    if (status == 0 && (!gr_read32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE + 4U, &control) ||
+        !gr_write32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE + 4U,
+            (control & ~0x000F0000U) | (runlist << 16U)) ||
+        !gr_write32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE,
+            0x80000000U | (channel.instance_offset >> 12U)))) status = -5;
+    if (status == 0) status = gr_channel_commit_runlist(
+        &device->gr_firmware_region, runlist, channel.runlist_offset,
+        1U, started, deadline);
+    if (status == 0 && (!gr_read32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE + 4U, &control) ||
+        !gr_write32(&bind,
+            GK208_CHANNEL_ID * GK208_FIFO_CHANNEL_STRIDE + 4U,
+            control | 0x00000400U))) status = -5;
+    if (status == 0) device->gr_channel_active = 1U;
+    device_domain_gr_2d_request_t self_test = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(self_test),
+        .device = request->device,
+        .region = request->region,
+        .dma = request->dma,
+        .policy_id = request->policy_id,
+        .operation = DEVICE_DOMAIN_GR_2D_RECT_FILL,
+        .fence_sequence = 1U,
+        .destination_x = device->gr_channel_policy.width - 1U,
+        .destination_y = device->gr_channel_policy.height - 1U,
+        .width = 1U,
+        .height = 1U,
+    };
+    if (status == 0) status = gr_channel_submit_locked(
+        device, pool, &self_test, channel.surface_gpu_address,
+        started, deadline);
+    self_test.operation = DEVICE_DOMAIN_GR_2D_RECT_COPY;
+    self_test.fence_sequence = 2U;
+    self_test.source_x = self_test.destination_x;
+    self_test.source_y = self_test.destination_y;
+    if (status == 0) status = gr_channel_submit_locked(
+        device, pool, &self_test, channel.surface_gpu_address,
+        started, deadline);
+    if (status != 0) {
+        const bool stopped = gr_channel_hardware_stop(device);
+        const bool disabled = platform_ops.set_bus_master(
+            device->pci_location, false);
+        const bool scrubbed = disabled && gr_channel_scrub_private(device);
+        clear_gr_channel_state(device);
+        if (!stopped || !disabled || !scrubbed) status = -5;
+        status = gr_execution_rollback(device, status);
+        end_operation();
+        return status;
+    }
+    *result = (device_domain_gr_channel_result_t){
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(*result),
+        .device = request->device,
+        .policy_id = request->policy_id,
+        .width = device->gr_channel_policy.width,
+        .height = device->gr_channel_policy.height,
+        .pitch = device->gr_channel_policy.pitch,
+        .capabilities = GK208_CHANNEL_CAPABILITIES,
+        .fence_sequence = device->gr_channel_fence_sequence,
+    };
+    end_operation();
+    return 0;
+}
+
+int device_domain_gr_2d_submit(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_2d_request_t *request,
+        device_domain_gr_2d_result_t *result) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || result == NULL ||
+        request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        (request->operation != DEVICE_DOMAIN_GR_2D_RECT_FILL &&
+         request->operation != DEVICE_DOMAIN_GR_2D_RECT_COPY) ||
+        request->fence_sequence == 0U || request->flags != 0U ||
+        request->reserved[0] != 0U || request->reserved[1] != 0U ||
+        request->reserved[2] != 0U || request->reserved[3] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    const device_domain_gr_channel_request_t common = {
+        .version = request->version,
+        .struct_size = sizeof(common),
+        .device = request->device,
+        .region = request->region,
+        .dma = request->dma,
+        .policy_id = request->policy_id,
+    };
+    device_slot_t *device = NULL;
+    dma_pool_slot_t *pool = NULL;
+    int status = gr_channel_validate_owner_locked(pid, process_generation,
+        &common, &device, &pool);
+    if (status == 0 && device->gr_channel_active == 0U) status = -13;
+    const uint32_t page_offset =
+        device != NULL ? device->gr_prerequisite_policy.scanout_offset &
+            0xFFFU : 0U;
+    const uint32_t surface = GK208_CHANNEL_SURFACE_GPU + page_offset;
+    const uint64_t started = platform_ops.monotonic_ms();
+    const uint64_t deadline = started > UINT64_MAX - 500U
+        ? UINT64_MAX : started + 500U;
+    if (status == 0) status = gr_channel_submit_locked(
+        device, pool, request, surface, started, deadline);
+    if (status != 0 && status != -22 && status != -34 && device != NULL) {
+        const bool stopped = gr_channel_hardware_stop(device);
+        const bool disabled = platform_ops.set_bus_master(
+            device->pci_location, false);
+        const bool scrubbed = disabled && gr_channel_scrub_private(device);
+        clear_gr_channel_state(device);
+        if (!stopped || !disabled || !scrubbed) status = -5;
+    }
+    if (status == 0) {
+        *result = (device_domain_gr_2d_result_t){
+            .version = DEVICE_DOMAIN_ABI_VERSION,
+            .struct_size = sizeof(*result),
+            .device = request->device,
+            .policy_id = request->policy_id,
+            .fence_sequence = request->fence_sequence,
+            .capabilities = GK208_CHANNEL_CAPABILITIES,
+        };
+    }
+    end_operation();
+    return status;
+}
+
+int device_domain_gr_channel_deactivate(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_channel_request_t *request) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->flags != 0U || request->reserved[0] != 0U ||
+        request->reserved[1] != 0U || request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = NULL;
+    dma_pool_slot_t *pool = NULL;
+    int status = gr_channel_validate_owner_locked(pid, process_generation,
+        request, &device, &pool);
+    (void)pool;
+    if (status == 0 && device->gr_channel_active != 0U) {
+        const bool stopped = gr_channel_hardware_stop(device);
+        const bool disabled = platform_ops.set_bus_master(
+            device->pci_location, false);
+        const bool scrubbed = disabled && gr_channel_scrub_private(device);
+        clear_gr_channel_state(device);
+        if (!stopped || !disabled || !scrubbed) status = -5;
+    }
+    end_operation();
+    return status;
+}
+
 static const device_domain_region_rule_t *region_write_rule(
         const device_slot_t *device, uint32_t region_index, uint32_t offset,
         uint32_t width, uint32_t kind) {
@@ -4735,6 +5674,10 @@ bool device_domain_test_dma_word(device_domain_resource_handle_t handle,
     return true;
 }
 
+void device_domain_test_set_gr_fence_completion(bool enabled) {
+    gr_channel_test_fence_completion = enabled;
+}
+
 void device_domain_test_reset(void) {
     memset(devices, 0, sizeof(devices));
     memset(groups, 0, sizeof(groups));
@@ -4750,5 +5693,6 @@ void device_domain_test_reset(void) {
     operation_busy = 0U;
     pending_irq_lines = 0U;
     initialized = false;
+    gr_channel_test_fence_completion = true;
 }
 #endif

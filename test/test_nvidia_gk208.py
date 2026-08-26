@@ -377,14 +377,19 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("X86OS_DEVICE_REGION_MAP_", driver)
         self.assertNotIn("X86OS_DEVICE_REGION_ACCESS_WRITE", driver)
 
-    def test_driver_never_advertises_unproven_acceleration(self):
+    def test_driver_advertises_only_self_tested_acceleration(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(
             encoding="utf-8")
         display = (ROOT / "drivers/video/display_control.c").read_text(
             encoding="utf-8")
-        self.assertIn("response->capabilities = 0U", driver)
-        self.assertIn("response->status = -95", driver)
         self.assertIn("request->capabilities = 0U", display)
+        self.assertIn("x86os_device_gr_channel_activate", driver)
+        self.assertIn("x86os_device_gr_2d_submit", driver)
+        self.assertIn("x86os_device_gr_channel_deactivate", driver)
+        self.assertIn("driver->acceleration_ready != 0U", driver)
+        self.assertIn("REIST_SVGA2D_CAP_RECT_FILL", driver)
+        self.assertIn("REIST_SVGA2D_CAP_RECT_COPY", driver)
+        self.assertIn("NVIDIA_DIAGNOSTIC_GR_CHANNEL_READY", driver)
         self.assertIn("x86os_device_open_region", driver)
         self.assertIn("x86os_device_bind_dma_direction", driver)
         self.assertIn("x86os_device_dma_write", driver)

@@ -108,6 +108,11 @@ class DeviceDomainTests(unittest.TestCase):
             "DEVICE_DOMAIN_CONTROL_GR_CONTEXT_MEMORY = 24U", header)
         self.assertIn(
             "DEVICE_DOMAIN_CONTROL_GR_GOLDEN_CONTEXT = 25U", header)
+        self.assertIn(
+            "DEVICE_DOMAIN_CONTROL_GR_CHANNEL_ACTIVATE = 26U", header)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_2D_SUBMIT = 27U", header)
+        self.assertIn(
+            "DEVICE_DOMAIN_CONTROL_GR_CHANNEL_DEACTIVATE = 28U", header)
         self.assertIn("device_domain_dma_pool_stats_t", header)
         self.assertIn("capacity_rejections", header)
         self.assertIn("device_domain_dma_pool_stats", source)
@@ -136,6 +141,13 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("device_domain_gr_context_memory", source)
         self.assertIn("gr_build_context_memory_plan", source)
         self.assertIn("device_domain_gr_golden_context", source)
+        self.assertIn("device_domain_install_gr_channel_policy", source)
+        self.assertIn("device_domain_gr_channel_activate", source)
+        self.assertIn("device_domain_gr_2d_submit", source)
+        self.assertIn("device_domain_gr_channel_deactivate", source)
+        self.assertIn("gr_channel_commit_runlist", source)
+        self.assertIn("gr_channel_hardware_stop", source)
+        self.assertIn("GK208_CHANNEL_FENCE_GPU", source)
         self.assertIn("gr_golden_execute_transaction", source)
         self.assertIn("gr_golden_install_vm", source)
         self.assertIn("gr_golden_clear_vm", source)
@@ -284,6 +296,9 @@ class DeviceDomainTests(unittest.TestCase):
                         "x86os_device_gr_execute",
                         "x86os_device_gr_context_memory",
                         "x86os_device_gr_golden_context",
+                        "x86os_device_gr_channel_activate",
+                        "x86os_device_gr_2d_submit",
+                        "x86os_device_gr_channel_deactivate",
                         "x86os_device_dma_write", "x86os_device_dma_read",
                         "x86os_device_region_read",
                         "x86os_device_region_write",
@@ -302,6 +317,9 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_EXECUTE", syscall)
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_CONTEXT_MEMORY", syscall)
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_GOLDEN_CONTEXT", syscall)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_CHANNEL_ACTIVATE", syscall)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_2D_SUBMIT", syscall)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_CHANNEL_DEACTIVATE", syscall)
         self.assertIn("x86os_device_driver_bootstrap", sdk_source)
         self.assertIn("x86os_device_driver_report", sdk_source)
         self.assertIn("supervisor_device_driver_output_allowed", syscall)

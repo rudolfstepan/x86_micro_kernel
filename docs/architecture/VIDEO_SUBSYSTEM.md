@@ -346,6 +346,21 @@ failure invokes the existing GR-reset rollback before state is forgotten. The
 VRAM, GPU or physical address. Channel/runlist activation, USERD submission,
 IRQ, fence and NVIDIA acceleration capabilities remain disabled.
 
+`R2.2x` completes the bounded native 2D path with append-only Device-Control
+commands 26--28. Ring 0 reconstructs one private channel VM, maps only the
+sealed system-memory command windows, retained GR buffers and admitted VBE
+scanout, discovers the bounded TOP runlist/PBDMA set, and binds channel 1 with
+the inherited GK104/GK208 RAMFC and USERD layout. Only fixed pitch-linear
+XRGB8888 `FERMI_TWOD_A` fill/copy packets are accepted. Every submission ends
+in a system-memory semaphore release and becomes visible only after the exact
+monotonic fence sequence completes without FIFO, PBDMA or PGRAPH faults.
+Activation performs real 1x1 fill and copy fence self-tests before publishing
+either capability. A fault or timeout stops the channel, empties its runlist,
+disables PCI bus mastering, scrubs private state and enters the existing GR
+rollback. IRQs and arbitrary Ring-3 MMIO/DMA addresses remain unavailable.
+QEMU and VMware prove build, ABI, rollback and VMware non-regression; actual
+GK208 execution still requires the final ASUS hardware run.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and
@@ -375,9 +390,10 @@ whose driver owns the active SVGA mode, but it incorrectly restored VGA text
 for passive GK208 while the desktop still used the kernel-owned VBE scanout.
 Recovery now deactivates scanout only for `svga2d-ring3`. Both drivers still
 prove mediated-I/O quiescence before device fencing, process reaping and owner
-recovery. Since GK208 continues to advertise zero capabilities and owns no GPU
-command state, retaining sealed VBE across its generation change grants no
-stale driver output authority. Explicit desktop shutdown still restores VGA.
+recovery. Before `R2.2x`, GK208 advertised zero capabilities and owned no GPU
+command state. With the native channel active, generation fencing now tears
+down its runlist and bus-master authority before process recovery. Explicit
+desktop shutdown still restores VGA.
 
 The same reproduction showed why the generation changed during startup. The
 desktop already split font and asset reads into fixed calls, but a voluntary

@@ -192,6 +192,14 @@ das opake Kontextabbild bleibt mit CRC erhalten. Teilfehler setzen GR zurück.
 PCI-Busmastering, IRQ, Channel, Runlist, USERD, Submission, Fence und NVIDIA-
 Capabilitybits bleiben weiterhin null; der nächste Hardwareabschnitt ist das
 getrennte Channel-/Fence-Gate.
+`R2.2x-nvidia-gk208-2d-activation` bündelt dieses Gate vollständig: Die neuen
+Device-Control-Kommandos 26--28 bauen den privaten Channel-VM-, RAMFC-, USERD-,
+Runlist- und PBDMA-Zustand im Kernel auf, reichen nur feste XRGB8888-Fill-/Copy-
+Operationen ein und veröffentlichen Capabilities erst nach zwei echten
+Semaphore-Fence-Selbsttests. Fehler und Timeouts leeren die Runlist,
+deaktivieren Busmastering, bereinigen privaten Zustand und rollen GR zurück.
+Der automatisierte Abschluss deckt Host, QEMU und VMware ab; die echte
+Beschleunigung muss anschließend einmal auf dem ASUS-GK208 bestätigt werden.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung
@@ -1024,10 +1032,10 @@ Evidenz und VMware-Sicherheitsgrenze stehen in
   oder BAR-Autorität sind nicht Bestandteil des Profils. Details stehen im
   [Videovertrag](../architecture/VIDEO_SUBSYSTEM.md).
 - NVIDIA GK208 `10de:1280` besitzt nun den exakten überwachten Bring-up-Pfad
-  `nvidia-gk208-ring3`. Er verändert beim Boot keine GPU-Register und meldet
-  erst nach der vollständig in Ring 3 vermittelten BAR0-/Timerprüfung
-  `NVIDIA_GK208_READY`. Native
-  `RECT_FILL`-/`RECT_COPY`-Ausführung bleibt bis zum GPFIFO-/Fence-Paket offen.
+  `nvidia-gk208-ring3` und einen kernelvermittelten Einzelkanal für native
+  `RECT_FILL`-/`RECT_COPY`-Ausführung. Capability-Freigabe verlangt zwei echte
+  Hardware-Fences; bis zum abschließenden ASUS-Test bleibt dies implementierte,
+  aber auf realer GK208-Hardware noch nicht bestätigte Funktionalität.
 - PCI-HDA läuft über getrennte überwachte Ring-3-Domänen; QEMU prüft den
   PCM-Pfad, VMware-Wiedergabe und Pegel wurden manuell bestätigt. Format,
   Lifecycle und Hardwaregrenzen stehen im

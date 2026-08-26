@@ -2441,9 +2441,18 @@ System-RAM- oder Busmaster-Zugriff. Ring 0 validiert eigene gepinnte Kontext-,
 ICMD- und MTHD-Tabellen, führt die GK208-Folge unter einer gemeinsamen
 Fünf-Sekunden-Deadline aus, speichert den opaken Golden Context samt CRC und
 entfernt anschließend Bindung und temporäre Seitentabelleneinträge. Bei jedem
-Teilfehler erfolgt zuerst der vorhandene GR-Reset-Rollback. Offen bleiben nun
-bewusst Channel-Bind, Runlist, USERD-Kick, echte Submission/Fence-Prüfung und
-erst danach die Veröffentlichung der 2D-Capabilities.
+Teilfehler erfolgt zuerst der vorhandene GR-Reset-Rollback.
+
+`R2.2x` schließt den verbleibenden Channel-/Capability-Slice in einem Paket.
+Die append-only Kommandos 26--28 bauen einen privaten Kanal-VM-Vertrag,
+aktivieren die begrenzte TOP-Runlist und PBDMA, übersetzen ausschließlich feste
+XRGB8888-Fill-/Copy-Anfragen und quittieren sie über einen echten
+Hardware-Semaphore-Fence. Fill und Copy werden beim Aktivieren als 1x1-
+Operationen geprüft; erst danach meldet der Dienst beide Capabilities. Jeder
+Hardwarefehler leert die Runlist, deaktiviert Busmastering, bereinigt privaten
+Zustand und setzt GR zurück. Automatisiert sind Host-, QEMU- und VMware-
+Nichtregression; der elektrische Fence- und Bildnachweis auf GK208 bleibt der
+abschließende manuelle ASUS-Test.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

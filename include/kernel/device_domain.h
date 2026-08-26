@@ -86,6 +86,9 @@ enum {
     DEVICE_DOMAIN_CONTROL_GR_EXECUTE = 23U,
     DEVICE_DOMAIN_CONTROL_GR_CONTEXT_MEMORY = 24U,
     DEVICE_DOMAIN_CONTROL_GR_GOLDEN_CONTEXT = 25U,
+    DEVICE_DOMAIN_CONTROL_GR_CHANNEL_ACTIVATE = 26U,
+    DEVICE_DOMAIN_CONTROL_GR_2D_SUBMIT = 27U,
+    DEVICE_DOMAIN_CONTROL_GR_CHANNEL_DEACTIVATE = 28U,
 };
 
 enum {
@@ -575,6 +578,76 @@ typedef struct {
     uint32_t reserved[3];
 } device_domain_gr_golden_context_result_t;
 
+enum {
+    DEVICE_DOMAIN_GR_2D_RECT_FILL = 1U,
+    DEVICE_DOMAIN_GR_2D_RECT_COPY = 2U,
+};
+
+enum {
+    DEVICE_DOMAIN_GR_2D_CAP_RECT_FILL = 1U << 0U,
+    DEVICE_DOMAIN_GR_2D_CAP_RECT_COPY = 1U << 1U,
+    DEVICE_DOMAIN_GR_CHANNEL_READY = 1U << 2U,
+};
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t policy_id;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t channel_id;
+    uint32_t reserved[3];
+} device_domain_gr_channel_policy_t;
+
+typedef device_domain_gr_execution_request_t
+    device_domain_gr_channel_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    uint32_t policy_id;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t capabilities;
+    uint32_t fence_sequence;
+    uint32_t flags;
+    uint32_t reserved[2];
+} device_domain_gr_channel_result_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    device_domain_resource_handle_t region;
+    device_domain_resource_handle_t dma;
+    uint32_t policy_id;
+    uint32_t operation;
+    uint32_t fence_sequence;
+    uint32_t source_x;
+    uint32_t source_y;
+    uint32_t destination_x;
+    uint32_t destination_y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t color;
+    uint32_t flags;
+    uint32_t reserved[4];
+} device_domain_gr_2d_request_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    uint32_t policy_id;
+    uint32_t fence_sequence;
+    uint32_t capabilities;
+    uint32_t flags;
+    uint32_t reserved[3];
+} device_domain_gr_2d_result_t;
+
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -750,6 +823,14 @@ _Static_assert(sizeof(device_domain_gr_context_memory_result_t) == 64U,
                "device-domain GR context-memory result ABI changed");
 _Static_assert(sizeof(device_domain_gr_golden_context_result_t) == 64U,
                "device-domain GR golden-context result ABI changed");
+_Static_assert(sizeof(device_domain_gr_channel_policy_t) == 40U,
+               "device-domain GR channel policy ABI changed");
+_Static_assert(sizeof(device_domain_gr_channel_result_t) == 48U,
+               "device-domain GR channel result ABI changed");
+_Static_assert(sizeof(device_domain_gr_2d_request_t) == 80U,
+               "device-domain GR 2D request ABI changed");
+_Static_assert(sizeof(device_domain_gr_2d_result_t) == 40U,
+               "device-domain GR 2D result ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -793,6 +874,9 @@ int device_domain_install_gr_firmware_policy(
 /** Install one exact read-only GR image/FB/LTC prerequisite policy. */
 int device_domain_install_gr_prerequisite_policy(
     uint32_t device, const device_domain_gr_prerequisite_policy_t *policy);
+/** Install immutable scanout geometry and the one admitted channel ID. */
+int device_domain_install_gr_channel_policy(
+    uint32_t device, const device_domain_gr_channel_policy_t *policy);
 /** Claim one function and its complete isolation group for a process generation. */
 int device_domain_claim(int pid, uint32_t process_generation, uint32_t device,
                         uint32_t mode, device_domain_handle_t *handle_out);
@@ -894,6 +978,17 @@ int device_domain_gr_golden_context(
     int pid, uint32_t process_generation,
     const device_domain_gr_golden_context_request_t *request,
     device_domain_gr_golden_context_result_t *result);
+int device_domain_gr_channel_activate(
+    int pid, uint32_t process_generation,
+    const device_domain_gr_channel_request_t *request,
+    device_domain_gr_channel_result_t *result);
+int device_domain_gr_2d_submit(
+    int pid, uint32_t process_generation,
+    const device_domain_gr_2d_request_t *request,
+    device_domain_gr_2d_result_t *result);
+int device_domain_gr_channel_deactivate(
+    int pid, uint32_t process_generation,
+    const device_domain_gr_channel_request_t *request);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);
@@ -914,6 +1009,7 @@ void device_domain_test_reset(void);
 void device_domain_test_raise_irq(uint8_t irq);
 bool device_domain_test_dma_word(device_domain_resource_handle_t resource,
                                  uint32_t offset, uint64_t *value);
+void device_domain_test_set_gr_fence_completion(bool enabled);
 #endif
 
 #endif

@@ -237,6 +237,18 @@ Freigabe durch den vorhandenen GR-Reset-Rollback. Das Resultat enthält Größen
 Zähler und Kontext-CRC, jedoch keinerlei Adresse. Busmaster, IRQ, Channel,
 Runlist, USERD, Submission, Fence und Capability bleiben gesperrt.
 
+Die append-only Kommandos 26--28 bilden anschließend genau einen
+generationgebundenen GK208-Kanal. Der Kernel erzeugt und behält RAMFC, USERD,
+Runlist und Seitentabellen, veröffentlicht keine Geräte- oder DMA-Adresse und
+akzeptiert ausschließlich typisierte Fill-/Copy-Rechtecke innerhalb des
+festen XRGB8888-Scanouts. Eine streng fortlaufende Sequenz wird erst nach dem
+Hardware-Semaphore-Fence bestätigt. Vor der ersten Capabilityfreigabe müssen
+ein Fill- und ein Copy-Selbsttest den Fence erreichen. Timeout, FIFO/PBDMA/GR-
+Fehler, Deaktivierung oder Generationswechsel leeren die Runlist, deaktivieren
+Busmastering und bereinigen den privaten Kanalzustand. Der Ring-3-Treiber kann
+damit Operationen anfordern, erhält aber weder rohe MMIO-Schreibrechte noch
+physische oder GPU-virtuelle Adressen.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden

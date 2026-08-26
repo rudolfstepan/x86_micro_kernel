@@ -1501,6 +1501,80 @@ int x86os_device_gr_golden_context(
     return 0;
 }
 
+int x86os_device_gr_channel_activate(
+        x86os_device_handle_t device, x86os_device_resource_t region,
+        x86os_device_resource_t dma, uint32_t policy_id,
+        x86os_device_gr_channel_result_t *result) {
+    if (device == 0U || region == 0U || dma == 0U || policy_id == 0U ||
+        result == NULL) return -22;
+    const x86os_device_gr_channel_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .region = region,
+        .dma = dma,
+        .policy_id = policy_id,
+    };
+    x86os_zero_bytes(result, sizeof(*result));
+    int status = (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_GR_CHANNEL_ACTIVATE,
+        (uintptr_t)&request, (uintptr_t)result);
+    if (status != 0) return status;
+    const uint32_t capabilities = X86OS_DEVICE_GR_2D_CAP_RECT_FILL |
+        X86OS_DEVICE_GR_2D_CAP_RECT_COPY | X86OS_DEVICE_GR_CHANNEL_READY;
+    if (result->version != X86OS_DEVICE_ABI_VERSION ||
+        result->struct_size != sizeof(*result) || result->device != device ||
+        result->policy_id != policy_id || result->width == 0U ||
+        result->height == 0U || result->pitch < result->width * 4U ||
+        result->capabilities != capabilities || result->fence_sequence == 0U ||
+        result->flags != 0U || result->reserved[0] != 0U ||
+        result->reserved[1] != 0U) return -84;
+    return 0;
+}
+
+int x86os_device_gr_2d_submit(
+        const x86os_device_gr_2d_request_t *request,
+        x86os_device_gr_2d_result_t *result) {
+    if (request == NULL || result == NULL || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->policy_id == 0U || request->fence_sequence == 0U)
+        return -22;
+    x86os_zero_bytes(result, sizeof(*result));
+    int status = (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_GR_2D_SUBMIT,
+        (uintptr_t)request, (uintptr_t)result);
+    if (status != 0) return status;
+    const uint32_t capabilities = X86OS_DEVICE_GR_2D_CAP_RECT_FILL |
+        X86OS_DEVICE_GR_2D_CAP_RECT_COPY | X86OS_DEVICE_GR_CHANNEL_READY;
+    if (result->version != X86OS_DEVICE_ABI_VERSION ||
+        result->struct_size != sizeof(*result) ||
+        result->device != request->device ||
+        result->policy_id != request->policy_id ||
+        result->fence_sequence != request->fence_sequence ||
+        result->capabilities != capabilities || result->flags != 0U ||
+        result->reserved[0] != 0U || result->reserved[1] != 0U ||
+        result->reserved[2] != 0U) return -84;
+    return 0;
+}
+
+int x86os_device_gr_channel_deactivate(
+        x86os_device_handle_t device, x86os_device_resource_t region,
+        x86os_device_resource_t dma, uint32_t policy_id) {
+    if (device == 0U || region == 0U || dma == 0U || policy_id == 0U)
+        return -22;
+    const x86os_device_gr_channel_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .region = region,
+        .dma = dma,
+        .policy_id = policy_id,
+    };
+    return (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_GR_CHANNEL_DEACTIVATE,
+        (uintptr_t)&request, 0U);
+}
+
 static int x86os_device_region_access_valid(
         x86os_device_resource_t region, uint32_t offset, uint32_t width) {
     return region != 0U &&

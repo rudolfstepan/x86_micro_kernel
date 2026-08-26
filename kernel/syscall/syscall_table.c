@@ -3135,6 +3135,40 @@ static int syscall_device_control(uint32_t command, const void *user_request,
         return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
                                   &result, sizeof(result)) == 0 ? 0 : -14;
     }
+    if (command == DEVICE_DOMAIN_CONTROL_GR_CHANNEL_ACTIVATE) {
+        if (!device_output_accessible(directory, user_result,
+                sizeof(device_domain_gr_channel_result_t))) return -14;
+        device_domain_gr_channel_request_t request;
+        device_domain_gr_channel_result_t result;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        int status = device_domain_gr_channel_activate(
+            process->pid, process->generation, &request, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_GR_2D_SUBMIT) {
+        if (!device_output_accessible(directory, user_result,
+                sizeof(device_domain_gr_2d_result_t))) return -14;
+        device_domain_gr_2d_request_t request;
+        device_domain_gr_2d_result_t result;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        int status = device_domain_gr_2d_submit(
+            process->pid, process->generation, &request, &result);
+        if (status != 0) return status;
+        return copy_to_user_space(directory, (uint32_t)(uintptr_t)user_result,
+                                  &result, sizeof(result)) == 0 ? 0 : -14;
+    }
+    if (command == DEVICE_DOMAIN_CONTROL_GR_CHANNEL_DEACTIVATE) {
+        if (user_result != NULL) return -22;
+        device_domain_gr_channel_request_t request;
+        if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+            return -14;
+        return device_domain_gr_channel_deactivate(
+            process->pid, process->generation, &request);
+    }
     if (command == DEVICE_DOMAIN_CONTROL_REGION_READ) {
         if (!device_output_accessible(
                 directory, user_result,

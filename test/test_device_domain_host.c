@@ -41,6 +41,8 @@ static bool gr_execution_test_mode;
 static bool gr_execution_ready;
 static bool gr_golden_test_mode;
 static bool gr_golden_ready;
+static bool gr_channel_test_mode;
+static uint32_t gr_channel_pbdma_enable;
 #define TEST_VRAM_WORD_CAPACITY (8U * 1024U * 1024U / sizeof(uint32_t))
 static uint32_t test_vram[TEST_VRAM_WORD_CAPACITY];
 static uint32_t gr_fecs_status;
@@ -229,6 +231,30 @@ static bool read_region(const device_domain_region_info_t *region,
             return true;
         }
     }
+    if (gr_channel_test_mode) {
+        if (offset == 0x00022700U) {
+            *value = 0x80000012U;
+            return true;
+        }
+        if (offset == 0x00022704U) {
+            *value = 0x00000003U;
+            return true;
+        }
+        if (offset == 0x00000204U) {
+            *value = gr_channel_pbdma_enable;
+            return true;
+        }
+        if (offset == 0x00002390U) {
+            *value = 1U;
+            return true;
+        }
+        if (offset == 0x00002284U || offset == 0x00002100U ||
+            offset == 0x00400100U || offset == 0x00040108U ||
+            offset == 0x00040148U) {
+            *value = 0U;
+            return true;
+        }
+    }
     if (gr_prerequisite_test_mode) {
         switch (offset) {
         case 0x00409604U: *value = 0x00020001U; return true;
@@ -302,6 +328,10 @@ static bool write_region(const device_domain_region_info_t *region,
         return true;
     }
     const bool bar0 = region->region_index == 0U;
+    if (gr_channel_test_mode && bar0 && offset == 0x00000204U) {
+        gr_channel_pbdma_enable = value == UINT32_MAX ? 1U : value;
+        return true;
+    }
     if (bar0 && region_write_persists && offset == tracked_region_offset) {
         tracked_region_value = value;
         if (offset == 0x00000200U && (value & 0x00001000U) == 0U) {
@@ -469,6 +499,8 @@ static void reset_counters(void) {
     gr_execution_ready = true;
     gr_golden_test_mode = false;
     gr_golden_ready = true;
+    gr_channel_test_mode = false;
+    gr_channel_pbdma_enable = 0U;
     gr_fecs_status = 0U;
     memset(test_vram, 0, sizeof(test_vram));
     memset(falcon_dmem, 0, sizeof(falcon_dmem));
@@ -1803,7 +1835,7 @@ static void build_gr_prerequisite_image(
 static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
         void) {
     reset_counters();
-    described_region_length = 0x005FA60CU;
+    described_region_length = 16U * 1024U * 1024U;
     gr_prerequisite_test_mode = true;
     device_domain_platform_ops_t ops = test_platform_ops();
     assert(device_domain_init(&ops, false));
@@ -1904,9 +1936,23 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
         device, &prerequisite_policy) == 0);
     assert(device_domain_install_gr_prerequisite_policy(
         device, &prerequisite_policy) == -16);
+    const device_domain_gr_channel_policy_t channel_policy = {
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(channel_policy),
+        .policy_id = 1U,
+        .width = 1024U,
+        .height = 768U,
+        .pitch = 4096U,
+        .channel_id = 1U,
+    };
+    assert(device_domain_install_gr_channel_policy(
+        device, &channel_policy) == 0);
+    assert(device_domain_install_gr_channel_policy(
+        device, &channel_policy) == -16);
 
     for (uint32_t generation = 70U; generation < 73U; ++generation) {
         const uint32_t writes_before_generation = region_write_calls;
+        const uint32_t enables_before_generation = enable_calls;
         device_domain_handle_t handle = 0U;
         const int pid = (int)generation;
         assert(device_domain_claim(pid, generation, device,
@@ -1970,7 +2016,7 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
             assert(device_domain_gr_prerequisites(
                 pid, generation, &request) == -13);
             assert(region_write_calls == writes_before_generation &&
-                   enable_calls == 0U);
+                   enable_calls == enables_before_generation);
             const device_domain_dma_vm_page_mode_request_t page_mode = {
                 .version = DEVICE_DOMAIN_ABI_VERSION,
                 .struct_size = sizeof(page_mode),
@@ -2067,17 +2113,78 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
                 assert(golden_result.temporary_bytes == 0x51000U);
                 assert(device_domain_gr_golden_context(pid, generation,
                     &context_request, &golden_result) == -13);
+                if (generation == 70U) {
+                    gr_channel_test_mode = true;
+                    device_domain_gr_channel_result_t channel_result;
+                    assert(device_domain_gr_channel_activate(
+                        pid, generation, &context_request,
+                        &channel_result) == 0);
+                    assert(channel_result.capabilities ==
+                        (DEVICE_DOMAIN_GR_2D_CAP_RECT_FILL |
+                         DEVICE_DOMAIN_GR_2D_CAP_RECT_COPY |
+                         DEVICE_DOMAIN_GR_CHANNEL_READY));
+                    assert(channel_result.width == 1024U &&
+                        channel_result.height == 768U &&
+                        channel_result.pitch == 4096U &&
+                        channel_result.fence_sequence == 2U);
+                    device_domain_gr_2d_request_t draw = {
+                        .version = DEVICE_DOMAIN_ABI_VERSION,
+                        .struct_size = sizeof(draw),
+                        .device = handle,
+                        .region = region.resource,
+                        .dma = dma,
+                        .policy_id = 1U,
+                        .operation = DEVICE_DOMAIN_GR_2D_RECT_FILL,
+                        .fence_sequence = 3U,
+                        .destination_x = 10U,
+                        .destination_y = 20U,
+                        .width = 30U,
+                        .height = 40U,
+                        .color = 0x00112233U,
+                    };
+                    device_domain_gr_2d_result_t draw_result;
+                    assert(device_domain_gr_2d_submit(pid, generation,
+                        &draw, &draw_result) == 0);
+                    assert(draw_result.fence_sequence == 3U);
+                    draw.fence_sequence = 4U;
+                    draw.destination_x = 1020U;
+                    draw.width = 8U;
+                    assert(device_domain_gr_2d_submit(pid, generation,
+                        &draw, &draw_result) == -34);
+                    draw.operation = DEVICE_DOMAIN_GR_2D_RECT_COPY;
+                    draw.source_x = 1U;
+                    draw.source_y = 2U;
+                    draw.destination_x = 3U;
+                    draw.destination_y = 4U;
+                    draw.width = 8U;
+                    draw.height = 8U;
+                    assert(device_domain_gr_2d_submit(pid, generation,
+                        &draw, &draw_result) == 0);
+                    device_domain_test_set_gr_fence_completion(false);
+                    draw.operation = DEVICE_DOMAIN_GR_2D_RECT_FILL;
+                    draw.fence_sequence = 5U;
+                    assert(device_domain_gr_2d_submit(pid, generation,
+                        &draw, &draw_result) == -110);
+                    device_domain_test_set_gr_fence_completion(true);
+                    assert(device_domain_gr_channel_deactivate(
+                        pid, generation, &context_request) == 0);
+                    assert(enable_calls == enables_before_generation + 1U &&
+                           disable_calls > 0U);
+                    gr_channel_test_mode = false;
+                }
             } else {
                 assert((tracked_region_value & 0x00001000U) == 0x00001000U);
                 assert(device_domain_gr_golden_context(pid, generation,
                     &context_request, &golden_result) == -13);
             }
-            assert(enable_calls == 0U && region_write_calls > 0U);
+            assert(enable_calls == enables_before_generation +
+                       (generation == 70U ? 1U : 0U) &&
+                   region_write_calls > 0U);
             gr_golden_test_mode = false;
             gr_execution_test_mode = false;
         } else {
             assert(region_write_calls == writes_before_generation &&
-                   enable_calls == 0U);
+                   enable_calls == enables_before_generation);
         }
         assert(device_domain_release(pid, generation, handle, 100U) == 0);
     }

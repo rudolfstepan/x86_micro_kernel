@@ -11,6 +11,53 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2x-nvidia-gk208-2d-activation"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Activate bounded native GK208 2D acceleration"
+scope = "Complete the native GK208 2D vertical slice in one package: private VRAM channel VM, bounded TOP/runlist and PBDMA activation, fixed typed XRGB8888 fill/copy submission, hardware semaphore fence, fail-closed teardown and capability publication only after the fence self-test. VMware remains unchanged."
+allowed_files = [
+  "automation/reist-s03b.toml", "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c", "kernel/init/video_device_profile.c",
+  "kernel/syscall/syscall_table.c", "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c", "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c", "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208.py", "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "commands 26 through 28 expose no raw device or DMA address",
+  "the private VM maps only sealed command pages retained GR buffers and the admitted VBE scanout",
+  "bus mastering starts only after validation and stops before private state is cleared",
+  "capabilities require a completed hardware fence",
+  "all hardware scans waits and queues are fixed-capacity and deadline bounded",
+  "every failure and generation teardown unbinds the channel and empties its runlist",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "exact GK208 channel or fence semantics would require guessing",
+  "the private VM cannot fit the admitted VRAM aperture",
+  "rollback cannot disable bus mastering and unbind the channel",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+
+[[packages]]
 id = "R2.2w-nvidia-gk208-golden-context-execution"
 status = "done"
 phase = "post-s0"
