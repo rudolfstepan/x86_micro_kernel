@@ -225,6 +225,18 @@ Post-Context, FECS-Bind, Golden-Save und Retain explizit. Dieser Compiler hat
 keinen Hardwarezugriff. Erst ein nachfolgendes Kernelkommando darf den Plan
 unabhängig rekonstruieren und unter einer gemeinsamen Deadline ausführen.
 
+Append-only Device-Control-Kommando 25 führt diesen Plan jetzt als eine
+kernelvermittelte Transaktion aus. Ring 0 prüft seine eigenen unveränderlichen
+Kopien der 199 Kontext-, 245 ICMD- und 311 klassengebundenen Methodentupel per
+CRC32, legt Instance, 64-KiB-PGD und 256-KiB-Small-PGT ausschließlich im opaken
+VRAM an und erzeugt nur VRAM-PTEs. Alle direkten Kontext-, Floorsweep-, ICMD-,
+Methoden- und FECS-Schritte teilen dieselbe monotone Fünf-Sekunden-Deadline.
+Bei Erfolg werden Bindung und temporäre PDE/PTEs entfernt und nur das
+gespeicherte Kontextabbild behalten; jeder Teilfehler läuft vor einer erneuten
+Freigabe durch den vorhandenen GR-Reset-Rollback. Das Resultat enthält Größen,
+Zähler und Kontext-CRC, jedoch keinerlei Adresse. Busmaster, IRQ, Channel,
+Runlist, USERD, Submission, Fence und Capability bleiben gesperrt.
+
 Device-Control-Kommando 18 stellt der bereits autorisierten Treiberdomäne eine
 aggregierte 32-Byte-v1-Diagnose bereit. Sie enthält aktuelle und maximale
 Belegung der vier Pools, Slotkapazität, Standard-Poolgröße und einen saturierenden

@@ -9,6 +9,29 @@
 #include "drivers/bus/pci.h"
 #include "include/kernel/ipc.h"
 #include "lib/libc/string.h"
+
+typedef struct {
+    uint32_t address;
+    uint32_t count;
+    uint32_t pitch;
+    uint32_t value;
+} reist_nvidia_gk208_gr_tuple_t;
+typedef struct {
+    reist_nvidia_gk208_gr_tuple_t tuple;
+    uint32_t class_id;
+} reist_nvidia_gk208_gr_method_tuple_t;
+typedef struct {
+    uint32_t first_tuple;
+    uint32_t tuple_count;
+} reist_nvidia_gk208_gr_span_t;
+typedef struct {
+    uint32_t first_tuple;
+    uint32_t tuple_count;
+    uint32_t falcon_base;
+    uint32_t starstar;
+    uint32_t register_base;
+} reist_nvidia_gk208_gr_context_span_t;
+#include "../../userspace/video/lib/nvidia_gk208_gr_tables.h"
 #ifndef REIST_HOST_TEST
 #include "arch/x86/mm/paging.h"
 #include "drivers/char/io.h"
@@ -53,7 +76,7 @@
 #define GK208_VRAM_VGA_HEAD_BYTES 0x00040000U
 #define GK208_VRAM_VBIOS_TAIL_BYTES 0x00100000U
 #define GK208_GR_PAGEPOOL_BYTES 0x00008000U
-#define GK208_GR_PAGEPOOL_ALIGNMENT 0x00000100U
+#define GK208_GR_PAGEPOOL_ALIGNMENT 0x00001000U
 #define GK208_GR_BUNDLE_BYTES 0x00003000U
 #define GK208_GR_BUNDLE_ALIGNMENT 0x00000100U
 #define GK208_GR_ATTRIB_ALIGNMENT 0x00001000U
@@ -61,6 +84,22 @@
 #define GK208_GR_ATTRIB_TOTAL_MAX 0x00000B23U
 #define GK208_GR_GOLDEN_CB_RESERVED 0x00080000U
 #define GK208_GR_GOLDEN_ALIGNMENT 0x00001000U
+#define GK208_GR_TEMP_INSTANCE_BYTES 0x00001000U
+#define GK208_GR_TEMP_PGD_BYTES 0x00010000U
+#define GK208_GR_TEMP_PGT_BYTES 0x00040000U
+#define GK208_GR_GPU_PAGE_SHIFT 12U
+#define GK208_GR_GPU_BASE 0x20010000U
+#define GK208_GR_GPU_TABLE_BASE 0x20000000U
+#define GK208_GR_GPU_TABLE_BYTES 0x08000000U
+#define GK208_GR_INSTANCE_PGD 0x00000200U
+#define GK208_GR_INSTANCE_VM_LIMIT 0x00000208U
+#define GK208_GR_INSTANCE_CONTEXT 0x00000210U
+#define GK208_GR_FE_POWER 0x00404170U
+#define GK208_GR_FECS_RESET 0x00409614U
+#define GK208_GR_FECS_STATUS 0x00409800U
+#define GK208_GR_FECS_DATA 0x00409500U
+#define GK208_GR_FECS_METHOD 0x00409504U
+#define GK208_GR_FECS_CURRENT 0x00409B00U
 
 typedef struct {
     uint8_t registered;
@@ -130,6 +169,9 @@ typedef struct {
     uint32_t gr_context_golden_offset;
     uint32_t gr_context_golden_bytes;
     uint32_t gr_context_total_bytes;
+    uint8_t gr_golden_context_active;
+    uint32_t gr_golden_context_crc32;
+    uint32_t gr_golden_context_retained_bytes;
 } device_slot_t;
 
 typedef struct {
@@ -894,6 +936,9 @@ static void clear_gr_execution_state(device_slot_t *device) {
     device->gr_context_golden_offset = 0U;
     device->gr_context_golden_bytes = 0U;
     device->gr_context_total_bytes = 0U;
+    device->gr_golden_context_active = 0U;
+    device->gr_golden_context_crc32 = 0U;
+    device->gr_golden_context_retained_bytes = 0U;
     device->gr_execution_active = 0U;
     device->gr_execution_operation_count = 0U;
     device->gr_execution_context_size = 0U;
@@ -3620,6 +3665,852 @@ int device_domain_gr_context_memory(
         .golden_bytes = context.golden_bytes,
         .total_bytes = context.total_bytes,
         .flags = DEVICE_DOMAIN_GR_CONTEXT_MEMORY_READY,
+    };
+    end_operation();
+    return 0;
+}
+
+typedef struct {
+    uint32_t instance_offset;
+    uint32_t pgd_offset;
+    uint32_t pgt_offset;
+    uint32_t end_offset;
+    uint32_t temporary_bytes;
+    uint32_t gpu_address[4];
+    uint32_t vram_offset[4];
+    uint32_t mapped_bytes[4];
+    uint32_t pte_first[4];
+    uint32_t pte_count[4];
+} gr_golden_memory_plan_t;
+
+static bool gr_golden_build_memory_plan(
+        const gr_context_memory_plan_t *context,
+        const gr_prerequisite_plan_t *prerequisite,
+        const device_domain_gr_prerequisite_policy_t *policy,
+        gr_golden_memory_plan_t *plan) {
+    if (context == NULL || prerequisite == NULL || policy == NULL ||
+        plan == NULL || context->total_bytes == 0U)
+        return false;
+    uint64_t cursor = (uint64_t)context->pagepool_offset +
+        context->total_bytes;
+    if (!gr_align_up_u64(cursor, 4096U, &cursor) || cursor > UINT32_MAX)
+        return false;
+    const uint64_t instance = cursor;
+    cursor += GK208_GR_TEMP_INSTANCE_BYTES;
+    if (!gr_align_up_u64(cursor, 4096U, &cursor) || cursor > UINT32_MAX)
+        return false;
+    const uint64_t pgd = cursor;
+    cursor += GK208_GR_TEMP_PGD_BYTES;
+    if (!gr_align_up_u64(cursor, 4096U, &cursor) || cursor > UINT32_MAX)
+        return false;
+    const uint64_t pgt = cursor;
+    cursor += GK208_GR_TEMP_PGT_BYTES;
+    uint64_t usable_end = prerequisite->vram_bytes -
+        GK208_VRAM_VBIOS_TAIL_BYTES;
+    if (usable_end > policy->vram_aperture_bytes)
+        usable_end = policy->vram_aperture_bytes;
+    if (cursor > usable_end || cursor > UINT32_MAX ||
+        cursor <= instance || cursor - instance > UINT32_MAX)
+        return false;
+
+    *plan = (gr_golden_memory_plan_t){
+        .instance_offset = (uint32_t)instance,
+        .pgd_offset = (uint32_t)pgd,
+        .pgt_offset = (uint32_t)pgt,
+        .end_offset = (uint32_t)cursor,
+        .temporary_bytes = (uint32_t)(cursor - instance),
+    };
+    const uint32_t bytes[4] = {
+        GK208_GR_PAGEPOOL_BYTES, GK208_GR_BUNDLE_BYTES,
+        context->attrib_bytes, context->golden_bytes,
+    };
+    const uint32_t offsets[4] = {
+        context->pagepool_offset, context->bundle_offset,
+        context->attrib_offset, context->golden_offset,
+    };
+    uint64_t gpu = GK208_GR_GPU_BASE;
+    const uint64_t table_end =
+        (uint64_t)GK208_GR_GPU_TABLE_BASE + GK208_GR_GPU_TABLE_BYTES;
+    for (uint32_t index = 0U; index < 4U; ++index) {
+        uint64_t mapped = 0U;
+        if (bytes[index] == 0U || (offsets[index] & 0xFFFU) != 0U ||
+            !gr_align_up_u64(bytes[index], 4096U, &mapped) ||
+            mapped == 0U || mapped > UINT32_MAX || gpu <
+                GK208_GR_GPU_TABLE_BASE || gpu > table_end ||
+            mapped > table_end - gpu)
+            return false;
+        const uint64_t first = (gpu - GK208_GR_GPU_TABLE_BASE) >>
+            GK208_GR_GPU_PAGE_SHIFT;
+        const uint64_t count = mapped >> GK208_GR_GPU_PAGE_SHIFT;
+        if (first > UINT32_MAX || count == 0U || count > UINT32_MAX ||
+            first + count > GK208_GR_TEMP_PGT_BYTES / 8U)
+            return false;
+        plan->gpu_address[index] = (uint32_t)gpu;
+        plan->vram_offset[index] = offsets[index];
+        plan->mapped_bytes[index] = (uint32_t)mapped;
+        plan->pte_first[index] = (uint32_t)first;
+        plan->pte_count[index] = (uint32_t)count;
+        gpu += mapped;
+    }
+    return true;
+}
+
+static bool gr_golden_table_valid(void) {
+    (void)reist_gk208_gr_mmio;
+    (void)reist_gk208_gr_mmio_spans;
+    (void)reist_gk208_gr_context_spans;
+    uint32_t context_crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_CONTEXT_TUPLE_COUNT;
+         ++index) {
+        const reist_nvidia_gk208_gr_tuple_t *tuple =
+            &reist_gk208_gr_context[index];
+        if (tuple->count == 0U || tuple->count > 255U ||
+            (tuple->address & 3U) != 0U || tuple->pitch == 0U ||
+            (tuple->pitch & 3U) != 0U ||
+            (uint64_t)tuple->address +
+                (uint64_t)(tuple->count - 1U) * tuple->pitch > 0x007FFFFCU)
+            return false;
+        context_crc = gr_crc32_word(context_crc, tuple->address);
+        context_crc = gr_crc32_word(context_crc, tuple->count);
+        context_crc = gr_crc32_word(context_crc, tuple->pitch);
+        context_crc = gr_crc32_word(context_crc, tuple->value);
+    }
+    uint32_t icmd_crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_ICMD_TUPLE_COUNT;
+         ++index) {
+        const reist_nvidia_gk208_gr_tuple_t *tuple =
+            &reist_gk208_gr_icmd[index];
+        if (tuple->count == 0U || tuple->count > 255U ||
+            tuple->pitch != 1U || (uint64_t)tuple->address +
+                tuple->count - 1U > 0x001FFFFFULL)
+            return false;
+        icmd_crc = gr_crc32_word(icmd_crc, tuple->address);
+        icmd_crc = gr_crc32_word(icmd_crc, tuple->count);
+        icmd_crc = gr_crc32_word(icmd_crc, tuple->pitch);
+        icmd_crc = gr_crc32_word(icmd_crc, tuple->value);
+    }
+    uint32_t method_crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_MTHD_TUPLE_COUNT;
+         ++index) {
+        const reist_nvidia_gk208_gr_method_tuple_t *method =
+            &reist_gk208_gr_mthd[index];
+        const reist_nvidia_gk208_gr_tuple_t *tuple = &method->tuple;
+        if (tuple->count == 0U || tuple->count > 255U ||
+            (tuple->address & 3U) != 0U || tuple->pitch == 0U ||
+            (tuple->pitch & 3U) != 0U ||
+            (uint64_t)tuple->address +
+                (uint64_t)(tuple->count - 1U) * tuple->pitch > 0x0001FFFFU ||
+            (method->class_id != 0x0000A197U &&
+             method->class_id != 0x0000902DU))
+            return false;
+        method_crc = gr_crc32_word(method_crc, tuple->address);
+        method_crc = gr_crc32_word(method_crc, tuple->count);
+        method_crc = gr_crc32_word(method_crc, tuple->pitch);
+        method_crc = gr_crc32_word(method_crc, tuple->value);
+        method_crc = gr_crc32_word(method_crc, method->class_id);
+    }
+    return ~context_crc == REIST_GK208_GR_CONTEXT_CRC32 &&
+        ~icmd_crc == REIST_GK208_GR_ICMD_CRC32 &&
+        ~method_crc == REIST_GK208_GR_MTHD_CRC32;
+}
+
+static bool gr_write32(const device_domain_region_info_t *region,
+                       uint32_t offset, uint32_t value) {
+    return region != NULL && (offset & 3U) == 0U &&
+        offset <= region->length_low &&
+        sizeof(uint32_t) <= region->length_low - offset &&
+        platform_ops.write_region(region, offset, sizeof(uint32_t), value);
+}
+
+static bool gr_mask32(const device_domain_region_info_t *region,
+                      uint32_t offset, uint32_t mask, uint32_t value) {
+    uint32_t current = 0U;
+    return gr_read32(region, offset, &current) &&
+        gr_write32(region, offset, (current & ~mask) | (value & mask));
+}
+
+static int gr_golden_wait_idle(const device_domain_region_info_t *region,
+        uint64_t started, uint64_t deadline) {
+    for (uint32_t attempt = 0U; attempt < 2000U; ++attempt) {
+        uint32_t update = 0U;
+        uint32_t busy = 0U;
+        if (!gr_read32(region, 0x00400700U, &update) ||
+            !gr_read32(region, 0x0040060CU, &busy))
+            return -5;
+        if ((busy & 1U) == 0U) return 0;
+        if (!gr_wait_one_ms(started, deadline)) return -110;
+    }
+    return -110;
+}
+
+static int gr_golden_wait_fecs(const device_domain_region_info_t *region,
+        uint32_t success, uint32_t error, uint64_t started,
+        uint64_t deadline) {
+    for (uint32_t attempt = 0U; attempt < 2000U; ++attempt) {
+        uint32_t status = 0U;
+        if (!gr_read32(region, GK208_GR_FECS_STATUS, &status)) return -5;
+        if ((status & error) != 0U) return -5;
+        if ((status & success) != 0U) return 0;
+        if (!gr_wait_one_ms(started, deadline)) return -110;
+    }
+    return -110;
+}
+
+static int gr_golden_zero_window(
+        const device_domain_region_info_t *vram,
+        const gr_context_memory_plan_t *context,
+        const gr_golden_memory_plan_t *golden,
+        device_domain_region_info_t *window,
+        uint64_t started, uint64_t deadline) {
+    if (vram == NULL || context == NULL || golden == NULL || window == NULL ||
+        golden->end_offset <= context->pagepool_offset ||
+        vram->base_high != 0U || vram->length_high != 0U ||
+        context->pagepool_offset > vram->length_low ||
+        golden->end_offset > vram->length_low ||
+        vram->base_low > UINT32_MAX - context->pagepool_offset)
+        return -84;
+    *window = *vram;
+    window->base_low += context->pagepool_offset;
+    window->length_low = golden->end_offset - context->pagepool_offset;
+    window->length_high = 0U;
+    if (!platform_ops.prepare_region(window)) return -5;
+    for (uint32_t cursor = 0U; cursor < window->length_low; cursor += 4U) {
+        if ((cursor & 0x3FFU) == 0U &&
+            !gr_deadline_valid(started, deadline))
+            return -110;
+        if (!gr_write32(window, cursor, 0U)) return -5;
+    }
+    return 0;
+}
+
+static bool gr_golden_vram_write32(
+        const device_domain_region_info_t *window, uint32_t window_base,
+        uint32_t absolute_offset, uint32_t value) {
+    return absolute_offset >= window_base &&
+        gr_write32(window, absolute_offset - window_base, value);
+}
+
+static bool gr_golden_vram_read32(
+        const device_domain_region_info_t *window, uint32_t window_base,
+        uint32_t absolute_offset, uint32_t *value) {
+    return absolute_offset >= window_base &&
+        gr_read32(window, absolute_offset - window_base, value);
+}
+
+static bool gr_golden_vram_write64(
+        const device_domain_region_info_t *window, uint32_t window_base,
+        uint32_t absolute_offset, uint64_t value) {
+    return gr_golden_vram_write32(window, window_base, absolute_offset,
+            (uint32_t)value) &&
+        gr_golden_vram_write32(window, window_base, absolute_offset + 4U,
+            (uint32_t)(value >> 32U));
+}
+
+static int gr_golden_install_vm(
+        const device_domain_region_info_t *mmio,
+        const device_domain_region_info_t *window, uint32_t window_base,
+        const gr_golden_memory_plan_t *plan,
+        const gr_context_memory_plan_t *context,
+        uint64_t started, uint64_t deadline) {
+    if (mmio == NULL || window == NULL || plan == NULL || context == NULL)
+        return -22;
+    const uint32_t pgd_index = GK208_GR_GPU_TABLE_BASE >> 27U;
+    if (!gr_golden_vram_write64(window, window_base,
+            plan->instance_offset + GK208_GR_INSTANCE_PGD,
+            (uint64_t)plan->pgd_offset) ||
+        !gr_golden_vram_write32(window, window_base,
+            plan->instance_offset + GK208_GR_INSTANCE_VM_LIMIT,
+            0xFFFFFFFFU) ||
+        !gr_golden_vram_write32(window, window_base,
+            plan->instance_offset + GK208_GR_INSTANCE_VM_LIMIT + 4U,
+            0x000000FFU) ||
+        !gr_golden_vram_write64(window, window_base,
+            plan->pgd_offset + pgd_index * 8U,
+            ((uint64_t)plan->pgt_offset >> 8U) | 1ULL))
+        return -5;
+    for (uint32_t map = 0U; map < 4U; ++map) {
+        for (uint32_t page = 0U; page < plan->pte_count[map]; ++page) {
+            const uint32_t physical = plan->vram_offset[map] +
+                (page << GK208_GR_GPU_PAGE_SHIFT);
+            const uint64_t pte = ((uint64_t)physical >> 8U) | 1ULL;
+            if (!gr_golden_vram_write64(window, window_base,
+                    plan->pgt_offset +
+                        (plan->pte_first[map] + page) * 8U, pte))
+                return -5;
+        }
+    }
+    if (!gr_golden_vram_write64(window, window_base,
+            plan->instance_offset + GK208_GR_INSTANCE_CONTEXT,
+            (uint64_t)(plan->gpu_address[3] +
+                GK208_GR_GOLDEN_CB_RESERVED) | 4ULL) ||
+        !gr_write32(mmio, 0x00100CB8U, (plan->pgd_offset >> 12U) << 4U) ||
+        !gr_write32(mmio, 0x00100CBCU, 0x80000001U))
+        return -5;
+    return gr_wait_mask(mmio, GK208_FB_PAGE_CONFIG, 0x00008000U,
+        0x00008000U, 2000U, started, deadline);
+}
+
+static int gr_golden_clear_vm(
+        const device_domain_region_info_t *mmio,
+        const device_domain_region_info_t *window, uint32_t window_base,
+        const gr_golden_memory_plan_t *plan,
+        uint64_t started, uint64_t deadline) {
+    bool clean = gr_golden_vram_write64(window, window_base,
+        plan->instance_offset + GK208_GR_INSTANCE_CONTEXT, 0ULL);
+    for (uint32_t map = 0U; clean && map < 4U; ++map)
+        for (uint32_t page = 0U; clean && page < plan->pte_count[map]; ++page)
+            clean = gr_golden_vram_write64(window, window_base,
+                plan->pgt_offset + (plan->pte_first[map] + page) * 8U, 0ULL);
+    const uint32_t pgd_index = GK208_GR_GPU_TABLE_BASE >> 27U;
+    clean = clean && gr_golden_vram_write64(window, window_base,
+        plan->pgd_offset + pgd_index * 8U, 0ULL) &&
+        gr_golden_vram_write64(window, window_base,
+            plan->instance_offset + GK208_GR_INSTANCE_PGD, 0ULL);
+    if (!clean || !gr_write32(mmio, 0x00100CB8U,
+            (plan->pgd_offset >> 12U) << 4U) ||
+        !gr_write32(mmio, 0x00100CBCU, 0x80000001U))
+        return -5;
+    return gr_wait_mask(mmio, GK208_FB_PAGE_CONFIG, 0x00008000U,
+        0x00008000U, 2000U, started, deadline);
+}
+
+static int gr_golden_write_context_table(
+        const device_domain_region_info_t *mmio,
+        uint64_t started, uint64_t deadline) {
+    for (uint32_t index = 0U; index < REIST_GK208_GR_CONTEXT_TUPLE_COUNT;
+         ++index) {
+        const reist_nvidia_gk208_gr_tuple_t *tuple =
+            &reist_gk208_gr_context[index];
+        uint32_t address = tuple->address;
+        for (uint32_t item = 0U; item < tuple->count; ++item) {
+            if (!gr_deadline_valid(started, deadline)) return -110;
+            if (!gr_write32(mmio, address, tuple->value)) return -5;
+            address += tuple->pitch;
+        }
+    }
+    return 0;
+}
+
+static uint32_t gr_golden_screen_row(uint32_t total) {
+    static const uint8_t primes[] = {
+        3U, 5U, 7U, 11U, 13U, 17U, 19U, 23U, 29U, 31U,
+        37U, 41U, 43U, 47U, 53U, 59U, 61U,
+    };
+    switch (total) {
+    case 15U: return 6U;
+    case 14U: return 5U;
+    case 13U: return 2U;
+    case 11U: return 7U;
+    case 10U: return 6U;
+    case 7U:
+    case 5U: return 1U;
+    case 3U: return 2U;
+    case 2U:
+    case 1U: return 1U;
+    default:
+        for (uint32_t index = 0U; index < sizeof(primes); ++index)
+            if (total % primes[index] != 0U) return primes[index];
+        return 3U;
+    }
+}
+
+static bool gr_golden_tile_map(const gr_prerequisite_topology_t *topology,
+        uint32_t tile[GK208_GR_MAX_TOTAL_TPCS]) {
+    int32_t fraction[DEVICE_DOMAIN_GR_MAX_GPCS];
+    int32_t error[DEVICE_DOMAIN_GR_MAX_GPCS];
+    uint32_t order[DEVICE_DOMAIN_GR_MAX_GPCS];
+    for (uint32_t gpc = 0U; gpc < topology->gpc_count; ++gpc)
+        order[gpc] = gpc;
+    for (uint32_t pass = 0U; pass < topology->gpc_count; ++pass)
+        for (uint32_t gpc = 0U; gpc + 1U < topology->gpc_count; ++gpc)
+            if (topology->tpc_count[order[gpc + 1U]] >
+                topology->tpc_count[order[gpc]]) {
+                const uint32_t swap = order[gpc];
+                order[gpc] = order[gpc + 1U];
+                order[gpc + 1U] = swap;
+            }
+    uint32_t multiplier = topology->gpc_count * topology->tpc_max;
+    multiplier = (multiplier & 1U) != 0U ? 2U : 1U;
+    const int32_t denominator = (int32_t)(
+        topology->gpc_count * topology->tpc_max * multiplier);
+    for (uint32_t gpc = 0U; gpc < topology->gpc_count; ++gpc) {
+        fraction[gpc] = (int32_t)(topology->tpc_count[order[gpc]] *
+            topology->gpc_count * multiplier);
+        error[gpc] = fraction[gpc] +
+            (int32_t)(gpc * topology->tpc_max * multiplier) - denominator / 2;
+    }
+    uint32_t count = 0U;
+    for (uint32_t cycle = 0U;
+         cycle < GK208_GR_MAX_TOTAL_TPCS * DEVICE_DOMAIN_GR_MAX_GPCS * 2U &&
+             count < topology->tpc_total; ++cycle)
+        for (uint32_t gpc = 0U;
+             gpc < topology->gpc_count && count < topology->tpc_total; ++gpc)
+            if (error[gpc] * 2 >= denominator) {
+                tile[count++] = order[gpc];
+                error[gpc] += fraction[gpc] - denominator;
+            } else {
+                error[gpc] += fraction[gpc];
+            }
+    return count == topology->tpc_total;
+}
+
+static int gr_golden_floorsweep(
+        const device_domain_region_info_t *mmio,
+        const gr_prerequisite_topology_t *topology,
+        uint64_t started, uint64_t deadline) {
+    uint32_t sm = 0U;
+    for (uint32_t tpc = 0U; tpc < topology->tpc_max; ++tpc) {
+        for (uint32_t gpc = 0U; gpc < topology->gpc_count; ++gpc) {
+            if (tpc >= topology->tpc_count[gpc]) continue;
+            const uint32_t gpc_base = GK208_GR_GPC_UNIT_BASE +
+                gpc * GK208_GR_GPC_UNIT_STRIDE;
+            const uint32_t tpc_base = 0x00504000U +
+                gpc * GK208_GR_GPC_UNIT_STRIDE + tpc * 0x800U;
+            if (!gr_write32(mmio, tpc_base + 0x698U, sm) ||
+                !gr_write32(mmio, tpc_base + 0x4E8U, sm) ||
+                !gr_write32(mmio, gpc_base + 0x0C10U + tpc * 4U, sm) ||
+                !gr_write32(mmio, tpc_base + 0x088U, sm) ||
+                !gr_write32(mmio, gpc_base + 0x0C08U,
+                    topology->tpc_count[gpc]) ||
+                !gr_write32(mmio, gpc_base + 0x0C8CU,
+                    topology->tpc_count[gpc]))
+                return -5;
+            ++sm;
+        }
+    }
+    for (uint32_t group = 0U; group < 4U; ++group) {
+        uint32_t packed = 0U;
+        for (uint32_t item = 0U; item < 8U; ++item) {
+            const uint32_t gpc = group * 8U + item;
+            if (gpc < topology->gpc_count)
+                packed |= topology->tpc_count[gpc] << (item * 4U);
+        }
+        if (!gr_write32(mmio, 0x00405070U + group * 4U, packed) ||
+            !gr_write32(mmio, 0x00406028U + group * 4U, packed))
+            return -5;
+    }
+    uint32_t tile[GK208_GR_MAX_TOTAL_TPCS] = {0U};
+    if (!gr_golden_tile_map(topology, tile) || topology->tpc_total > 16U)
+        return -84;
+    uint32_t data[6] = {0U};
+    for (uint32_t index = 0U; index < 32U; ++index)
+        data[index / 6U] |= (tile[index] & 7U) << ((index % 6U) * 5U);
+    uint32_t shift = 0U;
+    uint32_t ntpcv = topology->tpc_total;
+    for (; (ntpcv & 16U) == 0U && shift < 4U; ++shift)
+        ntpcv <<= 1U;
+    if ((ntpcv & 16U) == 0U) return -84;
+    uint32_t data2_0 = (ntpcv << 16U) | (shift << 21U) |
+        (((1U << 5U) % ntpcv) << 24U);
+    uint32_t data2_1 = 0U;
+    for (uint32_t index = 1U; index < 7U; ++index)
+        data2_1 |= ((1U << (index + 5U)) % ntpcv) <<
+            ((index - 1U) * 5U);
+    const uint32_t row = gr_golden_screen_row(topology->tpc_total);
+    if (!gr_write32(mmio, 0x00418BB8U,
+            (topology->tpc_total << 8U) | row) ||
+        !gr_write32(mmio, 0x0041BFD0U,
+            (topology->tpc_total << 8U) | row | data2_0) ||
+        !gr_write32(mmio, 0x0041BFE4U, data2_1) ||
+        !gr_write32(mmio, 0x004078BCU,
+            (topology->tpc_total << 8U) | row))
+        return -5;
+    for (uint32_t index = 0U; index < 6U; ++index)
+        if (!gr_write32(mmio, 0x00418B08U + index * 4U, data[index]) ||
+            !gr_write32(mmio, 0x0041BF00U + index * 4U, data[index]) ||
+            !gr_write32(mmio, 0x0040780CU + index * 4U, data[index]))
+            return -5;
+
+    for (uint32_t entry = 0U; entry < 32U; ++entry) {
+        uint32_t atarget = topology->tpc_total * entry / 32U;
+        if (atarget == 0U) atarget = 1U;
+        uint32_t btarget = topology->tpc_total - atarget;
+        bool alpha = atarget < btarget;
+        uint32_t amask[8] = {0U};
+        uint32_t bmask[8] = {0U};
+        for (uint32_t gpc = 0U; gpc < topology->gpc_count; ++gpc) {
+            const uint32_t tpcs = topology->tpc_count[gpc];
+            uint32_t abits = alpha ? (atarget != 0U ? tpcs : 0U) :
+                tpcs - (btarget != 0U ? tpcs : 0U);
+            uint32_t bbits = tpcs - abits;
+            uint32_t pmask = topology->ppc_tpc_mask[gpc];
+            for (uint32_t remaining = tpcs; remaining > abits; --remaining)
+                pmask &= pmask - 1U;
+            amask[gpc / 4U] |= pmask << ((gpc % 4U) * 8U);
+            pmask ^= topology->ppc_tpc_mask[gpc];
+            bmask[gpc / 4U] |= pmask << ((gpc % 4U) * 8U);
+            atarget -= abits < atarget ? abits : atarget;
+            btarget -= bbits < btarget ? bbits : btarget;
+            if (abits != 0U || bbits != 0U) alpha = !alpha;
+        }
+        for (uint32_t group = 0U;
+             group < (topology->gpc_count + 3U) / 4U; ++group)
+            if (!gr_write32(mmio,
+                    0x00406800U + entry * 0x20U + group * 4U,
+                    amask[group]) ||
+                !gr_write32(mmio,
+                    0x00406C00U + entry * 0x20U + group * 4U,
+                    bmask[group]))
+                return -5;
+    }
+    for (uint32_t index = 0U; index < 8U; ++index)
+        if (!gr_write32(mmio, 0x004064D0U + index * 4U, 0U)) return -5;
+    if (!gr_write32(mmio, 0x00405B00U,
+            (topology->tpc_total << 8U) | topology->gpc_count) ||
+        !gr_mask32(mmio, 0x00419F78U, 0x00000008U, 0U))
+        return -5;
+    return gr_deadline_valid(started, deadline) ? 0 : -110;
+}
+
+static int gr_golden_patch_buffers(
+        const device_domain_region_info_t *mmio,
+        const gr_prerequisite_topology_t *topology,
+        const gr_golden_memory_plan_t *plan) {
+    const uint32_t pagepool = plan->gpu_address[0];
+    const uint32_t bundle = plan->gpu_address[1];
+    const uint32_t attrib = plan->gpu_address[2];
+    if (!gr_write32(mmio, 0x0040800CU, pagepool >> 8U) ||
+        !gr_write32(mmio, 0x00408010U, 0x80000000U) ||
+        !gr_write32(mmio, 0x00419004U, pagepool >> 8U) ||
+        !gr_write32(mmio, 0x00419008U, 0U) ||
+        !gr_write32(mmio, 0x004064CCU, 0x80000000U) ||
+        !gr_write32(mmio, 0x00408004U, bundle >> 8U) ||
+        !gr_write32(mmio, 0x00408008U,
+            0x80000000U | (GK208_GR_BUNDLE_BYTES >> 8U)) ||
+        !gr_write32(mmio, 0x00418808U, bundle >> 8U) ||
+        !gr_write32(mmio, 0x0041880CU,
+            0x80000000U | (GK208_GR_BUNDLE_BYTES >> 8U)) ||
+        !gr_write32(mmio, 0x004064C8U, (0xC2U << 16U) | 0x200U) ||
+        !gr_write32(mmio, 0x00418810U, 0x80000000U | (attrib >> 12U)) ||
+        !gr_write32(mmio, 0x00419848U, 0x10000000U | (attrib >> 12U)) ||
+        !gr_write32(mmio, 0x00405830U, (0x218U << 16U) | 0x648U) ||
+        !gr_write32(mmio, 0x004064C4U,
+            ((0x648U / 4U) << 16U) | 0xFFFFU))
+        return -5;
+    uint32_t beta_offset = 0U;
+    uint32_t alpha_offset = 0x324U * topology->tpc_total;
+    for (uint32_t gpc = 0U; gpc < topology->gpc_count; ++gpc) {
+        const uint32_t ppc = 0x00503000U +
+            gpc * GK208_GR_GPC_UNIT_STRIDE;
+        const uint32_t tpcs = topology->tpc_count[gpc];
+        if (!gr_write32(mmio, ppc + 0xC0U,
+                (1U << 28U) | ((0x218U * tpcs) << 16U) | beta_offset) ||
+            !gr_write32(mmio, ppc + 0xE4U,
+                ((0x648U * tpcs) << 16U) | alpha_offset))
+            return -5;
+        beta_offset += 0x324U * tpcs;
+        alpha_offset += 0x7FFU * tpcs;
+    }
+    uint32_t ltc = 0U;
+    if (!gr_read32(mmio, 0x0017E91CU, &ltc) ||
+        !gr_write32(mmio, 0x0017E91CU, ltc) ||
+        !gr_read32(mmio, 0x0017E920U, &ltc) ||
+        !gr_write32(mmio, 0x0017E920U, ltc) ||
+        !gr_mask32(mmio, 0x00418C6CU, 0x00000001U, 0x00000001U) ||
+        !gr_mask32(mmio, 0x0041980CU, 0x00000010U, 0x00000010U) ||
+        !gr_mask32(mmio, 0x0041BE08U, 0x00000004U, 0x00000004U) ||
+        !gr_mask32(mmio, 0x004064C0U, 0x80000000U, 0x80000000U) ||
+        !gr_mask32(mmio, 0x00405800U, 0x08000000U, 0x08000000U) ||
+        !gr_mask32(mmio, 0x00419C00U, 0x00000008U, 0x00000008U))
+        return -5;
+    return 0;
+}
+
+static int gr_golden_icmd(const device_domain_region_info_t *mmio,
+        uint64_t started, uint64_t deadline) {
+    if (!gr_write32(mmio, 0x00400208U, 0x80000000U)) return -5;
+    uint32_t previous = 0U;
+    bool first = true;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_ICMD_TUPLE_COUNT;
+         ++index) {
+        const reist_nvidia_gk208_gr_tuple_t *tuple =
+            &reist_gk208_gr_icmd[index];
+        if (first || previous != tuple->value) {
+            if (!gr_write32(mmio, 0x00400204U, tuple->value)) return -5;
+            previous = tuple->value;
+            first = false;
+        }
+        uint32_t address = tuple->address;
+        for (uint32_t item = 0U; item < tuple->count; ++item) {
+            if (!gr_write32(mmio, 0x00400200U, address)) return -5;
+            int status = 0;
+            if ((address & 0xFFFFU) == 0xE100U)
+                status = gr_golden_wait_idle(mmio, started, deadline);
+            if (status == 0)
+                status = gr_wait_mask(mmio, 0x00400700U, 4U, 0U,
+                    2000U, started, deadline);
+            if (status != 0) return status;
+            address += tuple->pitch;
+        }
+    }
+    return gr_write32(mmio, 0x00400208U, 0U) ? 0 : -5;
+}
+
+static int gr_golden_methods(const device_domain_region_info_t *mmio,
+        uint64_t started, uint64_t deadline) {
+    uint32_t previous = 0U;
+    bool first = true;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_MTHD_TUPLE_COUNT;
+         ++index) {
+        const reist_nvidia_gk208_gr_method_tuple_t *method =
+            &reist_gk208_gr_mthd[index];
+        const reist_nvidia_gk208_gr_tuple_t *tuple = &method->tuple;
+        if (first || previous != tuple->value) {
+            if (!gr_write32(mmio, 0x0040448CU, tuple->value)) return -5;
+            previous = tuple->value;
+            first = false;
+        }
+        uint32_t address = tuple->address;
+        for (uint32_t item = 0U; item < tuple->count; ++item) {
+            if (!gr_deadline_valid(started, deadline)) return -110;
+            if (!gr_write32(mmio, 0x00404488U,
+                    0x80000000U | method->class_id | (address << 14U)))
+                return -5;
+            address += tuple->pitch;
+        }
+    }
+    return 0;
+}
+
+static int gr_golden_context_crc(
+        const device_domain_region_info_t *window, uint32_t window_base,
+        uint32_t context_offset, uint32_t context_size,
+        uint64_t started, uint64_t deadline, uint32_t *crc_out) {
+    if (window == NULL || crc_out == NULL || context_size == 0U ||
+        (context_size & 3U) != 0U)
+        return -84;
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t cursor = 0U; cursor < context_size; cursor += 4U) {
+        uint32_t word = 0U;
+        if ((cursor & 0x3FFU) == 0U &&
+            !gr_deadline_valid(started, deadline))
+            return -110;
+        if (!gr_golden_vram_read32(window, window_base,
+                context_offset + cursor, &word))
+            return -5;
+        crc = gr_crc32_word(crc, word);
+    }
+    *crc_out = ~crc;
+    return *crc_out != 0U ? 0 : -84;
+}
+
+static int gr_golden_execute_transaction(
+        const device_domain_region_info_t *mmio,
+        const device_domain_region_info_t *vram,
+        const gr_prerequisite_topology_t *topology,
+        const gr_context_memory_plan_t *context,
+        const gr_golden_memory_plan_t *plan,
+        uint32_t context_size, uint64_t started, uint64_t deadline,
+        uint32_t *crc_out) {
+    device_domain_region_info_t window = {0};
+    int status = gr_golden_zero_window(
+        vram, context, plan, &window, started, deadline);
+    const bool window_ready = status == 0;
+    const uint32_t base = context->pagepool_offset;
+    if (status == 0)
+        status = gr_golden_install_vm(mmio, &window, base, plan, context,
+            started, deadline);
+    if (status == 0 &&
+        !gr_write32(mmio, GK208_GR_FE_POWER, 0x00000012U)) status = -5;
+    if (status == 0)
+        status = gr_wait_mask(mmio, GK208_GR_FE_POWER, 0x10U, 0U, 2000U,
+            started, deadline);
+    if (status == 0 &&
+        (!gr_write32(mmio, GK208_GR_FECS_RESET, 0x00000070U) ||
+         !gr_mask32(mmio, GK208_GR_FECS_RESET,
+             0x00000700U, 0x00000700U) ||
+         !gr_write32(mmio, GK208_GR_FE_POWER, 0x00000010U)))
+        status = -5;
+    if (status == 0)
+        status = gr_wait_mask(mmio, GK208_GR_FE_POWER, 0x10U, 0U, 2000U,
+            started, deadline);
+    if (status == 0 && !gr_write32(mmio, 0x0040802CU, 1U)) status = -5;
+    const uint32_t instance = 0x80000000U |
+        (plan->instance_offset >> 12U);
+    if (status == 0 &&
+        (!gr_mask32(mmio, GK208_GR_FECS_STATUS, 0x30U, 0U) ||
+         !gr_write32(mmio, GK208_GR_FECS_DATA, instance) ||
+         !gr_write32(mmio, GK208_GR_FECS_METHOD, 3U)))
+        status = -5;
+    if (status == 0)
+        status = gr_golden_wait_fecs(
+            mmio, 0x10U, 0x20U, started, deadline);
+    if (status == 0 &&
+        (!gr_golden_vram_write32(&window, base,
+             context->golden_offset + 0x1CU, 1U) ||
+         !gr_golden_vram_write32(&window, base,
+             context->golden_offset + 0x20U, 0U) ||
+         !gr_golden_vram_write32(&window, base,
+             context->golden_offset + 0x28U, 0U) ||
+         !gr_golden_vram_write32(&window, base,
+             context->golden_offset + 0x2CU, 0U)))
+        status = -5;
+    if (status == 0 && !gr_write32(mmio, 0x00000260U, 0U)) status = -5;
+    if (status == 0)
+        status = gr_golden_write_context_table(mmio, started, deadline);
+    if (status == 0)
+        status = gr_golden_wait_idle(mmio, started, deadline);
+    uint32_t idle_timeout = 0U;
+    if (status == 0 &&
+        (!gr_read32(mmio, 0x00404154U, &idle_timeout) ||
+         !gr_write32(mmio, 0x00404154U, 0U)))
+        status = -5;
+    if (status == 0)
+        status = gr_golden_patch_buffers(mmio, topology, plan);
+    if (status == 0)
+        status = gr_golden_floorsweep(mmio, topology, started, deadline);
+    if (status == 0)
+        status = gr_golden_wait_idle(mmio, started, deadline);
+    if (status == 0)
+        status = gr_golden_icmd(mmio, started, deadline);
+    if (status == 0 && !gr_write32(mmio, 0x00404154U, idle_timeout))
+        status = -5;
+    if (status == 0)
+        status = gr_golden_methods(mmio, started, deadline);
+    if (status == 0 && !gr_write32(mmio, 0x00000260U, 1U)) status = -5;
+    if (status == 0)
+        status = gr_golden_wait_idle(mmio, started, deadline);
+    if (status == 0 &&
+        (!gr_mask32(mmio, GK208_GR_FECS_STATUS, 3U, 0U) ||
+         !gr_write32(mmio, GK208_GR_FECS_DATA, instance) ||
+         !gr_write32(mmio, GK208_GR_FECS_METHOD, 9U)))
+        status = -5;
+    if (status == 0)
+        status = gr_golden_wait_fecs(mmio, 1U, 2U, started, deadline);
+    if (status == 0 &&
+        !gr_mask32(mmio, GK208_GR_FECS_CURRENT, 0x80000000U, 0U))
+        status = -5;
+    if (status == 0)
+        status = gr_golden_context_crc(&window, base,
+            context->golden_offset + GK208_GR_GOLDEN_CB_RESERVED,
+            context_size, started, deadline, crc_out);
+    const int clear_status = window_ready ? gr_golden_clear_vm(
+        mmio, &window, base, plan, started, deadline) : 0;
+    return status != 0 ? status : clear_status;
+}
+
+int device_domain_gr_golden_context(
+        int pid, uint32_t process_generation,
+        const device_domain_gr_golden_context_request_t *request,
+        device_domain_gr_golden_context_result_t *result) {
+    if (!initialized || pid <= 0 || process_generation == 0U ||
+        request == NULL || result == NULL ||
+        request->version != DEVICE_DOMAIN_ABI_VERSION ||
+        request->struct_size != sizeof(*request) || request->device == 0U ||
+        request->region == 0U || request->dma == 0U ||
+        request->policy_id == 0U || request->flags != 0U ||
+        request->reserved[0] != 0U || request->reserved[1] != 0U ||
+        request->reserved[2] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = owned_slot(
+        pid, process_generation, request->device);
+    resource_slot_t *region = owned_resource_locked(
+        pid, process_generation, request->region,
+        DEVICE_DOMAIN_RESOURCE_REGION);
+    resource_slot_t *dma = owned_resource_locked(
+        pid, process_generation, request->dma, DEVICE_DOMAIN_RESOURCE_DMA);
+    dma_pool_slot_t *pool = dma_pool_for_resource(dma);
+    if (device == NULL || region == NULL || dma == NULL) {
+        end_operation();
+        return -9;
+    }
+    const uint32_t device_index = (uint32_t)(device - devices);
+    const device_domain_gr_prerequisite_policy_t *policy =
+        &device->gr_prerequisite_policy;
+    if (region->device_slot != device_index || dma->device_slot != device_index ||
+        region->device_generation != device->generation ||
+        dma->device_generation != device->generation ||
+        device->state != DEVICE_DOMAIN_DMA_BOUND || pool == NULL ||
+        pool->sealed == 0U || device->gr_prerequisite_active == 0U ||
+        device->dma_vm_page_mode_active == 0U ||
+        device->gr_firmware_active == 0U ||
+        device->gr_execution_active == 0U ||
+        device->gr_context_memory_active == 0U ||
+        device->gr_golden_context_active != 0U ||
+        device->gr_execution_context_size == 0U ||
+        (device->gr_execution_context_size & 3U) != 0U ||
+        request->policy_id != policy->policy_id ||
+        region->region.region_index != policy->region_index ||
+        (region->region.rights & DEVICE_DOMAIN_REGION_ACCESS_READ) == 0U) {
+        end_operation();
+        return -13;
+    }
+    const uint8_t *storage =
+        dma_pool_storage[dma->platform_capability - 1U];
+    gr_prerequisite_topology_t topology;
+    gr_prerequisite_topology_t confirmed;
+    gr_prerequisite_plan_t prerequisite;
+    gr_context_memory_plan_t context;
+    gr_golden_memory_plan_t golden;
+    device_domain_gr_execution_header_t header;
+    uint32_t image_crc = 0U;
+    memcpy(&header, storage + policy->execution_pool_offset, sizeof(header));
+    device_domain_region_info_t vram;
+    bool valid = gr_sample_topology(&region->region, &topology) &&
+        gr_execution_image_valid(storage, pool->capacity, policy,
+            &region->region, &topology, &image_crc) &&
+        gr_build_prerequisite_plan(&region->region, policy, &prerequisite) &&
+        gr_sample_topology(&region->region, &confirmed) &&
+        memcmp(&topology, &confirmed, sizeof(topology)) == 0 &&
+        gr_plan_matches_device(&prerequisite, device) &&
+        image_crc == device->gr_prerequisite_image_crc &&
+        gr_topology_crc32(&topology) ==
+            device->gr_prerequisite_topology_crc &&
+        header.operation_count == device->gr_execution_operation_count &&
+        gr_build_context_memory_plan(&topology, &prerequisite, policy,
+            device->gr_execution_context_size, &context) &&
+        context.pagepool_offset == device->gr_context_pagepool_offset &&
+        context.bundle_offset == device->gr_context_bundle_offset &&
+        context.attrib_offset == device->gr_context_attrib_offset &&
+        context.attrib_bytes == device->gr_context_attrib_bytes &&
+        context.golden_offset == device->gr_context_golden_offset &&
+        context.golden_bytes == device->gr_context_golden_bytes &&
+        context.total_bytes == device->gr_context_total_bytes &&
+        gr_golden_build_memory_plan(
+            &context, &prerequisite, policy, &golden) &&
+        gr_golden_table_valid() &&
+        platform_ops.describe_region(device->pci_location,
+            policy->vram_region_index, &vram) &&
+        (vram.flags & DEVICE_DOMAIN_REGION_MMIO) != 0U &&
+        (vram.flags & DEVICE_DOMAIN_REGION_PIO) == 0U &&
+        vram.base_high == 0U && vram.length_high == 0U &&
+        vram.length_low == policy->vram_aperture_bytes;
+    if (!valid) {
+        end_operation();
+        return -84;
+    }
+    const uint64_t started = platform_ops.monotonic_ms();
+    const uint64_t deadline = started >
+            UINT64_MAX - DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS
+        ? UINT64_MAX : started + DEVICE_DOMAIN_GR_EXECUTION_TIMEOUT_MS;
+    uint32_t context_crc = 0U;
+    int status = gr_golden_execute_transaction(
+        &region->region, &vram, &topology, &context, &golden,
+        device->gr_execution_context_size, started, deadline, &context_crc);
+    if (status != 0) {
+        status = gr_execution_rollback(device, status);
+        end_operation();
+        return status;
+    }
+    device->gr_golden_context_active = 1U;
+    device->gr_golden_context_crc32 = context_crc;
+    device->gr_golden_context_retained_bytes = context.golden_bytes;
+    *result = (device_domain_gr_golden_context_result_t){
+        .version = DEVICE_DOMAIN_ABI_VERSION,
+        .struct_size = sizeof(*result),
+        .device = request->device,
+        .policy_id = request->policy_id,
+        .topology_crc32 = device->gr_prerequisite_topology_crc,
+        .context_tuple_count = REIST_GK208_GR_CONTEXT_TUPLE_COUNT,
+        .icmd_tuple_count = REIST_GK208_GR_ICMD_TUPLE_COUNT,
+        .method_tuple_count = REIST_GK208_GR_MTHD_TUPLE_COUNT,
+        .context_size = device->gr_execution_context_size,
+        .retained_bytes = context.golden_bytes,
+        .context_crc32 = context_crc,
+        .temporary_bytes = golden.temporary_bytes,
+        .flags = DEVICE_DOMAIN_GR_GOLDEN_CONTEXT_READY |
+            DEVICE_DOMAIN_GR_GOLDEN_CONTEXT_OPAQUE_VRAM,
     };
     end_operation();
     return 0;

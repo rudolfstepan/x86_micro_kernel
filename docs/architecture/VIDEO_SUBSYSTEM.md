@@ -331,6 +331,21 @@ or FECS method. The next kernel package must independently rebuild and execute
 the contract under one deadline with GR-reset rollback before any channel is
 made runnable.
 
+`R2.2w` executes that contract through append-only Device-Control command 25.
+Ring 0 revalidates the sealed image and stable topology, checks independent
+immutable copies of the 199 context, 245 ICMD and 311 class-bound method tuples
+against their pinned CRC32 values, and constructs a temporary VRAM-only
+instance block, 64-KiB PGD and 256-KiB 4-KiB-page table after the reserved
+context buffers. The four PTE spans name VRAM only, so PCI bus mastering stays
+disabled. FE power/reset, SCC, direct context packs, buffer patches,
+floorsweep, ICMD, methods, FECS bind and golden save run under the existing
+single five-second monotonic deadline. Success clears the temporary instance
+binding and PTE/PDE entries while retaining only the opaque saved context;
+failure invokes the existing GR-reset rollback before state is forgotten. The
+64-byte result exposes counts, context size, retained size and CRC, but no BAR,
+VRAM, GPU or physical address. Channel/runlist activation, USERD submission,
+IRQ, fence and NVIDIA acceleration capabilities remain disabled.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

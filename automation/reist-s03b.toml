@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2w-nvidia-gk208-golden-context-execution"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2w-nvidia-gk208-golden-context-execution"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Execute and retain the GK208 golden context"

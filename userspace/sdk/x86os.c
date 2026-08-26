@@ -87,6 +87,8 @@ _Static_assert(sizeof(x86os_device_gr_execution_request_t) == 40U,
                "device GR execution request ABI changed");
 _Static_assert(sizeof(x86os_device_gr_execution_result_t) == 32U,
                "device GR execution result ABI changed");
+_Static_assert(sizeof(x86os_device_gr_golden_context_result_t) == 64U,
+               "device GR golden-context result ABI changed");
 _Static_assert(sizeof(x86os_device_region_access_t) == 32U,
                "device region access ABI changed");
 _Static_assert(sizeof(x86os_device_region_value_t) == 32U,
@@ -1458,6 +1460,41 @@ int x86os_device_gr_context_memory(
         result->context_size == 0U || result->golden_bytes == 0U ||
         result->total_bytes == 0U ||
         result->flags != X86OS_DEVICE_GR_CONTEXT_MEMORY_READY ||
+        result->reserved[0] != 0U || result->reserved[1] != 0U ||
+        result->reserved[2] != 0U)
+        return -84;
+    return 0;
+}
+
+int x86os_device_gr_golden_context(
+        x86os_device_handle_t device, x86os_device_resource_t region,
+        x86os_device_resource_t dma, uint32_t policy_id,
+        x86os_device_gr_golden_context_result_t *result) {
+    if (device == 0U || region == 0U || dma == 0U || policy_id == 0U ||
+        result == NULL)
+        return -22;
+    const x86os_device_gr_golden_context_request_t request = {
+        .version = X86OS_DEVICE_ABI_VERSION,
+        .struct_size = sizeof(request),
+        .device = device,
+        .region = region,
+        .dma = dma,
+        .policy_id = policy_id,
+    };
+    x86os_zero_bytes(result, sizeof(*result));
+    int status = (int)x86os_syscall(X86OS_SYS_DEVICE_CONTROL,
+        X86OS_DEVICE_CONTROL_GR_GOLDEN_CONTEXT,
+        (uintptr_t)&request, (uintptr_t)result);
+    if (status != 0) return status;
+    if (result->version != X86OS_DEVICE_ABI_VERSION ||
+        result->struct_size != sizeof(*result) || result->device != device ||
+        result->policy_id != policy_id || result->topology_crc32 == 0U ||
+        result->context_tuple_count == 0U || result->icmd_tuple_count == 0U ||
+        result->method_tuple_count == 0U || result->context_size == 0U ||
+        result->retained_bytes < result->context_size ||
+        result->context_crc32 == 0U || result->temporary_bytes == 0U ||
+        result->flags != (X86OS_DEVICE_GR_GOLDEN_CONTEXT_READY |
+            X86OS_DEVICE_GR_GOLDEN_CONTEXT_OPAQUE_VRAM) ||
         result->reserved[0] != 0U || result->reserved[1] != 0U ||
         result->reserved[2] != 0U)
         return -84;

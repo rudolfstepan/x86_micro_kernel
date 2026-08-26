@@ -106,6 +106,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_EXECUTE = 23U", header)
         self.assertIn(
             "DEVICE_DOMAIN_CONTROL_GR_CONTEXT_MEMORY = 24U", header)
+        self.assertIn(
+            "DEVICE_DOMAIN_CONTROL_GR_GOLDEN_CONTEXT = 25U", header)
         self.assertIn("device_domain_dma_pool_stats_t", header)
         self.assertIn("capacity_rejections", header)
         self.assertIn("device_domain_dma_pool_stats", source)
@@ -133,6 +135,18 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("gr_execution_rollback", source)
         self.assertIn("device_domain_gr_context_memory", source)
         self.assertIn("gr_build_context_memory_plan", source)
+        self.assertIn("device_domain_gr_golden_context", source)
+        self.assertIn("gr_golden_execute_transaction", source)
+        self.assertIn("gr_golden_install_vm", source)
+        self.assertIn("gr_golden_clear_vm", source)
+        self.assertIn("gr_golden_table_valid", source)
+        self.assertIn("gr_execution_rollback(device, status)", source)
+        self.assertIn("GK208_GR_TEMP_INSTANCE_BYTES 0x00001000U", source)
+        self.assertIn("GK208_GR_TEMP_PGD_BYTES 0x00010000U", source)
+        self.assertIn("GK208_GR_TEMP_PGT_BYTES 0x00040000U", source)
+        self.assertIn("REIST_GK208_GR_CONTEXT_CRC32", source)
+        self.assertIn("REIST_GK208_GR_ICMD_CRC32", source)
+        self.assertIn("REIST_GK208_GR_MTHD_CRC32", source)
         self.assertIn("GK208_GR_GOLDEN_CB_RESERVED 0x00080000U", source)
         self.assertIn("GK208_GR_ATTRIB_TOTAL_MAX 0x00000B23U", source)
         self.assertIn("scheduler_sleep_ms(1U)", source)
@@ -268,6 +282,8 @@ class DeviceDomainTests(unittest.TestCase):
                         "x86os_device_gr_firmware_upload",
                         "x86os_device_gr_prerequisites",
                         "x86os_device_gr_execute",
+                        "x86os_device_gr_context_memory",
+                        "x86os_device_gr_golden_context",
                         "x86os_device_dma_write", "x86os_device_dma_read",
                         "x86os_device_region_read",
                         "x86os_device_region_write",
@@ -284,6 +300,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_FIRMWARE_UPLOAD", syscall)
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES", syscall)
         self.assertIn("DEVICE_DOMAIN_CONTROL_GR_EXECUTE", syscall)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_CONTEXT_MEMORY", syscall)
+        self.assertIn("DEVICE_DOMAIN_CONTROL_GR_GOLDEN_CONTEXT", syscall)
         self.assertIn("x86os_device_driver_bootstrap", sdk_source)
         self.assertIn("x86os_device_driver_report", sdk_source)
         self.assertIn("supervisor_device_driver_output_allowed", syscall)

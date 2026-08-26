@@ -2434,6 +2434,17 @@ und GR-Reset-Rollback. Erst danach dürfen Channel-Bind, Runlist, USERD-Kick,
 Submission und echter Fence in einem abschließenden Capability-Gate aktiviert
 werden.
 
+`R2.2w` schließt diese Kernel-Ausführung jetzt mit append-only Kommando 25.
+Eine temporäre, vollständig VRAM-interne Instance/PGD/PGT-Domäne bildet die
+vier reservierten Puffer mit 4-KiB-Seiten ab; die GPU erhält weiterhin keinen
+System-RAM- oder Busmaster-Zugriff. Ring 0 validiert eigene gepinnte Kontext-,
+ICMD- und MTHD-Tabellen, führt die GK208-Folge unter einer gemeinsamen
+Fünf-Sekunden-Deadline aus, speichert den opaken Golden Context samt CRC und
+entfernt anschließend Bindung und temporäre Seitentabelleneinträge. Bei jedem
+Teilfehler erfolgt zuerst der vorhandene GR-Reset-Rollback. Offen bleiben nun
+bewusst Channel-Bind, Runlist, USERD-Kick, echte Submission/Fence-Prüfung und
+erst danach die Veröffentlichung der 2D-Capabilities.
+
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale
 Monitorhardware, elektrisches Fence-Readback und physische Fault-Injection

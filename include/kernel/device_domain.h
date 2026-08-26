@@ -85,6 +85,7 @@ enum {
     DEVICE_DOMAIN_CONTROL_GR_PREREQUISITES = 22U,
     DEVICE_DOMAIN_CONTROL_GR_EXECUTE = 23U,
     DEVICE_DOMAIN_CONTROL_GR_CONTEXT_MEMORY = 24U,
+    DEVICE_DOMAIN_CONTROL_GR_GOLDEN_CONTEXT = 25U,
 };
 
 enum {
@@ -549,6 +550,31 @@ typedef struct {
     uint32_t reserved[3];
 } device_domain_gr_context_memory_result_t;
 
+typedef device_domain_gr_execution_request_t
+    device_domain_gr_golden_context_request_t;
+
+enum {
+    DEVICE_DOMAIN_GR_GOLDEN_CONTEXT_READY = 1U << 0U,
+    DEVICE_DOMAIN_GR_GOLDEN_CONTEXT_OPAQUE_VRAM = 1U << 1U,
+};
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    device_domain_handle_t device;
+    uint32_t policy_id;
+    uint32_t topology_crc32;
+    uint32_t context_tuple_count;
+    uint32_t icmd_tuple_count;
+    uint32_t method_tuple_count;
+    uint32_t context_size;
+    uint32_t retained_bytes;
+    uint32_t context_crc32;
+    uint32_t temporary_bytes;
+    uint32_t flags;
+    uint32_t reserved[3];
+} device_domain_gr_golden_context_result_t;
+
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -722,6 +748,8 @@ _Static_assert(sizeof(device_domain_gr_execution_result_t) == 32U,
                "device-domain GR execution result ABI changed");
 _Static_assert(sizeof(device_domain_gr_context_memory_result_t) == 64U,
                "device-domain GR context-memory result ABI changed");
+_Static_assert(sizeof(device_domain_gr_golden_context_result_t) == 64U,
+               "device-domain GR golden-context result ABI changed");
 _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
@@ -861,6 +889,11 @@ int device_domain_gr_context_memory(
     int pid, uint32_t process_generation,
     const device_domain_gr_context_memory_request_t *request,
     device_domain_gr_context_memory_result_t *result);
+/** Generate and retain one opaque topology-bound GK208 golden context. */
+int device_domain_gr_golden_context(
+    int pid, uint32_t process_generation,
+    const device_domain_gr_golden_context_request_t *request,
+    device_domain_gr_golden_context_result_t *result);
 int device_domain_region_read(int pid, uint32_t process_generation,
                               const device_domain_region_access_t *request,
                               device_domain_region_value_t *result);

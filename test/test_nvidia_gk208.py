@@ -289,6 +289,8 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertNotIn("pci_set_bus_master", probe)
 
     def test_golden_context_plan_is_pinned_opaque_and_hardware_inactive(self):
+        domain = (ROOT / "kernel/init/device_domain.c").read_text(
+            encoding="utf-8")
         header = (ROOT /
             "userspace/video/include/reist/nvidia_gk208_2d.h").read_text(
                 encoding="utf-8")
@@ -329,9 +331,26 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("0x00418810U", library)
         self.assertIn("0x0017E91CU", library)
         self.assertIn("NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN", driver)
+        self.assertIn("NVIDIA_DIAGNOSTIC_GR_GOLDEN_CONTEXT", driver)
+        self.assertIn("x86os_device_gr_golden_context", driver)
+        self.assertIn("gr_golden_execute_transaction", domain)
+        self.assertIn("gr_golden_install_vm", domain)
+        self.assertIn("gr_golden_clear_vm", domain)
+        self.assertIn("REIST_GK208_GR_CONTEXT_CRC32", domain)
+        self.assertIn("REIST_GK208_GR_ICMD_CRC32", domain)
+        self.assertIn("REIST_GK208_GR_MTHD_CRC32", domain)
+        golden_domain = domain[domain.index(
+            "int device_domain_gr_golden_context(") :]
+        golden_domain = golden_domain[:golden_domain.index(
+            "static const device_domain_region_rule_t *region_write_rule")]
+        self.assertNotIn(
+            "platform_ops.set_bus_master(device->pci_location, true)",
+            golden_domain)
         self.assertLess(
             driver.index("reist_nvidia_gk208_gr_compile_golden_plan"),
             driver.index("x86os_device_gr_context_memory"))
+        self.assertLess(driver.index("x86os_device_gr_context_memory"),
+                        driver.index("x86os_device_gr_golden_context"))
         golden = library[library.index(
             "static int gr_golden_plan_build") :]
         golden = golden[:golden.index("static int gr_execution_emit")]

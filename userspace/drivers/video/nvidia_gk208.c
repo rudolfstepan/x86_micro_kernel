@@ -37,6 +37,7 @@
 #define NVIDIA_DIAGNOSTIC_GR_EXECUTED 0x4E640000U
 #define NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY 0x4E650000U
 #define NVIDIA_DIAGNOSTIC_GR_GOLDEN_PLAN 0x4E660000U
+#define NVIDIA_DIAGNOSTIC_GR_GOLDEN_CONTEXT 0x4E670000U
 #define NVIDIA_GR_PREREQUISITE_POLICY_ID 1U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
@@ -636,10 +637,26 @@ static int gpu_gr_execute(nvidia_driver_t *driver) {
         reserved.golden_bytes != expected.golden_bytes ||
         reserved.total_bytes != expected.total_bytes)
         return -84;
-    return x86os_device_driver_report(
+    status = x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_GR_CONTEXT_MEMORY |
             (reserved.total_bytes >> 12U));
+    if (status != 0) return status;
+    x86os_device_gr_golden_context_result_t retained;
+    status = x86os_device_gr_golden_context(
+        driver->bootstrap.device, driver->registers, driver->dma,
+        NVIDIA_GR_PREREQUISITE_POLICY_ID, &retained);
+    if (status != 0 || retained.topology_crc32 != expected.topology_crc32 ||
+        retained.context_size != expected.context_size ||
+        retained.retained_bytes != expected.golden_bytes ||
+        retained.context_tuple_count != golden.context_tuple_count ||
+        retained.icmd_tuple_count != golden.icmd_tuple_count ||
+        retained.method_tuple_count != golden.mthd_tuple_count)
+        return status != 0 ? status : -84;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_GOLDEN_CONTEXT |
+            (retained.context_crc32 & 0xFFFFU));
 }
 
 static int activate(nvidia_driver_t *driver) {

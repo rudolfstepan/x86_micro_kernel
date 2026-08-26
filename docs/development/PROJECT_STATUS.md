@@ -182,6 +182,16 @@ Retain ab. Der NVIDIA-Dienst prüft diesen Plan vor Kommando 24, verändert aber
 weder DMA-Pool noch PTE, VRAM, MMIO oder FECS. Offen ist damit die unabhängige,
 deadlinebegrenzte Kernel-Ausführung mit GR-Reset-Rollback; Channel und
 Capabilityfreigabe bleiben danach weiterhin getrennte Gates.
+`R2.2w-nvidia-gk208-golden-context-execution` führt den versiegelten Plan nun
+über append-only Kommando 25 tatsächlich aus. Der Kernel validiert eigene
+immutable Tabellenkopien (199 Kontext-, 245 ICMD-, 311 MTHD-Tupel), baut eine
+rein VRAM-interne temporäre Instance/PGD/PGT-Domäne und speichert den von FECS
+erzeugten Golden Context unter einer gemeinsamen Fünf-Sekunden-Deadline. Nach
+Erfolg sind Instance-Bindung und temporäre Seitentabelleneinträge gelöscht;
+das opake Kontextabbild bleibt mit CRC erhalten. Teilfehler setzen GR zurück.
+PCI-Busmastering, IRQ, Channel, Runlist, USERD, Submission, Fence und NVIDIA-
+Capabilitybits bleiben weiterhin null; der nächste Hardwareabschnitt ist das
+getrennte Channel-/Fence-Gate.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

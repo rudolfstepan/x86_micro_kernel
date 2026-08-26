@@ -1333,6 +1333,7 @@ enum {
     X86OS_DEVICE_CONTROL_GR_PREREQUISITES = 22U,
     X86OS_DEVICE_CONTROL_GR_EXECUTE = 23U,
     X86OS_DEVICE_CONTROL_GR_CONTEXT_MEMORY = 24U,
+    X86OS_DEVICE_CONTROL_GR_GOLDEN_CONTEXT = 25U,
 };
 enum {
     X86OS_DEVICE_RESOURCE_REGION = 1U,
@@ -1575,6 +1576,28 @@ typedef struct {
     uint32_t flags;
     uint32_t reserved[3];
 } x86os_device_gr_context_memory_result_t;
+typedef x86os_device_gr_execution_request_t
+    x86os_device_gr_golden_context_request_t;
+enum {
+    X86OS_DEVICE_GR_GOLDEN_CONTEXT_READY = 1U << 0U,
+    X86OS_DEVICE_GR_GOLDEN_CONTEXT_OPAQUE_VRAM = 1U << 1U,
+};
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    x86os_device_handle_t device;
+    uint32_t policy_id;
+    uint32_t topology_crc32;
+    uint32_t context_tuple_count;
+    uint32_t icmd_tuple_count;
+    uint32_t method_tuple_count;
+    uint32_t context_size;
+    uint32_t retained_bytes;
+    uint32_t context_crc32;
+    uint32_t temporary_bytes;
+    uint32_t flags;
+    uint32_t reserved[3];
+} x86os_device_gr_golden_context_result_t;
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -1929,6 +1952,10 @@ int x86os_device_gr_context_memory(
     x86os_device_handle_t device, x86os_device_resource_t region,
     x86os_device_resource_t dma, uint32_t policy_id,
     x86os_device_gr_context_memory_result_t *result);
+int x86os_device_gr_golden_context(
+    x86os_device_handle_t device, x86os_device_resource_t region,
+    x86os_device_resource_t dma, uint32_t policy_id,
+    x86os_device_gr_golden_context_result_t *result);
 /** Read one aligned 8-, 16- or 32-bit value through the installed policy. */
 int x86os_device_region_read(x86os_device_resource_t region, uint32_t offset,
                              uint32_t width, uint32_t *value);

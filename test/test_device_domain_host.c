@@ -39,6 +39,11 @@ static bool region_write_persists = true;
 static bool gr_prerequisite_test_mode;
 static bool gr_execution_test_mode;
 static bool gr_execution_ready;
+static bool gr_golden_test_mode;
+static bool gr_golden_ready;
+#define TEST_VRAM_WORD_CAPACITY (8U * 1024U * 1024U / sizeof(uint32_t))
+static uint32_t test_vram[TEST_VRAM_WORD_CAPACITY];
+static uint32_t gr_fecs_status;
 #define TEST_FECS_BASE 0x00409000U
 #define TEST_GPCCS_BASE 0x0041A000U
 #define TEST_FALCON_WORD_CAPACITY 1024U
@@ -200,6 +205,30 @@ static bool read_region(const device_domain_region_info_t *region,
                         uint32_t offset, uint32_t width, uint32_t *value) {
     if (region == NULL || value == NULL || offset >= region->length_low ||
         (width != 1U && width != 2U && width != 4U)) return false;
+    if (region->region_index == 3U) {
+        const uint64_t absolute =
+            (uint64_t)region->base_low - 0xF0000000ULL + offset;
+        if (width != sizeof(uint32_t) || (absolute & 3U) != 0U ||
+            absolute / sizeof(uint32_t) >= TEST_VRAM_WORD_CAPACITY)
+            return false;
+        *value = test_vram[absolute / sizeof(uint32_t)];
+        return true;
+    }
+    if (gr_golden_test_mode) {
+        if (offset == 0x00404170U || offset == 0x0040060CU ||
+            offset == 0x00400700U) {
+            *value = 0U;
+            return true;
+        }
+        if (offset == 0x00409800U) {
+            *value = gr_golden_ready ? gr_fecs_status : 0U;
+            return true;
+        }
+        if (offset == 0x00100C80U) {
+            *value = 0x00008000U;
+            return true;
+        }
+    }
     if (gr_prerequisite_test_mode) {
         switch (offset) {
         case 0x00409604U: *value = 0x00020001U; return true;
@@ -263,6 +292,15 @@ static bool write_region(const device_domain_region_info_t *region,
     ++region_write_calls;
     last_region_value = value;
     if (!region_write_result) return false;
+    if (region->region_index == 3U) {
+        const uint64_t absolute =
+            (uint64_t)region->base_low - 0xF0000000ULL + offset;
+        if (width != sizeof(uint32_t) || (absolute & 3U) != 0U ||
+            absolute / sizeof(uint32_t) >= TEST_VRAM_WORD_CAPACITY)
+            return false;
+        test_vram[absolute / sizeof(uint32_t)] = value;
+        return true;
+    }
     const bool bar0 = region->region_index == 0U;
     if (bar0 && region_write_persists && offset == tracked_region_offset) {
         tracked_region_value = value;
@@ -274,6 +312,10 @@ static bool write_region(const device_domain_region_info_t *region,
     if (bar0 && region_write_persists && offset == secondary_region_offset)
         secondary_region_value = value;
     if (!bar0) return true;
+    if (gr_golden_test_mode && offset == 0x00409504U) {
+        if (value == 3U) gr_fecs_status = 0x00000010U;
+        if (value == 9U) gr_fecs_status = 0x00000001U;
+    }
     int falcon = falcon_index_for_offset(offset, 0x1C0U);
     if (falcon >= 0) {
         falcon_dmem_control[falcon] = value;
@@ -425,6 +467,10 @@ static void reset_counters(void) {
     gr_prerequisite_test_mode = false;
     gr_execution_test_mode = false;
     gr_execution_ready = true;
+    gr_golden_test_mode = false;
+    gr_golden_ready = true;
+    gr_fecs_status = 0U;
+    memset(test_vram, 0, sizeof(test_vram));
     memset(falcon_dmem, 0, sizeof(falcon_dmem));
     memset(falcon_imem, 0, sizeof(falcon_imem));
     memset(falcon_dmem_cursor, 0, sizeof(falcon_dmem_cursor));
@@ -2001,7 +2047,33 @@ static void test_gr_prerequisites_are_read_only_bounded_and_generation_scoped(
             assert(region_write_calls == writes_before_context_plan);
             assert(device_domain_gr_context_memory(pid, generation,
                 &context_request, &context_result) == -13);
+            device_domain_gr_golden_context_result_t golden_result;
+            gr_golden_test_mode = true;
+            if (generation == 72U) gr_golden_ready = false;
+            const int golden_expected = generation == 72U ? -110 : 0;
+            assert(device_domain_gr_golden_context(pid, generation,
+                &context_request, &golden_result) == golden_expected);
+            if (golden_expected == 0) {
+                assert(golden_result.flags ==
+                    (DEVICE_DOMAIN_GR_GOLDEN_CONTEXT_READY |
+                     DEVICE_DOMAIN_GR_GOLDEN_CONTEXT_OPAQUE_VRAM));
+                assert(golden_result.topology_crc32 == header.topology_crc32);
+                assert(golden_result.context_tuple_count == 199U);
+                assert(golden_result.icmd_tuple_count == 245U);
+                assert(golden_result.method_tuple_count == 311U);
+                assert(golden_result.context_size == 0x2000U);
+                assert(golden_result.retained_bytes == 0x82000U);
+                assert(golden_result.context_crc32 != 0U);
+                assert(golden_result.temporary_bytes == 0x51000U);
+                assert(device_domain_gr_golden_context(pid, generation,
+                    &context_request, &golden_result) == -13);
+            } else {
+                assert((tracked_region_value & 0x00001000U) == 0x00001000U);
+                assert(device_domain_gr_golden_context(pid, generation,
+                    &context_request, &golden_result) == -13);
+            }
             assert(enable_calls == 0U && region_write_calls > 0U);
+            gr_golden_test_mode = false;
             gr_execution_test_mode = false;
         } else {
             assert(region_write_calls == writes_before_generation &&
