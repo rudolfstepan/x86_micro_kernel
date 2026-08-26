@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2n-nvidia-gk208-vm-page-mode"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,64 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2n-nvidia-gk208-vm-page-mode"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Apply and recover the sealed GK208 VM page mode"
+scope = "Append device-control command 20 for one exact kernel-mediated GPU-VM page-mode transaction after the GK208 DMA image has been sealed. Install an immutable per-device activation policy before first claim for the already validated policy IDs 16 and 17. The request must bind the owning device, read-only BAR resource and sealed DMA resource from one generation; Ring 0 performs a masked read-modify-write of only bit 0 at BAR0 register 0x100c80, verifies both the selected bit and every preserved bit, and records the original value. Any failed readback attempts an immediate exact rollback. Driver fencing, cleanup and release disable bus mastering first and restore and verify the original register value before resource revocation; a failed restoration remains fenced and retryable. The supervised GK208 driver selects policy 17 and receives only status. This package performs no physical-address publication, arbitrary MMIO write, page-directory/channel bind, runlist commit, USERD kick, IRQ bind, bus-master enable, GR/firmware initialization, hardware submission or acceleration capability publication."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "control command 20 is append-only fixed-size versioned driver-only and returns no register or physical address",
+  "activation policies are immutable before first claim and contain only exact unique policy IDs one BAR index one aligned 32-bit register one nonzero mask and a value within that mask",
+  "device region and DMA handles belong to one owner generation and device and the DMA pool is sealed before any register write",
+  "the kernel changes only policy-selected bit 0 of 0x100c80 and verifies both the selected value and all preserved bits",
+  "failed activation rolls back immediately while fence cleanup and release disable bus mastering then restore and verify the original register value",
+  "failed restoration remains fenced and retryable and cannot publish the device for a new generation",
+  "GK208 selects policy 17 while VMware remains read-only DMA-free and unchanged",
+  "no raw write right address publication channel bind runlist commit USERD kick IRQ bus-master enable hardware submission or capability publication occurs"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the transaction can run without one exact immutable activation policy sealed same-device DMA resource or generation-scoped read resource",
+  "a failed readback or later fence can leave the modified register accepted as restored",
+  "the implementation grants arbitrary MMIO writes bus mastering IRQs or hardware execution",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: mediate GK208 VM page mode"
+evidence = []
 
 [[packages]]
 id = "R2.2g-nvidia-gk208-engine-contract"
