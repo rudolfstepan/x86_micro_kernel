@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2p-nvidia-gk208-falcon-upload"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,67 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2p-nvidia-gk208-falcon-upload"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Stage and verify both halted GK208 Falcon images"
+scope = "Complete the largest safe pre-start GK208 GR slice. Reserve four fixed non-overlapping firmware windows in the existing 512-KiB mediated-DMA pool, stage and read back the pinned FECS/GPCCS data and code images in bounded chunks before relocation sealing, and append Device Control command 21 for one immutable kernel-mediated Falcon upload transaction. The transaction binds device, read-only BAR and sealed DMA pool from one generation, validates the exact four little-endian CRC32 images before side effects, resets only the GR engine through the preserved PMC_ENABLE bit, waits within a fixed monotonic deadline for FECS and GPCCS memory scrubbing, uploads exact DMEM/IMEM words and block tags, then reads every word back. Any failure resets GR immediately; fencing disables bus mastering, resets uploaded Falcon state and only then restores the previous page mode. Failed cleanup remains fenced and retryable. This package deliberately leaves both Falcons halted and performs no MMIO pack, context-switch list, channel bind, runlist commit, USERD kick, IRQ bind, hardware submission or acceleration capability publication because Nouveau starts FECS only after those topology-dependent register lists exist."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "control command 21 is append-only fixed-size versioned driver-only and returns no register firmware pointer DMA or physical address",
+  "the immutable pre-claim policy names exactly four aligned non-overlapping bounded pool images two distinct Falcon bases one PMC GR-reset bit and exact nonzero CRC32 values",
+  "device region and sealed DMA handles belong to one owner generation and page-mode activation completed before firmware upload",
+  "all four CRC32 values are verified before the first register write and both Falcons remain halted",
+  "GR reset preserves unrelated PMC_ENABLE bits and every DMEM IMEM word and IMEM block tag follows the fixed policy",
+  "every uploaded word is read back while all waits retries and loops are bounded",
+  "failure and generation cleanup disable bus mastering reset GR and restore page mode in that order with retryable fencing",
+  "no MMIO pack context-switch list Falcon start channel bind runlist USERD IRQ hardware submission or capability publication occurs",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "a firmware byte can change after validation or an invalid CRC reaches hardware",
+  "upload can occur without sealed same-generation resources completed page mode or an exact immutable policy",
+  "a failed upload or fence can publish the device before GR reset and page-mode restoration succeed",
+  "the package starts either Falcon or grants bus mastering IRQ submission or acceleration capability",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: mediate GK208 Falcon firmware upload"
+evidence = []
 
 [[packages]]
 id = "R2.2o-nvidia-gk208-gr-firmware-contract"
