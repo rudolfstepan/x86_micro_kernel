@@ -222,10 +222,21 @@ und `copy_status=-11`: Der Supervisor hielt die Ausgabeautorität korrekt
 geschlossen, beendete die gesamte GK208-Konstruktion aber nach der generischen
 einsekündigen Recoveryfrist, obwohl einzelne versiegelte GR-Phasen bis zu fünf
 Sekunden begrenzt sind. `R2.2ac-nvidia-startup-deadline` ergänzt deshalb eine
-optionale, geschützte Startfrist. Nur GK208 erhält 15 Sekunden für Konstruktion
+optionale, geschützte Startfrist. Nur GK208 erhält 25 Sekunden für Konstruktion
 und Selbsttest; Heartbeatüberwachung bleibt bei zwei Sekunden und
 Fencing/Recovery bei einer Sekunde. Bestehende Komponenten mit Startfrist null
 behalten exakt die bisherige Recoveryfrist als Startgrenze.
+Der nächste ASUS-Lauf blieb bei `observed_caps=0`: Die 234 Drag-Frames lagen
+vor der Dienstfreigabe, danach lösten 822 gewöhnliche Resize-Frames keinen
+weiteren Lazy-Reconnect aus. `R2.2ad-background-acceleration-readiness` führt
+den bereits auf eine monotone Sekunde begrenzten Versuch deshalb unabhängig
+von Gesten im Desktoploop fort. Zugleich deckt die auf 25 Sekunden korrigierte
+Gesamtfrist nun auch die Summe der einzelnen GR-, Kontext-, Golden-Context- und
+Channel-Deadlines ab. `reconnect_attempts`, `service_status` und
+`transaction_status` trennen die verbleibenden Fehlerstufen.
+Ein fehlgeschlagener Treiberaufbau endet außerdem nicht mehr still, sondern
+meldet vor dem Prozessende `NVIDIA_GK208_INIT_FAILED status=N`; der unmittelbar
+vorherige geordnete Diagnosemarker bezeichnet die letzte abgeschlossene Phase.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

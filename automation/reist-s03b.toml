@@ -11,6 +11,48 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R2.2ad-background-acceleration-readiness"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Adopt late acceleration readiness independently of gestures"
+scope = "Poll the supervised display generation in the normal desktop loop with the existing monotonic one-second backoff, retain immediate VBE presentation, expose service versus transaction and driver initialization status, and raise the GK208 aggregate startup deadline to cover the sum of all individually bounded GR phases."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/kernel.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_vmware_svga2d.py",
+  "test/test_desktop_source.py",
+  "test/test_nvidia_gk208.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "the desktop never waits for acceleration before presenting its software frame",
+  "background readiness checks occur at most once per monotonic second and stop after copy capability is observed",
+  "late readiness is adopted without requiring a second drag or left-top resize gesture",
+  "the 25-second GK208 aggregate deadline exceeds the sum of sealed phase deadlines but remains absolute and bounded",
+  "service admission and IPC transaction failures remain separately observable while software composition continues",
+  "a failed GK208 construction emits its bounded numeric status before the process exits"
+]
+targeted_tests = [
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_nvidia_gk208.py -v"
+]
+package_tests = []
+runtime_tests = []
+stop_conditions = [
+  "the readiness poll can execute once per desktop frame or busy-wait",
+  "the accelerator becomes a dependency of first desktop presentation",
+  "the aggregate startup bound is shorter than its admitted sequential hardware phases",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "the targeted gate still fails after one focused in-scope repair"
+]
+
+[[packages]]
 id = "R2.2ac-nvidia-startup-deadline"
 status = "done"
 phase = "post-s0"

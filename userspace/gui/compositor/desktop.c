@@ -106,8 +106,11 @@ static uint32_t desktop_svga2d_request_id;
 static uint32_t desktop_svga2d_capabilities;
 static uint32_t desktop_svga2d_observed_capabilities;
 static uint32_t desktop_svga2d_reconnects;
+static uint32_t desktop_svga2d_reconnect_attempts;
 static uint64_t desktop_svga2d_next_reconnect_ms;
 static int32_t desktop_svga2d_last_connect_status;
+static int32_t desktop_svga2d_last_service_status;
+static int32_t desktop_svga2d_last_transaction_status;
 static int32_t desktop_svga2d_last_copy_status;
 static int32_t desktop_svga2d_last_mark_status;
 
@@ -165,6 +168,7 @@ static int desktop_svga2d_connect(uint32_t activate, uint32_t report_error) {
     if (desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE) {
         int status = x86os_service_connect(
             X86OS_SERVICE_DISPLAY_DRIVER, &desktop_svga2d_endpoint);
+        desktop_svga2d_last_service_status = status;
         if (status != 0) {
             desktop_svga2d_last_connect_status = status;
             if (report_error != 0U) {
@@ -179,6 +183,7 @@ static int desktop_svga2d_connect(uint32_t activate, uint32_t report_error) {
     request.operation = activate != 0U
         ? REIST_SVGA2D_ACTIVATE : REIST_SVGA2D_INFO;
     int status = desktop_svga2d_transact(&request);
+    desktop_svga2d_last_transaction_status = status;
     desktop_svga2d_last_connect_status = status;
     if (status != 0 && activate != 0U && report_error != 0U) {
         x86os_puts("desktop: SVGA2D-Transaktion status=");
@@ -259,6 +264,8 @@ static int desktop_svga2d_reconnect_if_ready(void) {
     desktop_svga2d_next_reconnect_ms = now + DESKTOP_SVGA2D_RECONNECT_MS;
     if (desktop_svga2d_next_reconnect_ms < now)
         desktop_svga2d_next_reconnect_ms = ~(uint64_t)0U;
+    if (desktop_svga2d_reconnect_attempts != 0xFFFFFFFFU)
+        ++desktop_svga2d_reconnect_attempts;
     int status = desktop_svga2d_connect(1U, 0U);
     if (status != 0) return status;
     if ((desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) == 0U)
@@ -3241,8 +3248,13 @@ static void print_render_metrics(const desktop_render_metrics_t *metrics) {
     print_metric("fallbacks", metrics->acceleration_fallbacks);
     print_metric("observed_caps", desktop_svga2d_observed_capabilities);
     print_metric("reconnects", desktop_svga2d_reconnects);
+    print_metric("reconnect_attempts", desktop_svga2d_reconnect_attempts);
     x86os_puts(" connect_status=");
     x86os_print_number(desktop_svga2d_last_connect_status);
+    x86os_puts(" service_status=");
+    x86os_print_number(desktop_svga2d_last_service_status);
+    x86os_puts(" transaction_status=");
+    x86os_print_number(desktop_svga2d_last_transaction_status);
     x86os_puts(" copy_status=");
     x86os_print_number(desktop_svga2d_last_copy_status);
     x86os_puts(" mark_status=");
@@ -5075,6 +5087,10 @@ int main(int argc, char **argv) {
             if (runtime_activated) (void)desktop_display_deactivate();
             return 1;
         }
+        /* Driver construction is independent of desktop presentation. Poll
+         * its supervised generation at the helper's monotonic one-second
+         * bound so readiness is adopted even without a later drag gesture. */
+        (void)desktop_svga2d_reconnect_if_ready();
         int key = read_key();
         desktop_dirty_region_t dirty;
         desktop_dirty_initialize(&dirty, display.width, display.height);

@@ -180,6 +180,7 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("x86os_monotonic_ms(&now)", helper)
         self.assertIn("now < desktop_svga2d_next_reconnect_ms", helper)
         self.assertIn("desktop_svga2d_connect(1U, 0U)", helper)
+        self.assertIn("desktop_svga2d_reconnect_attempts", helper)
         self.assertIn("desktop_svga2d_reconnects", helper)
         copy = desktop[
             desktop.index("static int desktop_svga2d_rect_copy"):
@@ -187,6 +188,9 @@ class VmwareSvga2dTests(unittest.TestCase):
         ]
         self.assertIn("desktop_svga2d_reconnect_if_ready()", copy)
         self.assertIn("desktop_svga2d_last_copy_status", copy)
+        main_loop = desktop[desktop.index("    for (;;) {", desktop.index(
+            "int main(")):]
+        self.assertIn("desktop_svga2d_reconnect_if_ready()", main_loop)
 
     def test_geometry_is_validated_before_fifo_publication(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(
@@ -212,8 +216,9 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("DESKTOP_ACCELERATION_READY caps=", desktop)
         self.assertIn("DESKTOP_RENDER_ACCELERATED", desktop)
         self.assertIn('"DESKTOP_ACCELERATION"', desktop)
-        for field in ("observed_caps", "reconnects", "connect_status",
-                      "copy_status", "mark_status"):
+        for field in ("observed_caps", "reconnects", "reconnect_attempts",
+                      "connect_status", "service_status",
+                      "transaction_status", "copy_status", "mark_status"):
             self.assertIn(field, desktop)
 
     def test_generic_activation_cannot_bypass_supervised_driver(self):

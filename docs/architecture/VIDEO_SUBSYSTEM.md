@@ -385,11 +385,22 @@ The first native acceleration measurement reported `observed_caps=0` with
 deadline, not a 2D packet failure: the generic one-second recovery limit also
 bounded initial construction even though the sealed GR execution and golden
 context phases each have independent deadlines up to five seconds. GK208 now
-has a distinct 15-second aggregate startup/reinitialization deadline. Its
+has a distinct 25-second aggregate startup/reinitialization deadline. Its
 healthy heartbeat remains two seconds and device fencing/recovery remains one
 second. The endpoint is still unavailable until channel self-test and progress
 validation complete; the desktop renders through VBE software and reconnects
 later without waiting for that startup window.
+
+Readiness recovery is driven by the normal desktop loop, not by a gesture. The
+same monotonic one-second backoff therefore continues while the user is idle or
+performing a resize that needs no retained copy. Once capabilities are
+observed, polling stops and subsequent eligible moves use the synchronous GPU
+copy path. Exit metrics count actual attempts and report service admission and
+IPC transaction status separately; this distinguishes a still-fenced driver
+generation from an unresponsive published endpoint. If construction itself
+returns an error, the Ring-3 driver emits
+`NVIDIA_GK208_INIT_FAILED status=N` before its generation exits, while the
+preceding ordered diagnostic marker identifies the last completed phase.
 
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the

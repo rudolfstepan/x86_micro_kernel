@@ -488,7 +488,10 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('print_metric("fallbacks"', metrics)
         self.assertIn('print_metric("observed_caps"', metrics)
         self.assertIn('print_metric("reconnects"', metrics)
+        self.assertIn('print_metric("reconnect_attempts"', metrics)
         self.assertIn('" connect_status="', metrics)
+        self.assertIn('" service_status="', metrics)
+        self.assertIn('" transaction_status="', metrics)
         self.assertIn('" copy_status="', metrics)
         self.assertIn('" mark_status="', metrics)
 

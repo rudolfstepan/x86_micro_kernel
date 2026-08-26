@@ -884,7 +884,13 @@ static int driver_initialize(nvidia_driver_t *driver) {
 
 int main(void) {
     nvidia_driver_t driver;
-    if (driver_initialize(&driver) != 0) return 1;
+    int initialize_status = driver_initialize(&driver);
+    if (initialize_status != 0) {
+        x86os_puts("REIST_VIDEO NVIDIA_GK208_INIT_FAILED status=");
+        x86os_print_number(initialize_status);
+        x86os_putchar('\n');
+        return 1;
+    }
     uint64_t last_report = 0U;
     (void)x86os_monotonic_ms(&last_report);
     for (;;) {
