@@ -667,9 +667,14 @@ static bool profile_is_irqless_mediated_io(
         const device_domain_profile_t *profile) {
     return profile != NULL &&
         (profile->flags & DEVICE_DOMAIN_PROFILE_MEDIATED_IO) != 0U &&
-        (profile->flags & (DEVICE_DOMAIN_PROFILE_MEDIATED_DMA |
-                           DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT |
+        (profile->flags & (DEVICE_DOMAIN_PROFILE_IOMMU_DIRECT |
                            DEVICE_DOMAIN_PROFILE_LEGACY_INTX_PIC)) == 0U;
+}
+
+static bool device_is_passive_mediated_io(const device_slot_t *device) {
+    return device != NULL &&
+        profile_is_irqless_mediated_io(&device->profile) &&
+        device->state != DEVICE_DOMAIN_ACTIVE && device->irq_bound == 0U;
 }
 
 static bool unmask_device_irq(const device_slot_t *device) {
@@ -683,7 +688,7 @@ static bool unmask_device_irq(const device_slot_t *device) {
 }
 
 static bool fence_slot(device_slot_t *device) {
-    bool irq_masked = profile_is_irqless_mediated_io(&device->profile) ||
+    bool irq_masked = device_is_passive_mediated_io(device) ||
         mask_device_irq(device);
     bool mastering_disabled =
         platform_ops.set_bus_master(device->pci_location, false);
@@ -1134,6 +1139,11 @@ int device_domain_bind_dma(int pid, uint32_t process_generation,
         end_operation();
         return device == NULL ? -9 : -22;
     }
+    if (device->mode == DEVICE_DOMAIN_MODE_MEDIATED &&
+        (device->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA) == 0U) {
+        end_operation();
+        return -95;
+    }
     int resource_index = available_resource_slot();
     if (resource_index < 0) {
         end_operation();
@@ -1263,7 +1273,7 @@ int device_domain_mark_mediated_io_quiesced(
     if (!begin_operation()) return -16;
     device_slot_t *device = owned_slot(pid, process_generation, handle);
     if (device == NULL ||
-        !profile_is_irqless_mediated_io(&device->profile)) {
+        !device_is_passive_mediated_io(device)) {
         end_operation();
         return device == NULL ? -9 : -95;
     }

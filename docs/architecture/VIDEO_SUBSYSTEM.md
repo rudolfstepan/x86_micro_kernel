@@ -140,6 +140,18 @@ The supervised process exercises this only as a software self-test. It does
 not allocate GPU addresses, create a channel, write USERD, load firmware or
 submit work, so acceleration capabilities remain zero.
 
+`R2.2j` gives the exact GK208 process one kernel-owned 64-KiB mediated-DMA
+pool while keeping its BAR aperture read-only. The first 4 KiB remain
+kernel-only. Three fixed, non-overlapping windows above it hold one 8-byte
+GPFIFO entry, the complete zero-padded 72-dword pushbuffer and one zeroed
+4-byte fence. Ring 3 stages and reads back exactly those 300 bytes using
+bounded transfers; it receives neither the pool's physical address nor a raw
+mapping. The generic mediator now also rejects DMA binding for every profile
+that declares `MEDIATED_IO` without `MEDIATED_DMA`, before allocating a pool.
+The fixed GPU virtual addresses are only a future page-table placement
+contract. No GPU mapping, RAMFC, runlist, DMA-address register, USERD kick,
+IRQ, activation or bus mastering exists yet, and capabilities remain zero.
+
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both image layouts and non-regression of the
 VMware accelerated path.  The `NVIDIA_GK208_PROBE` and

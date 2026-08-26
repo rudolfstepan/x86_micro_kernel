@@ -2312,6 +2312,15 @@ Dword-Länge. Ein unabhängiger Parser verwirft reservierte Privileg-,
 Subroutine-, Conditional-Fetch- und Sync-Wait-Bits sowie Padding- und
 Querverweisabweichungen. Der Ring-3-Selbsttest führt den Strom nicht aus und
 erteilt keine neue Geräteautorität.
+Das abgeschlossene `R2.2j` verbindet diesen Vertrag mit genau einem
+kernelverwalteten 64-KiB-mediated-DMA-Pool. Die ersten 4 KiB bleiben dem
+Kernel vorbehalten; feste getrennte Fenster enthalten genau einen
+GPFIFO-Eintrag, den nullaufgefüllten 72-Dword-Pushbuffer und ein Null-Fence.
+Der überwachte Treiber überträgt und verifiziert bytegenau 300 Byte, erhält
+aber weder physische Adresse noch Mapping. Reine `MEDIATED_IO`-Profile können
+nun grundsätzlich keinen DMA-Pool mehr binden; nur die exakte GK208-Auswahl
+kombiniert IO und mediated DMA, während VMware DMA-frei bleibt. Die festen
+GPU-VAs sind lediglich der Platzierungsvertrag für das folgende GPU-VM-Paket.
 Das anschließende Hardware-Engine-Paket bleibt für GPU-VM, GK208-GR-
 Initialisierung einschließlich FECS/GPCCS, einen festen Kepler-GPFIFO-Kanal
 und einen echten deadlinebegrenzten Fence verantwortlich.

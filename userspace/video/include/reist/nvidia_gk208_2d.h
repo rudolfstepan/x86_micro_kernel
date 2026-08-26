@@ -18,6 +18,13 @@
 #define REIST_NVIDIA_GK208_SURFACE_ALIGNMENT 256U
 #define REIST_NVIDIA_GK208_MAX_DIMENSION 4096U
 #define REIST_NVIDIA_GK208_MAX_PITCH 65536U
+#define REIST_NVIDIA_GK208_DMA_POOL_BYTES (64U * 1024U)
+#define REIST_NVIDIA_GK208_DMA_DESCRIPTOR_BYTES 4096U
+#define REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET 0x00001000U
+#define REIST_NVIDIA_GK208_DMA_PUSHBUF_OFFSET 0x00002000U
+#define REIST_NVIDIA_GK208_DMA_FENCE_OFFSET 0x00003000U
+#define REIST_NVIDIA_GK208_PUSHBUF_GPU_ADDRESS 0x0000000020000000ULL
+#define REIST_NVIDIA_GK208_FENCE_GPU_ADDRESS 0x0000000020001000ULL
 
 typedef struct {
     uint64_t gpu_address;
@@ -44,6 +51,17 @@ typedef struct {
     uint32_t gpfifo_entry[REIST_NVIDIA_GK208_GPFIFO_ENTRY_WORDS];
 } reist_nvidia_gk208_submission_t;
 
+typedef struct {
+    uint32_t gpfifo_offset;
+    uint32_t gpfifo_bytes;
+    uint32_t pushbuf_offset;
+    uint32_t pushbuf_bytes;
+    uint32_t fence_offset;
+    uint32_t fence_bytes;
+    uint32_t fence_sequence;
+    uint32_t reserved;
+} reist_nvidia_gk208_dma_staging_t;
+
 int reist_nvidia_gk208_encode_fill(
     reist_nvidia_gk208_pushbuf_t *pushbuf,
     const reist_nvidia_gk208_surface_t *surface,
@@ -65,7 +83,16 @@ int reist_nvidia_gk208_validate_submission(
     const reist_nvidia_gk208_submission_t *submission,
     uint64_t pushbuf_gpu_address, uint64_t fence_gpu_address,
     uint32_t fence_sequence);
+int reist_nvidia_gk208_prepare_dma_staging(
+    reist_nvidia_gk208_dma_staging_t *staging,
+    const reist_nvidia_gk208_submission_t *submission,
+    uint32_t fence_sequence);
+int reist_nvidia_gk208_validate_dma_staging(
+    const reist_nvidia_gk208_dma_staging_t *staging,
+    const reist_nvidia_gk208_submission_t *submission,
+    uint32_t fence_sequence);
 int reist_nvidia_gk208_command_self_test(void);
 int reist_nvidia_gk208_submission_self_test(void);
+int reist_nvidia_gk208_dma_staging_self_test(void);
 
 #endif

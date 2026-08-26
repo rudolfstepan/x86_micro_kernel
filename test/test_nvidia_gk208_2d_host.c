@@ -144,12 +144,54 @@ static void test_submission_ranges_fail_closed(void) {
         &submission, &pushbuf, 0x20000000ULL, 0x20001000ULL, 0U) == -84);
 }
 
+static void test_dma_staging_layout_is_fixed_and_nonoverlapping(void) {
+    reist_nvidia_gk208_pushbuf_t pushbuf;
+    reist_nvidia_gk208_submission_t submission;
+    reist_nvidia_gk208_dma_staging_t staging;
+    reist_nvidia_gk208_surface_t target = surface();
+    reist_nvidia_gk208_rect_t rect = {0U, 0U, 8U, 8U};
+    assert(reist_nvidia_gk208_encode_fill(
+        &pushbuf, &target, &rect, 0x00112233U) == 0);
+    assert(reist_nvidia_gk208_prepare_submission(
+        &submission, &pushbuf, REIST_NVIDIA_GK208_PUSHBUF_GPU_ADDRESS,
+        REIST_NVIDIA_GK208_FENCE_GPU_ADDRESS, 9U) == 0);
+    assert(reist_nvidia_gk208_prepare_dma_staging(
+        &staging, &submission, 9U) == 0);
+    assert(staging.gpfifo_offset == REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET);
+    assert(staging.pushbuf_offset == REIST_NVIDIA_GK208_DMA_PUSHBUF_OFFSET);
+    assert(staging.fence_offset == REIST_NVIDIA_GK208_DMA_FENCE_OFFSET);
+    assert(staging.gpfifo_bytes == sizeof(submission.gpfifo_entry));
+    assert(staging.pushbuf_bytes == sizeof(submission.words));
+    assert(staging.fence_bytes == sizeof(uint32_t));
+    assert(reist_nvidia_gk208_validate_dma_staging(
+        &staging, &submission, 9U) == 0);
+
+    reist_nvidia_gk208_dma_staging_t mutated = staging;
+    mutated.gpfifo_offset = REIST_NVIDIA_GK208_DMA_DESCRIPTOR_BYTES - 4U;
+    assert(reist_nvidia_gk208_validate_dma_staging(
+        &mutated, &submission, 9U) == -84);
+    mutated = staging;
+    mutated.pushbuf_offset = staging.gpfifo_offset;
+    assert(reist_nvidia_gk208_validate_dma_staging(
+        &mutated, &submission, 9U) == -84);
+    mutated = staging;
+    mutated.fence_offset = REIST_NVIDIA_GK208_DMA_POOL_BYTES;
+    assert(reist_nvidia_gk208_validate_dma_staging(
+        &mutated, &submission, 9U) == -84);
+    mutated = staging;
+    mutated.reserved = 1U;
+    assert(reist_nvidia_gk208_validate_dma_staging(
+        &mutated, &submission, 9U) == -84);
+}
+
 int main(void) {
     test_fill_and_copy_are_bounded_and_validated();
     test_invalid_ranges_fail_closed();
     test_stream_tampering_is_rejected();
     test_submission_envelope_is_sealed();
     test_submission_ranges_fail_closed();
+    test_dma_staging_layout_is_fixed_and_nonoverlapping();
     assert(reist_nvidia_gk208_submission_self_test() == 0);
+    assert(reist_nvidia_gk208_dma_staging_self_test() == 0);
     return 0;
 }

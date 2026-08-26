@@ -98,6 +98,9 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("device_domain_dma_pool_stats", source)
         self.assertIn("device_domain_dma_write", source)
         self.assertIn("device_domain_dma_read", source)
+        self.assertIn(
+            "device->profile.flags & DEVICE_DOMAIN_PROFILE_MEDIATED_DMA",
+            source)
         self.assertIn("DEVICE_DOMAIN_MAX_REGION_RULES 32U", header)
         self.assertIn(
             "DEVICE_DOMAIN_MAX_REGION_BYTES (8U * 1024U * 1024U)", header)

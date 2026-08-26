@@ -3,8 +3,9 @@
  * @brief Fail-closed VMware SVGA-II and NVIDIA GK208 ownership profiles.
  *
  * VMware device identifiers follow vm_device_version.h from open-vm-tools.
- * The profile deliberately grants no DMA, IRQ or raw BAR authority.  Ring 0
- * retains a small fixed-command FIFO mediator and validates every rectangle.
+ * VMware deliberately receives no DMA, IRQ or raw BAR authority.  GK208 may
+ * stage data only in one kernel-owned mediated pool and still receives no raw
+ * mapping, DMA address, IRQ or bus-master authority.
  */
 #include "kernel/init/video_device_profile.h"
 
@@ -30,7 +31,9 @@ static int register_profile(const pci_device_t *device, uint32_t backend,
         .version = DEVICE_DOMAIN_ABI_VERSION,
         .struct_size = sizeof(profile),
         .isolation_group = DEVICE_DOMAIN_MAX_GROUPS - 2U,
-        .flags = DEVICE_DOMAIN_PROFILE_MEDIATED_IO,
+        .flags = DEVICE_DOMAIN_PROFILE_MEDIATED_IO |
+            (backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208
+                ? DEVICE_DOMAIN_PROFILE_MEDIATED_DMA : 0U),
         .vendor_id = device->vendor_id,
         .device_id = device->device_id,
         .class_code = device->class_code,

@@ -67,7 +67,10 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("0x0405U", profile)
         self.assertIn("0x0710U", profile)
         self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_IO", profile)
-        self.assertNotIn("DEVICE_DOMAIN_PROFILE_MEDIATED_DMA", profile)
+        self.assertIn(
+            "backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208", profile)
+        self.assertIn(
+            "? DEVICE_DOMAIN_PROFILE_MEDIATED_DMA : 0U", profile)
         self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_IO", header)
 
     def test_irqless_profile_is_quiesced_before_generation_recovery(self):

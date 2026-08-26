@@ -676,6 +676,12 @@ static void test_large_bar_is_clipped_to_read_only_policy_aperture(void) {
     device_domain_handle_t handle = DEVICE_DOMAIN_INVALID_HANDLE;
     assert(device_domain_claim(
         44, 9U, device, DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    device_domain_resource_handle_t dma = DEVICE_DOMAIN_INVALID_HANDLE;
+    assert(bind_dma_resource(44, 9U, handle, 0U, &dma) == -95);
+    assert(dma == DEVICE_DOMAIN_INVALID_HANDLE);
+    device_domain_dma_pool_stats_t stats;
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.active_pools == 0U && stats.capacity_rejections == 0U);
     const device_domain_region_request_t open_request = {
         .version = DEVICE_DOMAIN_ABI_VERSION,
         .struct_size = sizeof(open_request),
@@ -712,6 +718,28 @@ static void test_large_bar_is_clipped_to_read_only_policy_aperture(void) {
     oversized.readable_bytes[0] = DEVICE_DOMAIN_MAX_REGION_BYTES + 4U;
     assert(device_domain_install_region_policy(device, &oversized) == -95);
     assert(last_prepared_length == 0U);
+}
+
+static void test_passive_mediated_dma_staging_is_quiesceable(void) {
+    reset_counters();
+    device_domain_platform_ops_t ops = test_platform_ops();
+    assert(device_domain_init(&ops, false));
+    device_domain_profile_t video = profile(
+        3U, DEVICE_DOMAIN_PROFILE_MEDIATED_IO |
+            DEVICE_DOMAIN_PROFILE_MEDIATED_DMA);
+    uint32_t device = UINT32_MAX;
+    assert(device_domain_register(&video, 0x00001B00U, &device) == 0);
+    device_domain_handle_t handle = DEVICE_DOMAIN_INVALID_HANDLE;
+    assert(device_domain_claim(
+        44, 9U, device, DEVICE_DOMAIN_MODE_MEDIATED, &handle) == 0);
+    device_domain_resource_handle_t dma = DEVICE_DOMAIN_INVALID_HANDLE;
+    assert(bind_dma_resource(44, 9U, handle, 0U, &dma) == 0);
+    assert(device_domain_mark_mediated_io_quiesced(44, 9U, handle) == 0);
+    assert(device_domain_fence(44, 9U, handle) == 0);
+    assert(mask_calls == 0U && disable_calls >= 2U);
+    device_domain_dma_pool_stats_t stats;
+    assert(device_domain_dma_pool_stats(&stats) == 0);
+    assert(stats.active_pools == 0U);
 }
 
 static void test_group_exclusivity_and_failed_reset(void) {
@@ -1032,6 +1060,7 @@ int main(void) {
     test_legacy_pic_fallback_masks_shared_irq();
     test_mediated_lifecycle_and_stale_handle();
     test_large_bar_is_clipped_to_read_only_policy_aperture();
+    test_passive_mediated_dma_staging_is_quiesceable();
     test_group_exclusivity_and_failed_reset();
     test_direct_assignment_requires_both_proofs();
     test_every_fence_action_runs_after_partial_failure();

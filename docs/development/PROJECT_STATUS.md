@@ -1,6 +1,6 @@
 # Projektstatus
 
-Stand: 25. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
+Stand: 26. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
 aktive Paketqueue in `automation/reist-s03b.toml`.
 
 REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
@@ -40,6 +40,15 @@ Der zweite Parser weist Adress-, Längen-, Padding-, Privileg-, Subroutine-,
 Conditional-Fetch-, Sync-Wait- und Fence-Abweichungen zurück. GPU-VM,
 Kanalerzeugung, USERD-Kick, Firmware, Busmaster und echte GPU-Ausführung sind
 weiterhin nicht aktiv; NVIDIA-Capabilities bleiben deshalb null.
+`R2.2j-nvidia-gk208-dma-staging` bindet für die exakte GK208-Domäne erstmals
+einen kernelverwalteten, beim Generationwechsel genullten 64-KiB-Pool. Oberhalb
+der kernelexklusiven 4-KiB-Deskriptorseite werden genau ein 8-Byte-GPFIFO-
+Eintrag, der vollständig nullaufgefüllte 72-Dword-Pushbuffer und ein 4-Byte-
+Null-Fence geschrieben und bytegenau zurückgelesen. Physische Adressen bleiben
+verborgen. Gleichzeitig weist der generische Mediator DMA-Binds von reinen
+`MEDIATED_IO`-Profilen jetzt vor einer Allokation ab; VMware bleibt dadurch
+unverändert DMA-frei. GPU-VM, RAMFC, Runlist, USERD, IRQ, Aktivierung,
+Busmaster und Capabilitybits bleiben offen.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

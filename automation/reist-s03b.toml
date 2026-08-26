@@ -7828,3 +7828,61 @@ evidence = [
   "QEMU framebuffer package passed in 25 seconds",
   "VMware framebuffer package passed in 27 seconds"
 ]
+
+[[packages]]
+id = "R2.2j-nvidia-gk208-dma-staging"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Stage one sealed GK208 submission in kernel-owned mediated DMA"
+scope = "Close the generic authorization gap that currently permits a MEDIATED_IO-only device to bind a mediated DMA pool, then grant the exact GK208 profile MEDIATED_DMA in addition to its read-only mediated-I/O aperture. Define one fixed 64-KiB staging layout above the kernel-only descriptor page for a single GPFIFO entry, a zero-padded 72-dword pushbuffer and one 4-byte fence. The supervised Ring-3 driver binds one bidirectional kernel-owned pool, validates its exact geometry, stages one independently validated submission through bounded DMA write calls and reads every staged byte back before reporting self-test success. The GPU virtual addresses remain fixed placement contracts only. This package performs no DMA-address publication, MMIO write, GPU page-table construction, RAMFC/runlist creation, USERD kick, IRQ bind, device activation, bus-master enable, hardware submission or acceleration capability publication."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/device_domain.c",
+  "kernel/init/video_device_profile.c",
+  "userspace/video/include/reist/nvidia_gk208_2d.h",
+  "userspace/video/lib/nvidia_gk208_2d.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208_2d_host.c",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a MEDIATED_IO-only profile cannot bind DMA and allocation statistics remain unchanged on rejection",
+  "only the exact NVIDIA GK208 backend combines MEDIATED_IO with MEDIATED_DMA while VMware remains IO-only and DMA-free",
+  "the staging layout stays inside one 64-KiB kernel-owned pool and never overlaps the first kernel-only 4-KiB descriptor page",
+  "exactly one validated GPFIFO entry one zero-padded bounded pushbuffer and one zero fence are staged and read back byte-for-byte",
+  "Ring 3 never receives a physical DMA address and every DMA transfer is at most 1024 bytes",
+  "no region write DMA-address publication IRQ bind activation bus mastering hardware submission or acceleration capability occurs"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the staging path exposes a physical address or requires a GPU-visible mapping before page-table validation exists",
+  "the NVIDIA profile change grants VMware DMA or enables bus mastering device activation IRQs or MMIO writes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
+commit_message = "video: stage sealed GK208 DMA submissions"
+evidence = [
+  "Device-domain authorization and lifecycle contract passed 10 tests including IO-only DMA rejection and passive staged-DMA recovery",
+  "NVIDIA GK208 command submission and fixed DMA-staging contract passed 12 tests",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 25 seconds",
+  "VMware framebuffer package passed in 26 seconds"
+]

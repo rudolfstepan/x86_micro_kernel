@@ -23,6 +23,7 @@
 #define NVIDIA_DIAGNOSTIC_PROBE 0x4E560000U
 #define NVIDIA_DIAGNOSTIC_PREFLIGHT 0x4E570000U
 #define NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT 0x4E580000U
+#define NVIDIA_DIAGNOSTIC_DMA_STAGING 0x4E590000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
@@ -36,6 +37,7 @@ typedef struct {
     x86os_device_driver_bootstrap_t bootstrap;
     x86os_ipc_handle_t control;
     x86os_device_resource_t registers;
+    x86os_device_resource_t dma;
     uint32_t register_bytes;
     uint32_t width;
     uint32_t height;
@@ -55,6 +57,14 @@ typedef struct {
 static void bytes_zero(void *memory, size_t length) {
     uint8_t *bytes = memory;
     for (size_t index = 0U; index < length; ++index) bytes[index] = 0U;
+}
+
+static int bytes_equal(const void *first, const void *second, size_t length) {
+    const uint8_t *left = first;
+    const uint8_t *right = second;
+    for (size_t index = 0U; index < length; ++index)
+        if (left[index] != right[index]) return 0;
+    return 1;
 }
 
 static int driver_command(nvidia_driver_t *driver, uint32_t command,
@@ -197,11 +207,99 @@ static int engine_preflight(nvidia_driver_t *driver) {
 static int command_contract_self_test(nvidia_driver_t *driver) {
     int status = reist_nvidia_gk208_command_self_test();
     if (status == 0) status = reist_nvidia_gk208_submission_self_test();
+    if (status == 0) status = reist_nvidia_gk208_dma_staging_self_test();
     if (status != 0) return status;
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_COMMAND_CONTRACT |
             REIST_NVIDIA_GK208_FERMI_TWOD_A);
+}
+
+static int open_dma_pool(nvidia_driver_t *driver) {
+    x86os_device_resource_result_t resource;
+    bytes_zero(&resource, sizeof(resource));
+    const uint32_t direction = X86OS_DEVICE_DMA_TO_DEVICE |
+        X86OS_DEVICE_DMA_FROM_DEVICE;
+    int status = x86os_device_bind_dma_direction(
+        driver->bootstrap.device, 0U, direction, &resource);
+    if (status != 0) return status;
+    if (resource.version != X86OS_DEVICE_ABI_VERSION ||
+        resource.struct_size != sizeof(resource) || resource.resource == 0U ||
+        resource.kind != X86OS_DEVICE_RESOURCE_DMA ||
+        resource.reserved[0] != 0U || resource.reserved[1] != 0U ||
+        resource.reserved[2] != 0U || resource.reserved[3] != 0U)
+        return -84;
+    x86os_device_dma_info_t info;
+    bytes_zero(&info, sizeof(info));
+    status = x86os_device_dma_info(resource.resource, &info);
+    if (status != 0) return status;
+    if (info.version != X86OS_DEVICE_ABI_VERSION ||
+        info.struct_size != sizeof(info) || info.resource != resource.resource ||
+        info.capacity != REIST_NVIDIA_GK208_DMA_POOL_BYTES ||
+        info.alignment != X86OS_DEVICE_DMA_DATA_OFFSET ||
+        info.direction != direction || info.reserved[0] != 0U ||
+        info.reserved[1] != 0U)
+        return -84;
+    driver->dma = resource.resource;
+    return 0;
+}
+
+static int dma_staging_self_test(nvidia_driver_t *driver) {
+    reist_nvidia_gk208_pushbuf_t commands;
+    reist_nvidia_gk208_submission_t submission;
+    reist_nvidia_gk208_dma_staging_t staging;
+    const reist_nvidia_gk208_surface_t surface = {
+        .gpu_address = 0x10000000ULL,
+        .width = 1024U,
+        .height = 768U,
+        .pitch = 4096U,
+    };
+    const reist_nvidia_gk208_rect_t rect = {8U, 8U, 16U, 16U};
+    const uint32_t fence_sequence = 1U;
+    int status = reist_nvidia_gk208_encode_fill(
+        &commands, &surface, &rect, 0x00010203U);
+    if (status == 0)
+        status = reist_nvidia_gk208_prepare_submission(
+            &submission, &commands,
+            REIST_NVIDIA_GK208_PUSHBUF_GPU_ADDRESS,
+            REIST_NVIDIA_GK208_FENCE_GPU_ADDRESS, fence_sequence);
+    if (status == 0)
+        status = reist_nvidia_gk208_prepare_dma_staging(
+            &staging, &submission, fence_sequence);
+    if (status != 0) return status;
+
+    const uint32_t zero_fence = 0U;
+    status = x86os_device_dma_write(driver->dma, staging.gpfifo_offset,
+        submission.gpfifo_entry, staging.gpfifo_bytes);
+    if (status == 0)
+        status = x86os_device_dma_write(driver->dma, staging.pushbuf_offset,
+            submission.words, staging.pushbuf_bytes);
+    if (status == 0)
+        status = x86os_device_dma_write(driver->dma, staging.fence_offset,
+            &zero_fence, staging.fence_bytes);
+    if (status != 0) return status;
+
+    uint32_t gpfifo_readback[REIST_NVIDIA_GK208_GPFIFO_ENTRY_WORDS];
+    uint32_t pushbuf_readback[REIST_NVIDIA_GK208_SUBMISSION_WORD_CAPACITY];
+    uint32_t fence_readback = UINT32_MAX;
+    bytes_zero(gpfifo_readback, sizeof(gpfifo_readback));
+    bytes_zero(pushbuf_readback, sizeof(pushbuf_readback));
+    status = x86os_device_dma_read(driver->dma, staging.gpfifo_offset,
+        gpfifo_readback, staging.gpfifo_bytes);
+    if (status == 0)
+        status = x86os_device_dma_read(driver->dma, staging.pushbuf_offset,
+            pushbuf_readback, staging.pushbuf_bytes);
+    if (status == 0)
+        status = x86os_device_dma_read(driver->dma, staging.fence_offset,
+            &fence_readback, staging.fence_bytes);
+    if (status != 0 || !bytes_equal(gpfifo_readback,
+            submission.gpfifo_entry, sizeof(gpfifo_readback)) ||
+        !bytes_equal(pushbuf_readback, submission.words,
+            sizeof(pushbuf_readback)) || fence_readback != zero_fence)
+        return status != 0 ? status : -84;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_DMA_STAGING | submission.word_count);
 }
 
 static int activate(nvidia_driver_t *driver) {
@@ -310,6 +408,10 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = engine_preflight(driver);
     if (status != 0) return status;
     status = command_contract_self_test(driver);
+    if (status != 0) return status;
+    status = open_dma_pool(driver);
+    if (status != 0) return status;
+    status = dma_staging_self_test(driver);
     if (status != 0) return status;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||

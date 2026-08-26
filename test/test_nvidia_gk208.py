@@ -45,6 +45,10 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("reist_nvidia_gk208_prepare_submission", source)
         self.assertIn("reist_nvidia_gk208_validate_submission", source)
         self.assertIn("submission->word_count << 10U", source)
+        self.assertIn("REIST_NVIDIA_GK208_DMA_POOL_BYTES", header)
+        self.assertIn("REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET", header)
+        self.assertIn("reist_nvidia_gk208_prepare_dma_staging", source)
+        self.assertIn("reist_nvidia_gk208_validate_dma_staging", source)
         self.assertNotIn("malloc", source)
 
     def test_profile_is_exact_and_irqless(self):
@@ -56,13 +60,15 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("device->subclass_code != DISPLAY_VGA_SUBCLASS", source)
         self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_IO", source)
         self.assertIn(
+            "backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208", source)
+        self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_DMA", source)
+        self.assertIn(
             "NVIDIA_BAR0_READABLE_BYTES (NVIDIA_PGRAPH_INTR + "
             "sizeof(uint32_t))", source)
         self.assertIn(
             ".readable_bytes = {NVIDIA_BAR0_READABLE_BYTES}", source)
         self.assertIn(".rule_count = 0U", source)
         self.assertIn("device_domain_install_region_policy", source)
-        self.assertNotIn("DEVICE_DOMAIN_PROFILE_MEDIATED_DMA", source)
 
     def test_kernel_only_admits_bar_geometry(self):
         source = (ROOT / "drivers/video/display_control.c").read_text(
@@ -96,7 +102,6 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("x86os_sleep_ms(NVIDIA_PREFLIGHT_DELAY_MS)", driver)
         self.assertIn("nvidia_gk208_timer_after", driver)
         self.assertNotIn("x86os_device_region_write", driver)
-        self.assertNotIn("x86os_device_bind_dma", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
         self.assertNotIn("X86OS_DEVICE_REGION_MAP_", driver)
         self.assertNotIn("X86OS_DEVICE_REGION_ACCESS_WRITE", driver)
@@ -110,10 +115,15 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn("response->status = -95", driver)
         self.assertIn("request->capabilities = 0U", display)
         self.assertIn("x86os_device_open_region", driver)
-        self.assertNotIn("x86os_device_bind_dma", driver)
+        self.assertIn("x86os_device_bind_dma_direction", driver)
+        self.assertIn("x86os_device_dma_write", driver)
+        self.assertIn("x86os_device_dma_read", driver)
         self.assertNotIn("x86os_device_bind_irq", driver)
+        self.assertNotIn("x86os_device_activate", driver)
+        self.assertNotIn("x86os_device_region_bind_dma", driver)
         self.assertIn("reist_nvidia_gk208_command_self_test", driver)
         self.assertIn("reist_nvidia_gk208_submission_self_test", driver)
+        self.assertIn("reist_nvidia_gk208_dma_staging_self_test", driver)
 
     def test_driver_is_supervised_and_deadlines_are_bounded(self):
         driver = (ROOT / "userspace/drivers/video/nvidia_gk208.c").read_text(

@@ -467,6 +467,68 @@ int reist_nvidia_gk208_validate_submission(
         submission->gpfifo_entry[1] == expected_entry1 ? 0 : -84;
 }
 
+static int dma_window_valid(uint32_t offset, uint32_t length) {
+    return offset >= REIST_NVIDIA_GK208_DMA_DESCRIPTOR_BYTES &&
+        length != 0U && offset < REIST_NVIDIA_GK208_DMA_POOL_BYTES &&
+        length <= REIST_NVIDIA_GK208_DMA_POOL_BYTES - offset;
+}
+
+static int dma_windows_overlap(uint32_t first_offset, uint32_t first_length,
+                               uint32_t second_offset,
+                               uint32_t second_length) {
+    return first_offset < second_offset + second_length &&
+        second_offset < first_offset + first_length;
+}
+
+int reist_nvidia_gk208_validate_dma_staging(
+    const reist_nvidia_gk208_dma_staging_t *staging,
+    const reist_nvidia_gk208_submission_t *submission,
+    uint32_t fence_sequence) {
+    if (staging == NULL || submission == NULL || fence_sequence == 0U ||
+        reist_nvidia_gk208_validate_submission(
+            submission, REIST_NVIDIA_GK208_PUSHBUF_GPU_ADDRESS,
+            REIST_NVIDIA_GK208_FENCE_GPU_ADDRESS, fence_sequence) != 0)
+        return -84;
+    if (staging->gpfifo_offset != REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET ||
+        staging->gpfifo_bytes != sizeof(submission->gpfifo_entry) ||
+        staging->pushbuf_offset != REIST_NVIDIA_GK208_DMA_PUSHBUF_OFFSET ||
+        staging->pushbuf_bytes != sizeof(submission->words) ||
+        staging->fence_offset != REIST_NVIDIA_GK208_DMA_FENCE_OFFSET ||
+        staging->fence_bytes != sizeof(uint32_t) ||
+        staging->fence_sequence != fence_sequence ||
+        staging->reserved != 0U)
+        return -84;
+    if (!dma_window_valid(staging->gpfifo_offset, staging->gpfifo_bytes) ||
+        !dma_window_valid(staging->pushbuf_offset, staging->pushbuf_bytes) ||
+        !dma_window_valid(staging->fence_offset, staging->fence_bytes) ||
+        dma_windows_overlap(staging->gpfifo_offset, staging->gpfifo_bytes,
+            staging->pushbuf_offset, staging->pushbuf_bytes) ||
+        dma_windows_overlap(staging->gpfifo_offset, staging->gpfifo_bytes,
+            staging->fence_offset, staging->fence_bytes) ||
+        dma_windows_overlap(staging->pushbuf_offset, staging->pushbuf_bytes,
+            staging->fence_offset, staging->fence_bytes))
+        return -84;
+    return 0;
+}
+
+int reist_nvidia_gk208_prepare_dma_staging(
+    reist_nvidia_gk208_dma_staging_t *staging,
+    const reist_nvidia_gk208_submission_t *submission,
+    uint32_t fence_sequence) {
+    if (staging == NULL) return -22;
+    *staging = (reist_nvidia_gk208_dma_staging_t){
+        .gpfifo_offset = REIST_NVIDIA_GK208_DMA_GPFIFO_OFFSET,
+        .gpfifo_bytes = sizeof(submission->gpfifo_entry),
+        .pushbuf_offset = REIST_NVIDIA_GK208_DMA_PUSHBUF_OFFSET,
+        .pushbuf_bytes = sizeof(submission->words),
+        .fence_offset = REIST_NVIDIA_GK208_DMA_FENCE_OFFSET,
+        .fence_bytes = sizeof(uint32_t),
+        .fence_sequence = fence_sequence,
+    };
+    return reist_nvidia_gk208_validate_dma_staging(
+        staging, submission, fence_sequence);
+}
+
 int reist_nvidia_gk208_command_self_test(void) {
     reist_nvidia_gk208_pushbuf_t pushbuf;
     const reist_nvidia_gk208_surface_t surface = {
@@ -510,4 +572,29 @@ int reist_nvidia_gk208_submission_self_test(void) {
     submission.gpfifo_entry[1] |= 1U << 8U;
     return reist_nvidia_gk208_validate_submission(
         &submission, push_address, fence_address, 1U) == -84 ? 0 : -84;
+}
+
+int reist_nvidia_gk208_dma_staging_self_test(void) {
+    reist_nvidia_gk208_pushbuf_t commands;
+    reist_nvidia_gk208_submission_t submission;
+    reist_nvidia_gk208_dma_staging_t staging;
+    const reist_nvidia_gk208_surface_t surface = {
+        .gpu_address = 0x10000000ULL,
+        .width = 1024U,
+        .height = 768U,
+        .pitch = 4096U,
+    };
+    const reist_nvidia_gk208_rect_t rect = {4U, 4U, 8U, 8U};
+    if (reist_nvidia_gk208_encode_fill(
+            &commands, &surface, &rect, 0x00010203U) != 0 ||
+        reist_nvidia_gk208_prepare_submission(
+            &submission, &commands,
+            REIST_NVIDIA_GK208_PUSHBUF_GPU_ADDRESS,
+            REIST_NVIDIA_GK208_FENCE_GPU_ADDRESS, 1U) != 0 ||
+        reist_nvidia_gk208_prepare_dma_staging(
+            &staging, &submission, 1U) != 0)
+        return -84;
+    staging.pushbuf_offset = staging.gpfifo_offset;
+    return reist_nvidia_gk208_validate_dma_staging(
+        &staging, &submission, 1U) == -84 ? 0 : -84;
 }
