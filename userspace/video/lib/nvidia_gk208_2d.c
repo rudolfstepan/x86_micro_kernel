@@ -9,6 +9,7 @@
  */
 #include "../include/reist/nvidia_gk208_2d.h"
 #include "nvidia_gk208_firmware_data.h"
+#include "nvidia_gk208_gr_tables.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -78,6 +79,14 @@ _Static_assert(REIST_NVIDIA_GK208_CHANNEL_ID <
                "GK208 fixed channel ID is outside the hardware range");
 _Static_assert(sizeof(reist_nvidia_gk208_gr_firmware_manifest_t) == 64U,
                "GK208 firmware manifest ABI must remain fixed");
+_Static_assert(sizeof(reist_nvidia_gk208_gr_plan_manifest_t) == 64U,
+               "GK208 GR plan manifest ABI must remain fixed");
+_Static_assert(REIST_GK208_GR_MMIO_PACK_COUNT ==
+                   REIST_NVIDIA_GK208_GR_MMIO_PACK_COUNT,
+               "GK208 MMIO pack count changed");
+_Static_assert(REIST_GK208_GR_CONTEXT_PACK_COUNT ==
+                   REIST_NVIDIA_GK208_GR_CONTEXT_PACK_COUNT,
+               "GK208 context pack count changed");
 _Static_assert(sizeof(gk208_grhub_data) / sizeof(gk208_grhub_data[0]) ==
                    REIST_NVIDIA_GK208_GR_FECS_DATA_WORDS,
                "GK208 FECS data image size changed");
@@ -1046,6 +1055,264 @@ int reist_nvidia_gk208_gr_firmware_self_test(void) {
         reist_nvidia_gk208_gr_firmware_word(
             REIST_NVIDIA_GK208_GR_COMPONENT_FECS,
             REIST_NVIDIA_GK208_GR_SECTION_DATA, 0U, NULL) != -22)
+        return -84;
+    return 0;
+}
+
+static uint32_t gr_table_crc32(
+    const reist_nvidia_gk208_gr_tuple_t *tuples, uint32_t tuple_count) {
+    uint32_t crc = UINT32_MAX;
+    for (uint32_t index = 0U; index < tuple_count; ++index) {
+        const uint32_t fields[4] = {
+            tuples[index].address, tuples[index].count,
+            tuples[index].pitch, tuples[index].value,
+        };
+        for (uint32_t field = 0U; field < 4U; ++field) {
+            for (uint32_t shift = 0U; shift < 32U; shift += 8U) {
+                crc ^= (fields[field] >> shift) & 0xFFU;
+                for (uint32_t bit = 0U; bit < 8U; ++bit) {
+                    const uint32_t mask = 0U - (crc & 1U);
+                    crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+                }
+            }
+        }
+    }
+    return ~crc;
+}
+
+static int gr_tuple_valid(const reist_nvidia_gk208_gr_tuple_t *tuple) {
+    if (tuple == NULL || tuple->count == 0U || tuple->count > 255U ||
+        (tuple->address & 3U) != 0U || tuple->pitch == 0U ||
+        (tuple->pitch & 3U) != 0U)
+        return 0;
+    const uint64_t last = (uint64_t)tuple->address +
+        (uint64_t)(tuple->count - 1U) * tuple->pitch;
+    return last <= 0x007FFFFCU;
+}
+
+int reist_nvidia_gk208_gr_plan_manifest(
+    reist_nvidia_gk208_gr_plan_manifest_t *manifest) {
+    if (manifest == NULL) return -22;
+    *manifest = (reist_nvidia_gk208_gr_plan_manifest_t){
+        .version = REIST_NVIDIA_GK208_GR_PLAN_VERSION,
+        .struct_size = sizeof(*manifest),
+        .mmio_pack_count = REIST_GK208_GR_MMIO_PACK_COUNT,
+        .mmio_tuple_count = REIST_GK208_GR_MMIO_TUPLE_COUNT,
+        .mmio_crc32 = REIST_GK208_GR_MMIO_CRC32,
+        .context_pack_count = REIST_GK208_GR_CONTEXT_PACK_COUNT,
+        .context_tuple_count = REIST_GK208_GR_CONTEXT_TUPLE_COUNT,
+        .context_crc32 = REIST_GK208_GR_CONTEXT_CRC32,
+        .hub_command_offset = 0x0040910CU,
+        .hub_command_value = 0x00000000U,
+        .hub_start_offset = 0x00409100U,
+        .hub_start_value = 0x00000002U,
+        .ready_offset = 0x00409800U,
+        .ready_mask = 0x80000000U,
+        .context_size_offset = 0x00409804U,
+        .ready_deadline_ms = 2000U,
+    };
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_mmio_tuple(
+    uint32_t pack, uint32_t index, reist_nvidia_gk208_gr_tuple_t *tuple) {
+    if (tuple == NULL) return -22;
+    if (pack >= REIST_GK208_GR_MMIO_PACK_COUNT) return -34;
+    const reist_nvidia_gk208_gr_span_t *span = &reist_gk208_gr_mmio_spans[pack];
+    if (index >= span->tuple_count) return -34;
+    *tuple = reist_gk208_gr_mmio[span->first_tuple + index];
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_context_tuple(
+    uint32_t pack, uint32_t index, reist_nvidia_gk208_gr_tuple_t *tuple) {
+    if (tuple == NULL) return -22;
+    if (pack >= REIST_GK208_GR_CONTEXT_PACK_COUNT) return -34;
+    const reist_nvidia_gk208_gr_context_span_t *span =
+        &reist_gk208_gr_context_spans[pack];
+    if (index >= span->tuple_count) return -34;
+    *tuple = reist_gk208_gr_context[span->first_tuple + index];
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_validate_topology(
+    const reist_nvidia_gk208_gr_topology_t *topology) {
+    if (topology == NULL) return -22;
+    if (topology->version != REIST_NVIDIA_GK208_GR_PLAN_VERSION ||
+        topology->struct_size != sizeof(*topology) ||
+        topology->gpc_count == 0U ||
+        topology->gpc_count > REIST_NVIDIA_GK208_MAX_GPCS ||
+        topology->rop_count == 0U ||
+        topology->rop_count > REIST_NVIDIA_GK208_MAX_ROPS ||
+        topology->tpc_total == 0U ||
+        topology->tpc_total > REIST_NVIDIA_GK208_MAX_TOTAL_TPCS ||
+        topology->tpc_max == 0U ||
+        topology->tpc_max > REIST_NVIDIA_GK208_MAX_TPCS_PER_GPC ||
+        topology->reserved[0] != 0U || topology->reserved[1] != 0U)
+        return -84;
+    uint32_t total = 0U;
+    uint32_t maximum = 0U;
+    for (uint32_t gpc = 0U; gpc < REIST_NVIDIA_GK208_MAX_GPCS; ++gpc) {
+        const uint32_t tpcs = topology->tpc_count[gpc];
+        const uint32_t mask = topology->ppc_tpc_mask[gpc];
+        if (gpc >= topology->gpc_count) {
+            if (tpcs != 0U || mask != 0U) return -84;
+            continue;
+        }
+        if (tpcs == 0U || tpcs > REIST_NVIDIA_GK208_MAX_TPCS_PER_GPC ||
+            mask == 0U || (mask >> tpcs) != 0U)
+            return -84;
+        uint32_t bits = 0U;
+        for (uint32_t value = mask; value != 0U; value >>= 1U)
+            bits += value & 1U;
+        if (bits != tpcs || total > REIST_NVIDIA_GK208_MAX_TOTAL_TPCS - tpcs)
+            return -84;
+        total += tpcs;
+        if (maximum < tpcs) maximum = tpcs;
+    }
+    return total == topology->tpc_total && maximum == topology->tpc_max
+        ? 0 : -84;
+}
+
+static int gr_context_emit(reist_nvidia_gk208_gr_context_plan_t *plan,
+                           uint32_t address, uint32_t transfer_count) {
+    if (transfer_count == 0U || transfer_count > 32U ||
+        address > 0x03FFFFFFU ||
+        plan->word_count >= REIST_NVIDIA_GK208_GR_CONTEXT_TRANSFER_CAPACITY)
+        return -84;
+    plan->words[plan->word_count++] =
+        ((transfer_count - 1U) << 26U) | address;
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_compile_context_plan(
+    reist_nvidia_gk208_gr_context_plan_t *plan) {
+    if (plan == NULL) return -22;
+    plan->version = REIST_NVIDIA_GK208_GR_PLAN_VERSION;
+    plan->struct_size = sizeof(*plan);
+    plan->word_count = 0U;
+    for (uint32_t group = 0U;
+         group < REIST_GK208_GR_CONTEXT_PACK_COUNT; ++group) {
+        const reist_nvidia_gk208_gr_context_span_t *span =
+            &reist_gk208_gr_context_spans[group];
+        uint32_t start = 0U;
+        uint32_t previous = UINT32_MAX;
+        uint32_t transfers = 0U;
+        plan->group_first[group] = plan->word_count;
+        for (uint32_t index = 0U; index < span->tuple_count; ++index) {
+            const reist_nvidia_gk208_gr_tuple_t *tuple =
+                &reist_gk208_gr_context[span->first_tuple + index];
+            if (!gr_tuple_valid(tuple) || tuple->address < span->register_base)
+                return -84;
+            uint32_t head = tuple->address - span->register_base;
+            for (uint32_t item = 0U; item < tuple->count; ++item) {
+                if (head != previous + 4U || transfers >= 32U) {
+                    if (transfers != 0U &&
+                        gr_context_emit(plan, start, transfers) != 0)
+                        return -84;
+                    start = head;
+                    transfers = 0U;
+                }
+                previous = head;
+                ++transfers;
+                if (item + 1U < tuple->count &&
+                    head > UINT32_MAX - tuple->pitch)
+                    return -84;
+                head += tuple->pitch;
+            }
+        }
+        if (gr_context_emit(plan, start, transfers) != 0) return -84;
+        plan->group_count[group] =
+            plan->word_count - plan->group_first[group];
+    }
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_validate_context_plan(
+    const reist_nvidia_gk208_gr_context_plan_t *plan) {
+    if (plan == NULL) return -22;
+    if (plan->version != REIST_NVIDIA_GK208_GR_PLAN_VERSION ||
+        plan->struct_size != sizeof(*plan) || plan->word_count == 0U ||
+        plan->word_count > REIST_NVIDIA_GK208_GR_CONTEXT_TRANSFER_CAPACITY)
+        return -84;
+    reist_nvidia_gk208_gr_context_plan_t expected;
+    if (reist_nvidia_gk208_gr_compile_context_plan(&expected) != 0 ||
+        expected.word_count != plan->word_count)
+        return -84;
+    for (uint32_t group = 0U;
+         group < REIST_NVIDIA_GK208_GR_CONTEXT_PACK_COUNT; ++group)
+        if (expected.group_first[group] != plan->group_first[group] ||
+            expected.group_count[group] != plan->group_count[group])
+            return -84;
+    for (uint32_t index = 0U; index < plan->word_count; ++index)
+        if (expected.words[index] != plan->words[index]) return -84;
+    return 0;
+}
+
+int reist_nvidia_gk208_gr_plan_self_test(void) {
+    reist_nvidia_gk208_gr_plan_manifest_t manifest;
+    if (reist_nvidia_gk208_gr_plan_manifest(&manifest) != 0 ||
+        manifest.version != REIST_NVIDIA_GK208_GR_PLAN_VERSION ||
+        manifest.struct_size != sizeof(manifest) ||
+        manifest.mmio_pack_count != REIST_GK208_GR_MMIO_PACK_COUNT ||
+        manifest.mmio_tuple_count != REIST_GK208_GR_MMIO_TUPLE_COUNT ||
+        manifest.context_pack_count != REIST_GK208_GR_CONTEXT_PACK_COUNT ||
+        manifest.context_tuple_count != REIST_GK208_GR_CONTEXT_TUPLE_COUNT ||
+        gr_table_crc32(reist_gk208_gr_mmio,
+            REIST_GK208_GR_MMIO_TUPLE_COUNT) != manifest.mmio_crc32 ||
+        gr_table_crc32(reist_gk208_gr_context,
+            REIST_GK208_GR_CONTEXT_TUPLE_COUNT) != manifest.context_crc32 ||
+        manifest.hub_command_offset != 0x0040910CU ||
+        manifest.hub_command_value != 0U ||
+        manifest.hub_start_offset != 0x00409100U ||
+        manifest.hub_start_value != 2U ||
+        manifest.ready_offset != 0x00409800U ||
+        manifest.ready_mask != 0x80000000U ||
+        manifest.context_size_offset != 0x00409804U ||
+        manifest.ready_deadline_ms != 2000U)
+        return -84;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_MMIO_TUPLE_COUNT;
+         ++index)
+        if (!gr_tuple_valid(&reist_gk208_gr_mmio[index])) return -84;
+    for (uint32_t index = 0U; index < REIST_GK208_GR_CONTEXT_TUPLE_COUNT;
+         ++index)
+        if (!gr_tuple_valid(&reist_gk208_gr_context[index])) return -84;
+
+    reist_nvidia_gk208_gr_context_plan_t plan;
+    if (reist_nvidia_gk208_gr_compile_context_plan(&plan) != 0 ||
+        reist_nvidia_gk208_gr_validate_context_plan(&plan) != 0)
+        return -84;
+    reist_nvidia_gk208_gr_tuple_t tuple;
+    if (reist_nvidia_gk208_gr_mmio_tuple(0U, 0U, &tuple) != 0 ||
+        tuple.address != 0x00400080U ||
+        reist_nvidia_gk208_gr_context_tuple(0U, 0U, &tuple) != 0 ||
+        tuple.address != 0x00400204U ||
+        reist_nvidia_gk208_gr_mmio_tuple(
+            REIST_GK208_GR_MMIO_PACK_COUNT, 0U, &tuple) != -34 ||
+        reist_nvidia_gk208_gr_context_tuple(0U,
+            reist_gk208_gr_context_spans[0].tuple_count, &tuple) != -34)
+        return -84;
+
+    reist_nvidia_gk208_gr_topology_t topology;
+    topology.version = REIST_NVIDIA_GK208_GR_PLAN_VERSION;
+    topology.struct_size = sizeof(topology);
+    topology.gpc_count = 1U;
+    topology.rop_count = 2U;
+    topology.tpc_total = 2U;
+    topology.tpc_max = 2U;
+    for (uint32_t index = 0U; index < REIST_NVIDIA_GK208_MAX_GPCS;
+         ++index) {
+        topology.tpc_count[index] = 0U;
+        topology.ppc_tpc_mask[index] = 0U;
+    }
+    topology.tpc_count[0] = 2U;
+    topology.ppc_tpc_mask[0] = 3U;
+    topology.reserved[0] = 0U;
+    topology.reserved[1] = 0U;
+    if (reist_nvidia_gk208_gr_validate_topology(&topology) != 0)
+        return -84;
+    topology.ppc_tpc_mask[0] = 1U;
+    if (reist_nvidia_gk208_gr_validate_topology(&topology) != -84)
         return -84;
     return 0;
 }

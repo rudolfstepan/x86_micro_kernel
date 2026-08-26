@@ -73,6 +73,19 @@
 #define REIST_NVIDIA_GK208_GR_GPCCS_DATA_CRC32 0xF7976F94U
 #define REIST_NVIDIA_GK208_GR_GPCCS_CODE_CRC32 0xF70A347FU
 #define REIST_NVIDIA_GK208_GR_FIRMWARE_TOTAL_WORDS 1244U
+#define REIST_NVIDIA_GK208_GR_PLAN_VERSION 1U
+#define REIST_NVIDIA_GK208_GR_MMIO_PACK_COUNT 30U
+#define REIST_NVIDIA_GK208_GR_CONTEXT_PACK_COUNT 5U
+#define REIST_NVIDIA_GK208_GR_CONTEXT_TRANSFER_CAPACITY 256U
+#define REIST_NVIDIA_GK208_MAX_GPCS 32U
+#define REIST_NVIDIA_GK208_MAX_TPCS_PER_GPC 8U
+#define REIST_NVIDIA_GK208_MAX_TOTAL_TPCS 32U
+#define REIST_NVIDIA_GK208_MAX_ROPS 31U
+#define REIST_NVIDIA_GK208_GPC_UNIT_BASE 0x00500000U
+#define REIST_NVIDIA_GK208_GPC_UNIT_STRIDE 0x00008000U
+#define REIST_NVIDIA_GK208_GPC_TPC_COUNT_OFFSET 0x00002608U
+#define REIST_NVIDIA_GK208_GPC_PPC_MASK_OFFSET 0x00000C30U
+#define REIST_NVIDIA_GK208_BAR0_TOPOLOGY_BYTES 0x005FA60CU
 
 enum {
     REIST_NVIDIA_GK208_GR_COMPONENT_FECS = 1U,
@@ -181,6 +194,66 @@ typedef struct {
     uint32_t reserved[5];
 } reist_nvidia_gk208_gr_firmware_manifest_t;
 
+typedef struct {
+    uint32_t address;
+    uint32_t count;
+    uint32_t pitch;
+    uint32_t value;
+} reist_nvidia_gk208_gr_tuple_t;
+
+typedef struct {
+    uint32_t first_tuple;
+    uint32_t tuple_count;
+} reist_nvidia_gk208_gr_span_t;
+
+typedef struct {
+    uint32_t first_tuple;
+    uint32_t tuple_count;
+    uint32_t falcon_base;
+    uint32_t starstar;
+    uint32_t register_base;
+} reist_nvidia_gk208_gr_context_span_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t gpc_count;
+    uint32_t rop_count;
+    uint32_t tpc_total;
+    uint32_t tpc_max;
+    uint32_t tpc_count[REIST_NVIDIA_GK208_MAX_GPCS];
+    uint32_t ppc_tpc_mask[REIST_NVIDIA_GK208_MAX_GPCS];
+    uint32_t reserved[2];
+} reist_nvidia_gk208_gr_topology_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t mmio_pack_count;
+    uint32_t mmio_tuple_count;
+    uint32_t mmio_crc32;
+    uint32_t context_pack_count;
+    uint32_t context_tuple_count;
+    uint32_t context_crc32;
+    uint32_t hub_command_offset;
+    uint32_t hub_command_value;
+    uint32_t hub_start_offset;
+    uint32_t hub_start_value;
+    uint32_t ready_offset;
+    uint32_t ready_mask;
+    uint32_t context_size_offset;
+    uint32_t ready_deadline_ms;
+} reist_nvidia_gk208_gr_plan_manifest_t;
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t word_count;
+    uint32_t group_first[REIST_NVIDIA_GK208_GR_CONTEXT_PACK_COUNT];
+    uint32_t group_count[REIST_NVIDIA_GK208_GR_CONTEXT_PACK_COUNT];
+    uint32_t words[REIST_NVIDIA_GK208_GR_CONTEXT_TRANSFER_CAPACITY];
+} reist_nvidia_gk208_gr_context_plan_t;
+
 int reist_nvidia_gk208_encode_fill(
     reist_nvidia_gk208_pushbuf_t *pushbuf,
     const reist_nvidia_gk208_surface_t *surface,
@@ -223,11 +296,24 @@ int reist_nvidia_gk208_gr_firmware_manifest(
 int reist_nvidia_gk208_gr_firmware_word(
     uint32_t component, uint32_t section, uint32_t index,
     uint32_t *word_out);
+int reist_nvidia_gk208_gr_plan_manifest(
+    reist_nvidia_gk208_gr_plan_manifest_t *manifest);
+int reist_nvidia_gk208_gr_mmio_tuple(
+    uint32_t pack, uint32_t index, reist_nvidia_gk208_gr_tuple_t *tuple);
+int reist_nvidia_gk208_gr_context_tuple(
+    uint32_t pack, uint32_t index, reist_nvidia_gk208_gr_tuple_t *tuple);
+int reist_nvidia_gk208_gr_validate_topology(
+    const reist_nvidia_gk208_gr_topology_t *topology);
+int reist_nvidia_gk208_gr_compile_context_plan(
+    reist_nvidia_gk208_gr_context_plan_t *plan);
+int reist_nvidia_gk208_gr_validate_context_plan(
+    const reist_nvidia_gk208_gr_context_plan_t *plan);
 int reist_nvidia_gk208_command_self_test(void);
 int reist_nvidia_gk208_submission_self_test(void);
 int reist_nvidia_gk208_dma_staging_self_test(void);
 int reist_nvidia_gk208_channel_image_self_test(void);
 int reist_nvidia_gk208_vm_plan_self_test(void);
 int reist_nvidia_gk208_gr_firmware_self_test(void);
+int reist_nvidia_gk208_gr_plan_self_test(void);
 
 #endif

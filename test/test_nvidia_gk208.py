@@ -126,8 +126,8 @@ class NvidiaGk208BringupTests(unittest.TestCase):
             "backend == VIDEO_DEVICE_BACKEND_NVIDIA_GK208", source)
         self.assertIn("DEVICE_DOMAIN_PROFILE_MEDIATED_DMA", source)
         self.assertIn("DEVICE_DOMAIN_PROFILE_LARGE_DMA_POOL", source)
-        self.assertIn("NVIDIA_GPCCS_DMEMD 0x41A1C4U", source)
-        self.assertIn("(NVIDIA_GPCCS_DMEMD + sizeof(uint32_t))", source)
+        self.assertIn("NVIDIA_GPC31_TPC_COUNT 0x005FA608U", source)
+        self.assertIn("(NVIDIA_GPC31_TPC_COUNT + sizeof(uint32_t))", source)
         self.assertIn(
             ".readable_bytes = {NVIDIA_BAR0_READABLE_BYTES}", source)
         self.assertIn(".rule_count = 0U", source)
@@ -155,6 +155,59 @@ class NvidiaGk208BringupTests(unittest.TestCase):
         self.assertIn(".value = NVIDIA_FB_PAGE_MODE_MASK", page_mode)
         self.assertIn(".policy_id = 17U", page_mode)
         self.assertIn(".value = 0U", page_mode)
+
+    def test_gr_plan_tables_topology_and_start_contract_are_complete(self):
+        generator = (ROOT /
+            "scripts/generate_nvidia_gk208_gr_tables.py").read_text(
+                encoding="utf-8")
+        data = (ROOT /
+            "userspace/video/lib/nvidia_gk208_gr_tables.h").read_text(
+                encoding="utf-8")
+        header = (ROOT /
+            "userspace/video/include/reist/nvidia_gk208_2d.h").read_text(
+                encoding="utf-8")
+        library = (ROOT /
+            "userspace/video/lib/nvidia_gk208_2d.c").read_text(
+                encoding="utf-8")
+        driver = (ROOT /
+            "userspace/drivers/video/nvidia_gk208.c").read_text(
+                encoding="utf-8")
+        pinned = "45c13f3f9e3bb15fd89ff2864c6f627a3b4b4229"
+        self.assertIn(pinned, generator)
+        self.assertIn(pinned, data)
+        self.assertIn("Source arrays are MIT licensed", data)
+        self.assertIn("REIST_GK208_GR_MMIO_TUPLE_COUNT 115U", data)
+        self.assertIn("REIST_GK208_GR_MMIO_PACK_COUNT 30U", data)
+        self.assertIn("REIST_GK208_GR_MMIO_CRC32 0xDB583025U", data)
+        self.assertIn("REIST_GK208_GR_CONTEXT_TUPLE_COUNT 199U", data)
+        self.assertIn("REIST_GK208_GR_CONTEXT_PACK_COUNT 5U", data)
+        self.assertIn("REIST_GK208_GR_CONTEXT_CRC32 0xB765ADF0U", data)
+        self.assertEqual(data.count("gk208_gr_init_main_0"), 2)
+        for pack in ("HUB", "GPC0", "GPC1", "TPC", "PPC"):
+            self.assertIn(f"/* {pack} */", data)
+        self.assertIn("MMIO_PACK = (", generator)
+        self.assertIn("CONTEXT_PACKS = (", generator)
+        self.assertIn("tuple(actual_mmio or ()) != MMIO_PACK", generator)
+        self.assertIn("REIST_NVIDIA_GK208_BAR0_TOPOLOGY_BYTES 0x005FA60CU",
+                      header)
+        self.assertIn("REIST_NVIDIA_GK208_MAX_GPCS 32U", header)
+        self.assertIn("reist_nvidia_gk208_gr_validate_topology", library)
+        self.assertIn("reist_nvidia_gk208_gr_compile_context_plan", library)
+        self.assertIn("transfers >= 32U", library)
+        self.assertIn("((transfer_count - 1U) << 26U) | address", library)
+        self.assertIn("hub_start_offset = 0x00409100U", library)
+        self.assertIn("ready_mask = 0x80000000U", library)
+        self.assertIn("ready_deadline_ms = 2000U", library)
+        self.assertIn("NVIDIA_GR_TOPOLOGY 0x409604U", driver)
+        self.assertIn("gr_plan_contract_self_test", driver)
+        self.assertIn("NVIDIA_DIAGNOSTIC_GR_PLAN", driver)
+        self.assertLess(driver.index("gr_plan_contract_self_test(driver)"),
+                        driver.index("open_dma_pool(driver)"))
+        self.assertNotIn("x86os_device_region_write", driver)
+        plan = library[library.index(
+            "int reist_nvidia_gk208_gr_plan_manifest") :]
+        self.assertNotIn("x86os_", plan)
+        self.assertNotIn("volatile", plan)
 
     def test_kernel_only_admits_bar_geometry(self):
         source = (ROOT / "drivers/video/display_control.c").read_text(

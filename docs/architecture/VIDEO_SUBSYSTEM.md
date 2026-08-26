@@ -85,8 +85,9 @@ Turing, while GK208 is Kepler.  Register terminology therefore follows the
 upstream Nouveau/Envytools model.
 
 The first native gate is deliberately passive.  The generic device-domain
-mediator clips the physical 16-MiB BAR0 to an immutable `0x41a1c8`-byte
-read-only aperture, extended by `R2.2p` only through the GPCCS DMEM port. The
+mediator clips the physical 16-MiB BAR0 to an immutable `0x5fa60c`-byte
+read-only aperture. `R2.2q` extends the earlier GPCCS-DMEM boundary only far
+enough to read `GPC_UNIT(31, 0x2608)` for a fixed-capacity topology snapshot. The
 supervised Ring-3 driver reads PMC identity/enable,
 the free-running PTIMER and PFIFO/PGRAPH interrupt state through aligned
 32-bit Device-Control operations.  Its region descriptor grants no mapping
@@ -232,6 +233,22 @@ volatile upload and then restores command 20's page mode; an unverified reset
 remains fenced and retryable. The next package must compile the complete
 topology-dependent MMIO and context-switch lists before it may start FECS or
 publish any channel state.
+
+`R2.2q` freezes that complete hardware-inactive GR plan in one package. A
+deterministic generator consumes the MIT-licensed Nouveau files at the same
+pinned Linux commit and checks in all 30 ordered GK208 static MMIO packs (115
+tuples) plus the exact HUB, GPC0, GPC1, TPC and PPC context-switch packs (199
+tuples). Pack boundaries, tuple counts and IEEE CRC32 values are immutable.
+Ring 3 reads `0x409604` and one TPC-count/PPC-mask pair per reported GPC through
+the read-only aperture, then rejects zero, overflowing or cross-field-
+inconsistent topologies. A fixed-storage compiler reproduces Nouveau's
+maximum-32 contiguous-register coalescing for all five Falcon transfer lists.
+The manifest also records the future HUB start writes at `0x40910c` and
+`0x409100`, readiness bit `0x80000000` at `0x409800`, context-size readback at
+`0x409804` and the bounded 2000-ms reference deadline. This package executes
+none of those writes or transfers. Full topology-dependent dynamic register
+initialization, rollback-capable mediated execution, Falcon start, channel
+publication and a real fence remain prerequisites for capability publication.
 
 QEMU and VMware cannot emulate GK208.  Automated gates therefore cover source
 contracts, driver lifecycle, both channel and GPU-VM layouts and non-regression of the

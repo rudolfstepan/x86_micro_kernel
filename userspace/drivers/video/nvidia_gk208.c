@@ -31,15 +31,15 @@
 #define NVIDIA_DIAGNOSTIC_GR_FIRMWARE 0x4E5E0000U
 #define NVIDIA_DIAGNOSTIC_GR_FIRMWARE_STAGED 0x4E5F0000U
 #define NVIDIA_DIAGNOSTIC_GR_FIRMWARE_UPLOADED 0x4E600000U
+#define NVIDIA_DIAGNOSTIC_GR_PLAN 0x4E610000U
 #define NVIDIA_PMC_BOOT_0 0x000000U
 #define NVIDIA_PMC_ENABLE 0x000200U
 #define NVIDIA_PFIFO_INTR 0x002100U
 #define NVIDIA_PTIMER_TIME_0 0x009400U
 #define NVIDIA_PTIMER_TIME_1 0x009410U
 #define NVIDIA_PGRAPH_INTR 0x400100U
-#define NVIDIA_GPCCS_DMEMD 0x41A1C4U
-#define NVIDIA_BAR0_READABLE_BYTES \
-    (NVIDIA_GPCCS_DMEMD + sizeof(uint32_t))
+#define NVIDIA_GR_TOPOLOGY 0x409604U
+#define NVIDIA_BAR0_READABLE_BYTES REIST_NVIDIA_GK208_BAR0_TOPOLOGY_BYTES
 #define NVIDIA_PROBE_COHERENCE_ATTEMPTS 4U
 
 typedef struct {
@@ -235,6 +235,46 @@ static int gr_firmware_contract_self_test(nvidia_driver_t *driver) {
     return x86os_device_driver_report(
         &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
         NVIDIA_DIAGNOSTIC_GR_FIRMWARE | manifest.total_words);
+}
+
+static int gr_plan_contract_self_test(nvidia_driver_t *driver) {
+    reist_nvidia_gk208_gr_topology_t topology;
+    bytes_zero(&topology, sizeof(topology));
+    topology.version = REIST_NVIDIA_GK208_GR_PLAN_VERSION;
+    topology.struct_size = sizeof(topology);
+    uint32_t summary = 0U;
+    int status = register_read32(driver, NVIDIA_GR_TOPOLOGY, &summary);
+    if (status != 0) return status;
+    topology.gpc_count = summary & 0x1FU;
+    topology.rop_count = (summary >> 16U) & 0x1FU;
+    if (topology.gpc_count == 0U ||
+        topology.gpc_count > REIST_NVIDIA_GK208_MAX_GPCS)
+        return -84;
+    for (uint32_t gpc = 0U; gpc < topology.gpc_count; ++gpc) {
+        const uint32_t base = REIST_NVIDIA_GK208_GPC_UNIT_BASE +
+            gpc * REIST_NVIDIA_GK208_GPC_UNIT_STRIDE;
+        status = register_read32(driver,
+            base + REIST_NVIDIA_GK208_GPC_TPC_COUNT_OFFSET,
+            &topology.tpc_count[gpc]);
+        if (status == 0)
+            status = register_read32(driver,
+                base + REIST_NVIDIA_GK208_GPC_PPC_MASK_OFFSET,
+                &topology.ppc_tpc_mask[gpc]);
+        if (status != 0) return status;
+        if (topology.tpc_total > UINT32_MAX - topology.tpc_count[gpc])
+            return -84;
+        topology.tpc_total += topology.tpc_count[gpc];
+        if (topology.tpc_max < topology.tpc_count[gpc])
+            topology.tpc_max = topology.tpc_count[gpc];
+    }
+    status = reist_nvidia_gk208_gr_validate_topology(&topology);
+    if (status == 0) status = reist_nvidia_gk208_gr_plan_self_test();
+    if (status != 0) return status;
+    return x86os_device_driver_report(
+        &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
+        NVIDIA_DIAGNOSTIC_GR_PLAN |
+            ((topology.gpc_count & 0xFFU) << 8U) |
+            (topology.tpc_total & 0xFFU));
 }
 
 static int open_dma_pool(nvidia_driver_t *driver) {
@@ -615,6 +655,8 @@ static int driver_initialize(nvidia_driver_t *driver) {
     status = command_contract_self_test(driver);
     if (status != 0) return status;
     status = gr_firmware_contract_self_test(driver);
+    if (status != 0) return status;
+    status = gr_plan_contract_self_test(driver);
     if (status != 0) return status;
     status = open_dma_pool(driver);
     if (status != 0) return status;

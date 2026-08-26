@@ -28,8 +28,9 @@ NVIDIA-Capabilities null und VBE verbindlich.
 `R2.2h-nvidia-ring3-register-probe` beseitigt dabei die verbliebene direkte
 NVIDIA-Registerprobe aus Ring 0. Der generische Device-Domain-Mediator clippt
 den 16-MiB-BAR vor dem Mapping auf die unveränderliche read-only Apertur
-zunächst `0x400104`; `R2.2p` erweitert sie read-only bis zum GPCCS-DMEM-Port
-auf `0x41a1c8`. Der überwachte Treiber liest PMC, PTIMER, PFIFO und PGRAPH nun
+zunächst `0x400104`; `R2.2p` erweiterte sie bis zum GPCCS-DMEM-Port und
+`R2.2q` read-only bis `0x5fa60c` für den vollständigen, auf 32 GPCs begrenzten
+Topologie-Snapshot. Der überwachte Treiber liest PMC, PTIMER, PFIFO und PGRAPH nun
 selbst mit generationsgebundenem Handle. PTIMER-Kohärenz ist auf vier
 high-low-high-Versuche begrenzt. Schreib-, Mapping-, DMA-, IRQ-, Busmaster-
 und Beschleunigungsrechte bleiben ausgeschlossen.
@@ -110,6 +111,17 @@ danach den Page-Mode wieder her; nicht bestätigte Bereinigung bleibt
 wiederholbar gesperrt. Offen sind nun die vollständigen topologyabhängigen
 MMIO-/Context-Switch-Listen, Falcon-Start, Channel-Bind, Runlist, USERD, IRQ,
 echter Fence und Capabilityfreigabe.
+`R2.2q-nvidia-gk208-gr-plan` bündelt die gesamte sichere Planvorstufe. Aus dem
+bereits gepinnten MIT-lizenzierten Nouveau-Stand werden reproduzierbar alle 30
+geordneten GK208-MMIO-Pakete mit 115 Tupeln und die fünf FECS/GPCCS-
+Kontextstreams mit 199 Tupeln erzeugt und durch feste CRC32-Werte geschützt.
+Ring 3 liest GPC-/ROP-Anzahl sowie je aktivem GPC TPC-Anzahl und PPC-Maske,
+validiert Summen und Architekturgrenzen und erzeugt die maximal 32 Register
+langen Transfergruppen in festem Speicher. Der spätere HUB-Start- und
+Readiness-Ablauf ist als 64-Byte-Manifest eingefroren, wird aber noch nicht
+ausgeführt. Offen bleiben die dynamischen topologieabhängigen Registerwerte,
+deren rollback-fähige Kernelmediation, Falcon-Start, Channel-/Runlist-Bind,
+USERD-Kick, IRQ, echter Fence und Capabilityfreigabe.
 Der im ersten ASUS-Lauf beobachtete Fehler `SVGA2D-Service status=-19` ist im
 Folgepaket `R2.2a-nvidia-vbe-fallback` behoben: Ein fehlender oder noch nicht
 bereiter Beschleunigungsdienst löst jetzt eine ausdrückliche VBE-Reaktivierung

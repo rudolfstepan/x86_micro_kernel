@@ -102,8 +102,9 @@ Zugriffsbereich. Das unveränderliche Geräteprofil berechnet je Region die
 kleinste Apertur aus Leselimit und exakten Schreibregeln; nur diese Apertur
 wird vorbereitet und im generationgebundenen Ressourcenobjekt publiziert.
 Sie ist zusätzlich auf 8 MiB begrenzt und muss vollständig in der physischen
-BAR-Länge liegen. Das GK208-Profil nutzt davon `0x400104` Byte read-only und
-keine Schreibregel. Seit `R2.2j` darf dieses exakte Profil zusätzlich einen
+BAR-Länge liegen. Das GK208-Profil nutzt seit `R2.2q` davon `0x5fa60c` Byte
+read-only für die feste PMC/PTIMER/PFIFO/PGRAPH- und GPC-Topologieprobe und
+weiterhin keine Schreibregel. Seit `R2.2j` darf dieses exakte Profil zusätzlich einen
 kernelverwalteten mediated-DMA-Pool ausschließlich zum Staging binden. Ein
 reines `MEDIATED_IO`-Profil wird beim DMA-Bind vor Ressourcenallokation mit
 `ENOTSUP` abgewiesen. Ein Describe-only-Deskriptor, eine bekannte BAR-Basis

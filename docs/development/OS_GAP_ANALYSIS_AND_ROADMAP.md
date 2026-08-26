@@ -2300,8 +2300,10 @@ Das abgeschlossene `R2.2h` verschiebt anschließend auch die passive
 Registerprobe aus `display_control` in den überwachten Ring-3-Treiber. Der
 generische Device-Domain-Pfad darf große physische BARs nur als auf höchstens
 8 MiB geclippte Policy-Apertur vorbereiten; für GK208 waren zunächst exakt
-`0x400104` Byte von BAR0 lesbar. `R2.2p` erweitert das unverändert read-only
-Fenster bis `0x41a1c8` für den GPCCS-DMEM-Port. Keine Schreibregeln sind
+`0x400104` Byte von BAR0 lesbar. `R2.2p` erweiterte das unverändert read-only
+Fenster bis `0x41a1c8` für den GPCCS-DMEM-Port; `R2.2q` erweitert es bis
+`0x5fa60c`, damit der überwachte Treiber höchstens 32 upstream-`GPC_UNIT`-
+Topologieeinträge lesen kann. Keine Schreibregeln sind
 installiert. Alle Registerreads
 sind ausgerichtet und generationgebunden, PTIMER-Kohärenz ist auf vier
 Versuche begrenzt. Mapping-, DMA-, IRQ-, Busmaster- und Capabilityrechte
@@ -2375,10 +2377,17 @@ beendetes Falcon-Scrubbing, lädt DMEM/IMEM samt Block-Tags und liest jedes Wort
 zurück. Cleanup deaktiviert Busmaster, resettiert den Upload und stellt danach
 den Page-Mode wieder her. FECS und GPCCS bleiben bewusst angehalten, weil die
 geprüfte Nouveau-Reihenfolge zuvor die vollständigen topologyabhängigen GR-
-MMIO- und Context-Switch-Listen verlangt. Diese Listen, ihr rückrollbarer
-kernelmediierter Commit, Falcon-Start und deadlinebegrenzte Readiness bilden
-den nächsten gemeinsamen Slice; Channel-Bind, Runlist und USERD folgen erst
-danach.
+MMIO- und Context-Switch-Listen verlangt. `R2.2q` friert diese statische
+Planbasis nun als einen gemeinsamen Slice ein: Ein reproduzierbarer Generator
+übernimmt aus demselben gepinnten MIT-lizenzierten Nouveau-Stand exakt 30
+MMIO-Pakete mit 115 Tupeln und fünf Kontextstreams mit 199 Tupeln. Feste
+Counts/CRCs, eine begrenzte GPC/ROP/TPC/PPC-Topologievalidierung und der
+maximal 32 Register umfassende Kontexttransfer-Compiler laufen vollständig in
+Ring 3. Auch HUB-Start, Readiness-Maske, Kontextgrößen-Readback und 2000-ms-
+Referenzdeadline sind manifestiert, werden aber noch nicht ausgeführt. Als
+nächster gemeinsamer Slice bleiben die dynamischen topologieabhängigen Werte,
+ihr rückrollbarer kernelmediierter Commit, Falcon-Start und Readiness;
+Channel-Bind, Runlist und USERD folgen erst danach.
 
 S0.6c hat die ausdrücklich begrenzte automatisierte QEMU/VMware-
 Forschungsbaseline abgeschlossen. Das externe Profil bleibt `unbound`; reale

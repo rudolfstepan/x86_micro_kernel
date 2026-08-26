@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2q-nvidia-gk208-gr-plan"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R2.2q-nvidia-gk208-gr-plan"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Freeze the complete bounded GK208 pre-start GR plan"
@@ -30,6 +30,7 @@ allowed_files = [
   "test/test_nvidia_gk208_2d_host.c",
   "test/test_nvidia_gk208.py",
   "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
   "docs/architecture/VIDEO_SUBSYSTEM.md",
   "docs/development/PROJECT_STATUS.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
@@ -63,7 +64,13 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "video: freeze bounded GK208 GR init plan"
-evidence = []
+evidence = [
+  "Device-domain source and host lifecycle contract passed 10 tests",
+  "NVIDIA GK208 source and host GR-plan contract passed 14 tests after correcting two test-only upstream tuple assumptions",
+  "VMware SVGA-II DMA-free non-regression contract passed 14 tests",
+  "QEMU framebuffer package passed in 4 seconds after removing compiler-emitted freestanding memcpy and memset intrinsics from large local structures",
+  "VMware framebuffer package passed in 26 seconds"
+]
 
 [[packages]]
 id = "R2.2p-nvidia-gk208-falcon-upload"
