@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R2.2w-nvidia-gk208-golden-context-execution"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,61 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R2.2w-nvidia-gk208-golden-context-execution"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Execute and retain the GK208 golden context"
+scope = "Append Device-Control command 25 as the single kernel-mediated GK208 golden-context transaction after commands 23 and 24. Ring 0 independently rebuilds the pinned topology-bound plan and compiles its own immutable copies of the exact GK208 context, ICMD and class-bound method tables. It allocates a non-overlapping temporary VRAM-only instance, PGD and small-page table after the existing pagepool, bundle, attribute and golden reservations, zeroes every temporary buffer, installs only VRAM PTEs, invalidates the temporary PDB, executes the Nouveau-compatible FE power/reset, SCC, context-pack, global-buffer, floorsweep, ICMD, method, post-context, FECS bind and golden-save sequence under one monotonic deadline, clears the temporary instance binding and retains the saved context image in the opaque golden reservation. Every partial failure clears temporary mappings and state through the existing GR reset rollback before retry or fencing. The fixed result exposes readiness, counts and context size but no BAR, VRAM, GPU or physical address. Channel activation, runlist, USERD, PCI bus mastering, IRQ, normal command submission, fence and acceleration capability publication remain disabled."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/device_domain.h",
+  "kernel/init/device_domain.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "userspace/drivers/video/nvidia_gk208.c",
+  "userspace/video/lib/nvidia_gk208_gr_tables.h",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_nvidia_gk208.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/USERSPACE_DRIVER_MODEL.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/PROJECT_STATUS.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "command 25 is append-only and accepts only the exact owner generation read-only BAR0 resource and sealed pool after commands 23 and 24",
+  "Ring 0 rebuilds the topology memory maps patches and immutable pinned context ICMD and method streams without trusting Ring-3 table bytes or addresses",
+  "the temporary instance PGD PGT pagepool bundle attribute and golden buffers occupy aligned non-overlapping windows wholly inside the clipped VRAM aperture",
+  "all PDB PDE and PTE entries name VRAM only and PCI bus mastering remains disabled",
+  "the exact pinned GK208 context-main ordering including bounded idle ICMD method FECS bind and golden-save operations completes under one absolute monotonic deadline",
+  "every partial hardware effect resets GR before temporary mappings or readiness are forgotten and stale generations cannot retain authority",
+  "the retained result exposes no BAR VRAM GPU or physical address and no channel runlist USERD submission fence IRQ or acceleration capability is published",
+  "VMware remains DMA-free and unchanged"
+]
+targeted_tests = [
+  "python test/test_device_domain_source.py -v",
+  "python test/test_nvidia_gk208.py -v",
+  "python test/test_vmware_svga2d.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "the pinned GK208 context floorsweep ICMD method PTE or FECS semantics cannot be represented without guessing",
+  "the temporary VRAM-only address domain cannot fit inside the admitted aperture",
+  "rollback cannot confirm GR reset after a partial hardware effect",
+  "the package attempts channel runlist USERD submission bus mastering IRQ fence or capability publication",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a gate still fails after one focused in-scope repair"
+]
 
 [[packages]]
 id = "R2.2v-nvidia-gk208-golden-context-plan"
