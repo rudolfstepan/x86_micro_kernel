@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2e-hda-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -1822,6 +1822,55 @@ evidence = [
   "four-CPU QEMU HDA guest executed the authorized driver path on CPU 3 completed all five playback cycles and captured 278332 stereo S16 frames at 440.4 Hz with max-gap 1",
   "no DMA IRQ MMIO port or audio-service authority was widened and active_id is empty"
 ]
+
+[[packages]]
+id = "R6.2e-hda-ap-restart"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Restore HDA AP affinity after bounded heartbeat restart"
+scope = "Add a compile-time-only HDA lifecycle fault that suppresses progress from only the first AP-affine driver epoch until the existing five-second heartbeat deadline isolates it. Reuse the bounded BSP-return fence, one-second recovery deadline, protected post-ready affinity mask and finite restart budget. Require the replacement generation to construct and self-test on BSP, become healthy, return to an AP and complete five real mediated PCM playback cycles with valid captured audio."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "kernel/init/supervisor.c",
+  "scripts/run_qemu_pci_audio.py",
+  "test/test_audio_source.py",
+  "test/test_qemu_pci_audio.py",
+  "docs/architecture/AUDIO_SUBSYSTEM.md",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the fault hook is absent from normal builds and suppresses progress only for the first HDA epoch after it executes on an AP",
+  "fencing returns the old generation to BSP revokes IRQ and bus mastering zeroizes mediated DMA and completes within one second before respawn",
+  "the protected desired AP mask survives restart while each new generation still constructs self-tests and publishes healthy on BSP",
+  "the replacement HDA generation executes an authorized device operation on an AP and completes five real PCM cycles",
+  "audio service supervisor legacy-PIC hard IRQ and unrelated services remain BSP-affine and no device authority is widened"
+]
+targeted_tests = [
+  "python test/test_audio_source.py -q",
+  "python test/test_qemu_pci_audio.py -v",
+  "python test/test_reist_supervisor.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -HdaSmpLifecycleFaultInjection -SkipReleaseSbom",
+  "python scripts/run_qemu_pci_audio.py --image build/reist-os.img --smp 4 --expect-hda-smp-restart --timeout 120 --log build/codex-agent/r62e-hda-restart.log --wav build/codex-agent/r62e-hda-restart.wav"
+]
+stop_conditions = [
+  "the initial or replacement generation becomes AP-affine before healthy publication",
+  "the fault affects a normal build or more than the first HDA epoch",
+  "fencing recovery or DMA zeroization fails",
+  "the restarted driver or audio service exhausts its restart budget",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "audio: restore HDA AP affinity after restart"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
