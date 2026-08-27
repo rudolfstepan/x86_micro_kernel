@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2m – VMware-Mausreports bis zum überwachten Desktop
+Aktives Thema: keines – R6.2m VMware-Maus und Explorer abgeschlossen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -51,6 +51,13 @@ Tests und der lokale Diff.
 - `scripts/build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom` – PASS
 - Vier aufeinanderfolgende vollständige QEMU-SMP4-Läufe nach der
   Lockdiagnose – PASS; der letzte zusätzlich mit VMware-SVGA2D.
+- `python test/test_usb_mouse.py -v` – 13/13
+- `python test/test_reist_supervisor.py -v` – 9/9
+- `python test/test_vmware_mouse.py -v` – 6/6
+- `python test/test_desktop_source.py -v` – 41/41
+- VMware-VGA-Paket und `vmware-mouse`-Runtime – PASS mit geordneten Markern
+  `USB: xHCI HID ready`, `COMPOSITOR_READY`, `DESKTOP_OK`,
+  `DESKTOP_EXPLORER_OK` und `DESKTOP_MOUSE_OK`.
 
 Referenzlauf:
 
@@ -61,6 +68,25 @@ python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp
 Er enthält `online=4`, alle SMP-READY-Marker, `REAP_READY`,
 `TASK_CAPACITY_OK`, `SVGA2D_RECT_COPY_OK` und `TEST_OK`, ohne Panic,
 Assertion oder unbekannten FIFO-Befehl.
+
+## VMware-Maus und Explorer wiederhergestellt
+
+Der virtuelle VMware-xHCI-Boot-Mausendpunkt kodiert Max ESIT Payload nun in
+den standardisierten Endpoint-Context-Feldern statt den Average-TRB-Wert in
+das High-Payload-Feld zu duplizieren. Der überwachte Compositor darf den exakt
+identifizierten Displaydienst verbinden. Seine Pointer-Präsentation hält die
+Präemption nicht mehr über dem sleepfähigen Displaymutex; die bestehende
+Frame-Reservierung bleibt die Veröffentlichungsgrenze.
+
+Das Default-Deny-Compositorprofil besitzt zusätzlich nur den begrenzten
+Submit-/Collect-/Cancel-/Bulk-Transport für serviceeigene VFS-Shadow-Objekte.
+Der Syscall weist für diese Domäne Raw-Block-, Format- und Maintenance-
+Operationen vor jeder Veröffentlichung ab. Damit öffnet der initiale Explorer
+`/` wieder. Ein deadlinebegrenzter VMware-Runner startet ausschließlich bei
+leerem Workstation-Laufzustand, speist eine virtuelle Bewegung ein, verlangt
+die geordneten Explorer-/Mausmarker und beendet genau seinen einzigen VMX-
+Prozess. Der Benutzer bestätigte die Maus zusätzlich sichtbar; der frische
+Gast bestätigte den Root-Explorer über den Erfolgsmarker.
 
 ## Restrisiko und nächster zusammenhängender Schritt
 

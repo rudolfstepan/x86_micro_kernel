@@ -484,7 +484,9 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             SYS_IPC_RECEIVE_TIMEOUT, SYS_IPC_DELEGATE, SYS_IPC_RELEASE,
             SYS_REIST_REPORT, SYS_SERVICE_CONNECT, SYS_DISPLAY_CONTROL,
             SYS_MOUSE_EVENT, SYS_POINTER_UPDATE, SYS_PROCESS_IDENTITY,
-            SYS_DRAW_TEXT_CLIPPED
+            SYS_DRAW_TEXT_CLIPPED,
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL,
+            SYS_STORAGE_BULK
         };
         for (size_t index = 0;
              index < sizeof(compositor_syscalls) /

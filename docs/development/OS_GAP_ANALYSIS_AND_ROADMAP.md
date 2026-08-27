@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 26. August 2026
+Stand: 27. August 2026
 
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
@@ -73,8 +73,10 @@ Viewer sind echte externe Fensterclients. Die abgeschlossenen Pakete R1.6 und
 R1.7 ergänzen kernelvermittelte Ring-3-Gerätedomänen und HDA-Audio mit
 Userspacebibliothek. Vor jedem weiteren regulären Funktionspaket steht das
 Sicherheits-Gate S0. Die generische `REIST-research`-Baseline ist mit S0.6c
-für die feste automatisierte QEMU-/VMware-Matrix abgeschlossen. Die
-ausführbare Queue besitzt derzeit kein aktives Paket. Physische,
+für die feste automatisierte QEMU-/VMware-Matrix abgeschlossen. Der
+VMware-xHCI-Mauspfad und der VFS-Shadow-Zugriff des überwachten Compositors
+sind zusätzlich end-to-end abgenommen; die ausführbare Queue besitzt derzeit
+kein aktives Paket. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
 werden nicht durch die Emulatorabnahme ersetzt.
 
@@ -551,7 +553,7 @@ und 10 verbindlich.
 | Dateien | VFS, REIST-FAT12/FAT32 read/write, fremde FAT12/FAT32 read-only, ASCII-VFAT-LFN, Undo-Journale, FAT12-Remap/Replikate/Fehlermatrix, `fsync`, Same-Directory-Rename/Replace, EXT2 read-only | Unicode-Normalisierung, allgemeiner transaktionaler Reparaturpfad und medienunabhängige Persistenz fehlen |
 | Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI, überwachtes Ring-3-VMware-SVGA-II-2D und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
 | Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS und HTTP/1.0 | Host- und QEMU-Nachweise vorhanden; kein IPv6, TLS oder vollständiges POSIX-Socketmodell |
-| USB | xHCI-Initialisierung, Root-Port-/Descriptorpfad und HID-Boot-Tastatur/-Maus | einfache reale Geräte und VMware-Maus beobachtet; Composite-AULA, allgemeiner Hotplug und Mass Storage offen |
+| USB | xHCI-Initialisierung, Root-Port-/Descriptorpfad und HID-Boot-Tastatur/-Maus einschließlich automatisiertem VMware-Desktop-Mausnachweis | einfache reale Geräte und VMware-Maus abgenommen; Composite-AULA, allgemeiner Hotplug und Mass Storage offen |
 | Userspace | SDK mit getrennten GUI-/Audio-/Image-Bibliotheken, Ring-3-Shell, Systemprogramme, Surface-Compositor, Explorer, Notepad und Image Viewer als Fensterclients | Sound Player, Control Gallery, Terminal und Systemwerkzeuge noch nicht als Surface-Clients migriert |
 | Qualität | Host-/Quelltests, Imagevalidatoren, QEMU-Runtimeprofile für Ring 3, Netzwerk, Storage, Handover, Grafik/Surface und PCI-Audio sowie manuelle VMware-/Hardwareevidenz | breite Hardware-, Langzeit-, EMV- und reale Power-Loss-Matrix fehlt |
 
@@ -750,6 +752,11 @@ Pixelschrift und eine versionierte Frame-ABI. Window Manager, Explorer,
 Maus-/Tastaturfokus, Drag/Resize, Dirty Regions und eine
 generationengebundene Surface-/Event-IPC sind umgesetzt. Notepad, Image
 Viewer und die Systemsteuerung laufen als getrennte Ring-3-Fensterclients.
+Der überwachte Compositor verbindet den generationsgebundenen Displaydienst,
+präsentiert den Softwarezeiger ohne Präemptionssperre über sleepfähigen Locks
+und darf ausschließlich VFS-Shadow-Requests über den begrenzten Storage-
+Transport senden. Der VMware-Lauf belegt Root-Explorer und Mausbewegung in
+dieser Domäne mit geordneten End-to-End-Markern.
 Eine feste klassische Taskbar bietet ein aufwärts öffnendes Startmenü,
 kapazitätsbegrenzte Fensterbuttons und eine validierte Datums-/Minutenuhr;
 Fensteraktivierung bleibt ein typisiertes WM-Ereignis und die Uhr invalidiert

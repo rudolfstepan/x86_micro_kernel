@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2m-vmware-mouse-report-flow"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -9726,7 +9726,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2m-vmware-mouse-report-flow"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Restore VMware desktop mouse and explorer flow"
@@ -9779,3 +9779,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "fix: restore VMware desktop mouse input"
+evidence = [
+  "USB mouse source and HID host behavior passed 13 tests including standard xHCI Max ESIT Payload encoding and the sleepable pointer presentation boundary",
+  "supervisor source and host behavior passed 9 tests including exact compositor display identity and VFS-shadow-only storage request authority",
+  "VMware mouse host automation passed 6 tests and desktop source behavior passed 41 tests",
+  "fresh VMware VGA package passed with signed boot manifest and complete generated VM",
+  "generated VMware guest reached ordered xHCI HID compositor desktop explorer and injected mouse markers without panic or pre-success degradation",
+  "user confirmed visible mouse movement and the fresh guest emitted the successful root Explorer marker",
+  "no queued package remains and active_id is empty"
+]

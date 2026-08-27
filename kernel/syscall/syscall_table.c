@@ -1252,6 +1252,12 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
     storage_request_submit_t request;
     if (copy_from_user(&request, user_request, sizeof(request)) != 0)
         return -14;
+    /* The compositor uses the storage service only as the bounded transport
+     * for service-owned VFS objects and snapshots.  Granting the generic
+     * request syscall must not expose raw blocks, formatting or maintenance. */
+    if (process->domain_profile.kind == PROCESS_DOMAIN_COMPOSITOR &&
+        request.operation != STORAGE_REQUEST_VFS_SHADOW_STAT &&
+        request.operation != STORAGE_REQUEST_VFS_BULK_READ) return -13;
     if (request.operation >= STORAGE_REQUEST_FORMAT_FAT12 &&
         request.operation <= STORAGE_REQUEST_FORMAT_FAT32_PREPARE &&
         process->domain_profile.kind != PROCESS_DOMAIN_ADMIN) return -13;
@@ -2099,9 +2105,7 @@ static int syscall_pointer_update(int32_t x, int32_t y, uint32_t visible) {
     int reservation = framebuffer_frame_draw_enter(
         process->pid, process->generation, pit_monotonic_ms());
     if (reservation != 0) return reservation;
-    scheduler_preempt_disable();
     bool updated = framebuffer_cursor_update(x, y, visible != 0U);
-    scheduler_preempt_enable();
     int release = framebuffer_frame_draw_leave(
         process->pid, process->generation, pit_monotonic_ms());
     if (release != 0) return release;

@@ -1076,9 +1076,7 @@ static void draw_text_clipped(const desktop_render_context_t *context,
         context->display->font_width == 0U ||
         context->display->font_height == 0U) return;
     const x86os_display_info_t *display = context->display;
-    int64_t clip_left = context->clip.x;
     int64_t clip_top = context->clip.y;
-    int64_t clip_right = clip_left + context->clip.width;
     int64_t clip_bottom = clip_top + context->clip.height;
     int64_t text_top = y;
     int64_t text_bottom = text_top + display->font_height;
@@ -5037,9 +5035,10 @@ int main(int argc, char **argv) {
     desktop_dirty_region_t initial_dirty;
     desktop_dirty_initialize(&initial_dirty, display.width, display.height);
     uint32_t initial_target = DESKTOP_WM_NO_TARGET;
-    (void)open_explorer_path(
-        &manager, &explorer, &ui, &display,
-        &initial_dirty, "/", &initial_target);
+    if (open_explorer_path(
+            &manager, &explorer, &ui, &display,
+            &initial_dirty, "/", &initial_target) != 0U)
+        x86os_puts("DESKTOP_EXPLORER_OK\n");
     if (filetypes_status != 0)
         desktop_ui_open_error(
             &ui, &display, &initial_dirty,
@@ -5219,6 +5218,11 @@ int main(int argc, char **argv) {
         for (; mouse_events < DESKTOP_MOUSE_BATCH_LIMIT; ++mouse_events) {
             x86os_mouse_event_t mouse;
             if (x86os_mouse_event(&mouse) != 0) break;
+            static uint32_t mouse_ready_reported;
+            if (!mouse_ready_reported) {
+                x86os_puts("DESKTOP_MOUSE_OK\n");
+                mouse_ready_reported = 1U;
+            }
             accumulate_mouse_delta(&pending_delta_x, mouse.delta_x);
             accumulate_mouse_delta(&pending_delta_y, mouse.delta_y);
             uint32_t left_down =

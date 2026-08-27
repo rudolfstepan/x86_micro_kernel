@@ -1169,13 +1169,14 @@ static bool xhci_configure_boot_hid(xhci_hid_device_t *hid,
      * at one makes a strict controller ignore the newly added HID endpoint. */
     slot[0] = (slot[0] & ~(0x1FU << 27U)) |
               ((uint32_t)hid->endpoint_id << 27U);
-    ep[0] = (uint32_t)xhci_periodic_interval(hid->port_speed, interval) << 16U;
+    ep[0] = ((uint32_t)xhci_periodic_interval(hid->port_speed, interval)
+             << 16U) | (((uint32_t)packet & 0xFFU) << 24U);
     ep[1] = (3U << 1U) | (7U << 3U) | ((uint32_t)packet << 16U);
     ep[2] = xhci_dma32(xhci_interrupt_ring(hid)) | 1U;
     /* Interrupt endpoints are periodic: Max ESIT Payload must describe the
      * bytes available per service interval.  Average TRB Length uses the same
      * bounded packet size, matching the reference xHCI endpoint setup. */
-    ep[4] = (uint32_t)packet | ((uint32_t)packet << 16U);
+    ep[4] = (uint32_t)packet | (((uint32_t)packet >> 8U) << 16U);
     xhci_trb_t *configure = xhci_command(TRB_CONFIGURE_ENDPOINT,
                                            xhci_dma32(input_context), 0U,
                                            (uint32_t)hid->slot_id << 24U);

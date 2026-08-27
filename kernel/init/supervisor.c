@@ -3165,7 +3165,8 @@ int supervisor_service_connect(Process *client, uint32_t service_id,
     }
 
     if (service_id == REIST_SERVICE_DISPLAY_DRIVER) {
-        if (client->domain_profile.kind != PROCESS_DOMAIN_COMPATIBILITY ||
+        if ((client->domain_profile.kind != PROCESS_DOMAIN_COMPATIBILITY &&
+             client->domain_profile.kind != PROCESS_DOMAIN_COMPOSITOR) ||
             strcmp(client->image_path, "/usr/gui/bin/desktop.prg") != 0)
             return -13;
         for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS;

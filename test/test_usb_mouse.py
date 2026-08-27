@@ -241,6 +241,13 @@ class UsbMouseTests(unittest.TestCase):
             "(port & ~(XHCI_PORT_CSC | XHCI_PORT_PRC))", source
         )
 
+    def test_interrupt_endpoint_encodes_max_esit_payload_fields(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        self.assertIn("((uint32_t)packet & 0xFFU) << 24U", source)
+        self.assertIn("((uint32_t)packet >> 8U) << 16U", source)
+        self.assertNotIn("(uint32_t)packet | ((uint32_t)packet << 16U)",
+                         source)
+
     def test_xhci_control_td_matches_physical_controller_contract(self):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
         self.assertIn("#define TRB_ISP", source)
@@ -310,6 +317,8 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("mouse_events < DESKTOP_MOUSE_BATCH_LIMIT", source)
         self.assertIn("x86os_pointer_update(pointer_x, pointer_y, 1U)", source)
         self.assertNotIn("draw_mouse_pointer", source)
+        self.assertIn('x86os_puts("DESKTOP_MOUSE_OK\\n")', source)
+        self.assertIn('x86os_puts("DESKTOP_EXPLORER_OK\\n")', source)
 
     def test_mouse_syscall_is_append_only_and_pointer_checked(self):
         stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")
@@ -322,6 +331,16 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("X86OS_SYS_POINTER_UPDATE = 111", header)
         self.assertIn("SYS_POINTER_UPDATE 111", stdlib)
         self.assertIn("framebuffer_cursor_update", syscalls)
+        pointer_start = syscalls.index("static int syscall_pointer_update")
+        pointer_end = syscalls.index("static int syscall_display_control",
+                                     pointer_start)
+        pointer_body = syscalls[pointer_start:pointer_end]
+        self.assertNotIn("scheduler_preempt_disable", pointer_body)
+        self.assertNotIn("scheduler_preempt_enable", pointer_body)
+        self.assertLess(pointer_body.index("framebuffer_frame_draw_enter"),
+                        pointer_body.index("framebuffer_cursor_update"))
+        self.assertLess(pointer_body.index("framebuffer_cursor_update"),
+                        pointer_body.index("framebuffer_frame_draw_leave"))
         start = syscalls.index("static int syscall_mouse_event")
         body = syscalls[start:syscalls.index("\n}", start)]
         self.assertLess(body.index("copy_from_user"),
@@ -336,6 +355,7 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn('usb_xhci.pciSlotNumber = "160"', image)
         self.assertIn('usb_xhci:4.deviceType = "hid"', image)
         self.assertIn('mouse.vusb.present = "TRUE"', image)
+        self.assertIn('mouse.vusb.useBasicMouse = "TRUE"', image)
         self.assertNotIn('\nxhci.present = "TRUE"', image)
 
 

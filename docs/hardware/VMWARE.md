@@ -1,6 +1,6 @@
 # VMware Workstation
 
-Stand: 20. August 2026.
+Stand: 27. August 2026.
 
 Der native Windows-Build erzeugt eine vollständige Legacy-BIOS-VM. ISO, GRUB
 und manuelles Anlegen einer VM sind nicht erforderlich.
@@ -64,6 +64,19 @@ VMware-Monitor-Panic durch eine Real-Mode-Ausführung auf einer inkompatiblen
 virtuellen Grafikgeneration.
 
 ## Funktionstest
+
+Der automatisierte Desktop-Eingabenachweis startet nur bei leerem VMware-
+Laufzustand, verwendet die generierte virtuelle Basic-Mouse ohne physisches
+HID-Passthrough und ist auf 75 Sekunden sowie zwölf Eingabeversuche begrenzt:
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode vmware-mouse
+```
+
+Er verlangt in dieser Reihenfolge xHCI-HID-Bereitschaft,
+`COMPOSITOR_READY`, `DESKTOP_OK`, `DESKTOP_EXPLORER_OK` und
+`DESKTOP_MOUSE_OK`. Panic oder Compositor-Degradation vor dem Mausmarker
+brechen den Lauf geschlossen ab.
 
 ```text
 C:\> DRIVES
@@ -135,8 +148,13 @@ erscheint der VMware-Dialog zum Ersetzen oder Anhängen der Datei nicht.
 - kein Root: AHCI-Probe, MBR-Children und eindeutiges `X86 SYSTEM` prüfen
 - keine Tastatur: VM-Fenster fokussieren; PS/2 ist erforderlich, VMware Tools
   nicht
-- keine Maus: `usb_xhci.present`, `mouse.vusb.enable` und die Meldung
-  `USB: xHCI HID mouse ready` im seriellen Log prüfen
+- keine Maus: `usb_xhci.present`, `mouse.vusb.enable`,
+  `mouse.vusb.useBasicMouse` und die Meldung `USB: xHCI HID ready` mit einem
+  `mouse-port` im seriellen Log prüfen; fehlt `DESKTOP_MOUSE_OK`, den
+  Compositor-Pointerpfad prüfen
+- Explorer meldet `/` könne nicht geöffnet werden: `DESKTOP_EXPLORER_OK`
+  prüfen. Der überwachte Compositor benötigt die eng begrenzten VFS-Shadow-
+  Submit-/Collect-/Cancel-Rechte, aber keine Raw-Storage-Autorität.
 - `connected` zeigt den virtuellen Maus-Port, aber `failure=port-reset`:
   keine Host-HID- oder VMX-Ausweichregel ergänzen. Der xHCI-Treiber muss die
   begrenzten 20 ms nach Port-Power und 10 ms nach USB2-Reset über die monotone

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -28,6 +28,7 @@ $DriverDomainRunner = Join-Path $RepoRoot 'scripts\run_qemu_driver_domain.py'
 $SystemLayoutRunner = Join-Path $RepoRoot 'scripts\run_qemu_system_layout.py'
 $PciAudioRunner = Join-Path $RepoRoot 'scripts\run_qemu_pci_audio.py'
 $VmwareSvga2dRunner = Join-Path $RepoRoot 'scripts\run_vmware_svga2d.ps1'
+$VmwareMouseRunner = Join-Path $RepoRoot 'scripts\run_vmware_mouse.ps1'
 $PartitionProvisioningRunner = Join-Path $RepoRoot 'scripts\run_qemu_partition_provisioning.py'
 $LogRoot = Join-Path $RepoRoot 'build\codex-agent'
 $WcetBudget = Join-Path $RepoRoot 'safety\wcet_budgets.json'
@@ -60,7 +61,8 @@ $OpenSsl = if ($Mode -eq 'boot-control' -or $Mode -eq 'boot-success') {
         'C:\msys64\mingw64\bin\openssl.exe'
     )
 } else { $null }
-$Qemu = if ($Target -eq 'qemu' -or $Mode -eq 'pci-audio') {
+$Qemu = if (($Target -eq 'qemu' -and $Mode -ne 'vmware-mouse') -or
+    $Mode -eq 'pci-audio') {
     Resolve-NativeTool 'qemu-system-i386' @(
         'C:\tmp\qemu-portable\qemu-system-i386.exe',
         'C:\Program Files\qemu\qemu-system-i386.exe',
@@ -75,6 +77,7 @@ $Make = if ($Mode -eq 'driver-domain') {
 } else { $null }
 
 if ($Target -eq 'qemu' -and $Mode -ne 'driver-domain' -and
+    $Mode -ne 'vmware-mouse' -and
     !(Test-Path -LiteralPath $Image -PathType Leaf)) {
     throw 'build\reist-os.img is missing; run build-windows.ps1 first.'
 }
@@ -1066,6 +1069,12 @@ switch ($Mode) {
             if ($LASTEXITCODE -ne 0) {
                 throw 'VMware SVGA2D console lifecycle failed.'
             }
+        }
+    }
+    'vmware-mouse' {
+        & $VmwareMouseRunner
+        if ($LASTEXITCODE -ne 0) {
+            throw 'VMware mouse runtime failed.'
         }
     }
     'runtime-desktop' {

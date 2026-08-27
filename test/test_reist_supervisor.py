@@ -39,8 +39,46 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("restart_budget = 3U", source)
         self.assertIn("supervisor_start_compositor", kernel)
         self.assertIn("supervisor_compositor_session_active", kernel)
+        display_connect = source[
+            source.index("if (service_id == REIST_SERVICE_DISPLAY_DRIVER)"):
+            source.index("static void supervisor_worker(")]
+        self.assertIn("PROCESS_DOMAIN_COMPOSITOR", display_connect)
+        self.assertIn('strcmp(client->image_path, "/usr/gui/bin/desktop.prg")',
+                      display_connect)
         self.assertNotIn("set_current_affinity", kernel[
             kernel.index("supervisor_start_compositor"):])
+
+    def test_compositor_vfs_shadow_authority_is_narrow_and_bounded(self):
+        process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
+        syscalls = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8")
+        profile = process[
+            process.index("if (kind == PROCESS_DOMAIN_COMPOSITOR)"):
+            process.index("if (kind != PROCESS_DOMAIN_PROBE)")]
+        for syscall in (
+            "SYS_STORAGE_SUBMIT",
+            "SYS_STORAGE_COLLECT",
+            "SYS_STORAGE_CANCEL",
+            "SYS_STORAGE_BULK",
+        ):
+            self.assertIn(syscall, profile)
+        submit = syscalls[
+            syscalls.index("static int syscall_storage_submit"):
+            syscalls.index("static int syscall_storage_claim")]
+        self.assertIn(
+            "process->domain_profile.kind == PROCESS_DOMAIN_COMPOSITOR",
+            submit,
+        )
+        self.assertIn(
+            "request.operation != STORAGE_REQUEST_VFS_SHADOW_STAT", submit
+        )
+        self.assertIn(
+            "request.operation != STORAGE_REQUEST_VFS_BULK_READ", submit
+        )
+        self.assertLess(
+            submit.index("PROCESS_DOMAIN_COMPOSITOR"),
+            submit.index("storage_request_submit("),
+        )
 
     def test_network_service_ap_affinity_is_post_ready_and_protected(self):
         header = (ROOT / "include/kernel/supervisor.h").read_text(
