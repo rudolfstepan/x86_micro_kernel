@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2o – Compositor-AP-Affinität nach Restart wiederherstellen
+Aktives Thema: R2.2af – nativen VBE-Compositorstart vor AP-Handoff absichern
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -110,13 +110,28 @@ getrennten Fehlerlauf.
 
 ## Restrisiko und nächster zusammenhängender Schritt
 
+Der aktuelle physische Lauf auf dem AMD-Mainboard mit NVIDIA meldet den noch
+nicht freigegebenen optionalen Beschleunigungsdienst korrekt als `EAGAIN`
+(`status=11`), erreicht danach aber `REIST_GUI COMPOSITOR_DEGRADED`. Seit
+R6.2n publiziert der Compositor `SERVICE_READY` und übernimmt seine AP-Maske,
+bevor Iconvorbereitung und der erste vollständige Software-Framebuffer-Frame
+abgeschlossen sind. Der auf Emulatoren ausreichende Zwei-Sekunden-Heartbeat
+kann dabei auf nativer ungecacheter VRAM-Ausgabe ablaufen und jede
+Ersatzgeneration auf dieselbe Weise verbrauchen.
+
+R2.2af zieht deshalb den Hardware-Fix vor: Der erste vollständige Frame bleibt
+in einer festen 30-Sekunden-Startphase auf CPU 0; erst sein Abschluss erlaubt
+Healthy, `SERVICE_READY` und AP-Handoff. Zwei-Sekunden-Heartbeat,
+Ein-Sekunden-Fence und Restartbudget drei bleiben unverändert. R6.2o bleibt
+danach als getrenntes Fault-Injection-Paket queued.
+
 Ein früherer Lauf meldete einmal eine rekursive Übernahme von
 `task_table_lock`. Der Fehler trat in vier vollständigen Folgeläufen nicht
 erneut auf; die neue Panic-Diagnose liefert bei Wiederholung sofort CPU und
 Aufrufer. Das ist starke Regressionsevidenz, aber kein Beweis, dass ein
 nichtdeterministisches Rennen ausgeschlossen ist.
 
-Das aktive R6.2o-Paket ist der getrennte Compositor-Restart-Nachweis: Eine nur
+Das zurückgestellte R6.2o-Paket ist der getrennte Compositor-Restart-Nachweis: Eine nur
 im Fault-Build betroffene erste AP-Generation muss ihren Heartbeat verlieren,
 vor Display-Fence und Reap begrenzt auf den BSP zurückkehren und die
 Ersatzgeneration darf ihre geschützte AP-Maske erst nach erneutem Self-Test,

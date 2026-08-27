@@ -77,9 +77,11 @@ für die feste automatisierte QEMU-/VMware-Matrix abgeschlossen. Der
 VMware-xHCI-Mauspfad und der VFS-Shadow-Zugriff des überwachten Compositors
 sind zusätzlich end-to-end abgenommen. R6.2n serialisiert den gemeinsamen
 xHCI-/HID-Zustand und weist den gesunden Compositor nach `SERVICE_READY` auf
-einem AP mit loopbackgebundener RFB-Mauszustellung nach. R6.2o prüft nun den
-begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem
-Heartbeat-Restart. Physische,
+einem AP mit loopbackgebundener RFB-Mauszustellung nach. Der physische
+NVIDIA-Lauf hat dabei einen vorzeitigen AP-Handoff vor dem langsamen ersten
+VBE-Softwareframe offengelegt. R2.2af korrigiert zuerst diese Startgrenze;
+R6.2o prüft danach den begrenzten BSP-Fence und die erneute post-READY-AP-
+Affinität nach einem Heartbeat-Restart. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
 werden nicht durch die Emulatorabnahme ersetzt.
 
@@ -528,8 +530,9 @@ und 10 verbindlich.
     AP-fähig; auch normale und neu gestartete Netzwerkdienstgenerationen
     AP-fähig; der Session-Compositor besitzt nun als Voraussetzung einen
     generationsgebundenen Supervisor-Lebenszyklus; R6.2n serialisiert xHCI/HID
-    und hat seinen normalen post-READY-AP-Pfad abgenommen; R6.2o nimmt den
-    getrennten Compositor-AP-Restartnachweis ab, weitere Produktionsdomänen
+    und hat seinen normalen post-READY-AP-Pfad abgenommen; R2.2af hält nun den
+    nativen ersten Softwareframe vor READY auf dem BSP, bevor R6.2o den
+    getrennten Compositor-AP-Restartnachweis abnimmt; weitere Produktionsdomänen
     bleiben offen
 
 #### Verbindliche Priorität nach dem S0-Gate

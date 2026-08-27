@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2o-compositor-ap-restart"
+active_id = "R2.2af-native-compositor-startup"
 
 [policy]
 one_package_per_run = true
@@ -9862,7 +9862,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
-status = "active"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"
@@ -9907,3 +9907,49 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "smp: restore compositor AP affinity after restart"
+
+[[packages]]
+id = "R2.2af-native-compositor-startup"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Keep native VBE compositor startup inside its lifecycle window"
+scope = "Repair the physical AMD-mainboard/NVIDIA failure observed after compositor AP enablement. The optional acceleration endpoint may remain fenced with EAGAIN while GK208 completes its separately bounded startup, so the compositor must continue through the validated VBE/software path. Keep the generation in its bounded STARTING state on the BSP while splash, fixed asset preparation and the first complete frame are rendered; publish healthy progress and SERVICE_READY only after that frame has been committed, then permit the existing post-ready AP handoff. Replace the emulator-sized five-second compositor startup ceiling with a fixed thirty-second aggregate limit without changing the two-second healthy heartbeat, one-second recovery fence or restart budget. Prove lifecycle ordering, optional-driver fallback and QEMU/VMware non-regression; physical NVIDIA timing remains a required manual target check."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/supervisor.c",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_desktop_source.py",
+  "test/test_reist_supervisor.py",
+  "test/test_nvidia_gk208.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "an unavailable or still-fenced acceleration endpoint remains non-fatal and the sealed VBE software path is activated before desktop initialization",
+  "the first complete desktop frame is committed on the BSP before healthy progress SERVICE_READY and post-ready AP affinity are published",
+  "the compositor startup aggregate is fixed at thirty seconds while its healthy heartbeat remains two seconds recovery remains one second and restart budget remains three",
+  "startup failure still fences display publication terminates and reaps the exact generation and exhausts only the existing finite restart budget",
+  "no display Surface VFS USB device or GPU authority ABI is widened and native GPU construction retains its independent bounded lifecycle"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_nvidia_gk208.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --vmware-vga --expect-svga2d --timeout 120 --log build/codex-agent/native-compositor-startup.log"
+]
+stop_conditions = [
+  "the compositor can become healthy ready or AP-affine before its first complete frame commit",
+  "the startup limit is unbounded or changes the healthy heartbeat recovery fence or restart budget",
+  "the optional NVIDIA service can suppress VBE software desktop startup",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: defer compositor ready until first native frame"
