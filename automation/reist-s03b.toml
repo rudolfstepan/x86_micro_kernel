@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2ah-startup-program-admission"
+active_id = "R2.2ai-soundplayer-surface-lifecycle"
 
 [policy]
 one_package_per_run = true
@@ -9861,6 +9861,104 @@ evidence = [
 ]
 
 [[packages]]
+id = "R2.2ai-soundplayer-surface-lifecycle"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Keep graphical audio playback inside the compositor lifecycle"
+scope = "Migrate the graphical Sound Player from the legacy synchronous full-screen launcher to the existing delegated Surface ABI. The desktop must reserve, delegate and bind the fixed-capacity endpoint without waiting for playback completion, so its existing 500-ms progress publication remains live throughout the two-second audio preview and cannot consume the compositor restart budget. The Sound Player parses exactly one bounded Surface handle plus one WAV path, paints only client-local retained commands, receives bounded compositor input, pumps at most one fixed audio payload per event-loop iteration and tears down audio, Surface and IPC state idempotently. Add a QEMU Surface-plus-HDA probe that starts real PCM playback, requires continuing compositor progress beyond the heartbeat deadline, rejects every compositor restart or degraded marker and validates the captured 440-Hz stereo stream. Preserve the shell-compatible WAVPLAY path, audio lifecycle and all display, VFS, IPC and process authority limits."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/apps/sound_player/main.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_audio_source.py",
+  "test/test_desktop_source.py",
+  "test/test_qemu_desktop_smoke.py",
+  "docs/architecture/AUDIO_SUBSYSTEM.md",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the desktop never performs a blocking child wait for the Surface Sound Player and continues publishing compositor progress at the existing 500-ms cadence",
+  "the Sound Player receives only its delegated Surface endpoint and the selected bounded WAV path and performs no direct global display or raw input operation in desktop mode",
+  "each GUI iteration pumps at most one fixed audio protocol payload and every Surface IPC audio IPC wait retry and event batch remains bounded",
+  "close playback failure resize and compositor disconnect release audio stream audio endpoint Surface endpoint and retained publication idempotently",
+  "the runtime proof crosses the two-second heartbeat deadline with real captured 440-Hz PCM and no compositor restart degraded state or widened authority"
+]
+targeted_tests = [
+  "python test/test_audio_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_qemu_desktop_smoke.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-audio"
+]
+stop_conditions = [
+  "the desktop can block on Sound Player completion or the probe observes a compositor restart or degraded marker",
+  "the Sound Player uses global display or raw keyboard mouse APIs after receiving a Surface endpoint",
+  "audio upload Surface handling or cleanup becomes unbounded or allocates in a safety-critical runtime path",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: keep sound playback inside compositor lifecycle"
+
+[[packages]]
+id = "R5.2x-xhci-control-short-packet"
+status = "queued"
+phase = "post-s0"
+risk = "high"
+title = "Diagnose and contain physical xHCI HID control short packets"
+scope = "Resolve the physical USB HID enumeration failure reported as failure=set-configuration, configuration length 59 and xHCI completion code 13. Persist the exact failed standard USB request type, request, value, index and length in the append-only diagnostics ABI before changing policy. Reproduce the controller response against the USB 2.0, HID 1.11 and xHCI 1.2 control-transfer state model, then make only the smallest standards-correct bounded recovery or compatibility change. Mandatory SET_CONFIGURATION and SET_PROTOCOL failures remain fail closed; no short packet is converted to success unless the requested zero-length transfer and controller event semantics prove complete success. Prove VMware xHCI keyboard and mouse non-regression and require a replacement physical image for the affected controller."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/usb/xhci.c",
+  "drivers/usb/xhci.h",
+  "kernel/syscall/syscall_table.c",
+  "kernel/shell/command.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/usbinfo.c",
+  "test/test_usb_keyboard.py",
+  "test/test_usb_mouse.py",
+  "docs/architecture/USB_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/hardware/VMWARE.md"
+]
+invariants = [
+  "diagnostics preserve the exact failed USB setup packet and completion without changing existing ABI prefixes",
+  "mandatory configuration and boot-protocol requests still fail closed when transfer completion is not proven",
+  "every recovery is bounded and resets or fences the exact slot endpoint generation before retry",
+  "one unsupported HID candidate cannot corrupt or revoke an already published keyboard or mouse",
+  "VMware xHCI keyboard and mouse remain functional and physical acceptance uses a newly generated image"
+]
+targeted_tests = [
+  "python test/test_usb_keyboard.py -v",
+  "python test/test_usb_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-mouse"
+]
+stop_conditions = [
+  "a short packet or failed mandatory class request is blindly accepted",
+  "a retry can reuse an unfenced halted endpoint or stale transfer event",
+  "physical request diagnostics remain ambiguous after the replacement image",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "usb: contain physical HID control short packet"
+
+[[packages]]
 id = "R6.2o-compositor-ap-restart"
 status = "queued"
 phase = "post-s0"
@@ -10008,7 +10106,7 @@ evidence = [
 
 [[packages]]
 id = "R2.2ah-startup-program-admission"
-status = "active"
+status = "cancelled"
 phase = "post-s0"
 risk = "high"
 title = "Serialize startup executable admission against storage boot acknowledgement"
@@ -10056,3 +10154,8 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "boot: serialize startup program admission"
+evidence = [
+  "The identical image boots and starts the desktop on the supported ASUS board, so the observed executable-open failure is specific to the AMD platform rather than a demonstrated common startup-admission defect.",
+  "The AMD board is no longer in current use; the general startup-admission candidate was fully reverted and no production change or acceptance claim was retained.",
+  "The attempted targeted failures were defects in source-slice test definitions and did not establish a production failure; R6.2o resumes on the clean supported VMware and ASUS baseline."
+]

@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R2.2ah – Startup-Programmladen gegen Storage-I/O serialisieren
+Aktives Thema: R2.2ai – Sound Player auf die Surface-Lebenszyklusgrenze migrieren
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -110,42 +110,35 @@ getrennten Fehlerlauf.
 
 ## Restrisiko und nächster zusammenhängender Schritt
 
-Der aktuelle physische Lauf auf dem AMD-Mainboard mit NVIDIA zeigt vor jeder
-Grafikinitialisierung beim Öffnen von `/usr/gui/bin/desktop.prg` den Fehler
-`Program load open failed (-4)`. `-4` ist `VFS_ERR_IO`; unmittelbar danach
-scheitert auch der Shell-
-Fallback. Trotzdem meldet der Supervisor später `COMPOSITOR_RESTARTED epoch=2`
-und die Ersatzgeneration erreicht den optionalen Beschleunigungsdienst. Damit
-ist die frühere Erstframe-Timinghypothese widerlegt und R2.2af abgebrochen.
+Der physische Fehler `VFS_ERR_IO` beim Laden von
+`/usr/gui/bin/desktop.prg` trat nur auf dem AMD-Mainboard auf. Dasselbe Image
+startet den Desktop auf dem unterstützten ASUS-Board ohne diesen Fehler. Das
+AMD-Board wird derzeit nicht weiter benutzt; deshalb bleiben R2.2af, R2.2ag
+und R2.2ah ohne Produktionskandidat abgebrochen. Insbesondere wird aus dem
+AMD-Befund keine allgemeine Storage-/Startup-Admission-Änderung abgeleitet.
 
-Der isolierte R2.2ag-Lifecycle-Kandidat verhinderte zwar die parallele Rescue-
-Shell, beseitigte den Hardwarefehler aber nicht. Sein Ein-CPU-QEMU-Gate blieb
-zusätzlich reproduzierbar direkt nach `REIST_STORAGE SERVICE_READY` stehen,
-noch bevor Scheduler oder Compositor erreicht wurden. Damit teilen sich beide
-Plattformen dieselbe fehlende Startup-Admission-Grenze.
+Der danach beobachtete Desktopausfall beim Abspielen einer WAV-Datei ist
+reproduzierbar aus dem Quellvertrag erklärt: `soundplayer.prg` ist noch ein
+synchron gestarteter Vollbildclient. Der Compositor blockiert deshalb in
+`x86os_wait()` und verpasst während der Wiedergabe seinen 500-ms-Heartbeat.
+Nach der festen Zwei-Sekunden-Grenze werden nacheinander alle drei
+Restartbudgets verbraucht. R2.2ai migriert den Sound Player auf den bereits
+vorhandenen delegierten Surface-Vertrag und beweist gleichzeitig echte
+440-Hz-Wiedergabe sowie fortlaufende Compositor-Heartbeats.
 
-R2.2ah serialisiert deshalb den vollständigen zusammenhängenden Pfad: Nach dem
-residenten Storage-Spawn wartet der Kernel begrenzt auf dessen gebundene
-Generation, bevor weitere Executables aus FAT32 geladen werden. Nach `BOOT_OK`
-bleibt die Ring-3-Bootbestätigung gesperrt, bis eine Compositor-Executable-
-Generation vollständig geladen ist oder deren endliches Recoverybudget die
-optionale Sitzung deaktiviert. Der Initialspawn bleibt dabei exklusiv im
-vorhandenen Supervisor-Recovery. VFS-/ATA-Fehler, Deadlines, ABI und Rechte
-bleiben unverändert. R6.2o bleibt danach queued.
+Der im anschließenden Rescue-Shell-Bild sichtbare USB-Fehler ist eine getrennte
+xHCI-Enumerationsgrenze: `config=59` bezeichnet die Länge des gelesenen
+Konfigurationsdeskriptors; `cc=13` ist ein unerwarteter Short-Packet-Abschluss
+bei einem nachfolgenden HID-Control-Request. R5.2x persistiert zuerst den
+exakten Setup-Request und nimmt danach nur eine standardskonforme, begrenzte
+Korrektur vor. R6.2o bleibt hinter diesen beiden beobachteten Regressionen
+queued.
 
 Ein früherer Lauf meldete einmal eine rekursive Übernahme von
 `task_table_lock`. Der Fehler trat in vier vollständigen Folgeläufen nicht
 erneut auf; die neue Panic-Diagnose liefert bei Wiederholung sofort CPU und
 Aufrufer. Das ist starke Regressionsevidenz, aber kein Beweis, dass ein
 nichtdeterministisches Rennen ausgeschlossen ist.
-
-Das zurückgestellte R6.2o-Paket ist der getrennte Compositor-Restart-Nachweis: Eine nur
-im Fault-Build betroffene erste AP-Generation muss ihren Heartbeat verlieren,
-vor Display-Fence und Reap begrenzt auf den BSP zurückkehren und die
-Ersatzgeneration darf ihre geschützte AP-Maske erst nach erneutem Self-Test,
-Healthy und `SERVICE_READY` auf CPU 0 anwenden. Der Vier-vCPU-VMware-Lauf muss
-danach erneute AP-Ausführung und reale xHCI-Mauszustellung über den lokalen
-RFB-Kanal belegen.
 
 Die erste R6.2-Scheibe inventarisiert gemeinsam genutzte Treiberzustände und
 gibt ausschließlich die autoritätslose, überwachte Driver-Fault-Fixture für
