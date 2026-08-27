@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: keines – R6.2n ist abgeschlossen und committed-bereit
+Aktives Thema: R6.2o – Compositor-AP-Affinität nach Restart wiederherstellen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -116,11 +116,13 @@ erneut auf; die neue Panic-Diagnose liefert bei Wiederholung sofort CPU und
 Aufrufer. Das ist starke Regressionsevidenz, aber kein Beweis, dass ein
 nichtdeterministisches Rennen ausgeschlossen ist.
 
-Der nächste kohärente R6.2-Schritt ist der getrennte Compositor-Restart-
-Nachweis: Eine compile-time-begrenzte erste AP-Generation muss ihren Heartbeat
-verlieren, vor Display-Fence und Reap begrenzt auf den BSP zurückkehren und
-die Ersatzgeneration darf ihre geschützte AP-Maske erst nach erneutem
-`SERVICE_READY` anwenden. Dafür ist noch kein Paket aktiv geschaltet.
+Das aktive R6.2o-Paket ist der getrennte Compositor-Restart-Nachweis: Eine nur
+im Fault-Build betroffene erste AP-Generation muss ihren Heartbeat verlieren,
+vor Display-Fence und Reap begrenzt auf den BSP zurückkehren und die
+Ersatzgeneration darf ihre geschützte AP-Maske erst nach erneutem Self-Test,
+Healthy und `SERVICE_READY` auf CPU 0 anwenden. Der Vier-vCPU-VMware-Lauf muss
+danach erneute AP-Ausführung und reale xHCI-Mauszustellung über den lokalen
+RFB-Kanal belegen.
 
 Die erste R6.2-Scheibe inventarisiert gemeinsam genutzte Treiberzustände und
 gibt ausschließlich die autoritätslose, überwachte Driver-Fault-Fixture für
