@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2k – Netzwerkdienst-AP-Affinität nach Crash wiederherstellen
+Aktives Thema: kein aktives Paket; R6.2k ist abgeschlossen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -174,3 +174,12 @@ führte danach einen autorisierten Heartbeat auf CPU 2 aus. Der Gast bestand
 `NETWORK_PARSER_OK`, `TASK_CAPACITY_OK` und `TEST_OK`; NIC-Treiber,
 `netdev_poll`, Supervisor und Legacy-PIC-IRQ blieben BSP-affin. Vor einem
 späteren Fence kehrt eine noch lebende Generation begrenzt auf CPU 0 zurück.
+
+## Netzwerkdienst-AP-Restart nachgewiesen
+
+Im RTL8139-Socket-Hub-Lauf arbeitete Generation 4 auf CPU 3. Der bestehende
+Queue-Druck-/Crashpfad führte sie vor dem Entzug von ARP-, Socket-, Lease-,
+Frame- und Endpoint-Autorität auf CPU 0 zurück. Ersatzgeneration 5 self-testete
+und publizierte Ready auf dem BSP, lief anschließend wieder auf CPU 3 und
+bestand `NETWORK_RECOVERY_OK`, `NETWORK_PARSER_OK`, `TASK_CAPACITY_OK` und
+`TEST_OK`.

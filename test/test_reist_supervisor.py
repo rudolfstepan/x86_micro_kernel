@@ -22,6 +22,11 @@ class ReistSupervisorTests(unittest.TestCase):
                        source.index("static void probe_report_recovery_pair")]
         self.assertLess(fence.index("TASK_CPU_MASK_BSP"),
                         fence.index("netstack_revoke_arp_bindings"))
+        ready = source[source.index(
+            "if (report_type == REIST_REPORT_SERVICE_READY)"):
+            source.index("if (report_type == REIST_REPORT_WCET_BASELINE)")]
+        self.assertLess(ready.index("REIST_NETWORK SERVICE_READY"),
+                        ready.index("process_set_supervised_affinity"))
         self.assertLess(kernel.index("x86_smp_scheduler_probe()"),
                         kernel.index(
                             "supervisor_set_network_service_current_affinity"))

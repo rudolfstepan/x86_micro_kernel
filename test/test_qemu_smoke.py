@@ -44,6 +44,26 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIn("ready/AP", RUNNER_MODULE.validate(
             missing, expect_network_service_ap=True))
 
+    def test_network_service_ap_restart_requires_replacement_progress(self):
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER,
+            "BOOT_OK",
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_AP_MARKER + "2 generation=4",
+            RUNNER_MODULE.REIST_ARP_REVOKED_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_CRASH_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER,
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_AP_MARKER + "1 generation=5",
+            RUNNER_MODULE.REIST_NETWORK_RECOVERY_MARKER,
+            "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_network_service_ap_restart=True))
+        missing = transcript.replace(
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_AP_MARKER +
+            "1 generation=5\n", "")
+        self.assertIn("AP restart", RUNNER_MODULE.validate(
+            missing, expect_network_service_ap_restart=True))
+
     def test_storage_ap_requires_ready_execution_and_real_self_test(self):
         transcript = "\n".join((
             RUNNER_MODULE.REIST_STORAGE_READY_MARKER,

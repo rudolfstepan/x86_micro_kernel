@@ -2622,6 +2622,13 @@ int supervisor_probe_report(int pid, uint32_t generation,
         if (supervisor_protected_probe_control_write(
                 &probe_runtime.control, &control) != 0) return -1;
         printf("REIST_NETWORK SERVICE_READY\n");
+        if (control.post_ready_cpu_affinity_mask != 0U &&
+            process_set_supervised_affinity(
+                control.pid, control.process_generation,
+                control.post_ready_cpu_affinity_mask) != 0) {
+            (void)supervisor_force_isolate(control.handle);
+            return -1;
+        }
         return 0;
     }
     if (report_type == REIST_REPORT_WCET_BASELINE) {

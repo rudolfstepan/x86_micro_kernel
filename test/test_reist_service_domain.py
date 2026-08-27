@@ -10,6 +10,13 @@ def read(path: str) -> str:
 
 
 class ReistServiceDomainTests(unittest.TestCase):
+    def test_network_restart_reapplies_ap_affinity_only_after_ready(self):
+        supervisor = read("kernel/init/supervisor.c")
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn("post_ready_cpu_affinity_mask", supervisor)
+        self.assertIn("--expect-network-service-ap-restart", runner)
+        self.assertIn("replacement_ap", runner)
+
     def test_connect_abi_is_append_only_and_pointer_checked_first(self):
         libc = read("lib/libc/stdlib.h")
         sdk = read("userspace/sdk/include/x86os.h")

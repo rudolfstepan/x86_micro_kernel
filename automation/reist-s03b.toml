@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2k-network-service-ap-restart"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -2145,7 +2145,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2k-network-service-ap-restart"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Restore network-service AP affinity after bounded crash restart"
@@ -2184,7 +2184,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "network: restore service AP affinity after restart"
-evidence = []
+evidence = [
+  "supervisor passed 7 tests service-domain passed 19 tests and QEMU runner passed 45 tests",
+  "Windows QEMU VGA production build compiled all 102 C objects and produced a signed validated native image",
+  "RTL8139 socket-hub SMP4 QEMU observed network generation 4 execute on CPU 3 before bounded crash",
+  "fencing revoked ARP socket lease frame and endpoint authority then replacement generation 5 published ready on BSP",
+  "replacement generation 5 executed on CPU 3 before NETWORK_RECOVERY_OK and TEST_OK",
+  "active_id is empty and RTL8139 driver netdev bottom half supervisor and legacy-PIC IRQ remained BSP-affine"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

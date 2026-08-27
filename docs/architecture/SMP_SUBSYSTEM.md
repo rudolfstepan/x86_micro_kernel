@@ -278,5 +278,10 @@ auf CPU 0. Nach Self-Test, Fortschritt, `SERVICE_READY` und
 `netdev_poll`, Supervisor, Socket-/ARP-Eigentum und Legacy-PIC-IRQ bleiben auf
 dem BSP. Ein späterer Fence führt eine noch lebende AP-Generation vor dem
 Entzug ihrer Netzwerkautorität sleepfähig auf CPU 0 zurück.
+R6.2k weist denselben Vertrag über den bestehenden Real-NIC-Crashpfad nach.
+Generation 4 kehrt vor ARP-/Socket-/Lease-Revoke auf den BSP zurück; die
+geschützte AP-Maske überlebt den Fence. Ersatzgeneration 5 self-testet und
+publiziert Ready auf CPU 0, bevor sie wieder AP-affin wird und
+`NETWORK_RECOVERY_OK` abschließt.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

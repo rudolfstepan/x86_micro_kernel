@@ -1536,6 +1536,7 @@ def validate(
     expect_storage_ap: bool = False,
     expect_storage_ap_restart: bool = False,
     expect_network_service_ap: bool = False,
+    expect_network_service_ap_restart: bool = False,
     expect_handover: bool = False,
     expect_icmp_echo: bool = False,
     expect_dhcp_config: bool = False,
@@ -1788,6 +1789,24 @@ def validate(
         ap_execution = transcript.find(REIST_NETWORK_SERVICE_AP_MARKER, boot)
         if ready < 0 or ready > boot or ap_execution < boot or ap_execution > test:
             return "missing ordered network-service ready/AP markers"
+    if expect_network_service_ap_restart:
+        first_ap = transcript.find(REIST_NETWORK_SERVICE_AP_MARKER, boot)
+        revoked = exact_line_position(transcript, REIST_ARP_REVOKED_MARKER)
+        recovered_service = exact_line_position(
+            transcript, REIST_NETWORK_CRASH_MARKER)
+        replacement_ready = exact_line_position(
+            transcript, REIST_NETWORK_SERVICE_READY_MARKER,
+            after=recovered_service)
+        replacement_ap = transcript.find(REIST_NETWORK_SERVICE_AP_MARKER,
+                                         replacement_ready)
+        recovered = exact_line_position(transcript,
+                                        REIST_NETWORK_RECOVERY_MARKER,
+                                        after=replacement_ap)
+        if (first_ap < boot or revoked < first_ap or
+                recovered_service < revoked or
+                replacement_ready < recovered_service or
+                replacement_ap < replacement_ready or recovered < replacement_ap):
+            return "missing ordered network-service AP restart markers"
     if expect_handover:
         positions = [exact_line_position(transcript, marker)
                      for marker in REIST_HANDOVER_MARKERS]
@@ -2005,6 +2024,10 @@ def main() -> int:
         help="require a healthy network-service heartbeat on an AP",
     )
     parser.add_argument(
+        "--expect-network-service-ap-restart", action="store_true",
+        help="require pre-crash and replacement network-service AP progress",
+    )
+    parser.add_argument(
         "--expect-wcet-baseline", action="store_true",
         help="require a bounded empirical timing marker",
     )
@@ -2169,6 +2192,7 @@ def main() -> int:
                             args.expect_storage_ap,
                             args.expect_storage_ap_restart,
                             args.expect_network_service_ap,
+                            args.expect_network_service_ap_restart,
                             args.expect_handover,
                             args.inject_icmp_echo,
                             args.expect_dhcp_config,
