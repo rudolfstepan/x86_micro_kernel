@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: kein aktives Paket; R6.2i ist abgeschlossen
+Aktives Thema: R6.2j – gesunden Netzwerkdienst auf APs ausführen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.

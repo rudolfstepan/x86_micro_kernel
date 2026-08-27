@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2j-ap-network-service"
 
 [policy]
 one_package_per_run = true
@@ -2092,6 +2092,49 @@ evidence = [
   "the guest completed STORAGE_RESTART_OK STORAGE_SERVICE_OK TASK_CAPACITY_OK and TEST_OK",
   "active_id is empty and ATA AHCI FDD administration supervisor legacy-PIC IRQ and device authority remained unchanged"
 ]
+
+[[packages]]
+id = "R6.2j-ap-network-service"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run the healthy generation-scoped network service on APs"
+scope = "Persist an online-AP target mask in the ECC-protected probe/network-service control record. Preserve the existing bounded crash hang invalid-reply bootstrap generations on the BSP. Require the healthy fourth generation to self-test, publish progress and network SERVICE_READY on the BSP, then apply the mask only after the SMP scheduler release. Prove a real authorized network-service operation on an AP while NIC drivers, netdev bottom half, supervisor, socket/ARP ownership and legacy-PIC IRQ remain unchanged. Restart affinity restoration is a separate package."
+allowed_files = [
+  "automation/reist-s03b.toml", "kernel/init/kernel.c",
+  "kernel/init/supervisor.c", "include/kernel/supervisor.h",
+  "scripts/run_qemu_smoke.py", "test/test_qemu_smoke.py",
+  "test/test_reist_supervisor.py", "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "crash hang invalid-reply and healthy bootstrap generations construct and recover on BSP",
+  "the healthy generation self-tests reports progress and publishes SERVICE_READY on BSP before AP affinity",
+  "the desired mask is protected validated and cleared with inactive state",
+  "only the current healthy ready network-service generation may execute on APs",
+  "NIC drivers netdev bottom half supervisor socket and ARP ownership and legacy-PIC IRQ remain BSP-affine",
+  "the guest proves an authorized AP operation plus the existing network parser and service contracts"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_qemu_smoke.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --vmware-vga --expect-svga2d --expect-network-service-ap --timeout 120 --log build/codex-agent/r62j-network-service-ap.log"
+]
+stop_conditions = [
+  "any bootstrap generation becomes AP-affine before healthy SERVICE_READY",
+  "a NIC driver bottom half supervisor socket owner ARP owner or legacy-PIC IRQ moves off BSP",
+  "network generation validation deadlines or bounded queues regress",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "network: run supervised service on APs"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
