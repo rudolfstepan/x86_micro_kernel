@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import os
 from pathlib import Path
 
 
@@ -15,10 +16,16 @@ class UsbKeyboardTests(unittest.TestCase):
             self.skipTest("host C compiler unavailable")
         with tempfile.TemporaryDirectory(prefix="reist-usb-hid-") as temp:
             executable = Path(temp) / "hid-keyboard-test.exe"
+            command = [
+                compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-DREIST_USB_HID_HOST_TEST", "-I.",
+                "test/test_usb_hid_keyboard_host.c",
+                "drivers/usb/hid_kb.c", "-o", str(executable),
+            ]
+            if os.name != "nt":
+                command.append("-pthread")
             subprocess.run(
-                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-I.", "test/test_usb_hid_keyboard_host.c",
-                 "drivers/usb/hid_kb.c", "-o", str(executable)],
+                command,
                 cwd=ROOT, check=True, capture_output=True, text=True)
             subprocess.run([str(executable)], cwd=ROOT, check=True,
                            capture_output=True, text=True, timeout=5)
@@ -46,8 +53,8 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("memcpy(saved_slot, xhci_device_context(hid)", source)
         self.assertIn("((uint32_t)hid->endpoint_id << 27U)", source)
         self.assertIn(
-            "ep[4] = (uint32_t)packet | ((uint32_t)packet << 16U)",
-            source)
+            "ep[4] = (uint32_t)packet | "
+            "(((uint32_t)packet >> 8U) << 16U)", source)
         self.assertNotIn(
             "memcpy(saved_slot, input_context + controller.context_size",
             source)
@@ -60,6 +67,9 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("report[index] >= 1U && report[index] <= 3U", source)
         self.assertIn("generation != active_generation", source)
         self.assertIn("hid_keyboard_detach", source)
+        self.assertIn("keyboard_state_lock", source)
+        self.assertIn("hid_sync_lock_acquire", source)
+        self.assertIn("hid_sync_lock_release", source)
 
     def test_blocking_console_input_polls_xhci_before_queue_lock(self):
         source = (ROOT / "drivers/char/kb.c").read_text(encoding="utf-8")
@@ -79,7 +89,7 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("status.keyboard_reports", source)
         self.assertIn("usb_failure_name(status.failure_stage)", source)
         self.assertIn("status.configuration_length", source)
-        main = source[source.index("int main(void)"):]
+        main = source[source.index("int main("):]
         self.assertLess(main.index("show_usb_keyboard_startup();"),
                         main.index("for (;;)"))
 

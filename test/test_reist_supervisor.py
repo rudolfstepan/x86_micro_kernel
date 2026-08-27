@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReistSupervisorTests(unittest.TestCase):
-    def test_compositor_lifecycle_is_protected_bounded_and_bsp_only(self):
+    def test_compositor_lifecycle_ap_affinity_is_post_ready_and_one_shot(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         control = source[source.index("static bool compositor_control_valid"):
@@ -18,6 +18,7 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("SUPERVISOR_COMPOSITOR_CONTROL_VERSION", source)
         self.assertIn("compositor control exceeds protected payload", source)
         self.assertIn("control->process_generation", control)
+        self.assertIn("control->post_ready_cpu_affinity_mask", control)
         spawn = source[source.index("static bool compositor_spawn_next"):
                        source.index("static bool compositor_fence_apply")]
         self.assertIn("process_spawn_supervised_prepared", spawn)
@@ -28,12 +29,23 @@ class ReistSupervisorTests(unittest.TestCase):
                        source.index("static bool compositor_fence_verify")]
         self.assertLess(fence.index("display_control_deactivate()"),
                         fence.index("process_terminate(control.pid)"))
-        report = source[source.index("static int compositor_report_if_identity"):
-                        source.index("static void compositor_monitor_process")]
+        report_start = source.index(
+            "static int compositor_report_if_identity",
+            source.index("bool supervisor_compositor_session_active"),
+        )
+        report = source[report_start:
+                        source.index("static void compositor_monitor_process",
+                                     report_start)]
         self.assertLess(report.index("REIST_REPORT_SELF_TEST"),
                         report.index("REIST_REPORT_PROGRESS"))
         self.assertLess(report.index("REIST_REPORT_PROGRESS"),
                         report.index("REIST_REPORT_SERVICE_READY"))
+        ready = report[report.index("REIST_REPORT_SERVICE_READY"):]
+        self.assertLess(ready.index("COMPOSITOR_READY"),
+                        ready.index("process_set_supervised_affinity"))
+        self.assertLess(ready.index("post_ready_cpu_affinity_mask = 0U"),
+                        ready.index("process_set_supervised_affinity"))
+        self.assertIn("REIST_GUI COMPOSITOR_AP_EXEC cpu=", report)
         self.assertIn("heartbeat_timeout_ms = 2000U", source)
         self.assertIn("recovery_timeout_ms = 1000U", source)
         self.assertIn("restart_budget = 3U", source)
@@ -45,8 +57,8 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("PROCESS_DOMAIN_COMPOSITOR", display_connect)
         self.assertIn('strcmp(client->image_path, "/usr/gui/bin/desktop.prg")',
                       display_connect)
-        self.assertNotIn("set_current_affinity", kernel[
-            kernel.index("supervisor_start_compositor"):])
+        start = kernel.index("supervisor_start_compositor")
+        self.assertIn("production_driver_ap_mask", kernel[start:start + 180])
 
     def test_compositor_vfs_shadow_authority_is_narrow_and_bounded(self):
         process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")

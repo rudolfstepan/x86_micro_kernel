@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2n-ap-compositor-input"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -9791,7 +9791,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2n-ap-compositor-input"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run the supervised compositor on APs over SMP-safe USB input"
@@ -9850,3 +9850,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "smp: run compositor over locked USB input"
+evidence = [
+  "USB keyboard passed 5 tests and USB mouse passed 14 tests including concurrent attach detach report and queue activity under bounded IRQ-safe host locks",
+  "supervisor contract passed 9 tests including one-shot post-ready compositor AP affinity and BSP-only restart default",
+  "VMware mouse runner contract passed 6 tests including four-vCPU VMX loopback-only RFB input exact process cleanup ordered markers and fail-closed compositor handling",
+  "the regenerated VMware VGA package passed in 14 seconds with four vCPUs virtual HID and loopback-only RFB settings",
+  "the four-vCPU VMware guest reported xHCI HID readiness BSP legacy-PIC scheduling compositor SERVICE_READY and COMPOSITOR_AP_EXEC on an AP before DESKTOP_MOUSE_OK",
+  "the final loopback-RFB runtime gate passed in 13 seconds and removed its exact VMX and Workstation processes",
+  "no queued package remains active_id is empty and compositor restart affinity remains a separate proof"
+]

@@ -7,6 +7,7 @@
  * Safety: Feste Reportgröße und Usage-Tabellen verhindern ungebundene Deskriptorinterpretation.
  */
 #include "hid_kb.h"
+#include "hid_sync.h"
 #include "drivers/char/kb.h"
 #include "lib/libc/string.h"
 
@@ -18,6 +19,8 @@ typedef struct {
 static uint8_t previous_report[8];
 static uint32_t active_generation;
 static bool attached;
+/* Lock order: xHCI runtime -> HID generation -> common keyboard queue. */
+static hid_sync_lock_t keyboard_state_lock = HID_SYNC_LOCK_INIT;
 
 static hid_key_t hid_usage_to_key(uint8_t usage) {
     static const uint8_t letters[26] = {
@@ -97,13 +100,19 @@ static void publish(hid_key_t key, bool released) {
 }
 
 void hid_keyboard_attach(uint32_t generation) {
+    uint32_t flags = hid_sync_lock_acquire(&keyboard_state_lock);
     memset(previous_report, 0, sizeof(previous_report));
     active_generation = generation;
     attached = generation != 0U;
+    hid_sync_lock_release(&keyboard_state_lock, flags);
 }
 
 void hid_keyboard_detach(uint32_t generation) {
-    if (!attached || generation != active_generation) return;
+    uint32_t flags = hid_sync_lock_acquire(&keyboard_state_lock);
+    if (!attached || generation != active_generation) {
+        hid_sync_lock_release(&keyboard_state_lock, flags);
+        return;
+    }
     for (uint8_t bit = 0U; bit < 8U; bit++)
         if (previous_report[0] & (1U << bit))
             publish(hid_modifier_to_key(bit), true);
@@ -113,15 +122,21 @@ void hid_keyboard_detach(uint32_t generation) {
     memset(previous_report, 0, sizeof(previous_report));
     attached = false;
     active_generation = 0U;
+    hid_sync_lock_release(&keyboard_state_lock, flags);
 }
 
 bool hid_keyboard_report(uint32_t generation, const uint8_t *report,
                          size_t length) {
-    if (!attached || generation != active_generation || !report ||
-        length != sizeof(previous_report) || report[1] != 0U)
+    if (!report || length != sizeof(previous_report) || report[1] != 0U)
         return false;
     for (uint32_t index = 2U; index < 8U; index++)
         if (report[index] >= 1U && report[index] <= 3U) return false;
+
+    uint32_t flags = hid_sync_lock_acquire(&keyboard_state_lock);
+    if (!attached || generation != active_generation) {
+        hid_sync_lock_release(&keyboard_state_lock, flags);
+        return false;
+    }
 
     for (uint32_t index = 2U; index < 8U; index++) {
         uint8_t usage = previous_report[index];
@@ -139,5 +154,6 @@ bool hid_keyboard_report(uint32_t generation, const uint8_t *report,
             publish(hid_usage_to_key(usage), false);
     }
     memcpy(previous_report, report, sizeof(previous_report));
+    hid_sync_lock_release(&keyboard_state_lock, flags);
     return true;
 }

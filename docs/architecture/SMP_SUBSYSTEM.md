@@ -290,5 +290,14 @@ auf CPU 0. Vor Termination oder Restart wird die Displaypublikation unter dem
 bestehenden Timed-Mutex deaktiviert; erst danach darf die alte Generation
 verschwinden. Diese Lifecycle-Scheibe ist ausdruecklich noch keine
 AP-Freigabe.
+R6.2n serialisiert den nach der BSP-only-Enumeration veroeffentlichten xHCI-
+Eventconsumer und seine Diagnosesnapshots mit einem kurzen CPU-besitzenden
+IRQ-Lock. Darunter folgen ausschliesslich der generationsgebundene HID-Maus-
+beziehungsweise Tastaturlock und bei Tastaturereignissen zuletzt der
+gemeinsame Eingabequeuelock. Kein Lock umfasst Controller-, Port- oder
+Control-Transfer-Deadlines. Der Compositor konsumiert seine geschuetzte
+Einmal-AP-Maske erst nach `SERVICE_READY`; xHCI-Legacy-PIC-IRQ bleibt auf CPU
+0. Fence oder Restart loeschen diese Einmalfreigabe, bis ein eigener
+Restart-Nachweis sie spaeter dauerhaft machen darf.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

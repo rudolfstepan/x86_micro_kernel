@@ -562,8 +562,8 @@ firmware = "bios"
 bios.bootOrder = "{boot_order}"
 bios.hddOrder = "sata0:0"
 memsize = "512"
-numvcpus = "1"
-cpuid.coresPerSocket = "1"
+numvcpus = "4"
+cpuid.coresPerSocket = "4"
 mem.hotadd = "FALSE"
 vcpu.hotadd = "FALSE"
 sata0.present = "TRUE"
@@ -611,6 +611,12 @@ serial0.fileName = "vmware-serial.log"
 serial0.startConnected = "TRUE"
 serial0.tryNoRxLoss = "TRUE"
 serial0.yieldOnMsrRead = "TRUE"
+# The automated mouse proof uses an RFB PointerEvent on a loopback-only
+# endpoint. This reaches VMware's virtual Basic Mouse without exposing a
+# remote display service beyond the host or passing through physical HID.
+RemoteDisplay.vnc.enabled = "TRUE"
+RemoteDisplay.vnc.ip = "127.0.0.1"
+RemoteDisplay.vnc.port = "5909"
 ethernet0.present = "TRUE"
 ethernet0.startConnected = "TRUE"
 # NAT supplies a deterministic VMware DHCP server out of the box. Users who
@@ -674,13 +680,14 @@ Start:
 
 Die VM ist bereits vollständig konfiguriert:
   - Legacy BIOS, zuerst Diskette, danach Fallback auf IDE-Festplatte
-  - 1 virtuelle CPU, 512 MiB RAM
+  - 4 virtuelle CPUs, 512 MiB RAM
   - VGA ohne 3D-Beschleunigung
   - Intel E1000, standardmaessig ueber VMware NAT mit DHCP
   - automatische IPv4-Konfiguration per DHCP
   - 60-MiB-FAT32-Datenpartition mit README.TXT und Ring-3-Systemprogrammen
   - COM1-Bootprotokoll in vmware-serial.log
   - virtuelle PS/2-Tastatur und virtuelle USB-Maus
+  - lokaler RFB-Port 5909 nur fuer den automatisierten Mausnachweis
   - virtuelles Intel-HDA-Audiogerät für AUDIOINFO und AUDIOTEST
   - bootfähiges 1,44-MB-Floppy-Image
 

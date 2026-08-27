@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2n – AP-Compositor über SMP-sicheren USB-Eingabepfad
+Aktives Thema: keines – R6.2n ist abgeschlossen und committed-bereit
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -51,13 +51,15 @@ Tests und der lokale Diff.
 - `scripts/build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom` – PASS
 - Vier aufeinanderfolgende vollständige QEMU-SMP4-Läufe nach der
   Lockdiagnose – PASS; der letzte zusätzlich mit VMware-SVGA2D.
-- `python test/test_usb_mouse.py -v` – 13/13
+- `python test/test_usb_keyboard.py -v` – 5/5
+- `python test/test_usb_mouse.py -v` – 14/14
 - `python test/test_reist_supervisor.py -v` – 9/9
 - `python test/test_vmware_mouse.py -v` – 6/6
 - `python test/test_desktop_source.py -v` – 41/41
-- VMware-VGA-Paket und `vmware-mouse`-Runtime – PASS mit geordneten Markern
-  `USB: xHCI HID ready`, `COMPOSITOR_READY`, `DESKTOP_OK`,
-  `DESKTOP_EXPLORER_OK` und `DESKTOP_MOUSE_OK`.
+- VMware-VGA-Paket – PASS in 14 Sekunden; `vmware-mouse`-Runtime – PASS in
+  13 Sekunden mit geordneten Markern `USB: xHCI HID ready`,
+  `REIST_SMP SCHEDULER_READY cpus=4`, `COMPOSITOR_READY`, `DESKTOP_OK`,
+  `DESKTOP_EXPLORER_OK`, `COMPOSITOR_AP_EXEC` und `DESKTOP_MOUSE_OK`.
 
 Referenzlauf:
 
@@ -88,7 +90,7 @@ die geordneten Explorer-/Mausmarker und beendet genau seinen einzigen VMX-
 Prozess. Der Benutzer bestätigte die Maus zusätzlich sichtbar; der frische
 Gast bestätigte den Root-Explorer über den Erfolgsmarker.
 
-## Aktives R6.2n-Paket
+## R6.2n abgeschlossen
 
 Der veröffentlichte xHCI-Eventring, die Diagnosesnapshots und die
 generationsgebundenen HID-Tastatur-/Mauszustände werden als kurze, feste
@@ -99,8 +101,12 @@ Kontrollrecord abgelegte Einmal-AP-Maske nach `SERVICE_READY` übernehmen.
 
 Die Abnahme verwendet die generierte VMware-Referenz mit vier vCPUs. Legacy-
 PIC-xHCI-IRQ bleibt auf CPU 0; der Compositor muss vor der virtuellen
-Mauszustellung AP-Ausführung melden. Restart-Affinität wird in diesem Paket
-nicht implizit übernommen und benötigt einen getrennten Fehlerlauf.
+Mauszustellung AP-Ausführung melden. Die virtuelle Bewegung kommt
+deterministisch über einen ausschließlich an `127.0.0.1:5909` gebundenen
+RFB-3.8-Pointerevent; physisches HID-Passthrough bleibt verboten. Das Paket-
+Gate bestand in 14 Sekunden, der Vier-vCPU-Runtime-Nachweis in 13 Sekunden.
+Restart-Affinität wurde nicht implizit übernommen und benötigt einen
+getrennten Fehlerlauf.
 
 ## Restrisiko und nächster zusammenhängender Schritt
 
@@ -109,6 +115,12 @@ Ein früherer Lauf meldete einmal eine rekursive Übernahme von
 erneut auf; die neue Panic-Diagnose liefert bei Wiederholung sofort CPU und
 Aufrufer. Das ist starke Regressionsevidenz, aber kein Beweis, dass ein
 nichtdeterministisches Rennen ausgeschlossen ist.
+
+Der nächste kohärente R6.2-Schritt ist der getrennte Compositor-Restart-
+Nachweis: Eine compile-time-begrenzte erste AP-Generation muss ihren Heartbeat
+verlieren, vor Display-Fence und Reap begrenzt auf den BSP zurückkehren und
+die Ersatzgeneration darf ihre geschützte AP-Maske erst nach erneutem
+`SERVICE_READY` anwenden. Dafür ist noch kein Paket aktiv geschaltet.
 
 Die erste R6.2-Scheibe inventarisiert gemeinsam genutzte Treiberzustände und
 gibt ausschließlich die autoritätslose, überwachte Driver-Fault-Fixture für

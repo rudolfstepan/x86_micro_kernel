@@ -136,7 +136,7 @@ static volatile uint32_t network_service_ap_execution_generation;
 #define SUPERVISOR_DRIVER_CONTROL_VERSION 1U
 #define SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION 1U
 #define SUPERVISOR_AUDIO_SERVICE_PATH "/libexec/reist/audio.prg"
-#define SUPERVISOR_COMPOSITOR_CONTROL_VERSION 1U
+#define SUPERVISOR_COMPOSITOR_CONTROL_VERSION 2U
 #define SUPERVISOR_COMPOSITOR_PATH "/usr/gui/bin/desktop.prg"
 #define SUPERVISOR_COMPOSITOR_STOP_DIAGNOSTIC 0x434D5053U
 
@@ -273,6 +273,7 @@ typedef struct {
     int32_t pid;
     uint32_t process_generation;
     supervisor_handle_t supervisor;
+    uint32_t post_ready_cpu_affinity_mask;
 } supervisor_compositor_control_t;
 
 typedef struct {
@@ -283,6 +284,7 @@ typedef struct {
 } supervisor_compositor_runtime_t;
 
 static supervisor_compositor_runtime_t compositor_runtime;
+static volatile uint32_t compositor_ap_execution_generation;
 static int compositor_report_if_identity(
     int pid, uint32_t generation, uint32_t report_type, uint32_t value,
     uint64_t now_ms, bool *matched);
@@ -1874,6 +1876,8 @@ static bool compositor_control_valid(const void *payload, size_t length) {
     if (control->active > 1U || control->administratively_enabled > 1U ||
         control->fenced > 1U || control->healthy > 1U ||
         control->ready > 1U || control->stop_requested > 1U) return false;
+    if ((control->post_ready_cpu_affinity_mask & 0xFFFF0001U) != 0U)
+        return false;
     if (control->active == 0U) {
         const supervisor_compositor_control_t empty = {0};
         return memcmp(control, &empty, sizeof(empty)) == 0;
@@ -5726,6 +5730,7 @@ static void compositor_abort_prepared_spawn(
     control->ready = 0U;
     control->stop_requested = 0U;
     control->fenced = 1U;
+    control->post_ready_cpu_affinity_mask = 0U;
     (void)compositor_control_write(control);
 }
 
@@ -5776,6 +5781,7 @@ static bool compositor_fence_apply(void *context) {
     control.ready = 0U;
     control.stop_requested = 0U;
     control.fenced = 1U;
+    control.post_ready_cpu_affinity_mask = 0U;
     return compositor_control_write(&control) == 0;
 }
 
@@ -5788,7 +5794,9 @@ static bool compositor_fence_verify(void *context) {
         control.ready == 0U;
 }
 
-bool supervisor_start_compositor(uint64_t now_ms) {
+bool supervisor_start_compositor(uint64_t now_ms,
+                                 uint32_t post_ready_cpu_affinity_mask) {
+    if ((post_ready_cpu_affinity_mask & 0xFFFF0001U) != 0U) return false;
     supervisor_compositor_control_t control;
     if (compositor_control_read(&control) != 0 || control.active != 0U)
         return false;
@@ -5812,6 +5820,7 @@ bool supervisor_start_compositor(uint64_t now_ms) {
         .administratively_enabled = 1U,
         .fenced = 1U,
         .supervisor = handle,
+        .post_ready_cpu_affinity_mask = post_ready_cpu_affinity_mask,
     };
     if (compositor_control_write(&control) != 0 ||
         !compositor_spawn_next(handle)) {
@@ -5852,14 +5861,34 @@ static int compositor_report_if_identity(
             control.healthy = 1U;
             result = compositor_control_write(&control);
         }
+#ifndef REIST_HOST_TEST
+        if (result == 0 && control.ready != 0U &&
+            x86_cpu_current_index() != 0U) {
+            uint32_t prior = __sync_lock_test_and_set(
+                &compositor_ap_execution_generation,
+                control.process_generation);
+            if (prior != control.process_generation)
+                printf("REIST_GUI COMPOSITOR_AP_EXEC cpu=%u generation=%u\n",
+                       x86_cpu_current_index(), control.process_generation);
+        }
+#endif
     } else if (report_type == REIST_REPORT_SERVICE_READY) {
         if (value != 1U || control.fenced != 0U ||
             control.healthy == 0U || control.ready != 0U) result = -13;
         else {
+            uint32_t post_ready_cpu_affinity_mask =
+                control.post_ready_cpu_affinity_mask;
             control.ready = 1U;
+            /* Consume the normal-path grant before applying it. A later
+             * restart therefore returns to the BSP until separately proven. */
+            control.post_ready_cpu_affinity_mask = 0U;
             result = compositor_control_write(&control);
             if (result == 0) printf("REIST_GUI COMPOSITOR_READY generation=%u\n",
                                     control.process_generation);
+            if (result == 0 && post_ready_cpu_affinity_mask != 0U)
+                result = process_set_supervised_affinity(
+                    control.pid, control.process_generation,
+                    post_ready_cpu_affinity_mask);
         }
     } else if (report_type == REIST_REPORT_DIAGNOSTIC &&
                value == SUPERVISOR_COMPOSITOR_STOP_DIAGNOSTIC &&
@@ -6224,8 +6253,10 @@ bool supervisor_start_worker(void) {
     return false;
 }
 
-bool supervisor_start_compositor(uint64_t now_ms) {
+bool supervisor_start_compositor(uint64_t now_ms,
+                                 uint32_t post_ready_cpu_affinity_mask) {
     (void)now_ms;
+    (void)post_ready_cpu_affinity_mask;
     return false;
 }
 

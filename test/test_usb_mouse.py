@@ -17,7 +17,7 @@ class UsbMouseTests(unittest.TestCase):
             executable = Path(temp) / "hid-mouse-test.exe"
             subprocess.run(
                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-DHID_MOUSE_HOST_TEST", "-I.",
+                 "-DREIST_USB_HID_HOST_TEST", "-I.",
                  "test/test_usb_hid_mouse_host.c",
                  "drivers/usb/hid_mouse.c", "lib/libc/string.c",
                  "-o", str(executable)],
@@ -319,6 +319,28 @@ class UsbMouseTests(unittest.TestCase):
         self.assertNotIn("draw_mouse_pointer", source)
         self.assertIn('x86os_puts("DESKTOP_MOUSE_OK\\n")', source)
         self.assertIn('x86os_puts("DESKTOP_EXPLORER_OK\\n")', source)
+
+    def test_xhci_and_mouse_runtime_state_use_bounded_smp_locks(self):
+        xhci = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        mouse = (ROOT / "drivers/usb/hid_mouse.c").read_text(
+            encoding="utf-8")
+        self.assertIn("static spinlock_t xhci_runtime_lock = SPINLOCK_INIT",
+                      xhci)
+        self.assertIn("controller.runtime_published", xhci)
+        for function in ("xhci_irq_handler", "xhci_poll",
+                         "xhci_get_diagnostics"):
+            start = xhci.index(function)
+            body = xhci[start:xhci.index("\n}", start)]
+            self.assertIn("spinlock_acquire_irq(&xhci_runtime_lock)", body)
+            self.assertIn("spinlock_release_irq(&xhci_runtime_lock", body)
+        probe = xhci[xhci.index("int xhci_probe"):
+                     xhci.index("void xhci_poll")]
+        wait = probe[probe.index("xhci_wait_connected_ports"):
+                     probe.index("runtime_flags")]
+        self.assertNotIn("spinlock_acquire_irq(&xhci_runtime_lock)", wait)
+        self.assertIn("mouse_state_lock", mouse)
+        self.assertGreaterEqual(mouse.count("hid_sync_lock_acquire"), 4)
+        self.assertGreaterEqual(mouse.count("hid_sync_lock_release"), 7)
 
     def test_mouse_syscall_is_append_only_and_pointer_checked(self):
         stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")

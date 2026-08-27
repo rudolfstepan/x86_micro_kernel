@@ -20,7 +20,7 @@ das Überschreiben einer über `vmrun` laufenden Paket-VM.
 |---|---|
 | Firmware | Legacy BIOS |
 | Boot | `sata0:0` |
-| CPU/RAM | 1 vCPU, 512 MiB |
+| CPU/RAM | 4 vCPUs, 512 MiB |
 | Festplatte | persistente monolithic-flat SATA-VMDK |
 | Grafik | VMware SVGA, 3D aus, standardmäßig VGA-Text |
 | Skalierung | Free Stretch (`gui.stretchGuestMode=fullfill`) |
@@ -45,8 +45,8 @@ Umständen die Host-Eingabegeräte übernehmen. Tastatureingabe läuft über die
 virtuelle PS/2-Schnittstelle, Mausdiagnosen über VMwares virtuelles USB-HID.
 
 VMware kann weder Intels realen `8086:8c31`-Controller noch die NVIDIA-Karte
-`10de:1280` emulieren. Legacy-BIOS, SATA, ein xHCI-Pfad, EHCI-Präsenz und eine
-einzelne CPU bilden die sicher testbare Annäherung; Intel-spezifische Register-,
+`10de:1280` emulieren. Legacy-BIOS, SATA, ein xHCI-Pfad, EHCI-Präsenz und vier
+vCPUs bilden die automatisierte Annäherung; Intel-spezifische Register-,
 Timing- und physische HID-Fehler bleiben ein Nachweis auf dem ASUS-Board.
 
 VMwares HDA-Modell implementiert das PCI-2.3-`INTx Disable`-Bit nicht. Sein
@@ -65,18 +65,26 @@ virtuellen Grafikgeneration.
 
 ## Funktionstest
 
-Der automatisierte Desktop-Eingabenachweis startet nur bei leerem VMware-
-Laufzustand, verwendet die generierte virtuelle Basic-Mouse ohne physisches
-HID-Passthrough und ist auf 75 Sekunden sowie zwölf Eingabeversuche begrenzt:
+Der automatisierte Desktop-Eingabenachweis startet nur bei vollständig leerem
+VMware-Laufzustand ohne offene Workstation-UI und verwendet die generierte
+virtuelle Basic-Mouse ohne physisches HID-Passthrough. Die VMX bindet ihren
+RFB-3.8-Eingabekanal ausschließlich an `127.0.0.1:5909`; der Runner prüft den
+Port vor dem Start und sendet darüber begrenzte Standard-PointerEvents. Er
+öffnet die exakte Paket-VM über Workstations sichtbaren `-x`-Pfad und beendet
+ausschließlich die danach ermittelte VMX-PID sowie seine eigene Workstation-
+PID. Start, Markerwartezeit und Aufräumen bleiben auf 30, 75 beziehungsweise
+10 Sekunden begrenzt. Die Eingabephase verwendet höchstens zwölf Versuche:
 
 ```powershell
 .\scripts\test-reist-runtime.ps1 -Mode vmware-mouse
 ```
 
-Er verlangt in dieser Reihenfolge xHCI-HID-Bereitschaft,
-`COMPOSITOR_READY`, `DESKTOP_OK`, `DESKTOP_EXPLORER_OK` und
-`DESKTOP_MOUSE_OK`. Panic oder Compositor-Degradation vor dem Mausmarker
-brechen den Lauf geschlossen ab.
+Er verlangt in dieser Reihenfolge xHCI-HID-Bereitschaft, die SMP-
+Schedulerfreigabe, `COMPOSITOR_READY`, `DESKTOP_OK`, `DESKTOP_EXPLORER_OK`,
+einen `COMPOSITOR_AP_EXEC`-Heartbeat und `DESKTOP_MOUSE_OK`. Der Legacy-PIC-
+xHCI-IRQ bleibt dabei auf CPU 0, während der Compositor das Ereignis auf einem
+AP konsumiert. Panic oder Compositor-Degradation vor dem Mausmarker brechen
+den Lauf geschlossen ab.
 
 ```text
 C:\> DRIVES

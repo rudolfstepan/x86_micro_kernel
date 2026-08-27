@@ -15,6 +15,7 @@
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/interrupt.h"
 #include "kernel/time/pit.h"
+#include "include/lib/spinlock.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 
@@ -166,6 +167,7 @@ typedef struct {
     bool command_cycle;
     bool event_cycle;
     bool port_change_pending;
+    bool runtime_published;
 } xhci_state_t;
 
 /* These objects are never handed to hardware before xHCI validation. */
@@ -197,6 +199,9 @@ static uint8_t hid_reports[XHCI_MAX_HID_DEVICES]
     __attribute__((aligned(64)));
 static xhci_hid_device_t hid_devices[XHCI_MAX_HID_DEVICES];
 static xhci_state_t controller;
+/* Published event-consumer and diagnostics transaction. Enumeration remains
+ * BSP-only and completes before runtime_published becomes visible. */
+static spinlock_t xhci_runtime_lock = SPINLOCK_INIT;
 static xhci_diagnostics_t diagnostics = {
     .version = XHCI_DIAGNOSTICS_VERSION,
     .struct_size = sizeof(xhci_diagnostics_t),
@@ -1377,10 +1382,18 @@ static bool xhci_publish_hid(xhci_hid_device_t *hid) {
 
 static void xhci_irq_handler(void *opaque) {
     (void)opaque;
-    if (!xhci_any_hid_online() || controller.mmio == NULL) return;
+    uint32_t flags = spinlock_acquire_irq(&xhci_runtime_lock);
+    if (!controller.runtime_published || controller.mmio == NULL ||
+        !xhci_any_hid_online()) {
+        spinlock_release_irq(&xhci_runtime_lock, flags);
+        return;
+    }
     uint32_t status = xhci_read(controller.op_base + XHCI_USBSTS);
     uint32_t iman = xhci_read(controller.runtime_base + XHCI_RT_IMAN);
-    if ((status & XHCI_STS_EINT) == 0U && (iman & XHCI_IMAN_IP) == 0U) return;
+    if ((status & XHCI_STS_EINT) == 0U && (iman & XHCI_IMAN_IP) == 0U) {
+        spinlock_release_irq(&xhci_runtime_lock, flags);
+        return;
+    }
     (void)xhci_drain_events(32U, 0U, 0U, NULL, NULL, NULL, NULL);
     /* IMAN.IP is RW1C.  Leaving it asserted keeps the legacy PCI interrupt
      * active even after USBSTS.EINT was acknowledged and can starve the
@@ -1388,6 +1401,7 @@ static void xhci_irq_handler(void *opaque) {
     xhci_write(controller.runtime_base + XHCI_RT_IMAN,
                XHCI_IMAN_IP | XHCI_IMAN_IE);
     xhci_write(controller.op_base + XHCI_USBSTS, XHCI_STS_EINT);
+    spinlock_release_irq(&xhci_runtime_lock, flags);
 }
 
 int xhci_probe(pci_device_t *dev) {
@@ -1568,34 +1582,43 @@ int xhci_probe(pci_device_t *dev) {
         diagnostics.state = XHCI_DIAG_IRQ_FAILED;
         return -1;
     }
+    /* Publish the fully enumerated runtime atomically with interrupt enable.
+     * No deadline-bound construction or control wait is inside this lock. */
+    uint32_t runtime_flags = spinlock_acquire_irq(&xhci_runtime_lock);
+    controller.runtime_published = true;
+    diagnostics.irq = controller.irq;
+    xhci_refresh_ready_state();
     /* Clear enumeration-time pending state before unmasking the interrupter. */
     xhci_write(controller.runtime_base + XHCI_RT_IMAN,
                XHCI_IMAN_IP | XHCI_IMAN_IE);
     xhci_write(controller.op_base + XHCI_USBCMD,
                xhci_read(controller.op_base + XHCI_USBCMD) |
                XHCI_CMD_INTE | XHCI_CMD_RUN);
+    uint32_t keyboard_port = diagnostics.keyboard_port;
+    uint32_t mouse_port = diagnostics.mouse_port;
+    uint32_t runtime_irq = controller.irq;
+    spinlock_release_irq(&xhci_runtime_lock, runtime_flags);
     printf("USB: xHCI HID ready keyboard-port=%u mouse-port=%u irq=%u\n",
-           (unsigned)diagnostics.keyboard_port,
-           (unsigned)diagnostics.mouse_port, (unsigned)controller.irq);
-    diagnostics.irq = controller.irq;
-    xhci_refresh_ready_state();
+           (unsigned)keyboard_port, (unsigned)mouse_port,
+           (unsigned)runtime_irq);
     return 0;
 }
 
 /* Called from task-context console polling.  IRQ context only records changes. */
 void xhci_poll(void) {
-    if (controller.mmio == NULL || irq_in_context()) return;
-    uint32_t flags = irq_save();
-    if (xhci_any_hid_online())
+    if (irq_in_context()) return;
+    uint32_t flags = spinlock_acquire_irq(&xhci_runtime_lock);
+    if (controller.runtime_published && controller.mmio != NULL &&
+        xhci_any_hid_online())
         (void)xhci_drain_events(16U, 0U, 0U, NULL, NULL, NULL, NULL);
-    irq_restore(flags);
+    spinlock_release_irq(&xhci_runtime_lock, flags);
 }
 
 bool xhci_get_diagnostics(xhci_diagnostics_t *snapshot) {
     if (snapshot == NULL) return false;
-    uint32_t flags = irq_save();
+    uint32_t flags = spinlock_acquire_irq(&xhci_runtime_lock);
     *snapshot = diagnostics;
-    irq_restore(flags);
+    spinlock_release_irq(&xhci_runtime_lock, flags);
     return snapshot->version == XHCI_DIAGNOSTICS_VERSION &&
            snapshot->struct_size == sizeof(*snapshot);
 }

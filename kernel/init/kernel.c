@@ -1031,7 +1031,8 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 #endif
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any
      * failed/terminated desktop fall back to the userspace shell. */
-    if (!supervisor_start_compositor(pit_monotonic_ms())) {
+    if (!supervisor_start_compositor(pit_monotonic_ms(),
+                                     production_driver_ap_mask)) {
         printf("Unable to start desktop.prg; starting shell fallback.\n");
     } else {
         printf("Starting supervised graphical desktop from "

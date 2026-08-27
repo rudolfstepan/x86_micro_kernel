@@ -26,10 +26,14 @@ Vorhanden sind:
 - statische, ausgerichtete DMA-Strukturen und spätes Bus-Mastering;
 - Intel-Port-Routing vom EHCI-Begleitcontroller mit Readback;
 - generationgebundene Attach-/Detach- und Reportpfade;
+- kurze, endlich wartende SMP-/IRQ-Locks fuer den veroeffentlichten xHCI-
+  Eventconsumer, Diagnosesnapshots und beide HID-Generationen; Enumeration und
+  deadlinegebundene Control-Transfers bleiben davor BSP-only;
 - gleichzeitige Tastatur- und Mausendpunkte an unterschiedlichen Root-Ports;
 - persistente Diagnose über `/sbin/usbinfo.prg` in der normalen Ring-3-Shell;
 - Hosttests für HID-Tastatur, Maus, Ring-/TRB-Regeln und Imagepaketierung;
-- QEMUs manuelles `make run-usb`-Profil mit `qemu-xhci` und `usb-kbd`.
+- parallele Hosttests fuer HID-Tastatur und -Maus sowie QEMUs manuelles
+  `make run-usb`-Profil mit `qemu-xhci` und `usb-kbd`.
 
 ## VMware- und Hardwaregrenze
 
