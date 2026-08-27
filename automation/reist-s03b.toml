@@ -9062,3 +9062,61 @@ evidence = [
   "QEMU framebuffer package passed in 37 seconds",
   "VMware framebuffer package passed in 26 seconds"
 ]
+
+[[packages]]
+id = "R6.2a-ap-driver-fault-domain"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Run one bounded fault-tolerant work domain on APs"
+scope = "Inventory shared legacy driver state, add one append-only supervisor CPU-affinity field whose zero value preserves BSP-only execution, and permit only the authority-free recoverable driver-domain fixture to run on online APs. Prove initial and restarted generations execute on an AP while the BSP supervisor concurrently drives crash, hang, stale-generation, reset-failure and restart-budget paths."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/supervisor.h",
+  "kernel/init/kernel.c",
+  "kernel/init/supervisor.c",
+  "kernel/proc/process.c",
+  "kernel/proc/process.h",
+  "kernel/sched/scheduler.c",
+  "kernel/sched/scheduler.h",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_driver_domain.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_qemu_driver_domain.py",
+  "test/test_smp.py",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "zero affinity preserves BSP-only execution for every existing kernel and Ring-3 service",
+  "a nonzero supervised affinity contains only registered online CPUs and is rejected before task publication otherwise",
+  "only the authority-free recoverable driver fault fixture receives an AP-only mask while the reset fixture and all production drivers remain BSP-only",
+  "at least two AP execution markers prove both initial and restarted generations of the single AP-enabled domain",
+  "crash hang stale-generation reset-failure and restart-budget recovery remain generation-scoped deadline-bounded and fenced"
+]
+targeted_tests = [
+  "python test/test_smp.py -v",
+  "python test/test_qemu_driver_domain.py -v",
+  "python test/test_reist_supervisor.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode driver-domain"
+]
+stop_conditions = [
+  "a production driver or ordinary service can become AP-affine without an explicit nonzero profile mask",
+  "an offline or unknown CPU bit can be admitted",
+  "the runtime cannot distinguish initial AP execution from a restarted generation",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "smp: run bounded driver fault domain on APs"
+evidence = [
+  "SMP source contract passed 25 tests including online-only affinity admission and the explicit AP fault-domain boundary",
+  "Driver-domain runner and build-wrapper contract passed 2 tests with reliable native exit-code propagation",
+  "Supervisor source and host behavior passed 6 tests",
+  "QEMU fault-enabled kernel and native image built successfully with the Windows NASM and Zig toolchain",
+  "Four-CPU driver-domain runtime passed in 15 seconds with four AP executions across initial and restarted generations plus crash hang stale-generation reset-failure restart-budget and Ring-3 shell markers"
+]

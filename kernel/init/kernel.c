@@ -928,35 +928,6 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
                 printf("REIST_AUDIO SERVICE_DEGRADED result=-1\n");
         }
     }
-#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
-    const supervisor_config_t driver_fault_config = {
-        .heartbeat_timeout_ms = 150U,
-        .recovery_timeout_ms = 750U,
-        .restart_budget = 3U,
-    };
-    supervisor_handle_t driver_fault_handle;
-    if (supervisor_start_device_driver(
-            "driver-fault-recovery", "/libexec/reist/reist.prg",
-            driver_fault_recovery_device, DEVICE_DOMAIN_MODE_MEDIATED,
-            &driver_fault_config, pit_monotonic_ms(),
-            &driver_fault_handle) != 0) {
-        panic("Unable to start recoverable driver-domain fixture");
-    }
-    const supervisor_config_t reset_fault_config = {
-        .heartbeat_timeout_ms = 150U,
-        .recovery_timeout_ms = 750U,
-        .restart_budget = 1U,
-    };
-    supervisor_handle_t reset_fault_handle;
-    if (supervisor_start_device_driver(
-            "driver-fault-reset", "/libexec/reist/reist.prg",
-            driver_fault_reset_device, DEVICE_DOMAIN_MODE_MEDIATED,
-            &reset_fault_config, pit_monotonic_ms(),
-            &reset_fault_handle) != 0) {
-        panic("Unable to start reset-failure driver-domain fixture");
-    }
-    printf("DRIVER_DOMAIN TEST_STARTED\n");
-#endif
     /* Publish every supervised service before the worker can inspect or
      * restart it.  This removes a boot-time partial-initialization race. */
     boot_context("userspace-start", "safety supervisor", "spawn",
@@ -980,6 +951,42 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     if (!x86_smp_scheduler_probe()) {
         panic("SMP scheduler release probe failed");
     }
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+    /* Fault fixtures are intentionally registered only after AP scheduling is
+     * live. Production services retain the pre-worker publication order. */
+    x86_smp_status_t driver_fault_smp_status;
+    x86_smp_status(&driver_fault_smp_status);
+    uint32_t driver_fault_ap_mask = driver_fault_smp_status.online_cpu_count > 1U
+        ? ((1U << driver_fault_smp_status.online_cpu_count) - 1U) & ~1U : 0U;
+    if (driver_fault_ap_mask == 0U)
+        panic("Driver-domain SMP fault fixture requires an online AP");
+    const supervisor_config_t driver_fault_config = {
+        .heartbeat_timeout_ms = 150U,
+        .recovery_timeout_ms = 750U,
+        .restart_budget = 3U,
+        .cpu_affinity_mask = driver_fault_ap_mask,
+    };
+    supervisor_handle_t driver_fault_handle;
+    if (supervisor_start_device_driver(
+            "driver-fault-recovery", "/libexec/reist/reist.prg",
+            driver_fault_recovery_device, DEVICE_DOMAIN_MODE_MEDIATED,
+            &driver_fault_config, pit_monotonic_ms(),
+            &driver_fault_handle) != 0)
+        panic("Unable to start recoverable driver-domain fixture");
+    const supervisor_config_t reset_fault_config = {
+        .heartbeat_timeout_ms = 150U,
+        .recovery_timeout_ms = 750U,
+        .restart_budget = 1U,
+    };
+    supervisor_handle_t reset_fault_handle;
+    if (supervisor_start_device_driver(
+            "driver-fault-reset", "/libexec/reist/reist.prg",
+            driver_fault_reset_device, DEVICE_DOMAIN_MODE_MEDIATED,
+            &reset_fault_config, pit_monotonic_ms(),
+            &reset_fault_handle) != 0)
+        panic("Unable to start reset-failure driver-domain fixture");
+    printf("DRIVER_DOMAIN TEST_STARTED\n");
+#endif
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any
      * failed/terminated desktop fall back to the userspace shell. */
 #ifdef USE_FRAMEBUFFER

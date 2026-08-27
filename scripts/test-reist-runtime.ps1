@@ -366,19 +366,20 @@ function Invoke-DriverDomain {
     $gateLog = Join-Path $LogRoot "$stamp-runtime-driver-domain"
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     $exitCode = 0
+    $runnerOut = "$gateLog.runner.out"
+    $runnerErr = "$gateLog.runner.err"
     try {
-        $LASTEXITCODE = 0
-        & $Make native-image TARGET=qemu VIDEO=vga `
-            DRIVER_DOMAIN_FAULT_INJECTION=1 *> $gateLog
-        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
-        if ($exitCode -eq 0) {
-            & $Python $DriverDomainRunner `
-                --qemu $Qemu `
-                --image $Image `
-                --log (Join-Path $RepoRoot 'build\guest-driver-domain.log') `
-                *>> $gateLog
-            $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
-        }
+        & $BuildScript -Target qemu -Video vga `
+            -DriverDomainFaultInjection -SkipReleaseSbom *> $gateLog
+        $runner = Start-Process -FilePath $Python -Wait -PassThru `
+            -ArgumentList @(
+                $DriverDomainRunner, '--qemu', "`"$Qemu`"", '--image', $Image,
+                '--log', (Join-Path $RepoRoot 'build\guest-driver-domain.log')
+            ) -RedirectStandardOutput $runnerOut `
+              -RedirectStandardError $runnerErr
+        Get-Content -LiteralPath $runnerOut, $runnerErr |
+            Add-Content -LiteralPath $gateLog
+        $exitCode = $runner.ExitCode
     }
     catch {
         $exitCode = 1
@@ -386,6 +387,8 @@ function Invoke-DriverDomain {
     }
     finally {
         $watch.Stop()
+        Remove-Item -LiteralPath $runnerOut, $runnerErr -Force `
+            -ErrorAction SilentlyContinue
     }
     if ($exitCode -ne 0) {
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"

@@ -16,6 +16,7 @@ param(
     [switch]$DhcpRenewFaultInjection,
     [switch]$VbeRuntimeTest,
     [switch]$RuntimeDegradationFaultInjection,
+    [switch]$DriverDomainFaultInjection,
     [switch]$SkipReleaseSbom,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
@@ -173,6 +174,7 @@ try {
         dhcp_renew_fault_injection = [bool]$DhcpRenewFaultInjection
         vbe_runtime_test = [bool]$VbeRuntimeTest
         runtime_degradation_fault_injection = [bool]$RuntimeDegradationFaultInjection
+        driver_domain_fault_injection = [bool]$DriverDomainFaultInjection
         skip_release_sbom = [bool]$SkipReleaseSbom
         nasm = $Nasm
         zig = $Zig
@@ -238,6 +240,9 @@ try {
     }
     if ($RuntimeDegradationFaultInjection) {
         $makeArguments += 'RUNTIME_DEGRADATION_FAULT_INJECTION=1'
+    }
+    if ($DriverDomainFaultInjection) {
+        $makeArguments += 'DRIVER_DOMAIN_FAULT_INJECTION=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

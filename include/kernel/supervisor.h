@@ -124,6 +124,8 @@ typedef struct {
     /* Optional per-phase bound. Strictly increasing startup reports may move
      * the current deadline, but never beyond startup_timeout_ms. */
     uint32_t startup_progress_timeout_ms;
+    /* Optional online scheduler CPU mask. Zero preserves BSP-only execution. */
+    uint32_t cpu_affinity_mask;
 } supervisor_config_t;
 
 typedef bool (*supervisor_fence_fn_t)(void *context);

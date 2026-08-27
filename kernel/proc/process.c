@@ -705,7 +705,8 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
                                                Process *parent,
                                                bool supervised,
                                                bool prepared,
-                                               process_domain_kind_t domain_kind) {
+                                               process_domain_kind_t domain_kind,
+                                               uint32_t cpu_affinity_mask) {
     if (filename == NULL || *filename == '\0') {
         return -22;
     }
@@ -845,9 +846,9 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
             entry_point + USER_PROGRAM_ADDRESS, user_stack,
             kernel_stack, page_directory, process);
     } else {
-        task_id = create_supervised_user_task(
+        task_id = create_affined_supervised_user_task(
             entry_point + USER_PROGRAM_ADDRESS, user_stack,
-            kernel_stack, page_directory, process);
+            kernel_stack, page_directory, process, cpu_affinity_mask);
     }
     if (task_id < 0) {
         scheduler_free_kernel_stack(kernel_stack);
@@ -863,7 +864,8 @@ int create_process_for_file_args(const char *filename, int argc,
                                  const char *const *argv,
                                  const char *working_directory) {
     return create_process_for_file_args_owned(filename, argc, argv,
-        working_directory, NULL, false, false, PROCESS_DOMAIN_COMPATIBILITY);
+        working_directory, NULL, false, false, PROCESS_DOMAIN_COMPATIBILITY,
+        TASK_CPU_MASK_BSP);
 }
 
 int create_process(void* entry_point) {
@@ -1529,7 +1531,7 @@ int process_spawn_args(Process *parent, const char *path, int argc,
             ? PROCESS_DOMAIN_ADMIN : PROCESS_DOMAIN_COMPATIBILITY;
     return create_process_for_file_args_owned(
         resolved, argc, argv, parent->working_directory, parent, false,
-        false, domain_kind);
+        false, domain_kind, TASK_CPU_MASK_BSP);
 }
 
 int process_spawn_supervised(const char *path, int argc,
@@ -1538,7 +1540,19 @@ int process_spawn_supervised(const char *path, int argc,
     if (path == NULL || *path == '\0' || argc < 1 || argc > 32 ||
         argv == NULL) return -1;
     return create_process_for_file_args_owned(path, argc, argv, "/", NULL,
-                                               true, false, domain_kind);
+                                               true, false, domain_kind,
+                                               TASK_CPU_MASK_BSP);
+}
+
+int process_spawn_supervised_affined(const char *path, int argc,
+                                     const char *const *argv,
+                                     process_domain_kind_t domain_kind,
+                                     uint32_t cpu_affinity_mask) {
+    if (path == NULL || *path == '\0' || argc < 1 || argc > 32 ||
+        argv == NULL || cpu_affinity_mask == 0U) return -1;
+    return create_process_for_file_args_owned(path, argc, argv, "/", NULL,
+                                               true, false, domain_kind,
+                                               cpu_affinity_mask);
 }
 
 int process_spawn_supervised_prepared(const char *path, int argc,
@@ -1547,7 +1561,8 @@ int process_spawn_supervised_prepared(const char *path, int argc,
     if (path == NULL || *path == '\0' || argc < 1 || argc > 32 ||
         argv == NULL) return -1;
     return create_process_for_file_args_owned(path, argc, argv, "/", NULL,
-                                               true, true, domain_kind);
+                                               true, true, domain_kind,
+                                               TASK_CPU_MASK_BSP);
 }
 
 int process_start_prepared_supervised(int pid, uint32_t generation) {

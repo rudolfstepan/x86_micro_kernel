@@ -515,7 +515,8 @@ und 10 verbindlich.
   - [x] R6.1 begrenzter i386-SMP-Bootstrap mit vier CPUs, affinen
     Kernelprobetasks, Reaping und vollständigem 32-Slot-Kapazitätsnachweis
   - [ ] R6.2 allgemeine Mehrkernverteilung regulärer Kernel- und
-    Ring-3-Dienste nach Migration der verbleibenden Treiberzustände
+    Ring-3-Dienste nach Migration der verbleibenden Treiberzustände; erste
+    autoritätslose, überwachte Driver-Fault-Domäne AP-fähig
 
 #### Verbindliche Priorität nach dem S0-Gate
 

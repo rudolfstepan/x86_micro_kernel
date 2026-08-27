@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: begrenzten SMP-Bootstrap stabilisieren und R6.2 vorbereiten
+Aktives Thema: nächste produktive R6.2-Treiberdomäne auditieren
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -17,8 +17,8 @@ Tests und der lokale Diff.
   der Benutzer.
 - Reguläre Kernel- und Ring-3-Dienste bleiben CPU-0-affin, bis die
   verbleibenden gemeinsamen Treiberzustände für R6.2 auditiert sind.
-- Der Worktree enthält zahlreiche zusammengehörige, noch nicht commitete
-  SMP-Änderungen. Nichts davon verwerfen oder überschreiben.
+- Der begrenzte SMP-Bootstrap ist als `ad8884e8` committed. Die aktuelle
+  R6.2-Scheibe baut direkt darauf auf.
 
 ## Erreichter stabiler Meilenstein
 
@@ -70,8 +70,19 @@ erneut auf; die neue Panic-Diagnose liefert bei Wiederholung sofort CPU und
 Aufrufer. Das ist starke Regressionsevidenz, aber kein Beweis, dass ein
 nichtdeterministisches Rennen ausgeschlossen ist.
 
-Als Nächstes folgt R6.2 in einer zusammenhängenden, auditierten Scheibe:
-gemeinsam genutzte Treiberzustände inventarisieren, genau eine weitere
-fehlertolerante Arbeitsdomäne AP-fähig machen und deren parallelen
-Normal-/Timeout-/Restartpfad prüfen. Bis dahin keine allgemeine Ring-3-
-Verteilung aktivieren und keinen vollständigen SMP-Support behaupten.
+Die erste R6.2-Scheibe inventarisiert gemeinsam genutzte Treiberzustände und
+gibt ausschließlich die autoritätslose, überwachte Driver-Fault-Fixture für
+Online-APs frei. Null bleibt im append-only Supervisorprofil BSP-only; reale
+Treiber und allgemeine Ring-3-Dienste behalten diese Voreinstellung. Der
+Driver-Domain-Gastlauf muss Initialstart und Restart auf einem AP sowie Crash,
+Hang, stale Generation, Reset-Fence und Budgeterschöpfung gemeinsam bestehen.
+Weitere Produktionsdomänen folgen erst nach ihrem eigenen Zustandsaudit.
+
+## Erste R6.2-Scheibe abgeschlossen
+
+Die Driver-Fault-Domäne lief im vierkernigen QEMU-Nachweis bei Initialstart
+und drei Restartgenerationen auf CPU 1 beziehungsweise CPU 3. Crash, Hang,
+stale Generation, Reset-Fence und Budgeterschöpfung blieben begrenzt; die
+Ring-3-Shell lief parallel auf dem BSP weiter. Das Runtime-Gate bestand in
+15 Sekunden. Als Nächstes ist genau eine reale Treiberdomäne samt Controller-,
+DMA-, IRQ- und Fencezustand zu auditieren; bis dahin bleibt sie BSP-affin.

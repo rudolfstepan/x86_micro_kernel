@@ -117,6 +117,10 @@ int create_supervised_user_task(uint32_t entry_point, uint32_t user_stack,
                                 uint32_t *kernel_stack,
                                 page_directory_t *page_directory,
                                 Process *process);
+int create_affined_supervised_user_task(
+    uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
+    page_directory_t *page_directory, Process *process,
+    uint32_t cpu_affinity_mask);
 int create_prepared_supervised_user_task(
     uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
     page_directory_t *page_directory, Process *process);

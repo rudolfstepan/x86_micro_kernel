@@ -146,6 +146,10 @@ int process_spawn_args(Process* parent, const char* path, int argc,
 int process_spawn_supervised(const char *path, int argc,
                              const char *const *argv,
                              process_domain_kind_t domain_kind);
+int process_spawn_supervised_affined(const char *path, int argc,
+                                     const char *const *argv,
+                                     process_domain_kind_t domain_kind,
+                                     uint32_t cpu_affinity_mask);
 int process_spawn_supervised_prepared(const char *path, int argc,
                                       const char *const *argv,
                                       process_domain_kind_t domain_kind);

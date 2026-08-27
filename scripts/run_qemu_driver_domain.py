@@ -16,6 +16,7 @@ import run_qemu_smoke as smoke
 
 
 DRIVER_DOMAIN_MARKERS = (
+    smoke.BOOT_MARKER,
     "DRIVER_DOMAIN TEST_STARTED",
     "DRIVER_DOMAIN CRASH_RECOVERED",
     "DRIVER_DOMAIN HANG_RECOVERED",
@@ -27,7 +28,7 @@ DRIVER_DOMAIN_MARKERS = (
 
 def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
     process = subprocess.Popen(
-        smoke.qemu_command(qemu, image),
+        smoke.qemu_command(qemu, image, smp=4),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -48,12 +49,15 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
     deadline = time.monotonic() + timeout
     error: str | None = None
     try:
-        for marker in (*DRIVER_DOMAIN_MARKERS, smoke.BOOT_MARKER,
-                       smoke.SHELL_PROMPT):
+        for marker in DRIVER_DOMAIN_MARKERS:
             error, _ = smoke.wait_for_line(
                 process, chunks, transcript, finished, marker, deadline)
             if error is not None:
                 break
+        if error is None and smoke.SHELL_PROMPT not in "".join(transcript):
+            error, _ = smoke.wait_for_line(
+                process, chunks, transcript, finished, smoke.SHELL_PROMPT,
+                deadline)
     except (OSError, RuntimeError, TimeoutError) as caught:
         error = str(caught)
     finally:
@@ -65,6 +69,11 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
         log.write_text("".join(transcript), encoding="utf-8")
     if error is not None:
         print(f"DRIVER DOMAIN FAIL: {error}; log={log}")
+        return 1
+    ap_executions = "".join(transcript).count("DRIVER_DOMAIN AP_EXEC cpu=")
+    if ap_executions < 2:
+        print("DRIVER DOMAIN FAIL: AP domain did not execute both initial and "
+              f"restart generations; executions={ap_executions}; log={log}")
         return 1
     print(f"DRIVER DOMAIN PASS log={log}")
     return 0

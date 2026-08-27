@@ -89,11 +89,24 @@ als Kapazitätsnachweis.
 Tasktabelle und Runqueue sind global, aber durch den CPU-besitzenden
 Tasktabellen-Lock serialisiert. Scheduling-Zeitfenster und Auswahlcursor sind
 dagegen CPU-lokal getrennt. Auswahl und atomare Übernahme beachten die Task-
-Affinitätsmaske. Bestehende Kernel- und Ring-3-Dienste werden
-weiterhin standardmäßig ausschließlich CPU 0 zugeordnet; nur die isolierten
-internen Probetasks dürfen auf APs laufen. Vor allgemeiner Mehrkernverteilung
-müssen die verbleibenden subsystemeigenen Treiberlocks vollständig SMP-fest
-sein.
+Affinitätsmaske. Bestehende Kernel- und Ring-3-Dienste werden weiterhin
+standardmäßig ausschließlich CPU 0 zugeordnet. Eine append-only Supervisor-
+Konfiguration kann nun eine explizite, ausschließlich aus online CPUs
+bestehende Affinitätsmaske an einen überwachten Ring-3-Treiber weiterreichen;
+der Wert null bewahrt die bisherige BSP-Affinität. Als erste R6.2-
+Arbeitsdomäne nutzt nur die autoritätslose Driver-Fault-Fixture diese Freigabe
+und läuft AP-only. Reale Video-, Audio-, Storage-, Netzwerk-, USB- und
+Eingabetreiber bleiben BSP-affin.
+
+Das Audit der gemeinsam genutzten Treiberzustände trennt drei Gruppen. VFS,
+FAT32, ATA, AHCI und FDD sind durch die unten beschriebenen deadlinebegrenzten
+Transaktionsmutexe geschützt und besitzen bereits parallele Read-Evidenz.
+Tastatureingabe, UDP/TCP-Sockettabellen, ARP-Bindings und Storage-Pool besitzen
+kurze CPU-besitzende Locks. Die globalen Controller-, Ring-, DMA- und
+Pollzustände von PCI-Netzwerktreibern, xHCI/OHCI, serieller Ausgabe und den
+verbleibenden Video-/Audio-Mediatoren sind dagegen noch nicht vollständig als
+SMP-feste Transaktionen auditiert; ihre Produktionsdomänen dürfen deshalb
+keine AP-Maske erhalten.
 
 Der Waitqueue-Kern serialisiert Taskzustand, intrusive Nodes und Timeout-Scans
 unter dem Tasktabellen-Lock. IPC sowie die begrenzten UDP- und TCP-Sockettabellen
@@ -167,9 +180,14 @@ und gibt den CPU-Besitz frei. Blockierte und beendete Tasks behalten ihren
 fachlichen Zustand, werden aber ebenfalls erst nach vollzogenem `swtch()`
 freigegeben. Neue Tasks schließen denselben Handoff im Trampolin ab. Dadurch
 kann kein Task gleichzeitig auf zwei CPUs laufen und kein Runqueue-Lock wird
-über einen Kontextwechsel getragen. Der isolierte AP-Probelauf verwendet
-genau diesen Pfad; allgemeine Dienste bleiben bis zur Migration ihrer eigenen
-Synchronisation BSP-exklusiv.
+über einen Kontextwechsel getragen. Der isolierte AP-Probelauf und die
+überwachte Driver-Fault-Fixture verwenden genau diesen Pfad; allgemeine
+Dienste bleiben bis zur Migration ihrer eigenen Synchronisation BSP-exklusiv.
+Der Driver-Domain-Lauf verlangt mindestens zwei AP-Eintritte der einzigen AP-
+fähigen Fixture und beweist damit sowohl ihren Initialstart als auch einen
+generationsgebundenen Restart nach Crash oder Timeout. Reset-Failure-Fixture
+und Supervisor-Worker laufen weiter auf CPU 0, sodass der Nachweis echte
+parallele Supervisor-/Arbeitsdomänenausführung enthält.
 
 Der Boot-Probelauf führt zusätzlich auf allen APs nach einer gemeinsamen
 Startbarriere denselben read-only Root-Sektorzugriff aus. Ein BSP-gelesenes

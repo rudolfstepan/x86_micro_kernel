@@ -580,6 +580,13 @@ static void task_trampoline(void) {
     }
 
     if (tasks[index].user_mode) {
+#ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
+        if (tasks[index].process != NULL &&
+            tasks[index].process->domain_profile.kind == PROCESS_DOMAIN_DRIVER &&
+            scheduler_cpu_local()->cpu_index != 0U)
+            printf("DRIVER_DOMAIN AP_EXEC cpu=%u\n",
+                   scheduler_cpu_local()->cpu_index);
+#endif
         enter_user_mode(tasks[index].user_entry, tasks[index].user_stack);
     }
 
@@ -700,6 +707,11 @@ static int create_task_with_affinity(void (*entry_point)(void),
     if (cpu_affinity_mask == 0U ||
         (cpu_affinity_mask & ~((1U << X86_CPU_LOCAL_MAX) - 1U)) != 0U)
         return -1;
+    for (uint32_t cpu = 0U; cpu < X86_CPU_LOCAL_MAX; ++cpu) {
+        if ((cpu_affinity_mask & (1U << cpu)) == 0U) continue;
+        x86_cpu_local_t *local = x86_cpu_local_by_index(cpu);
+        if (local == NULL || local->online == 0U) return -1;
+    }
 
     bool process_locked = process != NULL;
     uint32_t process_flags = 0U;
@@ -785,7 +797,7 @@ static size_t available_task_slots_locked(void) {
 static int create_user_task_admitted(
     uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
     page_directory_t *page_directory, Process *process, bool supervised,
-    bool prepared) {
+    bool prepared, uint32_t cpu_affinity_mask) {
     if (entry_point < USER_BASE || entry_point >= USER_TOP ||
         user_stack <= USER_BASE || user_stack > USER_TOP || !kernel_stack ||
         !page_directory) return -1;
@@ -804,7 +816,7 @@ static int create_user_task_admitted(
     }
     int task_id = create_task_with_affinity(
         (void (*)(void))(uintptr_t)entry_point, kernel_stack, process,
-        TASK_CPU_MASK_BSP);
+        cpu_affinity_mask);
     if (task_id < 0) {
         scheduler_preempt_enable();
         return -1;
@@ -841,21 +853,33 @@ int create_user_task(uint32_t entry_point, uint32_t user_stack,
                      uint32_t *kernel_stack, page_directory_t *page_directory,
                      Process *process) {
     return create_user_task_admitted(entry_point, user_stack, kernel_stack,
-                                     page_directory, process, false, false);
+                                     page_directory, process, false, false,
+                                     TASK_CPU_MASK_BSP);
 }
 
 int create_supervised_user_task(
     uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
     page_directory_t *page_directory, Process *process) {
     return create_user_task_admitted(entry_point, user_stack, kernel_stack,
-                                     page_directory, process, true, false);
+                                     page_directory, process, true, false,
+                                     TASK_CPU_MASK_BSP);
+}
+
+int create_affined_supervised_user_task(
+    uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
+    page_directory_t *page_directory, Process *process,
+    uint32_t cpu_affinity_mask) {
+    return create_user_task_admitted(entry_point, user_stack, kernel_stack,
+                                     page_directory, process, true, false,
+                                     cpu_affinity_mask);
 }
 
 int create_prepared_supervised_user_task(
     uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
     page_directory_t *page_directory, Process *process) {
     return create_user_task_admitted(entry_point, user_stack, kernel_stack,
-                                     page_directory, process, true, true);
+                                     page_directory, process, true, true,
+                                     TASK_CPU_MASK_BSP);
 }
 
 int scheduler_start_prepared_user_task_locked(

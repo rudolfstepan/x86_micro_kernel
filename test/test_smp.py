@@ -453,5 +453,17 @@ class SmpTests(unittest.TestCase):
         self.assertNotIn("scheduler_preempt_disable();", exit_path[:cleanup])
 
 
+    def test_fault_tolerant_driver_domain_is_explicitly_ap_affined(self):
+        supervisor = (ROOT / "include/kernel/supervisor.h").read_text(
+            encoding="utf-8")
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8")
+        self.assertIn("uint32_t cpu_affinity_mask;", supervisor)
+        self.assertIn(".cpu_affinity_mask = driver_fault_ap_mask", kernel)
+        self.assertIn("local == NULL || local->online == 0U", scheduler)
+        self.assertIn('"DRIVER_DOMAIN AP_EXEC cpu=%u', scheduler)
+
+
 if __name__ == "__main__":
     unittest.main()

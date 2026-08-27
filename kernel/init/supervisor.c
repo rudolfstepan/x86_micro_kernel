@@ -4868,8 +4868,10 @@ static bool driver_spawn_next(supervisor_driver_runtime_t *runtime,
         control.pid != 0 || control.device != 0U || control.channel != 0U)
         return false;
     const char *arguments[] = {runtime->path};
-    int pid = supervisor_spawn_service(runtime->path, 1, arguments,
-                                       PROCESS_DOMAIN_DRIVER);
+    uint32_t affinity = runtime->config.cpu_affinity_mask == 0U
+        ? TASK_CPU_MASK_BSP : runtime->config.cpu_affinity_mask;
+    int pid = process_spawn_supervised_affined(
+        runtime->path, 1, arguments, PROCESS_DOMAIN_DRIVER, affinity);
     uint32_t generation = 0U;
     device_domain_handle_t device = 0U;
     if (pid <= 0 || process_get_identity(pid, &generation) != 0 ||
@@ -4964,7 +4966,9 @@ int supervisor_start_device_driver(
         (mode != DEVICE_DOMAIN_MODE_MEDIATED &&
          mode != DEVICE_DOMAIN_MODE_IOMMU_DIRECT) ||
         config->heartbeat_timeout_ms == 0U ||
-        config->recovery_timeout_ms == 0U) return -22;
+        config->recovery_timeout_ms == 0U ||
+        (config->cpu_affinity_mask &
+         ~((1U << X86_CPU_LOCAL_MAX) - 1U)) != 0U) return -22;
     supervisor_driver_runtime_t *runtime = NULL;
     for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
         supervisor_driver_control_t control;
