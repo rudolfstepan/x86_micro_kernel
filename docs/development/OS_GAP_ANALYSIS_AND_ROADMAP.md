@@ -75,8 +75,9 @@ Userspacebibliothek. Vor jedem weiteren regulären Funktionspaket steht das
 Sicherheits-Gate S0. Die generische `REIST-research`-Baseline ist mit S0.6c
 für die feste automatisierte QEMU-/VMware-Matrix abgeschlossen. Der
 VMware-xHCI-Mauspfad und der VFS-Shadow-Zugriff des überwachten Compositors
-sind zusätzlich end-to-end abgenommen; die ausführbare Queue besitzt derzeit
-kein aktives Paket. Physische,
+sind zusätzlich end-to-end abgenommen. R6.2n auditiert derzeit den gemeinsamen
+xHCI-/HID-Zustand und weist den gesunden Compositor nach `SERVICE_READY` auf
+einem AP nach. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
 werden nicht durch die Emulatorabnahme ersetzt.
 
@@ -524,7 +525,8 @@ und 10 verbindlich.
     Audio-Servicegenerationen sowie normaler und neu gestarteter Storage-Service
     AP-fähig; auch normale und neu gestartete Netzwerkdienstgenerationen
     AP-fähig; der Session-Compositor besitzt nun als Voraussetzung einen
-    generationsgebundenen, BSP-affinen Supervisor-Lebenszyklus, weitere
+    generationsgebundenen Supervisor-Lebenszyklus; R6.2n serialisiert derzeit
+    xHCI/HID und nimmt seinen normalen post-READY-AP-Pfad ab, weitere
     Produktionsdomänen noch BSP-affin
 
 #### Verbindliche Priorität nach dem S0-Gate

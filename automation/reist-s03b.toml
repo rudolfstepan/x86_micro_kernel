@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2n-ap-compositor-input"
 
 [policy]
 one_package_per_run = true
@@ -9788,3 +9788,65 @@ evidence = [
   "user confirmed visible mouse movement and the fresh guest emitted the successful root Explorer marker",
   "no queued package remains and active_id is empty"
 ]
+
+[[packages]]
+id = "R6.2n-ap-compositor-input"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run the supervised compositor on APs over SMP-safe USB input"
+scope = "Serialize the published xHCI event-ring, diagnostics and HID keyboard/mouse state with bounded CPU-owned IRQ-safe locks while keeping the deadline-bound controller construction on the BSP. Store a one-shot post-ready AP mask in the protected compositor control record, construct and self-test the generation on the BSP, consume and apply the mask only after SERVICE_READY, and preserve BSP-only legacy-PIC hard IRQ delivery. Prove the normal path with a generated four-vCPU VMware guest in which the compositor executes on an AP and receives a virtual xHCI mouse report. Restart affinity restoration remains a separate package."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/usb/hid_sync.h",
+  "drivers/usb/hid_kb.c",
+  "drivers/usb/hid_mouse.c",
+  "drivers/usb/xhci.c",
+  "kernel/init/kernel.c",
+  "kernel/init/supervisor.c",
+  "include/kernel/supervisor.h",
+  "scripts/create_native_boot_image.py",
+  "scripts/run_vmware_mouse.ps1",
+  "test/test_usb_hid_keyboard_host.c",
+  "test/test_usb_hid_mouse_host.c",
+  "test/test_usb_keyboard.py",
+  "test/test_usb_mouse.py",
+  "test/test_reist_supervisor.py",
+  "test/test_vmware_mouse.py",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/hardware/USB_DESIGN.md",
+  "docs/hardware/VMWARE.md"
+]
+invariants = [
+  "xHCI enumeration and every deadline-bound control transfer remain BSP-only and never hold an SMP spinlock across a wait",
+  "the runtime event consumer index cycle state HID ownership and diagnostics snapshot are serialized by bounded IRQ-safe CPU-owned locks",
+  "the fixed lock order is xHCI runtime state then HID generation state then the common keyboard queue and no path acquires it in reverse",
+  "legacy-PIC xHCI hard IRQ delivery remains CPU-0-affine while AP task-context polling cannot consume the same event twice",
+  "the compositor constructs self-tests publishes healthy and SERVICE_READY on the BSP before its protected one-shot online-AP mask is consumed",
+  "zero affinity preserves the single-CPU BSP path and a restart receives no implicit AP affinity in this package",
+  "the generated VMware reference guest uses four vCPUs and virtual HID only and proves AP compositor execution before virtual mouse delivery"
+]
+targeted_tests = [
+  "python test/test_usb_keyboard.py -v",
+  "python test/test_usb_mouse.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_vmware_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-mouse"
+]
+stop_conditions = [
+  "an xHCI or HID lock can be held across a sleep deadline or unbounded controller wait",
+  "the compositor can execute on an AP before healthy SERVICE_READY publication",
+  "a compositor restart silently inherits AP affinity without the separate restart proof",
+  "xHCI hard IRQ delivery moves away from the BSP or physical HID passthrough is enabled",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "smp: run compositor over locked USB input"

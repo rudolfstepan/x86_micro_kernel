@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: keines – R6.2m VMware-Maus und Explorer abgeschlossen
+Aktives Thema: R6.2n – AP-Compositor über SMP-sicheren USB-Eingabepfad
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -87,6 +87,20 @@ leerem Workstation-Laufzustand, speist eine virtuelle Bewegung ein, verlangt
 die geordneten Explorer-/Mausmarker und beendet genau seinen einzigen VMX-
 Prozess. Der Benutzer bestätigte die Maus zusätzlich sichtbar; der frische
 Gast bestätigte den Root-Explorer über den Erfolgsmarker.
+
+## Aktives R6.2n-Paket
+
+Der veröffentlichte xHCI-Eventring, die Diagnosesnapshots und die
+generationsgebundenen HID-Tastatur-/Mauszustände werden als kurze, feste
+IRQ-sichere SMP-Transaktionen serialisiert. Die deadlinegebundene
+Controllerkonstruktion bleibt davon getrennt und vollständig BSP-only. Danach
+darf genau die gesunde aktuelle Compositorgeneration ihre im geschützten
+Kontrollrecord abgelegte Einmal-AP-Maske nach `SERVICE_READY` übernehmen.
+
+Die Abnahme verwendet die generierte VMware-Referenz mit vier vCPUs. Legacy-
+PIC-xHCI-IRQ bleibt auf CPU 0; der Compositor muss vor der virtuellen
+Mauszustellung AP-Ausführung melden. Restart-Affinität wird in diesem Paket
+nicht implizit übernommen und benötigt einen getrennten Fehlerlauf.
 
 ## Restrisiko und nächster zusammenhängender Schritt
 
