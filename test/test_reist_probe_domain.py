@@ -99,6 +99,26 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         self.assertIn("domain_kind", process_spawn)
         self.assertIn("true, false, domain_kind", process_spawn)
 
+    def test_compositor_profile_is_explicit_and_excludes_other_authority(self):
+        self.assertIn("PROCESS_DOMAIN_COMPOSITOR = 9", self.process_h)
+        initialize = function(self.process, "static bool initialize_domain_profile(")
+        start = initialize.index("if (kind == PROCESS_DOMAIN_COMPOSITOR)")
+        end = initialize.index("if (kind != PROCESS_DOMAIN_PROBE)", start)
+        compositor = initialize[start:end]
+        for allowed in (
+            "SYS_DISPLAY_CONTROL", "SYS_DISPLAY_INFO", "SYS_MOUSE_EVENT",
+            "SYS_POINTER_UPDATE", "SYS_IPC_CREATE", "SYS_IPC_DELEGATE",
+            "SYS_IPC_CLOSE", "SYS_REIST_REPORT", "SYS_TERMINAL_WRITE",
+            "SYS_SPAWNV", "SYS_WAIT", "SYS_STAT",
+        ):
+            self.assertIn(allowed, compositor)
+        for denied in (
+            "SYS_DEVICE_CONTROL", "SYS_STORAGE_BIND", "SYS_ADMIN_STORAGE",
+            "SYS_COMPONENT_CONTROL", "SYS_NETWORK_CONTROL",
+            "SYS_REIST_DHCP_COMMIT",
+        ):
+            self.assertNotIn(denied, compositor)
+
     def test_probe_lifecycle_is_generation_scoped_and_bounded(self):
         for token in (
             "process_identity_alive", "process_generation",

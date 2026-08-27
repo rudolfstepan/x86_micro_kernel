@@ -68,8 +68,8 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
     def test_desktop_retries_activation_once(self):
         self.assertIn("x86os_display_activate()", self.desktop)
         self.assertLess(
-            self.desktop.index("int display_status = x86os_display_info"),
-            self.desktop.index("x86os_display_activate()")
+            self.desktop.index("x86os_display_activate()"),
+            self.desktop.index("int display_status = x86os_display_info")
         )
 
     def test_desktop_restores_vga_after_runtime_activation(self):
@@ -113,6 +113,26 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertLess(prepare, shell)
         self.assertIn("vmware_prepared", self.control)
         self.assertIn("qemu_prepared", self.control)
+
+    def test_boot_desktop_uses_supervised_lifecycle_before_shell_fallback(self):
+        start = self.kernel.index("supervisor_start_compositor(")
+        wait = self.kernel.index("supervisor_compositor_session_active()", start)
+        shell = self.kernel.index(
+            'start_userspace_program(multiboot_info, "bin/shell.prg"')
+        self.assertLess(start, wait)
+        self.assertLess(wait, shell)
+        boot_path = self.kernel[start:shell]
+        self.assertNotIn('start_userspace_program(multiboot_info, "usr/gui',
+                         boot_path)
+        self.assertIn('"REIST_GUI COMPOSITOR_READY" in text',
+                      self.runtime_runner)
+        self.assertIn('"REIST_GUI COMPOSITOR_READY" in text',
+                      self.runtime_runner)
+        self.assertIn('default=120.0', self.runtime_runner)
+        self.assertIn("desktop_deadline = time.monotonic() + 30.0",
+                      self.runtime_runner)
+        self.assertIn("supervised_boot_detected and control_probe",
+                      self.runtime_runner)
 
     def test_vbe_lfb_may_be_inside_a_sized_display_bar(self):
         self.assertIn("PCI_COMMAND_MEMORY", self.control)

@@ -467,6 +467,31 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
              ++index) profile_allow(profile, audio_service_syscalls[index]);
         return true;
     }
+    if (kind == PROCESS_DOMAIN_COMPOSITOR) {
+        /* The trusted session compositor owns display publication and its
+         * bounded Surface broker, but receives no device, raw storage,
+         * network-policy or administrative authority. */
+        static const uint8_t compositor_syscalls[] = {
+            0U, 1U, SYS_EXIT, SYS_GET_DATE, SYS_GET_TIME,
+            SYS_OPEN, SYS_READ, SYS_CLOSE, SYS_STAT, SYS_READDIR_BATCH,
+            SYS_CREATE, SYS_WRITE, SYS_UNLINK, SYS_SPAWN, SYS_WAIT, SYS_KILL,
+            SYS_SPAWNV, SYS_MKDIR, SYS_RMDIR, SYS_CLEAR,
+            SYS_TERMINAL_WRITE, SYS_GETCHAR_NONBLOCKING,
+            SYS_YIELD, SYS_SLEEP_MS,
+            SYS_MONOTONIC_MS, SYS_DISPLAY_INFO, SYS_FILL_RECT, SYS_DRAW_TEXT,
+            SYS_RENAME, SYS_FSYNC, SYS_IPC_CREATE, SYS_IPC_CLOSE,
+            SYS_IPC_SEND_TIMEOUT,
+            SYS_IPC_RECEIVE_TIMEOUT, SYS_IPC_DELEGATE, SYS_IPC_RELEASE,
+            SYS_REIST_REPORT, SYS_SERVICE_CONNECT, SYS_DISPLAY_CONTROL,
+            SYS_MOUSE_EVENT, SYS_POINTER_UPDATE, SYS_PROCESS_IDENTITY,
+            SYS_DRAW_TEXT_CLIPPED
+        };
+        for (size_t index = 0;
+             index < sizeof(compositor_syscalls) /
+                         sizeof(compositor_syscalls[0]);
+             ++index) profile_allow(profile, compositor_syscalls[index]);
+        return true;
+    }
     if (kind != PROCESS_DOMAIN_PROBE) return false;
 
     static const uint8_t probe_syscalls[] = {
@@ -505,6 +530,7 @@ bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
          profile->kind != PROCESS_DOMAIN_COMPONENT_ADMIN &&
          profile->kind != PROCESS_DOMAIN_DRIVER &&
          profile->kind != PROCESS_DOMAIN_AUDIO_SERVICE &&
+         profile->kind != PROCESS_DOMAIN_COMPOSITOR &&
          profile->kind != PROCESS_DOMAIN_MAINTENANCE)) return false;
     return (profile->allowed_syscalls[syscall_index / 32U] &
             (1U << (syscall_index % 32U))) != 0U;

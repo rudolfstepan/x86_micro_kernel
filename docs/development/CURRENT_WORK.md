@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2l – generationsgebundener Supervisor-Lebenszyklus fuer den Session-Compositor
+Aktives Thema: kein aktives Paket; R6.2l ist abgeschlossen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -183,3 +183,15 @@ Frame- und Endpoint-Autorität auf CPU 0 zurück. Ersatzgeneration 5 self-testet
 und publizierte Ready auf dem BSP, lief anschließend wieder auf CPU 3 und
 bestand `NETWORK_RECOVERY_OK`, `NETWORK_PARSER_OK`, `TASK_CAPACITY_OK` und
 `TEST_OK`.
+
+## Session-Compositor unter begrenzter Aufsicht
+
+Der Desktop startet nicht mehr als unbeschraenkter Kompatibilitaetsprozess,
+sondern in einer eigenen Default-Deny-Domaene. Jede Generation aktiviert und
+initialisiert Display und Surface-Broker auf CPU 0, meldet danach geordnet
+Self-Test, Fortschritt und Ready und erneuert ihren Heartbeat alle 500 ms.
+Crash, ungueltiger Report oder Zwei-Sekunden-Timeout deaktivieren die
+Displaypublikation vor der Prozessbeendigung; der Supervisor startet hoechstens
+drei Ersatzgenerationen mit einem einsekundigen Recovery-Fenster. Erst normales
+Sitzungsende oder Budgeterschoepfung gibt den Userspace-Shell-Fallback frei.
+Diese Scheibe erteilt noch keine AP-Affinitaet.

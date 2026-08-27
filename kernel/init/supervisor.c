@@ -136,6 +136,9 @@ static volatile uint32_t network_service_ap_execution_generation;
 #define SUPERVISOR_DRIVER_CONTROL_VERSION 1U
 #define SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION 1U
 #define SUPERVISOR_AUDIO_SERVICE_PATH "/libexec/reist/audio.prg"
+#define SUPERVISOR_COMPOSITOR_CONTROL_VERSION 1U
+#define SUPERVISOR_COMPOSITOR_PATH "/usr/gui/bin/desktop.prg"
+#define SUPERVISOR_COMPOSITOR_STOP_DIAGNOSTIC 0x434D5053U
 
 /* Successful packet-by-packet mediation is useful as deterministic QEMU gate
  * evidence but floods the operator console on a live network.  Production
@@ -259,6 +262,30 @@ static int audio_service_report_if_identity(
     int pid, uint32_t generation, uint32_t report_type, uint32_t value,
     uint64_t now_ms, bool *matched);
 static bool audio_service_rotate_session(supervisor_handle_t handle);
+
+typedef struct {
+    uint32_t active;
+    uint32_t administratively_enabled;
+    uint32_t fenced;
+    uint32_t healthy;
+    uint32_t ready;
+    uint32_t stop_requested;
+    int32_t pid;
+    uint32_t process_generation;
+    supervisor_handle_t supervisor;
+} supervisor_compositor_control_t;
+
+typedef struct {
+    critical_object_t control;
+    supervisor_config_t config;
+    uint32_t reported_safe_generation;
+    uint32_t reported_safe_epoch;
+} supervisor_compositor_runtime_t;
+
+static supervisor_compositor_runtime_t compositor_runtime;
+static int compositor_report_if_identity(
+    int pid, uint32_t generation, uint32_t report_type, uint32_t value,
+    uint64_t now_ms, bool *matched);
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
 static volatile uint32_t driver_fault_markers;
 #endif
@@ -1835,6 +1862,52 @@ static int audio_service_control_write(
         SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION, control, sizeof(*control),
         audio_service_control_valid) == 0 ? 0 : SUPERVISOR_EINTEGRITY;
 }
+
+_Static_assert(sizeof(supervisor_compositor_control_t) <=
+                   CRITICAL_OBJECT_MAX_PAYLOAD,
+               "compositor control exceeds protected payload");
+
+static bool compositor_control_valid(const void *payload, size_t length) {
+    if (payload == NULL ||
+        length != sizeof(supervisor_compositor_control_t)) return false;
+    const supervisor_compositor_control_t *control = payload;
+    if (control->active > 1U || control->administratively_enabled > 1U ||
+        control->fenced > 1U || control->healthy > 1U ||
+        control->ready > 1U || control->stop_requested > 1U) return false;
+    if (control->active == 0U) {
+        const supervisor_compositor_control_t empty = {0};
+        return memcmp(control, &empty, sizeof(empty)) == 0;
+    }
+    if (control->supervisor.generation == 0U ||
+        control->supervisor.epoch == 0U ||
+        (control->healthy != 0U && control->fenced != 0U) ||
+        (control->ready != 0U && control->healthy == 0U) ||
+        (control->stop_requested != 0U && control->ready == 0U)) return false;
+    bool present = control->pid > 0 && control->process_generation != 0U;
+    bool absent = control->pid == 0 && control->process_generation == 0U &&
+        control->fenced != 0U && control->healthy == 0U &&
+        control->ready == 0U;
+    return present != absent;
+}
+
+static int compositor_control_read(
+        supervisor_compositor_control_t *control) {
+    if (control == NULL) return -22;
+    size_t length = 0U;
+    return critical_object_read(
+        &compositor_runtime.control, SUPERVISOR_COMPOSITOR_CONTROL_VERSION,
+        control, sizeof(*control), &length, compositor_control_valid) < 0 ||
+        length != sizeof(*control) ? SUPERVISOR_EINTEGRITY : 0;
+}
+
+static int compositor_control_write(
+        const supervisor_compositor_control_t *control) {
+    if (control == NULL) return -22;
+    return critical_object_update(
+        &compositor_runtime.control, SUPERVISOR_COMPOSITOR_CONTROL_VERSION,
+        control, sizeof(*control), compositor_control_valid) == 0
+            ? 0 : SUPERVISOR_EINTEGRITY;
+}
 #endif
 
 void supervisor_init(void) {
@@ -1881,6 +1954,13 @@ void supervisor_init(void) {
             SUPERVISOR_AUDIO_SERVICE_CONTROL_VERSION, &empty_audio_service,
             sizeof(empty_audio_service)) != 0)
         panic("Unable to initialize protected audio service runtime");
+    supervisor_compositor_control_t empty_compositor = {0};
+    memset(&compositor_runtime, 0, sizeof(compositor_runtime));
+    if (critical_object_init(
+            &compositor_runtime.control,
+            SUPERVISOR_COMPOSITOR_CONTROL_VERSION, &empty_compositor,
+            sizeof(empty_compositor)) != 0)
+        panic("Unable to initialize protected compositor runtime");
     supervisor_icmp_delivery_t empty_icmp_delivery = {0};
     supervisor_udp_delivery_t empty_udp_delivery = {0};
     if (critical_object_init(&probe_runtime.icmp_ingress_delivery.object,
@@ -2568,6 +2648,10 @@ bool supervisor_probe_component_up(uint64_t deadline_ms) {
 int supervisor_probe_report(int pid, uint32_t generation,
                             uint32_t report_type, uint32_t value,
                             uint64_t now_ms) {
+    bool compositor_match = false;
+    int compositor_result = compositor_report_if_identity(
+        pid, generation, report_type, value, now_ms, &compositor_match);
+    if (compositor_match) return compositor_result;
     bool audio_service_match = false;
     int audio_service_result = audio_service_report_if_identity(
         pid, generation, report_type, value, now_ms, &audio_service_match);
@@ -5631,6 +5715,212 @@ static bool audio_service_event(supervisor_event_t event) {
     return true;
 }
 
+static void compositor_abort_prepared_spawn(
+        supervisor_compositor_control_t *control, int pid) {
+    if (pid > 0) (void)process_terminate(pid);
+    if (control == NULL) return;
+    control->pid = 0;
+    control->process_generation = 0U;
+    control->healthy = 0U;
+    control->ready = 0U;
+    control->stop_requested = 0U;
+    control->fenced = 1U;
+    (void)compositor_control_write(control);
+}
+
+static bool compositor_spawn_next(supervisor_handle_t handle) {
+    supervisor_compositor_control_t control;
+    if (compositor_control_read(&control) != 0 || control.active == 0U ||
+        control.administratively_enabled == 0U || control.pid != 0 ||
+        control.fenced == 0U) return false;
+    const char *arguments[] = {"desktop.prg"};
+    int pid = process_spawn_supervised_prepared(
+        SUPERVISOR_COMPOSITOR_PATH, 1, arguments,
+        PROCESS_DOMAIN_COMPOSITOR);
+    uint32_t generation = 0U;
+    if (pid <= 0 || process_get_identity(pid, &generation) != 0) {
+        compositor_abort_prepared_spawn(&control, pid);
+        return false;
+    }
+    control.pid = pid;
+    control.process_generation = generation;
+    control.healthy = 0U;
+    control.ready = 0U;
+    control.stop_requested = 0U;
+    control.fenced = 1U;
+    control.supervisor = handle;
+    if (compositor_control_write(&control) != 0 ||
+        process_start_prepared_supervised(pid, generation) != 0) {
+        compositor_abort_prepared_spawn(&control, pid);
+        return false;
+    }
+    return true;
+}
+
+static bool compositor_fence_apply(void *context) {
+    (void)context;
+    supervisor_compositor_control_t control;
+    if (compositor_control_read(&control) != 0 || control.active == 0U)
+        return false;
+    /* Revoke publication before stopping code that may still own a staged
+     * frame. The display transaction lock serializes this with frame commit. */
+    if (display_control_graphics_active() &&
+        display_control_deactivate() != 0) return false;
+    if (control.pid > 0 && process_identity_alive(
+            control.pid, control.process_generation))
+        (void)process_terminate(control.pid);
+    control.pid = 0;
+    control.process_generation = 0U;
+    control.healthy = 0U;
+    control.ready = 0U;
+    control.stop_requested = 0U;
+    control.fenced = 1U;
+    return compositor_control_write(&control) == 0;
+}
+
+static bool compositor_fence_verify(void *context) {
+    (void)context;
+    supervisor_compositor_control_t control;
+    return compositor_control_read(&control) == 0 && control.active != 0U &&
+        control.fenced != 0U && control.pid == 0 &&
+        control.process_generation == 0U && control.healthy == 0U &&
+        control.ready == 0U;
+}
+
+bool supervisor_start_compositor(uint64_t now_ms) {
+    supervisor_compositor_control_t control;
+    if (compositor_control_read(&control) != 0 || control.active != 0U)
+        return false;
+    const supervisor_config_t config = {
+        .heartbeat_timeout_ms = 2000U,
+        .recovery_timeout_ms = 1000U,
+        .restart_budget = 3U,
+        .startup_timeout_ms = 5000U,
+    };
+    const supervisor_fence_ops_t fence = {
+        .apply = compositor_fence_apply,
+        .verify = compositor_fence_verify,
+        .context = &compositor_runtime,
+    };
+    supervisor_handle_t handle;
+    if (supervisor_register("session-compositor", &config, &fence, now_ms,
+                            &handle) != 0) return false;
+    compositor_runtime.config = config;
+    control = (supervisor_compositor_control_t){
+        .active = 1U,
+        .administratively_enabled = 1U,
+        .fenced = 1U,
+        .supervisor = handle,
+    };
+    if (compositor_control_write(&control) != 0 ||
+        !compositor_spawn_next(handle)) {
+        (void)supervisor_force_isolate(handle);
+        return false;
+    }
+    return true;
+}
+
+bool supervisor_compositor_session_active(void) {
+    supervisor_compositor_control_t control;
+    return compositor_control_read(&control) == 0 && control.active != 0U &&
+        control.administratively_enabled != 0U;
+}
+
+static int compositor_report_if_identity(
+        int pid, uint32_t generation, uint32_t report_type, uint32_t value,
+        uint64_t now_ms, bool *matched) {
+    if (matched == NULL) return -22;
+    *matched = false;
+    supervisor_compositor_control_t control;
+    if (compositor_control_read(&control) != 0 || control.active == 0U ||
+        control.pid != pid || control.process_generation != generation)
+        return -9;
+    *matched = true;
+    if (!process_identity_alive(pid, generation)) return -9;
+    int result = -22;
+    if (report_type == REIST_REPORT_SELF_TEST) {
+        if (value != 1U || control.healthy != 0U || control.ready != 0U)
+            result = -13;
+        else result = supervisor_report_self_test(
+            control.supervisor, true, now_ms);
+    } else if (report_type == REIST_REPORT_PROGRESS) {
+        result = value == 0U ? -22 : supervisor_report_progress(
+            control.supervisor, value, now_ms);
+        if (result == 0 && control.fenced != 0U) {
+            control.fenced = 0U;
+            control.healthy = 1U;
+            result = compositor_control_write(&control);
+        }
+    } else if (report_type == REIST_REPORT_SERVICE_READY) {
+        if (value != 1U || control.fenced != 0U ||
+            control.healthy == 0U || control.ready != 0U) result = -13;
+        else {
+            control.ready = 1U;
+            result = compositor_control_write(&control);
+            if (result == 0) printf("REIST_GUI COMPOSITOR_READY generation=%u\n",
+                                    control.process_generation);
+        }
+    } else if (report_type == REIST_REPORT_DIAGNOSTIC &&
+               value == SUPERVISOR_COMPOSITOR_STOP_DIAGNOSTIC &&
+               control.ready != 0U) {
+        control.stop_requested = 1U;
+        result = compositor_control_write(&control);
+    }
+    if (result != 0) (void)supervisor_force_isolate(control.supervisor);
+    return result;
+}
+
+static void compositor_monitor_process(void) {
+    supervisor_compositor_control_t control;
+    if (compositor_control_read(&control) != 0 || control.active == 0U ||
+        control.pid <= 0 || process_identity_alive(
+            control.pid, control.process_generation)) return;
+    if (control.stop_requested != 0U) {
+        if (display_control_graphics_active()) {
+            (void)supervisor_force_isolate(control.supervisor);
+            return;
+        }
+        control.pid = 0;
+        control.process_generation = 0U;
+        control.healthy = 0U;
+        control.ready = 0U;
+        control.stop_requested = 0U;
+        control.fenced = 1U;
+        control.administratively_enabled = 0U;
+        if (compositor_control_write(&control) != 0) output_fence_all();
+        return;
+    }
+    (void)supervisor_force_isolate(control.supervisor);
+}
+
+static bool compositor_event(supervisor_event_t event) {
+    supervisor_compositor_control_t control;
+    if (compositor_control_read(&control) != 0 || control.active == 0U ||
+        event.handle.slot != control.supervisor.slot ||
+        event.handle.generation != control.supervisor.generation) return false;
+    if (event.type == SUPERVISOR_EVENT_RESTART_REQUIRED) {
+        control.supervisor = event.handle;
+        bool restarted = control.administratively_enabled != 0U &&
+            compositor_control_write(&control) == 0 &&
+            compositor_spawn_next(event.handle);
+        if (!restarted) (void)supervisor_force_isolate(event.handle);
+        else printf("REIST_GUI COMPOSITOR_RESTARTED epoch=%u\n",
+                    event.handle.epoch);
+    } else if (event.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
+        control.administratively_enabled = 0U;
+        (void)compositor_control_write(&control);
+        if (compositor_runtime.reported_safe_generation !=
+                event.handle.generation ||
+            compositor_runtime.reported_safe_epoch != event.handle.epoch) {
+            compositor_runtime.reported_safe_generation =
+                event.handle.generation;
+            compositor_runtime.reported_safe_epoch = event.handle.epoch;
+            printf("REIST_GUI COMPOSITOR_DEGRADED\n");
+        }
+    }
+    return true;
+}
+
 static void driver_monitor_processes(void) {
     for (uint32_t slot = 0U; slot < SUPERVISOR_MAX_DEVICE_DRIVERS; ++slot) {
         supervisor_driver_control_t control;
@@ -5714,6 +6004,7 @@ static void supervisor_worker(void) {
         component_control_poll(component_now_ms);
         driver_monitor_processes();
         audio_service_monitor_process();
+        compositor_monitor_process();
         supervisor_probe_control_t control;
         uint32_t transaction_flags = supervisor_lock();
         int control_result = supervisor_protected_probe_control_read(
@@ -5874,6 +6165,7 @@ static void supervisor_worker(void) {
         supervisor_event_t result = supervisor_service_one(pit_monotonic_ms());
         bool driver_event = driver_service_event(result);
         bool audio_event = audio_service_event(result);
+        bool compositor_lifecycle_event = compositor_event(result);
         if (control.active != 0U &&
             result.type == SUPERVISOR_EVENT_RESTART_REQUIRED &&
             result.handle.slot == control.handle.slot &&
@@ -5895,7 +6187,7 @@ static void supervisor_worker(void) {
             }
         }
         if (result.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED &&
-            !driver_event && !audio_event) {
+            !driver_event && !audio_event && !compositor_lifecycle_event) {
             /* Until per-hazard external interlocks are registered, the
              * conservative system response revokes every known output. */
             output_fence_all();
@@ -5921,12 +6213,22 @@ int supervisor_spawn_service(const char *path, int argc,
     if (domain_kind != PROCESS_DOMAIN_PROBE &&
         domain_kind != PROCESS_DOMAIN_STORAGE &&
         domain_kind != PROCESS_DOMAIN_DRIVER &&
-        domain_kind != PROCESS_DOMAIN_AUDIO_SERVICE) return -1;
+        domain_kind != PROCESS_DOMAIN_AUDIO_SERVICE &&
+        domain_kind != PROCESS_DOMAIN_COMPOSITOR) return -1;
     return process_spawn_supervised(path, argc, argv,
                                     (process_domain_kind_t)domain_kind);
 }
 #else
 bool supervisor_start_worker(void) {
+    return false;
+}
+
+bool supervisor_start_compositor(uint64_t now_ms) {
+    (void)now_ms;
+    return false;
+}
+
+bool supervisor_compositor_session_active(void) {
     return false;
 }
 

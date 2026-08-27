@@ -1031,16 +1031,17 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 #endif
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any
      * failed/terminated desktop fall back to the userspace shell. */
-#ifdef USE_FRAMEBUFFER
-    if (framebuffer_available()) {
-        if (start_userspace_program(multiboot_info, "usr/gui/bin/desktop.prg",
-                                    "graphical desktop") == 0) {
-            printf("Graphical desktop exited; starting shell fallback.\n");
-        } else {
-            printf("Unable to start desktop.prg; starting shell fallback.\n");
+    if (!supervisor_start_compositor(pit_monotonic_ms())) {
+        printf("Unable to start desktop.prg; starting shell fallback.\n");
+    } else {
+        printf("Starting supervised graphical desktop from "
+               "/usr/gui/bin/desktop.prg\n");
+        while (supervisor_compositor_session_active()) {
+            if (scheduler_sleep_ms(10U) != 0) (void)scheduler_yield();
         }
+        printf("Graphical desktop lifecycle ended; starting shell "
+               "fallback.\n");
     }
-#endif
     if (start_userspace_program(multiboot_info, "bin/shell.prg",
                                 "userspace command interpreter") < 0) {
         printf("Unable to start shell.prg; entering rescue shell.\n");

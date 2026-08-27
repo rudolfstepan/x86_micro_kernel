@@ -9,6 +9,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReistSupervisorTests(unittest.TestCase):
+    def test_compositor_lifecycle_is_protected_bounded_and_bsp_only(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        control = source[source.index("static bool compositor_control_valid"):
+                         source.index("#endif", source.index(
+                             "static bool compositor_control_valid"))]
+        self.assertIn("SUPERVISOR_COMPOSITOR_CONTROL_VERSION", source)
+        self.assertIn("compositor control exceeds protected payload", source)
+        self.assertIn("control->process_generation", control)
+        spawn = source[source.index("static bool compositor_spawn_next"):
+                       source.index("static bool compositor_fence_apply")]
+        self.assertIn("process_spawn_supervised_prepared", spawn)
+        self.assertIn("PROCESS_DOMAIN_COMPOSITOR", spawn)
+        self.assertIn("process_start_prepared_supervised", spawn)
+        self.assertNotIn("process_set_supervised_affinity", spawn)
+        fence = source[source.index("static bool compositor_fence_apply"):
+                       source.index("static bool compositor_fence_verify")]
+        self.assertLess(fence.index("display_control_deactivate()"),
+                        fence.index("process_terminate(control.pid)"))
+        report = source[source.index("static int compositor_report_if_identity"):
+                        source.index("static void compositor_monitor_process")]
+        self.assertLess(report.index("REIST_REPORT_SELF_TEST"),
+                        report.index("REIST_REPORT_PROGRESS"))
+        self.assertLess(report.index("REIST_REPORT_PROGRESS"),
+                        report.index("REIST_REPORT_SERVICE_READY"))
+        self.assertIn("heartbeat_timeout_ms = 2000U", source)
+        self.assertIn("recovery_timeout_ms = 1000U", source)
+        self.assertIn("restart_budget = 3U", source)
+        self.assertIn("supervisor_start_compositor", kernel)
+        self.assertIn("supervisor_compositor_session_active", kernel)
+        self.assertNotIn("set_current_affinity", kernel[
+            kernel.index("supervisor_start_compositor"):])
+
     def test_network_service_ap_affinity_is_post_ready_and_protected(self):
         header = (ROOT / "include/kernel/supervisor.h").read_text(
             encoding="utf-8")

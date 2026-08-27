@@ -521,7 +521,8 @@ und 10 verbindlich.
     AP-fähig; auch normale und nach Heartbeat-Timeout neu gestartete
     Audio-Servicegenerationen sowie normaler und neu gestarteter Storage-Service
     AP-fähig; auch normale und neu gestartete Netzwerkdienstgenerationen
-    AP-fähig, weitere
+    AP-fähig; der Session-Compositor besitzt nun als Voraussetzung einen
+    generationsgebundenen, BSP-affinen Supervisor-Lebenszyklus, weitere
     Produktionsdomänen noch BSP-affin
 
 #### Verbindliche Priorität nach dem S0-Gate

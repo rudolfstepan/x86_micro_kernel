@@ -3282,6 +3282,11 @@ static void print_render_metrics(const desktop_render_metrics_t *metrics) {
 static uint32_t desktop_try_exit(
     int32_t pointer_x, int32_t pointer_y, uint32_t runtime_activated,
     const desktop_render_metrics_t *metrics) {
+    /* A supervised interactive session announces intentional shutdown before
+     * relinquishing display publication. Direct diagnostic launches are
+     * compatibility processes; their rejected report is deliberately benign. */
+    (void)x86os_reist_report(
+        X86OS_REIST_REPORT_DIAGNOSTIC, 0x434D5053U);
     (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
     if (runtime_activated && desktop_display_deactivate() != 0) {
         x86os_puts("desktop: VGA-Rueckkehr fehlgeschlagen\n");
@@ -4989,6 +4994,22 @@ int main(int argc, char **argv) {
         x86os_puts("desktop: Surface-IPC konnte nicht gestartet werden\n");
         return 1;
     }
+    int lifecycle_self_test = x86os_reist_report(
+        X86OS_REIST_REPORT_SELF_TEST, 1U);
+    uint32_t lifecycle_supervised = lifecycle_self_test == 0;
+    if ((lifecycle_self_test != 0 && lifecycle_self_test != -1) ||
+        (lifecycle_supervised &&
+         (x86os_reist_report(X86OS_REIST_REPORT_PROGRESS, 1U) != 0 ||
+          x86os_reist_report(
+              X86OS_REIST_REPORT_SERVICE_READY, 1U) != 0))) {
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)desktop_display_deactivate();
+        x86os_puts("desktop: Supervisor-Lifecycle nicht verfuegbar\n");
+        return 1;
+    }
+    uint32_t lifecycle_sequence = 2U;
+    uint64_t lifecycle_heartbeat_ms = 0U;
+    (void)x86os_monotonic_ms(&lifecycle_heartbeat_ms);
     desktop_explorer_initialize(&explorer);
     desktop_drag_state_initialize(&desktop_drag);
     desktop_trash_state_initialize(&desktop_trash);
@@ -5107,6 +5128,20 @@ int main(int argc, char **argv) {
     }
 
     for (;;) {
+        uint64_t lifecycle_now_ms = 0U;
+        if (lifecycle_supervised &&
+            (x86os_monotonic_ms(&lifecycle_now_ms) != 0 ||
+            lifecycle_now_ms < lifecycle_heartbeat_ms ||
+            lifecycle_now_ms - lifecycle_heartbeat_ms >= 500U)) {
+            if (x86os_reist_report(
+                    X86OS_REIST_REPORT_PROGRESS, lifecycle_sequence) != 0) {
+                desktop_surface_runtime_shutdown(&surface_runtime);
+                if (runtime_activated) (void)desktop_display_deactivate();
+                return 1;
+            }
+            if (lifecycle_sequence != UINT32_MAX) ++lifecycle_sequence;
+            lifecycle_heartbeat_ms = lifecycle_now_ms;
+        }
         int surface_poll_status = desktop_surface_runtime_poll(
             &surface_runtime, &surfaces);
         if (surface_probe && surface_poll_status != 0) {

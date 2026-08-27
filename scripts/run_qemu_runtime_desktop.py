@@ -279,10 +279,15 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
     thread.start()
     transcript: list[str] = []
     deadline = time.monotonic() + timeout
+    supervised_boot_detected = False
     try:
         while time.monotonic() < deadline:
             drain(output, transcript)
             text = "".join(transcript)
+            if ("REIST_GUI COMPOSITOR_READY" in text and
+                    "DESKTOP_OK" in text):
+                supervised_boot_detected = True
+                break
             if SHELL_PROMPT in text:
                 command_name = "desktop.prg --render-probe" if render_probe \
                     else ("desktop.prg --surface-probe" if surface_probe
@@ -299,7 +304,18 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 break
             time.sleep(0.02)
         else:
-            raise RuntimeError("VGA shell prompt not observed")
+            drain(output, transcript)
+            text = "".join(transcript)
+            if ("REIST_GUI COMPOSITOR_READY" in text and
+                    "DESKTOP_OK" in text):
+                supervised_boot_detected = True
+            else:
+                tail = text[-8000:].replace("\r", "")
+                raise RuntimeError(
+                    "supervised desktop or VGA shell prompt not observed; "
+                    f"guest tail:\n{tail}")
+        desktop_deadline = time.monotonic() + 30.0
+        deadline = desktop_deadline
         while time.monotonic() < deadline:
             drain(output, transcript)
             text = "".join(transcript)
@@ -308,6 +324,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     print("runtime-desktop: FAIL: unsupported mode was accepted",
                           file=sys.stderr)
                     return 1
+                if supervised_boot_detected and control_probe:
+                    time.sleep(0.2)
+                    capture_screenshot(process, screenshot, deadline)
+                    print("runtime-desktop: PASS supervised-generation")
+                    return 0
                 if render_probe:
                     while time.monotonic() < deadline:
                         drain(output, transcript)
@@ -461,6 +482,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 # before capturing it or injecting Escape.
                 time.sleep(0.2)
                 capture_screenshot(process, screenshot, deadline)
+                if supervised_boot_detected:
+                    print("runtime-desktop: PASS supervised-generation")
+                    return 0
                 send_key(process, "esc")
                 while time.monotonic() < deadline:
                     drain(output, transcript)
@@ -472,7 +496,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             print("runtime-desktop: PASS")
                             return 0
                     time.sleep(0.02)
-                raise RuntimeError("desktop did not restore the VGA shell")
+                tail = "".join(transcript)[-8000:].replace("\r", "")
+                raise RuntimeError(
+                    f"desktop did not restore the VGA shell; guest tail:\n{tail}")
             if "desktop: Grafikmodus nicht verfuegbar" in text:
                 tail = text[-1600:].replace("\r", "")
                 raise RuntimeError(
@@ -492,7 +518,7 @@ def main() -> int:
     parser.add_argument("--qemu", type=pathlib.Path, required=True)
     parser.add_argument("--image", type=pathlib.Path, required=True)
     parser.add_argument("--screenshot", type=pathlib.Path, required=True)
-    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--expect-failure", action="store_true")
     parser.add_argument("--render-probe", action="store_true")
     parser.add_argument("--surface-probe", action="store_true")

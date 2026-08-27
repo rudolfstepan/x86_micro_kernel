@@ -283,5 +283,12 @@ Generation 4 kehrt vor ARP-/Socket-/Lease-Revoke auf den BSP zurück; die
 geschützte AP-Maske überlebt den Fence. Ersatzgeneration 5 self-testet und
 publiziert Ready auf CPU 0, bevor sie wieder AP-affin wird und
 `NETWORK_RECOVERY_OK` abschließt.
+R6.2l migriert den Session-Compositor aus der Compatibility-Domaene in einen
+eigenen generationsgebundenen Supervisor-Lebenszyklus. Display- und
+Surface-Initialisierung, Self-Test, Ready und Heartbeats bleiben vollstaendig
+auf CPU 0. Vor Termination oder Restart wird die Displaypublikation unter dem
+bestehenden Timed-Mutex deaktiviert; erst danach darf die alte Generation
+verschwinden. Diese Lifecycle-Scheibe ist ausdruecklich noch keine
+AP-Freigabe.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

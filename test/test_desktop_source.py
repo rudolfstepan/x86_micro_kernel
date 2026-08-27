@@ -59,6 +59,27 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertRegex(self.source, r"display\.width\s*<\s*320U")
         self.assertRegex(self.source, r"display\.height\s*<\s*240U")
 
+    def test_interactive_compositor_reports_ordered_bounded_lifecycle(self):
+        surface = self.source.index(
+            "desktop_surface_runtime_initialize(&surface_runtime)")
+        self_test = self.source.index(
+            "X86OS_REIST_REPORT_SELF_TEST", surface)
+        progress = self.source.index(
+            "X86OS_REIST_REPORT_PROGRESS, 1U", self_test)
+        ready = self.source.index(
+            "X86OS_REIST_REPORT_SERVICE_READY", progress)
+        loop = self.source.index("for (;;) {", ready)
+        self.assertLess(surface, self_test)
+        self.assertLess(self_test, progress)
+        self.assertLess(progress, ready)
+        self.assertLess(ready, loop)
+        self.assertIn("lifecycle_now_ms - lifecycle_heartbeat_ms >= 500U",
+                      self.source[loop:])
+        exit_path = self.source[self.source.index("static uint32_t desktop_try_exit"):
+                                self.source.index("static char filetypes_config")]
+        self.assertLess(exit_path.index("X86OS_REIST_REPORT_DIAGNOSTIC"),
+                        exit_path.index("desktop_display_deactivate()"))
+
     def test_root_explorer_replaces_static_launcher_windows(self):
         self.assertIn('#include "desktop_explorer.h"', self.source)
         self.assertIn('{"Computer", "/",', self.source)

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2l-compositor-supervised-lifecycle"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1771,7 +1771,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2l-compositor-supervised-lifecycle"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Place the session compositor under bounded supervision"
@@ -1811,7 +1811,7 @@ targeted_tests = [
   "python test/test_runtime_graphics_switch.py -v"
 ]
 package_tests = [
-  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
 ]
 runtime_tests = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
@@ -1826,6 +1826,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "gui: supervise the session compositor lifecycle"
+evidence = [
+  "Desktop source contract passed 41 tests including ordered self-test progress ready and bounded heartbeat publication",
+  "Supervisor source and host behavior passed 8 tests including ECC-protected compositor identity BSP-only spawn and display-before-terminate fencing",
+  "Process-domain contract passed 9 tests with an explicit compositor allowlist and no device storage network-policy or administrative authority",
+  "Runtime graphics source contract passed 20 tests including supervised boot selection and separate bounded bootstrap and desktop phases",
+  "QEMU VGA package passed in 9 seconds after compiling all 102 kernel C objects and the complete userspace program set",
+  "QEMU runtime observed COMPOSITOR_READY and DESKTOP_OK from the supervised boot generation and passed the captured desktop session"
+]
 
 [[packages]]
 id = "R6.2d-ap-hda"
