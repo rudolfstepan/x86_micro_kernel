@@ -213,6 +213,7 @@ def main() -> int:
     parser.add_argument("--smp", type=int, choices=(1, 2, 3, 4), default=1)
     parser.add_argument("--expect-hda-smp-restart", action="store_true")
     parser.add_argument("--expect-audio-service-smp", action="store_true")
+    parser.add_argument("--expect-audio-service-smp-restart", action="store_true")
     args = parser.parse_args()
     if args.qemu is None:
         args.qemu = default_qemu_path()
@@ -253,6 +254,15 @@ def main() -> int:
             detail = "supervised audio service did not become ready"
         elif not wait_for(transcript, DMA_POOL_READY, deadline):
             detail = "mediated DMA pool diagnostics were not observed"
+        elif args.expect_audio_service_smp_restart and not wait_for(
+                transcript, "REIST_AUDIO SERVICE_TIMEOUT_ARMED epoch=", deadline):
+            detail = "audio-service AP heartbeat fault was not armed"
+        elif args.expect_audio_service_smp_restart and not wait_for(
+                transcript, "REIST_AUDIO SERVICE_RESTARTED", deadline):
+            detail = "audio service was not restarted after heartbeat timeout"
+        elif args.expect_audio_service_smp_restart and not wait_for_count(
+                transcript, AUDIO_READY, 2, deadline):
+            detail = "replacement audio service did not become ready"
         elif args.expect_hda_smp_restart and not wait_for(
                 transcript, "REIST_AUDIO HDA_TIMEOUT_ARMED epoch=", deadline):
             detail = "HDA AP heartbeat fault was not armed"
@@ -293,7 +303,8 @@ def main() -> int:
                     detail = (
                         "HDA driver did not execute an authorized operation "
                         "on an AP")
-                if (not detail and args.expect_audio_service_smp and
+                if (not detail and (args.expect_audio_service_smp or
+                                    args.expect_audio_service_smp_restart) and
                         not wait_for_count(
                             transcript, "REIST_AUDIO SERVICE_AP_EXEC cpu=",
                             AUDIO_TEST_CYCLES, deadline)):

@@ -219,6 +219,17 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertLess(rotate.index("audio_service_return_to_bsp(&control)"),
                         rotate.index("scheduler_preempt_disable()"))
 
+    def test_audio_service_ap_fault_is_compile_time_bounded(self):
+        makefile = self.read("Makefile")
+        windows = self.read("scripts/build-windows.ps1")
+        supervisor = self.read("kernel/init/supervisor.c")
+        runner = self.read("scripts/run_qemu_pci_audio.py")
+        self.assertIn("AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION ?= 0", makefile)
+        self.assertIn("AudioServiceSmpLifecycleFaultInjection", windows)
+        self.assertIn("REIST_AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION", supervisor)
+        self.assertIn("SERVICE_TIMEOUT_ARMED", supervisor)
+        self.assertIn("expect-audio-service-smp-restart", runner)
+
     def test_tools_sdk_and_virtual_hda_are_packaged(self):
         makefile = self.read("Makefile")
         windows = self.read("scripts/build-windows.ps1")

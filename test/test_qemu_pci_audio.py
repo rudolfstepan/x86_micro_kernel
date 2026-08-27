@@ -51,6 +51,8 @@ class PciAudioRunnerTests(unittest.TestCase):
         self.assertIn("first bounded request discovers the stale", runner)
         self.assertIn("--expect-audio-service-smp", runner)
         self.assertIn("REIST_AUDIO SERVICE_AP_EXEC cpu=", runner)
+        self.assertIn("--expect-audio-service-smp-restart", runner)
+        self.assertIn("args.expect_audio_service_smp_restart) and", runner)
 
     def test_wave_validator_rejects_silence_and_accepts_pcm(self):
         with tempfile.TemporaryDirectory() as directory:

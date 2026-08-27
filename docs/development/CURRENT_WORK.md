@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2g – Audio-Service-Timeout und erneute AP-Ausführung nachweisen
+Aktives Thema: kein aktives Paket; R6.2g ist abgeschlossen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -136,3 +136,13 @@ Online-AP-Maske angewandt. Vor jeder normalen Sessionrotation kehrt die alte
 Generation sleepfähig auf den BSP zurück, bevor der präemptionsgeschützte
 Fence-/Reap-Commit beginnt. Der SMP4-Lauf bestätigte AP-Ausführung über fünf
 Rotationen und fünf PCM-Zyklen mit 274297 Frames bei 440,4 Hz und `max-gap=1`.
+
+## Audio-Service-AP-Restart nachgewiesen
+
+Eine nur im Fault-Build vorhandene Injection unterdrückte Fortschrittsberichte
+der ersten AP-affinen Audio-Service-Epoch. Der bestehende Zwei-Sekunden-
+Heartbeat isolierte die Generation; der begrenzte BSP-Handoff lief vor
+Endpoint-Entzug und Reap. Die Ersatzgeneration verband sich auf CPU 0 erneut
+mit der aktuellen HDA-Generation, bestand Self-Test und Ready-Publikation und
+kehrte anschließend auf einen AP zurück. Fünf PCM-Zyklen erzeugten 269153
+Stereo-S16-Frames bei 440,4 Hz und `max-gap=1`, ohne neue Geräteautorität.

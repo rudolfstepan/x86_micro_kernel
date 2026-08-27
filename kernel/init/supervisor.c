@@ -251,6 +251,9 @@ typedef struct {
 
 static supervisor_audio_service_runtime_t audio_service_runtime;
 static volatile uint32_t audio_service_ap_execution_epoch;
+#ifdef REIST_AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION
+static volatile uint32_t audio_service_fault_epoch;
+#endif
 static int audio_service_report_if_identity(
     int pid, uint32_t generation, uint32_t report_type, uint32_t value,
     uint64_t now_ms, bool *matched);
@@ -5491,6 +5494,16 @@ static int audio_service_report_if_identity(
                     control.supervisor, true, now_ms);
         }
     } else if (report_type == REIST_REPORT_PROGRESS) {
+#ifdef REIST_AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION
+        if (control.ready != 0U && x86_cpu_current_index() != 0U) {
+            if (audio_service_fault_epoch == 0U &&
+                __sync_bool_compare_and_swap(
+                    &audio_service_fault_epoch, 0U, control.supervisor.epoch))
+                printf("REIST_AUDIO SERVICE_TIMEOUT_ARMED epoch=%u\n",
+                       control.supervisor.epoch);
+            if (audio_service_fault_epoch == control.supervisor.epoch) return 0;
+        }
+#endif
         result = value == 0U ? -22 : supervisor_report_progress(
             control.supervisor, value, now_ms);
         if (result == 0 && control.fenced != 0U) {

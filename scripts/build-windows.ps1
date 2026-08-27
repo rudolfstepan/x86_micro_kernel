@@ -19,6 +19,7 @@ param(
     [switch]$DriverDomainFaultInjection,
     [switch]$Svga2dSmpLifecycleFaultInjection,
     [switch]$HdaSmpLifecycleFaultInjection,
+    [switch]$AudioServiceSmpLifecycleFaultInjection,
     [switch]$SkipReleaseSbom,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
@@ -179,6 +180,7 @@ try {
         driver_domain_fault_injection = [bool]$DriverDomainFaultInjection
         svga2d_smp_lifecycle_fault_injection = [bool]$Svga2dSmpLifecycleFaultInjection
         hda_smp_lifecycle_fault_injection = [bool]$HdaSmpLifecycleFaultInjection
+        audio_service_smp_lifecycle_fault_injection = [bool]$AudioServiceSmpLifecycleFaultInjection
         skip_release_sbom = [bool]$SkipReleaseSbom
         nasm = $Nasm
         zig = $Zig
@@ -253,6 +255,9 @@ try {
     }
     if ($HdaSmpLifecycleFaultInjection) {
         $makeArguments += 'HDA_SMP_LIFECYCLE_FAULT_INJECTION=1'
+    }
+    if ($AudioServiceSmpLifecycleFaultInjection) {
+        $makeArguments += 'AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

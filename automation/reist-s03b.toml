@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2g-audio-service-ap-restart"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1943,7 +1943,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2g-audio-service-ap-restart"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Restore audio-service AP affinity after heartbeat restart"
@@ -1982,7 +1982,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "audio: restore service AP affinity after restart"
-evidence = []
+evidence = [
+  "audio source contract passed 14 tests including the compile-time-bounded first-epoch AP heartbeat fault",
+  "PCI audio runner passed 7 tests and supervisor contract passed 6 tests",
+  "Windows QEMU VGA fault build compiled all 102 C objects and produced a signed validated native image",
+  "four-CPU QEMU observed the first AP service timeout, bounded restart, replacement ready publication and renewed AP execution",
+  "five playback cycles captured 269153 stereo S16 frames at 440.4 Hz with max-gap 1",
+  "active_id is empty and no driver DMA IRQ MMIO port or ambient service authority was added"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
