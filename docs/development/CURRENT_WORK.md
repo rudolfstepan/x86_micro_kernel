@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R2.2af – nativen VBE-Compositorstart vor AP-Handoff absichern
+Aktives Thema: R2.2ag – initialen Compositor-Ladefehler begrenzt wiederherstellen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -110,20 +110,22 @@ getrennten Fehlerlauf.
 
 ## Restrisiko und nächster zusammenhängender Schritt
 
-Der aktuelle physische Lauf auf dem AMD-Mainboard mit NVIDIA meldet den noch
-nicht freigegebenen optionalen Beschleunigungsdienst korrekt als `EAGAIN`
-(`status=11`), erreicht danach aber `REIST_GUI COMPOSITOR_DEGRADED`. Seit
-R6.2n publiziert der Compositor `SERVICE_READY` und übernimmt seine AP-Maske,
-bevor Iconvorbereitung und der erste vollständige Software-Framebuffer-Frame
-abgeschlossen sind. Der auf Emulatoren ausreichende Zwei-Sekunden-Heartbeat
-kann dabei auf nativer ungecacheter VRAM-Ausgabe ablaufen und jede
-Ersatzgeneration auf dieselbe Weise verbrauchen.
+Der aktuelle physische Lauf auf dem AMD-Mainboard mit NVIDIA zeigt vor jeder
+Grafikinitialisierung beim Öffnen von `/usr/gui/bin/desktop.prg` den Fehler
+`Program load open failed (-4)`. `-4` ist `VFS_ERR_IO`; unmittelbar danach
+scheitert auch der Shell-
+Fallback. Trotzdem meldet der Supervisor später `COMPOSITOR_RESTARTED epoch=2`
+und die Ersatzgeneration erreicht den optionalen Beschleunigungsdienst. Damit
+ist die frühere Erstframe-Timinghypothese widerlegt und R2.2af abgebrochen.
 
-R2.2af zieht deshalb den Hardware-Fix vor: Der erste vollständige Frame bleibt
-in einer festen 30-Sekunden-Startphase auf CPU 0; erst sein Abschluss erlaubt
-Healthy, `SERVICE_READY` und AP-Handoff. Zwei-Sekunden-Heartbeat,
-Ein-Sekunden-Fence und Restartbudget drei bleiben unverändert. R6.2o bleibt
-danach als getrenntes Fault-Injection-Paket queued.
+R2.2ag korrigiert die nachgewiesene geteilte Sitzungsautorität: Sobald der
+geschützte Compositor-Kontrollrecord aktiv ist, bleibt auch ein fehlgeschlagener
+Initialspawn im vorhandenen begrenzten Isolate-/Fence-/Restart-Zyklus. Der
+Kernel wartet, solange diese Sitzung administrativ aktiv ist, und startet die
+Shell erst nach Budgeterschöpfung oder wenn die Sitzung gar nicht sicher
+etabliert werden konnte. VFS-Fehler, Deadlines und Restartbudget werden nicht
+umgedeutet oder erweitert. R6.2o bleibt danach als getrenntes
+Fault-Injection-Paket queued.
 
 Ein früherer Lauf meldete einmal eine rekursive Übernahme von
 `task_table_lock`. Der Fehler trat in vier vollständigen Folgeläufen nicht

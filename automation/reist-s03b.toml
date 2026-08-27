@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2af-native-compositor-startup"
+active_id = "R2.2ag-compositor-initial-load-recovery"
 
 [policy]
 one_package_per_run = true
@@ -9910,7 +9910,7 @@ commit_message = "smp: restore compositor AP affinity after restart"
 
 [[packages]]
 id = "R2.2af-native-compositor-startup"
-status = "active"
+status = "cancelled"
 phase = "post-s0"
 risk = "high"
 title = "Keep native VBE compositor startup inside its lifecycle window"
@@ -9953,3 +9953,50 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "gui: defer compositor ready until first native frame"
+evidence = [
+  "The candidate targeted first-frame timing, but its frozen QEMU runtime gate timed out before scheduler and desktop startup after the single permitted focused test repair.",
+  "A later physical trace disproved the assumed first-frame root cause: the initial /usr/gui/bin/desktop.prg open returned VFS_ERR_IO before any compositor code ran, shell fallback failed next, and the still-active supervisor restarted the compositor concurrently as epoch 2."
+]
+
+[[packages]]
+id = "R2.2ag-compositor-initial-load-recovery"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Keep initial compositor load failure inside bounded recovery"
+scope = "Repair the physical AMD-mainboard/NVIDIA startup trace in which the initial /usr/gui/bin/desktop.prg VFS open returns VFS_ERR_IO, the kernel immediately enters shell/rescue fallback, and the already registered supervisor later starts compositor epoch 2 concurrently. Once the protected compositor control record has been committed, treat a failed initial spawn as the first failure of that still-active session: force the existing generation into its bounded isolate, fence, restart and budget-exhaustion state machine, keep the kernel waiting on the exclusive session owner, and permit shell fallback only after administrative disablement at safe state. Preserve fail-closed handling when registration, protected control publication or forced isolation itself fails. Do not retry or reinterpret VFS errors in the loader, widen authority, extend deadlines or change restart budgets."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/supervisor.c",
+  "test/test_reist_supervisor.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a failed initial compositor program load cannot cause shell or rescue ownership while the registered compositor session remains administratively enabled",
+  "the initial spawn failure uses the same generation-scoped isolate fence restart and finite three-restart budget as later crash or hang recovery",
+  "registration protected-control publication and forced-isolation failures remain fail closed and return startup failure without claiming an active recoverable session",
+  "VFS_ERR_IO is neither converted to success nor retried below the supervisor lifecycle and no VFS process display Surface device or GPU authority ABI changes",
+  "the existing five-second startup timeout two-second healthy heartbeat one-second recovery fence and post-ready affinity rules remain unchanged",
+  "shell fallback begins only after the compositor session is inactive or the initial lifecycle could not be established"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 1 --timeout 120 --log build/codex-agent/compositor-initial-load-recovery.log"
+]
+stop_conditions = [
+  "the kernel can launch shell fallback while an administratively enabled compositor session can still restart",
+  "initial spawn recovery bypasses fencing generation checks or the existing finite restart budget",
+  "a lower VFS layer would need a blind retry or an I/O error would be hidden",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: contain initial compositor load recovery"

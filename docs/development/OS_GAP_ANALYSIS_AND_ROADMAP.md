@@ -78,8 +78,10 @@ VMware-xHCI-Mauspfad und der VFS-Shadow-Zugriff des überwachten Compositors
 sind zusätzlich end-to-end abgenommen. R6.2n serialisiert den gemeinsamen
 xHCI-/HID-Zustand und weist den gesunden Compositor nach `SERVICE_READY` auf
 einem AP mit loopbackgebundener RFB-Mauszustellung nach. Der physische
-NVIDIA-Lauf hat dabei einen vorzeitigen AP-Handoff vor dem langsamen ersten
-VBE-Softwareframe offengelegt. R2.2af korrigiert zuerst diese Startgrenze;
+NVIDIA-Lauf hat dabei einen initialen `VFS_ERR_IO` beim Laden des Desktops und
+einen konkurrierenden Rescue-/Compositor-Neustart offengelegt. R2.2af wurde
+nach widerlegter Timinghypothese abgebrochen; R2.2ag korrigiert zuerst die
+exklusive, begrenzte Sitzungswiederherstellung;
 R6.2o prüft danach den begrenzten BSP-Fence und die erneute post-READY-AP-
 Affinität nach einem Heartbeat-Restart. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
@@ -530,9 +532,10 @@ und 10 verbindlich.
     AP-fähig; auch normale und neu gestartete Netzwerkdienstgenerationen
     AP-fähig; der Session-Compositor besitzt nun als Voraussetzung einen
     generationsgebundenen Supervisor-Lebenszyklus; R6.2n serialisiert xHCI/HID
-    und hat seinen normalen post-READY-AP-Pfad abgenommen; R2.2af hält nun den
-    nativen ersten Softwareframe vor READY auf dem BSP, bevor R6.2o den
-    getrennten Compositor-AP-Restartnachweis abnimmt; weitere Produktionsdomänen
+    und hat seinen normalen post-READY-AP-Pfad abgenommen; R2.2ag hält nun
+    initiale Ladefehler in der exklusiven Supervisor-Wiederherstellung, bevor
+    R6.2o den getrennten Compositor-AP-Restartnachweis abnimmt; weitere
+    Produktionsdomänen
     bleiben offen
 
 #### Verbindliche Priorität nach dem S0-Gate
@@ -2364,6 +2367,16 @@ Scheduling-Punkte, ohne die Heartbeat- oder WCET-Deadline aufzuweichen.
 Gezielte Regressionen, QEMU- und VMware-Framebuffer-Pakete sowie der
 QEMU-Runtime-Lauf bis `TEST_OK` bestehen; der sichtbare Übergang auf dem ASUS-
 Ziel bleibt der abschließende manuelle Hardware-Nachweis.
+Der aktuelle physische Lauf zeigte stattdessen bereits vor Ausführung des
+Compositors `VFS_ERR_IO` beim Öffnen von `/usr/gui/bin/desktop.prg`, danach
+einen ebenfalls fehlgeschlagenen Shell-Fallback und schließlich einen
+Supervisor-Neustart als Epoch 2. R2.2af wurde deshalb ohne Kandidatencommit
+abgebrochen. R2.2ag hält den bereits registrierten Sitzungsbesitzer auch bei
+Initialspawn-Fehlern im vorhandenen begrenzten Recovery-Zyklus und verhindert
+den konkurrierenden Rescue-Pfad; erst Budgeterschöpfung erlaubt Shell-
+Fallback. Loaderfehler, Fünf-Sekunden-Startgrenze, Heartbeat, Fence und
+Restartbudget bleiben unverändert. Der sichtbare Nachweis bleibt ein neuer
+Lauf auf dem betroffenen Mainboard.
 Der nächste Hardwarelauf zeigte einen fehlenden `/trash`-Root. Das
 abgeschlossene `R2.2f` erweitert den gemeinsamen nativen FAT32-Imagebaum um
 explizite, leere und weiterhin begrenzte Verzeichnisse. `/trash/files` und
