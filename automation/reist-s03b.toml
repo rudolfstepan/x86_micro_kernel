@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2i-storage-service-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -2041,6 +2041,50 @@ evidence = [
   "the guest completed real storage and VFS tests TASK_CAPACITY_OK and TEST_OK with VMware SVGA2 reference graphics",
   "active_id is empty and ATA AHCI FDD administration legacy-PIC IRQ and device authority remained BSP-affine"
 ]
+
+[[packages]]
+id = "R6.2i-storage-service-ap-restart"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Restore storage-service AP affinity after bounded crash restart"
+scope = "Use the existing compile-time-only storage-service crash after a real mediated read. Preserve the ECC-protected desired AP mask while the dead generation is unbound and reaped. Require the replacement to spawn and bind on the BSP, complete its existing self-test and ready publication, then reapply the mask and complete a second authorized storage operation on an AP. Keep restart budget, storage request generations, ATA/AHCI/FDD, administration and legacy-PIC IRQ authority unchanged."
+allowed_files = [
+  "automation/reist-s03b.toml", "kernel/init/storage_service.c",
+  "scripts/run_qemu_smoke.py", "test/test_reist_storage_service.py",
+  "test/test_reist_storage_recovery.py", "test/test_qemu_smoke.py",
+  "docs/architecture/SMP_SUBSYSTEM.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the existing fault remains absent from normal builds and crashes only after a real storage read",
+  "the dead generation is unbound and stale request authority is rejected before replacement publication",
+  "the protected desired AP mask survives automatic restart",
+  "the replacement spawns binds self-tests and publishes ready on BSP before AP affinity",
+  "both pre-crash and replacement generations execute an authorized storage operation on an AP",
+  "ATA AHCI FDD administration supervisor legacy-PIC IRQ and restart budgets remain unchanged"
+]
+targeted_tests = [
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_storage_recovery.py -v",
+  "python test/test_qemu_smoke.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -StorageFaultInjection -SkipReleaseSbom",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --vmware-vga --expect-svga2d --expect-storage-recovery --expect-storage-ap-restart --timeout 120 --log build/codex-agent/r62i-storage-service-ap-restart.log"
+]
+stop_conditions = [
+  "replacement affinity is applied before bind self-test or ready publication",
+  "stale storage request authority crosses the generation boundary",
+  "more than one service generation consumes restart budget",
+  "a storage device admin supervisor or legacy-PIC IRQ path moves off BSP",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: restore service AP affinity after restart"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
