@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: nächste produktive R6.2-Domäne nach VMware-SVGA2D auditieren
+Aktives Thema: R6.2c abgeschlossen; kein Queue-Paket aktiv
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -96,5 +96,12 @@ den BSP-Default zurück. Der gemeinsame Displayzustand ist durch einen
 deadlinebegrenzten Kernelmutex vor dem FIFO-Spinlock serialisiert. Der
 vierkernige QEMU-Lauf führte den Treiber auf CPU 2 aus und bestätigte einen
 realen `RECT_COPY`, geordnete Deaktivierung, `TASK_CAPACITY_OK` und `TEST_OK`.
-Ein produktiver Timeout-/Restartnachweis ist noch offen und wird nicht aus dem
-Normalpfad abgeleitet.
+Der anschließende R6.2c-Nachweis schützt die gewünschte AP-Maske im
+ECC-gesicherten Driver-Control-Record. Jede Generation konstruiert und testet
+sich auf dem BSP und wird erst nach gesunder Veröffentlichung AP-only. Eine
+nur im Testbuild vorhandene Fault Injection unterdrückte den ersten
+AP-Heartbeat: Epoch 1 wurde nach zwei Sekunden isoliert, vor dem Fence auf den
+BSP zurückgeführt und innerhalb des einsekündigen Recovery-Fensters beendet.
+Epoch 2 startete erneut auf dem BSP, wurde gesund, lief auf CPU 2 und schloss
+den realen `SVGA2D_RECT_COPY_OK`-Pfad sowie `TEST_OK` ab. Die Treiberdomäne
+erhielt dabei weiterhin keine DMA-, IRQ-, BAR- oder Raw-Port-Autorität.

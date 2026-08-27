@@ -298,5 +298,36 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("SVGA2D_AP_EXEC cpu=%u", supervisor)
         self.assertIn("missing SVGA2D AP execution marker", smoke)
 
+    def test_smp_lifecycle_fault_is_compile_time_bounded(self):
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        windows = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        smoke = (ROOT / "scripts/run_qemu_smoke.py").read_text(
+            encoding="utf-8")
+        self.assertIn("SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION ?= 0", makefile)
+        self.assertIn("REIST_SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION", supervisor)
+        self.assertIn("Svga2dSmpLifecycleFaultInjection", windows)
+        self.assertIn("post_ready_cpu_affinity_mask", supervisor)
+        self.assertIn("SVGA2D_TIMEOUT_ARMED", supervisor)
+        self.assertIn("expect-svga2d-smp-restart", smoke)
+        self.assertIn("SVGA2D_AP_EXEC cpu=", smoke)
+
+    def test_ap_generation_returns_to_bsp_before_fencing(self):
+        supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        start = supervisor.index("static bool driver_fence_until(")
+        end = supervisor.index("static bool driver_fence_apply(", start)
+        fence = supervisor[start:end]
+        affinity = fence.index("process_set_supervised_affinity(")
+        yield_tick = fence.index("scheduler_sleep_ms(1U)", affinity)
+        deactivate = fence.index("display_control_deactivate()", yield_tick)
+        terminate = fence.index("process_terminate(control.pid)", deactivate)
+        self.assertLess(affinity, yield_tick)
+        self.assertLess(yield_tick, deactivate)
+        self.assertLess(deactivate, terminate)
+        self.assertIn("pit_monotonic_ms() >= deadline_ms", fence)
+
 if __name__ == "__main__":
     unittest.main()

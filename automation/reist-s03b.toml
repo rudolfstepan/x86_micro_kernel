@@ -9179,3 +9179,57 @@ evidence = [
   "Windows QEMU VGA build compiled all 102 C objects and produced a signed validated native image",
   "Four-CPU QEMU VMware-VGA guest passed with SVGA2D_AP_EXEC on CPU 2 real SVGA2D_RECT_COPY_OK ordered deactivation TASK_CAPACITY_OK and TEST_OK"
 ]
+
+[[packages]]
+id = "R6.2c-svga2d-ap-restart"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Reapply SVGA2D AP affinity after bounded timeout restart"
+scope = "Persist the desired post-ready CPU mask inside the ECC-protected driver control record, keep every generation BSP-affine through construction and self-test, and reapply the online AP mask only after healthy publication. Add one compile-time-only lifecycle fault that suppresses the first AP generation heartbeat until the existing supervisor timeout fences and restarts it. Require the restarted generation to become healthy, execute on an AP and complete the real mediated RECT_COPY path."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_smoke.py",
+  "kernel/init/supervisor.c",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the desired post-ready mask is integrity protected validated and preserved across fence and restart control transitions",
+  "every new generation constructs and self-tests on BSP before any AP-only affinity is applied",
+  "only a healthy unfenced current generation can receive the desired online AP mask",
+  "the fault hook is absent from normal builds and suppresses progress only for the first AP generation epoch",
+  "timeout uses the existing two-second heartbeat one-second recovery fence and finite restart budget",
+  "the restarted generation publishes healthy before AP execution and completes a real bounded RECT_COPY without DMA IRQ BAR or raw-port authority"
+]
+targeted_tests = [
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_qemu_smoke.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -Svga2dSmpLifecycleFaultInjection -SkipReleaseSbom",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --vmware-vga --expect-svga2d --expect-svga2d-smp-restart --timeout 120 --log build/codex-agent/r62c-svga2d-restart.log"
+]
+stop_conditions = [
+  "the initial or restarted generation becomes AP-affine before self-test and healthy publication",
+  "the desired mask is stored outside protected control state or survives administrative disable incorrectly",
+  "the fault hook can affect a normal build or more than the first generation epoch",
+  "fencing fails to disable scanout before generation recovery",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "video: restore SVGA2D AP affinity after restart"
+evidence = [
+  "VMware SVGA2D source contract passed 19 tests including protected restart affinity BSP quiescence and bounded fault injection",
+  "supervisor source contract passed 6 tests and QEMU smoke source contract passed 41 tests",
+  "fault-enabled Windows QEMU image built successfully with signed boot manifest",
+  "four-CPU QEMU VMware-VGA guest armed epoch 1 timeout fenced and restarted the driver executed epoch 2 on CPU 2 completed SVGA2D_RECT_COPY_OK and reached TEST_OK",
+  "no queued package remains and active_id is empty"
+]

@@ -237,5 +237,13 @@ Nachweis sowohl über ATA-PIO als auch über ICH9-AHCI aus. Der abschließende
 SMP4-Gastlauf verlangt außerdem `TASK_CAPACITY_OK` und `TEST_OK`; der aktuelle
 Referenzlauf besteht zusätzlich die überwachte SVGA2D-Aktivierung und einen
 realen, begrenzten `RECT_COPY`-Befehl ohne Software-Fallback.
+Der R6.2c-Fehlerlauf unterdrückt compile-time-begrenzt ausschließlich den
+Heartbeat der ersten AP-affinen SVGA2D-Epoch. Die gewünschte Online-AP-Maske
+liegt im ECC-geschützten Supervisor-Control-Record und wird nach jedem Neustart
+erst nach BSP-Konstruktion, Self-Test und gesunder Veröffentlichung angewandt.
+Vor dem Fence kehrt die alte Generation deadlinebegrenzt auf den BSP zurück,
+damit Prozess-Exit und Reaping nicht parallel auf verschiedenen CPUs laufen.
+Der Vier-CPU-Nachweis verlangt Timeout und `DRIVER_RESTARTED`, AP-Ausführung in
+beiden Epochs, `SVGA2D_RECT_COPY_OK` der zweiten Generation und `TEST_OK`.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

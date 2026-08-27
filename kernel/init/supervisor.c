@@ -31,6 +31,9 @@
 #endif
 
 static volatile uint32_t svga2d_ap_execution_reported;
+#ifdef REIST_SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION
+static volatile uint32_t svga2d_fault_epoch;
+#endif
 
 typedef struct {
     uint32_t generation;
@@ -205,6 +208,7 @@ typedef struct {
     device_domain_handle_t device;
     ipc_handle_t channel;
     supervisor_handle_t supervisor;
+    uint32_t post_ready_cpu_affinity_mask;
 } supervisor_driver_control_t;
 
 typedef struct {
@@ -1723,12 +1727,15 @@ static bool driver_control_valid(const void *payload, size_t length) {
         return control->administratively_enabled == 0U &&
             control->fenced == 0U && control->pid == 0 &&
             control->process_generation == 0U && control->device == 0U &&
-            control->channel == 0U;
+            control->channel == 0U &&
+            control->post_ready_cpu_affinity_mask == 0U;
     if (control->device_index >= DEVICE_DOMAIN_MAX_DEVICES ||
         (control->mode != DEVICE_DOMAIN_MODE_MEDIATED &&
          control->mode != DEVICE_DOMAIN_MODE_IOMMU_DIRECT) ||
         control->supervisor.generation == 0U ||
-        control->supervisor.epoch == 0U) return false;
+        control->supervisor.epoch == 0U ||
+        (control->post_ready_cpu_affinity_mask &
+         ~((1U << X86_CPU_LOCAL_MAX) - 1U)) != 0U) return false;
     bool process_present = control->pid > 0 &&
         control->process_generation != 0U && control->device != 0U;
     bool process_absent = control->pid == 0 &&
@@ -4911,6 +4918,17 @@ static bool driver_fence_until(supervisor_driver_runtime_t *runtime,
     bool owns_device_scanout = strcmp(runtime->name, "svga2d-ring3") == 0;
     bool passive_vbe_client =
         strcmp(runtime->name, "nvidia-gk208-ring3") == 0;
+    /* A supervised driver may currently execute on an AP. Return its
+     * generation to the BSP and yield for one scheduler tick before revoking
+     * mediated I/O. The BSP-bound supervisor then resumes without the target
+     * concurrently entering its userspace exit path on another CPU. */
+    if (process_set_supervised_affinity(
+            control.pid, control.process_generation, TASK_CPU_MASK_BSP) != 0)
+        return false;
+    uint64_t now_ms = pit_monotonic_ms();
+    if (now_ms >= deadline_ms || scheduler_sleep_ms(1U) != 0 ||
+        pit_monotonic_ms() >= deadline_ms)
+        return false;
     /* VMware owns the active SVGA mode and must disable it before recovery.
      * The passive GK208 service owns no scanout or GPU command state: its
      * zero-capability endpoint only asks the kernel to retain the sealed VBE
@@ -5022,6 +5040,9 @@ int supervisor_set_device_driver_current_affinity(
     if (runtime == NULL || control.active == 0U || control.pid <= 0 ||
         control.process_generation == 0U || control.fenced != 0U)
         return -3;
+    control.post_ready_cpu_affinity_mask = cpu_affinity_mask;
+    if (driver_control_write(runtime, &control) != 0)
+        return SUPERVISOR_EINTEGRITY;
     return process_set_supervised_affinity(
         control.pid, control.process_generation, cpu_affinity_mask);
 }
@@ -5094,12 +5115,22 @@ int supervisor_device_driver_report(
             : -5;
     } else {
         bool became_ready = control.fenced != 0U;
+#ifdef REIST_SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION
+        if (strcmp(runtime->name, "svga2d-ring3") == 0 &&
+            svga2d_fault_epoch == control.supervisor.epoch) return 0;
+#endif
         result = report->value != 0U
             ? supervisor_report_progress(
                 control.supervisor, report->value, now_ms) : -22;
         if (result == 0 && control.fenced != 0U) {
             control.fenced = 0U;
             result = driver_control_write(runtime, &control);
+        }
+        if (result == 0 && became_ready) {
+            if (control.post_ready_cpu_affinity_mask != 0U)
+                result = process_set_supervised_affinity(
+                    control.pid, control.process_generation,
+                    control.post_ready_cpu_affinity_mask);
         }
         if (result == 0 && became_ready) {
             printf("REIST_DRIVER READY name=%s\n", runtime->name);
@@ -5134,10 +5165,20 @@ bool supervisor_device_driver_command_allowed(
         process_identity_alive(pid, process_generation);
 #ifndef REIST_HOST_TEST
     uint32_t cpu = x86_cpu_current_index();
-    if (allowed && cpu != 0U &&
-        strcmp(runtime->name, "svga2d-ring3") == 0 &&
-        __sync_bool_compare_and_swap(&svga2d_ap_execution_reported, 0U, 1U))
-        printf("REIST_VIDEO SVGA2D_AP_EXEC cpu=%u\n", cpu);
+    if (allowed && cpu != 0U && strcmp(runtime->name, "svga2d-ring3") == 0) {
+        uint32_t prior = __sync_lock_test_and_set(
+            &svga2d_ap_execution_reported, control.supervisor.epoch);
+        if (prior != control.supervisor.epoch)
+            printf("REIST_VIDEO SVGA2D_AP_EXEC cpu=%u epoch=%u\n",
+                   cpu, control.supervisor.epoch);
+#ifdef REIST_SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION
+        if (svga2d_fault_epoch == 0U &&
+            __sync_bool_compare_and_swap(
+                &svga2d_fault_epoch, 0U, control.supervisor.epoch))
+            printf("REIST_VIDEO SVGA2D_TIMEOUT_ARMED epoch=%u\n",
+                   control.supervisor.epoch);
+#endif
+    }
 #endif
     return allowed;
 }

@@ -1998,6 +1998,10 @@ def main() -> int:
         "--expect-svga2d", action="store_true",
         help="require supervised VMware SVGA-II activation and RECT_COPY",
     )
+    parser.add_argument(
+        "--expect-svga2d-smp-restart", action="store_true",
+        help="require one AP heartbeat timeout and healthy AP restart",
+    )
     args = parser.parse_args()
 
     if args.qemu == Path("qemu-system-i386"):
@@ -2142,6 +2146,15 @@ def main() -> int:
         if marker_error is None and args.smp > 1 and \
                 "REIST_VIDEO SVGA2D_AP_EXEC cpu=" not in transcript:
             marker_error = "missing SVGA2D AP execution marker"
+    if marker_error is None and args.expect_svga2d_smp_restart:
+        for marker in ("REIST_VIDEO SVGA2D_TIMEOUT_ARMED",
+                       "REIST_VIDEO DRIVER_RESTARTED"):
+            if marker not in transcript:
+                marker_error = f"missing {marker} marker"
+                break
+        if marker_error is None and transcript.count(
+                "REIST_VIDEO SVGA2D_AP_EXEC cpu=") < 2:
+            marker_error = "missing restarted SVGA2D AP execution marker"
     if marker_error is None and args.expect_smp:
         for index in range(1, args.smp):
             marker = f"REIST_SMP AP_ONLINE index={index} apic={index}"
