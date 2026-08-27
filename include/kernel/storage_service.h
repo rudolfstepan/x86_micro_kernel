@@ -17,6 +17,7 @@ bool storage_service_inventory_media(void);
 bool storage_service_start(uint64_t now_ms);
 void storage_service_poll(uint64_t now_ms);
 int storage_service_bind(int pid, uint32_t generation);
+int storage_service_set_current_affinity(uint32_t cpu_affinity_mask);
 bool storage_service_authorized(int pid, uint32_t generation);
 bool storage_service_resource_available(uint32_t resource);
 bool storage_service_report_io_failure(uint32_t resource);

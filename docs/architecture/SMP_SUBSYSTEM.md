@@ -261,5 +261,10 @@ Generation publiziert Ready auf CPU 0, übernimmt danach die geschützte AP-Mask
 und kehrt vor der nächsten Sessionrotation deadlinebegrenzt auf den BSP zurück.
 Fünf aufeinanderfolgende Servicegenerationen führten auf APs aus; Supervisor,
 PIC-IRQ und Geräteautorität blieben unverändert.
+R6.2h erweitert denselben Post-Ready-Vertrag auf den Ring-3-Storage-Service.
+Medieninventar, Bindung, Self-Test und Ready-Publikation bleiben auf CPU 0;
+erst nach `SCHEDULER_READY` erhält die aktuelle gesunde Generation die
+geschützte Online-AP-Maske. ATA, AHCI, FDD, Administration und Legacy-PIC-IRQ
+bleiben BSP-affin.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

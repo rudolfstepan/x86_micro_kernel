@@ -32,6 +32,17 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("storage_fence_writes();", source)
         self.assertIn("filesystem_fence_mutations();", source)
 
+    def test_ready_storage_service_has_protected_ap_affinity(self):
+        source = read("kernel/init/storage_service.c")
+        kernel = read("kernel/init/kernel.c")
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn("post_ready_cpu_affinity_mask", source)
+        self.assertIn("storage_service_set_current_affinity", source)
+        self.assertIn("REIST_STORAGE SERVICE_AP_EXEC cpu=", source)
+        self.assertLess(kernel.index("x86_smp_scheduler_probe()"),
+                        kernel.index("storage_service_set_current_affinity"))
+        self.assertIn("--expect-storage-ap", runner)
+
     def test_only_authorized_service_reaches_raw_block_read(self):
         syscalls = read("kernel/syscall/syscall_table.c")
         body = syscalls[syscalls.index("static int syscall_storage_block_read"):

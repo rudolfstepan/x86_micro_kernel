@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2h – Storage-Service-Normalpfad AP-fähig machen
+Aktives Thema: kein aktives Paket; R6.2h ist abgeschlossen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -146,3 +146,12 @@ Endpoint-Entzug und Reap. Die Ersatzgeneration verband sich auf CPU 0 erneut
 mit der aktuellen HDA-Generation, bestand Self-Test und Ready-Publikation und
 kehrte anschließend auf einen AP zurück. Fünf PCM-Zyklen erzeugten 269153
 Stereo-S16-Frames bei 440,4 Hz und `max-gap=1`, ohne neue Geräteautorität.
+
+## Storage-Service auf AP nachgewiesen
+
+Der Ring-3-Storage-Service inventarisiert, bindet, testet und publiziert Ready
+weiterhin auf CPU 0. Nach der SMP-Scheduler-Freigabe wird nur die aktuelle
+gesunde Generation über die ECC-geschützte Zielmaske auf einen AP verschoben.
+Der SMP4-Gast bestätigte eine autorisierte Storage-Operation auf CPU 2, den
+realen Storage-Self-Test, VFS-/FAT-Zugriffe, `TASK_CAPACITY_OK` und `TEST_OK`.
+ATA, AHCI, FDD, Administration und Legacy-PIC-IRQ blieben BSP-affin.

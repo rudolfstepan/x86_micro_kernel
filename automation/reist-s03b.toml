@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2h-ap-storage-service"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1993,7 +1993,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2h-ap-storage-service"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run the generation-scoped storage service on APs"
@@ -2022,7 +2022,7 @@ targeted_tests = [
 package_tests = []
 runtime_tests = [
   ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom",
-  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --expect-storage-self-test --timeout 120 --log build/codex-agent/r62h-storage-service-ap.log"
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --vmware-vga --expect-svga2d --expect-storage-ap --timeout 120 --log build/codex-agent/r62h-storage-service-ap.log"
 ]
 stop_conditions = [
   "the service becomes AP-affine before ready or before the scheduler release",
@@ -2033,7 +2033,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: run supervised service on APs"
-evidence = []
+evidence = [
+  "storage service contract passed 7 tests and storage recovery contract passed 17 tests",
+  "QEMU smoke runner passed 42 tests including ordered storage ready AP execution and self-test validation",
+  "Windows QEMU VGA production build compiled all 102 C objects and produced a signed validated native image",
+  "four-CPU QEMU observed the healthy storage-service generation execute an authorized operation on CPU 2",
+  "the guest completed real storage and VFS tests TASK_CAPACITY_OK and TEST_OK with VMware SVGA2 reference graphics",
+  "active_id is empty and ATA AHCI FDD administration legacy-PIC IRQ and device authority remained BSP-affine"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

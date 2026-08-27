@@ -29,6 +29,21 @@ RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_storage_ap_requires_ready_execution_and_real_self_test(self):
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_STORAGE_READY_MARKER,
+            "BOOT_OK",
+            RUNNER_MODULE.REIST_STORAGE_AP_MARKER + "2 generation=1",
+            RUNNER_MODULE.REIST_STORAGE_SELF_TEST_MARKER,
+            "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_storage_ap=True))
+        self.assertIn("ready/AP/self-test", RUNNER_MODULE.validate(
+            transcript.replace(RUNNER_MODULE.REIST_STORAGE_AP_MARKER,
+                               "REIST_STORAGE BSP_EXEC cpu="),
+            expect_storage_ap=True))
+
     def test_failure_suffix_checks_the_transcript_for_test_completion(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
         self.assertIn("TEST_MARKER not in transcript", runner)

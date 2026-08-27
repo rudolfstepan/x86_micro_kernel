@@ -8,6 +8,7 @@
  */
 #include "include/kernel/storage_service.h"
 
+#include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/interrupt.h"
 #include "drivers/block/ata.h"
 #include "drivers/block/ahci.h"
@@ -25,7 +26,7 @@
 #include "lib/libc/string.h"
 #include "kernel/time/pit.h"
 
-#define STORAGE_SERVICE_CONTROL_VERSION 2U
+#define STORAGE_SERVICE_CONTROL_VERSION 3U
 #define STORAGE_SERVICE_START_TIMEOUT_MS 1000U
 #define STORAGE_SERVICE_RESTART_BUDGET 3U
 #define STORAGE_MEDIA_PROBE_INITIAL_MS 250U
@@ -41,8 +42,9 @@ typedef struct {
     uint32_t quarantined_resources;
     uint32_t read_only_resources;
     uint32_t recovering_resources;
-    uint32_t probe_cursor;
-    uint32_t probe_attempts;
+    uint8_t probe_cursor;
+    uint8_t probe_attempts;
+    uint16_t post_ready_cpu_affinity_mask;
     uint32_t admin_down_resources;
     uint32_t admin_transition_resources;
     uint32_t admin_failed_resources;
@@ -74,6 +76,7 @@ static bool initialized;
 static volatile bool service_starting;
 static volatile bool service_started;
 static volatile bool service_administratively_enabled = true;
+static volatile uint32_t service_ap_execution_generation;
 static critical_object_t media_fingerprints[MAX_DRIVES];
 static uint32_t fingerprint_ready_mask;
 
@@ -102,7 +105,9 @@ static bool control_valid(const void *payload, size_t length) {
          ~control->admin_down_resources) != 0U ||
         control->probe_cursor >= MAX_DRIVES ||
         control->probe_attempts > STORAGE_MEDIA_PROBE_MAX_ATTEMPTS ||
-        control->launch_count > STORAGE_SERVICE_RESTART_BUDGET + 1U)
+        control->launch_count > STORAGE_SERVICE_RESTART_BUDGET + 1U ||
+        (control->post_ready_cpu_affinity_mask &
+         ~((1U << X86_CPU_LOCAL_MAX) - 1U)) != 0U)
         return false;
     if (control->pid == 0)
         return control->generation == 0U && control->healthy == 0U &&
@@ -400,13 +405,33 @@ int storage_service_bind(int pid, uint32_t generation) {
     return 0;
 }
 
+int storage_service_set_current_affinity(uint32_t cpu_affinity_mask) {
+    storage_service_control_t control;
+    if (cpu_affinity_mask == 0U || control_read(&control) != 0 ||
+        control.healthy == 0U || control.pid <= 0 ||
+        control.generation == 0U ||
+        !process_identity_alive(control.pid, control.generation)) return -3;
+    control.post_ready_cpu_affinity_mask = cpu_affinity_mask;
+    if (control_write(&control) != 0) return -84;
+    return process_set_supervised_affinity(
+        control.pid, control.generation, cpu_affinity_mask);
+}
+
 bool storage_service_authorized(int pid, uint32_t generation) {
     storage_service_control_t control;
-    return initialized && service_administratively_enabled &&
+    bool authorized = initialized && service_administratively_enabled &&
            control_read(&control) == 0 &&
            control.healthy != 0U && control.pid == pid &&
            control.generation == generation &&
            process_identity_alive(pid, generation);
+    if (authorized && x86_cpu_current_index() != 0U &&
+        service_ap_execution_generation != generation &&
+        __sync_bool_compare_and_swap(
+            &service_ap_execution_generation,
+            service_ap_execution_generation, generation))
+        printf("REIST_STORAGE SERVICE_AP_EXEC cpu=%u generation=%u\n",
+               x86_cpu_current_index(), generation);
+    return authorized;
 }
 
 bool storage_service_resource_available(uint32_t resource) {
@@ -844,6 +869,7 @@ bool storage_service_component_down(uint64_t deadline_ms) {
     control.generation = 0U;
     control.healthy = 0U;
     control.start_deadline_ms = 0U;
+    control.post_ready_cpu_affinity_mask = 0U;
     if (control_write(&control) != 0) return false;
     service_started = false;
     service_starting = false;
@@ -865,6 +891,7 @@ bool storage_service_component_up(uint64_t deadline_ms) {
     control.healthy = 0U;
     control.launch_count = 0U;
     control.start_deadline_ms = 0U;
+    control.post_ready_cpu_affinity_mask = 0U;
     if (control_write(&control) != 0) return false;
     service_started = false;
     service_starting = false;

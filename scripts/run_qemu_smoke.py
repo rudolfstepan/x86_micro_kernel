@@ -88,6 +88,7 @@ REIST_STORAGE_QUARANTINE_MARKER = "REIST_STORAGE RESOURCE_QUARANTINED 0"
 REIST_STORAGE_REINTEGRATION_MARKER = "REIST_STORAGE RESOURCE_REINTEGRATED_RW 0"
 REIST_STORAGE_IO_RECOVERY_MARKER = "TEST_STAGE STORAGE_MEDIA_REINTEGRATED_OK"
 REIST_STORAGE_SELF_TEST_MARKER = "TEST_STAGE STORAGE_SERVICE_OK"
+REIST_STORAGE_AP_MARKER = "REIST_STORAGE SERVICE_AP_EXEC cpu="
 REIST_WCET_MARKER = "REIST_WCET BASELINE"
 REIST_WCET_PATTERN = re.compile(
     r"^REIST_WCET BASELINE version=(?P<version>\d+) "
@@ -1531,6 +1532,7 @@ def validate(
     expect_storage_recovery: bool = False,
     expect_storage_io_failure: bool = False,
     expect_storage_self_test: bool = False,
+    expect_storage_ap: bool = False,
     expect_handover: bool = False,
     expect_icmp_echo: bool = False,
     expect_dhcp_config: bool = False,
@@ -1753,6 +1755,15 @@ def validate(
                                         after=ready)
         if ready < boot or self_test < ready or self_test > test:
             return "missing ordered storage-service post-recovery self-test"
+    if expect_storage_ap:
+        ready = exact_line_position(transcript, REIST_STORAGE_READY_MARKER)
+        ap_execution = transcript.find(REIST_STORAGE_AP_MARKER, boot)
+        self_test = exact_line_position(transcript,
+                                        REIST_STORAGE_SELF_TEST_MARKER,
+                                        after=ap_execution)
+        if (ready < 0 or ready > boot or ap_execution < boot or
+                self_test < ap_execution or self_test > test):
+            return "missing ordered storage-service ready/AP/self-test markers"
     if expect_handover:
         positions = [exact_line_position(transcript, marker)
                      for marker in REIST_HANDOVER_MARKERS]
@@ -1958,6 +1969,10 @@ def main() -> int:
         help="require storage-service bind and media self-test before PASS",
     )
     parser.add_argument(
+        "--expect-storage-ap", action="store_true",
+        help="require an authorized storage-service operation on an AP",
+    )
+    parser.add_argument(
         "--expect-wcet-baseline", action="store_true",
         help="require a bounded empirical timing marker",
     )
@@ -2119,6 +2134,7 @@ def main() -> int:
                             args.expect_storage_recovery,
                             args.expect_storage_io_failure,
                             args.expect_storage_self_test,
+                            args.expect_storage_ap,
                             args.expect_handover,
                             args.inject_icmp_echo,
                             args.expect_dhcp_config,
