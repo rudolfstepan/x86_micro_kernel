@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2k-network-service-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -2142,6 +2142,49 @@ evidence = [
   "the guest completed NETWORK_PARSER_OK TASK_CAPACITY_OK and TEST_OK",
   "active_id is empty and NIC drivers netdev bottom half supervisor socket ARP and legacy-PIC IRQ authority remained unchanged"
 ]
+
+[[packages]]
+id = "R6.2k-network-service-ap-restart"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Restore network-service AP affinity after bounded crash restart"
+scope = "Use the existing RTL8139 socket-hub network handoff, queue-pressure campaign and supervised service crash. Preserve the ECC-protected desired AP mask across ARP/socket/lease revocation and process reap. Require replacement generation 5 to spawn, self-test, report healthy and publish SERVICE_READY on BSP before the mask is reapplied. Prove authorized AP progress before and after restart plus NETWORK_RECOVERY_OK without moving the NIC driver, netdev bottom half, supervisor or legacy-PIC IRQ off BSP."
+allowed_files = [
+  "automation/reist-s03b.toml", "kernel/init/supervisor.c",
+  "scripts/run_qemu_smoke.py", "test/test_qemu_smoke.py",
+  "test/test_reist_supervisor.py", "test/test_reist_service_domain.py",
+  "docs/architecture/SMP_SUBSYSTEM.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "generation 4 executes on an AP before the injected network-service crash",
+  "fencing returns a live AP generation to BSP before ARP socket lease and endpoint revocation",
+  "stale network authority is revoked and the protected desired AP mask survives restart",
+  "generation 5 self-tests reports healthy and publishes SERVICE_READY on BSP before AP affinity",
+  "generation 5 executes authorized progress on an AP and completes NETWORK_RECOVERY_OK",
+  "RTL8139 driver netdev bottom half supervisor and legacy-PIC IRQ remain BSP-affine"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_reist_service_domain.py -v",
+  "python test/test_qemu_smoke.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --vmware-vga --expect-svga2d --nic rtl8139 --inject-arp-request --expect-network-handoff --expect-network-service-ap-restart --timeout 120 --log build/codex-agent/r62k-network-service-ap-restart.log"
+]
+stop_conditions = [
+  "replacement affinity is applied before healthy SERVICE_READY",
+  "stale ARP socket lease frame or endpoint authority crosses the generation boundary",
+  "the NIC driver bottom half supervisor or legacy-PIC IRQ moves off BSP",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "network: restore service AP affinity after restart"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
