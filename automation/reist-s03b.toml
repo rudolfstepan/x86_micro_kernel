@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2h-ap-storage-service"
 
 [policy]
 one_package_per_run = true
@@ -1990,6 +1990,50 @@ evidence = [
   "five playback cycles captured 269153 stereo S16 frames at 440.4 Hz with max-gap 1",
   "active_id is empty and no driver DMA IRQ MMIO port or ambient service authority was added"
 ]
+
+[[packages]]
+id = "R6.2h-ap-storage-service"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run the generation-scoped storage service on APs"
+scope = "Persist an online-AP target mask in the ECC-protected storage-service control record. Keep service construction, media inventory, bind, self-test and ready publication on the BSP, then apply the mask only after the SMP scheduler release. Prove a real bounded Ring-3 storage self-test and filesystem read while the current service executes on an AP; ATA, AHCI, FDD, supervisor, admin maintenance and legacy-PIC IRQ execution remain BSP-affine. Timeout and restart affinity restoration are a separate package."
+allowed_files = [
+  "automation/reist-s03b.toml", "kernel/init/kernel.c",
+  "kernel/init/storage_service.c", "include/kernel/storage_service.h",
+  "scripts/run_qemu_smoke.py", "test/test_reist_storage_service.py",
+  "test/test_reist_storage_recovery.py", "test/test_qemu_smoke.py",
+  "docs/architecture/SMP_SUBSYSTEM.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the storage service inventories binds self-tests and publishes ready on BSP before AP affinity",
+  "the desired mask is protected validated and cleared with inactive state",
+  "only the current bound ready generation may become AP-affine",
+  "storage requests remain generation-scoped bounded and serialized by the existing request and filesystem contracts",
+  "ATA AHCI FDD supervisor admin maintenance legacy-PIC IRQ and all device authority remain BSP-affine",
+  "the guest proves AP service execution plus a real storage self-test and filesystem read"
+]
+targeted_tests = [
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_storage_recovery.py -v",
+  "python test/test_qemu_smoke.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --expect-storage-self-test --timeout 120 --log build/codex-agent/r62h-storage-service-ap.log"
+]
+stop_conditions = [
+  "the service becomes AP-affine before ready or before the scheduler release",
+  "a storage device driver admin path supervisor or legacy-PIC IRQ moves off BSP",
+  "request ordering generation validation or bounded waits regress",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: run supervised service on APs"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
