@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2m-vmware-mouse-report-flow"
 
 [policy]
 one_package_per_run = true
@@ -9723,3 +9723,53 @@ evidence = [
   "four-CPU QEMU VMware-VGA guest armed epoch 1 timeout fenced and restarted the driver executed epoch 2 on CPU 2 completed SVGA2D_RECT_COPY_OK and reached TEST_OK",
   "no queued package remains and active_id is empty"
 ]
+
+[[packages]]
+id = "R6.2m-vmware-mouse-report-flow"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Restore VMware desktop mouse report flow"
+scope = "Repair the bounded xHCI interrupt-report path after VMware has enumerated its virtual USB Boot mouse, without enabling host HID passthrough or adding a second input authority. Preserve generation-scoped HID publication and the compositor syscall boundary, add diagnostics and regression coverage for the proven failure, and require a real generated VMware package to deliver pointer movement to the supervised desktop."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/usb/xhci.c",
+  "drivers/usb/xhci.h",
+  "scripts/create_native_boot_image.py",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_usb_mouse.py",
+  "test/test_vmware_mouse.py",
+  "userspace/gui/compositor/desktop.c",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/hardware/VMWARE.md"
+]
+invariants = [
+  "the generated VM uses only VMware virtual HID and keeps physical host HID passthrough disabled",
+  "every transfer event is matched to the owning online HID generation before publication",
+  "interrupt rearming and event draining are bounded and preserve xHCI producer and consumer cycle state",
+  "mouse reports remain fixed-size Boot-protocol input and cannot publish raw DMA or device authority to Ring 3",
+  "the supervised compositor receives mouse input only through SYS_MOUSE_EVENT and updates the mediated software pointer",
+  "runtime acceptance boots the generated VMware package and proves at least one injected virtual pointer movement reaches the desktop"
+]
+targeted_tests = [
+  "python test/test_usb_mouse.py -v",
+  "python test/test_vmware_mouse.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-mouse"
+]
+stop_conditions = [
+  "the fix requires physical HID passthrough or an unbounded wait",
+  "a stale or detached HID generation can publish input",
+  "mouse recovery requires a new complex in-kernel driver instead of repairing the existing bounded mediator",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "fix: restore VMware desktop mouse input"
