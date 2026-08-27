@@ -80,8 +80,9 @@ xHCI-/HID-Zustand und weist den gesunden Compositor nach `SERVICE_READY` auf
 einem AP mit loopbackgebundener RFB-Mauszustellung nach. Der physische
 NVIDIA-Lauf hat dabei einen initialen `VFS_ERR_IO` beim Laden des Desktops und
 einen konkurrierenden Rescue-/Compositor-Neustart offengelegt. R2.2af wurde
-nach widerlegter Timinghypothese abgebrochen; R2.2ag korrigiert zuerst die
-exklusive, begrenzte Sitzungswiederherstellung;
+nach widerlegter Timinghypothese abgebrochen. Auch R2.2ag blieb als reine
+Lifecycle-Korrektur unvollständig; R2.2ah serialisiert zuerst Storage-Ready,
+Bootbestätigung und ausführbare Startup-Admission;
 R6.2o prüft danach den begrenzten BSP-Fence und die erneute post-READY-AP-
 Affinität nach einem Heartbeat-Restart. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
@@ -532,8 +533,8 @@ und 10 verbindlich.
     AP-fähig; auch normale und neu gestartete Netzwerkdienstgenerationen
     AP-fähig; der Session-Compositor besitzt nun als Voraussetzung einen
     generationsgebundenen Supervisor-Lebenszyklus; R6.2n serialisiert xHCI/HID
-    und hat seinen normalen post-READY-AP-Pfad abgenommen; R2.2ag hält nun
-    initiale Ladefehler in der exklusiven Supervisor-Wiederherstellung, bevor
+    und hat seinen normalen post-READY-AP-Pfad abgenommen; R2.2ah serialisiert
+    nun Storage-Ready, Bootbestätigung und Startup-Executable-Admission, bevor
     R6.2o den getrennten Compositor-AP-Restartnachweis abnimmt; weitere
     Produktionsdomänen
     bleiben offen
@@ -2371,10 +2372,12 @@ Der aktuelle physische Lauf zeigte stattdessen bereits vor Ausführung des
 Compositors `VFS_ERR_IO` beim Öffnen von `/usr/gui/bin/desktop.prg`, danach
 einen ebenfalls fehlgeschlagenen Shell-Fallback und schließlich einen
 Supervisor-Neustart als Epoch 2. R2.2af wurde deshalb ohne Kandidatencommit
-abgebrochen. R2.2ag hält den bereits registrierten Sitzungsbesitzer auch bei
-Initialspawn-Fehlern im vorhandenen begrenzten Recovery-Zyklus und verhindert
-den konkurrierenden Rescue-Pfad; erst Budgeterschöpfung erlaubt Shell-
-Fallback. Loaderfehler, Fünf-Sekunden-Startgrenze, Heartbeat, Fence und
+abgebrochen. Der reine Lifecycle-Fix R2.2ag verhinderte zwar geteilte
+Sitzungsautorität, ließ den physischen Fehler aber bestehen; sein Ein-CPU-QEMU-
+Gate hing ebenfalls direkt nach Storage-Ready. R2.2ah führt daher eine feste
+Startup-Admission-Grenze ein: Storage muss vor weiteren Programmladevorgängen
+gebunden sein, und Boot-Control-I/O bleibt bis zur vollständigen Compositor-
+Executable-Admission gesperrt. Loaderfehler, Startgrenze, Heartbeat, Fence und
 Restartbudget bleiben unverändert. Der sichtbare Nachweis bleibt ein neuer
 Lauf auf dem betroffenen Mainboard.
 Der nächste Hardwarelauf zeigte einen fehlenden `/trash`-Root. Das

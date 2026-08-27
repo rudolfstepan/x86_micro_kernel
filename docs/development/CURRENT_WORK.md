@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R2.2ag – initialen Compositor-Ladefehler begrenzt wiederherstellen
+Aktives Thema: R2.2ah – Startup-Programmladen gegen Storage-I/O serialisieren
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -118,14 +118,20 @@ Fallback. Trotzdem meldet der Supervisor später `COMPOSITOR_RESTARTED epoch=2`
 und die Ersatzgeneration erreicht den optionalen Beschleunigungsdienst. Damit
 ist die frühere Erstframe-Timinghypothese widerlegt und R2.2af abgebrochen.
 
-R2.2ag korrigiert die nachgewiesene geteilte Sitzungsautorität: Sobald der
-geschützte Compositor-Kontrollrecord aktiv ist, bleibt auch ein fehlgeschlagener
-Initialspawn im vorhandenen begrenzten Isolate-/Fence-/Restart-Zyklus. Der
-Kernel wartet, solange diese Sitzung administrativ aktiv ist, und startet die
-Shell erst nach Budgeterschöpfung oder wenn die Sitzung gar nicht sicher
-etabliert werden konnte. VFS-Fehler, Deadlines und Restartbudget werden nicht
-umgedeutet oder erweitert. R6.2o bleibt danach als getrenntes
-Fault-Injection-Paket queued.
+Der isolierte R2.2ag-Lifecycle-Kandidat verhinderte zwar die parallele Rescue-
+Shell, beseitigte den Hardwarefehler aber nicht. Sein Ein-CPU-QEMU-Gate blieb
+zusätzlich reproduzierbar direkt nach `REIST_STORAGE SERVICE_READY` stehen,
+noch bevor Scheduler oder Compositor erreicht wurden. Damit teilen sich beide
+Plattformen dieselbe fehlende Startup-Admission-Grenze.
+
+R2.2ah serialisiert deshalb den vollständigen zusammenhängenden Pfad: Nach dem
+residenten Storage-Spawn wartet der Kernel begrenzt auf dessen gebundene
+Generation, bevor weitere Executables aus FAT32 geladen werden. Nach `BOOT_OK`
+bleibt die Ring-3-Bootbestätigung gesperrt, bis eine Compositor-Executable-
+Generation vollständig geladen ist oder deren endliches Recoverybudget die
+optionale Sitzung deaktiviert. Der Initialspawn bleibt dabei exklusiv im
+vorhandenen Supervisor-Recovery. VFS-/ATA-Fehler, Deadlines, ABI und Rechte
+bleiben unverändert. R6.2o bleibt danach queued.
 
 Ein früherer Lauf meldete einmal eine rekursive Übernahme von
 `task_table_lock`. Der Fehler trat in vier vollständigen Folgeläufen nicht

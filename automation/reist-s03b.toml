@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2ag-compositor-initial-load-recovery"
+active_id = "R2.2ah-startup-program-admission"
 
 [policy]
 one_package_per_run = true
@@ -9960,7 +9960,7 @@ evidence = [
 
 [[packages]]
 id = "R2.2ag-compositor-initial-load-recovery"
-status = "active"
+status = "cancelled"
 phase = "post-s0"
 risk = "high"
 title = "Keep initial compositor load failure inside bounded recovery"
@@ -10000,3 +10000,59 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "gui: contain initial compositor load recovery"
+evidence = [
+  "The lifecycle-only candidate passed 9 supervisor tests, 20 graphics-lifecycle tests and the 39-second QEMU framebuffer package gate.",
+  "Its one-vCPU runtime gate exposed a pre-existing startup stall immediately after REIST_STORAGE SERVICE_READY, and the corrected display-profile rerun stalled at the same marker before scheduler or compositor admission.",
+  "The physical target still failed after the lifecycle-only change, proving that the underlying startup executable-I/O overlap also requires an explicit storage and boot-ack admission boundary."
+]
+
+[[packages]]
+id = "R2.2ah-startup-program-admission"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Serialize startup executable admission against storage boot acknowledgement"
+scope = "Close the common one-CPU startup race observed as a QEMU stall immediately after REIST_STORAGE SERVICE_READY and as physical VFS_ERR_IO while opening /usr/gui/bin/desktop.prg. After spawning the resident cached storage service, wait within a fixed deadline until its exact generation has bound and published ready before loading any optional video or audio driver executable. Keep boot-success status unavailable to the Ring-3 storage service after BOOT_OK until the first compositor executable generation has been completely admitted, or until the finite compositor recovery lifecycle has disabled that optional session. A failed initial compositor spawn remains exclusively owned by the already registered bounded isolate/fence/restart state machine so shell fallback cannot overlap epoch 2. Preserve the boot-health ABI, existing media confirmation transaction, VFS and ATA error semantics, all lifecycle budgets and default-deny authorities; add no delay-based retry or cache enlargement."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/boot_health.h",
+  "include/kernel/supervisor.h",
+  "kernel/init/boot_health.c",
+  "kernel/init/kernel.c",
+  "kernel/init/supervisor.c",
+  "test/test_boot_success.py",
+  "test/test_reist_supervisor.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the kernel loads no nonresident video audio or compositor executable until the resident storage-service generation is bound healthy and ready within a fixed deadline",
+  "Ring-3 boot-control acknowledgement remains unavailable after BOOT_OK until compositor executable admission is complete or its finite optional session is administratively disabled",
+  "a failed initial compositor spawn cannot launch shell fallback while the registered compositor session can still restart and only the existing isolate fence restart budget may recreate it",
+  "boot-health status ABI size version flags and Ring-3 confirmation validation remain unchanged and the kernel never writes boot-control media",
+  "VFS_ERR_IO ATA lock deadlines compositor startup heartbeat recovery and restart budgets retain their existing meanings and values",
+  "no blind retry fixed sleep workaround rescue-cache enlargement or new filesystem storage display or device authority is introduced"
+]
+targeted_tests = [
+  "python test/test_boot_success.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 1 --vmware-vga --expect-svga2d --timeout 120 --log build/codex-agent/startup-program-admission.log"
+]
+stop_conditions = [
+  "boot acknowledgement can perform block I/O while a startup executable is still being loaded through kernel VFS",
+  "storage readiness or compositor admission waits become unbounded or busy-spin",
+  "shell fallback can overlap an administratively enabled compositor recovery generation",
+  "a public ABI lifecycle budget VFS or ATA error contract must change",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "boot: serialize startup program admission"
