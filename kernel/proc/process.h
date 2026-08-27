@@ -154,6 +154,8 @@ int process_spawn_supervised_prepared(const char *path, int argc,
                                       const char *const *argv,
                                       process_domain_kind_t domain_kind);
 int process_start_prepared_supervised(int pid, uint32_t generation);
+int process_set_supervised_affinity(int pid, uint32_t generation,
+                                    uint32_t cpu_affinity_mask);
 bool process_syscall_allowed(const Process *process, uint32_t syscall_index);
 int process_terminate_authorized(Process *requester, int pid);
 int process_get_identity(int pid, uint32_t *generation_out);

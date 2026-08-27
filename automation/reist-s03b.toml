@@ -9120,3 +9120,62 @@ evidence = [
   "QEMU fault-enabled kernel and native image built successfully with the Windows NASM and Zig toolchain",
   "Four-CPU driver-domain runtime passed in 15 seconds with four AP executions across initial and restarted generations plus crash hang stale-generation reset-failure restart-budget and Ring-3 shell markers"
 ]
+
+[[packages]]
+id = "R6.2b-ap-vmware-svga2d"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Run the supervised VMware SVGA2D normal path on APs"
+scope = "Serialize the shared VMware display backend state with one deadline-bounded recursive kernel mutex ordered before the existing FIFO spinlock, retain the single-CPU BSP fallback, and make only the supervised VMware SVGA2D production process AP-only on SMP systems. Prove its real mediated RECT_COPY normal path executes on an AP while compositor and supervisor remain BSP-affine."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/video/display_control.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/kernel.c",
+  "kernel/init/supervisor.c",
+  "kernel/proc/process.c",
+  "kernel/proc/process.h",
+  "kernel/sched/scheduler.c",
+  "kernel/sched/scheduler.h",
+  "scripts/run_qemu_smoke.py",
+  "test/test_vmware_svga2d.py",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "display activation deactivation probe status and FIFO handoff share one recursive deadline-bounded state transaction",
+  "the fixed nesting order is display state mutex before VMware FIFO spinlock and no spinlock crosses a context switch",
+  "only the current healthy VMware SVGA2D generation is reaffined after AP release while NVIDIA audio storage network USB input compositor and supervisor affinities remain unchanged",
+  "a one-CPU boot retains BSP execution and an SMP boot admits only online AP bits",
+  "the Ring-3 driver retains mediated commands only and gains no DMA IRQ BAR mapping or raw port authority",
+  "runtime acceptance requires both an AP execution marker and a hardware-accepted bounded RECT_COPY"
+]
+targeted_tests = [
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_smp.py -v",
+  "python test/test_qemu_smoke.py -v",
+  "python test/test_reist_supervisor.py -v"
+]
+package_tests = []
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --vmware-vga --expect-svga2d --timeout 120 --log build/codex-agent/r62b-svga2d-smp4.log"
+]
+stop_conditions = [
+  "display state can change outside the state mutex after AP release",
+  "a FIFO spinlock is acquired before the display state mutex or held across scheduler blocking",
+  "the initial BSP-compatible driver startup deadline expires before AP scheduler release",
+  "a non-VMware production service receives a changed affinity",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "video: run supervised SVGA2D on APs"
+evidence = [
+  "VMware SVGA2D source contract passed 17 tests including deadline state serialization post-release generation affinity and AP marker enforcement",
+  "SMP source contract passed 25 tests and QEMU smoke runner contract passed 41 tests",
+  "Supervisor source and host behavior passed 6 tests",
+  "Windows QEMU VGA build compiled all 102 C objects and produced a signed validated native image",
+  "Four-CPU QEMU VMware-VGA guest passed with SVGA2D_AP_EXEC on CPU 2 real SVGA2D_RECT_COPY_OK ordered deactivation TASK_CAPACITY_OK and TEST_OK"
+]

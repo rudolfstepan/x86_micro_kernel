@@ -9,6 +9,7 @@
 #include "arch/x86/boot/vbe_runtime.h"
 #include "include/kernel/device_domain.h"
 #include "include/lib/spinlock.h"
+#include "kernel/sched/mutex.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 
@@ -94,7 +95,10 @@ static uint32_t vmware_capabilities;
 static uint32_t vmware_width;
 static uint32_t vmware_height;
 static bool vmware_rect_copy_reported;
+static kernel_mutex_t display_state_mutex = KERNEL_MUTEX_INIT;
 static spinlock_t vmware_fifo_lock = SPINLOCK_INIT;
+
+#define DISPLAY_STATE_TIMEOUT_MS 1000U
 
 static void svga_write(uint16_t index_port, uint16_t value_port,
                        uint32_t index, uint32_t value);
@@ -130,8 +134,8 @@ void display_control_present_rect(uint32_t x, uint32_t y,
     display_control_present_rects(&rect, 1U);
 }
 
-void display_control_present_rects(const display_control_rect_t *rects,
-                                   uint32_t count) {
+static void display_control_present_rects_locked(
+        const display_control_rect_t *rects, uint32_t count) {
     if (!vmware_fifo || rects == NULL || count == 0U ||
         count > DISPLAY_CONTROL_PRESENT_CAPACITY) return;
     uint32_t commands[DISPLAY_CONTROL_PRESENT_CAPACITY * 5U];
@@ -150,6 +154,14 @@ void display_control_present_rects(const display_control_rect_t *rects,
     if (submitted)
         svga_write(vmware_index_port, vmware_value_port, SVGA_REG_SYNC, 1U);
     spinlock_release_irq(&vmware_fifo_lock, flags);
+}
+
+void display_control_present_rects(const display_control_rect_t *rects,
+                                   uint32_t count) {
+    if (kernel_mutex_lock_for(&display_state_mutex,
+                              DISPLAY_STATE_TIMEOUT_MS) != 0) return;
+    display_control_present_rects_locked(rects, count);
+    kernel_mutex_unlock(&display_state_mutex);
 }
 
 static bool vmware_rect_valid(uint32_t x, uint32_t y,
@@ -636,7 +648,7 @@ vmware_disable:
 }
 #endif
 
-int display_control_activate(void) {
+static int display_control_activate_locked(void) {
     /* A framebuffer published by the BIOS loader does not prove that its
      * graphics mode is still the visible hardware mode.  In particular the
      * rescue shell may have restored VGA text while the bounded framebuffer
@@ -763,7 +775,16 @@ activation_done:
     return result;
 }
 
-int display_control_deactivate(void) {
+int display_control_activate(void) {
+    int lock_result = kernel_mutex_lock_for(&display_state_mutex,
+                                            DISPLAY_STATE_TIMEOUT_MS);
+    if (lock_result != 0) return lock_result;
+    int result = display_control_activate_locked();
+    kernel_mutex_unlock(&display_state_mutex);
+    return result;
+}
+
+static int display_control_deactivate_locked(void) {
     uint32_t old_flags;
     __asm__ __volatile__("pushf\n pop %0\n cli" : "=r"(old_flags) :: "memory");
     if (activation_busy) {
@@ -806,19 +827,40 @@ int display_control_deactivate(void) {
     return result;
 }
 
+int display_control_deactivate(void) {
+    int lock_result = kernel_mutex_lock_for(&display_state_mutex,
+                                            DISPLAY_STATE_TIMEOUT_MS);
+    if (lock_result != 0) return lock_result;
+    int result = display_control_deactivate_locked();
+    kernel_mutex_unlock(&display_state_mutex);
+    return result;
+}
+
 bool display_control_graphics_active(void) {
-    return active_backend != DISPLAY_BACKEND_NONE && framebuffer_available();
+    if (kernel_mutex_lock_for(&display_state_mutex,
+                              DISPLAY_STATE_TIMEOUT_MS) != 0) return false;
+    bool active = active_backend != DISPLAY_BACKEND_NONE &&
+        framebuffer_available();
+    kernel_mutex_unlock(&display_state_mutex);
+    return active;
 }
 
 bool display_control_acceleration_active(void) {
-    if (active_backend == DISPLAY_BACKEND_VMWARE)
-        return vmware_fifo != NULL &&
+    if (kernel_mutex_lock_for(&display_state_mutex,
+                              DISPLAY_STATE_TIMEOUT_MS) != 0) return false;
+    bool active = false;
+    if (active_backend == DISPLAY_BACKEND_VMWARE) {
+        active = vmware_fifo != NULL &&
             (vmware_capabilities & SVGA_CAP_RECT_COPY) != 0U;
-    return active_backend == DISPLAY_BACKEND_VBE &&
-        device_domain_gr_acceleration_active();
+    } else if (active_backend == DISPLAY_BACKEND_VBE) {
+        active = device_domain_gr_acceleration_active();
+    }
+    kernel_mutex_unlock(&display_state_mutex);
+    return active;
 }
 
-int display_control_driver_command(display_driver_request_t *request) {
+static int display_control_driver_command_locked(
+        display_driver_request_t *request) {
     if (request == NULL) return -22;
     if (find_nvidia_gk208() != NULL) {
         int result = -95;
@@ -952,5 +994,18 @@ int display_control_driver_command(display_driver_request_t *request) {
         request->height = vmware_height;
     }
     request->status = result;
+    return result;
+}
+
+int display_control_driver_command(display_driver_request_t *request) {
+    if (request == NULL) return -22;
+    int lock_result = kernel_mutex_lock_for(&display_state_mutex,
+                                            DISPLAY_STATE_TIMEOUT_MS);
+    if (lock_result != 0) {
+        request->status = lock_result;
+        return lock_result;
+    }
+    int result = display_control_driver_command_locked(request);
+    kernel_mutex_unlock(&display_state_mutex);
     return result;
 }

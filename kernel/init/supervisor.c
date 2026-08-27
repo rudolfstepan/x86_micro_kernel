@@ -13,6 +13,7 @@
 
 #include "include/kernel/critical_object.h"
 #ifndef REIST_HOST_TEST
+#include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/interrupt.h"
 #include "include/kernel/component_control.h"
 #include "include/kernel/device_domain.h"
@@ -28,6 +29,8 @@
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 #endif
+
+static volatile uint32_t svga2d_ap_execution_reported;
 
 typedef struct {
     uint32_t generation;
@@ -5010,6 +5013,19 @@ int supervisor_start_device_driver(
     return 0;
 }
 
+int supervisor_set_device_driver_current_affinity(
+        supervisor_handle_t handle, uint32_t cpu_affinity_mask) {
+    if (cpu_affinity_mask == 0U) return -22;
+    supervisor_driver_control_t control;
+    supervisor_driver_runtime_t *runtime = driver_runtime_for_handle(
+        handle, &control);
+    if (runtime == NULL || control.active == 0U || control.pid <= 0 ||
+        control.process_generation == 0U || control.fenced != 0U)
+        return -3;
+    return process_set_supervised_affinity(
+        control.pid, control.process_generation, cpu_affinity_mask);
+}
+
 int supervisor_device_driver_bootstrap(
         int pid, uint32_t process_generation,
         device_domain_driver_bootstrap_t *bootstrap) {
@@ -5110,12 +5126,20 @@ bool supervisor_device_driver_command_allowed(
     supervisor_driver_control_t control;
     supervisor_driver_runtime_t *runtime = driver_runtime_for_identity(
         pid, process_generation, &control);
-    return runtime != NULL &&
+    bool allowed = runtime != NULL &&
         (strcmp(runtime->name, "svga2d-ring3") == 0 ||
          strcmp(runtime->name, "nvidia-gk208-ring3") == 0) &&
         control.device == device && control.pid == pid &&
         control.process_generation == process_generation &&
         process_identity_alive(pid, process_generation);
+#ifndef REIST_HOST_TEST
+    uint32_t cpu = x86_cpu_current_index();
+    if (allowed && cpu != 0U &&
+        strcmp(runtime->name, "svga2d-ring3") == 0 &&
+        __sync_bool_compare_and_swap(&svga2d_ap_execution_reported, 0U, 1U))
+        printf("REIST_VIDEO SVGA2D_AP_EXEC cpu=%u\n", cpu);
+#endif
+    return allowed;
 }
 
 static supervisor_driver_runtime_t *driver_runtime_for_device(
@@ -5732,6 +5756,12 @@ int supervisor_spawn_service(const char *path, int argc,
     (void)argc;
     (void)argv;
     (void)domain_kind;
+    return -1;
+}
+
+int supervisor_set_device_driver_current_affinity(
+        supervisor_handle_t handle, uint32_t cpu_affinity_mask) {
+    (void)handle; (void)cpu_affinity_mask;
     return -1;
 }
 

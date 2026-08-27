@@ -867,7 +867,14 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     if (!storage_service_start(pit_monotonic_ms())) {
         panic("Unable to start REIST Ring-3 storage service");
     }
+    supervisor_handle_t video_driver_handle = {0U, 0U, 0U};
+    bool video_driver_started = false;
+    uint32_t video_ap_mask = 0U;
     if (video_device_available) {
+        x86_smp_status_t video_smp_status;
+        x86_smp_status(&video_smp_status);
+        video_ap_mask = video_smp_status.online_cpu_count > 1U
+            ? ((1U << video_smp_status.online_cpu_count) - 1U) & ~1U : 0U;
         /* GK208 executes several independently bounded GR construction
          * phases before it may publish output authority. Each phase must
          * advance within six seconds and the complete generation remains
@@ -883,10 +890,8 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
             .recovery_timeout_ms = 1000U,
             .restart_budget = 3U,
             .startup_timeout_ms = video_startup_timeout_ms,
-            .startup_progress_timeout_ms =
-                video_startup_progress_timeout_ms,
+            .startup_progress_timeout_ms = video_startup_progress_timeout_ms,
         };
-        supervisor_handle_t video_driver_handle;
         const bool nvidia = video_device_info.backend ==
             VIDEO_DEVICE_BACKEND_NVIDIA_GK208;
         const char *driver_name = nvidia
@@ -903,6 +908,8 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         if (video_driver_result != 0)
             printf("REIST_VIDEO DRIVER_DEGRADED result=%d\n",
                    video_driver_result);
+        else
+            video_driver_started = true;
     }
     if (audio_device_available) {
         const supervisor_config_t audio_driver_config = {
@@ -950,6 +957,12 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
                  "application processors");
     if (!x86_smp_scheduler_probe()) {
         panic("SMP scheduler release probe failed");
+    }
+    if (video_driver_started && video_ap_mask != 0U &&
+        video_device_info.backend == VIDEO_DEVICE_BACKEND_VMWARE_SVGA2) {
+        if (supervisor_set_device_driver_current_affinity(
+                video_driver_handle, video_ap_mask) != 0)
+            panic("Unable to move healthy SVGA2D generation to APs");
     }
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
     /* Fault fixtures are intentionally registered only after AP scheduling is

@@ -733,6 +733,8 @@ int supervisor_start_device_driver(
     const char *name, const char *path, uint32_t device_index, uint32_t mode,
     const supervisor_config_t *config, uint64_t now_ms,
     supervisor_handle_t *handle_out);
+int supervisor_set_device_driver_current_affinity(
+    supervisor_handle_t handle, uint32_t cpu_affinity_mask);
 int supervisor_device_driver_bootstrap(
     int pid, uint32_t process_generation,
     device_domain_driver_bootstrap_t *bootstrap);

@@ -126,6 +126,9 @@ int create_prepared_supervised_user_task(
     page_directory_t *page_directory, Process *process);
 int scheduler_start_prepared_user_task_locked(
     int task_id, const Process *owner, uint32_t process_generation);
+int scheduler_set_task_affinity_locked(
+    int task_id, const Process *owner, uint32_t process_generation,
+    uint32_t cpu_affinity_mask);
 uint32_t* scheduler_allocate_kernel_stack(void);
 void scheduler_free_kernel_stack(uint32_t* stack);
 bool scheduler_kernel_stack_is_valid(const uint32_t* stack);

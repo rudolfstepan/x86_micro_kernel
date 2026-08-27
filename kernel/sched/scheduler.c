@@ -781,6 +781,18 @@ static int create_task_with_affinity(void (*entry_point)(void),
     return task_id;
 }
 
+static bool scheduler_affinity_online(uint32_t cpu_affinity_mask) {
+    if (cpu_affinity_mask == 0U ||
+        (cpu_affinity_mask & ~((1U << X86_CPU_LOCAL_MAX) - 1U)) != 0U)
+        return false;
+    for (uint32_t cpu = 0U; cpu < X86_CPU_LOCAL_MAX; ++cpu) {
+        if ((cpu_affinity_mask & (1U << cpu)) == 0U) continue;
+        x86_cpu_local_t *local = x86_cpu_local_by_index(cpu);
+        if (local == NULL || local->online == 0U) return false;
+    }
+    return true;
+}
+
 static size_t available_task_slots_locked(void) {
     assert_task_table_locked();
     size_t available = MAX_TASKS - num_tasks;
@@ -895,6 +907,25 @@ int scheduler_start_prepared_user_task_locked(
         tasks[task_id].status == TASK_PREPARED &&
         tasks[task_id].running_cpu == TASK_CPU_NONE) {
         tasks[task_id].status = TASK_READY;
+        result = 0;
+    }
+    spinlock_release(&task_table_lock);
+    return result;
+}
+
+int scheduler_set_task_affinity_locked(
+        int task_id, const Process *owner, uint32_t process_generation,
+        uint32_t cpu_affinity_mask) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(process_table_lock_is_owned());
+    if (task_id < 0 || owner == NULL || process_generation == 0U ||
+        !scheduler_affinity_online(cpu_affinity_mask)) return -22;
+    spinlock_acquire(&task_table_lock);
+    int result = -3;
+    if (task_id < num_tasks && tasks[task_id].process == owner &&
+        tasks[task_id].process_generation == process_generation &&
+        tasks[task_id].status != TASK_FINISHED) {
+        tasks[task_id].cpu_affinity_mask = cpu_affinity_mask;
         result = 0;
     }
     spinlock_release(&task_table_lock);

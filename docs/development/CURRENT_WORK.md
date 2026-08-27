@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: nächste produktive R6.2-Treiberdomäne auditieren
+Aktives Thema: nächste produktive R6.2-Domäne nach VMware-SVGA2D auditieren
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -86,3 +86,15 @@ stale Generation, Reset-Fence und Budgeterschöpfung blieben begrenzt; die
 Ring-3-Shell lief parallel auf dem BSP weiter. Das Runtime-Gate bestand in
 15 Sekunden. Als Nächstes ist genau eine reale Treiberdomäne samt Controller-,
 DMA-, IRQ- und Fencezustand zu auditieren; bis dahin bleibt sie BSP-affin.
+
+## Zweite R6.2-Scheibe abgeschlossen
+
+Der VMware-SVGA2D-Normalpfad startet weiterhin innerhalb seines bisherigen
+BSP-Startup-Watchdogs. Erst nach `SCHEDULER_READY` wird die aktuelle gesunde
+Generation generationsgeprüft AP-only umgebunden; Restarts fallen bewusst auf
+den BSP-Default zurück. Der gemeinsame Displayzustand ist durch einen
+deadlinebegrenzten Kernelmutex vor dem FIFO-Spinlock serialisiert. Der
+vierkernige QEMU-Lauf führte den Treiber auf CPU 2 aus und bestätigte einen
+realen `RECT_COPY`, geordnete Deaktivierung, `TASK_CAPACITY_OK` und `TEST_OK`.
+Ein produktiver Timeout-/Restartnachweis ist noch offen und wird nicht aus dem
+Normalpfad abgeleitet.

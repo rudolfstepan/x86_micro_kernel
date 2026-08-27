@@ -269,5 +269,34 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("TimeoutSeconds = 60", vmware)
 
 
+    def test_smp_display_state_is_deadline_serialized_before_fifo(self):
+        display = (ROOT / "drivers/video/display_control.c").read_text(
+            encoding="utf-8")
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        smoke = (ROOT / "scripts/run_qemu_smoke.py").read_text(
+            encoding="utf-8")
+        self.assertIn("display_state_mutex = KERNEL_MUTEX_INIT", display)
+        self.assertIn("DISPLAY_STATE_TIMEOUT_MS 1000U", display)
+        present_wrapper = display[display.index(
+            "void display_control_present_rects("):display.index(
+                "static bool vmware_rect_valid")]
+        self.assertLess(present_wrapper.index("kernel_mutex_lock_for("),
+                        present_wrapper.index(
+                            "display_control_present_rects_locked("))
+        command_wrapper = display[display.index(
+            "int display_control_driver_command("):]
+        self.assertLess(command_wrapper.index("kernel_mutex_lock_for("),
+                        command_wrapper.index(
+                            "display_control_driver_command_locked("))
+        self.assertIn("spinlock_acquire_irq(&vmware_fifo_lock)", display)
+        self.assertIn("VIDEO_DEVICE_BACKEND_VMWARE_SVGA2", kernel)
+        self.assertIn("video_ap_mask", kernel)
+        self.assertIn("supervisor_set_device_driver_current_affinity(", kernel)
+        self.assertIn("process_set_supervised_affinity(", supervisor)
+        self.assertIn("SVGA2D_AP_EXEC cpu=%u", supervisor)
+        self.assertIn("missing SVGA2D AP execution marker", smoke)
+
 if __name__ == "__main__":
     unittest.main()

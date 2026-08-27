@@ -95,8 +95,10 @@ Konfiguration kann nun eine explizite, ausschließlich aus online CPUs
 bestehende Affinitätsmaske an einen überwachten Ring-3-Treiber weiterreichen;
 der Wert null bewahrt die bisherige BSP-Affinität. Als erste R6.2-
 Arbeitsdomäne nutzt nur die autoritätslose Driver-Fault-Fixture diese Freigabe
-und läuft AP-only. Reale Video-, Audio-, Storage-, Netzwerk-, USB- und
-Eingabetreiber bleiben BSP-affin.
+und läuft AP-only. Nach dem zweiten R6.2-Audit darf auch der überwachte VMware-
+SVGA2D-Prozess auf einem SMP-System AP-only laufen; auf Ein-CPU-Systemen bleibt
+sein BSP-Fallback erhalten. Andere reale Video-, Audio-, Storage-, Netzwerk-,
+USB- und Eingabetreiber bleiben BSP-affin.
 
 Das Audit der gemeinsam genutzten Treiberzustände trennt drei Gruppen. VFS,
 FAT32, ATA, AHCI und FDD sind durch die unten beschriebenen deadlinebegrenzten
@@ -107,6 +109,15 @@ Pollzustände von PCI-Netzwerktreibern, xHCI/OHCI, serieller Ausgabe und den
 verbleibenden Video-/Audio-Mediatoren sind dagegen noch nicht vollständig als
 SMP-feste Transaktionen auditiert; ihre Produktionsdomänen dürfen deshalb
 keine AP-Maske erhalten.
+
+Der VMware-Display-Control-Zustand besitzt nun einen rekursiven, maximal eine
+Sekunde wartenden Kernelmutex. Er umfasst Aktivierung, Deaktivierung, Probe,
+Busy-/Capability-Abfrage und die Übergabe an den FIFO. Die feste Lockordnung
+lautet `Displayzustand -> VMware-FIFO -> Scheduler`; kein FIFO-Spinlock wird
+über einen Kontextwechsel gehalten. Der Ring-3-Treiber erhält weiterhin weder
+DMA- noch IRQ-, BAR-Mapping- oder rohe Portautorität. Ein vierkerniger QEMU-
+Lauf verlangt einen echten AP-Eintritt sowie den realen begrenzten
+`RECT_COPY`, während Compositor und Supervisor auf dem BSP fortschreiten.
 
 Der Waitqueue-Kern serialisiert Taskzustand, intrusive Nodes und Timeout-Scans
 unter dem Tasktabellen-Lock. IPC sowie die begrenzten UDP- und TCP-Sockettabellen

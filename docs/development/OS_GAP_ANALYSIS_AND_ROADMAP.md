@@ -516,7 +516,7 @@ und 10 verbindlich.
     Kernelprobetasks, Reaping und vollständigem 32-Slot-Kapazitätsnachweis
   - [ ] R6.2 allgemeine Mehrkernverteilung regulärer Kernel- und
     Ring-3-Dienste nach Migration der verbleibenden Treiberzustände; erste
-    autoritätslose, überwachte Driver-Fault-Domäne AP-fähig
+    autoritätslose Driver-Fault-Domäne und VMware-SVGA2D-Normalpfad AP-fähig
 
 #### Verbindliche Priorität nach dem S0-Gate
 

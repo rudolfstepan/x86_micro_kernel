@@ -1582,6 +1582,24 @@ int process_start_prepared_supervised(int pid, uint32_t generation) {
     return result;
 }
 
+int process_set_supervised_affinity(int pid, uint32_t generation,
+                                    uint32_t cpu_affinity_mask) {
+    if (pid <= 0 || generation == 0U || cpu_affinity_mask == 0U) return -22;
+    uint32_t flags = process_table_lock_irqsave();
+    int result = -3;
+    for (int index = 0; index < MAX_PROGRAMS; ++index) {
+        Process *process = &process_list[index];
+        if (!process->is_running || process->has_exited ||
+            process->terminating || process->pid != pid ||
+            process->generation != generation) continue;
+        result = scheduler_set_task_affinity_locked(
+            process->task_id, process, generation, cpu_affinity_mask);
+        break;
+    }
+    process_table_unlock_irqrestore(flags);
+    return result;
+}
+
 int process_ipc_delegate(Process *source, ipc_handle_t handle,
                          int target_pid, uint32_t rights) {
     if (source == NULL || target_pid <= 0 || target_pid == source->pid) {

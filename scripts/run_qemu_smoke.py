@@ -2139,6 +2139,9 @@ def main() -> int:
             if marker not in transcript:
                 marker_error = f"missing {marker} marker"
                 break
+        if marker_error is None and args.smp > 1 and \
+                "REIST_VIDEO SVGA2D_AP_EXEC cpu=" not in transcript:
+            marker_error = "missing SVGA2D AP execution marker"
     if marker_error is None and args.expect_smp:
         for index in range(1, args.smp):
             marker = f"REIST_SMP AP_ONLINE index={index} apic={index}"
