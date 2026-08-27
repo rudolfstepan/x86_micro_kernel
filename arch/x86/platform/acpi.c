@@ -18,6 +18,7 @@
 #define ACPI_TABLE_MAX_LENGTH (1024U * 1024U)
 #define ACPI_MAX_ROOT_ENTRIES 256U
 #define ACPI_MAX_DMAR_STRUCTURES 256U
+#define ACPI_MAX_MADT_STRUCTURES 256U
 #define ACPI_EBDA_SCAN_LENGTH 1024U
 
 #pragma pack(push, 1)
@@ -53,6 +54,12 @@ typedef struct {
 } acpi_dmar_t;
 
 typedef struct {
+    acpi_sdt_header_t header;
+    uint32_t local_apic_address;
+    uint32_t flags;
+} acpi_madt_t;
+
+typedef struct {
     uint16_t type;
     uint16_t length;
 } acpi_dmar_structure_t;
@@ -63,6 +70,21 @@ _Static_assert(sizeof(acpi_rsdp_t) == ACPI_RSDP_V2_LENGTH,
 _Static_assert(sizeof(acpi_sdt_header_t) == ACPI_SDT_HEADER_LENGTH,
                "ACPI SDT header layout mismatch");
 _Static_assert(sizeof(acpi_dmar_t) == 48U, "DMAR header layout mismatch");
+_Static_assert(sizeof(acpi_madt_t) == 44U, "MADT header layout mismatch");
+
+static uint32_t captured_ebda;
+
+void x86_acpi_capture_early(void) {
+#ifndef REIST_HOST_TEST
+    uint16_t ebda_segment = 0U;
+    __asm__ volatile("movw 0x40e, %0" : "=r"(ebda_segment));
+    uint32_t candidate = (uint32_t)ebda_segment << 4U;
+    captured_ebda = candidate >= 0x400U && candidate < 0xA0000U
+        ? candidate : 0U;
+#else
+    captured_ebda = 0U;
+#endif
+}
 
 static bool checksum_valid(const void *data, size_t length) {
     if (data == NULL || length == 0U) return false;
@@ -104,15 +126,10 @@ static const acpi_rsdp_t *scan_rsdp_range(uint32_t start, uint32_t length) {
 }
 
 static const acpi_rsdp_t *find_rsdp(void) {
-    uint16_t ebda_segment = 0U;
-#ifndef REIST_HOST_TEST
-    __asm__ volatile("movw 0x40e, %0" : "=r"(ebda_segment));
-#endif
-    uint32_t ebda = (uint32_t)ebda_segment << 4U;
-    const acpi_rsdp_t *rsdp = NULL;
-    if (ebda >= 0x400U && ebda < 0xA0000U)
-        rsdp = scan_rsdp_range(ebda, ACPI_EBDA_SCAN_LENGTH);
-    return rsdp != NULL ? rsdp : scan_rsdp_range(0xE0000U, 0x20000U);
+    const acpi_rsdp_t *rsdp = scan_rsdp_range(0xE0000U, 0x20000U);
+    if (rsdp == NULL && captured_ebda != 0U)
+        rsdp = scan_rsdp_range(captured_ebda, ACPI_EBDA_SCAN_LENGTH);
+    return rsdp;
 }
 
 static const acpi_sdt_header_t *validated_sdt(uint64_t address,
@@ -143,6 +160,112 @@ static const acpi_sdt_header_t *find_root(const acpi_rsdp_t *rsdp,
         validated_sdt(rsdp->rsdt_address, "RSDT");
     if (rsdt != NULL) *entry_width = 4U;
     return rsdt;
+}
+
+static const acpi_sdt_header_t *find_sdt(const char signature[4]) {
+    const acpi_rsdp_t *rsdp = find_rsdp();
+    uint32_t entry_width = 0U;
+    const acpi_sdt_header_t *root = find_root(rsdp, &entry_width);
+    if (root == NULL || entry_width == 0U) return NULL;
+    size_t payload_length = root->length - sizeof(*root);
+    if (payload_length % entry_width != 0U ||
+        payload_length / entry_width > ACPI_MAX_ROOT_ENTRIES) return NULL;
+    const uint8_t *entries = (const uint8_t *)root + sizeof(*root);
+    uint32_t count = (uint32_t)(payload_length / entry_width);
+    for (uint32_t index = 0U; index < count; ++index) {
+        uint64_t address = 0U;
+        memcpy(&address, entries + (size_t)index * entry_width, entry_width);
+        const acpi_sdt_header_t *header = validated_sdt(address, signature);
+        if (header != NULL) return header;
+    }
+    return NULL;
+}
+
+static void cpu_inventory_add(x86_acpi_cpu_inventory_t *inventory,
+                              uint32_t apic_id) {
+    if (inventory->discovered_cpu_count != UINT32_MAX)
+        ++inventory->discovered_cpu_count;
+    if (apic_id > UINT8_MAX) {
+        if (inventory->unsupported_x2apic_count != UINT32_MAX)
+            ++inventory->unsupported_x2apic_count;
+        return;
+    }
+    for (uint32_t index = 0U; index < inventory->usable_cpu_count; ++index) {
+        if (inventory->apic_ids[index] != apic_id) continue;
+        if (inventory->duplicate_apic_id_count != UINT32_MAX)
+            ++inventory->duplicate_apic_id_count;
+        return;
+    }
+    if (inventory->usable_cpu_count >= X86_ACPI_MAX_CPUS) {
+        if (inventory->truncated_cpu_count != UINT32_MAX)
+            ++inventory->truncated_cpu_count;
+        return;
+    }
+    inventory->apic_ids[inventory->usable_cpu_count++] = apic_id;
+}
+
+bool x86_acpi_parse_madt(const void *table, size_t available_length,
+                         x86_acpi_cpu_inventory_t *inventory) {
+    if (inventory == NULL) return false;
+    memset(inventory, 0, sizeof(*inventory));
+    inventory->version = X86_ACPI_CPU_INVENTORY_VERSION;
+    inventory->struct_size = sizeof(*inventory);
+    if (table == NULL || available_length < sizeof(acpi_madt_t)) return false;
+    const acpi_madt_t *madt = table;
+    if (memcmp(madt->header.signature, "APIC", 4U) != 0 ||
+        madt->header.length < sizeof(*madt) ||
+        madt->header.length > available_length ||
+        madt->header.length > ACPI_TABLE_MAX_LENGTH ||
+        !checksum_valid(madt, madt->header.length)) return false;
+    inventory->local_apic_address = madt->local_apic_address;
+
+    size_t offset = sizeof(*madt);
+    uint32_t structure_count = 0U;
+    while (offset < madt->header.length &&
+           structure_count < ACPI_MAX_MADT_STRUCTURES) {
+        if (madt->header.length - offset < 2U) return false;
+        const uint8_t *entry = (const uint8_t *)madt + offset;
+        uint8_t type = entry[0];
+        uint8_t length = entry[1];
+        if (length < 2U || length > madt->header.length - offset)
+            return false;
+        if (type == 0U) {
+            if (length < 8U) return false;
+            uint32_t flags = 0U;
+            memcpy(&flags, entry + 4U, sizeof(flags));
+            if ((flags & 1U) != 0U) cpu_inventory_add(inventory, entry[3U]);
+        } else if (type == 5U) {
+            if (length < 12U) return false;
+            uint64_t address = 0U;
+            memcpy(&address, entry + 4U, sizeof(address));
+            if (address > UINT32_MAX) return false;
+            inventory->local_apic_address = (uint32_t)address;
+        } else if (type == 9U) {
+            if (length < 16U) return false;
+            uint32_t apic_id = 0U;
+            uint32_t flags = 0U;
+            memcpy(&apic_id, entry + 4U, sizeof(apic_id));
+            memcpy(&flags, entry + 8U, sizeof(flags));
+            if ((flags & 1U) != 0U) cpu_inventory_add(inventory, apic_id);
+        }
+        offset += length;
+        ++structure_count;
+    }
+    return offset == madt->header.length &&
+        inventory->local_apic_address != 0U &&
+        inventory->usable_cpu_count != 0U;
+}
+
+bool x86_acpi_cpu_inventory(x86_acpi_cpu_inventory_t *inventory) {
+    if (inventory == NULL) return false;
+    const acpi_sdt_header_t *madt = find_sdt("APIC");
+    if (madt == NULL) {
+        memset(inventory, 0, sizeof(*inventory));
+        inventory->version = X86_ACPI_CPU_INVENTORY_VERSION;
+        inventory->struct_size = sizeof(*inventory);
+        return false;
+    }
+    return x86_acpi_parse_madt(madt, madt->length, inventory);
 }
 
 bool x86_acpi_parse_dmar(const void *table, size_t available_length,

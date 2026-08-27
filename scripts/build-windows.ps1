@@ -328,6 +328,7 @@ try {
         'libexec/reist/nvidia.prg' = 'NVIDIA.PRG'
         'libexec/reist/audio.prg' = 'AUDIO.PRG'
         'libexec/reist/sleeper.prg' = 'SLEEPER.PRG'
+        'libexec/reist/capwait.prg' = 'CAPWAIT.PRG'
         'libexec/reist/satawr.prg' = 'SATAWR.PRG'
     }
     $imageDataArguments = @(

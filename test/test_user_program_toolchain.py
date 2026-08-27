@@ -495,11 +495,13 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "STORAGE.PRG",
                 "HDA.PRG",
                 "SVGA2D.PRG",
+                "NVIDIA.PRG",
                 "AUDIO.PRG",
                 "AUDIOINFO.PRG",
                 "AUDIOTEST.PRG",
                 "WAVPLAY.PRG",
                 "SLEEPER.PRG",
+                "CAPWAIT.PRG",
                 "SATAWR.PRG",
             }
             self.assertEqual({path.name for path in output.iterdir()}, expected)

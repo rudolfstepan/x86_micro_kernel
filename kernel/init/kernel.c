@@ -18,7 +18,10 @@
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/mbheader.h"
 #include "arch/x86/boot/multiboot_parser.h"
+#include "arch/x86/platform/acpi.h"
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/cpu_local.h"
+#include "arch/x86/include/smp.h"
 #include "arch/x86/include/tss.h"
 #include "kernel/init/banner.h"
 #include "include/kernel/panic.h"
@@ -36,6 +39,7 @@
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/output_fence.h"
 #include "include/kernel/ipc.h"
+#include "include/kernel/critical_object.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
 
@@ -67,6 +71,7 @@
 #include "drivers/block/ata.h"
 #include "drivers/block/ahci.h"
 #include "drivers/block/fdd.h"
+#include "drivers/block/block_device.h"
 #include "drivers/block/partition.h"
 #include "drivers/bus/drives.h"
 
@@ -106,6 +111,120 @@ static audio_device_profile_info_t audio_device_info;
 static bool audio_device_available;
 static video_device_profile_info_t video_device_info;
 static bool video_device_available;
+static const drive_t *smp_storage_probe_drive;
+static uint8_t smp_storage_probe_reference[512];
+#define SMP_INTEGRITY_PROBE_VERSION 1U
+#define SMP_INTEGRITY_PROBE_COOKIE 0x534D5000U
+typedef struct {
+    uint32_t cpu_index;
+    uint32_t cookie;
+} smp_integrity_probe_payload_t;
+static critical_object_t smp_integrity_shared;
+static critical_object_t smp_integrity_private[X86_SMP_MAX_CPUS];
+static volatile uint32_t smp_integrity_arrived_mask;
+static uint32_t smp_integrity_expected_mask;
+
+static bool smp_integrity_probe_valid(const void *payload, size_t length) {
+    if (payload == NULL || length != sizeof(smp_integrity_probe_payload_t))
+        return false;
+    const smp_integrity_probe_payload_t *probe = payload;
+    return probe->cpu_index < X86_SMP_MAX_CPUS &&
+           probe->cookie == (SMP_INTEGRITY_PROBE_COOKIE ^ probe->cpu_index);
+}
+
+static bool smp_integrity_probe_worker(uint32_t cpu_index) {
+    smp_integrity_probe_payload_t payload = {
+        .cpu_index = cpu_index,
+        .cookie = SMP_INTEGRITY_PROBE_COOKIE ^ cpu_index,
+    };
+    smp_integrity_probe_payload_t observed = {0U, 0U};
+    size_t observed_length = 0U;
+    if (critical_object_update(&smp_integrity_shared,
+                               SMP_INTEGRITY_PROBE_VERSION, &payload,
+                               sizeof(payload), smp_integrity_probe_valid) != 0)
+        return false;
+    critical_read_result_t result = critical_object_read(
+        &smp_integrity_shared, SMP_INTEGRITY_PROBE_VERSION, &observed,
+        sizeof(observed), &observed_length, smp_integrity_probe_valid);
+    if (result < CRITICAL_READ_OK ||
+        !smp_integrity_probe_valid(&observed, observed_length)) return false;
+
+    critical_object_t *private_object = &smp_integrity_private[cpu_index];
+    private_object->primary.words[CRITICAL_OBJECT_METADATA_WORDS] ^= 1U << 7U;
+    result = critical_object_read(
+        private_object, SMP_INTEGRITY_PROBE_VERSION, &observed,
+        sizeof(observed), &observed_length, smp_integrity_probe_valid);
+    if (result != CRITICAL_READ_CORRECTED || observed.cpu_index != cpu_index)
+        return false;
+
+    private_object->primary.crc32 ^= 1U;
+    result = critical_object_read(
+        private_object, SMP_INTEGRITY_PROBE_VERSION, &observed,
+        sizeof(observed), &observed_length, smp_integrity_probe_valid);
+    if (result != CRITICAL_READ_RECOVERED || observed.cpu_index != cpu_index)
+        return false;
+
+    private_object->primary.crc32 ^= 1U;
+    private_object->shadow.crc32 ^= 2U;
+    return critical_object_read(
+               private_object, SMP_INTEGRITY_PROBE_VERSION, &observed,
+               sizeof(observed), &observed_length,
+               smp_integrity_probe_valid) == CRITICAL_READ_UNCORRECTABLE;
+}
+
+static bool smp_storage_probe_worker(uint32_t cpu_index) {
+    if (cpu_index == 0U || cpu_index >= X86_SMP_MAX_CPUS ||
+        smp_storage_probe_drive == NULL) return false;
+    uint8_t sector[512];
+    if (block_device_read_sector(smp_storage_probe_drive, 0U, sector) !=
+            BLOCK_DEVICE_OK ||
+        memcmp(sector, smp_storage_probe_reference, sizeof(sector)) != 0)
+        return false;
+    __sync_fetch_and_or(&smp_integrity_arrived_mask, 1U << cpu_index);
+    uint64_t now_ms = pit_monotonic_ms();
+    uint64_t deadline = UINT64_MAX - now_ms < 1000U
+        ? UINT64_MAX : now_ms + 1000U;
+    while ((smp_integrity_arrived_mask & smp_integrity_expected_mask) !=
+           smp_integrity_expected_mask) {
+        if (pit_monotonic_ms() >= deadline) return false;
+        pit_delay(1U);
+    }
+    return smp_integrity_probe_worker(cpu_index);
+}
+
+static bool smp_storage_probe_prepare(void) {
+    if (current_drive == NULL || current_drive->sectors == 0U ||
+        block_device_read_sector(current_drive, 0U,
+                                 smp_storage_probe_reference) !=
+            BLOCK_DEVICE_OK) return false;
+    x86_smp_status_t smp_status;
+    x86_smp_status(&smp_status);
+    if (smp_status.online_cpu_count == 0U ||
+        smp_status.online_cpu_count > X86_SMP_MAX_CPUS) return false;
+    smp_integrity_arrived_mask = 0U;
+    smp_integrity_expected_mask =
+        ((1U << smp_status.online_cpu_count) - 1U) & ~1U;
+    smp_integrity_probe_payload_t initial = {
+        .cpu_index = 0U,
+        .cookie = SMP_INTEGRITY_PROBE_COOKIE,
+    };
+    if (critical_object_init(&smp_integrity_shared,
+                             SMP_INTEGRITY_PROBE_VERSION, &initial,
+                             sizeof(initial)) != 0) return false;
+    for (uint32_t cpu = 1U; cpu < X86_SMP_MAX_CPUS; ++cpu) {
+        smp_integrity_probe_payload_t private_initial = {
+            .cpu_index = cpu,
+            .cookie = SMP_INTEGRITY_PROBE_COOKIE ^ cpu,
+        };
+        if (critical_object_init(&smp_integrity_private[cpu],
+                                 SMP_INTEGRITY_PROBE_VERSION,
+                                 &private_initial,
+                                 sizeof(private_initial)) != 0) return false;
+    }
+    smp_storage_probe_drive = current_drive;
+    __sync_synchronize();
+    return x86_smp_set_parallel_probe(smp_storage_probe_worker);
+}
 
 
 //---------------------------------------------------------------------------------------------
@@ -182,6 +301,8 @@ static void hardware_init(void) {
     // Advanced timing
     boot_context("hardware-init", "APIC timer", "initialize", "local APIC");
     initialize_apic_timer();  // Local APIC timer
+    boot_context("hardware-init", "SMP", "start", "application processors");
+    (void)x86_smp_initialize();
     
     // Bus enumeration
     boot_context("hardware-init", "PCI", "enumerate", "PCI buses");
@@ -549,18 +670,17 @@ static int start_userspace_program(const multiboot1_info_t *boot_info,
         const char *arguments[] = {filename};
         /* System programs are loaded only from the already selected root
          * volume.  An auxiliary disk must not override the trusted shell by
-         * appearing earlier in controller discovery order. */
-        scheduler_preempt_disable();
+         * appearing earlier in controller discovery order.  Program loading
+         * performs sleepable VFS I/O; process-slot and scheduler publication
+         * are synchronized inside the process loader. */
         int pid = create_process_for_file_args(
             program_path, 1, arguments, drive->mount_point);
         if (pid >= 0) {
             printf("Starting %s from %s\n", description, program_path);
-            scheduler_preempt_enable();
             wait_for_process(pid);
             printf("%s exited.\n", description);
             return 0;
         }
-        scheduler_preempt_enable();
         break;
     }
     return -1;
@@ -597,8 +717,17 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         while (1) { asm volatile("hlt"); }
     }
 
+    /* Per-CPU identity must exist before init_paging binds CR3 to the BSP. */
+    if (!x86_cpu_local_bootstrap(x86_cpu_initial_apic_id())) {
+        printf("Fatal: unable to initialize BSP per-CPU state.\n");
+        while (1) { asm volatile("hlt"); }
+    }
+
     // Parse bootloader-provided information
     parse_multiboot1_info(multiboot_info);
+    /* Page zero is deliberately unmapped by paging. Capture the legacy BDA
+     * EBDA pointer while the boot identity mapping still permits access. */
+    x86_acpi_capture_early();
     if (!boot_health_capture()) {
         panic("Invalid BIOS boot-health handoff");
     }
@@ -613,6 +742,10 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     if (memory_reserve_region(FATAL_CRASH_RECORD_ADDRESS,
                               FATAL_CRASH_RECORD_REGION_SIZE) != 0) {
         panic("Unable to reserve persistent crash record");
+    }
+    if (memory_reserve_region(X86_SMP_TRAMPOLINE_BASE,
+                              X86_SMP_TRAMPOLINE_REGION_SIZE) != 0) {
+        panic("Unable to reserve SMP trampoline region");
     }
 
     // Initialize kernel memory allocator
@@ -835,9 +968,18 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     configure_network_after_service();
     // Stage 4: System ready
     system_ready();
+    boot_context("smp-release", "storage", "parallel-read-probe",
+                 "active root block device");
+    if (!smp_storage_probe_prepare()) {
+        panic("Unable to prepare SMP storage serialization probe");
+    }
     printf("BOOT_OK\n");
     boot_health_mark_system_ready();
-
+    boot_context("smp-release", "scheduler", "probe",
+                 "application processors");
+    if (!x86_smp_scheduler_probe()) {
+        panic("SMP scheduler release probe failed");
+    }
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any
      * failed/terminated desktop fall back to the userspace shell. */
 #ifdef USE_FRAMEBUFFER

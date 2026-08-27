@@ -14,6 +14,8 @@
 
 #ifndef REIST_HOST_TEST
 #include "arch/x86/include/interrupt.h"
+#include "include/lib/spinlock.h"
+static spinlock_t handover_state_lock = SPINLOCK_INIT;
 #endif
 
 #define HANDOVER_EINVAL (-22)
@@ -35,7 +37,7 @@ static uint32_t handover_lock(void) {
 #ifdef REIST_HOST_TEST
     return 0U;
 #else
-    return irq_save();
+    return spinlock_acquire_irq(&handover_state_lock);
 #endif
 }
 
@@ -43,7 +45,7 @@ static void handover_unlock(uint32_t flags) {
 #ifdef REIST_HOST_TEST
     (void)flags;
 #else
-    irq_restore(flags);
+    spinlock_release_irq(&handover_state_lock, flags);
 #endif
 }
 

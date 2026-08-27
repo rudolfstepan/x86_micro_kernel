@@ -7,6 +7,7 @@
  */
 
 #include "arch/x86/include/tss.h"
+#include "arch/x86/include/cpu_local.h"
 #include "arch/x86/mm/paging.h"
 #include "include/kernel/fatal.h"
 #include "lib/libc/string.h"
@@ -16,43 +17,70 @@
 static tss_entry_t kernel_tss;
 static tss_entry_t double_fault_tss;
 static uint8_t double_fault_stack[PAGE_SIZE] __attribute__((aligned(PAGE_SIZE)));
+static tss_entry_t ap_kernel_tss[X86_CPU_LOCAL_MAX - 1U];
+static tss_entry_t ap_double_fault_tss[X86_CPU_LOCAL_MAX - 1U];
+static uint8_t ap_double_fault_stacks[X86_CPU_LOCAL_MAX - 1U][PAGE_SIZE]
+    __attribute__((aligned(PAGE_SIZE)));
+
+static tss_entry_t *runtime_tss_for_cpu(uint32_t cpu_index) {
+    if (cpu_index >= X86_CPU_LOCAL_MAX) return NULL;
+    return cpu_index == 0U ? &kernel_tss : &ap_kernel_tss[cpu_index - 1U];
+}
+
+static tss_entry_t *fault_tss_for_cpu(uint32_t cpu_index) {
+    if (cpu_index >= X86_CPU_LOCAL_MAX) return NULL;
+    return cpu_index == 0U ? &double_fault_tss
+                           : &ap_double_fault_tss[cpu_index - 1U];
+}
+
+static uint8_t *fault_stack_for_cpu(uint32_t cpu_index) {
+    if (cpu_index >= X86_CPU_LOCAL_MAX) return NULL;
+    return cpu_index == 0U ? double_fault_stack
+                           : ap_double_fault_stacks[cpu_index - 1U];
+}
 
 /**
  * Initialize the Task State Segment
  */
 void tss_init(uint32_t kernel_stack, uint32_t kernel_ss) {
-    // Zero out entire TSS structure
-    memset(&kernel_tss, 0, sizeof(tss_entry_t));
-    
-    // Set kernel stack for Ring 0 (only fields we use)
-    kernel_tss.ss0 = kernel_ss;    // Kernel data segment (0x10)
-    kernel_tss.esp0 = kernel_stack; // Top of kernel stack
-    
-    // Set I/O map base to end of TSS (no I/O permission bitmap)
-    kernel_tss.iomap_base = sizeof(tss_entry_t);
+    (void)tss_init_cpu(0U, kernel_stack, kernel_ss);
+}
+
+bool tss_init_cpu(uint32_t cpu_index, uint32_t kernel_stack,
+                  uint32_t kernel_ss) {
+    tss_entry_t *runtime = runtime_tss_for_cpu(cpu_index);
+    tss_entry_t *fault = fault_tss_for_cpu(cpu_index);
+    uint8_t *fault_stack = fault_stack_for_cpu(cpu_index);
+    if (runtime == NULL || fault == NULL || fault_stack == NULL ||
+        kernel_stack == 0U || kernel_ss == 0U) return false;
+    memset(runtime, 0, sizeof(*runtime));
+    runtime->ss0 = kernel_ss;
+    runtime->esp0 = kernel_stack;
+    runtime->iomap_base = sizeof(*runtime);
 
     /* Vector 8 uses hardware task switching so it never depends on the
      * possibly corrupted stack that caused the double fault. */
-    memset(&double_fault_tss, 0, sizeof(double_fault_tss));
+    memset(fault, 0, sizeof(*fault));
     uint32_t emergency_top =
-        (uint32_t)(uintptr_t)(double_fault_stack + sizeof(double_fault_stack));
-    double_fault_tss.cr3 = (uint32_t)(uintptr_t)paging_kernel_directory();
-    double_fault_tss.eip = (uint32_t)(uintptr_t)double_fault_emergency_entry;
-    double_fault_tss.eflags = 0x00000002U;
-    double_fault_tss.esp = emergency_top;
-    double_fault_tss.ebp = emergency_top;
-    double_fault_tss.esp0 = emergency_top;
-    double_fault_tss.ss0 = kernel_ss;
-    double_fault_tss.cs = 0x08U;
-    double_fault_tss.ss = kernel_ss;
-    double_fault_tss.ds = kernel_ss;
-    double_fault_tss.es = kernel_ss;
-    double_fault_tss.fs = kernel_ss;
-    double_fault_tss.gs = kernel_ss;
-    double_fault_tss.iomap_base = sizeof(tss_entry_t);
+        (uint32_t)(uintptr_t)(fault_stack + PAGE_SIZE);
+    fault->cr3 = (uint32_t)(uintptr_t)paging_kernel_directory();
+    fault->eip = (uint32_t)(uintptr_t)double_fault_emergency_entry;
+    fault->eflags = 0x00000002U;
+    fault->esp = emergency_top;
+    fault->ebp = emergency_top;
+    fault->esp0 = emergency_top;
+    fault->ss0 = kernel_ss;
+    fault->cs = 0x08U;
+    fault->ss = kernel_ss;
+    fault->ds = kernel_ss;
+    fault->es = kernel_ss;
+    fault->fs = kernel_ss;
+    fault->gs = kernel_ss;
+    fault->iomap_base = sizeof(*fault);
     
     // CS and SS are set by the CPU during task switch
     // We don't use hardware task switching, so these remain 0
+    return true;
 }
 
 /**
@@ -62,7 +90,8 @@ void tss_init(uint32_t kernel_stack, uint32_t kernel_ss) {
  * each process uses its own kernel stack when entering kernel mode.
  */
 void tss_set_kernel_stack(uint32_t kernel_stack) {
-    kernel_tss.esp0 = kernel_stack;
+    tss_entry_t *runtime = runtime_tss_for_cpu(x86_cpu_current_index());
+    if (runtime != NULL) runtime->esp0 = kernel_stack;
 }
 
 /**
@@ -70,6 +99,11 @@ void tss_set_kernel_stack(uint32_t kernel_stack) {
  */
 uint32_t tss_get_base(void) {
     return (uint32_t)&kernel_tss;
+}
+
+uint32_t tss_get_base_for_cpu(uint32_t cpu_index) {
+    tss_entry_t *runtime = runtime_tss_for_cpu(cpu_index);
+    return (uint32_t)(uintptr_t)runtime;
 }
 
 /**
@@ -81,6 +115,11 @@ uint32_t tss_get_limit(void) {
 
 uint32_t tss_get_double_fault_base(void) {
     return (uint32_t)(uintptr_t)&double_fault_tss;
+}
+
+uint32_t tss_get_double_fault_base_for_cpu(uint32_t cpu_index) {
+    tss_entry_t *fault = fault_tss_for_cpu(cpu_index);
+    return (uint32_t)(uintptr_t)fault;
 }
 
 uint32_t tss_get_double_fault_limit(void) {

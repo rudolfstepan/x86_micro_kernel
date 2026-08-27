@@ -7,6 +7,7 @@
 ;
 [BITS 32]
 global gdt_flush
+global gdt_load
 global tss_flush
 extern gp
 
@@ -21,6 +22,20 @@ gdt_flush:
     mov ss, ax
     jmp 0x08:flush2
 flush2:
+    ret
+
+; void gdt_load(const struct gdt_ptr *pointer);
+gdt_load:
+    mov eax, [esp + 4]
+    lgdt [eax]
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    jmp 0x08:.loaded
+.loaded:
     ret
 
 ; Load TSS into Task Register

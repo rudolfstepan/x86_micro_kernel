@@ -29,6 +29,11 @@ RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_failure_suffix_checks_the_transcript_for_test_completion(self) -> None:
+        runner = RUNNER.read_text(encoding="utf-8")
+        self.assertIn("TEST_MARKER not in transcript", runner)
+        self.assertNotIn("TEST_MARKER not in str(detail)", runner)
+
     def test_wcet_marker_is_normalized_and_bounded(self) -> None:
         budget = {
             "minimum_samples": 64,

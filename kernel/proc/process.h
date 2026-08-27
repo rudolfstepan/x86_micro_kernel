@@ -14,6 +14,7 @@
 #include <stdint.h>
 
 #include "include/kernel/ipc.h"
+#include "include/lib/spinlock.h"
 #include "kernel/sched/wait_queue.h"
 
 
@@ -105,6 +106,7 @@ typedef struct Process {
     char image_path[PROCESS_PATH_MAX];
     bool is_running;
     bool has_exited;
+    bool terminating;
     bool uses_shared_program_image;
     uint32_t heap_next;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
@@ -144,6 +146,10 @@ int process_spawn_args(Process* parent, const char* path, int argc,
 int process_spawn_supervised(const char *path, int argc,
                              const char *const *argv,
                              process_domain_kind_t domain_kind);
+int process_spawn_supervised_prepared(const char *path, int argc,
+                                      const char *const *argv,
+                                      process_domain_kind_t domain_kind);
+int process_start_prepared_supervised(int pid, uint32_t generation);
 bool process_syscall_allowed(const Process *process, uint32_t syscall_index);
 int process_terminate_authorized(Process *requester, int pid);
 int process_get_identity(int pid, uint32_t *generation_out);
@@ -193,5 +199,12 @@ int process_get_working_directory(const Process* process, char* buffer,
 int process_set_working_directory(Process* process, const char* path);
 int process_get_info(uint32_t index, process_info_t* info);
 int process_terminate(int pid);
+
+/* Internal SMP lifecycle transaction. Lock order is Process -> Scheduler. */
+uint32_t process_table_lock_irqsave(void);
+void process_table_unlock_irqrestore(uint32_t flags);
+spinlock_t *process_table_lock_ref(void);
+bool process_table_lock_is_owned(void);
+bool process_begin_exit(Process *process, uint32_t generation);
 
 #endif // PROCESS_H

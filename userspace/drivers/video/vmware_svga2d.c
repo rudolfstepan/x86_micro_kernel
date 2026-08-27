@@ -192,34 +192,24 @@ static int driver_initialize(svga2d_driver_t *driver) {
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_CHANNEL,
             driver->control) != 0)
         return -5;
-    int status = activate(driver);
-    if (status != 0) {
+    x86os_display_driver_request_t probe;
+    int status = driver_command(
+        driver, X86OS_DISPLAY_DRIVER_PROBE,
+        0U, 0U, 0U, 0U, 0U, 0U, 0U, &probe);
+    if (status == 0)
+        status = driver_command(
+            driver, X86OS_DISPLAY_DRIVER_ENGINE_PREFLIGHT,
+            0U, 0U, 0U, 0U, 0U, 0U, 0U, &probe);
+    if (status != 0 || probe.width < 800U || probe.height < 600U) {
         (void)x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
             0x51000000U | ((uint32_t)(-status) & 0x0000FFFFU));
-        return status;
+        return status != 0 ? status : -84;
     }
-    if ((driver->capabilities & REIST_SVGA2D_CAP_RECT_COPY) != 0U) {
-        reist_svga2d_message_t self_test;
-        bytes_zero(&self_test, sizeof(self_test));
-        self_test.operation = REIST_SVGA2D_RECT_COPY;
-        self_test.width = 1U;
-        self_test.height = 1U;
-        status = submit_2d(driver, &self_test);
-        if (status != 0) {
-            (void)x86os_device_driver_report(
-                &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
-                0x52000000U | ((uint32_t)(-status) & 0x0000FFFFU));
-            return status;
-        }
-    }
-    status = deactivate(driver);
-    if (status != 0) {
-        (void)x86os_device_driver_report(
-            &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_DIAGNOSTIC,
-            0x53000000U | ((uint32_t)(-status) & 0x0000FFFFU));
-        return status;
-    }
+    driver->capabilities = probe.capabilities &
+        (REIST_SVGA2D_CAP_RECT_FILL | REIST_SVGA2D_CAP_RECT_COPY);
+    driver->width = probe.width;
+    driver->height = probe.height;
     if (x86os_device_driver_report(
             &driver->bootstrap, X86OS_DEVICE_DRIVER_REPORT_SELF_TEST, 1U) != 0 ||
         x86os_device_driver_report(

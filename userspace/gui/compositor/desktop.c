@@ -47,13 +47,13 @@
 #define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 262144U
 #define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode.psf"
-#define DESKTOP_SPLASH_PATH "/usr/share/images/reist-splash.bmp"
 #define DESKTOP_SPLASH_WIDTH 512U
 #define DESKTOP_SPLASH_HEIGHT 288U
-#define DESKTOP_SPLASH_ENCODED_CAPACITY (512U * 1024U)
-#define DESKTOP_SPLASH_PIXEL_OFFSET DESKTOP_SPLASH_ENCODED_CAPACITY
-#define DESKTOP_SPLASH_PIXEL_CAPACITY \
-    (DESKTOP_SPLASH_WIDTH * DESKTOP_SPLASH_HEIGHT)
+#define DESKTOP_SPLASH_BMP_HEADER_SIZE 54U
+#define DESKTOP_SPLASH_BYTES_PER_PIXEL 3U
+#define DESKTOP_SPLASH_STRIP_ROWS 36U
+#define DESKTOP_SPLASH_STRIP_PIXELS \
+    (DESKTOP_SPLASH_WIDTH * DESKTOP_SPLASH_STRIP_ROWS)
 #define DESKTOP_SPLASH_BACKGROUND 0x00040A18U
 #define DESKTOP_SPLASH_FOREGROUND 0x00E8FAFFU
 #define DESKTOP_CLOCK_TEXT_CAPACITY 17U
@@ -512,7 +512,6 @@ static uint32_t desktop_file_icon_decoded[DESKTOP_FILE_ICON_PIXELS];
 static reist_gui_font_t desktop_font;
 typedef union desktop_startup_workspace {
     reist_gui_font_mapping_t font_mappings[DESKTOP_FONT_MAPPING_CAPACITY];
-    reist_image_workspace_t splash_decode;
 } desktop_startup_workspace_t;
 typedef union desktop_font_file_storage {
     uint8_t bytes[DESKTOP_FONT_FILE_CAPACITY];
@@ -520,6 +519,9 @@ typedef union desktop_font_file_storage {
 } desktop_font_file_storage_t;
 static desktop_startup_workspace_t desktop_startup_workspace;
 static desktop_font_file_storage_t desktop_font_file;
+static uint32_t desktop_splash_strip[DESKTOP_SPLASH_STRIP_PIXELS];
+extern const uint8_t reist_desktop_splash_bmp[];
+extern const uint32_t reist_desktop_splash_bmp_size;
 static uint32_t desktop_font_pixels[
     REIST_GUI_FONT_MAX_WIDTH * REIST_GUI_FONT_MAX_HEIGHT];
 static uint32_t desktop_font_ready;
@@ -544,16 +546,8 @@ _Static_assert(sizeof(desktop_file_icon_paths) /
                    sizeof(desktop_file_icon_paths[0]) ==
                    DESKTOP_EXPLORER_ICON_COUNT,
                "file icon path table is incomplete");
-_Static_assert(DESKTOP_SPLASH_PIXEL_OFFSET % sizeof(uint32_t) == 0U,
-               "splash pixel storage must remain aligned");
-_Static_assert(DESKTOP_SPLASH_PIXEL_OFFSET +
-                   DESKTOP_SPLASH_PIXEL_CAPACITY * sizeof(uint32_t) <=
-                   DESKTOP_FONT_FILE_CAPACITY,
-               "splash buffers exceed shared font-file storage");
-_Static_assert(DESKTOP_FONT_MAPPING_CAPACITY *
-                   sizeof(reist_gui_font_mapping_t) >=
-                   sizeof(reist_image_workspace_t),
-               "font mapping storage is too small for splash decoding");
+_Static_assert(DESKTOP_SPLASH_HEIGHT % DESKTOP_SPLASH_STRIP_ROWS == 0U,
+               "splash strips must cover the image exactly");
 
 typedef struct {
     const x86os_display_info_t *display;
@@ -791,9 +785,11 @@ static void desktop_splash_show(const x86os_display_info_t *display) {
     static const char loading[] = "System wird geladen ...";
     if (display == 0) return;
 
-    /* Publish a useful fallback before touching the filesystem.  The image
-     * path is optional and must never turn desktop startup into a blank or
-     * failed screen. */
+    /* Publish a useful fallback first. The real splash is linked into this
+     * process so desktop startup never waits for the storage service. */
+    uint32_t fallback_serial = 0U;
+    uint32_t fallback_frame =
+        x86os_display_frame_begin(&fallback_serial) == 0 ? 1U : 0U;
     (void)x86os_fill_rect(
         0, 0, display->width, display->height, DESKTOP_SPLASH_BACKGROUND);
     int32_t fallback_y = (int32_t)((display->height - display->font_height) /
@@ -802,45 +798,57 @@ static void desktop_splash_show(const x86os_display_info_t *display) {
         desktop_splash_center_x(display, sizeof(title) - 1U), fallback_y,
         title, sizeof(title) - 1U,
         DESKTOP_SPLASH_FOREGROUND, DESKTOP_SPLASH_BACKGROUND);
-
-    size_t encoded_size = 0U;
-    int status = read_file_bounded(
-        DESKTOP_SPLASH_PATH, desktop_font_file.bytes,
-        DESKTOP_SPLASH_ENCODED_CAPACITY, &encoded_size);
-    uint32_t *pixels = (uint32_t *)(void *)(
-        desktop_font_file.bytes + DESKTOP_SPLASH_PIXEL_OFFSET);
-    reist_image_info_t info = {0};
-    if (status == 0)
-        status = reist_image_decode(
-            desktop_font_file.bytes, encoded_size, pixels,
-            DESKTOP_SPLASH_PIXEL_CAPACITY,
-            &desktop_startup_workspace.splash_decode, &info);
+    if (fallback_frame != 0U &&
+        x86os_display_frame_commit(fallback_serial) != 0)
+        (void)x86os_display_frame_cancel(fallback_serial);
 
     uint32_t text_gap = display->font_height + 12U;
     uint32_t group_height = DESKTOP_SPLASH_HEIGHT + text_gap +
                             display->font_height * 2U;
-    if (status != 0 || info.width != DESKTOP_SPLASH_WIDTH ||
-        info.height != DESKTOP_SPLASH_HEIGHT ||
-        info.stride_pixels != DESKTOP_SPLASH_WIDTH ||
-        info.format != REIST_IMAGE_FORMAT_BMP || info.flags != 0U ||
+    uint32_t expected_size = DESKTOP_SPLASH_BMP_HEADER_SIZE +
+        DESKTOP_SPLASH_WIDTH * DESKTOP_SPLASH_HEIGHT *
+        DESKTOP_SPLASH_BYTES_PER_PIXEL;
+    if (reist_desktop_splash_bmp_size != expected_size ||
+        reist_desktop_splash_bmp[0] != 'B' ||
+        reist_desktop_splash_bmp[1] != 'M' ||
         display->width < DESKTOP_SPLASH_WIDTH ||
         display->height < group_height) {
-        x86os_puts("DESKTOP_SPLASH_FALLBACK status=");
-        x86os_print_number(status != 0 ? status : -84);
-        x86os_putchar('\n');
+        x86os_puts("DESKTOP_SPLASH_FALLBACK status=-84\n");
         return;
     }
 
     int32_t image_x = (int32_t)((display->width - DESKTOP_SPLASH_WIDTH) / 2U);
     int32_t image_y = (int32_t)((display->height - group_height) / 2U);
-    status = x86os_draw_pixels(
-        image_x, image_y, DESKTOP_SPLASH_WIDTH, DESKTOP_SPLASH_HEIGHT,
-        pixels, DESKTOP_SPLASH_WIDTH);
-    if (status != 0) {
-        x86os_puts("DESKTOP_SPLASH_FALLBACK status=");
-        x86os_print_number(status);
-        x86os_putchar('\n');
-        return;
+    (void)x86os_fill_rect(
+        0, 0, display->width, display->height, DESKTOP_SPLASH_BACKGROUND);
+    for (uint32_t strip_y = 0U; strip_y < DESKTOP_SPLASH_HEIGHT;
+         strip_y += DESKTOP_SPLASH_STRIP_ROWS) {
+        for (uint32_t row = 0U; row < DESKTOP_SPLASH_STRIP_ROWS; ++row) {
+            uint32_t source_y = DESKTOP_SPLASH_HEIGHT - 1U - strip_y - row;
+            const uint8_t *source = reist_desktop_splash_bmp +
+                DESKTOP_SPLASH_BMP_HEADER_SIZE +
+                source_y * DESKTOP_SPLASH_WIDTH *
+                    DESKTOP_SPLASH_BYTES_PER_PIXEL;
+            uint32_t *target = desktop_splash_strip +
+                row * DESKTOP_SPLASH_WIDTH;
+            for (uint32_t column = 0U; column < DESKTOP_SPLASH_WIDTH;
+                 ++column) {
+                uint32_t blue = source[column * 3U];
+                uint32_t green = source[column * 3U + 1U];
+                uint32_t red = source[column * 3U + 2U];
+                target[column] = (red << 16U) | (green << 8U) | blue;
+            }
+        }
+        int status = x86os_draw_pixels(
+            image_x, image_y + (int32_t)strip_y,
+            DESKTOP_SPLASH_WIDTH, DESKTOP_SPLASH_STRIP_ROWS,
+            desktop_splash_strip, DESKTOP_SPLASH_WIDTH);
+        if (status != 0) {
+            x86os_puts("DESKTOP_SPLASH_FALLBACK status=");
+            x86os_print_number(status);
+            x86os_putchar('\n');
+            return;
+        }
     }
     int32_t title_y = image_y + (int32_t)DESKTOP_SPLASH_HEIGHT + 12;
     (void)x86os_draw_text_pixels(
@@ -4888,6 +4896,16 @@ int main(int argc, char **argv) {
                 0, 0, malformed, sizeof(malformed) - 1U,
                 0x00FFFFFFU, 0x00000000U)
             : probe_activate_status;
+        int acceleration_copy_status = 0;
+        if (probe_activate_status == 0 &&
+            (desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) != 0U) {
+            /* Exercise the negotiated command path without depending on a
+             * synthetic drag gesture.  A one-pixel copy is bounded, visible
+             * only for this disposable probe frame, and proves FIFO command
+             * submission before the driver is deactivated. */
+            acceleration_copy_status = desktop_svga2d_rect_copy(
+                0U, 0U, 1U, 1U, 1U, 1U);
+        }
         desktop_explorer_initialize(&explorer);
         int explorer_status = desktop_explorer_open(&explorer, 0U, "/");
         uint32_t explorer_htdocs = 0U;
@@ -4906,6 +4924,7 @@ int main(int argc, char **argv) {
             fallback_glyph != desktop_font.fallback_glyph ||
             malformed_status != -22 || explorer_status != 0 ||
             explorer.windows[0].active == 0U || explorer_htdocs == 0U ||
+            acceleration_copy_status != 0 ||
             deactivate_status != 0) {
             x86os_puts("DESKTOP_UNICODE_FAIL valid=");
             x86os_print_number(valid_status);
@@ -4921,6 +4940,8 @@ int main(int argc, char **argv) {
             x86os_print_number(explorer_status);
             x86os_puts(" activate=");
             x86os_print_number(probe_activate_status);
+            x86os_puts(" copy=");
+            x86os_print_number(acceleration_copy_status);
             x86os_puts(" deactivate=");
             x86os_print_number(deactivate_status);
             x86os_putchar('\n');

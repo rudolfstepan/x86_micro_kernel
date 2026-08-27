@@ -22,9 +22,15 @@ static uint32_t ipc_lock(void) { return 0U; }
 static void ipc_unlock(uint32_t flags) { (void)flags; }
 #else
 #include "arch/x86/include/interrupt.h"
+#include "include/lib/spinlock.h"
 #include "lib/libc/string.h"
-static uint32_t ipc_lock(void) { return irq_save(); }
-static void ipc_unlock(uint32_t flags) { irq_restore(flags); }
+static spinlock_t ipc_state_lock = SPINLOCK_INIT;
+static uint32_t ipc_lock(void) {
+    return spinlock_acquire_irq(&ipc_state_lock);
+}
+static void ipc_unlock(uint32_t flags) {
+    spinlock_release_irq(&ipc_state_lock, flags);
+}
 #endif
 
 #define IPC_MAX_CAPABILITY_RECORDS 64U
@@ -746,10 +752,17 @@ int ipc_send_timeout(Process *sender, ipc_handle_t handle,
         if (counterpart > 0)
             (void)scheduler_set_wait_owner_locked(owner_pid,
                                                   owner_generation);
+#ifdef REIST_HOST_TEST
         result = wait_queue_block_until_locked(&endpoint->send_waiters,
                                                TASK_BLOCK_WAITING, deadline);
         scheduler_clear_wait_owner_locked();
         ipc_unlock(flags);
+#else
+        result = wait_queue_block_until_spinlocked(
+            &endpoint->send_waiters, TASK_BLOCK_WAITING, deadline,
+            &ipc_state_lock, flags);
+        scheduler_clear_wait_owner_locked();
+#endif
         if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
         if (result != 0) return IPC_EAGAIN;
     }
@@ -997,10 +1010,17 @@ int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,
         if (counterpart > 0)
             (void)scheduler_set_wait_owner_locked(owner_pid,
                                                   owner_generation);
+#ifdef REIST_HOST_TEST
         result = wait_queue_block_until_locked(&endpoint->receive_waiters,
                                                TASK_BLOCK_WAITING, deadline);
         scheduler_clear_wait_owner_locked();
         ipc_unlock(flags);
+#else
+        result = wait_queue_block_until_spinlocked(
+            &endpoint->receive_waiters, TASK_BLOCK_WAITING, deadline,
+            &ipc_state_lock, flags);
+        scheduler_clear_wait_owner_locked();
+#endif
         if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
         if (result != 0) return IPC_EAGAIN;
     }

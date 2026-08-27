@@ -55,32 +55,28 @@ class VfsSynchronizationContractTests(unittest.TestCase):
             "vfs_get_relative_path_locked(",
     }
 
-    def test_guard_rejects_irq_and_if0_before_disabling_preemption(self) -> None:
-        begin = function_block("static void vfs_operation_begin(")
+    def test_guard_uses_deadline_bounded_sleepable_mutex(self) -> None:
+        begin = function_block("static bool vfs_operation_begin(")
         not_irq = begin.index("KASSERT_NOT_IRQ();")
-        interrupts_enabled = begin.index("KASSERT(irq_enabled());")
-        disable = begin.index("scheduler_preempt_disable();")
-        self.assertLess(not_irq, interrupts_enabled)
-        self.assertLess(interrupts_enabled, disable)
+        can_sleep = begin.index("KASSERT_CAN_SLEEP();")
+        acquire = begin.index("kernel_mutex_lock_for(")
+        self.assertLess(not_irq, can_sleep)
+        self.assertLess(can_sleep, acquire)
+        self.assertIn("VFS_OPERATION_LOCK_TIMEOUT_MS", begin)
 
         end = function_block("static void vfs_operation_end(")
         self.assertIn("KASSERT_NOT_IRQ();", end)
-        self.assertIn("KASSERT(irq_enabled());", end)
-        self.assertIn("KASSERT(scheduler_preempt_is_disabled());", end)
-        self.assertLess(
-            end.index("KASSERT(scheduler_preempt_is_disabled());"),
-            end.index("scheduler_preempt_enable();"),
-        )
+        self.assertIn("kernel_mutex_unlock(&vfs_operation_mutex);", end)
 
     def test_every_public_entry_uses_one_balanced_guard(self) -> None:
         for signature, locked_call in self.WRAPPERS.items():
             with self.subTest(function=signature):
                 block = function_block(signature)
-                self.assertEqual(block.count("vfs_operation_begin();"), 1)
+                self.assertEqual(block.count("vfs_operation_begin()"), 1)
                 self.assertEqual(block.count("vfs_operation_end();"), 1)
                 self.assertEqual(block.count(locked_call), 1)
                 self.assertLess(
-                    block.index("vfs_operation_begin();"),
+                    block.index("vfs_operation_begin()"),
                     block.index(locked_call),
                 )
                 self.assertLess(
@@ -106,28 +102,25 @@ class VfsSynchronizationContractTests(unittest.TestCase):
                 self.assertNotRegex(block, r"\bvfs_get_filesystem\s*\(")
                 self.assertNotRegex(block, r"\bvfs_get_relative_path\s*\(")
 
-    def test_guarded_vfs_has_no_block_or_context_switch_call(self) -> None:
+    def test_guarded_vfs_has_no_direct_context_switch_call(self) -> None:
         forbidden = re.compile(
-            r"\b(?:scheduler_sleep_ms|scheduler_yield|"
-            r"wait_queue_block_locked|swtch)\s*\("
+            r"\b(?:scheduler_sleep_ms|scheduler_yield|swtch)\s*\("
         )
         self.assertNotRegex(VFS_C, forbidden)
 
     def test_header_publishes_the_nonblocking_execution_contract(self) -> None:
         contract = re.search(
-            r"Execution contract \(uniprocessor\):(?P<body>.*?)\*/",
+            r"Execution contract \(SMP\):(?P<body>.*?)\*/",
             VFS_H,
             flags=re.DOTALL,
         )
         self.assertIsNotNone(contract)
         body = contract.group("body").lower()
         for term in (
-            "interrupts enabled",
-            "preemption guard",
-            "sleep",
-            "yield",
-            "block",
-            "switch context",
+            "sleepable",
+            "recursive",
+            "deadline-bounded",
+            "vfs_err_busy",
         ):
             with self.subTest(term=term):
                 self.assertIn(term, body)

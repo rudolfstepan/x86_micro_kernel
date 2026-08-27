@@ -16,8 +16,10 @@
 #include "lib/libc/stdlib.h"
 #include "drivers/block/fdd.h"
 #include "drivers/bus/pci.h"
+#include "arch/x86/include/cpu_local.h"
 #include "include/kernel/panic.h"
 #include "include/kernel/storage_safety.h"
+#include "kernel/sched/mutex.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"  // For pit_delay() in kernel context
 #include <stddef.h>
@@ -317,20 +319,32 @@ static ata_undo_journal_t ata_journal;
 static bool ata_journal_read_view(unsigned short base, uint32_t lba,
                                   void *buffer, bool is_master);
 
-/* ATA PIO is synchronous and uses controller-global task-file registers.  On
- * this single-core kernel a nestable preemption guard serializes complete
- * transactions while leaving hardware interrupts enabled. */
-static void ata_transaction_begin(void) {
+/* ATA PIO uses controller-global task-file registers. A recursive sleepable
+ * mutex serializes complete transactions without pinning another CPU in a
+ * spin loop; public entry points fail closed when its deadline expires. */
+#define ATA_TRANSACTION_LOCK_TIMEOUT_MS 10000U
+static kernel_mutex_t ata_transaction_mutex = KERNEL_MUTEX_INIT;
+
+static bool ata_transaction_begin(void) {
+    if (irq_in_context()) {
+        x86_cpu_local_t *local = x86_cpu_local_current();
+        panic_context_set_result(
+            -35, local != NULL ? local->cpu_index : UINT32_MAX,
+            local != NULL
+                ? (local->irq_context_depth << 16U) |
+                      (irq_context_vector() & 0xFFFFU)
+                : x86_cpu_initial_apic_id());
+    }
     KASSERT_NOT_IRQ();
-    KASSERT(irq_enabled());
-    scheduler_preempt_disable();
+    if (kernel_mutex_lock_for(&ata_transaction_mutex,
+                              ATA_TRANSACTION_LOCK_TIMEOUT_MS) != 0)
+        return false;
+    return true;
 }
 
 static void ata_transaction_end(void) {
     KASSERT_NOT_IRQ();
-    KASSERT(irq_enabled());
-    KASSERT(scheduler_preempt_is_disabled());
-    scheduler_preempt_enable();
+    kernel_mutex_unlock(&ata_transaction_mutex);
 }
 
 static void ata_selection_delay(uint16_t base) {
@@ -751,7 +765,7 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
             }
             return true;
         }
-        ata_transaction_begin();
+        if (!ata_transaction_begin()) return false;
         bool result = ata_read_sectors_pio_impl(parent->base, absolute,
             count, buffer, parent->is_master);
         ata_transaction_end();
@@ -769,7 +783,7 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
         }
         return true;
     }
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     bool result = ata_read_sectors_pio_impl(base, lba, count, buffer,
                                             is_master);
     ata_transaction_end();
@@ -794,7 +808,7 @@ bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
         if (ahci_drive != NULL)
             return ata_journal_read_view(base, lba, buffer, is_master);
     }
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     bool result = ata_journal_read_view(base, lba, buffer, is_master);
     ata_transaction_end();
     return result;
@@ -809,7 +823,7 @@ bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
         if (parent == NULL) return false;
         if (parent->type == DRIVE_TYPE_AHCI)
             return ahci_read_sector(parent, absolute, buffer);
-        ata_transaction_begin();
+        if (!ata_transaction_begin()) return false;
         ata_cache_entry_t *cached = ata_cache_slot(parent->base, absolute,
                                                     parent->is_master);
         cached->valid = false;
@@ -820,7 +834,7 @@ bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void *buffer,
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_read_sector(ahci_drive, lba, buffer);
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
     if (buffer == NULL ||
@@ -1037,7 +1051,7 @@ static bool ata_journal_attach_impl(unsigned short base, bool is_master,
                                     uint32_t partition_lba,
                                     uint32_t volume_sectors,
                                     uint16_t reserved_sectors) {
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     ata_journal_ensure_initialized();
     bool result = ata_undo_journal_attach(&ata_journal, base, is_master,
         partition_lba, volume_sectors, reserved_sectors);
@@ -1144,7 +1158,7 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
             return result;
         }
     }
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     int resource = ata_resource_index(base, is_master);
     bool armed = !ata_write_fenced && resource >= 0 &&
         storage_write_begin((uint32_t)resource, pit_monotonic_ms());
@@ -1199,7 +1213,7 @@ bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
         if (armed && !storage_write_end(result)) result = false;
         return result;
     }
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
     bool valid = buffer != NULL && ata_pio_range_valid(drive, lba, count);
@@ -1234,7 +1248,7 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
         (void)absolute;
         if (parent == NULL) return false;
         if (parent->type == DRIVE_TYPE_AHCI) return ahci_flush(parent);
-        ata_transaction_begin();
+        if (!ata_transaction_begin()) return false;
         int resource = ata_resource_index(parent->base, parent->is_master);
         bool armed = !ata_write_fenced && resource >= 0 &&
             storage_write_begin((uint32_t)resource, pit_monotonic_ms());
@@ -1256,7 +1270,7 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
     }
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     if (ahci_drive != NULL) return ahci_flush(ahci_drive);
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     int resource = ata_resource_index(base, is_master);
     bool armed = !ata_write_fenced && resource >= 0 &&
         storage_write_begin((uint32_t)resource, pit_monotonic_ms());
@@ -1278,21 +1292,30 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
 void ata_fence_writes(void) {
     ata_write_fenced = true;
     __asm__ volatile("" ::: "memory");
+    if (!ata_transaction_begin()) return;
+    ata_transaction_end();
 }
 
 void ata_restore_writes_after_recovery(void) {
+    if (!ata_transaction_begin()) return;
     ata_write_fenced = false;
     __asm__ volatile("" ::: "memory");
+    ata_transaction_end();
 }
 
 bool ata_writes_quiescent(void) {
-    if (!ata_write_fenced) return false;
+    if (!ata_transaction_begin()) return false;
+    bool result = ata_write_fenced;
     for (short i = 0; i < drive_count; ++i) {
         if (detected_drives[i].type != DRIVE_TYPE_ATA) continue;
         uint8_t status = inb(ATA_ALT_STATUS(detected_drives[i].base));
-        if ((status & (0x80U | 0x08U)) != 0U) return false;
+        if ((status & (0x80U | 0x08U)) != 0U) {
+            result = false;
+            break;
+        }
     }
-    return true;
+    ata_transaction_end();
+    return result;
 }
 
 drive_t* ata_get_drive(unsigned short drive_index) {
@@ -1407,7 +1430,7 @@ static void ata_detect_drives_impl(void) {
 }
 
 void ata_detect_drives(void) {
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return;
     ata_detect_drives_impl();
     ata_transaction_end();
 }
@@ -1496,7 +1519,7 @@ static bool ata_identify_drive_impl(uint16_t base, uint8_t drive,
 }
 
 bool ata_identify_drive(uint16_t base, uint8_t drive, drive_t *drive_info) {
-    ata_transaction_begin();
+    if (!ata_transaction_begin()) return false;
     bool result = ata_identify_drive_impl(base, drive, drive_info);
     ata_transaction_end();
     return result;

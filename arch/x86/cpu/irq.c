@@ -11,6 +11,9 @@
 #include "lib/libc/stdio.h"
 #include "kernel/sched/scheduler.h"
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/cpu_local.h"
+#include "arch/x86/include/smp.h"
+#include "arch/x86/mm/paging.h"
 #include "include/kernel/panic.h"
 
 extern char _kernel_start;
@@ -33,7 +36,9 @@ extern void irq12();
 extern void irq13();
 extern void irq14();
 extern void irq15();
+extern void smp_scheduler_release_interrupt(void);
 extern void apic_spurious_interrupt();
+extern void tlb_shootdown_interrupt();
 
 //extern void syscall_handler_asm();
 
@@ -41,20 +46,40 @@ extern void apic_spurious_interrupt();
 #define IRQ_ROUTINE_COUNT 16
 #define IRQ_HANDLERS_PER_LINE 4
 static void* irq_routines[IRQ_ROUTINE_COUNT][IRQ_HANDLERS_PER_LINE] = {{0}};
-static volatile uint32_t irq_context_depth;
-
+static volatile uint32_t irq_affinity[IRQ_ROUTINE_COUNT];
+static volatile uint32_t irq_affinity_violations;
+#define IRQ_BSP_AFFINITY_MASK 1U
+#define current_irq_context_depth \
+    (x86_cpu_local_current()->irq_context_depth)
 void irq_context_enter(void) {
-    KASSERT(irq_context_depth < UINT32_MAX);
-    ++irq_context_depth;
+    KASSERT(x86_cpu_local_current() != NULL);
+    KASSERT(current_irq_context_depth < UINT32_MAX);
+    ++current_irq_context_depth;
+}
+
+void irq_context_note_vector(uint32_t vector) {
+    x86_cpu_local_t *local = x86_cpu_local_current();
+    KASSERT(local != NULL);
+    KASSERT(local->irq_context_depth == 0U);
+    local->irq_context_vector = vector;
 }
 
 void irq_context_exit(void) {
-    KASSERT(irq_context_depth != 0);
-    --irq_context_depth;
+    KASSERT(x86_cpu_local_current() != NULL);
+    KASSERT(current_irq_context_depth != 0);
+    --current_irq_context_depth;
+    if (current_irq_context_depth == 0U)
+        x86_cpu_local_current()->irq_context_vector = 0U;
 }
 
 int irq_in_context(void) {
-    return irq_context_depth != 0;
+    if (x86_cpu_local_current() == NULL) return 1;
+    return current_irq_context_depth != 0;
+}
+
+uint32_t irq_context_vector(void) {
+    x86_cpu_local_t *local = x86_cpu_local_current();
+    return local != NULL ? local->irq_context_vector : UINT32_MAX;
 }
 
 // Function to install a custom IRQ handler
@@ -130,6 +155,29 @@ bool irq_pic_unmask_line(uint8_t irq) {
     return irq_pic_update_line(irq, false);
 }
 
+int irq_set_affinity(uint8_t irq, uint32_t cpu_mask) {
+    if (irq >= IRQ_ROUTINE_COUNT || cpu_mask != IRQ_BSP_AFFINITY_MASK)
+        return -95;
+    uint32_t flags = irq_save();
+    irq_affinity[irq] = cpu_mask;
+    __sync_synchronize();
+    irq_restore(flags);
+    return 0;
+}
+
+uint32_t irq_affinity_mask(uint8_t irq) {
+    if (irq >= IRQ_ROUTINE_COUNT) return 0U;
+    __sync_synchronize();
+    return irq_affinity[irq];
+}
+
+bool irq_affinity_bsp_only_ready(void) {
+    for (uint8_t irq = 0U; irq < IRQ_ROUTINE_COUNT; ++irq) {
+        if (irq_affinity_mask(irq) != IRQ_BSP_AFFINITY_MASK) return false;
+    }
+    return true;
+}
+
 // Remaps IRQs 0-15 to interrupt vectors 0x20-0x2F
 void irq_remap(void) {
     outb(0x20, 0x11); // Init command for PIC1
@@ -148,6 +196,10 @@ extern void syscall_handler_asm();
 
 // Installs all IRQs to the IDT
 void irq_install() {
+    for (uint8_t irq = 0U; irq < IRQ_ROUTINE_COUNT; ++irq)
+        irq_affinity[irq] = IRQ_BSP_AFFINITY_MASK;
+    irq_affinity_violations = 0U;
+    __sync_synchronize();
     irq_remap();
 
     set_idt_entry(0x20, (uint32_t)irq0);  // Timer Interrupt (PIT/APIC Timer)
@@ -170,6 +222,10 @@ void irq_install() {
     // DPL=3 permits INT 0x80 from user mode; the handler still executes in Ring 0.
     set_idt_entry_flags(0x80, (uint32_t)syscall_handler_asm, 0xEE);
     set_idt_entry(0xFF, (uint32_t)apic_spurious_interrupt);
+    set_idt_entry(X86_TLB_SHOOTDOWN_VECTOR,
+                  (uint32_t)tlb_shootdown_interrupt);
+    set_idt_entry(X86_SMP_SCHEDULER_RELEASE_VECTOR,
+                  (uint32_t)smp_scheduler_release_interrupt);
 }
 
 // General IRQ handler that checks for custom routines
@@ -178,14 +234,23 @@ void irq_handler(Registers* regs) {
         return;
     }
 
+    irq_context_note_vector(regs->irq_number);
     irq_context_enter();
     uint32_t irq = regs->irq_number - 32;
-    // Legacy PCI lines may be shared.  Every registered handler must inspect
-    // its device status and return when the interrupt does not belong to it.
-    for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
-        void (*handler)(Registers* r) =
-            (void (*)(Registers*))(irq_routines[irq][slot]);
-        if (handler != NULL) handler(regs);
+    uint32_t cpu = x86_cpu_current_index();
+    bool affinity_allowed = cpu < X86_CPU_LOCAL_MAX &&
+        (irq_affinity[irq] & (1U << cpu)) != 0U;
+    if (!affinity_allowed) {
+        ++irq_affinity_violations;
+        (void)irq_pic_mask_line((uint8_t)irq);
+    } else {
+        // Legacy PCI lines may be shared. Every registered handler must
+        // inspect its device status and ignore unrelated interrupts.
+        for (int slot = 0; slot < IRQ_HANDLERS_PER_LINE; ++slot) {
+            void (*handler)(Registers* r) =
+                (void (*)(Registers*))(irq_routines[irq][slot]);
+            if (handler != NULL) handler(regs);
+        }
     }
 
     // Send End of Interrupt (EOI) to the PICs if necessary
@@ -197,5 +262,5 @@ void irq_handler(Registers* regs) {
     /* A context switch must happen only after the PIC has acknowledged IRQ0;
      * otherwise the parked interrupt frame leaves the timer in-service. */
     irq_context_exit();
-    if (irq == 0) scheduler_pit_interrupt_handler();
+    if (affinity_allowed && irq == 0) scheduler_pit_interrupt_handler();
 }

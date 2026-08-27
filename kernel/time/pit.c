@@ -14,6 +14,7 @@
 #include "kernel/sched/scheduler.h"
 #include "include/kernel/watchdog.h"
 #include "include/kernel/supervisor.h"
+#include "include/kernel/panic.h"
 #include "lib/libc/stdio.h"
 
 
@@ -43,6 +44,8 @@
 #define PIT_COMMAND_BYTE (PIT_CMD_CHANNEL_0 | PIT_CMD_LOHI | PIT_CMD_MODE_3 | PIT_CMD_BINARY)
 
 static volatile uint64_t timer_tick_count;
+static volatile uint32_t timer_tick_sequence;
+#define PIT_MONOTONIC_READ_RETRY_LIMIT (1U << 20U)
 static uint32_t pit_divisor = PIT_FREQUENCY / 1000U;
 static uint32_t pit_millisecond_fraction;
 
@@ -51,25 +54,50 @@ uint32_t pit_ticks(void) {
 }
 
 uint64_t pit_monotonic_ms(void) {
-    /* A 64-bit load is not atomic on i386.  IRQ0 is the sole writer, so
-     * excluding it gives readers a coherent value without a global lock. */
+    /* A 64-bit load is not atomic on i386, and disabling only the local IRQ
+     * does not stop the BSP writer when an AP reads.  The single IRQ0 writer
+     * brackets its two-word update with an odd/even sequence. */
     uint32_t flags = irq_save();
-    uint64_t ticks = timer_tick_count;
+    for (uint32_t retry = 0U;
+         retry < PIT_MONOTONIC_READ_RETRY_LIMIT; ++retry) {
+        uint32_t before = timer_tick_sequence;
+        if ((before & 1U) != 0U) {
+            __asm__ __volatile__("pause");
+            continue;
+        }
+        __sync_synchronize();
+        uint64_t ticks = timer_tick_count;
+        __sync_synchronize();
+        uint32_t after = timer_tick_sequence;
+        if (before == after && (after & 1U) == 0U) {
+            irq_restore(flags);
+            return ticks;
+        }
+    }
     irq_restore(flags);
-    return ticks;
+    panic_context_set("time", "PIT monotonic clock", "read",
+                      "SMP sequence retry");
+    panic_context_set_result(-110, timer_tick_sequence,
+                             PIT_MONOTONIC_READ_RETRY_LIMIT);
+    panic("PIT monotonic clock read timed out");
 }
 
 void timer_irq_handler(void* r) {
     /* Accumulate the real programmed PIT interval instead of assuming that
      * the rounded integer divisor is exactly 1 kHz.  With divisor 1193 this
      * removes the former ~13-second-per-day drift. */
+    ++timer_tick_sequence;
+    __sync_synchronize();
     pit_millisecond_fraction += pit_divisor * 1000U;
     timer_tick_count += pit_millisecond_fraction / PIT_FREQUENCY;
     pit_millisecond_fraction %= PIT_FREQUENCY;
-    scheduler_wake_expired_sleepers_locked(timer_tick_count);
-    scheduler_wake_expired_waiters_locked(timer_tick_count);
-    watchdog_clock_tick(timer_tick_count);
-    supervisor_clock_tick(timer_tick_count);
+    __sync_synchronize();
+    ++timer_tick_sequence;
+    uint64_t now_ms = timer_tick_count;
+    scheduler_wake_expired_sleepers_locked(now_ms);
+    scheduler_wake_expired_waiters_locked(now_ms);
+    watchdog_clock_tick(now_ms);
+    supervisor_clock_tick(now_ms);
 }
 
 // Function to initialize the PIT with a given frequency

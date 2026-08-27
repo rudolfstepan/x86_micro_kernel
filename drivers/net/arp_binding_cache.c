@@ -15,6 +15,8 @@
 
 #ifndef REIST_HOST_TEST
 #include "arch/x86/include/interrupt.h"
+#include "include/lib/spinlock.h"
+static spinlock_t arp_cache_lock = SPINLOCK_INIT;
 #endif
 
 #define SUPERVISED_ARP_OBJECT_VERSION 1U
@@ -43,7 +45,7 @@ static uint32_t cache_lock(void) {
 #ifdef REIST_HOST_TEST
     return 0U;
 #else
-    return irq_save();
+    return spinlock_acquire_irq(&arp_cache_lock);
 #endif
 }
 
@@ -51,7 +53,7 @@ static void cache_unlock(uint32_t flags) {
 #ifdef REIST_HOST_TEST
     (void)flags;
 #else
-    irq_restore(flags);
+    spinlock_release_irq(&arp_cache_lock, flags);
 #endif
 }
 

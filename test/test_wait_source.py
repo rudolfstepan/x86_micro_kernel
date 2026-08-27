@@ -45,9 +45,9 @@ class WaitWakeupSourceRegressionTests(unittest.TestCase):
 
     def test_status_check_and_queue_registration_are_atomic(self):
         wait = self.wait_function
-        irq_save = wait.index("uint32_t flags = irq_save();")
+        irq_save = wait.index("uint32_t flags = process_table_lock_irqsave();")
         status_check = wait.index("process_wait_status_locked(")
-        wait_registration = wait.index("wait_queue_block_locked(")
+        wait_registration = wait.index("wait_queue_block_until_spinlocked(")
 
         self.assertLess(irq_save, status_check)
         self.assertLess(status_check, wait_registration)
@@ -57,14 +57,15 @@ class WaitWakeupSourceRegressionTests(unittest.TestCase):
         # must reach queue insertion with the original lock held.
         critical_path = wait[status_check:wait_registration]
         for condition in (r"if\s*\(result\s*<\s*0\)",
-                          r"if\s*\(result\s*>\s*0\)"):
+                          r"if\s*\(result\s*>\s*0\)",
+                          r"if\s*\(wait_queue\s*==\s*NULL\)"):
             match = re.search(condition + r"\s*\{", critical_path)
             self.assertIsNotNone(match)
             branch = extract_block(
                 critical_path, critical_path.index("{", match.start())
             )
             critical_path = critical_path.replace(branch, "")
-        self.assertNotIn("irq_restore(", critical_path)
+        self.assertNotIn("process_table_unlock_irqrestore(", critical_path)
 
     def test_wait_blocks_on_the_child_owned_queue(self):
         wait = self.wait_function
@@ -78,7 +79,9 @@ class WaitWakeupSourceRegressionTests(unittest.TestCase):
         )
         self.assertIn("wait_queue == NULL", wait)
         self.assertIn(
-            "wait_queue_block_locked(wait_queue, TASK_BLOCK_WAITING)",
+            "wait_queue_block_until_spinlocked( wait_queue, "
+            "TASK_BLOCK_WAITING, UINT64_MAX, process_table_lock_ref(), "
+            "flags)",
             re.sub(r"\s+", " ", wait),
         )
 
@@ -87,6 +90,7 @@ class WaitWakeupSourceRegressionTests(unittest.TestCase):
             self.process, "int process_wait_status_locked("
         )
         self.assertNotIn("irq_save(", status)
+        self.assertIn("process_table_lock_is_owned()", status)
         self.assertIn("*wait_queue = &child->exit_waiters;", status)
         self.assertLess(
             status.index("*wait_queue = &child->exit_waiters;"),
@@ -98,7 +102,7 @@ class WaitWakeupSourceRegressionTests(unittest.TestCase):
         terminate = function_block(
             self.scheduler, "void scheduler_terminate_task("
         )
-        expected = "wait_queue_wake_all_locked("
+        expected = "wait_queue_wake_all_task_locked("
         self.assertIn(expected, exit_block)
         self.assertIn("exit_waiters", exit_block)
         self.assertIn(expected, terminate)

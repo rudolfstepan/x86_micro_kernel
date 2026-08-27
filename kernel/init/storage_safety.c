@@ -219,5 +219,6 @@ bool storage_writes_fenced(void) {
     storage_control_t state;
     bool logical = storage_force_fenced || storage_integrity_failed;
     if (storage_control_read(&state)) logical |= state.write_fenced != 0U;
-    return logical && ata_writes_quiescent() && fdd_writes_quiescent();
+    return logical && ata_writes_quiescent() && ahci_writes_quiescent() &&
+           fdd_writes_quiescent();
 }

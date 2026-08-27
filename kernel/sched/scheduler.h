@@ -18,6 +18,7 @@
 #include "kernel/sched/scheduling_policy.h"
 #include "kernel/sched/wait_queue.h"
 #include "arch/x86/mm/paging.h"
+#include "include/lib/spinlock.h"
 
 /* Fixed capacity keeps scheduler scans and stack storage bounded.  Thirty-two
  * slots leave room for supervised services, the shell, the desktop and its
@@ -31,6 +32,10 @@
 #define TASK_FINISHED 3
 #define TASK_WAITING 4
 #define TASK_REAPING 5
+#define TASK_HANDOFF 6
+#define TASK_PREPARED 7
+#define TASK_CPU_NONE (-1)
+#define TASK_CPU_MASK_BSP 1U
 
 #define STACK_SIZE (8U * 1024U)
 
@@ -78,6 +83,7 @@ typedef struct task {
     int is_started;         // Task started flag
     Process *process;       // Process associated with the task
     uint32_t process_generation;
+    uint32_t task_generation; /* Never-zero incarnation of this task slot. */
     page_directory_t *page_directory;
     uint32_t *reap_kernel_stack;
     page_directory_t *reap_page_directory;
@@ -91,6 +97,8 @@ typedef struct task {
     uint8_t effective_scheduling_class;
     uint8_t budget_remaining;
     int8_t blocked_owner_task;
+    volatile int32_t running_cpu;
+    uint32_t cpu_affinity_mask;
     uint32_t blocked_owner_generation;
 } task_t;
 
@@ -99,11 +107,9 @@ typedef enum {
     TASK_BLOCK_SLEEPING
 } task_block_kind_t;
 
-extern task_t tasks[];
-extern volatile int current_task;
-extern uint8_t num_tasks;
-
 int create_task(void (*entry_point)(void), uint32_t *stack, Process *process);
+int create_affined_kernel_task(void (*entry_point)(void), uint32_t *stack,
+                               uint32_t cpu_affinity_mask);
 int create_user_task(uint32_t entry_point, uint32_t user_stack,
                      uint32_t *kernel_stack, page_directory_t *page_directory,
                      Process *process);
@@ -111,6 +117,11 @@ int create_supervised_user_task(uint32_t entry_point, uint32_t user_stack,
                                 uint32_t *kernel_stack,
                                 page_directory_t *page_directory,
                                 Process *process);
+int create_prepared_supervised_user_task(
+    uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
+    page_directory_t *page_directory, Process *process);
+int scheduler_start_prepared_user_task_locked(
+    int task_id, const Process *owner, uint32_t process_generation);
 uint32_t* scheduler_allocate_kernel_stack(void);
 void scheduler_free_kernel_stack(uint32_t* stack);
 bool scheduler_kernel_stack_is_valid(const uint32_t* stack);
@@ -130,11 +141,25 @@ int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind);
 int wait_queue_block_until_locked(wait_queue_t *queue,
                                   task_block_kind_t kind,
                                   uint64_t deadline_ms);
+/**
+ * Atomically transfer from a held condition lock into a scheduler wait queue.
+ * Releases condition_lock and restores irq_flags on every return path.
+ */
+int wait_queue_block_until_spinlocked(wait_queue_t *queue,
+                                      task_block_kind_t kind,
+                                      uint64_t deadline_ms,
+                                      spinlock_t *condition_lock,
+                                      uint32_t irq_flags);
 bool wait_queue_wake_one_locked(wait_queue_t *queue);
 size_t wait_queue_wake_all_locked(wait_queue_t *queue);
 void wait_queue_cancel_locked(task_t *task);
 int scheduler_sleep_ms(uint32_t milliseconds);
 int scheduler_yield(void);
+int scheduler_current_task_id(void);
+bool scheduler_current_task_identity(int *task_id_out,
+                                     uint32_t *generation_out);
+int scheduler_task_state_snapshot(int task_id, const Process *owner,
+                                  uint32_t generation, int *state_out);
 void scheduler_wake_expired_sleepers_locked(uint64_t now_ms);
 void scheduler_wake_expired_waiters_locked(uint64_t now_ms);
 bool scheduler_set_wait_owner_locked(int pid, uint32_t generation);

@@ -94,7 +94,7 @@ static uint32_t vmware_capabilities;
 static uint32_t vmware_width;
 static uint32_t vmware_height;
 static bool vmware_rect_copy_reported;
-static spinlock_t vmware_fifo_lock;
+static spinlock_t vmware_fifo_lock = SPINLOCK_INIT;
 
 static void svga_write(uint16_t index_port, uint16_t value_port,
                        uint32_t index, uint32_t value);
@@ -845,7 +845,41 @@ int display_control_driver_command(display_driver_request_t *request) {
         return result;
     }
     int result = -22;
-    if (request->command == DISPLAY_DRIVER_ACTIVATE) {
+    bool non_destructive_probe =
+        request->command == DISPLAY_DRIVER_PROBE ||
+        request->command == DISPLAY_DRIVER_ENGINE_PREFLIGHT;
+    if (non_destructive_probe) {
+        pci_device_t *device = find_vmware_vga();
+        if (device == NULL || !vmware_prepared) {
+            result = -19;
+        } else {
+            uint32_t index_bar = device->bar[0];
+            uint16_t index_port = (uint16_t)(index_bar & 0xFFFCU);
+            uint16_t value_port = (uint16_t)(index_port + 1U);
+            uint32_t max_width = svga_read(
+                index_port, value_port, SVGA_REG_MAX_WIDTH);
+            uint32_t max_height = svga_read(
+                index_port, value_port, SVGA_REG_MAX_HEIGHT);
+            uint32_t fifo_size = svga_read(
+                index_port, value_port, SVGA_REG_MEM_SIZE);
+            uint32_t fifo_start = svga_read(
+                index_port, value_port, SVGA_REG_MEM_START);
+            if (fifo_start == 0U)
+                fifo_start = device->bar[2] & 0xFFFFFFF0U;
+            if (max_width < 800U || max_height < 600U ||
+                fifo_start == 0U || fifo_size < 4096U) {
+                result = -19;
+            } else {
+                request->width = max_width >= 1024U ? 1024U : 800U;
+                request->height = max_height >= 768U ? 768U : 600U;
+                request->capabilities = svga_read(
+                    index_port, value_port, SVGA_REG_CAPABILITIES) &
+                    (SVGA_CAP_RECT_FILL | SVGA_CAP_RECT_COPY);
+                request->busy = 0U;
+                result = 0;
+            }
+        }
+    } else if (request->command == DISPLAY_DRIVER_ACTIVATE) {
         pci_device_t *device = find_vmware_vga();
         result = active_backend == DISPLAY_BACKEND_VMWARE
             ? 0 : device != NULL ? activate_vmware(device) : -19;
@@ -909,9 +943,14 @@ int display_control_driver_command(display_driver_request_t *request) {
             }
         }
     }
-    request->capabilities = vmware_capabilities;
-    request->width = vmware_width;
-    request->height = vmware_height;
+    /* PROBE/PREFLIGHT intentionally run before a visible mode exists.  Keep
+     * their locally measured geometry/capabilities instead of replacing the
+     * response with the inactive runtime state. */
+    if (!non_destructive_probe) {
+        request->capabilities = vmware_capabilities;
+        request->width = vmware_width;
+        request->height = vmware_height;
+    }
     request->status = result;
     return result;
 }

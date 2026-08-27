@@ -102,7 +102,8 @@ class DesktopSmokeRunnerTests(unittest.TestCase):
         return path
 
     def run_smoke(self, mode: str, *, timeout: str = "3",
-                  image: Path | None = None) -> subprocess.CompletedProcess[str]:
+                  image: Path | None = None,
+                  smp: int = 1) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["FAKE_QEMU_MODE"] = mode
         environment["FAKE_QEMU_ARGS"] = str(self.arguments_file)
@@ -112,6 +113,7 @@ class DesktopSmokeRunnerTests(unittest.TestCase):
                 "--qemu", str(self.qemu),
                 "--image", str(image or self.image),
                 "--timeout", timeout,
+                "--smp", str(smp),
                 "--log", str(self.log_file),
             ],
             cwd=ROOT,
@@ -173,7 +175,16 @@ class DesktopSmokeRunnerTests(unittest.TestCase):
         self.assertIn("-serial", arguments)
         self.assertIn("stdio", arguments)
         self.assertIn("-snapshot", arguments)
+        self.assertIn("-smp", arguments)
+        self.assertIn("1", arguments)
         self.assertIn(f"file={self.image}", arguments)
+
+    def test_requested_smp_topology_is_forwarded_to_qemu(self) -> None:
+        result = self.run_smoke("success", smp=4)
+        self.assertEqual(result.returncode, 0, self.output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        self.assertIn("-smp", arguments)
+        self.assertIn("4", arguments)
 
     def test_missing_image_is_rejected_before_qemu_starts(self) -> None:
         result = self.run_smoke("success", image=self.directory / "missing.img")

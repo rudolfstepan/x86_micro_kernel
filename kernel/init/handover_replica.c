@@ -14,6 +14,8 @@
 
 #ifndef REIST_HOST_TEST
 #include "arch/x86/include/interrupt.h"
+#include "include/lib/spinlock.h"
+static spinlock_t replica_state_lock = SPINLOCK_INIT;
 #endif
 
 #define REPLICA_EINVAL (-22)
@@ -32,7 +34,7 @@ static uint32_t replica_lock(void) {
 #ifdef REIST_HOST_TEST
     return 0U;
 #else
-    return irq_save();
+    return spinlock_acquire_irq(&replica_state_lock);
 #endif
 }
 
@@ -40,7 +42,7 @@ static void replica_unlock(uint32_t flags) {
 #ifdef REIST_HOST_TEST
     (void)flags;
 #else
-    irq_restore(flags);
+    spinlock_release_irq(&replica_state_lock, flags);
 #endif
 }
 

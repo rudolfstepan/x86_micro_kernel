@@ -42,27 +42,38 @@ def assert_in_order(test: unittest.TestCase, body: str, *tokens: str) -> None:
 
 
 class BlockTransactionContractTests(unittest.TestCase):
-    def test_transaction_guards_require_task_context_and_enabled_irqs(self):
-        for source, prefix in ((ATA, "ata"), (FDD, "fdd")):
-            with self.subTest(driver=prefix, edge="begin"):
-                begin = function_body(source, f"{prefix}_transaction_begin")
-                assert_in_order(
-                    self,
-                    begin,
-                    "KASSERT_NOT_IRQ()",
-                    "KASSERT(irq_enabled())",
-                    "scheduler_preempt_disable()",
-                )
-            with self.subTest(driver=prefix, edge="end"):
-                end = function_body(source, f"{prefix}_transaction_end")
-                assert_in_order(
-                    self,
-                    end,
-                    "KASSERT_NOT_IRQ()",
-                    "KASSERT(irq_enabled())",
-                    "KASSERT(scheduler_preempt_is_disabled())",
-                    "scheduler_preempt_enable()",
-                )
+    def test_transaction_guards_reject_irq_context_before_locking(self):
+        ata_begin = function_body(ATA, "ata_transaction_begin")
+        assert_in_order(
+            self,
+            ata_begin,
+            "KASSERT_NOT_IRQ()",
+            "kernel_mutex_lock_for(",
+            "ATA_TRANSACTION_LOCK_TIMEOUT_MS",
+        )
+        ata_end = function_body(ATA, "ata_transaction_end")
+        assert_in_order(
+            self,
+            ata_end,
+            "KASSERT_NOT_IRQ()",
+            "kernel_mutex_unlock(&ata_transaction_mutex)",
+        )
+
+        fdd_begin = function_body(FDD, "fdd_transaction_begin")
+        assert_in_order(
+            self,
+            fdd_begin,
+            "KASSERT_NOT_IRQ()",
+            "kernel_mutex_lock_for(",
+            "FDD_TRANSACTION_LOCK_TIMEOUT_MS",
+        )
+        fdd_end = function_body(FDD, "fdd_transaction_end")
+        assert_in_order(
+            self,
+            fdd_end,
+            "KASSERT_NOT_IRQ()",
+            "kernel_mutex_unlock(&fdd_transaction_mutex)",
+        )
 
     def test_guards_keep_hardware_interrupts_enabled(self):
         forbidden = re.compile(r"\b(?:irq_save|irq_disable)\s*\(|\bcli\b")
@@ -72,7 +83,7 @@ class BlockTransactionContractTests(unittest.TestCase):
 
     def test_ata_public_transactions_pair_the_guard_on_every_return_path(self):
         wrappers = {
-            "ata_read_sector": "ata_read_sector_impl(",
+            "ata_read_sector": "ata_journal_read_view(",
             "ata_write_sector": "ata_write_sector_journaled(",
             "ata_detect_drives": "ata_detect_drives_impl(",
             "ata_identify_drive": "ata_identify_drive_impl(",
@@ -82,6 +93,7 @@ class BlockTransactionContractTests(unittest.TestCase):
                 body = function_body(ATA, name, public=True)
                 self.assertEqual(body.count("ata_transaction_begin()"), 1)
                 self.assertEqual(body.count("ata_transaction_end()"), 1)
+                self.assertIn("if (!ata_transaction_begin())", body)
                 assert_in_order(
                     self,
                     body,
@@ -107,6 +119,7 @@ class BlockTransactionContractTests(unittest.TestCase):
                 body = function_body(FDD, name, public=True)
                 self.assertEqual(body.count("fdd_transaction_begin()"), 1)
                 self.assertEqual(body.count("fdd_transaction_end()"), 1)
+                self.assertIn("if (!fdd_transaction_begin())", body)
                 assert_in_order(
                     self,
                     body,
@@ -128,6 +141,7 @@ class BlockTransactionContractTests(unittest.TestCase):
         ):
             self.assertEqual(body.count("fdd_transaction_begin()"), 1)
             self.assertEqual(body.count("fdd_transaction_end()"), 1)
+            self.assertIn("if (!fdd_transaction_begin())", body)
             assert_in_order(
                 self,
                 body,
@@ -146,6 +160,21 @@ class BlockTransactionContractTests(unittest.TestCase):
         irq = function_body(FDD, "fdd_irq_handler", public=True)
         self.assertIn("irq_triggered = true", irq)
         self.assertNotRegex(irq, r"transaction|scheduler_preempt|KASSERT")
+
+    def test_driver_fence_state_precedes_locked_hardware_quiescence(self):
+        for source, prefix in ((ATA, "ata"), (FDD, "fdd")):
+            fence = function_body(source, f"{prefix}_fence_writes")
+            assert_in_order(
+                self,
+                fence,
+                f"{prefix}_write_fenced = true",
+                f"if (!{prefix}_transaction_begin()) return",
+                f"{prefix}_transaction_end()",
+            )
+            quiescent = function_body(source, f"{prefix}_writes_quiescent")
+            self.assertIn(f"if (!{prefix}_transaction_begin()) return false",
+                          quiescent)
+            self.assertIn(f"{prefix}_transaction_end()", quiescent)
 
     def test_transactions_do_not_cross_scheduler_switch_apis(self):
         forbidden = re.compile(

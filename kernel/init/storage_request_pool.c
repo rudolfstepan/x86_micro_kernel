@@ -18,8 +18,14 @@ static uint32_t storage_pool_lock(void) { return 0U; }
 static void storage_pool_unlock(uint32_t flags) { (void)flags; }
 #else
 #include "arch/x86/include/interrupt.h"
-static uint32_t storage_pool_lock(void) { return irq_save(); }
-static void storage_pool_unlock(uint32_t flags) { irq_restore(flags); }
+#include "include/lib/spinlock.h"
+static spinlock_t storage_state_lock = SPINLOCK_INIT;
+static uint32_t storage_pool_lock(void) {
+    return spinlock_acquire_irq(&storage_state_lock);
+}
+static void storage_pool_unlock(uint32_t flags) {
+    spinlock_release_irq(&storage_state_lock, flags);
+}
 #endif
 
 #define STORAGE_POOL_METADATA_VERSION 1U

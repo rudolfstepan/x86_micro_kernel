@@ -82,7 +82,7 @@ def reserve_qmp_port() -> int:
         return int(listener.getsockname()[1])
 
 
-def qemu_command(qemu: Path, image: Path, memory: str,
+def qemu_command(qemu: Path, image: Path, memory: str, smp: int,
                  qmp_port: int | None = None) -> list[str]:
     command = [
         str(qemu),
@@ -90,6 +90,7 @@ def qemu_command(qemu: Path, image: Path, memory: str,
         "-machine", "pc",
         "-nodefaults",
         "-m", memory,
+        "-smp", str(smp),
         "-boot", "c",
         "-drive", f"file={image},format=raw,if=ide,index=0,media=disk",
         "-snapshot",
@@ -304,11 +305,11 @@ def qmp_screendump(port: int, screenshot: Path, deadline: float) -> str | None:
     return None
 
 
-def run(qemu: Path, image: Path, timeout: float, memory: str,
+def run(qemu: Path, image: Path, timeout: float, memory: str, smp: int,
         screenshot: Path | None = None) -> tuple[int, str, str | None]:
     qmp_port = reserve_qmp_port() if screenshot is not None else None
     process = subprocess.Popen(
-        qemu_command(qemu, image, memory, qmp_port),
+        qemu_command(qemu, image, memory, smp, qmp_port),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -368,6 +369,7 @@ def main() -> int:
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument("--memory", default="512M")
+    parser.add_argument("--smp", type=int, default=1)
     parser.add_argument("--log", type=Path)
     parser.add_argument(
         "--screenshot", type=Path,
@@ -385,6 +387,9 @@ def main() -> int:
                     flags=re.IGNORECASE) is None:
         print("desktop-smoke: memory must look like 64M or 1G", file=sys.stderr)
         return 2
+    if args.smp < 1 or args.smp > 16:
+        print("desktop-smoke: --smp must be in 1..16", file=sys.stderr)
+        return 2
 
     screenshot = args.screenshot.resolve() if args.screenshot else None
     if screenshot is not None:
@@ -393,7 +398,7 @@ def main() -> int:
     try:
         status, transcript, process_error = run(
             args.qemu, args.image.resolve(), args.timeout, args.memory,
-            screenshot,
+            args.smp, screenshot,
         )
     except OSError as error:
         print(f"desktop-smoke: unable to start QEMU: {error}", file=sys.stderr)

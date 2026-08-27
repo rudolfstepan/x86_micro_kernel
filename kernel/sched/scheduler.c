@@ -9,6 +9,7 @@
 #include "kernel/sched/scheduler.h"
 
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/tss.h"
 #include "arch/x86/mm/paging.h"
@@ -21,6 +22,7 @@
 #include "include/kernel/ipc.h"
 #include "include/kernel/device_domain.h"
 #include "include/kernel/storage_request_pool.h"
+#include "include/lib/spinlock.h"
 #include "drivers/video/framebuffer.h"
 #include "mm/kmalloc.h"
 
@@ -29,35 +31,89 @@ extern void enter_user_mode(uint32_t entry_point, uint32_t user_stack)
     __attribute__((noreturn));
 
 task_t tasks[MAX_TASKS];
-volatile int current_task = -1;
 uint8_t num_tasks = 0;
+static uint32_t next_task_generation;
 
-static context_t kernel_context;
-static bool kernel_context_saved = false;
-static volatile uint32_t preempt_disable_count;
-static volatile bool preemption_pending;
+static x86_cpu_local_t *scheduler_cpu_local(void) {
+    x86_cpu_local_t *local = x86_cpu_local_current();
+    KASSERT(local != NULL);
+    KASSERT(local->online != 0U);
+    return local;
+}
+
+#define current_task (scheduler_cpu_local()->scheduler_current_task)
+#define kernel_context \
+    (*(context_t *)(void *)scheduler_cpu_local()->scheduler_context)
+#define kernel_context_saved \
+    (scheduler_cpu_local()->scheduler_context_saved)
+#define preempt_disable_count \
+    (x86_cpu_local_current()->preempt_disable_count)
+#define preemption_pending \
+    (x86_cpu_local_current()->preemption_pending)
+#define handoff_task \
+    (scheduler_cpu_local()->scheduler_handoff_task)
+#define handoff_action \
+    (scheduler_cpu_local()->scheduler_handoff_action)
 static bool apic_timer_active;
+static spinlock_t task_table_lock = SPINLOCK_INIT;
+static spinlock_t runtime_timing_lock = SPINLOCK_INIT;
 static uint32_t pit_scheduler_ticks;
 static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
-static scheduler_window_t cpu_window;
-static int8_t scheduling_class_cursors[SCHEDULER_CLASS_COUNT] = {-1, -1, -1};
-static uint8_t scheduling_class_cycle_cursor;
+static scheduler_window_t cpu_windows[X86_CPU_LOCAL_MAX];
+static int8_t
+    scheduling_class_cursors[X86_CPU_LOCAL_MAX][SCHEDULER_CLASS_COUNT];
+static uint8_t scheduling_class_cycle_cursors[X86_CPU_LOCAL_MAX];
+static bool scheduler_cpu_policy_initialized[X86_CPU_LOCAL_MAX];
 static uint32_t peak_active_tasks;
 static uint32_t task_capacity_rejections;
 static runtime_timing_stats_t runtime_timing_stats;
 
 _Static_assert(MAX_TASKS <= SCHEDULER_POLICY_MAX_CANDIDATES,
                "scheduler policy candidate capacity is too small");
-_Static_assert(MAX_TASKS == KERNEL_STACK_SLOT_COUNT,
-               "scheduler and kernel-stack capacities differ");
+_Static_assert(KERNEL_STACK_SLOT_COUNT >=
+                   MAX_TASKS + X86_CPU_LOCAL_MAX - 1U,
+               "kernel-stack arena cannot preserve task capacity under SMP");
 _Static_assert(sizeof(scheduler_resource_stats_t) == 32U,
                "scheduler statistics ABI size changed");
 _Static_assert(sizeof(runtime_timing_stats_t) == 72U,
                "runtime timing statistics ABI size changed");
+_Static_assert(sizeof(context_t) ==
+                   X86_SCHEDULER_CONTEXT_WORDS * sizeof(uint32_t),
+               "per-CPU scheduler context layout changed");
 
 #define SCHEDULER_QUANTUM_MS 10U
 #define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
 #define KERNEL_STACK_WATERMARK_BYTE 0xA5U
+#define SCHEDULER_HANDOFF_NONE 0U
+#define SCHEDULER_HANDOFF_READY 1U
+#define SCHEDULER_HANDOFF_RELEASE 2U
+
+static uint32_t task_table_lock_irqsave(void) {
+    return spinlock_acquire_irq(&task_table_lock);
+}
+
+static void task_table_unlock_irqrestore(uint32_t flags) {
+    spinlock_release_irq(&task_table_lock, flags);
+}
+
+static void assert_task_table_locked(void) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(spinlock_is_owned_by_current(&task_table_lock));
+}
+
+static uint32_t scheduler_cpu_policy_index_locked(void) {
+    assert_task_table_locked();
+    uint32_t cpu = scheduler_cpu_local()->cpu_index;
+    KASSERT(cpu < X86_CPU_LOCAL_MAX);
+    if (!scheduler_cpu_policy_initialized[cpu]) {
+        for (uint32_t scheduling_class = 0U;
+             scheduling_class < SCHEDULER_CLASS_COUNT; ++scheduling_class)
+            scheduling_class_cursors[cpu][scheduling_class] = -1;
+        scheduling_class_cycle_cursors[cpu] = 0U;
+        scheduler_cpu_policy_initialized[cpu] = true;
+    }
+    return cpu;
+}
 
 static uint64_t saturating_increment_u64(uint64_t value) {
     return value == UINT64_MAX ? UINT64_MAX : value + 1U;
@@ -69,18 +125,18 @@ static uint64_t saturating_add_u64(uint64_t value, uint64_t increment) {
 
 static void runtime_timing_record(uint64_t start_cycles, bool scheduler) {
     uint64_t end_cycles = cpu_cycle_counter_read();
-    uint32_t flags = irq_save();
+    uint32_t flags = spinlock_acquire_irq(&runtime_timing_lock);
     /* Scheduler IRQs start before boot-time frequency calibration. Those
      * early intervals cannot be normalized and are deliberately not samples;
      * only a backwards calibrated counter is a persistent anomaly. */
     if (cpu_frequency == 0U) {
-        irq_restore(flags);
+        spinlock_release_irq(&runtime_timing_lock, flags);
         return;
     }
     if (end_cycles < start_cycles) {
         runtime_timing_stats.clock_anomalies = saturating_increment_u64(
             runtime_timing_stats.clock_anomalies);
-        irq_restore(flags);
+        spinlock_release_irq(&runtime_timing_lock, flags);
         return;
     }
     uint64_t elapsed = end_cycles - start_cycles;
@@ -96,7 +152,7 @@ static void runtime_timing_record(uint64_t start_cycles, bool scheduler) {
     *samples = saturating_increment_u64(*samples);
     *total = saturating_add_u64(*total, elapsed);
     if (elapsed > *maximum) *maximum = elapsed;
-    irq_restore(flags);
+    spinlock_release_irq(&runtime_timing_lock, flags);
 }
 
 uint64_t runtime_timing_begin(void) {
@@ -113,12 +169,12 @@ void runtime_timing_record_syscall(uint64_t start_cycles) {
 
 int scheduler_runtime_timing_stats(runtime_timing_stats_t *stats_out) {
     if (stats_out == NULL) return -22;
-    uint32_t flags = irq_save();
+    uint32_t flags = spinlock_acquire_irq(&runtime_timing_lock);
     *stats_out = runtime_timing_stats;
     stats_out->version = RUNTIME_TIMING_STATS_VERSION;
     stats_out->struct_size = sizeof(*stats_out);
     stats_out->cpu_frequency_hz = cpu_frequency;
-    irq_restore(flags);
+    spinlock_release_irq(&runtime_timing_lock, flags);
     return stats_out->cpu_frequency_hz == 0U ? -5 : 0;
 }
 
@@ -132,7 +188,7 @@ typedef struct {
     uintptr_t frames[STACK_SIZE / PAGE_SIZE];
 } kernel_stack_slot_t;
 
-static kernel_stack_slot_t kernel_stack_slots[MAX_TASKS];
+static kernel_stack_slot_t kernel_stack_slots[KERNEL_STACK_SLOT_COUNT];
 static uint32_t kernel_stack_high_water_peak;
 
 static uint32_t kernel_stack_watermark_bytes(const uint32_t *stack) {
@@ -162,12 +218,12 @@ static int kernel_stack_slot_for(const uint32_t *stack) {
     uintptr_t offset = address - KERNEL_STACK_ARENA_BASE - PAGE_SIZE;
     if ((offset % KERNEL_STACK_SLOT_SIZE) != 0) return -1;
     size_t slot = offset / KERNEL_STACK_SLOT_SIZE;
-    return slot < MAX_TASKS ? (int)slot : -1;
+    return slot < KERNEL_STACK_SLOT_COUNT ? (int)slot : -1;
 }
 
 uint32_t *scheduler_allocate_kernel_stack(void) {
     KASSERT_NOT_IRQ();
-    for (size_t slot = 0; slot < MAX_TASKS; ++slot) {
+    for (size_t slot = 0; slot < KERNEL_STACK_SLOT_COUNT; ++slot) {
         if (kernel_stack_slots[slot].allocated) continue;
         uint32_t stack_base = KERNEL_STACK_ARENA_BASE +
                               (uint32_t)slot * KERNEL_STACK_SLOT_SIZE +
@@ -197,9 +253,17 @@ uint32_t *scheduler_allocate_kernel_stack(void) {
     return NULL;
 }
 
-bool scheduler_kernel_stack_is_valid(const uint32_t *stack) {
+static bool scheduler_kernel_stack_metadata_is_valid(const uint32_t *stack) {
     int slot = kernel_stack_slot_for(stack);
     if (slot < 0 || !kernel_stack_slots[slot].allocated) return false;
+    for (size_t page = 0; page < STACK_SIZE / PAGE_SIZE; ++page) {
+        if (kernel_stack_slots[slot].frames[page] == 0U) return false;
+    }
+    return true;
+}
+
+bool scheduler_kernel_stack_is_valid(const uint32_t *stack) {
+    if (!scheduler_kernel_stack_metadata_is_valid(stack)) return false;
     uintptr_t base = (uintptr_t)stack;
     if (paging_kernel_page_present((uint32_t)(base - PAGE_SIZE)) ||
         paging_kernel_page_present((uint32_t)(base + STACK_SIZE))) {
@@ -250,7 +314,7 @@ static void validate_task_stack_or_panic(const task_t *task) {
     if (task == NULL || task->kernel_stack == NULL) return;
     uintptr_t low = (uintptr_t)task->kernel_stack;
     uintptr_t high = low + STACK_SIZE;
-    if (!scheduler_kernel_stack_is_valid(task->kernel_stack) ||
+    if (!scheduler_kernel_stack_metadata_is_valid(task->kernel_stack) ||
         (task->context.esp != 0U &&
          ((uintptr_t)task->context.esp < low ||
           (uintptr_t)task->context.esp >= high))) {
@@ -269,21 +333,78 @@ static void validate_running_task_stack_or_panic(const task_t *task) {
     }
 }
 
+/* Timer IRQ scheduling cannot acquire the page-table lock: a concurrent
+ * kernel mapping may hold it while waiting for this CPU's TLB-shootdown ACK.
+ * Full guard-page mapping validation remains mandatory at stack allocation
+ * and release boundaries; a runtime overflow still faults on the unmapped
+ * guard page without taking the mapping lock from a scheduler path. */
+static void validate_running_task_stack_irq_or_panic(const task_t *task) {
+    if (task == NULL || task->kernel_stack == NULL ||
+        !scheduler_kernel_stack_metadata_is_valid(task->kernel_stack))
+        panic("Kernel stack metadata corrupted in scheduler IRQ");
+    uintptr_t low = (uintptr_t)task->kernel_stack;
+    uintptr_t high = low + STACK_SIZE;
+    uintptr_t current_esp;
+    __asm__ __volatile__("mov %%esp, %0" : "=r"(current_esp));
+    if (current_esp < low || current_esp >= high ||
+        (task->context.esp != 0U &&
+         ((uintptr_t)task->context.esp < low ||
+          (uintptr_t)task->context.esp >= high)))
+        panic("Kernel stack bounds corrupted in scheduler IRQ");
+    record_kernel_stack_watermark(task->kernel_stack);
+}
+
 static void validate_kernel_context_stack_or_panic(bool check_esp) {
-    if (!scheduler_kernel_context_stack_is_valid()) {
-        panic("Static kernel stack guard corrupted");
+    x86_cpu_local_t *local = scheduler_cpu_local();
+    uintptr_t low;
+    uintptr_t high;
+    if (local->cpu_index == 0U) {
+        if ((uintptr_t)&_stack_guard_end -
+                (uintptr_t)&_stack_guard_start != PAGE_SIZE)
+            panic("Static kernel stack layout corrupted");
+        low = (uintptr_t)&_stack_start;
+        high = (uintptr_t)&_stack_end;
+    } else {
+        low = local->kernel_idle_stack_low;
+        high = local->kernel_idle_stack_high;
+        if (low == 0U || high - low != STACK_SIZE ||
+            !scheduler_kernel_stack_metadata_is_valid((const uint32_t *)low))
+            panic("AP kernel idle stack metadata corrupted");
     }
     if (check_esp) {
         uintptr_t current_esp;
         __asm__ __volatile__("mov %%esp, %0" : "=r"(current_esp));
-        if (current_esp < (uintptr_t)&_stack_start ||
-            current_esp >= (uintptr_t)&_stack_end) {
-            panic("Current ESP escaped the static kernel stack");
-        }
+        if (current_esp < low || current_esp >= high)
+            panic("Current ESP escaped the CPU kernel idle stack");
     }
 }
 
+static void validate_kernel_context_stack_irq_or_panic(void) {
+    x86_cpu_local_t *local = scheduler_cpu_local();
+    uintptr_t low;
+    uintptr_t high;
+    if (local->cpu_index == 0U) {
+        if ((uintptr_t)&_stack_guard_end -
+                (uintptr_t)&_stack_guard_start != PAGE_SIZE)
+            panic("Static kernel stack layout corrupted in scheduler IRQ");
+        low = (uintptr_t)&_stack_start;
+        high = (uintptr_t)&_stack_end;
+    } else {
+        low = local->kernel_idle_stack_low;
+        high = local->kernel_idle_stack_high;
+        if (low == 0U || high - low != STACK_SIZE ||
+            !scheduler_kernel_stack_metadata_is_valid(
+                (const uint32_t *)low))
+            panic("AP kernel stack metadata corrupted in scheduler IRQ");
+    }
+    uintptr_t current_esp;
+    __asm__ __volatile__("mov %%esp, %0" : "=r"(current_esp));
+    if (current_esp < low || current_esp >= high)
+        panic("Current ESP escaped the CPU stack in scheduler IRQ");
+}
+
 static void refresh_effective_classes_locked(void) {
+    assert_task_table_locked();
     uint8_t base[MAX_TASKS] = {0};
     uint8_t effective[MAX_TASKS] = {0};
     int8_t owners[MAX_TASKS];
@@ -312,12 +433,14 @@ static void refresh_effective_classes_locked(void) {
 }
 
 static void account_current_runtime_locked(void) {
+    assert_task_table_locked();
     refresh_effective_classes_locked();
+    uint32_t cpu = scheduler_cpu_policy_index_locked();
     uint8_t charged_class = current_task >= 0 && current_task < num_tasks
         ? tasks[current_task].effective_scheduling_class
         : SCHEDULER_CLASS_NONE;
     if (scheduler_policy_window_charge(
-            &cpu_window, charged_class, pit_monotonic_ms())) {
+            &cpu_windows[cpu], charged_class, pit_monotonic_ms())) {
         for (int index = 0; index < num_tasks; ++index) {
             tasks[index].budget_remaining = scheduler_policy_budget(
                 tasks[index].effective_scheduling_class);
@@ -326,32 +449,115 @@ static void account_current_runtime_locked(void) {
 }
 
 static int find_next_runnable(int after) {
+    assert_task_table_locked();
     (void)after;
     if (num_tasks == 0) {
         return -1;
     }
     account_current_runtime_locked();
     scheduler_candidate_t candidates[MAX_TASKS] = {0};
+    int32_t cpu = (int32_t)scheduler_cpu_local()->cpu_index;
+    uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
+    uint32_t cpu_bit = 1U << (uint32_t)cpu;
     for (int index = 0; index < num_tasks; ++index) {
+        bool ready_unowned = tasks[index].status == TASK_READY &&
+            tasks[index].running_cpu == TASK_CPU_NONE;
+        bool running_here = tasks[index].status == TASK_RUNNING &&
+            tasks[index].running_cpu == cpu;
         candidates[index].runnable =
-            (tasks[index].status == TASK_READY ||
-             tasks[index].status == TASK_RUNNING) &&
-            scheduler_policy_class_allowed(&cpu_window,
+            (ready_unowned || running_here) &&
+            (tasks[index].cpu_affinity_mask & cpu_bit) != 0U &&
+            scheduler_policy_class_allowed(&cpu_windows[policy_cpu],
                 tasks[index].effective_scheduling_class);
         candidates[index].scheduling_class =
             tasks[index].effective_scheduling_class;
         candidates[index].budget_remaining = tasks[index].budget_remaining;
     }
     int selected = scheduler_policy_select_cycle(
-        candidates, num_tasks, scheduling_class_cursors,
-        &scheduling_class_cycle_cursor);
+        candidates, num_tasks, scheduling_class_cursors[policy_cpu],
+        &scheduling_class_cycle_cursors[policy_cpu]);
     for (int index = 0; index < num_tasks; ++index)
         tasks[index].budget_remaining = candidates[index].budget_remaining;
     return selected;
 }
 
-static uint32_t active_task_count_locked(void) {
+static bool claim_task_for_current_cpu(int task_id) {
     KASSERT_IRQ_DISABLED();
+    if (task_id < 0 || task_id >= num_tasks) return false;
+    task_t *task = &tasks[task_id];
+    int32_t cpu = (int32_t)scheduler_cpu_local()->cpu_index;
+    if ((task->cpu_affinity_mask & (1U << (uint32_t)cpu)) == 0U)
+        return false;
+    if (task->status == TASK_RUNNING) return task->running_cpu == cpu;
+    if (task->status != TASK_READY ||
+        !__sync_bool_compare_and_swap(&task->running_cpu,
+                                      TASK_CPU_NONE, cpu)) return false;
+    __sync_synchronize();
+    if (task->status != TASK_READY) {
+        bool released = __sync_bool_compare_and_swap(&task->running_cpu,
+                                                     cpu, TASK_CPU_NONE);
+        KASSERT(released);
+        return false;
+    }
+    task->status = TASK_RUNNING;
+    __sync_synchronize();
+    return true;
+}
+
+static int claim_next_runnable(int after) {
+    for (uint32_t attempt = 0U; attempt < MAX_TASKS; ++attempt) {
+        int next = find_next_runnable(after);
+        if (next < 0) return -1;
+        if (claim_task_for_current_cpu(next)) return next;
+    }
+    return -1;
+}
+
+static void prepare_task_handoff(int task_id, uint32_t action) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(task_id >= 0 && task_id < num_tasks);
+    KASSERT(action == SCHEDULER_HANDOFF_READY ||
+            action == SCHEDULER_HANDOFF_RELEASE);
+    KASSERT(handoff_task == -1);
+    KASSERT(handoff_action == SCHEDULER_HANDOFF_NONE);
+    task_t *task = &tasks[task_id];
+    int32_t cpu = (int32_t)scheduler_cpu_local()->cpu_index;
+    KASSERT(task->running_cpu == cpu);
+    if (action == SCHEDULER_HANDOFF_READY) task->status = TASK_HANDOFF;
+    handoff_task = task_id;
+    handoff_action = action;
+    __sync_synchronize();
+}
+
+static void finish_task_handoff(void) {
+    KASSERT_IRQ_DISABLED();
+    int task_id = handoff_task;
+    uint32_t action = handoff_action;
+    if (task_id < 0) {
+        KASSERT(action == SCHEDULER_HANDOFF_NONE);
+        return;
+    }
+    KASSERT(task_id < num_tasks);
+    KASSERT(action == SCHEDULER_HANDOFF_READY ||
+            action == SCHEDULER_HANDOFF_RELEASE);
+    task_t *task = &tasks[task_id];
+    int32_t cpu = (int32_t)scheduler_cpu_local()->cpu_index;
+    KASSERT(task->running_cpu == cpu);
+    if (action == SCHEDULER_HANDOFF_READY) {
+        KASSERT(task->status == TASK_HANDOFF);
+        task->status = TASK_READY;
+    }
+    __sync_synchronize();
+    bool released = __sync_bool_compare_and_swap(&task->running_cpu,
+                                                 cpu, TASK_CPU_NONE);
+    KASSERT(released);
+    handoff_action = SCHEDULER_HANDOFF_NONE;
+    handoff_task = -1;
+    __sync_synchronize();
+}
+
+static uint32_t active_task_count_locked(void) {
+    assert_task_table_locked();
     uint32_t active = 0U;
     for (int index = 0; index < num_tasks; ++index) {
         if (tasks[index].status != TASK_FINISHED &&
@@ -361,12 +567,13 @@ static uint32_t active_task_count_locked(void) {
 }
 
 static void note_task_capacity_rejection_locked(void) {
-    KASSERT_IRQ_DISABLED();
+    assert_task_table_locked();
     if (task_capacity_rejections != UINT32_MAX) ++task_capacity_rejections;
 }
 
 static void task_trampoline(void) __attribute__((noreturn));
 static void task_trampoline(void) {
+    finish_task_handoff();
     int index = current_task;
     if (index < 0 || index >= num_tasks || tasks[index].context.eip == 0) {
         scheduler_kill_current();
@@ -383,6 +590,8 @@ static void task_trampoline(void) {
 }
 
 static void release_task_resources(task_t *task) {
+    KASSERT(task->running_cpu == TASK_CPU_NONE);
+    KASSERT(task->process == NULL || process_table_lock_is_owned());
     int task_id = (int)(task - tasks);
     wait_queue_cancel_locked(task);
     if (task->process != NULL &&
@@ -405,14 +614,19 @@ static void release_task_resources(task_t *task) {
 
 int scheduler_reap_finished_task_locked(int task_id, const Process *owner) {
     KASSERT_IRQ_DISABLED();
+    KASSERT(process_table_lock_is_owned());
+    spinlock_acquire(&task_table_lock);
     if (irq_enabled() || task_id < 0 || task_id >= num_tasks ||
         task_id == current_task || tasks[task_id].status != TASK_FINISHED ||
+        tasks[task_id].running_cpu != TASK_CPU_NONE ||
         (owner != NULL && (tasks[task_id].process != owner ||
                            tasks[task_id].process_generation !=
                                owner->generation))) {
+        spinlock_release(&task_table_lock);
         return -1;
     }
     release_task_resources(&tasks[task_id]);
+    spinlock_release(&task_table_lock);
     return 0;
 }
 
@@ -420,7 +634,8 @@ size_t scheduler_reap_finished_tasks(void) {
     size_t reaped = 0;
     scheduler_preempt_disable();
 
-    uint32_t flags = irq_save();
+    uint32_t process_flags = process_table_lock_irqsave();
+    spinlock_acquire(&task_table_lock);
     for (int task_id = 0; task_id < num_tasks; ++task_id) {
         task_t *task = &tasks[task_id];
         bool owns_resources = task->kernel_stack != NULL ||
@@ -428,11 +643,13 @@ size_t scheduler_reap_finished_tasks(void) {
                               task->process != NULL ||
                               task->wait_node.queue != NULL;
         if (task_id != current_task && task->status == TASK_FINISHED &&
+            task->running_cpu == TASK_CPU_NONE &&
             owns_resources) {
             release_task_resources(task);
         }
     }
-    irq_restore(flags);
+    spinlock_release(&task_table_lock);
+    process_table_unlock_irqrestore(process_flags);
 
     /* Page-directory walks and heap coalescing can be proportional to a
      * process's allocation count.  Detach atomically above, then do that work
@@ -441,7 +658,7 @@ size_t scheduler_reap_finished_tasks(void) {
         page_directory_t *page_directory = NULL;
         uint32_t *kernel_stack = NULL;
 
-        flags = irq_save();
+        uint32_t flags = task_table_lock_irqsave();
         task_t *task = &tasks[task_id];
         if (task->status == TASK_REAPING &&
             (task->reap_page_directory != NULL ||
@@ -451,34 +668,43 @@ size_t scheduler_reap_finished_tasks(void) {
             task->reap_page_directory = NULL;
             task->reap_kernel_stack = NULL;
         }
-        irq_restore(flags);
+        task_table_unlock_irqrestore(flags);
 
         if (page_directory != NULL) free_page_directory(page_directory);
         if (kernel_stack != NULL) scheduler_free_kernel_stack(kernel_stack);
         if (page_directory == NULL && kernel_stack == NULL) continue;
 
-        flags = irq_save();
+        flags = task_table_lock_irqsave();
         task = &tasks[task_id];
         if (task->status == TASK_REAPING &&
             task->reap_page_directory == NULL &&
             task->reap_kernel_stack == NULL) {
             memset(task, 0, sizeof(*task));
             task->status = TASK_FINISHED;
+            task->running_cpu = TASK_CPU_NONE;
             ++reaped;
         }
-        irq_restore(flags);
+        task_table_unlock_irqrestore(flags);
     }
 
     scheduler_preempt_enable();
     return reaped;
 }
 
-int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
+static int create_task_with_affinity(void (*entry_point)(void),
+                                     uint32_t *stack, Process *process,
+                                     uint32_t cpu_affinity_mask) {
     if (!entry_point || !stack || !scheduler_kernel_stack_is_valid(stack)) {
         return -1;
     }
+    if (cpu_affinity_mask == 0U ||
+        (cpu_affinity_mask & ~((1U << X86_CPU_LOCAL_MAX) - 1U)) != 0U)
+        return -1;
 
-    uint32_t flags = irq_save();
+    bool process_locked = process != NULL;
+    uint32_t process_flags = 0U;
+    if (process_locked) process_flags = process_table_lock_irqsave();
+    uint32_t flags = task_table_lock_irqsave();
     int task_id = -1;
     for (int i = 0; i < num_tasks; ++i) {
         if (tasks[i].status == TASK_FINISHED && i != current_task &&
@@ -493,7 +719,9 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     if (task_id < 0) {
         if (num_tasks >= MAX_TASKS) {
             note_task_capacity_rejection_locked();
-            irq_restore(flags);
+            task_table_unlock_irqrestore(flags);
+            if (process_locked)
+                process_table_unlock_irqrestore(process_flags);
             printf("Error: Maximum number of tasks reached!\n");
             return -1;
         }
@@ -502,6 +730,9 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
 
     task_t *task = &tasks[task_id];
     memset(task, 0, sizeof(*task));
+    KASSERT(next_task_generation != UINT32_MAX);
+    ++next_task_generation;
+    task->task_generation = next_task_generation;
     task->status = TASK_FINISHED;
     task->kernel_stack = stack;
     task->context.eip = (uint32_t)entry_point;
@@ -515,6 +746,8 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     task->budget_remaining = scheduler_policy_budget(
         task->scheduling_class);
     task->blocked_owner_task = -1;
+    task->running_cpu = TASK_CPU_NONE;
+    task->cpu_affinity_mask = cpu_affinity_mask;
 
     uintptr_t top = ((uintptr_t)stack + STACK_SIZE) & ~(uintptr_t)0x0F;
     uint32_t *initial_stack = (uint32_t*)top;
@@ -531,14 +764,17 @@ int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
     uint32_t active = active_task_count_locked();
     if (active > peak_active_tasks) peak_active_tasks = active;
 
-    irq_restore(flags);
+    task_table_unlock_irqrestore(flags);
+    if (process_locked) process_table_unlock_irqrestore(process_flags);
     return task_id;
 }
 
 static size_t available_task_slots_locked(void) {
+    assert_task_table_locked();
     size_t available = MAX_TASKS - num_tasks;
     for (int index = 0; index < num_tasks; ++index) {
         if (index != current_task && tasks[index].status == TASK_FINISHED &&
+            tasks[index].running_cpu == TASK_CPU_NONE &&
             tasks[index].kernel_stack == NULL &&
             tasks[index].reap_kernel_stack == NULL &&
             tasks[index].reap_page_directory == NULL) ++available;
@@ -548,30 +784,32 @@ static size_t available_task_slots_locked(void) {
 
 static int create_user_task_admitted(
     uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
-    page_directory_t *page_directory, Process *process, bool supervised) {
+    page_directory_t *page_directory, Process *process, bool supervised,
+    bool prepared) {
     if (entry_point < USER_BASE || entry_point >= USER_TOP ||
         user_stack <= USER_BASE || user_stack > USER_TOP || !kernel_stack ||
         !page_directory) return -1;
     scheduler_preempt_disable();
-    uint32_t admission_flags = irq_save();
+    uint32_t admission_flags = task_table_lock_irqsave();
     size_t available = available_task_slots_locked();
     bool admitted = available != 0U &&
         (supervised || available > SUPERVISED_TASK_RESERVE);
-    irq_restore(admission_flags);
+    task_table_unlock_irqrestore(admission_flags);
     if (!admitted) {
-        uint32_t flags = irq_save();
+        uint32_t flags = task_table_lock_irqsave();
         note_task_capacity_rejection_locked();
-        irq_restore(flags);
+        task_table_unlock_irqrestore(flags);
         scheduler_preempt_enable();
         return -1;
     }
-    int task_id = create_task((void (*)(void))(uintptr_t)entry_point,
-                              kernel_stack, process);
+    int task_id = create_task_with_affinity(
+        (void (*)(void))(uintptr_t)entry_point, kernel_stack, process,
+        TASK_CPU_MASK_BSP);
     if (task_id < 0) {
         scheduler_preempt_enable();
         return -1;
     }
-    uint32_t flags = irq_save();
+    uint32_t flags = task_table_lock_irqsave();
     task_t *task = &tasks[task_id];
     task->page_directory = page_directory;
     task->user_entry = entry_point;
@@ -582,23 +820,61 @@ static int create_user_task_admitted(
     task->effective_scheduling_class = task->scheduling_class;
     task->budget_remaining = scheduler_policy_budget(
         task->scheduling_class);
-    irq_restore(flags);
+    if (prepared) task->status = TASK_PREPARED;
+    task_table_unlock_irqrestore(flags);
     scheduler_preempt_enable();
     return task_id;
+}
+
+int create_task(void (*entry_point)(void), uint32_t *stack, Process *process) {
+    return create_task_with_affinity(entry_point, stack, process,
+                                     TASK_CPU_MASK_BSP);
+}
+
+int create_affined_kernel_task(void (*entry_point)(void), uint32_t *stack,
+                               uint32_t cpu_affinity_mask) {
+    return create_task_with_affinity(entry_point, stack, NULL,
+                                     cpu_affinity_mask);
 }
 
 int create_user_task(uint32_t entry_point, uint32_t user_stack,
                      uint32_t *kernel_stack, page_directory_t *page_directory,
                      Process *process) {
     return create_user_task_admitted(entry_point, user_stack, kernel_stack,
-                                     page_directory, process, false);
+                                     page_directory, process, false, false);
 }
 
 int create_supervised_user_task(
     uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
     page_directory_t *page_directory, Process *process) {
     return create_user_task_admitted(entry_point, user_stack, kernel_stack,
-                                     page_directory, process, true);
+                                     page_directory, process, true, false);
+}
+
+int create_prepared_supervised_user_task(
+    uint32_t entry_point, uint32_t user_stack, uint32_t *kernel_stack,
+    page_directory_t *page_directory, Process *process) {
+    return create_user_task_admitted(entry_point, user_stack, kernel_stack,
+                                     page_directory, process, true, true);
+}
+
+int scheduler_start_prepared_user_task_locked(
+        int task_id, const Process *owner, uint32_t process_generation) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(process_table_lock_is_owned());
+    if (task_id < 0 || owner == NULL || process_generation == 0U)
+        return -22;
+    spinlock_acquire(&task_table_lock);
+    int result = -3;
+    if (task_id < num_tasks && tasks[task_id].process == owner &&
+        tasks[task_id].process_generation == process_generation &&
+        tasks[task_id].status == TASK_PREPARED &&
+        tasks[task_id].running_cpu == TASK_CPU_NONE) {
+        tasks[task_id].status = TASK_READY;
+        result = 0;
+    }
+    spinlock_release(&task_table_lock);
+    return result;
 }
 
 static void activate_task_address_space(int task_index) {
@@ -615,25 +891,35 @@ static void activate_task_address_space(int task_index) {
 
 static bool schedule_blocked_current_locked(int blocked) {
     validate_running_task_stack_or_panic(&tasks[blocked]);
-    int next = find_next_runnable(blocked);
+    assert_task_table_locked();
+    int next = claim_next_runnable(blocked);
     if (next >= 0) {
+        prepare_task_handoff(blocked, SCHEDULER_HANDOFF_RELEASE);
         current_task = next;
-        tasks[next].status = TASK_RUNNING;
+        spinlock_release(&task_table_lock);
         activate_task_address_space(next);
         swtch(&tasks[blocked].context, &tasks[next].context);
+        finish_task_handoff();
         return true;
     }
 
-    if (!kernel_context_saved) return false;
+    if (!kernel_context_saved) {
+        spinlock_release(&task_table_lock);
+        return false;
+    }
     validate_kernel_context_stack_or_panic(false);
+    prepare_task_handoff(blocked, SCHEDULER_HANDOFF_RELEASE);
     current_task = -1;
+    spinlock_release(&task_table_lock);
     activate_task_address_space(-1);
     swtch(&tasks[blocked].context, &kernel_context);
+    finish_task_handoff();
     return true;
 }
 
 void wait_queue_cancel_locked(task_t *task) {
     KASSERT_IRQ_DISABLED();
+    assert_task_table_locked();
     if (task == NULL) return;
     if (task->wait_node.queue != NULL)
         (void)wait_queue_remove_locked(task->wait_node.queue,
@@ -646,8 +932,12 @@ void wait_queue_cancel_locked(task_t *task) {
 
 bool scheduler_set_wait_owner_locked(int pid, uint32_t generation) {
     KASSERT_IRQ_DISABLED();
-    if (irq_enabled() || pid <= 0 || generation == 0U || current_task < 0 ||
-        current_task >= num_tasks) return false;
+    if (irq_enabled() || pid <= 0 || generation == 0U) return false;
+    spinlock_acquire(&task_table_lock);
+    if (current_task < 0 || current_task >= num_tasks) {
+        spinlock_release(&task_table_lock);
+        return false;
+    }
     for (int owner = 0; owner < num_tasks; ++owner) {
         task_t *candidate = &tasks[owner];
         if (owner != current_task && candidate->process != NULL &&
@@ -658,27 +948,35 @@ bool scheduler_set_wait_owner_locked(int pid, uint32_t generation) {
              candidate->status == TASK_RUNNING)) {
             tasks[current_task].blocked_owner_task = (int8_t)owner;
             tasks[current_task].blocked_owner_generation = generation;
+            spinlock_release(&task_table_lock);
             return true;
         }
     }
+    spinlock_release(&task_table_lock);
     return false;
 }
 
 void scheduler_clear_wait_owner_locked(void) {
-    KASSERT_IRQ_DISABLED();
-    if (irq_enabled() || current_task < 0 || current_task >= num_tasks) return;
-    tasks[current_task].blocked_owner_task = -1;
-    tasks[current_task].blocked_owner_generation = 0U;
+    uint32_t flags = irq_save();
+    spinlock_acquire(&task_table_lock);
+    if (current_task >= 0 && current_task < num_tasks) {
+        tasks[current_task].blocked_owner_task = -1;
+        tasks[current_task].blocked_owner_generation = 0U;
+    }
+    spinlock_release(&task_table_lock);
+    irq_restore(flags);
 }
 
-int wait_queue_block_until_locked(wait_queue_t *queue,
-                                  task_block_kind_t kind,
-                                  uint64_t deadline_ms) {
+static int wait_queue_block_until_task_locked(wait_queue_t *queue,
+                                              task_block_kind_t kind,
+                                              uint64_t deadline_ms) {
     KASSERT_IRQ_DISABLED();
     KASSERT_NOT_IRQ();
+    assert_task_table_locked();
     if (queue == NULL || irq_enabled() || preempt_disable_count != 0 ||
         current_task < 0 || current_task >= num_tasks ||
         (kind != TASK_BLOCK_WAITING && kind != TASK_BLOCK_SLEEPING)) {
+        spinlock_release(&task_table_lock);
         return -1;
     }
 
@@ -686,6 +984,7 @@ int wait_queue_block_until_locked(wait_queue_t *queue,
     task_t *task = &tasks[blocked];
     if (task->status != TASK_RUNNING || task->wait_node.queue != NULL ||
         !wait_queue_push_locked(queue, &task->wait_node)) {
+        spinlock_release(&task_table_lock);
         return -1;
     }
     task->wait_deadline_ms = deadline_ms;
@@ -694,12 +993,39 @@ int wait_queue_block_until_locked(wait_queue_t *queue,
         ? TASK_SLEEPING : TASK_WAITING;
 
     if (!schedule_blocked_current_locked(blocked)) {
+        spinlock_acquire(&task_table_lock);
         wait_queue_cancel_locked(task);
         task->status = TASK_RUNNING;
         current_task = blocked;
+        spinlock_release(&task_table_lock);
         return -1;
     }
     return task->wait_result;
+}
+
+int wait_queue_block_until_locked(wait_queue_t *queue,
+                                  task_block_kind_t kind,
+                                  uint64_t deadline_ms) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT_NOT_IRQ();
+    spinlock_acquire(&task_table_lock);
+    return wait_queue_block_until_task_locked(queue, kind, deadline_ms);
+}
+
+int wait_queue_block_until_spinlocked(wait_queue_t *queue,
+                                      task_block_kind_t kind,
+                                      uint64_t deadline_ms,
+                                      spinlock_t *condition_lock,
+                                      uint32_t irq_flags) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT_NOT_IRQ();
+    KASSERT(condition_lock != NULL);
+    KASSERT(spinlock_is_owned_by_current(condition_lock));
+    spinlock_acquire(&task_table_lock);
+    spinlock_release(condition_lock);
+    int result = wait_queue_block_until_task_locked(queue, kind, deadline_ms);
+    irq_restore(irq_flags);
+    return result;
 }
 
 int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
@@ -708,8 +1034,9 @@ int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
     return wait_queue_block_until_locked(queue, kind, UINT64_MAX);
 }
 
-bool wait_queue_wake_one_locked(wait_queue_t *queue) {
+static bool wait_queue_wake_one_task_locked(wait_queue_t *queue) {
     KASSERT_IRQ_DISABLED();
+    assert_task_table_locked();
     if (queue == NULL || irq_enabled()) return false;
     for (;;) {
         wait_queue_node_t *node = wait_queue_pop_locked(queue);
@@ -727,9 +1054,25 @@ bool wait_queue_wake_one_locked(wait_queue_t *queue) {
     }
 }
 
+bool wait_queue_wake_one_locked(wait_queue_t *queue) {
+    KASSERT_IRQ_DISABLED();
+    spinlock_acquire(&task_table_lock);
+    bool woke = wait_queue_wake_one_task_locked(queue);
+    spinlock_release(&task_table_lock);
+    return woke;
+}
+
+static size_t wait_queue_wake_all_task_locked(wait_queue_t *queue) {
+    assert_task_table_locked();
+    size_t count = 0U;
+    while (wait_queue_wake_one_task_locked(queue)) ++count;
+    return count;
+}
+
 void scheduler_wake_expired_waiters_locked(uint64_t now_ms) {
     KASSERT_IRQ_DISABLED();
     if (irq_enabled()) return;
+    spinlock_acquire(&task_table_lock);
     for (size_t index = 0; index < MAX_TASKS; ++index) {
         task_t *task = &tasks[index];
         if (task->status != TASK_WAITING || task->wait_node.queue == NULL ||
@@ -744,22 +1087,26 @@ void scheduler_wake_expired_waiters_locked(uint64_t now_ms) {
             task->status = TASK_READY;
         }
     }
+    spinlock_release(&task_table_lock);
 }
 
 size_t wait_queue_wake_all_locked(wait_queue_t *queue) {
     KASSERT_IRQ_DISABLED();
-    size_t count = 0;
-    while (wait_queue_wake_one_locked(queue)) ++count;
+    spinlock_acquire(&task_table_lock);
+    size_t count = wait_queue_wake_all_task_locked(queue);
+    spinlock_release(&task_table_lock);
     return count;
 }
 
 void scheduler_wake_expired_sleepers_locked(uint64_t now_ms) {
     KASSERT_IRQ_DISABLED();
     if (irq_enabled()) return;
+    spinlock_acquire(&task_table_lock);
     while (sleep_waiters.head != NULL &&
            sleep_waiters.head->key <= now_ms) {
-        (void)wait_queue_wake_one_locked(&sleep_waiters);
+        (void)wait_queue_wake_one_task_locked(&sleep_waiters);
     }
+    spinlock_release(&task_table_lock);
 }
 
 int scheduler_sleep_ms(uint32_t milliseconds) {
@@ -776,19 +1123,23 @@ int scheduler_sleep_ms(uint32_t milliseconds) {
     uint64_t deadline = now + (uint64_t)milliseconds;
     if (deadline < now) deadline = UINT64_MAX;
 
+    spinlock_acquire(&task_table_lock);
     int blocked = current_task;
     task_t *task = &tasks[blocked];
     if (task->status != TASK_RUNNING || task->wait_node.queue != NULL ||
         !wait_queue_insert_ordered_locked(&sleep_waiters, &task->wait_node,
                                           deadline)) {
+        spinlock_release(&task_table_lock);
         irq_restore(flags);
         return -1;
     }
     task->status = TASK_SLEEPING;
     if (!schedule_blocked_current_locked(blocked)) {
+        spinlock_acquire(&task_table_lock);
         wait_queue_cancel_locked(task);
         task->status = TASK_RUNNING;
         current_task = blocked;
+        spinlock_release(&task_table_lock);
         irq_restore(flags);
         return -1;
     }
@@ -810,28 +1161,37 @@ int scheduler_yield(void) {
     }
     validate_running_task_stack_or_panic(&tasks[previous]);
 
+    spinlock_acquire(&task_table_lock);
     tasks[previous].status = TASK_READY;
-    int next = find_next_runnable(previous);
+    int next = claim_next_runnable(previous);
+    uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
     bool previous_allowed = scheduler_policy_class_allowed(
-        &cpu_window, tasks[previous].effective_scheduling_class);
+        &cpu_windows[policy_cpu],
+        tasks[previous].effective_scheduling_class);
     if ((next < 0 || next == previous) && !previous_allowed &&
         kernel_context_saved) {
+        prepare_task_handoff(previous, SCHEDULER_HANDOFF_READY);
         current_task = -1;
+        spinlock_release(&task_table_lock);
         activate_task_address_space(-1);
         swtch(&tasks[previous].context, &kernel_context);
+        finish_task_handoff();
         irq_restore(flags);
         return 0;
     }
     if (next < 0 || next == previous) {
         tasks[previous].status = TASK_RUNNING;
+        spinlock_release(&task_table_lock);
         irq_restore(flags);
         return 0;
     }
 
+    prepare_task_handoff(previous, SCHEDULER_HANDOFF_READY);
     current_task = next;
-    tasks[next].status = TASK_RUNNING;
+    spinlock_release(&task_table_lock);
     activate_task_address_space(next);
     swtch(&tasks[previous].context, &tasks[next].context);
+    finish_task_handoff();
     irq_restore(flags);
     return 0;
 }
@@ -841,6 +1201,40 @@ void scheduler_set_apic_timer_active(bool active) {
     apic_timer_active = active;
     pit_scheduler_ticks = 0;
     irq_restore(flags);
+}
+
+bool scheduler_current_task_identity(int *task_id_out,
+                                     uint32_t *generation_out) {
+    if (task_id_out == NULL || generation_out == NULL) return false;
+    uint32_t flags = task_table_lock_irqsave();
+    bool valid = current_task >= 0 && current_task < num_tasks &&
+                 tasks[current_task].task_generation != 0U;
+    *task_id_out = valid ? current_task : -1;
+    *generation_out = valid ? tasks[current_task].task_generation : 0U;
+    task_table_unlock_irqrestore(flags);
+    return valid;
+}
+
+int scheduler_current_task_id(void) {
+    int task_id = -1;
+    uint32_t generation = 0U;
+    (void)scheduler_current_task_identity(&task_id, &generation);
+    return task_id;
+}
+
+int scheduler_task_state_snapshot(int task_id, const Process *owner,
+                                  uint32_t generation, int *state_out) {
+    if (task_id < 0 || owner == NULL || generation == 0U ||
+        state_out == NULL) return -22;
+    uint32_t flags = task_table_lock_irqsave();
+    int result = -3;
+    if (task_id < num_tasks && tasks[task_id].process == owner &&
+        tasks[task_id].process_generation == generation) {
+        *state_out = tasks[task_id].status;
+        result = 0;
+    }
+    task_table_unlock_irqrestore(flags);
+    return result;
 }
 
 bool scheduler_uses_pit_fallback(void) {
@@ -869,48 +1263,54 @@ void scheduler_interrupt_handler(void) {
     preemption_pending = false;
     int previous = current_task;
     if (previous >= 0 && previous < num_tasks) {
-        validate_running_task_stack_or_panic(&tasks[previous]);
+        validate_running_task_stack_irq_or_panic(&tasks[previous]);
     } else {
-        validate_kernel_context_stack_or_panic(true);
+        validate_kernel_context_stack_irq_or_panic();
     }
     /* Feeding eligibility is earned only after the scheduler reached its
      * validation point with preemption enabled. Merely receiving IRQ0 does
      * not constitute system progress. */
-    watchdog_health_progress();
-    int next = find_next_runnable(previous);
+    if (scheduler_cpu_local()->cpu_index == 0U) watchdog_health_progress();
+    spinlock_acquire(&task_table_lock);
+    int next = claim_next_runnable(previous);
+    uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
 
     bool previous_allowed = previous >= 0 && previous < num_tasks &&
-        scheduler_policy_class_allowed(&cpu_window,
+        scheduler_policy_class_allowed(&cpu_windows[policy_cpu],
             tasks[previous].effective_scheduling_class);
     if (next < 0 && previous >= 0 && !previous_allowed &&
         kernel_context_saved) {
-        tasks[previous].status = TASK_READY;
+        prepare_task_handoff(previous, SCHEDULER_HANDOFF_READY);
         current_task = -1;
+        spinlock_release(&task_table_lock);
         activate_task_address_space(-1);
         runtime_timing_finish_scheduler(timing_start);
         swtch(&tasks[previous].context, &kernel_context);
+        finish_task_handoff();
         irq_restore(flags);
         return;
     }
     if (next < 0 || next == previous) {
+        spinlock_release(&task_table_lock);
         runtime_timing_finish_scheduler(timing_start);
         irq_restore(flags);
         return;
     }
 
     current_task = next;
-    tasks[next].status = TASK_RUNNING;
+    if (previous >= 0)
+        prepare_task_handoff(previous, SCHEDULER_HANDOFF_READY);
+    spinlock_release(&task_table_lock);
     activate_task_address_space(next);
     runtime_timing_finish_scheduler(timing_start);
 
     if (previous < 0) {
         kernel_context_saved = true;
         swtch(&kernel_context, &tasks[next].context);
+        finish_task_handoff();
     } else {
-        if (tasks[previous].status == TASK_RUNNING) {
-            tasks[previous].status = TASK_READY;
-        }
         swtch(&tasks[previous].context, &tasks[next].context);
+        finish_task_handoff();
     }
 
     irq_restore(flags);
@@ -949,7 +1349,11 @@ void scheduler_terminate_task(int task_id) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
     KASSERT(scheduler_preempt_is_disabled());
+    uint32_t process_flags = process_table_lock_irqsave();
+    spinlock_acquire(&task_table_lock);
     if (task_id < 0 || task_id >= num_tasks) {
+        spinlock_release(&task_table_lock);
+        process_table_unlock_irqrestore(process_flags);
         return;
     }
     KASSERT(task_id != current_task);
@@ -958,13 +1362,20 @@ void scheduler_terminate_task(int task_id) {
     Process *process = task->process;
     uint32_t generation = task->process_generation;
     if (task->status == TASK_FINISHED || task->status == TASK_REAPING ||
-        process == NULL || process->generation != generation) {
+        task->running_cpu != TASK_CPU_NONE ||
+        process == NULL || process->generation != generation ||
+        !process->terminating) {
+        spinlock_release(&task_table_lock);
+        process_table_unlock_irqrestore(process_flags);
         return;
     }
+    spinlock_release(&task_table_lock);
+    process_table_unlock_irqrestore(process_flags);
 
-    /* VFS teardown may reach block drivers and must run with IF=1, outside the
-     * scheduler's IRQ-disabled commit.  The caller's preemption guard keeps
-     * the target slot and generation stable on this UP scheduler. */
+    /* VFS teardown may sleep in block-driver mutexes. The terminating marker
+     * and running_cpu == NONE pin the target identity while the calling task
+     * is allowed to be scheduled normally. */
+    scheduler_preempt_enable();
     /* Revoke DMA and mask device IRQs before any capability or address-space
      * teardown. The later process-slot cleanup is deliberately idempotent. */
     device_domain_process_cleanup(process->pid, generation);
@@ -973,17 +1384,21 @@ void scheduler_terminate_task(int task_id) {
     framebuffer_frame_process_cleanup(process->pid, generation);
     process_close_all_files(process);
     process_orphan_children(process->pid);
+    scheduler_preempt_disable();
 
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
+    spinlock_acquire(&task_table_lock);
     KASSERT(task->process == process &&
             task->process_generation == generation);
     wait_queue_cancel_locked(task);
     process->exit_status = 143;
     process->has_exited = true;
     process->is_running = false;
-    (void)wait_queue_wake_all_locked(&process->exit_waiters);
+    process->terminating = false;
+    (void)wait_queue_wake_all_task_locked(&process->exit_waiters);
     task->status = TASK_FINISHED;
-    irq_restore(flags);
+    spinlock_release(&task_table_lock);
+    process_table_unlock_irqrestore(flags);
 }
 
 void task_exit(void) {
@@ -993,8 +1408,8 @@ void task_exit(void) {
 void task_exit_status(int status) {
     KASSERT_NOT_IRQ();
     KASSERT(!scheduler_preempt_is_disabled());
-    scheduler_preempt_disable();
 
+    uint32_t snapshot_flags = task_table_lock_irqsave();
     int exiting = current_task;
     Process *process = NULL;
     uint32_t process_generation = 0U;
@@ -1003,11 +1418,15 @@ void task_exit_status(int status) {
         process = tasks[exiting].process;
         process_generation = tasks[exiting].process_generation;
     }
+    task_table_unlock_irqrestore(snapshot_flags);
 
-    /* User exceptions arrive with IF=0.  Keep scheduling suppressed while
-     * temporarily enabling device IRQs for VFS/block-driver cleanup. */
+    /* User exceptions arrive with IF=0. Resource cleanup may sleep in VFS and
+     * block-driver mutexes, so enable IRQs without a preemption guard. The
+     * running task and terminating process generation remain pinned until the
+     * final Process -> Scheduler commit below. */
     irq_enable();
     if (process != NULL) {
+        KASSERT(process_begin_exit(process, process_generation));
         device_domain_process_cleanup(process->pid, process_generation);
         ipc_process_cleanup(process->pid, process_generation);
         storage_request_cancel_process(process->pid, process_generation);
@@ -1016,8 +1435,9 @@ void task_exit_status(int status) {
         process_orphan_children(process->pid);
     }
     irq_disable();
-    scheduler_preempt_enable();
 
+    uint32_t process_flags = process_table_lock_irqsave();
+    spinlock_acquire(&task_table_lock);
     int finished = current_task;
     if (finished >= 0 && finished < num_tasks) {
         wait_queue_cancel_locked(&tasks[finished]);
@@ -1026,15 +1446,22 @@ void task_exit_status(int status) {
             tasks[finished].process->exit_status = status;
             tasks[finished].process->has_exited = true;
             tasks[finished].process->is_running = false;
-            (void)wait_queue_wake_all_locked(
+            tasks[finished].process->terminating = false;
+            (void)wait_queue_wake_all_task_locked(
                 &tasks[finished].process->exit_waiters);
         }
     }
 
-    int next = find_next_runnable(finished);
+    KASSERT(finished < 0 ||
+            tasks[finished].running_cpu ==
+                (int32_t)scheduler_cpu_local()->cpu_index);
+    int next = claim_next_runnable(finished);
     if (next >= 0) {
+        if (finished >= 0)
+            prepare_task_handoff(finished, SCHEDULER_HANDOFF_RELEASE);
         current_task = next;
-        tasks[next].status = TASK_RUNNING;
+        spinlock_release(&task_table_lock);
+        process_table_unlock_irqrestore(process_flags);
         activate_task_address_space(next);
         swtch(NULL, &tasks[next].context);
     }
@@ -1042,10 +1469,20 @@ void task_exit_status(int status) {
     current_task = -1;
     if (kernel_context_saved) {
         validate_kernel_context_stack_or_panic(false);
+        if (finished >= 0)
+            prepare_task_handoff(finished, SCHEDULER_HANDOFF_RELEASE);
+        spinlock_release(&task_table_lock);
+        process_table_unlock_irqrestore(process_flags);
         activate_task_address_space(-1);
         swtch(NULL, &kernel_context);
     }
 
+    spinlock_release(&task_table_lock);
+    process_table_unlock_irqrestore(process_flags);
+    if (finished >= 0) {
+        prepare_task_handoff(finished, SCHEDULER_HANDOFF_RELEASE);
+        finish_task_handoff();
+    }
     cpu_halt_forever();
     __builtin_unreachable();
 }
@@ -1055,41 +1492,71 @@ void scheduler_kill_current(void) {
 }
 
 Process *scheduler_current_process(void) {
+    uint32_t flags = task_table_lock_irqsave();
     int index = current_task;
     if (index < 0 || index >= num_tasks || !tasks[index].user_mode) {
+        task_table_unlock_irqrestore(flags);
         return NULL;
     }
-    return tasks[index].process;
+    Process *process = tasks[index].process;
+    task_table_unlock_irqrestore(flags);
+    return process;
 }
 
 void list_tasks(void) {
+    typedef struct {
+        uint32_t eip;
+        uint32_t esp;
+        int status;
+        uint8_t scheduling_class;
+        uint8_t effective_scheduling_class;
+    } task_list_snapshot_t;
+    task_list_snapshot_t snapshots[MAX_TASKS];
+    scheduler_window_t window;
+    uint32_t flags = task_table_lock_irqsave();
+    int count = num_tasks;
+    if (count > MAX_TASKS) count = MAX_TASKS;
+    for (int index = 0; index < count; ++index) {
+        snapshots[index] = (task_list_snapshot_t){
+            .eip = tasks[index].context.eip,
+            .esp = tasks[index].context.esp,
+            .status = tasks[index].status,
+            .scheduling_class = tasks[index].scheduling_class,
+            .effective_scheduling_class =
+                tasks[index].effective_scheduling_class,
+        };
+    }
+    window = cpu_windows[scheduler_cpu_policy_index_locked()];
+    task_table_unlock_irqrestore(flags);
+
     printf("Task list (CPU window %u ms, throttled=0x%x):\n",
-           SCHEDULER_WINDOW_MS, cpu_window.throttled_mask);
-    for (int i = 0; i < num_tasks; ++i) {
+           SCHEDULER_WINDOW_MS, window.throttled_mask);
+    for (int i = 0; i < count; ++i) {
         const char *status = "Ready";
-        if (tasks[i].status == TASK_RUNNING) status = "Running";
-        else if (tasks[i].status == TASK_SLEEPING) status = "Sleeping";
-        else if (tasks[i].status == TASK_WAITING) status = "Waiting";
-        else if (tasks[i].status == TASK_FINISHED) status = "Finished";
+        if (snapshots[i].status == TASK_RUNNING) status = "Running";
+        else if (snapshots[i].status == TASK_SLEEPING) status = "Sleeping";
+        else if (snapshots[i].status == TASK_WAITING) status = "Waiting";
+        else if (snapshots[i].status == TASK_HANDOFF) status = "Handoff";
+        else if (snapshots[i].status == TASK_FINISHED) status = "Finished";
 
         printf("Task %d: EIP=%p, ESP=%p, Status=%s, Class=%u/%u\n",
-               i, (void*)(uintptr_t)tasks[i].context.eip,
-               (void*)(uintptr_t)tasks[i].context.esp, status,
-               tasks[i].scheduling_class,
-               tasks[i].effective_scheduling_class);
+               i, (void*)(uintptr_t)snapshots[i].eip,
+               (void*)(uintptr_t)snapshots[i].esp, status,
+               snapshots[i].scheduling_class,
+               snapshots[i].effective_scheduling_class);
     }
     for (uint8_t scheduling_class = 0U;
          scheduling_class < SCHEDULER_CLASS_COUNT; ++scheduling_class) {
         printf("CPU class %u: used=%u/%u ms overloads=%u\n",
-               scheduling_class, cpu_window.used_ms[scheduling_class],
+               scheduling_class, window.used_ms[scheduling_class],
                scheduler_policy_window_limit(scheduling_class),
-               cpu_window.overload_count[scheduling_class]);
+               window.overload_count[scheduling_class]);
     }
 }
 
 int scheduler_resource_stats(scheduler_resource_stats_t *stats_out) {
     if (stats_out == NULL) return -22;
-    uint32_t flags = irq_save();
+    uint32_t flags = task_table_lock_irqsave();
     uint32_t active = active_task_count_locked();
     if (active > peak_active_tasks) peak_active_tasks = active;
     *stats_out = (scheduler_resource_stats_t){
@@ -1102,6 +1569,6 @@ int scheduler_resource_stats(scheduler_resource_stats_t *stats_out) {
         .supervised_reserve = SUPERVISED_TASK_RESERVE,
         .reserved = kernel_stack_high_water_peak,
     };
-    irq_restore(flags);
+    task_table_unlock_irqrestore(flags);
     return 0;
 }

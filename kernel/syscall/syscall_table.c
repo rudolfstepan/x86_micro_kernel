@@ -2724,30 +2724,29 @@ static int syscall_wait(int pid, int *user_status) {
                                sizeof(*user_status), true)) return -14;
     for (;;) {
         int status = 0;
-        /* On this uniprocessor kernel, keeping interrupts disabled makes the
-         * child-state check and TASK_WAITING registration one atomic
-         * operation.  Otherwise a child can exit between both operations and
-         * its wakeup is lost permanently. */
-        uint32_t flags = irq_save();
+        /* Hold the SMP process table transaction from child-state inspection
+         * through waitqueue registration. */
+        uint32_t flags = process_table_lock_irqsave();
         wait_queue_t *wait_queue = NULL;
         int result = process_wait_status_locked(parent, pid, &status,
                                                 &wait_queue);
         if (result < 0) {
-            irq_restore(flags);
+            process_table_unlock_irqrestore(flags);
             return -10;
         }
         if (result > 0) {
-            irq_restore(flags);
+            process_table_unlock_irqrestore(flags);
             (void)scheduler_reap_finished_tasks();
             return copy_to_user(user_status, &status, sizeof(status)) == 0
                        ? pid : -14;
         }
-        if (wait_queue == NULL ||
-            wait_queue_block_locked(wait_queue, TASK_BLOCK_WAITING) != 0) {
-            irq_restore(flags);
+        if (wait_queue == NULL) {
+            process_table_unlock_irqrestore(flags);
             return -11;
         }
-        irq_restore(flags);
+        if (wait_queue_block_until_spinlocked(
+                wait_queue, TASK_BLOCK_WAITING, UINT64_MAX,
+                process_table_lock_ref(), flags) != 0) return -11;
     }
 }
 
@@ -3562,95 +3561,65 @@ void syscall_handler(Registers* regs) {
             result = syscall_memory_kb();
             break;
         case SYS_OPEN:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_open((const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_READ:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_read((int)arg1,
                                             (void*)(uintptr_t)arg2,
                                             (size_t)arg3);
-            scheduler_preempt_enable();
             break;
         case SYS_CLOSE:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_close((int)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_STAT:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_stat(
                 (const char*)(uintptr_t)arg1, (void*)(uintptr_t)arg2);
-            scheduler_preempt_enable();
             break;
         case SYS_READDIR:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_readdir(
                 (const char*)(uintptr_t)arg1, arg2, (void*)(uintptr_t)arg3);
-            scheduler_preempt_enable();
             break;
         case SYS_CREATE:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_create((const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_OPEN_FLAGS:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_open_flags(
                 (const char*)(uintptr_t)arg1, arg2);
-            scheduler_preempt_enable();
             break;
         case SYS_LSEEK:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_lseek((int)arg1, (int32_t)arg2, arg3);
-            scheduler_preempt_enable();
             break;
         case SYS_FSTAT:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_fstat(
                 (int)arg1, (void*)(uintptr_t)arg2);
-            scheduler_preempt_enable();
             break;
         case SYS_FTRUNCATE:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_ftruncate((int)arg1, arg2);
-            scheduler_preempt_enable();
             break;
         case SYS_TOUCH:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_touch((const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_WRITE:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_write(
                 (int)arg1, (const void*)(uintptr_t)arg2, (size_t)arg3);
-            scheduler_preempt_enable();
             break;
         case SYS_UNLINK:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_unlink((const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_GETPID:
             result = (uint32_t)syscall_getpid();
             break;
         case SYS_SPAWN:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_spawn((const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_WAIT:
             result = (uint32_t)syscall_wait(
                 (int)arg1, (int*)(uintptr_t)arg2);
             break;
         case SYS_READDIR_BATCH:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_readdir_batch(
                 (const char*)(uintptr_t)arg1, arg2,
                 (void*)(uintptr_t)arg3);
-            scheduler_preempt_enable();
             break;
         case SYS_PROCESS_INFO:
             scheduler_preempt_disable();
@@ -3662,43 +3631,31 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_kill((int)arg1);
             break;
         case SYS_GETCWD:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_getcwd(
                 (void*)(uintptr_t)arg1, (size_t)arg2);
-            scheduler_preempt_enable();
             break;
         case SYS_CHDIR:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_chdir(
                 (const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_SPAWNV:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_spawnv(
                 (const char*)(uintptr_t)arg1,
                 (const char* const*)(uintptr_t)arg2, (int)arg3);
-            scheduler_preempt_enable();
             break;
         case SYS_DRIVE_INFO:
             result = (uint32_t)syscall_drive_info(
                 arg1, (void*)(uintptr_t)arg2);
             break;
         case SYS_SPACE:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_space(
                 (const char*)(uintptr_t)arg1, (void*)(uintptr_t)arg2);
-            scheduler_preempt_enable();
             break;
         case SYS_MKDIR:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_mkdir((const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_RMDIR:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_rmdir((const char*)(uintptr_t)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_CLEAR:
             display_clear();
@@ -3783,16 +3740,12 @@ void syscall_handler(Registers* regs) {
                 (runtime_timing_stats_t*)(uintptr_t)arg1, arg2, arg3);
             break;
         case SYS_RENAME:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_rename(
                 (const char*)(uintptr_t)arg1,
                 (const char*)(uintptr_t)arg2);
-            scheduler_preempt_enable();
             break;
         case SYS_FSYNC:
-            scheduler_preempt_disable();
             result = (uint32_t)syscall_fsync((int)arg1);
-            scheduler_preempt_enable();
             break;
         case SYS_IPC_CREATE:
             result = (uint32_t)syscall_ipc_create(

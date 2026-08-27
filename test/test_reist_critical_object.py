@@ -36,6 +36,19 @@ class ReistCriticalObjectTests(unittest.TestCase):
         self.assertIn("WORD_SEQUENCE", source)
         self.assertIn("copy_crc", source)
 
+    def test_publication_is_bounded_and_smp_safe(self):
+        header = (ROOT / "include/kernel/critical_object.h").read_text(encoding="utf-8")
+        source = (ROOT / "kernel/init/critical_object.c").read_text(encoding="utf-8")
+        self.assertIn("volatile uint32_t publication_lock", header)
+        self.assertIn("CRITICAL_OBJECT_LOCK_RETRY_LIMIT", source)
+        self.assertIn("__sync_bool_compare_and_swap(&object->publication_lock", source)
+        self.assertIn("__sync_lock_release(&object->publication_lock)", source)
+        self.assertIn("*irq_flags_out = irq_save()", source)
+        self.assertIn("irq_restore(irq_flags)", source)
+        self.assertGreaterEqual(
+            source.count("critical_object_lock(object, &irq_flags)"), 2
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

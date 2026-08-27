@@ -5185,25 +5185,39 @@ bool supervisor_device_driver_component_up(uint32_t device_index,
     return false;
 }
 
+static void audio_service_abort_prepared_spawn(
+        supervisor_audio_service_control_t *control, int pid) {
+    if (pid > 0) {
+        scheduler_preempt_disable();
+        (void)process_terminate(pid);
+        scheduler_preempt_enable();
+    }
+    if (control == NULL) return;
+    control->pid = 0;
+    control->process_generation = 0U;
+    control->endpoint = 0U;
+    control->client_pid = 0;
+    control->client_generation = 0U;
+    control->healthy = 0U;
+    control->ready = 0U;
+    control->fenced = 1U;
+    (void)audio_service_control_write(control);
+}
+
 static bool audio_service_spawn_next(supervisor_handle_t handle) {
-    /* A newly created task is runnable immediately.  Keep preemption disabled
-     * until its PID, generation and supervisor epoch are published so its
-     * first self-test report cannot race an incomplete control record. */
-    scheduler_preempt_disable();
     supervisor_audio_service_control_t control;
     if (audio_service_control_read(&control) != 0 || control.active == 0U ||
-        control.pid != 0 || control.endpoint != 0U || control.fenced == 0U) {
-        scheduler_preempt_enable();
+        control.pid != 0 || control.endpoint != 0U || control.fenced == 0U)
         return false;
-    }
     const char *arguments[] = {SUPERVISOR_AUDIO_SERVICE_PATH};
-    int pid = supervisor_spawn_service(
+    /* Loading may block in VFS.  The task therefore remains PREPARED until
+     * its generation-scoped control record has been committed. */
+    int pid = process_spawn_supervised_prepared(
         SUPERVISOR_AUDIO_SERVICE_PATH, 1, arguments,
         PROCESS_DOMAIN_AUDIO_SERVICE);
     uint32_t generation = 0U;
     if (pid <= 0 || process_get_identity(pid, &generation) != 0) {
-        if (pid > 0) (void)process_terminate(pid);
-        scheduler_preempt_enable();
+        audio_service_abort_prepared_spawn(&control, pid);
         return false;
     }
     control.pid = pid;
@@ -5216,11 +5230,13 @@ static bool audio_service_spawn_next(supervisor_handle_t handle) {
     control.fenced = 1U;
     control.supervisor = handle;
     if (audio_service_control_write(&control) != 0) {
-        (void)process_terminate(pid);
-        scheduler_preempt_enable();
+        audio_service_abort_prepared_spawn(&control, pid);
         return false;
     }
-    scheduler_preempt_enable();
+    if (process_start_prepared_supervised(pid, generation) != 0) {
+        audio_service_abort_prepared_spawn(&control, pid);
+        return false;
+    }
     return true;
 }
 
@@ -5262,25 +5278,25 @@ static bool audio_service_rotate_session(supervisor_handle_t handle) {
     supervisor_handle_t updated = {0};
     supervisor_audio_service_control_t control;
     bool rotated = false;
+    bool launch_allowed = false;
 
     scheduler_preempt_disable();
-    if (!audio_service_fence_apply(&audio_service_runtime) ||
-        !audio_service_fence_verify(&audio_service_runtime) ||
-        supervisor_admin_pause(handle) != 0 ||
-        supervisor_admin_start(handle, pit_monotonic_ms(), &updated) != 0)
-        goto done;
-    isolate_handle = updated;
-    if (audio_service_control_read(&control) != 0 ||
-        control.active == 0U || control.fenced == 0U || control.pid != 0)
-        goto done;
-    control.supervisor = updated;
-    if (audio_service_control_write(&control) != 0 ||
-        !audio_service_spawn_next(updated))
-        goto done;
-    rotated = true;
-
-done:
+    do {
+        if (!audio_service_fence_apply(&audio_service_runtime) ||
+            !audio_service_fence_verify(&audio_service_runtime) ||
+            supervisor_admin_pause(handle) != 0 ||
+            supervisor_admin_start(handle, pit_monotonic_ms(), &updated) != 0)
+            break;
+        isolate_handle = updated;
+        if (audio_service_control_read(&control) != 0 ||
+            control.active == 0U || control.fenced == 0U || control.pid != 0)
+            break;
+        control.supervisor = updated;
+        if (audio_service_control_write(&control) != 0) break;
+        launch_allowed = true;
+    } while (0);
     scheduler_preempt_enable();
+    if (launch_allowed && audio_service_spawn_next(updated)) rotated = true;
     if (!rotated) {
         (void)supervisor_force_isolate(isolate_handle);
         return false;

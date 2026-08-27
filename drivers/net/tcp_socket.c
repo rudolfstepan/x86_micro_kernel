@@ -10,6 +10,7 @@
 #include "drivers/net/netstack.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
+#include "include/lib/spinlock.h"
 #include "lib/libc/string.h"
 
 #define TCP_RECEIVE_WINDOW TCP_SOCKET_RECEIVE_CAPACITY
@@ -62,9 +63,27 @@ typedef struct {
 static uint32_t tcp_lock(void) { return 0U; }
 static void tcp_unlock(uint32_t flags) { (void)flags; }
 #else
-static uint32_t tcp_lock(void) { return irq_save(); }
-static void tcp_unlock(uint32_t flags) { irq_restore(flags); }
+static spinlock_t tcp_state_lock = SPINLOCK_INIT;
+static uint32_t tcp_lock(void) {
+    return spinlock_acquire_irq(&tcp_state_lock);
+}
+static void tcp_unlock(uint32_t flags) {
+    spinlock_release_irq(&tcp_state_lock, flags);
+}
 #endif
+
+static int tcp_wait_locked(wait_queue_t *queue, uint64_t deadline,
+                           uint32_t irq_flags) {
+#ifdef REIST_HOST_TEST
+    int result = wait_queue_block_until_locked(
+        queue, TASK_BLOCK_WAITING, deadline);
+    tcp_unlock(irq_flags);
+    return result;
+#else
+    return wait_queue_block_until_spinlocked(
+        queue, TASK_BLOCK_WAITING, deadline, &tcp_state_lock, irq_flags);
+#endif
+}
 
 static uint64_t deadline_after(uint64_t now, uint32_t milliseconds) {
     uint64_t deadline = now + milliseconds;
@@ -220,9 +239,8 @@ int tcp_socket_accept(int pid, uint32_t process_generation,
         }
         if (timeout_ms == 0U) { tcp_unlock(flags); return -11; }
         if (now >= deadline) { tcp_unlock(flags); return -110; }
-        result = wait_queue_block_until_locked(
-            &listener_control->state_waiters, TASK_BLOCK_WAITING, wait_deadline);
-        tcp_unlock(flags);
+        result = tcp_wait_locked(&listener_control->state_waiters,
+                                 wait_deadline, flags);
         if (result != 0 && result != -110) return -11;
     }
 }
@@ -264,9 +282,8 @@ static int wait_for_ack(int pid, uint32_t process_generation,
             continue;
         }
         if (wait_deadline > deadline) wait_deadline = deadline;
-        result = wait_queue_block_until_locked(
-            &control->state_waiters, TASK_BLOCK_WAITING, wait_deadline);
-        tcp_unlock(irq_flags);
+        result = tcp_wait_locked(&control->state_waiters, wait_deadline,
+                                 irq_flags);
         if (result != 0 && result != -110) return -11;
     }
 }
@@ -373,9 +390,7 @@ int tcp_socket_receive(int pid, uint32_t process_generation,
         if (pit_monotonic_ms() >= deadline) {
             tcp_unlock(flags); return -110;
         }
-        result = wait_queue_block_until_locked(
-            &control->receive_waiters, TASK_BLOCK_WAITING, deadline);
-        tcp_unlock(flags);
+        result = tcp_wait_locked(&control->receive_waiters, deadline, flags);
         if (result != 0 && result != -110) return -11;
     }
 }
@@ -431,9 +446,8 @@ int tcp_socket_close(int pid, uint32_t process_generation,
         if (pit_monotonic_ms() >= close_deadline) {
             tcp_unlock(flags); result = -110; break;
         }
-        int wait_result = wait_queue_block_until_locked(
-            &control->state_waiters, TASK_BLOCK_WAITING, close_deadline);
-        tcp_unlock(flags);
+        int wait_result = tcp_wait_locked(&control->state_waiters,
+                                          close_deadline, flags);
         if (wait_result != 0 && wait_result != -110) {
             result = -11; break;
         }

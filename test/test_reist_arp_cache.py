@@ -8,6 +8,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class ReistArpCacheTests(unittest.TestCase):
+    def test_target_cache_uses_a_cpu_owned_smp_lock(self):
+        source = (ROOT / "drivers/net/arp_binding_cache.c").read_text(
+            encoding="utf-8")
+        self.assertIn("arp_cache_lock = SPINLOCK_INIT", source)
+        self.assertIn("spinlock_acquire_irq(&arp_cache_lock)", source)
+        self.assertIn("spinlock_release_irq(&arp_cache_lock, flags)", source)
+
     def test_protected_cache_host_behavior(self):
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "arp-cache-test.exe"

@@ -413,9 +413,11 @@ class KernelStackAndReapingTests(unittest.TestCase):
             self.scheduler, "size_t scheduler_reap_finished_tasks("
         )
         compact = re.sub(r"\s+", " ", reap_all)
-        first_save = reap_all.index("irq_save()")
+        first_save = reap_all.index("process_table_lock_irqsave()")
         detach_call = reap_all.index("release_task_resources(task)")
-        first_restore = reap_all.index("irq_restore(flags)", detach_call)
+        first_restore = reap_all.index(
+            "process_table_unlock_irqrestore(process_flags)", detach_call
+        )
         self.assertLess(first_save, detach_call)
         self.assertLess(detach_call, first_restore)
         self.assertIn("task->status == TASK_REAPING", compact)
@@ -423,8 +425,12 @@ class KernelStackAndReapingTests(unittest.TestCase):
         free_directory = reap_all.index("free_page_directory(page_directory)")
         free_stack = reap_all.index("scheduler_free_kernel_stack(kernel_stack)")
         claimed = reap_all.index("page_directory = task->reap_page_directory")
-        claim_restore = reap_all.index("irq_restore(flags)", claimed)
-        final_save = reap_all.index("flags = irq_save()", free_stack)
+        claim_restore = reap_all.index(
+            "task_table_unlock_irqrestore(flags)", claimed
+        )
+        final_save = reap_all.index(
+            "flags = task_table_lock_irqsave()", free_stack
+        )
         self.assertLess(claim_restore, free_directory)
         self.assertLess(claim_restore, free_stack)
         self.assertLess(free_directory, final_save)
@@ -438,24 +444,33 @@ class KernelStackAndReapingTests(unittest.TestCase):
 
         # No expensive page-table walk or heap free is allowed in any of the
         # explicit interrupt-disabled regions in this routine.
-        for match in re.finditer(r"(?:uint32_t\s+)?flags\s*=\s*irq_save\(\);",
-                                 reap_all):
+        for match in re.finditer(
+            r"(?:uint32_t\s+)?flags\s*=\s*task_table_lock_irqsave\(\);",
+            reap_all,
+        ):
             critical = reap_all[
-                match.start() : reap_all.index("irq_restore(flags);", match.end())
+                match.start() : reap_all.index(
+                    "task_table_unlock_irqrestore(flags);", match.end()
+                )
             ]
             self.assertNotIn("free_page_directory(", critical)
             self.assertNotIn("scheduler_free_kernel_stack(", critical)
+
+        first_critical = reap_all[first_save:first_restore]
+        self.assertIn("spinlock_acquire(&task_table_lock)", first_critical)
+        self.assertNotIn("free_page_directory(", first_critical)
+        self.assertNotIn("scheduler_free_kernel_stack(", first_critical)
 
     def test_wait_completes_detached_reaping_after_restoring_interrupts(self):
         wait = function_block(self.syscalls, "static int syscall_wait(")
         completed = wait[wait.index("if (result > 0)") :]
         self.assertLess(
-            completed.index("irq_restore(flags)"),
+            completed.index("process_table_unlock_irqrestore(flags)"),
             completed.index("scheduler_reap_finished_tasks()"),
         )
         wrapper = function_block(self.process, "int process_wait_status(")
         self.assertLess(
-            wrapper.index("irq_restore(flags)"),
+            wrapper.index("process_table_unlock_irqrestore(flags)"),
             wrapper.index("scheduler_reap_finished_tasks()"),
         )
 
@@ -469,7 +484,9 @@ class KernelStackAndReapingTests(unittest.TestCase):
         )
         self.assertIn("task->status == TASK_FINISHED", reap_all)
         self.assertIn("release_task_resources(task)", reap_all)
-        create_task = function_block(self.scheduler, "int create_task(")
+        create_task = function_block(
+            self.scheduler, "static int create_task_with_affinity("
+        )
         self.assertIn("tasks[i].reap_kernel_stack == NULL", create_task)
         self.assertIn("tasks[i].reap_page_directory == NULL", create_task)
 

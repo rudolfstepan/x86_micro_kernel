@@ -49,6 +49,16 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("storage_request_stats_t", header)
         self.assertIn("int storage_request_stats(", header)
 
+    def test_target_pool_uses_a_cpu_owned_smp_lock(self):
+        source = (ROOT / "kernel/init/storage_request_pool.c").read_text()
+        target = source[source.index("#else"):
+                        source.index("#endif", source.index("#else"))]
+        self.assertIn("storage_state_lock = SPINLOCK_INIT", target)
+        self.assertIn("spinlock_acquire_irq(&storage_state_lock)", target)
+        self.assertIn("spinlock_release_irq(&storage_state_lock, flags)",
+                      target)
+        self.assertNotIn("return irq_save()", target)
+
     def test_owner_aware_claim_is_append_only_and_keeps_v1_exact(self):
         header = (ROOT / "include/kernel/storage_request_pool.h").read_text()
         source = (ROOT / "kernel/init/storage_request_pool.c").read_text()

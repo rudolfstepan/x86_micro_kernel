@@ -124,7 +124,7 @@ class ReistSupervisorTests(unittest.TestCase):
 
     def test_pit_drives_bounded_supervisor_deadline_checks(self):
         pit = (ROOT / "kernel/time/pit.c").read_text(encoding="utf-8")
-        self.assertIn("supervisor_clock_tick(timer_tick_count);", pit)
+        self.assertIn("supervisor_clock_tick(now_ms);", pit)
 
     def test_reserved_foreground_worker_is_fail_closed(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")

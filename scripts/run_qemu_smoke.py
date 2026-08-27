@@ -167,6 +167,7 @@ def qemu_command(
     sata: bool = False,
     auxiliary_sata_image: Path | None = None,
     vmware_vga: bool = False,
+    smp: int = 1,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -180,6 +181,8 @@ def qemu_command(
         "-serial", "mon:stdio",
         "-no-shutdown",
     ]
+    if smp > 1:
+        command.extend(["-smp", str(smp)])
     if vmware_vga:
         command.extend(["-vga", "vmware"])
     if sata:
@@ -1121,6 +1124,7 @@ def run(
     boot_only: bool = False,
     expect_wcet_baseline: bool = False,
     vmware_vga: bool = False,
+    smp: int = 1,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -1140,7 +1144,7 @@ def run(
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
                          nic, persistent, injection_port, handover_port, sata,
-                         auxiliary_sata_image, vmware_vga),
+                         auxiliary_sata_image, vmware_vga, smp),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1816,6 +1820,14 @@ def main() -> int:
         help="disable the local APIC and exercise the PIT scheduler fallback",
     )
     parser.add_argument(
+        "--smp", type=int, default=1,
+        help="emulated x86 CPU count (bounded to the kernel maximum of 16)",
+    )
+    parser.add_argument(
+        "--expect-smp", action="store_true",
+        help="require every configured AP to enter and park successfully",
+    )
+    parser.add_argument(
         "--watchdog",
         action="store_true",
         help="attach the qualified QEMU IB700 hardware-watchdog profile",
@@ -2016,6 +2028,13 @@ def main() -> int:
     if args.timeout <= 0:
         print("guest-smoke: timeout must be positive", file=sys.stderr)
         return 2
+    if args.smp < 1 or args.smp > 16:
+        print("guest-smoke: --smp must be in 1..16", file=sys.stderr)
+        return 2
+    if args.expect_smp and (args.smp < 2 or args.no_apic):
+        print("guest-smoke: --expect-smp requires --smp 2..16 with APIC",
+              file=sys.stderr)
+        return 2
     if args.udp_port < 1024 or args.udp_port > 65535:
         print("guest-smoke: UDP port must be in 1024..65535", file=sys.stderr)
         return 2
@@ -2065,6 +2084,7 @@ def main() -> int:
             args.boot_only,
             args.expect_wcet_baseline,
             args.vmware_vga,
+            args.smp,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)
@@ -2119,6 +2139,53 @@ def main() -> int:
             if marker not in transcript:
                 marker_error = f"missing {marker} marker"
                 break
+    if marker_error is None and args.expect_smp:
+        for index in range(1, args.smp):
+            marker = f"REIST_SMP AP_ONLINE index={index} apic={index}"
+            if marker not in transcript:
+                marker_error = f"missing {marker} marker"
+                break
+        ready = (f"REIST_SMP READY online={args.smp} "
+                 f"parked={args.smp - 1} failed=0")
+        if marker_error is None and ready not in transcript:
+            marker_error = f"missing {ready} marker"
+        per_cpu = f"REIST_SMP PERCPU_READY cpus={args.smp}"
+        if marker_error is None and per_cpu not in transcript:
+            marker_error = f"missing {per_cpu} marker"
+        lock_mask = (1 << args.smp) - 1
+        lock_ready = (f"REIST_SMP LOCK_READY cpus={args.smp} "
+                      f"mask={lock_mask:08X}")
+        if marker_error is None and lock_ready not in transcript:
+            marker_error = f"missing {lock_ready} marker"
+        tlb_ready = f"REIST_SMP TLB_READY cpus={args.smp}"
+        if marker_error is None and tlb_ready not in transcript:
+            marker_error = f"missing {tlb_ready} marker"
+        irq_ready = "REIST_SMP IRQ_AFFINITY_READY mode=pic-bsp"
+        if marker_error is None and irq_ready not in transcript:
+            marker_error = f"missing {irq_ready} marker"
+        timer_ready = f"REIST_SMP TIMER_READY cpus={args.smp} mode=masked"
+        if marker_error is None and timer_ready not in transcript:
+            marker_error = f"missing {timer_ready} marker"
+        probe_mask = ((1 << args.smp) - 1) & ~1
+        mutex_ready = (f"REIST_SMP MUTEX_READY workers={args.smp - 1} "
+                       f"mask={probe_mask:08X}")
+        if marker_error is None and mutex_ready not in transcript:
+            marker_error = f"missing {mutex_ready} marker"
+        integrity_ready = (f"REIST_SMP INTEGRITY_READY workers={args.smp - 1} "
+                           f"mask={probe_mask:08X}")
+        if marker_error is None and integrity_ready not in transcript:
+            marker_error = f"missing {integrity_ready} marker"
+        subsystem_ready = (f"REIST_SMP SUBSYSTEM_READY workers={args.smp - 1} "
+                           f"mask={probe_mask:08X}")
+        if marker_error is None and subsystem_ready not in transcript:
+            marker_error = f"missing {subsystem_ready} marker"
+        reap_ready = f"REIST_SMP REAP_READY workers={args.smp - 1} "
+        if marker_error is None and reap_ready not in transcript:
+            marker_error = f"missing {reap_ready} marker"
+        scheduler_ready = (f"REIST_SMP SCHEDULER_READY cpus={args.smp} "
+                           f"probe_mask={probe_mask:08X}")
+        if marker_error is None and scheduler_ready not in transcript:
+            marker_error = f"missing {scheduler_ready} marker"
     if marker_error is None and process_error is None:
         print(transcript, end="" if transcript.endswith("\n") else "\n")
         print("guest-smoke: PASS")
@@ -2129,7 +2196,7 @@ def main() -> int:
     detail = process_error or marker_error
     if not (args.expect_dhcp_expiry or args.expect_dhcp_renewal or
             args.boot_only) and \
-            TEST_MARKER not in str(detail):
+            TEST_MARKER not in transcript:
         detail = f"{detail}; missing {TEST_MARKER} marker"
     print(f"guest-smoke: FAIL: {detail}", file=sys.stderr)
     return status or 1

@@ -65,7 +65,8 @@ class ReistSchedulingPolicyTests(unittest.TestCase):
             encoding="utf-8")
         self.assertIn("counterpart_identity_locked", ipc)
         self.assertEqual(ipc.count("scheduler_set_wait_owner_locked("), 2)
-        self.assertEqual(ipc.count("scheduler_clear_wait_owner_locked();"), 2)
+        self.assertEqual(ipc.count("scheduler_clear_wait_owner_locked();"), 4)
+        self.assertIn("wait_queue_block_until_spinlocked", ipc)
         self.assertIn("blocked_owner_generation", scheduler)
         self.assertIn("scheduler_policy_inherit", scheduler)
 

@@ -70,6 +70,13 @@ class BootServiceReadyContractTests(unittest.TestCase):
         self.assertLess(call, boot_ok)
         self.assertLess(boot_ok, shell)
 
+    def test_system_program_loading_keeps_vfs_sleepable(self):
+        start = function(self.kernel, "static int start_userspace_program(")
+        self.assertIn("create_process_for_file_args(", start)
+        self.assertIn("wait_for_process(pid)", start)
+        self.assertNotIn("scheduler_preempt_disable()", start)
+        self.assertNotIn("scheduler_preempt_enable()", start)
+
 
 if __name__ == "__main__":
     unittest.main()

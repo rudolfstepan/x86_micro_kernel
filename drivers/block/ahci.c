@@ -13,6 +13,7 @@
 #include "drivers/block/ata.h"
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
+#include "kernel/sched/mutex.h"
 #include "kernel/time/pit.h"
 
 #define AHCI_MAX_CONTROLLERS 4U
@@ -48,6 +49,7 @@
 #define AHCI_PORT_TFD_DRQ (1U << 3)
 #define AHCI_PORT_TFD_ERR (1U << 0)
 #define AHCI_COMMAND_TIMEOUT_MS 5000U
+#define AHCI_PORT_LOCK_TIMEOUT_MS 10000U
 #define AHCI_ATA_READ_DMA_EXT 0x25U
 #define AHCI_ATA_WRITE_DMA_EXT 0x35U
 #define AHCI_ATA_FLUSH_CACHE_EXT 0xEAU
@@ -65,7 +67,7 @@ static uint8_t identify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
     __attribute__((aligned(2)));
 static uint8_t write_verify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
     __attribute__((aligned(2)));
-static bool port_busy[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS];
+static kernel_mutex_t port_mutex[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS];
 static volatile bool writes_fenced;
 #ifdef REIST_AHCI_FAULT_INJECTION
 static bool ahci_fault_consumed;
@@ -477,20 +479,60 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
     return true;
 }
 
-static bool ahci_port_acquire(size_t controller_index, uint32_t port) {
+static bool ahci_port_acquire_until(size_t controller_index, uint32_t port,
+                                    uint64_t deadline_ms) {
+    KASSERT_NOT_IRQ();
     if (controller_index >= controller_count || port >= AHCI_MAX_PORTS)
         return false;
-    uint32_t flags = irq_save();
-    bool acquired = !port_busy[controller_index][port];
-    if (acquired) port_busy[controller_index][port] = true;
-    irq_restore(flags);
-    return acquired;
+    return kernel_mutex_lock_until(&port_mutex[controller_index][port],
+                                   deadline_ms) == 0;
+}
+
+static bool ahci_port_acquire(size_t controller_index, uint32_t port) {
+    KASSERT_NOT_IRQ();
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + AHCI_PORT_LOCK_TIMEOUT_MS;
+    if (deadline < now) deadline = UINT64_MAX;
+    return ahci_port_acquire_until(controller_index, port, deadline);
 }
 
 static void ahci_port_release(size_t controller_index, uint32_t port) {
-    uint32_t flags = irq_save();
-    port_busy[controller_index][port] = false;
-    irq_restore(flags);
+    KASSERT_NOT_IRQ();
+    KASSERT(controller_index < controller_count);
+    KASSERT(port < AHCI_MAX_PORTS);
+    kernel_mutex_unlock(&port_mutex[controller_index][port]);
+}
+
+static bool ahci_ports_acquire(uint64_t deadline_ms,
+                               uint32_t acquired[AHCI_MAX_CONTROLLERS]) {
+    memset(acquired, 0, sizeof(uint32_t) * AHCI_MAX_CONTROLLERS);
+    for (size_t controller_index = 0U;
+         controller_index < controller_count; ++controller_index) {
+        const ahci_controller_info_t *controller =
+            &controllers[controller_index];
+        if (controller->valid == 0U) continue;
+        for (uint32_t port = 0U; port < AHCI_MAX_PORTS; ++port) {
+            uint32_t bit = 1U << port;
+            if ((controller->identify_valid_ports & bit) == 0U) continue;
+            if (!ahci_port_acquire_until(controller_index, port,
+                                         deadline_ms)) return false;
+            acquired[controller_index] |= bit;
+        }
+    }
+    return true;
+}
+
+static void ahci_ports_release(
+        const uint32_t acquired[AHCI_MAX_CONTROLLERS]) {
+    for (size_t controller_index = controller_count;
+         controller_index != 0U; --controller_index) {
+        size_t index = controller_index - 1U;
+        for (uint32_t port = AHCI_MAX_PORTS; port != 0U; --port) {
+            uint32_t port_index = port - 1U;
+            if ((acquired[index] & (1U << port_index)) != 0U)
+                ahci_port_release(index, port_index);
+        }
+    }
 }
 
 static bool ahci_drive_valid(const drive_t *drive,
@@ -584,6 +626,10 @@ static bool ahci_write_sector_internal(const drive_t *drive, uint32_t sector,
         !ahci_drive_valid(drive, &controller) || sector >= drive->sectors ||
         !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
         return false;
+    if (writes_fenced && !recovery) {
+        ahci_port_release(drive->ahci_controller, drive->ahci_port);
+        return false;
+    }
     uint8_t *dma_buffer =
         identify_buffers[drive->ahci_controller][drive->ahci_port];
     uint8_t *expected =
@@ -638,11 +684,55 @@ bool ahci_flush(const drive_t *drive) {
 void ahci_fence_writes(void) {
     writes_fenced = true;
     __asm__ volatile("" ::: "memory");
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + AHCI_PORT_LOCK_TIMEOUT_MS;
+    if (deadline < now) deadline = UINT64_MAX;
+    uint32_t acquired[AHCI_MAX_CONTROLLERS];
+    (void)ahci_ports_acquire(deadline, acquired);
+    ahci_ports_release(acquired);
 }
 
 void ahci_restore_writes_after_recovery(void) {
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + AHCI_PORT_LOCK_TIMEOUT_MS;
+    if (deadline < now) deadline = UINT64_MAX;
+    uint32_t acquired[AHCI_MAX_CONTROLLERS];
+    if (!ahci_ports_acquire(deadline, acquired)) {
+        ahci_ports_release(acquired);
+        return;
+    }
     writes_fenced = false;
     __asm__ volatile("" ::: "memory");
+    ahci_ports_release(acquired);
+}
+
+bool ahci_writes_quiescent(void) {
+    if (!writes_fenced) return false;
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + AHCI_PORT_LOCK_TIMEOUT_MS;
+    if (deadline < now) deadline = UINT64_MAX;
+    uint32_t acquired[AHCI_MAX_CONTROLLERS];
+    if (!ahci_ports_acquire(deadline, acquired)) {
+        ahci_ports_release(acquired);
+        return false;
+    }
+    bool quiescent = true;
+    for (size_t controller_index = 0U;
+         controller_index < controller_count; ++controller_index) {
+        ahci_controller_info_t *controller = &controllers[controller_index];
+        for (uint32_t port = 0U; port < AHCI_MAX_PORTS; ++port) {
+            uint32_t bit = 1U << port;
+            if ((acquired[controller_index] & bit) == 0U) continue;
+            uint32_t base = AHCI_PORT_BASE + port * AHCI_PORT_STRIDE;
+            uint32_t task = ahci_read(controller->mmio,
+                                      base + AHCI_PORT_TFD);
+            if ((ahci_read(controller->mmio, base + AHCI_PORT_CI) & 1U) != 0U ||
+                (task & (AHCI_PORT_TFD_BSY | AHCI_PORT_TFD_DRQ)) != 0U)
+                quiescent = false;
+        }
+    }
+    ahci_ports_release(acquired);
+    return quiescent;
 }
 
 static bool ahci_initialize_controller(ahci_controller_info_t *controller,
@@ -748,7 +838,11 @@ size_t ahci_probe_controllers(ahci_controller_info_t *output,
 
 void ahci_init(void) {
     memset(controllers, 0, sizeof(controllers));
-    memset(port_busy, 0, sizeof(port_busy));
+    for (size_t controller_index = 0U;
+         controller_index < AHCI_MAX_CONTROLLERS; ++controller_index) {
+        for (uint32_t port = 0U; port < AHCI_MAX_PORTS; ++port)
+            kernel_mutex_init(&port_mutex[controller_index][port]);
+    }
     writes_fenced = false;
     ahci_link_candidate_count = 0U;
     ahci_identified_drive_count = 0U;

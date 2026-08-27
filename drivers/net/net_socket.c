@@ -10,6 +10,7 @@
 #include "drivers/net/netstack.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
+#include "include/lib/spinlock.h"
 #include "lib/libc/string.h"
 
 typedef struct {
@@ -36,8 +37,13 @@ static uint32_t dropped_datagrams;
 static uint32_t socket_lock(void) { return 0U; }
 static void socket_unlock(uint32_t flags) { (void)flags; }
 #else
-static uint32_t socket_lock(void) { return irq_save(); }
-static void socket_unlock(uint32_t flags) { irq_restore(flags); }
+static spinlock_t socket_state_lock = SPINLOCK_INIT;
+static uint32_t socket_lock(void) {
+    return spinlock_acquire_irq(&socket_state_lock);
+}
+static void socket_unlock(uint32_t flags) {
+    spinlock_release_irq(&socket_state_lock, flags);
+}
 #endif
 
 static net_socket_handle_t make_handle(uint32_t slot, uint32_t generation) {
@@ -158,9 +164,15 @@ int net_socket_recvfrom(int pid, uint32_t process_generation,
             if (pit_monotonic_ms() >= deadline) {
                 socket_unlock(flags); return -110;
             }
+#ifdef REIST_HOST_TEST
             result = wait_queue_block_until_locked(
                 &socket->receive_waiters, TASK_BLOCK_WAITING, deadline);
             socket_unlock(flags);
+#else
+            result = wait_queue_block_until_spinlocked(
+                &socket->receive_waiters, TASK_BLOCK_WAITING, deadline,
+                &socket_state_lock, flags);
+#endif
             if (result == -110) return -110;
             if (result != 0) return -11;
             continue;

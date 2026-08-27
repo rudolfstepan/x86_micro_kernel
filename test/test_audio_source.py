@@ -111,8 +111,13 @@ class AudioSubsystemTests(unittest.TestCase):
         spawn = supervisor.split(
             "static bool audio_service_spawn_next", 1)[1]
         spawn = spawn.split("static bool audio_service_fence_apply", 1)[0]
-        self.assertIn("scheduler_preempt_disable();", spawn)
-        self.assertIn("scheduler_preempt_enable();", spawn)
+        self.assertIn("process_spawn_supervised_prepared", spawn)
+        self.assertIn("process_start_prepared_supervised", spawn)
+        self.assertNotIn("scheduler_preempt_disable();", spawn)
+        self.assertNotIn("scheduler_preempt_enable();", spawn)
+        scheduler = self.read("kernel/sched/scheduler.c")
+        self.assertIn("TASK_PREPARED", scheduler)
+        self.assertIn("scheduler_start_prepared_user_task_locked", scheduler)
 
     def test_vmware_legacy_intx_fallback_is_profile_scoped(self):
         profile = self.read("kernel/init/audio_device_profile.c")

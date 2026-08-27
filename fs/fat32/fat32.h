@@ -135,8 +135,8 @@ extern bool ata_is_master;
 extern unsigned int partition_lba_offset; // LBA offset for partitioned disks
 extern bool fat32_write_supported;
 
-/* The current implementation is uniprocessor.  These guards prevent timer
- * preemption while a FAT transaction owns the global volume context. */
+/* Recursive, deadline-bounded serialization for the global FAT32 volume
+ * context. The legacy return value remains ABI-compatible and is reserved. */
 uint32_t fat32_operation_begin(void);
 void fat32_operation_end(uint32_t interrupt_flags);
 bool fat32_prepare_write(void);

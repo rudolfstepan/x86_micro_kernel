@@ -9,6 +9,7 @@
 #ifndef ARCH_X86_TSS_H
 #define ARCH_X86_TSS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -66,6 +67,8 @@ typedef struct {
  * @param kernel_ss Kernel stack segment selector (usually 0x10)
  */
 void tss_init(uint32_t kernel_stack, uint32_t kernel_ss);
+bool tss_init_cpu(uint32_t cpu_index, uint32_t kernel_stack,
+                  uint32_t kernel_ss);
 
 /**
  * Update TSS kernel stack pointer
@@ -87,6 +90,7 @@ void tss_set_kernel_stack(uint32_t kernel_stack);
  * @return Physical address of TSS structure
  */
 uint32_t tss_get_base(void);
+uint32_t tss_get_base_for_cpu(uint32_t cpu_index);
 
 /**
  * Get TSS size
@@ -97,6 +101,7 @@ uint32_t tss_get_base(void);
  */
 uint32_t tss_get_limit(void);
 uint32_t tss_get_double_fault_base(void);
+uint32_t tss_get_double_fault_base_for_cpu(uint32_t cpu_index);
 uint32_t tss_get_double_fault_limit(void);
 
 #endif // ARCH_X86_TSS_H

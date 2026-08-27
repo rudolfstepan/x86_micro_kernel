@@ -7,6 +7,7 @@
  * Safety: Deskriptorrechte und Grenzen werden vor LGDT/LTR festgelegt.
  */
 #include "arch/x86/include/sys.h"
+#include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/tss.h"
 
 
@@ -41,27 +42,51 @@ struct gdt_ptr {
 
 struct gdt_entry gdt[7];
 struct gdt_ptr gp;
+static struct gdt_entry ap_gdt[X86_CPU_LOCAL_MAX - 1U][7];
+static struct gdt_ptr ap_gp[X86_CPU_LOCAL_MAX - 1U];
 
 extern void gdt_flush();
+extern void gdt_load(const struct gdt_ptr *pointer);
 
 // Assembly function to load TSS
 extern void tss_flush(uint16_t selector);
 
-void gdt_set_gate(int num, unsigned long base, unsigned long limit, unsigned char access, unsigned char gran) {
-    gdt[num].base_low = (base & 0xFFFF);
-    gdt[num].base_middle = (base >> 16) & 0xFF;
-    gdt[num].base_high = (base >> 24) & 0xFF;
+static void set_gate(struct gdt_entry table[7], int num, unsigned long base,
+                     unsigned long limit, unsigned char access,
+                     unsigned char gran) {
+    table[num].base_low = (base & 0xFFFF);
+    table[num].base_middle = (base >> 16) & 0xFF;
+    table[num].base_high = (base >> 24) & 0xFF;
 
-    gdt[num].limit_low = (limit & 0xFFFF);
-    gdt[num].granularity = ((limit >> 16) & 0x0F);
+    table[num].limit_low = (limit & 0xFFFF);
+    table[num].granularity = ((limit >> 16) & 0x0F);
 
-    gdt[num].granularity |= (gran & 0xF0);
-    gdt[num].access = access;
+    table[num].granularity |= (gran & 0xF0);
+    table[num].access = access;
+}
+
+void gdt_set_gate(int num, unsigned long base, unsigned long limit,
+                  unsigned char access, unsigned char gran) {
+    set_gate(gdt, num, base, limit, access, gran);
+}
+
+static void build_gdt(struct gdt_entry table[7], uint32_t cpu_index) {
+    set_gate(table, 0, 0, 0, 0, 0);
+    set_gate(table, 1, 0, 0xFFFFFFFF, 0x9A, 0xCF);
+    set_gate(table, 2, 0, 0xFFFFFFFF, 0x92, 0xCF);
+    set_gate(table, 3, 0, 0xFFFFFFFF, 0xFA, 0xCF);
+    set_gate(table, 4, 0, 0xFFFFFFFF, 0xF2, 0xCF);
+    set_gate(table, 5, tss_get_base_for_cpu(cpu_index),
+             tss_get_limit(), 0x89, 0x00);
+    set_gate(table, 6, tss_get_double_fault_base_for_cpu(cpu_index),
+             tss_get_double_fault_limit(), 0x89, 0x00);
 }
 
 void gdt_install() {
     gp.limit = (sizeof(struct gdt_entry) * 7) - 1;
     gp.base = (unsigned)&gdt;
+
+    build_gdt(gdt, 0U);
 
     // Entry 0: NULL descriptor (required by x86 architecture)
     gdt_set_gate(0, 0, 0, 0, 0);
@@ -110,4 +135,19 @@ void gdt_install() {
     // Selector 0x28 = index 5, RPL 0 (Ring 0)
     // 0x28 = (5 << 3) | 0
     tss_flush(0x28);
+}
+
+bool gdt_install_cpu(uint32_t cpu_index) {
+    if (cpu_index == 0U || cpu_index >= X86_CPU_LOCAL_MAX ||
+        x86_cpu_current_index() != cpu_index) return false;
+    struct gdt_entry *table = ap_gdt[cpu_index - 1U];
+    struct gdt_ptr *pointer = &ap_gp[cpu_index - 1U];
+    build_gdt(table, cpu_index);
+    pointer->limit = sizeof(ap_gdt[0]) - 1U;
+    pointer->base = (uint32_t)(uintptr_t)table;
+    gdt_load(pointer);
+    tss_flush(0x28U);
+    uint16_t task_register;
+    __asm__ __volatile__("str %0" : "=r"(task_register));
+    return task_register == 0x28U;
 }

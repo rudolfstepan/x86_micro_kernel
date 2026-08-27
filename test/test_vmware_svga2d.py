@@ -122,18 +122,26 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertNotIn(
             'strcmp(client->name, "/usr/gui/bin/desktop.prg")', supervisor)
 
-    def test_boot_self_test_restores_vga_before_ready(self):
+    def test_boot_self_test_does_not_switch_visible_mode(self):
         driver = (ROOT / "userspace/drivers/video/vmware_svga2d.c").read_text(
             encoding="utf-8")
         display = (ROOT / "drivers/video/display_control.c").read_text(
             encoding="utf-8")
-        self_test = driver.index("self_test.operation = REIST_SVGA2D_RECT_COPY")
-        deactivate = driver.index("status = deactivate(driver)", self_test)
-        ready = driver.index("X86OS_DEVICE_DRIVER_REPORT_SELF_TEST", deactivate)
-        self.assertLess(self_test, deactivate)
-        self.assertLess(deactivate, ready)
-        self.assertIn("SVGA_REG_ENABLE, 0U", display)
-        self.assertIn("SVGA2D_INACTIVE", display)
+        initialize = driver[
+            driver.index("static int driver_initialize"):
+            driver.index("int main(void)")
+        ]
+        self.assertIn("X86OS_DISPLAY_DRIVER_PROBE", initialize)
+        self.assertIn("X86OS_DISPLAY_DRIVER_ENGINE_PREFLIGHT", initialize)
+        self.assertNotIn("activate(driver)", initialize)
+        self.assertNotIn("deactivate(driver)", initialize)
+        self.assertIn("request->command == DISPLAY_DRIVER_PROBE", display)
+        self.assertIn("DISPLAY_DRIVER_ENGINE_PREFLIGHT", display)
+        self.assertIn("if (!non_destructive_probe)", display)
+        preserve = display.index("if (!non_destructive_probe)")
+        self.assertGreater(display.index(
+            "request->capabilities = vmware_capabilities", preserve),
+            preserve)
 
     def test_desktop_releases_the_generation_scoped_driver(self):
         desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
@@ -220,6 +228,17 @@ class VmwareSvga2dTests(unittest.TestCase):
                       "connect_status", "service_status",
                       "transaction_status", "copy_status", "mark_status"):
             self.assertIn(field, desktop)
+
+    def test_unicode_probe_submits_a_bounded_acceleration_command(self):
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
+            encoding="utf-8")
+        probe = desktop[desktop.index("    if (unicode_probe) {"):
+                        desktop.index("    uint32_t taskbar =", desktop.index(
+                            "    if (unicode_probe) {"))]
+        self.assertIn("REIST_SVGA2D_CAP_RECT_COPY", probe)
+        self.assertIn("desktop_svga2d_rect_copy(", probe)
+        self.assertIn("0U, 0U, 1U, 1U, 1U, 1U", probe)
+        self.assertIn("acceleration_copy_status != 0", probe)
 
     def test_generic_activation_cannot_bypass_supervised_driver(self):
         display = (ROOT / "drivers/video/display_control.c").read_text(

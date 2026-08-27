@@ -97,7 +97,7 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         self.assertIn("process_spawn_supervised", spawn)
         process_spawn = function(self.process, "int process_spawn_supervised(")
         self.assertIn("domain_kind", process_spawn)
-        self.assertIn("true, domain_kind", process_spawn)
+        self.assertIn("true, false, domain_kind", process_spawn)
 
     def test_probe_lifecycle_is_generation_scoped_and_bounded(self):
         for token in (

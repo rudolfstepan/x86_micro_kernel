@@ -154,10 +154,11 @@ typedef struct {
 // ===========================================================================
 
 /*
- * Execution contract (uniprocessor): every public entry point requires
- * foreground context with hardware interrupts enabled.  VFS serializes each
- * synchronous operation with a nestable preemption guard; filesystem
- * callbacks therefore must not sleep, yield, block, exit, or switch context.
+ * Execution contract (SMP): every public entry point requires sleepable
+ * foreground context with hardware interrupts enabled. VFS serializes each
+ * synchronous operation with a recursive, deadline-bounded kernel mutex.
+ * A timed-out contender fails with VFS_ERR_BUSY; filesystem callbacks may
+ * re-enter VFS but must not retain VFS-owned objects beyond their contracts.
  */
 
 // Initialization

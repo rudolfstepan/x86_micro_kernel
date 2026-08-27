@@ -57,6 +57,7 @@ PROGRAMS = {
     ),
     "DESKTOP.PRG": (
         ROOT / "userspace/gui/compositor/desktop.c",
+        ROOT / "userspace/gui/compositor/desktop_splash.s",
         ROOT / "userspace/gui/compositor/desktop_drag.c",
         ROOT / "userspace/gui/compositor/desktop_wm.c",
         ROOT / "userspace/gui/compositor/desktop_explorer.c",
@@ -153,6 +154,7 @@ PROGRAMS = {
     "AUDIOTEST.PRG": ROOT / "userspace/programs/audiotest.c",
     "WAVPLAY.PRG": ROOT / "userspace/programs/wavplay.c",
     "SLEEPER.PRG": ROOT / "userspace/programs/sleep_child.c",
+    "CAPWAIT.PRG": ROOT / "userspace/programs/capacity_child.c",
     "SATAWR.PRG": ROOT / "userspace/programs/sata_write_test.c",
 }
 
@@ -234,6 +236,9 @@ def main() -> None:
                 dependency_files.extend(audio_headers)
             if name in IMAGE_PROGRAMS:
                 dependency_files.extend(image_headers)
+            if name == "DESKTOP.PRG":
+                dependency_files.append(
+                    ROOT / "assets/images/reist-splash.bmp")
             build(
                 sources, output, zig, incremental=args.incremental,
                 include_dirs=[sdk.include_dir, STORAGE_INCLUDE_ROOT],

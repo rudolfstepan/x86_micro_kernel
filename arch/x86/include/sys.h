@@ -39,6 +39,7 @@ _Static_assert(sizeof(Registers) == 76,
 
 //gdt
 extern void gdt_install();
+bool gdt_install_cpu(uint32_t cpu_index);
 
 //idt
 extern void idt_install();
@@ -54,6 +55,9 @@ extern void irq_install();
 extern void irq_handler(Registers* r);
 extern int register_interrupt_handler(int irq, void* r);
 extern int unregister_interrupt_handler(int irq, void* r);
+int irq_set_affinity(uint8_t irq, uint32_t cpu_mask);
+uint32_t irq_affinity_mask(uint8_t irq);
+bool irq_affinity_bsp_only_ready(void);
 void irq_uninstall_handler(int irq);
 bool irq_pic_mask_line(uint8_t irq);
 bool irq_pic_unmask_line(uint8_t irq);

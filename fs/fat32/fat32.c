@@ -11,7 +11,8 @@
 #include "lib/libc/stdio.h"
 #include "drivers/bus/drives.h"
 #ifndef KERNEL_HOST_TEST
-#include "kernel/sched/scheduler.h"
+#include "include/kernel/panic.h"
+#include "kernel/sched/mutex.h"
 #endif
 
 // fat32 file system implementation
@@ -32,11 +33,17 @@ bool fsinfo_valid = false; // Track if FSInfo is loaded and valid
 bool fat32_write_supported = false;
 fat32_context_sync_hook_t fat32_context_sync_hook;
 
+#define FAT32_OPERATION_LOCK_TIMEOUT_MS 10000U
+#ifndef KERNEL_HOST_TEST
+static kernel_mutex_t fat32_operation_mutex = KERNEL_MUTEX_INIT;
+#endif
+
 uint32_t fat32_operation_begin(void) {
 #ifdef KERNEL_HOST_TEST
     return 0;
 #else
-    scheduler_preempt_disable();
+    KASSERT(kernel_mutex_lock_for(&fat32_operation_mutex,
+                                  FAT32_OPERATION_LOCK_TIMEOUT_MS) == 0);
     return 0;
 #endif
 }
@@ -47,7 +54,7 @@ void fat32_operation_end(uint32_t interrupt_flags) {
     (void)interrupt_flags;
 #else
     (void)interrupt_flags;
-    scheduler_preempt_enable();
+    kernel_mutex_unlock(&fat32_operation_mutex);
 #endif
 }
 

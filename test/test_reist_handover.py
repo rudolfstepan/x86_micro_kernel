@@ -13,6 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReistHandoverTests(unittest.TestCase):
+    def test_target_state_uses_a_cpu_owned_smp_lock(self):
+        source = (ROOT / "kernel/init/handover.c").read_text()
+        self.assertIn("handover_state_lock = SPINLOCK_INIT", source)
+        self.assertIn("spinlock_acquire_irq(&handover_state_lock)", source)
+        self.assertIn("spinlock_release_irq(&handover_state_lock, flags)",
+                      source)
+
     def test_host_protocol(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:

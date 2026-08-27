@@ -119,6 +119,46 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertLess(recovery.index("ahci_build_identify_command"),
                         recovery.index("ahci_parse_identify"))
 
+    def test_port_transactions_use_bounded_sleepable_mutexes(self):
+        source = self.read("drivers/block/ahci.c")
+        header = self.read("drivers/block/ahci.h")
+        storage = self.read("kernel/init/storage_safety.c")
+        self.assertIn("kernel_mutex_t port_mutex", source)
+        self.assertIn("AHCI_PORT_LOCK_TIMEOUT_MS", source)
+        self.assertIn("kernel_mutex_lock_until(", source)
+        self.assertIn("kernel_mutex_unlock(", source)
+        self.assertNotIn("static bool port_busy", source)
+
+        acquire_start = source.index("static bool ahci_port_acquire(")
+        acquire_end = source.index("static void ahci_port_release(",
+                                   acquire_start)
+        acquire = source[acquire_start:acquire_end]
+        self.assertIn("KASSERT_NOT_IRQ()", acquire)
+        self.assertIn("KASSERT_CAN_SLEEP()", acquire)
+        self.assertNotIn("irq_save()", acquire)
+
+        fence_start = source.index("void ahci_fence_writes(")
+        fence_end = source.index("void ahci_restore_writes_after_recovery(",
+                                 fence_start)
+        fence = source[fence_start:fence_end]
+        self.assertLess(fence.index("writes_fenced = true"),
+                        fence.index("ahci_ports_acquire"))
+        self.assertIn("ahci_ports_release", fence)
+
+        self.assertIn("bool ahci_writes_quiescent(void);", header)
+        self.assertIn("ahci_writes_quiescent()", storage)
+
+    def test_normal_write_rechecks_fence_after_port_lock(self):
+        source = self.read("drivers/block/ahci.c")
+        start = source.index("static bool ahci_write_sector_internal(")
+        end = source.index("bool ahci_write_sector(", start)
+        write = source[start:end]
+        acquired = write.index("ahci_port_acquire(")
+        recheck = write.index("writes_fenced && !recovery", acquired)
+        release = write.index("ahci_port_release(", recheck)
+        self.assertLess(acquired, recheck)
+        self.assertLess(recheck, release)
+
 
 if __name__ == "__main__":
     unittest.main()

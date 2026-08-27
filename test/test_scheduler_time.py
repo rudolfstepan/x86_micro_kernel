@@ -123,10 +123,10 @@ class SchedulerTimeSourceTests(unittest.TestCase):
 
     def test_generic_block_and_wake_paths_update_scheduler_state(self) -> None:
         block = function_block(
-            self.scheduler, "int wait_queue_block_until_locked("
+            self.scheduler, "static int wait_queue_block_until_task_locked("
         )
         wake_one = function_block(
-            self.scheduler, "bool wait_queue_wake_one_locked("
+            self.scheduler, "static bool wait_queue_wake_one_task_locked("
         )
         wake_all = function_block(
             self.scheduler, "size_t wait_queue_wake_all_locked("
@@ -137,8 +137,7 @@ class SchedulerTimeSourceTests(unittest.TestCase):
         self.assertIn("schedule_blocked_current_locked(", block)
         self.assertIn("wait_queue_pop_locked(", wake_one)
         self.assertIn("TASK_READY", wake_one)
-        self.assertIn("wait_queue_wake_one_locked(queue)", wake_all)
-        self.assertIn("++count", wake_all)
+        self.assertIn("wait_queue_wake_all_task_locked(queue)", wake_all)
 
     def test_sleep_uses_an_ordered_deadline_queue_and_does_not_poll(self) -> None:
         sleep = function_block(self.scheduler, "int scheduler_sleep_ms(")
@@ -159,7 +158,8 @@ class SchedulerTimeSourceTests(unittest.TestCase):
         )
         compact = re.sub(r"\s+", " ", wake)
         self.assertIn("sleep_waiters.head->key <= now_ms", compact)
-        self.assertIn("wait_queue_wake_one_locked(&sleep_waiters)", compact)
+        self.assertIn("wait_queue_wake_one_task_locked(&sleep_waiters)",
+                      compact)
 
     def test_timed_waiters_use_bounded_task_scan(self) -> None:
         wake = function_block(
@@ -172,7 +172,7 @@ class SchedulerTimeSourceTests(unittest.TestCase):
 
     def test_yield_selects_another_ready_task_without_polling(self) -> None:
         yield_block = function_block(self.scheduler, "int scheduler_yield(")
-        self.assertIn("find_next_runnable(", yield_block)
+        self.assertIn("claim_next_runnable(", yield_block)
         self.assertIn("TASK_READY", yield_block)
         self.assertIn("swtch(", yield_block)
         self.assertNotRegex(yield_block, r"\bwhile\s*\(")
@@ -184,10 +184,10 @@ class SchedulerTimeSourceTests(unittest.TestCase):
         )
         self.assertIn("uint64_t pit_monotonic_ms(void);", self.pit_header)
         read = function_block(self.pit, "uint64_t pit_monotonic_ms(")
-        self.assertLess(read.index("irq_save()"),
-                        read.index("uint64_t ticks = timer_tick_count;"))
-        self.assertLess(read.index("uint64_t ticks = timer_tick_count;"),
-                        read.index("irq_restore(flags);"))
+        self.assertIn("timer_tick_sequence", read)
+        self.assertIn("PIT_MONOTONIC_READ_RETRY_LIMIT", read)
+        self.assertIn("before == after", read)
+        self.assertIn("panic(\"PIT monotonic clock read timed out\")", read)
         irq = function_block(self.pit, "void timer_irq_handler(")
         self.assertIn("scheduler_wake_expired_sleepers_locked(", irq)
 
@@ -303,8 +303,13 @@ class SchedulerTimeGuestAndPackagingTests(unittest.TestCase):
         )
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn('"SLEEPER.PRG"', programs)
+        self.assertIn('"CAPWAIT.PRG"', programs)
         self.assertIn(
             "libexec/reist/sleeper.prg=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG",
+            makefile,
+        )
+        self.assertIn(
+            "libexec/reist/capwait.prg=$(SYSTEM_PROGRAM_DIR)/CAPWAIT.PRG",
             makefile,
         )
         self.assertIn("$(foreach spec,$(SYSTEM_IMAGE_FILES),--data-file $(spec))", makefile)

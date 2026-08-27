@@ -701,6 +701,7 @@ SYSTEM_IMAGE_FILES := \
 	libexec/reist/nvidia.prg=$(SYSTEM_PROGRAM_DIR)/NVIDIA.PRG \
 	libexec/reist/audio.prg=$(SYSTEM_PROGRAM_DIR)/AUDIO.PRG \
 	libexec/reist/sleeper.prg=$(SYSTEM_PROGRAM_DIR)/SLEEPER.PRG \
+	libexec/reist/capwait.prg=$(SYSTEM_PROGRAM_DIR)/CAPWAIT.PRG \
 	libexec/reist/satawr.prg=$(SYSTEM_PROGRAM_DIR)/SATAWR.PRG
 
 # The rescue floppy intentionally omits optional audio components.  The full

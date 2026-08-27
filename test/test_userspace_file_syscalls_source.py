@@ -7,6 +7,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class UserspaceFileSyscallSourceTests(unittest.TestCase):
+    def test_sleepable_file_syscalls_do_not_disable_preemption(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        sleepable = (
+            "OPEN", "READ", "CLOSE", "STAT", "READDIR", "CREATE",
+            "OPEN_FLAGS", "LSEEK", "FSTAT", "FTRUNCATE", "TOUCH",
+            "WRITE", "UNLINK", "SPAWN", "READDIR_BATCH", "GETCWD",
+            "CHDIR", "SPAWNV", "SPACE", "MKDIR", "RMDIR", "RENAME",
+            "FSYNC",
+        )
+        for name in sleepable:
+            case = source[source.index(f"case SYS_{name}:") :]
+            case = case[:case.index("break;")]
+            self.assertNotIn("scheduler_preempt_disable()", case, name)
+            self.assertNotIn("scheduler_preempt_enable()", case, name)
+
     def test_open_accepts_nonempty_copied_paths(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
@@ -93,7 +110,8 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("TASK_WAITING", scheduler)
         self.assertIn("wait_queue_wake_all_locked", scheduler)
         self.assertIn("process_wait_status_locked", syscall)
-        self.assertIn("wait_queue_block_locked", syscall)
+        self.assertIn("process_table_lock_irqsave", syscall)
+        self.assertIn("wait_queue_block_until_spinlocked", syscall)
         wait = sdk[sdk.index("int x86os_wait") :]
         wait = wait[:wait.index("\n}")]
         self.assertNotIn("x86os_delay", wait)
@@ -178,7 +196,10 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         getchar = getchar[:getchar.index("\n}")]
         self.assertIn("KASSERT_CAN_SLEEP();", getchar)
         self.assertNotIn("irq_enable();", getchar)
-        self.assertIn("wait_queue_block_until_locked", getchar)
+        self.assertIn("spinlock_acquire(&input_queue_lock)", getchar)
+        self.assertIn("wait_queue_block_until_spinlocked", getchar)
+        self.assertIn("&input_queue_lock, flags", getchar)
+        self.assertNotIn("wait_queue_block_until_locked(", getchar)
         self.assertIn("KEYBOARD_POLL_INTERVAL_MS", getchar)
         self.assertIn('"hlt"', getchar)
         self.assertIn("wait_queue_wake_all_locked", source)

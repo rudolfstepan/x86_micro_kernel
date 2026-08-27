@@ -512,6 +512,10 @@ und 10 verbindlich.
 - [ ] R5.1 ACPI-, DMA- und Plattformbasis
 - [ ] R5.2 xHCI/USB in überprüfbaren Stufen
 - [ ] R6 Optionale Modernisierung: UEFI, SMP, 64 Bit und Highmem
+  - [x] R6.1 begrenzter i386-SMP-Bootstrap mit vier CPUs, affinen
+    Kernelprobetasks, Reaping und vollständigem 32-Slot-Kapazitätsnachweis
+  - [ ] R6.2 allgemeine Mehrkernverteilung regulärer Kernel- und
+    Ring-3-Dienste nach Migration der verbleibenden Treiberzustände
 
 #### Verbindliche Priorität nach dem S0-Gate
 
@@ -533,9 +537,9 @@ und 10 verbindlich.
 | Bereich | Vorhanden | Reifegrad |
 |---|---|---|
 | Boot | BIOS/MBR, zweistufiger Loader, E820, A20, ELF32-Prüfung, Kernel-CRC32, FAT12-Floppy, optionaler nativer VBE-LFB-Handoff | stabiler Referenzpfad mit VGA-Rückfall |
-| CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierter lokaler APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80` | funktionsfähiger Single-Core-Pfad |
+| CPU | GDT/IDT/TSS, Ring 0/3, Exceptions, PIC, gegen PIT kalibrierte lokale APIC-Timer, PIT-Scheduler-Fallback, `INT 0x80`, begrenzter ACPI-/xAPIC-SMP-Bootstrap mit vier CPUs | isolierte AP-Kernelproben abgenommen; reguläre Dienste bleiben CPU-0-affin |
 | Speicher | fail-closed normalisierte E820-Karte, 1-GiB-Directmap, Frame-Accounting, dynamischer Kernel-Heap, Kernel-Stack-Guardpages, getrennte Prozessadressräume, sichere User-Kopien | R1.2 plus erster S0.2-Schutz; Speicher oberhalb 1 GiB nur erkannt |
-| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, Wait-Queues, Sleep/Yield, eigenes CWD, IPC-v1, generationsgebundene Capabilities, endliche Deadlines, Restartreserve und überwachte Ring-3-Domänen | 32 feste Taskslots; SMP und dynamisch erweiterbare Taskkapazität fehlen |
+| Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, Wait-Queues, Sleep/Yield, eigenes CWD, IPC-v1, generationsgebundene Capabilities, endliche Deadlines, Restartreserve, überwachte Ring-3-Domänen und CPU-affiner SMP-Kernelprobelauf | 32 feste Taskslots; allgemeine Mehrkern-Dienstausführung und dynamisch erweiterbare Taskkapazität fehlen |
 | Dateien | VFS, REIST-FAT12/FAT32 read/write, fremde FAT12/FAT32 read-only, ASCII-VFAT-LFN, Undo-Journale, FAT12-Remap/Replikate/Fehlermatrix, `fsync`, Same-Directory-Rename/Replace, EXT2 read-only | Unicode-Normalisierung, allgemeiner transaktionaler Reparaturpfad und medienunabhängige Persistenz fehlen |
 | Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI, überwachtes Ring-3-VMware-SVGA-II-2D und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
 | Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS und HTTP/1.0 | Host- und QEMU-Nachweise vorhanden; kein IPv6, TLS oder vollständiges POSIX-Socketmodell |
@@ -643,7 +647,9 @@ Abnahmechecklisten.
   Reparenting-/Reaper-Semantik
 - dynamische oder zumindest deutlich größere Tasktabelle über die aktuelle
   feste Grenze von `MAX_TASKS 32` hinaus
-- Prioritäten erst nach korrekter Blockierung; Threads und SMP deutlich später
+- Prioritäten erst nach korrekter Blockierung; Threads und allgemeine
+  SMP-Dienstverteilung deutlich später, der begrenzte R6.1-Bootstrap ist
+  abgenommen
 - Guardpage-Abdeckung auf weitere benutzergesteuerte Abbildungen ausweiten;
   User- und Kernel-Stacks besitzen bereits feste Guardpages
 - aussagekräftigere Prozessstatistiken
@@ -852,7 +858,8 @@ Native VBE + Display-ABI [R1.4 erledigt] -> Desktop-Härtung -> später Fensters
 ABI/FD-Ausbau -> VFS rename/truncate/fsync -> sicherer Editor und Dateitools
 Blockgeräte -> Partitionen + DMA -> AHCI/NVMe und USB-Massenspeicher
 ACPI + DMA -> xHCI -> USB-Enumeration -> HID/Storage
-R1.2-Directmap bis 1 GiB -> Highmem/kmap oberhalb 1 GiB -> später x86-64/SMP
+R1.2-Directmap bis 1 GiB -> Highmem/kmap oberhalb 1 GiB -> später x86-64 und
+allgemeine SMP-Dienstverteilung
 
 Generic High-Assurance Gate S0
   -> Einsatzprofil + Gefahren + Essential Functions + FTTI
@@ -1276,10 +1283,11 @@ falschen Ausfall. Der 64-Bit-Fortschritt vermeidet ein Langzeit-Wrap. Nach
 Timeout folgen Software-Latch, NIC-Abschaltung und Register-Rückleseprüfung;
 der Restart-Budgetwert null erzwingt bis zu einem implementierten,
 qualifizierten Reinitialisierungspfad den Safe State.
-`storage-write` überwacht nun als zweite reale Domäne jede physische ATA-/FDD-
-Schreibtransaktion mit einer 10-s-Deadline und explizitem Idle. Timeout oder
-fehlgeschlagene Ruhestellung sperren weitere Writes ohne Restartversuch. ATA
-liest `BSY/DRQ`, FDD Motorbits und Controller-Busy zurück; ein fehlgeschlagener
+`storage-write` überwacht nun als zweite reale Domäne jede physische
+ATA-/AHCI-/FDD-Schreibtransaktion mit einer 10-s-Deadline und explizitem Idle.
+Timeout oder fehlgeschlagene Ruhestellung sperren weitere Writes ohne
+Restartversuch. ATA liest `BSY/DRQ`, AHCI `CI` und `TFD`, FDD Motorbits und
+Controller-Busy zurück; ein fehlgeschlagener
 ATA-Flush wird als Schreibfehler weitergereicht. Das Storage-Fence allein kann
 einen Teilwrite nicht zurückrollen; für markierte native FAT32-Images übernimmt
 dies inzwischen das nachfolgende Undo-Journal v2 mit Flush-Barrieren und
@@ -2129,9 +2137,62 @@ Gerät nur deaktivieren, nicht den Bootvorgang blockieren.
 
 Erst nach den vorherigen Meilensteinen einzeln entscheiden:
 
+#### R6.1 Begrenzter SMP-Bootstrap — M
+
+**Status (27. August 2026): Erste Stufe umgesetzt und in QEMU abgenommen.**
+Die validierte ACPI-Schicht inventarisiert MADT-Prozessoren und startet bis zu
+15 APs seriell über deadlinebegrenzte INIT/SIPI-Sequenzen. Jeder AP beweist
+geschützte, gepagte C-Ausführung auf einem eigenen Stack und wird anschließend
+nach Installation einer privaten GDT, eines Runtime-/Double-Fault-TSS und
+CPU-lokalen IRQ-, Präemptions- und CR3-Zustands mit deaktivierten Interrupts
+geparkt. QEMU bootet automatisiert mit einem und vier Prozessoren sowie ohne
+APIC bis zur Ring-3-Shell.
+
+Die zweite Fundamentstufe ergänzt CPU-besitzende, endlich wartende SMP-Locks,
+einen realen Cross-CPU-Locknachweis, CPU-lokalen aktuellen Task und
+Kernel-Schedulerkontext sowie einen eigenen Lock für Seitentabellenmutationen.
+Administrative Tasktabellen-Transaktionen sind inzwischen ebenfalls
+CPU-besitzend gesperrt und außerhalb des Schedulers nur über
+generationsgeprüfte Snapshots sichtbar. Die atomare RUNNING-Besitz-/Runqueue-
+Übergabe ist nun ebenfalls umgesetzt: Der Zielkontext gibt den alten Besitzer
+erst nach dem vollzogenen `swtch()` frei. Der globale Scheduler serialisiert
+Runqueue-Transaktionen und beachtet eine explizite CPU-Affinitätsmaske. Ein
+generationsgebundener, real
+von allen QEMU-APs quittierter TLB-Shootdown und eine explizite CPU-0-
+Affinität für alle Legacy-PIC-IRQs sind umgesetzt. Jeder LAPIC-Timer wird
+zusätzlich CPU-lokal gegen den PIT kalibriert und bleibt zunächst maskiert.
+Nach `BOOT_OK` aktiviert ein eigener IPI die AP-Timer; je ein ausschließlich
+AP-affiner, guard-page-geschützter Kernel-Probetask weist parallelen Eintritt,
+Exit und Rückkehr in den lokalen Idlekontext nach. Reguläre Kernel- und Ring-3-
+Dienste bleiben CPU-0-affin. Waitqueue-, IPC-, Tastaturpuffer- und UDP-/TCP-
+Socketzustände sind bereits SMP-gesperrt und verwenden eine atomare
+Condition-to-Waitqueue-
+Übergabe ohne Spinlock über `swtch()`. Prozessliste, PID-/Generationsvergabe,
+Exit-Commit und `wait` sind über den festen Rang `Prozess -> Scheduler`
+serialisiert; der speicherresidente Storage-Request-/Bulk-Pool besitzt einen
+eigenen SMP-Lock. Ein neuer rekursiver Timed-Mutex überträgt auch lange
+Foreground-Transaktionen atomar in die Scheduler-Waitqueue. VFS, FAT32, ATA,
+AHCI und FDD verwenden ihn bereits unter
+`VFS -> FAT32 -> ATA/AHCI -> Scheduler` beziehungsweise
+`VFS -> FDD -> Scheduler`; ein
+Vier-CPU-QEMU-Probezug erzwingt Konkurrenz zwischen drei AP-Tasks und bestätigt
+`MUTEX_READY workers=3 mask=0000000E`. Dieselben Tasks lesen barriere-synchron
+einen Root-Sektor über ATA-PIO und ICH9-AHCI und bestätigen bytegleiche
+Ergebnisse mit `SUBSYSTEM_READY workers=3 mask=0000000E`. Der Lebenszyklus der
+AP-Probetasks endet generationsgeprüft mit
+`REAP_READY workers=3 reaped=3`. Ein eigener blockierender Gasthelfer belegt
+anschließend gleichzeitig alle 32 öffentlichen Taskslots; 48 feste
+Kernelstack-Slots halten diese Kapazität auch bei bis zu 15 privaten AP-Idle-
+Stacks vollständig verfügbar. Der wiederholte SMP4-Gastnachweis erreicht
+`TASK_CAPACITY_OK` und `TEST_OK`. Die Migration der verbleibenden Treiberlocks
+sowie parallele Fault-Injection bilden die verbleibende R6.2-Grenze vor
+allgemeiner Mehrkern-Dienstausführung. Details stehen im
+[SMP-Subsystemvertrag](../architecture/SMP_SUBSYSTEM.md).
+
 - UEFI-Boot und GPT
 - x86-64-Port mit neuem ABI
-- SMP, IOAPIC/MSI und per-CPU-Daten
+- allgemeine SMP-Dienstverteilung sowie IOAPIC/MSI; grundlegende per-CPU-Daten
+  und der begrenzte xAPIC-Bootstrap sind bereits umgesetzt
 - AHCI/NVMe, USB-Massenspeicher und Hotplug
 - IPv6
 - Mehrbenutzer-Identitäten, Dateirechte/ACLs und kryptografisch verifizierter

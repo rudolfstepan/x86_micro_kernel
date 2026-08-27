@@ -528,65 +528,84 @@ static int test_ftruncate(void) {
     static uint8_t original[700];
     static uint8_t actual[700];
     x86os_file_info_t info;
+#define FTRUNC_CHECK(stage, condition) do {                                  \
+        if (!(condition)) {                                                  \
+            x86os_puts("FTRUNCATE_FAIL stage=");                            \
+            x86os_print_number((int)(stage));                                \
+            x86os_putchar('\n');                                             \
+            goto failed;                                                     \
+        }                                                                    \
+    } while (0)
     for (uint32_t index = 0U; index < sizeof(original); ++index)
         original[index] = (uint8_t)('A' + index % 23U);
 
     (void)x86os_unlink(path);
     int descriptor = x86os_open_flags(path, X86OS_O_CREAT | X86OS_O_RDWR);
-    if (descriptor < 0 ||
-        x86os_write(descriptor, original, sizeof(original)) !=
-            (int)sizeof(original) ||
-        x86os_lseek(descriptor, 600, X86OS_SEEK_SET) != 600 ||
-        x86os_ftruncate(descriptor, 200U) != 0 ||
-        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 600 ||
-        x86os_fstat(descriptor, &info) != 0 || info.size != 200U ||
-        x86os_lseek(descriptor, 0, X86OS_SEEK_SET) != 0 ||
-        x86os_read(descriptor, actual, 200U) != 200 ||
-        !bytes_equal((const char*)actual, (const char*)original, 200U) ||
-        x86os_read(descriptor, actual, 1U) != 0) goto failed;
+    FTRUNC_CHECK(1U, descriptor >= 0);
+    FTRUNC_CHECK(2U, x86os_write(descriptor, original, sizeof(original)) ==
+                       (int)sizeof(original));
+    FTRUNC_CHECK(3U, x86os_lseek(descriptor, 600, X86OS_SEEK_SET) == 600);
+    FTRUNC_CHECK(4U, x86os_ftruncate(descriptor, 200U) == 0);
+    FTRUNC_CHECK(5U, x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) == 600);
+    FTRUNC_CHECK(6U, x86os_fstat(descriptor, &info) == 0);
+    FTRUNC_CHECK(7U, info.size == 200U);
+    FTRUNC_CHECK(8U, x86os_lseek(descriptor, 0, X86OS_SEEK_SET) == 0);
+    FTRUNC_CHECK(9U, x86os_read(descriptor, actual, 200U) == 200);
+    FTRUNC_CHECK(10U, bytes_equal((const char*)actual,
+                                 (const char*)original, 200U));
+    FTRUNC_CHECK(11U, x86os_read(descriptor, actual, 1U) == 0);
 
-    if (x86os_ftruncate(descriptor, sizeof(original)) != 0 ||
-        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 200 ||
-        x86os_fstat(descriptor, &info) != 0 ||
-        info.size != sizeof(original) ||
-        x86os_read(descriptor, actual, sizeof(actual) - 200U) !=
-            (int)(sizeof(actual) - 200U)) goto failed;
+    FTRUNC_CHECK(12U, x86os_ftruncate(descriptor, sizeof(original)) == 0);
+    FTRUNC_CHECK(13U, x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) == 200);
+    FTRUNC_CHECK(14U, x86os_fstat(descriptor, &info) == 0);
+    FTRUNC_CHECK(15U, info.size == sizeof(original));
+    FTRUNC_CHECK(16U,
+                 x86os_read(descriptor, actual, sizeof(actual) - 200U) ==
+                     (int)(sizeof(actual) - 200U));
     for (uint32_t index = 0U; index < sizeof(actual) - 200U; ++index)
-        if (actual[index] != 0U) goto failed;
+        FTRUNC_CHECK(17U, actual[index] == 0U);
 
-    if (x86os_ftruncate(descriptor, sizeof(original)) != 0 ||
-        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) !=
-            (int32_t)sizeof(original) ||
-        x86os_ftruncate(descriptor, 0U) != 0 ||
-        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) !=
-            (int32_t)sizeof(original) ||
-        x86os_fstat(descriptor, &info) != 0 || info.size != 0U ||
-        x86os_close(descriptor) != 0) goto failed;
+    FTRUNC_CHECK(18U, x86os_ftruncate(descriptor, sizeof(original)) == 0);
+    FTRUNC_CHECK(19U, x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) ==
+                          (int32_t)sizeof(original));
+    FTRUNC_CHECK(20U, x86os_ftruncate(descriptor, 0U) == 0);
+    FTRUNC_CHECK(21U, x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) ==
+                          (int32_t)sizeof(original));
+    FTRUNC_CHECK(22U, x86os_fstat(descriptor, &info) == 0);
+    FTRUNC_CHECK(23U, info.size == 0U);
+    FTRUNC_CHECK(24U, x86os_close(descriptor) == 0);
 
     descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
-    if (descriptor < 0 || x86os_ftruncate(descriptor, 1U) != -REIST_EBADF ||
-        x86os_close(descriptor) != 0 ||
-        x86os_ftruncate(descriptor, 1U) != -REIST_EBADF ||
-        x86os_ftruncate(X86OS_STDERR_FILENO, 1U) != -REIST_EINVAL)
-        goto failed;
+    FTRUNC_CHECK(25U, descriptor >= 0);
+    FTRUNC_CHECK(26U, x86os_ftruncate(descriptor, 1U) == -REIST_EBADF);
+    FTRUNC_CHECK(27U, x86os_close(descriptor) == 0);
+    FTRUNC_CHECK(28U, x86os_ftruncate(descriptor, 1U) == -REIST_EBADF);
+    FTRUNC_CHECK(29U,
+                 x86os_ftruncate(X86OS_STDERR_FILENO, 1U) == -REIST_EINVAL);
 
     descriptor = x86os_open_flags(path, X86OS_O_WRONLY);
-    if (descriptor < 0 || x86os_ftruncate(descriptor, 513U) != 0 ||
-        x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) != 0 ||
-        x86os_fstat(descriptor, &info) != 0 || info.size != 513U ||
-        x86os_fsync(descriptor) != 0 || x86os_close(descriptor) != 0)
-        goto failed;
+    FTRUNC_CHECK(30U, descriptor >= 0);
+    FTRUNC_CHECK(31U, x86os_ftruncate(descriptor, 513U) == 0);
+    FTRUNC_CHECK(32U, x86os_lseek(descriptor, 0, X86OS_SEEK_CUR) == 0);
+    FTRUNC_CHECK(33U, x86os_fstat(descriptor, &info) == 0);
+    FTRUNC_CHECK(34U, info.size == 513U);
+    FTRUNC_CHECK(35U, x86os_fsync(descriptor) == 0);
+    FTRUNC_CHECK(36U, x86os_close(descriptor) == 0);
     descriptor = x86os_open_flags(path, X86OS_O_RDONLY);
-    if (descriptor < 0 || x86os_read(descriptor, actual, 513U) != 513)
-        goto failed;
+    FTRUNC_CHECK(37U, descriptor >= 0);
+    FTRUNC_CHECK(38U, x86os_read(descriptor, actual, 513U) == 513);
     for (uint32_t index = 0U; index < 513U; ++index)
-        if (actual[index] != 0U) goto failed;
-    if (x86os_close(descriptor) != 0 || x86os_unlink(path) != 0) goto failed;
+        FTRUNC_CHECK(39U, actual[index] == 0U);
+    FTRUNC_CHECK(40U, x86os_close(descriptor) == 0);
+    descriptor = -1;
+    FTRUNC_CHECK(41U, x86os_unlink(path) == 0);
+#undef FTRUNC_CHECK
     return 0;
 
 failed:
     if (descriptor >= 0) (void)x86os_close(descriptor);
     (void)x86os_unlink(path);
+#undef FTRUNC_CHECK
     return -1;
 }
 
@@ -1559,14 +1578,42 @@ static int test_memory_accounting(void) {
     return 0;
 }
 
+static int task_capacity_fail(unsigned stage,
+                              const x86os_scheduler_stats_t *stats,
+                              int detail) {
+    x86os_puts("TASK_CAPACITY_FAIL stage=");
+    x86os_print_number((int)stage);
+    x86os_puts(" detail=");
+    x86os_print_number(detail);
+    if (stats != NULL) {
+        x86os_puts(" capacity=");
+        x86os_print_number((int)stats->task_capacity);
+        x86os_puts(" active=");
+        x86os_print_number((int)stats->active_tasks);
+        x86os_puts(" peak=");
+        x86os_print_number((int)stats->peak_active_tasks);
+        x86os_puts(" rejected=");
+        x86os_print_number((int)stats->capacity_rejections);
+        x86os_puts(" reserve=");
+        x86os_print_number((int)stats->supervised_reserve);
+    }
+    x86os_putchar('\n');
+    return -1;
+}
+
 static int test_task_capacity_and_parenting(void) {
     /* Fill exactly the currently reported ambient slots. The fixed array is
      * bounded by the selected research profile and the final supervised slot
      * must remain unavailable to ordinary children. */
-    x86os_scheduler_stats_t before;
-    if (x86os_scheduler_stats(&before) != 0 ||
-        x86os_scheduler_stats(
-            (x86os_scheduler_stats_t*)(uintptr_t)0x1000U) != -14 ||
+    x86os_scheduler_stats_t before = {0};
+    int stats_result = x86os_scheduler_stats(&before);
+    if (stats_result != 0)
+        return task_capacity_fail(1U, &before, stats_result);
+    int invalid_result = x86os_scheduler_stats(
+        (x86os_scheduler_stats_t*)(uintptr_t)0x1000U);
+    if (invalid_result != -14)
+        return task_capacity_fail(2U, &before, invalid_result);
+    if (
         before.version != X86OS_SCHEDULER_STATS_VERSION ||
         before.struct_size != sizeof(before) ||
         before.task_capacity != GUEST_TEST_TASK_CAPACITY_LIMIT ||
@@ -1574,28 +1621,31 @@ static int test_task_capacity_and_parenting(void) {
         before.peak_active_tasks < before.active_tasks ||
         before.active_tasks >= before.task_capacity ||
         before.supervised_reserve >
-            before.task_capacity - before.active_tasks) return -1;
+            before.task_capacity - before.active_tasks)
+        return task_capacity_fail(3U, &before, 0);
 
     size_t child_count = (size_t)(before.task_capacity - before.active_tasks -
                                   before.supervised_reserve);
-    if (child_count == 0U ||
-        child_count >= GUEST_TEST_TASK_CAPACITY_LIMIT) return -1;
+    if (child_count == 0U || child_count >= GUEST_TEST_TASK_CAPACITY_LIMIT)
+        return task_capacity_fail(4U, &before, (int)child_count);
 
     int children[GUEST_TEST_TASK_CAPACITY_LIMIT];
     size_t spawned = 0U;
     bool valid = true;
     int parent_pid = x86os_getpid();
     for (; spawned < child_count; ++spawned) {
-        children[spawned] = x86os_spawn("SLEEPER.PRG");
+        children[spawned] = x86os_spawn("/libexec/reist/capwait.prg");
         if (children[spawned] <= 0) {
+            (void)task_capacity_fail(5U, &before, (int)spawned);
             valid = false;
             break;
         }
     }
     if (valid) {
-        int overflow_pid = x86os_spawn("SLEEPER.PRG");
+        int overflow_pid = x86os_spawn("/libexec/reist/capwait.prg");
         if (overflow_pid >= 0) {
             children[spawned++] = overflow_pid;
+            (void)task_capacity_fail(6U, &before, overflow_pid);
             valid = false;
         }
     }
@@ -1607,8 +1657,10 @@ static int test_task_capacity_and_parenting(void) {
                   exhausted.active_tasks + exhausted.supervised_reserve !=
                       exhausted.task_capacity ||
                   exhausted.peak_active_tasks < exhausted.active_tasks ||
-                  exhausted.capacity_rejections <= before.capacity_rejections))
+                  exhausted.capacity_rejections <= before.capacity_rejections)) {
+        (void)task_capacity_fail(7U, &exhausted, 0);
         valid = false;
+    }
 
     for (size_t index = 0; valid && index < spawned; ++index) {
         x86os_process_info_t info;
@@ -1617,6 +1669,7 @@ static int test_task_capacity_and_parenting(void) {
             (info.state != X86OS_PROCESS_READY &&
              info.state != X86OS_PROCESS_RUNNING &&
              info.state != X86OS_PROCESS_SLEEPING)) {
+            (void)task_capacity_fail(8U, &exhausted, children[index]);
             valid = false;
         }
     }
@@ -1625,17 +1678,21 @@ static int test_task_capacity_and_parenting(void) {
         int status = -1;
         int kill_result = x86os_kill(children[index]);
         int wait_result = x86os_wait(children[index], &status);
-        if (kill_result != 0 || wait_result != children[index] ||
-            status != 143) valid = false;
+        if (kill_result != 0 || wait_result != children[index] || status != 143) {
+            (void)task_capacity_fail(9U, &exhausted, children[index]);
+            valid = false;
+        }
     }
     if (!valid) return -1;
-    if (wait_for_expected("CHILDEX.PRG", 37) != 0) return -1;
+    if (wait_for_expected("CHILDEX.PRG", 37) != 0)
+        return task_capacity_fail(10U, &exhausted, 0);
     x86os_scheduler_stats_t reclaimed;
-    return x86os_scheduler_stats(&reclaimed) == 0 &&
-           reclaimed.active_tasks < exhausted.active_tasks &&
-           reclaimed.peak_active_tasks >= exhausted.peak_active_tasks &&
-           reclaimed.capacity_rejections >= exhausted.capacity_rejections
-        ? 0 : -1;
+    if (x86os_scheduler_stats(&reclaimed) != 0 ||
+        reclaimed.active_tasks >= exhausted.active_tasks ||
+        reclaimed.peak_active_tasks < exhausted.peak_active_tasks ||
+        reclaimed.capacity_rejections < exhausted.capacity_rejections)
+        return task_capacity_fail(11U, &reclaimed, 0);
+    return 0;
 }
 
 static int test_storage_service(void) {

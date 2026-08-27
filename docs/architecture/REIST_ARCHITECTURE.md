@@ -93,6 +93,26 @@ Der [VMware-SVGA-II-2D-Pfad](VIDEO_SUBSYSTEM.md) verwendet dieselbe
 generationsgebundene Ring-3-Lifecycle-Grenze, benötigt aber kein DMA: Ein
 kleiner Kernelmediator akzeptiert ausschließlich validierte FIFO-Kommandos und
 behält Framebuffer, BARs und beliebige Pakete außerhalb der Treiberautorität.
+Die erste [SMP-Stufe](SMP_SUBSYSTEM.md) aktiviert weitere xAPIC-Prozessoren
+begrenzt. Private TSS/GDTs, guard-page-geschützte CPU-Idle-Stacks, CPU-lokaler
+IRQ-, Präemptions-, CR3-
+und Schedulerkontext sowie begrenzte CPU-besitzende Locks sind vorhanden.
+Tasktabellen-Transaktionen sind SMP-gesperrt; die Runqueue verhindert mit
+atomarem CPU-Besitz und nach `swtch()` abgeschlossener Übergabe eine doppelte
+Taskausführung. Generationsgebundene, endlich quittierte TLB-Shootdowns und
+explizit BSP-affine Legacy-PIC-IRQs schließen die Adressraum- und Geräte-IRQ-
+Grenze. LAPIC-Timer werden pro CPU kalibriert und nach `BOOT_OK` über einen
+eigenen IPI freigegeben. Ein affiner Kernel-Probetask pro AP weist echten
+parallelen Eintritt und die sichere Rückkehr in den CPU-lokalen Idlekontext
+nach. Drei konkurrierende AP-Probetasks weisen zusätzlich den atomaren
+Waitqueue-Übergang des rekursiven Timed-Kernelmutex nach. VFS, FAT32 und ATA
+verwenden diesen Mutex bereits für lange globale Transaktionen; AHCI schützt
+damit jeden veröffentlichten Command-Port und FDD zusätzlich FIFO, ISA-DMA und
+IRQ6-Abschluss. Ein barriere-synchroner AP-Probelauf liest denselben Root-Sektor
+über ATA-PIO beziehungsweise AHCI und akzeptiert ausschließlich bytegleiche
+Ergebnisse. Alle regulären
+Kernel- und Ring-3-Dienste bleiben CPU-0-affin, bis ihre übrigen
+subsystemeigenen Locks und parallele Fehlerinjektion abgenommen sind.
 
 Langfristig verbleiben nur Mechanismen mit globaler Schutzwirkung in Ring 0:
 
@@ -1738,7 +1758,8 @@ die vorhandenen Sender und liest bei E1000, RTL8139, RTL8168/8111G und NE2000 di
 Register zurück. Erst diese Rückleseprüfung bestätigt das Fence; andernfalls
 bleibt die Domäne ebenfalls im global eskalierten Safe State.
 
-Die zweite reale Domäne ist `storage-write`. ATA- und FDD-Schreibtransaktionen
+Die zweite reale Domäne ist `storage-write`. ATA-, AHCI- und
+FDD-Schreibtransaktionen
 bewaffnen eine 10-s-Deadline und melden danach wieder explizit Idle. Ihr
 Restartbudget ist null. Bei einer Fristverletzung verriegelt REIST alle
 weiteren Schreibaufrufe, prüft ATA auf gelöste `BSY`-/`DRQ`-Signale und stellt

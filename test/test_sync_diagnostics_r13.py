@@ -81,7 +81,8 @@ class IrqAndSleepContextContractTests(unittest.TestCase):
             else "int irq_in_context("
         )
         query = function_block(self.irq_c, query_signature)
-        depth_names = set(re.findall(r"\b(?:irq_)?context_depth\b", enter))
+        depth_names = set(re.findall(
+            r"\b(?:(?:current_)?irq_)?context_depth\b", enter))
         self.assertEqual(len(depth_names), 1, "IRQ context must use a depth counter")
         depth = next(iter(depth_names))
         self.assertIn(depth, leave)
@@ -180,27 +181,34 @@ class IrqAndSleepContextContractTests(unittest.TestCase):
                 self.assertRegex(body, r"\bKASSERT\s*\(")
 
     def test_raw_spinlocks_assert_context_and_misuse(self) -> None:
-        acquire = function_block(
-            self.spinlock_h, "static inline void spinlock_acquire("
+        bounded = function_block(
+            self.spinlock_h, "static inline bool spinlock_acquire_bounded("
         )
         release = function_block(
             self.spinlock_h, "static inline void spinlock_release("
         )
         self.assertRegex(
-            acquire,
+            bounded,
             r"(?:KASSERT_IRQ_DISABLED\s*\(\s*\)|"
             r"KASSERT\s*\(\s*!\s*irq_enabled\s*\(\s*\)\s*\))",
         )
-        self.assertRegex(
-            acquire,
-            r"KASSERT\s*\(\s*(?:lock\s*->\s*lock\s*==\s*0|"
-            r"!\s*spinlock_is_locked\s*\(\s*lock\s*\))\s*\)",
+        self.assertIn("spin < spin_limit", bounded)
+        self.assertIn("__sync_bool_compare_and_swap", bounded)
+        self.assertIn("if (lock->owner_cpu == cpu)", bounded)
+        self.assertIn("__builtin_return_address(0)", bounded)
+        self.assertIn("(cpu << 24U) | (caller & 0x00FFFFFFU)", bounded)
+        self.assertIn('panic("Recursive SMP spinlock acquisition")', bounded)
+        acquire = function_block(
+            self.spinlock_h, "static inline void spinlock_acquire("
         )
+        self.assertIn("SPINLOCK_ACQUIRE_SPIN_LIMIT", acquire)
+        self.assertIn("panic_context_set_result(-110", acquire)
         self.assertRegex(
             release,
             r"KASSERT\s*\(\s*(?:lock\s*->\s*lock\s*!=\s*0|"
             r"spinlock_is_locked\s*\(\s*lock\s*\))\s*\)",
         )
+        self.assertIn("lock->owner_cpu == cpu", release)
 
     def test_heap_entry_points_reject_hard_irq_context(self) -> None:
         memory = read("mm/kmalloc.c")
@@ -248,7 +256,8 @@ class IrqAndSleepContextContractTests(unittest.TestCase):
 
     def test_task_teardown_closes_vfs_state_before_scheduler_irq_lock(self) -> None:
         cases = (
-            ("void scheduler_terminate_task(", "irq_save()"),
+            ("void scheduler_terminate_task(",
+             "uint32_t flags = process_table_lock_irqsave();"),
             ("void task_exit_status(", "irq_disable()"),
         )
         for signature, mask_operation in cases:
@@ -272,7 +281,9 @@ class IrqAndSleepContextContractTests(unittest.TestCase):
         process = read("kernel/proc/process.c")
         terminate = function_block(process, "int process_terminate(")
         call = terminate.index("scheduler_terminate_task(task_id);")
-        restore = terminate.rfind("irq_restore(flags);", 0, call)
+        restore = terminate.rfind(
+            "process_table_unlock_irqrestore(flags);", 0, call
+        )
         self.assertGreaterEqual(
             restore,
             0,

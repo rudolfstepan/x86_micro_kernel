@@ -13,6 +13,7 @@
 #ifndef KERNEL_HOST_TEST
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/panic.h"
+#include "kernel/sched/mutex.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
 #endif
@@ -61,29 +62,32 @@ static bool vfs_filesystem_has_registered_nodes(vfs_filesystem_t* fs) {
     return false;
 }
 
-/*
- * VFS state is serialized on the current uniprocessor by suppressing task
- * preemption while leaving hardware interrupts enabled.  The scheduler guard
- * is counter-based, so a filesystem callback may enter another guarded
- * foreground API without prematurely re-enabling preemption.  Blocking and
- * context-switching APIs reject this state through KASSERT_CAN_SLEEP().
- *
- * Host regressions are single-threaded and do not link the kernel scheduler.
- */
-static void vfs_operation_begin(void) {
+/* A recursive mutex preserves existing callback re-entry while allowing a
+ * contending foreground task to sleep instead of blocking another CPU. */
+#define VFS_OPERATION_LOCK_TIMEOUT_MS 10000U
+#ifndef KERNEL_HOST_TEST
+static kernel_mutex_t vfs_operation_mutex = KERNEL_MUTEX_INIT;
+#endif
+
+static bool vfs_operation_begin(void) {
 #ifndef KERNEL_HOST_TEST
     KASSERT_NOT_IRQ();
-    KASSERT(irq_enabled());
-    scheduler_preempt_disable();
+    if (!scheduler_can_sleep()) {
+        printf("VFS_SLEEP_CONTEXT irq_enabled=%u irq_context=%u preempt=%u\n",
+               irq_enabled() ? 1U : 0U, irq_in_context() ? 1U : 0U,
+               scheduler_preempt_is_disabled() ? 1U : 0U);
+    }
+    return kernel_mutex_lock_for(&vfs_operation_mutex,
+                                 VFS_OPERATION_LOCK_TIMEOUT_MS) == 0;
+#else
+    return true;
 #endif
 }
 
 static void vfs_operation_end(void) {
 #ifndef KERNEL_HOST_TEST
     KASSERT_NOT_IRQ();
-    KASSERT(irq_enabled());
-    KASSERT(scheduler_preempt_is_disabled());
-    scheduler_preempt_enable();
+    kernel_mutex_unlock(&vfs_operation_mutex);
 #endif
 }
 
@@ -778,20 +782,20 @@ static int vfs_touch_locked(const char* path) {
 // ===========================================================================
 
 void vfs_init(void) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return;
     vfs_init_locked();
     vfs_operation_end();
 }
 
 int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_register_filesystem_locked(name, ops);
     vfs_operation_end();
     return result;
 }
 
 int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_mount_locked(drive, fs_type, mount_path, false);
     vfs_operation_end();
     return result;
@@ -799,14 +803,14 @@ int vfs_mount(drive_t* drive, const char* fs_type, const char* mount_path) {
 
 int vfs_mount_maintenance(drive_t* drive, const char* fs_type,
                           const char* mount_path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_mount_locked(drive, fs_type, mount_path, true);
     vfs_operation_end();
     return result;
 }
 
 int vfs_unmount(const char* mount_path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_unmount_locked(mount_path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
@@ -860,28 +864,28 @@ static int vfs_maintenance_release_locked(drive_t* drive) {
 }
 
 int vfs_maintenance_acquire(drive_t* drive) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_maintenance_acquire_locked(drive);
     vfs_operation_end();
     return result;
 }
 
 int vfs_maintenance_begin(drive_t* drive) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_maintenance_begin_locked(drive);
     vfs_operation_end();
     return result;
 }
 
 int vfs_maintenance_open_count(drive_t* drive, uint32_t* open_nodes) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_maintenance_open_count_locked(drive, open_nodes);
     vfs_operation_end();
     return result;
 }
 
 int vfs_maintenance_release(drive_t* drive) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_maintenance_release_locked(drive);
     vfs_operation_end();
     return result;
@@ -889,7 +893,7 @@ int vfs_maintenance_release(drive_t* drive) {
 
 int vfs_get_mount_info(drive_t* drive, vfs_mount_info_t* info) {
     if (!info) return VFS_ERR_INVALID;
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     memset(info, 0, sizeof(*info));
     int result = VFS_ERR_NOT_FOUND;
     if (drive != NULL) {
@@ -910,14 +914,14 @@ int vfs_get_mount_info(drive_t* drive, vfs_mount_info_t* info) {
 }
 
 int vfs_open(const char* path, vfs_node_t** node) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_open_locked(path, node);
     vfs_operation_end();
     return result;
 }
 
 int vfs_close(vfs_node_t* node) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_close_locked(node);
     vfs_operation_end();
     return result;
@@ -925,7 +929,7 @@ int vfs_close(vfs_node_t* node) {
 
 int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size,
              uint8_t* buffer) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_read_locked(node, offset, size, buffer);
     vfs_operation_end();
     return result;
@@ -933,7 +937,7 @@ int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size,
 
 int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
               const uint8_t* buffer) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_write_locked(node, offset, size, buffer)
                        : VFS_ERR_READ_ONLY;
@@ -943,7 +947,7 @@ int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
 }
 
 int vfs_truncate(vfs_node_t* node, uint32_t size) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_truncate_locked(node, size)
                        : VFS_ERR_READ_ONLY;
@@ -953,14 +957,14 @@ int vfs_truncate(vfs_node_t* node, uint32_t size) {
 }
 
 int vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_fstat_locked(node, stat);
     vfs_operation_end();
     return result;
 }
 
 int vfs_sync(vfs_node_t* node) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_sync_locked(node);
 #ifndef KERNEL_HOST_TEST
     if (result == VFS_ERR_IO) filesystem_fence_mutations();
@@ -970,7 +974,7 @@ int vfs_sync(vfs_node_t* node) {
 }
 
 int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_readdir_locked(path, index, entry);
     vfs_operation_end();
     return result;
@@ -978,14 +982,14 @@ int vfs_readdir(const char* path, uint32_t index, vfs_dir_entry_t* entry) {
 
 int vfs_readdir_batch(const char* path, uint32_t index,
                       vfs_dir_entry_t* entries, uint32_t capacity) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_readdir_batch_locked(path, index, entries, capacity);
     vfs_operation_end();
     return result;
 }
 
 int vfs_mkdir(const char* path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_mkdir_locked(path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
@@ -994,7 +998,7 @@ int vfs_mkdir(const char* path) {
 }
 
 int vfs_rmdir(const char* path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_rmdir_locked(path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
@@ -1003,7 +1007,7 @@ int vfs_rmdir(const char* path) {
 }
 
 int vfs_create(const char* path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_create_locked(path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
@@ -1012,7 +1016,7 @@ int vfs_create(const char* path) {
 }
 
 int vfs_delete(const char* path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_delete_locked(path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
@@ -1021,7 +1025,7 @@ int vfs_delete(const char* path) {
 }
 
 int vfs_rename(const char* old_path, const char* new_path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_rename_locked(old_path, new_path)
                        : VFS_ERR_READ_ONLY;
@@ -1031,7 +1035,7 @@ int vfs_rename(const char* old_path, const char* new_path) {
 }
 
 int vfs_touch(const char* path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_touch_locked(path) : VFS_ERR_READ_ONLY;
     result = vfs_mutation_finish(armed, result);
@@ -1040,21 +1044,21 @@ int vfs_touch(const char* path) {
 }
 
 int vfs_stat(const char* path, vfs_dir_entry_t* stat) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_stat_locked(path, stat);
     vfs_operation_end();
     return result;
 }
 
 int vfs_space(const char* path, vfs_space_info_t* info) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     int result = vfs_space_locked(path, info);
     vfs_operation_end();
     return result;
 }
 
 vfs_filesystem_t* vfs_get_filesystem(const char* path) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return NULL;
     vfs_filesystem_t* result = vfs_get_filesystem_locked(path);
     vfs_operation_end();
     return result;
@@ -1062,7 +1066,7 @@ vfs_filesystem_t* vfs_get_filesystem(const char* path) {
 
 const char* vfs_get_relative_path(const char* absolute_path,
                                   vfs_filesystem_t* fs) {
-    vfs_operation_begin();
+    if (!vfs_operation_begin()) return NULL;
     const char* result = vfs_get_relative_path_locked(absolute_path, fs);
     vfs_operation_end();
     return result;

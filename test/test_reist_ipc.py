@@ -142,6 +142,10 @@ class ReistIpcContractTests(unittest.TestCase):
         self.assertIn("wait_queue_wake_one_locked(", enqueue)
         self.assertIn("enqueue_message_locked(", send)
         self.assertIn("wait_queue_wake_one_locked(", receive)
+        self.assertIn("ipc_state_lock = SPINLOCK_INIT", self.source)
+        self.assertIn("spinlock_acquire_irq(&ipc_state_lock)", self.source)
+        self.assertIn("wait_queue_block_until_spinlocked(", send)
+        self.assertIn("wait_queue_block_until_spinlocked(", receive)
 
     def test_delegation_is_explicit_attenuated_and_generation_scoped(self) -> None:
         delegate = c_block(self.source, "int ipc_delegate(")
@@ -152,8 +156,9 @@ class ReistIpcContractTests(unittest.TestCase):
         self.assertNotIn("ipc_inherit(", self.source)
         self.assertNotIn("ipc_inherit(", self.process)
         process_delegate = c_block(self.process, "int process_ipc_delegate(")
-        self.assertIn("scheduler_preempt_disable()", process_delegate)
-        self.assertIn("scheduler_preempt_enable()", process_delegate)
+        self.assertIn("process_table_lock_irqsave()", process_delegate)
+        self.assertIn("process_table_unlock_irqrestore(flags)",
+                      process_delegate)
         self.assertIn("process_list[index].generation", process_delegate)
 
     def test_exit_cleanup_is_generation_scoped_and_wakes_both_directions(self) -> None:

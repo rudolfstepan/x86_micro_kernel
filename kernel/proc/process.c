@@ -330,8 +330,35 @@ static void release_admission_image(uint8_t **image) {
 }
 
 
-Process process_list[MAX_PROGRAMS];
-int next_pid = 1; // PID counter starting at 1
+static Process process_list[MAX_PROGRAMS];
+static int next_pid = 1; // PID counter starting at 1
+static spinlock_t process_table_lock = SPINLOCK_INIT;
+
+uint32_t process_table_lock_irqsave(void) {
+    return spinlock_acquire_irq(&process_table_lock);
+}
+
+void process_table_unlock_irqrestore(uint32_t flags) {
+    spinlock_release_irq(&process_table_lock, flags);
+}
+
+spinlock_t *process_table_lock_ref(void) {
+    return &process_table_lock;
+}
+
+bool process_table_lock_is_owned(void) {
+    return spinlock_is_owned_by_current(&process_table_lock);
+}
+
+bool process_begin_exit(Process *process, uint32_t generation) {
+    if (process == NULL || generation == 0U) return false;
+    uint32_t flags = process_table_lock_irqsave();
+    bool accepted = process->is_running && !process->terminating &&
+                    process->generation == generation;
+    if (accepted) process->terminating = true;
+    process_table_unlock_irqrestore(flags);
+    return accepted;
+}
 
 static void profile_allow(process_domain_profile_t *profile,
                           uint32_t syscall_index) {
@@ -515,11 +542,12 @@ static void release_process_slot(Process *process) {
     storage_request_cancel_process(process->pid, process->generation);
     admin_maintenance_process_cleanup(process->pid, process->generation);
     component_control_process_cleanup(process->pid, process->generation);
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     process->is_running = false;
+    process->terminating = false;
     process->uses_shared_program_image = false;
     process->task_id = -1;
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
 }
 
 static void initialize_standard_descriptors(Process *process) {
@@ -545,13 +573,13 @@ static int claim_process_slot(const char *name, bool shared_image,
                               int parent_pid, uint32_t parent_generation,
                               bool supervised,
                               process_domain_kind_t domain_kind) {
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
 
     if (shared_image) {
         for (int i = 0; i < MAX_PROGRAMS; ++i) {
             if (process_list[i].is_running &&
                 process_list[i].uses_shared_program_image) {
-                irq_restore(flags);
+                process_table_unlock_irqrestore(flags);
                 return -2;
             }
         }
@@ -565,7 +593,7 @@ static int claim_process_slot(const char *name, bool shared_image,
     }
     if (free_slots == 0U ||
         (!supervised && free_slots <= SUPERVISED_PROCESS_RESERVE)) {
-        irq_restore(flags);
+        process_table_unlock_irqrestore(flags);
         return -1;
     }
 
@@ -578,7 +606,7 @@ static int claim_process_slot(const char *name, bool shared_image,
             if (process->generation == UINT32_MAX) continue;
             int pid = allocate_pid_locked();
             if (pid < 0) {
-                irq_restore(flags);
+                process_table_unlock_irqrestore(flags);
                 return -1;
             }
             uint32_t generation = process->generation + 1U;
@@ -589,6 +617,7 @@ static int claim_process_slot(const char *name, bool shared_image,
             process->task_id = -1;
             process->exit_status = 0;
             process->has_exited = false;
+            process->terminating = false;
             process->uses_shared_program_image = shared_image;
             process->heap_next = USER_HEAP_BASE;
             memset(process->user_allocations, 0,
@@ -598,7 +627,7 @@ static int claim_process_slot(const char *name, bool shared_image,
             if (!initialize_domain_profile(&process->domain_profile,
                                            domain_kind)) {
                 process->is_running = false;
-                irq_restore(flags);
+                process_table_unlock_irqrestore(flags);
                 return -1;
             }
             memset(process->ipc_capabilities, 0,
@@ -609,12 +638,12 @@ static int claim_process_slot(const char *name, bool shared_image,
             strncpy(process->name, name, sizeof(process->name) - 1U);
             process->name[sizeof(process->name) - 1U] = '\0';
             process->is_running = true;
-            irq_restore(flags);
+            process_table_unlock_irqrestore(flags);
             return i;
         }
     }
 
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
     return -1;
 }
 
@@ -675,6 +704,7 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
                                                const char *working_directory,
                                                Process *parent,
                                                bool supervised,
+                                               bool prepared,
                                                process_domain_kind_t domain_kind) {
     if (filename == NULL || *filename == '\0') {
         return -22;
@@ -806,9 +836,19 @@ static int create_process_for_file_args_owned(const char *filename, int argc,
         return -14;
     }
 
-    int task_id = (supervised ? create_supervised_user_task : create_user_task)(
-        entry_point + USER_PROGRAM_ADDRESS, user_stack,
-        kernel_stack, page_directory, process);
+    int task_id;
+    if (!supervised) {
+        task_id = create_user_task(entry_point + USER_PROGRAM_ADDRESS,
+            user_stack, kernel_stack, page_directory, process);
+    } else if (prepared) {
+        task_id = create_prepared_supervised_user_task(
+            entry_point + USER_PROGRAM_ADDRESS, user_stack,
+            kernel_stack, page_directory, process);
+    } else {
+        task_id = create_supervised_user_task(
+            entry_point + USER_PROGRAM_ADDRESS, user_stack,
+            kernel_stack, page_directory, process);
+    }
     if (task_id < 0) {
         scheduler_free_kernel_stack(kernel_stack);
         free_page_directory(page_directory);
@@ -823,7 +863,7 @@ int create_process_for_file_args(const char *filename, int argc,
                                  const char *const *argv,
                                  const char *working_directory) {
     return create_process_for_file_args_owned(filename, argc, argv,
-        working_directory, NULL, false, PROCESS_DOMAIN_COMPATIBILITY);
+        working_directory, NULL, false, false, PROCESS_DOMAIN_COMPATIBILITY);
 }
 
 int create_process(void* entry_point) {
@@ -1444,14 +1484,14 @@ void wait_for_process(int pid) {
 
     for (;;) {
         bool running = false;
-        uint32_t flags = irq_save();
+        uint32_t flags = process_table_lock_irqsave();
         for (int i = 0; i < MAX_PROGRAMS; ++i) {
             if (process_list[i].pid == pid && process_list[i].is_running) {
                 running = true;
                 break;
             }
         }
-        irq_restore(flags);
+        process_table_unlock_irqrestore(flags);
         if (!running) return;
 
         /* The APIC timer schedules the userspace task. HLT avoids burning the
@@ -1489,7 +1529,7 @@ int process_spawn_args(Process *parent, const char *path, int argc,
             ? PROCESS_DOMAIN_ADMIN : PROCESS_DOMAIN_COMPATIBILITY;
     return create_process_for_file_args_owned(
         resolved, argc, argv, parent->working_directory, parent, false,
-        domain_kind);
+        false, domain_kind);
 }
 
 int process_spawn_supervised(const char *path, int argc,
@@ -1498,7 +1538,33 @@ int process_spawn_supervised(const char *path, int argc,
     if (path == NULL || *path == '\0' || argc < 1 || argc > 32 ||
         argv == NULL) return -1;
     return create_process_for_file_args_owned(path, argc, argv, "/", NULL,
-                                               true, domain_kind);
+                                               true, false, domain_kind);
+}
+
+int process_spawn_supervised_prepared(const char *path, int argc,
+                                      const char *const *argv,
+                                      process_domain_kind_t domain_kind) {
+    if (path == NULL || *path == '\0' || argc < 1 || argc > 32 ||
+        argv == NULL) return -1;
+    return create_process_for_file_args_owned(path, argc, argv, "/", NULL,
+                                               true, true, domain_kind);
+}
+
+int process_start_prepared_supervised(int pid, uint32_t generation) {
+    if (pid <= 0 || generation == 0U) return -22;
+    uint32_t flags = process_table_lock_irqsave();
+    int result = -3;
+    for (int index = 0; index < MAX_PROGRAMS; ++index) {
+        Process *process = &process_list[index];
+        if (!process->is_running || process->has_exited ||
+            process->terminating || process->pid != pid ||
+            process->generation != generation) continue;
+        result = scheduler_start_prepared_user_task_locked(
+            process->task_id, process, generation);
+        break;
+    }
+    process_table_unlock_irqrestore(flags);
+    return result;
 }
 
 int process_ipc_delegate(Process *source, ipc_handle_t handle,
@@ -1507,9 +1573,8 @@ int process_ipc_delegate(Process *source, ipc_handle_t handle,
         return -22;
     }
 
-    /* The preemption guard makes PID lookup and generation-scoped capability
-     * publication one transaction on the current UP scheduler. */
-    scheduler_preempt_disable();
+    /* Process -> IPC is the fixed lifecycle/capability lock order. */
+    uint32_t flags = process_table_lock_irqsave();
     Process *target = NULL;
     uint32_t target_generation = 0U;
     for (int index = 0; index < MAX_PROGRAMS; ++index) {
@@ -1522,7 +1587,7 @@ int process_ipc_delegate(Process *source, ipc_handle_t handle,
     }
     int result = target != NULL && target->generation == target_generation
         ? ipc_delegate(source, handle, target, rights) : -3;
-    scheduler_preempt_enable();
+    process_table_unlock_irqrestore(flags);
     return result;
 }
 
@@ -1531,7 +1596,7 @@ int process_ipc_delegate_identity(int source_pid, uint32_t source_generation,
                                   uint32_t rights) {
     if (source_pid <= 0 || source_generation == 0U || target == NULL)
         return -22;
-    scheduler_preempt_disable();
+    uint32_t flags = process_table_lock_irqsave();
     Process *source = NULL;
     for (size_t index = 0; index < MAX_PROGRAMS; ++index) {
         Process *candidate = &process_list[index];
@@ -1543,12 +1608,14 @@ int process_ipc_delegate_identity(int source_pid, uint32_t source_generation,
     }
     int result = source != NULL
         ? ipc_delegate(source, handle, target, rights) : -9;
-    scheduler_preempt_enable();
+    process_table_unlock_irqrestore(flags);
     return result;
 }
 
 int process_wait_status_locked(Process *parent, int pid, int *status,
                                wait_queue_t **wait_queue) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(process_table_lock_is_owned());
     if (parent == NULL || status == NULL || pid <= 0) return -1;
     if (wait_queue != NULL) *wait_queue = NULL;
     for (int i = 0; i < MAX_PROGRAMS; ++i) {
@@ -1574,16 +1641,16 @@ int process_wait_status_locked(Process *parent, int pid, int *status,
 }
 
 int process_wait_status(Process *parent, int pid, int *status) {
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     int result = process_wait_status_locked(parent, pid, status, NULL);
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
     if (result > 0) (void)scheduler_reap_finished_tasks();
     return result;
 }
 
 void process_orphan_children(int parent_pid) {
     if (parent_pid <= 0) return;
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     for (int i = 0; i < MAX_PROGRAMS; ++i) {
         if (process_list[i].parent_pid == parent_pid) {
             process_list[i].parent_pid = 0;
@@ -1597,12 +1664,12 @@ void process_orphan_children(int parent_pid) {
             }
         }
     }
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
 }
 
 int process_get_info(uint32_t index, process_info_t* info) {
     if (info == NULL) return -1;
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     uint32_t visible = 0;
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         Process* process = &process_list[i];
@@ -1616,22 +1683,24 @@ int process_get_info(uint32_t index, process_info_t* info) {
         strncpy(info->name, process->name, sizeof(info->name) - 1U);
         if (process->has_exited) {
             info->state = PROCESS_STATE_ZOMBIE;
-        } else if (process->task_id >= 0 && process->task_id < num_tasks &&
-                   tasks[process->task_id].process == process &&
-                   tasks[process->task_id].process_generation ==
-                       process->generation) {
-            int task_state = tasks[process->task_id].status;
+        } else {
+            int task_state;
+            if (scheduler_task_state_snapshot(
+                    process->task_id, process, process->generation,
+                    &task_state) != 0) {
+                info->state = PROCESS_STATE_READY;
+                process_table_unlock_irqrestore(flags);
+                return 1;
+            }
             if (task_state == TASK_RUNNING) info->state = PROCESS_STATE_RUNNING;
             else if (task_state == TASK_SLEEPING) info->state = PROCESS_STATE_SLEEPING;
             else if (task_state == TASK_WAITING) info->state = PROCESS_STATE_WAITING;
             else info->state = PROCESS_STATE_READY;
-        } else {
-            info->state = PROCESS_STATE_READY;
         }
-        irq_restore(flags);
+        process_table_unlock_irqrestore(flags);
         return 1;
     }
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
     return 0;
 }
 
@@ -1639,31 +1708,34 @@ int process_terminate(int pid) {
     if (pid <= 0) return -1;
     KASSERT_NOT_IRQ();
     scheduler_preempt_disable();
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     for (int i = 0; i < MAX_PROGRAMS; i++) {
-        if (process_list[i].is_running && process_list[i].pid == pid) {
+        if (process_list[i].is_running && !process_list[i].terminating &&
+            process_list[i].pid == pid) {
             int task_id = process_list[i].task_id;
-            if (task_id < 0 || task_id >= num_tasks ||
-                tasks[task_id].process != &process_list[i] ||
-                tasks[task_id].process_generation !=
-                    process_list[i].generation) {
-                irq_restore(flags);
+            int task_state;
+            if (scheduler_task_state_snapshot(
+                    task_id, &process_list[i], process_list[i].generation,
+                    &task_state) != 0) {
+                process_table_unlock_irqrestore(flags);
                 scheduler_preempt_enable();
                 return -1;
             }
-            irq_restore(flags);
-            if (task_id == current_task) {
+            bool self = task_id == scheduler_current_task_id();
+            if (!self) process_list[i].terminating = true;
+            process_table_unlock_irqrestore(flags);
+            if (self) {
                 scheduler_preempt_enable();
                 task_exit_status(143);
             }
-            /* The preemption guard preserves PID -> slot -> generation while
-             * the scheduler closes the target's files with IRQs enabled. */
+            /* The terminating state pins PID/slot/generation while the
+             * scheduler closes resources with IRQs enabled. */
             scheduler_terminate_task(task_id);
             scheduler_preempt_enable();
             return 0;
         }
     }
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
     scheduler_preempt_enable();
     return -1;
 }
@@ -1672,7 +1744,7 @@ int process_terminate_authorized(Process *requester, int pid) {
     if (requester == NULL || pid <= 0) return -1;
     KASSERT_NOT_IRQ();
     scheduler_preempt_disable();
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     bool authorized = false;
     for (int index = 0; index < MAX_PROGRAMS; ++index) {
         Process *target = &process_list[index];
@@ -1683,7 +1755,7 @@ int process_terminate_authorized(Process *requester, int pid) {
             break;
         }
     }
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
     int result = authorized ? process_terminate(pid) : -1;
     scheduler_preempt_enable();
     return result;
@@ -1691,21 +1763,21 @@ int process_terminate_authorized(Process *requester, int pid) {
 
 int process_get_identity(int pid, uint32_t *generation_out) {
     if (pid <= 0 || generation_out == NULL) return -1;
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     for (int index = 0; index < MAX_PROGRAMS; ++index) {
         if (process_list[index].is_running && process_list[index].pid == pid) {
             *generation_out = process_list[index].generation;
-            irq_restore(flags);
+            process_table_unlock_irqrestore(flags);
             return 0;
         }
     }
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
     return -1;
 }
 
 bool process_identity_alive(int pid, uint32_t generation) {
     if (pid <= 0 || generation == 0U) return false;
-    uint32_t flags = irq_save();
+    uint32_t flags = process_table_lock_irqsave();
     bool alive = false;
     for (int index = 0; index < MAX_PROGRAMS; ++index) {
         if (process_list[index].is_running && process_list[index].pid == pid &&
@@ -1714,6 +1786,6 @@ bool process_identity_alive(int pid, uint32_t generation) {
             break;
         }
     }
-    irq_restore(flags);
+    process_table_unlock_irqrestore(flags);
     return alive;
 }

@@ -1,11 +1,67 @@
 # Projektstatus
 
-Stand: 26. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
+Stand: 27. August 2026. Maßgeblich sind ausführbarer Code, die Tests und die
 aktive Paketqueue in `automation/reist-s03b.toml`.
 
 REIST OS ist ein nicht zertifizierter High-Assurance-Forschungsprototyp. Die
 vorhandenen Schutzmechanismen dürfen nicht als klinische, industrielle oder
 sonstige sicherheitsbezogene Freigabe verstanden werden.
+
+`R6.1-smp-bootstrap` aktiviert auf i386 erstmals echte zusätzliche xAPIC-
+Prozessoren. Ein checksum- und längengeprüfter ACPI-MADT-Pfad inventarisiert
+höchstens 16 CPUs; eine reservierte Low-Memory-Seite startet jeden AP mit
+privatem Stack und endlicher INIT/SIPI-/Online-Deadline. Der automatisierte
+QEMU-Nachweis erreicht mit vier CPUs `online=4 parked=3`, bestätigt denselben
+CPU-besitzenden SMP-Lock mit `mask=0000000F` und bootet danach bis zur
+Ring-3-Shell. Nach `BOOT_OK` führt jeder AP einen ausschließlich an ihn
+gebundenen Kernel-Probetask aus; `probe_mask=0000000E` bestätigt Eintritt,
+`task_exit` und Rückkehr in alle drei lokalen Idle-Kontexte. Jeder AP besitzt
+eine private GDT, Runtime- und Double-Fault-TSS
+sowie CPU-lokalen IRQ-, Präemptions-, Adressraum-, aktuellen Task- und
+Kernel-Schedulerzustand. Seitentabellenmutationen sind in der festen
+Lockreihenfolge `Seitentabelle -> Frame-Allocator` serialisiert. Die AP-
+Kernelstacks stammen aus dem guard-page-geschützten Scheduler-Allocator.
+Administrative Tasktabellen-Transaktionen sind
+SMP-gesperrt und nur noch über generationsgeprüfte Snapshots sichtbar. Der
+Runqueue-Handoff besitzt zusätzlich atomaren CPU-Besitz; READY-Publikation und
+Besitzfreigabe erfolgen erst im tatsächlich erreichten Zielkontext. Ein real
+quittierter, generationsgebundener TLB-Shootdown hält gemeinsame Mappings
+kohärent und gibt entfernte Frames erst nach allen ACKs frei. Legacy-PIC-IRQs
+sind explizit CPU 0 zugeordnet. Jeder LAPIC-Timer wird CPU-lokal gegen den PIT
+kalibriert und erst an der späten Bootbarriere per IPI aktiviert. Damit ist
+isolierte Mehrkern-Kerneltaskausführung nachgewiesen. Reguläre Kernel- und
+Ring-3-Dienste bleiben bis zur SMP-Migration der verbleibenden Treiberlocks
+CPU-0-affin; allgemeine Mehrkern-Dienstausführung wird noch nicht behauptet.
+Waitqueues, IPC, der gemeinsame Tastaturpuffer sowie die begrenzten UDP-/TCP-
+Sockettabellen sind bereits SMP-gesperrt; blockierende Pfade übertragen atomar
+vom Subsystemlock in den Scheduler und halten keinen Spinlock über `swtch()`.
+Ein rekursiver, deadline-begrenzter Kernelmutex erweitert dieses Modell auf
+lange Foreground-Arbeit. VFS, FAT32, ATA, AHCI und FDD sind damit in den festen
+Ordnungen `VFS -> FAT32 -> ATA/AHCI -> Scheduler` und
+`VFS -> FDD -> Scheduler` serialisiert. AHCI sperrt seine festen Command- und
+DMA-Puffer je Port. ATA-/AHCI-/FDD-Fences werden vor möglicher Blockierung
+publiziert und erst nach gesperrter Hardware-Quieszenz aufgehoben.
+Der Vier-CPU-Smoke erzwingt
+Konkurrenz zwischen drei AP-affinen Probetasks und bestätigt die vollständige
+Wait-/Wake-Kette mit `MUTEX_READY workers=3 mask=0000000E`. Dieselben Tasks
+lesen nach einer Startbarriere parallel denselben Root-Sektor; ATA-PIO und
+ICH9-AHCI liefern jeweils drei bytegleiche Ergebnisse mit
+`SUBSYSTEM_READY workers=3 mask=0000000E`.
+Die drei beendeten AP-Probetasks werden anschließend generationsgeprüft
+reap't (`REAP_READY workers=3 reaped=3`). Ein separates, blockierendes
+`CAPWAIT.PRG` hält danach alle 32 öffentlichen Taskslots gleichzeitig belegt
+und bestätigt die unveränderte öffentliche Taskkapazität mit
+`TASK_CAPACITY_OK`. Das Kernelstack-Areal besitzt dafür 48 feste Slots, sodass
+bis zu 15 private AP-Idle-Stacks die 32 Taskslots nicht verkleinern. Der
+vollständige SMP4-/SVGA2D-Gastlauf erreicht wiederholt `TEST_OK`; reguläre
+Dienste bleiben trotzdem bewusst CPU-0-affin.
+Auch PID-/Generationsvergabe, Prozess-Exit und `wait` sind unter einem eigenen
+Prozesslock serialisiert; langsame Ressourcenfreigabe bleibt außerhalb der
+Lockdomäne. Der feste Storage-Request-/Bulk-Pool ist ebenfalls durch einen
+eigenen SMP-Lock geschützt; gleiches gilt für ARP-Binding-Cache, Handover-
+Status und Handover-Replikat. Scheduling-Zeitfenster
+und Klassenauswahlcursor sind
+pro CPU getrennt, damit AP-Idle-Ticks die CPU-0-Budgetierung nicht verändern.
 
 `R2.2-nvidia-gk208-bringup` ist als automatisierter Hardware-Schnitt für native
 2D-Beschleunigung auf dem ASUS-Board. Die exakte Karte `10de:1280` erhält eine
@@ -1203,5 +1259,6 @@ Zertifizierung bleiben offene manuelle oder produktbezogene Nachweise.
 - allgemeiner USB/xHCI-, Composite-HID-, Mass-Storage- und Hotplug-Lebenszyklus
 - Migration der verbleibenden GUI-Programme auf Surface-Clients sowie
   allgemeine 3D-/Multi-Monitor-Grafikbeschleunigung
-- SMP, IOMMU/DMA-Isolation, UEFI, Secure Boot und NVMe
+- allgemeine SMP-Verteilung regulärer Dienste, IOMMU/DMA-Isolation, UEFI,
+  Secure Boot und NVMe
 - formale Nachweise, Langzeit-Stresstests und Zertifizierung

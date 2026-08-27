@@ -8,13 +8,51 @@
  */
 #include "include/kernel/critical_object.h"
 
+#if !defined(__STDC_HOSTED__) || !__STDC_HOSTED__
+#include "arch/x86/include/interrupt.h"
+#endif
+
 #define WORD_VERSION 0U
 #define WORD_SEQUENCE 1U
 #define WORD_LENGTH 2U
 #define WORD_INTEGRITY 3U
 #define WORD_PAYLOAD 4U
+#define CRITICAL_OBJECT_LOCK_RETRY_LIMIT (1U << 20U)
 
 typedef enum { COPY_INVALID = -1, COPY_VALID = 0, COPY_CORRECTED = 1 } copy_status_t;
+
+static bool critical_object_lock(critical_object_t *object,
+                                 uint32_t *irq_flags_out) {
+    if (object == 0 || irq_flags_out == 0) return false;
+#if !defined(__STDC_HOSTED__) || !__STDC_HOSTED__
+    *irq_flags_out = irq_save();
+#else
+    *irq_flags_out = 0U;
+#endif
+    for (uint32_t retry = 0U; retry < CRITICAL_OBJECT_LOCK_RETRY_LIMIT;
+         ++retry) {
+        if (__sync_bool_compare_and_swap(&object->publication_lock, 0U, 1U)) {
+            __sync_synchronize();
+            return true;
+        }
+        __asm__ __volatile__("pause");
+    }
+#if !defined(__STDC_HOSTED__) || !__STDC_HOSTED__
+    irq_restore(*irq_flags_out);
+#endif
+    return false;
+}
+
+static void critical_object_unlock(critical_object_t *object,
+                                   uint32_t irq_flags) {
+    __sync_synchronize();
+    __sync_lock_release(&object->publication_lock);
+#if !defined(__STDC_HOSTED__) || !__STDC_HOSTED__
+    irq_restore(irq_flags);
+#else
+    (void)irq_flags;
+#endif
+}
 
 static bool parity32(uint32_t value) {
     value ^= value >> 16;
@@ -149,6 +187,8 @@ int critical_object_init(critical_object_t *object, uint32_t version,
                          const void *payload, size_t length) {
     if (object == 0 || payload == 0 || version == 0 ||
         length == 0 || length > CRITICAL_OBJECT_MAX_PAYLOAD) return -1;
+    object->publication_lock = 0U;
+    __sync_synchronize();
     copy_build(&object->primary, version, 1U, CRITICAL_INTEGRITY_HEALTHY,
                payload, length);
     object->shadow = object->primary;
@@ -160,20 +200,31 @@ int critical_object_update(critical_object_t *object, uint32_t expected_version,
                            critical_object_validator_t validator) {
     if (object == 0 || payload == 0 || length == 0 ||
         length > CRITICAL_OBJECT_MAX_PAYLOAD || expected_version == 0) return -1;
+    uint32_t irq_flags;
+    if (!critical_object_lock(object, &irq_flags)) return -1;
     critical_object_copy_t primary = object->primary;
     critical_object_copy_t shadow = object->shadow;
     copy_status_t primary_status = copy_check(&primary, expected_version, validator);
     copy_status_t shadow_status = copy_check(&shadow, expected_version, validator);
-    if (primary_status < 0 && shadow_status < 0) return -1;
+    if (primary_status < 0 && shadow_status < 0) {
+        critical_object_unlock(object, irq_flags);
+        return -1;
+    }
     if (primary_status >= 0 && shadow_status >= 0 &&
         primary.words[WORD_SEQUENCE] == shadow.words[WORD_SEQUENCE] &&
-        !copies_equal(&primary, &shadow)) return -1;
+        !copies_equal(&primary, &shadow)) {
+        critical_object_unlock(object, irq_flags);
+        return -1;
+    }
     uint32_t current_sequence = primary_status >= 0
         ? primary.words[WORD_SEQUENCE] : shadow.words[WORD_SEQUENCE];
     if (shadow_status >= 0 && shadow.words[WORD_SEQUENCE] > current_sequence)
         current_sequence = shadow.words[WORD_SEQUENCE];
     uint32_t sequence = current_sequence + 1U;
-    if (sequence == 0) return -1;
+    if (sequence == 0) {
+        critical_object_unlock(object, irq_flags);
+        return -1;
+    }
     critical_object_copy_t candidate;
     copy_build(&candidate, expected_version, sequence, CRITICAL_INTEGRITY_HEALTHY,
                payload, length);
@@ -182,6 +233,7 @@ int critical_object_update(critical_object_t *object, uint32_t expected_version,
      * independently valid copy and never combine partial payloads. */
     object->shadow = candidate;
     object->primary = candidate;
+    critical_object_unlock(object, irq_flags);
     return 0;
 }
 
@@ -190,17 +242,26 @@ critical_read_result_t critical_object_read(
     size_t capacity, size_t *length_out, critical_object_validator_t validator) {
     if (object == 0 || payload_out == 0 || length_out == 0 || expected_version == 0)
         return CRITICAL_READ_INVALID_ARGUMENT;
+    uint32_t irq_flags;
+    if (!critical_object_lock(object, &irq_flags))
+        return CRITICAL_READ_UNCORRECTABLE;
     critical_object_copy_t primary = object->primary;
     critical_object_copy_t shadow = object->shadow;
     copy_status_t primary_status = copy_check(&primary, expected_version, validator);
     copy_status_t shadow_status = copy_check(&shadow, expected_version, validator);
-    if (primary_status < 0 && shadow_status < 0) return CRITICAL_READ_UNCORRECTABLE;
+    if (primary_status < 0 && shadow_status < 0) {
+        critical_object_unlock(object, irq_flags);
+        return CRITICAL_READ_UNCORRECTABLE;
+    }
 
     critical_object_copy_t *chosen;
     critical_read_result_t result;
     if (primary_status >= 0 && shadow_status >= 0) {
         if (primary.words[WORD_SEQUENCE] == shadow.words[WORD_SEQUENCE] &&
-            !copies_equal(&primary, &shadow)) return CRITICAL_READ_UNCORRECTABLE;
+            !copies_equal(&primary, &shadow)) {
+            critical_object_unlock(object, irq_flags);
+            return CRITICAL_READ_UNCORRECTABLE;
+        }
         chosen = primary.words[WORD_SEQUENCE] >= shadow.words[WORD_SEQUENCE]
                      ? &primary : &shadow;
         result = (primary_status > 0 || shadow_status > 0)
@@ -210,7 +271,10 @@ critical_read_result_t critical_object_read(
         result = CRITICAL_READ_RECOVERED;
     }
     size_t length = chosen->words[WORD_LENGTH];
-    if (length > capacity) return CRITICAL_READ_INVALID_ARGUMENT;
+    if (length > capacity) {
+        critical_object_unlock(object, irq_flags);
+        return CRITICAL_READ_INVALID_ARGUMENT;
+    }
     critical_integrity_state_t state = result == CRITICAL_READ_RECOVERED
         ? CRITICAL_INTEGRITY_RECOVERED
         : (result == CRITICAL_READ_CORRECTED ? CRITICAL_INTEGRITY_CORRECTED
@@ -221,5 +285,6 @@ critical_read_result_t critical_object_read(
     object->shadow = object->primary;
     bytes_copy(payload_out, &chosen->words[WORD_PAYLOAD], length);
     *length_out = length;
+    critical_object_unlock(object, irq_flags);
     return result;
 }

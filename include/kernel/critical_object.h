@@ -42,6 +42,7 @@ typedef struct {
 } critical_object_copy_t;
 
 typedef struct {
+    volatile uint32_t publication_lock;
     critical_object_copy_t primary;
     critical_object_copy_t shadow;
 } critical_object_t;

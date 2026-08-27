@@ -13,6 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReistHandoverReplicaTests(unittest.TestCase):
+    def test_target_replica_uses_a_cpu_owned_smp_lock(self):
+        source = (ROOT / "kernel/init/handover_replica.c").read_text()
+        self.assertIn("replica_state_lock = SPINLOCK_INIT", source)
+        self.assertIn("spinlock_acquire_irq(&replica_state_lock)", source)
+        self.assertIn("spinlock_release_irq(&replica_state_lock, flags)",
+                      source)
+
     def test_protected_replica_state_host(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:

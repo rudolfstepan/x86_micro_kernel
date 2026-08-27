@@ -38,8 +38,10 @@ class ReistFatalContainmentTests(unittest.TestCase):
         self.assertIn("type_attr = 0x85", self.idt)
         self.assertIn("set_idt_task_gate(8, DOUBLE_FAULT_TSS_SELECTOR)", self.isr)
         self.assertIn("double_fault_stack[PAGE_SIZE]", self.tss)
-        self.assertIn("double_fault_tss.eip", self.tss)
-        self.assertIn("double_fault_tss.cr3", self.tss)
+        self.assertRegex(self.tss, r"(?:double_fault_tss\.|fault->)eip")
+        self.assertRegex(self.tss, r"(?:double_fault_tss\.|fault->)cr3")
+        self.assertIn("ap_double_fault_tss", self.tss)
+        self.assertIn("ap_double_fault_stacks", self.tss)
 
     def test_emergency_path_is_bounded_and_dependency_minimal(self):
         self.assertIn("EMERGENCY_SERIAL_POLL_BUDGET", self.fatal)

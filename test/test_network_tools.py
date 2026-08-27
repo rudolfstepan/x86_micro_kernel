@@ -10,6 +10,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NetworkToolsSourceTests(unittest.TestCase):
+    def test_kernel_socket_tables_use_smp_locks_and_atomic_wait_transfer(self):
+        udp = (ROOT / "drivers/net/net_socket.c").read_text()
+        tcp = (ROOT / "drivers/net/tcp_socket.c").read_text()
+        self.assertIn("socket_state_lock = SPINLOCK_INIT", udp)
+        self.assertIn("spinlock_acquire_irq(&socket_state_lock)", udp)
+        self.assertIn("wait_queue_block_until_spinlocked(", udp)
+        self.assertIn("tcp_state_lock = SPINLOCK_INIT", tcp)
+        self.assertIn("spinlock_acquire_irq(&tcp_state_lock)", tcp)
+        self.assertIn("wait_queue_block_until_spinlocked(", tcp)
+
     def test_standalone_network_tools_are_built_and_installed(self):
         programs = (ROOT / "scripts/build_system_programs.py").read_text()
         makefile = (ROOT / "Makefile").read_text()

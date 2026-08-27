@@ -23,6 +23,8 @@
 void irq_context_enter(void);
 void irq_context_exit(void);
 int irq_in_context(void);
+void irq_context_note_vector(uint32_t vector);
+uint32_t irq_context_vector(void);
 
 /**
  * Disable interrupts (CLI)

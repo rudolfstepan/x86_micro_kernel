@@ -13,7 +13,7 @@
 #include "include/kernel/panic.h"
 #include "include/kernel/storage_safety.h"
 #include "include/kernel/storage_service.h"
-#include "kernel/sched/scheduler.h"
+#include "kernel/sched/mutex.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
 #include "lib/libc/string.h"
@@ -71,21 +71,21 @@ static int fdd_resource_index(uint8_t drive) {
     return -1;
 }
 
-/* The FDC command FIFO, DMA channel and completion flag form one synchronous
- * transaction domain.  Keep IRQ6 enabled for completion and prevent another
- * task from interleaving controller state.  The scheduler counter is nestable
- * because public convenience operations call other public FDC operations. */
-static void fdd_transaction_begin(void) {
+/* The command FIFO, ISA-DMA channel and IRQ6 completion flag form one global
+ * transaction domain. The recursive timed mutex keeps IRQ6 enabled while a
+ * contending foreground task sleeps instead of pinning another CPU. */
+#define FDD_TRANSACTION_LOCK_TIMEOUT_MS 10000U
+static kernel_mutex_t fdd_transaction_mutex = KERNEL_MUTEX_INIT;
+
+static bool fdd_transaction_begin(void) {
     KASSERT_NOT_IRQ();
-    KASSERT(irq_enabled());
-    scheduler_preempt_disable();
+    return kernel_mutex_lock_for(&fdd_transaction_mutex,
+                                 FDD_TRANSACTION_LOCK_TIMEOUT_MS) == 0;
 }
 
 static void fdd_transaction_end(void) {
     KASSERT_NOT_IRQ();
-    KASSERT(irq_enabled());
-    KASSERT(scheduler_preempt_is_disabled());
-    scheduler_preempt_enable();
+    kernel_mutex_unlock(&fdd_transaction_mutex);
 }
 
 #define FDD_MOTOR_SPINUP_MS 500U
@@ -165,7 +165,7 @@ static bool fdc_initialize_impl(void) {
 }
 
 bool fdc_initialize(void) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     bool result = fdc_initialize_impl();
     fdd_transaction_end();
     return result;
@@ -190,7 +190,7 @@ static void fdc_motor_on_impl(int drive) {
 }
 
 void fdc_motor_on(int drive) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return;
     fdc_motor_on_impl(drive);
     fdd_transaction_end();
 }
@@ -206,7 +206,7 @@ static void fdc_motor_off_impl(int drive) {
 }
 
 void fdc_motor_off(int drive) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return;
     fdc_motor_off_impl(drive);
     fdd_transaction_end();
 }
@@ -230,7 +230,7 @@ static void fdd_service_impl(void) {
 }
 
 void fdd_service(void) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return;
     fdd_service_impl();
     fdd_transaction_end();
 }
@@ -351,7 +351,7 @@ static bool fdc_init_controller_impl(void) {
 }
 
 bool fdc_init_controller(void) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     bool result = fdc_init_controller_impl();
     fdd_transaction_end();
     return result;
@@ -456,7 +456,7 @@ static bool fdc_read_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
 
 bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
                       uint8_t sector, uint8_t count, void* buffer) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     int resource = fdd_resource_index(drive);
     bool attempted = resource >= 0 &&
         storage_service_resource_available((uint32_t)resource);
@@ -470,7 +470,7 @@ bool fdc_read_sectors(uint8_t drive, uint8_t head, uint8_t track,
 
 bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
                      uint8_t sector, void* buffer) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     bool result = fdc_read_sectors(drive, head, track, sector, 1, buffer);
     fdd_transaction_end();
     return result;
@@ -478,7 +478,7 @@ bool fdc_read_sector(uint8_t drive, uint8_t head, uint8_t track,
 
 bool fdc_read_sector_recovery(uint8_t drive, uint8_t head, uint8_t track,
                               uint8_t sector, void* buffer) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     bool result = fdc_read_sectors_impl(drive, head, track, sector, 1U,
                                         buffer);
     fdd_transaction_end();
@@ -533,7 +533,7 @@ static bool fdc_write_sectors_impl(uint8_t drive, uint8_t head, uint8_t track,
 
 bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
                        uint8_t sector, uint8_t count, const void* buffer) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     int resource = fdd_resource_index(drive);
     bool armed = !fdd_write_fenced && resource >= 0 &&
         storage_write_begin((uint32_t)resource, pit_monotonic_ms());
@@ -546,7 +546,7 @@ bool fdc_write_sectors(uint8_t drive, uint8_t head, uint8_t track,
 
 bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
                       uint8_t sector, const void* buffer) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     bool result = fdc_write_sectors(drive, head, track, sector, 1, buffer);
     fdd_transaction_end();
     return result;
@@ -555,23 +555,32 @@ bool fdd_write_sector(uint8_t drive, uint8_t head, uint8_t track,
 void fdd_fence_writes(void) {
     fdd_write_fenced = true;
     __asm__ volatile("" ::: "memory");
-    if (!fdc_controller_initialized) return;
-    outb(FDD_DOR, (uint8_t)(inb(FDD_DOR) & 0x0FU));
-    for (uint8_t drive = 0; drive < MAX_FDD_DRIVES; ++drive) {
-        fdd_motor_running[drive] = false;
-        fdd_cached_track[drive] = -1;
+    if (!fdd_transaction_begin()) return;
+    if (fdc_controller_initialized) {
+        outb(FDD_DOR, (uint8_t)(inb(FDD_DOR) & 0x0FU));
+        for (uint8_t drive = 0; drive < MAX_FDD_DRIVES; ++drive) {
+            fdd_motor_running[drive] = false;
+            fdd_cached_track[drive] = -1;
+        }
     }
+    fdd_transaction_end();
 }
 
 void fdd_restore_writes_after_recovery(void) {
+    if (!fdd_transaction_begin()) return;
     fdd_write_fenced = false;
     __asm__ volatile("" ::: "memory");
+    fdd_transaction_end();
 }
 
 bool fdd_writes_quiescent(void) {
-    if (!fdd_write_fenced) return false;
-    if (!fdc_controller_initialized) return true;
-    return (inb(FDD_DOR) & 0xF0U) == 0U && (inb(FDD_MSR) & MSR_CB) == 0U;
+    if (!fdd_transaction_begin()) return false;
+    bool result = fdd_write_fenced &&
+        (!fdc_controller_initialized ||
+         ((inb(FDD_DOR) & 0xF0U) == 0U &&
+          (inb(FDD_MSR) & MSR_CB) == 0U));
+    fdd_transaction_end();
+    return result;
 }
 
 static bool fdc_calibrate_drive_impl(uint8_t drive) {
@@ -633,14 +642,14 @@ static bool fdc_calibrate_drive_impl(uint8_t drive) {
 }
 
 bool fdc_calibrate_drive(uint8_t drive) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     bool result = fdc_calibrate_drive_impl(drive);
     fdd_transaction_end();
     return result;
 }
 
 bool fdc_requalify_drive(uint8_t drive) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return false;
     bool result = drive < MAX_FDD_DRIVES && fdc_reset_controller_impl() &&
                   fdc_calibrate_drive_impl(drive);
     fdd_transaction_end();
@@ -725,7 +734,7 @@ static void fdd_detect_drives_impl(void) {
 }
 
 void fdd_detect_drives(void) {
-    fdd_transaction_begin();
+    if (!fdd_transaction_begin()) return;
     fdd_detect_drives_impl();
     fdd_transaction_end();
 }

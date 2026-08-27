@@ -268,6 +268,17 @@ static bool input_queue_push(char ch) {
     return input_queue_push_sequence(&ch, 1);
 }
 
+/* The caller owns input_queue_lock with IRQs disabled. */
+static char input_queue_pop_locked(void) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(spinlock_is_owned_by_current(&input_queue_lock));
+    if (input_queue_head == input_queue_tail) return '\0';
+
+    char ch = input_queue[input_queue_head];
+    input_queue_head = (input_queue_head + 1) % INPUT_QUEUE_SIZE;
+    return ch;
+}
+
 /**
  * Pop character from input queue
  * Returns: character or '\0' if queue empty
@@ -276,15 +287,7 @@ static bool input_queue_push(char ch) {
  */
 char input_queue_pop(void) {
     uint32_t flags = spinlock_acquire_irq(&input_queue_lock);
-    
-    if (input_queue_head == input_queue_tail) {
-        spinlock_release_irq(&input_queue_lock, flags);
-        return '\0';  // Queue empty
-    }
-    
-    char ch = input_queue[input_queue_head];
-    input_queue_head = (input_queue_head + 1) % INPUT_QUEUE_SIZE;
-    
+    char ch = input_queue_pop_locked();
     spinlock_release_irq(&input_queue_lock, flags);
     return ch;
 }
@@ -773,9 +776,10 @@ char getchar(void) {
         kb_drain_output_locked(KEYBOARD_DRAIN_BUDGET);
         kb_service_leds_locked();
 
-        char ch = input_queue_pop();
+        spinlock_acquire(&input_queue_lock);
+        char ch = input_queue_pop_locked();
         if (ch != 0) {
-            irq_restore(flags);
+            spinlock_release_irq(&input_queue_lock, flags);
             return ch;
         }
 
@@ -787,9 +791,9 @@ char getchar(void) {
         uint64_t deadline_ms = UINT64_MAX - now_ms <
                 KEYBOARD_POLL_INTERVAL_MS
             ? UINT64_MAX : now_ms + KEYBOARD_POLL_INTERVAL_MS;
-        int blocked = wait_queue_block_until_locked(
-            &input_waiters, TASK_BLOCK_WAITING, deadline_ms);
-        irq_restore(flags);
+        int blocked = wait_queue_block_until_spinlocked(
+            &input_waiters, TASK_BLOCK_WAITING, deadline_ms,
+            &input_queue_lock, flags);
         if (blocked == 0 || blocked == -110) continue;
 
         __asm__ __volatile__("hlt");

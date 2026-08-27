@@ -113,5 +113,6 @@ bool ahci_write_sector_recovery(const drive_t *drive, uint32_t sector,
 bool ahci_flush(const drive_t *drive);
 void ahci_fence_writes(void);
 void ahci_restore_writes_after_recovery(void);
+bool ahci_writes_quiescent(void);
 
 #endif

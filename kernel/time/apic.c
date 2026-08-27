@@ -8,11 +8,13 @@
  */
 #include "kernel/time/apic.h"
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/sys.h"
 #include "arch/x86/mm/paging.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
 #include "include/kernel/kernel_log.h"
+#include "include/lib/spinlock.h"
 
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
@@ -24,6 +26,35 @@
 volatile uint32_t* apic = (volatile uint32_t*)APIC_BASE_ADDR;
 volatile uint32_t apic_interrupt_count = 0;
 extern void apic_timer_interrupt(void);
+
+#define APIC_ID_REGISTER 0x020U
+#define APIC_ICR_LOW_REGISTER 0x300U
+#define APIC_ICR_HIGH_REGISTER 0x310U
+#define APIC_ICR_DELIVERY_PENDING (1U << 12U)
+
+static bool apic_enabled;
+static spinlock_t apic_icr_lock = SPINLOCK_INIT;
+static bool calibrate_apic_timer(uint32_t *ticks_out);
+
+static bool apic_send_ipi_locked(uint8_t destination_apic_id,
+                                 uint32_t command, uint32_t spin_limit) {
+    for (uint32_t spin = 0U;
+         (apic[APIC_ICR_LOW_REGISTER / 4U] &
+          APIC_ICR_DELIVERY_PENDING) != 0U; ++spin) {
+        if (spin >= spin_limit) return false;
+        __asm__ __volatile__("pause");
+    }
+    apic[APIC_ICR_HIGH_REGISTER / 4U] =
+        (uint32_t)destination_apic_id << 24U;
+    apic[APIC_ICR_LOW_REGISTER / 4U] = command;
+    for (uint32_t spin = 0U;
+         (apic[APIC_ICR_LOW_REGISTER / 4U] &
+          APIC_ICR_DELIVERY_PENDING) != 0U; ++spin) {
+        if (spin >= spin_limit) return false;
+        __asm__ __volatile__("pause");
+    }
+    return true;
+}
 
 static bool cpu_has_local_apic(void) {
     uint32_t original_flags;
@@ -68,6 +99,7 @@ static bool cpu_has_local_apic(void) {
 }
 
 void apic_timer_isr(void* r) {
+    irq_context_note_vector(APIC_VECTOR_BASE);
     irq_context_enter();
     // Acknowledge before switching away from this interrupt stack. Otherwise
     // the LAPIC blocks subsequent timer vectors until this context returns.
@@ -111,7 +143,81 @@ static bool enable_apic(void) {
     apic_base |= APIC_BASE_ENABLE; // Enable the APIC
     write_msr(IA32_APIC_BASE_MSR, apic_base);
     apic[0xF0 / 4] = APIC_SPURIOUS_ENABLE | APIC_SPURIOUS_VECTOR;
+    apic_enabled = true;
     return true;
+}
+
+bool apic_is_available(void) {
+    return apic_enabled;
+}
+
+bool apic_enable_current_cpu_ipi_only(void) {
+    if (!apic_enabled || !cpu_has_local_apic()) return false;
+    uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
+    if ((apic_base & 0xFFFFFFFFFFFFF000ULL) != APIC_BASE_ADDR) return false;
+    write_msr(IA32_APIC_BASE_MSR, apic_base | APIC_BASE_ENABLE);
+    /* APs are coherence workers only at this stage.  Mask every local source
+     * and enable solely fixed IPIs plus the architectural spurious vector. */
+    apic[APIC_LVT_TIMER / 4U] = TIMER_MASKED;
+    apic[0x350U / 4U] = TIMER_MASKED;
+    apic[0x360U / 4U] = TIMER_MASKED;
+    apic[0x370U / 4U] = TIMER_MASKED;
+    apic[0xF0U / 4U] = APIC_SPURIOUS_ENABLE | APIC_SPURIOUS_VECTOR;
+    __sync_synchronize();
+    return (apic[0xF0U / 4U] & APIC_SPURIOUS_ENABLE) != 0U;
+}
+
+bool apic_calibrate_current_cpu_timer_masked(uint32_t *ticks_out) {
+    if (!apic_enabled || ticks_out == NULL) return false;
+    uint32_t ticks;
+    if (!calibrate_apic_timer(&ticks)) return false;
+    apic[APIC_LVT_TIMER / 4U] = TIMER_MASKED | APIC_VECTOR_BASE;
+    x86_cpu_local_t *local = x86_cpu_local_current();
+    if (local == NULL) return false;
+    local->lapic_timer_ticks = ticks;
+    __sync_synchronize();
+    local->lapic_timer_calibrated = 1U;
+    *ticks_out = ticks;
+    return true;
+}
+
+bool apic_start_current_cpu_scheduler_timer(void) {
+    x86_cpu_local_t *local = x86_cpu_local_current();
+    if (!apic_enabled || local == NULL || local->cpu_index == 0U ||
+        local->online == 0U || local->lapic_timer_calibrated == 0U ||
+        local->lapic_timer_ticks == 0U) return false;
+    init_apic_timer(local->lapic_timer_ticks);
+    __sync_synchronize();
+    return (apic[APIC_LVT_TIMER / 4U] & TIMER_MASKED) == 0U;
+}
+
+uint8_t apic_local_id(void) {
+    if (!apic_enabled) return 0U;
+    return (uint8_t)(apic[APIC_ID_REGISTER / 4U] >> 24U);
+}
+
+bool apic_send_ipi(uint8_t destination_apic_id, uint32_t command,
+                   uint64_t deadline_ms) {
+    if (!apic_enabled || !irq_enabled() || irq_in_context()) return false;
+    if (pit_monotonic_ms() >= deadline_ms) return false;
+    uint32_t flags = spinlock_acquire_irq(&apic_icr_lock);
+    bool sent = apic_send_ipi_locked(destination_apic_id, command,
+                                     1U << 20U);
+    spinlock_release_irq(&apic_icr_lock, flags);
+    return sent && pit_monotonic_ms() < deadline_ms;
+}
+
+bool apic_send_ipi_bounded(uint8_t destination_apic_id, uint32_t command,
+                           uint32_t spin_limit) {
+    if (!apic_enabled || spin_limit == 0U || irq_in_context()) return false;
+    uint32_t flags = spinlock_acquire_irq(&apic_icr_lock);
+    bool sent = apic_send_ipi_locked(destination_apic_id, command, spin_limit);
+    spinlock_release_irq(&apic_icr_lock, flags);
+    return sent;
+}
+
+void apic_eoi(void) {
+    if (apic_enabled) apic[0xB0U / 4U] = 0U;
 }
 
 void init_apic_timer(uint32_t ticks) {
@@ -125,7 +231,8 @@ void init_apic_timer(uint32_t ticks) {
     apic[0x380 / 4] = ticks;
 }
 
-static uint32_t calibrate_apic_timer(void) {
+static bool calibrate_apic_timer(uint32_t *ticks_out) {
+    if (ticks_out == NULL) return false;
     const uint64_t sample_ms = 20U;
     const uint32_t loop_limit = 100000000U;
 
@@ -145,18 +252,20 @@ static uint32_t calibrate_apic_timer(void) {
     uint32_t elapsed_counts = UINT32_MAX -
                               apic[APIC_TIMER_CURR_CNT / 4];
     if (elapsed_ms == 0 || elapsed_counts == 0) {
-        return APIC_DEFAULT_TIMER_TICKS;
+        return false;
     }
 
     uint64_t periodic_counts =
         ((uint64_t)elapsed_counts * APIC_SCHEDULER_PERIOD_MS) / elapsed_ms;
     if (periodic_counts == 0 || periodic_counts > UINT32_MAX) {
-        return APIC_DEFAULT_TIMER_TICKS;
+        return false;
     }
-    return (uint32_t)periodic_counts;
+    *ticks_out = (uint32_t)periodic_counts;
+    return true;
 }
 
 void initialize_apic_timer(void) {
+    apic_enabled = false;
     scheduler_set_apic_timer_active(false);
     if (!cpu_has_local_apic()) {
         klog(KLOG_WARN, "apic",
@@ -175,13 +284,24 @@ void initialize_apic_timer(void) {
     }
     irq_restore(flags);
 
-    uint32_t ticks = calibrate_apic_timer();
+    uint32_t ticks = APIC_DEFAULT_TIMER_TICKS;
+    bool calibrated = calibrate_apic_timer(&ticks);
+    x86_cpu_local_t *local = x86_cpu_local_current();
+    if (local == NULL || ticks == 0U) {
+        klog(KLOG_WARN, "apic",
+             "Timer calibration has no CPU-local publication slot");
+        return;
+    }
+    local->lapic_timer_ticks = ticks;
+    local->lapic_timer_calibrated = calibrated ? 1U : 0U;
     flags = irq_save();
     init_apic_timer(ticks);
     scheduler_set_apic_timer_active(true);
     irq_restore(flags);
 
-    klog(KLOG_INFO, "apic",
-         "Timer calibrated to %u ms (%u ticks) on vector %u",
+    klog(calibrated ? KLOG_INFO : KLOG_WARN, "apic",
+         calibrated
+             ? "Timer calibrated to %u ms (%u ticks) on vector %u"
+             : "Timer calibration failed; using fallback %u ms (%u ticks) on vector %u",
          APIC_SCHEDULER_PERIOD_MS, ticks, APIC_VECTOR_BASE);
 }
