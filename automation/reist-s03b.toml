@@ -9736,6 +9736,7 @@ allowed_files = [
   "drivers/usb/xhci.c",
   "drivers/usb/xhci.h",
   "kernel/init/supervisor.c",
+  "kernel/syscall/syscall_table.c",
   "scripts/create_native_boot_image.py",
   "scripts/run_vmware_mouse.ps1",
   "scripts/test-reist-runtime.ps1",
