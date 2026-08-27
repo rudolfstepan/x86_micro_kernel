@@ -38,7 +38,7 @@ struct Process;
 #define SUPERVISOR_DHCP_RENEWAL_VERSION 1U
 #define SUPERVISOR_DHCP_BOOT_VERSION 1U
 #define SUPERVISOR_UDP_ECHO_CONTEXT_VERSION 1U
-#define SUPERVISOR_PROBE_CONTROL_VERSION 2U
+#define SUPERVISOR_PROBE_CONTROL_VERSION 3U
 #define SUPERVISOR_EINTEGRITY (-84)
 #define REIST_REPORT_SELF_TEST 1U
 #define REIST_REPORT_PROGRESS 2U
@@ -107,6 +107,7 @@ typedef struct {
     uint32_t launch_count;
     uint32_t endpoint_handle;
     uint32_t network_epoch;
+    uint32_t post_ready_cpu_affinity_mask;
     uint64_t last_network_probe_ms;
 } supervisor_probe_control_t;
 
@@ -657,6 +658,7 @@ void supervisor_init(void);
 void supervisor_clock_tick(uint64_t now_ms);
 bool supervisor_start_worker(void);
 bool supervisor_start_probe(uint64_t now_ms);
+int supervisor_set_network_service_current_affinity(uint32_t cpu_affinity_mask);
 /** Start the isolated PCM policy service after its HDA driver was spawned. */
 bool supervisor_start_audio_service(uint32_t device_index, uint64_t now_ms);
 int supervisor_set_audio_service_current_affinity(uint32_t cpu_affinity_mask);

@@ -126,6 +126,7 @@ static uint32_t next_generation = 1U;
 static uint64_t last_deadline_check_ms;
 static uint32_t next_poll_slot;
 static critical_object_t protected_network_degradation_stats;
+static volatile uint32_t network_service_ap_execution_generation;
 
 #define SUPERVISOR_CHECK_INTERVAL_MS 10U
 #define SUPERVISOR_NETWORK_PROBE_TIMEOUT_MS 250U
@@ -1522,7 +1523,9 @@ static bool probe_control_valid(const void *payload, size_t length) {
         control->healthy > 1U || control->service_ready > 1U ||
         (control->fenced != 0U && control->healthy != 0U) ||
         (control->service_ready != 0U &&
-         (control->healthy == 0U || control->fenced != 0U))) return false;
+         (control->healthy == 0U || control->fenced != 0U)) ||
+        (control->post_ready_cpu_affinity_mask & 0xFFFF0000U) != 0U)
+        return false;
     if (control->active == 0U) {
         const supervisor_probe_control_t empty = {0};
         const uint8_t *actual = (const uint8_t *)control;
@@ -2181,6 +2184,14 @@ static bool probe_fence_apply(void *context) {
         output_fence_all();
         return false;
     }
+    if (control.post_ready_cpu_affinity_mask != 0U &&
+        process_identity_alive(control.pid, control.process_generation) &&
+        (process_set_supervised_affinity(
+             control.pid, control.process_generation, TASK_CPU_MASK_BSP) != 0 ||
+         scheduler_sleep_ms(1U) != 0)) {
+        output_fence_all();
+        return false;
+    }
     int revoked = netstack_revoke_arp_bindings(
         control.pid, control.process_generation);
     if (revoked < 0) {
@@ -2436,6 +2447,24 @@ bool supervisor_probe_ready(void) {
     return ready;
 }
 
+int supervisor_set_network_service_current_affinity(
+        uint32_t cpu_affinity_mask) {
+    if (cpu_affinity_mask == 0U) return -22;
+    supervisor_probe_control_t control;
+    if (supervisor_protected_probe_control_read(
+            &probe_runtime.control, &control) != 0 || control.active == 0U ||
+        control.fenced != 0U || control.healthy == 0U ||
+        control.service_ready == 0U || control.pid <= 0 ||
+        !process_identity_alive(control.pid, control.process_generation))
+        return -3;
+    control.post_ready_cpu_affinity_mask = cpu_affinity_mask;
+    if (supervisor_protected_probe_control_write(
+            &probe_runtime.control, &control) != 0)
+        return SUPERVISOR_EINTEGRITY;
+    return process_set_supervised_affinity(
+        control.pid, control.process_generation, cpu_affinity_mask);
+}
+
 static int supervisor_admin_pause(supervisor_handle_t handle) {
     uint32_t flags = supervisor_lock();
     supervisor_state_t state;
@@ -2573,6 +2602,16 @@ int supervisor_probe_report(int pid, uint32_t generation,
             if (supervisor_protected_probe_control_write(
                     &probe_runtime.control, &control) != 0) return -1;
         }
+        if (result == 0 && control.service_ready != 0U &&
+            x86_cpu_current_index() != 0U &&
+            network_service_ap_execution_generation !=
+                control.process_generation &&
+            __sync_bool_compare_and_swap(
+                &network_service_ap_execution_generation,
+                network_service_ap_execution_generation,
+                control.process_generation))
+            printf("REIST_NETWORK SERVICE_AP_EXEC cpu=%u generation=%u\n",
+                   x86_cpu_current_index(), control.process_generation);
         return result;
     }
     if (report_type == REIST_REPORT_SERVICE_READY) {
@@ -5960,6 +5999,12 @@ bool supervisor_device_driver_component_ready(uint32_t device_index) {
 bool supervisor_start_probe(uint64_t now_ms) {
     (void)now_ms;
     return false;
+}
+
+int supervisor_set_network_service_current_affinity(
+        uint32_t cpu_affinity_mask) {
+    (void)cpu_affinity_mask;
+    return -1;
 }
 
 bool supervisor_probe_ready(void) {

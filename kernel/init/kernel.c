@@ -974,6 +974,10 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     if (production_driver_ap_mask != 0U &&
         storage_service_set_current_affinity(production_driver_ap_mask) != 0)
         panic("Unable to move healthy storage service generation to APs");
+    if (production_driver_ap_mask != 0U &&
+        supervisor_set_network_service_current_affinity(
+            production_driver_ap_mask) != 0)
+        panic("Unable to move healthy network service generation to APs");
     if (video_driver_started && video_ap_mask != 0U &&
         video_device_info.backend == VIDEO_DEVICE_BACKEND_VMWARE_SVGA2) {
         if (supervisor_set_device_driver_current_affinity(

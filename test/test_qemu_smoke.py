@@ -29,6 +29,21 @@ RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_network_service_ap_requires_ready_before_ap_heartbeat(self):
+        transcript = "\n".join((
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER,
+            "BOOT_OK",
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_AP_MARKER + "2 generation=4",
+            "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_network_service_ap=True))
+        missing = transcript.replace(
+            RUNNER_MODULE.REIST_NETWORK_SERVICE_AP_MARKER,
+            "REIST_NETWORK BSP_EXEC cpu=")
+        self.assertIn("ready/AP", RUNNER_MODULE.validate(
+            missing, expect_network_service_ap=True))
+
     def test_storage_ap_requires_ready_execution_and_real_self_test(self):
         transcript = "\n".join((
             RUNNER_MODULE.REIST_STORAGE_READY_MARKER,

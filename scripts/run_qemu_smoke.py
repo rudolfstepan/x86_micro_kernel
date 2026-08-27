@@ -35,6 +35,7 @@ REIST_PROBE_MARKERS = (
 )
 REIST_PROBE_COMPLETION_MARKER = "REIST_PROBE RECOVERY_SEQUENCE_OK"
 REIST_NETWORK_SERVICE_READY_MARKER = "REIST_NETWORK SERVICE_READY"
+REIST_NETWORK_SERVICE_AP_MARKER = "REIST_NETWORK SERVICE_AP_EXEC cpu="
 REIST_MEMORY_FAULT_MARKER = "REIST_MEMORY_FAULT_INJECTION_OK"
 REIST_RUNTIME_DEGRADATION_MARKER = (
     "REIST_RUNTIME_DEGRADATION CLOCK_SAFE IRQ_FENCED"
@@ -1534,6 +1535,7 @@ def validate(
     expect_storage_self_test: bool = False,
     expect_storage_ap: bool = False,
     expect_storage_ap_restart: bool = False,
+    expect_network_service_ap: bool = False,
     expect_handover: bool = False,
     expect_icmp_echo: bool = False,
     expect_dhcp_config: bool = False,
@@ -1780,6 +1782,12 @@ def validate(
                 replacement_ready < restarted or
                 replacement_ap < replacement_ready or recovered < replacement_ap):
             return "missing ordered storage-service AP restart markers"
+    if expect_network_service_ap:
+        ready = exact_line_position(transcript,
+                                    REIST_NETWORK_SERVICE_READY_MARKER)
+        ap_execution = transcript.find(REIST_NETWORK_SERVICE_AP_MARKER, boot)
+        if ready < 0 or ready > boot or ap_execution < boot or ap_execution > test:
+            return "missing ordered network-service ready/AP markers"
     if expect_handover:
         positions = [exact_line_position(transcript, marker)
                      for marker in REIST_HANDOVER_MARKERS]
@@ -1993,6 +2001,10 @@ def main() -> int:
         help="require pre-crash and replacement storage-service AP execution",
     )
     parser.add_argument(
+        "--expect-network-service-ap", action="store_true",
+        help="require a healthy network-service heartbeat on an AP",
+    )
+    parser.add_argument(
         "--expect-wcet-baseline", action="store_true",
         help="require a bounded empirical timing marker",
     )
@@ -2156,6 +2168,7 @@ def main() -> int:
                             args.expect_storage_self_test,
                             args.expect_storage_ap,
                             args.expect_storage_ap_restart,
+                            args.expect_network_service_ap,
                             args.expect_handover,
                             args.inject_icmp_echo,
                             args.expect_dhcp_config,

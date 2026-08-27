@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2j-ap-network-service"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -2095,7 +2095,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2j-ap-network-service"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run the healthy generation-scoped network service on APs"
@@ -2134,7 +2134,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "network: run supervised service on APs"
-evidence = []
+evidence = [
+  "supervisor contract passed 7 tests and QEMU runner passed 44 tests including ordered network ready and AP validation",
+  "Windows QEMU VGA production build compiled all 102 C objects and produced a signed validated native image",
+  "four-CPU QEMU kept crash hang and invalid-reply recovery generations on BSP through RECOVERY_SEQUENCE_OK",
+  "healthy network generation 4 published SERVICE_READY before SCHEDULER_READY then reported progress on CPU 2",
+  "the guest completed NETWORK_PARSER_OK TASK_CAPACITY_OK and TEST_OK",
+  "active_id is empty and NIC drivers netdev bottom half supervisor socket ARP and legacy-PIC IRQ authority remained unchanged"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

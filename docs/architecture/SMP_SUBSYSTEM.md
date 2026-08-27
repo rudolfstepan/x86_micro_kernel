@@ -271,5 +271,12 @@ Storage-Service-Crash-/Restartpfad. Die Ersatzgeneration bindet und publiziert
 Ready auf CPU 0; erst danach wird die Maske erneut angewandt. Stale Requests
 bleiben generationsgebunden abgewiesen, während ATA/AHCI/FDD und PIC-IRQ auf
 dem BSP verbleiben.
+R6.2j erweitert nur die gesunde vierte Generation des überwachten
+Netzwerkdiensts. Crash-, Hang- und Invalid-Reply-Bootstrap bleiben vollständig
+auf CPU 0. Nach Self-Test, Fortschritt, `SERVICE_READY` und
+`SCHEDULER_READY` erhält Generation 4 die geschützte AP-Maske. NIC-Treiber,
+`netdev_poll`, Supervisor, Socket-/ARP-Eigentum und Legacy-PIC-IRQ bleiben auf
+dem BSP. Ein späterer Fence führt eine noch lebende AP-Generation vor dem
+Entzug ihrer Netzwerkautorität sleepfähig auf CPU 0 zurück.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

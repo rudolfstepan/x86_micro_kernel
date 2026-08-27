@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2j – gesunden Netzwerkdienst auf APs ausführen
+Aktives Thema: kein aktives Paket; R6.2j ist abgeschlossen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -164,3 +164,13 @@ Request-Autorität und startete Generation 2 innerhalb des vorhandenen Budgets.
 Sie band und publizierte Ready auf CPU 0, erhielt erst danach erneut die
 geschützte AP-Maske und führte auf CPU 1 aus. Der SMP4-Gast bestand
 `STORAGE_RESTART_OK`, `STORAGE_SERVICE_OK`, `TASK_CAPACITY_OK` und `TEST_OK`.
+
+## Gesunder Netzwerkdienst auf AP nachgewiesen
+
+Die drei begrenzten Crash-, Hang- und Invalid-Reply-Bootstrapgenerationen
+blieben auf CPU 0 und erreichten `RECOVERY_SEQUENCE_OK`. Die gesunde vierte
+Generation publizierte `SERVICE_READY` vor der SMP-Scheduler-Freigabe und
+führte danach einen autorisierten Heartbeat auf CPU 2 aus. Der Gast bestand
+`NETWORK_PARSER_OK`, `TASK_CAPACITY_OK` und `TEST_OK`; NIC-Treiber,
+`netdev_poll`, Supervisor und Legacy-PIC-IRQ blieben BSP-affin. Vor einem
+späteren Fence kehrt eine noch lebende Generation begrenzt auf CPU 0 zurück.

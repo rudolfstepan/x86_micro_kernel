@@ -520,7 +520,7 @@ und 10 verbindlich.
     Timeout-/Restartpfad sowie HDA-Normal- und profilgebundener Restartpfad
     AP-fähig; auch normale und nach Heartbeat-Timeout neu gestartete
     Audio-Servicegenerationen sowie normaler und neu gestarteter Storage-Service
-    AP-fähig, weitere
+    AP-fähig; auch die gesunde Netzwerkdienstgeneration AP-fähig, weitere
     Produktionsdomänen noch BSP-affin
 
 #### Verbindliche Priorität nach dem S0-Gate

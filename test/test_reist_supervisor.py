@@ -9,6 +9,23 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReistSupervisorTests(unittest.TestCase):
+    def test_network_service_ap_affinity_is_post_ready_and_protected(self):
+        header = (ROOT / "include/kernel/supervisor.h").read_text(
+            encoding="utf-8")
+        source = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        self.assertIn("post_ready_cpu_affinity_mask", header)
+        self.assertIn("supervisor_set_network_service_current_affinity", source)
+        self.assertIn("REIST_NETWORK SERVICE_AP_EXEC cpu=", source)
+        fence = source[source.index("static bool probe_fence_apply"):
+                       source.index("static void probe_report_recovery_pair")]
+        self.assertLess(fence.index("TASK_CPU_MASK_BSP"),
+                        fence.index("netstack_revoke_arp_bindings"))
+        self.assertLess(kernel.index("x86_smp_scheduler_probe()"),
+                        kernel.index(
+                            "supervisor_set_network_service_current_affinity"))
+
     def test_supervisor_state_machine_and_budgets(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:
