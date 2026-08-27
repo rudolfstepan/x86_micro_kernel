@@ -64,6 +64,11 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("platform_ops.set_bus_master(device->pci_location, false)",
                       source)
         self.assertIn("device_domain_recover_owner", source)
+        self.assertIn("device_domain_install_reset_policy", source)
+        self.assertIn("execute_profile_reset", source)
+        self.assertIn("policy->max_polls > 1000U", source)
+        self.assertIn("platform_ops.monotonic_ms() < deadline_ms", source)
+        self.assertNotIn("HDA_", source)
         self.assertIn("platform_ops.monotonic_ms() >= deadline_ms", source)
         self.assertIn("__sync_lock_test_and_set", source)
         self.assertIn("bool device_domain_bootstrap(void)", source)

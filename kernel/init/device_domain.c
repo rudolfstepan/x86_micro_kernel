@@ -166,6 +166,9 @@ typedef struct {
     uint32_t irq_storm_count;
     uint8_t region_policy_installed;
     device_domain_region_policy_t region_policy;
+    uint8_t reset_policy_installed;
+    device_domain_reset_policy_t reset_policy;
+    device_domain_region_info_t reset_region;
     uint8_t dma_relocation_policy_installed;
     device_domain_dma_relocation_policy_t dma_relocation_policy;
     uint8_t dma_vm_page_mode_policy_installed;
@@ -1284,6 +1287,86 @@ int device_domain_install_region_policy(
     return 0;
 }
 
+int device_domain_install_reset_policy(
+        uint32_t device_index, const device_domain_reset_policy_t *policy) {
+    if (!initialized || policy == NULL || device_index >= device_count ||
+        policy->version != DEVICE_DOMAIN_ABI_VERSION ||
+        policy->struct_size != sizeof(*policy) || policy->region_index >= 6U ||
+        (policy->width != 1U && policy->width != 2U && policy->width != 4U) ||
+        policy->writable_mask == 0U || policy->poll_mask == 0U ||
+        policy->max_polls == 0U || policy->max_polls > 1000U ||
+        (policy->assert_expected & ~policy->poll_mask) != 0U ||
+        (policy->deassert_expected & ~policy->poll_mask) != 0U ||
+        policy->reserved[0] != 0U || policy->reserved[1] != 0U)
+        return -22;
+    if (!begin_operation()) return -16;
+    device_slot_t *device = &devices[device_index];
+    device_domain_region_info_t region = {0};
+    uint64_t end = (uint64_t)policy->offset + policy->width;
+    bool valid = device->registered != 0U &&
+        device->state == DEVICE_DOMAIN_AVAILABLE &&
+        device->region_policy_installed != 0U &&
+        device->reset_policy_installed == 0U && end <= UINT32_MAX &&
+        end <= device->region_policy.readable_bytes[policy->region_index] &&
+        platform_ops.describe_region(
+            device->pci_location, policy->region_index, &region) &&
+        end <= region.length_low;
+    if (valid) {
+        region.length_low = device->region_policy.readable_bytes[
+            policy->region_index];
+        region.length_high = 0U;
+        valid = platform_ops.prepare_region(&region);
+    }
+    if (!valid) {
+        end_operation();
+        return -95;
+    }
+    device->reset_policy = *policy;
+    device->reset_region = region;
+    device->reset_policy_installed = 1U;
+    end_operation();
+    return 0;
+}
+
+static bool execute_profile_reset(device_slot_t *device,
+                                  uint64_t deadline_ms) {
+    if (device == NULL || device->reset_policy_installed == 0U) return false;
+    const device_domain_reset_policy_t *policy = &device->reset_policy;
+    uint32_t current = 0U;
+    if (!platform_ops.read_region(
+            &device->reset_region, policy->offset, policy->width, &current))
+        return false;
+    uint32_t asserted = (current & ~policy->writable_mask) |
+        (policy->assert_value & policy->writable_mask);
+    if (!platform_ops.write_region(&device->reset_region, policy->offset,
+                                   policy->width, asserted)) return false;
+    bool matched = false;
+    for (uint32_t poll = 0U; poll < policy->max_polls &&
+         platform_ops.monotonic_ms() < deadline_ms; ++poll) {
+        if (!platform_ops.read_region(
+                &device->reset_region, policy->offset, policy->width,
+                &current)) return false;
+        if ((current & policy->poll_mask) == policy->assert_expected) {
+            matched = true;
+            break;
+        }
+    }
+    uint32_t deasserted = (current & ~policy->writable_mask) |
+        (policy->deassert_value & policy->writable_mask);
+    if (!matched || !platform_ops.write_region(
+            &device->reset_region, policy->offset, policy->width, deasserted))
+        return false;
+    for (uint32_t poll = 0U; poll < policy->max_polls &&
+         platform_ops.monotonic_ms() < deadline_ms; ++poll) {
+        if (!platform_ops.read_region(
+                &device->reset_region, policy->offset, policy->width,
+                &current)) return false;
+        if ((current & policy->poll_mask) == policy->deassert_expected)
+            return true;
+    }
+    return false;
+}
+
 static bool dma_relocation_rule_zero(
         const device_domain_dma_relocation_rule_t *rule) {
     return rule->destination_pool_offset == 0U &&
@@ -1995,7 +2078,7 @@ int device_domain_release(int pid, uint32_t process_generation,
     bool mediated_reset = profile_is_irqless_mediated_io(&device->profile) &&
         device->mediated_io_quiesced != 0U;
     bool reset = fenced && platform_ops.monotonic_ms() < deadline_ms &&
-        (mediated_reset ||
+        (mediated_reset || execute_profile_reset(device, deadline_ms) ||
          platform_ops.reset(device->pci_location, deadline_ms)) &&
         platform_ops.monotonic_ms() < deadline_ms;
     if (!reset) {
@@ -2101,7 +2184,7 @@ int device_domain_recover_owner(int pid, uint32_t process_generation,
             profile_is_irqless_mediated_io(&device->profile) &&
             device->mediated_io_quiesced != 0U;
         if (platform_ops.monotonic_ms() >= deadline_ms ||
-            (!mediated_reset &&
+            (!mediated_reset && !execute_profile_reset(device, deadline_ms) &&
              !platform_ops.reset(device->pci_location, deadline_ms))) {
             reset = false;
         }

@@ -211,6 +211,7 @@ def main() -> int:
                         default=ROOT / "build" / "qemu-pci-audio.log")
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--smp", type=int, choices=(1, 2, 3, 4), default=1)
+    parser.add_argument("--expect-hda-smp-restart", action="store_true")
     args = parser.parse_args()
     if args.qemu is None:
         args.qemu = default_qemu_path()
@@ -251,11 +252,32 @@ def main() -> int:
             detail = "supervised audio service did not become ready"
         elif not wait_for(transcript, DMA_POOL_READY, deadline):
             detail = "mediated DMA pool diagnostics were not observed"
+        elif args.expect_hda_smp_restart and not wait_for(
+                transcript, "REIST_AUDIO HDA_TIMEOUT_ARMED epoch=", deadline):
+            detail = "HDA AP heartbeat fault was not armed"
+        elif args.expect_hda_smp_restart and not wait_for(
+                transcript, "REIST_AUDIO DRIVER_RESTARTED", deadline):
+            detail = "HDA driver was not restarted after its heartbeat timeout"
+        elif args.expect_hda_smp_restart and not wait_for_count(
+                transcript, "REIST_DRIVER READY name=hda-ring3", 2, deadline):
+            detail = "replacement HDA generation did not become healthy"
         else:
-            inject_ps2_command(process, "audioinfo")
-            if not wait_for(transcript, AUDIOINFO_OK, deadline):
-                detail = "audioinfo did not confirm the PCM service"
+            if args.expect_hda_smp_restart:
+                # A service with no client performs no ambient reconnect
+                # polling. The first bounded request discovers the stale
+                # internal endpoint and enters the normal rotation path.
+                inject_ps2_command(process, "audioinfo")
+                if not wait_for_count(transcript, AUDIO_READY, 2, deadline):
+                    detail = (
+                        "audio service did not reintegrate with the "
+                        "replacement driver")
+            if detail:
+                pass
             else:
+                inject_ps2_command(process, "audioinfo")
+            if not detail and not wait_for(transcript, AUDIOINFO_OK, deadline):
+                detail = "audioinfo did not confirm the PCM service"
+            if not detail:
                 # More cycles than the service restart budget prove that
                 # normal short-lived clients rotate their endpoint generation
                 # without being misclassified as service failures.

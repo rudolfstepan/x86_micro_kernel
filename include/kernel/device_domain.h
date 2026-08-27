@@ -689,6 +689,23 @@ typedef struct {
     device_domain_region_rule_t rules[DEVICE_DOMAIN_MAX_REGION_RULES];
 } device_domain_region_policy_t;
 
+/** Immutable bounded register reset transaction for one vetted profile. */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t region_index;
+    uint32_t offset;
+    uint32_t width;
+    uint32_t writable_mask;
+    uint32_t assert_value;
+    uint32_t assert_expected;
+    uint32_t deassert_value;
+    uint32_t deassert_expected;
+    uint32_t poll_mask;
+    uint32_t max_polls;
+    uint32_t reserved[2];
+} device_domain_reset_policy_t;
+
 typedef struct {
     uint32_t version;
     uint32_t struct_size;
@@ -836,6 +853,8 @@ _Static_assert(sizeof(device_domain_region_rule_t) == 24U,
                "device-domain region rule ABI changed");
 _Static_assert(sizeof(device_domain_region_policy_t) == 808U,
                "device-domain region policy ABI changed");
+_Static_assert(sizeof(device_domain_reset_policy_t) == 56U,
+               "device-domain reset policy ABI changed");
 _Static_assert(sizeof(device_domain_region_access_t) == 32U,
                "device-domain region access ABI changed");
 _Static_assert(sizeof(device_domain_region_value_t) == 32U,
@@ -863,6 +882,9 @@ int device_domain_register(const device_domain_profile_t *profile,
 /** Install immutable register-safety metadata before the first claim. */
 int device_domain_install_region_policy(
     uint32_t device, const device_domain_region_policy_t *policy);
+/** Install one bounded profile-defined reset transaction before first claim. */
+int device_domain_install_reset_policy(
+    uint32_t device, const device_domain_reset_policy_t *policy);
 /** Install exact kernel-owned DMA relocation templates before first claim. */
 int device_domain_install_dma_relocation_policy(
     uint32_t device, const device_domain_dma_relocation_policy_t *policy);

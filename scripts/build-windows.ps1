@@ -18,6 +18,7 @@ param(
     [switch]$RuntimeDegradationFaultInjection,
     [switch]$DriverDomainFaultInjection,
     [switch]$Svga2dSmpLifecycleFaultInjection,
+    [switch]$HdaSmpLifecycleFaultInjection,
     [switch]$SkipReleaseSbom,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
@@ -177,6 +178,7 @@ try {
         runtime_degradation_fault_injection = [bool]$RuntimeDegradationFaultInjection
         driver_domain_fault_injection = [bool]$DriverDomainFaultInjection
         svga2d_smp_lifecycle_fault_injection = [bool]$Svga2dSmpLifecycleFaultInjection
+        hda_smp_lifecycle_fault_injection = [bool]$HdaSmpLifecycleFaultInjection
         skip_release_sbom = [bool]$SkipReleaseSbom
         nasm = $Nasm
         zig = $Zig
@@ -248,6 +250,9 @@ try {
     }
     if ($Svga2dSmpLifecycleFaultInjection) {
         $makeArguments += 'SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION=1'
+    }
+    if ($HdaSmpLifecycleFaultInjection) {
+        $makeArguments += 'HDA_SMP_LIFECYCLE_FAULT_INJECTION=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

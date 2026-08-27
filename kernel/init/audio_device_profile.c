@@ -130,6 +130,23 @@ int audio_device_profile_discover(audio_device_profile_info_t *info) {
         };
         result = device_domain_install_region_policy(device_index, &policy);
         if (result != 0) return result;
+        const device_domain_reset_policy_t reset_policy = {
+            .version = DEVICE_DOMAIN_ABI_VERSION,
+            .struct_size = sizeof(reset_policy),
+            .region_index = HDA_BAR_INDEX,
+            .offset = HDA_GCTL,
+            .width = 4U,
+            .writable_mask = 0x00000001U,
+            .assert_value = 0U,
+            .assert_expected = 0U,
+            .deassert_value = 0x00000001U,
+            .deassert_expected = 0x00000001U,
+            .poll_mask = 0x00000001U,
+            .max_polls = 100U,
+        };
+        result = device_domain_install_reset_policy(
+            device_index, &reset_policy);
+        if (result != 0) return result;
         *info = (audio_device_profile_info_t){
             .device_index = device_index,
             .pci_location = pci_location(device),

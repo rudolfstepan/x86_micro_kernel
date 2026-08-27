@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2e-hda-ap-restart"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1825,7 +1825,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2e-hda-ap-restart"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Restore HDA AP affinity after bounded heartbeat restart"
@@ -1835,9 +1835,14 @@ allowed_files = [
   "Makefile",
   "scripts/build-windows.ps1",
   "kernel/init/supervisor.c",
+  "kernel/init/device_domain.c",
+  "kernel/init/audio_device_profile.c",
+  "include/kernel/device_domain.h",
   "scripts/run_qemu_pci_audio.py",
   "test/test_audio_source.py",
   "test/test_qemu_pci_audio.py",
+  "test/test_device_domain_host.c",
+  "test/test_device_domain_source.py",
   "docs/architecture/AUDIO_SUBSYSTEM.md",
   "docs/architecture/SMP_SUBSYSTEM.md",
   "docs/development/CURRENT_WORK.md",
@@ -1853,7 +1858,8 @@ invariants = [
 targeted_tests = [
   "python test/test_audio_source.py -q",
   "python test/test_qemu_pci_audio.py -v",
-  "python test/test_reist_supervisor.py -v"
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_device_domain_source.py -q"
 ]
 package_tests = []
 runtime_tests = [
@@ -1870,7 +1876,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "audio: restore HDA AP affinity after restart"
-evidence = []
+evidence = [
+  "audio source contract passed 12 tests device-domain source and host contract passed 10 tests PCI audio runner passed 7 tests and supervisor passed 6 tests",
+  "fault-enabled Windows QEMU image compiled all 102 C objects and produced a signed validated native image",
+  "epoch 1 armed the AP heartbeat timeout and the bounded profile-defined GCTL transaction reset the fenced HDA controller before DRIVER_RESTARTED",
+  "the replacement driver became healthy the stale audio-service endpoint triggered its normal generation rotation and the service reintegrated",
+  "four-CPU QEMU completed five playback cycles on the replacement AP generation and captured 271216 stereo S16 frames at 440.4 Hz with max-gap 1",
+  "active_id is empty and no DMA IRQ MMIO port or ambient service authority was added"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

@@ -250,5 +250,11 @@ und wird erst nach DMA-/IRQ-Bindung, Codec-Self-Test, gesunder Veröffentlichung
 und `SCHEDULER_READY` AP-only. Der Audio-Service und der Legacy-PIC-Hard-IRQ
 bleiben auf CPU 0. Der SMP4-Audionachweis beobachtet die erste autorisierte
 Geräteoperation auf CPU 3 und fünf echte, lückenfreie PCM-Zyklen.
+Der HDA-Restartnachweis unterdrückt ausschließlich in einem Testbuild den
+Heartbeat der ersten AP-Epoch. Der alte Prozess kehrt vor dem Fence auf CPU 0
+zurück; IRQ, Bus-Mastering und DMA werden entzogen, danach führt der generische
+Mediator das profildefinierte deadlinebegrenzte Registerreset aus. Treiber und
+Audio-Service rotieren generationstreu, bevor die Ersatzgeneration erneut auf
+einem AP fünf PCM-Zyklen abschließt.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

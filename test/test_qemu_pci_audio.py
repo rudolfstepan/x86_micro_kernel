@@ -45,6 +45,10 @@ class PciAudioRunnerTests(unittest.TestCase):
         runner = (ROOT / "scripts/run_qemu_pci_audio.py").read_text(
             encoding="utf-8")
         self.assertIn("REIST_AUDIO HDA_AP_EXEC cpu=", runner)
+        self.assertIn("--expect-hda-smp-restart", runner)
+        self.assertIn("REIST_AUDIO HDA_TIMEOUT_ARMED epoch=", runner)
+        self.assertIn("wait_for_count(transcript, AUDIO_READY, 2", runner)
+        self.assertIn("first bounded request discovers the stale", runner)
 
     def test_wave_validator_rejects_silence_and_accepts_pcm(self):
         with tempfile.TemporaryDirectory() as directory:

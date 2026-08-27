@@ -32,6 +32,9 @@
 
 static volatile uint32_t svga2d_ap_execution_reported;
 static volatile uint32_t hda_ap_execution_reported;
+#ifdef REIST_HDA_SMP_LIFECYCLE_FAULT_INJECTION
+static volatile uint32_t hda_fault_epoch;
+#endif
 #ifdef REIST_SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION
 static volatile uint32_t svga2d_fault_epoch;
 #endif
@@ -5116,6 +5119,17 @@ int supervisor_device_driver_report(
             : -5;
     } else {
         bool became_ready = control.fenced != 0U;
+#ifdef REIST_HDA_SMP_LIFECYCLE_FAULT_INJECTION
+        if (strcmp(runtime->name, "hda-ring3") == 0 &&
+            x86_cpu_current_index() != 0U) {
+            if (hda_fault_epoch == 0U &&
+                __sync_bool_compare_and_swap(
+                    &hda_fault_epoch, 0U, control.supervisor.epoch))
+                printf("REIST_AUDIO HDA_TIMEOUT_ARMED epoch=%u\n",
+                       control.supervisor.epoch);
+            if (hda_fault_epoch == control.supervisor.epoch) return 0;
+        }
+#endif
 #ifdef REIST_SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION
         if (strcmp(runtime->name, "svga2d-ring3") == 0 &&
             svga2d_fault_epoch == control.supervisor.epoch) return 0;

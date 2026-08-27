@@ -517,8 +517,8 @@ und 10 verbindlich.
   - [ ] R6.2 allgemeine Mehrkernverteilung regulärer Kernel- und
     Ring-3-Dienste nach Migration der verbleibenden Treiberzustände; erste
     autoritätslose Driver-Fault-Domäne und VMware-SVGA2D-Normal- sowie
-    Timeout-/Restartpfad sowie HDA-Normalpfad AP-fähig; Audio-Service und
-    weitere Produktionsdomänen noch BSP-affin
+    Timeout-/Restartpfad sowie HDA-Normal- und profilgebundener Restartpfad
+    AP-fähig; Audio-Service und weitere Produktionsdomänen noch BSP-affin
 
 #### Verbindliche Priorität nach dem S0-Gate
 

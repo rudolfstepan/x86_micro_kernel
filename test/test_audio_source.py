@@ -185,6 +185,23 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn('strcmp(runtime->name, "hda-ring3") == 0', output)
         self.assertIn("REIST_AUDIO HDA_AP_EXEC cpu=%u epoch=%u", output)
 
+    def test_hda_ap_restart_fault_is_compile_time_bounded(self):
+        makefile = self.read("Makefile")
+        windows = self.read("scripts/build-windows.ps1")
+        supervisor = self.read("kernel/init/supervisor.c")
+        runner = self.read("scripts/run_qemu_pci_audio.py")
+        self.assertIn("HDA_SMP_LIFECYCLE_FAULT_INJECTION ?= 0", makefile)
+        self.assertIn("REIST_HDA_SMP_LIFECYCLE_FAULT_INJECTION", supervisor)
+        self.assertIn("HdaSmpLifecycleFaultInjection", windows)
+        self.assertIn("HDA_TIMEOUT_ARMED", supervisor)
+        self.assertIn("expect-hda-smp-restart", runner)
+        self.assertIn("REIST_AUDIO DRIVER_RESTARTED", runner)
+        profile = self.read("kernel/init/audio_device_profile.c")
+        self.assertIn("device_domain_reset_policy_t reset_policy", profile)
+        self.assertIn(".offset = HDA_GCTL", profile)
+        self.assertIn(".max_polls = 100U", profile)
+        self.assertIn("device_domain_install_reset_policy", profile)
+
     def test_tools_sdk_and_virtual_hda_are_packaged(self):
         makefile = self.read("Makefile")
         windows = self.read("scripts/build-windows.ps1")

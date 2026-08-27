@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2e – HDA-Timeout, Fence, Restart und erneute AP-Ausführung nachweisen
+Aktives Thema: R6.2e abgeschlossen; kein Queue-Paket aktiv
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -116,3 +116,14 @@ autorisierte HDA-Operationen auf CPU 3 aus, bestand fünf Playback-Zyklen und
 erzeugte 278332 Stereo-S16-Frames bei 440,4 Hz mit `max-gap=1`. Für begrenzte
 SMP-/PIC-Schedulinglatenz gilt ein festes Fünf-Sekunden-Heartbeatfenster;
 einsekündiger Fence und Restartbudget drei bleiben erhalten.
+
+## HDA-AP-Restart nachgewiesen
+
+Eine compile-time-begrenzte Fault Injection unterdrückte den Heartbeat der
+ersten HDA-AP-Epoch. Nach fünf Sekunden kehrte die Generation auf den BSP
+zurück; der Fence entzog IRQ und Bus-Mastering, nullte den DMA-Pool und führte
+das profildefinierte, auf 100 Polls und die einsekündige Recovery-Deadline
+begrenzte GCTL-Resetrezept aus. Die neue Treibergeneration wurde auf dem BSP
+gesund, der stale Service-Endpoint löste die normale Service-Rotation aus und
+die Ersatzgeneration lief wieder auf einem AP. Fünf Playback-Zyklen ergaben
+271216 Stereo-S16-Frames bei 440,4 Hz und `max-gap=1`.

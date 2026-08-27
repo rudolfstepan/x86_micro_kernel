@@ -61,6 +61,13 @@ Maske. Audio-Service, Supervisor und Legacy-PIC-Hard-IRQ bleiben BSP-affin.
 Der 500-ms-Treiberheartbeat besitzt wegen begrenzter SMP-Scheduling- und PIC-
 Latenz ein festes Fünf-Sekunden-Fenster; Fence-Deadline von einer Sekunde und
 Restartbudget drei bleiben unverändert.
+Für Controller ohne PCI-Funktionsreset installiert das HDA-Profil zusätzlich
+ein unveränderliches, datengetriebenes GCTL-Resetrezept. Der generische
+Mediator validiert Region, Breite, Maske, Assert-/Deassert-Werte, höchstens 100
+Polls und die absolute Recovery-Deadline vor dem ersten Claim. Beim Fence sind
+IRQ und Bus-Mastering bereits entzogen und der DMA-Pool genullt; erst nach dem
+erfolgreichen Registerreset darf eine neue Generation claimen. Der Mediator
+enthält dabei keine HDA-Zustandsmaschine oder gerätespezifische Konstante.
 
 ## Öffentliche API
 
@@ -215,6 +222,11 @@ tatsächliche nicht stumme PCM-Ausgabe und die Wiederverwendung nach `stop`.
 Der SMP4-Nachweis verlangt zusätzlich eine autorisierte HDA-Geräteoperation auf
 einem AP und fünf vollständige Playback-Zyklen; die Referenzaufnahme umfasste
 278332 Stereo-S16-Frames bei 440,4 Hz mit höchstens einer Nullprobe Lücke.
+Der ergänzende Restartlauf unterdrückt compile-time-begrenzt den Heartbeat der
+ersten AP-Epoch. Nach Timeout, Fence, GCTL-Reset und Treiberneustart entdeckt
+die erste Clientprobe den stale Service-Endpoint und löst die normale
+Servicegenerationrotation aus. Die Ersatzgeneration bestand danach fünf
+Playback-Zyklen mit 271216 Frames bei 440,4 Hz und `max-gap=1`.
 Der manuelle VMware-Nachweis vom 20. August 2026 bestätigt mit der paketierten
 440-Hz-WAV-Datei sowohl hörbare Ausgabe als auch den erwarteten Pegel über den
 vollständig aktivierten DAC-/Mixer-/Pin-Pfad.
