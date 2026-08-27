@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2d-ap-hda"
 
 [policy]
 one_package_per_run = true
@@ -1768,6 +1768,54 @@ evidence = [
   "userspace/bin/shell.c contains no x86os_stat, x86os_readdir or legacy namespace-read fallback while the protected resident rescue mapping remains intact",
   "no queued package remains and active_id is empty"
 ]
+
+[[packages]]
+id = "R6.2d-ap-hda"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run the supervised HDA driver normal path on APs"
+scope = "Keep HDA construction, mediated DMA binding, codec discovery, self-test and healthy publication on the BSP, then persist and apply the online AP mask only to the supervised HDA driver generation after the SMP scheduler release. Keep the audio service, supervisor and legacy-PIC hard-IRQ path BSP-affine. Prove real mediated PCM DMA, generation-scoped IRQ acknowledge and five bounded playback cycles while the HDA Ring-3 driver executes on an AP."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/kernel.c",
+  "kernel/init/supervisor.c",
+  "scripts/run_qemu_pci_audio.py",
+  "test/test_audio_source.py",
+  "test/test_qemu_pci_audio.py",
+  "docs/architecture/AUDIO_SUBSYSTEM.md",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "every HDA generation constructs binds mediated DMA discovers the codec self-tests and publishes healthy on BSP before AP affinity",
+  "only the current healthy unfenced HDA driver generation receives the online AP mask",
+  "the audio service supervisor compositor storage network USB and legacy-PIC hard-IRQ path remain BSP-affine",
+  "HDA retains kernel-owned validated DMA and gains no physical address raw MMIO port IOMMU-direct or additional IRQ authority",
+  "the AP marker is generation scoped and emitted only from an authorized HDA device operation",
+  "the SMP4 runtime completes real non-silent stereo S16 playback all five cycles without panic degradation underrun or unrelated service loss"
+]
+targeted_tests = [
+  "python test/test_audio_source.py -q",
+  "python test/test_qemu_pci_audio.py -v",
+  "python test/test_reist_supervisor.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom",
+  "python scripts/run_qemu_pci_audio.py --image build/reist-os.img --smp 4 --timeout 90 --log build/codex-agent/r62d-hda-ap.log --wav build/codex-agent/r62d-hda-ap.wav"
+]
+stop_conditions = [
+  "HDA becomes AP-affine before self-test and healthy publication",
+  "the audio service supervisor or legacy-PIC hard-IRQ path is moved off BSP",
+  "DMA IRQ MMIO or port authority is widened",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "audio: run supervised HDA driver on APs"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

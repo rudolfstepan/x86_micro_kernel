@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2c abgeschlossen; kein Queue-Paket aktiv
+Aktives Thema: R6.2d – überwachten HDA-Treiber nach gesundem BSP-Start AP-only ausführen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
