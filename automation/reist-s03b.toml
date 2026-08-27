@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2g-audio-service-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -1940,6 +1940,49 @@ evidence = [
   "five playback cycles captured 274297 stereo S16 frames at 440.4 Hz with max-gap 1",
   "active_id is empty and HDA supervisor legacy-PIC IRQ and device authority remained unchanged"
 ]
+
+[[packages]]
+id = "R6.2g-audio-service-ap-restart"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Restore audio-service AP affinity after heartbeat restart"
+scope = "Add a compile-time-only fault that suppresses progress from only the first AP-affine audio-service epoch until its existing two-second heartbeat timeout. Require bounded BSP handoff, endpoint revocation, process reap and supervisor restart. The replacement service must reconnect to the current HDA generation, self-test and publish ready on BSP, return to an AP and complete five real PCM cycles without widening authority."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "scripts/build-windows.ps1",
+  "kernel/init/supervisor.c", "scripts/run_qemu_pci_audio.py",
+  "test/test_audio_source.py", "test/test_qemu_pci_audio.py",
+  "docs/architecture/AUDIO_SUBSYSTEM.md", "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the fault is absent from normal builds and affects only the first AP service epoch",
+  "the old generation returns to BSP before endpoint revocation reap and restart",
+  "the protected desired AP mask survives restart but is applied only after replacement ready publication",
+  "stale client and driver endpoint rights do not cross the generation boundary",
+  "replacement service AP execution and five valid PCM cycles complete without device authority changes"
+]
+targeted_tests = [
+  "python test/test_audio_source.py -q",
+  "python test/test_qemu_pci_audio.py -v",
+  "python test/test_reist_supervisor.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -AudioServiceSmpLifecycleFaultInjection -SkipReleaseSbom",
+  "python scripts/run_qemu_pci_audio.py --image build/reist-os.img --smp 4 --expect-audio-service-smp-restart --timeout 120 --log build/codex-agent/r62g-audio-service-restart.log --wav build/codex-agent/r62g-audio-service-restart.wav"
+]
+stop_conditions = [
+  "replacement service becomes AP-affine before ready",
+  "fencing or endpoint revocation fails",
+  "fault or restart consumes more than one service epoch",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "audio: restore service AP affinity after restart"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

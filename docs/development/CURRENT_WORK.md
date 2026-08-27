@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2f abgeschlossen; kein Queue-Paket aktiv
+Aktives Thema: R6.2g – Audio-Service-Timeout und erneute AP-Ausführung nachweisen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
