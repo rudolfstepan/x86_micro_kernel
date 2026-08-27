@@ -34,6 +34,12 @@ class SystemLayoutContracts(unittest.TestCase):
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 
+    def test_windows_build_bounds_default_program_parallelism(self):
+        windows = self.read("scripts/build-windows.ps1")
+        self.assertIn("[int]$SystemBuildJobs = 2", windows)
+        self.assertIn("'--jobs', [string]$SystemBuildJobs", windows)
+        self.assertIn("ProcessPriorityClass]::BelowNormal", windows)
+
     def test_tree_rejects_noncanonical_and_unbounded_paths(self):
         with self.assertRaisesRegex(ValueError, "lowercase"):
             build_tree({"BIN/shell.prg": b"x"})
@@ -65,6 +71,7 @@ class SystemLayoutContracts(unittest.TestCase):
             "input.conf": "schema=reist.input/1",
             "desktop.conf": "schema=reist.desktop/1",
             "filetypes.conf": "schema=reist.filetypes/1",
+            "sounds.conf": "schema=reist.sounds/1",
         }
         for name, schema in required.items():
             text = self.read(f"config/etc/reist/{name}")
@@ -130,7 +137,7 @@ class SystemLayoutContracts(unittest.TestCase):
                 "usr/gui/bin/soundplayer.prg": b"soundplayer",
                 "usr/gui/bin/imageviewer.prg": b"imageviewer",
                 "usr/gui/bin/control.prg": b"control",
-                "usr/share/sounds/440hz.wav": b"wave",
+                "usr/share/sounds/startup.wav": b"startup",
                 "usr/share/images/demo-desktop.bmp": b"bmp",
                 "usr/share/images/demo-colors.gif": b"gif",
                 "usr/share/icons/program.ico": b"ico",
@@ -176,7 +183,7 @@ class SystemLayoutContracts(unittest.TestCase):
         share = cluster_entries(share_cluster)
         sounds_cluster = struct.unpack_from("<H", share[b"SOUNDS     "], 26)[0]
         self.assertEqual(
-            cluster_entries(sounds_cluster)[b"440HZ   WAV"][12], 0x18
+            cluster_entries(sounds_cluster)[b"STARTUP WAV"][12], 0x18
         )
         gui_cluster = struct.unpack_from("<H", usr[b"GUI        "], 26)[0]
         gui = cluster_entries(gui_cluster)
@@ -220,7 +227,7 @@ class SystemLayoutContracts(unittest.TestCase):
             "bin/shell.prg", "sbin/svcctl.prg",
             "libexec/reist/storage.prg",
             "sbin/audioinfo.prg", "usr/bin/audiotest.prg",
-            "usr/bin/wavplay.prg", "usr/share/sounds/440hz.wav",
+            "usr/bin/wavplay.prg",
             "usr/gui/bin/soundplayer.prg",
             "usr/gui/bin/imageviewer.prg",
             "usr/gui/bin/control.prg", "sbin/config.prg",
@@ -230,6 +237,13 @@ class SystemLayoutContracts(unittest.TestCase):
         ):
             self.assertIn(target, makefile)
             self.assertIn(target, windows)
+        for sound in ("startup", "shutdown", "error", "notify",
+                      "trash-drop", "trash-empty"):
+            self.assertIn(f"usr/share/sounds/{sound}.wav", makefile)
+            self.assertIn(f"'{sound}'", windows)
+        self.assertIn(
+            '"usr/share/sounds/$soundName.wav=$soundPath"', windows
+        )
         self.assertIn("usr/bin/hello.prg", makefile)
         self.assertIn("usr/bin/$($ProgramName.ToLowerInvariant())", windows)
         self.assertNotIn("--data-file SHELL.PRG=", makefile)
@@ -255,7 +269,8 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn("usr/gui/bin/guidemo.prg", makefile)
         self.assertIn("'usr/gui/bin/guidemo.prg'", windows)
         for config in (
-            "system.conf", "input.conf", "desktop.conf", "filetypes.conf"
+            "system.conf", "input.conf", "desktop.conf", "filetypes.conf",
+            "sounds.conf"
         ):
             self.assertIn(
                 f"etc/reist/{config}=config/etc/reist/{config}", makefile

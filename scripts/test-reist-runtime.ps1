@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-audio', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -167,10 +167,11 @@ function Invoke-RuntimeDesktop(
     [bool]$RenderProbe = $false,
     [bool]$SurfaceProbe = $false,
     [bool]$ControlProbe = $false,
-    [bool]$VmwareSvga2d = $false
+    [bool]$VmwareSvga2d = $false,
+    [bool]$SoundProbe = $false
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
-            [int]$ControlProbe) -gt 1) {
+            [int]$ControlProbe + [int]$SoundProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
     $screenshot = Join-Path $RepoRoot 'build\runtime-desktop.ppm'
@@ -185,6 +186,7 @@ function Invoke-RuntimeDesktop(
     }
     if ($SurfaceProbe) { $arguments += '--surface-probe' }
     if ($ControlProbe) { $arguments += '--control-probe' }
+    if ($SoundProbe) { $arguments += '--sound-probe' }
     if ($VmwareSvga2d) { $arguments += '--vmware-vga' }
     & $Python $RuntimeDesktopRunner @arguments
     if ($ExpectFailure) {
@@ -1085,6 +1087,14 @@ switch ($Mode) {
     }
     'runtime-desktop-surface' {
         Invoke-RuntimeDesktop $false $false $true
+    }
+    'runtime-desktop-audio' {
+        & $BuildScript -Target qemu -Video framebuffer `
+            -SoundplayerSurfaceProbe -SkipReleaseSbom
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Sound Player Surface probe build failed.'
+        }
+        Invoke-RuntimeDesktop -SoundProbe $true
     }
     'runtime-desktop-vbe' {
         & $BuildScript -Target qemu -Video vga -VbeRuntimeTest

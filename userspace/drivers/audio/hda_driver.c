@@ -40,6 +40,7 @@
 #define HDA_RESET_POLLS 100U
 #define HDA_VERB_POLLS 200U
 #define HDA_STREAM_POLLS 100U
+#define HDA_DMA_WRITE_CHUNKS_MAX 2U
 #define HDA_HEARTBEAT_MS 500U
 #define HDA_DIAGNOSTIC_STAGE_REGION 2U
 #define HDA_DIAGNOSTIC_STAGE_IRQ_ENDPOINT 3U
@@ -516,6 +517,47 @@ static int stream_identity_valid(const hda_driver_t *driver,
         request->stream_generation == driver->stream_generation;
 }
 
+static int stream_identity_fields_valid(const hda_driver_t *driver,
+                                        uint32_t stream_id,
+                                        uint32_t stream_generation) {
+    return driver->stream_id != 0U && stream_id == driver->stream_id &&
+           stream_generation == driver->stream_generation;
+}
+
+static int stream_write_pcm(hda_driver_t *driver, const int16_t *samples,
+                            uint32_t frame_count, uint32_t frame_limit) {
+    if (driver->backend_state != REIST_AUDIO_BACKEND_BUFFERING ||
+        samples == NULL || frame_count == 0U || frame_count > frame_limit)
+        return -22;
+    if (driver->buffered_frames >
+            REIST_AUDIO_MAX_STREAM_FRAMES - frame_count) return -11;
+
+    uint32_t offset = X86OS_DEVICE_DMA_DATA_OFFSET +
+        driver->buffered_frames * REIST_AUDIO_CHANNELS * sizeof(int16_t);
+    uint32_t byte_count = frame_count * REIST_AUDIO_CHANNELS *
+        sizeof(int16_t);
+    uint32_t copied = 0U;
+    for (uint32_t chunk_index = 0U;
+         chunk_index < HDA_DMA_WRITE_CHUNKS_MAX && copied < byte_count;
+         ++chunk_index) {
+        uint32_t chunk = byte_count - copied;
+        if (chunk > X86OS_DEVICE_DMA_TRANSFER_MAX)
+            chunk = X86OS_DEVICE_DMA_TRANSFER_MAX;
+        int status = x86os_device_dma_write(
+            driver->dma, offset + copied,
+            (const uint8_t *)(const void *)samples + copied, chunk);
+        if (status != 0) return status;
+        copied += chunk;
+    }
+    if (copied != byte_count) return -90;
+    driver->buffered_frames += frame_count;
+    return 0;
+}
+
+_Static_assert(REIST_AUDIO_BULK_SAMPLE_BYTES <=
+                   HDA_DMA_WRITE_CHUNKS_MAX * X86OS_DEVICE_DMA_TRANSFER_MAX,
+               "bulk audio write exceeds bounded DMA mediation");
+
 static int stream_start(hda_driver_t *driver) {
     if (driver->backend_state != REIST_AUDIO_BACKEND_BUFFERING ||
         driver->buffered_frames == 0U || driver->activated != 0U) return -16;
@@ -603,7 +645,7 @@ static int handle_request(hda_driver_t *driver,
         response->payload.words[0] = REIST_AUDIO_SAMPLE_RATE;
         response->payload.words[1] = REIST_AUDIO_CHANNELS;
         response->payload.words[2] = REIST_AUDIO_FORMAT_S16_LE;
-        response->payload.words[3] = REIST_AUDIO_MESSAGE_FRAMES;
+        response->payload.words[3] = REIST_AUDIO_BULK_FRAMES;
         response->payload.words[4] = REIST_AUDIO_MAX_STREAM_FRAMES;
         response->payload.words[5] = driver->backend_state;
     } else if (request->command == REIST_AUDIO_COMMAND_OPEN) {
@@ -625,23 +667,9 @@ static int handle_request(hda_driver_t *driver,
     } else if (!stream_identity_valid(driver, request)) {
         status = -9;
     } else if (request->command == REIST_AUDIO_COMMAND_WRITE) {
-        if (driver->backend_state != REIST_AUDIO_BACKEND_BUFFERING ||
-            request->frame_count == 0U ||
-            request->frame_count > REIST_AUDIO_MESSAGE_FRAMES) {
-            status = -22;
-        } else if (driver->buffered_frames >
-                REIST_AUDIO_MAX_STREAM_FRAMES - request->frame_count) {
-            status = -11;
-        } else {
-            uint32_t offset = X86OS_DEVICE_DMA_DATA_OFFSET +
-                driver->buffered_frames * REIST_AUDIO_CHANNELS *
-                    sizeof(int16_t);
-            uint32_t bytes = request->frame_count * REIST_AUDIO_CHANNELS *
-                sizeof(int16_t);
-            status = x86os_device_dma_write(
-                driver->dma, offset, request->payload.samples, bytes);
-            if (status == 0) driver->buffered_frames += request->frame_count;
-        }
+        status = stream_write_pcm(driver, request->payload.samples,
+                                  request->frame_count,
+                                  REIST_AUDIO_MESSAGE_FRAMES);
     } else if (request->command == REIST_AUDIO_COMMAND_START) {
         status = stream_start(driver);
     } else if (request->command == REIST_AUDIO_COMMAND_STOP) {
@@ -662,10 +690,50 @@ static int handle_request(hda_driver_t *driver,
     return status;
 }
 
-static int ipc_decode(const x86os_ipc_message_t *ipc,
-                      reist_audio_message_t *wire) {
+static int handle_bulk_request(hda_driver_t *driver,
+                               const reist_audio_bulk_message_t *request,
+                               reist_audio_message_t *response) {
+    bytes_zero(response, sizeof(*response));
+    response->version = REIST_AUDIO_PROTOCOL_VERSION;
+    response->struct_size = sizeof(*response);
+    response->command = request->command | REIST_AUDIO_RESPONSE_FLAG;
+    response->request_id = request->request_id;
+    response->stream_id = request->stream_id;
+    response->stream_generation = request->stream_generation;
+    int status = -22;
+    if (request->version == REIST_AUDIO_PROTOCOL_VERSION &&
+        request->struct_size == sizeof(*request) && request->request_id != 0U &&
+        request->command == REIST_AUDIO_COMMAND_WRITE_BULK) {
+        if (!stream_identity_fields_valid(driver, request->stream_id,
+                                          request->stream_generation)) {
+            status = -9;
+        } else {
+            status = stream_write_pcm(driver, request->payload.samples,
+                                      request->frame_count,
+                                      REIST_AUDIO_BULK_FRAMES);
+        }
+    }
+    response->status = status;
+    if (status == -5 || status == -110) driver->fatal = 1U;
+    return status;
+}
+
+static int ipc_bulk_container_decode_small(
+        const x86os_ipc_bulk_message_t *ipc,
+        reist_audio_message_t *wire) {
     if (ipc == NULL || wire == NULL ||
         ipc->version != X86OS_IPC_MESSAGE_VERSION ||
+        ipc->struct_size != sizeof(x86os_ipc_message_t) ||
+        ipc->length != sizeof(*wire)) return -84;
+    for (size_t index = 0U; index < sizeof(*wire); ++index)
+        ((uint8_t *)wire)[index] = ipc->payload[index];
+    return 0;
+}
+
+static int ipc_decode_bulk(const x86os_ipc_bulk_message_t *ipc,
+                           reist_audio_bulk_message_t *wire) {
+    if (ipc == NULL || wire == NULL ||
+        ipc->version != X86OS_IPC_BULK_MESSAGE_VERSION ||
         ipc->struct_size != sizeof(*ipc) || ipc->length != sizeof(*wire))
         return -84;
     for (size_t index = 0U; index < sizeof(*wire); ++index)
@@ -689,10 +757,17 @@ static void ipc_receive_prepare(x86os_ipc_message_t *ipc) {
     ipc->struct_size = sizeof(*ipc);
 }
 
+static void ipc_bulk_receive_prepare(x86os_ipc_bulk_message_t *ipc) {
+    bytes_zero(ipc, sizeof(*ipc));
+    ipc->version = X86OS_IPC_BULK_MESSAGE_VERSION;
+    ipc->struct_size = sizeof(*ipc);
+}
+
 static void service_control_poll(hda_driver_t *driver) {
-    x86os_ipc_message_t ipc;
-    ipc_receive_prepare(&ipc);
-    int received = x86os_ipc_receive_timeout(driver->control, &ipc, 20U);
+    x86os_ipc_bulk_message_t ipc;
+    ipc_bulk_receive_prepare(&ipc);
+    int received = x86os_ipc_receive_bulk_timeout(
+        driver->control, &ipc, 20U);
     if (received == -32) {
         if (stream_abandon(driver) != 0) driver->fatal = 1U;
         return;
@@ -700,10 +775,16 @@ static void service_control_poll(hda_driver_t *driver) {
     if (received != 0) return;
     reist_audio_message_t request;
     reist_audio_message_t response;
-    if (ipc_decode(&ipc, &request) != 0) return;
-    (void)handle_request(driver, &request, &response);
-    ipc_encode(&ipc, &response);
-    (void)x86os_ipc_send_timeout(driver->control, &ipc, 100U);
+    if (ipc_bulk_container_decode_small(&ipc, &request) == 0) {
+        (void)handle_request(driver, &request, &response);
+    } else {
+        reist_audio_bulk_message_t bulk_request;
+        if (ipc_decode_bulk(&ipc, &bulk_request) != 0) return;
+        (void)handle_bulk_request(driver, &bulk_request, &response);
+    }
+    x86os_ipc_message_t reply;
+    ipc_encode(&reply, &response);
+    (void)x86os_ipc_send_timeout(driver->control, &reply, 100U);
 }
 
 static void irq_poll(hda_driver_t *driver) {

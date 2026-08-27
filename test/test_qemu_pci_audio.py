@@ -25,8 +25,12 @@ def stereo_tone(frequency: float, frames: int = 48000) -> bytes:
 
 
 class PciAudioRunnerTests(unittest.TestCase):
-    def test_runtime_exceeds_service_fault_restart_budget(self):
+    def test_clean_session_reuse_exceeds_service_fault_restart_budget(self):
         self.assertGreater(AUDIO_TEST_CYCLES, 3)
+        runner = (ROOT / "scripts/run_qemu_pci_audio.py").read_text(
+            encoding="utf-8")
+        self.assertIn("REIST_AUDIO CLIENT_RELEASED", runner)
+        self.assertIn("cycle, deadline", runner)
 
     def test_qemu_configuration_uses_virtual_hda_and_wav_capture(self):
         command = audio_qemu_command(
@@ -35,6 +39,10 @@ class PciAudioRunnerTests(unittest.TestCase):
         self.assertIn("intel-hda,msi=off,debug=1", rendered)
         self.assertIn("hda-output,audiodev=reistaudio,debug=1", rendered)
         self.assertIn("wav,id=reistaudio", rendered)
+        runner = (ROOT / "scripts/run_qemu_pci_audio.py").read_text(
+            encoding="utf-8")
+        self.assertIn("BELOW_NORMAL_PRIORITY_CLASS", runner)
+        self.assertIn("creationflags=QEMU_CREATION_FLAGS", runner)
 
     def test_smp_audio_configuration_requires_four_cpus(self):
         command = audio_qemu_command(

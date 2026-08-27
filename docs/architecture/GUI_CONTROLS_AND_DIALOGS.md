@@ -1,6 +1,6 @@
 # GUI-Komponenten, Controls und Dialoge
 
-Stand: 26. August 2026.
+Stand: 27. August 2026.
 
 Dieses Dokument ist der technische Katalog für sichtbare und interaktive
 REIST-GUI-Komponenten. Es trennt bereits nutzbare API von compositorinternen
@@ -92,10 +92,10 @@ Transaktionsantworten umsortiert.
 | Kontextmenü | Menücontroller verwendbar | ja | Capture | Pfeile/Enter/Esc | [ ] öffentlicher Öffnungsanker fehlt |
 | Datei-Öffnen-/Speichern-Dialog | ja | REIST Editor | modal, Pfadfeld und Buttons | Tab, Editieren, Enter/Escape | [x] asynchroner absoluter Pfad-Chooser v1 |
 | Farb- und Fontdialog | nein | nein | nein | nein | [ ] spätere Systemdienste |
-| interaktive Control Gallery | Menü-, Dialog- und Basis-Control-API | ja | ja | ja | [x] `/usr/gui/bin/guidemo.prg` |
+| interaktive Control Gallery | Surface-, Menü-, Dialog- und Basis-Control-API | ja | ja | ja | [x] `/usr/gui/bin/guidemo.prg`, unabhängiger Surface-Client |
 | grafischer Texteditor | Texteditor-, Menü- und Dialog-API | ja | Cursorplatzierung | Editieren/Navigation/Save | [x] `/usr/gui/bin/notepad.prg` |
 | Bildbetrachter | Surface-Client- und Image-API | XRGB8888-Buffer | Fensterinteraktion | Close | [x] `/usr/gui/bin/imageviewer.prg` |
-| Sound Player | GUI- und Audio-API | Vollbildbrücke | Buttons | Aktivierung/Close | [x] `/usr/gui/bin/soundplayer.prg`, Surface-Migration offen |
+| Sound Player | Surface-, Control- und Audio-API | Retained-Paint-Fenster | Buttons und lokaler Pointer | Aktivierung/Close | [x] `/usr/gui/bin/soundplayer.prg`, unabhängiger Surface-Client |
 
 ![Grafischer REIST Editor als windowed Surface-Client](../assets/screenshots/reist-notepad.png)
 
@@ -108,9 +108,11 @@ Desktop-Compositor verwalteten Ring-3-Fenster.*
 den aktuell freigegebenen API-Umfang. Beide Image-Builds installieren sie als
 `/usr/gui/bin/guidemo.prg`; der begrenzte Standard-Suchpfad der Ring-3-Shell
 macht sie mit `guidemo` direkt startbar. Die Anwendung bindet ausschließlich
-`x86os.h`, `<reist/gui/menu.h>`, `<reist/gui/dialog.h>` und
-`<reist/gui/control.h>` ein und besitzt
-keinen Zugriff auf private Compositor-Header.
+`x86os.h` und die öffentlichen `<reist/gui/...>`-Header ein und besitzt keinen
+Zugriff auf private Compositor-Header. Der Desktop delegiert genau einen
+generationsgebundenen Surface-Endpunkt; Zeichnen, Pointer- und Tastaturereignisse
+bleiben dadurch clientlokal und der Compositor wartet nicht auf das Ende der
+Galerie.
 
 Interaktiv nachweisbar sind verschachtelte Page-/Gruppencontainer, Tabs,
 Label, Pushbutton, Checkbox, exklusive Radiogruppe, einzeiliges Textfeld,
@@ -118,10 +120,18 @@ Liste, Scrollbar, Slider, SpinBox, Fortschrittsanzeige, Menüleiste, Popup-Menü
 application-modal Dialoge, semantische Responses, Default-/Cancel-Buttons,
 Tastaturfokus, Enter/Escape, Schließfeld und Verschieben per Pointer-Capture.
 Komplexe noch nicht implementierte Controls werden nicht als Attrappen
-gezeichnet. Die Surface-IPC ist vorhanden; die Galerie wurde aber noch nicht
-darauf migriert und läuft deshalb weiterhin ausdrücklich über die begrenzte
-Vollbildbrücke. Dieser Kompatibilitätsmodus ist keine Eigenschaft der
-Control-API.
+gezeichnet. Surface-Erzeugung und Eingabebatches sind fest begrenzt; Close,
+Resize, Protokollfehler und Compositorverlust führen über denselben
+idempotenten Destroy-/Release-Pfad.
+
+Der Surface-Broker behandelt ein geschlossenes Client-Ende nicht als
+ausreichenden Prozessabschluss. Er widerruft zuerst alle generationengebundenen
+Surfaces und schliesst den Endpoint, beobachtet danach die exakte
+Prozessidentitaet ohne blockierendes `wait` und erntet erst nach festgestelltem
+Exit. Ein nach 1000 ms noch lebender Client wird einmalig beendet; eine
+fremde oder ungueltige Generation bleibt quarantiniert und wird nie als das
+urspruengliche Kind behandelt. Damit koennen wiederholte Starts weder den
+Compositor blockieren noch unbemerkt dessen feste Prozessplaetze aufbrauchen.
 
 ## Vertrag der Basis-Controls
 

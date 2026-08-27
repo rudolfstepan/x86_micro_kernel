@@ -16,6 +16,7 @@
 #include "desktop_surface.h"
 #include "desktop_surface_runtime.h"
 #include "reist/image.h"
+#include "reist/config.h"
 #include "reist/vfs_file_client.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/font.h"
@@ -67,6 +68,11 @@
 #define DESKTOP_TRASH_ICON_COUNT 2U
 #define DESKTOP_DRAG_FEEDBACK_SIZE 34U
 #define DESKTOP_TRASH_ACTION_HEIGHT 34U
+#define DESKTOP_SYSTEM_SOUND_CONFIG_PATH "/etc/reist/sounds.conf"
+#define DESKTOP_SYSTEM_SOUND_SCHEMA "reist.sounds/1"
+#define DESKTOP_SYSTEM_SOUND_PLAYER "/usr/bin/wavplay.prg"
+#define DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY 2U
+#define DESKTOP_SURFACE_PROBE_READY_ATTEMPTS 3000U
 
 _Static_assert(DESKTOP_EXPLORER_WINDOW_CAPACITY == DESKTOP_WM_CAPACITY,
                "explorer and window-manager capacities must match");
@@ -78,6 +84,40 @@ enum {
     DESKTOP_KEY_DOWN,
     DESKTOP_KEY_LEFT,
     DESKTOP_KEY_RIGHT
+};
+
+typedef enum {
+    DESKTOP_SYSTEM_SOUND_STARTUP = 0,
+    DESKTOP_SYSTEM_SOUND_SHUTDOWN,
+    DESKTOP_SYSTEM_SOUND_ERROR,
+    DESKTOP_SYSTEM_SOUND_NOTIFICATION,
+    DESKTOP_SYSTEM_SOUND_TRASH_DROP,
+    DESKTOP_SYSTEM_SOUND_TRASH_EMPTY,
+    DESKTOP_SYSTEM_SOUND_EVENT_COUNT,
+    DESKTOP_SYSTEM_SOUND_NONE = UINT32_MAX,
+} desktop_system_sound_event_t;
+
+typedef struct {
+    int32_t pid;
+    uint32_t process_generation;
+} desktop_system_sound_child_t;
+
+typedef struct {
+    uint32_t enabled;
+    char paths[DESKTOP_SYSTEM_SOUND_EVENT_COUNT][REIST_CONFIG_VALUE_CAPACITY];
+    desktop_system_sound_child_t
+        children[DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY];
+    uint32_t pending_event;
+} desktop_system_sound_state_t;
+
+static const char *const desktop_system_sound_keys[
+        DESKTOP_SYSTEM_SOUND_EVENT_COUNT] = {
+    "event.startup",
+    "event.shutdown",
+    "event.error",
+    "event.notification",
+    "event.trash_drop",
+    "event.trash_empty",
 };
 
 typedef struct {
@@ -585,6 +625,10 @@ typedef struct {
     uint32_t taskbar_capture_slot;
     uint32_t dialog_kind;
     uint32_t trash_menu_can_empty;
+    uint32_t error_sequence;
+    uint32_t notification_sequence;
+    uint32_t trash_drop_sequence;
+    uint32_t trash_empty_sequence;
     int32_t trash_menu_x;
     int32_t trash_menu_y;
     reist_gui_dialog_model_t error_model;
@@ -1377,6 +1421,10 @@ static void desktop_ui_initialize(desktop_ui_state_t *ui) {
     ui->taskbar_capture_slot = DESKTOP_WM_NO_TARGET;
     ui->dialog_kind = DESKTOP_DIALOG_NONE;
     ui->trash_menu_can_empty = 0U;
+    ui->error_sequence = 0U;
+    ui->notification_sequence = 0U;
+    ui->trash_drop_sequence = 0U;
+    ui->trash_empty_sequence = 0U;
     ui->trash_menu_x = 0;
     ui->trash_menu_y = 0;
     ui->error_detail[0] = '\0';
@@ -1515,6 +1563,8 @@ static void desktop_ui_open_dialog(
         return;
     }
     collect_dialog_damage(dirty, &opened);
+    if (kind != DESKTOP_DIALOG_ERROR && kind != DESKTOP_DIALOG_EMPTY_TRASH)
+        saturating_increment(&ui->notification_sequence);
 }
 
 static void desktop_ui_open_error(
@@ -1533,6 +1583,8 @@ static void desktop_ui_open_error(
     ui->error_model.message = message;
     desktop_ui_open_dialog(
         ui, display, dirty, DESKTOP_DIALOG_ERROR);
+    if (ui->dialog.visible && ui->dialog_kind == DESKTOP_DIALOG_ERROR)
+        saturating_increment(&ui->error_sequence);
 }
 
 static void desktop_ui_open_trash_context(
@@ -3298,6 +3350,9 @@ static uint32_t desktop_try_exit(
 }
 
 static char filetypes_config[DESKTOP_FILETYPES_CONFIG_CAPACITY + 1U];
+static char system_sound_config[REIST_CONFIG_FILE_CAPACITY + 1U];
+static reist_config_document_t system_sound_document;
+static desktop_system_sound_state_t system_sound_candidate;
 /* The syscall copies argv synchronously, but keeping the launch handoff in
  * fixed application storage avoids exposing deep compositor stack frames as
  * cross-boundary string/vector inputs. The desktop event loop is serialized,
@@ -3318,6 +3373,186 @@ static int copy_launch_text(char *destination, uint32_t capacity,
     if (source[index] != '\0') return -36;
     destination[index] = '\0';
     return 0;
+}
+
+static uint32_t desktop_system_sound_path_valid(const char *path) {
+    static const char prefix[] = "/usr/share/sounds/";
+    if (path == 0) return 0U;
+    size_t length = bounded_text_length(path, REIST_CONFIG_VALUE_CAPACITY);
+    if (length >= REIST_CONFIG_VALUE_CAPACITY ||
+        length <= sizeof(prefix) - 1U + 4U) return 0U;
+    for (size_t index = 0U; index < sizeof(prefix) - 1U; ++index)
+        if (path[index] != prefix[index]) return 0U;
+    for (size_t index = sizeof(prefix) - 1U; index < length; ++index) {
+        unsigned char character = (unsigned char)path[index];
+        if (!((character >= 'a' && character <= 'z') ||
+              (character >= '0' && character <= '9') ||
+              character == '-' || character == '_' || character == '.'))
+            return 0U;
+    }
+    return path[length - 4U] == '.' && path[length - 3U] == 'w' &&
+        path[length - 2U] == 'a' && path[length - 1U] == 'v';
+}
+
+static void desktop_system_sound_state_reset(
+    desktop_system_sound_state_t *state) {
+    if (state == 0) return;
+    volatile uint8_t *bytes = (volatile uint8_t *)state;
+    for (size_t index = 0U; index < sizeof(*state); ++index)
+        bytes[index] = 0U;
+    state->pending_event = DESKTOP_SYSTEM_SOUND_NONE;
+}
+
+static int load_system_sounds(desktop_system_sound_state_t *state) {
+    if (state == 0) return -22;
+    desktop_system_sound_state_reset(&system_sound_candidate);
+    size_t used = 0U;
+    if (read_file_bounded(
+            DESKTOP_SYSTEM_SOUND_CONFIG_PATH,
+            (uint8_t *)system_sound_config,
+            REIST_CONFIG_FILE_CAPACITY, &used) != 0 ||
+        reist_config_parse(
+            system_sound_config, used, DESKTOP_SYSTEM_SOUND_SCHEMA,
+            &system_sound_document) != 0) return -1;
+    const char *enabled = reist_config_get(
+        &system_sound_document, "enabled");
+    if (!text_equal(enabled, "true") && !text_equal(enabled, "false"))
+        return -1;
+    system_sound_candidate.enabled = text_equal(enabled, "true");
+    for (uint32_t event = 0U;
+         event < DESKTOP_SYSTEM_SOUND_EVENT_COUNT; ++event) {
+        const char *path = reist_config_get(
+            &system_sound_document, desktop_system_sound_keys[event]);
+        if (path == 0) return -1;
+        if (text_equal(path, "none")) continue;
+        if (!desktop_system_sound_path_valid(path) ||
+            copy_launch_text(
+                system_sound_candidate.paths[event],
+                sizeof(system_sound_candidate.paths[event]), path) != 0)
+            return -1;
+    }
+    /* Keep the final publication explicit: freestanding GUI programs do not
+     * link a compiler-generated memcpy for this comparatively large table. */
+    state->enabled = system_sound_candidate.enabled;
+    state->pending_event = DESKTOP_SYSTEM_SOUND_NONE;
+    for (uint32_t slot = 0U;
+         slot < DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY; ++slot) {
+        state->children[slot].pid = 0;
+        state->children[slot].process_generation = 0U;
+    }
+    for (uint32_t event = 0U;
+         event < DESKTOP_SYSTEM_SOUND_EVENT_COUNT; ++event)
+        if (copy_launch_text(
+                state->paths[event], sizeof(state->paths[event]),
+                system_sound_candidate.paths[event]) != 0) return -1;
+    return 0;
+}
+
+static uint32_t desktop_system_sound_priority(uint32_t event) {
+    if (event == DESKTOP_SYSTEM_SOUND_SHUTDOWN) return 7U;
+    if (event == DESKTOP_SYSTEM_SOUND_ERROR) return 6U;
+    if (event == DESKTOP_SYSTEM_SOUND_TRASH_EMPTY) return 5U;
+    if (event == DESKTOP_SYSTEM_SOUND_TRASH_DROP) return 4U;
+    if (event == DESKTOP_SYSTEM_SOUND_NOTIFICATION) return 3U;
+    if (event == DESKTOP_SYSTEM_SOUND_STARTUP) return 2U;
+    return 0U;
+}
+
+static uint32_t desktop_system_sound_active_count(
+        const desktop_system_sound_state_t *state) {
+    uint32_t count = 0U;
+    if (state == 0) return 0U;
+    for (uint32_t slot = 0U;
+         slot < DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY; ++slot)
+        if (state->children[slot].pid > 0) ++count;
+    return count;
+}
+
+static int desktop_system_sound_launch(
+        desktop_system_sound_state_t *state, uint32_t event) {
+    if (state == 0 || !state->enabled ||
+        event >= DESKTOP_SYSTEM_SOUND_EVENT_COUNT ||
+        state->paths[event][0] == '\0') return -22;
+    uint32_t slot = DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY;
+    for (uint32_t index = 0U;
+         index < DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY; ++index) {
+        if (state->children[index].pid <= 0) {
+            slot = index;
+            break;
+        }
+    }
+    if (slot == DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY) return -28;
+    const char *arguments[] = {
+        DESKTOP_SYSTEM_SOUND_PLAYER, "--quiet", state->paths[event],
+    };
+    int pid = x86os_spawnv(DESKTOP_SYSTEM_SOUND_PLAYER, 3, arguments);
+    if (pid <= 0) return pid < 0 ? pid : -5;
+    x86os_process_identity_t identity;
+    int identity_status = x86os_process_identity_of(pid, &identity);
+    if (identity_status != 0 || identity.version != 1U ||
+        identity.struct_size != sizeof(identity) || identity.pid != pid ||
+        identity.generation == 0U) {
+        /* This PID was returned by our still-unreaped spawn transaction, so
+         * it cannot have been recycled. Terminate before waiting: malformed
+         * identity metadata must never turn GUI startup into a live wait. */
+        (void)x86os_kill(pid);
+        int child_status = 0;
+        (void)x86os_wait(pid, &child_status);
+        return identity_status != 0 ? identity_status : -84;
+    }
+    state->children[slot] = (desktop_system_sound_child_t){
+        .pid = pid,
+        .process_generation = identity.generation,
+    };
+    return 0;
+}
+
+static void desktop_system_sound_poll(desktop_system_sound_state_t *state) {
+    if (state == 0) return;
+    for (uint32_t slot = 0U;
+         slot < DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY; ++slot) {
+        desktop_system_sound_child_t *child = &state->children[slot];
+        if (child->pid <= 0) continue;
+        x86os_process_identity_t identity;
+        int identity_status = x86os_process_identity_of(
+            child->pid, &identity);
+        if (identity_status == 0 && identity.version == 1U &&
+            identity.struct_size == sizeof(identity) &&
+            identity.pid == child->pid &&
+            identity.generation == child->process_generation)
+            continue;
+        /* A successful but foreign/malformed identity is never evidence that
+         * our exact child can be reaped. Keep the fixed slot quarantined
+         * instead of waiting on or clearing a possibly live process. */
+        if (identity_status == 0) continue;
+        int child_status = 0;
+        if (x86os_wait(child->pid, &child_status) == child->pid)
+            *child = (desktop_system_sound_child_t){0};
+    }
+    if (desktop_system_sound_active_count(state) == 0U &&
+        state->pending_event < DESKTOP_SYSTEM_SOUND_EVENT_COUNT) {
+        uint32_t pending = state->pending_event;
+        state->pending_event = DESKTOP_SYSTEM_SOUND_NONE;
+        (void)desktop_system_sound_launch(state, pending);
+    }
+}
+
+static void desktop_system_sound_request(
+        desktop_system_sound_state_t *state, uint32_t event) {
+    if (state == 0 || !state->enabled ||
+        event >= DESKTOP_SYSTEM_SOUND_EVENT_COUNT ||
+        state->paths[event][0] == '\0') return;
+    uint32_t active = desktop_system_sound_active_count(state);
+    if (active == 0U ||
+        (event == DESKTOP_SYSTEM_SOUND_SHUTDOWN &&
+         active < DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY)) {
+        (void)desktop_system_sound_launch(state, event);
+        return;
+    }
+    if (state->pending_event >= DESKTOP_SYSTEM_SOUND_EVENT_COUNT ||
+        desktop_system_sound_priority(event) >
+            desktop_system_sound_priority(state->pending_event))
+        state->pending_event = event;
 }
 
 static int load_filetypes(desktop_filetypes_t *filetypes) {
@@ -3352,8 +3587,10 @@ static int format_surface_argument(x86os_ipc_handle_t endpoint) {
 
 static uint32_t program_uses_surface(const char *program) {
     return path_equal_ascii_case(program, "/usr/gui/bin/surfacedemo.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/guidemo.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/notepad.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/imageviewer.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/soundplayer.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/control.prg");
 }
 
@@ -3435,20 +3672,89 @@ static uint32_t active_surface_count(
     return count;
 }
 
+static int desktop_lifecycle_publish_progress(
+    uint32_t supervised, uint32_t *sequence, uint64_t *heartbeat_ms);
+
+static uint32_t same_surface_owner(
+        reist_gui_surface_owner_t left, reist_gui_surface_owner_t right) {
+    return left.pid == right.pid &&
+        left.process_generation == right.process_generation;
+}
+
+static uint32_t committed_surface_owned_by(
+        const desktop_surface_manager_t *surfaces,
+        reist_gui_surface_owner_t owner) {
+    if (surfaces == 0 || owner.pid <= 0 ||
+        owner.process_generation == 0U) return 0U;
+    for (uint32_t index = 0U; index < DESKTOP_SURFACE_CAPACITY; ++index) {
+        if (surfaces->slots[index].active &&
+            (surfaces->slots[index].committed ||
+             surfaces->slots[index].paint_generation != 0U) &&
+            same_surface_owner(surfaces->slots[index].owner, owner))
+            return 1U;
+    }
+    return 0U;
+}
+
 static int launch_surface_probe_client(
     desktop_surface_runtime_t *runtime,
     desktop_surface_manager_t *surfaces,
     const char *program, const char *argument,
-    uint32_t expected_surface_count) {
+    uint32_t lifecycle_supervised,
+    uint32_t *lifecycle_sequence, uint64_t *lifecycle_heartbeat_ms) {
+    if (runtime == 0 || surfaces == 0 ||
+        (lifecycle_supervised != 0U &&
+         (lifecycle_sequence == 0 || lifecycle_heartbeat_ms == 0)))
+        return -22;
+    reist_gui_surface_owner_t prior_owners[DESKTOP_SURFACE_RUNTIME_CAPACITY];
+    for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
+        prior_owners[i] = (reist_gui_surface_owner_t){0};
+        if (runtime->clients[i].active == DESKTOP_SURFACE_RUNTIME_BOUND)
+            prior_owners[i] = runtime->clients[i].owner;
+    }
     int result = launch_program(runtime, program, argument);
     if (result != 0) return result;
+    reist_gui_surface_owner_t launched_owner = {0};
+    for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
+        const desktop_surface_runtime_client_t *candidate =
+            &runtime->clients[i];
+        if (candidate->active != DESKTOP_SURFACE_RUNTIME_BOUND) continue;
+        uint32_t known = 0U;
+        for (uint32_t prior = 0U;
+             prior < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++prior) {
+            if (prior_owners[prior].process_generation != 0U &&
+                same_surface_owner(candidate->owner, prior_owners[prior])) {
+                known = 1U;
+                break;
+            }
+        }
+        if (known) continue;
+        if (launched_owner.process_generation != 0U) return -84;
+        launched_owner = candidate->owner;
+    }
+    if (launched_owner.pid <= 0 || launched_owner.process_generation == 0U)
+        return -84;
     /* The probe starts several clients without user input between launches.
      * Service each new endpoint before launching the next process so a client
-     * cannot exhaust its bounded configure timeout behind later spawns. */
-    for (uint32_t attempt = 0U; attempt < 250U; ++attempt) {
+     * cannot exhaust its bounded configure timeout behind later spawns. Wait
+     * for this generation's own committed Surface: an earlier short-lived
+     * client may retire without making a later successful binding look like a
+     * timeout, and a later spawn cannot compete with an unfinished first
+     * frame. */
+    for (uint32_t attempt = 0U;
+         attempt < DESKTOP_SURFACE_PROBE_READY_ATTEMPTS; ++attempt) {
+        uint64_t now_ms = 0U;
+        if (lifecycle_supervised != 0U &&
+            (x86os_monotonic_ms(&now_ms) != 0 ||
+             now_ms < *lifecycle_heartbeat_ms ||
+             (now_ms - *lifecycle_heartbeat_ms >= 500U &&
+              desktop_lifecycle_publish_progress(
+                  lifecycle_supervised, lifecycle_sequence,
+                  lifecycle_heartbeat_ms) != 0)))
+            return -1;
         result = desktop_surface_runtime_poll(runtime, surfaces);
         if (result != 0) return result;
-        if (active_surface_count(surfaces) >= expected_surface_count)
+        if (committed_surface_owned_by(surfaces, launched_owner))
             return 0;
         (void)x86os_sleep_ms(1U);
     }
@@ -4177,6 +4483,7 @@ static void apply_trash_drop(
         desktop_ui_open_error(ui, display, dirty, message, file.path);
         return;
     }
+    saturating_increment(&ui->trash_drop_sequence);
 
     uint32_t refreshed = refresh_explorer_snapshot(
         explorer, manager, dirty, file.window_index);
@@ -4241,11 +4548,13 @@ static void apply_trash_empty(
             status == DESKTOP_TRASH_ECAPACITY
                 ? "Sicherheitsgrenze erreicht; Vorgang erneut ausfuehren."
                 : DESKTOP_TRASH_FILES_PATH);
-    } else if (!refreshed) {
-        desktop_ui_open_error(
-            ui, display, dirty,
-            "Papierkorb wurde geleert; Ansicht ist veraltet.",
-            DESKTOP_TRASH_FILES_PATH);
+    } else {
+        saturating_increment(&ui->trash_empty_sequence);
+        if (!refreshed)
+            desktop_ui_open_error(
+                ui, display, dirty,
+                "Papierkorb wurde geleert; Ansicht ist veraltet.",
+                DESKTOP_TRASH_FILES_PATH);
     }
 }
 
@@ -4789,6 +5098,20 @@ static int prepare_trash_documentation_probe(
     return 0;
 }
 
+static int desktop_lifecycle_publish_progress(
+        uint32_t supervised, uint32_t *sequence, uint64_t *heartbeat_ms) {
+    if (supervised == 0U) return 0;
+    if (sequence == 0 || heartbeat_ms == 0 || *sequence == 0U) return -22;
+    uint64_t now_ms = 0U;
+    if (x86os_monotonic_ms(&now_ms) != 0 ||
+        x86os_reist_report(
+            X86OS_REIST_REPORT_PROGRESS, *sequence) != 0)
+        return -1;
+    if (*sequence != UINT32_MAX) ++*sequence;
+    *heartbeat_ms = now_ms;
+    return 0;
+}
+
 int main(int argc, char **argv) {
     x86os_display_info_t display;
     desktop_wm_t manager;
@@ -4796,6 +5119,7 @@ int main(int argc, char **argv) {
     desktop_surface_runtime_t surface_runtime;
     static desktop_explorer_t explorer;
     static desktop_filetypes_t filetypes;
+    static desktop_system_sound_state_t system_sounds;
     desktop_ui_state_t ui;
     desktop_render_metrics_t metrics = {0};
     int32_t pointer_x;
@@ -4806,12 +5130,15 @@ int main(int argc, char **argv) {
     uint32_t surface_probe = 0U;
     uint32_t notepad_probe = 0U;
     uint32_t control_probe = 0U;
+    uint32_t sound_probe = 0U;
     uint32_t trash_context_probe = 0U;
     uint32_t trash_confirm_probe = 0U;
     uint32_t unicode_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
     uint32_t surface_resize_requested = 0U;
+    uint32_t sound_probe_reported = 0U;
+    uint64_t sound_probe_started_ms = 0U;
     uint64_t startup_started_ms = 0U;
     uint32_t startup_clock_valid =
         x86os_monotonic_ms(&startup_started_ms) == 0;
@@ -4828,6 +5155,9 @@ int main(int argc, char **argv) {
                text_equal(argv[1], "--control-probe")) {
         control_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--sound-probe")) {
+        sound_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--trash-context-probe")) {
         trash_context_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
@@ -4839,7 +5169,8 @@ int main(int argc, char **argv) {
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--surface-probe|"
-            "--notepad-probe|--control-probe|--trash-context-probe|"
+            "--notepad-probe|--control-probe|--sound-probe|"
+            "--trash-context-probe|"
             "--trash-confirm-probe|--unicode-probe]\n");
         return 2;
     }
@@ -5020,6 +5351,25 @@ int main(int argc, char **argv) {
     (void)x86os_monotonic_ms(&phase_started_ms);
     int filetypes_status = load_filetypes(&filetypes);
     desktop_startup_phase_metric("filetypes", phase_started_ms);
+    (void)x86os_monotonic_ms(&phase_started_ms);
+    int system_sound_status = load_system_sounds(&system_sounds);
+    desktop_startup_phase_metric("sounds", phase_started_ms);
+    if (render_probe || surface_probe || notepad_probe || control_probe ||
+        sound_probe || trash_context_probe || trash_confirm_probe ||
+        unicode_probe)
+        system_sounds.enabled = 0U;
+    if (system_sound_status != 0)
+        x86os_puts("desktop: Systemklangkonfiguration ungueltig\n");
+    /* Startup asset loading can consume most of the two-second supervisor
+     * window on uncached or emulated storage.  Publish progress before the
+     * first full frame without weakening the fixed heartbeat deadline. */
+    if (desktop_lifecycle_publish_progress(
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms) != 0) {
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)desktop_display_deactivate();
+        return 1;
+    }
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
     uint64_t startup_ready_ms = 0U;
@@ -5063,52 +5413,105 @@ int main(int argc, char **argv) {
         &display, &manager, &explorer, &surfaces, &ui,
         &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+    desktop_system_sound_request(
+        &system_sounds, ui.error_sequence != 0U
+            ? DESKTOP_SYSTEM_SOUND_ERROR
+            : DESKTOP_SYSTEM_SOUND_STARTUP);
     if (trash_context_probe)
         x86os_puts("DESKTOP_TRASH_CONTEXT_READY\n");
     if (trash_confirm_probe)
         x86os_puts("DESKTOP_TRASH_CONFIRM_READY\n");
-    if (surface_probe || notepad_probe || control_probe) {
-        int probe_status = control_probe
-            ? launch_surface_probe_client(
-                &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/CONTROL.PRG", 0, 1U)
-            : launch_surface_probe_client(
-                &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT", 1U);
-        if (surface_probe) {
-            if (probe_status == 0)
-                probe_status = launch_surface_probe_client(
-                    &surface_runtime, &surfaces,
-                    "/USR/GUI/BIN/NOTEPAD.PRG", "--menu-probe", 2U);
-            if (probe_status == 0)
-                probe_status = launch_surface_probe_client(
-                    &surface_runtime, &surfaces,
-                    "/USR/GUI/BIN/NOTEPAD.PRG", "--file-dialog-probe", 3U);
-            if (probe_status == 0)
-                probe_status = launch_surface_probe_client(
-                    &surface_runtime, &surfaces,
-                    "/USR/GUI/BIN/NOTEPAD.PRG", "--hover-probe", 4U);
-            if (probe_status == 0)
-                probe_status = launch_surface_probe_client(
-                    &surface_runtime, &surfaces,
-                    "/USR/GUI/BIN/NOTEPAD.PRG", "--dialog-probe", 5U);
-            if (probe_status == 0)
-                probe_status = launch_surface_probe_client(
-                    &surface_runtime, &surfaces,
-                    "/USR/GUI/BIN/IMAGEVIEWER.PRG",
-                    "/USR/SHARE/IMAGES/DEMO-COLORS.GIF", 7U);
-        }
-        if (probe_status != 0) {
-            x86os_puts(control_probe
-                ? "DESKTOP_CONTROL_FAIL launch\n"
-                : (surface_probe
-                    ? "DESKTOP_SURFACE_FAIL launch\n"
-                    : "DESKTOP_NOTEPAD_FAIL launch\n"));
+    if (surface_probe || notepad_probe || control_probe || sound_probe) {
+        /* Each client spawn is bounded, but two consecutive image loads can
+         * legitimately cross one heartbeat interval.  Reset the deadline at
+         * the phase boundary and, for the audio probe, between both clients. */
+        if (desktop_lifecycle_publish_progress(
+                lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms) != 0) {
             desktop_surface_runtime_shutdown(&surface_runtime);
             if (runtime_activated) (void)desktop_display_deactivate();
             return 1;
         }
-        x86os_puts(control_probe
+        int probe_status = sound_probe
+            ? launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/SOUNDPLAYER.PRG",
+                "/USR/SHARE/SOUNDS/STARTUP.WAV",
+                lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms)
+            : control_probe
+            ? launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/CONTROL.PRG", 0,
+                lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms)
+            : launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT",
+                lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms);
+        if (sound_probe && probe_status == 0) {
+            probe_status = desktop_lifecycle_publish_progress(
+                lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/GUIDEMO.PRG", 0,
+                    lifecycle_supervised, &lifecycle_sequence,
+                    &lifecycle_heartbeat_ms);
+        }
+        if (surface_probe) {
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--menu-probe",
+                    lifecycle_supervised, &lifecycle_sequence,
+                    &lifecycle_heartbeat_ms);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--file-dialog-probe",
+                    lifecycle_supervised, &lifecycle_sequence,
+                    &lifecycle_heartbeat_ms);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--hover-probe",
+                    lifecycle_supervised, &lifecycle_sequence,
+                    &lifecycle_heartbeat_ms);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/NOTEPAD.PRG", "--dialog-probe",
+                    lifecycle_supervised, &lifecycle_sequence,
+                    &lifecycle_heartbeat_ms);
+            if (probe_status == 0)
+                probe_status = launch_surface_probe_client(
+                    &surface_runtime, &surfaces,
+                    "/USR/GUI/BIN/IMAGEVIEWER.PRG",
+                    "/USR/SHARE/IMAGES/DEMO-COLORS.GIF",
+                    lifecycle_supervised, &lifecycle_sequence,
+                    &lifecycle_heartbeat_ms);
+        }
+        if (probe_status != 0) {
+            x86os_puts(sound_probe
+                ? "DESKTOP_AUDIO_FAIL launch status="
+                : control_probe
+                ? "DESKTOP_CONTROL_FAIL launch status="
+                : (surface_probe
+                    ? "DESKTOP_SURFACE_FAIL launch status="
+                    : "DESKTOP_NOTEPAD_FAIL launch status="));
+            x86os_print_number(probe_status);
+            x86os_putchar('\n');
+            desktop_surface_runtime_shutdown(&surface_runtime);
+            if (runtime_activated) (void)desktop_display_deactivate();
+            return 1;
+        }
+        if (sound_probe) (void)x86os_monotonic_ms(&sound_probe_started_ms);
+        x86os_puts(sound_probe
+            ? "DESKTOP_AUDIO_STAGE client-bound\n"
+            : control_probe
             ? "DESKTOP_CONTROL_STAGE client-bound\n"
             : (surface_probe
                 ? "DESKTOP_SURFACE_STAGE client-bound\n"
@@ -5127,6 +5530,7 @@ int main(int argc, char **argv) {
     }
 
     for (;;) {
+        desktop_system_sound_poll(&system_sounds);
         uint64_t lifecycle_now_ms = 0U;
         if (lifecycle_supervised &&
             (x86os_monotonic_ms(&lifecycle_now_ms) != 0 ||
@@ -5141,10 +5545,23 @@ int main(int argc, char **argv) {
             if (lifecycle_sequence != UINT32_MAX) ++lifecycle_sequence;
             lifecycle_heartbeat_ms = lifecycle_now_ms;
         }
+        /* The paired runtime also requires SOUNDPLAYER_PLAYBACK_OK from the
+         * client.  Crossing the supervisor's two-second deadline here proves
+         * that delegated playback never blocked compositor progress. */
+        if (sound_probe && !sound_probe_reported &&
+            sound_probe_started_ms != 0U &&
+            lifecycle_now_ms >= sound_probe_started_ms &&
+            lifecycle_now_ms - sound_probe_started_ms >= 2500U &&
+            active_surface_count(&surfaces) != 0U) {
+            x86os_puts("DESKTOP_AUDIO_HEARTBEAT_OK\n");
+            sound_probe_reported = 1U;
+        }
         int surface_poll_status = desktop_surface_runtime_poll(
             &surface_runtime, &surfaces);
-        if (surface_probe && surface_poll_status != 0) {
-            x86os_puts("DESKTOP_SURFACE_FAIL protocol status=");
+        if ((surface_probe || sound_probe) && surface_poll_status != 0) {
+            x86os_puts(sound_probe
+                ? "DESKTOP_AUDIO_FAIL protocol status="
+                : "DESKTOP_SURFACE_FAIL protocol status=");
             x86os_print_number(surface_poll_status);
             x86os_putchar('\n');
             desktop_surface_runtime_shutdown(&surface_runtime);
@@ -5202,6 +5619,10 @@ int main(int argc, char **argv) {
             }
         }
         uint32_t actions = 0U;
+        uint32_t error_sequence_before = ui.error_sequence;
+        uint32_t notification_sequence_before = ui.notification_sequence;
+        uint32_t trash_drop_sequence_before = ui.trash_drop_sequence;
+        uint32_t trash_empty_sequence_before = ui.trash_empty_sequence;
         uint32_t action_target = DESKTOP_WM_NO_TARGET;
         uint32_t drag_render = 0U;
         uint32_t resize_render = 0U;
@@ -5376,6 +5797,8 @@ int main(int argc, char **argv) {
         }
 
         if ((actions & DESKTOP_WM_RESULT_EXIT) != 0U) {
+            desktop_system_sound_request(
+                &system_sounds, DESKTOP_SYSTEM_SOUND_SHUTDOWN);
             if (desktop_try_exit(
                     pointer_x, pointer_y, runtime_activated, &metrics)) {
                 desktop_surface_runtime_shutdown(&surface_runtime);
@@ -5397,6 +5820,19 @@ int main(int argc, char **argv) {
                 DESKTOP_TRASH_FILES_PATH, &action_target);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
+
+        if (ui.error_sequence != error_sequence_before)
+            desktop_system_sound_request(
+                &system_sounds, DESKTOP_SYSTEM_SOUND_ERROR);
+        else if (ui.trash_empty_sequence != trash_empty_sequence_before)
+            desktop_system_sound_request(
+                &system_sounds, DESKTOP_SYSTEM_SOUND_TRASH_EMPTY);
+        else if (ui.trash_drop_sequence != trash_drop_sequence_before)
+            desktop_system_sound_request(
+                &system_sounds, DESKTOP_SYSTEM_SOUND_TRASH_DROP);
+        else if (ui.notification_sequence != notification_sequence_before)
+            desktop_system_sound_request(
+                &system_sounds, DESKTOP_SYSTEM_SOUND_NOTIFICATION);
 
         /* The cached path represents exactly one unobscured move or retained
          * left/top resize. Concurrent state changes use normal composition. */

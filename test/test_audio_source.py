@@ -61,6 +61,39 @@ class AudioSubsystemTests(unittest.TestCase):
             self.assertEqual(fixture.getnframes(), 240000)
             self.assertEqual(fixture.getcomptype(), "NONE")
 
+    def test_original_system_sound_set_is_deterministic_bounded_pcm(self):
+        expected_frames = {
+            "startup.wav": 12480,
+            "shutdown.wav": 13440,
+            "error.wav": 11232,
+            "notify.wav": 9312,
+            "trash-drop.wav": 6720,
+            "trash-empty.wav": 11040,
+        }
+        with tempfile.TemporaryDirectory(prefix="reist-sounds-") as temp:
+            subprocess.run(
+                ["python", "scripts/generate_system_sounds.py",
+                 "--output-dir", temp],
+                cwd=ROOT, check=True, capture_output=True, text=True,
+                timeout=10,
+            )
+            for name, frame_count in expected_frames.items():
+                packaged = ROOT / "assets" / "audio" / name
+                generated = Path(temp) / name
+                self.assertEqual(packaged.read_bytes(), generated.read_bytes())
+                with wave.open(str(packaged), "rb") as sound:
+                    self.assertEqual(sound.getnchannels(), 1)
+                    self.assertEqual(sound.getsampwidth(), 2)
+                    self.assertEqual(sound.getframerate(), 48000)
+                    self.assertEqual(sound.getnframes(), frame_count)
+                    self.assertLessEqual(
+                        sound.getnframes(), 15360,
+                    )
+                    self.assertEqual(sound.getcomptype(), "NONE")
+        readme = self.read("assets/audio/README.md")
+        self.assertIn("CC0-1.0", readme)
+        self.assertIn("no Microsoft or", readme)
+
     def test_public_audio_sdk_behavior(self):
         self.compile_and_run(
             "audio-sdk-test.exe",
@@ -81,6 +114,7 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn("response.request_id != wire->request_id", source)
         self.assertIn("completed != 0U ? (int)completed", source)
         self.assertIn("REIST_AUDIO_CONNECT_ATTEMPTS", source)
+        self.assertIn("result != -11 && result != -16", source)
         self.assertNotIn("malloc", source)
 
     def test_driver_and_service_are_separate_default_deny_domains(self):
@@ -92,7 +126,7 @@ class AudioSubsystemTests(unittest.TestCase):
         audio_profile = process_c.split(
             "if (kind == PROCESS_DOMAIN_AUDIO_SERVICE)", 1)[1]
         audio_profile = audio_profile.split(
-            "if (kind != PROCESS_DOMAIN_PROBE)", 1)[0]
+            "if (kind == PROCESS_DOMAIN_COMPOSITOR)", 1)[0]
         self.assertIn("SYS_SERVICE_CONNECT", audio_profile)
         for authority in ("SYS_DEVICE_CONTROL", "SYS_DISPLAY_CONTROL",
                           "SYS_NETWORK_CONTROL", "SYS_OPEN"):
@@ -106,6 +140,29 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn("audio_service_rotate_session(handle)", supervisor)
         self.assertIn("without consuming the service fault-restart budget",
                       supervisor)
+        self.assertIn("REIST_REPORT_AUDIO_CLIENT_RELEASED 16U",
+                      self.read("include/kernel/supervisor.h"))
+        self.assertIn("X86OS_REIST_REPORT_AUDIO_CLIENT_RELEASED 16U",
+                      self.read("userspace/sdk/include/x86os.h"))
+        service = self.read("userspace/services/audio/audio_service.c")
+        public = self.read("userspace/audio/include/reist/audio.h")
+        client = self.read("userspace/audio/lib/audio.c")
+        self.assertIn("REIST_AUDIO_COMMAND_RELEASE = 7U", public)
+        self.assertIn("REIST_AUDIO_COMMAND_RELEASE", client)
+        self.assertIn("client_release_armed", service)
+        self.assertIn("request.command == REIST_AUDIO_COMMAND_RELEASE",
+                      service)
+        self.assertIn("!(status == 0 &&", service)
+        release = service[service.index("} else if (received == -32)"):
+                          service.index("if (service.driver_failed")]
+        self.assertLess(release.index("abandon_client_stream"),
+                        release.index(
+                            "X86OS_REIST_REPORT_AUDIO_CLIENT_RELEASED"))
+        self.assertIn("service.client_release_armed != 0U", release)
+        report = supervisor[supervisor.index(
+            "REIST_REPORT_AUDIO_CLIENT_RELEASED"):]
+        self.assertIn("ipc_endpoint_validate_quiescent_owner", report)
+        self.assertIn("control.client_pid = 0", supervisor)
         self.assertIn("supervisor_admin_pause(handle)", supervisor)
         self.assertIn("supervisor_admin_start(handle", supervisor)
         spawn = supervisor.split(
@@ -245,8 +302,13 @@ class AudioSubsystemTests(unittest.TestCase):
                      "libexec/reist/hda.prg", "libexec/reist/audio.prg"):
             self.assertIn(path, makefile)
             self.assertIn(f"'{path}'", windows)
-        self.assertIn("usr/share/sounds/440hz.wav", makefile)
-        self.assertIn("usr/share/sounds/440hz.wav", windows)
+        self.assertNotIn("usr/share/sounds/440hz.wav", makefile)
+        self.assertNotIn("usr/share/sounds/440hz.wav", windows)
+        self.assertNotIn("testtone-440hz-mono-48k-s16.wav", windows)
+        for sound in ("startup", "shutdown", "error", "notify",
+                      "trash-drop", "trash-empty"):
+            self.assertIn(f"usr/share/sounds/{sound}.wav", makefile)
+            self.assertIn(f"'{sound}'", windows)
         self.assertIn("libreistaudio.a", sdk)
         self.assertIn("reist-audio.pc", sdk)
         self.assertIn("intel-hda,msi=off,debug=1", runner)
@@ -254,17 +316,31 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn("AUDIO_TEST_CYCLES = 5", runner)
         self.assertIn("TEST_TONE_FRAMES 2400U", audiotest)
         self.assertIn("exactly 22 periods", audiotest)
-        self.assertIn("WAVPLAY_DEFAULT_PATH \"/usr/share/sounds/440hz.wav\"",
+        self.assertIn("WAVPLAY_DEFAULT_PATH \"/usr/share/sounds/startup.wav\"",
                       wavplay)
         self.assertIn("REIST_AUDIO_WAVE_CHUNK_LIMIT 16U",
                       self.read("userspace/audio/include/reist/audio_wave.h"))
-        self.assertIn("WAVPLAY_PREVIEW_FRAMES 2400U", wavplay)
+        self.assertIn(
+            "WAVPLAY_PREVIEW_FRAMES REIST_AUDIO_MAX_STREAM_FRAMES", wavplay)
+        self.assertIn('text_equal(argv[1], "--quiet")', wavplay)
+        self.assertIn("WAVPLAY_DRAIN_GUARD_MS 20U", wavplay)
         self.assertNotIn("malloc", wavplay)
         self.assertIn("REIST_AUDIO_WAVE_CHUNK_LIMIT", wave)
         self.assertIn("reist_audio_wave_load_preview", wavplay)
         self.assertIn("reist_audio_wave_load_preview", soundplayer)
         self.assertIn("reist_gui_control_dispatch", soundplayer)
-        self.assertIn("PLAYER_MOUSE_BATCH_LIMIT 32U", soundplayer)
+        self.assertIn("reist/gui/surface_client.h", soundplayer)
+        self.assertIn("PLAYER_SURFACE_EVENT_BATCH_LIMIT 32U", soundplayer)
+        self.assertIn("reist_gui_surface_endpoint_from_argv", soundplayer)
+        self.assertIn("reist_gui_surface_client_create", soundplayer)
+        self.assertIn("reist_gui_surface_client_paint_begin", soundplayer)
+        self.assertIn("reist_gui_surface_client_receive", soundplayer)
+        self.assertIn("reist_gui_surface_client_destroy", soundplayer)
+        self.assertNotIn("x86os_display_activate", soundplayer)
+        self.assertNotIn("x86os_display_deactivate", soundplayer)
+        self.assertNotIn("x86os_mouse_event", soundplayer)
+        self.assertNotIn("x86os_getchar_nonblocking", soundplayer)
+        self.assertNotIn("x86os_pointer_update", soundplayer)
         stop = soundplayer[soundplayer.index("static int stop_audio"):
                            soundplayer.index("static void shutdown_audio")]
         self.assertIn("reist_audio_stop", stop)
@@ -274,10 +350,33 @@ class AudioSubsystemTests(unittest.TestCase):
                                soundplayer.index("static int begin_audio")]
         self.assertIn("reist_audio_shutdown", shutdown)
         self.assertIn("if (!state->audio_initialized)", soundplayer)
-        self.assertIn("static void pump_audio", soundplayer)
-        self.assertIn("remaining < REIST_AUDIO_MESSAGE_FRAMES", soundplayer)
-        self.assertIn("pump_audio(&state)", soundplayer)
-        self.assertIn("else if (!state.uploading)", soundplayer)
+        self.assertNotIn("static void pump_audio", soundplayer)
+        self.assertIn("REIST_AUDIO_BULK_FRAMES 504U",
+                      self.read("userspace/audio/include/reist/audio.h"))
+        self.assertIn("state->wave.loaded_frames", soundplayer)
+        self.assertIn(
+            "#define PLAYER_AUDIO_TRANSACTION_MS "
+            "REIST_AUDIO_DEFAULT_TIMEOUT_MS", soundplayer)
+        self.assertNotIn("#define PLAYER_AUDIO_TRANSACTION_MS 100U",
+                         soundplayer)
+        self.assertIn("#define PLAYER_DRAIN_GUARD_MS 20U", soundplayer)
+        self.assertIn("uint64_t playback_started_ms;", soundplayer)
+        self.assertIn("uint64_t playback_deadline_ms;", soundplayer)
+        self.assertIn("static void poll_playback", soundplayer)
+        self.assertIn("state->wave.loaded_frames +", soundplayer)
+        self.assertIn("x86os_monotonic_ms(&now_ms)", soundplayer)
+        self.assertIn("poll_playback(&state);", soundplayer)
+        self.assertIn('state->status = "Status: Beendet"', soundplayer)
+        self.assertIn('x86os_puts("SOUNDPLAYER_PLAYBACK_DONE\\n")',
+                      soundplayer)
+        main = soundplayer[soundplayer.index("int main(int argc") :]
+        self.assertLess(main.index("int audio_result = begin_audio(&state)"),
+                        main.index("reist_gui_surface_client_init"))
+        self.assertEqual(wave.count("x86os_open(path)"), 1)
+        self.assertNotIn("skip_exact", wave)
+        self.assertIn('x86os_puts("SOUNDPLAYER_PLAYBACK_OK\\n")', soundplayer)
+        for stage in ("connect", "open", "write", "start"):
+            self.assertIn(f'report_audio_failure("{stage}"', soundplayer)
         self.assertNotIn("malloc", soundplayer)
         self.assertIn('sound.virtualDev = "hdaudio"', vmware)
         self.assertIn('sound.pciSlotNumber = "34"', vmware)

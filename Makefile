@@ -73,6 +73,7 @@ DRIVER_DOMAIN_FAULT_INJECTION ?= 0
 SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION ?= 0
 HDA_SMP_LIFECYCLE_FAULT_INJECTION ?= 0
 AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION ?= 0
+SOUNDPLAYER_SURFACE_PROBE ?= 0
 RUNTIME_DEGRADATION_FAULT_INJECTION ?= 0
 
 # Target-specific defines
@@ -140,6 +141,9 @@ ifeq ($(HDA_SMP_LIFECYCLE_FAULT_INJECTION),1)
 endif
 ifeq ($(AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION),1)
     SAFETY_TEST_DEFINES += -DREIST_AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION
+endif
+ifeq ($(SOUNDPLAYER_SURFACE_PROBE),1)
+    SAFETY_TEST_DEFINES += -DREIST_SOUNDPLAYER_SURFACE_PROBE
 endif
 
 ifeq ($(RUNTIME_DEGRADATION_FAULT_INJECTION),1)
@@ -230,7 +234,7 @@ LIB_LIBC_C := $(wildcard $(LIB_DIR)/libc/*.c)
 LIB_LIBC_ASM := $(wildcard $(LIB_DIR)/libc/*.asm)
 LIB_LIBK_C := $(wildcard $(LIB_DIR)/libk/*.c)
 
-CONFIG_VARIANT := f$(FAULT_INJECTION)-m$(MEMORY_FAULT_INJECTION)-s$(STORAGE_FAULT_INJECTION)-io$(STORAGE_IO_FAULT_INJECTION)-a$(AHCI_FAULT_INJECTION)-$(AHCI_FAULT_MODE)-h$(HANDOVER_FAULT_INJECTION)-n$(HANDOVER_NODE_ID)-dl$(DHCP_LEASE_FAULT_INJECTION)-dr$(DHCP_RENEW_FAULT_INJECTION)-v$(VBE_RUNTIME_TEST)-dd$(DRIVER_DOMAIN_FAULT_INJECTION)-svs$(SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION)-hds$(HDA_SMP_LIFECYCLE_FAULT_INJECTION)-ass$(AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION)-rd$(RUNTIME_DEGRADATION_FAULT_INJECTION)
+CONFIG_VARIANT := f$(FAULT_INJECTION)-m$(MEMORY_FAULT_INJECTION)-s$(STORAGE_FAULT_INJECTION)-io$(STORAGE_IO_FAULT_INJECTION)-a$(AHCI_FAULT_INJECTION)-$(AHCI_FAULT_MODE)-h$(HANDOVER_FAULT_INJECTION)-n$(HANDOVER_NODE_ID)-dl$(DHCP_LEASE_FAULT_INJECTION)-dr$(DHCP_RENEW_FAULT_INJECTION)-v$(VBE_RUNTIME_TEST)-dd$(DRIVER_DOMAIN_FAULT_INJECTION)-svs$(SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION)-hds$(HDA_SMP_LIFECYCLE_FAULT_INJECTION)-ass$(AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION)-sap$(SOUNDPLAYER_SURFACE_PROBE)-rd$(RUNTIME_DEGRADATION_FAULT_INJECTION)
 CONFIG_STAMP := $(OUTPUT_DIR)/.config-$(TARGET)-$(VIDEO)-$(CONFIG_VARIANT)
 
 # ============================================================================
@@ -623,6 +627,7 @@ SYSTEM_IMAGE_FILES := \
 	etc/reist/input.conf=config/etc/reist/input.conf \
 	etc/reist/desktop.conf=config/etc/reist/desktop.conf \
 	etc/reist/filetypes.conf=config/etc/reist/filetypes.conf \
+	etc/reist/sounds.conf=config/etc/reist/sounds.conf \
 	usr/share/icons/folder-empty.ico=assets/icons/folder-empty.ico \
 	usr/share/icons/folder-full.ico=assets/icons/folder-full.ico \
 	usr/share/icons/program.ico=assets/icons/program.ico \
@@ -633,7 +638,12 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/icons/unknown.ico=assets/icons/unknown.ico \
 	usr/share/icons/trash-empty.ico=assets/icons/trash-empty.ico \
 	usr/share/icons/trash-full.ico=assets/icons/trash-full.ico \
-	usr/share/sounds/440hz.wav=assets/audio/testtone-440hz-mono-48k-s16.wav \
+	usr/share/sounds/startup.wav=assets/audio/startup.wav \
+	usr/share/sounds/shutdown.wav=assets/audio/shutdown.wav \
+	usr/share/sounds/error.wav=assets/audio/error.wav \
+	usr/share/sounds/notify.wav=assets/audio/notify.wav \
+	usr/share/sounds/trash-drop.wav=assets/audio/trash-drop.wav \
+	usr/share/sounds/trash-empty.wav=assets/audio/trash-empty.wav \
 	usr/share/images/reist-splash.bmp=assets/images/reist-splash.bmp \
 	usr/share/images/demo-desktop.bmp=assets/images/demo-desktop.bmp \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
@@ -724,7 +734,12 @@ SYSTEM_IMAGE_FILES := \
 FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
-	usr/share/sounds/440hz.wav=% usr/share/images/demo-desktop.bmp=% \
+	usr/share/sounds/startup.wav=% \
+	usr/share/sounds/shutdown.wav=% \
+	usr/share/sounds/error.wav=% usr/share/sounds/notify.wav=% \
+	usr/share/sounds/trash-drop.wav=% usr/share/sounds/trash-empty.wav=% \
+	usr/share/sounds/trash-drop.wav=% usr/share/sounds/trash-empty.wav=% \
+	usr/share/images/demo-desktop.bmp=% \
 	usr/share/images/reist-splash.bmp=% \
 	usr/share/images/demo-colors.gif=% \
 	usr/share/fonts/reist-unicode.psf=% \

@@ -40,6 +40,7 @@ static void ipc_unlock(uint32_t flags) {
 #define IPC_EBADF    (-9)
 #define IPC_EAGAIN   (-11)
 #define IPC_EACCES   (-13)
+#define IPC_EBUSY    (-16)
 #define IPC_EINVAL   (-22)
 #define IPC_ENOSPC   (-28)
 #define IPC_EMSGSIZE (-90)
@@ -60,6 +61,10 @@ typedef struct {
     ipc_message_t messages[IPC_QUEUE_DEPTH];
     int sender_pid[IPC_QUEUE_DEPTH];
     uint32_t sender_generation[IPC_QUEUE_DEPTH];
+    bool bulk_active;
+    ipc_bulk_message_t bulk_message;
+    int bulk_sender_pid;
+    uint32_t bulk_sender_generation;
     wait_queue_t send_waiters;
     wait_queue_t receive_waiters;
 } ipc_endpoint_t;
@@ -88,6 +93,7 @@ typedef struct {
     uint32_t peer_capabilities;
     uint32_t head;
     uint32_t count;
+    uint32_t bulk_active;
 } ipc_endpoint_metadata_t;
 
 typedef struct {
@@ -106,11 +112,23 @@ typedef struct {
     uint32_t sender_generation;
 } ipc_protected_message_t;
 
+typedef struct {
+    uint32_t active;
+    uint32_t endpoint_generation;
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t length;
+    int32_t sender_pid;
+    uint32_t sender_generation;
+    uint32_t crc32;
+} ipc_bulk_metadata_t;
+
 static critical_object_t ipc_endpoint_integrity[IPC_MAX_ENDPOINTS];
 static critical_object_t ipc_capability_integrity[IPC_MAX_CAPABILITY_RECORDS];
 static critical_object_t
     ipc_message_integrity[IPC_MAX_ENDPOINTS][IPC_QUEUE_DEPTH]
                          [IPC_MESSAGE_CHUNKS];
+static critical_object_t ipc_bulk_integrity[IPC_MAX_ENDPOINTS];
 static uint32_t ipc_integrity_corrections;
 static bool ipc_capability_scan_corrupt;
 static ipc_resource_stats_t ipc_stats;
@@ -142,6 +160,8 @@ _Static_assert(sizeof(ipc_capability_metadata_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
 _Static_assert(sizeof(ipc_protected_message_t) <=
                    IPC_MESSAGE_CHUNKS * CRITICAL_OBJECT_MAX_PAYLOAD,
                "IPC message split is too small");
+_Static_assert(sizeof(ipc_bulk_metadata_t) <= CRITICAL_OBJECT_MAX_PAYLOAD,
+               "IPC bulk metadata exceeds critical-object capacity");
 _Static_assert(sizeof(ipc_resource_stats_t) == 9U * sizeof(uint32_t),
                "IPC resource stats ABI drift");
 
@@ -149,12 +169,14 @@ static bool endpoint_metadata_valid(const void *payload, size_t length) {
     const ipc_endpoint_metadata_t *value = payload;
     if (length != sizeof(*value) || value->active > 1U ||
         value->retired > 1U || value->peer_seen > 1U ||
+        value->bulk_active > 1U ||
         value->generation > IPC_HANDLE_GENERATION_MAX ||
         value->peer_capabilities > IPC_MAX_CAPABILITY_RECORDS ||
         value->head >= IPC_QUEUE_DEPTH || value->count > IPC_QUEUE_DEPTH) {
         return false;
     }
-    return value->active == 0U ||
+    if (value->active == 0U) return value->bulk_active == 0U;
+    return
         (value->generation != 0U && value->owner_pid > 0 &&
          value->owner_generation != 0U);
 }
@@ -174,6 +196,51 @@ static bool capability_metadata_valid(const void *payload, size_t length) {
 static bool message_chunk_valid(const void *payload, size_t length) {
     (void)payload;
     return length != 0U && length <= CRITICAL_OBJECT_MAX_PAYLOAD;
+}
+
+static bool bulk_metadata_valid(const void *payload, size_t length) {
+    const ipc_bulk_metadata_t *value = payload;
+    if (length != sizeof(*value) || value->active > 1U) return false;
+    if (value->active == 0U) {
+        return value->endpoint_generation == 0U && value->version == 0U &&
+               value->struct_size == 0U && value->length == 0U &&
+               value->sender_pid == 0 && value->sender_generation == 0U &&
+               value->crc32 == 0U;
+    }
+    return value->endpoint_generation != 0U &&
+           value->version == IPC_BULK_MESSAGE_VERSION &&
+           value->struct_size == sizeof(ipc_bulk_message_t) &&
+           value->length <= IPC_BULK_MAX_MESSAGE_SIZE &&
+           value->sender_pid > 0 && value->sender_generation != 0U;
+}
+
+static uint32_t ipc_crc32_update(uint32_t crc, const void *data,
+                                 size_t length) {
+    const uint8_t *bytes = data;
+    for (size_t index = 0U; index < length; ++index) {
+        crc ^= bytes[index];
+        for (uint32_t bit = 0U; bit < 8U; ++bit) {
+            uint32_t mask = 0U - (crc & 1U);
+            crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+        }
+    }
+    return crc;
+}
+
+static uint32_t bulk_crc32(uint32_t endpoint_generation,
+                           const ipc_bulk_message_t *message,
+                           int sender_pid, uint32_t sender_generation) {
+    uint32_t header[] = {
+        endpoint_generation,
+        message->version,
+        message->struct_size,
+        message->length,
+        (uint32_t)sender_pid,
+        sender_generation,
+    };
+    uint32_t crc = ipc_crc32_update(UINT32_MAX, header, sizeof(header));
+    crc = ipc_crc32_update(crc, message->payload, message->length);
+    return ~crc;
 }
 
 static void note_integrity_result(critical_read_result_t result) {
@@ -196,6 +263,7 @@ static int seal_endpoint(size_t slot) {
         endpoint->peer_capabilities,
         endpoint->head,
         endpoint->count,
+        endpoint->bulk_active ? 1U : 0U,
     };
     if (!endpoint_metadata_valid(&value, sizeof(value))) return IPC_EINTEGRITY;
     return critical_object_update(&ipc_endpoint_integrity[slot],
@@ -220,7 +288,64 @@ static int load_endpoint(size_t slot) {
     endpoint->peer_capabilities = value.peer_capabilities;
     endpoint->head = value.head;
     endpoint->count = value.count;
+    endpoint->bulk_active = value.bulk_active != 0U;
     return 0;
+}
+
+static int seal_bulk(size_t slot) {
+    ipc_endpoint_t *endpoint = &ipc_endpoints[slot];
+    ipc_bulk_metadata_t value = {0};
+    if (endpoint->bulk_active) {
+        value.active = 1U;
+        value.endpoint_generation = endpoint->generation;
+        value.version = endpoint->bulk_message.version;
+        value.struct_size = endpoint->bulk_message.struct_size;
+        value.length = endpoint->bulk_message.length;
+        value.sender_pid = endpoint->bulk_sender_pid;
+        value.sender_generation = endpoint->bulk_sender_generation;
+        value.crc32 = bulk_crc32(endpoint->generation,
+                                 &endpoint->bulk_message,
+                                 endpoint->bulk_sender_pid,
+                                 endpoint->bulk_sender_generation);
+    }
+    if (!bulk_metadata_valid(&value, sizeof(value))) return IPC_EINTEGRITY;
+    return critical_object_update(&ipc_bulk_integrity[slot],
+        IPC_METADATA_VERSION, &value, sizeof(value), bulk_metadata_valid);
+}
+
+static int load_bulk(size_t slot) {
+    ipc_bulk_metadata_t value;
+    size_t length = 0U;
+    critical_read_result_t result = critical_object_read(
+        &ipc_bulk_integrity[slot], IPC_METADATA_VERSION, &value,
+        sizeof(value), &length, bulk_metadata_valid);
+    if (result < 0 || length != sizeof(value)) return IPC_EINTEGRITY;
+    note_integrity_result(result);
+
+    ipc_endpoint_t *endpoint = &ipc_endpoints[slot];
+    bool active = value.active != 0U;
+    if (endpoint->bulk_active != active) return IPC_EINTEGRITY;
+    if (!active) return 0;
+    if (!endpoint->active || value.endpoint_generation != endpoint->generation ||
+        endpoint->bulk_message.version != value.version ||
+        endpoint->bulk_message.struct_size != value.struct_size ||
+        endpoint->bulk_message.length != value.length ||
+        endpoint->bulk_sender_pid != value.sender_pid ||
+        endpoint->bulk_sender_generation != value.sender_generation ||
+        bulk_crc32(endpoint->generation, &endpoint->bulk_message,
+                   endpoint->bulk_sender_pid,
+                   endpoint->bulk_sender_generation) != value.crc32) {
+        return IPC_EINTEGRITY;
+    }
+    return 0;
+}
+
+static int reset_bulk_locked(size_t slot, ipc_endpoint_t *endpoint) {
+    endpoint->bulk_active = false;
+    memset(&endpoint->bulk_message, 0, sizeof(endpoint->bulk_message));
+    endpoint->bulk_sender_pid = 0;
+    endpoint->bulk_sender_generation = 0U;
+    return seal_bulk(slot);
 }
 
 static int seal_capability(size_t slot) {
@@ -401,12 +526,14 @@ static void quarantine_endpoint_locked(size_t endpoint_slot) {
     ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
     if (endpoint->active) {
         resource_removed(&ipc_stats.active_endpoints);
-        messages_removed(endpoint->count);
+        messages_removed(endpoint->count +
+                         (endpoint->bulk_active ? 1U : 0U));
     }
     endpoint->active = false;
     endpoint->count = 0U;
     endpoint->head = 0U;
     endpoint->peer_capabilities = 0U;
+    (void)reset_bulk_locked(endpoint_slot, endpoint);
     (void)seal_endpoint(endpoint_slot);
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
         if (load_capability(index) != 0) continue;
@@ -423,12 +550,14 @@ static void revoke_endpoint_locked(size_t endpoint_slot) {
     ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
     if (endpoint->active) {
         resource_removed(&ipc_stats.active_endpoints);
-        messages_removed(endpoint->count);
+        messages_removed(endpoint->count +
+                         (endpoint->bulk_active ? 1U : 0U));
     }
     endpoint->active = false;
     endpoint->count = 0U;
     endpoint->head = 0U;
     endpoint->peer_capabilities = 0U;
+    (void)reset_bulk_locked(endpoint_slot, endpoint);
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
         if (load_capability(index) != 0) continue;
         ipc_capability_record_t *record = &ipc_capability_records[index];
@@ -517,6 +646,7 @@ void ipc_init(void) {
     memset(ipc_endpoint_integrity, 0, sizeof(ipc_endpoint_integrity));
     memset(ipc_capability_integrity, 0, sizeof(ipc_capability_integrity));
     memset(ipc_message_integrity, 0, sizeof(ipc_message_integrity));
+    memset(ipc_bulk_integrity, 0, sizeof(ipc_bulk_integrity));
     ipc_integrity_corrections = 0U;
     ipc_capability_scan_corrupt = false;
     ipc_stats = (ipc_resource_stats_t){
@@ -529,6 +659,9 @@ void ipc_init(void) {
         ipc_endpoint_metadata_t empty = {0};
         (void)critical_object_init(&ipc_endpoint_integrity[index],
             IPC_METADATA_VERSION, &empty, sizeof(empty));
+        ipc_bulk_metadata_t empty_bulk = {0};
+        (void)critical_object_init(&ipc_bulk_integrity[index],
+            IPC_METADATA_VERSION, &empty_bulk, sizeof(empty_bulk));
     }
     for (size_t index = 0; index < IPC_MAX_CAPABILITY_RECORDS; ++index) {
         ipc_capability_metadata_t empty = {0};
@@ -561,6 +694,10 @@ int ipc_create(Process *owner, ipc_handle_t *handle) {
             continue;
         }
         ipc_endpoint_t *candidate = &ipc_endpoints[index];
+        if (load_bulk(index) != 0) {
+            quarantine_endpoint_locked(index);
+            continue;
+        }
         if (candidate->active || candidate->retired) continue;
         if (candidate->generation >= IPC_HANDLE_GENERATION_MAX) {
             candidate->retired = true;
@@ -585,7 +722,8 @@ int ipc_create(Process *owner, ipc_handle_t *handle) {
     endpoint->owner_generation = owner->generation;
     wait_queue_init(&endpoint->send_waiters);
     wait_queue_init(&endpoint->receive_waiters);
-    if (seal_endpoint(endpoint_slot) != 0) {
+    if (seal_bulk(endpoint_slot) != 0 ||
+        seal_endpoint(endpoint_slot) != 0) {
         endpoint->active = false;
         ipc_unlock(flags);
         return IPC_EINTEGRITY;
@@ -612,6 +750,13 @@ static bool message_valid(const ipc_message_t *message) {
     return message != NULL && message->version == IPC_MESSAGE_VERSION &&
            message->struct_size == sizeof(*message) &&
            message->length <= IPC_MAX_MESSAGE_SIZE;
+}
+
+static bool bulk_message_valid(const ipc_bulk_message_t *message) {
+    return message != NULL &&
+           message->version == IPC_BULK_MESSAGE_VERSION &&
+           message->struct_size == sizeof(*message) &&
+           message->length <= IPC_BULK_MAX_MESSAGE_SIZE;
 }
 
 static int seal_message(size_t endpoint_slot, uint32_t queue_slot,
@@ -771,6 +916,113 @@ int ipc_send_timeout(Process *sender, ipc_handle_t handle,
 int ipc_send(Process *sender, ipc_handle_t handle,
              const ipc_message_t *message) {
     return ipc_send_timeout(sender, handle, message, IPC_DEFAULT_TIMEOUT_MS);
+}
+
+static int enqueue_bulk_locked(size_t endpoint_slot,
+                               ipc_endpoint_t *endpoint,
+                               const ipc_bulk_message_t *message,
+                               int sender_pid,
+                               uint32_t sender_generation) {
+    if (load_bulk(endpoint_slot) != 0) return IPC_EINTEGRITY;
+    if (endpoint->bulk_active) {
+        increment_saturating(&ipc_stats.capacity_rejections);
+        return IPC_EAGAIN;
+    }
+
+    memset(&endpoint->bulk_message, 0, sizeof(endpoint->bulk_message));
+    endpoint->bulk_message.version = message->version;
+    endpoint->bulk_message.struct_size = message->struct_size;
+    endpoint->bulk_message.length = message->length;
+    memcpy(endpoint->bulk_message.payload, message->payload,
+           message->length);
+    endpoint->bulk_sender_pid = sender_pid;
+    endpoint->bulk_sender_generation = sender_generation;
+    endpoint->bulk_active = true;
+    if (seal_bulk(endpoint_slot) != 0 ||
+        seal_endpoint(endpoint_slot) != 0) {
+        (void)reset_bulk_locked(endpoint_slot, endpoint);
+        return IPC_EINTEGRITY;
+    }
+    resource_added(&ipc_stats.queued_messages,
+                   &ipc_stats.message_high_water);
+    (void)wait_queue_wake_one_locked(&endpoint->receive_waiters);
+    return 0;
+}
+
+int ipc_send_bulk_timeout(Process *sender, ipc_handle_t handle,
+                          const ipc_bulk_message_t *message,
+                          uint32_t timeout_ms) {
+    if (!bulk_message_valid(message)) {
+        return message != NULL &&
+               message->length > IPC_BULK_MAX_MESSAGE_SIZE
+            ? IPC_EMSGSIZE : IPC_EINVAL;
+    }
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + (uint64_t)timeout_ms;
+    if (deadline < now) deadline = UINT64_MAX;
+    for (;;) {
+        uint32_t flags = ipc_lock();
+        ipc_endpoint_t *endpoint = NULL;
+        size_t endpoint_slot = 0U;
+        int result = resolve_capability(sender, handle, IPC_RIGHT_SEND,
+                                        &endpoint, &endpoint_slot);
+        if (result != 0) {
+            ipc_unlock(flags);
+            return result;
+        }
+        if (load_bulk(endpoint_slot) != 0) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        if (endpoint->peer_seen && endpoint->peer_capabilities == 0U) {
+            ipc_unlock(flags);
+            return IPC_EPIPE;
+        }
+        if (!endpoint->bulk_active) {
+            result = enqueue_bulk_locked(endpoint_slot, endpoint, message,
+                                         sender->pid, sender->generation);
+            if (result == IPC_EINTEGRITY)
+                quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return result;
+        }
+        if (timeout_ms == 0U) {
+            increment_saturating(&ipc_stats.capacity_rejections);
+            ipc_unlock(flags);
+            return IPC_EAGAIN;
+        }
+        if (pit_monotonic_ms() >= deadline) {
+            ipc_unlock(flags);
+            return IPC_ETIMEDOUT;
+        }
+        int owner_pid = 0;
+        uint32_t owner_generation = 0U;
+        int counterpart = counterpart_identity_locked(
+            endpoint_slot, sender, IPC_RIGHT_RECEIVE, &owner_pid,
+            &owner_generation);
+        if (counterpart == IPC_EINTEGRITY) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        if (counterpart > 0)
+            (void)scheduler_set_wait_owner_locked(owner_pid,
+                                                  owner_generation);
+#ifdef REIST_HOST_TEST
+        result = wait_queue_block_until_locked(&endpoint->send_waiters,
+                                               TASK_BLOCK_WAITING, deadline);
+        scheduler_clear_wait_owner_locked();
+        ipc_unlock(flags);
+#else
+        result = wait_queue_block_until_spinlocked(
+            &endpoint->send_waiters, TASK_BLOCK_WAITING, deadline,
+            &ipc_state_lock, flags);
+        scheduler_clear_wait_owner_locked();
+#endif
+        if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
+        if (result != 0) return IPC_EAGAIN;
+    }
 }
 
 static int receivable_offset(size_t endpoint_slot,
@@ -951,6 +1203,38 @@ int ipc_capability_validate_owner(int owner_pid, uint32_t owner_generation,
     return result;
 }
 
+int ipc_endpoint_validate_quiescent_owner(
+        int owner_pid, uint32_t owner_generation, ipc_handle_t handle) {
+    size_t endpoint_slot = 0U;
+    uint32_t generation = 0U;
+    if (owner_pid <= 0 || owner_generation == 0U ||
+        decode_handle(handle, &endpoint_slot, &generation) != 0)
+        return IPC_EINVAL;
+
+    uint32_t flags = ipc_lock();
+    if (load_endpoint(endpoint_slot) != 0) {
+        quarantine_endpoint_locked(endpoint_slot);
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
+    }
+    if (load_bulk(endpoint_slot) != 0) {
+        quarantine_endpoint_locked(endpoint_slot);
+        ipc_unlock(flags);
+        return IPC_EINTEGRITY;
+    }
+    const ipc_endpoint_t *endpoint = &ipc_endpoints[endpoint_slot];
+    int result = 0;
+    if (!endpoint->active || endpoint->generation != generation ||
+        endpoint->owner_pid != owner_pid ||
+        endpoint->owner_generation != owner_generation)
+        result = IPC_EBADF;
+    else if (endpoint->peer_capabilities != 0U || endpoint->count != 0U ||
+             endpoint->bulk_active)
+        result = IPC_EBUSY;
+    ipc_unlock(flags);
+    return result;
+}
+
 int ipc_receive_timeout(Process *receiver, ipc_handle_t handle,
                         ipc_message_t *message, uint32_t timeout_ms) {
     if (!message_valid(message)) return IPC_EINVAL;
@@ -1030,6 +1314,124 @@ int ipc_receive(Process *receiver, ipc_handle_t handle,
                 ipc_message_t *message) {
     return ipc_receive_timeout(receiver, handle, message,
                                IPC_DEFAULT_TIMEOUT_MS);
+}
+
+static int remove_bulk_locked(size_t endpoint_slot,
+                              ipc_endpoint_t *endpoint,
+                              ipc_bulk_message_t *message) {
+    if (load_bulk(endpoint_slot) != 0 || !endpoint->bulk_active)
+        return IPC_EINTEGRITY;
+    *message = endpoint->bulk_message;
+    if (reset_bulk_locked(endpoint_slot, endpoint) != 0) {
+        return IPC_EINTEGRITY;
+    }
+    resource_removed(&ipc_stats.queued_messages);
+    return seal_endpoint(endpoint_slot) == 0 ? 0 : IPC_EINTEGRITY;
+}
+
+int ipc_receive_bulk_timeout(Process *receiver, ipc_handle_t handle,
+                             ipc_bulk_message_t *message,
+                             uint32_t timeout_ms) {
+    if (!bulk_message_valid(message)) return IPC_EINVAL;
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = now + (uint64_t)timeout_ms;
+    if (deadline < now) deadline = UINT64_MAX;
+    for (;;) {
+        uint32_t flags = ipc_lock();
+        ipc_endpoint_t *endpoint = NULL;
+        size_t endpoint_slot = 0U;
+        int result = resolve_capability(receiver, handle, IPC_RIGHT_RECEIVE,
+                                        &endpoint, &endpoint_slot);
+        if (result != 0) {
+            ipc_unlock(flags);
+            return result;
+        }
+
+        int offset = receivable_offset(endpoint_slot, endpoint, receiver);
+        if (offset == IPC_EINTEGRITY) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        if (offset >= 0) {
+            ipc_message_t small = {
+                .version = IPC_MESSAGE_VERSION,
+                .struct_size = sizeof(ipc_message_t),
+            };
+            result = remove_message_locked(endpoint_slot, endpoint,
+                                           (uint32_t)offset, &small);
+            if (result != 0) {
+                quarantine_endpoint_locked(endpoint_slot);
+                ipc_unlock(flags);
+                return IPC_EINTEGRITY;
+            }
+            memset(message, 0, sizeof(*message));
+            message->version = small.version;
+            message->struct_size = small.struct_size;
+            message->length = small.length;
+            memcpy(message->payload, small.payload, small.length);
+            (void)wait_queue_wake_one_locked(&endpoint->send_waiters);
+            ipc_unlock(flags);
+            return 0;
+        }
+
+        if (load_bulk(endpoint_slot) != 0) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        if (endpoint->bulk_active &&
+            (endpoint->bulk_sender_pid != receiver->pid ||
+             endpoint->bulk_sender_generation != receiver->generation)) {
+            result = remove_bulk_locked(endpoint_slot, endpoint, message);
+            if (result != 0) {
+                quarantine_endpoint_locked(endpoint_slot);
+                ipc_unlock(flags);
+                return IPC_EINTEGRITY;
+            }
+            (void)wait_queue_wake_one_locked(&endpoint->send_waiters);
+            ipc_unlock(flags);
+            return 0;
+        }
+        if (endpoint->peer_seen && endpoint->peer_capabilities == 0U) {
+            ipc_unlock(flags);
+            return IPC_EPIPE;
+        }
+        if (timeout_ms == 0U) {
+            ipc_unlock(flags);
+            return IPC_EAGAIN;
+        }
+        if (pit_monotonic_ms() >= deadline) {
+            ipc_unlock(flags);
+            return IPC_ETIMEDOUT;
+        }
+        int owner_pid = 0;
+        uint32_t owner_generation = 0U;
+        int counterpart = counterpart_identity_locked(
+            endpoint_slot, receiver, IPC_RIGHT_SEND, &owner_pid,
+            &owner_generation);
+        if (counterpart == IPC_EINTEGRITY) {
+            quarantine_endpoint_locked(endpoint_slot);
+            ipc_unlock(flags);
+            return IPC_EINTEGRITY;
+        }
+        if (counterpart > 0)
+            (void)scheduler_set_wait_owner_locked(owner_pid,
+                                                  owner_generation);
+#ifdef REIST_HOST_TEST
+        result = wait_queue_block_until_locked(&endpoint->receive_waiters,
+                                               TASK_BLOCK_WAITING, deadline);
+        scheduler_clear_wait_owner_locked();
+        ipc_unlock(flags);
+#else
+        result = wait_queue_block_until_spinlocked(
+            &endpoint->receive_waiters, TASK_BLOCK_WAITING, deadline,
+            &ipc_state_lock, flags);
+        scheduler_clear_wait_owner_locked();
+#endif
+        if (result == IPC_ETIMEDOUT) return IPC_ETIMEDOUT;
+        if (result != 0) return IPC_EAGAIN;
+    }
 }
 
 int ipc_close(Process *process, ipc_handle_t handle) {
@@ -1203,10 +1605,26 @@ int ipc_resource_stats(ipc_resource_stats_t *stats_out) {
 
 int ipc_fault_inject(ipc_fault_target_t target, size_t object_index,
                      size_t copy_index, size_t word_index, uint32_t bit_mask) {
-    if (copy_index > 1U || word_index >= CRITICAL_OBJECT_WORDS ||
-        bit_mask == 0U) {
-        return IPC_EINVAL;
+    if (bit_mask == 0U) return IPC_EINVAL;
+    if (target == IPC_FAULT_BULK_PAYLOAD) {
+        const size_t bulk_words =
+            (sizeof(ipc_bulk_message_t) + sizeof(uint32_t) - 1U) /
+            sizeof(uint32_t);
+        if (copy_index != 0U || object_index >= IPC_MAX_ENDPOINTS ||
+            word_index >= bulk_words) return IPC_EINVAL;
+        uint32_t flags = ipc_lock();
+        ipc_endpoint_t *endpoint = &ipc_endpoints[object_index];
+        if (!endpoint->bulk_active) {
+            ipc_unlock(flags);
+            return IPC_EINVAL;
+        }
+        uint32_t *words = (uint32_t *)(void *)&endpoint->bulk_message;
+        words[word_index] ^= bit_mask;
+        ipc_unlock(flags);
+        return 0;
     }
+    if (copy_index > 1U || word_index >= CRITICAL_OBJECT_WORDS)
+        return IPC_EINVAL;
     uint32_t flags = ipc_lock();
     critical_object_t *object = NULL;
     if (target == IPC_FAULT_ENDPOINT && object_index < IPC_MAX_ENDPOINTS) {
@@ -1218,6 +1636,9 @@ int ipc_fault_inject(ipc_fault_target_t target, size_t object_index,
                object_index < IPC_MAX_ENDPOINTS * IPC_QUEUE_DEPTH *
                                   IPC_MESSAGE_CHUNKS) {
         object = &ipc_message_integrity[0][0][0] + object_index;
+    } else if (target == IPC_FAULT_BULK_METADATA &&
+               object_index < IPC_MAX_ENDPOINTS) {
+        object = &ipc_bulk_integrity[object_index];
     }
     if (object == NULL || object->primary.words[0] == 0U) {
         ipc_unlock(flags);

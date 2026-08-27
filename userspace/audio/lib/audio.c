@@ -63,6 +63,39 @@ static int audio_transact(reist_audio_context_t *context,
     return response.status;
 }
 
+static int audio_bulk_transact(reist_audio_context_t *context,
+                               reist_audio_bulk_message_t *wire) {
+    if (!audio_context_valid(context) || wire == NULL) return -22;
+    x86os_ipc_bulk_message_t message;
+    audio_zero(&message, sizeof(message));
+    message.version = X86OS_IPC_BULK_MESSAGE_VERSION;
+    message.struct_size = sizeof(message);
+    message.length = sizeof(*wire);
+    for (size_t index = 0U; index < sizeof(*wire); ++index)
+        message.payload[index] = ((const uint8_t *)wire)[index];
+    int result = x86os_ipc_send_bulk_timeout(
+        context->endpoint, &message, context->timeout_ms);
+    if (result != 0) return result;
+
+    audio_zero(&message, sizeof(message));
+    message.version = X86OS_IPC_BULK_MESSAGE_VERSION;
+    message.struct_size = sizeof(message);
+    result = x86os_ipc_receive_bulk_timeout(
+        context->endpoint, &message, context->timeout_ms);
+    if (result != 0) return result;
+    if (message.version != X86OS_IPC_MESSAGE_VERSION ||
+        message.struct_size != sizeof(x86os_ipc_message_t) ||
+        message.length != sizeof(reist_audio_message_t)) return -84;
+    reist_audio_message_t response;
+    for (size_t index = 0U; index < sizeof(response); ++index)
+        ((uint8_t *)&response)[index] = message.payload[index];
+    if (response.version != REIST_AUDIO_PROTOCOL_VERSION ||
+        response.struct_size != sizeof(response) ||
+        response.command != (wire->command | REIST_AUDIO_RESPONSE_FLAG) ||
+        response.request_id != wire->request_id) return -84;
+    return response.status;
+}
+
 int reist_audio_init(reist_audio_context_t *context) {
     if (context == NULL) return -22;
     audio_zero(context, sizeof(*context));
@@ -71,7 +104,7 @@ int reist_audio_init(reist_audio_context_t *context) {
     for (uint32_t attempt = 0U; attempt < REIST_AUDIO_CONNECT_ATTEMPTS;
          ++attempt) {
         result = x86os_service_connect(X86OS_SERVICE_AUDIO, &endpoint);
-        if (result != -11) break;
+        if (result != -11 && result != -16) break;
         if (attempt + 1U < REIST_AUDIO_CONNECT_ATTEMPTS &&
             x86os_sleep_ms(REIST_AUDIO_CONNECT_DELAY_MS) != 0)
             (void)x86os_yield();
@@ -90,9 +123,30 @@ int reist_audio_init(reist_audio_context_t *context) {
 
 void reist_audio_shutdown(reist_audio_context_t *context) {
     if (context == NULL) return;
-    if (context->connected == 1U &&
-        context->endpoint != X86OS_IPC_INVALID_HANDLE)
+    if (audio_context_valid(context)) {
+        reist_audio_message_t wire;
+        audio_message_init(&wire, REIST_AUDIO_COMMAND_RELEASE,
+                           audio_request_id(context),
+                           (reist_audio_stream_t){0});
+        x86os_ipc_message_t message;
+        audio_zero(&message, sizeof(message));
+        message.version = X86OS_IPC_MESSAGE_VERSION;
+        message.struct_size = sizeof(message);
+        message.length = sizeof(wire);
+        for (size_t index = 0U; index < sizeof(wire); ++index)
+            message.payload[index] = ((const uint8_t *)&wire)[index];
+        /* RELEASE has deliberately no response. Once enqueue succeeds, the
+         * following capability drop lets the service prove an armed EPIPE
+         * without leaving a reply for a future client. */
+        (void)x86os_ipc_send_timeout(
+            context->endpoint, &message, context->timeout_ms);
         (void)x86os_ipc_release(context->endpoint);
+    } else if (context->connected == 1U &&
+               context->endpoint != X86OS_IPC_INVALID_HANDLE) {
+        /* Corrupt local context still relinquishes its endpoint, but cannot
+         * authorize reusable-session cleanup. */
+        (void)x86os_ipc_release(context->endpoint);
+    }
     audio_zero(context, sizeof(*context));
 }
 
@@ -161,17 +215,22 @@ int reist_audio_write(reist_audio_context_t *context,
     uint32_t completed = 0U;
     while (completed < frame_count) {
         uint32_t chunk = frame_count - completed;
-        if (chunk > REIST_AUDIO_MESSAGE_FRAMES)
-            chunk = REIST_AUDIO_MESSAGE_FRAMES;
-        reist_audio_message_t wire;
-        audio_message_init(&wire, REIST_AUDIO_COMMAND_WRITE,
-                           audio_request_id(context), stream);
+        if (chunk > REIST_AUDIO_BULK_FRAMES)
+            chunk = REIST_AUDIO_BULK_FRAMES;
+        reist_audio_bulk_message_t wire;
+        audio_zero(&wire, sizeof(wire));
+        wire.version = REIST_AUDIO_PROTOCOL_VERSION;
+        wire.struct_size = sizeof(wire);
+        wire.command = REIST_AUDIO_COMMAND_WRITE_BULK;
+        wire.request_id = audio_request_id(context);
+        wire.stream_id = stream.id;
+        wire.stream_generation = stream.generation;
         wire.frame_count = chunk;
         for (uint32_t index = 0U; index < chunk * REIST_AUDIO_CHANNELS;
              ++index)
             wire.payload.samples[index] =
                 interleaved_samples[completed * REIST_AUDIO_CHANNELS + index];
-        int result = audio_transact(context, &wire);
+        int result = audio_bulk_transact(context, &wire);
         if (result != 0)
             return completed != 0U ? (int)completed : result;
         completed += chunk;

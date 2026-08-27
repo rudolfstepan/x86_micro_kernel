@@ -22,6 +22,8 @@ struct Process;
 #define IPC_QUEUE_DEPTH 4U
 #define IPC_MAX_MESSAGE_SIZE 128U
 #define IPC_MESSAGE_VERSION 1U
+#define IPC_BULK_MAX_MESSAGE_SIZE 2048U
+#define IPC_BULK_MESSAGE_VERSION 2U
 #define IPC_DEFAULT_TIMEOUT_MS 1000U
 #define IPC_RESOURCE_STATS_VERSION 1U
 
@@ -37,6 +39,8 @@ typedef enum {
     IPC_FAULT_ENDPOINT = 0,
     IPC_FAULT_CAPABILITY = 1,
     IPC_FAULT_MESSAGE = 2,
+    IPC_FAULT_BULK_METADATA = 3,
+    IPC_FAULT_BULK_PAYLOAD = 4,
 } ipc_fault_target_t;
 
 typedef uint32_t ipc_handle_t;
@@ -53,6 +57,18 @@ typedef struct {
     uint32_t length;
     uint8_t payload[IPC_MAX_MESSAGE_SIZE];
 } ipc_message_t;
+
+/**
+ * Append-only large-message ABI. Each endpoint has exactly one rendezvous
+ * slot, separate from the four-entry version-1 queue. The kernel validates a
+ * protected header and CRC32 before exposing any payload to the receiver.
+ */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t length;
+    uint8_t payload[IPC_BULK_MAX_MESSAGE_SIZE];
+} ipc_bulk_message_t;
 
 typedef struct {
     uint32_t version;
@@ -72,6 +88,9 @@ int ipc_send(struct Process *sender, ipc_handle_t handle,
              const ipc_message_t *message);
 int ipc_send_timeout(struct Process *sender, ipc_handle_t handle,
                      const ipc_message_t *message, uint32_t timeout_ms);
+int ipc_send_bulk_timeout(struct Process *sender, ipc_handle_t handle,
+                          const ipc_bulk_message_t *message,
+                          uint32_t timeout_ms);
 /* Nonblocking trusted ingress.  The active peer identity is used as the
  * sender so only the endpoint owner can receive the injected message. */
 int ipc_send_external_from_peer(int owner_pid, uint32_t owner_generation,
@@ -87,10 +106,20 @@ int ipc_send_kernel_to_owner(int owner_pid, uint32_t owner_generation,
 int ipc_capability_validate_owner(int owner_pid, uint32_t owner_generation,
                                   ipc_handle_t handle,
                                   uint32_t required_rights);
+/**
+ * Validate an exact live endpoint owner and prove that no peer capability or
+ * queued message remains. Used before reusing a session endpoint.
+ */
+int ipc_endpoint_validate_quiescent_owner(
+    int owner_pid, uint32_t owner_generation, ipc_handle_t handle);
 int ipc_receive(struct Process *receiver, ipc_handle_t handle,
                 ipc_message_t *message);
 int ipc_receive_timeout(struct Process *receiver, ipc_handle_t handle,
                         ipc_message_t *message, uint32_t timeout_ms);
+/** Receive either a version-1 queued message or one version-2 bulk message. */
+int ipc_receive_bulk_timeout(struct Process *receiver, ipc_handle_t handle,
+                             ipc_bulk_message_t *message,
+                             uint32_t timeout_ms);
 int ipc_close(struct Process *process, ipc_handle_t handle);
 int ipc_release(struct Process *process, ipc_handle_t handle);
 int ipc_delegate(struct Process *source, ipc_handle_t handle,

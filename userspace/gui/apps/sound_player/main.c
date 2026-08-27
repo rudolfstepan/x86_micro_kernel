@@ -1,10 +1,10 @@
 /**
  * @file userspace/gui/apps/sound_player/main.c
- * @brief Bounded graphical WAV player using the public GUI and audio SDKs.
+ * @brief Bounded graphical WAV player using delegated Surface and audio IPC.
  *
- * The desktop supervises this client and restores its composition after exit.
- * Until Surface IPC is available the client paints a centered application
- * panel into the active display; it never reaches into compositor internals.
+ * The player owns no global display or input authority. The compositor
+ * delegates one fixed-capacity Surface endpoint and keeps running its own
+ * lifecycle heartbeat while this independent client plays audio.
  */
 #include <stddef.h>
 #include <stdint.h>
@@ -13,10 +13,21 @@
 #include "reist/audio.h"
 #include "reist/audio_wave.h"
 #include "reist/gui/control.h"
+#include "reist/gui/surface_client.h"
 
 #define PLAYER_PREVIEW_FRAMES 15360U
-#define PLAYER_MOUSE_BATCH_LIMIT 32U
+#define PLAYER_SURFACE_EVENT_BATCH_LIMIT 32U
+#define PLAYER_SURFACE_CREATE_ATTEMPTS 250U
+#define PLAYER_AUDIO_TRANSACTION_MS REIST_AUDIO_DEFAULT_TIMEOUT_MS
+#define PLAYER_DRAIN_GUARD_MS 20U
+#define PLAYER_DEFAULT_WIDTH 640U
+#define PLAYER_DEFAULT_HEIGHT 320U
+#define PLAYER_MIN_WIDTH 400U
+#define PLAYER_MIN_HEIGHT 240U
+#define PLAYER_FONT_WIDTH 8U
+#define PLAYER_FONT_HEIGHT 16U
 #define PLAYER_TEXT_LIMIT 256U
+#define PLAYER_KEY_ESCAPE 0x101U
 
 enum { PLAYER_ACTION_PLAY = 1U, PLAYER_ACTION_STOP, PLAYER_ACTION_CLOSE };
 enum { PLAYER_CONTROL_PLAY = 1U, PLAYER_CONTROL_STOP, PLAYER_CONTROL_CLOSE };
@@ -32,13 +43,14 @@ typedef struct player_state {
     const char *status;
     uint32_t audio_initialized;
     uint32_t playing;
-    uint32_t uploading;
-    uint32_t uploaded_frames;
+    uint64_t playback_started_ms;
+    uint64_t playback_deadline_ms;
     uint32_t exit_requested;
     uint32_t redraw;
 } player_state_t;
 
-/* The service contract permits 15360 frames; static storage keeps stack use bounded. */
+/* The service contract permits 15360 frames; static storage keeps memory
+ * bounded and outside the small Ring-3 stack. */
 static int16_t samples[PLAYER_PREVIEW_FRAMES * REIST_AUDIO_CHANNELS];
 
 static const uint32_t color_face = 0x00C8C8C8U;
@@ -49,6 +61,14 @@ static const uint32_t color_active = 0x00000088U;
 static const uint32_t color_text = 0x00000000U;
 static const uint32_t color_title = 0x00FFFFFFU;
 
+static void report_audio_failure(const char *stage, int status) {
+    x86os_puts("SOUNDPLAYER_AUDIO_FAIL stage=");
+    x86os_puts(stage);
+    x86os_puts(" status=");
+    x86os_print_number(status);
+    x86os_putchar('\n');
+}
+
 static size_t bounded_length(const char *value, size_t capacity) {
     size_t length = 0U;
     if (value == NULL) return 0U;
@@ -56,77 +76,121 @@ static size_t bounded_length(const char *value, size_t capacity) {
     return length;
 }
 
+static void bytes_zero(void *destination, size_t length) {
+    uint8_t *bytes = destination;
+    for (size_t index = 0U; index < length; ++index) bytes[index] = 0U;
+}
+
+static uint32_t starts_with(const char *value, const char *prefix) {
+    if (value == NULL || prefix == NULL) return 0U;
+    while (*prefix != '\0')
+        if (*value++ != *prefix++) return 0U;
+    return 1U;
+}
+
 static uint32_t text_equal(const char *left, const char *right) {
     size_t index = 0U;
     if (left == NULL || right == NULL) return 0U;
-    while (index < PLAYER_TEXT_LIMIT && left[index] != '\0' && right[index] != '\0') {
+    while (index < PLAYER_TEXT_LIMIT && left[index] != '\0' &&
+           right[index] != '\0') {
         if (left[index] != right[index]) return 0U;
         ++index;
     }
     return index < PLAYER_TEXT_LIMIT && left[index] == right[index];
 }
 
+static const char *wave_path_from_argv(int argc, char **argv) {
+    const char *path = NULL;
+    if (argv == NULL) return NULL;
+    for (int index = 1; index < argc; ++index) {
+        if (argv[index] == NULL ||
+            starts_with(argv[index], "--reist-surface=")) continue;
+        if (path != NULL) return NULL;
+        path = argv[index];
+    }
+    return path;
+}
+
 static uint32_t max_u32(uint32_t left, uint32_t right) {
     return left > right ? left : right;
 }
 
-static void fill(reist_gui_rect_t rect, uint32_t color) {
-    if (rect.width != 0U && rect.height != 0U)
-        (void)x86os_fill_rect(rect.x, rect.y, rect.width, rect.height, color);
+static int paint_fill(reist_gui_surface_client_t *client,
+                      reist_gui_rect_t rect, uint32_t color) {
+    if (rect.width == 0U || rect.height == 0U) return 0;
+    return reist_gui_surface_client_paint_fill(client, rect, color);
 }
 
-static void text(const x86os_display_info_t *display, int32_t x, int32_t y,
-                 const char *value, uint32_t width, uint32_t foreground,
-                 uint32_t background) {
-    if (display == NULL || value == NULL || display->font_width == 0U) return;
+static int paint_text(reist_gui_surface_client_t *client,
+                      int32_t x, int32_t y, const char *value,
+                      uint32_t width, uint32_t foreground,
+                      uint32_t background) {
+    if (client == NULL || value == NULL || width == 0U) return 0;
     size_t length = bounded_length(value, PLAYER_TEXT_LIMIT);
-    size_t capacity = width / display->font_width;
+    size_t capacity = width / PLAYER_FONT_WIDTH;
     if (length > capacity) length = capacity;
-    if (length != 0U)
-        (void)x86os_draw_text_pixels(x, y, value, length, foreground, background);
+    if (length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY)
+        length = REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U;
+    if (length == 0U) return 0;
+    return reist_gui_surface_client_paint_text(
+        client, x, y, width, value, (uint32_t)length,
+        foreground, background);
 }
 
-static void bevel(reist_gui_rect_t rect, uint32_t raised) {
-    fill(rect, color_face);
-    if (rect.width < 2U || rect.height < 2U) return;
+static int bevel(reist_gui_surface_client_t *client,
+                 reist_gui_rect_t rect, uint32_t raised) {
+    if (paint_fill(client, rect, color_face) != 0) return -1;
+    if (rect.width < 2U || rect.height < 2U) return 0;
     uint32_t first = raised ? color_light : color_shadow;
     uint32_t second = raised ? color_shadow : color_light;
-    fill((reist_gui_rect_t){rect.x, rect.y, rect.width, 1U}, first);
-    fill((reist_gui_rect_t){rect.x, rect.y, 1U, rect.height}, first);
-    fill((reist_gui_rect_t){rect.x, rect.y + (int32_t)rect.height - 1,
-                            rect.width, 1U}, second);
-    fill((reist_gui_rect_t){rect.x + (int32_t)rect.width - 1, rect.y,
-                            1U, rect.height}, second);
+    if (paint_fill(client,
+            (reist_gui_rect_t){rect.x, rect.y, rect.width, 1U}, first) != 0 ||
+        paint_fill(client,
+            (reist_gui_rect_t){rect.x, rect.y, 1U, rect.height}, first) != 0 ||
+        paint_fill(client,
+            (reist_gui_rect_t){rect.x, rect.y + (int32_t)rect.height - 1,
+                               rect.width, 1U}, second) != 0 ||
+        paint_fill(client,
+            (reist_gui_rect_t){rect.x + (int32_t)rect.width - 1, rect.y,
+                               1U, rect.height}, second) != 0) return -1;
+    return 0;
 }
 
-static void outline(reist_gui_rect_t rect, uint32_t color) {
-    fill((reist_gui_rect_t){rect.x, rect.y, rect.width, 1U}, color);
-    fill((reist_gui_rect_t){rect.x, rect.y, 1U, rect.height}, color);
-    fill((reist_gui_rect_t){rect.x, rect.y + (int32_t)rect.height - 1,
-                            rect.width, 1U}, color);
-    fill((reist_gui_rect_t){rect.x + (int32_t)rect.width - 1, rect.y,
-                            1U, rect.height}, color);
+static int outline(reist_gui_surface_client_t *client,
+                   reist_gui_rect_t rect, uint32_t color) {
+    if (paint_fill(client,
+            (reist_gui_rect_t){rect.x, rect.y, rect.width, 1U}, color) != 0 ||
+        paint_fill(client,
+            (reist_gui_rect_t){rect.x, rect.y, 1U, rect.height}, color) != 0 ||
+        paint_fill(client,
+            (reist_gui_rect_t){rect.x, rect.y + (int32_t)rect.height - 1,
+                               rect.width, 1U}, color) != 0 ||
+        paint_fill(client,
+            (reist_gui_rect_t){rect.x + (int32_t)rect.width - 1, rect.y,
+                               1U, rect.height}, color) != 0) return -1;
+    return 0;
 }
 
-static reist_gui_rect_t player_frame(const x86os_display_info_t *display) {
-    uint32_t width = display->width > 680U ? 640U : display->width - 24U;
-    uint32_t height = display->height > 340U ? 300U : display->height - 24U;
-    return (reist_gui_rect_t){(int32_t)((display->width - width) / 2U),
-        (int32_t)((display->height - height) / 2U), width, height};
+static reist_gui_rect_t player_frame(uint32_t width, uint32_t height) {
+    return (reist_gui_rect_t){6, 6, width - 12U, height - 12U};
 }
 
 static int configure_controls(player_state_t *state,
-                              const x86os_display_info_t *display) {
-    reist_gui_rect_t frame = player_frame(display);
-    uint32_t button_height = max_u32(display->font_height + 12U, 28U);
+                              uint32_t width, uint32_t height) {
+    if (state == NULL || width < PLAYER_MIN_WIDTH ||
+        height < PLAYER_MIN_HEIGHT) return -22;
+    reist_gui_rect_t frame = player_frame(width, height);
+    uint32_t button_height = max_u32(PLAYER_FONT_HEIGHT + 12U, 28U);
     uint32_t button_width = 112U;
-    int32_t button_y = frame.y + (int32_t)frame.height - (int32_t)button_height - 18;
+    int32_t button_y = frame.y + (int32_t)frame.height -
+        (int32_t)button_height - 18;
     int32_t center = frame.x + (int32_t)(frame.width / 2U);
     uint32_t common = REIST_GUI_CONTROL_VISIBLE | REIST_GUI_CONTROL_ENABLED;
     state->controls[0] = (reist_gui_control_t){PLAYER_CONTROL_PLAY,
         REIST_GUI_CONTROL_ROLE_PUSH_BUTTON, "Abspielen",
         {center - 176, button_y, button_width, button_height},
-        PLAYER_ACTION_PLAY, 0U, common | REIST_GUI_CONTROL_DEFAULT, 0U, {0U, 0U}};
+        PLAYER_ACTION_PLAY, 0U, common | REIST_GUI_CONTROL_DEFAULT, 0U,
+        {0U, 0U}};
     state->controls[1] = (reist_gui_control_t){PLAYER_CONTROL_STOP,
         REIST_GUI_CONTROL_ROLE_PUSH_BUTTON, "Stop",
         {center - 56, button_y, button_width, button_height},
@@ -135,60 +199,75 @@ static int configure_controls(player_state_t *state,
         REIST_GUI_CONTROL_ROLE_PUSH_BUTTON, "Schliessen",
         {center + 64, button_y, button_width, button_height},
         PLAYER_ACTION_CLOSE, 0U, common, 0U, {0U, 0U}};
-    state->model = (reist_gui_control_model_t){REIST_GUI_CONTROL_API_VERSION,
-        sizeof(reist_gui_control_model_t), state->controls, 3U,
-        display->width, display->height, 4U, {0U, 0U, 0U, 0U}};
+    state->model = (reist_gui_control_model_t){
+        REIST_GUI_CONTROL_API_VERSION, sizeof(reist_gui_control_model_t),
+        state->controls, 3U, width, height, 4U, {0U, 0U, 0U, 0U}};
     reist_gui_control_state_initialize(&state->control);
     reist_gui_control_result_t result;
     reist_gui_control_result_initialize(&result);
-    return reist_gui_control_configure(&state->model, &state->control, &result);
+    return reist_gui_control_configure(
+        &state->model, &state->control, &result);
 }
 
-static void render(const x86os_display_info_t *display, player_state_t *state) {
-    reist_gui_rect_t frame = player_frame(display);
-    uint32_t serial = 0U;
-    uint32_t transaction = x86os_display_frame_begin(&serial) == 0;
-    fill((reist_gui_rect_t){frame.x + 6, frame.y + 6, frame.width, frame.height}, color_dark);
-    bevel(frame, 1U);
-    fill((reist_gui_rect_t){frame.x + 4, frame.y + 4, frame.width - 8U,
-                            max_u32(display->font_height + 10U, 28U)}, color_active);
-    text(display, frame.x + 14, frame.y + 10, "REIST Sound Player",
-         frame.width - 28U, color_title, color_active);
-    text(display, frame.x + 24, frame.y + 68, state->path,
-         frame.width - 48U, color_text, color_face);
-    text(display, frame.x + 24, frame.y + 104,
-         state->wave.source_channels == 1U
-             ? "WAV PCM 48 kHz / 16 Bit / Mono -> Stereo"
-             : "WAV PCM 48 kHz / 16 Bit / Stereo",
-         frame.width - 48U, color_text, color_face);
-    text(display, frame.x + 24, frame.y + 140, state->status,
-         frame.width - 48U, color_text, color_face);
+static int render(reist_gui_surface_client_t *client,
+                  player_state_t *state) {
+    if (client == NULL || state == NULL ||
+        reist_gui_surface_client_paint_begin(client) != 0) return -1;
+    reist_gui_rect_t frame = player_frame(client->width, client->height);
+    if (paint_fill(client,
+            (reist_gui_rect_t){frame.x + 4, frame.y + 4,
+                               frame.width, frame.height}, color_dark) != 0 ||
+        bevel(client, frame, 1U) != 0 ||
+        paint_fill(client,
+            (reist_gui_rect_t){frame.x + 4, frame.y + 4, frame.width - 8U,
+                               max_u32(PLAYER_FONT_HEIGHT + 10U, 28U)},
+            color_active) != 0 ||
+        paint_text(client, frame.x + 14, frame.y + 10,
+            "REIST Sound Player", frame.width - 28U,
+            color_title, color_active) != 0 ||
+        paint_text(client, frame.x + 24, frame.y + 68, state->path,
+            frame.width - 48U, color_text, color_face) != 0 ||
+        paint_text(client, frame.x + 24, frame.y + 104,
+            state->wave.source_channels == 1U
+                ? "WAV PCM 48 kHz / 16 Bit / Mono -> Stereo"
+                : "WAV PCM 48 kHz / 16 Bit / Stereo",
+            frame.width - 48U, color_text, color_face) != 0 ||
+        paint_text(client, frame.x + 24, frame.y + 140, state->status,
+            frame.width - 48U, color_text, color_face) != 0) return -1;
+
     for (uint32_t index = 0U; index < state->model.control_count; ++index) {
         reist_gui_control_t *control = &state->controls[index];
-        uint32_t pressed = state->control.captured == index && state->control.armed;
-        if (state->control.focused == index)
-            outline((reist_gui_rect_t){control->bounds.x - 2,
-                control->bounds.y - 2, control->bounds.width + 4U,
-                control->bounds.height + 4U}, color_dark);
-        bevel(control->bounds, !pressed);
+        uint32_t pressed = state->control.captured == index &&
+            state->control.armed;
+        if (state->control.focused == index &&
+            outline(client,
+                (reist_gui_rect_t){control->bounds.x - 2,
+                    control->bounds.y - 2, control->bounds.width + 4U,
+                    control->bounds.height + 4U}, color_dark) != 0) return -1;
+        if (bevel(client, control->bounds, !pressed) != 0) return -1;
         uint32_t label_width = (uint32_t)bounded_length(
-            control->label, REIST_GUI_CONTROL_LABEL_LIMIT) * display->font_width;
-        text(display, control->bounds.x + (int32_t)((control->bounds.width > label_width
-                ? control->bounds.width - label_width : 0U) / 2U),
-            control->bounds.y + (int32_t)((control->bounds.height > display->font_height
-                ? control->bounds.height - display->font_height : 0U) / 2U),
-            control->label, control->bounds.width, color_text, color_face);
+            control->label, REIST_GUI_CONTROL_LABEL_LIMIT) *
+            PLAYER_FONT_WIDTH;
+        if (paint_text(client,
+                control->bounds.x + (int32_t)((control->bounds.width >
+                    label_width ? control->bounds.width - label_width : 0U) /
+                    2U),
+                control->bounds.y + (int32_t)((control->bounds.height >
+                    PLAYER_FONT_HEIGHT ? control->bounds.height -
+                    PLAYER_FONT_HEIGHT : 0U) / 2U),
+                control->label, control->bounds.width,
+                color_text, color_face) != 0) return -1;
     }
-    if (transaction && x86os_display_frame_commit(serial) != 0)
-        (void)x86os_display_frame_cancel(serial);
+    return reist_gui_surface_client_paint_commit(client);
 }
 
 static int stop_audio(player_state_t *state) {
     int result = 0;
-    if (state->playing) result = reist_audio_stop(&state->audio, state->stream);
+    if (state->playing)
+        result = reist_audio_stop(&state->audio, state->stream);
     state->playing = 0U;
-    state->uploading = 0U;
-    state->uploaded_frames = 0U;
+    state->playback_started_ms = 0U;
+    state->playback_deadline_ms = 0U;
     if (state->stream.id != 0U) {
         int closed = reist_audio_close(&state->audio, &state->stream);
         if (result == 0) result = closed;
@@ -208,44 +287,83 @@ static int begin_audio(player_state_t *state) {
     int result = 0;
     if (!state->audio_initialized) {
         result = reist_audio_init(&state->audio);
-        if (result != 0) return result;
+        if (result != 0) {
+            report_audio_failure("connect", result);
+            return result;
+        }
         state->audio_initialized = 1U;
+        result = reist_audio_set_timeout(
+            &state->audio, PLAYER_AUDIO_TRANSACTION_MS);
+        if (result != 0) {
+            report_audio_failure("timeout", result);
+            shutdown_audio(state);
+            return result;
+        }
     }
-    const reist_audio_format_t format = {REIST_AUDIO_SAMPLE_RATE,
-        REIST_AUDIO_CHANNELS, REIST_AUDIO_FORMAT_S16_LE};
+    const reist_audio_format_t format = {
+        REIST_AUDIO_SAMPLE_RATE, REIST_AUDIO_CHANNELS,
+        REIST_AUDIO_FORMAT_S16_LE};
     result = reist_audio_open(&state->audio, &format, &state->stream);
-    if (result == 0) {
-        state->uploaded_frames = 0U;
-        state->uploading = 1U;
-    } else shutdown_audio(state);
-    return result;
+    if (result != 0) {
+        report_audio_failure("open", result);
+        shutdown_audio(state);
+        return result;
+    }
+    int written = reist_audio_write(
+        &state->audio, state->stream, samples, state->wave.loaded_frames);
+    if (written != (int)state->wave.loaded_frames) {
+        report_audio_failure("write", written);
+        shutdown_audio(state);
+        return written < 0 ? written : -5;
+    }
+    const uint32_t frames_per_ms = REIST_AUDIO_SAMPLE_RATE / 1000U;
+    uint64_t duration_ms =
+        (state->wave.loaded_frames + frames_per_ms - 1U) / frames_per_ms +
+        PLAYER_DRAIN_GUARD_MS;
+    if (frames_per_ms == 0U) {
+        report_audio_failure("clock", -75);
+        shutdown_audio(state);
+        return -75;
+    }
+    int started = reist_audio_start(&state->audio, state->stream);
+    if (started == 0) {
+        uint64_t now_ms = 0U;
+        if (x86os_monotonic_ms(&now_ms) != 0 ||
+            now_ms > UINT64_MAX - duration_ms) {
+            report_audio_failure("clock", -75);
+            shutdown_audio(state);
+            return -75;
+        }
+        state->playing = 1U;
+        state->playback_started_ms = now_ms;
+        state->playback_deadline_ms = now_ms + duration_ms;
+        state->status = "Status: Wiedergabe";
+        x86os_puts("SOUNDPLAYER_PLAYBACK_OK\n");
+    } else {
+        report_audio_failure("start", started);
+        shutdown_audio(state);
+        state->status = "Status: Audiofehler";
+    }
+    return started;
 }
 
-/* Transfer at most one protocol payload per GUI iteration.  This preserves
- * bounded input latency while a complete stream is staged in the service. */
-static void pump_audio(player_state_t *state) {
-    if (!state->uploading || state->stream.id == 0U) return;
-    uint32_t remaining = state->wave.loaded_frames - state->uploaded_frames;
-    uint32_t chunk = remaining < REIST_AUDIO_MESSAGE_FRAMES
-        ? remaining : REIST_AUDIO_MESSAGE_FRAMES;
-    int written = reist_audio_write(
-        &state->audio, state->stream,
-        &samples[state->uploaded_frames * REIST_AUDIO_CHANNELS], chunk);
-    if (written != (int)chunk) {
-        shutdown_audio(state);
-        state->status = "Status: Audiofehler";
-        state->redraw = 1U;
-        return;
-    }
-    state->uploaded_frames += chunk;
-    if (state->uploaded_frames != state->wave.loaded_frames) return;
-    state->uploading = 0U;
-    if (reist_audio_start(&state->audio, state->stream) == 0) {
-        state->playing = 1U;
-        state->status = "Status: Wiedergabe";
+static void poll_playback(player_state_t *state) {
+    if (state == NULL || !state->playing) return;
+    uint64_t now_ms = 0U;
+    int clock_status = x86os_monotonic_ms(&now_ms);
+    uint32_t completed = clock_status == 0 &&
+        now_ms >= state->playback_started_ms &&
+        now_ms >= state->playback_deadline_ms;
+    if (!completed && clock_status == 0 &&
+        now_ms >= state->playback_started_ms) return;
+    if (!completed) report_audio_failure("clock", -84);
+    int result = stop_audio(state);
+    if (completed && result == 0) {
+        state->status = "Status: Beendet";
+        x86os_puts("SOUNDPLAYER_PLAYBACK_DONE\n");
     } else {
-        shutdown_audio(state);
-        state->status = "Status: Audiofehler";
+        if (result != 0) report_audio_failure("auto-stop", result);
+        state->status = "Status: Stopfehler";
     }
     state->redraw = 1U;
 }
@@ -253,106 +371,164 @@ static void pump_audio(player_state_t *state) {
 static void handle_action(player_state_t *state, uint32_t action) {
     if (action == PLAYER_ACTION_PLAY) {
         int result = begin_audio(state);
-        state->status = result == 0 ? "Status: Laden..." : "Status: Audiofehler";
+        state->status = result == 0 ? "Status: Wiedergabe"
+                                    : "Status: Audiofehler";
     } else if (action == PLAYER_ACTION_STOP) {
         int result = stop_audio(state);
-        state->status = result == 0 ? "Status: Gestoppt" : "Status: Stopfehler";
+        state->status = result == 0 ? "Status: Gestoppt"
+                                    : "Status: Stopfehler";
     } else if (action == PLAYER_ACTION_CLOSE) {
         state->exit_requested = 1U;
     }
     state->redraw = 1U;
 }
 
-static void dispatch(player_state_t *state, reist_gui_control_event_t *event) {
+static void dispatch(player_state_t *state,
+                     reist_gui_control_event_t *event) {
     reist_gui_control_result_t result;
     reist_gui_control_result_initialize(&result);
-    if (reist_gui_control_dispatch(&state->model, &state->control, event, &result) == 0) {
+    if (reist_gui_control_dispatch(
+            &state->model, &state->control, event, &result) == 0) {
         if (result.activated) handle_action(state, result.action);
-        if (result.damage_count != 0U || result.full_redraw) state->redraw = 1U;
+        if (result.damage_count != 0U || result.full_redraw)
+            state->redraw = 1U;
     }
 }
 
-static void move_pointer(const x86os_display_info_t *display, int32_t *x,
-                         int32_t *y, int32_t dx, int32_t dy) {
-    int64_t next_x = (int64_t)*x + dx, next_y = (int64_t)*y + dy;
-    if (next_x < 0) next_x = 0;
-    if (next_y < 0) next_y = 0;
-    if (next_x >= display->width) next_x = display->width - 1U;
-    if (next_y >= display->height) next_y = display->height - 1U;
-    *x = (int32_t)next_x; *y = (int32_t)next_y;
+static void handle_surface_input(player_state_t *state,
+                                 const reist_gui_surface_input_t *input) {
+    if (state == NULL || input == NULL) return;
+    reist_gui_control_event_t event;
+    reist_gui_control_event_initialize(&event);
+    if (input->type == REIST_GUI_SURFACE_INPUT_POINTER_MOTION) {
+        event.type = REIST_GUI_CONTROL_EVENT_POINTER_MOTION;
+        event.x = input->x;
+        event.y = input->y;
+    } else if (input->type == REIST_GUI_SURFACE_INPUT_POINTER_BUTTON) {
+        event.type = REIST_GUI_CONTROL_EVENT_POINTER_BUTTON;
+        event.x = input->x;
+        event.y = input->y;
+        event.button = REIST_GUI_CONTROL_BUTTON_LEFT;
+        event.pressed = input->pressed;
+    } else if (input->type == REIST_GUI_SURFACE_INPUT_KEYBOARD &&
+               input->pressed) {
+        if (input->key == PLAYER_KEY_ESCAPE) {
+            state->exit_requested = 1U;
+            return;
+        }
+        event.type = REIST_GUI_CONTROL_EVENT_KEYBOARD;
+        if (input->key == '\t') event.key = REIST_GUI_CONTROL_KEY_NEXT;
+        else if (input->key == ' ') event.key = REIST_GUI_CONTROL_KEY_SPACE;
+        else if (input->key == '\r' || input->key == '\n')
+            event.key = REIST_GUI_CONTROL_KEY_ENTER;
+        else return;
+    } else return;
+    dispatch(state, &event);
 }
 
 int main(int argc, char **argv) {
-    if (argc == 2 && text_equal(argv[1], "--help")) {
-        x86os_puts("Usage: soundplayer <pcm-wave-file>\n");
+    if (argc == 2 && argv != NULL && text_equal(argv[1], "--help")) {
+        x86os_puts("Usage: soundplayer --reist-surface=<handle> "
+                   "<pcm-wave-file>\n");
         return 0;
     }
-    if (argc != 2) { x86os_puts("Usage: soundplayer <pcm-wave-file>\n"); return 2; }
+    x86os_ipc_handle_t endpoint = 0U;
+    const char *path = wave_path_from_argv(argc, argv);
+    if (argc != 3 || path == NULL ||
+        reist_gui_surface_endpoint_from_argv(argc, argv, &endpoint) != 0) {
+        x86os_puts("soundplayer: compositor endpoint and WAV file required\n");
+        return 2;
+    }
+
     static player_state_t state;
-    state.path = argv[1]; state.status = "Status: Bereit";
+    state.path = path;
+    state.status = "Status: Bereit";
     int result = reist_audio_wave_load_preview(
         state.path, samples, PLAYER_PREVIEW_FRAMES, &state.wave);
-    if (result != 0) { x86os_puts("soundplayer: WAV-Datei ungueltig\n"); return 1; }
-    x86os_display_info_t display;
-    uint32_t runtime_activated = 0U;
-    if (x86os_display_info(&display) != 0) {
-        if (x86os_display_activate() == 0) runtime_activated = 1U;
-        if (x86os_display_info(&display) != 0) return 1;
-    }
-    if (display.version != X86OS_DISPLAY_ABI_VERSION ||
-        display.struct_size < sizeof(display) || display.width < 400U ||
-        display.height < 240U || configure_controls(&state, &display) != 0) {
-        if (runtime_activated) (void)x86os_display_deactivate();
+    if (result != 0) {
+        x86os_puts("soundplayer: WAV-Datei ungueltig\n");
+        (void)x86os_ipc_release(endpoint);
         return 1;
     }
-    int32_t pointer_x = (int32_t)(display.width / 2U);
-    int32_t pointer_y = (int32_t)(display.height / 2U);
-    uint32_t previous_buttons = 0U;
-    render(&display, &state);
-    (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-    while (!state.exit_requested) {
-        uint32_t mouse_count = 0U;
-        for (; mouse_count < PLAYER_MOUSE_BATCH_LIMIT; ++mouse_count) {
-            x86os_mouse_event_t mouse;
-            if (x86os_mouse_event(&mouse) != 0) break;
-            move_pointer(&display, &pointer_x, &pointer_y, mouse.delta_x, mouse.delta_y);
-            reist_gui_control_event_t event;
-            reist_gui_control_event_initialize(&event);
-            event.type = REIST_GUI_CONTROL_EVENT_POINTER_MOTION;
-            event.x = pointer_x; event.y = pointer_y;
-            dispatch(&state, &event);
-            uint32_t left = (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
-            uint32_t previous = (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
-            if (left != previous) {
-                reist_gui_control_event_initialize(&event);
-                event.type = REIST_GUI_CONTROL_EVENT_POINTER_BUTTON;
-                event.x = pointer_x; event.y = pointer_y;
-                event.button = REIST_GUI_CONTROL_BUTTON_LEFT; event.pressed = left;
-                dispatch(&state, &event);
-            }
-            previous_buttons = mouse.buttons;
+
+    /* Begin playback before any Surface construction or paint transaction.
+     * The compositor remains independent while at most 31 bulk writes are
+     * synchronously confirmed by this client. */
+    int audio_result = begin_audio(&state);
+    state.status = audio_result == 0 ? "Status: Wiedergabe"
+                                     : "Status: Audiofehler";
+
+    reist_gui_surface_client_t client;
+    bytes_zero(&client, sizeof(client));
+    result = reist_gui_surface_client_init(&client, endpoint);
+    if (result == 0) {
+        result = -9;
+        for (uint32_t attempt = 0U;
+             attempt < PLAYER_SURFACE_CREATE_ATTEMPTS; ++attempt) {
+            result = reist_gui_surface_client_create(
+                &client, REIST_GUI_SURFACE_ROLE_TOPLEVEL,
+                PLAYER_DEFAULT_WIDTH, PLAYER_DEFAULT_HEIGHT);
+            if (result == 0 || (result != -9 && result != -13)) break;
+            poll_playback(&state);
+            (void)x86os_sleep_ms(1U);
         }
-        int key = x86os_getchar_nonblocking();
-        if (key == 0x1B) state.exit_requested = 1U;
-        else if (key == '\t' || key == '\r' || key == ' ') {
-            reist_gui_control_event_t event;
-            reist_gui_control_event_initialize(&event);
-            event.type = REIST_GUI_CONTROL_EVENT_KEYBOARD;
-            event.key = key == '\t' ? REIST_GUI_CONTROL_KEY_NEXT
-                : key == ' ' ? REIST_GUI_CONTROL_KEY_SPACE : REIST_GUI_CONTROL_KEY_ENTER;
-            dispatch(&state, &event);
-        }
-        pump_audio(&state);
-        if (state.redraw) {
-            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            render(&display, &state); state.redraw = 0U;
-            (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-        } else if (mouse_count != 0U) (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-        else if (!state.uploading) (void)x86os_sleep_ms(5U);
     }
-    (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+    if (result == 0)
+        result = reist_gui_surface_client_ack_configure(
+            &client, client.configured_serial);
+    if (result == 0)
+        result = reist_gui_surface_client_set_title(
+            &client, "REIST Sound Player");
+    if (result == 0)
+        result = configure_controls(&state, client.width, client.height);
+    if (result == 0) result = render(&client, &state);
+    if (result != 0) {
+        if (client.connected)
+            (void)reist_gui_surface_client_destroy(&client);
+        shutdown_audio(&state);
+        (void)x86os_ipc_release(endpoint);
+        return 1;
+    }
+
+    x86os_puts("SOUNDPLAYER_SURFACE_READY\n");
+    while (!state.exit_requested) {
+        uint32_t processed = 0U;
+        for (; processed < PLAYER_SURFACE_EVENT_BATCH_LIMIT; ++processed) {
+            reist_gui_surface_message_t message;
+            int receive = reist_gui_surface_client_receive(
+                &client, &message, 0U);
+            if (receive == -11) break;
+            if (receive != 0) {
+                result = receive;
+                state.exit_requested = 1U;
+                break;
+            }
+            if (message.type == REIST_GUI_SURFACE_CLOSE) {
+                state.exit_requested = 1U;
+            } else if (message.type == REIST_GUI_SURFACE_CONFIGURE) {
+                result = reist_gui_surface_client_accept_configure(
+                    &client, &message);
+                if (result == 0)
+                    result = configure_controls(
+                        &state, client.width, client.height);
+                if (result != 0) state.exit_requested = 1U;
+                else state.redraw = 1U;
+            } else if (message.type == REIST_GUI_SURFACE_INPUT) {
+                handle_surface_input(&state, &message.input);
+            }
+        }
+        poll_playback(&state);
+        if (state.redraw && !state.exit_requested) {
+            result = render(&client, &state);
+            state.redraw = 0U;
+            if (result != 0) state.exit_requested = 1U;
+        }
+        if (!state.exit_requested && processed == 0U)
+            (void)x86os_sleep_ms(5U);
+    }
+
     shutdown_audio(&state);
-    if (runtime_activated) return x86os_display_deactivate() == 0 ? 0 : 1;
-    x86os_clear();
-    return 0;
+    (void)reist_gui_surface_client_destroy(&client);
+    (void)x86os_ipc_release(endpoint);
+    return result == 0 ? 0 : 1;
 }

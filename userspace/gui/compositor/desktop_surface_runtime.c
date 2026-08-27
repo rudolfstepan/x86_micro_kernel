@@ -16,13 +16,13 @@ int desktop_surface_runtime_reserve(desktop_surface_runtime_t *runtime,
                                     x86os_ipc_handle_t *client_endpoint) {
     if (runtime == 0 || client_endpoint == 0) return DESKTOP_SURFACE_EINVAL;
     for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
-        if (runtime->clients[i].active == 0U) {
+        if (runtime->clients[i].active == DESKTOP_SURFACE_RUNTIME_FREE) {
             x86os_ipc_handle_t endpoint = 0U;
             int status = x86os_ipc_create(&endpoint);
             if (status != 0 || endpoint == 0U)
                 return status != 0 ? status : DESKTOP_SURFACE_EINVAL;
             runtime->clients[i].endpoint = endpoint;
-            runtime->clients[i].active = 2U;
+            runtime->clients[i].active = DESKTOP_SURFACE_RUNTIME_RESERVED;
             *client_endpoint = endpoint;
             return 0;
         }
@@ -36,7 +36,7 @@ int desktop_surface_runtime_bind(desktop_surface_runtime_t *runtime,
         return DESKTOP_SURFACE_EINVAL;
     uint32_t slot = DESKTOP_SURFACE_RUNTIME_CAPACITY;
     for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
-        if (runtime->clients[i].active == 2U &&
+        if (runtime->clients[i].active == DESKTOP_SURFACE_RUNTIME_RESERVED &&
             runtime->clients[i].endpoint == endpoint) {
             slot = i;
             break;
@@ -56,7 +56,7 @@ int desktop_surface_runtime_bind(desktop_surface_runtime_t *runtime,
     if (status != 0) return status;
     runtime->clients[slot].owner.pid = pid;
     runtime->clients[slot].owner.process_generation = identity.generation;
-    runtime->clients[slot].active = 1U;
+    runtime->clients[slot].active = DESKTOP_SURFACE_RUNTIME_BOUND;
     return 0;
 }
 
@@ -101,8 +101,10 @@ static int poll_client(desktop_surface_runtime_client_t *client, desktop_surface
     reist_gui_surface_message_t request,response; uint8_t *d=(uint8_t *)&request; for (uint32_t i=0;i<sizeof(request);++i) d[i]=ipc.payload[i]; clear_bytes(&response,sizeof(response));
     status=desktop_surface_dispatch_message(manager,client->owner,&request,&response); response.flags=(uint32_t)status;
     if ((request.type != REIST_GUI_SURFACE_PAINT_FILL &&
-         request.type != REIST_GUI_SURFACE_PAINT_TEXT) || status != 0)
-        (void)send_response(client->endpoint,&response);
+         request.type != REIST_GUI_SURFACE_PAINT_TEXT) || status != 0) {
+        int response_status = send_response(client->endpoint, &response);
+        if (response_status != 0) return response_status;
+    }
     return status == 0 ? 1 : status;
 }
 static int send_pending_input(desktop_surface_runtime_client_t *client,
@@ -130,15 +132,69 @@ static int send_pending_input(desktop_surface_runtime_client_t *client,
     }
     return 0;
 }
+
+static void retire_client(desktop_surface_runtime_client_t *client) {
+    if (client == 0) return;
+    client->endpoint = 0U;
+    client->active = DESKTOP_SURFACE_RUNTIME_RETIRING;
+    client->terminate_requested = 0U;
+    uint64_t now_ms = 0U;
+    if (x86os_monotonic_ms(&now_ms) != 0 ||
+        now_ms > UINT64_MAX - DESKTOP_SURFACE_RUNTIME_RETIRE_TIMEOUT_MS)
+        client->retire_deadline_ms = 0U;
+    else client->retire_deadline_ms =
+        now_ms + DESKTOP_SURFACE_RUNTIME_RETIRE_TIMEOUT_MS;
+}
+
+static void disconnect_client(desktop_surface_runtime_client_t *client,
+                              desktop_surface_manager_t *manager) {
+    if (client == 0 || manager == 0 ||
+        client->active != DESKTOP_SURFACE_RUNTIME_BOUND) return;
+    desktop_surface_revoke_owner(manager, client->owner);
+    if (client->endpoint != 0U) (void)x86os_ipc_close(client->endpoint);
+    retire_client(client);
+}
+
+static void poll_retiring_client(desktop_surface_runtime_client_t *client) {
+    if (client == 0 ||
+        client->active != DESKTOP_SURFACE_RUNTIME_RETIRING ||
+        client->owner.pid <= 0 ||
+        client->owner.process_generation == 0U) return;
+    x86os_process_identity_t identity;
+    int identity_status = x86os_process_identity_of(
+        client->owner.pid, &identity);
+    if (identity_status != 0) {
+        int child_status = 0;
+        if (x86os_wait(client->owner.pid, &child_status) == client->owner.pid)
+            clear_bytes(client, sizeof(*client));
+        return;
+    }
+    if (identity.version != 1U || identity.struct_size != sizeof(identity) ||
+        identity.pid != client->owner.pid ||
+        identity.generation != client->owner.process_generation)
+        return;
+    uint64_t now_ms = 0U;
+    if (client->terminate_requested == 0U &&
+        (client->retire_deadline_ms == 0U ||
+         x86os_monotonic_ms(&now_ms) != 0 ||
+         now_ms >= client->retire_deadline_ms)) {
+        if (x86os_kill(client->owner.pid) == 0)
+            client->terminate_requested = 1U;
+    }
+}
+
 int desktop_surface_runtime_poll(desktop_surface_runtime_t *runtime, desktop_surface_manager_t *manager) {
     if (runtime == 0 || manager == 0) return DESKTOP_SURFACE_EINVAL;
     int result = 0;
+    for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i)
+        poll_retiring_client(&runtime->clients[i]);
     for (uint32_t round = 0U;
          round < DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS; ++round) {
         uint32_t processed_round = 0U;
         for (uint32_t i = 0U;
              i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
-            if (runtime->clients[i].active != 1U) continue;
+            if (runtime->clients[i].active != DESKTOP_SURFACE_RUNTIME_BOUND)
+                continue;
             int status = 0;
             uint32_t processed_client = 0U;
             for (uint32_t request = 0U;
@@ -153,17 +209,18 @@ int desktop_surface_runtime_poll(desktop_surface_runtime_t *runtime, desktop_sur
             }
             if (status == 1) status = 0;
             if (status == -32) {
-                desktop_surface_revoke_owner(manager,
-                    runtime->clients[i].owner);
-                (void)x86os_ipc_close(runtime->clients[i].endpoint);
-                runtime->clients[i].endpoint = 0U;
-                runtime->clients[i].active = 0U;
+                disconnect_client(&runtime->clients[i], manager);
             } else if (status == 0 && !processed_client) {
                 status = send_pending_input(
                     &runtime->clients[i], manager);
-                if (status != 0 && result == 0) result = status;
-            } else if (status != 0 && result == 0) {
-                result = status;
+                if (status == -11) status = 0;
+                if (status != 0) {
+                    disconnect_client(&runtime->clients[i], manager);
+                    if (result == 0) result = status;
+                }
+            } else if (status != 0) {
+                disconnect_client(&runtime->clients[i], manager);
+                if (result == 0) result = status;
             }
         }
         if (!processed_round || result != 0) break;
@@ -182,7 +239,8 @@ int desktop_surface_runtime_send_close(
         return DESKTOP_SURFACE_EINVAL;
     for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
         desktop_surface_runtime_client_t *client = &runtime->clients[i];
-        if (client->active != 1U || client->owner.pid != owner.pid ||
+        if (client->active != DESKTOP_SURFACE_RUNTIME_BOUND ||
+            client->owner.pid != owner.pid ||
             client->owner.process_generation != owner.process_generation)
             continue;
         reist_gui_surface_message_t message;
@@ -206,7 +264,8 @@ int desktop_surface_runtime_send_configure(
         return DESKTOP_SURFACE_EINVAL;
     for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
         desktop_surface_runtime_client_t *client = &runtime->clients[i];
-        if (client->active != 1U || client->owner.pid != owner.pid ||
+        if (client->active != DESKTOP_SURFACE_RUNTIME_BOUND ||
+            client->owner.pid != owner.pid ||
             client->owner.process_generation != owner.process_generation)
             continue;
         reist_gui_surface_message_t message;
@@ -225,9 +284,21 @@ int desktop_surface_runtime_send_configure(
 void desktop_surface_runtime_shutdown(desktop_surface_runtime_t *runtime) {
     if (runtime == 0) return;
     for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
-        if (runtime->clients[i].active != 0U) {
-            (void)x86os_ipc_close(runtime->clients[i].endpoint);
-            runtime->clients[i].active = 0U;
+        desktop_surface_runtime_client_t *client = &runtime->clients[i];
+        if (client->active != DESKTOP_SURFACE_RUNTIME_FREE) {
+            if (client->endpoint != 0U)
+                (void)x86os_ipc_close(client->endpoint);
+            x86os_process_identity_t identity;
+            if (client->owner.pid > 0 &&
+                x86os_process_identity_of(
+                    client->owner.pid, &identity) == 0 &&
+                identity.generation == client->owner.process_generation)
+                (void)x86os_kill(client->owner.pid);
+            else if (client->owner.pid > 0) {
+                int child_status = 0;
+                (void)x86os_wait(client->owner.pid, &child_status);
+            }
+            clear_bytes(client, sizeof(*client));
         }
     }
 }

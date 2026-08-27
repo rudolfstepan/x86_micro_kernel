@@ -109,20 +109,22 @@ static int read_exact(int descriptor, uint8_t *buffer, uint32_t amount) {
     return 0;
 }
 
-static int skip_exact(int descriptor, uint32_t amount) {
-    uint8_t discard[256];
-    while (amount != 0U) {
-        uint32_t chunk = amount < sizeof(discard) ? amount : sizeof(discard);
-        int result = read_exact(descriptor, discard, chunk);
-        if (result != 0) return result;
-        amount -= chunk;
-    }
-    return 0;
-}
-
 static int16_t decode_sample(const uint8_t *source) {
     uint16_t raw = read_le16(source);
     return (int16_t)(raw >= 0x8000U ? (int32_t)raw - 0x10000 : raw);
+}
+
+static void decode_frames(const uint8_t *input, uint32_t frame_count,
+                          const wave_description_t *wave, int16_t *samples,
+                          uint32_t output_offset) {
+    for (uint32_t index = 0U; index < frame_count; ++index) {
+        const uint8_t *source = &input[index * wave->block_align];
+        int16_t left = decode_sample(source);
+        int16_t right = wave->channels == 1U
+            ? left : decode_sample(&source[2]);
+        samples[(output_offset + index) * REIST_AUDIO_CHANNELS] = left;
+        samples[(output_offset + index) * REIST_AUDIO_CHANNELS + 1U] = right;
+    }
 }
 
 int reist_audio_wave_load_preview(const char *path, int16_t *samples,
@@ -139,35 +141,66 @@ int reist_audio_wave_load_preview(const char *path, int16_t *samples,
     uint8_t header[REIST_AUDIO_WAVE_HEADER_CAPACITY];
     uint32_t header_bytes = file.size < sizeof(header) ? file.size : sizeof(header);
     int result = read_exact(descriptor, header, header_bytes);
-    int closed = x86os_close(descriptor);
-    if (result == 0 && closed != 0) result = closed;
-    if (result != 0) return result;
     wave_description_t wave;
-    result = parse_header(header, header_bytes, file.size, &wave);
-    if (result != 0) return result;
-    uint32_t source_frames = wave.data_bytes / wave.block_align;
-    uint32_t frames = source_frames < capacity_frames ? source_frames : capacity_frames;
-    if (frames == 0U) return -84;
-    descriptor = x86os_open(path);
-    if (descriptor < 0) return descriptor;
-    result = skip_exact(descriptor, wave.data_offset);
+    uint32_t source_frames = 0U;
+    uint32_t frames = 0U;
+    if (result == 0)
+        result = parse_header(header, header_bytes, file.size, &wave);
+    if (result == 0) {
+        source_frames = wave.data_bytes / wave.block_align;
+        frames = source_frames < capacity_frames
+            ? source_frames : capacity_frames;
+        if (frames == 0U) result = -84;
+    }
+
     uint8_t input[512];
     uint32_t completed = 0U;
-    while (result == 0 && completed < frames) {
+    uint32_t target_bytes = result == 0 ? frames * wave.block_align : 0U;
+    uint32_t prefix_bytes = 0U;
+    if (result == 0 && header_bytes > wave.data_offset) {
+        prefix_bytes = header_bytes - wave.data_offset;
+        if (prefix_bytes > target_bytes) prefix_bytes = target_bytes;
+        uint32_t prefix_frames = prefix_bytes / wave.block_align;
+        decode_frames(&header[wave.data_offset], prefix_frames, &wave,
+                      samples, 0U);
+        completed = prefix_frames;
+    }
+
+    uint32_t consumed_bytes = prefix_bytes;
+    uint32_t pending_bytes = result == 0
+        ? prefix_bytes % wave.block_align : 0U;
+    if (result == 0 && pending_bytes != 0U) {
+        for (uint32_t index = 0U; index < pending_bytes; ++index)
+            input[index] = header[wave.data_offset +
+                prefix_bytes - pending_bytes + index];
+        uint32_t needed = wave.block_align - pending_bytes;
+        result = read_exact(descriptor, &input[pending_bytes], needed);
+        if (result == 0) {
+            decode_frames(input, 1U, &wave, samples, completed);
+            ++completed;
+            consumed_bytes += needed;
+        }
+    }
+
+    while (result == 0 && consumed_bytes < target_bytes) {
+        uint32_t remaining_bytes = target_bytes - consumed_bytes;
         uint32_t chunk = frames - completed;
         uint32_t chunk_capacity = sizeof(input) / wave.block_align;
         if (chunk > chunk_capacity) chunk = chunk_capacity;
-        result = read_exact(descriptor, input, chunk * wave.block_align);
-        for (uint32_t index = 0U; result == 0 && index < chunk; ++index) {
-            const uint8_t *source = &input[index * wave.block_align];
-            int16_t left = decode_sample(source);
-            int16_t right = wave.channels == 1U ? left : decode_sample(&source[2]);
-            samples[(completed + index) * 2U] = left;
-            samples[(completed + index) * 2U + 1U] = right;
+        if (chunk * wave.block_align > remaining_bytes)
+            chunk = remaining_bytes / wave.block_align;
+        if (chunk == 0U) {
+            result = -84;
+            break;
         }
-        if (result == 0) completed += chunk;
+        result = read_exact(descriptor, input, chunk * wave.block_align);
+        if (result == 0) {
+            decode_frames(input, chunk, &wave, samples, completed);
+            completed += chunk;
+            consumed_bytes += chunk * wave.block_align;
+        }
     }
-    closed = x86os_close(descriptor);
+    int closed = x86os_close(descriptor);
     if (result == 0 && closed != 0) result = closed;
     if (result != 0) return result;
     reist_audio_wave_info_t published = {

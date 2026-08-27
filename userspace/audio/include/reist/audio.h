@@ -23,6 +23,8 @@
 #define REIST_AUDIO_FORMAT_S16_LE 1U
 #define REIST_AUDIO_MESSAGE_SAMPLE_BYTES 96U
 #define REIST_AUDIO_MESSAGE_FRAMES 24U
+#define REIST_AUDIO_BULK_SAMPLE_BYTES 2016U
+#define REIST_AUDIO_BULK_FRAMES 504U
 #define REIST_AUDIO_MAX_STREAM_FRAMES 15360U
 #define REIST_AUDIO_DEFAULT_TIMEOUT_MS 500U
 #define REIST_AUDIO_MAX_TIMEOUT_MS 5000U
@@ -36,6 +38,11 @@ enum reist_audio_command {
     REIST_AUDIO_COMMAND_START = 4U,
     REIST_AUDIO_COMMAND_STOP = 5U,
     REIST_AUDIO_COMMAND_CLOSE = 6U,
+    /* One-way final session message. A valid RELEASE is never answered, so
+     * no stale response can remain when the peer capability disappears. */
+    REIST_AUDIO_COMMAND_RELEASE = 7U,
+    /** Version-2 IPC payload carrying at most 504 interleaved frames. */
+    REIST_AUDIO_COMMAND_WRITE_BULK = 8U,
 };
 
 enum reist_audio_backend_state {
@@ -63,6 +70,26 @@ typedef struct {
 
 _Static_assert(sizeof(reist_audio_message_t) == 128U,
                "audio protocol message ABI changed");
+
+/** Exactly one version-2 x86os IPC payload (2048 bytes). */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t command;
+    uint32_t request_id;
+    uint32_t stream_id;
+    uint32_t stream_generation;
+    uint32_t frame_count;
+    int32_t status;
+    union {
+        int16_t samples[REIST_AUDIO_BULK_FRAMES * REIST_AUDIO_CHANNELS];
+        uint32_t words[REIST_AUDIO_BULK_SAMPLE_BYTES / sizeof(uint32_t)];
+        uint8_t bytes[REIST_AUDIO_BULK_SAMPLE_BYTES];
+    } payload;
+} reist_audio_bulk_message_t;
+
+_Static_assert(sizeof(reist_audio_bulk_message_t) == 2048U,
+               "audio bulk protocol message ABI changed");
 
 typedef struct {
     uint32_t sample_rate;
@@ -102,7 +129,11 @@ _Static_assert(sizeof(reist_audio_context_t) == 32U,
 
 /** Connect to the supervised PCM service within a finite two-second budget. */
 int reist_audio_init(reist_audio_context_t *context);
-/** Release the IPC capability; safe to call more than once. */
+/**
+ * Request graceful session release, then drop the IPC capability.
+ * The request is one-way and best effort; failure falls back to supervised
+ * endpoint rotation on the next connection. Safe to call more than once.
+ */
 void reist_audio_shutdown(reist_audio_context_t *context);
 /** Configure the finite transaction timeout (1..5000 ms). */
 int reist_audio_set_timeout(reist_audio_context_t *context,

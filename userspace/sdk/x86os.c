@@ -39,6 +39,8 @@ _Static_assert(sizeof(x86os_usb_diagnostics_t) == 212U,
                "USB diagnostics ABI size changed");
 _Static_assert(sizeof(x86os_ipc_message_t) == 140U,
                "IPC message ABI size changed");
+_Static_assert(sizeof(x86os_ipc_bulk_message_t) == 2060U,
+               "IPC bulk message ABI size changed");
 _Static_assert(sizeof(x86os_admin_storage_request_t) == 104U,
                "admin storage request ABI changed");
 _Static_assert(sizeof(x86os_admin_storage_result_t) == 128U,
@@ -195,6 +197,32 @@ int x86os_ipc_send_timeout(x86os_ipc_handle_t handle,
 int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
                               x86os_ipc_message_t* message,
                               uint32_t timeout_ms) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_RECEIVE_TIMEOUT, handle,
+                              (uintptr_t)message, timeout_ms);
+}
+
+int x86os_ipc_send_bulk(x86os_ipc_handle_t handle,
+                        const x86os_ipc_bulk_message_t* message) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_SEND, handle,
+                              (uintptr_t)message, 0);
+}
+
+int x86os_ipc_receive_bulk(x86os_ipc_handle_t handle,
+                           x86os_ipc_bulk_message_t* message) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_RECEIVE, handle,
+                              (uintptr_t)message, 0);
+}
+
+int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t handle,
+                                const x86os_ipc_bulk_message_t* message,
+                                uint32_t timeout_ms) {
+    return (int)x86os_syscall(X86OS_SYS_IPC_SEND_TIMEOUT, handle,
+                              (uintptr_t)message, timeout_ms);
+}
+
+int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t handle,
+                                   x86os_ipc_bulk_message_t* message,
+                                   uint32_t timeout_ms) {
     return (int)x86os_syscall(X86OS_SYS_IPC_RECEIVE_TIMEOUT, handle,
                               (uintptr_t)message, timeout_ms);
 }

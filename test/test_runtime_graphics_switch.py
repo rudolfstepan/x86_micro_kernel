@@ -4,6 +4,7 @@ import sys
 import struct
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,6 +14,7 @@ from run_qemu_runtime_desktop import (
     convert_screenshot_if_png,
     desktop_monitor_key_commands,
     parse_render_metrics,
+    validate_system_sound_wave,
 )
 
 
@@ -191,6 +193,41 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("screenshot_has_menu_text", self.runtime_runner)
         self.assertIn("desktop screenshot contains no menu text",
                       self.runtime_runner)
+
+    def test_runtime_sound_surface_probe_crosses_heartbeat_with_real_audio(self):
+        self.assertIn("runtime-desktop-audio", self.runtime_script)
+        self.assertIn("SoundplayerSurfaceProbe", self.runtime_script)
+        self.assertIn("--sound-probe", self.runtime_runner)
+        self.assertIn("SOUNDPLAYER_PLAYBACK_OK", self.runtime_runner)
+        self.assertIn("GUIDEMO_SURFACE_READY", self.runtime_runner)
+        self.assertIn("DESKTOP_AUDIO_HEARTBEAT_OK", self.runtime_runner)
+        self.assertIn("REIST_GUI COMPOSITOR_RESTARTED", self.runtime_runner)
+        self.assertIn("REIST_GUI COMPOSITOR_DEGRADED", self.runtime_runner)
+        self.assertIn("validate_system_sound_wave", self.runtime_runner)
+        self.assertIn("system-sound playback repeated instead of stopping",
+                      self.runtime_runner)
+        self.assertLess(self.runtime_runner.index('"intel-hda,msi=off,debug=1"'),
+                        self.runtime_runner.index('"VGA,vgamem_mb=1"'))
+
+    def test_system_sound_capture_accepts_once_and_rejects_loop(self):
+        with wave.open(str(ROOT / "assets/audio/startup.wav"), "rb") as source:
+            mono = source.readframes(source.getnframes())
+        samples = struct.unpack(f"<{len(mono) // 2}h", mono)
+        stereo = b"".join(struct.pack("<hh", sample, sample)
+                          for sample in samples)
+        with tempfile.TemporaryDirectory(prefix="reist-audio-capture-") as temp:
+            once = Path(temp) / "once.wav"
+            loop = Path(temp) / "loop.wav"
+            for path, payload in ((once, stereo), (loop, stereo * 2)):
+                with wave.open(str(path), "wb") as capture:
+                    capture.setnchannels(2)
+                    capture.setsampwidth(2)
+                    capture.setframerate(48000)
+                    capture.writeframes(payload)
+            self.assertTrue(validate_system_sound_wave(once)[0])
+            valid, detail = validate_system_sound_wave(loop)
+            self.assertFalse(valid)
+            self.assertIn("repeated instead of stopping", detail)
 
     def test_documentation_capture_uses_runtime_vga_proofs(self):
         self.assertIn("-Target qemu -Video vga", self.documentation_capture)

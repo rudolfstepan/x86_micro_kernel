@@ -32,11 +32,17 @@ uint32_t page_directory[PAGE_DIRECTORY_ENTRIES]
 static uint32_t kernel_page_tables[KERNEL_PAGE_ENTRIES][PAGE_TABLE_ENTRIES]
     __attribute__((aligned(PAGE_SIZE)));
 
+/* Every supervisor address space shares these high page tables.  Keeping the
+ * PDEs stable before the first Ring-3 process exists lets later MMIO PTEs
+ * become visible in all current and future CR3s without exposing PAGE_USER. */
+#define KERNEL_HIGH_PAGE_ENTRIES (PAGE_DIRECTORY_ENTRIES - USER_PAGE_END)
+static uint32_t
+    kernel_high_page_tables[KERNEL_HIGH_PAGE_ENTRIES][PAGE_TABLE_ENTRIES]
+    __attribute__((aligned(PAGE_SIZE)));
+
 #define LOCAL_APIC_BASE 0xFEE00000U
 #define LOCAL_APIC_DIRECTORY_INDEX (LOCAL_APIC_BASE >> 22)
 #define LOCAL_APIC_TABLE_INDEX ((LOCAL_APIC_BASE >> 12) & 0x3FFU)
-static uint32_t local_apic_page_table[PAGE_TABLE_ENTRIES]
-    __attribute__((aligned(PAGE_SIZE)));
 static bool paging_enabled;
 static bool pat_checked;
 static bool pat_write_combining;
@@ -343,7 +349,7 @@ void switch_page_directory(page_directory_t *pd) {
 void init_paging(void) {
     memset(page_directory, 0, sizeof(page_directory));
     memset(kernel_page_tables, 0, sizeof(kernel_page_tables));
-    memset(local_apic_page_table, 0, sizeof(local_apic_page_table));
+    memset(kernel_high_page_tables, 0, sizeof(kernel_high_page_tables));
 
     for (uint32_t directory_index = 0;
          directory_index < KERNEL_PAGE_ENTRIES; ++directory_index) {
@@ -362,12 +368,17 @@ void init_paging(void) {
             PAGE_PRESENT | PAGE_RW;
     }
 
+    for (uint32_t directory_index = USER_PAGE_END;
+         directory_index < PAGE_DIRECTORY_ENTRIES; ++directory_index) {
+        page_directory[directory_index] =
+            (uint32_t)(uintptr_t)kernel_high_page_tables[
+                directory_index - USER_PAGE_END] | PAGE_PRESENT | PAGE_RW;
+    }
+
     /* LAPIC MMIO sits near 4 GB and needs an uncached supervisor mapping. */
-    local_apic_page_table[LOCAL_APIC_TABLE_INDEX] =
+    kernel_high_page_tables[
+        LOCAL_APIC_DIRECTORY_INDEX - USER_PAGE_END][LOCAL_APIC_TABLE_INDEX] =
         LOCAL_APIC_BASE | PAGE_PRESENT | PAGE_RW | PAGE_CACHE_DISABLE;
-    page_directory[LOCAL_APIC_DIRECTORY_INDEX] =
-        (uint32_t)(uintptr_t)local_apic_page_table |
-        PAGE_PRESENT | PAGE_RW;
 
     /* Boot-stack and task-stack guards must fault before any stack data can
      * corrupt an adjacent object.  Task stack pages are mapped on demand. */
@@ -572,59 +583,96 @@ int copy_string_from_user(char *destination, size_t capacity,
     return -1;
 }
 
-void *map_kernel_mmio(uint32_t physical_address, size_t length) {
-    if (length == 0 || length > UINT32_MAX - physical_address) return NULL;
+#define KERNEL_MMIO_MAX_BYTES (64U * 1024U * 1024U)
 
-    /* Identity-mapped MMIO inside the user virtual window would alias a
-     * process-private PDE and disappear (or become user-accessible) on CR3
-     * switches.  A dedicated high-MMIO virtual allocator is required before
-     * such BARs can be supported safely. */
-    uint32_t final_address = physical_address + (uint32_t)length - 1U;
-    if ((physical_address >= USER_BASE && physical_address < USER_TOP) ||
-        (final_address >= USER_BASE && final_address < USER_TOP) ||
-        (physical_address < USER_BASE && final_address >= USER_BASE)) {
-        return NULL;
-    }
-
-    uint32_t first = physical_address & ~(PAGE_SIZE - 1U);
-    uint32_t end_address = final_address;
-    uint32_t last = end_address & ~(PAGE_SIZE - 1U);
-
-    for (uint32_t page = first;; page += PAGE_SIZE) {
-        if (map_page(paging_kernel_directory(), page, page,
-                     PAGE_RW | PAGE_CACHE_DISABLE) != 0) {
-            return NULL;
-        }
-        if (page == last) break;
-        if (page > UINT32_MAX - PAGE_SIZE) return NULL;
-    }
-    return (void*)(uintptr_t)physical_address;
-}
-
-void *map_kernel_write_combining(uint32_t physical_address, size_t length) {
-    if (!prepare_pat_write_combining() || length == 0U ||
+static void *map_kernel_identity_range(page_directory_t *directory,
+                                       uint32_t physical_address,
+                                       size_t length, uint32_t flags) {
+    if (directory != paging_kernel_directory() || length == 0U ||
+        length > KERNEL_MMIO_MAX_BYTES ||
         length > UINT32_MAX - physical_address) return NULL;
-
     uint32_t final_address = physical_address + (uint32_t)length - 1U;
     if ((physical_address >= USER_BASE && physical_address < USER_TOP) ||
         (final_address >= USER_BASE && final_address < USER_TOP) ||
-        (physical_address < USER_BASE && final_address >= USER_BASE)) {
+        (physical_address < USER_BASE && final_address >= USER_BASE))
         return NULL;
-    }
 
     uint32_t first = physical_address & ~(PAGE_SIZE - 1U);
     uint32_t last = final_address & ~(PAGE_SIZE - 1U);
-    __asm__ __volatile__("wbinvd" : : : "memory");
+    uint32_t expected_flags = PAGE_PRESENT |
+        (flags & (PAGE_RW | PAGE_PAT_INDEX_1 | PAGE_CACHE_DISABLE));
+    uint32_t irq_flags = page_table_lock_acquire_irq();
+    bool valid = true;
+    bool changed = false;
+
+    /* Validate the complete range before publishing any PTE.  Existing exact
+     * identity mappings are idempotent.  An uncached device aperture may also
+     * retain an already-established write-combining identity page (the early
+     * framebuffer does this before display_control_prepare()).  That is the
+     * same physical mapping with a stricter device-memory cache policy, not an
+     * alias.  All other cache-mode, privilege or physical conflicts fail
+     * closed without partially changing the aperture. */
     for (uint32_t page = first;; page += PAGE_SIZE) {
-        if (map_page(paging_kernel_directory(), page, page,
-                     PAGE_RW | PAGE_PAT_INDEX_1) != 0) {
-            return NULL;
+        uint32_t directory_index = page >> 22U;
+        uint32_t pde = ((uint32_t *)directory->entries)[directory_index];
+        if ((pde & (PAGE_PRESENT | PAGE_USER)) != PAGE_PRESENT) {
+            valid = false;
+            break;
+        }
+        uint32_t *table =
+            (uint32_t *)(uintptr_t)(pde & 0xFFFFF000U);
+        uint32_t existing = table[(page >> 12U) & 0x3FFU] &
+            ~(PAGE_ACCESSED | PAGE_DIRTY);
+        uint32_t existing_flags = existing & (PAGE_SIZE - 1U);
+        bool exact = existing == (page | expected_flags);
+        bool compatible_wc =
+            (expected_flags & PAGE_CACHE_DISABLE) != 0U &&
+            existing == (page | PAGE_PRESENT | PAGE_RW |
+                          PAGE_PAT_INDEX_1);
+        if (existing != 0U &&
+            ((!exact && !compatible_wc) ||
+             (existing & ~(PAGE_SIZE - 1U)) != page ||
+             (existing_flags & PAGE_USER) != 0U)) {
+            valid = false;
+            break;
         }
         if (page == last) break;
-        if (page > UINT32_MAX - PAGE_SIZE) return NULL;
     }
+
+    if (valid) {
+        for (uint32_t page = first;; page += PAGE_SIZE) {
+            uint32_t pde = ((uint32_t *)directory->entries)[page >> 22U];
+            uint32_t *table =
+                (uint32_t *)(uintptr_t)(pde & 0xFFFFF000U);
+            uint32_t table_index = (page >> 12U) & 0x3FFU;
+            if ((table[table_index] & PAGE_PRESENT) == 0U) {
+                table[table_index] = page | expected_flags;
+                changed = true;
+            }
+            if (page == last) break;
+        }
+        if (changed)
+            tlb_shootdown_or_panic(
+                directory, first, true);
+    }
+    page_table_lock_release_irq(irq_flags);
+    return valid ? (void *)(uintptr_t)physical_address : NULL;
+}
+
+void *map_kernel_mmio(uint32_t physical_address, size_t length) {
+    return map_kernel_identity_range(
+        paging_kernel_directory(), physical_address, length,
+        PAGE_RW | PAGE_CACHE_DISABLE);
+}
+
+void *map_kernel_write_combining(uint32_t physical_address, size_t length) {
+    if (!prepare_pat_write_combining()) return NULL;
     __asm__ __volatile__("wbinvd" : : : "memory");
-    return (void*)(uintptr_t)physical_address;
+    void *mapping = map_kernel_identity_range(
+        paging_kernel_directory(), physical_address, length,
+        PAGE_RW | PAGE_PAT_INDEX_1);
+    __asm__ __volatile__("wbinvd" : : : "memory");
+    return mapping;
 }
 
 int map_page(page_directory_t *pd, uint32_t virtual_address,
@@ -667,9 +715,19 @@ int map_page(page_directory_t *pd, uint32_t virtual_address,
         }
     }
 
-    table[table_index] = physical_address | PAGE_PRESENT |
-                         (flags & (PAGE_RW | PAGE_USER | PAGE_PAT_INDEX_1 |
-                                   PAGE_CACHE_DISABLE));
+    uint32_t expected = physical_address | PAGE_PRESENT |
+        (flags & (PAGE_RW | PAGE_USER | PAGE_PAT_INDEX_1 |
+                  PAGE_CACHE_DISABLE));
+    uint32_t existing = table[table_index] & ~(PAGE_ACCESSED | PAGE_DIRTY);
+    if (existing != 0U && existing != expected) {
+        page_table_lock_release_irq(irq_flags);
+        return -1;
+    }
+    if (existing == expected) {
+        page_table_lock_release_irq(irq_flags);
+        return 0;
+    }
+    table[table_index] = expected;
     tlb_shootdown_or_panic(pd, virtual_address, false);
     page_table_lock_release_irq(irq_flags);
     return 0;

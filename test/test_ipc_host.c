@@ -104,6 +104,23 @@ static void prepare_receive(ipc_message_t *message_out) {
     message_out->struct_size = sizeof(*message_out);
 }
 
+static ipc_bulk_message_t bulk_message(uint32_t length, uint8_t seed) {
+    ipc_bulk_message_t result;
+    memset(&result, 0xA5, sizeof(result));
+    result.version = IPC_BULK_MESSAGE_VERSION;
+    result.struct_size = sizeof(result);
+    result.length = length;
+    for (uint32_t index = 0U; index < length; ++index)
+        result.payload[index] = (uint8_t)(seed + index);
+    return result;
+}
+
+static void prepare_bulk_receive(ipc_bulk_message_t *message_out) {
+    memset(message_out, 0, sizeof(*message_out));
+    message_out->version = IPC_BULK_MESSAGE_VERSION;
+    message_out->struct_size = sizeof(*message_out);
+}
+
 static int test_rights_fifo_and_bounds(void) {
     Process owner = process(10, 1U);
     Process child = process(11, 3U);
@@ -339,6 +356,35 @@ static int test_global_endpoint_quota(void) {
     return 0;
 }
 
+static int test_quiescent_owner_validation(void) {
+    Process owner = process(35, 2U);
+    Process peer = process(36, 4U);
+    ipc_handle_t handle = 0U;
+    ipc_message_t value = message(0x63U);
+    ipc_message_t received;
+
+    ipc_init();
+    CHECK(ipc_create(&owner, &handle) == 0);
+    CHECK(ipc_endpoint_validate_quiescent_owner(
+              owner.pid, owner.generation, handle) == 0);
+    CHECK(ipc_endpoint_validate_quiescent_owner(
+              owner.pid, owner.generation + 1U, handle) == -9);
+    CHECK(ipc_delegate(&owner, handle, &peer,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
+    CHECK(ipc_endpoint_validate_quiescent_owner(
+              owner.pid, owner.generation, handle) == -16);
+    CHECK(ipc_send(&peer, handle, &value) == 0);
+    CHECK(ipc_release(&peer, handle) == 0);
+    CHECK(ipc_endpoint_validate_quiescent_owner(
+              owner.pid, owner.generation, handle) == -16);
+    prepare_receive(&received);
+    CHECK(ipc_receive(&owner, handle, &received) == 0);
+    CHECK(ipc_endpoint_validate_quiescent_owner(
+              owner.pid, owner.generation, handle) == 0);
+    CHECK(ipc_close(&owner, handle) == 0);
+    return 0;
+}
+
 static int test_kernel_to_owner_ingress_without_peer(void) {
     Process owner = process(40, 5U);
     ipc_handle_t handle = 0U;
@@ -357,6 +403,59 @@ static int test_kernel_to_owner_ingress_without_peer(void) {
     CHECK(ipc_send_kernel_to_owner(owner.pid + 1, owner.generation, handle,
                                    &ingress) == -9);
     CHECK(ipc_close(&owner, handle) == 0);
+    return 0;
+}
+
+static int test_bulk_rendezvous_and_compatibility(void) {
+    Process owner = process(45, 2U);
+    Process peer = process(46, 3U);
+    ipc_handle_t handle = 0U;
+    ipc_init();
+    CHECK(ipc_create(&owner, &handle) == 0);
+    CHECK(ipc_delegate(&owner, handle, &peer,
+                       IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE) == 0);
+
+    ipc_bulk_message_t bulk = bulk_message(1500U, 0x31U);
+    CHECK(ipc_send_bulk_timeout(&owner, handle, &bulk, 0U) == 0);
+    ipc_message_t small_receive;
+    prepare_receive(&small_receive);
+    CHECK(ipc_receive_timeout(&peer, handle, &small_receive, 0U) == -11);
+    CHECK(ipc_send_bulk_timeout(&owner, handle, &bulk, 0U) == -11);
+    ipc_bulk_message_t received;
+    prepare_bulk_receive(&received);
+    CHECK(ipc_receive_bulk_timeout(&peer, handle, &received, 0U) == 0);
+    CHECK(received.version == IPC_BULK_MESSAGE_VERSION &&
+          received.struct_size == sizeof(received) &&
+          received.length == 1500U);
+    for (uint32_t index = 0U; index < received.length; ++index)
+        CHECK(received.payload[index] == (uint8_t)(0x31U + index));
+    for (uint32_t index = received.length;
+         index < IPC_BULK_MAX_MESSAGE_SIZE; ++index)
+        CHECK(received.payload[index] == 0U);
+
+    ipc_message_t small = message(0x77U);
+    CHECK(ipc_send(&owner, handle, &small) == 0);
+    CHECK(ipc_send_bulk_timeout(&owner, handle, &bulk, 0U) == 0);
+    prepare_bulk_receive(&received);
+    CHECK(ipc_receive_bulk_timeout(&peer, handle, &received, 0U) == 0);
+    CHECK(received.version == IPC_MESSAGE_VERSION &&
+          received.struct_size == sizeof(ipc_message_t) &&
+          received.length == 1U && received.payload[0] == 0x77U);
+    prepare_bulk_receive(&received);
+    CHECK(ipc_receive_bulk_timeout(&peer, handle, &received, 0U) == 0);
+    CHECK(received.version == IPC_BULK_MESSAGE_VERSION &&
+          received.length == 1500U);
+    ipc_resource_stats_t stats;
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.queued_messages == 0U && stats.message_high_water == 2U);
+
+    CHECK(ipc_send_bulk_timeout(&owner, handle, &bulk, 0U) == 0);
+    CHECK(ipc_fault_inject(IPC_FAULT_BULK_PAYLOAD, 0U, 0U, 4U, 1U) == 0);
+    prepare_bulk_receive(&received);
+    CHECK(ipc_receive_bulk_timeout(&peer, handle, &received, 0U) ==
+          IPC_EINTEGRITY);
+    CHECK(ipc_resource_stats(&stats) == 0);
+    CHECK(stats.active_endpoints == 0U && stats.queued_messages == 0U);
     return 0;
 }
 
@@ -439,7 +538,11 @@ int main(void) {
     if (result != 0) return result;
     result = test_message_stress_without_resource_growth();
     if (result != 0) return result;
+    result = test_quiescent_owner_validation();
+    if (result != 0) return result;
     result = test_kernel_to_owner_ingress_without_peer();
+    if (result != 0) return result;
+    result = test_bulk_rendezvous_and_compatibility();
     if (result != 0) return result;
     return test_integrity_fault_injection();
 }

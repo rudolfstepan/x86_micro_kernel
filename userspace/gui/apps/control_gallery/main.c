@@ -2,20 +2,29 @@
  * @file userspace/gui/apps/control_gallery/main.c
  * @brief Interactive gallery for the currently implemented REIST GUI API.
  *
- * This program is a temporary full-screen graphical client while the Surface
- * IPC protocol is still pending. It consumes only public x86os and
- * libreistgui headers; it does not include compositor-private state.
+ * The compositor delegates exactly one Surface endpoint. The gallery owns no
+ * global display or raw-input authority and never blocks the desktop while it
+ * is open.
  */
 #include "x86os.h"
 #include "reist/gui/control.h"
 #include "reist/gui/container.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/menu.h"
+#include "reist/gui/surface_client.h"
 #include "reist/gui/tabs.h"
 #include "reist/gui/value_controls.h"
 
 #define GALLERY_MENU_COUNT 3U
 #define GALLERY_TEXT_LIMIT 128U
+#define GALLERY_SURFACE_EVENT_BATCH_LIMIT 32U
+#define GALLERY_SURFACE_CREATE_ATTEMPTS 250U
+#define GALLERY_DEFAULT_WIDTH 800U
+#define GALLERY_DEFAULT_HEIGHT 600U
+#define GALLERY_MIN_WIDTH 640U
+#define GALLERY_MIN_HEIGHT 480U
+#define GALLERY_FONT_WIDTH 8U
+#define GALLERY_FONT_HEIGHT 16U
 
 enum {
     GALLERY_KEY_NONE = 0x100,
@@ -113,6 +122,8 @@ static const uint32_t color_active = 0x00000088U;
 static const uint32_t color_inactive = 0x00787878U;
 static const uint32_t color_text = 0x00000000U;
 static const uint32_t color_title_text = 0x00FFFFFFU;
+static reist_gui_surface_client_t *gallery_surface;
+static uint32_t gallery_paint_failed;
 
 static const reist_gui_menu_item_t gallery_items[] = {
     {"Beenden", GALLERY_ACTION_EXIT, 0U, 0U, 0U},
@@ -283,9 +294,10 @@ static void decimal_text(int32_t value, char output[16]) {
 }
 
 static void fill(reist_gui_rect_t rect, uint32_t color) {
-    if (rect.width != 0U && rect.height != 0U)
-        (void)x86os_fill_rect(
-            rect.x, rect.y, rect.width, rect.height, color);
+    if (gallery_surface != 0 && rect.width != 0U && rect.height != 0U &&
+        reist_gui_surface_client_paint_fill(
+            gallery_surface, rect, color) != 0)
+        gallery_paint_failed = 1U;
 }
 
 static void text(const x86os_display_info_t *display,
@@ -296,9 +308,13 @@ static void text(const x86os_display_info_t *display,
     size_t length = bounded_length(value, GALLERY_TEXT_LIMIT);
     size_t capacity = maximum_width / display->font_width;
     if (length > capacity) length = capacity;
-    if (length != 0U)
-        (void)x86os_draw_text_pixels(
-            x, y, value, length, foreground, background);
+    if (length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY)
+        length = REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U;
+    if (gallery_surface != 0 && length != 0U &&
+        reist_gui_surface_client_paint_text(
+            gallery_surface, x, y, maximum_width, value, (uint32_t)length,
+            foreground, background) != 0)
+        gallery_paint_failed = 1U;
 }
 
 static void bevel(reist_gui_rect_t rect, uint32_t face, uint32_t raised) {
@@ -812,15 +828,15 @@ static void render_scene(const x86os_display_info_t *display,
     render_dialog(display, state);
 }
 
-static void render(const x86os_display_info_t *display,
-                   const gallery_state_t *state) {
-    uint32_t serial = 0U;
-    uint32_t transaction = x86os_display_frame_begin(&serial) == 0;
+static int render(reist_gui_surface_client_t *client,
+                  const x86os_display_info_t *display,
+                  const gallery_state_t *state) {
+    gallery_surface = client;
+    gallery_paint_failed = 0U;
+    if (reist_gui_surface_client_paint_begin(client) != 0) return -1;
     render_scene(display, state);
-    if (transaction && x86os_display_frame_commit(serial) != 0) {
-        (void)x86os_display_frame_cancel(serial);
-        render_scene(display, state);
-    }
+    if (gallery_paint_failed != 0U) return -1;
+    return reist_gui_surface_client_paint_commit(client);
 }
 
 static int initialize(gallery_state_t *state,
@@ -1649,155 +1665,168 @@ static uint32_t dispatch_keyboard(gallery_state_t *state,
     return apply_control_result(state, display, &result);
 }
 
-static int read_key(void) {
-    int key = x86os_getchar_nonblocking();
-    if (key != 0x1B) return key;
-    int prefix = x86os_getchar_nonblocking();
-    if (prefix == 0) return GALLERY_KEY_ESCAPE;
-    if (prefix != '[') return GALLERY_KEY_NONE;
-    int value = x86os_getchar_nonblocking();
-    if (value == 0) return GALLERY_KEY_NONE;
-    if (value == 'A') return GALLERY_KEY_UP;
-    if (value == 'B') return GALLERY_KEY_DOWN;
-    if (value == 'C') return GALLERY_KEY_RIGHT;
-    if (value == 'D') return GALLERY_KEY_LEFT;
-    for (uint32_t consumed = 0U;
-         consumed < 4U && value >= 0x30 && value <= 0x3F; ++consumed) {
-        value = x86os_getchar_nonblocking();
-        if (value == 0) return GALLERY_KEY_NONE;
-    }
-    return GALLERY_KEY_NONE;
+static void display_from_surface(x86os_display_info_t *display,
+                                 const reist_gui_surface_client_t *client) {
+    display->version = X86OS_DISPLAY_ABI_VERSION;
+    display->struct_size = sizeof(*display);
+    display->width = client->width;
+    display->height = client->height;
+    display->pitch = client->width * 4U;
+    display->bits_per_pixel = 32U;
+    display->red_field_position = 16U;
+    display->red_mask_size = 8U;
+    display->green_field_position = 8U;
+    display->green_mask_size = 8U;
+    display->blue_field_position = 0U;
+    display->blue_mask_size = 8U;
+    display->font_width = GALLERY_FONT_WIDTH;
+    display->font_height = GALLERY_FONT_HEIGHT;
 }
 
-static void move_pointer(const x86os_display_info_t *display,
-                         int32_t *x, int32_t *y,
-                         int32_t delta_x, int32_t delta_y) {
-    int64_t next_x = (int64_t)*x + delta_x;
-    int64_t next_y = (int64_t)*y + delta_y;
-    if (next_x < 0) next_x = 0;
-    if (next_y < 0) next_y = 0;
-    if (next_x >= display->width) next_x = display->width - 1U;
-    if (next_y >= display->height) next_y = display->height - 1U;
-    *x = (int32_t)next_x;
-    *y = (int32_t)next_y;
+static int validate_gallery(const gallery_state_t *state,
+                            const x86os_display_info_t *display) {
+    reist_gui_menu_layout_t menu_metrics = menu_layout(display);
+    reist_gui_dialog_layout_t dialog_metrics = dialog_layout(display);
+    return reist_gui_menu_validate(
+            &gallery_menu_model, &menu_metrics, &state->menu) != 0 ||
+        reist_gui_dialog_validate(
+            &modeless_dialog_model, &dialog_metrics, &state->dialog) != 0 ||
+        reist_gui_dialog_validate(
+            &modal_dialog_model, &dialog_metrics, &state->dialog) != 0 ||
+        reist_gui_dialog_validate(
+            &about_dialog_model, &dialog_metrics, &state->dialog) != 0 ||
+        reist_gui_control_validate(
+            &state->control_model, &state->control) != 0 ||
+        reist_gui_tabs_validate(&state->tab_model, &state->tabs) != 0 ||
+        reist_gui_tree_validate(&state->tree_model) != 0 ||
+        reist_gui_text_validate(&state->text_model, &state->text_field) != 0 ||
+        reist_gui_list_validate(&state->list_model, &state->list) != 0 ||
+        reist_gui_range_validate(
+            &state->scrollbar_model, &state->scrollbar) != 0 ||
+        reist_gui_range_validate(&state->slider_model, &state->slider) != 0 ||
+        reist_gui_range_validate(&state->spin_model, &state->spin) != 0 ||
+        reist_gui_range_validate(&state->progress_model, &state->progress) != 0
+        ? -1 : 0;
 }
 
 int main(int argc, char **argv) {
-    x86os_display_info_t display;
-    uint32_t runtime_activated = 0U;
     if (argc == 2 && argv != 0 && text_equal(argv[1], "--help")) {
-        x86os_puts("Usage: guidemo\n");
+        x86os_puts("Usage: guidemo --reist-surface=<handle>\n");
         return 0;
     }
-    if (argc != 1) {
-        x86os_puts("Usage: guidemo [--help]\n");
+    x86os_ipc_handle_t endpoint = 0U;
+    if (argc != 2 ||
+        reist_gui_surface_endpoint_from_argv(argc, argv, &endpoint) != 0) {
+        x86os_puts("guidemo: compositor endpoint required\n");
         return 2;
     }
-    if (x86os_display_info(&display) != 0) {
-        if (x86os_display_activate() == 0) runtime_activated = 1U;
-        if (x86os_display_info(&display) != 0) {
-            x86os_puts("guidemo: Grafikmodus nicht verfuegbar\n");
-            return 1;
+
+    reist_gui_surface_client_t client;
+    int result = reist_gui_surface_client_init(&client, endpoint);
+    if (result == 0) {
+        result = -9;
+        for (uint32_t attempt = 0U;
+             attempt < GALLERY_SURFACE_CREATE_ATTEMPTS; ++attempt) {
+            result = reist_gui_surface_client_create(
+                &client, REIST_GUI_SURFACE_ROLE_TOPLEVEL,
+                GALLERY_DEFAULT_WIDTH, GALLERY_DEFAULT_HEIGHT);
+            if (result == 0 || (result != -9 && result != -13)) break;
+            (void)x86os_sleep_ms(1U);
         }
     }
-    if (display.version != X86OS_DISPLAY_ABI_VERSION ||
-        display.struct_size < sizeof(display) ||
-        display.width < 320U || display.height < 240U ||
-        display.font_width == 0U || display.font_height == 0U) {
-        if (runtime_activated) (void)x86os_display_deactivate();
-        x86os_puts("guidemo: ungueltige Display-ABI\n");
+    if (result == 0)
+        result = reist_gui_surface_client_ack_configure(
+            &client, client.configured_serial);
+    if (result == 0)
+        result = reist_gui_surface_client_set_title(
+            &client, "REIST GUI Control Gallery");
+    if (result != 0 || client.width < GALLERY_MIN_WIDTH ||
+        client.height < GALLERY_MIN_HEIGHT) {
+        if (result == 0) (void)reist_gui_surface_client_destroy(&client);
+        (void)x86os_ipc_release(endpoint);
         return 1;
     }
 
-    gallery_state_t state;
-    if (initialize(&state, &display) != 0) {
-        if (runtime_activated) (void)x86os_display_deactivate();
+    static gallery_state_t state;
+    x86os_display_info_t display;
+    display_from_surface(&display, &client);
+    if (initialize(&state, &display) != 0 ||
+        validate_gallery(&state, &display) != 0) {
         x86os_puts("guidemo: Control-API/Layout nicht kompatibel\n");
+        (void)reist_gui_surface_client_destroy(&client);
+        (void)x86os_ipc_release(endpoint);
         return 1;
     }
-    reist_gui_menu_layout_t menu_metrics = menu_layout(&display);
-    reist_gui_dialog_layout_t dialog_metrics = dialog_layout(&display);
-    if (reist_gui_menu_validate(
-            &gallery_menu_model, &menu_metrics, &state.menu) != 0 ||
-        reist_gui_dialog_validate(
-            &modeless_dialog_model, &dialog_metrics, &state.dialog) != 0 ||
-        reist_gui_dialog_validate(
-            &modal_dialog_model, &dialog_metrics, &state.dialog) != 0 ||
-        reist_gui_dialog_validate(
-            &about_dialog_model, &dialog_metrics, &state.dialog) != 0 ||
-        reist_gui_control_validate(
-            &state.control_model, &state.control) != 0 ||
-        reist_gui_tabs_validate(&state.tab_model, &state.tabs) != 0 ||
-        reist_gui_tree_validate(&state.tree_model) != 0 ||
-        reist_gui_text_validate(&state.text_model, &state.text_field) != 0 ||
-        reist_gui_list_validate(&state.list_model, &state.list) != 0 ||
-        reist_gui_range_validate(
-            &state.scrollbar_model, &state.scrollbar) != 0 ||
-        reist_gui_range_validate(&state.slider_model, &state.slider) != 0 ||
-        reist_gui_range_validate(&state.spin_model, &state.spin) != 0 ||
-        reist_gui_range_validate(&state.progress_model, &state.progress) != 0) {
-        if (runtime_activated) (void)x86os_display_deactivate();
-        x86os_puts("guidemo: GUI-API/Layout nicht kompatibel\n");
-        return 1;
-    }
-
-    int32_t pointer_x = (int32_t)(display.width / 2U);
-    int32_t pointer_y = (int32_t)(display.height / 2U);
-    uint32_t previous_buttons = 0U;
     x86os_puts("GUIDEMO_OK\n");
-    render(&display, &state);
+    result = render(&client, &display, &state);
+    if (result != 0) {
+        (void)reist_gui_surface_client_destroy(&client);
+        (void)x86os_ipc_release(endpoint);
+        return 1;
+    }
     state.redraw = 0U;
-    (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+    x86os_puts("GUIDEMO_SURFACE_READY\n");
 
     while (!state.exit_requested) {
-        int key = read_key();
-        uint32_t mouse_count = 0U;
-        for (; mouse_count < 32U; ++mouse_count) {
-            x86os_mouse_event_t mouse;
-            if (x86os_mouse_event(&mouse) != 0) break;
-            move_pointer(&display, &pointer_x, &pointer_y,
-                         mouse.delta_x, mouse.delta_y);
-            (void)dispatch_pointer(
-                &state, &display, pointer_x, pointer_y, 0U, 0U);
-            uint32_t left =
-                (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
-            uint32_t previous =
-                (previous_buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
-            if (left && !previous)
-                (void)dispatch_pointer(
-                    &state, &display, pointer_x, pointer_y, 1U, 1U);
-            else if (!left && previous)
-                (void)dispatch_pointer(
-                    &state, &display, pointer_x, pointer_y, 1U, 0U);
-            previous_buttons = mouse.buttons;
-        }
-
-        if (key != 0 && key != GALLERY_KEY_NONE) {
-            uint32_t consumed = dispatch_keyboard(&state, &display, key);
-            if (!consumed && key == GALLERY_KEY_ESCAPE)
+        uint32_t processed = 0U;
+        for (; processed < GALLERY_SURFACE_EVENT_BATCH_LIMIT; ++processed) {
+            reist_gui_surface_message_t message;
+            int receive = reist_gui_surface_client_receive(
+                &client, &message, 0U);
+            if (receive == -11) break;
+            if (receive != 0) {
+                result = receive;
                 state.exit_requested = 1U;
+                break;
+            }
+            if (message.type == REIST_GUI_SURFACE_CLOSE) {
+                state.exit_requested = 1U;
+            } else if (message.type == REIST_GUI_SURFACE_CONFIGURE) {
+                result = reist_gui_surface_client_accept_configure(
+                    &client, &message);
+                if (result == 0 && client.width >= GALLERY_MIN_WIDTH &&
+                    client.height >= GALLERY_MIN_HEIGHT) {
+                    display_from_surface(&display, &client);
+                    result = initialize(&state, &display);
+                    if (result == 0)
+                        result = validate_gallery(&state, &display);
+                } else if (result == 0) result = -22;
+                if (result != 0) state.exit_requested = 1U;
+                else state.redraw = 1U;
+            } else if (message.type == REIST_GUI_SURFACE_INPUT &&
+                       message.input.type ==
+                           REIST_GUI_SURFACE_INPUT_POINTER_MOTION) {
+                (void)dispatch_pointer(
+                    &state, &display, message.input.x, message.input.y,
+                    0U, 0U);
+            } else if (message.type == REIST_GUI_SURFACE_INPUT &&
+                       message.input.type ==
+                           REIST_GUI_SURFACE_INPUT_POINTER_BUTTON) {
+                (void)dispatch_pointer(
+                    &state, &display, message.input.x, message.input.y,
+                    1U, message.input.pressed);
+            } else if (message.type == REIST_GUI_SURFACE_INPUT &&
+                       message.input.type ==
+                           REIST_GUI_SURFACE_INPUT_KEYBOARD &&
+                       message.input.pressed) {
+                int key = (int)message.input.key;
+                uint32_t consumed = dispatch_keyboard(
+                    &state, &display, key);
+                if (!consumed && key == GALLERY_KEY_ESCAPE)
+                    state.exit_requested = 1U;
+            }
         }
         if (state.redraw) {
-            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            render(&display, &state);
+            result = render(&client, &display, &state);
             state.redraw = 0U;
-            (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-        } else if (mouse_count != 0U) {
-            (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-        } else {
+            if (result != 0) state.exit_requested = 1U;
+        } else if (processed == 0U) {
             (void)x86os_sleep_ms(5U);
         }
     }
 
-    (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-    if (runtime_activated) {
-        if (x86os_display_deactivate() != 0) {
-            x86os_puts("guidemo: VGA-Rueckkehr fehlgeschlagen\n");
-            return 1;
-        }
-    } else {
-        x86os_clear();
-    }
+    (void)reist_gui_surface_client_destroy(&client);
+    (void)x86os_ipc_release(endpoint);
     x86os_puts("GUIDEMO_EXIT_OK\n");
-    return 0;
+    return result == 0 ? 0 : 1;
 }

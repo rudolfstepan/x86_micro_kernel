@@ -22,6 +22,7 @@
 #include "include/kernel/storage_service.h"
 #include "drivers/net/netstack.h"
 #include "drivers/net/netdev.h"
+#include "drivers/char/serial.h"
 #include "drivers/video/display_control.h"
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
@@ -5017,6 +5018,30 @@ static bool copy_driver_string(char *destination, size_t capacity,
     return true;
 }
 
+static void driver_abort_prepared_spawn(
+        supervisor_driver_runtime_t *runtime,
+        supervisor_driver_control_t *control, int pid, uint32_t generation,
+        device_domain_handle_t device) {
+    if (pid > 0 && generation != 0U && device != 0U) {
+        (void)device_domain_fence(pid, generation, device);
+        (void)process_terminate(pid);
+        uint64_t now_ms = pit_monotonic_ms();
+        if (runtime != NULL)
+            (void)device_domain_recover_owner(
+                pid, generation, deadline_after(
+                    now_ms, runtime->config.recovery_timeout_ms));
+    } else if (pid > 0) {
+        (void)process_terminate(pid);
+    }
+    if (runtime == NULL || control == NULL) return;
+    control->pid = 0;
+    control->process_generation = 0U;
+    control->device = 0U;
+    control->channel = 0U;
+    control->fenced = 1U;
+    (void)driver_control_write(runtime, control);
+}
+
 static bool driver_spawn_next(supervisor_driver_runtime_t *runtime,
                               supervisor_handle_t supervisor_handle) {
     supervisor_driver_control_t control;
@@ -5027,14 +5052,29 @@ static bool driver_spawn_next(supervisor_driver_runtime_t *runtime,
     const char *arguments[] = {runtime->path};
     uint32_t affinity = runtime->config.cpu_affinity_mask == 0U
         ? TASK_CPU_MASK_BSP : runtime->config.cpu_affinity_mask;
-    int pid = process_spawn_supervised_affined(
-        runtime->path, 1, arguments, PROCESS_DOMAIN_DRIVER, affinity);
+    /* The driver must not bootstrap until its complete generation-scoped
+     * control record is visible. HDA and video startup can otherwise expose a
+     * publish-after-run race in which bootstrap observes no matching owner.
+     * Keep the task PREPARED while affinity, device authority and protected
+     * control state are committed, then make it runnable exactly once. */
+    int pid = process_spawn_supervised_prepared(
+        runtime->path, 1, arguments, PROCESS_DOMAIN_DRIVER);
     uint32_t generation = 0U;
     device_domain_handle_t device = 0U;
-    if (pid <= 0 || process_get_identity(pid, &generation) != 0 ||
-        device_domain_claim(pid, generation, control.device_index,
+    if (pid <= 0 || process_get_identity(pid, &generation) != 0) {
+        driver_abort_prepared_spawn(
+            runtime, &control, pid, generation, device);
+        return false;
+    }
+    if (process_set_supervised_affinity(pid, generation, affinity) != 0) {
+        driver_abort_prepared_spawn(
+            runtime, &control, pid, generation, device);
+        return false;
+    }
+    if (device_domain_claim(pid, generation, control.device_index,
                             control.mode, &device) != 0) {
-        if (pid > 0) (void)process_terminate(pid);
+        driver_abort_prepared_spawn(
+            runtime, &control, pid, generation, device);
         return false;
     }
     control.pid = pid;
@@ -5043,12 +5083,13 @@ static bool driver_spawn_next(supervisor_driver_runtime_t *runtime,
     control.supervisor = supervisor_handle;
     control.fenced = 1U;
     if (driver_control_write(runtime, &control) != 0) {
-        (void)device_domain_fence(pid, generation, device);
-        (void)process_terminate(pid);
-        uint64_t now_ms = pit_monotonic_ms();
-        (void)device_domain_recover_owner(
-            pid, generation, deadline_after(
-                now_ms, runtime->config.recovery_timeout_ms));
+        driver_abort_prepared_spawn(
+            runtime, &control, pid, generation, device);
+        return false;
+    }
+    if (process_start_prepared_supervised(pid, generation) != 0) {
+        driver_abort_prepared_spawn(
+            runtime, &control, pid, generation, device);
         return false;
     }
     return true;
@@ -5194,6 +5235,23 @@ int supervisor_set_device_driver_current_affinity(
         control.pid, control.process_generation, cpu_affinity_mask);
 }
 
+static void driver_diagnostic_serial(const char *name, uint32_t value) {
+    static const char hex[] = "0123456789ABCDEF";
+    serial_write_string(SERIAL_COM1, "REIST_DRIVER DIAGNOSTIC name=");
+    uint32_t name_length = 0U;
+    while (name != NULL && name[name_length] != '\0' &&
+           name_length + 1U < SUPERVISOR_NAME_CAPACITY) {
+        serial_write_char(SERIAL_COM1, name[name_length]);
+        ++name_length;
+    }
+    serial_write_string(SERIAL_COM1, " value=");
+    for (uint32_t nibble = 0U; nibble < 8U; ++nibble) {
+        uint32_t shift = 28U - nibble * 4U;
+        serial_write_char(SERIAL_COM1, hex[(value >> shift) & 0x0FU]);
+    }
+    serial_write_char(SERIAL_COM1, '\n');
+}
+
 int supervisor_device_driver_bootstrap(
         int pid, uint32_t process_generation,
         device_domain_driver_bootstrap_t *bootstrap) {
@@ -5236,8 +5294,7 @@ int supervisor_device_driver_report(
     if (report->report_type == DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC) {
         if (report->value == 0U) result = -22;
         else {
-            printf("REIST_DRIVER DIAGNOSTIC name=%s value=%08X\n",
-                   runtime->name, report->value);
+            driver_diagnostic_serial(runtime->name, report->value);
             result = 0;
         }
     } else if (report->report_type ==
@@ -5669,6 +5726,23 @@ static int audio_service_report_if_identity(
                     control.pid, control.process_generation,
                     control.post_ready_cpu_affinity_mask);
         }
+    } else if (report_type == REIST_REPORT_AUDIO_CLIENT_RELEASED) {
+        if (value != 1U || control.fenced != 0U ||
+            control.healthy == 0U || control.ready == 0U ||
+            control.endpoint == IPC_INVALID_HANDLE) result = -13;
+        else if (ipc_endpoint_validate_quiescent_owner(
+                     control.pid, control.process_generation,
+                     control.endpoint) != 0) result = -13;
+        else if (control.client_pid == 0 &&
+                 control.client_generation == 0U) result = 0;
+        else if (control.client_pid <= 0 ||
+                 control.client_generation == 0U) result = -84;
+        else {
+            control.client_pid = 0;
+            control.client_generation = 0U;
+            result = audio_service_control_write(&control);
+            if (result == 0) printf("REIST_AUDIO CLIENT_RELEASED\n");
+        }
     }
     if (result != 0) (void)supervisor_force_isolate(control.supervisor);
     return result;
@@ -5739,9 +5813,15 @@ static bool compositor_spawn_next(supervisor_handle_t handle) {
     if (compositor_control_read(&control) != 0 || control.active == 0U ||
         control.administratively_enabled == 0U || control.pid != 0 ||
         control.fenced == 0U) return false;
+#ifdef REIST_SOUNDPLAYER_SURFACE_PROBE
+    const char *arguments[] = {"desktop.prg", "--sound-probe"};
+    const int argument_count = 2;
+#else
     const char *arguments[] = {"desktop.prg"};
+    const int argument_count = 1;
+#endif
     int pid = process_spawn_supervised_prepared(
-        SUPERVISOR_COMPOSITOR_PATH, 1, arguments,
+        SUPERVISOR_COMPOSITOR_PATH, argument_count, arguments,
         PROCESS_DOMAIN_COMPOSITOR);
     uint32_t generation = 0U;
     if (pid <= 0 || process_get_identity(pid, &generation) != 0) {

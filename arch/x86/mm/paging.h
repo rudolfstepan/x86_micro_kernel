@@ -54,6 +54,8 @@
 #define PAGE_USER 0x4
 #define PAGE_PAT_INDEX_1 0x8
 #define PAGE_CACHE_DISABLE 0x10
+#define PAGE_ACCESSED 0x20
+#define PAGE_DIRTY 0x40
 #define X86_TLB_SHOOTDOWN_VECTOR 0xF1U
 
 #include <stdbool.h>

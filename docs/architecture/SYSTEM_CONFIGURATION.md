@@ -1,6 +1,6 @@
 # System- und Programmkonfiguration
 
-Stand: 20. August 2026.
+Stand: 27. August 2026.
 
 REIST OS verwendet fuer systemweit veraenderbare Einstellungen das Verzeichnis
 `/etc/reist`. Die Konfiguration bleibt damit von Programmen unter `/usr`,
@@ -15,6 +15,7 @@ getrennt.
 | `/etc/reist/input.conf` | Tastatur, Maus und Eingabeverhalten | Systemverwaltung |
 | `/etc/reist/desktop.conf` | Desktop-, Theme- und Explorer-Vorgaben | Systemverwaltung |
 | `/etc/reist/filetypes.conf` | Dateiendungen und zugeordnete GUI-Programme | Systemverwaltung |
+| `/etc/reist/sounds.conf` | Systemereignisse und zugeordnete WAV-Dateien | Systemverwaltung |
 | `/usr/share/reist/defaults/` | spaetere unveraenderliche Herstellerwerte | nur Systemabbild |
 | `/var/lib/reist/` | spaetere dauerhafte Laufzeitdaten, keine Konfiguration | jeweiliger Dienst |
 | `$HOME/.config/reist/` | spaetere benutzerspezifische Ueberschreibungen | jeweiliger Benutzer |
@@ -82,7 +83,42 @@ einen modalen Desktopfehler. Ausfuehrbare `.prg`-Dateien bleiben eine feste
 Dateiklasse und werden nicht durch Konfiguration umgedeutet. Das zugeordnete
 Programm erhaelt den kanonischen Dateipfad als `argv[1]`.
 
-Der aktuelle Stand verpackt die vier systemweiten Standarddateien in das
+## Systemklangzuordnungen
+
+`sounds.conf` verwendet `schema=reist.sounds/1`. Die vollstaendige
+Standarddatei lautet sinngemaess:
+
+```text
+schema=reist.sounds/1
+enabled=true
+event.startup=/usr/share/sounds/startup.wav
+event.shutdown=/usr/share/sounds/shutdown.wav
+event.error=/usr/share/sounds/error.wav
+event.notification=/usr/share/sounds/notify.wav
+event.trash_drop=/usr/share/sounds/trash-drop.wav
+event.trash_empty=/usr/share/sounds/trash-empty.wav
+```
+
+`event.notification` folgt nur einem echten Informationsdialog. Das Öffnen
+eines Ordners oder der erfolgreiche Start einer Datei beziehungsweise eines
+Programms löst keinen Systemklang aus, weil der einzelne Audio-Clientendpunkt
+für das gestartete Programm frei bleiben muss.
+`event.trash_drop` folgt ausschließlich einem erfolgreich committed
+Verschieben in den Papierkorb; `event.trash_empty` folgt ausschließlich einer
+vollständig erfolgreichen endgültigen Löschung. Teilfehler erzeugen stattdessen
+den Fehlerton.
+
+Jeder Ereigniswert ist entweder `none` oder ein kanonischer kleingeschriebener
+`.wav`-Pfad direkt unter `/usr/share/sounds`; weitere Unterverzeichnisse,
+Traversal, Steuerzeichen und fremde Dateiendungen werden abgewiesen. Eine
+ungueltige Tabelle wird nie teilweise aktiv. Der Desktop spielt solche
+Ereignisse nur ueber begrenzte Ring-3-Kinder und haelt selbst keine
+Audio-Service-Capability. Die stabilen Schluessel sind bereits durch
+`config.prg set sounds ...` mutierbar und bilden damit die spaetere
+Systemsteuerungsoberflaeche ab; die aktuelle Systemsteuerung bietet diese
+Auswahl noch nicht grafisch an.
+
+Der aktuelle Stand verpackt die fuenf systemweiten Standarddateien in das
 FAT-Systemabbild. `libreistos` enthaelt einen gemeinsamen Parser mit 4096 Byte
 Dateigroesse, 160 Byte Zeilenlaenge, 32 Eintraegen sowie festen Schluessel- und
 Wertgrenzen. `config.prg` ist die einzige von der grafischen Systemsteuerung

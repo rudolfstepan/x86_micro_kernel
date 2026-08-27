@@ -31,7 +31,9 @@ DMA_POOL_READY = (
 )
 AUDIOINFO_OK = "REIST audio: ready"
 AUDIOTEST_OK = "Audio test complete."
+AUDIO_CLIENT_RELEASED = "REIST_AUDIO CLIENT_RELEASED"
 AUDIO_TEST_CYCLES = 5
+QEMU_CREATION_FLAGS = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
 FAIL_MARKERS = (
     "PANIC:", "KERNEL ASSERTION FAILED", "Kernel exception:",
     "REIST_AUDIO DRIVER_DEGRADED", "REIST_AUDIO SERVICE_DEGRADED",
@@ -233,6 +235,7 @@ def main() -> int:
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, encoding="utf-8",
         errors="replace", bufsize=1,
+        creationflags=QEMU_CREATION_FLAGS,
     )
     transcript: list[str] = []
 
@@ -289,14 +292,30 @@ def main() -> int:
             if not detail and not wait_for(transcript, AUDIOINFO_OK, deadline):
                 detail = "audioinfo did not confirm the PCM service"
             if not detail:
+                release_baseline = "".join(transcript).count(
+                    AUDIO_CLIENT_RELEASED)
+                if not wait_for_count(
+                        transcript, AUDIO_CLIENT_RELEASED,
+                        release_baseline + 1, deadline):
+                    detail = "audioinfo did not release its clean client session"
+                else:
+                    release_baseline += 1
+            if not detail:
                 # More cycles than the service restart budget prove that
-                # normal short-lived clients rotate their endpoint generation
+                # explicit one-way RELEASE handshakes reuse a clean endpoint
                 # without being misclassified as service failures.
                 for cycle in range(1, AUDIO_TEST_CYCLES + 1):
                     inject_ps2_command(process, "audiotest")
                     if not wait_for_count(
                             transcript, AUDIOTEST_OK, cycle, deadline):
                         detail = f"audiotest cycle {cycle} did not complete"
+                        break
+                    if not wait_for_count(
+                            transcript, AUDIO_CLIENT_RELEASED,
+                            release_baseline + cycle, deadline):
+                        detail = (
+                            f"audiotest cycle {cycle} did not release its "
+                            "clean client session")
                         break
                 if (not detail and args.smp > 1 and not wait_for(
                         transcript, "REIST_AUDIO HDA_AP_EXEC cpu=", deadline)):
@@ -305,10 +324,10 @@ def main() -> int:
                         "on an AP")
                 if (not detail and (args.expect_audio_service_smp or
                                     args.expect_audio_service_smp_restart) and
-                        not wait_for_count(
+                        not wait_for(
                             transcript, "REIST_AUDIO SERVICE_AP_EXEC cpu=",
-                            AUDIO_TEST_CYCLES, deadline)):
-                    detail = "not every rotated audio service executed on an AP"
+                            deadline)):
+                    detail = "the reusable audio service did not execute on an AP"
     finally:
         if process.poll() is None:
             try:

@@ -21,10 +21,11 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         self.assertIn('#include "reist/gui/container.h"', self.source)
         self.assertIn('#include "reist/gui/tabs.h"', self.source)
         self.assertIn('#include "reist/gui/value_controls.h"', self.source)
+        self.assertIn('#include "reist/gui/surface_client.h"', self.source)
         self.assertNotIn("desktop_wm", self.source)
         self.assertNotRegex(
             self.source, r"\b(malloc|calloc|realloc|free)\s*\(")
-        self.assertIn("temporary full-screen graphical client", self.source)
+        self.assertIn("exactly one Surface endpoint", self.source)
 
     def test_gallery_demonstrates_real_dialogs_and_basic_controls(self):
         self.assertIn("REIST_GUI_DIALOG_MODELESS", self.source)
@@ -40,14 +41,20 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         self.assertIn("Keine geplante Komponente wird als fertig", self.source)
 
     def test_gallery_lifecycle_and_input_work_are_bounded(self):
-        self.assertIn("x86os_display_activate", self.source)
-        self.assertIn("x86os_display_deactivate", self.source)
-        self.assertIn("x86os_display_frame_begin", self.source)
-        self.assertIn("x86os_display_frame_commit", self.source)
+        self.assertIn("reist_gui_surface_endpoint_from_argv", self.source)
+        self.assertIn("reist_gui_surface_client_create", self.source)
+        self.assertIn("reist_gui_surface_client_paint_begin", self.source)
+        self.assertIn("reist_gui_surface_client_paint_commit", self.source)
+        self.assertIn("reist_gui_surface_client_receive", self.source)
+        self.assertIn("reist_gui_surface_client_destroy", self.source)
+        self.assertNotIn("x86os_display_activate", self.source)
+        self.assertNotIn("x86os_display_deactivate", self.source)
+        self.assertNotIn("x86os_mouse_event", self.source)
+        self.assertNotIn("x86os_getchar_nonblocking", self.source)
+        self.assertNotIn("x86os_pointer_update", self.source)
         self.assertIn('text_equal(argv[1], "--help")', self.source)
-        self.assertIn('x86os_puts("Usage: guidemo\\n")', self.source)
-        self.assertIn("mouse_count < 32U", self.source)
-        self.assertIn("consumed < 4U", self.source)
+        self.assertIn("GALLERY_SURFACE_EVENT_BATCH_LIMIT 32U", self.source)
+        self.assertIn("GALLERY_SURFACE_CREATE_ATTEMPTS 250U", self.source)
         self.assertIn("x86os_sleep_ms(5U)", self.source)
 
     def test_basic_control_layout_has_one_label_and_outline_only_focus(self):

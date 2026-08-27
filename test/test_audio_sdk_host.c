@@ -7,6 +7,7 @@
 #include "reist/audio.h"
 
 static x86os_ipc_message_t last_message;
+static x86os_ipc_bulk_message_t last_bulk_message;
 static uint32_t send_count;
 static uint32_t receive_count;
 static uint32_t release_count;
@@ -67,7 +68,7 @@ int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
         response.payload.words[0] = REIST_AUDIO_SAMPLE_RATE;
         response.payload.words[1] = REIST_AUDIO_CHANNELS;
         response.payload.words[2] = REIST_AUDIO_FORMAT_S16_LE;
-        response.payload.words[3] = REIST_AUDIO_MESSAGE_FRAMES;
+        response.payload.words[3] = REIST_AUDIO_BULK_FRAMES;
         response.payload.words[4] = REIST_AUDIO_MAX_STREAM_FRAMES;
         response.payload.words[5] = REIST_AUDIO_BACKEND_READY;
     } else if (response.command ==
@@ -78,6 +79,50 @@ int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
     if (corrupt_request_id != 0U) ++response.request_id;
     message->version = X86OS_IPC_MESSAGE_VERSION;
     message->struct_size = sizeof(*message);
+    message->length = sizeof(response);
+    memcpy(message->payload, &response, sizeof(response));
+    return 0;
+}
+
+int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t handle,
+                                const x86os_ipc_bulk_message_t *message,
+                                uint32_t timeout_ms) {
+    assert(handle == 7U);
+    assert(message != NULL);
+    assert(message->version == X86OS_IPC_BULK_MESSAGE_VERSION);
+    assert(message->struct_size == sizeof(*message));
+    assert(message->length == sizeof(reist_audio_bulk_message_t));
+    assert(timeout_ms > 0U && timeout_ms <= REIST_AUDIO_MAX_TIMEOUT_MS);
+    ++send_count;
+    if (fail_send_at != 0U && send_count == fail_send_at) return -11;
+    last_bulk_message = *message;
+    return 0;
+}
+
+int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t handle,
+                                   x86os_ipc_bulk_message_t *message,
+                                   uint32_t timeout_ms) {
+    assert(handle == 7U);
+    assert(message != NULL);
+    assert(timeout_ms > 0U && timeout_ms <= REIST_AUDIO_MAX_TIMEOUT_MS);
+    ++receive_count;
+    reist_audio_bulk_message_t request;
+    memcpy(&request, last_bulk_message.payload, sizeof(request));
+    assert(request.command == REIST_AUDIO_COMMAND_WRITE_BULK);
+    assert(request.frame_count > 0U &&
+           request.frame_count <= REIST_AUDIO_BULK_FRAMES);
+    reist_audio_message_t response;
+    memset(&response, 0, sizeof(response));
+    response.version = REIST_AUDIO_PROTOCOL_VERSION;
+    response.struct_size = sizeof(response);
+    response.command = request.command | REIST_AUDIO_RESPONSE_FLAG;
+    response.request_id = request.request_id;
+    response.stream_id = request.stream_id;
+    response.stream_generation = request.stream_generation;
+    if (corrupt_request_id != 0U) ++response.request_id;
+    memset(message, 0, sizeof(*message));
+    message->version = X86OS_IPC_MESSAGE_VERSION;
+    message->struct_size = sizeof(x86os_ipc_message_t);
     message->length = sizeof(response);
     memcpy(message->payload, &response, sizeof(response));
     return 0;
@@ -107,6 +152,9 @@ int main(void) {
     assert(info.preferred_format.sample_rate == REIST_AUDIO_SAMPLE_RATE);
     assert(info.preferred_format.channels == REIST_AUDIO_CHANNELS);
     assert(info.preferred_format.format == REIST_AUDIO_FORMAT_S16_LE);
+    assert(REIST_AUDIO_BULK_FRAMES == 504U);
+    assert((REIST_AUDIO_MAX_STREAM_FRAMES + REIST_AUDIO_BULK_FRAMES - 1U) /
+           REIST_AUDIO_BULK_FRAMES == 31U);
 
     reist_audio_stream_t stream = {0};
     reist_audio_format_t bad = {44100U, 2U, REIST_AUDIO_FORMAT_S16_LE};
@@ -120,22 +168,22 @@ int main(void) {
     assert(reist_audio_open(&context, &format, &stream) == 0);
     assert(stream.id == 1U && stream.generation == 9U);
 
-    int16_t samples[REIST_AUDIO_MESSAGE_FRAMES * 2U * REIST_AUDIO_CHANNELS];
+    int16_t samples[REIST_AUDIO_BULK_FRAMES * 2U * REIST_AUDIO_CHANNELS];
     for (size_t index = 0U; index < sizeof(samples) / sizeof(samples[0]);
          ++index) samples[index] = (int16_t)(index + 1U);
     before = send_count;
     assert(reist_audio_write(
         &context, stream, samples, REIST_AUDIO_MESSAGE_FRAMES * 2U) ==
         (int)(REIST_AUDIO_MESSAGE_FRAMES * 2U));
-    assert(send_count == before + 2U);
+    assert(send_count == before + 1U);
 
     /* A later block failure is surfaced as an explicit POSIX-style short
      * write; already accepted frames are never hidden behind an errno. */
     before = send_count;
     fail_send_at = send_count + 2U;
     assert(reist_audio_write(
-        &context, stream, samples, REIST_AUDIO_MESSAGE_FRAMES * 2U) ==
-        (int)REIST_AUDIO_MESSAGE_FRAMES);
+        &context, stream, samples, REIST_AUDIO_BULK_FRAMES * 2U) ==
+        (int)REIST_AUDIO_BULK_FRAMES);
     assert(send_count == before + 2U);
     fail_send_at = 0U;
 
@@ -147,7 +195,13 @@ int main(void) {
     corrupt_request_id = 1U;
     assert(reist_audio_get_info(&context, &info) == -84);
     corrupt_request_id = 0U;
+    uint32_t receives_before_shutdown = receive_count;
     reist_audio_shutdown(&context);
+    reist_audio_message_t release;
+    memcpy(&release, last_message.payload, sizeof(release));
+    assert(release.command == REIST_AUDIO_COMMAND_RELEASE);
+    assert(release.stream_id == 0U && release.stream_generation == 0U);
+    assert(receive_count == receives_before_shutdown);
     reist_audio_shutdown(&context);
     assert(release_count == 1U);
     assert(receive_count > 0U);

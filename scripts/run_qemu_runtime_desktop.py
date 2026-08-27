@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import array
 import binascii
 import pathlib
 import queue
@@ -12,18 +13,23 @@ import subprocess
 import sys
 import threading
 import time
+import wave
 import zlib
 
 from run_qemu_smoke import (
     QEMU_MUX_SWITCH,
     SHELL_PROMPT,
     monitor_key_commands,
+    qemu_command,
+    qemu_monitor_command,
     stop_process,
 )
+from run_qemu_pci_audio import finalize_qemu_wave
 
 
 METRICS_VERSION = 1
 RENDER_PROBE_STEPS = 8
+QEMU_CREATION_FLAGS = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
 METRIC_KEYS = {
     "version", "full_frames", "full_total_ms", "full_max_ms",
     "dirty_frames", "dirty_total_ms", "dirty_max_ms",
@@ -33,6 +39,48 @@ METRIC_KEYS = {
     "clock_errors", "probe_errors",
 }
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def validate_system_sound_wave(path: pathlib.Path) -> tuple[bool, str]:
+    """Require one bounded non-silent stereo S16 system-sound interval."""
+    if not path.is_file():
+        return False, "QEMU did not create the audio capture"
+    try:
+        with wave.open(str(path), "rb") as capture:
+            channels = capture.getnchannels()
+            width = capture.getsampwidth()
+            rate = capture.getframerate()
+            frames = capture.getnframes()
+            payload = capture.readframes(frames)
+    except (OSError, EOFError, wave.Error) as error:
+        return False, f"invalid WAV capture: {error}"
+    if channels != 2 or width != 2 or rate != 48000 or frames == 0:
+        return False, (f"unexpected WAV format channels={channels} "
+                       f"width={width} rate={rate} frames={frames}")
+    samples = array.array("h")
+    samples.frombytes(payload)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    left = samples[0::channels]
+    right = samples[1::channels]
+    if left != right:
+        return False, "system-sound capture is not duplicated mono stereo"
+    first = next((index for index, value in enumerate(left) if value != 0), -1)
+    last = next((len(left) - 1 - index for index, value in
+                 enumerate(reversed(left)) if value != 0), -1)
+    if first < 0 or last <= first:
+        return False, "system-sound capture contains silence only"
+    active = left[first:last + 1]
+    if len(active) < rate // 20:
+        return False, f"system-sound interval too short: {len(active)} frames"
+    if len(active) > rate // 2:
+        return False, ("system-sound playback repeated instead of stopping: "
+                       f"{len(active)} active frames")
+    peak = max(abs(value) for value in active)
+    if peak < 512:
+        return False, f"system-sound level is too low: peak={peak}"
+    return True, (f"stereo S16 system sound frames={frames} "
+                  f"active={len(active)} peak={peak}")
 
 
 def parse_render_metrics(text: str) -> tuple[dict[str, int], str]:
@@ -252,25 +300,30 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         surface_probe: bool, notepad_probe: bool,
         control_probe: bool, trash_context_probe: bool,
         trash_confirm_probe: bool,
-        metrics_log: pathlib.Path | None, vmware_vga: bool) -> int:
-    command = [
-        str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
-    ]
-    if vmware_vga:
-        command.extend(["-vga", "vmware"])
-    else:
+        sound_probe: bool, metrics_log: pathlib.Path | None,
+        vmware_vga: bool) -> int:
+    audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
+    if sound_probe and audio_capture.exists():
+        audio_capture.unlink()
+    command = qemu_command(
+        qemu, image, memory="512M", vmware_vga=vmware_vga)
+    if sound_probe:
+        command.extend([
+            "-audiodev",
+            (f"wav,id=reistaudio,path={audio_capture},out.frequency=48000,"
+             "out.channels=2,out.format=s16"),
+            "-device", "intel-hda,msi=off,debug=1",
+            "-device", "hda-output,audiodev=reistaudio,debug=1",
+        ])
+    if not vmware_vga:
         command.extend([
             "-device", "VGA,vgamem_mb=1" if expect_failure else "VGA"
         ])
-    command.extend([
-        "-m", "512M", "-display", "none",
-        "-monitor", "none", "-serial", "mon:stdio", "-no-reboot",
-        "-snapshot", "-drive", f"file={image},format=raw,if=ide,index=0",
-    ])
     process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, text=True,
-                               encoding="utf-8", errors="replace", bufsize=0)
+                               encoding="utf-8", errors="replace", bufsize=0,
+                               creationflags=QEMU_CREATION_FLAGS)
     assert process.stdout is not None
     output: queue.Queue[str] = queue.Queue()
     finished = threading.Event()
@@ -295,11 +348,13 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 if notepad_probe else
                                 ("desktop.prg --control-probe"
                                  if control_probe else
+                                 ("desktop.prg --sound-probe"
+                                  if sound_probe else
                                  ("desktop.prg --trash-context-probe"
                                   if trash_context_probe else
                                   ("desktop.prg --trash-confirm-probe"
                                    if trash_confirm_probe else
-                                   "desktop.prg")))))
+                                   "desktop.prg"))))))
                 send_command(process, command_name)
                 break
             time.sleep(0.02)
@@ -310,6 +365,19 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     "DESKTOP_OK" in text):
                 supervised_boot_detected = True
             else:
+                try:
+                    capture_screenshot(
+                        process, screenshot, time.monotonic() + 2.0
+                    )
+                except RuntimeError:
+                    pass
+                try:
+                    qemu_monitor_command(process, "info registers")
+                    time.sleep(0.1)
+                    drain(output, transcript)
+                    text = "".join(transcript)
+                except (BrokenPipeError, OSError, RuntimeError):
+                    pass
                 tail = text[-8000:].replace("\r", "")
                 raise RuntimeError(
                     "supervised desktop or VGA shell prompt not observed; "
@@ -329,6 +397,44 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     capture_screenshot(process, screenshot, deadline)
                     print("runtime-desktop: PASS supervised-generation")
                     return 0
+                if sound_probe:
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        for failure in (
+                                "REIST_GUI COMPOSITOR_RESTARTED",
+                                "REIST_GUI COMPOSITOR_DEGRADED",
+                                "DESKTOP_AUDIO_FAIL",
+                                "SOUNDPLAYER_AUDIO_FAIL"):
+                            if failure in probe_text:
+                                time.sleep(0.5)
+                                drain(output, transcript)
+                                probe_text = "".join(transcript)
+                                tail = probe_text[-8000:].replace("\r", "")
+                                raise RuntimeError(
+                                    "audio Surface lifecycle failed: "
+                                    f"{failure}; guest tail:\n{tail}"
+                                )
+                        if ("SOUNDPLAYER_PLAYBACK_OK" in probe_text and
+                                "GUIDEMO_SURFACE_READY" in probe_text and
+                                "DESKTOP_AUDIO_HEARTBEAT_OK" in probe_text):
+                            capture_screenshot(process, screenshot, deadline)
+                            stop_process(process)
+                            finalized, detail = finalize_qemu_wave(audio_capture)
+                            if not finalized:
+                                raise RuntimeError(detail)
+                            valid, detail = validate_system_sound_wave(
+                                audio_capture)
+                            if not valid:
+                                raise RuntimeError(detail)
+                            print(f"runtime-desktop-audio: PASS {detail}")
+                            return 0
+                        time.sleep(0.02)
+                    tail = "".join(transcript)[-2000:].replace("\r", "")
+                    raise RuntimeError(
+                        "Sound Player did not cross the compositor heartbeat "
+                        f"deadline; guest tail:\n{tail}"
+                    )
                 if render_probe:
                     while time.monotonic() < deadline:
                         drain(output, transcript)
@@ -500,7 +606,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 raise RuntimeError(
                     f"desktop did not restore the VGA shell; guest tail:\n{tail}")
             if "desktop: Grafikmodus nicht verfuegbar" in text:
-                tail = text[-1600:].replace("\r", "")
+                tail = text[-12000:].replace("\r", "")
                 raise RuntimeError(
                     "native runtime graphics activation failed; "
                     f"guest tail:\n{tail}"
@@ -526,12 +632,14 @@ def main() -> int:
     parser.add_argument("--control-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
+    parser.add_argument("--sound-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     parser.add_argument("--vmware-vga", action="store_true")
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.control_probe,
-            args.trash_context_probe, args.trash_confirm_probe)) > 1:
+            args.trash_context_probe, args.trash_confirm_probe,
+            args.sound_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
     if args.metrics_log is not None and not args.render_probe:
         parser.error("--metrics-log requires --render-probe")
@@ -540,7 +648,7 @@ def main() -> int:
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
-                   args.metrics_log, args.vmware_vga)
+                   args.sound_probe, args.metrics_log, args.vmware_vga)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

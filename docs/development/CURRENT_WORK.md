@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R2.2ai – Sound Player auf die Surface-Lebenszyklusgrenze migrieren
+Aktives Thema: R2.2ai – Audio-GUI-Containment und konfigurierbare Systemklänge
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -117,14 +117,49 @@ AMD-Board wird derzeit nicht weiter benutzt; deshalb bleiben R2.2af, R2.2ag
 und R2.2ah ohne Produktionskandidat abgebrochen. Insbesondere wird aus dem
 AMD-Befund keine allgemeine Storage-/Startup-Admission-Änderung abgeleitet.
 
-Der danach beobachtete Desktopausfall beim Abspielen einer WAV-Datei ist
-reproduzierbar aus dem Quellvertrag erklärt: `soundplayer.prg` ist noch ein
-synchron gestarteter Vollbildclient. Der Compositor blockiert deshalb in
-`x86os_wait()` und verpasst während der Wiedergabe seinen 500-ms-Heartbeat.
-Nach der festen Zwei-Sekunden-Grenze werden nacheinander alle drei
-Restartbudgets verbraucht. R2.2ai migriert den Sound Player auf den bereits
-vorhandenen delegierten Surface-Vertrag und beweist gleichzeitig echte
-440-Hz-Wiedergabe sowie fortlaufende Compositor-Heartbeats.
+Die danach unter VMware und Zielhardware beobachteten Desktopausfälle beim
+Abspielen einer WAV-Datei und beim Start der alten Control Gallery haben
+dieselbe Quellursache: Beide Programme waren synchron gestartete
+Vollbildclients. Der Compositor blockierte deshalb in `x86os_wait()` und
+verpasste seinen 500-ms-Heartbeat; nach zwei Sekunden wurden nacheinander die
+drei Restartbudgets verbraucht. R2.2ai migriert beide Programme auf den
+delegierten Surface-Vertrag und beweist gleichzeitig die einmalige echte
+Wiedergabe des paketierten Startklangs, beide aktiven Clients und fortlaufende
+Compositor-Heartbeats.
+
+Zum selben Audio-Lifecycle gehören sechs eigenständig erzeugte, unter CC0
+freigegebene Systemklänge. `reist.sounds/1` ordnet Start, Ende, Fehler
+und Benachrichtigung sowie erfolgreiches Papierkorb-Drop und endgültiges
+Leeren festen WAV-Pfaden oder `none` zu; der bestehende
+Konfigurationsdienst ist bereits die spätere Mutationsgrenze für die
+Systemsteuerung. Der Desktop hält keine Audio-Capability, sondern startet
+höchstens zwei generationengeprüfte `wavplay`-Kinder und wartet nie auf ein
+lebendes Kind. Ein sauberer Clientwechsel benötigt das antwortlose
+Audio-`RELEASE`, den tatsächlichen Peer-Entzug und einen zusätzlich in Ring 0
+geprüften leeren IPC-Endpunkt; ein Crash behält die vollständige
+Servicegenerationrotation.
+
+Der VMware-Befund beim Doppelklick auf WAV-Dateien war keine HDA-Störung:
+Ordneröffnungen und erfolgreiche Programmstarts lösten fälschlich
+`event.notification` aus. Das kurzlebige `wavplay`-Kind belegte dadurch den
+einzelnen Audio-Clientendpunkt, während der Sound Player denselben Endpunkt
+öffnen wollte. Navigation und erfolgreiche Datei-/Programmaktivierung bleiben
+nun still; Benachrichtigungsklang ist echten Informationsdialogen vorbehalten.
+Der danach weiterhin beobachtete Fehler war im Seriellog eindeutig
+`SOUNDPLAYER_AUDIO_FAIL stage=start status=-110`: Der Sound Player hatte die
+öffentliche 500-ms-Audiofrist lokal auf 100 ms verkürzt, obwohl der vermittelte
+Service-zu-HDA-Start selbst bis zu 500 ms beanspruchen darf. Er verwendet nun
+die öffentliche Standardfrist; schnelle Starts erhalten dadurch keine
+zusätzliche Wartezeit, nur der Fail-Closed-Abbruch bleibt ausreichend groß.
+
+Die beobachtete WAV-Startverzögerung hatte eine eigene, reproduzierbare
+Ursache: 96 PCM-Bytes im v1-Payload erforderten für 15360 Frames bis zu 640
+synchrone Roundtrips, bevor `START` gesendet wurde. Der append-only IPC-v2-Pfad
+überträgt nun 2016 PCM-Bytes beziehungsweise 504 Stereo-Frames pro Block in
+einem getrennten CRC-geschützten Rendezvous-Slot. V1 bleibt bytegleich; eine
+maximale Vorschau benötigt höchstens 31 bestätigte Schreibvorgänge. Der
+Preview-Loader öffnet und liest die WAV-Datei nur einmal, und der Sound Player
+startet die Wiedergabe vor seiner Surface-Konstruktion.
 
 Der im anschließenden Rescue-Shell-Bild sichtbare USB-Fehler ist eine getrennte
 xHCI-Enumerationsgrenze: `config=59` bezeichnet die Länge des gelesenen

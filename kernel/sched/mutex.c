@@ -59,6 +59,11 @@ int kernel_mutex_lock_until(kernel_mutex_t *mutex, uint64_t deadline_ms) {
     if (!kernel_mutex_owner_identity(&identity))
         return KERNEL_MUTEX_INVALID;
 
+    /* A task that currently cannot sleep may still take an uncontended or
+     * recursive mutex.  Snapshot that permission before irq_save(): actual
+     * contention must fail bounded instead of entering a wait queue. */
+    bool may_block = scheduler_can_sleep();
+
     /* A per-CPU kernel context is not a runnable scheduler task. Keep it on
      * the CPU while it owns a mutex, otherwise a timer switch can strand an
      * owner_task=-1 lock indefinitely. Kernel contexts never wait. */
@@ -68,8 +73,6 @@ int kernel_mutex_lock_until(kernel_mutex_t *mutex, uint64_t deadline_ms) {
          * other kernel mutexes balanced regardless of unlock order. */
         scheduler_preempt_disable();
         kernel_preempt_guard = true;
-    } else if (identity.task >= 0) {
-        KASSERT_CAN_SLEEP();
     }
 
     for (;;) {
@@ -96,15 +99,15 @@ int kernel_mutex_lock_until(kernel_mutex_t *mutex, uint64_t deadline_ms) {
         }
 
         uint64_t now = pit_monotonic_ms();
+        if (identity.task < 0 || !may_block) {
+            spinlock_release_irq(&mutex->state_lock, flags);
+            if (kernel_preempt_guard) scheduler_preempt_enable();
+            return KERNEL_MUTEX_WOULD_BLOCK;
+        }
         if (now >= deadline_ms) {
             spinlock_release_irq(&mutex->state_lock, flags);
             if (kernel_preempt_guard) scheduler_preempt_enable();
             return KERNEL_MUTEX_WAIT_TIMEOUT;
-        }
-        if (identity.task < 0) {
-            spinlock_release_irq(&mutex->state_lock, flags);
-            if (kernel_preempt_guard) scheduler_preempt_enable();
-            return KERNEL_MUTEX_WOULD_BLOCK;
         }
 
         int result = wait_queue_block_until_spinlocked(

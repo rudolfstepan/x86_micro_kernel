@@ -21,6 +21,32 @@ class PagingSourceRegressionTests(unittest.TestCase):
         self.assertIn("paging_kernel_directory()", body)
         self.assertIn("PAGE_CACHE_DISABLE", body)
 
+    def test_high_mmio_uses_shared_tables_and_one_bounded_range_shootdown(self):
+        source = (ROOT / "arch/x86/mm/paging.c").read_text(encoding="utf-8")
+        self.assertIn("kernel_high_page_tables", source)
+        init_start = source.index("void init_paging")
+        init_body = source[init_start:source.index("bool paging_is_enabled",
+                                                   init_start)]
+        self.assertIn("directory_index = USER_PAGE_END", init_body)
+        self.assertIn("kernel_high_page_tables[", init_body)
+
+        range_start = source.index("static void *map_kernel_identity_range")
+        range_body = source[range_start:source.index("void *map_kernel_mmio",
+                                                     range_start)]
+        self.assertIn("KERNEL_MMIO_MAX_BYTES", range_body)
+        self.assertEqual(range_body.count("page_table_lock_acquire_irq()"), 1)
+        self.assertEqual(range_body.count("tlb_shootdown_or_panic("), 1)
+        self.assertIn("(existing & ~(PAGE_SIZE - 1U)) != page", range_body)
+        self.assertIn("(existing_flags & PAGE_USER) != 0U", range_body)
+        self.assertIn("bool compatible_wc", range_body)
+        self.assertIn("PAGE_PAT_INDEX_1", range_body)
+
+        mmio_start = source.index("void *map_kernel_mmio")
+        mmio_body = source[mmio_start:source.index(
+            "void *map_kernel_write_combining", mmio_start)]
+        self.assertIn("map_kernel_identity_range", mmio_body)
+        self.assertNotIn("map_page(", mmio_body)
+
     def test_e1000_maps_the_complete_register_window(self):
         source = (ROOT / "drivers/net/e1000.c").read_text(encoding="utf-8")
         self.assertIn("#define E1000_MMIO_SIZE", source)

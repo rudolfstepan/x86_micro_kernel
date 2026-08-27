@@ -256,7 +256,8 @@ class DeviceDomainTests(unittest.TestCase):
         self.assertIn("PROCESS_DOMAIN_DRIVER = 6", header)
         self.assertIn("if (kind == PROCESS_DOMAIN_DRIVER)", process)
         profile = process[process.index("if (kind == PROCESS_DOMAIN_DRIVER)"):]
-        profile = profile[:profile.index("if (kind != PROCESS_DOMAIN_PROBE)")]
+        profile = profile[:profile.index(
+            "if (kind == PROCESS_DOMAIN_AUDIO_SERVICE)")]
         for syscall in ("SYS_IPC_CREATE", "SYS_IPC_SEND_TIMEOUT",
                         "SYS_MONOTONIC_MS", "SYS_DEVICE_CONTROL",
                         "SYS_DISPLAY_CONTROL"):

@@ -39,11 +39,17 @@ class ReistConfigSourceTests(unittest.TestCase):
         source = (ROOT / "userspace/services/config/config_service.c").read_text(
             encoding="utf-8")
         for path in ("/etc/reist/system.conf", "/etc/reist/input.conf",
-                     "/etc/reist/desktop.conf"):
+                     "/etc/reist/desktop.conf", "/etc/reist/sounds.conf"):
             self.assertIn(path, source)
-        for schema in ("reist.system/1", "reist.input/1", "reist.desktop/1"):
+        for schema in ("reist.system/1", "reist.input/1", "reist.desktop/1",
+                       "reist.sounds/1"):
             self.assertIn(schema, source)
         self.assertIn("validate_setting", source)
+        self.assertIn("sound_path_valid", source)
+        self.assertIn('text_equal(key, "event.notification")', source)
+        self.assertIn('text_equal(key, "event.trash_drop")', source)
+        self.assertIn('text_equal(key, "event.trash_empty")', source)
+        self.assertIn('text_equal(value, "none")', source)
         self.assertIn("reist_config_set", source)
         self.assertNotIn("filetypes.conf", source)
 

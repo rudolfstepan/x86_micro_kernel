@@ -25,6 +25,7 @@ static const config_target_t targets[] = {
     {"system", "/etc/reist/system.conf", "reist.system/1", "RSC"},
     {"input", "/etc/reist/input.conf", "reist.input/1", "RIC"},
     {"desktop", "/etc/reist/desktop.conf", "reist.desktop/1", "RDC"},
+    {"sounds", "/etc/reist/sounds.conf", "reist.sounds/1", "RSS"},
 };
 
 static char read_buffer[CONFIG_WRITE_CAPACITY];
@@ -54,6 +55,26 @@ static uint32_t one_of(const char *value, const char *first,
                        const char *second, const char *third) {
     return text_equal(value, first) || text_equal(value, second) ||
            (third != 0 && text_equal(value, third));
+}
+
+static uint32_t sound_path_valid(const char *value) {
+    static const char prefix[] = "/usr/share/sounds/";
+    size_t length = text_length(value, REIST_CONFIG_VALUE_CAPACITY);
+    if (text_equal(value, "none")) return 1U;
+    if (length >= REIST_CONFIG_VALUE_CAPACITY ||
+        length <= sizeof(prefix) - 1U + 4U) return 0U;
+    for (size_t index = 0U; index < sizeof(prefix) - 1U; ++index)
+        if (value[index] != prefix[index]) return 0U;
+    size_t name_start = sizeof(prefix) - 1U;
+    for (size_t index = name_start; index < length; ++index) {
+        unsigned char character = (unsigned char)value[index];
+        if (!((character >= 'a' && character <= 'z') ||
+              (character >= '0' && character <= '9') ||
+              character == '-' || character == '_' || character == '.'))
+            return 0U;
+    }
+    return value[length - 4U] == '.' && value[length - 3U] == 'w' &&
+        value[length - 2U] == 'a' && value[length - 1U] == 'v';
 }
 
 static int parse_unsigned(const char *value, uint32_t minimum,
@@ -111,6 +132,17 @@ static int validate_setting(const config_target_t *target,
             return one_of(value, "new-window", "same-window", 0) ? 0 : -22;
         if (text_equal(key, "icon_size"))
             return one_of(value, "small", "medium", "large") ? 0 : -22;
+    }
+    if (text_equal(target->name, "sounds")) {
+        if (text_equal(key, "enabled"))
+            return one_of(value, "false", "true", 0) ? 0 : -22;
+        if (text_equal(key, "event.startup") ||
+            text_equal(key, "event.shutdown") ||
+            text_equal(key, "event.error") ||
+            text_equal(key, "event.notification") ||
+            text_equal(key, "event.trash_drop") ||
+            text_equal(key, "event.trash_empty"))
+            return sound_path_valid(value) ? 0 : -22;
     }
     return -22;
 }
@@ -197,7 +229,8 @@ static int persist_document(const config_target_t *target) {
 
 int reist_config_service_main(int argc, char **argv) {
     if (argc != 5 || argv == 0 || !text_equal(argv[1], "set")) {
-        x86os_puts("Usage: config set <system|input|desktop> <key> <value>\n");
+        x86os_puts(
+            "Usage: config set <system|input|desktop|sounds> <key> <value>\n");
         return 2;
     }
     const config_target_t *target = find_target(argv[2]);

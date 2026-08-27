@@ -1,6 +1,6 @@
 # REIST-Audiosubsystem
 
-Stand: 20. August 2026.
+Stand: 27. August 2026.
 
 Dieses Dokument beschreibt die erste öffentliche Audioarchitektur von REIST.
 Sie stellt einen begrenzten PCM-Wiedergabepfad bereit, ohne Anwendungen oder
@@ -13,7 +13,8 @@ Binärkompatibilität mit ALSA, OSS, CoreAudio oder WASAPI.
 Version 1 unterstützt genau einen Wiedergabestream:
 
 - interleaved `S16_LE`, stereo, 48 kHz;
-- höchstens 24 Frames pro IPC-Nachricht und 15360 Frames pro Stream;
+- 24 Frames im unveränderten IPC-v1-Format oder 504 Frames im append-only
+  IPC-v2-Bulkformat sowie höchstens 15360 Frames pro Stream;
 - synchrone, durch 1 bis 5000 ms begrenzte Transaktionen;
 - Intel High Definition Audio, PCI-Klasse `04:03:00`;
 - einen gleichzeitig geöffneten Clientstream ohne Mixing.
@@ -43,10 +44,19 @@ Ring 0 validiert ausschließlich Identität, Ressourcen, Registerregeln, IRQ,
 DMA und Bus-Mastering.
 
 Eine Servicegeneration wird geschützt an genau eine lebende Client-PID samt
-Prozessgeneration gebunden. Nach deren Ende wird der Endpoint vollständig
-entzogen und der optionale Service über seinen normalen begrenzten
-Supervisorpfad neu erzeugt, bevor ein anderer Client verbunden wird. Dadurch
-kann kein neuer Prozess eine noch wartende Response des Vorgängers übernehmen.
+Prozessgeneration gebunden. Bei einem geordneten
+`reist_audio_shutdown()` sendet die Bibliothek zuerst das append-only,
+antwortlose Protokollkommando `RELEASE` und entzieht danach ihre
+Peer-Capability. Erst wenn der Dienst diese Reihenfolge als bewaffnetes
+`EPIPE` beobachtet, räumt er den Stream auf und meldet die Sessionfreigabe an
+den Supervisor. Dieser löscht ausschließlich die passende Clientbindung
+idempotent; zuvor prüft Ring 0 am exakten Endpoint, dass weder eine
+Peer-Capability noch eine wartende Nachricht verblieben ist. Die saubere
+Servicegeneration bleibt erhalten. Weil `RELEASE` keine Antwort erzeugt, kann
+keine alte Abschlussantwort zum nächsten Client wandern. Stirbt ein Client
+ohne diese Folge, wird der Endpoint weiterhin
+vollständig entzogen und der optionale Service über seinen normalen begrenzten
+Supervisorpfad neu erzeugt, bevor ein anderer Client verbunden wird.
 
 Treiber und Service haben getrennte Adressräume, Quoten, Generationen und
 Restartbudgets. Ein Fehler im optionalen Audiosubsystem darf Shell, Desktop,
@@ -57,15 +67,25 @@ Auch der geräteautoritätslose Audio-Service darf nach R6.2f auf SMP-Systemen
 AP-only laufen. Jede Generation verbindet sich weiterhin auf dem BSP mit der
 aktuellen HDA-Generation, führt Self-Test aus und veröffentlicht Endpoint,
 Gesundheit und Ready, bevor die ECC-geschützte Zielmaske angewandt wird. Vor
-jeder normalen Client-Sessionrotation kehrt die Generation sleepfähig auf den
-BSP zurück; erst danach beginnt der präemptionsgeschützte Fence-/Reap-Commit.
-Die Zielmaske bleibt über Rotationen erhalten, stale Endpoints jedoch nicht.
+jeder wegen Crash oder stale Endpoint erforderlichen Sessionrotation kehrt die
+Generation sleepfähig auf den BSP zurück; erst danach beginnt der
+präemptionsgeschützte Fence-/Reap-Commit. Die Zielmaske bleibt über Rotationen
+erhalten, stale Endpoints jedoch nicht. Ein sauberer `RELEASE`-Wechsel benötigt
+keine Rotation.
 
 Auf SMP-Systemen konstruiert der HDA-Treiber jede Generation zunächst auf dem
 BSP, bindet dort den kernelbesessenen DMA-Pool und IRQ-Endpunkt, entdeckt den
 Codec und veröffentlicht Self-Test sowie Gesundheit. Erst nach der globalen
 Scheduler-Freigabe erhält genau diese geschützte Generation die Online-AP-
 Maske. Audio-Service, Supervisor und Legacy-PIC-Hard-IRQ bleiben BSP-affin.
+Schon vor dieser Konstruktion bleibt der geladene Treiberprozess im Zustand
+`PREPARED`: Der Supervisor setzt seine Anfangsaffinität, claimt das Gerät und
+committet PID, Prozessgeneration, Device-Handle und Supervisor-Handle in den
+geschützten Kontrollrecord. Erst danach wird der Task lauffähig. Ein Fehler in
+dieser Folge beendet die vorbereitete Generation und fenced sowie recovered
+einen bereits erfolgten Claim innerhalb der vorhandenen Deadline. Damit kann
+parallele HDA-/Video-Initialisierung keinen Bootstrap vor der
+Owner-Publikation mehr beobachten.
 Der 500-ms-Treiberheartbeat besitzt wegen begrenzter SMP-Scheduling- und PIC-
 Latenz ein festes Fünf-Sekunden-Fenster; Fence-Deadline von einer Sekunde und
 Restartbudget drei bleiben unverändert.
@@ -98,6 +118,13 @@ Streamgeneration erhält keine neue Autorität. Jede Response muss Version,
 Größe, Command und Request-ID der Anfrage entsprechen.
 
 `reist_audio_write` übernimmt Frames blockweise in den begrenzten Dienstpuffer.
+Der normale Datenpfad verwendet einen einzelnen, von der v1-Queue getrennten
+2048-Byte-Rendezvous-Slot je Endpoint. Geschützte Metadaten binden Version,
+Länge, Endpoint- und Absendergeneration an CRC32 der Nutzlast; beschädigte
+Blöcke werden vor Veröffentlichung verworfen. Damit benötigt eine maximale
+Vorschau höchstens 31 statt 640 bestätigte Schreibtransaktionen. Der
+HDA-Treiber zerlegt jeden 2016-Byte-PCM-Anteil weiterhin in höchstens zwei vom
+Kernelmediator erlaubte DMA-Schreibvorgänge von je maximal 1024 Byte.
 Wie bei POSIX `write` darf ein positiver kurzer Rückgabewert die bereits
 akzeptierte Framezahl melden, falls eine spätere IPC-Teiltransaktion scheitert.
 Ein negativer Wert bedeutet, dass in diesem Aufruf kein Frame akzeptiert wurde.
@@ -172,8 +199,10 @@ usr/lib/pkgconfig/reist-audio.pc
 
 Die Systempartition enthält `/libexec/reist/hda.prg`,
 `/libexec/reist/audio.prg`, `/sbin/audioinfo.prg` und
-`/usr/bin/audiotest.prg`, `/usr/bin/wavplay.prg` sowie die Testdatei
-`/usr/share/sounds/440hz.wav`. Der grafische Client liegt unter
+`/usr/bin/audiotest.prg`, `/usr/bin/wavplay.prg` und die sechs Systemklänge
+`startup.wav`,
+`shutdown.wav`, `error.wav`, `notify.wav`, `trash-drop.wav` und
+`trash-empty.wav`. Der grafische Client liegt unter
 `/usr/gui/bin/soundplayer.prg`. Die Programme sind über die normale
 Ring-3-Shell erreichbar:
 
@@ -181,8 +210,8 @@ Ring-3-Shell erreichbar:
 C:\> AUDIOINFO
 C:\> AUDIOTEST
 C:\> WAVPLAY
-C:\> WAVPLAY /usr/share/sounds/440hz.wav
-C:\> SOUNDPLAYER /usr/share/sounds/440hz.wav
+C:\> WAVPLAY /usr/share/sounds/startup.wav
+C:\> SOUNDPLAYER /usr/share/sounds/startup.wav
 ```
 
 `AUDIOTEST` erzeugt einen begrenzten 440-Hz-Testton, startet und stoppt den
@@ -190,9 +219,10 @@ Stream und schließt ihn anschließend. Sein 50-ms-Ring enthält 22 vollständig
 Perioden einer ganzzahlig erzeugten Dreieckswelle. Damit bleibt der zyklische
 HDA-Puffer an seiner Grenze phasenstetig und ist größer als ein 20-ms-
 VMware-Hostblock. Der QEMU-Runtimetest führt diese Folge
-fünfmal und damit häufiger als das Fehler-Restart-Budget aus. Normale
-Clientwechsel rotieren den Dienst-Endpunkt administrativ, ohne als
-Dienstfehler zu zählen. Der Test akzeptiert nur eine korrekt formatierte,
+fünfmal und damit häufiger als das Fehler-Restart-Budget aus. Geordnete
+Clientwechsel geben dieselbe saubere Dienstgeneration frei; nur ein ohne
+Peer-Freigabe beendeter Client erzwingt die administrative Endpointrotation,
+ohne als Dienstfehler zu zählen. Der Test akzeptiert nur eine korrekt formatierte,
 unterbrechungsfreie Stereo-S16-Aufzeichnung mit 435 bis 445 Hz. VMware stellt
 ein virtuelles `hdaudio`
 bereit; reale Codecs und physische Ausgänge benötigen weiterhin einen eigenen
@@ -203,41 +233,107 @@ und 48 kHz. Mono wird kontrolliert auf die zwei Kanäle der öffentlichen ABI
 dupliziert. Der Parser untersucht höchstens 512 Headerbytes und 16 Chunks;
 komprimierte, gleitkommacodierte, falsch ausgerichtete oder anders abgetastete
 Dateien werden abgewiesen. Wegen des zyklischen ABI-v1-DMA-Puffers kopiert der
-Player höchstens 2400 Frames in statischen Ring-3-Speicher und wiederholt diese
-Vorschau zwei Sekunden. Streaming, Resampling und ein allgemeiner Decoder sind
-damit ausdrücklich noch nicht behauptet. Die unveränderte fünfsekündige
-440-Hz-Testdatei stammt aus dem unter CC0-1.0 veröffentlichten Projekt
-[TestToneSet](https://github.com/AkiyukiOkayasu/TestToneSet).
+Player höchstens 15360 Frames in statischen Ring-3-Speicher. Er spielt genau
+die geladene Dauer bis höchstens 320 ms plus eine feste 20-ms-Drain-Frist und
+stoppt danach den zyklischen Stream; `--quiet` unterdrückt ausschließlich die
+Konsolenausgabe für Desktopereignisse. Streaming, Resampling und ein
+allgemeiner Decoder sind damit ausdrücklich noch nicht behauptet. Die
+unveränderte fünfsekündige 440-Hz-Datei aus dem unter CC0-1.0
+veröffentlichten Projekt
+[TestToneSet](https://github.com/AkiyukiOkayasu/TestToneSet) bleibt nur eine
+Host-Parserfixture und wird nicht in das Systemimage installiert.
 
 Parser und bounded Preview-Loader gehören zur öffentlichen
 `<reist/audio_wave.h>`-Schicht und werden von `WAVPLAY` und `SOUNDPLAYER`
-gemeinsam verwendet. Die Desktop-Dateizuordnung `.wav` startet den grafischen
+gemeinsam verwendet. Jede Datei wird genau einmal geöffnet; bereits zusammen
+mit dem 512-Byte-Header gelesene PCM-Daten werden direkt übernommen, danach
+wird nur vorwärts weitergelesen. Die Desktop-Dateizuordnung `.wav` startet den grafischen
 Player mit dem kanonischen Dateipfad. Dieser bietet Abspielen, Stoppen und
-Schließen, hält aber dieselben Format- und Kapazitätsgrenzen ein. Die
-Surface-IPC ist vorhanden, der Sound Player wurde jedoch noch nicht darauf
-migriert. Anders als Notepad und Image Viewer verwendet er deshalb weiterhin
-die überwachte Vollbild-Kompatibilitätsbrücke und ist noch kein unabhängig
-komponiertes Fenster.
+Schließen, hält aber dieselben Format- und Kapazitätsgrenzen ein und beginnt
+die feste Vorschau beim Öffnen noch vor Konstruktion seiner Surface. Der Desktop delegiert ihm genau einen
+generationgebundenen Surface-Endpunkt und wartet nicht auf das Ende der
+Wiedergabe. Der Player malt ausschließlich lokale Retained-Paint-Befehle,
+erhält lokale Eingabeereignisse über Surface-IPC und überträgt je
+Eventloopdurchlauf höchstens eine feste Audio-Nutzlast. Dadurch publiziert der
+Compositor auch während der Wiedergabe weiter seinen 500-ms-Heartbeat; die
+frühere synchrone Vollbildbrücke ist für den Sound Player entfernt. Der
+Sound Player begrenzt jede Audiotransaktion auf die öffentliche 500-ms-
+Standardfrist. Diese Frist deckt den ebenfalls auf 500 ms begrenzten
+Service-zu-HDA-Treiber-Start ab und kehrt bei schneller Hardware sofort zurück;
+ein nicht reagierender optionaler Audiodienst scheitert weiterhin sichtbar,
+statt den Fensteraufbau unbegrenzt aufzuhalten. Eine kürzere lokale 100-ms-
+Frist ist unzulässig, weil VMware einen erfolgreich begonnenen HDA-Start erst
+danach bestätigen kann und der Client sonst den Erfolg fälschlich als
+`ETIMEDOUT` behandelt.
+
+## Konfigurierbare Systemklänge
+
+`/etc/reist/sounds.conf` verwendet `schema=reist.sounds/1`. Die sechs stabilen
+Schlüssel `event.startup`, `event.shutdown`, `event.error` und
+`event.notification` sowie `event.trash_drop` und `event.trash_empty` ordnen
+Ereignisse einem kanonischen kleingeschriebenen
+WAV-Pfad unter `/usr/share/sounds` oder dem Wert `none` zu. `enabled=false`
+schaltet die gesamte Präsentationsschicht aus. Der Desktop übernimmt erst nach
+vollständiger Parser- und Pfadvalidierung eine neue Tabelle; eine fehlende oder
+ungültige Datei deaktiviert Klänge und verändert den GUI-Lifecycle nicht.
+`event.notification` ist einem echten Informationsdialog vorbehalten. Normale
+Ordnernavigation und erfolgreiche Datei- oder Programmaktivierung bleiben
+still, damit kein kurzlebiger Systemklang mit einem explizit gestarteten
+Audio-Client um den einzelnen generationengebundenen Dienstendpunkt konkurriert.
+Die beiden Papierkorbereignisse werden erst nach erfolgreich committed
+Verschieben beziehungsweise vollständig erfolgreichem endgültigem Löschen
+publiziert; Teilfehler verwenden ausschließlich `event.error`.
+`config.prg` akzeptiert dieselben begrenzten Schlüssel bereits als
+Mutationsgrenze, sodass eine spätere Systemsteuerungsseite keine Desktop-ABI
+ändern muss.
+
+Der Compositor verbindet sich nicht selbst mit dem Audiodienst. Er startet
+stattdessen höchstens zwei stille `wavplay.prg`-Kinder und prüft deren
+Prozessgeneration nicht blockierend. Ein normaler Slot ist aktiv, solange sein
+Kind lebt; Überlast wird auf genau ein priorisiertes Folgeereignis reduziert.
+Shutdown darf den zweiten festen Slot verwenden, damit ein vorheriger kurzer
+Klang das Sitzungsende nicht verschluckt. Erst nach verschwundener Live-
+Identität ruft der Desktop `wait` auf und kann daher nicht auf einen lebenden
+Klangprozess blockieren. Diagnose- und Runtime-Probes deaktivieren diese
+Präsentationsklänge, damit ihre Audioevidenz ausschließlich vom jeweiligen
+Testclient stammt.
+
+Die sechs WAV-Dateien sind deterministisch aus
+`scripts/generate_system_sounds.py` erzeugte Mono-S16_LE-Signale mit 48 kHz,
+liegen jeweils unter der 15360-Frame-Grenze und werden unter CC0-1.0
+freigegeben. Sie enthalten keine Microsoft- oder sonstigen Fremdsamples.
 
 ## Nachweis und verbleibende Risiken
 
-Hosttests prüfen ABI-Größen, Request-Korrelation, Short Writes,
+Hosttests prüfen ABI-Größen, v1-Kompatibilität, den einzelnen CRC-geschützten
+Bulk-Slot, Request-Korrelation, höchstens 31 Blöcke und Short Writes,
 Parameterdekodierung und 0-dB-Gain. Source- und Pakettests prüfen
 Default-Deny-Domänen, vollständig vermitteltes DMA, Shell-Erreichbarkeit und
 identische QEMU-/VMware-Systemlayouts. Ein headless VMware-Bootsmoke verlangt
 das HDA-Profil und `REIST_AUDIO SERVICE_READY`. Der QEMU-Gastnachweis prüft
 tatsächliche nicht stumme PCM-Ausgabe und die Wiederverwendung nach `stop`.
 Der SMP4-Nachweis verlangt zusätzlich eine autorisierte HDA-Geräteoperation auf
-einem AP und fünf vollständige Playback-Zyklen; die Referenzaufnahme umfasste
-278332 Stereo-S16-Frames bei 440,4 Hz mit höchstens einer Nullprobe Lücke.
+einem AP und fünf vollständige Playback-Zyklen. Jeder Zyklus muss vor dem
+nächsten Client einen bestätigten `CLIENT_RELEASED`-Marker liefern; die
+Referenzaufnahme umfasste 278332 Stereo-S16-Frames bei 440,4 Hz mit höchstens
+einer Nullprobe Lücke.
 Der ergänzende Restartlauf unterdrückt compile-time-begrenzt den Heartbeat der
 ersten AP-Epoch. Nach Timeout, Fence, GCTL-Reset und Treiberneustart entdeckt
 die erste Clientprobe den stale Service-Endpoint und löst die normale
 Servicegenerationrotation aus. Die Ersatzgeneration bestand danach fünf
 Playback-Zyklen mit 271216 Frames bei 440,4 Hz und `max-gap=1`.
-Der manuelle VMware-Nachweis vom 20. August 2026 bestätigt mit der paketierten
-440-Hz-WAV-Datei sowohl hörbare Ausgabe als auch den erwarteten Pegel über den
+Der manuelle VMware-Nachweis vom 20. August 2026 bestätigte mit der damals
+paketierten 440-Hz-WAV-Datei sowohl hörbare Ausgabe als auch den erwarteten Pegel über den
 vollständig aktivierten DAC-/Mixer-/Pin-Pfad.
+
+Ein eigener compile-time-only Desktop-Audioprobe startet den Sound Player mit
+dem paketierten `startup.wav` und parallel die Control Gallery als Surface-
+Clients.
+Er muss beide Ready-Marker, eine einzelne begrenzte, echte Stereo-S16-Ausgabe
+und das Überschreiten der
+Zwei-Sekunden-Compositor-Heartbeatgrenze beobachten, ohne
+`COMPOSITOR_RESTARTED` oder `COMPOSITOR_DEGRADED` zu melden. Der Schalter ist
+in normalen Images nicht definiert.
 
 Noch nicht nachgewiesen sind hörbare Ausgabe auf dem ASUS-Zielsystem,
 codec-spezifische Pin-Routing-Varianten, MSI, IOMMU-Direktzuweisung und die oben

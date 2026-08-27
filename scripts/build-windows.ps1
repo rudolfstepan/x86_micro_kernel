@@ -20,7 +20,10 @@ param(
     [switch]$Svga2dSmpLifecycleFaultInjection,
     [switch]$HdaSmpLifecycleFaultInjection,
     [switch]$AudioServiceSmpLifecycleFaultInjection,
+    [switch]$SoundplayerSurfaceProbe,
     [switch]$SkipReleaseSbom,
+    [ValidateRange(1, 8)]
+    [int]$SystemBuildJobs = 2,
     [ValidateRange(0, 3)]
     [int]$HandoverNodeId = 0,
     [switch]$RunTests,
@@ -90,6 +93,11 @@ function Invoke-PythonProcess {
     $process = [System.Diagnostics.Process]::Start($startInfo)
     if ($null -eq $process) {
         throw "Python process could not be started."
+    }
+    try {
+        $process.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+    } catch {
+        # A very short helper may exit before its priority can be adjusted.
     }
     $standardOutput = $process.StandardOutput.ReadToEndAsync()
     $standardError = $process.StandardError.ReadToEndAsync()
@@ -181,6 +189,7 @@ try {
         svga2d_smp_lifecycle_fault_injection = [bool]$Svga2dSmpLifecycleFaultInjection
         hda_smp_lifecycle_fault_injection = [bool]$HdaSmpLifecycleFaultInjection
         audio_service_smp_lifecycle_fault_injection = [bool]$AudioServiceSmpLifecycleFaultInjection
+        soundplayer_surface_probe = [bool]$SoundplayerSurfaceProbe
         skip_release_sbom = [bool]$SkipReleaseSbom
         nasm = $Nasm
         zig = $Zig
@@ -259,6 +268,9 @@ try {
     if ($AudioServiceSmpLifecycleFaultInjection) {
         $makeArguments += 'AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION=1'
     }
+    if ($SoundplayerSurfaceProbe) {
+        $makeArguments += 'SOUNDPLAYER_SURFACE_PROBE=1'
+    }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Kernel build failed with exit code $LASTEXITCODE."
@@ -282,7 +294,8 @@ try {
         'scripts/build_system_programs.py',
         '--output-dir', $UserProgramDir,
         '--zig', $Zig,
-        '--incremental'
+        '--incremental',
+        '--jobs', [string]$SystemBuildJobs
     )
     if ($systemProgramExitCode -ne 0) {
         throw "System program build failed with exit code $systemProgramExitCode."
@@ -354,9 +367,7 @@ try {
     $imageDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
     )
-    $testTonePath = Join-Path $RepoRoot 'assets\audio\testtone-440hz-mono-48k-s16.wav'
     $imageDataArguments += @(
-        '--data-file', "usr/share/sounds/440hz.wav=$testTonePath"
         '--data-file', "usr/share/images/reist-splash.bmp=$(Join-Path $RepoRoot 'assets\images\reist-splash.bmp')"
         '--data-file', "usr/share/images/demo-desktop.bmp=$(Join-Path $RepoRoot 'assets\images\demo-desktop.bmp')"
         '--data-file', "usr/share/images/demo-colors.gif=$(Join-Path $RepoRoot 'assets\images\demo-colors.gif')"
@@ -367,6 +378,15 @@ try {
         '--data-file', "usr/share/fonts/readme.txt=$(Join-Path $RepoRoot 'assets\fonts\README.md')"
         '--data-file', "usr/share/fonts/unicode.txt=$(Join-Path $RepoRoot 'assets\fonts\unicode.txt')"
     )
+    foreach ($soundName in @(
+        'startup', 'shutdown', 'error', 'notify',
+        'trash-drop', 'trash-empty'
+    )) {
+        $soundPath = Join-Path $RepoRoot "assets\audio\$soundName.wav"
+        $imageDataArguments += @(
+            '--data-file', "usr/share/sounds/$soundName.wav=$soundPath"
+        )
+    }
     $floppyDataArguments = @(
         '--data-file', "usr/bin/$($ProgramName.ToLowerInvariant())=$UserPrg"
     )
@@ -395,7 +415,10 @@ try {
             )
         }
     }
-    foreach ($configFile in @('system.conf', 'input.conf', 'desktop.conf', 'filetypes.conf')) {
+    foreach ($configFile in @(
+        'system.conf', 'input.conf', 'desktop.conf', 'filetypes.conf',
+        'sounds.conf'
+    )) {
         $configPath = Join-Path $RepoRoot "config\etc\reist\$configFile"
         $imageDataArguments += @(
             '--data-file', "etc/reist/$configFile=$configPath"

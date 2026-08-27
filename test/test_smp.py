@@ -343,7 +343,8 @@ class SmpTests(unittest.TestCase):
         self.assertIn("KERNEL_MUTEX_RECURSION_LIMIT", header)
         self.assertIn("kernel_mutex_lock_until", header)
         self.assertIn("kernel_mutex_lock_for", header)
-        self.assertIn("KASSERT_CAN_SLEEP();", source)
+        self.assertNotIn("KASSERT_CAN_SLEEP();", source)
+        self.assertIn("bool may_block = scheduler_can_sleep();", source)
         self.assertIn("pit_monotonic_ms()", source)
         self.assertIn("wait_queue_block_until_spinlocked(", source)
         self.assertIn("&mutex->state_lock, flags", source)
@@ -354,9 +355,10 @@ class SmpTests(unittest.TestCase):
         self.assertIn("scheduler_preempt_disable();", source)
         self.assertIn("if (release_kernel_preempt_guard)", source)
         self.assertIn("scheduler_preempt_enable();", source)
-        self.assertIn("identity.task < 0", source[source.index(
-            "if (identity.task < 0)"):source.index(
-                "wait_queue_block_until_spinlocked(")])
+        contention = source[source.index("uint64_t now = pit_monotonic_ms()"):
+                            source.index("wait_queue_block_until_spinlocked(")]
+        self.assertIn("identity.task < 0 || !may_block", contention)
+        self.assertIn("return KERNEL_MUTEX_WOULD_BLOCK;", contention)
         scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
             encoding="utf-8")
         self.assertIn("uint32_t task_generation", (ROOT /

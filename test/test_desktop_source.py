@@ -73,6 +73,11 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertLess(self_test, progress)
         self.assertLess(progress, ready)
         self.assertLess(ready, loop)
+        startup = self.source[ready:loop]
+        self.assertGreaterEqual(
+            startup.count("desktop_lifecycle_publish_progress("), 3)
+        self.assertIn("uint32_t *sequence", self.source)
+        self.assertIn("uint64_t *heartbeat_ms", self.source)
         self.assertIn("lifecycle_now_ms - lifecycle_heartbeat_ms >= 500U",
                       self.source[loop:])
         exit_path = self.source[self.source.index("static uint32_t desktop_try_exit"):
@@ -289,6 +294,94 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertNotIn("x86os_puts", launch)
         self.assertNotIn("x86os_clear", launch)
 
+    def test_sound_player_uses_nonblocking_surface_launch(self):
+        selector = self.source[
+            self.source.index("static uint32_t program_uses_surface"):
+            self.source.index("static int launch_program")
+        ]
+        self.assertIn('"/usr/gui/bin/soundplayer.prg"', selector)
+        self.assertIn('"/usr/gui/bin/guidemo.prg"', selector)
+        launch = self.source[self.source.index("static int launch_program"):]
+        surface = launch[:launch.index(
+            "/* Legacy full-screen clients remain synchronous")]
+        self.assertIn("desktop_surface_runtime_bind", surface)
+        bind_failure = surface[surface.index("if (bound != 0)"):]
+        self.assertLess(bind_failure.index("x86os_kill(pid)"),
+                        bind_failure.index("x86os_wait(pid, &status)"))
+        self.assertIn("return 0;", surface)
+        probe = self.source[
+            self.source.index("static int launch_surface_probe_client"):
+            self.source.index("static void clip_pointer")
+        ]
+        ownership = self.source[
+            self.source.index("static uint32_t committed_surface_owned_by"):
+            self.source.index("static int launch_surface_probe_client")
+        ]
+        self.assertIn("launched_owner", probe)
+        self.assertIn("committed_surface_owned_by", probe)
+        self.assertIn("surfaces->slots[index].committed", ownership)
+        self.assertIn("surfaces->slots[index].paint_generation != 0U",
+                      ownership)
+        self.assertIn("DESKTOP_SURFACE_PROBE_READY_ATTEMPTS", probe)
+        self.assertIn("DESKTOP_SURFACE_PROBE_READY_ATTEMPTS 3000U",
+                      self.source)
+        self.assertNotIn("active_surface_count", probe)
+        self.assertIn('text_equal(argv[1], "--sound-probe")', self.source)
+        self.assertIn('"DESKTOP_AUDIO_HEARTBEAT_OK\\n"', self.source)
+
+    def test_system_sounds_are_configured_and_spawned_without_blocking_gui(self):
+        config = (ROOT / "config/etc/reist/sounds.conf").read_text(
+            encoding="utf-8")
+        self.assertIn("schema=reist.sounds/1", config)
+        for event in ("startup", "shutdown", "error",
+                      "notification", "trash_drop", "trash_empty"):
+            self.assertIn(f"event.{event}=", config)
+        sound = self.source[
+            self.source.index("static uint32_t desktop_system_sound_path_valid"):
+            self.source.index("static int load_filetypes")
+        ]
+        self.assertIn("reist_config_parse(", sound)
+        self.assertIn("DESKTOP_SYSTEM_SOUND_CHILD_CAPACITY 2U", self.source)
+        self.assertIn('DESKTOP_SYSTEM_SOUND_PLAYER, "--quiet"', sound)
+        self.assertIn("x86os_spawnv(DESKTOP_SYSTEM_SOUND_PLAYER", sound)
+        self.assertIn("x86os_process_identity_of", sound)
+        reap = sound[sound.index("static void desktop_system_sound_poll"):]
+        self.assertLess(reap.index("x86os_process_identity_of"),
+                        reap.index("x86os_wait(child->pid"))
+        main = self.source[self.source.index("int main("):]
+        for event in ("STARTUP", "SHUTDOWN", "ERROR",
+                      "NOTIFICATION", "TRASH_DROP", "TRASH_EMPTY"):
+            self.assertIn(f"DESKTOP_SYSTEM_SOUND_{event}", main)
+        self.assertIn("saturating_increment(&ui->trash_drop_sequence)",
+                      self.source)
+        self.assertIn("saturating_increment(&ui->trash_empty_sequence)",
+                      self.source)
+        self.assertNotIn("DESKTOP_SYSTEM_SOUND_CLICK", self.source)
+        self.assertNotIn("event.click", config)
+        self.assertIn("system_sounds.enabled = 0U", main)
+        self.assertNotIn("reist_audio_", self.source)
+
+    def test_audio_surface_probe_uses_packaged_startup_sound(self):
+        self.assertIn('"/USR/SHARE/SOUNDS/STARTUP.WAV"', self.source)
+        self.assertNotIn('"/USR/SHARE/SOUNDS/440HZ.WAV"', self.source)
+
+    def test_navigation_and_program_launch_do_not_compete_with_audio_clients(self):
+        explorer_open = self.source[
+            self.source.index("static uint32_t open_explorer_path"):
+            self.source.index("static uint32_t close_all_explorer_windows")
+        ]
+        activation = self.source[
+            self.source.index("static uint32_t apply_desktop_activation"):
+            self.source.index("static uint32_t apply_desktop_ui_result")
+        ]
+        self.assertNotIn("notification_sequence", explorer_open)
+        self.assertNotIn("notification_sequence", activation)
+        dialog = self.source[
+            self.source.index("static void desktop_ui_open_dialog"):
+            self.source.index("static void desktop_ui_open_error")
+        ]
+        self.assertIn("notification_sequence", dialog)
+
     def test_wait_failure_terminates_and_reaps_child_before_input_returns(self):
         launch = self.source[self.source.index("static int launch_program") :]
         wait_check = launch.index("if (wait_result != pid)")
@@ -441,7 +534,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('"/usr/gui/bin/notepad.prg"', self.source)
         self.assertIn('"/usr/gui/bin/imageviewer.prg"', self.source)
         self.assertIn("launch_surface_probe_client", self.source)
-        self.assertIn('"/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT", 1U',
+        self.assertIn('"/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT",',
                       self.source)
         self.assertIn("program_uses_surface", self.source)
         self.assertIn("path_equal_ascii_case", self.source)
@@ -450,7 +543,7 @@ class DesktopSourceTests(unittest.TestCase):
             self.source.index("static int launch_program")
         ]
         self.assertNotIn("text_equal(program", surface_classifier)
-        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 4)
+        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 6)
         self.assertIn("desktop_surface_runtime_reserve", self.source)
         self.assertIn("desktop_surface_runtime_bind", self.source)
         self.assertIn("sync_surface_windows", self.source)

@@ -24,6 +24,7 @@
 #define AUDIO_DIAGNOSTIC_STAGE_SELF_TEST_REPORT 4U
 #define AUDIO_DIAGNOSTIC_STAGE_PROGRESS_REPORT 5U
 #define AUDIO_DIAGNOSTIC_STAGE_READY_REPORT 6U
+#define AUDIO_DIAGNOSTIC_STAGE_CLIENT_RELEASE 7U
 
 typedef struct {
     x86os_ipc_handle_t client_endpoint;
@@ -35,6 +36,8 @@ typedef struct {
     uint32_t backend_state;
     uint32_t progress;
     uint32_t driver_failed;
+    uint32_t client_release_armed;
+    uint32_t client_release_reported;
 } audio_service_t;
 
 static void bytes_zero(void *destination, size_t length) {
@@ -60,6 +63,29 @@ static int ipc_decode(const x86os_ipc_message_t *ipc,
     return 0;
 }
 
+static int ipc_bulk_container_decode_small(
+        const x86os_ipc_bulk_message_t *ipc,
+        reist_audio_message_t *wire) {
+    if (ipc == NULL || wire == NULL ||
+        ipc->version != X86OS_IPC_MESSAGE_VERSION ||
+        ipc->struct_size != sizeof(x86os_ipc_message_t) ||
+        ipc->length != sizeof(*wire)) return -84;
+    for (size_t index = 0U; index < sizeof(*wire); ++index)
+        ((uint8_t *)wire)[index] = ipc->payload[index];
+    return 0;
+}
+
+static int ipc_decode_bulk(const x86os_ipc_bulk_message_t *ipc,
+                           reist_audio_bulk_message_t *wire) {
+    if (ipc == NULL || wire == NULL ||
+        ipc->version != X86OS_IPC_BULK_MESSAGE_VERSION ||
+        ipc->struct_size != sizeof(*ipc) || ipc->length != sizeof(*wire))
+        return -84;
+    for (size_t index = 0U; index < sizeof(*wire); ++index)
+        ((uint8_t *)wire)[index] = ipc->payload[index];
+    return 0;
+}
+
 static void ipc_encode(x86os_ipc_message_t *ipc,
                        const reist_audio_message_t *wire) {
     bytes_zero(ipc, sizeof(*ipc));
@@ -70,15 +96,28 @@ static void ipc_encode(x86os_ipc_message_t *ipc,
         ipc->payload[index] = ((const uint8_t *)wire)[index];
 }
 
-static void ipc_receive_prepare(x86os_ipc_message_t *ipc) {
+static void ipc_bulk_receive_prepare(x86os_ipc_bulk_message_t *ipc) {
     bytes_zero(ipc, sizeof(*ipc));
-    ipc->version = X86OS_IPC_MESSAGE_VERSION;
+    ipc->version = X86OS_IPC_BULK_MESSAGE_VERSION;
     ipc->struct_size = sizeof(*ipc);
 }
 
 static void response_prepare(reist_audio_message_t *response,
                              const reist_audio_message_t *request,
                              int status) {
+    bytes_zero(response, sizeof(*response));
+    response->version = REIST_AUDIO_PROTOCOL_VERSION;
+    response->struct_size = sizeof(*response);
+    response->command = request->command | REIST_AUDIO_RESPONSE_FLAG;
+    response->request_id = request->request_id;
+    response->stream_id = request->stream_id;
+    response->stream_generation = request->stream_generation;
+    response->status = status;
+}
+
+static void bulk_response_prepare(reist_audio_message_t *response,
+                                  const reist_audio_bulk_message_t *request,
+                                  int status) {
     bytes_zero(response, sizeof(*response));
     response->version = REIST_AUDIO_PROTOCOL_VERSION;
     response->struct_size = sizeof(*response);
@@ -112,8 +151,46 @@ static int driver_transact(audio_service_t *service,
     return service->driver_failed != 0U ? -84 : wire->status;
 }
 
+static int driver_bulk_transact(audio_service_t *service,
+                                const reist_audio_bulk_message_t *wire) {
+    x86os_ipc_bulk_message_t ipc;
+    bytes_zero(&ipc, sizeof(ipc));
+    ipc.version = X86OS_IPC_BULK_MESSAGE_VERSION;
+    ipc.struct_size = sizeof(ipc);
+    ipc.length = sizeof(*wire);
+    for (size_t index = 0U; index < sizeof(*wire); ++index)
+        ipc.payload[index] = ((const uint8_t *)wire)[index];
+    int result = x86os_ipc_send_bulk_timeout(
+        service->driver_endpoint, &ipc, AUDIO_SERVICE_DRIVER_MS);
+    if (result == 0) {
+        ipc_bulk_receive_prepare(&ipc);
+        result = x86os_ipc_receive_bulk_timeout(
+            service->driver_endpoint, &ipc, AUDIO_SERVICE_DRIVER_MS);
+    }
+    reist_audio_message_t response;
+    if (result != 0 ||
+        ipc_bulk_container_decode_small(&ipc, &response) != 0 ||
+        response.version != REIST_AUDIO_PROTOCOL_VERSION ||
+        response.struct_size != sizeof(response) ||
+        response.command != (wire->command | REIST_AUDIO_RESPONSE_FLAG) ||
+        response.request_id != wire->request_id ||
+        response.stream_id != wire->stream_id ||
+        response.stream_generation != wire->stream_generation) {
+        service->driver_failed = 1U;
+        return result != 0 ? result : -84;
+    }
+    return response.status;
+}
+
 static int stream_matches(const audio_service_t *service,
                           const reist_audio_message_t *request) {
+    return service->stream_id != 0U &&
+        request->stream_id == service->stream_id &&
+        request->stream_generation == service->stream_generation;
+}
+
+static int bulk_stream_matches(const audio_service_t *service,
+                               const reist_audio_bulk_message_t *request) {
     return service->stream_id != 0U &&
         request->stream_id == service->stream_id &&
         request->stream_generation == service->stream_generation;
@@ -158,6 +235,18 @@ static int service_handle(audio_service_t *service,
         return result;
     }
 
+    if (request->command == REIST_AUDIO_COMMAND_RELEASE) {
+        if (service->stream_id != 0U ||
+            service->backend_state != REIST_AUDIO_BACKEND_READY ||
+            request->stream_id != 0U || request->stream_generation != 0U ||
+            request->frame_count != 0U) return -16;
+        for (uint32_t index = 0U;
+             index < REIST_AUDIO_MESSAGE_SAMPLE_BYTES; ++index)
+            if (request->payload.bytes[index] != 0U) return -22;
+        service->client_release_armed = 1U;
+        return 0;
+    }
+
     if (!stream_matches(service, request)) return -9;
     reist_audio_message_t relay = *request;
     int result = -22;
@@ -190,6 +279,25 @@ static int service_handle(audio_service_t *service,
     }
     if (result == 0) *response = relay;
     else response_prepare(response, request, result);
+    return result;
+}
+
+static int service_handle_bulk(audio_service_t *service,
+                               const reist_audio_bulk_message_t *request,
+                               reist_audio_message_t *response) {
+    bulk_response_prepare(response, request, -22);
+    if (request->version != REIST_AUDIO_PROTOCOL_VERSION ||
+        request->struct_size != sizeof(*request) || request->request_id == 0U ||
+        request->command != REIST_AUDIO_COMMAND_WRITE_BULK ||
+        !bulk_stream_matches(service, request) ||
+        service->backend_state != REIST_AUDIO_BACKEND_BUFFERING ||
+        request->frame_count == 0U ||
+        request->frame_count > REIST_AUDIO_BULK_FRAMES) return -22;
+    if (service->buffered_frames > REIST_AUDIO_MAX_STREAM_FRAMES -
+            request->frame_count) return -11;
+    int result = driver_bulk_transact(service, request);
+    if (result == 0) service->buffered_frames += request->frame_count;
+    response->status = result;
     return result;
 }
 
@@ -280,24 +388,55 @@ int main(void) {
     uint64_t last_report = 0U;
     (void)x86os_monotonic_ms(&last_report);
     for (;;) {
-        x86os_ipc_message_t ipc;
-        ipc_receive_prepare(&ipc);
-        int received = x86os_ipc_receive_timeout(
+        x86os_ipc_bulk_message_t ipc;
+        ipc_bulk_receive_prepare(&ipc);
+        int received = x86os_ipc_receive_bulk_timeout(
             service.client_endpoint, &ipc, AUDIO_SERVICE_RECEIVE_MS);
         if (received == 0) {
+            /* Any message after a valid one-way RELEASE cancels that intent;
+             * service_handle arms it again only for another valid RELEASE. */
+            service.client_release_armed = 0U;
+            service.client_release_reported = 0U;
             reist_audio_message_t request;
             reist_audio_message_t response;
-            if (ipc_decode(&ipc, &request) == 0) {
+            if (ipc_bulk_container_decode_small(&ipc, &request) == 0) {
                 int status = service_handle(&service, &request, &response);
-                response.status = status;
-                if (response.version == 0U)
-                    response_prepare(&response, &request, status);
-                ipc_encode(&ipc, &response);
-                (void)x86os_ipc_send_timeout(
-                    service.client_endpoint, &ipc, AUDIO_SERVICE_SEND_MS);
+                if (!(status == 0 &&
+                      request.command == REIST_AUDIO_COMMAND_RELEASE)) {
+                    response.status = status;
+                    if (response.version == 0U)
+                        response_prepare(&response, &request, status);
+                    x86os_ipc_message_t reply;
+                    ipc_encode(&reply, &response);
+                    (void)x86os_ipc_send_timeout(
+                        service.client_endpoint, &reply,
+                        AUDIO_SERVICE_SEND_MS);
+                }
+            } else {
+                reist_audio_bulk_message_t bulk_request;
+                if (ipc_decode_bulk(&ipc, &bulk_request) == 0) {
+                    int status = service_handle_bulk(
+                        &service, &bulk_request, &response);
+                    response.status = status;
+                    x86os_ipc_message_t reply;
+                    ipc_encode(&reply, &response);
+                    (void)x86os_ipc_send_timeout(
+                        service.client_endpoint, &reply,
+                        AUDIO_SERVICE_SEND_MS);
+                }
             }
         } else if (received == -32) {
             abandon_client_stream(&service);
+            if (service.client_release_armed != 0U &&
+                service.client_release_reported == 0U) {
+                status = x86os_reist_report(
+                    X86OS_REIST_REPORT_AUDIO_CLIENT_RELEASED, 1U);
+                if (status != 0)
+                    return service_failure(
+                        AUDIO_DIAGNOSTIC_STAGE_CLIENT_RELEASE, status);
+                service.client_release_reported = 1U;
+                service.client_release_armed = 0U;
+            }
             if (x86os_sleep_ms(1U) != 0) (void)x86os_yield();
         }
         if (service.driver_failed != 0U) return 2;

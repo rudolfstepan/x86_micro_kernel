@@ -164,60 +164,128 @@ static int syscall_ipc_create(ipc_handle_t *user_handle) {
     return 0;
 }
 
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t length;
+} ipc_user_message_header_t;
+
 static int syscall_ipc_send(ipc_handle_t handle,
-                            const ipc_message_t *user_message) {
+                            const void *user_message) {
     Process *process = scheduler_current_process();
-    ipc_message_t message;
-    if (process == NULL ||
-        syscall_copy_from_user_space(&message, user_message,
-                                     sizeof(message)) != 0) return -14;
-    return ipc_send(process, handle, &message);
+    ipc_user_message_header_t header;
+    if (process == NULL || syscall_copy_from_user_space(
+            &header, user_message, sizeof(header)) != 0) return -14;
+    if (header.version == IPC_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_message_t)) {
+        ipc_message_t message;
+        if (syscall_copy_from_user_space(&message, user_message,
+                                         sizeof(message)) != 0) return -14;
+        return ipc_send(process, handle, &message);
+    }
+    if (header.version == IPC_BULK_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_bulk_message_t)) {
+        ipc_bulk_message_t message;
+        if (syscall_copy_from_user_space(&message, user_message,
+                                         sizeof(message)) != 0) return -14;
+        return ipc_send_bulk_timeout(process, handle, &message,
+                                     IPC_DEFAULT_TIMEOUT_MS);
+    }
+    return -22;
 }
 
 static int syscall_ipc_send_timeout(ipc_handle_t handle,
-                                    const ipc_message_t *user_message,
+                                    const void *user_message,
                                     uint32_t timeout_ms) {
     Process *process = scheduler_current_process();
-    ipc_message_t message;
-    if (process == NULL ||
-        syscall_copy_from_user_space(&message, user_message,
-                                     sizeof(message)) != 0) return -14;
-    return ipc_send_timeout(process, handle, &message, timeout_ms);
+    ipc_user_message_header_t header;
+    if (process == NULL || syscall_copy_from_user_space(
+            &header, user_message, sizeof(header)) != 0) return -14;
+    if (header.version == IPC_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_message_t)) {
+        ipc_message_t message;
+        if (syscall_copy_from_user_space(&message, user_message,
+                                         sizeof(message)) != 0) return -14;
+        return ipc_send_timeout(process, handle, &message, timeout_ms);
+    }
+    if (header.version == IPC_BULK_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_bulk_message_t)) {
+        ipc_bulk_message_t message;
+        if (syscall_copy_from_user_space(&message, user_message,
+                                         sizeof(message)) != 0) return -14;
+        return ipc_send_bulk_timeout(process, handle, &message, timeout_ms);
+    }
+    return -22;
 }
 
 static int syscall_ipc_receive(ipc_handle_t handle,
-                               ipc_message_t *user_message) {
+                               void *user_message) {
     Process *process = scheduler_current_process();
     page_directory_t *directory = paging_current_directory();
     uint32_t address = (uint32_t)(uintptr_t)user_message;
-    ipc_message_t message;
-    if (process == NULL ||
-        !user_range_accessible(directory, address, sizeof(message), true) ||
-        copy_from_user(&message, user_message, sizeof(message)) != 0) {
-        return -14;
+    ipc_user_message_header_t header;
+    if (process == NULL || copy_from_user(&header, user_message,
+                                          sizeof(header)) != 0) return -14;
+    if (header.version == IPC_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_message_t)) {
+        ipc_message_t message;
+        if (!user_range_accessible(directory, address, sizeof(message), true) ||
+            copy_from_user(&message, user_message, sizeof(message)) != 0)
+            return -14;
+        int result = ipc_receive(process, handle, &message);
+        if (result != 0) return result;
+        return copy_to_user_space(directory, address, &message,
+                                  sizeof(message)) == 0 ? 0 : -14;
     }
-    int result = ipc_receive(process, handle, &message);
-    if (result != 0) return result;
-    return copy_to_user_space(directory, address, &message,
-                              sizeof(message)) == 0 ? 0 : -14;
+    if (header.version == IPC_BULK_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_bulk_message_t)) {
+        ipc_bulk_message_t message;
+        if (!user_range_accessible(directory, address, sizeof(message), true) ||
+            copy_from_user(&message, user_message, sizeof(message)) != 0)
+            return -14;
+        int result = ipc_receive_bulk_timeout(
+            process, handle, &message, IPC_DEFAULT_TIMEOUT_MS);
+        if (result != 0) return result;
+        return copy_to_user_space(directory, address, &message,
+                                  sizeof(message)) == 0 ? 0 : -14;
+    }
+    return -22;
 }
 
 static int syscall_ipc_receive_timeout(ipc_handle_t handle,
-                                       ipc_message_t *user_message,
+                                       void *user_message,
                                        uint32_t timeout_ms) {
     Process *process = scheduler_current_process();
     page_directory_t *directory = paging_current_directory();
     uint32_t address = (uint32_t)(uintptr_t)user_message;
-    ipc_message_t message;
-    if (process == NULL ||
-        !user_range_accessible(directory, address, sizeof(message), true) ||
-        copy_from_user(&message, user_message, sizeof(message)) != 0) {
-        return -14;
+    ipc_user_message_header_t header;
+    if (process == NULL || copy_from_user(&header, user_message,
+                                          sizeof(header)) != 0) return -14;
+    if (header.version == IPC_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_message_t)) {
+        ipc_message_t message;
+        if (!user_range_accessible(directory, address, sizeof(message), true) ||
+            copy_from_user(&message, user_message, sizeof(message)) != 0)
+            return -14;
+        int result = ipc_receive_timeout(process, handle, &message,
+                                         timeout_ms);
+        if (result != 0) return result;
+        return copy_to_user_space(directory, address, &message,
+                                  sizeof(message)) == 0 ? 0 : -14;
     }
-    int result = ipc_receive_timeout(process, handle, &message, timeout_ms);
-    if (result != 0) return result;
-    return copy_to_user_space(directory, address, &message,
-                              sizeof(message)) == 0 ? 0 : -14;
+    if (header.version == IPC_BULK_MESSAGE_VERSION &&
+        header.struct_size == sizeof(ipc_bulk_message_t)) {
+        ipc_bulk_message_t message;
+        if (!user_range_accessible(directory, address, sizeof(message), true) ||
+            copy_from_user(&message, user_message, sizeof(message)) != 0)
+            return -14;
+        int result = ipc_receive_bulk_timeout(process, handle, &message,
+                                              timeout_ms);
+        if (result != 0) return result;
+        return copy_to_user_space(directory, address, &message,
+                                  sizeof(message)) == 0 ? 0 : -14;
+    }
+    return -22;
 }
 
 static int syscall_ipc_close(ipc_handle_t handle) {

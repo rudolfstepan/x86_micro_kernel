@@ -401,9 +401,11 @@ typedef struct {
 } x86os_runtime_timing_t;
 
 #define X86OS_IPC_MAX_MESSAGE_SIZE 128U
+#define X86OS_IPC_BULK_MAX_MESSAGE_SIZE 2048U
 #define X86OS_IPC_QUEUE_DEPTH 4U
 #define X86OS_IPC_MAX_CAPABILITIES_PER_PROCESS 8U
 #define X86OS_IPC_MESSAGE_VERSION 1U
+#define X86OS_IPC_BULK_MESSAGE_VERSION 2U
 #define X86OS_IPC_INVALID_HANDLE 0U
 #define X86OS_IPC_DEFAULT_TIMEOUT_MS 1000U
 #define X86OS_IPC_RIGHT_SEND 0x01U
@@ -425,6 +427,7 @@ typedef struct {
 #define X86OS_REIST_REPORT_DIAGNOSTIC 13U
 #define X86OS_REIST_REPORT_WCET_BASELINE 14U
 #define X86OS_REIST_REPORT_WCET_REJECT 15U
+#define X86OS_REIST_REPORT_AUDIO_CLIENT_RELEASED 16U
 #define X86OS_SERVICE_AUDIO 2U
 #define X86OS_SERVICE_DISPLAY_DRIVER 3U
 #define X86OS_SERVICE_AUDIO_DRIVER_INTERNAL 0x80000001U
@@ -835,6 +838,14 @@ typedef struct {
     uint32_t length;
     uint8_t payload[X86OS_IPC_MAX_MESSAGE_SIZE];
 } x86os_ipc_message_t;
+
+/** Append-only bounded large-message ABI on the existing IPC syscalls. */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t length;
+    uint8_t payload[X86OS_IPC_BULK_MAX_MESSAGE_SIZE];
+} x86os_ipc_bulk_message_t;
 
 #define X86OS_DISPLAY_ABI_VERSION 1U
 #define X86OS_DISPLAY_MAX_TEXT 256U
@@ -1761,6 +1772,16 @@ int x86os_ipc_send_timeout(x86os_ipc_handle_t handle,
 int x86os_ipc_receive_timeout(x86os_ipc_handle_t handle,
                               x86os_ipc_message_t* message,
                               uint32_t timeout_ms);
+int x86os_ipc_send_bulk(x86os_ipc_handle_t handle,
+                        const x86os_ipc_bulk_message_t* message);
+int x86os_ipc_receive_bulk(x86os_ipc_handle_t handle,
+                           x86os_ipc_bulk_message_t* message);
+int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t handle,
+                                const x86os_ipc_bulk_message_t* message,
+                                uint32_t timeout_ms);
+int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t handle,
+                                   x86os_ipc_bulk_message_t* message,
+                                   uint32_t timeout_ms);
 int x86os_ipc_close(x86os_ipc_handle_t handle);
 int x86os_ipc_release(x86os_ipc_handle_t handle);
 int x86os_network_probe(void);

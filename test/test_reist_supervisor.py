@@ -9,6 +9,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReistSupervisorTests(unittest.TestCase):
+    def test_driver_diagnostics_bypass_framebuffer_with_bounded_serial_output(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        helper = source[source.index("static void driver_diagnostic_serial"):
+                        source.index("int supervisor_device_driver_report")]
+        report = source[source.index(
+            "if (report->report_type == "
+            "DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC"):
+            source.index("} else if (report->report_type ==",
+                         source.index(
+                             "if (report->report_type == "
+                             "DEVICE_DOMAIN_DRIVER_REPORT_DIAGNOSTIC"))]
+        self.assertIn("SUPERVISOR_NAME_CAPACITY", helper)
+        self.assertIn("name_length + 1U < SUPERVISOR_NAME_CAPACITY", helper)
+        self.assertIn("nibble < 8U", helper)
+        self.assertIn("serial_write_char", helper)
+        self.assertIn("driver_diagnostic_serial(runtime->name, report->value)",
+                      report)
+        self.assertNotIn("printf(", report)
+
     def test_compositor_lifecycle_ap_affinity_is_post_ready_and_one_shot(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
@@ -59,6 +79,38 @@ class ReistSupervisorTests(unittest.TestCase):
                       display_connect)
         start = kernel.index("supervisor_start_compositor")
         self.assertIn("production_driver_ap_mask", kernel[start:start + 180])
+
+    def test_sound_surface_probe_is_compile_time_only(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        windows = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        self.assertIn("SOUNDPLAYER_SURFACE_PROBE ?= 0", makefile)
+        self.assertIn("REIST_SOUNDPLAYER_SURFACE_PROBE", makefile)
+        self.assertIn("SoundplayerSurfaceProbe", windows)
+        spawn = source[source.index("static bool compositor_spawn_next"):
+                       source.index("static bool compositor_fence_apply")]
+        self.assertIn("#ifdef REIST_SOUNDPLAYER_SURFACE_PROBE", spawn)
+        self.assertIn('"--sound-probe"', spawn)
+
+    def test_driver_control_is_published_before_prepared_task_starts(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        spawn = source[source.index("static bool driver_spawn_next"):
+                       source.index("static bool driver_fence_until")]
+        self.assertIn("process_spawn_supervised_prepared", spawn)
+        self.assertIn("process_set_supervised_affinity", spawn)
+        self.assertIn("driver_control_write(runtime, &control)", spawn)
+        self.assertIn("process_start_prepared_supervised", spawn)
+        self.assertNotIn("process_spawn_supervised_affined", spawn)
+        self.assertLess(spawn.index("process_spawn_supervised_prepared"),
+                        spawn.index("device_domain_claim"))
+        self.assertLess(spawn.index("device_domain_claim"),
+                        spawn.index("driver_control_write(runtime, &control)"))
+        self.assertLess(spawn.index("driver_control_write(runtime, &control)"),
+                        spawn.index("process_start_prepared_supervised"))
+        self.assertIn("driver_abort_prepared_spawn", source)
 
     def test_compositor_vfs_shadow_authority_is_narrow_and_bounded(self):
         process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")

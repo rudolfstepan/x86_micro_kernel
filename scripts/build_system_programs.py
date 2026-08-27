@@ -224,7 +224,7 @@ def main() -> None:
             if name in IMAGE_PROGRAMS:
                 link_libraries.append(sdk.image_library)
             dependency_files = [*core_headers]
-            if name in {"CONTROL.PRG", "CONFIG.PRG"}:
+            if name in {"DESKTOP.PRG", "CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",

@@ -9,10 +9,17 @@
  * four messages, therefore 64 cooperative refill rounds cover one complete
  * frame plus transaction messages without making broker work unbounded. */
 #define DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 64U
+#define DESKTOP_SURFACE_RUNTIME_RETIRE_TIMEOUT_MS 1000U
+#define DESKTOP_SURFACE_RUNTIME_FREE 0U
+#define DESKTOP_SURFACE_RUNTIME_BOUND 1U
+#define DESKTOP_SURFACE_RUNTIME_RESERVED 2U
+#define DESKTOP_SURFACE_RUNTIME_RETIRING 3U
 typedef struct desktop_surface_runtime_client {
     x86os_ipc_handle_t endpoint;
     reist_gui_surface_owner_t owner;
     uint32_t active;
+    uint32_t terminate_requested;
+    uint64_t retire_deadline_ms;
 } desktop_surface_runtime_client_t;
 typedef struct desktop_surface_runtime {
     desktop_surface_runtime_client_t clients[DESKTOP_SURFACE_RUNTIME_CAPACITY];

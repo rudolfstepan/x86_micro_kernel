@@ -82,9 +82,10 @@ einem AP mit loopbackgebundener RFB-Mauszustellung nach. Ein initialer
 zurückgestellten AMD-Mainboard auf; dasselbe Image startet auf dem
 unterstützten ASUS-Board. Die daraus abgeleiteten Pakete R2.2af bis R2.2ah
 bleiben ohne Produktionskandidaten abgebrochen. Ein danach reproduzierter
-WAV-Start blockiert den Compositor noch im synchronen Legacy-Child-Wait und
-verbraucht dadurch sein Heartbeat-Restartbudget; R2.2ai migriert den Sound
-Player auf die Surface-Grenze. Der getrennte physische xHCI-Control-Fehler
+WAV- oder Control-Gallery-Start blockiert den Compositor noch im synchronen
+Legacy-Child-Wait und verbraucht dadurch sein Heartbeat-Restartbudget; R2.2ai
+migriert beide Clients auf die Surface-Grenze und ergänzt konfigurierbare,
+originale CC0-Systemklänge. Der getrennte physische xHCI-Control-Fehler
 `cc=13` folgt als R5.2x, bevor R6.2o auf der VMware-/ASUS-Basis den begrenzten
 BSP-Fence und die erneute post-READY-AP-Affinität nach einem Heartbeat-Restart
 prüft. Physische,
@@ -538,7 +539,8 @@ und 10 verbindlich.
     generationsgebundenen Supervisor-Lebenszyklus; R6.2n serialisiert xHCI/HID
     und hat seinen normalen post-READY-AP-Pfad abgenommen; die AMD-spezifischen
     Startup-Hypothesen R2.2af bis R2.2ah sind abgebrochen; R2.2ai beseitigt
-    zuerst den synchronen Sound-Player-Child-Wait, R5.2x klärt danach den
+    zuerst die synchronen Sound-Player-/Control-Gallery-Child-Waits und bindet
+    konfigurierbare Systemklänge an begrenzte Ring-3-Kinder; R5.2x klärt danach den
     physischen xHCI-Control-Fehler und R6.2o nimmt anschließend den getrennten
     Compositor-AP-Restartnachweis ab; weitere
     Produktionsdomänen
@@ -571,7 +573,7 @@ und 10 verbindlich.
 | Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI, überwachtes Ring-3-VMware-SVGA-II-2D und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
 | Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS und HTTP/1.0 | Host- und QEMU-Nachweise vorhanden; kein IPv6, TLS oder vollständiges POSIX-Socketmodell |
 | USB | xHCI-Initialisierung, Root-Port-/Descriptorpfad und HID-Boot-Tastatur/-Maus einschließlich automatisiertem VMware-Desktop-Mausnachweis | einfache reale Geräte und VMware-Maus abgenommen; Composite-AULA, allgemeiner Hotplug und Mass Storage offen |
-| Userspace | SDK mit getrennten GUI-/Audio-/Image-Bibliotheken, Ring-3-Shell, Systemprogramme, Surface-Compositor, Explorer, Notepad und Image Viewer als Fensterclients | Sound Player, Control Gallery, Terminal und Systemwerkzeuge noch nicht als Surface-Clients migriert |
+| Userspace | SDK mit getrennten GUI-/Audio-/Image-Bibliotheken, Ring-3-Shell, Systemprogramme, Surface-Compositor, Explorer, Notepad und Image Viewer als Fensterclients | Sound Player und Control Gallery werden in R2.2ai migriert; Terminal und Systemwerkzeuge bleiben offen |
 | Qualität | Host-/Quelltests, Imagevalidatoren, QEMU-Runtimeprofile für Ring 3, Netzwerk, Storage, Handover, Grafik/Surface und PCI-Audio sowie manuelle VMware-/Hardwareevidenz | breite Hardware-, Langzeit-, EMV- und reale Power-Loss-Matrix fehlt |
 
 Maßgebliche Quellen sind der ausführbare Code und die Tests. Der aktuelle
@@ -796,11 +798,18 @@ Doppelklick/Enter; Zielkollision oder manipulierte Metadaten scheitern vor dem
 Rename. Ein Rechtsklick auf das Desktop-Icon öffnet ein begrenztes Kontextmenü
 mit Öffnen und Papierkorb leeren. Endgültiges Leeren benötigt eine
 applikationsmodale Ja/Nein-Bestätigung und verwendet feste Traversierungsbudgets.
-Control Gallery, Sound Player und Terminal verwenden noch die begrenzte
-Vollbildbrücke. Eine vollständige TTY- und Terminal-Clientarchitektur bleibt
-offen. Die Systemsteuerung persistiert vier begrenzte Einstellungsgruppen über
-einen separaten Ring-3-Prozess; dynamisches Neuladen durch bestehende Treiber
-ist noch offen und wird nicht behauptet.
+Sound Player und Control Gallery werden in R2.2ai als unabhängige
+Surface-Clients migriert. Das Terminal verwendet noch die begrenzte
+Vollbildbrücke; eine vollständige TTY- und Terminal-Clientarchitektur bleibt
+offen. Die Systemsteuerung zeigt vier begrenzte Einstellungs-Applets; derselbe
+separate Ring-3-Konfigurationsdienst akzeptiert zusätzlich die fünfte,
+versionierte Systemklangtabelle für eine spätere grafische Auswahl.
+Derselbe R2.2ai-Schnitt ergänzt ohne Änderung des v1-Formats einen einzelnen
+2048-Byte-IPC-v2-Bulkslot: 504 Frames pro Schreibvorgang begrenzen eine volle
+Vorschau auf 31 Roundtrips. WAV-Dateien werden in einem Vorwärtsdurchlauf
+gelesen und die Wiedergabe beginnt vor der Sound-Player-Surface.
+Dynamisches Neuladen durch bestehende Treiber ist noch offen und wird nicht
+behauptet.
 
 - TTY-Abstraktion mit kanonischem/raw Modus, Echo und per-Prozess
   Vordergrundgruppe

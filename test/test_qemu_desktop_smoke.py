@@ -20,6 +20,14 @@ RUNNER = ROOT / "scripts" / "run_qemu_desktop_smoke.py"
 
 
 class DesktopSmokeRunnerTests(unittest.TestCase):
+    def test_runtime_desktop_qemu_uses_below_normal_windows_priority(self):
+        runtime = (ROOT / "scripts/run_qemu_runtime_desktop.py").read_text(
+            encoding="utf-8")
+        self.assertIn("BELOW_NORMAL_PRIORITY_CLASS", runtime)
+        self.assertIn("creationflags=QEMU_CREATION_FLAGS", runtime)
+        self.assertNotIn('"x/64wx $esp"', runtime)
+        self.assertIn('"SOUNDPLAYER_AUDIO_FAIL"', runtime)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

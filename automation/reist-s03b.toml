@@ -9865,36 +9865,115 @@ id = "R2.2ai-soundplayer-surface-lifecycle"
 status = "active"
 phase = "post-s0"
 risk = "high"
-title = "Keep graphical audio playback inside the compositor lifecycle"
-scope = "Migrate the graphical Sound Player from the legacy synchronous full-screen launcher to the existing delegated Surface ABI. The desktop must reserve, delegate and bind the fixed-capacity endpoint without waiting for playback completion, so its existing 500-ms progress publication remains live throughout the two-second audio preview and cannot consume the compositor restart budget. The Sound Player parses exactly one bounded Surface handle plus one WAV path, paints only client-local retained commands, receives bounded compositor input, pumps at most one fixed audio payload per event-loop iteration and tears down audio, Surface and IPC state idempotently. Add a QEMU Surface-plus-HDA probe that starts real PCM playback, requires continuing compositor progress beyond the heartbeat deadline, rejects every compositor restart or degraded marker and validates the captured 440-Hz stereo stream. Preserve the shell-compatible WAVPLAY path, audio lifecycle and all display, VFS, IPC and process authority limits."
+title = "Contain graphical audio clients and add configurable system sounds"
+scope = "Migrate the graphical Sound Player and Control Gallery from the legacy synchronous full-screen launcher to the existing delegated Surface ABI and close their bounded child retirement lifecycle. Eliminate the HDA-plus-video publish-after-run race by keeping every supervised driver PREPARED until affinity, device ownership and its generation-scoped protected control record are committed. Add an original deterministic CC0 S16_LE system-sound set whose startup, shutdown, error, notification, successful trash-drop and successful trash-empty event paths are transactionally loaded from reist.sounds/1 and accepted by the bounded configuration mutation service for later Control Panel use. The desktop may launch at most two quiet WAVPLAY children, never holds audio authority or waits on a live sound child, drops or priority-coalesces excess events and disables presentation sounds in diagnostic probes. A graceful audio endpoint release uses an append-only one-way RELEASE followed by EPIPE; Ring 0 clears the one-client session only after proving that no peer capability or queued message remains, while crashes retain full endpoint rotation. Add a QEMU Surface-plus-HDA probe that starts both graphical clients and one bounded generated startup-sound playback, requires continuing compositor progress beyond the heartbeat deadline, rejects every compositor restart or degraded marker and validates the captured stereo S16 stream. Diagnose and repair the combined VGA-plus-HDA bootstrap across high MMIO mapping, PCI-region mediation and the bounded Ring-3 HDA state machine; mappings must remain supervisor-only, non-aliased and valid in every process address space. Repair the framebuffer-only boot panic by allowing an immediate uncontended kernel-mutex acquisition when the current task cannot sleep while returning bounded WOULD_BLOCK on actual contention. Remove audible WAV startup latency with an append-only version-2 2048-byte bulk IPC rendezvous that leaves version 1 unchanged, transfers at most one checksummed bulk message per endpoint, and reduces a maximum audio preview to at most 31 confirmed bulk writes. Load each WAV with one bounded open/read pass and start graphical playback before Surface construction. Preserve all display, VFS, IPC, device and process authority limits."
 allowed_files = [
   "automation/reist-s03b.toml",
+  "Makefile",
+  "assets/audio/README.md",
+  "assets/audio/startup.wav",
+  "assets/audio/shutdown.wav",
+  "assets/audio/error.wav",
+  "assets/audio/notify.wav",
+  "assets/audio/trash-drop.wav",
+  "assets/audio/trash-empty.wav",
+  "config/etc/reist/sounds.conf",
+  "arch/x86/mm/paging.c",
+  "arch/x86/mm/paging.h",
+  "include/kernel/device_domain.h",
+  "include/kernel/ipc.h",
+  "include/kernel/supervisor.h",
+  "kernel/init/audio_device_profile.c",
+  "kernel/init/device_domain.c",
+  "kernel/ipc/ipc.c",
+  "kernel/sched/mutex.c",
+  "kernel/init/supervisor.c",
+  "kernel/syscall/syscall_table.c",
+  "scripts/build-windows.ps1",
+  "scripts/build_system_programs.py",
+  "scripts/generate_system_sounds.py",
   "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/compositor/desktop_surface_runtime.h",
+  "userspace/gui/apps/control_gallery/main.c",
   "userspace/gui/apps/sound_player/main.c",
+  "userspace/audio/include/reist/audio.h",
+  "userspace/audio/include/reist/audio_wave.h",
+  "userspace/audio/lib/audio.c",
+  "userspace/audio/lib/audio_wave.c",
+  "userspace/programs/wavplay.c",
+  "userspace/sdk/x86os.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/services/audio/audio_service.c",
+  "userspace/services/config/config_service.c",
+  "userspace/drivers/audio/hda_driver.c",
+  "userspace/drivers/audio/hda_driver.h",
+  "scripts/run_qemu_pci_audio.py",
   "scripts/run_qemu_runtime_desktop.py",
   "scripts/test-reist-runtime.ps1",
   "test/test_audio_source.py",
+  "test/test_audio_host.c",
+  "test/test_device_domain_source.py",
+  "test/test_device_domain_host.c",
+  "test/test_paging_source.py",
+  "test/test_audio_sdk_host.c",
+  "test/test_ipc_host.c",
+  "test/test_reist_ipc.py",
   "test/test_desktop_source.py",
+  "test/test_desktop_surface_runtime_source.py",
+  "test/test_gui_control_gallery_source.py",
   "test/test_qemu_desktop_smoke.py",
+  "test/test_qemu_pci_audio.py",
+  "test/test_reist_config_source.py",
+  "test/test_reist_supervisor.py",
+  "test/test_runtime_graphics_switch.py",
+  "test/test_smp.py",
+  "test/test_syscall_abi_source.py",
+  "test/test_system_layout.py",
   "docs/architecture/AUDIO_SUBSYSTEM.md",
   "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/SYSTEM_CONFIGURATION.md",
   "docs/development/CURRENT_WORK.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
 ]
 invariants = [
-  "the desktop never performs a blocking child wait for the Surface Sound Player and continues publishing compositor progress at the existing 500-ms cadence",
-  "the Sound Player receives only its delegated Surface endpoint and the selected bounded WAV path and performs no direct global display or raw input operation in desktop mode",
-  "each GUI iteration pumps at most one fixed audio protocol payload and every Surface IPC audio IPC wait retry and event batch remains bounded",
+  "the desktop never performs a blocking child wait for the Surface Sound Player or Control Gallery and continues publishing compositor progress at the existing 500-ms cadence",
+  "both clients receive only their delegated Surface endpoint plus the Sound Player's selected bounded WAV path and perform no direct global display or raw input operation in desktop mode",
+  "version-1 IPC remains byte-for-byte compatible while version 2 provides one 2048-byte checksummed rendezvous slot per endpoint with bounded waits and fail-closed corruption handling",
+  "a maximum audio preview uses at most 31 confirmed bulk writes and graphical playback begins before Surface construction without blocking the compositor",
+  "the graphical client uses the public finite 500-ms audio transaction deadline so the bounded 500-ms service-to-HDA start can complete on VMware without converting a successful start into ETIMEDOUT",
+  "the graphical player measures the loaded WAV duration after confirmed stream start and automatically stops and closes the cyclic stream after that duration plus one fixed 20-ms drain guard instead of looping",
+  "every Surface IPC audio IPC wait retry and event batch remains bounded",
   "close playback failure resize and compositor disconnect release audio stream audio endpoint Surface endpoint and retained publication idempotently",
-  "the runtime proof crosses the two-second heartbeat deadline with real captured 440-Hz PCM and no compositor restart degraded state or widened authority"
+  "a supervised driver remains PREPARED until affinity device claim and the complete protected owner record are published and every failed preparation fences recovers and terminates its generation",
+  "reist.sounds/1 is parsed transactionally and only none or canonical lowercase WAV paths below /usr/share/sounds are configurable for the six stable event keys; trash sounds follow only successful committed mutations",
+  "system sounds use no copied Microsoft samples remain at or below the fixed audio stream capacity and execute only in at most two tracked WAVPLAY children with priority coalescing and bounded nonblocking reap; normal navigation and successful program or document activation never enqueue notification audio that can compete with the explicit client",
+  "only an explicit one-way RELEASE followed by EPIPE clears the current one-client session idempotently while an unarmed crash still rotates the complete endpoint generation",
+  "VGA and HDA high MMIO apertures remain page-aligned non-overlapping supervisor mappings shared into every later process address space without exposing raw mappings to Ring 3",
+  "every HDA bootstrap register operation and hardware wait is bounded and a mapping mediation failure terminates or fences only the exact driver generation",
+  "a task without sleep permission may acquire an uncontended kernel mutex but actual contention returns WOULD_BLOCK before any wait-queue transition",
+  "the runtime proof crosses the two-second heartbeat deadline with one bounded captured generated startup sound and no compositor restart degraded state or widened authority"
 ]
 targeted_tests = [
   "python test/test_audio_source.py -v",
+  "python test/test_device_domain_source.py -v",
+  "python test/test_paging_source.py -v",
+  "python test/test_reist_ipc.py -v",
   "python test/test_desktop_source.py -v",
-  "python test/test_qemu_desktop_smoke.py -v"
+  "python test/test_desktop_surface_runtime_source.py",
+  "python test/test_gui_control_gallery_source.py -v",
+  "python test/test_qemu_desktop_smoke.py -v",
+  "python test/test_qemu_pci_audio.py -v",
+  "python test/test_reist_config_source.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_smp.py SmpTests.test_sleepable_kernel_mutex_has_bounded_atomic_wait_transfer -v",
+  "python test/test_syscall_abi_source.py -v",
+  "python test/test_system_layout.py -v"
 ]
 package_tests = [
-  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
 ]
 runtime_tests = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-audio"
@@ -9903,11 +9982,13 @@ stop_conditions = [
   "the desktop can block on Sound Player completion or the probe observes a compositor restart or degraded marker",
   "the Sound Player uses global display or raw keyboard mouse APIs after receiving a Surface endpoint",
   "audio upload Surface handling or cleanup becomes unbounded or allocates in a safety-critical runtime path",
+  "a driver can execute before its generation-scoped control and device claim are published or a failed prepared spawn leaves device ownership behind",
+  "a system-sound path escapes /usr/share/sounds uses an unbounded queue blocks the compositor or bypasses the one-client audio service",
   "a required production file lies outside allowed_files",
   "an unrelated worktree change overlaps an allowed file",
   "a frozen gate still fails after one focused in-scope repair"
 ]
-commit_message = "gui: keep sound playback inside compositor lifecycle"
+commit_message = "gui: contain audio clients and add system sounds"
 
 [[packages]]
 id = "R5.2x-xhci-control-short-packet"
