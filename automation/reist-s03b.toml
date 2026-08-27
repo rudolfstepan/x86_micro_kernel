@@ -9729,13 +9729,14 @@ id = "R6.2m-vmware-mouse-report-flow"
 status = "active"
 phase = "post-s0"
 risk = "high"
-title = "Restore VMware desktop mouse report flow"
-scope = "Repair the bounded xHCI interrupt-report path after VMware has enumerated its virtual USB Boot mouse, without enabling host HID passthrough or adding a second input authority. Preserve generation-scoped HID publication and the compositor syscall boundary, add diagnostics and regression coverage for the proven failure, and require a real generated VMware package to deliver pointer movement to the supervised desktop."
+title = "Restore VMware desktop mouse and explorer flow"
+scope = "Repair the bounded xHCI interrupt-report path after VMware has enumerated its virtual USB Boot mouse and restore the supervised compositor's bounded VFS-shadow client authority, without enabling host HID passthrough, raw storage or a second input authority. Preserve generation-scoped HID publication and the compositor syscall boundary, add diagnostics and regression coverage for the proven failures, and require a real generated VMware package to deliver pointer movement to the supervised desktop."
 allowed_files = [
   "automation/reist-s03b.toml",
   "drivers/usb/xhci.c",
   "drivers/usb/xhci.h",
   "kernel/init/supervisor.c",
+  "kernel/proc/process.c",
   "kernel/syscall/syscall_table.c",
   "scripts/create_native_boot_image.py",
   "scripts/run_vmware_mouse.ps1",
@@ -9754,10 +9755,12 @@ invariants = [
   "interrupt rearming and event draining are bounded and preserve xHCI producer and consumer cycle state",
   "mouse reports remain fixed-size Boot-protocol input and cannot publish raw DMA or device authority to Ring 3",
   "the supervised compositor receives mouse input only through SYS_MOUSE_EVENT and updates the mediated software pointer",
+  "the compositor can submit collect and cancel only storage-service VFS-shadow requests and receives no raw block format maintenance or storage-service authority",
   "runtime acceptance boots the generated VMware package and proves at least one injected virtual pointer movement reaches the desktop"
 ]
 targeted_tests = [
   "python test/test_usb_mouse.py -v",
+  "python test/test_reist_supervisor.py -v",
   "python test/test_vmware_mouse.py -v",
   "python test/test_desktop_source.py -v"
 ]
