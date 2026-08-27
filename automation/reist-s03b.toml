@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2f-ap-audio-service"
 
 [policy]
 one_package_per_run = true
@@ -1884,6 +1884,55 @@ evidence = [
   "four-CPU QEMU completed five playback cycles on the replacement AP generation and captured 271216 stereo S16 frames at 440.4 Hz with max-gap 1",
   "active_id is empty and no DMA IRQ MMIO port or ambient service authority was added"
 ]
+
+[[packages]]
+id = "R6.2f-ap-audio-service"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run generation-scoped audio services on APs"
+scope = "Persist an online-AP target mask in the ECC-protected audio-service control record. Keep every service generation BSP-affine through HDA connection, self-test, endpoint publication, healthy and ready reports, then apply the mask. Return an AP generation to BSP with a bounded scheduler handoff before normal client-session fencing. Prove all five normal service rotations execute on APs while HDA, supervisor and legacy-PIC IRQ lifecycle remain independently bounded."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/kernel.c",
+  "kernel/init/supervisor.c",
+  "include/kernel/supervisor.h",
+  "scripts/run_qemu_pci_audio.py",
+  "test/test_audio_source.py",
+  "test/test_qemu_pci_audio.py",
+  "docs/architecture/AUDIO_SUBSYSTEM.md",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "each service generation connects self-tests publishes healthy and ready on BSP before AP affinity",
+  "the desired mask is protected validated preserved across normal rotations and cleared with inactive state",
+  "service fencing returns an AP generation to BSP with a deadline-bounded scheduler handoff before termination",
+  "only current healthy ready service generations execute on APs and stale generations regain no endpoint authority",
+  "HDA driver supervisor legacy-PIC IRQ and all device authority contracts remain unchanged",
+  "five normal client rotations each produce AP execution evidence and valid PCM output without consuming the service fault budget"
+]
+targeted_tests = [
+  "python test/test_audio_source.py -q",
+  "python test/test_qemu_pci_audio.py -v",
+  "python test/test_reist_supervisor.py -v"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -SkipReleaseSbom",
+  "python scripts/run_qemu_pci_audio.py --image build/reist-os.img --smp 4 --expect-audio-service-smp --timeout 120 --log build/codex-agent/r62f-audio-service-ap.log --wav build/codex-agent/r62f-audio-service-ap.wav"
+]
+stop_conditions = [
+  "a service becomes AP-affine before ready publication",
+  "normal client rotation races AP execution or consumes restart budget",
+  "device or IRQ authority changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "audio: run rotated service generations on APs"
+evidence = []
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"
