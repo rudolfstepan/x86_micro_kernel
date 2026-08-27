@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2i – Storage-Service-AP-Affinität nach Crash wiederherstellen
+Aktives Thema: kein aktives Paket; R6.2i ist abgeschlossen
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -155,3 +155,12 @@ gesunde Generation über die ECC-geschützte Zielmaske auf einen AP verschoben.
 Der SMP4-Gast bestätigte eine autorisierte Storage-Operation auf CPU 2, den
 realen Storage-Self-Test, VFS-/FAT-Zugriffe, `TASK_CAPACITY_OK` und `TEST_OK`.
 ATA, AHCI, FDD, Administration und Legacy-PIC-IRQ blieben BSP-affin.
+
+## Storage-Service-AP-Restart nachgewiesen
+
+Die bestehende Test-Injection beendete Generation 1 erst nach einem realen
+vermittelten Block-Read. Der Supervisor entzog die generationsgebundene
+Request-Autorität und startete Generation 2 innerhalb des vorhandenen Budgets.
+Sie band und publizierte Ready auf CPU 0, erhielt erst danach erneut die
+geschützte AP-Maske und führte auf CPU 1 aus. Der SMP4-Gast bestand
+`STORAGE_RESTART_OK`, `STORAGE_SERVICE_OK`, `TASK_CAPACITY_OK` und `TEST_OK`.

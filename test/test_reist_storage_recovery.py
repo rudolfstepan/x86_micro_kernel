@@ -20,6 +20,16 @@ def read(relative: str) -> str:
 
 
 class StorageRecoveryContracts(unittest.TestCase):
+    def test_replacement_storage_service_restores_ap_affinity_after_ready(self):
+        service = read("kernel/init/storage_service.c")
+        bind = service[service.index("int storage_service_bind"):
+                       service.index("bool storage_service_authorized")]
+        self.assertLess(bind.index('printf("REIST_STORAGE SERVICE_READY'),
+                        bind.index("process_set_supervised_affinity"))
+        runner = read("scripts/run_qemu_smoke.py")
+        self.assertIn("--expect-storage-ap-restart", runner)
+        self.assertIn("replacement_ap", runner)
+
     def test_fault_hook_is_test_build_only_and_crashes_after_real_read(self):
         source = read("kernel/syscall/syscall_table.c")
         guard = source.index("#ifdef REIST_STORAGE_FAULT_INJECTION")

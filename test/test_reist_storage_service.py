@@ -42,6 +42,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertLess(kernel.index("x86_smp_scheduler_probe()"),
                         kernel.index("storage_service_set_current_affinity"))
         self.assertIn("--expect-storage-ap", runner)
+        self.assertIn("control.post_ready_cpu_affinity_mask != 0U", source)
 
     def test_only_authorized_service_reaches_raw_block_read(self):
         syscalls = read("kernel/syscall/syscall_table.c")

@@ -1533,6 +1533,7 @@ def validate(
     expect_storage_io_failure: bool = False,
     expect_storage_self_test: bool = False,
     expect_storage_ap: bool = False,
+    expect_storage_ap_restart: bool = False,
     expect_handover: bool = False,
     expect_icmp_echo: bool = False,
     expect_dhcp_config: bool = False,
@@ -1764,6 +1765,21 @@ def validate(
         if (ready < 0 or ready > boot or ap_execution < boot or
                 self_test < ap_execution or self_test > test):
             return "missing ordered storage-service ready/AP/self-test markers"
+    if expect_storage_ap_restart:
+        first_ap = transcript.find(REIST_STORAGE_AP_MARKER, boot)
+        restarted = exact_line_position(transcript,
+                                        REIST_STORAGE_RESTARTED_MARKER)
+        replacement_ready = exact_line_position(
+            transcript, REIST_STORAGE_READY_MARKER, after=restarted)
+        replacement_ap = transcript.find(REIST_STORAGE_AP_MARKER,
+                                         replacement_ready)
+        recovered = exact_line_position(transcript,
+                                        REIST_STORAGE_RECOVERY_MARKER,
+                                        after=replacement_ap)
+        if (first_ap < boot or restarted < first_ap or
+                replacement_ready < restarted or
+                replacement_ap < replacement_ready or recovered < replacement_ap):
+            return "missing ordered storage-service AP restart markers"
     if expect_handover:
         positions = [exact_line_position(transcript, marker)
                      for marker in REIST_HANDOVER_MARKERS]
@@ -1973,6 +1989,10 @@ def main() -> int:
         help="require an authorized storage-service operation on an AP",
     )
     parser.add_argument(
+        "--expect-storage-ap-restart", action="store_true",
+        help="require pre-crash and replacement storage-service AP execution",
+    )
+    parser.add_argument(
         "--expect-wcet-baseline", action="store_true",
         help="require a bounded empirical timing marker",
     )
@@ -2135,6 +2155,7 @@ def main() -> int:
                             args.expect_storage_io_failure,
                             args.expect_storage_self_test,
                             args.expect_storage_ap,
+                            args.expect_storage_ap_restart,
                             args.expect_handover,
                             args.inject_icmp_echo,
                             args.expect_dhcp_config,

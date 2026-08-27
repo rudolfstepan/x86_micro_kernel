@@ -402,6 +402,10 @@ int storage_service_bind(int pid, uint32_t generation) {
         return -84;
     }
     printf("REIST_STORAGE SERVICE_READY\n");
+    if (control.post_ready_cpu_affinity_mask != 0U &&
+        process_set_supervised_affinity(
+            control.pid, control.generation,
+            control.post_ready_cpu_affinity_mask) != 0) return -3;
     return 0;
 }
 

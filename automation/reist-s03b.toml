@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2i-storage-service-ap-restart"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -2044,7 +2044,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2i-storage-service-ap-restart"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Restore storage-service AP affinity after bounded crash restart"
@@ -2072,7 +2072,7 @@ targeted_tests = [
 package_tests = []
 runtime_tests = [
   ".\\scripts\\build-windows.ps1 -Target qemu -Video vga -StorageFaultInjection -SkipReleaseSbom",
-  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --vmware-vga --expect-svga2d --expect-storage-recovery --expect-storage-ap-restart --timeout 120 --log build/codex-agent/r62i-storage-service-ap-restart.log"
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --smp 4 --expect-smp --vmware-vga --expect-svga2d --expect-storage-recovery --expect-storage-ap-restart --timeout 120 --log build/codex-agent/r62i-storage-service-ap-restart.log"
 ]
 stop_conditions = [
   "replacement affinity is applied before bind self-test or ready publication",
@@ -2084,7 +2084,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: restore service AP affinity after restart"
-evidence = []
+evidence = [
+  "storage service contract passed 7 tests storage recovery contract passed 18 tests and QEMU runner passed 43 tests",
+  "Windows QEMU VGA storage-fault build compiled all 102 C objects and produced a signed validated native image",
+  "four-CPU QEMU crashed generation 1 only after a real mediated read then unbound and restarted it within the existing budget",
+  "replacement generation 2 spawned and published ready on BSP before executing an authorized storage operation on CPU 1",
+  "the guest completed STORAGE_RESTART_OK STORAGE_SERVICE_OK TASK_CAPACITY_OK and TEST_OK",
+  "active_id is empty and ATA AHCI FDD administration supervisor legacy-PIC IRQ and device authority remained unchanged"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

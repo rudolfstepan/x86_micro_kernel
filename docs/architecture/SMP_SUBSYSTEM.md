@@ -266,5 +266,10 @@ Medieninventar, Bindung, Self-Test und Ready-Publikation bleiben auf CPU 0;
 erst nach `SCHEDULER_READY` erhält die aktuelle gesunde Generation die
 geschützte Online-AP-Maske. ATA, AHCI, FDD, Administration und Legacy-PIC-IRQ
 bleiben BSP-affin.
+R6.2i bewahrt die geschützte Zielmaske über den vorhandenen begrenzten
+Storage-Service-Crash-/Restartpfad. Die Ersatzgeneration bindet und publiziert
+Ready auf CPU 0; erst danach wird die Maske erneut angewandt. Stale Requests
+bleiben generationsgebunden abgewiesen, während ATA/AHCI/FDD und PIC-IRQ auf
+dem BSP verbleiben.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.
