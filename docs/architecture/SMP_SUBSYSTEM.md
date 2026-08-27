@@ -245,5 +245,10 @@ Vor dem Fence kehrt die alte Generation deadlinebegrenzt auf den BSP zurück,
 damit Prozess-Exit und Reaping nicht parallel auf verschiedenen CPUs laufen.
 Der Vier-CPU-Nachweis verlangt Timeout und `DRIVER_RESTARTED`, AP-Ausführung in
 beiden Epochs, `SVGA2D_RECT_COPY_OK` der zweiten Generation und `TEST_OK`.
+Als nächste Produktionsdomäne startet HDA weiterhin vollständig auf dem BSP
+und wird erst nach DMA-/IRQ-Bindung, Codec-Self-Test, gesunder Veröffentlichung
+und `SCHEDULER_READY` AP-only. Der Audio-Service und der Legacy-PIC-Hard-IRQ
+bleiben auf CPU 0. Der SMP4-Audionachweis beobachtet die erste autorisierte
+Geräteoperation auf CPU 3 und fünf echte, lückenfreie PCM-Zyklen.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

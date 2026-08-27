@@ -161,6 +161,30 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn("driver->fatal", driver)
         self.assertNotIn("k_malloc", driver)
 
+    def test_healthy_hda_generation_is_ap_affined_after_smp_release(self):
+        kernel = self.read("kernel/init/kernel.c")
+        supervisor = self.read("kernel/init/supervisor.c")
+        release = kernel.split("if (!x86_smp_scheduler_probe())", 1)[1]
+        self.assertIn("audio_ap_mask = production_driver_ap_mask", kernel)
+        video = kernel.split("if (video_device_available)", 1)[1]
+        video = video.split("if (audio_device_available)", 1)[0]
+        self.assertNotIn("audio_ap_mask =", video)
+        self.assertIn("audio_driver_started && audio_ap_mask != 0U", release)
+        self.assertIn("audio_driver_handle, audio_ap_mask", release)
+        audio_start = kernel.split("if (audio_device_available)", 1)[1]
+        audio_start = audio_start.split(
+            "Publish every supervised service", 1)[0]
+        self.assertIn(".heartbeat_timeout_ms = 5000U", audio_start)
+        self.assertIn(".recovery_timeout_ms = 1000U", audio_start)
+        self.assertIn(".restart_budget = 3U", audio_start)
+        self.assertIn("post_ready_cpu_affinity_mask", supervisor)
+        output = supervisor.split(
+            "bool supervisor_device_driver_output_allowed(", 1)[1]
+        output = output.split(
+            "bool supervisor_device_driver_command_allowed(", 1)[0]
+        self.assertIn('strcmp(runtime->name, "hda-ring3") == 0', output)
+        self.assertIn("REIST_AUDIO HDA_AP_EXEC cpu=%u epoch=%u", output)
+
     def test_tools_sdk_and_virtual_hda_are_packaged(self):
         makefile = self.read("Makefile")
         windows = self.read("scripts/build-windows.ps1")

@@ -36,6 +36,16 @@ class PciAudioRunnerTests(unittest.TestCase):
         self.assertIn("hda-output,audiodev=reistaudio,debug=1", rendered)
         self.assertIn("wav,id=reistaudio", rendered)
 
+    def test_smp_audio_configuration_requires_four_cpus(self):
+        command = audio_qemu_command(
+            Path("qemu-system-i386"), Path("reist.img"), Path("audio.wav"),
+            smp=4)
+        rendered = " ".join(map(str, command))
+        self.assertIn("-smp 4", rendered)
+        runner = (ROOT / "scripts/run_qemu_pci_audio.py").read_text(
+            encoding="utf-8")
+        self.assertIn("REIST_AUDIO HDA_AP_EXEC cpu=", runner)
+
     def test_wave_validator_rejects_silence_and_accepts_pcm(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "capture.wav"

@@ -53,6 +53,15 @@ Restartbudgets. Ein Fehler im optionalen Audiosubsystem darf Shell, Desktop,
 Storage und andere Prozesse nicht beenden. Nach erschöpftem Budget bleibt
 Audio isoliert und das System meldet `DEGRADED`.
 
+Auf SMP-Systemen konstruiert der HDA-Treiber jede Generation zunächst auf dem
+BSP, bindet dort den kernelbesessenen DMA-Pool und IRQ-Endpunkt, entdeckt den
+Codec und veröffentlicht Self-Test sowie Gesundheit. Erst nach der globalen
+Scheduler-Freigabe erhält genau diese geschützte Generation die Online-AP-
+Maske. Audio-Service, Supervisor und Legacy-PIC-Hard-IRQ bleiben BSP-affin.
+Der 500-ms-Treiberheartbeat besitzt wegen begrenzter SMP-Scheduling- und PIC-
+Latenz ein festes Fünf-Sekunden-Fenster; Fence-Deadline von einer Sekunde und
+Restartbudget drei bleiben unverändert.
+
 ## Öffentliche API
 
 Der normative Header ist `<reist/audio.h>`. Ein Client verwendet die Folge
@@ -203,6 +212,9 @@ Default-Deny-Domänen, vollständig vermitteltes DMA, Shell-Erreichbarkeit und
 identische QEMU-/VMware-Systemlayouts. Ein headless VMware-Bootsmoke verlangt
 das HDA-Profil und `REIST_AUDIO SERVICE_READY`. Der QEMU-Gastnachweis prüft
 tatsächliche nicht stumme PCM-Ausgabe und die Wiederverwendung nach `stop`.
+Der SMP4-Nachweis verlangt zusätzlich eine autorisierte HDA-Geräteoperation auf
+einem AP und fünf vollständige Playback-Zyklen; die Referenzaufnahme umfasste
+278332 Stereo-S16-Frames bei 440,4 Hz mit höchstens einer Nullprobe Lücke.
 Der manuelle VMware-Nachweis vom 20. August 2026 bestätigt mit der paketierten
 440-Hz-WAV-Datei sowohl hörbare Ausgabe als auch den erwarteten Pegel über den
 vollständig aktivierten DAC-/Mixer-/Pin-Pfad.

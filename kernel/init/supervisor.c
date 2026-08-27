@@ -31,6 +31,7 @@
 #endif
 
 static volatile uint32_t svga2d_ap_execution_reported;
+static volatile uint32_t hda_ap_execution_reported;
 #ifdef REIST_SVGA2D_SMP_LIFECYCLE_FAULT_INJECTION
 static volatile uint32_t svga2d_fault_epoch;
 #endif
@@ -5147,9 +5148,21 @@ int supervisor_device_driver_report(
 bool supervisor_device_driver_output_allowed(
         int pid, uint32_t process_generation, device_domain_handle_t device) {
     supervisor_driver_control_t control;
-    return driver_runtime_for_identity(pid, process_generation, &control) !=
-            NULL && control.device == device && control.fenced == 0U &&
-        supervisor_output_allowed(control.supervisor);
+    supervisor_driver_runtime_t *runtime = driver_runtime_for_identity(
+        pid, process_generation, &control);
+    bool allowed = runtime != NULL && control.device == device &&
+        control.fenced == 0U && supervisor_output_allowed(control.supervisor);
+#ifndef REIST_HOST_TEST
+    uint32_t cpu = x86_cpu_current_index();
+    if (allowed && cpu != 0U && strcmp(runtime->name, "hda-ring3") == 0) {
+        uint32_t prior = __sync_lock_test_and_set(
+            &hda_ap_execution_reported, control.supervisor.epoch);
+        if (prior != control.supervisor.epoch)
+            printf("REIST_AUDIO HDA_AP_EXEC cpu=%u epoch=%u\n",
+                   cpu, control.supervisor.epoch);
+    }
+#endif
+    return allowed;
 }
 
 bool supervisor_device_driver_command_allowed(

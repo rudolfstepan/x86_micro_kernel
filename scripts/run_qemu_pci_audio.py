@@ -60,9 +60,10 @@ def default_qemu_path() -> Path | None:
     return None
 
 
-def audio_qemu_command(qemu: Path, image: Path, wav_path: Path) -> list[str]:
+def audio_qemu_command(qemu: Path, image: Path, wav_path: Path,
+                       smp: int = 1) -> list[str]:
     """Return the deterministic virtual Intel-HDA plus WAV backend command."""
-    command = qemu_command(qemu, image, nic="none")
+    command = qemu_command(qemu, image, nic="none", smp=smp)
     command.extend([
         "-audiodev",
         (f"wav,id=reistaudio,path={wav_path},out.frequency=48000,"
@@ -209,6 +210,7 @@ def main() -> int:
     parser.add_argument("--log", type=Path,
                         default=ROOT / "build" / "qemu-pci-audio.log")
     parser.add_argument("--timeout", type=float, default=60.0)
+    parser.add_argument("--smp", type=int, choices=(1, 2, 3, 4), default=1)
     args = parser.parse_args()
     if args.qemu is None:
         args.qemu = default_qemu_path()
@@ -224,7 +226,7 @@ def main() -> int:
         args.wav.unlink()
 
     process = subprocess.Popen(
-        audio_qemu_command(args.qemu, args.image, args.wav),
+        audio_qemu_command(args.qemu, args.image, args.wav, smp=args.smp),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, text=True, encoding="utf-8",
         errors="replace", bufsize=1,
@@ -263,6 +265,11 @@ def main() -> int:
                             transcript, AUDIOTEST_OK, cycle, deadline):
                         detail = f"audiotest cycle {cycle} did not complete"
                         break
+                if (not detail and args.smp > 1 and not wait_for(
+                        transcript, "REIST_AUDIO HDA_AP_EXEC cpu=", deadline)):
+                    detail = (
+                        "HDA driver did not execute an authorized operation "
+                        "on an AP")
     finally:
         if process.poll() is None:
             try:

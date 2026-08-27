@@ -870,11 +870,18 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     supervisor_handle_t video_driver_handle = {0U, 0U, 0U};
     bool video_driver_started = false;
     uint32_t video_ap_mask = 0U;
+    supervisor_handle_t audio_driver_handle = {0U, 0U, 0U};
+    bool audio_driver_started = false;
+    x86_smp_status_t production_driver_smp_status;
+    x86_smp_status(&production_driver_smp_status);
+    uint32_t production_driver_ap_mask =
+        production_driver_smp_status.online_cpu_count > 1U
+            ? ((1U << production_driver_smp_status.online_cpu_count) - 1U) &
+                ~1U
+            : 0U;
+    uint32_t audio_ap_mask = production_driver_ap_mask;
     if (video_device_available) {
-        x86_smp_status_t video_smp_status;
-        x86_smp_status(&video_smp_status);
-        video_ap_mask = video_smp_status.online_cpu_count > 1U
-            ? ((1U << video_smp_status.online_cpu_count) - 1U) & ~1U : 0U;
+        video_ap_mask = production_driver_ap_mask;
         /* GK208 executes several independently bounded GR construction
          * phases before it may publish output authority. Each phase must
          * advance within six seconds and the complete generation remains
@@ -913,11 +920,13 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     }
     if (audio_device_available) {
         const supervisor_config_t audio_driver_config = {
-            .heartbeat_timeout_ms = 2000U,
+            /* HDA reports every 500 ms. Allow bounded SMP scheduling and
+             * legacy-PIC delivery jitter without weakening the one-second
+             * fence or the finite restart budget. */
+            .heartbeat_timeout_ms = 5000U,
             .recovery_timeout_ms = 1000U,
             .restart_budget = 3U,
         };
-        supervisor_handle_t audio_driver_handle;
         boot_context("userspace-start", "HDA driver", "spawn",
                      "/libexec/reist/hda.prg");
         int audio_driver_result = supervisor_start_device_driver(
@@ -928,6 +937,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
             printf("REIST_AUDIO DRIVER_DEGRADED result=%d\n",
                    audio_driver_result);
         } else {
+            audio_driver_started = true;
             boot_context("userspace-start", "audio service", "spawn",
                          "/libexec/reist/audio.prg");
             if (!supervisor_start_audio_service(
@@ -963,6 +973,11 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         if (supervisor_set_device_driver_current_affinity(
                 video_driver_handle, video_ap_mask) != 0)
             panic("Unable to move healthy SVGA2D generation to APs");
+    }
+    if (audio_driver_started && audio_ap_mask != 0U) {
+        if (supervisor_set_device_driver_current_affinity(
+                audio_driver_handle, audio_ap_mask) != 0)
+            panic("Unable to move healthy HDA generation to APs");
     }
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
     /* Fault fixtures are intentionally registered only after AP scheduling is

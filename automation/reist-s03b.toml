@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2d-ap-hda"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1771,7 +1771,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2d-ap-hda"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run the supervised HDA driver normal path on APs"
@@ -1815,7 +1815,13 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "audio: run supervised HDA driver on APs"
-evidence = []
+evidence = [
+  "audio source contract passed 11 tests including post-ready HDA affinity independent of video availability and bounded five-second heartbeat",
+  "PCI audio runner contract passed 7 tests and supervisor contract passed 6 tests",
+  "Windows QEMU VGA build compiled all 102 C objects and produced a signed validated native image",
+  "four-CPU QEMU HDA guest executed the authorized driver path on CPU 3 completed all five playback cycles and captured 278332 stereo S16 frames at 440.4 Hz with max-gap 1",
+  "no DMA IRQ MMIO port or audio-service authority was widened and active_id is empty"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

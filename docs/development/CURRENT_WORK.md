@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2d – überwachten HDA-Treiber nach gesundem BSP-Start AP-only ausführen
+Aktives Thema: R6.2d abgeschlossen; kein Queue-Paket aktiv
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -105,3 +105,14 @@ BSP zurückgeführt und innerhalb des einsekündigen Recovery-Fensters beendet.
 Epoch 2 startete erneut auf dem BSP, wurde gesund, lief auf CPU 2 und schloss
 den realen `SVGA2D_RECT_COPY_OK`-Pfad sowie `TEST_OK` ab. Die Treiberdomäne
 erhielt dabei weiterhin keine DMA-, IRQ-, BAR- oder Raw-Port-Autorität.
+
+## Dritte produktive R6.2-Scheibe abgeschlossen
+
+Der HDA-Treiber konstruiert jede Generation einschließlich vermitteltem DMA,
+IRQ-Bindung, Codec-Erkennung und Self-Test auf dem BSP. Nach
+`SCHEDULER_READY` wird nur die gesunde Treibergeneration AP-only; Audio-Service,
+Supervisor und Legacy-PIC-Hard-IRQ bleiben BSP-affin. Der SMP4-QEMU-Lauf führte
+autorisierte HDA-Operationen auf CPU 3 aus, bestand fünf Playback-Zyklen und
+erzeugte 278332 Stereo-S16-Frames bei 440,4 Hz mit `max-gap=1`. Für begrenzte
+SMP-/PIC-Schedulinglatenz gilt ein festes Fünf-Sekunden-Heartbeatfenster;
+einsekündiger Fence und Restartbudget drei bleiben erhalten.
