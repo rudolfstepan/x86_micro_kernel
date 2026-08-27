@@ -53,6 +53,14 @@ Restartbudgets. Ein Fehler im optionalen Audiosubsystem darf Shell, Desktop,
 Storage und andere Prozesse nicht beenden. Nach erschöpftem Budget bleibt
 Audio isoliert und das System meldet `DEGRADED`.
 
+Auch der geräteautoritätslose Audio-Service darf nach R6.2f auf SMP-Systemen
+AP-only laufen. Jede Generation verbindet sich weiterhin auf dem BSP mit der
+aktuellen HDA-Generation, führt Self-Test aus und veröffentlicht Endpoint,
+Gesundheit und Ready, bevor die ECC-geschützte Zielmaske angewandt wird. Vor
+jeder normalen Client-Sessionrotation kehrt die Generation sleepfähig auf den
+BSP zurück; erst danach beginnt der präemptionsgeschützte Fence-/Reap-Commit.
+Die Zielmaske bleibt über Rotationen erhalten, stale Endpoints jedoch nicht.
+
 Auf SMP-Systemen konstruiert der HDA-Treiber jede Generation zunächst auf dem
 BSP, bindet dort den kernelbesessenen DMA-Pool und IRQ-Endpunkt, entdeckt den
 Codec und veröffentlicht Self-Test sowie Gesundheit. Erst nach der globalen

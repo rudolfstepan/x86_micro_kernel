@@ -659,6 +659,7 @@ bool supervisor_start_worker(void);
 bool supervisor_start_probe(uint64_t now_ms);
 /** Start the isolated PCM policy service after its HDA driver was spawned. */
 bool supervisor_start_audio_service(uint32_t device_index, uint64_t now_ms);
+int supervisor_set_audio_service_current_affinity(uint32_t cpu_affinity_mask);
 bool supervisor_probe_ready(void);
 bool supervisor_probe_component_down(uint64_t deadline_ms);
 bool supervisor_probe_component_up(uint64_t deadline_ms);

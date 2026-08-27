@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R6.2f – rotierende Audio-Servicegenerationen AP-only ausführen
+Aktives Thema: R6.2f abgeschlossen; kein Queue-Paket aktiv
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -127,3 +127,12 @@ begrenzte GCTL-Resetrezept aus. Die neue Treibergeneration wurde auf dem BSP
 gesund, der stale Service-Endpoint löste die normale Service-Rotation aus und
 die Ersatzgeneration lief wieder auf einem AP. Fünf Playback-Zyklen ergaben
 271216 Stereo-S16-Frames bei 440,4 Hz und `max-gap=1`.
+
+## Audio-Servicegenerationen auf APs
+
+Der geräteautoritätslose Audio-Service verbindet, testet und publiziert jede
+Generation weiterhin auf CPU 0. Erst nach `SERVICE_READY` wird die geschützte
+Online-AP-Maske angewandt. Vor jeder normalen Sessionrotation kehrt die alte
+Generation sleepfähig auf den BSP zurück, bevor der präemptionsgeschützte
+Fence-/Reap-Commit beginnt. Der SMP4-Lauf bestätigte AP-Ausführung über fünf
+Rotationen und fünf PCM-Zyklen mit 274297 Frames bei 440,4 Hz und `max-gap=1`.

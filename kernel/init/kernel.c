@@ -872,6 +872,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     uint32_t video_ap_mask = 0U;
     supervisor_handle_t audio_driver_handle = {0U, 0U, 0U};
     bool audio_driver_started = false;
+    bool audio_service_started = false;
     x86_smp_status_t production_driver_smp_status;
     x86_smp_status(&production_driver_smp_status);
     uint32_t production_driver_ap_mask =
@@ -943,6 +944,8 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
             if (!supervisor_start_audio_service(
                     audio_device_info.device_index, pit_monotonic_ms()))
                 printf("REIST_AUDIO SERVICE_DEGRADED result=-1\n");
+            else
+                audio_service_started = true;
         }
     }
     /* Publish every supervised service before the worker can inspect or
@@ -978,6 +981,10 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         if (supervisor_set_device_driver_current_affinity(
                 audio_driver_handle, audio_ap_mask) != 0)
             panic("Unable to move healthy HDA generation to APs");
+    }
+    if (audio_service_started && audio_ap_mask != 0U) {
+        if (supervisor_set_audio_service_current_affinity(audio_ap_mask) != 0)
+            panic("Unable to move healthy audio service generation to APs");
     }
 #ifdef REIST_DRIVER_DOMAIN_FAULT_INJECTION
     /* Fault fixtures are intentionally registered only after AP scheduling is

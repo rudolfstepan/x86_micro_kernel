@@ -202,6 +202,23 @@ class AudioSubsystemTests(unittest.TestCase):
         self.assertIn(".max_polls = 100U", profile)
         self.assertIn("device_domain_install_reset_policy", profile)
 
+    def test_rotated_audio_services_are_post_ready_ap_affined(self):
+        supervisor = self.read("kernel/init/supervisor.c")
+        kernel = self.read("kernel/init/kernel.c")
+        self.assertIn("post_ready_cpu_affinity_mask", supervisor)
+        self.assertIn("supervisor_set_audio_service_current_affinity", kernel)
+        self.assertIn("REIST_AUDIO SERVICE_AP_EXEC cpu=%u epoch=%u", supervisor)
+        handoff = supervisor.split("static bool audio_service_return_to_bsp", 1)[1]
+        handoff = handoff.split("static bool audio_service_fence_apply_internal", 1)[0]
+        self.assertIn("TASK_CPU_MASK_BSP", handoff)
+        self.assertIn("scheduler_sleep_ms(1U)", handoff)
+        rotate = supervisor.split(
+            "static bool audio_service_rotate_session(supervisor_handle_t handle) {",
+            1)[1]
+        rotate = rotate.split("bool supervisor_start_audio_service", 1)[0]
+        self.assertLess(rotate.index("audio_service_return_to_bsp(&control)"),
+                        rotate.index("scheduler_preempt_disable()"))
+
     def test_tools_sdk_and_virtual_hda_are_packaged(self):
         makefile = self.read("Makefile")
         windows = self.read("scripts/build-windows.ps1")

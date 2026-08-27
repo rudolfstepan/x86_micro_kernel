@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2f-ap-audio-service"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -1887,7 +1887,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2f-ap-audio-service"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run generation-scoped audio services on APs"
@@ -1932,7 +1932,14 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "audio: run rotated service generations on APs"
-evidence = []
+evidence = [
+  "audio source contract passed 13 tests including protected service affinity and BSP handoff before guarded rotation",
+  "PCI audio runner passed 7 tests and supervisor contract passed 6 tests",
+  "Windows QEMU VGA production build compiled all 102 C objects and produced a signed validated native image",
+  "four-CPU QEMU observed AP execution across all five rotated audio-service generations without consuming the fault restart budget",
+  "five playback cycles captured 274297 stereo S16 frames at 440.4 Hz with max-gap 1",
+  "active_id is empty and HDA supervisor legacy-PIC IRQ and device authority remained unchanged"
+]
 
 [[packages]]
 id = "R2.1-desktop-explorer-vfs-cutover"

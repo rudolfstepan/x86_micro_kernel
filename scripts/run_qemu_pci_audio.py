@@ -212,6 +212,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--smp", type=int, choices=(1, 2, 3, 4), default=1)
     parser.add_argument("--expect-hda-smp-restart", action="store_true")
+    parser.add_argument("--expect-audio-service-smp", action="store_true")
     args = parser.parse_args()
     if args.qemu is None:
         args.qemu = default_qemu_path()
@@ -292,6 +293,11 @@ def main() -> int:
                     detail = (
                         "HDA driver did not execute an authorized operation "
                         "on an AP")
+                if (not detail and args.expect_audio_service_smp and
+                        not wait_for_count(
+                            transcript, "REIST_AUDIO SERVICE_AP_EXEC cpu=",
+                            AUDIO_TEST_CYCLES, deadline)):
+                    detail = "not every rotated audio service executed on an AP"
     finally:
         if process.poll() is None:
             try:

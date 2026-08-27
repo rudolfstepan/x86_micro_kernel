@@ -256,5 +256,10 @@ zurück; IRQ, Bus-Mastering und DMA werden entzogen, danach führt der generisch
 Mediator das profildefinierte deadlinebegrenzte Registerreset aus. Treiber und
 Audio-Service rotieren generationstreu, bevor die Ersatzgeneration erneut auf
 einem AP fünf PCM-Zyklen abschließt.
+R6.2f erweitert ausschließlich den geräteautoritätslosen Audio-Service. Jede
+Generation publiziert Ready auf CPU 0, übernimmt danach die geschützte AP-Maske
+und kehrt vor der nächsten Sessionrotation deadlinebegrenzt auf den BSP zurück.
+Fünf aufeinanderfolgende Servicegenerationen führten auf APs aus; Supervisor,
+PIC-IRQ und Geräteautorität blieben unverändert.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

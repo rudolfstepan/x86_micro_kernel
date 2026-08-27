@@ -239,6 +239,7 @@ typedef struct {
     int32_t client_pid;
     uint32_t client_generation;
     supervisor_handle_t supervisor;
+    uint32_t post_ready_cpu_affinity_mask;
 } supervisor_audio_service_control_t;
 
 typedef struct {
@@ -249,6 +250,7 @@ typedef struct {
 } supervisor_audio_service_runtime_t;
 
 static supervisor_audio_service_runtime_t audio_service_runtime;
+static volatile uint32_t audio_service_ap_execution_epoch;
 static int audio_service_report_if_identity(
     int pid, uint32_t generation, uint32_t report_type, uint32_t value,
     uint64_t now_ms, bool *matched);
@@ -1786,10 +1788,13 @@ static bool audio_service_control_valid(const void *payload, size_t length) {
             control->client_generation == 0U &&
             control->supervisor.slot == 0U &&
             control->supervisor.generation == 0U &&
-            control->supervisor.epoch == 0U;
+            control->supervisor.epoch == 0U &&
+            control->post_ready_cpu_affinity_mask == 0U;
     if (control->device_index >= DEVICE_DOMAIN_MAX_DEVICES ||
         control->supervisor.generation == 0U ||
         control->supervisor.epoch == 0U ||
+        (control->post_ready_cpu_affinity_mask &
+         ~((1U << X86_CPU_LOCAL_MAX) - 1U)) != 0U ||
         (control->healthy != 0U && control->fenced != 0U) ||
         (control->ready != 0U &&
          (control->healthy == 0U || control->endpoint == 0U))) return false;
@@ -5336,11 +5341,22 @@ static bool audio_service_spawn_next(supervisor_handle_t handle) {
     return true;
 }
 
-static bool audio_service_fence_apply(void *context) {
-    (void)context;
+static bool audio_service_return_to_bsp(
+        const supervisor_audio_service_control_t *control) {
+    if (control == NULL || control->pid <= 0 ||
+        control->post_ready_cpu_affinity_mask == 0U ||
+        !process_identity_alive(control->pid, control->process_generation))
+        return true;
+    return process_set_supervised_affinity(
+               control->pid, control->process_generation,
+               TASK_CPU_MASK_BSP) == 0 && scheduler_sleep_ms(1U) == 0;
+}
+
+static bool audio_service_fence_apply_internal(bool already_bsp) {
     supervisor_audio_service_control_t control;
     if (audio_service_control_read(&control) != 0 || control.active == 0U)
         return false;
+    if (!already_bsp && !audio_service_return_to_bsp(&control)) return false;
     if (control.pid > 0 && process_identity_alive(
             control.pid, control.process_generation))
         (void)process_terminate(control.pid);
@@ -5353,6 +5369,11 @@ static bool audio_service_fence_apply(void *context) {
     control.ready = 0U;
     control.fenced = 1U;
     return audio_service_control_write(&control) == 0;
+}
+
+static bool audio_service_fence_apply(void *context) {
+    (void)context;
+    return audio_service_fence_apply_internal(false);
 }
 
 static bool audio_service_fence_verify(void *context) {
@@ -5376,9 +5397,13 @@ static bool audio_service_rotate_session(supervisor_handle_t handle) {
     bool rotated = false;
     bool launch_allowed = false;
 
+    if (audio_service_control_read(&control) != 0 ||
+        !audio_service_return_to_bsp(&control))
+        return false;
+
     scheduler_preempt_disable();
     do {
-        if (!audio_service_fence_apply(&audio_service_runtime) ||
+        if (!audio_service_fence_apply_internal(true) ||
             !audio_service_fence_verify(&audio_service_runtime) ||
             supervisor_admin_pause(handle) != 0 ||
             supervisor_admin_start(handle, pit_monotonic_ms(), &updated) != 0)
@@ -5473,6 +5498,16 @@ static int audio_service_report_if_identity(
             control.healthy = 1U;
             result = audio_service_control_write(&control);
         }
+#ifndef REIST_HOST_TEST
+        if (result == 0 && control.ready != 0U &&
+            x86_cpu_current_index() != 0U) {
+            uint32_t prior = __sync_lock_test_and_set(
+                &audio_service_ap_execution_epoch, control.supervisor.epoch);
+            if (prior != control.supervisor.epoch)
+                printf("REIST_AUDIO SERVICE_AP_EXEC cpu=%u epoch=%u\n",
+                       x86_cpu_current_index(), control.supervisor.epoch);
+        }
+#endif
     } else if (report_type == REIST_REPORT_SERVICE_READY) {
         if (value != 1U || control.fenced != 0U ||
             control.healthy == 0U || control.ready != 0U ||
@@ -5481,10 +5516,28 @@ static int audio_service_report_if_identity(
             control.ready = 1U;
             result = audio_service_control_write(&control);
             if (result == 0) printf("REIST_AUDIO SERVICE_READY\n");
+            if (result == 0 && control.post_ready_cpu_affinity_mask != 0U)
+                result = process_set_supervised_affinity(
+                    control.pid, control.process_generation,
+                    control.post_ready_cpu_affinity_mask);
         }
     }
     if (result != 0) (void)supervisor_force_isolate(control.supervisor);
     return result;
+}
+
+int supervisor_set_audio_service_current_affinity(uint32_t cpu_affinity_mask) {
+    if (cpu_affinity_mask == 0U) return -22;
+    supervisor_audio_service_control_t control;
+    if (audio_service_control_read(&control) != 0 || control.active == 0U ||
+        control.pid <= 0 || control.process_generation == 0U ||
+        control.fenced != 0U || control.healthy == 0U || control.ready == 0U)
+        return -3;
+    control.post_ready_cpu_affinity_mask = cpu_affinity_mask;
+    if (audio_service_control_write(&control) != 0)
+        return SUPERVISOR_EINTEGRITY;
+    return process_set_supervised_affinity(
+        control.pid, control.process_generation, cpu_affinity_mask);
 }
 
 static void audio_service_monitor_process(void) {
