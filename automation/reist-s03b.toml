@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2l-compositor-supervised-lifecycle"
 
 [policy]
 one_package_per_run = true
@@ -1768,6 +1768,64 @@ evidence = [
   "userspace/bin/shell.c contains no x86os_stat, x86os_readdir or legacy namespace-read fallback while the protected resident rescue mapping remains intact",
   "no queued package remains and active_id is empty"
 ]
+
+[[packages]]
+id = "R6.2l-compositor-supervised-lifecycle"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Place the session compositor under bounded supervision"
+scope = "Replace the compatibility-process desktop launch with a dedicated least-authority compositor domain and a generation-scoped supervisor lifecycle. Each generation activates and initializes display and Surface state on the BSP, reports self-test, progress and SERVICE_READY, then emits bounded heartbeats. Crash or heartbeat expiry must deactivate display publication before process termination, revoke stale generation authority, restart within a finite budget, and fall back to the userspace shell only after bounded recovery is exhausted. This prerequisite does not make the compositor AP-affine."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "include/kernel/supervisor.h",
+  "kernel/init/supervisor.c",
+  "kernel/init/kernel.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "test/test_desktop_source.py",
+  "test/test_reist_supervisor.py",
+  "test/test_reist_probe_domain.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the dedicated compositor domain grants only the syscalls already required by the desktop and does not inherit probe driver storage audio or administrative authority",
+  "every generation starts BSP-affine and remains BSP-affine throughout this package",
+  "display and Surface initialization complete before self-test progress and SERVICE_READY are accepted in that order",
+  "only the current live generation can report lifecycle state or publish accelerated frame ownership",
+  "crash timeout and invalid report deactivate display publication before termination and stale generation revocation",
+  "restart uses finite heartbeat recovery and restart-budget deadlines and never overlaps two live compositor generations",
+  "the userspace shell starts only after the compositor exits normally or its bounded restart budget is exhausted",
+  "diagnostic desktop probe modes remain directly launchable and source compatible"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_reist_probe_domain.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"
+]
+stop_conditions = [
+  "display publication can remain active after the compositor generation is dead or fenced",
+  "a replacement can start before the previous generation is terminated and its display ownership revoked",
+  "normal desktop startup or a heartbeat can execute on an AP",
+  "the rescue shell or supervisor worker becomes dependent on compositor progress",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: supervise the session compositor lifecycle"
 
 [[packages]]
 id = "R6.2d-ap-hda"

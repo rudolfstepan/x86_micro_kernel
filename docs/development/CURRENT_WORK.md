@@ -4,7 +4,7 @@ Stand: 27. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: kein aktives Paket; R6.2k ist abgeschlossen
+Aktives Thema: R6.2l – generationsgebundener Supervisor-Lebenszyklus fuer den Session-Compositor
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
