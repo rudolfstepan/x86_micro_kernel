@@ -246,7 +246,7 @@ Kernel-CS, IF und Higher-Half-Text-RIP; drei Ereignisse erzeugten drei
 Master-EOIs. Danach waren IF, IRQ0, beide PIC-Masken und der temporaere Zustand
 restauriert.
 
-## Geplante Abnahme R8.1i
+## Abnahme R8.1i
 
 Task A gibt genau einmal ueber `YIELD` 40 an die CPU-gebundene Task B ab. Erst
 dann wird PIT-IRQ0 fuer eine Generation armiert. Der normalisierte CPL3-Frame
@@ -254,3 +254,12 @@ muss B, deren privaten CR3, Userselektoren, IF, Stack und ausfuehrbare RIP
 exakt validieren, IRQ0 maskieren, genau einen EOI senden und nur B reapen. Task
 A muss danach ihre private Datenseite bestaetigen und ueber `EXIT` 9 mit Status
 102 enden. Bs TSC-Limit verhindert einen unbegrenzten Userloop.
+
+Alle 28 Quellvertragstests bestanden. Der warnungsfreie Windows-Build erzeugte
+ein 70.964-Byte-Bootstrap und ein 9.400-Byte-ELF64-Probeabbild. Der auf eine
+vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf nahm genau einen validierten
+CPL3-Vektor-32-Frame an, setzte nur B auf `PREEMPTED`, reapte diese Generation
+und setzte A bis `EXIT` 9/Status 102 fort. Nach dem zehnteiligen Lebenszyklus
+und der vollstaendigen Wiederherstellung erschien
+`REIST_X86_64_TIMER_PREEMPTION_OK` zwischen `TIMER_IRQ_OK` und
+`EXCEPTION_RECOVERY_OK`.

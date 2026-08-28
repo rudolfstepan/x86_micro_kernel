@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: R8.1i – begrenzte x86_64-CPL3-Timerpreemption
+Aktives Thema: keines – R8.1i abgeschlossen, Queue leer
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -125,12 +125,18 @@ meldete `TIMER_IRQ_OK` geordnet vor dem Abschlussmarker. IF, IRQ0, beide
 PIC-Masken und die temporaere Generation waren davor restauriert. Die Queue
 ist wieder leer.
 
-R8.1i ist aktiv. Task A gibt einmal kooperativ an eine CPU-gebundene Task B
-ab. Ein generation- und framevalidierter PIT-IRQ muss ausschliesslich B
-preemptieren und reapen; A muss danach ihre private Datenseite behalten und
-mit Exit-Status 102 beenden. Ein TSC-Limit im Userloop schliesst fehlende
-IRQ-Zustellung begrenzt. Wiederkehrende Quanten, Fairness und produktive
-Schedulerintegration bleiben spaeteren Paketen vorbehalten.
+R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
+Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt
+ausschliesslich B; A behaelt ihre private Datenseite und beendet sich mit
+`EXIT` 9/Status 102. Ein festes TSC-Limit begrenzt Bs Userloop. Alle 28
+Quellvertragstests bestanden. Der warnungsfreie Build erzeugte ein
+70.964-Byte-Bootstrap mit einem 9.400-Byte-ELF64-Probeabbild. Der kurze
+Ein-vCPU-/32-MiB-QEMU-Lauf meldete `TIMER_PREEMPTION_OK` geordnet zwischen
+`TIMER_IRQ_OK` und dem Abschlussmarker. Vor Erfolg waren PIC-Masken, IF, CR3,
+TSS, Syscall-MSRs, Tabellen, Taskrecords, Frames und der urspruengliche
+Freizaehler restauriert. Wiederkehrende Quanten, Fairness und produktive
+Schedulerintegration bleiben spaeteren Paketen vorbehalten. Die Queue ist
+wieder leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

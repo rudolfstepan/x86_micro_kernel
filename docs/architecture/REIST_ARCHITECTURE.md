@@ -148,10 +148,13 @@ sein. Das erteilt noch keine CPL3-Praeemption oder produktive Clockautoritaet.
 Der Lauf hat exakt drei Vektor-32-Ereignisse und drei Master-EOIs bestaetigt;
 vor dem Erfolgsmarker waren IF, IRQ0, PIC-Masken und Generation restauriert.
 
-R8.1i verbindet diesen IRQ einmalig mit zwei privaten CPL3-Generationen. Eine
-CPU-gebundene Task darf nur nach vollstaendiger Framevalidierung preemptiert
-und reaptiert werden; die unabhaengige Task muss danach weiterlaufen. Das ist
-noch kein periodischer Produktionsscheduler.
+R8.1i verbindet diesen IRQ einmalig mit zwei privaten CPL3-Generationen. Der
+abgenommene Lauf preemptiert und reapt die CPU-gebundene Task B erst nach
+vollstaendiger Framevalidierung; Task A setzt ihre private Datenseite fort und
+beendet sich mit `EXIT` 9/Status 102. Genau ein IRQ und ein Master-EOI werden
+akzeptiert. Vor dem Erfolgsmarker sind PIC-Masken, IF, CR3, TSS, Syscall-MSRs,
+Tabellen, Taskrecords und Frames restauriert. Das ist noch kein periodischer
+Produktionsscheduler.
 
 ## Minimaler REIST-Kern
 

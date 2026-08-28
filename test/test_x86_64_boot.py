@@ -452,6 +452,40 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REIST_X86_64_TIMER_IRQ_OK", runner)
         self.assertIn("REIST_X86_64_TIMER_IRQ_ERROR", runner)
 
+    def test_cpl3_timer_preemption_is_generation_scoped_and_bounded(self):
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        timer = self.read("arch/x86_64/cpu/timer_interrupt.asm")
+        probe = self.read("arch/x86_64/user/probe.asm")
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("TASK_PREEMPTED             equ 5", scheduler)
+        self.assertIn("SCHEDULER_MODE_PREEMPTION  equ 2", scheduler)
+        self.assertIn("RFLAGS_PREEMPT_FORBIDDEN   equ 0x00000000003F7D00", scheduler)
+        self.assertIn("x86_64_process_preemption_selftest64:", scheduler)
+        self.assertIn("x86_64_scheduler_timer_validate64:", scheduler)
+        self.assertIn("x86_64_scheduler_timer_preempt64:", scheduler)
+        validate = timer.index("call x86_64_scheduler_timer_validate64")
+        eoi = timer.index("out PIC1_COMMAND, al", validate)
+        mutate = timer.index("call x86_64_scheduler_timer_preempt64", eoi)
+        self.assertLess(validate, eoi)
+        self.assertLess(eoi, mutate)
+        self.assertIn("x86_64_timer_preemption_arm64:", timer)
+        self.assertIn("x86_64_timer_preemption_cancel64:", timer)
+        self.assertIn("x86_64_timer_preemption_disarm64:", timer)
+        force_cleanup = scheduler.index("scheduler_force_cleanup64:")
+        self.assertIn(
+            "call x86_64_timer_preemption_cancel64",
+            scheduler[force_cleanup:],
+        )
+        self.assertIn("preempt_task_a:", probe)
+        self.assertIn("preempt_task_b:", probe)
+        self.assertIn(".bounded_cpu_loop:", probe)
+        self.assertIn("rdtsc", probe)
+        self.assertIn("mov edi, 102", probe)
+        self.assertIn("call x86_64_process_preemption_selftest64", entry)
+        self.assertIn("REIST_X86_64_TIMER_PREEMPTION_OK", runner)
+        self.assertIn("REIST_X86_64_TIMER_PREEMPTION_ERROR", runner)
+
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")
         self.assertIn("kein vollstaendiger REIST-Kernel", contract)

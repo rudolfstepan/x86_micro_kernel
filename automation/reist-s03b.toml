@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1i-x86_64-cpl3-timer-preemption"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10835,7 +10835,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1i-x86_64-cpl3-timer-preemption"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 CPL3 timer preemption and process continuation proof"
@@ -10871,7 +10871,15 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: add bounded x86_64 timer preemption proof"
-evidence = []
+evidence = [
+  "all 28 isolated x86_64 source-contract tests passed, including generation-scoped CPL3 timer-frame validation, bounded user execution and cleanup ordering",
+  "the warning-free Windows build linked a 70964-byte bootstrap embedding the independently linked 9400-byte ELF64 probe without changing any production i386 target",
+  "the one-vCPU 32-MiB QEMU runtime published TIMER_PREEMPTION_OK after TIMER_IRQ_OK and before EXCEPTION_RECOVERY_OK within one second",
+  "task A yielded exactly once, task B remained CPU-bound behind a fixed TSC ceiling, and exactly one validated vector-32 CPL3 event transitioned only B from RUNNING to PREEMPTED and then FREE",
+  "task A resumed with its private writable value intact and completed the exact REIST EXIT 9 status 102 path",
+  "success validated the ten-event lifecycle trace and restored PIC masks IF CR3 TSS syscall MSRs tables task records frames and the initial free count",
+  "no recurring quantum fairness sleep wait SMP LAPIC IOAPIC production clock device HPASA physical-hardware or fail-operational authority was added and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

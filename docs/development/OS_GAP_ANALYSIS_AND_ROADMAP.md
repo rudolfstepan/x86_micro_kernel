@@ -155,10 +155,17 @@ framevalidierte IRQ0-Ereignisse an, sendete drei Master-EOIs und meldete
 ausgeschoepft; IF, IRQ0, PIC-Masken und temporaere Generation waren vor Erfolg
 restauriert.
 
-**R8.1i ist aktiv:** Der R8.1h-PIT wird mit dem privaten Zwei-Slot-Scheduler
-verbunden. Nach genau einem `YIELD` von Task A muss IRQ0 die CPU-gebundene
-Task B anhand ihres CPL3-Frames preemptieren und reapen. A muss danach mit
-intakter privater Datenseite fortfahren und `EXIT` 9/Status 102 liefern.
+**R8.1i ist umgesetzt:** Der R8.1h-PIT ist mit dem privaten Zwei-Slot-
+Scheduler verbunden. Nach genau einem `YIELD` von Task A preemptiert und reapt
+genau ein generation- und framevalidierter IRQ0 die CPU-gebundene Task B. A
+setzt danach mit intakter privater Datenseite fort und liefert `EXIT` 9/Status
+102. Bs CPU-Loop besitzt eine feste TSC-Grenze.
+
+Alle 28 Quellvertragstests und der warnungsfreie 70.964-Byte-Build mit dem
+9.400-Byte-ELF64-Probeabbild bestanden. Der Ein-vCPU-/32-MiB-QEMU-Lauf
+validierte den zehnteiligen Lebenszyklus, meldete `TIMER_PREEMPTION_OK` geordnet
+vor dem Abschlussmarker und stellte PIC-Masken, IF, CR3, TSS, Syscall-MSRs,
+Tabellen, Taskrecords, Frames und den urspruenglichen Freizaehler wieder her.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

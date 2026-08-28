@@ -51,6 +51,7 @@ extern x86_64_elf64_loader_selftest64
 extern x86_64_user_execution_selftest64
 extern x86_64_process_scheduler_selftest64
 extern x86_64_timer_interrupt_selftest64
+extern x86_64_process_preemption_selftest64
 extern _text_start
 extern _text_end
 extern _rodata_start
@@ -381,6 +382,9 @@ x86_64_nx_resume:
     call x86_64_timer_interrupt_selftest64
     test eax, eax
     jz timer_interrupt_state_error
+    call x86_64_process_preemption_selftest64
+    test eax, eax
+    jz process_preemption_state_error
     lea rsi, [rel exception_recovery_message]
     call serial_write64
     jmp halt64
@@ -440,6 +444,12 @@ process_scheduler_state_error:
 timer_interrupt_state_error:
     call serial_init64
     lea rsi, [rel timer_interrupt_state_error_message]
+    call serial_write64
+    jmp halt64
+
+process_preemption_state_error:
+    call serial_init64
+    lea rsi, [rel process_preemption_state_error_message]
     call serial_write64
     jmp halt64
 
@@ -512,6 +522,7 @@ elf64_loader_state_error_message db "REIST_X86_64_ELF64_LOAD_ERROR", 13, 10, 0
 user_execution_state_error_message db "REIST_X86_64_USER_EXECUTION_ERROR", 13, 10, 0
 process_scheduler_state_error_message db "REIST_X86_64_PROCESS_SCHEDULER_ERROR", 13, 10, 0
 timer_interrupt_state_error_message db "REIST_X86_64_TIMER_IRQ_ERROR", 13, 10, 0
+process_preemption_state_error_message db "REIST_X86_64_TIMER_PREEMPTION_ERROR", 13, 10, 0
 success_message db "REIST_X86_64_LONG_MODE_BOOT_OK", 13, 10, 0
 higher_half_paging_message db "REIST_X86_64_HIGHER_HALF_PAGING_OK", 13, 10, 0
 exception_recovery_message db "REIST_X86_64_EXCEPTION_RECOVERY_OK", 13, 10, 0

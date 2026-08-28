@@ -24,6 +24,9 @@ PIT_DIVISOR               equ 11932
 TIMER_VECTOR              equ 32
 TIMER_EXPECTED_TICKS      equ 3
 TIMER_GENERATION          equ 1
+PREEMPT_GENERATION        equ 2
+TIMER_MODE_SELFTEST       equ 1
+TIMER_MODE_PREEMPT        equ 2
 TSC_DEADLINE_CYCLES       equ 3000000000
 KERNEL_CODE_SELECTOR      equ 0x08
 RFLAGS_IF                 equ 0x0000000000000200
@@ -38,11 +41,16 @@ EXCEPTION_FRAME_RFLAGS    equ (EXCEPTION_FRAME_CS + 8)
 section .text
 global x86_64_timer_interrupt_selftest64
 global x86_64_timer_interrupt64
+global x86_64_timer_preemption_arm64
+global x86_64_timer_preemption_cancel64
+global x86_64_timer_preemption_disarm64
 
 extern pml4_table
 extern _text_start
 extern _text_end
 extern serial_write64
+extern x86_64_scheduler_timer_preempt64
+extern x86_64_scheduler_timer_validate64
 
 x86_64_timer_interrupt_selftest64:
     cli
@@ -127,6 +135,7 @@ x86_64_timer_interrupt_selftest64:
     jc timer_fail
     mov qword [rel timer_deadline], rax
     mov dword [rel timer_generation], TIMER_GENERATION
+    mov byte [rel timer_mode], TIMER_MODE_SELFTEST
     mov byte [rel timer_active], 1
 
     mov byte [rel timer_failure_stage], 4
@@ -159,6 +168,8 @@ x86_64_timer_interrupt_selftest64:
 x86_64_timer_interrupt64:
     cmp byte [rel timer_active], 1
     jne .invalid
+    cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
+    je .preempt
     cmp dword [rel timer_generation], TIMER_GENERATION
     jne .invalid
     mov rax, cr3
@@ -196,6 +207,27 @@ x86_64_timer_interrupt64:
     out PIC1_COMMAND, al
     mov eax, 1
     ret
+.preempt:
+    cmp dword [rel timer_generation], PREEMPT_GENERATION
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_VECTOR], TIMER_VECTOR
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_ERROR], 0
+    jne .invalid
+    cmp dword [rel timer_ticks], 0
+    jne .invalid
+    call x86_64_scheduler_timer_validate64
+    test eax, eax
+    jz .invalid
+    mov al, PIC_ALL_MASKED
+    out PIC1_DATA, al
+    inc dword [rel timer_ticks]
+    inc dword [rel timer_eoi_count]
+    mov al, PIC_EOI
+    out PIC1_COMMAND, al
+    call x86_64_scheduler_timer_preempt64
+    xor eax, eax
+    ret
 .invalid:
     xor eax, eax
     ret
@@ -205,6 +237,7 @@ timer_cleanup64:
     mov byte [rel timer_active], 0
     mov dword [rel timer_generation], 0
     mov qword [rel timer_deadline], 0
+    mov byte [rel timer_mode], 0
     cmp byte [rel timer_masks_saved], 1
     jne .state_only
     mov al, PIC_ALL_MASKED
@@ -238,6 +271,101 @@ timer_io_wait64:
     pop rax
     ret
 
+x86_64_timer_preemption_arm64:
+    cli
+    cmp byte [rel timer_active], 0
+    jne .arm_fail
+    mov dword [rel timer_ticks], 0
+    mov dword [rel timer_eoi_count], 0
+    in al, PIC1_DATA
+    mov byte [rel timer_saved_master_mask], al
+    in al, PIC2_DATA
+    mov byte [rel timer_saved_slave_mask], al
+    mov byte [rel timer_masks_saved], 1
+    mov al, PIC_ALL_MASKED
+    out PIC1_DATA, al
+    out PIC2_DATA, al
+    mov al, PIC_ICW1_INIT_ICW4
+    out PIC1_COMMAND, al
+    call timer_io_wait64
+    out PIC2_COMMAND, al
+    call timer_io_wait64
+    mov al, PIC_MASTER_VECTOR
+    out PIC1_DATA, al
+    call timer_io_wait64
+    mov al, PIC_SLAVE_VECTOR
+    out PIC2_DATA, al
+    call timer_io_wait64
+    mov al, PIC_MASTER_CASCADE
+    out PIC1_DATA, al
+    call timer_io_wait64
+    mov al, PIC_SLAVE_ID
+    out PIC2_DATA, al
+    call timer_io_wait64
+    mov al, PIC_8086_MODE
+    out PIC1_DATA, al
+    call timer_io_wait64
+    out PIC2_DATA, al
+    call timer_io_wait64
+    mov al, PIC_MASTER_IRQ0_ONLY
+    out PIC1_DATA, al
+    mov al, PIC_ALL_MASKED
+    out PIC2_DATA, al
+    mov al, PIT_MODE3_LOHI
+    out PIT_COMMAND, al
+    mov ax, PIT_DIVISOR
+    out PIT_CHANNEL0, al
+    mov al, ah
+    out PIT_CHANNEL0, al
+    rdtsc
+    shl rdx, 32
+    mov eax, eax
+    or rax, rdx
+    mov rdx, TSC_DEADLINE_CYCLES
+    add rax, rdx
+    jc .arm_fail_cleanup
+    mov qword [rel timer_deadline], rax
+    mov dword [rel timer_generation], PREEMPT_GENERATION
+    mov byte [rel timer_mode], TIMER_MODE_PREEMPT
+    mov byte [rel timer_active], 1
+    ret
+.arm_fail_cleanup:
+    call timer_cleanup64
+.arm_fail:
+    xor eax, eax
+    ret
+
+x86_64_timer_preemption_disarm64:
+    cli
+    cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
+    jne .disarm_fail
+    cmp dword [rel timer_ticks], 1
+    jne .disarm_fail
+    cmp dword [rel timer_eoi_count], 1
+    jne .disarm_fail
+    call timer_cleanup64
+    ret
+.disarm_fail:
+    xor eax, eax
+    ret
+
+; Idempotent failure cleanup. It grants no success for a conflicting active
+; timer mode, but restores every partially or fully armed preemption state.
+x86_64_timer_preemption_cancel64:
+    cli
+    cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
+    je .cancel
+    cmp byte [rel timer_active], 0
+    jne .cancel_fail
+    mov eax, 1
+    ret
+.cancel:
+    call timer_cleanup64
+    ret
+.cancel_fail:
+    xor eax, eax
+    ret
+
 timer_fail:
     cli
     call timer_cleanup64
@@ -261,6 +389,7 @@ timer_ticks: resd 1
 timer_eoi_count: resd 1
 timer_generation: resd 1
 timer_active: resb 1
+timer_mode: resb 1
 timer_masks_saved: resb 1
 timer_saved_master_mask: resb 1
 timer_saved_slave_mask: resb 1

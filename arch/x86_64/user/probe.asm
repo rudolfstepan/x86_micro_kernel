@@ -17,6 +17,10 @@ _start:
     je scheduler_task_a
     cmp edi, 0x0B
     je scheduler_task_b
+    cmp edi, 0x0C
+    je preempt_task_a
+    cmp edi, 0x0D
+    je preempt_task_b
     int3
 
 probe_exit:
@@ -58,6 +62,31 @@ scheduler_fault:
     ud2
 
 scheduler_isolation_failure:
+    int3
+
+preempt_task_a:
+    mov rax, 0xC33C33C33C33C33C
+    mov qword [rel probe_data], rax
+    mov eax, 40
+    syscall
+    mov rax, 0xC33C33C33C33C33C
+    cmp qword [rel probe_data], rax
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 102
+    syscall
+    ud2
+
+preempt_task_b:
+    mov rbx, rdx
+.bounded_cpu_loop:
+    pause
+    rdtsc
+    shl rdx, 32
+    mov eax, eax
+    or rax, rdx
+    cmp rax, rbx
+    jb .bounded_cpu_loop
     int3
 
 section .data

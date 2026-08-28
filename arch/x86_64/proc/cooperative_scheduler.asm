@@ -33,10 +33,15 @@ TASK_READY                 equ 1
 TASK_RUNNING               equ 2
 TASK_FAULTED               equ 3
 TASK_EXITED                equ 4
+TASK_PREEMPTED             equ 5
 TASK_A_GENERATION          equ 1
 TASK_B_GENERATION          equ 2
 TASK_A_ID                  equ 0x0A
 TASK_B_ID                  equ 0x0B
+TASK_A_PREEMPT_ID          equ 0x0C
+TASK_B_PREEMPT_ID          equ 0x0D
+SCHEDULER_MODE_COOPERATIVE equ 1
+SCHEDULER_MODE_PREEMPTION  equ 2
 
 EVENT_A_READY              equ 1
 EVENT_B_READY              equ 2
@@ -48,6 +53,7 @@ EVENT_B_FAULTED            equ 7
 EVENT_B_FREE               equ 8
 EVENT_A_EXITED             equ 9
 EVENT_A_FREE               equ 10
+EVENT_B_PREEMPTED          equ 11
 EVENT_CAPACITY             equ 16
 
 USER_BASE                  equ 0x00400000
@@ -75,11 +81,13 @@ USER_RFLAGS_INITIAL        equ 0x0000000000000002
 RFLAGS_FIXED_BIT           equ 0x0000000000000002
 RFLAGS_RF                  equ 0x0000000000010000
 RFLAGS_SYSCALL_FORBIDDEN   equ 0x00000000003F7F00
+RFLAGS_PREEMPT_FORBIDDEN   equ 0x00000000003F7D00
 RFLAGS_FAULT_FORBIDDEN     equ 0x00000000003E7F00
 
 REIST_SYS_EXIT             equ 9
 REIST_SYS_YIELD            equ 40
 EXPECTED_EXIT_STATUS       equ 101
+PREEMPT_EXIT_STATUS        equ 102
 
 IA32_EFER                  equ 0xC0000080
 IA32_STAR                  equ 0xC0000081
@@ -105,6 +113,9 @@ EXCEPTION_FRAME_SS         equ (EXCEPTION_FRAME_RSP + 8)
 section .text
 global x86_64_process_scheduler_selftest64
 global x86_64_scheduler_user_exception64
+global x86_64_process_preemption_selftest64
+global x86_64_scheduler_timer_preempt64
+global x86_64_scheduler_timer_validate64
 
 extern pml4_table
 extern physical_frame_alloc64
@@ -119,6 +130,9 @@ extern x86_64_elf64_address_flags64
 extern x86_64_exception_set_rsp0
 extern serial_write64
 extern serial_putc64
+extern x86_64_timer_preemption_arm64
+extern x86_64_timer_preemption_cancel64
+extern x86_64_timer_preemption_disarm64
 
 x86_64_process_scheduler_selftest64:
     cli
@@ -137,6 +151,7 @@ x86_64_process_scheduler_selftest64:
     mov ecx, (scheduler_state_end - scheduler_state_begin) / 8
     rep stosq
     mov byte [rel scheduler_failure_stage], 1
+    mov byte [rel scheduler_mode], SCHEDULER_MODE_COOPERATIVE
     mov qword [rel scheduler_caller_rsp], rsp
     mov rax, cr3
     mov qword [rel scheduler_original_cr3], rax
@@ -196,6 +211,73 @@ x86_64_process_scheduler_selftest64:
 
     mov byte [rel scheduler_active], 1
     mov byte [rel scheduler_failure_stage], 5
+    xor edi, edi
+    jmp scheduler_enter_task64
+
+x86_64_process_preemption_selftest64:
+    cli
+    cld
+    mov byte [rel scheduler_failure_stage], 0xA0
+    mov qword [rel scheduler_caller_rsp], rsp
+    mov rax, cr3
+    mov qword [rel scheduler_original_cr3], rax
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne scheduler_fail
+    call physical_free_frame_count64
+    mov dword [rel scheduler_initial_free], eax
+    xor eax, eax
+    lea rdi, [rel scheduler_state_begin]
+    mov ecx, (scheduler_state_end - scheduler_state_begin) / 8
+    rep stosq
+    mov byte [rel scheduler_failure_stage], 0xA1
+    mov byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    mov qword [rel scheduler_caller_rsp], rsp
+    mov rax, cr3
+    mov qword [rel scheduler_original_cr3], rax
+    call physical_free_frame_count64
+    mov dword [rel scheduler_initial_free], eax
+    mov byte [rel scheduler_failure_stage], 0xA2
+    call x86_64_elf64_load64
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_elf64_entry64
+    mov qword [rel scheduler_entry], rax
+    mov byte [rel scheduler_failure_stage], 0xA3
+    xor edi, edi
+    call scheduler_build_task64
+    test eax, eax
+    jz scheduler_fail
+    mov edi, 1
+    call scheduler_build_task64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_isolation64
+    test eax, eax
+    jz scheduler_fail
+    mov byte [rel scheduler_failure_stage], 0xA4
+    lea r12, [rel scheduler_tasks]
+    mov qword [r12 + TASK_GENERATION], TASK_A_GENERATION
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov al, EVENT_A_READY
+    call scheduler_append_event64
+    lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    mov qword [r12 + TASK_GENERATION], TASK_B_GENERATION
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov al, EVENT_B_READY
+    call scheduler_append_event64
+    mov byte [rel scheduler_failure_stage], 0xA5
+    call scheduler_setup_syscalls64
+    test eax, eax
+    jz scheduler_fail
+    lea rax, [rel scheduler_kernel_stack_top]
+    mov qword [rel scheduler_syscall_context + SYSCALL_CONTEXT_KERNEL_RSP], rax
+    mov rdi, rax
+    call x86_64_exception_set_rsp0
+    test eax, eax
+    jz scheduler_fail
+    mov byte [rel scheduler_active], 1
+    mov byte [rel scheduler_failure_stage], 0xA6
     xor edi, edi
     jmp scheduler_enter_task64
 
@@ -304,8 +386,17 @@ scheduler_syscall_entry64:
     mov rax, qword [rel syscall_r11]
     test rax, RFLAGS_FIXED_BIT
     jz scheduler_fail
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    je .preempt_syscall_flags
     test rax, RFLAGS_SYSCALL_FORBIDDEN
     jnz scheduler_fail
+    jmp .syscall_flags_valid
+.preempt_syscall_flags:
+    test rax, RFLAGS_PREEMPT_FORBIDDEN
+    jnz scheduler_fail
+    test rax, 0x200
+    jz scheduler_fail
+.syscall_flags_valid:
     mov rax, qword [rel syscall_rcx]
     call x86_64_elf64_address_flags64
     test eax, PF_X
@@ -350,6 +441,8 @@ scheduler_handle_yield64:
     mov qword [r12 + TASK_R15], rax
 
     inc qword [r12 + TASK_YIELDS]
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    je .preemption_yield
     cmp edi, 0
     jne .yield_b
     cmp qword [r12 + TASK_YIELDS], 2
@@ -377,6 +470,26 @@ scheduler_handle_yield64:
     jne scheduler_fail
     mov edi, 1
     jmp scheduler_enter_task64
+.preemption_yield:
+    mov byte [rel scheduler_failure_stage], 0xB1
+    cmp edi, 0
+    jne scheduler_fail
+    cmp qword [r12 + TASK_YIELDS], 1
+    jne scheduler_fail
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov al, EVENT_A_READY_AGAIN
+    call scheduler_append_event64
+    inc dword [rel scheduler_handoffs]
+    cmp dword [rel scheduler_handoffs], 1
+    jne scheduler_fail
+    call x86_64_timer_preemption_arm64
+    test rax, rax
+    jz scheduler_fail
+    mov byte [rel scheduler_failure_stage], 0xB2
+    lea r13, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    mov qword [r13 + TASK_RDX], rax
+    mov edi, 1
+    jmp scheduler_enter_task64
 .expect_b_to_a:
     cmp edi, 1
     jne scheduler_fail
@@ -388,6 +501,8 @@ scheduler_handle_exit64:
     jne scheduler_fail
     cmp qword [r12 + TASK_GENERATION], TASK_A_GENERATION
     jne scheduler_fail
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    je .preemption_exit
     cmp qword [rel syscall_rdi], EXPECTED_EXIT_STATUS
     jne scheduler_fail
     cmp dword [rel scheduler_handoffs], 3
@@ -400,6 +515,20 @@ scheduler_handle_exit64:
     jne scheduler_fail
     cmp qword [rel scheduler_b_yields], 1
     jne scheduler_fail
+    jmp .exit_valid
+.preemption_exit:
+    mov byte [rel scheduler_failure_stage], 0xD1
+    cmp qword [rel syscall_rdi], PREEMPT_EXIT_STATUS
+    jne scheduler_fail
+    cmp dword [rel scheduler_handoffs], 1
+    jne scheduler_fail
+    cmp dword [rel scheduler_fault_count], 1
+    jne scheduler_fail
+    cmp dword [rel scheduler_reap_count], 1
+    jne scheduler_fail
+    cmp qword [r12 + TASK_YIELDS], 1
+    jne scheduler_fail
+.exit_valid:
     mov qword [r12 + TASK_STATE], TASK_EXITED
     mov al, EVENT_A_EXITED
     call scheduler_append_event64
@@ -412,16 +541,25 @@ scheduler_handle_exit64:
     mov esi, TASK_A_GENERATION
     mov edx, TASK_EXITED
     mov ecx, EVENT_A_FREE
+    mov byte [rel scheduler_failure_stage], 0xD2
     call scheduler_reap_terminal64
     test eax, eax
     jz scheduler_fail
+    mov byte [rel scheduler_failure_stage], 0xD3
     call scheduler_verify_final_events64
     test eax, eax
     jz scheduler_fail
+    mov byte [rel scheduler_failure_stage], 0xD4
     call scheduler_cleanup_common64
     test eax, eax
     jz scheduler_return_failure64
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    je .preemption_ok
     lea rsi, [rel scheduler_ok_message]
+    jmp .write_ok
+.preemption_ok:
+    lea rsi, [rel scheduler_preempt_ok_message]
+.write_ok:
     call serial_write64
     mov byte [rel scheduler_final_result], 1
     jmp scheduler_return64
@@ -493,6 +631,105 @@ x86_64_scheduler_user_exception64:
     jz scheduler_fail
     xor edi, edi
     jmp scheduler_enter_task64
+.invalid:
+    xor eax, eax
+    ret
+
+x86_64_scheduler_timer_preempt64:
+    mov byte [rel scheduler_failure_stage], 0xC2
+    cmp byte [rel scheduler_active], 1
+    jne .invalid
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    jne .invalid
+    cmp dword [rel scheduler_current_slot], 1
+    jne .invalid
+    lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp qword [r12 + TASK_STATE], TASK_RUNNING
+    jne .invalid
+    cmp qword [r12 + TASK_GENERATION], TASK_B_GENERATION
+    jne .invalid
+    mov rax, cr3
+    cmp rax, qword [r12 + TASK_CR3]
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_VECTOR], 32
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_ERROR], 0
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_CS], USER_CODE_SELECTOR
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_SS], USER_DATA_SELECTOR
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_RSP], USER_STACK_TOP
+    jne .invalid
+    mov rax, qword [rdi + EXCEPTION_FRAME_RFLAGS]
+    test rax, 0x200
+    jz .invalid
+    mov rax, qword [rdi + EXCEPTION_FRAME_RIP]
+    call x86_64_elf64_address_flags64
+    test eax, PF_X
+    jz .invalid
+    mov qword [r12 + TASK_STATE], TASK_PREEMPTED
+    mov al, EVENT_B_PREEMPTED
+    call scheduler_append_event64
+    inc dword [rel scheduler_fault_count]
+    mov rax, qword [rel scheduler_original_cr3]
+    mov cr3, rax
+    lea rsp, [rel scheduler_kernel_stack_top]
+    call scheduler_restore_kernel_segments64
+    mov byte [rel scheduler_failure_stage], 0xC3
+    call x86_64_timer_preemption_disarm64
+    test eax, eax
+    jz scheduler_fail
+    mov edi, 1
+    mov esi, TASK_B_GENERATION
+    mov edx, TASK_PREEMPTED
+    mov ecx, EVENT_B_FREE
+    mov byte [rel scheduler_failure_stage], 0xC4
+    call scheduler_reap_terminal64
+    test eax, eax
+    jz scheduler_fail
+    mov byte [rel scheduler_failure_stage], 0xC5
+    xor edi, edi
+    jmp scheduler_enter_task64
+.invalid:
+    xor eax, eax
+    ret
+
+x86_64_scheduler_timer_validate64:
+    mov byte [rel scheduler_failure_stage], 0xC1
+    cmp byte [rel scheduler_active], 1
+    jne .invalid
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    jne .invalid
+    cmp dword [rel scheduler_current_slot], 1
+    jne .invalid
+    lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp qword [r12 + TASK_STATE], TASK_RUNNING
+    jne .invalid
+    cmp qword [r12 + TASK_GENERATION], TASK_B_GENERATION
+    jne .invalid
+    mov rax, cr3
+    cmp rax, qword [r12 + TASK_CR3]
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_VECTOR], 32
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_ERROR], 0
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_CS], USER_CODE_SELECTOR
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_SS], USER_DATA_SELECTOR
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_RSP], USER_STACK_TOP
+    jne .invalid
+    mov rax, qword [rdi + EXCEPTION_FRAME_RFLAGS]
+    test rax, 0x200
+    jz .invalid
+    mov rax, qword [rdi + EXCEPTION_FRAME_RIP]
+    call x86_64_elf64_address_flags64
+    test eax, PF_X
+    jz .invalid
+    mov eax, 1
+    ret
 .invalid:
     xor eax, eax
     ret
@@ -633,6 +870,8 @@ scheduler_build_task64:
     mov qword [r12 + TASK_RIP], rax
     mov qword [r12 + TASK_RSP], USER_STACK_TOP
     mov qword [r12 + TASK_RFLAGS], USER_RFLAGS_INITIAL
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    je .preempt_ids
     test ebx, ebx
     jnz .id_b
     mov qword [r12 + TASK_RDI], TASK_A_ID
@@ -641,6 +880,17 @@ scheduler_build_task64:
 .id_b:
     mov qword [r12 + TASK_RDI], TASK_B_ID
     mov qword [r12 + TASK_ID], TASK_B_ID
+    jmp .done
+.preempt_ids:
+    or qword [r12 + TASK_RFLAGS], 0x200
+    test ebx, ebx
+    jnz .preempt_b
+    mov qword [r12 + TASK_RDI], TASK_A_PREEMPT_ID
+    mov qword [r12 + TASK_ID], TASK_A_PREEMPT_ID
+    jmp .done
+.preempt_b:
+    mov qword [r12 + TASK_RDI], TASK_B_PREEMPT_ID
+    mov qword [r12 + TASK_ID], TASK_B_PREEMPT_ID
 .done:
     mov eax, 1
     ret
@@ -767,13 +1017,27 @@ scheduler_append_event64:
     ret
 
 scheduler_verify_final_events64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
+    je .preempt_events
     cmp byte [rel scheduler_event_count], 14
     jne .fail
+    jmp .records
+.preempt_events:
+    cmp byte [rel scheduler_event_count], 10
+    jne .fail
+    lea rsi, [rel scheduler_events]
+    lea rdi, [rel scheduler_preempt_events]
+    mov ecx, 10
+    repe cmpsb
+    jne .fail
+    jmp .task_records
+.records:
     lea rsi, [rel scheduler_events]
     lea rdi, [rel scheduler_expected_events]
     mov ecx, 14
     repe cmpsb
     jne .fail
+.task_records:
     lea r12, [rel scheduler_tasks]
     xor ebx, ebx
 .task_zero_loop:
@@ -934,6 +1198,7 @@ scheduler_cleanup_common64:
 scheduler_force_cleanup64:
     cli
     mov byte [rel scheduler_active], 0
+    call x86_64_timer_preemption_cancel64
     mov rax, qword [rel scheduler_original_cr3]
     test rax, rax
     jz .original_ready
@@ -999,7 +1264,12 @@ scheduler_expected_events:
     db EVENT_A_RUNNING, EVENT_A_READY_AGAIN
     db EVENT_B_RUNNING, EVENT_B_FAULTED, EVENT_B_FREE
     db EVENT_A_RUNNING, EVENT_A_EXITED, EVENT_A_FREE
+scheduler_preempt_events:
+    db EVENT_A_READY, EVENT_B_READY, EVENT_A_RUNNING, EVENT_A_READY_AGAIN
+    db EVENT_B_RUNNING, EVENT_B_PREEMPTED, EVENT_B_FREE
+    db EVENT_A_RUNNING, EVENT_A_EXITED, EVENT_A_FREE
 scheduler_ok_message db "REIST_X86_64_PROCESS_SCHEDULER_OK", 13, 10, 0
+scheduler_preempt_ok_message db "REIST_X86_64_TIMER_PREEMPTION_OK", 13, 10, 0
 scheduler_stage_message db "REIST_X86_64_PROCESS_SCHEDULER_STAGE_", 0
 scheduler_newline db 13, 10, 0
 
@@ -1025,6 +1295,8 @@ scheduler_fault_count:
 scheduler_reap_count:
     resd 1
 scheduler_active:
+    resb 1
+scheduler_mode:
     resb 1
 scheduler_syscalls_active:
     resb 1
