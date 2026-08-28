@@ -73,7 +73,7 @@ exakten NX-Page-Fault und den Abschlussmarker. Die PTE-Selbstprüfung ignoriert
 ausschließlich die von der CPU gepflegten Accessed-/Dirty-Bits; Adresse,
 Schreibrecht und NX bleiben exakt geprüft.
 
-**R8.1d ist in Arbeit:** Die nächste isolierte Scheibe validiert die
+**R8.1d ist umgesetzt:** Die isolierte Scheibe validiert die
 Multiboot-v1-Speicherkarte fail-closed und verwaltet nur vollständige
 4-KiB-Frames unter einer festen 64-MiB-Grenze. Bootstrap, verwendete
 Handoffdaten und Module bleiben reserviert; nicht nutzbare Einträge überstimmen
@@ -81,6 +81,13 @@ Handoffdaten und Module bleiben reserviert; nicht nutzbare Einträge überstimme
 Frames ab. Drei reale Allokationen, Schreibzugriff, Free/Reuse und negative
 Free-Fälle bilden den begrenzten Laufzeitnachweis. Dynamisches Paging,
 Speicher oberhalb 64 MiB und produktive Kernelintegration bleiben offen.
+
+Vierzehn Quellvertragstests und der warnungsfreie 29.788-Byte-Build bestanden.
+Der begrenzte Ein-vCPU-/32-MiB-QEMU-Lauf verarbeitete den realen
+Multiboot-v1-Handoff, allozierte drei eindeutige Frames, pruefte deren
+beschreibbare NX-Direct-Map, Free/Reuse, unaligned und doppeltes Free und
+stellte den Freizaehler wieder her. `PHYSICAL_MEMORY_OK` erschien geordnet
+zwischen NX-Nachweis und Abschlussmarker.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

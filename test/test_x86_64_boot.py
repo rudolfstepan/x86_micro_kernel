@@ -19,6 +19,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         target = makefile.split("x86_64-bootstrap:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("arch/x86_64/boot/entry.asm", target)
         self.assertIn("arch/x86_64/cpu/exceptions.asm", target)
+        self.assertIn("arch/x86_64/mm/physical_memory.asm", target)
         self.assertNotIn("native-image", target)
         self.assertNotIn("kernel", target)
 
@@ -87,6 +88,49 @@ class X8664BootstrapContractTests(unittest.TestCase):
             block = source[source.index(f"mov esi, {start}"):]
             self.assertIn("mov ecx, PAGE_NX_HIGH", block.split("call map_high_pages32", 1)[0])
         self.assertIn("and r8d, ~PAGE_HW_AD_MASK", source)
+
+    def test_multiboot_memory_map_parser_is_fail_closed_and_bounded(self):
+        source = self.read("arch/x86_64/mm/physical_memory.asm")
+        self.assertIn("MULTIBOOT_BOOT_MAGIC equ 0x2BADB002", source)
+        self.assertIn("MULTIBOOT_MMAP_FLAG equ (1 << 6)", source)
+        self.assertIn("MAX_MMAP_BYTES      equ 4096", source)
+        self.assertIn("MAX_MMAP_ENTRIES    equ 128", source)
+        self.assertIn("MAX_MODULES         equ 32", source)
+        self.assertIn("MMAP_ENTRY_MIN_SIZE equ 20", source)
+        self.assertIn("parse_usable_pass32:", source)
+        self.assertIn("parse_reserved_pass32:", source)
+        self.assertIn(".reserved_alignment:", source)
+        self.assertIn("jc physical_memory_fail32", source)
+        self.assertIn("cmp eax, MAX_MMAP_BYTES", source)
+        self.assertIn("cmp ebp, MAX_MMAP_ENTRIES", source)
+        self.assertIn("cmp ecx, MAX_MODULES", source)
+
+    def test_physical_frames_and_direct_map_have_fixed_authority(self):
+        source = self.read("arch/x86_64/mm/physical_memory.asm")
+        self.assertIn("MANAGED_LIMIT       equ 0x04000000", source)
+        self.assertIn("FRAME_SIZE          equ 4096", source)
+        self.assertIn("FRAME_COUNT         equ 16384", source)
+        self.assertIn("FRAME_BITMAP_BYTES  equ 2048", source)
+        self.assertIn("DIRECT_MAP_BASE     equ 0xFFFF800000000000", source)
+        self.assertIn("DIRECT_PT_COUNT     equ 32", source)
+        self.assertEqual(source.count("resb FRAME_BITMAP_BYTES"), 2)
+        self.assertIn("resb DIRECT_PT_COUNT * 4096", source)
+        self.assertIn("mov dword [pml4_table + (256 * 8) + 4], PAGE_NX_HIGH", source)
+        self.assertIn("mov dword [direct_page_tables + eax * 8 + 4], PAGE_NX_HIGH", source)
+        self.assertIn("bt dword [rel usable_bitmap], ecx", source)
+        self.assertIn("bts dword [rel allocation_bitmap], ecx", source)
+        self.assertIn("btr dword [rel allocation_bitmap], r8d", source)
+
+    def test_physical_allocator_selftest_is_bounded_and_negative(self):
+        source = self.read("arch/x86_64/mm/physical_memory.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("x86_64_physical_memory_selftest64:", source)
+        self.assertIn("cmp ecx, FRAME_COUNT", source)
+        self.assertGreaterEqual(source.count("call physical_frame_alloc64"), 4)
+        self.assertGreaterEqual(source.count("call physical_frame_free64"), 5)
+        self.assertIn("test rdi, FRAME_SIZE - 1", source)
+        self.assertIn("REIST_X86_64_PHYSICAL_MEMORY_OK", source)
+        self.assertIn("REIST_X86_64_PHYSICAL_MEMORY_OK", runner)
 
     def test_success_marker_is_reachable_only_in_64_bit_section(self):
         source = self.read("arch/x86_64/boot/entry.asm")
@@ -165,6 +209,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REQUIRED_MARKERS", runner)
         self.assertIn("REIST_X86_64_HIGHER_HALF_PAGING_OK", runner)
         self.assertIn("REIST_X86_64_PAGING_NX_OK", runner)
+        self.assertIn("REIST_X86_64_PHYSICAL_MEMORY_OK", runner)
         self.assertIn("REIST_X86_64_EXCEPTION_RECOVERY_OK", runner)
         self.assertIn("positions != sorted(positions)", runner)
 

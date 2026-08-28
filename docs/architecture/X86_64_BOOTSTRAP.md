@@ -25,9 +25,17 @@ die niedrige Uebergangsabbildung aus PML4[0] entfernt und CR3 neu geladen.
 Ein Sprung auf ein festes Byte in der NX-Datenseite muss danach exakt einen
 Supervisor-Instruction-Fetch-Page-Fault erzeugen.
 
-Das Artefakt ist kein vollstaendiger REIST-Kernel. Es besitzt keine Multiboot-
-Speicherkartenauswertung, keinen physischen Allocator und keine Direct Map;
-diese physische Adressierungsgrundlage ist R8.1d vorbehalten. Es besitzt keine produktive
+R8.1d erfasst den Multiboot-v1-Handoff noch im ungepageten 32-Bit-Einstieg.
+Die variable Speicherkarte wird zweimal innerhalb fester Grenzen ausgewertet:
+zuerst werden vollstaendige nutzbare 4-KiB-Frames aufgenommen, danach
+ueberstimmen alle nicht nutzbaren Eintraege jede Ueberlappung. Bootstrap,
+ausgewertete Multiboot-Strukturen, Modultabelle und Modulnutzdaten werden vor
+der Freigabe reserviert. Zwei feste Bitmaps trennen verwaltbare Frames von
+laufenden Allokationen.
+
+Das Artefakt ist kein vollstaendiger REIST-Kernel. Seine physische Verwaltung
+endet bei 64 MiB und verwendet weder dynamische Seitentabellen noch NUMA,
+Highmem oder eine produktive Prozessintegration. Es besitzt keine produktive
 Hardwareinterruptbehandlung und weder Prozessmodell noch Syscall-ABI,
 Userspace, Treiber, Dateisystem oder signiertes natives Medienlayout. Es
 begruendet deshalb keine ELF64-, Hardware- oder Fail-operational-Kompatibilitaet.
@@ -49,6 +57,10 @@ ist Multiboot Version 1; er bleibt auf das separate Bootstrap-Artefakt begrenzt.
 - genau eine temporaere 2-MiB-Identity-Map ab physischer Adresse null;
 - feste 4-KiB-Higher-Half-Abbildungen nur fuer die gelinkten Abschnitte;
 - Text read-only/executable, RoData read-only/NX und Data/BSS read-write/NX;
+- maximal 4.096 Byte Multiboot-Speicherkarte mit 128 Eintraegen und 32 Modulen;
+- zwei feste 2.048-Byte-Bitmaps fuer 16.384 Frames unter 64 MiB;
+- eine feste RW/NX-Direct-Map mit 32 Page Tables und ausschliesslich
+  verwaltbaren RAM-Frames;
 - ein statischer 16-KiB-Bootstack innerhalb dieser Map;
 - genau 32 statische 16-Byte-IDT-Gates und eine gepackte 104-Byte-TSS;
 - ein statischer 16-KiB-IST ausschliesslich fuer Double Fault;
@@ -97,3 +109,23 @@ maskiert, veroeffentlichte der QEMU-Lauf alle sechs geforderten Marker in
 exakter Reihenfolge innerhalb einer Sekunde. Damit sind Higher-Half-Wechsel,
 Low-Map-Widerruf, bestehender UD2-Resume und die exakte NX-Schutzwirkung fuer
 dieses isolierte Artefakt nachgewiesen.
+
+## Abnahme R8.1d
+
+Der Quellvertrag fordert exakte Multiboot-Magic-, Pointer-, Laengen-,
+Entrygroessen-, Kapazitaets- und 64-Bit-Ueberlaufpruefungen vor jeder
+Publikation. Reservierte Bereiche muessen jede nutzbare Ueberlappung
+ueberstimmen. Der QEMU-Lauf muss nach dem bestehenden NX-Probe drei eindeutige
+Frames allozieren, deren RW/NX-Direct-Map beschreiben, einen Frame freigeben
+und exakt wiederverwenden, danach alle Frames freigeben sowie unaligned und
+doppeltes Free ablehnen. Erst nach wiederhergestelltem Freizaehler darf
+`REIST_X86_64_PHYSICAL_MEMORY_OK` vor dem Abschlussmarker erscheinen.
+
+Der finale Quellvertrag bestand vierzehn Tests. Der warnungsfreie Windows-
+Build linkte Entry-, Exception- und Physikalspeicherobjekt zu einem 29.788 Byte
+grossen ELF. Der Ein-vCPU-/32-MiB-QEMU-Lauf verarbeitete die reale
+Multiboot-v1-Speicherkarte und bestand Allokation, Direct-Map-Schreibprobe,
+Free/Reuse, unaligned Free, Double Free und Freizaehlerwiederherstellung.
+`REIST_X86_64_PHYSICAL_MEMORY_OK` erschien innerhalb einer Sekunde in der
+geforderten Reihenfolge. Der Nachweis gilt nicht fuer Speicher oberhalb
+64 MiB oder physische Hardware.

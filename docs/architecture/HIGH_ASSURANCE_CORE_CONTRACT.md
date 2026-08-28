@@ -75,6 +75,15 @@ danach wird sie vor Exception- und NX-Probes widerrufen und durch CR3-Reload
 invalidiert. Dynamische physische Speicherverwaltung bleibt ein eigener,
 später abzunehmender Vertrag.
 
+Die erste physische x86_64-Verwaltung akzeptiert ausschliesslich einen
+vollstaendig innerhalb fester Byte-, Entry- und Modulgrenzen validierten
+Multiboot-v1-Handoff. Ueberlaeufe, abgeschnittene variable Eintraege und
+Kapazitaetsueberschreitungen veroeffentlichen keinen Allokatorzustand.
+Reservierte Kartenbereiche und die verwendeten Bootstrap-/Handoffdaten
+ueberstimmen nutzbare Eintraege. Verwaltbare und belegte Frames bleiben in
+getrennten festen Bitmaps; die begrenzte Direct-Map ist stets NX und darf
+keinen beschreibbaren Alias des Bootstrap-Artefakts erzeugen.
+
 Bootartefakte müssen versioniert und ihre exakten Inhalte kryptografisch
 gebunden sein. Der aktuelle BIOS-Pfad verwendet ein Manifest-v3-Format mit
 SHA-256 nach NIST FIPS 180-4, eingebetteter RSA-PSS-Signatur und einen

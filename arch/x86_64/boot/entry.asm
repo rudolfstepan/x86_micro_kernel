@@ -43,7 +43,10 @@ global x86_64_ud2_probe
 global x86_64_ud2_resume
 global x86_64_nx_probe_target
 global x86_64_nx_resume
+global pml4_table
 extern x86_64_exception_init
+extern x86_64_physical_memory_init32
+extern x86_64_physical_memory_selftest64
 extern _text_start
 extern _text_end
 extern _rodata_start
@@ -55,6 +58,8 @@ extern _bss_end
 
 x86_64_bootstrap_start:
     cli
+    mov dword [boot_magic_value], eax
+    mov dword [boot_info_value], ebx
     mov esp, bootstrap_stack_top
     xor ebp, ebp
 
@@ -68,6 +73,12 @@ x86_64_bootstrap_start:
     mov edi, pml4_table
     mov ecx, (5 * 4096) / 4
     rep stosd
+
+    mov eax, dword [boot_magic_value]
+    mov ebx, dword [boot_info_value]
+    call x86_64_physical_memory_init32
+    test eax, eax
+    jz .memory_map_error
 
     mov eax, pdpt_table
     or eax, PAGE_PRESENT_WRITE
@@ -137,6 +148,12 @@ x86_64_bootstrap_start:
 .unsupported:
     call serial_init32
     mov esi, unsupported_message
+    call serial_write32
+    jmp halt32
+
+.memory_map_error:
+    call serial_init32
+    mov esi, memory_map_error_message
     call serial_write32
     jmp halt32
 
@@ -345,6 +362,9 @@ x86_64_ud2_resume:
     lea rax, [rel x86_64_nx_probe_target]
     jmp rax
 x86_64_nx_resume:
+    call x86_64_physical_memory_selftest64
+    test eax, eax
+    jz physical_memory_state_error
     lea rsi, [rel exception_recovery_message]
     call serial_write64
     jmp halt64
@@ -374,6 +394,12 @@ long_mode_state_error:
 higher_half_state_error:
     call serial_init64
     lea rsi, [rel higher_half_state_error_message]
+    call serial_write64
+    jmp halt64
+
+physical_memory_state_error:
+    call serial_init64
+    lea rsi, [rel physical_memory_state_error_message]
     call serial_write64
     jmp halt64
 
@@ -438,8 +464,10 @@ halt64:
 
 section .rodata
 unsupported_message db "REIST_X86_64_UNSUPPORTED", 13, 10, 0
+memory_map_error_message db "REIST_X86_64_MEMORY_MAP_ERROR", 13, 10, 0
 state_error_message db "REIST_X86_64_LONG_MODE_STATE_ERROR", 13, 10, 0
 higher_half_state_error_message db "REIST_X86_64_HIGHER_HALF_STATE_ERROR", 13, 10, 0
+physical_memory_state_error_message db "REIST_X86_64_PHYSICAL_MEMORY_ERROR", 13, 10, 0
 success_message db "REIST_X86_64_LONG_MODE_BOOT_OK", 13, 10, 0
 higher_half_paging_message db "REIST_X86_64_HIGHER_HALF_PAGING_OK", 13, 10, 0
 exception_recovery_message db "REIST_X86_64_EXCEPTION_RECOVERY_OK", 13, 10, 0
@@ -457,6 +485,10 @@ gdt64_pointer:
 
 section .data
 align 8
+boot_magic_value:
+    dd 0
+boot_info_value:
+    dd 0
 x86_64_nx_probe_target:
     db 0xC3
 

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1d-x86_64-physical-memory"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10518,7 +10518,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1d-x86_64-physical-memory"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 Multiboot physical memory foundation"
@@ -10569,7 +10569,13 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "mm: add x86_64 bounded physical memory foundation"
-evidence = []
+evidence = [
+  "the final source contract passed all 14 tests covering Multiboot bounds two-pass reservation precedence fixed bitmaps direct-map NX authority allocator bounds and negative free behavior",
+  "the warning-free isolated Windows build assembled entry exceptions and physical-memory objects and linked a 29788-byte Multiboot ELF without changing any production i386 dependency",
+  "the one-vCPU 32-MiB QEMU runtime accepted the real bounded Multiboot-v1 map then published PHYSICAL_MEMORY_OK after the existing higher-half UD2 and NX proofs within one second",
+  "the runtime allocated three aligned unique frames wrote through only their RW NX direct-map aliases freed and exactly reused one frame rejected unaligned and double free and restored the initial free count",
+  "management remains fixed below 64 MiB with no dynamic page tables memory-above-limit process syscall userspace device physical-hardware or fail-operational claim and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

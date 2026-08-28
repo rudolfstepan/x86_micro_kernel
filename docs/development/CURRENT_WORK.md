@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `9844edbe`
 
-Aktives Thema: R8.1d – begrenzte x86_64-Physikalspeichergrundlage
+Aktives Thema: kein Queue-Paket – R8.1d ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -40,7 +40,7 @@ Laufzeit-Selbstprüfung wurde einmal gezielt korrigiert, damit ausschließlich
 die CPU-eigenen PTE-Accessed-/Dirty-Bits vom Vergleich ausgenommen sind. Die
 Queue ist wieder leer.
 
-R8.1d ist nun das einzige aktive Paket. Es validiert die Multiboot-v1-
+R8.1d ist abgeschlossen. Es validiert die Multiboot-v1-
 Speicherkarte mit festen Grenzen, reserviert Bootstrap- und verwendete
 Handoffbereiche und verwaltet ausschließlich vollständige 4-KiB-Frames unter
 64 MiB. Zwei feste Bitmaps trennen verwaltbaren RAM von aktuellen
@@ -48,6 +48,12 @@ Allokationen. Eine statische 4-KiB-Direct-Map ist RW/NX und bildet nur diese
 Frames ab. Der isolierte Laufzeitnachweis umfasst Allokation, Schreibzugriff,
 Free/Reuse sowie ungültiges und doppeltes Free. Dynamische Seitentabellen und
 Speicher oberhalb 64 MiB bleiben späteren Paketen vorbehalten.
+Vierzehn Quellvertragstests und der warnungsfreie 29.788-Byte-Build bestanden.
+Der Ein-vCPU-/32-MiB-QEMU-Lauf allozierte drei eindeutige Frames, schrieb ueber
+deren RW/NX-Direct-Map, pruefte Free/Reuse sowie negative Free-Faelle und
+stellte den urspruenglichen Freizaehler wieder her. Der Gast meldete
+`PHYSICAL_MEMORY_OK` vor dem bestehenden Abschlussmarker. Die Queue ist wieder
+leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

@@ -101,6 +101,14 @@ Instruction-Fetch-Page-Fault beweist NX, ohne eine allgemeine
 Fehlerfortsetzung zu erlauben. Multiboot-Speicherkarte, physischer Allocator
 und Direct Map bleiben R8.1d vorbehalten.
 
+R8.1d erfasst die Multiboot-v1-Speicherkarte vor dem Paginguebergang mit
+festen Grenzen und reserviert alle vom Bootstrap verwendeten Handoffbereiche.
+Nicht nutzbare Eintraege ueberstimmen nutzbare Ueberlappungen. Unterhalb einer
+festen 64-MiB-Grenze trennen zwei Bitmaps verwaltbare Frames von Allokationen;
+eine statische 4-KiB-Direct-Map bildet nur verwaltbare Frames RW/NX ab. Diese
+Grundlage ist single-CPU und besitzt weder dynamische Seitentabellen noch eine
+Prozess- oder Userspace-Autoritaet.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

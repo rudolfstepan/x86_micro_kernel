@@ -201,6 +201,7 @@ KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
 X86_64_BOOTSTRAP_DIR := $(OUTPUT_DIR)/x86_64
 X86_64_BOOTSTRAP_OBJ := $(X86_64_BOOTSTRAP_DIR)/entry.o
 X86_64_EXCEPTION_OBJ := $(X86_64_BOOTSTRAP_DIR)/exceptions.o
+X86_64_PHYSICAL_MEMORY_OBJ := $(X86_64_BOOTSTRAP_DIR)/physical_memory.o
 X86_64_BOOTSTRAP_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-bootstrap.elf
 X86_64_BOOTSTRAP_LDSCRIPT := $(CONFIG_DIR)/x86_64_bootstrap.ld
 
@@ -340,9 +341,10 @@ x86_64-bootstrap:
 	@mkdir -p $(X86_64_BOOTSTRAP_DIR)
 	@$(AS) -f elf32 arch/x86_64/boot/entry.asm -o $(X86_64_BOOTSTRAP_OBJ)
 	@$(AS) -f elf32 arch/x86_64/cpu/exceptions.asm -o $(X86_64_EXCEPTION_OBJ)
+	@$(AS) -f elf32 arch/x86_64/mm/physical_memory.asm -o $(X86_64_PHYSICAL_MEMORY_OBJ)
 	@$(LD) -m elf_i386 -nostdlib --build-id=none --fatal-warnings \
 		-T $(X86_64_BOOTSTRAP_LDSCRIPT) -o $(X86_64_BOOTSTRAP_ELF) \
-		$(X86_64_BOOTSTRAP_OBJ) $(X86_64_EXCEPTION_OBJ)
+		$(X86_64_BOOTSTRAP_OBJ) $(X86_64_EXCEPTION_OBJ) $(X86_64_PHYSICAL_MEMORY_OBJ)
 	@echo "x86_64 bootstrap complete: $(X86_64_BOOTSTRAP_ELF)"
 
 check-syscall-abi:
