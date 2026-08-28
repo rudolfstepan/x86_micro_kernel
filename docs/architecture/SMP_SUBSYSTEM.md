@@ -317,6 +317,19 @@ Clients deshalb wieder gemeinsam auf CPU 0. Die geschützte post-ready AP-
 Mechanik bleibt default-deny erhalten und darf erst nach explizitem Paint-
 Batching- oder gemeinschaftlichem GUI-Affinitätsnachweis erneut aktiviert
 werden. Andere bereits geprüfte AP-Dienste und -Treiber bleiben unverändert.
-Fence oder Restart löschen weiterhin jede explizite Einmalfreigabe.
+Bis R6.2n löschte ein Fence die explizite Einmalfreigabe; R6.2o ersetzt dies
+für den getrennt nachgewiesenen Compositor-Restart durch die folgende
+geschützte gewünschte Maske.
+R6.2o schließt den getrennten Neustartnachweis. Nur ein ausdrücklicher
+`DESKTOP`-Befehl führt in den generationsgebundenen Compositor-Supervisor;
+Boot-Autostart bleibt auf allen Targets deaktiviert. Die geschützte gewünschte
+AP-Maske überlebt einen Heartbeat-Fence. Eine noch lebende alte Generation
+kehrt zuerst begrenzt auf CPU 0 zurück, danach werden ausschließlich ihre
+generationseigenen Frame- und Surface-Ressourcen widerrufen und der Prozess
+beendet. Der separat überwachte Display-Treiber und sein Scanout bleiben
+aktiv. Die Ersatzgeneration startet auf CPU 0 und erhält die AP-Maske erst
+nach Self-Test, gesunder Publikation und `SERVICE_READY`. Der Vier-vCPU-
+VMware-Nachweis sah Generation 1 auf CPU 2, den Timeout/Restart zu Epoch 2,
+Generation 2 READY und danach auf CPU 1 sowie eine echte xHCI-Mausmeldung.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

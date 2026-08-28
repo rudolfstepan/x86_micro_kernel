@@ -21,6 +21,7 @@ param(
     [switch]$Svga2dSmpLifecycleFaultInjection,
     [switch]$HdaSmpLifecycleFaultInjection,
     [switch]$AudioServiceSmpLifecycleFaultInjection,
+    [switch]$CompositorSmpLifecycleFaultInjection,
     [switch]$SoundplayerSurfaceProbe,
     [switch]$SkipReleaseSbom,
     [ValidateRange(1, 8)]
@@ -194,6 +195,7 @@ try {
         svga2d_smp_lifecycle_fault_injection = [bool]$Svga2dSmpLifecycleFaultInjection
         hda_smp_lifecycle_fault_injection = [bool]$HdaSmpLifecycleFaultInjection
         audio_service_smp_lifecycle_fault_injection = [bool]$AudioServiceSmpLifecycleFaultInjection
+        compositor_smp_lifecycle_fault_injection = [bool]$CompositorSmpLifecycleFaultInjection
         soundplayer_surface_probe = [bool]$SoundplayerSurfaceProbe
         skip_release_sbom = [bool]$SkipReleaseSbom
         nasm = $Nasm
@@ -275,6 +277,9 @@ try {
     }
     if ($AudioServiceSmpLifecycleFaultInjection) {
         $makeArguments += 'AUDIO_SERVICE_SMP_LIFECYCLE_FAULT_INJECTION=1'
+    }
+    if ($CompositorSmpLifecycleFaultInjection) {
+        $makeArguments += 'COMPOSITOR_SMP_LIFECYCLE_FAULT_INJECTION=1'
     }
     if ($SoundplayerSurfaceProbe) {
         $makeArguments += 'SOUNDPLAYER_SURFACE_PROBE=1'

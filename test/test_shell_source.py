@@ -253,6 +253,22 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertNotIn("supervisor_start_compositor", kernel)
         self.assertNotIn("Starting supervised graphical desktop", kernel)
 
+    def test_explicit_desktop_command_starts_detached_supervised_session(self):
+        syscall = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        shell = (ROOT / "userspace/bin/shell.c").read_text(encoding="utf-8")
+        spawn = shell.index("int pid = x86os_spawnv(executable")
+        detached = shell.index(
+            'if (text_equal(executable, "/usr/gui/bin/desktop.prg")) return;',
+            spawn,
+        )
+        wait = shell.index("x86os_wait(pid, &status)", spawn)
+        self.assertLess(spawn, detached)
+        self.assertLess(detached, wait)
+        self.assertIn('strcmp(path, "/usr/gui/bin/desktop.prg") == 0', syscall)
+        self.assertIn("supervisor_start_compositor(", syscall)
+
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)
         self.assertNotIn('printf("%s:%s> ", drive_label, dos_path);', self.source)

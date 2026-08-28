@@ -3,7 +3,8 @@ param(
     [string]$SourcePackage = '',
     [string]$GateLog = '',
     [ValidateRange(20, 120)] [int]$TimeoutSeconds = 75,
-    [ValidateRange(1, 20)] [int]$InjectionAttempts = 12
+    [ValidateRange(1, 20)] [int]$InjectionAttempts = 12,
+    [switch]$ExpectCompositorRestart
 )
 
 Set-StrictMode -Version Latest
@@ -66,9 +67,11 @@ $requiredAfterDesktop = @(
 )
 $forbidden = @(
     '*** KERNEL PANIC ***',
-    'REIST_GUI COMPOSITOR_DEGRADED',
-    'REIST_GUI COMPOSITOR_RESTARTED'
+    'REIST_GUI COMPOSITOR_DEGRADED'
 )
+if (!$ExpectCompositorRestart) {
+    $forbidden += 'REIST_GUI COMPOSITOR_RESTARTED'
+}
 $running = & $vmrun -T ws list 2>$null
 $runningVms = @($running | Where-Object {
     $_.Trim() -and $_.Trim() -notmatch '^Total running VMs:'
@@ -383,6 +386,28 @@ try {
         throw "VMware explicit desktop markers timed out: $($desktopMissing -join ', ')"
     }
 
+    if ($ExpectCompositorRestart) {
+        $restartReady = $false
+        while ($watch.Elapsed -lt $deadline) {
+            $text = Read-SerialText
+            Assert-NoForbiddenMarker $text
+            $readyCount = ([regex]::Matches(
+                $text, 'REIST_GUI COMPOSITOR_READY generation=')).Count
+            $apCount = ([regex]::Matches(
+                $text, 'REIST_GUI COMPOSITOR_AP_EXEC cpu=')).Count
+            if ($text.Contains('REIST_GUI COMPOSITOR_TIMEOUT_ARMED epoch=1') -and
+                $text.Contains('REIST_GUI COMPOSITOR_RESTARTED epoch=2') -and
+                $readyCount -ge 2 -and $apCount -ge 2) {
+                $restartReady = $true
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$restartReady) {
+            throw 'VMware compositor replacement did not become healthy and AP-affine.'
+        }
+    }
+
     for ($attempt = 1; $attempt -le $InjectionAttempts; ++$attempt) {
         $injected = Send-BoundedMouseInput $attempt
         "input attempt=$attempt injected=$injected transport=rfb-loopback" |
@@ -399,7 +424,29 @@ try {
             $shell = $text.IndexOf($shellMarker)
             $desktop = $text.IndexOf('DESKTOP_OK')
             $explorer = $text.IndexOf('DESKTOP_EXPLORER_OK')
-            if (!($hid -lt $scheduler -and $scheduler -lt $shell -and
+            if ($ExpectCompositorRestart) {
+                $armed = $text.IndexOf(
+                    'REIST_GUI COMPOSITOR_TIMEOUT_ARMED epoch=1')
+                $restart = $text.IndexOf(
+                    'REIST_GUI COMPOSITOR_RESTARTED epoch=2')
+                $replacementReady = $text.IndexOf(
+                    'REIST_GUI COMPOSITOR_READY generation=', $restart)
+                $replacementAp = $text.IndexOf(
+                    'REIST_GUI COMPOSITOR_AP_EXEC cpu=', $replacementReady)
+                $replacementDesktop = $text.IndexOf('DESKTOP_OK', $restart)
+                $replacementExplorer = $text.IndexOf(
+                    'DESKTOP_EXPLORER_OK', $restart)
+                if (!($hid -lt $scheduler -and $scheduler -lt $shell -and
+                    $shell -lt $armed -and $armed -lt $restart -and
+                    $restart -lt $replacementReady -and
+                    $replacementReady -lt $replacementAp -and
+                    $restart -lt $replacementDesktop -and
+                    $replacementDesktop -lt $replacementExplorer -and
+                    $replacementAp -lt $mouse -and
+                    $replacementExplorer -lt $mouse)) {
+                    throw 'VMware compositor restart markers are out of order.'
+                }
+            } elseif (!($hid -lt $scheduler -and $scheduler -lt $shell -and
                 $shell -lt $desktop -and $desktop -lt $explorer -and
                 $explorer -lt $mouse)) {
                 throw 'VMware mouse runtime markers are out of order.'

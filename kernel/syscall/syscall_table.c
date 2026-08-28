@@ -2883,6 +2883,15 @@ static int syscall_spawnv(const char *user_path, const char *const *user_argv,
         }
         argument_list[index] = argument;
     }
+    if (argc == 1 &&
+        strcmp(path, "/usr/gui/bin/desktop.prg") == 0) {
+        int compositor_pid = 0;
+        int result = supervisor_start_compositor(
+            pit_monotonic_ms(), 0U, &compositor_pid)
+                ? compositor_pid : -5;
+        k_free(arguments);
+        return result;
+    }
     int result = process_spawn_args(parent, path, argc, argument_list);
     k_free(arguments);
     return result;

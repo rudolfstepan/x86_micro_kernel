@@ -82,6 +82,25 @@ PID. Start, Markerwartezeit und Aufräumen bleiben auf 30, 75 beziehungsweise
 .\scripts\test-reist-runtime.ps1 -Mode vmware-mouse
 ```
 
+Der getrennte R6.2o-Lifecycle-Nachweis verwendet dasselbe explizite
+Shell-Kommando und dieselbe loopbackgebundene RFB-Eingabe, unterdrückt aber
+compile-time-begrenzt nur den Heartbeat der ersten AP-affinen
+Compositorgeneration:
+
+```powershell
+.\scripts\build-windows.ps1 -Target vmware -Video vga `
+    -CompositorSmpLifecycleFaultInjection -SkipReleaseSbom
+.\scripts\test-reist-runtime.ps1 -Mode vmware-compositor-restart
+```
+
+Er verlangt `COMPOSITOR_TIMEOUT_ARMED epoch=1`, den begrenzten Neustart zu
+Epoch 2, ein zweites `COMPOSITOR_READY`, erneute `COMPOSITOR_AP_EXEC`-Ausgabe
+und erst danach `DESKTOP_MOUSE_OK`. Am 28. August 2026 bestand Generation 1
+auf CPU 2 und die Ersatzgeneration auf CPU 1; der vollständige Lauf dauerte
+17 Sekunden. Der Compositor-Fence widerruft dabei nur generationseigene
+Frame-/Surface-Ressourcen und deaktiviert nicht den weiterhin gesunden
+SVGA2D-Dienst.
+
 Er verlangt in dieser Reihenfolge xHCI-HID-Bereitschaft, die SMP-
 Schedulerfreigabe, den Start der Userspace-Shell, den erst danach explizit
 eingegebenen Desktopstart, `DESKTOP_OK`, `DESKTOP_EXPLORER_OK` und

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2o-compositor-ap-restart"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10399,11 +10399,11 @@ evidence = [
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"
-scope = "Route only the explicit Ring-3 DESKTOP command through the existing generationscoped compositor supervisor instead of launching an unsupervised compatibility process; preserve existing SYS_SPAWNV numbering and keep every boot target autostart-disabled. Add a compile-time-only compositor lifecycle fault that suppresses supervisor progress from only the first AP-affine compositor generation until the existing two-second heartbeat deadline isolates it. Preserve a protected desired online-AP mask across the fence, return the old live generation to the BSP before display publication is deactivated and the process is terminated, then spawn the replacement on the BSP. Require replacement self-test, healthy publication and SERVICE_READY on CPU 0 before reapplying the mask. Prove renewed AP execution and real virtual xHCI mouse delivery with the generated four-vCPU VMware guest and loopback-only RFB input; safe-state exhaustion must clear the desired mask and fall back without widening display, Surface, USB or device authority."
+scope = "Route only the explicit Ring-3 DESKTOP command through the existing generationscoped compositor supervisor instead of launching an unsupervised compatibility process; preserve existing SYS_SPAWNV numbering and keep every boot target autostart-disabled. Add a compile-time-only compositor lifecycle fault that suppresses supervisor progress from only the first AP-affine compositor generation until the existing two-second heartbeat deadline isolates it. Preserve a protected desired online-AP mask across the fence, return the old live generation to the BSP before its generation-owned frame and Surface publication is revoked and the process is terminated, then spawn the replacement on the BSP without deactivating the independently supervised display driver. Require replacement self-test, healthy publication and SERVICE_READY on CPU 0 before reapplying the mask. Prove renewed AP execution and real virtual xHCI mouse delivery with the generated four-vCPU VMware guest and loopback-only RFB input; safe-state exhaustion must clear the desired mask and fall back without widening display, Surface, USB or device authority."
 allowed_files = [
   "automation/reist-s03b.toml",
   "Makefile",
@@ -10415,6 +10415,7 @@ allowed_files = [
   "scripts/run_vmware_mouse.ps1",
   "scripts/test-reist-runtime.ps1",
   "test/test_reist_supervisor.py",
+  "test/test_shell_source.py",
   "test/test_vmware_mouse.py",
   "docs/architecture/SMP_SUBSYSTEM.md",
   "docs/development/CURRENT_WORK.md",
@@ -10425,7 +10426,7 @@ invariants = [
   "the compile-time fault is absent from normal builds and suppresses progress only for the first compositor generation after verified AP execution",
   "only an explicit Ring-3 DESKTOP spawn enters the compositor supervisor and no kernel boot target starts a graphical session automatically",
   "SYS_SPAWNV retains its existing number and ordinary programs retain their existing parented spawn and wait behavior",
-  "the old live generation returns to BSP affinity within the existing bounded recovery path before display deactivation termination and reap",
+  "the old live generation returns to BSP affinity within the existing bounded recovery path before its frame and Surface publication is revoked and the process is terminated while the independently supervised display driver remains active",
   "the protected desired AP mask survives restart but no generation receives AP affinity before self-test healthy publication and SERVICE_READY on CPU 0",
   "the replacement generation executes on an AP and receives a real virtual xHCI mouse report through loopback-only RFB input",
   "safe-state exhaustion clears desired affinity and display Surface USB IRQ and device authority are not widened"
@@ -10443,7 +10444,7 @@ runtime_tests = [
 stop_conditions = [
   "the normal build contains the fault or more than the first compositor generation loses progress",
   "the explicit shell command cannot enter the supervised compositor lifecycle without changing the existing syscall number or ordinary spawn semantics",
-  "display publication is deactivated or the process is terminated before the old generation returns to BSP",
+  "generation-owned frame or Surface publication is revoked or the process is terminated before the old generation returns to BSP, or the compositor-only fence deactivates the independently supervised display driver",
   "the replacement becomes AP-affine before healthy SERVICE_READY publication on CPU 0",
   "the restart exhausts its finite budget or virtual mouse delivery does not reach the replacement generation",
   "a required production file lies outside allowed_files",
@@ -10451,6 +10452,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "smp: restore compositor AP affinity after restart"
+evidence = [
+  "the final supervisor shell and VMware source contracts passed 13 24 and 8 tests respectively; the existing SYS_SPAWNV number and boot-wide DESKTOP_AUTOSTART_DISABLED policy remain unchanged",
+  "the VMware VGA fault build passed the 126-syscall ABI check compiled all 104 kernel C objects linked the kernel and produced a signed verified 64-MiB BIOS image",
+  "the four-vCPU VMware runtime armed only compositor epoch 1 after COMPOSITOR_AP_EXEC on CPU 2 forced its bounded heartbeat restart and published replacement generation 2 READY before renewed AP execution on CPU 1",
+  "the replacement emitted DESKTOP_OK DESKTOP_EXPLORER_OK and DESKTOP_MOUSE_OK after real loopback-only RFB input in 17 seconds with no compositor degradation or kernel panic"
+]
 
 [[packages]]
 id = "R2.2af-native-compositor-startup"

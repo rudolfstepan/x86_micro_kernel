@@ -14,6 +14,8 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("$VmwareMouseRunner", source)
         self.assertIn("& $VmwareMouseRunner", source)
         self.assertIn("$Mode -ne 'vmware-mouse'", source)
+        self.assertIn("'vmware-compositor-restart'", source)
+        self.assertIn("-ExpectCompositorRestart", source)
 
     def test_runner_requires_virtual_hid_without_passthrough(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
@@ -103,6 +105,18 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("$preShell", source)
         self.assertIn("Desktop marker appeared before explicit shell command",
                       source)
+
+    def test_restart_mode_requires_replacement_before_mouse(self):
+        source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[switch]$ExpectCompositorRestart", source)
+        self.assertIn("REIST_GUI COMPOSITOR_TIMEOUT_ARMED epoch=1", source)
+        self.assertIn("REIST_GUI COMPOSITOR_RESTARTED epoch=2", source)
+        self.assertIn("$readyCount -ge 2", source)
+        self.assertIn("$apCount -ge 2", source)
+        self.assertIn("$replacementReady -lt $replacementAp", source)
+        self.assertIn("$replacementAp -lt $mouse", source)
 
     def test_runner_starts_desktop_only_after_shell_marker(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(

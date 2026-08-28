@@ -1011,6 +1011,9 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
         x86os_puts("Bad command or program file.\n");
         return;
     }
+    /* The explicit desktop command starts a detached, supervisor-owned
+     * session. The shell must remain available as its recovery console. */
+    if (text_equal(executable, "/usr/gui/bin/desktop.prg")) return;
     int status;
     if (x86os_wait(pid, &status) < 0) x86os_puts("Unable to wait for program.\n");
 }

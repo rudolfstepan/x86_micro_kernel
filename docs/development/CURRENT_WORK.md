@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `0deb7be`
+Branch/Startpunkt: `working_branch` / `4a084c8`
 
-Aktives Thema: R6.2o – Compositor-AP-Affinität nach begrenztem Neustart
+Aktives Thema: kein Queue-Paket – R6.2o ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -14,8 +14,18 @@ genau die ersten 2 MiB identisch ab und prüft nach dem Far-Transfer im
 64-Bit-Code `CR0.PG`, `CR4.PAE` und `EFER.LMA`. Sechs Quellvertragstests, der
 isolierte Windows-Build und der Ein-vCPU-/32-MiB-QEMU-Lauf bestanden; der
 Laufzeitmarker erschien nach 1,8 Sekunden. Ein vollständiger x86_64-Kernel,
-ELF64-Prozesse und 64-Bit-Userspace sind ausdrücklich spätere Pakete. R6.2o
-ist wieder aktiv.
+ELF64-Prozesse und 64-Bit-Userspace sind ausdrücklich spätere Pakete.
+
+R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
+den generationsgebundenen Compositor-Supervisor; kein Image startet den
+Desktop automatisch. Der Fehlerinjektionslauf ließ ausschließlich die erste
+AP-affine Generation ihren Heartbeat verlieren. Sie wurde begrenzt auf den BSP
+zurückgeführt, ihre generationseigenen Frames und Surface-Puffer wurden
+widerrufen und Generation 2 erst nach Self-Test und `COMPOSITOR_READY` erneut
+AP-affin. Der unabhängige SVGA2D-Dienst und sein aktiver Scanout bleiben beim
+Compositor-Fence erhalten. Der Vier-vCPU-VMware-Lauf erreichte anschließend
+`DESKTOP_MOUSE_OK` in 17 Sekunden ohne Degradation oder Panic. Die Queue ist
+leer.
 
 R7.1a ist abgeschlossen. Das neue
 `BENCHMARK.PRG` misst CPU, RAM, sequentielle VFS-/Datentraegerzugriffe und den
@@ -25,7 +35,7 @@ und gibt die Ergebnisse nach Wiederherstellung der Textkonsole als feste
 ASCII-Tabelle aus. Der Quell-/Layoutvertrag bestand 5 Tests, das freestanding
 i386-Programm linkte als 20-KiB-MYPR und der QEMU-VGA-Paketbuild bestand in 36
 Sekunden; der finale inkrementelle Paketnachweis nach exklusivem CREATE bestand
-in 10 Sekunden ohne VM-Start. R6.2o ist wieder aktiv.
+in 10 Sekunden ohne VM-Start.
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -137,7 +147,8 @@ Transfer-Event (`cc=0`, `residual=8`, `stage=0`, Timeout/Failed). Mit PS/2 war
 derselbe USB-Pfad nutzbar. R5.2y ergänzt deshalb nach erfolgreichem xHCI
 `Address Device` die feste USB-2.0-SetAddress-Recovery vor dem ersten
 EP0-Doorbell; fehlende Events und Descriptor-Shorts bleiben fail-closed.
-R6.2o bleibt bis zu diesem Hardware-Nachtest geordnet in der Queue.
+R6.2o blieb bis zu diesem Hardware-Nachtest geordnet in der Queue und ist nach
+dem erfolgreichen Nachweis inzwischen abgeschlossen.
 
 Der R5.2y-Kandidat besteht 10 Tastatur- und 16 Maustests sowie den
 VMware-VGA-Paketbuild in 15 Sekunden. Der vollständige `real_hw/vga`-Build
@@ -322,8 +333,8 @@ bei einem nachfolgenden HID-Control-Request. R5.2x persistiert nun Typ, Request,
 Wert, Index, Länge, Completion, Restlänge, Eventstufe und Flags vor dem
 Doorbell-Zugriff. Die begrenzte Korrektur akzeptiert ausschließlich einen
 terminalen, restlosen Status-Short für einen Zero-Data-Request und führt keinen
-Retry auf dem alten EP0-Zustand aus. R6.2o bleibt bis zum physischen Nachweis
-queued.
+Retry auf dem alten EP0-Zustand aus. R6.2o blieb bis zum physischen Nachweis
+queued und ist inzwischen abgeschlossen.
 
 Ein früherer Lauf meldete einmal eine rekursive Übernahme von
 `task_table_lock`. Der Fehler trat in vier vollständigen Folgeläufen nicht

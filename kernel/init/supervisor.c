@@ -15,6 +15,7 @@
 #ifndef REIST_HOST_TEST
 #include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/smp.h"
 #include "include/kernel/component_control.h"
 #include "include/kernel/device_domain.h"
 #include "include/kernel/panic.h"
@@ -24,6 +25,7 @@
 #include "drivers/net/netdev.h"
 #include "drivers/char/serial.h"
 #include "drivers/video/display_control.h"
+#include "drivers/video/framebuffer.h"
 #include "kernel/proc/process.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/time/pit.h"
@@ -286,6 +288,9 @@ typedef struct {
 
 static supervisor_compositor_runtime_t compositor_runtime;
 static volatile uint32_t compositor_ap_execution_generation;
+#ifdef REIST_COMPOSITOR_SMP_LIFECYCLE_FAULT_INJECTION
+static volatile uint32_t compositor_fault_epoch;
+#endif
 static int compositor_report_if_identity(
     int pid, uint32_t generation, uint32_t report_type, uint32_t value,
     uint64_t now_ms, bool *matched);
@@ -1961,6 +1966,10 @@ void supervisor_init(void) {
         panic("Unable to initialize protected audio service runtime");
     supervisor_compositor_control_t empty_compositor = {0};
     memset(&compositor_runtime, 0, sizeof(compositor_runtime));
+    compositor_ap_execution_generation = 0U;
+#ifdef REIST_COMPOSITOR_SMP_LIFECYCLE_FAULT_INJECTION
+    compositor_fault_epoch = 0U;
+#endif
     if (critical_object_init(
             &compositor_runtime.control,
             SUPERVISOR_COMPOSITOR_CONTROL_VERSION, &empty_compositor,
@@ -5804,7 +5813,6 @@ static void compositor_abort_prepared_spawn(
     control->ready = 0U;
     control->stop_requested = 0U;
     control->fenced = 1U;
-    control->post_ready_cpu_affinity_mask = 0U;
     (void)compositor_control_write(control);
 }
 
@@ -5843,15 +5851,27 @@ static bool compositor_spawn_next(supervisor_handle_t handle) {
     return true;
 }
 
-static bool compositor_fence_apply(void *context) {
-    (void)context;
+static bool compositor_fence_until(uint64_t deadline_ms) {
     supervisor_compositor_control_t control;
     if (compositor_control_read(&control) != 0 || control.active == 0U)
         return false;
-    /* Revoke publication before stopping code that may still own a staged
-     * frame. The display transaction lock serializes this with frame commit. */
-    if (display_control_graphics_active() &&
-        display_control_deactivate() != 0) return false;
+    if (control.pid > 0 && process_identity_alive(
+            control.pid, control.process_generation)) {
+        if (deadline_ms == 0U || pit_monotonic_ms() >= deadline_ms ||
+            process_set_supervised_affinity(
+                control.pid, control.process_generation,
+                TASK_CPU_MASK_BSP) != 0)
+            return false;
+        uint64_t now_ms = pit_monotonic_ms();
+        if (now_ms >= deadline_ms || scheduler_sleep_ms(1U) != 0 ||
+            pit_monotonic_ms() >= deadline_ms)
+            return false;
+    }
+    /* Revoke only publication owned by this compositor generation. The
+     * independently supervised display driver retains the live scanout; its
+     * device state must not be invalidated by a compositor-only restart. */
+    framebuffer_frame_process_cleanup(
+        control.pid, control.process_generation);
     if (control.pid > 0 && process_identity_alive(
             control.pid, control.process_generation))
         (void)process_terminate(control.pid);
@@ -5861,8 +5881,14 @@ static bool compositor_fence_apply(void *context) {
     control.ready = 0U;
     control.stop_requested = 0U;
     control.fenced = 1U;
-    control.post_ready_cpu_affinity_mask = 0U;
     return compositor_control_write(&control) == 0;
+}
+
+static bool compositor_fence_apply(void *context) {
+    supervisor_compositor_runtime_t *runtime = context;
+    uint64_t now_ms = pit_monotonic_ms();
+    return runtime != NULL && compositor_fence_until(
+        deadline_after(now_ms, runtime->config.recovery_timeout_ms));
 }
 
 static bool compositor_fence_verify(void *context) {
@@ -5875,7 +5901,17 @@ static bool compositor_fence_verify(void *context) {
 }
 
 bool supervisor_start_compositor(uint64_t now_ms,
-                                 uint32_t post_ready_cpu_affinity_mask) {
+                                 uint32_t post_ready_cpu_affinity_mask,
+                                 int *pid_out) {
+    if (pid_out == NULL) return false;
+    *pid_out = 0;
+#ifdef REIST_COMPOSITOR_SMP_LIFECYCLE_FAULT_INJECTION
+    x86_smp_status_t smp_status;
+    x86_smp_status(&smp_status);
+    if (smp_status.online_cpu_count <= 1U) return false;
+    post_ready_cpu_affinity_mask =
+        ((1U << smp_status.online_cpu_count) - 1U) & ~TASK_CPU_MASK_BSP;
+#endif
     if ((post_ready_cpu_affinity_mask & 0xFFFF0001U) != 0U) return false;
     supervisor_compositor_control_t control;
     if (compositor_control_read(&control) != 0 || control.active != 0U)
@@ -5907,6 +5943,12 @@ bool supervisor_start_compositor(uint64_t now_ms,
         (void)supervisor_force_isolate(handle);
         return false;
     }
+    if (compositor_control_read(&control) != 0 || control.pid <= 0 ||
+        control.process_generation == 0U) {
+        (void)supervisor_force_isolate(handle);
+        return false;
+    }
+    *pid_out = control.pid;
     return true;
 }
 
@@ -5934,24 +5976,37 @@ static int compositor_report_if_identity(
         else result = supervisor_report_self_test(
             control.supervisor, true, now_ms);
     } else if (report_type == REIST_REPORT_PROGRESS) {
-        result = value == 0U ? -22 : supervisor_report_progress(
-            control.supervisor, value, now_ms);
+        if (value == 0U) result = -22;
+        else {
+#ifndef REIST_HOST_TEST
+            uint32_t cpu = x86_cpu_current_index();
+            if (control.ready != 0U && cpu != 0U) {
+                uint32_t prior = __sync_lock_test_and_set(
+                    &compositor_ap_execution_generation,
+                    control.process_generation);
+                if (prior != control.process_generation)
+                    printf("REIST_GUI COMPOSITOR_AP_EXEC cpu=%u generation=%u\n",
+                           cpu, control.process_generation);
+#ifdef REIST_COMPOSITOR_SMP_LIFECYCLE_FAULT_INJECTION
+                if (compositor_fault_epoch == 0U &&
+                    __sync_bool_compare_and_swap(
+                        &compositor_fault_epoch, 0U,
+                        control.supervisor.epoch))
+                    printf("REIST_GUI COMPOSITOR_TIMEOUT_ARMED epoch=%u\n",
+                           control.supervisor.epoch);
+                if (compositor_fault_epoch == control.supervisor.epoch)
+                    return 0;
+#endif
+            }
+#endif
+            result = supervisor_report_progress(
+                control.supervisor, value, now_ms);
+        }
         if (result == 0 && control.fenced != 0U) {
             control.fenced = 0U;
             control.healthy = 1U;
             result = compositor_control_write(&control);
         }
-#ifndef REIST_HOST_TEST
-        if (result == 0 && control.ready != 0U &&
-            x86_cpu_current_index() != 0U) {
-            uint32_t prior = __sync_lock_test_and_set(
-                &compositor_ap_execution_generation,
-                control.process_generation);
-            if (prior != control.process_generation)
-                printf("REIST_GUI COMPOSITOR_AP_EXEC cpu=%u generation=%u\n",
-                       x86_cpu_current_index(), control.process_generation);
-        }
-#endif
     } else if (report_type == REIST_REPORT_SERVICE_READY) {
         if (value != 1U || control.fenced != 0U ||
             control.healthy == 0U || control.ready != 0U) result = -13;
@@ -5959,9 +6014,6 @@ static int compositor_report_if_identity(
             uint32_t post_ready_cpu_affinity_mask =
                 control.post_ready_cpu_affinity_mask;
             control.ready = 1U;
-            /* Consume the normal-path grant before applying it. A later
-             * restart therefore returns to the BSP until separately proven. */
-            control.post_ready_cpu_affinity_mask = 0U;
             result = compositor_control_write(&control);
             if (result == 0) printf("REIST_GUI COMPOSITOR_READY generation=%u\n",
                                     control.process_generation);
@@ -6018,6 +6070,7 @@ static bool compositor_event(supervisor_event_t event) {
                     event.handle.epoch);
     } else if (event.type == SUPERVISOR_EVENT_SAFE_STATE_REQUIRED) {
         control.administratively_enabled = 0U;
+        control.post_ready_cpu_affinity_mask = 0U;
         (void)compositor_control_write(&control);
         if (compositor_runtime.reported_safe_generation !=
                 event.handle.generation ||
@@ -6334,9 +6387,11 @@ bool supervisor_start_worker(void) {
 }
 
 bool supervisor_start_compositor(uint64_t now_ms,
-                                 uint32_t post_ready_cpu_affinity_mask) {
+                                 uint32_t post_ready_cpu_affinity_mask,
+                                 int *pid_out) {
     (void)now_ms;
     (void)post_ready_cpu_affinity_mask;
+    if (pid_out != NULL) *pid_out = 0;
     return false;
 }
 

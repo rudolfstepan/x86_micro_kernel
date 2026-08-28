@@ -108,10 +108,9 @@ migriert beide Clients auf die Surface-Grenze und ergänzt konfigurierbare,
 originale CC0-Systemklänge. Der getrennte physische xHCI-Control-Fehler
 `cc=13` folgt als R5.2x. Das abgeschlossene R7.1a stellt fuer die weitere
 Leistungsdiagnose ein begrenztes Ring-3-`BENCHMARK.PRG` fuer CPU, RAM,
-Datentraeger und VGA bereit; danach nimmt R6.2o auf der VMware-/ASUS-Basis den
-begrenzten
-BSP-Fence und die erneute post-READY-AP-Affinität nach einem Heartbeat-Restart
-prüft. Physische,
+Datentraeger und VGA bereit. R6.2o hat auf der VMware-/ASUS-Basis den
+begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem
+Heartbeat-Restart abgeschlossen. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
 werden nicht durch die Emulatorabnahme ersetzt.
 
@@ -570,8 +569,9 @@ und 10 verbindlich.
     Startup-Hypothesen R2.2af bis R2.2ah sind abgebrochen; R2.2ai beseitigt
     zuerst die synchronen Sound-Player-/Control-Gallery-Child-Waits und bindet
     konfigurierbare Systemklänge an begrenzte Ring-3-Kinder; R5.2x klärt danach den
-    physischen xHCI-Control-Fehler und R6.2o nimmt anschließend den getrennten
-    Compositor-AP-Restartnachweis ab; weitere
+    physischen xHCI-Control-Fehler; R6.2o hat anschließend den getrennten
+    Compositor-AP-Restartnachweis mit erneuter AP-Ausführung und xHCI-Maus-
+    Zustellung abgeschlossen; weitere
     Produktionsdomänen
     bleiben offen
 

@@ -40,15 +40,16 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("control->process_generation", control)
         self.assertIn("control->post_ready_cpu_affinity_mask", control)
         spawn = source[source.index("static bool compositor_spawn_next"):
-                       source.index("static bool compositor_fence_apply")]
+                       source.index("static bool compositor_fence_until")]
         self.assertIn("process_spawn_supervised_prepared", spawn)
         self.assertIn("PROCESS_DOMAIN_COMPOSITOR", spawn)
         self.assertIn("process_start_prepared_supervised", spawn)
         self.assertNotIn("process_set_supervised_affinity", spawn)
-        fence = source[source.index("static bool compositor_fence_apply"):
-                       source.index("static bool compositor_fence_verify")]
-        self.assertLess(fence.index("display_control_deactivate()"),
+        fence = source[source.index("static bool compositor_fence_until"):
+                       source.index("static bool compositor_fence_apply")]
+        self.assertLess(fence.index("framebuffer_frame_process_cleanup("),
                         fence.index("process_terminate(control.pid)"))
+        self.assertNotIn("display_control_deactivate()", fence)
         report_start = source.index(
             "static int compositor_report_if_identity",
             source.index("bool supervisor_compositor_session_active"),
@@ -63,8 +64,7 @@ class ReistSupervisorTests(unittest.TestCase):
         ready = report[report.index("REIST_REPORT_SERVICE_READY"):]
         self.assertLess(ready.index("COMPOSITOR_READY"),
                         ready.index("process_set_supervised_affinity"))
-        self.assertLess(ready.index("post_ready_cpu_affinity_mask = 0U"),
-                        ready.index("process_set_supervised_affinity"))
+        self.assertNotIn("post_ready_cpu_affinity_mask = 0U", ready)
         self.assertIn("REIST_GUI COMPOSITOR_AP_EXEC cpu=", report)
         self.assertIn("heartbeat_timeout_ms = 2000U", source)
         self.assertIn("recovery_timeout_ms = 1000U", source)
@@ -72,12 +72,48 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertNotIn("supervisor_start_compositor", kernel)
         self.assertNotIn("supervisor_compositor_session_active", kernel)
         self.assertIn("REIST_GUI DESKTOP_AUTOSTART_DISABLED", kernel)
+        syscall = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8")
+        spawnv = syscall[syscall.index("static int syscall_spawnv"):]
+        spawnv = spawnv[:spawnv.index("static int syscall_wait")]
+        self.assertIn('strcmp(path, "/usr/gui/bin/desktop.prg") == 0', spawnv)
+        self.assertIn("supervisor_start_compositor(", spawnv)
+        self.assertIn("pit_monotonic_ms(), 0U, &compositor_pid", spawnv)
         display_connect = source[
             source.index("if (service_id == REIST_SERVICE_DISPLAY_DRIVER)"):
             source.index("static void supervisor_worker(")]
         self.assertIn("PROCESS_DOMAIN_COMPOSITOR", display_connect)
         self.assertIn('strcmp(client->image_path, "/usr/gui/bin/desktop.prg")',
                       display_connect)
+
+    def test_compositor_restart_preserves_desired_mask_and_returns_to_bsp(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        windows = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        fence = source[source.index("static bool compositor_fence_until"):]
+        fence = fence[:fence.index("static bool compositor_fence_apply")]
+        self.assertLess(fence.index("TASK_CPU_MASK_BSP"),
+                        fence.index("framebuffer_frame_process_cleanup("))
+        self.assertLess(fence.index("framebuffer_frame_process_cleanup("),
+                        fence.index("process_terminate(control.pid)"))
+        self.assertNotIn("display_control_deactivate()", fence)
+        self.assertNotIn("post_ready_cpu_affinity_mask = 0U", fence)
+        safe = source[source.index("static bool compositor_event"):]
+        safe = safe[:safe.index("static void driver_monitor_processes")]
+        self.assertIn("control.post_ready_cpu_affinity_mask = 0U", safe)
+        progress = source[source.index(
+            "static int compositor_report_if_identity",
+            source.index("bool supervisor_compositor_session_active")) :]
+        progress = progress[:progress.index(
+            "static void compositor_monitor_process")]
+        self.assertIn("REIST_GUI COMPOSITOR_TIMEOUT_ARMED epoch=%u", progress)
+        self.assertIn("compositor_fault_epoch == control.supervisor.epoch",
+                      progress)
+        self.assertIn("COMPOSITOR_SMP_LIFECYCLE_FAULT_INJECTION ?= 0",
+                      makefile)
+        self.assertIn("CompositorSmpLifecycleFaultInjection", windows)
 
     def test_sound_surface_probe_is_compile_time_only(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(
