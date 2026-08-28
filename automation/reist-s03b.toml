@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1e-x86_64-elf64-loader"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10579,7 +10579,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1e-x86_64-elf64-loader"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add a bounded x86_64 ELF64 load foundation"
@@ -10632,7 +10632,13 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "exec: add bounded x86_64 ELF64 load foundation"
-evidence = []
+evidence = [
+  "the final isolated x86_64 source contract passed all 17 tests covering the independent ELF64 toolchain path complete pre-allocation validation W^X bounded staging verification and cleanup",
+  "after one focused repair to use an unambiguous NASM failure label the warning-free Windows build linked a 45156-byte bootstrap embedding the independently linked 9008-byte ELF64 ET_EXEC probe",
+  "the one-vCPU 32-MiB QEMU runtime published ELF64_LOAD_OK after the physical-memory proof and before EXCEPTION_RECOVERY_OK within one second",
+  "the guest accepted at most two PT_LOAD segments staged and revalidated file plus BSS bytes through allocator-owned RW NX direct-map frames then restored every frame and the initial free count before success",
+  "no Ring-3 transfer user page table syscall payload execution i386 target HPASA integration physical-hardware or fail-operational claim was added and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

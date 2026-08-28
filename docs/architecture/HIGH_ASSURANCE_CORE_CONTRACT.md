@@ -84,6 +84,14 @@ ueberstimmen nutzbare Eintraege. Verwaltbare und belegte Frames bleiben in
 getrennten festen Bitmaps; die begrenzte Direct-Map ist stets NX und darf
 keinen beschreibbaren Alias des Bootstrap-Artefakts erzeugen.
 
+Der erste x86_64-Executable-Loader akzeptiert nur ELF64 little-endian
+System-V-`ET_EXEC` fuer `EM_X86_64`. Er prueft feste Headerkapazitaeten,
+arithmetische Bereiche, Seitenausrichtung, Segmentueberlappung, Entry-Point
+und W^X vor jeder Allokation. Teilweise geladene Abbilder werden nie
+publiziert; jeder Pfad gibt seine begrenzten Frames zurueck und prueft den
+Freizaehler. Formatvalidierung und Segment-Staging allein erteilen weder
+Ausfuehrungs- noch Ring-3- oder Syscall-Autoritaet.
+
 Bootartefakte müssen versioniert und ihre exakten Inhalte kryptografisch
 gebunden sein. Der aktuelle BIOS-Pfad verwendet ein Manifest-v3-Format mit
 SHA-256 nach NIST FIPS 180-4, eingebetteter RSA-PSS-Signatur und einen

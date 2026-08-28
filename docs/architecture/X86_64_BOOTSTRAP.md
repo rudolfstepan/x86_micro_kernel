@@ -33,12 +33,21 @@ ausgewertete Multiboot-Strukturen, Modultabelle und Modulnutzdaten werden vor
 der Freigabe reserviert. Zwei feste Bitmaps trennen verwaltbare Frames von
 laufenden Allokationen.
 
+R8.1e baut ein eigenstaendiges freestanding x86_64-`ET_EXEC` mit NASM und dem
+ELF64-Linker und bettet genau dieses Artefakt in den Bootstrap ein. Der
+Gastloader validiert die ELF64-/System-V-Identitaet und hoechstens zwei
+`PT_LOAD`-Segmente vollstaendig, bevor er Frames allokiert. Er staged Datei-
+und BSS-Bytes in ein festes Acht-Seiten-Fenster, prueft Inhalt und W^X-
+Metadaten und gibt danach alle Frames frei. Das Probeprogramm wird nicht
+ausgefuehrt.
+
 Das Artefakt ist kein vollstaendiger REIST-Kernel. Seine physische Verwaltung
 endet bei 64 MiB und verwendet weder dynamische Seitentabellen noch NUMA,
 Highmem oder eine produktive Prozessintegration. Es besitzt keine produktive
 Hardwareinterruptbehandlung und weder Prozessmodell noch Syscall-ABI,
-Userspace, Treiber, Dateisystem oder signiertes natives Medienlayout. Es
-begruendet deshalb keine ELF64-, Hardware- oder Fail-operational-Kompatibilitaet.
+ausfuehrbaren Userspace, Treiber, Dateisystem oder signiertes natives
+Medienlayout. Der Loadernachweis allein begruendet deshalb keine vollstaendige
+ELF64-Prozess-, Hardware- oder Fail-operational-Kompatibilitaet.
 
 ## Referenzstandard
 
@@ -61,6 +70,8 @@ ist Multiboot Version 1; er bleibt auf das separate Bootstrap-Artefakt begrenzt.
 - zwei feste 2.048-Byte-Bitmaps fuer 16.384 Frames unter 64 MiB;
 - eine feste RW/NX-Direct-Map mit 32 Page Tables und ausschliesslich
   verwaltbaren RAM-Frames;
+- ein separat gelinktes ELF64-`ET_EXEC` mit maximal 64 KiB, vier Program
+  Headern, zwei `PT_LOAD`-Segmenten und acht staged Userseiten;
 - ein statischer 16-KiB-Bootstack innerhalb dieser Map;
 - genau 32 statische 16-Byte-IDT-Gates und eine gepackte 104-Byte-TSS;
 - ein statischer 16-KiB-IST ausschliesslich fuer Double Fault;
@@ -129,3 +140,23 @@ Free/Reuse, unaligned Free, Double Free und Freizaehlerwiederherstellung.
 `REIST_X86_64_PHYSICAL_MEMORY_OK` erschien innerhalb einer Sekunde in der
 geforderten Reihenfolge. Der Nachweis gilt nicht fuer Speicher oberhalb
 64 MiB oder physische Hardware.
+
+## Abnahme R8.1e
+
+Der Quellvertrag verlangt einen unabhaengigen ELF64-Toolchainlauf und eine
+vollstaendige Vorabvalidierung von Identitaet, Maschine, Typ, Headergroessen,
+Programmtabelle, allen 64-Bit-Bereichen, Alignment, Entry-Point und W^X. Erst
+danach duerfen hoechstens acht R8.1d-Frames belegt werden. Der Gast muss alle
+Dateibytes sowie die genullten Speicherenden nachpruefen und vor
+`REIST_X86_64_ELF64_LOAD_OK` jeden Frame sowie den urspruenglichen
+Freizaehler wiederherstellen. Ring-3-Transfer, User-Seitentabellen, Syscalls
+und Payload-Ausfuehrung sind ausdruecklich R8.1f vorbehalten.
+
+Alle 17 Quellvertragstests bestanden. Nach einer gezielten Korrektur eines
+mehrdeutigen NASM-Labels erzeugte der warnungsfreie Windows-Build ein
+45.156-Byte-Bootstrap und ein unabhaengig gelinktes 9.008-Byte-ELF64-`ET_EXEC`.
+Der auf eine vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf meldete
+`REIST_X86_64_ELF64_LOAD_OK` innerhalb einer Sekunde geordnet zwischen
+`REIST_X86_64_PHYSICAL_MEMORY_OK` und
+`REIST_X86_64_EXCEPTION_RECOVERY_OK`. Der Nachweis gilt nicht fuer
+Payload-Ausfuehrung, Ring 3, physische Hardware oder HPASA.

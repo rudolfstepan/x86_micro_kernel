@@ -109,6 +109,14 @@ eine statische 4-KiB-Direct-Map bildet nur verwaltbare Frames RW/NX ab. Diese
 Grundlage ist single-CPU und besitzt weder dynamische Seitentabellen noch eine
 Prozess- oder Userspace-Autoritaet.
 
+R8.1e fuehrt darauf einen begrenzten ELF64-Loadervertrag ein. Ein unabhaengig
+assembliertes und als System-V-x86_64-`ET_EXEC` gelinktes Probeabbild wird vor
+jeder Allokation vollstaendig validiert. Nur zwei nicht ueberlappende,
+seitenkongruente und W^X-konforme `PT_LOAD`-Segmente in einem festen
+Acht-Seiten-Fenster sind zulaessig. Staging und Verifikation erfolgen ueber
+R8.1d-Frames; alle Frames werden vor Erfolg zurueckgegeben. Die Scheibe
+installiert keine User-Seitentabellen und fuehrt das Probeabbild nicht aus.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

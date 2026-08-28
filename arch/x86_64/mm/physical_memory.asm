@@ -33,6 +33,9 @@ BITS 32
 section .text
 global x86_64_physical_memory_init32
 global x86_64_physical_memory_selftest64
+global physical_frame_alloc64
+global physical_frame_free64
+global physical_free_frame_count64
 extern pml4_table
 extern _x86_64_bootstrap_end
 extern serial_write64
@@ -493,6 +496,10 @@ physical_frame_free64:
     ret
 .invalid:
     xor eax, eax
+    ret
+
+physical_free_frame_count64:
+    mov eax, dword [rel free_frame_count]
     ret
 
 verify_direct_frame64:

@@ -89,14 +89,21 @@ beschreibbare NX-Direct-Map, Free/Reuse, unaligned und doppeltes Free und
 stellte den Freizaehler wieder her. `PHYSICAL_MEMORY_OK` erschien geordnet
 zwischen NX-Nachweis und Abschlussmarker.
 
-**R8.1e ist in Arbeit:** Ein separat mit dem normalen x86_64-Assembler und
+**R8.1e ist umgesetzt:** Ein separat mit dem normalen x86_64-Assembler und
 ELF64-Linker erzeugtes `ET_EXEC`-Probeabbild bildet den ersten Loadervertrag.
 Der Gast akzeptiert hoechstens vier Program Header, zwei nicht ueberlappende
 `PT_LOAD`-Segmente und acht Userseiten. Alle 64-Bit-Grenzen, Alignment,
 Entry-Point und W^X werden vor Allokation validiert. Daten und BSS werden in
 R8.1d-Frames gestaged, vollstaendig nachgeprueft und vor Erfolg wieder
 freigegeben. Ausfuehrung, Ring 3, User-Seitentabellen und Syscalls folgen erst
-in R8.1f. HPASA bleibt davon als spaeteres QEMU-Forschungsprojekt getrennt.
+in R8.1f. HPASA ist ein eigenstaendiges Projekt ausserhalb dieses
+REIST-Repositories und kein Bestandteil der R8-Roadmap.
+
+Alle 17 Quellvertragstests und der warnungsfreie Build des 45.156-Byte-
+Bootstrap mit dem unabhaengigen 9.008-Byte-Probeabbild bestanden. Der begrenzte
+Ein-vCPU-/32-MiB-QEMU-Lauf meldete `ELF64_LOAD_OK` geordnet nach dem
+Speichernachweis und vor dem Abschlussmarker, nachdem alle staged Frames und
+der urspruengliche Freizaehler wiederhergestellt waren.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

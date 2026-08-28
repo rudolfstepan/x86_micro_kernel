@@ -20,6 +20,10 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("arch/x86_64/boot/entry.asm", target)
         self.assertIn("arch/x86_64/cpu/exceptions.asm", target)
         self.assertIn("arch/x86_64/mm/physical_memory.asm", target)
+        self.assertIn("arch/x86_64/user/probe.asm", target)
+        self.assertIn("arch/x86_64/exec/elf64_loader.asm", target)
+        self.assertIn("-f elf64", target)
+        self.assertIn("-m elf_x86_64", target)
         self.assertNotIn("native-image", target)
         self.assertNotIn("kernel", target)
 
@@ -132,6 +136,51 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REIST_X86_64_PHYSICAL_MEMORY_OK", source)
         self.assertIn("REIST_X86_64_PHYSICAL_MEMORY_OK", runner)
 
+    def test_elf64_probe_is_independently_linked_with_wx_segments(self):
+        probe = self.read("arch/x86_64/user/probe.asm")
+        linker = self.read("config/x86_64_user_probe.ld")
+        self.assertIn("BITS 64", probe)
+        self.assertIn("global _start", probe)
+        self.assertIn("OUTPUT_FORMAT(elf64-x86-64)", linker)
+        self.assertIn("ENTRY(_start)", linker)
+        self.assertIn("text PT_LOAD FLAGS(5)", linker)
+        self.assertIn("data PT_LOAD FLAGS(6)", linker)
+        self.assertIn("ASSERT(_probe_end <= 0x00408000", linker)
+
+    def test_elf64_loader_validates_standard_headers_before_allocation(self):
+        source = self.read("arch/x86_64/exec/elf64_loader.asm")
+        allocation = source.index("call physical_frame_alloc64")
+        for validation in (
+            "ELF_MAGIC           equ 0x464C457F",
+            "ELFCLASS64          equ 2",
+            "ELFDATA2LSB         equ 1",
+            "ET_EXEC             equ 2",
+            "EM_X86_64           equ 62",
+            "ELF64_EHDR_SIZE     equ 64",
+            "ELF64_PHDR_SIZE     equ 56",
+            "MAX_PROGRAM_HEADERS equ 4",
+            "MAX_LOAD_SEGMENTS   equ 2",
+            "USER_PAGE_COUNT     equ 8",
+        ):
+            self.assertIn(validation, source)
+            self.assertLess(source.index(validation), allocation)
+        self.assertIn("jc elf64_load_fail", source[:allocation])
+        self.assertIn("cmp rax, rdx", source[:allocation])
+        self.assertIn("and edx, PF_W | PF_X", source[:allocation])
+
+    def test_elf64_staging_is_bounded_verified_and_fully_cleaned(self):
+        source = self.read("arch/x86_64/exec/elf64_loader.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("incbin USER_PROBE_PATH", source)
+        self.assertIn("cmp ecx, USER_PAGE_COUNT", source)
+        self.assertIn("call elf_user_direct_pointer64", source)
+        self.assertIn("call physical_frame_free64", source)
+        self.assertIn("call physical_free_frame_count64", source)
+        marker = source.index("REIST_X86_64_ELF64_LOAD_OK")
+        cleanup = source.index("call elf64_cleanup64")
+        self.assertLess(cleanup, marker)
+        self.assertIn("REIST_X86_64_ELF64_LOAD_OK", runner)
+
     def test_success_marker_is_reachable_only_in_64_bit_section(self):
         source = self.read("arch/x86_64/boot/entry.asm")
         bits64 = source.index("BITS 64")
@@ -210,6 +259,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REIST_X86_64_HIGHER_HALF_PAGING_OK", runner)
         self.assertIn("REIST_X86_64_PAGING_NX_OK", runner)
         self.assertIn("REIST_X86_64_PHYSICAL_MEMORY_OK", runner)
+        self.assertIn("REIST_X86_64_ELF64_LOAD_OK", runner)
         self.assertIn("REIST_X86_64_EXCEPTION_RECOVERY_OK", runner)
         self.assertIn("positions != sorted(positions)", runner)
 

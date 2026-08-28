@@ -39,6 +39,7 @@ $Zig = Resolve-NativeTool 'zig' @(
 )
 $MsysShell = Resolve-NativeTool 'sh' @('C:\msys64\usr\bin\sh.exe')
 $Artifact = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-bootstrap.elf"
+$UserProbe = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-user-probe.elf"
 
 Push-Location $RepoRoot
 try {
@@ -56,11 +57,25 @@ try {
     if (-not (Test-Path -LiteralPath $Artifact -PathType Leaf)) {
         throw "x86_64 bootstrap artifact was not produced: $Artifact"
     }
+    if (-not (Test-Path -LiteralPath $UserProbe -PathType Leaf)) {
+        throw "x86_64 ELF64 user probe was not produced: $UserProbe"
+    }
+    $probeItem = Get-Item -LiteralPath $UserProbe
+    if ($probeItem.Length -lt 64 -or $probeItem.Length -gt 64KB) {
+        throw "x86_64 ELF64 user probe size is outside the fixed 64..65536-byte range."
+    }
+    $probeMagic = ([System.IO.File]::ReadAllBytes($UserProbe))[0..4]
+    if ($probeMagic[0] -ne 0x7F -or $probeMagic[1] -ne 0x45 -or
+        $probeMagic[2] -ne 0x4C -or $probeMagic[3] -ne 0x46 -or
+        $probeMagic[4] -ne 0x02) {
+        throw "x86_64 user probe is not an ELFCLASS64 artifact."
+    }
     $item = Get-Item -LiteralPath $Artifact
     if ($item.Length -le 0 -or $item.Length -gt 2MB) {
         throw "x86_64 bootstrap artifact size is outside the fixed 1..2097152-byte range."
     }
     Write-Host "X86_64_BOOTSTRAP_BUILD_OK path=$Artifact bytes=$($item.Length)"
+    Write-Host "X86_64_USER_PROBE_BUILD_OK path=$UserProbe bytes=$($probeItem.Length)"
 } finally {
     Pop-Location
 }

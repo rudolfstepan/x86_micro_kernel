@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `3b0e0c8b`
+Branch/Startpunkt: `working_branch` / `ed2655b`
 
-Aktives Thema: R8.1e – begrenzte x86_64-ELF64-Loadgrundlage
+Aktives Thema: kein Paket aktiv; R8.1e ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -55,15 +55,21 @@ stellte den urspruenglichen Freizaehler wieder her. Der Gast meldete
 `PHYSICAL_MEMORY_OK` vor dem bestehenden Abschlussmarker. Die Queue ist wieder
 leer.
 
-R8.1e ist nun das einzige aktive Paket. Ein separat assembliertes und als
+R8.1e ist abgeschlossen. Ein separat assembliertes und als
 ELF64-`ET_EXEC` gelinktes Probeabbild wird in das isolierte Bootstrap-Artefakt
 eingebettet. Der Gast validiert ELF-Identitaet, x86_64-Maschine, Header- und
 Programmtabellengrenzen sowie hoechstens zwei W^X-konforme `PT_LOAD`-Segmente
 in einem festen Acht-Seiten-Userfenster. Segmentdaten und BSS werden nur in
 Frames des R8.1d-Allokators gestaged, byteweise nachgeprueft und danach
 vollstaendig freigegeben. Ring-3-Wechsel, User-Seitentabellen und Syscalls
-bleiben R8.1f vorbehalten. Der geoeffnete HPASA-Plan bleibt ein unabhaengiges
-spaeteres QEMU-/Residency-Forschungsvorhaben.
+bleiben R8.1f vorbehalten. HPASA ist ein eigenstaendiges Projekt ausserhalb
+dieses REIST-Repositories und ausserhalb der R8-Roadmap.
+Siebzehn Quellvertragstests bestanden. Nach einer gezielten Korrektur eines
+mehrdeutigen NASM-Labels erzeugte der warnungsfreie Build ein 45.156-Byte-
+Bootstrap mit einem unabhaengig gelinkten 9.008-Byte-ELF64-Probeabbild. Der
+Ein-vCPU-/32-MiB-QEMU-Lauf meldete `ELF64_LOAD_OK` geordnet zwischen
+`PHYSICAL_MEMORY_OK` und dem Abschlussmarker und stellte zuvor alle Frames
+sowie den urspruenglichen Freizaehler wieder her. Die Queue ist wieder leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den
