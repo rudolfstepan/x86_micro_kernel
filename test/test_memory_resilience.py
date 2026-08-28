@@ -40,11 +40,9 @@ class MemoryResilienceTests(unittest.TestCase):
         process_admission = kernel.index("supervisor_start_probe(")
         self.assertLess(memory_test, boot_proof)
         self.assertLess(boot_proof, process_admission)
-        self.assertIn(
-            "#ifndef REIST_RESILIENT_PAGE_BOOT_PROOF\n"
-            "    if (!supervisor_start_compositor",
-            kernel,
-        )
+        self.assertIn("REIST_GUI DESKTOP_AUTOSTART_DISABLED", kernel)
+        self.assertNotIn("supervisor_start_compositor", kernel)
+        self.assertNotIn("supervisor_compositor_session_active", kernel)
         self.assertIn("RESILIENT_PAGE_BOOT_PROOF ?= 0", makefile)
         self.assertIn("-DREIST_RESILIENT_PAGE_BOOT_PROOF", makefile)
         self.assertIn("[switch]$ResilientPageBootProof", build_script)

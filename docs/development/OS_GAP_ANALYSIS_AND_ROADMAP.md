@@ -92,6 +92,12 @@ prüft. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
 werden nicht durch die Emulatorabnahme ersetzt.
 
+Bootpolicy seit 28. August 2026: Kein Target startet den grafischen Desktop
+automatisch. QEMU, VMware und physische Images erreichen zuerst die Ring-3-
+Shell; `DESKTOP` startet die grafische Sitzung ausschließlich nach einem
+ausdrücklichen Benutzerkommando. Automatisierte Grafiktests müssen denselben
+expliziten Eingabepfad verwenden.
+
 ### 2.1 Fortschrittsübersicht
 
 Diese Liste ist der schnelle Einstieg in den Arbeitsstand. `[x]` bedeutet
@@ -2210,6 +2216,51 @@ deshalb wieder vollständig aus Treiber und Laufzeitausgabe entfernt.
    bereitstellen.
 
 #### R5.2 xHCI in überprüfbaren Stufen — XL
+
+**Status (28. August 2026): R5.2x auf der ASUS-Referenz physisch abgenommen.**
+Die append-only Diagnose-ABI enthält das vollständige fehlgeschlagene USB-
+Setup-Paket sowie Completion, Restlänge und Eventstufe. Ein xHCI-Short wird nur
+für einen host-to-device Request mit `wLength=0`, ohne Data-TRB, mit terminalem
+Status-TRB-Zeiger und Restlänge null als vollständig angenommen. Mandatory
+`SET_CONFIGURATION` und `SET_PROTOCOL` bleiben ansonsten fail-closed. Die
+gezielten USB-Tests, das VMware-VGA-Paket und der virtuelle RFB-Mauspfad sind
+bestanden. Das HID-Gerät funktioniert am separaten USB-2.0-Controller. Am
+USB-3.0-Port wurde es zunächst erst parallel zu einer PS/2-Tastatur nutzbar.
+Deshalb sammelt nun jeder xHCI-Controller nach dem Start höchstens 500 ms lang
+sichtbar werdende Root-Ports; zuvor galt dieses Fenster nur nach Intel-Port-
+Routing. Der anschließende ASUS-Nachtest bestätigt USB-Tastatur und `DMESG`
+mit dem neuen Image. Das schließt die konkrete Regression, nicht die breite
+xHCI-Hardwarematrix.
+
+Das abschließend erzeugte VMware-Paket wurde vom Benutzer zusätzlich manuell
+erfolgreich gestartet und geprüft. Ein unmittelbar davor gestarteter
+automatischer Nachlauf hatte den Gast wegen eines Host-VMware-Startfehlers
+nicht erreicht; er wird deshalb nicht als Runtime-Erfolg gewertet. Die
+automatische Nichtregression stützt sich weiterhin auf den zuvor bestandenen
+begrenzten RFB-Mauslauf.
+
+Das dafür gebaute `real_hw/vga`-Image startet wie alle anderen Images niemals
+automatisch den Desktop, sondern endet zuerst in der Ring-3-Shell. Sein
+SHA-256 lautet
+`DBA5E5794405180CC11CBCB3FDB2BF81FDA001B2206BFF17700ED29135EDA3C3`;
+`DESKTOP` bleibt ein ausschließlich manueller Benutzerbefehl.
+
+Das nach einer zweiten Manifestprüfung veröffentlichte aktuelle
+Installerartefakt `build/reist-os-real-hw.img` ist 64 MiB groß und hat SHA-256
+`BF774039CF11370093B49E4E0D20094FB1315E15E440E84E6778B23F0E4DBFE9`.
+
+Künftige `real_hw`-Builds veröffentlichen nach einer zweiten Manifestprüfung
+atomar `build/reist-os-real-hw.img`, auch wenn der Quellbuild in einem
+Diagnose-Unterordner liegt. Nur dieses zielprofilspezifische Artefakt wird von
+den physischen Installationsskripten akzeptiert; Emulatorbuilds schreiben es
+nicht.
+
+Frühe Ring-0-Ausgaben werden für diese physische Diagnose zusätzlich in einem
+festen 32-KiB-Speicherring gehalten. Der append-only Lesesyscall und das
+Ring-3-Werkzeug `DMESG` liefern einen am ersten Head begrenzten Snapshot und
+pausieren ohne VFS- oder Heap-Abhängigkeit nach jeweils 22 Textzeilen. Die
+Compatibility-Profilgrenze umfasst den neuen Syscall 125; eingeschränkte
+Dienstprofile erhalten ihn nicht automatisch.
 
 - Controller stoppen/resetten und Capability-/Operational-Register validieren.
 - DCBAA, Command Ring, Event Ring und Interrupter initialisieren.

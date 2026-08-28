@@ -170,12 +170,25 @@ Details stehen in [VMWARE.md](../hardware/VMWARE.md).
 .\scripts\build-windows.ps1 -Target real_hw -Video vga
 ```
 
+Der Quellbuild liegt weiterhin als `reist-os.img` in seinem gewählten
+Ausgabeordner. Zusätzlich wird ausschließlich für `real_hw` nach erneuter
+Manifestprüfung atomar `build/reist-os-real-hw.img` veröffentlicht. Die
+zielgebundenen Installer verwenden nur dieses Artefakt; dadurch kann ein
+späterer QEMU- oder VMware-Build nicht versehentlich als Hardwareimage auf
+eine physische Platte geschrieben werden.
+
 Das Schreiben auf eine physische Platte ist destruktiv. Nur ein
 zielgebundenes Installationsskript verwenden und vor Bestätigung
 `PhysicalDrive`, Modell, Seriennummer und Größe prüfen. Das allgemeine Backend
 ist `scripts/install-physical-disk.ps1`; vorhandene `.cmd`-Wrapper sind an die
 konkret dokumentierte Platte gebunden. Nach erfolgreichem Schreiben muss die
 Platte offline bleiben, bevor sie vom USB-Adapter getrennt wird.
+
+Für die dokumentierte Samsung-SSD lautet der Aufruf aus dem Repository:
+
+```powershell
+.\scripts\install-reist-samsung-120gb.cmd
+```
 
 Erforderlich sind Legacy BIOS beziehungsweise CSM und deaktivierter Secure
 Boot. UEFI-Boot, NVMe und eine allgemeine USB-Mass-Storage-Bootzusage sind

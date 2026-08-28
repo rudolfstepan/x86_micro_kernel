@@ -679,6 +679,7 @@ SYSTEM_IMAGE_FILES := \
 	bin/cls.prg=$(SYSTEM_PROGRAM_DIR)/CLS.PRG \
 	sbin/sysinfo.prg=$(SYSTEM_PROGRAM_DIR)/SYSINFO.PRG \
 	sbin/usbinfo.prg=$(SYSTEM_PROGRAM_DIR)/USBINFO.PRG \
+	sbin/dmesg.prg=$(SYSTEM_PROGRAM_DIR)/DMESG.PRG \
 	sbin/audioinfo.prg=$(SYSTEM_PROGRAM_DIR)/AUDIOINFO.PRG \
 	sbin/meminfo.prg=$(SYSTEM_PROGRAM_DIR)/MEMINFO.PRG \
 	sbin/chkdsk.prg=$(SYSTEM_PROGRAM_DIR)/CHKDSK.PRG \

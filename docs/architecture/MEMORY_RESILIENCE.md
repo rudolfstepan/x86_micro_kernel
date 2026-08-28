@@ -57,8 +57,10 @@ R1.2b führt dieselbe Kampagne als compile-time-only Bootprobe im echten
 Kernelimage aus. Der Gast hat Commit-Generation 2, degradierte committed Daten,
 ein unabhängiges Objekt und den HEALTHY-Rebuild in die feste simulierte Domäne
 C geordnet validiert und danach `BOOT_OK`, Userspace sowie `TEST_OK` erreicht.
-Nur dieses Probeprofil überspringt den Desktop-Autostart, damit die Shell den
-vollständigen Gasttest ausführen kann; normale Builds bleiben unverändert.
+Alle Targets überspringen den Desktop-Autostart und erreichen zuerst die
+Ring-3-Shell. Das Memory-Resilience-Profil benötigt dafür keinen Sonderweg;
+`DESKTOP` wird ausschließlich durch einen ausdrücklichen Benutzerbefehl
+gestartet.
 
 Damit ist eine im laufenden REIST-Kernel ausgeführte **simulierte** Degradation
 nachgewiesen. Physische DIMM-, Rank-, Channel-, IMC-, MCE- oder EDAC-Eigenschaften

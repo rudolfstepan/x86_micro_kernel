@@ -145,7 +145,8 @@ enum {
     X86OS_SYS_LSEEK = 121,
     X86OS_SYS_FSTAT = 122,
     X86OS_SYS_FTRUNCATE = 123,
-    X86OS_SYS_STORAGE_BULK = 124
+    X86OS_SYS_STORAGE_BULK = 124,
+    X86OS_SYS_KERNEL_LOG_READ = 125
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -1053,7 +1054,7 @@ typedef struct {
     uint32_t reserved;
 } x86os_mouse_event_t;
 
-#define X86OS_USB_DIAGNOSTICS_VERSION 6U
+#define X86OS_USB_DIAGNOSTICS_VERSION 7U
 #define X86OS_USB_BACKEND_NONE 0U
 #define X86OS_USB_BACKEND_XHCI 1U
 #define X86OS_USB_BACKEND_OHCI 2U
@@ -1071,6 +1072,14 @@ typedef struct {
 #define X86OS_USB_INTEL_ROUTE_INVALID_CONFIG  (1U << 5U)
 #define X86OS_USB_INTEL_ROUTE_VERIFY_FAILED   (1U << 6U)
 #define X86OS_USB_INTEL_ROUTE_SKIPPED_QUIRK   (1U << 7U)
+#define X86OS_USB_CONTROL_EVENT_NONE   0U
+#define X86OS_USB_CONTROL_EVENT_DATA   1U
+#define X86OS_USB_CONTROL_EVENT_STATUS 2U
+#define X86OS_USB_CONTROL_DATA_EVENT     (1U << 0U)
+#define X86OS_USB_CONTROL_STATUS_EVENT   (1U << 1U)
+#define X86OS_USB_CONTROL_SHORT_ACCEPTED (1U << 2U)
+#define X86OS_USB_CONTROL_FAILED         (1U << 3U)
+#define X86OS_USB_CONTROL_TIMEOUT        (1U << 4U)
 enum {
     X86OS_USB_STATE_NOT_PROBED = 0U,
     X86OS_USB_STATE_PROBING,
@@ -1160,7 +1169,35 @@ typedef struct {
     uint32_t device_protocol;
     uint32_t configuration_length;
     uint32_t backend;
+    uint32_t control_request_type;
+    uint32_t control_request;
+    uint32_t control_value;
+    uint32_t control_index;
+    uint32_t control_length;
+    uint32_t control_completion;
+    uint32_t control_residual;
+    uint32_t control_event_stage;
+    uint32_t control_flags;
 } x86os_usb_diagnostics_t;
+
+#define X86OS_KERNEL_LOG_READ_VERSION 1U
+#define X86OS_KERNEL_LOG_READ_FROM_OLDEST (1U << 0U)
+#define X86OS_KERNEL_LOG_READ_MAX 256U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t flags;
+    uint32_t cursor;
+    uint32_t buffer_address;
+    uint32_t buffer_capacity;
+    uint32_t oldest_cursor;
+    uint32_t snapshot_head;
+    uint32_t next_cursor;
+    uint32_t copied;
+    uint32_t dropped;
+    uint32_t overwritten;
+} x86os_kernel_log_read_t;
 
 enum {
     X86OS_DRIVE_ATA = 1,
@@ -1922,6 +1959,7 @@ int x86os_display_surface_buffer_draw(
 int x86os_mouse_event(x86os_mouse_event_t* event);
 int x86os_pointer_update(int32_t x, int32_t y, uint32_t visible);
 int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics);
+int x86os_kernel_log_read(x86os_kernel_log_read_t *request);
 int x86os_fill_rect(int32_t x, int32_t y, uint32_t width, uint32_t height,
                     uint32_t rgb);
 int x86os_draw_text_pixels(int32_t x, int32_t y, const char* text,

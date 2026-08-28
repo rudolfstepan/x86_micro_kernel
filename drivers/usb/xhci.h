@@ -13,7 +13,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define XHCI_DIAGNOSTICS_VERSION 5U
+#define XHCI_DIAGNOSTICS_VERSION 6U
+
+#define XHCI_CONTROL_EVENT_NONE   0U
+#define XHCI_CONTROL_EVENT_DATA   1U
+#define XHCI_CONTROL_EVENT_STATUS 2U
+#define XHCI_CONTROL_DATA_EVENT     (1U << 0U)
+#define XHCI_CONTROL_STATUS_EVENT   (1U << 1U)
+#define XHCI_CONTROL_SHORT_ACCEPTED (1U << 2U)
+#define XHCI_CONTROL_FAILED         (1U << 3U)
+#define XHCI_CONTROL_TIMEOUT        (1U << 4U)
 
 #define XHCI_CAP_REJECT_PORT_COUNT       (1U << 0U)
 #define XHCI_CAP_REJECT_SCRATCHPADS      (1U << 1U)
@@ -114,6 +123,15 @@ typedef struct {
     uint32_t device_subclass;
     uint32_t device_protocol;
     uint32_t configuration_length;
+    uint32_t control_request_type;
+    uint32_t control_request;
+    uint32_t control_value;
+    uint32_t control_index;
+    uint32_t control_length;
+    uint32_t control_completion;
+    uint32_t control_residual;
+    uint32_t control_event_stage;
+    uint32_t control_flags;
 } xhci_diagnostics_t;
 
 /* Initialise at most one bounded boot keyboard and one boot mouse. */

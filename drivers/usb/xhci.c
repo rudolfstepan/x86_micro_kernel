@@ -170,6 +170,18 @@ typedef struct {
     bool runtime_published;
 } xhci_state_t;
 
+typedef struct {
+    uint32_t request_type;
+    uint32_t request;
+    uint32_t value;
+    uint32_t index;
+    uint32_t length;
+    uint32_t completion;
+    uint32_t residual;
+    uint32_t event_stage;
+    uint32_t flags;
+} xhci_control_diagnostic_t;
+
 /* These objects are never handed to hardware before xHCI validation. */
 static uint64_t dcbaa[33] __attribute__((aligned(4096)));
 static uint64_t scratchpad_array[XHCI_MAX_SCRATCHPADS]
@@ -207,6 +219,55 @@ static xhci_diagnostics_t diagnostics = {
     .struct_size = sizeof(xhci_diagnostics_t),
     .state = XHCI_DIAG_NOT_PROBED
 };
+
+_Static_assert(offsetof(xhci_diagnostics_t, control_request_type) == 188U,
+               "xHCI diagnostics v5 prefix changed");
+
+static xhci_control_diagnostic_t xhci_control_diagnostics_snapshot(void) {
+    xhci_control_diagnostic_t snapshot = {
+        .request_type = diagnostics.control_request_type,
+        .request = diagnostics.control_request,
+        .value = diagnostics.control_value,
+        .index = diagnostics.control_index,
+        .length = diagnostics.control_length,
+        .completion = diagnostics.control_completion,
+        .residual = diagnostics.control_residual,
+        .event_stage = diagnostics.control_event_stage,
+        .flags = diagnostics.control_flags
+    };
+    return snapshot;
+}
+
+static void xhci_control_diagnostics_restore(
+        const xhci_control_diagnostic_t *snapshot) {
+    if (snapshot == NULL) return;
+    diagnostics.control_request_type = snapshot->request_type;
+    diagnostics.control_request = snapshot->request;
+    diagnostics.control_value = snapshot->value;
+    diagnostics.control_index = snapshot->index;
+    diagnostics.control_length = snapshot->length;
+    diagnostics.control_completion = snapshot->completion;
+    diagnostics.control_residual = snapshot->residual;
+    diagnostics.control_event_stage = snapshot->event_stage;
+    diagnostics.control_flags = snapshot->flags;
+}
+
+static xhci_control_diagnostic_t xhci_control_diagnostics_begin(
+        uint8_t request_type, uint8_t request, uint16_t value,
+        uint16_t index, uint16_t length) {
+    xhci_control_diagnostic_t previous =
+        xhci_control_diagnostics_snapshot();
+    diagnostics.control_request_type = request_type;
+    diagnostics.control_request = request;
+    diagnostics.control_value = value;
+    diagnostics.control_index = index;
+    diagnostics.control_length = length;
+    diagnostics.control_completion = 0U;
+    diagnostics.control_residual = 0U;
+    diagnostics.control_event_stage = XHCI_CONTROL_EVENT_NONE;
+    diagnostics.control_flags = 0U;
+    return previous;
+}
 
 static uint32_t xhci_dma32(const void *address) {
     uintptr_t value = (uintptr_t)address;
@@ -738,9 +799,13 @@ static bool xhci_wait_control_transfer(xhci_trb_t *data_trb,
             continue;
         }
         diagnostics.last_completion = completion;
+        diagnostics.control_completion = completion;
+        diagnostics.control_residual = residual;
         if (completion_out != NULL) *completion_out = completion;
 
         if (pointer == data_pointer && data_pointer != 0U) {
+            diagnostics.control_event_stage = XHCI_CONTROL_EVENT_DATA;
+            diagnostics.control_flags |= XHCI_CONTROL_DATA_EVENT;
             if (!direction_in ||
                 completion != XHCI_COMPLETION_SHORT_PACKET ||
                 residual > requested_length) {
@@ -754,27 +819,43 @@ static bool xhci_wait_control_transfer(xhci_trb_t *data_trb,
         }
 
         if (pointer == status_pointer) {
+            diagnostics.control_event_stage = XHCI_CONTROL_EVENT_STATUS;
+            diagnostics.control_flags |= XHCI_CONTROL_STATUS_EVENT;
             if (completion == XHCI_COMPLETION_SUCCESS) {
                 xhci_dma_read_barrier();
                 diagnostics.last_actual_length = actual;
-                if (saw_data_short && actual != requested_length) {
+                if (saw_data_short) {
                     diagnostics.last_completion =
                         XHCI_COMPLETION_SHORT_PACKET;
+                    diagnostics.control_completion =
+                        XHCI_COMPLETION_SHORT_PACKET;
+                    diagnostics.control_residual = requested_length - actual;
+                    diagnostics.control_event_stage = XHCI_CONTROL_EVENT_DATA;
                     if (completion_out != NULL)
                         *completion_out = XHCI_COMPLETION_SHORT_PACKET;
                     return false;
                 }
                 return actual == requested_length;
             }
-            /* Some controllers attach an exact short indication to the
-             * terminal Status Stage event instead of the Data Stage event. */
-            if (!saw_data_short && direction_in &&
+            /* xHCI 1.2 permits software to treat a short event as TD-complete
+             * only when its pointer references the final TRB.  For a
+             * host-to-device request with wLength=0 that final TRB is the
+             * zero-length Status Stage itself; no data was requested and a
+             * zero residue proves that the terminal event is complete. */
+            if (!direction_in && requested_length == 0U &&
+                data_pointer == 0U &&
                 completion == XHCI_COMPLETION_SHORT_PACKET &&
-                residual <= requested_length) {
-                actual = requested_length - residual;
+                residual == 0U) {
                 xhci_dma_read_barrier();
-                diagnostics.last_actual_length = actual;
-                return actual == requested_length;
+                diagnostics.last_actual_length = 0U;
+                diagnostics.control_flags |= XHCI_CONTROL_SHORT_ACCEPTED;
+                printf("USB: xHCI accepted terminal zero-length Status Stage short"
+                       " type=%02X request=%u value=%04X index=%u\n",
+                       (unsigned)diagnostics.control_request_type,
+                       (unsigned)diagnostics.control_request,
+                       (unsigned)diagnostics.control_value,
+                       (unsigned)diagnostics.control_index);
+                return true;
             }
             return false;
         }
@@ -782,6 +863,10 @@ static bool xhci_wait_control_transfer(xhci_trb_t *data_trb,
     diagnostics.last_completion = saw_data_short
         ? XHCI_COMPLETION_SHORT_PACKET : 0U;
     diagnostics.last_actual_length = saw_data_short ? actual : 0U;
+    diagnostics.control_completion = diagnostics.last_completion;
+    diagnostics.control_residual = saw_data_short
+        ? requested_length - actual : requested_length;
+    diagnostics.control_flags |= XHCI_CONTROL_TIMEOUT;
     if (completion_out != NULL)
         *completion_out = diagnostics.last_completion;
     return false;
@@ -803,6 +888,9 @@ static bool xhci_control(xhci_hid_device_t *hid,
     xhci_trb_t *data_trb = length != 0U
         ? &ring[hid->endpoint_index + 1U] : NULL;
     xhci_trb_t *status = &ring[hid->endpoint_index + trb_count - 1U];
+    xhci_control_diagnostic_t previous_control =
+        xhci_control_diagnostics_begin(request_type, request, value, index,
+                                       length);
     uint8_t setup_packet[8] = {request_type, request, (uint8_t)value,
                                (uint8_t)(value >> 8U), (uint8_t)index,
                                (uint8_t)(index >> 8U), (uint8_t)length,
@@ -836,15 +924,23 @@ static bool xhci_control(xhci_hid_device_t *hid,
     bool result = xhci_wait_control_transfer(data_trb, status, length,
                                              direction_in, &completion);
     if (!result) {
-        printf("USB: xHCI control failed request=%u type=%02X length=%u cc=%u\n",
-               (unsigned)request, (unsigned)request_type, (unsigned)length,
-               (unsigned)completion);
+        diagnostics.control_flags |= XHCI_CONTROL_FAILED;
+        printf("USB: xHCI control failed type=%02X request=%u value=%04X"
+               " index=%u length=%u cc=%u residual=%u stage=%u flags=%X\n",
+               (unsigned)request_type, (unsigned)request, (unsigned)value,
+               (unsigned)index, (unsigned)length, (unsigned)completion,
+               (unsigned)diagnostics.control_residual,
+               (unsigned)diagnostics.control_event_stage,
+               (unsigned)diagnostics.control_flags);
     }
     hid->endpoint_index = (uint32_t)((status - ring) + 1U);
     if (hid->endpoint_index >= XHCI_ENDPOINT_RING_TRBS - 1U) {
         hid->endpoint_index = 0U;
         hid->endpoint_cycle = !hid->endpoint_cycle;
     }
+    if (result && (diagnostics.control_flags &
+                   XHCI_CONTROL_SHORT_ACCEPTED) == 0U)
+        xhci_control_diagnostics_restore(&previous_control);
     return result;
 }
 
@@ -1512,10 +1608,14 @@ int xhci_probe(pci_device_t *dev) {
         return -1;
     }
 
+    /* Controller reset and Run/Stop publication are asynchronous to root-port
+     * connection visibility on physical hosts.  Applying the finite discovery
+     * window only after Intel companion routing made successful enumeration
+     * depend on unrelated early-boot work (observably, i8042/PS/2 setup) on
+     * other xHCI implementations.  Use the same bounded window for every
+     * controller and retain every port observed during it. */
     uint32_t connected_ports =
-        (diagnostics.intel_routing_flags & XHCI_INTEL_ROUTE_ATTEMPTED) != 0U
-        ? xhci_wait_connected_ports(XHCI_PORT_SETTLE_MS)
-        : xhci_connected_ports();
+        xhci_wait_connected_ports(XHCI_PORT_SETTLE_MS);
     diagnostics.connected_ports = connected_ports;
     printf("USB: xHCI root ports=%u connected=%08X\n",
            (unsigned)controller.port_count, (unsigned)connected_ports);

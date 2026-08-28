@@ -40,6 +40,21 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn("'--jobs', [string]$SystemBuildJobs", windows)
         self.assertIn("ProcessPriorityClass]::BelowNormal", windows)
 
+    def test_real_hardware_build_publishes_installer_only_artifact(self):
+        windows = self.read("scripts/build-windows.ps1")
+        samsung = self.read("scripts/install-reist-samsung-120gb.cmd")
+        fujitsu = self.read("scripts/install-reist-fujitsu-80gb.cmd")
+        canonical = "build\\reist-os-real-hw.img"
+        self.assertIn("$HardwareInstallImage", windows)
+        self.assertIn("if ($Target -eq 'real_hw')", windows)
+        self.assertIn("$HardwareInstallPending", windows)
+        self.assertIn("validate_boot_manifest.py", windows)
+        self.assertIn("Move-Item -LiteralPath $HardwareInstallPending", windows)
+        self.assertIn(canonical, samsung)
+        self.assertIn(canonical, fujitsu)
+        self.assertNotIn("build\\reist-os.img", samsung)
+        self.assertNotIn("build\\reist-os.img", fujitsu)
+
     def test_tree_rejects_noncanonical_and_unbounded_paths(self):
         with self.assertRaisesRegex(ValueError, "lowercase"):
             build_tree({"BIN/shell.prg": b"x"})

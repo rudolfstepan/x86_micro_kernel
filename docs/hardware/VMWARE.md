@@ -65,9 +65,12 @@ virtuellen Grafikgeneration.
 
 ## Funktionstest
 
-Der automatisierte Desktop-Eingabenachweis startet nur bei vollständig leerem
-VMware-Laufzustand ohne offene Workstation-UI und verwendet die generierte
-virtuelle Basic-Mouse ohne physisches HID-Passthrough. Die VMX bindet ihren
+Kein VMware-Image startet den Desktop automatisch. Der automatisierte
+Desktop-Eingabenachweis wartet zuerst auf die Ring-3-Shell, sendet dort den
+ausdrücklichen Befehl `DESKTOP` und prüft erst danach die Maus. Er startet nur
+bei vollständig leerem VMware-Laufzustand ohne offene Workstation-UI und
+verwendet die generierte virtuelle Basic-Mouse ohne physisches
+HID-Passthrough. Die VMX bindet ihren
 RFB-3.8-Eingabekanal ausschließlich an `127.0.0.1:5909`; der Runner prüft den
 Port vor dem Start und sendet darüber begrenzte Standard-PointerEvents. Er
 öffnet die exakte Paket-VM über Workstations sichtbaren `-x`-Pfad und beendet
@@ -80,13 +83,27 @@ PID. Start, Markerwartezeit und Aufräumen bleiben auf 30, 75 beziehungsweise
 ```
 
 Er verlangt in dieser Reihenfolge xHCI-HID-Bereitschaft, die SMP-
-Schedulerfreigabe, `COMPOSITOR_READY`, `DESKTOP_OK`, `DESKTOP_EXPLORER_OK`,
-und `DESKTOP_MOUSE_OK`. Der Legacy-PIC-xHCI-IRQ und der Produktionscompositor
+Schedulerfreigabe, den Start der Userspace-Shell, den erst danach explizit
+eingegebenen Desktopstart, `DESKTOP_OK`, `DESKTOP_EXPLORER_OK` und
+`DESKTOP_MOUSE_OK`. Er bricht zusätzlich ab, falls ein Desktopmarker bereits
+vor der Shell erscheint. Der Legacy-PIC-xHCI-IRQ und der
+Produktionscompositor
 bleiben auf CPU 0; andere getrennt geprüfte Dienste und Treiber dürfen die
 verfügbaren APs weiterhin verwenden. Die frühere AP-Compositor-Abnahme bleibt
 historische SMP-Evidenz, ist wegen des gemessenen Retained-Paint-IPC-Aufwands
 aber keine Vorgabe des normalen VMware-Profils mehr. Panic oder Compositor-
 Degradation vor dem Mausmarker brechen den Lauf geschlossen ab.
+
+Am 28. August 2026 bestand der R5.2x-Kandidat diesen Lauf in 14 Sekunden nach
+dem VMware-VGA-Paketbuild. Damit ist die virtuelle xHCI-Maus gegen die engere
+Control-Short-Packet-Regel abgesichert; die getrennte physische USB-Abnahme
+wird dadurch nicht ersetzt.
+
+Nach dem finalen Imagebuild scheiterte ein zusätzlicher Host-Automationslauf
+noch vor dem Start von `vmware-vmx`. Das war kein Gastfehler. Der Benutzer
+startete das generierte Paket anschließend manuell und bestätigte den
+fehlerfreien VMware-Betrieb. Diese manuelle Bestätigung ersetzt keinen
+automatisierten Marker-Nachweis, schließt aber die praktische Image-Abnahme ab.
 
 ```text
 C:\> DRIVES

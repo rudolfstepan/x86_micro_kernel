@@ -129,6 +129,9 @@ $BootTrustPolicy = Join-Path $RepoRoot 'safety\boot_trust_policy.json'
 $BootPrivateKey = Join-Path $RepoRoot `
     'test\fixtures\reist-research-dev-private.pem'
 $RawImage = Join-Path $BuildDir 'reist-os.img'
+$HardwareInstallImage = Join-Path $RepoRoot 'build\reist-os-real-hw.img'
+$HardwareInstallPending = Join-Path $RepoRoot `
+    'build\.reist-os-real-hw.img.pending'
 $FloppyImage = Join-Path $BuildDir 'reist-os-floppy.img'
 $Vmdk = Join-Path $BuildDir 'reist-os.vmdk'
 $Vmx = Join-Path $BuildDir 'reist-os.vmx'
@@ -326,6 +329,7 @@ try {
         'bin/rm.prg' = 'RM.PRG'
         'bin/echo.prg' = 'ECHO.PRG'; 'bin/cls.prg' = 'CLS.PRG'
         'sbin/sysinfo.prg' = 'SYSINFO.PRG'; 'sbin/usbinfo.prg' = 'USBINFO.PRG'
+        'sbin/dmesg.prg' = 'DMESG.PRG'
         'sbin/audioinfo.prg' = 'AUDIOINFO.PRG'
         'sbin/meminfo.prg' = 'MEMINFO.PRG'
         'sbin/chkdsk.prg' = 'CHKDSK.PRG'; 'sbin/fdisk.prg' = 'FDISK.PRG'
@@ -533,6 +537,27 @@ try {
         if ($sbomValidationExitCode -ne 0) { throw "Release SBOM validation failed with exit code $sbomValidationExitCode." }
     }
 
+    if ($Target -eq 'real_hw') {
+        # Physical installers consume one target-specific canonical artifact.
+        # Publish through a validated pending file so an interrupted nested
+        # diagnostic build cannot replace the last complete hardware image.
+        if (Test-Path -LiteralPath $HardwareInstallPending -PathType Leaf) {
+            Remove-Item -LiteralPath $HardwareInstallPending -Force
+        }
+        Copy-Item -LiteralPath $RawImage `
+            -Destination $HardwareInstallPending -Force
+        $hardwareValidationExitCode = Invoke-PythonProcess -Arguments @(
+            'scripts/validate_boot_manifest.py', '--image',
+            $HardwareInstallPending, '--layout', 'hdd'
+        )
+        if ($hardwareValidationExitCode -ne 0) {
+            Remove-Item -LiteralPath $HardwareInstallPending -Force
+            throw "Canonical hardware image validation failed with exit code $hardwareValidationExitCode."
+        }
+        Move-Item -LiteralPath $HardwareInstallPending `
+            -Destination $HardwareInstallImage -Force
+    }
+
     # Image generation recreates both VMX files. Restore physical floppy
     # backing after every VMware build instead of silently switching to the
     # packaged image again.
@@ -576,4 +601,8 @@ Write-Host "  User PRG:      $UserPrg"
 if ($Target -ne 'qemu') {
     Write-Host "  Complete VM:   $PackagedVmx" -ForegroundColor Cyan
     Write-Host "  Double-click:  $(Join-Path $VmwareDir 'START-VMWARE.cmd')"
+}
+if ($Target -eq 'real_hw') {
+    Write-Host "  Installer image: $HardwareInstallImage" `
+        -ForegroundColor Cyan
 }

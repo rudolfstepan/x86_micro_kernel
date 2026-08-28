@@ -2356,6 +2356,17 @@ void cmd_usbinfo(int arg_count, const char **args) {
                (unsigned)status.device_subclass,
                (unsigned)status.device_protocol,
                (unsigned)status.configuration_length);
+        printf("     control type=%02X request=%u value=%04X index=%u"
+               " length=%u cc=%u residual=%u stage=%u flags=%X\n",
+               (unsigned)status.control_request_type,
+               (unsigned)status.control_request,
+               (unsigned)status.control_value,
+               (unsigned)status.control_index,
+               (unsigned)status.control_length,
+               (unsigned)status.control_completion,
+               (unsigned)status.control_residual,
+               (unsigned)status.control_event_stage,
+               (unsigned)status.control_flags);
         printf("     selected=%u protocol=%u endpoint=%u report=%u irq=%u\n",
                (unsigned)status.selected_port, (unsigned)status.hid_protocol,
                (unsigned)status.endpoint_id, (unsigned)status.report_size,

@@ -89,9 +89,68 @@ class UsbKeyboardTests(unittest.TestCase):
         self.assertIn("status.keyboard_reports", source)
         self.assertIn("usb_failure_name(status.failure_stage)", source)
         self.assertIn("status.configuration_length", source)
+        self.assertIn("status.control_request_type", source)
+        self.assertIn("status.control_request", source)
+        self.assertIn("status.control_value", source)
+        self.assertIn("status.control_index", source)
+        self.assertIn("status.control_length", source)
+        self.assertIn("status.control_completion", source)
+        self.assertIn("status.control_residual", source)
+        self.assertIn("status.control_event_stage", source)
+        self.assertIn("status.control_flags", source)
         main = source[source.index("int main("):]
         self.assertLess(main.index("show_usb_keyboard_startup();"),
                         main.index("for (;;)"))
+
+    def test_mandatory_hid_control_requests_remain_fail_closed(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        start = source.index("static bool xhci_configure_boot_hid")
+        end = source.index("static bool xhci_start_controller", start)
+        configure = source[start:end]
+        self.assertIn(
+            "!xhci_control(hid, 0x00U, 9U, configuration, 0U, 0U, "
+            "false, NULL)", configure)
+        self.assertIn(
+            "!xhci_control(hid, 0x21U, 0x0BU, 0U, interface, 0U, "
+            "false, NULL)", configure)
+        self.assertIn("XHCI_FAILURE_SET_CONFIGURATION", configure)
+        self.assertNotIn("retry", configure.lower())
+
+    def test_usb_contract_documents_physical_short_packet_boundary(self):
+        contract = (ROOT / "docs/architecture/USB_SUBSYSTEM.md").read_text(
+            encoding="utf-8")
+        self.assertIn("USB 2.0", contract)
+        self.assertIn("HID 1.11", contract)
+        self.assertIn("xHCI 1.2", contract)
+        self.assertIn("Completion Code 13", contract)
+        self.assertIn("SET_CONFIGURATION", contract)
+        self.assertIn("SET_PROTOCOL", contract)
+        self.assertIn("zero-length", contract)
+        self.assertIn("fail-closed", contract)
+
+    def test_xhci_port_discovery_does_not_depend_on_ps2_boot_delay(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        self.assertIn(
+            "uint32_t connected_ports =\n        "
+            "xhci_wait_connected_ports(XHCI_PORT_SETTLE_MS);",
+            source,
+        )
+        self.assertNotIn(
+            "? xhci_wait_connected_ports(XHCI_PORT_SETTLE_MS)\n"
+            "        : xhci_connected_ports()",
+            source,
+        )
+
+    def test_every_boot_reaches_shell_without_desktop_autostart(self):
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        start = kernel.index("REIST_GUI DESKTOP_AUTOSTART_DISABLED")
+        shell = kernel.index(
+            'start_userspace_program(multiboot_info, "bin/shell.prg"', start)
+        boot = kernel[start:shell]
+        self.assertIn("explicit DESKTOP command required", boot)
+        self.assertNotIn("supervisor_start_compositor", kernel)
+        self.assertNotIn("supervisor_compositor_session_active", kernel)
+        self.assertNotIn("REIST_RESILIENT_PAGE_BOOT_PROOF", boot)
 
 
 if __name__ == "__main__":

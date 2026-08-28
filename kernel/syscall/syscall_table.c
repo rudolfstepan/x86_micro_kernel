@@ -38,6 +38,7 @@
 #include "include/kernel/component_control.h"
 #include "include/kernel/boot_health.h"
 #include "include/kernel/device_domain.h"
+#include "include/kernel/kernel_log.h"
 #include "include/reist/utf.h"
 #include "arch/x86/mm/paging.h"
 #include "fs/vfs/vfs.h"
@@ -2486,20 +2487,35 @@ typedef struct {
     uint32_t device_protocol;
     uint32_t configuration_length;
     uint32_t backend;
+    uint32_t control_request_type;
+    uint32_t control_request;
+    uint32_t control_value;
+    uint32_t control_index;
+    uint32_t control_length;
+    uint32_t control_completion;
+    uint32_t control_residual;
+    uint32_t control_event_stage;
+    uint32_t control_flags;
 } syscall_usb_diagnostics_t;
 
-#define SYSCALL_USB_DIAGNOSTICS_VERSION 6U
+#define SYSCALL_USB_DIAGNOSTICS_VERSION 7U
 #define SYSCALL_USB_DIAGNOSTICS_V1_SIZE 96U
 #define SYSCALL_USB_DIAGNOSTICS_V2_SIZE 120U
 #define SYSCALL_USB_DIAGNOSTICS_V3_SIZE 148U
 #define SYSCALL_USB_DIAGNOSTICS_V4_SIZE 180U
 #define SYSCALL_USB_DIAGNOSTICS_V5_SIZE 208U
+#define SYSCALL_USB_DIAGNOSTICS_V6_SIZE 212U
 #define SYSCALL_USB_BACKEND_NONE 0U
 #define SYSCALL_USB_BACKEND_XHCI 1U
 #define SYSCALL_USB_BACKEND_OHCI 2U
 
-_Static_assert(sizeof(syscall_usb_diagnostics_t) == 212U,
+_Static_assert(sizeof(syscall_usb_diagnostics_t) == 248U,
                "USB diagnostics syscall ABI size changed");
+_Static_assert(offsetof(syscall_usb_diagnostics_t, backend) == 208U,
+               "USB diagnostics v6 prefix changed");
+_Static_assert(offsetof(syscall_usb_diagnostics_t, control_request_type) ==
+                   SYSCALL_USB_DIAGNOSTICS_V6_SIZE,
+               "USB control diagnostics are not append-only");
 _Static_assert(XHCI_DIAG_DISCONNECTED == 13U,
                "USB diagnostics state ABI changed");
 _Static_assert(XHCI_DIAG_PORT_ROUTING_FAILED == 14U,
@@ -2555,6 +2571,9 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
     } else if (header.version == 5U &&
                header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V5_SIZE) {
         result_size = SYSCALL_USB_DIAGNOSTICS_V5_SIZE;
+    } else if (header.version == 6U &&
+               header.struct_size >= SYSCALL_USB_DIAGNOSTICS_V6_SIZE) {
+        result_size = SYSCALL_USB_DIAGNOSTICS_V6_SIZE;
     } else if (header.version == SYSCALL_USB_DIAGNOSTICS_VERSION &&
                header.struct_size >= sizeof(syscall_usb_diagnostics_t)) {
         result_size = sizeof(syscall_usb_diagnostics_t);
@@ -2636,6 +2655,15 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
         result.device_subclass = xhci_status.device_subclass;
         result.device_protocol = xhci_status.device_protocol;
         result.configuration_length = xhci_status.configuration_length;
+        result.control_request_type = xhci_status.control_request_type;
+        result.control_request = xhci_status.control_request;
+        result.control_value = xhci_status.control_value;
+        result.control_index = xhci_status.control_index;
+        result.control_length = xhci_status.control_length;
+        result.control_completion = xhci_status.control_completion;
+        result.control_residual = xhci_status.control_residual;
+        result.control_event_stage = xhci_status.control_event_stage;
+        result.control_flags = xhci_status.control_flags;
     } else if (have_ohci) {
         result.backend = SYSCALL_USB_BACKEND_OHCI;
         result.state = ohci_syscall_state(ohci_status.state);
@@ -2673,6 +2701,78 @@ static int syscall_usb_diagnostics(syscall_usb_diagnostics_t *user_status) {
         result.state = XHCI_DIAG_NOT_PROBED;
     }
     return copy_to_user(user_status, &result, result_size) == 0 ? 0 : -14;
+}
+
+#define KERNEL_LOG_READ_VERSION 1U
+#define KERNEL_LOG_READ_MAX 256U
+
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t flags;
+    uint32_t cursor;
+    uint32_t buffer_address;
+    uint32_t buffer_capacity;
+    uint32_t oldest_cursor;
+    uint32_t snapshot_head;
+    uint32_t next_cursor;
+    uint32_t copied;
+    uint32_t dropped;
+    uint32_t overwritten;
+} syscall_kernel_log_read_t;
+
+_Static_assert(sizeof(syscall_kernel_log_read_t) == 48U,
+               "kernel log read syscall ABI size changed");
+
+static int syscall_kernel_log_read(syscall_kernel_log_read_t *user_request) {
+    Process *process = scheduler_current_process();
+    if (process == NULL || user_request == NULL) return -13;
+    page_directory_t *directory = paging_current_directory();
+    uint32_t request_address = (uint32_t)(uintptr_t)user_request;
+    if (request_address > UINT32_MAX - sizeof(*user_request)) return -14;
+    if (!user_range_accessible(directory, request_address,
+                               sizeof(*user_request), true))
+        return -14;
+
+    syscall_kernel_log_read_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0)
+        return -14;
+    if (request.version != KERNEL_LOG_READ_VERSION ||
+        request.struct_size != sizeof(request) ||
+        request.buffer_capacity == 0U ||
+        request.buffer_capacity > KERNEL_LOG_READ_MAX ||
+        request.buffer_address == 0U ||
+        (request.flags & ~KERNEL_LOG_READ_FROM_OLDEST) != 0U ||
+        request.buffer_address > UINT32_MAX - request.buffer_capacity)
+        return -22;
+    if (!user_range_accessible(directory, request.buffer_address,
+                               request.buffer_capacity, true))
+        return -14;
+
+    uint32_t request_end = request_address + sizeof(request);
+    uint32_t buffer_end = request.buffer_address + request.buffer_capacity;
+    if (request.buffer_address < request_end &&
+        request_address < buffer_end)
+        return -22;
+
+    char chunk[KERNEL_LOG_READ_MAX];
+    kernel_log_read_result_t result;
+    int status = kernel_log_read(request.cursor, request.flags, chunk,
+                                 request.buffer_capacity, &result);
+    if (status != 0) return status;
+
+    request.oldest_cursor = result.oldest_cursor;
+    request.snapshot_head = result.snapshot_head;
+    request.next_cursor = result.next_cursor;
+    request.copied = result.copied;
+    request.dropped = result.dropped;
+    request.overwritten = result.overwritten;
+    if (result.copied != 0U &&
+        copy_to_user((void *)(uintptr_t)request.buffer_address, chunk,
+                     result.copied) != 0)
+        return -14;
+    return copy_to_user(user_request, &request, sizeof(request)) == 0
+        ? 0 : -14;
 }
 
 static int syscall_touch(const char *user_path) {
@@ -3543,6 +3643,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_fstat,               // Syscall 122: Open-file metadata
     (void*)&syscall_ftruncate,           // Syscall 123: Set file size
     (void*)&syscall_storage_bulk,        // Syscall 124: Bounded bulk transfer
+    (void*)&syscall_kernel_log_read,     // Syscall 125: Bounded kernel log
     // Add more syscalls here as needed
 };
 
@@ -4083,6 +4184,10 @@ void syscall_handler(Registers* regs) {
                 (storage_request_bulk_control_t*)(uintptr_t)arg1,
                 (uint8_t*)(uintptr_t)arg2, (uint8_t*)(uintptr_t)arg3);
             scheduler_preempt_enable();
+            break;
+        case SYS_KERNEL_LOG_READ:
+            result = (uint32_t)syscall_kernel_log_read(
+                (syscall_kernel_log_read_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

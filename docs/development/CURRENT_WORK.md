@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `c184674`
+Branch/Startpunkt: `working_branch` / `0deb7be`
 
-Aktives Thema: R5.2x – physisches xHCI-HID-Control-Short-Packet
+Aktives Thema: R6.2o – Compositor-AP-Affinität nach begrenztem Neustart
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -40,15 +40,74 @@ R1.2b ist ebenfalls abgeschlossen. Ein spezieller Testbuild führt die feste
 Kampagne einmal nach den Speichertests und vor allgemeiner Prozessaufnahme aus.
 Der QEMU-Gast validiert geordnet Commit, degradierte committed Daten, ein
 unabhängiges Objekt, Rebuild und HEALTHY, erreicht danach Shell, Userspace und
-`TEST_OK` und bleibt innerhalb einer festen 180-Sekunden-Grenze. Nur dieses
-Probeprofil überspringt den Desktop-Autostart. Normale Builds bleiben
-unverändert. Auch diese Stufe erteilt keine User-, DMA- oder Paging-Autorität
-und behauptet keine physische DIMM-/Rank-/Channel-Isolation.
+`TEST_OK` und bleibt innerhalb einer festen 180-Sekunden-Grenze. Der
+Desktop-Autostart ist inzwischen für alle Targets entfernt: Jeder normale und
+jeder Proof-Boot erreicht zuerst die Ring-3-Shell; `DESKTOP` bleibt ein
+ausdrücklicher Benutzerbefehl. Auch diese Stufe erteilt keine User-, DMA- oder
+Paging-Autorität und behauptet keine physische DIMM-/Rank-/Channel-Isolation.
 
-Als nächstes ist R5.2x aktiv: Die bereits beobachtete physische xHCI-HID-
-Control-Short-Packet-Störung wird zunächst mit exakten Setup-Paket- und
-Completion-Diagnosen eingegrenzt; VMware-Nichtregression und ein neues
-physisches Testimage bleiben verpflichtend.
+R5.2x ist abgeschlossen. Die append-only USB-Diagnose
+Version 7 persistiert das exakte Setup-Paket und den terminalen Eventzustand.
+Completion Code 13 wird nur bei einem host-to-device Zero-Data-Request ohne
+Data-TRB, mit Eventzeiger auf die Status-TRB und Restlänge null angenommen.
+Alle anderen Shorts sowie fehlgeschlagenes `SET_CONFIGURATION` oder
+`SET_PROTOCOL` bleiben fail-closed. Die USB-Tastaturtests bestehen 9/9, die
+Maustests 16/16, das nach der Kernel-Log-/ABI-Erweiterung vollständig neu
+erzeugte VMware-VGA-Paket bestand in 153 Sekunden; der abschließende
+inkrementelle Paketnachweis nach der Pointer-Überlaufhärtung bestand in 16
+Sekunden und der echte
+VMware-RFB-Mauspfad in 14 Sekunden. Der Runtime-Nachweis wartet zuerst auf die
+Ring-3-Shell, gibt erst dann `DESKTOP` ein und verwirft jeden Lauf, in dem
+Desktopmarker bereits vor diesem ausdrücklichen Befehl erscheinen.
+
+Ein abschließender automatisierter VMware-Nachlauf konnte die Paket-VM auf dem
+Host nicht starten und erreichte den Gast daher nicht. Der Benutzer startete
+das erzeugte VMware-Paket anschließend manuell und bestätigte dessen
+fehlerfreien Betrieb. Diese manuelle Abnahme ergänzt den zuvor bestandenen
+automatisierten RFB-Lauf; sie wird nicht als automatischer Gate-Erfolg
+ausgegeben.
+
+Der erfolgreich physisch getestete Kandidat liegt unter
+`build/r5.2x-physical-test/reist-os-r5.2x.img` (64 MiB, SHA-256
+`DBA5E5794405180CC11CBCB3FDB2BF81FDA001B2206BFF17700ED29135EDA3C3`). Der
+`real_hw/vga`-Build erzeugte das Image vollständig; RSA-PSS-Signatur und
+Bootmanifest bestanden. Als begrenzter Hardware-Diagnosekandidat wurde der
+Release-SBOM-Schritt für den verschachtelten Testordner ausdrücklich
+übersprungen; das Image ist daher kein Releaseartefakt. Der ASUS-Nachtest
+bestätigt nun die USB-Tastatur am USB-3/xHCI-Port und den paged `DMESG`-Zugriff.
+Die physische Paketabnahme ist damit für diese konkrete Hardwarekombination
+erfüllt; eine breite xHCI-Freigabe wird nicht behauptet.
+
+Der ASUS-Nachtest bestätigt die Tastatur am separaten USB-2.0-Controller. Am
+USB-3.0-Port wurde sie zunächst nicht nutzbar, funktionierte jedoch parallel,
+sobald eine PS/2-Tastatur angeschlossen war. Das grenzt den Restfehler auf eine
+Bootzeitabhängigkeit des xHCI-Pfads ein. Der feste 500-ms-Zeitraum zum Sammeln
+sichtbar werdender Root-Ports gilt deshalb jetzt für jeden xHCI-Controller und
+nicht mehr nur nach Intel-Companion-Routing. Tastatur, Boot-HID-Parser und
+allgemeiner Eingabepfad bleiben unverändert. Der nie
+freigegebene Desktop-Autostart ist ausnahmslos aus dem Kernelboot aller Images
+entfernt, damit die physische Diagnose sichtbar bleibt. Ein nachfolgend
+erfolgreicher Mauskandidat darf den vorherigen Tastatur-Control-Fehler nicht
+mehr löschen. Die Shell-Startanzeige gibt beim Ausfall nun ohne Eingabe auch
+Setup-Paket, Completion, Restlänge, Eventstufe und Flags aus. Nur bei einer
+nicht bereiten USB-Tastatur ergänzt sie weiterhin eine kompakte Startdiagnose.
+Unabhängig vom 80x25-Scrollback hält ein neuer fester 32-KiB-Kernel-Logring alle
+Ring-0-Konsolenausgaben im Speicher. Der append-only Syscall 125 und das
+Ring-3-Programm `DMESG` lesen einen begrenzten Snapshot; `DMESG` pausiert
+standardmäßig nach 22 Zeilen mit Leertaste, Enter oder Q. Der Host-Ringtest
+besteht Wrap, Stale-Cursor und begrenzte Reads. Der erste ASUS-Kandidat wies
+den Syscall wegen der veralteten exklusiven Prozessprofilgrenze 125 mit `-13`
+ab; sie ist nun append-only auf 126 angehoben, und `DMESG` zeigt künftige
+Fehlercodes an. Der inkrementelle `real_hw/vga`-Build umfasst 104 Kernelobjekte,
+baute `DMESG.PRG` neu und bestand Signatur- sowie Bootmanifestprüfung.
+
+Jeder `real_hw`-Build veröffentlicht künftig unabhängig vom internen
+Ausgabeordner zusätzlich `build/reist-os-real-hw.img`. Die Samsung- und
+Fujitsu-Installer verwenden ausschließlich diesen nach einer zweiten
+Manifestprüfung atomar veröffentlichten Pfad. QEMU- und VMware-Builds können
+das physische Installerartefakt dadurch nicht überschreiben.
+Das aktuell validierte 64-MiB-Artefakt hat SHA-256
+`BF774039CF11370093B49E4E0D20094FB1315E15E440E84E6778B23F0E4DBFE9`.
 
 ## Erreichter stabiler Meilenstein
 
@@ -219,9 +278,11 @@ gemeinsame GUI-Affinitätsdomäne separat nachgewiesen ist.
 Der im anschließenden Rescue-Shell-Bild sichtbare USB-Fehler ist eine getrennte
 xHCI-Enumerationsgrenze: `config=59` bezeichnet die Länge des gelesenen
 Konfigurationsdeskriptors; `cc=13` ist ein unerwarteter Short-Packet-Abschluss
-bei einem nachfolgenden HID-Control-Request. R5.2x persistiert zuerst den
-exakten Setup-Request und nimmt danach nur eine standardskonforme, begrenzte
-Korrektur vor. R6.2o bleibt hinter diesen beiden beobachteten Regressionen
+bei einem nachfolgenden HID-Control-Request. R5.2x persistiert nun Typ, Request,
+Wert, Index, Länge, Completion, Restlänge, Eventstufe und Flags vor dem
+Doorbell-Zugriff. Die begrenzte Korrektur akzeptiert ausschließlich einen
+terminalen, restlosen Status-Short für einen Zero-Data-Request und führt keinen
+Retry auf dem alten EP0-Zustand aus. R6.2o bleibt bis zum physischen Nachweis
 queued.
 
 Ein früherer Lauf meldete einmal eine rekursive Übernahme von

@@ -35,8 +35,10 @@ _Static_assert(sizeof(x86os_display_text_clipped_t) == 48U,
                "clipped display text ABI size changed");
 _Static_assert(sizeof(x86os_display_pixels_t) == 48U,
                "display pixels ABI size changed");
-_Static_assert(sizeof(x86os_usb_diagnostics_t) == 212U,
+_Static_assert(sizeof(x86os_usb_diagnostics_t) == 248U,
                "USB diagnostics ABI size changed");
+_Static_assert(sizeof(x86os_kernel_log_read_t) == 48U,
+               "kernel log read ABI size changed");
 _Static_assert(sizeof(x86os_ipc_message_t) == 140U,
                "IPC message ABI size changed");
 _Static_assert(sizeof(x86os_ipc_bulk_message_t) == 2060U,
@@ -1082,6 +1084,17 @@ int x86os_usb_diagnostics(x86os_usb_diagnostics_t* diagnostics) {
     diagnostics->struct_size = sizeof(*diagnostics);
     return (int)x86os_syscall(X86OS_SYS_USB_DIAGNOSTICS,
                               (uintptr_t)diagnostics, 0, 0);
+}
+
+int x86os_kernel_log_read(x86os_kernel_log_read_t *request) {
+    if (request == NULL || request->buffer_address == 0U ||
+        request->buffer_capacity == 0U ||
+        request->buffer_capacity > X86OS_KERNEL_LOG_READ_MAX)
+        return -22;
+    request->version = X86OS_KERNEL_LOG_READ_VERSION;
+    request->struct_size = sizeof(*request);
+    return (int)x86os_syscall(X86OS_SYS_KERNEL_LOG_READ,
+                              (uintptr_t)request, 0U, 0U);
 }
 
 int x86os_touch(const char* path) {

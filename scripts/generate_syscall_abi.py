@@ -14,7 +14,7 @@ SOURCE = ROOT / "include/reist/abi/syscall.h"
 KERNEL_HEADER = ROOT / "lib/libc/stdlib.h"
 SDK_HEADER = ROOT / "userspace/sdk/include/x86os.h"
 SDK_COMMON_HEADER = ROOT / "userspace/sdk/include/reist/abi/syscall.h"
-COUNT = 125
+COUNT = 126
 ENTRY = re.compile(
     r"^\s*X\(([A-Z][A-Z0-9_]*), ([A-Z][A-Z0-9_]*), ([0-9]+)U\)"
     r"\s*(?:\\)?\s*$",

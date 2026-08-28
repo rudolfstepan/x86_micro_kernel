@@ -161,18 +161,20 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("x86os_usb_diagnostics(&status)", program)
         self.assertNotIn("x86os_usb_diagnostics_t status = {0}", program)
         self.assertIn("X86OS_SYS_USB_DIAGNOSTICS = 112", sdk_header)
-        self.assertIn("X86OS_USB_DIAGNOSTICS_VERSION 6U", sdk_header)
+        self.assertIn("X86OS_USB_DIAGNOSTICS_VERSION 7U", sdk_header)
         self.assertIn("uint32_t capability_rejections", sdk_header)
         self.assertIn("uint32_t intel_routing_flags", sdk_header)
         self.assertIn("X86OS_USB_INTEL_ROUTE_USB2_VERIFIED", sdk_header)
         self.assertIn("int x86os_usb_diagnostics", sdk)
-        self.assertIn("sizeof(x86os_usb_diagnostics_t) == 212U", sdk)
+        self.assertIn("sizeof(x86os_usb_diagnostics_t) == 248U", sdk)
         self.assertIn("case SYS_USB_DIAGNOSTICS:", syscalls)
         self.assertIn("SYSCALL_USB_DIAGNOSTICS_V1_SIZE 96U", syscalls)
         self.assertIn("SYSCALL_USB_DIAGNOSTICS_V2_SIZE 120U", syscalls)
         self.assertIn("SYSCALL_USB_DIAGNOSTICS_V3_SIZE 148U", syscalls)
         self.assertIn("SYSCALL_USB_DIAGNOSTICS_V4_SIZE 180U", syscalls)
-        self.assertIn("sizeof(syscall_usb_diagnostics_t) == 212U", syscalls)
+        self.assertIn("SYSCALL_USB_DIAGNOSTICS_V5_SIZE 208U", syscalls)
+        self.assertIn("SYSCALL_USB_DIAGNOSTICS_V6_SIZE 212U", syscalls)
+        self.assertIn("sizeof(syscall_usb_diagnostics_t) == 248U", syscalls)
         function_start = syscalls.index("static int syscall_usb_diagnostics")
         function_end = syscalls.index("\n}", function_start)
         function = syscalls[function_start:function_end]
@@ -187,10 +189,72 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("result.mouse_port", function)
         self.assertIn("result.failure_stage", function)
         self.assertIn("result.configuration_length", function)
+        self.assertIn("result.control_request_type", function)
+        self.assertIn("result.control_request", function)
+        self.assertIn("result.control_value", function)
+        self.assertIn("result.control_index", function)
+        self.assertIn("result.control_length", function)
+        self.assertIn("result.control_completion", function)
+        self.assertIn("result.control_residual", function)
+        self.assertIn("result.control_event_stage", function)
+        self.assertIn("result.control_flags", function)
         self.assertIn('x86os_puts(" reject=")', program)
         self.assertIn('x86os_puts(" route-flags=")', program)
         self.assertIn('x86os_puts("     failure=")', program)
+        self.assertIn('x86os_puts("     control type=")', program)
         self.assertIn('return "keyboard-mouse-ready"', program)
+
+    def test_xhci_control_anomaly_diagnostics_are_append_only_and_exact(self):
+        header = (ROOT / "drivers/usb/xhci.h").read_text(encoding="utf-8")
+        sdk = (ROOT / "userspace/sdk/include/x86os.h").read_text(
+            encoding="utf-8")
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        shell = (ROOT / "kernel/shell/command.c").read_text(encoding="utf-8")
+        self.assertIn("XHCI_DIAGNOSTICS_VERSION 6U", header)
+        for field in (
+            "control_request_type", "control_request", "control_value",
+            "control_index", "control_length", "control_completion",
+            "control_residual", "control_event_stage", "control_flags",
+        ):
+            self.assertIn(f"uint32_t {field};", header)
+            self.assertIn(f"uint32_t {field};", sdk)
+        self.assertLess(header.index("uint32_t configuration_length;"),
+                        header.index("uint32_t control_request_type;"))
+        self.assertLess(sdk.index("uint32_t backend;"),
+                        sdk.index("uint32_t control_request_type;"))
+        control_start = source.index("static bool xhci_control")
+        control_end = source.index("static bool xhci_address_device",
+                                   control_start)
+        control = source[control_start:control_end]
+        self.assertIn("xhci_control_diagnostics_begin(request_type, request",
+                      control)
+        self.assertLess(control.index("xhci_control_diagnostics_begin"),
+                        control.index("xhci_ring_doorbell"))
+        self.assertIn("diagnostics.control_flags |= XHCI_CONTROL_FAILED",
+                      control)
+        self.assertIn("type=%02X request=%u value=%04X", control)
+        self.assertIn("index=%u length=%u cc=%u residual=%u", control)
+        self.assertIn("control type=%02X request=%u value=%04X", shell)
+        self.assertNotIn("xhci_control_diagnostics_clear", source)
+        self.assertIn("xhci_control_diagnostics_restore(&previous_control)",
+                      control)
+
+    def test_xhci_accepts_only_proven_zero_length_terminal_short(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        start = source.index("static bool xhci_wait_control_transfer")
+        end = source.index("static bool xhci_control", start)
+        helper = source[start:end]
+        self.assertIn("pointer == status_pointer", helper)
+        self.assertIn("requested_length == 0U", helper)
+        self.assertIn("data_pointer == 0U", helper)
+        self.assertIn("residual == 0U", helper)
+        self.assertIn("!direction_in", helper)
+        self.assertIn("XHCI_CONTROL_SHORT_ACCEPTED", helper)
+        self.assertNotIn("!saw_data_short && direction_in", helper)
+        self.assertIn("if (saw_data_short)", helper)
+        self.assertNotIn("saw_data_short && actual != requested_length",
+                         helper)
+        self.assertIn("terminal zero-length Status Stage short", helper)
 
     def test_xhci_preserves_consumed_event_cycle_bits(self):
         source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")

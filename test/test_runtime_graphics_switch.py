@@ -116,24 +116,20 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("vmware_prepared", self.control)
         self.assertIn("qemu_prepared", self.control)
 
-    def test_boot_desktop_uses_supervised_lifecycle_before_shell_fallback(self):
-        start = self.kernel.index("supervisor_start_compositor(")
-        wait = self.kernel.index("supervisor_compositor_session_active()", start)
+    def test_boot_requires_explicit_desktop_command_after_userspace_shell(self):
+        disabled = self.kernel.index("REIST_GUI DESKTOP_AUTOSTART_DISABLED")
         shell = self.kernel.index(
             'start_userspace_program(multiboot_info, "bin/shell.prg"')
-        self.assertLess(start, wait)
-        self.assertLess(wait, shell)
-        boot_path = self.kernel[start:shell]
-        self.assertNotIn('start_userspace_program(multiboot_info, "usr/gui',
-                         boot_path)
+        self.assertLess(disabled, shell)
+        self.assertNotIn("supervisor_start_compositor", self.kernel)
+        self.assertNotIn("supervisor_compositor_session_active", self.kernel)
+        self.assertIn("explicit DESKTOP command required", self.kernel)
         self.assertIn('"REIST_GUI COMPOSITOR_READY" in text',
                       self.runtime_runner)
         self.assertIn('"REIST_GUI COMPOSITOR_READY" in text',
                       self.runtime_runner)
         self.assertIn('default=120.0', self.runtime_runner)
         self.assertIn("desktop_deadline = time.monotonic() + 30.0",
-                      self.runtime_runner)
-        self.assertIn("supervised_boot_detected and control_probe",
                       self.runtime_runner)
 
     def test_vbe_lfb_may_be_inside_a_sized_display_bar(self):

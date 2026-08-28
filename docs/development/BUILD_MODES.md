@@ -62,6 +62,13 @@ Für das auslieferbare VMware-Paket sollte `vmware` verwendet werden. Für ein
 Raw-Image, das später auf einen echten Datenträger geschrieben wird, ist
 `real_hw` vorgesehen.
 
+Jeder erfolgreiche `real_hw`-Build veröffentlicht zusätzlich das kanonische
+Installerartefakt `build/reist-os-real-hw.img`. Das gilt auch bei einem
+abweichenden `-OutputDirectory` für einen Hardware-Diagnosebuild. Der Build
+kopiert zunächst in eine Pending-Datei, validiert dort erneut das vollständige
+HDD-Bootmanifest und ersetzt erst danach das kanonische Artefakt. QEMU- und
+VMware-Builds schreiben diesen Pfad niemals.
+
 ## Video
 
 | `VIDEO` | Definition | Status |

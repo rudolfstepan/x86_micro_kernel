@@ -69,21 +69,15 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("heartbeat_timeout_ms = 2000U", source)
         self.assertIn("recovery_timeout_ms = 1000U", source)
         self.assertIn("restart_budget = 3U", source)
-        self.assertIn("supervisor_start_compositor", kernel)
-        self.assertIn("supervisor_compositor_session_active", kernel)
-        self.assertIn(
-            "const uint32_t compositor_post_ready_cpu_affinity_mask = 0U;",
-            kernel)
+        self.assertNotIn("supervisor_start_compositor", kernel)
+        self.assertNotIn("supervisor_compositor_session_active", kernel)
+        self.assertIn("REIST_GUI DESKTOP_AUTOSTART_DISABLED", kernel)
         display_connect = source[
             source.index("if (service_id == REIST_SERVICE_DISPLAY_DRIVER)"):
             source.index("static void supervisor_worker(")]
         self.assertIn("PROCESS_DOMAIN_COMPOSITOR", display_connect)
         self.assertIn('strcmp(client->image_path, "/usr/gui/bin/desktop.prg")',
                       display_connect)
-        start = kernel.index("supervisor_start_compositor")
-        self.assertIn("compositor_post_ready_cpu_affinity_mask",
-                      kernel[start:start + 220])
-        self.assertNotIn("production_driver_ap_mask", kernel[start:start + 220])
 
     def test_sound_surface_probe_is_compile_time_only(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(

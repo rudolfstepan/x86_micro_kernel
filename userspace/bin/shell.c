@@ -867,6 +867,26 @@ static void show_usb_keyboard_startup(void) {
         x86os_print_number((int)status.configuration_length);
         x86os_puts(" cc=");
         x86os_print_number((int)status.last_completion);
+        x86os_putchar('\n');
+        x86os_puts("  control type=");
+        x86os_print_number((int)status.control_request_type);
+        x86os_puts(" request=");
+        x86os_print_number((int)status.control_request);
+        x86os_puts(" value=");
+        x86os_print_number((int)status.control_value);
+        x86os_puts(" index=");
+        x86os_print_number((int)status.control_index);
+        x86os_puts(" length=");
+        x86os_print_number((int)status.control_length);
+        x86os_putchar('\n');
+        x86os_puts("  event cc=");
+        x86os_print_number((int)status.control_completion);
+        x86os_puts(" residual=");
+        x86os_print_number((int)status.control_residual);
+        x86os_puts(" stage=");
+        x86os_print_number((int)status.control_event_stage);
+        x86os_puts(" flags=");
+        x86os_print_number((int)status.control_flags);
     }
     x86os_putchar('\n');
 }

@@ -88,18 +88,36 @@ class VmwareMouseTests(unittest.TestCase):
             "USB: xHCI HID ready",
             "mouse-port=",
             "REIST_SMP SCHEDULER_READY cpus=4 probe_mask=0000000E",
-            "REIST_GUI COMPOSITOR_READY",
+            "Starting userspace command interpreter from /bin/shell.prg",
             "DESKTOP_OK",
             "DESKTOP_EXPLORER_OK",
             "DESKTOP_MOUSE_OK",
         ):
             self.assertIn(marker, source)
         self.assertIn("$hid -lt $scheduler", source)
-        self.assertIn("$scheduler -lt $ready", source)
-        self.assertIn("$ready -lt $desktop", source)
+        self.assertIn("$scheduler -lt $shell", source)
+        self.assertIn("$shell -lt $desktop", source)
         self.assertIn("$desktop -lt $explorer", source)
         self.assertIn("$explorer -lt $mouse", source)
         self.assertNotIn("$ap =", source)
+        self.assertIn("$preShell", source)
+        self.assertIn("Desktop marker appeared before explicit shell command",
+                      source)
+
+    def test_runner_starts_desktop_only_after_shell_marker(self):
+        source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("SendCommand", source)
+        self.assertIn("Send-ExplicitDesktopCommand", source)
+        self.assertIn("'desktop'", source)
+        wait = source.index(
+            "Starting userspace command interpreter from /bin/shell.prg"
+        )
+        command = source.index("Send-ExplicitDesktopCommand", wait)
+        desktop = source.index("DESKTOP_OK", command)
+        self.assertLess(wait, command)
+        self.assertLess(command, desktop)
 
     def test_runner_fails_closed_on_compositor_or_kernel_failure(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(

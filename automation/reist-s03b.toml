@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R5.2x-xhci-control-short-packet"
+active_id = "R6.2o-compositor-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -10141,23 +10141,55 @@ evidence = [
 
 [[packages]]
 id = "R5.2x-xhci-control-short-packet"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Diagnose and contain physical xHCI HID control short packets"
-scope = "Resolve the physical USB HID enumeration failure reported as failure=set-configuration, configuration length 59 and xHCI completion code 13. Persist the exact failed standard USB request type, request, value, index and length in the append-only diagnostics ABI before changing policy. Reproduce the controller response against the USB 2.0, HID 1.11 and xHCI 1.2 control-transfer state model, then make only the smallest standards-correct bounded recovery or compatibility change. Mandatory SET_CONFIGURATION and SET_PROTOCOL failures remain fail closed; no short packet is converted to success unless the requested zero-length transfer and controller event semantics prove complete success. Prove VMware xHCI keyboard and mouse non-regression and require a replacement physical image for the affected controller."
+scope = "Resolve the physical USB HID enumeration failure reported as failure=set-configuration, configuration length 59 and xHCI completion code 13. Persist the exact failed standard USB request type, request, value, index and length in the append-only diagnostics ABI before changing policy. Reproduce the controller response against the USB 2.0, HID 1.11 and xHCI 1.2 control-transfer state model, then make only the smallest standards-correct bounded recovery or compatibility change. Mandatory SET_CONFIGURATION and SET_PROTOCOL failures remain fail closed; no short packet is converted to success unless the requested zero-length transfer and controller event semantics prove complete success. Remove the unapproved graphical desktop autostart from every target: boot always reaches the Ring-3 shell and graphical tests must start DESKTOP explicitly. Retain bounded Ring-0 console output in a fixed in-memory kernel log and expose it through an append-only read ABI plus a paged Ring-3 DMESG command so physical diagnostics do not depend on the 80x25 scrollback. Prove VMware xHCI keyboard and mouse non-regression and require a replacement physical image for the affected controller."
 allowed_files = [
   "automation/reist-s03b.toml",
+  "Makefile",
+  "include/reist/abi/syscall.h",
+  "include/kernel/kernel_log.h",
   "drivers/usb/xhci.c",
   "drivers/usb/xhci.h",
+  "kernel/init/kernel.c",
+  "kernel/init/kernel_log.c",
+  "kernel/init/kernel_log_buffer.c",
+  "kernel/proc/process.h",
   "kernel/syscall/syscall_table.c",
   "kernel/shell/command.c",
+  "lib/libc/stdio.c",
+  "lib/libc/stdlib.h",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/generate_syscall_abi.py",
+  "scripts/install-reist-fujitsu-80gb.cmd",
+  "scripts/install-reist-samsung-120gb.cmd",
+  "scripts/run_vmware_mouse.ps1",
+  "userspace/bin/shell.c",
+  "userspace/programs/dmesg.c",
+  "userspace/sdk/include/reist/abi/syscall.h",
   "userspace/sdk/include/x86os.h",
   "userspace/sdk/x86os.c",
   "userspace/programs/usbinfo.c",
   "test/test_usb_keyboard.py",
   "test/test_usb_mouse.py",
+  "test/test_memory_resilience.py",
+  "test/test_kernel_log.py",
+  "test/test_kernel_log_host.c",
+  "test/test_reist_probe_domain.py",
+  "test/test_reist_supervisor.py",
+  "test/test_runtime_graphics_switch.py",
+  "test/test_shell_source.py",
+  "test/test_vmware_mouse.py",
+  "test/test_syscall_abi_source.py",
+  "test/test_system_layout.py",
+  "docs/architecture/KERNEL_LOG.md",
+  "docs/architecture/MEMORY_RESILIENCE.md",
   "docs/architecture/USB_SUBSYSTEM.md",
+  "docs/development/BOOTABLE_DISK.md",
+  "docs/development/BUILD_MODES.md",
   "docs/development/CURRENT_WORK.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "docs/hardware/VMWARE.md"
@@ -10167,11 +10199,23 @@ invariants = [
   "mandatory configuration and boot-protocol requests still fail closed when transfer completion is not proven",
   "every recovery is bounded and resets or fences the exact slot endpoint generation before retry",
   "one unsupported HID candidate cannot corrupt or revoke an already published keyboard or mouse",
+  "no target or ordinary boot profile starts the graphical desktop without an explicit user command",
+  "kernel logging uses fixed storage, never allocates or accesses VFS, and every Ring-3 read is size and cursor bounded",
+  "only a validated real_hw build can replace the canonical physical-installer image",
   "VMware xHCI keyboard and mouse remain functional and physical acceptance uses a newly generated image"
 ]
 targeted_tests = [
   "python test/test_usb_keyboard.py -v",
-  "python test/test_usb_mouse.py -v"
+  "python test/test_usb_mouse.py -v",
+  "python test/test_memory_resilience.py -v",
+  "python test/test_kernel_log.py -v",
+  "python test/test_reist_probe_domain.py -v",
+  "python test/test_syscall_abi_source.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_shell_source.py -v",
+  "python test/test_vmware_mouse.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
@@ -10188,10 +10232,19 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "usb: contain physical HID control short packet"
+evidence = [
+  "all 120 frozen targeted tests passed, including the 9 keyboard, 16 mouse, 5 kernel-log and 7 VMware-runner source cases",
+  "the final VMware VGA package gate passed in 37 seconds and preserved the separately validated physical-installer image byte-for-byte",
+  "an earlier automated four-vCPU VMware RFB run passed in 14 seconds with xHCI HID shell explicit DESKTOP explorer and mouse markers in order",
+  "the final host-driven VMware retry failed before guest launch; the user then started the generated VMware package manually and confirmed it working without an observed USB or DMESG regression",
+  "the ASUS physical replacement-image test confirmed the USB boot keyboard on the USB 3 xHCI path and paged DMESG access from the Ring-3 shell",
+  "the validated 64 MiB canonical physical-installer artifact build/reist-os-real-hw.img has SHA-256 BF774039CF11370093B49E4E0D20094FB1315E15E440E84E6778B23F0E4DBFE9 and is consumed by both target-bound installer wrappers",
+  "all images reach the Ring-3 shell before any explicit DESKTOP command; no broad xHCI hardware or DMA isolation claim is made"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"

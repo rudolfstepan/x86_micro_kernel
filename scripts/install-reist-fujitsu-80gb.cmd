@@ -7,7 +7,7 @@ set "EXPECTED_SERIAL=839546226413"
 set "EXPECTED_SIZE=80026361856"
 
 for %%I in ("%~dp0..") do set "PROJECT_ROOT=%%~fI"
-set "IMAGE=%PROJECT_ROOT%\build\reist-os.img"
+set "IMAGE=%PROJECT_ROOT%\build\reist-os-real-hw.img"
 set "INSTALLER=%~dp0install-physical-disk.ps1"
 
 if not exist "%INSTALLER%" (

@@ -30,8 +30,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscall 124 is append-only STORAGE_BULK. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 125U
+/* Exclusive upper bound; syscall 125 is append-only KERNEL_LOG_READ. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 126U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,

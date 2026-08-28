@@ -887,11 +887,6 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
             ? ((1U << production_driver_smp_status.online_cpu_count) - 1U) &
                 ~1U
             : 0U;
-    /* Ordinary Surface clients remain BSP-affine. Keep the production
-     * compositor colocated with them so a retained frame does not require
-     * dozens of cross-CPU IPC refill handoffs. The supervisor's protected
-     * post-ready AP mechanism remains available for explicit future proofs. */
-    const uint32_t compositor_post_ready_cpu_affinity_mask = 0U;
     uint32_t audio_ap_mask = production_driver_ap_mask;
     if (video_device_available) {
         video_ap_mask = production_driver_ap_mask;
@@ -1041,22 +1036,11 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         panic("Unable to start reset-failure driver-domain fixture");
     printf("DRIVER_DOMAIN TEST_STARTED\n");
 #endif
-    /* A real framebuffer prefers the graphical desktop.  VGA boots and any
-     * failed/terminated desktop fall back to the userspace shell. */
-#ifndef REIST_RESILIENT_PAGE_BOOT_PROOF
-    if (!supervisor_start_compositor(pit_monotonic_ms(),
-                                     compositor_post_ready_cpu_affinity_mask)) {
-        printf("Unable to start desktop.prg; starting shell fallback.\n");
-    } else {
-        printf("Starting supervised graphical desktop from "
-               "/usr/gui/bin/desktop.prg\n");
-        while (supervisor_compositor_session_active()) {
-            if (scheduler_sleep_ms(10U) != 0) (void)scheduler_yield();
-        }
-        printf("Graphical desktop lifecycle ended; starting shell "
-               "fallback.\n");
-    }
-#endif
+    /* Graphical sessions require an explicit command from the Ring-3 shell.
+     * No target, display backend or proof profile may bypass that authority
+     * boundary by starting the compositor during kernel boot. */
+    printf("REIST_GUI DESKTOP_AUTOSTART_DISABLED "
+           "explicit DESKTOP command required\n");
     if (start_userspace_program(multiboot_info, "bin/shell.prg",
                                 "userspace command interpreter") < 0) {
         printf("Unable to start shell.prg; entering rescue shell.\n");

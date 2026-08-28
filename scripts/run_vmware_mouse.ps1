@@ -53,11 +53,14 @@ foreach ($setting in @(
     }
 }
 
+$shellMarker = 'Starting userspace command interpreter from /bin/shell.prg'
 $requiredBeforeInput = @(
     'USB: xHCI HID ready',
     'mouse-port=',
     'REIST_SMP SCHEDULER_READY cpus=4 probe_mask=0000000E',
-    'REIST_GUI COMPOSITOR_READY',
+    $shellMarker
+)
+$requiredAfterDesktop = @(
     'DESKTOP_OK',
     'DESKTOP_EXPLORER_OK'
 )
@@ -114,6 +117,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 public static class ReistRfbInput {
     private static byte[] ReadExact(NetworkStream stream, int count) {
@@ -141,6 +145,74 @@ public static class ReistRfbInput {
         };
         stream.Write(message, 0, message.Length);
         stream.Flush();
+    }
+
+    private static void SendKey(NetworkStream stream, uint key,
+                                bool pressed) {
+        byte[] message = new byte[] {
+            4, pressed ? (byte)1 : (byte)0, 0, 0,
+            (byte)(key >> 24), (byte)(key >> 16),
+            (byte)(key >> 8), (byte)key
+        };
+        stream.Write(message, 0, message.Length);
+        stream.Flush();
+    }
+
+    public static bool SendCommand(int port, string command) {
+        if (String.IsNullOrEmpty(command) || command.Length > 32) return false;
+        try {
+            using (TcpClient client = new TcpClient()) {
+                IAsyncResult pending = client.BeginConnect("127.0.0.1", port,
+                                                            null, null);
+                bool connected = pending.AsyncWaitHandle.WaitOne(2000);
+                pending.AsyncWaitHandle.Close();
+                if (!connected) return false;
+                client.EndConnect(pending);
+                client.ReceiveTimeout = 2000;
+                client.SendTimeout = 2000;
+                using (NetworkStream stream = client.GetStream()) {
+                    string serverVersion = Encoding.ASCII.GetString(
+                        ReadExact(stream, 12));
+                    if (!serverVersion.StartsWith("RFB 003.008")) return false;
+                    byte[] version = Encoding.ASCII.GetBytes("RFB 003.008\n");
+                    stream.Write(version, 0, version.Length);
+
+                    int securityCount = stream.ReadByte();
+                    if (securityCount <= 0) return false;
+                    byte[] security = ReadExact(stream, securityCount);
+                    bool supportsNone = false;
+                    foreach (byte kind in security) {
+                        if (kind == 1) supportsNone = true;
+                    }
+                    if (!supportsNone) return false;
+                    stream.WriteByte(1);
+                    if (ReadU32(stream) != 0) return false;
+
+                    stream.WriteByte(1);
+                    byte[] geometry = ReadExact(stream, 4);
+                    int width = (geometry[0] << 8) | geometry[1];
+                    int height = (geometry[2] << 8) | geometry[3];
+                    ReadExact(stream, 16);
+                    uint nameLength = ReadU32(stream);
+                    if (width <= 0 || height <= 0 || nameLength > 1048576)
+                        return false;
+                    ReadExact(stream, (int)nameLength);
+
+                    foreach (char character in command) {
+                        if (character < 0x20 || character > 0x7E) return false;
+                        SendKey(stream, character, true);
+                        SendKey(stream, character, false);
+                        Thread.Sleep(20);
+                    }
+                    SendKey(stream, 0xFF0D, true);
+                    SendKey(stream, 0xFF0D, false);
+                    return true;
+                }
+            }
+        }
+        catch {
+            return false;
+        }
     }
 
     public static bool SendPointer(int port, int attempt) {
@@ -222,6 +294,10 @@ function Send-BoundedMouseInput([int]$Attempt) {
     return [ReistRfbInput]::SendPointer($vncPort, $Attempt)
 }
 
+function Send-ExplicitDesktopCommand {
+    return [ReistRfbInput]::SendCommand($vncPort, 'desktop')
+}
+
 $started = $false
 $launched = $false
 $vmxProcessId = 0
@@ -267,7 +343,44 @@ try {
         Start-Sleep -Milliseconds 250
     }
     if ($missing.Count -ne 0) {
-        throw "VMware mouse desktop markers timed out: $($missing -join ', ')"
+        throw "VMware mouse shell markers timed out: $($missing -join ', ')"
+    }
+    $text = Read-SerialText
+    $shellPosition = $text.IndexOf($shellMarker)
+    if ($shellPosition -lt 0) {
+        throw 'VMware userspace shell marker disappeared before validation.'
+    }
+    $preShell = $text.Substring(0, $shellPosition)
+    foreach ($unexpected in @('REIST_GUI COMPOSITOR_READY', 'DESKTOP_OK',
+                               'DESKTOP_EXPLORER_OK', 'DESKTOP_MOUSE_OK')) {
+        if ($preShell.Contains($unexpected)) {
+            throw "Desktop marker appeared before explicit shell command: $unexpected"
+        }
+    }
+
+    $commandSent = $false
+    for ($attempt = 1; $attempt -le 3; ++$attempt) {
+        $commandSent = Send-ExplicitDesktopCommand
+        "desktop command attempt=$attempt injected=$commandSent transport=rfb-loopback" |
+            Add-Content -LiteralPath $GateLog -Encoding utf8
+        if ($commandSent) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    if (!$commandSent) {
+        throw 'VMware RFB desktop command could not be injected.'
+    }
+
+    $desktopMissing = $requiredAfterDesktop
+    while ($watch.Elapsed -lt $deadline) {
+        $text = Read-SerialText
+        Assert-NoForbiddenMarker $text
+        $desktopMissing = @($requiredAfterDesktop |
+            Where-Object { !$text.Contains($_) })
+        if ($desktopMissing.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($desktopMissing.Count -ne 0) {
+        throw "VMware explicit desktop markers timed out: $($desktopMissing -join ', ')"
     }
 
     for ($attempt = 1; $attempt -le $InjectionAttempts; ++$attempt) {
@@ -283,11 +396,11 @@ try {
             $hid = $text.IndexOf('USB: xHCI HID ready')
             $scheduler = $text.IndexOf(
                 'REIST_SMP SCHEDULER_READY cpus=4 probe_mask=0000000E')
-            $ready = $text.IndexOf('REIST_GUI COMPOSITOR_READY')
+            $shell = $text.IndexOf($shellMarker)
             $desktop = $text.IndexOf('DESKTOP_OK')
             $explorer = $text.IndexOf('DESKTOP_EXPLORER_OK')
-            if (!($hid -lt $scheduler -and $scheduler -lt $ready -and
-                $ready -lt $desktop -and $desktop -lt $explorer -and
+            if (!($hid -lt $scheduler -and $scheduler -lt $shell -and
+                $shell -lt $desktop -and $desktop -lt $explorer -and
                 $explorer -lt $mouse)) {
                 throw 'VMware mouse runtime markers are out of order.'
             }

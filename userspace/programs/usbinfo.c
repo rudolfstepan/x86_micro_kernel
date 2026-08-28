@@ -130,6 +130,26 @@ int main(void) {
     print_unsigned(status.configuration_length);
     x86os_putchar('\n');
 
+    x86os_puts("     control type=");
+    print_hex32(status.control_request_type);
+    x86os_puts(" request=");
+    print_unsigned(status.control_request);
+    x86os_puts(" value=");
+    print_hex32(status.control_value);
+    x86os_puts(" index=");
+    print_unsigned(status.control_index);
+    x86os_puts(" length=");
+    print_unsigned(status.control_length);
+    x86os_puts(" cc=");
+    print_unsigned(status.control_completion);
+    x86os_puts(" residual=");
+    print_unsigned(status.control_residual);
+    x86os_puts(" stage=");
+    print_unsigned(status.control_event_stage);
+    x86os_puts(" flags=");
+    print_hex32(status.control_flags);
+    x86os_putchar('\n');
+
     x86os_puts("     selected=");
     print_unsigned(status.selected_port);
     x86os_puts(" protocol=");

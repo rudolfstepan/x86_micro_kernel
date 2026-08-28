@@ -20,6 +20,7 @@ PROGRAMS = {
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
     "SYSINFO.PRG": ROOT / "userspace/programs/sysinfo.c",
     "USBINFO.PRG": ROOT / "userspace/programs/usbinfo.c",
+    "DMESG.PRG": ROOT / "userspace/programs/dmesg.c",
     "REPEAT.PRG": ROOT / "userspace/programs/repeat.c",
     "CALC.PRG": ROOT / "userspace/programs/calc.c",
     "DATE.PRG": ROOT / "userspace/programs/date.c",

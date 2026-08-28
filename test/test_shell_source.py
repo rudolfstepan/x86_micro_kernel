@@ -242,14 +242,16 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn('"bin/shell.prg"', kernel)
         self.assertIn("wait_for_process(pid)", kernel)
 
-    def test_framebuffer_boot_prefers_desktop_with_shell_fallback(self):
+    def test_every_boot_starts_shell_without_desktop_autostart(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         framebuffer = kernel.index("if (framebuffer_available())")
-        desktop = kernel.index('"usr/gui/bin/desktop.prg"', framebuffer)
-        shell = kernel.index('"bin/shell.prg"', desktop)
-        self.assertLess(framebuffer, desktop)
-        self.assertLess(desktop, shell)
-        self.assertIn("Unable to start desktop.prg; starting shell fallback", kernel)
+        disabled = kernel.index("REIST_GUI DESKTOP_AUTOSTART_DISABLED",
+                                framebuffer)
+        shell = kernel.index('"bin/shell.prg"', disabled)
+        self.assertLess(framebuffer, disabled)
+        self.assertLess(disabled, shell)
+        self.assertNotIn("supervisor_start_compositor", kernel)
+        self.assertNotIn("Starting supervised graphical desktop", kernel)
 
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)
