@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1n-x86_64-spawn-wait"
 
 [policy]
 one_package_per_run = true
@@ -11083,6 +11083,48 @@ evidence = [
   "The bounded one-vCPU 32-MiB QEMU run published DEADLINE_SLEEP_OK before the unchanged exception-recovery marker",
   "A focused repair admitted the bounded pending-PIT start phase through an eight-tick absolute ceiling while preserving exact relative sleeps and wake order 1 2 0"
 ]
+
+[[packages]]
+id = "R8.1n-x86_64-spawn-wait"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 parent child spawn and wait proof"
+scope = "Extend only the isolated x86_64 bootstrap with one fixed-capacity dynamic parent-child lifecycle on the accepted four-slot FIFO. Preserve REIST-v1 GETPID 22 SPAWN 23 WAIT 24 and EXIT 9. Start only parent slot 0, validate a bounded NUL-terminated child path in the caller's writable private ELF page, construct child slot 1 on demand from the already validated embedded image, and bind fixed nonzero PID generation and parent identity before READY publication. A valid WAIT validates the exact live child identity and writable aligned status output before changing state, blocks the parent without polling, runs the child, consumes status 77 exactly once, reaps the child generation, wakes the parent and allows final parent status 130. Reject null unterminated unsupported duplicate stale and non-child requests before allocation queue task or output mutation. Prove one child slot reuse with a new generation, private writable isolation, empty FIFO, zeroed task and relationship records, restored CR3 TSS syscall MSRs frames and initial free count before publishing SPAWN_WAIT_OK. Keep general VFS loading SPAWNV argv inheritance waitpid minus one signals process groups priorities SMP devices HPASA physical hardware and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "arch/x86_64/user/probe.asm",
+  "scripts/run_qemu_x86_64_boot.py", "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 targets and every accepted x86_64 marker remain behaviorally unchanged",
+  "REIST-v1 syscall numbers GETPID 22 SPAWN 23 WAIT 24 and EXIT 9 retain their existing argument and result conventions",
+  "exactly four static task slots remain and only slots 0 and 1 are used while child address-space frames are allocated only after complete spawn validation",
+  "path and status output bounds rights termination PID generation parent identity state duplicate membership and capacity are validated before side effects",
+  "WAIT blocks the parent without polling and only the exact child generation may publish status wake or be reaped",
+  "status is copied once and a stale repeated wait cannot observe or mutate a reused child generation",
+  "one child slot is reused only after complete reap with a strictly newer generation and private writable state",
+  "success requires parent status 130 child status 77 twice empty zeroed queue task relation and output state plus complete memory syscall and gate restoration",
+  "all scans copies queues and waits are fixed-capacity and no dynamic VFS loader or unbounded string operation is introduced",
+  "no SPAWNV argv inheritance wait-any signals groups priorities SMP production integration device DMA HPASA physical hardware or fail-operational authority is introduced"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 syscall image layout or accepted x86_64 runtime marker changes",
+  "an invalid pointer path PID generation parent state duplicate or capacity request mutates allocation queue task output or relationship state",
+  "a stale child can publish status wake a parent or regain a reused slot",
+  "a scan copy queue operation or wait can exceed its compile-time bound",
+  "cleanup leaves child parent queue mapping syscall gate or frame authority active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: add bounded x86_64 spawn wait lifecycle"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
