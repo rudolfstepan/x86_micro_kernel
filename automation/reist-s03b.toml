@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R2.2ai-soundplayer-surface-lifecycle"
+active_id = "R1.2a-resilient-page-poc"
 
 [policy]
 one_package_per_run = true
@@ -9862,7 +9862,7 @@ evidence = [
 
 [[packages]]
 id = "R2.2ai-soundplayer-surface-lifecycle"
-status = "active"
+status = "cancelled"
 phase = "post-s0"
 risk = "high"
 title = "Contain graphical audio clients and add configurable system sounds"
@@ -10014,6 +10014,63 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "gui: contain audio clients and add system sounds"
+evidence = [
+  "all 18 frozen targeted gates passed on commit 9c154c68 and both final QEMU-framebuffer and VMware-VGA package builds passed",
+  "the Sound Player published playback and Surface readiness completed one-shot playback and released the audio client endpoint correctly",
+  "the combined runtime gate remains open because Control Gallery emitted GUIDEMO_OK but did not commit its first retained Surface within the bounded launch budget and the compositor reported DESKTOP_AUDIO_FAIL launch status=-110",
+  "the user confirmed manually that VMware audio and Sound Player operation have no remaining audio problem",
+  "the user explicitly ended this package despite the separate combined Control Gallery acceptance timeout so it is cancelled with retained partial implementation and evidence rather than claimed done"
+]
+
+[[packages]]
+id = "R1.2a-resilient-page-poc"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Model a fixed-capacity resilient page transaction"
+scope = "Introduce the first explicitly mediated software-memory-resilience object without claiming transparent virtual-memory or physical DIMM mirroring. Build at most four kernel-owned 4096-byte objects from fixed storage. Each object uses two copy-on-write banks in each of two labeled simulated failure domains, CRC32-protected page bytes and generation-scoped metadata protected through the existing critical-object envelope. Reads select only the committed generation; writes prepare and validate inactive banks before one metadata commit. A deterministic host fault campaign may fail exactly one complete simulated domain before prepare, between replica preparation and commit, after commit, during scrub and during bounded rebuild to a fixed replacement domain. The object enters HEALTHY DEGRADED REBUILDING or FAILED without heap allocation blocking VFS DMA arbitrary PTE manipulation or user authority. Prove stale-handle rejection capacity bounds last-committed-generation recovery single-domain continuation fail-closed double loss and successful bounded rebuild. Compile the module into the normal kernel image but defer frame-allocator zones SMBIOS IMC decoding MCE EDAC physical fault injection and arbitrary process-page adoption to separate packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "include/kernel/resilient_page.h",
+  "kernel/init/resilient_page.c",
+  "test/test_resilient_page_host.c",
+  "test/test_memory_resilience.py",
+  "docs/architecture/MEMORY_RESILIENCE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the pool contains at most four objects of exactly 4096 payload bytes and every operation has a fixed iteration bound",
+  "simulated domains are labels only and no evidence or documentation calls them physical DIMM rank channel or independent hardware domains",
+  "each reachable domain retains two copy-on-write banks so an interrupted pre-commit update cannot destroy the last committed generation",
+  "metadata generation domain assignment active banks state and checksums are published only through the existing validated critical-object transaction",
+  "read scrub and rebuild accept only the exact live handle generation and never guess between conflicting equal-generation replicas",
+  "loss of exactly one active domain moves the object to DEGRADED while preserving the last committed bytes; loss of every valid committed replica moves it to FAILED",
+  "rebuild copies only a CRC-validated committed replica into fixed replacement storage validates it before publication and performs no unbounded scan or wait",
+  "the runtime path performs no heap allocation VFS access DMA blocking wait formatted logging or arbitrary page-table mutation",
+  "no public syscall capability process mapping or hardware-resilience claim is added"
+]
+targeted_tests = [
+  "python test/test_memory_resilience.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "a write can expose bytes from a generation whose complete committed replica was not validated",
+  "one simulated domain failure can corrupt an unrelated object or make the surviving committed copy inaccessible",
+  "metadata data storage retry rebuild or scrub work becomes dynamically sized or unbounded",
+  "the implementation requires trapping arbitrary CPU writes direct DMA or a second page-table mapping claim",
+  "documentation implies survival of physical DIMM rank channel IMC or machine-check failure",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "memory: add bounded resilient page proof"
 
 [[packages]]
 id = "R5.2x-xhci-control-short-packet"

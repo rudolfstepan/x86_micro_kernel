@@ -1114,6 +1114,27 @@ IRQ-tauglicher Allocator. Die Kernel-Guardpages waren der erste umgesetzte
 Teil von S0.2; die automatisierte QEMU/VMware-Baseline ist inzwischen
 abgeschlossen.
 
+##### R1.2a Experimenteller resilienter Seitenspeicher — aktiver PoC
+
+Der erste Memory-Resilience-Schritt ergänzt die abgenommene allgemeine
+Speicherverwaltung um höchstens vier explizite, kernel-eigene 4096-Byte-
+Objekte. Zwei als A und B bezeichnete simulierte Fehlerdomänen besitzen je
+zwei Copy-on-write-Bänke. Nutzdaten werden durch CRC32, veröffentlichte
+Generation, Bankauswahl und Zustandsübergang zusätzlich durch den bestehenden
+Critical-Object-Umschlag geschützt.
+
+Die Abnahme verlangt die unveränderte letzte Commit-Generation nach einem
+Fehler vor oder zwischen der Replica-Vorbereitung, `DEGRADED` nach Verlust
+genau einer Domäne, fail-closed `FAILED` nach Verlust aller gültigen Replicas
+und einen begrenzten Rebuild auf feste Ersatzspeicherplätze. Der Pfad enthält
+keinen Heap, keine VFS-, DMA- oder blockierende Operation und verändert keine
+beliebigen PTEs.
+
+Diese Scheibe ist ein Softwarezustands- und Fehlerinjektionsnachweis. Reale
+Frame-Zonen, SMBIOS/IMC-Adressdekodierung, MCE/EDAC, physische
+DIMM-/Rank-/Channel-Unabhängigkeit und transparente Prozessseiten bleiben
+getrennte, hardwaregebundene Folgestufen.
+
 #### R1.3 Synchronisations- und Diagnosevertrag — M
 
 **Status (13. August 2026): Abgeschlossen und abgenommen.** Der Kernel

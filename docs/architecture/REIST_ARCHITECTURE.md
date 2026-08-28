@@ -556,6 +556,24 @@ gleich alte, aber widersprüchliche gültige Kopien liefern ausschließlich
 produktiver Nutzung räumlich getrennt platziert werden. Für höchste Kritikalität
 bleiben 2oo3 oder eine unabhängige autoritative Recovery-Domäne erforderlich.
 
+### Experimenteller resilienter Seitenspeicher
+
+R1.2a überträgt diesen Transaktionsvertrag testweise auf höchstens vier
+explizite kernel-eigene Objekte mit jeweils 4096 Nutzbytes. Jede der zwei
+simulierten Fehlerdomänen hält zwei Datenbänke. Eine Mutation wird in den
+inaktiven Bänken vorbereitet und durch CRC32 validiert; erst danach publiziert
+der Critical-Object-geschützte Metadatensatz Generation und aktive Bänke.
+Leser akzeptieren ausschließlich diese veröffentlichte Generation.
+
+Domänenbezeichnungen sind in dieser Stufe reine Fehlerinjektionslabels. Das
+Objekt verändert keine Seitentabellen, vermittelt keine beliebigen
+CPU-Schreibzugriffe, akzeptiert kein DMA und beweist keine physische
+DIMM-/Rank-/Channel-Trennung. Verlust einer gültigen Replica führt zu
+`DEGRADED`; Verlust aller gültigen Replicas oder widersprüchliche
+gleichgenerationige Daten führt fail-closed zu `FAILED`. Ein Rebuild darf nur
+aus einer vollständig validierten committed Replica in einen festen
+Ersatzslot erfolgen.
+
 ## Capability- und Ressourcenmodell
 
 Eine Capability verbindet Objektidentität, Generation und minimale Rechte,

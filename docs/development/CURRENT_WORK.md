@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R2.2ai – Audio-GUI-Containment und konfigurierbare Systemklänge
+Aktives Thema: R1.2a – begrenzter `resilient_page`-Forschungs-PoC
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -19,6 +19,24 @@ Tests und der lokale Diff.
   verbleibenden gemeinsamen Treiberzustände für R6.2 auditiert sind.
 - Der begrenzte SMP-Bootstrap ist als `ad8884e8` committed. Die aktuelle
   R6.2-Scheibe baut direkt darauf auf.
+
+## Aktiver Memory-Resilience-PoC
+
+R2.2ai ist mit erhaltener Audio-/Surface-Implementierung beendet, aber nicht
+als vollständig bestanden markiert: Alle gezielten Gates und beide
+Paketbuilds bestanden, der manuelle VMware-Test zeigt keine Audiostörung, doch
+der kombinierte QEMU-Gate endet beim ersten retained Control-Gallery-Frame mit
+`DESKTOP_AUDIO_FAIL launch status=-110`. Die Queue dokumentiert das Paket
+deshalb als `cancelled` statt `done`.
+
+R1.2a untersucht zunächst ausschließlich ein explizites kernel-eigenes
+4096-Byte-Objekt. Höchstens vier Instanzen besitzen je zwei Copy-on-write-
+Bänke in zwei simulierten Fehlerdomänen, generationsgebundene
+Critical-Object-Metadaten und CRC32 für die Nutzdaten. Ein kompletter
+simulierter Domänenverlust muss die letzte veröffentlichte Generation lesbar
+lassen und einen festen Rebuild auf Ersatzspeicher erlauben. Das Paket erteilt
+keine User-, DMA- oder Paging-Autorität und behauptet keine physische
+DIMM-/Rank-/Channel-Isolation.
 
 ## Erreichter stabiler Meilenstein
 
