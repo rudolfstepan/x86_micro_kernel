@@ -324,3 +324,26 @@ Bootstrap und ein 10.088-Byte-ELF64-Probeabbild. Der begrenzte Ein-vCPU-/
 32-MiB-QEMU-Lauf meldete `REIST_X86_64_DEADLINE_SLEEP_OK` vor dem unveraenderten
 Abschlussmarker. Dynamische Tasks, Prioritaeten, SMP und produktive
 x86_64-Integration bleiben offen.
+
+## Abgenommener Spawn-/Wait-Lebenszyklus R8.1n
+
+Der dynamische Nachweis startet ausschliesslich Parent-Slot 0. `GETPID` 22
+liefert dessen feste Test-PID 200. `SPAWN` 23 liest hoechstens 16 Bytes aus
+einer privaten beschreibbaren ELF-Seite und akzeptiert nur den vollstaendig
+terminierten Testpfad `/probe/child`. Erst danach werden die privaten Frames
+fuer Slot 1 erzeugt und PID 201 mit Generation 31 beziehungsweise beim zweiten
+Lebenszyklus Generation 32 veroeffentlicht.
+
+`WAIT` 24 validiert die exakte Kindgeneration und einen ausgerichteten
+privaten Vier-Byte-Statusausgang vor dem Zustandswechsel. Der Parent blockiert
+ohne Polling, das Kind liefert Status 77, wird genau einmal reaptiert und erst
+dann wird der Parent mit PID 201 und geschriebenem Status geweckt. Nullpfad,
+doppelter Spawn, fremde PID, Null-Statuszeiger und ein bereits konsumiertes
+stales Wait werden ohne Kind-, Queue- oder Ausgabemutation abgewiesen. Der
+Parent beendet nach zwei Kindgenerationen mit Status 130.
+
+Alle 32 Quellvertragstests bestanden. Der Build erzeugte ein 92.372-Byte-
+Bootstrap und ein 10.264-Byte-ELF64-Probeabbild. Der begrenzte Ein-vCPU-/
+32-MiB-QEMU-Lauf meldete `REIST_X86_64_SPAWN_WAIT_OK` vor dem unveraenderten
+Abschlussmarker. Allgemeines VFS-Laden, `SPAWNV`, Argumentvererbung,
+wait-any, Signale, Gruppen, SMP und produktive Integration bleiben offen.

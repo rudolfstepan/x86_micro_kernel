@@ -40,6 +40,8 @@ TASK_FAULTED               equ 3
 TASK_EXITED                equ 4
 TASK_PREEMPTED             equ 5
 TASK_BLOCKED               equ 6
+TASK_WAITING               equ 7
+TASK_ZOMBIE                equ 8
 TASK_A_GENERATION          equ 1
 TASK_B_GENERATION          equ 2
 TASK_A_ID                  equ 0x0A
@@ -52,11 +54,19 @@ TASK_RUNQUEUE_ID_BASE      equ 0x10
 TASK_RUNQUEUE_GEN_BASE     equ 10
 TASK_SLEEP_ID_BASE         equ 0x14
 TASK_SLEEP_GEN_BASE        equ 20
+TASK_DYNAMIC_PARENT_ID     equ 0x18
+TASK_DYNAMIC_CHILD_ID      equ 0x19
+TASK_DYNAMIC_PARENT_GEN    equ 30
+TASK_DYNAMIC_CHILD_GEN1    equ 31
+TASK_DYNAMIC_CHILD_GEN2    equ 32
+TASK_DYNAMIC_PARENT_PID    equ 200
+TASK_DYNAMIC_CHILD_PID     equ 201
 SCHEDULER_MODE_COOPERATIVE equ 1
 SCHEDULER_MODE_PREEMPTION  equ 2
 SCHEDULER_MODE_QUANTUM     equ 3
 SCHEDULER_MODE_RUNQUEUE    equ 4
 SCHEDULER_MODE_SLEEP       equ 5
+SCHEDULER_MODE_DYNAMIC     equ 6
 
 EVENT_A_READY              equ 1
 EVENT_B_READY              equ 2
@@ -82,8 +92,23 @@ EVENT_SLEEP_WAKE_BASE      equ 0x4C
 EVENT_SLEEP_MONOTONIC      equ 0x50
 EVENT_SLEEP_EXIT_BASE      equ 0x54
 EVENT_SLEEP_FREE_BASE      equ 0x58
-EVENT_CAPACITY             equ 32
+EVENT_DYNAMIC_PARENT_READY equ 0x60
+EVENT_DYNAMIC_PARENT_RUN   equ 0x61
+EVENT_DYNAMIC_REJECT       equ 0x62
+EVENT_DYNAMIC_CHILD_READY  equ 0x63
+EVENT_DYNAMIC_PARENT_WAIT  equ 0x64
+EVENT_DYNAMIC_CHILD_RUN    equ 0x65
+EVENT_DYNAMIC_CHILD_EXIT   equ 0x66
+EVENT_DYNAMIC_CHILD_FREE   equ 0x67
+EVENT_DYNAMIC_PARENT_WAKE  equ 0x68
+EVENT_DYNAMIC_PARENT_EXIT  equ 0x69
+EVENT_DYNAMIC_PARENT_FREE  equ 0x6A
+EVENT_DYNAMIC_SPAWN        equ 0x6B
+EVENT_DYNAMIC_GETPID       equ 0x6C
+EVENT_CAPACITY             equ 40
+DYNAMIC_EVENT_COUNT        equ 34
 DEADLINE_TICK_LIMIT        equ 8
+CHILD_PATH_CAPACITY        equ 16
 
 USER_BASE                  equ 0x00400000
 USER_PAGE_COUNT            equ 8
@@ -96,6 +121,7 @@ PROBE_RUNQUEUE_FAULT_OFFSET equ 24
 QUANTUM_A_MAGIC            equ 0xE44E44E44E44E44E
 QUANTUM_B_MAGIC            equ 0xF55F55F55F55F55F
 PAGE_SIZE                  equ 4096
+USER_END                   equ USER_BASE + (USER_PAGE_COUNT * PAGE_SIZE)
 MANAGED_LIMIT              equ 0x04000000
 DIRECT_MAP_BASE            equ 0xFFFF800000000000
 
@@ -122,11 +148,16 @@ REIST_SYS_EXIT             equ 9
 REIST_SYS_YIELD            equ 40
 REIST_SYS_SLEEP_MS         equ 41
 REIST_SYS_MONOTONIC_MS     equ 42
+REIST_SYS_GETPID           equ 22
+REIST_SYS_SPAWN            equ 23
+REIST_SYS_WAIT             equ 24
 EXPECTED_EXIT_STATUS       equ 101
 PREEMPT_EXIT_STATUS        equ 102
 QUANTUM_EXIT_STATUS        equ 103
 RUNQUEUE_EXIT_BASE         equ 110
 SLEEP_EXIT_BASE            equ 120
+DYNAMIC_PARENT_EXIT_STATUS equ 130
+DYNAMIC_CHILD_EXIT_STATUS  equ 77
 
 IA32_EFER                  equ 0xC0000080
 IA32_STAR                  equ 0xC0000081
@@ -177,6 +208,7 @@ global x86_64_scheduler_timer_abort64
 global x86_64_process_runqueue_selftest64
 global x86_64_process_deadline_sleep_selftest64
 global x86_64_scheduler_deadline_tick64
+global x86_64_process_spawn_wait_selftest64
 
 extern pml4_table
 extern physical_frame_alloc64
@@ -527,6 +559,56 @@ x86_64_process_deadline_sleep_selftest64:
     call scheduler_runqueue_dispatch64
     jmp scheduler_fail
 
+x86_64_process_spawn_wait_selftest64:
+    cli
+    cld
+    mov byte [rel scheduler_failure_stage], 0xA8
+    mov qword [rel scheduler_caller_rsp], rsp
+    mov rax, cr3
+    mov qword [rel scheduler_original_cr3], rax
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne scheduler_fail
+    xor eax, eax
+    lea rdi, [rel scheduler_state_begin]
+    mov ecx, (scheduler_state_end - scheduler_state_begin) / 8
+    rep stosq
+    mov byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    mov qword [rel scheduler_caller_rsp], rsp
+    mov rax, cr3
+    mov qword [rel scheduler_original_cr3], rax
+    call physical_free_frame_count64
+    mov dword [rel scheduler_initial_free], eax
+    call x86_64_elf64_load64
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_elf64_entry64
+    mov qword [rel scheduler_entry], rax
+
+    xor edi, edi
+    call scheduler_build_task64
+    test eax, eax
+    jz scheduler_fail
+    lea r12, [rel scheduler_tasks]
+    mov qword [r12 + TASK_GENERATION], TASK_DYNAMIC_PARENT_GEN
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov al, EVENT_DYNAMIC_PARENT_READY
+    call scheduler_append_event64
+
+    mov byte [rel scheduler_failure_stage], 0xA9
+    call scheduler_setup_syscalls64
+    test eax, eax
+    jz scheduler_fail
+    lea rax, [rel scheduler_kernel_stack_top]
+    mov qword [rel scheduler_syscall_context + SYSCALL_CONTEXT_KERNEL_RSP], rax
+    mov rdi, rax
+    call x86_64_exception_set_rsp0
+    test eax, eax
+    jz scheduler_fail
+    mov byte [rel scheduler_active], 1
+    xor edi, edi
+    jmp scheduler_enter_task64
+
 x86_64_process_runqueue_selftest64:
     cli
     cld
@@ -627,6 +709,8 @@ scheduler_runqueue_enqueue64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .mode_valid
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .mode_valid
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     jne .fail
 .mode_valid:
     cmp edi, TASK_SLOT_CAPACITY
@@ -676,6 +760,8 @@ scheduler_runqueue_dequeue64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .mode_valid
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .mode_valid
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     jne .fail
 .mode_valid:
     movzx ecx, byte [rel scheduler_runqueue_count]
@@ -1002,6 +1088,8 @@ scheduler_enter_task64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .extended_slot
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     jne scheduler_fail
 .extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
@@ -1018,6 +1106,8 @@ scheduler_enter_task64:
     je .runqueue_task
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     je .sleep_task
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    je .dynamic_task
     test edi, edi
     jnz .task_b
     cmp qword [r11 + TASK_GENERATION], TASK_A_GENERATION
@@ -1046,6 +1136,23 @@ scheduler_enter_task64:
     jne scheduler_fail
     mov eax, edi
     add al, EVENT_SLEEP_RUNNING_BASE
+    jmp .state_ready
+.dynamic_task:
+    test edi, edi
+    jnz .dynamic_child
+    cmp qword [r11 + TASK_GENERATION], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    mov al, EVENT_DYNAMIC_PARENT_RUN
+    jmp .state_ready
+.dynamic_child:
+    cmp edi, 1
+    jne scheduler_fail
+    mov eax, dword [rel scheduler_dynamic_child_generation]
+    test eax, eax
+    jz scheduler_fail
+    cmp qword [r11 + TASK_GENERATION], rax
+    jne scheduler_fail
+    mov al, EVENT_DYNAMIC_CHILD_RUN
 .state_ready:
     mov qword [r11 + TASK_STATE], TASK_RUNNING
     call scheduler_append_event64
@@ -1070,6 +1177,8 @@ scheduler_enter_task64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
     je .quantum_registers
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .quantum_registers
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     je .quantum_registers
     mov rbx, qword [r11 + TASK_RBX]
     mov rdx, qword [r11 + TASK_RDX]
@@ -1137,6 +1246,8 @@ scheduler_syscall_entry64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .syscall_extended_slot
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .syscall_extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     jne scheduler_fail
 .syscall_extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
@@ -1182,6 +1293,12 @@ scheduler_syscall_entry64:
     je scheduler_handle_sleep64
     cmp qword [rel syscall_rax], REIST_SYS_MONOTONIC_MS
     je scheduler_handle_monotonic64
+    cmp qword [rel syscall_rax], REIST_SYS_GETPID
+    je scheduler_handle_getpid64
+    cmp qword [rel syscall_rax], REIST_SYS_SPAWN
+    je scheduler_handle_spawn64
+    cmp qword [rel syscall_rax], REIST_SYS_WAIT
+    je scheduler_handle_wait64
     cmp qword [rel syscall_rax], REIST_SYS_EXIT
     je scheduler_handle_exit64
     jmp scheduler_fail
@@ -1304,6 +1421,221 @@ scheduler_handle_monotonic64:
     mov byte [rel scheduler_failure_stage], 0x77
     jmp scheduler_runqueue_dispatch64
 
+; RAX points into the current parent's private writable image. The accepted
+; path is intentionally fixed for this isolated proof; no VFS is consulted.
+scheduler_validate_child_path64:
+    test rax, rax
+    jz .fail
+    cmp rax, USER_BASE
+    jb .fail
+    cmp rax, USER_END - CHILD_PATH_CAPACITY
+    ja .fail
+    test rax, 3
+    jnz .fail
+    mov rbx, rax
+    call x86_64_elf64_address_flags64
+    and eax, PF_R | PF_W
+    cmp eax, PF_R | PF_W
+    jne .fail
+    mov rax, rbx
+    sub rax, USER_BASE
+    mov rcx, rax
+    shr rcx, 12
+    cmp rcx, USER_PAGE_COUNT
+    jae .fail
+    cmp qword [r12 + TASK_PRIVATE_FRAMES + rcx * 8], 0
+    je .fail
+    and eax, PAGE_SIZE - 1
+    cmp eax, PAGE_SIZE - CHILD_PATH_CAPACITY
+    ja .fail
+    lea r8, [rel scheduler_dynamic_child_path]
+    xor ecx, ecx
+.compare:
+    cmp ecx, CHILD_PATH_CAPACITY
+    jae .fail
+    mov dl, byte [rbx + rcx]
+    cmp dl, byte [r8 + rcx]
+    jne .fail
+    test dl, dl
+    jz .ok
+    inc ecx
+    jmp .compare
+.ok:
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+; RAX is a four-byte user status pointer. RDX returns the private direct-map
+; address only after bounds, alignment, rights and frame ownership validate.
+scheduler_translate_status_pointer64:
+    test rax, rax
+    jz .fail
+    test rax, 3
+    jnz .fail
+    cmp rax, USER_BASE
+    jb .fail
+    cmp rax, USER_END - 4
+    ja .fail
+    mov rbx, rax
+    call x86_64_elf64_address_flags64
+    test eax, PF_W
+    jz .fail
+    mov rax, rbx
+    sub rax, USER_BASE
+    mov rcx, rax
+    shr rcx, 12
+    cmp rcx, USER_PAGE_COUNT
+    jae .fail
+    mov rdx, qword [r12 + TASK_PRIVATE_FRAMES + rcx * 8]
+    test rdx, rdx
+    jz .fail
+    mov rcx, DIRECT_MAP_BASE
+    add rdx, rcx
+    and eax, PAGE_SIZE - 1
+    add rdx, rax
+    mov eax, 1
+    ret
+.fail:
+    xor edx, edx
+    xor eax, eax
+    ret
+
+; R13 is the signed syscall result and R14b is the bounded event. Request
+; validation has completed before this continuation state is written.
+scheduler_dynamic_resume64:
+    call scheduler_save_syscall_context64
+    mov qword [r12 + TASK_RAX], r13
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov al, r14b
+    call scheduler_append_event64
+    xor edi, edi
+    jmp scheduler_enter_task64
+
+scheduler_handle_getpid64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    jne scheduler_fail
+    test edi, edi
+    jne scheduler_fail
+    cmp qword [r12 + TASK_GENERATION], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    mov r13, TASK_DYNAMIC_PARENT_PID
+    mov r14b, EVENT_DYNAMIC_GETPID
+    jmp scheduler_dynamic_resume64
+
+scheduler_handle_spawn64:
+    mov byte [rel scheduler_failure_stage], 0xAA
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    jne scheduler_fail
+    test edi, edi
+    jne scheduler_fail
+    cmp qword [r12 + TASK_GENERATION], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    mov rax, qword [rel syscall_rdi]
+    call scheduler_validate_child_path64
+    test eax, eax
+    jz .invalid_path
+    cmp byte [rel scheduler_dynamic_child_active], 0
+    jne .busy
+    cmp dword [rel scheduler_dynamic_spawn_count], 2
+    jae .busy
+    cmp byte [rel scheduler_runqueue_membership + 1], 0
+    jne scheduler_fail
+    lea r11, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp qword [r11 + TASK_STATE], TASK_FREE
+    jne scheduler_fail
+    cmp qword [r11 + TASK_GENERATION], 0
+    jne scheduler_fail
+    cmp qword [r11 + TASK_CR3], 0
+    jne scheduler_fail
+
+    call scheduler_save_syscall_context64
+    mov edi, 1
+    call scheduler_build_task64
+    test eax, eax
+    jz scheduler_fail
+    lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    mov eax, TASK_DYNAMIC_CHILD_GEN1
+    cmp dword [rel scheduler_dynamic_spawn_count], 0
+    je .generation_ready
+    mov eax, TASK_DYNAMIC_CHILD_GEN2
+.generation_ready:
+    mov dword [rel scheduler_dynamic_child_generation], eax
+    mov qword [r12 + TASK_GENERATION], rax
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov byte [rel scheduler_dynamic_child_active], 1
+    mov dword [rel scheduler_dynamic_parent_generation], TASK_DYNAMIC_PARENT_GEN
+    mov al, EVENT_DYNAMIC_SPAWN
+    call scheduler_append_event64
+    mov al, EVENT_DYNAMIC_CHILD_READY
+    call scheduler_append_event64
+    mov edi, 1
+    mov esi, dword [rel scheduler_dynamic_child_generation]
+    call scheduler_runqueue_enqueue64
+    test eax, eax
+    jz scheduler_fail
+    inc dword [rel scheduler_dynamic_spawn_count]
+    lea r12, [rel scheduler_tasks]
+    mov qword [r12 + TASK_RAX], TASK_DYNAMIC_CHILD_PID
+    mov qword [r12 + TASK_STATE], TASK_READY
+    xor edi, edi
+    jmp scheduler_enter_task64
+.invalid_path:
+    mov r13, -14
+    mov r14b, EVENT_DYNAMIC_REJECT
+    jmp scheduler_dynamic_resume64
+.busy:
+    mov r13, -16
+    mov r14b, EVENT_DYNAMIC_REJECT
+    jmp scheduler_dynamic_resume64
+
+scheduler_handle_wait64:
+    mov byte [rel scheduler_failure_stage], 0xAB
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    jne scheduler_fail
+    test edi, edi
+    jne scheduler_fail
+    cmp qword [r12 + TASK_GENERATION], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    cmp qword [rel syscall_rdi], TASK_DYNAMIC_CHILD_PID
+    jne .not_child
+    cmp byte [rel scheduler_dynamic_child_active], 1
+    jne .not_child
+    mov eax, dword [rel scheduler_dynamic_child_generation]
+    test eax, eax
+    jz scheduler_fail
+    lea r11, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp qword [r11 + TASK_GENERATION], rax
+    jne scheduler_fail
+    cmp qword [r11 + TASK_STATE], TASK_READY
+    jne .not_child
+    cmp dword [rel scheduler_dynamic_parent_generation], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    mov rax, qword [rel syscall_rsi]
+    call scheduler_translate_status_pointer64
+    test eax, eax
+    jz .invalid_pointer
+
+    mov r15, rdx
+    call scheduler_save_syscall_context64
+    mov qword [r12 + TASK_STATE], TASK_WAITING
+    mov dword [rel scheduler_dynamic_wait_generation], TASK_DYNAMIC_PARENT_GEN
+    mov rax, qword [rel scheduler_dynamic_child_generation]
+    mov dword [rel scheduler_dynamic_wait_child_generation], eax
+    mov qword [rel scheduler_dynamic_wait_status_direct], r15
+    mov al, EVENT_DYNAMIC_PARENT_WAIT
+    call scheduler_append_event64
+    jmp scheduler_runqueue_dispatch64
+.not_child:
+    mov r13, -10
+    mov r14b, EVENT_DYNAMIC_REJECT
+    jmp scheduler_dynamic_resume64
+.invalid_pointer:
+    mov r13, -14
+    mov r14b, EVENT_DYNAMIC_REJECT
+    jmp scheduler_dynamic_resume64
+
 scheduler_handle_yield64:
     mov rax, qword [rel syscall_rcx]
     mov qword [r12 + TASK_RIP], rax
@@ -1417,6 +1749,8 @@ scheduler_handle_exit64:
     je scheduler_handle_runqueue_exit64
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     je scheduler_handle_sleep_exit64
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    je scheduler_handle_dynamic_exit64
     cmp edi, 0
     jne scheduler_fail
     cmp qword [r12 + TASK_GENERATION], TASK_A_GENERATION
@@ -1631,6 +1965,114 @@ scheduler_handle_sleep_exit64:
     mov byte [rel scheduler_final_result], 1
     jmp scheduler_return64
 
+scheduler_handle_dynamic_exit64:
+    mov byte [rel scheduler_failure_stage], 0xAC
+    cmp edi, 1
+    je .child
+    test edi, edi
+    jne scheduler_fail
+    cmp qword [r12 + TASK_GENERATION], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    cmp qword [rel syscall_rdi], DYNAMIC_PARENT_EXIT_STATUS
+    jne scheduler_fail
+    cmp dword [rel scheduler_dynamic_spawn_count], 2
+    jne scheduler_fail
+    cmp dword [rel scheduler_dynamic_completed_count], 2
+    jne scheduler_fail
+    cmp byte [rel scheduler_dynamic_child_active], 0
+    jne scheduler_fail
+    cmp dword [rel scheduler_dynamic_child_generation], 0
+    jne scheduler_fail
+    mov qword [r12 + TASK_STATE], TASK_EXITED
+    mov al, EVENT_DYNAMIC_PARENT_EXIT
+    call scheduler_append_event64
+    mov rax, qword [rel scheduler_original_cr3]
+    mov cr3, rax
+    call scheduler_restore_kernel_segments64
+    xor edi, edi
+    call scheduler_verify_dynamic_magic64
+    test eax, eax
+    jz scheduler_fail
+    xor edi, edi
+    mov esi, TASK_DYNAMIC_PARENT_GEN
+    mov edx, TASK_EXITED
+    mov ecx, EVENT_DYNAMIC_PARENT_FREE
+    call scheduler_reap_terminal64
+    test eax, eax
+    jz scheduler_fail
+    cmp dword [rel scheduler_reap_count], 3
+    jne scheduler_fail
+    call scheduler_verify_final_events64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_cleanup_common64
+    test eax, eax
+    jz scheduler_return_failure64
+    lea rsi, [rel scheduler_dynamic_ok_message]
+    call serial_write64
+    mov byte [rel scheduler_final_result], 1
+    jmp scheduler_return64
+.child:
+    cmp byte [rel scheduler_dynamic_child_active], 1
+    jne scheduler_fail
+    mov eax, dword [rel scheduler_dynamic_child_generation]
+    test eax, eax
+    jz scheduler_fail
+    cmp qword [r12 + TASK_GENERATION], rax
+    jne scheduler_fail
+    cmp qword [rel syscall_rdi], DYNAMIC_CHILD_EXIT_STATUS
+    jne scheduler_fail
+    lea r11, [rel scheduler_tasks]
+    cmp qword [r11 + TASK_STATE], TASK_WAITING
+    jne scheduler_fail
+    cmp qword [r11 + TASK_GENERATION], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    cmp dword [rel scheduler_dynamic_wait_generation], TASK_DYNAMIC_PARENT_GEN
+    jne scheduler_fail
+    mov edx, dword [rel scheduler_dynamic_wait_child_generation]
+    cmp edx, eax
+    jne scheduler_fail
+    mov r15, qword [rel scheduler_dynamic_wait_status_direct]
+    test r15, r15
+    jz scheduler_fail
+
+    mov qword [r12 + TASK_STATE], TASK_ZOMBIE
+    mov al, EVENT_DYNAMIC_CHILD_EXIT
+    call scheduler_append_event64
+    mov rax, qword [rel scheduler_original_cr3]
+    mov cr3, rax
+    call scheduler_restore_kernel_segments64
+    mov edi, 1
+    call scheduler_verify_dynamic_magic64
+    test eax, eax
+    jz scheduler_fail
+    mov dword [r15], DYNAMIC_CHILD_EXIT_STATUS
+    lea r12, [rel scheduler_tasks]
+    mov qword [r12 + TASK_RAX], TASK_DYNAMIC_CHILD_PID
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov edi, 1
+    mov esi, dword [rel scheduler_dynamic_child_generation]
+    mov edx, TASK_ZOMBIE
+    mov ecx, EVENT_DYNAMIC_CHILD_FREE
+    call scheduler_reap_terminal64
+    test eax, eax
+    jz scheduler_fail
+    mov byte [rel scheduler_dynamic_child_active], 0
+    mov dword [rel scheduler_dynamic_child_generation], 0
+    mov dword [rel scheduler_dynamic_parent_generation], 0
+    mov dword [rel scheduler_dynamic_wait_generation], 0
+    mov dword [rel scheduler_dynamic_wait_child_generation], 0
+    mov qword [rel scheduler_dynamic_wait_status_direct], 0
+    inc dword [rel scheduler_dynamic_completed_count]
+    mov al, EVENT_DYNAMIC_PARENT_WAKE
+    call scheduler_append_event64
+    xor edi, edi
+    mov esi, TASK_DYNAMIC_PARENT_GEN
+    call scheduler_runqueue_enqueue64
+    test eax, eax
+    jz scheduler_fail
+    jmp scheduler_runqueue_dispatch64
+
 ; RDI points at the normalized exception frame. Only B's exact terminal UD2
 ; after the third handoff is locally contained; every other frame returns 0.
 x86_64_scheduler_user_exception64:
@@ -1645,6 +2087,8 @@ x86_64_scheduler_user_exception64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
     je x86_64_scheduler_timer_abort64
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je x86_64_scheduler_timer_abort64
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     je x86_64_scheduler_timer_abort64
     jmp .invalid
 .cooperative_exception:
@@ -1782,6 +2226,8 @@ x86_64_scheduler_timer_abort64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
     je .abort
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .abort
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     jne .invalid
 .abort:
     mov rax, qword [rel scheduler_original_cr3]
@@ -2096,6 +2542,8 @@ scheduler_build_task64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .extended_slot
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     jne .fail
 .extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
@@ -2241,6 +2689,8 @@ scheduler_build_task64:
     je .runqueue_ids
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     je .sleep_ids
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    je .dynamic_ids
     test ebx, ebx
     jnz .id_b
     mov qword [r12 + TASK_RDI], TASK_A_ID
@@ -2283,6 +2733,18 @@ scheduler_build_task64:
     add eax, ebx
     mov qword [r12 + TASK_RDI], rax
     mov qword [r12 + TASK_ID], rax
+    jmp .done
+.dynamic_ids:
+    test ebx, ebx
+    jnz .dynamic_child
+    mov qword [r12 + TASK_RDI], TASK_DYNAMIC_PARENT_ID
+    mov qword [r12 + TASK_ID], TASK_DYNAMIC_PARENT_ID
+    jmp .done
+.dynamic_child:
+    cmp ebx, 1
+    jne .fail
+    mov qword [r12 + TASK_RDI], TASK_DYNAMIC_CHILD_ID
+    mov qword [r12 + TASK_ID], TASK_DYNAMIC_CHILD_ID
 .done:
     mov eax, 1
     ret
@@ -2378,6 +2840,28 @@ scheduler_verify_sleep_magic64:
     xor eax, eax
     ret
 
+scheduler_verify_dynamic_magic64:
+    cmp edi, 1
+    ja .fail
+    mov eax, edi
+    shl rax, 8
+    lea r12, [rel scheduler_tasks]
+    add r12, rax
+    mov rax, qword [r12 + TASK_PRIVATE_FRAMES + (PROBE_DATA_PAGE_INDEX * 8)]
+    test rax, rax
+    jz .fail
+    mov rdx, DIRECT_MAP_BASE
+    add rax, rdx
+    lea rdx, [rel scheduler_dynamic_magics]
+    mov rdx, qword [rdx + rdi * 8]
+    cmp qword [rax], rdx
+    jne .fail
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
 ; EDI slot, ESI generation, EDX terminal state, CL free-event.
 scheduler_reap_terminal64:
     cmp edi, TASK_COUNT
@@ -2385,6 +2869,8 @@ scheduler_reap_terminal64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .extended_slot
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
     jne .fail
 .extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
@@ -2465,6 +2951,8 @@ scheduler_verify_final_events64:
     je .runqueue_events
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     je .sleep_events
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_DYNAMIC
+    je .dynamic_events
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
     je .quantum_events
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
@@ -2544,6 +3032,48 @@ scheduler_verify_final_events64:
     inc ebx
     cmp ebx, TASK_SLOT_CAPACITY
     jb .sleep_zero_loop
+    jmp .task_records
+.dynamic_events:
+    cmp byte [rel scheduler_event_count], DYNAMIC_EVENT_COUNT
+    jne .fail
+    lea rsi, [rel scheduler_events]
+    lea rdi, [rel scheduler_dynamic_events]
+    mov ecx, DYNAMIC_EVENT_COUNT
+    repe cmpsb
+    jne .fail
+    cmp byte [rel scheduler_runqueue_head], 0
+    jne .fail
+    cmp byte [rel scheduler_runqueue_tail], 0
+    jne .fail
+    cmp byte [rel scheduler_runqueue_count], 0
+    jne .fail
+    cmp dword [rel scheduler_dynamic_spawn_count], 2
+    jne .fail
+    cmp dword [rel scheduler_dynamic_completed_count], 2
+    jne .fail
+    cmp byte [rel scheduler_dynamic_child_active], 0
+    jne .fail
+    cmp dword [rel scheduler_dynamic_child_generation], 0
+    jne .fail
+    cmp dword [rel scheduler_dynamic_parent_generation], 0
+    jne .fail
+    cmp dword [rel scheduler_dynamic_wait_generation], 0
+    jne .fail
+    cmp dword [rel scheduler_dynamic_wait_child_generation], 0
+    jne .fail
+    cmp qword [rel scheduler_dynamic_wait_status_direct], 0
+    jne .fail
+    lea rdx, [rel scheduler_runqueue_membership]
+    lea rsi, [rel scheduler_runqueue_entries]
+    xor ebx, ebx
+.dynamic_queue_zero:
+    cmp byte [rdx + rbx], 0
+    jne .fail
+    cmp qword [rsi + rbx * 8], 0
+    jne .fail
+    inc ebx
+    cmp ebx, TASK_SLOT_CAPACITY
+    jb .dynamic_queue_zero
     jmp .task_records
 .quantum_events:
     cmp byte [rel scheduler_event_count], 14
@@ -2878,11 +3408,33 @@ scheduler_sleep_ticks:
 scheduler_sleep_magics:
     dq 0x1414141414141414, 0x1515151515151515
     dq 0x1616161616161616, 0x1717171717171717
+scheduler_dynamic_events:
+    db EVENT_DYNAMIC_PARENT_READY, EVENT_DYNAMIC_PARENT_RUN
+    db EVENT_DYNAMIC_GETPID, EVENT_DYNAMIC_PARENT_RUN
+    db EVENT_DYNAMIC_REJECT, EVENT_DYNAMIC_PARENT_RUN
+    db EVENT_DYNAMIC_SPAWN, EVENT_DYNAMIC_CHILD_READY
+    db EVENT_DYNAMIC_PARENT_RUN, EVENT_DYNAMIC_REJECT
+    db EVENT_DYNAMIC_PARENT_RUN, EVENT_DYNAMIC_REJECT
+    db EVENT_DYNAMIC_PARENT_RUN, EVENT_DYNAMIC_REJECT
+    db EVENT_DYNAMIC_PARENT_RUN, EVENT_DYNAMIC_PARENT_WAIT
+    db EVENT_DYNAMIC_CHILD_RUN, EVENT_DYNAMIC_CHILD_EXIT
+    db EVENT_DYNAMIC_CHILD_FREE, EVENT_DYNAMIC_PARENT_WAKE
+    db EVENT_DYNAMIC_PARENT_RUN, EVENT_DYNAMIC_REJECT
+    db EVENT_DYNAMIC_PARENT_RUN, EVENT_DYNAMIC_SPAWN
+    db EVENT_DYNAMIC_CHILD_READY, EVENT_DYNAMIC_PARENT_RUN
+    db EVENT_DYNAMIC_PARENT_WAIT, EVENT_DYNAMIC_CHILD_RUN
+    db EVENT_DYNAMIC_CHILD_EXIT, EVENT_DYNAMIC_CHILD_FREE
+    db EVENT_DYNAMIC_PARENT_WAKE, EVENT_DYNAMIC_PARENT_RUN
+    db EVENT_DYNAMIC_PARENT_EXIT, EVENT_DYNAMIC_PARENT_FREE
+scheduler_dynamic_magics:
+    dq 0x1818181818181818, 0x1919191919191919
+scheduler_dynamic_child_path db "/probe/child", 0
 scheduler_ok_message db "REIST_X86_64_PROCESS_SCHEDULER_OK", 13, 10, 0
 scheduler_preempt_ok_message db "REIST_X86_64_TIMER_PREEMPTION_OK", 13, 10, 0
 scheduler_quantum_ok_message db "REIST_X86_64_QUANTUM_SWITCH_OK", 13, 10, 0
 scheduler_runqueue_ok_message db "REIST_X86_64_RUNQUEUE_LIFECYCLE_OK", 13, 10, 0
 scheduler_sleep_ok_message db "REIST_X86_64_DEADLINE_SLEEP_OK", 13, 10, 0
+scheduler_dynamic_ok_message db "REIST_X86_64_SPAWN_WAIT_OK", 13, 10, 0
 scheduler_stage_message db "REIST_X86_64_PROCESS_SCHEDULER_STAGE_", 0
 scheduler_newline db 13, 10, 0
 
@@ -2947,6 +3499,22 @@ scheduler_idle_wakes:
     resd 1
 scheduler_last_monotonic:
     resq 1
+scheduler_dynamic_spawn_count:
+    resd 1
+scheduler_dynamic_completed_count:
+    resd 1
+scheduler_dynamic_child_generation:
+    resd 1
+scheduler_dynamic_parent_generation:
+    resd 1
+scheduler_dynamic_wait_generation:
+    resd 1
+scheduler_dynamic_wait_child_generation:
+    resd 1
+scheduler_dynamic_wait_status_direct:
+    resq 1
+scheduler_dynamic_child_active:
+    resb 1
 scheduler_event_count:
     resb 1
 scheduler_events:

@@ -55,6 +55,7 @@ extern x86_64_process_preemption_selftest64
 extern x86_64_process_quantum_selftest64
 extern x86_64_process_runqueue_selftest64
 extern x86_64_process_deadline_sleep_selftest64
+extern x86_64_process_spawn_wait_selftest64
 extern _text_start
 extern _text_end
 extern _rodata_start
@@ -397,6 +398,9 @@ x86_64_nx_resume:
     call x86_64_process_deadline_sleep_selftest64
     test eax, eax
     jz deadline_sleep_state_error
+    call x86_64_process_spawn_wait_selftest64
+    test eax, eax
+    jz spawn_wait_state_error
     lea rsi, [rel exception_recovery_message]
     call serial_write64
     jmp halt64
@@ -483,6 +487,12 @@ deadline_sleep_state_error:
     call serial_write64
     jmp halt64
 
+spawn_wait_state_error:
+    call serial_init64
+    lea rsi, [rel spawn_wait_state_error_message]
+    call serial_write64
+    jmp halt64
+
 serial_init64:
     mov dx, COM1_DATA + 1
     xor al, al
@@ -556,6 +566,7 @@ process_preemption_state_error_message db "REIST_X86_64_TIMER_PREEMPTION_ERROR",
 quantum_switch_state_error_message db "REIST_X86_64_QUANTUM_SWITCH_ERROR", 13, 10, 0
 runqueue_lifecycle_state_error_message db "REIST_X86_64_RUNQUEUE_LIFECYCLE_ERROR", 13, 10, 0
 deadline_sleep_state_error_message db "REIST_X86_64_DEADLINE_SLEEP_ERROR", 13, 10, 0
+spawn_wait_state_error_message db "REIST_X86_64_SPAWN_WAIT_ERROR", 13, 10, 0
 success_message db "REIST_X86_64_LONG_MODE_BOOT_OK", 13, 10, 0
 higher_half_paging_message db "REIST_X86_64_HIGHER_HALF_PAGING_OK", 13, 10, 0
 exception_recovery_message db "REIST_X86_64_EXCEPTION_RECOVERY_OK", 13, 10, 0

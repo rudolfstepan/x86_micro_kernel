@@ -183,6 +183,16 @@ absolute Nachweishorizont bleibt trotz eines beim ersten Ring-3-Eintritt
 moeglichen anstehenden PIT-Ticks auf acht Ticks begrenzt. Dies ist weiterhin
 keine dynamische oder produktive x86_64-Schedulerintegration.
 
+R8.1n ergaenzt einen ersten dynamischen, weiterhin fest begrenzten
+Eltern-Kind-Lebenszyklus. Der Parent startet allein und verwendet die
+unveraenderten REIST-v1-Indizes `GETPID` 22, `SPAWN` 23, `WAIT` 24 und
+`EXIT` 9. Nur der exakt begrenzt gelesene Pfad `/probe/child` darf Slot 1 aus
+dem bereits validierten ELF64-Abbild erzeugen. `WAIT` prueft PID, Generation,
+Elternbindung und privaten Statuszeiger, blockiert den Parent und konsumiert
+Status 77 genau einmal. Der Slot wird erst nach vollstaendigem Reap mit der
+neuen Generation 32 wiederverwendet. Allgemeines VFS-Laden, `SPAWNV`,
+wait-any, Signale und produktive Prozessintegration bleiben offen.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

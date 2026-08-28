@@ -210,6 +210,20 @@ der 89.188-Byte-Build mit 10.088-Byte-Probe und der kurze Ein-vCPU-/32-MiB-
 QEMU-Lauf bestanden. Die x86_64-Queue ist wieder leer; dynamische Tasks,
 Prioritaeten, SMP und produktive Integration bleiben offen.
 
+**R8.1n ist abgeschlossen:** Der Parent startet allein und erzeugt Kind-Slot 1
+ueber `SPAWN` 23 erst nach begrenzter privater Pfadpruefung. `GETPID` 22 und
+`WAIT` 24 behalten ihre REIST-v1-Konventionen. Wait bindet PID, Generation,
+Elternidentitaet und privaten Statusausgang, blockiert ohne Polling, konsumiert
+Status 77 genau einmal und erlaubt Slot-Wiederverwendung erst als Generation
+32. Nullpfad, doppelter Spawn, fremde PID, Null-Ausgang und stales Wait werden
+vor Seiteneffekten abgewiesen. 32 Quelltests, der 92.372-Byte-Build mit
+10.264-Byte-Probe und der kurze QEMU-Lauf bestanden.
+
+**R8.2a ist aktiv:** Der naechste Meilenstein fuehrt einen gepackten,
+versionierten und vollstaendig validierten Bootstrap-Handoff an einen
+freestanding nach SysV AMD64 kompilierten C-Kern ein. Der produktive i386-Pfad
+bleibt unveraendert.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: kein Queuepaket aktiv; R8.1l ist abgeschlossen
+Aktives Thema: R8.2a – freestanding x86_64-C-Kern-Handoff
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -157,6 +157,16 @@ anstehenden PIT-Tick auf, ohne eine unbeschraenkte Wartezeit einzufuehren.
 kurze Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Der Gast weckte exakt 1-2-0,
 akzeptierte Status 120 bis 123, leerte beide Queues und meldete
 `DEADLINE_SLEEP_OK` vor dem unveraenderten Abschlussmarker. Die Queue ist leer.
+
+R8.1n ist abgeschlossen. Parent-Slot 0 erzeugt Kind-Slot 1 erst nach einer
+begrenzten privaten Pfadpruefung. `WAIT` blockiert den Parent, konsumiert
+Kindstatus 77 genau einmal und gibt den Slot erst nach Reap fuer Generation 32
+frei. Nullpfad, doppelter Spawn, fremde PID, Null-Statusausgang und stales Wait
+werden vor Seiteneffekten abgelehnt. 32 Quellvertragstests, der 92.372-Byte-
+Build mit 10.264-Byte-Probe und der kurze Ein-vCPU-/32-MiB-QEMU-Lauf bestanden;
+`SPAWN_WAIT_OK` erschien vor dem unveraenderten Abschlussmarker. R8.2a ist nun
+aktiv und fuehrt einen versionierten Bootstrap-Handoff an freestanding
+x86_64-C-Code ein.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt

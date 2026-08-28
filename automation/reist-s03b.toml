@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1n-x86_64-spawn-wait"
+active_id = "R8.2a-x86_64-c-core-handoff"
 
 [policy]
 one_package_per_run = true
@@ -11086,7 +11086,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1n-x86_64-spawn-wait"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 parent child spawn and wait proof"
@@ -11124,6 +11124,51 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: add bounded x86_64 spawn wait lifecycle"
+evidence = [
+  "32 x86_64 source-contract tests passed including pre-mutation path pointer child identity and status-output validation",
+  "The isolated build produced a 92372-byte bootstrap and a 10264-byte ELF64 user probe",
+  "The bounded one-vCPU 32-MiB QEMU run completed two child generations and published SPAWN_WAIT_OK before the unchanged recovery marker",
+  "Null path duplicate spawn wrong PID null status pointer and stale consumed wait were rejected while slot 1 was reused only as generation 32"
+]
+
+[[packages]]
+id = "R8.2a-x86_64-c-core-handoff"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Establish a freestanding x86_64 C core handoff"
+scope = "Turn the accepted isolated x86_64 assembly bootstrap into a bounded freestanding C-kernel foundation without changing the production i386 build. Define one packed append-only version-1 bootstrap handoff owned by assembly with exact size flags canonical higher-half CR3 direct-map base managed-memory limit ELF64 probe bounds and fixed-capacity lifecycle capabilities. Enter one SysV AMD64 C function on a 16-byte-aligned dedicated stack only after all existing R8.1 markers pass, validate every field relation reserved byte and range before touching C-owned state, prove C data and BSS initialization fixed-width arithmetic bounded copies and a C-to-assembly serial callback, then zero the handoff and C state before publishing C_CORE_HANDOFF_OK. Compile with the repository's normal x86_64 freestanding toolchain and reject stack protector red-zone unwind runtime constructors libc compiler builtins writable-executable sections undefined symbols and unexpected relocations. Keep devices VFS production process integration SMP HPASA physical hardware and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "config/x86_64_bootstrap.ld",
+  "scripts/build-x86_64-bootstrap.ps1", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/kernel/bootstrap_core.h", "arch/x86_64/kernel/bootstrap_core.c",
+  "scripts/run_qemu_x86_64_boot.py", "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 source objects targets images installers syscall numbers and accepted x86_64 markers remain behaviorally unchanged",
+  "the handoff is packed fixed-size versioned append-only and contains no ambient pointer outside named canonical kernel symbols",
+  "assembly validates CPU paging memory process and cleanup proofs before publishing the handoff and transferring to C",
+  "C validates version size reserved bytes flags canonical addresses alignment ranges and cross-field relations before changing C-owned state",
+  "the SysV AMD64 entry stack is 16-byte aligned and the C target uses no red zone stack protector unwind runtime constructors libc or heap",
+  "all C storage copies arithmetic and loops are compile-time bounded and no undefined symbol or unexpected relocation remains",
+  "success requires C data BSS callback and fixed-width arithmetic proofs followed by zeroed handoff and C-owned mutable state",
+  "the handoff grants no device VFS DMA process spawn SMP or fail-operational authority"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 artifact or prior accepted x86_64 runtime marker changes",
+  "C can observe an unvalidated handoff or retain handoff authority after success or failure",
+  "the C object introduces red-zone stack-protector unwind constructor libc heap undefined-symbol writable-executable or relocation debt",
+  "a loop copy arithmetic operation or serial callback can exceed a compile-time bound",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "kernel: establish freestanding x86_64 C handoff"
 evidence = []
 
 [[packages]]

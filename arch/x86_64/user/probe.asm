@@ -41,6 +41,10 @@ _start:
     je sleep_task_2
     cmp edi, 0x17
     je sleep_task_3
+    cmp edi, 0x18
+    je dynamic_parent
+    cmp edi, 0x19
+    je dynamic_child
     int3
 
 probe_exit:
@@ -249,6 +253,94 @@ sleep_task_3:
     syscall
     ud2
 
+dynamic_parent:
+    mov rbx, 0x1818181818181818
+    mov qword [rel probe_data], rbx
+    mov eax, 22
+    syscall
+    cmp rax, 200
+    jne scheduler_isolation_failure
+
+    mov eax, 23
+    xor edi, edi
+    syscall
+    cmp rax, -14
+    jne scheduler_isolation_failure
+
+    mov eax, 23
+    lea rdi, [rel dynamic_child_path]
+    syscall
+    cmp rax, 201
+    jne scheduler_isolation_failure
+    mov r14, rax
+
+    mov eax, 23
+    lea rdi, [rel dynamic_child_path]
+    syscall
+    cmp rax, -16
+    jne scheduler_isolation_failure
+
+    mov eax, 24
+    mov edi, 202
+    lea rsi, [rel dynamic_wait_status]
+    syscall
+    cmp rax, -10
+    jne scheduler_isolation_failure
+
+    mov eax, 24
+    mov rdi, r14
+    xor esi, esi
+    syscall
+    cmp rax, -14
+    jne scheduler_isolation_failure
+
+    mov eax, 24
+    mov rdi, r14
+    lea rsi, [rel dynamic_wait_status]
+    syscall
+    cmp rax, 201
+    jne scheduler_isolation_failure
+    cmp dword [rel dynamic_wait_status], 77
+    jne scheduler_isolation_failure
+
+    mov eax, 24
+    mov rdi, r14
+    lea rsi, [rel dynamic_wait_status]
+    syscall
+    cmp rax, -10
+    jne scheduler_isolation_failure
+
+    mov dword [rel dynamic_wait_status], 0x55555555
+    mov eax, 23
+    lea rdi, [rel dynamic_child_path]
+    syscall
+    cmp rax, 201
+    jne scheduler_isolation_failure
+    mov r14, rax
+
+    mov eax, 24
+    mov rdi, r14
+    lea rsi, [rel dynamic_wait_status]
+    syscall
+    cmp rax, 201
+    jne scheduler_isolation_failure
+    cmp dword [rel dynamic_wait_status], 77
+    jne scheduler_isolation_failure
+    cmp qword [rel probe_data], rbx
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 130
+    syscall
+    ud2
+
+dynamic_child:
+    mov rbx, 0x1919191919191919
+    mov qword [rel probe_data], rbx
+    mov eax, 9
+    mov edi, 77
+    syscall
+    ud2
+
 section .data
 align 8
 probe_data:
@@ -258,6 +350,12 @@ probe_progress:
     dq 0
 probe_runqueue_fault:
     dq runqueue_fault
+align 4
+dynamic_child_path:
+    db "/probe/child", 0
+align 4
+dynamic_wait_status:
+    dd 0x55555555
 
 section .bss
 alignb 16

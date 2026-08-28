@@ -598,6 +598,45 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REIST_X86_64_DEADLINE_SLEEP_OK", runner)
         self.assertIn("REIST_X86_64_DEADLINE_SLEEP_ERROR", runner)
 
+    def test_spawn_wait_lifecycle_is_dynamic_bounded_and_generation_safe(self):
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        probe = self.read("arch/x86_64/user/probe.asm")
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("SCHEDULER_MODE_DYNAMIC     equ 6", scheduler)
+        self.assertIn("REIST_SYS_GETPID           equ 22", scheduler)
+        self.assertIn("REIST_SYS_SPAWN            equ 23", scheduler)
+        self.assertIn("REIST_SYS_WAIT             equ 24", scheduler)
+        self.assertIn("TASK_DYNAMIC_CHILD_GEN1    equ 31", scheduler)
+        self.assertIn("TASK_DYNAMIC_CHILD_GEN2    equ 32", scheduler)
+        self.assertIn("x86_64_process_spawn_wait_selftest64:", scheduler)
+        self.assertIn("scheduler_validate_child_path64:", scheduler)
+        self.assertIn("CHILD_PATH_CAPACITY        equ 16", scheduler)
+        spawn = scheduler.index("scheduler_handle_spawn64:")
+        validate = scheduler.index("call scheduler_validate_child_path64", spawn)
+        build = scheduler.index("call scheduler_build_task64", spawn)
+        publish = scheduler.index(
+            "mov byte [rel scheduler_dynamic_child_active], 1", spawn
+        )
+        self.assertLess(validate, build)
+        self.assertLess(build, publish)
+        wait = scheduler.index("scheduler_handle_wait64:")
+        translate = scheduler.index(
+            "call scheduler_translate_status_pointer64", wait
+        )
+        block = scheduler.index("mov qword [r12 + TASK_STATE], TASK_WAITING", wait)
+        self.assertLess(translate, block)
+        self.assertIn("scheduler_dynamic_wait_child_generation", scheduler)
+        self.assertIn("scheduler_dynamic_events:", scheduler)
+        self.assertIn("dynamic_parent:", probe)
+        self.assertIn("dynamic_child:", probe)
+        self.assertIn('db "/probe/child", 0', probe)
+        self.assertIn("mov edi, 130", probe)
+        self.assertIn("mov edi, 77", probe)
+        self.assertIn("call x86_64_process_spawn_wait_selftest64", entry)
+        self.assertIn("REIST_X86_64_SPAWN_WAIT_OK", runner)
+        self.assertIn("REIST_X86_64_SPAWN_WAIT_ERROR", runner)
+
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")
         self.assertIn("kein vollstaendiger REIST-Kernel", contract)
