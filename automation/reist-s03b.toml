@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2c-x86_64-scheduled-shell"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11224,7 +11224,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2c-x86_64-scheduled-shell"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run the interactive x86_64 shell through the bounded process scheduler"
@@ -11259,7 +11259,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: schedule interactive x86_64 shell"
-evidence = []
+evidence = [
+  "all 42 x86_64 source-contract tests passed including boot-time scheduler admission exact generation validation pre-effect shell-buffer checks queue-mediated nonterminal returns and terminal reap ordering",
+  "the isolated x86_64 bootstrap build completed with the unchanged independently linked compact shell ELF and without changing any production i386 target",
+  "the bounded one-vCPU 32-MiB QEMU dialogue preserved all accepted markers sent exact INFO and EXIT commands and observed RING3_SHELL_EXIT_OK SCHEDULED_SHELL_OK and RING3_SHELL_OK after cleanup",
+  "the final shell generation was reaped with an empty runqueue zeroed task record and tables restored loader selector TSS syscall MSRs frames and free count; no VFS driver SMP device or physical-hardware authority was added and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

@@ -258,10 +258,11 @@ class X8664BootstrapContractTests(unittest.TestCase):
         entry = self.read("arch/x86_64/boot/entry.asm")
         runner = self.read("scripts/run_qemu_x86_64_boot.py")
         c_marker = entry.index("lea rsi, [rel c_core_handoff_message]")
-        shell_call = entry.index("call x86_64_user_shell64", c_marker)
+        shell_call = entry.index("call x86_64_process_shell64", c_marker)
         final_marker = entry.index("lea rsi, [rel ring3_shell_message]", shell_call)
         self.assertLess(c_marker, shell_call)
         self.assertLess(shell_call, final_marker)
+        self.assertNotIn("call x86_64_user_shell64", entry)
         self.assertIn('SUCCESS = "REIST_X86_64_RING3_SHELL_OK"', runner)
         self.assertIn('"-serial", "stdio"', runner)
         self.assertIn('process.stdin.write(b"INFO\\n")', runner)
@@ -273,9 +274,38 @@ class X8664BootstrapContractTests(unittest.TestCase):
             "REIST_X86_64_RING3_SHELL_READY",
             "REIST_X86_64_RING3_SHELL_INFO_OK",
             "REIST_X86_64_RING3_SHELL_EXIT_OK",
+            "REIST_X86_64_SCHEDULED_SHELL_OK",
             "REIST_X86_64_RING3_SHELL_ERROR",
         ):
             self.assertIn(marker, runner)
+
+    def test_ring3_shell_uses_generation_scoped_scheduler_slot(self):
+        source = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        shell = source.index("x86_64_process_shell64:")
+        dispatch = source.index("call scheduler_runqueue_dispatch64", shell)
+        self.assertIn("SCHEDULER_MODE_SHELL", source)
+        self.assertIn("TASK_SHELL_GENERATION", source)
+        self.assertIn("call x86_64_elf64_select_image64", source[shell:dispatch])
+        self.assertIn("call scheduler_build_task64", source[shell:dispatch])
+        self.assertIn("mov qword [r12 + TASK_STATE], TASK_READY", source[shell:dispatch])
+        self.assertIn("call scheduler_runqueue_enqueue64", source[shell:dispatch])
+        self.assertIn("scheduler_handle_shell_read64:", source)
+        self.assertIn("scheduler_handle_shell_write64:", source)
+        self.assertIn("scheduler_shell_resume64:", source)
+        self.assertIn("call scheduler_save_syscall_context64", source)
+        self.assertIn("jmp scheduler_runqueue_dispatch64", source)
+        read = source.index("scheduler_handle_shell_read64:")
+        write = source.index("scheduler_handle_shell_write64:", read)
+        self.assertLess(source.index("call scheduler_validate_shell_buffer64", read, write),
+                        source.index("mov byte [rdi], al", read, write))
+        write_end = source.index("scheduler_handle_shell_yield64:", write)
+        self.assertLess(source.index("call scheduler_validate_shell_buffer64", write, write_end),
+                        source.index("call serial_putc64", write, write_end))
+        exit_handler = source.index("scheduler_handle_shell_exit64:")
+        cleanup = source.index("call scheduler_cleanup_common64", exit_handler)
+        marker = source.index("REIST_X86_64_SCHEDULED_SHELL_OK", cleanup)
+        self.assertLess(exit_handler, cleanup)
+        self.assertLess(cleanup, marker)
 
     def test_user_page_tables_are_private_fixed_and_wx(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")

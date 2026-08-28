@@ -94,7 +94,7 @@ extern x86_64_process_quantum_selftest64
 extern x86_64_process_runqueue_selftest64
 extern x86_64_process_deadline_sleep_selftest64
 extern x86_64_process_spawn_wait_selftest64
-extern x86_64_user_shell64
+extern x86_64_process_shell64
 extern _text_start
 extern _text_end
 extern _rodata_start
@@ -492,7 +492,7 @@ x86_64_nx_resume:
     jz c_core_handoff_state_error
     lea rsi, [rel c_core_handoff_message]
     call serial_write64
-    call x86_64_user_shell64
+    call x86_64_process_shell64
     test eax, eax
     jz ring3_shell_state_error
     lea rsi, [rel ring3_shell_message]

@@ -242,14 +242,16 @@ Quellvertragstests, der 117.260-Byte-Bootstrap mit kompakter
 1.256-Byte-RX-Shell und der begrenzte Ein-vCPU-/32-MiB-QEMU-Lauf bis
 `RING3_SHELL_OK` bestanden; die x86_64-Queue ist leer.
 
-**R8.2c ist in Arbeit:** Die interaktive Shell wird als genau eine
+**R8.2c ist abgeschlossen:** Die interaktive Shell ist als genau eine
 generationengebundene READY-Task in die bestehende feste x86_64-Runqueue
-aufgenommen. Der Boot-Sonderaufruf entfaellt; nichtterminale READ-/WRITE-/
+aufgenommen. Der Boot-Sonderaufruf ist entfallen; nichtterminale READ-/WRITE-/
 YIELD-Ergebnisse laufen ueber denselben validierten Scheduler- und IRETQ-
-Rueckweg. EXIT muss die Generation exakt reapen, Queue, Seitentabellen,
-Loaderauswahl, TSS, Syscall-MSRs und Frames bereinigen und den Freizaehler
-wiederherstellen. VFS, allgemeine Terminaltreiber, Prioritaeten, SMP und
-produktive i386-Integration bleiben getrennte Schritte.
+Rueckweg. EXIT reapt die exakte Generation und bereinigt Queue,
+Seitentabellen, Loaderauswahl, TSS, Syscall-MSRs und Frames vor Wiederherstellung
+des Freizaehlers. 42 Quellvertragstests, der isolierte Build und der begrenzte
+Ein-vCPU-QEMU-Dialog bis `SCHEDULED_SHELL_OK` und `RING3_SHELL_OK` bestanden;
+die x86_64-Queue ist leer. VFS, allgemeine Terminaltreiber, Prioritaeten, SMP
+und produktive i386-Integration bleiben getrennte Schritte.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
