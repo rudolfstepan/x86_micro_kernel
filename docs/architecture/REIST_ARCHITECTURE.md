@@ -208,6 +208,15 @@ Der von QEMU/Multiboot v1 benoetigte aeussere ELF32-Container bettet dafuer ein
 separat vollstaendig gelinktes ELF64-C-Payload seitenweise ein; der produktive
 i386-Build und sein Medienformat bleiben unveraendert.
 
+R8.2b buendelt den folgenden isolierten Weg bis zu einer interaktiven
+Ring-3-Shell. Ein separates freestanding-C-ELF64 wird durch den bestehenden
+begrenzten Loader in eine private Seitentabelle gestaged. Die
+produktionskompatiblen REIST-v1-Indizes `READ` 15, `WRITE` 20, `YIELD` 40 und
+`EXIT` 9 erhalten nur eine feste serielle Standardkanalvermittlung. Pointer,
+Rechte, Laengen, CR3, RIP, RFLAGS und Userstack werden vor Wirkung geprueft;
+Reads sind nichtblockierend und nichtterminale Rueckwege verwenden `IRETQ`.
+Dies ist kein VFS-, allgemeiner Terminal-, Treiber- oder Produktionspfad.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

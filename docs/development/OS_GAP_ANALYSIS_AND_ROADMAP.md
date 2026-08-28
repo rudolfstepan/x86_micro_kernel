@@ -231,9 +231,13 @@ i386-Pfad bleibt unveraendert; die x86_64-Queue ist wieder leer.
 Die Abnahme bestand 37 Quelltests, den isolierten Build eines 106.808-Byte-
 Bootstraps mit 13.328-Byte-ELF64-C-Payload und den begrenzten Ein-vCPU-QEMU-
 Lauf bis `C_CORE_HANDOFF_OK`.
-Die Abnahme bestand 37 Quelltests, den isolierten Build eines 106.808-Byte-
-Bootstraps mit 13.328-Byte-ELF64-C-Payload und den begrenzten Ein-vCPU-QEMU-
-Lauf bis `C_CORE_HANDOFF_OK`.
+
+**R8.2b ist aktiv:** Der naechste gebuendelte Schnitt baut und startet eine
+separate freestanding-ELF64-Shell in Ring 3. Die bestehenden REIST-v1-Indizes
+`READ` 15, `WRITE` 20, `YIELD` 40 und `EXIT` 9 werden ueber einen vollstaendig
+validierten, nicht wartenden seriellen Vermittlungspfad angebunden. Der kurze
+QEMU-Gate fuehrt einen echten `INFO`-/`EXIT`-Dialog und verlangt danach die
+vollstaendige Ruecknahme aller temporaeren User- und Syscall-Ressourcen.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

@@ -377,8 +377,13 @@ Objekt und das unveraenderte 10.264-Byte-User-Probeabbild. Der begrenzte
 Ein-vCPU-/32-MiB-QEMU-Lauf meldete nach allen R8.1-Markern geordnet
 `REIST_X86_64_C_CALLBACK_OK` und `REIST_X86_64_C_CORE_HANDOFF_OK`.
 
-Alle 37 Quellvertragstests bestanden. Der Build erzeugte den 106.808-Byte-
-Bootstrap, das 13.328-Byte-gelinkte ELF64-C-Payload, dessen 5.496-Byte-
-Objekt und das unveraenderte 10.264-Byte-User-Probeabbild. Der begrenzte
-Ein-vCPU-/32-MiB-QEMU-Lauf meldete nach allen R8.1-Markern geordnet
-`REIST_X86_64_C_CALLBACK_OK` und `REIST_X86_64_C_CORE_HANDOFF_OK`.
+## Aktiver Ring-3-Shell-Schnitt R8.2b
+
+R8.2b fuehrt ein getrennt gelinktes freestanding-C-ELF64 als einzigen
+interaktiven Ring-3-Prozess aus. Nur die bestehenden REIST-v1-Indizes `READ`
+15, `WRITE` 20, `YIELD` 40 und `EXIT` 9 werden fuer dessen feste serielle
+Standardkanaele vermittelt. Reads blockieren nicht, Writes bleiben auf 64
+Byte begrenzt und jeder nichtterminale Rueckweg verwendet einen validierten
+`IRETQ`-Frame. Der automatisierte Dialog ist auf `INFO` und `EXIT` begrenzt;
+allgemeines VFS-Laden und produktive Terminal- oder Geraeteautoritaet folgen
+nicht aus diesem Nachweis.

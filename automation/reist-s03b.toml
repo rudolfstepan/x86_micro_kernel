@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2b-x86_64-ring3-shell"
 
 [policy]
 one_package_per_run = true
@@ -11175,6 +11175,47 @@ evidence = [
   "the bounded one-vCPU 32-MiB QEMU run preserved every accepted R8.1 marker then proved C_CALLBACK_OK and zeroed handoff and C state before C_CORE_HANDOFF_OK",
   "the production i386 build graph device VFS DMA SMP and physical-hardware authority remain unchanged and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2b-x86_64-ring3-shell"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Boot a bounded interactive x86_64 Ring-3 shell"
+scope = "Complete the next cohesive isolated x86_64 vertical slice from the accepted freestanding C handoff to one real interactive Ring-3 shell process without changing any production i386 artifact. Build a separate freestanding C ELF64 shell with the existing REIST-v1 READ 15 WRITE 20 YIELD 40 and EXIT 9 indices, validate and stage it through the existing fixed eight-page loader window, enter it through the existing private CR3 TSS and architectural SYSCALL path, and expose only bounded COM1 standard-input and standard-output mediation. Every syscall must validate active generation CR3 RIP RFLAGS descriptor pointer range permissions length and user stack before effect; reads are nonblocking and return EAGAIN instead of waiting, writes are capped at 64 bytes, unknown operations return ENOSYS, and return-to-user uses a constructed validated IRETQ frame rather than SYSRET. The shell has a fixed 16-byte command buffer and bounded polling budget, supports exact HELP INFO and EXIT commands, and publishes readiness and command evidence over serial. Extend the QEMU runner into a bounded stdin/stdout dialogue that sends INFO then EXIT and requires ordered Ring-3 output, complete cleanup of syscall MSRs TSS CR3 tables stack ELF frames loader selection and free count, and a final RING3_SHELL_OK marker. Keep VFS path loading general terminals keyboard drivers scheduling SMP devices networking GUI physical hardware and all claims of a complete x86_64 system outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "config/x86_64_user_shell.ld",
+  "scripts/build-x86_64-bootstrap.ps1", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/exec/elf64_loader.asm", "arch/x86_64/proc/user_execution.asm",
+  "arch/x86_64/user/shell.c", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 objects images installers syscall numbers and every accepted x86_64 marker remain behaviorally unchanged",
+  "the shell is an independently linked W^X ELF64 image and runs only in the existing private CPL3 address space with a separate NX stack",
+  "READ 15 WRITE 20 YIELD 40 and EXIT 9 retain the production register convention while no other syscall or ambient authority is admitted",
+  "every user pointer range permission descriptor length RIP RFLAGS CR3 stack and active lifecycle field is validated before serial or memory effect",
+  "serial reads never wait and serial writes commands polls copies loops and dialogue steps have fixed compile-time bounds",
+  "every nonterminal syscall returns through a validated IRETQ frame and no untrusted context uses SYSRET",
+  "success restores kernel CR3 TSS syscall MSRs tables stack loader selection frames and the initial free count before RING3_SHELL_OK",
+  "the package grants no VFS device DMA SMP network GUI production-shell or physical-hardware authority"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 artifact prior accepted x86_64 marker or existing syscall number changes",
+  "a user-controlled pointer register frame descriptor length or loader choice reaches an effect before complete validation",
+  "serial input waits in the kernel or any shell command copy poll syscall or runner dialogue is unbounded",
+  "cleanup leaves user CR3 TSS syscall MSR frame table loader or serial authority active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "shell: boot bounded x86_64 ring3 console"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: keines – R8.2a freestanding x86_64-C-Kern-Handoff abgeschlossen
+Aktives Thema: R8.2b – gebundene interaktive x86_64-Ring-3-Shell
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -177,8 +177,12 @@ und C-Zustand. Assembly prueft die Loeschung vor `C_CORE_HANDOFF_OK`. Geraete,
 VFS, DMA, SMP und produktive x86_64-Integration bleiben ausserhalb.
 37 Quelltests, der 106.808-Byte-Bootstrap, das 13.328-Byte-gelinkte C-Payload
 und der kurze Ein-vCPU-QEMU-Nachweis bestanden; die Queue ist leer.
-37 Quelltests, der 106.808-Byte-Bootstrap, das 13.328-Byte-gelinkte C-Payload
-und der kurze Ein-vCPU-QEMU-Nachweis bestanden; die Queue ist leer.
+
+R8.2b ist aktiv und buendelt den naechsten vollstaendigen Pfad: ein separates
+freestanding-ELF64-Shellabbild, private Ring-3-Ausfuehrung, begrenzte serielle
+READ-/WRITE-Vermittlung mit den bestehenden REIST-v1-Indizes und einen echten
+automatisierten `INFO`-/`EXIT`-Dialog. VFS, allgemeine Terminal- und
+Geraetetreiber sowie produktive x86_64-Integration bleiben getrennt.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt
