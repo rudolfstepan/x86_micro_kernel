@@ -264,6 +264,30 @@ Ein-vCPU-QEMU-Dialog bis `C_KERNEL_CONTROL_OK` und `RING3_SHELL_OK` bestanden;
 die x86_64-Queue ist leer. VFS, allgemeine Prozessdienste, Terminals, Treiber,
 SMP und die produktive x86_64-Integration bleiben Folgearbeiten.
 
+**R8.2e ist abgeschlossen:** Die feste physische Verwaltung und RW/NX-Direct-
+Map des isolierten x86_64-Artefakts wurden von 64 auf genau 128 MiB erweitert.
+Zwei feste 4.096-Byte-Bitmaps und 64 feste Page Tables bleiben die harte
+Autoritaetsgrenze. Ein Ein-vCPU-/128-MiB-QEMU-Lauf muss einen von Multiboot
+autorisierten Frame oberhalb 64 MiB ueber denselben Allocator allokieren,
+nullen, ueber die Direct-Map lesen und schreiben, wieder freigeben und den
+exakten Freizaehler herstellen. Der C-Handoff behaelt sein Layout und
+aktualisiert nur das vorhandene Speicherlimit. Dynamische Seitentabellen,
+Speicher oberhalb 128 MiB, NUMA, SMP, Treiber und produktive Systemimages
+bleiben Folgearbeiten. Alle 45 Quellvertragstests bestanden. Der isolierte
+Build erzeugte ein 120.664-Byte-Bootstrap; seine vergroesserte Assembly-BSS
+endet bei `0x00183000`, die C-Bruecke beginnt bei `0x00184000`, und das
+Gesamtende bleibt mit `0x001880e0` unter 2 MiB. Der begrenzte QEMU-Dialog
+meldete `PHYSICAL_MEMORY_128M_OK` geordnet vor allen unveraenderten Loader-,
+Scheduler-, Shell- und C-Control-Markern bis `RING3_SHELL_OK`; die x86_64-
+Queue ist leer.
+
+Die bereits abgenommenen Loader- und Prozessverbraucher behalten vorerst ihre
+64-MiB-Allokationsgrenze. Der allgemeine Aufruf kann ihnen deshalb bei
+Erschoepfung keinen hohen Frame liefern, den ihre bestehende Validierung erst
+nach der Allokation ablehnen wuerde. Die kontrollierte Freigabe der oberen
+Haelfte fuer diese Verbraucher bleibt ein eigener gemeinsamer ABI- und
+Cleanupschritt.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

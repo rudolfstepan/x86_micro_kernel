@@ -375,14 +375,14 @@ x86_64-bootstrap:
 		arch/x86_64/kernel/bootstrap_core.c -o $(X86_64_C_CORE_OBJ)
 	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings --no-undefined \
 		-z noexecstack --strip-debug -e x86_64_c_core_entry \
-		--section-start=.text=0xFFFFFFFF80163000 \
-		--section-start=.rodata=0xFFFFFFFF80164000 \
-		--section-start=.data=0xFFFFFFFF80165000 \
-		--section-start=.bss=0xFFFFFFFF80166000 \
-		--defsym=x86_64_c_serial_write64=0xFFFFFFFF80162000 \
-		--defsym=x86_64_c_process_shell64=0xFFFFFFFF80162100 \
-		--defsym=x86_64_c_handoff=0xFFFFFFFF80166020 \
-		--defsym=x86_64_c_control_handoff=0xFFFFFFFF801660A0 \
+		--section-start=.text=0xFFFFFFFF80185000 \
+		--section-start=.rodata=0xFFFFFFFF80186000 \
+		--section-start=.data=0xFFFFFFFF80187000 \
+		--section-start=.bss=0xFFFFFFFF80188000 \
+		--defsym=x86_64_c_serial_write64=0xFFFFFFFF80184000 \
+		--defsym=x86_64_c_process_shell64=0xFFFFFFFF80184100 \
+		--defsym=x86_64_c_handoff=0xFFFFFFFF80188020 \
+		--defsym=x86_64_c_control_handoff=0xFFFFFFFF801880A0 \
 		-o $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_OBJ)
 	@$(OBJCOPY) -O binary --only-section=.text $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_TEXT)
 	@$(OBJCOPY) -O binary --only-section=.rodata $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_RODATA)

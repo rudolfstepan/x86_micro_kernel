@@ -42,12 +42,12 @@ Metadaten und gibt danach alle Frames frei. Das Probeprogramm wird nicht
 ausgefuehrt.
 
 Das Artefakt ist kein vollstaendiger REIST-Kernel. Seine physische Verwaltung
-endet bei 64 MiB und verwendet weder dynamische Seitentabellen noch NUMA,
-Highmem oder eine produktive Prozessintegration. Es besitzt keine produktive
-Hardwareinterruptbehandlung und weder Prozessmodell noch Syscall-ABI,
-ausfuehrbaren Userspace, Treiber, Dateisystem oder signiertes natives
-Medienlayout. Der Loadernachweis allein begruendet deshalb keine vollstaendige
-ELF64-Prozess-, Hardware- oder Fail-operational-Kompatibilitaet.
+endet bei 128 MiB und verwendet weder dynamische Seitentabellen noch NUMA oder
+Highmem. Die spaeteren R8.1-/R8.2-Nachweise besitzen einen begrenzten
+Prozess-, Syscall- und Ring-3-Shellpfad, aber keine produktive
+Hardwareinterruptbehandlung, Treiber, VFS-Integration oder signiertes natives
+64-Bit-Medienlayout. Die isolierten Nachweise begruenden deshalb keine
+vollstaendige ELF64-Prozess-, Hardware- oder Fail-operational-Kompatibilitaet.
 
 ## Referenzstandard
 
@@ -67,8 +67,8 @@ ist Multiboot Version 1; er bleibt auf das separate Bootstrap-Artefakt begrenzt.
 - feste 4-KiB-Higher-Half-Abbildungen nur fuer die gelinkten Abschnitte;
 - Text read-only/executable, RoData read-only/NX und Data/BSS read-write/NX;
 - maximal 4.096 Byte Multiboot-Speicherkarte mit 128 Eintraegen und 32 Modulen;
-- zwei feste 2.048-Byte-Bitmaps fuer 16.384 Frames unter 64 MiB;
-- eine feste RW/NX-Direct-Map mit 32 Page Tables und ausschliesslich
+- zwei feste 4.096-Byte-Bitmaps fuer 32.768 Frames unter 128 MiB;
+- eine feste RW/NX-Direct-Map mit 64 Page Tables und ausschliesslich
   verwaltbaren RAM-Frames;
 - ein separat gelinktes ELF64-`ET_EXEC` mit maximal 64 KiB, vier Program
   Headern, zwei `PT_LOAD`-Segmenten und acht staged Userseiten;
@@ -78,7 +78,7 @@ ist Multiboot Version 1; er bleibt auf das separate Bootstrap-Artefakt begrenzt.
 - genau 32 statische 16-Byte-IDT-Gates und eine gepackte 104-Byte-TSS;
 - ein statischer 16-KiB-IST ausschliesslich fuer Double Fault;
 - maximal 65.536 Statusabfragen je gesendetem COM1-Byte;
-- genau eine vCPU, 32 MiB RAM und zehn Sekunden im automatisierten QEMU-Gate.
+- genau eine vCPU, 128 MiB RAM und zehn Sekunden im automatisierten QEMU-Gate.
 
 Nicht unterstuetzte CPU-Faehigkeiten und inkonsistente Kontrollregister enden
 mit einem eigenen seriellen Fehlermarker und anschliessendem `hlt`. Der
@@ -425,3 +425,36 @@ Quellvertragstests, den isolierten Build und den begrenzten Ein-vCPU-/32-MiB-
 QEMU-Dialog. Der Gast meldet `C_CORE_HANDOFF_OK` vor der Scheduler-Shell,
 danach `C_KERNEL_CONTROL_OK` und abschliessend den unveraenderten
 `RING3_SHELL_OK`-Marker.
+
+## Abgenommener physischer 128-MiB-Schnitt R8.2e
+
+R8.2e erweitert ausschliesslich die feste physische Verwaltungsgrenze des
+isolierten Artefakts. Zwei 4.096-Byte-Bitmaps verwalten hoechstens 32.768
+4-KiB-Frames; 64 feste Page Tables bilden nur von Multiboot als nutzbar
+gemeldete und nicht reservierte Frames RW/NX in der Direct-Map ab. Die
+internen C-Seiten beginnen nun bei physisch `0x00184000`, damit die vergroesserte
+Assembly-BSS disjunkt bleibt; das gesamte Bootstrap-Artefakt muss weiterhin
+unter der bestehenden 2-MiB-Identity-Grenze enden. Ein separater, auf die
+obere Bitmaphaelfte begrenzter Selbsttest allokiert genau einen Frame ab
+64 MiB, prueft Zero-Fill und einen 64-Bit-Schreib-/Lesezugriff ueber die
+Direct-Map, gibt ihn frei, verwirft ein doppeltes Free und stellt den exakten
+Freizaehler wieder her. Erst danach erscheint
+`REIST_X86_64_PHYSICAL_MEMORY_128M_OK`. Der bestehende 128-Byte-C-Handoff
+behaelt Layout und Rechte; nur sein vorhandenes Speicherlimit betraegt nun
+128 MiB. Dynamische Seitentabellen, Speicher oberhalb 128 MiB, NUMA, SMP und
+produktive Hardwareintegration bleiben offen.
+
+Der bisherige allgemeine Frame-Aufruf bleibt fuer seine bereits abgenommenen
+Loader- und Prozessverbraucher zunaechst auf Frames unter 64 MiB begrenzt.
+Damit kann deren bestehende 64-MiB-Eingangsvalidierung keinen bereits
+allokierten hohen Frame ablehnen. Die obere Haelfte ist nur ueber den neuen
+expliziten, auf `[64 MiB, 128 MiB)` begrenzten Nachweispfad erreichbar. Eine
+spaetere Freigabe fuer allgemeine Verbraucher muss deren komplette
+Validierungs- und Cleanupvertraege gemeinsam migrieren.
+
+Die Abnahme umfasst 45 Quellvertragstests und ein 120.664-Byte-Bootstrap.
+Seine Assembly-BSS endet bei `0x00183000`, die C-Bruecke beginnt bei
+`0x00184000`, und das Gesamtende `0x001880e0` bleibt unter 2 MiB. Der
+begrenzte Ein-vCPU-/128-MiB-QEMU-Dialog meldete den neuen Marker geordnet vor
+allen unveraenderten Loader-, Scheduler-, Shell- und C-Control-Markern bis
+`RING3_SHELL_OK`.

@@ -565,7 +565,7 @@ x86_64_c_core_handoff64:
     mov qword [r8 + C_H_PML4], rax
     mov rax, 0xFFFF800000000000
     mov qword [r8 + C_H_DIRECT_MAP], rax
-    mov qword [r8 + C_H_MANAGED_LIMIT], 0x04000000
+    mov qword [r8 + C_H_MANAGED_LIMIT], 0x08000000
     mov qword [r8 + C_H_ELF_BASE], 0x00400000
     mov qword [r8 + C_H_ELF_LIMIT], 0x00408000
     lea rax, [rel _text_start]

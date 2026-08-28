@@ -19,11 +19,13 @@ MAX_MODULES         equ 32
 MODULE_ENTRY_SIZE   equ 16
 
 FRAME_SIZE          equ 4096
-MANAGED_LIMIT       equ 0x04000000
-FRAME_COUNT         equ 16384
-FRAME_BITMAP_BYTES  equ 2048
+MANAGED_LIMIT       equ 0x08000000
+FRAME_COUNT         equ 32768
+FRAME_BITMAP_BYTES  equ 4096
+HIGH_MEMORY_BASE    equ 0x04000000
+HIGH_MEMORY_FRAME   equ HIGH_MEMORY_BASE / FRAME_SIZE
 DIRECT_MAP_BASE     equ 0xFFFF800000000000
-DIRECT_PT_COUNT     equ 32
+DIRECT_PT_COUNT     equ 64
 DIRECT_TABLE_COUNT  equ (2 + DIRECT_PT_COUNT)
 PAGE_PRESENT_WRITE equ 0x003
 PAGE_NX_HIGH        equ 0x80000000
@@ -226,7 +228,7 @@ parse_memory_map32:
     clc
     ret
 
-; Input range is [EDX:EAX, ECX:EBX). Only complete frames below 64 MiB can
+; Input range is [EDX:EAX, ECX:EBX). Only complete frames below 128 MiB can
 ; affect the bitmap. This routine preserves the parser cursor and entry count.
 apply_managed_range32:
     push esi
@@ -396,6 +398,30 @@ x86_64_physical_memory_selftest64:
     test eax, eax
     jz .fail
 
+    ; Require one Multiboot-authorized frame from the newly managed half.
+    ; The scan and all mutation still use the allocator's fixed bitmap bound.
+    call physical_frame_alloc_high_selftest64
+    test rax, rax
+    jz .fail
+    cmp rax, HIGH_MEMORY_BASE
+    jb .fail
+    cmp rax, MANAGED_LIMIT
+    jae .fail
+    mov qword [rel selftest_high_frame], rax
+    mov rdi, rax
+    mov rax, 0x1280ABCD55AA33CC
+    call verify_direct_frame64
+    test eax, eax
+    jz .fail
+    mov rdi, qword [rel selftest_high_frame]
+    call physical_frame_free64
+    test eax, eax
+    jz .fail
+    mov rdi, qword [rel selftest_high_frame]
+    call physical_frame_free64
+    test eax, eax
+    jnz .fail
+
     mov rdi, qword [rel selftest_frame2]
     call physical_frame_free64
     test eax, eax
@@ -437,6 +463,8 @@ x86_64_physical_memory_selftest64:
     jne .fail
     lea rsi, [rel physical_memory_ok_message]
     call serial_write64
+    lea rsi, [rel physical_memory_128m_ok_message]
+    call serial_write64
     mov eax, 1
     ret
 .fail:
@@ -446,8 +474,19 @@ x86_64_physical_memory_selftest64:
 physical_frame_alloc64:
     cld
     xor ecx, ecx
+    mov r9d, HIGH_MEMORY_FRAME
+    jmp physical_frame_alloc_from_index64
+
+physical_frame_alloc_high_selftest64:
+    cld
+    mov ecx, HIGH_MEMORY_FRAME
+    mov r9d, FRAME_COUNT
+
+physical_frame_alloc_from_index64:
+    cmp r9d, FRAME_COUNT
+    ja .none
 .scan:
-    cmp ecx, FRAME_COUNT
+    cmp ecx, r9d
     jae .none
     bt dword [rel usable_bitmap], ecx
     jnc .next
@@ -518,6 +557,7 @@ verify_direct_frame64:
 
 section .rodata
 physical_memory_ok_message db "REIST_X86_64_PHYSICAL_MEMORY_OK", 13, 10, 0
+physical_memory_128m_ok_message db "REIST_X86_64_PHYSICAL_MEMORY_128M_OK", 13, 10, 0
 
 section .bss
 alignb 16
@@ -564,4 +604,6 @@ selftest_frame1:
 selftest_frame2:
     resq 1
 selftest_reused_frame:
+    resq 1
+selftest_high_frame:
     resq 1

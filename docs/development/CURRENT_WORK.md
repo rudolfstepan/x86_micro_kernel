@@ -2,11 +2,11 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `eb00105b`
+Branch/Startpunkt: `working_branch` / `6295c96`
 
-Aktives Thema: R8.2e – begrenzter x86_64-Speicherausbau auf 128 MiB
+Aktives Thema: keines – R8.2e ist abgeschlossen
 
-R8.2e ist als naechster isolierter Architekturbaustein aktiv. Das Paket hebt
+R8.2e ist als isolierter Architekturbaustein abgeschlossen. Das Paket hebt
 die feste physische Verwaltungs- und 4-KiB-Direct-Map-Grenze von 64 auf genau
 128 MiB an und beweist in einem Ein-vCPU-/128-MiB-QEMU-Lauf einen
 Multiboot-autorisierten Frame oberhalb 64 MiB. Die beiden Bitmaps, alle Scans
@@ -15,7 +15,16 @@ weiterhin in seine bestehende 2-MiB-Identity-Map passen. Der bestehende
 128-Byte-C-Handoff behaelt Layout und Rechte und aktualisiert nur den Wert
 seines vorhandenen Speicherlimits. Dynamische Seitentabellen, RAM oberhalb
 128 MiB, SMP, VFS, Geraete und alle produktiven i386-Artefakte bleiben
-ausserhalb dieses Pakets.
+ausserhalb dieses Pakets. Alle 45 Quellvertragstests bestanden. Der Build
+erzeugte ein 120.664-Byte-Bootstrap; dessen Assembly-BSS endet bei
+`0x00183000`, die C-Bruecke beginnt disjunkt bei `0x00184000`, und das
+Gesamtende `0x001880e0` bleibt unter 2 MiB. Der Gast meldete geordnet
+`PHYSICAL_MEMORY_OK`, `PHYSICAL_MEMORY_128M_OK` und alle unveraenderten
+Loader-, Scheduler-, Shell- und C-Control-Marker bis `RING3_SHELL_OK`.
+Die bestehenden Loader- und Prozessverbraucher bleiben bewusst unter ihrer
+abgenommenen 64-MiB-Allokationsgrenze; nur der explizite Hochspeichernachweis
+nutzt die obere Haelfte. Ihre gemeinsame 128-MiB-Freigabe folgt erst mit einer
+vollstaendigen Validierungs- und Cleanupmigration.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der

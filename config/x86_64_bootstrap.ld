@@ -38,34 +38,34 @@ SECTIONS
     _bss_end = .;
   }
 
-  ASSERT(_bss_end <= 0x00162000,
+  ASSERT(_bss_end <= 0x00184000,
          "x86_64 assembly bootstrap overlaps the fixed C bridge")
 
-  .c_core_bridge 0x00162000 : {
+  .c_core_bridge 0x00184000 : {
     _c_core_bridge_start = .;
     KEEP(*(.c_core_bridge))
     _c_core_bridge_end = .;
   }
 
-  .c_core_text 0x00163000 : {
+  .c_core_text 0x00185000 : {
     _c_core_text_start = .;
     KEEP(*(.c_core_text))
     _c_core_text_end = .;
   }
 
-  .c_core_rodata 0x00164000 : {
+  .c_core_rodata 0x00186000 : {
     _c_core_rodata_start = .;
     KEEP(*(.c_core_rodata))
     _c_core_rodata_end = .;
   }
 
-  .c_core_data 0x00165000 : {
+  .c_core_data 0x00187000 : {
     _c_core_data_start = .;
     KEEP(*(.c_core_data))
     _c_core_data_end = .;
   }
 
-  .c_core_bss 0x00166000 (NOLOAD) : {
+  .c_core_bss 0x00188000 (NOLOAD) : {
     _c_core_bss_start = .;
     KEEP(*(.c_core_bss))
     _c_core_bss_end = .;

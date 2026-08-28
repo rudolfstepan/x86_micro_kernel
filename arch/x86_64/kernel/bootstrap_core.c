@@ -2,7 +2,7 @@
 
 #define REIST_HIGHER_HALF_BASE 0xFFFFFFFF80000000ULL
 #define REIST_DIRECT_MAP_BASE 0xFFFF800000000000ULL
-#define REIST_MANAGED_MEMORY_LIMIT 0x04000000ULL
+#define REIST_MANAGED_MEMORY_LIMIT 0x08000000ULL
 #define REIST_ELF_PROBE_BASE 0x00400000ULL
 #define REIST_ELF_PROBE_LIMIT 0x00408000ULL
 #define REIST_PAGE_SIZE 4096ULL
@@ -94,7 +94,7 @@ static int validate_handoff(
         handoff->elf_probe_limit - handoff->elf_probe_base != 8ULL * REIST_PAGE_SIZE ||
         (handoff->elf_probe_base & (REIST_PAGE_SIZE - 1ULL)) != 0ULL ||
         (handoff->elf_probe_limit & (REIST_PAGE_SIZE - 1ULL)) != 0ULL ||
-        handoff->managed_memory_limit / REIST_PAGE_SIZE != 16384ULL) {
+        handoff->managed_memory_limit / REIST_PAGE_SIZE != 32768ULL) {
         return 0;
     }
     for (index = 0U; index < sizeof(handoff->reserved); ++index) {
@@ -179,7 +179,7 @@ reist_u32 x86_64_c_core_entry(
         (reist_u64)handoff->task_capacity +
         (reist_u64)handoff->runqueue_capacity +
         (reist_u64)handoff->deadline_capacity;
-    if (arithmetic_proof != 16404ULL) {
+    if (arithmetic_proof != 32788ULL) {
         goto cleanup;
     }
     x86_64_c_bss_state[0] = arithmetic_proof;

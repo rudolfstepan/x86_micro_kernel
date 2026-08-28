@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2e-x86_64-128m-physical-memory"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11312,7 +11312,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2e-x86_64-128m-physical-memory"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Extend bounded x86_64 physical memory and direct map to 128 MiB"
@@ -11345,7 +11345,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "mm: extend bounded x86_64 memory to 128 MiB"
-evidence = []
+evidence = [
+  "all 45 x86_64 source-contract tests passed including the exact 128-MiB bitmap and direct-map capacities shared bounded high-frame allocation path duplicate-free rejection updated C handoff value and one-vCPU 128-MiB runner contract",
+  "the isolated build produced a 120664-byte ELF32 Multiboot bootstrap the unchanged 10264-byte user probe and 1256-byte shell plus the 8064-byte C object and 13520-byte linked C payload",
+  "the enlarged assembly BSS ended at 0x00183000 one full page before the fixed C bridge at 0x00184000 and the complete bootstrap ended at 0x001880e0 below its unchanged 2-MiB identity-map ceiling",
+  "the bounded one-vCPU 128-MiB QEMU dialogue observed PHYSICAL_MEMORY_128M_OK after the prior physical-memory marker then preserved every loader scheduler shell and C-control marker through RING3_SHELL_OK; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
