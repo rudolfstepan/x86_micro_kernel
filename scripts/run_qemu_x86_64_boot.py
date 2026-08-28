@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import queue
 import shutil
 import subprocess
 import sys
+import threading
 import time
 
 
-SUCCESS = "REIST_X86_64_C_CORE_HANDOFF_OK"
+SUCCESS = "REIST_X86_64_RING3_SHELL_OK"
 REQUIRED_MARKERS = (
     "REIST_X86_64_LONG_MODE_BOOT_OK",
     "REIST_X86_64_HIGHER_HALF_PAGING_OK",
@@ -30,6 +32,10 @@ REQUIRED_MARKERS = (
     "REIST_X86_64_SPAWN_WAIT_OK",
     "REIST_X86_64_EXCEPTION_RECOVERY_OK",
     "REIST_X86_64_C_CALLBACK_OK",
+    "REIST_X86_64_C_CORE_HANDOFF_OK",
+    "REIST_X86_64_RING3_SHELL_READY",
+    "REIST_X86_64_RING3_SHELL_INFO_OK",
+    "REIST_X86_64_RING3_SHELL_EXIT_OK",
     SUCCESS,
 )
 FAILURES = (
@@ -48,6 +54,7 @@ FAILURES = (
     "REIST_X86_64_DEADLINE_SLEEP_ERROR",
     "REIST_X86_64_SPAWN_WAIT_ERROR",
     "REIST_X86_64_C_CORE_HANDOFF_ERROR",
+    "REIST_X86_64_RING3_SHELL_ERROR",
     "REIST_X86_64_EXCEPTION_FATAL",
 )
 QEMU_FALLBACKS = (
@@ -97,7 +104,7 @@ def run_boot(qemu: Path, image: Path, log: Path, timeout: float) -> str:
         "-smp", "1",
         "-display", "none",
         "-monitor", "none",
-        "-serial", f"file:{log.resolve()}",
+        "-serial", "stdio",
         "-no-reboot",
         "-no-shutdown",
         "-kernel", str(image.resolve()),
@@ -105,30 +112,82 @@ def run_boot(qemu: Path, image: Path, log: Path, timeout: float) -> str:
     process = subprocess.Popen(
         command,
         cwd=image.resolve().parent,
-        stdout=subprocess.DEVNULL,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        bufsize=0,
     )
+    output_queue: queue.Queue[bytes] = queue.Queue()
+
+    def read_serial() -> None:
+        if process.stdout is None:
+            return
+        while True:
+            chunk = process.stdout.read(256)
+            if not chunk:
+                return
+            output_queue.put(chunk)
+
+    reader = threading.Thread(target=read_serial, daemon=True)
+    reader.start()
     deadline = time.monotonic() + timeout
-    captured = ""
+    captured_bytes = bytearray()
+    info_sent = False
+    exit_sent = False
     try:
         while time.monotonic() < deadline:
-            if log.exists():
-                captured = log.read_text(encoding="ascii", errors="replace")
-                if SUCCESS in captured or any(marker in captured for marker in FAILURES):
+            try:
+                captured_bytes.extend(output_queue.get(timeout=0.02))
+            except queue.Empty:
+                pass
+            while True:
+                try:
+                    captured_bytes.extend(output_queue.get_nowait())
+                except queue.Empty:
                     break
+            captured = captured_bytes.decode("ascii", errors="replace")
+            if not info_sent and "REIST_X86_64_RING3_SHELL_READY" in captured:
+                if process.stdin is None:
+                    raise RuntimeError("qemu serial input is unavailable")
+                process.stdin.write(b"INFO\n")
+                process.stdin.flush()
+                info_sent = True
+            if info_sent and not exit_sent and \
+                    "REIST_X86_64_RING3_SHELL_INFO_OK" in captured:
+                if process.stdin is None:
+                    raise RuntimeError("qemu serial input closed before EXIT")
+                process.stdin.write(b"EXIT\n")
+                process.stdin.flush()
+                exit_sent = True
+            if SUCCESS in captured or any(marker in captured for marker in FAILURES):
+                break
             if process.poll() is not None:
                 break
-            time.sleep(0.02)
     finally:
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
         terminate_bounded(process)
-    if log.exists():
-        captured = log.read_text(encoding="ascii", errors="replace")
+        reader.join(timeout=1.0)
+        while True:
+            try:
+                captured_bytes.extend(output_queue.get_nowait())
+            except queue.Empty:
+                break
+        if process.stdout is not None:
+            process.stdout.close()
+        log.write_bytes(captured_bytes)
+    captured = captured_bytes.decode("ascii", errors="replace")
     stderr = b""
     if process.stderr is not None:
         stderr = process.stderr.read(4096)
         process.stderr.close()
     if any(marker in captured for marker in FAILURES):
         raise RuntimeError(f"bootstrap reported failure: {captured.strip()}")
+    if not info_sent or not exit_sent:
+        raise RuntimeError("bounded Ring-3 shell dialogue did not complete")
     positions = [captured.find(marker) for marker in REQUIRED_MARKERS]
     if any(position < 0 for position in positions):
         detail = stderr.decode("utf-8", errors="replace").strip()

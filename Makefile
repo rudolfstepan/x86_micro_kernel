@@ -213,6 +213,8 @@ X86_64_C_CORE_RODATA := $(X86_64_BOOTSTRAP_DIR)/bootstrap_core_rodata.bin
 X86_64_C_CORE_DATA := $(X86_64_BOOTSTRAP_DIR)/bootstrap_core_data.bin
 X86_64_USER_PROBE_OBJ := $(X86_64_BOOTSTRAP_DIR)/user_probe.o
 X86_64_USER_PROBE_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-user-probe.elf
+X86_64_USER_SHELL_OBJ := $(X86_64_BOOTSTRAP_DIR)/user_shell.o
+X86_64_USER_SHELL_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-user-shell.elf
 X86_64_BOOTSTRAP_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-bootstrap.elf
 X86_64_BOOTSTRAP_LDSCRIPT := $(CONFIG_DIR)/x86_64_bootstrap.ld
 X86_64_CC ?= $(CC)
@@ -220,6 +222,11 @@ X86_64_CFLAGS := -target x86_64-freestanding-none -std=c11 -O2 -Wall -Wextra -We
 	-ffreestanding -nostdlib -fno-builtin -fno-stack-protector -mno-red-zone \
 	-fno-unwind-tables -fno-asynchronous-unwind-tables -fno-exceptions \
 	-fno-pic -fno-pie -mcmodel=kernel -mno-mmx -mno-sse -mno-sse2 \
+	-fno-vectorize -fno-slp-vectorize -fno-stack-check -Werror=vla -g0
+X86_64_USER_CFLAGS := -target x86_64-freestanding-none -std=c11 -O2 -Wall -Wextra -Werror \
+	-ffreestanding -nostdlib -fno-builtin -fno-stack-protector -mno-red-zone \
+	-fno-unwind-tables -fno-asynchronous-unwind-tables -fno-exceptions \
+	-fno-pic -fno-pie -mcmodel=small -mno-mmx -mno-sse -mno-sse2 \
 	-fno-vectorize -fno-slp-vectorize -fno-stack-check -Werror=vla -g0
 
 # Mount directory for disk image
@@ -359,6 +366,11 @@ x86_64-bootstrap:
 	@$(AS) -f elf64 arch/x86_64/user/probe.asm -o $(X86_64_USER_PROBE_OBJ)
 	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings \
 		-T config/x86_64_user_probe.ld -o $(X86_64_USER_PROBE_ELF) $(X86_64_USER_PROBE_OBJ)
+	@$(X86_64_CC) $(X86_64_USER_CFLAGS) -c arch/x86_64/user/shell.c \
+		-o $(X86_64_USER_SHELL_OBJ)
+	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings --no-undefined \
+		-z noexecstack --strip-all -T config/x86_64_user_shell.ld \
+		-o $(X86_64_USER_SHELL_ELF) $(X86_64_USER_SHELL_OBJ)
 	@$(X86_64_CC) $(X86_64_CFLAGS) -Iarch/x86_64/kernel -c \
 		arch/x86_64/kernel/bootstrap_core.c -o $(X86_64_C_CORE_OBJ)
 	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings --no-undefined \
@@ -381,6 +393,7 @@ x86_64-bootstrap:
 	@$(AS) -f elf32 arch/x86_64/cpu/timer_interrupt.asm -o $(X86_64_TIMER_INTERRUPT_OBJ)
 	@$(AS) -f elf32 arch/x86_64/mm/physical_memory.asm -o $(X86_64_PHYSICAL_MEMORY_OBJ)
 	@$(AS) -f elf32 -DUSER_PROBE_PATH=\"$(X86_64_USER_PROBE_ELF)\" \
+		-DUSER_SHELL_PATH=\"$(X86_64_USER_SHELL_ELF)\" \
 		arch/x86_64/exec/elf64_loader.asm -o $(X86_64_ELF64_LOADER_OBJ)
 	@$(AS) -f elf32 arch/x86_64/proc/user_execution.asm -o $(X86_64_USER_EXECUTION_OBJ)
 	@$(AS) -f elf32 arch/x86_64/proc/cooperative_scheduler.asm -o $(X86_64_PROCESS_SCHEDULER_OBJ)

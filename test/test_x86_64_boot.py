@@ -187,6 +187,96 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertLess(cleanup, marker)
         self.assertIn("REIST_X86_64_ELF64_LOAD_OK", runner)
 
+    def test_ring3_shell_is_independently_linked_fixed_and_bounded(self):
+        shell = self.read("arch/x86_64/user/shell.c")
+        linker = self.read("config/x86_64_user_shell.ld")
+        makefile = self.read("Makefile")
+        for syscall in (
+            "REIST_SYS_EXIT 9ULL", "REIST_SYS_READ 15ULL",
+            "REIST_SYS_WRITE 20ULL", "REIST_SYS_YIELD 40ULL",
+        ):
+            self.assertIn(syscall, shell)
+        self.assertIn("SHELL_COMMAND_CAPACITY 16U", shell)
+        self.assertIn("SHELL_POLL_LIMIT 67108864U", shell)
+        self.assertIn("while (polls < SHELL_POLL_LIMIT)", shell)
+        self.assertNotRegex(shell, re.compile(r"while\s*\(\s*1\s*\)"))
+        for command in ('"HELP"', '"INFO"', '"EXIT"'):
+            self.assertIn(command, shell)
+        self.assertIn("OUTPUT_FORMAT(elf64-x86-64)", linker)
+        self.assertIn("text PT_LOAD FILEHDR PHDRS FLAGS(5)", linker)
+        self.assertNotIn("data PT_LOAD", linker)
+        self.assertIn("ASSERT(SIZEOF(.data) == 0", linker)
+        self.assertIn("ASSERT(SIZEOF(.bss) == 0", linker)
+        self.assertIn("ASSERT(_shell_end <= 0x00401000", linker)
+        self.assertIn("shell_u8 command[SHELL_COMMAND_CAPACITY]", shell)
+        self.assertIn("X86_64_USER_CFLAGS", makefile)
+        self.assertIn("arch/x86_64/user/shell.c", makefile)
+        self.assertIn("config/x86_64_user_shell.ld", makefile)
+        self.assertIn("USER_SHELL_PATH", makefile)
+
+    def test_elf64_shell_selection_is_inactive_only_and_cleaned(self):
+        loader = self.read("arch/x86_64/exec/elf64_loader.asm")
+        execution = self.read("arch/x86_64/proc/user_execution.asm")
+        selector = loader.index("x86_64_elf64_select_image64:")
+        publish = loader.index("mov byte [rel elf_image_selector], dil", selector)
+        self.assertLess(loader.index("cmp byte [rel elf_load_active], 0", selector), publish)
+        self.assertLess(loader.index("cmp edi, ELF_IMAGE_SHELL", selector), publish)
+        self.assertIn("incbin USER_PROBE_PATH", loader)
+        self.assertIn("incbin USER_SHELL_PATH", loader)
+        cleanup = execution.index("user_execution_cleanup64:")
+        self.assertIn("call x86_64_elf64_release64", execution[cleanup:])
+        self.assertIn("call x86_64_elf64_select_image64", execution[cleanup:])
+        self.assertIn("call physical_free_frame_count64", execution[cleanup:])
+
+    def test_ring3_shell_syscalls_validate_before_effect_and_return_with_iretq(self):
+        source = self.read("arch/x86_64/proc/user_execution.asm")
+        self.assertIn("SHELL_IO_MAX              equ 64", source)
+        self.assertIn("REIST_EAGAIN              equ -11", source)
+        self.assertIn("REIST_ENOSYS              equ -38", source)
+        dispatch = source.index("shell_syscall_dispatch64:")
+        read = source.index("shell_handle_read64:", dispatch)
+        write = source.index("shell_handle_write64:", read)
+        read_validation = source.index("call validate_shell_buffer64", read, write)
+        read_effect = source.index("mov byte [rdi], al", read, write)
+        self.assertLess(read_validation, read_effect)
+        write_end = source.index("shell_handle_yield64:", write)
+        write_validation = source.index("call validate_shell_buffer64", write, write_end)
+        write_effect = source.index("call serial_putc64", write, write_end)
+        self.assertLess(write_validation, write_effect)
+        validator = source.index("validate_shell_buffer64:")
+        validator_end = source.index("shell_return_to_user64:", validator)
+        stack_validator = source[validator:validator_end]
+        self.assertIn("cmp r8, USER_STACK_BASE", stack_validator)
+        self.assertIn("cmp r9, USER_STACK_TOP", stack_validator)
+        self.assertIn("cmp r12d, PF_W", stack_validator)
+        self.assertIn("call verify_user_context64", stack_validator)
+        return_path = source.index("shell_return_to_user64:")
+        self.assertIn("iretq", source[return_path:source.index("user_syscall_rejected64:")])
+        self.assertNotRegex(source, re.compile(r"^\s*sysretq?\s*$", re.MULTILINE))
+
+    def test_ring3_shell_runtime_dialogue_is_fixed_ordered_and_bounded(self):
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        c_marker = entry.index("lea rsi, [rel c_core_handoff_message]")
+        shell_call = entry.index("call x86_64_user_shell64", c_marker)
+        final_marker = entry.index("lea rsi, [rel ring3_shell_message]", shell_call)
+        self.assertLess(c_marker, shell_call)
+        self.assertLess(shell_call, final_marker)
+        self.assertIn('SUCCESS = "REIST_X86_64_RING3_SHELL_OK"', runner)
+        self.assertIn('"-serial", "stdio"', runner)
+        self.assertIn('process.stdin.write(b"INFO\\n")', runner)
+        self.assertIn('process.stdin.write(b"EXIT\\n")', runner)
+        self.assertIn("queue.Queue", runner)
+        self.assertIn("reader.join(timeout=1.0)", runner)
+        self.assertIn("log.write_bytes(captured_bytes)", runner)
+        for marker in (
+            "REIST_X86_64_RING3_SHELL_READY",
+            "REIST_X86_64_RING3_SHELL_INFO_OK",
+            "REIST_X86_64_RING3_SHELL_EXIT_OK",
+            "REIST_X86_64_RING3_SHELL_ERROR",
+        ):
+            self.assertIn(marker, runner)
+
     def test_user_page_tables_are_private_fixed_and_wx(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")
         self.assertIn("USER_PAGE_COUNT           equ 8", source)
@@ -711,7 +801,8 @@ class X8664BootstrapContractTests(unittest.TestCase):
     def test_c_core_runtime_requires_callback_cleanup_and_final_marker(self):
         entry = self.read("arch/x86_64/boot/entry.asm")
         runner = self.read("scripts/run_qemu_x86_64_boot.py")
-        self.assertIn('SUCCESS = "REIST_X86_64_C_CORE_HANDOFF_OK"', runner)
+        self.assertIn('"REIST_X86_64_C_CORE_HANDOFF_OK"', runner)
+        self.assertIn('SUCCESS = "REIST_X86_64_RING3_SHELL_OK"', runner)
         self.assertIn("REIST_X86_64_C_CALLBACK_OK", runner)
         self.assertIn("REIST_X86_64_EXCEPTION_RECOVERY_OK", runner)
         self.assertIn("REIST_X86_64_C_CORE_HANDOFF_ERROR", runner)

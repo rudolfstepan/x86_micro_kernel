@@ -4,6 +4,9 @@
 %ifndef USER_PROBE_PATH
     %error "USER_PROBE_PATH must name the independently linked ELF64 probe"
 %endif
+%ifndef USER_SHELL_PATH
+    %error "USER_SHELL_PATH must name the independently linked ELF64 shell"
+%endif
 
 BITS 64
 
@@ -29,6 +32,8 @@ USER_END            equ 0x00408000
 USER_PAGE_COUNT     equ 8
 PAGE_SIZE           equ 4096
 DIRECT_MAP_BASE     equ 0xFFFF800000000000
+ELF_IMAGE_PROBE     equ 0
+ELF_IMAGE_SHELL     equ 1
 
 EH_TYPE             equ 16
 EH_MACHINE          equ 18
@@ -55,6 +60,7 @@ global x86_64_elf64_entry64
 global x86_64_elf64_page_frame64
 global x86_64_elf64_page_flags64
 global x86_64_elf64_address_flags64
+global x86_64_elf64_select_image64
 extern physical_frame_alloc64
 extern physical_frame_free64
 extern physical_free_frame_count64
@@ -63,6 +69,10 @@ extern serial_write64
 x86_64_elf64_loader_selftest64:
     mov byte [rel elf_load_active], 0
     mov qword [rel elf_entry_address], 0
+    xor edi, edi
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jz elf64_return_failure
     call x86_64_elf64_load64
     test eax, eax
     jz elf64_return_failure
@@ -93,8 +103,17 @@ x86_64_elf64_load64:
     mov byte [rel elf_entry_is_executable], 0
     mov qword [rel elf_entry_address], 0
 
+    cmp byte [rel elf_image_selector], ELF_IMAGE_PROBE
+    je .select_probe
+    cmp byte [rel elf_image_selector], ELF_IMAGE_SHELL
+    jne elf64_load_fail
+    lea r12, [rel user_shell_elf_start]
+    mov r13, user_shell_elf_end - user_shell_elf_start
+    jmp .image_selected
+.select_probe:
     lea r12, [rel user_probe_elf_start]
     mov r13, user_probe_elf_end - user_probe_elf_start
+.image_selected:
     cmp r13, ELF64_EHDR_SIZE
     jb elf64_load_fail
     cmp r13, MAX_EMBEDDED_BYTES
@@ -357,6 +376,18 @@ x86_64_elf64_release64:
     mov eax, 1
     ret
 
+x86_64_elf64_select_image64:
+    cmp byte [rel elf_load_active], 0
+    jne .invalid
+    cmp edi, ELF_IMAGE_SHELL
+    ja .invalid
+    mov byte [rel elf_image_selector], dil
+    mov eax, 1
+    ret
+.invalid:
+    xor eax, eax
+    ret
+
 x86_64_elf64_entry64:
     cmp byte [rel elf_load_active], 1
     jne .invalid
@@ -479,6 +510,11 @@ user_probe_elf_start:
     incbin USER_PROBE_PATH
 user_probe_elf_end:
 
+align 16
+user_shell_elf_start:
+    incbin USER_SHELL_PATH
+user_shell_elf_end:
+
 elf64_load_ok_message db "REIST_X86_64_ELF64_LOAD_OK", 13, 10, 0
 
 section .bss
@@ -496,6 +532,8 @@ elf_entry_is_executable:
 elf_cleanup_error:
     resb 1
 elf_load_active:
+    resb 1
+elf_image_selector:
     resb 1
 alignb 8
 elf_entry_address:

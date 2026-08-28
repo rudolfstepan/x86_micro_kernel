@@ -232,12 +232,15 @@ Die Abnahme bestand 37 Quelltests, den isolierten Build eines 106.808-Byte-
 Bootstraps mit 13.328-Byte-ELF64-C-Payload und den begrenzten Ein-vCPU-QEMU-
 Lauf bis `C_CORE_HANDOFF_OK`.
 
-**R8.2b ist aktiv:** Der naechste gebuendelte Schnitt baut und startet eine
+**R8.2b ist abgeschlossen:** Der gebuendelte Schnitt baut und startet eine
 separate freestanding-ELF64-Shell in Ring 3. Die bestehenden REIST-v1-Indizes
 `READ` 15, `WRITE` 20, `YIELD` 40 und `EXIT` 9 werden ueber einen vollstaendig
 validierten, nicht wartenden seriellen Vermittlungspfad angebunden. Der kurze
 QEMU-Gate fuehrt einen echten `INFO`-/`EXIT`-Dialog und verlangt danach die
-vollstaendige Ruecknahme aller temporaeren User- und Syscall-Ressourcen.
+vollstaendige Ruecknahme aller temporaeren User- und Syscall-Ressourcen. 41
+Quellvertragstests, der 117.260-Byte-Bootstrap mit kompakter
+1.256-Byte-RX-Shell und der begrenzte Ein-vCPU-/32-MiB-QEMU-Lauf bis
+`RING3_SHELL_OK` bestanden; die x86_64-Queue ist leer.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

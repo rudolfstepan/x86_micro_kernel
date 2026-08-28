@@ -5,6 +5,7 @@ BITS 64
 
 USER_BASE                 equ 0x00400000
 USER_PAGE_COUNT           equ 8
+USER_END                  equ 0x00408000
 USER_STACK_BASE           equ 0x00408000
 USER_STACK_TOP            equ 0x00409000
 PAGE_SIZE                 equ 4096
@@ -31,12 +32,28 @@ RFLAGS_SYSCALL_FORBIDDEN  equ 0x00000000003F7F00
 RFLAGS_FAULT_FORBIDDEN    equ 0x00000000003E7F00
 
 REIST_SYS_EXIT            equ 9
+REIST_SYS_READ            equ 15
+REIST_SYS_WRITE           equ 20
+REIST_SYS_YIELD           equ 40
 EXPECTED_EXIT_STATUS      equ 100
 ATTEMPT_EXIT              equ 0
 ATTEMPT_FAULT             equ 1
+ATTEMPT_SHELL             equ 2
 EVENT_NONE                equ 0
 EVENT_EXIT                equ 1
 EVENT_FAULT               equ 2
+EVENT_SHELL_EXIT          equ 3
+SHELL_STDIN               equ 0
+SHELL_STDOUT              equ 1
+SHELL_STDERR              equ 2
+SHELL_EXIT_STATUS         equ 0
+SHELL_IO_MAX              equ 64
+SHELL_EXPECTED_READS      equ 10
+SHELL_EXPECTED_WRITES     equ 4
+REIST_EAGAIN              equ -11
+REIST_ENOSYS              equ -38
+COM1_DATA                 equ 0x03F8
+COM1_LSR                  equ 0x03FD
 
 IA32_EFER                 equ 0xC0000080
 IA32_STAR                 equ 0xC0000081
@@ -62,6 +79,7 @@ SYSCALL_CONTEXT_USER_RSP   equ 8
 section .text
 global x86_64_user_execution_selftest64
 global x86_64_user_exception64
+global x86_64_user_shell64
 
 extern pml4_table
 extern physical_frame_alloc64
@@ -73,6 +91,7 @@ extern x86_64_elf64_entry64
 extern x86_64_elf64_page_frame64
 extern x86_64_elf64_page_flags64
 extern x86_64_elf64_address_flags64
+extern x86_64_elf64_select_image64
 extern x86_64_exception_set_rsp0
 extern serial_write64
 extern serial_putc64
@@ -96,6 +115,8 @@ x86_64_user_execution_selftest64:
     mov byte [rel exit_event_count], 0
     mov byte [rel fault_event_count], 0
     mov byte [rel syscall_state_active], 0
+    mov dword [rel shell_read_count], 0
+    mov dword [rel shell_write_count], 0
     mov byte [rel failure_stage], 1
     mov qword [rel failure_observed], 0
     mov qword [rel failure_expected], 0
@@ -131,6 +152,66 @@ x86_64_user_execution_selftest64:
     test eax, eax
     jz user_execution_fail
 
+    mov byte [rel execution_active], 1
+    jmp enter_user_attempt64
+
+x86_64_user_shell64:
+    cli
+    cld
+    mov qword [rel caller_rsp], rsp
+    mov rax, cr3
+    mov qword [rel original_cr3], rax
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne user_execution_fail
+    call physical_free_frame_count64
+    mov dword [rel initial_free_count], eax
+
+    mov qword [rel user_stack_frame], 0
+    mov byte [rel execution_active], 0
+    mov byte [rel execution_attempt], ATTEMPT_SHELL
+    mov byte [rel execution_event], EVENT_NONE
+    mov byte [rel exit_event_count], 0
+    mov byte [rel fault_event_count], 0
+    mov byte [rel syscall_state_active], 0
+    mov dword [rel shell_read_count], 0
+    mov dword [rel shell_write_count], 0
+    mov byte [rel failure_stage], 0x50
+    mov qword [rel failure_observed], 0
+    mov qword [rel failure_expected], 0
+
+    mov edi, 1
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jz user_execution_fail
+    mov byte [rel failure_stage], 0x51
+    call x86_64_elf64_load64
+    test eax, eax
+    jz user_execution_fail
+    mov byte [rel failure_stage], 0x52
+    call physical_frame_alloc64
+    test rax, rax
+    jz user_execution_fail
+    test rax, PAGE_SIZE - 1
+    jnz user_execution_fail
+    cmp rax, MANAGED_LIMIT
+    jae user_execution_fail
+    mov qword [rel user_stack_frame], rax
+
+    mov byte [rel failure_stage], 0x53
+    call build_user_page_tables64
+    test eax, eax
+    jz user_execution_fail
+    call verify_user_context64
+    test eax, eax
+    jz user_execution_fail
+    mov byte [rel failure_stage], 0x54
+    call setup_syscall_state64
+    test eax, eax
+    jz user_execution_fail
+    call verify_syscall_state64
+    test eax, eax
+    jz user_execution_fail
     mov byte [rel execution_active], 1
     jmp enter_user_attempt64
 
@@ -211,13 +292,27 @@ x86_64_syscall_entry64:
     mov qword [rel observed_syscall_status], rdi
     mov qword [rel observed_syscall_rip], rcx
     mov qword [rel observed_syscall_rflags], r11
+    mov qword [rel shell_saved_rbx], rbx
+    mov qword [rel shell_saved_rbp], rbp
+    mov qword [rel shell_saved_rdi], rdi
+    mov qword [rel shell_saved_rsi], rsi
+    mov qword [rel shell_saved_rdx], rdx
+    mov qword [rel shell_saved_r8], r8
+    mov qword [rel shell_saved_r9], r9
+    mov qword [rel shell_saved_r10], r10
+    mov qword [rel shell_saved_r12], r12
+    mov qword [rel shell_saved_r13], r13
+    mov qword [rel shell_saved_r14], r14
+    mov qword [rel shell_saved_r15], r15
 
     cmp byte [rel execution_active], 1
     jne user_syscall_rejected64
-    cmp byte [rel execution_attempt], ATTEMPT_EXIT
-    jne user_syscall_rejected64
     mov rax, cr3
     cmp rax, qword [rel user_cr3]
+    jne user_syscall_rejected64
+    cmp byte [rel execution_attempt], ATTEMPT_SHELL
+    je shell_syscall_dispatch64
+    cmp byte [rel execution_attempt], ATTEMPT_EXIT
     jne user_syscall_rejected64
     cmp qword [rel observed_syscall_number], REIST_SYS_EXIT
     jne user_syscall_rejected64
@@ -240,6 +335,206 @@ x86_64_syscall_entry64:
     jne user_syscall_rejected64
     mov byte [rel execution_event], EVENT_EXIT
     jmp user_event_to_kernel64
+
+shell_syscall_dispatch64:
+    mov rax, qword [rel syscall_context + SYSCALL_CONTEXT_USER_RSP]
+    cmp rax, USER_STACK_BASE
+    jb user_syscall_rejected64
+    cmp rax, USER_STACK_TOP
+    ja user_syscall_rejected64
+    mov rax, qword [rel observed_syscall_rflags]
+    test rax, RFLAGS_FIXED_BIT
+    jz user_syscall_rejected64
+    test rax, RFLAGS_SYSCALL_FORBIDDEN
+    jnz user_syscall_rejected64
+    mov rax, qword [rel observed_syscall_rip]
+    call x86_64_elf64_address_flags64
+    test eax, PF_X
+    jz user_syscall_rejected64
+
+    mov rax, qword [rel observed_syscall_number]
+    cmp rax, REIST_SYS_READ
+    je shell_handle_read64
+    cmp rax, REIST_SYS_WRITE
+    je shell_handle_write64
+    cmp rax, REIST_SYS_YIELD
+    je shell_handle_yield64
+    cmp rax, REIST_SYS_EXIT
+    je shell_handle_exit64
+    mov rax, REIST_ENOSYS
+    jmp shell_return_to_user64
+
+shell_handle_read64:
+    cmp qword [rel shell_saved_rdi], SHELL_STDIN
+    jne user_syscall_rejected64
+    cmp qword [rel shell_saved_rdx], 1
+    jne user_syscall_rejected64
+    mov rax, qword [rel shell_saved_rsi]
+    mov edx, 1
+    mov ecx, PF_W
+    call validate_shell_buffer64
+    test eax, eax
+    jz user_syscall_rejected64
+    mov dx, COM1_LSR
+    in al, dx
+    test al, 0x01
+    jz .not_ready
+    mov dx, COM1_DATA
+    in al, dx
+    mov rdi, qword [rel shell_saved_rsi]
+    mov byte [rdi], al
+    inc dword [rel shell_read_count]
+    cmp dword [rel shell_read_count], SHELL_EXPECTED_READS
+    ja user_syscall_rejected64
+    mov eax, 1
+    jmp shell_return_to_user64
+.not_ready:
+    mov rax, REIST_EAGAIN
+    jmp shell_return_to_user64
+
+shell_handle_write64:
+    mov rax, qword [rel shell_saved_rdi]
+    cmp rax, SHELL_STDOUT
+    je .descriptor_ok
+    cmp rax, SHELL_STDERR
+    jne user_syscall_rejected64
+.descriptor_ok:
+    mov rdx, qword [rel shell_saved_rdx]
+    test rdx, rdx
+    jz user_syscall_rejected64
+    cmp rdx, SHELL_IO_MAX
+    ja user_syscall_rejected64
+    mov rax, qword [rel shell_saved_rsi]
+    mov ecx, PF_R
+    call validate_shell_buffer64
+    test eax, eax
+    jz user_syscall_rejected64
+    mov r12, qword [rel shell_saved_rsi]
+    mov r13, qword [rel shell_saved_rdx]
+.write_loop:
+    mov al, byte [r12]
+    call serial_putc64
+    test eax, eax
+    jz user_syscall_rejected64
+    inc r12
+    dec r13
+    jnz .write_loop
+    inc dword [rel shell_write_count]
+    cmp dword [rel shell_write_count], SHELL_EXPECTED_WRITES
+    ja user_syscall_rejected64
+    mov rax, qword [rel shell_saved_rdx]
+    jmp shell_return_to_user64
+
+shell_handle_yield64:
+    cmp qword [rel shell_saved_rdi], 0
+    jne user_syscall_rejected64
+    cmp qword [rel shell_saved_rsi], 0
+    jne user_syscall_rejected64
+    cmp qword [rel shell_saved_rdx], 0
+    jne user_syscall_rejected64
+    xor eax, eax
+    jmp shell_return_to_user64
+
+shell_handle_exit64:
+    cmp qword [rel shell_saved_rdi], SHELL_EXIT_STATUS
+    jne user_syscall_rejected64
+    cmp qword [rel shell_saved_rsi], 0
+    jne user_syscall_rejected64
+    cmp qword [rel shell_saved_rdx], 0
+    jne user_syscall_rejected64
+    cmp dword [rel shell_read_count], SHELL_EXPECTED_READS
+    jne user_syscall_rejected64
+    cmp dword [rel shell_write_count], SHELL_EXPECTED_WRITES
+    jne user_syscall_rejected64
+    inc byte [rel exit_event_count]
+    cmp byte [rel exit_event_count], 1
+    jne user_syscall_rejected64
+    mov byte [rel execution_event], EVENT_SHELL_EXIT
+    jmp user_event_to_kernel64
+
+; RAX is a user address, RDX is 1..64 bytes and ECX is the required PF_* bit.
+validate_shell_buffer64:
+    test rdx, rdx
+    jz .invalid
+    cmp rdx, SHELL_IO_MAX
+    ja .invalid
+    mov r8, rax
+    cmp r8, USER_BASE
+    jb .invalid
+    mov r9, r8
+    add r9, rdx
+    jc .invalid
+    mov r12d, ecx
+    cmp r8, USER_STACK_BASE
+    jae .stack_buffer
+    cmp r9, USER_END
+    ja .invalid
+    dec r9
+    mov rax, r8
+    call x86_64_elf64_address_flags64
+    test eax, r12d
+    jz .invalid
+    mov rax, r9
+    call x86_64_elf64_address_flags64
+    test eax, r12d
+    jz .invalid
+    mov eax, 1
+    ret
+.stack_buffer:
+    cmp r9, USER_STACK_TOP
+    ja .invalid
+    cmp r12d, PF_W
+    jne .invalid
+    call verify_user_context64
+    test eax, eax
+    jz .invalid
+    mov eax, 1
+    ret
+.invalid:
+    xor eax, eax
+    ret
+
+shell_return_to_user64:
+    mov qword [rel shell_syscall_result], rax
+    mov rax, qword [rel syscall_context + SYSCALL_CONTEXT_USER_RSP]
+    cmp rax, USER_STACK_BASE
+    jb user_syscall_rejected64
+    cmp rax, USER_STACK_TOP
+    ja user_syscall_rejected64
+    mov rax, qword [rel observed_syscall_rip]
+    call x86_64_elf64_address_flags64
+    test eax, PF_X
+    jz user_syscall_rejected64
+    mov rax, qword [rel observed_syscall_rflags]
+    test rax, RFLAGS_FIXED_BIT
+    jz user_syscall_rejected64
+    test rax, RFLAGS_SYSCALL_FORBIDDEN
+    jnz user_syscall_rejected64
+
+    push qword USER_DATA_SELECTOR
+    push qword [rel syscall_context + SYSCALL_CONTEXT_USER_RSP]
+    push qword [rel observed_syscall_rflags]
+    push qword USER_CODE_SELECTOR
+    push qword [rel observed_syscall_rip]
+    mov ax, USER_DATA_SELECTOR
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov rbx, qword [rel shell_saved_rbx]
+    mov rbp, qword [rel shell_saved_rbp]
+    mov rdi, qword [rel shell_saved_rdi]
+    mov rsi, qword [rel shell_saved_rsi]
+    mov rdx, qword [rel shell_saved_rdx]
+    mov r8, qword [rel shell_saved_r8]
+    mov r9, qword [rel shell_saved_r9]
+    mov r10, qword [rel shell_saved_r10]
+    mov r12, qword [rel shell_saved_r12]
+    mov r13, qword [rel shell_saved_r13]
+    mov r14, qword [rel shell_saved_r14]
+    mov r15, qword [rel shell_saved_r15]
+    mov rax, qword [rel shell_syscall_result]
+    iretq
 
 user_syscall_rejected64:
     mov byte [rel failure_stage], 0x20
@@ -303,6 +598,8 @@ user_event_return64:
     mov fs, ax
     mov gs, ax
 
+    cmp byte [rel execution_attempt], ATTEMPT_SHELL
+    je .shell_result
     cmp byte [rel execution_attempt], ATTEMPT_EXIT
     jne .fault_result
     mov byte [rel failure_stage], 0x30
@@ -315,6 +612,26 @@ user_event_return64:
     mov byte [rel execution_attempt], ATTEMPT_FAULT
     mov byte [rel execution_event], EVENT_NONE
     jmp enter_user_attempt64
+
+.shell_result:
+    mov byte [rel failure_stage], 0x60
+    cmp byte [rel execution_event], EVENT_SHELL_EXIT
+    jne user_execution_fail
+    cmp byte [rel exit_event_count], 1
+    jne user_execution_fail
+    cmp byte [rel fault_event_count], 0
+    jne user_execution_fail
+    cmp dword [rel shell_read_count], SHELL_EXPECTED_READS
+    jne user_execution_fail
+    cmp dword [rel shell_write_count], SHELL_EXPECTED_WRITES
+    jne user_execution_fail
+    call user_execution_cleanup64
+    test eax, eax
+    jz user_execution_return_failure64
+    lea rsi, [rel shell_exit_ok_message]
+    call serial_write64
+    mov byte [rel final_result], 1
+    jmp user_execution_return64
 
 .fault_result:
     mov byte [rel failure_stage], 0x31
@@ -843,6 +1160,19 @@ user_execution_cleanup64:
     jnz .loader_done
     mov byte [rel cleanup_error], 1
 .loader_done:
+    xor edi, edi
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jnz .selector_done
+    mov byte [rel cleanup_error], 1
+.selector_done:
+    cld
+    xor eax, eax
+    lea rdi, [rel shell_saved_state_begin]
+    mov ecx, (shell_saved_state_end - shell_saved_state_begin) / 8
+    rep stosq
+    mov dword [rel shell_read_count], 0
+    mov dword [rel shell_write_count], 0
     call physical_free_frame_count64
     cmp eax, dword [rel initial_free_count]
     je .count_done
@@ -858,6 +1188,7 @@ user_execution_cleanup64:
 
 section .rodata
 user_execution_ok_message db "REIST_X86_64_USER_EXECUTION_OK", 13, 10, 0
+shell_exit_ok_message db "REIST_X86_64_RING3_SHELL_EXIT_OK", 13, 10, 0
 user_execution_stage_message db "REIST_X86_64_USER_EXECUTION_STAGE_", 0
 observed_message db " observed=", 0
 expected_message db " expected=", 0
@@ -885,11 +1216,44 @@ observed_syscall_rip:
     resq 1
 observed_syscall_rflags:
     resq 1
+alignb 8
+shell_saved_state_begin:
+shell_saved_rbx:
+    resq 1
+shell_saved_rbp:
+    resq 1
+shell_saved_rdi:
+    resq 1
+shell_saved_rsi:
+    resq 1
+shell_saved_rdx:
+    resq 1
+shell_saved_r8:
+    resq 1
+shell_saved_r9:
+    resq 1
+shell_saved_r10:
+    resq 1
+shell_saved_r12:
+    resq 1
+shell_saved_r13:
+    resq 1
+shell_saved_r14:
+    resq 1
+shell_saved_r15:
+    resq 1
+shell_syscall_result:
+    resq 1
+shell_saved_state_end:
 failure_observed:
     resq 1
 failure_expected:
     resq 1
 initial_free_count:
+    resd 1
+shell_read_count:
+    resd 1
+shell_write_count:
     resd 1
 execution_active:
     resb 1

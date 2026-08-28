@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2b-x86_64-ring3-shell"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11178,7 +11178,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2b-x86_64-ring3-shell"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Boot a bounded interactive x86_64 Ring-3 shell"
@@ -11215,7 +11215,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "shell: boot bounded x86_64 ring3 console"
-evidence = []
+evidence = [
+  "all 41 x86_64 source-contract tests passed including compact RX shell linkage bounded command parsing stack permission checks fail-closed syscall mediation validated IRETQ return and the interactive runner dialogue",
+  "the isolated build produced a 117260-byte ELF32 Multiboot bootstrap a 1256-byte independently linked RX ELF64 Ring-3 shell the unchanged 10264-byte probe a 5496-byte C object and a 13328-byte linked C payload without hosted runtime undefined final relocations unwind constructors writable data or writable-executable segments",
+  "the bounded one-vCPU 32-MiB QEMU run preserved every accepted R8.1 and R8.2a marker sent exact INFO and EXIT commands and observed ordered RING3_SHELL_READY RING3_SHELL_INFO_OK RING3_SHELL_EXIT_OK and RING3_SHELL_OK markers after complete cleanup",
+  "the production i386 build graph devices VFS DMA SMP GUI and physical-hardware authority remain unchanged and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

@@ -94,6 +94,7 @@ extern x86_64_process_quantum_selftest64
 extern x86_64_process_runqueue_selftest64
 extern x86_64_process_deadline_sleep_selftest64
 extern x86_64_process_spawn_wait_selftest64
+extern x86_64_user_shell64
 extern _text_start
 extern _text_end
 extern _rodata_start
@@ -491,6 +492,11 @@ x86_64_nx_resume:
     jz c_core_handoff_state_error
     lea rsi, [rel c_core_handoff_message]
     call serial_write64
+    call x86_64_user_shell64
+    test eax, eax
+    jz ring3_shell_state_error
+    lea rsi, [rel ring3_shell_message]
+    call serial_write64
     jmp halt64
 
 x86_64_c_core_handoff64:
@@ -695,6 +701,12 @@ c_core_handoff_state_error:
     call serial_write64
     jmp halt64
 
+ring3_shell_state_error:
+    call serial_init64
+    lea rsi, [rel ring3_shell_state_error_message]
+    call serial_write64
+    jmp halt64
+
 section .c_core_bridge
 x86_64_c_serial_write64:
     test rdi, rdi
@@ -815,10 +827,12 @@ runqueue_lifecycle_state_error_message db "REIST_X86_64_RUNQUEUE_LIFECYCLE_ERROR
 deadline_sleep_state_error_message db "REIST_X86_64_DEADLINE_SLEEP_ERROR", 13, 10, 0
 spawn_wait_state_error_message db "REIST_X86_64_SPAWN_WAIT_ERROR", 13, 10, 0
 c_core_handoff_state_error_message db "REIST_X86_64_C_CORE_HANDOFF_ERROR", 13, 10, 0
+ring3_shell_state_error_message db "REIST_X86_64_RING3_SHELL_ERROR", 13, 10, 0
 success_message db "REIST_X86_64_LONG_MODE_BOOT_OK", 13, 10, 0
 higher_half_paging_message db "REIST_X86_64_HIGHER_HALF_PAGING_OK", 13, 10, 0
 exception_recovery_message db "REIST_X86_64_EXCEPTION_RECOVERY_OK", 13, 10, 0
 c_core_handoff_message db "REIST_X86_64_C_CORE_HANDOFF_OK", 13, 10, 0
+ring3_shell_message db "REIST_X86_64_RING3_SHELL_OK", 13, 10, 0
 
 align 8
 gdt64:

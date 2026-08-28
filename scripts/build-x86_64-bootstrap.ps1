@@ -145,6 +145,8 @@ $Objcopy = Resolve-NativeTool 'objcopy' @('C:\msys64\mingw64\bin\objcopy.exe')
 $MsysShell = Resolve-NativeTool 'sh' @('C:\msys64\usr\bin\sh.exe')
 $Artifact = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-bootstrap.elf"
 $UserProbe = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-user-probe.elf"
+$UserShell = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-user-shell.elf"
+$UserShellObject = Join-Path $RepoRoot "$OutputDirectory\x86_64\user_shell.o"
 $CObject = Join-Path $RepoRoot "$OutputDirectory\x86_64\bootstrap_core.o"
 $CElf = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-c-core.elf"
 $CText = Join-Path $RepoRoot "$OutputDirectory\x86_64\bootstrap_core_text.bin"
@@ -172,6 +174,10 @@ try {
     if (-not (Test-Path -LiteralPath $UserProbe -PathType Leaf)) {
         throw "x86_64 ELF64 user probe was not produced: $UserProbe"
     }
+    if (-not (Test-Path -LiteralPath $UserShell -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $UserShellObject -PathType Leaf)) {
+        throw "x86_64 ELF64 Ring-3 shell artifacts were not produced."
+    }
     if (-not (Test-Path -LiteralPath $CObject -PathType Leaf)) {
         throw "x86_64 freestanding C object was not produced: $CObject"
     }
@@ -193,6 +199,10 @@ try {
         $probeMagic[4] -ne 0x02) {
         throw "x86_64 user probe is not an ELFCLASS64 artifact."
     }
+    $shellItem = Get-Item -LiteralPath $UserShell
+    if ($shellItem.Length -lt 64 -or $shellItem.Length -gt 4096) {
+        throw "x86_64 ELF64 Ring-3 shell exceeds its fixed compact page."
+    }
     $item = Get-Item -LiteralPath $Artifact
     if ($item.Length -le 0 -or $item.Length -gt 2MB) {
         throw "x86_64 bootstrap artifact size is outside the fixed 1..2097152-byte range."
@@ -205,11 +215,17 @@ try {
     }
     $cElfBytes = Read-Elf64Layout -Path $CElf -RequireExecutable -RequireLinked
     $objectBytes = Read-Elf64Layout -Path $CObject
+    $shellBytes = Read-Elf64Layout -Path $UserShell -RequireExecutable -RequireLinked
+    $shellObjectBytes = Read-Elf64Layout -Path $UserShellObject
     $objectText = [Text.Encoding]::ASCII.GetString($objectBytes)
+    $shellObjectText = [Text.Encoding]::ASCII.GetString($shellObjectBytes)
     foreach ($forbidden in @('__stack_chk', 'memcpy', 'memset', 'memmove',
                               '_Unwind', '__cxa_', 'malloc', 'free')) {
         if ($objectText.Contains($forbidden)) {
             throw "x86_64 C object references forbidden runtime symbol '$forbidden'."
+        }
+        if ($shellObjectText.Contains($forbidden)) {
+            throw "x86_64 shell object references forbidden runtime symbol '$forbidden'."
         }
     }
     $cTextLength = (Get-Item -LiteralPath $CText).Length
@@ -222,6 +238,7 @@ try {
     }
     Write-Host "X86_64_BOOTSTRAP_BUILD_OK path=$Artifact bytes=$($item.Length)"
     Write-Host "X86_64_USER_PROBE_BUILD_OK path=$UserProbe bytes=$($probeItem.Length)"
+    Write-Host "X86_64_USER_SHELL_BUILD_OK path=$UserShell bytes=$($shellBytes.Length)"
     Write-Host "X86_64_C_CORE_BUILD_OK path=$CObject bytes=$($objectBytes.Length)"
     Write-Host "X86_64_C_PAYLOAD_BUILD_OK path=$CElf bytes=$($cElfBytes.Length)"
 } finally {
