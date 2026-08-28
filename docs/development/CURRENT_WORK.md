@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `0deb7be`
 
-Aktives Thema: R5.2y – xHCI-Adress-Recovery vor dem ersten EP0-Request
+Aktives Thema: R6.2o – Compositor-AP-Affinität nach begrenztem Neustart
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -117,6 +117,16 @@ derselbe USB-Pfad nutzbar. R5.2y ergänzt deshalb nach erfolgreichem xHCI
 `Address Device` die feste USB-2.0-SetAddress-Recovery vor dem ersten
 EP0-Doorbell; fehlende Events und Descriptor-Shorts bleiben fail-closed.
 R6.2o bleibt bis zu diesem Hardware-Nachtest geordnet in der Queue.
+
+Der R5.2y-Kandidat besteht 10 Tastatur- und 16 Maustests sowie den
+VMware-VGA-Paketbuild in 15 Sekunden. Der vollständige `real_hw/vga`-Build
+veröffentlichte nach zwei erfolgreichen Bootmanifestprüfungen das 64-MiB-Image
+`build/reist-os-real-hw.img` mit SHA-256
+`93E416F48327CA62E7056B6CD9D791D983E62782A0B3318B2A83B6488691B8A5`.
+Die ASUS-Abnahme startete dieses Image ohne angeschlossene PS/2-Tastatur kalt;
+die USB-Tastatur funktioniert am betroffenen xHCI-Port. R5.2y ist damit
+abgeschlossen. Die Bestätigung gilt für diese Controller-/Gerätekombination
+und ist keine breite USB-Hardwarefreigabe.
 
 ## Erreichter stabiler Meilenstein
 

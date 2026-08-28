@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R5.2y-xhci-address-recovery"
+active_id = "R6.2o-compositor-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -10244,7 +10244,7 @@ evidence = [
 
 [[packages]]
 id = "R5.2y-xhci-address-recovery"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Make xHCI EP0 enumeration independent of PS/2 boot timing"
@@ -10283,10 +10283,18 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "usb: honor address recovery before ep0"
+evidence = [
+  "the regression test first failed on the missing SetAddress recovery and then passed with fixed ordering between Address Device completion recovery and the first EP0 request",
+  "all 10 USB keyboard tests and all 16 USB mouse tests passed while descriptor reads absent events and non-terminal short packets remained fail closed",
+  "the VMware VGA package build passed in 15 seconds without starting a VM",
+  "the complete real_hw VGA build passed both boot-manifest validations and published the 64 MiB canonical installer image with SHA-256 93E416F48327CA62E7056B6CD9D791D983E62782A0B3318B2A83B6488691B8A5",
+  "the user cold-booted the replacement image on the affected ASUS system with no PS/2 keyboard attached and confirmed the USB keyboard works on the xHCI path",
+  "the repair adds only the USB 2.0 two-millisecond post-SetAddress recovery and introduces no retry loop broader hardware claim or relaxed completion rule"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"

@@ -141,6 +141,35 @@ class UsbKeyboardTests(unittest.TestCase):
             source,
         )
 
+    def test_address_device_recovery_precedes_first_ep0_request(self):
+        source = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        self.assertIn("#define XHCI_SET_ADDRESS_RECOVERY_MS 2U", source)
+        address = source[
+            source.index("static bool xhci_address_device"):
+            source.index("static bool xhci_ep0_packet_valid")
+        ]
+        self.assertIn("xhci_wait_command(address, &completed_slot)", address)
+        self.assertIn("xhci_wait_address_recovery();", address)
+        self.assertLess(
+            address.index("xhci_wait_command(address, &completed_slot)"),
+            address.index("xhci_wait_address_recovery();"),
+        )
+        recovery = source[
+            source.index("static void xhci_wait_address_recovery"):
+            source.index("static bool xhci_address_device")
+        ]
+        self.assertIn("pit_delay(XHCI_SET_ADDRESS_RECOVERY_MS);", recovery)
+        self.assertNotIn("for (", recovery)
+        self.assertNotIn("while (", recovery)
+        enumerate_hid = source[
+            source.index("static bool xhci_enumerate_root_hid"):
+            source.index("static bool xhci_publish_hid")
+        ]
+        self.assertLess(
+            enumerate_hid.index("xhci_address_device(hid, port_speed)"),
+            enumerate_hid.index("xhci_configure_boot_hid(hid, protocol_mask)"),
+        )
+
     def test_every_boot_reaches_shell_without_desktop_autostart(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         start = kernel.index("REIST_GUI DESKTOP_AUTOSTART_DISABLED")

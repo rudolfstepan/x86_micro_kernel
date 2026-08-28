@@ -24,6 +24,19 @@ Hardware konnte dadurch die Erkennung vom Zeitbedarf einer unabhängigen
 i8042-/PS/2-Initialisierung abhängen. Die Korrektur ändert weder Control-
 Transfer-Erfolgskriterien noch die feste Kandidatenzahl.
 
+Nach erfolgreichem xHCI `Address Device` wartet der Host zusätzlich exakt
+2 ms, bevor er den ersten EP0-Descriptor-Request veröffentlicht. `Address
+Device` führt den USB-`SET_ADDRESS`-Vorgang aus; USB 2.0 Abschnitt 9.2.6.3
+fordert danach diese Mindest-Recovery. Die Pause ist konstant, besitzt keine
+Retryschleife und ersetzt weder die 10-ms-Port-Reset-Recovery noch die
+Transfer-Event-Prüfung. Ein fehlendes Event bleibt daher ein Timeout mit
+voller Restlänge und wird nie durch die Pause als Erfolg behandelt.
+
+Der abschließende ASUS-Kaltstart mit dem neu erzeugten Image und ohne
+angeschlossene PS/2-Tastatur bestätigt die USB-Boot-Tastatur am zuvor
+zeitabhängigen xHCI-Port. Dieser Nachweis schließt die konkrete EP0-Regression,
+nicht die allgemeine Controller- oder HID-Matrix.
+
 ## Verbindliche HID-Boot-Requests
 
 Nach erfolgreicher Descriptorprüfung und `CONFIGURE_ENDPOINT` müssen mindestens

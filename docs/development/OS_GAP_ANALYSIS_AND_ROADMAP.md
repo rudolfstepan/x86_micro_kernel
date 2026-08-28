@@ -2257,6 +2257,15 @@ akzeptierten Control-Short. R5.2y schließt vor R6.2o die fehlende feste
 SetAddress-Recovery zwischen erfolgreichem xHCI `Address Device` und dem ersten
 EP0-Doorbell; die ASUS-Abnahme muss ohne PS/2 mit einem Ersatzimage erfolgen.
 
+Der Ersatzkandidat besteht 10 Tastatur- und 16 Maustests sowie den
+VMware-VGA-Paketbuild in 15 Sekunden. Das zweimal manifestgeprüfte kanonische
+Hardwareimage `build/reist-os-real-hw.img` hat SHA-256
+`93E416F48327CA62E7056B6CD9D791D983E62782A0B3318B2A83B6488691B8A5`;
+der anschließende ASUS-Kaltstart ohne angeschlossene PS/2-Tastatur bestätigt
+die USB-Tastatur am betroffenen xHCI-Port. R5.2y ist damit für die konkrete
+Controller-/Gerätekombination abgeschlossen; eine breite USB-Hardwarefreigabe
+wird daraus nicht abgeleitet.
+
 Künftige `real_hw`-Builds veröffentlichen nach einer zweiten Manifestprüfung
 atomar `build/reist-os-real-hw.img`, auch wenn der Quellbuild in einem
 Diagnose-Unterordner liegt. Nur dieses zielprofilspezifische Artefakt wird von

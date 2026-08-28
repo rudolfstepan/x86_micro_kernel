@@ -38,6 +38,7 @@
 #define XHCI_PORT_SETTLE_MS     500U
 #define XHCI_PORT_POWER_SETTLE_MS 20U
 #define XHCI_PORT_RESET_RECOVERY_MS 10U
+#define XHCI_SET_ADDRESS_RECOVERY_MS 2U
 #define XHCI_PORT_MAX_RECOVERY_MS XHCI_PORT_POWER_SETTLE_MS
 
 #define XHCI_INTEL_VENDOR_ID       0x8086U
@@ -944,6 +945,10 @@ static bool xhci_control(xhci_hid_device_t *hid,
     return result;
 }
 
+static void xhci_wait_address_recovery(void) {
+    pit_delay(XHCI_SET_ADDRESS_RECOVERY_MS);
+}
+
 static bool xhci_address_device(xhci_hid_device_t *hid, uint8_t port_speed) {
     if (hid == NULL) return false;
     xhci_trb_t *command = xhci_command(TRB_ENABLE_SLOT, 0U, 0U, 0U);
@@ -973,8 +978,14 @@ static bool xhci_address_device(xhci_hid_device_t *hid, uint8_t port_speed) {
                                         xhci_dma32(input_context), 0U,
                                         (uint32_t)slot << 24U);
     uint8_t completed_slot = 0U;
-    return xhci_wait_command(address, &completed_slot) &&
-           completed_slot == slot;
+    if (!xhci_wait_command(address, &completed_slot) ||
+        completed_slot != slot) return false;
+    /* USB 2.0 section 9.2.6.3 requires at least 2 ms recovery after the
+     * SET_ADDRESS status stage.  xHCI performs that request inside Address
+     * Device, so its successful command completion must precede this fixed
+     * delay and the first EP0 descriptor doorbell. */
+    xhci_wait_address_recovery();
+    return true;
 }
 
 static bool xhci_ep0_packet_valid(uint8_t port_speed, uint16_t max_packet) {
