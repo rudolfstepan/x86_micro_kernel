@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `4a084c8`
+Branch/Startpunkt: `working_branch` / `452fe654`
 
-Aktives Thema: kein Queue-Paket – R6.2o ist abgeschlossen
+Aktives Thema: R8.1b – begrenzte x86_64-Exception-Grundlage
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -15,6 +15,12 @@ genau die ersten 2 MiB identisch ab und prüft nach dem Far-Transfer im
 isolierte Windows-Build und der Ein-vCPU-/32-MiB-QEMU-Lauf bestanden; der
 Laufzeitmarker erschien nach 1,8 Sekunden. Ein vollständiger x86_64-Kernel,
 ELF64-Prozesse und 64-Bit-Userspace sind ausdrücklich spätere Pakete.
+
+R8.1b ist als nächster isolierter Architekturbaustein aktiv. Es ergänzt die
+32 reservierten Exceptionvektoren, normalisierte 64-Bit-Frames, eine statische
+TSS mit Double-Fault-IST und einen exakt validierten `UD2`-Resume-Probe. Das
+Paket aktiviert keine Hardware-IRQs und erweitert weder Paging noch Prozess-,
+Syscall- oder Userspace-ABI.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

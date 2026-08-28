@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1b-x86_64-exception-foundation"
 
 [policy]
 one_package_per_run = true
@@ -10396,6 +10396,58 @@ evidence = [
   "the bounded one-vCPU 32-MiB QEMU x86_64 runtime reached REIST_X86_64_LONG_MODE_BOOT_OK in 1.8 seconds after the 64-bit control-state checks",
   "the bootstrap remains explicitly limited to the architecture transition and provides no complete kernel process syscall userspace image or physical-hardware claim"
 ]
+
+[[packages]]
+id = "R8.1b-x86_64-exception-foundation"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add a bounded x86_64 exception and double-fault foundation"
+scope = "Extend only the isolated x86_64 bootstrap artifact with the architectural exception-entry foundation required before broader paging or kernel migration. Install exactly the 32 architecturally reserved exception gates, normalize hardware and synthetic error-code frames, preserve all general-purpose registers, load a 64-bit TSS with one fixed IST stack for double fault, and keep maskable interrupts disabled. Trigger one compile-time-fixed UD2 probe after long-mode validation; accept it only when vector error code and RIP match the exact probe site, advance to the fixed continuation and publish ordered serial markers. Every unexpected exception must emit one bounded fatal marker and halt without returning. Keep all existing i386 kernel userspace image VMware and hardware targets unchanged and make no claim of a complete x86_64 kernel paging process syscall userspace or physical-hardware implementation."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/cpu/exceptions.asm",
+  "config/x86_64_bootstrap.ld",
+  "scripts/build-x86_64-bootstrap.ps1",
+  "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all normal make Windows QEMU VMware real-hardware kernel userspace image and installer targets remain i386 by default and do not consume any x86_64 object",
+  "long-mode capability and control-register checks complete before the exception foundation is initialized or any exception success marker can be emitted",
+  "the IDT contains exactly vectors 0 through 31 as present 64-bit interrupt gates with reserved fields zero and only vector 8 selects IST1",
+  "the packed 104-byte TSS and its fixed 16-KiB double-fault IST are static inside the existing bounded identity map and LTR completes before LIDT",
+  "every exception stub presents one normalized vector and error-code pair while the common entry preserves and restores every general-purpose register",
+  "only the exact UD2 probe vector 6 error 0 and RIP may resume at its fixed continuation; any mismatch or other exception emits a bounded fatal marker and halts",
+  "maskable interrupts remain disabled and no process syscall userspace device or dynamic-memory authority is introduced",
+  "the artifact and documentation make no claim of a complete x86_64 kernel paging ABI physical-hardware acceptance or fail-operational behavior"
+]
+targeted_tests = [
+  "python test/test_x86_64_boot.py -v"
+]
+package_tests = [
+  ".\\scripts\\build-x86_64-bootstrap.ps1"
+]
+runtime_tests = [
+  "python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"
+]
+stop_conditions = [
+  "an existing i386 object flag linker script artifact path image layout or default target changes",
+  "an exception gate can be published before its complete descriptor TSS or IST state is initialized",
+  "an unexpected exception returns or the UD2 probe can resume without exact vector error-code and RIP validation",
+  "a wait stack table loop memory range or generated artifact is not statically bounded",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "arch: add x86_64 exception foundation"
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
