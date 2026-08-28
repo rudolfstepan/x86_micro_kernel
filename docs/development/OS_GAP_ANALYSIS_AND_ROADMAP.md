@@ -142,6 +142,12 @@ generation-gebundenem CPL3-`UD2`, setzte Task A fort und akzeptierte dessen
 Abschlussmarker, nachdem die vierzehn Lebenszyklusereignisse validiert und
 CR3, TSS, Syscall-MSRs, Tasktabellen sowie alle Frames restauriert waren.
 
+**R8.1h ist aktiv:** Die naechste beschleunigte Scheibe buendelt die erste
+maskierbare Interrupt- und Clockgrundlage. Genau IDT-Vektor 32 nimmt nach
+Standard-PIC-Remap und festem 100-Hz-PIT-Setup drei validierte Kernel-IRQ0-
+Ereignisse an. Ein fester TSC-Abbruch verhindert ein unbegrenztes Warten.
+CPL3-Praeemption, LAPIC, IOAPIC und produktive Clockintegration folgen danach.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

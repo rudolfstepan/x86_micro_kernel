@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1h-x86_64-maskable-timer-irq"
 
 [policy]
 one_package_per_run = true
@@ -10771,6 +10771,59 @@ evidence = [
   "success validated the fourteen-event lifecycle trace restored original CR3 TSS and syscall MSRs cleared both task records and eight static user tables released every private and retained frame and restored the initial free count",
   "no timer preemption SMP general syscall dispatcher production userspace device HPASA physical-hardware or fail-operational authority was added and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.1h-x86_64-maskable-timer-irq"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 maskable PIT interrupt foundation"
+scope = "Extend only the isolated x86_64 bootstrap with the first maskable hardware-interrupt proof required by later timer preemption. Expand the fixed IDT from exception vectors 0 through 31 to include only IRQ vector 32, install one normalized no-error IRQ0 stub, and route it before privilege-specific exception handling. Snapshot both legacy PIC masks, remap master and slave PIC to vectors 32 and 40 with bounded I O ordering, leave every line except PIT IRQ0 masked, program PIT channel 0 to a fixed 100-Hz periodic divisor, and admit exactly three kernel-mode timer events. Each event must validate active generation state original CR3 vector error code selectors and interrupted RIP range before incrementing a bounded monotonic tick count and issuing the master EOI. The wait uses a fixed TSC deadline rather than HLT so missing IRQ delivery fails without an unbounded sleep. On success or failure disable interrupts mask IRQ0 restore both saved PIC masks clear the active generation and publish TIMER_IRQ_OK only after exactly three events. Keep CPL3 preemption LAPIC IOAPIC SMP production clock integration devices HPASA and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/cpu/exceptions.asm",
+  "arch/x86_64/cpu/timer_interrupt.asm",
+  "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all normal make Windows QEMU VMware real-hardware kernel userspace image and installer targets remain i386 by default and consume no x86_64 timer object",
+  "the IDT contains exactly vectors 0 through 32 and only vector 32 enters the maskable timer route",
+  "PIC initialization snapshots both masks remaps to standard vectors 32 and 40 and unmasks only master IRQ0 while every slave line remains masked",
+  "the PIT uses the standard 1193182-Hz source a fixed divisor for 100 Hz and no dynamic or unbounded calibration",
+  "each admitted event validates active generation original CR3 vector zero error kernel selectors and interrupted bootstrap text before changing the monotonic tick count",
+  "the timer count stops at exactly three and each admitted IRQ sends exactly one master PIC EOI",
+  "the wait remains bounded by a fixed TSC deadline and does not execute HLT or depend on a userspace-visible busy wait",
+  "success and failure disable interrupts mask IRQ0 restore both saved PIC masks and clear all temporary active state before return",
+  "no CPL3 preemption LAPIC IOAPIC SMP production clock device DMA HPASA physical-hardware or fail-operational authority is introduced"
+]
+targeted_tests = [
+  "python test/test_x86_64_boot.py -v"
+]
+package_tests = [
+  ".\\scripts\\build-x86_64-bootstrap.ps1"
+]
+runtime_tests = [
+  "python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"
+]
+stop_conditions = [
+  "an existing i386 object flag linker script artifact path image layout syscall number or default target changes",
+  "an IRQ other than vector 32 can enter the timer handler or any PIC line other than IRQ0 becomes unmasked",
+  "a user or unexpected kernel frame can increment the tick count or receive an EOI as an admitted timer event",
+  "the wait can sleep or spin without the fixed TSC ceiling",
+  "cleanup can leave IF IRQ0 PIC masks or active timer generation changed",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "cpu: add bounded x86_64 PIT interrupt proof"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

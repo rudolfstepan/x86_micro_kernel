@@ -140,6 +140,12 @@ ihre private Datenseite fort und beendet sich ueber `EXIT` 9. Vor dem
 Erfolgsmarker sind alle temporaeren CR3-, TSS-, MSR-, Tabellen- und
 Framezustaende widerrufen.
 
+R8.1h buendelt als naechste isolierte Grundlage genau einen maskierbaren
+Hardwarepfad: Legacy-PIC-IRQ0 auf IDT-Vektor 32 und einen festen 100-Hz-PIT.
+Drei generation- und framevalidierte Kernelereignisse mit begrenzter
+TSC-Wartezeit muessen vor vollstaendig restaurierten PIC-Masken abgeschlossen
+sein. Das erteilt noch keine CPL3-Praeemption oder produktive Clockautoritaet.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

@@ -222,3 +222,17 @@ vierzehnteiligen Lebenszykluspruefung, dem Widerruf aller temporaeren
 Architekturzustande und vollstaendiger Framefreigabe erschien
 `REIST_X86_64_PROCESS_SCHEDULER_OK` zwischen `USER_EXECUTION_OK` und
 `EXCEPTION_RECOVERY_OK`.
+
+## Geplante Abnahme R8.1h
+
+Die feste IDT wird ausschliesslich um den standardmaessigen PIC-IRQ0-Vektor 32
+erweitert. Beide PIC-Masken werden vor dem Remap auf 32/40 gesichert; nur
+Master-IRQ0 darf waehrend des Nachweises unmaskiert sein. PIT-Kanal 0 verwendet
+den standardisierten 1.193.182-Hz-Eingang und einen festen 100-Hz-Divisor.
+Exakt drei normalisierte Kernel-Frames muessen Generation, CR3, Vektor,
+Fehlercode, Selektoren und RIP-Bereich bestehen und je ein Master-EOI senden.
+
+Der Warteloop besitzt eine feste TSC-Obergrenze und verwendet kein `HLT`. Vor
+`REIST_X86_64_TIMER_IRQ_OK` muessen IF deaktiviert, IRQ0 wieder maskiert, beide
+gesicherten PIC-Masken restauriert und die temporaere Generation inaktiv sein.
+CPL3-Praeemption, LAPIC, IOAPIC und SMP bleiben offen.
