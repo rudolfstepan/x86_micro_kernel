@@ -148,6 +148,11 @@ sein. Das erteilt noch keine CPL3-Praeemption oder produktive Clockautoritaet.
 Der Lauf hat exakt drei Vektor-32-Ereignisse und drei Master-EOIs bestaetigt;
 vor dem Erfolgsmarker waren IF, IRQ0, PIC-Masken und Generation restauriert.
 
+R8.1i verbindet diesen IRQ einmalig mit zwei privaten CPL3-Generationen. Eine
+CPU-gebundene Task darf nur nach vollstaendiger Framevalidierung preemptiert
+und reaptiert werden; die unabhaengige Task muss danach weiterlaufen. Das ist
+noch kein periodischer Produktionsscheduler.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

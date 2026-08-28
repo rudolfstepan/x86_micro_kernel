@@ -155,6 +155,11 @@ framevalidierte IRQ0-Ereignisse an, sendete drei Master-EOIs und meldete
 ausgeschoepft; IF, IRQ0, PIC-Masken und temporaere Generation waren vor Erfolg
 restauriert.
 
+**R8.1i ist aktiv:** Der R8.1h-PIT wird mit dem privaten Zwei-Slot-Scheduler
+verbunden. Nach genau einem `YIELD` von Task A muss IRQ0 die CPU-gebundene
+Task B anhand ihres CPL3-Frames preemptieren und reapen. A muss danach mit
+intakter privater Datenseite fortfahren und `EXIT` 9/Status 102 liefern.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

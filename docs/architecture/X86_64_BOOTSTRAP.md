@@ -245,3 +245,12 @@ Ein-vCPU-/32-MiB-QEMU-Lauf nahm genau drei Vektor-32-Frames an und meldete
 Kernel-CS, IF und Higher-Half-Text-RIP; drei Ereignisse erzeugten drei
 Master-EOIs. Danach waren IF, IRQ0, beide PIC-Masken und der temporaere Zustand
 restauriert.
+
+## Geplante Abnahme R8.1i
+
+Task A gibt genau einmal ueber `YIELD` 40 an die CPU-gebundene Task B ab. Erst
+dann wird PIT-IRQ0 fuer eine Generation armiert. Der normalisierte CPL3-Frame
+muss B, deren privaten CR3, Userselektoren, IF, Stack und ausfuehrbare RIP
+exakt validieren, IRQ0 maskieren, genau einen EOI senden und nur B reapen. Task
+A muss danach ihre private Datenseite bestaetigen und ueber `EXIT` 9 mit Status
+102 enden. Bs TSC-Limit verhindert einen unbegrenzten Userloop.

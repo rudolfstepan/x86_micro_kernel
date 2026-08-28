@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1i-x86_64-cpl3-timer-preemption"
 
 [policy]
 one_package_per_run = true
@@ -10832,6 +10832,46 @@ evidence = [
   "the fixed TSC deadline used no HLT; success disabled IF masked IRQ0 restored both saved PIC masks cleared temporary generation state and retained no CPL3 preemption authority",
   "no LAPIC IOAPIC SMP production clock device HPASA physical-hardware or fail-operational claim was added and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.1i-x86_64-cpl3-timer-preemption"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 CPL3 timer preemption and process continuation proof"
+scope = "Extend only the isolated x86_64 bootstrap by connecting the accepted R8.1h PIT IRQ to the fixed R8.1g two-slot scheduler. Recreate two private generation-scoped tasks with private writable ELF pages and NX stacks. Task A writes private state and performs exactly one REIST YIELD 40. Arm a fixed one-shot preemption generation before entering CPU-bound task B with IF enabled and a user-visible TSC failure ceiling. IRQ0 must validate B's exact CPL3 frame private CR3 generation selectors stack executable RIP and IF, mask and acknowledge the timer, transition only B from RUNNING to PREEMPTED and reap it, then resume A. Task A must retain its private data and complete exact EXIT 9 status 102. Disarm the PIT path restore PIC masks CR3 TSS syscall MSRs tables task records and all frames before publishing TIMER_PREEMPTION_OK. Keep recurring quanta fairness sleep wait SMP LAPIC IOAPIC production integration devices HPASA and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile",
+  "arch/x86_64/boot/entry.asm", "arch/x86_64/cpu/timer_interrupt.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "arch/x86_64/user/probe.asm",
+  "scripts/run_qemu_x86_64_boot.py", "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 targets remain unchanged and consume no x86_64 preemption path",
+  "exactly two private task generations exist and only task B may transition from RUNNING to PREEMPTED",
+  "task B's CPU loop has a fixed TSC failure ceiling and no unbounded HLT or wait",
+  "IRQ0 validates active timer generation CPL3 vector error CR3 selectors IF stack and executable RIP before process state or EOI changes",
+  "exactly one timer event masks IRQ0 sends one master EOI reaps only B and resumes A",
+  "task A observes its original private writable value after preemption and exits only with REIST EXIT 9 status 102",
+  "success restores PIC masks IF CR3 TSS syscall MSRs tables task records frames and initial free count",
+  "no recurring quanta fairness sleep wait SMP LAPIC IOAPIC production clock device DMA HPASA physical-hardware or fail-operational authority is introduced"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 target syscall number or image layout changes",
+  "an IRQ can preempt or reap task A or an invalid CPL3 frame can receive an EOI",
+  "task B can wait past its TSC ceiling without a fatal closed outcome",
+  "cleanup leaves timer process or memory authority active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: add bounded x86_64 timer preemption proof"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

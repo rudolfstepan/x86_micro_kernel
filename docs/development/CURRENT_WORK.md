@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: kein Paket aktiv; R8.1h ist abgeschlossen
+Aktives Thema: R8.1i – begrenzte x86_64-CPL3-Timerpreemption
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -124,6 +124,13 @@ Ein-vCPU-/32-MiB-QEMU-Lauf nahm exakt drei validierte IRQ0-Frames an und
 meldete `TIMER_IRQ_OK` geordnet vor dem Abschlussmarker. IF, IRQ0, beide
 PIC-Masken und die temporaere Generation waren davor restauriert. Die Queue
 ist wieder leer.
+
+R8.1i ist aktiv. Task A gibt einmal kooperativ an eine CPU-gebundene Task B
+ab. Ein generation- und framevalidierter PIT-IRQ muss ausschliesslich B
+preemptieren und reapen; A muss danach ihre private Datenseite behalten und
+mit Exit-Status 102 beenden. Ein TSC-Limit im Userloop schliesst fehlende
+IRQ-Zustellung begrenzt. Wiederkehrende Quanten, Fairness und produktive
+Schedulerintegration bleiben spaeteren Paketen vorbehalten.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den
