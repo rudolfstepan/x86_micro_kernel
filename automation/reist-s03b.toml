@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1c-x86_64-higher-half-paging"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10458,7 +10458,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1c-x86_64-higher-half-paging"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 higher-half W^X paging"
@@ -10508,7 +10508,13 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "arch: add x86_64 higher-half W^X paging"
-evidence = []
+evidence = [
+  "the final higher-half source contract passed all 11 tests including fixed table bounds section permissions low-map revocation and exact UD2 plus NX page-fault validation",
+  "the warning-free isolated Windows build linked a 26180-byte Multiboot ELF without changing or consuming any production i386 dependency",
+  "after one focused repair to ignore only CPU-owned PTE Accessed and Dirty bits the one-vCPU 32-MiB QEMU runtime published all six required paging and exception markers in exact order within one second",
+  "the runtime executed on a canonical higher-half RIP and stack after clearing PML4 entry zero and reloading CR3 then accepted only page-fault vector 14 error 0x11 with exact RIP and CR2 at the fixed NX data byte",
+  "the package adds no Multiboot memory-map parser physical allocator direct map process syscall userspace device hardware or fail-operational claim and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

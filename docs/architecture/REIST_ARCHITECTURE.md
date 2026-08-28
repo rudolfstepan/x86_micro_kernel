@@ -92,6 +92,15 @@ feste Fortsetzung ändern und mit `iretq` zurückkehren; jede andere Exception
 meldet begrenzt fatal und hält. Maskierbare Interrupts und alle produktiven
 x86_64-Kernel-/Userspace-ABIs bleiben außerhalb dieser Grundlage.
 
+R8.1c trennt im selben isolierten Artefakt die gelinkten Seitenrechte. Ein
+kanonischer Higher-Half-Alias verwendet feste 4-KiB-Seiten mit Text-RX,
+RoData-R/NX und Data/BSS-RW/NX. `CR0.WP` und `EFER.NXE` sind verpflichtend;
+nach dem Wechsel von Ausführung und Stack wird die niedrige 2-MiB-
+Übergangsabbildung widerrufen und CR3 neu geladen. Ein exakt gebundener
+Instruction-Fetch-Page-Fault beweist NX, ohne eine allgemeine
+Fehlerfortsetzung zu erlauben. Multiboot-Speicherkarte, physischer Allocator
+und Direct Map bleiben R8.1d vorbehalten.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

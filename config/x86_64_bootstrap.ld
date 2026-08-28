@@ -10,20 +10,32 @@ SECTIONS
   }
 
   .text ALIGN(4096) : {
+    _text_start = .;
     *(.text)
+    . = ALIGN(4096);
+    _text_end = .;
   }
 
-  .rodata ALIGN(16) : {
+  .rodata ALIGN(4096) : {
+    _rodata_start = .;
     *(.rodata)
+    . = ALIGN(4096);
+    _rodata_end = .;
   }
 
-  .data ALIGN(16) : {
+  .data ALIGN(4096) : {
+    _data_start = .;
     *(.data)
+    . = ALIGN(4096);
+    _data_end = .;
   }
 
   .bss ALIGN(4096) (NOLOAD) : {
+    _bss_start = .;
     *(COMMON)
     *(.bss)
+    . = ALIGN(4096);
+    _bss_end = .;
   }
 
   _x86_64_bootstrap_end = .;

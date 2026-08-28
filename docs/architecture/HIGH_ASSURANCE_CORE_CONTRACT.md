@@ -67,6 +67,14 @@ Architektur-Prototyp und darf nicht als vollständige Systemvariante bezeichnet
 werden. Der produktive i386-Pfad bleibt während der x86_64-Migration der
 unveränderte Standard und Fallback.
 
+Die isolierte x86_64-Paginggrundlage verwendet feste 4-KiB-Seiten und trennt
+schreibbare von ausführbaren Abbildungen. `CR0.WP` und `EFER.NXE` müssen vor
+dem Schutzwirkungsnachweis aktiv sein. Eine niedrige Übergangsabbildung darf
+nur bestehen, bis RIP und RSP den kanonischen Higher-Half-Alias verwenden;
+danach wird sie vor Exception- und NX-Probes widerrufen und durch CR3-Reload
+invalidiert. Dynamische physische Speicherverwaltung bleibt ein eigener,
+später abzunehmender Vertrag.
+
 Bootartefakte müssen versioniert und ihre exakten Inhalte kryptografisch
 gebunden sein. Der aktuelle BIOS-Pfad verwendet ein Manifest-v3-Format mit
 SHA-256 nach NIST FIPS 180-4, eingebetteter RSA-PSS-Signatur und einen

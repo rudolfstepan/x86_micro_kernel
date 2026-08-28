@@ -14,13 +14,16 @@ import time
 SUCCESS = "REIST_X86_64_EXCEPTION_RECOVERY_OK"
 REQUIRED_MARKERS = (
     "REIST_X86_64_LONG_MODE_BOOT_OK",
+    "REIST_X86_64_HIGHER_HALF_PAGING_OK",
     "REIST_X86_64_EXCEPTION_IDT_READY",
     "REIST_X86_64_EXCEPTION_UD_OK",
+    "REIST_X86_64_PAGING_NX_OK",
     SUCCESS,
 )
 FAILURES = (
     "REIST_X86_64_UNSUPPORTED",
     "REIST_X86_64_LONG_MODE_STATE_ERROR",
+    "REIST_X86_64_HIGHER_HALF_STATE_ERROR",
     "REIST_X86_64_EXCEPTION_FATAL",
 )
 QEMU_FALLBACKS = (
@@ -107,7 +110,7 @@ def run_boot(qemu: Path, image: Path, log: Path, timeout: float) -> str:
         detail = stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"required marker missing; qemu={detail or 'no diagnostic'}")
     if positions != sorted(positions) or len(set(positions)) != len(positions):
-        raise RuntimeError("x86_64 exception markers are out of order")
+        raise RuntimeError("x86_64 paging and exception markers are out of order")
     return captured
 
 

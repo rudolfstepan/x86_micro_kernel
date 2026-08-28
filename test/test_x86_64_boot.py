@@ -35,27 +35,70 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertLess(lme, paging)
         self.assertLess(paging, transfer)
         self.assertIn("test edx, CPUID_LONG_MODE_BIT", source)
+        self.assertIn("test edx, CPUID_NX_BIT", source)
+        self.assertLess(source.index("call cpu_has_long_mode"), source.index("wrmsr"))
 
     def test_page_tables_and_serial_polling_are_fixed(self):
         source = self.read("arch/x86_64/boot/entry.asm")
-        self.assertIn("mov ecx, (3 * 4096) / 4", source)
-        self.assertEqual(source.count("resb 4096"), 3)
+        self.assertIn("mov ecx, (5 * 4096) / 4", source)
+        self.assertEqual(source.count("resb 4096"), 5)
         self.assertIn("resb 16384", source)
         self.assertIn("SERIAL_TX_POLLS     equ 65536", source)
         self.assertEqual(source.count("mov ecx, SERIAL_TX_POLLS"), 2)
         linker = self.read("config/x86_64_bootstrap.ld")
         self.assertIn("_x86_64_bootstrap_end <= 0x00200000", linker)
+        for boundary in ("text", "rodata", "data", "bss"):
+            self.assertIn(f"_{boundary}_start", linker)
+            self.assertIn(f"_{boundary}_end", linker)
+        self.assertGreaterEqual(linker.count("ALIGN(4096)"), 8)
+
+    def test_higher_half_map_is_fixed_and_low_transition_is_revoked(self):
+        source = self.read("arch/x86_64/boot/entry.asm")
+        self.assertIn("HIGHER_HALF_BASE     equ 0xFFFFFFFF80000000", source)
+        self.assertIn("mov dword [pml4_table + (511 * 8)]", source)
+        self.assertIn("mov dword [pdpt_table + (510 * 8)]", source)
+        self.assertIn("mov dword [low_page_directory], PAGE_2M_FLAGS", source)
+        self.assertIn("higher_half_entry:", source)
+        switch = source.index("lea rsp, [rel bootstrap_stack_top]")
+        revoke = source.index("mov qword [rel pml4_table], 0", switch)
+        flush = source.index("mov cr3, rax", revoke)
+        marker = source.index("higher_half_paging_message", flush)
+        self.assertLess(switch, revoke)
+        self.assertLess(revoke, flush)
+        self.assertLess(flush, marker)
+
+    def test_final_page_permissions_are_wx_exclusive(self):
+        source = self.read("arch/x86_64/boot/entry.asm")
+        self.assertIn("CR0_WP_BIT          equ (1 << 16)", source)
+        self.assertIn("EFER_NXE_BIT        equ (1 << 11)", source)
+        self.assertIn("PAGE_NX_HIGH        equ 0x80000000", source)
+        self.assertIn("PAGE_HW_AD_MASK     equ 0x060", source)
+        self.assertIn("or eax, CR0_PG_BIT | CR0_WP_BIT", source)
+        self.assertIn("or eax, EFER_LME_BIT | EFER_NXE_BIT", source)
+        self.assertRegex(
+            source,
+            re.compile(
+                r"mov esi, _text_start.*?mov ebx, PAGE_PRESENT\s+"
+                r"xor ecx, ecx.*?call map_high_pages32",
+                re.DOTALL,
+            ),
+        )
+        for start in ("_rodata_start", "_data_start", "_bss_start"):
+            block = source[source.index(f"mov esi, {start}"):]
+            self.assertIn("mov ecx, PAGE_NX_HIGH", block.split("call map_high_pages32", 1)[0])
+        self.assertIn("and r8d, ~PAGE_HW_AD_MASK", source)
 
     def test_success_marker_is_reachable_only_in_64_bit_section(self):
         source = self.read("arch/x86_64/boot/entry.asm")
         bits64 = source.index("BITS 64")
         entry = source.index("long_mode_entry:", bits64)
         state_checks = source.index("test eax, EFER_LMA_BIT", entry)
-        success_load = source.index("mov esi, success_message", state_checks)
+        success_load = source.index("lea rsi, [rel success_message]", state_checks)
         self.assertLess(bits64, entry)
         self.assertLess(entry, state_checks)
         self.assertLess(state_checks, success_load)
         self.assertEqual(source.count("REIST_X86_64_LONG_MODE_BOOT_OK"), 1)
+        self.assertEqual(source.count("REIST_X86_64_HIGHER_HALF_PAGING_OK"), 1)
 
     def test_runner_is_single_cpu_memory_and_deadline_bounded(self):
         runner = self.read("scripts/run_qemu_x86_64_boot.py")
@@ -101,7 +144,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
             self.assertIn(f"push {register}", source)
             self.assertIn(f"pop {register}", source)
 
-    def test_ud2_probe_requires_exact_frame_and_runner_requires_order(self):
+    def test_ud2_and_nx_probes_require_exact_frames_and_runner_order(self):
         entry = self.read("arch/x86_64/boot/entry.asm")
         source = self.read("arch/x86_64/cpu/exceptions.asm")
         runner = self.read("scripts/run_qemu_x86_64_boot.py")
@@ -112,8 +155,16 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("cmp qword [rsp + EXCEPTION_FRAME_ERROR], 0", source)
         self.assertIn("cmp rax, rdx", source)
         self.assertIn("mov [rsp + EXCEPTION_FRAME_RIP], rdx", source)
+        self.assertIn("x86_64_nx_probe_target:", entry)
+        self.assertIn("x86_64_nx_resume:", entry)
+        self.assertIn("cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 14", source)
+        self.assertIn("cmp qword [rsp + EXCEPTION_FRAME_ERROR], 0x11", source)
+        self.assertIn("mov rax, cr2", source)
+        self.assertIn("REIST_X86_64_PAGING_NX_OK", source)
         self.assertIn("REIST_X86_64_EXCEPTION_FATAL vector=", source)
         self.assertIn("REQUIRED_MARKERS", runner)
+        self.assertIn("REIST_X86_64_HIGHER_HALF_PAGING_OK", runner)
+        self.assertIn("REIST_X86_64_PAGING_NX_OK", runner)
         self.assertIn("REIST_X86_64_EXCEPTION_RECOVERY_OK", runner)
         self.assertIn("positions != sorted(positions)", runner)
 
@@ -122,6 +173,8 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("kein vollstaendiger REIST-Kernel", contract)
         self.assertIn("produktive i386-Build", contract)
         self.assertIn("REIST_X86_64_LONG_MODE_BOOT_OK", contract)
+        self.assertIn("Higher-Half", contract)
+        self.assertIn("R8.1d", contract)
 
 
 if __name__ == "__main__":

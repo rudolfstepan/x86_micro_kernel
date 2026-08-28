@@ -16,6 +16,7 @@ KERNEL_DATA_SELECTOR  equ 0x10
 EXCEPTION_FRAME_VECTOR equ (15 * 8)
 EXCEPTION_FRAME_ERROR  equ (EXCEPTION_FRAME_VECTOR + 8)
 EXCEPTION_FRAME_RIP    equ (EXCEPTION_FRAME_ERROR + 8)
+HIGHER_HALF_BASE       equ 0xFFFFFFFF80000000
 
 section .text
 global x86_64_exception_init
@@ -25,6 +26,8 @@ extern serial_putc64
 extern halt64
 extern x86_64_ud2_probe
 extern x86_64_ud2_resume
+extern x86_64_nx_probe_target
+extern x86_64_nx_resume
 
 x86_64_exception_init:
     cld
@@ -66,13 +69,14 @@ x86_64_exception_init:
     mov ax, TSS_SELECTOR
     ltr ax
 
-    ; Build every gate completely before LIDT. All handler addresses are in
-    ; the existing low 2-MiB identity map, so their upper 32 bits are zero.
+    ; Build every high-half gate completely before LIDT.
     lea rsi, [rel exception_stub_table]
     lea rdi, [rel exception_idt]
     xor ecx, ecx
 .gate_loop:
     mov eax, dword [rsi + rcx * 4]
+    mov rdx, HIGHER_HALF_BASE
+    add rax, rdx
     mov word [rdi], ax
     mov word [rdi + 2], KERNEL_CODE_SELECTOR
     mov byte [rdi + 4], 0
@@ -81,9 +85,10 @@ x86_64_exception_init:
     mov byte [rdi + 4], TSS_IST1
 .gate_no_ist:
     mov byte [rdi + 5], IDT_GATE_PRESENT_INT
-    shr eax, 16
+    shr rax, 16
     mov word [rdi + 6], ax
-    mov dword [rdi + 8], 0
+    shr rax, 16
+    mov dword [rdi + 8], eax
     mov dword [rdi + 12], 0
     add rdi, IDT_GATE_SIZE
     inc ecx
@@ -93,7 +98,7 @@ x86_64_exception_init:
     lea rax, [rel exception_idt]
     mov qword [rel exception_idt_pointer + 2], rax
     lidt [rel exception_idt_pointer]
-    mov esi, exception_idt_ready_message
+    lea rsi, [rel exception_idt_ready_message]
     call serial_write64
     ret
 
@@ -162,18 +167,41 @@ exception_common:
     push r15
 
     cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 6
-    jne exception_fatal
+    je exception_ud_probe
+    cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 14
+    je exception_nx_probe
+    jmp exception_fatal
+
+exception_ud_probe:
     cmp qword [rsp + EXCEPTION_FRAME_ERROR], 0
     jne exception_fatal
     mov rax, [rsp + EXCEPTION_FRAME_RIP]
-    mov edx, x86_64_ud2_probe
+    lea rdx, [rel x86_64_ud2_probe]
     cmp rax, rdx
     jne exception_fatal
-    mov edx, x86_64_ud2_resume
+    lea rdx, [rel x86_64_ud2_resume]
     mov [rsp + EXCEPTION_FRAME_RIP], rdx
-    mov esi, exception_ud_ok_message
+    lea rsi, [rel exception_ud_ok_message]
+    call serial_write64
+    jmp exception_resume
+
+exception_nx_probe:
+    ; P=1, W/R=0, U/S=0 and I/D=1 is the exact supervisor instruction-fetch
+    ; protection fault expected from the fixed NX byte.
+    cmp qword [rsp + EXCEPTION_FRAME_ERROR], 0x11
+    jne exception_fatal
+    lea rdx, [rel x86_64_nx_probe_target]
+    cmp qword [rsp + EXCEPTION_FRAME_RIP], rdx
+    jne exception_fatal
+    mov rax, cr2
+    cmp rax, rdx
+    jne exception_fatal
+    lea rdx, [rel x86_64_nx_resume]
+    mov [rsp + EXCEPTION_FRAME_RIP], rdx
+    lea rsi, [rel exception_nx_ok_message]
     call serial_write64
 
+exception_resume:
     pop r15
     pop r14
     pop r13
@@ -194,11 +222,11 @@ exception_common:
 
 exception_fatal:
     call serial_init64
-    mov esi, exception_fatal_message
+    lea rsi, [rel exception_fatal_message]
     call serial_write64
     mov rax, [rsp + EXCEPTION_FRAME_VECTOR]
     call serial_hex8
-    mov esi, newline_message
+    lea rsi, [rel newline_message]
     call serial_write64
     jmp halt64
 
@@ -220,6 +248,7 @@ serial_hex_nibble:
 section .rodata
 exception_idt_ready_message db "REIST_X86_64_EXCEPTION_IDT_READY", 13, 10, 0
 exception_ud_ok_message db "REIST_X86_64_EXCEPTION_UD_OK", 13, 10, 0
+exception_nx_ok_message db "REIST_X86_64_PAGING_NX_OK", 13, 10, 0
 exception_fatal_message db "REIST_X86_64_EXCEPTION_FATAL vector=", 0
 newline_message db 13, 10, 0
 
@@ -231,6 +260,7 @@ exception_stub_table:
 %assign vector vector + 1
 %endrep
 
+section .data
 align 8
 exception_gdt:
     dq 0x0000000000000000
