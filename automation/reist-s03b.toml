@@ -10153,6 +10153,7 @@ allowed_files = [
   "kernel/syscall/syscall_table.c",
   "kernel/shell/command.c",
   "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
   "userspace/programs/usbinfo.c",
   "test/test_usb_keyboard.py",
   "test/test_usb_mouse.py",
