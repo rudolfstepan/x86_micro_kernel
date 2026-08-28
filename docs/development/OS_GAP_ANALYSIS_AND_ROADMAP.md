@@ -191,6 +191,12 @@ der kurze Ein-vCPU-/32-MiB-Lauf sind gruen. `RUNQUEUE_LIFECYCLE_OK` beweist die
 exakte Folge; der temporaere CPL3-Breakpoint-Gate, Queuezustand, Tasks und alle
 Speicher- und Syscall-Ressourcen sind vor dem Abschlussmarker restauriert.
 
+**R8.1m ist aktiv:** Der bestehende zweisprachige Webauftritt wird auf den
+abgenommenen Projektstand bis R8.1k aktualisiert. Texte und Bildbeschreibungen
+muessen die produktive i386-Basis, die vorhandenen Ring-3-Dienste und den noch
+isolierten x86_64-Bootstrap klar trennen. Danach folgt R8.1l mit begrenztem
+generationengebundenem Deadline-Sleep.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

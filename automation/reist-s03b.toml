@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1m-project-website-refresh"
 
 [policy]
 one_package_per_run = true
@@ -10983,6 +10983,91 @@ evidence = [
   "the final queue, membership, entries and four task records were zero and CR3 TSS syscall MSRs frames and the initial free count were restored",
   "no production scheduler, timer use, dynamic task creation, device authority, HPASA code or i386 behavior was added or changed"
 ]
+
+[[packages]]
+id = "R8.1m-project-website-refresh"
+status = "active"
+phase = "post-s0"
+risk = "low"
+title = "Refresh bilingual project website to the accepted REIST status"
+scope = "Update the existing dependency-free English and German project website to the accepted repository state through R8.1k. Correct obsolete S0, architecture, hardware, desktop, audio, USB, kernel-log and x86_64 migration text without presenting the isolated bootstrap as a complete 64-bit OS. Audit every existing screenshot against its caption and retain only assets that still accurately represent the current user-visible function; do not synthesize runtime evidence or run a resource-heavy capture. Keep canonical URLs, bilingual parity, accessibility, responsive layout and nginx deployment behavior intact. Validate links, metadata, image references, dimensions and both HTML documents locally. Queue R8.1l without implementing it in this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "website/index.html", "website/de/index.html",
+  "website/styles.css", "website/assets/site.js", "website/README.md",
+  "website/sitemap.xml", "website/robots.txt", "website/404.html",
+  "website/assets/reist-boot-shell.png", "website/assets/reist-desktop.png",
+  "website/assets/reist-desktop-apps.png", "website/assets/reist-drives.png",
+  "website/assets/reist-fdisk.png", "website/assets/reist-format-fat32.png",
+  "website/assets/reist-maintenance.png", "website/assets/reist-system-info.png",
+  "test/test_website.py",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "English and German pages communicate equivalent verified claims and limitations",
+  "the production i386 system remains the standard while x86_64 is labeled an isolated accepted bootstrap through R8.1k",
+  "no certification fail-operational complete-64-bit or unverified hardware claim is introduced",
+  "existing images are retained only when their visible content still supports the adjacent caption and alt text",
+  "no synthetic screenshot is presented as runtime evidence and no QEMU capture is required",
+  "canonical alternate-language social metadata JSON-LD sitemap robots nginx paths and responsive navigation remain valid",
+  "all local image and anchor references resolve and both pages retain accessible image alternatives",
+  "no kernel userspace build installer HPASA or deployment file outside the website is changed"
+]
+targeted_tests = ["python test/test_website.py -v"]
+package_tests = []
+runtime_tests = []
+stop_conditions = [
+  "a claimed status cannot be traced to accepted repository documentation",
+  "an image visibly contradicts its caption or is replaced without current evidence",
+  "English and German claims diverge materially",
+  "a required source or test lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "the frozen source gate still fails after one focused in-scope repair"
+]
+commit_message = "docs: refresh REIST project website"
+evidence = []
+
+[[packages]]
+id = "R8.1l-x86_64-deadline-sleep"
+status = "queued"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 monotonic deadline sleep proof"
+scope = "Extend only the isolated x86_64 bootstrap with a fixed-capacity generation-scoped blocking sleep proof on the accepted four-slot FIFO. Add REIST-v1 SLEEP_MS 41 and MONOTONIC_MS 42 without changing their public numbers or production i386 implementation. Use one fixed four-entry deadline array ordered by absolute 64-bit PIT ticks with stable slot order for equal deadlines; validate nonzero bounded duration, overflow, generation, RUNNING state, duplicate membership and capacity before changing task or queue state. Execute four private tasks so task 0 sleeps three ticks, task 1 sleeps one tick, task 2 sleeps two ticks, task 3 reads monotonic time and exits, then wake and run exactly 1 2 0 at their deadlines. Reject zero, overflowing and duplicate sleep requests without state mutation, accept exact statuses 120 through 123, and prove monotonic observations, private writable values, one reap per generation, empty runqueue and deadline queue, restored vector and timer state, CR3 TSS syscall MSRs frames and initial free count before publishing DEADLINE_SLEEP_OK. Keep priorities dynamic allocation parent-child policy SMP production integration devices HPASA physical hardware and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/cpu/timer_interrupt.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "arch/x86_64/user/probe.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 targets and every accepted x86_64 marker remain behaviorally unchanged",
+  "REIST-v1 syscall numbers 41 and 42 retain millisecond terminology while this 100-Hz proof uses checked ten-millisecond conversion",
+  "exactly four fixed task slots one four-entry FIFO and one four-entry deadline array exist with no dynamic storage",
+  "sleep validates duration conversion overflow generation RUNNING state duplicate membership and capacity before publication",
+  "deadline ordering is stable and each timer IRQ examines no more than four entries before acknowledging exactly one master EOI",
+  "only an exact active generation may become BLOCKED READY EXITED or FREE and stale entries cannot wake reused authority",
+  "the finite wake order is exactly task 1 then 2 then 0 while task 3 observes nondecreasing monotonic time",
+  "success requires statuses 120 121 122 123 empty zeroed queues zeroed task records and full timer memory syscall and gate restoration",
+  "all waits have a fixed tick and TSC ceiling and no busy-wait is exposed as a userspace sleep implementation",
+  "no priorities dynamic allocation parent-child policy SMP production integration device DMA HPASA physical hardware or fail-operational authority is introduced"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 target syscall number image layout or accepted x86_64 runtime marker changes",
+  "an invalid zero overflowing duplicate stale out-of-range or non-RUNNING sleep request mutates state",
+  "a deadline entry can wake or reap a different generation or one slot can occur twice",
+  "timer IRQ work deadline scanning or a wait can exceed its compile-time bound",
+  "cleanup leaves timer queue task mapping syscall gate or frame authority active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: add bounded x86_64 deadline sleep proof"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

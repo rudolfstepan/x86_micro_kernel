@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: kein Paket – R8.1k abgeschlossen
+Aktives Thema: R8.1m – zweisprachige Projektwebsite aktualisieren
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -135,6 +135,13 @@ Quelltextpruefungen und der 81.524-Byte-Build mit 9.936-Byte-Probe sind gruen.
 Der kurze Ein-vCPU-/32-MiB-Lauf meldete `RUNQUEUE_LIFECYCLE_OK`; Vector 3,
 Queue, Taskrecords, CR3, TSS, Syscall-MSRs, Frames und Freizaehler waren davor
 vollstaendig restauriert.
+
+R8.1m ist aktiv. Die englische und deutsche Projektwebsite wird auf den
+abgenommenen Stand bis R8.1k gebracht. Veraltete S0-, Architektur-, Hardware-,
+Desktop-, Audio-, USB-, Kernel-Log- und x86_64-Aussagen werden korrigiert;
+vorhandene Screenshots bleiben nur mit weiterhin zutreffenden Bildtexten. Es
+wird kein synthetisches Laufzeitbild erzeugt und kein schwerer QEMU-Capture
+gestartet. R8.1l ist danach als begrenzter Deadline-Sleep-Nachweis vorgemerkt.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt
