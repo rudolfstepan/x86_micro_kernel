@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1k-x86_64-runqueue-lifecycle"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10934,7 +10934,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1k-x86_64-runqueue-lifecycle"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 generation-scoped runqueue lifecycle proof"
@@ -10974,7 +10974,15 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: add bounded x86_64 runqueue lifecycle proof"
-evidence = []
+evidence = [
+  "all 30 isolated x86_64 source-contract tests passed, including fixed-capacity FIFO validation, duplicate and stale rejection, exact lifecycle order and cleanup",
+  "the warning-free Windows build linked an 81524-byte bootstrap embedding the independently linked 9936-byte ELF64 probe without changing any production i386 target",
+  "the one-vCPU 32-MiB QEMU runtime published RUNQUEUE_LIFECYCLE_OK after QUANTUM_SWITCH_OK and before EXCEPTION_RECOVERY_OK within one second",
+  "the exact 0 1 2 3 0 2 order accepted two bounded yields, statuses 110 111 112 and isolated only task 3's validated CPL3 INT3",
+  "vector 3 was leased to CPL3 only for this proof and its original Ring-0 gate attribute was restored on every cleanup path",
+  "the final queue, membership, entries and four task records were zero and CR3 TSS syscall MSRs frames and the initial free count were restored",
+  "no production scheduler, timer use, dynamic task creation, device authority, HPASA code or i386 behavior was added or changed"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

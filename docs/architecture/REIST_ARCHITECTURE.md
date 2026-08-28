@@ -164,11 +164,12 @@ Der vierte Tick reapt nur B und A beendet mit Status 103. Dieser feste Nachweis
 fuehrt noch keine dynamischen Tasks, Prioritaeten, allgemeine Fairness oder
 produktive x86_64-Schedulerautoritaet ein.
 
-R8.1k soll die direkten Zwei-Slot-Uebergaben durch eine feste
+R8.1k ergaenzt die direkten Zwei-Slot-Uebergaben durch eine feste
 generationengebundene Vier-Eintrag-FIFO ergaenzen. Enqueue und Dequeue muessen
 Slot, Generation, `READY` und Membership vor jeder Publikation pruefen. Ein
 endlicher Vier-Prozess-Lebenszyklus kombiniert Yield, Exit und lokale
-Fehlerisolation. Das bleibt ein isolierter Kapazitaetsnachweis ohne allgemeine
+Fehlerisolation. Vector 3 ist dabei nur waehrend des Nachweises fuer CPL3
+zugaenglich und wird vor Erfolg wieder auf Ring 0 begrenzt. Das bleibt ein isolierter Kapazitaetsnachweis ohne allgemeine
 Spawn-, Blocking-, Prioritaets- oder Produktionspolicy.
 
 ## Minimaler REIST-Kern

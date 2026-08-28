@@ -25,6 +25,14 @@ _start:
     je quantum_task_a
     cmp edi, 0x0F
     je quantum_task_b
+    cmp edi, 0x10
+    je runqueue_task_0
+    cmp edi, 0x11
+    je runqueue_task_1
+    cmp edi, 0x12
+    je runqueue_task_2
+    cmp edi, 0x13
+    je runqueue_task_3
     int3
 
 probe_exit:
@@ -138,6 +146,47 @@ quantum_task_b:
     jb .quantum_b_loop
     int3
 
+runqueue_task_0:
+    mov rax, 0x1010101010101010
+    mov qword [rel probe_data], rax
+    mov eax, 40
+    syscall
+    mov rax, 0x1010101010101010
+    cmp qword [rel probe_data], rax
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 110
+    syscall
+    ud2
+
+runqueue_task_1:
+    mov rax, 0x1111111111111111
+    mov qword [rel probe_data], rax
+    mov eax, 9
+    mov edi, 111
+    syscall
+    ud2
+
+runqueue_task_2:
+    mov rax, 0x1212121212121212
+    mov qword [rel probe_data], rax
+    mov eax, 40
+    syscall
+    mov rax, 0x1212121212121212
+    cmp qword [rel probe_data], rax
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 112
+    syscall
+    ud2
+
+runqueue_task_3:
+    mov rax, 0x1313131313131313
+    mov qword [rel probe_data], rax
+runqueue_fault:
+    int3
+    ud2
+
 section .data
 align 8
 probe_data:
@@ -145,6 +194,8 @@ probe_data:
     dq scheduler_fault
 probe_progress:
     dq 0
+probe_runqueue_fault:
+    dq runqueue_fault
 
 section .bss
 alignb 16

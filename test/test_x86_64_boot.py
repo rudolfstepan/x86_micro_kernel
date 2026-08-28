@@ -267,10 +267,14 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("TASK_B_GENERATION          equ 2", source)
         for state in ("TASK_FREE", "TASK_READY", "TASK_RUNNING", "TASK_FAULTED", "TASK_EXITED"):
             self.assertIn(state, source)
-        self.assertIn("resb TASK_COUNT * TASK_RECORD_SIZE", source)
-        self.assertEqual(source.count("resb PAGE_SIZE"), 8)
+        self.assertIn("TASK_SLOT_CAPACITY         equ 4", source)
+        self.assertIn("resb TASK_SLOT_CAPACITY * TASK_RECORD_SIZE", source)
+        self.assertIn("scheduler_enable_user_breakpoint64:", source)
+        self.assertIn("scheduler_disable_user_breakpoint64:", source)
+        self.assertIn("mov byte [rax + (3 * 16) + 5], 0xEE", source)
+        self.assertEqual(source.count("resb PAGE_SIZE"), 16)
         self.assertIn("cmp edi, TASK_COUNT", source)
-        self.assertIn("cmp ebx, TASK_COUNT", source)
+        self.assertIn("cmp ebx, TASK_SLOT_CAPACITY", source)
         self.assertIn("X86_64_PROCESS_SCHEDULER_OBJ", makefile)
         target = makefile.split("x86_64-bootstrap:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(X86_64_PROCESS_SCHEDULER_OBJ)", target)
@@ -518,6 +522,40 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("call x86_64_process_quantum_selftest64", entry)
         self.assertIn("REIST_X86_64_QUANTUM_SWITCH_OK", runner)
         self.assertIn("REIST_X86_64_QUANTUM_SWITCH_ERROR", runner)
+
+    def test_generation_scoped_runqueue_lifecycle_is_fixed_and_stale_safe(self):
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        probe = self.read("arch/x86_64/user/probe.asm")
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("TASK_SLOT_CAPACITY         equ 4", scheduler)
+        self.assertIn("RUNQUEUE_CAPACITY          equ 4", scheduler)
+        self.assertIn("SCHEDULER_MODE_RUNQUEUE    equ 4", scheduler)
+        self.assertIn("x86_64_process_runqueue_selftest64:", scheduler)
+        self.assertIn("scheduler_runqueue_enqueue64:", scheduler)
+        self.assertIn("scheduler_runqueue_dequeue64:", scheduler)
+        self.assertIn("scheduler_runqueue_dispatch64:", scheduler)
+        enqueue = scheduler.index("scheduler_runqueue_enqueue64:")
+        publish = scheduler.index("mov qword [rdx + rcx * 8], rax", enqueue)
+        for validation in (
+            "cmp qword [r12 + TASK_GENERATION], rsi",
+            "cmp qword [r12 + TASK_STATE], TASK_READY",
+            "cmp byte [rdx + rdi], 0",
+            "cmp ecx, RUNQUEUE_CAPACITY",
+        ):
+            self.assertLess(scheduler.index(validation, enqueue), publish)
+        self.assertIn("scheduler_verify_initial_runqueue64:", scheduler)
+        self.assertIn("scheduler_runqueue_events:", scheduler)
+        self.assertIn("runqueue_task_0:", probe)
+        self.assertIn("runqueue_task_1:", probe)
+        self.assertIn("runqueue_task_2:", probe)
+        self.assertIn("runqueue_task_3:", probe)
+        self.assertIn("mov edi, 110", probe)
+        self.assertIn("mov edi, 111", probe)
+        self.assertIn("mov edi, 112", probe)
+        self.assertIn("call x86_64_process_runqueue_selftest64", entry)
+        self.assertIn("REIST_X86_64_RUNQUEUE_LIFECYCLE_OK", runner)
+        self.assertIn("REIST_X86_64_RUNQUEUE_LIFECYCLE_ERROR", runner)
 
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")

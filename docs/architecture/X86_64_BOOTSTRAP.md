@@ -284,7 +284,7 @@ vier reapte nur B; A lieferte danach `EXIT` 9/Status 103. Erst nach der
 vollstaendigen Wiederherstellung erschien `REIST_X86_64_QUANTUM_SWITCH_OK`
 zwischen `TIMER_PREEMPTION_OK` und `EXCEPTION_RECOVERY_OK`.
 
-## Geplante Abnahme R8.1k
+## Abgenommene FIFO-Lebenszyklen R8.1k
 
 Vier feste private Prozessslots besitzen je eine nichtnull Generation. Eine
 Vier-Eintrag-Ringqueue bindet jeden Eintrag an Slot und Generation und
@@ -293,4 +293,8 @@ exakte Laufreihenfolge 0-1-2-3-0-2 umfasst je ein `YIELD` von 0 und 2, direkte
 Exits 110/111/112 und einen exakt validierten CPL3-`INT3` von Task 3. Ein
 doppelter und ein staler Enqueue-Versuch muessen den Queuezustand unveraendert
 lassen. Erfolg verlangt eine leere Queue, vier genullte freie Slots und den
-urspruenglichen Framezaehler.
+urspruenglichen Framezaehler. Die Implementierung erfuellt diese Folge im
+81.524-Byte-Bootstrap mit dem 9.936-Byte-Probeabbild. Vector 3 wird nur fuer
+die Dauer des Nachweises fuer CPL3 freigegeben und danach auch auf Fehlerpfaden
+auf seinen Ring-0-Gatezustand zurueckgesetzt. Der kurze Ein-vCPU-/32-MiB-Lauf
+meldete `REIST_X86_64_RUNQUEUE_LIFECYCLE_OK` vor dem Abschlussmarker.
