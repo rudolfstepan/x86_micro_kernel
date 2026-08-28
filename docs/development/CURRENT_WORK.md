@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: keines – R8.1j abgeschlossen, Queue leer
+Aktives Thema: R8.1k – generationengebundene x86_64-FIFO-Runqueue
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -125,6 +125,13 @@ meldete `TIMER_IRQ_OK` geordnet vor dem Abschlussmarker. IF, IRQ0, beide
 PIC-Masken und die temporaere Generation waren davor restauriert. Die Queue
 ist wieder leer.
 
+R8.1k ist aktiv. Vier feste private Prozessgenerationen werden ueber eine
+generationengebundene Vier-Slot-FIFO in der exakten Reihenfolge 0-1-2-3-0-2
+ausgefuehrt. Tasks 0 und 2 geben je einmal ab, Task 1 beendet direkt und nur
+Task 3 darf nach einem exakten CPL3-`INT3` isoliert werden. Doppelte und stale
+Queueeintraege muessen vor jeder Mutation scheitern. Allgemeine Spawnpolicy,
+Blocking, Prioritaeten, SMP und produktive Integration bleiben ausserhalb.
+
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt
 ausschliesslich B; A behaelt ihre private Datenseite und beendet sich mit
@@ -149,8 +156,8 @@ Ein-vCPU-/32-MiB-QEMU-Lauf meldete `QUANTUM_SWITCH_OK` geordnet vor dem
 Abschlussmarker. Vier IRQs erzeugten vier Master-EOIs; Timer, PIC-Masken, IF,
 CR3, TSS, Syscall-MSRs, Tabellen, Taskrecords, Frames und Freizaehler waren vor
 Erfolg restauriert. Dynamische Tasks, Prioritaeten, allgemeine Fairness, SMP
-und produktive Schedulerintegration bleiben ausserhalb des Pakets. Die Queue
-ist wieder leer.
+und produktive Schedulerintegration bleiben ausserhalb des Pakets. R8.1k folgt
+als naechste begrenzte Scheibe.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

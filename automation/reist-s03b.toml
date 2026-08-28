@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1k-x86_64-runqueue-lifecycle"
 
 [policy]
 one_package_per_run = true
@@ -10929,8 +10929,52 @@ evidence = [
   "the final tick transitioned and reaped only task B, resumed task A with the bounded completion signal, and accepted exact REIST EXIT 9 status 103",
   "the IRQ contract preserved ordinary OF and RF context while rejecting TF DF IOPL NT VM AC VIF VIP and ID before state mutation or EOI",
   "success and failure cleanup restore timer PIC masks IF CR3 TSS syscall MSRs tables task records frames and the initial free count",
-  "no dynamic task creation priorities sleep wait general fairness SMP LAPIC IOAPIC production clock device DMA HPASA physical-hardware or fail-operational authority was added and active_id is empty"
+  "no dynamic task creation priorities sleep wait general fairness SMP LAPIC IOAPIC production clock device DMA HPASA physical-hardware or fail-operational authority was added; R8.1k is the next active package"
 ]
+
+[[packages]]
+id = "R8.1k-x86_64-runqueue-lifecycle"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 generation-scoped runqueue lifecycle proof"
+scope = "Extend only the isolated x86_64 bootstrap with a fixed-capacity four-slot process lifecycle and FIFO runqueue proof. Retain the accepted private CR3 writable-page and NX-stack construction and instantiate four nonzero process generations from the already validated ELF64 image. Add one four-entry ring queue whose entries bind slot and generation, whose head tail count and membership state are fixed-capacity, and whose enqueue and dequeue validate READY state generation range duplicate membership and stale entries before publication. Execute the exact finite order 0 1 2 3 0 2: tasks 0 and 2 each yield once and re-enter at the tail, task 1 exits directly, task 3 raises one exact executable-page CPL3 INT3 and is isolated, then tasks 0 and 2 resume and exit. Admit only existing REIST YIELD 40 and EXIT 9 with exact statuses 110 111 and 112. Reap each terminal generation immediately, reject one deliberate duplicate enqueue and one stale-generation enqueue without queue mutation, prove every private writable value and final empty queue, then restore CR3 TSS syscall MSRs tables task records frames and initial free count before publishing RUNQUEUE_LIFECYCLE_OK. Keep timer use disabled for this proof and keep blocking sleep priorities dynamic allocation parent-child policy SMP production integration devices HPASA and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile",
+  "arch/x86_64/boot/entry.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "arch/x86_64/user/probe.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 targets and all accepted two-slot x86_64 proofs remain behaviorally unchanged",
+  "exactly four fixed slots carry distinct nonzero generations private CR3 writable ELF frames and NX stacks",
+  "the four-entry FIFO binds slot and generation and validates bounds state membership and generation before publishing head tail or count",
+  "duplicate and stale enqueue attempts fail before queue mutation and generation reuse is not inferred",
+  "dequeue revalidates READY state exact generation and membership before selecting a task",
+  "the runtime order is exactly 0 1 2 3 0 2 with only tasks 0 and 2 yielding once",
+  "only task 3 exact CPL3 INT3 in validated executable code becomes FAULTED while tasks 0 1 and 2 retain private data and exact EXIT statuses 110 111 and 112",
+  "each terminal generation is reaped once and success requires an empty zeroed queue four FREE zeroed slots and full frame-count restoration",
+  "all loops and queue operations are compile-time bounded and maskable interrupts remain disabled during this proof",
+  "no blocking sleep priorities dynamic storage parent-child policy SMP production integration device DMA HPASA physical-hardware or fail-operational authority is introduced"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 target syscall number image layout or accepted two-slot runtime marker changes",
+  "a duplicate stale out-of-range non-READY or zero-generation entry can mutate the queue",
+  "a queue entry can run or reap a different generation or one slot can appear twice",
+  "task 3 failure can terminate another generation or any task can observe another writable frame",
+  "a loop queue or lifecycle transition can exceed its fixed capacity",
+  "cleanup leaves a queue task mapping syscall or frame active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: add bounded x86_64 runqueue lifecycle proof"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

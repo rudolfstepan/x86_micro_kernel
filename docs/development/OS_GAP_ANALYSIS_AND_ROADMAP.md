@@ -181,6 +181,13 @@ stellte Timer, PIC-Masken, IF, CR3, TSS, Syscall-MSRs, Tabellen, Taskrecords,
 Frames und Freizaehler wieder her. Allgemeine Fairness und produktive
 Schedulerintegration bleiben offen.
 
+**R8.1k ist aktiv:** Vier feste private Prozessgenerationen werden erstmals
+ueber eine generationengebundene FIFO-Runqueue statt ueber vorbestimmte direkte
+Spruenge gewaehlt. Die endliche Folge 0-1-2-3-0-2 kombiniert Yield, regulare
+Exits und einen isolierten CPL3-Fehler. Doppelte und stale Eintraege muessen
+ohne Queueaenderung abgewiesen und alle vier Generationen vollstaendig reaptiert
+werden.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

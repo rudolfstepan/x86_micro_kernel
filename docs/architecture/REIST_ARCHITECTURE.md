@@ -164,6 +164,13 @@ Der vierte Tick reapt nur B und A beendet mit Status 103. Dieser feste Nachweis
 fuehrt noch keine dynamischen Tasks, Prioritaeten, allgemeine Fairness oder
 produktive x86_64-Schedulerautoritaet ein.
 
+R8.1k soll die direkten Zwei-Slot-Uebergaben durch eine feste
+generationengebundene Vier-Eintrag-FIFO ergaenzen. Enqueue und Dequeue muessen
+Slot, Generation, `READY` und Membership vor jeder Publikation pruefen. Ein
+endlicher Vier-Prozess-Lebenszyklus kombiniert Yield, Exit und lokale
+Fehlerisolation. Das bleibt ein isolierter Kapazitaetsnachweis ohne allgemeine
+Spawn-, Blocking-, Prioritaets- oder Produktionspolicy.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

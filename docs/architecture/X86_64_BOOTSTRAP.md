@@ -283,3 +283,14 @@ ihren vollstaendigen unterbrochenen Kontext mit eigenem Fortschritt fort. Tick
 vier reapte nur B; A lieferte danach `EXIT` 9/Status 103. Erst nach der
 vollstaendigen Wiederherstellung erschien `REIST_X86_64_QUANTUM_SWITCH_OK`
 zwischen `TIMER_PREEMPTION_OK` und `EXCEPTION_RECOVERY_OK`.
+
+## Geplante Abnahme R8.1k
+
+Vier feste private Prozessslots besitzen je eine nichtnull Generation. Eine
+Vier-Eintrag-Ringqueue bindet jeden Eintrag an Slot und Generation und
+validiert `READY`, Grenzen, Membership und Aktualitaet vor jeder Mutation. Die
+exakte Laufreihenfolge 0-1-2-3-0-2 umfasst je ein `YIELD` von 0 und 2, direkte
+Exits 110/111/112 und einen exakt validierten CPL3-`INT3` von Task 3. Ein
+doppelter und ein staler Enqueue-Versuch muessen den Queuezustand unveraendert
+lassen. Erfolg verlangt eine leere Queue, vier genullte freie Slots und den
+urspruenglichen Framezaehler.
