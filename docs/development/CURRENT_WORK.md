@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `750f8bb6`
+Branch/Startpunkt: `working_branch` / `b5b97a74`
 
-Aktives Thema: keines – R8.2b ist abgeschlossen
+Aktives Thema: R8.2c – generationengebundene x86_64-Shell im Scheduler
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -186,6 +186,14 @@ Geraetetreiber sowie produktive x86_64-Integration bleiben getrennt. 41
 Quellvertragstests, der 117.260-Byte-Bootstrap mit 1.256-Byte-RX-Shell und der
 begrenzte Ein-vCPU-/32-MiB-QEMU-Dialog bis `RING3_SHELL_OK` bestanden; die
 Queue ist leer.
+
+R8.2c ist aktiv. Der unveraenderte kompakte Shell-ELF soll nicht mehr ueber
+den Boot-Sonderaufruf laufen, sondern als genau eine READY-Generation in der
+vorhandenen festen Runqueue. READ, WRITE, YIELD und EXIT bleiben die einzigen
+vermittelten Operationen; jeder nichtterminale Rueckweg wird erneut ueber den
+generationengeprueften Slot dispatcht. Der Abschluss verlangt exaktes Reap,
+leere Queue und vollstaendige Ruecknahme aller temporaeren Ressourcen. VFS,
+allgemeine Terminals, Treiber, Prioritaeten, SMP und i386 bleiben unveraendert.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt

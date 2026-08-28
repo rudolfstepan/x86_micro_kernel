@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2c-x86_64-scheduled-shell"
 
 [policy]
 one_package_per_run = true
@@ -11221,6 +11221,45 @@ evidence = [
   "the bounded one-vCPU 32-MiB QEMU run preserved every accepted R8.1 and R8.2a marker sent exact INFO and EXIT commands and observed ordered RING3_SHELL_READY RING3_SHELL_INFO_OK RING3_SHELL_EXIT_OK and RING3_SHELL_OK markers after complete cleanup",
   "the production i386 build graph devices VFS DMA SMP GUI and physical-hardware authority remain unchanged and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2c-x86_64-scheduled-shell"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run the interactive x86_64 shell through the bounded process scheduler"
+scope = "Replace the R8.2b boot-time shell special launch with one generation-scoped task admitted through the existing fixed-capacity x86_64 runqueue. Select and load the unchanged compact shell ELF through the bounded loader, construct its private CR3 and NX stack with the existing task builder, publish one READY generation, and dispatch it only through the existing scheduler entry. Extend that scheduler's existing architectural SYSCALL gate only in the shell mode for REIST-v1 READ 15 WRITE 20 YIELD 40 and EXIT 9: validate lifecycle generation CR3 RIP RFLAGS descriptor user range permissions length and stack before effect, keep COM1 reads nonblocking, cap writes at 64 bytes, and reschedule every nonterminal return through the same generation-checked queue and IRETQ restoration. EXIT must validate the fixed INFO/EXIT dialogue counters, transition RUNNING to EXITED, reap the exact generation, empty the queue, revoke loader selection, task tables, stack, frames, TSS and syscall MSRs, restore the initial free count, preserve the accepted RING3_SHELL markers and add SCHEDULED_SHELL_OK before the final marker. Keep the earlier execution proof available for its own selftest while removing the boot dependency on its shell-special entry. VFS, general terminals, drivers, dynamic shell spawning, priorities, SMP, physical hardware and every production i386 target remain outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 artifacts syscall numbers and every previously accepted x86_64 marker remain behaviorally unchanged",
+  "the boot shell is exactly one fixed-slot nonzero-generation task and reaches Ring 3 only after READY queue admission and generation validation",
+  "READ 15 WRITE 20 YIELD 40 and EXIT 9 are the only shell operations and no VFS terminal driver device or ambient authority is added",
+  "every descriptor pointer range permission length RIP RFLAGS CR3 stack slot state and generation is validated before serial or memory effect",
+  "reads remain nonblocking writes remain capped at 64 bytes and every nonterminal result returns through READY enqueue generation-checked dequeue and a constructed IRETQ frame",
+  "EXIT reaps only the exact terminal generation and success leaves the runqueue task records tables loader selector TSS syscall MSRs frames and initial free count restored",
+  "the standalone R8.2b shell entry is no longer called by boot while its earlier execution and fault selftest remains intact",
+  "the package adds no VFS dynamic process priorities SMP device physical-hardware complete-kernel or fail-operational claim"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 artifact prior accepted x86_64 marker or existing syscall number changes",
+  "the shell can enter Ring 3 outside a READY generation-scoped runqueue slot or a nonterminal syscall bypasses queue validation",
+  "a user-controlled pointer register frame descriptor length or loader choice reaches an effect before complete validation",
+  "serial input waits in the kernel or any shell command copy poll syscall queue operation or runner dialogue is unbounded",
+  "cleanup leaves a task queue entry user CR3 TSS syscall MSR frame table loader selection or serial authority active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: schedule interactive x86_64 shell"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

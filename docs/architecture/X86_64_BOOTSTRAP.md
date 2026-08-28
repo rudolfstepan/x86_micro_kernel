@@ -391,3 +391,16 @@ nicht aus diesem Nachweis. Die Abnahme umfasst 41 Quellvertragstests, einen
 begrenzten Ein-vCPU-/32-MiB-QEMU-Lauf. Der Gast meldet geordnet
 `RING3_SHELL_READY`, `RING3_SHELL_INFO_OK`, die vollstaendige Bereinigung mit
 `RING3_SHELL_EXIT_OK` und abschliessend `RING3_SHELL_OK`.
+
+## Aktiver Scheduler-Shell-Schnitt R8.2c
+
+R8.2c ersetzt nur den Boot-Sonderaufruf der Shell durch einen vorhandenen,
+fest kapazitierten Prozessslot. Das unveraenderte Shell-ELF wird als genau eine
+nichtnullige Generation READY publiziert, in die Runqueue aufgenommen und ueber
+den gemeinsamen Scheduler-Eintritt nach Ring 3 dispatcht. READ, WRITE und YIELD
+kehren nicht direkt ueber einen separaten Shellpfad zurueck, sondern speichern
+den Kontext, stellen den Slot erneut READY und durchlaufen generationengepruefte
+Queue und `IRETQ`-Wiederherstellung. EXIT wechselt ueber EXITED zu FREE und
+raeumt erst danach Loaderauswahl, Seitentabellen, Stack, TSS und Syscall-MSRs
+auf. Der Schnitt fuehrt weder VFS noch allgemeine Terminal-, Geraete-, SMP-
+oder produktive i386-Autoritaet ein.
