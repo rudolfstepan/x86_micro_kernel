@@ -73,6 +73,15 @@ exakten NX-Page-Fault und den Abschlussmarker. Die PTE-Selbstprüfung ignoriert
 ausschließlich die von der CPU gepflegten Accessed-/Dirty-Bits; Adresse,
 Schreibrecht und NX bleiben exakt geprüft.
 
+**R8.1d ist in Arbeit:** Die nächste isolierte Scheibe validiert die
+Multiboot-v1-Speicherkarte fail-closed und verwaltet nur vollständige
+4-KiB-Frames unter einer festen 64-MiB-Grenze. Bootstrap, verwendete
+Handoffdaten und Module bleiben reserviert; nicht nutzbare Einträge überstimmen
+Überlappungen. Eine feste RW/NX-Direct-Map bildet ausschließlich verwaltbare
+Frames ab. Drei reale Allokationen, Schreibzugriff, Free/Reuse und negative
+Free-Fälle bilden den begrenzten Laufzeitnachweis. Dynamisches Paging,
+Speicher oberhalb 64 MiB und produktive Kernelintegration bleiben offen.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget
