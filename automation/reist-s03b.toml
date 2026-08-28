@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1b-x86_64-exception-foundation"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10399,7 +10399,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1b-x86_64-exception-foundation"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add a bounded x86_64 exception and double-fault foundation"
@@ -10448,6 +10448,13 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "arch: add x86_64 exception foundation"
+evidence = [
+  "the final isolated x86_64 source contract passed all 9 tests after correcting one test-only macro-definition match",
+  "the warning-free Windows bootstrap build assembled separate entry and exception objects and linked a 16844-byte bounded ELF without changing any production i386 dependency",
+  "the one-vCPU 32-MiB QEMU runtime published LONG_MODE_BOOT_OK IDT_READY UD_OK and EXCEPTION_RECOVERY_OK in exact order within one second",
+  "the runtime resumed only from the exact vector-6 error-zero UD2 site while all other exception paths remain bounded fatal halts and maskable interrupts remain disabled",
+  "the package provides no extended x86_64 paging process syscall ELF64 userspace physical-hardware or fail-operational claim"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

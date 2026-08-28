@@ -28,6 +28,13 @@ align 4
 
 section .text
 global x86_64_bootstrap_start
+global serial_init64
+global serial_write64
+global serial_putc64
+global halt64
+global x86_64_ud2_probe
+global x86_64_ud2_resume
+extern x86_64_exception_init
 
 x86_64_bootstrap_start:
     cli
@@ -198,6 +205,13 @@ long_mode_entry:
     call serial_init64
     mov esi, success_message
     call serial_write64
+
+    call x86_64_exception_init
+x86_64_ud2_probe:
+    ud2
+x86_64_ud2_resume:
+    mov esi, exception_recovery_message
+    call serial_write64
     jmp halt64
 
 long_mode_state_error:
@@ -269,6 +283,7 @@ section .rodata
 unsupported_message db "REIST_X86_64_UNSUPPORTED", 13, 10, 0
 state_error_message db "REIST_X86_64_LONG_MODE_STATE_ERROR", 13, 10, 0
 success_message db "REIST_X86_64_LONG_MODE_BOOT_OK", 13, 10, 0
+exception_recovery_message db "REIST_X86_64_EXCEPTION_RECOVERY_OK", 13, 10, 0
 
 align 8
 gdt64:

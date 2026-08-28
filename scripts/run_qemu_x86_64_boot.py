@@ -11,10 +11,17 @@ import sys
 import time
 
 
-SUCCESS = "REIST_X86_64_LONG_MODE_BOOT_OK"
+SUCCESS = "REIST_X86_64_EXCEPTION_RECOVERY_OK"
+REQUIRED_MARKERS = (
+    "REIST_X86_64_LONG_MODE_BOOT_OK",
+    "REIST_X86_64_EXCEPTION_IDT_READY",
+    "REIST_X86_64_EXCEPTION_UD_OK",
+    SUCCESS,
+)
 FAILURES = (
     "REIST_X86_64_UNSUPPORTED",
     "REIST_X86_64_LONG_MODE_STATE_ERROR",
+    "REIST_X86_64_EXCEPTION_FATAL",
 )
 QEMU_FALLBACKS = (
     Path(r"C:\tmp\qemu-portable\qemu-system-x86_64.exe"),
@@ -95,9 +102,12 @@ def run_boot(qemu: Path, image: Path, log: Path, timeout: float) -> str:
         process.stderr.close()
     if any(marker in captured for marker in FAILURES):
         raise RuntimeError(f"bootstrap reported failure: {captured.strip()}")
-    if SUCCESS not in captured:
+    positions = [captured.find(marker) for marker in REQUIRED_MARKERS]
+    if any(position < 0 for position in positions):
         detail = stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"success marker missing; qemu={detail or 'no diagnostic'}")
+        raise RuntimeError(f"required marker missing; qemu={detail or 'no diagnostic'}")
+    if positions != sorted(positions) or len(set(positions)) != len(positions):
+        raise RuntimeError("x86_64 exception markers are out of order")
     return captured
 
 

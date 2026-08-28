@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `452fe654`
 
-Aktives Thema: R8.1b – begrenzte x86_64-Exception-Grundlage
+Aktives Thema: kein Queue-Paket – R8.1b ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -16,11 +16,14 @@ isolierte Windows-Build und der Ein-vCPU-/32-MiB-QEMU-Lauf bestanden; der
 Laufzeitmarker erschien nach 1,8 Sekunden. Ein vollständiger x86_64-Kernel,
 ELF64-Prozesse und 64-Bit-Userspace sind ausdrücklich spätere Pakete.
 
-R8.1b ist als nächster isolierter Architekturbaustein aktiv. Es ergänzt die
+R8.1b ist als nächster isolierter Architekturbaustein abgeschlossen. Es ergänzt die
 32 reservierten Exceptionvektoren, normalisierte 64-Bit-Frames, eine statische
 TSS mit Double-Fault-IST und einen exakt validierten `UD2`-Resume-Probe. Das
 Paket aktiviert keine Hardware-IRQs und erweitert weder Paging noch Prozess-,
-Syscall- oder Userspace-ABI.
+Syscall- oder Userspace-ABI. Neun Quellvertragstests, der warnungsfreie
+16.844-Byte-Build und der Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Der Gast
+meldete geordnet Long Mode, IDT-Bereitschaft, den behandelten Vektor 6 und die
+erfolgreiche Rückkehr. Die Queue ist wieder leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

@@ -10,8 +10,15 @@ CPU-Faehigkeiten, aktiviert mit statischen Tabellen IA-32e Paging und springt
 in einen 64-Bit-Codesegment. Erst dort darf der serielle Erfolgsmarker
 `REIST_X86_64_LONG_MODE_BOOT_OK` erscheinen.
 
-Das Artefakt ist kein vollstaendiger REIST-Kernel. Es besitzt weder produktive
-Interrupt- oder Exceptionbehandlung noch Prozessmodell, Syscall-ABI,
+R8.1b ergaenzt danach eine begrenzte Exceptiongrundlage. Sie veroeffentlicht
+genau die Vektoren 0 bis 31, normalisiert CPU- und synthetische Fehlercodes,
+sichert alle allgemeinen Register und laedt eine 64-Bit-TSS. Nur Double Fault
+verwendet deren festen IST1. Ein einzelner `UD2`-Probe darf ausschliesslich bei
+Vektor 6, Fehlercode null und exakt passender RIP zur festen Fortsetzung
+zurueckkehren.
+
+Das Artefakt ist kein vollstaendiger REIST-Kernel. Es besitzt keine produktive
+Hardwareinterruptbehandlung und weder Prozessmodell noch Syscall-ABI,
 Userspace, Treiber, Dateisystem oder signiertes natives Medienlayout. Es
 begruendet deshalb keine ELF64-, Hardware- oder Fail-operational-Kompatibilitaet.
 
@@ -28,6 +35,8 @@ Version 1; er bleibt auf das separate Bootstrap-Artefakt begrenzt.
 - eine statische, page-aligned PML4, PDPT und Page Directory;
 - genau eine 2-MiB-Identity-Map ab physischer Adresse null;
 - ein statischer 16-KiB-Bootstack innerhalb dieser Map;
+- genau 32 statische 16-Byte-IDT-Gates und eine gepackte 104-Byte-TSS;
+- ein statischer 16-KiB-IST ausschliesslich fuer Double Fault;
 - maximal 65.536 Statusabfragen je gesendetem COM1-Byte;
 - genau eine vCPU, 32 MiB RAM und zehn Sekunden im automatisierten QEMU-Gate.
 
@@ -43,3 +52,13 @@ Der Quellvertrag bestand sechs Tests. Der getrennte Windows-Build erzeugte ein
 vCPU und 32 MiB RAM veroeffentlichte nach den erneuten 64-Bit-Zustandspruefungen
 `REIST_X86_64_LONG_MODE_BOOT_OK` in 1,8 Sekunden. Dieser Nachweis gilt nur fuer
 den Emulator und den beschriebenen Architekturuebergang.
+
+## Abnahme R8.1b
+
+Der erweiterte Quellvertrag bestand neun Tests. Der warnungsfreie Windows-Build
+linkte getrennte Entry- und Exceptionobjekte zu einem 16.844 Byte grossen ELF.
+Der weiterhin auf eine vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf
+meldete in dieser Reihenfolge `REIST_X86_64_LONG_MODE_BOOT_OK`,
+`REIST_X86_64_EXCEPTION_IDT_READY`, `REIST_X86_64_EXCEPTION_UD_OK` und
+`REIST_X86_64_EXCEPTION_RECOVERY_OK`. Erweiterte Seitentabellen, Hardware-IRQs,
+Prozesse, Syscalls, ELF64-Userspace und physische Hardware bleiben offen.

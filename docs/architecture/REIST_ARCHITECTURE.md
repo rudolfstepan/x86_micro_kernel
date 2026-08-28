@@ -83,6 +83,15 @@ Boot, Exceptionen, Paging, Prozess-/Syscall-ABI, Userspace und Zielhardware
 für x86_64 jeweils nachgewiesen wurden. Ein Long-Mode-Bootstrap allein ist
 ausdrücklich noch keine vollständige 64-Bit-Systemvariante.
 
+R8.1b ergänzt im weiterhin isolierten Artefakt die 32 reservierten
+Architektur-Exceptionvektoren. Alle Eintrittspfade normalisieren Vektor und
+Fehlercode und sichern sämtliche allgemeinen Register. Eine statische
+64-Bit-TSS stellt ausschließlich für Double Fault einen festen 16-KiB-IST
+bereit. Nur ein exakt passender `UD2`-Probe darf seine gespeicherte RIP auf die
+feste Fortsetzung ändern und mit `iretq` zurückkehren; jede andere Exception
+meldet begrenzt fatal und hält. Maskierbare Interrupts und alle produktiven
+x86_64-Kernel-/Userspace-ABIs bleiben außerhalb dieser Grundlage.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

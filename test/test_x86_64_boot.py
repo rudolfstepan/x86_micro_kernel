@@ -18,6 +18,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("all: native-image", makefile)
         target = makefile.split("x86_64-bootstrap:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("arch/x86_64/boot/entry.asm", target)
+        self.assertIn("arch/x86_64/cpu/exceptions.asm", target)
         self.assertNotIn("native-image", target)
         self.assertNotIn("kernel", target)
 
@@ -64,6 +65,57 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("process.terminate()", runner)
         self.assertIn("process.kill()", runner)
         self.assertNotRegex(runner, re.compile(r"qemu-system-i386"))
+
+    def test_exception_idt_tss_and_double_fault_ist_are_fixed(self):
+        source = self.read("arch/x86_64/cpu/exceptions.asm")
+        self.assertIn("EXCEPTION_VECTOR_COUNT equ 32", source)
+        self.assertIn("IDT_GATE_SIZE         equ 16", source)
+        self.assertIn("TSS64_SIZE            equ 104", source)
+        self.assertIn("resb TSS64_SIZE", source)
+        self.assertIn("resb 16384", source)
+        self.assertEqual(source.count("IDT_GATE_PRESENT_INT"), 2)
+        self.assertIn("cmp ecx, DOUBLE_FAULT_VECTOR", source)
+        self.assertIn("mov byte [rdi + 4], TSS_IST1", source)
+        self.assertLess(source.index("ltr ax"), source.index("lidt [rel exception_idt_pointer]"))
+
+    def test_all_exception_frames_are_normalized_and_registers_preserved(self):
+        source = self.read("arch/x86_64/cpu/exceptions.asm")
+        error_vectors = {8, 10, 11, 12, 13, 14, 17, 21, 29, 30}
+        emitted_error = {
+            int(value) for value in re.findall(
+                r"^EXCEPTION_ERR\s+(\d+)\s*$", source, re.MULTILINE
+            )
+        }
+        emitted_plain = {
+            int(value) for value in re.findall(
+                r"^EXCEPTION_NOERR\s+(\d+)\s*$", source, re.MULTILINE
+            )
+        }
+        self.assertEqual(emitted_error, error_vectors)
+        self.assertEqual(emitted_plain, set(range(32)) - error_vectors)
+        self.assertIn("EXCEPTION_FRAME_VECTOR equ (15 * 8)", source)
+        for register in (
+            "rax", "rbx", "rcx", "rdx", "rbp", "rsi", "rdi",
+            "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+        ):
+            self.assertIn(f"push {register}", source)
+            self.assertIn(f"pop {register}", source)
+
+    def test_ud2_probe_requires_exact_frame_and_runner_requires_order(self):
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        source = self.read("arch/x86_64/cpu/exceptions.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("x86_64_ud2_probe:", entry)
+        self.assertIn("ud2", entry)
+        self.assertIn("x86_64_ud2_resume:", entry)
+        self.assertIn("cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 6", source)
+        self.assertIn("cmp qword [rsp + EXCEPTION_FRAME_ERROR], 0", source)
+        self.assertIn("cmp rax, rdx", source)
+        self.assertIn("mov [rsp + EXCEPTION_FRAME_RIP], rdx", source)
+        self.assertIn("REIST_X86_64_EXCEPTION_FATAL vector=", source)
+        self.assertIn("REQUIRED_MARKERS", runner)
+        self.assertIn("REIST_X86_64_EXCEPTION_RECOVERY_OK", runner)
+        self.assertIn("positions != sorted(positions)", runner)
 
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")

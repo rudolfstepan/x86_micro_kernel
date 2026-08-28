@@ -47,11 +47,15 @@ Windows-Build und ein Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Das ist kein
 vollstaendiger x86_64-Kernel; Exception-, Paging-, Prozess-, Syscall- und
 Userspace-ABIs bleiben offen.
 
-**R8.1b ist aktiv:** Das weiterhin getrennte Bootstrap-Artefakt erhält genau
+**R8.1b ist umgesetzt:** Das weiterhin getrennte Bootstrap-Artefakt besitzt genau
 die 32 Architektur-Exceptiongates, normalisierte Fehlerframes, eine statische
 64-Bit-TSS mit eigenem Double-Fault-IST und einen exakt validierten
 `UD2`-Resume-Nachweis. Maskierbare Hardwareinterrupts, erweitertes Paging,
-Prozesse, Syscalls und Userspace bleiben außerhalb dieses Pakets.
+Prozesse, Syscalls und Userspace bleiben außerhalb dieses Pakets. Neun
+Quellvertragstests, der warnungsfreie 16.844-Byte-Build und ein begrenzter
+Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Der Lauf veröffentlichte geordnet
+`LONG_MODE_BOOT_OK`, `EXCEPTION_IDT_READY`, `EXCEPTION_UD_OK` und
+`EXCEPTION_RECOVERY_OK`.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
