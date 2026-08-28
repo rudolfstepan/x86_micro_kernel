@@ -10403,12 +10403,15 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"
-scope = "Add a compile-time-only compositor lifecycle fault that suppresses supervisor progress from only the first AP-affine compositor generation until the existing two-second heartbeat deadline isolates it. Preserve a protected desired online-AP mask across the fence, return the old live generation to the BSP before display publication is deactivated and the process is terminated, then spawn the replacement on the BSP. Require replacement self-test, healthy publication and SERVICE_READY on CPU 0 before reapplying the mask. Prove renewed AP execution and real virtual xHCI mouse delivery with the generated four-vCPU VMware guest and loopback-only RFB input; safe-state exhaustion must clear the desired mask and fall back without widening display, Surface, USB or device authority."
+scope = "Route only the explicit Ring-3 DESKTOP command through the existing generationscoped compositor supervisor instead of launching an unsupervised compatibility process; preserve existing SYS_SPAWNV numbering and keep every boot target autostart-disabled. Add a compile-time-only compositor lifecycle fault that suppresses supervisor progress from only the first AP-affine compositor generation until the existing two-second heartbeat deadline isolates it. Preserve a protected desired online-AP mask across the fence, return the old live generation to the BSP before display publication is deactivated and the process is terminated, then spawn the replacement on the BSP. Require replacement self-test, healthy publication and SERVICE_READY on CPU 0 before reapplying the mask. Prove renewed AP execution and real virtual xHCI mouse delivery with the generated four-vCPU VMware guest and loopback-only RFB input; safe-state exhaustion must clear the desired mask and fall back without widening display, Surface, USB or device authority."
 allowed_files = [
   "automation/reist-s03b.toml",
   "Makefile",
   "scripts/build-windows.ps1",
+  "include/kernel/supervisor.h",
   "kernel/init/supervisor.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/bin/shell.c",
   "scripts/run_vmware_mouse.ps1",
   "scripts/test-reist-runtime.ps1",
   "test/test_reist_supervisor.py",
@@ -10420,6 +10423,8 @@ allowed_files = [
 ]
 invariants = [
   "the compile-time fault is absent from normal builds and suppresses progress only for the first compositor generation after verified AP execution",
+  "only an explicit Ring-3 DESKTOP spawn enters the compositor supervisor and no kernel boot target starts a graphical session automatically",
+  "SYS_SPAWNV retains its existing number and ordinary programs retain their existing parented spawn and wait behavior",
   "the old live generation returns to BSP affinity within the existing bounded recovery path before display deactivation termination and reap",
   "the protected desired AP mask survives restart but no generation receives AP affinity before self-test healthy publication and SERVICE_READY on CPU 0",
   "the replacement generation executes on an AP and receives a real virtual xHCI mouse report through loopback-only RFB input",
@@ -10427,7 +10432,8 @@ invariants = [
 ]
 targeted_tests = [
   "python test/test_reist_supervisor.py -v",
-  "python test/test_vmware_mouse.py -v"
+  "python test/test_vmware_mouse.py -v",
+  "python test/test_shell_source.py -v"
 ]
 package_tests = []
 runtime_tests = [
@@ -10436,6 +10442,7 @@ runtime_tests = [
 ]
 stop_conditions = [
   "the normal build contains the fault or more than the first compositor generation loses progress",
+  "the explicit shell command cannot enter the supervised compositor lifecycle without changing the existing syscall number or ordinary spawn semantics",
   "display publication is deactivated or the process is terminated before the old generation returns to BSP",
   "the replacement becomes AP-affine before healthy SERVICE_READY publication on CPU 0",
   "the restart exhausts its finite budget or virtual mouse delivery does not reach the replacement generation",
