@@ -35,3 +35,11 @@ Nicht unterstuetzte CPU-Faehigkeiten und inkonsistente Kontrollregister enden
 mit einem eigenen seriellen Fehlermarker und anschliessendem `hlt`. Der
 produktive i386-Build verwendet keine Datei aus `arch/x86_64` und bleibt die
 Standardauswahl aller bisherigen Build- und Installationswege.
+
+## Abnahme R8.1a
+
+Der Quellvertrag bestand sechs Tests. Der getrennte Windows-Build erzeugte ein
+14.360 Byte grosses Bootstrap-ELF. Der begrenzte QEMU-x86_64-Lauf mit einer
+vCPU und 32 MiB RAM veroeffentlichte nach den erneuten 64-Bit-Zustandspruefungen
+`REIST_X86_64_LONG_MODE_BOOT_OK` in 1,8 Sekunden. Dieser Nachweis gilt nur fuer
+den Emulator und den beschriebenen Architekturuebergang.

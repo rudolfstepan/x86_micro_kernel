@@ -192,6 +192,13 @@ STACK_ANALYSIS_OUTPUT_DIR ?= build/stack-analysis
 LDFLAGS := -m elf_i386 -nostdlib --strip-all --build-id=sha1
 KERNEL_LDSCRIPT := $(CONFIG_DIR)/klink.ld
 
+# Isolated architecture bootstrap.  This target deliberately does not feed
+# objects or flags into the production i386 kernel/image dependency graph.
+X86_64_BOOTSTRAP_DIR := $(OUTPUT_DIR)/x86_64
+X86_64_BOOTSTRAP_OBJ := $(X86_64_BOOTSTRAP_DIR)/entry.o
+X86_64_BOOTSTRAP_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-bootstrap.elf
+X86_64_BOOTSTRAP_LDSCRIPT := $(CONFIG_DIR)/x86_64_bootstrap.ld
+
 # Mount directory for disk image
 MOUNT_DIR := /mnt/disk
 
@@ -320,9 +327,17 @@ $(CONFIG_STAMP):
 # TARGETS
 # ============================================================================
 
-.PHONY: all clean prepare kernel signed-kernel check-syscall-abi check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-runtime-degradation test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
+.PHONY: all clean prepare kernel signed-kernel check-syscall-abi check-kernel-dependencies check-kernel-stack check-kernel-stack-analysis user-sdk user-program system-programs bootdisk native-image floppy-image x86_64-bootstrap run run-disk run-native run-usb run-floppy run-fb help format-disks test test-unit test-desktop-host test-all test-images test-smoke test-smoke-pit test-smoke-watchdog test-smoke-fatal-recovery test-smoke-memory-fault test-smoke-runtime-degradation test-smoke-journal-recovery test-smoke-storage-recovery test-smoke-storage-io-failure test-smoke-fdd-hotplug test-smoke-handover test-smoke-handover-pair test-smoke-memory test-smoke-desktop test-verbose test-bash test-quick run-debug print-vars build-qemu build-qemu-fb build-vmware build-real-hw clean-all
 
 all: native-image
+
+x86_64-bootstrap:
+	@mkdir -p $(X86_64_BOOTSTRAP_DIR)
+	@$(AS) -f elf32 arch/x86_64/boot/entry.asm -o $(X86_64_BOOTSTRAP_OBJ)
+	@$(LD) -m elf_i386 -nostdlib --build-id=none --fatal-warnings \
+		-T $(X86_64_BOOTSTRAP_LDSCRIPT) -o $(X86_64_BOOTSTRAP_ELF) \
+		$(X86_64_BOOTSTRAP_OBJ)
+	@echo "x86_64 bootstrap complete: $(X86_64_BOOTSTRAP_ELF)"
 
 check-syscall-abi:
 	@$(PYTHON) scripts/generate_syscall_abi.py --check
@@ -383,6 +398,7 @@ help:
 	@echo "  build-vmware - Build for VMware Workstation (E1000 network)"
 	@echo "  build-real-hw - Build for real hardware (strict ATA timing)"
 	@echo "  kernel       - Build kernel binary only"
+	@echo "  x86_64-bootstrap - Build the isolated IA-32e transition proof"
 	@echo "  user-sdk     - Build conventional REIST headers and static libraries"
 	@echo "  user-program - Compile USER_PROGRAM_SOURCE into a loadable MYPR file"
 	@echo "  system-programs - Build the native Ring-3 system tool collection"

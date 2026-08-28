@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1a-x86_64-long-mode-bootstrap"
+active_id = "R6.2o-compositor-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -10343,7 +10343,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1a-x86_64-long-mode-bootstrap"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add an isolated x86_64 long-mode bootstrap without changing i386"
@@ -10390,10 +10390,16 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "arch: add isolated x86_64 long-mode bootstrap"
+evidence = [
+  "the final source contract passed all 6 tests after correcting one stale ESI-versus-RSI test expectation",
+  "the isolated Windows package build produced a 14360-byte Multiboot ELF bootstrap without consuming or changing any production i386 object",
+  "the bounded one-vCPU 32-MiB QEMU x86_64 runtime reached REIST_X86_64_LONG_MODE_BOOT_OK in 1.8 seconds after the 64-bit control-state checks",
+  "the bootstrap remains explicitly limited to the architecture transition and provides no complete kernel process syscall userspace image or physical-hardware claim"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"

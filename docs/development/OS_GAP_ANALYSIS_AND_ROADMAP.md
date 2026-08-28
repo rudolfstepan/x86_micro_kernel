@@ -38,6 +38,15 @@ Adressierung, ELF64-/Prozess-ABI, Userspace und erst zuletzt vollständige
 Systemimages. Kein Zwischenstand wird als vollständiges 64-Bit-REIST-OS
 bezeichnet.
 
+**R8.1a ist umgesetzt:** Der getrennte Multiboot-Prototyp prueft CPUID und
+Long-Mode-Unterstuetzung, nullt drei statische Seitentabellen, bildet genau die
+ersten 2 MiB ab und aktiviert PAE, EFER.LME und Paging in festgelegter
+Reihenfolge. Erst der 64-Bit-Zielcode prueft CR0.PG, CR4.PAE und EFER.LMA und
+sendet danach den Erfolgsmarker. Sechs Quellvertragstests, der isolierte
+Windows-Build und ein Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Das ist kein
+vollstaendiger x86_64-Kernel; Exception-, Paging-, Prozess-, Syscall- und
+Userspace-ABIs bleiben offen.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget
