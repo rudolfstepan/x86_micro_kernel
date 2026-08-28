@@ -86,7 +86,10 @@ WAV- oder Control-Gallery-Start blockiert den Compositor noch im synchronen
 Legacy-Child-Wait und verbraucht dadurch sein Heartbeat-Restartbudget; R2.2ai
 migriert beide Clients auf die Surface-Grenze und ergänzt konfigurierbare,
 originale CC0-Systemklänge. Der getrennte physische xHCI-Control-Fehler
-`cc=13` folgt als R5.2x, bevor R6.2o auf der VMware-/ASUS-Basis den begrenzten
+`cc=13` folgt als R5.2x. Das eingeschobene R7.1a stellt fuer die weitere
+Leistungsdiagnose ein begrenztes Ring-3-`BENCHMARK.PRG` fuer CPU, RAM,
+Datentraeger und VGA bereit; danach nimmt R6.2o auf der VMware-/ASUS-Basis den
+begrenzten
 BSP-Fence und die erneute post-READY-AP-Affinität nach einem Heartbeat-Restart
 prüft. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und

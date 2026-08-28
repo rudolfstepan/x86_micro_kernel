@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2o-compositor-ap-restart"
+active_id = "R7.1a-system-benchmark"
 
 [policy]
 one_package_per_run = true
@@ -10293,8 +10293,49 @@ evidence = [
 ]
 
 [[packages]]
-id = "R6.2o-compositor-ap-restart"
+id = "R7.1a-system-benchmark"
 status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Add a bounded Ring-3 system benchmark"
+scope = "Add BENCHMARK.PRG as a normal Ring-3 shell program. Measure bounded integer CPU work, fixed-storage memory write and read bandwidth, verified sequential VFS write and read throughput through one private temporary file, and complete framebuffer fill throughput through the public display ABI. Restore the text console before printing one fixed-width ASCII result table, report unavailable or failed sections without hiding successful results, package the command in both Makefile and Windows image layouts, and keep every iteration count, byte count, retry and cleanup path finite."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "scripts/build_system_programs.py",
+  "userspace/programs/benchmark.c",
+  "test/test_benchmark_source.py",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "BENCHMARK.PRG runs entirely in Ring 3 and receives no raw device DMA IRQ MMIO port or supervisor authority",
+  "CPU memory storage and VGA workloads have compile-time iteration and byte ceilings and no busy wait for external state",
+  "the storage benchmark touches only its private BENCHMARK.TMP file verifies every byte read and removes the file on success and failure",
+  "the VGA benchmark uses only the public framebuffer API and restores the text console before publishing results",
+  "a failed or unavailable benchmark section is visible in the table and does not fabricate a throughput value",
+  "Makefile and Windows image layouts both install usr/bin/benchmark.prg and the userspace shell resolves it through the existing PATH"
+]
+targeted_tests = [
+  "python test/test_benchmark_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the benchmark requires a new syscall direct hardware authority an unbounded adaptive loop or destructive access outside its private temporary file",
+  "the VGA test cannot restore a readable shell console before table output",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "tools: add bounded system benchmark"
+
+[[packages]]
+id = "R6.2o-compositor-ap-restart"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"

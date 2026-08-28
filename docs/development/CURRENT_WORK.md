@@ -4,7 +4,14 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `0deb7be`
 
-Aktives Thema: R6.2o – Compositor-AP-Affinität nach begrenztem Neustart
+Aktives Thema: R7.1a – begrenztes Ring-3-Systembenchmark
+
+R7.1a unterbricht R6.2o auf ausdruecklichen Benutzerwunsch. Das neue
+`BENCHMARK.PRG` misst CPU, RAM, sequentielle VFS-/Datentraegerzugriffe und den
+vollstaendigen VGA-Framebufferpfad mit festen Arbeitsgrenzen. Es verwendet nur
+oeffentliche Ring-3-ABIs, schreibt ausschliesslich eine eigene temporaere Datei
+und gibt die Ergebnisse nach Wiederherstellung der Textkonsole als feste
+ASCII-Tabelle aus. R6.2o bleibt unveraendert queued.
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
