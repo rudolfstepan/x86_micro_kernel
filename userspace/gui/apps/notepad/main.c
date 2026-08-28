@@ -1316,7 +1316,7 @@ static uint32_t dispatch_editor_pointer(notepad_state_t *state,
     if (reist_gui_text_editor_dispatch(
             &state->editor_model, &state->editor,
             &event, &result) != 0) return 1U;
-    if (synchronize_scrollbars(state) != 0) return 1U;
+    if (result.full_redraw && synchronize_scrollbars(state) != 0) return 1U;
     if (result.damage_count || result.full_redraw) state->redraw = 1U;
     return result.consumed;
 }
@@ -1350,9 +1350,10 @@ static uint32_t apply_scroll_value(notepad_state_t *state,
         ? value : (uint32_t)state->horizontal_scroll.value;
     if (reist_gui_text_editor_scroll_to(
             &state->editor_model, &state->editor,
-            first_line, first_column, &editor_result) != 0 ||
-        synchronize_scrollbars(state) != 0)
+            first_line, first_column, &editor_result) != 0)
         return 0U;
+    state->viewport.first_line = state->editor.first_line;
+    state->viewport.first_column = state->editor.first_column;
     if (range_result.changed || editor_result.full_redraw)
         state->redraw = 1U;
     return 1U;

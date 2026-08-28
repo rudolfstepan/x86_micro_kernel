@@ -29,7 +29,7 @@ class ReistSupervisorTests(unittest.TestCase):
                       report)
         self.assertNotIn("printf(", report)
 
-    def test_compositor_lifecycle_ap_affinity_is_post_ready_and_one_shot(self):
+    def test_compositor_lifecycle_keeps_production_surface_clients_colocated(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(encoding="utf-8")
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         control = source[source.index("static bool compositor_control_valid"):
@@ -71,6 +71,9 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("restart_budget = 3U", source)
         self.assertIn("supervisor_start_compositor", kernel)
         self.assertIn("supervisor_compositor_session_active", kernel)
+        self.assertIn(
+            "const uint32_t compositor_post_ready_cpu_affinity_mask = 0U;",
+            kernel)
         display_connect = source[
             source.index("if (service_id == REIST_SERVICE_DISPLAY_DRIVER)"):
             source.index("static void supervisor_worker(")]
@@ -78,7 +81,9 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn('strcmp(client->image_path, "/usr/gui/bin/desktop.prg")',
                       display_connect)
         start = kernel.index("supervisor_start_compositor")
-        self.assertIn("production_driver_ap_mask", kernel[start:start + 180])
+        self.assertIn("compositor_post_ready_cpu_affinity_mask",
+                      kernel[start:start + 220])
+        self.assertNotIn("production_driver_ap_mask", kernel[start:start + 220])
 
     def test_sound_surface_probe_is_compile_time_only(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(

@@ -1,6 +1,6 @@
 # SMP-Subsystem
 
-Stand: 27. August 2026
+Stand: 28. August 2026
 
 ## Abnahmegrenze der ersten Stufe
 
@@ -128,6 +128,18 @@ erst dann der Kontext gewechselt. Dadurch bleibt die feste Lockordnung
 `IPC/Socket -> Scheduler` erhalten, ohne einen Spinlock über `swtch()` zu halten
 oder ein Wakeup-Fenster zu öffnen.
 
+Ein Foreground-Produzent, der einen Waitqueue-Task READY macht, übernimmt
+dessen geprüfte CPU-Affinitätsmaske noch unter dem Tasktabellen-Lock. Erst nach
+Freigabe dieses Locks fordert er über den festen Vektor `0xF3` einen
+Schedulerlauf auf jeder freigegebenen entfernten Ziel-CPU an. Der IPI-Pfad
+bestätigt den LAPIC und verlässt den Hard-IRQ-Kontext vor einem möglichen
+`swtch()`. Versand und Zielmenge sind auf höchstens 16 CPUs und 4096
+ICR-Pollschritte je CPU begrenzt. Ein Zustellfehler macht den bereits
+veröffentlichten READY-Zustand nicht rückgängig; der periodische LAPIC-/PIT-
+Scheduler bleibt der sichere Fallback. Wakeups aus Hard-IRQ-Kontext versenden
+keinen IPI und behalten ebenfalls diesen Fallback, damit kein unterbrochener
+ICR-Lock rekursiv erworben werden kann.
+
 Der gemeinsame PS/2-/USB-Tastaturpuffer verwendet denselben Vertrag. Ein Leser
 prüft und entnimmt Eingabe unter dem Eingabelock oder überträgt sich atomar in
 die Waitqueue; ein IRQ- oder Poll-Produzent kann deshalb zwischen Leerprüfung
@@ -213,8 +225,9 @@ ist aber keine Sicherheitsvoraussetzung für den nun explizit BSP-affinen
 Legacy-PIC-Pfad.
 
 Nach dem Probe-Nachweis bleiben APs in ihrem lokalen Scheduler-Idlekontext und
-bedienen ausschließlich AP-affine Kernelarbeit sowie TLB-IPIs. Fehlt ACPI oder
-LAPIC, bootet REIST diagnostiziert im vorhandenen Ein-CPU-/PIT-Fallback weiter.
+bedienen ausschließlich AP-affine Kernelarbeit sowie TLB- und Scheduler-
+Wakeup-IPIs. Fehlt ACPI oder LAPIC, bootet REIST diagnostiziert im vorhandenen
+Ein-CPU-/PIT-Fallback weiter.
 
 ## Automatisierte Evidenz
 
@@ -295,9 +308,15 @@ Eventconsumer und seine Diagnosesnapshots mit einem kurzen CPU-besitzenden
 IRQ-Lock. Darunter folgen ausschliesslich der generationsgebundene HID-Maus-
 beziehungsweise Tastaturlock und bei Tastaturereignissen zuletzt der
 gemeinsame Eingabequeuelock. Kein Lock umfasst Controller-, Port- oder
-Control-Transfer-Deadlines. Der Compositor konsumiert seine geschuetzte
-Einmal-AP-Maske erst nach `SERVICE_READY`; xHCI-Legacy-PIC-IRQ bleibt auf CPU
-0. Fence oder Restart loeschen diese Einmalfreigabe, bis ein eigener
-Restart-Nachweis sie spaeter dauerhaft machen darf.
+Control-Transfer-Deadlines. Der damalige Nachweis konsumierte die geschuetzte
+Einmal-AP-Maske des Compositors erst nach `SERVICE_READY`; xHCI-Legacy-PIC-IRQ
+blieb auf CPU 0. Die nachfolgende interaktive Messung zeigte jedoch, dass
+gewöhnliche BSP-Surface-Clients pro Retained-Frame dutzende CPU-uebergreifende
+Queue-Refills benötigen. Das Produktionsprofil hält Compositor und diese
+Clients deshalb wieder gemeinsam auf CPU 0. Die geschützte post-ready AP-
+Mechanik bleibt default-deny erhalten und darf erst nach explizitem Paint-
+Batching- oder gemeinschaftlichem GUI-Affinitätsnachweis erneut aktiviert
+werden. Andere bereits geprüfte AP-Dienste und -Treiber bleiben unverändert.
+Fence oder Restart löschen weiterhin jede explizite Einmalfreigabe.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.

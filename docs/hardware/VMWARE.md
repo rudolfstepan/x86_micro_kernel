@@ -81,10 +81,12 @@ PID. Start, Markerwartezeit und Aufräumen bleiben auf 30, 75 beziehungsweise
 
 Er verlangt in dieser Reihenfolge xHCI-HID-Bereitschaft, die SMP-
 Schedulerfreigabe, `COMPOSITOR_READY`, `DESKTOP_OK`, `DESKTOP_EXPLORER_OK`,
-einen `COMPOSITOR_AP_EXEC`-Heartbeat und `DESKTOP_MOUSE_OK`. Der Legacy-PIC-
-xHCI-IRQ bleibt dabei auf CPU 0, während der Compositor das Ereignis auf einem
-AP konsumiert. Panic oder Compositor-Degradation vor dem Mausmarker brechen
-den Lauf geschlossen ab.
+und `DESKTOP_MOUSE_OK`. Der Legacy-PIC-xHCI-IRQ und der Produktionscompositor
+bleiben auf CPU 0; andere getrennt geprüfte Dienste und Treiber dürfen die
+verfügbaren APs weiterhin verwenden. Die frühere AP-Compositor-Abnahme bleibt
+historische SMP-Evidenz, ist wegen des gemessenen Retained-Paint-IPC-Aufwands
+aber keine Vorgabe des normalen VMware-Profils mehr. Panic oder Compositor-
+Degradation vor dem Mausmarker brechen den Lauf geschlossen ab.
 
 ```text
 C:\> DRIVES

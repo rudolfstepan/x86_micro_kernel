@@ -73,6 +73,8 @@ typedef struct desktop_surface_slot {
     uint32_t pending_paint_layer;
     uint32_t paint_generation;
     uint32_t presented_generation;
+    reist_gui_rect_t present_damage;
+    uint32_t present_damage_valid;
     reist_gui_surface_damage_t damage;
     reist_gui_surface_input_t pending_events[
         REIST_GUI_SURFACE_MAX_PENDING_EVENTS];
@@ -134,6 +136,10 @@ int desktop_surface_commit(desktop_surface_manager_t *manager,
                             reist_gui_surface_owner_t owner,
                             reist_gui_surface_handle_t handle,
                             desktop_surface_commit_result_t *result);
+int desktop_surface_present_damage_take(desktop_surface_manager_t *manager,
+                                        reist_gui_surface_owner_t owner,
+                                        reist_gui_surface_handle_t handle,
+                                        reist_gui_rect_t *damage);
 int desktop_surface_destroy(desktop_surface_manager_t *manager,
                             reist_gui_surface_owner_t owner,
                             reist_gui_surface_handle_t handle);

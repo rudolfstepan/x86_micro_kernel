@@ -3181,9 +3181,26 @@ static void sync_surface_windows(
             if (surface->paint_generation !=
                 surface->presented_generation &&
                 surface->window_index < DESKTOP_WM_CAPACITY) {
-                desktop_dirty_add(
-                    dirty, desktop_wm_window_bounds(
-                        manager, surface->window_index));
+                reist_gui_rect_t local_damage;
+                int damage_status = desktop_surface_present_damage_take(
+                    surfaces, surface->owner, surface->handle,
+                    &local_damage);
+                if (damage_status == DESKTOP_SURFACE_OK) {
+                    desktop_rect_t client = desktop_window_client_rect(
+                        manager, surface->window_index);
+                    desktop_rect_t presentation_damage = {
+                        client.x + local_damage.x,
+                        client.y + local_damage.y,
+                        local_damage.width,
+                        local_damage.height,
+                    };
+                    desktop_dirty_add(dirty, presentation_damage);
+                } else if (damage_status != DESKTOP_SURFACE_ESTATE) {
+                    desktop_rect_t presentation_damage =
+                        desktop_wm_window_bounds(
+                            manager, surface->window_index);
+                    desktop_dirty_add(dirty, presentation_damage);
+                }
                 surface->presented_generation = surface->paint_generation;
             }
             if (surface->window_index < DESKTOP_WM_CAPACITY &&

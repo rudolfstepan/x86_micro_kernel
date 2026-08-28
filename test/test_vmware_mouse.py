@@ -92,15 +92,14 @@ class VmwareMouseTests(unittest.TestCase):
             "DESKTOP_OK",
             "DESKTOP_EXPLORER_OK",
             "DESKTOP_MOUSE_OK",
-            "REIST_GUI COMPOSITOR_AP_EXEC cpu=",
         ):
             self.assertIn(marker, source)
         self.assertIn("$hid -lt $scheduler", source)
         self.assertIn("$scheduler -lt $ready", source)
         self.assertIn("$ready -lt $desktop", source)
         self.assertIn("$desktop -lt $explorer", source)
-        self.assertIn("$explorer -lt $ap", source)
-        self.assertIn("$ap -lt $mouse", source)
+        self.assertIn("$explorer -lt $mouse", source)
+        self.assertNotIn("$ap =", source)
 
     def test_runner_fails_closed_on_compositor_or_kernel_failure(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(

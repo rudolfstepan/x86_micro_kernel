@@ -105,6 +105,23 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("model->page_step", self.source)
         self.assertIn("synchronize_scrollbars(state)", self.source)
 
+    def test_scroll_drag_uses_cached_viewport_and_coalesced_redraw(self):
+        start = self.source.index("static uint32_t apply_scroll_value(")
+        end = self.source.index("static uint32_t dispatch_one_scrollbar", start)
+        apply_scroll = self.source[start:end]
+        self.assertIn("state->viewport.first_line = state->editor.first_line",
+                      apply_scroll)
+        self.assertIn("state->viewport.first_column =",
+                      apply_scroll)
+        self.assertNotIn("synchronize_scrollbars(state)", apply_scroll)
+        self.assertNotIn("reist_gui_text_editor_get_viewport", apply_scroll)
+
+        start = self.source.index("static uint32_t dispatch_editor_pointer(")
+        end = self.source.index("static uint32_t scroll_coordinate", start)
+        pointer = self.source[start:end]
+        self.assertIn("if (result.full_redraw &&", pointer)
+        self.assertIn("synchronize_scrollbars(state)", pointer)
+
     def test_resize_is_recoverable_and_dialog_is_a_separate_surface(self):
         self.assertIn("accept_configure_bounded", self.source)
         self.assertIn('"notepad: Resize verzoegert: "', self.source)

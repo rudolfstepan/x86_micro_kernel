@@ -33,6 +33,73 @@ static int valid_local_rect(const desktop_surface_slot_t *slot,
         rect.height <= slot->height - (uint32_t)rect.y;
 }
 
+static int same_rect(reist_gui_rect_t left, reist_gui_rect_t right) {
+    return left.x == right.x && left.y == right.y &&
+        left.width == right.width && left.height == right.height;
+}
+
+static int same_paint_command(const desktop_surface_paint_command_t *left,
+                              const desktop_surface_paint_command_t *right) {
+    if (left == 0 || right == 0 || left->type != right->type ||
+        !same_rect(left->rect, right->rect) ||
+        left->foreground != right->foreground ||
+        left->background != right->background ||
+        left->text_length != right->text_length)
+        return 0;
+    for (uint32_t index = 0U; index < left->text_length; ++index) {
+        if (left->text[index] != right->text[index]) return 0;
+    }
+    return 1;
+}
+
+static void accumulate_present_damage(desktop_surface_slot_t *slot,
+                                      reist_gui_rect_t rect) {
+    if (slot == 0 || !valid_local_rect(slot, rect)) return;
+    if (!slot->present_damage_valid) {
+        slot->present_damage = rect;
+        slot->present_damage_valid = 1U;
+        return;
+    }
+    int32_t left = rect.x < slot->present_damage.x
+        ? rect.x : slot->present_damage.x;
+    int32_t top = rect.y < slot->present_damage.y
+        ? rect.y : slot->present_damage.y;
+    uint32_t rect_right = (uint32_t)rect.x + rect.width;
+    uint32_t damage_right = (uint32_t)slot->present_damage.x +
+        slot->present_damage.width;
+    uint32_t rect_bottom = (uint32_t)rect.y + rect.height;
+    uint32_t damage_bottom = (uint32_t)slot->present_damage.y +
+        slot->present_damage.height;
+    uint32_t right = rect_right > damage_right ? rect_right : damage_right;
+    uint32_t bottom = rect_bottom > damage_bottom
+        ? rect_bottom : damage_bottom;
+    slot->present_damage.x = left;
+    slot->present_damage.y = top;
+    slot->present_damage.width = right - (uint32_t)left;
+    slot->present_damage.height = bottom - (uint32_t)top;
+}
+
+static uint32_t accumulate_layer_difference(
+        desktop_surface_slot_t *slot,
+        const desktop_surface_paint_command_t *old_commands,
+        uint32_t old_count,
+        const desktop_surface_paint_command_t *new_commands,
+        uint32_t new_count) {
+    uint32_t changed = 0U;
+    uint32_t count = old_count > new_count ? old_count : new_count;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (index < old_count && index < new_count &&
+            same_paint_command(&old_commands[index], &new_commands[index]))
+            continue;
+        changed = 1U;
+        if (index < old_count)
+            accumulate_present_damage(slot, old_commands[index].rect);
+        if (index < new_count)
+            accumulate_present_damage(slot, new_commands[index].rect);
+    }
+    return changed;
+}
+
 static void copy_bounded_text(char *destination, const char *source,
                               uint32_t length) {
     uint32_t index = 0U;
@@ -484,13 +551,21 @@ int desktop_surface_paint_commit_layer(desktop_surface_manager_t *manager,
         manager->slots[index].pending_paint_layer != layer)
         return DESKTOP_SURFACE_ESTATE;
     desktop_surface_slot_t *slot = &manager->slots[index];
+    uint32_t changed = 0U;
     if (layer == REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) {
+        changed = accumulate_layer_difference(
+            slot, slot->committed_overlay_paint,
+            slot->committed_overlay_paint_count,
+            slot->pending_paint, slot->pending_paint_count);
         for (uint32_t command = 0U; command < slot->pending_paint_count;
              ++command)
             slot->committed_overlay_paint[command] =
                 slot->pending_paint[command];
         slot->committed_overlay_paint_count = slot->pending_paint_count;
     } else {
+        changed = accumulate_layer_difference(
+            slot, slot->committed_paint, slot->committed_paint_count,
+            slot->pending_paint, slot->pending_paint_count);
         for (uint32_t command = 0U; command < slot->pending_paint_count;
              ++command)
             slot->committed_paint[command] = slot->pending_paint[command];
@@ -499,7 +574,8 @@ int desktop_surface_paint_commit_layer(desktop_surface_manager_t *manager,
     slot->paint_active = 0U;
     slot->pending_paint_count = 0U;
     slot->pending_paint_layer = REIST_GUI_SURFACE_PAINT_LAYER_BASE;
-    slot->paint_generation = next_nonzero(&slot->paint_generation);
+    if (changed)
+        slot->paint_generation = next_nonzero(&slot->paint_generation);
     return DESKTOP_SURFACE_OK;
 }
 
@@ -541,6 +617,8 @@ int desktop_surface_commit(desktop_surface_manager_t *manager,
     result->damage.reserved = slot->damage.reserved;
     for (uint32_t i = 0U; i < slot->damage.count; ++i)
         result->damage.rects[i] = slot->damage.rects[i];
+    for (uint32_t i = 0U; i < slot->damage.count; ++i)
+        accumulate_present_damage(slot, slot->damage.rects[i]);
     slot->committed = 1U;
     slot->committed_buffer = slot->attached_buffer;
     slot->committed_buffer_generation = slot->attached_generation;
@@ -549,6 +627,23 @@ int desktop_surface_commit(desktop_surface_manager_t *manager,
     slot->attached_buffer = 0U;
     slot->attached_generation = 0U;
     slot->attached = 0U;
+    return DESKTOP_SURFACE_OK;
+}
+
+int desktop_surface_present_damage_take(desktop_surface_manager_t *manager,
+                                        reist_gui_surface_owner_t owner,
+                                        reist_gui_surface_handle_t handle,
+                                        reist_gui_rect_t *damage) {
+    int index = find_slot(manager, owner, handle);
+    if (index < 0 || damage == 0) return DESKTOP_SURFACE_EINVAL;
+    desktop_surface_slot_t *slot = &manager->slots[index];
+    if (!slot->present_damage_valid) return DESKTOP_SURFACE_ESTATE;
+    *damage = slot->present_damage;
+    slot->present_damage_valid = 0U;
+    slot->present_damage.x = 0;
+    slot->present_damage.y = 0;
+    slot->present_damage.width = 0U;
+    slot->present_damage.height = 0U;
     return DESKTOP_SURFACE_OK;
 }
 

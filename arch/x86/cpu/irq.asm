@@ -8,11 +8,12 @@
 [BITS 32]
 global irq0, irq1, irq2, irq3, irq4, irq5, irq6, irq7, irq8, irq9, irq10, irq11, irq12, irq13, irq14, irq15
 global apic_spurious_interrupt, apic_timer_interrupt, tlb_shootdown_interrupt
-global smp_scheduler_release_interrupt
+global smp_scheduler_release_interrupt, smp_reschedule_interrupt
 extern irq_handler
 extern apic_timer_isr
 extern paging_tlb_shootdown_isr
 extern x86_smp_scheduler_release_isr
+extern x86_smp_reschedule_isr
 
 section .text
 
@@ -97,6 +98,35 @@ smp_scheduler_release_interrupt:
     sub esp, 12
     push ebx
     call x86_smp_scheduler_release_isr
+    mov esp, ebx
+    pop gs
+    pop fs
+    pop es
+    pop ds
+    popa
+    add esp, 8
+    iretd
+
+smp_reschedule_interrupt:
+    cli
+    push dword 0
+    push dword 0xF3
+    pusha
+    push ds
+    push es
+    push fs
+    push gs
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    cld
+    mov ebx, esp
+    and esp, 0xfffffff0
+    sub esp, 12
+    push ebx
+    call x86_smp_reschedule_isr
     mov esp, ebx
     pop gs
     pop fs

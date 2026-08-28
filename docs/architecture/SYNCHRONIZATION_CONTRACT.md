@@ -1,6 +1,6 @@
 # Synchronisations- und Ausführungskontextvertrag
 
-Stand: 26. August 2026. Dieser Vertrag gilt für den begrenzten SMP-Kernel.
+Stand: 28. August 2026. Dieser Vertrag gilt für den begrenzten SMP-Kernel.
 Schedulerzustand, IRQ-Tiefe und Präemptionszähler sind CPU-lokal;
 gemeinsam genutzter Kernelzustand verwendet CPU-besitzende SMP-Locks.
 
@@ -71,6 +71,14 @@ ihnen ist Blockieren bereits ein Vertragsfehler.
 - Blockierende Waitqueue-APIs sind zusätzlich nur aus Foreground-Kontext
   erlaubt; `wait_queue_block_until_spinlocked()` überträgt atomar vom
   Condition-Lock in den Scheduler.
+- Ein Foreground-Wakeup darf nach Freigabe des Scheduler-Locks einen
+  spin-begrenzten Reschedule-IPI an freigegebene entfernte CPUs aus der
+  Affinitätsmaske senden. Der Ziel-ISR bestätigt den LAPIC und verlässt
+  `irq_in_context()` vor dem Scheduler-Tail. IPI-Fehler ändern den READY-
+  Commit nicht; der periodische Scheduler bleibt Fallback.
+- Hard-IRQ-Wakeups senden keinen Reschedule-IPI, weil der unterbrochene Kontext
+  selbst den ICR-Lock halten könnte. Sie bleiben auf atomare READY-Publikation
+  als letzte Aktion und den periodischen Scheduler begrenzt.
 - Heap- und Frame-Allokation sind nicht IRQ-tauglich.
 - VFS, FAT32 sowie synchrone ATA-PIO-, AHCI- und FDD-Transaktionen laufen mit
   IF=1 unter rekursiven Timed-Mutexen. Die zulässigen verschachtelten Pfade

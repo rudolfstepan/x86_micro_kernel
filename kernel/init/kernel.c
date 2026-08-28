@@ -880,6 +880,11 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
             ? ((1U << production_driver_smp_status.online_cpu_count) - 1U) &
                 ~1U
             : 0U;
+    /* Ordinary Surface clients remain BSP-affine. Keep the production
+     * compositor colocated with them so a retained frame does not require
+     * dozens of cross-CPU IPC refill handoffs. The supervisor's protected
+     * post-ready AP mechanism remains available for explicit future proofs. */
+    const uint32_t compositor_post_ready_cpu_affinity_mask = 0U;
     uint32_t audio_ap_mask = production_driver_ap_mask;
     if (video_device_available) {
         video_ap_mask = production_driver_ap_mask;
@@ -1032,7 +1037,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any
      * failed/terminated desktop fall back to the userspace shell. */
     if (!supervisor_start_compositor(pit_monotonic_ms(),
-                                     production_driver_ap_mask)) {
+                                     compositor_post_ready_cpu_affinity_mask)) {
         printf("Unable to start desktop.prg; starting shell fallback.\n");
     } else {
         printf("Starting supervised graphical desktop from "

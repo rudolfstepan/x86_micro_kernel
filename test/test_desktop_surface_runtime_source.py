@@ -32,12 +32,16 @@ def test_runtime_has_explicit_lifecycle():
     assert "DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 64U" in HEADER
     assert "request < X86OS_IPC_QUEUE_DEPTH" in SOURCE
     assert "x86os_yield()" in SOURCE
+    assert "uint32_t input_sent[DESKTOP_SURFACE_RUNTIME_CAPACITY]" in SOURCE
+    assert "input_status = send_pending_input(" in SOURCE
+    assert "input_status == -11" in SOURCE
+    assert "input_sent[i] = 1U" in SOURCE
     assert "active = DESKTOP_SURFACE_RUNTIME_RESERVED" in SOURCE
     assert "DESKTOP_SURFACE_RUNTIME_RETIRE_TIMEOUT_MS 1000U" in HEADER
     assert "DESKTOP_SURFACE_RUNTIME_RETIRING" in HEADER
     assert "static void disconnect_client" in SOURCE
     assert "desktop_surface_revoke_owner(manager, client->owner)" in SOURCE
-    assert "if (status == -11) status = 0;" in SOURCE
+    assert "if (input_status == -11) input_status = 0;" in SOURCE
     retire = SOURCE[SOURCE.index("static void retire_client"):
                     SOURCE.index("int desktop_surface_runtime_poll")]
     assert "x86os_process_identity_of" in retire

@@ -12,6 +12,43 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SmpTests(unittest.TestCase):
+    def test_cross_cpu_wait_queue_wake_requests_bounded_reschedule(self):
+        header = (ROOT / "arch/x86/include/smp.h").read_text(
+            encoding="utf-8")
+        smp = (ROOT / "arch/x86/cpu/smp.c").read_text(encoding="utf-8")
+        irq_asm = (ROOT / "arch/x86/cpu/irq.asm").read_text(
+            encoding="utf-8")
+        irq = (ROOT / "arch/x86/cpu/irq.c").read_text(encoding="utf-8")
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8")
+
+        self.assertIn("X86_SMP_RESCHEDULE_VECTOR 0xF3U", header)
+        self.assertIn("x86_smp_request_reschedule", header)
+        self.assertIn("x86_smp_reschedule_isr", header)
+        self.assertIn("smp_reschedule_interrupt", irq_asm)
+        self.assertIn("X86_SMP_RESCHEDULE_VECTOR", irq)
+
+        request = smp[smp.index("bool x86_smp_request_reschedule"):
+                      smp.index("void x86_smp_reschedule_isr")]
+        self.assertIn("SMP_RESCHEDULE_IPI_SPIN_LIMIT", request)
+        self.assertIn("smp_scheduler_ack_mask", request)
+        self.assertIn("x86_cpu_current_index()", request)
+        self.assertIn("apic_send_ipi_bounded", request)
+
+        isr = smp[smp.index("void x86_smp_reschedule_isr"):
+                  smp.index("static void smp_lock_probe_publish")]
+        self.assertLess(isr.index("apic_eoi();"),
+                        isr.index("irq_context_exit();"))
+        self.assertLess(isr.index("irq_context_exit();"),
+                        isr.index("scheduler_interrupt_handler();"))
+
+        wake = scheduler[
+            scheduler.index("bool wait_queue_wake_one_locked"):
+            scheduler.index("static size_t wait_queue_wake_all_task_locked")]
+        self.assertIn("task->cpu_affinity_mask", scheduler)
+        self.assertLess(wake.index("spinlock_release(&task_table_lock);"),
+                        wake.index("x86_smp_request_reschedule"))
+
     def test_madt_parser(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:

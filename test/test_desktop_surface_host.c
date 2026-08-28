@@ -41,6 +41,11 @@ int main(void) {
     desktop_surface_slot_t *painted = &manager.slots[handle.id - 1U];
     assert(painted->committed_paint_count == 2U);
     assert(painted->paint_generation != 0U);
+    reist_gui_rect_t present_damage;
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == 0);
+    assert(present_damage.x == 0 && present_damage.y == 0 &&
+           present_damage.width == 320U && present_damage.height == 200U);
     uint32_t base_generation = painted->paint_generation;
     assert(desktop_surface_paint_begin_layer(
         &manager, owner, handle, 2U) == DESKTOP_SURFACE_EINVAL);
@@ -62,6 +67,23 @@ int main(void) {
     assert(painted->committed_paint_count == 2U);
     assert(painted->committed_overlay_paint_count == 1U);
     assert(painted->committed_overlay_paint[0].foreground == 0x00000080U);
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == 0);
+    assert(present_damage.x == 4 && present_damage.y == 4 &&
+           present_damage.width == 80U && present_damage.height == 24U);
+    uint32_t overlay_generation = painted->paint_generation;
+    assert(desktop_surface_paint_begin_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) == 0);
+    assert(desktop_surface_paint_fill(
+        &manager, owner, handle,
+        (reist_gui_rect_t){4, 4, 80U, 24U}, 0x00000080U) == 0);
+    assert(desktop_surface_paint_commit_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) == 0);
+    assert(painted->paint_generation == overlay_generation);
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == DESKTOP_SURFACE_ESTATE);
     assert(desktop_surface_paint_begin(&manager, owner, handle) == 0);
     assert(desktop_surface_paint_fill(
         &manager, owner, handle,
@@ -69,6 +91,10 @@ int main(void) {
     assert(desktop_surface_paint_commit(&manager, owner, handle) == 0);
     assert(painted->committed_paint_count == 1U);
     assert(painted->committed_overlay_paint_count == 1U);
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == 0);
+    assert(present_damage.x == 8 && present_damage.y == 8 &&
+           present_damage.width == 120U && present_damage.height == 1U);
     reist_gui_surface_input_t input = {
         REIST_GUI_SURFACE_INPUT_POINTER_MOTION, 1U, 12, 8,
         1, -1, 0U, 0U, 0U, 0U};
@@ -108,16 +134,24 @@ int main(void) {
     assert(desktop_surface_commit(&manager, owner, handle, &result) == 0);
     assert(result.committed == 1U && result.damage.count == 1U);
     assert(result.released_buffer_id == 0U);
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == 0);
+    assert(present_damage.x == 0 && present_damage.y == 0 &&
+           present_damage.width == 320U && present_damage.height == 200U);
     assert(desktop_surface_buffer_destroy(&manager, owner, 1U, 1U) < 0);
     buffer.capability_id = 3U;
     assert(desktop_surface_buffer_create(&manager, owner, &buffer) == 0);
     assert(desktop_surface_attach(&manager, owner, handle,
         3U, 1U, 320U, 200U) == 0);
     assert(desktop_surface_damage(&manager, owner, handle,
-        (reist_gui_rect_t){0, 0, 320U, 200U}) == 0);
+        (reist_gui_rect_t){10, 20, 30U, 40U}) == 0);
     assert(desktop_surface_commit(&manager, owner, handle, &result) == 0);
     assert(result.released_buffer_id == 1U &&
            result.released_buffer_generation == 1U);
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == 0);
+    assert(present_damage.x == 10 && present_damage.y == 20 &&
+           present_damage.width == 30U && present_damage.height == 40U);
     assert(desktop_surface_buffer_destroy(&manager, owner, 1U, 1U) == 0);
     reist_gui_surface_configure_t resized;
     assert(desktop_surface_reconfigure(

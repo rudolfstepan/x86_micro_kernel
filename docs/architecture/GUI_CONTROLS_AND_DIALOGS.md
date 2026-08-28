@@ -63,6 +63,30 @@ nicht mehr die vollständige Editorfläche. Separate Dialog-Surfaces und ältere
 Clients verwenden unverändert die Basis-API; Eingaben werden nicht in laufende
 Transaktionsantworten umsortiert.
 
+Der Broker verarbeitet pro Desktopumlauf höchstens 64 faire Scheiben zu je
+einer IPC-Queue-Tiefe. Damit passt ein kompletter, weiterhin fest auf 192
+Kommandos begrenzter Retained-Paintframe in einen Umlauf. Ein nach jedem
+Queue-Drain freigegebener Produzent erhält auf seiner anderen CPU unmittelbar
+einen begrenzten Scheduler-IPI statt erst den nächsten periodischen Tick
+abzuwarten. Jedem aktiven Client wird auch während eines Paint-Bursts höchstens
+ein zusammengefasstes Eingabeereignis angeboten. Eine volle ausgehende Queue
+verschiebt dieses Ereignis, beendet aber nicht den Client.
+Beim Commit vergleicht der Server die alte und neue feste Paint-Liste und
+vereinigt nur Rechtecke geänderter, hinzugefügter oder entfernter Kommandos in
+einen lokalen Präsentationsschaden. Identische Commits erzeugen keine neue
+Paint-Generation. Damit zeichnet Menü-Hover nicht mehr das vollständige
+Notepad-Fenster neu; mehrere noch nicht präsentierte Commits bleiben durch das
+eine begrenzte Vereinigungsrechteck abgedeckt.
+
+Im Produktionsprofil bleiben Session-Compositor und gewöhnliche Surface-
+Clients gemeinsam auf CPU 0. Ein maximaler Retained-Paintframe benötigt damit
+keine Folge von CPU-übergreifenden Queue-Refills und Reschedule-IPIs. Storage,
+Netzwerk, HDA, Audio-Service und freigegebene Gerätetreiber dürfen weiterhin
+ihre getrennt geprüften AP-Masken verwenden. Die geschützte post-ready AP-
+Affinität des Compositors bleibt implementiert, wird aber erst mit einem
+expliziten Paint-Batching- und gemeinschaftlichen GUI-Affinitätsnachweis wieder
+als Produktionsvorgabe aktiviert.
+
 ## Unterstützungsstatus
 
 | Komponente | Öffentliche API | Rendering | Pointer | Tastatur | Status |
@@ -218,6 +242,11 @@ Dirty-State. Persistenz bleibt Anwendungsverantwortung; erst nach erfolgreichem
 `fsync` und Rename ruft `notepad.prg` `reist_gui_text_editor_mark_saved()` auf.
 Damit kann ein fehlgeschlagener Schreibpfad den sichtbaren Dirty-State nicht
 fälschlich löschen.
+Scrollbar-Drag übernimmt den bereits begrenzten neuen Zeilen- oder Spaltenwert
+direkt in den gecachten Viewport. Die bis zu 200 Dokumentzeilen werden nicht
+bei jeder absoluten Pointerbewegung erneut nach der längsten Zeile durchsucht;
+eine vollständige Synchronisierung folgt nur auf eine echte
+Editor-Geometrieänderung.
 
 `<reist/gui/file_dialog.h>` stellt dazu einen wiederverwendbaren,
 rendererneutralen Datei-Öffnen-/Speichern-Controller bereit. Er folgt demselben

@@ -37,6 +37,7 @@ extern void irq13();
 extern void irq14();
 extern void irq15();
 extern void smp_scheduler_release_interrupt(void);
+extern void smp_reschedule_interrupt(void);
 extern void apic_spurious_interrupt();
 extern void tlb_shootdown_interrupt();
 
@@ -226,6 +227,8 @@ void irq_install() {
                   (uint32_t)tlb_shootdown_interrupt);
     set_idt_entry(X86_SMP_SCHEDULER_RELEASE_VECTOR,
                   (uint32_t)smp_scheduler_release_interrupt);
+    set_idt_entry(X86_SMP_RESCHEDULE_VECTOR,
+                  (uint32_t)smp_reschedule_interrupt);
 }
 
 // General IRQ handler that checks for custom routines

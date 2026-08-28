@@ -35,6 +35,7 @@
 #define SMP_AP_START_TIMEOUT_MS 250U
 #define SMP_SCHEDULER_TIMEOUT_MS 2000U
 #define SMP_PARALLEL_PROBE_TIMEOUT_MS 1000U
+#define SMP_RESCHEDULE_IPI_SPIN_LIMIT 4096U
 
 enum {
     SMP_AP_STATE_EMPTY = 0U,
@@ -140,6 +141,44 @@ void x86_smp_scheduler_release_isr(void *frame) {
     __sync_synchronize();
     apic_eoi();
     irq_context_exit();
+}
+
+bool x86_smp_request_reschedule(uint32_t cpu_mask) {
+    uint32_t online_count = smp_status.online_cpu_count;
+    if (cpu_mask == 0U || online_count == 0U) return true;
+    if (online_count > X86_SMP_MAX_CPUS || irq_in_context()) return false;
+
+    uint32_t current_cpu = x86_cpu_current_index();
+    if (current_cpu >= online_count) return false;
+    uint32_t online_mask = (1U << online_count) - 1U;
+    uint32_t eligible_mask = smp_scheduler_ack_mask | 1U;
+    uint32_t target_mask = cpu_mask & online_mask & eligible_mask &
+        ~(1U << current_cpu);
+    bool sent_all = true;
+    for (uint32_t cpu = 0U; cpu < online_count; ++cpu) {
+        uint32_t cpu_bit = 1U << cpu;
+        if ((target_mask & cpu_bit) == 0U) continue;
+        x86_cpu_local_t *local = x86_cpu_local_by_index(cpu);
+        if (local == NULL || local->online == 0U ||
+            local->apic_id != smp_status.apic_ids[cpu] ||
+            !apic_send_ipi_bounded(
+                (uint8_t)smp_status.apic_ids[cpu],
+                APIC_IPI_FIXED(X86_SMP_RESCHEDULE_VECTOR),
+                SMP_RESCHEDULE_IPI_SPIN_LIMIT))
+            sent_all = false;
+    }
+    return sent_all;
+}
+
+void x86_smp_reschedule_isr(void *frame) {
+    (void)frame;
+    irq_context_note_vector(X86_SMP_RESCHEDULE_VECTOR);
+    irq_context_enter();
+    /* Acknowledge before a possible context switch so the local APIC can
+     * accept subsequent wakeups even while this interrupt frame is parked. */
+    apic_eoi();
+    irq_context_exit();
+    scheduler_interrupt_handler();
 }
 
 static void smp_lock_probe_publish(uint32_t cpu_index) {

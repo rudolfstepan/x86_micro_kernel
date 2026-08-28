@@ -128,7 +128,7 @@ static int send_pending_input(desktop_surface_runtime_client_t *client,
         slot->event_head = (slot->event_head + 1U) %
             REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
         --slot->event_count;
-        return 0;
+        return 1;
     }
     return 0;
 }
@@ -186,6 +186,7 @@ static void poll_retiring_client(desktop_surface_runtime_client_t *client) {
 int desktop_surface_runtime_poll(desktop_surface_runtime_t *runtime, desktop_surface_manager_t *manager) {
     if (runtime == 0 || manager == 0) return DESKTOP_SURFACE_EINVAL;
     int result = 0;
+    uint32_t input_sent[DESKTOP_SURFACE_RUNTIME_CAPACITY] = {0U};
     for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i)
         poll_retiring_client(&runtime->clients[i]);
     for (uint32_t round = 0U;
@@ -196,12 +197,10 @@ int desktop_surface_runtime_poll(desktop_surface_runtime_t *runtime, desktop_sur
             if (runtime->clients[i].active != DESKTOP_SURFACE_RUNTIME_BOUND)
                 continue;
             int status = 0;
-            uint32_t processed_client = 0U;
             for (uint32_t request = 0U;
                  request < X86OS_IPC_QUEUE_DEPTH; ++request) {
                 status = poll_client(&runtime->clients[i], manager);
                 if (status == 1) {
-                    processed_client = 1U;
                     processed_round = 1U;
                     continue;
                 }
@@ -210,17 +209,21 @@ int desktop_surface_runtime_poll(desktop_surface_runtime_t *runtime, desktop_sur
             if (status == 1) status = 0;
             if (status == -32) {
                 disconnect_client(&runtime->clients[i], manager);
-            } else if (status == 0 && !processed_client) {
-                status = send_pending_input(
-                    &runtime->clients[i], manager);
-                if (status == -11) status = 0;
-                if (status != 0) {
-                    disconnect_client(&runtime->clients[i], manager);
-                    if (result == 0) result = status;
-                }
             } else if (status != 0) {
                 disconnect_client(&runtime->clients[i], manager);
                 if (result == 0) result = status;
+            } else if (!input_sent[i]) {
+                int input_status = send_pending_input(
+                    &runtime->clients[i], manager);
+                if (input_status == 1) {
+                    input_sent[i] = 1U;
+                    input_status = 0;
+                }
+                if (input_status == -11) input_status = 0;
+                if (input_status != 0) {
+                    disconnect_client(&runtime->clients[i], manager);
+                    if (result == 0) result = input_status;
+                }
             }
         }
         if (!processed_round || result != 0) break;

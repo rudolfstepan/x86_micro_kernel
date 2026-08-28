@@ -571,6 +571,24 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn(overlay, render_window)
         self.assertLess(render_window.index(base), render_window.index(overlay))
 
+    def test_surface_commit_maps_only_local_presentation_damage(self):
+        sync = self.source[
+            self.source.index("static void sync_surface_windows"):
+            self.source.index("static void print_render_metrics")
+        ]
+        self.assertIn("desktop_surface_present_damage_take", sync)
+        self.assertIn("client.x + local_damage.x", sync)
+        self.assertIn("client.y + local_damage.y", sync)
+        presentation = sync[
+            sync.index("if (surface->paint_generation"):
+            sync.index("surface->presented_generation = surface->paint_generation")
+        ]
+        self.assertIn("if (damage_status == DESKTOP_SURFACE_OK)", presentation)
+        self.assertLess(
+            presentation.index("desktop_surface_present_damage_take"),
+            presentation.index("desktop_dirty_add(dirty, presentation_damage)"),
+        )
+
     def test_render_probe_is_fixed_bounded_and_reports_versioned_metrics(self):
         self.assertIn("#define DESKTOP_METRICS_VERSION 1U", self.source)
         self.assertIn("#define DESKTOP_RENDER_PROBE_STEPS 8U", self.source)

@@ -10,6 +10,7 @@
 
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/cpu_local.h"
+#include "arch/x86/include/smp.h"
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/tss.h"
 #include "arch/x86/mm/paging.h"
@@ -1089,7 +1090,8 @@ int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind) {
     return wait_queue_block_until_locked(queue, kind, UINT64_MAX);
 }
 
-static bool wait_queue_wake_one_task_locked(wait_queue_t *queue) {
+static bool wait_queue_wake_one_task_locked(wait_queue_t *queue,
+                                            uint32_t *reschedule_mask) {
     KASSERT_IRQ_DISABLED();
     assert_task_table_locked();
     if (queue == NULL || irq_enabled()) return false;
@@ -1104,6 +1106,8 @@ static bool wait_queue_wake_one_task_locked(wait_queue_t *queue) {
             task->blocked_owner_task = -1;
             task->blocked_owner_generation = 0U;
             task->status = TASK_READY;
+            if (reschedule_mask != NULL)
+                *reschedule_mask |= task->cpu_affinity_mask;
             return true;
         }
     }
@@ -1111,16 +1115,20 @@ static bool wait_queue_wake_one_task_locked(wait_queue_t *queue) {
 
 bool wait_queue_wake_one_locked(wait_queue_t *queue) {
     KASSERT_IRQ_DISABLED();
+    uint32_t reschedule_mask = 0U;
     spinlock_acquire(&task_table_lock);
-    bool woke = wait_queue_wake_one_task_locked(queue);
+    bool woke = wait_queue_wake_one_task_locked(queue, &reschedule_mask);
     spinlock_release(&task_table_lock);
+    if (woke)
+        (void)x86_smp_request_reschedule(reschedule_mask);
     return woke;
 }
 
-static size_t wait_queue_wake_all_task_locked(wait_queue_t *queue) {
+static size_t wait_queue_wake_all_task_locked(wait_queue_t *queue,
+                                              uint32_t *reschedule_mask) {
     assert_task_table_locked();
     size_t count = 0U;
-    while (wait_queue_wake_one_task_locked(queue)) ++count;
+    while (wait_queue_wake_one_task_locked(queue, reschedule_mask)) ++count;
     return count;
 }
 
@@ -1147,9 +1155,12 @@ void scheduler_wake_expired_waiters_locked(uint64_t now_ms) {
 
 size_t wait_queue_wake_all_locked(wait_queue_t *queue) {
     KASSERT_IRQ_DISABLED();
+    uint32_t reschedule_mask = 0U;
     spinlock_acquire(&task_table_lock);
-    size_t count = wait_queue_wake_all_task_locked(queue);
+    size_t count = wait_queue_wake_all_task_locked(queue, &reschedule_mask);
     spinlock_release(&task_table_lock);
+    if (count != 0U)
+        (void)x86_smp_request_reschedule(reschedule_mask);
     return count;
 }
 
@@ -1159,7 +1170,7 @@ void scheduler_wake_expired_sleepers_locked(uint64_t now_ms) {
     spinlock_acquire(&task_table_lock);
     while (sleep_waiters.head != NULL &&
            sleep_waiters.head->key <= now_ms) {
-        (void)wait_queue_wake_one_task_locked(&sleep_waiters);
+        (void)wait_queue_wake_one_task_locked(&sleep_waiters, NULL);
     }
     spinlock_release(&task_table_lock);
 }
@@ -1450,7 +1461,7 @@ void scheduler_terminate_task(int task_id) {
     process->has_exited = true;
     process->is_running = false;
     process->terminating = false;
-    (void)wait_queue_wake_all_task_locked(&process->exit_waiters);
+    (void)wait_queue_wake_all_task_locked(&process->exit_waiters, NULL);
     task->status = TASK_FINISHED;
     spinlock_release(&task_table_lock);
     process_table_unlock_irqrestore(flags);
@@ -1503,7 +1514,7 @@ void task_exit_status(int status) {
             tasks[finished].process->is_running = false;
             tasks[finished].process->terminating = false;
             (void)wait_queue_wake_all_task_locked(
-                &tasks[finished].process->exit_waiters);
+                &tasks[finished].process->exit_waiters, NULL);
         }
     }
 

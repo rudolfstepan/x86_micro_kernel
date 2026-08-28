@@ -1,6 +1,6 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 27. August 2026
+Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
@@ -160,6 +160,31 @@ einem getrennten CRC-geschützten Rendezvous-Slot. V1 bleibt bytegleich; eine
 maximale Vorschau benötigt höchstens 31 bestätigte Schreibvorgänge. Der
 Preview-Loader öffnet und liest die WAV-Datei nur einmal, und der Sound Player
 startet die Wiedergabe vor seiner Surface-Konstruktion.
+
+Die im REIST Editor beobachtete unbrauchbare Verzögerung von Scrollbar-Drag und
+Menü-Hover lag nicht in den Controls. Der erste Reparaturversuch behielt die
+lokale Paint-Differenz, Damage-Akkumulation, Inputweiterleitung unter Paintlast
+und den gecachten Notepad-Viewport bei, begrenzte den Broker aber auf vier
+Queue-Scheiben. Auf dem SMP-Desktop verschlechterte das vollständige Frames:
+Notepad läuft auf CPU 0, der Compositor auf einem AP, und jeder nach vier
+Nachrichten blockierte Produzent wartete mangels CPU-übergreifendem Wakeup bis
+zum nächsten 10-ms-Schedulertick. Der Broker verarbeitet deshalb wieder bis zu
+64 faire Queue-Scheiben für einen kompletten, fest begrenzten Paintframe. Neu
+fordert jeder Foreground-Wakeup erst nach Freigabe des Scheduler-Locks einen
+spin-begrenzten Reschedule-IPI für die entfernte Affinitäts-CPU an. Ein
+IPI-Fehler verändert den READY-Zustand nicht; der periodische Scheduler bleibt
+Fallback. Die vorhandenen Paint- und Viewport-Optimierungen bleiben erhalten.
+
+Der erste VMware-Nachtest mit Reschedule-IPI war wesentlich schneller, blieb
+aber messbar hinter derselben VM mit nur einer aktiven CPU zurück. Ursache ist
+der verbleibende Transportaufwand: Ein maximaler Paintframe benötigt bis zu 48
+Queue-Refills zwischen dem BSP-Notepad und dem AP-Compositor und damit ebenso
+viele lokale-APIC-/Schedulerübergaben. Das Produktionsprofil hält den
+Compositor deshalb wieder auf CPU 0 bei seinen gewöhnlichen Surface-Clients.
+Storage, Netzwerk, HDA, Audio-Service und geprüfte Gerätetreiber behalten ihre
+AP-Nutzung. Die geschützte post-ready Compositor-AP-Maske bleibt im Supervisor
+implementiert, ist aber standardmäßig leer, bis Paint-Batching oder eine
+gemeinsame GUI-Affinitätsdomäne separat nachgewiesen ist.
 
 Der im anschließenden Rescue-Shell-Bild sichtbare USB-Fehler ist eine getrennte
 xHCI-Enumerationsgrenze: `config=59` bezeichnet die Länge des gelesenen

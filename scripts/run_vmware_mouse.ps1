@@ -59,8 +59,7 @@ $requiredBeforeInput = @(
     'REIST_SMP SCHEDULER_READY cpus=4 probe_mask=0000000E',
     'REIST_GUI COMPOSITOR_READY',
     'DESKTOP_OK',
-    'DESKTOP_EXPLORER_OK',
-    'REIST_GUI COMPOSITOR_AP_EXEC cpu='
+    'DESKTOP_EXPLORER_OK'
 )
 $forbidden = @(
     '*** KERNEL PANIC ***',
@@ -287,10 +286,9 @@ try {
             $ready = $text.IndexOf('REIST_GUI COMPOSITOR_READY')
             $desktop = $text.IndexOf('DESKTOP_OK')
             $explorer = $text.IndexOf('DESKTOP_EXPLORER_OK')
-            $ap = $text.IndexOf('REIST_GUI COMPOSITOR_AP_EXEC cpu=')
             if (!($hid -lt $scheduler -and $scheduler -lt $ready -and
                 $ready -lt $desktop -and $desktop -lt $explorer -and
-                $explorer -lt $ap -and $ap -lt $mouse)) {
+                $explorer -lt $mouse)) {
                 throw 'VMware mouse runtime markers are out of order.'
             }
             $text | Set-Content -LiteralPath $GateLog -Encoding utf8

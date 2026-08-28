@@ -16,6 +16,7 @@
 #define X86_SMP_TRAMPOLINE_BASE 0x00007000U
 #define X86_SMP_TRAMPOLINE_REGION_SIZE 0x00001000U
 #define X86_SMP_SCHEDULER_RELEASE_VECTOR 0xF2U
+#define X86_SMP_RESCHEDULE_VECTOR 0xF3U
 
 typedef struct {
     uint32_t version;
@@ -44,6 +45,16 @@ bool x86_smp_scheduler_probe(void);
 
 /** Dedicated AP scheduler-release IPI entry called by the assembly stub. */
 void x86_smp_scheduler_release_isr(void *frame);
+
+/**
+ * Request an immediate scheduler pass on eligible remote CPUs in cpu_mask.
+ * Delivery is bounded and advisory; READY state remains authoritative when
+ * the periodic scheduler must provide the fallback.
+ */
+bool x86_smp_request_reschedule(uint32_t cpu_mask);
+
+/** Dedicated cross-CPU reschedule IPI entry called by the assembly stub. */
+void x86_smp_reschedule_isr(void *frame);
 
 /** Return a coherent BSP-owned status snapshot. */
 void x86_smp_status(x86_smp_status_t *status);
