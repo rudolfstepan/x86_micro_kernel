@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1a-system-benchmark"
+active_id = "R6.2o-compositor-ap-restart"
 
 [policy]
 one_package_per_run = true
@@ -10294,7 +10294,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1a-system-benchmark"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Add a bounded Ring-3 system benchmark"
@@ -10306,6 +10306,7 @@ allowed_files = [
   "scripts/build_system_programs.py",
   "userspace/programs/benchmark.c",
   "test/test_benchmark_source.py",
+  "test/test_user_program_toolchain.py",
   "docs/development/CURRENT_WORK.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
 ]
@@ -10332,10 +10333,17 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "tools: add bounded system benchmark"
+evidence = [
+  "the final source and image-layout contract passed all 5 tests",
+  "the freestanding i386 build linked BENCHMARK.PRG as a 20480-byte MYPR image without runtime division helpers",
+  "the final qemu VGA package build passed in 10 seconds and packaged the newly built BENCHMARK.PRG without starting a VM",
+  "CPU RAM VFS storage and VGA workloads have fixed attempt byte and elapsed-time ceilings and report partial failures explicitly",
+  "the VFS benchmark uses exclusive CREATE refuses a pre-existing generation-specific path verifies every read byte and removes only its private temporary file"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"

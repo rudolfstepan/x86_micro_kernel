@@ -707,6 +707,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/bin/calc.prg=$(SYSTEM_PROGRAM_DIR)/CALC.PRG \
 	usr/bin/date.prg=$(SYSTEM_PROGRAM_DIR)/DATE.PRG \
 	usr/bin/uptime.prg=$(SYSTEM_PROGRAM_DIR)/UPTIME.PRG \
+	usr/bin/benchmark.prg=$(SYSTEM_PROGRAM_DIR)/BENCHMARK.PRG \
 	usr/bin/ascii.prg=$(SYSTEM_PROGRAM_DIR)/ASCII.PRG \
 	usr/bin/save.prg=$(SYSTEM_PROGRAM_DIR)/SAVE.PRG \
 	usr/bin/spawn.prg=$(SYSTEM_PROGRAM_DIR)/SPAWN.PRG \

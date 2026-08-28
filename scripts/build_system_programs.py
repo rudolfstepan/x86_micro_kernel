@@ -26,6 +26,7 @@ PROGRAMS = {
     "DATE.PRG": ROOT / "userspace/programs/date.c",
     "UPTIME.PRG": ROOT / "userspace/programs/uptime.c",
     "MEMINFO.PRG": ROOT / "userspace/programs/meminfo.c",
+    "BENCHMARK.PRG": ROOT / "userspace/programs/benchmark.c",
     "ASCII.PRG": ROOT / "userspace/programs/ascii.c",
     "CAT.PRG": (
         ROOT / "userspace/programs/cat.c",

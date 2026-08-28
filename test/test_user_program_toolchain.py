@@ -438,7 +438,8 @@ class UserProgramToolchainTests(unittest.TestCase):
             expected = {
                 "HELLO.PRG", "SYSINFO.PRG", "USBINFO.PRG", "REPEAT.PRG",
                 "CALC.PRG",
-                "DATE.PRG", "UPTIME.PRG", "MEMINFO.PRG", "ASCII.PRG",
+                "DATE.PRG", "UPTIME.PRG", "MEMINFO.PRG", "BENCHMARK.PRG",
+                "ASCII.PRG",
                 "CAT.PRG",
                 "CHKDSK.PRG",
                 "FDISK.PRG",

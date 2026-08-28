@@ -4,14 +4,17 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `0deb7be`
 
-Aktives Thema: R7.1a – begrenztes Ring-3-Systembenchmark
+Aktives Thema: R6.2o – Compositor-AP-Affinität nach begrenztem Neustart
 
-R7.1a unterbricht R6.2o auf ausdruecklichen Benutzerwunsch. Das neue
+R7.1a ist abgeschlossen. Das neue
 `BENCHMARK.PRG` misst CPU, RAM, sequentielle VFS-/Datentraegerzugriffe und den
 vollstaendigen VGA-Framebufferpfad mit festen Arbeitsgrenzen. Es verwendet nur
 oeffentliche Ring-3-ABIs, schreibt ausschliesslich eine eigene temporaere Datei
 und gibt die Ergebnisse nach Wiederherstellung der Textkonsole als feste
-ASCII-Tabelle aus. R6.2o bleibt unveraendert queued.
+ASCII-Tabelle aus. Der Quell-/Layoutvertrag bestand 5 Tests, das freestanding
+i386-Programm linkte als 20-KiB-MYPR und der QEMU-VGA-Paketbuild bestand in 36
+Sekunden; der finale inkrementelle Paketnachweis nach exklusivem CREATE bestand
+in 10 Sekunden ohne VM-Start. R6.2o ist wieder aktiv.
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.

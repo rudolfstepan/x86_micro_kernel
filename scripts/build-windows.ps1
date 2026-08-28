@@ -346,6 +346,7 @@ try {
         'sbin/config.prg' = 'CONFIG.PRG'
         'usr/bin/repeat.prg' = 'REPEAT.PRG'; 'usr/bin/calc.prg' = 'CALC.PRG'
         'usr/bin/date.prg' = 'DATE.PRG'; 'usr/bin/uptime.prg' = 'UPTIME.PRG'
+        'usr/bin/benchmark.prg' = 'BENCHMARK.PRG'
         'usr/bin/ascii.prg' = 'ASCII.PRG'; 'usr/bin/save.prg' = 'SAVE.PRG'
         'usr/bin/spawn.prg' = 'SPAWN.PRG'
         'usr/bin/audiotest.prg' = 'AUDIOTEST.PRG'
