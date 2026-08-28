@@ -2249,6 +2249,14 @@ Das nach einer zweiten Manifestprüfung veröffentlichte aktuelle
 Installerartefakt `build/reist-os-real-hw.img` ist 64 MiB groß und hat SHA-256
 `BF774039CF11370093B49E4E0D20094FB1315E15E440E84E6778B23F0E4DBFE9`.
 
+Ein nachfolgender Kaltstart desselben Images reproduzierte ohne parallel
+angeschlossene PS/2-Tastatur einen früheren EP0-Ausfall bereits beim ersten
+acht Byte großen Device-Descriptor-Request. Die Diagnose belegt kein
+Transfer-Event (`cc=0`, volle Restlänge, Stage 0) und damit keinen erneut
+akzeptierten Control-Short. R5.2y schließt vor R6.2o die fehlende feste
+SetAddress-Recovery zwischen erfolgreichem xHCI `Address Device` und dem ersten
+EP0-Doorbell; die ASUS-Abnahme muss ohne PS/2 mit einem Ersatzimage erfolgen.
+
 Künftige `real_hw`-Builds veröffentlichen nach einer zweiten Manifestprüfung
 atomar `build/reist-os-real-hw.img`, auch wenn der Quellbuild in einem
 Diagnose-Unterordner liegt. Nur dieses zielprofilspezifische Artefakt wird von

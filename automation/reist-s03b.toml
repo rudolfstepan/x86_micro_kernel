@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2o-compositor-ap-restart"
+active_id = "R5.2y-xhci-address-recovery"
 
 [policy]
 one_package_per_run = true
@@ -10243,8 +10243,50 @@ evidence = [
 ]
 
 [[packages]]
-id = "R6.2o-compositor-ap-restart"
+id = "R5.2y-xhci-address-recovery"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Make xHCI EP0 enumeration independent of PS/2 boot timing"
+scope = "Repair the physical ASUS regression in which the same real-hardware image intermittently times out on the first eight-byte GET_DESCRIPTOR(Device) request unless a PS/2 keyboard is present. Preserve the existing finite root-port reset recovery and add the USB 2.0 SetAddress recovery interval after successful xHCI Address Device completion before ringing EP0. Do not accept a missing or malformed Transfer Event, do not convert Completion Code 13 into success for descriptor reads and do not add an unbounded retry. Prove source-level ordering and VMware HID non-regression, then generate a replacement canonical real_hw image for manual ASUS acceptance."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/usb/xhci.c",
+  "test/test_usb_keyboard.py",
+  "test/test_usb_mouse.py",
+  "docs/architecture/USB_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "Address Device command completion precedes one fixed USB SetAddress recovery interval and the first EP0 descriptor doorbell",
+  "the recovery interval is bounded and does not depend on PS/2 initialization scheduler load or a retry loop",
+  "descriptor reads still require a valid data or terminal status Transfer Event with exact residual accounting",
+  "mandatory control requests and every non-terminal Completion Code 13 remain fail closed",
+  "the previously published keyboard or mouse cannot be revoked by an unrelated failed candidate",
+  "manual physical acceptance uses a newly generated validated real_hw image"
+]
+targeted_tests = [
+  "python test/test_usb_keyboard.py -v",
+  "python test/test_usb_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the first descriptor request can be rung before SetAddress recovery completes",
+  "a descriptor timeout short packet or absent event is accepted as success",
+  "a retry reset or wait is unbounded",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "usb: honor address recovery before ep0"
+
+[[packages]]
+id = "R6.2o-compositor-ap-restart"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"

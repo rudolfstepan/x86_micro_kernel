@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `0deb7be`
 
-Aktives Thema: R6.2o – Compositor-AP-Affinität nach begrenztem Neustart
+Aktives Thema: R5.2y – xHCI-Adress-Recovery vor dem ersten EP0-Request
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -108,6 +108,15 @@ Manifestprüfung atomar veröffentlichten Pfad. QEMU- und VMware-Builds können
 das physische Installerartefakt dadurch nicht überschreiben.
 Das aktuell validierte 64-MiB-Artefakt hat SHA-256
 `BF774039CF11370093B49E4E0D20094FB1315E15E440E84E6778B23F0E4DBFE9`.
+
+Ein weiterer ASUS-Kaltstart mit demselben Image zeigte eine verbleibende
+Zeitabhängigkeit: Ohne gleichzeitig angeschlossene PS/2-Tastatur endete bereits
+der erste acht Byte große `GET_DESCRIPTOR(Device)`-Request ohne übernommenes
+Transfer-Event (`cc=0`, `residual=8`, `stage=0`, Timeout/Failed). Mit PS/2 war
+derselbe USB-Pfad nutzbar. R5.2y ergänzt deshalb nach erfolgreichem xHCI
+`Address Device` die feste USB-2.0-SetAddress-Recovery vor dem ersten
+EP0-Doorbell; fehlende Events und Descriptor-Shorts bleiben fail-closed.
+R6.2o bleibt bis zu diesem Hardware-Nachtest geordnet in der Queue.
 
 ## Erreichter stabiler Meilenstein
 
