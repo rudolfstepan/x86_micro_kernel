@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `452fe654`
+Branch/Startpunkt: `working_branch` / `9844edbe`
 
-Aktives Thema: kein Queue-Paket – R8.1b ist abgeschlossen
+Aktives Thema: R8.1c – begrenztes x86_64-Higher-Half-W^X-Paging
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -23,7 +23,16 @@ Paket aktiviert keine Hardware-IRQs und erweitert weder Paging noch Prozess-,
 Syscall- oder Userspace-ABI. Neun Quellvertragstests, der warnungsfreie
 16.844-Byte-Build und der Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Der Gast
 meldete geordnet Long Mode, IDT-Bereitschaft, den behandelten Vektor 6 und die
-erfolgreiche Rückkehr. Die Queue ist wieder leer.
+erfolgreiche Rückkehr.
+
+R8.1c ist nun das einzige aktive Paket. Es ersetzt die dauerhafte 2-MiB-
+Identity-Map im isolierten Bootstrap durch feste 4-KiB-Abbildungen eines
+kanonischen Higher-Half-Alias. Text, schreibgeschützte Daten und veränderliche
+Daten erhalten getrennte W^X-/NX-Rechte; `CR0.WP` und `EFER.NXE` werden vor
+dem Nachweis aktiviert. Nach dem Wechsel auf den Higher-Half-Stack wird die
+niedrige Übergangsabbildung widerrufen und ein exakt validierter NX-Page-Fault
+beweist den Schutz. Physische Speicherkarte und Allocator folgen erst in
+R8.1d; der produktive i386-Pfad wird nicht verändert.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

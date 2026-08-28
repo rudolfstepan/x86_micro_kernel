@@ -57,6 +57,15 @@ Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Der Lauf veröffentlichte geordnet
 `LONG_MODE_BOOT_OK`, `EXCEPTION_IDT_READY`, `EXCEPTION_UD_OK` und
 `EXCEPTION_RECOVERY_OK`.
 
+**R8.1c ist in Arbeit:** Das isolierte Bootstrap-Artefakt erhält feste
+4-KiB-Seitentabellen für einen kanonischen Higher-Half-Kernelalias. Die
+Abschnitte werden als Text-RX, RoData-R/NX und Data/BSS-RW/NX abgebildet;
+`CR0.WP` und `EFER.NXE` werden verpflichtend. Nach dem Wechsel auf einen
+Higher-Half-Stack wird die niedrige Übergangsabbildung entfernt. Ein exakt
+validierter Instruction-Fetch-Page-Fault aus einer NX-Datenseite bildet den
+Laufzeitnachweis. Multiboot-Speicherkarte, physischer Allocator und Direct Map
+bleiben R8.1d vorbehalten.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1c-x86_64-higher-half-paging"
 
 [policy]
 one_package_per_run = true
@@ -10455,6 +10455,60 @@ evidence = [
   "the runtime resumed only from the exact vector-6 error-zero UD2 site while all other exception paths remain bounded fatal halts and maskable interrupts remain disabled",
   "the package provides no extended x86_64 paging process syscall ELF64 userspace physical-hardware or fail-operational claim"
 ]
+
+[[packages]]
+id = "R8.1c-x86_64-higher-half-paging"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 higher-half W^X paging"
+scope = "Extend only the isolated x86_64 bootstrap artifact with a fixed four-level 4-KiB paging layout. Keep one temporary low 2-MiB transition mapping, add a canonical higher-half kernel alias, mark text read-only executable, rodata read-only non-executable and data plus BSS read-write non-executable, enable CR0.WP and EFER.NXE, transfer to a higher-half stack, then revoke the low PML4 entry and flush CR3 before exception initialization. Execute one compile-time-fixed byte in the NX data page and accept the resulting page fault only when vector, error code, RIP and CR2 match exactly; all mismatches remain bounded fatal halts. Keep the Multiboot memory map, physical allocator, direct map, processes, syscalls, userspace, device interrupts and every production i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/cpu/exceptions.asm",
+  "config/x86_64_bootstrap.ld",
+  "scripts/build-x86_64-bootstrap.ps1",
+  "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all normal make Windows QEMU VMware real-hardware kernel userspace image and installer targets remain i386 by default and consume no x86_64 bootstrap object",
+  "the higher-half mapping uses fixed 4-KiB pages and maps only the linked text rodata data and BSS ranges while the low 2-MiB mapping exists only for the bounded transition",
+  "text is read-only executable rodata is read-only non-executable and data plus BSS are read-write non-executable with CR0.WP and EFER.NXE enabled before the higher-half proof",
+  "execution and the active stack use canonical higher-half addresses before PML4 entry zero is cleared and CR3 is reloaded",
+  "only page-fault vector 14 with error code 0x11 and exact RIP and CR2 at the fixed NX data byte may resume at its fixed continuation",
+  "the existing exact UD2 recovery remains valid after low-map revocation and every unexpected exception emits a bounded fatal marker and halts",
+  "maskable interrupts remain disabled and no dynamic allocation process syscall userspace device or DMA authority is introduced",
+  "the artifact and documentation make no claim of a physical allocator direct map complete x86_64 kernel ABI hardware acceptance or fail-operational behavior"
+]
+targeted_tests = [
+  "python test/test_x86_64_boot.py -v"
+]
+package_tests = [
+  ".\\scripts\\build-x86_64-bootstrap.ps1"
+]
+runtime_tests = [
+  "python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"
+]
+stop_conditions = [
+  "an existing i386 object flag linker script artifact path image layout or default target changes",
+  "a linked bootstrap page is absent aliased with incompatible permissions or remains writable and executable",
+  "the low PML4 entry remains present after the higher-half stack transfer or the transition can continue without a CR3 flush",
+  "the NX probe can resume without exact vector error-code RIP and CR2 validation or an unexpected exception returns",
+  "a wait stack table loop memory range or generated artifact is not statically bounded",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "arch: add x86_64 higher-half W^X paging"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
