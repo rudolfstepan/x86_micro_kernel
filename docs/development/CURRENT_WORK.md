@@ -2,9 +2,20 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `8436832`
+Branch/Startpunkt: `working_branch` / `eb00105b`
 
-Aktives Thema: keines – R8.2d ist abgeschlossen
+Aktives Thema: R8.2e – begrenzter x86_64-Speicherausbau auf 128 MiB
+
+R8.2e ist als naechster isolierter Architekturbaustein aktiv. Das Paket hebt
+die feste physische Verwaltungs- und 4-KiB-Direct-Map-Grenze von 64 auf genau
+128 MiB an und beweist in einem Ein-vCPU-/128-MiB-QEMU-Lauf einen
+Multiboot-autorisierten Frame oberhalb 64 MiB. Die beiden Bitmaps, alle Scans
+und der Nachweis bleiben fest begrenzt; der vollstaendige Bootstrap muss
+weiterhin in seine bestehende 2-MiB-Identity-Map passen. Der bestehende
+128-Byte-C-Handoff behaelt Layout und Rechte und aktualisiert nur den Wert
+seines vorhandenen Speicherlimits. Dynamische Seitentabellen, RAM oberhalb
+128 MiB, SMP, VFS, Geraete und alle produktiven i386-Artefakte bleiben
+ausserhalb dieses Pakets.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2e-x86_64-128m-physical-memory"
 
 [policy]
 one_package_per_run = true
@@ -11309,6 +11309,43 @@ evidence = [
   "the bounded one-vCPU 32-MiB QEMU dialogue preserved every prior marker and observed C_CORE_HANDOFF_OK before the scheduled shell then C_KERNEL_CONTROL_OK after shell cleanup and finally RING3_SHELL_OK",
   "success returned with the complete control handoff and lease cleared kernel CR3 and IF restored and no VFS spawn terminal driver device DMA SMP or physical-hardware authority added; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2e-x86_64-128m-physical-memory"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Extend bounded x86_64 physical memory and direct map to 128 MiB"
+scope = "Remove the isolated x86_64 bootstrap's first 64-MiB ceiling without changing the production i386 fallback. Raise the fixed managed physical limit to exactly 128 MiB, expand the separate usable and allocation bitmaps and the RW/NX 4-KiB direct map accordingly, and relocate only the internal fixed C bridge pages far enough to keep assembly BSS disjoint while the complete bootstrap remains inside its existing single 2-MiB identity map. Keep the Multiboot-v1 parser's fixed entry byte and module bounds, reserve the complete enlarged bootstrap before publication, and retain lowest-first allocation for existing callers. Add one bounded self-test-only scan which requires a usable frame at or above 64 MiB, allocates it exactly once through the same bitmap authority, verifies zero-fill and read/write access through the direct map, frees it, rejects stale reuse and restores the exact initial free count before publishing a new PHYSICAL_MEMORY_128M_OK marker. Run the isolated proof with one vCPU and 128 MiB RAM. Update the version-1 C handoff's existing managed-memory field and arithmetic validation without changing its size flags layout or any lifecycle capability. Keep dynamic page-table allocation memory above 128 MiB NUMA SMP devices VFS general processes physical hardware complete-system claims and every production i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "config/x86_64_bootstrap.ld",
+  "arch/x86_64/boot/entry.asm", "arch/x86_64/mm/physical_memory.asm",
+  "arch/x86_64/kernel/bootstrap_core.c", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 artifacts syscall numbers scheduled-shell semantics C-control ABI layout and every previously accepted x86_64 marker remain behaviorally unchanged and ordered",
+  "managed physical authority is fixed at exactly 128 MiB with two separate fixed bitmaps and an RW/NX 4-KiB direct map that publishes only Multiboot-usable nonreserved frames",
+  "the complete enlarged bootstrap and all captured Multiboot ranges are reserved before the allocator becomes visible and the bootstrap still fits its existing single 2-MiB identity map",
+  "the high-memory proof performs one bounded bitmap scan at or above 64 MiB uses the normal allocation bit and free counter and restores the exact initial state after direct-map zero-fill read/write and stale-free checks",
+  "the version-1 C handoff changes only the value of its existing managed-memory field and C validates the exact new limit before any effect",
+  "no dynamic page tables memory above 128 MiB NUMA SMP VFS device DMA physical-hardware complete-kernel or fail-operational authority is introduced"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 artifact prior marker syscall number shell lifecycle or C-control ABI layout changes",
+  "a frame outside a Multiboot-usable nonreserved range can receive direct-map or allocation authority",
+  "the high-memory proof is unbounded can mutate state before complete validation or fails to restore its allocation bit and the exact initial free count",
+  "the enlarged assembly BSS overlaps a fixed C page or the bootstrap exceeds the existing 2-MiB identity map",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "mm: extend bounded x86_64 memory to 128 MiB"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
