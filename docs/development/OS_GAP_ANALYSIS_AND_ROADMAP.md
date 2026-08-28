@@ -89,6 +89,15 @@ beschreibbare NX-Direct-Map, Free/Reuse, unaligned und doppeltes Free und
 stellte den Freizaehler wieder her. `PHYSICAL_MEMORY_OK` erschien geordnet
 zwischen NX-Nachweis und Abschlussmarker.
 
+**R8.1e ist in Arbeit:** Ein separat mit dem normalen x86_64-Assembler und
+ELF64-Linker erzeugtes `ET_EXEC`-Probeabbild bildet den ersten Loadervertrag.
+Der Gast akzeptiert hoechstens vier Program Header, zwei nicht ueberlappende
+`PT_LOAD`-Segmente und acht Userseiten. Alle 64-Bit-Grenzen, Alignment,
+Entry-Point und W^X werden vor Allokation validiert. Daten und BSS werden in
+R8.1d-Frames gestaged, vollstaendig nachgeprueft und vor Erfolg wieder
+freigegeben. Ausfuehrung, Ring 3, User-Seitentabellen und Syscalls folgen erst
+in R8.1f. HPASA bleibt davon als spaeteres QEMU-Forschungsprojekt getrennt.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

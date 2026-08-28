@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1e-x86_64-elf64-loader"
 
 [policy]
 one_package_per_run = true
@@ -10576,6 +10576,63 @@ evidence = [
   "the runtime allocated three aligned unique frames wrote through only their RW NX direct-map aliases freed and exactly reused one frame rejected unaligned and double free and restored the initial free count",
   "management remains fixed below 64 MiB with no dynamic page tables memory-above-limit process syscall userspace device physical-hardware or fail-operational claim and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.1e-x86_64-elf64-loader"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add a bounded x86_64 ELF64 load foundation"
+scope = "Extend only the isolated x86_64 bootstrap artifact with a standards-based bounded ELF64 ET_EXEC loader proof. Build one independent freestanding x86_64 probe with the normal assembler and ELF64 linker, embed that exact artifact, and validate ELF magic class encoding version OSABI type machine header sizes program-header bounds and every 64-bit offset and virtual-range addition before allocation. Accept at most four program headers, two non-overlapping PT_LOAD segments and eight fixed user pages in 0x400000..0x408000; require 4-KiB alignment congruence, filesz not exceeding memsz, an executable entry point, known R W X flags and no writable-executable segment. Allocate frames only through the R8.1d allocator, stage file bytes through the bounded RW NX direct map, verify every staged byte and zero-filled remainder, preserve append-only page-permission metadata, then free every frame and restore the initial free count before publishing success. Do not enter Ring 3, install user page tables, add syscalls, execute the payload, integrate HPASA or change any production i386 target."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/mm/physical_memory.asm",
+  "arch/x86_64/exec/elf64_loader.asm",
+  "arch/x86_64/user/probe.asm",
+  "config/x86_64_user_probe.ld",
+  "scripts/build-x86_64-bootstrap.ps1",
+  "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all normal make Windows QEMU VMware real-hardware kernel userspace image and installer targets remain i386 by default and consume no x86_64 bootstrap object or ELF64 probe",
+  "the embedded probe is an independently assembled and linked ELF64 ET_EXEC artifact rather than a hand-authored byte fixture",
+  "ELF identity machine type version header sizes program-header table and every offset virtual address file size and memory size range are validated before any frame allocation",
+  "at most four program headers two PT_LOAD segments and eight pages inside 0x400000 through 0x408000 are accepted and overlapping pages unknown flags misalignment or any writable-executable segment fail closed",
+  "the entry point lies inside an accepted executable segment and no staged page receives both write and execute metadata",
+  "all segment bytes and zero-filled memory tails are staged and revalidated only through allocator-owned RW NX direct-map frames",
+  "every success and failure cleanup is bounded idempotent and restores the initial physical free-frame count before success publication",
+  "maskable interrupts remain disabled and no Ring-3 transfer user page table syscall payload execution device DMA or HPASA authority is introduced",
+  "the artifact and documentation make no claim of a complete ELF64 process ABI userspace physical hardware or fail-operational behavior"
+]
+targeted_tests = [
+  "python test/test_x86_64_boot.py -v"
+]
+package_tests = [
+  ".\\scripts\\build-x86_64-bootstrap.ps1"
+]
+runtime_tests = [
+  "python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"
+]
+stop_conditions = [
+  "an existing i386 object flag linker script artifact path image layout or default target changes",
+  "malformed unsupported overlapping writable-executable or overflowing ELF input can allocate or publish staged state",
+  "a partial segment byte unzeroed tail stale frame or changed free count survives cleanup",
+  "the probe executes or gains a user mapping Ring-3 transition syscall or ambient authority in this package",
+  "a parser allocation copy verification or cleanup loop lacks a fixed compile-time bound",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "exec: add bounded x86_64 ELF64 load foundation"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

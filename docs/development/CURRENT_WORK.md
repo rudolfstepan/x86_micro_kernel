@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `9844edbe`
+Branch/Startpunkt: `working_branch` / `3b0e0c8b`
 
-Aktives Thema: kein Queue-Paket – R8.1d ist abgeschlossen
+Aktives Thema: R8.1e – begrenzte x86_64-ELF64-Loadgrundlage
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -54,6 +54,16 @@ deren RW/NX-Direct-Map, pruefte Free/Reuse sowie negative Free-Faelle und
 stellte den urspruenglichen Freizaehler wieder her. Der Gast meldete
 `PHYSICAL_MEMORY_OK` vor dem bestehenden Abschlussmarker. Die Queue ist wieder
 leer.
+
+R8.1e ist nun das einzige aktive Paket. Ein separat assembliertes und als
+ELF64-`ET_EXEC` gelinktes Probeabbild wird in das isolierte Bootstrap-Artefakt
+eingebettet. Der Gast validiert ELF-Identitaet, x86_64-Maschine, Header- und
+Programmtabellengrenzen sowie hoechstens zwei W^X-konforme `PT_LOAD`-Segmente
+in einem festen Acht-Seiten-Userfenster. Segmentdaten und BSS werden nur in
+Frames des R8.1d-Allokators gestaged, byteweise nachgeprueft und danach
+vollstaendig freigegeben. Ring-3-Wechsel, User-Seitentabellen und Syscalls
+bleiben R8.1f vorbehalten. Der geoeffnete HPASA-Plan bleibt ein unabhaengiges
+spaeteres QEMU-/Residency-Forschungsvorhaben.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den
