@@ -44,6 +44,19 @@ Die Bezeichnungen A und B beweisen zunächst keine Zuordnung zu verschiedenen
 DIMMs, Ranks oder Channels. Adress-Interleaving und herstellerspezifisches
 IMC-Hashing werden erst in einem eigenen Hardwarepaket untersucht.
 
+### Implementierungsstand R1.2a
+
+Der feste Objektvertrag ist implementiert und hostseitig geprüft. Vier Slots,
+drei simulierte Domänen und je zwei 4096-Byte-Bänke liegen vollständig in
+statischem Kernelstorage. Handles sind generationsgebunden; Metadaten werden
+durch `critical_object` geschützt. Der Fault-Test deckt Unterbrechungen vor
+dem Commit, Domänenverlust nach dem Commit, CRC-Verlust, widersprüchliche
+gleichgenerationige Replicas, Doppelverlust und Rebuild-Unterbrechung ab.
+
+R1.2b führt dieselbe Kampagne als compile-time-only Bootprobe im echten
+Kernelimage aus. Erst nach diesem Gastnachweis darf von einer im laufenden
+REIST-Kernel ausgeführten simulierten Degradation gesprochen werden.
+
 ## Funktionale Anforderungen
 
 ### 1. Physische Speicheridentifikation

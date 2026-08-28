@@ -574,6 +574,11 @@ gleichgenerationige Daten führt fail-closed zu `FAILED`. Ein Rebuild darf nur
 aus einer vollständig validierten committed Replica in einen festen
 Ersatzslot erfolgen.
 
+R1.2a implementiert diesen Vertrag mit vier statischen Objektslots, drei
+simulierten Domänen und zwei Bänken je Objekt und Domäne. Der Hostnachweis
+deckt die Commitgrenzen und Fehlerzustände ab; R1.2b ergänzt den noch fehlenden
+compile-time-only Gastnachweis im realen Kernelimage.
+
 ## Capability- und Ressourcenmodell
 
 Eine Capability verbindet Objektidentität, Generation und minimale Rechte,

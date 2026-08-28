@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R1.2a-resilient-page-poc"
+active_id = "R1.2b-resilient-page-boot-proof"
 
 [policy]
 one_package_per_run = true
@@ -10024,7 +10024,7 @@ evidence = [
 
 [[packages]]
 id = "R1.2a-resilient-page-poc"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Model a fixed-capacity resilient page transaction"
@@ -10071,6 +10071,66 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "memory: add bounded resilient page proof"
+evidence = [
+  "the focused memory-resilience gate passed all three contract and host behavior tests in 1.3 seconds",
+  "the host campaign proved four-object capacity stale-handle rejection interrupted pre-commit recovery post-commit degradation CRC loss equal-generation conflict double-domain loss and bounded rebuild",
+  "the final QEMU-VGA package build passed in 125 seconds after the cleaned build directory forced a complete rebuild and linked resilient_page.c into the normal kernel image",
+  "the runtime path uses fixed 4096-byte banks and bounded loops with no heap VFS DMA blocking wait arbitrary PTE mutation or physical hardware-resilience claim"
+]
+
+[[packages]]
+id = "R1.2b-resilient-page-boot-proof"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Prove resilient-page degradation and rebuild in a real guest"
+scope = "Add a compile-time-only kernel boot proof for the R1.2a fixed-capacity resilient-page object. After the ordinary allocator self-tests and before general process admission, create two deterministic objects, commit a mutation to one, inject loss of one labeled simulated domain, prove the last committed generation remains byte-exact and the unrelated object remains available, rebuild into the fixed replacement domain, revalidate HEALTHY state and destroy both objects. Emit ordered append-only markers only after each validated transition. Normal production builds execute none of this campaign and retain no new user capability syscall PTE DMA VFS or hardware authority. Extend the bounded QEMU smoke runner and runtime wrapper with an exact opt-in mode that rejects missing reversed duplicate panic or failed markers and still requires normal boot scheduler userspace and TEST_OK progress. This proves execution of the software state machine in the real kernel image only; frame-zone DIMM rank channel IMC MCE EDAC and physical fault claims remain separate."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_smoke.py",
+  "scripts/test-reist-runtime.ps1",
+  "include/kernel/resilient_page.h",
+  "kernel/init/resilient_page.c",
+  "kernel/init/kernel.c",
+  "test/test_memory_resilience.py",
+  "test/test_qemu_smoke.py",
+  "docs/architecture/MEMORY_RESILIENCE.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the fault campaign is absent unless one explicit compile-time flag is enabled and executes once before general process admission",
+  "the campaign performs a fixed number of operations over exactly two fixed-size objects and every failure terminates the proof before its success marker",
+  "the degraded marker follows byte-exact validation of the last committed generation after one complete simulated domain loss",
+  "an unrelated object is read and validated after the injected loss before rebuild begins",
+  "the rebuild marker follows CRC generation and HEALTHY-state validation in fixed replacement storage",
+  "normal boot progress userspace scheduler and TEST_OK continue after the proof without granting any new runtime authority",
+  "the runner requires ordered unique markers rejects panic and explicit failure markers and has one finite deadline",
+  "no evidence or documentation upgrades simulated labels into physical DIMM rank channel IMC MCE EDAC or fail-operational claims"
+]
+targeted_tests = [
+  "python test/test_memory_resilience.py -v",
+  "python test/test_qemu_smoke.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode memory-resilience"
+]
+stop_conditions = [
+  "the proof can run in a normal build or after untrusted userspace begins",
+  "a success marker can be emitted before data state generation CRC or unrelated-object validation",
+  "the injected loss or rebuild can alter unrelated allocator process or object state",
+  "the runner accepts missing reversed duplicate or post-panic success markers",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "memory: prove resilient page recovery at boot"
 
 [[packages]]
 id = "R5.2x-xhci-control-short-packet"

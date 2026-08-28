@@ -1114,7 +1114,7 @@ IRQ-tauglicher Allocator. Die Kernel-Guardpages waren der erste umgesetzte
 Teil von S0.2; die automatisierte QEMU/VMware-Baseline ist inzwischen
 abgeschlossen.
 
-##### R1.2a Experimenteller resilienter Seitenspeicher — aktiver PoC
+##### R1.2a Experimenteller resilienter Seitenspeicher — abgeschlossen
 
 Der erste Memory-Resilience-Schritt ergänzt die abgenommene allgemeine
 Speicherverwaltung um höchstens vier explizite, kernel-eigene 4096-Byte-
@@ -1134,6 +1134,22 @@ Diese Scheibe ist ein Softwarezustands- und Fehlerinjektionsnachweis. Reale
 Frame-Zonen, SMBIOS/IMC-Adressdekodierung, MCE/EDAC, physische
 DIMM-/Rank-/Channel-Unabhängigkeit und transparente Prozessseiten bleiben
 getrennte, hardwaregebundene Folgestufen.
+
+**Abnahme erfüllt:** Der Hostvertrag prüft vier Slots, stale Handles,
+Copy-on-write-Commitgrenzen, Einzel- und Doppelverlust, CRC-Korruption,
+gleichgenerationigen Konflikt sowie erfolgreichen und unterbrochenen Rebuild.
+Der vollständige QEMU-VGA-Paketbuild linkt das Modul in das normale
+Kernelimage. R1.2a macht noch keinen Laufzeitclaim im Gast.
+
+##### R1.2b Resilienter Boot-Fehlernachweis — aktiv
+
+Ein ausschließlich im Testbuild vorhandener Bootpfad führt die feste
+Domänenverlust-/Rebuild-Kampagne einmal vor allgemeiner Prozessaufnahme aus.
+Geordnete Marker werden erst nach bytegenauer committed-Datenprüfung,
+Weiterbetrieb eines unabhängigen Objekts und validiertem HEALTHY-Rebuild
+ausgegeben. Der QEMU-Runner muss danach weiterhin Scheduler, Userspace und
+`TEST_OK` beobachten und Panic, Fehler, fehlende oder vertauschte Marker
+ablehnen.
 
 #### R1.3 Synchronisations- und Diagnosevertrag — M
 

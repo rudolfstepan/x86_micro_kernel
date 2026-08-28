@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R1.2a – begrenzter `resilient_page`-Forschungs-PoC
+Aktives Thema: R1.2b – `resilient_page`-Boot- und Gastnachweis
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -29,14 +29,19 @@ der kombinierte QEMU-Gate endet beim ersten retained Control-Gallery-Frame mit
 `DESKTOP_AUDIO_FAIL launch status=-110`. Die Queue dokumentiert das Paket
 deshalb als `cancelled` statt `done`.
 
-R1.2a untersucht zunächst ausschließlich ein explizites kernel-eigenes
-4096-Byte-Objekt. Höchstens vier Instanzen besitzen je zwei Copy-on-write-
-Bänke in zwei simulierten Fehlerdomänen, generationsgebundene
-Critical-Object-Metadaten und CRC32 für die Nutzdaten. Ein kompletter
-simulierter Domänenverlust muss die letzte veröffentlichte Generation lesbar
-lassen und einen festen Rebuild auf Ersatzspeicher erlauben. Das Paket erteilt
-keine User-, DMA- oder Paging-Autorität und behauptet keine physische
-DIMM-/Rank-/Channel-Isolation.
+R1.2a ist abgeschlossen. Vier explizite kernel-eigene 4096-Byte-Objekte
+besitzen je zwei Copy-on-write-Bänke in zwei aktiven simulierten
+Fehlerdomänen, generationsgebundene Critical-Object-Metadaten und CRC32 für
+die Nutzdaten. Der Host-Fault-Test besteht Commit-Unterbrechungen,
+Einzeldomänen- und Doppelverlust, stale Handles, CRC-/Konfliktfälle und den
+festen Rebuild. Der normale QEMU-VGA-Paketbuild linkt das Modul erfolgreich.
+
+R1.2b aktiviert dieselbe Kampagne ausschließlich in einem speziellen
+Testbuild einmal während des Kernelboots. Der Gast muss geordnet Degradation,
+unveränderte committed Daten, ein unabhängiges Objekt, Rebuild und HEALTHY
+validieren und danach normalen Scheduler-, Userspace- und `TEST_OK`-Fortschritt
+erreichen. Auch diese Stufe erteilt keine User-, DMA- oder Paging-Autorität und
+behauptet keine physische DIMM-/Rank-/Channel-Isolation.
 
 ## Erreichter stabiler Meilenstein
 
