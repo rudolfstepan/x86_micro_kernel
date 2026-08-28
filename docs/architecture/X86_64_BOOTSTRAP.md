@@ -193,3 +193,22 @@ Vor `REIST_X86_64_USER_EXECUTION_OK` muessen Original-CR3 und Kernelzustand
 wiederhergestellt, die temporaeren Syscall-MSRs deaktiviert, alle User-PTEs
 geloescht, alle Frames freigegeben und der urspruengliche Freizaehler erreicht
 sein.
+
+## Geplante Abnahme R8.1g
+
+Der Prozessnachweis bleibt auf zwei feste Slots und eine endliche kooperative
+Abfolge begrenzt. Jede Generation besitzt eine private Vier-Ebenen-Hierarchie,
+private writable ELF-Seiten und eine private NX-Stackseite. Ausschliesslich
+validierte nichtschreibbare RX-Seiten duerfen physisch geteilt werden. Die
+Probe muss ihre jeweils eigene Datenseite nach mehreren CR3-Wechseln
+wiedererkennen.
+
+Der AMD64-`SYSCALL`-Pfad akzeptiert nur die vorhandenen REIST-v1-Indizes
+`YIELD` 40 und `EXIT` 9. `YIELD` speichert einen festen Userkontext und der
+Chooser untersucht hoechstens zwei Slots. Ein exakt validierter CPL3-`UD2`
+von Task B muss nur diese Generation isolieren und reifen; Task A muss danach
+weiterlaufen und mit dem erwarteten Status beenden. Vor
+`REIST_X86_64_PROCESS_SCHEDULER_OK` muessen Original-CR3, TSS und Syscall-MSRs
+wiederhergestellt, alle Taskdaten genullt und alle Frames freigegeben sein.
+Timerpreemption, Hardwareinterrupts, SMP und produktive Prozessintegration
+bleiben ausserhalb dieser Scheibe.

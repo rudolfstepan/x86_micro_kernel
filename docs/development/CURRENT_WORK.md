@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `59abb50`
+Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: kein Paket aktiv; R8.1f ist abgeschlossen
+Aktives Thema: R8.1g – begrenzter x86_64-Zwei-Prozess-Scheduler
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -91,6 +91,17 @@ nur CPU-eigene Accessed-/Dirty-Bits und verlangt beim Fault das architektonische
 Resume-Flag; alle Rechte und Adressen bleiben exakt. CR3, Syscall-MSRs,
 Usertabellen und Frames wurden vor Erfolg vollstaendig zurueckgesetzt. Die
 Queue ist wieder leer.
+
+R8.1g ist aktiv. Der isolierte Bootstrap erhaelt genau zwei feste,
+generation-gebundene Prozessslots mit privaten Seitentabellen, privaten
+writable ELF-Seiten und je einer privaten NX-Stackseite. Nur validierter
+unveraenderlicher RX-Code darf geteilt werden. Der kooperative Pfad akzeptiert
+ausschliesslich die vorhandenen REIST-v1-Syscalls `YIELD` 40 und `EXIT` 9.
+Task B muss nach einer festen Interleaving-Sequenz mit einem exakt validierten
+CPL3-`UD2` isoliert werden; Task A muss danach weiterlaufen, seine private
+Datenseite erneut bestaetigen und erwartungsgemaess beenden. Timerpreemption,
+SMP, allgemeine Syscalls und produktive Integration bleiben ausserhalb dieses
+Pakets. HPASA bleibt ein separates Projekt.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

@@ -125,6 +125,15 @@ Accessed-/Dirty-Bits sowie das fuer den Fault gesetzte Resume-Flag werden bei
 der Nachpruefung architekturgemaess behandelt; Mappingrechte und Adressen
 bleiben exakt.
 
+**R8.1g ist aktiv:** Der naechste isolierte Nachweis besitzt genau zwei feste,
+nichtnull generation-gebundene Prozessslots. Beide erhalten private CR3,
+private writable ELF-Seiten und private NX-Stacks; nur validierter RX-Code darf
+geteilt werden. Ein begrenzter kooperativer Scheduler verarbeitet nur
+`YIELD` 40 und `EXIT` 9. Nach einem exakt gebundenen CPL3-`UD2` von Task B muss
+nur dessen Generation terminal werden, waehrend Task A seine private
+Datenseite erneut prueft und sauber beendet. Timerpreemption, SMP, allgemeine
+Syscalls und produktive x86_64-Integration bleiben offen.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1g-x86_64-process-scheduler"
 
 [policy]
 one_package_per_run = true
@@ -10703,6 +10703,66 @@ evidence = [
   "success restored the original CR3 disabled and cleared the temporary syscall MSRs zeroed every user table released stack and ELF frames restored the initial free count and left active_id empty",
   "no SYSRET scheduler multitasking general syscall dispatcher production userspace device HPASA physical-hardware or fail-operational authority was added"
 ]
+
+[[packages]]
+id = "R8.1g-x86_64-process-scheduler"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 process isolation and cooperative scheduling proof"
+scope = "Extend only the isolated x86_64 bootstrap with a fixed two-slot process lifecycle proof. Retain one fully validated R8.1e ELF64 image, share only its immutable executable pages, clone every writable ELF page and one NX stack frame into each private four-level address space, and prove runtime data isolation. Create exactly two nonzero generation-scoped task records with fixed READY RUNNING FAULTED EXITED and FREE transitions. Admit only the existing append-only REIST SYS_YIELD number 40 and SYS_EXIT number 9 through an architectural SYSCALL entry that switches to the fixed kernel stack before validation. Save and restore a bounded AMD64 user context on YIELD, choose the next READY slot with an at-most-two-entry scan, contain one exact CPL3 UD2 from task B, reap only that generation, then resume task A and require its expected EXIT status. Restore the original CR3 TSS and syscall MSRs, erase all user mappings and task contexts, release every private and retained frame, restore the initial free count and publish PROCESS_SCHEDULER_OK. Keep timer preemption hardware interrupts SMP production process integration general syscalls devices HPASA and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/cpu/exceptions.asm",
+  "arch/x86_64/exec/elf64_loader.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm",
+  "arch/x86_64/proc/user_execution.asm",
+  "arch/x86_64/user/probe.asm",
+  "scripts/build-x86_64-bootstrap.ps1",
+  "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all normal make Windows QEMU VMware real-hardware kernel userspace image and installer targets remain i386 by default and consume no x86_64 scheduler object",
+  "exactly two fixed task slots carry nonzero generations and may transition only FREE to READY to RUNNING to READY or terminal FAULTED EXITED and then FREE",
+  "each task owns a private CR3 private writable ELF frames and private NX stack while only validated nonwritable executable ELF frames may be shared",
+  "the probe must observe its own writable data value after interleaving so a shared writable mapping or stale CR3 fails before success",
+  "SYSCALL accepts only REIST ABI YIELD 40 and EXIT 9 switches to the fixed kernel stack before request validation and never uses SYSRET",
+  "YIELD saves a bounded AMD64 user context and the cooperative chooser examines at most two slots without a wait busy loop or interrupt dependency",
+  "only task B's exact CPL3 vector-6 error-zero UD2 in a validated executable page is contained and reaped; task A must resume afterward and exit with its exact expected status",
+  "success requires the exact finite handoff sequence and generation-scoped terminal states followed by original CR3 TSS and syscall restoration zero task state full frame cleanup and initial free-count restoration",
+  "all storage loops transitions scans and cleanup are fixed at compile time and maskable interrupts remain disabled",
+  "no timer preemption SMP general syscall dispatcher production userspace device DMA HPASA physical-hardware or fail-operational authority is introduced"
+]
+targeted_tests = [
+  "python test/test_x86_64_boot.py -v"
+]
+package_tests = [
+  ".\\scripts\\build-x86_64-bootstrap.ps1"
+]
+runtime_tests = [
+  "python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"
+]
+stop_conditions = [
+  "an existing i386 object flag linker script artifact path image layout syscall number or default target changes",
+  "a task can map another task's writable frame stack supervisor table direct map or an unvalidated writable executable page",
+  "a stale generation invalid transition or scan beyond the two fixed slots can schedule or reap a task",
+  "YIELD or EXIT can consume an unvalidated privilege context CR3 return RIP stack selector number or status",
+  "task B's fault can terminate task A resume as kernel code or leave task B runnable",
+  "cleanup can leave the temporary CR3 syscall MSR TSS mapping task context or frame active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: add bounded x86_64 cooperative scheduler proof"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

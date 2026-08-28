@@ -126,6 +126,14 @@ mit `SYSRET` in einen ungeprueften Kontext zurueck. Ein separater CPL3-`UD2`-
 Versuch prueft lokale Fehlerbegrenzung; Kernel-Exceptionen bleiben fatal.
 Dieser Nachweis fuehrt weder Scheduler noch allgemeine Syscalls ein.
 
+R8.1g fuehrt darauf ausschliesslich im getrennten Bootstrap zwei feste,
+generation-gebundene Prozessslots ein. Private CR3, writable ELF-Seiten und
+NX-Stacks trennen die Fehlerdomaenen; nur unveraenderlicher validierter RX-Code
+darf geteilt werden. Ein endlicher kooperativer `YIELD`-/`EXIT`-Ablauf muss
+einen CPL3-Fehler von Task B enthalten und Task A danach weiter ausfuehren.
+Das ist noch keine timerbasierte Praeemption, kein SMP-Scheduler und keine
+produktive x86_64-Prozessintegration.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein
