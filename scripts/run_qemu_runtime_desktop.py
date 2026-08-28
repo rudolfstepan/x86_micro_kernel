@@ -153,11 +153,11 @@ def send_command(process: subprocess.Popen[str], command: str) -> None:
         raise RuntimeError("QEMU monitor input unavailable")
     process.stdin.write(QEMU_MUX_SWITCH)
     process.stdin.flush()
-    time.sleep(0.05)
+    time.sleep(0.15)
     for key in desktop_monitor_key_commands(command):
         process.stdin.write(key)
         process.stdin.flush()
-        time.sleep(0.02)
+        time.sleep(0.05)
     process.stdin.write(QEMU_MUX_SWITCH)
     process.stdin.flush()
 
@@ -301,7 +301,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         control_probe: bool, trash_context_probe: bool,
         trash_confirm_probe: bool,
         sound_probe: bool, metrics_log: pathlib.Path | None,
-        vmware_vga: bool) -> int:
+        vmware_vga: bool, capture_only: bool = False) -> int:
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
         audio_capture.unlink()
@@ -586,8 +586,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 # backbuffer render so it is overwritten by the desktop.
                 # Give the guest a bounded interval to finish that frame
                 # before capturing it or injecting Escape.
-                time.sleep(0.2)
+                time.sleep(1.5 if capture_only else 0.2)
                 capture_screenshot(process, screenshot, deadline)
+                if capture_only:
+                    print("runtime-desktop-capture: PASS")
+                    return 0
                 if supervised_boot_detected:
                     print("runtime-desktop: PASS supervised-generation")
                     return 0

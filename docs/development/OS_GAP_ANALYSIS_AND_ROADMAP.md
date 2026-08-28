@@ -191,11 +191,16 @@ der kurze Ein-vCPU-/32-MiB-Lauf sind gruen. `RUNQUEUE_LIFECYCLE_OK` beweist die
 exakte Folge; der temporaere CPL3-Breakpoint-Gate, Queuezustand, Tasks und alle
 Speicher- und Syscall-Ressourcen sind vor dem Abschlussmarker restauriert.
 
-**R8.1m ist aktiv:** Der bestehende zweisprachige Webauftritt wird auf den
-abgenommenen Projektstand bis R8.1k aktualisiert. Texte und Bildbeschreibungen
-muessen die produktive i386-Basis, die vorhandenen Ring-3-Dienste und den noch
-isolierten x86_64-Bootstrap klar trennen. Danach folgt R8.1l mit begrenztem
-generationengebundenem Deadline-Sleep.
+**R8.1m ist abgeschlossen:** Der zweisprachige Webauftritt beschreibt den
+abgenommenen Stand bis R8.1k und trennt produktive i386-Basis, Ring-3-Dienste
+und isolierten x86_64-Bootstrap. Acht echte i386-Laufzeitaufnahmen wurden gegen
+ihre aktualisierten Bildtexte geprueft. Zwei neue echte 1024x768-Aufnahmen vom
+QEMU-VMware-VGA-Pfad zeigen die aktuellen Desktop-Icons sowie Editor,
+Scrollbars und About-Dialog. Drei lokale Vertragstests bestanden.
+
+**R8.1l ist aktiv:** Als naechste begrenzte Scheibe verbindet eine feste
+generationengebundene Deadline-Queue `SLEEP_MS` 41 und `MONOTONIC_MS` 42 mit
+der Vier-Slot-FIFO und dem isolierten 100-Hz-PIT.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

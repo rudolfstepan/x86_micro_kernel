@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: R8.1m – zweisprachige Projektwebsite aktualisieren
+Aktives Thema: R8.1l – begrenztes x86_64-Deadline-Sleep
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -136,12 +136,16 @@ Der kurze Ein-vCPU-/32-MiB-Lauf meldete `RUNQUEUE_LIFECYCLE_OK`; Vector 3,
 Queue, Taskrecords, CR3, TSS, Syscall-MSRs, Frames und Freizaehler waren davor
 vollstaendig restauriert.
 
-R8.1m ist aktiv. Die englische und deutsche Projektwebsite wird auf den
-abgenommenen Stand bis R8.1k gebracht. Veraltete S0-, Architektur-, Hardware-,
-Desktop-, Audio-, USB-, Kernel-Log- und x86_64-Aussagen werden korrigiert;
-vorhandene Screenshots bleiben nur mit weiterhin zutreffenden Bildtexten. Es
-wird kein synthetisches Laufzeitbild erzeugt und kein schwerer QEMU-Capture
-gestartet. R8.1l ist danach als begrenzter Deadline-Sleep-Nachweis vorgemerkt.
+R8.1m ist abgeschlossen. Die englische und deutsche Projektwebsite ist auf dem
+den abgenommenen Stand bis R8.1k und trennt produktives i386 klar vom isolierten
+x86_64-Bootstrap. Alle acht vorhandenen Laufzeitaufnahmen wurden gegen ihre
+Bildtexte geprueft und bleiben als zutreffende i386-Evidenz erhalten; es wurde
+kein synthetisches Bild und kein schwerer QEMU-Capture erzeugt. Drei lokale
+Website-Vertragstests pruefen Sprachen, Claims, Links, PNG-Masse und Metadaten.
+Zwei neue echte 1024x768-QEMU-Aufnahmen zeigen die aktuellen Desktop-Icons
+sowie Editor, Scrollbars und About-Dialog. Der Standard-VGA-Capture deckte
+einen begrenzt degradierten Beschleunigungspfad auf; die abgenommenen Bilder
+stammen vom funktionierenden QEMU-VMware-VGA-Pfad. R8.1l ist nun aktiv.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt

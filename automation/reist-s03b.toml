@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1m-project-website-refresh"
+active_id = "R8.1l-x86_64-deadline-sleep"
 
 [policy]
 one_package_per_run = true
@@ -3496,7 +3496,15 @@ stop_conditions = [
   "a gate still fails after one focused in-scope repair"
 ]
 commit_message = "abi: unify syscall number source"
-evidence = []
+evidence = [
+  "both dependency-free language pages describe the accepted project state through R8.1k and distinguish production i386 from the isolated x86_64 bootstrap",
+  "current status text covers explicit desktop startup VMware audio ASUS USB keyboard and paged dmesg without certification or fail-operational claims",
+  "a current 64-MiB QEMU VGA HDD image was built and the bounded VMware-VGA capture path replaced both desktop PNGs with genuine 1024x768 guest frames",
+  "the new desktop frame visibly contains the current folder control-panel trash and file icons; the Surface frame shows the current Editor scrollbars controls and modal About dialog",
+  "the capture adapter follows the current runtime probe signature uses bounded key injection and has an explicit documentation-only capture completion mode",
+  "three website contract tests passed for bilingual bounds local anchors image references PNG dimensions canonical metadata and parseable JSON-LD",
+  "the static layout canonical URLs language alternates social image nginx deployment shape and responsive CSS remain unchanged"
+]
 
 [[packages]]
 id = "R2.1-standard-descriptors"
@@ -10986,13 +10994,15 @@ evidence = [
 
 [[packages]]
 id = "R8.1m-project-website-refresh"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "low"
 title = "Refresh bilingual project website to the accepted REIST status"
-scope = "Update the existing dependency-free English and German project website to the accepted repository state through R8.1k. Correct obsolete S0, architecture, hardware, desktop, audio, USB, kernel-log and x86_64 migration text without presenting the isolated bootstrap as a complete 64-bit OS. Audit every existing screenshot against its caption and retain only assets that still accurately represent the current user-visible function; do not synthesize runtime evidence or run a resource-heavy capture. Keep canonical URLs, bilingual parity, accessibility, responsive layout and nginx deployment behavior intact. Validate links, metadata, image references, dimensions and both HTML documents locally. Queue R8.1l without implementing it in this package."
+scope = "Update the existing dependency-free English and German project website to the accepted repository state through R8.1k. Correct obsolete S0, architecture, hardware, desktop, audio, USB, kernel-log and x86_64 migration text without presenting the isolated bootstrap as a complete 64-bit OS. Rebuild the current i386 QEMU VGA image and use the bounded repository capture runner to replace desktop screenshots with genuine current views showing the new icons and Surface applications; do not synthesize runtime evidence. Audit every retained screenshot against its caption. Keep canonical URLs, bilingual parity, accessibility, responsive layout and nginx deployment behavior intact. Validate links, metadata, image references, dimensions and both HTML documents locally. Queue R8.1l without implementing it in this package."
 allowed_files = [
   "automation/reist-s03b.toml", "website/index.html", "website/de/index.html",
+  "scripts/capture_website_qemu.py",
+  "scripts/run_qemu_runtime_desktop.py",
   "website/styles.css", "website/assets/site.js", "website/README.md",
   "website/sitemap.xml", "website/robots.txt", "website/404.html",
   "website/assets/reist-boot-shell.png", "website/assets/reist-desktop.png",
@@ -11007,7 +11017,7 @@ invariants = [
   "the production i386 system remains the standard while x86_64 is labeled an isolated accepted bootstrap through R8.1k",
   "no certification fail-operational complete-64-bit or unverified hardware claim is introduced",
   "existing images are retained only when their visible content still supports the adjacent caption and alt text",
-  "no synthetic screenshot is presented as runtime evidence and no QEMU capture is required",
+  "no synthetic screenshot is presented as runtime evidence and new desktop images must come from the bounded QEMU capture runner",
   "canonical alternate-language social metadata JSON-LD sitemap robots nginx paths and responsive navigation remain valid",
   "all local image and anchor references resolve and both pages retain accessible image alternatives",
   "no kernel userspace build installer HPASA or deployment file outside the website is changed"
@@ -11028,7 +11038,7 @@ evidence = []
 
 [[packages]]
 id = "R8.1l-x86_64-deadline-sleep"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 monotonic deadline sleep proof"
