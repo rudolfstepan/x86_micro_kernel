@@ -557,6 +557,47 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REIST_X86_64_RUNQUEUE_LIFECYCLE_OK", runner)
         self.assertIn("REIST_X86_64_RUNQUEUE_LIFECYCLE_ERROR", runner)
 
+    def test_deadline_sleep_is_fixed_generation_scoped_and_bounded(self):
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        timer = self.read("arch/x86_64/cpu/timer_interrupt.asm")
+        probe = self.read("arch/x86_64/user/probe.asm")
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("TASK_BLOCKED               equ 6", scheduler)
+        self.assertIn("SCHEDULER_MODE_SLEEP       equ 5", scheduler)
+        self.assertIn("REIST_SYS_SLEEP_MS         equ 41", scheduler)
+        self.assertIn("REIST_SYS_MONOTONIC_MS     equ 42", scheduler)
+        self.assertIn("scheduler_deadline_entries:", scheduler)
+        self.assertIn("resb TASK_SLOT_CAPACITY * 16", scheduler)
+        self.assertIn("scheduler_deadline_insert64:", scheduler)
+        insert = scheduler.index("scheduler_deadline_insert64:")
+        publish = scheduler.index("mov qword [r10], rdx", insert)
+        for validation in (
+            "test rdx, rdx",
+            "cmp rdx, DEADLINE_TICK_LIMIT",
+            "cmp qword [r12 + TASK_GENERATION], rsi",
+            "cmp qword [r12 + TASK_STATE], TASK_RUNNING",
+            "cmp byte [r8 + rdi], 0",
+            "cmp ecx, TASK_SLOT_CAPACITY",
+        ):
+            self.assertLess(scheduler.index(validation, insert), publish)
+        self.assertIn("x86_64_scheduler_deadline_tick64:", scheduler)
+        self.assertIn("cmp ebx, TASK_SLOT_CAPACITY", scheduler)
+        self.assertIn("scheduler_sleep_events:", scheduler)
+        self.assertIn("dq 30, 10, 20, 0", scheduler)
+        self.assertIn("SLEEP_MAX_TICKS           equ 8", timer)
+        self.assertIn("x86_64_timer_sleep_arm64:", timer)
+        self.assertIn("x86_64_timer_sleep_disarm64:", timer)
+        self.assertIn("sleep_task_0:", probe)
+        self.assertIn("sleep_task_1:", probe)
+        self.assertIn("sleep_task_2:", probe)
+        self.assertIn("sleep_task_3:", probe)
+        for status in range(120, 124):
+            self.assertIn(f"mov edi, {status}", probe)
+        self.assertIn("call x86_64_process_deadline_sleep_selftest64", entry)
+        self.assertIn("REIST_X86_64_DEADLINE_SLEEP_OK", runner)
+        self.assertIn("REIST_X86_64_DEADLINE_SLEEP_ERROR", runner)
+
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")
         self.assertIn("kein vollstaendiger REIST-Kernel", contract)

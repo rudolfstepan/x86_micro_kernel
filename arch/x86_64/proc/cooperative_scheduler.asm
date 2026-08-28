@@ -39,6 +39,7 @@ TASK_RUNNING               equ 2
 TASK_FAULTED               equ 3
 TASK_EXITED                equ 4
 TASK_PREEMPTED             equ 5
+TASK_BLOCKED               equ 6
 TASK_A_GENERATION          equ 1
 TASK_B_GENERATION          equ 2
 TASK_A_ID                  equ 0x0A
@@ -49,10 +50,13 @@ TASK_A_QUANTUM_ID          equ 0x0E
 TASK_B_QUANTUM_ID          equ 0x0F
 TASK_RUNQUEUE_ID_BASE      equ 0x10
 TASK_RUNQUEUE_GEN_BASE     equ 10
+TASK_SLEEP_ID_BASE         equ 0x14
+TASK_SLEEP_GEN_BASE        equ 20
 SCHEDULER_MODE_COOPERATIVE equ 1
 SCHEDULER_MODE_PREEMPTION  equ 2
 SCHEDULER_MODE_QUANTUM     equ 3
 SCHEDULER_MODE_RUNQUEUE    equ 4
+SCHEDULER_MODE_SLEEP       equ 5
 
 EVENT_A_READY              equ 1
 EVENT_B_READY              equ 2
@@ -71,7 +75,15 @@ EVENT_RUNQUEUE_YIELD_BASE  equ 0x28
 EVENT_RUNQUEUE_EXIT_BASE   equ 0x2C
 EVENT_RUNQUEUE_FAULT       equ 0x2F
 EVENT_RUNQUEUE_FREE_BASE   equ 0x30
+EVENT_SLEEP_READY_BASE     equ 0x40
+EVENT_SLEEP_RUNNING_BASE   equ 0x44
+EVENT_SLEEP_BLOCK_BASE     equ 0x48
+EVENT_SLEEP_WAKE_BASE      equ 0x4C
+EVENT_SLEEP_MONOTONIC      equ 0x50
+EVENT_SLEEP_EXIT_BASE      equ 0x54
+EVENT_SLEEP_FREE_BASE      equ 0x58
 EVENT_CAPACITY             equ 32
+DEADLINE_TICK_LIMIT        equ 8
 
 USER_BASE                  equ 0x00400000
 USER_PAGE_COUNT            equ 8
@@ -108,10 +120,13 @@ RFLAGS_FAULT_FORBIDDEN     equ 0x00000000003E7F00
 
 REIST_SYS_EXIT             equ 9
 REIST_SYS_YIELD            equ 40
+REIST_SYS_SLEEP_MS         equ 41
+REIST_SYS_MONOTONIC_MS     equ 42
 EXPECTED_EXIT_STATUS       equ 101
 PREEMPT_EXIT_STATUS        equ 102
 QUANTUM_EXIT_STATUS        equ 103
 RUNQUEUE_EXIT_BASE         equ 110
+SLEEP_EXIT_BASE            equ 120
 
 IA32_EFER                  equ 0xC0000080
 IA32_STAR                  equ 0xC0000081
@@ -160,6 +175,8 @@ global x86_64_scheduler_quantum_switch64
 global x86_64_scheduler_quantum_validate64
 global x86_64_scheduler_timer_abort64
 global x86_64_process_runqueue_selftest64
+global x86_64_process_deadline_sleep_selftest64
+global x86_64_scheduler_deadline_tick64
 
 extern pml4_table
 extern physical_frame_alloc64
@@ -179,6 +196,9 @@ extern x86_64_timer_preemption_cancel64
 extern x86_64_timer_preemption_disarm64
 extern x86_64_timer_quantum_arm64
 extern x86_64_timer_quantum_disarm64
+extern x86_64_timer_sleep_arm64
+extern x86_64_timer_sleep_disarm64
+extern x86_64_timer_sleep_now64
 
 x86_64_process_scheduler_selftest64:
     cli
@@ -397,6 +417,116 @@ x86_64_process_quantum_selftest64:
     xor edi, edi
     jmp scheduler_enter_task64
 
+x86_64_process_deadline_sleep_selftest64:
+    cli
+    cld
+    mov byte [rel scheduler_failure_stage], 0x70
+    mov qword [rel scheduler_caller_rsp], rsp
+    mov rax, cr3
+    mov qword [rel scheduler_original_cr3], rax
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne scheduler_fail
+    xor eax, eax
+    lea rdi, [rel scheduler_state_begin]
+    mov ecx, (scheduler_state_end - scheduler_state_begin) / 8
+    rep stosq
+    mov byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    mov qword [rel scheduler_caller_rsp], rsp
+    mov rax, cr3
+    mov qword [rel scheduler_original_cr3], rax
+    call physical_free_frame_count64
+    mov dword [rel scheduler_initial_free], eax
+    call x86_64_elf64_load64
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_elf64_entry64
+    mov qword [rel scheduler_entry], rax
+
+    xor ebx, ebx
+.build_loop:
+    mov edi, ebx
+    call scheduler_build_task64
+    test eax, eax
+    jz scheduler_fail
+    inc ebx
+    cmp ebx, TASK_SLOT_CAPACITY
+    jb .build_loop
+    call scheduler_verify_runqueue_isolation64
+    test eax, eax
+    jz scheduler_fail
+
+    mov byte [rel scheduler_failure_stage], 0x71
+    xor ebx, ebx
+.publish_loop:
+    mov eax, ebx
+    shl rax, 8
+    lea r12, [rel scheduler_tasks]
+    add r12, rax
+    mov eax, TASK_SLEEP_GEN_BASE
+    add eax, ebx
+    mov qword [r12 + TASK_GENERATION], rax
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov eax, ebx
+    add al, EVENT_SLEEP_READY_BASE
+    call scheduler_append_event64
+    mov edi, ebx
+    mov esi, TASK_SLEEP_GEN_BASE
+    add esi, ebx
+    call scheduler_runqueue_enqueue64
+    test eax, eax
+    jz scheduler_fail
+    inc ebx
+    cmp ebx, TASK_SLOT_CAPACITY
+    jb .publish_loop
+
+    ; Duration and generation failures are checked before any deadline byte.
+    xor edi, edi
+    mov esi, TASK_SLEEP_GEN_BASE
+    xor edx, edx
+    call scheduler_deadline_insert64
+    test eax, eax
+    jnz scheduler_fail
+    mov rdx, -1
+    call scheduler_deadline_insert64
+    test eax, eax
+    jnz scheduler_fail
+    mov edx, 1
+    inc esi
+    call scheduler_deadline_insert64
+    test eax, eax
+    jnz scheduler_fail
+    cmp byte [rel scheduler_deadline_count], 0
+    jne scheduler_fail
+
+    mov byte [rel scheduler_failure_stage], 0x72
+    call scheduler_setup_syscalls64
+    test eax, eax
+    jz scheduler_fail
+    lea rax, [rel scheduler_kernel_stack_top]
+    mov qword [rel scheduler_syscall_context + SYSCALL_CONTEXT_KERNEL_RSP], rax
+    mov rdi, rax
+    call x86_64_exception_set_rsp0
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_timer_sleep_arm64
+    test eax, eax
+    jz scheduler_fail
+    xor ebx, ebx
+.enable_irq_loop:
+    mov eax, ebx
+    shl rax, 8
+    lea r12, [rel scheduler_tasks]
+    add r12, rax
+    or qword [r12 + TASK_RFLAGS], 0x200
+    inc ebx
+    cmp ebx, TASK_SLOT_CAPACITY
+    jb .enable_irq_loop
+    mov byte [rel scheduler_active], 1
+    mov byte [rel scheduler_failure_stage], 0x73
+    call scheduler_runqueue_dispatch64
+    jmp scheduler_fail
+
 x86_64_process_runqueue_selftest64:
     cli
     cld
@@ -495,7 +625,10 @@ x86_64_process_runqueue_selftest64:
 ; EDI slot, ESI generation. Validation is complete before any queue byte moves.
 scheduler_runqueue_enqueue64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
+    je .mode_valid
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     jne .fail
+.mode_valid:
     cmp edi, TASK_SLOT_CAPACITY
     jae .fail
     test esi, esi
@@ -541,7 +674,10 @@ scheduler_runqueue_enqueue64:
 ; until every task and generation check succeeds.
 scheduler_runqueue_dequeue64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
+    je .mode_valid
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     jne .fail
+.mode_valid:
     movzx ecx, byte [rel scheduler_runqueue_count]
     test ecx, ecx
     jz .fail
@@ -635,6 +771,181 @@ scheduler_verify_initial_runqueue64:
     xor eax, eax
     ret
 
+; EDI slot, ESI generation, RDX absolute PIT tick. All validation precedes
+; insertion into the fixed stable deadline array.
+scheduler_deadline_insert64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    jne .fail
+    test rdx, rdx
+    jz .fail
+    cmp rdx, DEADLINE_TICK_LIMIT
+    ja .fail
+    cmp edi, TASK_SLOT_CAPACITY
+    jae .fail
+    mov eax, edi
+    shl rax, 8
+    lea r12, [rel scheduler_tasks]
+    add r12, rax
+    cmp qword [r12 + TASK_GENERATION], rsi
+    jne .fail
+    cmp qword [r12 + TASK_STATE], TASK_RUNNING
+    jne .fail
+    lea r8, [rel scheduler_deadline_membership]
+    cmp byte [r8 + rdi], 0
+    jne .fail
+    movzx ecx, byte [rel scheduler_deadline_count]
+    cmp ecx, TASK_SLOT_CAPACITY
+    jae .fail
+    xor eax, eax
+.find:
+    cmp eax, ecx
+    jae .shift
+    mov r9d, eax
+    shl r9, 4
+    lea r10, [rel scheduler_deadline_entries]
+    add r10, r9
+    cmp rdx, qword [r10]
+    jb .shift
+    ja .next
+    movzx r9d, byte [r10 + 12]
+    cmp edi, r9d
+    jb .shift
+.next:
+    inc eax
+    jmp .find
+.shift:
+    mov r9d, ecx
+.shift_loop:
+    cmp r9d, eax
+    jbe .store
+    mov r10d, r9d
+    dec r10d
+    shl r10, 4
+    lea r11, [rel scheduler_deadline_entries]
+    add r11, r10
+    mov r13, qword [r11]
+    mov r14, qword [r11 + 8]
+    mov qword [r11 + 16], r13
+    mov qword [r11 + 24], r14
+    dec r9d
+    jmp .shift_loop
+.store:
+    mov r9d, eax
+    shl r9, 4
+    lea r10, [rel scheduler_deadline_entries]
+    add r10, r9
+    mov qword [r10], rdx
+    mov dword [r10 + 8], esi
+    mov byte [r10 + 12], dil
+    mov byte [r10 + 13], 0
+    mov word [r10 + 14], 0
+    mov byte [r8 + rdi], 1
+    inc byte [rel scheduler_deadline_count]
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+; ESI is the newly accepted 100-Hz tick. At most four due entries move from
+; BLOCKED to READY and into the generation-scoped FIFO.
+x86_64_scheduler_deadline_tick64:
+    mov byte [rel scheduler_failure_stage], 0x80
+    add byte [rel scheduler_failure_stage], sil
+    cmp byte [rel scheduler_active], 1
+    jne .fail
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    jne .fail
+    mov eax, dword [rel scheduler_last_tick]
+    inc eax
+    cmp esi, eax
+    jne .fail
+    cmp esi, DEADLINE_TICK_LIMIT
+    ja .fail
+    mov ebp, esi
+    xor ebx, ebx
+.due_loop:
+    cmp ebx, TASK_SLOT_CAPACITY
+    jae .fail
+    movzx ecx, byte [rel scheduler_deadline_count]
+    test ecx, ecx
+    jz .done
+    lea r10, [rel scheduler_deadline_entries]
+    cmp qword [r10], rbp
+    ja .done
+    mov esi, dword [r10 + 8]
+    movzx edi, byte [r10 + 12]
+    cmp edi, TASK_SLOT_CAPACITY
+    jae .fail
+    mov eax, edi
+    shl rax, 8
+    lea r12, [rel scheduler_tasks]
+    add r12, rax
+    cmp qword [r12 + TASK_GENERATION], rsi
+    jne .fail
+    cmp qword [r12 + TASK_STATE], TASK_BLOCKED
+    jne .fail
+    lea r8, [rel scheduler_deadline_membership]
+    cmp byte [r8 + rdi], 1
+    jne .fail
+    mov byte [r8 + rdi], 0
+    mov r9d, 1
+.shift_left:
+    cmp r9d, ecx
+    jae .clear_last
+    mov r11d, r9d
+    shl r11, 4
+    mov r13, qword [r10 + r11]
+    mov r14, qword [r10 + r11 + 8]
+    mov qword [r10 + r11 - 16], r13
+    mov qword [r10 + r11 - 8], r14
+    inc r9d
+    jmp .shift_left
+.clear_last:
+    dec ecx
+    mov r9d, ecx
+    shl r9, 4
+    mov qword [r10 + r9], 0
+    mov qword [r10 + r9 + 8], 0
+    dec byte [rel scheduler_deadline_count]
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov eax, edi
+    add al, EVENT_SLEEP_WAKE_BASE
+    call scheduler_append_event64
+    call scheduler_runqueue_enqueue64
+    test eax, eax
+    jz .fail
+    inc ebx
+    jmp .due_loop
+.done:
+    mov byte [rel scheduler_failure_stage], 0x84
+    add byte [rel scheduler_failure_stage], bpl
+    mov dword [rel scheduler_last_tick], ebp
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+scheduler_sleep_dispatch_or_idle64:
+    mov byte [rel scheduler_failure_stage], 0x78
+    cmp byte [rel scheduler_runqueue_count], 0
+    jne scheduler_runqueue_dispatch64
+    cmp byte [rel scheduler_deadline_count], 0
+    je scheduler_fail
+    cmp dword [rel scheduler_idle_wakes], 4
+    jae scheduler_fail
+    inc dword [rel scheduler_idle_wakes]
+    sti
+    hlt
+    cli
+    cmp byte [rel scheduler_runqueue_count], 0
+    jne scheduler_runqueue_dispatch64
+    mov eax, dword [rel scheduler_final_tick]
+    cmp dword [rel scheduler_last_tick], eax
+    jae scheduler_fail
+    jmp scheduler_sleep_dispatch_or_idle64
+
 scheduler_verify_runqueue_isolation64:
     call scheduler_verify_isolation64
     test eax, eax
@@ -689,7 +1000,10 @@ scheduler_enter_task64:
     cmp edi, TASK_COUNT
     jb .slot_valid
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
+    je .extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     jne scheduler_fail
+.extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
     jae scheduler_fail
 .slot_valid:
@@ -702,6 +1016,8 @@ scheduler_enter_task64:
     jne scheduler_fail
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .runqueue_task
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .sleep_task
     test edi, edi
     jnz .task_b
     cmp qword [r11 + TASK_GENERATION], TASK_A_GENERATION
@@ -721,6 +1037,15 @@ scheduler_enter_task64:
     jne scheduler_fail
     mov eax, edi
     add al, EVENT_RUNQUEUE_RUNNING_BASE
+    jmp .state_ready
+.sleep_task:
+    mov rax, qword [r11 + TASK_GENERATION]
+    mov edx, TASK_SLEEP_GEN_BASE
+    add edx, edi
+    cmp rax, rdx
+    jne scheduler_fail
+    mov eax, edi
+    add al, EVENT_SLEEP_RUNNING_BASE
 .state_ready:
     mov qword [r11 + TASK_STATE], TASK_RUNNING
     call scheduler_append_event64
@@ -743,6 +1068,8 @@ scheduler_enter_task64:
     mov gs, ax
 
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
+    je .quantum_registers
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     je .quantum_registers
     mov rbx, qword [r11 + TASK_RBX]
     mov rdx, qword [r11 + TASK_RDX]
@@ -808,7 +1135,10 @@ scheduler_syscall_entry64:
     cmp edi, TASK_COUNT
     jb .syscall_slot_valid
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
+    je .syscall_extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     jne scheduler_fail
+.syscall_extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
     jae scheduler_fail
 .syscall_slot_valid:
@@ -830,6 +1160,8 @@ scheduler_syscall_entry64:
     je .preempt_syscall_flags
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
     je .preempt_syscall_flags
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .preempt_syscall_flags
     test rax, RFLAGS_SYSCALL_FORBIDDEN
     jnz scheduler_fail
     jmp .syscall_flags_valid
@@ -846,9 +1178,131 @@ scheduler_syscall_entry64:
 
     cmp qword [rel syscall_rax], REIST_SYS_YIELD
     je scheduler_handle_yield64
+    cmp qword [rel syscall_rax], REIST_SYS_SLEEP_MS
+    je scheduler_handle_sleep64
+    cmp qword [rel syscall_rax], REIST_SYS_MONOTONIC_MS
+    je scheduler_handle_monotonic64
     cmp qword [rel syscall_rax], REIST_SYS_EXIT
     je scheduler_handle_exit64
     jmp scheduler_fail
+
+scheduler_save_syscall_context64:
+    mov rax, qword [rel syscall_rcx]
+    mov qword [r12 + TASK_RIP], rax
+    mov rax, qword [rel scheduler_syscall_context + SYSCALL_CONTEXT_USER_RSP]
+    mov qword [r12 + TASK_RSP], rax
+    mov rax, qword [rel syscall_r11]
+    mov qword [r12 + TASK_RFLAGS], rax
+    mov qword [r12 + TASK_RAX], 0
+    mov rax, qword [rel syscall_rbx]
+    mov qword [r12 + TASK_RBX], rax
+    mov rax, qword [rel syscall_rcx]
+    mov qword [r12 + TASK_RCX], rax
+    mov rax, qword [rel syscall_rdx]
+    mov qword [r12 + TASK_RDX], rax
+    mov rax, qword [rel syscall_rbp]
+    mov qword [r12 + TASK_RBP], rax
+    mov rax, qword [rel syscall_rsi]
+    mov qword [r12 + TASK_RSI], rax
+    mov rax, qword [rel syscall_rdi]
+    mov qword [r12 + TASK_RDI], rax
+    mov rax, qword [rel syscall_r8]
+    mov qword [r12 + TASK_R8], rax
+    mov rax, qword [rel syscall_r9]
+    mov qword [r12 + TASK_R9], rax
+    mov rax, qword [rel syscall_r10]
+    mov qword [r12 + TASK_R10], rax
+    mov rax, qword [rel syscall_r11]
+    mov qword [r12 + TASK_R11], rax
+    mov rax, qword [rel syscall_r12]
+    mov qword [r12 + TASK_R12], rax
+    mov rax, qword [rel syscall_r13]
+    mov qword [r12 + TASK_R13], rax
+    mov rax, qword [rel syscall_r14]
+    mov qword [r12 + TASK_R14], rax
+    mov rax, qword [rel syscall_r15]
+    mov qword [r12 + TASK_R15], rax
+    ret
+
+scheduler_handle_sleep64:
+    mov byte [rel scheduler_failure_stage], 0x74
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    jne scheduler_fail
+    cmp edi, 3
+    jae scheduler_fail
+    lea rdx, [rel scheduler_sleep_ms]
+    mov rax, qword [rel syscall_rdi]
+    cmp rax, qword [rdx + rdi * 8]
+    jne scheduler_fail
+    call scheduler_save_syscall_context64
+    inc qword [r12 + TASK_YIELDS]
+    cmp qword [r12 + TASK_YIELDS], 1
+    jne scheduler_fail
+    call x86_64_timer_sleep_now64
+    cmp rax, -1
+    je scheduler_fail
+    lea rdx, [rel scheduler_sleep_ticks]
+    mov rdx, qword [rdx + rdi * 8]
+    add rdx, rax
+    jc scheduler_fail
+    mov esi, TASK_SLEEP_GEN_BASE
+    add esi, edi
+    mov rbx, rdx
+    mov r15d, esi
+    call scheduler_deadline_insert64
+    test eax, eax
+    jz scheduler_fail
+    ; A second valid publication is rejected by membership before mutation.
+    movzx ebp, byte [rel scheduler_deadline_count]
+    mov rdx, rbx
+    mov esi, r15d
+    call scheduler_deadline_insert64
+    test eax, eax
+    jnz scheduler_fail
+    cmp byte [rel scheduler_deadline_count], bpl
+    jne scheduler_fail
+    test edi, edi
+    jnz .deadline_recorded
+    mov dword [rel scheduler_final_tick], ebx
+.deadline_recorded:
+    mov qword [r12 + TASK_STATE], TASK_BLOCKED
+    mov eax, edi
+    add al, EVENT_SLEEP_BLOCK_BASE
+    call scheduler_append_event64
+    mov byte [rel scheduler_failure_stage], 0x75
+    inc dword [rel scheduler_handoffs]
+    jmp scheduler_sleep_dispatch_or_idle64
+
+scheduler_handle_monotonic64:
+    mov byte [rel scheduler_failure_stage], 0x76
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    jne scheduler_fail
+    cmp edi, 3
+    jne scheduler_fail
+    cmp qword [r12 + TASK_YIELDS], 0
+    jne scheduler_fail
+    call scheduler_save_syscall_context64
+    call x86_64_timer_sleep_now64
+    cmp rax, -1
+    je scheduler_fail
+    mov rdx, 10
+    mul rdx
+    test rdx, rdx
+    jnz scheduler_fail
+    cmp rax, qword [rel scheduler_last_monotonic]
+    jb scheduler_fail
+    mov qword [rel scheduler_last_monotonic], rax
+    mov qword [r12 + TASK_RAX], rax
+    inc qword [r12 + TASK_YIELDS]
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov al, EVENT_SLEEP_MONOTONIC
+    call scheduler_append_event64
+    mov esi, TASK_SLEEP_GEN_BASE + 3
+    call scheduler_runqueue_enqueue64
+    test eax, eax
+    jz scheduler_fail
+    mov byte [rel scheduler_failure_stage], 0x77
+    jmp scheduler_runqueue_dispatch64
 
 scheduler_handle_yield64:
     mov rax, qword [rel syscall_rcx]
@@ -961,6 +1415,8 @@ scheduler_handle_yield64:
 scheduler_handle_exit64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je scheduler_handle_runqueue_exit64
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je scheduler_handle_sleep_exit64
     cmp edi, 0
     jne scheduler_fail
     cmp qword [r12 + TASK_GENERATION], TASK_A_GENERATION
@@ -1108,6 +1564,73 @@ scheduler_handle_runqueue_exit64:
     mov byte [rel scheduler_final_result], 1
     jmp scheduler_return64
 
+scheduler_handle_sleep_exit64:
+    mov byte [rel scheduler_failure_stage], 0x90
+    add byte [rel scheduler_failure_stage], dil
+    cmp edi, TASK_SLOT_CAPACITY
+    jae scheduler_fail
+    mov ebx, edi
+    mov eax, TASK_SLEEP_GEN_BASE
+    add eax, ebx
+    cmp qword [r12 + TASK_GENERATION], rax
+    jne scheduler_fail
+    mov eax, SLEEP_EXIT_BASE
+    add eax, ebx
+    cmp qword [rel syscall_rdi], rax
+    jne scheduler_fail
+    cmp qword [r12 + TASK_YIELDS], 1
+    jne scheduler_fail
+    mov qword [r12 + TASK_STATE], TASK_EXITED
+    mov eax, ebx
+    add al, EVENT_SLEEP_EXIT_BASE
+    call scheduler_append_event64
+    mov rax, qword [rel scheduler_original_cr3]
+    mov cr3, rax
+    call scheduler_restore_kernel_segments64
+    mov edi, ebx
+    call scheduler_verify_sleep_magic64
+    test eax, eax
+    jz scheduler_fail
+    mov edi, ebx
+    mov esi, TASK_SLEEP_GEN_BASE
+    add esi, ebx
+    mov edx, TASK_EXITED
+    mov ecx, EVENT_SLEEP_FREE_BASE
+    add ecx, ebx
+    call scheduler_reap_terminal64
+    test eax, eax
+    jz scheduler_fail
+    mov byte [rel scheduler_failure_stage], 0x94
+    add byte [rel scheduler_failure_stage], bl
+    cmp dword [rel scheduler_reap_count], TASK_SLOT_CAPACITY
+    je .final
+    jmp scheduler_sleep_dispatch_or_idle64
+.final:
+    mov byte [rel scheduler_failure_stage], 0x9F
+    cmp dword [rel scheduler_handoffs], 3
+    jne scheduler_fail
+    cmp dword [rel scheduler_fault_count], 0
+    jne scheduler_fail
+    mov eax, dword [rel scheduler_final_tick]
+    test eax, eax
+    jz scheduler_fail
+    cmp dword [rel scheduler_last_tick], eax
+    jne scheduler_fail
+    mov edi, eax
+    call x86_64_timer_sleep_disarm64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_final_events64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_cleanup_common64
+    test eax, eax
+    jz scheduler_return_failure64
+    lea rsi, [rel scheduler_sleep_ok_message]
+    call serial_write64
+    mov byte [rel scheduler_final_result], 1
+    jmp scheduler_return64
+
 ; RDI points at the normalized exception frame. Only B's exact terminal UD2
 ; after the third handoff is locally contained; every other frame returns 0.
 x86_64_scheduler_user_exception64:
@@ -1120,6 +1643,8 @@ x86_64_scheduler_user_exception64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
     je x86_64_scheduler_timer_abort64
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
+    je x86_64_scheduler_timer_abort64
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     je x86_64_scheduler_timer_abort64
     jmp .invalid
 .cooperative_exception:
@@ -1255,6 +1780,8 @@ x86_64_scheduler_timer_abort64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
     je .abort
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
+    je .abort
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     jne .invalid
 .abort:
     mov rax, qword [rel scheduler_original_cr3]
@@ -1567,7 +2094,10 @@ scheduler_build_task64:
     cmp edi, TASK_COUNT
     jb .slot_valid
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
+    je .extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     jne .fail
+.extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
     jae .fail
 .slot_valid:
@@ -1709,6 +2239,8 @@ scheduler_build_task64:
     je .quantum_ids
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .runqueue_ids
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .sleep_ids
     test ebx, ebx
     jnz .id_b
     mov qword [r12 + TASK_RDI], TASK_A_ID
@@ -1742,6 +2274,12 @@ scheduler_build_task64:
     jmp .done
 .runqueue_ids:
     mov eax, TASK_RUNQUEUE_ID_BASE
+    add eax, ebx
+    mov qword [r12 + TASK_RDI], rax
+    mov qword [r12 + TASK_ID], rax
+    jmp .done
+.sleep_ids:
+    mov eax, TASK_SLEEP_ID_BASE
     add eax, ebx
     mov qword [r12 + TASK_RDI], rax
     mov qword [r12 + TASK_ID], rax
@@ -1818,12 +2356,37 @@ scheduler_verify_runqueue_magic64:
     xor eax, eax
     ret
 
+scheduler_verify_sleep_magic64:
+    cmp edi, TASK_SLOT_CAPACITY
+    jae .fail
+    mov eax, edi
+    shl rax, 8
+    lea r12, [rel scheduler_tasks]
+    add r12, rax
+    mov rax, qword [r12 + TASK_PRIVATE_FRAMES + (PROBE_DATA_PAGE_INDEX * 8)]
+    test rax, rax
+    jz .fail
+    mov rdx, DIRECT_MAP_BASE
+    add rax, rdx
+    lea rdx, [rel scheduler_sleep_magics]
+    mov rdx, qword [rdx + rdi * 8]
+    cmp qword [rax], rdx
+    jne .fail
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
 ; EDI slot, ESI generation, EDX terminal state, CL free-event.
 scheduler_reap_terminal64:
     cmp edi, TASK_COUNT
     jb .slot_valid
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
+    je .extended_slot
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
     jne .fail
+.extended_slot:
     cmp edi, TASK_SLOT_CAPACITY
     jae .fail
 .slot_valid:
@@ -1900,6 +2463,8 @@ scheduler_append_event64:
 scheduler_verify_final_events64:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
     je .runqueue_events
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SLEEP
+    je .sleep_events
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_QUANTUM
     je .quantum_events
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_PREEMPTION
@@ -1941,6 +2506,44 @@ scheduler_verify_final_events64:
     inc ebx
     cmp ebx, RUNQUEUE_CAPACITY
     jb .runqueue_zero_loop
+    jmp .task_records
+.sleep_events:
+    cmp byte [rel scheduler_event_count], 27
+    jne .fail
+    lea rsi, [rel scheduler_events]
+    lea rdi, [rel scheduler_sleep_events]
+    mov ecx, 27
+    repe cmpsb
+    jne .fail
+    cmp byte [rel scheduler_runqueue_head], 0
+    jne .fail
+    cmp byte [rel scheduler_runqueue_tail], 0
+    jne .fail
+    cmp byte [rel scheduler_runqueue_count], 0
+    jne .fail
+    cmp byte [rel scheduler_deadline_count], 0
+    jne .fail
+    xor ebx, ebx
+.sleep_zero_loop:
+    lea rdx, [rel scheduler_runqueue_membership]
+    cmp byte [rdx + rbx], 0
+    jne .fail
+    lea rdx, [rel scheduler_runqueue_entries]
+    cmp qword [rdx + rbx * 8], 0
+    jne .fail
+    lea rdx, [rel scheduler_deadline_membership]
+    cmp byte [rdx + rbx], 0
+    jne .fail
+    mov eax, ebx
+    shl rax, 4
+    lea rdx, [rel scheduler_deadline_entries]
+    cmp qword [rdx + rax], 0
+    jne .fail
+    cmp qword [rdx + rax + 8], 0
+    jne .fail
+    inc ebx
+    cmp ebx, TASK_SLOT_CAPACITY
+    jb .sleep_zero_loop
     jmp .task_records
 .quantum_events:
     cmp byte [rel scheduler_event_count], 14
@@ -2253,10 +2856,33 @@ scheduler_runqueue_events:
 scheduler_runqueue_magics:
     dq 0x1010101010101010, 0x1111111111111111
     dq 0x1212121212121212, 0x1313131313131313
+scheduler_sleep_events:
+    db EVENT_SLEEP_READY_BASE + 0, EVENT_SLEEP_READY_BASE + 1
+    db EVENT_SLEEP_READY_BASE + 2, EVENT_SLEEP_READY_BASE + 3
+    db EVENT_SLEEP_RUNNING_BASE + 0, EVENT_SLEEP_BLOCK_BASE + 0
+    db EVENT_SLEEP_RUNNING_BASE + 1, EVENT_SLEEP_BLOCK_BASE + 1
+    db EVENT_SLEEP_RUNNING_BASE + 2, EVENT_SLEEP_BLOCK_BASE + 2
+    db EVENT_SLEEP_RUNNING_BASE + 3, EVENT_SLEEP_MONOTONIC
+    db EVENT_SLEEP_RUNNING_BASE + 3, EVENT_SLEEP_EXIT_BASE + 3
+    db EVENT_SLEEP_FREE_BASE + 3, EVENT_SLEEP_WAKE_BASE + 1
+    db EVENT_SLEEP_RUNNING_BASE + 1, EVENT_SLEEP_EXIT_BASE + 1
+    db EVENT_SLEEP_FREE_BASE + 1, EVENT_SLEEP_WAKE_BASE + 2
+    db EVENT_SLEEP_RUNNING_BASE + 2, EVENT_SLEEP_EXIT_BASE + 2
+    db EVENT_SLEEP_FREE_BASE + 2, EVENT_SLEEP_WAKE_BASE + 0
+    db EVENT_SLEEP_RUNNING_BASE + 0, EVENT_SLEEP_EXIT_BASE + 0
+    db EVENT_SLEEP_FREE_BASE + 0
+scheduler_sleep_ms:
+    dq 30, 10, 20, 0
+scheduler_sleep_ticks:
+    dq 3, 1, 2, 0
+scheduler_sleep_magics:
+    dq 0x1414141414141414, 0x1515151515151515
+    dq 0x1616161616161616, 0x1717171717171717
 scheduler_ok_message db "REIST_X86_64_PROCESS_SCHEDULER_OK", 13, 10, 0
 scheduler_preempt_ok_message db "REIST_X86_64_TIMER_PREEMPTION_OK", 13, 10, 0
 scheduler_quantum_ok_message db "REIST_X86_64_QUANTUM_SWITCH_OK", 13, 10, 0
 scheduler_runqueue_ok_message db "REIST_X86_64_RUNQUEUE_LIFECYCLE_OK", 13, 10, 0
+scheduler_sleep_ok_message db "REIST_X86_64_DEADLINE_SLEEP_OK", 13, 10, 0
 scheduler_stage_message db "REIST_X86_64_PROCESS_SCHEDULER_STAGE_", 0
 scheduler_newline db 13, 10, 0
 
@@ -2306,6 +2932,21 @@ scheduler_runqueue_membership:
 alignb 8
 scheduler_runqueue_entries:
     resq RUNQUEUE_CAPACITY
+scheduler_deadline_count:
+    resb 1
+scheduler_deadline_membership:
+    resb TASK_SLOT_CAPACITY
+alignb 16
+scheduler_deadline_entries:
+    resb TASK_SLOT_CAPACITY * 16
+scheduler_last_tick:
+    resd 1
+scheduler_final_tick:
+    resd 1
+scheduler_idle_wakes:
+    resd 1
+scheduler_last_monotonic:
+    resq 1
 scheduler_event_count:
     resb 1
 scheduler_events:

@@ -26,10 +26,13 @@ TIMER_EXPECTED_TICKS      equ 3
 TIMER_GENERATION          equ 1
 PREEMPT_GENERATION        equ 2
 QUANTUM_GENERATION        equ 3
+SLEEP_GENERATION          equ 4
 TIMER_MODE_SELFTEST       equ 1
 TIMER_MODE_PREEMPT        equ 2
 TIMER_MODE_QUANTUM        equ 3
+TIMER_MODE_SLEEP          equ 4
 QUANTUM_EXPECTED_TICKS    equ 4
+SLEEP_MAX_TICKS           equ 8
 TSC_DEADLINE_CYCLES       equ 3000000000
 KERNEL_CODE_SELECTOR      equ 0x08
 RFLAGS_IF                 equ 0x0000000000000200
@@ -49,6 +52,9 @@ global x86_64_timer_preemption_cancel64
 global x86_64_timer_preemption_disarm64
 global x86_64_timer_quantum_arm64
 global x86_64_timer_quantum_disarm64
+global x86_64_timer_sleep_arm64
+global x86_64_timer_sleep_disarm64
+global x86_64_timer_sleep_now64
 
 extern pml4_table
 extern _text_start
@@ -59,6 +65,7 @@ extern x86_64_scheduler_timer_validate64
 extern x86_64_scheduler_quantum_switch64
 extern x86_64_scheduler_quantum_validate64
 extern x86_64_scheduler_timer_abort64
+extern x86_64_scheduler_deadline_tick64
 
 x86_64_timer_interrupt_selftest64:
     cli
@@ -180,6 +187,8 @@ x86_64_timer_interrupt64:
     je .preempt
     cmp byte [rel timer_mode], TIMER_MODE_QUANTUM
     je .quantum
+    cmp byte [rel timer_mode], TIMER_MODE_SLEEP
+    je .sleep
     cmp dword [rel timer_generation], TIMER_GENERATION
     jne .invalid
     mov rax, cr3
@@ -269,10 +278,42 @@ x86_64_timer_interrupt64:
     call x86_64_scheduler_quantum_switch64
     xor eax, eax
     ret
+.sleep:
+    cmp dword [rel timer_generation], SLEEP_GENERATION
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_VECTOR], TIMER_VECTOR
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_ERROR], 0
+    jne .invalid
+    cmp dword [rel timer_ticks], SLEEP_MAX_TICKS
+    jae .invalid
+    rdtsc
+    shl rdx, 32
+    mov eax, eax
+    or rax, rdx
+    cmp rax, qword [rel timer_deadline]
+    ja .invalid
+    inc dword [rel timer_ticks]
+    inc dword [rel timer_eoi_count]
+    mov esi, dword [rel timer_ticks]
+    call x86_64_scheduler_deadline_tick64
+    test eax, eax
+    jz .invalid
+    cmp dword [rel timer_ticks], SLEEP_MAX_TICKS
+    jne .sleep_eoi
+    mov al, PIC_ALL_MASKED
+    out PIC1_DATA, al
+.sleep_eoi:
+    mov al, PIC_EOI
+    out PIC1_COMMAND, al
+    mov eax, 1
+    ret
 .invalid:
     cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
     je .abort_scheduler
     cmp byte [rel timer_mode], TIMER_MODE_QUANTUM
+    je .abort_scheduler
+    cmp byte [rel timer_mode], TIMER_MODE_SLEEP
     jne .invalid_return
 .abort_scheduler:
     call x86_64_scheduler_timer_abort64
@@ -422,6 +463,46 @@ x86_64_timer_quantum_disarm64:
     xor eax, eax
     ret
 
+x86_64_timer_sleep_arm64:
+    call x86_64_timer_preemption_arm64
+    test rax, rax
+    jz .sleep_arm_fail
+    mov dword [rel timer_generation], SLEEP_GENERATION
+    mov byte [rel timer_mode], TIMER_MODE_SLEEP
+    ret
+.sleep_arm_fail:
+    xor eax, eax
+    ret
+
+x86_64_timer_sleep_disarm64:
+    cli
+    cmp byte [rel timer_mode], TIMER_MODE_SLEEP
+    jne .sleep_disarm_fail
+    test edi, edi
+    jz .sleep_disarm_fail
+    cmp edi, SLEEP_MAX_TICKS
+    ja .sleep_disarm_fail
+    cmp dword [rel timer_ticks], edi
+    jne .sleep_disarm_fail
+    cmp dword [rel timer_eoi_count], edi
+    jne .sleep_disarm_fail
+    call timer_cleanup64
+    ret
+.sleep_disarm_fail:
+    xor eax, eax
+    ret
+
+x86_64_timer_sleep_now64:
+    cmp byte [rel timer_active], 1
+    jne .sleep_now_fail
+    cmp byte [rel timer_mode], TIMER_MODE_SLEEP
+    jne .sleep_now_fail
+    mov eax, dword [rel timer_ticks]
+    ret
+.sleep_now_fail:
+    mov rax, -1
+    ret
+
 ; Idempotent failure cleanup. It grants no success for a conflicting active
 ; timer mode, but restores every partially or fully armed preemption state.
 x86_64_timer_preemption_cancel64:
@@ -429,6 +510,8 @@ x86_64_timer_preemption_cancel64:
     cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
     je .cancel
     cmp byte [rel timer_mode], TIMER_MODE_QUANTUM
+    je .cancel
+    cmp byte [rel timer_mode], TIMER_MODE_SLEEP
     je .cancel
     cmp byte [rel timer_active], 0
     jne .cancel_fail

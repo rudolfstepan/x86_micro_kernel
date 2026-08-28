@@ -165,12 +165,23 @@ fuehrt noch keine dynamischen Tasks, Prioritaeten, allgemeine Fairness oder
 produktive x86_64-Schedulerautoritaet ein.
 
 R8.1k ergaenzt die direkten Zwei-Slot-Uebergaben durch eine feste
-generationengebundene Vier-Eintrag-FIFO ergaenzen. Enqueue und Dequeue muessen
+generationengebundene Vier-Eintrag-FIFO. Enqueue und Dequeue muessen
 Slot, Generation, `READY` und Membership vor jeder Publikation pruefen. Ein
 endlicher Vier-Prozess-Lebenszyklus kombiniert Yield, Exit und lokale
 Fehlerisolation. Vector 3 ist dabei nur waehrend des Nachweises fuer CPL3
 zugaenglich und wird vor Erfolg wieder auf Ring 0 begrenzt. Das bleibt ein isolierter Kapazitaetsnachweis ohne allgemeine
 Spawn-, Blocking-, Prioritaets- oder Produktionspolicy.
+
+R8.1l verbindet diese FIFO im isolierten Bootstrap mit den vorhandenen
+REIST-v1-Indizes `SLEEP_MS` 41 und `MONOTONIC_MS` 42. Eine feste sortierte
+Vier-Eintrag-Deadline-Liste bindet absolute 64-Bit-PIT-Ticks an Slot und
+Generation. Dauer, Ueberlauf, Zustand, Membership und Kapazitaet werden vor
+Publikation geprueft; ein IRQ untersucht hoechstens vier Eintraege. Der
+abgenommene Lauf blockiert drei Tasks relativ fuer 30, 10 und 20 ms, fuehrt
+einen vierten Monotonic-Task aus und weckt exakt in der Folge 1-2-0. Der
+absolute Nachweishorizont bleibt trotz eines beim ersten Ring-3-Eintritt
+moeglichen anstehenden PIT-Ticks auf acht Ticks begrenzt. Dies ist weiterhin
+keine dynamische oder produktive x86_64-Schedulerintegration.
 
 ## Minimaler REIST-Kern
 

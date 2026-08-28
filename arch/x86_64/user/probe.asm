@@ -33,6 +33,14 @@ _start:
     je runqueue_task_2
     cmp edi, 0x13
     je runqueue_task_3
+    cmp edi, 0x14
+    je sleep_task_0
+    cmp edi, 0x15
+    je sleep_task_1
+    cmp edi, 0x16
+    je sleep_task_2
+    cmp edi, 0x17
+    je sleep_task_3
     int3
 
 probe_exit:
@@ -185,6 +193,60 @@ runqueue_task_3:
     mov qword [rel probe_data], rax
 runqueue_fault:
     int3
+    ud2
+
+sleep_task_0:
+    mov rbx, 0x1414141414141414
+    mov qword [rel probe_data], rbx
+    mov eax, 41
+    mov edi, 30
+    syscall
+    cmp qword [rel probe_data], rbx
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 120
+    syscall
+    ud2
+
+sleep_task_1:
+    mov rbx, 0x1515151515151515
+    mov qword [rel probe_data], rbx
+    mov eax, 41
+    mov edi, 10
+    syscall
+    cmp qword [rel probe_data], rbx
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 121
+    syscall
+    ud2
+
+sleep_task_2:
+    mov rbx, 0x1616161616161616
+    mov qword [rel probe_data], rbx
+    mov eax, 41
+    mov edi, 20
+    syscall
+    cmp qword [rel probe_data], rbx
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 122
+    syscall
+    ud2
+
+sleep_task_3:
+    mov rbx, 0x1717171717171717
+    mov qword [rel probe_data], rbx
+    mov eax, 42
+    syscall
+    cmp rax, 80
+    ja scheduler_isolation_failure
+    mov qword [rel probe_progress], rax
+    cmp qword [rel probe_data], rbx
+    jne scheduler_isolation_failure
+    mov eax, 9
+    mov edi, 123
+    syscall
     ud2
 
 section .data

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1l-x86_64-deadline-sleep"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11038,7 +11038,7 @@ evidence = []
 
 [[packages]]
 id = "R8.1l-x86_64-deadline-sleep"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 monotonic deadline sleep proof"
@@ -11077,7 +11077,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: add bounded x86_64 deadline sleep proof"
-evidence = []
+evidence = [
+  "31 x86_64 source-contract tests passed including fixed deadline validation ordering and ABI numbers 41 and 42",
+  "The isolated build produced an 89188-byte bootstrap and a 10088-byte ELF64 user probe",
+  "The bounded one-vCPU 32-MiB QEMU run published DEADLINE_SLEEP_OK before the unchanged exception-recovery marker",
+  "A focused repair admitted the bounded pending-PIT start phase through an eight-tick absolute ceiling while preserving exact relative sleeps and wake order 1 2 0"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

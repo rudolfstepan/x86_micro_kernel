@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: R8.1l – begrenztes x86_64-Deadline-Sleep
+Aktives Thema: kein Queuepaket aktiv; R8.1l ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -145,7 +145,18 @@ Website-Vertragstests pruefen Sprachen, Claims, Links, PNG-Masse und Metadaten.
 Zwei neue echte 1024x768-QEMU-Aufnahmen zeigen die aktuellen Desktop-Icons
 sowie Editor, Scrollbars und About-Dialog. Der Standard-VGA-Capture deckte
 einen begrenzt degradierten Beschleunigungspfad auf; die abgenommenen Bilder
-stammen vom funktionierenden QEMU-VMware-VGA-Pfad. R8.1l ist nun aktiv.
+stammen vom funktionierenden QEMU-VMware-VGA-Pfad. Danach folgte R8.1l.
+
+R8.1l ist abgeschlossen. Eine feste Vier-Eintrag-Deadline-Liste verbindet die
+Vier-Slot-FIFO mit `SLEEP_MS` 41 und `MONOTONIC_MS` 42. Drei private Tasks
+blockieren fuer ein, zwei oder drei relative 100-Hz-Ticks; ein vierter liest
+die monotone Millisekundenzeit und beendet direkt. Der absolute Horizont ist
+auf acht Ticks begrenzt und nimmt damit einen beim ersten CPL3-Eintritt bereits
+anstehenden PIT-Tick auf, ohne eine unbeschraenkte Wartezeit einzufuehren.
+31 Quellvertragstests, der 89.188-Byte-Build mit 10.088-Byte-Probe und der
+kurze Ein-vCPU-/32-MiB-QEMU-Lauf bestanden. Der Gast weckte exakt 1-2-0,
+akzeptierte Status 120 bis 123, leerte beide Queues und meldete
+`DEADLINE_SLEEP_OK` vor dem unveraenderten Abschlussmarker. Die Queue ist leer.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt

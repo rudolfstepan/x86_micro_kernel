@@ -198,9 +198,17 @@ ihre aktualisierten Bildtexte geprueft. Zwei neue echte 1024x768-Aufnahmen vom
 QEMU-VMware-VGA-Pfad zeigen die aktuellen Desktop-Icons sowie Editor,
 Scrollbars und About-Dialog. Drei lokale Vertragstests bestanden.
 
-**R8.1l ist aktiv:** Als naechste begrenzte Scheibe verbindet eine feste
-generationengebundene Deadline-Queue `SLEEP_MS` 41 und `MONOTONIC_MS` 42 mit
-der Vier-Slot-FIFO und dem isolierten 100-Hz-PIT.
+**R8.1l ist abgeschlossen:** Eine feste generationengebundene
+Vier-Eintrag-Deadline-Queue verbindet `SLEEP_MS` 41 und `MONOTONIC_MS` 42 mit
+der Vier-Slot-FIFO und dem isolierten 100-Hz-PIT. Drei Tasks blockieren relativ
+fuer 30, 10 und 20 ms; der vierte liest monotone Zeit. Der feste Acht-Tick-
+Horizont beruecksichtigt einen beim ersten Ring-3-Eintritt bereits anstehenden
+PIT-Tick. Der Lauf weckt exakt 1-2-0, akzeptiert Status 120 bis 123 und verlangt
+vor `DEADLINE_SLEEP_OK` leere genullte Queues, genullte Tasks sowie restaurierte
+Timer-, PIC-, Speicher-, TSS- und Syscall-Autoritaet. 31 Quellvertragstests,
+der 89.188-Byte-Build mit 10.088-Byte-Probe und der kurze Ein-vCPU-/32-MiB-
+QEMU-Lauf bestanden. Die x86_64-Queue ist wieder leer; dynamische Tasks,
+Prioritaeten, SMP und produktive Integration bleiben offen.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

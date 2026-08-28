@@ -298,3 +298,29 @@ urspruenglichen Framezaehler. Die Implementierung erfuellt diese Folge im
 die Dauer des Nachweises fuer CPL3 freigegeben und danach auch auf Fehlerpfaden
 auf seinen Ring-0-Gatezustand zurueckgesetzt. Der kurze Ein-vCPU-/32-MiB-Lauf
 meldete `REIST_X86_64_RUNQUEUE_LIFECYCLE_OK` vor dem Abschlussmarker.
+
+## Abgenommener Deadline-Sleep R8.1l
+
+Die vorhandene Vier-Slot-FIFO besitzt zusaetzlich eine feste sortierte
+Vier-Eintrag-Deadline-Liste. `SLEEP_MS` behaelt den REIST-v1-Index 41 und
+Millisekunden als Einheit; die isolierte 100-Hz-Implementierung akzeptiert
+hier exakt 10, 20 oder 30 ms und rechnet geprueft in ein, zwei oder drei
+relative Ticks um. `MONOTONIC_MS` behaelt Index 42. Absolute Deadlines sind
+64 Bit breit und auf einen festen Acht-Tick-Nachweishorizont begrenzt, damit
+auch ein bereits anstehender PIT-Tick beim ersten CPL3-Eintritt sicher
+beruecksichtigt wird.
+
+Slot, Generation, `RUNNING`, Dauer, Ueberlauf, Membership und Kapazitaet
+werden vor jeder Publikation validiert. Pro IRQ werden hoechstens vier
+Deadline-Eintraege untersucht. Die vier privaten Tasks liefern Status 120 bis
+123; nach dem Monotonic-Task werden die blockierten Tasks exakt in der Folge
+1, 2, 0 geweckt. Erfolg verlangt die 27 festen Lebenszyklusereignisse, leere
+und genullte Run- und Deadline-Queues, vier genullte Taskrecords sowie die
+Wiederherstellung von Timer, PIC, CR3, TSS, Syscall-MSRs, Frames und
+Freizaehler.
+
+Alle 31 Quellvertragstests bestanden. Der Build erzeugte ein 89.188-Byte-
+Bootstrap und ein 10.088-Byte-ELF64-Probeabbild. Der begrenzte Ein-vCPU-/
+32-MiB-QEMU-Lauf meldete `REIST_X86_64_DEADLINE_SLEEP_OK` vor dem unveraenderten
+Abschlussmarker. Dynamische Tasks, Prioritaeten, SMP und produktive
+x86_64-Integration bleiben offen.
