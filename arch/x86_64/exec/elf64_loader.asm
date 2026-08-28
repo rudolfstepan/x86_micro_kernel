@@ -49,15 +49,38 @@ PH_ALIGN            equ 48
 
 section .text
 global x86_64_elf64_loader_selftest64
+global x86_64_elf64_load64
+global x86_64_elf64_release64
+global x86_64_elf64_entry64
+global x86_64_elf64_page_frame64
+global x86_64_elf64_page_flags64
+global x86_64_elf64_address_flags64
 extern physical_frame_alloc64
 extern physical_frame_free64
 extern physical_free_frame_count64
 extern serial_write64
 
 x86_64_elf64_loader_selftest64:
+    mov byte [rel elf_load_active], 0
+    mov qword [rel elf_entry_address], 0
+    call x86_64_elf64_load64
+    test eax, eax
+    jz elf64_return_failure
+    call x86_64_elf64_release64
+    test eax, eax
+    jz elf64_return_failure
+    lea rsi, [rel elf64_load_ok_message]
+    call serial_write64
+    mov eax, 1
+    ret
+
+x86_64_elf64_load64:
+    cmp byte [rel elf_load_active], 0
+    jne elf64_return_failure
     cld
     call physical_free_frame_count64
     mov dword [rel elf_initial_free_count], eax
+    mov byte [rel elf_load_active], 1
 
     xor eax, eax
     lea rdi, [rel elf_page_frames]
@@ -68,6 +91,7 @@ x86_64_elf64_loader_selftest64:
     rep stosb
     mov byte [rel elf_load_segment_count], 0
     mov byte [rel elf_entry_is_executable], 0
+    mov qword [rel elf_entry_address], 0
 
     lea r12, [rel user_probe_elf_start]
     mov r13, user_probe_elf_end - user_probe_elf_start
@@ -214,6 +238,7 @@ x86_64_elf64_loader_selftest64:
     je elf64_load_fail
     cmp byte [rel elf_entry_is_executable], 1
     jne elf64_load_fail
+    mov qword [rel elf_entry_address], rbp
 
     xor ecx, ecx
 .allocation_loop:
@@ -315,17 +340,71 @@ x86_64_elf64_loader_selftest64:
     jmp .verify_header_loop
 
 .verified:
-    call elf64_cleanup64
-    test eax, eax
-    jz elf64_return_failure
-    lea rsi, [rel elf64_load_ok_message]
-    call serial_write64
     mov eax, 1
     ret
 
 elf64_load_fail:
     call elf64_cleanup64
 elf64_return_failure:
+    xor eax, eax
+    ret
+
+x86_64_elf64_release64:
+    cmp byte [rel elf_load_active], 0
+    je .already_released
+    jmp elf64_cleanup64
+.already_released:
+    mov eax, 1
+    ret
+
+x86_64_elf64_entry64:
+    cmp byte [rel elf_load_active], 1
+    jne .invalid
+    mov rax, qword [rel elf_entry_address]
+    ret
+.invalid:
+    xor eax, eax
+    ret
+
+; ECX is a page index in the fixed eight-page ELF window.
+x86_64_elf64_page_frame64:
+    cmp byte [rel elf_load_active], 1
+    jne .invalid
+    cmp ecx, USER_PAGE_COUNT
+    jae .invalid
+    lea rax, [rel elf_page_frames]
+    mov rax, qword [rax + rcx * 8]
+    ret
+.invalid:
+    xor eax, eax
+    ret
+
+x86_64_elf64_page_flags64:
+    cmp byte [rel elf_load_active], 1
+    jne .invalid
+    cmp ecx, USER_PAGE_COUNT
+    jae .invalid
+    lea rax, [rel elf_page_flags]
+    movzx eax, byte [rax + rcx]
+    ret
+.invalid:
+    xor eax, eax
+    ret
+
+; RAX is a user virtual address; EAX returns its validated ELF PF_* metadata.
+x86_64_elf64_address_flags64:
+    cmp byte [rel elf_load_active], 1
+    jne .invalid
+    cmp rax, USER_BASE
+    jb .invalid
+    cmp rax, USER_END
+    jae .invalid
+    sub rax, USER_BASE
+    shr rax, 12
+    lea rdx, [rel elf_page_flags]
+    movzx eax, byte [rdx + rax]
+    ret
+.invalid:
     xor eax, eax
     ret
 
@@ -368,12 +447,14 @@ elf64_cleanup64:
     test eax, eax
     jnz .clear_frame
     mov byte [rel elf_cleanup_error], 1
+    jmp .next_cleanup
 .clear_frame:
     lea rdx, [rel elf_page_frames]
     mov qword [rdx + rcx * 8], 0
 .clear_metadata:
     lea rdx, [rel elf_page_flags]
     mov byte [rdx + rcx], 0
+.next_cleanup:
     inc ecx
     jmp .cleanup_loop
 .cleanup_count:
@@ -382,6 +463,10 @@ elf64_cleanup64:
     jne .cleanup_failed
     cmp byte [rel elf_cleanup_error], 0
     jne .cleanup_failed
+    mov byte [rel elf_load_active], 0
+    mov byte [rel elf_load_segment_count], 0
+    mov byte [rel elf_entry_is_executable], 0
+    mov qword [rel elf_entry_address], 0
     mov eax, 1
     ret
 .cleanup_failed:
@@ -410,3 +495,8 @@ elf_entry_is_executable:
     resb 1
 elf_cleanup_error:
     resb 1
+elf_load_active:
+    resb 1
+alignb 8
+elf_entry_address:
+    resq 1

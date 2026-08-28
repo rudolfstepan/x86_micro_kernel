@@ -161,7 +161,7 @@ Der auf eine vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf meldete
 `REIST_X86_64_EXCEPTION_RECOVERY_OK`. Der Nachweis gilt nicht fuer
 Payload-Ausfuehrung, Ring 3, physische Hardware oder HPASA.
 
-## Ziel und Abnahmekriterien R8.1f
+## Abnahme R8.1f
 
 Der erste User-Ausfuehrungspfad bleibt auf dasselbe eingebettete ELF64-Abbild,
 hoechstens acht Abbildseiten und eine feste separate NX-Stackseite begrenzt.
@@ -170,6 +170,18 @@ Eintraege fuer Higher-Half-Kernel und Direct Map; User-PTEs werden
 ausschliesslich aus den validierten ELF-Rechten abgeleitet. DPL3-Code und
 -Daten, TSS-RSP0, Entry, Stack und feste RFLAGS muessen vor `IRETQ` geprueft
 sein.
+
+Alle 21 Quellvertragstests bestanden. Der warnungsfreie Windows-Build erzeugte
+ein 50.980-Byte-Bootstrap und ein unabhaengig gelinktes 9.048-Byte-ELF64-
+`ET_EXEC`. Der auf eine vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf
+beruehrte die User-Stackseite, nahm exakt `EXIT` 9 mit Status 100 an, enthielt
+anschliessend den erwarteten CPL3-`UD2` und meldete
+`REIST_X86_64_USER_EXECUTION_OK` innerhalb einer Sekunde zwischen
+`REIST_X86_64_ELF64_LOAD_OK` und `REIST_X86_64_EXCEPTION_RECOVERY_OK`.
+Die wiederholte Tabellenpruefung maskiert ausschliesslich CPU-eigene
+Accessed-/Dirty-Bits; der Faultpfad verlangt das architektonische Resume-Flag.
+Scheduler, allgemeine Syscalls, produktiver 64-Bit-Userspace und physische
+Hardware bleiben offen; HPASA bleibt ein getrenntes Projekt.
 
 Der Syscall-Nachweis folgt Intel 64 `SYSCALL`/`SWAPGS` und der System-V-AMD64-
 Registerkonvention. Nur der append-only REIST-v1-Index 9 (`EXIT`) mit dem

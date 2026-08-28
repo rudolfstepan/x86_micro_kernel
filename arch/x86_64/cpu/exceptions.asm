@@ -16,10 +16,12 @@ KERNEL_DATA_SELECTOR  equ 0x10
 EXCEPTION_FRAME_VECTOR equ (15 * 8)
 EXCEPTION_FRAME_ERROR  equ (EXCEPTION_FRAME_VECTOR + 8)
 EXCEPTION_FRAME_RIP    equ (EXCEPTION_FRAME_ERROR + 8)
+EXCEPTION_FRAME_CS     equ (EXCEPTION_FRAME_RIP + 8)
 HIGHER_HALF_BASE       equ 0xFFFFFFFF80000000
 
 section .text
 global x86_64_exception_init
+global x86_64_exception_set_rsp0
 extern serial_init64
 extern serial_write64
 extern serial_putc64
@@ -28,6 +30,7 @@ extern x86_64_ud2_probe
 extern x86_64_ud2_resume
 extern x86_64_nx_probe_target
 extern x86_64_nx_resume
+extern x86_64_user_exception64
 
 x86_64_exception_init:
     cld
@@ -102,6 +105,23 @@ x86_64_exception_init:
     call serial_write64
     ret
 
+x86_64_exception_set_rsp0:
+    test rdi, rdi
+    jz .store
+    cmp rdi, HIGHER_HALF_BASE
+    jb .invalid
+    test rdi, 15
+    jnz .invalid
+.store:
+    mov qword [rel exception_tss + 4], rdi
+    cmp qword [rel exception_tss + 4], rdi
+    jne .invalid
+    mov eax, 1
+    ret
+.invalid:
+    xor eax, eax
+    ret
+
 %macro EXCEPTION_NOERR 1
 exception_stub_%1:
     push qword 0
@@ -166,6 +186,16 @@ exception_common:
     push r14
     push r15
 
+    mov rax, qword [rsp + EXCEPTION_FRAME_CS]
+    and eax, 3
+    jz .kernel_exception
+    cmp eax, 3
+    jne exception_fatal
+    mov rdi, rsp
+    call x86_64_user_exception64
+    jmp exception_fatal
+
+.kernel_exception:
     cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 6
     je exception_ud_probe
     cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 14
@@ -269,6 +299,8 @@ exception_gdt:
 exception_gdt_tss:
     dq 0
     dq 0
+    dq 0x00AFF2000000FFFF
+    dq 0x00AFFA000000FFFF
 exception_gdt_end:
 
 exception_gdt_pointer:

@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `be0bd2e2`
+Branch/Startpunkt: `working_branch` / `59abb50`
 
-Aktives Thema: R8.1f – begrenzte x86_64-Ring-3-Ausfuehrungsgrundlage
+Aktives Thema: kein Paket aktiv; R8.1f ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -71,7 +71,7 @@ Ein-vCPU-/32-MiB-QEMU-Lauf meldete `ELF64_LOAD_OK` geordnet zwischen
 `PHYSICAL_MEMORY_OK` und dem Abschlussmarker und stellte zuvor alle Frames
 sowie den urspruenglichen Freizaehler wieder her. Die Queue ist wieder leer.
 
-R8.1f ist nun das einzige aktive Paket. Es behaelt ein vollstaendig validiertes
+R8.1f ist abgeschlossen. Es behaelt ein vollstaendig validiertes
 R8.1e-Abbild kontrolliert, bildet dessen hoechstens acht Seiten und genau eine
 getrennte NX-Stackseite in einer privaten statischen Vier-Ebenen-Hierarchie ab
 und betritt mit festen Selektoren und Flags einmal CPL3. Der einzige zulaessige
@@ -82,6 +82,15 @@ Syscall-MSRs zurueckgesetzt, alle Userabbildungen geloescht und alle Frames
 freigegeben sein. Scheduler, allgemeine Syscalls und produktiver 64-Bit-
 Userspace bleiben spaeteren Paketen vorbehalten. HPASA bleibt ein eigenes,
 unabhaengiges Projekt.
+Alle 21 Quellvertragstests bestanden. Der warnungsfreie Build erzeugte ein
+50.980-Byte-Bootstrap mit einem unabhaengigen 9.048-Byte-ELF64-Probeabbild. Der
+Ein-vCPU-/32-MiB-QEMU-Lauf beruehrte den Userstack, akzeptierte exakt Exit 9
+mit Status 100, enthielt danach den CPL3-`UD2` und meldete
+`USER_EXECUTION_OK` geordnet vor dem Abschlussmarker. Die Nachpruefung maskiert
+nur CPU-eigene Accessed-/Dirty-Bits und verlangt beim Fault das architektonische
+Resume-Flag; alle Rechte und Adressen bleiben exakt. CR3, Syscall-MSRs,
+Usertabellen und Frames wurden vor Erfolg vollstaendig zurueckgesetzt. Die
+Queue ist wieder leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1f-x86_64-ring3-execution"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10642,7 +10642,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1f-x86_64-ring3-execution"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 Ring-3 execution and exit ABI proof"
@@ -10694,7 +10694,15 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: add bounded x86_64 Ring-3 execution proof"
-evidence = []
+evidence = [
+  "the final isolated x86_64 source contract passed all 21 tests covering private user mappings fixed W X derivation controlled IRETQ syscall stack switching exact EXIT dispatch CPL3 fault containment and cleanup",
+  "the warning-free Windows build linked a 50980-byte bootstrap embedding the independently linked 9048-byte ELF64 probe without changing any production i386 target",
+  "the one-vCPU 32-MiB QEMU runtime published USER_EXECUTION_OK after ELF64_LOAD_OK and before EXCEPTION_RECOVERY_OK within one second",
+  "the first CPL3 attempt touched the NX user stack and reported REIST ABI EXIT 9 status 100 only after SWAPGS selected the kernel stack while the second attempt contained only its vector-6 error-zero UD2 frame",
+  "post-use table validation ignored only CPU-owned Accessed Dirty bits and the expected fault frame required architectural RF while address Present User Write NX selectors CR3 RIP RSP and all unused entries remained exact",
+  "success restored the original CR3 disabled and cleared the temporary syscall MSRs zeroed every user table released stack and ELF frames restored the initial free count and left active_id empty",
+  "no SYSRET scheduler multitasking general syscall dispatcher production userspace device HPASA physical-hardware or fail-operational authority was added"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

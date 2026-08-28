@@ -6,9 +6,17 @@ BITS 64
 section .text
 global _start
 _start:
-    mov eax, 0x52454953
-    xor edx, edx
-    ret
+    push rdi
+    pop rdi
+    test edi, edi
+    jnz probe_fault
+    mov eax, 9
+    mov edi, 100
+    syscall
+    ud2
+
+probe_fault:
+    ud2
 
 section .data
 align 8

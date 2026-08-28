@@ -105,16 +105,25 @@ Ein-vCPU-/32-MiB-QEMU-Lauf meldete `ELF64_LOAD_OK` geordnet nach dem
 Speichernachweis und vor dem Abschlussmarker, nachdem alle staged Frames und
 der urspruengliche Freizaehler wiederhergestellt waren.
 
-**R8.1f ist in Arbeit:** Eine private feste Vier-Ebenen-Hierarchie soll das
+**R8.1f ist umgesetzt:** Eine private feste Vier-Ebenen-Hierarchie bildet das
 validierte ELF64-Abbild W^X-konform und genau eine getrennte User-Stackseite NX
-abbilden. Der erste kontrollierte `IRETQ`-Eintritt muss den bestehenden
+ab. Der erste kontrollierte `IRETQ`-Eintritt erreicht den bestehenden
 REIST-v1-`EXIT`-Syscall 9 ueber den AMD64-`SYSCALL`-Mechanismus erreichen; der
 Entry wechselt vor der Validierung auf den TSS-gebundenen Kernelstack und
-verwendet kein `SYSRET`. Ein zweiter Eintritt muss einen CPL3-`UD2` lokal
-enthalten. Erst nach Wiederherstellung des urspruenglichen CR3, Widerruf der
+verwendet kein `SYSRET`. Ein zweiter Eintritt enthaelt einen CPL3-`UD2` lokal.
+Erst nach Wiederherstellung des urspruenglichen CR3, Widerruf der
 temporaren Syscall-MSRs, Loeschung aller User-PTEs und vollstaendiger
 Framefreigabe darf der Erfolgsmarker erscheinen. Das ist noch kein Scheduler,
 allgemeiner Syscall-Dispatcher oder produktiver 64-Bit-Userspace.
+
+Alle 21 Quellvertragstests und der warnungsfreie 50.980-Byte-Build mit dem
+unabhaengigen 9.048-Byte-Probeabbild bestanden. Der begrenzte
+Ein-vCPU-/32-MiB-QEMU-Lauf beruehrte die User-Stackseite, akzeptierte exakt
+Exit 9 mit Status 100, enthielt den erwarteten User-Vektor 6 und meldete
+`USER_EXECUTION_OK` geordnet vor dem Abschlussmarker. Nur CPU-eigene
+Accessed-/Dirty-Bits sowie das fuer den Fault gesetzte Resume-Flag werden bei
+der Nachpruefung architekturgemaess behandelt; Mappingrechte und Adressen
+bleiben exakt.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
