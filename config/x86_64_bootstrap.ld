@@ -96,7 +96,7 @@ SECTIONS
          "x86_64 C rodata exceeds one R/NX page")
   ASSERT(SIZEOF(.c_core_data) == 32,
          "x86_64 C initialized data ABI changed")
-  ASSERT(SIZEOF(.c_core_bss) == 160,
+  ASSERT(SIZEOF(.c_core_bss) == 224,
          "x86_64 C BSS or handoff ABI changed")
 
   ASSERT(_x86_64_bootstrap_end <= 0x00200000,

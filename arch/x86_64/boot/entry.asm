@@ -34,6 +34,12 @@ C_FIXED_CAPACITY    equ 4
 C_SYSCALL_ABI       equ 1
 C_HANDOFF_QWORDS    equ C_HANDOFF_SIZE / 8
 C_STATE_QWORDS      equ 4
+C_CONTROL_VERSION   equ 1
+C_CONTROL_SIZE      equ 64
+C_CONTROL_FLAGS     equ 0x0F
+C_CONTROL_SERVICE   equ 1
+C_CONTROL_GENERATION equ 1
+C_CONTROL_QWORDS    equ C_CONTROL_SIZE / 8
 
 C_H_VERSION         equ 0
 C_H_SIZE            equ 4
@@ -52,6 +58,15 @@ C_H_TASK_CAPACITY   equ 96
 C_H_RUNQUEUE_CAP    equ 100
 C_H_DEADLINE_CAP    equ 104
 C_H_SYSCALL_ABI     equ 108
+
+C_C_VERSION         equ 0
+C_C_SIZE            equ 4
+C_C_FLAGS           equ 8
+C_C_GENERATION      equ 16
+C_C_SERVICE         equ 24
+C_C_TASK_CAPACITY   equ 32
+C_C_RUNQUEUE_CAP    equ 36
+C_C_SYSCALL_ABI     equ 40
 
 %ifndef C_CORE_TEXT_PATH
     %error "C_CORE_TEXT_PATH is required"
@@ -81,7 +96,9 @@ global x86_64_nx_probe_target
 global x86_64_nx_resume
 global pml4_table
 global x86_64_c_handoff
+global x86_64_c_control_handoff
 global x86_64_c_serial_write64
+global x86_64_c_process_shell64
 extern x86_64_exception_init
 extern x86_64_physical_memory_init32
 extern x86_64_physical_memory_selftest64
@@ -136,6 +153,7 @@ x86_64_bootstrap_start:
     mov edi, x86_64_c_bss_state
     mov ecx, (C_STATE_QWORDS * 8) / 4
     rep stosd
+    mov byte [c_control_active], 0
 
     mov eax, dword [boot_magic_value]
     mov ebx, dword [boot_info_value]
@@ -492,9 +510,9 @@ x86_64_nx_resume:
     jz c_core_handoff_state_error
     lea rsi, [rel c_core_handoff_message]
     call serial_write64
-    call x86_64_process_shell64
+    call x86_64_c_control_handoff64
     test eax, eax
-    jz ring3_shell_state_error
+    jz c_kernel_control_state_error
     lea rsi, [rel ring3_shell_message]
     call serial_write64
     jmp halt64
@@ -607,6 +625,72 @@ x86_64_c_core_handoff64:
     xor eax, eax
     ret
 
+x86_64_c_control_handoff64:
+    pushfq
+    pop rax
+    test eax, (1 << 9)
+    jnz .fail
+    mov rax, cr3
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne .fail
+    cmp byte [rel c_control_active], 0
+    jne .fail
+
+    cld
+    lea rdi, [rel x86_64_c_control_handoff]
+    mov r8, rdi
+    xor eax, eax
+    mov ecx, C_CONTROL_QWORDS
+    rep stosq
+    mov dword [r8 + C_C_VERSION], C_CONTROL_VERSION
+    mov dword [r8 + C_C_SIZE], C_CONTROL_SIZE
+    mov qword [r8 + C_C_FLAGS], C_CONTROL_FLAGS
+    mov qword [r8 + C_C_GENERATION], C_CONTROL_GENERATION
+    mov qword [r8 + C_C_SERVICE], C_CONTROL_SERVICE
+    mov dword [r8 + C_C_TASK_CAPACITY], C_FIXED_CAPACITY
+    mov dword [r8 + C_C_RUNQUEUE_CAP], C_FIXED_CAPACITY
+    mov dword [r8 + C_C_SYSCALL_ABI], C_SYSCALL_ABI
+
+    mov r15, rsp
+    lea rsp, [rel c_core_stack_top]
+    and rsp, -16
+    mov rdi, r8
+    call x86_64_c_core_entry
+    mov r14d, eax
+    mov rsp, r15
+    cmp r14d, 1
+    jne .fail
+
+    lea rsi, [rel x86_64_c_control_handoff]
+    mov ecx, C_CONTROL_QWORDS
+.verify_control_zero:
+    lodsq
+    test rax, rax
+    jnz .fail
+    loop .verify_control_zero
+    cmp byte [rel c_control_active], 0
+    jne .fail
+    mov rax, cr3
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne .fail
+    pushfq
+    pop rax
+    test eax, (1 << 9)
+    jnz .fail
+    mov eax, 1
+    ret
+.fail:
+    cld
+    lea rdi, [rel x86_64_c_control_handoff]
+    xor eax, eax
+    mov ecx, C_CONTROL_QWORDS
+    rep stosq
+    mov byte [rel c_control_active], 0
+    xor eax, eax
+    ret
+
 verify_high_page64:
     mov eax, esi
     shr eax, 12
@@ -707,6 +791,12 @@ ring3_shell_state_error:
     call serial_write64
     jmp halt64
 
+c_kernel_control_state_error:
+    call serial_init64
+    lea rsi, [rel c_kernel_control_state_error_message]
+    call serial_write64
+    jmp halt64
+
 section .c_core_bridge
 x86_64_c_serial_write64:
     test rdi, rdi
@@ -748,6 +838,56 @@ x86_64_c_serial_write64:
     pop r12
     pop rbx
 .callback_fail:
+    xor eax, eax
+    ret
+
+align 256
+x86_64_c_process_shell64:
+    cmp rdi, C_CONTROL_GENERATION
+    jne .control_fail
+    pushfq
+    pop rax
+    test eax, (1 << 9)
+    jnz .control_fail
+    mov rax, cr3
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne .control_fail
+    cmp byte [rel c_control_active], 0
+    jne .control_fail
+    mov byte [rel c_control_active], 1
+
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    call x86_64_process_shell64
+    add rsp, 8
+    mov r10d, eax
+    mov rax, cr3
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne .control_return_invalid
+    pushfq
+    pop rax
+    test eax, (1 << 9)
+    jz .control_restore
+.control_return_invalid:
+    xor r10d, r10d
+.control_restore:
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    mov byte [rel c_control_active], 0
+    mov eax, r10d
+    ret
+.control_fail:
     xor eax, eax
     ret
 
@@ -827,6 +967,7 @@ runqueue_lifecycle_state_error_message db "REIST_X86_64_RUNQUEUE_LIFECYCLE_ERROR
 deadline_sleep_state_error_message db "REIST_X86_64_DEADLINE_SLEEP_ERROR", 13, 10, 0
 spawn_wait_state_error_message db "REIST_X86_64_SPAWN_WAIT_ERROR", 13, 10, 0
 c_core_handoff_state_error_message db "REIST_X86_64_C_CORE_HANDOFF_ERROR", 13, 10, 0
+c_kernel_control_state_error_message db "REIST_X86_64_C_KERNEL_CONTROL_ERROR", 13, 10, 0
 ring3_shell_state_error_message db "REIST_X86_64_RING3_SHELL_ERROR", 13, 10, 0
 success_message db "REIST_X86_64_LONG_MODE_BOOT_OK", 13, 10, 0
 higher_half_paging_message db "REIST_X86_64_HIGHER_HALF_PAGING_OK", 13, 10, 0
@@ -878,6 +1019,9 @@ alignb 16
 c_core_stack_bottom:
     resb 16384
 c_core_stack_top:
+alignb 8
+c_control_active:
+    resq 1
 
 section .c_core_text progbits alloc exec nowrite align=16
 global x86_64_c_core_entry
@@ -899,3 +1043,6 @@ x86_64_c_bss_state:
 alignb 16
 x86_64_c_handoff:
     resb C_HANDOFF_SIZE
+alignb 16
+x86_64_c_control_handoff:
+    resb C_CONTROL_SIZE

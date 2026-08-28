@@ -9,11 +9,14 @@
 #define REIST_FIXED_CAPACITY 4U
 #define REIST_SYSCALL_ABI_VERSION 1U
 #define REIST_COPY_BOUND REIST_X86_64_HANDOFF_SIZE
+#define REIST_CONTROL_COPY_BOUND REIST_X86_64_CONTROL_SIZE
 #define REIST_STATE_WORDS 4U
 
 extern reist_u8 x86_64_c_handoff[];
+extern reist_u8 x86_64_c_control_handoff[];
 extern reist_u32 x86_64_c_serial_write64(const char *message,
                                          reist_u64 length);
+extern reist_u32 x86_64_c_process_shell64(reist_u64 generation);
 
 volatile reist_u64 x86_64_c_data_state[REIST_STATE_WORDS] = {
     0x5245495354434441ULL,
@@ -24,6 +27,8 @@ volatile reist_u64 x86_64_c_data_state[REIST_STATE_WORDS] = {
 volatile reist_u64 x86_64_c_bss_state[REIST_STATE_WORDS];
 
 static const char c_callback_message[] = "REIST_X86_64_C_CALLBACK_OK\r\n";
+static const char c_kernel_control_message[] =
+    "REIST_X86_64_C_KERNEL_CONTROL_OK\r\n";
 
 static int canonical_kernel_address(reist_u64 value)
 {
@@ -100,6 +105,30 @@ static int validate_handoff(
     return 1;
 }
 
+static int validate_control(
+    const volatile struct reist_x86_64_control_v1 *control)
+{
+    reist_u32 index;
+
+    if (control->version != REIST_X86_64_CONTROL_VERSION ||
+        control->size != REIST_X86_64_CONTROL_SIZE ||
+        control->flags != REIST_X86_64_CONTROL_REQUIRED_FLAGS ||
+        control->request_generation != REIST_X86_64_CONTROL_GENERATION ||
+        control->service_id != REIST_X86_64_CONTROL_SERVICE_SHELL ||
+        control->task_capacity != REIST_FIXED_CAPACITY ||
+        control->runqueue_capacity != REIST_FIXED_CAPACITY ||
+        control->syscall_abi_version != REIST_SYSCALL_ABI_VERSION ||
+        control->reserved_word != 0U) {
+        return 0;
+    }
+    for (index = 0U; index < sizeof(control->reserved); ++index) {
+        if (control->reserved[index] != 0U) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 reist_u32 x86_64_c_core_entry(
     volatile struct reist_x86_64_bootstrap_handoff_v1 *handoff)
 {
@@ -109,6 +138,10 @@ reist_u32 x86_64_c_core_entry(
     reist_u32 index;
     reist_u32 result = 0U;
 
+    if ((volatile reist_u8 *)handoff == x86_64_c_control_handoff) {
+        return x86_64_c_control_entry(
+            (volatile struct reist_x86_64_control_v1 *)handoff);
+    }
     if ((volatile reist_u8 *)handoff != x86_64_c_handoff) {
         return 0U;
     }
@@ -163,5 +196,45 @@ reist_u32 x86_64_c_core_entry(
 cleanup:
     clear_owned_state();
     zero_bytes((volatile reist_u8 *)handoff, REIST_COPY_BOUND);
+    return result;
+}
+
+reist_u32 x86_64_c_control_entry(
+    volatile struct reist_x86_64_control_v1 *control)
+{
+    volatile reist_u8 snapshot[REIST_CONTROL_COPY_BOUND];
+    const volatile reist_u8 *source;
+    reist_u32 index;
+    reist_u32 result = 0U;
+
+    if ((volatile reist_u8 *)control != x86_64_c_control_handoff) {
+        return 0U;
+    }
+    if (!validate_control(control)) {
+        zero_bytes((volatile reist_u8 *)control, REIST_CONTROL_COPY_BOUND);
+        return 0U;
+    }
+
+    source = (const volatile reist_u8 *)control;
+    for (index = 0U; index < REIST_CONTROL_COPY_BOUND; ++index) {
+        snapshot[index] = source[index];
+    }
+    for (index = 0U; index < REIST_CONTROL_COPY_BOUND; ++index) {
+        if (snapshot[index] != source[index]) {
+            goto cleanup_control;
+        }
+    }
+    if (x86_64_c_process_shell64(control->request_generation) != 1U) {
+        goto cleanup_control;
+    }
+    result = 1U;
+
+cleanup_control:
+    zero_bytes((volatile reist_u8 *)control, REIST_CONTROL_COPY_BOUND);
+    if (result != 0U &&
+        x86_64_c_serial_write64(c_kernel_control_message,
+                                sizeof(c_kernel_control_message) - 1U) != 1U) {
+        result = 0U;
+    }
     return result;
 }

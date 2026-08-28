@@ -7,6 +7,8 @@ typedef unsigned long long reist_u64;
 
 #define REIST_X86_64_HANDOFF_VERSION 1U
 #define REIST_X86_64_HANDOFF_SIZE 128U
+#define REIST_X86_64_CONTROL_VERSION 1U
+#define REIST_X86_64_CONTROL_SIZE 64U
 
 #define REIST_X86_64_HANDOFF_LONG_MODE       (1ULL << 0)
 #define REIST_X86_64_HANDOFF_HIGHER_HALF     (1ULL << 1)
@@ -47,11 +49,37 @@ struct __attribute__((packed)) reist_x86_64_bootstrap_handoff_v1 {
     reist_u8 reserved[16];
 };
 
+#define REIST_X86_64_CONTROL_RUNQUEUE       (1ULL << 0)
+#define REIST_X86_64_CONTROL_SHELL_ELF      (1ULL << 1)
+#define REIST_X86_64_CONTROL_BOUNDED_IO     (1ULL << 2)
+#define REIST_X86_64_CONTROL_NO_DEVICE_AUTH (1ULL << 3)
+#define REIST_X86_64_CONTROL_REQUIRED_FLAGS 0x0FULL
+#define REIST_X86_64_CONTROL_SERVICE_SHELL  1ULL
+#define REIST_X86_64_CONTROL_GENERATION     1ULL
+
+struct __attribute__((packed)) reist_x86_64_control_v1 {
+    reist_u32 version;
+    reist_u32 size;
+    reist_u64 flags;
+    reist_u64 request_generation;
+    reist_u64 service_id;
+    reist_u32 task_capacity;
+    reist_u32 runqueue_capacity;
+    reist_u32 syscall_abi_version;
+    reist_u32 reserved_word;
+    reist_u8 reserved[16];
+};
+
 _Static_assert(sizeof(struct reist_x86_64_bootstrap_handoff_v1) ==
                    REIST_X86_64_HANDOFF_SIZE,
                "x86_64 bootstrap handoff ABI size changed");
+_Static_assert(sizeof(struct reist_x86_64_control_v1) ==
+                   REIST_X86_64_CONTROL_SIZE,
+               "x86_64 C control ABI size changed");
 
 reist_u32 x86_64_c_core_entry(
     volatile struct reist_x86_64_bootstrap_handoff_v1 *handoff);
+reist_u32 x86_64_c_control_entry(
+    volatile struct reist_x86_64_control_v1 *control);
 
 #endif

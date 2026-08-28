@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2d-x86_64-c-kernel-control"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11268,7 +11268,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2d-x86_64-c-kernel-control"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Transfer the scheduled x86_64 shell lifecycle to the freestanding C kernel"
@@ -11303,7 +11303,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "kernel: hand scheduled x86_64 shell control to C"
-evidence = []
+evidence = [
+  "all 44 x86_64 source-contract tests passed including the fixed packed control ABI pre-effect C validation exclusive adapter lease SysV preservation and boot ownership ordering",
+  "the isolated x86_64 bootstrap build completed with fixed C bridge text rodata data and 224-byte C-BSS/control layout and without changing any production i386 target",
+  "the bounded one-vCPU 32-MiB QEMU dialogue preserved every prior marker and observed C_CORE_HANDOFF_OK before the scheduled shell then C_KERNEL_CONTROL_OK after shell cleanup and finally RING3_SHELL_OK",
+  "success returned with the complete control handoff and lease cleared kernel CR3 and IF restored and no VFS spawn terminal driver device DMA SMP or physical-hardware authority added; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

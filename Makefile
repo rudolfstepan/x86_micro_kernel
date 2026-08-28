@@ -380,7 +380,9 @@ x86_64-bootstrap:
 		--section-start=.data=0xFFFFFFFF80165000 \
 		--section-start=.bss=0xFFFFFFFF80166000 \
 		--defsym=x86_64_c_serial_write64=0xFFFFFFFF80162000 \
+		--defsym=x86_64_c_process_shell64=0xFFFFFFFF80162100 \
 		--defsym=x86_64_c_handoff=0xFFFFFFFF80166020 \
+		--defsym=x86_64_c_control_handoff=0xFFFFFFFF801660A0 \
 		-o $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_OBJ)
 	@$(OBJCOPY) -O binary --only-section=.text $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_TEXT)
 	@$(OBJCOPY) -O binary --only-section=.rodata $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_RODATA)
