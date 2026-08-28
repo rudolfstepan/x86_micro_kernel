@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: keines – R8.1i abgeschlossen, Queue leer
+Aktives Thema: R8.1j – begrenzter x86_64-Round-Robin-Quantennachweis
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -135,8 +135,16 @@ Ein-vCPU-/32-MiB-QEMU-Lauf meldete `TIMER_PREEMPTION_OK` geordnet zwischen
 `TIMER_IRQ_OK` und dem Abschlussmarker. Vor Erfolg waren PIC-Masken, IF, CR3,
 TSS, Syscall-MSRs, Tabellen, Taskrecords, Frames und der urspruengliche
 Freizaehler restauriert. Wiederkehrende Quanten, Fairness und produktive
-Schedulerintegration bleiben spaeteren Paketen vorbehalten. Die Queue ist
-wieder leer.
+Schedulerintegration bleiben spaeteren Paketen vorbehalten. R8.1j folgt als
+naechste begrenzte Scheibe.
+
+R8.1j ist aktiv. Zwei CPU-gebundene private CPL3-Generationen muessen ueber
+genau vier PIT-Quanten in der festen Folge A-B-A-B-A laufen. Jeder IRQ speichert
+den vollstaendigen unterbrochenen AMD64- und IRET-Kontext erst nach exakter
+Framevalidierung. Beide Tasks muessen unabhaengigen privaten Fortschritt
+beweisen; nach Tick vier wird nur B reaptiert und A beendet den Nachweis mit
+`EXIT` 9/Status 103. Dynamische Tasks, Prioritaeten, allgemeine Fairness, SMP
+und produktive Schedulerintegration bleiben ausserhalb des Pakets.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

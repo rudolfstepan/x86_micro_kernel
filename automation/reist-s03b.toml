@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1j-x86_64-recurring-quantum-switch"
 
 [policy]
 one_package_per_run = true
@@ -10878,8 +10878,50 @@ evidence = [
   "task A yielded exactly once, task B remained CPU-bound behind a fixed TSC ceiling, and exactly one validated vector-32 CPL3 event transitioned only B from RUNNING to PREEMPTED and then FREE",
   "task A resumed with its private writable value intact and completed the exact REIST EXIT 9 status 102 path",
   "success validated the ten-event lifecycle trace and restored PIC masks IF CR3 TSS syscall MSRs tables task records frames and the initial free count",
-  "no recurring quantum fairness sleep wait SMP LAPIC IOAPIC production clock device HPASA physical-hardware or fail-operational authority was added and active_id is empty"
+  "no recurring quantum fairness sleep wait SMP LAPIC IOAPIC production clock device HPASA physical-hardware or fail-operational authority was added; R8.1j is the next active package"
 ]
+
+[[packages]]
+id = "R8.1j-x86_64-recurring-quantum-switch"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 recurring quantum context-switch proof"
+scope = "Extend only the isolated x86_64 bootstrap from the accepted one-shot R8.1i path to a finite recurring PIT quantum proof over the same two private generation-scoped CPL3 tasks. Arm one timer generation with a fixed four-tick ceiling and a global TSC failure deadline. Both tasks execute CPU-bound loops and update only their private writable ELF page. Every admitted IRQ0 must validate the exact current generation CPL3 frame private CR3 selectors IF stack and executable RIP before mutation or EOI, save the complete interrupted AMD64 general-register and IRET context, transition only the current RUNNING task to READY, and choose only the other READY slot. Require the exact A to B to A to B to A sequence and prove both tasks resume previously interrupted contexts with independent nonzero progress. On the fourth tick transition and reap only B, disarm the timer, resume A with a bounded completion signal, validate A's private state and accept exact EXIT 9 status 103. Restore PIC masks IF CR3 TSS syscall MSRs tables task records frames and the initial free count before publishing QUANTUM_SWITCH_OK. Keep dynamic task creation priorities sleep wait general fairness SMP LAPIC IOAPIC production integration devices HPASA and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile",
+  "arch/x86_64/boot/entry.asm", "arch/x86_64/cpu/timer_interrupt.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "arch/x86_64/user/probe.asm",
+  "scripts/run_qemu_x86_64_boot.py", "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 targets remain unchanged and consume no x86_64 recurring-quantum path",
+  "exactly two private task generations and one fixed four-tick timer generation exist",
+  "each IRQ validates current generation CPL3 frame private CR3 selectors IF stack and executable RIP before task mutation or EOI",
+  "the complete interrupted AMD64 general-register and IRET context is saved before the current task becomes READY",
+  "the fixed chooser examines no more than two slots and produces exactly A B A B A with four timer events and four master EOIs",
+  "both tasks resume interrupted contexts and publish independent nonzero private progress before only B is terminally reaped",
+  "task A receives only the bounded final completion signal retains its private state and exits through REIST EXIT 9 status 103",
+  "success and failure restore timer PIC masks IF CR3 TSS syscall MSRs tables task records frames and initial free count",
+  "no dynamic task creation priorities sleep wait general fairness SMP LAPIC IOAPIC production clock device DMA HPASA physical-hardware or fail-operational authority is introduced"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 target syscall number or image layout changes",
+  "an invalid IRQ frame can mutate a task or receive an EOI",
+  "a task can lose or receive another generation's interrupted register or private-memory state",
+  "the quantum count sequence or chooser can exceed its fixed compile-time bound",
+  "cleanup leaves timer process or memory authority active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: add bounded x86_64 recurring quantum proof"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

@@ -263,3 +263,14 @@ und setzte A bis `EXIT` 9/Status 102 fort. Nach dem zehnteiligen Lebenszyklus
 und der vollstaendigen Wiederherstellung erschien
 `REIST_X86_64_TIMER_PREEMPTION_OK` zwischen `TIMER_IRQ_OK` und
 `EXCEPTION_RECOVERY_OK`.
+
+## Geplante Abnahme R8.1j
+
+Eine feste vierteilige PIT-Generation schaltet zwei private CPU-gebundene
+CPL3-Tasks exakt in der Folge A-B-A-B-A um. Jeder IRQ validiert Generation,
+CR3, Userframe, IF, Stack und ausfuehrbare RIP vor Zustandsaenderung und EOI
+und speichert danach alle allgemeinen Register sowie den IRET-Kontext. Beide
+Tasks muessen aus dem unterbrochenen Kontext fortfahren und unabhaengigen
+privaten Fortschritt erzeugen. Tick vier reapt nur B und signalisiert A den
+begrenzten Abschluss; A bestaetigt ihre private Datenseite und liefert `EXIT`
+9/Status 103. Ein globales TSC-Limit begrenzt den gesamten Nachweis.
