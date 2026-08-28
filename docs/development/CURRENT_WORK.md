@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: R8.1h – begrenzte x86_64-PIT-IRQ-Grundlage
+Aktives Thema: kein Paket aktiv; R8.1h ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -111,13 +111,19 @@ nahm dessen Exit 9 mit Status 101 an. Der Lauf meldete
 Syscall-MSRs, alle Tasktabellen und den urspruenglichen Freizaehler wieder her.
 Die Queue ist wieder leer.
 
-R8.1h ist aktiv. Der isolierte Bootstrap erweitert die IDT genau um Vektor 32,
+R8.1h ist abgeschlossen. Der isolierte Bootstrap erweitert die IDT genau um Vektor 32,
 remappt die beiden Legacy-PICs mit gesicherten Masken, laesst ausschliesslich
 PIT-IRQ0 zu und nimmt exakt drei validierte Kernel-Timerereignisse innerhalb
 einer festen TSC-Grenze an. Das Paket bildet gemeinsam die notwendige
 maskierbare Interrupt- und Clockgrundlage fuer die folgende CPL3-
 Timerpreemption. LAPIC, IOAPIC, SMP und produktive Clockintegration bleiben
 noch ausserhalb der Scheibe.
+Alle 27 Quellvertragstests bestanden. Der warnungsfreie Build erzeugte ein
+68.888-Byte-Bootstrap; das ELF64-Probeabbild blieb 9.264 Byte gross. Der kurze
+Ein-vCPU-/32-MiB-QEMU-Lauf nahm exakt drei validierte IRQ0-Frames an und
+meldete `TIMER_IRQ_OK` geordnet vor dem Abschlussmarker. IF, IRQ0, beide
+PIC-Masken und die temporaere Generation waren davor restauriert. Die Queue
+ist wieder leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

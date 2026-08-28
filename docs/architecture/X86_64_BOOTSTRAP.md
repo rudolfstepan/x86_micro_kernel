@@ -223,7 +223,7 @@ Architekturzustande und vollstaendiger Framefreigabe erschien
 `REIST_X86_64_PROCESS_SCHEDULER_OK` zwischen `USER_EXECUTION_OK` und
 `EXCEPTION_RECOVERY_OK`.
 
-## Geplante Abnahme R8.1h
+## Abnahme R8.1h
 
 Die feste IDT wird ausschliesslich um den standardmaessigen PIC-IRQ0-Vektor 32
 erweitert. Beide PIC-Masken werden vor dem Remap auf 32/40 gesichert; nur
@@ -236,3 +236,12 @@ Der Warteloop besitzt eine feste TSC-Obergrenze und verwendet kein `HLT`. Vor
 `REIST_X86_64_TIMER_IRQ_OK` muessen IF deaktiviert, IRQ0 wieder maskiert, beide
 gesicherten PIC-Masken restauriert und die temporaere Generation inaktiv sein.
 CPL3-Praeemption, LAPIC, IOAPIC und SMP bleiben offen.
+
+Alle 27 Quellvertragstests bestanden. Der warnungsfreie Windows-Build erzeugte
+ein 68.888-Byte-Bootstrap bei unveraendertem 9.264-Byte-ELF64-Probeabbild. Der
+Ein-vCPU-/32-MiB-QEMU-Lauf nahm genau drei Vektor-32-Frames an und meldete
+`REIST_X86_64_TIMER_IRQ_OK` geordnet zwischen `PROCESS_SCHEDULER_OK` und
+`EXCEPTION_RECOVERY_OK`. Jeder Frame bestand Generation, CR3, Fehlercode,
+Kernel-CS, IF und Higher-Half-Text-RIP; drei Ereignisse erzeugten drei
+Master-EOIs. Danach waren IF, IRQ0, beide PIC-Masken und der temporaere Zustand
+restauriert.

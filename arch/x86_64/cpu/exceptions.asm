@@ -1,9 +1,10 @@
 ; Bounded exception-entry foundation for the isolated REIST x86_64 proof.
-; Hardware interrupts remain masked; this unit publishes only vectors 0..31.
+; R8.1h publishes exceptions 0..31 and exactly one maskable IRQ0 vector 32.
 
 BITS 64
 
 EXCEPTION_VECTOR_COUNT equ 32
+IDT_VECTOR_COUNT       equ 33
 IDT_GATE_SIZE         equ 16
 IDT_GATE_PRESENT_INT  equ 0x8E
 DOUBLE_FAULT_VECTOR   equ 8
@@ -32,6 +33,7 @@ extern x86_64_nx_probe_target
 extern x86_64_nx_resume
 extern x86_64_user_exception64
 extern x86_64_scheduler_user_exception64
+extern x86_64_timer_interrupt64
 
 x86_64_exception_init:
     cld
@@ -96,7 +98,7 @@ x86_64_exception_init:
     mov dword [rdi + 12], 0
     add rdi, IDT_GATE_SIZE
     inc ecx
-    cmp ecx, EXCEPTION_VECTOR_COUNT
+    cmp ecx, IDT_VECTOR_COUNT
     jb .gate_loop
 
     lea rax, [rel exception_idt]
@@ -168,6 +170,7 @@ EXCEPTION_NOERR 28
 EXCEPTION_ERR 29
 EXCEPTION_ERR 30
 EXCEPTION_NOERR 31
+EXCEPTION_NOERR 32
 
 exception_common:
     cld
@@ -187,6 +190,9 @@ exception_common:
     push r14
     push r15
 
+    cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 32
+    je .timer_interrupt
+
     mov rax, qword [rsp + EXCEPTION_FRAME_CS]
     and eax, 3
     jz .kernel_exception
@@ -197,6 +203,13 @@ exception_common:
     mov rdi, rsp
     call x86_64_scheduler_user_exception64
     jmp exception_fatal
+
+.timer_interrupt:
+    mov rdi, rsp
+    call x86_64_timer_interrupt64
+    test eax, eax
+    jz exception_fatal
+    jmp exception_resume
 
 .kernel_exception:
     cmp qword [rsp + EXCEPTION_FRAME_VECTOR], 6
@@ -288,7 +301,7 @@ newline_message db 13, 10, 0
 align 8
 exception_stub_table:
 %assign vector 0
-%rep EXCEPTION_VECTOR_COUNT
+%rep IDT_VECTOR_COUNT
     dd exception_stub_%+vector
 %assign vector vector + 1
 %endrep
@@ -311,7 +324,7 @@ exception_gdt_pointer:
     dq 0
 
 exception_idt_pointer:
-    dw (EXCEPTION_VECTOR_COUNT * IDT_GATE_SIZE) - 1
+    dw (IDT_VECTOR_COUNT * IDT_GATE_SIZE) - 1
     dq 0
 
 section .bss
@@ -320,7 +333,7 @@ exception_tss:
     resb TSS64_SIZE
 alignb 16
 exception_idt:
-    resb EXCEPTION_VECTOR_COUNT * IDT_GATE_SIZE
+    resb IDT_VECTOR_COUNT * IDT_GATE_SIZE
 alignb 16
 double_fault_ist_bottom:
     resb 16384

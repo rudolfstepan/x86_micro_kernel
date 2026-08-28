@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1h-x86_64-maskable-timer-irq"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10774,7 +10774,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1h-x86_64-maskable-timer-irq"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 maskable PIT interrupt foundation"
@@ -10823,7 +10823,15 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "cpu: add bounded x86_64 PIT interrupt proof"
-evidence = []
+evidence = [
+  "the final isolated x86_64 source contract passed all 27 tests covering the exact 33-entry IDT normalized IRQ0 routing standard PIC remap fixed PIT divisor TSC ceiling frame validation EOI count and cleanup",
+  "the warning-free Windows build linked a 68888-byte bootstrap and retained the independently linked 9264-byte ELF64 probe without changing any production i386 target",
+  "the one-vCPU 32-MiB QEMU runtime published TIMER_IRQ_OK after PROCESS_SCHEDULER_OK and before EXCEPTION_RECOVERY_OK within one second",
+  "the guest remapped the master and slave PIC to vectors 32 and 40 masked every line except PIT IRQ0 and programmed channel 0 with the fixed 11932 divisor for the standard 1193182-Hz source",
+  "exactly three generation-bound vector-32 kernel frames passed CR3 error selector flags and higher-half text-RIP validation and each admitted event issued exactly one master EOI",
+  "the fixed TSC deadline used no HLT; success disabled IF masked IRQ0 restored both saved PIC masks cleared temporary generation state and retained no CPL3 preemption authority",
+  "no LAPIC IOAPIC SMP production clock device HPASA physical-hardware or fail-operational claim was added and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

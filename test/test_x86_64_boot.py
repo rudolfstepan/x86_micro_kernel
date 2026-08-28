@@ -19,6 +19,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         target = makefile.split("x86_64-bootstrap:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("arch/x86_64/boot/entry.asm", target)
         self.assertIn("arch/x86_64/cpu/exceptions.asm", target)
+        self.assertIn("arch/x86_64/cpu/timer_interrupt.asm", target)
         self.assertIn("arch/x86_64/mm/physical_memory.asm", target)
         self.assertIn("arch/x86_64/user/probe.asm", target)
         self.assertIn("arch/x86_64/exec/elf64_loader.asm", target)
@@ -386,7 +387,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
             )
         }
         self.assertEqual(emitted_error, error_vectors)
-        self.assertEqual(emitted_plain, set(range(32)) - error_vectors)
+        self.assertEqual(emitted_plain, set(range(33)) - error_vectors)
         self.assertIn("EXCEPTION_FRAME_VECTOR equ (15 * 8)", source)
         for register in (
             "rax", "rbx", "rcx", "rdx", "rbp", "rsi", "rdi",
@@ -420,8 +421,36 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REIST_X86_64_ELF64_LOAD_OK", runner)
         self.assertIn("REIST_X86_64_USER_EXECUTION_OK", runner)
         self.assertIn("REIST_X86_64_PROCESS_SCHEDULER_OK", runner)
+        self.assertIn("REIST_X86_64_TIMER_IRQ_OK", runner)
         self.assertIn("REIST_X86_64_EXCEPTION_RECOVERY_OK", runner)
         self.assertIn("positions != sorted(positions)", runner)
+
+    def test_maskable_timer_irq_is_fixed_bounded_and_restored(self):
+        exception = self.read("arch/x86_64/cpu/exceptions.asm")
+        timer = self.read("arch/x86_64/cpu/timer_interrupt.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("IDT_VECTOR_COUNT       equ 33", exception)
+        self.assertIn("EXCEPTION_NOERR 32", exception)
+        self.assertIn("call x86_64_timer_interrupt64", exception)
+        self.assertIn("resb IDT_VECTOR_COUNT * IDT_GATE_SIZE", exception)
+        self.assertIn("PIC_MASTER_VECTOR         equ 0x20", timer)
+        self.assertIn("PIC_SLAVE_VECTOR          equ 0x28", timer)
+        self.assertIn("PIC_MASTER_IRQ0_ONLY      equ 0xFE", timer)
+        self.assertIn("PIT_INPUT_HZ              equ 1193182", timer)
+        self.assertIn("PIT_TARGET_HZ             equ 100", timer)
+        self.assertIn("PIT_DIVISOR               equ 11932", timer)
+        self.assertIn("TIMER_EXPECTED_TICKS      equ 3", timer)
+        self.assertIn("TSC_DEADLINE_CYCLES       equ 3000000000", timer)
+        self.assertIn("rdtsc", timer)
+        self.assertIn("cmp rax, qword [rel timer_deadline]", timer)
+        self.assertNotIn("hlt", timer.lower())
+        self.assertIn("cmp qword [rdi + EXCEPTION_FRAME_VECTOR], TIMER_VECTOR", timer)
+        self.assertIn("cmp qword [rdi + EXCEPTION_FRAME_CS], KERNEL_CODE_SELECTOR", timer)
+        self.assertIn("out PIC1_COMMAND, al", timer)
+        self.assertIn("timer_saved_master_mask", timer)
+        self.assertIn("timer_saved_slave_mask", timer)
+        self.assertIn("REIST_X86_64_TIMER_IRQ_OK", runner)
+        self.assertIn("REIST_X86_64_TIMER_IRQ_ERROR", runner)
 
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")

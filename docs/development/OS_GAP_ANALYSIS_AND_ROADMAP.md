@@ -142,11 +142,18 @@ generation-gebundenem CPL3-`UD2`, setzte Task A fort und akzeptierte dessen
 Abschlussmarker, nachdem die vierzehn Lebenszyklusereignisse validiert und
 CR3, TSS, Syscall-MSRs, Tasktabellen sowie alle Frames restauriert waren.
 
-**R8.1h ist aktiv:** Die naechste beschleunigte Scheibe buendelt die erste
+**R8.1h ist umgesetzt:** Die beschleunigte Scheibe buendelt die erste
 maskierbare Interrupt- und Clockgrundlage. Genau IDT-Vektor 32 nimmt nach
 Standard-PIC-Remap und festem 100-Hz-PIT-Setup drei validierte Kernel-IRQ0-
 Ereignisse an. Ein fester TSC-Abbruch verhindert ein unbegrenztes Warten.
 CPL3-Praeemption, LAPIC, IOAPIC und produktive Clockintegration folgen danach.
+
+Alle 27 Quellvertragstests und der warnungsfreie 68.888-Byte-Build bestanden.
+Der Ein-vCPU-/32-MiB-QEMU-Lauf nahm exakt drei generation- und
+framevalidierte IRQ0-Ereignisse an, sendete drei Master-EOIs und meldete
+`TIMER_IRQ_OK` vor dem Abschlussmarker. Die feste TSC-Grenze wurde nicht
+ausgeschoepft; IF, IRQ0, PIC-Masken und temporaere Generation waren vor Erfolg
+restauriert.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
