@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `ed2655b`
+Branch/Startpunkt: `working_branch` / `be0bd2e2`
 
-Aktives Thema: kein Paket aktiv; R8.1e ist abgeschlossen
+Aktives Thema: R8.1f – begrenzte x86_64-Ring-3-Ausfuehrungsgrundlage
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -70,6 +70,18 @@ Bootstrap mit einem unabhaengig gelinkten 9.008-Byte-ELF64-Probeabbild. Der
 Ein-vCPU-/32-MiB-QEMU-Lauf meldete `ELF64_LOAD_OK` geordnet zwischen
 `PHYSICAL_MEMORY_OK` und dem Abschlussmarker und stellte zuvor alle Frames
 sowie den urspruenglichen Freizaehler wieder her. Die Queue ist wieder leer.
+
+R8.1f ist nun das einzige aktive Paket. Es behaelt ein vollstaendig validiertes
+R8.1e-Abbild kontrolliert, bildet dessen hoechstens acht Seiten und genau eine
+getrennte NX-Stackseite in einer privaten statischen Vier-Ebenen-Hierarchie ab
+und betritt mit festen Selektoren und Flags einmal CPL3. Der einzige zulaessige
+Syscall ist die bestehende REIST-v1-Nummer 9 (`EXIT`) nach AMD64-Konvention.
+Ein zweiter Eintritt provoziert einen exakt gebundenen User-`UD2`; nur dieser
+CPL3-Fehler wird ueber TSS-RSP0 enthalten. Vor Erfolg muessen CR3 und
+Syscall-MSRs zurueckgesetzt, alle Userabbildungen geloescht und alle Frames
+freigegeben sein. Scheduler, allgemeine Syscalls und produktiver 64-Bit-
+Userspace bleiben spaeteren Paketen vorbehalten. HPASA bleibt ein eigenes,
+unabhaengiges Projekt.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

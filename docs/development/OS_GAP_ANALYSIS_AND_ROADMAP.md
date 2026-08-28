@@ -105,6 +105,17 @@ Ein-vCPU-/32-MiB-QEMU-Lauf meldete `ELF64_LOAD_OK` geordnet nach dem
 Speichernachweis und vor dem Abschlussmarker, nachdem alle staged Frames und
 der urspruengliche Freizaehler wiederhergestellt waren.
 
+**R8.1f ist in Arbeit:** Eine private feste Vier-Ebenen-Hierarchie soll das
+validierte ELF64-Abbild W^X-konform und genau eine getrennte User-Stackseite NX
+abbilden. Der erste kontrollierte `IRETQ`-Eintritt muss den bestehenden
+REIST-v1-`EXIT`-Syscall 9 ueber den AMD64-`SYSCALL`-Mechanismus erreichen; der
+Entry wechselt vor der Validierung auf den TSS-gebundenen Kernelstack und
+verwendet kein `SYSRET`. Ein zweiter Eintritt muss einen CPL3-`UD2` lokal
+enthalten. Erst nach Wiederherstellung des urspruenglichen CR3, Widerruf der
+temporaren Syscall-MSRs, Loeschung aller User-PTEs und vollstaendiger
+Framefreigabe darf der Erfolgsmarker erscheinen. Das ist noch kein Scheduler,
+allgemeiner Syscall-Dispatcher oder produktiver 64-Bit-Userspace.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

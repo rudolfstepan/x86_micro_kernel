@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.1f-x86_64-ring3-execution"
 
 [policy]
 one_package_per_run = true
@@ -10639,6 +10639,62 @@ evidence = [
   "the guest accepted at most two PT_LOAD segments staged and revalidated file plus BSS bytes through allocator-owned RW NX direct-map frames then restored every frame and the initial free count before success",
   "no Ring-3 transfer user page table syscall payload execution i386 target HPASA integration physical-hardware or fail-operational claim was added and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.1f-x86_64-ring3-execution"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add bounded x86_64 Ring-3 execution and exit ABI proof"
+scope = "Extend only the isolated x86_64 bootstrap with one fixed-capacity user-execution proof. Refactor the already validated R8.1e loader behind bounded retain query and release operations, create a private four-level user page table with only the existing supervisor higher-half kernel and NX direct-map entries plus at most eight ELF pages and one separate stack page, and derive every user PTE from the validated ELF W X metadata. Add DPL3 System-V AMD64 code and data selectors, a TSS RSP0 update and one controlled IRETQ entry with fixed flags. Configure the architectural SYSCALL MSRs for the existing append-only REIST SYS_EXIT number 9 and AMD64 register convention, accept only the expected exit status from an executable user return RIP, and never SYSRET an untrusted context. Execute the same probe a second time in fault mode and contain only its validated CPL3 UD2 through the kernel stack without treating it as a kernel exception. Restore the original CR3, disable and clear the temporary syscall state, clear all user mappings, free the stack and ELF frames, restore the initial free count and publish USER_EXECUTION_OK. Keep maskable interrupts, scheduling, multitasking, general syscall dispatch, production process integration, devices, HPASA and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/cpu/exceptions.asm",
+  "arch/x86_64/exec/elf64_loader.asm",
+  "arch/x86_64/proc/user_execution.asm",
+  "arch/x86_64/user/probe.asm",
+  "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all normal make Windows QEMU VMware real-hardware kernel userspace image and installer targets remain i386 by default and consume no x86_64 bootstrap user-execution object",
+  "the private user hierarchy publishes only fixed supervisor kernel and direct-map branches plus validated user ELF leaves and one NX stack leaf and no user page is writable executable",
+  "the ELF entry stack top selectors RFLAGS TSS RSP0 CR3 and every page-table address and permission are validated before IRETQ",
+  "SYSCALL follows the AMD64 architectural entry mechanism and REIST ABI number 9 with RAX as the number and RDI as status while every other number status context or return address fails closed",
+  "the syscall entry switches from the untrusted user stack to the fixed kernel stack before consuming the request and never uses SYSRET on an untrusted context",
+  "only a CPL3 vector-6 error-zero fault from an accepted executable ELF page in the explicit fault attempt is contained; every kernel or unexpected exception remains fatal",
+  "success requires one exact exit event and one exact contained user fault followed by original CR3 restoration syscall revocation zero user mappings full frame cleanup and initial free-count restoration",
+  "all loops tables transitions and cleanup paths have fixed compile-time bounds and maskable interrupts remain disabled",
+  "no scheduler multitasking general syscall dispatcher production userspace device DMA HPASA physical-hardware or fail-operational authority is introduced"
+]
+targeted_tests = [
+  "python test/test_x86_64_boot.py -v"
+]
+package_tests = [
+  ".\\scripts\\build-x86_64-bootstrap.ps1"
+]
+runtime_tests = [
+  "python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"
+]
+stop_conditions = [
+  "an existing i386 object flag linker script artifact path image layout syscall number or default target changes",
+  "a user mapping can expose an unvalidated physical frame supervisor table direct map or writable executable page",
+  "IRETQ or SYSCALL can consume an unvalidated selector flag stack entry number status return RIP or privilege level",
+  "a user fault can resume as a kernel probe or an unexpected kernel exception can enter the user containment path",
+  "cleanup can leave the temporary CR3 syscall MSR user mapping stack frame ELF frame or changed free count active",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "proc: add bounded x86_64 Ring-3 execution proof"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

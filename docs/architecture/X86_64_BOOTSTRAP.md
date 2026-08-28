@@ -160,3 +160,24 @@ Der auf eine vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf meldete
 `REIST_X86_64_PHYSICAL_MEMORY_OK` und
 `REIST_X86_64_EXCEPTION_RECOVERY_OK`. Der Nachweis gilt nicht fuer
 Payload-Ausfuehrung, Ring 3, physische Hardware oder HPASA.
+
+## Ziel und Abnahmekriterien R8.1f
+
+Der erste User-Ausfuehrungspfad bleibt auf dasselbe eingebettete ELF64-Abbild,
+hoechstens acht Abbildseiten und eine feste separate NX-Stackseite begrenzt.
+Eine private Vier-Ebenen-Hierarchie uebernimmt nur die bestehenden Supervisor-
+Eintraege fuer Higher-Half-Kernel und Direct Map; User-PTEs werden
+ausschliesslich aus den validierten ELF-Rechten abgeleitet. DPL3-Code und
+-Daten, TSS-RSP0, Entry, Stack und feste RFLAGS muessen vor `IRETQ` geprueft
+sein.
+
+Der Syscall-Nachweis folgt Intel 64 `SYSCALL`/`SWAPGS` und der System-V-AMD64-
+Registerkonvention. Nur der append-only REIST-v1-Index 9 (`EXIT`) mit dem
+erwarteten Status ist zulaessig. Der Entry muss vor dem Lesen des Requests auf
+den festen Kernelstack wechseln; `SYSRET` ist nicht zulaessig. Ein zweiter
+Eintritt provoziert `UD2`; nur Vektor 6 mit Fehlercode null, CPL3-Selektoren und
+einer RIP in einer validierten ausfuehrbaren ELF-Seite darf enthalten werden.
+Vor `REIST_X86_64_USER_EXECUTION_OK` muessen Original-CR3 und Kernelzustand
+wiederhergestellt, die temporaeren Syscall-MSRs deaktiviert, alle User-PTEs
+geloescht, alle Frames freigegeben und der urspruengliche Freizaehler erreicht
+sein.

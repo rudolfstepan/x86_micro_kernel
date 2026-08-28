@@ -117,6 +117,15 @@ Acht-Seiten-Fenster sind zulaessig. Staging und Verifikation erfolgen ueber
 R8.1d-Frames; alle Frames werden vor Erfolg zurueckgegeben. Die Scheibe
 installiert keine User-Seitentabellen und fuehrt das Probeabbild nicht aus.
 
+R8.1f begrenzt den ersten Ausfuehrungsnachweis auf eine private statische
+User-Seitentabelle, acht validierte ELF-Seiten und eine getrennte NX-
+Stackseite. Ein fester `IRETQ`-Kontext darf nur den vorhandenen REIST-v1-
+`EXIT`-Index 9 ueber die AMD64-`SYSCALL`-Registerkonvention melden. Der Entry
+wechselt vor jeder Auswertung auf den TSS-gebundenen Kernelstack und kehrt nie
+mit `SYSRET` in einen ungeprueften Kontext zurueck. Ein separater CPL3-`UD2`-
+Versuch prueft lokale Fehlerbegrenzung; Kernel-Exceptionen bleiben fatal.
+Dieser Nachweis fuehrt weder Scheduler noch allgemeine Syscalls ein.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

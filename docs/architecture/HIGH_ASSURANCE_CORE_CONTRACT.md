@@ -92,6 +92,16 @@ publiziert; jeder Pfad gibt seine begrenzten Frames zurueck und prueft den
 Freizaehler. Formatvalidierung und Segment-Staging allein erteilen weder
 Ausfuehrungs- noch Ring-3- oder Syscall-Autoritaet.
 
+Der erste x86_64-Ring-3-Nachweis verwendet ausschliesslich eine private feste
+Seitentabellenhierarchie, validierte ELF-W^X-Rechte und eine separate NX-
+Stackseite. Selektoren, Entry, Stack, RFLAGS, TSS-RSP0 und CR3 werden vor dem
+`IRETQ` festgelegt und geprueft. Der temporaere `SYSCALL`-Entry akzeptiert nur
+den bestehenden REIST-v1-`EXIT`-Index 9 mit dem erwarteten Status, wechselt vor
+der Auswertung vom User- auf den Kernelstack und verwendet kein `SYSRET`.
+Nur der explizite CPL3-`UD2`-Probe darf als Userfehler enthalten werden;
+unerwartete oder Ring-0-Exceptionen bleiben fatal. Erfolg setzt Widerruf aller
+temporaeren Abbildungen und MSRs sowie vollstaendige Framefreigabe voraus.
+
 Bootartefakte müssen versioniert und ihre exakten Inhalte kryptografisch
 gebunden sein. Der aktuelle BIOS-Pfad verwendet ein Manifest-v3-Format mit
 SHA-256 nach NIST FIPS 180-4, eingebetteter RSA-PSS-Signatur und einen
