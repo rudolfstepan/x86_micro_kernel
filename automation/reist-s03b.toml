@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2d-x86_64-c-kernel-control"
 
 [policy]
 one_package_per_run = true
@@ -11265,6 +11265,45 @@ evidence = [
   "the bounded one-vCPU 32-MiB QEMU dialogue preserved all accepted markers sent exact INFO and EXIT commands and observed RING3_SHELL_EXIT_OK SCHEDULED_SHELL_OK and RING3_SHELL_OK after cleanup",
   "the final shell generation was reaped with an empty runqueue zeroed task record and tables restored loader selector TSS syscall MSRs frames and free count; no VFS driver SMP device or physical-hardware authority was added and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2d-x86_64-c-kernel-control"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Transfer the scheduled x86_64 shell lifecycle to the freestanding C kernel"
+scope = "Move the first real boot orchestration step from the x86_64 assembly sequence into the accepted freestanding C kernel without changing the scheduled shell process or any production i386 target. After the existing C-core validation and C_CORE_HANDOFF_OK marker, assembly must construct a separate packed version-1 64-byte control handoff in the fixed C BSS page. It authorizes exactly service 1 generation 1 with the existing four-slot runqueue and syscall ABI version 1; all reserved fields remain zero. A new C control entry validates the exact handoff address version size flags service generation capacities ABI and reserved bytes before any effect, snapshots it within a fixed bound, and invokes one fixed-address assembly adapter. The adapter validates generation IF kernel CR3 and an exclusive local lease, preserves the SysV AMD64 callee-saved contract, invokes only x86_64_process_shell64, clears the lease on every return, and exposes no other service. C must clear the control handoff, publish C_KERNEL_CONTROL_OK only after the scheduler has returned with its existing exact reap and cleanup, and return to assembly; assembly revalidates the zeroed handoff inactive lease kernel CR3 and IF before the unchanged final RING3_SHELL_OK marker. Preserve every prior marker and its relative order. Keep VFS general process creation terminals drivers devices SMP physical hardware and claims of a complete x86_64 kernel outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/kernel/bootstrap_core.c", "arch/x86_64/kernel/bootstrap_core.h",
+  "config/x86_64_bootstrap.ld", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 artifacts syscall numbers scheduled-shell semantics and previously accepted x86_64 markers remain behaviorally unchanged and ordered",
+  "the control ABI is a separate packed append-only version-1 64-byte structure at one fixed mapped C-BSS address and does not alter the accepted 128-byte bootstrap handoff",
+  "C validates exact address version size flags service generation capacities syscall ABI and every reserved byte before invoking the shell adapter",
+  "the adapter accepts only service generation 1 under kernel CR3 with interrupts disabled and one exclusive bounded lease and calls only x86_64_process_shell64",
+  "the assembly adapter preserves the SysV AMD64 callee-saved register and stack-alignment contract around the scheduler call",
+  "C_KERNEL_CONTROL_OK is emitted only after the scheduled shell has exited reaped and cleaned its queue task tables loader TSS syscall MSRs frames and free count",
+  "success clears the complete control handoff and lease and assembly revalidates them plus kernel CR3 and IF before the unchanged final marker",
+  "the package adds no VFS dynamic spawn terminal driver device DMA SMP physical-hardware complete-kernel or fail-operational authority"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an i386 artifact prior marker syscall number or scheduled-shell lifecycle changes",
+  "C can invoke an unvalidated callback service generation pointer or ambient authority",
+  "the adapter can reenter while leased leaves the lease active or violates the C ABI register or stack contract",
+  "the C success marker or final shell marker can appear before scheduler and control cleanup is complete",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "kernel: hand scheduled x86_64 shell control to C"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

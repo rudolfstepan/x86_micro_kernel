@@ -407,3 +407,17 @@ oder produktive i386-Autoritaet ein. Die Abnahme umfasst 42 Quellvertragstests,
 den isolierten Build und den begrenzten Ein-vCPU-/32-MiB-QEMU-Dialog. Nach dem
 exakten Reap und der vollstaendigen Bereinigung meldet der Gast geordnet
 `RING3_SHELL_EXIT_OK`, `SCHEDULED_SHELL_OK` und `RING3_SHELL_OK`.
+
+## Aktiver C-Kernel-Control-Schnitt R8.2d
+
+R8.2d behaelt den 128-Byte-Bootstrap-Handoff unveraendert und fuegt einen
+getrennten gepackten 64-Byte-Control-Handoff Version 1 hinzu. Nach dem
+abgenommenen C-Core-Nachweis autorisiert er genau Shell-Service 1 als
+Generation 1 mit den vorhandenen festen Kapazitaeten und Syscall-ABI Version 1.
+Der C-Kern validiert Adresse und alle Felder vor dem ersten Effekt und erreicht
+den Scheduler nur ueber einen festen Assembly-Adapter, der Kernel-CR3, IF und
+eine exklusive Lease prueft und die SysV-ABI erhaelt. C loescht den Vertrag und
+meldet Erfolg erst nach Rueckkehr des vollstaendig bereinigten Shell-
+Lifecycles; Assembly prueft den autoritaetsfreien Zustand erneut vor dem
+unveraenderten finalen Marker. Der Schnitt fuehrt keine allgemeine Spawn-, VFS-,
+Terminal-, Geraete- oder SMP-Autoritaet ein.

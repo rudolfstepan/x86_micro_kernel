@@ -2,9 +2,9 @@
 
 Stand: 28. August 2026
 
-Branch/Startpunkt: `working_branch` / `ccc8878`
+Branch/Startpunkt: `working_branch` / `b351f7c6`
 
-Aktives Thema: keines – R8.2c ist abgeschlossen
+Aktives Thema: R8.2d – x86_64-Bootkontrolle im freestanding-C-Kern
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -197,6 +197,15 @@ der begrenzte Ein-vCPU-/32-MiB-QEMU-Dialog bis `SCHEDULED_SHELL_OK` und
 Syscall-MSRs, Frames und Freizaehler waren vor Erfolg bereinigt. VFS,
 allgemeine Terminals, Treiber, Prioritaeten, SMP und i386 blieben unveraendert;
 die Queue ist leer.
+
+R8.2d ist aktiv. Nach dem unveraenderten C-Core-Handoff soll Assembly einen
+getrennten gepackten 64-Byte-Control-Vertrag publizieren. Der freestanding-C-
+Kern validiert daraus genau Shell-Service 1/Generation 1 und ruft ueber einen
+festen, lease-geschuetzten Adapter den bereits abgenommenen Schedulerpfad auf.
+Erst nach dessen Reap und Cleanup loescht C den Control-Vertrag und meldet
+`C_KERNEL_CONTROL_OK`; Assembly prueft Vertrag, Lease, CR3 und IF erneut vor
+dem bestehenden finalen Shellmarker. VFS, allgemeine Prozessdienste, Treiber,
+SMP und i386 bleiben ausserhalb.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt

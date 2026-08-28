@@ -253,6 +253,15 @@ Ein-vCPU-QEMU-Dialog bis `SCHEDULED_SHELL_OK` und `RING3_SHELL_OK` bestanden;
 die x86_64-Queue ist leer. VFS, allgemeine Terminaltreiber, Prioritaeten, SMP
 und produktive i386-Integration bleiben getrennte Schritte.
 
+**R8.2d ist in Arbeit:** Der erste echte Boot-Orchestrierungsschritt wechselt
+von Assembly in den freestanding-C-Kern. Ein getrennter gepackter 64-Byte-
+Control-Handoff autorisiert ausschliesslich den bestehenden Scheduler-Shell-
+Service als Generation 1. C validiert alle Felder vor dem festen Adapteraufruf
+und loescht den Vertrag erst nach Shell-Reap und Ressourcenbereinigung. Der
+Adapter bleibt lease-geschuetzt, erhaelt die SysV-ABI und bietet keine weitere
+Autoritaet. VFS, allgemeine Prozessdienste, Terminals, Treiber, SMP und die
+produktive x86_64-Integration bleiben Folgearbeiten.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget
