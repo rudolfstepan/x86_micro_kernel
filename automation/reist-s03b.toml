@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1j-x86_64-recurring-quantum-switch"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10883,7 +10883,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1j-x86_64-recurring-quantum-switch"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 recurring quantum context-switch proof"
@@ -10921,7 +10921,16 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: add bounded x86_64 recurring quantum proof"
-evidence = []
+evidence = [
+  "all 29 isolated x86_64 source-contract tests passed, including exact four-tick ordering, full interrupted AMD64 context storage, private progress and cleanup",
+  "the warning-free Windows build linked a 73820-byte bootstrap embedding the independently linked 9688-byte ELF64 probe without changing any production i386 target",
+  "the one-vCPU 32-MiB QEMU runtime published QUANTUM_SWITCH_OK after TIMER_PREEMPTION_OK and before EXCEPTION_RECOVERY_OK within one second",
+  "exactly four validated vector-32 events and four master EOIs produced the finite A B A B A sequence while each task retained its generation-owned context and private writable progress",
+  "the final tick transitioned and reaped only task B, resumed task A with the bounded completion signal, and accepted exact REIST EXIT 9 status 103",
+  "the IRQ contract preserved ordinary OF and RF context while rejecting TF DF IOPL NT VM AC VIF VIP and ID before state mutation or EOI",
+  "success and failure cleanup restore timer PIC masks IF CR3 TSS syscall MSRs tables task records frames and the initial free count",
+  "no dynamic task creation priorities sleep wait general fairness SMP LAPIC IOAPIC production clock device DMA HPASA physical-hardware or fail-operational authority was added and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

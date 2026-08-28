@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: R8.1j – begrenzter x86_64-Round-Robin-Quantennachweis
+Aktives Thema: keines – R8.1j abgeschlossen, Queue leer
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -138,13 +138,19 @@ Freizaehler restauriert. Wiederkehrende Quanten, Fairness und produktive
 Schedulerintegration bleiben spaeteren Paketen vorbehalten. R8.1j folgt als
 naechste begrenzte Scheibe.
 
-R8.1j ist aktiv. Zwei CPU-gebundene private CPL3-Generationen muessen ueber
-genau vier PIT-Quanten in der festen Folge A-B-A-B-A laufen. Jeder IRQ speichert
+R8.1j ist abgeschlossen. Zwei CPU-gebundene private CPL3-Generationen laufen
+ueber genau vier PIT-Quanten in der festen Folge A-B-A-B-A. Jeder IRQ speichert
 den vollstaendigen unterbrochenen AMD64- und IRET-Kontext erst nach exakter
-Framevalidierung. Beide Tasks muessen unabhaengigen privaten Fortschritt
-beweisen; nach Tick vier wird nur B reaptiert und A beendet den Nachweis mit
-`EXIT` 9/Status 103. Dynamische Tasks, Prioritaeten, allgemeine Fairness, SMP
-und produktive Schedulerintegration bleiben ausserhalb des Pakets.
+Framevalidierung. Beide Tasks beweisen unabhaengigen privaten Fortschritt; nach
+Tick vier wird nur B reaptiert und A beendet den Nachweis mit `EXIT` 9/Status
+103. Alle 29 Quellvertragstests bestanden. Der warnungsfreie Build erzeugte
+ein 73.820-Byte-Bootstrap mit einem 9.688-Byte-ELF64-Probeabbild. Der kurze
+Ein-vCPU-/32-MiB-QEMU-Lauf meldete `QUANTUM_SWITCH_OK` geordnet vor dem
+Abschlussmarker. Vier IRQs erzeugten vier Master-EOIs; Timer, PIC-Masken, IF,
+CR3, TSS, Syscall-MSRs, Tabellen, Taskrecords, Frames und Freizaehler waren vor
+Erfolg restauriert. Dynamische Tasks, Prioritaeten, allgemeine Fairness, SMP
+und produktive Schedulerintegration bleiben ausserhalb des Pakets. Die Queue
+ist wieder leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

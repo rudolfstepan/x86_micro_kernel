@@ -156,12 +156,13 @@ akzeptiert. Vor dem Erfolgsmarker sind PIC-Masken, IF, CR3, TSS, Syscall-MSRs,
 Tabellen, Taskrecords und Frames restauriert. Das ist noch kein periodischer
 Produktionsscheduler.
 
-R8.1j soll darauf einen endlichen Round-Robin-Kontextwechsel nachweisen. Genau
-vier validierte PIT-Quanten duerfen zwei private CPL3-Generationen in der Folge
-A-B-A-B-A fortsetzen. Der vollstaendige unterbrochene Register- und IRET-
-Kontext muss generation-gebunden bleiben. Dieser feste Nachweis fuehrt noch
-keine dynamischen Tasks, Prioritaeten, allgemeine Fairness oder produktive
-x86_64-Schedulerautoritaet ein.
+R8.1j weist darauf einen endlichen Round-Robin-Kontextwechsel nach. Genau vier
+validierte PIT-Quanten setzen zwei private CPL3-Generationen in der Folge
+A-B-A-B-A fort. Der vollstaendige unterbrochene Register- und IRET-Kontext
+bleibt generation-gebunden; beide Tasks zeigen eigenen privaten Fortschritt.
+Der vierte Tick reapt nur B und A beendet mit Status 103. Dieser feste Nachweis
+fuehrt noch keine dynamischen Tasks, Prioritaeten, allgemeine Fairness oder
+produktive x86_64-Schedulerautoritaet ein.
 
 ## Minimaler REIST-Kern
 

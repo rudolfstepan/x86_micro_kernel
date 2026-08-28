@@ -167,12 +167,19 @@ validierte den zehnteiligen Lebenszyklus, meldete `TIMER_PREEMPTION_OK` geordnet
 vor dem Abschlussmarker und stellte PIC-Masken, IF, CR3, TSS, Syscall-MSRs,
 Tabellen, Taskrecords, Frames und den urspruenglichen Freizaehler wieder her.
 
-**R8.1j ist aktiv:** Der einmalige Preemption-Pfad wird zu einem endlichen
+**R8.1j ist umgesetzt:** Der einmalige Preemption-Pfad ist zu einem endlichen
 Round-Robin-Nachweis mit genau vier PIT-Quanten erweitert. Zwei CPU-gebundene
-CPL3-Tasks muessen in der festen Folge A-B-A-B-A ihre vollstaendigen
-unterbrochenen Kontexte fortsetzen und unabhaengigen privaten Fortschritt
-zeigen. Danach wird nur B reaptiert und A beendet mit `EXIT` 9/Status 103.
-Allgemeine Fairness und produktive Schedulerintegration bleiben offen.
+CPL3-Tasks setzen in der festen Folge A-B-A-B-A ihre vollstaendigen
+unterbrochenen Kontexte fort und zeigen unabhaengigen privaten Fortschritt.
+Danach wird nur B reaptiert und A beendet mit `EXIT` 9/Status 103.
+
+Alle 29 Quellvertragstests und der warnungsfreie 73.820-Byte-Build mit dem
+9.688-Byte-ELF64-Probeabbild bestanden. Der Ein-vCPU-/32-MiB-QEMU-Lauf nahm
+exakt vier validierte IRQs und vier Master-EOIs an und meldete
+`QUANTUM_SWITCH_OK` vor dem Abschlussmarker. Die vollstaendige Bereinigung
+stellte Timer, PIC-Masken, IF, CR3, TSS, Syscall-MSRs, Tabellen, Taskrecords,
+Frames und Freizaehler wieder her. Allgemeine Fairness und produktive
+Schedulerintegration bleiben offen.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

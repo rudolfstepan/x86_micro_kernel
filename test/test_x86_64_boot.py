@@ -486,6 +486,39 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("REIST_X86_64_TIMER_PREEMPTION_OK", runner)
         self.assertIn("REIST_X86_64_TIMER_PREEMPTION_ERROR", runner)
 
+    def test_recurring_quantum_switch_saves_complete_bounded_context(self):
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        timer = self.read("arch/x86_64/cpu/timer_interrupt.asm")
+        probe = self.read("arch/x86_64/user/probe.asm")
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("SCHEDULER_MODE_QUANTUM     equ 3", scheduler)
+        self.assertIn("QUANTUM_EXPECTED_TICKS    equ 4", timer)
+        self.assertIn("x86_64_process_quantum_selftest64:", scheduler)
+        self.assertIn("x86_64_scheduler_quantum_validate64:", scheduler)
+        self.assertIn("x86_64_scheduler_quantum_switch64:", scheduler)
+        self.assertIn("x86_64_scheduler_timer_abort64:", scheduler)
+        self.assertIn("call x86_64_scheduler_timer_abort64", timer)
+        quantum = timer.index(".quantum:")
+        validate = timer.index("call x86_64_scheduler_quantum_validate64", quantum)
+        eoi = timer.index("out PIC1_COMMAND, al", validate)
+        switch = timer.index("call x86_64_scheduler_quantum_switch64", eoi)
+        self.assertLess(validate, eoi)
+        self.assertLess(eoi, switch)
+        for register in (
+            "RAX", "RBX", "RCX", "RDX", "RBP", "RSI", "RDI", "R8",
+            "R9", "R10", "R11", "R12", "R13", "R14", "R15",
+        ):
+            self.assertIn(f"EXCEPTION_FRAME_{register}", scheduler)
+            self.assertIn(f"TASK_{register}", scheduler)
+        self.assertIn("scheduler_quantum_events:", scheduler)
+        self.assertIn("quantum_task_a:", probe)
+        self.assertIn("quantum_task_b:", probe)
+        self.assertIn("mov edi, 103", probe)
+        self.assertIn("call x86_64_process_quantum_selftest64", entry)
+        self.assertIn("REIST_X86_64_QUANTUM_SWITCH_OK", runner)
+        self.assertIn("REIST_X86_64_QUANTUM_SWITCH_ERROR", runner)
+
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")
         self.assertIn("kein vollstaendiger REIST-Kernel", contract)

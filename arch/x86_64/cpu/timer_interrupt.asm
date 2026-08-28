@@ -25,8 +25,11 @@ TIMER_VECTOR              equ 32
 TIMER_EXPECTED_TICKS      equ 3
 TIMER_GENERATION          equ 1
 PREEMPT_GENERATION        equ 2
+QUANTUM_GENERATION        equ 3
 TIMER_MODE_SELFTEST       equ 1
 TIMER_MODE_PREEMPT        equ 2
+TIMER_MODE_QUANTUM        equ 3
+QUANTUM_EXPECTED_TICKS    equ 4
 TSC_DEADLINE_CYCLES       equ 3000000000
 KERNEL_CODE_SELECTOR      equ 0x08
 RFLAGS_IF                 equ 0x0000000000000200
@@ -44,6 +47,8 @@ global x86_64_timer_interrupt64
 global x86_64_timer_preemption_arm64
 global x86_64_timer_preemption_cancel64
 global x86_64_timer_preemption_disarm64
+global x86_64_timer_quantum_arm64
+global x86_64_timer_quantum_disarm64
 
 extern pml4_table
 extern _text_start
@@ -51,6 +56,9 @@ extern _text_end
 extern serial_write64
 extern x86_64_scheduler_timer_preempt64
 extern x86_64_scheduler_timer_validate64
+extern x86_64_scheduler_quantum_switch64
+extern x86_64_scheduler_quantum_validate64
+extern x86_64_scheduler_timer_abort64
 
 x86_64_timer_interrupt_selftest64:
     cli
@@ -170,6 +178,8 @@ x86_64_timer_interrupt64:
     jne .invalid
     cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
     je .preempt
+    cmp byte [rel timer_mode], TIMER_MODE_QUANTUM
+    je .quantum
     cmp dword [rel timer_generation], TIMER_GENERATION
     jne .invalid
     mov rax, cr3
@@ -228,7 +238,45 @@ x86_64_timer_interrupt64:
     call x86_64_scheduler_timer_preempt64
     xor eax, eax
     ret
+.quantum:
+    cmp dword [rel timer_generation], QUANTUM_GENERATION
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_VECTOR], TIMER_VECTOR
+    jne .invalid
+    cmp qword [rdi + EXCEPTION_FRAME_ERROR], 0
+    jne .invalid
+    cmp dword [rel timer_ticks], QUANTUM_EXPECTED_TICKS
+    jae .invalid
+    rdtsc
+    shl rdx, 32
+    mov eax, eax
+    or rax, rdx
+    cmp rax, qword [rel timer_deadline]
+    ja .invalid
+    call x86_64_scheduler_quantum_validate64
+    test eax, eax
+    jz .invalid
+    inc dword [rel timer_ticks]
+    inc dword [rel timer_eoi_count]
+    cmp dword [rel timer_ticks], QUANTUM_EXPECTED_TICKS
+    jne .quantum_eoi
+    mov al, PIC_ALL_MASKED
+    out PIC1_DATA, al
+.quantum_eoi:
+    mov al, PIC_EOI
+    out PIC1_COMMAND, al
+    mov esi, dword [rel timer_ticks]
+    call x86_64_scheduler_quantum_switch64
+    xor eax, eax
+    ret
 .invalid:
+    cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
+    je .abort_scheduler
+    cmp byte [rel timer_mode], TIMER_MODE_QUANTUM
+    jne .invalid_return
+.abort_scheduler:
+    call x86_64_scheduler_timer_abort64
+.invalid_return:
     xor eax, eax
     ret
 
@@ -349,11 +397,38 @@ x86_64_timer_preemption_disarm64:
     xor eax, eax
     ret
 
+x86_64_timer_quantum_arm64:
+    call x86_64_timer_preemption_arm64
+    test rax, rax
+    jz .quantum_arm_fail
+    mov dword [rel timer_generation], QUANTUM_GENERATION
+    mov byte [rel timer_mode], TIMER_MODE_QUANTUM
+    ret
+.quantum_arm_fail:
+    xor eax, eax
+    ret
+
+x86_64_timer_quantum_disarm64:
+    cli
+    cmp byte [rel timer_mode], TIMER_MODE_QUANTUM
+    jne .quantum_disarm_fail
+    cmp dword [rel timer_ticks], QUANTUM_EXPECTED_TICKS
+    jne .quantum_disarm_fail
+    cmp dword [rel timer_eoi_count], QUANTUM_EXPECTED_TICKS
+    jne .quantum_disarm_fail
+    call timer_cleanup64
+    ret
+.quantum_disarm_fail:
+    xor eax, eax
+    ret
+
 ; Idempotent failure cleanup. It grants no success for a conflicting active
 ; timer mode, but restores every partially or fully armed preemption state.
 x86_64_timer_preemption_cancel64:
     cli
     cmp byte [rel timer_mode], TIMER_MODE_PREEMPT
+    je .cancel
+    cmp byte [rel timer_mode], TIMER_MODE_QUANTUM
     je .cancel
     cmp byte [rel timer_active], 0
     jne .cancel_fail

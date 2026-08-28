@@ -264,7 +264,7 @@ und der vollstaendigen Wiederherstellung erschien
 `REIST_X86_64_TIMER_PREEMPTION_OK` zwischen `TIMER_IRQ_OK` und
 `EXCEPTION_RECOVERY_OK`.
 
-## Geplante Abnahme R8.1j
+## Abnahme R8.1j
 
 Eine feste vierteilige PIT-Generation schaltet zwei private CPU-gebundene
 CPL3-Tasks exakt in der Folge A-B-A-B-A um. Jeder IRQ validiert Generation,
@@ -274,3 +274,12 @@ Tasks muessen aus dem unterbrochenen Kontext fortfahren und unabhaengigen
 privaten Fortschritt erzeugen. Tick vier reapt nur B und signalisiert A den
 begrenzten Abschluss; A bestaetigt ihre private Datenseite und liefert `EXIT`
 9/Status 103. Ein globales TSC-Limit begrenzt den gesamten Nachweis.
+
+Alle 29 Quellvertragstests bestanden. Der warnungsfreie Windows-Build erzeugte
+ein 73.820-Byte-Bootstrap und ein 9.688-Byte-ELF64-Probeabbild. Der auf eine
+vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf nahm genau vier validierte
+CPL3-Vektor-32-Frames und vier Master-EOIs an. Beide privaten Tasks setzten
+ihren vollstaendigen unterbrochenen Kontext mit eigenem Fortschritt fort. Tick
+vier reapte nur B; A lieferte danach `EXIT` 9/Status 103. Erst nach der
+vollstaendigen Wiederherstellung erschien `REIST_X86_64_QUANTUM_SWITCH_OK`
+zwischen `TIMER_PREEMPTION_OK` und `EXCEPTION_RECOVERY_OK`.
