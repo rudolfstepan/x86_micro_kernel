@@ -40,6 +40,28 @@ REIST_MEMORY_FAULT_MARKER = "REIST_MEMORY_FAULT_INJECTION_OK"
 REIST_RUNTIME_DEGRADATION_MARKER = (
     "REIST_RUNTIME_DEGRADATION CLOCK_SAFE IRQ_FENCED"
 )
+REIST_RESILIENT_PAGE_COMMIT_MARKER = (
+    "REIST_RESILIENT_PAGE COMMIT_OK generation=2"
+)
+REIST_RESILIENT_PAGE_DEGRADED_MARKER = (
+    "REIST_RESILIENT_PAGE DEGRADED_DATA_OK generation=2"
+)
+REIST_RESILIENT_PAGE_UNRELATED_MARKER = (
+    "REIST_RESILIENT_PAGE UNRELATED_OK generation=1"
+)
+REIST_RESILIENT_PAGE_REBUILD_MARKER = (
+    "REIST_RESILIENT_PAGE REBUILD_OK generation=2 domain=C"
+)
+REIST_RESILIENT_PAGE_COMPLETION_MARKER = (
+    "REIST_RESILIENT_PAGE BOOT_PROOF_OK objects=2"
+)
+REIST_RESILIENT_PAGE_BOOT_MARKERS = (
+    REIST_RESILIENT_PAGE_COMMIT_MARKER,
+    REIST_RESILIENT_PAGE_DEGRADED_MARKER,
+    REIST_RESILIENT_PAGE_UNRELATED_MARKER,
+    REIST_RESILIENT_PAGE_REBUILD_MARKER,
+    REIST_RESILIENT_PAGE_COMPLETION_MARKER,
+)
 REIST_SERVICE_MARKER = "TEST_STAGE DIAGNOSTIC_SERVICE_OK"
 REIST_SERVICE_CORRELATION_MARKER = "TEST_STAGE SERVICE_CORRELATION_OK"
 REIST_NETWORK_MARKER = "TEST_STAGE NETWORK_PARSER_OK"
@@ -152,6 +174,7 @@ FAIL_MARKERS = (
     "REIST_NETWORK DHCP_RENEWAL_REJECTED",
     "REIST_NETWORK UDP_ECHO_REJECTED",
     "REIST_WCET REJECT",
+    "REIST_RESILIENT_PAGE BOOT_PROOF_FAIL",
 )
 
 
@@ -1552,6 +1575,7 @@ def validate(
     expect_network_udp_ingress: bool = False,
     expect_memory_fault: bool = False,
     expect_runtime_degradation: bool = False,
+    expect_resilient_page_boot_proof: bool = False,
     boot_only: bool = False,
     wcet_budget: dict[str, int] | None = None,
 ) -> str | None:
@@ -1590,6 +1614,18 @@ def validate(
             transcript, REIST_RUNTIME_DEGRADATION_MARKER)
         if degradation < 0 or degradation > boot:
             return "missing pre-boot runtime degradation marker"
+    if expect_resilient_page_boot_proof:
+        positions = []
+        lines = [line.rstrip("\r") for line in transcript.splitlines()]
+        for marker in REIST_RESILIENT_PAGE_BOOT_MARKERS:
+            count = lines.count(marker)
+            if count == 0:
+                return f"missing resilient-page boot marker {marker!r}"
+            if count != 1:
+                return f"duplicate resilient-page boot marker {marker!r}"
+            positions.append(exact_line_position(transcript, marker))
+        if positions != sorted(positions) or positions[-1] > boot:
+            return "resilient-page boot markers are out of order"
     if not (expect_dhcp_expiry or expect_dhcp_renewal) and exact_line_position(
             transcript, SHELL_PROMPT, after=test) < 0:
         return f"missing {SHELL_PROMPT} prompt after {TEST_MARKER}"
@@ -1911,6 +1947,11 @@ def main() -> int:
         help="require pre-boot clock-regression and IRQ-storm guard evidence",
     )
     parser.add_argument(
+        "--expect-resilient-page-boot-proof",
+        action="store_true",
+        help="require ordered simulated resilient-page recovery evidence",
+    )
+    parser.add_argument(
         "--expect-network-handoff",
         action="store_true",
         help="require a real NIC RX header to reach the Ring-3 service",
@@ -2208,6 +2249,7 @@ def main() -> int:
                             args.expect_network_udp_ingress,
                             args.expect_memory_fault,
                             args.expect_runtime_degradation,
+                            args.expect_resilient_page_boot_proof,
                             args.boot_only,
                             wcet_budget)
     if marker_error is None and args.expect_svga2d:

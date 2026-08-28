@@ -576,8 +576,11 @@ Ersatzslot erfolgen.
 
 R1.2a implementiert diesen Vertrag mit vier statischen Objektslots, drei
 simulierten Domänen und zwei Bänken je Objekt und Domäne. Der Hostnachweis
-deckt die Commitgrenzen und Fehlerzustände ab; R1.2b ergänzt den noch fehlenden
-compile-time-only Gastnachweis im realen Kernelimage.
+deckt die Commitgrenzen und Fehlerzustände ab. R1.2b hat den
+compile-time-only Gastnachweis im realen Kernelimage mit geordnetem
+Domänenverlust, unabhängiger Objektverfügbarkeit, festem Rebuild sowie
+anschließendem Userspace- und `TEST_OK`-Fortschritt abgeschlossen. Normale
+Kernelimages führen diese Kampagne nicht aus.
 
 ## Capability- und Ressourcenmodell
 

@@ -1141,7 +1141,7 @@ gleichgenerationigen Konflikt sowie erfolgreichen und unterbrochenen Rebuild.
 Der vollständige QEMU-VGA-Paketbuild linkt das Modul in das normale
 Kernelimage. R1.2a macht noch keinen Laufzeitclaim im Gast.
 
-##### R1.2b Resilienter Boot-Fehlernachweis — aktiv
+##### R1.2b Resilienter Boot-Fehlernachweis — abgeschlossen
 
 Ein ausschließlich im Testbuild vorhandener Bootpfad führt die feste
 Domänenverlust-/Rebuild-Kampagne einmal vor allgemeiner Prozessaufnahme aus.
@@ -1150,6 +1150,15 @@ Weiterbetrieb eines unabhängigen Objekts und validiertem HEALTHY-Rebuild
 ausgegeben. Der QEMU-Runner muss danach weiterhin Scheduler, Userspace und
 `TEST_OK` beobachten und Panic, Fehler, fehlende oder vertauschte Marker
 ablehnen.
+
+**Abnahme erfüllt:** Der compile-time-only QEMU-Gast meldet genau einmal und
+in Reihenfolge Commit-Generation 2, degradierte committed Daten, ein weiterhin
+lesbares unabhängiges Objekt, HEALTHY-Rebuild in die simulierte Domäne C und
+den Abschluss. Danach erreicht er ohne Desktop-Autostart die Userspace-Shell,
+den gezielten Unicode-Desktopprozess und `TEST_OK` innerhalb der festen
+180-Sekunden-Grenze. Der normale QEMU-VGA-Build besteht ohne Ausführung der
+Kampagne. Daraus folgt ausschließlich ein Softwarezustandsnachweis, keine
+physische Speicherfehler-Isolation.
 
 #### R1.3 Synchronisations- und Diagnosevertrag — M
 

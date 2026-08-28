@@ -29,6 +29,44 @@ RUNNER_SPEC.loader.exec_module(RUNNER_MODULE)
 
 
 class QemuGuestSmokeRunnerTests(unittest.TestCase):
+    def test_resilient_page_boot_proof_requires_unique_ordered_markers(self):
+        transcript = "\n".join((
+            *RUNNER_MODULE.REIST_RESILIENT_PAGE_BOOT_MARKERS,
+            "BOOT_OK", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIsNone(RUNNER_MODULE.validate(
+            transcript, expect_resilient_page_boot_proof=True))
+
+        missing = transcript.replace(
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_UNRELATED_MARKER + "\n", "")
+        self.assertIn("missing", RUNNER_MODULE.validate(
+            missing, expect_resilient_page_boot_proof=True))
+
+        reversed_markers = transcript.replace(
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_DEGRADED_MARKER + "\n" +
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_UNRELATED_MARKER,
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_UNRELATED_MARKER + "\n" +
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_DEGRADED_MARKER,
+        )
+        self.assertIn("out of order", RUNNER_MODULE.validate(
+            reversed_markers, expect_resilient_page_boot_proof=True))
+
+        duplicate = transcript.replace(
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_REBUILD_MARKER,
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_REBUILD_MARKER + "\n" +
+            RUNNER_MODULE.REIST_RESILIENT_PAGE_REBUILD_MARKER,
+        )
+        self.assertIn("duplicate", RUNNER_MODULE.validate(
+            duplicate, expect_resilient_page_boot_proof=True))
+
+        post_panic = "\n".join((
+            "PANIC: resilient page proof failed",
+            *RUNNER_MODULE.REIST_RESILIENT_PAGE_BOOT_MARKERS,
+            "BOOT_OK", "TEST_OK", "C:\\>", "",
+        ))
+        self.assertIn("failure marker", RUNNER_MODULE.validate(
+            post_panic, expect_resilient_page_boot_proof=True))
+
     def test_network_service_ap_requires_ready_before_ap_heartbeat(self):
         transcript = "\n".join((
             RUNNER_MODULE.REIST_NETWORK_SERVICE_READY_MARKER,

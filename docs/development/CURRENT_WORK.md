@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `c184674`
 
-Aktives Thema: R1.2b – `resilient_page`-Boot- und Gastnachweis
+Aktives Thema: R5.2x – physisches xHCI-HID-Control-Short-Packet
 
 Diese Datei ist der kompakte Wiedereinstiegspunkt. Maßgeblich bleiben Code,
 Tests und der lokale Diff.
@@ -20,7 +20,7 @@ Tests und der lokale Diff.
 - Der begrenzte SMP-Bootstrap ist als `ad8884e8` committed. Die aktuelle
   R6.2-Scheibe baut direkt darauf auf.
 
-## Aktiver Memory-Resilience-PoC
+## Abgeschlossener Memory-Resilience-PoC
 
 R2.2ai ist mit erhaltener Audio-/Surface-Implementierung beendet, aber nicht
 als vollständig bestanden markiert: Alle gezielten Gates und beide
@@ -36,12 +36,19 @@ die Nutzdaten. Der Host-Fault-Test besteht Commit-Unterbrechungen,
 Einzeldomänen- und Doppelverlust, stale Handles, CRC-/Konfliktfälle und den
 festen Rebuild. Der normale QEMU-VGA-Paketbuild linkt das Modul erfolgreich.
 
-R1.2b aktiviert dieselbe Kampagne ausschließlich in einem speziellen
-Testbuild einmal während des Kernelboots. Der Gast muss geordnet Degradation,
-unveränderte committed Daten, ein unabhängiges Objekt, Rebuild und HEALTHY
-validieren und danach normalen Scheduler-, Userspace- und `TEST_OK`-Fortschritt
-erreichen. Auch diese Stufe erteilt keine User-, DMA- oder Paging-Autorität und
-behauptet keine physische DIMM-/Rank-/Channel-Isolation.
+R1.2b ist ebenfalls abgeschlossen. Ein spezieller Testbuild führt die feste
+Kampagne einmal nach den Speichertests und vor allgemeiner Prozessaufnahme aus.
+Der QEMU-Gast validiert geordnet Commit, degradierte committed Daten, ein
+unabhängiges Objekt, Rebuild und HEALTHY, erreicht danach Shell, Userspace und
+`TEST_OK` und bleibt innerhalb einer festen 180-Sekunden-Grenze. Nur dieses
+Probeprofil überspringt den Desktop-Autostart. Normale Builds bleiben
+unverändert. Auch diese Stufe erteilt keine User-, DMA- oder Paging-Autorität
+und behauptet keine physische DIMM-/Rank-/Channel-Isolation.
+
+Als nächstes ist R5.2x aktiv: Die bereits beobachtete physische xHCI-HID-
+Control-Short-Packet-Störung wird zunächst mit exakten Setup-Paket- und
+Completion-Diagnosen eingegrenzt; VMware-Nichtregression und ein neues
+physisches Testimage bleiben verpflichtend.
 
 ## Erreichter stabiler Meilenstein
 

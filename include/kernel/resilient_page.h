@@ -8,6 +8,7 @@
 #ifndef KERNEL_RESILIENT_PAGE_H
 #define KERNEL_RESILIENT_PAGE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -66,6 +67,10 @@ resilient_page_result_t resilient_page_rebuild(
     resilient_page_handle_t handle);
 resilient_page_result_t resilient_page_get_state(
     resilient_page_handle_t handle, resilient_page_state_t *state_out);
+
+#ifdef REIST_RESILIENT_PAGE_BOOT_PROOF
+bool resilient_page_boot_proof(void);
+#endif
 
 #ifdef REIST_HOST_TEST
 typedef enum {

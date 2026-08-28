@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R1.2b-resilient-page-boot-proof"
+active_id = "R5.2x-xhci-control-short-packet"
 
 [policy]
 one_package_per_run = true
@@ -10080,7 +10080,7 @@ evidence = [
 
 [[packages]]
 id = "R1.2b-resilient-page-boot-proof"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Prove resilient-page degradation and rebuild in a real guest"
@@ -10131,10 +10131,17 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "memory: prove resilient page recovery at boot"
+evidence = [
+  "the focused memory-resilience contract and host campaign passed all four tests including compile-time exclusion boot ordering exact two-object capacity generation checks and fixed runtime wiring",
+  "the QEMU smoke-runner host suite passed all 46 tests and rejects missing reversed duplicate explicit-failure and post-panic resilient-page markers",
+  "the final normal QEMU-VGA package build passed in 12 seconds with the proof absent from the production execution path",
+  "the isolated memory-resilience runtime passed in 92 seconds with ordered commit degraded-data unrelated-object rebuild and completion markers before BOOT_OK followed by userspace TEST_OK progress",
+  "the proof-only profile skips desktop autostart reaches the userspace shell uses one fixed 180-second deadline and retains no user DMA PTE VFS or physical hardware-resilience claim"
+]
 
 [[packages]]
 id = "R5.2x-xhci-control-short-packet"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Diagnose and contain physical xHCI HID control short packets"

@@ -44,7 +44,7 @@ Die Bezeichnungen A und B beweisen zunächst keine Zuordnung zu verschiedenen
 DIMMs, Ranks oder Channels. Adress-Interleaving und herstellerspezifisches
 IMC-Hashing werden erst in einem eigenen Hardwarepaket untersucht.
 
-### Implementierungsstand R1.2a
+### Implementierungsstand R1.2a und R1.2b
 
 Der feste Objektvertrag ist implementiert und hostseitig geprüft. Vier Slots,
 drei simulierte Domänen und je zwei 4096-Byte-Bänke liegen vollständig in
@@ -54,8 +54,15 @@ dem Commit, Domänenverlust nach dem Commit, CRC-Verlust, widersprüchliche
 gleichgenerationige Replicas, Doppelverlust und Rebuild-Unterbrechung ab.
 
 R1.2b führt dieselbe Kampagne als compile-time-only Bootprobe im echten
-Kernelimage aus. Erst nach diesem Gastnachweis darf von einer im laufenden
-REIST-Kernel ausgeführten simulierten Degradation gesprochen werden.
+Kernelimage aus. Der Gast hat Commit-Generation 2, degradierte committed Daten,
+ein unabhängiges Objekt und den HEALTHY-Rebuild in die feste simulierte Domäne
+C geordnet validiert und danach `BOOT_OK`, Userspace sowie `TEST_OK` erreicht.
+Nur dieses Probeprofil überspringt den Desktop-Autostart, damit die Shell den
+vollständigen Gasttest ausführen kann; normale Builds bleiben unverändert.
+
+Damit ist eine im laufenden REIST-Kernel ausgeführte **simulierte** Degradation
+nachgewiesen. Physische DIMM-, Rank-, Channel-, IMC-, MCE- oder EDAC-Eigenschaften
+sind weiterhin weder geprüft noch behauptet.
 
 ## Funktionale Anforderungen
 

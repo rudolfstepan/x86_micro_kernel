@@ -16,6 +16,7 @@ param(
     [switch]$DhcpRenewFaultInjection,
     [switch]$VbeRuntimeTest,
     [switch]$RuntimeDegradationFaultInjection,
+    [switch]$ResilientPageBootProof,
     [switch]$DriverDomainFaultInjection,
     [switch]$Svga2dSmpLifecycleFaultInjection,
     [switch]$HdaSmpLifecycleFaultInjection,
@@ -185,6 +186,7 @@ try {
         dhcp_renew_fault_injection = [bool]$DhcpRenewFaultInjection
         vbe_runtime_test = [bool]$VbeRuntimeTest
         runtime_degradation_fault_injection = [bool]$RuntimeDegradationFaultInjection
+        resilient_page_boot_proof = [bool]$ResilientPageBootProof
         driver_domain_fault_injection = [bool]$DriverDomainFaultInjection
         svga2d_smp_lifecycle_fault_injection = [bool]$Svga2dSmpLifecycleFaultInjection
         hda_smp_lifecycle_fault_injection = [bool]$HdaSmpLifecycleFaultInjection
@@ -255,6 +257,9 @@ try {
     }
     if ($RuntimeDegradationFaultInjection) {
         $makeArguments += 'RUNTIME_DEGRADATION_FAULT_INJECTION=1'
+    }
+    if ($ResilientPageBootProof) {
+        $makeArguments += 'RESILIENT_PAGE_BOOT_PROOF=1'
     }
     if ($DriverDomainFaultInjection) {
         $makeArguments += 'DRIVER_DOMAIN_FAULT_INJECTION=1'

@@ -11,6 +11,10 @@
 
 #include <stdbool.h>
 
+#ifdef REIST_RESILIENT_PAGE_BOOT_PROOF
+#include "lib/libc/stdio.h"
+#endif
+
 #if !defined(__STDC_HOSTED__) || !__STDC_HOSTED__
 #include "arch/x86/include/interrupt.h"
 #endif
@@ -622,6 +626,122 @@ resilient_page_result_t resilient_page_get_state(
     resilient_page_unlock(irq_flags);
     return result;
 }
+
+#ifdef REIST_RESILIENT_PAGE_BOOT_PROOF
+static uint8_t boot_initial[RESILIENT_PAGE_SIZE];
+static uint8_t boot_committed[RESILIENT_PAGE_SIZE];
+static uint8_t boot_unrelated[RESILIENT_PAGE_SIZE];
+static uint8_t boot_observed[RESILIENT_PAGE_SIZE];
+static uint32_t boot_proof_executed;
+
+static void boot_fill(uint8_t *bytes, uint8_t seed) {
+    for (size_t index = 0U; index < RESILIENT_PAGE_SIZE; ++index)
+        bytes[index] = (uint8_t)(seed + (uint8_t)(index * 13U));
+}
+
+static bool boot_metadata_matches(resilient_page_handle_t handle,
+                                  uint32_t data_generation,
+                                  resilient_page_state_t state,
+                                  uint32_t replica_count,
+                                  uint32_t require_domain_c) {
+    uint32_t irq_flags;
+    if (!resilient_page_lock(&irq_flags)) return false;
+    resilient_page_metadata_t metadata;
+    uint32_t slot_index;
+    resilient_page_result_t result =
+        resolve_locked(handle, &slot_index, &metadata);
+    bool matches = result == RESILIENT_PAGE_OK &&
+        metadata.data_generation == data_generation &&
+        metadata.state == (uint32_t)state &&
+        metadata.replica_count == replica_count;
+    if (matches && require_domain_c != 0U) {
+        matches = false;
+        for (uint32_t replica = 0U; replica < metadata.replica_count;
+             ++replica) {
+            if (metadata.domain[replica] == RESILIENT_PAGE_DOMAIN_C) {
+                matches = true;
+                break;
+            }
+        }
+    }
+    resilient_page_unlock(irq_flags);
+    return matches;
+}
+
+static bool boot_read_matches(resilient_page_handle_t handle,
+                              const uint8_t *expected,
+                              resilient_page_state_t expected_state) {
+    resilient_page_state_t state = RESILIENT_PAGE_FAILED;
+    resilient_page_result_t result = resilient_page_read(
+        handle, boot_observed, sizeof(boot_observed), &state);
+    return result >= RESILIENT_PAGE_OK && state == expected_state &&
+        bytes_equal(boot_observed, expected, RESILIENT_PAGE_SIZE);
+}
+
+static bool boot_proof_fail(uint32_t stage, resilient_page_result_t result) {
+    printf("REIST_RESILIENT_PAGE BOOT_PROOF_FAIL stage=%u result=%d\n",
+           stage, result);
+    return false;
+}
+
+bool resilient_page_boot_proof(void) {
+    if (boot_proof_executed != 0U)
+        return boot_proof_fail(1U, RESILIENT_PAGE_ERROR_FAILED);
+    boot_proof_executed = 1U;
+
+    boot_fill(boot_initial, 7U);
+    boot_fill(boot_committed, 41U);
+    boot_fill(boot_unrelated, 113U);
+    resilient_page_initialize();
+
+    resilient_page_handle_t primary;
+    resilient_page_handle_t unrelated;
+    resilient_page_result_t result = resilient_page_create(
+        boot_initial, sizeof(boot_initial), &primary);
+    if (result != RESILIENT_PAGE_OK) return boot_proof_fail(2U, result);
+    result = resilient_page_create(
+        boot_unrelated, sizeof(boot_unrelated), &unrelated);
+    if (result != RESILIENT_PAGE_OK) return boot_proof_fail(3U, result);
+
+    result = resilient_page_write(primary, 0U, boot_committed,
+                                  sizeof(boot_committed));
+    if (result != RESILIENT_PAGE_OK ||
+        !boot_read_matches(primary, boot_committed, RESILIENT_PAGE_HEALTHY) ||
+        !boot_metadata_matches(primary, 2U, RESILIENT_PAGE_HEALTHY, 2U, 0U))
+        return boot_proof_fail(4U, result);
+    printf("REIST_RESILIENT_PAGE COMMIT_OK generation=2\n");
+
+    result = resilient_page_fail_domain(RESILIENT_PAGE_DOMAIN_A);
+    if (result != RESILIENT_PAGE_RESULT_DEGRADED ||
+        !boot_read_matches(primary, boot_committed,
+                           RESILIENT_PAGE_DEGRADED) ||
+        !boot_metadata_matches(primary, 2U, RESILIENT_PAGE_DEGRADED, 1U, 0U))
+        return boot_proof_fail(5U, result);
+    printf("REIST_RESILIENT_PAGE DEGRADED_DATA_OK generation=2\n");
+
+    if (!boot_read_matches(unrelated, boot_unrelated,
+                           RESILIENT_PAGE_DEGRADED) ||
+        !boot_metadata_matches(unrelated, 1U, RESILIENT_PAGE_DEGRADED,
+                               1U, 0U))
+        return boot_proof_fail(6U, RESILIENT_PAGE_ERROR_CORRUPT);
+    printf("REIST_RESILIENT_PAGE UNRELATED_OK generation=1\n");
+
+    result = resilient_page_rebuild(primary);
+    if (result != RESILIENT_PAGE_RESULT_REBUILT ||
+        !boot_read_matches(primary, boot_committed, RESILIENT_PAGE_HEALTHY) ||
+        !boot_metadata_matches(primary, 2U, RESILIENT_PAGE_HEALTHY, 2U, 1U))
+        return boot_proof_fail(7U, result);
+    printf("REIST_RESILIENT_PAGE REBUILD_OK generation=2 domain=C\n");
+
+    result = resilient_page_destroy(primary);
+    if (result != RESILIENT_PAGE_OK) return boot_proof_fail(8U, result);
+    result = resilient_page_destroy(unrelated);
+    if (result != RESILIENT_PAGE_OK) return boot_proof_fail(9U, result);
+    resilient_page_initialize();
+    printf("REIST_RESILIENT_PAGE BOOT_PROOF_OK objects=2\n");
+    return true;
+}
+#endif
 
 #ifdef REIST_HOST_TEST
 void resilient_page_test_arm_domain_failure(

@@ -13,6 +13,48 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class MemoryResilienceTests(unittest.TestCase):
+    def test_boot_proof_is_compile_time_only_and_precedes_processes(self) -> None:
+        header = (ROOT / "include/kernel/resilient_page.h").read_text(
+            encoding="utf-8")
+        source = (ROOT / "kernel/init/resilient_page.c").read_text(
+            encoding="utf-8")
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        build_script = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        runtime = (ROOT / "scripts/test-reist-runtime.ps1").read_text(
+            encoding="utf-8")
+
+        self.assertIn("REIST_RESILIENT_PAGE_BOOT_PROOF", header)
+        proof_start = source.index("bool resilient_page_boot_proof(void)")
+        proof = source[proof_start:]
+        self.assertEqual(proof.count("resilient_page_create("), 2)
+        self.assertIn("metadata.data_generation", source)
+        self.assertIn("boot_metadata_matches(primary, 2U", proof)
+        self.assertIn("RESILIENT_PAGE_DEGRADED", proof)
+        self.assertIn("RESILIENT_PAGE_HEALTHY", proof)
+        self.assertIn("REIST_RESILIENT_PAGE BOOT_PROOF_OK", proof)
+
+        memory_test = kernel.index("test_memory();")
+        boot_proof = kernel.index("resilient_page_boot_proof()")
+        process_admission = kernel.index("supervisor_start_probe(")
+        self.assertLess(memory_test, boot_proof)
+        self.assertLess(boot_proof, process_admission)
+        self.assertIn(
+            "#ifndef REIST_RESILIENT_PAGE_BOOT_PROOF\n"
+            "    if (!supervisor_start_compositor",
+            kernel,
+        )
+        self.assertIn("RESILIENT_PAGE_BOOT_PROOF ?= 0", makefile)
+        self.assertIn("-DREIST_RESILIENT_PAGE_BOOT_PROOF", makefile)
+        self.assertIn("[switch]$ResilientPageBootProof", build_script)
+        self.assertIn("RESILIENT_PAGE_BOOT_PROOF=1", build_script)
+        self.assertIn("'memory-resilience'", runtime)
+        self.assertIn("-ResilientPageBootProof", runtime)
+        self.assertIn("'--expect-resilient-page-boot-proof'", runtime)
+        self.assertIn("'--vmware-vga'", runtime)
+        self.assertIn("'--timeout', '180'", runtime)
+
     def test_host_fault_campaign(self) -> None:
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:

@@ -40,6 +40,7 @@
 #include "include/kernel/output_fence.h"
 #include "include/kernel/ipc.h"
 #include "include/kernel/critical_object.h"
+#include "include/kernel/resilient_page.h"
 #include "kernel/shell/command.h"
 #include "mm/kmalloc.h"
 
@@ -297,6 +298,12 @@ static void hardware_init(void) {
     // Memory subsystem test
     boot_context("hardware-init", "memory", "self-test", "physical memory");
     test_memory();
+#ifdef REIST_RESILIENT_PAGE_BOOT_PROOF
+    boot_context("hardware-init", "resilient page", "fault proof",
+                 "simulated domains");
+    if (!resilient_page_boot_proof())
+        panic("Resilient-page boot proof failed");
+#endif
     
     // Advanced timing
     boot_context("hardware-init", "APIC timer", "initialize", "local APIC");
@@ -1036,6 +1043,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
 #endif
     /* A real framebuffer prefers the graphical desktop.  VGA boots and any
      * failed/terminated desktop fall back to the userspace shell. */
+#ifndef REIST_RESILIENT_PAGE_BOOT_PROOF
     if (!supervisor_start_compositor(pit_monotonic_ms(),
                                      compositor_post_ready_cpu_affinity_mask)) {
         printf("Unable to start desktop.prg; starting shell fallback.\n");
@@ -1048,6 +1056,7 @@ void kernel_main(uint32_t multiboot_magic, const multiboot1_info_t *multiboot_in
         printf("Graphical desktop lifecycle ended; starting shell "
                "fallback.\n");
     }
+#endif
     if (start_userspace_program(multiboot_info, "bin/shell.prg",
                                 "userspace command interpreter") < 0) {
         printf("Unable to start shell.prg; entering rescue shell.\n");
