@@ -134,6 +134,12 @@ einen CPL3-Fehler von Task B enthalten und Task A danach weiter ausfuehren.
 Das ist noch keine timerbasierte Praeemption, kein SMP-Scheduler und keine
 produktive x86_64-Prozessintegration.
 
+Der abgenommene Lauf verwendet drei kooperative Handoffs. Nach Task Bs exakt
+adressiertem CPL3-`UD2` wird nur Generation 2 reaptiert; Generation 1 setzt
+ihre private Datenseite fort und beendet sich ueber `EXIT` 9. Vor dem
+Erfolgsmarker sind alle temporaeren CR3-, TSS-, MSR-, Tabellen- und
+Framezustaende widerrufen.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

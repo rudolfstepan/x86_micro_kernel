@@ -194,7 +194,7 @@ wiederhergestellt, die temporaeren Syscall-MSRs deaktiviert, alle User-PTEs
 geloescht, alle Frames freigegeben und der urspruengliche Freizaehler erreicht
 sein.
 
-## Geplante Abnahme R8.1g
+## Abnahme R8.1g
 
 Der Prozessnachweis bleibt auf zwei feste Slots und eine endliche kooperative
 Abfolge begrenzt. Jede Generation besitzt eine private Vier-Ebenen-Hierarchie,
@@ -206,9 +206,19 @@ wiedererkennen.
 Der AMD64-`SYSCALL`-Pfad akzeptiert nur die vorhandenen REIST-v1-Indizes
 `YIELD` 40 und `EXIT` 9. `YIELD` speichert einen festen Userkontext und der
 Chooser untersucht hoechstens zwei Slots. Ein exakt validierter CPL3-`UD2`
-von Task B muss nur diese Generation isolieren und reifen; Task A muss danach
+von Task B muss nur diese Generation isolieren und reapen; Task A muss danach
 weiterlaufen und mit dem erwarteten Status beenden. Vor
 `REIST_X86_64_PROCESS_SCHEDULER_OK` muessen Original-CR3, TSS und Syscall-MSRs
 wiederhergestellt, alle Taskdaten genullt und alle Frames freigegeben sein.
 Timerpreemption, Hardwareinterrupts, SMP und produktive Prozessintegration
 bleiben ausserhalb dieser Scheibe.
+
+Alle 26 Quellvertragstests bestanden. Der warnungsfreie Windows-Build erzeugte
+ein 62.612-Byte-Bootstrap und ein 9.264-Byte-ELF64-`ET_EXEC`. Der auf eine
+vCPU, 32 MiB und zehn Sekunden begrenzte QEMU-Lauf fuehrte die exakte Folge
+`A:YIELD`, `B:YIELD`, `A:YIELD`, `B:UD2`, `A:EXIT(101)` aus. Task B wurde vor
+der Fortsetzung von Task A generation-gebunden reaptiert. Erst nach der
+vierzehnteiligen Lebenszykluspruefung, dem Widerruf aller temporaeren
+Architekturzustande und vollstaendiger Framefreigabe erschien
+`REIST_X86_64_PROCESS_SCHEDULER_OK` zwischen `USER_EXECUTION_OK` und
+`EXCEPTION_RECOVERY_OK`.

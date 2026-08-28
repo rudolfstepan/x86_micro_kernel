@@ -125,7 +125,7 @@ Accessed-/Dirty-Bits sowie das fuer den Fault gesetzte Resume-Flag werden bei
 der Nachpruefung architekturgemaess behandelt; Mappingrechte und Adressen
 bleiben exakt.
 
-**R8.1g ist aktiv:** Der naechste isolierte Nachweis besitzt genau zwei feste,
+**R8.1g ist umgesetzt:** Der isolierte Nachweis besitzt genau zwei feste,
 nichtnull generation-gebundene Prozessslots. Beide erhalten private CR3,
 private writable ELF-Seiten und private NX-Stacks; nur validierter RX-Code darf
 geteilt werden. Ein begrenzter kooperativer Scheduler verarbeitet nur
@@ -133,6 +133,14 @@ geteilt werden. Ein begrenzter kooperativer Scheduler verarbeitet nur
 nur dessen Generation terminal werden, waehrend Task A seine private
 Datenseite erneut prueft und sauber beendet. Timerpreemption, SMP, allgemeine
 Syscalls und produktive x86_64-Integration bleiben offen.
+
+Alle 26 Quellvertragstests und der warnungsfreie 62.612-Byte-Build mit dem
+9.264-Byte-ELF64-Probeabbild bestanden. Der begrenzte Ein-vCPU-/32-MiB-QEMU-
+Lauf fuehrte drei exakte `YIELD`-Handoffs aus, reapte Task B nach dessen
+generation-gebundenem CPL3-`UD2`, setzte Task A fort und akzeptierte dessen
+`EXIT` 9 mit Status 101. `PROCESS_SCHEDULER_OK` erschien geordnet vor dem
+Abschlussmarker, nachdem die vierzehn Lebenszyklusereignisse validiert und
+CR3, TSS, Syscall-MSRs, Tasktabellen sowie alle Frames restauriert waren.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

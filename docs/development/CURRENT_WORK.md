@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: R8.1g – begrenzter x86_64-Zwei-Prozess-Scheduler
+Aktives Thema: kein Paket aktiv; R8.1g ist abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -92,7 +92,7 @@ Resume-Flag; alle Rechte und Adressen bleiben exakt. CR3, Syscall-MSRs,
 Usertabellen und Frames wurden vor Erfolg vollstaendig zurueckgesetzt. Die
 Queue ist wieder leer.
 
-R8.1g ist aktiv. Der isolierte Bootstrap erhaelt genau zwei feste,
+R8.1g ist abgeschlossen. Der isolierte Bootstrap besitzt genau zwei feste,
 generation-gebundene Prozessslots mit privaten Seitentabellen, privaten
 writable ELF-Seiten und je einer privaten NX-Stackseite. Nur validierter
 unveraenderlicher RX-Code darf geteilt werden. Der kooperative Pfad akzeptiert
@@ -102,6 +102,14 @@ CPL3-`UD2` isoliert werden; Task A muss danach weiterlaufen, seine private
 Datenseite erneut bestaetigen und erwartungsgemaess beenden. Timerpreemption,
 SMP, allgemeine Syscalls und produktive Integration bleiben ausserhalb dieses
 Pakets. HPASA bleibt ein separates Projekt.
+Alle 26 Quellvertragstests bestanden. Der warnungsfreie Build erzeugte ein
+62.612-Byte-Bootstrap mit einem 9.264-Byte-ELF64-Probeabbild. Der Ein-vCPU-/
+32-MiB-QEMU-Lauf fuehrte die drei erwarteten Handoffs aus, isolierte und reapte
+nur Task B nach dessen exakt adressiertem CPL3-`UD2`, setzte Task A fort und
+nahm dessen Exit 9 mit Status 101 an. Der Lauf meldete
+`PROCESS_SCHEDULER_OK` geordnet vor dem Abschlussmarker und stellte CR3, TSS,
+Syscall-MSRs, alle Tasktabellen und den urspruenglichen Freizaehler wieder her.
+Die Queue ist wieder leer.
 
 R6.2o ist abgeschlossen. Nur der ausdrückliche Ring-3-Befehl `DESKTOP` startet
 den generationsgebundenen Compositor-Supervisor; kein Image startet den

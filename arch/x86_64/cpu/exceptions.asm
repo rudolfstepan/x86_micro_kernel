@@ -31,6 +31,7 @@ extern x86_64_ud2_resume
 extern x86_64_nx_probe_target
 extern x86_64_nx_resume
 extern x86_64_user_exception64
+extern x86_64_scheduler_user_exception64
 
 x86_64_exception_init:
     cld
@@ -193,6 +194,8 @@ exception_common:
     jne exception_fatal
     mov rdi, rsp
     call x86_64_user_exception64
+    mov rdi, rsp
+    call x86_64_scheduler_user_exception64
     jmp exception_fatal
 
 .kernel_exception:

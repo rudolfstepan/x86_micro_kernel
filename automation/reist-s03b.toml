@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.1g-x86_64-process-scheduler"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -10706,7 +10706,7 @@ evidence = [
 
 [[packages]]
 id = "R8.1g-x86_64-process-scheduler"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Add bounded x86_64 process isolation and cooperative scheduling proof"
@@ -10762,7 +10762,15 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "proc: add bounded x86_64 cooperative scheduler proof"
-evidence = []
+evidence = [
+  "the final isolated x86_64 source contract passed all 26 tests covering two fixed generations private writable mappings bounded cooperative handoffs exact fault containment deterministic reaping and cleanup",
+  "the warning-free Windows build linked a 62612-byte bootstrap embedding the independently linked 9264-byte ELF64 probe without changing any production i386 target",
+  "the one-vCPU 32-MiB QEMU runtime published PROCESS_SCHEDULER_OK after USER_EXECUTION_OK and before EXCEPTION_RECOVERY_OK within one second",
+  "task A and task B used distinct CR3 writable data frames and NX stacks while sharing only validated RX frames; both probes retained their own data magic across the exact A-B-A-B interleaving",
+  "the scheduler accepted exactly three REIST ABI YIELD 40 handoffs, contained task B's exact generation-bound CPL3 UD2, immediately reaped only B and then resumed A for exact EXIT 9 status 101",
+  "success validated the fourteen-event lifecycle trace restored original CR3 TSS and syscall MSRs cleared both task records and eight static user tables released every private and retained frame and restored the initial free count",
+  "no timer preemption SMP general syscall dispatcher production userspace device HPASA physical-hardware or fail-operational authority was added and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
