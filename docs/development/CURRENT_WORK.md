@@ -4,7 +4,7 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `750f8bb6`
 
-Aktives Thema: R8.2a – freestanding x86_64-C-Kern-Handoff
+Aktives Thema: keines – R8.2a freestanding x86_64-C-Kern-Handoff abgeschlossen
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
@@ -164,9 +164,21 @@ Kindstatus 77 genau einmal und gibt den Slot erst nach Reap fuer Generation 32
 frei. Nullpfad, doppelter Spawn, fremde PID, Null-Statusausgang und stales Wait
 werden vor Seiteneffekten abgelehnt. 32 Quellvertragstests, der 92.372-Byte-
 Build mit 10.264-Byte-Probe und der kurze Ein-vCPU-/32-MiB-QEMU-Lauf bestanden;
-`SPAWN_WAIT_OK` erschien vor dem unveraenderten Abschlussmarker. R8.2a ist nun
-aktiv und fuehrt einen versionierten Bootstrap-Handoff an freestanding
-x86_64-C-Code ein.
+`SPAWN_WAIT_OK` erschien vor dem unveraenderten Abschlussmarker.
+
+R8.2a ist abgeschlossen. Der isolierte ELF32-Multiboot-Container bettet einen
+separat vollstaendig gelinkten ELF64-freestanding-C-Kern ein, ohne den i386-
+Produktionsgraphen zu beruehren. Ein gepackter 128-Byte-Handoff Version 1
+uebergibt ausschliesslich validierte Architektur-, Speicher-, ELF-Probe- und
+Lifecyclegrenzen. Der C-Eintritt laeuft nach allen R8.1-Markern auf einem
+eigenen ausgerichteten 16-KiB-Stack, beweist Data/BSS, feste Arithmetik,
+begrenzte Kopie und C-zu-Assembly-Callback und loescht anschliessend Handoff
+und C-Zustand. Assembly prueft die Loeschung vor `C_CORE_HANDOFF_OK`. Geraete,
+VFS, DMA, SMP und produktive x86_64-Integration bleiben ausserhalb.
+37 Quelltests, der 106.808-Byte-Bootstrap, das 13.328-Byte-gelinkte C-Payload
+und der kurze Ein-vCPU-QEMU-Nachweis bestanden; die Queue ist leer.
+37 Quelltests, der 106.808-Byte-Bootstrap, das 13.328-Byte-gelinkte C-Payload
+und der kurze Ein-vCPU-QEMU-Nachweis bestanden; die Queue ist leer.
 
 R8.1i ist abgeschlossen. Task A gibt einmal kooperativ an eine CPU-gebundene
 Task B ab. Ein generation- und framevalidierter PIT-IRQ preemptiert und reapt

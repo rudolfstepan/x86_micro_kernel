@@ -206,10 +206,21 @@ X86_64_PHYSICAL_MEMORY_OBJ := $(X86_64_BOOTSTRAP_DIR)/physical_memory.o
 X86_64_ELF64_LOADER_OBJ := $(X86_64_BOOTSTRAP_DIR)/elf64_loader.o
 X86_64_USER_EXECUTION_OBJ := $(X86_64_BOOTSTRAP_DIR)/user_execution.o
 X86_64_PROCESS_SCHEDULER_OBJ := $(X86_64_BOOTSTRAP_DIR)/cooperative_scheduler.o
+X86_64_C_CORE_OBJ := $(X86_64_BOOTSTRAP_DIR)/bootstrap_core.o
+X86_64_C_CORE_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-c-core.elf
+X86_64_C_CORE_TEXT := $(X86_64_BOOTSTRAP_DIR)/bootstrap_core_text.bin
+X86_64_C_CORE_RODATA := $(X86_64_BOOTSTRAP_DIR)/bootstrap_core_rodata.bin
+X86_64_C_CORE_DATA := $(X86_64_BOOTSTRAP_DIR)/bootstrap_core_data.bin
 X86_64_USER_PROBE_OBJ := $(X86_64_BOOTSTRAP_DIR)/user_probe.o
 X86_64_USER_PROBE_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-user-probe.elf
 X86_64_BOOTSTRAP_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-bootstrap.elf
 X86_64_BOOTSTRAP_LDSCRIPT := $(CONFIG_DIR)/x86_64_bootstrap.ld
+X86_64_CC ?= $(CC)
+X86_64_CFLAGS := -target x86_64-freestanding-none -std=c11 -O2 -Wall -Wextra -Werror \
+	-ffreestanding -nostdlib -fno-builtin -fno-stack-protector -mno-red-zone \
+	-fno-unwind-tables -fno-asynchronous-unwind-tables -fno-exceptions \
+	-fno-pic -fno-pie -mcmodel=kernel -mno-mmx -mno-sse -mno-sse2 \
+	-fno-vectorize -fno-slp-vectorize -fno-stack-check -Werror=vla -g0
 
 # Mount directory for disk image
 MOUNT_DIR := /mnt/disk
@@ -348,7 +359,24 @@ x86_64-bootstrap:
 	@$(AS) -f elf64 arch/x86_64/user/probe.asm -o $(X86_64_USER_PROBE_OBJ)
 	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings \
 		-T config/x86_64_user_probe.ld -o $(X86_64_USER_PROBE_ELF) $(X86_64_USER_PROBE_OBJ)
-	@$(AS) -f elf32 arch/x86_64/boot/entry.asm -o $(X86_64_BOOTSTRAP_OBJ)
+	@$(X86_64_CC) $(X86_64_CFLAGS) -Iarch/x86_64/kernel -c \
+		arch/x86_64/kernel/bootstrap_core.c -o $(X86_64_C_CORE_OBJ)
+	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings --no-undefined \
+		-z noexecstack --strip-debug -e x86_64_c_core_entry \
+		--section-start=.text=0xFFFFFFFF80163000 \
+		--section-start=.rodata=0xFFFFFFFF80164000 \
+		--section-start=.data=0xFFFFFFFF80165000 \
+		--section-start=.bss=0xFFFFFFFF80166000 \
+		--defsym=x86_64_c_serial_write64=0xFFFFFFFF80162000 \
+		--defsym=x86_64_c_handoff=0xFFFFFFFF80166020 \
+		-o $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_OBJ)
+	@$(OBJCOPY) -O binary --only-section=.text $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_TEXT)
+	@$(OBJCOPY) -O binary --only-section=.rodata $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_RODATA)
+	@$(OBJCOPY) -O binary --only-section=.data $(X86_64_C_CORE_ELF) $(X86_64_C_CORE_DATA)
+	@$(AS) -f elf32 -DC_CORE_TEXT_PATH=\"$(X86_64_C_CORE_TEXT)\" \
+		-DC_CORE_RODATA_PATH=\"$(X86_64_C_CORE_RODATA)\" \
+		-DC_CORE_DATA_PATH=\"$(X86_64_C_CORE_DATA)\" \
+		arch/x86_64/boot/entry.asm -o $(X86_64_BOOTSTRAP_OBJ)
 	@$(AS) -f elf32 arch/x86_64/cpu/exceptions.asm -o $(X86_64_EXCEPTION_OBJ)
 	@$(AS) -f elf32 arch/x86_64/cpu/timer_interrupt.asm -o $(X86_64_TIMER_INTERRUPT_OBJ)
 	@$(AS) -f elf32 arch/x86_64/mm/physical_memory.asm -o $(X86_64_PHYSICAL_MEMORY_OBJ)

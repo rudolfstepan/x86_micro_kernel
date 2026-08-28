@@ -193,6 +193,21 @@ Status 77 genau einmal. Der Slot wird erst nach vollstaendigem Reap mit der
 neuen Generation 32 wiederverwendet. Allgemeines VFS-Laden, `SPAWNV`,
 wait-any, Signale und produktive Prozessintegration bleiben offen.
 
+R8.2a setzt auf diesen vollstaendig bereinigten Nachweis einen ersten normal
+kompilierten freestanding-C-Kern. Assembly besitzt und befuellt genau einen
+gepackten 128-Byte-Handoff der append-only Version 1. Er enthaelt nur feste
+Architektur-, Paging-, Speicher-, ELF-Probe- und Lifecyclegrenzen; insbesondere
+keine VFS-, Geraete-, DMA- oder SMP-Autoritaet. Der SysV-AMD64-Eintritt erfolgt
+erst nach allen R8.1-Erfolgsmarkern auf einem getrennten 16-KiB-Stack. C prueft
+Version, Groesse, Flags, kanonische Adressen, CR3/PML4-Beziehung, Bereiche,
+Kapazitaeten und reservierte Bytes vor globaler Zustandsmutation. Nach
+Data-/BSS-, Arithmetik-, Kopier- und begrenztem Assembly-Callback-Nachweis
+werden Handoff und veraenderlicher C-Zustand geloescht. Erst die anschliessende
+Assembly-Pruefung darf `REIST_X86_64_C_CORE_HANDOFF_OK` veroeffentlichen.
+Der von QEMU/Multiboot v1 benoetigte aeussere ELF32-Container bettet dafuer ein
+separat vollstaendig gelinktes ELF64-C-Payload seitenweise ein; der produktive
+i386-Build und sein Medienformat bleiben unveraendert.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

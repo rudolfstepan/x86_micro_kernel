@@ -26,6 +26,42 @@ HIGHER_HALF_BASE     equ 0xFFFFFFFF80000000
 COM1_DATA           equ 0x03F8
 COM1_LSR            equ 0x03FD
 SERIAL_TX_POLLS     equ 65536
+C_HANDOFF_VERSION   equ 1
+C_HANDOFF_SIZE      equ 128
+C_HANDOFF_FLAGS     equ 0x3FF
+C_LIFECYCLE_CAPS    equ 0x0F
+C_FIXED_CAPACITY    equ 4
+C_SYSCALL_ABI       equ 1
+C_HANDOFF_QWORDS    equ C_HANDOFF_SIZE / 8
+C_STATE_QWORDS      equ 4
+
+C_H_VERSION         equ 0
+C_H_SIZE            equ 4
+C_H_FLAGS           equ 8
+C_H_HIGHER_HALF     equ 16
+C_H_CR3             equ 24
+C_H_PML4            equ 32
+C_H_DIRECT_MAP      equ 40
+C_H_MANAGED_LIMIT   equ 48
+C_H_ELF_BASE        equ 56
+C_H_ELF_LIMIT       equ 64
+C_H_TEXT_START      equ 72
+C_H_TEXT_END        equ 80
+C_H_LIFECYCLE       equ 88
+C_H_TASK_CAPACITY   equ 96
+C_H_RUNQUEUE_CAP    equ 100
+C_H_DEADLINE_CAP    equ 104
+C_H_SYSCALL_ABI     equ 108
+
+%ifndef C_CORE_TEXT_PATH
+    %error "C_CORE_TEXT_PATH is required"
+%endif
+%ifndef C_CORE_RODATA_PATH
+    %error "C_CORE_RODATA_PATH is required"
+%endif
+%ifndef C_CORE_DATA_PATH
+    %error "C_CORE_DATA_PATH is required"
+%endif
 
 section .multiboot
 align 4
@@ -44,6 +80,8 @@ global x86_64_ud2_resume
 global x86_64_nx_probe_target
 global x86_64_nx_resume
 global pml4_table
+global x86_64_c_handoff
+global x86_64_c_serial_write64
 extern x86_64_exception_init
 extern x86_64_physical_memory_init32
 extern x86_64_physical_memory_selftest64
@@ -64,6 +102,16 @@ extern _data_start
 extern _data_end
 extern _bss_start
 extern _bss_end
+extern _c_core_bridge_start
+extern _c_core_bridge_end
+extern _c_core_text_start
+extern _c_core_text_end
+extern _c_core_rodata_start
+extern _c_core_rodata_end
+extern _c_core_data_start
+extern _c_core_data_end
+extern _c_core_bss_start
+extern _c_core_bss_end
 
 x86_64_bootstrap_start:
     cli
@@ -81,6 +129,11 @@ x86_64_bootstrap_start:
     xor eax, eax
     mov edi, pml4_table
     mov ecx, (5 * 4096) / 4
+    rep stosd
+
+    ; The C ABI requires a loader-independent BSS initialization proof.
+    mov edi, x86_64_c_bss_state
+    mov ecx, (C_STATE_QWORDS * 8) / 4
     rep stosd
 
     mov eax, dword [boot_magic_value]
@@ -130,6 +183,36 @@ x86_64_bootstrap_start:
 
     mov esi, _bss_start
     mov edi, _bss_end
+    mov ebx, PAGE_PRESENT_WRITE
+    mov ecx, PAGE_NX_HIGH
+    call map_high_pages32
+
+    mov esi, _c_core_bridge_start
+    mov edi, _c_core_bridge_end
+    mov ebx, PAGE_PRESENT
+    xor ecx, ecx
+    call map_high_pages32
+
+    mov esi, _c_core_text_start
+    mov edi, _c_core_text_end
+    mov ebx, PAGE_PRESENT
+    xor ecx, ecx
+    call map_high_pages32
+
+    mov esi, _c_core_rodata_start
+    mov edi, _c_core_rodata_end
+    mov ebx, PAGE_PRESENT
+    mov ecx, PAGE_NX_HIGH
+    call map_high_pages32
+
+    mov esi, _c_core_data_start
+    mov edi, _c_core_data_end
+    mov ebx, PAGE_PRESENT_WRITE
+    mov ecx, PAGE_NX_HIGH
+    call map_high_pages32
+
+    mov esi, _c_core_bss_start
+    mov edi, _c_core_bss_end
     mov ebx, PAGE_PRESENT_WRITE
     mov ecx, PAGE_NX_HIGH
     call map_high_pages32
@@ -403,7 +486,120 @@ x86_64_nx_resume:
     jz spawn_wait_state_error
     lea rsi, [rel exception_recovery_message]
     call serial_write64
+    call x86_64_c_core_handoff64
+    test eax, eax
+    jz c_core_handoff_state_error
+    lea rsi, [rel c_core_handoff_message]
+    call serial_write64
     jmp halt64
+
+x86_64_c_core_handoff64:
+    pushfq
+    pop rax
+    test eax, (1 << 9)
+    jnz .fail
+    mov rax, cr3
+    mov edx, pml4_table
+    cmp rax, rdx
+    jne .fail
+
+    mov esi, _c_core_bridge_start
+    mov edx, PAGE_PRESENT
+    xor ecx, ecx
+    call verify_high_page64
+    mov esi, _c_core_text_start
+    mov edx, PAGE_PRESENT
+    xor ecx, ecx
+    call verify_high_page64
+    mov esi, _c_core_rodata_start
+    mov edx, PAGE_PRESENT
+    mov ecx, PAGE_NX_HIGH
+    call verify_high_page64
+    mov esi, _c_core_data_start
+    mov edx, PAGE_PRESENT_WRITE
+    mov ecx, PAGE_NX_HIGH
+    call verify_high_page64
+    mov esi, _c_core_bss_start
+    mov edx, PAGE_PRESENT_WRITE
+    mov ecx, PAGE_NX_HIGH
+    call verify_high_page64
+
+    lea rdi, [rel x86_64_c_handoff]
+    mov r8, rdi
+    xor eax, eax
+    mov ecx, C_HANDOFF_QWORDS
+    rep stosq
+
+    mov dword [r8 + C_H_VERSION], C_HANDOFF_VERSION
+    mov dword [r8 + C_H_SIZE], C_HANDOFF_SIZE
+    mov qword [r8 + C_H_FLAGS], C_HANDOFF_FLAGS
+    mov rax, HIGHER_HALF_BASE
+    mov qword [r8 + C_H_HIGHER_HALF], rax
+    mov rax, cr3
+    mov qword [r8 + C_H_CR3], rax
+    lea rax, [rel pml4_table]
+    mov qword [r8 + C_H_PML4], rax
+    mov rax, 0xFFFF800000000000
+    mov qword [r8 + C_H_DIRECT_MAP], rax
+    mov qword [r8 + C_H_MANAGED_LIMIT], 0x04000000
+    mov qword [r8 + C_H_ELF_BASE], 0x00400000
+    mov qword [r8 + C_H_ELF_LIMIT], 0x00408000
+    lea rax, [rel _text_start]
+    mov qword [r8 + C_H_TEXT_START], rax
+    lea rax, [rel _text_end]
+    mov qword [r8 + C_H_TEXT_END], rax
+    mov qword [r8 + C_H_LIFECYCLE], C_LIFECYCLE_CAPS
+    mov dword [r8 + C_H_TASK_CAPACITY], C_FIXED_CAPACITY
+    mov dword [r8 + C_H_RUNQUEUE_CAP], C_FIXED_CAPACITY
+    mov dword [r8 + C_H_DEADLINE_CAP], C_FIXED_CAPACITY
+    mov dword [r8 + C_H_SYSCALL_ABI], C_SYSCALL_ABI
+
+    mov r15, rsp
+    lea rsp, [rel c_core_stack_top]
+    and rsp, -16
+    mov rdi, r8
+    call x86_64_c_core_entry
+    mov r14d, eax
+    mov rsp, r15
+    cmp r14d, 1
+    jne .fail
+
+    lea rsi, [rel x86_64_c_handoff]
+    mov ecx, C_HANDOFF_QWORDS
+.verify_handoff_zero:
+    lodsq
+    test rax, rax
+    jnz .fail
+    loop .verify_handoff_zero
+    lea rsi, [rel x86_64_c_data_state]
+    mov ecx, C_STATE_QWORDS
+.verify_data_zero:
+    lodsq
+    test rax, rax
+    jnz .fail
+    loop .verify_data_zero
+    lea rsi, [rel x86_64_c_bss_state]
+    mov ecx, C_STATE_QWORDS
+.verify_bss_zero:
+    lodsq
+    test rax, rax
+    jnz .fail
+    loop .verify_bss_zero
+    mov eax, 1
+    ret
+.fail:
+    lea rdi, [rel x86_64_c_handoff]
+    xor eax, eax
+    mov ecx, C_HANDOFF_QWORDS
+    rep stosq
+    lea rdi, [rel x86_64_c_data_state]
+    mov ecx, C_STATE_QWORDS
+    rep stosq
+    lea rdi, [rel x86_64_c_bss_state]
+    mov ecx, C_STATE_QWORDS
+    rep stosq
+    xor eax, eax
+    ret
 
 verify_high_page64:
     mov eax, esi
@@ -493,6 +689,57 @@ spawn_wait_state_error:
     call serial_write64
     jmp halt64
 
+c_core_handoff_state_error:
+    call serial_init64
+    lea rsi, [rel c_core_handoff_state_error_message]
+    call serial_write64
+    jmp halt64
+
+section .c_core_bridge
+x86_64_c_serial_write64:
+    test rdi, rdi
+    jz .callback_fail
+    test rsi, rsi
+    jz .callback_fail
+    cmp rsi, 64
+    ja .callback_fail
+    lea rax, [rel _c_core_rodata_start]
+    cmp rdi, rax
+    jb .callback_fail
+    mov rax, rdi
+    add rax, rsi
+    jc .callback_fail
+    lea rdx, [rel _c_core_rodata_end]
+    cmp rax, rdx
+    ja .callback_fail
+
+    push rbx
+    push r12
+    push r13
+    mov r12, rdi
+    mov r13, rsi
+.callback_loop:
+    mov al, byte [r12]
+    call serial_putc64
+    test eax, eax
+    jz .callback_send_fail
+    inc r12
+    dec r13
+    jnz .callback_loop
+    pop r13
+    pop r12
+    pop rbx
+    mov eax, 1
+    ret
+.callback_send_fail:
+    pop r13
+    pop r12
+    pop rbx
+.callback_fail:
+    xor eax, eax
+    ret
+
+section .text
 serial_init64:
     mov dx, COM1_DATA + 1
     xor al, al
@@ -567,9 +814,11 @@ quantum_switch_state_error_message db "REIST_X86_64_QUANTUM_SWITCH_ERROR", 13, 1
 runqueue_lifecycle_state_error_message db "REIST_X86_64_RUNQUEUE_LIFECYCLE_ERROR", 13, 10, 0
 deadline_sleep_state_error_message db "REIST_X86_64_DEADLINE_SLEEP_ERROR", 13, 10, 0
 spawn_wait_state_error_message db "REIST_X86_64_SPAWN_WAIT_ERROR", 13, 10, 0
+c_core_handoff_state_error_message db "REIST_X86_64_C_CORE_HANDOFF_ERROR", 13, 10, 0
 success_message db "REIST_X86_64_LONG_MODE_BOOT_OK", 13, 10, 0
 higher_half_paging_message db "REIST_X86_64_HIGHER_HALF_PAGING_OK", 13, 10, 0
 exception_recovery_message db "REIST_X86_64_EXCEPTION_RECOVERY_OK", 13, 10, 0
+c_core_handoff_message db "REIST_X86_64_C_CORE_HANDOFF_OK", 13, 10, 0
 
 align 8
 gdt64:
@@ -611,3 +860,28 @@ alignb 4096
 bootstrap_stack_bottom:
     resb 16384
 bootstrap_stack_top:
+alignb 16
+c_core_stack_bottom:
+    resb 16384
+c_core_stack_top:
+
+section .c_core_text progbits alloc exec nowrite align=16
+global x86_64_c_core_entry
+x86_64_c_core_entry:
+    incbin C_CORE_TEXT_PATH
+
+section .c_core_rodata progbits alloc noexec nowrite align=16
+    incbin C_CORE_RODATA_PATH
+
+section .c_core_data progbits alloc noexec write align=16
+global x86_64_c_data_state
+x86_64_c_data_state:
+    incbin C_CORE_DATA_PATH
+
+section .c_core_bss nobits alloc noexec write align=16
+global x86_64_c_bss_state
+x86_64_c_bss_state:
+    resb 32
+alignb 16
+x86_64_c_handoff:
+    resb C_HANDOFF_SIZE

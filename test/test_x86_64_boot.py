@@ -28,7 +28,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("-f elf64", target)
         self.assertIn("-m elf_x86_64", target)
         self.assertNotIn("native-image", target)
-        self.assertNotIn("kernel", target)
+        self.assertNotIn("$(KERNEL_OBJ)", target)
 
     def test_capability_check_precedes_paging_transition(self):
         source = self.read("arch/x86_64/boot/entry.asm")
@@ -636,6 +636,96 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("call x86_64_process_spawn_wait_selftest64", entry)
         self.assertIn("REIST_X86_64_SPAWN_WAIT_OK", runner)
         self.assertIn("REIST_X86_64_SPAWN_WAIT_ERROR", runner)
+
+    def test_c_core_handoff_is_packed_versioned_and_fixed(self):
+        header = self.read("arch/x86_64/kernel/bootstrap_core.h")
+        self.assertIn("REIST_X86_64_HANDOFF_VERSION 1U", header)
+        self.assertIn("REIST_X86_64_HANDOFF_SIZE 128U", header)
+        self.assertIn("struct __attribute__((packed))", header)
+        self.assertIn("reist_u64 kernel_cr3;", header)
+        self.assertIn("reist_u64 kernel_pml4;", header)
+        self.assertIn("reist_u64 direct_map_base;", header)
+        self.assertIn("reist_u64 lifecycle_capabilities;", header)
+        self.assertIn("reist_u8 reserved[16];", header)
+        self.assertIn("_Static_assert(sizeof(", header)
+
+    def test_c_core_validates_before_mutation_and_cleans_authority(self):
+        source = self.read("arch/x86_64/kernel/bootstrap_core.c")
+        validate = source.index("if (!validate_handoff(handoff))")
+        data_mutation = source.index("x86_64_c_bss_state[0] =", validate)
+        callback = source.index("x86_64_c_serial_write64", data_mutation)
+        cleanup = source.index("clear_owned_state();", callback)
+        zero_handoff = source.index("zero_bytes((volatile reist_u8 *)handoff", cleanup)
+        self.assertLess(validate, data_mutation)
+        self.assertLess(data_mutation, callback)
+        self.assertLess(callback, cleanup)
+        self.assertLess(cleanup, zero_handoff)
+        self.assertIn("REIST_COPY_BOUND REIST_X86_64_HANDOFF_SIZE", source)
+        self.assertIn("index < REIST_COPY_BOUND", source)
+        self.assertIn("index < REIST_STATE_WORDS", source)
+        self.assertIn("handoff->reserved[index]", source)
+        self.assertNotRegex(source, re.compile(r"\b(?:memcpy|memset|malloc|free)\s*\("))
+
+    def test_sysv_c_entry_uses_dedicated_aligned_stack_after_old_markers(self):
+        source = self.read("arch/x86_64/boot/entry.asm")
+        recovery = source.index("lea rsi, [rel exception_recovery_message]")
+        handoff = source.index("call x86_64_c_core_handoff64", recovery)
+        final = source.index("lea rsi, [rel c_core_handoff_message]", handoff)
+        self.assertLess(recovery, handoff)
+        self.assertLess(handoff, final)
+        self.assertIn("lea rsp, [rel c_core_stack_top]", source)
+        self.assertIn("and rsp, -16", source)
+        self.assertIn("call x86_64_c_core_entry", source)
+        self.assertIn("mov edi, x86_64_c_bss_state", source)
+        self.assertIn("mov ecx, C_HANDOFF_QWORDS", source)
+        self.assertIn("x86_64_c_serial_write64:", source)
+        self.assertIn("cmp rsi, 64", source)
+        self.assertIn("resb C_HANDOFF_SIZE", source)
+
+    def test_c_core_build_rejects_hosted_runtime_and_wx(self):
+        makefile = self.read("Makefile")
+        script = self.read("scripts/build-x86_64-bootstrap.ps1")
+        linker = self.read("config/x86_64_bootstrap.ld")
+        target = makefile.split("x86_64-bootstrap:", 1)[1].split("\n\n", 1)[0]
+        for flag in (
+            "-target x86_64-freestanding-none", "-ffreestanding",
+            "-fno-builtin", "-fno-stack-protector", "-mno-red-zone",
+            "-fno-unwind-tables", "-fno-pic", "-mcmodel=kernel",
+        ):
+            self.assertIn(flag, makefile)
+        self.assertIn("arch/x86_64/kernel/bootstrap_core.c", target)
+        self.assertIn("$(X86_64_C_CORE_OBJ)", target)
+        self.assertIn("OUTPUT_FORMAT(elf32-i386)", linker)
+        self.assertIn("reist-x86_64-c-core.elf", makefile)
+        self.assertIn("--section-start=.text=0xFFFFFFFF80163000", target)
+        self.assertIn("--only-section=.text", target)
+        self.assertIn("incbin C_CORE_TEXT_PATH", self.read("arch/x86_64/boot/entry.asm"))
+        self.assertIn(".c_core_text 0x00163000", linker)
+        self.assertIn("SIZEOF(.init_array) == 0", linker)
+        self.assertIn("SIZEOF(.eh_frame) == 0", linker)
+        self.assertIn("writable-executable PT_LOAD", script)
+        self.assertIn("retains an undefined symbol", script)
+        self.assertIn("retains relocation section", script)
+        self.assertIn("__stack_chk", script)
+
+    def test_c_core_runtime_requires_callback_cleanup_and_final_marker(self):
+        entry = self.read("arch/x86_64/boot/entry.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn('SUCCESS = "REIST_X86_64_C_CORE_HANDOFF_OK"', runner)
+        self.assertIn("REIST_X86_64_C_CALLBACK_OK", runner)
+        self.assertIn("REIST_X86_64_EXCEPTION_RECOVERY_OK", runner)
+        self.assertIn("REIST_X86_64_C_CORE_HANDOFF_ERROR", runner)
+        handoff_start = entry.index("x86_64_c_core_handoff64:")
+        handoff_end = entry.index("verify_high_page64:", handoff_start)
+        handoff = entry[handoff_start:handoff_end]
+        data_zero = handoff.index(".verify_data_zero:")
+        bss_zero = handoff.index(".verify_bss_zero:", data_zero)
+        success_return = handoff.index("mov eax, 1", bss_zero)
+        fail_cleanup = handoff.index("lea rdi, [rel x86_64_c_handoff]", success_return)
+        self.assertLess(data_zero, bss_zero)
+        self.assertLess(bss_zero, success_return)
+        self.assertIn("lea rdi, [rel x86_64_c_data_state]", handoff[fail_cleanup:])
+        self.assertIn("lea rdi, [rel x86_64_c_bss_state]", handoff[fail_cleanup:])
 
     def test_documentation_rejects_complete_system_claim(self):
         contract = self.read("docs/architecture/X86_64_BOOTSTRAP.md")

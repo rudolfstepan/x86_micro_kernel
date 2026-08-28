@@ -73,6 +73,8 @@ ist Multiboot Version 1; er bleibt auf das separate Bootstrap-Artefakt begrenzt.
 - ein separat gelinktes ELF64-`ET_EXEC` mit maximal 64 KiB, vier Program
   Headern, zwei `PT_LOAD`-Segmenten und acht staged Userseiten;
 - ein statischer 16-KiB-Bootstack innerhalb dieser Map;
+- ein getrennter 16-KiB-C-Entry-Stack und ein exakt 128 Byte grosser
+  versionierter Assembly-Handoff;
 - genau 32 statische 16-Byte-IDT-Gates und eine gepackte 104-Byte-TSS;
 - ein statischer 16-KiB-IST ausschliesslich fuer Double Fault;
 - maximal 65.536 Statusabfragen je gesendetem COM1-Byte;
@@ -347,3 +349,36 @@ Bootstrap und ein 10.264-Byte-ELF64-Probeabbild. Der begrenzte Ein-vCPU-/
 32-MiB-QEMU-Lauf meldete `REIST_X86_64_SPAWN_WAIT_OK` vor dem unveraenderten
 Abschlussmarker. Allgemeines VFS-Laden, `SPAWNV`, Argumentvererbung,
 wait-any, Signale, Gruppen, SMP und produktive Integration bleiben offen.
+
+## Abgenommener freestanding-C-Kern-Handoff R8.2a
+
+Der fuer Multiboot v1 benoetigte aeussere Bootstrap bleibt ein ELF32-`ET_EXEC`.
+Er bettet die Text-, RoData- und Data-Seiten eines separat vollstaendig
+gelinkten ELF64-C-Payloads ein, das der normale x86_64-freestanding-C-Compiler
+erzeugt. Die Produktionsziele fuer i386 bleiben davon getrennt. Assembly publiziert nach
+allen bisherigen Markern genau den gepackten 128-Byte-Handoff Version 1 auf
+einem eigenen 16-KiB-Stack nach SysV AMD64. C validiert die vollstaendige ABI
+vor globaler Mutation, prueft initialisierte Data- und genullte BSS-Werte,
+feste Arithmetik und eine auf 128 Byte begrenzte Kopie und ruft den ebenfalls
+auf 64 Byte begrenzten seriellen Assembly-Adapter auf.
+
+Der Abschluss ist fail-closed: C loescht sowohl den Handoff als auch alle
+veraenderlichen C-Testwerte. Assembly prueft diese Bereiche erneut und meldet
+erst danach `REIST_X86_64_C_CORE_HANDOFF_OK`. Der Build lehnt Red Zone,
+Stackprotektor, Unwind- und Konstruktorabschnitte, Hosted-Runtime-Symbole,
+undefinierte Endsymbole, verbleibende Relokationen sowie W+X-Abschnitte und
+-Segmente ab. Der Nachweis fuehrt keine Geraete-, VFS-, DMA-, SMP- oder
+produktive x86_64-Autoritaet ein und macht das Artefakt weiterhin nicht zu
+einem vollstaendigen REIST-Kernel.
+
+Alle 37 Quellvertragstests bestanden. Der Build erzeugte den 106.808-Byte-
+Bootstrap, das 13.328-Byte-gelinkte ELF64-C-Payload, dessen 5.496-Byte-
+Objekt und das unveraenderte 10.264-Byte-User-Probeabbild. Der begrenzte
+Ein-vCPU-/32-MiB-QEMU-Lauf meldete nach allen R8.1-Markern geordnet
+`REIST_X86_64_C_CALLBACK_OK` und `REIST_X86_64_C_CORE_HANDOFF_OK`.
+
+Alle 37 Quellvertragstests bestanden. Der Build erzeugte den 106.808-Byte-
+Bootstrap, das 13.328-Byte-gelinkte ELF64-C-Payload, dessen 5.496-Byte-
+Objekt und das unveraenderte 10.264-Byte-User-Probeabbild. Der begrenzte
+Ein-vCPU-/32-MiB-QEMU-Lauf meldete nach allen R8.1-Markern geordnet
+`REIST_X86_64_C_CALLBACK_OK` und `REIST_X86_64_C_CORE_HANDOFF_OK`.

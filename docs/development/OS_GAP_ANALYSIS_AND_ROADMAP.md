@@ -219,10 +219,21 @@ Status 77 genau einmal und erlaubt Slot-Wiederverwendung erst als Generation
 vor Seiteneffekten abgewiesen. 32 Quelltests, der 92.372-Byte-Build mit
 10.264-Byte-Probe und der kurze QEMU-Lauf bestanden.
 
-**R8.2a ist aktiv:** Der naechste Meilenstein fuehrt einen gepackten,
-versionierten und vollstaendig validierten Bootstrap-Handoff an einen
-freestanding nach SysV AMD64 kompilierten C-Kern ein. Der produktive i386-Pfad
-bleibt unveraendert.
+**R8.2a ist abgeschlossen:** Der isolierte ELF32-Multiboot-Container bettet ein
+separat gelinktes ELF64-C-Payload ein und uebergibt nach allen R8.1-Markern einen gepackten,
+versionierten 128-Byte-Vertrag an einen nach SysV AMD64 kompilierten
+freestanding-C-Kern. Der getrennte Stack, die vollstaendige Vorvalidierung,
+Data-/BSS-/Arithmetik-/Kopier- und Callback-Nachweise sowie die anschliessende
+Loeschung von Handoff und C-Zustand werden vor `C_CORE_HANDOFF_OK` geprueft.
+Buildregeln lehnen Hosted Runtime, Red Zone, Stackprotektor, Unwind,
+Konstruktoren, undefinierte Symbole, Restrelokationen und W+X ab. Der produktive
+i386-Pfad bleibt unveraendert; die x86_64-Queue ist wieder leer.
+Die Abnahme bestand 37 Quelltests, den isolierten Build eines 106.808-Byte-
+Bootstraps mit 13.328-Byte-ELF64-C-Payload und den begrenzten Ein-vCPU-QEMU-
+Lauf bis `C_CORE_HANDOFF_OK`.
+Die Abnahme bestand 37 Quelltests, den isolierten Build eines 106.808-Byte-
+Bootstraps mit 13.328-Byte-ELF64-C-Payload und den begrenzten Ein-vCPU-QEMU-
+Lauf bis `C_CORE_HANDOFF_OK`.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

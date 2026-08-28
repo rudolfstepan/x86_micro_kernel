@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2a-x86_64-c-core-handoff"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11133,7 +11133,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2a-x86_64-c-core-handoff"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Establish a freestanding x86_64 C core handoff"
@@ -11169,7 +11169,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "kernel: establish freestanding x86_64 C handoff"
-evidence = []
+evidence = [
+  "all 37 x86_64 source-contract tests passed including the exact packed version-1 handoff validation bounded C proofs cleanup ordering and embedded ELF64 payload policy",
+  "the isolated build produced a 106808-byte ELF32 Multiboot bootstrap a 13328-byte linked ELF64 C payload a 5496-byte C object and the unchanged 10264-byte user probe without hosted runtime undefined final relocations unwind constructors or writable-executable load segments",
+  "the bounded one-vCPU 32-MiB QEMU run preserved every accepted R8.1 marker then proved C_CALLBACK_OK and zeroed handoff and C state before C_CORE_HANDOFF_OK",
+  "the production i386 build graph device VFS DMA SMP and physical-hardware authority remain unchanged and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
