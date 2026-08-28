@@ -58,6 +58,15 @@ Degradierungsstufen definiert der
 
 ## Bootintegrität und Vertrauensgrenze
 
+Architekturvarianten sind getrennte, explizit bezeichnete Buildartefakte. Ein
+neuer Bootstrap darf weder die Toolchain, das Medienlayout noch die
+Sicherheitsbehauptung eines bestehenden Zielartefakts stillschweigend ändern.
+Bis Kernel-, Prozess-, Syscall- und Userspace-ABI einer neuen Architektur
+jeweils ausführbar nachgewiesen sind, bleibt sie ein begrenzter
+Architektur-Prototyp und darf nicht als vollständige Systemvariante bezeichnet
+werden. Der produktive i386-Pfad bleibt während der x86_64-Migration der
+unveränderte Standard und Fallback.
+
 Bootartefakte müssen versioniert und ihre exakten Inhalte kryptografisch
 gebunden sein. Der aktuelle BIOS-Pfad verwendet ein Manifest-v3-Format mit
 SHA-256 nach NIST FIPS 180-4, eingebetteter RSA-PSS-Signatur und einen

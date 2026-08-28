@@ -4,7 +4,15 @@ Stand: 28. August 2026
 
 Branch/Startpunkt: `working_branch` / `0deb7be`
 
-Aktives Thema: R6.2o – Compositor-AP-Affinität nach begrenztem Neustart
+Aktives Thema: R8.1a – isolierter x86_64-Long-Mode-Bootstrap
+
+R8.1a beginnt den Dual-Architekturpfad. Der vorhandene i386-Kernel samt
+Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
+unveränderte Standard und Fallback. Ein getrenntes Bootstrap-Artefakt soll
+zunächst ausschließlich den geprüften Übergang von Multiboot-32-Bit-Code in
+IA-32e Long Mode nachweisen. Ein vollständiger x86_64-Kernel, ELF64-Prozesse
+und 64-Bit-Userspace sind ausdrücklich spätere Pakete. R6.2o bleibt als
+nächstes Paket geordnet in der Queue.
 
 R7.1a ist abgeschlossen. Das neue
 `BENCHMARK.PRG` misst CPU, RAM, sequentielle VFS-/Datentraegerzugriffe und den

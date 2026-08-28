@@ -77,6 +77,12 @@ verbindlichen, profilunabhängigen Regeln stehen im
 [Medical-High-Assurance-Vertrag](MEDICAL_HIGH_ASSURANCE_CONTRACT.md) ist nur
 ein optionales Referenzprofil.
 
+Die x86_64-Migration verwendet getrennte Artefakte und Abnahmepakete. Der
+produktive i386-Kernel bleibt dabei unveränderter Standard und Fallback, bis
+Boot, Exceptionen, Paging, Prozess-/Syscall-ABI, Userspace und Zielhardware
+für x86_64 jeweils nachgewiesen wurden. Ein Long-Mode-Bootstrap allein ist
+ausdrücklich noch keine vollständige 64-Bit-Systemvariante.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

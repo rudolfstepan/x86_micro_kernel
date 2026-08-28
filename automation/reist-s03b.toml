@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2o-compositor-ap-restart"
+active_id = "R8.1a-x86_64-long-mode-bootstrap"
 
 [policy]
 one_package_per_run = true
@@ -10342,8 +10342,58 @@ evidence = [
 ]
 
 [[packages]]
-id = "R6.2o-compositor-ap-restart"
+id = "R8.1a-x86_64-long-mode-bootstrap"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Add an isolated x86_64 long-mode bootstrap without changing i386"
+scope = "Create the first executable x86_64 architecture slice as a separate Multiboot bootstrap artifact. A bounded 32-bit loader must validate CPUID long-mode support, construct fixed identity-mapped page tables, enable PAE and EFER.LME, enter IA-32e long mode and publish a serial success marker from 64-bit code. Keep every existing i386 kernel, userspace, BIOS-image and installer target byte-contractually unchanged and retain i386 as the default architecture. This package proves only the architecture transition; it must not claim a complete x86_64 kernel, ELF64 process ABI, 64-bit userspace or hardware support."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "arch/x86_64/boot/entry.asm",
+  "config/x86_64_bootstrap.ld",
+  "scripts/build-x86_64-bootstrap.ps1",
+  "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/REORGANIZATION.md"
+]
+invariants = [
+  "all normal make Windows QEMU VMware real-hardware kernel userspace image and installer targets remain i386 by default and do not consume x86_64 bootstrap objects",
+  "the bootstrap checks CPUID extended-function and long-mode capability before changing paging state and reports a distinct bounded failure marker when unsupported",
+  "PML4 PDPT and page-directory storage is statically allocated page-aligned zeroed before publication and identity maps only the first 2 MiB with a single 2-MiB page",
+  "the success marker executes after a far control transfer into a 64-bit code segment with CR0.PG CR4.PAE and EFER.LMA observed set",
+  "serial transmitter polling is finite and the terminal halted state performs no device or memory mutation",
+  "the artifact and documentation make no claim of a complete x86_64 kernel ELF64 process ABI 64-bit userspace or physical-hardware acceptance"
+]
+targeted_tests = [
+  "python test/test_x86_64_boot.py -v"
+]
+package_tests = [
+  ".\\scripts\\build-x86_64-bootstrap.ps1"
+]
+runtime_tests = [
+  "python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"
+]
+stop_conditions = [
+  "an existing i386 object flag linker script artifact path image layout or default target changes",
+  "the bootstrap enters paging or long mode without first validating the required CPUID capability",
+  "a runtime success marker can be emitted before 64-bit mode and control-register state are verified",
+  "a wait retry memory range or generated artifact is not statically bounded",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "arch: add isolated x86_64 long-mode bootstrap"
+
+[[packages]]
+id = "R6.2o-compositor-ap-restart"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Restore compositor AP affinity after bounded heartbeat restart"

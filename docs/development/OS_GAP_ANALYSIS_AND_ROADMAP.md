@@ -27,6 +27,17 @@ freigegeben. Der verbindliche Kernvertrag steht in
 [`HIGH_ASSURANCE_CORE_CONTRACT.md`](../architecture/HIGH_ASSURANCE_CORE_CONTRACT.md);
 der bisherige medizinische Vertrag ist ein optionales Referenzprofil.
 
+## R8 · Duale x86-Architektur
+
+Die x86_64-Migration erfolgt über getrennte, einzeln abgenommene Artefakte.
+`i386` bleibt bis zur vollständigen Kernel-, Prozess-, Syscall-, Userspace- und
+Hardwareabnahme unveränderter Standard und Fallback. R8.1a weist zunächst nur
+den begrenzten Multiboot-zu-IA-32e-Übergang in einem eigenen Bootstrap nach.
+Darauf folgen getrennt Kernel-Ausnahme-/Paginggrundlage, physische
+Adressierung, ELF64-/Prozess-ABI, Userspace und erst zuletzt vollständige
+Systemimages. Kein Zwischenstand wird als vollständiges 64-Bit-REIST-OS
+bezeichnet.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

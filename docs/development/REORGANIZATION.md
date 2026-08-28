@@ -195,7 +195,8 @@ NEW: #include "drivers/block/ata.h"
 ### Future Enhancements
 - [ ] Move VFS from `fs/vfs/` to `kernel/vfs/` (VFS is kernel core)
 - [ ] Create `kernel/ipc/` for inter-process communication
-- [ ] Add `arch/x86_64/` for 64-bit support
+- [ ] Complete `arch/x86_64/` support (R8.1a starts with the isolated
+  long-mode bootstrap; kernel and userspace ABIs remain open)
 - [ ] Populate `lib/libk/` with kernel-only utilities
 - [ ] Create `include/uapi/` for user-kernel API headers
 - [ ] Add `tools/` directory for build utilities
