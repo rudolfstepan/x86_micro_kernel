@@ -32,6 +32,7 @@ unsigned int partition_lba_offset = 0; // LBA offset for partitioned disks (0 fo
 bool fsinfo_valid = false; // Track if FSInfo is loaded and valid
 bool fat32_write_supported = false;
 fat32_context_sync_hook_t fat32_context_sync_hook;
+fat32_context_mutation_hook_t fat32_context_mutation_hook;
 
 #define FAT32_OPERATION_LOCK_TIMEOUT_MS 10000U
 #ifndef KERNEL_HOST_TEST
@@ -87,8 +88,11 @@ bool fat32_prepare_write(void) {
 }
 
 bool fat32_write_sector(unsigned int lba, void* buffer) {
-    return buffer != NULL && fat32_prepare_write() &&
+    bool written = buffer != NULL && fat32_prepare_write() &&
         ata_write_sector(ata_base_address, lba, buffer, ata_is_master);
+    if (!written) return false;
+    if (fat32_context_mutation_hook) fat32_context_mutation_hook();
+    return true;
 }
 
 // Forward declarations

@@ -349,7 +349,12 @@ migriert beide Clients auf die Surface-Grenze und ergänzt konfigurierbare,
 originale CC0-Systemklänge. Der getrennte physische xHCI-Control-Fehler
 `cc=13` folgt als R5.2x. Das abgeschlossene R7.1a stellt fuer die weitere
 Leistungsdiagnose ein begrenztes Ring-3-`BENCHMARK.PRG` fuer CPU, RAM,
-Datentraeger und VGA bereit. R6.2o hat auf der VMware-/ASUS-Basis den
+Datentraeger und VGA bereit. R7.1b beseitigt dessen quadratischen FAT32-
+Schreibpfad mit generationsgebundenen sequentiellen Cluster- und Tail-Hinweisen
+pro offenem Handle. Der 512-Byte-Userspace-Bounce, die feste Journalgroesse und
+die atomare VFS-Transaktionsgrenze bleiben unveraendert; Legacy- oder zweite
+VFS-Writer, Truncate, Randomzugriffe und Fehler entwerten die Hinweise. R6.2o
+hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem
 Heartbeat-Restart abgeschlossen. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und

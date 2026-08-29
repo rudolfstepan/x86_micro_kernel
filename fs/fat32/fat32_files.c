@@ -450,27 +450,23 @@ static bool clear_data_cluster(uint32_t cluster) {
     return true;
 }
 
-static uint32_t ensure_file_cluster(uint32_t* start_cluster,
-                                    uint32_t cluster_index,
-                                    bool* chain_reclaim_safe) {
-    if (!start_cluster ||
-        cluster_index >= get_total_clusters(&boot_sector)) {
+// Advance forward through the cluster chain from a known position, allocating
+// and linking new clusters as needed.  `from_cluster` must be the valid cluster
+// at `from_index`; the walk only moves forward, so a sequential caller can
+// resume from its last position instead of re-walking from the chain start
+// (which made a bulk write quadratic in the file length).
+static uint32_t advance_file_cluster(uint32_t from_cluster,
+                                     uint32_t from_index,
+                                     uint32_t target_index,
+                                     bool* chain_reclaim_safe) {
+    uint32_t cluster_limit = get_total_clusters(&boot_sector);
+    if (!is_valid_cluster(&boot_sector, from_cluster) ||
+        from_index > target_index || target_index >= cluster_limit) {
         return INVALID_CLUSTER;
     }
 
-    if (!is_valid_cluster(&boot_sector, *start_cluster)) {
-        uint32_t first = allocate_new_cluster(&boot_sector);
-        if (first == INVALID_CLUSTER || !clear_data_cluster(first)) {
-            if (first != INVALID_CLUSTER) {
-                mark_cluster_in_fat(&boot_sector, first, 0);
-            }
-            return INVALID_CLUSTER;
-        }
-        *start_cluster = first;
-    }
-
-    uint32_t current = *start_cluster;
-    for (uint32_t i = 0; i < cluster_index; i++) {
+    uint32_t current = from_cluster;
+    for (uint32_t i = from_index; i < target_index; i++) {
         uint32_t next = get_next_cluster_in_chain(&boot_sector, current);
         if (next == INVALID_CLUSTER) {
             return INVALID_CLUSTER;
@@ -512,18 +508,77 @@ static uint32_t ensure_file_cluster(uint32_t* start_cluster,
     return current;
 }
 
-int write_file_data_at_checked(unsigned int* start_cluster,
-                               unsigned int offset, const void* buffer,
-                               unsigned int bytes_to_write,
-                               bool* chain_reclaim_safe) {
+static uint32_t ensure_file_cluster(uint32_t* start_cluster,
+                                    uint32_t cluster_index,
+                                    bool* chain_reclaim_safe) {
+    if (!start_cluster ||
+        cluster_index >= get_total_clusters(&boot_sector)) {
+        return INVALID_CLUSTER;
+    }
+
+    if (!is_valid_cluster(&boot_sector, *start_cluster)) {
+        uint32_t first = allocate_new_cluster(&boot_sector);
+        if (first == INVALID_CLUSTER || !clear_data_cluster(first)) {
+            if (first != INVALID_CLUSTER) {
+                mark_cluster_in_fat(&boot_sector, first, 0);
+            }
+            return INVALID_CLUSTER;
+        }
+        *start_cluster = first;
+    }
+
+    return advance_file_cluster(*start_cluster, 0, cluster_index,
+                                chain_reclaim_safe);
+}
+
+static void fat32_write_cursor_invalidate(fat32_write_cursor_t* cursor) {
+    if (!cursor) return;
+    cursor->chain_start = INVALID_CLUSTER;
+    cursor->cluster = INVALID_CLUSTER;
+    cursor->cluster_index = 0U;
+    cursor->next_offset = 0U;
+    cursor->valid = false;
+}
+
+static bool fat32_write_cursor_matches(const fat32_write_cursor_t* cursor,
+                                       uint32_t chain_start,
+                                       uint32_t offset,
+                                       uint32_t cluster_size) {
+    if (!cursor || !cursor->valid || cluster_size == 0U ||
+        cursor->chain_start != chain_start || cursor->next_offset != offset ||
+        !is_valid_cluster(&boot_sector, cursor->cluster)) {
+        return false;
+    }
+
+    uint32_t target_index = offset / cluster_size;
+    uint32_t cluster_limit = get_total_clusters(&boot_sector);
+    return cursor->cluster_index < cluster_limit &&
+           target_index >= cursor->cluster_index &&
+           target_index - cursor->cluster_index <= 1U;
+}
+
+static int fat32_write_failure(fat32_write_cursor_t* cursor,
+                               uint32_t written) {
+    fat32_write_cursor_invalidate(cursor);
+    return written != 0U ? (int)written : -1;
+}
+
+int write_file_data_at_checked_cursor(unsigned int* start_cluster,
+                                      unsigned int offset,
+                                      const void* buffer,
+                                      unsigned int bytes_to_write,
+                                      bool* chain_reclaim_safe,
+                                      fat32_write_cursor_t* cursor) {
     if (!start_cluster || (!buffer && bytes_to_write != 0) ||
         boot_sector.sectors_per_cluster == 0 || bytes_to_write > INT_MAX) {
+        fat32_write_cursor_invalidate(cursor);
         return -1;
     }
     if (bytes_to_write == 0) {
         return 0;
     }
     if (offset > UINT32_MAX - bytes_to_write) {
+        fat32_write_cursor_invalidate(cursor);
         return -1;
     }
 
@@ -531,22 +586,44 @@ int write_file_data_at_checked(unsigned int* start_cluster,
     uint32_t written = 0;
     uint8_t sector_buffer[SECTOR_SIZE];
     uint8_t verify_buffer[SECTOR_SIZE];
+    uint32_t cursor_cluster = INVALID_CLUSTER;
+    uint32_t cursor_index = 0;
+    bool cursor_valid = fat32_write_cursor_matches(
+        cursor, *start_cluster, offset, cluster_size);
+    if (cursor_valid) {
+        cursor_cluster = cursor->cluster;
+        cursor_index = cursor->cluster_index;
+    } else {
+        fat32_write_cursor_invalidate(cursor);
+    }
 
     while (written < bytes_to_write) {
         uint32_t file_offset = offset + written;
         uint32_t cluster_index = file_offset / cluster_size;
         uint32_t offset_in_cluster = file_offset % cluster_size;
-        uint32_t cluster = ensure_file_cluster(start_cluster, cluster_index,
-                                               chain_reclaim_safe);
-        if (cluster == INVALID_CLUSTER) {
-            return written ? (int)written : -1;
+        /* Resume the chain walk from the previously reached cluster whenever
+         * the target is at or ahead of it; only the first sector of a bulk
+         * write pays the walk from the chain start. */
+        uint32_t cluster;
+        if (cursor_valid && cluster_index >= cursor_index) {
+            cluster = advance_file_cluster(cursor_cluster, cursor_index,
+                                           cluster_index, chain_reclaim_safe);
+        } else {
+            cluster = ensure_file_cluster(start_cluster, cluster_index,
+                                          chain_reclaim_safe);
         }
+        if (cluster == INVALID_CLUSTER) {
+            return fat32_write_failure(cursor, written);
+        }
+        cursor_cluster = cluster;
+        cursor_index = cluster_index;
+        cursor_valid = true;
 
         uint32_t sector_index = offset_in_cluster / SECTOR_SIZE;
         uint32_t sector_offset = offset_in_cluster % SECTOR_SIZE;
         uint32_t first_sector = cluster_to_sector(&boot_sector, cluster);
         if (first_sector == INVALID_CLUSTER) {
-            return written ? (int)written : -1;
+            return fat32_write_failure(cursor, written);
         }
         uint32_t sector = first_sector + sector_index;
         uint32_t amount = bytes_to_write - written;
@@ -557,7 +634,7 @@ int write_file_data_at_checked(unsigned int* start_cluster,
         if (sector_offset != 0 || amount != SECTOR_SIZE) {
             if (!ata_read_sector(ata_base_address, sector, sector_buffer,
                                  ata_is_master)) {
-                return written ? (int)written : -1;
+                return fat32_write_failure(cursor, written);
             }
         }
         memcpy(sector_buffer + sector_offset,
@@ -566,11 +643,28 @@ int write_file_data_at_checked(unsigned int* start_cluster,
             !ata_read_sector(ata_base_address, sector, verify_buffer,
                              ata_is_master) ||
             memcmp(sector_buffer, verify_buffer, SECTOR_SIZE) != 0) {
-            return written ? (int)written : -1;
+            return fat32_write_failure(cursor, written);
         }
         written += amount;
     }
+
+    if (cursor) {
+        cursor->chain_start = *start_cluster;
+        cursor->cluster = cursor_cluster;
+        cursor->cluster_index = cursor_index;
+        cursor->next_offset = offset + written;
+        cursor->valid = true;
+    }
     return (int)written;
+}
+
+int write_file_data_at_checked(unsigned int* start_cluster,
+                               unsigned int offset, const void* buffer,
+                               unsigned int bytes_to_write,
+                               bool* chain_reclaim_safe) {
+    return write_file_data_at_checked_cursor(
+        start_cluster, offset, buffer, bytes_to_write, chain_reclaim_safe,
+        NULL);
 }
 
 int write_file_data_at(unsigned int* start_cluster, unsigned int offset,

@@ -1,10 +1,29 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 28. August 2026
+Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `6295c96`
+Branch/Startpunkt: `working_branch` / `47b60678`
 
-Aktives Thema: keines – R8.2e ist abgeschlossen
+Aktives Thema: keines – R7.1b ist abgeschlossen
+
+R7.1b behebt den beim Datentraegerteil von `BENCHMARK.PRG` sichtbaren
+quadratischen FAT32-Schreibpfad. Ein offenes VFS-Handle behaelt jetzt einen
+validierten sequentiellen Cluster-Cursor und den bereits geprueften physischen
+Kettentail. Jede Sektormutation erhoeht eine volumenbezogene 64-Bit-Generation;
+Legacy-Writer, ein zweites Handle, Truncate, Random-Offset, I/O-Mehrdeutigkeit
+oder Generationsueberlauf entwerten beide Hinweise und verwenden wieder den
+vollstaendigen begrenzten Kettenlauf. Der Syscall kopiert weiterhin hoechstens
+512 Bytes in einen stabilen Kernelpuffer, und jede VFS-Operation bleibt genau
+eine Transaktion des unveraenderten 20-Sektor-Undo-Journals. Insbesondere gibt
+es keinen Zwischencommit beim Freigeben einer Clusterkette.
+
+Der Hostnachweis verwendet ein FAT32-Volume mit gueltigem FSInfo und fuehrt 48
+getrennte 512-Byte-Appends aus. Alle Bytes stimmen; 1.794 FAT-Sektorreads
+bleiben unter der festen linearen Grenze von 1.920. Derselbe Lauf prueft die
+Cacheentwertung nach einem Legacy-Append sowie nach Truncate/Rewrite ueber ein
+zweites VFS-Handle. 12 Dateisystem-, 20 Syscall-Grenz-, 9 Undo-Journal-, 8
+Power-Cut- und 5 Benchmarktests bestanden. Der abschliessende QEMU-VGA-
+Paketbuild bestand in 38 Sekunden ohne VM-Start.
 
 R8.2e ist als isolierter Architekturbaustein abgeschlossen. Das Paket hebt
 die feste physische Verwaltungs- und 4-KiB-Direct-Map-Grenze von 64 auf genau

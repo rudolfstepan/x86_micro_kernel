@@ -143,6 +143,8 @@ bool fat32_prepare_write(void);
 bool fat32_write_sector(unsigned int lba, void* buffer);
 typedef void (*fat32_context_sync_hook_t)(void);
 extern fat32_context_sync_hook_t fat32_context_sync_hook;
+typedef void (*fat32_context_mutation_hook_t)(void);
+extern fat32_context_mutation_hook_t fat32_context_mutation_hook;
 
 
 
@@ -305,10 +307,28 @@ unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
                                unsigned int bytes_to_read);
 int write_file_data_at(unsigned int* start_cluster, unsigned int offset,
                        const void* buffer, unsigned int bytes_to_write);
+
+/* A caller-owned, generation-validated hint for consecutive writes.  It never
+ * grants authority: the implementation rejects stale starts, offsets and
+ * cluster ranges before using the cached position. */
+typedef struct {
+    uint32_t chain_start;
+    uint32_t cluster;
+    uint32_t cluster_index;
+    uint32_t next_offset;
+    bool valid;
+} fat32_write_cursor_t;
+
 int write_file_data_at_checked(unsigned int* start_cluster,
                                unsigned int offset, const void* buffer,
                                unsigned int bytes_to_write,
                                bool* chain_reclaim_safe);
+int write_file_data_at_checked_cursor(unsigned int* start_cluster,
+                                      unsigned int offset,
+                                      const void* buffer,
+                                      unsigned int bytes_to_write,
+                                      bool* chain_reclaim_safe,
+                                      fat32_write_cursor_t* cursor);
 bool update_directory_entry(unsigned int parent_cluster,
                             const unsigned char name[11],
                             const struct fat32_dir_entry* updated_entry);

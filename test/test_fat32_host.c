@@ -34,6 +34,7 @@ static int payload_writes_before_failure = -1;
 static int fat_writes_before_verify_failure = -1;
 static unsigned int fat_verify_read_failures;
 static unsigned int fat_verify_failure_burst = 1;
+static unsigned int fat_sector_reads;
 static unsigned int cache_flushes;
 static bool journal_volume_marked = true;
 static bool journal_attached;
@@ -51,6 +52,8 @@ static unsigned int campaign_cut_after_write;
 static unsigned int campaign_write_count;
 static uint8_t campaign_baseline[TEST_SECTORS][SECTOR_SIZE];
 static uint8_t campaign_committed[TEST_SECTORS][SECTOR_SIZE];
+static uint32_t primary_fat_lba = 1U;
+static uint32_t secondary_fat_lba = 2U;
 drive_t* current_drive;
 
 bool ata_flush_cache(unsigned short base, bool is_master) {
@@ -74,7 +77,10 @@ static bool host_disk_read(unsigned short base, unsigned int lba, void* buffer,
     (void)base;
     (void)is_master;
     if (campaign_power_cut || lba >= TEST_SECTORS || !buffer) return false;
-    if (lba == 1 && fat_verify_read_failures > 0) {
+    if (lba == primary_fat_lba || lba == secondary_fat_lba) {
+        ++fat_sector_reads;
+    }
+    if (lba == primary_fat_lba && fat_verify_read_failures > 0) {
         --fat_verify_read_failures;
         return false;
     }
@@ -113,7 +119,7 @@ static bool host_raw_write(void *context, unsigned short base, uint32_t lba,
         if (campaign_write_count == campaign_cut_after_write)
             campaign_power_cut = true;
     }
-    if (lba == 1 && fat_writes_before_verify_failure >= 0) {
+    if (lba == primary_fat_lba && fat_writes_before_verify_failure >= 0) {
         if (fat_writes_before_verify_failure-- == 0) {
             fat_writes_before_verify_failure = -1;
             fat_verify_read_failures = fat_verify_failure_burst;
@@ -256,6 +262,8 @@ static void make_test_volume(void) {
     use_production_journal = false;
     fail_any_write_once = false;
     root_directory_lba = ROOT_DIRECTORY_LBA;
+    primary_fat_lba = 1U;
+    secondary_fat_lba = 2U;
     campaign_power_cut = false;
     campaign_fault_armed = false;
     campaign_cut_after_write = 0U;
@@ -268,6 +276,7 @@ static void make_test_volume(void) {
     fat_writes_before_verify_failure = -1;
     fat_verify_read_failures = 0;
     fat_verify_failure_burst = 1;
+    fat_sector_reads = 0U;
     set_test_clock(2026, 8, 3, 12, 34, 56);
     struct fat32_boot_sector boot;
     memset(&boot, 0, sizeof(boot));
@@ -287,6 +296,43 @@ static void make_test_volume(void) {
     fat[1] = FAT32_EOC_MAX;
     fat[2] = FAT32_EOC_MAX;
     memcpy(test_disk[2], test_disk[1], SECTOR_SIZE);
+}
+
+static void make_fsinfo_test_volume(void) {
+    make_test_volume();
+    memset(test_disk, 0, sizeof(test_disk));
+    root_directory_lba = 4U;
+    primary_fat_lba = 2U;
+    secondary_fat_lba = 3U;
+
+    struct fat32_boot_sector boot;
+    memset(&boot, 0, sizeof(boot));
+    boot.bytes_per_sector = SECTOR_SIZE;
+    boot.sectors_per_cluster = 1U;
+    boot.reserved_sector_count = 2U;
+    boot.number_of_fats = 2U;
+    boot.total_sectors_32 = TEST_SECTORS;
+    boot.fat_size_32 = 1U;
+    boot.root_cluster = 2U;
+    boot.fs_info = 1U;
+    boot.boot_sector_signature = 0xAA55U;
+    memcpy(test_disk[0], &boot, sizeof(boot));
+
+    struct fat32_fsinfo info;
+    memset(&info, 0, sizeof(info));
+    info.lead_signature = 0x41615252U;
+    info.struct_signature = 0x61417272U;
+    info.free_cluster_count = TEST_SECTORS - 5U;
+    info.next_free_cluster = 3U;
+    info.trail_signature = 0xAA550000U;
+    memcpy(test_disk[1], &info, sizeof(info));
+
+    uint32_t* fat = (uint32_t*)test_disk[primary_fat_lba];
+    fat[0] = 0x0FFFFFF8U;
+    fat[1] = FAT32_EOC_MAX;
+    fat[2] = FAT32_EOC_MAX;
+    memcpy(test_disk[secondary_fat_lba], test_disk[primary_fat_lba],
+           SECTOR_SIZE);
 }
 
 static unsigned int count_allocated_clusters(void) {
@@ -635,7 +681,94 @@ static int run_fat32_lfn_replace_fault_campaign(void) {
     return 0;
 }
 
+static int run_sequential_write_cache_test(void) {
+    enum { STREAM_CHUNKS = 48U, STREAM_BYTES = STREAM_CHUNKS * SECTOR_SIZE };
+    make_fsinfo_test_volume();
+    CHECK(fat32_init_fs_at(0x1F0, true, 0U) == SUCCESS);
+    CHECK(fsinfo_valid && fsinfo.next_free_cluster == 3U);
+
+    drive_t drive;
+    memset(&drive, 0, sizeof(drive));
+    drive.type = DRIVE_TYPE_ATA;
+    drive.base = 0x1F0;
+    drive.is_master = true;
+    drive.sectors = TEST_SECTORS;
+    strcpy(drive.name, "hdd0");
+
+    vfs_init();
+    fat32_register_vfs();
+    CHECK(vfs_mount(&drive, "fat32", "/") == VFS_OK);
+    CHECK(vfs_create("/STREAM.BIN") == VFS_OK);
+    vfs_node_t* stream_node = NULL;
+    CHECK(vfs_open("/STREAM.BIN", &stream_node) == VFS_OK &&
+          stream_node != NULL);
+
+    uint8_t* stream_data = (uint8_t*)malloc(STREAM_BYTES);
+    uint8_t* stream_readback = (uint8_t*)malloc(STREAM_BYTES);
+    CHECK(stream_data != NULL && stream_readback != NULL);
+    for (uint32_t index = 0U; index < STREAM_BYTES; ++index) {
+        stream_data[index] = (uint8_t)(index * 17U + 3U);
+    }
+
+    /* This is the exact syscall-facing rhythm: one stable 512-byte kernel
+     * bounce per VFS transaction.  A valid FSInfo hint isolates chain-walk
+     * complexity from free-cluster scanning. */
+    fat_sector_reads = 0U;
+    for (uint32_t chunk = 0U; chunk < STREAM_CHUNKS; ++chunk) {
+        CHECK(vfs_write(stream_node, chunk * SECTOR_SIZE, SECTOR_SIZE,
+                        stream_data + chunk * SECTOR_SIZE) == SECTOR_SIZE);
+    }
+    CHECK(fat_sector_reads <= STREAM_CHUNKS * 40U);
+    CHECK(vfs_read(stream_node, 0U, STREAM_BYTES, stream_readback) ==
+          (int)STREAM_BYTES);
+    CHECK(memcmp(stream_readback, stream_data, STREAM_BYTES) == 0);
+
+    /* Legacy FAT writes use the same volume-generation hook, so a cached VFS
+     * cursor cannot survive an out-of-handle mutation. */
+    uint8_t legacy_chunk[SECTOR_SIZE];
+    uint8_t resumed_chunk[SECTOR_SIZE];
+    memset(legacy_chunk, 0x3CU, sizeof(legacy_chunk));
+    memset(resumed_chunk, 0xC3U, sizeof(resumed_chunk));
+    FILE* legacy = fat32_open_file("STREAM.BIN", "a");
+    CHECK(legacy != NULL);
+    CHECK(fat32_write_file(legacy, legacy_chunk, sizeof(legacy_chunk),
+                           sizeof(legacy_chunk)) == SECTOR_SIZE);
+    free(legacy);
+    CHECK(vfs_write(stream_node, STREAM_BYTES + SECTOR_SIZE, SECTOR_SIZE,
+                    resumed_chunk) == SECTOR_SIZE);
+    CHECK(vfs_read(stream_node, STREAM_BYTES, 2U * SECTOR_SIZE,
+                   stream_readback) == (int)(2U * SECTOR_SIZE));
+    CHECK(memcmp(stream_readback, legacy_chunk, SECTOR_SIZE) == 0);
+    CHECK(memcmp(stream_readback + SECTOR_SIZE, resumed_chunk,
+                 SECTOR_SIZE) == 0);
+
+    /* A mutation through another open VFS handle must invalidate both hints,
+     * even if truncation later reuses a freed cluster. */
+    vfs_node_t* stream_peer = NULL;
+    CHECK(vfs_open("/STREAM.BIN", &stream_peer) == VFS_OK &&
+          stream_peer != NULL);
+    CHECK(vfs_truncate(stream_peer, SECTOR_SIZE) == VFS_OK);
+    memset(stream_data, 0xA5, SECTOR_SIZE);
+    CHECK(vfs_write(stream_peer, 0U, SECTOR_SIZE, stream_data) == SECTOR_SIZE);
+    memset(stream_data + SECTOR_SIZE, 0x5A, SECTOR_SIZE);
+    CHECK(vfs_write(stream_node, SECTOR_SIZE, SECTOR_SIZE,
+                    stream_data + SECTOR_SIZE) == SECTOR_SIZE);
+    CHECK(vfs_read(stream_node, 0U, 2U * SECTOR_SIZE, stream_readback) ==
+          (int)(2U * SECTOR_SIZE));
+    CHECK(memcmp(stream_readback, stream_data, 2U * SECTOR_SIZE) == 0);
+
+    free(stream_readback);
+    free(stream_data);
+    CHECK(vfs_close(stream_peer) == VFS_OK);
+    CHECK(vfs_close(stream_node) == VFS_OK);
+    CHECK(vfs_delete("/STREAM.BIN") == VFS_OK);
+    CHECK(vfs_unmount("/") == VFS_OK);
+    return 0;
+}
+
 int main(void) {
+    int cache_test = run_sequential_write_cache_test();
+    if (cache_test != 0) return cache_test;
     make_test_volume();
     CHECK(fat32_init_fs_at(0x1F0, true, 0) == SUCCESS);
 

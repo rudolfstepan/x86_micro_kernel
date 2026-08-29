@@ -68,10 +68,19 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"
         )
+        write = source[source.index("static int syscall_write") :
+                       source.index("static int syscall_fsync")]
         self.assertIn("syscall_create", source)
         self.assertIn("syscall_write", source)
         self.assertIn("syscall_unlink", source)
-        self.assertIn("copy_from_user(buffer", source)
+        self.assertIn("uint8_t buffer[512]", write)
+        self.assertIn("copy_from_user(buffer", write)
+        self.assertIn(
+            "process_file_write(process, descriptor, buffer, amount)", write
+        )
+        self.assertNotIn(
+            "descriptor, (const uint8_t*)user_buffer + total", write
+        )
 
     def test_process_exit_closes_open_descriptors(self):
         source = (ROOT / "kernel/sched/scheduler.c").read_text(

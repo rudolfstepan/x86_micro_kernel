@@ -11567,3 +11567,58 @@ evidence = [
   "The AMD board is no longer in current use; the general startup-admission candidate was fully reverted and no production change or acceptance claim was retained.",
   "The attempted targeted failures were defects in source-slice test definitions and did not establish a production failure; R6.2o resumes on the clean supported VMware and ASUS baseline."
 ]
+
+[[packages]]
+id = "R7.1b-fat32-sequential-write"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Bound FAT32 sequential write traversal without widening transactions"
+scope = "Remove the quadratic FAT32 chain and physical-tail rewalk exposed by BENCHMARK.PRG while retaining the 512-byte syscall bounce and fixed ATA undo-journal capacity. Keep one generation-scoped sequential cluster cursor and verified physical-tail hint per open FAT32 VFS node, invalidate both on another writer, truncate, random offset, I/O ambiguity or generation exhaustion, and fall back to the existing bounded chain walk. Reject invalid cached starts, indices and offsets before sector I/O. Do not split one VFS mutation with an intermediate journal commit or expose a Ring-3 pointer to filesystem code."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/fat32/fat32.c",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32_files.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "kernel/syscall/syscall_table.c",
+  "test/test_fat32_host.c",
+  "test/test_userspace_file_syscalls_source.py",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "SYS_WRITE continues to copy at most 512 bytes from Ring 3 into a stable kernel buffer before every VFS side effect",
+  "each public VFS write remains one atomic fixed-capacity undo-journal transaction and no nested or intermediate commit API is introduced",
+  "a cached FAT position is only a bounded hint and is discarded on generation offset start-cluster range random-write truncate I/O or wrap ambiguity",
+  "another VFS or legacy FAT32 writer invalidates every older per-handle hint for the active volume before it can be reused",
+  "sequential 512-byte writes traverse a long existing FAT chain linearly while random writes and failures retain the previous bounded fallback and rollback behavior",
+  "no public syscall number persistent FAT layout journal capacity driver authority or userspace ABI changes"
+]
+targeted_tests = [
+  "python test/test_fs_host.py -v",
+  "python test/test_userspace_file_syscalls_source.py -v",
+  "python test/test_reist_undo_journal.py -v",
+  "python test/test_fat32_image_fault_campaign.py -v",
+  "python test/test_benchmark_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the optimization requires a larger kernel-stack bounce direct Ring-3 VFS pointer journal capacity increase or intermediate transaction commit",
+  "a stale cursor can reach sector I/O after another mutation truncate offset mismatch generation exhaustion or invalid cluster observation",
+  "the sequential host proof exceeds its fixed linear FAT-read ceiling or any existing FAT32 journal or power-cut test fails",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "fat32: bound sequential write traversal"
+evidence = [
+  "The valid-FSInfo host volume completed 48 separate 512-byte append transactions with 1794 FAT-sector reads below the fixed linear ceiling of 1920 and verified every payload byte.",
+  "The same host proof invalidated the original handle after both a legacy FAT32 append and a truncate-rewrite through a second VFS handle, then verified the resumed data byte-for-byte.",
+  "All 12 filesystem tests, 20 userspace file-syscall boundary tests, 9 undo-journal tests, 8 FAT32 image fault-campaign contracts and 5 bounded benchmark contracts passed.",
+  "The final QEMU VGA package build passed in 38 seconds without starting a VM.",
+  "SYS_WRITE retains its 512-byte copy_from_user bounce, ATA journal capacity and transaction boundaries are unchanged, and no intermediate journal commit API remains."
+]

@@ -43,6 +43,8 @@ typedef struct {
     uint32_t partition_lba;
     uint16_t ata_base;
     bool ata_master;
+    uint64_t data_generation;
+    bool cache_disabled;
 } fat32_vfs_context_t;
 
 #define FAT32_CONTEXT_REGISTRY_SIZE 10
@@ -63,11 +65,33 @@ static void fat32_sync_registered_contexts(void) {
     }
 }
 
+static void fat32_advance_context_generation(fat32_vfs_context_t* context) {
+    if (!context || context->cache_disabled) return;
+    if (context->data_generation == UINT64_MAX) {
+        context->cache_disabled = true;
+        return;
+    }
+    context->data_generation++;
+}
+
+static void fat32_mark_registered_context_mutated(void) {
+    for (unsigned int i = 0; i < FAT32_CONTEXT_REGISTRY_SIZE; ++i) {
+        fat32_vfs_context_t* context = fat32_context_registry[i];
+        if (context && context->ata_base == ata_base_address &&
+            context->ata_master == ata_is_master &&
+            context->partition_lba == partition_lba_offset) {
+            fat32_advance_context_generation(context);
+        }
+    }
+}
+
 static bool fat32_register_context(fat32_vfs_context_t* context) {
     for (unsigned int i = 0; i < FAT32_CONTEXT_REGISTRY_SIZE; ++i) {
         if (!fat32_context_registry[i]) {
             fat32_context_registry[i] = context;
             fat32_context_sync_hook = fat32_sync_registered_contexts;
+            fat32_context_mutation_hook =
+                fat32_mark_registered_context_mutated;
             return true;
         }
     }
@@ -85,13 +109,104 @@ static void fat32_unregister_context(fat32_vfs_context_t* context) {
     if (!any && fat32_context_sync_hook == fat32_sync_registered_contexts) {
         fat32_context_sync_hook = NULL;
     }
+    if (!any && fat32_context_mutation_hook ==
+                    fat32_mark_registered_context_mutated) {
+        fat32_context_mutation_hook = NULL;
+    }
 }
 
 typedef struct {
     struct fat32_dir_entry entry;
     uint32_t parent_cluster;
     char name[MAX_PATH_LENGTH];
+    fat32_write_cursor_t write_cursor;
+    uint32_t tail_chain_start;
+    uint32_t tail_cluster;
+    uint32_t tail_file_size;
+    uint64_t cache_generation;
+    bool tail_valid;
 } fat32_vfs_handle_t;
+
+static void fat32_vfs_cache_reset(fat32_vfs_handle_t* handle) {
+    if (!handle) return;
+    handle->write_cursor.valid = false;
+    handle->tail_valid = false;
+}
+
+static void fat32_vfs_note_data_mutation(vfs_node_t* node,
+                                         fat32_vfs_handle_t* handle) {
+    if (!node || !node->fs || !node->fs->fs_data || !handle) return;
+    fat32_vfs_context_t* context =
+        (fat32_vfs_context_t*)node->fs->fs_data;
+    fat32_advance_context_generation(context);
+    if (context->cache_disabled) fat32_vfs_cache_reset(handle);
+    handle->cache_generation = context->data_generation;
+}
+
+static bool fat32_vfs_resolve_tail(vfs_node_t* node,
+                                   fat32_vfs_handle_t* handle,
+                                   uint32_t* tail_out) {
+    if (!node || !node->fs || !node->fs->fs_data || !handle || !tail_out ||
+        !is_valid_cluster(&boot_sector, node->inode)) {
+        return false;
+    }
+    fat32_vfs_context_t* context =
+        (fat32_vfs_context_t*)node->fs->fs_data;
+    if (!context->cache_disabled && handle->tail_valid &&
+        handle->cache_generation == context->data_generation &&
+        handle->tail_chain_start == node->inode &&
+        handle->tail_file_size == node->size &&
+        is_valid_cluster(&boot_sector, handle->tail_cluster)) {
+        *tail_out = handle->tail_cluster;
+        return true;
+    }
+    if (!fat32_get_chain_tail(&boot_sector, node->inode, tail_out)) {
+        fat32_vfs_cache_reset(handle);
+        return false;
+    }
+    handle->tail_chain_start = node->inode;
+    handle->tail_cluster = *tail_out;
+    handle->tail_file_size = node->size;
+    handle->tail_valid = !context->cache_disabled;
+    return true;
+}
+
+static void fat32_vfs_cache_written_tail(vfs_node_t* node,
+                                         fat32_vfs_handle_t* handle,
+                                         uint32_t original_tail,
+                                         uint32_t expected_end) {
+    fat32_vfs_context_t* context = node && node->fs
+        ? (fat32_vfs_context_t*)node->fs->fs_data : NULL;
+    if (!context || context->cache_disabled || !handle ||
+        !handle->write_cursor.valid ||
+        handle->write_cursor.chain_start != node->inode ||
+        handle->write_cursor.next_offset != expected_end ||
+        !is_valid_cluster(&boot_sector, handle->write_cursor.cluster)) {
+        if (handle) handle->tail_valid = false;
+        return;
+    }
+
+    uint32_t next = get_next_cluster_in_chain(
+        &boot_sector, handle->write_cursor.cluster);
+    uint32_t tail = INVALID_CLUSTER;
+    if (is_end_of_cluster_chain(next)) {
+        tail = handle->write_cursor.cluster;
+    } else if (is_valid_cluster(&boot_sector, next) &&
+               is_valid_cluster(&boot_sector, original_tail)) {
+        /* A chain may legally be longer than the logical file size.  If the
+         * final written cluster has a successor, the previously verified
+         * physical tail remains authoritative. */
+        tail = original_tail;
+    }
+    if (!is_valid_cluster(&boot_sector, tail)) {
+        handle->tail_valid = false;
+        return;
+    }
+    handle->tail_chain_start = node->inode;
+    handle->tail_cluster = tail;
+    handle->tail_file_size = node->size;
+    handle->tail_valid = true;
+}
 
 static void fat32_activate(vfs_filesystem_t* fs) {
     fat32_vfs_context_t* context = (fat32_vfs_context_t*)fs->fs_data;
@@ -329,8 +444,13 @@ static vfs_node_t* fat32_make_node(vfs_filesystem_t* fs,
     }
 
     memset(node, 0, sizeof(*node));
+    memset(handle, 0, sizeof(*handle));
     handle->entry = *entry;
     handle->parent_cluster = parent_cluster;
+    if (fs->fs_data) {
+        handle->cache_generation =
+            ((fat32_vfs_context_t*)fs->fs_data)->data_generation;
+    }
     if (resolved_name && fat32_is_valid_name(resolved_name))
         strcpy(handle->name, resolved_name);
     else
@@ -399,11 +519,17 @@ static bool fat32_commit_node_data(vfs_node_t* node, uint32_t start_cluster,
     node->inode = start_cluster;
     node->size = file_size;
     fat32_flush_context(node->fs);
+    /* FSInfo persistence is itself a sector mutation.  Capture the handle's
+     * generation only after that final write, otherwise every valid-FSInfo
+     * volume would discard the newly built sequential hints immediately. */
+    fat32_vfs_note_data_mutation(node, handle);
     return true;
 }
 
 static int fat32_refresh_file_node(vfs_node_t* node) {
-    if (!node || !node->fs_specific) return VFS_ERR_INVALID;
+    if (!node || !node->fs || !node->fs->fs_data || !node->fs_specific) {
+        return VFS_ERR_INVALID;
+    }
     fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
     struct fat32_dir_entry current;
     char resolved_name[MAX_PATH_LENGTH];
@@ -412,6 +538,13 @@ static int fat32_refresh_file_node(vfs_node_t* node) {
     if (result == FAT32_LOOKUP_NOT_FOUND) return VFS_ERR_NOT_FOUND;
     if (result != FAT32_LOOKUP_FOUND || (current.attr & ATTR_DIRECTORY)) {
         return VFS_ERR_IO;
+    }
+    fat32_vfs_context_t* context =
+        (fat32_vfs_context_t*)node->fs->fs_data;
+    if (context->cache_disabled ||
+        handle->cache_generation != context->data_generation) {
+        fat32_vfs_cache_reset(handle);
+        handle->cache_generation = context->data_generation;
     }
     handle->entry = current;
     strcpy(handle->name, resolved_name);
@@ -454,6 +587,8 @@ static int fat32_vfs_mount_unlocked(vfs_filesystem_t* fs, drive_t* drive) {
     context->partition_lba = partition_lba_offset;
     context->ata_base = ata_base_address;
     context->ata_master = ata_is_master;
+    context->data_generation = 1U;
+    context->cache_disabled = false;
     fs->fs_data = context;
     
     // Create root node
@@ -595,8 +730,12 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
     uint32_t start_cluster = node->inode;
     uint32_t durable_size = node->size;
     uint32_t original_tail = INVALID_CLUSTER;
-    if (is_valid_cluster(&boot_sector, node->inode) &&
-        !fat32_get_chain_tail(&boot_sector, node->inode, &original_tail)) {
+    if (is_valid_cluster(&boot_sector, node->inode)) {
+        if (!fat32_vfs_resolve_tail(node, handle, &original_tail)) {
+            return VFS_ERR_IO;
+        }
+    } else if (node->inode != 0U || node->size != 0U) {
+        fat32_vfs_cache_reset(handle);
         return VFS_ERR_IO;
     }
     bool chain_reclaim_safe = true;
@@ -608,14 +747,17 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
         while (position < offset) {
             uint32_t amount = offset - position;
             if (amount > sizeof(zeroes)) amount = sizeof(zeroes);
-            int written = write_file_data_at_checked(
+            int written = write_file_data_at_checked_cursor(
                 &start_cluster, position, zeroes, amount,
-                &chain_reclaim_safe);
+                &chain_reclaim_safe, &handle->write_cursor);
             if (written > 0) {
                 position += (uint32_t)written;
                 durable_size = position;
             }
-            if (!chain_reclaim_safe) return VFS_ERR_IO;
+            if (!chain_reclaim_safe) {
+                fat32_vfs_cache_reset(handle);
+                return VFS_ERR_IO;
+            }
             if (written != (int)amount) {
                 if (written < 0 && durable_size == node->size) {
                     if (is_valid_cluster(&boot_sector, node->inode)) {
@@ -627,23 +769,30 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
                                                  start_cluster);
                     }
                     fat32_flush_context(node->fs);
+                    fat32_vfs_cache_reset(handle);
                     return VFS_ERR_IO;
                 }
                 if ((durable_size != node->size || start_cluster != node->inode) &&
                     !fat32_commit_node_data(node, start_cluster, durable_size,
                                             original_tail,
                                             chain_reclaim_safe)) {
+                    fat32_vfs_cache_reset(handle);
                     return VFS_ERR_IO;
                 }
+                fat32_vfs_cache_reset(handle);
                 return VFS_ERR_IO;
             }
         }
         durable_size = offset;
     }
 
-    int written = write_file_data_at_checked(&start_cluster, offset, buffer,
-                                             size, &chain_reclaim_safe);
-    if (!chain_reclaim_safe) return VFS_ERR_IO;
+    int written = write_file_data_at_checked_cursor(
+        &start_cluster, offset, buffer, size, &chain_reclaim_safe,
+        &handle->write_cursor);
+    if (!chain_reclaim_safe) {
+        fat32_vfs_cache_reset(handle);
+        return VFS_ERR_IO;
+    }
     if (written < 0) {
         if (durable_size == node->size) {
             if (is_valid_cluster(&boot_sector, node->inode)) {
@@ -653,13 +802,16 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
                 (void)free_cluster_chain(&boot_sector, start_cluster);
             }
             fat32_flush_context(node->fs);
+            fat32_vfs_cache_reset(handle);
             return VFS_ERR_IO;
         }
         if ((durable_size != node->size || start_cluster != node->inode) &&
             !fat32_commit_node_data(node, start_cluster, durable_size,
                                     original_tail, chain_reclaim_safe)) {
+            fat32_vfs_cache_reset(handle);
             return VFS_ERR_IO;
         }
+        fat32_vfs_cache_reset(handle);
         return VFS_ERR_IO;
     }
 
@@ -667,8 +819,11 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
     if (end < durable_size) end = durable_size;
     if (!fat32_commit_node_data(node, start_cluster, end, original_tail,
                                 chain_reclaim_safe)) {
+        fat32_vfs_cache_reset(handle);
         return VFS_ERR_IO;
     }
+    fat32_vfs_cache_written_tail(node, handle, original_tail,
+                                 offset + (uint32_t)written);
     return written;
 }
 
@@ -682,6 +837,7 @@ static int fat32_vfs_truncate_unlocked(vfs_node_t* node, uint32_t size) {
     if (refresh != VFS_OK) return refresh;
 
     fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    fat32_vfs_cache_reset(handle);
     if ((handle->entry.attr & ATTR_READ_ONLY) != 0U)
         return VFS_ERR_READ_ONLY;
     struct fat32_dir_entry original_entry = handle->entry;
