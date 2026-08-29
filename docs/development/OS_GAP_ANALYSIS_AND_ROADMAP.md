@@ -372,9 +372,18 @@ Markern bestanden bis `RING3_SHELL_OK`. Close, Reap, Fehlercleanup und finale
 Pruefung hinterliessen Endpoint, Nachricht, alle vier Capabilityrecords sowie
 Task-, Queue-, Loader- und Frameautoritaet null. Allgemeine Endpointregistries,
 Queue-Tiefe groesser eins, Blocking-IPC und produktive x86_64-Integration
-bleiben Folgearbeiten. R8.2o ist aktiv und begrenzt genau einen leeren sowie
-einen durch SEND geweckten Receive ueber `IPC_RECEIVE_TIMEOUT` 54 auf die
-vorhandene feste PIT-Deadlinequeue; allgemeine Blocking-IPC bleibt ausserhalb.
+bleiben Folgearbeiten.
+
+**R8.2o ist abgeschlossen:** `IPC_RECEIVE_TIMEOUT` 54 bindet genau einen
+Receive-Wait an die feste 100-Hz-PIT-Deadlinequeue. Pro `RUN` bewies zuerst ein
+leerer 10-ms-Wait den echten `ETIMEDOUT`-Pfad ohne Ausgabemutation; danach
+blockierte der Parent vor dem Kind und nur dessen validierter `token77`-SEND
+entfernte die exakte Deadline, stoppte den Timer, lieferte in den privaten
+Parent-Frame und weckte Generation 40. 54 Quellvertragstests, der warnungsfreie
+138.000-Byte-Build und der native QEMU-Dialog mit zwei `RUN_OK`-Markern
+bestanden bis `RING3_SHELL_OK`. Allgemeine Endpointregistries, Queue-Tiefe
+groesser eins, mehrere Waiter, blockierende Sender und produktive
+x86_64-Integration bleiben Folgearbeiten; die x86_64-Queue ist leer.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

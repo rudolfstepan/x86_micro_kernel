@@ -15,11 +15,13 @@ typedef unsigned char shell_u8;
 #define REIST_SYS_IPC_SEND 50ULL
 #define REIST_SYS_IPC_RECEIVE 51ULL
 #define REIST_SYS_IPC_CLOSE 52ULL
+#define REIST_SYS_IPC_RECEIVE_TIMEOUT 54ULL
 #define REIST_SYS_IPC_DELEGATE 55ULL
 #define REIST_SYS_IPC_RELEASE 58ULL
 #define REIST_STDIN 0ULL
 #define REIST_STDOUT 1ULL
 #define REIST_EAGAIN (-11LL)
+#define REIST_ETIMEDOUT (-110LL)
 #define SHELL_COMMAND_CAPACITY 16U
 #define SHELL_POLL_LIMIT 67108864U
 #define SHELL_PARENT_PID 300LL
@@ -29,6 +31,7 @@ typedef unsigned char shell_u8;
 #define IPC_MESSAGE_SIZE 140U
 #define IPC_MESSAGE_LENGTH 8U
 #define IPC_RIGHT_SEND 0x01U
+#define IPC_RECEIVE_TIMEOUT_MS 10ULL
 
 typedef struct {
     shell_u32 version;
@@ -132,6 +135,22 @@ static int ipc_message_is_token77(const shell_ipc_message_t *message)
     return 1;
 }
 
+static int ipc_message_is_empty(const shell_ipc_message_t *message)
+{
+    shell_u32 index;
+
+    if (message->version != IPC_MESSAGE_VERSION ||
+        message->struct_size != IPC_MESSAGE_SIZE || message->length != 0U) {
+        return 0;
+    }
+    for (index = 0U; index < sizeof(message->payload); ++index) {
+        if (message->payload[index] != 0U) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 void _start(void)
 {
     static const char ready[] = "REIST_X86_64_RING3_SHELL_READY\r\n";
@@ -197,6 +216,16 @@ void _start(void)
                     ipc_handle == 0U) {
                     shell_exit(15ULL);
                 }
+                clear_ipc_message(&ipc_message);
+                ipc_message.version = IPC_MESSAGE_VERSION;
+                ipc_message.struct_size = IPC_MESSAGE_SIZE;
+                if (shell_syscall3(REIST_SYS_IPC_RECEIVE_TIMEOUT,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)&ipc_message,
+                                   IPC_RECEIVE_TIMEOUT_MS) != REIST_ETIMEDOUT ||
+                    !ipc_message_is_empty(&ipc_message)) {
+                    shell_exit(19ULL);
+                }
                 child_pid = shell_syscall3(REIST_SYS_SPAWNV,
                                            (shell_u64)child_path,
                                            (shell_u64)child_argv, 2ULL);
@@ -209,20 +238,21 @@ void _start(void)
                                    IPC_RIGHT_SEND) != 0LL) {
                     shell_exit(16ULL);
                 }
+                clear_ipc_message(&ipc_message);
+                ipc_message.version = IPC_MESSAGE_VERSION;
+                ipc_message.struct_size = IPC_MESSAGE_SIZE;
+                if (shell_syscall3(REIST_SYS_IPC_RECEIVE_TIMEOUT,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)&ipc_message,
+                                   IPC_RECEIVE_TIMEOUT_MS) != 0LL ||
+                    !ipc_message_is_token77(&ipc_message)) {
+                    shell_exit(17ULL);
+                }
                 waited_pid = shell_syscall3(REIST_SYS_WAIT, (shell_u64)child_pid,
                                             (shell_u64)&child_status, 0ULL);
                 if (waited_pid != SHELL_CHILD_PID ||
                     child_status != SHELL_CHILD_STATUS) {
                     shell_exit(13ULL);
-                }
-                clear_ipc_message(&ipc_message);
-                ipc_message.version = IPC_MESSAGE_VERSION;
-                ipc_message.struct_size = IPC_MESSAGE_SIZE;
-                if (shell_syscall3(REIST_SYS_IPC_RECEIVE,
-                                   (shell_u64)ipc_handle,
-                                   (shell_u64)&ipc_message, 0ULL) != 0LL ||
-                    !ipc_message_is_token77(&ipc_message)) {
-                    shell_exit(17ULL);
                 }
                 if (shell_syscall3(REIST_SYS_IPC_CLOSE,
                                    (shell_u64)ipc_handle, 0ULL, 0ULL) != 0LL) {

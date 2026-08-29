@@ -597,3 +597,30 @@ vier Capabilityrecords null. 54 Quellvertragstests, der warnungsfreie
 exakt zwei `RUN_OK`-Markern bis `RING3_SHELL_OK`. Eine fokussierte Reparatur lud
 den physischen Kind-Stackframe unmittelbar vor der Direct-Map-Initialisierung
 neu und wird durch eine Regressionserwartung gesichert.
+
+## Deadlinebegrenzter IPC-Receive R8.2o
+
+Der reale `RUN`-Pfad verwendet nun zusaetzlich den bestehenden REIST-v1-Index
+`IPC_RECEIVE_TIMEOUT` 54. Genau ein fester Waiterrecord bindet Generation 40,
+Endpointhandle und den vorvalidierten privaten Outputframe an einen Eintrag der
+vorhandenen Vier-Slot-Deadlinequeue. Der isolierte Nachweis akzeptiert exakt
+10 ms, entsprechend einem Tick des bereits getesteten 100-Hz-PIT-Timers.
+
+Unmittelbar nach `IPC_CREATE` blockiert ein leerer Receive ohne lauffaehigen
+Peer, idlet mit `STI; HLT`, wacht nur durch die monotone Deadline und liefert
+`ETIMEDOUT`, ohne Header oder Payload zu veraendern. Nach SPAWNV und der
+abgeschwaechten SEND-Delegation blockiert der Parent erneut vor dem Kind. Der
+Kind-SEND validiert Capability, Endpoint, Nachricht, Taskgeneration, Waiter,
+privaten Direct-Map-Bereich und Deadline vor Queue-Publikation; vor Wake werden
+dieselben Beziehungen erneut geprueft. Danach werden Deadline und Timer
+widerrufen, `token77` wird in den privaten Parent-Frame kopiert und nur
+Generation 40 wird READY. Erst nach der Receive-Pruefung folgt das bestehende
+WAIT/Reap.
+
+54 Quellvertragstests, der warnungsfreie 138.000-Byte-Build und der native
+Ein-vCPU-/128-MiB-QEMU-Dialog bestanden mit zwei vollstaendigen Timeout-/Wake-
+Zyklen, exakt zwei `RUN_OK`-Markern und `RING3_SHELL_OK`. Abschlusspruefung und
+Fehlercleanup verlangen Timer-, Deadline-, Waiter-, Endpoint-, Nachrichten-,
+Capability-, Task-, Loader- und Framezustand null. Mehrere Waiter,
+blockierende Sender, tiefere Queues und produktive Integration bleiben
+ausgeschlossen.

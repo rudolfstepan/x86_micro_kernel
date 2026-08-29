@@ -520,14 +520,15 @@ class X8664BootstrapContractTests(unittest.TestCase):
         stack_check = child.index("cmp rsp, CHILD_RSP", denial)
         self.assertLess(child.index("cmp rax, REIST_EACCES", denial), stack_check)
 
-    def test_ring3_ipc_capability_transfer_is_fixed_attenuated_and_reaped(self):
+    def test_ring3_ipc_receive_wait_is_deadline_bounded_and_generation_exact(self):
         abi = self.read("include/reist/abi/syscall.h")
         shell = self.read("arch/x86_64/user/shell.c")
         child = self.read("arch/x86_64/user/child.asm")
         scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
         for name, number in (
             ("IPC_CREATE", 49), ("IPC_SEND", 50), ("IPC_RECEIVE", 51),
-            ("IPC_CLOSE", 52), ("IPC_DELEGATE", 55), ("IPC_RELEASE", 58),
+            ("IPC_CLOSE", 52), ("IPC_RECEIVE_TIMEOUT", 54),
+            ("IPC_DELEGATE", 55), ("IPC_RELEASE", 58),
         ):
             self.assertIn(f"X({name}, {name}, {number}U)", abi)
             self.assertIn(f"REIST_SYS_{name}", scheduler)
@@ -540,14 +541,17 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("_Static_assert(sizeof(shell_ipc_message_t) == IPC_MESSAGE_SIZE", shell)
         run = shell.index('command_equals(command, "RUN",')
         create = shell.index("REIST_SYS_IPC_CREATE", run)
-        spawn = shell.index("REIST_SYS_SPAWNV", create)
+        empty_timeout = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT", create)
+        spawn = shell.index("REIST_SYS_SPAWNV", empty_timeout)
         delegate = shell.index("REIST_SYS_IPC_DELEGATE", spawn)
-        wait = shell.index("REIST_SYS_WAIT", delegate)
-        receive = shell.index("REIST_SYS_IPC_RECEIVE", wait)
-        close = shell.index("REIST_SYS_IPC_CLOSE", receive)
+        receive = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT", delegate)
+        wait = shell.index("REIST_SYS_WAIT", receive)
+        close = shell.index("REIST_SYS_IPC_CLOSE", wait)
         run_ok = shell.index("shell_write_exact(run_ok", close)
-        self.assertEqual([create, spawn, delegate, wait, receive, close, run_ok],
-                         sorted([create, spawn, delegate, wait, receive, close, run_ok]))
+        order = [create, empty_timeout, spawn, delegate, receive, wait, close, run_ok]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("IPC_RECEIVE_TIMEOUT_MS 10ULL", shell)
+        self.assertIn("REIST_ETIMEDOUT (-110LL)", shell)
         self.assertIn("AT_REIST_IPC_HANDLE        equ 0x52534901", scheduler)
         self.assertIn("mov qword [r13 + 40], AT_REIST_IPC_HANDLE", scheduler)
         self.assertIn("mov qword [r13 + 48], r15", scheduler)
@@ -570,6 +574,43 @@ class X8664BootstrapContractTests(unittest.TestCase):
         send_path = scheduler[send:receive_handler]
         self.assertLess(send_path.index("call scheduler_validate_shell_ipc_buffer64"),
                         send_path.index("scheduler_shell_ipc_message_ready], 1"))
+        self.assertLess(
+            send_path.index("call scheduler_validate_shell_ipc_waiter_for_send64"),
+            send_path.index("scheduler_shell_ipc_message_ready], 1"),
+        )
+        timeout_handler = scheduler.index(
+            "scheduler_handle_shell_ipc_receive_timeout64:"
+        )
+        publish_wait = scheduler.index(
+            "scheduler_shell_ipc_wait_generation], TASK_SHELL_GENERATION",
+            timeout_handler,
+        )
+        self.assertLess(
+            scheduler.index("call scheduler_verify_shell_deadline_zero64",
+                            timeout_handler),
+            publish_wait,
+        )
+        self.assertLess(
+            scheduler.index("call scheduler_translate_shell_ipc_message_pointer64",
+                            timeout_handler),
+            publish_wait,
+        )
+        wake = scheduler.index("scheduler_wake_shell_ipc_receiver64:")
+        remove = scheduler.index(
+            "call scheduler_deadline_remove_shell_receive64", wake
+        )
+        cancel = scheduler.index("call x86_64_timer_preemption_cancel64", wake)
+        copy = scheduler.index("rep movsb", wake)
+        ready = scheduler.index("TASK_STATE], TASK_READY", copy)
+        self.assertEqual([remove, cancel, copy, ready],
+                         sorted([remove, cancel, copy, ready]))
+        tick = scheduler.index("x86_64_scheduler_deadline_tick64:")
+        timeout_result = scheduler.index("TASK_RAX], REIST_ETIMEDOUT", tick)
+        timeout_ready = scheduler.index("TASK_STATE], TASK_READY", timeout_result)
+        self.assertLess(timeout_result, timeout_ready)
+        self.assertIn("scheduler_shell_dispatch_or_idle64:", scheduler)
+        self.assertIn("call x86_64_timer_sleep_disarm64", scheduler)
+        self.assertIn("resq 1\nscheduler_shell_ipc_wait_handle:", scheduler)
         reap = scheduler.index("scheduler_reap_terminal64:")
         release_frames = scheduler.index("call scheduler_release_task_frames64", reap)
         self.assertLess(scheduler.index("IPC_CAPABILITY_GENERATION], 0", reap),

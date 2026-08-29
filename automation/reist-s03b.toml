@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2o-x86_64-ipc-receive-timeout"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11736,7 +11736,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2o-x86_64-ipc-receive-timeout"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Prove deadline-bounded generation-scoped x86_64 IPC receive"
@@ -11768,7 +11768,14 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "ipc: bound x86_64 receive waits"
-evidence = []
+evidence = [
+  "54 x86_64 source contract tests passed including syscall 54 millisecond and ETIMEDOUT ABI ordering pre-publication waiter validation exact deadline removal timer cancellation private-frame delivery and complete zero-state checks",
+  "the warning-free Windows build produced the 138000-byte bootstrap 10264-byte probe 2496-byte shell 720-byte child 8064-byte C object and 13520-byte C payload without changing the packed task ABI or fixed capacities",
+  "the bounded one-vCPU 128-MiB QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers and reached RING3_SHELL_OK after each RUN first completed a real empty 10-ms timeout and then a child-SEND wake",
+  "a focused runtime repair reloaded the validated child message pointer after the pre-publication waiter validator reused r13; the final source build and QEMU gates all passed afterward",
+  "the host py launcher still targets an inaccessible Store Python 3.12 registration so the identical Python gates used the installed Python 3.13 executable; installed WinGet make and Zig were supplied only through the gate process PATH",
+  "timeout SEND wake WAIT reap close shell exit force cleanup and final runtime verification left timer deadline waiter endpoint message capability queue loader task and frame authority clear; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

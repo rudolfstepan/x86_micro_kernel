@@ -292,13 +292,14 @@ Userkopie. Release, Close, Reap und Fehlercleanup widerrufen die gesamte
 Autoritaet vor Slot-Reuse; die finale Pruefung verlangt Endpoint, Nachricht und
 alle vier Capabilityrecords null.
 
-R8.2o ist die aktive, weiterhin isolierte Erweiterung dieses Pfads. Der
-bestehende REIST-v1-Index `IPC_RECEIVE_TIMEOUT` 54 soll genau einen
-generationengebundenen Receive-Wait an die feste monotone PIT-Deadlinequeue
-binden. Ein leerer Receive muss real mit `ETIMEDOUT` enden; ein valider
-Kind-SEND darf nur die exakte Elterngeneration wecken. Beide Pfade muessen
-Timer-, Deadline- und Waiterzustand vor der weiteren Lifecycle-Ausfuehrung
-vollstaendig widerrufen.
+R8.2o bindet den bestehenden REIST-v1-Index `IPC_RECEIVE_TIMEOUT` 54 an genau
+einen generationengebundenen Receive-Wait und die feste monotone
+PIT-Deadlinequeue. Ein leerer 10-ms-Receive idlet wirklich bis `ETIMEDOUT`; der
+anschliessende Receive blockiert vor der Kindausfuehrung. Erst der vollstaendig
+validierte Kind-SEND entfernt die exakte Deadline, stoppt den Timer, kopiert in
+den vorvalidierten privaten Parent-Frame und weckt Generation 40. Beide Pfade
+widerrufen Timer-, Deadline- und Waiterzustand vor der weiteren
+Lifecycle-Ausfuehrung vollstaendig.
 
 ## Minimaler REIST-Kern
 
