@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2j-x86_64-shell-child-reuse"
 
 [policy]
 one_package_per_run = true
@@ -11520,6 +11520,43 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN EXIT and reached RING3_SHELL_RUN_OK then every established marker through RING3_SHELL_OK",
   "child status 77 published only after terminal validation; reap restored kernel CR3 released all generation-41 frames cleared relation wait and queue state woke only shell generation 40 and final cleanup restored the initial free count; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2j-x86_64-shell-child-reuse"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Reuse the bounded x86_64 shell child slot safely"
+scope = "Extend only the accepted real x86_64 Ring-3 shell RUN lifecycle from one to exactly two sequential invocations. The first RUN uses child slot 1 generation 41 and the second reuses the fully reaped slot as generation 42; both return PID 301 and status 77 through the unchanged GETPID 22 SPAWN 23 WAIT 24 and EXIT 9 ABI. SPAWN derives the next generation solely from the bounded completed count, validates the empty zeroed slot and all relation queue wait and ownership metadata before allocating private tables writable pages and NX stack, and publishes READY only after complete construction. WAIT remains blocking and generation exact, writes status only after terminal validation under child CR3, reaps and clears all authority before waking shell generation 40. The native dialogue sends INFO RUN RUN EXIT, requires exactly two ordered RUN_OK observations, then final EXIT verifies two spawns two completions two child reaps empty queue zero relation and ownership metadata and the exact initial frame count. Preserve the four-slot capacity immutable shared RX image nonblocking serial bounds IRETQ paths separate dynamic two-generation proof all markers C handoffs i386 and package layout. Add no concurrent child wait-any VFS image registry argv new syscall SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all i386 artifacts syscall numbers C handoffs four-slot capacity prior dynamic and one-run shell proofs and existing x86_64 markers remain unchanged and ordered",
+  "the host sends exactly INFO RUN RUN EXIT and observes exactly two ordered RUN_OK markers before shell EXIT",
+  "only fully reaped zeroed slot 1 may advance from generation 41 to generation 42 and each generation owns distinct fresh private tables writable pages and NX stack",
+  "each WAIT blocks shell generation 40 without polling and status 77 becomes visible only after exact current-generation terminal validation",
+  "each child reap restores kernel CR3 releases every owned frame clears queue relation and wait metadata then wakes only shell generation 40",
+  "final shell EXIT requires exactly two spawns completions and child-free events no live child or stale generation exact read write counts and the initial free count"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "a concurrent child second slot new loader image VFS path argv task capacity public ABI or syscall number is required",
+  "generation can advance before complete reap or stale relation wait queue frame or status authority can survive reuse",
+  "the shell can poll for completion or status can publish before exact terminal validation",
+  "an i386 artifact prior marker separate dynamic proof C handoff or shell safety bound changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "proc: reuse x86_64 shell child generation safely"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
