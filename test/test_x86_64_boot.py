@@ -256,6 +256,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
             "REIST_SYS_EXIT 9ULL", "REIST_SYS_READ 15ULL",
             "REIST_SYS_WRITE 20ULL", "REIST_SYS_GETPID 22ULL",
             "REIST_SYS_SPAWN 23ULL", "REIST_SYS_WAIT 24ULL",
+            "REIST_SYS_SPAWNV 30ULL",
             "REIST_SYS_YIELD 40ULL",
         ):
             self.assertIn(syscall, shell)
@@ -416,7 +417,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         ):
             self.assertIn(contract, shell)
         getpid = shell.index("REIST_SYS_GETPID", shell.index('command_equals(command, "RUN",'))
-        spawn = shell.index("REIST_SYS_SPAWN", getpid)
+        spawn = shell.index("REIST_SYS_SPAWNV", getpid)
         wait = shell.index("REIST_SYS_WAIT", spawn)
         run_ok = shell.index("shell_write_exact(run_ok", wait)
         self.assertLess(getpid, spawn)
@@ -429,6 +430,30 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("mov qword [r12 + TASK_STATE], TASK_WAITING", scheduler)
         self.assertIn("mov dword [r15], DYNAMIC_CHILD_EXIT_STATUS", scheduler)
         self.assertIn("REIST_X86_64_RING3_SHELL_RUN_OK", runner)
+
+    def test_ring3_shell_spawnv_builds_bounded_system_v_child_stack(self):
+        shell = self.read("arch/x86_64/user/shell.c")
+        child = self.read("arch/x86_64/user/child.asm")
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        self.assertIn('"token77"', shell)
+        self.assertIn("shell_u64 child_argv[2]", shell)
+        self.assertIn("REIST_SYS_SPAWNV", shell)
+        self.assertIn("REIST_SYS_SPAWNV           equ 30", scheduler)
+        self.assertIn("scheduler_handle_shell_spawnv64:", scheduler)
+        self.assertIn("cmp qword [rel syscall_rdx], SHELL_ARGC", scheduler)
+        self.assertIn("call scheduler_validate_shell_token64", scheduler)
+        self.assertIn("call scheduler_build_shell_child_stack64", scheduler)
+        self.assertIn("SHELL_CHILD_STACK_BYTES    equ 96", scheduler)
+        self.assertIn("mov qword [r13 + 8], SHELL_CHILD_ARGV0", scheduler)
+        self.assertIn("mov qword [r13 + 16], SHELL_CHILD_ARGV1", scheduler)
+        self.assertIn("mov qword [r12 + TASK_RSP], USER_STACK_TOP - SHELL_CHILD_STACK_BYTES",
+                      scheduler)
+        self.assertIn("CHILD_RSP      equ USER_STACK_TOP - 96", child)
+        self.assertIn("test rsp, 15", child)
+        self.assertIn("cmp qword [rsp], 2", child)
+        self.assertIn("cmp qword [rsp + 24], 0", child)
+        self.assertIn("cmp qword [rsp + 48], 0", child)
+        self.assertIn("FAIL_STATUS    equ 78", child)
 
     def test_ring3_shell_child_slot_reuse_is_exactly_two_generations(self):
         scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")

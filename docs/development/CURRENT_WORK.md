@@ -196,12 +196,14 @@ native QEMU-Dialog mit zwei frischen Kindladungen bestanden bis
 `RING3_SHELL_OK`; die Queue ist leer. VFS, argv und dynamische Registries
 bleiben ausgeschlossen.
 
-R8.2l ist aktiv. Die reale x86_64-Shell verwendet fuer `RUN` den bestehenden
-REIST-v1-Index `SPAWNV` 30 mit exakt `argv[0] = /shell/child` und
+R8.2l ist abgeschlossen. Die reale x86_64-Shell verwendet fuer `RUN` den
+bestehenden REIST-v1-Index `SPAWNV` 30 mit exakt `argv[0] = /shell/child` und
 `argv[1] = token77`. Der Kernel validiert den gesamten privaten Shell-Stack vor
-jeder Wirkung und baut erst nach ELF-/Adressraumpruefung einen festen
-System-V-AMD64-Startstack im privaten NX-Kindstack. Variable Argumentlisten,
-Umgebung, VFS und Capability-Vererbung bleiben ausgeschlossen.
+jeder Wirkung und baut einen festen System-V-AMD64-Startstack im privaten
+NX-Kindstack. 52 Quellvertragstests, der warnungsfreie 128.328-Byte-Build und
+der native QEMU-Lauf mit zwei erfolgreichen Kind-Eigenpruefungen bestanden bis
+`RING3_SHELL_OK`; die Queue ist leer. Variable Argumentlisten, Umgebung, VFS
+und Capability-Vererbung bleiben ausgeschlossen.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der

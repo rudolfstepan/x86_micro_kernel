@@ -531,3 +531,23 @@ laeuft Kind, Shell, Probe.
 native Ein-vCPU-/128-MiB-QEMU-Dialog lud das Kind zweimal frisch, beobachtete
 exakt zwei `RUN_OK`-Marker und erreichte nach leerem Kontext- und Framebesitz
 alle bisherigen Marker bis `RING3_SHELL_OK`.
+
+## Begrenztes SPAWNV und argv R8.2l
+
+`RUN` verwendet nun den unveraenderten REIST-v1-Syscall `SPAWNV` 30. Im
+privaten Shell-NX-Stack liegen exakt `/shell/child`, `token77` und ein
+8-Byte-ausgerichteter Zwei-Pointer-Vector. Der Kernel akzeptiert nur Shell-PID
+300/Generation 40, `argc == 2`, disjunkte 16-Byte-Bereiche und beide
+NUL-terminierten Sollstrings, bevor Loader oder Taskzustand veraendert werden.
+
+Nach ELF- und Adressraumvalidierung entsteht im privaten Kindstack ein
+vollstaendig genullter 96-Byte-Startblock. `%rsp` ist 16-Byte-ausgerichtet und
+zeigt auf `argc`; es folgen zwei `argv`-Pointer, NULL, eine leere Umgebung und
+ein `AT_NULL`-Paar. Das RX-only-Kind prueft Stackadresse, Alignment, alle
+Pointer, Terminatoren und Strings. Nur Erfolg beendet sich mit 77, jede
+Abweichung mit 78.
+
+52 Quellvertragstests und der nach einer fokussierten Immediate-Reparatur
+warnungsfreie 128.328-Byte-Build bestanden. Der native QEMU-Dialog validierte
+beide Generationen und erreichte mit exakt zwei `RUN_OK`-Markern alle
+bisherigen Marker bis `RING3_SHELL_OK`.

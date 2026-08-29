@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2l-x86_64-shell-spawnv-argv"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11609,7 +11609,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2l-x86_64-shell-spawnv-argv"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Pass bounded argv to the x86_64 shell child"
@@ -11642,7 +11642,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "proc: pass bounded argv to x86_64 shell child"
-evidence = []
+evidence = [
+  "all 52 x86_64 source-contract tests passed including unchanged SPAWN 23 new SPAWNV 30 exact parent vector and string validation fixed 96-byte System V AMD64 child entry stack and distinct failure status",
+  "after one focused immediate-encoding repair the warning-free package build produced a 128328-byte bootstrap 10264-byte probe 1696-byte shell 504-byte child ELF 8064-byte C core object and 13520-byte C payload",
+  "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers after the child validated argc argv NULL empty envp AT_NULL and both strings and preserved every marker through RING3_SHELL_OK",
+  "both generations retained task-before-image reap blocking exact WAIT shell-selector restoration zero relation queue and loader metadata and the exact initial free count; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

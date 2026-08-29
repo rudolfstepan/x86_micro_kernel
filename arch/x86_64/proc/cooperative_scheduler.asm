@@ -175,6 +175,11 @@ REIST_SYS_MONOTONIC_MS     equ 42
 REIST_SYS_GETPID           equ 22
 REIST_SYS_SPAWN            equ 23
 REIST_SYS_WAIT             equ 24
+REIST_SYS_SPAWNV           equ 30
+SHELL_ARGC                 equ 2
+SHELL_CHILD_STACK_BYTES    equ 96
+SHELL_CHILD_ARGV0          equ USER_STACK_TOP - 32
+SHELL_CHILD_ARGV1          equ USER_STACK_TOP - 16
 EXPECTED_EXIT_STATUS       equ 101
 PREEMPT_EXIT_STATUS        equ 102
 QUANTUM_EXIT_STATUS        equ 103
@@ -1513,6 +1518,8 @@ scheduler_shell_syscall_dispatch64:
     je scheduler_handle_shell_getpid64
     cmp qword [rel syscall_rax], REIST_SYS_SPAWN
     je scheduler_handle_shell_spawn64
+    cmp qword [rel syscall_rax], REIST_SYS_SPAWNV
+    je scheduler_handle_shell_spawnv64
     cmp qword [rel syscall_rax], REIST_SYS_WAIT
     je scheduler_handle_shell_wait64
     cmp qword [rel syscall_rax], REIST_SYS_EXIT
@@ -1605,6 +1612,61 @@ scheduler_handle_shell_getpid64:
     mov rax, TASK_SHELL_PARENT_PID
     jmp scheduler_shell_resume64
 
+scheduler_handle_shell_spawnv64:
+    mov byte [rel scheduler_failure_stage], 0x57
+    cmp dword [rel scheduler_current_slot], 0
+    jne scheduler_fail
+    cmp qword [r12 + TASK_GENERATION], TASK_SHELL_GENERATION
+    jne scheduler_fail
+    cmp qword [rel syscall_rdx], SHELL_ARGC
+    jne scheduler_fail
+    mov rax, qword [rel syscall_rdi]
+    test rax, 7
+    jnz scheduler_fail
+    call scheduler_validate_child_path64
+    test eax, eax
+    jz scheduler_fail
+    mov rax, qword [rel syscall_rsi]
+    cmp rax, USER_STACK_BASE
+    jb scheduler_fail
+    cmp rax, USER_STACK_TOP - 16
+    ja scheduler_fail
+    test rax, 7
+    jnz scheduler_fail
+    mov rbx, rax
+    mov r9, qword [rbx]
+    cmp r9, qword [rel syscall_rdi]
+    jne scheduler_fail
+    mov r10, qword [rbx + 8]
+    cmp r10, qword [rel syscall_rdi]
+    je scheduler_fail
+    mov rax, r9
+    sub rax, rbx
+    jnc .vector_path_distance
+    neg rax
+.vector_path_distance:
+    cmp rax, CHILD_PATH_CAPACITY
+    jb scheduler_fail
+    mov rax, r10
+    sub rax, rbx
+    jnc .vector_token_distance
+    neg rax
+.vector_token_distance:
+    cmp rax, CHILD_PATH_CAPACITY
+    jb scheduler_fail
+    mov rax, r10
+    sub rax, r9
+    jnc .string_distance
+    neg rax
+.string_distance:
+    cmp rax, CHILD_PATH_CAPACITY
+    jb scheduler_fail
+    mov rax, r10
+    call scheduler_validate_shell_token64
+    test eax, eax
+    jz scheduler_fail
+    jmp scheduler_shell_spawn_validated64
+
 scheduler_handle_shell_spawn64:
     mov byte [rel scheduler_failure_stage], 0x55
     cmp dword [rel scheduler_current_slot], 0
@@ -1619,6 +1681,7 @@ scheduler_handle_shell_spawn64:
     call scheduler_validate_child_path64
     test eax, eax
     jz scheduler_fail
+scheduler_shell_spawn_validated64:
     cmp byte [rel scheduler_dynamic_child_active], 0
     jne scheduler_fail
     mov eax, dword [rel scheduler_dynamic_spawn_count]
@@ -1682,6 +1745,9 @@ scheduler_handle_shell_spawn64:
     jz scheduler_fail
     mov edi, 1
     call scheduler_build_task64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_build_shell_child_stack64
     test eax, eax
     jz scheduler_fail
     mov edi, ELF_IMAGE_SHELL
@@ -1947,6 +2013,33 @@ scheduler_validate_child_path64:
     mov rbx, rax
     lea r8, [rel scheduler_shell_child_path]
 .compare_start:
+    xor ecx, ecx
+.compare:
+    cmp ecx, CHILD_PATH_CAPACITY
+    jae .fail
+    mov dl, byte [rbx + rcx]
+    cmp dl, byte [r8 + rcx]
+    jne .fail
+    test dl, dl
+    jz .ok
+    inc ecx
+    jmp .compare
+.ok:
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+scheduler_validate_shell_token64:
+    cmp rax, USER_STACK_BASE
+    jb .fail
+    cmp rax, USER_STACK_TOP - CHILD_PATH_CAPACITY
+    ja .fail
+    test rax, 7
+    jnz .fail
+    mov rbx, rax
+    lea r8, [rel scheduler_shell_child_token]
     xor ecx, ecx
 .compare:
     cmp ecx, CHILD_PATH_CAPACITY
@@ -3466,6 +3559,41 @@ scheduler_build_task64:
     xor eax, eax
     ret
 
+scheduler_build_shell_child_stack64:
+    cld
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .fail
+    lea rax, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp r12, rax
+    jne .fail
+    mov rax, qword [r12 + TASK_STACK_FRAME]
+    test rax, rax
+    jz .fail
+    mov r13, DIRECT_MAP_BASE
+    add r13, rax
+    add r13, PAGE_SIZE - SHELL_CHILD_STACK_BYTES
+    mov rdi, r13
+    xor eax, eax
+    mov ecx, SHELL_CHILD_STACK_BYTES / 8
+    rep stosq
+    mov qword [r13], SHELL_ARGC
+    mov qword [r13 + 8], SHELL_CHILD_ARGV0
+    mov qword [r13 + 16], SHELL_CHILD_ARGV1
+    lea rsi, [rel scheduler_shell_child_path]
+    lea rdi, [r13 + 64]
+    mov ecx, 13
+    rep movsb
+    lea rsi, [rel scheduler_shell_child_token]
+    lea rdi, [r13 + 80]
+    mov ecx, 8
+    rep movsb
+    mov qword [r12 + TASK_RSP], USER_STACK_TOP - SHELL_CHILD_STACK_BYTES
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
 scheduler_verify_isolation64:
     lea r12, [rel scheduler_tasks]
     lea r13, [rel scheduler_tasks + TASK_RECORD_SIZE]
@@ -4237,6 +4365,7 @@ scheduler_dynamic_magics:
     dq 0x1818181818181818, 0x1919191919191919
 scheduler_dynamic_child_path db "/probe/child", 0
 scheduler_shell_child_path db "/shell/child", 0
+scheduler_shell_child_token db "token77", 0
 scheduler_ok_message db "REIST_X86_64_PROCESS_SCHEDULER_OK", 13, 10, 0
 scheduler_preempt_ok_message db "REIST_X86_64_TIMER_PREEMPTION_OK", 13, 10, 0
 scheduler_quantum_ok_message db "REIST_X86_64_QUANTUM_SWITCH_OK", 13, 10, 0

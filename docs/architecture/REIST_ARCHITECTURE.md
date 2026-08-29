@@ -261,6 +261,14 @@ Metadaten, waehrend Framebesitz und Entry pro Kontext erhalten bleiben. Der
 Kind-Reap gibt zuerst den Taskadressraum und danach den Kind-Abbildkontext frei,
 bevor der Shellkontext wieder Autoritaet erhaelt.
 
+R8.2l bindet den bestehenden REIST-v1-Index `SPAWNV` 30 an den realen
+x86_64-Shellpfad. Der Parent uebergibt genau Programmpfad und `token77`; Vector,
+Pointer, Abstaende und NUL-Terminierung werden vor jeder Wirkung geprueft. Das
+Kind erhaelt einen privaten 96-Byte-System-V-AMD64-Startstack mit `argc`,
+`argv`, leerer Umgebung und `AT_NULL`. Nur die bytegenaue Eigenpruefung darf
+Status 77 liefern; damit entsteht keine variable Argument- oder
+Capability-Vererbung.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

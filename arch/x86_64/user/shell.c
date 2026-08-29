@@ -9,6 +9,7 @@ typedef unsigned char shell_u8;
 #define REIST_SYS_GETPID 22ULL
 #define REIST_SYS_SPAWN 23ULL
 #define REIST_SYS_WAIT 24ULL
+#define REIST_SYS_SPAWNV 30ULL
 #define REIST_SYS_YIELD 40ULL
 #define REIST_STDIN 0ULL
 #define REIST_STDOUT 1ULL
@@ -121,8 +122,13 @@ void _start(void)
                     shell_exit(5ULL);
                 }
             } else if (command_equals(command, "RUN", 3U, command_length)) {
-                shell_u8 child_path[SHELL_COMMAND_CAPACITY] __attribute__((aligned(4))) =
+                shell_u8 child_path[SHELL_COMMAND_CAPACITY] __attribute__((aligned(8))) =
                     "/shell/child";
+                shell_u8 child_token[SHELL_COMMAND_CAPACITY] __attribute__((aligned(8))) =
+                    "token77";
+                shell_u64 child_argv[2] __attribute__((aligned(8))) = {
+                    (shell_u64)child_path, (shell_u64)child_token
+                };
                 shell_u32 child_status __attribute__((aligned(4))) = 0U;
                 shell_i64 parent_pid = shell_syscall3(REIST_SYS_GETPID, 0ULL, 0ULL, 0ULL);
                 shell_i64 child_pid;
@@ -131,8 +137,9 @@ void _start(void)
                 if (parent_pid != SHELL_PARENT_PID) {
                     shell_exit(11ULL);
                 }
-                child_pid = shell_syscall3(REIST_SYS_SPAWN,
-                                           (shell_u64)child_path, 0ULL, 0ULL);
+                child_pid = shell_syscall3(REIST_SYS_SPAWNV,
+                                           (shell_u64)child_path,
+                                           (shell_u64)child_argv, 2ULL);
                 if (child_pid != SHELL_CHILD_PID) {
                     shell_exit(12ULL);
                 }
