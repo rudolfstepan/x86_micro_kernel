@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1e-ata-flush-capabilities"
 
 [policy]
 one_package_per_run = true
@@ -11753,3 +11753,52 @@ evidence = [
   "The one-job Ring-3 toolchain built LS.PRG and STORAGE.PRG successfully; STORAGE.PRG is 196608 bytes and remains below the fixed 224-KiB service-image limit.",
   "The final QEMU VGA package build passed in 70 seconds without starting a VM. Operation 7 and its 512-byte frame remain unchanged and LS.PRG contains no kernel readdir fallback."
 ]
+
+[[packages]]
+id = "R7.1e-ata-flush-capabilities"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Select physical ATA cache barriers from IDENTIFY capabilities"
+scope = "Repair the physical SSD benchmark failure isolated immediately after BENCHMARK_STATUS phase=hdd-fsync. Validate the ATA IDENTIFY DEVICE command-set word before recording FLUSH CACHE and FLUSH CACHE EXT support, select only an advertised barrier command independently of LBA48 addressing, and reject media that advertises neither command. After issuing the selected non-data command, observe the required alternate-status delay and a bounded completion check that reports command, status and ATA error without retrying an uncertain operation. Preserve fsync error propagation, the storage write fence, journal ordering, AHCI behavior, on-disk formats and public ABIs."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/bus/drives.h",
+  "drivers/block/ata.h",
+  "drivers/block/ata.c",
+  "test/test_ata_lba48_source.py",
+  "test/test_ata_source.py",
+  "test/test_benchmark_source.py",
+  "test/test_reist_atomic_rename.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "IDENTIFY word 83 is accepted only when its validity bits are 01b and LBA48 FLUSH CACHE and FLUSH CACHE EXT remain three independent capabilities",
+  "PIO selects FLUSH CACHE EXT only when word 83 bit 13 is advertised and otherwise selects FLUSH CACHE only when word 83 bit 12 is advertised",
+  "a device advertising neither cache barrier fails fsync closed and no rejected timeout or ambiguous completion is retried with another command",
+  "non-data command completion uses the required alternate-status settling reads and one monotonic bounded poll that rejects floating bus ERR DF or unexpected DRQ",
+  "a barrier failure remains visible through VFS fsync and the existing storage-write fence while successful journal ordering is unchanged",
+  "AHCI behavior partition translation persistent formats syscall numbers and public userspace ABI remain unchanged"
+]
+targeted_tests = [
+  "python test/test_ata_lba48_source.py -v",
+  "python test/test_ata_source.py -v",
+  "python test/test_benchmark_source.py -v",
+  "python test/test_reist_atomic_rename.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target real_hw -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the repair would ignore a failed flush treat an unadvertised command as supported or retry an uncertain barrier",
+  "the normal write or journal path can report durable success without the selected barrier completing",
+  "the physical SSD still fails and its new ATA_FLUSH_FAILED record identifies a different first failure",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "ata: select physical cache flush capability"
+evidence = []

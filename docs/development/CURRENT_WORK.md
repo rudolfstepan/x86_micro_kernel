@@ -4,8 +4,17 @@ Stand: 29. August 2026
 
 Branch/Startpunkt: `working_branch` / `47b60678`
 
-Aktives Thema: kein Paket. `R7.1d-storage-readdir-continuation` ist
-abgeschlossen.
+Aktives Thema: `R7.1e-ata-flush-capabilities`.
+
+Der reale SSD-Lauf erreicht alle 256 KiB des Benchmark-Writes, scheitert aber
+unmittelbar nach `BENCHMARK_STATUS phase=hdd-fsync`; der Readback wird deshalb
+nicht begonnen. Der PIO-Pfad waehlt fuer das explizite `fsync` derzeit
+`FLUSH CACHE EXT` allein aus der LBA48-Faehigkeit, obwohl IDENTIFY DEVICE die
+beiden Cache-Flush-Befehle unabhaengig meldet. R7.1e validiert diese
+Kommandofaehigkeiten getrennt, behaelt Fehlerweitergabe und Storage-Fence bei
+und erzeugt anschliessend ein neues reales Hardware-Image fuer den SSD-Test.
+
+`R7.1d-storage-readdir-continuation` ist abgeschlossen.
 
 Die indexierte Operation 7 bleibt bytegleich. Die unabhaengigen FAT- und
 EXT2-Parser besitzen nun einen festen Fortsetzungszustand, und der

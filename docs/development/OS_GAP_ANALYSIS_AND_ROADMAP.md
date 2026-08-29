@@ -373,6 +373,13 @@ halten 128 FAT-Eintraege plus EOF unter 129 Verzeichnis-Datensektorreads und
 62 EXT2-Eintraege plus EOF unter 126 Verzeichnissektorreads insgesamt;
 Ketten-, Inode- und Cursorabweichungen verwenden den Kaltlauf. Alle 46
 gezielten Pruefungen und der 70-sekuendige QEMU-VGA-Paketbuild bestanden.
+R7.1e ist in Arbeit, nachdem derselbe Benchmark auf einer realen SSD alle
+256 KiB schrieb, aber unmittelbar beim anschliessenden `fsync` scheiterte und
+den Readback deshalb nicht begann. Der ATA-PIO-Pfad muss `FLUSH CACHE` und
+`FLUSH CACHE EXT` aus den getrennten, gueltigen IDENTIFY-Kommandobits waehlen,
+nicht pauschal aus LBA48. Ein nicht unterstuetzter oder fehlgeschlagener
+Persistenzbefehl bleibt ein sichtbarer Fehler und verriegelt weiterhin den
+bestehenden Storage-Write-Pfad.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem
