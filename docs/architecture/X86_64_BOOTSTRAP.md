@@ -444,13 +444,16 @@ behaelt Layout und Rechte; nur sein vorhandenes Speicherlimit betraegt nun
 128 MiB. Dynamische Seitentabellen, Speicher oberhalb 128 MiB, NUMA, SMP und
 produktive Hardwareintegration bleiben offen.
 
-Der bisherige allgemeine Frame-Aufruf bleibt fuer seine bereits abgenommenen
-Loader- und Prozessverbraucher zunaechst auf Frames unter 64 MiB begrenzt.
-Damit kann deren bestehende 64-MiB-Eingangsvalidierung keinen bereits
-allokierten hohen Frame ablehnen. Die obere Haelfte ist nur ueber den neuen
-expliziten, auf `[64 MiB, 128 MiB)` begrenzten Nachweispfad erreichbar. Eine
-spaetere Freigabe fuer allgemeine Verbraucher muss deren komplette
-Validierungs- und Cleanupvertraege gemeinsam migrieren.
+## Begrenzter High-Frame-Verbraucherschnitt R8.2f
+
+Der normale lowest-first Allocator und die bestehenden ELF64-, Userstack- und
+Prozess-Seitentabellenvertraege verwenden gemeinsam die bereits abgenommene
+128-MiB-Grenze. Ein nur im Boot-Selbsttest aktiviertes festes Fenster erzwingt
+Frames aus `[64 MiB, 128 MiB)` fuer den unveraenderten Loader- und ersten
+Prozessaufbau. Es wird vor dem Ring-3-Eintritt geloescht; Erfolg verlangt die
+normalen Zero-fill-, W^X-, NX-, Release- und Duplicate-free-Pruefungen sowie den
+exakten urspruenglichen Freizaehler. Dynamische Seitentabellen und Speicher
+oberhalb 128 MiB bleiben ausgeschlossen.
 
 Die Abnahme umfasst 45 Quellvertragstests und ein 120.664-Byte-Bootstrap.
 Seine Assembly-BSS endet bei `0x00183000`, die C-Bruecke beginnt bei

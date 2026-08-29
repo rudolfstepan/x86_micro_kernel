@@ -129,7 +129,7 @@ QUANTUM_A_MAGIC            equ 0xE44E44E44E44E44E
 QUANTUM_B_MAGIC            equ 0xF55F55F55F55F55F
 PAGE_SIZE                  equ 4096
 USER_END                   equ USER_BASE + (USER_PAGE_COUNT * PAGE_SIZE)
-MANAGED_LIMIT              equ 0x04000000
+MANAGED_LIMIT              equ 0x08000000
 DIRECT_MAP_BASE            equ 0xFFFF800000000000
 
 PAGE_PRESENT               equ 0x001

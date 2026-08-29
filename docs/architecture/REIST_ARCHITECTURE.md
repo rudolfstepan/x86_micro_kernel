@@ -220,6 +220,13 @@ privaten NX-Stack. Der begrenzte QEMU-Dialog beweist `INFO`, `EXIT` und die
 vollstaendige Ruecknahme der temporaeren Autoritaet. Dies ist kein VFS-,
 allgemeiner Terminal-, Treiber- oder Produktionspfad.
 
+R8.2f gibt den in R8.2e bereits verwalteten oberen 64-MiB-Bereich gemeinsam
+fuer den festen ELF64-Loader und die privaten Prozessrahmen frei. Die
+Produktionsallokation bleibt lowest-first. Nur ein begrenztes Boot-Testfenster
+erzwingt hohe Frames und muss vor CPL3 sowie vor allen folgenden Scheduler-
+Nachweisen wieder inaktiv sein; alle Verbraucher behalten ihre festen
+Kapazitaeten und vollstaendigen Cleanup-Vertraege.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

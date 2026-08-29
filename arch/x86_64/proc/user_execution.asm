@@ -9,7 +9,7 @@ USER_END                  equ 0x00408000
 USER_STACK_BASE           equ 0x00408000
 USER_STACK_TOP            equ 0x00409000
 PAGE_SIZE                 equ 4096
-MANAGED_LIMIT             equ 0x04000000
+MANAGED_LIMIT             equ 0x08000000
 HIGHER_HALF_BASE           equ 0xFFFFFFFF80000000
 
 PAGE_PRESENT              equ 0x001
@@ -85,6 +85,7 @@ extern pml4_table
 extern physical_frame_alloc64
 extern physical_frame_free64
 extern physical_free_frame_count64
+extern physical_frame_test_window_clear64
 extern x86_64_elf64_load64
 extern x86_64_elf64_release64
 extern x86_64_elf64_entry64
@@ -216,6 +217,9 @@ x86_64_user_shell64:
     jmp enter_user_attempt64
 
 enter_user_attempt64:
+    call physical_frame_test_window_clear64
+    test eax, eax
+    jz user_execution_fail
     mov byte [rel failure_stage], 0x81
     cmp byte [rel execution_active], 1
     jne user_execution_fail
@@ -1118,6 +1122,7 @@ write_msr64:
 
 user_execution_cleanup64:
     cli
+    call physical_frame_test_window_clear64
     mov byte [rel cleanup_error], 0
     mov byte [rel execution_active], 0
     mov rax, qword [rel original_cr3]

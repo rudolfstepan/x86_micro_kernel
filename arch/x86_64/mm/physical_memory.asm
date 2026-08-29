@@ -36,6 +36,9 @@ section .text
 global x86_64_physical_memory_init32
 global x86_64_physical_memory_selftest64
 global physical_frame_alloc64
+global physical_frame_test_high_window64
+global physical_frame_test_window_clear64
+global physical_frame_test_window_is_clear64
 global physical_frame_free64
 global physical_free_frame_count64
 extern pml4_table
@@ -473,9 +476,30 @@ x86_64_physical_memory_selftest64:
 
 physical_frame_alloc64:
     cld
-    xor ecx, ecx
-    mov r9d, HIGH_MEMORY_FRAME
+    mov ecx, dword [rel allocation_test_floor]
+    mov r9d, FRAME_COUNT
     jmp physical_frame_alloc_from_index64
+
+physical_frame_test_high_window64:
+    cmp dword [rel allocation_test_floor], 0
+    jne .fail
+    mov dword [rel allocation_test_floor], HIGH_MEMORY_FRAME
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+physical_frame_test_window_clear64:
+    mov dword [rel allocation_test_floor], 0
+    mov eax, 1
+    ret
+
+physical_frame_test_window_is_clear64:
+    xor eax, eax
+    cmp dword [rel allocation_test_floor], 0
+    sete al
+    ret
 
 physical_frame_alloc_high_selftest64:
     cld
@@ -558,6 +582,10 @@ verify_direct_frame64:
 section .rodata
 physical_memory_ok_message db "REIST_X86_64_PHYSICAL_MEMORY_OK", 13, 10, 0
 physical_memory_128m_ok_message db "REIST_X86_64_PHYSICAL_MEMORY_128M_OK", 13, 10, 0
+
+section .bss
+align 4
+allocation_test_floor resd 1
 
 section .bss
 alignb 16

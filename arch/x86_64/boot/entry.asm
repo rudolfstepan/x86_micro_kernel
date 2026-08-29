@@ -102,6 +102,9 @@ global x86_64_c_process_shell64
 extern x86_64_exception_init
 extern x86_64_physical_memory_init32
 extern x86_64_physical_memory_selftest64
+extern physical_frame_test_high_window64
+extern physical_frame_test_window_clear64
+extern physical_frame_test_window_is_clear64
 extern x86_64_elf64_loader_selftest64
 extern x86_64_user_execution_selftest64
 extern x86_64_process_scheduler_selftest64
@@ -476,15 +479,35 @@ x86_64_nx_resume:
     call x86_64_physical_memory_selftest64
     test eax, eax
     jz physical_memory_state_error
-    call x86_64_elf64_loader_selftest64
+    call physical_frame_test_high_window64
     test eax, eax
     jz elf64_loader_state_error
+    call x86_64_elf64_loader_selftest64
+    test eax, eax
+    jz .high_loader_fail
+    call physical_frame_test_window_clear64
+    test eax, eax
+    jz elf64_loader_state_error
+    call physical_frame_test_high_window64
+    test eax, eax
+    jz user_execution_state_error
     call x86_64_user_execution_selftest64
     test eax, eax
     jz user_execution_state_error
+    call physical_frame_test_window_is_clear64
+    test eax, eax
+    jz user_execution_state_error
+    lea rsi, [rel high_frame_consumers_message]
+    call serial_write64
     call x86_64_process_scheduler_selftest64
     test eax, eax
     jz process_scheduler_state_error
+    jmp .high_loader_done
+
+.high_loader_fail:
+    call physical_frame_test_window_clear64
+    jmp elf64_loader_state_error
+.high_loader_done:
     call x86_64_timer_interrupt_selftest64
     test eax, eax
     jz timer_interrupt_state_error
@@ -952,6 +975,7 @@ halt64:
     jmp .loop
 
 section .rodata
+high_frame_consumers_message db "REIST_X86_64_HIGH_FRAME_CONSUMERS_OK", 13, 10, 0
 unsupported_message db "REIST_X86_64_UNSUPPORTED", 13, 10, 0
 memory_map_error_message db "REIST_X86_64_MEMORY_MAP_ERROR", 13, 10, 0
 state_error_message db "REIST_X86_64_LONG_MODE_STATE_ERROR", 13, 10, 0

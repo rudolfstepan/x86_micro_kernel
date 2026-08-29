@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2f-x86_64-high-frame-consumers"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11354,7 +11354,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2f-x86_64-high-frame-consumers"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Admit bounded high frames to x86_64 loader and processes"
@@ -11388,7 +11388,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "mm: admit bounded high frames to x86_64 consumers"
-evidence = []
+evidence = [
+  "all 46 x86_64 source-contract tests passed including the shared exact 128-MiB consumer ceiling forced high allocation window pre-CPL3 clearing and runtime marker ordering",
+  "the isolated build produced a 121056-byte bootstrap the unchanged 10264-byte probe and 1256-byte shell plus the unchanged 8064-byte C object and 13520-byte linked C payload",
+  "the bounded one-vCPU 128-MiB native Windows QEMU 11.1.0 dialogue observed HIGH_FRAME_CONSUMERS_OK after forced high ELF staging and private process construction then preserved every scheduler shell and C-control marker through RING3_SHELL_OK",
+  "the self-test allocation floor loader selection task state queue CR3 TSS syscall MSRs frames and exact initial free count were restored; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

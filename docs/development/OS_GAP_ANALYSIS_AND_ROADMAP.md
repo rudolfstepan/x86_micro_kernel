@@ -288,6 +288,15 @@ nach der Allokation ablehnen wuerde. Die kontrollierte Freigabe der oberen
 Haelfte fuer diese Verbraucher bleibt ein eigener gemeinsamer ABI- und
 Cleanupschritt.
 
+**R8.2f ist abgeschlossen:** Der gemeinsame Allocator, ELF64-Loader und Prozessaufbau
+werden auf die bereits validierte 128-MiB-Grenze vereinheitlicht. Ein festes
+Selbsttestfenster erzwingt mindestens einen hohen Loader- und Prozessrahmen,
+wird vor Ring 3 geloescht und muss nach normalem Cleanup den exakten
+Ausgangszustand hinterlassen. 46 Quellvertragstests, der isolierte Build und
+der begrenzte native Windows-QEMU-Lauf bis `HIGH_FRAME_CONSUMERS_OK` und
+`RING3_SHELL_OK` bestanden. Kapazitaeten, ABI, i386 und Speicher oberhalb
+128 MiB bleiben unveraendert; die x86_64-Queue ist leer.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

@@ -145,10 +145,13 @@ erzeugte ein 120.664-Byte-Bootstrap; dessen Assembly-BSS endet bei
 Gesamtende `0x001880e0` bleibt unter 2 MiB. Der Gast meldete geordnet
 `PHYSICAL_MEMORY_OK`, `PHYSICAL_MEMORY_128M_OK` und alle unveraenderten
 Loader-, Scheduler-, Shell- und C-Control-Marker bis `RING3_SHELL_OK`.
-Die bestehenden Loader- und Prozessverbraucher bleiben bewusst unter ihrer
-abgenommenen 64-MiB-Allokationsgrenze; nur der explizite Hochspeichernachweis
-nutzt die obere Haelfte. Ihre gemeinsame 128-MiB-Freigabe folgt erst mit einer
-vollstaendigen Validierungs- und Cleanupmigration.
+R8.2f ist abgeschlossen. Der bislang auf 64 MiB begrenzte ordinary-allocation-Pfad von
+ELF64-Loader, Userstack und Prozess-Seitentabellen wird gemeinsam auf die in
+R8.2e abgenommene 128-MiB-Direct-Map angehoben. Ein Boot-Selbsttest erzwingt
+hohe Frames, raeumt sein Auswahlfenster vor CPL3 ab und verlangt danach den
+vollstaendigen bestehenden Ressourcen-Cleanup. Alle 46 Quellvertragstests,
+der isolierte 121.056-Byte-Build und der native Ein-vCPU-/128-MiB-QEMU-Dialog
+bis `HIGH_FRAME_CONSUMERS_OK` und `RING3_SHELL_OK` bestanden; die Queue ist leer.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
