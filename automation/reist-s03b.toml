@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2g-x86_64-dynamic-process-tables"
 
 [policy]
 one_package_per_run = true
@@ -11394,6 +11394,43 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU 11.1.0 dialogue observed HIGH_FRAME_CONSUMERS_OK after forced high ELF staging and private process construction then preserved every scheduler shell and C-control marker through RING3_SHELL_OK",
   "the self-test allocation floor loader selection task state queue CR3 TSS syscall MSRs frames and exact initial free count were restored; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2g-x86_64-dynamic-process-tables"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Allocate x86_64 scheduled-process page tables from frames"
+scope = "Replace only the isolated x86_64 generation-scoped scheduler's four static 16-KiB per-slot page-table arenas with four individually allocated 4-KiB physical frames per live task. Keep the existing four task slots, loader pages, private writable copies, NX stack, shared immutable RX mappings, task record layout and all REIST-v1 syscall semantics unchanged. Prevalidate the exact slot and free task state, allocate and zero PML4 PDPT PD and PT through the common 128-MiB allocator into one fixed metadata matrix, validate every physical frame and direct-map pointer before linking levels, and publish TASK_CR3 only after the complete W^X address space is valid. Any allocation, mapping or later task-build failure releases every unpublished table and data frame exactly once before READY publication. Generation-scoped normal reap and force cleanup restore kernel CR3 first, clear every table through the direct map, release PT through PML4, zero metadata and reject duplicate free. Exercise cooperative preemptive FIFO sleep spawn-wait and scheduled-shell lifecycles through these dynamic tables, require the exact initial free count and empty metadata matrix, and publish DYNAMIC_PROCESS_TABLES_OK before the unchanged final marker. Keep the earlier single-process static execution proof as an independent regression. Add no capacity dynamic task count general VFS loading SMP device physical hardware production integration or i386 change."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all i386 artifacts syscall numbers task record layout fixed four-slot capacity shell behavior C handoffs and prior x86_64 markers remain unchanged and ordered",
+  "each live scheduled task owns exactly four distinct aligned usable allocated table frames below 128 MiB recorded in a fixed four-by-four metadata matrix",
+  "TASK_CR3 and READY become visible only after all table frames private pages stack mappings inherited kernel entries and W^X NX permissions validate",
+  "partial construction and every failure path restore kernel CR3 then release all owned frames exactly once without publishing a generation or queue entry",
+  "normal generation-scoped reap and force cleanup clear and free PT PD PDPT PML4 zero task and metadata records and restore the exact initial free count",
+  "the legacy single-process user-execution proof remains isolated and its static tables do not become scheduler authority"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "the task record loader page task slot runqueue or page-table level capacity must grow",
+  "TASK_CR3 or READY can publish before complete table validation or a cleanup path can free under a non-kernel CR3",
+  "a table frame can alias another owned frame escape the managed direct map leak or be freed twice",
+  "an i386 artifact prior marker public ABI shell semantic or C handoff layout changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "mm: allocate x86_64 process page tables from frames"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
