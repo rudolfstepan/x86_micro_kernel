@@ -1953,6 +1953,35 @@ Undo-Journal v2 einschließlich Flush-Barrieren und Boot-Recovery. Ein
 skalierbares Journal beziehungsweise COW sowie die Power-Cut-Matrix auf
 Zielhardware bleiben Aufgabe von S0.5.
 
+Der ATA-PIO-Pfad behandelt die IDENTIFY-DEVICE-Kommandofaehigkeiten nach dem
+ATA-Vertrag getrennt: Wort 83 wird nur mit den gueltigen Bits 15:14 gleich
+`01b` ausgewertet; Bit 10 autorisiert LBA48, Bit 12 `FLUSH CACHE` und Bit 13
+`FLUSH CACHE EXT`. Ein LBA48-Geraet ohne Bit 13 erhaelt daher nicht
+automatisch den erweiterten Flush, sondern nur den separat gemeldeten
+Basisbefehl. Fehlen beide Flush-Bits, scheitert die Persistenzbarriere
+geschlossen. Nach der Befehlsausgabe folgen die vorgeschriebenen vier
+Alternate-Status-Lesezugriffe und ein zeit- sowie pollbegrenzter Abschluss,
+der Floating Bus, `ERR`, `DF` oder unerwartetes `DRQ` mit Befehl, Status und
+ATA-Fehlerregister diagnostiziert. Ein fehlgeschlagener oder unklarer Flush
+wird nicht mit dem jeweils anderen Befehl wiederholt.
+
+`SYS_WRITE` validiert den gesamten Ring-3-Quellbereich vor dem ersten Zugriff,
+uebergibt aber weiterhin keinen Benutzerpointer an VFS oder Blocktreiber.
+Dateiinhalte werden unter einem auf zehn Sekunden begrenzten, schlafenden
+Mutex in genau eine statische, supervisor-only und seitenorientierte
+4096-Byte-Stagingablage kopiert. Jeder belegte Abschnitt bis zu dieser Grenze
+erreicht `process_file_write` als eine VFS-Mutation; groessere Anforderungen
+werden in weiterhin begrenzte Seiten zerlegt und behalten Teilwrite-Semantik.
+Damit wird ein 4096-Byte-Aufruf nicht mehr in acht unabhaengige
+512-Byte-Journaltransaktionen zerlegt. Der FAT32-Hostvertrag beweist, dass eine
+volle Seite auf dem normalen zusammenhaengenden REIST-Layout innerhalb der
+unveraenderten zwanzig Undo-Slots bleibt, mit genau den vier Barrieren
+`Undo -> ACTIVE -> Ziele -> CLEAN` persistiert und bytegleich zurueckgelesen
+wird. Ein eigener Kapazitaetstest belegt zusaetzlich, dass ein 21. eindeutiger
+Sektor vor jeder Zielpublikation abgewiesen wird und ein Abbruch alle
+Zielsektoren unveraendert laesst. Der AHCI-Pfad behaelt seine sektorweise
+`WRITE DMA EXT -> FLUSH CACHE EXT -> READ DMA EXT`-Verifikation unveraendert.
+
 Darüber liegt `filesystem-write` als dritte reale Domäne. Alle öffentlichen
 VFS-Mutationen (`write`, `create`, `delete`, `rename`, `mkdir`, `rmdir`,
 `unmount`)

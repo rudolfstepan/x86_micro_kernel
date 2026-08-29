@@ -47,6 +47,8 @@ typedef struct {
     uint8_t partition_guid[16];
     bool has_partitions;    // Whole-media device owns validated children
     bool lba48_supported;   // ATA IDENTIFY word 83 bit 10 validated
+    bool flush_cache_supported; // ATA IDENTIFY word 83 bit 12 validated
+    bool flush_cache_ext_supported; // ATA IDENTIFY word 83 bit 13 validated
     uint32_t lba_offset;    // First parent LBA for partition child devices
     char mount_point[64];   // VFS mount point (e.g., "/", "/mnt/hdd1")
 } drive_t;

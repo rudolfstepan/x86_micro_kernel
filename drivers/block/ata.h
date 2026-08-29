@@ -20,8 +20,14 @@
 #define ATA_WRITE_SECTORS   0x30               // Write sectors command
 #define ATA_READ_SECTORS_EXT 0x24              // 48-bit PIO read
 #define ATA_WRITE_SECTORS_EXT 0x34             // 48-bit PIO write
+#define ATA_FLUSH_CACHE      0xE7
 #define ATA_FLUSH_CACHE_EXT  0xEA
 #define ATA_IDENTIFY        0xEC               // Identify command
+#define ATA_IDENTIFY_COMMAND_SET_VALID_MASK 0xC000U
+#define ATA_IDENTIFY_COMMAND_SET_VALID      0x4000U
+#define ATA_IDENTIFY_LBA48                  (1U << 10U)
+#define ATA_IDENTIFY_FLUSH_CACHE            (1U << 12U)
+#define ATA_IDENTIFY_FLUSH_CACHE_EXT        (1U << 13U)
 #define ATA_PRIMARY_IO      0x1F0              // Base I/O port for the primary ATA bus
 #define ATA_SECONDARY_IO    0x170              // Base I/O port for the secondary ATA bus
 #define ATA_MASTER          0xA0               // Master drive selection

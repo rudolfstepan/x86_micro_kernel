@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1e-ata-flush-capabilities"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11756,19 +11756,24 @@ evidence = [
 
 [[packages]]
 id = "R7.1e-ata-flush-capabilities"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
-title = "Select physical ATA cache barriers from IDENTIFY capabilities"
-scope = "Repair the physical SSD benchmark failure isolated immediately after BENCHMARK_STATUS phase=hdd-fsync. Validate the ATA IDENTIFY DEVICE command-set word before recording FLUSH CACHE and FLUSH CACHE EXT support, select only an advertised barrier command independently of LBA48 addressing, and reject media that advertises neither command. After issuing the selected non-data command, observe the required alternate-status delay and a bounded completion check that reports command, status and ATA error without retrying an uncertain operation. Preserve fsync error propagation, the storage write fence, journal ordering, AHCI behavior, on-disk formats and public ABIs."
+title = "Repair physical ATA barriers and bounded file-write batching"
+scope = "Repair the physical SSD benchmark failure isolated after BENCHMARK_STATUS phase=hdd-fsync. Physical evidence identifies hdd0p2 on AHCI with no PIO drive and proves fsync returned successfully before the shared post-write clock and 90-second result check rejected the measurement. Keep AHCI command verification unchanged, but stop SYS_WRITE from turning one validated 4-KiB request into eight independent 512-byte VFS mutations and therefore eight complete four-barrier journal transactions: copy at most one page into one supervisor-only fixed staging slot under a bounded sleepable mutex and submit that bounded chunk once. Give the fixed 256-KiB disk measurement a separate 300-second result-validation ceiling and distinct clock versus ceiling diagnostics without extending an I/O wait. Also correct the PIO fallback by validating ATA IDENTIFY DEVICE command-set word 83 before recording FLUSH CACHE and FLUSH CACHE EXT support, selecting only an advertised barrier independently of LBA48, and reporting bounded completion details without retrying an uncertain command. Preserve user-copy isolation, partial-write behavior, fsync error propagation, storage fencing, the four journal durability boundaries, AHCI write/flush/read verification, on-disk formats and public ABIs."
 allowed_files = [
   "automation/reist-s03b.toml",
   "drivers/bus/drives.h",
   "drivers/block/ata.h",
   "drivers/block/ata.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/programs/benchmark.c",
   "test/test_ata_lba48_source.py",
   "test/test_ata_source.py",
   "test/test_benchmark_source.py",
+  "test/test_userspace_file_syscalls_source.py",
+  "test/test_fat32_host.c",
+  "test/test_fs_host.py",
   "test/test_reist_atomic_rename.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/CURRENT_WORK.md",
@@ -11780,12 +11785,18 @@ invariants = [
   "a device advertising neither cache barrier fails fsync closed and no rejected timeout or ambiguous completion is retried with another command",
   "non-data command completion uses the required alternate-status settling reads and one monotonic bounded poll that rejects floating bus ERR DF or unexpected DRQ",
   "a barrier failure remains visible through VFS fsync and the existing storage-write fence while successful journal ordering is unchanged",
-  "AHCI behavior partition translation persistent formats syscall numbers and public userspace ABI remain unchanged"
+  "file writes never pass a userspace pointer into VFS and copy at most one 4096-byte page into one supervisor-only fixed staging slot acquired by a bounded sleepable mutex",
+  "one validated 4096-byte SYS_WRITE request reaches process_file_write as one bounded chunk instead of eight independent 512-byte journal transactions while larger requests retain bounded chunking and partial-write behavior",
+  "journal capacity exhaustion rejects the additional unique sector before target publication and aborting that bounded transaction leaves every target unchanged",
+  "the benchmark reports a fixed failure step after an unsuccessful fsync clock validation zero duration or 300-second disk-measurement ceiling without converting any failure to a throughput result",
+  "the four journal barriers AHCI write-flush-read verification partition translation persistent formats syscall numbers and public userspace ABI remain unchanged"
 ]
 targeted_tests = [
   "python test/test_ata_lba48_source.py -v",
   "python test/test_ata_source.py -v",
   "python test/test_benchmark_source.py -v",
+  "python test/test_userspace_file_syscalls_source.py -v",
+  "python test/test_fs_host.py -v",
   "python test/test_reist_atomic_rename.py -v"
 ]
 package_tests = [
@@ -11795,10 +11806,18 @@ runtime_tests = []
 stop_conditions = [
   "the repair would ignore a failed flush treat an unadvertised command as supported or retry an uncertain barrier",
   "the normal write or journal path can report durable success without the selected barrier completing",
-  "the physical SSD still fails and its new ATA_FLUSH_FAILED record identifies a different first failure",
+  "write batching would pass a userspace pointer into VFS allocate dynamically use an unbounded wait or admit more than 4096 bytes to one VFS mutation",
+  "the physical SSD still fails after bounded write batching or reports an AHCI ATA_FLUSH_FAILED or clock diagnostic that identifies a different first failure",
   "a required production file lies outside allowed_files",
   "an unrelated worktree change overlaps an allowed file",
   "a frozen gate still fails after one focused in-scope repair"
 ]
-commit_message = "ata: select physical cache flush capability"
-evidence = []
+commit_message = "storage: batch file writes and select ATA flush capability"
+evidence = [
+  "All 54 frozen targeted checks passed: 4 ATA capability, 5 ATA driver, 7 benchmark, 20 userspace-file-syscall, 12 filesystem-host and 6 atomic-rename checks.",
+  "The production-journal FAT32 host proof wrote and read one complete 4096-byte VFS mutation with exactly four durability barriers; a separate capacity proof accepted twenty unique sectors, rejected sector twenty-one before target publication and aborted with every target byte unchanged.",
+  "The final real_hw/vga package build passed in 17 seconds without starting QEMU or VMware and produced the 67108864-byte image with SHA-256 C0074B3FD710C0C4AD346313DCAF3A961271691EE0443704F1D82B93B6145487.",
+  "The manual ASUS-board Samsung-SSD AHCI counter-run on hdd0p2 completed write, fsync, full 256-KiB readback, cleanup and phase=complete with HDD sequential write 7.99 KiB/s and read 503.93 KiB/s, both status OK.",
+  "No PIO drive was present in the physical counter-run; the separately covered IDENTIFY capability repair preserves the bounded fail-closed PIO fallback while the proven AHCI write-flush-read path remains unchanged.",
+  "No queued package remains and active_id is empty."
+]

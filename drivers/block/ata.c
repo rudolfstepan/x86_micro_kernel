@@ -257,6 +257,13 @@ uint32_t ata_probe_diagnostics(void) {
 static unsigned int consecutive_read_failures = 0;
 #define MAX_CONSECUTIVE_FAILURES 5
 
+#define ATA_STATUS_ERR 0x01U
+#define ATA_STATUS_DRQ 0x08U
+#define ATA_STATUS_DF  0x20U
+#define ATA_STATUS_BSY 0x80U
+#define ATA_FLUSH_MAX_POLLS \
+    (ATA_WAIT_TIMEOUT_MS / ATA_POLL_DELAY_MS + 2U)
+
 #define ATA_READ_CACHE_ENTRIES 32
 typedef struct {
     unsigned short base;
@@ -866,12 +873,76 @@ void ata_reset_error_counter() {
     * @param buffer The buffer to write to the sector.
     * @return True if the sector was written successfully, false otherwise.
 */
+static bool ata_flush_failure(unsigned short base, bool is_master,
+                              uint8_t command, uint8_t status,
+                              const char *reason);
+
+static bool ata_wait_flush_complete(unsigned short base, bool is_master,
+                                    uint8_t command,
+                                    uint32_t timeout_ms) {
+    uint64_t started = pit_monotonic_ms();
+    uint8_t status = 0U;
+    for (uint32_t poll = 0U; poll < ATA_FLUSH_MAX_POLLS; ++poll) {
+        status = inb(ATA_STATUS(base));
+        if (status == 0U || status == 0xFFU)
+            return ata_flush_failure(base, is_master, command, status,
+                                     "bus");
+        if ((status & ATA_STATUS_BSY) == 0U) {
+            if ((status & (ATA_STATUS_ERR | ATA_STATUS_DF |
+                           ATA_STATUS_DRQ)) != 0U)
+                return ata_flush_failure(base, is_master, command, status,
+                                         "status");
+            return true;
+        }
+
+        uint64_t now = pit_monotonic_ms();
+        if (now < started || now - started >= timeout_ms)
+            return ata_flush_failure(base, is_master, command, status,
+                                     now < started ? "clock" : "timeout");
+        uint64_t remaining = timeout_ms - (now - started);
+        uint32_t delay = remaining < ATA_POLL_DELAY_MS
+            ? (uint32_t)remaining : ATA_POLL_DELAY_MS;
+        if (delay == 0U)
+            return ata_flush_failure(base, is_master, command, status,
+                                     "timeout");
+        pit_delay(delay);
+    }
+    return ata_flush_failure(base, is_master, command, status,
+                             "poll-limit");
+}
+
+static bool ata_flush_failure(unsigned short base, bool is_master,
+                              uint8_t command, uint8_t status,
+                              const char *reason) {
+    uint8_t error = (status & ATA_STATUS_ERR) != 0U
+        ? inb(ATA_ERROR(base)) : 0U;
+    printf("ATA_FLUSH_FAILED base=%X master=%u command=%02X status=%02X error=%02X reason=%s\n",
+           base, is_master ? 1U : 0U, command, status, error, reason);
+    return false;
+}
+
+static uint8_t ata_flush_command_for_drive(const drive_t *drive) {
+    if (drive == NULL || drive->type != DRIVE_TYPE_ATA) return 0U;
+    if (drive->flush_cache_ext_supported) return ATA_FLUSH_CACHE_EXT;
+    if (drive->flush_cache_supported) return ATA_FLUSH_CACHE;
+    return 0U;
+}
+
 static bool ata_flush_cache_impl(unsigned short base, bool is_master,
-                                 bool use_lba48) {
+                                 const drive_t *drive) {
+    uint8_t command = ata_flush_command_for_drive(drive);
+    if (command == 0U)
+        return ata_flush_failure(base, is_master, command, 0U,
+                                 "unsupported");
     unsigned char drive_head = is_master ? 0xE0U : 0xF0U;
-    if (!ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS)) return false;
-    outb(ATA_COMMAND(base), use_lba48 ? ATA_FLUSH_CACHE_EXT : 0xE7U);
-    return wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+    if (!ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS))
+        return ata_flush_failure(base, is_master, command,
+                                 inb(ATA_STATUS(base)), "select");
+    outb(ATA_COMMAND(base), command);
+    /* ATA requires at least 400 ns before command-status inspection. */
+    ata_selection_delay(base);
+    return ata_wait_flush_complete(base, is_master, command,
+                                   ATA_WAIT_TIMEOUT_MS);
 }
 
 static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
@@ -932,8 +1003,7 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
     // Journal staging may defer this barrier, but ordinary writes remain
     // durable before returning.
     if (flush_cache &&
-        !ata_flush_cache_impl(base, is_master, use_lba48)) {
-        printf("Warning: Cache flush timeout\n");
+        !ata_flush_cache_impl(base, is_master, drive)) {
         return false;
     }
 
@@ -1016,7 +1086,7 @@ static bool ata_journal_flush_transport(unsigned short base,
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
     return drive != NULL && drive->type == DRIVE_TYPE_ATA &&
-        ata_flush_cache_impl(base, is_master, drive->lba48_supported);
+        ata_flush_cache_impl(base, is_master, drive);
 }
 
 static uint8_t ata_batch_verify[SECTOR_SIZE];
@@ -1044,8 +1114,7 @@ static bool ata_write_sectors_pio_impl(unsigned short base, uint32_t lba,
         outsw(ATA_DATA(base), bytes + index * SECTOR_SIZE, SECTOR_SIZE / 2U);
     }
     if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
-    outb(ATA_COMMAND(base), use_lba48 ? ATA_FLUSH_CACHE_EXT : 0xE7U);
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+    if (!ata_flush_cache_impl(base, is_master, drive)) return false;
     for (uint32_t index = 0U; index < count; ++index) {
         if (!ata_read_sector_impl(base, lba + index, ata_batch_verify,
                                   is_master) ||
@@ -1391,7 +1460,7 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
         if (armed) {
             drive_t *drive = parent;
             result = ata_flush_cache_impl(parent->base, parent->is_master,
-                                          drive->lba48_supported);
+                                          drive);
         }
         if (armed && !storage_write_end(result)) result = false;
         ata_transaction_end();
@@ -1406,8 +1475,7 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
     bool result = false;
     if (armed) {
         drive_t *drive = &detected_drives[resource];
-        result = ata_flush_cache_impl(base, is_master,
-                                      drive->lba48_supported);
+        result = ata_flush_cache_impl(base, is_master, drive);
     }
     if (armed && !storage_write_end(result)) result = false;
     ata_transaction_end();
@@ -1535,10 +1603,11 @@ static void ata_detect_drives_impl(void) {
                 // Copy the successfully identified drive to the detected_drives array
                 detected_drives[drive_count] = temp_drive;
 
-                printf("ATA: resource %d %s model='%s' sectors=%u command=%X control=%X\n",
+                printf("ATA: resource %d %s model='%s' sectors=%u command=%X control=%X flush=%02X\n",
                        drive_count, temp_drive.is_master ? "master" : "slave",
                        temp_drive.model, temp_drive.sectors, temp_drive.base,
-                       ATA_CONTROL(temp_drive.base));
+                       ATA_CONTROL(temp_drive.base),
+                       ata_flush_command_for_drive(&temp_drive));
 
                 // Increment the global drive count after successfully adding a drive
                 drive_count++;
@@ -1622,8 +1691,16 @@ static bool ata_identify_drive_impl(uint16_t base, uint8_t drive,
 
     uint64_t sectors = (uint32_t)identify_data[60] |
                        ((uint32_t)identify_data[61] << 16U);
-    drive_info->lba48_supported =
-        (identify_data[83] & (1U << 10U)) != 0U;
+    uint16_t command_set2 = identify_data[83];
+    bool command_set2_valid =
+        (command_set2 & ATA_IDENTIFY_COMMAND_SET_VALID_MASK) ==
+        ATA_IDENTIFY_COMMAND_SET_VALID;
+    drive_info->lba48_supported = command_set2_valid &&
+        (command_set2 & ATA_IDENTIFY_LBA48) != 0U;
+    drive_info->flush_cache_supported = command_set2_valid &&
+        (command_set2 & ATA_IDENTIFY_FLUSH_CACHE) != 0U;
+    drive_info->flush_cache_ext_supported = command_set2_valid &&
+        (command_set2 & ATA_IDENTIFY_FLUSH_CACHE_EXT) != 0U;
     if (drive_info->lba48_supported) {
         uint64_t lba48 = (uint64_t)identify_data[100] |
             ((uint64_t)identify_data[101] << 16U) |

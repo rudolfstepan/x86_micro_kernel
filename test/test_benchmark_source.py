@@ -37,6 +37,7 @@ class BenchmarkSourceTests(unittest.TestCase):
             "BENCHMARK_MEMORY_MAX_PASSES",
             "BENCHMARK_DISK_CHUNK_BYTES",
             "BENCHMARK_DISK_CHUNKS",
+            "BENCHMARK_DISK_MAX_ELAPSED_MS",
             "BENCHMARK_VGA_MAX_FRAMES",
             "BENCHMARK_VGA_ATTEMPTS",
         ):
@@ -84,6 +85,12 @@ class BenchmarkSourceTests(unittest.TestCase):
         )
         positions = [self.source.index(marker) for marker in disk_markers]
         self.assertEqual(positions, sorted(positions))
+        for marker in (
+            "BENCHMARK_STATUS phase=hdd-failed step=fsync",
+            "BENCHMARK_STATUS phase=hdd-failed step=write-clock",
+            "BENCHMARK_STATUS phase=hdd-failed step=write-duration",
+        ):
+            self.assertIn(marker, self.source)
         for phase in ("hdd-write", "hdd-read"):
             for progress in (64, 128, 192, 256):
                 self.assertEqual(
@@ -94,6 +101,17 @@ class BenchmarkSourceTests(unittest.TestCase):
                     1,
                 )
         self.assertIn("BENCHMARK_DISK_PROGRESS_CHUNKS 16U", self.source)
+        self.assertIn("BENCHMARK_DISK_MAX_ELAPSED_MS 300000U", self.source)
+        disk = self.source[
+            self.source.index("static void benchmark_disk("):
+            self.source.index("static benchmark_result_t benchmark_vga(")
+        ]
+        self.assertGreaterEqual(
+            disk.count("BENCHMARK_DISK_MAX_ELAPSED_MS"), 2)
+        self.assertIn("BENCHMARK_STATUS phase=hdd-failed step=write-time-limit",
+                      disk)
+        self.assertIn("BENCHMARK_STATUS phase=hdd-failed step=read-time-limit",
+                      disk)
         self.assertIn("timed_status(progress, &write_status_ms)", self.source)
         self.assertIn("write_elapsed_with_status - write_status_ms", self.source)
 

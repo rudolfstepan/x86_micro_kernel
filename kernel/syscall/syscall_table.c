@@ -27,6 +27,7 @@
 #include "drivers/net/net_socket.h"
 #include "drivers/net/tcp_socket.h"
 #include "kernel/time/pit.h"
+#include "kernel/sched/mutex.h"
 #include "kernel/sched/scheduler.h"
 #include "kernel/proc/process.h"
 #include "include/kernel/ipc.h"
@@ -2782,6 +2783,20 @@ static int syscall_touch(const char *user_path) {
     return vfs_touch(path) == VFS_OK ? 0 : -5;
 }
 
+#define FILE_WRITE_CHUNK_CAPACITY 4096U
+#define FILE_WRITE_STAGING_TIMEOUT_MS 10000U
+
+_Static_assert(FILE_WRITE_CHUNK_CAPACITY == PAGE_SIZE,
+               "file-write staging must remain exactly one page");
+
+/* One supervisor-only page replaces a 512-byte kernel-stack bounce buffer.
+ * The VFS already serializes mutations globally, so a single bounded staging
+ * owner adds no storage-path serialization while keeping user pointers out of
+ * filesystem and block-driver code. */
+static uint8_t file_write_staging[FILE_WRITE_CHUNK_CAPACITY]
+    __attribute__((aligned(PAGE_SIZE)));
+static kernel_mutex_t file_write_staging_mutex = KERNEL_MUTEX_INIT;
+
 static int syscall_write(int descriptor, const void *user_buffer, size_t size) {
     Process *process = scheduler_current_process();
     if (process == NULL) return -9;
@@ -2797,14 +2812,22 @@ static int syscall_write(int descriptor, const void *user_buffer, size_t size) {
                                (uint32_t)(uintptr_t)user_buffer, size, false)) {
         return -14;
     }
-    uint8_t buffer[512];
-    size_t total = 0;
+    size_t total = 0U;
     while (total < size) {
         size_t amount = size - total;
-        if (amount > sizeof(buffer)) amount = sizeof(buffer);
-        if (copy_from_user(buffer, (const uint8_t*)user_buffer + total,
-                           amount) != 0) return -14;
-        int written = process_file_write(process, descriptor, buffer, amount);
+        if (amount > FILE_WRITE_CHUNK_CAPACITY)
+            amount = FILE_WRITE_CHUNK_CAPACITY;
+        if (kernel_mutex_lock_for(&file_write_staging_mutex,
+                                  FILE_WRITE_STAGING_TIMEOUT_MS) != 0)
+            return total != 0U ? (int)total : -11;
+        int copy_result = copy_from_user(
+            file_write_staging, (const uint8_t*)user_buffer + total, amount);
+        int written = copy_result == 0
+            ? process_file_write(process, descriptor, file_write_staging,
+                                 amount)
+            : -14;
+        kernel_mutex_unlock(&file_write_staging_mutex);
+        if (copy_result != 0) return -14;
         if (written < 0) return total != 0 ? (int)total : -9;
         if (written == 0) break;
         total += (size_t)written;

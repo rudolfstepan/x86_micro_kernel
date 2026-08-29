@@ -12,15 +12,42 @@ class AtaLba48ContractTests(unittest.TestCase):
         drives = (ROOT / "drivers/bus/drives.h").read_text(encoding="utf-8")
         self.assertIn("ATA_READ_SECTORS_EXT 0x24", header)
         self.assertIn("ATA_WRITE_SECTORS_EXT 0x34", header)
+        self.assertIn("ATA_FLUSH_CACHE      0xE7", header)
         self.assertIn("ATA_FLUSH_CACHE_EXT", header)
-        self.assertIn("identify_data[83] & (1U << 10U)", source)
+        self.assertIn("ATA_IDENTIFY_COMMAND_SET_VALID_MASK", header)
+        self.assertIn("ATA_IDENTIFY_FLUSH_CACHE", header)
+        self.assertIn("ATA_IDENTIFY_FLUSH_CACHE_EXT", header)
+        self.assertIn("command_set2 & ATA_IDENTIFY_LBA48", source)
         self.assertIn("identify_data[100]", source)
         self.assertIn("identify_data[103]", source)
         self.assertIn("sectors > UINT32_MAX ? UINT32_MAX", source)
         self.assertIn("lba48_supported", drives)
+        self.assertIn("flush_cache_supported", drives)
+        self.assertIn("flush_cache_ext_supported", drives)
         self.assertIn("drive == NULL || !drive->lba48_supported", source)
         self.assertIn("use_lba48 ? ATA_READ_SECTORS_EXT", source)
         self.assertIn("use_lba48 ? ATA_WRITE_SECTORS_EXT", source)
+
+    def test_flush_selection_is_independent_of_lba48(self):
+        source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        start = source.index("static uint8_t ata_flush_command_for_drive(")
+        end = source.index("static bool ata_flush_cache_impl(", start)
+        select = source[start:end]
+        self.assertIn("drive->flush_cache_ext_supported", select)
+        self.assertIn("ATA_FLUSH_CACHE_EXT", select)
+        self.assertIn("drive->flush_cache_supported", select)
+        self.assertIn("ATA_FLUSH_CACHE", select)
+        self.assertNotIn("lba48_supported", select)
+        self.assertLess(select.index("flush_cache_ext_supported"),
+                        select.index("flush_cache_supported"))
+
+        identify = source[source.index("uint16_t command_set2 ="):
+                          source.index("drive_info->sectors =", start)]
+        self.assertIn("ATA_IDENTIFY_COMMAND_SET_VALID_MASK", identify)
+        self.assertIn("ATA_IDENTIFY_COMMAND_SET_VALID", identify)
+        self.assertIn("ATA_IDENTIFY_LBA48", identify)
+        self.assertIn("ATA_IDENTIFY_FLUSH_CACHE", identify)
+        self.assertIn("ATA_IDENTIFY_FLUSH_CACHE_EXT", identify)
 
     def test_pio_batches_are_bounded_and_verified(self):
         header = (ROOT / "drivers/block/ata.h").read_text(encoding="utf-8")

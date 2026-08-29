@@ -73,11 +73,23 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("syscall_create", source)
         self.assertIn("syscall_write", source)
         self.assertIn("syscall_unlink", source)
-        self.assertIn("uint8_t buffer[512]", write)
-        self.assertIn("copy_from_user(buffer", write)
+        self.assertIn("FILE_WRITE_CHUNK_CAPACITY 4096U", source)
+        self.assertIn("FILE_WRITE_STAGING_TIMEOUT_MS 10000U", source)
+        self.assertIn("static uint8_t file_write_staging[", source)
+        self.assertIn("static kernel_mutex_t file_write_staging_mutex = "
+                      "KERNEL_MUTEX_INIT", source)
+        self.assertIn("kernel_mutex_lock_for(&file_write_staging_mutex", write)
+        self.assertIn("int copy_result = copy_from_user(", write)
         self.assertIn(
-            "process_file_write(process, descriptor, buffer, amount)", write
+            "file_write_staging, (const uint8_t*)user_buffer + total", write
         )
+        self.assertIn(
+            "? process_file_write(process, descriptor, file_write_staging,",
+            write,
+        )
+        self.assertIn("kernel_mutex_unlock(&file_write_staging_mutex)", write)
+        self.assertIn("if (amount > FILE_WRITE_CHUNK_CAPACITY)", write)
+        self.assertNotIn("uint8_t buffer[512]", write)
         self.assertNotIn(
             "descriptor, (const uint8_t*)user_buffer + total", write
         )

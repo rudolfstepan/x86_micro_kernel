@@ -25,6 +25,20 @@ class AtaDriverSourceTests(unittest.TestCase):
         self.assertNotIn("pit_delay(50)", read)
         self.assertIn("wait_for_drive_ready", read)
 
+    def test_flush_has_settling_delay_and_bounded_error_diagnostics(self):
+        start = self.source.index("static bool ata_wait_flush_complete(")
+        end = self.source.index("static bool ata_write_sector_impl(", start)
+        flush = self.source[start:end]
+        self.assertIn("pit_monotonic_ms()", flush)
+        self.assertIn("ATA_FLUSH_MAX_POLLS", flush)
+        self.assertIn("status == 0U || status == 0xFFU", flush)
+        self.assertIn("ATA_STATUS_ERR", flush)
+        self.assertIn("ATA_STATUS_DF", flush)
+        self.assertIn("ATA_STATUS_DRQ", flush)
+        self.assertIn("ATA_FLUSH_FAILED", flush)
+        self.assertIn("ata_selection_delay(base);", flush)
+        self.assertNotIn("wait_for_drive_ready(base", flush)
+
     def test_ls_uses_authoritative_ring3_directory_reads(self):
         fat32 = (ROOT / "fs/fat32/fat32_vfs_adapter.c").read_text(
             encoding="utf-8"

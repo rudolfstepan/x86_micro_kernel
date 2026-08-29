@@ -510,6 +510,47 @@ static bool campaign_mount(void) {
     return vfs_mount(&campaign_drive, "fat32", "/") == VFS_OK;
 }
 
+static int run_journal_capacity_rejection_test(void) {
+    enum { CAPACITY_TARGET_LBA = 40U };
+    uint8_t original[ATA_JOURNAL_MAX_ENTRIES + 1U][SECTOR_SIZE];
+    uint8_t replacement[SECTOR_SIZE];
+
+    make_campaign_volume();
+    CHECK(campaign_mount());
+    for (uint32_t slot = 0U; slot <= ATA_JOURNAL_MAX_ENTRIES; ++slot) {
+        uint32_t target = CAPACITY_TARGET_LBA + slot;
+        for (uint32_t byte = 0U; byte < SECTOR_SIZE; ++byte)
+            test_disk[target][byte] = (uint8_t)(slot * 17U + byte);
+        memcpy(original[slot], test_disk[target], SECTOR_SIZE);
+    }
+
+    /* A fragmented page can require more unique sectors than a contiguous
+     * one.  The fixed journal must reject slot 21 before publishing any
+     * target and an aborted transaction must leave every sector unchanged. */
+    CHECK(ata_undo_journal_transaction_begin(&host_journal));
+    for (uint32_t slot = 0U; slot < ATA_JOURNAL_MAX_ENTRIES; ++slot) {
+        memset(replacement, (int)(0x80U + slot), sizeof(replacement));
+        CHECK(ata_undo_journal_write_sector(
+            &host_journal, campaign_drive.base,
+            CAPACITY_TARGET_LBA + slot, replacement,
+            campaign_drive.is_master));
+    }
+    memset(replacement, 0xE5, sizeof(replacement));
+    CHECK(!ata_undo_journal_write_sector(
+        &host_journal, campaign_drive.base,
+        CAPACITY_TARGET_LBA + ATA_JOURNAL_MAX_ENTRIES, replacement,
+        campaign_drive.is_master));
+    CHECK(ata_undo_journal_transaction_end(&host_journal, false));
+    CHECK(host_journal.entry_count == 0U);
+    CHECK(host_journal.transaction_depth == 0U);
+    CHECK(campaign_flush_count == 0U);
+    for (uint32_t slot = 0U; slot <= ATA_JOURNAL_MAX_ENTRIES; ++slot)
+        CHECK(memcmp(test_disk[CAPACITY_TARGET_LBA + slot], original[slot],
+                     SECTOR_SIZE) == 0);
+    CHECK(vfs_unmount("/") == VFS_OK);
+    return 0;
+}
+
 static bool campaign_journal_sector(uint32_t sector) {
     return (sector >= ATA_JOURNAL_HEADER_OFFSET &&
             sector < ATA_JOURNAL_DATA_OFFSET + ATA_JOURNAL_MAX_ENTRIES) ||
@@ -579,11 +620,35 @@ static int run_fat32_image_fault_campaign(void) {
     make_campaign_volume();
     CHECK(campaign_mount());
 
+    /* SYS_WRITE submits one copied page per VFS mutation.  A complete page
+     * must fit the fixed twenty-sector undo journal and retain exactly the
+     * four durability barriers. */
+    enum { FILE_WRITE_PAGE_BYTES = 4096U };
+    uint8_t* page = (uint8_t*)malloc(FILE_WRITE_PAGE_BYTES);
+    uint8_t* page_readback = (uint8_t*)malloc(FILE_WRITE_PAGE_BYTES);
+    CHECK(page != NULL && page_readback != NULL);
+    for (uint32_t index = 0U; index < FILE_WRITE_PAGE_BYTES; ++index)
+        page[index] = (uint8_t)(index * 29U + 7U);
+    CHECK(vfs_create("/PAGE.BIN") == VFS_OK);
+    vfs_node_t *node = NULL;
+    CHECK(vfs_open("/PAGE.BIN", &node) == VFS_OK);
+    campaign_flush_count = 0U;
+    CHECK(vfs_write(node, 0U, FILE_WRITE_PAGE_BYTES, page) ==
+          FILE_WRITE_PAGE_BYTES);
+    CHECK(campaign_flush_count == 4U);
+    CHECK(vfs_read(node, 0U, FILE_WRITE_PAGE_BYTES, page_readback) ==
+          FILE_WRITE_PAGE_BYTES);
+    CHECK(memcmp(page, page_readback, FILE_WRITE_PAGE_BYTES) == 0);
+    CHECK(vfs_close(node) == VFS_OK);
+    CHECK(vfs_delete("/PAGE.BIN") == VFS_OK);
+    free(page_readback);
+    free(page);
+
     uint8_t keep[700];
     for (uint32_t i = 0U; i < sizeof(keep); ++i)
         keep[i] = (uint8_t)(i * 37U + 11U);
     CHECK(vfs_create("/KEEP.BIN") == VFS_OK);
-    vfs_node_t *node = NULL;
+    node = NULL;
     CHECK(vfs_open("/KEEP.BIN", &node) == VFS_OK);
     CHECK(vfs_write(node, 0U, sizeof(keep), keep) == (int)sizeof(keep));
     CHECK(vfs_close(node) == VFS_OK);
@@ -737,7 +802,14 @@ static int run_fat32_lfn_replace_fault_campaign(void) {
 }
 
 static int run_sequential_write_cache_test(void) {
-    enum { STREAM_CHUNKS = 48U, STREAM_BYTES = STREAM_CHUNKS * SECTOR_SIZE };
+    enum {
+        STREAM_SECTORS = 48U,
+        STREAM_BYTES = STREAM_SECTORS * SECTOR_SIZE,
+        STREAM_CHUNK_BYTES = 4096U,
+        STREAM_CHUNKS = STREAM_BYTES / STREAM_CHUNK_BYTES
+    };
+    _Static_assert(STREAM_BYTES % STREAM_CHUNK_BYTES == 0U,
+                   "stream must contain complete syscall write chunks");
     make_fsinfo_test_volume();
     CHECK(fat32_init_fs_at(0x1F0, true, 0U) == SUCCESS);
     CHECK(fsinfo_valid && fsinfo.next_free_cluster == FSINFO_FIRST_FREE);
@@ -765,25 +837,29 @@ static int run_sequential_write_cache_test(void) {
         stream_data[index] = (uint8_t)(index * 17U + 3U);
     }
 
-    /* This is the exact syscall-facing rhythm: one stable 512-byte kernel
-     * bounce per VFS transaction.  The occupied prefix makes a restart at
+    /* This is the exact syscall-facing rhythm: one copied 4096-byte page per
+     * VFS transaction.  The occupied prefix makes a restart at
      * cluster 2 exceed the linear ceiling; the valid FSInfo hint must select
      * the first free cluster directly and advance once per allocation. */
     fat_sector_reads = 0U;
     for (uint32_t chunk = 0U; chunk < STREAM_CHUNKS; ++chunk) {
-        CHECK(vfs_write(stream_node, chunk * SECTOR_SIZE, SECTOR_SIZE,
-                        stream_data + chunk * SECTOR_SIZE) == SECTOR_SIZE);
+        CHECK(vfs_write(stream_node, chunk * STREAM_CHUNK_BYTES,
+                        STREAM_CHUNK_BYTES,
+                        stream_data + chunk * STREAM_CHUNK_BYTES) ==
+              STREAM_CHUNK_BYTES);
     }
     CHECK(stream_node->inode == FSINFO_FIRST_FREE);
-    CHECK(fat_sector_reads <= STREAM_CHUNKS * 16U);
-    /* Consecutive syscall-sized reads must resume from the prior validated
+    CHECK(fat_sector_reads <= STREAM_SECTORS * 16U);
+    /* Consecutive benchmark-sized reads must resume from the prior validated
      * cluster instead of walking from the chain start for every offset. */
     fat_sector_reads = 0U;
     for (uint32_t chunk = 0U; chunk < STREAM_CHUNKS; ++chunk) {
-        CHECK(vfs_read(stream_node, chunk * SECTOR_SIZE, SECTOR_SIZE,
-                       stream_readback + chunk * SECTOR_SIZE) == SECTOR_SIZE);
+        CHECK(vfs_read(stream_node, chunk * STREAM_CHUNK_BYTES,
+                       STREAM_CHUNK_BYTES,
+                       stream_readback + chunk * STREAM_CHUNK_BYTES) ==
+              STREAM_CHUNK_BYTES);
     }
-    CHECK(fat_sector_reads <= STREAM_CHUNKS * 4U);
+    CHECK(fat_sector_reads <= STREAM_SECTORS * 4U);
     CHECK(memcmp(stream_readback, stream_data, STREAM_BYTES) == 0);
 
     /* Legacy FAT writes use the same volume-generation hook, so a cached VFS
@@ -1578,6 +1654,7 @@ int main(void) {
                                   TEST_SECTORS));
     CHECK(vfs_delete("/REBOUND.TXT") == VFS_OK);
     CHECK(vfs_unmount("/") == VFS_OK);
+    CHECK(run_journal_capacity_rejection_test() == 0);
     CHECK(run_fat32_image_fault_campaign() == 0);
     return run_fat32_lfn_replace_fault_campaign();
 }

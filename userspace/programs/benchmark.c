@@ -14,6 +14,7 @@
 
 #define BENCHMARK_TARGET_MS 200U
 #define BENCHMARK_MAX_ELAPSED_MS 90000U
+#define BENCHMARK_DISK_MAX_ELAPSED_MS 300000U
 #define BENCHMARK_CPU_INITIAL_ITERATIONS (1U << 20U)
 #define BENCHMARK_CPU_MAX_ITERATIONS (1U << 26U)
 #define BENCHMARK_CPU_ATTEMPTS 7U
@@ -150,12 +151,19 @@ static void print_result_row(const char *area, const char *test,
     x86os_puts(" |\n");
 }
 
-static int elapsed_ms(uint64_t started, uint64_t *elapsed) {
+static int elapsed_ms_bounded(uint64_t started, uint64_t *elapsed,
+                              uint64_t maximum_ms) {
     uint64_t finished = 0U;
-    if (elapsed == 0 || x86os_monotonic_ms(&finished) != 0 ||
+    if (elapsed == 0 || maximum_ms == 0U ||
+        x86os_monotonic_ms(&finished) != 0 ||
         finished < started) return -1;
     *elapsed = finished - started;
-    return *elapsed <= BENCHMARK_MAX_ELAPSED_MS ? 0 : -1;
+    return *elapsed <= maximum_ms ? 0 : -2;
+}
+
+static int elapsed_ms(uint64_t started, uint64_t *elapsed) {
+    return elapsed_ms_bounded(started, elapsed,
+                              BENCHMARK_MAX_ELAPSED_MS);
 }
 
 /* Keep progress visible without charging serial/framebuffer rendering time to
@@ -375,19 +383,38 @@ static void benchmark_disk(benchmark_result_t *write_result,
                 timed_status(progress, &write_status_ms) == 0;
         }
     }
-    if (write_ok) {
-        write_ok = timed_status("BENCHMARK_STATUS phase=hdd-fsync\n",
-                                &write_status_ms) == 0;
+    if (!write_ok)
+        x86os_puts("BENCHMARK_STATUS phase=hdd-failed step=write\n");
+    if (write_ok &&
+        timed_status("BENCHMARK_STATUS phase=hdd-fsync\n",
+                     &write_status_ms) != 0) {
+        write_ok = false;
+        x86os_puts("BENCHMARK_STATUS phase=hdd-failed step=status-clock\n");
     }
-    if (write_ok) write_ok = x86os_fsync(descriptor) == 0;
+    if (write_ok && x86os_fsync(descriptor) != 0) {
+        write_ok = false;
+        x86os_puts("BENCHMARK_STATUS phase=hdd-failed step=fsync\n");
+    }
     uint64_t write_elapsed_with_status = 0U;
     if (write_ok) {
-        write_ok = elapsed_ms(started, &write_elapsed_with_status) == 0 &&
-                   write_elapsed_with_status >= write_status_ms;
+        int elapsed_status = elapsed_ms_bounded(
+            started, &write_elapsed_with_status,
+            BENCHMARK_DISK_MAX_ELAPSED_MS);
+        if (elapsed_status != 0 ||
+            write_elapsed_with_status < write_status_ms) {
+            write_ok = false;
+            x86os_puts(elapsed_status == -2
+                ? "BENCHMARK_STATUS phase=hdd-failed step=write-time-limit\n"
+                : "BENCHMARK_STATUS phase=hdd-failed step=write-clock\n");
+        }
     }
     if (write_ok) {
         write_elapsed = write_elapsed_with_status - write_status_ms;
-        write_ok = write_elapsed != 0U;
+        if (write_elapsed == 0U) {
+            write_ok = false;
+            x86os_puts(
+                "BENCHMARK_STATUS phase=hdd-failed step=write-duration\n");
+        }
     }
     if (write_ok) {
         write_result->hundredths = divide_unsigned(
@@ -421,12 +448,24 @@ static void benchmark_disk(benchmark_result_t *write_result,
     }
     uint64_t read_elapsed_with_status = 0U;
     if (read_ok) {
-        read_ok = elapsed_ms(started, &read_elapsed_with_status) == 0 &&
-                  read_elapsed_with_status >= read_status_ms;
+        int elapsed_status = elapsed_ms_bounded(
+            started, &read_elapsed_with_status,
+            BENCHMARK_DISK_MAX_ELAPSED_MS);
+        if (elapsed_status != 0 ||
+            read_elapsed_with_status < read_status_ms) {
+            read_ok = false;
+            x86os_puts(elapsed_status == -2
+                ? "BENCHMARK_STATUS phase=hdd-failed step=read-time-limit\n"
+                : "BENCHMARK_STATUS phase=hdd-failed step=read-clock\n");
+        }
     }
     if (read_ok) {
         read_elapsed = read_elapsed_with_status - read_status_ms;
-        read_ok = read_elapsed != 0U;
+        if (read_elapsed == 0U) {
+            read_ok = false;
+            x86os_puts(
+                "BENCHMARK_STATUS phase=hdd-failed step=read-duration\n");
+        }
     }
     if (read_ok) {
         read_result->hundredths = divide_unsigned(

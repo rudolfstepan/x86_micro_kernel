@@ -2,17 +2,41 @@
 
 Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `47b60678`
+Branch/Startpunkt: `working_branch` / `a66635aa`
 
-Aktives Thema: `R7.1e-ata-flush-capabilities`.
+Aktives Thema: keines; `R7.1e-ata-flush-capabilities` ist abgeschlossen.
 
-Der reale SSD-Lauf erreicht alle 256 KiB des Benchmark-Writes, scheitert aber
-unmittelbar nach `BENCHMARK_STATUS phase=hdd-fsync`; der Readback wird deshalb
-nicht begonnen. Der PIO-Pfad waehlt fuer das explizite `fsync` derzeit
-`FLUSH CACHE EXT` allein aus der LBA48-Faehigkeit, obwohl IDENTIFY DEVICE die
-beiden Cache-Flush-Befehle unabhaengig meldet. R7.1e validiert diese
-Kommandofaehigkeiten getrennt, behaelt Fehlerweitergabe und Storage-Fence bei
-und erzeugt anschliessend ein neues reales Hardware-Image fuer den SSD-Test.
+Der manuelle Gegenlauf auf dem ASUS-Board mit Samsung-SSD und dem AHCI-Volume
+`hdd0p2` ist erfolgreich abgeschlossen. Der Benchmark schrieb 256 KiB,
+beendete `fsync`, las alle 256 KiB bytegleich zurueck, entfernte die Testdatei
+und erreichte `phase=complete`. Die Tabelle meldete 7,99 KiB/s sequenzielles
+Schreiben und 503,93 KiB/s Lesen, jeweils `OK`. Die Bootdiagnose belegte
+weiterhin `ATA: detected 0 PIO drive(s)`; der reale Fehler lag daher in der
+gemeinsamen Uhr-/90-Sekunden-Auswertung und den 512 einzelnen
+Journaltransaktionen, nicht in einem AHCI-Flushfehler.
+
+Die abgeschlossene Umsetzung kopiert pro Dateischreibschritt hoechstens eine
+4096-Byte-Seite in einen statischen, supervisor-only Puffer unter einem
+10-Sekunden-Mutex und uebergibt diesen als genau eine VFS-Mutation. Der
+256-KiB-Benchmark benoetigt dadurch 64 statt 512 Journaltransaktionen. Der
+Hostnachweis schreibt eine ganze Seite innerhalb der festen 20 Undo-Slots,
+behaelt exakt vier Persistenzbarrieren und liest jedes Byte identisch zurueck.
+Ein separater Grenztest weist den 21. eindeutigen Sektor vor der
+Zielpublikation ab und belegt den unveraenderten Abbruchzustand. AHCI behaelt
+fuer jeden Sektor WRITE, FLUSH und vollstaendigen Readback-Vergleich. Die
+Benchmark-Auswertung hat getrennt eine 300-Sekunden-Grenze und meldet
+Uhrfehler, Grenzueberschreitung sowie Nulldauer getrennt; kein I/O-Wait wurde
+verlaengert.
+
+Der PIO-Rueckfallpfad ist ebenfalls korrekt abgeschlossen: IDENTIFY-Wort 83
+waehlt `0xEA` nur bei Bit 13 und `0xE7` nur bei Bit 12; vier
+Alternate-Status-Reads sowie feste Zeit-/Pollgrenzen liefern bei Fehlern
+`ATA_FLUSH_FAILED`, ohne einen unklaren Befehl zu wiederholen. Alle 54
+eingefrorenen gezielten Pruefungen bestanden. Der abschliessende
+`real_hw/vga`-Paketbuild bestand in 17 Sekunden ohne VM-Start und erzeugte das
+64-MiB-Image mit SHA-256
+`C0074B3FD710C0C4AD346313DCAF3A961271691EE0443704F1D82B93B6145487`.
+Es ist kein weiteres Paket eingereiht.
 
 `R7.1d-storage-readdir-continuation` ist abgeschlossen.
 
