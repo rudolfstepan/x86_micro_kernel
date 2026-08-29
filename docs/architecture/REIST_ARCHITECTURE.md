@@ -306,7 +306,9 @@ R8.2p begrenzt Queue-Backpressure fuer denselben Lifecycle. Ein Kind darf
 validierter SEND auf den belegten Slot liefert ohne Mutation oder Blockierung
 `EAGAIN`; erst nachdem Generation 40 `token76` entnommen hat, darf dasselbe
 generationengebundene Kind `token77` wiederholen. Der Retry verwendet wieder
-den exakten R8.2o-Waiter-, Deadline-, Timer- und Direct-Frame-Wakeup-Pfad.
+den exakten R8.2o-Waiter-, Deadline-, Timer- und Direct-Frame-Wakeup-Pfad. Der
+abgeschlossene QEMU-Nachweis durchlief diese Sequenz fuer beide
+Kindgenerationen und hinterliess vor Erfolg alle IPC-Records null.
 
 ## Minimaler REIST-Kern
 

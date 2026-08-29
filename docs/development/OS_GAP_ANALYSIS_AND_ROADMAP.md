@@ -385,13 +385,15 @@ bestanden bis `RING3_SHELL_OK`. Allgemeine Endpointregistries, Queue-Tiefe
 groesser eins, mehrere Waiter, blockierende Sender und produktive
 x86_64-Integration bleiben Folgearbeiten; die x86_64-Queue ist leer.
 
-**R8.2p ist aktiv:** Der Ein-Slot-IPC-Pfad beweist als naechstes asynchrone
+**R8.2p ist abgeschlossen:** Der Ein-Slot-IPC-Pfad beweist asynchrone
 Queue-Publikation und fail-closed Backpressure. `token76` belegt den Slot, ein
 unmittelbarer validierter `token77`-SEND liefert wirkungslos `EAGAIN`, der
 Parent entnimmt `token76` und der generationengebundene Kind-Retry liefert
-`token77` ueber den vorhandenen Timeout-Wakeup-Pfad. Blocking-Sender, tiefere
-Queues, mehrere Waiter, Endpointregistries und produktive Integration bleiben
-Folgearbeiten.
+`token77` ueber den vorhandenen Timeout-Wakeup-Pfad. 54 Quellvertragstests,
+der warnungsfreie 142.800-Byte-Build und zwei reale QEMU-`RUN`-Zyklen bestanden
+bis `RING3_SHELL_OK`. Blocking-Sender, tiefere Queues, mehrere Waiter,
+Endpointregistries und produktive Integration bleiben Folgearbeiten; die
+x86_64-Queue ist leer.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

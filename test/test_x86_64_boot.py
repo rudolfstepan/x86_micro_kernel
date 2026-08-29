@@ -520,7 +520,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         stack_check = child.index("cmp rsp, CHILD_RSP", denial)
         self.assertLess(child.index("cmp rax, REIST_EACCES", denial), stack_check)
 
-    def test_ring3_ipc_receive_wait_is_deadline_bounded_and_generation_exact(self):
+    def test_ring3_ipc_queue_backpressure_and_receive_wait_are_bounded(self):
         abi = self.read("include/reist/abi/syscall.h")
         shell = self.read("arch/x86_64/user/shell.c")
         child = self.read("arch/x86_64/user/child.asm")
@@ -544,11 +544,17 @@ class X8664BootstrapContractTests(unittest.TestCase):
         empty_timeout = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT", create)
         spawn = shell.index("REIST_SYS_SPAWNV", empty_timeout)
         delegate = shell.index("REIST_SYS_IPC_DELEGATE", spawn)
-        receive = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT", delegate)
+        first_yield = shell.index("REIST_SYS_YIELD", delegate)
+        second_yield = shell.index("REIST_SYS_YIELD", first_yield + 1)
+        third_yield = shell.index("REIST_SYS_YIELD", second_yield + 1)
+        queued_receive = shell.index("REIST_SYS_IPC_RECEIVE", third_yield)
+        receive = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT", queued_receive)
         wait = shell.index("REIST_SYS_WAIT", receive)
         close = shell.index("REIST_SYS_IPC_CLOSE", wait)
         run_ok = shell.index("shell_write_exact(run_ok", close)
-        order = [create, empty_timeout, spawn, delegate, receive, wait, close, run_ok]
+        order = [create, empty_timeout, spawn, delegate, first_yield,
+                 second_yield, third_yield, queued_receive, receive, wait,
+                 close, run_ok]
         self.assertEqual(order, sorted(order))
         self.assertIn("IPC_RECEIVE_TIMEOUT_MS 10ULL", shell)
         self.assertIn("REIST_ETIMEDOUT (-110LL)", shell)
@@ -557,11 +563,20 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("mov qword [r13 + 48], r15", scheduler)
         self.assertIn("cmp qword [rsp + 40], AT_REIST_IPC_HANDLE", child)
         child_receive = child.index("mov eax, REIST_SYS_IPC_RECEIVE")
-        child_send = child.index("mov eax, REIST_SYS_IPC_SEND", child_receive)
-        child_release = child.index("mov eax, REIST_SYS_IPC_RELEASE", child_send)
+        child_send76 = child.index("mov eax, REIST_SYS_IPC_SEND", child_receive)
+        child_send_full = child.index("mov eax, REIST_SYS_IPC_SEND", child_send76 + 1)
+        child_yield = child.index("mov eax, REIST_SYS_YIELD", child_send_full)
+        child_send77 = child.index("mov eax, REIST_SYS_IPC_SEND", child_yield)
+        child_release = child.index("mov eax, REIST_SYS_IPC_RELEASE", child_send77)
         child_exit = child.index("mov eax, REIST_SYS_EXIT", child_release)
-        self.assertLess(child_receive, child_send)
-        self.assertLess(child_send, child_release)
+        self.assertEqual(
+            [child_receive, child_send76, child_send_full, child_yield,
+             child_send77, child_release, child_exit],
+            sorted([child_receive, child_send76, child_send_full, child_yield,
+                    child_send77, child_release, child_exit]),
+        )
+        self.assertIn("REIST_EAGAIN    equ -11", child)
+        self.assertIn("cmp rax, REIST_EAGAIN", child[child_send_full:child_yield])
         self.assertLess(child_release, child_exit)
         denied = scheduler.index("scheduler_handle_shell_ipc_receive64:")
         parent_receive = scheduler.index(".parent_receive:", denied)
@@ -572,11 +587,24 @@ class X8664BootstrapContractTests(unittest.TestCase):
         send = scheduler.index("scheduler_handle_shell_ipc_send64:")
         receive_handler = scheduler.index("scheduler_handle_shell_ipc_receive64:", send)
         send_path = scheduler[send:receive_handler]
+        first_copy = send_path.index("rep movsb")
         self.assertLess(send_path.index("call scheduler_validate_shell_ipc_buffer64"),
-                        send_path.index("scheduler_shell_ipc_message_ready], 1"))
-        self.assertLess(
-            send_path.index("call scheduler_validate_shell_ipc_waiter_for_send64"),
-            send_path.index("scheduler_shell_ipc_message_ready], 1"),
+                        first_copy)
+        retry = send_path.index("call scheduler_validate_shell_ipc_waiter_for_send64")
+        retry_copy = send_path.index("rep movsb", retry)
+        wake_send = send_path.index("call scheduler_wake_shell_ipc_receiver64", retry)
+        self.assertEqual([retry, retry_copy, wake_send],
+                         sorted([retry, retry_copy, wake_send]))
+        self.assertIn("scheduler_shell_ipc_send_phase", send_path)
+        self.assertIn("scheduler_shell_ipc_send_generation", send_path)
+        self.assertIn("mov rax, REIST_EAGAIN", send_path)
+        full = send_path.index("mov rax, REIST_EAGAIN")
+        full_label = send_path.index(".reject_full_token77:")
+        self.assertLess(send_path.index("IPC_SEND_PHASE_BACKPRESSURE"), full)
+        self.assertNotIn("call scheduler_wake_shell_ipc_receiver64",
+                         send_path[full_label:full])
+        self.assertIn(
+            "resb TASK_SLOT_CAPACITY * IPC_CAPABILITY_SIZE", scheduler
         )
         timeout_handler = scheduler.index(
             "scheduler_handle_shell_ipc_receive_timeout64:"

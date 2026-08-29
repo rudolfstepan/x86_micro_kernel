@@ -2,10 +2,12 @@ BITS 64
 
 REIST_SYS_EXIT equ 9
 REIST_SYS_GETPID equ 22
+REIST_SYS_YIELD equ 40
 REIST_SYS_IPC_SEND equ 50
 REIST_SYS_IPC_RECEIVE equ 51
 REIST_SYS_IPC_RELEASE equ 58
 REIST_EACCES    equ -13
+REIST_EAGAIN    equ -11
 CHILD_STATUS   equ 77
 FAIL_STATUS    equ 78
 USER_STACK_TOP equ 0x00409000
@@ -73,7 +75,7 @@ _start:
     mov dword [rsp], IPC_MESSAGE_VERSION
     mov dword [rsp + 4], IPC_MESSAGE_SIZE
     mov dword [rsp + 8], IPC_MESSAGE_LENGTH
-    mov rax, 0x0037376E656B6F74
+    mov rax, 0x0036376E656B6F74
     mov qword [rsp + 12], rax
     mov eax, REIST_SYS_IPC_RECEIVE
     mov rdi, r12
@@ -82,6 +84,28 @@ _start:
     syscall
     cmp rax, REIST_EACCES
     jne .fail
+    mov eax, REIST_SYS_IPC_SEND
+    mov rdi, r12
+    mov rsi, rsp
+    xor edx, edx
+    syscall
+    test rax, rax
+    jnz .fail
+    mov byte [rsp + 18], '7'
+    mov eax, REIST_SYS_IPC_SEND
+    mov rdi, r12
+    mov rsi, rsp
+    xor edx, edx
+    syscall
+    cmp rax, REIST_EAGAIN
+    jne .fail
+    mov eax, REIST_SYS_YIELD
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    syscall
+    test rax, rax
+    jnz .fail
     mov eax, REIST_SYS_IPC_SEND
     mov rdi, r12
     mov rsi, rsp

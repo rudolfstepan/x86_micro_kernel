@@ -627,10 +627,12 @@ ausgeschlossen.
 
 ## Queue-Backpressure R8.2p
 
-Das aktive Paket behaelt den einzelnen 140-Byte-Queue-Slot bei und prueft ihn
-erstmals asynchron. Nach einem geplanten `YIELD` des Parents publiziert die
-exakte Kindgeneration `token76`, ohne dass ein Receive-Wait besteht. Der
-folgende strukturell gueltige `token77`-SEND muss `EAGAIN` liefern und darf
+Das abgeschlossene Paket behaelt den einzelnen 140-Byte-Queue-Slot bei und prueft ihn
+erstmals asynchron. Die normale Delegate-Rueckkehr und drei geplante
+Parent-`YIELD`s lassen das Kind ueber die beiden erhaltenen Denial-Proofs bis
+zur `token76`-Publikation und danach zum wiedereingereihten Full-Queue-Versuch
+laufen, ohne dass ein Receive-Wait besteht. Der strukturell gueltige
+`token77`-SEND muss `EAGAIN` liefern und darf
 weder Queue noch Waiter, Deadline, Capability, Endpoint oder Usernachricht
 veraendern. Das Kind gibt danach ebenfalls mit `YIELD` ab.
 
@@ -639,3 +641,9 @@ bestehenden 10-ms-Receive und wird erst vom generationengenauen `token77`-Retry
 des Kindes geweckt. Ein fester Send-Phasenrecord verhindert Auslassung,
 Doppelpublikation und stale Wiederverwendung. Blocking-Sender, Queue-Tiefe
 groesser eins und mehrere Waiter bleiben explizit ausgeschlossen.
+
+54 Quellvertragstests, der warnungsfreie 142.800-Byte-Build und der native
+Ein-vCPU-/128-MiB-QEMU-Dialog bestanden mit exakt zwei `RUN_OK`-Markern bis
+`RING3_SHELL_OK`. Release, WAIT, Reap, Close, Abschlusspruefung und
+Fehlercleanup hinterliessen Sendphase, Timer, Deadline, Waiter, Endpoint,
+Nachricht, Capabilities, Runqueue, Loader, Tasks und Frames null.

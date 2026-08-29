@@ -112,9 +112,13 @@ static void clear_ipc_message(shell_ipc_message_t *message)
     }
 }
 
-static int ipc_message_is_token77(const shell_ipc_message_t *message)
+static int ipc_message_is_token(const shell_ipc_message_t *message,
+                                shell_u8 final_digit)
 {
-    static const shell_u8 expected[IPC_MESSAGE_LENGTH] = "token77";
+    static const shell_u8 prefix[IPC_MESSAGE_LENGTH - 2U] = {
+        (shell_u8)'t', (shell_u8)'o', (shell_u8)'k',
+        (shell_u8)'e', (shell_u8)'n', (shell_u8)'7'
+    };
     shell_u32 index;
 
     if (message->version != IPC_MESSAGE_VERSION ||
@@ -122,11 +126,16 @@ static int ipc_message_is_token77(const shell_ipc_message_t *message)
         message->length != IPC_MESSAGE_LENGTH) {
         return 0;
     }
-    for (index = 0U; index < IPC_MESSAGE_LENGTH; ++index) {
-        if (message->payload[index] != expected[index]) {
+    for (index = 0U; index < IPC_MESSAGE_LENGTH - 2U; ++index) {
+        if (message->payload[index] != prefix[index]) {
             return 0;
         }
     }
+    if (message->payload[index] != final_digit ||
+        message->payload[index + 1U] != 0U) {
+        return 0;
+    }
+    index += 2U;
     for (; index < sizeof(message->payload); ++index) {
         if (message->payload[index] != 0U) {
             return 0;
@@ -238,6 +247,20 @@ void _start(void)
                                    IPC_RIGHT_SEND) != 0LL) {
                     shell_exit(16ULL);
                 }
+                if (shell_syscall3(REIST_SYS_YIELD, 0ULL, 0ULL, 0ULL) != 0LL ||
+                    shell_syscall3(REIST_SYS_YIELD, 0ULL, 0ULL, 0ULL) != 0LL ||
+                    shell_syscall3(REIST_SYS_YIELD, 0ULL, 0ULL, 0ULL) != 0LL) {
+                    shell_exit(20ULL);
+                }
+                clear_ipc_message(&ipc_message);
+                ipc_message.version = IPC_MESSAGE_VERSION;
+                ipc_message.struct_size = IPC_MESSAGE_SIZE;
+                if (shell_syscall3(REIST_SYS_IPC_RECEIVE,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)&ipc_message, 0ULL) != 0LL ||
+                    !ipc_message_is_token(&ipc_message, (shell_u8)'6')) {
+                    shell_exit(21ULL);
+                }
                 clear_ipc_message(&ipc_message);
                 ipc_message.version = IPC_MESSAGE_VERSION;
                 ipc_message.struct_size = IPC_MESSAGE_SIZE;
@@ -245,7 +268,7 @@ void _start(void)
                                    (shell_u64)ipc_handle,
                                    (shell_u64)&ipc_message,
                                    IPC_RECEIVE_TIMEOUT_MS) != 0LL ||
-                    !ipc_message_is_token77(&ipc_message)) {
+                    !ipc_message_is_token(&ipc_message, (shell_u8)'7')) {
                     shell_exit(17ULL);
                 }
                 waited_pid = shell_syscall3(REIST_SYS_WAIT, (shell_u64)child_pid,
