@@ -4,7 +4,16 @@ Stand: 29. August 2026
 
 Branch/Startpunkt: `working_branch` / `47b60678`
 
-Aktives Thema: keines – R7.1b ist abgeschlossen
+Aktives Thema: R7.1c – echter Abschlussnachweis fuer den Benchmark-Schreibpfad
+
+Der erste begrenzte Ein-vCPU-QEMU-Lauf von `BENCHMARK.PRG` erreichte nach
+90 Sekunden keine Ergebnistabelle. Die offline ausgewertete FAT32-Testkopie
+enthielt eine 38.400 Byte grosse `REISTB~1.TMP` mit 75 verketteten Clustern;
+damit liegt der Stillstand nachweislich im HDD-Schreibpfad und nicht im CPU-
+oder RAM-Test. R7.1c fuegt feste Phasen- und 64-KiB-Fortschrittsmarker hinzu,
+lokalisiert den ersten blockierenden Schritt und verlangt danach als echten
+Gastnachweis Write, `fsync`, bytegeprueften Readback, Cleanup und die Rueckkehr
+zur Ring-3-Shell innerhalb einer festen Gesamtfrist.
 
 R7.1b behebt den beim Datentraegerteil von `BENCHMARK.PRG` sichtbaren
 quadratischen FAT32-Schreibpfad. Ein offenes VFS-Handle behaelt jetzt einen

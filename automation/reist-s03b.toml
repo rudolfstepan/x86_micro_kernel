@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1c-benchmark-write-runtime"
 
 [policy]
 one_package_per_run = true
@@ -11622,3 +11622,62 @@ evidence = [
   "The final QEMU VGA package build passed in 38 seconds without starting a VM.",
   "SYS_WRITE retains its 512-byte copy_from_user bounce, ATA journal capacity and transaction boundaries are unchanged, and no intermediate journal commit API remains."
 ]
+
+[[packages]]
+id = "R7.1c-benchmark-write-runtime"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Complete the bounded FAT32 benchmark write runtime proof"
+scope = "Expose fixed machine-readable BENCHMARK_STATUS phase and bounded HDD progress markers without charging console output to the throughput result. Add a one-vCPU QEMU runner with a hard aggregate deadline that requires the 256-KiB FAT32 write, fsync, byte-verified readback, temporary-file cleanup and return to the Ring-3 shell. Reproduce and repair only the first demonstrated bounded failure in the existing FAT32, syscall or ATA transaction path; retain the 512-byte stable syscall bounce, fixed undo-journal capacity and unchanged on-disk format."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/programs/benchmark.c",
+  "scripts/run_qemu_benchmark.py",
+  "fs/fat32/fat32.c",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32_files.c",
+  "fs/fat32/fat32_cluster.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "drivers/block/ata.c",
+  "drivers/block/ata.h",
+  "drivers/block/ata_journal.c",
+  "drivers/block/ata_journal.h",
+  "kernel/syscall/syscall_table.c",
+  "test/test_benchmark_source.py",
+  "test/test_fat32_host.c",
+  "test/test_userspace_file_syscalls_source.py",
+  "test/test_reist_undo_journal.py",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "every benchmark phase and HDD 64-KiB milestone is visible before the following potentially blocking operation",
+  "status output time is excluded from HDD throughput and progress reporting remains compile-time bounded",
+  "the runtime gate uses one emulated CPU and terminates only its own QEMU process at one fixed aggregate deadline",
+  "success requires HDD write and read status OK cleanup of the private temporary file and a fresh Ring-3 shell prompt",
+  "SYS_WRITE retains its stable 512-byte kernel bounce and no Ring-3 pointer reaches FAT32 or ATA code",
+  "undo-journal capacity transaction boundaries persistent FAT layout and public ABI remain unchanged"
+]
+targeted_tests = [
+  "python test/test_benchmark_source.py -v",
+  "python test/test_fs_host.py -v",
+  "python test/test_userspace_file_syscalls_source.py -v",
+  "python test/test_reist_undo_journal.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_benchmark.py --image build/reist-os.img --timeout 90 --log build/codex-agent/r7.1c-benchmark-runtime.log"
+]
+stop_conditions = [
+  "the correction requires a larger syscall bounce journal capacity intermediate transaction commit or changed FAT layout",
+  "the benchmark cannot identify a unique bounded phase before the aggregate deadline",
+  "the real guest leaves a temporary benchmark file or fails byte-verified readback",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "fat32: complete bounded benchmark write runtime"
+evidence = []
