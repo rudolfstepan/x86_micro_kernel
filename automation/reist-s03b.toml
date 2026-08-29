@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R6.2p-vmware-compositor-startup"
 
 [policy]
 one_package_per_run = true
@@ -12403,3 +12403,48 @@ evidence = [
   "The user-reported physical ASUS-board Samsung-SSD AHCI counter-run completed the benchmark result path at approximately 30 KiB/s write and 670 KiB/s read, improving the prior 7.99 KiB/s and 503.93 KiB/s result while retaining verified readback and cleanup.",
   "No queued package remains and active_id is empty."
 ]
+
+[[packages]]
+id = "R6.2p-vmware-compositor-startup"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Keep VMware compositor startup inside its heartbeat contract"
+scope = "Repair the reproduced VMware desktop failure in which the compositor publishes SERVICE_READY before its bounded splash and fixed icon, filetype and sound preparation complete, then misses the two-second healthy heartbeat and consumes all three generation-scoped restart attempts. Keep display and Surface initialization before self-test, but retain STARTING ownership on the BSP until the first complete frame has been committed. Publish ordered progress between bounded startup phases, including each fixed icon decode, and publish SERVICE_READY only after that first frame. Prove the normal four-vCPU VMware desktop reaches real xHCI mouse input without compositor restart or degradation. Preserve the five-second initial admission limit, two-second healthy heartbeat, one-second recovery fence, three-restart budget, post-ready AP handoff and all display, Surface, VFS, USB and device authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_desktop_source.py",
+  "docs/architecture/SMP_SUBSYSTEM.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "display and Surface runtime initialization complete before compositor self-test and the first supervised progress publication",
+  "the compositor remains STARTING and BSP-affine while splash fixed assets explorer setup and the first complete frame are produced",
+  "each bounded startup phase and each fixed icon decode is separated by generation-scoped progress so no single aggregate asset phase consumes the healthy heartbeat",
+  "SERVICE_READY is published only after the first complete frame and before the existing post-ready AP affinity handoff",
+  "the five-second initial admission limit two-second healthy heartbeat one-second recovery fence and finite three-restart budget remain unchanged",
+  "no display Surface VFS USB IRQ MMIO DMA device authority public ABI or automatic desktop startup policy is widened"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-mouse"
+]
+stop_conditions = [
+  "the compositor can publish SERVICE_READY or receive AP affinity before its first complete frame",
+  "a startup operation can cross the healthy heartbeat without bounded progress or a lifecycle deadline must be widened",
+  "normal VMware runtime emits COMPOSITOR_RESTARTED COMPOSITOR_DEGRADED or a kernel panic",
+  "the real virtual xHCI mouse report does not reach the healthy compositor generation",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: bound VMware compositor startup"
+evidence = []
