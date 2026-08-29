@@ -394,6 +394,14 @@ und der 17-sekuendige `real_hw/vga`-Paketbuild bestanden. Der manuelle
 ASUS-/Samsung-SSD-Gegenlauf erreichte nach Schreiben, `fsync`, vollstaendigem
 Readback und Cleanup `phase=complete`; die HDD-Zeilen meldeten 7,99 KiB/s
 Schreiben und 503,93 KiB/s Lesen, jeweils `OK`.
+R7.1f ist aktiv, weil diese Werte trotz korrekter Daten weit unter dem
+Hardwarepfad liegen. Der AHCI-Journaltransport soll Undo, ACTIVE, Ziele und
+CLEAN in genau vier unveraenderten Persistenzphasen mit fester
+Mehrsektor-DMA, einem Flush je Phase und vollstaendigem Batch-Readback
+ausfuehren. Validierte physisch fortlaufende FAT32-Datenreads werden ueber
+denselben auf zwanzig Sektoren begrenzten DMA-Pfad zusammengefasst. NCQ,
+Interruptbetrieb, Journalformat und Durabilitaetssemantik bleiben ausserhalb
+dieses Pakets.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

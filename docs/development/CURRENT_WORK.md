@@ -2,9 +2,22 @@
 
 Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `a66635aa`
+Branch/Startpunkt: `working_branch` / `2b428243`
 
-Aktives Thema: keines; `R7.1e-ata-flush-capabilities` ist abgeschlossen.
+Aktives Thema: `R7.1f-ahci-batched-dma`.
+
+Der reale R7.1e-Gegenlauf ist korrekt, aber mit 7,99 KiB/s Schreiben und
+503,93 KiB/s Lesen weiterhin unbrauchbar langsam. Ursache ist der nur dem
+Namen nach verzögerte AHCI-Journaltransport: Jeder 512-Byte-Sektor fuehrt
+weiterhin `WRITE DMA EXT -> FLUSH CACHE EXT -> READ DMA EXT` aus, bevor das
+Journal seine vier eigentlichen Phasenbarrieren setzt. R7.1f setzt den
+vollstaendigen sechsstufigen Pfad um: Undo-Batch und Verifikation, ACTIVE und
+Verifikation, zusammenhaengende Ziel-Batches und Verifikation sowie CLEAN und
+Verifikation. Genau vier geordnete Flushes, das Journal-v2-Format und das
+fail-closed Write-Fencing bleiben erhalten. Derselbe feste Mehrsektor-DMA-
+Mechanismus soll validierte sequentielle FAT32-Leseabschnitte buendeln; das
+native 64-MiB-Image verwendet Einsektorcluster, weshalb auch physisch
+aufeinanderfolgende Clusterketten explizit erkannt werden muessen.
 
 Der manuelle Gegenlauf auf dem ASUS-Board mit Samsung-SSD und dem AHCI-Volume
 `hdd0p2` ist erfolgreich abgeschlossen. Der Benchmark schrieb 256 KiB,

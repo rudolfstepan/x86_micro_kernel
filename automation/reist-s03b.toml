@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1f-ahci-batched-dma"
 
 [policy]
 one_package_per_run = true
@@ -11821,3 +11821,65 @@ evidence = [
   "No PIO drive was present in the physical counter-run; the separately covered IDENTIFY capability repair preserves the bounded fail-closed PIO fallback while the proven AHCI write-flush-read path remains unchanged.",
   "No queued package remains and active_id is empty."
 ]
+
+[[packages]]
+id = "R7.1f-ahci-batched-dma"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Batch AHCI journal phases and sequential FAT32 DMA"
+scope = "Replace the physical AHCI path's false deferred contract, where every 512-byte journal sector still executes WRITE DMA EXT then FLUSH CACHE EXT then READ DMA EXT, with the complete six-stage bounded transaction requested for maximum safe gain: submit the contiguous undo image in multi-sector DMA, flush and batch-verify it, publish both ACTIVE headers then flush and verify them, submit final targets as coalesced contiguous multi-sector runs, flush and batch-verify all targets under the existing storage supervisor, and publish both CLEAN headers followed by their flush and verification. Extend the same fixed-capacity multi-sector DMA primitive to normal sequential reads and let FAT32 coalesce only fully validated physically consecutive cluster sectors, falling back to the existing sector path for partial, pending-journal or nonconsecutive ranges. Preserve the version-2 twenty-sector on-disk journal, exactly four ordered durability barriers, pre-side-effect range and DMA validation, uncertain-write fencing, no blind retry, bounded sleepable waits, full readback comparison, partition translation, PIO behavior, filesystem semantics and public ABIs. Add no NCQ, interrupt completion, dynamic allocation, userspace pointer DMA, new device authority or durability weakening."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/block/ahci.h",
+  "drivers/block/ahci.c",
+  "drivers/block/ata.h",
+  "drivers/block/ata.c",
+  "drivers/block/ata_journal.h",
+  "drivers/block/ata_journal.c",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32_files.c",
+  "test/test_ahci_source.py",
+  "test/test_ata_source.py",
+  "test/test_ata_lba48_source.py",
+  "test/test_reist_undo_journal.py",
+  "test/test_fat32_host.c",
+  "test/test_fs_host.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all AHCI data commands validate drive range count fixed DMA capacity 32-bit DMA reachability and exact expected transfer length before reporting success",
+  "deferred journal writes use only one fixed kernel-owned batch of at most twenty sectors and never DMA from userspace journal stack or arbitrary caller storage",
+  "undo is fully written flushed and bytewise batch-verified before either ACTIVE header is submitted",
+  "both ACTIVE headers are submitted flushed and bytewise verified before any final target is submitted",
+  "final targets are grouped only when their validated LBAs are physically consecutive and remain bytewise verified after one target-phase flush",
+  "both CLEAN headers are submitted only after target durability and are flushed and verified before the VFS mutation reports success",
+  "the transaction retains exactly four ordered flush barriers and any command short transfer clock regression mismatch or uncertain completion fences writes without retry",
+  "normal sequential reads coalesce at most twenty fully validated consecutive sectors and preserve exact partial-read cursor journal-view and partition semantics",
+  "the journal persistent version slot count recovery algorithm PIO path syscall ABI and FAT32 format remain unchanged"
+]
+targeted_tests = [
+  "python test/test_ahci_source.py -v",
+  "python test/test_ata_source.py -v",
+  "python test/test_ata_lba48_source.py -v",
+  "python test/test_reist_undo_journal.py -v",
+  "python test/test_fs_host.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target real_hw -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "an AHCI phase can publish durable success before its flush and complete readback comparison",
+  "the implementation removes one of the four journal barriers retries an uncertain write or changes the on-disk journal",
+  "DMA uses an unvalidated caller pointer dynamic allocation more than twenty sectors or an unbounded wait",
+  "a pending journal view or fragmented FAT chain can bypass sector validation through the read batch path",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair",
+  "the final physical benchmark fails data verification cleanup or any AHCI journal phase"
+]
+commit_message = "storage: batch verified AHCI journal phases"
+evidence = []
