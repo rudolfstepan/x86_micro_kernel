@@ -1079,3 +1079,15 @@ Degraded-Zustand oder Kernel-Panic. Der Desktop benötigte 2698 ms, davon
 806 ms für den Splash, 652 ms für Icons, 54 ms für Dateitypen und 43 ms für
 Klänge; Explorer, `COMPOSITOR_READY`, `DESKTOP_OK` und die echte virtuelle
 xHCI-Maus erschienen in der geforderten Reihenfolge.
+# R7.1k CPU-Skalierungsbenchmark
+
+`BENCHMARK.PRG` misst den Integer-Mix nun getrennt als seriellen
+Single-CPU-Durchsatz und als aggregierten Multi-CPU-Durchsatz. Beide Werte
+verwenden dieselbe kalibrierte, feste Arbeitsmenge pro Worker. Der Kernel gibt
+Ring 3 dazu ueber den append-only Syscall 126 ausschliesslich die versionierte
+Anzahl online geschalteter CPUs bekannt. Der Benchmark startet genau einen
+Worker je online CPU vor einer gemeinsamen monotonen Startzeit; Image-Laden
+und Prozesserzeugung liegen damit ausserhalb des Messfensters. Ein fehlender,
+verspaeteter oder fehlerhafter Worker verwirft den Multi-CPU-Wert. Die Tabelle
+weist zusaetzlich Multi/Single-Skalierung aus und kennzeichnet die Werte als
+schedulerbeeinflusste Vergleichsmessung, nicht als Hardwarezertifizierung.

@@ -19,6 +19,8 @@
 #define BENCHMARK_CPU_MAX_ITERATIONS (1U << 26U)
 #define BENCHMARK_CPU_ATTEMPTS 7U
 #define BENCHMARK_CPU_OPERATIONS_PER_ITERATION 8U
+#define BENCHMARK_CPU_START_DELAY_MS 5000U
+#define BENCHMARK_CPU_MAX_WORKERS X86OS_CPU_TOPOLOGY_MAX_CPUS
 #define BENCHMARK_MEMORY_BYTES (256U * 1024U)
 #define BENCHMARK_MEMORY_WORDS \
     (BENCHMARK_MEMORY_BYTES / (uint32_t)sizeof(uint32_t))
@@ -57,6 +59,18 @@ typedef struct {
 static volatile uint32_t memory_words[BENCHMARK_MEMORY_WORDS];
 static uint8_t disk_buffer[BENCHMARK_DISK_CHUNK_BYTES];
 static volatile uint32_t benchmark_sink;
+
+static uint32_t cpu_work(uint32_t iterations) {
+    uint32_t a = 0x13579BDFU;
+    uint32_t b = 0x2468ACE1U;
+    for (uint32_t index = 0U; index < iterations; ++index) {
+        a ^= b + 0x9E3779B9U;
+        a = (a << 7U) | (a >> 25U);
+        b += a ^ index;
+        b = b * 1664525U + 1013904223U;
+    }
+    return a ^ b;
+}
 
 static uint64_t divide_unsigned(uint64_t numerator, uint64_t denominator,
                                 uint64_t *remainder_out) {
@@ -213,21 +227,13 @@ static const char *disk_read_progress(uint32_t completed_chunks) {
     }
 }
 
-static benchmark_result_t benchmark_cpu(void) {
+static benchmark_result_t benchmark_cpu_single(uint32_t *iterations_out) {
     benchmark_result_t result = {0U, "MOp/s", BENCHMARK_FAILED};
     uint32_t iterations = BENCHMARK_CPU_INITIAL_ITERATIONS;
     for (uint32_t attempt = 0U; attempt < BENCHMARK_CPU_ATTEMPTS; ++attempt) {
         uint64_t started = 0U;
         if (x86os_monotonic_ms(&started) != 0) return result;
-        uint32_t a = 0x13579BDFU;
-        uint32_t b = 0x2468ACE1U;
-        for (uint32_t index = 0U; index < iterations; ++index) {
-            a ^= b + 0x9E3779B9U;
-            a = (a << 7U) | (a >> 25U);
-            b += a ^ index;
-            b = b * 1664525U + 1013904223U;
-        }
-        benchmark_sink ^= a ^ b;
+        benchmark_sink ^= cpu_work(iterations);
         uint64_t elapsed = 0U;
         if (elapsed_ms(started, &elapsed) != 0) return result;
         if (elapsed != 0U &&
@@ -238,6 +244,7 @@ static benchmark_result_t benchmark_cpu(void) {
             result.hundredths = divide_unsigned(
                 operations, elapsed * 10U, 0);
             result.status = BENCHMARK_OK;
+            if (iterations_out != 0) *iterations_out = iterations;
             return result;
         }
         if (iterations >= BENCHMARK_CPU_MAX_ITERATIONS / 2U)
@@ -245,6 +252,108 @@ static benchmark_result_t benchmark_cpu(void) {
         else
             iterations *= 2U;
     }
+    return result;
+}
+
+static int parse_unsigned(const char *text, uint64_t *value_out) {
+    if (text == 0 || value_out == 0 || text[0] == '\0') return -1;
+    uint64_t value = 0U;
+    for (size_t index = 0U; text[index] != '\0'; ++index) {
+        if (text[index] < '0' || text[index] > '9') return -1;
+        uint32_t digit = (uint32_t)(text[index] - '0');
+        if (value > (UINT64_MAX - digit) / 10U) return -1;
+        value = value * 10U + digit;
+    }
+    *value_out = value;
+    return 0;
+}
+
+static int cpu_worker(const char *start_text, const char *iterations_text) {
+    uint64_t start = 0U;
+    uint64_t parsed_iterations = 0U;
+    uint64_t now = 0U;
+    if (parse_unsigned(start_text, &start) != 0 ||
+        parse_unsigned(iterations_text, &parsed_iterations) != 0 ||
+        parsed_iterations == 0U ||
+        parsed_iterations > BENCHMARK_CPU_MAX_ITERATIONS ||
+        x86os_monotonic_ms(&now) != 0 || now >= start ||
+        start - now > BENCHMARK_CPU_START_DELAY_MS) {
+        x86os_puts("BENCHMARK_STATUS phase=cpu-worker-failed step=arguments\n");
+        return 3;
+    }
+    if (x86os_sleep_ms((uint32_t)(start - now)) != 0 ||
+        x86os_monotonic_ms(&now) != 0 || now < start ||
+        now - start > BENCHMARK_TARGET_MS) {
+        x86os_puts("BENCHMARK_STATUS phase=cpu-worker-failed step=start\n");
+        return 4;
+    }
+    benchmark_sink ^= cpu_work((uint32_t)parsed_iterations);
+    return 0;
+}
+
+static void format_unsigned_argument(char buffer[24], uint64_t value) {
+    size_t used = append_unsigned(buffer, 24U, 0U, value);
+    buffer[used] = '\0';
+}
+
+static benchmark_result_t benchmark_cpu_multi(uint32_t iterations,
+                                               uint32_t *workers_out) {
+    benchmark_result_t result = {0U, "MOp/s", BENCHMARK_FAILED};
+    x86os_cpu_topology_t topology;
+    if (x86os_cpu_topology(&topology) != 0 ||
+        topology.version != X86OS_CPU_TOPOLOGY_VERSION ||
+        topology.struct_size != sizeof(topology) ||
+        topology.online_cpu_count == 0U ||
+        topology.online_cpu_count > BENCHMARK_CPU_MAX_WORKERS) {
+        x86os_puts("BENCHMARK_STATUS phase=cpu-failed step=multi-topology\n");
+        return result;
+    }
+    if (topology.online_cpu_count == 1U) {
+        result.status = BENCHMARK_UNAVAILABLE;
+        return result;
+    }
+
+    uint64_t now = 0U;
+    if (x86os_monotonic_ms(&now) != 0) return result;
+    uint64_t shared_start = now + BENCHMARK_CPU_START_DELAY_MS;
+    char start_text[24];
+    char iterations_text[24];
+    format_unsigned_argument(start_text, shared_start);
+    format_unsigned_argument(iterations_text, iterations);
+    int children[BENCHMARK_CPU_MAX_WORKERS];
+    uint32_t spawned = 0U;
+    const char *arguments[] = {
+        "/usr/bin/benchmark.prg", "--cpu-worker", start_text,
+        iterations_text
+    };
+    for (; spawned < topology.online_cpu_count; ++spawned) {
+        children[spawned] = x86os_spawnv(arguments[0], 4, arguments);
+        if (children[spawned] <= 0) break;
+    }
+    bool complete = spawned == topology.online_cpu_count;
+    if (!complete)
+        x86os_puts("BENCHMARK_STATUS phase=cpu-failed step=multi-spawn\n");
+    if (x86os_monotonic_ms(&now) != 0 || now >= shared_start)
+        complete = false;
+    for (uint32_t index = 0U; index < spawned; ++index) {
+        int status = -1;
+        if (x86os_wait(children[index], &status) != children[index] ||
+            status != 0) {
+            complete = false;
+            x86os_puts("BENCHMARK_STATUS phase=cpu-failed step=multi-worker\n");
+        }
+    }
+    uint64_t elapsed = 0U;
+    if (!complete || elapsed_ms(shared_start, &elapsed) != 0 || elapsed == 0U) {
+        if (complete)
+            x86os_puts("BENCHMARK_STATUS phase=cpu-failed step=multi-clock\n");
+        return result;
+    }
+    uint64_t operations = (uint64_t)iterations *
+        BENCHMARK_CPU_OPERATIONS_PER_ITERATION * topology.online_cpu_count;
+    result.hundredths = divide_unsigned(operations, elapsed * 10U, 0);
+    result.status = BENCHMARK_OK;
+    if (workers_out != 0) *workers_out = topology.online_cpu_count;
     return result;
 }
 
@@ -534,14 +643,34 @@ static benchmark_result_t benchmark_vga(void) {
 }
 
 int main(int argc, char **argv) {
-    (void)argv;
+    if (argc == 4 && argv != 0 &&
+        text_length(argv[1]) == sizeof("--cpu-worker") - 1U) {
+        static const char worker_option[] = "--cpu-worker";
+        bool matches = true;
+        for (size_t index = 0U; index < sizeof(worker_option); ++index)
+            if (argv[1][index] != worker_option[index]) matches = false;
+        if (matches) return cpu_worker(argv[2], argv[3]);
+    }
     if (argc != 1) {
         x86os_puts("Usage: benchmark\n");
         return 2;
     }
     x86os_puts("REIST Benchmark: begrenzte Diagnose laeuft ...\n");
     x86os_puts("BENCHMARK_STATUS phase=cpu\n");
-    benchmark_result_t cpu = benchmark_cpu();
+    x86os_puts("BENCHMARK_STATUS phase=cpu-single\n");
+    uint32_t cpu_iterations = 0U;
+    benchmark_result_t cpu_single = benchmark_cpu_single(&cpu_iterations);
+    x86os_puts("BENCHMARK_STATUS phase=cpu-multi\n");
+    uint32_t cpu_workers = 0U;
+    benchmark_result_t cpu_multi = cpu_single.status == BENCHMARK_OK
+        ? benchmark_cpu_multi(cpu_iterations, &cpu_workers)
+        : (benchmark_result_t){0U, "MOp/s", BENCHMARK_FAILED};
+    benchmark_result_t cpu_scaling = {0U, "x", cpu_multi.status};
+    if (cpu_multi.status == BENCHMARK_OK && cpu_single.hundredths != 0U) {
+        cpu_scaling.hundredths = divide_unsigned(
+            cpu_multi.hundredths * 100U, cpu_single.hundredths, 0);
+        cpu_scaling.status = BENCHMARK_OK;
+    }
     x86os_puts("BENCHMARK_STATUS phase=ram-write\n");
     benchmark_result_t memory_write = benchmark_memory_write();
     x86os_puts("BENCHMARK_STATUS phase=ram-read\n");
@@ -556,17 +685,25 @@ int main(int argc, char **argv) {
     x86os_puts("+----------+----------------------+------------------+----------+\n");
     x86os_puts("| Bereich  | Test                 | Ergebnis         | Status   |\n");
     x86os_puts("+----------+----------------------+------------------+----------+\n");
-    print_result_row("CPU", "Integer-Mix", &cpu);
+    print_result_row("CPU", "Single CPU", &cpu_single);
+    print_result_row("CPU", "Multi CPU gesamt", &cpu_multi);
+    print_result_row("CPU", "Multi/Single", &cpu_scaling);
     print_result_row("RAM", "Schreiben", &memory_write);
     print_result_row("RAM", "Lesen", &memory_read);
     print_result_row("HDD", "Seq. Schreiben", &disk_write);
     print_result_row("HDD", "Seq. Lesen", &disk_read);
     print_result_row("VGA", "Vollbild-Fill", &vga);
     x86os_puts("+----------+----------------------+------------------+----------+\n");
-    x86os_puts("Hinweis: Vergleichswerte des aktuellen REIST-Treiberpfads.\n");
+    x86os_puts("Hinweis: Multi CPU nutzt alle online CPUs (Worker: ");
+    char worker_text[24];
+    format_unsigned_argument(worker_text, cpu_workers);
+    x86os_puts(worker_text);
+    x86os_puts("); Schedulerlast kann Werte beeinflussen.\n");
     x86os_puts("BENCHMARK_STATUS phase=complete\n");
 
-    return cpu.status == BENCHMARK_OK &&
+    return cpu_single.status == BENCHMARK_OK &&
+           (cpu_multi.status == BENCHMARK_OK ||
+            cpu_multi.status == BENCHMARK_UNAVAILABLE) &&
            memory_write.status == BENCHMARK_OK &&
            memory_read.status == BENCHMARK_OK &&
            disk_write.status == BENCHMARK_OK &&

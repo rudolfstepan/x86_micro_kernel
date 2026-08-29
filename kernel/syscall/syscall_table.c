@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/sys.h"
+#include "arch/x86/include/smp.h"
 #include "drivers/video/display.h"
 #include "drivers/video/framebuffer.h"
 #include "drivers/video/display_control.h"
@@ -139,6 +140,32 @@ static int syscall_runtime_timing(runtime_timing_stats_t *user_stats,
     int result = scheduler_runtime_timing_stats(&stats);
     if (result != 0) return result;
     return copy_to_user(user_stats, &stats, sizeof(stats)) == 0 ? 0 : -14;
+}
+
+#define CPU_TOPOLOGY_VERSION 1U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t online_cpu_count;
+    uint32_t reserved;
+} syscall_cpu_topology_t;
+
+static int syscall_cpu_topology(syscall_cpu_topology_t *user_topology,
+                                uint32_t user_size, uint32_t version) {
+    if (version != CPU_TOPOLOGY_VERSION ||
+        user_size < sizeof(syscall_cpu_topology_t)) return -22;
+    x86_smp_status_t smp;
+    x86_smp_status(&smp);
+    if (smp.online_cpu_count == 0U ||
+        smp.online_cpu_count > X86_SMP_MAX_CPUS) return -5;
+    syscall_cpu_topology_t topology = {
+        .version = CPU_TOPOLOGY_VERSION,
+        .struct_size = sizeof(syscall_cpu_topology_t),
+        .online_cpu_count = smp.online_cpu_count,
+        .reserved = 0U,
+    };
+    return copy_to_user(user_topology, &topology, sizeof(topology)) == 0
+        ? 0 : -14;
 }
 
 static int syscall_copy_from_user_space(void *destination,
@@ -3735,6 +3762,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_ftruncate,           // Syscall 123: Set file size
     (void*)&syscall_storage_bulk,        // Syscall 124: Bounded bulk transfer
     (void*)&syscall_kernel_log_read,     // Syscall 125: Bounded kernel log
+    (void*)&syscall_cpu_topology,        // Syscall 126: Read CPU topology
     // Add more syscalls here as needed
 };
 
@@ -4279,6 +4307,10 @@ void syscall_handler(Registers* regs) {
         case SYS_KERNEL_LOG_READ:
             result = (uint32_t)syscall_kernel_log_read(
                 (syscall_kernel_log_read_t*)(uintptr_t)arg1);
+            break;
+        case SYS_CPU_TOPOLOGY:
+            result = (uint32_t)syscall_cpu_topology(
+                (syscall_cpu_topology_t*)(uintptr_t)arg1, arg2, arg3);
             break;
         default:
             result = (uint32_t)-1;

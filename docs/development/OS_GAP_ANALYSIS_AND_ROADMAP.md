@@ -4275,3 +4275,11 @@ gelten daher nicht als Abnahme des S0-Gates.
 Systematische Allocation-Failure-Injection, ein IRQ-tauglicher Allocator,
 weitere Reaper-Stresstests und Highmem/`kmap` bleiben zusätzliche
 Speicherhärtung.
+# R7.1k: realistische CPU-Skalierung
+
+Der Ring-3-Systembenchmark trennt Single-CPU- und Multi-CPU-Integerdurchsatz.
+Eine feste, versionierte und nur lesende CPU-Topologie-ABI meldet die Zahl der
+online CPUs. Synchronisierte Worker fuehren je dieselbe zuvor kalibrierte
+Arbeitslast aus; Spawnkosten werden nicht als Nutzarbeit bewertet. Aggregate
+MOp/s und der Multi/Single-Faktor bleiben diagnostische Vergleichswerte unter
+der aktuellen Schedulerlast.

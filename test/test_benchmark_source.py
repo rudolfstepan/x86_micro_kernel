@@ -32,6 +32,8 @@ class BenchmarkSourceTests(unittest.TestCase):
         for token in (
             "BENCHMARK_CPU_MAX_ITERATIONS",
             "BENCHMARK_CPU_ATTEMPTS",
+            "BENCHMARK_CPU_MAX_WORKERS",
+            "BENCHMARK_CPU_START_DELAY_MS",
             "BENCHMARK_MAX_ELAPSED_MS",
             "BENCHMARK_MEMORY_BYTES",
             "BENCHMARK_MEMORY_MAX_PASSES",
@@ -69,6 +71,8 @@ class BenchmarkSourceTests(unittest.TestCase):
     def test_status_identifies_each_phase_and_bounded_disk_progress(self) -> None:
         main_markers = (
             "BENCHMARK_STATUS phase=cpu",
+            "BENCHMARK_STATUS phase=cpu-single",
+            "BENCHMARK_STATUS phase=cpu-multi",
             "BENCHMARK_STATUS phase=ram-write",
             "BENCHMARK_STATUS phase=ram-read",
             "BENCHMARK_STATUS phase=vga",
@@ -135,8 +139,27 @@ class BenchmarkSourceTests(unittest.TestCase):
         )
         for area in ('"CPU"', '"RAM"', '"HDD"', '"VGA"'):
             self.assertIn(f"print_result_row({area}", self.source)
+        for cpu_test in ('"Single CPU"', '"Multi CPU gesamt"',
+                         '"Multi/Single"'):
+            self.assertIn(cpu_test, self.source)
         self.assertIn('return "N/V"', self.source)
         self.assertIn('return "FEHLER"', self.source)
+
+    def test_cpu_scaling_uses_matched_synchronized_bounded_work(self) -> None:
+        self.assertIn("x86os_cpu_topology(&topology)", self.source)
+        self.assertIn("topology.online_cpu_count > BENCHMARK_CPU_MAX_WORKERS",
+                      self.source)
+        self.assertIn("shared_start = now + BENCHMARK_CPU_START_DELAY_MS",
+                      self.source)
+        self.assertIn('"--cpu-worker"', self.source)
+        self.assertIn("x86os_spawnv(arguments[0], 4, arguments)", self.source)
+        self.assertIn("x86os_wait(children[index], &status)", self.source)
+        self.assertIn("cpu_work(iterations)", self.source)
+        self.assertIn("BENCHMARK_CPU_OPERATIONS_PER_ITERATION * "
+                      "topology.online_cpu_count", self.source)
+        self.assertLess(
+            self.source.index("x86os_spawnv(arguments[0], 4, arguments)"),
+            self.source.index("elapsed_ms(shared_start, &elapsed)"))
 
     def test_program_is_installed_in_both_image_layouts(self) -> None:
         self.assertIn(
@@ -173,6 +196,9 @@ class BenchmarkSourceTests(unittest.TestCase):
         )
         self.assertIn('"Seq. Schreiben", "Seq. Lesen"', self.runtime)
         self.assertIn('last_status=', self.runtime)
+        self.assertIn('"Single CPU", "Multi CPU gesamt", "Multi/Single"',
+                      self.runtime)
+        self.assertIn("CPU_ROW_PATTERN", self.runtime)
 
 
 if __name__ == "__main__":
