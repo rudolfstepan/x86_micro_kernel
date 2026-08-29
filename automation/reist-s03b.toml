@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2f-x86_64-high-frame-consumers"
 
 [policy]
 one_package_per_run = true
@@ -11351,6 +11351,44 @@ evidence = [
   "the enlarged assembly BSS ended at 0x00183000 one full page before the fixed C bridge at 0x00184000 and the complete bootstrap ended at 0x001880e0 below its unchanged 2-MiB identity-map ceiling",
   "the bounded one-vCPU 128-MiB QEMU dialogue observed PHYSICAL_MEMORY_128M_OK after the prior physical-memory marker then preserved every loader scheduler shell and C-control marker through RING3_SHELL_OK; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2f-x86_64-high-frame-consumers"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Admit bounded high frames to x86_64 loader and processes"
+scope = "Complete the common ABI and cleanup step left by R8.2e. Extend the isolated x86_64 allocator's ordinary lowest-first scan and every existing ELF64 loader, page-table and process-frame range validation from the old 64-MiB consumer ceiling to the already proven exact 128-MiB managed and RW/NX direct-map limit. Add one self-test-only bounded allocation window that forces the unchanged embedded ELF64 probe and one private process stack/page-table lifecycle to consume at least one usable frame at or above 64 MiB through the same production staging, mapping, validation, release and stale-free paths. Restore the exact initial free count, allocation bitmap, loader selection, task generation, queue, CR3, TSS and syscall state before publishing HIGH_FRAME_CONSUMERS_OK. Preserve lowest-first production allocation, fixed eight-page loader and four-slot process capacities, W^X, private writable pages, NX stacks, generation checks and every prior marker. Keep dynamic page tables, memory above 128 MiB, VFS loading, SMP, devices, physical hardware, production integration and every i386 target outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/mm/physical_memory.asm", "arch/x86_64/exec/elf64_loader.asm",
+  "arch/x86_64/proc/user_execution.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "scripts/run_qemu_x86_64_boot.py", "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all production i386 artifacts syscall numbers C handoff layouts scheduled-shell semantics and every prior x86_64 marker remain unchanged and ordered",
+  "the ordinary allocator remains lowest-first and admits only aligned usable unallocated frames below the exact 128-MiB managed limit",
+  "the forced high allocation window is self-test-only fixed to the validated 64-to-128-MiB half and cannot remain active across a Ring-3 entry or failure return",
+  "ELF staging user stacks and every process page-table level accept high frames only through the existing RW/NX direct map and validate alignment and the exact managed ceiling before publication",
+  "every forced high frame follows the same zero-fill W^X mapping unmap zero-on-free duplicate-free rejection and generation-scoped cleanup paths as an ordinary frame",
+  "success restores the exact initial free count allocation state loader selection tasks queue CR3 TSS syscall MSRs and self-test window before HIGH_FRAME_CONSUMERS_OK"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "an existing fixed page-table loader task or queue capacity must grow",
+  "a high frame can bypass usable allocation alignment direct-map permission W^X generation or cleanup validation",
+  "the self-test allocation window can affect the later scheduled shell or survive any failure path",
+  "an i386 artifact prior marker public ABI or C handoff layout changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "mm: admit bounded high frames to x86_64 consumers"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
