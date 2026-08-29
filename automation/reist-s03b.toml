@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1g-fat32-open-handle-cache"
 
 [policy]
 one_package_per_run = true
@@ -12462,3 +12462,52 @@ evidence = [
   "The accepted desktop startup completed in 2698 ms: splash 806 ms icons 652 ms filetypes 54 ms and sounds 43 ms; SERVICE_READY remained after the first frame while the healthy heartbeat recovery fence and restart budget stayed unchanged.",
   "The runtime runner now keys command admission to the Ring-3 C:\\> prompt and validates the new explorer then ready then desktop then real xHCI mouse order despite bounded SMP serial interleaving; active_id is empty."
 ]
+
+[[packages]]
+id = "R7.1g-fat32-open-handle-cache"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Reuse generation-scoped FAT32 open-handle metadata"
+scope = "Remove the VMware benchmark's repeated FAT32 directory lookup from every 4-KiB read and write without weakening media or persistence checks. Reuse an open VFS file handle's exact cached directory entry only while its mounted-volume generation matches, caching remains enabled, and the node name type cluster size parent and entry identity remain internally consistent. Any mutation through another VFS handle or the legacy FAT hook advances the shared generation, clears sequential hints and forces one bounded exact-name directory lookup before later data I/O; generation exhaustion keeps caching disabled and always revalidates. Preserve the version-2 undo journal, exactly four ordered durability barriers per VFS mutation, 4096-byte syscall staging ceiling, AHCI command verification and sleepable waits, FAT32 format, VFS and syscall ABIs. Add a bounded VMware benchmark mode that injects the packaged userspace command only after the Ring-3 shell prompt and requires ordered progress, byte-verified readback, cleanup, successful HDD rows, shell return and no panic or storage/compositor degradation."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "test/test_fat32_host.c",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_vmware_mouse.py",
+  "test/test_benchmark_source.py",
+  "docs/filesystems/FAT32_OPTIMIZATIONS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a cached open-file directory entry is reused only for an enabled cache with the exact current mounted-volume generation and internally consistent file node name parent entry cluster and size",
+  "a generation mismatch cache exhaustion malformed identity missing entry or directory replacement cannot publish stale metadata and instead resets hints and performs the existing bounded exact-name lookup or fails closed",
+  "every successful mutation still advances the shared volume generation while the mutating handle adopts it only after the final metadata and FSInfo writes",
+  "the undo-journal format four ordered durability barriers 4096-byte syscall staging ceiling AHCI verification waits and persistent VMDK layout remain unchanged",
+  "the VMware benchmark accepts only complete ordered userspace status byte-verified readback cleanup successful HDD rows and return to the Ring-3 shell without panic restart degradation or storage fencing"
+]
+targeted_tests = [
+  "python test/test_fs_host.py -v",
+  "python test/test_vmware_mouse.py -v",
+  "python test/test_benchmark_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-benchmark"
+]
+stop_conditions = [
+  "a cached handle can survive another handle's or legacy FAT mutation without one exact-name revalidation",
+  "the optimization changes journal ordering removes a flush or readback check widens a wait or adds dynamic cache storage",
+  "the VMware benchmark fails byte verification cleanup shell return or emits a panic storage fence compositor restart or degradation",
+  "the measured VMware HDD path does not improve over the observed 18.29 KiB/s write and 77.48 KiB/s read baseline",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "fat32: reuse current open-handle metadata"
+evidence = []
