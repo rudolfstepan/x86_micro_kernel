@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1j-vmware-smp-post-workload-stability"
 
 [policy]
 one_package_per_run = true
@@ -12664,3 +12664,57 @@ evidence = [
   "The real four-vCPU VMware benchmark passed in 17 seconds at 314.49 KiB/s sequential write and 640.00 KiB/s sequential read with complete 256-KiB byte verification, cleanup and Ring-3 shell return.",
   "Journal version 2, its twenty target slots, exactly four ordered durability barriers, full DMA transfer-length and readback checks, bounded polled completion, storage fencing and public ABIs remained unchanged."
 ]
+
+[[packages]]
+id = "R7.1j-vmware-smp-post-workload-stability"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Eliminate delayed VMware SMP lock panics"
+scope = "Reproduce and eliminate the delayed four-vCPU VMware kernel restart observed after a successful FAT32 benchmark and during desktop use. First make every bounded spinlock timeout identify the exact lock address, owning CPU and waiting call site without weakening immediate recursive-owner detection. Replace the processor-speed-dependent retry ceiling with a bounded virtualization-tolerant wait contract, and reduce any measured scheduler critical section that can exceed that contract. Extend the VMware benchmark and desktop runtime proofs with a fixed post-success stability interval that continues rejecting panic, degradation, restart and storage-fence markers before the VM is stopped. Preserve the Process-to-Scheduler lock order, IRQ-safe fixed-capacity state, watchdog fail-closed behavior and all public ABIs."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/lib/spinlock.h",
+  "kernel/sched/scheduler.c",
+  "kernel/time/pit.c",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_smp.py",
+  "test/test_sync_diagnostics_r13.py",
+  "test/test_vmware_mouse.py",
+  "docs/architecture/SYNCHRONIZATION_CONTRACT.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "recursive acquisition by the current logical CPU remains an immediate diagnosed kernel fault",
+  "a contended acquisition remains bounded by a hardware-independent elapsed-time contract plus a finite pre-clock fallback and never spins indefinitely",
+  "timeout diagnostics preserve the exact lock address owner CPU and waiting call site without heap allocation formatted logging or VFS access",
+  "the Process to Scheduler lock order wait-node ownership IRQ state and context-switch release rules remain unchanged",
+  "no scheduler spinlock critical section may sleep block perform VFS or device I/O or cross a context switch",
+  "the VMware benchmark and desktop gates continue monitoring for at least ten seconds after their success marker and fail on any panic degradation restart quarantine or storage fence",
+  "the four-vCPU benchmark retains complete byte verification cleanup shell return and the accepted 95 KiB/s write and 415 KiB/s read minima"
+]
+targeted_tests = [
+  "python test/test_smp.py -v",
+  "python test/test_sync_diagnostics_r13.py -v",
+  "python test/test_vmware_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-benchmark",
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-mouse"
+]
+stop_conditions = [
+  "the contention bound is based only on loop count processor frequency assumptions or an IRQ-dependent clock that cannot advance while waiting",
+  "a true recursive owner or a lock held beyond the frozen elapsed-time ceiling can continue execution",
+  "the fix weakens watchdog panic restart degradation storage fencing or benchmark data-integrity checks",
+  "the benchmark or desktop runtime emits a panic restart degradation quarantine or storage-fence marker during its post-success interval",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "smp: tolerate bounded vcpu lock preemption"
+evidence = []
