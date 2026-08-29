@@ -11,6 +11,12 @@ typedef unsigned char shell_u8;
 #define REIST_SYS_WAIT 24ULL
 #define REIST_SYS_SPAWNV 30ULL
 #define REIST_SYS_YIELD 40ULL
+#define REIST_SYS_IPC_CREATE 49ULL
+#define REIST_SYS_IPC_SEND 50ULL
+#define REIST_SYS_IPC_RECEIVE 51ULL
+#define REIST_SYS_IPC_CLOSE 52ULL
+#define REIST_SYS_IPC_DELEGATE 55ULL
+#define REIST_SYS_IPC_RELEASE 58ULL
 #define REIST_STDIN 0ULL
 #define REIST_STDOUT 1ULL
 #define REIST_EAGAIN (-11LL)
@@ -19,6 +25,20 @@ typedef unsigned char shell_u8;
 #define SHELL_PARENT_PID 300LL
 #define SHELL_CHILD_PID 301LL
 #define SHELL_CHILD_STATUS 77U
+#define IPC_MESSAGE_VERSION 1U
+#define IPC_MESSAGE_SIZE 140U
+#define IPC_MESSAGE_LENGTH 8U
+#define IPC_RIGHT_SEND 0x01U
+
+typedef struct {
+    shell_u32 version;
+    shell_u32 struct_size;
+    shell_u32 length;
+    shell_u8 payload[128];
+} shell_ipc_message_t;
+
+_Static_assert(sizeof(shell_ipc_message_t) == IPC_MESSAGE_SIZE,
+               "REIST-v1 IPC message size changed");
 
 static shell_i64 shell_syscall3(shell_u64 number, shell_u64 first,
                                 shell_u64 second, shell_u64 third)
@@ -79,6 +99,39 @@ static void clear_command(shell_u8 *command)
     }
 }
 
+static void clear_ipc_message(shell_ipc_message_t *message)
+{
+    shell_u32 index;
+    shell_u8 *bytes = (shell_u8 *)message;
+
+    for (index = 0U; index < IPC_MESSAGE_SIZE; ++index) {
+        bytes[index] = 0U;
+    }
+}
+
+static int ipc_message_is_token77(const shell_ipc_message_t *message)
+{
+    static const shell_u8 expected[IPC_MESSAGE_LENGTH] = "token77";
+    shell_u32 index;
+
+    if (message->version != IPC_MESSAGE_VERSION ||
+        message->struct_size != IPC_MESSAGE_SIZE ||
+        message->length != IPC_MESSAGE_LENGTH) {
+        return 0;
+    }
+    for (index = 0U; index < IPC_MESSAGE_LENGTH; ++index) {
+        if (message->payload[index] != expected[index]) {
+            return 0;
+        }
+    }
+    for (; index < sizeof(message->payload); ++index) {
+        if (message->payload[index] != 0U) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 void _start(void)
 {
     static const char ready[] = "REIST_X86_64_RING3_SHELL_READY\r\n";
@@ -130,6 +183,8 @@ void _start(void)
                     (shell_u64)child_path, (shell_u64)child_token
                 };
                 shell_u32 child_status __attribute__((aligned(4))) = 0U;
+                shell_u32 ipc_handle __attribute__((aligned(4))) = 0U;
+                shell_ipc_message_t ipc_message __attribute__((aligned(8)));
                 shell_i64 parent_pid = shell_syscall3(REIST_SYS_GETPID, 0ULL, 0ULL, 0ULL);
                 shell_i64 child_pid;
                 shell_i64 waited_pid;
@@ -137,17 +192,41 @@ void _start(void)
                 if (parent_pid != SHELL_PARENT_PID) {
                     shell_exit(11ULL);
                 }
+                if (shell_syscall3(REIST_SYS_IPC_CREATE,
+                                   (shell_u64)&ipc_handle, 0ULL, 0ULL) != 0LL ||
+                    ipc_handle == 0U) {
+                    shell_exit(15ULL);
+                }
                 child_pid = shell_syscall3(REIST_SYS_SPAWNV,
                                            (shell_u64)child_path,
                                            (shell_u64)child_argv, 2ULL);
                 if (child_pid != SHELL_CHILD_PID) {
                     shell_exit(12ULL);
                 }
+                if (shell_syscall3(REIST_SYS_IPC_DELEGATE,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)child_pid,
+                                   IPC_RIGHT_SEND) != 0LL) {
+                    shell_exit(16ULL);
+                }
                 waited_pid = shell_syscall3(REIST_SYS_WAIT, (shell_u64)child_pid,
                                             (shell_u64)&child_status, 0ULL);
                 if (waited_pid != SHELL_CHILD_PID ||
                     child_status != SHELL_CHILD_STATUS) {
                     shell_exit(13ULL);
+                }
+                clear_ipc_message(&ipc_message);
+                ipc_message.version = IPC_MESSAGE_VERSION;
+                ipc_message.struct_size = IPC_MESSAGE_SIZE;
+                if (shell_syscall3(REIST_SYS_IPC_RECEIVE,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)&ipc_message, 0ULL) != 0LL ||
+                    !ipc_message_is_token77(&ipc_message)) {
+                    shell_exit(17ULL);
+                }
+                if (shell_syscall3(REIST_SYS_IPC_CLOSE,
+                                   (shell_u64)ipc_handle, 0ULL, 0ULL) != 0LL) {
+                    shell_exit(18ULL);
                 }
                 if (!shell_write_exact(run_ok, sizeof(run_ok) - 1U) ||
                     !shell_write_exact(prompt, sizeof(prompt) - 1U)) {

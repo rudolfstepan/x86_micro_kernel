@@ -443,16 +443,19 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("cmp qword [rel syscall_rdx], SHELL_ARGC", scheduler)
         self.assertIn("call scheduler_validate_shell_token64", scheduler)
         self.assertIn("call scheduler_build_shell_child_stack64", scheduler)
-        self.assertIn("SHELL_CHILD_STACK_BYTES    equ 96", scheduler)
+        self.assertIn("SHELL_CHILD_STACK_BYTES    equ 128", scheduler)
         self.assertIn("mov qword [r13 + 8], SHELL_CHILD_ARGV0", scheduler)
         self.assertIn("mov qword [r13 + 16], SHELL_CHILD_ARGV1", scheduler)
         self.assertIn("mov qword [r12 + TASK_RSP], USER_STACK_TOP - SHELL_CHILD_STACK_BYTES",
                       scheduler)
-        self.assertIn("CHILD_RSP      equ USER_STACK_TOP - 96", child)
+        self.assertIn("add r13, qword [r12 + TASK_STACK_FRAME]", scheduler)
+        self.assertIn("CHILD_RSP      equ USER_STACK_TOP - 128", child)
         self.assertIn("test rsp, 15", child)
         self.assertIn("cmp qword [rsp], 2", child)
         self.assertIn("cmp qword [rsp + 24], 0", child)
-        self.assertIn("cmp qword [rsp + 48], 0", child)
+        self.assertIn("cmp qword [rsp + 40], AT_REIST_IPC_HANDLE", child)
+        self.assertIn("cmp qword [rsp + 56], 0", child)
+        self.assertIn("cmp qword [rsp + 64], 0", child)
         self.assertIn("FAIL_STATUS    equ 78", child)
 
     def test_ring3_shell_child_slot_reuse_is_exactly_two_generations(self):
@@ -480,7 +483,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
             "resb TASK_SLOT_CAPACITY * SYSCALL_PROFILE_SIZE", scheduler
         )
         self.assertIn("SHELL_PARENT_SYSCALL_MASK", scheduler)
-        self.assertIn("SHELL_CHILD_SYSCALL_MASK   equ (1 << REIST_SYS_EXIT)", scheduler)
+        self.assertIn("SHELL_CHILD_SYSCALL_MASK", scheduler)
         entry = scheduler.index("scheduler_syscall_entry64:")
         gate = scheduler.index(
             "call scheduler_validate_shell_syscall_profile64", entry
@@ -516,6 +519,65 @@ class X8664BootstrapContractTests(unittest.TestCase):
         denial = child.index("mov eax, REIST_SYS_GETPID")
         stack_check = child.index("cmp rsp, CHILD_RSP", denial)
         self.assertLess(child.index("cmp rax, REIST_EACCES", denial), stack_check)
+
+    def test_ring3_ipc_capability_transfer_is_fixed_attenuated_and_reaped(self):
+        abi = self.read("include/reist/abi/syscall.h")
+        shell = self.read("arch/x86_64/user/shell.c")
+        child = self.read("arch/x86_64/user/child.asm")
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        for name, number in (
+            ("IPC_CREATE", 49), ("IPC_SEND", 50), ("IPC_RECEIVE", 51),
+            ("IPC_CLOSE", 52), ("IPC_DELEGATE", 55), ("IPC_RELEASE", 58),
+        ):
+            self.assertIn(f"X({name}, {name}, {number}U)", abi)
+            self.assertIn(f"REIST_SYS_{name}", scheduler)
+        self.assertIn("IPC_MESSAGE_VERSION        equ 1", scheduler)
+        self.assertIn("IPC_MESSAGE_SIZE           equ 140", scheduler)
+        self.assertIn("IPC_CAPABILITY_SIZE        equ 24", scheduler)
+        self.assertIn(
+            "resb TASK_SLOT_CAPACITY * IPC_CAPABILITY_SIZE", scheduler
+        )
+        self.assertIn("_Static_assert(sizeof(shell_ipc_message_t) == IPC_MESSAGE_SIZE", shell)
+        run = shell.index('command_equals(command, "RUN",')
+        create = shell.index("REIST_SYS_IPC_CREATE", run)
+        spawn = shell.index("REIST_SYS_SPAWNV", create)
+        delegate = shell.index("REIST_SYS_IPC_DELEGATE", spawn)
+        wait = shell.index("REIST_SYS_WAIT", delegate)
+        receive = shell.index("REIST_SYS_IPC_RECEIVE", wait)
+        close = shell.index("REIST_SYS_IPC_CLOSE", receive)
+        run_ok = shell.index("shell_write_exact(run_ok", close)
+        self.assertEqual([create, spawn, delegate, wait, receive, close, run_ok],
+                         sorted([create, spawn, delegate, wait, receive, close, run_ok]))
+        self.assertIn("AT_REIST_IPC_HANDLE        equ 0x52534901", scheduler)
+        self.assertIn("mov qword [r13 + 40], AT_REIST_IPC_HANDLE", scheduler)
+        self.assertIn("mov qword [r13 + 48], r15", scheduler)
+        self.assertIn("cmp qword [rsp + 40], AT_REIST_IPC_HANDLE", child)
+        child_receive = child.index("mov eax, REIST_SYS_IPC_RECEIVE")
+        child_send = child.index("mov eax, REIST_SYS_IPC_SEND", child_receive)
+        child_release = child.index("mov eax, REIST_SYS_IPC_RELEASE", child_send)
+        child_exit = child.index("mov eax, REIST_SYS_EXIT", child_release)
+        self.assertLess(child_receive, child_send)
+        self.assertLess(child_send, child_release)
+        self.assertLess(child_release, child_exit)
+        denied = scheduler.index("scheduler_handle_shell_ipc_receive64:")
+        parent_receive = scheduler.index(".parent_receive:", denied)
+        denial_path = scheduler[denied:parent_receive]
+        self.assertLess(denial_path.index("IPC_CAPABILITY_RIGHTS"),
+                        denial_path.index("mov rax, REIST_EACCES"))
+        self.assertNotIn("scheduler_validate_shell_ipc_buffer64", denial_path)
+        send = scheduler.index("scheduler_handle_shell_ipc_send64:")
+        receive_handler = scheduler.index("scheduler_handle_shell_ipc_receive64:", send)
+        send_path = scheduler[send:receive_handler]
+        self.assertLess(send_path.index("call scheduler_validate_shell_ipc_buffer64"),
+                        send_path.index("scheduler_shell_ipc_message_ready], 1"))
+        reap = scheduler.index("scheduler_reap_terminal64:")
+        release_frames = scheduler.index("call scheduler_release_task_frames64", reap)
+        self.assertLess(scheduler.index("IPC_CAPABILITY_GENERATION], 0", reap),
+                        release_frames)
+        self.assertIn("call scheduler_verify_shell_ipc_zero64", scheduler)
+        force = scheduler.index("scheduler_force_cleanup64:")
+        self.assertIn("scheduler_shell_ipc_end - scheduler_shell_ipc_begin",
+                      scheduler[force:])
 
     def test_user_page_tables_are_private_fixed_and_wx(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")

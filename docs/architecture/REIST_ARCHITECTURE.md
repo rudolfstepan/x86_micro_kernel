@@ -278,14 +278,19 @@ gespeicherten IRETQ-/Runqueue-Pfad zurueck, waehrend stale oder strukturell
 falsche Profile den Scheduler fail-closed bereinigen. Reap widerruft zuerst das
 exakt passende Profil; erst danach werden Task und Abbild freigegeben.
 
-R8.2n bindet als naechste isolierte Scheibe die bestehende REIST-v1-IPC-ABI an
-denselben realen Eltern-Kind-Lifecycle. Genau ein fester Endpoint und eine
-Nachricht tragen eine explizit auf `SEND` abgeschwaechte Capability zur exakten
-Kindgeneration; `RECEIVE` und `CONTROL` bleiben beim Parent. Das opaque Handle
-wird als dokumentierte REIST-private System-V-Auxv-Erweiterung uebergeben.
-Rechte-, Handle-, Profil- und Generationspruefung muessen vor jeder Queue- oder
-Userkopie liegen; Release, Close, Reap und Fehlercleanup widerrufen die gesamte
-Autoritaet vor Slot-Reuse.
+R8.2n bindet die bestehende REIST-v1-IPC-ABI an denselben realen
+Eltern-Kind-Lifecycle. Genau ein fester Endpoint, eine 140-Byte-Nachricht und
+vier feste Capabilityrecords tragen eine explizit auf `SEND` abgeschwaechte
+Capability zur exakten Kindgeneration; `RECEIVE` und `CONTROL` bleiben beim
+Parent. Der private System-V-Auxv-Typ `AT_REIST_IPC_HANDLE = 0x52534901`
+transportiert nur das opaque Generation-plus-Slot-Handle und endet weiterhin
+mit `AT_NULL`. Die exakten Rollenprofile ergaenzen beim Parent `IPC_CREATE`,
+`IPC_RECEIVE`, `IPC_CLOSE` und `IPC_DELEGATE`, beim Kind `IPC_SEND`, den
+absichtlich verweigerten `IPC_RECEIVE` und `IPC_RELEASE`. Rechte-, Handle-,
+Profil-, Nachrichten- und Generationspruefung liegen vor jeder Queue- oder
+Userkopie. Release, Close, Reap und Fehlercleanup widerrufen die gesamte
+Autoritaet vor Slot-Reuse; die finale Pruefung verlangt Endpoint, Nachricht und
+alle vier Capabilityrecords null.
 
 ## Minimaler REIST-Kern
 

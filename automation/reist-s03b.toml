@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2n-x86_64-ipc-capability-transfer"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11692,7 +11692,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2n-x86_64-ipc-capability-transfer"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Prove explicit generation-scoped x86_64 IPC capability transfer"
@@ -11725,7 +11725,14 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "ipc: prove x86_64 capability transfer"
-evidence = []
+evidence = [
+  "54 x86_64 source contract tests passed including fixed one-endpoint one-message four-record capacity exact syscall ABI private auxv rights-first denial and generation-scoped cleanup",
+  "the warning-free Windows build produced the 136364-byte bootstrap 10264-byte probe 2208-byte shell 720-byte child 8064-byte C object and 13520-byte C payload",
+  "the bounded native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers and reached RING3_SHELL_OK after both capability transfers",
+  "a focused runtime repair reloaded the child stack frame before direct-map initialization; the regression check source gate rebuild and QEMU runtime all passed afterward",
+  "both generations observed GETPID and RECEIVE as EACCES then sent token77 released their SEND capability and exited 77; final runtime verification found endpoint message four capability records task relation loader frames and free count clear",
+  "no queued x86_64 package remains and active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

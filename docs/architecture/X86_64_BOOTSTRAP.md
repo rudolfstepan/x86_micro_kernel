@@ -573,3 +573,27 @@ einer fokussierten 64-Bit-Immediate-Reparatur warnungsfreie 129.680-Byte-Build
 bestanden. Der native Ein-vCPU-/128-MiB-QEMU-Dialog durchlief beide
 Kindgenerationen, meldete exakt zwei `RUN_OK`-Marker und erreichte alle
 bisherigen Marker bis `RING3_SHELL_OK`.
+
+## Expliziter IPC-Capability-Transfer R8.2n
+
+Der reale `RUN`-Pfad verwendet die bestehenden REIST-v1-Indizes `IPC_CREATE`
+49, `IPC_SEND` 50, `IPC_RECEIVE` 51, `IPC_CLOSE` 52, `IPC_DELEGATE` 55 und
+`IPC_RELEASE` 58. Genau ein Endpoint, eine Nachricht mit festem 140-Byte-v1-
+Layout und vier 24-Byte-Capabilityrecords sind statisch reserviert. Generation
+40 besitzt `SEND | RECEIVE | CONTROL` und delegiert ausschliesslich `SEND` an
+die bereits aufgebaute Generation 41 beziehungsweise 42. Das Kind erhaelt das
+opaque Generation-plus-Slot-Handle ueber den REIST-privaten System-V-Auxv-Typ
+`AT_REIST_IPC_HANDLE = 0x52534901`; der auf 128 Byte erweiterte Startstack
+behaelt `argc = 2`, `argv`, leere Umgebung, `AT_NULL` und 16-Byte-Ausrichtung.
+
+Nach `GETPID -> EACCES` prueft das Kind den Startstack, erhaelt fuer einen
+strukturell gueltigen `IPC_RECEIVE` wegen des fehlenden Rechts erneut
+`EACCES`, sendet die bytegenaue `token77`-Nachricht, gibt die Capability frei
+und beendet sich mit 77. Der Parent wartet generationengenau, empfaengt und
+validiert die Nachricht und schliesst den Endpoint vor `RUN_OK`. Reap,
+Fehlercleanup und die finale Pruefung verlangen Endpoint, Nachricht sowie alle
+vier Capabilityrecords null. 54 Quellvertragstests, der warnungsfreie
+136.364-Byte-Build und der native Ein-vCPU-/128-MiB-QEMU-Dialog bestanden mit
+exakt zwei `RUN_OK`-Markern bis `RING3_SHELL_OK`. Eine fokussierte Reparatur lud
+den physischen Kind-Stackframe unmittelbar vor der Direct-Map-Initialisierung
+neu und wird durch eine Regressionserwartung gesichert.

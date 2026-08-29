@@ -216,13 +216,18 @@ QEMU-Dialog bis `RING3_SHELL_OK` bestanden. Reap loeschte jedes exakte Profil;
 alle vier Records und alle bisherige Autoritaet waren vor Erfolg null. Die
 x86_64-Queue ist leer.
 
-R8.2n ist aktiv. Der reale x86_64-`RUN`-Pfad erhaelt genau einen festen
-REIST-v1-IPC-Endpoint und eine 140-Byte-Nachricht. Generation 40 behaelt
-`RECEIVE` und `CONTROL` und delegiert nur `SEND` an die exakte Kindgeneration.
-Das Kind muss objektseitig `RECEIVE -> EACCES` beobachten, `token77` senden,
-seine Capability freigeben und erst dann mit 77 enden. Handle und Authority
-werden ueber einen privaten System-V-Auxv-Eintrag transportiert und muessen vor
-jedem Slot-Reuse vollstaendig genullt sein.
+R8.2n ist abgeschlossen. Der reale x86_64-`RUN`-Pfad besitzt genau einen
+festen REIST-v1-IPC-Endpoint, eine 140-Byte-Nachricht und vier feste
+Capabilityrecords. Generation 40 behaelt `RECEIVE` und `CONTROL` und delegiert
+nur `SEND` an die exakte Kindgeneration. Das Handle wird ueber den privaten
+System-V-Auxv-Typ `0x52534901` uebergeben. Beide Kinder beobachteten
+`RECEIVE -> EACCES`, sendeten `token77`, gaben ihre Capability frei und
+endeten mit 77. 54 Quellvertragstests, der warnungsfreie 136.364-Byte-Build und
+der native QEMU-Dialog mit exakt zwei `RUN_OK`-Markern bestanden bis
+`RING3_SHELL_OK`. Close, Reap, Fehlercleanup und Abschlusspruefung hinterliessen
+Endpoint, Nachricht und alle vier Capabilityrecords null. Die x86_64-Queue ist
+leer; allgemeine Endpointregistries, Queue-Tiefe groesser eins und produktive
+x86_64-Integration bleiben ausserhalb dieses Nachweises.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der

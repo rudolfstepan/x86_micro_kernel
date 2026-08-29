@@ -360,14 +360,19 @@ Queue-, Relations-, Loader- und Frameautoritaet bereinigt. Dynamische Profile,
 Capability-Transfer und produktive x86_64-Integration bleiben Folgearbeiten;
 die x86_64-Queue ist leer.
 
-**R8.2n ist aktiv:** Der reale Shell-Kind-Lifecycle wird um genau einen festen
-REIST-v1-IPC-Endpoint, eine Nachricht und eine explizit auf `SEND` begrenzte
-Capability erweitert. Der Parent behaelt `RECEIVE`/`CONTROL`, delegiert an die
-exakte Kindgeneration und uebergibt nur das opaque Handle ueber einen
-dokumentierten privaten System-V-Auxv-Eintrag. Das Kind muss fehlendes
-`RECEIVE` als `EACCES` sehen, `token77` senden, Release ausfuehren und danach
-unveraendert mit 77 enden. Close, Reap und Fehlercleanup muessen Endpoint,
-Nachricht und alle vier festen Capabilityrecords vor Wiederverwendung nullen.
+**R8.2n ist abgeschlossen:** Der reale Shell-Kind-Lifecycle besitzt genau einen
+festen REIST-v1-IPC-Endpoint, eine 140-Byte-v1-Nachricht und vier feste
+Generation-Handle-Rechte-Records. Der Parent behaelt `RECEIVE`/`CONTROL`,
+delegiert nur `SEND` an Generation 41 beziehungsweise 42 und uebergibt das
+opaque Handle ueber den privaten System-V-Auxv-Typ `0x52534901`. Beide Kinder
+bewiesen `GETPID -> EACCES`, capabilityseitig `RECEIVE -> EACCES`, den
+bytegenauen `token77`-Send, Release und Exit 77. 54 Quellvertragstests, der
+warnungsfreie 136.364-Byte-Build und der native QEMU-Lauf mit zwei `RUN_OK`-
+Markern bestanden bis `RING3_SHELL_OK`. Close, Reap, Fehlercleanup und finale
+Pruefung hinterliessen Endpoint, Nachricht, alle vier Capabilityrecords sowie
+Task-, Queue-, Loader- und Frameautoritaet null. Allgemeine Endpointregistries,
+Queue-Tiefe groesser eins, Blocking-IPC und produktive x86_64-Integration
+bleiben Folgearbeiten; die x86_64-Queue ist leer.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
