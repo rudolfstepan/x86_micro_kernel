@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2h-x86_64-dynamic-execution-tables"
 
 [policy]
 one_package_per_run = true
@@ -11436,6 +11436,43 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU 11.1.0 dialogue exercised cooperative preemptive quantum FIFO sleep spawn-wait and C-controlled scheduled-shell lifecycles with allocated page tables and reached DYNAMIC_PROCESS_TABLES_OK then RING3_SHELL_OK",
   "normal reap and force cleanup restored kernel CR3 released every table data and stack frame zeroed the fixed ownership matrix restored the exact initial free count and left active_id empty"
 ]
+
+[[packages]]
+id = "R8.2h-x86_64-dynamic-execution-tables"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Allocate the remaining x86_64 execution page tables from frames"
+scope = "Remove the final static 16-KiB user page-table arena from the isolated x86_64 early execution and shell-special regression path. Allocate exactly four distinct aligned usable frames for PML4 PDPT PD and PT through the common 128-MiB allocator into one fixed four-entry ownership record, build and verify all inherited supervisor entries private W^X ELF mappings and the NX stack through the direct map, and publish user_cr3 only after complete validation. Clear the high-frame self-test allocation window before Ring 3 exactly as before. Any allocation mapping syscall setup execution or verification failure restores kernel CR3 and releases stack ELF and table frames exactly once; successful EXIT or contained CPL3 fault performs the same cleanup, rejects stale duplicate free, restores the initial free count and proves an empty ownership record before EARLY_EXECUTION_TABLES_OK. Preserve the R8.2g dynamic scheduled-process tables all existing markers shell dialogue C handoffs task capacity syscall ABI and i386 artifacts. Add no VFS loading general process service SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/boot/entry.asm",
+  "arch/x86_64/proc/user_execution.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all i386 artifacts syscall numbers shell dialogue task capacities C handoffs scheduler table ownership and prior x86_64 markers remain unchanged and ordered",
+  "the early execution path owns exactly four distinct aligned usable table frames below 128 MiB and has no static page-table arena",
+  "user_cr3 becomes visible only after all four levels inherited kernel mappings ELF W^X permissions and NX stack mapping validate",
+  "every failure and success cleanup restores kernel CR3 before clearing and freeing PT PD PDPT PML4 and zeroing ownership metadata",
+  "the high-frame selection window is cleared before CPL3 and forced-high table frames use the same allocator release and stale-free protections",
+  "success restores the exact initial free count zero ownership metadata syscall MSRs TSS loader selection and execution state before EARLY_EXECUTION_TABLES_OK"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "a page-table level loader window task capacity task record public ABI or syscall must grow",
+  "user_cr3 can publish before complete validation or cleanup can free under a non-kernel CR3",
+  "a table frame can alias leak escape the managed direct map or be freed twice",
+  "an i386 artifact prior marker scheduler semantic shell behavior or C handoff changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "mm: allocate remaining x86_64 execution tables from frames"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
