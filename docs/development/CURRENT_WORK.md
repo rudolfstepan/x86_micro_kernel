@@ -2,10 +2,29 @@
 
 Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `a6d76fd`
+Branch/Startpunkt: `working_branch` / `336b1f8`
 
-Aktives Thema: keines; `R7.1j-vmware-smp-post-workload-stability` ist
-abgeschlossen.
+Aktives Thema: `R7.1k-fat32-directory-scan-stack-stability`.
+
+Der nach R7.1j verbliebene Rename-Befund ist jetzt als eigenes begrenztes
+Paket aktiv. Der GCC-Nachweis weist dem gemeinsamen FAT32-Verzeichnisscan
+3168 lokale Byte zu. Zusammen mit Unicode-Normalisierung, Rename-/VFS-, ATA-
+und Schedulerframes erreicht der tiefste Syscallpfad 8336 Byte und liegt damit
+ueber dem unveraenderten 7168-Byte-Budget des 8-KiB-Taskstacks. Das ist ein
+statischer Risikopfad, kein Beleg fuer einen bereits beobachteten zweiten
+Desktopfehler.
+
+R7.1k verschiebt Sektorpuffer, LFN-Zustand, sichtbare Namen und die beiden
+Unicode-Schluessel in genau einen festen, durch eine verschachtelte Ebene der
+bestehenden rekursiven FAT32-Operationsmutex geschuetzten Arbeitsbereich. Ein
+rekursiver Scan wird vor Zugriff abgewiesen; jeder Ausgang gibt Besitz und
+Mutexebene frei, ohne den Context-Sync-Hook mitten in einer aeusseren
+Operation auszufuehren. Stackgroesse, Guardpage, Unicode-/VFAT-Semantik,
+Journal-v2 und oeffentliche ABIs bleiben unveraendert. Der offizielle
+Callgraph-Validator wird fuer den bereits zyklusgeprueften DAG memoisiert. Die
+Abnahme verlangt den kumulativen Compiler-Stacknachweis und einen realen
+Vier-vCPU-VMware-Lauf bis `VFAT_LFN_REPLACE_OK`, `TEST_OK`, Shell-Rueckkehr
+und zehn Sekunden stabilen Nachlauf.
 
 Nach dem erfolgreichen R7.1i-Benchmark trat erst nach der Shell-Rueckkehr ein
 Kernel-Panic auf; der beobachtete Neustart ist daher kein Absturz des Desktop-

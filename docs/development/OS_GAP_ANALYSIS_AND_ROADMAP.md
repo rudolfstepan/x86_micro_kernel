@@ -626,6 +626,22 @@ Lesen. Der Desktop passierte Splash, Explorer, `COMPOSITOR_READY`,
 zehnsekündige Nachlauf blieb ohne Panic, Fatal-Marker, wiederholten BIOS-Lader
 oder `BOOT_OK`, Degradation, Quarantaene oder Storage-Fence. R7.1j ist damit
 angenommen und die Queue leer.
+R7.1k ist als begrenzter Stack-Haertungsschritt aktiv. Die nach R7.1j erneut
+ausgewertete GCC-Evidenz zeigt fuer den gemeinsamen FAT32-Verzeichnisscan
+3168 lokale Byte; im Rename-Syscall ergibt der tiefste Pfad zusammen mit
+Unicode-Normalisierung, VFS, ATA und Scheduler 8336 Byte gegen das
+unveraenderte 7168-Byte-Budget. Sektorpuffer, VFAT-LFN-Leser, sichtbare Namen
+und Unicode-Vergleichsschluessel werden in einen einzigen festen
+mutexgeschuetzten Arbeitsbereich verschoben. Derselbe Besitzer darf ihn nicht
+rekursiv betreten, und jeder Fehlerpfad muss ihn vor Rueckkehr freigeben. Die
+bestehende FAT32-Operationsmutex bleibt die Serialisierungsgrenze; eine
+verschachtelte Freigabe darf den Context-Sync-Hook nicht vorzeitig ausloesen.
+Der offizielle Compiler-Callgraph-Nachweis wird fuer seinen bereits
+zyklusgeprueften DAG memoisiert und muss weiterhin jeden unbekannten oder
+ueberbudgetierten Pfad fail-closed melden. Die Zielabnahme umfasst ausserdem
+einen realen Vier-vCPU-VMware-Rename bis zum vorhandenen
+`VFAT_LFN_REPLACE_OK`, dem abschliessenden `TEST_OK`, Shell-Rueckkehr und zehn
+Sekunden ohne Neustart oder Panic.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

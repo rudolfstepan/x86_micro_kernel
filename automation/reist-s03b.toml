@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1k-fat32-directory-scan-stack-stability"
 
 [policy]
 one_package_per_run = true
@@ -12730,3 +12730,66 @@ evidence = [
   "The final strict real four-vCPU VMware benchmark passed at 284.12 KiB/s sequential write and 439.10 KiB/s sequential read with complete 256-KiB byte verification cleanup shell return and ten seconds free of fatal degradation restart quarantine and storage-fence markers.",
   "The final strict real VMware desktop passed the former crash point through DESKTOP_SPLASH_READY, DESKTOP_EXPLORER_OK, COMPOSITOR_READY generation 2, DESKTOP_OK and real xHCI DESKTOP_MOUSE_OK, then remained free of panic fatal repeated BIOS-loader or BOOT_OK markers degradation quarantine and storage fencing for ten seconds; active_id is empty."
 ]
+
+[[packages]]
+id = "R7.1k-fat32-directory-scan-stack-stability"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bound FAT32 directory scans outside the kernel stack"
+scope = "Eliminate the remaining compiler-proven kernel-stack overrun in FAT32 lookup and rename without enlarging the 8-KiB task stack or weakening its guard page. The current directory scan retains a 3168-byte frame containing one sector, VFAT LFN state, visible-name storage and two Unicode comparison keys; together with Unicode normalization, rename, VFS, ATA and scheduler frames, the measured syscall path reaches 8336 bytes against the frozen 7168-byte budget. Move those scan buffers into one fixed workspace serialized by a nested level of the existing recursive FAT32 operation mutex, but do not run the context-sync hook at the nested release. Reject accidental same-owner scan recursion before touching shared state, and release the workspace on every found, not-found and error exit. Preserve exact FAT32/VFAT lookup, Unicode-15 caseless NFC, journal-v2, barrier, cache, write-fence and public ABI behavior. Memoize the already cycle-checked compiler-callgraph cost calculation so the official cumulative stack gate terminates in bounded time on shared production DAGs without hiding cycles, missing costs or indirect-call errors. Add a deterministic Windows stack-analysis entry point and a real four-vCPU VMware mode that runs the packaged Ring-3 gtest through VFAT_LFN_REPLACE_OK and TEST_OK, observes shell return and then rejects panic, restart, degradation, quarantine or storage fencing for ten seconds."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32.c",
+  "fs/fat32/fat32_files.c",
+  "scripts/validate_stack_usage.py",
+  "scripts/test-reist-stack-analysis.ps1",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_fat32_host.c",
+  "test/test_fs_host.py",
+  "test/test_stack_evidence.py",
+  "test/test_vmware_mouse.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the 8-KiB task stack guard page and the frozen 7168-byte complete syscall budget remain unchanged and every compiler-proven syscall entry stays within that budget",
+  "the FAT32 directory sector LFN reader visible and short names and both Unicode comparison keys reside in one fixed workspace and never in an unbounded heap or per-call variable-length allocation",
+  "the workspace is acquired through the existing deadline-bounded recursive FAT32 operation mutex before its in-use state is inspected and is released exactly once on every scan outcome",
+  "a nested workspace release does not publish a FAT32 context generation or invoke the context-sync hook in the middle of an outer filesystem operation",
+  "same-owner recursive scan entry fails closed before shared workspace contents are read or changed and another task cannot observe the workspace while its owner blocks in device I/O",
+  "VFAT long-name assembly Unicode-15 full case folding NFC matching short-name alias matching and visible-index ordering remain byte-for-byte compatible",
+  "callgraph memoization preserves explicit cycle validation missing-cost reporting bounded indirect dispatch costs entry reserves and the exact worst path while evaluating each acyclic node at most once",
+  "journal version 2 its twenty target slots exactly four ordered durability barriers FAT cache invalidation AHCI verification storage fencing and all public ABIs remain unchanged",
+  "the final real four-vCPU VMware run reaches VFAT_LFN_REPLACE_OK then TEST_OK and a fresh shell prompt and remains stable for ten seconds without panic restart degradation quarantine or storage fencing"
+]
+targeted_tests = [
+  "python test/test_fs_host.py -v",
+  "python test/test_stack_evidence.py -v",
+  "python test/test_vmware_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-stack-analysis.ps1",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-rename"
+]
+stop_conditions = [
+  "the FAT32 scan workspace can alias another live task or recursive scan or can remain occupied after any return path",
+  "the directory sector LFN reader visible or short name or Unicode comparison keys remain in the fat32_scan_directory compiler frame",
+  "the official complete syscall stack evidence exceeds 7168 bytes or omits the rename VFS and FAT32 paths",
+  "workspace ownership requires a new spinlock across device I/O an unbounded wait heap allocation or a context-generation publication during nested release",
+  "memoization suppresses a cycle missing cost unresolved indirect target entry reserve or worst-path overrun",
+  "VFAT rename replace content verification cleanup TEST_OK shell return or the ten-second VMware stability interval is absent",
+  "journal format barrier count FAT cache invalidation AHCI verification storage fencing guard pages stack size or a public ABI must change",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "fat32: bound directory scans outside task stack"
+evidence = []
