@@ -34,28 +34,69 @@ class ReistUndoJournalTests(unittest.TestCase):
         image.seek((partition + 31) * SECTOR)
         self.assertEqual(image.read(SECTOR), header)
 
-    def test_kernel_orders_undo_data_active_target_then_clean(self):
+    def test_kernel_orders_batched_undo_active_target_then_clean(self):
         source = (ROOT / "drivers/block/ata_journal.c").read_text(
             encoding="utf-8")
         start = source.index("bool ata_undo_journal_write_sector")
         end = source.index("bool ata_undo_journal_attach", start)
         body = source[start:end]
-        body = body[body.index("uint8_t old_data"):]
+        self.assertIn("read_sector(journal, base, lba, journal->undo_data[slot]",
+                      body)
+        self.assertIn("memcpy(journal->pending_data[slot]", body)
+        self.assertNotIn("write_active(journal", body)
+
+        commit = source[source.index("static bool transaction_end"):
+                        source.index("bool ata_undo_journal_transaction_end")]
         ordered = [
-            "read_sector(journal, base, lba",
-            "write_sector(journal, base, journal->data_lba + slot",
-            "memcpy(journal->pending_data[slot]",
-            "write_active(journal)",
+            "journal->data_lba + i",
+            "flush_deferred(journal)",
+            "write_active(journal, deferred)",
+            "flush_deferred(journal)",
+            "commit_write(",
+            "clear_journal(journal, deferred)",
+            "flush_deferred(journal)",
         ]
         position = -1
         for token in ordered:
-            next_position = body.index(token)
-            self.assertGreater(next_position, position, token)
-            position = next_position
-        commit = source[source.index("static bool transaction_end"):
-                        source.index("bool ata_undo_journal_transaction_end")]
-        self.assertLess(commit.index("commit_write("),
-                        commit.index("clear_journal(journal)"))
+            position = commit.index(token, position + 1)
+
+    def test_deferred_transport_is_fail_closed_and_pio_flushes_are_coalesced(self):
+        core = (ROOT / "drivers/block/ata_journal.c").read_text(
+            encoding="utf-8")
+        ready = core[core.index("static bool deferred_transport_ready"):
+                     core.index("static bool read_sector")]
+        self.assertIn("journal->transport->write_deferred != NULL", ready)
+        self.assertIn("journal->transport->flush != NULL", ready)
+        self.assertIn("journal->transport->commit_begin != NULL", ready)
+        self.assertIn("journal->transport->commit_write_deferred != NULL",
+                      ready)
+        self.assertIn("journal->transport->commit_end != NULL", ready)
+
+        ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
+        self.assertIn("ata_journal_write_deferred_transport", ata)
+        self.assertIn("ata_write_sector_impl(base, lba, (void *)buffer, "
+                      "is_master, false)", ata)
+        transport = ata[ata.index("static const ata_journal_transport_t"):
+                        ata.index("static bool ata_journal_initialized")]
+        self.assertIn(".write_deferred = ata_journal_core_write_deferred",
+                      transport)
+        self.assertIn(
+            ".write_sectors_deferred = "
+            "ata_journal_core_write_sectors_deferred",
+            transport,
+        )
+        self.assertIn(".flush = ata_journal_core_flush", transport)
+        self.assertIn(".commit_begin = ata_journal_core_commit_begin",
+                      transport)
+        self.assertIn(
+            ".commit_write_deferred = ata_journal_core_commit_write_deferred",
+            transport)
+        self.assertIn(".commit_end = ata_journal_core_commit_end", transport)
+        batch = ata[ata.index("static bool ata_journal_core_commit_begin"):
+                    ata.index("static bool ata_journal_core_commit_write(")]
+        self.assertIn("storage_write_begin", batch)
+        self.assertIn("ata_journal_flush_transport", batch)
+        self.assertIn("storage_write_end(durable)", batch)
 
     def test_recovery_validates_crc_before_restoring_and_clearing(self):
         source = (ROOT / "drivers/block/ata_journal.c").read_text(

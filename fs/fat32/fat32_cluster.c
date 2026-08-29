@@ -480,22 +480,28 @@ void read_cluster_dir_entries(unsigned int current_cluster) {
 }
 
 unsigned int allocate_new_cluster(struct fat32_boot_sector* boot_sector) {
-    // Assuming you have functions to read and write to the FAT
-    // and a function to get the total number of clusters in the filesystem
-    unsigned int total_clusters = get_total_clusters(boot_sector); // Implement this function
-    // Scan the FAT for a free cluster
-    for (unsigned int cluster = 2; cluster <= total_clusters + 1u; cluster++) {
-        if (read_fat_entry(boot_sector, cluster) == 0) { // Assuming 0 indicates a free cluster
-            // Mark the cluster as used (end of chain)
-            if (mark_cluster_in_fat(boot_sector, cluster, FAT32_EOC_MAX)) {
-                return cluster; // Successfully allocated cluster
-            } else {
-                return INVALID_CLUSTER; // Failed to update FAT entry
-            }
-        }
+    if (!boot_sector || get_total_clusters(boot_sector) == 0U) {
+        return INVALID_CLUSTER;
     }
 
-    return INVALID_CLUSTER; // No free clusters available
+    /* `find_free_cluster` validates and consumes the standard FAT32 FSInfo
+     * next-free hint before performing its bounded wraparound scan.  Starting
+     * every allocation at cluster 2 made sequential growth quadratic on a
+     * normally populated system volume even though the valid hint was already
+     * available. */
+    unsigned int cluster = find_free_cluster(boot_sector);
+    if (cluster == INVALID_CLUSTER) return INVALID_CLUSTER;
+    if (mark_cluster_in_fat(boot_sector, cluster, FAT32_EOC_MAX)) {
+        return cluster;
+    }
+
+    /* `find_free_cluster` advances the in-memory hint before publication.  If
+     * the active FAT still proves the candidate free, make it the next retry;
+     * an ambiguous/non-free observation is never reclaimed or reused here. */
+    if (fsinfo_valid && read_fat_entry(boot_sector, cluster) == 0U) {
+        fsinfo.next_free_cluster = cluster;
+    }
+    return INVALID_CLUSTER;
 }
 
 bool link_cluster_to_chain(struct fat32_boot_sector* boot_sector, unsigned int parent_cluster, unsigned int new_cluster) {

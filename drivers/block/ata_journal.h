@@ -46,11 +46,34 @@ typedef bool (*ata_journal_read_fn)(void *context, unsigned short base,
 typedef bool (*ata_journal_write_fn)(void *context, unsigned short base,
                                      uint32_t lba, const void *buffer,
                                      bool is_master);
+typedef bool (*ata_journal_write_sectors_fn)(void *context,
+                                             unsigned short base,
+                                             uint32_t lba, uint32_t count,
+                                             const void *buffer,
+                                             bool is_master);
+typedef bool (*ata_journal_flush_fn)(void *context, unsigned short base,
+                                     bool is_master);
+typedef bool (*ata_journal_commit_begin_fn)(void *context,
+                                            unsigned short base,
+                                            bool is_master);
+typedef bool (*ata_journal_commit_end_fn)(void *context,
+                                          unsigned short base,
+                                          bool is_master, bool commit);
 
 typedef struct {
     ata_journal_read_fn read;
     ata_journal_write_fn write;
     ata_journal_write_fn commit_write;
+    /* Optional pair used to coalesce cache flushes without weakening the
+     * on-disk ordering. Both callbacks must be present or neither is used. */
+    ata_journal_write_fn write_deferred;
+    ata_journal_write_sectors_fn write_sectors_deferred;
+    ata_journal_flush_fn flush;
+    /* Optional target batch. Begin owns the transport and supervision until
+     * end publishes the final durability result. */
+    ata_journal_commit_begin_fn commit_begin;
+    ata_journal_write_fn commit_write_deferred;
+    ata_journal_commit_end_fn commit_end;
 } ata_journal_transport_t;
 
 typedef struct {
@@ -69,6 +92,7 @@ typedef struct {
         uint32_t target_lba;
         uint32_t data_crc32;
     } entries[ATA_JOURNAL_MAX_ENTRIES];
+    uint8_t undo_data[ATA_JOURNAL_MAX_ENTRIES][ATA_JOURNAL_SECTOR_SIZE];
     uint8_t pending_data[ATA_JOURNAL_MAX_ENTRIES][ATA_JOURNAL_SECTOR_SIZE];
     const ata_journal_transport_t *transport;
     void *transport_context;

@@ -59,6 +59,19 @@ static bool transport_ready(const ata_undo_journal_t *journal) {
            journal->transport->write != NULL;
 }
 
+static bool deferred_transport_ready(const ata_undo_journal_t *journal) {
+    return transport_ready(journal) &&
+           journal->transport->write_deferred != NULL &&
+           journal->transport->flush != NULL;
+}
+
+static bool deferred_commit_ready(const ata_undo_journal_t *journal) {
+    return deferred_transport_ready(journal) &&
+           journal->transport->commit_begin != NULL &&
+           journal->transport->commit_write_deferred != NULL &&
+           journal->transport->commit_end != NULL;
+}
+
 static bool read_sector(ata_undo_journal_t *journal, unsigned short base,
                         uint32_t lba, void *buffer, bool is_master) {
     return transport_ready(journal) &&
@@ -73,13 +86,31 @@ static bool write_sector(ata_undo_journal_t *journal, unsigned short base,
                                   buffer, is_master);
 }
 
+static bool write_sector_deferred(ata_undo_journal_t *journal,
+                                  unsigned short base, uint32_t lba,
+                                  const void *buffer, bool is_master) {
+    return deferred_transport_ready(journal) &&
+        journal->transport->write_deferred(journal->transport_context, base,
+                                           lba, buffer, is_master);
+}
+
+static bool flush_deferred(ata_undo_journal_t *journal) {
+    return deferred_transport_ready(journal) &&
+        journal->transport->flush(journal->transport_context, journal->base,
+                                  journal->is_master);
+}
+
 static bool write_record(ata_undo_journal_t *journal,
-                         const ata_journal_record_t *record) {
-    if (!write_sector(journal, journal->base, journal->header_lba, record,
-                      journal->is_master)) return false;
+                         const ata_journal_record_t *record,
+                         bool deferred) {
+    ata_journal_write_fn writer = deferred
+        ? journal->transport->write_deferred : journal->transport->write;
+    if (writer == NULL ||
+        !writer(journal->transport_context, journal->base,
+                journal->header_lba, record, journal->is_master)) return false;
     return journal->mirror_lba == 0U ||
-           write_sector(journal, journal->base, journal->mirror_lba, record,
-                        journal->is_master);
+           writer(journal->transport_context, journal->base,
+                  journal->mirror_lba, record, journal->is_master);
 }
 
 void ata_undo_journal_make_clean(ata_journal_record_t *record,
@@ -93,13 +124,13 @@ void ata_undo_journal_make_clean(ata_journal_record_t *record,
     seal_record(record);
 }
 
-static bool clear_journal(ata_undo_journal_t *journal) {
+static bool clear_journal(ata_undo_journal_t *journal, bool deferred) {
     ata_journal_record_t clean;
     ata_undo_journal_make_clean(&clean, journal->sequence);
-    return write_record(journal, &clean);
+    return write_record(journal, &clean, deferred);
 }
 
-static bool write_active(ata_undo_journal_t *journal) {
+static bool write_active(ata_undo_journal_t *journal, bool deferred) {
     ata_journal_record_t active;
     memset(&active, 0, sizeof(active));
     active.magic = ATA_JOURNAL_MAGIC;
@@ -112,7 +143,7 @@ static bool write_active(ata_undo_journal_t *journal) {
         active.entries[i].data_crc32 = journal->entries[i].data_crc32;
     }
     seal_record(&active);
-    return write_record(journal, &active);
+    return write_record(journal, &active, deferred);
 }
 
 void ata_undo_journal_init(ata_undo_journal_t *journal,
@@ -141,20 +172,74 @@ static bool transaction_end(ata_undo_journal_t *journal, bool commit,
     }
     bool result = true;
     if (journal->entry_count != 0U && commit) {
-        for (uint32_t i = 0U; result && i < journal->entry_count; ++i) {
-            if (use_commit_transport &&
-                journal->transport->commit_write != NULL) {
-                result = journal->transport->commit_write(
+        bool deferred = deferred_transport_ready(journal);
+        /* Targets remain untouched until every undo sector is durable. The
+         * ACTIVE record is then published exactly once for the complete
+         * transaction. This preserves recovery ordering while reducing a
+         * transaction to four fixed barriers: undo, ACTIVE, targets, CLEAN. */
+        if (deferred &&
+            journal->transport->write_sectors_deferred != NULL) {
+            result = journal->transport->write_sectors_deferred(
+                journal->transport_context, journal->base, journal->data_lba,
+                journal->entry_count, journal->undo_data,
+                journal->is_master);
+        } else {
+            for (uint32_t i = 0U; result && i < journal->entry_count; ++i) {
+                result = deferred
+                    ? write_sector_deferred(journal, journal->base,
+                        journal->data_lba + i, journal->undo_data[i],
+                        journal->is_master)
+                    : write_sector(journal, journal->base,
+                        journal->data_lba + i, journal->undo_data[i],
+                        journal->is_master);
+            }
+        }
+        if (result && deferred) result = flush_deferred(journal);
+        if (result) result = write_active(journal, deferred);
+        if (result && deferred) result = flush_deferred(journal);
+        if (result && use_commit_transport &&
+            deferred_commit_ready(journal)) {
+            bool begun = journal->transport->commit_begin(
+                journal->transport_context, journal->base,
+                journal->is_master);
+            result = begun;
+            for (uint32_t i = 0U; result && i < journal->entry_count; ++i) {
+                result = journal->transport->commit_write_deferred(
                     journal->transport_context, journal->base,
-                    journal->entries[i].target_lba, journal->pending_data[i],
-                    journal->is_master);
-            } else {
-                result = write_sector(journal, journal->base,
+                    journal->entries[i].target_lba,
+                    journal->pending_data[i], journal->is_master);
+            }
+            if (begun) {
+                bool targets_written = result;
+                bool ended = journal->transport->commit_end(
+                    journal->transport_context, journal->base,
+                    journal->is_master, targets_written);
+                result = targets_written && ended;
+            }
+        } else if (result && !use_commit_transport && deferred) {
+            for (uint32_t i = 0U; result && i < journal->entry_count; ++i) {
+                result = write_sector_deferred(journal, journal->base,
                     journal->entries[i].target_lba, journal->pending_data[i],
                     journal->is_master);
             }
+            if (result) result = flush_deferred(journal);
+        } else {
+            for (uint32_t i = 0U; result && i < journal->entry_count; ++i) {
+                if (use_commit_transport &&
+                    journal->transport->commit_write != NULL) {
+                    result = journal->transport->commit_write(
+                        journal->transport_context, journal->base,
+                        journal->entries[i].target_lba,
+                        journal->pending_data[i], journal->is_master);
+                } else {
+                    result = write_sector(journal, journal->base,
+                        journal->entries[i].target_lba,
+                        journal->pending_data[i], journal->is_master);
+                }
+            }
         }
-        if (result) result = clear_journal(journal);
+        if (result) result = clear_journal(journal, deferred);
+        if (result && deferred) result = flush_deferred(journal);
     }
     journal->entry_count = 0U;
     return result;
@@ -213,21 +298,19 @@ bool ata_undo_journal_write_sector(ata_undo_journal_t *journal,
         return false;
     }
 
-    uint8_t old_data[ATA_JOURNAL_SECTOR_SIZE];
     uint32_t slot = journal->entry_count;
-    bool result = read_sector(journal, base, lba, old_data, is_master) &&
-        write_sector(journal, base, journal->data_lba + slot, old_data,
-                     is_master);
+    bool result = read_sector(journal, base, lba, journal->undo_data[slot],
+                              is_master);
     if (result) {
         journal->entries[slot].target_lba = lba;
         journal->entries[slot].data_crc32 =
-            journal_crc32(old_data, sizeof(old_data));
+            journal_crc32(journal->undo_data[slot],
+                          ATA_JOURNAL_SECTOR_SIZE);
         memcpy(journal->pending_data[slot], buffer,
                ATA_JOURNAL_SECTOR_SIZE);
         journal->entry_count++;
         if (slot == 0U && ++journal->sequence == 0U) result = false;
     }
-    if (result) result = write_active(journal);
     if (automatic)
         result = transaction_end(journal, result, false) && result;
     return result;
@@ -314,7 +397,7 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
                 journal_crc32(data, sizeof(data)) == old->data_crc32 &&
                 write_sector(journal, base, old->target_lba, data, is_master);
         }
-        if (result) result = clear_journal(journal);
+        if (result) result = clear_journal(journal, false);
     } else {
         result = reserved_sectors >
                      ATA_JOURNAL_DATA_OFFSET + ATA_JOURNAL_MAX_ENTRIES - 1U &&
@@ -335,7 +418,7 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
                 write_sector(journal, base, target, data, is_master);
         }
         if (result && (record.state == ATA_JOURNAL_ACTIVE || repair_headers))
-            result = clear_journal(journal);
+            result = clear_journal(journal, false);
     }
     if (result) journal->enabled = true;
     return result;

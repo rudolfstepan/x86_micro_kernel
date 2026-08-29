@@ -4,16 +4,25 @@ Stand: 29. August 2026
 
 Branch/Startpunkt: `working_branch` / `47b60678`
 
-Aktives Thema: R7.1c – echter Abschlussnachweis fuer den Benchmark-Schreibpfad
+Aktives Thema: kein Paket; als naechstes folgt die gebuendelte `LS.PRG`-
+Verzeichnisauflistung des Ring-3-Storage-Dienstes.
 
-Der erste begrenzte Ein-vCPU-QEMU-Lauf von `BENCHMARK.PRG` erreichte nach
-90 Sekunden keine Ergebnistabelle. Die offline ausgewertete FAT32-Testkopie
-enthielt eine 38.400 Byte grosse `REISTB~1.TMP` mit 75 verketteten Clustern;
-damit liegt der Stillstand nachweislich im HDD-Schreibpfad und nicht im CPU-
-oder RAM-Test. R7.1c fuegt feste Phasen- und 64-KiB-Fortschrittsmarker hinzu,
-lokalisiert den ersten blockierenden Schritt und verlangt danach als echten
-Gastnachweis Write, `fsync`, bytegeprueften Readback, Cleanup und die Rueckkehr
-zur Ring-3-Shell innerhalb einer festen Gesamtfrist.
+R7.1c ist abgeschlossen. `BENCHMARK.PRG` meldet jede Phase und feste
+64-KiB-Fortschritte, ohne Konsolenausgabe in den Durchsatz einzurechnen. Die
+FAT32-Allokation verwendet den validierten FSInfo-Next-Free-Hinweis und offene
+VFS-Handles lesen sequentiell ueber einen generationsgeprueften Cluster-Cursor.
+Das unveraenderte 20-Sektor-Undo-Journal sammelt alte und neue Sektoren in
+fester Kapazitaet und persistiert sie in der Reihenfolge Undo, ACTIVE, Ziele,
+CLEAN mit genau vier Barrieren. Syscall-Bounce, Transaktionsgrenzen,
+On-Disk-Format und oeffentliche ABI bleiben unveraendert.
+
+Alle 49 gezielten Tests sowie der QEMU-VGA-Paketbuild bestanden. Der finale
+Ein-vCPU-QEMU-Lauf schrieb 256 KiB mit 3,17 KiB/s, las sie mit 77,24 KiB/s
+bytegleich zurueck, entfernte die private Testdatei und erreichte nach
+96,265 Sekunden erneut die Ring-3-Shell. Derselbe Benchmark wurde vom Benutzer
+auch unter VMware erfolgreich ausgefuehrt. Die 120-Sekunden-Gesamtfrist bleibt
+hart; der Runner beendet ausschliesslich seine eigene VM und arbeitet auf einer
+danach geloeschten Rohkopie.
 
 R7.1b behebt den beim Datentraegerteil von `BENCHMARK.PRG` sichtbaren
 quadratischen FAT32-Schreibpfad. Ein offenes VFS-Handle behaelt jetzt einen

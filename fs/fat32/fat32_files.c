@@ -34,17 +34,46 @@
 //     }
 // }
 
-unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
-                               char* buffer, unsigned int buffer_size,
-                               unsigned int bytes_to_read) {
+static void fat32_read_cursor_invalidate(fat32_read_cursor_t* cursor) {
+    if (!cursor) return;
+    cursor->chain_start = INVALID_CLUSTER;
+    cursor->cluster = INVALID_CLUSTER;
+    cursor->cluster_index = 0U;
+    cursor->next_offset = 0U;
+    cursor->valid = false;
+}
+
+static bool fat32_read_cursor_matches(const fat32_read_cursor_t* cursor,
+                                      uint32_t chain_start, uint32_t offset,
+                                      uint32_t cluster_size) {
+    if (!cursor || !cursor->valid || cluster_size == 0U ||
+        cursor->chain_start != chain_start || cursor->next_offset != offset ||
+        !is_valid_cluster(&boot_sector, cursor->cluster)) return false;
+    uint32_t target_index = offset / cluster_size;
+    uint32_t cluster_limit = get_total_clusters(&boot_sector);
+    return cursor->cluster_index < cluster_limit &&
+           target_index >= cursor->cluster_index &&
+           target_index - cursor->cluster_index <= 1U;
+}
+
+unsigned int read_file_data_at_cursor(unsigned int start_cluster,
+                                      unsigned int offset, char* buffer,
+                                      unsigned int buffer_size,
+                                      unsigned int bytes_to_read,
+                                      fat32_read_cursor_t* cursor) {
     if (!buffer || buffer_size == 0 || bytes_to_read == 0 ||
         boot_sector.sectors_per_cluster == 0 ||
         !is_valid_cluster(&boot_sector, start_cluster)) {
+        fat32_read_cursor_invalidate(cursor);
         return 0;
     }
 
     if (bytes_to_read > buffer_size) {
         bytes_to_read = buffer_size;
+    }
+    if (offset > UINT32_MAX - bytes_to_read) {
+        fat32_read_cursor_invalidate(cursor);
+        return 0;
     }
 
     uint32_t cluster_size = SECTOR_SIZE * boot_sector.sectors_per_cluster;
@@ -52,19 +81,33 @@ unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
     uint32_t offset_in_cluster = offset % cluster_size;
     uint32_t current_cluster = start_cluster;
     uint32_t cluster_limit = get_total_clusters(&boot_sector);
-    if (clusters_to_skip >= cluster_limit) return 0;
+    if (cluster_size == 0U || clusters_to_skip >= cluster_limit) {
+        fat32_read_cursor_invalidate(cursor);
+        return 0;
+    }
 
-    for (uint32_t i = 0; i < clusters_to_skip; i++) {
+    uint32_t current_index = 0U;
+    if (fat32_read_cursor_matches(cursor, start_cluster, offset,
+                                  cluster_size)) {
+        current_cluster = cursor->cluster;
+        current_index = cursor->cluster_index;
+    } else {
+        fat32_read_cursor_invalidate(cursor);
+    }
+
+    for (uint32_t i = current_index; i < clusters_to_skip; i++) {
         uint32_t next = get_next_cluster_in_chain(&boot_sector, current_cluster);
         if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next) ||
             !is_valid_cluster(&boot_sector, next)) {
+            fat32_read_cursor_invalidate(cursor);
             return 0;
         }
         current_cluster = next;
+        current_index++;
     }
 
     uint32_t total = 0;
-    uint32_t traversed = clusters_to_skip;
+    uint32_t traversed = 0U;
     uint8_t sector_buffer[SECTOR_SIZE];
     while (total < bytes_to_read && traversed++ < cluster_limit &&
            is_valid_cluster(&boot_sector, current_cluster)) {
@@ -80,6 +123,7 @@ unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
              i++) {
             if (!ata_read_sector(ata_base_address, first_sector + i,
                                  sector_buffer, ata_is_master)) {
+                fat32_read_cursor_invalidate(cursor);
                 return total;
             }
 
@@ -103,9 +147,26 @@ unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
             break;
         }
         current_cluster = next;
+        current_index++;
         offset_in_cluster = 0;
     }
+    if (cursor && total == bytes_to_read) {
+        cursor->chain_start = start_cluster;
+        cursor->cluster = current_cluster;
+        cursor->cluster_index = current_index;
+        cursor->next_offset = offset + total;
+        cursor->valid = true;
+    } else if (total != bytes_to_read) {
+        fat32_read_cursor_invalidate(cursor);
+    }
     return total;
+}
+
+unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
+                               char* buffer, unsigned int buffer_size,
+                               unsigned int bytes_to_read) {
+    return read_file_data_at_cursor(start_cluster, offset, buffer,
+                                    buffer_size, bytes_to_read, NULL);
 }
 
 unsigned int read_file_data(unsigned int start_cluster, char* buffer,

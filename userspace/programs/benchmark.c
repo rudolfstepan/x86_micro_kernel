@@ -13,7 +13,7 @@
 #include <stdbool.h>
 
 #define BENCHMARK_TARGET_MS 200U
-#define BENCHMARK_MAX_ELAPSED_MS 60000U
+#define BENCHMARK_MAX_ELAPSED_MS 90000U
 #define BENCHMARK_CPU_INITIAL_ITERATIONS (1U << 20U)
 #define BENCHMARK_CPU_MAX_ITERATIONS (1U << 26U)
 #define BENCHMARK_CPU_ATTEMPTS 7U
@@ -26,6 +26,7 @@
 #define BENCHMARK_MEMORY_ATTEMPTS 6U
 #define BENCHMARK_DISK_CHUNK_BYTES 4096U
 #define BENCHMARK_DISK_CHUNKS 64U
+#define BENCHMARK_DISK_PROGRESS_CHUNKS 16U
 #define BENCHMARK_DISK_BYTES \
     (BENCHMARK_DISK_CHUNK_BYTES * BENCHMARK_DISK_CHUNKS)
 #define BENCHMARK_VGA_INITIAL_FRAMES 2U
@@ -37,6 +38,8 @@ _Static_assert(BENCHMARK_MEMORY_BYTES % sizeof(uint32_t) == 0U,
                "memory benchmark must use complete words");
 _Static_assert(BENCHMARK_DISK_BYTES == 256U * 1024U,
                "disk benchmark byte bound changed");
+_Static_assert(BENCHMARK_DISK_CHUNKS % BENCHMARK_DISK_PROGRESS_CHUNKS == 0U,
+               "disk progress must divide the bounded workload");
 
 typedef enum {
     BENCHMARK_OK = 0,
@@ -153,6 +156,53 @@ static int elapsed_ms(uint64_t started, uint64_t *elapsed) {
         finished < started) return -1;
     *elapsed = finished - started;
     return *elapsed <= BENCHMARK_MAX_ELAPSED_MS ? 0 : -1;
+}
+
+/* Keep progress visible without charging serial/framebuffer rendering time to
+ * the measured device operation.  The exclusion itself is deadline-bounded
+ * and fails closed on a clock regression or implausibly long console stall. */
+static int timed_status(const char *status, uint64_t *excluded_ms) {
+    uint64_t before = 0U;
+    uint64_t after = 0U;
+    if (status == 0 || excluded_ms == 0 ||
+        x86os_monotonic_ms(&before) != 0) return -1;
+    x86os_puts(status);
+    if (x86os_monotonic_ms(&after) != 0 || after < before) return -1;
+    uint64_t delta = after - before;
+    if (delta > BENCHMARK_MAX_ELAPSED_MS ||
+        *excluded_ms > BENCHMARK_MAX_ELAPSED_MS - delta) return -1;
+    *excluded_ms += delta;
+    return 0;
+}
+
+static const char *disk_write_progress(uint32_t completed_chunks) {
+    switch (completed_chunks) {
+        case 16U:
+            return "BENCHMARK_STATUS phase=hdd-write progress_kib=64 total_kib=256\n";
+        case 32U:
+            return "BENCHMARK_STATUS phase=hdd-write progress_kib=128 total_kib=256\n";
+        case 48U:
+            return "BENCHMARK_STATUS phase=hdd-write progress_kib=192 total_kib=256\n";
+        case 64U:
+            return "BENCHMARK_STATUS phase=hdd-write progress_kib=256 total_kib=256\n";
+        default:
+            return 0;
+    }
+}
+
+static const char *disk_read_progress(uint32_t completed_chunks) {
+    switch (completed_chunks) {
+        case 16U:
+            return "BENCHMARK_STATUS phase=hdd-read progress_kib=64 total_kib=256\n";
+        case 32U:
+            return "BENCHMARK_STATUS phase=hdd-read progress_kib=128 total_kib=256\n";
+        case 48U:
+            return "BENCHMARK_STATUS phase=hdd-read progress_kib=192 total_kib=256\n";
+        case 64U:
+            return "BENCHMARK_STATUS phase=hdd-read progress_kib=256 total_kib=256\n";
+        default:
+            return 0;
+    }
 }
 
 static benchmark_result_t benchmark_cpu(void) {
@@ -294,6 +344,7 @@ static void benchmark_disk(benchmark_result_t *write_result,
     *read_result = (benchmark_result_t){0U, "KiB/s", BENCHMARK_FAILED};
     char path[BENCHMARK_PATH_CAPACITY];
     if (make_disk_path(path) != 0) return;
+    x86os_puts("BENCHMARK_STATUS phase=hdd-create\n");
     /* CREATE is exclusive in the VFS: an existing generation path is never
      * opened or truncated, including when metadata lookup had an I/O fault. */
     int descriptor = x86os_create(path);
@@ -306,6 +357,9 @@ static void benchmark_disk(benchmark_result_t *write_result,
     bool write_ok = true;
     uint64_t started = 0U;
     uint64_t write_elapsed = 0U;
+    uint64_t write_status_ms = 0U;
+    x86os_puts(
+        "BENCHMARK_STATUS phase=hdd-write progress_kib=0 total_kib=256\n");
     if (x86os_monotonic_ms(&started) != 0) write_ok = false;
     for (uint32_t chunk = 0U; chunk < BENCHMARK_DISK_CHUNKS && write_ok;
          ++chunk) {
@@ -313,10 +367,28 @@ static void benchmark_disk(benchmark_result_t *write_result,
         write_ok = x86os_write(
             descriptor, disk_buffer, BENCHMARK_DISK_CHUNK_BYTES) ==
             (int)BENCHMARK_DISK_CHUNK_BYTES;
+        uint32_t completed = chunk + 1U;
+        if (write_ok &&
+            completed % BENCHMARK_DISK_PROGRESS_CHUNKS == 0U) {
+            const char *progress = disk_write_progress(completed);
+            write_ok = progress != 0 &&
+                timed_status(progress, &write_status_ms) == 0;
+        }
+    }
+    if (write_ok) {
+        write_ok = timed_status("BENCHMARK_STATUS phase=hdd-fsync\n",
+                                &write_status_ms) == 0;
     }
     if (write_ok) write_ok = x86os_fsync(descriptor) == 0;
-    if (write_ok) write_ok = elapsed_ms(started, &write_elapsed) == 0 &&
-                             write_elapsed != 0U;
+    uint64_t write_elapsed_with_status = 0U;
+    if (write_ok) {
+        write_ok = elapsed_ms(started, &write_elapsed_with_status) == 0 &&
+                   write_elapsed_with_status >= write_status_ms;
+    }
+    if (write_ok) {
+        write_elapsed = write_elapsed_with_status - write_status_ms;
+        write_ok = write_elapsed != 0U;
+    }
     if (write_ok) {
         write_result->hundredths = divide_unsigned(
             (uint64_t)BENCHMARK_DISK_BYTES * 100000U,
@@ -324,8 +396,13 @@ static void benchmark_disk(benchmark_result_t *write_result,
         write_result->status = BENCHMARK_OK;
     }
 
-    bool read_ok = write_ok &&
-        x86os_lseek(descriptor, 0, X86OS_SEEK_SET) == 0;
+    bool read_ok = write_ok;
+    uint64_t read_status_ms = 0U;
+    if (read_ok) {
+        x86os_puts(
+            "BENCHMARK_STATUS phase=hdd-read progress_kib=0 total_kib=256\n");
+        read_ok = x86os_lseek(descriptor, 0, X86OS_SEEK_SET) == 0;
+    }
     uint64_t read_elapsed = 0U;
     if (read_ok && x86os_monotonic_ms(&started) != 0) read_ok = false;
     for (uint32_t chunk = 0U; chunk < BENCHMARK_DISK_CHUNKS && read_ok;
@@ -334,9 +411,23 @@ static void benchmark_disk(benchmark_result_t *write_result,
             descriptor, disk_buffer, BENCHMARK_DISK_CHUNK_BYTES) ==
             (int)BENCHMARK_DISK_CHUNK_BYTES;
         if (read_ok) read_ok = verify_disk_chunk(chunk);
+        uint32_t completed = chunk + 1U;
+        if (read_ok &&
+            completed % BENCHMARK_DISK_PROGRESS_CHUNKS == 0U) {
+            const char *progress = disk_read_progress(completed);
+            read_ok = progress != 0 &&
+                timed_status(progress, &read_status_ms) == 0;
+        }
     }
-    if (read_ok) read_ok = elapsed_ms(started, &read_elapsed) == 0 &&
-                           read_elapsed != 0U;
+    uint64_t read_elapsed_with_status = 0U;
+    if (read_ok) {
+        read_ok = elapsed_ms(started, &read_elapsed_with_status) == 0 &&
+                  read_elapsed_with_status >= read_status_ms;
+    }
+    if (read_ok) {
+        read_elapsed = read_elapsed_with_status - read_status_ms;
+        read_ok = read_elapsed != 0U;
+    }
     if (read_ok) {
         read_result->hundredths = divide_unsigned(
             (uint64_t)BENCHMARK_DISK_BYTES * 100000U,
@@ -344,12 +435,18 @@ static void benchmark_disk(benchmark_result_t *write_result,
         read_result->status = BENCHMARK_OK;
     }
 
-    if (x86os_close(descriptor) != 0 && read_result->status == BENCHMARK_OK)
+    x86os_puts("BENCHMARK_STATUS phase=hdd-cleanup state=begin\n");
+    bool cleanup_ok = x86os_close(descriptor) == 0;
+    if (!cleanup_ok && read_result->status == BENCHMARK_OK)
         read_result->status = BENCHMARK_FAILED;
     if (x86os_unlink(path) != 0) {
+        cleanup_ok = false;
         write_result->status = BENCHMARK_FAILED;
         read_result->status = BENCHMARK_FAILED;
     }
+    x86os_puts(cleanup_ok
+        ? "BENCHMARK_STATUS phase=hdd-cleanup state=complete\n"
+        : "BENCHMARK_STATUS phase=hdd-cleanup state=failed\n");
 }
 
 static benchmark_result_t benchmark_vga(void) {
@@ -404,12 +501,16 @@ int main(int argc, char **argv) {
         return 2;
     }
     x86os_puts("REIST Benchmark: begrenzte Diagnose laeuft ...\n");
+    x86os_puts("BENCHMARK_STATUS phase=cpu\n");
     benchmark_result_t cpu = benchmark_cpu();
+    x86os_puts("BENCHMARK_STATUS phase=ram-write\n");
     benchmark_result_t memory_write = benchmark_memory_write();
+    x86os_puts("BENCHMARK_STATUS phase=ram-read\n");
     benchmark_result_t memory_read = benchmark_memory_read();
     benchmark_result_t disk_write;
     benchmark_result_t disk_read;
     benchmark_disk(&disk_write, &disk_read);
+    x86os_puts("BENCHMARK_STATUS phase=vga\n");
     benchmark_result_t vga = benchmark_vga();
 
     x86os_puts("REIST OS System Benchmark\n");
@@ -424,6 +525,7 @@ int main(int argc, char **argv) {
     print_result_row("VGA", "Vollbild-Fill", &vga);
     x86os_puts("+----------+----------------------+------------------+----------+\n");
     x86os_puts("Hinweis: Vergleichswerte des aktuellen REIST-Treiberpfads.\n");
+    x86os_puts("BENCHMARK_STATUS phase=complete\n");
 
     return cpu.status == BENCHMARK_OK &&
            memory_write.status == BENCHMARK_OK &&

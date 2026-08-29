@@ -866,8 +866,17 @@ void ata_reset_error_counter() {
     * @param buffer The buffer to write to the sector.
     * @return True if the sector was written successfully, false otherwise.
 */
+static bool ata_flush_cache_impl(unsigned short base, bool is_master,
+                                 bool use_lba48) {
+    unsigned char drive_head = is_master ? 0xE0U : 0xF0U;
+    if (!ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS)) return false;
+    outb(ATA_COMMAND(base), use_lba48 ? ATA_FLUSH_CACHE_EXT : 0xE7U);
+    return wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+}
+
 static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
-                                  void* buffer, bool is_master) {
+                                  void* buffer, bool is_master,
+                                  bool flush_cache) {
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
     bool use_lba48 = lba >= ATA_LBA28_LIMIT;
@@ -920,10 +929,10 @@ static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
         return false;
     }
     
-    // Flush cache to ensure data is written (critical for filesystem integrity)
-    // This prevents data loss on power failure or disk removal
-    outb(ATA_COMMAND(base), use_lba48 ? ATA_FLUSH_CACHE_EXT : 0xE7U);
-    if (!wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS)) {
+    // Journal staging may defer this barrier, but ordinary writes remain
+    // durable before returning.
+    if (flush_cache &&
+        !ata_flush_cache_impl(base, is_master, use_lba48)) {
         printf("Warning: Cache flush timeout\n");
         return false;
     }
@@ -944,7 +953,70 @@ static bool ata_journal_write_transport(unsigned short base, uint32_t lba,
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
     return ahci_drive != NULL
         ? ahci_write_sector_recovery(ahci_drive, lba, buffer)
-        : ata_write_sector_impl(base, lba, (void *)buffer, is_master);
+        : ata_write_sector_impl(base, lba, (void *)buffer, is_master, true);
+}
+
+static bool ata_journal_write_deferred_transport(unsigned short base,
+                                                 uint32_t lba,
+                                                 const void *buffer,
+                                                 bool is_master) {
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    /* AHCI currently exposes only a durable recovery write. Keeping that
+     * stronger primitive preserves ordering; PIO gains the flush coalescing. */
+    return ahci_drive != NULL
+        ? ahci_write_sector_recovery(ahci_drive, lba, buffer)
+        : ata_write_sector_impl(base, lba, (void *)buffer, is_master, false);
+}
+
+static bool ata_write_sectors_pio_deferred_impl(unsigned short base,
+                                                uint32_t lba,
+                                                uint32_t count,
+                                                const void *buffer,
+                                                bool is_master) {
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    if (buffer == NULL || !ata_pio_range_valid(drive, lba, count))
+        return false;
+    uint32_t last = lba + count - 1U;
+    bool use_lba48 = last >= ATA_LBA28_LIMIT;
+    if (use_lba48 && !drive->lba48_supported) return false;
+    for (uint32_t index = 0U; index < count; ++index)
+        ata_cache_slot(base, lba + index, is_master)->valid = false;
+    if (!ata_program_pio_batch(base, lba, count, is_master, true,
+                               use_lba48)) return false;
+    const uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+        outsw(ATA_DATA(base), bytes + index * SECTOR_SIZE,
+              SECTOR_SIZE / 2U);
+    }
+    return wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+}
+
+static bool ata_journal_write_sectors_deferred_transport(
+        unsigned short base, uint32_t lba, uint32_t count,
+        const void *buffer, bool is_master) {
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive == NULL)
+        return ata_write_sectors_pio_deferred_impl(
+            base, lba, count, buffer, is_master);
+    const uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!ahci_write_sector_recovery(
+                ahci_drive, lba + index, bytes + index * SECTOR_SIZE))
+            return false;
+    }
+    return true;
+}
+
+static bool ata_journal_flush_transport(unsigned short base,
+                                        bool is_master) {
+    drive_t *ahci_drive = ata_compat_ahci_drive(base);
+    if (ahci_drive != NULL) return ahci_flush(ahci_drive);
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    return drive != NULL && drive->type == DRIVE_TYPE_ATA &&
+        ata_flush_cache_impl(base, is_master, drive->lba48_supported);
 }
 
 static uint8_t ata_batch_verify[SECTOR_SIZE];
@@ -997,6 +1069,57 @@ static bool ata_journal_core_write(void *context, unsigned short base,
     return ata_journal_write_transport(base, lba, buffer, is_master);
 }
 
+static bool ata_journal_core_write_deferred(void *context,
+                                            unsigned short base,
+                                            uint32_t lba,
+                                            const void *buffer,
+                                            bool is_master) {
+    (void)context;
+    return ata_journal_write_deferred_transport(base, lba, buffer,
+                                                is_master);
+}
+
+static bool ata_journal_core_write_sectors_deferred(
+        void *context, unsigned short base, uint32_t lba, uint32_t count,
+        const void *buffer, bool is_master) {
+    (void)context;
+    return ata_journal_write_sectors_deferred_transport(
+        base, lba, count, buffer, is_master);
+}
+
+static bool ata_journal_core_flush(void *context, unsigned short base,
+                                   bool is_master) {
+    (void)context;
+    return ata_journal_flush_transport(base, is_master);
+}
+
+static bool ata_journal_core_commit_begin(void *context,
+                                          unsigned short base,
+                                          bool is_master) {
+    (void)context;
+    int resource = ata_resource_index(base, is_master);
+    bool armed = !ata_write_fenced && resource >= 0 &&
+        storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+    return armed;
+}
+
+static bool ata_journal_core_commit_write_deferred(
+        void *context, unsigned short base, uint32_t lba,
+        const void *buffer, bool is_master) {
+    (void)context;
+    return ata_journal_write_deferred_transport(base, lba, buffer,
+                                                is_master);
+}
+
+static bool ata_journal_core_commit_end(void *context, unsigned short base,
+                                        bool is_master, bool commit) {
+    (void)context;
+    bool flushed = ata_journal_flush_transport(base, is_master);
+    bool durable = commit && flushed;
+    bool result = storage_write_end(durable) && durable;
+    return result;
+}
+
 static bool ata_journal_core_commit_write(void *context, unsigned short base,
                                           uint32_t lba, const void *buffer,
                                           bool is_master) {
@@ -1014,6 +1137,12 @@ static const ata_journal_transport_t ata_journal_transport = {
     .read = ata_journal_core_read,
     .write = ata_journal_core_write,
     .commit_write = ata_journal_core_commit_write,
+    .write_deferred = ata_journal_core_write_deferred,
+    .write_sectors_deferred = ata_journal_core_write_sectors_deferred,
+    .flush = ata_journal_core_flush,
+    .commit_begin = ata_journal_core_commit_begin,
+    .commit_write_deferred = ata_journal_core_commit_write_deferred,
+    .commit_end = ata_journal_core_commit_end,
 };
 static bool ata_journal_initialized;
 
@@ -1037,7 +1166,13 @@ bool ata_journal_transaction_begin(void) {
 
 bool ata_journal_transaction_end(bool commit) {
     ata_journal_ensure_initialized();
-    return ata_undo_journal_transaction_end(&ata_journal, commit);
+    /* The core's deferred callbacks intentionally assume this transaction
+     * lock. Automatic one-sector transactions already execute below a public
+     * ATA entry point holding the same recursive mutex. */
+    if (!ata_transaction_begin()) return false;
+    bool result = ata_undo_journal_transaction_end(&ata_journal, commit);
+    ata_transaction_end();
+    return result;
 }
 
 static bool ata_write_sector_journaled(unsigned short base, unsigned int lba,
@@ -1255,14 +1390,8 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
         bool result = false;
         if (armed) {
             drive_t *drive = parent;
-            if (ata_select_target(parent->base,
-                                  parent->is_master ? 0xE0U : 0xF0U,
-                                  ATA_WAIT_TIMEOUT_MS)) {
-                outb(ATA_COMMAND(parent->base), drive->lba48_supported ?
-                    ATA_FLUSH_CACHE_EXT : 0xE7U);
-                result = wait_for_drive_ready(parent->base,
-                                              ATA_WAIT_TIMEOUT_MS);
-            }
+            result = ata_flush_cache_impl(parent->base, parent->is_master,
+                                          drive->lba48_supported);
         }
         if (armed && !storage_write_end(result)) result = false;
         ata_transaction_end();
@@ -1277,12 +1406,8 @@ bool ata_flush_cache(unsigned short base, bool is_master) {
     bool result = false;
     if (armed) {
         drive_t *drive = &detected_drives[resource];
-        if (ata_select_target(base, is_master ? 0xE0U : 0xF0U,
-                              ATA_WAIT_TIMEOUT_MS)) {
-            outb(ATA_COMMAND(base), drive->lba48_supported ?
-                                      ATA_FLUSH_CACHE_EXT : 0xE7U);
-            result = wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
-        }
+        result = ata_flush_cache_impl(base, is_master,
+                                      drive->lba48_supported);
     }
     if (armed && !storage_write_end(result)) result = false;
     ata_transaction_end();

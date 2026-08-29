@@ -305,6 +305,22 @@ bool fat32_delete_file(const char* filename);
 unsigned int read_file_data_at(unsigned int start_cluster, unsigned int offset,
                                char* buffer, unsigned int buffer_size,
                                unsigned int bytes_to_read);
+
+/* Caller-owned hint for consecutive reads. It is never authoritative: chain
+ * identity, offset and cluster bounds are validated before reuse. */
+typedef struct {
+    uint32_t chain_start;
+    uint32_t cluster;
+    uint32_t cluster_index;
+    uint32_t next_offset;
+    bool valid;
+} fat32_read_cursor_t;
+
+unsigned int read_file_data_at_cursor(unsigned int start_cluster,
+                                      unsigned int offset, char* buffer,
+                                      unsigned int buffer_size,
+                                      unsigned int bytes_to_read,
+                                      fat32_read_cursor_t* cursor);
 int write_file_data_at(unsigned int* start_cluster, unsigned int offset,
                        const void* buffer, unsigned int bytes_to_write);
 

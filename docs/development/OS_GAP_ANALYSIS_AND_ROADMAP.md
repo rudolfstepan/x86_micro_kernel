@@ -353,7 +353,17 @@ Datentraeger und VGA bereit. R7.1b beseitigt dessen quadratischen FAT32-
 Schreibpfad mit generationsgebundenen sequentiellen Cluster- und Tail-Hinweisen
 pro offenem Handle. Der 512-Byte-Userspace-Bounce, die feste Journalgroesse und
 die atomare VFS-Transaktionsgrenze bleiben unveraendert; Legacy- oder zweite
-VFS-Writer, Truncate, Randomzugriffe und Fehler entwerten die Hinweise. R6.2o
+VFS-Writer, Truncate, Randomzugriffe und Fehler entwerten die Hinweise. R7.1c
+schliesst den realen Benchmarkpfad ab: feste Phasen- und
+64-KiB-Fortschrittsmarker lokalisieren jeden begrenzten Schritt, die
+FSInfo-Allokation beginnt am validierten Next-Free-Hinweis und ein eigener
+sequentieller Lesecursor verhindert wiederholte Kettenlaeufe. Das feste
+Undo-Journal schreibt die komplette Transaktion mit vier geordneten
+Persistenzbarrieren statt mit sektorweisen Flushes. Der Ein-vCPU-QEMU-Nachweis
+schreibt 256 KiB, fuehrt `fsync` aus, liest alle Bytes zurueck, entfernt die
+Testdatei und erreicht innerhalb der harten 120-Sekunden-Gesamtfrist erneut die
+Ring-3-Shell. Der Benutzer bestaetigte denselben Abschluss unter VMware.
+R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem
 Heartbeat-Restart abgeschlossen. Physische,

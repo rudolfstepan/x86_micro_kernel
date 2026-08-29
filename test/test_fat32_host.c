@@ -16,6 +16,7 @@
 
 #define TEST_SECTORS 128u
 #define ROOT_DIRECTORY_LBA 3u
+#define FSINFO_FIRST_FREE 64u
 #define FAT32_FAULT_CAMPAIGN_MAX_WRITES 384u
 #define CHECK(condition) do { if (!(condition)) return __LINE__; } while (0)
 
@@ -50,6 +51,7 @@ static bool campaign_power_cut;
 static bool campaign_fault_armed;
 static unsigned int campaign_cut_after_write;
 static unsigned int campaign_write_count;
+static unsigned int campaign_flush_count;
 static uint8_t campaign_baseline[TEST_SECTORS][SECTOR_SIZE];
 static uint8_t campaign_committed[TEST_SECTORS][SECTOR_SIZE];
 static uint32_t primary_fat_lba = 1U;
@@ -139,10 +141,52 @@ static bool host_raw_read(void *context, unsigned short base, uint32_t lba,
     return host_disk_read(base, lba, buffer, is_master);
 }
 
+static bool host_raw_flush(void *context, unsigned short base,
+                           bool is_master) {
+    (void)context;
+    (void)base;
+    (void)is_master;
+    if (campaign_power_cut) return false;
+    ++campaign_flush_count;
+    return true;
+}
+
+static bool host_commit_begin(void *context, unsigned short base,
+                              bool is_master) {
+    (void)context;
+    (void)base;
+    (void)is_master;
+    return !campaign_power_cut;
+}
+
+static bool host_commit_end(void *context, unsigned short base,
+                            bool is_master, bool commit) {
+    bool flushed = host_raw_flush(context, base, is_master);
+    return commit && flushed;
+}
+
+static bool host_raw_write_sectors(void *context, unsigned short base,
+                                   uint32_t lba, uint32_t count,
+                                   const void *buffer, bool is_master) {
+    const uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!host_raw_write(context, base, lba + index,
+                            bytes + index * SECTOR_SIZE, is_master))
+            return false;
+    }
+    return true;
+}
+
 static const ata_journal_transport_t host_journal_transport = {
     .read = host_raw_read,
     .write = host_raw_write,
     .commit_write = host_raw_write,
+    .write_deferred = host_raw_write,
+    .write_sectors_deferred = host_raw_write_sectors,
+    .flush = host_raw_flush,
+    .commit_begin = host_commit_begin,
+    .commit_write_deferred = host_raw_write,
+    .commit_end = host_commit_end,
 };
 
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,
@@ -268,6 +312,7 @@ static void make_test_volume(void) {
     campaign_fault_armed = false;
     campaign_cut_after_write = 0U;
     campaign_write_count = 0U;
+    campaign_flush_count = 0U;
     ata_undo_journal_init(&host_journal, &host_journal_transport, NULL);
     root_read_failures = 0;
     fail_directory_write_once = false;
@@ -322,15 +367,18 @@ static void make_fsinfo_test_volume(void) {
     memset(&info, 0, sizeof(info));
     info.lead_signature = 0x41615252U;
     info.struct_signature = 0x61417272U;
-    info.free_cluster_count = TEST_SECTORS - 5U;
-    info.next_free_cluster = 3U;
+    info.free_cluster_count =
+        (TEST_SECTORS - 4U) - (FSINFO_FIRST_FREE - 2U);
+    info.next_free_cluster = FSINFO_FIRST_FREE;
     info.trail_signature = 0xAA550000U;
     memcpy(test_disk[1], &info, sizeof(info));
 
     uint32_t* fat = (uint32_t*)test_disk[primary_fat_lba];
     fat[0] = 0x0FFFFFF8U;
     fat[1] = FAT32_EOC_MAX;
-    fat[2] = FAT32_EOC_MAX;
+    for (uint32_t cluster = 2U; cluster < FSINFO_FIRST_FREE; ++cluster) {
+        fat[cluster] = FAT32_EOC_MAX;
+    }
     memcpy(test_disk[secondary_fat_lba], test_disk[primary_fat_lba],
            SECTOR_SIZE);
 }
@@ -420,6 +468,7 @@ static void make_campaign_volume(void) {
     campaign_fault_armed = false;
     campaign_cut_after_write = 0U;
     campaign_write_count = 0U;
+    campaign_flush_count = 0U;
     ata_undo_journal_init(&host_journal, &host_journal_transport, NULL);
 
     struct fat32_boot_sector boot;
@@ -548,11 +597,13 @@ static int run_fat32_image_fault_campaign(void) {
     campaign_fault_armed = true;
     campaign_cut_after_write = UINT_MAX;
     campaign_write_count = 0U;
+    campaign_flush_count = 0U;
     CHECK(vfs_truncate(node, 700U) == VFS_OK);
     campaign_fault_armed = false;
     unsigned int measured_writes = campaign_write_count;
     CHECK(measured_writes > 0U &&
           measured_writes <= FAT32_FAULT_CAMPAIGN_MAX_WRITES);
+    CHECK(campaign_flush_count == 4U);
     CHECK(vfs_close(node) == VFS_OK);
     memcpy(campaign_committed, test_disk, sizeof(test_disk));
     CHECK(campaign_verify_mounted_state(true));
@@ -565,6 +616,7 @@ static int run_fat32_image_fault_campaign(void) {
         campaign_power_cut = false;
         campaign_fault_armed = false;
         campaign_write_count = 0U;
+        campaign_flush_count = 0U;
         CHECK(campaign_mount());
         CHECK(vfs_open("/CUT.TMP", &node) == VFS_OK);
         campaign_cut_after_write = cut;
@@ -639,11 +691,13 @@ static int run_fat32_lfn_replace_fault_campaign(void) {
     campaign_fault_armed = true;
     campaign_cut_after_write = UINT_MAX;
     campaign_write_count = 0U;
+    campaign_flush_count = 0U;
     CHECK(vfs_rename(source, target) == VFS_OK);
     campaign_fault_armed = false;
     unsigned int measured_writes = campaign_write_count;
     CHECK(measured_writes > 0U &&
           measured_writes <= FAT32_FAULT_CAMPAIGN_MAX_WRITES);
+    CHECK(campaign_flush_count == 4U);
     memcpy(campaign_committed, test_disk, sizeof(test_disk));
     CHECK(campaign_verify_lfn_replace(true));
     CHECK(vfs_unmount("/") == VFS_OK);
@@ -655,6 +709,7 @@ static int run_fat32_lfn_replace_fault_campaign(void) {
         campaign_power_cut = false;
         campaign_fault_armed = false;
         campaign_write_count = 0U;
+        campaign_flush_count = 0U;
         CHECK(campaign_mount());
         campaign_cut_after_write = cut;
         campaign_fault_armed = true;
@@ -685,7 +740,7 @@ static int run_sequential_write_cache_test(void) {
     enum { STREAM_CHUNKS = 48U, STREAM_BYTES = STREAM_CHUNKS * SECTOR_SIZE };
     make_fsinfo_test_volume();
     CHECK(fat32_init_fs_at(0x1F0, true, 0U) == SUCCESS);
-    CHECK(fsinfo_valid && fsinfo.next_free_cluster == 3U);
+    CHECK(fsinfo_valid && fsinfo.next_free_cluster == FSINFO_FIRST_FREE);
 
     drive_t drive;
     memset(&drive, 0, sizeof(drive));
@@ -711,16 +766,24 @@ static int run_sequential_write_cache_test(void) {
     }
 
     /* This is the exact syscall-facing rhythm: one stable 512-byte kernel
-     * bounce per VFS transaction.  A valid FSInfo hint isolates chain-walk
-     * complexity from free-cluster scanning. */
+     * bounce per VFS transaction.  The occupied prefix makes a restart at
+     * cluster 2 exceed the linear ceiling; the valid FSInfo hint must select
+     * the first free cluster directly and advance once per allocation. */
     fat_sector_reads = 0U;
     for (uint32_t chunk = 0U; chunk < STREAM_CHUNKS; ++chunk) {
         CHECK(vfs_write(stream_node, chunk * SECTOR_SIZE, SECTOR_SIZE,
                         stream_data + chunk * SECTOR_SIZE) == SECTOR_SIZE);
     }
-    CHECK(fat_sector_reads <= STREAM_CHUNKS * 40U);
-    CHECK(vfs_read(stream_node, 0U, STREAM_BYTES, stream_readback) ==
-          (int)STREAM_BYTES);
+    CHECK(stream_node->inode == FSINFO_FIRST_FREE);
+    CHECK(fat_sector_reads <= STREAM_CHUNKS * 16U);
+    /* Consecutive syscall-sized reads must resume from the prior validated
+     * cluster instead of walking from the chain start for every offset. */
+    fat_sector_reads = 0U;
+    for (uint32_t chunk = 0U; chunk < STREAM_CHUNKS; ++chunk) {
+        CHECK(vfs_read(stream_node, chunk * SECTOR_SIZE, SECTOR_SIZE,
+                       stream_readback + chunk * SECTOR_SIZE) == SECTOR_SIZE);
+    }
+    CHECK(fat_sector_reads <= STREAM_CHUNKS * 4U);
     CHECK(memcmp(stream_readback, stream_data, STREAM_BYTES) == 0);
 
     /* Legacy FAT writes use the same volume-generation hook, so a cached VFS

@@ -24,6 +24,9 @@ class BenchmarkSourceTests(unittest.TestCase):
         cls.shell = (ROOT / "userspace/bin/shell.c").read_text(
             encoding="utf-8"
         )
+        cls.runtime = (ROOT / "scripts/run_qemu_benchmark.py").read_text(
+            encoding="utf-8"
+        )
 
     def test_all_workloads_are_compile_time_bounded(self) -> None:
         for token in (
@@ -49,6 +52,11 @@ class BenchmarkSourceTests(unittest.TestCase):
         self.assertIn("verify_disk_chunk(chunk)", self.source)
         self.assertIn("x86os_fsync(descriptor)", self.source)
         self.assertIn("x86os_unlink(path)", self.source)
+        self.assertLess(
+            self.source.index("x86os_unlink(path)"),
+            self.source.index(
+                "BENCHMARK_STATUS phase=hdd-cleanup state=complete"),
+        )
         for forbidden in (
             "x86os_storage_block_write",
             "x86os_device_open_region",
@@ -56,6 +64,38 @@ class BenchmarkSourceTests(unittest.TestCase):
             "x86os_device_bind_irq",
         ):
             self.assertNotIn(forbidden, self.source)
+
+    def test_status_identifies_each_phase_and_bounded_disk_progress(self) -> None:
+        main_markers = (
+            "BENCHMARK_STATUS phase=cpu",
+            "BENCHMARK_STATUS phase=ram-write",
+            "BENCHMARK_STATUS phase=ram-read",
+            "BENCHMARK_STATUS phase=vga",
+            "BENCHMARK_STATUS phase=complete",
+        )
+        positions = [self.source.index(marker) for marker in main_markers]
+        self.assertEqual(positions, sorted(positions))
+        disk_markers = (
+            "BENCHMARK_STATUS phase=hdd-create",
+            "BENCHMARK_STATUS phase=hdd-write progress_kib=0",
+            "BENCHMARK_STATUS phase=hdd-fsync",
+            "BENCHMARK_STATUS phase=hdd-read progress_kib=0",
+            "BENCHMARK_STATUS phase=hdd-cleanup",
+        )
+        positions = [self.source.index(marker) for marker in disk_markers]
+        self.assertEqual(positions, sorted(positions))
+        for phase in ("hdd-write", "hdd-read"):
+            for progress in (64, 128, 192, 256):
+                self.assertEqual(
+                    self.source.count(
+                        f"BENCHMARK_STATUS phase={phase} "
+                        f"progress_kib={progress} total_kib=256"
+                    ),
+                    1,
+                )
+        self.assertIn("BENCHMARK_DISK_PROGRESS_CHUNKS 16U", self.source)
+        self.assertIn("timed_status(progress, &write_status_ms)", self.source)
+        self.assertIn("write_elapsed_with_status - write_status_ms", self.source)
 
     def test_vga_uses_public_api_and_restores_console(self) -> None:
         self.assertIn("x86os_display_info(&display)", self.source)
@@ -95,6 +135,19 @@ class BenchmarkSourceTests(unittest.TestCase):
         )
         self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"',
                       self.shell)
+
+    def test_runtime_gate_is_single_cpu_bounded_and_checks_cleanup(self) -> None:
+        self.assertIn('persistent=True, smp=1', self.runtime)
+        self.assertIn('shutil.copyfile(image, clone)', self.runtime)
+        self.assertIn('clone.unlink(missing_ok=True)', self.runtime)
+        self.assertIn('default=120.0', self.runtime)
+        self.assertIn('smoke.stop_process(process)', self.runtime)
+        self.assertIn(
+            '"BENCHMARK_STATUS phase=hdd-cleanup state=complete"',
+            self.runtime,
+        )
+        self.assertIn('"Seq. Schreiben", "Seq. Lesen"', self.runtime)
+        self.assertIn('last_status=', self.runtime)
 
 
 if __name__ == "__main__":

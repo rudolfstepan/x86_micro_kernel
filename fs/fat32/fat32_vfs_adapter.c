@@ -119,6 +119,7 @@ typedef struct {
     struct fat32_dir_entry entry;
     uint32_t parent_cluster;
     char name[MAX_PATH_LENGTH];
+    fat32_read_cursor_t read_cursor;
     fat32_write_cursor_t write_cursor;
     uint32_t tail_chain_start;
     uint32_t tail_cluster;
@@ -129,6 +130,7 @@ typedef struct {
 
 static void fat32_vfs_cache_reset(fat32_vfs_handle_t* handle) {
     if (!handle) return;
+    handle->read_cursor.valid = false;
     handle->write_cursor.valid = false;
     handle->tail_valid = false;
 }
@@ -139,6 +141,7 @@ static void fat32_vfs_note_data_mutation(vfs_node_t* node,
     fat32_vfs_context_t* context =
         (fat32_vfs_context_t*)node->fs->fs_data;
     fat32_advance_context_generation(context);
+    handle->read_cursor.valid = false;
     if (context->cache_disabled) fat32_vfs_cache_reset(handle);
     handle->cache_generation = context->data_generation;
 }
@@ -708,8 +711,10 @@ static int fat32_vfs_read_unlocked(vfs_node_t* node, uint32_t offset,
     uint32_t available = node->size - offset;
     uint32_t bytes_to_read = size < available ? size : available;
     if (bytes_to_read > INT_MAX) bytes_to_read = INT_MAX;
-    return (int)read_file_data_at(node->inode, offset, (char*)buffer,
-                                  size, bytes_to_read);
+    fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    return (int)read_file_data_at_cursor(
+        node->inode, offset, (char*)buffer, size, bytes_to_read,
+        &handle->read_cursor);
 }
 
 static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
