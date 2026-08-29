@@ -178,12 +178,14 @@ warnungsfreie 126.700-Byte-Build und der native QEMU-Dialog mit `INFO`, `RUN`
 und `EXIT` bestanden bis `RING3_SHELL_OK`; die Queue ist leer. Kein VFS- oder
 argv-Vertrag wird vorweggenommen.
 
-R8.2j ist aktiv. Der bereits vollstaendig reaptierte Shell-Kindslot wird fuer
-genau einen zweiten `RUN`-Zyklus als Generation 42 wiederverwendet. Der Dialog
-bleibt auf `INFO`, `RUN`, `RUN`, `EXIT` begrenzt; beide WAIT-Aufrufe blockieren
-generationengenau und jede Wiederverwendung setzt leere Queue-, Beziehungs-,
-Wait- und Framebesitzdaten voraus. Parallele Kinder, VFS und argv bleiben
-ausserhalb dieses Pakets.
+R8.2j ist abgeschlossen. Der vollstaendig reaptierte Shell-Kindslot wird fuer
+genau einen zweiten `RUN`-Zyklus als Generation 42 wiederverwendet. 50
+Quellvertragstests, der warnungsfreie 126.868-Byte-Build und der native
+`INFO`-/`RUN`-/`RUN`-/`EXIT`-QEMU-Dialog mit exakt zwei `RUN_OK`-Markern
+bestanden bis `RING3_SHELL_OK`. Beide WAIT-Aufrufe blockieren
+generationengenau, jede Wiederverwendung setzt leere Queue-, Beziehungs-,
+Wait- und Framebesitzdaten voraus, und die Queue ist leer. Parallele Kinder,
+VFS und argv bleiben ausserhalb dieses Pakets.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der

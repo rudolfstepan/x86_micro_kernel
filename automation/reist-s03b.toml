@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2j-x86_64-shell-child-reuse"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11523,7 +11523,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2j-x86_64-shell-child-reuse"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Reuse the bounded x86_64 shell child slot safely"
@@ -11556,7 +11556,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "proc: reuse x86_64 shell child generation safely"
-evidence = []
+evidence = [
+  "all 50 x86_64 source-contract tests passed including exact two-generation shell child reuse zero ownership preconditions blocking waits and host dialogue bounds",
+  "the warning-free x86_64 package build produced a 126868-byte bootstrap while the 10264-byte probe 1672-byte shell 8064-byte C core object and 13520-byte C payload retained their established sizes",
+  "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RING3_SHELL_RUN_OK markers and preserved every established marker through RING3_SHELL_OK",
+  "generation 41 was fully reaped before generation 42 allocation; each completion published status 77 only after terminal validation then restored kernel CR3 cleared queue relation wait and ownership state and final cleanup restored the exact initial frame count; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

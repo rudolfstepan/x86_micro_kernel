@@ -141,7 +141,7 @@ def run_boot(qemu: Path, image: Path, log: Path, timeout: float) -> str:
     deadline = time.monotonic() + timeout
     captured_bytes = bytearray()
     info_sent = False
-    run_sent = False
+    runs_sent = 0
     exit_sent = False
     try:
         while time.monotonic() < deadline:
@@ -161,15 +161,21 @@ def run_boot(qemu: Path, image: Path, log: Path, timeout: float) -> str:
                 process.stdin.write(b"INFO\n")
                 process.stdin.flush()
                 info_sent = True
-            if info_sent and not run_sent and \
+            run_ok_count = captured.count("REIST_X86_64_RING3_SHELL_RUN_OK")
+            if info_sent and runs_sent == 0 and \
                     "REIST_X86_64_RING3_SHELL_INFO_OK" in captured:
                 if process.stdin is None:
                     raise RuntimeError("qemu serial input closed before RUN")
                 process.stdin.write(b"RUN\n")
                 process.stdin.flush()
-                run_sent = True
-            if run_sent and not exit_sent and \
-                    "REIST_X86_64_RING3_SHELL_RUN_OK" in captured:
+                runs_sent = 1
+            if runs_sent == 1 and run_ok_count >= 1:
+                if process.stdin is None:
+                    raise RuntimeError("qemu serial input closed before second RUN")
+                process.stdin.write(b"RUN\n")
+                process.stdin.flush()
+                runs_sent = 2
+            if runs_sent == 2 and not exit_sent and run_ok_count >= 2:
                 if process.stdin is None:
                     raise RuntimeError("qemu serial input closed before EXIT")
                 process.stdin.write(b"EXIT\n")
@@ -202,8 +208,10 @@ def run_boot(qemu: Path, image: Path, log: Path, timeout: float) -> str:
         process.stderr.close()
     if any(marker in captured for marker in FAILURES):
         raise RuntimeError(f"bootstrap reported failure: {captured.strip()}")
-    if not info_sent or not run_sent or not exit_sent:
+    if not info_sent or runs_sent != 2 or not exit_sent:
         raise RuntimeError("bounded Ring-3 shell dialogue did not complete")
+    if captured.count("REIST_X86_64_RING3_SHELL_RUN_OK") != 2:
+        raise RuntimeError("bounded Ring-3 shell dialogue did not complete two RUN cycles")
     positions = [captured.find(marker) for marker in REQUIRED_MARKERS]
     if any(position < 0 for position in positions):
         detail = stderr.decode("utf-8", errors="replace").strip()

@@ -498,3 +498,17 @@ Der warnungsfreie isolierte Build erzeugte die 1.672-Byte-Shell. Der begrenzte
 Ein-vCPU-/128-MiB-QEMU-Dialog fuehrte `INFO`, `RUN` und `EXIT` aus, erreichte
 `RING3_SHELL_RUN_OK` und meldete nach vollstaendigem Kind-Reap alle bisherigen
 Marker geordnet bis `RING3_SHELL_OK`.
+
+## Generationensichere Shell-Kindwiederverwendung R8.2j
+
+Der reale Shellpfad akzeptiert genau einen zweiten sequenziellen `RUN`-Zyklus.
+Nach dem vollstaendigen Reap von Generation 41 muessen Slot 1, Stack- und
+private ELF-Frames, alle vier Tabellenframes, Runqueue, Parentbeziehung und
+WAIT-Metadaten null sein. Erst dann darf derselbe Slot mit frischen Ressourcen
+als Generation 42 READY werden. PID 301 und Status 77 bleiben Teil der
+unveraenderten REIST-v1-ABI; die Generation bleibt kernelintern.
+
+50 Quellvertragstests und der warnungsfreie 126.868-Byte-Build bestanden. Der
+begrenzte Ein-vCPU-/128-MiB-QEMU-Dialog sendete `INFO`, `RUN`, `RUN`, `EXIT`,
+beobachtete exakt zwei geordnete `RING3_SHELL_RUN_OK`-Marker und erreichte nach
+vollstaendigem Cleanup alle bisherigen Marker bis `RING3_SHELL_OK`.

@@ -248,6 +248,12 @@ einen privaten NX-Stack. Der Shell-Parent blockiert generationengebunden in
 WAIT; Status, Reap und Wake erfolgen erst nach exakter terminaler
 Kindvalidierung. Dies ist noch kein allgemeiner Image- oder VFS-Loader.
 
+R8.2j nutzt denselben Shell-Kindslot nach vollstaendigem Reap genau einmal als
+Generation 42 erneut. Vor dem frischen Aufbau muessen Taskrecord, private
+Frames, Tabellenbesitz, Queue, Parentbeziehung und WAIT-Ziel leer sein. Beide
+WAIT-Zyklen bleiben blockierend und generationengenau; parallele Kinder,
+wait-any und allgemeines Image-Laden werden dadurch nicht eingefuehrt.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

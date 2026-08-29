@@ -323,12 +323,13 @@ private Tabellen, Queue und Freizaehler blieben im Quell-, Build- und nativen
 QEMU-Nachweis vollstaendig gebunden. Allgemeines VFS-Laden und argv bleiben
 getrennte Folgearbeiten; die x86_64-Queue ist leer.
 
-**R8.2j ist aktiv:** Der vollstaendig reaptierte Shell-Kindslot wird exakt
-einmal als Generation 42 wiederverwendet. Ein begrenzter `INFO`-/`RUN`-/`RUN`-/
-`EXIT`-Dialog muss beide blockierenden WAIT-/Status-77-Zyklen, frische private
-Kindressourcen und die vollstaendige Ruecknahme jeder Generation nachweisen.
-Parallele Kinder, wait-any, allgemeines Image-/VFS-Laden und argv bleiben
-getrennte Folgearbeiten.
+**R8.2j ist abgeschlossen:** Der vollstaendig reaptierte Shell-Kindslot wird
+exakt einmal als Generation 42 wiederverwendet. 50 Quellvertragstests, der
+warnungsfreie 126.868-Byte-Build und ein begrenzter `INFO`-/`RUN`-/`RUN`-/
+`EXIT`-QEMU-Dialog bewiesen beide blockierenden WAIT-/Status-77-Zyklen,
+frische private Kindressourcen und die vollstaendige Ruecknahme jeder
+Generation. Parallele Kinder, wait-any, allgemeines Image-/VFS-Laden und argv
+bleiben getrennte Folgearbeiten; die x86_64-Queue ist leer.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

@@ -395,6 +395,22 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("mov dword [r15], DYNAMIC_CHILD_EXIT_STATUS", scheduler)
         self.assertIn("REIST_X86_64_RING3_SHELL_RUN_OK", runner)
 
+    def test_ring3_shell_child_slot_reuse_is_exactly_two_generations(self):
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        self.assertIn("TASK_SHELL_CHILD_GEN       equ 41", scheduler)
+        self.assertIn("TASK_SHELL_CHILD_GEN2      equ 42", scheduler)
+        self.assertIn("SHELL_EXPECTED_READS       equ 18", scheduler)
+        self.assertIn("SHELL_EXPECTED_WRITES      equ 8", scheduler)
+        self.assertIn("cmp dword [rel scheduler_dynamic_spawn_count], 2", scheduler)
+        self.assertIn("cmp dword [rel scheduler_dynamic_completed_count], 2", scheduler)
+        self.assertIn("inc dword [rel scheduler_dynamic_completed_count]", scheduler)
+        self.assertIn("cmp dword [rel scheduler_reap_count], 3", scheduler)
+        self.assertIn("runs_sent = 0", runner)
+        self.assertIn("if runs_sent == 1 and run_ok_count >= 1:", runner)
+        self.assertIn("runs_sent = 2", runner)
+        self.assertIn('captured.count("REIST_X86_64_RING3_SHELL_RUN_OK") != 2', runner)
+
     def test_user_page_tables_are_private_fixed_and_wx(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")
         self.assertIn("USER_PAGE_COUNT           equ 8", source)
