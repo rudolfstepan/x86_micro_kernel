@@ -12410,13 +12410,15 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Keep VMware compositor startup inside its heartbeat contract"
-scope = "Repair the reproduced VMware desktop failure in which the compositor publishes SERVICE_READY before its bounded splash and fixed icon, filetype and sound preparation complete, then misses the two-second healthy heartbeat and consumes all three generation-scoped restart attempts. Keep display and Surface initialization before self-test, publish the initial healthy progress within the existing admission limit, and retain pre-ready BSP ownership until the first complete frame has been committed. Publish ordered progress between bounded startup phases, including the fixed splash strips and each fixed icon decode, and publish SERVICE_READY only after that first frame. Prove the normal four-vCPU VMware desktop reaches real xHCI mouse input without compositor restart or degradation. Preserve the five-second initial admission limit, two-second healthy heartbeat, one-second recovery fence, three-restart budget, post-ready AP handoff and all display, Surface, VFS, USB and device authority."
+scope = "Repair the reproduced VMware desktop failure in which the compositor publishes SERVICE_READY before its bounded splash and fixed icon, filetype and sound preparation complete, then misses the two-second healthy heartbeat and consumes all three generation-scoped restart attempts. Keep display and Surface initialization before self-test, give only this compositor lifecycle a fixed thirty-second aggregate initial-admission ceiling, and retain pre-ready BSP ownership until the first complete frame has been committed. Publish ordered progress between bounded startup phases, including the fixed splash strips and each fixed icon decode, and publish SERVICE_READY only after that first frame. Prove the normal four-vCPU VMware desktop reaches real xHCI mouse input without compositor restart or degradation. Preserve the two-second healthy heartbeat, one-second recovery fence, three-restart budget, post-ready AP handoff and all display, Surface, VFS, USB and device authority."
 allowed_files = [
   "automation/reist-s03b.toml",
+  "kernel/init/supervisor.c",
   "userspace/gui/compositor/desktop.c",
   "scripts/run_vmware_mouse.ps1",
   "test/test_desktop_source.py",
   "test/test_desktop_splash.py",
+  "test/test_reist_supervisor.py",
   "test/test_vmware_mouse.py",
   "docs/architecture/SMP_SUBSYSTEM.md",
   "docs/architecture/VIDEO_SUBSYSTEM.md",
@@ -12428,12 +12430,13 @@ invariants = [
   "the compositor remains pre-ready and BSP-affine while splash fixed assets explorer setup and the first complete frame are produced",
   "each bounded startup phase each fixed splash strip and each fixed icon decode is separated by generation-scoped progress so no single aggregate presentation or asset phase consumes the healthy heartbeat",
   "SERVICE_READY is published only after the first complete frame and before the existing post-ready AP affinity handoff",
-  "the five-second initial admission limit two-second healthy heartbeat one-second recovery fence and finite three-restart budget remain unchanged",
+  "only the compositor aggregate initial-admission ceiling changes from five to a fixed thirty seconds while the two-second healthy heartbeat one-second recovery fence and finite three-restart budget remain unchanged",
   "no display Surface VFS USB IRQ MMIO DMA device authority public ABI or automatic desktop startup policy is widened"
 ]
 targeted_tests = [
   "python test/test_desktop_source.py -v",
   "python test/test_desktop_splash.py -v",
+  "python test/test_reist_supervisor.py -v",
   "python test/test_vmware_mouse.py -v"
 ]
 package_tests = [
@@ -12444,7 +12447,7 @@ runtime_tests = [
 ]
 stop_conditions = [
   "the compositor can publish SERVICE_READY or receive AP affinity before its first complete frame",
-  "a startup operation can cross the healthy heartbeat without bounded progress or a lifecycle deadline must be widened",
+  "a post-self-test startup operation can cross the healthy heartbeat without bounded progress or any lifecycle deadline other than the fixed compositor initial-admission ceiling must be widened",
   "normal VMware runtime emits COMPOSITOR_RESTARTED COMPOSITOR_DEGRADED or a kernel panic",
   "the real virtual xHCI mouse report does not reach the healthy compositor generation",
   "a required production file lies outside allowed_files",
