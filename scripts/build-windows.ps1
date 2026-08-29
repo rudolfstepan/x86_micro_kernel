@@ -55,7 +55,14 @@ function Resolve-NativeTool {
         return $command.Source
     }
     foreach ($candidate in $Fallbacks) {
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+        if ([System.Management.Automation.WildcardPattern]::ContainsWildcardCharacters(
+                $candidate)) {
+            $matches = @(Get-ChildItem -Path $candidate -File `
+                -ErrorAction SilentlyContinue | Sort-Object LastWriteTimeUtc -Descending)
+            if ($matches.Count -ne 0) {
+                return $matches[0].FullName
+            }
+        } elseif (Test-Path -LiteralPath $candidate -PathType Leaf) {
             return (Resolve-Path -LiteralPath $candidate).Path
         }
     }
@@ -66,19 +73,33 @@ function To-MakePath([string]$Path) {
     return $Path.Replace('\', '/')
 }
 
-$Make = Resolve-NativeTool 'make' @('C:\ProgramData\chocolatey\bin\make.exe')
+$LocalAppDataRoot = [Environment]::GetFolderPath('LocalApplicationData')
+$Make = Resolve-NativeTool 'make' @(
+    'C:\ProgramData\chocolatey\bin\make.exe',
+    'C:\msys64\usr\bin\make.exe',
+    'C:\msys64\mingw64\bin\mingw32-make.exe'
+)
 $Nasm = Resolve-NativeTool 'nasm' @(
-    'C:\tmp\nasm-3.02-portable\nasm-3.02\nasm.exe'
+    'C:\tmp\nasm-3.02-portable\nasm-3.02\nasm.exe',
+    (Join-Path $LocalAppDataRoot `
+        'Microsoft\WinGet\Packages\BrechtSanders.WinLibs.*\mingw64\bin\nasm.exe')
 )
 $Zig = Resolve-NativeTool 'zig' @(
-    'C:\tmp\zig-0.16.0-portable\zig-x86_64-windows-0.16.0\zig.exe'
+    'C:\tmp\zig-0.16.0-portable\zig-x86_64-windows-0.16.0\zig.exe',
+    (Join-Path $LocalAppDataRoot 'Microsoft\WinGet\Links\zig.exe'),
+    (Join-Path $LocalAppDataRoot `
+        'Microsoft\WinGet\Packages\zig.zig_*\zig-x86_64-windows-*\zig.exe')
 )
 $Python = Resolve-NativeTool 'python' @(
     'C:\Python314\python.exe',
-    'C:\Python313\python.exe'
+    'C:\Python313\python.exe',
+    (Join-Path $LocalAppDataRoot 'Programs\Python\Python314\python.exe'),
+    (Join-Path $LocalAppDataRoot 'Programs\Python\Python313\python.exe'),
+    (Join-Path $LocalAppDataRoot 'Programs\Python\Python3*\python.exe')
 )
 $OpenSsl = Resolve-NativeTool 'openssl' @(
-    'C:\msys64\mingw64\bin\openssl.exe'
+    'C:\msys64\mingw64\bin\openssl.exe',
+    'C:\msys64\usr\bin\openssl.exe'
 )
 
 function Invoke-PythonProcess {
@@ -230,6 +251,7 @@ try {
         "OUTPUT_DIR=$($OutputDirectory.Replace('\', '/'))",
         "SHELL=$(To-MakePath $MsysShell)",
         "AS=$(To-MakePath $Nasm)",
+        "PYTHON=$(To-MakePath $Python)",
         "CC=$(To-MakePath $Zig) cc -target x86-freestanding -Wno-unused-command-line-argument",
         "LD=$(To-MakePath $Zig) ld.lld",
         'FRAME_WARNING_FLAGS=-Wframe-larger-than=4096 -Werror=frame-larger-than='

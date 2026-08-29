@@ -15,6 +15,18 @@ SPEC.loader.exec_module(VALIDATOR)
 
 
 class BuildDependencyTests(unittest.TestCase):
+    def test_windows_build_resolves_standard_msys2_and_winget_tools(self) -> None:
+        script = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        self.assertIn("WildcardPattern]::ContainsWildcardCharacters", script)
+        self.assertIn(r"C:\msys64\usr\bin\make.exe", script)
+        self.assertIn(r"C:\msys64\usr\bin\openssl.exe", script)
+        self.assertIn("LocalApplicationData", script)
+        self.assertIn(r"Microsoft\WinGet\Packages\zig.zig_*", script)
+        self.assertIn(r"Microsoft\WinGet\Packages\BrechtSanders.WinLibs.*", script)
+        self.assertIn(r"Programs\Python\Python3*\python.exe", script)
+        self.assertIn('"PYTHON=$(To-MakePath $Python)"', script)
+
     def test_windows_build_reuses_matching_configuration(self) -> None:
         script = (ROOT / "scripts/build-windows.ps1").read_text(
             encoding="utf-8")
@@ -66,7 +78,10 @@ class BuildDependencyTests(unittest.TestCase):
         self.assertIn("DEPFLAGS = -MMD -MP -MF $(@:.o=.d) -MT $@", makefile)
         self.assertIn("DEPS := $(C_OBJ:.o=.d)", makefile)
         self.assertIn("-include $(DEPS)", makefile)
-        self.assertIn("kernel: check-kernel-dependencies", makefile)
+        self.assertRegex(
+            makefile,
+            r"(?m)^kernel:.*\bcheck-kernel-dependencies\b",
+        )
         self.assertIn("$(OUTPUT_DIR)/kernel.bin: $(ALL_OBJ) $(KERNEL_LDSCRIPT)",
                       makefile)
         self.assertGreaterEqual(
