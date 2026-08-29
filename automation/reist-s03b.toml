@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2g-x86_64-dynamic-process-tables"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11397,7 +11397,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2g-x86_64-dynamic-process-tables"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Allocate x86_64 scheduled-process page tables from frames"
@@ -11430,7 +11430,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "mm: allocate x86_64 process page tables from frames"
-evidence = []
+evidence = [
+  "all 47 x86_64 source-contract tests passed after replacing one stale assertion that required the removed sixteen static BSS table pages",
+  "the warning-free isolated build produced a 121208-byte bootstrap the unchanged 10264-byte probe and 1256-byte shell plus the unchanged 8064-byte C object and 13520-byte linked C payload",
+  "the bounded one-vCPU 128-MiB native Windows QEMU 11.1.0 dialogue exercised cooperative preemptive quantum FIFO sleep spawn-wait and C-controlled scheduled-shell lifecycles with allocated page tables and reached DYNAMIC_PROCESS_TABLES_OK then RING3_SHELL_OK",
+  "normal reap and force cleanup restored kernel CR3 released every table data and stack frame zeroed the fixed ownership matrix restored the exact initial free count and left active_id empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

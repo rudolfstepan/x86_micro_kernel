@@ -227,6 +227,13 @@ erzwingt hohe Frames und muss vor CPL3 sowie vor allen folgenden Scheduler-
 Nachweisen wieder inaktiv sein; alle Verbraucher behalten ihre festen
 Kapazitaeten und vollstaendigen Cleanup-Vertraege.
 
+R8.2g entfernt nur die statischen Prozess-Seitentabellenarenen des isolierten
+Vier-Slot-Schedulers. Jede live Generation besitzt vier einzeln allokierte
+Tabellenframes in fester Metadatenkapazitaet. Vollstaendiger Aufbau geht jeder
+CR3-/READY-Publikation voraus; Reap und Fehlerrollback laufen unter Kernel-CR3
+und geben alle Ebenen generationengebunden zurueck. Taskzahl, ABI und der
+unabhaengige fruehe Ring-3-Nachweis bleiben unveraendert.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

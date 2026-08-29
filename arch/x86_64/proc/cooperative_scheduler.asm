@@ -32,6 +32,12 @@ TASK_ID                    equ 224
 TASK_RAX                   equ 232
 TASK_RCX                   equ 240
 TASK_R11                   equ 248
+TASK_TABLE_LEVELS          equ 4
+TASK_TABLE_BYTES           equ TASK_TABLE_LEVELS * 8
+TASK_TABLE_PML4            equ 0
+TASK_TABLE_PDPT            equ 8
+TASK_TABLE_PD              equ 16
+TASK_TABLE_PT              equ 24
 
 TASK_FREE                  equ 0
 TASK_READY                 equ 1
@@ -230,6 +236,7 @@ global x86_64_process_deadline_sleep_selftest64
 global x86_64_scheduler_deadline_tick64
 global x86_64_process_spawn_wait_selftest64
 global x86_64_process_shell64
+global x86_64_process_table_metadata_clear64
 
 extern pml4_table
 extern physical_frame_alloc64
@@ -2884,6 +2891,7 @@ x86_64_scheduler_timer_validate64:
 
 ; Build one private address space. EDI is 0 or 1.
 scheduler_build_task64:
+    xor r12d, r12d
     cmp edi, TASK_COUNT
     jb .slot_valid
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_RUNQUEUE
@@ -2903,20 +2911,37 @@ scheduler_build_task64:
     shl rax, 8
     lea r12, [rel scheduler_tasks]
     add r12, rax
+    cmp qword [r12 + TASK_STATE], TASK_FREE
+    jne .fail
+    cmp qword [r12 + TASK_CR3], 0
+    jne .fail
     mov eax, ebx
-    shl rax, 14
-    lea r13, [rel scheduler_tables]
-    add r13, rax
-    mov eax, scheduler_tables
-    mov ecx, ebx
-    shl rcx, 14
-    add rax, rcx
-    mov qword [r12 + TASK_CR3], rax
+    shl rax, 5
+    lea r14, [rel scheduler_table_frames]
+    add r14, rax
+    xor ebp, ebp
+.table_metadata_loop:
+    cmp qword [r14 + rbp * 8], 0
+    jne .fail
+    inc ebp
+    cmp ebp, TASK_TABLE_LEVELS
+    jb .table_metadata_loop
+    xor ebp, ebp
+.table_allocation_loop:
+    call physical_frame_alloc64
+    test rax, rax
+    jz .fail
+    test rax, PAGE_SIZE - 1
+    jnz .fail
+    cmp rax, MANAGED_LIMIT
+    jae .fail
+    mov qword [r14 + rbp * 8], rax
+    inc ebp
+    cmp ebp, TASK_TABLE_LEVELS
+    jb .table_allocation_loop
 
-    xor eax, eax
-    mov rdi, r13
-    mov ecx, (4 * PAGE_SIZE) / 8
-    rep stosq
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [r14 + TASK_TABLE_PML4]
     mov rax, qword [rel pml4_table + (256 * 8)]
     test rax, PAGE_USER
     jnz .fail
@@ -2926,18 +2951,19 @@ scheduler_build_task64:
     jnz .fail
     mov qword [r13 + (511 * 8)], rax
 
-    mov rax, qword [r12 + TASK_CR3]
-    add rax, PAGE_SIZE
+    mov rax, qword [r14 + TASK_TABLE_PDPT]
     or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
     mov qword [r13], rax
-    mov rax, qword [r12 + TASK_CR3]
-    add rax, 2 * PAGE_SIZE
+    mov r11, DIRECT_MAP_BASE
+    add r11, qword [r14 + TASK_TABLE_PDPT]
+    mov rax, qword [r14 + TASK_TABLE_PD]
     or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov qword [r13 + PAGE_SIZE], rax
-    mov rax, qword [r12 + TASK_CR3]
-    add rax, 3 * PAGE_SIZE
+    mov qword [r11], rax
+    mov r10, DIRECT_MAP_BASE
+    add r10, qword [r14 + TASK_TABLE_PD]
+    mov rax, qword [r14 + TASK_TABLE_PT]
     or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov qword [r13 + (2 * PAGE_SIZE) + (2 * 8)], rax
+    mov qword [r10 + (2 * 8)], rax
 
     xor ebp, ebp
 .page_loop:
@@ -3001,7 +3027,14 @@ scheduler_build_task64:
     mov rdx, PAGE_NX
     or rax, rdx
 .store_page:
-    mov qword [r13 + (3 * PAGE_SIZE) + rbp * 8], rax
+    mov edx, ebx
+    shl rdx, 5
+    lea rdi, [rel scheduler_table_frames]
+    add rdi, rdx
+    mov rdi, qword [rdi + TASK_TABLE_PT]
+    mov rdx, DIRECT_MAP_BASE
+    add rdi, rdx
+    mov qword [rdi + rbp * 8], rax
 .next_page:
     inc ebp
     cmp ebp, USER_PAGE_COUNT
@@ -3024,7 +3057,14 @@ scheduler_build_task64:
     or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
     mov rdx, PAGE_NX
     or rax, rdx
-    mov qword [r13 + (3 * PAGE_SIZE) + (USER_PAGE_COUNT * 8)], rax
+    mov edx, ebx
+    shl rdx, 5
+    lea rdi, [rel scheduler_table_frames]
+    add rdi, rdx
+    mov rdi, qword [rdi + TASK_TABLE_PT]
+    mov rdx, DIRECT_MAP_BASE
+    add rdi, rdx
+    mov qword [rdi + (USER_PAGE_COUNT * 8)], rax
 
     mov rax, qword [rel scheduler_entry]
     mov qword [r12 + TASK_RIP], rax
@@ -3103,9 +3143,18 @@ scheduler_build_task64:
     mov qword [r12 + TASK_RDI], 0
     mov qword [r12 + TASK_ID], TASK_SHELL_ID
 .done:
+    mov eax, ebx
+    shl rax, 5
+    lea rdx, [rel scheduler_table_frames]
+    add rdx, rax
+    mov rax, qword [rdx + TASK_TABLE_PML4]
+    test rax, rax
+    jz .fail
+    mov qword [r12 + TASK_CR3], rax
     mov eax, 1
     ret
 .fail:
+    call scheduler_release_task_frames64
     xor eax, eax
     ret
 
@@ -3246,13 +3295,6 @@ scheduler_reap_terminal64:
     call scheduler_release_task_frames64
     test eax, eax
     jz .fail
-    mov eax, ebx
-    shl rax, 14
-    lea rdi, [rel scheduler_tables]
-    add rdi, rax
-    xor eax, eax
-    mov ecx, (4 * PAGE_SIZE) / 8
-    rep stosq
     mov rdi, r12
     xor eax, eax
     mov ecx, TASK_RECORD_SIZE / 8
@@ -3267,6 +3309,16 @@ scheduler_reap_terminal64:
     ret
 
 scheduler_release_task_frames64:
+    lea rax, [rel scheduler_tasks]
+    cmp r12, rax
+    jb .fail
+    lea rdx, [rel scheduler_tasks + (TASK_SLOT_CAPACITY * TASK_RECORD_SIZE)]
+    cmp r12, rdx
+    jae .fail
+    mov rdx, r12
+    sub rdx, rax
+    test rdx, TASK_RECORD_SIZE - 1
+    jnz .fail
     xor ebp, ebp
 .private_loop:
     mov rdi, qword [r12 + TASK_PRIVATE_FRAMES + rbp * 8]
@@ -3288,6 +3340,28 @@ scheduler_release_task_frames64:
     jz .fail
     mov qword [r12 + TASK_STACK_FRAME], 0
 .done:
+    mov rax, r12
+    lea rdx, [rel scheduler_tasks]
+    sub rax, rdx
+    shr rax, 8
+    cmp eax, TASK_SLOT_CAPACITY
+    jae .fail
+    shl rax, 5
+    lea r13, [rel scheduler_table_frames]
+    add r13, rax
+    mov ebp, TASK_TABLE_LEVELS - 1
+.table_loop:
+    mov rdi, qword [r13 + rbp * 8]
+    test rdi, rdi
+    jz .next_table
+    call physical_frame_free64
+    test eax, eax
+    jz .fail
+    mov qword [r13 + rbp * 8], 0
+.next_table:
+    dec ebp
+    jns .table_loop
+    mov qword [r12 + TASK_CR3], 0
     mov eax, 1
     ret
 .fail:
@@ -3301,6 +3375,28 @@ scheduler_append_event64:
     lea rdx, [rel scheduler_events]
     mov byte [rdx + rcx], al
     inc byte [rel scheduler_event_count]
+    ret
+
+x86_64_process_table_metadata_clear64:
+    cld
+    lea rsi, [rel scheduler_table_frames]
+    mov ecx, TASK_SLOT_CAPACITY * TASK_TABLE_LEVELS
+.metadata_loop:
+    cmp qword [rsi], 0
+    jne .fail
+    add rsi, 8
+    loop .metadata_loop
+    lea rsi, [rel scheduler_tasks]
+    mov ecx, TASK_SLOT_CAPACITY
+.task_loop:
+    cmp qword [rsi + TASK_CR3], 0
+    jne .fail
+    add rsi, TASK_RECORD_SIZE
+    loop .task_loop
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
     ret
 
 scheduler_verify_final_events64:
@@ -3706,13 +3802,6 @@ scheduler_force_cleanup64:
     lea r12, [rel scheduler_tasks]
     add r12, rax
     call scheduler_release_task_frames64
-    mov eax, ebx
-    shl rax, 14
-    lea rdi, [rel scheduler_tables]
-    add rdi, rax
-    xor eax, eax
-    mov ecx, (4 * PAGE_SIZE) / 8
-    rep stosq
     inc ebx
     cmp ebx, TASK_SLOT_CAPACITY
     jb .task_loop
@@ -3952,24 +4041,9 @@ alignb 256
 scheduler_tasks:
     resb TASK_SLOT_CAPACITY * TASK_RECORD_SIZE
 
-alignb 4096
-scheduler_tables:
-scheduler_task0_pml4: resb PAGE_SIZE
-scheduler_task0_pdpt: resb PAGE_SIZE
-scheduler_task0_pd:   resb PAGE_SIZE
-scheduler_task0_pt:   resb PAGE_SIZE
-scheduler_task1_pml4: resb PAGE_SIZE
-scheduler_task1_pdpt: resb PAGE_SIZE
-scheduler_task1_pd:   resb PAGE_SIZE
-scheduler_task1_pt:   resb PAGE_SIZE
-scheduler_task2_pml4: resb PAGE_SIZE
-scheduler_task2_pdpt: resb PAGE_SIZE
-scheduler_task2_pd:   resb PAGE_SIZE
-scheduler_task2_pt:   resb PAGE_SIZE
-scheduler_task3_pml4: resb PAGE_SIZE
-scheduler_task3_pdpt: resb PAGE_SIZE
-scheduler_task3_pd:   resb PAGE_SIZE
-scheduler_task3_pt:   resb PAGE_SIZE
+alignb 32
+scheduler_table_frames:
+    resq TASK_SLOT_CAPACITY * TASK_TABLE_LEVELS
 
 alignb 16
 scheduler_kernel_stack_bottom:

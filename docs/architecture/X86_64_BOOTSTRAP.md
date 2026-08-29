@@ -455,9 +455,19 @@ normalen Zero-fill-, W^X-, NX-, Release- und Duplicate-free-Pruefungen sowie den
 exakten urspruenglichen Freizaehler. Dynamische Seitentabellen und Speicher
 oberhalb 128 MiB bleiben ausgeschlossen.
 
-Die Abnahme umfasst 45 Quellvertragstests und ein 120.664-Byte-Bootstrap.
-Seine Assembly-BSS endet bei `0x00183000`, die C-Bruecke beginnt bei
-`0x00184000`, und das Gesamtende `0x001880e0` bleibt unter 2 MiB. Der
-begrenzte Ein-vCPU-/128-MiB-QEMU-Dialog meldete den neuen Marker geordnet vor
-allen unveraenderten Loader-, Scheduler-, Shell- und C-Control-Markern bis
-`RING3_SHELL_OK`.
+## Dynamische Scheduler-Seitentabellen R8.2g
+
+Die vier generationengebundenen Scheduler-Slots behalten ihre feste
+Kapazitaet, beziehen PML4, PDPT, PD und PT aber einzeln aus dem gemeinsamen
+Frame-Allocator. Eine feste Vier-mal-vier-Metadatenmatrix besitzt diese Frames
+bis zum Reap. `TASK_CR3` und READY duerfen erst nach vollstaendigem W^X-/NX-
+Aufbau sichtbar werden. Teilaufbau, normaler Reap und Force-Cleanup stellen
+zuerst Kernel-CR3 her, nullen und geben PT bis PML4 exakt einmal frei und
+muessen den anfaenglichen Freizaehler sowie eine leere Matrix wiederherstellen.
+Der fruehe Einzelprozessnachweis behaelt unabhaengige statische Tabellen.
+
+Die Abnahme umfasst 47 Quellvertragstests und ein 121.208-Byte-Bootstrap.
+Der warnungsfreie isolierte Build behaelt Probe, Shell und C-Payload
+unveraendert. Der begrenzte Ein-vCPU-/128-MiB-QEMU-Dialog durchlief alle
+Scheduler-Lebenszyklen und meldete `DYNAMIC_PROCESS_TABLES_OK` nach leerer
+Besitzmatrix geordnet vor dem unveraenderten `RING3_SHELL_OK`.

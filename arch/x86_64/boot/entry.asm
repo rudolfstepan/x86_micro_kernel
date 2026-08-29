@@ -115,6 +115,7 @@ extern x86_64_process_runqueue_selftest64
 extern x86_64_process_deadline_sleep_selftest64
 extern x86_64_process_spawn_wait_selftest64
 extern x86_64_process_shell64
+extern x86_64_process_table_metadata_clear64
 extern _text_start
 extern _text_end
 extern _rodata_start
@@ -536,6 +537,11 @@ x86_64_nx_resume:
     call x86_64_c_control_handoff64
     test eax, eax
     jz c_kernel_control_state_error
+    call x86_64_process_table_metadata_clear64
+    test eax, eax
+    jz c_kernel_control_state_error
+    lea rsi, [rel dynamic_process_tables_message]
+    call serial_write64
     lea rsi, [rel ring3_shell_message]
     call serial_write64
     jmp halt64
@@ -975,6 +981,7 @@ halt64:
     jmp .loop
 
 section .rodata
+dynamic_process_tables_message db "REIST_X86_64_DYNAMIC_PROCESS_TABLES_OK", 13, 10, 0
 high_frame_consumers_message db "REIST_X86_64_HIGH_FRAME_CONSUMERS_OK", 13, 10, 0
 unsupported_message db "REIST_X86_64_UNSUPPORTED", 13, 10, 0
 memory_map_error_message db "REIST_X86_64_MEMORY_MAP_ERROR", 13, 10, 0

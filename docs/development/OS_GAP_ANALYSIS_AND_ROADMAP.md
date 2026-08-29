@@ -297,6 +297,15 @@ der begrenzte native Windows-QEMU-Lauf bis `HIGH_FRAME_CONSUMERS_OK` und
 `RING3_SHELL_OK` bestanden. Kapazitaeten, ABI, i386 und Speicher oberhalb
 128 MiB bleiben unveraendert; die x86_64-Queue ist leer.
 
+**R8.2g ist abgeschlossen:** Der feste Vier-Slot-Scheduler ersetzt seine statischen
+16-KiB-Tabellenarenen durch je vier Frames des gemeinsamen Allocators. Eine
+feste Besitzmatrix, fail-before-READY-Aufbau und generationengebundener Reap
+muessen partielle sowie normale Lebenszyklen ohne Leak oder Doppel-Freigabe
+auf den exakten Ausgangszaehler zurueckfuehren. 47 Quellvertragstests, der
+warnungsfreie isolierte 121.208-Byte-Build und der native QEMU-Lauf bis
+`DYNAMIC_PROCESS_TABLES_OK` und `RING3_SHELL_OK` bestanden. i386,
+Taskkapazitaet und ABI bleiben unveraendert; die x86_64-Queue ist leer.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

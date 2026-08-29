@@ -153,6 +153,15 @@ vollstaendigen bestehenden Ressourcen-Cleanup. Alle 46 Quellvertragstests,
 der isolierte 121.056-Byte-Build und der native Ein-vCPU-/128-MiB-QEMU-Dialog
 bis `HIGH_FRAME_CONSUMERS_OK` und `RING3_SHELL_OK` bestanden; die Queue ist leer.
 
+R8.2g ist abgeschlossen. Der x86_64-Scheduler allokiert fuer jede live Generation
+PML4, PDPT, PD und PT aus dem gemeinsamen 128-MiB-Framebestand. Der Aufbau
+publiziert CR3 und READY erst nach vollstaendiger Validierung; Reap und
+Force-Cleanup muessen alle Ebenen unter Kernel-CR3 nullen und exakt einmal
+freigeben. 47 Quellvertragstests, der warnungsfreie 121.208-Byte-Build und der
+native Ein-vCPU-/128-MiB-QEMU-Lauf bis `DYNAMIC_PROCESS_TABLES_OK` und
+`RING3_SHELL_OK` bestanden. Die vier Slots und alle bestehenden ABIs bleiben
+fest; die Queue ist leer.
+
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
 unveränderte Standard und Fallback. Das getrennte 14.360-Byte-Bootstrap-
