@@ -278,6 +278,15 @@ gespeicherten IRETQ-/Runqueue-Pfad zurueck, waehrend stale oder strukturell
 falsche Profile den Scheduler fail-closed bereinigen. Reap widerruft zuerst das
 exakt passende Profil; erst danach werden Task und Abbild freigegeben.
 
+R8.2n bindet als naechste isolierte Scheibe die bestehende REIST-v1-IPC-ABI an
+denselben realen Eltern-Kind-Lifecycle. Genau ein fester Endpoint und eine
+Nachricht tragen eine explizit auf `SEND` abgeschwaechte Capability zur exakten
+Kindgeneration; `RECEIVE` und `CONTROL` bleiben beim Parent. Das opaque Handle
+wird als dokumentierte REIST-private System-V-Auxv-Erweiterung uebergeben.
+Rechte-, Handle-, Profil- und Generationspruefung muessen vor jeder Queue- oder
+Userkopie liegen; Release, Close, Reap und Fehlercleanup widerrufen die gesamte
+Autoritaet vor Slot-Reuse.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

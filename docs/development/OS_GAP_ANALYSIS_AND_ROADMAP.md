@@ -360,6 +360,15 @@ Queue-, Relations-, Loader- und Frameautoritaet bereinigt. Dynamische Profile,
 Capability-Transfer und produktive x86_64-Integration bleiben Folgearbeiten;
 die x86_64-Queue ist leer.
 
+**R8.2n ist aktiv:** Der reale Shell-Kind-Lifecycle wird um genau einen festen
+REIST-v1-IPC-Endpoint, eine Nachricht und eine explizit auf `SEND` begrenzte
+Capability erweitert. Der Parent behaelt `RECEIVE`/`CONTROL`, delegiert an die
+exakte Kindgeneration und uebergibt nur das opaque Handle ueber einen
+dokumentierten privaten System-V-Auxv-Eintrag. Das Kind muss fehlendes
+`RECEIVE` als `EACCES` sehen, `token77` senden, Release ausfuehren und danach
+unveraendert mit 77 enden. Close, Reap und Fehlercleanup muessen Endpoint,
+Nachricht und alle vier festen Capabilityrecords vor Wiederverwendung nullen.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

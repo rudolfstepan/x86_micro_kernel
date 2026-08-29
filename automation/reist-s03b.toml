@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2n-x86_64-ipc-capability-transfer"
 
 [policy]
 one_package_per_run = true
@@ -11689,6 +11689,43 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers after child generations 41 and 42 each received EACCES -13 for GETPID then validated the existing System V startup stack and exited 77",
   "both generations cleared the exact profile before task and image release; final verification observed all four profile records plus task queue relation and loader metadata zero and cleanup restored the exact initial free count; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2n-x86_64-ipc-capability-transfer"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Prove explicit generation-scoped x86_64 IPC capability transfer"
+scope = "Add one fixed end-to-end REIST-v1 IPC capability lifecycle to the real x86_64 scheduled shell RUN path without changing the public syscall ABI packed 256-byte task record four-slot capacity or existing two-generation spawn wait lifecycle. Reuse IPC_CREATE 49 IPC_SEND 50 IPC_RECEIVE 51 IPC_CLOSE 52 IPC_DELEGATE 55 and IPC_RELEASE 58 with the established version-1 140-byte message layout rights bits and opaque generation plus slot handle encoding. Provide exactly one fixed endpoint one queued message and exactly four parallel generation handle rights capability records. Parent generation 40 creates the endpoint with SEND RECEIVE CONTROL then SPAWNV creates child generation 41 or 42 and DELEGATE attenuates only SEND to that exact live child before WAIT dispatches it. Convey the opaque handle in one documented REIST-private System V AMD64 auxiliary-vector pair while preserving argc two argv empty environment AT_NULL and 16-byte alignment. After the existing GETPID profile denial and startup validation the RX-only child makes one valid IPC_RECEIVE request that must return EACCES from the capability-rights gate before pointer or queue effects then sends exactly the versioned token77 message releases its capability and exits 77. The parent WAITs receives and byte-validates that message then closes the endpoint before RUN_OK. Validate syscall profile task endpoint capability handle generation rights message header bounds sender generation and all user ranges before publication or copy effects. Reap rejects residual generation authority; normal close and force cleanup zero endpoint message and all four capability records and final verification proves them zero in both cycles. Preserve all prior markers dialogue counts loader contexts C handoffs exact frame count and i386. Add no general endpoint registry queue depth above one blocking timeout bulk IPC service discovery capability inheritance control delegation second peer VFS SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/user/child.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the authoritative REIST-v1 syscall numbers message version size rights bits opaque handle encoding packed task ABI slot capacities i386 artifacts C handoffs and prior markers remain unchanged",
+  "exactly one endpoint one queued 140-byte version-1 message and four fixed generation handle rights capability records exist with no heap blocking retry or unbounded scan",
+  "parent generation 40 alone creates owns receives closes and delegates while child generation 41 or 42 receives only SEND and never CONTROL RECEIVE or ambient authority",
+  "every task endpoint capability handle generation rights message header sender and user-range check completes before endpoint capability queue pointer or serial effects",
+  "the child observes profile-denied GETPID and capability-denied RECEIVE as EACCES then sends token77 releases the exact capability validates the existing startup contract and exits 77",
+  "WAIT remains generation exact and normal reap close forced cleanup and final verification leave endpoint message four capability records task queue relation loader frames and free count fully clear"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "the public syscall ABI packed task record task or loader capacity must change or more than one endpoint one queued message or one capability per task is required",
+  "the child can obtain RECEIVE CONTROL or any capability without the exact live-generation DELEGATE publication",
+  "a malformed stale wrong-right or wrong-generation request reaches user copy queue endpoint task serial or lifecycle effects",
+  "endpoint message capability or handle authority can survive release close reap force cleanup generation reuse or final verification",
+  "an i386 artifact prior marker dialogue count separate lifecycle proof or C handoff changes",
+  "a required production file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "ipc: prove x86_64 capability transfer"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
