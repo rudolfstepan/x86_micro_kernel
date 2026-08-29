@@ -568,7 +568,8 @@ nach terminalem D2H-Wakeup aus und verfehlte 95 KiB/s Schreiben sowie
 muss die tiefer liegende Controller-/Schedulerlatenz als neues begrenztes
 Paket isolieren, ohne Journal-v2, vier geordnete Barrieren, DMA-/PRDBC-
 Prüfung, Flush, Readback, Fencing oder öffentliche ABIs zu lockern.
-R7.1i ist als begrenzter Folgeschritt aktiv. Der 256-KiB-Pfad wird nicht durch
+R7.1i ist als begrenzter Folgeschritt abgeschlossen. Der 256-KiB-Pfad wird
+nicht durch
 ein groesseres FAT32-Clusterformat oder weniger Persistenzbarrieren
 beschleunigt. Stattdessen cachet er ausserhalb von Journaltransaktionen eine
 feste, exakt an Laufwerk, Partition und FAT-Sektor gebundene Metadatenseite.
@@ -579,7 +580,17 @@ geflusht und bytegleich rueckgelesen sein; erst danach werden FAT-Link,
 Directory-Groesse und FSInfo im unveraenderten Journal-v2 mit exakt vier
 Barrieren committed. Alle anderen Faelle verwenden den voll journalisierten
 4096-Byte-Rueckfall. Die reale VMware-Abnahme bleibt bei mindestens
-95 KiB/s Schreiben und 415 KiB/s Lesen.
+95 KiB/s Schreiben und 415 KiB/s Lesen. Die zentrale Kettentraversierung wurde
+ebenfalls auf diesen Cache vereinheitlicht; die zuvor duplizierte direkte ATA-
+Abfrage verursachte trotz Cache weiterhin einen physischen FAT-Read pro
+Cluster. Der Hostnachweis begrenzt den sequentiellen 24-KiB-Lauf nun auf
+hoechstens zwei FAT-Sektorreads und besteht Append-, Overwrite- sowie
+Fehler-Rollback-Kampagnen. Der VMware-VGA-Paketbau bestand in 36 Sekunden.
+Der reale Vier-vCPU-Lauf bestand in 17 Sekunden mit vollstaendiger
+256-KiB-Bytepruefung, Cleanup und Ring-3-Shell-Rueckkehr bei 314,49 KiB/s
+Schreiben und 640,00 KiB/s Lesen. Journal-v2, zwanzig Slots, exakt vier
+Barrieren, vollstaendiger Readback, Fencing und oeffentliche ABIs blieben
+unveraendert; R7.1i ist damit angenommen.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

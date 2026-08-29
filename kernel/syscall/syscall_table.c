@@ -2783,16 +2783,17 @@ static int syscall_touch(const char *user_path) {
     return vfs_touch(path) == VFS_OK ? 0 : -5;
 }
 
-#define FILE_WRITE_CHUNK_CAPACITY 4096U
+#define FILE_WRITE_CHUNK_CAPACITY (64U * 1024U)
 #define FILE_WRITE_STAGING_TIMEOUT_MS 10000U
 
-_Static_assert(FILE_WRITE_CHUNK_CAPACITY == PAGE_SIZE,
-               "file-write staging must remain exactly one page");
+_Static_assert(FILE_WRITE_CHUNK_CAPACITY == VFS_MAX_WRITE_CHUNK_CAPACITY,
+               "file-write staging and VFS ceiling must match");
+_Static_assert(FILE_WRITE_CHUNK_CAPACITY % PAGE_SIZE == 0U,
+               "file-write staging must contain complete pages");
 
-/* One supervisor-only page replaces a 512-byte kernel-stack bounce buffer.
- * The VFS already serializes mutations globally, so a single bounded staging
- * owner adds no storage-path serialization while keeping user pointers out of
- * filesystem and block-driver code. */
+/* One fixed supervisor-owned staging slice keeps every userspace pointer out
+ * of filesystem and block-driver code. Backends opt into larger chunks with
+ * a bounded VFS hint; all others retain the 4096-byte mutation ceiling. */
 static uint8_t file_write_staging[FILE_WRITE_CHUNK_CAPACITY]
     __attribute__((aligned(PAGE_SIZE)));
 static kernel_mutex_t file_write_staging_mutex = KERNEL_MUTEX_INIT;
@@ -2815,8 +2816,12 @@ static int syscall_write(int descriptor, const void *user_buffer, size_t size) {
     size_t total = 0U;
     while (total < size) {
         size_t amount = size - total;
-        if (amount > FILE_WRITE_CHUNK_CAPACITY)
-            amount = FILE_WRITE_CHUNK_CAPACITY;
+        uint32_t backend_capacity =
+            process_file_write_chunk_capacity(process, descriptor);
+        if (backend_capacity < VFS_DEFAULT_WRITE_CHUNK_CAPACITY ||
+            backend_capacity > FILE_WRITE_CHUNK_CAPACITY)
+            backend_capacity = VFS_DEFAULT_WRITE_CHUNK_CAPACITY;
+        if (amount > backend_capacity) amount = backend_capacity;
         if (kernel_mutex_lock_for(&file_write_staging_mutex,
                                   FILE_WRITE_STAGING_TIMEOUT_MS) != 0)
             return total != 0U ? (int)total : -11;

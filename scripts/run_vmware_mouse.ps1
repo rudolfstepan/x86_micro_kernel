@@ -11,6 +11,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$minimumBenchmarkWriteKiB = 95.0
+$minimumBenchmarkReadKiB = 415.0
 if ($Benchmark -and $ExpectCompositorRestart) {
     throw 'Benchmark and compositor-restart modes are exclusive.'
 }
@@ -452,8 +454,9 @@ try {
                     $readText = $readMatch.Groups['rate'].Value.Replace(',', '.')
                     $writeRate = [double]::Parse($writeText, $culture)
                     $readRate = [double]::Parse($readText, $culture)
-                    if ($writeRate -le 18.29 -or $readRate -le 77.48) {
-                        throw "VMware HDD rates did not improve: write=$writeRate read=$readRate KiB/s."
+                    if ($writeRate -lt $minimumBenchmarkWriteKiB -or
+                        $readRate -lt $minimumBenchmarkReadKiB) {
+                        throw "VMware HDD rates missed the frozen minimum: write=$writeRate/$minimumBenchmarkWriteKiB read=$readRate/$minimumBenchmarkReadKiB KiB/s."
                     }
                     $text | Set-Content -LiteralPath $GateLog -Encoding utf8
                     $passed = $true

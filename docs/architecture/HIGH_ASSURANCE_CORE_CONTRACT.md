@@ -226,6 +226,21 @@ ist kein angenommener Systemvertrag; der zuletzt akzeptierte AHCI-Pfad bleibt
 maßgeblich, bis ein neues Paket die tiefer liegende Latenzursache begrenzt
 nachweist.
 
+R7.1i schliesst diesen Nachweis durch weniger Kommandos bei unveraendertem
+Persistenzvertrag. Ein auf exakte Laufwerks-, Partitions- und FAT-Sektor-
+Identitaet begrenzter fester Cache ist waehrend jeder Journaltransaktion
+gesperrt und wird vor Mount-, Kontext- oder Mutationswechseln verworfen. Ein
+ausgerichteter FAT32-Append darf hoechstens 128 als frei bewiesene und noch
+unerreichbare Einsektorcluster vorab ueber einen festen AHCI-Lauf schreiben;
+erst nach Flush und vollstaendig bytegleichem DMA-Readback duerfen FAT-Links,
+Dateigroesse und FSInfo im bestehenden Undo-Journal sichtbar werden. Nicht
+beweisbare Faelle bleiben beim voll journalisierten 4096-Byte-Pfad. Der reale
+Vier-vCPU-VMware-Nachweis bestand mit 314,49 KiB/s Schreiben und
+640,00 KiB/s Lesen, vollstaendiger 256-KiB-Bytepruefung, Cleanup und
+Ring-3-Shell-Rueckkehr. Journal-v2, zwanzig Slots, exakt vier geordnete
+Durabilitaetsbarrieren, DMA-Laengenpruefung, Fencing und oeffentliche ABIs sind
+unveraendert.
+
 Beim FDD melden auch normale FAT12-Lesefehler die konkrete Medienressource.
 Eine Requalifizierung darf die Quarantäne nur in einem internen Probezugriff
 umgehen und muss den FDC zuvor resetten, ausstehende Interruptzustände leeren,

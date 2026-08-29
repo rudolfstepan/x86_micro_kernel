@@ -168,8 +168,10 @@ class VmwareMouseTests(unittest.TestCase):
         ):
             self.assertIn(marker, source)
         self.assertIn("$promptAfter -ge 0", source)
-        self.assertIn("$writeRate -le 18.29", source)
-        self.assertIn("$readRate -le 77.48", source)
+        self.assertIn("$minimumBenchmarkWriteKiB = 95.0", source)
+        self.assertIn("$minimumBenchmarkReadKiB = 415.0", source)
+        self.assertIn("$writeRate -lt $minimumBenchmarkWriteKiB", source)
+        self.assertIn("$readRate -lt $minimumBenchmarkReadKiB", source)
         self.assertIn("REIST_STORAGE RESOURCE_QUARANTINED", source)
         self.assertIn("ATA_FLUSH_FAILED", source)
         self.assertIn("VMWARE BENCHMARK PASS", source)

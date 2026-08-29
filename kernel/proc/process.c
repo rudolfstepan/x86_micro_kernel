@@ -1315,6 +1315,19 @@ int process_file_create(Process *process, const char *path) {
     return slot;
 }
 
+uint32_t process_file_write_chunk_capacity(Process *process,
+                                           int descriptor) {
+    int slot = descriptor;
+    if (process == NULL || slot < PROCESS_FD_BASE ||
+        slot >= MAX_PROCESS_DESCRIPTORS || !process->files[slot].in_use ||
+        process->files[slot].kind != PROCESS_DESCRIPTOR_FILE ||
+        !process->files[slot].writable || process->files[slot].node == NULL)
+        return VFS_DEFAULT_WRITE_CHUNK_CAPACITY;
+    process_file_t *file = &process->files[slot];
+    uint32_t offset = file->append ? file->node->size : file->offset;
+    return vfs_write_chunk_capacity(file->node, offset);
+}
+
 int process_file_write(Process *process, int descriptor, const void *buffer,
                        size_t size) {
     int slot = descriptor;

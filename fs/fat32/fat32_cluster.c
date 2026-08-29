@@ -330,25 +330,7 @@ unsigned int get_next_cluster_in_chain(struct fat32_boot_sector* boot_sector, un
         boot_sector->bytes_per_sector != SECTOR_SIZE) {
         return INVALID_CLUSTER;
     }
-
-    unsigned int fat_offset = current_cluster * 4; // 4 bytes per FAT32 entry
-    unsigned int fat_sector = partition_lba_offset +
-        boot_sector->reserved_sector_count +
-        fat32_active_fat_index(boot_sector) * boot_sector->fat_size_32 +
-        (fat_offset / boot_sector->bytes_per_sector);
-    unsigned int ent_offset = fat_offset % boot_sector->bytes_per_sector;
-    // Buffer to read a part of the FAT
-    unsigned char buffer[SECTOR_SIZE];
-    // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
-        // Handle read error
-        return INVALID_CLUSTER;
-    }
-    // Read the 4 bytes of the current cluster's entry from the buffer
-    unsigned int nextCluster = *(unsigned int*)&buffer[ent_offset];
-    // Mask out the high 4 bits (reserved for FAT32)
-    nextCluster &= FAT32_EOC_MAX;
-    return nextCluster;
+    return read_fat_entry(boot_sector, current_cluster);
 }
 
 bool is_end_of_cluster_chain(unsigned int cluster) {

@@ -73,7 +73,7 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("syscall_create", source)
         self.assertIn("syscall_write", source)
         self.assertIn("syscall_unlink", source)
-        self.assertIn("FILE_WRITE_CHUNK_CAPACITY 4096U", source)
+        self.assertIn("FILE_WRITE_CHUNK_CAPACITY (64U * 1024U)", source)
         self.assertIn("FILE_WRITE_STAGING_TIMEOUT_MS 10000U", source)
         self.assertIn("static uint8_t file_write_staging[", source)
         self.assertIn("static kernel_mutex_t file_write_staging_mutex = "
@@ -88,11 +88,27 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
             write,
         )
         self.assertIn("kernel_mutex_unlock(&file_write_staging_mutex)", write)
-        self.assertIn("if (amount > FILE_WRITE_CHUNK_CAPACITY)", write)
+        self.assertIn("process_file_write_chunk_capacity", write)
+        self.assertIn("VFS_DEFAULT_WRITE_CHUNK_CAPACITY", write)
+        self.assertIn("if (amount > backend_capacity)", write)
         self.assertNotIn("uint8_t buffer[512]", write)
         self.assertNotIn(
             "descriptor, (const uint8_t*)user_buffer + total", write
         )
+        process = (ROOT / "kernel/proc/process.c").read_text(
+            encoding="utf-8"
+        )
+        capacity = process[
+            process.index("uint32_t process_file_write_chunk_capacity"):
+            process.index("int process_file_write(")
+        ]
+        self.assertIn("vfs_write_chunk_capacity(file->node, offset)", capacity)
+        fat32 = (ROOT / "fs/fat32/fat32_vfs_adapter.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(".write_chunk_capacity = "
+                      "fat32_vfs_write_chunk_capacity", fat32)
+        self.assertIn("return FAT32_ORDERED_APPEND_MAX_BYTES;", fat32)
 
     def test_process_exit_closes_open_descriptors(self):
         source = (ROOT / "kernel/sched/scheduler.c").read_text(

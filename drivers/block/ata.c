@@ -354,6 +354,10 @@ static bool ata_read_pending_range(unsigned short base, uint32_t lba,
     return true;
 }
 
+_Static_assert(ATA_UNPUBLISHED_MAX_SECTORS ==
+                   AHCI_UNPUBLISHED_MAX_SECTORS,
+               "ATA and AHCI unpublished capacities must match");
+
 /* ATA PIO uses controller-global task-file registers. A recursive sleepable
  * mutex serializes complete transactions without pinning another CPU in a
  * spin loop; public entry points fail closed when its deadline expires. */
@@ -1272,6 +1276,107 @@ bool ata_journal_transaction_end(bool commit) {
      * ATA entry point holding the same recursive mutex. */
     if (!ata_transaction_begin()) return false;
     bool result = ata_undo_journal_transaction_end(&ata_journal, commit);
+    ata_transaction_end();
+    return result;
+}
+
+bool ata_journal_transaction_active(void) {
+    ata_journal_ensure_initialized();
+    return ata_journal.enabled && ata_journal.transaction_depth != 0U;
+}
+
+static drive_t *ata_unpublished_ahci_parent(
+        unsigned short base, bool is_master, uint32_t volume_lba,
+        uint32_t volume_sectors, uint32_t *absolute_volume_lba) {
+    if (volume_sectors == 0U || absolute_volume_lba == NULL) return NULL;
+    drive_t *partition = ata_compat_partition_drive(base);
+    if (partition != NULL) {
+        uint32_t absolute;
+        drive_t *parent = ata_partition_translate(partition, volume_lba,
+                                                   &absolute);
+        if (parent == NULL || parent->type != DRIVE_TYPE_AHCI ||
+            volume_sectors > partition->sectors - volume_lba ||
+            volume_sectors > parent->sectors - absolute)
+            return NULL;
+        *absolute_volume_lba = absolute;
+        return parent;
+    }
+    drive_t *drive = ata_compat_ahci_drive(base);
+    if (drive == NULL || drive->is_master != is_master ||
+        volume_lba >= drive->sectors ||
+        volume_sectors > drive->sectors - volume_lba)
+        return NULL;
+    *absolute_volume_lba = volume_lba;
+    return drive;
+}
+
+bool ata_unpublished_write_supported(unsigned short base, bool is_master,
+                                     uint32_t volume_lba,
+                                     uint32_t volume_sectors) {
+    uint32_t absolute_volume;
+    return ata_unpublished_ahci_parent(base, is_master, volume_lba,
+                                       volume_sectors,
+                                       &absolute_volume) != NULL;
+}
+
+static bool ata_unpublished_overlaps_journal(uint32_t lba, uint32_t count) {
+    uint32_t end = lba + count;
+    if (ata_journal.header_lba >= lba && ata_journal.header_lba < end)
+        return true;
+    if (ata_journal.mirror_lba >= lba && ata_journal.mirror_lba < end)
+        return true;
+    uint32_t journal_data_end =
+        ata_journal.data_lba + ATA_JOURNAL_MAX_ENTRIES;
+    return lba < journal_data_end && ata_journal.data_lba < end;
+}
+
+bool ata_write_unpublished_sectors_verified(
+        unsigned short base, bool is_master, uint32_t volume_lba,
+        uint32_t volume_sectors, uint32_t data_start_lba, uint32_t lba,
+        uint32_t count, const void *buffer) {
+    if (buffer == NULL || count == 0U ||
+        count > ATA_UNPUBLISHED_MAX_SECTORS ||
+        data_start_lba < volume_lba || lba < data_start_lba ||
+        data_start_lba - volume_lba >= volume_sectors ||
+        lba - volume_lba >= volume_sectors ||
+        count > volume_sectors - (lba - volume_lba))
+        return false;
+
+    uint32_t absolute_volume;
+    drive_t *parent = ata_unpublished_ahci_parent(
+        base, is_master, volume_lba, volume_sectors, &absolute_volume);
+    if (parent == NULL) return false;
+    uint32_t relative_data = data_start_lba - volume_lba;
+    uint32_t relative_lba = lba - volume_lba;
+    if (absolute_volume > UINT32_MAX - relative_lba ||
+        absolute_volume > UINT32_MAX - relative_data)
+        return false;
+    uint32_t absolute_lba = absolute_volume + relative_lba;
+    uint32_t absolute_data = absolute_volume + relative_data;
+
+    if (!ata_transaction_begin()) return false;
+    ata_journal_ensure_initialized();
+    bool valid = !ata_write_fenced && ata_journal.enabled &&
+        ata_journal.transaction_depth != 0U &&
+        ata_journal.base == parent->base &&
+        ata_journal.is_master == parent->is_master &&
+        ata_journal.volume_start_lba == absolute_volume &&
+        ata_journal.volume_end_lba == absolute_volume + volume_sectors &&
+        absolute_lba >= absolute_data &&
+        count <= ata_journal.volume_end_lba - absolute_lba &&
+        !ata_unpublished_overlaps_journal(absolute_lba, count) &&
+        !ata_journal_range_has_pending(parent->base, absolute_lba, count,
+                                       parent->is_master);
+    int resource = valid
+        ? ata_resource_index(parent->base, parent->is_master) : -1;
+    bool armed = valid && resource >= 0 &&
+        storage_write_begin((uint32_t)resource, pit_monotonic_ms());
+    for (uint32_t index = 0U; armed && index < count; ++index)
+        ata_cache_slot(parent->base, absolute_lba + index,
+                       parent->is_master)->valid = false;
+    bool result = armed && ahci_write_unpublished_sectors_verified(
+        parent, absolute_lba, count, buffer);
+    if (armed && !storage_write_end(result)) result = false;
     ata_transaction_end();
     return result;
 }

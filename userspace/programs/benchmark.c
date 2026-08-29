@@ -25,9 +25,9 @@
 #define BENCHMARK_MEMORY_INITIAL_PASSES 8U
 #define BENCHMARK_MEMORY_MAX_PASSES 256U
 #define BENCHMARK_MEMORY_ATTEMPTS 6U
-#define BENCHMARK_DISK_CHUNK_BYTES 4096U
-#define BENCHMARK_DISK_CHUNKS 64U
-#define BENCHMARK_DISK_PROGRESS_CHUNKS 16U
+#define BENCHMARK_DISK_CHUNK_BYTES (64U * 1024U)
+#define BENCHMARK_DISK_CHUNKS 4U
+#define BENCHMARK_DISK_PROGRESS_CHUNKS 1U
 #define BENCHMARK_DISK_BYTES \
     (BENCHMARK_DISK_CHUNK_BYTES * BENCHMARK_DISK_CHUNKS)
 #define BENCHMARK_VGA_INITIAL_FRAMES 2U
@@ -185,13 +185,13 @@ static int timed_status(const char *status, uint64_t *excluded_ms) {
 
 static const char *disk_write_progress(uint32_t completed_chunks) {
     switch (completed_chunks) {
-        case 16U:
+        case 1U:
             return "BENCHMARK_STATUS phase=hdd-write progress_kib=64 total_kib=256\n";
-        case 32U:
+        case 2U:
             return "BENCHMARK_STATUS phase=hdd-write progress_kib=128 total_kib=256\n";
-        case 48U:
+        case 3U:
             return "BENCHMARK_STATUS phase=hdd-write progress_kib=192 total_kib=256\n";
-        case 64U:
+        case 4U:
             return "BENCHMARK_STATUS phase=hdd-write progress_kib=256 total_kib=256\n";
         default:
             return 0;
@@ -200,13 +200,13 @@ static const char *disk_write_progress(uint32_t completed_chunks) {
 
 static const char *disk_read_progress(uint32_t completed_chunks) {
     switch (completed_chunks) {
-        case 16U:
+        case 1U:
             return "BENCHMARK_STATUS phase=hdd-read progress_kib=64 total_kib=256\n";
-        case 32U:
+        case 2U:
             return "BENCHMARK_STATUS phase=hdd-read progress_kib=128 total_kib=256\n";
-        case 48U:
+        case 3U:
             return "BENCHMARK_STATUS phase=hdd-read progress_kib=192 total_kib=256\n";
-        case 64U:
+        case 4U:
             return "BENCHMARK_STATUS phase=hdd-read progress_kib=256 total_kib=256\n";
         default:
             return 0;

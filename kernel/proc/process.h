@@ -181,6 +181,7 @@ int process_file_read(Process* process, int descriptor, void* buffer,
 int process_file_create(Process* process, const char* path);
 int process_file_write(Process* process, int descriptor, const void* buffer,
                        size_t size);
+uint32_t process_file_write_chunk_capacity(Process* process, int descriptor);
 int process_file_truncate(Process* process, int descriptor, uint32_t size);
 int process_file_seek(Process* process, int descriptor, int32_t offset,
                       uint32_t whence);

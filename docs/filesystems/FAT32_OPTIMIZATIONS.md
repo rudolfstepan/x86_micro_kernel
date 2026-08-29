@@ -64,7 +64,7 @@ vollständiger Readback-Vergleich wurden nicht gelockert. Bis zu einem neuen
 begrenzten Latenznachweis bleibt der zuletzt akzeptierte Transportvertrag
 maßgeblich.
 
-R7.1i bearbeitet deshalb die nachgewiesene I/O-Verstaerkung. Ein fester,
+R7.1i beseitigt deshalb die nachgewiesene I/O-Verstaerkung. Ein fester,
 volumengebundener FAT-Sektorcache darf nur ausserhalb einer laufenden
 Journaltransaktion verwendet werden und wird bei Mount, Kontextwechsel und
 jeder Mutation verworfen. Fuer ausgerichtete Append-Daten auf dem nativen
@@ -74,6 +74,17 @@ geschrieben werden. Flush und vollstaendiger Readback muessen erfolgreich
 sein, bevor FAT-Link, Dateigroesse oder FSInfo in die bestehende
 Journaltransaktion aufgenommen werden. Nicht-AHCI-, Teilsektor-, Overwrite-,
 Sparse- oder Fragmentierungsfaelle bleiben beim 4096-Byte-Journalpfad.
+
+Der Kettenleser ruft dieselbe gecachte FAT-Entry-Funktion auf; eine zuvor
+duplizierte direkte ATA-Abfrage hatte den Cache umgangen und weiterhin einen
+Controllerbefehl pro Cluster erzeugt. Der Hostlauf beweist fuer einen
+sequentiellen 24-KiB-Datenstrom hoechstens zwei physische FAT-Sektorreads und
+deckt geordneten Append, Overwrite-Rueckfall sowie Rollback bei einem Fehler
+vor der Metadatenveroeffentlichung ab. Der reale Vier-vCPU-VMware-Lauf bestand
+mit vollstaendiger 256-KiB-Bytepruefung, Cleanup und Shell-Rueckkehr bei
+314,49 KiB/s Schreiben und 640,00 KiB/s Lesen. Damit sind die eingefrorenen
+95/415-KiB/s-Grenzen erfuellt, ohne Journal-v2, seine zwanzig Slots, exakt vier
+Durabilitaetsbarrieren oder den vollstaendigen DMA-Readback zu lockern.
 
 ## Grenzen
 

@@ -7,9 +7,16 @@
  * Safety: Mutationen folgen validierten Clusterketten und geordnetem Metadatencommit.
  */
 #include "fat32.h"
+#include "drivers/block/ata_journal.h"
 #include "include/reist/utf.h"
 #include "include/reist/unicode_norm.h"
 #include "lib/libc/stdio.h"
+
+#define FAT32_ORDERED_FAT_SECTORS_PER_COPY 3U
+#define FAT32_ORDERED_METADATA_SECTORS \
+    (2U * FAT32_ORDERED_FAT_SECTORS_PER_COPY + 2U)
+_Static_assert(FAT32_ORDERED_METADATA_SECTORS <= ATA_JOURNAL_MAX_ENTRIES,
+               "ordered append metadata must fit journal v2");
 
 // Function to read a file's data into a buffer
 // void read_file_data(unsigned int start_cluster, char* buffer, unsigned int size) {
@@ -673,6 +680,277 @@ static bool fat32_write_cursor_matches(const fat32_write_cursor_t* cursor,
     return cursor->cluster_index < cluster_limit &&
            target_index >= cursor->cluster_index &&
            target_index - cursor->cluster_index <= 1U;
+}
+
+static uint32_t fat32_ordered_clusters[ATA_UNPUBLISHED_MAX_SECTORS];
+static uint8_t fat32_ordered_fat_proof[2U * SECTOR_SIZE]
+    __attribute__((aligned(sizeof(uint32_t))));
+static uint8_t fat32_ordered_fat_sector[SECTOR_SIZE]
+    __attribute__((aligned(sizeof(uint32_t))));
+
+static bool fat32_ordered_run_is_free(uint32_t first, uint32_t count) {
+    if (count == 0U || count > ATA_UNPUBLISHED_MAX_SECTORS ||
+        boot_sector.bytes_per_sector != SECTOR_SIZE)
+        return false;
+    uint64_t first_offset = (uint64_t)first * sizeof(uint32_t);
+    uint64_t last_offset =
+        (uint64_t)(first + count - 1U) * sizeof(uint32_t);
+    uint32_t first_index = (uint32_t)(first_offset / SECTOR_SIZE);
+    uint32_t last_index = (uint32_t)(last_offset / SECTOR_SIZE);
+    if (last_index < first_index || last_index - first_index >= 2U)
+        return false;
+    uint64_t fat_start_wide = (uint64_t)partition_lba_offset +
+        boot_sector.reserved_sector_count +
+        (uint64_t)fat32_active_fat_index(&boot_sector) *
+            boot_sector.fat_size_32;
+    if (fat_start_wide > UINT32_MAX ||
+        (uint32_t)fat_start_wide > UINT32_MAX - first_index)
+        return false;
+    uint32_t fat_start = (uint32_t)fat_start_wide;
+    uint32_t sector_count = last_index - first_index + 1U;
+    if (!ata_read_sectors(ata_base_address, fat_start + first_index,
+                          sector_count, fat32_ordered_fat_proof,
+                          ata_is_master))
+        return false;
+    for (uint32_t index = 0U; index < count; ++index) {
+        uint32_t byte_offset =
+            (uint32_t)(((uint64_t)(first + index) * sizeof(uint32_t)) -
+                       (uint64_t)first_index * SECTOR_SIZE);
+        uint32_t value = *(uint32_t *)&fat32_ordered_fat_proof[byte_offset];
+        if ((value & 0x0FFFFFFFU) != 0U) return false;
+    }
+    return true;
+}
+
+static bool fat32_ordered_stage_copy(uint32_t fat_number,
+                                     uint32_t active_fat,
+                                     uint32_t first, uint32_t count,
+                                     bool publish_links,
+                                     bool has_original_tail,
+                                     uint32_t original_tail) {
+    uint32_t first_index = (first * sizeof(uint32_t)) / SECTOR_SIZE;
+    uint32_t last_cluster = first + count - 1U;
+    uint32_t last_index =
+        (last_cluster * sizeof(uint32_t)) / SECTOR_SIZE;
+    uint32_t indices[3U];
+    uint32_t index_count = 0U;
+    indices[index_count++] = first_index;
+    if (last_index != first_index) indices[index_count++] = last_index;
+    if (publish_links && has_original_tail) {
+        uint32_t tail_index =
+            (original_tail * sizeof(uint32_t)) / SECTOR_SIZE;
+        bool present = false;
+        for (uint32_t index = 0U; index < index_count; ++index)
+            if (indices[index] == tail_index) present = true;
+        if (!present) indices[index_count++] = tail_index;
+    }
+    for (uint32_t index = 1U; index < index_count; ++index) {
+        uint32_t value = indices[index];
+        uint32_t cursor = index;
+        while (cursor != 0U && indices[cursor - 1U] > value) {
+            indices[cursor] = indices[cursor - 1U];
+            --cursor;
+        }
+        indices[cursor] = value;
+    }
+
+    uint64_t copy_start = (uint64_t)partition_lba_offset +
+        boot_sector.reserved_sector_count +
+        (uint64_t)fat_number * boot_sector.fat_size_32;
+    if (copy_start > UINT32_MAX) return false;
+    for (uint32_t item = 0U; item < index_count; ++item) {
+        uint32_t sector_index = indices[item];
+        if ((uint32_t)copy_start > UINT32_MAX - sector_index)
+            return false;
+        uint32_t sector = (uint32_t)copy_start + sector_index;
+        if (!ata_read_sector(ata_base_address, sector,
+                             fat32_ordered_fat_sector, ata_is_master))
+            return false;
+        for (uint32_t entry_index = 0U; entry_index < count;
+             ++entry_index) {
+            uint32_t cluster = first + entry_index;
+            uint32_t offset = cluster * sizeof(uint32_t);
+            if (offset / SECTOR_SIZE != sector_index) continue;
+            uint32_t *entry = (uint32_t *)&fat32_ordered_fat_sector[
+                offset % SECTOR_SIZE];
+            uint32_t old = *entry & 0x0FFFFFFFU;
+            if (fat_number == active_fat &&
+                ((!publish_links && old != 0U) ||
+                 (publish_links && !is_end_of_cluster_chain(old))))
+                return false;
+            uint32_t desired = FAT32_EOC_MAX;
+            if (publish_links && entry_index + 1U < count)
+                desired = cluster + 1U;
+            *entry = (*entry & 0xF0000000U) | desired;
+        }
+        if (publish_links && has_original_tail) {
+            uint32_t tail_offset = original_tail * sizeof(uint32_t);
+            if (tail_offset / SECTOR_SIZE == sector_index) {
+                uint32_t *entry = (uint32_t *)&fat32_ordered_fat_sector[
+                    tail_offset % SECTOR_SIZE];
+                uint32_t old = *entry & 0x0FFFFFFFU;
+                if (fat_number == active_fat &&
+                    !is_end_of_cluster_chain(old))
+                    return false;
+                *entry = (*entry & 0xF0000000U) | first;
+            }
+        }
+        if (!fat32_write_sector(sector, fat32_ordered_fat_sector))
+            return false;
+    }
+    return true;
+}
+
+static bool fat32_ordered_stage_fat(uint32_t first, uint32_t count,
+                                    bool publish_links,
+                                    bool has_original_tail,
+                                    uint32_t original_tail) {
+    uint32_t active_fat = fat32_active_fat_index(&boot_sector);
+    if (active_fat >= boot_sector.number_of_fats) return false;
+    uint32_t first_fat = fat32_fat_is_mirrored(&boot_sector)
+        ? 0U : active_fat;
+    uint32_t fat_end = fat32_fat_is_mirrored(&boot_sector)
+        ? boot_sector.number_of_fats : active_fat + 1U;
+    bool mirror_degraded = false;
+    for (uint32_t fat = first_fat; fat < fat_end; ++fat) {
+        bool result = fat32_ordered_stage_copy(
+            fat, active_fat, first, count, publish_links,
+            has_original_tail, original_tail);
+        if (fat == active_fat && !result) return false;
+        if (!result) mirror_degraded = true;
+    }
+    if (mirror_degraded)
+        printf("Warning: ordered append left a stale FAT mirror\n");
+    return true;
+}
+
+static bool fat32_ordered_append_position_valid(
+        uint32_t start_cluster, uint32_t original_tail, uint32_t offset,
+        const fat32_write_cursor_t *cursor) {
+    if (offset == 0U)
+        return start_cluster == 0U && original_tail == INVALID_CLUSTER;
+    uint32_t expected_clusters = offset / SECTOR_SIZE;
+    if (expected_clusters == 0U || cursor == NULL || !cursor->valid ||
+        !is_valid_cluster(&boot_sector, start_cluster) ||
+        !is_valid_cluster(&boot_sector, original_tail) ||
+        cursor->chain_start != start_cluster ||
+        cursor->cluster != original_tail || cursor->next_offset != offset ||
+        cursor->cluster_index != expected_clusters - 1U)
+        return false;
+    uint32_t next = get_next_cluster_in_chain(&boot_sector, original_tail);
+    return next != INVALID_CLUSTER && is_end_of_cluster_chain(next);
+}
+
+int write_file_data_append_ordered(unsigned int* start_cluster,
+                                   unsigned int original_tail,
+                                   unsigned int offset,
+                                   const void* buffer,
+                                   unsigned int bytes_to_write,
+                                   bool* chain_reclaim_safe,
+                                   fat32_write_cursor_t* cursor) {
+    if (start_cluster == NULL || buffer == NULL ||
+        chain_reclaim_safe == NULL || bytes_to_write == 0U ||
+        bytes_to_write > FAT32_ORDERED_APPEND_MAX_BYTES ||
+        (offset % SECTOR_SIZE) != 0U ||
+        (bytes_to_write % SECTOR_SIZE) != 0U ||
+        offset > UINT32_MAX - bytes_to_write ||
+        boot_sector.bytes_per_sector != SECTOR_SIZE ||
+        boot_sector.sectors_per_cluster != 1U ||
+        !fat32_prepare_write() ||
+        !ata_unpublished_write_supported(
+            ata_base_address, ata_is_master, partition_lba_offset,
+            boot_sector.total_sectors_32) ||
+        !fat32_ordered_append_position_valid(
+            *start_cluster, original_tail, offset, cursor)) {
+        return FAT32_ORDERED_APPEND_UNSUPPORTED;
+    }
+
+    uint32_t count = bytes_to_write / SECTOR_SIZE;
+    uint32_t total_clusters = get_total_clusters(&boot_sector);
+    if (count == 0U || count > ATA_UNPUBLISHED_MAX_SECTORS ||
+        total_clusters == 0U)
+        return FAT32_ORDERED_APPEND_UNSUPPORTED;
+
+    struct fat32_fsinfo fsinfo_before = fsinfo;
+    uint32_t first = find_free_cluster(&boot_sector);
+    if (first == INVALID_CLUSTER || first > total_clusters + 1U ||
+        count - 1U > total_clusters + 1U - first) {
+        fsinfo = fsinfo_before;
+        return FAT32_ORDERED_APPEND_UNSUPPORTED;
+    }
+
+    /* No FAT entry is changed during this two-sector-at-most proof. VFS and
+     * FAT32 serialize the complete mutation, so zeroes in the current journal
+     * view establish a private contiguous run without a check-to-use race. */
+    if (!fat32_ordered_run_is_free(first, count)) {
+        fsinfo = fsinfo_before;
+        return FAT32_ORDERED_APPEND_UNSUPPORTED;
+    }
+    for (uint32_t index = 0U; index < count; ++index)
+        fat32_ordered_clusters[index] = first + index;
+
+    if (fsinfo_valid && fsinfo.free_cluster_count != 0xFFFFFFFFU &&
+        fsinfo.free_cluster_count < count) {
+        fsinfo = fsinfo_before;
+        return FAT32_ORDERED_APPEND_UNSUPPORTED;
+    }
+    if (!fat32_ordered_stage_fat(first, count, false, false,
+                                 INVALID_CLUSTER)) {
+        fsinfo = fsinfo_before;
+        *chain_reclaim_safe = false;
+        fat32_write_cursor_invalidate(cursor);
+        return -1;
+    }
+    if (fsinfo_valid) {
+        if (fsinfo.free_cluster_count != 0xFFFFFFFFU)
+            fsinfo.free_cluster_count -= count;
+        uint32_t after = first + count;
+        fsinfo.next_free_cluster = after <= total_clusters + 1U
+            ? after : 0xFFFFFFFFU;
+    }
+
+    uint32_t first_sector = cluster_to_sector(&boot_sector, first);
+    uint32_t last_sector = cluster_to_sector(
+        &boot_sector, fat32_ordered_clusters[count - 1U]);
+    uint32_t data_start = get_first_data_sector(&boot_sector);
+    bool layout_valid = first_sector != INVALID_CLUSTER &&
+        last_sector != INVALID_CLUSTER && data_start != INVALID_CLUSTER &&
+        first_sector >= data_start &&
+        count - 1U <= UINT32_MAX - first_sector &&
+        last_sector == first_sector + count - 1U;
+    bool data_durable = layout_valid &&
+        ata_write_unpublished_sectors_verified(
+            ata_base_address, ata_is_master, partition_lba_offset,
+            boot_sector.total_sectors_32, data_start, first_sector, count,
+            buffer);
+    if (!data_durable) {
+        fsinfo = fsinfo_before;
+        *chain_reclaim_safe = false;
+        fat32_write_cursor_invalidate(cursor);
+        return -1;
+    }
+
+    /* The data is now durable and byte-verified but still unreachable.
+     * Publish only pending FAT links; the outer journal commits them together
+     * with the directory size and FSInfo after its ACTIVE record. */
+    bool has_original_tail = offset != 0U;
+    if (!fat32_ordered_stage_fat(first, count, true,
+                                 has_original_tail, original_tail)) {
+        fsinfo = fsinfo_before;
+        *chain_reclaim_safe = false;
+        fat32_write_cursor_invalidate(cursor);
+        return -1;
+    }
+    if (!has_original_tail) *start_cluster = first;
+
+    if (cursor != NULL) {
+        cursor->chain_start = *start_cluster;
+        cursor->cluster = fat32_ordered_clusters[count - 1U];
+        cursor->cluster_index = offset / SECTOR_SIZE + count - 1U;
+        cursor->next_offset = offset + bytes_to_write;
+        cursor->valid = true;
+    }
+    return (int)bytes_to_write;
 }
 
 static int fat32_write_failure(fat32_write_cursor_t* cursor,

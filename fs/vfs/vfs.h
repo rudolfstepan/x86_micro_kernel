@@ -21,6 +21,8 @@ struct vfs_dir_entry;
 
 /* One non-root record for every possible dynamic descriptor of 32 tasks. */
 #define VFS_OPEN_NODE_CAPACITY 256U
+#define VFS_DEFAULT_WRITE_CHUNK_CAPACITY 4096U
+#define VFS_MAX_WRITE_CHUNK_CAPACITY (64U * 1024U)
 
 // ===========================================================================
 // VFS File Types
@@ -80,6 +82,8 @@ typedef struct vfs_filesystem_ops {
     int (*close)(vfs_node_t* node);
     int (*read)(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
     int (*write)(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+    uint32_t (*write_chunk_capacity)(const vfs_node_t* node,
+                                     uint32_t offset);
     int (*truncate)(vfs_node_t* node, uint32_t size);
     int (*fstat)(vfs_node_t* node, vfs_dir_entry_t* stat);
     int (*sync)(vfs_node_t* node);
@@ -186,6 +190,8 @@ int vfs_open(const char* path, vfs_node_t** node);
 int vfs_close(vfs_node_t* node);
 int vfs_read(vfs_node_t* node, uint32_t offset, uint32_t size, uint8_t* buffer);
 int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size, const uint8_t* buffer);
+/** Bounded backend hint; invalid or absent hints return the 4096-byte default. */
+uint32_t vfs_write_chunk_capacity(vfs_node_t* node, uint32_t offset);
 int vfs_truncate(vfs_node_t* node, uint32_t size);
 int vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat);
 int vfs_sync(vfs_node_t* node);

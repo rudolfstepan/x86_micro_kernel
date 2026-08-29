@@ -24,6 +24,7 @@
 #define AHCI_COMMAND_TABLE_SIZE 256U
 #define AHCI_VIRTUAL_BASE 0xA000U
 #define AHCI_DMA_MAX_SECTORS 20U
+#define AHCI_UNPUBLISHED_MAX_SECTORS 128U
 
 #pragma pack(push, 1)
 typedef struct {
@@ -117,6 +118,13 @@ bool ahci_write_sector_recovery(const drive_t *drive, uint32_t sector,
  * the phase and verifies every submitted sector before returning success. */
 bool ahci_write_sectors_deferred(const drive_t *drive, uint32_t sector,
                                  uint32_t count, const void *buffer);
+/* FAT32 write-before-publish mechanism: one bounded data command followed by
+ * one flush and a full-run readback comparison.  Policy admission remains in
+ * the ATA/FAT32 layers. */
+bool ahci_write_unpublished_sectors_verified(const drive_t *drive,
+                                             uint32_t sector,
+                                             uint32_t count,
+                                             const void *buffer);
 bool ahci_flush(const drive_t *drive);
 void ahci_fence_writes(void);
 void ahci_restore_writes_after_recovery(void);

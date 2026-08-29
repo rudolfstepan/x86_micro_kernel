@@ -109,14 +109,16 @@ class AhciProbeContractTests(unittest.TestCase):
         self.assertIn("header->bytes_transferred == expected", source)
 
         start = source.index("bool ahci_write_sectors_deferred(")
-        end = source.index("bool ahci_flush(", start)
+        end = source.index(
+            "bool ahci_write_unpublished_sectors_verified(", start
+        )
         deferred = source[start:end]
         self.assertIn("AHCI_ATA_WRITE_DMA_EXT", deferred)
         self.assertIn("deferred_batch.count += count", deferred)
         self.assertNotIn("AHCI_ATA_FLUSH_CACHE_EXT", deferred)
         self.assertNotIn("AHCI_ATA_READ_DMA_EXT", deferred)
 
-        start = end
+        start = source.index("bool ahci_flush(", end)
         end = source.index("void ahci_fence_writes(", start)
         flush = source[start:end]
         self.assertEqual(flush.count("ahci_execute_flush_command("), 1)
@@ -130,6 +132,30 @@ class AhciProbeContractTests(unittest.TestCase):
             "void ahci_restore_writes_after_recovery("):
             source.index("bool ahci_writes_quiescent(")]
         self.assertIn("ahci_deferred_reset();", restore)
+
+    def test_unpublished_run_is_fixed_write_flush_full_readback(self):
+        header = self.read("drivers/block/ahci.h")
+        source = self.read("drivers/block/ahci.c")
+        self.assertIn("AHCI_UNPUBLISHED_MAX_SECTORS 128U", header)
+        self.assertIn("unpublished_dma_buffer[AHCI_UNPUBLISHED_BYTES]", source)
+        self.assertIn(
+            "unpublished_verify_buffer[AHCI_UNPUBLISHED_BYTES]", source
+        )
+        start = source.index(
+            "bool ahci_write_unpublished_sectors_verified("
+        )
+        end = source.index("bool ahci_flush(", start)
+        body = source[start:end]
+        self.assertIn("count > AHCI_UNPUBLISHED_MAX_SECTORS", body)
+        self.assertIn("!deferred_batch.active", body)
+        write = body.index("AHCI_ATA_WRITE_DMA_EXT")
+        flush = body.index("ahci_execute_flush_command", write)
+        read = body.index("AHCI_ATA_READ_DMA_EXT", flush)
+        compare = body.index("memcmp(unpublished_dma_buffer", read)
+        self.assertLess(write, flush)
+        self.assertLess(flush, read)
+        self.assertLess(read, compare)
+        self.assertIn("ahci_stop_port(controller->mmio", body)
 
     def test_hotplug_requalification_resets_and_reidentifies_port(self):
         header = self.read("drivers/block/ahci.h")

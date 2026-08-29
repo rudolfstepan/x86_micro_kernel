@@ -34,6 +34,62 @@ bool fat32_write_supported = false;
 fat32_context_sync_hook_t fat32_context_sync_hook;
 fat32_context_mutation_hook_t fat32_context_mutation_hook;
 
+#define FAT32_FAT_CACHE_ENTRIES 8U
+typedef struct {
+    unsigned short base;
+    uint32_t partition_lba;
+    uint32_t sector;
+    bool is_master;
+    bool valid;
+    uint8_t data[SECTOR_SIZE];
+} fat32_fat_cache_entry_t;
+
+/* This is a metadata traversal cache, not a verification cache.  A journal
+ * transaction has an in-memory pending view which may later abort, so active
+ * transactions always bypass this storage.  Every FAT32 mutation invalidates
+ * it before staging its first side effect. */
+static fat32_fat_cache_entry_t fat32_fat_cache[FAT32_FAT_CACHE_ENTRIES];
+static uint32_t fat32_fat_cache_next;
+
+void fat32_fat_cache_invalidate(void) {
+    for (uint32_t index = 0U; index < FAT32_FAT_CACHE_ENTRIES; ++index)
+        fat32_fat_cache[index].valid = false;
+    fat32_fat_cache_next = 0U;
+}
+
+static bool fat32_read_fat_sector(uint32_t sector, void *buffer) {
+    if (buffer == NULL) return false;
+    if (ata_journal_transaction_active()) {
+        return ata_read_sector(ata_base_address, sector, buffer,
+                               ata_is_master);
+    }
+    for (uint32_t index = 0U; index < FAT32_FAT_CACHE_ENTRIES; ++index) {
+        fat32_fat_cache_entry_t *entry = &fat32_fat_cache[index];
+        if (entry->valid && entry->base == ata_base_address &&
+            entry->is_master == ata_is_master &&
+            entry->partition_lba == partition_lba_offset &&
+            entry->sector == sector) {
+            memcpy(buffer, entry->data, SECTOR_SIZE);
+            return true;
+        }
+    }
+    uint8_t data[SECTOR_SIZE];
+    if (!ata_read_sector(ata_base_address, sector, data, ata_is_master))
+        return false;
+    fat32_fat_cache_entry_t *entry =
+        &fat32_fat_cache[fat32_fat_cache_next];
+    fat32_fat_cache_next =
+        (fat32_fat_cache_next + 1U) % FAT32_FAT_CACHE_ENTRIES;
+    entry->base = ata_base_address;
+    entry->partition_lba = partition_lba_offset;
+    entry->sector = sector;
+    entry->is_master = ata_is_master;
+    memcpy(entry->data, data, SECTOR_SIZE);
+    entry->valid = true;
+    memcpy(buffer, data, SECTOR_SIZE);
+    return true;
+}
+
 #define FAT32_OPERATION_LOCK_TIMEOUT_MS 10000U
 #ifndef KERNEL_HOST_TEST
 static kernel_mutex_t fat32_operation_mutex = KERNEL_MUTEX_INIT;
@@ -88,7 +144,9 @@ bool fat32_prepare_write(void) {
 }
 
 bool fat32_write_sector(unsigned int lba, void* buffer) {
-    bool written = buffer != NULL && fat32_prepare_write() &&
+    if (buffer == NULL || !fat32_prepare_write()) return false;
+    fat32_fat_cache_invalidate();
+    bool written =
         ata_write_sector(ata_base_address, lba, buffer, ata_is_master);
     if (!written) return false;
     if (fat32_context_mutation_hook) fat32_context_mutation_hook();
@@ -105,6 +163,7 @@ int fat32_init_fs_at(unsigned short base, bool is_master, uint32_t partition_lba
     bool candidate_fsinfo_valid = false;
     bool candidate_write_supported = false;
 
+    fat32_fat_cache_invalidate();
     memset(&candidate_boot, 0, sizeof(candidate_boot));
     memset(&candidate_fsinfo, 0, sizeof(candidate_fsinfo));
 
@@ -523,7 +582,7 @@ unsigned int read_fat_entry(struct fat32_boot_sector* boot_sector, unsigned int 
     // Buffer to read a part of the FAT
     unsigned char buffer[SECTOR_SIZE];
     // Read the sector of the FAT that contains the current cluster's entry
-    if (!ata_read_sector(ata_base_address, fat_sector, buffer, ata_is_master)) {
+    if (!fat32_read_fat_sector(fat_sector, buffer)) {
         // Handle read error
         printf("Error: Failed to read the sector containing the FAT entry.\n");
         return INVALID_CLUSTER;

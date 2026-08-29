@@ -55,6 +55,7 @@
 #define MAX_DRIVES          (MAX_ATA_DRIVES + MAX_FDD_DRIVES + MAX_PARTITION_DRIVES)
 #define ATA_LBA28_LIMIT     0x10000000u
 #define ATA_PIO_MAX_SECTORS 20U
+#define ATA_UNPUBLISHED_MAX_SECTORS 128U
 #define SECTOR_SIZE 512
 
 // External declarations
@@ -93,6 +94,21 @@ bool ata_journal_is_attached(unsigned short base, bool is_master,
                              uint32_t volume_sectors);
 bool ata_journal_transaction_begin(void);
 bool ata_journal_transaction_end(bool commit);
+/** True only while the serialized compatibility-journal view is open. */
+bool ata_journal_transaction_active(void);
+/** Capability hint only; the write call repeats every identity check. */
+bool ata_unpublished_write_supported(unsigned short base, bool is_master,
+                                     uint32_t volume_lba,
+                                     uint32_t volume_sectors);
+/**
+ * Persist and fully verify data sectors which the filesystem still proves
+ * unreachable.  This never stages metadata and only succeeds inside the
+ * exact active journal volume on an AHCI parent.
+ */
+bool ata_write_unpublished_sectors_verified(
+    unsigned short base, bool is_master, uint32_t volume_lba,
+    uint32_t volume_sectors, uint32_t data_start_lba, uint32_t lba,
+    uint32_t count, const void *buffer);
 bool ata_journal_recover_resource(uint32_t resource);
 void ata_fence_writes(void);
 void ata_restore_writes_after_recovery(void);

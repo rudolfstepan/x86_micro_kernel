@@ -55,10 +55,12 @@
 #define AHCI_ATA_FLUSH_CACHE_EXT 0xEAU
 #define AHCI_SECTOR_SIZE 512U
 #define AHCI_BATCH_BYTES (AHCI_DMA_MAX_SECTORS * AHCI_SECTOR_SIZE)
+#define AHCI_UNPUBLISHED_BYTES \
+    (AHCI_UNPUBLISHED_MAX_SECTORS * AHCI_SECTOR_SIZE)
 
 _Static_assert(AHCI_DMA_MAX_SECTORS == ATA_PIO_MAX_SECTORS,
                "AHCI and journal batch capacities must match");
-_Static_assert(AHCI_BATCH_BYTES <= (1U << 22U),
+_Static_assert(AHCI_UNPUBLISHED_BYTES <= (1U << 22U),
                "one AHCI PRDT entry supports at most four MiB");
 
 /* These pools are deliberately fixed and identity-mapped. They are only
@@ -89,6 +91,10 @@ typedef struct {
  * before DMA; no userspace, stack, or journal pointer reaches the HBA. */
 static ahci_deferred_batch_t deferred_batch __attribute__((aligned(2)));
 static uint8_t batch_dma_buffer[AHCI_BATCH_BYTES]
+    __attribute__((aligned(2)));
+static uint8_t unpublished_dma_buffer[AHCI_UNPUBLISHED_BYTES]
+    __attribute__((aligned(2)));
+static uint8_t unpublished_verify_buffer[AHCI_UNPUBLISHED_BYTES]
     __attribute__((aligned(2)));
 static kernel_mutex_t batch_mutex = KERNEL_MUTEX_INIT;
 static kernel_mutex_t port_mutex[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS];
@@ -305,7 +311,7 @@ static bool ahci_build_dma_command(size_t controller_index, uint32_t port,
     bool has_data = count != 0U;
     uint32_t bytes = count * AHCI_SECTOR_SIZE;
     if (controller_index >= AHCI_MAX_CONTROLLERS || port >= AHCI_MAX_PORTS ||
-        count > AHCI_DMA_MAX_SECTORS ||
+        count > AHCI_UNPUBLISHED_MAX_SECTORS ||
         (has_data &&
          (sector > UINT32_MAX - (count - 1U) ||
           !ahci_dma_address_valid(dma_buffer, bytes, 2U))) ||
@@ -853,6 +859,53 @@ bool ahci_write_sectors_deferred(const drive_t *drive, uint32_t sector,
     }
     if (!result && ahci_deferred_owner_matches(drive))
         deferred_batch.poisoned = true;
+    if (acquired)
+        ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    ahci_batch_release();
+    return result;
+}
+
+bool ahci_write_unpublished_sectors_verified(const drive_t *drive,
+                                             uint32_t sector,
+                                             uint32_t count,
+                                             const void *buffer) {
+    ahci_controller_info_t *controller;
+    if (drive == NULL || buffer == NULL || writes_fenced || count == 0U ||
+        count > AHCI_UNPUBLISHED_MAX_SECTORS || sector >= drive->sectors ||
+        count > drive->sectors - sector ||
+        !ahci_drive_valid(drive, &controller) || !ahci_batch_acquire())
+        return false;
+
+    bool acquired = false;
+    bool result = false;
+    uint32_t bytes = count * AHCI_SECTOR_SIZE;
+    if (!deferred_batch.active && !writes_fenced &&
+        ahci_dma_address_valid(unpublished_dma_buffer, bytes, 2U)) {
+        memcpy(unpublished_verify_buffer, buffer, bytes);
+        memcpy(unpublished_dma_buffer, unpublished_verify_buffer, bytes);
+        acquired = ahci_port_acquire(drive->ahci_controller,
+                                     drive->ahci_port);
+        if (acquired && !writes_fenced) {
+            result = ahci_execute_dma_command(
+                controller, drive->ahci_controller, drive->ahci_port,
+                AHCI_ATA_WRITE_DMA_EXT, sector, count,
+                unpublished_dma_buffer, true) &&
+                ahci_execute_flush_command(controller,
+                    drive->ahci_controller, drive->ahci_port) &&
+                ahci_execute_dma_command(
+                    controller, drive->ahci_controller, drive->ahci_port,
+                    AHCI_ATA_READ_DMA_EXT, sector, count,
+                    unpublished_dma_buffer, false);
+            if (result && memcmp(unpublished_dma_buffer,
+                                 unpublished_verify_buffer, bytes) != 0) {
+                printf("AHCI: unpublished verification failed port=%u lba=%u count=%u\n",
+                       (unsigned)drive->ahci_port, (unsigned)sector,
+                       (unsigned)count);
+                (void)ahci_stop_port(controller->mmio, drive->ahci_port);
+                result = false;
+            }
+        }
+    }
     if (acquired)
         ahci_port_release(drive->ahci_controller, drive->ahci_port);
     ahci_batch_release();

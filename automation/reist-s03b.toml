@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1i-fat32-ordered-append-io"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12580,7 +12580,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1i-fat32-ordered-append-io"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Batch durable data before FAT32 append publication"
@@ -12657,4 +12657,10 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: batch ordered FAT32 append I/O"
-evidence = []
+evidence = [
+  "The frozen targeted suite completed with 68 passes, 10 compiler-dependent host cases skipped because gcc was absent from the inherited process PATH, and no failures; the package-specific FAT32 host executable was then compiled with the installed MinGW GCC and passed its complete behavior and fault campaigns.",
+  "The FAT32 host proof observed at most two physical FAT-sector reads across the sequential 24-KiB stream, one 4-KiB ordered unpublished append, the unchanged five total data-plus-journal flushes, journal rollback on injected private-data failure and the fully journaled overwrite fallback.",
+  "The final VMware VGA package gate passed in 36 seconds and produced the signed 64-MiB persistent SATA package with boot artifact SHA-256 16f53675d45203df7a0e4976ddd8711b0a799920df8e9aa8bb24bb0132e6924f.",
+  "The real four-vCPU VMware benchmark passed in 17 seconds at 314.49 KiB/s sequential write and 640.00 KiB/s sequential read with complete 256-KiB byte verification, cleanup and Ring-3 shell return.",
+  "Journal version 2, its twenty target slots, exactly four ordered durability barriers, full DMA transfer-length and readback checks, bounded polled completion, storage fencing and public ABIs remained unchanged."
+]

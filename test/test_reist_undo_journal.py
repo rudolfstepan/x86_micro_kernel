@@ -202,6 +202,22 @@ class ReistUndoJournalTests(unittest.TestCase):
             "ata_write_sector(ata_base_address, lba, buffer, ata_is_master);",
         )
 
+        files = (ROOT / "fs/fat32/fat32_files.c").read_text(
+            encoding="utf-8"
+        )
+        ordered = files[
+            files.index("int write_file_data_append_ordered("):
+            files.index("static int fat32_write_failure", files.index(
+                "int write_file_data_append_ordered("))
+        ]
+        self.assertIn("fat32_ordered_run_is_free(first, count)", ordered)
+        reserve = ordered.index("fat32_ordered_stage_fat(first, count, false")
+        data = ordered.index("ata_write_unpublished_sectors_verified(")
+        publish = ordered.index("bool has_original_tail = offset != 0U;")
+        self.assertLess(reserve, data)
+        self.assertLess(data, publish)
+        self.assertIn("*chain_reclaim_safe = false", ordered)
+
         adapter = (ROOT / "fs/fat32/fat32_vfs_adapter.c").read_text(
             encoding="utf-8")
         self.assertIn("static int fat32_require_write", adapter)

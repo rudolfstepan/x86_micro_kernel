@@ -100,7 +100,11 @@ class BenchmarkSourceTests(unittest.TestCase):
                     ),
                     1,
                 )
-        self.assertIn("BENCHMARK_DISK_PROGRESS_CHUNKS 16U", self.source)
+        self.assertIn(
+            "BENCHMARK_DISK_CHUNK_BYTES (64U * 1024U)", self.source
+        )
+        self.assertIn("BENCHMARK_DISK_CHUNKS 4U", self.source)
+        self.assertIn("BENCHMARK_DISK_PROGRESS_CHUNKS 1U", self.source)
         self.assertIn("BENCHMARK_DISK_MAX_ELAPSED_MS 300000U", self.source)
         disk = self.source[
             self.source.index("static void benchmark_disk("):

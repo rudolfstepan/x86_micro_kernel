@@ -61,6 +61,8 @@ static uint8_t campaign_baseline[TEST_SECTORS][SECTOR_SIZE];
 static uint8_t campaign_committed[TEST_SECTORS][SECTOR_SIZE];
 static uint32_t primary_fat_lba = 1U;
 static uint32_t secondary_fat_lba = 2U;
+static bool host_unpublished_supported;
+static unsigned int unpublished_write_calls;
 drive_t* current_drive;
 
 bool ata_flush_cache(unsigned short base, bool is_master) {
@@ -287,6 +289,46 @@ bool ata_journal_is_attached(unsigned short base, bool is_master,
         partition_lba, volume_sectors);
 }
 
+bool ata_journal_transaction_active(void) {
+    return use_production_journal && host_journal.enabled &&
+           host_journal.transaction_depth != 0U;
+}
+
+bool ata_unpublished_write_supported(unsigned short base, bool is_master,
+                                     uint32_t volume_lba,
+                                     uint32_t volume_sectors) {
+    (void)base;
+    (void)is_master;
+    return host_unpublished_supported && volume_sectors != 0U &&
+           volume_lba < TEST_SECTORS &&
+           volume_sectors <= TEST_SECTORS - volume_lba;
+}
+
+bool ata_write_unpublished_sectors_verified(
+        unsigned short base, bool is_master, uint32_t volume_lba,
+        uint32_t volume_sectors, uint32_t data_start_lba, uint32_t lba,
+        uint32_t count, const void *buffer) {
+    if (!ata_unpublished_write_supported(base, is_master, volume_lba,
+                                         volume_sectors) ||
+        !ata_journal_transaction_active() || buffer == NULL || count == 0U ||
+        count > ATA_UNPUBLISHED_MAX_SECTORS || lba < data_start_lba ||
+        lba < volume_lba || lba - volume_lba >= volume_sectors ||
+        count > volume_sectors - (lba - volume_lba))
+        return false;
+    ++unpublished_write_calls;
+    if (!host_raw_write_sectors(NULL, base, lba, count, buffer, is_master) ||
+        !host_raw_flush(NULL, base, is_master))
+        return false;
+    uint8_t verify[SECTOR_SIZE];
+    const uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!host_raw_read(NULL, base, lba + index, verify, is_master) ||
+            memcmp(verify, bytes + index * SECTOR_SIZE, SECTOR_SIZE) != 0)
+            return false;
+    }
+    return true;
+}
+
 bool vfs_host_mutation_begin(void) {
     return !use_production_journal ||
            ata_undo_journal_transaction_begin(&host_journal);
@@ -328,6 +370,8 @@ static void make_test_volume(void) {
     root_directory_lba = ROOT_DIRECTORY_LBA;
     primary_fat_lba = 1U;
     secondary_fat_lba = 2U;
+    host_unpublished_supported = false;
+    unpublished_write_calls = 0U;
     campaign_power_cut = false;
     campaign_fault_armed = false;
     campaign_cut_after_write = 0U;
@@ -490,6 +534,9 @@ static void make_campaign_volume(void) {
     campaign_cut_after_write = 0U;
     campaign_write_count = 0U;
     campaign_flush_count = 0U;
+    host_unpublished_supported = false;
+    unpublished_write_calls = 0U;
+    payload_writes_before_failure = -1;
     ata_undo_journal_init(&host_journal, &host_journal_transport, NULL);
 
     struct fat32_boot_sector boot;
@@ -529,6 +576,59 @@ static bool campaign_mount(void) {
     vfs_init();
     fat32_register_vfs();
     return vfs_mount(&campaign_drive, "fat32", "/") == VFS_OK;
+}
+
+static int run_ordered_append_test(void) {
+    enum { ORDERED_BYTES = 8U * SECTOR_SIZE };
+    static uint8_t payload[ORDERED_BYTES];
+    static uint8_t observed[ORDERED_BYTES];
+    for (uint32_t index = 0U; index < ORDERED_BYTES; ++index)
+        payload[index] = (uint8_t)(index * 29U + 7U);
+
+    make_campaign_volume();
+    host_unpublished_supported = true;
+    CHECK(campaign_mount());
+    CHECK(vfs_create("/ORDERED.BIN") == VFS_OK);
+    vfs_node_t *node = NULL;
+    CHECK(vfs_open("/ORDERED.BIN", &node) == VFS_OK && node != NULL);
+    CHECK(vfs_write_chunk_capacity(node, 0U) ==
+          FAT32_ORDERED_APPEND_MAX_BYTES);
+    campaign_flush_count = 0U;
+    unpublished_write_calls = 0U;
+    CHECK(vfs_write(node, 0U, ORDERED_BYTES, payload) == ORDERED_BYTES);
+    CHECK(unpublished_write_calls == 1U);
+    CHECK(campaign_flush_count == 5U);
+    CHECK(node->size == ORDERED_BYTES && node->inode == 3U);
+    CHECK(vfs_write_chunk_capacity(node, 0U) ==
+          VFS_DEFAULT_WRITE_CHUNK_CAPACITY);
+    CHECK(vfs_write_chunk_capacity(node, ORDERED_BYTES) ==
+          FAT32_ORDERED_APPEND_MAX_BYTES);
+    CHECK(vfs_read(node, 0U, ORDERED_BYTES, observed) == ORDERED_BYTES);
+    CHECK(memcmp(observed, payload, ORDERED_BYTES) == 0);
+    unpublished_write_calls = 0U;
+    CHECK(vfs_write(node, 0U, SECTOR_SIZE, payload) == SECTOR_SIZE);
+    CHECK(unpublished_write_calls == 0U);
+    CHECK(vfs_close(node) == VFS_OK);
+    CHECK(vfs_unmount("/") == VFS_OK);
+
+    /* If the private data write fails, neither its FAT reservation nor the
+     * directory size may be published by the aborted outer transaction. */
+    make_campaign_volume();
+    host_unpublished_supported = true;
+    CHECK(campaign_mount());
+    CHECK(vfs_create("/ORDERED.BIN") == VFS_OK);
+    CHECK(vfs_open("/ORDERED.BIN", &node) == VFS_OK && node != NULL);
+    static uint8_t before[sizeof(test_disk)];
+    memcpy(before, test_disk, sizeof(before));
+    payload_writes_before_failure = 0;
+    unpublished_write_calls = 0U;
+    CHECK(vfs_write(node, 0U, ORDERED_BYTES, payload) == VFS_ERR_IO);
+    CHECK(unpublished_write_calls == 1U);
+    CHECK(node->size == 0U && node->inode == 0U);
+    CHECK(memcmp(before, test_disk, sizeof(before)) == 0);
+    CHECK(vfs_close(node) == VFS_OK);
+    CHECK(vfs_unmount("/") == VFS_OK);
+    return 0;
 }
 
 static int run_journal_capacity_rejection_test(void) {
@@ -886,7 +986,7 @@ static int run_sequential_write_cache_test(void) {
                        stream_readback + chunk * STREAM_CHUNK_BYTES) ==
               STREAM_CHUNK_BYTES);
     }
-    CHECK(fat_sector_reads <= STREAM_SECTORS * 4U);
+    CHECK(fat_sector_reads <= 2U);
     CHECK(root_directory_reads == 0U);
     CHECK(read_batch_calls <= STREAM_CHUNKS);
     CHECK(largest_read_batch == STREAM_CHUNK_BYTES / SECTOR_SIZE);
@@ -1692,6 +1792,7 @@ int main(void) {
                                   TEST_SECTORS));
     CHECK(vfs_delete("/REBOUND.TXT") == VFS_OK);
     CHECK(vfs_unmount("/") == VFS_OK);
+    CHECK(run_ordered_append_test() == 0);
     CHECK(run_journal_capacity_rejection_test() == 0);
     CHECK(run_fat32_image_fault_campaign() == 0);
     return run_fat32_lfn_replace_fault_campaign();

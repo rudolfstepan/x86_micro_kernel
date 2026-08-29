@@ -213,6 +213,11 @@ static void fat32_vfs_cache_written_tail(vfs_node_t* node,
 
 static void fat32_activate(vfs_filesystem_t* fs) {
     fat32_vfs_context_t* context = (fat32_vfs_context_t*)fs->fs_data;
+    if (ata_base_address != context->ata_base ||
+        ata_is_master != context->ata_master ||
+        partition_lba_offset != context->partition_lba) {
+        fat32_fat_cache_invalidate();
+    }
     boot_sector = context->boot;
     fsinfo = context->fsinfo;
     fsinfo_valid = context->fsinfo_valid;
@@ -792,27 +797,36 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
         return VFS_ERR_IO;
     }
     bool chain_reclaim_safe = true;
+    int written = FAT32_ORDERED_APPEND_UNSUPPORTED;
+    if (offset == node->size) {
+        written = write_file_data_append_ordered(
+            &start_cluster, original_tail, offset, buffer, size,
+            &chain_reclaim_safe, &handle->write_cursor);
+    }
+    if (written == FAT32_ORDERED_APPEND_UNSUPPORTED &&
+        size > VFS_DEFAULT_WRITE_CHUNK_CAPACITY)
+        size = VFS_DEFAULT_WRITE_CHUNK_CAPACITY;
 
-    if (offset > node->size) {
+    if (written == FAT32_ORDERED_APPEND_UNSUPPORTED && offset > node->size) {
         uint8_t zeroes[SECTOR_SIZE];
         memset(zeroes, 0, sizeof(zeroes));
         uint32_t position = node->size;
         while (position < offset) {
             uint32_t amount = offset - position;
             if (amount > sizeof(zeroes)) amount = sizeof(zeroes);
-            int written = write_file_data_at_checked_cursor(
+            int gap_written = write_file_data_at_checked_cursor(
                 &start_cluster, position, zeroes, amount,
                 &chain_reclaim_safe, &handle->write_cursor);
-            if (written > 0) {
-                position += (uint32_t)written;
+            if (gap_written > 0) {
+                position += (uint32_t)gap_written;
                 durable_size = position;
             }
             if (!chain_reclaim_safe) {
                 fat32_vfs_cache_reset(handle);
                 return VFS_ERR_IO;
             }
-            if (written != (int)amount) {
-                if (written < 0 && durable_size == node->size) {
+            if (gap_written != (int)amount) {
+                if (gap_written < 0 && durable_size == node->size) {
                     if (is_valid_cluster(&boot_sector, node->inode)) {
                         (void)fat32_reclaim_chain_suffix(&boot_sector,
                                                          original_tail);
@@ -839,9 +853,11 @@ static int fat32_vfs_write_unlocked(vfs_node_t* node, uint32_t offset,
         durable_size = offset;
     }
 
-    int written = write_file_data_at_checked_cursor(
-        &start_cluster, offset, buffer, size, &chain_reclaim_safe,
-        &handle->write_cursor);
+    if (written == FAT32_ORDERED_APPEND_UNSUPPORTED) {
+        written = write_file_data_at_checked_cursor(
+            &start_cluster, offset, buffer, size, &chain_reclaim_safe,
+            &handle->write_cursor);
+    }
     if (!chain_reclaim_safe) {
         fat32_vfs_cache_reset(handle);
         return VFS_ERR_IO;
@@ -1448,6 +1464,24 @@ static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return result;
 }
 
+static uint32_t fat32_vfs_write_chunk_capacity(const vfs_node_t* node,
+                                               uint32_t offset) {
+    if (node == NULL || node->type != VFS_FILE || node->fs == NULL ||
+        node->fs->fs_data == NULL || offset != node->size ||
+        (offset % SECTOR_SIZE) != 0U)
+        return VFS_DEFAULT_WRITE_CHUNK_CAPACITY;
+    const fat32_vfs_context_t *context =
+        (const fat32_vfs_context_t *)node->fs->fs_data;
+    if (!context->write_supported ||
+        context->boot.bytes_per_sector != SECTOR_SIZE ||
+        context->boot.sectors_per_cluster != 1U ||
+        !ata_unpublished_write_supported(
+            context->ata_base, context->ata_master, context->partition_lba,
+            context->boot.total_sectors_32))
+        return VFS_DEFAULT_WRITE_CHUNK_CAPACITY;
+    return FAT32_ORDERED_APPEND_MAX_BYTES;
+}
+
 static int fat32_vfs_truncate(vfs_node_t* node, uint32_t size) {
     uint32_t flags = fat32_operation_begin();
     int result = fat32_vfs_truncate_unlocked(node, size);
@@ -1600,6 +1634,7 @@ vfs_filesystem_ops_t fat32_vfs_ops = {
     .close = fat32_vfs_close,
     .read = fat32_vfs_read,
     .write = fat32_vfs_write,
+    .write_chunk_capacity = fat32_vfs_write_chunk_capacity,
     .truncate = fat32_vfs_truncate,
     .fstat = fat32_vfs_fstat,
     .same_object = fat32_vfs_same_object,

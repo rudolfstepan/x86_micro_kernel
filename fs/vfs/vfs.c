@@ -946,6 +946,22 @@ int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return result;
 }
 
+uint32_t vfs_write_chunk_capacity(vfs_node_t* node, uint32_t offset) {
+    if (!vfs_operation_begin()) return VFS_DEFAULT_WRITE_CHUNK_CAPACITY;
+    uint32_t capacity = VFS_DEFAULT_WRITE_CHUNK_CAPACITY;
+    if (node != NULL && node->type == VFS_FILE && node->fs != NULL &&
+        node->fs->ops != NULL &&
+        node->fs->ops->write_chunk_capacity != NULL) {
+        uint32_t candidate =
+            node->fs->ops->write_chunk_capacity(node, offset);
+        if (candidate >= VFS_DEFAULT_WRITE_CHUNK_CAPACITY &&
+            candidate <= VFS_MAX_WRITE_CHUNK_CAPACITY)
+            capacity = candidate;
+    }
+    vfs_operation_end();
+    return capacity;
+}
+
 int vfs_truncate(vfs_node_t* node, uint32_t size) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();

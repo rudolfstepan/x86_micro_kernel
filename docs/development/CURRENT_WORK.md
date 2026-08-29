@@ -2,9 +2,9 @@
 
 Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `7daa546`
+Branch/Startpunkt: `working_branch` / `9a786ce`
 
-Aktives Thema: `R7.1i-fat32-ordered-append-io`.
+Aktives Thema: keines; `R7.1i-fat32-ordered-append-io` ist abgeschlossen.
 
 Die saubere Gegenanalyse ordnet die Restlatenz nicht dem FAT32-Format zu,
 sondern der Kommandovielzahl: Der 256-KiB-Leselauf liest fuer fast jeden der
@@ -18,8 +18,16 @@ den gesamten Lauf rueckgelesen; erst danach duerfen FAT-Verkettung,
 Verzeichniseintrag und FSInfo ueber das bestehende Journal sichtbar werden.
 Alle nicht beweisbaren Faelle bleiben beim bisherigen 4096-Byte-Rueckfall.
 Journal-v2, zwanzig Slots, exakt vier Barrieren und der akzeptierte gepollte
-AHCI-Abschluss bleiben unveraendert. Die eingefrorene VMware-Grenze lautet
-95 KiB/s Schreiben und 415 KiB/s Lesen.
+AHCI-Abschluss bleiben unveraendert. Der FAT-Kettenleser verwendet jetzt
+denselben Cache statt einer zweiten direkten ATA-Leseroutine; der Hostnachweis
+begrenzt einen sequentiellen 24-KiB-Lauf dadurch auf hoechstens zwei physische
+FAT-Sektorreads. Der eingefrorene VMware-Grenzwert von 95 KiB/s Schreiben und
+415 KiB/s Lesen wurde im realen Vier-vCPU-Lauf mit 314,49 KiB/s und
+640,00 KiB/s deutlich ueberschritten. Vollstaendige 256-KiB-Bytepruefung,
+Cleanup und Ring-3-Shell-Rueckkehr bestanden in 17 Sekunden. Der VMware-VGA-
+Paketbau bestand in 36 Sekunden; das signierte Bootartefakt hat SHA-256
+`16f53675d45203df7a0e4976ddd8711b0a799920df8e9aa8bb24bb0132e6924f`.
+R7.1i ist damit angenommen und abgeschlossen.
 
 `R7.1h-ahci-interrupt-completion` ist zuvor an seiner eingefrorenen
 Laufzeitgrenze blockiert und als nicht angenommen beendet worden.

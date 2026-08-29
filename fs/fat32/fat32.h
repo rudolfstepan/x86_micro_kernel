@@ -141,6 +141,8 @@ uint32_t fat32_operation_begin(void);
 void fat32_operation_end(uint32_t interrupt_flags);
 bool fat32_prepare_write(void);
 bool fat32_write_sector(unsigned int lba, void* buffer);
+/** Drop every fixed FAT-sector cache entry before an identity or data change. */
+void fat32_fat_cache_invalidate(void);
 typedef void (*fat32_context_sync_hook_t)(void);
 extern fat32_context_sync_hook_t fat32_context_sync_hook;
 typedef void (*fat32_context_mutation_hook_t)(void);
@@ -334,6 +336,20 @@ typedef struct {
     uint32_t next_offset;
     bool valid;
 } fat32_write_cursor_t;
+
+#define FAT32_ORDERED_APPEND_MAX_BYTES \
+    (ATA_UNPUBLISHED_MAX_SECTORS * SECTOR_SIZE)
+#define FAT32_ORDERED_APPEND_UNSUPPORTED (-2)
+
+/* Complete-sector write-before-publish append.  UNSUPPORTED guarantees that
+ * no data-sector side effect occurred and permits the 4096-byte fallback. */
+int write_file_data_append_ordered(unsigned int* start_cluster,
+                                   unsigned int original_tail,
+                                   unsigned int offset,
+                                   const void* buffer,
+                                   unsigned int bytes_to_write,
+                                   bool* chain_reclaim_safe,
+                                   fat32_write_cursor_t* cursor);
 
 int write_file_data_at_checked(unsigned int* start_cluster,
                                unsigned int offset, const void* buffer,
