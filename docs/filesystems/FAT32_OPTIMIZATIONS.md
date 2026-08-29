@@ -14,6 +14,9 @@ typischerweise die Partition `hdd0p2`, nicht das physische Elternlaufwerk.
 - wachsende Verzeichnisse sowie konsistentes `readdir`/`open`
 - Dateierzeugung, Verzeichnisse, Delete und Copy über VFS
 - Batch-I/O über die gemeinsame Blockgeräteschicht
+- generationsgebundene Metadaten- und Clusterhinweise pro offenem VFS-Handle;
+  unveränderte Handles überspringen erneute Verzeichnisläufe, während jede
+  fremde oder Legacy-Mutation genau eine erneute Namensauflösung erzwingt
 - `fsync` mit begrenztem Geräte-Flush und Readback
 - Same-Directory-Rename und Replace
 - journalgeschützter Replace bestehender VFAT-Langnamen

@@ -529,26 +529,69 @@ static bool fat32_commit_node_data(vfs_node_t* node, uint32_t start_cluster,
     return true;
 }
 
+static bool fat32_vfs_name_is_bounded(const char name[MAX_PATH_LENGTH]) {
+    if (!name) return false;
+    for (size_t length = 0U; length < MAX_PATH_LENGTH; ++length) {
+        if (name[length] == '\0') {
+            return length != 0U && fat32_is_valid_name(name);
+        }
+    }
+    return false;
+}
+
+static bool fat32_vfs_file_metadata_is_valid(
+    const fat32_vfs_handle_t* handle,
+    const struct fat32_dir_entry* entry,
+    const char name[MAX_PATH_LENGTH]) {
+    if (!handle || !entry || !fat32_vfs_name_is_bounded(name) ||
+        !is_valid_cluster(&boot_sector, handle->parent_cluster) ||
+        (entry->attr & ATTR_DIRECTORY) != 0U) {
+        return false;
+    }
+    uint32_t start_cluster = read_start_cluster(
+        (struct fat32_dir_entry*)entry);
+    return (entry->file_size == 0U && start_cluster == 0U) ||
+           is_valid_cluster(&boot_sector, start_cluster);
+}
+
+static bool fat32_vfs_cached_node_is_current(
+    const vfs_node_t* node, const fat32_vfs_handle_t* handle,
+    const fat32_vfs_context_t* context) {
+    if (!node || !handle || !context || context->cache_disabled ||
+        handle->cache_generation != context->data_generation ||
+        node->type != VFS_FILE ||
+        !fat32_vfs_file_metadata_is_valid(handle, &handle->entry,
+                                           handle->name) ||
+        !fat32_vfs_name_is_bounded(node->name) ||
+        strcmp(node->name, handle->name) != 0) {
+        return false;
+    }
+    return node->inode == read_start_cluster(
+               (struct fat32_dir_entry*)&handle->entry) &&
+           node->size == handle->entry.file_size;
+}
+
 static int fat32_refresh_file_node(vfs_node_t* node) {
     if (!node || !node->fs || !node->fs->fs_data || !node->fs_specific) {
         return VFS_ERR_INVALID;
     }
     fat32_vfs_handle_t* handle = (fat32_vfs_handle_t*)node->fs_specific;
+    fat32_vfs_context_t* context =
+        (fat32_vfs_context_t*)node->fs->fs_data;
+    if (fat32_vfs_cached_node_is_current(node, handle, context)) {
+        return VFS_OK;
+    }
+    fat32_vfs_cache_reset(handle);
     struct fat32_dir_entry current;
     char resolved_name[MAX_PATH_LENGTH];
     fat32_lookup_result_t result = fat32_lookup_entry_named(
         handle->parent_cluster, handle->name, &current, resolved_name);
     if (result == FAT32_LOOKUP_NOT_FOUND) return VFS_ERR_NOT_FOUND;
-    if (result != FAT32_LOOKUP_FOUND || (current.attr & ATTR_DIRECTORY)) {
+    if (result != FAT32_LOOKUP_FOUND ||
+        !fat32_vfs_file_metadata_is_valid(handle, &current, resolved_name)) {
         return VFS_ERR_IO;
     }
-    fat32_vfs_context_t* context =
-        (fat32_vfs_context_t*)node->fs->fs_data;
-    if (context->cache_disabled ||
-        handle->cache_generation != context->data_generation) {
-        fat32_vfs_cache_reset(handle);
-        handle->cache_generation = context->data_generation;
-    }
+    handle->cache_generation = context->data_generation;
     handle->entry = current;
     strcpy(handle->name, resolved_name);
     strcpy(node->name, resolved_name);
@@ -663,9 +706,14 @@ static int fat32_vfs_open_unlocked(vfs_filesystem_t* fs, const char* path,
                                              &parent_cluster);
     if (resolve_result != VFS_OK) return resolve_result;
 
-    const char* resolved_name = path;
+    const char* requested_name = path;
     for (const char* cursor = path; *cursor; cursor++)
-        if (*cursor == '/' && cursor[1] != '\0') resolved_name = cursor + 1;
+        if (*cursor == '/' && cursor[1] != '\0') requested_name = cursor + 1;
+    char resolved_name[MAX_PATH_LENGTH];
+    if (fat32_lookup_entry_named(parent_cluster, requested_name, &fat_entry,
+                                 resolved_name) != FAT32_LOOKUP_FOUND) {
+        return VFS_ERR_IO;
+    }
     vfs_node_t* new_node = fat32_make_node(fs, &fat_entry, parent_cluster,
                                            resolved_name);
     if (!new_node) {

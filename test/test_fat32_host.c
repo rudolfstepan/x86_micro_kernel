@@ -36,6 +36,7 @@ static int fat_writes_before_verify_failure = -1;
 static unsigned int fat_verify_read_failures;
 static unsigned int fat_verify_failure_burst = 1;
 static unsigned int fat_sector_reads;
+static unsigned int root_directory_reads;
 static unsigned int read_batch_calls;
 static uint32_t largest_read_batch;
 static unsigned int cache_flushes;
@@ -85,6 +86,9 @@ static bool host_disk_read(unsigned short base, unsigned int lba, void* buffer,
     if (campaign_power_cut || lba >= TEST_SECTORS || !buffer) return false;
     if (lba == primary_fat_lba || lba == secondary_fat_lba) {
         ++fat_sector_reads;
+    }
+    if (lba == root_directory_lba) {
+        ++root_directory_reads;
     }
     if (lba == primary_fat_lba && fat_verify_read_failures > 0) {
         --fat_verify_read_failures;
@@ -338,6 +342,7 @@ static void make_test_volume(void) {
     fat_verify_read_failures = 0;
     fat_verify_failure_burst = 1;
     fat_sector_reads = 0U;
+    root_directory_reads = 0U;
     set_test_clock(2026, 8, 3, 12, 34, 56);
     struct fat32_boot_sector boot;
     memset(&boot, 0, sizeof(boot));
@@ -872,6 +877,7 @@ static int run_sequential_write_cache_test(void) {
     /* Consecutive benchmark-sized reads must resume from the prior validated
      * cluster instead of walking from the chain start for every offset. */
     fat_sector_reads = 0U;
+    root_directory_reads = 0U;
     read_batch_calls = 0U;
     largest_read_batch = 0U;
     for (uint32_t chunk = 0U; chunk < STREAM_CHUNKS; ++chunk) {
@@ -881,6 +887,7 @@ static int run_sequential_write_cache_test(void) {
               STREAM_CHUNK_BYTES);
     }
     CHECK(fat_sector_reads <= STREAM_SECTORS * 4U);
+    CHECK(root_directory_reads == 0U);
     CHECK(read_batch_calls <= STREAM_CHUNKS);
     CHECK(largest_read_batch == STREAM_CHUNK_BYTES / SECTOR_SIZE);
     CHECK(memcmp(stream_readback, stream_data, STREAM_BYTES) == 0);
@@ -896,6 +903,14 @@ static int run_sequential_write_cache_test(void) {
     CHECK(fat32_write_file(legacy, legacy_chunk, sizeof(legacy_chunk),
                            sizeof(legacy_chunk)) == SECTOR_SIZE);
     free(legacy);
+    root_directory_reads = 0U;
+    CHECK(vfs_read(stream_node, STREAM_BYTES, SECTOR_SIZE,
+                   stream_readback) == SECTOR_SIZE);
+    CHECK(memcmp(stream_readback, legacy_chunk, SECTOR_SIZE) == 0);
+    CHECK(root_directory_reads == 1U);
+    CHECK(vfs_read(stream_node, STREAM_BYTES, SECTOR_SIZE,
+                   stream_readback) == SECTOR_SIZE);
+    CHECK(root_directory_reads == 1U);
     CHECK(vfs_write(stream_node, STREAM_BYTES + SECTOR_SIZE, SECTOR_SIZE,
                     resumed_chunk) == SECTOR_SIZE);
     CHECK(vfs_read(stream_node, STREAM_BYTES, 2U * SECTOR_SIZE,

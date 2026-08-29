@@ -539,7 +539,25 @@ ASUS-/Samsung-SSD-Gegenlauf auf echter Hardware meldete ungefaehr 30 KiB/s
 Schreiben und 670 KiB/s Lesen. Damit stieg die reale Schreibrate gegenueber
 R7.1e auf etwa das 3,75-Fache und die Leserate auf etwa das 1,33-Fache; die nur
 nach Readback und Cleanup ausgegebenen Ergebniszeilen schliessen die physische
-Abnahme. R7.1f ist abgeschlossen, und es ist kein Folgepaket eingereiht.
+Abnahme. R7.1f ist abgeschlossen. Der anschließende VMware-Gegenlauf zeigte
+jedoch nur 18,29 KiB/s Schreiben und 77,48 KiB/s Lesen. R7.1g beseitigt
+deshalb den verbliebenen VFS-Overhead: Ein bereits geöffnetes FAT32-Dateihandle
+verwendet seinen exakten Directory-Eintrag nur bei passender Mount-
+Datengeneration und vollständig konsistentem Namen, Typ, Elterncluster,
+Startcluster und Größe. Jede fremde oder Legacy-Mutation erhöht die
+Generation, verwirft die festen Clusterhinweise und erzwingt vor weiterem I/O
+eine begrenzte exakte Namensauflösung; Sättigung deaktiviert den Cache.
+Journalformat, vier geordnete Barrieren, AHCI-Readback, VFS-/Syscall-ABI und
+4096-Byte-Schreibgrenze ändern sich nicht. Der Hostlauf beweist null Root-
+Verzeichnisreads über sechs aufeinanderfolgende 4096-Byte-Reads sowie genau
+eine Revalidierung nach einer Legacy-Mutation. Alle 28 eingefrorenen Tests und
+der 5-sekündige VMware-Paketbuild bestanden. Der begrenzte Vier-vCPU-VMware-
+Benchmark erreichte in 35 Sekunden nach bytegleichem 256-KiB-Readback, Cleanup
+und Shell-Rückkehr 18,94 KiB/s Schreiben sowie 82,36 KiB/s Lesen gegenüber
+18,29/77,48. R7.1g ist damit abgeschlossen. Die geringe verbleibende
+Schreibrate wird als Kosten der unverändert vier Durabilitätsphasen und des
+gepollten Controllerpfads geführt, nicht durch eine gelockerte Barriere oder
+eine Host-Hyper-V-Änderung verdeckt.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

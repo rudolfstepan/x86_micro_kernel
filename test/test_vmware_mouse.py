@@ -16,6 +16,8 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("$Mode -ne 'vmware-mouse'", source)
         self.assertIn("'vmware-compositor-restart'", source)
         self.assertIn("-ExpectCompositorRestart", source)
+        self.assertIn("'vmware-benchmark'", source)
+        self.assertIn("& $VmwareMouseRunner -Benchmark", source)
 
     def test_runner_requires_virtual_hid_without_passthrough(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
@@ -144,6 +146,33 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("REIST_GUI COMPOSITOR_DEGRADED", source)
         self.assertIn("REIST_GUI COMPOSITOR_RESTARTED", source)
         self.assertIn("Assert-NoForbiddenMarker", source)
+
+    def test_benchmark_mode_is_bounded_and_requires_complete_hdd_proof(self):
+        source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[ValidateRange(30, 360)]", source)
+        self.assertIn("[switch]$Benchmark", source)
+        self.assertIn("Benchmark and compositor-restart modes are exclusive",
+                      source)
+        self.assertIn("Send-ExplicitBenchmarkCommand", source)
+        self.assertIn("'benchmark'", source)
+        for marker in (
+            "BENCHMARK_STATUS phase=hdd-create",
+            "BENCHMARK_STATUS phase=hdd-fsync",
+            "BENCHMARK_STATUS phase=hdd-cleanup state=complete",
+            "BENCHMARK_STATUS phase=complete",
+            "REIST OS System Benchmark",
+            "Seq\\. Schreiben",
+            "Seq\\. Lesen",
+        ):
+            self.assertIn(marker, source)
+        self.assertIn("$promptAfter -ge 0", source)
+        self.assertIn("$writeRate -le 18.29", source)
+        self.assertIn("$readRate -le 77.48", source)
+        self.assertIn("REIST_STORAGE RESOURCE_QUARANTINED", source)
+        self.assertIn("ATA_FLUSH_FAILED", source)
+        self.assertIn("VMWARE BENCHMARK PASS", source)
 
 
 if __name__ == "__main__":

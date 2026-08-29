@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1g-fat32-open-handle-cache"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12465,7 +12465,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1g-fat32-open-handle-cache"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Reuse generation-scoped FAT32 open-handle metadata"
@@ -12510,4 +12510,10 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "fat32: reuse current open-handle metadata"
-evidence = []
+evidence = [
+  "All 28 frozen targeted checks passed: 12 filesystem source and host tests with the FAT32 C harness, 9 VMware runner contracts and 7 bounded benchmark contracts.",
+  "The FAT32 host proof observed zero root-directory reads across six consecutive 4096-byte reads on one current handle, then exactly one revalidation read after a legacy FAT mutation and none on the following read.",
+  "The final VMware VGA package build passed in 5 seconds and produced the signed 64-MiB persistent SATA package with the journal format four barriers AHCI waits and public ABIs unchanged.",
+  "The four-vCPU VMware benchmark passed in 35 seconds with byte-verified 256-KiB readback cleanup and Ring-3 shell return; HDD write measured 18.94 KiB/s and read 82.36 KiB/s versus the 18.29 and 77.48 baseline.",
+  "The remaining VMware write throughput is still low and is reported as residual bounded journal and polled-controller cost rather than hidden by a durability wait or host Hyper-V change; active_id is empty."
+]

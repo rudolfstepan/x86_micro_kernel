@@ -3,12 +3,17 @@ param(
     [string]$SourcePackage = '',
     [string]$GateLog = '',
     [ValidateRange(20, 120)] [int]$TimeoutSeconds = 75,
+    [ValidateRange(30, 360)] [int]$BenchmarkTimeoutSeconds = 180,
     [ValidateRange(1, 20)] [int]$InjectionAttempts = 12,
-    [switch]$ExpectCompositorRestart
+    [switch]$ExpectCompositorRestart,
+    [switch]$Benchmark
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($Benchmark -and $ExpectCompositorRestart) {
+    throw 'Benchmark and compositor-restart modes are exclusive.'
+}
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (!$SourcePackage) {
     $SourcePackage = Join-Path $repoRoot 'build\vmware\reist-os'
@@ -75,6 +80,14 @@ $forbidden = @(
 )
 if (!$ExpectCompositorRestart) {
     $forbidden += 'REIST_GUI COMPOSITOR_RESTARTED'
+}
+if ($Benchmark) {
+    $forbidden += @(
+        'REIST_STORAGE RESOURCE_QUARANTINED',
+        'ATA_FLUSH_FAILED',
+        'BENCHMARK_STATUS phase=hdd-failed',
+        'BENCHMARK FAILED'
+    )
 }
 $running = & $vmrun -T ws list 2>$null
 $runningVms = @($running | Where-Object {
@@ -305,6 +318,10 @@ function Send-ExplicitDesktopCommand {
     return [ReistRfbInput]::SendCommand($vncPort, 'desktop')
 }
 
+function Send-ExplicitBenchmarkCommand {
+    return [ReistRfbInput]::SendCommand($vncPort, 'benchmark')
+}
+
 $started = $false
 $launched = $false
 $vmxProcessId = 0
@@ -339,7 +356,12 @@ try {
     } while ((Get-Date) -lt $publishDeadline)
     if (!$started) { throw 'VMware mouse VM failed to start.' }
 
-    $deadline = $watch.Elapsed.Add([TimeSpan]::FromSeconds($TimeoutSeconds))
+    $modeTimeout = if ($Benchmark) {
+        $BenchmarkTimeoutSeconds
+    } else {
+        $TimeoutSeconds
+    }
+    $deadline = $watch.Elapsed.Add([TimeSpan]::FromSeconds($modeTimeout))
     $missing = $requiredBeforeInput
     while ($watch.Elapsed -lt $deadline) {
         $text = Read-SerialText
@@ -365,6 +387,94 @@ try {
         }
     }
 
+    if ($Benchmark) {
+        $commandSent = $false
+        for ($attempt = 1; $attempt -le 3; ++$attempt) {
+            $commandSent = Send-ExplicitBenchmarkCommand
+            "benchmark command attempt=$attempt injected=$commandSent transport=rfb-loopback" |
+                Add-Content -LiteralPath $GateLog -Encoding utf8
+            if ($commandSent) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$commandSent) {
+            throw 'VMware RFB benchmark command could not be injected.'
+        }
+
+        $benchmarkMarkers = @(
+            'REIST Benchmark: begrenzte Diagnose laeuft ...',
+            'BENCHMARK_STATUS phase=cpu',
+            'BENCHMARK_STATUS phase=ram-write',
+            'BENCHMARK_STATUS phase=ram-read',
+            'BENCHMARK_STATUS phase=hdd-create',
+            'BENCHMARK_STATUS phase=hdd-write progress_kib=0 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-write progress_kib=64 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-write progress_kib=128 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-write progress_kib=192 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-write progress_kib=256 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-fsync',
+            'BENCHMARK_STATUS phase=hdd-read progress_kib=0 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-read progress_kib=64 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-read progress_kib=128 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-read progress_kib=192 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-read progress_kib=256 total_kib=256',
+            'BENCHMARK_STATUS phase=hdd-cleanup state=begin',
+            'BENCHMARK_STATUS phase=hdd-cleanup state=complete',
+            'BENCHMARK_STATUS phase=vga',
+            'REIST OS System Benchmark',
+            'BENCHMARK_STATUS phase=complete'
+        )
+        $benchmarkMissing = $benchmarkMarkers
+        while ($watch.Elapsed -lt $deadline) {
+            $text = Read-SerialText
+            Assert-NoForbiddenMarker $text
+            $position = $shellPosition
+            $benchmarkMissing = @()
+            foreach ($marker in $benchmarkMarkers) {
+                $found = $text.IndexOf($marker, $position + 1,
+                    [StringComparison]::Ordinal)
+                if ($found -lt 0) {
+                    $benchmarkMissing += $marker
+                    break
+                }
+                $position = $found + $marker.Length - 1
+            }
+            if ($benchmarkMissing.Count -eq 0) {
+                $promptAfter = $text.IndexOf($shellMarker, $position + 1,
+                    [StringComparison]::Ordinal)
+                $writeMatch = [regex]::Match($text,
+                    '\|\s*HDD\s*\|\s*Seq\. Schreiben\s*\|\s*(?<rate>[0-9]+(?:[.,][0-9]+)?)\s+KiB/s\s*\|\s*OK\s*\|')
+                $readMatch = [regex]::Match($text,
+                    '\|\s*HDD\s*\|\s*Seq\. Lesen\s*\|\s*(?<rate>[0-9]+(?:[.,][0-9]+)?)\s+KiB/s\s*\|\s*OK\s*\|')
+                if ($promptAfter -ge 0 -and $writeMatch.Success -and
+                    $readMatch.Success) {
+                    $culture = [Globalization.CultureInfo]::InvariantCulture
+                    $writeText = $writeMatch.Groups['rate'].Value.Replace(',', '.')
+                    $readText = $readMatch.Groups['rate'].Value.Replace(',', '.')
+                    $writeRate = [double]::Parse($writeText, $culture)
+                    $readRate = [double]::Parse($readText, $culture)
+                    if ($writeRate -le 18.29 -or $readRate -le 77.48) {
+                        throw "VMware HDD rates did not improve: write=$writeRate read=$readRate KiB/s."
+                    }
+                    $text | Set-Content -LiteralPath $GateLog -Encoding utf8
+                    $passed = $true
+                    Write-Output ("VMWARE BENCHMARK PASS elapsed={0}s write={1}KiB/s read={2}KiB/s cleanup=ok log={3}" -f
+                        [int]$watch.Elapsed.TotalSeconds, $writeText, $readText,
+                        $GateLog)
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$passed) {
+            $lastMarker = if ($benchmarkMissing.Count -ne 0) {
+                $benchmarkMissing[0]
+            } else {
+                'HDD result rows or shell return'
+            }
+            throw "VMware benchmark timed out waiting for: $lastMarker"
+        }
+    }
+    else {
     $commandSent = $false
     for ($attempt = 1; $attempt -le 3; ++$attempt) {
         $commandSent = Send-ExplicitDesktopCommand
@@ -465,6 +575,7 @@ try {
     }
     if (!$passed) {
         throw 'VMware RFB pointer movement did not reach the desktop.'
+    }
     }
 }
 finally {

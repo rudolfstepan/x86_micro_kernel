@@ -4,7 +4,32 @@ Stand: 29. August 2026
 
 Branch/Startpunkt: `working_branch` / `027728e`
 
-Aktives Thema: keines. Zuletzt abgeschlossen: `R7.1f-ahci-batched-dma`.
+Aktives Thema: keines. Zuletzt abgeschlossen:
+`R7.1g-fat32-open-handle-cache`.
+
+Der VMware-HDD-Gegenlauf zeigte trotz flacher persistenter SATA-VMDK nur
+18,29 KiB/s Schreiben und 77,48 KiB/s Lesen. CPU und RAM waren gleichzeitig
+unauffällig; der Gastpfad war damit isoliert. Der FAT32-VFS-Adapter löste vor
+jedem 4096-Byte-Read und -Write den bereits geöffneten Directory-Eintrag erneut
+auf, obwohl Handle und Mount bereits dieselbe monotone Datengeneration
+trugen. R7.1g verwendet diesen vorhandenen Vertrag nun vollständig: Nur ein
+intern konsistentes Dateihandle mit exakter aktueller Generation darf Name,
+Cluster und Größe wiederverwenden. Fremde VFS- oder Legacy-Mutationen erhöhen
+die gemeinsame Generation, verwerfen alle sequentiellen Hinweise und erzwingen
+vor dem nächsten I/O genau eine begrenzte Namensauflösung. Bei
+Generationserschöpfung bleibt der Cache dauerhaft aus. Journal-v2, vier
+Persistenzbarrieren, AHCI-Verifikation, 4096-Byte-Staging und öffentliche ABIs
+bleiben unverändert. Der Hostnachweis beobachtet bei sechs aufeinanderfolgenden
+4096-Byte-Reads null statt sechs Root-Verzeichnisreads und nach einer
+Legacy-Mutation genau einen Revalidierungsread. Alle 28 eingefrorenen Tests
+bestanden. Der finale VMware-Paketbuild bestand in 5 Sekunden; der echte
+Vier-vCPU-Lauf erreichte nach bytegleichem 256-KiB-Readback, Cleanup und
+Shell-Rückkehr in 35 Sekunden 18,94 KiB/s Schreiben und 82,36 KiB/s Lesen.
+Gegenüber 18,29/77,48 ist der verbliebene VFS-Overhead messbar reduziert, die
+Schreibrate aber weiterhin niedrig. Sie bleibt als Restkosten der vier
+Durabilitätsphasen und des gepollten Controllerpfads sichtbar; R7.1g lockert
+weder Barrieren noch Warte- oder Host-Sicherheitskonfiguration. Das Paket ist
+abgeschlossen und die Queue leer.
 
 Der reale R7.1e-Gegenlauf ist korrekt, aber mit 7,99 KiB/s Schreiben und
 503,93 KiB/s Lesen weiterhin unbrauchbar langsam. Ursache ist der nur dem
