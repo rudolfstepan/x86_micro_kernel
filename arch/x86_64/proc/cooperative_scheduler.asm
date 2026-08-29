@@ -38,6 +38,9 @@ TASK_TABLE_PML4            equ 0
 TASK_TABLE_PDPT            equ 8
 TASK_TABLE_PD              equ 16
 TASK_TABLE_PT              equ 24
+SYSCALL_PROFILE_SIZE       equ 16
+SYSCALL_PROFILE_GENERATION equ 0
+SYSCALL_PROFILE_MASK       equ 8
 
 TASK_FREE                  equ 0
 TASK_READY                 equ 1
@@ -176,6 +179,8 @@ REIST_SYS_GETPID           equ 22
 REIST_SYS_SPAWN            equ 23
 REIST_SYS_WAIT             equ 24
 REIST_SYS_SPAWNV           equ 30
+SHELL_PARENT_SYSCALL_MASK  equ (1 << REIST_SYS_EXIT) | (1 << REIST_SYS_READ) | (1 << REIST_SYS_WRITE) | (1 << REIST_SYS_GETPID) | (1 << REIST_SYS_SPAWN) | (1 << REIST_SYS_WAIT) | (1 << REIST_SYS_SPAWNV) | (1 << REIST_SYS_YIELD)
+SHELL_CHILD_SYSCALL_MASK   equ (1 << REIST_SYS_EXIT)
 SHELL_ARGC                 equ 2
 SHELL_CHILD_STACK_BYTES    equ 96
 SHELL_CHILD_ARGV0          equ USER_STACK_TOP - 32
@@ -195,6 +200,7 @@ SHELL_STDOUT               equ 1
 SHELL_STDERR               equ 2
 SHELL_IO_MAX               equ 64
 REIST_EAGAIN               equ -11
+REIST_EACCES               equ -13
 REIST_ENOSYS               equ -38
 COM1_DATA                  equ 0x3F8
 COM1_LSR                   equ 0x3FD
@@ -703,6 +709,12 @@ x86_64_process_shell64:
     lea r12, [rel scheduler_tasks]
     mov qword [r12 + TASK_GENERATION], TASK_SHELL_GENERATION
     mov qword [r12 + TASK_ID], TASK_SHELL_ID
+    xor edi, edi
+    mov esi, TASK_SHELL_GENERATION
+    mov rdx, SHELL_PARENT_SYSCALL_MASK
+    call scheduler_install_shell_syscall_profile64
+    test eax, eax
+    jz scheduler_fail
     mov qword [r12 + TASK_STATE], TASK_READY
     mov al, EVENT_SHELL_READY
     call scheduler_append_event64
@@ -1452,7 +1464,19 @@ scheduler_syscall_entry64:
     jz scheduler_fail
 
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .non_shell_dispatch
+    call scheduler_validate_shell_syscall_profile64
+    test eax, eax
+    jz scheduler_fail
+    cmp eax, 1
     je scheduler_shell_syscall_dispatch64
+    mov rax, REIST_EACCES
+    cmp dword [rel scheduler_current_slot], 0
+    je scheduler_shell_resume64
+    cmp dword [rel scheduler_current_slot], 1
+    jne scheduler_fail
+    jmp scheduler_shell_child_denied_resume64
+.non_shell_dispatch:
     cmp qword [rel syscall_rax], REIST_SYS_YIELD
     je scheduler_handle_yield64
     cmp qword [rel syscall_rax], REIST_SYS_SLEEP_MS
@@ -1505,6 +1529,61 @@ scheduler_save_syscall_context64:
     mov qword [r12 + TASK_R14], rax
     mov rax, qword [rel syscall_r15]
     mov qword [r12 + TASK_R15], rax
+    ret
+
+; The shell profile is a parallel generation-scoped authority record. EAX is
+; 1 when allowed, 2 for a well-formed denied request, and 0 for stale or
+; malformed profile state. No handler-visible effect precedes this gate.
+scheduler_validate_shell_syscall_profile64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .invalid
+    mov edi, dword [rel scheduler_current_slot]
+    cmp edi, 1
+    ja .invalid
+    mov eax, edi
+    shl rax, 8
+    lea rdx, [rel scheduler_tasks]
+    add rdx, rax
+    cmp r12, rdx
+    jne .invalid
+    cmp qword [r12 + TASK_STATE], TASK_RUNNING
+    jne .invalid
+    mov r8, qword [r12 + TASK_GENERATION]
+    test r8, r8
+    jz .invalid
+    mov eax, edi
+    shl rax, 4
+    lea rdx, [rel scheduler_syscall_profiles]
+    add rdx, rax
+    cmp qword [rdx + SYSCALL_PROFILE_GENERATION], r8
+    jne .invalid
+    test edi, edi
+    jnz .child_profile
+    cmp r8, TASK_SHELL_GENERATION
+    jne .invalid
+    mov rcx, SHELL_PARENT_SYSCALL_MASK
+    jmp .mask_ready
+.child_profile:
+    cmp r8, TASK_SHELL_CHILD_GEN
+    jb .invalid
+    cmp r8, TASK_SHELL_CHILD_GEN2
+    ja .invalid
+    mov rcx, SHELL_CHILD_SYSCALL_MASK
+.mask_ready:
+    cmp qword [rdx + SYSCALL_PROFILE_MASK], rcx
+    jne .invalid
+    mov rax, qword [rel syscall_rax]
+    cmp rax, 64
+    jae .denied
+    bt rcx, rax
+    jnc .denied
+    mov eax, 1
+    ret
+.denied:
+    mov eax, 2
+    ret
+.invalid:
+    xor eax, eax
     ret
 
 scheduler_shell_syscall_dispatch64:
@@ -1757,16 +1836,23 @@ scheduler_shell_spawn_validated64:
     lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
     mov eax, dword [rel scheduler_dynamic_spawn_count]
     add eax, TASK_SHELL_CHILD_GEN
+    mov r14d, eax
     mov qword [r12 + TASK_GENERATION], rax
     mov qword [r12 + TASK_ID], TASK_SHELL_CHILD_ID
     mov qword [r12 + TASK_RDI], 0
+    mov edi, 1
+    mov esi, r14d
+    mov rdx, SHELL_CHILD_SYSCALL_MASK
+    call scheduler_install_shell_syscall_profile64
+    test eax, eax
+    jz scheduler_fail
     mov qword [r12 + TASK_STATE], TASK_READY
     mov byte [rel scheduler_dynamic_child_active], 1
-    mov dword [rel scheduler_dynamic_child_generation], eax
+    mov dword [rel scheduler_dynamic_child_generation], r14d
     mov dword [rel scheduler_dynamic_parent_generation], TASK_SHELL_GENERATION
     inc dword [rel scheduler_dynamic_spawn_count]
     mov edi, 1
-    mov esi, eax
+    mov esi, r14d
     call scheduler_runqueue_enqueue64
     test eax, eax
     jz scheduler_fail
@@ -2586,6 +2672,121 @@ scheduler_handle_shell_child_exit64:
     test eax, eax
     jz scheduler_fail
     jmp scheduler_runqueue_dispatch64
+
+; A denied child request resumes through the ordinary saved-context queue path
+; so the RX-only child can inspect EACCES without gaining handler authority.
+scheduler_shell_child_denied_resume64:
+    cmp rax, REIST_EACCES
+    jne scheduler_fail
+    mov r15, rax
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne scheduler_fail
+    cmp dword [rel scheduler_current_slot], 1
+    jne scheduler_fail
+    lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp qword [r12 + TASK_STATE], TASK_RUNNING
+    jne scheduler_fail
+    mov r14, qword [r12 + TASK_GENERATION]
+    cmp r14, TASK_SHELL_CHILD_GEN
+    jb scheduler_fail
+    cmp r14, TASK_SHELL_CHILD_GEN2
+    ja scheduler_fail
+    cmp dword [rel scheduler_dynamic_child_generation], r14d
+    jne scheduler_fail
+    call scheduler_save_syscall_context64
+    mov qword [r12 + TASK_RAX], r15
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov edi, 1
+    mov esi, r14d
+    call scheduler_runqueue_enqueue64
+    test eax, eax
+    jz scheduler_fail
+    jmp scheduler_runqueue_dispatch64
+
+; EDI slot, ESI generation and RDX exact mask. Generation is published last,
+; after complete task construction and while the task is still non-runnable.
+scheduler_install_shell_syscall_profile64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .fail
+    cmp edi, 1
+    ja .fail
+    test esi, esi
+    jz .fail
+    test edi, edi
+    jnz .child
+    cmp esi, TASK_SHELL_GENERATION
+    jne .fail
+    mov rax, SHELL_PARENT_SYSCALL_MASK
+    cmp rdx, rax
+    jne .fail
+    jmp .identity_valid
+.child:
+    cmp esi, TASK_SHELL_CHILD_GEN
+    jb .fail
+    cmp esi, TASK_SHELL_CHILD_GEN2
+    ja .fail
+    cmp rdx, SHELL_CHILD_SYSCALL_MASK
+    jne .fail
+.identity_valid:
+    mov eax, edi
+    shl rax, 8
+    lea r8, [rel scheduler_tasks]
+    add r8, rax
+    cmp qword [r8 + TASK_STATE], TASK_FREE
+    jne .fail
+    cmp qword [r8 + TASK_GENERATION], rsi
+    jne .fail
+    mov eax, edi
+    shl rax, 4
+    lea r8, [rel scheduler_syscall_profiles]
+    add r8, rax
+    cmp qword [r8 + SYSCALL_PROFILE_GENERATION], 0
+    jne .fail
+    cmp qword [r8 + SYSCALL_PROFILE_MASK], 0
+    jne .fail
+    mov qword [r8 + SYSCALL_PROFILE_MASK], rdx
+    mov qword [r8 + SYSCALL_PROFILE_GENERATION], rsi
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+; EDI slot and ESI generation. Reject stale or duplicate revocation and clear
+; the bitmap before withdrawing its generation publication.
+scheduler_clear_shell_syscall_profile64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .fail
+    cmp edi, 1
+    ja .fail
+    test edi, edi
+    jnz .child
+    cmp esi, TASK_SHELL_GENERATION
+    jne .fail
+    mov rdx, SHELL_PARENT_SYSCALL_MASK
+    jmp .identity_valid
+.child:
+    cmp esi, TASK_SHELL_CHILD_GEN
+    jb .fail
+    cmp esi, TASK_SHELL_CHILD_GEN2
+    ja .fail
+    mov rdx, SHELL_CHILD_SYSCALL_MASK
+.identity_valid:
+    mov eax, edi
+    shl rax, 4
+    lea r8, [rel scheduler_syscall_profiles]
+    add r8, rax
+    cmp qword [r8 + SYSCALL_PROFILE_GENERATION], rsi
+    jne .fail
+    cmp qword [r8 + SYSCALL_PROFILE_MASK], rdx
+    jne .fail
+    mov qword [r8 + SYSCALL_PROFILE_MASK], 0
+    mov qword [r8 + SYSCALL_PROFILE_GENERATION], 0
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
 
 scheduler_handle_runqueue_exit64:
     cmp edi, 3
@@ -3727,6 +3928,12 @@ scheduler_reap_terminal64:
     jne .fail
     cmp qword [r12 + TASK_STATE], rdx
     jne .fail
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .profile_cleared
+    call scheduler_clear_shell_syscall_profile64
+    test eax, eax
+    jz .fail
+.profile_cleared:
     mov ebx, edi
     call scheduler_release_task_frames64
     test eax, eax
@@ -4007,6 +4214,13 @@ scheduler_verify_final_events64:
     jne .fail
     cmp qword [rel scheduler_dynamic_wait_status_direct], 0
     jne .fail
+    lea rsi, [rel scheduler_syscall_profiles]
+    mov ecx, (TASK_SLOT_CAPACITY * SYSCALL_PROFILE_SIZE) / 8
+.shell_profile_zero:
+    cmp qword [rsi], 0
+    jne .fail
+    add rsi, 8
+    loop .shell_profile_zero
     jmp .task_records
 .quantum_events:
     cmp byte [rel scheduler_event_count], 14
@@ -4253,6 +4467,10 @@ scheduler_force_cleanup64:
     inc ebx
     cmp ebx, TASK_SLOT_CAPACITY
     jb .task_loop
+    xor eax, eax
+    lea rdi, [rel scheduler_syscall_profiles]
+    mov ecx, (TASK_SLOT_CAPACITY * SYSCALL_PROFILE_SIZE) / 8
+    rep stosq
     call scheduler_cleanup_common64
     ret
 
@@ -4460,6 +4678,9 @@ scheduler_shell_read_count:
     resd 1
 scheduler_shell_write_count:
     resd 1
+alignb 16
+scheduler_syscall_profiles:
+    resb TASK_SLOT_CAPACITY * SYSCALL_PROFILE_SIZE
 scheduler_event_count:
     resb 1
 scheduler_events:

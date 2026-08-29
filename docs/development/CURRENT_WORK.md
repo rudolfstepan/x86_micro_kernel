@@ -205,12 +205,16 @@ der native QEMU-Lauf mit zwei erfolgreichen Kind-Eigenpruefungen bestanden bis
 `RING3_SHELL_OK`; die Queue ist leer. Variable Argumentlisten, Umgebung, VFS
 und Capability-Vererbung bleiben ausgeschlossen.
 
-R8.2m ist aktiv. Vier feste generationengebundene Syscallprofile ergaenzen den
-voll belegten Taskrecord ohne ABI- oder Kapazitaetswachstum. Die Shell erhaelt
-nur ihre acht benoetigten Indizes, das Kind ausschliesslich `EXIT` 9. Ein
-kindseitiger `GETPID`-Versuch muss vor jeder Wirkung mit `EACCES` scheitern und
-ueber denselben IRETQ-/Runqueue-Rueckweg fortgesetzt werden. Reap loescht das
-exakte Profil vor Slot-Reuse.
+R8.2m ist abgeschlossen. Vier feste generationengebundene Syscallprofile
+ergaenzen den voll belegten Taskrecord ohne ABI- oder Kapazitaetswachstum. Die
+Shell erhaelt nur ihre acht benoetigten Indizes, das Kind ausschliesslich
+`EXIT` 9. Beide Kindgenerationen beobachteten einen wirkungslosen
+`GETPID`-Versuch als `EACCES`, liefen ueber denselben IRETQ-/Runqueue-Rueckweg
+weiter und beendeten nach der bestehenden Stackpruefung mit 77. 53
+Quellvertragstests, der warnungsfreie 129.680-Byte-Build und der native
+QEMU-Dialog bis `RING3_SHELL_OK` bestanden. Reap loeschte jedes exakte Profil;
+alle vier Records und alle bisherige Autoritaet waren vor Erfolg null. Die
+x86_64-Queue ist leer.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der

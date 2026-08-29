@@ -471,6 +471,52 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("runs_sent = 2", runner)
         self.assertIn('captured.count("REIST_X86_64_RING3_SHELL_RUN_OK") != 2', runner)
 
+    def test_ring3_shell_syscall_profiles_are_default_deny_and_generation_scoped(self):
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        child = self.read("arch/x86_64/user/child.asm")
+        self.assertIn("TASK_RECORD_SIZE           equ 256", scheduler)
+        self.assertIn("SYSCALL_PROFILE_SIZE       equ 16", scheduler)
+        self.assertIn(
+            "resb TASK_SLOT_CAPACITY * SYSCALL_PROFILE_SIZE", scheduler
+        )
+        self.assertIn("SHELL_PARENT_SYSCALL_MASK", scheduler)
+        self.assertIn("SHELL_CHILD_SYSCALL_MASK   equ (1 << REIST_SYS_EXIT)", scheduler)
+        entry = scheduler.index("scheduler_syscall_entry64:")
+        gate = scheduler.index(
+            "call scheduler_validate_shell_syscall_profile64", entry
+        )
+        dispatch = scheduler.index("scheduler_shell_syscall_dispatch64:", gate)
+        self.assertLess(gate, dispatch)
+        validator = scheduler.index("scheduler_validate_shell_syscall_profile64:")
+        self.assertLess(scheduler.index("cmp rax, 64", validator),
+                        scheduler.index("bt rcx, rax", validator))
+        self.assertIn("mov rax, REIST_EACCES", scheduler[gate:dispatch])
+        self.assertIn("scheduler_shell_child_denied_resume64:", scheduler)
+        parent_setup = scheduler.index("x86_64_process_shell64:")
+        parent_ready = scheduler.index(
+            "mov qword [r12 + TASK_STATE], TASK_READY", parent_setup
+        )
+        self.assertLess(scheduler.index(
+            "call scheduler_install_shell_syscall_profile64", parent_setup
+        ), parent_ready)
+        child_setup = scheduler.index("scheduler_shell_spawn_validated64:")
+        child_ready = scheduler.index(
+            "mov qword [r12 + TASK_STATE], TASK_READY", child_setup
+        )
+        self.assertLess(scheduler.index(
+            "call scheduler_install_shell_syscall_profile64", child_setup
+        ), child_ready)
+        reap = scheduler.index("scheduler_reap_terminal64:")
+        release = scheduler.index("call scheduler_release_task_frames64", reap)
+        self.assertLess(scheduler.index(
+            "call scheduler_clear_shell_syscall_profile64", reap
+        ), release)
+        self.assertIn(".shell_profile_zero:", scheduler)
+        self.assertIn("REIST_SYS_GETPID equ 22", child)
+        denial = child.index("mov eax, REIST_SYS_GETPID")
+        stack_check = child.index("cmp rsp, CHILD_RSP", denial)
+        self.assertLess(child.index("cmp rax, REIST_EACCES", denial), stack_check)
+
     def test_user_page_tables_are_private_fixed_and_wx(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")
         self.assertIn("USER_PAGE_COUNT           equ 8", source)

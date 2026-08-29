@@ -551,3 +551,25 @@ Abweichung mit 78.
 warnungsfreie 128.328-Byte-Build bestanden. Der native QEMU-Dialog validierte
 beide Generationen und erreichte mit exakt zwei `RUN_OK`-Markern alle
 bisherigen Marker bis `RING3_SHELL_OK`.
+
+## Generationsgebundene Syscallprofile R8.2m
+
+Der unveraenderte 256-Byte-Taskrecord besitzt keine freie ABI-Flaeche. Deshalb
+ordnet eine separate feste Vier-Slot-Tabelle jedem Taskslot genau eine
+64-Bit-Generation und eine 64-Bit-Syscallmaske zu. Das Elternprofil fuer
+Generation 40 enthaelt ausschliesslich `EXIT`, `READ`, `WRITE`, `GETPID`,
+`SPAWN`, `WAIT`, `SPAWNV` und `YIELD`; die Kindprofile 41 und 42 enthalten nur
+`EXIT`. Profilgeneration, exakte Rollenmaske und Indexgrenze werden vor dem
+Shell-Dispatcher geprueft. Stale oder missgebildete Metadaten brechen
+fail-closed ab, eine gueltige Ablehnung liefert `EACCES` ueber den normalen
+gespeicherten Kontext und IRETQ-/Runqueue-Rueckweg.
+
+Das RX-only-Kind ruft vor seiner bisherigen Stackpruefung einmal `GETPID` 22
+mit Nullargumenten auf und akzeptiert ausschliesslich `-13`. Danach bleiben
+96-Byte-System-V-Startstack und Exitstatus 77 unveraendert. Reap leert Maske
+und Generation nur bei exaktem Match vor Task- und Abbildfreigabe; die finale
+Pruefung verlangt alle vier Records null. 53 Quellvertragstests und der nach
+einer fokussierten 64-Bit-Immediate-Reparatur warnungsfreie 129.680-Byte-Build
+bestanden. Der native Ein-vCPU-/128-MiB-QEMU-Dialog durchlief beide
+Kindgenerationen, meldete exakt zwei `RUN_OK`-Marker und erreichte alle
+bisherigen Marker bis `RING3_SHELL_OK`.

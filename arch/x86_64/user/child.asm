@@ -1,6 +1,8 @@
 BITS 64
 
 REIST_SYS_EXIT equ 9
+REIST_SYS_GETPID equ 22
+REIST_EACCES    equ -13
 CHILD_STATUS   equ 77
 FAIL_STATUS    equ 78
 USER_STACK_TOP equ 0x00409000
@@ -12,6 +14,13 @@ section .text
 global _start
 
 _start:
+    mov eax, REIST_SYS_GETPID
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    syscall
+    cmp rax, REIST_EACCES
+    jne .fail
     cmp rsp, CHILD_RSP
     jne .fail
     test rsp, 15

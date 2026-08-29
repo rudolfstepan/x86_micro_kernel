@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2m-x86_64-syscall-profiles"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11651,7 +11651,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2m-x86_64-syscall-profiles"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Enforce generation-scoped x86_64 syscall profiles"
@@ -11683,7 +11683,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "proc: enforce x86_64 syscall profiles"
-evidence = []
+evidence = [
+  "all 53 x86_64 source-contract tests passed including the unchanged packed 256-byte task ABI exactly four parallel generation plus bitmap records exact parent and child masks pre-dispatch validation EACCES resume and generation-exact reap",
+  "after one focused 64-bit immediate comparison repair the warning-free package build produced a 129680-byte bootstrap 10264-byte probe 1696-byte shell 528-byte child ELF 8064-byte C core object and 13520-byte C payload",
+  "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers after child generations 41 and 42 each received EACCES -13 for GETPID then validated the existing System V startup stack and exited 77",
+  "both generations cleared the exact profile before task and image release; final verification observed all four profile records plus task queue relation and loader metadata zero and cleanup restored the exact initial free count; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

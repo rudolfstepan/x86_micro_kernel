@@ -269,6 +269,15 @@ Kind erhaelt einen privaten 96-Byte-System-V-AMD64-Startstack mit `argc`,
 Status 77 liefern; damit entsteht keine variable Argument- oder
 Capability-Vererbung.
 
+R8.2m ergaenzt den voll belegten 256-Byte-Taskrecord durch genau vier parallele
+feste Profile aus Generation und 64-Bit-Syscallmaske. Generation 40 besitzt nur
+die acht Shelloperationen; Generation 41 und 42 besitzen ausschliesslich
+`EXIT` 9. Vor jedem Shell-Dispatcher wird Task-, Slot-, Profilgeneration und
+exakte Rollenmaske geprueft. Ein gueltiger Entzug kehrt als `EACCES` ueber den
+gespeicherten IRETQ-/Runqueue-Pfad zurueck, waehrend stale oder strukturell
+falsche Profile den Scheduler fail-closed bereinigen. Reap widerruft zuerst das
+exakt passende Profil; erst danach werden Task und Abbild freigegeben.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein
