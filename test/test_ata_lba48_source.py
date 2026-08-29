@@ -70,6 +70,21 @@ class AtaLba48ContractTests(unittest.TestCase):
         self.assertIn("ata_read_sectors(ata_base_address", fat32)
         self.assertIn("ata_write_sectors(ata_base_address", fat32)
 
+    def test_ahci_batches_are_bounded_and_report_exact_dma_completion(self):
+        header = (ROOT / "drivers/block/ahci.h").read_text(encoding="utf-8")
+        source = (ROOT / "drivers/block/ahci.c").read_text(encoding="utf-8")
+        files = (ROOT / "fs/fat32/fat32_files.c").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("AHCI_DMA_MAX_SECTORS 20U", header)
+        self.assertIn("count <= AHCI_DMA_MAX_SECTORS", source)
+        self.assertIn("count <= drive->sectors - sector", source)
+        self.assertIn("fis->count_low = (uint8_t)count", source)
+        self.assertIn("fis->count_high = (uint8_t)(count >> 8U)", source)
+        self.assertIn("header->bytes_transferred == expected", source)
+        self.assertIn("ata_read_sectors(ata_base_address, sector, run",
+                      files)
+
     def test_detection_zero_initializes_extended_drive_metadata(self):
         source = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
         self.assertIn("memset(&temp_drive, 0, sizeof(temp_drive))", source)

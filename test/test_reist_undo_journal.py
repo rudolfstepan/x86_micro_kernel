@@ -48,11 +48,11 @@ class ReistUndoJournalTests(unittest.TestCase):
         commit = source[source.index("static bool transaction_end"):
                         source.index("bool ata_undo_journal_transaction_end")]
         ordered = [
-            "journal->data_lba + i",
+            "journal->transport->write_sectors_deferred(",
             "flush_deferred(journal)",
             "write_active(journal, deferred)",
             "flush_deferred(journal)",
-            "commit_write(",
+            "commit_targets_deferred(journal)",
             "clear_journal(journal, deferred)",
             "flush_deferred(journal)",
         ]
@@ -74,10 +74,11 @@ class ReistUndoJournalTests(unittest.TestCase):
 
         ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
         self.assertIn("ata_journal_write_deferred_transport", ata)
+        self.assertIn("ahci_write_sectors_deferred", ata)
         self.assertIn("ata_write_sector_impl(base, lba, (void *)buffer, "
                       "is_master, false)", ata)
         transport = ata[ata.index("static const ata_journal_transport_t"):
-                        ata.index("static bool ata_journal_initialized")]
+                        ata.index("static void ata_journal_ensure_initialized")]
         self.assertIn(".write_deferred = ata_journal_core_write_deferred",
                       transport)
         self.assertIn(
@@ -91,12 +92,21 @@ class ReistUndoJournalTests(unittest.TestCase):
         self.assertIn(
             ".commit_write_deferred = ata_journal_core_commit_write_deferred",
             transport)
+        self.assertIn(
+            ".commit_write_sectors_deferred =",
+            transport)
         self.assertIn(".commit_end = ata_journal_core_commit_end", transport)
         batch = ata[ata.index("static bool ata_journal_core_commit_begin"):
                     ata.index("static bool ata_journal_core_commit_write(")]
         self.assertIn("storage_write_begin", batch)
         self.assertIn("ata_journal_flush_transport", batch)
         self.assertIn("storage_write_end(durable)", batch)
+
+        targets = core[core.index("static bool commit_targets_deferred"):
+                       core.index("static bool transaction_end")]
+        self.assertIn("commit_write_sectors_deferred", targets)
+        self.assertIn("target_lba + 1U", targets)
+        self.assertIn("journal->pending_data[index]", targets)
 
     def test_recovery_validates_crc_before_restoring_and_clearing(self):
         source = (ROOT / "drivers/block/ata_journal.c").read_text(

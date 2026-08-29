@@ -394,14 +394,35 @@ und der 17-sekuendige `real_hw/vga`-Paketbuild bestanden. Der manuelle
 ASUS-/Samsung-SSD-Gegenlauf erreichte nach Schreiben, `fsync`, vollstaendigem
 Readback und Cleanup `phase=complete`; die HDD-Zeilen meldeten 7,99 KiB/s
 Schreiben und 503,93 KiB/s Lesen, jeweils `OK`.
-R7.1f ist aktiv, weil diese Werte trotz korrekter Daten weit unter dem
-Hardwarepfad liegen. Der AHCI-Journaltransport soll Undo, ACTIVE, Ziele und
-CLEAN in genau vier unveraenderten Persistenzphasen mit fester
-Mehrsektor-DMA, einem Flush je Phase und vollstaendigem Batch-Readback
-ausfuehren. Validierte physisch fortlaufende FAT32-Datenreads werden ueber
-denselben auf zwanzig Sektoren begrenzten DMA-Pfad zusammengefasst. NCQ,
-Interruptbetrieb, Journalformat und Durabilitaetssemantik bleiben ausserhalb
-dieses Pakets.
+R7.1f wurde deshalb umgesetzt, weil diese Werte trotz korrekter Daten weit
+unter dem Hardwarepfad lagen. Der AHCI-Journaltransport besitzt jetzt einen festen,
+kernel-eigenen 20-Sektor-Batch: Undo wird gebuendelt geschrieben und nach dem
+ersten Flush vollstaendig gelesen und verglichen, danach folgen beide ACTIVE-
+Header mit zweitem Flush/Readback, physisch benachbarte Ziel-LBA-Laeufe mit
+drittem Flush/Readback und beide CLEAN-Header mit viertem Flush/Readback. Der
+Treiber prueft Bereich, 32-Bit-DMA-Erreichbarkeit und exakte PRDBC-Laenge vor
+Erfolg; Fehler vergiften die offene Phase ohne Wiederholung. FAT32 erkennt
+zusaetzlich validierte physisch fortlaufende Datencluster und liest bis zu
+zwanzig Sektoren pro DMA, ohne Teilsektor-, Cursor-, Partitions- oder offene
+Journalansichten zu umgehen. NCQ, Interruptbetrieb, Journalformat und
+Durabilitaetssemantik bleiben ausserhalb dieses Pakets. Alle 39 eingefrorenen
+Quell- und Hosttests bestanden. Die beim ersten Zielstart sichtbare
+`scheduler_can_sleep()`-Panik war eine unzulaessige AHCI-Lock-Assertion im
+Pre-Scheduler-Auto-Mount, nicht ein DMA- oder Journalfehler. Der Lock erlaubt
+dort wieder nur die unkontendierte Uebernahme und liefert bei Kontention
+begrenzt `WOULD_BLOCK`; alle sechs fokussierten AHCI-Tests bestanden danach.
+Der finale 40-sekuendige `real_hw/vga`-Paketbuild ohne VM-Start erzeugte das
+64-MiB-Installerimage mit SHA-256
+`CFBEBAA94A85489CFC82E4FF1C75D7490FABEFD7C90BC0CC0254C2155F3814AF`.
+Ein zusaetzlicher Ein-vCPU-QEMU-Lauf ueber ICH9-AHCI bestand Auto-Mount,
+`BOOT_OK`, Ring-3-Shell sowie den kompletten 256-KiB-Benchmark mit
+bytegleichem Readback, Cleanup und `phase=complete` in 10,485 Sekunden; die
+Messung ergab 42,75 KiB/s Schreiben und 1347,36 KiB/s Lesen. Der abschliessende
+ASUS-/Samsung-SSD-Gegenlauf auf echter Hardware meldete ungefaehr 30 KiB/s
+Schreiben und 670 KiB/s Lesen. Damit stieg die reale Schreibrate gegenueber
+R7.1e auf etwa das 3,75-Fache und die Leserate auf etwa das 1,33-Fache; die nur
+nach Readback und Cleanup ausgegebenen Ergebniszeilen schliessen die physische
+Abnahme. R7.1f ist abgeschlossen, und es ist kein Folgepaket eingereiht.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

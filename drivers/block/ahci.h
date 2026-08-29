@@ -23,6 +23,7 @@
 #define AHCI_RECEIVED_FIS_SIZE 256U
 #define AHCI_COMMAND_TABLE_SIZE 256U
 #define AHCI_VIRTUAL_BASE 0xA000U
+#define AHCI_DMA_MAX_SECTORS 20U
 
 #pragma pack(push, 1)
 typedef struct {
@@ -105,11 +106,17 @@ void ahci_init(void);
 /** Packed probe summary: functions, controllers, links, drives. */
 uint32_t ahci_probe_diagnostics(void);
 bool ahci_read_sector(const drive_t *drive, uint32_t sector, void *buffer);
+bool ahci_read_sectors(const drive_t *drive, uint32_t sector, uint32_t count,
+                       void *buffer);
 bool ahci_requalify_drive(const drive_t *drive);
 bool ahci_write_sector(const drive_t *drive, uint32_t sector,
                        const void *buffer);
 bool ahci_write_sector_recovery(const drive_t *drive, uint32_t sector,
                                 const void *buffer);
+/* Journal-only: completion means submitted, not durable. ahci_flush() closes
+ * the phase and verifies every submitted sector before returning success. */
+bool ahci_write_sectors_deferred(const drive_t *drive, uint32_t sector,
+                                 uint32_t count, const void *buffer);
 bool ahci_flush(const drive_t *drive);
 void ahci_fence_writes(void);
 void ahci_restore_writes_after_recovery(void);

@@ -56,6 +56,29 @@ static bool fat32_read_cursor_matches(const fat32_read_cursor_t* cursor,
            target_index - cursor->cluster_index <= 1U;
 }
 
+static bool fat32_advance_read_sector(uint32_t* cluster,
+                                      uint32_t* cluster_index,
+                                      uint32_t* sector_index,
+                                      uint32_t cluster_limit) {
+    if (!cluster || !cluster_index || !sector_index || cluster_limit == 0U ||
+        boot_sector.sectors_per_cluster == 0U ||
+        *sector_index >= boot_sector.sectors_per_cluster)
+        return false;
+    if (*sector_index + 1U < boot_sector.sectors_per_cluster) {
+        ++*sector_index;
+        return true;
+    }
+    if (*cluster_index >= cluster_limit - 1U) return false;
+    uint32_t next = get_next_cluster_in_chain(&boot_sector, *cluster);
+    if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next) ||
+        !is_valid_cluster(&boot_sector, next))
+        return false;
+    *cluster = next;
+    ++*cluster_index;
+    *sector_index = 0U;
+    return true;
+}
+
 unsigned int read_file_data_at_cursor(unsigned int start_cluster,
                                       unsigned int offset, char* buffer,
                                       unsigned int buffer_size,
@@ -106,49 +129,83 @@ unsigned int read_file_data_at_cursor(unsigned int start_cluster,
         current_index++;
     }
 
-    uint32_t total = 0;
-    uint32_t traversed = 0U;
+    uint32_t total = 0U;
     uint8_t sector_buffer[SECTOR_SIZE];
-    while (total < bytes_to_read && traversed++ < cluster_limit &&
+    uint32_t sector_index = offset_in_cluster / SECTOR_SIZE;
+    uint32_t sector_offset = offset_in_cluster % SECTOR_SIZE;
+    while (total < bytes_to_read && current_index < cluster_limit &&
            is_valid_cluster(&boot_sector, current_cluster)) {
         uint32_t first_sector = cluster_to_sector(&boot_sector, current_cluster);
-        if (first_sector == INVALID_CLUSTER) {
+        if (first_sector == INVALID_CLUSTER ||
+            sector_index >= boot_sector.sectors_per_cluster ||
+            sector_index > UINT32_MAX - first_sector)
             break;
-        }
+        uint32_t sector = first_sector + sector_index;
+        uint32_t remaining = bytes_to_read - total;
 
-        uint32_t sector_index = offset_in_cluster / SECTOR_SIZE;
-        uint32_t sector_offset = offset_in_cluster % SECTOR_SIZE;
-        for (uint32_t i = sector_index;
-             i < boot_sector.sectors_per_cluster && total < bytes_to_read;
-             i++) {
-            if (!ata_read_sector(ata_base_address, first_sector + i,
-                                 sector_buffer, ata_is_master)) {
+        if (sector_offset != 0U || remaining < SECTOR_SIZE) {
+            if (!ata_read_sector(ata_base_address, sector, sector_buffer,
+                                 ata_is_master)) {
                 fat32_read_cursor_invalidate(cursor);
                 return total;
             }
-
             uint32_t available = SECTOR_SIZE - sector_offset;
-            uint32_t amount = bytes_to_read - total;
-            if (amount > available) {
-                amount = available;
-            }
+            uint32_t amount = remaining > available ? available : remaining;
             memcpy(buffer + total, sector_buffer + sector_offset, amount);
             total += amount;
-            sector_offset = 0;
+            sector_offset += amount;
+            if (sector_offset == SECTOR_SIZE) {
+                sector_offset = 0U;
+                if (total < bytes_to_read &&
+                    !fat32_advance_read_sector(
+                        &current_cluster, &current_index, &sector_index,
+                        cluster_limit))
+                    break;
+            }
+            continue;
         }
 
-        if (total >= bytes_to_read) {
-            break;
+        uint32_t wanted = remaining / SECTOR_SIZE;
+        if (wanted > ATA_PIO_MAX_SECTORS) wanted = ATA_PIO_MAX_SECTORS;
+        uint32_t run = 1U;
+        uint32_t run_cluster = current_cluster;
+        uint32_t run_cluster_index = current_index;
+        uint32_t run_sector_index = sector_index;
+        uint32_t last_sector = sector;
+        while (run < wanted) {
+            uint32_t candidate_cluster = run_cluster;
+            uint32_t candidate_cluster_index = run_cluster_index;
+            uint32_t candidate_sector_index = run_sector_index;
+            if (!fat32_advance_read_sector(
+                    &candidate_cluster, &candidate_cluster_index,
+                    &candidate_sector_index, cluster_limit))
+                break;
+            uint32_t candidate_first =
+                cluster_to_sector(&boot_sector, candidate_cluster);
+            if (candidate_first == INVALID_CLUSTER ||
+                candidate_sector_index > UINT32_MAX - candidate_first ||
+                last_sector == UINT32_MAX ||
+                candidate_first + candidate_sector_index != last_sector + 1U)
+                break;
+            run_cluster = candidate_cluster;
+            run_cluster_index = candidate_cluster_index;
+            run_sector_index = candidate_sector_index;
+            last_sector++;
+            ++run;
         }
-
-        uint32_t next = get_next_cluster_in_chain(&boot_sector, current_cluster);
-        if (next == INVALID_CLUSTER || is_end_of_cluster_chain(next) ||
-            !is_valid_cluster(&boot_sector, next)) {
-            break;
+        if (!ata_read_sectors(ata_base_address, sector, run, buffer + total,
+                              ata_is_master)) {
+            fat32_read_cursor_invalidate(cursor);
+            return total;
         }
-        current_cluster = next;
-        current_index++;
-        offset_in_cluster = 0;
+        total += run * SECTOR_SIZE;
+        current_cluster = run_cluster;
+        current_index = run_cluster_index;
+        sector_index = run_sector_index;
+        if (total < bytes_to_read &&
+            !fat32_advance_read_sector(&current_cluster, &current_index,
+                                       &sector_index, cluster_limit))
+            break;
     }
     if (cursor && total == bytes_to_read) {
         cursor->chain_start = start_cluster;

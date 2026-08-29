@@ -4,7 +4,8 @@
  *
  * Layer: Ring-0 block persistence mechanism.
  * Contract: Version-2 on-disk records and write ordering remain independent of
- * the ATA or AHCI transport which persists one complete 512-byte sector.
+ * the ATA or AHCI transport which persists one sector or one bounded
+ * physically consecutive sector run.
  * Safety: The core allocates no memory and accepts at most twenty unique
  * target sectors in one transaction.
  */
@@ -73,6 +74,7 @@ typedef struct {
      * end publishes the final durability result. */
     ata_journal_commit_begin_fn commit_begin;
     ata_journal_write_fn commit_write_deferred;
+    ata_journal_write_sectors_fn commit_write_sectors_deferred;
     ata_journal_commit_end_fn commit_end;
 } ata_journal_transport_t;
 

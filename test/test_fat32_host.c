@@ -36,6 +36,8 @@ static int fat_writes_before_verify_failure = -1;
 static unsigned int fat_verify_read_failures;
 static unsigned int fat_verify_failure_burst = 1;
 static unsigned int fat_sector_reads;
+static unsigned int read_batch_calls;
+static uint32_t largest_read_batch;
 static unsigned int cache_flushes;
 static bool journal_volume_marked = true;
 static bool journal_attached;
@@ -52,6 +54,8 @@ static bool campaign_fault_armed;
 static unsigned int campaign_cut_after_write;
 static unsigned int campaign_write_count;
 static unsigned int campaign_flush_count;
+static unsigned int target_batch_calls;
+static uint32_t largest_target_batch;
 static uint8_t campaign_baseline[TEST_SECTORS][SECTOR_SIZE];
 static uint8_t campaign_committed[TEST_SECTORS][SECTOR_SIZE];
 static uint32_t primary_fat_lba = 1U;
@@ -177,6 +181,15 @@ static bool host_raw_write_sectors(void *context, unsigned short base,
     return true;
 }
 
+static bool host_commit_write_sectors(void *context, unsigned short base,
+                                      uint32_t lba, uint32_t count,
+                                      const void *buffer, bool is_master) {
+    ++target_batch_calls;
+    if (count > largest_target_batch) largest_target_batch = count;
+    return host_raw_write_sectors(context, base, lba, count, buffer,
+                                  is_master);
+}
+
 static const ata_journal_transport_t host_journal_transport = {
     .read = host_raw_read,
     .write = host_raw_write,
@@ -186,6 +199,7 @@ static const ata_journal_transport_t host_journal_transport = {
     .flush = host_raw_flush,
     .commit_begin = host_commit_begin,
     .commit_write_deferred = host_raw_write,
+    .commit_write_sectors_deferred = host_commit_write_sectors,
     .commit_end = host_commit_end,
 };
 
@@ -209,6 +223,8 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
                       void *buffer, bool is_master) {
     uint8_t *bytes = buffer;
     if (count == 0U || count > ATA_PIO_MAX_SECTORS) return false;
+    ++read_batch_calls;
+    if (count > largest_read_batch) largest_read_batch = count;
     for (uint32_t index = 0U; index < count; ++index) {
         if (!ata_read_sector(base, lba + index,
                              bytes + index * SECTOR_SIZE, is_master))
@@ -633,9 +649,12 @@ static int run_fat32_image_fault_campaign(void) {
     vfs_node_t *node = NULL;
     CHECK(vfs_open("/PAGE.BIN", &node) == VFS_OK);
     campaign_flush_count = 0U;
+    target_batch_calls = 0U;
+    largest_target_batch = 0U;
     CHECK(vfs_write(node, 0U, FILE_WRITE_PAGE_BYTES, page) ==
           FILE_WRITE_PAGE_BYTES);
     CHECK(campaign_flush_count == 4U);
+    CHECK(target_batch_calls != 0U && largest_target_batch > 1U);
     CHECK(vfs_read(node, 0U, FILE_WRITE_PAGE_BYTES, page_readback) ==
           FILE_WRITE_PAGE_BYTES);
     CHECK(memcmp(page, page_readback, FILE_WRITE_PAGE_BYTES) == 0);
@@ -853,6 +872,8 @@ static int run_sequential_write_cache_test(void) {
     /* Consecutive benchmark-sized reads must resume from the prior validated
      * cluster instead of walking from the chain start for every offset. */
     fat_sector_reads = 0U;
+    read_batch_calls = 0U;
+    largest_read_batch = 0U;
     for (uint32_t chunk = 0U; chunk < STREAM_CHUNKS; ++chunk) {
         CHECK(vfs_read(stream_node, chunk * STREAM_CHUNK_BYTES,
                        STREAM_CHUNK_BYTES,
@@ -860,6 +881,8 @@ static int run_sequential_write_cache_test(void) {
               STREAM_CHUNK_BYTES);
     }
     CHECK(fat_sector_reads <= STREAM_SECTORS * 4U);
+    CHECK(read_batch_calls <= STREAM_CHUNKS);
+    CHECK(largest_read_batch == STREAM_CHUNK_BYTES / SECTOR_SIZE);
     CHECK(memcmp(stream_readback, stream_data, STREAM_BYTES) == 0);
 
     /* Legacy FAT writes use the same volume-generation hook, so a cached VFS

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1f-ahci-batched-dma"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11824,7 +11824,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1f-ahci-batched-dma"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Batch AHCI journal phases and sequential FAT32 DMA"
@@ -11882,4 +11882,10 @@ stop_conditions = [
   "the final physical benchmark fails data verification cleanup or any AHCI journal phase"
 ]
 commit_message = "storage: batch verified AHCI journal phases"
-evidence = []
+evidence = [
+  "All 39 frozen AHCI ATA journal and filesystem source or host checks passed including exact four-barrier ordering contiguous target batching pending journal-view fallback and eight-sector FAT32 read batching; the focused pre-scheduler AHCI lock regression rerun passed all 6 checks.",
+  "The final real_hw VGA package passed in 40 seconds without starting a VM and produced a 67108864-byte installer image with SHA-256 CFBEBAA94A85489CFC82E4FF1C75D7490FABEFD7C90BC0CC0254C2155F3814AF.",
+  "A bounded one-vCPU QEMU ICH9-AHCI boot mounted hdd0p2 and reached BOOT_OK plus the Ring-3 shell without the former scheduler_can_sleep panic; the 256-KiB AHCI benchmark then completed in 10485 ms with byte-verified readback cleanup and shell return at 42.75 KiB/s write and 1347.36 KiB/s read.",
+  "The user-reported physical ASUS-board Samsung-SSD AHCI counter-run completed the benchmark result path at approximately 30 KiB/s write and 670 KiB/s read, improving the prior 7.99 KiB/s and 503.93 KiB/s result while retaining verified readback and cleanup.",
+  "No queued package remains and active_id is empty."
+]

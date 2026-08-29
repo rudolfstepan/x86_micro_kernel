@@ -19,6 +19,19 @@ class AtaDriverSourceTests(unittest.TestCase):
         write = self.source[self.source.index("bool ata_write_sector") :]
         self.assertIn("cached->valid = false", write)
 
+    def test_ahci_batch_reads_preserve_pending_journal_view(self):
+        batch = self.source[self.source.index("bool ata_read_sectors("):
+                            self.source.index("bool ata_read_sector(")]
+        self.assertIn("ata_transaction_begin()", batch)
+        self.assertIn("ata_journal_range_has_pending", batch)
+        self.assertIn("ata_read_pending_range", batch)
+        self.assertIn("ahci_read_sectors(parent, absolute, count, buffer)",
+                      batch)
+        self.assertIn("ahci_read_sectors(ahci_drive, lba, count, buffer)",
+                      batch)
+        self.assertLess(batch.index("ata_journal_range_has_pending"),
+                        batch.index("ahci_read_sectors(parent"))
+
     def test_drive_selection_uses_status_polling_not_fixed_50ms_delay(self):
         read = self.source[self.source.index("bool ata_read_sector") :]
         read = read[:read.index("void ata_reset_error_counter")]

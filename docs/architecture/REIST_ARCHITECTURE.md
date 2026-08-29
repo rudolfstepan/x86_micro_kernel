@@ -1979,8 +1979,19 @@ unveraenderten zwanzig Undo-Slots bleibt, mit genau den vier Barrieren
 `Undo -> ACTIVE -> Ziele -> CLEAN` persistiert und bytegleich zurueckgelesen
 wird. Ein eigener Kapazitaetstest belegt zusaetzlich, dass ein 21. eindeutiger
 Sektor vor jeder Zielpublikation abgewiesen wird und ein Abbruch alle
-Zielsektoren unveraendert laesst. Der AHCI-Pfad behaelt seine sektorweise
-`WRITE DMA EXT -> FLUSH CACHE EXT -> READ DMA EXT`-Verifikation unveraendert.
+Zielsektoren unveraendert laesst. Der AHCI-Pfad schliesst dieselben vier
+Persistenzphasen jetzt mit fester Mehrsektor-DMA: erst alle zur Phase
+gehoerenden Writes, dann genau ein `FLUSH CACHE EXT`, danach vollstaendiger
+Readback in physisch zusammenhaengenden Laeufen und byteweiser Vergleich. Der
+kernel-eigene Batch ist auf zwanzig Sektoren begrenzt; ein kurzer PRDBC,
+abweichende Daten oder unklarer Abschluss vergiften die Phase und erlauben
+keine blinde Wiederholung. Gewoehnliche Einzelwrites und Recovery behalten
+ihren strengeren unmittelbaren Write-Flush-Readback-Pfad.
+Da der VFS-Auto-Mount bereits vor der sleep-faehigen Schedulerphase auf AHCI
+zugreift, duerfen Port- und Batch-Mutex dort nur unkontendiert uebernommen
+werden. Der Kernel-Mutex liefert bei frueher Kontention begrenzt
+`WOULD_BLOCK`; der Treiber setzt fuer diesen Pfad keine pauschale
+`scheduler_can_sleep()`-Vorbedingung.
 
 Darüber liegt `filesystem-write` als dritte reale Domäne. Alle öffentlichen
 VFS-Mutationen (`write`, `create`, `delete`, `rename`, `mkdir`, `rmdir`,
@@ -2031,6 +2042,14 @@ den Undo-Satz für Boot-Recovery stehen und schalten das VFS Read-only. Größer
 Operationen benötigen künftig ein skalierbares Journal beziehungsweise COW.
 Journal-v1-Medien werden rückwärtskompatibel wiederhergestellt und anschließend
 mit einem sauberen v2-Header migriert.
+Sequentielle FAT32-Dateireads verwenden denselben festen DMA-Hoechstwert nur
+fuer vollstaendige, validierte und physisch direkt aufeinanderfolgende
+Sektoren. Das schliesst Einsektorcluster ein, deren FAT-Kette auf den jeweils
+naechsten physischen Cluster zeigt. Teilsektoren und physische Kettenspruenge
+bleiben Einzelreads; ueberlappt ein Bereich eine noch offene Journalfassung,
+wird die gesamte Lesegruppe ueber die transaktionsinterne Journalansicht
+aufgeloest. Partitionsuebersetzung, Cursorgrenzen und der 20-Sektor-Hoechstwert
+werden vor der DMA-Ausgabe geprueft.
 FAT32 Same-Directory-Rename und Replace laufen als eine solche VFS-Transaktion.
 Das umfasst bestehende VFAT-Langnamenziele regulärer Dateien: Ihre validierte
 LFN-Folge und der checksum-gebundene Alias bleiben erhalten, der Alias übernimmt

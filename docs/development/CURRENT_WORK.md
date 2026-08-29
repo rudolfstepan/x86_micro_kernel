@@ -2,22 +2,45 @@
 
 Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `2b428243`
+Branch/Startpunkt: `working_branch` / `027728e`
 
-Aktives Thema: `R7.1f-ahci-batched-dma`.
+Aktives Thema: keines. Zuletzt abgeschlossen: `R7.1f-ahci-batched-dma`.
 
 Der reale R7.1e-Gegenlauf ist korrekt, aber mit 7,99 KiB/s Schreiben und
 503,93 KiB/s Lesen weiterhin unbrauchbar langsam. Ursache ist der nur dem
 Namen nach verzögerte AHCI-Journaltransport: Jeder 512-Byte-Sektor fuehrt
 weiterhin `WRITE DMA EXT -> FLUSH CACHE EXT -> READ DMA EXT` aus, bevor das
-Journal seine vier eigentlichen Phasenbarrieren setzt. R7.1f setzt den
-vollstaendigen sechsstufigen Pfad um: Undo-Batch und Verifikation, ACTIVE und
-Verifikation, zusammenhaengende Ziel-Batches und Verifikation sowie CLEAN und
-Verifikation. Genau vier geordnete Flushes, das Journal-v2-Format und das
-fail-closed Write-Fencing bleiben erhalten. Derselbe feste Mehrsektor-DMA-
-Mechanismus soll validierte sequentielle FAT32-Leseabschnitte buendeln; das
-native 64-MiB-Image verwendet Einsektorcluster, weshalb auch physisch
-aufeinanderfolgende Clusterketten explizit erkannt werden muessen.
+Journal seine vier eigentlichen Phasenbarrieren setzt. R7.1f implementiert den
+vollstaendigen sechsstufigen Pfad: Undo-Batch, Flush/Readback, ACTIVE,
+Flush/Readback, zusammenhaengende Ziel-Batches, Flush/Readback und zuletzt
+CLEAN mit Flush/Readback. Ein fester kernel-eigener 20-Sektor-Puffer nimmt die
+erwarteten Daten auf; kurze DMA-Transfers, nicht passende Readbacks oder ein
+unklarer Abschluss vergiften die Phase bis zur kontrollierten Recovery. Genau
+vier geordnete Flushes, das Journal-v2-Format und das fail-closed Write-Fencing
+bleiben erhalten. Derselbe feste Mehrsektor-DMA-Mechanismus buendelt validierte
+sequentielle FAT32-Leseabschnitte auch ueber physisch aufeinanderfolgende
+Einsektorcluster hinweg. Bei Teilsektoren, offenen Journaldaten oder einer
+fragmentierten Kette bleibt der validierte Rueckfallpfad erhalten. Alle 39
+eingefrorenen Quell- und Hosttests bestanden. Eine zusaetzliche Assertion im
+AHCI-Port- und Batch-Lock hatte den fruehen Auto-Mount auf echter Hardware und
+VMware mit `scheduler_can_sleep()` gestoppt. Sie war mit dem vorhandenen
+Kernel-Mutex-Vertrag unvereinbar: Vor Schedulerbereitschaft ist eine
+unkontendierte Uebernahme erlaubt, Kontention endet begrenzt mit
+`WOULD_BLOCK`. Nach der fokussierten Korrektur bestanden alle sechs
+AHCI-Regressionstests erneut. Der finale `real_hw/vga`-Paketbuild bestand in
+40 Sekunden ohne VM-Start und erzeugte `build/reist-os-real-hw.img` mit
+SHA-256
+`CFBEBAA94A85489CFC82E4FF1C75D7490FABEFD7C90BC0CC0254C2155F3814AF`.
+Ein begrenzter QEMU-Lauf mit einer vCPU und ICH9-AHCI mountete `hdd0p2`,
+erreichte `BOOT_OK` und die Ring-3-Shell. Der anschliessende 256-KiB-Benchmark
+erreichte nach 10,485 Sekunden `phase=complete`, pruefte jedes Byte, entfernte
+die Testdatei und meldete 42,75 KiB/s Schreiben sowie 1347,36 KiB/s Lesen. Der
+abschliessende manuelle ASUS-/Samsung-SSD-Gegenlauf auf echter Hardware
+erreichte ungefaehr 30 KiB/s Schreiben und 670 KiB/s Lesen. Gegenueber dem
+R7.1e-Ausgangswert entspricht das etwa dem 3,75-Fachen beim Schreiben und dem
+1,33-Fachen beim Lesen. Da die Benchmark-Ergebniszeilen erst nach
+bytegeprueftem Readback und Cleanup erscheinen, ist die physische Abnahme
+bestanden. R7.1f ist abgeschlossen; kein weiteres Paket ist eingereiht.
 
 Der manuelle Gegenlauf auf dem ASUS-Board mit Samsung-SSD und dem AHCI-Volume
 `hdd0p2` ist erfolgreich abgeschlossen. Der Benchmark schrieb 256 KiB,

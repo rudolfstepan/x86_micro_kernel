@@ -92,11 +92,44 @@ class AhciProbeContractTests(unittest.TestCase):
         source = self.read("drivers/block/ata.c")
         batch_read = source.split("bool ata_read_sectors(", 1)[1].split(
             "bool ata_read_sector(", 1)[0]
-        self.assertIn("if (parent->type == DRIVE_TYPE_AHCI)", batch_read)
-        self.assertIn("ahci_read_sector(parent, absolute + index", batch_read)
+        self.assertIn("parent->type == DRIVE_TYPE_AHCI", batch_read)
+        self.assertIn("ahci_read_sectors(parent, absolute, count, buffer)",
+                      batch_read)
+        self.assertIn("ata_journal_range_has_pending", batch_read)
         self.assertLess(
-            batch_read.index("if (parent->type == DRIVE_TYPE_AHCI)"),
+            batch_read.index("parent->type == DRIVE_TYPE_AHCI"),
             batch_read.index("ata_read_sectors_pio_impl(parent->base"))
+
+    def test_fixed_dma_batches_close_each_deferred_phase_once(self):
+        header = self.read("drivers/block/ahci.h")
+        source = self.read("drivers/block/ahci.c")
+        self.assertIn("#define AHCI_DMA_MAX_SECTORS 20U", header)
+        self.assertIn("count_high = (uint8_t)(count >> 8U)", source)
+        self.assertIn("count * AHCI_SECTOR_SIZE", source)
+        self.assertIn("header->bytes_transferred == expected", source)
+
+        start = source.index("bool ahci_write_sectors_deferred(")
+        end = source.index("bool ahci_flush(", start)
+        deferred = source[start:end]
+        self.assertIn("AHCI_ATA_WRITE_DMA_EXT", deferred)
+        self.assertIn("deferred_batch.count += count", deferred)
+        self.assertNotIn("AHCI_ATA_FLUSH_CACHE_EXT", deferred)
+        self.assertNotIn("AHCI_ATA_READ_DMA_EXT", deferred)
+
+        start = end
+        end = source.index("void ahci_fence_writes(", start)
+        flush = source[start:end]
+        self.assertEqual(flush.count("ahci_execute_flush_command("), 1)
+        self.assertIn("AHCI_ATA_READ_DMA_EXT", flush)
+        self.assertIn("memcmp(batch_dma_buffer, deferred_batch.data[index]",
+                      flush)
+        self.assertIn("if (result) ahci_deferred_reset();", flush)
+        self.assertIn("else deferred_batch.poisoned = true;", flush)
+
+        restore = source[source.index(
+            "void ahci_restore_writes_after_recovery("):
+            source.index("bool ahci_writes_quiescent(")]
+        self.assertIn("ahci_deferred_reset();", restore)
 
     def test_hotplug_requalification_resets_and_reidentifies_port(self):
         header = self.read("drivers/block/ahci.h")
@@ -134,8 +167,16 @@ class AhciProbeContractTests(unittest.TestCase):
                                    acquire_start)
         acquire = source[acquire_start:acquire_end]
         self.assertIn("KASSERT_NOT_IRQ()", acquire)
-        self.assertIn("KASSERT_CAN_SLEEP()", acquire)
+        self.assertNotIn("KASSERT_CAN_SLEEP()", acquire)
+        self.assertIn("before the scheduler may sleep", acquire)
         self.assertNotIn("irq_save()", acquire)
+
+        batch_start = source.index("static bool ahci_batch_acquire(")
+        batch_end = source.index("static void ahci_batch_release(",
+                                 batch_start)
+        batch = source[batch_start:batch_end]
+        self.assertIn("KASSERT_NOT_IRQ()", batch)
+        self.assertNotIn("KASSERT_CAN_SLEEP()", batch)
 
         fence_start = source.index("void ahci_fence_writes(")
         fence_end = source.index("void ahci_restore_writes_after_recovery(",

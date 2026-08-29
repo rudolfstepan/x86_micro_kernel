@@ -162,6 +162,40 @@ bool ata_undo_journal_transaction_begin(ata_undo_journal_t *journal) {
     return true;
 }
 
+static bool commit_targets_deferred(ata_undo_journal_t *journal) {
+    if (!deferred_commit_ready(journal)) return false;
+    if (journal->transport->commit_write_sectors_deferred == NULL) {
+        for (uint32_t index = 0U; index < journal->entry_count; ++index) {
+            if (!journal->transport->commit_write_deferred(
+                    journal->transport_context, journal->base,
+                    journal->entries[index].target_lba,
+                    journal->pending_data[index], journal->is_master))
+                return false;
+        }
+        return true;
+    }
+
+    /* Entry order is the validated mutation order. Only adjacent LBAs are
+     * combined, so no unjournaled gap can enter one ATA command. */
+    for (uint32_t index = 0U; index < journal->entry_count;) {
+        uint32_t count = 1U;
+        while (index + count < journal->entry_count &&
+               journal->entries[index + count - 1U].target_lba !=
+                   UINT32_MAX &&
+               journal->entries[index + count].target_lba ==
+                   journal->entries[index + count - 1U].target_lba + 1U) {
+            ++count;
+        }
+        if (!journal->transport->commit_write_sectors_deferred(
+                journal->transport_context, journal->base,
+                journal->entries[index].target_lba, count,
+                journal->pending_data[index], journal->is_master))
+            return false;
+        index += count;
+    }
+    return true;
+}
+
 static bool transaction_end(ata_undo_journal_t *journal, bool commit,
                             bool use_commit_transport) {
     if (journal == NULL || journal->transaction_depth == 0U) return false;
@@ -203,12 +237,7 @@ static bool transaction_end(ata_undo_journal_t *journal, bool commit,
                 journal->transport_context, journal->base,
                 journal->is_master);
             result = begun;
-            for (uint32_t i = 0U; result && i < journal->entry_count; ++i) {
-                result = journal->transport->commit_write_deferred(
-                    journal->transport_context, journal->base,
-                    journal->entries[i].target_lba,
-                    journal->pending_data[i], journal->is_master);
-            }
+            if (result) result = commit_targets_deferred(journal);
             if (begun) {
                 bool targets_written = result;
                 bool ended = journal->transport->commit_end(

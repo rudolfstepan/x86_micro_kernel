@@ -323,8 +323,36 @@ static drive_t *ata_partition_translate(drive_t *partition, uint32_t lba,
 }
 
 static ata_undo_journal_t ata_journal;
+static bool ata_journal_initialized;
 static bool ata_journal_read_view(unsigned short base, uint32_t lba,
                                   void *buffer, bool is_master);
+
+static bool ata_journal_range_has_pending(unsigned short base, uint32_t lba,
+                                          uint32_t count,
+                                          bool is_master) {
+    if (!ata_journal_initialized || !ata_journal.enabled ||
+        ata_journal.transaction_depth == 0U || base != ata_journal.base ||
+        is_master != ata_journal.is_master)
+        return false;
+    for (uint32_t index = 0U; index < ata_journal.entry_count; ++index) {
+        uint32_t pending = ata_journal.entries[index].target_lba;
+        if (pending >= lba && pending - lba < count) return true;
+    }
+    return false;
+}
+
+static bool ata_read_pending_range(unsigned short base, uint32_t lba,
+                                   uint32_t count, void *buffer,
+                                   bool is_master) {
+    uint8_t *bytes = buffer;
+    for (uint32_t index = 0U; index < count; ++index) {
+        if (!ata_journal_read_view(base, lba + index,
+                                   bytes + index * SECTOR_SIZE,
+                                   is_master))
+            return false;
+    }
+    return true;
+}
 
 /* ATA PIO uses controller-global task-file registers. A recursive sleepable
  * mutex serializes complete transactions without pinning another CPU in a
@@ -764,17 +792,15 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
         if (parent == NULL || buffer == NULL || count == 0U ||
             count > ATA_PIO_MAX_SECTORS ||
             count > partition->sectors - lba) return false;
-        if (parent->type == DRIVE_TYPE_AHCI) {
-            uint8_t *bytes = buffer;
-            for (uint32_t index = 0U; index < count; ++index) {
-                if (!ahci_read_sector(parent, absolute + index,
-                        bytes + index * SECTOR_SIZE)) return false;
-            }
-            return true;
-        }
         if (!ata_transaction_begin()) return false;
-        bool result = ata_read_sectors_pio_impl(parent->base, absolute,
-            count, buffer, parent->is_master);
+        bool result = ata_journal_range_has_pending(
+                parent->base, absolute, count, parent->is_master)
+            ? ata_read_pending_range(parent->base, absolute, count, buffer,
+                                     parent->is_master)
+            : (parent->type == DRIVE_TYPE_AHCI
+                ? ahci_read_sectors(parent, absolute, count, buffer)
+                : ata_read_sectors_pio_impl(parent->base, absolute, count,
+                                            buffer, parent->is_master));
         ata_transaction_end();
         return result;
     }
@@ -783,16 +809,22 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
         if (buffer == NULL || count == 0U || count > ATA_PIO_MAX_SECTORS ||
             lba >= ahci_drive->sectors || count > ahci_drive->sectors - lba)
             return false;
-        uint8_t *bytes = buffer;
-        for (uint32_t index = 0U; index < count; ++index) {
-            if (!ahci_read_sector(ahci_drive, lba + index,
-                                  bytes + index * SECTOR_SIZE)) return false;
-        }
-        return true;
+        if (!ata_transaction_begin()) return false;
+        bool result = ata_journal_range_has_pending(base, lba, count,
+                                                     is_master)
+            ? ata_read_pending_range(base, lba, count, buffer, is_master)
+            : ahci_read_sectors(ahci_drive, lba, count, buffer);
+        ata_transaction_end();
+        return result;
     }
+    int resource = ata_resource_index(base, is_master);
+    drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
+    if (buffer == NULL || !ata_pio_range_valid(drive, lba, count))
+        return false;
     if (!ata_transaction_begin()) return false;
-    bool result = ata_read_sectors_pio_impl(base, lba, count, buffer,
-                                            is_master);
+    bool result = ata_journal_range_has_pending(base, lba, count, is_master)
+        ? ata_read_pending_range(base, lba, count, buffer, is_master)
+        : ata_read_sectors_pio_impl(base, lba, count, buffer, is_master);
     ata_transaction_end();
     return result;
 }
@@ -1031,10 +1063,8 @@ static bool ata_journal_write_deferred_transport(unsigned short base,
                                                  const void *buffer,
                                                  bool is_master) {
     drive_t *ahci_drive = ata_compat_ahci_drive(base);
-    /* AHCI currently exposes only a durable recovery write. Keeping that
-     * stronger primitive preserves ordering; PIO gains the flush coalescing. */
     return ahci_drive != NULL
-        ? ahci_write_sector_recovery(ahci_drive, lba, buffer)
+        ? ahci_write_sectors_deferred(ahci_drive, lba, 1U, buffer)
         : ata_write_sector_impl(base, lba, (void *)buffer, is_master, false);
 }
 
@@ -1070,13 +1100,7 @@ static bool ata_journal_write_sectors_deferred_transport(
     if (ahci_drive == NULL)
         return ata_write_sectors_pio_deferred_impl(
             base, lba, count, buffer, is_master);
-    const uint8_t *bytes = buffer;
-    for (uint32_t index = 0U; index < count; ++index) {
-        if (!ahci_write_sector_recovery(
-                ahci_drive, lba + index, bytes + index * SECTOR_SIZE))
-            return false;
-    }
-    return true;
+    return ahci_write_sectors_deferred(ahci_drive, lba, count, buffer);
 }
 
 static bool ata_journal_flush_transport(unsigned short base,
@@ -1180,6 +1204,14 @@ static bool ata_journal_core_commit_write_deferred(
                                                 is_master);
 }
 
+static bool ata_journal_core_commit_write_sectors_deferred(
+        void *context, unsigned short base, uint32_t lba, uint32_t count,
+        const void *buffer, bool is_master) {
+    (void)context;
+    return ata_journal_write_sectors_deferred_transport(
+        base, lba, count, buffer, is_master);
+}
+
 static bool ata_journal_core_commit_end(void *context, unsigned short base,
                                         bool is_master, bool commit) {
     (void)context;
@@ -1211,10 +1243,10 @@ static const ata_journal_transport_t ata_journal_transport = {
     .flush = ata_journal_core_flush,
     .commit_begin = ata_journal_core_commit_begin,
     .commit_write_deferred = ata_journal_core_commit_write_deferred,
+    .commit_write_sectors_deferred =
+        ata_journal_core_commit_write_sectors_deferred,
     .commit_end = ata_journal_core_commit_end,
 };
-static bool ata_journal_initialized;
-
 static void ata_journal_ensure_initialized(void) {
     if (ata_journal_initialized) return;
     ata_undo_journal_init(&ata_journal, &ata_journal_transport, NULL);

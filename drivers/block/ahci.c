@@ -53,6 +53,13 @@
 #define AHCI_ATA_READ_DMA_EXT 0x25U
 #define AHCI_ATA_WRITE_DMA_EXT 0x35U
 #define AHCI_ATA_FLUSH_CACHE_EXT 0xEAU
+#define AHCI_SECTOR_SIZE 512U
+#define AHCI_BATCH_BYTES (AHCI_DMA_MAX_SECTORS * AHCI_SECTOR_SIZE)
+
+_Static_assert(AHCI_DMA_MAX_SECTORS == ATA_PIO_MAX_SECTORS,
+               "AHCI and journal batch capacities must match");
+_Static_assert(AHCI_BATCH_BYTES <= (1U << 22U),
+               "one AHCI PRDT entry supports at most four MiB");
 
 /* These pools are deliberately fixed and identity-mapped. They are only
  * published after address/alignment validation and remain one-slot-per-port
@@ -67,6 +74,23 @@ static uint8_t identify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
     __attribute__((aligned(2)));
 static uint8_t write_verify_buffers[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS][512]
     __attribute__((aligned(2)));
+typedef struct {
+    bool active;
+    bool poisoned;
+    uint8_t controller;
+    uint8_t port;
+    uint32_t count;
+    uint32_t sectors[AHCI_DMA_MAX_SECTORS];
+    uint8_t data[AHCI_DMA_MAX_SECTORS][AHCI_SECTOR_SIZE];
+} ahci_deferred_batch_t;
+
+/* The ATA compatibility journal is a single fixed transaction, so one exact
+ * owner-scoped AHCI verification batch is sufficient. Caller data is copied
+ * before DMA; no userspace, stack, or journal pointer reaches the HBA. */
+static ahci_deferred_batch_t deferred_batch __attribute__((aligned(2)));
+static uint8_t batch_dma_buffer[AHCI_BATCH_BYTES]
+    __attribute__((aligned(2)));
+static kernel_mutex_t batch_mutex = KERNEL_MUTEX_INIT;
 static kernel_mutex_t port_mutex[AHCI_MAX_CONTROLLERS][AHCI_MAX_PORTS];
 static volatile bool writes_fenced;
 #ifdef REIST_AHCI_FAULT_INJECTION
@@ -274,12 +298,18 @@ static bool ahci_build_identify_command(ahci_controller_info_t *controller,
     return true;
 }
 
-static bool ahci_build_io_command(size_t controller_index, uint32_t port,
-                                  uint8_t command, uint32_t sector,
-                                  bool write, bool has_data) {
+static bool ahci_build_dma_command(size_t controller_index, uint32_t port,
+                                   uint8_t command, uint32_t sector,
+                                   uint32_t count, void *dma_buffer,
+                                   bool write) {
+    bool has_data = count != 0U;
+    uint32_t bytes = count * AHCI_SECTOR_SIZE;
     if (controller_index >= AHCI_MAX_CONTROLLERS || port >= AHCI_MAX_PORTS ||
-        (has_data && !ahci_dma_address_valid(
-            identify_buffers[controller_index][port], 512U, 2U))) return false;
+        count > AHCI_DMA_MAX_SECTORS ||
+        (has_data &&
+         (sector > UINT32_MAX - (count - 1U) ||
+          !ahci_dma_address_valid(dma_buffer, bytes, 2U))) ||
+        (!has_data && dma_buffer != NULL)) return false;
     ahci_command_header_t *header = (ahci_command_header_t *)
         command_lists[controller_index][port];
     ahci_command_table_t *table = (ahci_command_table_t *)
@@ -299,13 +329,22 @@ static bool ahci_build_io_command(size_t controller_index, uint32_t port,
     fis->lba1 = (uint8_t)(sector >> 8U);
     fis->lba2 = (uint8_t)(sector >> 16U);
     fis->lba3 = (uint8_t)(sector >> 24U);
-    fis->count_low = has_data ? 1U : 0U;
+    fis->count_low = (uint8_t)count;
+    fis->count_high = (uint8_t)(count >> 8U);
     if (has_data) {
-        table->prdt[0].data_base =
-            (uint32_t)(uintptr_t)identify_buffers[controller_index][port];
-        table->prdt[0].byte_count_and_interrupt = 511U | (1U << 31U);
+        table->prdt[0].data_base = (uint32_t)(uintptr_t)dma_buffer;
+        table->prdt[0].byte_count_and_interrupt =
+            (bytes - 1U) | (1U << 31U);
     }
     return true;
+}
+
+static bool ahci_build_io_command(size_t controller_index, uint32_t port,
+                                  uint8_t command, uint32_t sector,
+                                  bool write, bool has_data) {
+    return ahci_build_dma_command(
+        controller_index, port, command, sector, has_data ? 1U : 0U,
+        has_data ? identify_buffers[controller_index][port] : NULL, write);
 }
 
 static uint16_t ahci_identify_word(const uint8_t *identify, uint32_t word) {
@@ -479,6 +518,34 @@ static bool ahci_execute_command(ahci_controller_info_t *controller,
     return true;
 }
 
+static bool ahci_execute_dma_command(ahci_controller_info_t *controller,
+                                     size_t controller_index, uint32_t port,
+                                     uint8_t command, uint32_t sector,
+                                     uint32_t count, void *dma_buffer,
+                                     bool write) {
+    if (!ahci_build_dma_command(controller_index, port, command, sector,
+                                count, dma_buffer, write) ||
+        !ahci_execute_command(controller, controller_index, port))
+        return false;
+    uint32_t expected = count * AHCI_SECTOR_SIZE;
+    ahci_command_header_t *header = (ahci_command_header_t *)
+        command_lists[controller_index][port];
+    if (header->bytes_transferred == expected) return true;
+    printf("AHCI: short DMA command=%x port=%u lba=%u count=%u PRDBC=%u\n",
+           command, (unsigned)port, (unsigned)sector, (unsigned)count,
+           (unsigned)header->bytes_transferred);
+    (void)ahci_stop_port(controller->mmio, port);
+    return false;
+}
+
+static bool ahci_execute_flush_command(ahci_controller_info_t *controller,
+                                       size_t controller_index,
+                                       uint32_t port) {
+    return ahci_build_io_command(controller_index, port,
+                                 AHCI_ATA_FLUSH_CACHE_EXT, 0U, false, false) &&
+        ahci_execute_command(controller, controller_index, port);
+}
+
 static bool ahci_port_acquire_until(size_t controller_index, uint32_t port,
                                     uint64_t deadline_ms) {
     KASSERT_NOT_IRQ();
@@ -490,6 +557,9 @@ static bool ahci_port_acquire_until(size_t controller_index, uint32_t port,
 
 static bool ahci_port_acquire(size_t controller_index, uint32_t port) {
     KASSERT_NOT_IRQ();
+    /* Auto-mount uses this path before the scheduler may sleep.  The mutex
+     * contract permits an uncontended kernel-context acquisition and returns
+     * WOULD_BLOCK on contention, so a stronger sleep assertion is invalid. */
     uint64_t now = pit_monotonic_ms();
     uint64_t deadline = now + AHCI_PORT_LOCK_TIMEOUT_MS;
     if (deadline < now) deadline = UINT64_MAX;
@@ -501,6 +571,28 @@ static void ahci_port_release(size_t controller_index, uint32_t port) {
     KASSERT(controller_index < controller_count);
     KASSERT(port < AHCI_MAX_PORTS);
     kernel_mutex_unlock(&port_mutex[controller_index][port]);
+}
+
+static bool ahci_batch_acquire(void) {
+    KASSERT_NOT_IRQ();
+    /* Sequential reads also begin during pre-scheduler filesystem mount. */
+    return kernel_mutex_lock_for(&batch_mutex,
+                                 AHCI_PORT_LOCK_TIMEOUT_MS) == 0;
+}
+
+static void ahci_batch_release(void) {
+    KASSERT_NOT_IRQ();
+    kernel_mutex_unlock(&batch_mutex);
+}
+
+static void ahci_deferred_reset(void) {
+    memset(&deferred_batch, 0, sizeof(deferred_batch));
+}
+
+static bool ahci_deferred_owner_matches(const drive_t *drive) {
+    return deferred_batch.active && drive != NULL &&
+        deferred_batch.controller == drive->ahci_controller &&
+        deferred_batch.port == drive->ahci_port;
 }
 
 static bool ahci_ports_acquire(uint64_t deadline_ms,
@@ -549,19 +641,62 @@ static bool ahci_drive_valid(const drive_t *drive,
     return true;
 }
 
+static bool ahci_range_valid(const drive_t *drive, uint32_t sector,
+                             uint32_t count) {
+    return drive != NULL && count != 0U &&
+        count <= AHCI_DMA_MAX_SECTORS && sector < drive->sectors &&
+        count <= drive->sectors - sector;
+}
+
+static bool ahci_deferred_can_append(const drive_t *drive, uint32_t sector,
+                                     uint32_t count) {
+    if (deferred_batch.poisoned ||
+        (deferred_batch.active && !ahci_deferred_owner_matches(drive)) ||
+        count > AHCI_DMA_MAX_SECTORS - deferred_batch.count)
+        return false;
+    for (uint32_t incoming = 0U; incoming < count; ++incoming) {
+        uint32_t incoming_sector = sector + incoming;
+        for (uint32_t existing = 0U; existing < deferred_batch.count;
+             ++existing) {
+            if (deferred_batch.sectors[existing] == incoming_sector)
+                return false;
+        }
+    }
+    return true;
+}
+
 bool ahci_read_sector(const drive_t *drive, uint32_t sector, void *buffer) {
     ahci_controller_info_t *controller;
     if (buffer == NULL || !ahci_drive_valid(drive, &controller) ||
         sector >= drive->sectors ||
         !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
         return false;
-    bool result = ahci_build_io_command(drive->ahci_controller,
-        drive->ahci_port, AHCI_ATA_READ_DMA_EXT, sector, false, true) &&
-        ahci_execute_command(controller, drive->ahci_controller,
-                             drive->ahci_port);
+    bool result = ahci_execute_dma_command(
+        controller, drive->ahci_controller, drive->ahci_port,
+        AHCI_ATA_READ_DMA_EXT, sector, 1U,
+        identify_buffers[drive->ahci_controller][drive->ahci_port], false);
     if (result) memcpy(buffer,
         identify_buffers[drive->ahci_controller][drive->ahci_port], 512U);
     ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    return result;
+}
+
+bool ahci_read_sectors(const drive_t *drive, uint32_t sector, uint32_t count,
+                       void *buffer) {
+    ahci_controller_info_t *controller;
+    if (buffer == NULL || !ahci_range_valid(drive, sector, count) ||
+        !ahci_drive_valid(drive, &controller) || !ahci_batch_acquire())
+        return false;
+    bool acquired = ahci_port_acquire(drive->ahci_controller,
+                                      drive->ahci_port);
+    bool result = acquired && ahci_execute_dma_command(
+        controller, drive->ahci_controller, drive->ahci_port,
+        AHCI_ATA_READ_DMA_EXT, sector, count, batch_dma_buffer, false);
+    if (result)
+        memcpy(buffer, batch_dma_buffer, count * AHCI_SECTOR_SIZE);
+    if (acquired)
+        ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    ahci_batch_release();
     return result;
 }
 
@@ -624,10 +759,16 @@ static bool ahci_write_sector_internal(const drive_t *drive, uint32_t sector,
     ahci_controller_info_t *controller;
     if (buffer == NULL || (writes_fenced && !recovery) ||
         !ahci_drive_valid(drive, &controller) || sector >= drive->sectors ||
-        !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
+        !ahci_batch_acquire())
         return false;
+    if ((!recovery && deferred_batch.active) ||
+        !ahci_port_acquire(drive->ahci_controller, drive->ahci_port)) {
+        ahci_batch_release();
+        return false;
+    }
     if (writes_fenced && !recovery) {
         ahci_port_release(drive->ahci_controller, drive->ahci_port);
+        ahci_batch_release();
         return false;
     }
     uint8_t *dma_buffer =
@@ -636,18 +777,14 @@ static bool ahci_write_sector_internal(const drive_t *drive, uint32_t sector,
         write_verify_buffers[drive->ahci_controller][drive->ahci_port];
     memcpy(expected, buffer, 512U);
     memcpy(dma_buffer, expected, 512U);
-    bool result = ahci_build_io_command(drive->ahci_controller,
-        drive->ahci_port, AHCI_ATA_WRITE_DMA_EXT, sector, true, true) &&
-        ahci_execute_command(controller, drive->ahci_controller,
-                             drive->ahci_port) &&
-        ahci_build_io_command(drive->ahci_controller, drive->ahci_port,
-                              AHCI_ATA_FLUSH_CACHE_EXT, 0U, false, false) &&
-        ahci_execute_command(controller, drive->ahci_controller,
-                             drive->ahci_port) &&
-        ahci_build_io_command(drive->ahci_controller, drive->ahci_port,
-                              AHCI_ATA_READ_DMA_EXT, sector, false, true) &&
-        ahci_execute_command(controller, drive->ahci_controller,
-                             drive->ahci_port);
+    bool result = ahci_execute_dma_command(
+        controller, drive->ahci_controller, drive->ahci_port,
+        AHCI_ATA_WRITE_DMA_EXT, sector, 1U, dma_buffer, true) &&
+        ahci_execute_flush_command(controller, drive->ahci_controller,
+                                   drive->ahci_port) &&
+        ahci_execute_dma_command(
+            controller, drive->ahci_controller, drive->ahci_port,
+            AHCI_ATA_READ_DMA_EXT, sector, 1U, dma_buffer, false);
     if (result && memcmp(dma_buffer, expected, 512U) != 0) {
         printf("AHCI: write verification failed port=%u sector=%u\n",
                (unsigned)drive->ahci_port, (unsigned)sector);
@@ -655,6 +792,7 @@ static bool ahci_write_sector_internal(const drive_t *drive, uint32_t sector,
         result = false;
     }
     ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    ahci_batch_release();
     return result;
 }
 
@@ -668,16 +806,101 @@ bool ahci_write_sector_recovery(const drive_t *drive, uint32_t sector,
     return ahci_write_sector_internal(drive, sector, buffer, true);
 }
 
+bool ahci_write_sectors_deferred(const drive_t *drive, uint32_t sector,
+                                 uint32_t count, const void *buffer) {
+    ahci_controller_info_t *controller;
+    if (buffer == NULL || writes_fenced ||
+        !ahci_range_valid(drive, sector, count) ||
+        !ahci_drive_valid(drive, &controller) || !ahci_batch_acquire())
+        return false;
+
+    bool result = false;
+    bool acquired = false;
+    if (!writes_fenced && ahci_deferred_can_append(drive, sector, count) &&
+        ahci_dma_address_valid(batch_dma_buffer,
+                               count * AHCI_SECTOR_SIZE, 2U)) {
+        memcpy(batch_dma_buffer, buffer, count * AHCI_SECTOR_SIZE);
+        acquired = ahci_port_acquire(drive->ahci_controller,
+                                     drive->ahci_port);
+        if (acquired && !writes_fenced) {
+            result = ahci_execute_dma_command(
+                controller, drive->ahci_controller, drive->ahci_port,
+                AHCI_ATA_WRITE_DMA_EXT, sector, count, batch_dma_buffer,
+                true);
+            if (result) {
+                if (!deferred_batch.active) {
+                    deferred_batch.active = true;
+                    deferred_batch.controller = drive->ahci_controller;
+                    deferred_batch.port = drive->ahci_port;
+                }
+                uint32_t start = deferred_batch.count;
+                for (uint32_t index = 0U; index < count; ++index) {
+                    deferred_batch.sectors[start + index] = sector + index;
+                    memcpy(deferred_batch.data[start + index],
+                           batch_dma_buffer + index * AHCI_SECTOR_SIZE,
+                           AHCI_SECTOR_SIZE);
+                }
+                deferred_batch.count += count;
+            } else {
+                if (!deferred_batch.active) {
+                    deferred_batch.active = true;
+                    deferred_batch.controller = drive->ahci_controller;
+                    deferred_batch.port = drive->ahci_port;
+                }
+                deferred_batch.poisoned = true;
+            }
+        }
+    }
+    if (!result && ahci_deferred_owner_matches(drive))
+        deferred_batch.poisoned = true;
+    if (acquired)
+        ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    ahci_batch_release();
+    return result;
+}
+
 bool ahci_flush(const drive_t *drive) {
     ahci_controller_info_t *controller;
-    if (!ahci_drive_valid(drive, &controller) ||
-        !ahci_port_acquire(drive->ahci_controller, drive->ahci_port))
+    if (!ahci_drive_valid(drive, &controller) || !ahci_batch_acquire())
         return false;
-    bool result = ahci_build_io_command(drive->ahci_controller,
-        drive->ahci_port, AHCI_ATA_FLUSH_CACHE_EXT, 0U, false, false) &&
-        ahci_execute_command(controller, drive->ahci_controller,
-                             drive->ahci_port);
-    ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    bool acquired = ahci_port_acquire(drive->ahci_controller,
+                                      drive->ahci_port);
+    bool owns_batch = ahci_deferred_owner_matches(drive);
+    bool result = acquired && (!owns_batch ||
+                               (!deferred_batch.poisoned &&
+                                deferred_batch.count != 0U)) &&
+        ahci_execute_flush_command(controller, drive->ahci_controller,
+                                   drive->ahci_port);
+
+    for (uint32_t index = 0U; result && owns_batch &&
+         index < deferred_batch.count;) {
+        uint32_t run = 1U;
+        while (index + run < deferred_batch.count &&
+               deferred_batch.sectors[index + run - 1U] != UINT32_MAX &&
+               deferred_batch.sectors[index + run] ==
+                   deferred_batch.sectors[index + run - 1U] + 1U)
+            ++run;
+        uint32_t first = deferred_batch.sectors[index];
+        result = ahci_execute_dma_command(
+            controller, drive->ahci_controller, drive->ahci_port,
+            AHCI_ATA_READ_DMA_EXT, first, run, batch_dma_buffer, false);
+        if (result && memcmp(batch_dma_buffer, deferred_batch.data[index],
+                             run * AHCI_SECTOR_SIZE) != 0) {
+            printf("AHCI: deferred verification failed port=%u lba=%u count=%u\n",
+                   (unsigned)drive->ahci_port, (unsigned)first,
+                   (unsigned)run);
+            (void)ahci_stop_port(controller->mmio, drive->ahci_port);
+            result = false;
+        }
+        index += run;
+    }
+    if (owns_batch) {
+        if (result) ahci_deferred_reset();
+        else deferred_batch.poisoned = true;
+    }
+    if (acquired)
+        ahci_port_release(drive->ahci_controller, drive->ahci_port);
+    ahci_batch_release();
     return result;
 }
 
@@ -693,17 +916,21 @@ void ahci_fence_writes(void) {
 }
 
 void ahci_restore_writes_after_recovery(void) {
+    if (!ahci_batch_acquire()) return;
     uint64_t now = pit_monotonic_ms();
     uint64_t deadline = now + AHCI_PORT_LOCK_TIMEOUT_MS;
     if (deadline < now) deadline = UINT64_MAX;
     uint32_t acquired[AHCI_MAX_CONTROLLERS];
     if (!ahci_ports_acquire(deadline, acquired)) {
         ahci_ports_release(acquired);
+        ahci_batch_release();
         return;
     }
+    ahci_deferred_reset();
     writes_fenced = false;
     __asm__ volatile("" ::: "memory");
     ahci_ports_release(acquired);
+    ahci_batch_release();
 }
 
 bool ahci_writes_quiescent(void) {
@@ -838,6 +1065,8 @@ size_t ahci_probe_controllers(ahci_controller_info_t *output,
 
 void ahci_init(void) {
     memset(controllers, 0, sizeof(controllers));
+    kernel_mutex_init(&batch_mutex);
+    ahci_deferred_reset();
     for (size_t controller_index = 0U;
          controller_index < AHCI_MAX_CONTROLLERS; ++controller_index) {
         for (uint32_t port = 0U; port < AHCI_MAX_PORTS; ++port)
