@@ -187,6 +187,13 @@ generationengenau, jede Wiederverwendung setzt leere Queue-, Beziehungs-,
 Wait- und Framebesitzdaten voraus, und die Queue ist leer. Parallele Kinder,
 VFS und argv bleiben ausserhalb dieses Pakets.
 
+R8.2k ist aktiv. `/shell/child` soll ein separat assembliertes und gelinktes
+System-V-AMD64-ELF64-Abbild waehlen, statt den Shell-Entry-Modus
+wiederzuverwenden. Drei feste Loaderkontexte halten Probe, Shell und Kind
+getrennt; nur Shell und Kind duerfen waehrend eines RUN-Zyklus gleichzeitig
+aktiv sein. Jeder Kind-Reap gibt auch den exakten Abbildkontext frei, bevor die
+Shell wieder laeuft. VFS, argv und dynamische Registries bleiben ausgeschlossen.
+
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
 unveränderte Standard und Fallback. Das getrennte 14.360-Byte-Bootstrap-

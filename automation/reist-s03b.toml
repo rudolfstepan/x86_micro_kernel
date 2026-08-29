@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2k-x86_64-separate-child-elf"
 
 [policy]
 one_package_per_run = true
@@ -11562,6 +11562,45 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RING3_SHELL_RUN_OK markers and preserved every established marker through RING3_SHELL_OK",
   "generation 41 was fully reaped before generation 42 allocation; each completion published status 77 only after terminal validation then restored kernel CR3 cleared queue relation wait and ownership state and final cleanup restored the exact initial frame count; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2k-x86_64-separate-child-elf"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Load the x86_64 shell child from a separate ELF64 image"
+scope = "Replace the shell-child entry-mode shortcut with one independently assembled and linked System V AMD64 ET_EXEC child image. The fixed /shell/child registry entry selects embedded image 2 only after the existing bounded path generation and empty-slot validation. Extend the ELF64 loader from one selected mutable context to exactly three fixed selector-scoped contexts for probe shell and child, each with its own active bit entry segment metadata eight frame slots flags initial free count and cleanup state. Shell and child contexts may coexist; no frame or metadata may alias. Child load validates the unchanged ELF header program-header W^X range and entry contract before allocation and scheduler READY publication. The RX-only child performs no I/O accepts no ambient arguments and exits 77 through EXIT 9. After each terminal generation the scheduler restores kernel CR3 reaps task-owned tables stack and writable frames releases the selected child loader context restores the shell selector then wakes generation 40; the second RUN reloads fresh child ELF frames as generation 42. Add a reverse-order release-all path for failure and final cleanup and prove all three contexts empty with the exact initial free count. Preserve the INFO RUN RUN EXIT dialogue all existing markers four-slot capacity syscall ABI C handoffs i386 and isolated artifact. Add no VFS runtime parsing argv dynamic registry writable executable image concurrent child wait-any SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "Makefile", "scripts/build-x86_64-bootstrap.ps1",
+  "config/x86_64_user_child.ld", "arch/x86_64/user/child.asm",
+  "arch/x86_64/user/shell.c", "arch/x86_64/exec/elf64_loader.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all i386 artifacts syscall numbers C handoffs four-slot capacity prior lifecycle proofs and existing x86_64 markers remain unchanged and ordered",
+  "the child is a separately linked little-endian System V AMD64 ET_EXEC with one RX non-WX PT_LOAD fixed entry no runtime symbols no I/O and exact EXIT 77",
+  "probe shell and child use exactly three fixed selector-scoped loader contexts and simultaneously active shell and child frames metadata and entries never alias",
+  "child ELF validation and complete private task construction precede READY while every failure releases partial task and child-image ownership under kernel CR3",
+  "each child terminal path reaps task frames releases the exact child loader context restores shell selection clears relation wait and queue state then wakes only shell generation 40",
+  "final EXIT requires two fresh child loads and releases all contexts in reverse order restores the initial free count and preserves exactly two ordered RUN_OK observations"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "more than three loader contexts a dynamic image registry VFS runtime parsing argv concurrent child task capacity public ABI or syscall growth is required",
+  "shell or child RX frame context metadata cleanup counter or selected authority can alias leak or be freed in unsafe load order",
+  "child READY can publish before full ELF and private-address-space validation or shell can wake before exact child context release",
+  "an i386 artifact prior marker separate dynamic proof C handoff or shell safety bound changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "exec: load x86_64 shell child from separate elf"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
