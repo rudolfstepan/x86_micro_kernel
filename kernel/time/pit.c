@@ -45,7 +45,12 @@
 
 static volatile uint64_t timer_tick_count;
 static volatile uint32_t timer_tick_sequence;
-#define PIT_MONOTONIC_READ_RETRY_LIMIT (1U << 20U)
+#define PIT_MONOTONIC_READ_RETRY_LIMIT (1U << 28U)
+#define PIT_MONOTONIC_BOOT_RETRY_LIMIT (1U << 20U)
+#define PIT_MONOTONIC_READ_TIMEOUT_MS 250U
+#define PIT_MONOTONIC_TIME_CHECK_INTERVAL 1024U
+#define PIT_MONOTONIC_MIN_CPU_FREQUENCY_HZ 1000000ULL
+#define PIT_MONOTONIC_MAX_CPU_FREQUENCY_HZ 10000000000ULL
 static uint32_t pit_divisor = PIT_FREQUENCY / 1000U;
 static uint32_t pit_millisecond_fraction;
 
@@ -58,11 +63,26 @@ uint64_t pit_monotonic_ms(void) {
      * does not stop the BSP writer when an AP reads.  The single IRQ0 writer
      * brackets its two-word update with an odd/even sequence. */
     uint32_t flags = irq_save();
+    uint64_t frequency = cpu_frequency;
+    bool elapsed_bound = frequency >= PIT_MONOTONIC_MIN_CPU_FREQUENCY_HZ &&
+                         frequency <= PIT_MONOTONIC_MAX_CPU_FREQUENCY_HZ;
+    uint64_t start_cycles = elapsed_bound ? cpu_cycle_counter_read() : 0U;
+    uint64_t timeout_cycles = elapsed_bound
+        ? (frequency / 1000U) * PIT_MONOTONIC_READ_TIMEOUT_MS : 0U;
+    uint32_t retry_limit = elapsed_bound ? PIT_MONOTONIC_READ_RETRY_LIMIT :
+                                          PIT_MONOTONIC_BOOT_RETRY_LIMIT;
     for (uint32_t retry = 0U;
-         retry < PIT_MONOTONIC_READ_RETRY_LIMIT; ++retry) {
+         retry < retry_limit; ++retry) {
         uint32_t before = timer_tick_sequence;
         if ((before & 1U) != 0U) {
             __asm__ __volatile__("pause");
+            if (elapsed_bound &&
+                (retry & (PIT_MONOTONIC_TIME_CHECK_INTERVAL - 1U)) ==
+                    PIT_MONOTONIC_TIME_CHECK_INTERVAL - 1U) {
+                uint64_t now_cycles = cpu_cycle_counter_read();
+                if (now_cycles < start_cycles ||
+                    now_cycles - start_cycles >= timeout_cycles) break;
+            }
             continue;
         }
         __sync_synchronize();
@@ -73,12 +93,18 @@ uint64_t pit_monotonic_ms(void) {
             irq_restore(flags);
             return ticks;
         }
+        if (elapsed_bound &&
+            (retry & (PIT_MONOTONIC_TIME_CHECK_INTERVAL - 1U)) ==
+                PIT_MONOTONIC_TIME_CHECK_INTERVAL - 1U) {
+            uint64_t now_cycles = cpu_cycle_counter_read();
+            if (now_cycles < start_cycles ||
+                now_cycles - start_cycles >= timeout_cycles) break;
+        }
     }
     irq_restore(flags);
     panic_context_set("time", "PIT monotonic clock", "read",
                       "SMP sequence retry");
-    panic_context_set_result(-110, timer_tick_sequence,
-                             PIT_MONOTONIC_READ_RETRY_LIMIT);
+    panic_context_set_result(-110, timer_tick_sequence, retry_limit);
     panic("PIT monotonic clock read timed out");
 }
 

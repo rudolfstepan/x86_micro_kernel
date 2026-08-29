@@ -64,6 +64,37 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
         self.assertIn("syscall_copy_file_info", source)
         self.assertIn("copy_to_user(user_info", source)
 
+    def test_readdir_batch_uses_generation_scoped_task_workspace(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("static int syscall_readdir_batch")
+        body = source[start:source.index("\n}\n", start)]
+        self.assertIn("syscall_readdir_batch_workspace_t", source)
+        self.assertIn(
+            "readdir_batch_workspaces[MAX_TASKS]", source
+        )
+        self.assertIn("scheduler_current_task_identity", body)
+        self.assertIn("owner_generation", body)
+        self.assertIn("workspace->in_use", body)
+        self.assertIn("workspace->path", body)
+        self.assertIn("workspace->entries", body)
+        self.assertIn("workspace->info", body)
+        claimed = body[body.index("workspace->in_use = 1U;"):]
+        self.assertIn("release_workspace:", claimed)
+        self.assertEqual(claimed.count("return "), 1)
+        self.assertIn(
+            "result > (int)SYSCALL_READDIR_BATCH_CAPACITY", body
+        )
+        self.assertNotRegex(
+            body,
+            r"syscall_file_info_t\s+\w+\s*\["
+        )
+        self.assertNotRegex(
+            body,
+            r"vfs_dir_entry_t\s+\w+\s*\["
+        )
+
     def test_file_writes_copy_data_from_userspace(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"

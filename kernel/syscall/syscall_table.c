@@ -2066,6 +2066,22 @@ typedef struct {
     uint32_t access_time;
 } syscall_file_info_t;
 
+#define SYSCALL_READDIR_BATCH_CAPACITY 4U
+
+typedef struct {
+    uint32_t owner_generation;
+    uint32_t in_use;
+    char path[PROCESS_PATH_MAX];
+    syscall_file_info_t info[SYSCALL_READDIR_BATCH_CAPACITY];
+    vfs_dir_entry_t entries[SYSCALL_READDIR_BATCH_CAPACITY];
+} syscall_readdir_batch_workspace_t;
+
+static syscall_readdir_batch_workspace_t
+    readdir_batch_workspaces[MAX_TASKS];
+
+_Static_assert(sizeof(syscall_readdir_batch_workspace_t) <= 3U * 1024U,
+               "readdir batch task workspace exceeded its fixed bound");
+
 static int syscall_copy_path(char resolved[PROCESS_PATH_MAX],
                              const char *user_path) {
     char path[PROCESS_PATH_MAX];
@@ -2134,29 +2150,67 @@ static int syscall_readdir(const char *user_path, uint32_t index,
     return result == 0 ? 1 : result;
 }
 
-#define SYSCALL_READDIR_BATCH_CAPACITY 4U
 static int syscall_readdir_batch(const char *user_path, uint32_t index,
                                  void *user_entries) {
-    char path[PROCESS_PATH_MAX];
-    int result = syscall_copy_path(path, user_path);
-    if (result != 0) return result;
-    syscall_file_info_t info[SYSCALL_READDIR_BATCH_CAPACITY];
-    vfs_dir_entry_t entries[SYSCALL_READDIR_BATCH_CAPACITY];
-    result = vfs_readdir_batch(path, index, entries,
-                               SYSCALL_READDIR_BATCH_CAPACITY);
-    if (result < 0) return -5;
-    if (result == 0) return 0;
-    for (int i = 0; i < result; ++i) {
-        memset(&info[i], 0, sizeof(info[i]));
-        strncpy(info[i].name, entries[i].name, sizeof(info[i].name) - 1U);
-        info[i].type = (uint32_t)entries[i].type;
-        info[i].size = entries[i].size;
-        info[i].create_time = entries[i].create_time;
-        info[i].modify_time = entries[i].modify_time;
-        info[i].access_time = entries[i].access_time;
+    int task_id = -1;
+    uint32_t generation = 0U;
+    if (!scheduler_current_task_identity(&task_id, &generation) ||
+        task_id < 0 || task_id >= MAX_TASKS || generation == 0U) {
+        return -REIST_EAGAIN;
     }
-    size_t bytes = (size_t)result * sizeof(info[0]);
-    return copy_to_user(user_entries, info, bytes) == 0 ? result : -14;
+
+    syscall_readdir_batch_workspace_t *workspace =
+        &readdir_batch_workspaces[task_id];
+    if (workspace->in_use != 0U) {
+        if (workspace->owner_generation == generation) {
+            return -REIST_EBUSY;
+        }
+        /* A different generation proves that the former task incarnation was
+         * reaped and cannot resume with this task slot. */
+        memset(workspace, 0, sizeof(*workspace));
+    }
+    workspace->owner_generation = generation;
+    __sync_synchronize();
+    workspace->in_use = 1U;
+
+    int final_result;
+    int result = syscall_copy_path(workspace->path, user_path);
+    if (result != 0) {
+        final_result = result;
+        goto release_workspace;
+    }
+    result = vfs_readdir_batch(workspace->path, index, workspace->entries,
+                               SYSCALL_READDIR_BATCH_CAPACITY);
+    if (result < 0 || result > (int)SYSCALL_READDIR_BATCH_CAPACITY) {
+        final_result = -REIST_EIO;
+        goto release_workspace;
+    }
+    if (result == 0) {
+        final_result = 0;
+        goto release_workspace;
+    }
+    for (int i = 0; i < result; ++i) {
+        memset(&workspace->info[i], 0, sizeof(workspace->info[i]));
+        strncpy(workspace->info[i].name, workspace->entries[i].name,
+                sizeof(workspace->info[i].name) - 1U);
+        workspace->info[i].type = (uint32_t)workspace->entries[i].type;
+        workspace->info[i].size = workspace->entries[i].size;
+        workspace->info[i].create_time = workspace->entries[i].create_time;
+        workspace->info[i].modify_time = workspace->entries[i].modify_time;
+        workspace->info[i].access_time = workspace->entries[i].access_time;
+    }
+    size_t bytes = (size_t)result * sizeof(workspace->info[0]);
+    final_result = copy_to_user(user_entries, workspace->info, bytes) == 0
+        ? result : -REIST_EFAULT;
+
+release_workspace:
+    memset(workspace->path, 0, sizeof(workspace->path));
+    memset(workspace->info, 0, sizeof(workspace->info));
+    memset(workspace->entries, 0, sizeof(workspace->entries));
+    workspace->owner_generation = 0U;
+    __sync_synchronize();
+    workspace->in_use = 0U;
+    return final_result;
 }
 
 static int syscall_create(const char *user_path) {

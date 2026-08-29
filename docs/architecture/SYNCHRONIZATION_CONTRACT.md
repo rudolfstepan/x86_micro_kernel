@@ -55,6 +55,33 @@ abgeleitet. Das getrennte `owner_cpu`-Feld ist nur ein Diagnoseabbild und darf
 wegen möglicher Übergangs- oder Sichtbarkeitszustände niemals allein Besitz
 begründen.
 
+Ein normaler kontendierter Erwerb verwendet nach der einmaligen TSC-
+Kalibrierung eine feste Frist von 250 ms und zusätzlich eine endliche harte
+Iterationsgrenze. Vor der Kalibrierung gilt weiterhin die kleinere endliche
+Bootgrenze. Der Wartende liest das Lockwort zuerst und versucht Compare-and-
+swap nur bei beobachtetem Nullwert; dadurch bleibt die Cacheline während des
+Besitzes geteilt und VMware-vCPUs verhindern die Freigabe nicht durch einen
+Strom atomarer Schreibversuche. Rekursion bleibt unabhängig davon sofort
+fatal. Ein Timeout meldet Lockadresse sowie Besitzer-CPU und wartenden
+Aufrufer. Die Frist macht kurze Host-Präemption tolerierbar, ist aber kein
+Freibrief für lange kritische Abschnitte: Nach Ablauf bleibt der Übergang
+fail-closed.
+
+Die PIT-Sequenzlese verwendet denselben kalibrierten 250-ms-Vertrag mit einer
+endlichen Bootgrenze. Scheduling-Pfade lesen die monotone Zeit vor Erwerb des
+Task-Table-Locks und übergeben den Snapshot in den festen Policy-Commit. Damit
+kann eine vom Host angehaltene PIT-Writer-vCPU den globalen Scheduler-Lock
+nicht indirekt festhalten.
+
+Blockierende Syscalls duerfen grosse, ueber den Wait hinweg lebende
+Arbeitsfelder nicht auf dem 8-KiB-Task-Kernelstack halten. Der
+`SYS_READDIR_BATCH`-Pfad verwendet deshalb genau einen festen Arbeitsbereich
+pro Task-Slot. Dessen Besitzer ist die nie-null Task-Generation; dieselbe
+Generation kann ihn nicht rekursiv erwerben, und ein belegter Rest darf erst
+nach nachgewiesener Slot-Wiederverwendung durch eine andere Generation
+zurueckgesetzt werden. So bleibt der Bereich waehrend eines Kontextwechsels
+privat, ohne Heap, per-CPU-Alias oder vergroesserten Kernelstack.
+
 Lange Foreground-Transaktionen verwenden `kernel_mutex_t`. Dieser interne,
 rekursive Mutex besitzt einen festen maximalen Rekursionstiefenwert und nimmt
 für jeden konkurrierenden Erwerb eine absolute monotone Deadline entgegen.

@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/interrupt.h"
+#include "arch/x86/include/sys.h"
 #include "include/kernel/panic.h"
 
 /**
@@ -36,6 +37,12 @@ typedef struct {
 
 #define SPINLOCK_NO_OWNER X86_CPU_INDEX_INVALID
 #define SPINLOCK_ACQUIRE_SPIN_LIMIT (1U << 20U)
+#define SPINLOCK_ACQUIRE_TIMED_SPIN_LIMIT (1U << 28U)
+#define SPINLOCK_ACQUIRE_BOOT_SPIN_LIMIT SPINLOCK_ACQUIRE_SPIN_LIMIT
+#define SPINLOCK_ACQUIRE_TIMEOUT_MS 250U
+#define SPINLOCK_TIME_CHECK_INTERVAL 1024U
+#define SPINLOCK_MIN_CPU_FREQUENCY_HZ 1000000ULL
+#define SPINLOCK_MAX_CPU_FREQUENCY_HZ 10000000000ULL
 
 /**
  * Static initializer for spinlock (use at declaration)
@@ -62,10 +69,29 @@ static inline bool spinlock_acquire_bounded(spinlock_t *lock,
     uint32_t cpu = x86_cpu_current_index();
     KASSERT(cpu != X86_CPU_INDEX_INVALID);
     uint32_t owner_token = cpu + 1U;
-
+    /* cpu_frequency is calibrated once before AP scheduling is released and
+     * remains immutable afterwards.  A TSC deadline therefore gives the
+     * contended runtime path a processor-speed-independent bound.  Before
+     * calibration, boot is single-CPU and retains the smaller finite retry
+     * ceiling instead of trusting an unavailable clock scale. */
+    uint64_t frequency = cpu_frequency;
+    bool elapsed_bound = frequency >= SPINLOCK_MIN_CPU_FREQUENCY_HZ &&
+                         frequency <= SPINLOCK_MAX_CPU_FREQUENCY_HZ;
+    uint64_t start_cycles = elapsed_bound ? cpu_cycle_counter_read() : 0U;
+    uint64_t timeout_cycles = elapsed_bound
+        ? (frequency / 1000U) * SPINLOCK_ACQUIRE_TIMEOUT_MS : 0U;
     for (uint32_t spin = 0U; spin < spin_limit; ++spin) {
-        uint32_t observed = __sync_val_compare_and_swap(
-            &lock->lock, 0U, owner_token);
+        if (!elapsed_bound && spin >= SPINLOCK_ACQUIRE_BOOT_SPIN_LIMIT)
+            return false;
+        /* Test before compare-and-swap so waiters keep the cache line shared
+         * while an owner is running.  This avoids a locked write attempt on
+         * every PAUSE iteration and lets a preempted virtual owner resume and
+         * publish release without cache-line ping-pong from all waiters. */
+        uint32_t observed = lock->lock;
+        if (observed == 0U) {
+            observed = __sync_val_compare_and_swap(
+                &lock->lock, 0U, owner_token);
+        }
         if (observed == 0U) {
             lock->owner_cpu = cpu;
             __sync_synchronize();
@@ -85,6 +111,13 @@ static inline bool spinlock_acquire_bounded(spinlock_t *lock,
             panic("Recursive SMP spinlock acquisition");
         }
         __asm__ __volatile__("pause");
+        if (elapsed_bound &&
+            (spin & (SPINLOCK_TIME_CHECK_INTERVAL - 1U)) ==
+                SPINLOCK_TIME_CHECK_INTERVAL - 1U) {
+            uint64_t now_cycles = cpu_cycle_counter_read();
+            if (now_cycles < start_cycles ||
+                now_cycles - start_cycles >= timeout_cycles) return false;
+        }
     }
     return false;
 }
@@ -97,11 +130,14 @@ static inline bool spinlock_acquire_bounded(spinlock_t *lock,
  * Includes PAUSE instruction to reduce contention.
  */
 static inline void spinlock_acquire(spinlock_t *lock) {
-    if (!spinlock_acquire_bounded(lock, SPINLOCK_ACQUIRE_SPIN_LIMIT)) {
+    if (!spinlock_acquire_bounded(lock, SPINLOCK_ACQUIRE_TIMED_SPIN_LIMIT)) {
+        uint32_t caller =
+            (uint32_t)(uintptr_t)__builtin_return_address(0);
         panic_context_set("synchronization", "SMP spinlock", "acquire",
                           "bounded owner wait");
-        panic_context_set_result(-110, lock->owner_cpu,
-                                 SPINLOCK_ACQUIRE_SPIN_LIMIT);
+        panic_context_set_result(-110, (uint32_t)(uintptr_t)lock,
+            (lock->owner_cpu << 24U) |
+                (caller & 0x00FFFFFFU));
         panic("SMP spinlock acquisition timed out");
     }
 }

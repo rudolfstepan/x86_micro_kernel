@@ -5,6 +5,7 @@ param(
     [ValidateRange(20, 120)] [int]$TimeoutSeconds = 75,
     [ValidateRange(30, 360)] [int]$BenchmarkTimeoutSeconds = 180,
     [ValidateRange(1, 20)] [int]$InjectionAttempts = 12,
+    [ValidateRange(10, 60)] [int]$PostSuccessStabilitySeconds = 10,
     [switch]$ExpectCompositorRestart,
     [switch]$Benchmark
 )
@@ -78,15 +79,23 @@ $requiredAfterDesktop = @(
 )
 $forbidden = @(
     '*** KERNEL PANIC ***',
-    'REIST_GUI COMPOSITOR_DEGRADED'
+    'KERNEL PANIC',
+    'REIST_FATAL',
+    'REIST_RUNTIME_DEGRADATION',
+    'DRIVER_DEGRADED',
+    'SERVICE_DEGRADED',
+    'DRIVER_RESTARTED',
+    'SERVICE_RESTARTED',
+    'REIST_GUI COMPOSITOR_DEGRADED',
+    'REIST_STORAGE RESOURCE_QUARANTINED',
+    'REIST_STORAGE RECOVERY_WAIT_',
+    'ATA_FLUSH_FAILED'
 )
 if (!$ExpectCompositorRestart) {
     $forbidden += 'REIST_GUI COMPOSITOR_RESTARTED'
 }
 if ($Benchmark) {
     $forbidden += @(
-        'REIST_STORAGE RESOURCE_QUARANTINED',
-        'ATA_FLUSH_FAILED',
         'BENCHMARK_STATUS phase=hdd-failed',
         'BENCHMARK FAILED'
     )
@@ -312,6 +321,29 @@ function Assert-NoForbiddenMarker([string]$Text) {
     }
 }
 
+function Wait-PostSuccessStability([string]$Mode, [int]$BaselineBootCount,
+                                   [int]$BaselineLoaderCount) {
+    $stabilityDeadline = (Get-Date).AddSeconds($PostSuccessStabilitySeconds)
+    $stabilityText = Read-SerialText
+    while ((Get-Date) -lt $stabilityDeadline) {
+        Start-Sleep -Milliseconds 250
+        $stabilityText = Read-SerialText
+        Assert-NoForbiddenMarker $stabilityText
+        $bootCount = ([regex]::Matches($stabilityText, 'BOOT_OK')).Count
+        if ($bootCount -gt $BaselineBootCount) {
+            throw 'Boot marker repeated during post-success stability.'
+        }
+        $loaderCount = ([regex]::Matches(
+            $stabilityText, 'x86 native BIOS loader')).Count
+        if ($loaderCount -gt $BaselineLoaderCount) {
+            throw 'BIOS loader marker repeated during post-success stability.'
+        }
+    }
+    "$Mode post-success stability=$PostSuccessStabilitySeconds seconds boot_count=$BaselineBootCount" |
+        Add-Content -LiteralPath $GateLog -Encoding utf8
+    return $stabilityText
+}
+
 function Send-BoundedMouseInput([int]$Attempt) {
     return [ReistRfbInput]::SendPointer($vncPort, $Attempt)
 }
@@ -458,11 +490,16 @@ try {
                         $readRate -lt $minimumBenchmarkReadKiB) {
                         throw "VMware HDD rates missed the frozen minimum: write=$writeRate/$minimumBenchmarkWriteKiB read=$readRate/$minimumBenchmarkReadKiB KiB/s."
                     }
+                    $bootCount = ([regex]::Matches($text, 'BOOT_OK')).Count
+                    $loaderCount = ([regex]::Matches(
+                        $text, 'x86 native BIOS loader')).Count
+                    $text = Wait-PostSuccessStability 'benchmark' $bootCount `
+                        $loaderCount
                     $text | Set-Content -LiteralPath $GateLog -Encoding utf8
                     $passed = $true
-                    Write-Output ("VMWARE BENCHMARK PASS elapsed={0}s write={1}KiB/s read={2}KiB/s cleanup=ok log={3}" -f
+                    Write-Output ("VMWARE BENCHMARK PASS elapsed={0}s write={1}KiB/s read={2}KiB/s cleanup=ok stability={3}s log={4}" -f
                         [int]$watch.Elapsed.TotalSeconds, $writeText, $readText,
-                        $GateLog)
+                        $PostSuccessStabilitySeconds, $GateLog)
                     break
                 }
             }
@@ -569,9 +606,14 @@ try {
                 $ready -lt $desktop -and $desktop -lt $mouse)) {
                 throw 'VMware mouse runtime markers are out of order.'
             }
+            $bootCount = ([regex]::Matches($text, 'BOOT_OK')).Count
+            $loaderCount = ([regex]::Matches(
+                $text, 'x86 native BIOS loader')).Count
+            $text = Wait-PostSuccessStability 'desktop' $bootCount `
+                $loaderCount
             $text | Set-Content -LiteralPath $GateLog -Encoding utf8
             $passed = $true
-            Write-Output "VMWARE MOUSE PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$GateLog"
+            Write-Output "VMWARE MOUSE PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s stability=$($PostSuccessStabilitySeconds)s log=$GateLog"
             break
         }
         Assert-NoForbiddenMarker $text

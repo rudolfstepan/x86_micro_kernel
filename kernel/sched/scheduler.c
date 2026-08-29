@@ -433,7 +433,7 @@ static void refresh_effective_classes_locked(void) {
     }
 }
 
-static void account_current_runtime_locked(void) {
+static void account_current_runtime_locked(uint64_t now_ms) {
     assert_task_table_locked();
     refresh_effective_classes_locked();
     uint32_t cpu = scheduler_cpu_policy_index_locked();
@@ -441,7 +441,7 @@ static void account_current_runtime_locked(void) {
         ? tasks[current_task].effective_scheduling_class
         : SCHEDULER_CLASS_NONE;
     if (scheduler_policy_window_charge(
-            &cpu_windows[cpu], charged_class, pit_monotonic_ms())) {
+            &cpu_windows[cpu], charged_class, now_ms)) {
         for (int index = 0; index < num_tasks; ++index) {
             tasks[index].budget_remaining = scheduler_policy_budget(
                 tasks[index].effective_scheduling_class);
@@ -449,13 +449,13 @@ static void account_current_runtime_locked(void) {
     }
 }
 
-static int find_next_runnable(int after) {
+static int find_next_runnable(int after, uint64_t now_ms) {
     assert_task_table_locked();
     (void)after;
     if (num_tasks == 0) {
         return -1;
     }
-    account_current_runtime_locked();
+    account_current_runtime_locked(now_ms);
     scheduler_candidate_t candidates[MAX_TASKS] = {0};
     int32_t cpu = (int32_t)scheduler_cpu_local()->cpu_index;
     uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
@@ -505,9 +505,9 @@ static bool claim_task_for_current_cpu(int task_id) {
     return true;
 }
 
-static int claim_next_runnable(int after) {
+static int claim_next_runnable(int after, uint64_t now_ms) {
     for (uint32_t attempt = 0U; attempt < MAX_TASKS; ++attempt) {
-        int next = find_next_runnable(after);
+        int next = find_next_runnable(after, now_ms);
         if (next < 0) return -1;
         if (claim_task_for_current_cpu(next)) return next;
     }
@@ -945,10 +945,10 @@ static void activate_task_address_space(int task_index) {
     }
 }
 
-static bool schedule_blocked_current_locked(int blocked) {
+static bool schedule_blocked_current_locked(int blocked, uint64_t now_ms) {
     validate_running_task_stack_or_panic(&tasks[blocked]);
     assert_task_table_locked();
-    int next = claim_next_runnable(blocked);
+    int next = claim_next_runnable(blocked, now_ms);
     if (next >= 0) {
         prepare_task_handoff(blocked, SCHEDULER_HANDOFF_RELEASE);
         current_task = next;
@@ -1025,7 +1025,8 @@ void scheduler_clear_wait_owner_locked(void) {
 
 static int wait_queue_block_until_task_locked(wait_queue_t *queue,
                                               task_block_kind_t kind,
-                                              uint64_t deadline_ms) {
+                                              uint64_t deadline_ms,
+                                              uint64_t now_ms) {
     KASSERT_IRQ_DISABLED();
     KASSERT_NOT_IRQ();
     assert_task_table_locked();
@@ -1048,7 +1049,7 @@ static int wait_queue_block_until_task_locked(wait_queue_t *queue,
     task->status = kind == TASK_BLOCK_SLEEPING
         ? TASK_SLEEPING : TASK_WAITING;
 
-    if (!schedule_blocked_current_locked(blocked)) {
+    if (!schedule_blocked_current_locked(blocked, now_ms)) {
         spinlock_acquire(&task_table_lock);
         wait_queue_cancel_locked(task);
         task->status = TASK_RUNNING;
@@ -1064,8 +1065,10 @@ int wait_queue_block_until_locked(wait_queue_t *queue,
                                   uint64_t deadline_ms) {
     KASSERT_IRQ_DISABLED();
     KASSERT_NOT_IRQ();
+    uint64_t now_ms = pit_monotonic_ms();
     spinlock_acquire(&task_table_lock);
-    return wait_queue_block_until_task_locked(queue, kind, deadline_ms);
+    return wait_queue_block_until_task_locked(queue, kind, deadline_ms,
+                                              now_ms);
 }
 
 int wait_queue_block_until_spinlocked(wait_queue_t *queue,
@@ -1077,9 +1080,11 @@ int wait_queue_block_until_spinlocked(wait_queue_t *queue,
     KASSERT_NOT_IRQ();
     KASSERT(condition_lock != NULL);
     KASSERT(spinlock_is_owned_by_current(condition_lock));
+    uint64_t now_ms = pit_monotonic_ms();
     spinlock_acquire(&task_table_lock);
     spinlock_release(condition_lock);
-    int result = wait_queue_block_until_task_locked(queue, kind, deadline_ms);
+    int result = wait_queue_block_until_task_locked(queue, kind, deadline_ms,
+                                                    now_ms);
     irq_restore(irq_flags);
     return result;
 }
@@ -1200,7 +1205,7 @@ int scheduler_sleep_ms(uint32_t milliseconds) {
         return -1;
     }
     task->status = TASK_SLEEPING;
-    if (!schedule_blocked_current_locked(blocked)) {
+    if (!schedule_blocked_current_locked(blocked, now)) {
         spinlock_acquire(&task_table_lock);
         wait_queue_cancel_locked(task);
         task->status = TASK_RUNNING;
@@ -1226,10 +1231,11 @@ int scheduler_yield(void) {
         return 0;
     }
     validate_running_task_stack_or_panic(&tasks[previous]);
+    uint64_t now_ms = pit_monotonic_ms();
 
     spinlock_acquire(&task_table_lock);
     tasks[previous].status = TASK_READY;
-    int next = claim_next_runnable(previous);
+    int next = claim_next_runnable(previous, now_ms);
     uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
     bool previous_allowed = scheduler_policy_class_allowed(
         &cpu_windows[policy_cpu],
@@ -1337,8 +1343,9 @@ void scheduler_interrupt_handler(void) {
      * validation point with preemption enabled. Merely receiving IRQ0 does
      * not constitute system progress. */
     if (scheduler_cpu_local()->cpu_index == 0U) watchdog_health_progress();
+    uint64_t now_ms = pit_monotonic_ms();
     spinlock_acquire(&task_table_lock);
-    int next = claim_next_runnable(previous);
+    int next = claim_next_runnable(previous, now_ms);
     uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
 
     bool previous_allowed = previous >= 0 && previous < num_tasks &&
@@ -1500,6 +1507,7 @@ void task_exit_status(int status) {
         process_close_all_files(process);
         process_orphan_children(process->pid);
     }
+    uint64_t now_ms = pit_monotonic_ms();
     irq_disable();
 
     uint32_t process_flags = process_table_lock_irqsave();
@@ -1521,7 +1529,7 @@ void task_exit_status(int status) {
     KASSERT(finished < 0 ||
             tasks[finished].running_cpu ==
                 (int32_t)scheduler_cpu_local()->cpu_index);
-    int next = claim_next_runnable(finished);
+    int next = claim_next_runnable(finished, now_ms);
     if (next >= 0) {
         if (finished >= 0)
             prepare_task_handoff(finished, SCHEDULER_HANDOFF_RELEASE);

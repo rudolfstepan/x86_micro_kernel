@@ -202,8 +202,14 @@ class IrqAndSleepContextContractTests(unittest.TestCase):
         acquire = function_block(
             self.spinlock_h, "static inline void spinlock_acquire("
         )
-        self.assertIn("SPINLOCK_ACQUIRE_SPIN_LIMIT", acquire)
+        self.assertIn("SPINLOCK_ACQUIRE_TIMED_SPIN_LIMIT", acquire)
+        self.assertIn("SPINLOCK_ACQUIRE_TIMEOUT_MS", self.spinlock_h)
+        self.assertIn("cpu_cycle_counter_read()", bounded)
+        self.assertIn("cpu_frequency", bounded)
         self.assertIn("panic_context_set_result(-110", acquire)
+        self.assertIn("(uint32_t)(uintptr_t)lock", acquire)
+        self.assertIn("lock->owner_cpu << 24U", acquire)
+        self.assertIn("caller & 0x00FFFFFFU", acquire)
         self.assertIn("KASSERT(lock->lock == cpu + 1U)", release)
         self.assertIn("lock->owner_cpu == cpu", release)
 

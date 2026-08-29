@@ -2,9 +2,53 @@
 
 Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `9a786ce`
+Branch/Startpunkt: `working_branch` / `a6d76fd`
 
-Aktives Thema: keines; `R7.1i-fat32-ordered-append-io` ist abgeschlossen.
+Aktives Thema: keines; `R7.1j-vmware-smp-post-workload-stability` ist
+abgeschlossen.
+
+Nach dem erfolgreichen R7.1i-Benchmark trat erst nach der Shell-Rueckkehr ein
+Kernel-Panic auf; der beobachtete Neustart ist daher kein Absturz des Desktop-
+Prozesses. Build-ID und die schon im vorherigen Rekursionsbefund enthaltene
+Lockadresse ordnen den Fehler `task_table_lock` im Prozess-Endpfad zu. Die
+globale Lock-Reihenfolge bleibt konsistent. Der reale Fehler ist die Kopplung
+zweier CPU-geschwindigkeitsabhaengiger Retrygrenzen: Die Scheduler-Policy las
+die PIT-Sequenz unter dem Task-Lock, waehrend VMware eine beteiligte vCPU kurz
+vom Host anhalten kann; andere vCPUs erschoepften waehrenddessen eine Million
+CAS-Schleifen und loesten einen falschen Lock-Timeout aus.
+
+R7.1j verschiebt die monotone Zeitaufnahme vor den Task-Lock, ersetzt den
+normalen Erwerb durch test-before-CAS mit einer kalibrierten festen 250-ms-
+Frist und behaelt fuer Boot und defekte Zeitbasis endliche harte Grenzen. Ein
+Timeout nennt nun Lockadresse, Besitzer-CPU und wartenden Aufrufer. Der VMware-
+Runner beendet Benchmark oder Desktop nicht mehr sofort nach dem
+Erfolgsmarker, sondern beobachtet weitere zehn Sekunden auf Panic,
+Degradation, Storage-Fence und einen zweiten `BOOT_OK`-Marker.
+
+Der erste so verlaengerte Desktop-Lauf deckte zusaetzlich einen unabhaengigen
+Double Fault direkt nach `DESKTOP_SPLASH_READY` auf. Eine identische
+Vier-vCPU-QEMU-Konfiguration reproduzierte ihn und lieferte den exakten
+Interruptzustand: Syscall 25 (`SYS_READDIR_BATCH`) lief mit EIP in der FAT32-
+Unicode-Normalisierung; CR2 lag vier Byte unter ESP in der unteren
+Kernelstack-Guardpage. Die Compiler-Stackdaten zeigen fuer den Syscall allein
+2532 Byte und fuer den tiefsten FAT32-Pfad mehr als den gesamten 8-KiB-Slot.
+R7.1j verschiebt Pfad, vier VFS-Eintraege und vier ABI-Eintraege in einen
+festen Arbeitsbereich je Task-Slot. Die nie-null Task-Generation und ein
+Belegtbit verhindern Aliasing bei blockierendem I/O, Rekursion und
+Slot-Wiederverwendung; ein vergroesserter Stack oder eine abgeschaltete
+Guardpage ist nicht Teil des Fixes.
+
+Die finale Abnahme bestand 87 eingefrorene Quell-/Host-Pruefungen bei einem
+optionalen Compiler-Skip und den VMware-VGA-Paketbuild in 43 Sekunden. Der
+reale Benchmark erreichte 284,12 KiB/s Schreiben und 439,10 KiB/s Lesen mit
+vollstaendigem Datenvergleich, Cleanup, Shell-Rueckkehr und zehn Sekunden
+Nachlauf. Der reale Desktop passierte den frueheren Fehlerpunkt ueber
+`DESKTOP_EXPLORER_OK`, `COMPOSITOR_READY`, `DESKTOP_OK` und den echten
+virtuellen xHCI-Marker `DESKTOP_MOUSE_OK`; auch sein zehnsekündiger Nachlauf
+blieb ohne Panic, Fatal-Marker, wiederholten BIOS-Lader oder `BOOT_OK`,
+Degradation oder Storage-Fence.
+
+`R7.1i-fat32-ordered-append-io` ist abgeschlossen.
 
 Die saubere Gegenanalyse ordnet die Restlatenz nicht dem FAT32-Format zu,
 sondern der Kommandovielzahl: Der 256-KiB-Leselauf liest fuer fast jeden der

@@ -591,6 +591,41 @@ Der reale Vier-vCPU-Lauf bestand in 17 Sekunden mit vollstaendiger
 Schreiben und 640,00 KiB/s Lesen. Journal-v2, zwanzig Slots, exakt vier
 Barrieren, vollstaendiger Readback, Fencing und oeffentliche ABIs blieben
 unveraendert; R7.1i ist damit angenommen.
+R7.1j bearbeitet den erst nach dieser Erfolgsmarke sichtbar gewordenen
+Vier-vCPU-Stabilitaetsfehler. Der anschliessende Kernel-Panic meldete einen
+begrenzten SMP-Lock-Timeout mit Besitzer CPU 2; der fruehere Build-ID-Befund
+identifiziert dieselbe Lockadresse als Scheduler-Task-Tabelle im Exitpfad.
+Die Prozess-/Scheduler-Lockordnung ist nicht invertiert. Stattdessen wird die
+PIT-Sequenz bisher unter dem Task-Lock gelesen und beide Wartepfade verwenden
+eine feste Schleifenzahl, die auf einem schnellen AMD-Host ablaufen kann,
+waehrend VMware die Besitzer-vCPU kurz nicht ausfuehrt. Der Folgeschritt liest
+die monotone Zeit vor dem Scheduler-Lock, verwendet test-before-CAS und eine
+kalibrierte 250-ms-Frist mit endlicher Boot-/Hardgrenze und erweitert die
+Panicdetails um Lockadresse, Besitzer und wartenden Aufrufer. Benchmark und
+Desktop muessen nach ihrem Erfolgsmarker noch zehn Sekunden ohne Panic,
+Neustart, Degradation oder Storage-Fence weiterlaufen; erst dieser Nachlauf
+schliesst das Paket.
+Der erste verlaengerte Desktop-Lauf zeigte danach einen getrennten Double
+Fault unmittelbar nach dem Splash. Die exakte Vier-vCPU-Reproduktion unter
+QEMU ordnete den letzten Ring-3-Aufruf Syscall 25 zu; EIP lag in der
+FAT32-Unicode-Normalisierung und CR2 vier Byte unter ESP in der unteren
+8-KiB-Kernelstack-Guardpage. Compilerframes bestaetigen, dass die beiden
+Viererfelder von `SYS_READDIR_BATCH` zusammen mit dem tiefen FAT32-Pfad den
+Slot ueberschreiten. Sie und der ueber den blockierenden Aufruf lebende Pfad
+werden deshalb in einen festen, Task-Slot- und Task-Generation-gebundenen
+Arbeitsbereich verschoben. Derselbe Besitzer kann ihn nicht rekursiv nutzen;
+eine neue Generation darf einen belegten Rest der nachweislich beendeten alten
+Inkarnation zuruecksetzen. Stackgroesse, Guardpage, FAT32-Format und ABI
+bleiben unveraendert.
+Die finale R7.1j-Abnahme bestand alle 87 ausgefuehrten eingefrorenen
+Quell-/Host-Pruefungen, den VMware-VGA-Paketbuild und beide realen
+Vier-vCPU-Laufzeitgates. Der Benchmark erreichte mit vollstaendigem Readback,
+Cleanup und zehn Sekunden Nachlauf 284,12 KiB/s Schreiben sowie 439,10 KiB/s
+Lesen. Der Desktop passierte Splash, Explorer, `COMPOSITOR_READY`,
+`DESKTOP_OK` und den echten virtuellen xHCI-Mausmarker; der anschliessende
+zehnsekündige Nachlauf blieb ohne Panic, Fatal-Marker, wiederholten BIOS-Lader
+oder `BOOT_OK`, Degradation, Quarantaene oder Storage-Fence. R7.1j ist damit
+angenommen und die Queue leer.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

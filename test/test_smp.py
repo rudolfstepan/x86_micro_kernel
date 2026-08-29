@@ -161,8 +161,12 @@ class SmpTests(unittest.TestCase):
         lock = (ROOT / "include/lib/spinlock.h").read_text(encoding="utf-8")
         self.assertIn("owner_cpu", lock)
         self.assertIn("SPINLOCK_ACQUIRE_SPIN_LIMIT", lock)
+        self.assertIn("SPINLOCK_ACQUIRE_TIMED_SPIN_LIMIT", lock)
+        self.assertIn("SPINLOCK_ACQUIRE_TIMEOUT_MS", lock)
         self.assertIn("spinlock_acquire_bounded", lock)
         self.assertIn("x86_cpu_current_index()", lock)
+        self.assertIn("cpu_cycle_counter_read()", lock)
+        self.assertIn("cpu_frequency", lock)
         self.assertNotIn("while (__sync_lock_test_and_set", lock)
 
     def test_static_spinlocks_publish_no_owner_initially(self):
@@ -259,6 +263,31 @@ class SmpTests(unittest.TestCase):
         pit = (ROOT / "kernel/time/pit.c").read_text(encoding="utf-8")
         self.assertIn("timer_tick_sequence", pit)
         self.assertIn("PIT_MONOTONIC_READ_RETRY_LIMIT", pit)
+        self.assertIn("PIT_MONOTONIC_READ_TIMEOUT_MS", pit)
+        self.assertIn("cpu_cycle_counter_read()", pit)
+
+    def test_scheduler_samples_monotonic_time_before_task_lock(self):
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8")
+        account_start = scheduler.index(
+            "static void account_current_runtime_locked(")
+        account_end = scheduler.index("static int find_next_runnable(",
+                                      account_start)
+        self.assertNotIn("pit_monotonic_ms()",
+                         scheduler[account_start:account_end])
+        for signature, end_signature in (
+            ("int scheduler_yield(void)",
+             "void scheduler_set_apic_timer_active"),
+            ("void scheduler_interrupt_handler(void)",
+             "void scheduler_preempt_disable"),
+            ("void task_exit_status(int status)",
+             "void scheduler_kill_current"),
+        ):
+            start = scheduler.index(signature)
+            end = scheduler.index(end_signature, start)
+            body = scheduler[start:end]
+            self.assertLess(body.index("pit_monotonic_ms()"),
+                            body.index("spinlock_acquire(&task_table_lock)"))
 
     def test_task_table_admin_transactions_are_locked_but_switches_are_not(self):
         scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
@@ -293,9 +322,20 @@ class SmpTests(unittest.TestCase):
                        lock.index("static inline void spinlock_acquire(")]
         self.assertIn("uint32_t owner_token = cpu + 1U", bounded)
         self.assertIn("__sync_val_compare_and_swap(", bounded)
+        self.assertLess(bounded.index("uint32_t observed = lock->lock"),
+                        bounded.index("__sync_val_compare_and_swap("))
         self.assertLess(bounded.index("if (observed == 0U)"),
                         bounded.index("if (observed == owner_token)"))
         self.assertNotIn("if (lock->owner_cpu == cpu)", bounded)
+
+    def test_spinlock_timeout_identifies_lock_owner_and_waiter(self):
+        lock = (ROOT / "include/lib/spinlock.h").read_text(encoding="utf-8")
+        acquire = lock[lock.index("static inline void spinlock_acquire("):
+                       lock.index("static inline void spinlock_release(")]
+        self.assertIn("__builtin_return_address(0)", acquire)
+        self.assertIn("(uint32_t)(uintptr_t)lock", acquire)
+        self.assertIn("lock->owner_cpu << 24U", acquire)
+        self.assertIn("caller & 0x00FFFFFFU", acquire)
 
     def test_ap_scheduler_release_is_affined_bounded_and_guarded(self):
         smp = (ROOT / "arch/x86/cpu/smp.c").read_text(encoding="utf-8")

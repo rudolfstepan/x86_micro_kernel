@@ -146,6 +146,18 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("REIST_GUI COMPOSITOR_DEGRADED", source)
         self.assertIn("REIST_GUI COMPOSITOR_RESTARTED", source)
         self.assertIn("Assert-NoForbiddenMarker", source)
+        self.assertIn("Wait-PostSuccessStability", source)
+        self.assertIn("PostSuccessStabilitySeconds", source)
+        self.assertIn("Boot marker repeated during post-success stability", source)
+        self.assertIn("REIST_FATAL", source)
+        self.assertIn("REIST_RUNTIME_DEGRADATION", source)
+        self.assertIn("DRIVER_DEGRADED", source)
+        self.assertIn("SERVICE_DEGRADED", source)
+        self.assertIn("REIST_STORAGE RECOVERY_WAIT_", source)
+        self.assertIn(
+            "BIOS loader marker repeated during post-success stability",
+            source,
+        )
 
     def test_benchmark_mode_is_bounded_and_requires_complete_hdd_proof(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
@@ -175,6 +187,17 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("REIST_STORAGE RESOURCE_QUARANTINED", source)
         self.assertIn("ATA_FLUSH_FAILED", source)
         self.assertIn("VMWARE BENCHMARK PASS", source)
+        self.assertIn("stability=", source)
+        self.assertIn("Wait-PostSuccessStability 'benchmark'", source)
+
+    def test_desktop_mode_observes_post_success_stability_interval(self):
+        source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[ValidateRange(10, 60)]", source)
+        self.assertIn("Wait-PostSuccessStability 'desktop'", source)
+        self.assertIn("$stabilityDeadline =", source)
+        self.assertIn("Assert-NoForbiddenMarker $stabilityText", source)
 
 
 if __name__ == "__main__":
