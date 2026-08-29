@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2l-x86_64-shell-spawnv-argv"
 
 [policy]
 one_package_per_run = true
@@ -11606,6 +11606,43 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers from two fresh child loads and preserved every established marker through RING3_SHELL_OK",
   "each generation reaped task-owned tables stack and writable frames before releasing its child-image context and restoring the shell selector; reverse child shell probe cleanup restored the exact initial free count with no live context; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2l-x86_64-shell-spawnv-argv"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Pass bounded argv to the x86_64 shell child"
+scope = "Integrate the established REIST-v1 SPAWNV syscall index 30 into the real x86_64 shell RUN path without changing the existing SPAWN 23 proof or public ABI. RUN places exactly two NUL-terminated stack strings /shell/child and token77 plus an aligned two-entry argv vector in the shell private NX stack and calls SPAWNV(path argv 2). The kernel validates shell identity generation argc exact vector alignment vector bounds both pointers independent bounded NUL termination argv[0] equality with the fixed registry path and argv[1] equality with token77 before any loader frame task or queue effect. After the separate child ELF and private address space validate, construct a fixed System V AMD64 process-entry stack in the child private NX frame with argc 2 argv pointers trailing NULL empty envp and AT_NULL auxiliary vector, all in-range nonaliasing and 16-byte entry alignment, then publish READY. The RX-only child validates the complete stack contract and both strings directly, performs no I/O and exits 77 only on exact success; malformed state exits a distinct bounded failure status. Exercise both generation 41 and 42 cycles through the unchanged blocking WAIT and release order. Preserve SPAWN 23 GETPID WAIT EXIT all existing markers dialogue counts loader context capacity task capacity C handoffs i386 and cleanup. Add no variable argc user-controlled sizes environment capability inheritance VFS runtime parsing dynamic registry concurrent child wait-any SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/user/child.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the public ABI remains append-only and unchanged with SPAWN 23 SPAWNV 30 and the prior fixed SPAWN WAIT and two-generation loader proofs preserved",
+  "SPAWNV accepts only shell generation 40 argc 2 an aligned in-stack vector and exact bounded argv strings /shell/child and token77 before any allocation or publication",
+  "the child entry stack is entirely inside its private NX frame 16-byte aligned and contains argc argv NULL empty envp and AT_NULL without pointer alias or ambient authority",
+  "the RX-only child validates argc vector terminators pointers and both strings before exact EXIT 77 and performs no I/O",
+  "both generations retain blocking generation-exact WAIT task-before-image reap shell-selector restore and complete zero-metadata cleanup",
+  "all i386 artifacts C handoffs task and loader capacities prior markers INFO RUN RUN EXIT dialogue and exact initial frame count remain unchanged"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "a new syscall variable argc dynamic allocation VFS parser environment capability inheritance extra task loader context or public ABI change is required",
+  "an argv pointer can escape either private stack or be consumed before full bounded validation",
+  "child READY can publish before complete System V stack construction or malformed startup state can return status 77",
+  "an i386 artifact prior marker separate SPAWN proof C handoff task or loader capacity changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "proc: pass bounded argv to x86_64 shell child"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

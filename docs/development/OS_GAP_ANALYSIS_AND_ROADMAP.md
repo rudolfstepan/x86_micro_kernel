@@ -339,6 +339,13 @@ Kindladungen, vollständige Task- und Abbildfreigabe vor jedem Shell-Wakeup und
 alle bisherigen Marker bis `RING3_SHELL_OK`. Allgemeines VFS-Laden, argv und
 dynamische Image-Registries bleiben Folgearbeiten; die x86_64-Queue ist leer.
 
+**R8.2l ist aktiv:** `RUN` verwendet den bestehenden REIST-v1-Syscall
+`SPAWNV` 30 mit genau zwei vollstaendig stackgebundenen Argumenten. Vor jeder
+Wirkung muessen Vector, Pointer und Strings exakt validieren; danach erhaelt das
+separate Kind einen privaten, 16-Byte-ausgerichteten System-V-AMD64-Startstack
+mit leerer Umgebung und `AT_NULL`. Variable Argumentlisten, VFS und ambient
+vererbte Autoritaet bleiben getrennte Folgearbeiten.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget
