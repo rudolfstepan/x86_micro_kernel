@@ -18,7 +18,6 @@ typedef unsigned char shell_u8;
 #define SHELL_PARENT_PID 300LL
 #define SHELL_CHILD_PID 301LL
 #define SHELL_CHILD_STATUS 77U
-#define SHELL_CHILD_MODE 1ULL
 
 static shell_i64 shell_syscall3(shell_u64 number, shell_u64 first,
                                 shell_u64 second, shell_u64 third)
@@ -79,7 +78,7 @@ static void clear_command(shell_u8 *command)
     }
 }
 
-void _start(shell_u64 mode)
+void _start(void)
 {
     static const char ready[] = "REIST_X86_64_RING3_SHELL_READY\r\n";
     static const char prompt[] = "C:\\>";
@@ -91,13 +90,6 @@ void _start(shell_u64 mode)
     shell_u8 input_byte = 0U;
     shell_u32 command_length = 0U;
     shell_u32 polls = 0U;
-
-    if (mode == SHELL_CHILD_MODE) {
-        shell_exit(SHELL_CHILD_STATUS);
-    }
-    if (mode != 0ULL) {
-        shell_exit(10ULL);
-    }
 
     clear_command(command);
     if (!shell_write_exact(ready, sizeof(ready) - 1U) ||

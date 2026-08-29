@@ -512,3 +512,22 @@ unveraenderten REIST-v1-ABI; die Generation bleibt kernelintern.
 begrenzte Ein-vCPU-/128-MiB-QEMU-Dialog sendete `INFO`, `RUN`, `RUN`, `EXIT`,
 beobachtete exakt zwei geordnete `RING3_SHELL_RUN_OK`-Marker und erreichte nach
 vollstaendigem Cleanup alle bisherigen Marker bis `RING3_SHELL_OK`.
+
+## Separates Shell-Kind-ELF R8.2k
+
+`/shell/child` waehlt nun ein unabhaengig assembliertes und gelinktes
+System-V-AMD64-`ET_EXEC` mit genau einem RX-Segment. Das 360-Byte-Abbild fuehrt
+keine Ein-/Ausgabe aus und beendet sich ausschliesslich ueber `EXIT` 9 mit
+Status 77. Die Shell besitzt keinen Kindmodus mehr.
+
+Der Loader verwaltet exakt drei feste 88-Byte-Kontexte fuer Probe, Shell und
+Kind. Shell und Kind duerfen gleichzeitig aktiv sein, teilen aber weder
+Frameeintraege noch Flags, Entry oder Cleanupzaehler. Nach jeder Generation
+wird unter Kernel-CR3 zuerst der Task reaptiert, danach der Kindkontext
+freigegeben und erst dann die Shell wieder ausgewaehlt. Gemeinsames Cleanup
+laeuft Kind, Shell, Probe.
+
+51 Quellvertragstests und der warnungsfreie 127.488-Byte-Build bestanden. Der
+native Ein-vCPU-/128-MiB-QEMU-Dialog lud das Kind zweimal frisch, beobachtete
+exakt zwei `RUN_OK`-Marker und erreichte nach leerem Kontext- und Framebesitz
+alle bisherigen Marker bis `RING3_SHELL_OK`.

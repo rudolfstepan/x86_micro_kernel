@@ -331,12 +331,13 @@ frische private Kindressourcen und die vollstaendige Ruecknahme jeder
 Generation. Parallele Kinder, wait-any, allgemeines Image-/VFS-Laden und argv
 bleiben getrennte Folgearbeiten; die x86_64-Queue ist leer.
 
-**R8.2k ist aktiv:** Der feste Pfad `/shell/child` wird an ein separat
-gelinktes, RX-only System-V-AMD64-`ET_EXEC` gebunden. Genau drei feste
-Loaderkontexte trennen Probe, Shell und Kind; der Scheduler darf den Kindslot
-erst nach vollstaendiger ELF- und Adressraumvalidierung publizieren und muss
-Task- sowie Abbildframes vor dem Shell-Wakeup freigeben. Allgemeines VFS-Laden,
-argv und dynamische Image-Registries bleiben getrennte Folgearbeiten.
+**R8.2k ist abgeschlossen:** Der feste Pfad `/shell/child` ist an ein separat
+gelinktes, 360-Byte-RX-only-System-V-AMD64-`ET_EXEC` gebunden. Genau drei feste
+Loaderkontexte trennen Probe, Shell und Kind. 51 Quellvertragstests, der
+warnungsfreie 127.488-Byte-Build und der native QEMU-Lauf bewiesen zwei frische
+Kindladungen, vollständige Task- und Abbildfreigabe vor jedem Shell-Wakeup und
+alle bisherigen Marker bis `RING3_SHELL_OK`. Allgemeines VFS-Laden, argv und
+dynamische Image-Registries bleiben Folgearbeiten; die x86_64-Queue ist leer.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

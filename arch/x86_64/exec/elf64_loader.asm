@@ -7,6 +7,9 @@
 %ifndef USER_SHELL_PATH
     %error "USER_SHELL_PATH must name the independently linked ELF64 shell"
 %endif
+%ifndef USER_CHILD_PATH
+    %error "USER_CHILD_PATH must name the independently linked ELF64 child"
+%endif
 
 BITS 64
 
@@ -34,6 +37,9 @@ PAGE_SIZE           equ 4096
 DIRECT_MAP_BASE     equ 0xFFFF800000000000
 ELF_IMAGE_PROBE     equ 0
 ELF_IMAGE_SHELL     equ 1
+ELF_IMAGE_CHILD     equ 2
+ELF_CONTEXT_COUNT   equ 3
+ELF_CONTEXT_SIZE    equ 88
 
 EH_TYPE             equ 16
 EH_MACHINE          equ 18
@@ -56,6 +62,7 @@ section .text
 global x86_64_elf64_loader_selftest64
 global x86_64_elf64_load64
 global x86_64_elf64_release64
+global x86_64_elf64_release_all64
 global x86_64_elf64_entry64
 global x86_64_elf64_page_frame64
 global x86_64_elf64_page_flags64
@@ -106,7 +113,13 @@ x86_64_elf64_load64:
     cmp byte [rel elf_image_selector], ELF_IMAGE_PROBE
     je .select_probe
     cmp byte [rel elf_image_selector], ELF_IMAGE_SHELL
+    je .select_shell
+    cmp byte [rel elf_image_selector], ELF_IMAGE_CHILD
     jne elf64_load_fail
+    lea r12, [rel user_child_elf_start]
+    mov r13, user_child_elf_end - user_child_elf_start
+    jmp .image_selected
+.select_shell:
     lea r12, [rel user_shell_elf_start]
     mov r13, user_shell_elf_end - user_shell_elf_start
     jmp .image_selected
@@ -376,16 +389,66 @@ x86_64_elf64_release64:
     mov eax, 1
     ret
 
+x86_64_elf64_release_all64:
+    mov edi, ELF_IMAGE_CHILD
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jz .fail
+    call x86_64_elf64_release64
+    test eax, eax
+    jz .fail
+    mov edi, ELF_IMAGE_SHELL
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jz .fail
+    call x86_64_elf64_release64
+    test eax, eax
+    jz .fail
+    mov edi, ELF_IMAGE_PROBE
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jz .fail
+    call x86_64_elf64_release64
+    ret
+.fail:
+    xor eax, eax
+    ret
+
 x86_64_elf64_select_image64:
-    cmp byte [rel elf_load_active], 0
-    jne .invalid
-    cmp edi, ELF_IMAGE_SHELL
+    cmp edi, ELF_IMAGE_CHILD
     ja .invalid
+    cmp dil, byte [rel elf_image_selector]
+    je .same
+    push rdi
+    call elf64_store_selected_context64
+    pop rdi
     mov byte [rel elf_image_selector], dil
+    call elf64_load_selected_context64
+.same:
     mov eax, 1
     ret
 .invalid:
     xor eax, eax
+    ret
+
+elf64_store_selected_context64:
+    movzx eax, byte [rel elf_image_selector]
+    imul eax, ELF_CONTEXT_SIZE
+    lea rdi, [rel elf_context_store]
+    add rdi, rax
+    lea rsi, [rel elf_context_window]
+    mov ecx, ELF_CONTEXT_SIZE / 8
+    rep movsq
+    ret
+
+elf64_load_selected_context64:
+    movzx eax, byte [rel elf_image_selector]
+    imul eax, ELF_CONTEXT_SIZE
+    lea rsi, [rel elf_context_store]
+    add rsi, rax
+    lea rdi, [rel elf_context_window]
+    mov ecx, ELF_CONTEXT_SIZE / 8
+    rep movsq
     ret
 
 x86_64_elf64_entry64:
@@ -515,10 +578,16 @@ user_shell_elf_start:
     incbin USER_SHELL_PATH
 user_shell_elf_end:
 
+align 16
+user_child_elf_start:
+    incbin USER_CHILD_PATH
+user_child_elf_end:
+
 elf64_load_ok_message db "REIST_X86_64_ELF64_LOAD_OK", 13, 10, 0
 
 section .bss
 alignb 16
+elf_context_window:
 elf_page_frames:
     resq USER_PAGE_COUNT
 elf_page_flags:
@@ -533,8 +602,12 @@ elf_cleanup_error:
     resb 1
 elf_load_active:
     resb 1
-elf_image_selector:
-    resb 1
 alignb 8
 elf_entry_address:
     resq 1
+elf_context_window_end:
+elf_image_selector:
+    resb 1
+alignb 16
+elf_context_store:
+    resb ELF_CONTEXT_COUNT * ELF_CONTEXT_SIZE

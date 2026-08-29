@@ -277,19 +277,54 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn("config/x86_64_user_shell.ld", makefile)
         self.assertIn("USER_SHELL_PATH", makefile)
 
-    def test_elf64_shell_selection_is_inactive_only_and_cleaned(self):
+    def test_elf64_image_selection_uses_three_fixed_contexts(self):
         loader = self.read("arch/x86_64/exec/elf64_loader.asm")
         execution = self.read("arch/x86_64/proc/user_execution.asm")
         selector = loader.index("x86_64_elf64_select_image64:")
         publish = loader.index("mov byte [rel elf_image_selector], dil", selector)
-        self.assertLess(loader.index("cmp byte [rel elf_load_active], 0", selector), publish)
-        self.assertLess(loader.index("cmp edi, ELF_IMAGE_SHELL", selector), publish)
+        self.assertLess(loader.index("cmp edi, ELF_IMAGE_CHILD", selector), publish)
+        self.assertLess(loader.index("call elf64_store_selected_context64", selector), publish)
+        self.assertIn("ELF_CONTEXT_COUNT   equ 3", loader)
+        self.assertIn("ELF_CONTEXT_SIZE    equ 88", loader)
+        self.assertIn("resb ELF_CONTEXT_COUNT * ELF_CONTEXT_SIZE", loader)
         self.assertIn("incbin USER_PROBE_PATH", loader)
         self.assertIn("incbin USER_SHELL_PATH", loader)
+        self.assertIn("incbin USER_CHILD_PATH", loader)
         cleanup = execution.index("user_execution_cleanup64:")
         self.assertIn("call x86_64_elf64_release64", execution[cleanup:])
         self.assertIn("call x86_64_elf64_select_image64", execution[cleanup:])
         self.assertIn("call physical_free_frame_count64", execution[cleanup:])
+
+    def test_separate_elf64_shell_child_is_rx_only_and_fully_released(self):
+        child = self.read("arch/x86_64/user/child.asm")
+        linker = self.read("config/x86_64_user_child.ld")
+        shell = self.read("arch/x86_64/user/shell.c")
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        makefile = self.read("Makefile")
+        build = self.read("scripts/build-x86_64-bootstrap.ps1")
+        self.assertIn("REIST_SYS_EXIT equ 9", child)
+        self.assertIn("CHILD_STATUS   equ 77", child)
+        self.assertNotIn(" in ", child)
+        self.assertNotIn(" out ", child)
+        self.assertIn("text PT_LOAD FILEHDR PHDRS FLAGS(5)", linker)
+        self.assertNotIn("data PT_LOAD", linker)
+        self.assertIn("x86_64_user_child.ld", makefile)
+        self.assertIn("USER_CHILD_PATH", makefile)
+        self.assertIn("X86_64_USER_CHILD_BUILD_OK", build)
+        self.assertIn("void _start(void)", shell)
+        self.assertNotIn("SHELL_CHILD_MODE", shell)
+        spawn = scheduler.index("scheduler_handle_shell_spawn64:")
+        wait = scheduler.index("scheduler_handle_shell_wait64:", spawn)
+        spawn_path = scheduler[spawn:wait]
+        self.assertIn("mov edi, ELF_IMAGE_CHILD", spawn_path)
+        self.assertIn("call x86_64_elf64_load64", spawn_path)
+        self.assertIn("mov edi, ELF_IMAGE_SHELL", spawn_path)
+        child_exit = scheduler.index("scheduler_handle_shell_child_exit64:")
+        runqueue_exit = scheduler.index("scheduler_handle_runqueue_exit64:", child_exit)
+        reap_path = scheduler[child_exit:runqueue_exit]
+        self.assertLess(reap_path.index("call scheduler_reap_terminal64"),
+                        reap_path.index("call x86_64_elf64_release64"))
+        self.assertIn("call x86_64_elf64_release_all64", scheduler)
 
     def test_ring3_shell_syscalls_validate_before_effect_and_return_with_iretq(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")

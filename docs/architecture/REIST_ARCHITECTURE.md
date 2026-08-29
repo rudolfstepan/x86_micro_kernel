@@ -254,6 +254,13 @@ Frames, Tabellenbesitz, Queue, Parentbeziehung und WAIT-Ziel leer sein. Beide
 WAIT-Zyklen bleiben blockierend und generationengenau; parallele Kinder,
 wait-any und allgemeines Image-Laden werden dadurch nicht eingefuehrt.
 
+R8.2k ersetzt den Shell-Entry-Sondermodus durch ein unabhaengig assembliertes
+und gelinktes, RX-only System-V-AMD64-`ET_EXEC`. Drei feste Loaderkontexte
+halten Probe, Shell und Kind getrennt; Selectorwechsel kopieren nur begrenzte
+Metadaten, waehrend Framebesitz und Entry pro Kontext erhalten bleiben. Der
+Kind-Reap gibt zuerst den Taskadressraum und danach den Kind-Abbildkontext frei,
+bevor der Shellkontext wieder Autoritaet erhaelt.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

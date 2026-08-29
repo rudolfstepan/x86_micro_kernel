@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2k-x86_64-separate-child-elf"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11565,7 +11565,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2k-x86_64-separate-child-elf"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Load the x86_64 shell child from a separate ELF64 image"
@@ -11600,7 +11600,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "exec: load x86_64 shell child from separate elf"
-evidence = []
+evidence = [
+  "all 51 x86_64 source-contract tests passed including the separate RX-only System V AMD64 child three fixed selector-scoped loader contexts child-before-shell release order and removal of the shell entry-mode shortcut",
+  "the warning-free package build produced a 127488-byte bootstrap 10264-byte probe 1624-byte shell 360-byte child ELF 8064-byte C core object and 13520-byte C payload",
+  "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers from two fresh child loads and preserved every established marker through RING3_SHELL_OK",
+  "each generation reaped task-owned tables stack and writable frames before releasing its child-image context and restoring the shell selector; reverse child shell probe cleanup restored the exact initial free count with no live context; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

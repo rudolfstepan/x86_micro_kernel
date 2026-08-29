@@ -147,6 +147,8 @@ $Artifact = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-bootstrap.
 $UserProbe = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-user-probe.elf"
 $UserShell = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-user-shell.elf"
 $UserShellObject = Join-Path $RepoRoot "$OutputDirectory\x86_64\user_shell.o"
+$UserChild = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-user-child.elf"
+$UserChildObject = Join-Path $RepoRoot "$OutputDirectory\x86_64\user_child.o"
 $CObject = Join-Path $RepoRoot "$OutputDirectory\x86_64\bootstrap_core.o"
 $CElf = Join-Path $RepoRoot "$OutputDirectory\x86_64\reist-x86_64-c-core.elf"
 $CText = Join-Path $RepoRoot "$OutputDirectory\x86_64\bootstrap_core_text.bin"
@@ -177,6 +179,10 @@ try {
     if (-not (Test-Path -LiteralPath $UserShell -PathType Leaf) -or
         -not (Test-Path -LiteralPath $UserShellObject -PathType Leaf)) {
         throw "x86_64 ELF64 Ring-3 shell artifacts were not produced."
+    }
+    if (-not (Test-Path -LiteralPath $UserChild -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $UserChildObject -PathType Leaf)) {
+        throw "x86_64 ELF64 Ring-3 child artifacts were not produced."
     }
     if (-not (Test-Path -LiteralPath $CObject -PathType Leaf)) {
         throw "x86_64 freestanding C object was not produced: $CObject"
@@ -217,6 +223,8 @@ try {
     $objectBytes = Read-Elf64Layout -Path $CObject
     $shellBytes = Read-Elf64Layout -Path $UserShell -RequireExecutable -RequireLinked
     $shellObjectBytes = Read-Elf64Layout -Path $UserShellObject
+    $childBytes = Read-Elf64Layout -Path $UserChild -RequireExecutable -RequireLinked
+    $childObjectBytes = Read-Elf64Layout -Path $UserChildObject
     $objectText = [Text.Encoding]::ASCII.GetString($objectBytes)
     $shellObjectText = [Text.Encoding]::ASCII.GetString($shellObjectBytes)
     foreach ($forbidden in @('__stack_chk', 'memcpy', 'memset', 'memmove',
@@ -227,6 +235,12 @@ try {
         if ($shellObjectText.Contains($forbidden)) {
             throw "x86_64 shell object references forbidden runtime symbol '$forbidden'."
         }
+        if ([Text.Encoding]::ASCII.GetString($childObjectBytes).Contains($forbidden)) {
+            throw "x86_64 child object references forbidden runtime symbol '$forbidden'."
+        }
+    }
+    if ($childBytes.Length -lt 64 -or $childBytes.Length -gt 4096) {
+        throw "x86_64 ELF64 Ring-3 child exceeds its fixed compact page."
     }
     $cTextLength = (Get-Item -LiteralPath $CText).Length
     $cRodataLength = (Get-Item -LiteralPath $CRodata).Length
@@ -239,6 +253,7 @@ try {
     Write-Host "X86_64_BOOTSTRAP_BUILD_OK path=$Artifact bytes=$($item.Length)"
     Write-Host "X86_64_USER_PROBE_BUILD_OK path=$UserProbe bytes=$($probeItem.Length)"
     Write-Host "X86_64_USER_SHELL_BUILD_OK path=$UserShell bytes=$($shellBytes.Length)"
+    Write-Host "X86_64_USER_CHILD_BUILD_OK path=$UserChild bytes=$($childBytes.Length)"
     Write-Host "X86_64_C_CORE_BUILD_OK path=$CObject bytes=$($objectBytes.Length)"
     Write-Host "X86_64_C_PAYLOAD_BUILD_OK path=$CElf bytes=$($cElfBytes.Length)"
 } finally {

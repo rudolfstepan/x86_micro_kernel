@@ -74,7 +74,9 @@ TASK_SHELL_ID              equ 0x1A
 TASK_SHELL_CHILD_ID        equ 0x1B
 TASK_SHELL_PARENT_PID      equ 300
 TASK_SHELL_CHILD_PID       equ 301
-TASK_SHELL_CHILD_MODE      equ 1
+ELF_IMAGE_PROBE            equ 0
+ELF_IMAGE_SHELL            equ 1
+ELF_IMAGE_CHILD            equ 2
 SCHEDULER_MODE_COOPERATIVE equ 1
 SCHEDULER_MODE_PREEMPTION  equ 2
 SCHEDULER_MODE_QUANTUM     equ 3
@@ -251,6 +253,7 @@ extern physical_frame_free64
 extern physical_free_frame_count64
 extern x86_64_elf64_load64
 extern x86_64_elf64_release64
+extern x86_64_elf64_release_all64
 extern x86_64_elf64_entry64
 extern x86_64_elf64_page_frame64
 extern x86_64_elf64_page_flags64
@@ -670,7 +673,7 @@ x86_64_process_shell64:
     mov dword [rel scheduler_initial_free], eax
 
     mov byte [rel scheduler_failure_stage], 0x51
-    mov edi, 1
+    mov edi, ELF_IMAGE_SHELL
     call x86_64_elf64_select_image64
     test eax, eax
     jz scheduler_fail
@@ -1661,8 +1664,28 @@ scheduler_handle_shell_spawn64:
     jb .child_tables_zero
 
     call scheduler_save_syscall_context64
+    mov edi, ELF_IMAGE_CHILD
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_elf64_load64
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_elf64_entry64
+    cmp rax, USER_BASE
+    jb scheduler_fail
+    cmp rax, USER_STACK_BASE
+    jae scheduler_fail
+    mov qword [rel scheduler_entry], rax
+    call x86_64_elf64_address_flags64
+    test eax, PF_X
+    jz scheduler_fail
     mov edi, 1
     call scheduler_build_task64
+    test eax, eax
+    jz scheduler_fail
+    mov edi, ELF_IMAGE_SHELL
+    call x86_64_elf64_select_image64
     test eax, eax
     jz scheduler_fail
     lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
@@ -1670,7 +1693,7 @@ scheduler_handle_shell_spawn64:
     add eax, TASK_SHELL_CHILD_GEN
     mov qword [r12 + TASK_GENERATION], rax
     mov qword [r12 + TASK_ID], TASK_SHELL_CHILD_ID
-    mov qword [r12 + TASK_RDI], TASK_SHELL_CHILD_MODE
+    mov qword [r12 + TASK_RDI], 0
     mov qword [r12 + TASK_STATE], TASK_READY
     mov byte [rel scheduler_dynamic_child_active], 1
     mov dword [rel scheduler_dynamic_child_generation], eax
@@ -2444,6 +2467,17 @@ scheduler_handle_shell_child_exit64:
     mov edx, TASK_ZOMBIE
     mov ecx, EVENT_SHELL_CHILD_FREE
     call scheduler_reap_terminal64
+    test eax, eax
+    jz scheduler_fail
+    mov edi, ELF_IMAGE_CHILD
+    call x86_64_elf64_select_image64
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_elf64_release64
+    test eax, eax
+    jz scheduler_fail
+    mov edi, ELF_IMAGE_SHELL
+    call x86_64_elf64_select_image64
     test eax, eax
     jz scheduler_fail
     mov byte [rel scheduler_dynamic_child_active], 0
@@ -3414,7 +3448,7 @@ scheduler_build_task64:
     mov qword [r12 + TASK_ID], TASK_SHELL_ID
     jmp .done
 .shell_child_id:
-    mov qword [r12 + TASK_RDI], TASK_SHELL_CHILD_MODE
+    mov qword [r12 + TASK_RDI], 0
     mov qword [r12 + TASK_ID], TASK_SHELL_CHILD_ID
 .done:
     mov eax, ebx
@@ -4047,7 +4081,7 @@ scheduler_cleanup_common64:
     jnz .tss_done
     mov byte [rel scheduler_cleanup_error], 1
 .tss_done:
-    call x86_64_elf64_release64
+    call x86_64_elf64_release_all64
     test eax, eax
     jnz .loader_done
     mov byte [rel scheduler_cleanup_error], 1

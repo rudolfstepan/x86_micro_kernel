@@ -215,6 +215,8 @@ X86_64_USER_PROBE_OBJ := $(X86_64_BOOTSTRAP_DIR)/user_probe.o
 X86_64_USER_PROBE_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-user-probe.elf
 X86_64_USER_SHELL_OBJ := $(X86_64_BOOTSTRAP_DIR)/user_shell.o
 X86_64_USER_SHELL_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-user-shell.elf
+X86_64_USER_CHILD_OBJ := $(X86_64_BOOTSTRAP_DIR)/user_child.o
+X86_64_USER_CHILD_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-user-child.elf
 X86_64_BOOTSTRAP_ELF := $(X86_64_BOOTSTRAP_DIR)/reist-x86_64-bootstrap.elf
 X86_64_BOOTSTRAP_LDSCRIPT := $(CONFIG_DIR)/x86_64_bootstrap.ld
 X86_64_CC ?= $(CC)
@@ -371,6 +373,10 @@ x86_64-bootstrap:
 	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings --no-undefined \
 		-z noexecstack --strip-all -T config/x86_64_user_shell.ld \
 		-o $(X86_64_USER_SHELL_ELF) $(X86_64_USER_SHELL_OBJ)
+	@$(AS) -f elf64 arch/x86_64/user/child.asm -o $(X86_64_USER_CHILD_OBJ)
+	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings --no-undefined \
+		-z noexecstack --strip-all -T config/x86_64_user_child.ld \
+		-o $(X86_64_USER_CHILD_ELF) $(X86_64_USER_CHILD_OBJ)
 	@$(X86_64_CC) $(X86_64_CFLAGS) -Iarch/x86_64/kernel -c \
 		arch/x86_64/kernel/bootstrap_core.c -o $(X86_64_C_CORE_OBJ)
 	@$(LD) -m elf_x86_64 -nostdlib --build-id=none --fatal-warnings --no-undefined \
@@ -396,6 +402,7 @@ x86_64-bootstrap:
 	@$(AS) -f elf32 arch/x86_64/mm/physical_memory.asm -o $(X86_64_PHYSICAL_MEMORY_OBJ)
 	@$(AS) -f elf32 -DUSER_PROBE_PATH=\"$(X86_64_USER_PROBE_ELF)\" \
 		-DUSER_SHELL_PATH=\"$(X86_64_USER_SHELL_ELF)\" \
+		-DUSER_CHILD_PATH=\"$(X86_64_USER_CHILD_ELF)\" \
 		arch/x86_64/exec/elf64_loader.asm -o $(X86_64_ELF64_LOADER_OBJ)
 	@$(AS) -f elf32 arch/x86_64/proc/user_execution.asm -o $(X86_64_USER_EXECUTION_OBJ)
 	@$(AS) -f elf32 arch/x86_64/proc/cooperative_scheduler.asm -o $(X86_64_PROCESS_SCHEDULER_OBJ)
