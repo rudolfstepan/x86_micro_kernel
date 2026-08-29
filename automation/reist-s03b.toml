@@ -12415,6 +12415,7 @@ allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/gui/compositor/desktop.c",
   "test/test_desktop_source.py",
+  "test/test_desktop_splash.py",
   "docs/architecture/SMP_SUBSYSTEM.md",
   "docs/architecture/VIDEO_SUBSYSTEM.md",
   "docs/development/CURRENT_WORK.md",
@@ -12429,7 +12430,8 @@ invariants = [
   "no display Surface VFS USB IRQ MMIO DMA device authority public ABI or automatic desktop startup policy is widened"
 ]
 targeted_tests = [
-  "python test/test_desktop_source.py -v"
+  "python test/test_desktop_source.py -v",
+  "python test/test_desktop_splash.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
