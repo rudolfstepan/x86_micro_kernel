@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2q-x86_64-ipc-send-timeout"
 
 [policy]
 one_package_per_run = true
@@ -11821,6 +11821,43 @@ evidence = [
   "the inaccessible Store py launcher was replaced by the installed Python 3.13 executable and missing WinGet Make and Zig packages were restored; final source build and QEMU gates passed afterward",
   "release WAIT reap close shell exit force cleanup and final verification left send phase timer deadline waiter endpoint message capability queue loader task and frame authority clear; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2q-x86_64-ipc-send-timeout"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Prove deadline-bounded generation-scoped x86_64 IPC send wait"
+scope = "Extend the real x86_64 scheduled shell RUN lifecycle with the existing REIST-v1 IPC_SEND_TIMEOUT syscall 53 without changing the public ABI packed 256-byte task record four-slot task capability deadline and runqueue capacities one-endpoint one-message queue or one-receive-wait capacity. Add exactly one fixed kernel-owned 140-byte send-wait message record bound to one handle one live sender generation and one existing monotonic PIT deadline. Before child creation parent generation 40 queues token75 to its owned endpoint then performs an exact 10-ms token74 SEND_TIMEOUT on the full slot with no peer; it must idle until ETIMEDOUT while preserving token75 and the caller message, then dequeue and validate token75 and retain the prior empty RECEIVE_TIMEOUT proof. After SPAWNV exact SEND delegation the preserved GETPID and RECEIVE EACCES proofs token76 asynchronous queue publication and token77 nonblocking EAGAIN run as before. The child then calls token77 SEND_TIMEOUT while the slot is full and blocks without polling. Parent dequeue of token76 validates the blocked sender snapshot and exact deadline before effects, removes that deadline, cancels the timer, atomically publishes token77 into the freed slot and wakes only the exact child generation with success. The child yields, parent dequeues and validates token77, and a second child yield lets parent install the preserved token77 RECEIVE_TIMEOUT before the final ordinary child SEND uses the existing direct-frame wake path. Bind every parent and child send phase to the exact generation, validate profile task generation capability endpoint handle message queue waiter deadline and user range before effects, and clear send-wait state before release exit reap close and generation reuse. Preserve both RUN cycles WAIT status 77 every prior marker dialogue count exact free-frame recovery C handoffs i386 and Windows QEMU behavior. Add no second send waiter queue depth above one multiple receive waiter general endpoint registry priority inheritance cancellation API service discovery VFS SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/user/child.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "REIST-v1 IPC_SEND_TIMEOUT remains syscall 53 with millisecond units EAGAIN and ETIMEDOUT while every other syscall number message layout right handle encoding packed task ABI fixed capacity i386 artifact C handoff marker and dialogue remains unchanged",
+  "exactly one kernel-owned send-wait snapshot may exist and is bound to one live sender generation endpoint handle and deadline no later than eight 100-Hz ticks; no user pointer remains authoritative while blocked",
+  "the parent self-send timeout really idles to ETIMEDOUT without changing queued token75 caller token74 endpoint capability or receive-wait state and clears its send waiter before resume",
+  "the child SEND_TIMEOUT blocks only after token76 queue and token77 EAGAIN validation; parent dequeue validates all relations before removing the exact child deadline cancelling the timer replacing the freed slot with token77 and waking only that child generation",
+  "the final ordinary token77 SEND preserves the R8.2o exact receive-deadline removal timer cancellation private-frame delivery and generation-40-only wake path",
+  "timeout dequeue wake release WAIT reap close shell exit force cleanup and final verification leave send phase send waiter timer deadline receive waiter endpoint message capability task queue loader and frame state clear"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "the public syscall ABI packed task record or fixed task endpoint message capability receive-wait send-wait deadline or runqueue capacity must change",
+  "a send wait retains a user pointer as authoritative blocks without an exact monotonic deadline or can publish more than one queued message",
+  "timeout mutates the occupied queue caller message endpoint capability or receive waiter or leaves send-wait authority live",
+  "dequeue can wake a stale wrong-generation wrong-handle wrong-phase or nonblocked sender or publishes its snapshot before complete validation and exact deadline removal",
+  "an i386 artifact prior marker dialogue count child denial separate lifecycle proof C handoff or production file changes",
+  "a required file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "ipc: bound x86_64 send waits"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

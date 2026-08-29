@@ -310,6 +310,13 @@ den exakten R8.2o-Waiter-, Deadline-, Timer- und Direct-Frame-Wakeup-Pfad. Der
 abgeschlossene QEMU-Nachweis durchlief diese Sequenz fuer beide
 Kindgenerationen und hinterliess vor Erfolg alle IPC-Records null.
 
+R8.2q bindet `IPC_SEND_TIMEOUT` 53 an genau einen kernel-eigenen
+Nachrichtensnapshot, ein opakes Endpointhandle, eine Sendergeneration und die
+feste monotone Deadlinequeue. Timeout veraendert weder die bereits belegte
+Queue noch Userdaten. Ein erfolgreiches Dequeue-Wakeup validiert zuerst
+Sender, Capability, Snapshot, Queue und Deadline, entfernt dann die exakte
+Deadline und publiziert erst danach den wartenden Send in den freien Slot.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

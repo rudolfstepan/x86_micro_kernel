@@ -254,6 +254,15 @@ warnungsfreie 142.800-Byte-Build und der native QEMU-Dialog mit zwei
 `RUN_OK`-Markern bestanden bis `RING3_SHELL_OK`; alle IPC- und Lifecycle-
 Records waren vor Erfolg null. Die x86_64-Queue ist leer.
 
+R8.2q ist aktiv. `IPC_SEND_TIMEOUT` 53 erhaelt genau einen festen,
+kernel-eigenen Nachrichtensnapshot mit generationengebundenem Handle und
+monotoner Deadline. Ein Parent-Selbsttest muss auf dem belegten Ein-Slot-
+Endpoint wirklich bis `ETIMEDOUT` idlen, ohne Queue oder Callernachricht zu
+veraendern. Danach blockiert der Kind-Sender auf derselben vollen Queue; das
+validierte Parent-Dequeue entfernt seine exakte Deadline, publiziert den
+Snapshot in den frei gewordenen Slot und weckt nur diese Kindgeneration.
+Weitere Senderwaiter und tiefere Queues bleiben ausgeschlossen.
+
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
 unveränderte Standard und Fallback. Das getrennte 14.360-Byte-Bootstrap-

@@ -647,3 +647,18 @@ Ein-vCPU-/128-MiB-QEMU-Dialog bestanden mit exakt zwei `RUN_OK`-Markern bis
 `RING3_SHELL_OK`. Release, WAIT, Reap, Close, Abschlusspruefung und
 Fehlercleanup hinterliessen Sendphase, Timer, Deadline, Waiter, Endpoint,
 Nachricht, Capabilities, Runqueue, Loader, Tasks und Frames null.
+
+## Deadlinebegrenzter IPC-Send R8.2q
+
+Das aktive Paket bindet den bestehenden REIST-v1-Index `IPC_SEND_TIMEOUT` 53
+an genau einen festen kernel-eigenen 140-Byte-Snapshot. Der Waiter traegt nur
+Handle, exakte Sendergeneration und einen Eintrag der vorhandenen Vier-Slot-
+Deadlinequeue; der blockierte Pfad behaelt keinen autoritativen Userpointer.
+
+Vor dem Kind-Lifecycle belegt Generation 40 den Slot mit `token75` und muss
+beim folgenden `token74`-Send ohne Peer echt bis `ETIMEDOUT` idlen. Im
+Kindpfad blockiert dagegen `token77` nach dem erhaltenen Full-Queue-`EAGAIN`.
+Das Parent-Dequeue von `token76` validiert Snapshot und Deadline vor Effekten,
+entfernt die Deadline, stoppt den Timer, setzt `token77` in den freien Slot und
+weckt nur den exakten Kind-Sender. Der bestehende direkte Receive-Wakeup bleibt
+als anschliessender separater Nachweis erhalten.
