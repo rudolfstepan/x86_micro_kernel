@@ -2,10 +2,39 @@
 
 Stand: 29. August 2026
 
-Branch/Startpunkt: `working_branch` / `027728e`
+Branch/Startpunkt: `working_branch` / `7daa546`
 
-Aktives Thema: keines. Zuletzt abgeschlossen:
-`R7.1g-fat32-open-handle-cache`.
+Aktives Thema: `R7.1i-fat32-ordered-append-io`.
+
+Die saubere Gegenanalyse ordnet die Restlatenz nicht dem FAT32-Format zu,
+sondern der Kommandovielzahl: Der 256-KiB-Leselauf liest fuer fast jeden der
+511 FAT-Nachfolger denselben FAT-Sektor erneut. Der Schreiblauf zerlegt die
+Nutzdaten in 64 einzelne 4096-Byte-VFS-Mutationen und fuehrt fuer jeden
+Nutzdatensektor Undo-, Ziel- und Readback-I/O aus. Das aktive Paket fuehrt
+deshalb einen festen, transaktionsbewussten FAT-Sektorcache und einen
+geordneten Append-Pfad ein. Vollstaendige Sektoren neuer, noch nicht
+erreichbarer Cluster werden zuerst per AHCI geschrieben, geflusht und ueber
+den gesamten Lauf rueckgelesen; erst danach duerfen FAT-Verkettung,
+Verzeichniseintrag und FSInfo ueber das bestehende Journal sichtbar werden.
+Alle nicht beweisbaren Faelle bleiben beim bisherigen 4096-Byte-Rueckfall.
+Journal-v2, zwanzig Slots, exakt vier Barrieren und der akzeptierte gepollte
+AHCI-Abschluss bleiben unveraendert. Die eingefrorene VMware-Grenze lautet
+95 KiB/s Schreiben und 415 KiB/s Lesen.
+
+`R7.1h-ahci-interrupt-completion` ist zuvor an seiner eingefrorenen
+Laufzeitgrenze blockiert und als nicht angenommen beendet worden.
+
+Der Kandidat bestand alle 32 gezielten Prüfungen und den VMware-Paketbau. Zwei
+reale Vier-vCPU-Läufe bewiesen AHCI-Interruptzustellung, vollständige
+256-KiB-Byteprüfung, Cleanup und Ring-3-Shell-Rückkehr ohne Panic oder
+Degradation. Der erste Lauf erreichte dennoch nur 11,31 KiB/s Schreiben und
+52,29 KiB/s Lesen. Die einzige zulässige fokussierte Korrektur beschränkte
+Wakeups auf terminale D2H-Completion, verbesserte das Ergebnis aber nur auf
+11,57/53,51 KiB/s. Die geforderten 95/415 KiB/s sind damit klar verfehlt.
+Gemäß Stop-Bedingung gibt es keinen Implementierungscommit; der Kandidat
+bleibt nur als Diagnoseevidenz dokumentiert. R7.1i ersetzt ihn nicht durch
+einen weiteren Wait-Versuch, sondern beseitigt die nachgewiesene
+Kommandoverstärkung.
 
 Der VMware-HDD-Gegenlauf zeigte trotz flacher persistenter SATA-VMDK nur
 18,29 KiB/s Schreiben und 77,48 KiB/s Lesen. CPU und RAM waren gleichzeitig
@@ -29,7 +58,8 @@ Gegenüber 18,29/77,48 ist der verbliebene VFS-Overhead messbar reduziert, die
 Schreibrate aber weiterhin niedrig. Sie bleibt als Restkosten der vier
 Durabilitätsphasen und des gepollten Controllerpfads sichtbar; R7.1g lockert
 weder Barrieren noch Warte- oder Host-Sicherheitskonfiguration. Das Paket ist
-abgeschlossen und die Queue leer.
+abgeschlossen; der nachfolgende R7.1h-Versuch konnte die Controllerlatenz
+nicht ausreichend senken.
 
 Der reale R7.1e-Gegenlauf ist korrekt, aber mit 7,99 KiB/s Schreiben und
 503,93 KiB/s Lesen weiterhin unbrauchbar langsam. Ursache ist der nur dem

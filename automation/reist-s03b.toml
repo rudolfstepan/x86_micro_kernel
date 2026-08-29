@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1h-ahci-interrupt-completion"
+active_id = "R7.1i-fat32-ordered-append-io"
 
 [policy]
 one_package_per_run = true
@@ -12520,7 +12520,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1h-ahci-interrupt-completion"
-status = "active"
+status = "cancelled"
 phase = "post-s0"
 risk = "high"
 title = "Wake bounded AHCI completion waits from controller interrupts"
@@ -12570,4 +12570,91 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "ahci: wake commands from bounded interrupts"
+evidence = [
+  "All 32 frozen targeted checks passed after the candidate and again after its single permitted focused repair: 7 AHCI, 6 ATA, 10 undo-journal and 9 VMware-runner checks.",
+  "The final VMware VGA package gate passed in 4 seconds and produced the signed 64-MiB persistent SATA package with journal-v2, exactly four durability barriers and public ABIs unchanged.",
+  "Both four-vCPU VMware runtime attempts proved real AHCI interrupt delivery, complete 256-KiB write/read byte verification, cleanup and Ring-3 shell return without panic quarantine restart or degradation.",
+  "The first runtime measured only 11.31 KiB/s write and 52.29 KiB/s read; narrowing wakeups to terminal D2H completion in the one permitted focused repair still measured only 11.57 KiB/s write and 53.51 KiB/s read.",
+  "The required 95 KiB/s write and 415 KiB/s read thresholds remain missed, so the frozen stop condition is reached, the candidate is not accepted or committed and active_id is empty."
+]
+
+[[packages]]
+id = "R7.1i-fat32-ordered-append-io"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Batch durable data before FAT32 append publication"
+scope = "Remove the measured VMware command amplification instead of weakening completion waits or persistence. For an aligned append on the journal-marked native FAT32 volume, reserve at most 128 one-sector clusters in the current in-memory journal view, prove that every selected entry was free and that the complete run remains private, then write only the corresponding data sectors through a fixed-capacity AHCI write-flush-full-readback operation before staging any link that makes the run reachable. Publish the FAT links, directory size and FSInfo only through the existing version-2 undo journal and its exactly four ordered durability barriers. Any partial-sector write, overwrite, sparse extension, non-AHCI backend, unsupported geometry, fragmented/capacity case or failed proof retains a bounded 4096-byte fully journaled fallback. Advertise the 64-KiB syscall staging slice only through a fixed VFS backend hint, never through a user or DMA pointer. Add a fixed FAT-sector read cache that is keyed by exact mounted-volume identity, disabled during every journal transaction and invalidated by mount, context switch or mutation, so sequential reads no longer issue one AHCI command per FAT successor. Keep the accepted bounded polled AHCI completion path. Prove at least 95 KiB/s sequential write and 415 KiB/s sequential read in the real four-vCPU VMware benchmark with complete byte verification, cleanup and Ring-3 shell return."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/block/ahci.h",
+  "drivers/block/ahci.c",
+  "drivers/block/ata.h",
+  "drivers/block/ata.c",
+  "fs/vfs/vfs.h",
+  "fs/vfs/vfs.c",
+  "kernel/proc/process.h",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32.c",
+  "fs/fat32/fat32_cluster.c",
+  "fs/fat32/fat32_files.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "userspace/programs/benchmark.c",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_ahci_source.py",
+  "test/test_ata_source.py",
+  "test/test_ata_lba48_source.py",
+  "test/test_fat32_host.c",
+  "test/test_fs_host.py",
+  "test/test_reist_undo_journal.py",
+  "test/test_userspace_file_syscalls_source.py",
+  "test/test_benchmark_source.py",
+  "test/test_vmware_mouse.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/filesystems/FAT32_OPTIMIZATIONS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "only complete aligned append sectors mapped to newly reserved and still unreachable one-sector FAT32 clusters may use the ordered unpublished-data path",
+  "every unpublished data run completes one bounded AHCI write then cache flush then full-run DMA readback comparison before any FAT link or directory size can make it reachable",
+  "a short transfer timeout task-file error flush failure readback mismatch stale volume identity pending-target overlap or failed free-cluster proof fails closed through the existing storage fence without publishing metadata",
+  "partial sectors overwrites sparse extensions unsupported geometry non-AHCI media and bounded fragmentation or journal-capacity cases retain at most 4096-byte fully undo-journaled mutations",
+  "journal version 2 its twenty target slots and exactly four ordered Undo ACTIVE targets CLEAN barriers remain unchanged",
+  "the FAT read cache has fixed storage exact drive partition and sector identity is bypassed during journal transactions and is invalidated before every FAT32 mutation mount or context switch",
+  "the 64-KiB syscall buffer is fixed kernel-owned staging selected only by a bounded VFS backend hint after complete user-range validation and no userspace pointer reaches FAT32 or AHCI",
+  "the accepted polled AHCI completion deadline command-slot ownership PRDBC checks port-stop behavior public syscall ABI and standard FAT32 on-disk format remain unchanged",
+  "the final VMware run proves at least 95 KiB/s write and 415 KiB/s read byte verification cleanup and shell return without panic quarantine restart degradation or storage fencing"
+]
+targeted_tests = [
+  "python test/test_ahci_source.py -v",
+  "python test/test_ata_source.py -v",
+  "python test/test_ata_lba48_source.py -v",
+  "python test/test_fs_host.py -v",
+  "python test/test_reist_undo_journal.py -v",
+  "python test/test_userspace_file_syscalls_source.py -v",
+  "python test/test_benchmark_source.py -v",
+  "python test/test_vmware_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-benchmark"
+]
+stop_conditions = [
+  "an unpublished data write can target a cluster that was not proven free in the current serialized journal view or can overlap a pending journal target reserved sector or another volume",
+  "a FAT link directory size or FSInfo publication can precede successful data flush and full readback comparison",
+  "an overwrite partial sector sparse extension unsupported backend or fragmented fallback can bypass the undo journal or exceed its twenty slots",
+  "journal format barrier count DMA ownership transfer-length checks wait deadlines write fencing or a public ABI must be weakened",
+  "the FAT cache can return a sector across an active transaction mutation mount or different volume identity",
+  "the VMware benchmark is below 95 KiB/s write or 415 KiB/s read or lacks byte verification cleanup and shell return",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: batch ordered FAT32 append I/O"
 evidence = []

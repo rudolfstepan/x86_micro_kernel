@@ -558,6 +558,28 @@ und Shell-Rückkehr 18,94 KiB/s Schreiben sowie 82,36 KiB/s Lesen gegenüber
 Schreibrate wird als Kosten der unverändert vier Durabilitätsphasen und des
 gepollten Controllerpfads geführt, nicht durch eine gelockerte Barriere oder
 eine Host-Hyper-V-Änderung verdeckt.
+R7.1h wurde nach seiner einzigen zulässigen fokussierten Korrektur nicht
+angenommen. Alle 32 gezielten Prüfungen und der VMware-Paketbau bestanden;
+beide realen Vier-vCPU-Läufe bestätigten Interruptzustellung, vollständige
+Byteprüfung, Cleanup und Shell-Rückkehr ohne Panic oder Degradation. Die
+Messung fiel jedoch von zunächst 11,31/52,29 KiB/s nur auf 11,57/53,51 KiB/s
+nach terminalem D2H-Wakeup aus und verfehlte 95 KiB/s Schreiben sowie
+415 KiB/s Lesen deutlich. Der Kandidat bleibt uncommittet; die nächste Arbeit
+muss die tiefer liegende Controller-/Schedulerlatenz als neues begrenztes
+Paket isolieren, ohne Journal-v2, vier geordnete Barrieren, DMA-/PRDBC-
+Prüfung, Flush, Readback, Fencing oder öffentliche ABIs zu lockern.
+R7.1i ist als begrenzter Folgeschritt aktiv. Der 256-KiB-Pfad wird nicht durch
+ein groesseres FAT32-Clusterformat oder weniger Persistenzbarrieren
+beschleunigt. Stattdessen cachet er ausserhalb von Journaltransaktionen eine
+feste, exakt an Laufwerk, Partition und FAT-Sektor gebundene Metadatenseite.
+Bei einem ausgerichteten Append duerfen hoechstens 128 neu reservierte und
+noch unerreichbare Einsektorcluster ihre Daten vorab erhalten. Jeder
+physische Lauf muss vor seiner Veröffentlichung vollständig geschrieben,
+geflusht und bytegleich rueckgelesen sein; erst danach werden FAT-Link,
+Directory-Groesse und FSInfo im unveraenderten Journal-v2 mit exakt vier
+Barrieren committed. Alle anderen Faelle verwenden den voll journalisierten
+4096-Byte-Rueckfall. Die reale VMware-Abnahme bleibt bei mindestens
+95 KiB/s Schreiben und 415 KiB/s Lesen.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

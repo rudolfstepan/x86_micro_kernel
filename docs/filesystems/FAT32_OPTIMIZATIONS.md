@@ -1,6 +1,6 @@
 # FAT32-Status
 
-Stand: 25. August 2026.
+Stand: 29. August 2026.
 
 FAT32 ist das Systemdateisystem des nativen Festplattenimages. Die Partition
 beginnt bei LBA 8192, trägt das Label `X86 SYSTEM` und wird bei eindeutiger
@@ -54,6 +54,26 @@ Partition-relative Einzel- und Mehrsektorzugriffe werden auf absolute LBAs
 des Elternlaufwerks abgebildet. Der Elterntransport bleibt erhalten: AHCI-
 Partitionen verwenden AHCI, ATA-Partitionen ATA-PIO. Dieser Vertrag wird durch
 Quelltests und einen vollständigen QEMU-SATA-Gastlauf geprüft.
+
+Ein R7.1h-Versuch mit festem AHCI-Legacy-INTx-Completion-Zustand wurde nicht
+angenommen: Der VMware-Gast bestätigte die Interruptzustellung und alle
+Integritätsprüfungen, erreichte aber nur 11,57 KiB/s Schreiben und
+53,51 KiB/s Lesen statt der geforderten 95/415 KiB/s. Journal-v2, vier
+geordnete Durabilitätsbarrieren, exakte DMA-Längenprüfung, Flush und
+vollständiger Readback-Vergleich wurden nicht gelockert. Bis zu einem neuen
+begrenzten Latenznachweis bleibt der zuletzt akzeptierte Transportvertrag
+maßgeblich.
+
+R7.1i bearbeitet deshalb die nachgewiesene I/O-Verstaerkung. Ein fester,
+volumengebundener FAT-Sektorcache darf nur ausserhalb einer laufenden
+Journaltransaktion verwendet werden und wird bei Mount, Kontextwechsel und
+jeder Mutation verworfen. Fuer ausgerichtete Append-Daten auf dem nativen
+AHCI-Volume gilt write-before-publish: Nur als frei validierte, noch von
+keiner Kette erreichbare Einsektorcluster duerfen in einem festen Lauf
+geschrieben werden. Flush und vollstaendiger Readback muessen erfolgreich
+sein, bevor FAT-Link, Dateigroesse oder FSInfo in die bestehende
+Journaltransaktion aufgenommen werden. Nicht-AHCI-, Teilsektor-, Overwrite-,
+Sparse- oder Fragmentierungsfaelle bleiben beim 4096-Byte-Journalpfad.
 
 ## Grenzen
 

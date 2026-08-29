@@ -215,6 +215,17 @@ Dateitransaktionen. Die deterministische FAT12-Persistenz-Fehlermatrix über 29
 stabile Barrieren ist umgesetzt; reale Power-Loss-/Reconnect-Evidenz bleibt
 begrenzt. Ein medienunabhängiger Nachweis für EXT2, fremde FAT-Volumes und
 künftige Backends bleibt offen.
+
+Der nicht abgenommene R7.1h-Kandidat erprobte AHCI-1.3.1-Legacy-INTx mit
+festem portbezogenem Completion-Zustand, terminalem D2H-Wakeup und
+begrenztem Poll-/Halt-Rückfall. Der reale Vier-vCPU-VMware-Lauf bestätigte
+Interruptzustellung, vollständige Byteprüfung, Cleanup und Shell-Rückkehr,
+erreichte aber nur 11,57 KiB/s Schreiben und 53,51 KiB/s Lesen. Damit wurde
+die geforderte Verbesserung auf 95/415 KiB/s klar verfehlt. Dieser Kandidat
+ist kein angenommener Systemvertrag; der zuletzt akzeptierte AHCI-Pfad bleibt
+maßgeblich, bis ein neues Paket die tiefer liegende Latenzursache begrenzt
+nachweist.
+
 Beim FDD melden auch normale FAT12-Lesefehler die konkrete Medienressource.
 Eine Requalifizierung darf die Quarantäne nur in einem internen Probezugriff
 umgehen und muss den FDC zuvor resetten, ausstehende Interruptzustände leeren,
