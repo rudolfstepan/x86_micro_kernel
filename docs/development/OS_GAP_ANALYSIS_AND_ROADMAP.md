@@ -363,6 +363,12 @@ Persistenzbarrieren statt mit sektorweisen Flushes. Der Ein-vCPU-QEMU-Nachweis
 schreibt 256 KiB, fuehrt `fsync` aus, liest alle Bytes zurueck, entfernt die
 Testdatei und erreicht innerhalb der harten 120-Sekunden-Gesamtfrist erneut die
 Ring-3-Shell. Der Benutzer bestaetigte denselben Abschluss unter VMware.
+R7.1d ist in Arbeit und beseitigt den quadratischen Leserest in Operation 7:
+FAT und EXT2 duerfen sequentielle, weiterhin voll validierte
+Verzeichniscursor fortsetzen, waehrend der Storage-Dienst nur acht feste,
+ersetzbare und generation-/pfadgebundene Hinweise behaelt. ABI und
+Kernel-VFS-Grenze bleiben unveraendert; `LS.PRG` wird zugleich auf 128
+Eintraege und eine absolute Fuenf-Sekunden-Frist begrenzt.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

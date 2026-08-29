@@ -4,8 +4,16 @@ Stand: 29. August 2026
 
 Branch/Startpunkt: `working_branch` / `47b60678`
 
-Aktives Thema: kein Paket; als naechstes folgt die gebuendelte `LS.PRG`-
-Verzeichnisauflistung des Ring-3-Storage-Dienstes.
+Aktives Paket: `R7.1d-storage-readdir-continuation`.
+
+Die indexierte Operation 7 bleibt bytegleich, aber die unabhaengigen FAT- und
+EXT2-Parser erhalten einen festen Fortsetzungszustand. Der Storage-Dienst darf
+hoechstens acht ersetzbare, exakt an Client-/Servicegeneration und Pfad
+gebundene Hinweise halten. Vor jeder Wiederaufnahme werden Medium,
+Verzeichnisidentitaet und FAT-Kette beziehungsweise EXT2-Blockgrenzen erneut
+validiert; jede Abweichung verwendet den vorhandenen begrenzten Kaltlauf.
+`LS.PRG` bleibt ohne Kernel-VFS-Fallback und erhaelt eine absolute
+Fuenf-Sekunden-Frist sowie eine Grenze von 128 Eintraegen.
 
 R7.1c ist abgeschlossen. `BENCHMARK.PRG` meldet jede Phase und feste
 64-KiB-Fortschritte, ohne Konsolenausgabe in den Durchsatz einzurechnen. Die

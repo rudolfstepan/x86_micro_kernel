@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1d-storage-readdir-continuation"
 
 [policy]
 one_package_per_run = true
@@ -11687,3 +11687,63 @@ evidence = [
   "The final QEMU VGA package gate passed in 38 seconds without starting a VM.",
   "The one-vCPU QEMU runtime completed the 256-KiB write at 3.17 KiB/s and readback at 77.24 KiB/s in 96265 ms, verified every byte, removed the private file and returned to the Ring-3 shell; the same benchmark also completed in the user's manual VMware run."
 ]
+
+[[packages]]
+id = "R7.1d-storage-readdir-continuation"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Keep sequential Ring-3 directory enumeration linear"
+scope = "Remove the quadratic directory-sector rescans exposed by LS.PRG without changing operation 7 or returning to the kernel VFS. Add fixed-state continuation cursors to the independent FAT12/FAT32 and EXT2 shadow parsers. The Ring-3 storage service retains at most eight replaceable cache slots keyed by exact client PID/generation, service generation and normalized path; sequential indices resume only after parser-side media, directory, chain/block and cursor validation. Any index jump, owner/path/service mismatch, media change, malformed state, EOF or parser error discards the hint and uses the existing bounded cold scan. Keep LS.PRG on authoritative operation 7 and add one absolute five-second deadline, one-second request slices and a 128-entry limit. Correct stale tests that still expect the removed kernel readdir batch path."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/ls.c",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_vfs_shadow_ext2_host.c",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_storage_service.py",
+  "test/test_reist_vfs_read_client.py",
+  "test/test_ls_options.py",
+  "test/test_ata_source.py",
+  "test/test_userspace_file_syscalls_source.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "operation 7 its number fixed 512-byte frame request validation result convention and client adapter remain byte-for-byte unchanged",
+  "directory entries continue to come only from the bounded independent Ring-3 FAT or EXT2 parser with no SYS_OPEN SYS_READ SYS_READDIR SYS_STAT or kernel VFS fallback",
+  "continuation state is fixed-capacity replaceable and bound to exact client generation service generation path filesystem media directory identity and expected next index",
+  "a stale malformed jumped or evicted cursor is only a discarded performance hint and cannot widen path authority or reach unvalidated directory sectors or blocks",
+  "FAT chain links are revalidated from the resolved directory before a cached cluster is read and EXT2 resumes only inside the freshly resolved directory inode and current bounded block map",
+  "LS.PRG accepts at most 128 entries under one absolute five-second deadline and passes no request more than one second of remaining time"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_vfs_read_client.py -v",
+  "python test/test_ls_options.py -v",
+  "python test/test_ata_source.py -v",
+  "python test/test_userspace_file_syscalls_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = []
+stop_conditions = [
+  "the optimization requires changing operation 7 its public frame the storage syscall ABI or any filesystem persistent format",
+  "a cached FAT cluster can be read without revalidating the resolved directory chain or an EXT2 offset can escape the freshly resolved directory inode",
+  "sequential host enumeration still grows quadratically in directory data-sector reads or exceeds an existing parser work bound",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "storage: keep directory enumeration linear"
+evidence = []
