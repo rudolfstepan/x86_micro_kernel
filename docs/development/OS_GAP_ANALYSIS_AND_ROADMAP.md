@@ -372,7 +372,9 @@ Markern bestanden bis `RING3_SHELL_OK`. Close, Reap, Fehlercleanup und finale
 Pruefung hinterliessen Endpoint, Nachricht, alle vier Capabilityrecords sowie
 Task-, Queue-, Loader- und Frameautoritaet null. Allgemeine Endpointregistries,
 Queue-Tiefe groesser eins, Blocking-IPC und produktive x86_64-Integration
-bleiben Folgearbeiten; die x86_64-Queue ist leer.
+bleiben Folgearbeiten. R8.2o ist aktiv und begrenzt genau einen leeren sowie
+einen durch SEND geweckten Receive ueber `IPC_RECEIVE_TIMEOUT` 54 auf die
+vorhandene feste PIT-Deadlinequeue; allgemeine Blocking-IPC bleibt ausserhalb.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

@@ -229,6 +229,13 @@ Endpoint, Nachricht und alle vier Capabilityrecords null. Die x86_64-Queue ist
 leer; allgemeine Endpointregistries, Queue-Tiefe groesser eins und produktive
 x86_64-Integration bleiben ausserhalb dieses Nachweises.
 
+R8.2o ist aktiv. Es fuehrt genau einen generationengebundenen,
+deadlinebegrenzten `IPC_RECEIVE_TIMEOUT`-Wait in den realen `RUN`-Pfad ein.
+Ein leerer Receive muss nach einer echten 10-ms-PIT-Deadline `ETIMEDOUT`
+liefern; der anschliessende Receive darf ausschliesslich durch den validierten
+SEND der exakten Kindgeneration geweckt werden. Timer, Deadline und Waiter
+muessen in beiden Pfaden vor Close, Reap und Slot-Reuse vollstaendig null sein.
+
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
 unveränderte Standard und Fallback. Das getrennte 14.360-Byte-Bootstrap-

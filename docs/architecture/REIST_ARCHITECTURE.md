@@ -292,6 +292,14 @@ Userkopie. Release, Close, Reap und Fehlercleanup widerrufen die gesamte
 Autoritaet vor Slot-Reuse; die finale Pruefung verlangt Endpoint, Nachricht und
 alle vier Capabilityrecords null.
 
+R8.2o ist die aktive, weiterhin isolierte Erweiterung dieses Pfads. Der
+bestehende REIST-v1-Index `IPC_RECEIVE_TIMEOUT` 54 soll genau einen
+generationengebundenen Receive-Wait an die feste monotone PIT-Deadlinequeue
+binden. Ein leerer Receive muss real mit `ETIMEDOUT` enden; ein valider
+Kind-SEND darf nur die exakte Elterngeneration wecken. Beide Pfade muessen
+Timer-, Deadline- und Waiterzustand vor der weiteren Lifecycle-Ausfuehrung
+vollstaendig widerrufen.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

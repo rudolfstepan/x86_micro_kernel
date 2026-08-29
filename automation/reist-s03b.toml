@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2o-x86_64-ipc-receive-timeout"
 
 [policy]
 one_package_per_run = true
@@ -11733,6 +11733,42 @@ evidence = [
   "both generations observed GETPID and RECEIVE as EACCES then sent token77 released their SEND capability and exited 77; final runtime verification found endpoint message four capability records task relation loader frames and free count clear",
   "no queued x86_64 package remains and active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2o-x86_64-ipc-receive-timeout"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Prove deadline-bounded generation-scoped x86_64 IPC receive"
+scope = "Extend the real x86_64 scheduled shell RUN lifecycle with the existing REIST-v1 IPC_RECEIVE_TIMEOUT syscall 54 without changing the public ABI packed 256-byte task record four-slot capacity one-endpoint one-message capacity or two-generation child lifecycle. Add one fixed generation handle direct-buffer receive-wait record and reuse the existing fixed four-entry monotonic PIT deadline queue and on-demand 100-Hz timer. Parent generation 40 first performs an empty 10-ms receive that must block with no runnable peer wake only at the exact deadline return ETIMEDOUT and leave the output header endpoint capability and queue unchanged. It then SPAWNVs and delegates SEND to child generation 41 or 42 and blocks on the same bounded receive before child execution. The exact child SEND validates and publishes token77 removes the exact parent deadline cancels the timer copies to the prevalidated private parent frame wakes only generation 40 and leaves WAIT to reap the child after direct receive validation. Preserve the child's GETPID and RECEIVE EACCES proofs release exit 77 two RUN cycles final close all markers dialogue counts exact free-frame recovery and i386. Reject zero over-budget stale wrong-handle wrong-generation wrong-state and duplicate waits before timer queue waiter task or user effects. Normal timeout SEND wake close reap shell exit and force cleanup must leave timer deadline waiter message capability task queue loader and frame authority clear. Add no general endpoint registry queue depth above one send wait blocking sender multiple waiters cancellation API priority inheritance service discovery VFS SMP device hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "REIST-v1 IPC_RECEIVE_TIMEOUT remains syscall 54 with millisecond units and ETIMEDOUT while all other syscall numbers message layout rights handle encoding packed task ABI capacities i386 artifacts C handoffs markers and dialogue remain unchanged",
+  "exactly one receive waiter may exist and is bound to parent generation 40 endpoint handle one prevalidated private output frame and one deadline no later than eight 100-Hz ticks",
+  "an empty receive really idles until its monotonic deadline returns ETIMEDOUT without modifying the user message endpoint capability or queued-message state",
+  "a valid child SEND removes only the exact live parent deadline cancels the on-demand timer copies only after all task generation capability endpoint message waiter and direct-frame checks and wakes only parent generation 40",
+  "WAIT and reap remain generation exact after receive and timeout SEND wake close reap force cleanup and final verification leave all timer deadline waiter endpoint message capability queue loader task and frame state clear",
+  "all waits retries queues timer operations and scans remain fixed-capacity or deadline-bounded and no heap blocking VFS formatted logging or unbounded work enters the path"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "the public syscall ABI packed task record task endpoint message capability or deadline capacity must change",
+  "timeout can return early or late beyond the fixed eight-tick budget or SEND can wake a stale wrong-generation wrong-handle or nonblocked task",
+  "any validation failure reaches timer deadline waiter user-copy queue capability endpoint serial or lifecycle effects",
+  "timer deadline waiter endpoint message capability or task authority can survive timeout wake close reap force cleanup generation reuse or final verification",
+  "an i386 artifact prior marker dialogue count child denial separate lifecycle proof or C handoff changes",
+  "a required file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "ipc: bound x86_64 receive waits"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
