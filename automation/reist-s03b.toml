@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R7.1h-ahci-interrupt-completion"
 
 [policy]
 one_package_per_run = true
@@ -12517,3 +12517,57 @@ evidence = [
   "The four-vCPU VMware benchmark passed in 35 seconds with byte-verified 256-KiB readback cleanup and Ring-3 shell return; HDD write measured 18.94 KiB/s and read 82.36 KiB/s versus the 18.29 and 77.48 baseline.",
   "The remaining VMware write throughput is still low and is reported as residual bounded journal and polled-controller cost rather than hidden by a durability wait or host Hyper-V change; active_id is empty."
 ]
+
+[[packages]]
+id = "R7.1h-ahci-interrupt-completion"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Wake bounded AHCI completion waits from controller interrupts"
+scope = "Remove the dominant VMware storage latency without weakening FAT32 durability. Implement the AHCI 1.3.1 legacy-INTx completion mechanism for controllers with a valid bounded PCI IRQ: clear stale global and per-port status, enable only defined completion and error sources, latch status in a fixed per-controller/per-port record, and wake at most the exact serialized command waiter. The hard-IRQ path may only scan fixed controller/port capacity, capture status, acknowledge the HBA and wake an existing intrusive wait node; it performs no DMA, parsing, allocation, logging, retry or filesystem work. Runtime task commands atomically recheck CI, TFD and latched status before sleeping against the existing five-second monotonic deadline, so completion cannot be lost between the check and wait transition. Early boot, IRQ-masked contexts, invalid PCI IRQs and registration failure retain the existing bounded poll/halt fallback. Preserve one command slot per port, port and journal mutex ownership, exact transfer-length checks, timeout port stop, uncertain-write fencing, full readback comparison, journal-v2 and exactly four durability barriers. Prove real four-vCPU VMware benchmark throughput of at least 95 KiB/s write and 415 KiB/s read, more than five times the accepted R7.1g result, with complete byte verification cleanup shell return and no panic quarantine restart or degradation."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/block/ahci.h",
+  "drivers/block/ahci.c",
+  "scripts/run_vmware_mouse.ps1",
+  "test/test_ahci_source.py",
+  "test/test_vmware_mouse.py",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
+  "docs/filesystems/FAT32_OPTIMIZATIONS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the AHCI hard-IRQ path is fixed-capacity status capture acknowledgement and waiter wake only with no DMA allocation parsing retry logging filesystem or policy work",
+  "one serialized command arms its exact per-port wait state before CI publication and atomically rechecks CI TFD and latched errors before every bounded sleep",
+  "task-context interrupt waits retain the existing five-second absolute monotonic deadline and timeout still stops the port and fails closed",
+  "early boot invalid or unavailable IRQ masked contexts and registration failure retain bounded polling without pretending interrupt capability",
+  "TFES TFD error short PRDBC uncertain writes and readback mismatch remain visible and preserve storage fencing without retry",
+  "journal-v2 exactly four ordered durability barriers one command slot per port fixed DMA buffers VFS semantics and public ABIs remain unchanged",
+  "the final VMware run proves the AHCI interrupt marker at least 95 KiB/s write and 415 KiB/s read byte verification cleanup and shell return without panic quarantine restart or degradation"
+]
+targeted_tests = [
+  "python test/test_ahci_source.py -v",
+  "python test/test_ata_source.py -v",
+  "python test/test_reist_undo_journal.py -v",
+  "python test/test_vmware_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-benchmark"
+]
+stop_conditions = [
+  "an interrupt can be enabled before stale status is cleared the handler is registered and fixed completion state is initialized",
+  "the check-to-sleep transition can lose a completion or one port can wake consume or clear another port's status",
+  "the hard-IRQ path performs DMA allocation parsing retry formatted logging filesystem work or unbounded scanning",
+  "any error timeout short transfer uncertain write or readback mismatch is converted to success or blindly retried",
+  "the journal format barrier count DMA ownership wait ceilings persistent layout or public ABI changes",
+  "the VMware benchmark is below 95 KiB/s write or 415 KiB/s read or lacks IRQ proof byte verification cleanup and shell return",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "ahci: wake commands from bounded interrupts"
+evidence = []
