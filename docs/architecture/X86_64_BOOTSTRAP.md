@@ -624,3 +624,18 @@ Fehlercleanup verlangen Timer-, Deadline-, Waiter-, Endpoint-, Nachrichten-,
 Capability-, Task-, Loader- und Framezustand null. Mehrere Waiter,
 blockierende Sender, tiefere Queues und produktive Integration bleiben
 ausgeschlossen.
+
+## Queue-Backpressure R8.2p
+
+Das aktive Paket behaelt den einzelnen 140-Byte-Queue-Slot bei und prueft ihn
+erstmals asynchron. Nach einem geplanten `YIELD` des Parents publiziert die
+exakte Kindgeneration `token76`, ohne dass ein Receive-Wait besteht. Der
+folgende strukturell gueltige `token77`-SEND muss `EAGAIN` liefern und darf
+weder Queue noch Waiter, Deadline, Capability, Endpoint oder Usernachricht
+veraendern. Das Kind gibt danach ebenfalls mit `YIELD` ab.
+
+Generation 40 entnimmt und validiert `token76`, blockiert anschliessend mit dem
+bestehenden 10-ms-Receive und wird erst vom generationengenauen `token77`-Retry
+des Kindes geweckt. Ein fester Send-Phasenrecord verhindert Auslassung,
+Doppelpublikation und stale Wiederverwendung. Blocking-Sender, Queue-Tiefe
+groesser eins und mehrere Waiter bleiben explizit ausgeschlossen.

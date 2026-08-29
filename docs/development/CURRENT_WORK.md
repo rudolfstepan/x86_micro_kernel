@@ -240,6 +240,15 @@ bestanden bis `RING3_SHELL_OK`. Timer, Deadline, Waiter, Endpoint, Nachricht,
 Capabilities, Tasks, Loader und Frames waren vor Erfolg null; die Queue ist
 leer.
 
+R8.2p ist aktiv. Der naechste reale `RUN`-Nachweis behaelt genau einen
+Endpoint und einen 140-Byte-Queue-Slot: Das Kind publiziert `token76` ohne
+wartenden Empfaenger, erhaelt beim unmittelbar folgenden `token77`-SEND wegen
+der vollen Queue wirkungslos `EAGAIN` und gibt per `YIELD` an den Parent ab.
+Der Parent entnimmt und prueft `token76`, installiert danach den bestehenden
+10-ms-Receive-Wait und laesst den Kind-Retry `token77` ueber den bereits
+validierten Deadline-/Wakeup-Pfad liefern. Blocking-Sender, tiefere Queues und
+mehrere Waiter bleiben ausserhalb des Pakets.
+
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
 unveränderte Standard und Fallback. Das getrennte 14.360-Byte-Bootstrap-

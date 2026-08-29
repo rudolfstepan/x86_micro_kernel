@@ -301,6 +301,13 @@ den vorvalidierten privaten Parent-Frame und weckt Generation 40. Beide Pfade
 widerrufen Timer-, Deadline- und Waiterzustand vor der weiteren
 Lifecycle-Ausfuehrung vollstaendig.
 
+R8.2p begrenzt Queue-Backpressure fuer denselben Lifecycle. Ein Kind darf
+`token76` genau einmal in den einzelnen freien Slot publizieren. Ein zweiter
+validierter SEND auf den belegten Slot liefert ohne Mutation oder Blockierung
+`EAGAIN`; erst nachdem Generation 40 `token76` entnommen hat, darf dasselbe
+generationengebundene Kind `token77` wiederholen. Der Retry verwendet wieder
+den exakten R8.2o-Waiter-, Deadline-, Timer- und Direct-Frame-Wakeup-Pfad.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

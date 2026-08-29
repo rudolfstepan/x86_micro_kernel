@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2p-x86_64-ipc-queue-backpressure"
 
 [policy]
 one_package_per_run = true
@@ -11776,6 +11776,43 @@ evidence = [
   "the host py launcher still targets an inaccessible Store Python 3.12 registration so the identical Python gates used the installed Python 3.13 executable; installed WinGet make and Zig were supplied only through the gate process PATH",
   "timeout SEND wake WAIT reap close shell exit force cleanup and final runtime verification left timer deadline waiter endpoint message capability queue loader task and frame authority clear; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2p-x86_64-ipc-queue-backpressure"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Prove bounded x86_64 IPC queue backpressure and retry"
+scope = "Extend the real x86_64 scheduled shell RUN lifecycle without changing the REIST-v1 syscall ABI packed 256-byte task record four-slot task and capability capacities one-endpoint one-message queue or one-receive-wait capacity. Preserve the initial real empty 10-ms IPC_RECEIVE_TIMEOUT proof. After SPAWNV and exact SEND delegation parent generation 40 yields once so child generation 41 or 42 publishes token76 asynchronously while no receiver waits. The same child then validates token77 against the occupied one-slot queue and receives EAGAIN with the queued token76 waiter deadline capability endpoint and user message unchanged, records that bounded phase and yields. Parent generation 40 dequeues and byte-validates token76 with nonblocking IPC_RECEIVE then blocks on IPC_RECEIVE_TIMEOUT for token77. The resumed child retries the same valid token77 SEND, which uses the existing exact waiter deadline removal timer cancellation direct-frame copy and generation-40 wake path, then releases and exits 77. Bind the three successful send phases and the full-queue rejection to the exact live child generation with fixed kernel state, validate all profile task generation capability endpoint handle message queue waiter and deadline relations before effects, and clear that state before capability release and child exit. Preserve both RUN cycles WAIT reap close every prior marker dialogue count exact free-frame recovery C handoffs i386 and Windows QEMU build behavior. Add no blocking sender IPC_SEND_TIMEOUT queue depth above one multiple waiter general endpoint registry service discovery priority inheritance cancellation API VFS SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/user/child.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the authoritative REIST-v1 syscall numbers message version size rights opaque handle encoding packed task ABI fixed capacities i386 artifacts C handoffs markers and dialogue remain unchanged",
+  "exactly one endpoint one 140-byte queue slot one receive waiter and four capability records exist; a full queue returns EAGAIN without blocking retry heap allocation or mutation of queue waiter deadline capability endpoint or user message",
+  "token76 is published only by the exact live delegated child generation while no receiver waits; parent generation 40 alone dequeues it before installing the token77 timeout wait",
+  "the child send phase is generation scoped and permits only token76 publication then one token77 EAGAIN then YIELD then one token77 retry; release clears the phase before exit and generation reuse",
+  "the token77 retry preserves the validated R8.2o exact-deadline removal timer cancellation direct-frame delivery and generation-40-only wake path",
+  "WAIT reap close shell exit force cleanup and final verification leave send phase timer deadline waiter endpoint message capability task queue loader and frame state clear"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "the public syscall ABI packed task record or fixed task endpoint message capability waiter deadline or runqueue capacity must change",
+  "full-queue EAGAIN mutates the queued token76 sender generation waiter deadline capability endpoint or child user message or can block the sender",
+  "a stale wrong-generation wrong-phase wrong-handle malformed or wrong-right request reaches queue user-copy timer waiter capability endpoint task serial or lifecycle effects",
+  "token77 retry can wake a stale wrong-generation wrong-handle nonblocked task or bypass the existing exact deadline validation",
+  "an i386 artifact prior marker dialogue count child denial separate lifecycle proof C handoff or production file changes",
+  "a required file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "ipc: prove x86_64 queue backpressure"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
