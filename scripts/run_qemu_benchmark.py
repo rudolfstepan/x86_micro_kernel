@@ -73,7 +73,7 @@ def latest_status(text: str) -> str:
     return matches[-1].group(0).rstrip("\r") if matches else "none"
 
 
-def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
+def run(qemu: Path, image: Path, timeout: float, log: Path, smp: int = 1) -> int:
     log.parent.mkdir(parents=True, exist_ok=True)
     descriptor, clone_name = tempfile.mkstemp(
         prefix="reist-benchmark-", suffix=".img", dir=log.parent
@@ -83,7 +83,7 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
     try:
         shutil.copyfile(image, clone)
         command = smoke.qemu_command(
-            qemu, clone, memory="256M", nic="none", persistent=True, smp=1
+            qemu, clone, memory="256M", nic="none", persistent=True, smp=smp
         )
         command.extend(["-vga", "std"])
         process = subprocess.Popen(
@@ -191,6 +191,7 @@ def main() -> int:
     parser.add_argument("--qemu", type=Path, default=Path("qemu-system-i386"))
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument("--smp", type=int, default=1)
     parser.add_argument(
         "--log", type=Path,
         default=Path("build/codex-agent/benchmark-runtime.log"),
@@ -198,11 +199,14 @@ def main() -> int:
     args = parser.parse_args()
     if not args.image.is_file() or args.timeout <= 0:
         parser.error("image must exist and timeout must be positive")
+    if args.smp < 1 or args.smp > 16:
+        parser.error("smp must be in 1..16")
     try:
         qemu = resolve_qemu(args.qemu)
     except FileNotFoundError as error:
         parser.error(str(error))
-    return run(qemu, args.image.resolve(), args.timeout, args.log.resolve())
+    return run(qemu, args.image.resolve(), args.timeout, args.log.resolve(),
+               args.smp)
 
 
 if __name__ == "__main__":

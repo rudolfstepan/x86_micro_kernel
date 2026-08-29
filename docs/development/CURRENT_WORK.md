@@ -778,11 +778,15 @@ terminalen, restlosen Status-Short für einen Zero-Data-Request und führt keine
 Retry auf dem alten EP0-Zustand aus. R6.2o blieb bis zum physischen Nachweis
 queued und ist inzwischen abgeschlossen.
 
-Ein früherer Lauf meldete einmal eine rekursive Übernahme von
-`task_table_lock`. Der Fehler trat in vier vollständigen Folgeläufen nicht
-erneut auf; die neue Panic-Diagnose liefert bei Wiederholung sofort CPU und
-Aufrufer. Das ist starke Regressionsevidenz, aber kein Beweis, dass ein
-nichtdeterministisches Rennen ausgeschlossen ist.
+Die frühere sporadische Meldung einer rekursiven Übernahme von
+`task_table_lock` wurde im VMware-Benchmark erneut beobachtet und über Build-ID,
+Lockadresse und Aufrufer auf die Mutex-Identitätsabfrage eingegrenzt. Ursache war
+die getrennte Veröffentlichung von binärem Lockwort und `owner_cpu`: Der Erwerb
+prüfte das Diagnosefeld vor der atomaren Lockoperation und konnte einen
+veralteten Besitzer als Rekursion deuten. Das Lockwort enthält nun selbst den
+eindeutigen CPU-Token; nur der von Compare-and-swap atomar beobachtete eigene
+Token löst die Rekursions-Panic aus. Ein vierkerniger QEMU-Benchmark schloss
+anschließend Schreiben, bytegeprüftes Lesen, Cleanup und Shell-Rückkehr ab.
 
 Die erste R6.2-Scheibe inventarisiert gemeinsam genutzte Treiberzustände und
 gibt ausschließlich die autoritätslose, überwachte Driver-Fault-Fixture für

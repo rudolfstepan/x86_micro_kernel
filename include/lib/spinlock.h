@@ -28,6 +28,8 @@
  */
 
 typedef struct {
+    /* Zero is unlocked; an acquired value is the owning CPU index plus one.
+     * owner_cpu mirrors that token for bounded field diagnostics only. */
     volatile uint32_t lock;
     volatile uint32_t owner_cpu;
 } spinlock_t;
@@ -59,23 +61,28 @@ static inline bool spinlock_acquire_bounded(spinlock_t *lock,
     KASSERT(spin_limit != 0U);
     uint32_t cpu = x86_cpu_current_index();
     KASSERT(cpu != X86_CPU_INDEX_INVALID);
-    if (lock->owner_cpu == cpu) {
-        uint32_t caller = (uint32_t)(uintptr_t)__builtin_return_address(0);
-        panic_context_set("synchronization", "SMP spinlock", "acquire",
-                          "recursive owner");
-        /* Text addresses fit in the low 24 bits of the bounded 32-bit kernel
-         * image.  Preserve the CPU index in the high byte so a field panic
-         * identifies both the recursive call site and its execution CPU. */
-        panic_context_set_result(-35, (uint32_t)(uintptr_t)lock,
-                                 (cpu << 24U) | (caller & 0x00FFFFFFU));
-        panic("Recursive SMP spinlock acquisition");
-    }
+    uint32_t owner_token = cpu + 1U;
 
     for (uint32_t spin = 0U; spin < spin_limit; ++spin) {
-        if (__sync_bool_compare_and_swap(&lock->lock, 0U, 1U)) {
+        uint32_t observed = __sync_val_compare_and_swap(
+            &lock->lock, 0U, owner_token);
+        if (observed == 0U) {
             lock->owner_cpu = cpu;
             __sync_synchronize();
             return true;
+        }
+        if (observed == owner_token) {
+            uint32_t caller =
+                (uint32_t)(uintptr_t)__builtin_return_address(0);
+            panic_context_set("synchronization", "SMP spinlock", "acquire",
+                              "recursive owner");
+            /* Text addresses fit in the low 24 bits of the bounded 32-bit
+             * kernel image. Preserve the CPU index in the high byte so a
+             * field panic identifies both recursive call site and CPU. */
+            panic_context_set_result(
+                -35, (uint32_t)(uintptr_t)lock,
+                (cpu << 24U) | (caller & 0x00FFFFFFU));
+            panic("Recursive SMP spinlock acquisition");
         }
         __asm__ __volatile__("pause");
     }
@@ -108,9 +115,9 @@ static inline void spinlock_acquire(spinlock_t *lock) {
 static inline void spinlock_release(spinlock_t *lock) {
     KASSERT(lock != NULL);
     KASSERT_IRQ_DISABLED();
-    KASSERT(lock->lock != 0);
     uint32_t cpu = x86_cpu_current_index();
     KASSERT(cpu != X86_CPU_INDEX_INVALID);
+    KASSERT(lock->lock == cpu + 1U);
     KASSERT(lock->owner_cpu == cpu);
     __sync_synchronize();
     lock->owner_cpu = SPINLOCK_NO_OWNER;
@@ -127,8 +134,11 @@ static inline int spinlock_trylock(spinlock_t *lock) {
     KASSERT_IRQ_DISABLED();
     uint32_t cpu = x86_cpu_current_index();
     KASSERT(cpu != X86_CPU_INDEX_INVALID);
-    KASSERT(lock->owner_cpu != cpu);
-    if (!__sync_bool_compare_and_swap(&lock->lock, 0U, 1U)) return 0;
+    uint32_t owner_token = cpu + 1U;
+    uint32_t observed = __sync_val_compare_and_swap(
+        &lock->lock, 0U, owner_token);
+    KASSERT(observed != owner_token);
+    if (observed != 0U) return 0;
     lock->owner_cpu = cpu;
     __sync_synchronize();
     return 1;
@@ -148,9 +158,9 @@ static inline int spinlock_is_locked(const spinlock_t *lock) {
 
 /** Return whether the calling logical CPU currently owns the lock. */
 static inline bool spinlock_is_owned_by_current(const spinlock_t *lock) {
-    if (lock == NULL || lock->lock == 0U) return false;
+    if (lock == NULL) return false;
     uint32_t cpu = x86_cpu_current_index();
-    return cpu != X86_CPU_INDEX_INVALID && lock->owner_cpu == cpu;
+    return cpu != X86_CPU_INDEX_INVALID && lock->lock == cpu + 1U;
 }
 
 //=============================================================================

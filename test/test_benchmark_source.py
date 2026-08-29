@@ -154,8 +154,11 @@ class BenchmarkSourceTests(unittest.TestCase):
         self.assertIn('"/bin", "/sbin", "/usr/bin", "/usr/gui/bin"',
                       self.shell)
 
-    def test_runtime_gate_is_single_cpu_bounded_and_checks_cleanup(self) -> None:
-        self.assertIn('persistent=True, smp=1', self.runtime)
+    def test_runtime_gate_is_smp_selectable_bounded_and_checks_cleanup(self) -> None:
+        self.assertIn('persistent=True, smp=smp', self.runtime)
+        self.assertIn('parser.add_argument("--smp", type=int, default=1)',
+                      self.runtime)
+        self.assertIn('if args.smp < 1 or args.smp > 16:', self.runtime)
         self.assertIn('shutil.copyfile(image, clone)', self.runtime)
         self.assertIn('clone.unlink(missing_ok=True)', self.runtime)
         self.assertIn('default=120.0', self.runtime)

@@ -48,7 +48,12 @@ Spinlock über den Kontextwechsel.
 Unter einem Spinlock darf Code nicht schlafen oder blockieren. Rekursiv verboten
 ist der Spinlock-Erwerb; Freigabe eines nicht gehaltenen Locks ist ebenso
 ein Kernel-Fehler. Die Laufzeitassertions in `spinlock.h` bilden diesen
-SMP-Vertrag ab und begrenzen jeden Erwerbsversuch.
+SMP-Vertrag ab und begrenzen jeden Erwerbsversuch. Das atomare Lockwort trägt
+dabei `CPU-Index + 1` als maßgeblichen Besitzer-Token; Null bedeutet frei.
+Rekursion wird ausschließlich aus dem vom Compare-and-swap beobachteten Token
+abgeleitet. Das getrennte `owner_cpu`-Feld ist nur ein Diagnoseabbild und darf
+wegen möglicher Übergangs- oder Sichtbarkeitszustände niemals allein Besitz
+begründen.
 
 Lange Foreground-Transaktionen verwenden `kernel_mutex_t`. Dieser interne,
 rekursive Mutex besitzt einen festen maximalen Rekursionstiefenwert und nimmt

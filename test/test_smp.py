@@ -287,6 +287,16 @@ class SmpTests(unittest.TestCase):
         self.assertLess(exit_body.index("spinlock_release(&task_table_lock)"),
                         exit_body.index("swtch(NULL"))
 
+    def test_spinlock_recursion_uses_atomic_owner_token(self):
+        lock = (ROOT / "include/lib/spinlock.h").read_text(encoding="utf-8")
+        bounded = lock[lock.index("spinlock_acquire_bounded("):
+                       lock.index("static inline void spinlock_acquire(")]
+        self.assertIn("uint32_t owner_token = cpu + 1U", bounded)
+        self.assertIn("__sync_val_compare_and_swap(", bounded)
+        self.assertLess(bounded.index("if (observed == 0U)"),
+                        bounded.index("if (observed == owner_token)"))
+        self.assertNotIn("if (lock->owner_cpu == cpu)", bounded)
+
     def test_ap_scheduler_release_is_affined_bounded_and_guarded(self):
         smp = (ROOT / "arch/x86/cpu/smp.c").read_text(encoding="utf-8")
         scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
