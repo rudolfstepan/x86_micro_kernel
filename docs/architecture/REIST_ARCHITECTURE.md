@@ -241,6 +241,13 @@ jeder Rueckweg gibt unter Kernel-CR3 alle Ebenen frei. Damit teilen frueher
 Nachweis und Scheduler den Allocator- und Cleanupvertrag, ohne ihre
 Fehlerdomaenen oder Lebenszyklussemantik zusammenzulegen.
 
+R8.2i fuehrt den begrenzten Parent/Child-Vertrag in der realen geplanten
+Ring-3-Shell aus. Das Kind verwendet dasselbe unveraenderliche validierte
+Shell-RX-Abbild mit einem festen Entry-Modus, besitzt aber private Tabellen und
+einen privaten NX-Stack. Der Shell-Parent blockiert generationengebunden in
+WAIT; Status, Reap und Wake erfolgen erst nach exakter terminaler
+Kindvalidierung. Dies ist noch kein allgemeiner Image- oder VFS-Loader.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein

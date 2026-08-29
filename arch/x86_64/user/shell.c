@@ -6,12 +6,19 @@ typedef unsigned char shell_u8;
 #define REIST_SYS_EXIT 9ULL
 #define REIST_SYS_READ 15ULL
 #define REIST_SYS_WRITE 20ULL
+#define REIST_SYS_GETPID 22ULL
+#define REIST_SYS_SPAWN 23ULL
+#define REIST_SYS_WAIT 24ULL
 #define REIST_SYS_YIELD 40ULL
 #define REIST_STDIN 0ULL
 #define REIST_STDOUT 1ULL
 #define REIST_EAGAIN (-11LL)
 #define SHELL_COMMAND_CAPACITY 16U
 #define SHELL_POLL_LIMIT 67108864U
+#define SHELL_PARENT_PID 300LL
+#define SHELL_CHILD_PID 301LL
+#define SHELL_CHILD_STATUS 77U
+#define SHELL_CHILD_MODE 1ULL
 
 static shell_i64 shell_syscall3(shell_u64 number, shell_u64 first,
                                 shell_u64 second, shell_u64 third)
@@ -72,17 +79,25 @@ static void clear_command(shell_u8 *command)
     }
 }
 
-void _start(void)
+void _start(shell_u64 mode)
 {
     static const char ready[] = "REIST_X86_64_RING3_SHELL_READY\r\n";
     static const char prompt[] = "C:\\>";
     static const char info[] = "REIST_X86_64_RING3_SHELL_INFO_OK\r\n";
-    static const char help[] = "HELP INFO EXIT\r\n";
+    static const char help[] = "HELP INFO RUN EXIT\r\n";
+    static const char run_ok[] = "REIST_X86_64_RING3_SHELL_RUN_OK\r\n";
     static const char unknown[] = "Unknown command\r\n";
     shell_u8 command[SHELL_COMMAND_CAPACITY];
     shell_u8 input_byte = 0U;
     shell_u32 command_length = 0U;
     shell_u32 polls = 0U;
+
+    if (mode == SHELL_CHILD_MODE) {
+        shell_exit(SHELL_CHILD_STATUS);
+    }
+    if (mode != 0ULL) {
+        shell_exit(10ULL);
+    }
 
     clear_command(command);
     if (!shell_write_exact(ready, sizeof(ready) - 1U) ||
@@ -112,6 +127,32 @@ void _start(void)
                 if (!shell_write_exact(help, sizeof(help) - 1U) ||
                     !shell_write_exact(prompt, sizeof(prompt) - 1U)) {
                     shell_exit(5ULL);
+                }
+            } else if (command_equals(command, "RUN", 3U, command_length)) {
+                shell_u8 child_path[SHELL_COMMAND_CAPACITY] __attribute__((aligned(4))) =
+                    "/shell/child";
+                shell_u32 child_status __attribute__((aligned(4))) = 0U;
+                shell_i64 parent_pid = shell_syscall3(REIST_SYS_GETPID, 0ULL, 0ULL, 0ULL);
+                shell_i64 child_pid;
+                shell_i64 waited_pid;
+
+                if (parent_pid != SHELL_PARENT_PID) {
+                    shell_exit(11ULL);
+                }
+                child_pid = shell_syscall3(REIST_SYS_SPAWN,
+                                           (shell_u64)child_path, 0ULL, 0ULL);
+                if (child_pid != SHELL_CHILD_PID) {
+                    shell_exit(12ULL);
+                }
+                waited_pid = shell_syscall3(REIST_SYS_WAIT, (shell_u64)child_pid,
+                                            (shell_u64)&child_status, 0ULL);
+                if (waited_pid != SHELL_CHILD_PID ||
+                    child_status != SHELL_CHILD_STATUS) {
+                    shell_exit(13ULL);
+                }
+                if (!shell_write_exact(run_ok, sizeof(run_ok) - 1U) ||
+                    !shell_write_exact(prompt, sizeof(prompt) - 1U)) {
+                    shell_exit(14ULL);
                 }
             } else if (command_equals(command, "EXIT", 4U, command_length)) {
                 shell_exit(0ULL);

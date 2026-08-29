@@ -315,6 +315,14 @@ Pflicht vor dem neuen Marker. 48 Quellvertragstests, der warnungsfreie
 und `RING3_SHELL_OK` bestanden. Scheduler, ABI, i386 und Kapazitaeten bleiben
 unveraendert; die x86_64-Queue ist leer.
 
+**R8.2i ist abgeschlossen:** Die reale C-gesteuerte Ring-3-Shell besitzt das
+exakte Kommando `RUN`. Es prueft PID 300, startet genau Kind-PID
+301/Generation 41 aus dem bereits validierten Shell-RX-Abbild, blockiert in
+WAIT und akzeptiert erst nach Reap Status 77. Stackzeiger, Kindidentitaet,
+private Tabellen, Queue und Freizaehler blieben im Quell-, Build- und nativen
+QEMU-Nachweis vollstaendig gebunden. Allgemeines VFS-Laden und argv bleiben
+getrennte Folgearbeiten; die x86_64-Queue ist leer.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

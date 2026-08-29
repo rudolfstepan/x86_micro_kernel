@@ -170,6 +170,14 @@ exakt einmal zurueck. 48 Quellvertragstests, der warnungsfreie
 125.944-Byte-Build und der native QEMU-Lauf bis `EARLY_EXECUTION_TABLES_OK`
 und `RING3_SHELL_OK` bestanden; die Queue ist leer.
 
+R8.2i ist abgeschlossen. Die geplante x86_64-Ring-3-Shell integriert GETPID,
+SPAWN und WAIT ueber `RUN`. Ein einziges Kind in Slot 1/Generation 41 teilt nur
+RX-Code, besitzt private Tabellen und Stack, beendet sich mit 77 und wird vor
+dem Wakeup der Shell vollstaendig reaptiert. 49 Quellvertragstests, der
+warnungsfreie 126.700-Byte-Build und der native QEMU-Dialog mit `INFO`, `RUN`
+und `EXIT` bestanden bis `RING3_SHELL_OK`; die Queue ist leer. Kein VFS- oder
+argv-Vertrag wird vorweggenommen.
+
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
 unveränderte Standard und Fallback. Das getrennte 14.360-Byte-Bootstrap-

@@ -482,8 +482,19 @@ Nach leerer Besitzliste und wiederhergestelltem Freizaehler erschien
 `EARLY_EXECUTION_TABLES_OK` geordnet vor allen Scheduler-, C-Control- und
 Shell-Markern bis `RING3_SHELL_OK`.
 
-Die Abnahme umfasst 47 Quellvertragstests und ein 121.208-Byte-Bootstrap.
-Der warnungsfreie isolierte Build behaelt Probe, Shell und C-Payload
-unveraendert. Der begrenzte Ein-vCPU-/128-MiB-QEMU-Dialog durchlief alle
-Scheduler-Lebenszyklen und meldete `DYNAMIC_PROCESS_TABLES_OK` nach leerer
-Besitzmatrix geordnet vor dem unveraenderten `RING3_SHELL_OK`.
+## Reales Shell-Spawn/Wait R8.2i
+
+Das exakte Shell-Kommando `RUN` verbindet den C-gesteuerten geplanten
+Shellprozess mit `GETPID` 22, `SPAWN` 23 und `WAIT` 24. Nur PID 300 darf den
+festen Stackpfad `/shell/child` verwenden. Kindslot 1/Generation 41 teilt
+ausschliesslich das validierte RX-Shellabbild, erhaelt private dynamische
+Tabellen und einen NX-Stack und startet mit einem festen Kindmodus in `RDI`.
+Das Kind fuehrt kein I/O aus und beendet sich mit Status 77. WAIT blockiert
+Generation 40 ohne Polling, publiziert den Status erst nach terminaler
+Kindvalidierung und reapt alle Kindressourcen vor `RUN_OK`.
+
+Die Abnahme umfasst 49 Quellvertragstests und ein 126.700-Byte-Bootstrap.
+Der warnungsfreie isolierte Build erzeugte die 1.672-Byte-Shell. Der begrenzte
+Ein-vCPU-/128-MiB-QEMU-Dialog fuehrte `INFO`, `RUN` und `EXIT` aus, erreichte
+`RING3_SHELL_RUN_OK` und meldete nach vollstaendigem Kind-Reap alle bisherigen
+Marker geordnet bis `RING3_SHELL_OK`.

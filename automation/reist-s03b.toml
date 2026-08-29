@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2i-x86_64-shell-spawn-wait"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11481,7 +11481,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2i-x86_64-shell-spawn-wait"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run a bounded child from the real x86_64 shell"
@@ -11514,7 +11514,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "proc: run bounded child from x86_64 shell"
-evidence = []
+evidence = [
+  "all 49 x86_64 source-contract tests passed through the installed Windows py launcher including exact shell GETPID SPAWN WAIT ordering stack input validation generation-scoped child lifecycle and bounded dialogue",
+  "the warning-free x86_64 package build produced a 126700-byte bootstrap a 10264-byte probe a 1672-byte shell an 8064-byte C core object and a 13520-byte C payload",
+  "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN EXIT and reached RING3_SHELL_RUN_OK then every established marker through RING3_SHELL_OK",
+  "child status 77 published only after terminal validation; reap restored kernel CR3 released all generation-41 frames cleared relation wait and queue state woke only shell generation 40 and final cleanup restored the initial free count; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

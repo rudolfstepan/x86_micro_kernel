@@ -254,14 +254,16 @@ class X8664BootstrapContractTests(unittest.TestCase):
         makefile = self.read("Makefile")
         for syscall in (
             "REIST_SYS_EXIT 9ULL", "REIST_SYS_READ 15ULL",
-            "REIST_SYS_WRITE 20ULL", "REIST_SYS_YIELD 40ULL",
+            "REIST_SYS_WRITE 20ULL", "REIST_SYS_GETPID 22ULL",
+            "REIST_SYS_SPAWN 23ULL", "REIST_SYS_WAIT 24ULL",
+            "REIST_SYS_YIELD 40ULL",
         ):
             self.assertIn(syscall, shell)
         self.assertIn("SHELL_COMMAND_CAPACITY 16U", shell)
         self.assertIn("SHELL_POLL_LIMIT 67108864U", shell)
         self.assertIn("while (polls < SHELL_POLL_LIMIT)", shell)
         self.assertNotRegex(shell, re.compile(r"while\s*\(\s*1\s*\)"))
-        for command in ('"HELP"', '"INFO"', '"EXIT"'):
+        for command in ('"HELP"', '"INFO"', '"RUN"', '"EXIT"'):
             self.assertIn(command, shell)
         self.assertIn("OUTPUT_FORMAT(elf64-x86-64)", linker)
         self.assertIn("text PT_LOAD FILEHDR PHDRS FLAGS(5)", linker)
@@ -327,6 +329,7 @@ class X8664BootstrapContractTests(unittest.TestCase):
         self.assertIn('SUCCESS = "REIST_X86_64_RING3_SHELL_OK"', runner)
         self.assertIn('"-serial", "stdio"', runner)
         self.assertIn('process.stdin.write(b"INFO\\n")', runner)
+        self.assertIn('process.stdin.write(b"RUN\\n")', runner)
         self.assertIn('process.stdin.write(b"EXIT\\n")', runner)
         self.assertIn("queue.Queue", runner)
         self.assertIn("reader.join(timeout=1.0)", runner)
@@ -367,6 +370,30 @@ class X8664BootstrapContractTests(unittest.TestCase):
         marker = source.index("REIST_X86_64_SCHEDULED_SHELL_OK", cleanup)
         self.assertLess(exit_handler, cleanup)
         self.assertLess(cleanup, marker)
+
+    def test_ring3_shell_spawn_wait_is_bounded_and_generation_scoped(self):
+        shell = self.read("arch/x86_64/user/shell.c")
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        runner = self.read("scripts/run_qemu_x86_64_boot.py")
+        for contract in (
+            "SHELL_PARENT_PID 300LL", "SHELL_CHILD_PID 301LL",
+            "SHELL_CHILD_STATUS 77U", '"/shell/child"',
+        ):
+            self.assertIn(contract, shell)
+        getpid = shell.index("REIST_SYS_GETPID", shell.index('command_equals(command, "RUN",'))
+        spawn = shell.index("REIST_SYS_SPAWN", getpid)
+        wait = shell.index("REIST_SYS_WAIT", spawn)
+        run_ok = shell.index("shell_write_exact(run_ok", wait)
+        self.assertLess(getpid, spawn)
+        self.assertLess(spawn, wait)
+        self.assertLess(wait, run_ok)
+        self.assertIn("TASK_SHELL_CHILD_GEN       equ 41", scheduler)
+        self.assertIn("scheduler_handle_shell_spawn64:", scheduler)
+        self.assertIn("scheduler_handle_shell_wait64:", scheduler)
+        self.assertIn("scheduler_handle_shell_child_exit64:", scheduler)
+        self.assertIn("mov qword [r12 + TASK_STATE], TASK_WAITING", scheduler)
+        self.assertIn("mov dword [r15], DYNAMIC_CHILD_EXIT_STATUS", scheduler)
+        self.assertIn("REIST_X86_64_RING3_SHELL_RUN_OK", runner)
 
     def test_user_page_tables_are_private_fixed_and_wx(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")
