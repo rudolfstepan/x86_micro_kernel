@@ -29,7 +29,17 @@ class LsOptionsTests(unittest.TestCase):
 
     def test_files_and_directories_are_supported(self):
         self.assertIn("target.type != X86OS_DIRECTORY", self.source)
-        self.assertIn("x86os_readdir_batch(path, index, entries)", self.source)
+        self.assertIn("reist_vfs_readdir_at(", self.source)
+        self.assertNotIn("x86os_readdir", self.source)
+
+    def test_directory_walk_has_one_absolute_bound(self):
+        for token in ("LS_DIRECTORY_ENTRY_CAPACITY 128U",
+                      "LS_DEADLINE_MS 5000U",
+                      "LS_REQUEST_TIMEOUT_MS 1000U",
+                      "x86os_monotonic_ms(",
+                      "UINT64_MAX - started"):
+            self.assertIn(token, self.source)
+        self.assertIn("index >= LS_DIRECTORY_ENTRY_CAPACITY", self.source)
 
 
 if __name__ == "__main__":

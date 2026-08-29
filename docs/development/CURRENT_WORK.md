@@ -4,16 +4,26 @@ Stand: 29. August 2026
 
 Branch/Startpunkt: `working_branch` / `47b60678`
 
-Aktives Paket: `R7.1d-storage-readdir-continuation`.
+Aktives Thema: kein Paket. `R7.1d-storage-readdir-continuation` ist
+abgeschlossen.
 
-Die indexierte Operation 7 bleibt bytegleich, aber die unabhaengigen FAT- und
-EXT2-Parser erhalten einen festen Fortsetzungszustand. Der Storage-Dienst darf
-hoechstens acht ersetzbare, exakt an Client-/Servicegeneration und Pfad
-gebundene Hinweise halten. Vor jeder Wiederaufnahme werden Medium,
-Verzeichnisidentitaet und FAT-Kette beziehungsweise EXT2-Blockgrenzen erneut
-validiert; jede Abweichung verwendet den vorhandenen begrenzten Kaltlauf.
-`LS.PRG` bleibt ohne Kernel-VFS-Fallback und erhaelt eine absolute
-Fuenf-Sekunden-Frist sowie eine Grenze von 128 Eintraegen.
+Die indexierte Operation 7 bleibt bytegleich. Die unabhaengigen FAT- und
+EXT2-Parser besitzen nun einen festen Fortsetzungszustand, und der
+Storage-Dienst haelt hoechstens acht ersetzbare, exakt an
+Client-/Servicegeneration und Pfad gebundene Hinweise. Vor jeder
+Wiederaufnahme werden Medium, Verzeichnisidentitaet und FAT-Kette
+beziehungsweise EXT2-Inode-/Blockgrenzen erneut validiert; jede Abweichung
+verwendet den vorhandenen begrenzten Kaltlauf. `LS.PRG` bleibt ohne
+Kernel-VFS-Fallback und besitzt eine absolute Fuenf-Sekunden-Frist sowie eine
+Grenze von 128 Eintraegen.
+
+Alle 46 gezielten Pruefungen bestanden. Der FAT-Hostlauf listet 128 Eintraege
+plus EOF mit hoechstens 129 Verzeichnis-Datensektorreads; EXT2 listet 62
+Eintraege plus EOF mit hoechstens 126 Verzeichnissektorreads insgesamt.
+Beschaedigte Cursor, eine geaenderte FAT-Kette und ein geaenderter
+EXT2-Inode-Blockplan erzwingen den Kaltlauf. `STORAGE.PRG` bleibt mit 196.608
+Bytes unter 224 KiB. Der QEMU-VGA-Paketbuild bestand in 70 Sekunden, ohne eine
+VM zu starten.
 
 R7.1c ist abgeschlossen. `BENCHMARK.PRG` meldet jede Phase und feste
 64-KiB-Fortschritte, ohne Konsolenausgabe in den Durchsatz einzurechnen. Die

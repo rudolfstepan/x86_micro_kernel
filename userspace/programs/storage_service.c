@@ -5750,14 +5750,92 @@ static int vfs_shadow_read_at(x86os_vfs_shadow_read_frame_t *frame) {
     return 0;
 }
 
-static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame) {
+#define VFS_READDIR_CURSOR_CAPACITY 8U
+#define VFS_READDIR_FILESYSTEM_UNKNOWN 0U
+#define VFS_READDIR_FILESYSTEM_FAT 1U
+#define VFS_READDIR_FILESYSTEM_EXT2 2U
+
+typedef struct {
+    int32_t owner_pid;
+    uint32_t owner_generation;
+    uint32_t service_generation;
+    uint32_t path_length;
+    uint32_t filesystem;
+    char path[X86OS_VFS_SHADOW_PATH_CAPACITY];
+    reist_vfs_shadow_fat_readdir_cursor_t fat;
+    reist_vfs_shadow_ext2_readdir_cursor_t ext2;
+    uint8_t in_use;
+} vfs_readdir_cursor_slot_t;
+
+static vfs_readdir_cursor_slot_t
+    vfs_readdir_cursors[VFS_READDIR_CURSOR_CAPACITY];
+static uint32_t vfs_readdir_replace_cursor;
+
+static void vfs_readdir_cursor_zero(void *target, uint32_t length) {
+    uint8_t *bytes = (uint8_t *)target;
+    for (uint32_t index = 0U; index < length; ++index) bytes[index] = 0U;
+}
+
+static void vfs_readdir_cursor_release(vfs_readdir_cursor_slot_t *slot) {
+    if (slot != 0) vfs_readdir_cursor_zero(slot, sizeof(*slot));
+}
+
+static int vfs_readdir_cursor_path_equal(
+        const vfs_readdir_cursor_slot_t *slot,
+        const x86os_vfs_shadow_readdir_frame_t *frame) {
+    if (slot->path_length != frame->path_length) return 0;
+    for (uint32_t index = 0U; index <= frame->path_length; ++index)
+        if (slot->path[index] != frame->path[index]) return 0;
+    return 1;
+}
+
+static vfs_readdir_cursor_slot_t *vfs_readdir_cursor_slot(
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t service_generation,
+        const x86os_vfs_shadow_readdir_frame_t *frame) {
+    uint32_t free_slot = UINT32_MAX;
+    for (uint32_t index = 0U; index < VFS_READDIR_CURSOR_CAPACITY; ++index) {
+        vfs_readdir_cursor_slot_t *slot = &vfs_readdir_cursors[index];
+        if (slot->in_use == 0U) {
+            if (free_slot == UINT32_MAX) free_slot = index;
+            continue;
+        }
+        if (slot->owner_pid == owner_pid &&
+            slot->owner_generation == owner_generation &&
+            slot->service_generation == service_generation &&
+            vfs_readdir_cursor_path_equal(slot, frame)) return slot;
+    }
+    uint32_t selected = free_slot;
+    if (selected == UINT32_MAX) {
+        selected = vfs_readdir_replace_cursor;
+        vfs_readdir_replace_cursor =
+            (vfs_readdir_replace_cursor + 1U) %
+                VFS_READDIR_CURSOR_CAPACITY;
+    }
+    vfs_readdir_cursor_slot_t *slot = &vfs_readdir_cursors[selected];
+    vfs_readdir_cursor_release(slot);
+    slot->owner_pid = owner_pid;
+    slot->owner_generation = owner_generation;
+    slot->service_generation = service_generation;
+    slot->path_length = frame->path_length;
+    for (uint32_t index = 0U; index <= frame->path_length; ++index)
+        slot->path[index] = frame->path[index];
+    slot->filesystem = VFS_READDIR_FILESYSTEM_UNKNOWN;
+    slot->in_use = 1U;
+    return slot;
+}
+
+static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t service_generation) {
     if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame->struct_size != sizeof(*frame) ||
         frame->operation != X86OS_VFS_SHADOW_FS_READDIR_AT ||
         frame->flags != 0U || frame->path_length == 0U ||
         frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
         frame->path[0U] != '/' || frame->path[frame->path_length] != '\0' ||
-        frame->result != 0) return -22;
+        frame->result != 0 || owner_pid <= 0 || owner_generation == 0U ||
+        service_generation == 0U) return -22;
     for (uint32_t cursor = 0U; cursor < frame->path_length; ++cursor)
         if (frame->path[cursor] == '\0') return -22;
     const uint8_t *input = (const uint8_t *)&frame->info;
@@ -5773,14 +5851,40 @@ static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame) {
     x86os_file_info_t parsed;
     uint8_t *bytes = (uint8_t *)&parsed;
     for (uint32_t index = 0U; index < sizeof(parsed); ++index) bytes[index] = 0U;
-    int status = reist_vfs_shadow_fat_readdir(
-        &io, frame->path, frame->path_length, frame->index, &parsed);
-    if (status == -2)
-        status = reist_vfs_shadow_ext2_readdir(
-            &io, frame->path, frame->path_length, frame->index, &parsed);
+    vfs_readdir_cursor_slot_t *slot = vfs_readdir_cursor_slot(
+        owner_pid, owner_generation, service_generation, frame);
+    int status;
+    if (slot->filesystem == VFS_READDIR_FILESYSTEM_EXT2) {
+        status = reist_vfs_shadow_ext2_readdir_continue(
+            &io, frame->path, frame->path_length, frame->index,
+            &slot->ext2, &parsed);
+        if (status == -2) {
+            vfs_readdir_cursor_zero(&slot->fat, sizeof(slot->fat));
+            status = reist_vfs_shadow_fat_readdir_continue(
+                &io, frame->path, frame->path_length, frame->index,
+                &slot->fat, &parsed);
+            if (status != -2)
+                slot->filesystem = VFS_READDIR_FILESYSTEM_FAT;
+        }
+    } else {
+        status = reist_vfs_shadow_fat_readdir_continue(
+            &io, frame->path, frame->path_length, frame->index,
+            &slot->fat, &parsed);
+        if (status == -2) {
+            vfs_readdir_cursor_zero(&slot->ext2, sizeof(slot->ext2));
+            status = reist_vfs_shadow_ext2_readdir_continue(
+                &io, frame->path, frame->path_length, frame->index,
+                &slot->ext2, &parsed);
+            if (status != -2)
+                slot->filesystem = VFS_READDIR_FILESYSTEM_EXT2;
+        } else {
+            slot->filesystem = VFS_READDIR_FILESYSTEM_FAT;
+        }
+    }
     frame->result = status;
     for (uint32_t index = 0U; index < sizeof(frame->info); ++index)
         ((uint8_t *)&frame->info)[index] = status == 0 ? bytes[index] : 0U;
+    if (status != 0) vfs_readdir_cursor_release(slot);
     return 0;
 }
 
@@ -6227,7 +6331,9 @@ static int vfs_shadow_request(vfs_shadow_request_t *request,
     if (request->stat.operation == X86OS_VFS_SHADOW_FS_READ_AT)
         return vfs_shadow_read_at(&request->read);
     if (request->stat.operation == X86OS_VFS_SHADOW_FS_READDIR_AT)
-        return vfs_shadow_readdir_at(&request->readdir);
+        return vfs_shadow_readdir_at(
+            &request->readdir, owner_pid, owner_generation,
+            service_generation);
     return vfs_shadow_stat(&request->stat);
 }
 

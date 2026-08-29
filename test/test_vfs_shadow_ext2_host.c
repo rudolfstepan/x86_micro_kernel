@@ -7,10 +7,13 @@
 #define TEST_BLOCK_SIZE 1024U
 #define TEST_BLOCKS 128U
 #define TEST_SECTORS (TEST_BLOCKS * 2U)
+#define CURSOR_DIRECTORY_BLOCKS 8U
+#define CURSOR_VISIBLE_ENTRIES (CURSOR_DIRECTORY_BLOCKS * 8U - 2U)
 
 typedef struct {
     uint8_t image[TEST_SECTORS * X86OS_STORAGE_BLOCK_SIZE];
     uint32_t reads;
+    uint32_t directory_reads;
 } test_context_t;
 
 static void put16(uint8_t *data, uint16_t value) {
@@ -123,6 +126,40 @@ static void initialize(test_context_t *context) {
     memcpy(block_at(context, 40U), "deep\n", 5U);
 }
 
+static void cursor_name(char name[8], uint32_t value) {
+    name[0U] = 'f';
+    for (int position = 6; position >= 1; --position) {
+        name[position] = (char)('0' + value % 10U);
+        value /= 10U;
+    }
+    name[7U] = '\0';
+}
+
+static void initialize_cursor_directory(test_context_t *context) {
+    initialize(context);
+    make_inode(context, 13U, 0x41EDU,
+               CURSOR_DIRECTORY_BLOCKS * TEST_BLOCK_SIZE, 23U);
+    put16(inode_at(context, 13U) + 26U, 2U);
+    for (uint32_t logical = 0U; logical < CURSOR_DIRECTORY_BLOCKS; ++logical) {
+        uint32_t block = logical == 0U ? 23U : 40U + logical;
+        put32(inode_at(context, 13U) + 40U + logical * 4U, block);
+        uint8_t *data = block_at(context, block);
+        memset(data, 0, TEST_BLOCK_SIZE);
+        for (uint32_t slot = 0U; slot < 8U; ++slot) {
+            uint32_t ordinal = logical * 8U + slot;
+            if (ordinal == 0U)
+                add_entry(data, slot * 128U, 13U, ".", 2U, 128U);
+            else if (ordinal == 1U)
+                add_entry(data, slot * 128U, 2U, "..", 2U, 128U);
+            else {
+                char name[8];
+                cursor_name(name, ordinal - 2U);
+                add_entry(data, slot * 128U, 14U, name, 1U, 128U);
+            }
+        }
+    }
+}
+
 static int drive_info(void *opaque, uint32_t resource,
                       x86os_drive_info_t *info) {
     (void)opaque;
@@ -139,6 +176,9 @@ static int read_sector(void *opaque, uint32_t resource, uint32_t sector,
     test_context_t *context = opaque;
     if (resource != 1U || sector >= TEST_SECTORS) return -5;
     ++context->reads;
+    uint32_t block = sector / (TEST_BLOCK_SIZE / X86OS_STORAGE_BLOCK_SIZE);
+    if (block == 23U || (block >= 41U && block <= 47U))
+        ++context->directory_reads;
     memcpy(data, context->image + sector * X86OS_STORAGE_BLOCK_SIZE,
            X86OS_STORAGE_BLOCK_SIZE);
     return 0;
@@ -148,6 +188,7 @@ static int stat_path(test_context_t *context, const char *path,
                      x86os_file_info_t *info) {
     const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
     context->reads = 0U;
+    context->directory_reads = 0U;
     return reist_vfs_shadow_ext2_stat(
         &io, path, (uint32_t)strlen(path), info);
 }
@@ -157,6 +198,7 @@ static int read_path(test_context_t *context, const char *path,
                      uint32_t *transferred) {
     const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
     context->reads = 0U;
+    context->directory_reads = 0U;
     return reist_vfs_shadow_ext2_read(
         &io, path, (uint32_t)strlen(path), offset, data, capacity, transferred);
 }
@@ -165,6 +207,7 @@ static int readdir_path(test_context_t *context, const char *path,
                         uint32_t index, x86os_file_info_t *info) {
     const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
     context->reads = 0U;
+    context->directory_reads = 0U;
     return reist_vfs_shadow_ext2_readdir(
         &io, path, (uint32_t)strlen(path), index, info);
 }
@@ -233,6 +276,54 @@ int main(void) {
     if (reist_vfs_shadow_ext2_object_read(
             &object_io, &object, 0U, data, 10U, &transferred) != -116)
         return 27;
+
+    initialize_cursor_directory(&context);
+    const reist_vfs_shadow_io_t cursor_io = {
+        &context, drive_info, read_sector
+    };
+    reist_vfs_shadow_ext2_readdir_cursor_t cursor = {0};
+    context.reads = 0U;
+    context.directory_reads = 0U;
+    for (uint32_t index = 0U; index < CURSOR_VISIBLE_ENTRIES; ++index)
+        if (reist_vfs_shadow_ext2_readdir_continue(
+                &cursor_io, "/mnt/ext2/dir", 13U, index,
+                &cursor, &info) != 0)
+            return 28;
+    if (reist_vfs_shadow_ext2_readdir_continue(
+            &cursor_io, "/mnt/ext2/dir", 13U,
+            CURSOR_VISIBLE_ENTRIES, &cursor, &info) != 1 ||
+        context.directory_reads > (CURSOR_VISIBLE_ENTRIES + 1U) * 2U)
+        return 29;
+    memset(&cursor, 0, sizeof(cursor));
+    if (reist_vfs_shadow_ext2_readdir_continue(
+            &cursor_io, "/mnt/ext2/dir", 13U, 0U,
+            &cursor, &info) != 0)
+        return 30;
+    cursor.logical_block = REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS;
+    cursor.entry_offset = 3U;
+    if (reist_vfs_shadow_ext2_readdir_continue(
+            &cursor_io, "/mnt/ext2/dir", 13U, 1U,
+            &cursor, &info) != 0 || strcmp(info.name, "f000001") != 0)
+        return 31;
+    initialize_cursor_directory(&context);
+    memset(&cursor, 0, sizeof(cursor));
+    if (reist_vfs_shadow_ext2_readdir_continue(
+            &cursor_io, "/mnt/ext2/dir", 13U, 0U,
+            &cursor, &info) != 0)
+        return 32;
+    uint8_t *replacement = block_at(&context, 48U);
+    memset(replacement, 0, TEST_BLOCK_SIZE);
+    for (uint32_t slot = 0U; slot < 8U; ++slot) {
+        char name[8];
+        cursor_name(name, slot);
+        name[0U] = 'r';
+        add_entry(replacement, slot * 128U, 14U, name, 1U, 128U);
+    }
+    put32(inode_at(&context, 13U) + 40U, 48U);
+    if (reist_vfs_shadow_ext2_readdir_continue(
+            &cursor_io, "/mnt/ext2/dir", 13U, 1U,
+            &cursor, &info) != 0 || strcmp(info.name, "r000001") != 0)
+        return 33;
 
     initialize(&context);
     put16(block_at(&context, 1U) + 56U, 0U);

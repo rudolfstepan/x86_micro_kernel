@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1d-storage-readdir-continuation"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11690,7 +11690,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1d-storage-readdir-continuation"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Keep sequential Ring-3 directory enumeration linear"
@@ -11746,4 +11746,10 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "storage: keep directory enumeration linear"
-evidence = []
+evidence = [
+  "All 46 frozen targeted checks passed: FAT and EXT2 parser behavior, storage-service ownership and packaging, authoritative read clients, LS bounds, ATA cache contracts and userspace syscall boundaries.",
+  "The FAT host campaign enumerated 128 visible entries plus EOF with at most 129 directory-data-sector reads and fewer than four total mediated reads per accepted entry; malformed cursors and a changed cluster chain discarded the hint.",
+  "The EXT2 host campaign enumerated 62 visible entries plus EOF with at most 126 directory-sector reads in aggregate; malformed cursor offsets and a changed directory inode block map forced a bounded cold scan.",
+  "The one-job Ring-3 toolchain built LS.PRG and STORAGE.PRG successfully; STORAGE.PRG is 196608 bytes and remains below the fixed 224-KiB service-image limit.",
+  "The final QEMU VGA package build passed in 70 seconds without starting a VM. Operation 7 and its 512-byte frame remain unchanged and LS.PRG contains no kernel readdir fallback."
+]

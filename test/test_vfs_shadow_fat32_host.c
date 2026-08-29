@@ -17,10 +17,14 @@
 #define FAT12_SECTORS 2880U
 #define FAT12_ROOT_START 19U
 #define FAT12_DATA_START 33U
+#define CURSOR_FIRST_CLUSTER 6200U
+#define CURSOR_CLUSTER_COUNT 8U
+#define CURSOR_VISIBLE_ENTRIES 128U
 
 typedef struct {
     uint8_t image[TEST_SECTORS * X86OS_STORAGE_BLOCK_SIZE];
     uint32_t reads;
+    uint32_t directory_reads;
     uint32_t sectors;
 } test_context_t;
 
@@ -174,6 +178,51 @@ static void initialize_fat32(test_context_t *context) {
     make_entry(nested, app, 0x20U, 5U, 1234U);
 }
 
+static void make_cursor_name(char name[11], uint32_t value) {
+    static const char prefix[11] =
+        {'C','0','0','0','0','0','0','0','T','X','T'};
+    memcpy(name, prefix, sizeof(prefix));
+    for (int position = 7; position >= 1; --position) {
+        name[position] = (char)('0' + value % 10U);
+        value /= 10U;
+    }
+}
+
+static void initialize_cursor_directory(test_context_t *context) {
+    initialize_fat32(context);
+    for (uint32_t copy = 0U; copy < 2U; ++copy) {
+        uint8_t *fat = context->image +
+            (TEST_RESERVED + copy * TEST_FAT_SECTORS) *
+                X86OS_STORAGE_BLOCK_SIZE;
+        put32(fat + 2U * 4U, CURSOR_FIRST_CLUSTER);
+        for (uint32_t index = 0U; index < CURSOR_CLUSTER_COUNT; ++index) {
+            uint32_t cluster = CURSOR_FIRST_CLUSTER + index;
+            put32(fat + cluster * 4U,
+                  index + 1U == CURSOR_CLUSTER_COUNT
+                      ? 0x0FFFFFFFU : cluster + 1U);
+        }
+    }
+    uint32_t generated = 0U;
+    uint8_t *root = context->image +
+        TEST_DATA_START * X86OS_STORAGE_BLOCK_SIZE;
+    for (uint32_t slot = 8U; slot < 16U; ++slot) {
+        char name[11];
+        make_cursor_name(name, generated++);
+        make_entry(root + slot * 32U, name, 0x20U, 3U, generated);
+    }
+    for (uint32_t chain = 0U; chain < CURSOR_CLUSTER_COUNT; ++chain) {
+        uint32_t cluster = CURSOR_FIRST_CLUSTER + chain;
+        uint8_t *sector = context->image +
+            (TEST_DATA_START + cluster - 2U) * X86OS_STORAGE_BLOCK_SIZE;
+        for (uint32_t slot = 0U; slot < 16U &&
+             generated + 6U < CURSOR_VISIBLE_ENTRIES; ++slot) {
+            char name[11];
+            make_cursor_name(name, generated++);
+            make_entry(sector + slot * 32U, name, 0x20U, 3U, generated);
+        }
+    }
+}
+
 static void set_fat12_entry(uint8_t *fat, uint32_t cluster,
                             uint16_t value) {
     uint32_t offset = cluster + cluster / 2U;
@@ -272,6 +321,11 @@ static int read_sector(void *opaque, uint32_t resource, uint32_t sector,
     test_context_t *context = opaque;
     if (resource > 1U || sector >= context->sectors) return -1;
     ++context->reads;
+    if (sector == TEST_DATA_START ||
+        (sector >= TEST_DATA_START + CURSOR_FIRST_CLUSTER - 2U &&
+         sector < TEST_DATA_START + CURSOR_FIRST_CLUSTER - 2U +
+             CURSOR_CLUSTER_COUNT))
+        ++context->directory_reads;
     memcpy(data, context->image + sector * X86OS_STORAGE_BLOCK_SIZE,
            X86OS_STORAGE_BLOCK_SIZE);
     return 0;
@@ -285,6 +339,7 @@ static int stat_path(test_context_t *context, const char *path,
         .read_sector = read_sector,
     };
     context->reads = 0U;
+    context->directory_reads = 0U;
     return reist_vfs_shadow_fat_stat(
         &io, path, (uint32_t)strlen(path), info);
 }
@@ -297,6 +352,7 @@ static int fat32_stat_path(test_context_t *context, const char *path,
         .read_sector = read_sector,
     };
     context->reads = 0U;
+    context->directory_reads = 0U;
     return reist_vfs_shadow_fat32_stat(
         &io, path, (uint32_t)strlen(path), info);
 }
@@ -306,6 +362,7 @@ static int read_path(test_context_t *context, const char *path,
                      uint32_t *transferred) {
     const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
     context->reads = 0U;
+    context->directory_reads = 0U;
     return reist_vfs_shadow_fat_read(
         &io, path, (uint32_t)strlen(path), offset, data, capacity, transferred);
 }
@@ -314,6 +371,7 @@ static int readdir_path(test_context_t *context, const char *path,
                         uint32_t index, x86os_file_info_t *info) {
     const reist_vfs_shadow_io_t io = {context, drive_info, read_sector};
     context->reads = 0U;
+    context->directory_reads = 0U;
     return reist_vfs_shadow_fat_readdir(
         &io, path, (uint32_t)strlen(path), index, info);
 }
@@ -426,6 +484,50 @@ int main(void) {
     if (stat_path(&context, "/../README.TXT", &info) != -22) return 7;
     context.image[510U] = 0U;
     if (stat_path(&context, "/README.TXT", &info) != -2) return 8;
+    initialize_cursor_directory(&context);
+    const reist_vfs_shadow_io_t cursor_io = {
+        &context, drive_info, read_sector
+    };
+    reist_vfs_shadow_fat_readdir_cursor_t cursor = {0};
+    context.reads = 0U;
+    context.directory_reads = 0U;
+    for (uint32_t index = 0U; index < CURSOR_VISIBLE_ENTRIES; ++index)
+        if (reist_vfs_shadow_fat_readdir_continue(
+                &cursor_io, "/", 1U, index, &cursor, &info) != 0)
+            return 35;
+    if (reist_vfs_shadow_fat_readdir_continue(
+            &cursor_io, "/", 1U, CURSOR_VISIBLE_ENTRIES,
+            &cursor, &info) != 1 ||
+        context.directory_reads > CURSOR_VISIBLE_ENTRIES + 1U ||
+        context.reads > CURSOR_VISIBLE_ENTRIES * 4U)
+        return 36;
+    memset(&cursor, 0, sizeof(cursor));
+    if (reist_vfs_shadow_fat_readdir_continue(
+            &cursor_io, "/", 1U, 0U, &cursor, &info) != 0)
+        return 37;
+    cursor.cluster = CURSOR_FIRST_CLUSTER + CURSOR_CLUSTER_COUNT + 10U;
+    cursor.cluster_depth = 1U;
+    cursor.sector_index = 0U;
+    cursor.entry_offset = 0U;
+    if (reist_vfs_shadow_fat_readdir_continue(
+            &cursor_io, "/", 1U, 1U, &cursor, &info) != 0 ||
+        strcmp(info.name, "USR") != 0)
+        return 38;
+    initialize_cursor_directory(&context);
+    memset(&cursor, 0, sizeof(cursor));
+    for (uint32_t index = 0U; index <= 14U; ++index)
+        if (reist_vfs_shadow_fat_readdir_continue(
+                &cursor_io, "/", 1U, index, &cursor, &info) != 0)
+            return 39;
+    for (uint32_t copy = 0U; copy < 2U; ++copy) {
+        uint8_t *fat = context.image +
+            (TEST_RESERVED + copy * TEST_FAT_SECTORS) *
+                X86OS_STORAGE_BLOCK_SIZE;
+        put32(fat + 2U * 4U, 0x0FFFFFFFU);
+    }
+    if (reist_vfs_shadow_fat_readdir_continue(
+            &cursor_io, "/", 1U, 15U, &cursor, &info) != 1)
+        return 40;
     initialize_fat12(&context);
     if (stat_path(&context, "/HOTPLUG.TXT", &info) != 0 ||
         strcmp(info.name, "HOTPLUG.TXT") != 0 || info.size != 14U ||

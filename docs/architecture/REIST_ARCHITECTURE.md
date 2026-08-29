@@ -304,7 +304,7 @@ Append-only Operation 5 erweitert diesen autoritativen read-only Vertrag auf
 EXT2. Der Ring-3-Dienst wählt weiterhin das längste Mountpräfix und versucht
 nur die unabhängigen FAT12/FAT32- beziehungsweise EXT2-Parser. Der EXT2-Subset
 ist fest auf Revision 0/1, 1--4-KiB-Blöcke, lineare Verzeichnisse, 16
-Pfadkomponenten, 32 Verzeichnisblöcke und 128 vermittelte Sektorreads begrenzt.
+Pfadkomponenten, 32 Verzeichnisblöcke und 192 vermittelte Sektorreads begrenzt.
 Direkte und einfach-indirekte Directory-Blöcke sind unterstützt; HTree,
 Extents, Symlinkauflösung, 64-Bit-Größen und unbekannte Features werden
 fail-closed abgewiesen. Auch dieser Pfad ruft `SYS_STAT` nicht auf.
@@ -316,7 +316,19 @@ Antwortframes werden validiert; Fehler publizieren weder Teilbytes noch einen
 Teileintrag. Ein prozesslokaler Vier-Slot-Layer ergänzt generationcodierte,
 kanonisch pfadgebundene Read-only-Sessions mit Offset, Seek, Fstat und Close.
 Er veröffentlicht Offsetänderungen erst nach Erfolg und legt einen Slot bei
-Generationserschöpfung still. Append-only Frameoperationen 8 bis 11 ersetzen
+Generationserschöpfung still.
+Operation 7 behält ihren bytegleichen Einzelentry-Rahmen, vermeidet aber für
+strikt aufeinanderfolgende Indizes den quadratischen Kaltlauf. Der
+Storage-Dienst besitzt genau acht ersetzbare Hinweise, gebunden an exakte
+Client-/Servicegeneration und den vollständigen normalisierten Pfad. FAT
+validiert Medium, Verzeichniseintrag und die Clusterkette bis zur gemerkten
+Position erneut; EXT2 vergleicht Medium, Inodegeneration und den vollständigen
+Inode-Fingerprint und löst den aktuellen Block wieder aus dem frisch gelesenen
+Inode auf. Sprünge, Ersetzung, Abweichung, EOF und Fehler verwerfen den
+Hinweis. Dadurch bleibt er reine Leistungsinformation ohne zusätzliche Pfad-
+oder Blockautorität. `LS.PRG` akzeptiert höchstens 128 Einträge unter einer
+absoluten Fünf-Sekunden-Frist mit maximal einsekündigen Einzelrequests.
+Append-only Frameoperationen 8 bis 11 ersetzen
 inzwischen die Pfadwiederauflösung durch sechzehn feste serviceeigene Slots.
 Jeder Slot ist auf Client-PID/-Generation, Slotgeneration und die vollständige
 Servicegeneration gebunden; pro Client sind vier Slots zulässig, tote Owner

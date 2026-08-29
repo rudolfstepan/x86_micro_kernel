@@ -17,6 +17,7 @@
 #define REIST_VFS_SHADOW_OBJECT_VERSION 1U
 #define REIST_VFS_SHADOW_OBJECT_FAT 1U
 #define REIST_VFS_SHADOW_OBJECT_EXT2 2U
+#define REIST_VFS_SHADOW_READDIR_CURSOR_VERSION 1U
 
 typedef struct {
     uint32_t version;
@@ -42,6 +43,29 @@ typedef struct {
     reist_vfs_shadow_read_sector_fn read_sector;
 } reist_vfs_shadow_io_t;
 
+/**
+ * Replaceable parser hint for one sequential FAT directory walk.
+ *
+ * The hint carries no authority.  Every use resolves the path and validates
+ * the medium, directory identity and complete cluster prefix again.  Zeroed
+ * or malformed state selects the ordinary bounded cold scan.
+ */
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t next_index;
+    uint32_t resource;
+    uint32_t volume_signature;
+    uint32_t directory_generation;
+    uint32_t directory_cluster;
+    uint32_t cluster;
+    uint32_t cluster_depth;
+    uint32_t sector_index;
+    uint32_t entry_offset;
+    uint32_t fat_type;
+    uint32_t active;
+} reist_vfs_shadow_fat_readdir_cursor_t;
+
 /** Returns the public SYS_STAT error convention: 0, -2, -5, -22 or -110. */
 int reist_vfs_shadow_fat32_stat(const reist_vfs_shadow_io_t *io,
                                 const char *absolute_path,
@@ -64,6 +88,12 @@ int reist_vfs_shadow_fat_readdir(const reist_vfs_shadow_io_t *io,
                                  const char *absolute_path,
                                  uint32_t path_length, uint32_t index,
                                  x86os_file_info_t *info);
+
+int reist_vfs_shadow_fat_readdir_continue(
+    const reist_vfs_shadow_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint32_t index,
+    reist_vfs_shadow_fat_readdir_cursor_t *cursor,
+    x86os_file_info_t *info);
 
 int reist_vfs_shadow_fat_object_open(
     const reist_vfs_shadow_io_t *io, const char *absolute_path,

@@ -25,14 +25,15 @@ class AtaDriverSourceTests(unittest.TestCase):
         self.assertNotIn("pit_delay(50)", read)
         self.assertIn("wait_for_drive_ready", read)
 
-    def test_fat32_directory_entries_are_read_in_batches(self):
+    def test_ls_uses_authoritative_ring3_directory_reads(self):
         fat32 = (ROOT / "fs/fat32/fat32_vfs_adapter.c").read_text(
             encoding="utf-8"
         )
         ls = (ROOT / "userspace/programs/ls.c").read_text(encoding="utf-8")
         self.assertIn("fat32_vfs_readdir_batch_unlocked", fat32)
         self.assertIn(".readdir_batch = fat32_vfs_readdir_batch", fat32)
-        self.assertIn("x86os_readdir_batch", ls)
+        self.assertIn("reist_vfs_readdir_at(", ls)
+        self.assertNotIn("x86os_readdir", ls)
 
 
 if __name__ == "__main__":

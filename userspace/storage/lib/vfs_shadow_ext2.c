@@ -499,67 +499,179 @@ int reist_vfs_shadow_ext2_read(const reist_vfs_shadow_io_t *io,
     return status;
 }
 
-int reist_vfs_shadow_ext2_readdir(const reist_vfs_shadow_io_t *io,
-                                  const char *absolute_path,
-                                  uint32_t path_length, uint32_t index,
-                                  x86os_file_info_t *info) {
-    if (info == 0) return -22;
+static void ext2_readdir_cursor_reset(
+        reist_vfs_shadow_ext2_readdir_cursor_t *cursor) {
+    if (cursor != 0) ext2_zero(cursor, sizeof(*cursor));
+}
+
+static int ext2_readdir_resume_valid(
+        const ext2_shadow_volume_t *volume,
+        const ext2_shadow_inode_t *directory, uint32_t directory_inode,
+        uint32_t blocks, uint32_t index,
+        const reist_vfs_shadow_ext2_readdir_cursor_t *cursor) {
+    if (volume == 0 || directory == 0 || cursor == 0 ||
+        cursor->version != REIST_VFS_SHADOW_READDIR_CURSOR_VERSION ||
+        cursor->struct_size != sizeof(*cursor) || cursor->active != 1U ||
+        cursor->next_index != index || cursor->resource != volume->resource ||
+        cursor->volume_signature != volume->signature ||
+        cursor->directory_inode != directory_inode ||
+        cursor->directory_generation != ext2_get32(directory->bytes + 100U) ||
+        cursor->directory_signature !=
+            ext2_signature(directory->bytes, sizeof(directory->bytes)) ||
+        cursor->directory_size != ext2_get32(directory->bytes + 4U) ||
+        cursor->logical_block > blocks ||
+        (cursor->logical_block == blocks && cursor->entry_offset != 0U) ||
+        cursor->entry_offset >= volume->block_size ||
+        (cursor->entry_offset & 3U) != 0U) return 0;
+    return 1;
+}
+
+static void ext2_readdir_cursor_publish(
+        reist_vfs_shadow_ext2_readdir_cursor_t *cursor,
+        const ext2_shadow_volume_t *volume,
+        const ext2_shadow_inode_t *directory, uint32_t directory_inode,
+        uint32_t index, uint32_t logical_block, uint32_t entry_offset) {
+    ext2_readdir_cursor_reset(cursor);
+    if (index == UINT32_MAX) return;
+    cursor->version = REIST_VFS_SHADOW_READDIR_CURSOR_VERSION;
+    cursor->struct_size = sizeof(*cursor);
+    cursor->next_index = index + 1U;
+    cursor->resource = volume->resource;
+    cursor->volume_signature = volume->signature;
+    cursor->directory_inode = directory_inode;
+    cursor->directory_generation = ext2_get32(directory->bytes + 100U);
+    cursor->directory_signature =
+        ext2_signature(directory->bytes, sizeof(directory->bytes));
+    cursor->directory_size = ext2_get32(directory->bytes + 4U);
+    cursor->logical_block = logical_block;
+    cursor->entry_offset = entry_offset;
+    cursor->active = 1U;
+}
+
+int reist_vfs_shadow_ext2_readdir_continue(
+        const reist_vfs_shadow_io_t *io, const char *absolute_path,
+        uint32_t path_length, uint32_t index,
+        reist_vfs_shadow_ext2_readdir_cursor_t *cursor,
+        x86os_file_info_t *info) {
+    if (cursor == 0 || info == 0) return -22;
     ext2_zero(info, sizeof(*info));
     ext2_shadow_volume_t volume;
     ext2_shadow_inode_t directory;
     char visible[256];
+    uint32_t directory_inode = 0U;
     int status = ext2_resolve(io, absolute_path, path_length, &volume,
-                              &directory, visible, 0);
-    if (status != 0) return status;
-    if ((ext2_get16(directory.bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFDIR)
+                              &directory, visible, &directory_inode);
+    if (status != 0) {
+        ext2_readdir_cursor_reset(cursor);
+        return status;
+    }
+    if ((ext2_get16(directory.bytes + 0U) & EXT2_S_IFMT) != EXT2_S_IFDIR) {
+        ext2_readdir_cursor_reset(cursor);
         return -20;
+    }
     uint32_t size = ext2_get32(directory.bytes + 4U);
     uint32_t blocks = ext2_div_ceil_u32(size, volume.block_size);
-    if (blocks == 0U || blocks > REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS)
+    if (blocks == 0U || blocks > REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS) {
+        ext2_readdir_cursor_reset(cursor);
         return -110;
+    }
     uint32_t current = 0U;
+    uint32_t first_logical = 0U;
+    uint32_t first_offset = 0U;
+    if (ext2_readdir_resume_valid(
+            &volume, &directory, directory_inode, blocks, index, cursor)) {
+        current = index;
+        first_logical = cursor->logical_block;
+        first_offset = cursor->entry_offset;
+    } else {
+        ext2_readdir_cursor_reset(cursor);
+    }
     uint8_t block_data[REIST_VFS_SHADOW_EXT2_MAX_BLOCK_SIZE];
-    for (uint32_t logical = 0U; logical < blocks; ++logical) {
+    for (uint32_t logical = first_logical; logical < blocks; ++logical) {
         uint32_t block = 0U;
         status = ext2_inode_block(&volume, &directory, logical, &block);
-        if (status != 0) return status;
+        if (status != 0) {
+            ext2_readdir_cursor_reset(cursor);
+            return status;
+        }
         status = ext2_read_block(&volume, block, block_data);
-        if (status != 0) return status;
+        if (status != 0) {
+            ext2_readdir_cursor_reset(cursor);
+            return status;
+        }
         uint32_t remaining = size - logical * volume.block_size;
         uint32_t limit = remaining < volume.block_size
             ? remaining : volume.block_size;
-        for (uint32_t cursor = 0U; cursor < limit;) {
-            if (limit - cursor < 8U) return -5;
-            uint32_t child_number = ext2_get32(block_data + cursor);
-            uint32_t record_length = ext2_get16(block_data + cursor + 4U);
-            uint32_t name_length = volume.has_file_type != 0U
-                ? block_data[cursor + 6U]
-                : ext2_get16(block_data + cursor + 6U);
-            if (record_length < 8U || (record_length & 3U) != 0U ||
-                record_length > limit - cursor || name_length > 255U ||
-                name_length > record_length - 8U ||
-                (child_number != 0U && child_number > volume.inodes_count))
+        uint32_t block_cursor = logical == first_logical ? first_offset : 0U;
+        if (block_cursor >= limit || (block_cursor & 3U) != 0U) {
+            ext2_readdir_cursor_reset(cursor);
+            return -5;
+        }
+        for (; block_cursor < limit;) {
+            if (limit - block_cursor < 8U) {
+                ext2_readdir_cursor_reset(cursor);
                 return -5;
-            const char *name = (const char *)(block_data + cursor + 8U);
+            }
+            uint32_t child_number = ext2_get32(block_data + block_cursor);
+            uint32_t record_length =
+                ext2_get16(block_data + block_cursor + 4U);
+            uint32_t name_length = volume.has_file_type != 0U
+                ? block_data[block_cursor + 6U]
+                : ext2_get16(block_data + block_cursor + 6U);
+            if (record_length < 8U || (record_length & 3U) != 0U ||
+                record_length > limit - block_cursor || name_length > 255U ||
+                name_length > record_length - 8U ||
+                (child_number != 0U && child_number > volume.inodes_count)) {
+                ext2_readdir_cursor_reset(cursor);
+                return -5;
+            }
+            const char *name =
+                (const char *)(block_data + block_cursor + 8U);
             int dot = name_length == 1U && name[0] == '.';
             int dotdot = name_length == 2U && name[0] == '.' && name[1] == '.';
             if (child_number != 0U && !dot && !dotdot) {
-                if (!ext2_component_valid(name, name_length)) return -5;
+                if (!ext2_component_valid(name, name_length)) {
+                    ext2_readdir_cursor_reset(cursor);
+                    return -5;
+                }
                 if (current++ == index) {
                     ext2_shadow_inode_t child;
                     status = ext2_read_inode(&volume, child_number, &child);
-                    if (status != 0) return status;
+                    if (status != 0) {
+                        ext2_readdir_cursor_reset(cursor);
+                        return status;
+                    }
                     char child_name[256];
                     ext2_zero(child_name, sizeof(child_name));
                     ext2_copy(child_name, name, name_length);
                     ext2_inode_info(&child, child_name, info);
+                    uint32_t next_logical = logical;
+                    uint32_t next_offset = block_cursor + record_length;
+                    if (next_offset == limit) {
+                        ++next_logical;
+                        next_offset = 0U;
+                    }
+                    ext2_readdir_cursor_publish(
+                        cursor, &volume, &directory, directory_inode, index,
+                        next_logical, next_offset);
                     return 0;
                 }
             }
-            cursor += record_length;
+            block_cursor += record_length;
         }
     }
+    ext2_readdir_cursor_reset(cursor);
     return 1;
+}
+
+int reist_vfs_shadow_ext2_readdir(const reist_vfs_shadow_io_t *io,
+                                  const char *absolute_path,
+                                  uint32_t path_length, uint32_t index,
+                                  x86os_file_info_t *info) {
+    reist_vfs_shadow_ext2_readdir_cursor_t cursor;
+    ext2_zero(&cursor, sizeof(cursor));
+    return reist_vfs_shadow_ext2_readdir_continue(
+        io, absolute_path, path_length, index, &cursor, info);
 }
 
 static int ext2_object_inode(const reist_vfs_shadow_io_t *io,

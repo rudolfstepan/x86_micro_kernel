@@ -13,6 +13,9 @@
 #define LS_COLUMNS 4U
 #define LS_COLUMN_WIDTH 19U
 #define LS_PAGE_LINES 22U
+#define LS_DIRECTORY_ENTRY_CAPACITY 128U
+#define LS_DEADLINE_MS 5000U
+#define LS_REQUEST_TIMEOUT_MS 1000U
 
 typedef struct {
     int long_format;
@@ -22,6 +25,16 @@ typedef struct {
     int human_sizes;
     int pager;
 } ls_options_t;
+
+static int remaining_timeout(uint64_t deadline, uint32_t *timeout) {
+    uint64_t now = 0U;
+    if (timeout == 0 || x86os_monotonic_ms(&now) != 0 || now >= deadline)
+        return -1;
+    uint64_t remaining = deadline - now;
+    *timeout = remaining < LS_REQUEST_TIMEOUT_MS
+        ? (uint32_t)remaining : LS_REQUEST_TIMEOUT_MS;
+    return *timeout != 0U ? 0 : -1;
+}
 
 static unsigned int text_length(const char *text) {
     unsigned int length = 0;
@@ -162,10 +175,25 @@ int main(int argc, char **argv) {
     if (parsed > 0) return 0;
     if (parsed < 0) { x86os_puts("ls: invalid option or too many paths\n"); usage(); return 2; }
 
+    uint64_t started = 0U;
+    if (x86os_monotonic_ms(&started) != 0) {
+        x86os_puts("ls: monotonic clock unavailable\n");
+        return 1;
+    }
+    uint64_t deadline = UINT64_MAX - started < LS_DEADLINE_MS
+        ? UINT64_MAX : started + LS_DEADLINE_MS;
+    uint32_t timeout = 0U;
+    if (remaining_timeout(deadline, &timeout) != 0) {
+        x86os_puts("ls: directory deadline reached\n");
+        return 1;
+    }
     x86os_file_info_t target;
-    if (reist_vfs_stat(path, &target,
-                       REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) < 0) {
-        x86os_puts("ls: path not found\n");
+    int stat_result = reist_vfs_stat(path, &target, timeout);
+    if (stat_result < 0) {
+        if (stat_result == -110)
+            x86os_puts("ls: directory deadline reached\n");
+        else
+            x86os_puts("ls: path not found\n");
         return 1;
     }
     uint32_t column = 0;
@@ -179,16 +207,26 @@ int main(int argc, char **argv) {
         (void)emit_entry(&target, &options, &column, &lines);
     } else {
         for (uint32_t index = 0U;; ++index) {
+            if (remaining_timeout(deadline, &timeout) != 0) {
+                x86os_puts("ls: directory deadline reached\n");
+                return 1;
+            }
             x86os_file_info_t entry;
             int result = reist_vfs_readdir_at(
-                path, index, &entry, REIST_VFS_READ_DEFAULT_TIMEOUT_MS);
-            if (result < 0) { x86os_puts("ls: read error\n"); return 1; }
+                path, index, &entry, timeout);
+            if (result < 0) {
+                if (result == -110)
+                    x86os_puts("ls: directory deadline reached\n");
+                else
+                    x86os_puts("ls: read error\n");
+                return 1;
+            }
             if (result == 0) break;
-            if (!emit_entry(&entry, &options, &column, &lines)) return 0;
-            if (index == UINT32_MAX) {
+            if (index >= LS_DIRECTORY_ENTRY_CAPACITY) {
                 x86os_puts("ls: directory is too large\n");
                 return 1;
             }
+            if (!emit_entry(&entry, &options, &column, &lines)) return 0;
         }
     }
     if (column != 0U) x86os_putchar('\n');

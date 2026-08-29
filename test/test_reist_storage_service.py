@@ -94,6 +94,13 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("x86os_process_identity_of", service)
         self.assertIn("X86OS_VFS_SHADOW_FS_READ_AT", service)
         self.assertIn("X86OS_VFS_SHADOW_FS_READDIR_AT", service)
+        self.assertIn("VFS_READDIR_CURSOR_CAPACITY 8U", service)
+        self.assertIn("vfs_readdir_cursor_slot", service)
+        self.assertIn("slot->owner_generation", service)
+        self.assertIn("slot->service_generation", service)
+        self.assertIn("slot->path_length", service)
+        self.assertIn("reist_vfs_shadow_fat_readdir_continue", service)
+        self.assertIn("reist_vfs_shadow_ext2_readdir_continue", service)
         self.assertIn("vfs_shadow_fat32.c", read("scripts/build_system_programs.py"))
         self.assertIn('"STORAGE.PRG"', read("scripts/build_system_programs.py"))
         self.assertEqual(read("Makefile").count(

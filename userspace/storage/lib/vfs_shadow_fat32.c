@@ -870,8 +870,12 @@ int reist_vfs_shadow_fat_read(const reist_vfs_shadow_io_t *io,
 static int shadow_readdir_sector(const uint8_t sector[512], uint32_t wanted,
                                  uint32_t *current, shadow_lfn_t *lfn,
                                  shadow_dir_entry_t *entry,
-                                 char visible[256]) {
-    for (uint32_t offset = 0U; offset < 512U; offset += 32U) {
+                                 char visible[256], uint32_t start_offset,
+                                 uint32_t *next_offset) {
+    if (start_offset > 512U || (start_offset & 31U) != 0U ||
+        next_offset == 0) return -22;
+    *next_offset = start_offset;
+    for (uint32_t offset = start_offset; offset < 512U; offset += 32U) {
         const uint8_t *candidate = sector + offset;
         if (candidate[0U] == 0x00U) return 2;
         if (candidate[0U] == 0xE5U) { shadow_lfn_reset(lfn); continue; }
@@ -900,73 +904,286 @@ static int shadow_readdir_sector(const uint8_t sector[512], uint32_t wanted,
             *entry = parsed;
             shadow_zero(visible, 256U);
             shadow_copy(visible, resolved, length + 1U);
+            *next_offset = offset + 32U;
             return 1;
         }
         shadow_lfn_reset(lfn);
     }
+    *next_offset = 512U;
     return 0;
 }
 
-int reist_vfs_shadow_fat_readdir(const reist_vfs_shadow_io_t *io,
-                                 const char *absolute_path,
-                                 uint32_t path_length, uint32_t index,
-                                 x86os_file_info_t *info) {
-    if (info == 0) return -22;
+static void shadow_readdir_cursor_reset(
+        reist_vfs_shadow_fat_readdir_cursor_t *cursor) {
+    if (cursor != 0) shadow_zero(cursor, sizeof(*cursor));
+}
+
+static int shadow_readdir_chain_position(
+        shadow_volume_t *volume, uint32_t directory,
+        const reist_vfs_shadow_fat_readdir_cursor_t *cursor,
+        uint32_t visited[REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS],
+        uint32_t *visited_count, uint32_t *cluster) {
+    if (volume == 0 || cursor == 0 || visited == 0 ||
+        visited_count == 0 || cluster == 0 ||
+        cursor->cluster_depth >= REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS)
+        return 0;
+    uint32_t current = directory;
+    uint32_t count = 0U;
+    for (uint32_t depth = 0U; depth <= cursor->cluster_depth; ++depth) {
+        if (!shadow_cluster_valid(volume, current) ||
+            count >= REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS) return 0;
+        for (uint32_t seen = 0U; seen < count; ++seen)
+            if (visited[seen] == current) return 0;
+        visited[count++] = current;
+        if (depth == cursor->cluster_depth) {
+            if (current != cursor->cluster) return 0;
+            *visited_count = count;
+            *cluster = current;
+            return 1;
+        }
+        uint32_t next = 0U;
+        int status = shadow_next_cluster(volume, current, &next);
+        if (status != 0) return status;
+        if (shadow_end_of_chain(volume, next) ||
+            shadow_invalid_link(volume, next) ||
+            !shadow_cluster_valid(volume, next)) return 0;
+        current = next;
+    }
+    return 0;
+}
+
+static int shadow_readdir_resume_valid(
+        shadow_volume_t *volume, const shadow_dir_entry_t *directory_entry,
+        uint32_t directory, uint32_t index,
+        const reist_vfs_shadow_fat_readdir_cursor_t *cursor,
+        uint32_t visited[REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS],
+        uint32_t *visited_count, uint32_t *cluster) {
+    if (volume == 0 || directory_entry == 0 || cursor == 0 ||
+        cursor->version != REIST_VFS_SHADOW_READDIR_CURSOR_VERSION ||
+        cursor->struct_size != sizeof(*cursor) || cursor->active != 1U ||
+        cursor->next_index != index || cursor->resource != volume->resource ||
+        cursor->volume_signature != volume->signature ||
+        cursor->directory_generation !=
+            shadow_entry_generation(directory_entry->bytes) ||
+        cursor->directory_cluster != directory ||
+        cursor->fat_type != volume->fat_type || cursor->entry_offset > 512U ||
+        (cursor->entry_offset & 31U) != 0U) return 0;
+    if (volume->fat_type == FAT_TYPE_12 && directory == 0U) {
+        if (cursor->cluster != 0U || cursor->cluster_depth != 0U ||
+            cursor->sector_index > volume->root_dir_sectors ||
+            (cursor->sector_index == volume->root_dir_sectors &&
+             cursor->entry_offset != 0U)) return 0;
+        *visited_count = 0U;
+        *cluster = 0U;
+        return 1;
+    }
+    if (cursor->sector_index > volume->sectors_per_cluster ||
+        (cursor->sector_index == volume->sectors_per_cluster &&
+         cursor->entry_offset != 0U)) return 0;
+    return shadow_readdir_chain_position(
+        volume, directory, cursor, visited, visited_count, cluster);
+}
+
+static void shadow_readdir_cursor_publish(
+        reist_vfs_shadow_fat_readdir_cursor_t *cursor,
+        const shadow_volume_t *volume,
+        const shadow_dir_entry_t *directory_entry, uint32_t directory,
+        uint32_t index, uint32_t cluster, uint32_t cluster_depth,
+        uint32_t sector_index, uint32_t entry_offset) {
+    shadow_readdir_cursor_reset(cursor);
+    if (index == UINT32_MAX) return;
+    cursor->version = REIST_VFS_SHADOW_READDIR_CURSOR_VERSION;
+    cursor->struct_size = sizeof(*cursor);
+    cursor->next_index = index + 1U;
+    cursor->resource = volume->resource;
+    cursor->volume_signature = volume->signature;
+    cursor->directory_generation =
+        shadow_entry_generation(directory_entry->bytes);
+    cursor->directory_cluster = directory;
+    cursor->cluster = cluster;
+    cursor->cluster_depth = cluster_depth;
+    cursor->sector_index = sector_index;
+    cursor->entry_offset = entry_offset;
+    cursor->fat_type = volume->fat_type;
+    cursor->active = 1U;
+}
+
+int reist_vfs_shadow_fat_readdir_continue(
+        const reist_vfs_shadow_io_t *io, const char *absolute_path,
+        uint32_t path_length, uint32_t index,
+        reist_vfs_shadow_fat_readdir_cursor_t *cursor,
+        x86os_file_info_t *info) {
+    if (cursor == 0 || info == 0) return -22;
     shadow_zero(info, sizeof(*info));
     shadow_volume_t volume;
     shadow_dir_entry_t directory_entry;
     char visible[256];
     int status = shadow_resolve(io, absolute_path, path_length, &volume,
                                 &directory_entry, visible, 0, 0);
-    if (status != 0) return status;
-    if ((directory_entry.bytes[11U] & FAT32_ATTR_DIRECTORY) == 0U) return -20;
+    if (status != 0) {
+        shadow_readdir_cursor_reset(cursor);
+        return status;
+    }
+    if ((directory_entry.bytes[11U] & FAT32_ATTR_DIRECTORY) == 0U) {
+        shadow_readdir_cursor_reset(cursor);
+        return -20;
+    }
     uint32_t directory = 0U;
-    if (shadow_entry_cluster(&volume, &directory_entry, &directory) != 0)
+    if (shadow_entry_cluster(&volume, &directory_entry, &directory) != 0) {
+        shadow_readdir_cursor_reset(cursor);
         return -5;
+    }
     uint32_t current = 0U;
+    uint32_t cluster = directory;
+    uint32_t cluster_depth = 0U;
+    uint32_t sector_index = 0U;
+    uint32_t entry_offset = 0U;
+    uint32_t visited[REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS];
+    uint32_t visited_count = 0U;
+    int resume = shadow_readdir_resume_valid(
+        &volume, &directory_entry, directory, index, cursor, visited,
+        &visited_count, &cluster);
+    if (resume < 0) {
+        shadow_readdir_cursor_reset(cursor);
+        return resume;
+    }
+    if (resume != 0) {
+        current = index;
+        cluster_depth = cursor->cluster_depth;
+        sector_index = cursor->sector_index;
+        entry_offset = cursor->entry_offset;
+    } else {
+        shadow_readdir_cursor_reset(cursor);
+    }
     shadow_lfn_t lfn;
     shadow_lfn_reset(&lfn);
     uint8_t sector[512];
     shadow_dir_entry_t found;
     if (volume.fat_type == FAT_TYPE_12 && directory == 0U) {
-        for (uint32_t slot = 0U; slot < volume.root_dir_sectors; ++slot) {
-            status = shadow_read(&volume, volume.root_dir_start + slot, sector);
-            if (status != 0) return status;
-            int scan = shadow_readdir_sector(sector, index, &current, &lfn,
-                                              &found, visible);
-            if (scan == 1) { shadow_entry_info(&found, visible, info); return 0; }
-            if (scan == 2) return 1;
-            if (scan < 0) return scan;
+        if (entry_offset == 512U) {
+            ++sector_index;
+            entry_offset = 0U;
         }
+        for (; sector_index < volume.root_dir_sectors; ++sector_index) {
+            status = shadow_read(
+                &volume, volume.root_dir_start + sector_index, sector);
+            if (status != 0) {
+                shadow_readdir_cursor_reset(cursor);
+                return status;
+            }
+            uint32_t next_offset = 0U;
+            int scan = shadow_readdir_sector(
+                sector, index, &current, &lfn, &found, visible, entry_offset,
+                &next_offset);
+            if (scan == 1) {
+                shadow_entry_info(&found, visible, info);
+                shadow_readdir_cursor_publish(
+                    cursor, &volume, &directory_entry, directory, index, 0U,
+                    0U, sector_index, next_offset);
+                return 0;
+            }
+            if (scan == 2) {
+                shadow_readdir_cursor_reset(cursor);
+                return 1;
+            }
+            if (scan < 0) {
+                shadow_readdir_cursor_reset(cursor);
+                return scan;
+            }
+            entry_offset = 0U;
+        }
+        shadow_readdir_cursor_reset(cursor);
         return 1;
     }
-    uint32_t visited[REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS];
-    uint32_t count = 0U;
+    if (visited_count == 0U) {
+        if (!shadow_cluster_valid(&volume, cluster)) return -110;
+        visited[visited_count++] = cluster;
+    }
     for (;;) {
-        if (!shadow_cluster_valid(&volume, directory) ||
-            count >= REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS) return -110;
-        for (uint32_t seen = 0U; seen < count; ++seen)
-            if (visited[seen] == directory) return -5;
-        visited[count++] = directory;
+        if (entry_offset == 512U) {
+            ++sector_index;
+            entry_offset = 0U;
+        }
+        if (!shadow_cluster_valid(&volume, cluster) ||
+            visited_count == 0U ||
+            visited_count > REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS) {
+            shadow_readdir_cursor_reset(cursor);
+            return -110;
+        }
         uint64_t first = (uint64_t)volume.data_start +
-            (uint64_t)(directory - 2U) * volume.sectors_per_cluster;
-        if (first + volume.sectors_per_cluster > volume.sectors) return -5;
-        for (uint32_t slot = 0U; slot < volume.sectors_per_cluster; ++slot) {
-            status = shadow_read(&volume, (uint32_t)first + slot, sector);
-            if (status != 0) return status;
-            int scan = shadow_readdir_sector(sector, index, &current, &lfn,
-                                              &found, visible);
-            if (scan == 1) { shadow_entry_info(&found, visible, info); return 0; }
-            if (scan == 2) return 1;
-            if (scan < 0) return scan;
+            (uint64_t)(cluster - 2U) * volume.sectors_per_cluster;
+        if (first + volume.sectors_per_cluster > volume.sectors) {
+            shadow_readdir_cursor_reset(cursor);
+            return -5;
+        }
+        for (; sector_index < volume.sectors_per_cluster; ++sector_index) {
+            status = shadow_read(
+                &volume, (uint32_t)first + sector_index, sector);
+            if (status != 0) {
+                shadow_readdir_cursor_reset(cursor);
+                return status;
+            }
+            uint32_t next_offset = 0U;
+            int scan = shadow_readdir_sector(
+                sector, index, &current, &lfn, &found, visible, entry_offset,
+                &next_offset);
+            if (scan == 1) {
+                shadow_entry_info(&found, visible, info);
+                shadow_readdir_cursor_publish(
+                    cursor, &volume, &directory_entry, directory, index,
+                    cluster, cluster_depth, sector_index, next_offset);
+                return 0;
+            }
+            if (scan == 2) {
+                shadow_readdir_cursor_reset(cursor);
+                return 1;
+            }
+            if (scan < 0) {
+                shadow_readdir_cursor_reset(cursor);
+                return scan;
+            }
+            entry_offset = 0U;
         }
         uint32_t next = 0U;
-        status = shadow_next_cluster(&volume, directory, &next);
-        if (status != 0) return status;
-        if (shadow_end_of_chain(&volume, next)) return 1;
-        if (shadow_invalid_link(&volume, next)) return -5;
-        directory = next;
+        status = shadow_next_cluster(&volume, cluster, &next);
+        if (status != 0) {
+            shadow_readdir_cursor_reset(cursor);
+            return status;
+        }
+        if (shadow_end_of_chain(&volume, next)) {
+            shadow_readdir_cursor_reset(cursor);
+            return 1;
+        }
+        if (shadow_invalid_link(&volume, next) ||
+            !shadow_cluster_valid(&volume, next)) {
+            shadow_readdir_cursor_reset(cursor);
+            return -5;
+        }
+        if (visited_count >= REIST_VFS_SHADOW_MAX_CHAIN_CLUSTERS) {
+            shadow_readdir_cursor_reset(cursor);
+            return -110;
+        }
+        for (uint32_t seen = 0U; seen < visited_count; ++seen)
+            if (visited[seen] == next) {
+                shadow_readdir_cursor_reset(cursor);
+                return -5;
+            }
+        visited[visited_count++] = next;
+        cluster = next;
+        ++cluster_depth;
+        sector_index = 0U;
+        entry_offset = 0U;
     }
+}
+
+int reist_vfs_shadow_fat_readdir(const reist_vfs_shadow_io_t *io,
+                                 const char *absolute_path,
+                                 uint32_t path_length, uint32_t index,
+                                 x86os_file_info_t *info) {
+    reist_vfs_shadow_fat_readdir_cursor_t cursor;
+    shadow_zero(&cursor, sizeof(cursor));
+    return reist_vfs_shadow_fat_readdir_continue(
+        io, absolute_path, path_length, index, &cursor, info);
 }
 
 static int shadow_object_volume(const reist_vfs_shadow_io_t *io,
