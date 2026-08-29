@@ -5,6 +5,7 @@ REIST_SYS_GETPID equ 22
 REIST_SYS_YIELD equ 40
 REIST_SYS_IPC_SEND equ 50
 REIST_SYS_IPC_RECEIVE equ 51
+REIST_SYS_IPC_SEND_TIMEOUT equ 53
 REIST_SYS_IPC_RELEASE equ 58
 REIST_EACCES    equ -13
 REIST_EAGAIN    equ -11
@@ -19,6 +20,7 @@ IPC_MESSAGE_VERSION equ 1
 IPC_MESSAGE_SIZE equ 140
 IPC_MESSAGE_LENGTH equ 8
 IPC_STACK_BYTES equ 144
+IPC_SEND_TIMEOUT_MS equ 10
 
 section .text
 global _start
@@ -99,6 +101,20 @@ _start:
     syscall
     cmp rax, REIST_EAGAIN
     jne .fail
+    mov eax, REIST_SYS_IPC_SEND_TIMEOUT
+    mov rdi, r12
+    mov rsi, rsp
+    mov edx, IPC_SEND_TIMEOUT_MS
+    syscall
+    test rax, rax
+    jnz .fail
+    mov eax, REIST_SYS_YIELD
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    syscall
+    test rax, rax
+    jnz .fail
     mov eax, REIST_SYS_YIELD
     xor edi, edi
     xor esi, esi

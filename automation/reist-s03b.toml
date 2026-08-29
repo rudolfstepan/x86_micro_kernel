@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2q-x86_64-ipc-send-timeout"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11824,7 +11824,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2q-x86_64-ipc-send-timeout"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Prove deadline-bounded generation-scoped x86_64 IPC send wait"
@@ -11857,7 +11857,14 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "ipc: bound x86_64 send waits"
-evidence = []
+evidence = [
+  "all 54 x86_64 source contract tests passed including syscall 53 ABI ordering fixed kernel-owned send snapshot validation exact sender deadline removal timeout cleanup and dequeue wake ordering",
+  "the warning-free Windows build produced the 145572-byte bootstrap 10264-byte probe 3152-byte shell 832-byte child 8064-byte C object and 13520-byte C payload without widening any fixed page task queue waiter or ABI capacity",
+  "the bounded native Windows one-vCPU 128-MiB QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers and reached RING3_SHELL_OK",
+  "the parent full-queue token74 send idled to ETIMEDOUT without queue or caller-message mutation and the child token77 send wait was transferred into the freed slot only after exact generation snapshot and deadline validation",
+  "a focused runtime repair moved the snapshot payload loop to a scratch register so it preserved both the outer due-work bound and deadline-count state; no diagnostic stage instrumentation remains",
+  "timeout dequeue wake release WAIT reap close shell exit force cleanup and final verification left send phase send waiter timer deadline receive waiter endpoint message capability queue loader task and frame authority clear; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

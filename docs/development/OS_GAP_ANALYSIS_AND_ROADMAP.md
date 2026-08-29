@@ -395,13 +395,15 @@ bis `RING3_SHELL_OK`. Blocking-Sender, tiefere Queues, mehrere Waiter,
 Endpointregistries und produktive Integration bleiben Folgearbeiten; die
 x86_64-Queue ist leer.
 
-**R8.2q ist aktiv:** `IPC_SEND_TIMEOUT` 53 ergaenzt genau einen festen,
+**R8.2q ist abgeschlossen:** `IPC_SEND_TIMEOUT` 53 ergaenzt genau einen festen,
 generationengebundenen Send-Waiter mit kernel-eigenem Nachrichtensnapshot und
 monotoner Deadline. Der reale Pfad prueft sowohl `ETIMEDOUT` ohne Mutation der
 vollen Queue als auch ein Dequeue-Wakeup, das den wartenden Send erst nach
 vollstaendiger Validierung und Deadlineentzug publiziert. Mehrere Sender,
 tiefere Queues, Endpointregistries und produktive Integration bleiben
-Folgearbeiten.
+Folgearbeiten. 54 Quellvertragstests, der warnungsfreie 145.572-Byte-Build und
+zwei native QEMU-`RUN`-Zyklen bestanden bis `RING3_SHELL_OK`; die x86_64-Queue
+ist leer.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

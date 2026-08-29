@@ -316,6 +316,9 @@ feste monotone Deadlinequeue. Timeout veraendert weder die bereits belegte
 Queue noch Userdaten. Ein erfolgreiches Dequeue-Wakeup validiert zuerst
 Sender, Capability, Snapshot, Queue und Deadline, entfernt dann die exakte
 Deadline und publiziert erst danach den wartenden Send in den freien Slot.
+Der reale Abschlussnachweis durchlief Parent-Timeout und Kind-Dequeue-Wakeup in
+beiden `RUN`-Generationen und erreichte nach vollstaendiger Bereinigung
+`RING3_SHELL_OK`.
 
 ## Minimaler REIST-Kern
 

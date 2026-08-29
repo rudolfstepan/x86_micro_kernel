@@ -187,13 +187,14 @@ REIST_SYS_IPC_CREATE       equ 49
 REIST_SYS_IPC_SEND         equ 50
 REIST_SYS_IPC_RECEIVE      equ 51
 REIST_SYS_IPC_CLOSE        equ 52
+REIST_SYS_IPC_SEND_TIMEOUT equ 53
 REIST_SYS_IPC_RECEIVE_TIMEOUT equ 54
 REIST_SYS_IPC_DELEGATE     equ 55
 REIST_SYS_IPC_RELEASE      equ 58
 SHELL_PARENT_PROCESS_MASK  equ (1 << REIST_SYS_EXIT) | (1 << REIST_SYS_READ) | (1 << REIST_SYS_WRITE) | (1 << REIST_SYS_GETPID) | (1 << REIST_SYS_SPAWN) | (1 << REIST_SYS_WAIT) | (1 << REIST_SYS_SPAWNV) | (1 << REIST_SYS_YIELD)
-SHELL_PARENT_IPC_MASK      equ (1 << REIST_SYS_IPC_CREATE) | (1 << REIST_SYS_IPC_RECEIVE) | (1 << REIST_SYS_IPC_CLOSE) | (1 << REIST_SYS_IPC_RECEIVE_TIMEOUT) | (1 << REIST_SYS_IPC_DELEGATE)
+SHELL_PARENT_IPC_MASK      equ (1 << REIST_SYS_IPC_CREATE) | (1 << REIST_SYS_IPC_SEND) | (1 << REIST_SYS_IPC_RECEIVE) | (1 << REIST_SYS_IPC_CLOSE) | (1 << REIST_SYS_IPC_SEND_TIMEOUT) | (1 << REIST_SYS_IPC_RECEIVE_TIMEOUT) | (1 << REIST_SYS_IPC_DELEGATE)
 SHELL_PARENT_SYSCALL_MASK  equ SHELL_PARENT_PROCESS_MASK | SHELL_PARENT_IPC_MASK
-SHELL_CHILD_SYSCALL_MASK   equ (1 << REIST_SYS_EXIT) | (1 << REIST_SYS_YIELD) | (1 << REIST_SYS_IPC_SEND) | (1 << REIST_SYS_IPC_RECEIVE) | (1 << REIST_SYS_IPC_RELEASE)
+SHELL_CHILD_SYSCALL_MASK   equ (1 << REIST_SYS_EXIT) | (1 << REIST_SYS_YIELD) | (1 << REIST_SYS_IPC_SEND) | (1 << REIST_SYS_IPC_RECEIVE) | (1 << REIST_SYS_IPC_SEND_TIMEOUT) | (1 << REIST_SYS_IPC_RELEASE)
 SHELL_ARGC                 equ 2
 SHELL_CHILD_STACK_BYTES    equ 128
 SHELL_CHILD_ARGV0          equ USER_STACK_TOP - 32
@@ -213,7 +214,10 @@ IPC_RECEIVE_TIMEOUT_MS     equ 10
 IPC_RECEIVE_TIMEOUT_TICKS  equ 1
 IPC_SEND_PHASE_QUEUED      equ 1
 IPC_SEND_PHASE_BACKPRESSURE equ 2
-IPC_SEND_PHASE_DELIVERED   equ 3
+IPC_SEND_PHASE_WAITING     equ 3
+IPC_SEND_PHASE_TIMEOUT_QUEUED equ 4
+IPC_SEND_PHASE_TIMEOUT_DRAINED equ 5
+IPC_SEND_PHASE_DELIVERED   equ 6
 EXPECTED_EXIT_STATUS       equ 101
 PREEMPT_EXIT_STATUS        equ 102
 QUANTUM_EXIT_STATUS        equ 103
@@ -1147,6 +1151,79 @@ scheduler_validate_shell_receive_deadline64:
     xor eax, eax
     ret
 
+; Validate and remove the sole shell sender deadline for either the parent
+; self-timeout or the exact live child generation.
+scheduler_validate_shell_send_deadline64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .fail
+    cmp byte [rel scheduler_deadline_count], 1
+    jne .fail
+    mov r14, qword [rel scheduler_shell_ipc_send_wait_generation]
+    cmp r14, TASK_SHELL_GENERATION
+    je .parent_slot
+    cmp r14, TASK_SHELL_CHILD_GEN
+    jb .fail
+    cmp r14, TASK_SHELL_CHILD_GEN2
+    ja .fail
+    mov edi, 1
+    jmp .slot_ready
+.parent_slot:
+    xor edi, edi
+.slot_ready:
+    lea r10, [rel scheduler_deadline_membership]
+    cmp byte [r10 + rdi], 1
+    jne .fail
+    mov eax, edi
+    xor eax, 1
+    cmp byte [r10 + rax], 0
+    jne .fail
+    cmp byte [r10 + 2], 0
+    jne .fail
+    cmp byte [r10 + 3], 0
+    jne .fail
+    lea r10, [rel scheduler_deadline_entries]
+    cmp qword [r10], IPC_RECEIVE_TIMEOUT_TICKS
+    jne .fail
+    cmp dword [r10 + 8], r14d
+    jne .fail
+    cmp byte [r10 + 12], dil
+    jne .fail
+    mov eax, edi
+    shl rax, 8
+    lea r11, [rel scheduler_tasks]
+    add r11, rax
+    cmp qword [r11 + TASK_GENERATION], r14
+    jne .fail
+    cmp qword [r11 + TASK_STATE], TASK_BLOCKED
+    jne .fail
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+scheduler_deadline_remove_shell_send64:
+    call scheduler_validate_shell_send_deadline64
+    test eax, eax
+    jz .fail
+    mov r14, qword [rel scheduler_shell_ipc_send_wait_generation]
+    xor edi, edi
+    cmp r14, TASK_SHELL_GENERATION
+    je .slot_ready
+    mov edi, 1
+.slot_ready:
+    lea r10, [rel scheduler_deadline_entries]
+    mov qword [r10], 0
+    mov qword [r10 + 8], 0
+    lea r10, [rel scheduler_deadline_membership]
+    mov byte [r10 + rdi], 0
+    mov byte [rel scheduler_deadline_count], 0
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
 ; ESI is the newly accepted 100-Hz tick. At most four due entries move from
 ; BLOCKED to READY and into the generation-scoped FIFO.
 x86_64_scheduler_deadline_tick64:
@@ -1192,11 +1269,23 @@ x86_64_scheduler_deadline_tick64:
     jne .wait_valid
     cmp ecx, 1
     jne .fail
+    cmp qword [rel scheduler_shell_ipc_wait_generation], TASK_SHELL_GENERATION
+    je .shell_receive_wait
+    cmp qword [rel scheduler_shell_ipc_send_wait_generation], rsi
+    jne .fail
+    call scheduler_validate_shell_ipc_send_wait64
+    test eax, eax
+    jz .fail
+    mov esi, dword [rel scheduler_shell_ipc_send_wait_generation]
+    xor edi, edi
+    cmp esi, TASK_SHELL_GENERATION
+    je .wait_valid
+    mov edi, 1
+    jmp .wait_valid
+.shell_receive_wait:
     test edi, edi
     jnz .fail
     cmp esi, TASK_SHELL_GENERATION
-    jne .fail
-    cmp qword [rel scheduler_shell_ipc_wait_generation], TASK_SHELL_GENERATION
     jne .fail
     mov r13, qword [rel scheduler_shell_ipc_wait_handle]
     test r13, r13
@@ -1258,6 +1347,26 @@ x86_64_scheduler_deadline_tick64:
     call scheduler_append_event64
     jmp .enqueue
 .shell_timeout:
+    cmp qword [rel scheduler_shell_ipc_wait_generation], TASK_SHELL_GENERATION
+    je .shell_receive_timeout
+    cmp qword [rel scheduler_shell_ipc_send_wait_generation], rsi
+    jne .fail
+    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_WAITING
+    jne .fail
+    mov r14, qword [rel scheduler_shell_ipc_send_wait_generation]
+    call scheduler_clear_shell_ipc_send_wait64
+    test eax, eax
+    jz .fail
+    mov qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
+    mov qword [r12 + TASK_RAX], REIST_ETIMEDOUT
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov rsi, r14
+    xor edi, edi
+    cmp r14, TASK_SHELL_GENERATION
+    je .enqueue
+    mov edi, 1
+    jmp .enqueue
+.shell_receive_timeout:
     test edi, edi
     jnz .fail
     cmp esi, TASK_SHELL_GENERATION
@@ -1330,6 +1439,9 @@ scheduler_shell_dispatch_or_idle64:
     test eax, eax
     jz scheduler_fail
     call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
     test eax, eax
     jz scheduler_fail
     mov edi, dword [rel scheduler_final_tick]
@@ -1786,6 +1898,8 @@ scheduler_shell_syscall_dispatch64:
     je scheduler_handle_shell_ipc_receive64
     cmp qword [rel syscall_rax], REIST_SYS_IPC_CLOSE
     je scheduler_handle_shell_ipc_close64
+    cmp qword [rel syscall_rax], REIST_SYS_IPC_SEND_TIMEOUT
+    je scheduler_handle_shell_ipc_send_timeout64
     cmp qword [rel syscall_rax], REIST_SYS_IPC_RECEIVE_TIMEOUT
     je scheduler_handle_shell_ipc_receive_timeout64
     cmp qword [rel syscall_rax], REIST_SYS_IPC_DELEGATE
@@ -1872,13 +1986,36 @@ scheduler_handle_shell_yield64:
     mov r14, qword [r12 + TASK_GENERATION]
     cmp qword [rel scheduler_shell_ipc_send_generation], r14
     jne scheduler_fail
-    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
+    mov rax, qword [rel scheduler_shell_ipc_send_phase]
+    cmp rax, IPC_SEND_PHASE_TIMEOUT_QUEUED
+    je .queued_send
+    cmp rax, IPC_SEND_PHASE_TIMEOUT_DRAINED
     jne scheduler_fail
     cmp qword [rel scheduler_shell_ipc_message_ready], 0
     jne scheduler_fail
     cmp qword [rel scheduler_shell_ipc_message_sender_generation], 0
     jne scheduler_fail
+    jmp .send_state_valid
+.queued_send:
+    cmp qword [rel scheduler_shell_ipc_message_ready], 1
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_message_sender_generation], r14
+    jne scheduler_fail
+    lea r13, [rel scheduler_shell_ipc_message]
+    cmp dword [r13], IPC_MESSAGE_VERSION
+    jne scheduler_fail
+    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
+    jne scheduler_fail
+    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
+    jne scheduler_fail
+    mov rax, 0x0037376E656B6F74
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], rax
+    jne scheduler_fail
+.send_state_valid:
     call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
     test eax, eax
     jz scheduler_fail
     call scheduler_verify_shell_deadline_zero64
@@ -2009,6 +2146,9 @@ scheduler_handle_shell_ipc_delegate64:
     jne scheduler_fail
     cmp qword [rel scheduler_shell_ipc_send_phase], 0
     jne scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
     mov qword [rel scheduler_shell_ipc_send_generation], r15
     mov qword [r13 + IPC_CAPABILITY_HANDLE], r14
     mov qword [r13 + IPC_CAPABILITY_RIGHTS], IPC_RIGHT_SEND
@@ -2017,10 +2157,85 @@ scheduler_handle_shell_ipc_delegate64:
     jmp scheduler_shell_resume64
 
 scheduler_handle_shell_ipc_send64:
-    cmp dword [rel scheduler_current_slot], 1
-    jne scheduler_fail
     cmp qword [rel syscall_rdx], 0
     jne scheduler_fail
+    cmp dword [rel scheduler_current_slot], 0
+    je .parent_send
+    cmp dword [rel scheduler_current_slot], 1
+    jne scheduler_fail
+    jmp .child_send
+
+.parent_send:
+    cmp qword [r12 + TASK_GENERATION], TASK_SHELL_GENERATION
+    jne scheduler_fail
+    cmp byte [rel scheduler_dynamic_child_active], 0
+    jne scheduler_fail
+    call scheduler_validate_shell_ipc_endpoint64
+    test eax, eax
+    jz scheduler_fail
+    lea r13, [rel scheduler_shell_ipc_capabilities]
+    cmp qword [r13 + IPC_CAPABILITY_GENERATION], TASK_SHELL_GENERATION
+    jne scheduler_fail
+    mov r15, qword [rel syscall_rdi]
+    cmp qword [r13 + IPC_CAPABILITY_HANDLE], r15
+    jne scheduler_fail
+    cmp qword [r13 + IPC_CAPABILITY_RIGHTS], IPC_OWNER_RIGHTS
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_endpoint_handle], r15
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_generation], 0
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_phase], 0
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_message_ready], 0
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_message_sender_generation], 0
+    jne scheduler_fail
+    call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_deadline_zero64
+    test eax, eax
+    jz scheduler_fail
+    mov rax, qword [rel syscall_rsi]
+    mov edx, IPC_MESSAGE_SIZE
+    mov ecx, PF_R
+    call scheduler_validate_shell_ipc_buffer64
+    test eax, eax
+    jz scheduler_fail
+    mov r13, qword [rel syscall_rsi]
+    cmp dword [r13], IPC_MESSAGE_VERSION
+    jne scheduler_fail
+    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
+    jne scheduler_fail
+    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
+    jne scheduler_fail
+    mov rax, 0x0035376E656B6F74
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], rax
+    jne scheduler_fail
+    xor ebx, ebx
+.parent_payload_zero:
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rbx * 8], 0
+    jne scheduler_fail
+    inc ebx
+    cmp ebx, (128 - IPC_MESSAGE_LENGTH) / 8
+    jb .parent_payload_zero
+    cld
+    mov rsi, qword [rel syscall_rsi]
+    lea rdi, [rel scheduler_shell_ipc_message]
+    mov ecx, IPC_MESSAGE_SIZE
+    rep movsb
+    mov qword [rel scheduler_shell_ipc_message_sender_generation], TASK_SHELL_GENERATION
+    mov qword [rel scheduler_shell_ipc_message_ready], 1
+    mov qword [rel scheduler_shell_ipc_send_generation], TASK_SHELL_GENERATION
+    mov qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_QUEUED
+    xor eax, eax
+    jmp scheduler_shell_resume64
+
+.child_send:
     call scheduler_validate_shell_ipc_endpoint64
     test eax, eax
     jz scheduler_fail
@@ -2071,7 +2286,7 @@ scheduler_handle_shell_ipc_send64:
     jz .queue_token76
     cmp rax, IPC_SEND_PHASE_QUEUED
     je .reject_full_token77
-    cmp rax, IPC_SEND_PHASE_BACKPRESSURE
+    cmp rax, IPC_SEND_PHASE_TIMEOUT_DRAINED
     jne scheduler_fail
     mov rax, 0x0037376E656B6F74
     cmp qword [r13 + IPC_MESSAGE_PAYLOAD], rax
@@ -2103,6 +2318,9 @@ scheduler_handle_shell_ipc_send64:
     cmp qword [rel scheduler_shell_ipc_message_sender_generation], 0
     jne scheduler_fail
     call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
     test eax, eax
     jz scheduler_fail
     call scheduler_verify_shell_deadline_zero64
@@ -2148,12 +2366,160 @@ scheduler_handle_shell_ipc_send64:
     call scheduler_verify_shell_ipc_wait_zero64
     test eax, eax
     jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
     call scheduler_verify_shell_deadline_zero64
     test eax, eax
     jz scheduler_fail
     mov qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
     mov rax, REIST_EAGAIN
     jmp scheduler_shell_child_resume64
+
+; One fixed REIST-v1 sender wait owns a kernel snapshot rather than a user
+; pointer. Every queue, capability, message and zero-state check completes
+; before the snapshot, deadline or blocked task is published.
+scheduler_handle_shell_ipc_send_timeout64:
+    cmp qword [rel syscall_rdx], IPC_RECEIVE_TIMEOUT_MS
+    jne scheduler_fail
+    call scheduler_validate_shell_ipc_endpoint64
+    test eax, eax
+    jz scheduler_fail
+    mov ebx, dword [rel scheduler_current_slot]
+    cmp ebx, 1
+    ja scheduler_fail
+    mov r14, qword [r12 + TASK_GENERATION]
+    test ebx, ebx
+    jnz .child_sender
+    cmp r14, TASK_SHELL_GENERATION
+    jne scheduler_fail
+    cmp byte [rel scheduler_dynamic_child_active], 0
+    jne scheduler_fail
+    lea r13, [rel scheduler_shell_ipc_capabilities]
+    cmp qword [r13 + IPC_CAPABILITY_GENERATION], TASK_SHELL_GENERATION
+    jne scheduler_fail
+    cmp qword [r13 + IPC_CAPABILITY_RIGHTS], IPC_OWNER_RIGHTS
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_generation], TASK_SHELL_GENERATION
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_QUEUED
+    jne scheduler_fail
+    jmp .sender_valid
+.child_sender:
+    cmp r14, TASK_SHELL_CHILD_GEN
+    jb scheduler_fail
+    cmp r14, TASK_SHELL_CHILD_GEN2
+    ja scheduler_fail
+    cmp byte [rel scheduler_dynamic_child_active], 1
+    jne scheduler_fail
+    cmp dword [rel scheduler_dynamic_child_generation], r14d
+    jne scheduler_fail
+    lea r13, [rel scheduler_shell_ipc_capabilities + IPC_CAPABILITY_SIZE]
+    cmp qword [r13 + IPC_CAPABILITY_GENERATION], r14
+    jne scheduler_fail
+    cmp qword [r13 + IPC_CAPABILITY_RIGHTS], IPC_RIGHT_SEND
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_generation], r14
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
+    jne scheduler_fail
+.sender_valid:
+    mov r15, qword [rel syscall_rdi]
+    cmp qword [r13 + IPC_CAPABILITY_HANDLE], r15
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_endpoint_handle], r15
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_message_ready], 1
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_message_sender_generation], r14
+    jne scheduler_fail
+    call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_deadline_zero64
+    test eax, eax
+    jz scheduler_fail
+    mov rax, qword [rel syscall_rsi]
+    mov edx, IPC_MESSAGE_SIZE
+    mov ecx, PF_R
+    call scheduler_validate_shell_ipc_buffer64
+    test eax, eax
+    jz scheduler_fail
+    mov r13, qword [rel syscall_rsi]
+    cmp dword [r13], IPC_MESSAGE_VERSION
+    jne scheduler_fail
+    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
+    jne scheduler_fail
+    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
+    jne scheduler_fail
+    mov ebx, dword [rel scheduler_current_slot]
+    test ebx, ebx
+    jnz .child_wait_message
+    mov rax, 0x0034376E656B6F74
+    jmp .wait_message_ready
+.child_wait_message:
+    mov rax, 0x0037376E656B6F74
+.wait_message_ready:
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], rax
+    jne scheduler_fail
+    xor ebp, ebp
+.wait_payload_zero:
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rbp * 8], 0
+    jne scheduler_fail
+    inc ebp
+    cmp ebp, (128 - IPC_MESSAGE_LENGTH) / 8
+    jb .wait_payload_zero
+    lea r11, [rel scheduler_shell_ipc_message]
+    cmp dword [r11], IPC_MESSAGE_VERSION
+    jne scheduler_fail
+    cmp dword [r11 + 4], IPC_MESSAGE_SIZE
+    jne scheduler_fail
+    cmp dword [r11 + 8], IPC_MESSAGE_LENGTH
+    jne scheduler_fail
+    test ebx, ebx
+    jnz .child_queue_message
+    mov rax, 0x0035376E656B6F74
+    jmp .queue_message_ready
+.child_queue_message:
+    mov rax, 0x0036376E656B6F74
+.queue_message_ready:
+    cmp qword [r11 + IPC_MESSAGE_PAYLOAD], rax
+    jne scheduler_fail
+    xor ebp, ebp
+.queue_payload_zero:
+    cmp qword [r11 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rbp * 8], 0
+    jne scheduler_fail
+    inc ebp
+    cmp ebp, (128 - IPC_MESSAGE_LENGTH) / 8
+    jb .queue_payload_zero
+    call scheduler_save_syscall_context64
+    cld
+    mov rsi, qword [rel syscall_rsi]
+    lea rdi, [rel scheduler_shell_ipc_send_wait_message]
+    mov ecx, IPC_MESSAGE_SIZE
+    rep movsb
+    mov dword [rel scheduler_last_tick], 0
+    mov dword [rel scheduler_final_tick], IPC_RECEIVE_TIMEOUT_TICKS
+    mov dword [rel scheduler_idle_wakes], 0
+    mov edi, dword [rel scheduler_current_slot]
+    mov rsi, qword [r12 + TASK_GENERATION]
+    mov edx, IPC_RECEIVE_TIMEOUT_TICKS
+    call scheduler_deadline_insert64
+    test eax, eax
+    jz scheduler_fail
+    mov r14, qword [r12 + TASK_GENERATION]
+    mov r15, qword [rel syscall_rdi]
+    mov qword [rel scheduler_shell_ipc_send_wait_handle], r15
+    mov qword [rel scheduler_shell_ipc_send_wait_generation], r14
+    mov qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_WAITING
+    mov qword [r12 + TASK_STATE], TASK_BLOCKED
+    call x86_64_timer_sleep_arm64
+    test eax, eax
+    jz scheduler_fail
+    jmp scheduler_shell_dispatch_or_idle64
 
 ; Validate the exact blocked receive relation before SEND publishes even the
 ; kernel-owned queue record. The same relation is checked again before wake.
@@ -2174,12 +2540,15 @@ scheduler_validate_shell_ipc_waiter_for_send64:
     ja .fail
     cmp qword [rel scheduler_shell_ipc_send_generation], r14
     jne .fail
-    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
+    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_TIMEOUT_DRAINED
     jne .fail
     cmp qword [rel scheduler_shell_ipc_message_ready], 0
     jne .fail
     cmp qword [rel scheduler_shell_ipc_message_sender_generation], 0
     jne .fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz .fail
     cmp qword [rel scheduler_shell_ipc_wait_generation], TASK_SHELL_GENERATION
     jne .fail
     mov r13, qword [rel scheduler_shell_ipc_wait_handle]
@@ -2254,6 +2623,9 @@ scheduler_wake_shell_ipc_receiver64:
     jne .fail
     cmp qword [rel scheduler_shell_ipc_message_sender_generation], r14
     jne .fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz .fail
     cmp qword [rel scheduler_shell_ipc_wait_generation], TASK_SHELL_GENERATION
     jne .fail
     mov r13, qword [rel scheduler_shell_ipc_wait_handle]
@@ -2370,56 +2742,6 @@ scheduler_handle_shell_ipc_receive64:
     jne scheduler_fail
     cmp qword [rel scheduler_shell_ipc_message_ready], 1
     jne scheduler_fail
-    cmp byte [rel scheduler_dynamic_child_active], 1
-    jne scheduler_fail
-    mov r14d, dword [rel scheduler_dynamic_child_generation]
-    cmp r14d, TASK_SHELL_CHILD_GEN
-    jb scheduler_fail
-    cmp r14d, TASK_SHELL_CHILD_GEN2
-    ja scheduler_fail
-    cmp qword [rel scheduler_shell_ipc_message_sender_generation], r14
-    jne scheduler_fail
-    cmp qword [rel scheduler_shell_ipc_send_generation], r14
-    jne scheduler_fail
-    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
-    jne scheduler_fail
-    lea r11, [rel scheduler_tasks + TASK_RECORD_SIZE]
-    cmp qword [r11 + TASK_GENERATION], r14
-    jne scheduler_fail
-    cmp qword [r11 + TASK_STATE], TASK_READY
-    jne scheduler_fail
-    cmp byte [rel scheduler_runqueue_membership + 1], 1
-    jne scheduler_fail
-    lea r13, [rel scheduler_shell_ipc_capabilities + IPC_CAPABILITY_SIZE]
-    cmp qword [r13 + IPC_CAPABILITY_GENERATION], r14
-    jne scheduler_fail
-    cmp qword [r13 + IPC_CAPABILITY_HANDLE], r15
-    jne scheduler_fail
-    cmp qword [r13 + IPC_CAPABILITY_RIGHTS], IPC_RIGHT_SEND
-    jne scheduler_fail
-    call scheduler_verify_shell_ipc_wait_zero64
-    test eax, eax
-    jz scheduler_fail
-    call scheduler_verify_shell_deadline_zero64
-    test eax, eax
-    jz scheduler_fail
-    lea r13, [rel scheduler_shell_ipc_message]
-    cmp dword [r13], IPC_MESSAGE_VERSION
-    jne scheduler_fail
-    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
-    jne scheduler_fail
-    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
-    jne scheduler_fail
-    mov rax, 0x0036376E656B6F74
-    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], rax
-    jne scheduler_fail
-    xor ebx, ebx
-.queued_payload_zero:
-    cmp qword [r13 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rbx * 8], 0
-    jne scheduler_fail
-    inc ebx
-    cmp ebx, (128 - IPC_MESSAGE_LENGTH) / 8
-    jb .queued_payload_zero
     mov rax, qword [rel syscall_rsi]
     mov edx, IPC_MESSAGE_SIZE
     mov ecx, PF_W
@@ -2433,6 +2755,66 @@ scheduler_handle_shell_ipc_receive64:
     jne scheduler_fail
     cmp dword [r13 + 8], 0
     jne scheduler_fail
+    cmp byte [rel scheduler_dynamic_child_active], 0
+    je .receive_parent_probe
+    cmp byte [rel scheduler_dynamic_child_active], 1
+    jne scheduler_fail
+    mov rax, qword [rel scheduler_shell_ipc_send_phase]
+    cmp rax, IPC_SEND_PHASE_WAITING
+    je .receive_token76_waiter
+    cmp rax, IPC_SEND_PHASE_TIMEOUT_QUEUED
+    jne scheduler_fail
+
+.receive_token77:
+    mov r14d, dword [rel scheduler_dynamic_child_generation]
+    cmp r14d, TASK_SHELL_CHILD_GEN
+    jb scheduler_fail
+    cmp r14d, TASK_SHELL_CHILD_GEN2
+    ja scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_generation], r14
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_message_sender_generation], r14
+    jne scheduler_fail
+    lea r11, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp qword [r11 + TASK_GENERATION], r14
+    jne scheduler_fail
+    cmp qword [r11 + TASK_STATE], TASK_READY
+    jne scheduler_fail
+    cmp byte [rel scheduler_runqueue_membership + 1], 1
+    jne scheduler_fail
+    lea r11, [rel scheduler_shell_ipc_capabilities + IPC_CAPABILITY_SIZE]
+    cmp qword [r11 + IPC_CAPABILITY_GENERATION], r14
+    jne scheduler_fail
+    cmp qword [r11 + IPC_CAPABILITY_HANDLE], r15
+    jne scheduler_fail
+    cmp qword [r11 + IPC_CAPABILITY_RIGHTS], IPC_RIGHT_SEND
+    jne scheduler_fail
+    call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_deadline_zero64
+    test eax, eax
+    jz scheduler_fail
+    lea r13, [rel scheduler_shell_ipc_message]
+    cmp dword [r13], IPC_MESSAGE_VERSION
+    jne scheduler_fail
+    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
+    jne scheduler_fail
+    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
+    jne scheduler_fail
+    mov rax, 0x0037376E656B6F74
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], rax
+    jne scheduler_fail
+    xor ebx, ebx
+.token77_payload_zero:
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rbx * 8], 0
+    jne scheduler_fail
+    inc ebx
+    cmp ebx, (128 - IPC_MESSAGE_LENGTH) / 8
+    jb .token77_payload_zero
     cld
     lea rsi, [rel scheduler_shell_ipc_message]
     mov rdi, qword [rel syscall_rsi]
@@ -2444,6 +2826,106 @@ scheduler_handle_shell_ipc_receive64:
     lea rdi, [rel scheduler_shell_ipc_message]
     mov ecx, IPC_MESSAGE_SIZE / 4
     rep stosd
+    mov qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_TIMEOUT_DRAINED
+    xor eax, eax
+    jmp scheduler_shell_resume64
+
+.receive_token76_waiter:
+    call scheduler_validate_shell_ipc_send_wait64
+    test eax, eax
+    jz scheduler_fail
+    mov r14, qword [rel scheduler_shell_ipc_send_wait_generation]
+    cmp r14, TASK_SHELL_CHILD_GEN
+    jb scheduler_fail
+    cmp r14, TASK_SHELL_CHILD_GEN2
+    ja scheduler_fail
+    call scheduler_deadline_remove_shell_send64
+    test eax, eax
+    jz scheduler_fail
+    call x86_64_timer_preemption_cancel64
+    test eax, eax
+    jz scheduler_fail
+    cld
+    lea rsi, [rel scheduler_shell_ipc_message]
+    mov rdi, qword [rel syscall_rsi]
+    mov ecx, IPC_MESSAGE_SIZE
+    rep movsb
+    lea rsi, [rel scheduler_shell_ipc_send_wait_message]
+    lea rdi, [rel scheduler_shell_ipc_message]
+    mov ecx, IPC_MESSAGE_SIZE
+    rep movsb
+    mov r14, qword [rel scheduler_shell_ipc_send_wait_generation]
+    mov qword [rel scheduler_shell_ipc_message_sender_generation], r14
+    mov qword [rel scheduler_shell_ipc_message_ready], 1
+    call scheduler_clear_shell_ipc_send_wait64
+    test eax, eax
+    jz scheduler_fail
+    mov qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_TIMEOUT_QUEUED
+    lea r12, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    mov qword [r12 + TASK_RAX], 0
+    mov qword [r12 + TASK_STATE], TASK_READY
+    mov edi, 1
+    mov esi, r14d
+    call scheduler_runqueue_enqueue64
+    test eax, eax
+    jz scheduler_fail
+    lea r12, [rel scheduler_tasks]
+    xor eax, eax
+    jmp scheduler_shell_resume64
+
+.receive_parent_probe:
+    cmp qword [rel scheduler_shell_ipc_send_generation], TASK_SHELL_GENERATION
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
+    jne scheduler_fail
+    cmp qword [rel scheduler_shell_ipc_message_sender_generation], TASK_SHELL_GENERATION
+    jne scheduler_fail
+    lea r11, [rel scheduler_shell_ipc_capabilities + IPC_CAPABILITY_SIZE]
+    cmp qword [r11 + IPC_CAPABILITY_GENERATION], 0
+    jne scheduler_fail
+    cmp qword [r11 + IPC_CAPABILITY_HANDLE], 0
+    jne scheduler_fail
+    cmp qword [r11 + IPC_CAPABILITY_RIGHTS], 0
+    jne scheduler_fail
+    call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_deadline_zero64
+    test eax, eax
+    jz scheduler_fail
+    lea r13, [rel scheduler_shell_ipc_message]
+    cmp dword [r13], IPC_MESSAGE_VERSION
+    jne scheduler_fail
+    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
+    jne scheduler_fail
+    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
+    jne scheduler_fail
+    mov rax, 0x0035376E656B6F74
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], rax
+    jne scheduler_fail
+    xor ebx, ebx
+.probe_payload_zero:
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rbx * 8], 0
+    jne scheduler_fail
+    inc ebx
+    cmp ebx, (128 - IPC_MESSAGE_LENGTH) / 8
+    jb .probe_payload_zero
+    cld
+    lea rsi, [rel scheduler_shell_ipc_message]
+    mov rdi, qword [rel syscall_rsi]
+    mov ecx, IPC_MESSAGE_SIZE
+    rep movsb
+    xor eax, eax
+    lea rdi, [rel scheduler_shell_ipc_message]
+    mov ecx, IPC_MESSAGE_SIZE / 4
+    rep stosd
+    mov qword [rel scheduler_shell_ipc_message_ready], 0
+    mov qword [rel scheduler_shell_ipc_message_sender_generation], 0
+    mov qword [rel scheduler_shell_ipc_send_generation], 0
+    mov qword [rel scheduler_shell_ipc_send_phase], 0
     xor eax, eax
     jmp scheduler_shell_resume64
 
@@ -2496,7 +2978,7 @@ scheduler_handle_shell_ipc_receive_timeout64:
     ja scheduler_fail
     cmp qword [rel scheduler_shell_ipc_send_generation], r15
     jne scheduler_fail
-    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_BACKPRESSURE
+    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_TIMEOUT_DRAINED
     jne scheduler_fail
     lea r11, [rel scheduler_tasks + TASK_RECORD_SIZE]
     cmp qword [r11 + TASK_GENERATION], r15
@@ -2514,6 +2996,9 @@ scheduler_handle_shell_ipc_receive_timeout64:
     jne scheduler_fail
 .phase_valid:
     call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
     test eax, eax
     jz scheduler_fail
     call scheduler_verify_shell_deadline_zero64
@@ -2591,6 +3076,9 @@ scheduler_handle_shell_ipc_release64:
     call scheduler_verify_shell_ipc_wait_zero64
     test eax, eax
     jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
     call scheduler_verify_shell_deadline_zero64
     test eax, eax
     jz scheduler_fail
@@ -2631,6 +3119,9 @@ scheduler_handle_shell_ipc_close64:
     cmp qword [rel scheduler_shell_ipc_message_sender_generation], 0
     jne scheduler_fail
     call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
     test eax, eax
     jz scheduler_fail
     call scheduler_verify_shell_deadline_zero64
@@ -3052,6 +3543,142 @@ scheduler_verify_shell_ipc_wait_zero64:
     ret
 .fail:
     xor eax, eax
+    ret
+
+scheduler_verify_shell_ipc_send_wait_zero64:
+    cmp qword [rel scheduler_shell_ipc_send_wait_handle], 0
+    jne .fail
+    cmp qword [rel scheduler_shell_ipc_send_wait_generation], 0
+    jne .fail
+    lea rsi, [rel scheduler_shell_ipc_send_wait_message]
+    mov ecx, IPC_MESSAGE_SIZE / 4
+.message_loop:
+    cmp dword [rsi], 0
+    jne .fail
+    add rsi, 4
+    loop .message_loop
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+; Validate the one published sender snapshot, occupied queue and exact blocked
+; generation before timeout or dequeue may change any state.
+scheduler_validate_shell_ipc_send_wait64:
+    cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
+    jne .fail
+    cmp qword [rel scheduler_shell_ipc_send_phase], IPC_SEND_PHASE_WAITING
+    jne .fail
+    mov r14, qword [rel scheduler_shell_ipc_send_wait_generation]
+    test r14, r14
+    jz .fail
+    cmp qword [rel scheduler_shell_ipc_send_generation], r14
+    jne .fail
+    mov r15, qword [rel scheduler_shell_ipc_send_wait_handle]
+    test r15, r15
+    jz .fail
+    cmp qword [rel scheduler_shell_ipc_endpoint_active], 1
+    jne .fail
+    cmp qword [rel scheduler_shell_ipc_endpoint_handle], r15
+    jne .fail
+    cmp qword [rel scheduler_shell_ipc_message_ready], 1
+    jne .fail
+    cmp qword [rel scheduler_shell_ipc_message_sender_generation], r14
+    jne .fail
+    call scheduler_verify_shell_ipc_wait_zero64
+    test eax, eax
+    jz .fail
+    cmp r14, TASK_SHELL_GENERATION
+    je .parent_sender
+    cmp r14, TASK_SHELL_CHILD_GEN
+    jb .fail
+    cmp r14, TASK_SHELL_CHILD_GEN2
+    ja .fail
+    cmp byte [rel scheduler_dynamic_child_active], 1
+    jne .fail
+    cmp dword [rel scheduler_dynamic_child_generation], r14d
+    jne .fail
+    lea r13, [rel scheduler_shell_ipc_capabilities + IPC_CAPABILITY_SIZE]
+    cmp qword [r13 + IPC_CAPABILITY_GENERATION], r14
+    jne .fail
+    cmp qword [r13 + IPC_CAPABILITY_HANDLE], r15
+    jne .fail
+    cmp qword [r13 + IPC_CAPABILITY_RIGHTS], IPC_RIGHT_SEND
+    jne .fail
+    lea r11, [rel scheduler_tasks + TASK_RECORD_SIZE]
+    cmp qword [r11 + TASK_GENERATION], r14
+    jne .fail
+    cmp qword [r11 + TASK_STATE], TASK_BLOCKED
+    jne .fail
+    mov r8, 0x0036376E656B6F74
+    mov r9, 0x0037376E656B6F74
+    jmp .messages_ready
+.parent_sender:
+    cmp byte [rel scheduler_dynamic_child_active], 0
+    jne .fail
+    lea r13, [rel scheduler_shell_ipc_capabilities]
+    cmp qword [r13 + IPC_CAPABILITY_GENERATION], TASK_SHELL_GENERATION
+    jne .fail
+    cmp qword [r13 + IPC_CAPABILITY_HANDLE], r15
+    jne .fail
+    cmp qword [r13 + IPC_CAPABILITY_RIGHTS], IPC_OWNER_RIGHTS
+    jne .fail
+    lea r11, [rel scheduler_tasks]
+    cmp qword [r11 + TASK_GENERATION], TASK_SHELL_GENERATION
+    jne .fail
+    cmp qword [r11 + TASK_STATE], TASK_BLOCKED
+    jne .fail
+    mov r8, 0x0035376E656B6F74
+    mov r9, 0x0034376E656B6F74
+.messages_ready:
+    lea r13, [rel scheduler_shell_ipc_message]
+    cmp dword [r13], IPC_MESSAGE_VERSION
+    jne .fail
+    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
+    jne .fail
+    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
+    jne .fail
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], r8
+    jne .fail
+    lea r13, [rel scheduler_shell_ipc_send_wait_message]
+    cmp dword [r13], IPC_MESSAGE_VERSION
+    jne .fail
+    cmp dword [r13 + 4], IPC_MESSAGE_SIZE
+    jne .fail
+    cmp dword [r13 + 8], IPC_MESSAGE_LENGTH
+    jne .fail
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD], r9
+    jne .fail
+    xor edx, edx
+.payload_zero:
+    lea r13, [rel scheduler_shell_ipc_message]
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rdx * 8], 0
+    jne .fail
+    lea r13, [rel scheduler_shell_ipc_send_wait_message]
+    cmp qword [r13 + IPC_MESSAGE_PAYLOAD + IPC_MESSAGE_LENGTH + rdx * 8], 0
+    jne .fail
+    inc edx
+    cmp edx, (128 - IPC_MESSAGE_LENGTH) / 8
+    jb .payload_zero
+    call scheduler_validate_shell_send_deadline64
+    test eax, eax
+    jz .fail
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+scheduler_clear_shell_ipc_send_wait64:
+    mov qword [rel scheduler_shell_ipc_send_wait_handle], 0
+    mov qword [rel scheduler_shell_ipc_send_wait_generation], 0
+    xor eax, eax
+    cld
+    lea rdi, [rel scheduler_shell_ipc_send_wait_message]
+    mov ecx, IPC_MESSAGE_SIZE / 4
+    rep stosd
+    mov eax, 1
     ret
 
 scheduler_verify_shell_deadline_zero64:
@@ -3759,6 +4386,9 @@ scheduler_handle_shell_child_exit64:
     call scheduler_verify_shell_ipc_wait_zero64
     test eax, eax
     jz scheduler_fail
+    call scheduler_verify_shell_ipc_send_wait_zero64
+    test eax, eax
+    jz scheduler_fail
     call scheduler_verify_shell_deadline_zero64
     test eax, eax
     jz scheduler_fail
@@ -3815,6 +4445,8 @@ scheduler_shell_child_resume64:
     cmp r15, REIST_EACCES
     je .result_valid
     cmp r15, REIST_EAGAIN
+    je .result_valid
+    cmp r15, REIST_ETIMEDOUT
     jne scheduler_fail
 .result_valid:
     cmp byte [rel scheduler_mode], SCHEDULER_MODE_SHELL
@@ -5913,6 +6545,13 @@ scheduler_shell_ipc_wait_handle:
     resq 1
 scheduler_shell_ipc_wait_generation:
     resq 1
+scheduler_shell_ipc_send_wait_handle:
+    resq 1
+scheduler_shell_ipc_send_wait_generation:
+    resq 1
+scheduler_shell_ipc_send_wait_message:
+    resb IPC_MESSAGE_SIZE
+alignb 8
 scheduler_shell_ipc_send_generation:
     resq 1
 scheduler_shell_ipc_send_phase:
