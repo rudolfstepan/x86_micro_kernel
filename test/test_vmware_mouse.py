@@ -90,7 +90,8 @@ class VmwareMouseTests(unittest.TestCase):
             "USB: xHCI HID ready",
             "mouse-port=",
             "REIST_SMP SCHEDULER_READY cpus=4 probe_mask=0000000E",
-            "Starting userspace command interpreter from /bin/shell.prg",
+            "C:\\>",
+            "REIST_GUI COMPOSITOR_READY generation=",
             "DESKTOP_OK",
             "DESKTOP_EXPLORER_OK",
             "DESKTOP_MOUSE_OK",
@@ -98,9 +99,10 @@ class VmwareMouseTests(unittest.TestCase):
             self.assertIn(marker, source)
         self.assertIn("$hid -lt $scheduler", source)
         self.assertIn("$scheduler -lt $shell", source)
-        self.assertIn("$shell -lt $desktop", source)
-        self.assertIn("$desktop -lt $explorer", source)
-        self.assertIn("$explorer -lt $mouse", source)
+        self.assertIn("$shell -lt $explorer", source)
+        self.assertIn("$explorer -lt $ready", source)
+        self.assertIn("$ready -lt $desktop", source)
+        self.assertIn("$desktop -lt $mouse", source)
         self.assertNotIn("$ap =", source)
         self.assertIn("$preShell", source)
         self.assertIn("Desktop marker appeared before explicit shell command",
@@ -115,6 +117,7 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("REIST_GUI COMPOSITOR_RESTARTED epoch=2", source)
         self.assertIn("$readyCount -ge 2", source)
         self.assertIn("$apCount -ge 2", source)
+        self.assertIn("$replacementExplorer -lt $replacementReady", source)
         self.assertIn("$replacementReady -lt $replacementAp", source)
         self.assertIn("$replacementAp -lt $mouse", source)
 
@@ -126,7 +129,7 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("Send-ExplicitDesktopCommand", source)
         self.assertIn("'desktop'", source)
         wait = source.index(
-            "Starting userspace command interpreter from /bin/shell.prg"
+            "C:\\>"
         )
         command = source.index("Send-ExplicitDesktopCommand", wait)
         desktop = source.index("DESKTOP_OK", command)

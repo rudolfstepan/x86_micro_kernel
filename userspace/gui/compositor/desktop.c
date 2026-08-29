@@ -817,6 +817,9 @@ static void desktop_startup_phase_metric(const char *phase,
     x86os_putchar('\n');
 }
 
+static int desktop_lifecycle_publish_progress(
+    uint32_t supervised, uint32_t *sequence, uint64_t *heartbeat_ms);
+
 static int32_t desktop_splash_center_x(
     const x86os_display_info_t *display, size_t text_length) {
     uint64_t width = (uint64_t)text_length * display->font_width;
@@ -824,10 +827,12 @@ static int32_t desktop_splash_center_x(
         ? (int32_t)((display->width - (uint32_t)width) / 2U) : 0;
 }
 
-static void desktop_splash_show(const x86os_display_info_t *display) {
+static int desktop_splash_show(
+        const x86os_display_info_t *display, uint32_t lifecycle_supervised,
+        uint32_t *lifecycle_sequence, uint64_t *lifecycle_heartbeat_ms) {
     static const char title[] = "REIST OS";
     static const char loading[] = "System wird geladen ...";
-    if (display == 0) return;
+    if (display == 0) return -22;
 
     /* Publish a useful fallback first. The real splash is linked into this
      * process so desktop startup never waits for the storage service. */
@@ -845,6 +850,10 @@ static void desktop_splash_show(const x86os_display_info_t *display) {
     if (fallback_frame != 0U &&
         x86os_display_frame_commit(fallback_serial) != 0)
         (void)x86os_display_frame_cancel(fallback_serial);
+    if (desktop_lifecycle_publish_progress(
+            lifecycle_supervised, lifecycle_sequence,
+            lifecycle_heartbeat_ms) != 0)
+        return -1;
 
     uint32_t text_gap = display->font_height + 12U;
     uint32_t group_height = DESKTOP_SPLASH_HEIGHT + text_gap +
@@ -858,7 +867,7 @@ static void desktop_splash_show(const x86os_display_info_t *display) {
         display->width < DESKTOP_SPLASH_WIDTH ||
         display->height < group_height) {
         x86os_puts("DESKTOP_SPLASH_FALLBACK status=-84\n");
-        return;
+        return 0;
     }
 
     int32_t image_x = (int32_t)((display->width - DESKTOP_SPLASH_WIDTH) / 2U);
@@ -891,8 +900,12 @@ static void desktop_splash_show(const x86os_display_info_t *display) {
             x86os_puts("DESKTOP_SPLASH_FALLBACK status=");
             x86os_print_number(status);
             x86os_putchar('\n');
-            return;
+            return 0;
         }
+        if (desktop_lifecycle_publish_progress(
+                lifecycle_supervised, lifecycle_sequence,
+                lifecycle_heartbeat_ms) != 0)
+            return -1;
     }
     int32_t title_y = image_y + (int32_t)DESKTOP_SPLASH_HEIGHT + 12;
     (void)x86os_draw_text_pixels(
@@ -905,6 +918,9 @@ static void desktop_splash_show(const x86os_display_info_t *display) {
         loading, sizeof(loading) - 1U,
         DESKTOP_SPLASH_FOREGROUND, DESKTOP_SPLASH_BACKGROUND);
     x86os_puts("DESKTOP_SPLASH_READY\n");
+    return desktop_lifecycle_publish_progress(
+        lifecycle_supervised, lifecycle_sequence,
+        lifecycle_heartbeat_ms);
 }
 
 static int desktop_font_load(const x86os_display_info_t *display) {
@@ -974,13 +990,26 @@ static void desktop_icon_cache_load(desktop_file_icon_cache_entry_t *entry,
     entry->valid = 1U;
 }
 
-static void desktop_file_icon_cache_initialize(void) {
-    for (uint32_t kind = 0U; kind < DESKTOP_EXPLORER_ICON_COUNT; ++kind)
+static int desktop_file_icon_cache_initialize(
+        uint32_t lifecycle_supervised, uint32_t *lifecycle_sequence,
+        uint64_t *lifecycle_heartbeat_ms) {
+    for (uint32_t kind = 0U; kind < DESKTOP_EXPLORER_ICON_COUNT; ++kind) {
         desktop_icon_cache_load(
             &desktop_file_icon_cache[kind], desktop_file_icon_paths[kind]);
-    for (uint32_t kind = 0U; kind < DESKTOP_TRASH_ICON_COUNT; ++kind)
+        if (desktop_lifecycle_publish_progress(
+                lifecycle_supervised, lifecycle_sequence,
+                lifecycle_heartbeat_ms) != 0)
+            return -1;
+    }
+    for (uint32_t kind = 0U; kind < DESKTOP_TRASH_ICON_COUNT; ++kind) {
         desktop_icon_cache_load(
             &desktop_trash_icon_cache[kind], desktop_trash_icon_paths[kind]);
+        if (desktop_lifecycle_publish_progress(
+                lifecycle_supervised, lifecycle_sequence,
+                lifecycle_heartbeat_ms) != 0)
+            return -1;
+    }
+    return 0;
 }
 
 static uint32_t draw_cached_file_icon(
@@ -3689,9 +3718,6 @@ static uint32_t active_surface_count(
     return count;
 }
 
-static int desktop_lifecycle_publish_progress(
-    uint32_t supervised, uint32_t *sequence, uint64_t *heartbeat_ms);
-
 static uint32_t same_surface_owner(
         reist_gui_surface_owner_t left, reist_gui_surface_owner_t right) {
     return left.pid == right.pid &&
@@ -5207,8 +5233,7 @@ int main(int argc, char **argv) {
      * keep their established runtime envelope free of presentation I/O. */
     uint64_t phase_started_ms = 0U;
     (void)x86os_monotonic_ms(&phase_started_ms);
-    if (argc == 1) desktop_splash_show(&display);
-    desktop_startup_phase_metric("splash", phase_started_ms);
+    if (argc != 1) desktop_startup_phase_metric("splash", phase_started_ms);
     (void)desktop_svga2d_connect(0U, 0U);
     (void)x86os_monotonic_ms(&phase_started_ms);
     int font_status = unicode_probe ? desktop_font_load(&display) : 0;
@@ -5343,31 +5368,64 @@ int main(int argc, char **argv) {
     int lifecycle_self_test = x86os_reist_report(
         X86OS_REIST_REPORT_SELF_TEST, 1U);
     uint32_t lifecycle_supervised = lifecycle_self_test == 0;
+    uint32_t lifecycle_sequence = 1U;
+    uint64_t lifecycle_heartbeat_ms = 0U;
     if ((lifecycle_self_test != 0 && lifecycle_self_test != -1) ||
-        (lifecycle_supervised &&
-         (x86os_reist_report(X86OS_REIST_REPORT_PROGRESS, 1U) != 0 ||
-          x86os_reist_report(
-              X86OS_REIST_REPORT_SERVICE_READY, 1U) != 0))) {
+        desktop_lifecycle_publish_progress(
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms) != 0) {
         desktop_surface_runtime_shutdown(&surface_runtime);
         if (runtime_activated) (void)desktop_display_deactivate();
         x86os_puts("desktop: Supervisor-Lifecycle nicht verfuegbar\n");
         return 1;
     }
-    uint32_t lifecycle_sequence = 2U;
-    uint64_t lifecycle_heartbeat_ms = 0U;
-    (void)x86os_monotonic_ms(&lifecycle_heartbeat_ms);
+    /* SERVICE_READY remains withheld until all fixed startup work and the
+     * first complete desktop frame have finished on the BSP.  Keep the
+     * existing two-second healthy deadline alive between bounded strips and
+     * asset reads instead of widening it for a slow virtual display. */
+    if (argc == 1) {
+        (void)x86os_monotonic_ms(&phase_started_ms);
+        if (desktop_splash_show(
+                &display, lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms) != 0) {
+            desktop_surface_runtime_shutdown(&surface_runtime);
+            if (runtime_activated) (void)desktop_display_deactivate();
+            return 1;
+        }
+        desktop_startup_phase_metric("splash", phase_started_ms);
+    }
     desktop_explorer_initialize(&explorer);
     desktop_drag_state_initialize(&desktop_drag);
     desktop_trash_state_initialize(&desktop_trash);
     int trash_status = desktop_trash_prepare(&desktop_trash);
+    if (desktop_lifecycle_publish_progress(
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms) != 0) {
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)desktop_display_deactivate();
+        return 1;
+    }
     /* Optional assets are read and decoded exactly once before the first
      * frame. Missing or malformed files leave fixed-cost vector fallbacks. */
     (void)x86os_monotonic_ms(&phase_started_ms);
-    desktop_file_icon_cache_initialize();
+    if (desktop_file_icon_cache_initialize(
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms) != 0) {
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)desktop_display_deactivate();
+        return 1;
+    }
     desktop_startup_phase_metric("icons", phase_started_ms);
     (void)x86os_monotonic_ms(&phase_started_ms);
     int filetypes_status = load_filetypes(&filetypes);
     desktop_startup_phase_metric("filetypes", phase_started_ms);
+    if (desktop_lifecycle_publish_progress(
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms) != 0) {
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)desktop_display_deactivate();
+        return 1;
+    }
     (void)x86os_monotonic_ms(&phase_started_ms);
     int system_sound_status = load_system_sounds(&system_sounds);
     desktop_startup_phase_metric("sounds", phase_started_ms);
@@ -5377,9 +5435,6 @@ int main(int argc, char **argv) {
         system_sounds.enabled = 0U;
     if (system_sound_status != 0)
         x86os_puts("desktop: Systemklangkonfiguration ungueltig\n");
-    /* Startup asset loading can consume most of the two-second supervisor
-     * window on uncached or emulated storage.  Publish progress before the
-     * first full frame without weakening the fixed heartbeat deadline. */
     if (desktop_lifecycle_publish_progress(
             lifecycle_supervised, &lifecycle_sequence,
             &lifecycle_heartbeat_ms) != 0) {
@@ -5389,16 +5444,6 @@ int main(int argc, char **argv) {
     }
     pointer_x = (int32_t)(display.width / 2U);
     pointer_y = (int32_t)(display.height / 2U);
-    uint64_t startup_ready_ms = 0U;
-    if (startup_clock_valid &&
-        x86os_monotonic_ms(&startup_ready_ms) == 0 &&
-        startup_ready_ms >= startup_started_ms &&
-        startup_ready_ms - startup_started_ms <= INT32_MAX) {
-        x86os_puts("DESKTOP_STARTUP_MS value=");
-        x86os_print_number((int)(startup_ready_ms - startup_started_ms));
-        x86os_putchar('\n');
-    }
-    x86os_puts("DESKTOP_OK\n");
     desktop_dirty_region_t initial_dirty;
     desktop_dirty_initialize(&initial_dirty, display.width, display.height);
     uint32_t initial_target = DESKTOP_WM_NO_TARGET;
@@ -5424,12 +5469,40 @@ int main(int argc, char **argv) {
         if (runtime_activated) (void)desktop_display_deactivate();
         return 1;
     }
+    if (desktop_lifecycle_publish_progress(
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms) != 0) {
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)desktop_display_deactivate();
+        return 1;
+    }
     desktop_clock_refresh(&display, &initial_dirty, 1U);
     desktop_dirty_full(&initial_dirty);
     render_desktop_measured(
         &display, &manager, &explorer, &surfaces, &ui,
         &initial_dirty, 0, 0U, 0U, &metrics);
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+    if (desktop_lifecycle_publish_progress(
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms) != 0 ||
+        (lifecycle_supervised != 0U &&
+         x86os_reist_report(
+             X86OS_REIST_REPORT_SERVICE_READY, 1U) != 0)) {
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        if (runtime_activated) (void)desktop_display_deactivate();
+        x86os_puts("desktop: Supervisor-Lifecycle nicht verfuegbar\n");
+        return 1;
+    }
+    uint64_t startup_ready_ms = 0U;
+    if (startup_clock_valid &&
+        x86os_monotonic_ms(&startup_ready_ms) == 0 &&
+        startup_ready_ms >= startup_started_ms &&
+        startup_ready_ms - startup_started_ms <= INT32_MAX) {
+        x86os_puts("DESKTOP_STARTUP_MS value=");
+        x86os_print_number((int)(startup_ready_ms - startup_started_ms));
+        x86os_putchar('\n');
+    }
+    x86os_puts("DESKTOP_OK\n");
     desktop_system_sound_request(
         &system_sounds, ui.error_sequence != 0U
             ? DESKTOP_SYSTEM_SOUND_ERROR

@@ -333,3 +333,13 @@ VMware-Nachweis sah Generation 1 auf CPU 2, den Timeout/Restart zu Epoch 2,
 Generation 2 READY und danach auf CPU 1 sowie eine echte xHCI-Mausmeldung.
 Zusätzlich bleiben Ein-CPU- und
 `--no-apic`-Boots bis zur Ring-3-Shell erhalten.
+R6.2p hält denselben Compositor vor `SERVICE_READY` auf CPU 0, bis Splash,
+feste Assets, Exploreraufbau und der erste vollständige Frame abgeschlossen
+sind. Der erste gesunde Fortschritt folgt erst auf Display- und Surface-
+Initialisierung; weitere streng steigende Marker trennen jeden der acht
+festen Splash-Streifen, jedes feste Icon sowie die übrigen Startphasen. Erst
+nach dem ersten Frame darf der bestehende Post-Ready-Affinitätsvertrag greifen.
+Der Zwei-Sekunden-Heartbeat, der einsekündige Fence und das Restartbudget drei
+bleiben unverändert. Nur die feste aggregierte Erstaufnahme dieses Compositors
+beträgt dreißig Sekunden, damit langsame virtuelle Displayaktivierung die
+Generation nicht vor ihrem ersten zulässigen Self-Test verwirft.

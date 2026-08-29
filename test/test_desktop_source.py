@@ -65,17 +65,31 @@ class DesktopSourceTests(unittest.TestCase):
         self_test = self.source.index(
             "X86OS_REIST_REPORT_SELF_TEST", surface)
         progress = self.source.index(
-            "X86OS_REIST_REPORT_PROGRESS, 1U", self_test)
+            "desktop_lifecycle_publish_progress(", self_test)
+        splash = self.source.index("desktop_splash_show(", progress)
+        icons = self.source.index(
+            "desktop_file_icon_cache_initialize(", splash)
+        first_frame = self.source.index(
+            "render_desktop_measured(", icons)
         ready = self.source.index(
-            "X86OS_REIST_REPORT_SERVICE_READY", progress)
+            "X86OS_REIST_REPORT_SERVICE_READY", first_frame)
         loop = self.source.index("for (;;) {", ready)
         self.assertLess(surface, self_test)
         self.assertLess(self_test, progress)
-        self.assertLess(progress, ready)
+        self.assertLess(progress, splash)
+        self.assertLess(splash, icons)
+        self.assertLess(icons, first_frame)
+        self.assertLess(first_frame, ready)
         self.assertLess(ready, loop)
+        pre_ready = self.source[progress:ready]
+        self.assertGreaterEqual(
+            pre_ready.count("desktop_lifecycle_publish_progress("), 6)
         startup = self.source[ready:loop]
         self.assertGreaterEqual(
-            startup.count("desktop_lifecycle_publish_progress("), 3)
+            startup.count("desktop_lifecycle_publish_progress("), 2)
+        self.assertIn(
+            "uint32_t lifecycle_sequence = 1U",
+            self.source[self_test:ready])
         self.assertIn("uint32_t *sequence", self.source)
         self.assertIn("uint64_t *heartbeat_ms", self.source)
         self.assertIn("lifecycle_now_ms - lifecycle_heartbeat_ms >= 500U",
@@ -438,9 +452,11 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_ui_open_error(", activation)
         self.assertNotIn('x86os_puts("desktop: Keine Dateizuordnung', activation)
 
-    def test_first_render_emits_the_desktop_ready_marker(self):
+    def test_first_render_precedes_the_desktop_ready_marker(self):
         main = self.source[self.source.index("int main(") :]
         first_render = main.index("render_desktop_measured(")
+        service_ready = main.index(
+            "X86OS_REIST_REPORT_SERVICE_READY", first_render)
         marker = main.index('x86os_puts("DESKTOP_OK\\n")')
         self.assertIn('x86os_puts("DESKTOP_STARTUP_MS value=")', main)
         self.assertIn('desktop_startup_phase_metric("font-io"', self.source)
@@ -451,7 +467,8 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("if (desktop_font_attempted) return 0", self.source)
         self.assertIn("DESKTOP_FONT_LAZY_READY", self.source)
         self.assertIn("DESKTOP_FONT_LAZY_FALLBACK", self.source)
-        self.assertLess(marker, first_render)
+        self.assertLess(first_render, service_ready)
+        self.assertLess(service_ready, marker)
         startup = main[:main.index("for (;;)")]
         self.assertEqual(startup.count("render_desktop_measured("), 1)
 

@@ -54,7 +54,10 @@ foreach ($setting in @(
     }
 }
 
-$shellMarker = 'Starting userspace command interpreter from /bin/shell.prg'
+# SMP service diagnostics can interleave inside both the kernel launch text
+# and the shell banner.  This drive prompt is emitted only from the Ring-3
+# command loop after main() has completed its startup diagnostics.
+$shellMarker = 'C:\>'
 $requiredBeforeInput = @(
     'USB: xHCI HID ready',
     'mouse-port=',
@@ -62,6 +65,7 @@ $requiredBeforeInput = @(
     $shellMarker
 )
 $requiredAfterDesktop = @(
+    'REIST_GUI COMPOSITOR_READY generation=',
     'DESKTOP_OK',
     'DESKTOP_EXPLORER_OK'
 )
@@ -424,6 +428,7 @@ try {
             $shell = $text.IndexOf($shellMarker)
             $desktop = $text.IndexOf('DESKTOP_OK')
             $explorer = $text.IndexOf('DESKTOP_EXPLORER_OK')
+            $ready = $text.IndexOf('REIST_GUI COMPOSITOR_READY generation=')
             if ($ExpectCompositorRestart) {
                 $armed = $text.IndexOf(
                     'REIST_GUI COMPOSITOR_TIMEOUT_ARMED epoch=1')
@@ -438,17 +443,17 @@ try {
                     'DESKTOP_EXPLORER_OK', $restart)
                 if (!($hid -lt $scheduler -and $scheduler -lt $shell -and
                     $shell -lt $armed -and $armed -lt $restart -and
-                    $restart -lt $replacementReady -and
+                    $restart -lt $replacementExplorer -and
+                    $replacementExplorer -lt $replacementReady -and
                     $replacementReady -lt $replacementAp -and
-                    $restart -lt $replacementDesktop -and
-                    $replacementDesktop -lt $replacementExplorer -and
+                    $replacementReady -lt $replacementDesktop -and
                     $replacementAp -lt $mouse -and
-                    $replacementExplorer -lt $mouse)) {
+                    $replacementDesktop -lt $mouse)) {
                     throw 'VMware compositor restart markers are out of order.'
                 }
             } elseif (!($hid -lt $scheduler -and $scheduler -lt $shell -and
-                $shell -lt $desktop -and $desktop -lt $explorer -and
-                $explorer -lt $mouse)) {
+                $shell -lt $explorer -and $explorer -lt $ready -and
+                $ready -lt $desktop -and $desktop -lt $mouse)) {
                 throw 'VMware mouse runtime markers are out of order.'
             }
             $text | Set-Content -LiteralPath $GateLog -Encoding utf8

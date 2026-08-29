@@ -546,6 +546,18 @@ begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem
 Heartbeat-Restart abgeschlossen. Physische,
 zielhardwarespezifische und produktbezogene Nachweise bleiben sichtbar und
 werden nicht durch die Emulatorabnahme ersetzt.
+R6.2p repariert den auf dem AMD-Host reproduzierten VMware-Startfehler: Der
+Desktop hatte `SERVICE_READY` vor seiner 3,784 Sekunden langen Iconphase
+publiziert, verfehlte danach den Zwei-Sekunden-Heartbeat und verbrauchte alle
+drei Neustarts bis `COMPOSITOR_DEGRADED`. Feste Fortschrittsgrenzen liegen nun
+innerhalb des Splash- und Iconaufbaus; `SERVICE_READY` folgt erst nach dem
+ersten vollständigen Frame. Heartbeat, Fence, Restartbudget sowie alle
+Display-, Surface-, VFS- und Geräteautoritäten bleiben unverändert. Nur die
+aggregierte Compositor-Erstaufnahme beträgt nun fest 30 statt 5 Sekunden, da
+der reale VMware-Lauf die alte Grenze bereits vor dem ersten zulässigen
+Self-Test überschritt. Der finale Vier-vCPU-Lauf erreichte Explorer,
+`COMPOSITOR_READY`, `DESKTOP_OK` und echte virtuelle xHCI-Mauseingabe in
+24 Sekunden ohne Restart, Degraded-Zustand oder Kernel-Panic.
 
 Bootpolicy seit 28. August 2026: Kein Target startet den grafischen Desktop
 automatisch. QEMU, VMware und physische Images erreichen zuerst die Ring-3-

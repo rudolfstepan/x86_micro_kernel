@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R6.2p-vmware-compositor-startup"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12406,7 +12406,7 @@ evidence = [
 
 [[packages]]
 id = "R6.2p-vmware-compositor-startup"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Keep VMware compositor startup inside its heartbeat contract"
@@ -12455,4 +12455,10 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "gui: bound VMware compositor startup"
-evidence = []
+evidence = [
+  "All 73 executable frozen source-contract checks passed across desktop lifecycle splash supervisor and VMware runner ordering; two host-C checks were skipped because no GCC or Clang is installed.",
+  "The final VMware VGA package build passed the 126-syscall ABI check and produced the current signed 64-MiB BIOS package with only the compositor initial-admission ceiling changed to a fixed thirty seconds.",
+  "The four-vCPU VMware runtime reached explorer construction COMPOSITOR_READY generation 3 DESKTOP_OK and DESKTOP_MOUSE_OK in 24 seconds with no compositor restart degradation or kernel panic.",
+  "The accepted desktop startup completed in 2698 ms: splash 806 ms icons 652 ms filetypes 54 ms and sounds 43 ms; SERVICE_READY remained after the first frame while the healthy heartbeat recovery fence and restart budget stayed unchanged.",
+  "The runtime runner now keys command admission to the Ring-3 C:\\> prompt and validates the new explorer then ready then desktop then real xHCI mouse order despite bounded SMP serial interleaving; active_id is empty."
+]

@@ -473,3 +473,25 @@ regions of the existing aligned font-file buffer. There is no startup heap or
 kernel image parser. A missing, malformed, oversized or display-incompatible
 asset leaves the already visible title fallback and does not block desktop
 startup. The rescue floppy intentionally omits the artwork.
+
+VMware Workstation can make the fixed splash and icon presentation slower
+than their storage reads. The supervised desktop therefore initializes its
+display and Surface broker, self-tests and publishes its first healthy
+progress before drawing the splash. It then renews the same two-second
+generation heartbeat after the fallback frame, after every one of the eight
+fixed splash strips and after every fixed icon decode. Filetype and sound
+configuration, explorer setup and the first complete frame have matching
+bounded phase boundaries. `SERVICE_READY` remains withheld until that frame
+has committed, so post-ready affinity and Surface clients cannot observe a
+partially constructed desktop. No healthy lifecycle deadline or authority is
+widened.
+The initial compositor admission ceiling alone is a fixed thirty seconds,
+because VMware can spend more than the former five-second emulator allowance
+in display activation before the first permitted self-test. The healthy
+heartbeat, recovery fence and restart budget remain two seconds, one second
+and three respectively.
+
+The final four-vCPU VMware Workstation proof completed the desktop startup in
+2698 ms and reached the explorer, generation-scoped compositor ready marker,
+desktop marker and real virtual xHCI mouse marker in order. No compositor
+restart, degraded state or kernel panic occurred.

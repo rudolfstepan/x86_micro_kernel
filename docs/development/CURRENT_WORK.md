@@ -949,3 +949,26 @@ Displaypublikation vor der Prozessbeendigung; der Supervisor startet hoechstens
 drei Ersatzgenerationen mit einem einsekundigen Recovery-Fenster. Erst normales
 Sitzungsende oder Budgeterschoepfung gibt den Userspace-Shell-Fallback frei.
 Diese Scheibe erteilt noch keine AP-Affinitaet.
+
+## VMware-Compositorstart innerhalb des Heartbeats
+
+Der AMD-Hostlauf erreichte den Desktop erst nach 8555 ms; allein die festen
+Icons benötigten 3784 ms. Weil der Compositor `SERVICE_READY` bereits vor
+dieser Arbeit meldete, wertete der Supervisor die aggregierte Iconphase als
+verlorenen Zwei-Sekunden-Heartbeat, startete drei Generationen neu und ging
+anschließend in `COMPOSITOR_DEGRADED`; danach schlug auch die nächste Surface-
+Erzeugung fehl. R6.2p hält `SERVICE_READY` jetzt bis nach dem ersten
+vollständigen Frame zurück und meldet streng steigenden Fortschritt nach dem
+Splash-Fallback, jedem der acht festen Splash-Streifen, jedem festen Icon und
+den übrigen Startphasen. Display- und Surface-Initialisierung bleiben vor dem
+Self-Test. Weil der reale VMware-Lauf bereits vor diesem Self-Test die frühere
+Fünf-Sekunden-Erstaufnahme überschritt, besitzt ausschließlich der Compositor
+nun eine feste aggregierte 30-Sekunden-Erstaufnahme. Zwei-Sekunden-Heartbeat,
+einsekündiger Fence, Restartbudget drei und alle Autoritätsgrenzen bleiben
+unverändert.
+
+Der finale Vier-vCPU-VMware-Lauf bestand in 24 Sekunden ohne Restart,
+Degraded-Zustand oder Kernel-Panic. Der Desktop benötigte 2698 ms, davon
+806 ms für den Splash, 652 ms für Icons, 54 ms für Dateitypen und 43 ms für
+Klänge; Explorer, `COMPOSITOR_READY`, `DESKTOP_OK` und die echte virtuelle
+xHCI-Maus erschienen in der geforderten Reihenfolge.

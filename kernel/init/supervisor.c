@@ -5920,7 +5920,7 @@ bool supervisor_start_compositor(uint64_t now_ms,
         .heartbeat_timeout_ms = 2000U,
         .recovery_timeout_ms = 1000U,
         .restart_budget = 3U,
-        .startup_timeout_ms = 5000U,
+        .startup_timeout_ms = 30000U,
     };
     const supervisor_fence_ops_t fence = {
         .apply = compositor_fence_apply,

@@ -69,6 +69,13 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("heartbeat_timeout_ms = 2000U", source)
         self.assertIn("recovery_timeout_ms = 1000U", source)
         self.assertIn("restart_budget = 3U", source)
+        compositor_start = source[
+            source.index("bool supervisor_start_compositor("):
+            source.index("bool supervisor_compositor_session_active(")
+        ]
+        self.assertIn("startup_timeout_ms = 30000U", compositor_start)
+        self.assertNotIn("startup_timeout_ms = 30000U", source[
+            :source.index("bool supervisor_start_compositor(")])
         self.assertNotIn("supervisor_start_compositor", kernel)
         self.assertNotIn("supervisor_compositor_session_active", kernel)
         self.assertIn("REIST_GUI DESKTOP_AUTOSTART_DISABLED", kernel)
