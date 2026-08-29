@@ -348,6 +348,13 @@ Umgebung und `AT_NULL` fuer beide Kindgenerationen. Variable Argumentlisten,
 VFS und ambient vererbte Autoritaet bleiben Folgearbeiten; die x86_64-Queue ist
 leer.
 
+**R8.2m ist aktiv:** Eine parallele feste Vier-Slot-Profiltabelle bindet je
+Prozessgeneration genau eine 64-Bit-Syscallmaske. Generation 40 erhaelt nur die
+acht Shelloperationen, Generation 41/42 ausschliesslich `EXIT`. Validierung
+liegt vor jedem Dispatchereffekt; ein reales Kind muss `GETPID` als `EACCES`
+beobachten und danach weiterlaufen. Reap und Slot-Reuse muessen das Profil
+generationengenau loeschen.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

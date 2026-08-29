@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2m-x86_64-syscall-profiles"
 
 [policy]
 one_package_per_run = true
@@ -11648,6 +11648,42 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU dialogue executed INFO RUN RUN EXIT observed exactly two ordered RUN_OK markers after the child validated argc argv NULL empty envp AT_NULL and both strings and preserved every marker through RING3_SHELL_OK",
   "both generations retained task-before-image reap blocking exact WAIT shell-selector restoration zero relation queue and loader metadata and the exact initial free count; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2m-x86_64-syscall-profiles"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Enforce generation-scoped x86_64 syscall profiles"
+scope = "Add a fixed generation-scoped default-deny syscall authority gate to the real x86_64 scheduled shell lifecycle without growing the packed 256-byte task record or public ABI. Add exactly four parallel fixed profile records each containing generation and one 64-bit syscall bitmap. Parent generation 40 receives only EXIT 9 READ 15 WRITE 20 GETPID 22 SPAWN 23 WAIT 24 SPAWNV 30 and YIELD 40. Child generations 41 and 42 receive only EXIT 9. Before any shell syscall handler pointer read serial access loader task queue or lifecycle effect, validate current slot live task generation profile generation syscall index below 64 and the matching bit. A structurally invalid or stale profile fails closed through scheduler cleanup; a well-formed denied request returns EACCES -13 through the same saved-context IRETQ and runqueue path without side effects. The RX-only child performs one GETPID 22 denial probe with zero arguments, requires exactly -13, then validates its existing startup stack and exits 77; any accidental authority exits 78. Install profiles only after complete task construction and before READY, clear the exact matching profile during reap, reject stale duplicate clear and prove all four records zero before final success. Preserve syscall numbers task record and slot capacities separate SPAWN and SPAWNV proofs two generation lifecycle all markers dialogue counts loader contexts C handoffs i386 and exact cleanup. Add no capability transfer dynamic bitmap profile mutation extra task public ABI VFS SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/child.asm",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "test/test_x86_64_boot.py",
+  "docs/architecture/REIST_ARCHITECTURE.md", "docs/architecture/X86_64_BOOTSTRAP.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the packed 256-byte task record four-slot task and queue capacities public syscall ABI i386 artifacts C handoffs and prior x86_64 markers remain unchanged",
+  "exactly four fixed generation plus 64-bit bitmap profile records exist and no profile can outlive or authorize a different task generation",
+  "parent generation 40 receives only syscalls 9 15 20 22 23 24 30 40 while child generations 41 and 42 receive only syscall 9",
+  "profile validation precedes every shell dispatcher effect and malformed or stale metadata fails closed while a valid denial returns EACCES through bounded scheduler resume",
+  "the child GETPID denial probe observes exactly -13 with no effect before startup validation and only then may exact EXIT 77 complete",
+  "reap clears only the exact generation profile final verification proves four zero records and cleanup restores every prior frame loader queue and relation invariant"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "the task record task capacity public ABI or syscall numbering must grow or more than one fixed 64-bit mask per profile is required",
+  "a denied syscall can reach pointer serial loader task queue or lifecycle effects or return without the saved-context IRETQ path",
+  "a stale profile can authorize or survive generation reuse reap cleanup or final verification",
+  "an i386 artifact prior marker separate lifecycle proof C handoff or loader context changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "proc: enforce x86_64 syscall profiles"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
