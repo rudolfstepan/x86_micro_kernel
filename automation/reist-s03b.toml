@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2i-x86_64-shell-spawn-wait"
 
 [policy]
 one_package_per_run = true
@@ -11478,6 +11478,43 @@ evidence = [
   "the bounded one-vCPU 128-MiB native Windows QEMU 11.1.0 dialogue exercised the forced-high early execution lifecycle reached EARLY_EXECUTION_TABLES_OK then preserved every scheduler C-control and shell marker through RING3_SHELL_OK",
   "success and contained CPL3 fault cleanup restored kernel CR3 freed stack ELF and PT-through-PML4 frames zeroed ownership and restored the exact initial free count; active_id is empty"
 ]
+
+[[packages]]
+id = "R8.2i-x86_64-shell-spawn-wait"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run a bounded child from the real x86_64 shell"
+scope = "Integrate the accepted GETPID 22 SPAWN 23 WAIT 24 and EXIT 9 lifecycle into the real C-controlled scheduled x86_64 Ring-3 shell without adding VFS loading. Add exact RUN to the compact shell. RUN verifies shell PID 300, passes the fixed NUL-terminated /shell/child path and aligned status storage from its private NX stack, spawns exactly one child in fixed slot 1 generation 41 and blocks in WAIT for PID 301. The child reuses the already validated immutable shell RX image but receives one fixed nonzero entry mode in RDI, performs no I/O and exits 77 immediately. The kernel validates shell generation path stack ownership status pointer child identity and empty slot before allocating the child's private dynamic tables writable pages and NX stack; READY is published only after complete construction. WAIT stores only a direct-map status destination, blocks without polling, dispatches the child, writes status 77 after terminal validation, reaps exact generation 41, wakes shell generation 40 and permits RUN_OK then EXIT. Preserve nonblocking serial reads 64-byte writes IRETQ returns queue bounds existing separate spawn/wait proof C handoffs every marker and i386. Keep general image registry argv VFS wait-any repeated RUN priorities SMP devices physical hardware and production integration outside this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/proc/cooperative_scheduler.asm", "scripts/run_qemu_x86_64_boot.py",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all i386 artifacts syscall numbers C handoffs four-slot capacity prior isolated spawn-wait proof and existing x86_64 markers remain unchanged and ordered",
+  "RUN performs exactly GETPID SPAWN and WAIT using aligned private shell-stack inputs and accepts only parent PID 300 child PID 301 generation 41 and status 77",
+  "the child shares only the validated immutable shell RX image and owns distinct dynamic tables writable pages and NX stack before READY publication",
+  "WAIT blocks shell generation 40 without polling and publishes no status until exact child generation 41 is terminal under its own CR3",
+  "child reap restores kernel CR3 releases every child-owned frame zeroes slot queue membership relation and wait metadata then wakes only shell generation 40",
+  "final shell EXIT requires exactly one completed RUN empty queue and child state exact read write and dialogue counts full cleanup and initial free count"
+]
+targeted_tests = ["python test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["python scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "a second loader image VFS path general argv task slot runqueue capacity public ABI or syscall number is required",
+  "the shell can poll for completion or child RX becomes writable child stack or tables alias the parent or status publishes before exact terminal validation",
+  "a stale child generation can wake the shell retain authority leak a frame or survive final cleanup",
+  "an i386 artifact prior marker separate spawn-wait proof C handoff or shell safety bound changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "proc: run bounded child from x86_64 shell"
+evidence = []
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"
