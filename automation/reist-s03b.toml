@@ -12414,8 +12414,10 @@ scope = "Repair the reproduced VMware desktop failure in which the compositor pu
 allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/gui/compositor/desktop.c",
+  "scripts/run_vmware_mouse.ps1",
   "test/test_desktop_source.py",
   "test/test_desktop_splash.py",
+  "test/test_vmware_mouse.py",
   "docs/architecture/SMP_SUBSYSTEM.md",
   "docs/architecture/VIDEO_SUBSYSTEM.md",
   "docs/development/CURRENT_WORK.md",
@@ -12431,7 +12433,8 @@ invariants = [
 ]
 targeted_tests = [
   "python test/test_desktop_source.py -v",
-  "python test/test_desktop_splash.py -v"
+  "python test/test_desktop_splash.py -v",
+  "python test/test_vmware_mouse.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
