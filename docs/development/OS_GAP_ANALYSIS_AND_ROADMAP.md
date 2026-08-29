@@ -306,6 +306,15 @@ warnungsfreie isolierte 121.208-Byte-Build und der native QEMU-Lauf bis
 `DYNAMIC_PROCESS_TABLES_OK` und `RING3_SHELL_OK` bestanden. i386,
 Taskkapazitaet und ABI bleiben unveraendert; die x86_64-Queue ist leer.
 
+**R8.2h ist abgeschlossen:** Der letzte statische 16-KiB-User-Tabellenblock des fruehen
+Einzelprozessnachweises wird durch vier Frames des gemeinsamen Allocators
+ersetzt. Aufbau, CPL3-Fehler und Erfolg verwenden denselben fail-before-CR3-
+und Cleanupvertrag; eine leere Besitzliste und der exakte Freizaehler sind
+Pflicht vor dem neuen Marker. 48 Quellvertragstests, der warnungsfreie
+125.944-Byte-Build und der native QEMU-Lauf bis `EARLY_EXECUTION_TABLES_OK`
+und `RING3_SHELL_OK` bestanden. Scheduler, ABI, i386 und Kapazitaeten bleiben
+unveraendert; die x86_64-Queue ist leer.
+
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen
 keine für das gewählte Profil wesentliche Funktion blockieren oder deren Zeitbudget

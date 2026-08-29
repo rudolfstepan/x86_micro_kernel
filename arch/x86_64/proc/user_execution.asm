@@ -11,6 +11,12 @@ USER_STACK_TOP            equ 0x00409000
 PAGE_SIZE                 equ 4096
 MANAGED_LIMIT             equ 0x08000000
 HIGHER_HALF_BASE           equ 0xFFFFFFFF80000000
+DIRECT_MAP_BASE            equ 0xFFFF800000000000
+USER_TABLE_LEVELS         equ 4
+USER_TABLE_PML4           equ 0
+USER_TABLE_PDPT           equ 8
+USER_TABLE_PD             equ 16
+USER_TABLE_PT             equ 24
 
 PAGE_PRESENT              equ 0x001
 PAGE_WRITE                equ 0x002
@@ -80,6 +86,7 @@ section .text
 global x86_64_user_execution_selftest64
 global x86_64_user_exception64
 global x86_64_user_shell64
+global x86_64_user_execution_table_metadata_clear64
 
 extern pml4_table
 extern physical_frame_alloc64
@@ -251,7 +258,7 @@ enter_user_attempt64:
     test eax, PF_X
     jz user_execution_fail
 
-    mov eax, user_pml4
+    mov rax, qword [rel user_cr3]
     mov cr3, rax
 
     push qword USER_DATA_SELECTOR
@@ -710,35 +717,60 @@ serial_hex64_local64:
 
 build_user_page_tables64:
     cld
-    xor eax, eax
-    lea rdi, [rel user_pml4]
-    mov ecx, (4 * PAGE_SIZE) / 8
-    rep stosq
+    lea r14, [rel user_table_frames]
+    xor ebx, ebx
+.metadata_loop:
+    cmp qword [r14 + rbx * 8], 0
+    jne .fail
+    inc ebx
+    cmp ebx, USER_TABLE_LEVELS
+    jb .metadata_loop
+    xor ebx, ebx
+.allocation_loop:
+    call physical_frame_alloc64
+    test rax, rax
+    jz .fail
+    test rax, PAGE_SIZE - 1
+    jnz .fail
+    cmp rax, MANAGED_LIMIT
+    jae .fail
+    mov qword [r14 + rbx * 8], rax
+    inc ebx
+    cmp ebx, USER_TABLE_LEVELS
+    jb .allocation_loop
+
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PML4]
 
     mov rax, qword [rel pml4_table + (256 * 8)]
     test rax, PAGE_PRESENT
     jz .fail
     test rax, PAGE_USER
     jnz .fail
-    mov qword [rel user_pml4 + (256 * 8)], rax
+    mov qword [r13 + (256 * 8)], rax
     mov rax, qword [rel pml4_table + (511 * 8)]
     test rax, PAGE_PRESENT
     jz .fail
     test rax, PAGE_USER
     jnz .fail
-    mov qword [rel user_pml4 + (511 * 8)], rax
+    mov qword [r13 + (511 * 8)], rax
 
-    mov eax, user_pdpt
-    or eax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov qword [rel user_pml4], rax
-    mov eax, user_pd
-    or eax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov qword [rel user_pdpt], rax
-    mov eax, user_pt
-    or eax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov qword [rel user_pd + (2 * 8)], rax
+    mov rax, qword [rel user_table_frames + USER_TABLE_PDPT]
+    or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+    mov qword [r13], rax
+    mov r12, DIRECT_MAP_BASE
+    add r12, qword [rel user_table_frames + USER_TABLE_PDPT]
+    mov rax, qword [rel user_table_frames + USER_TABLE_PD]
+    or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+    mov qword [r12], rax
+    mov r12, DIRECT_MAP_BASE
+    add r12, qword [rel user_table_frames + USER_TABLE_PD]
+    mov rax, qword [rel user_table_frames + USER_TABLE_PT]
+    or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+    mov qword [r12 + (2 * 8)], rax
 
-    lea r13, [rel user_pt]
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PT]
     xor ebx, ebx
     xor r12d, r12d
 .elf_page_loop:
@@ -762,8 +794,8 @@ build_user_page_tables64:
     or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
     mov rdx, PAGE_NX
     or rax, rdx
-    mov qword [rel user_pt + (USER_PAGE_COUNT * 8)], rax
-    mov eax, user_pml4
+    mov qword [r13 + (USER_PAGE_COUNT * 8)], rax
+    mov rax, qword [rel user_table_frames + USER_TABLE_PML4]
     mov qword [rel user_cr3], rax
     mov eax, 1
     ret
@@ -823,16 +855,18 @@ verify_user_context64:
     cmp rax, rdx
     jne .fail
     mov rax, qword [rel user_cr3]
-    mov edx, user_pml4
+    mov rdx, qword [rel user_table_frames + USER_TABLE_PML4]
     cmp rax, rdx
     jne .fail
     test rax, PAGE_SIZE - 1
     jnz .fail
 
     mov byte [rel failure_stage], 0x91
-    mov eax, user_pdpt
-    or eax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov rdx, qword [rel user_pml4]
+    mov rax, qword [rel user_table_frames + USER_TABLE_PDPT]
+    or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PML4]
+    mov rdx, qword [r13]
     mov r8, rdx
     and rdx, ~PAGE_HW_A_MASK
     cmp rdx, rax
@@ -842,22 +876,28 @@ verify_user_context64:
     jmp .fail
 .pml4_user_ok:
     mov byte [rel failure_stage], 0x92
-    mov eax, user_pd
-    or eax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov rdx, qword [rel user_pdpt]
+    mov rax, qword [rel user_table_frames + USER_TABLE_PD]
+    or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PDPT]
+    mov rdx, qword [r13]
     and rdx, ~PAGE_HW_A_MASK
     cmp rdx, rax
     jne .fail
     mov byte [rel failure_stage], 0x93
-    mov eax, user_pt
-    or eax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
-    mov rdx, qword [rel user_pd + (2 * 8)]
+    mov rax, qword [rel user_table_frames + USER_TABLE_PT]
+    or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PD]
+    mov rdx, qword [r13 + (2 * 8)]
     and rdx, ~PAGE_HW_A_MASK
     cmp rdx, rax
     jne .fail
 
     mov byte [rel failure_stage], 0x94
-    mov rax, qword [rel user_pml4 + (256 * 8)]
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PML4]
+    mov rax, qword [r13 + (256 * 8)]
     mov rdx, qword [rel pml4_table + (256 * 8)]
     and rax, ~PAGE_HW_A_MASK
     and rdx, ~PAGE_HW_A_MASK
@@ -865,7 +905,7 @@ verify_user_context64:
     jne .fail
     test rax, PAGE_USER
     jnz .fail
-    mov rax, qword [rel user_pml4 + (511 * 8)]
+    mov rax, qword [r13 + (511 * 8)]
     mov rdx, qword [rel pml4_table + (511 * 8)]
     and rax, ~PAGE_HW_A_MASK
     and rdx, ~PAGE_HW_A_MASK
@@ -875,7 +915,8 @@ verify_user_context64:
     jnz .fail
 
     mov byte [rel failure_stage], 0x95
-    lea r13, [rel user_pt]
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PT]
     xor ebx, ebx
 .verify_elf_loop:
     mov ecx, ebx
@@ -894,7 +935,7 @@ verify_user_context64:
     or rax, PAGE_PRESENT | PAGE_WRITE | PAGE_USER
     mov rdx, PAGE_NX
     or rax, rdx
-    mov rdx, qword [rel user_pt + (USER_PAGE_COUNT * 8)]
+    mov rdx, qword [r13 + (USER_PAGE_COUNT * 8)]
     and rdx, ~PAGE_HW_AD_MASK
     cmp rdx, rax
     jne .fail
@@ -908,7 +949,8 @@ verify_user_context64:
     cmp ecx, 512
     jb .zero_pt_loop
     mov byte [rel failure_stage], 0x98
-    lea r13, [rel user_pdpt]
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PDPT]
     mov ecx, 1
 .zero_pdpt_loop:
     cmp qword [r13 + rcx * 8], 0
@@ -917,7 +959,8 @@ verify_user_context64:
     cmp ecx, 512
     jb .zero_pdpt_loop
     mov byte [rel failure_stage], 0x99
-    lea r13, [rel user_pd]
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PD]
     xor ecx, ecx
 .zero_pd_loop:
     cmp ecx, 2
@@ -929,7 +972,8 @@ verify_user_context64:
     cmp ecx, 512
     jb .zero_pd_loop
     mov byte [rel failure_stage], 0x9A
-    lea r13, [rel user_pml4]
+    mov r13, DIRECT_MAP_BASE
+    add r13, qword [rel user_table_frames + USER_TABLE_PML4]
     xor ecx, ecx
 .zero_pml4_loop:
     cmp ecx, 0
@@ -1141,11 +1185,6 @@ user_execution_cleanup64:
     jnz .tss_done
     mov byte [rel cleanup_error], 1
 .tss_done:
-    cld
-    xor eax, eax
-    lea rdi, [rel user_pml4]
-    mov ecx, (4 * PAGE_SIZE) / 8
-    rep stosq
     mov qword [rel user_cr3], 0
     mov qword [rel user_entry_address], 0
 
@@ -1160,6 +1199,22 @@ user_execution_cleanup64:
 .stack_freed:
     mov qword [rel user_stack_frame], 0
 .stack_done:
+    lea r14, [rel user_table_frames]
+    mov ebx, USER_TABLE_LEVELS - 1
+.table_loop:
+    mov rdi, qword [r14 + rbx * 8]
+    test rdi, rdi
+    jz .next_table
+    call physical_frame_free64
+    test eax, eax
+    jnz .table_freed
+    mov byte [rel cleanup_error], 1
+    jmp .next_table
+.table_freed:
+    mov qword [r14 + rbx * 8], 0
+.next_table:
+    dec ebx
+    jns .table_loop
     call x86_64_elf64_release64
     test eax, eax
     jnz .loader_done
@@ -1184,6 +1239,22 @@ user_execution_cleanup64:
     mov byte [rel cleanup_error], 1
 .count_done:
     cmp byte [rel cleanup_error], 0
+    jne .fail
+    mov eax, 1
+    ret
+.fail:
+    xor eax, eax
+    ret
+
+x86_64_user_execution_table_metadata_clear64:
+    lea rsi, [rel user_table_frames]
+    mov ecx, USER_TABLE_LEVELS
+.metadata_loop:
+    cmp qword [rsi], 0
+    jne .fail
+    add rsi, 8
+    loop .metadata_loop
+    cmp qword [rel user_cr3], 0
     jne .fail
     mov eax, 1
     ret
@@ -1279,15 +1350,9 @@ final_result:
 failure_stage:
     resb 1
 
-alignb 4096
-user_pml4:
-    resb PAGE_SIZE
-user_pdpt:
-    resb PAGE_SIZE
-user_pd:
-    resb PAGE_SIZE
-user_pt:
-    resb PAGE_SIZE
+alignb 32
+user_table_frames:
+    resq USER_TABLE_LEVELS
 
 alignb 16
 user_kernel_stack_bottom:

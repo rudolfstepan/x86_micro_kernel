@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2h-x86_64-dynamic-execution-tables"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -11439,7 +11439,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2h-x86_64-dynamic-execution-tables"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Allocate the remaining x86_64 execution page tables from frames"
@@ -11472,7 +11472,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "mm: allocate remaining x86_64 execution tables from frames"
-evidence = []
+evidence = [
+  "all 48 x86_64 source-contract tests passed including removal of the final static user table arena delayed user_cr3 publication reverse-order cleanup and empty ownership metadata",
+  "the warning-free isolated build produced a 125944-byte bootstrap the unchanged 10264-byte probe and 1256-byte shell plus the unchanged 8064-byte C object and 13520-byte linked C payload",
+  "the bounded one-vCPU 128-MiB native Windows QEMU 11.1.0 dialogue exercised the forced-high early execution lifecycle reached EARLY_EXECUTION_TABLES_OK then preserved every scheduler C-control and shell marker through RING3_SHELL_OK",
+  "success and contained CPL3 fault cleanup restored kernel CR3 freed stack ELF and PT-through-PML4 frames zeroed ownership and restored the exact initial free count; active_id is empty"
+]
 
 [[packages]]
 id = "R6.2o-compositor-ap-restart"

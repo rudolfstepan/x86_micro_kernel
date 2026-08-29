@@ -466,6 +466,22 @@ zuerst Kernel-CR3 her, nullen und geben PT bis PML4 exakt einmal frei und
 muessen den anfaenglichen Freizaehler sowie eine leere Matrix wiederherstellen.
 Der fruehe Einzelprozessnachweis behaelt unabhaengige statische Tabellen.
 
+## Dynamische fruehe Ausfuehrungstabellen R8.2h
+
+Auch der verbleibende Einzelprozess-/Shell-Sondernachweis bezieht PML4, PDPT,
+PD und PT aus dem gemeinsamen Frame-Allocator. Eine feste Vier-Eintrag-
+Besitzliste ersetzt seine letzte statische 16-KiB-Tabellenarena. `user_cr3`
+wird erst nach vollstaendigem Direct-Map-Aufbau und W^X-/NX-Nachweis
+publiziert. Erfolg, CPL3-Fehler und jeder Teilfehler stellen zuerst Kernel-CR3
+her und geben Stack, ELF- sowie Tabellenframes exakt einmal zurueck. Damit
+bleiben im isolierten x86_64-Prozesspfad keine statischen User-Tabellenarenen.
+
+Die Abnahme umfasst 48 Quellvertragstests, den warnungsfreien isolierten
+125.944-Byte-Build und den begrenzten nativen Ein-vCPU-/128-MiB-QEMU-Lauf.
+Nach leerer Besitzliste und wiederhergestelltem Freizaehler erschien
+`EARLY_EXECUTION_TABLES_OK` geordnet vor allen Scheduler-, C-Control- und
+Shell-Markern bis `RING3_SHELL_OK`.
+
 Die Abnahme umfasst 47 Quellvertragstests und ein 121.208-Byte-Bootstrap.
 Der warnungsfreie isolierte Build behaelt Probe, Shell und C-Payload
 unveraendert. Der begrenzte Ein-vCPU-/128-MiB-QEMU-Dialog durchlief alle

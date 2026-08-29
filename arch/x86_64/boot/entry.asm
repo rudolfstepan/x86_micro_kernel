@@ -107,6 +107,7 @@ extern physical_frame_test_window_clear64
 extern physical_frame_test_window_is_clear64
 extern x86_64_elf64_loader_selftest64
 extern x86_64_user_execution_selftest64
+extern x86_64_user_execution_table_metadata_clear64
 extern x86_64_process_scheduler_selftest64
 extern x86_64_timer_interrupt_selftest64
 extern x86_64_process_preemption_selftest64
@@ -495,6 +496,11 @@ x86_64_nx_resume:
     call x86_64_user_execution_selftest64
     test eax, eax
     jz user_execution_state_error
+    call x86_64_user_execution_table_metadata_clear64
+    test eax, eax
+    jz user_execution_state_error
+    lea rsi, [rel early_execution_tables_message]
+    call serial_write64
     call physical_frame_test_window_is_clear64
     test eax, eax
     jz user_execution_state_error
@@ -981,6 +987,7 @@ halt64:
     jmp .loop
 
 section .rodata
+early_execution_tables_message db "REIST_X86_64_EARLY_EXECUTION_TABLES_OK", 13, 10, 0
 dynamic_process_tables_message db "REIST_X86_64_DYNAMIC_PROCESS_TABLES_OK", 13, 10, 0
 high_frame_consumers_message db "REIST_X86_64_HIGH_FRAME_CONSUMERS_OK", 13, 10, 0
 unsupported_message db "REIST_X86_64_UNSUPPORTED", 13, 10, 0

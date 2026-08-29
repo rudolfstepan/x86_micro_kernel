@@ -162,6 +162,14 @@ native Ein-vCPU-/128-MiB-QEMU-Lauf bis `DYNAMIC_PROCESS_TABLES_OK` und
 `RING3_SHELL_OK` bestanden. Die vier Slots und alle bestehenden ABIs bleiben
 fest; die Queue ist leer.
 
+R8.2h ist abgeschlossen. Der verbleibende fruehe x86_64-Einzelprozesspfad ersetzt seine
+statische PML4-/PDPT-/PD-/PT-Arena durch vier allokierte Frames. `user_cr3`
+wird erst nach dem vollstaendigen W^X-/NX-Aufbau sichtbar; jeder Erfolg oder
+Fehler stellt Kernel-CR3 wieder her und gibt Tabellen, Stack und ELF-Frames
+exakt einmal zurueck. 48 Quellvertragstests, der warnungsfreie
+125.944-Byte-Build und der native QEMU-Lauf bis `EARLY_EXECUTION_TABLES_OK`
+und `RING3_SHELL_OK` bestanden; die Queue ist leer.
+
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der
 unveränderte Standard und Fallback. Das getrennte 14.360-Byte-Bootstrap-

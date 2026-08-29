@@ -234,6 +234,13 @@ CR3-/READY-Publikation voraus; Reap und Fehlerrollback laufen unter Kernel-CR3
 und geben alle Ebenen generationengebunden zurueck. Taskzahl, ABI und der
 unabhaengige fruehe Ring-3-Nachweis bleiben unveraendert.
 
+R8.2h migriert den letzten fruehen Einzelprozess-Ausfuehrungspfad auf dieselbe
+Frame-Autoritaet. Vier feste Besitzfelder ersetzen seine statische PML4-/PDPT-/
+PD-/PT-Arena; CR3-Publikation folgt erst auf vollstaendige Validierung und
+jeder Rueckweg gibt unter Kernel-CR3 alle Ebenen frei. Damit teilen frueher
+Nachweis und Scheduler den Allocator- und Cleanupvertrag, ohne ihre
+Fehlerdomaenen oder Lebenszyklussemantik zusammenzulegen.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein
