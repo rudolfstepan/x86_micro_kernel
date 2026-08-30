@@ -121,18 +121,27 @@ unsigned int find_free_cluster(struct fat32_boot_sector* boot_sector) {
 // --------------------------------------------------------------------
 // mark_cluster_in_fat
 // --------------------------------------------------------------------
+typedef struct {
+    unsigned char active_buffer[SECTOR_SIZE];
+    unsigned char update_buffer[SECTOR_SIZE];
+    unsigned char verify_buffer[SECTOR_SIZE];
+    bool in_use;
+} fat32_fat_update_workspace_t;
+
+static fat32_fat_update_workspace_t fat32_fat_update_workspace;
+
 static bool write_fat_copy_entry(struct fat32_boot_sector* boot_sector,
                                  unsigned int fat_number,
                                  unsigned int fat_offset,
-                                 unsigned int value) {
+                                 unsigned int value,
+                                 unsigned char buffer[SECTOR_SIZE],
+                                 unsigned char verify[SECTOR_SIZE]) {
     const unsigned int sector = partition_lba_offset +
         boot_sector->reserved_sector_count +
         fat_number * boot_sector->fat_size_32 +
         fat_offset / boot_sector->bytes_per_sector;
     const unsigned int entry_offset = fat_offset % boot_sector->bytes_per_sector;
     const unsigned int desired = value & 0x0FFFFFFFu;
-    unsigned char buffer[SECTOR_SIZE];
-    unsigned char verify[SECTOR_SIZE];
     bool write_reported_success = false;
     bool observed_after_write = false;
 
@@ -181,19 +190,30 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector,
     const unsigned int active_fat = fat32_active_fat_index(boot_sector);
     if (active_fat >= boot_sector->number_of_fats) return false;
 
+    uint32_t operation_flags = fat32_operation_workspace_begin();
+    fat32_fat_update_workspace_t *workspace =
+        &fat32_fat_update_workspace;
+    if (workspace->in_use) {
+        fat32_operation_workspace_end(operation_flags);
+        return false;
+    }
+    workspace->in_use = true;
+    bool result = false;
+
     const unsigned int fat_offset = cluster * 4u;
     const unsigned int active_sector = partition_lba_offset +
         boot_sector->reserved_sector_count +
         active_fat * boot_sector->fat_size_32 +
         fat_offset / boot_sector->bytes_per_sector;
     const unsigned int entry_offset = fat_offset % boot_sector->bytes_per_sector;
-    unsigned char active_buffer[SECTOR_SIZE];
-    if (!ata_read_sector(ata_base_address, active_sector, active_buffer,
+    if (!ata_read_sector(ata_base_address, active_sector,
+                         workspace->active_buffer,
                          ata_is_master)) {
-        return false;
+        goto release_workspace;
     }
     const unsigned int old_value =
-        (*(unsigned int*)&active_buffer[entry_offset]) & 0x0FFFFFFFu;
+        (*(unsigned int*)&workspace->active_buffer[entry_offset]) &
+        0x0FFFFFFFu;
 
     const unsigned int first_fat = fat32_fat_is_mirrored(boot_sector) ?
         0u : active_fat;
@@ -201,12 +221,14 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector,
         boot_sector->number_of_fats : active_fat + 1u;
     bool mirror_degraded = false;
     for (unsigned int fat_number = first_fat; fat_number < fat_count;
-         ++fat_number) {
+        ++fat_number) {
         bool updated = write_fat_copy_entry(boot_sector, fat_number,
-                                            fat_offset, value);
+                                            fat_offset, value,
+                                            workspace->update_buffer,
+                                            workspace->verify_buffer);
         if (fat_number == active_fat && !updated) {
             printf("Error: Failed to confirm active FAT entry %u\n", cluster);
-            return false;
+            goto release_workspace;
         }
         if (!updated) {
             mirror_degraded = true;
@@ -224,7 +246,15 @@ bool mark_cluster_in_fat(struct fat32_boot_sector* boot_sector,
     if (mirror_degraded) {
         printf("Warning: continuing with the verified active FAT copy\n");
     }
-    return true;
+    result = true;
+
+release_workspace:
+    memset(workspace->active_buffer, 0, sizeof(workspace->active_buffer));
+    memset(workspace->update_buffer, 0, sizeof(workspace->update_buffer));
+    memset(workspace->verify_buffer, 0, sizeof(workspace->verify_buffer));
+    workspace->in_use = false;
+    fat32_operation_workspace_end(operation_flags);
+    return result;
 }
 
 // --------------------------------------------------------------------

@@ -7,20 +7,49 @@
   ],
   "indirect_calls": {
     "fs/fat12/fat12_journal.c:write_header": [
+      "fs/fat12/fat12.c:fat12_journal_read_sector",
+      "fs/fat12/fat12.c:fat12_journal_write_sector"
+    ],
+    "fs/fat12/fat12_journal.c:write_verified": [
+      "fs/fat12/fat12.c:fat12_journal_read_sector",
       "fs/fat12/fat12.c:fat12_journal_write_sector"
     ],
     "fat12_journal_record": [
+      "fs/fat12/fat12.c:fat12_journal_read_sector",
       "fs/fat12/fat12.c:fat12_journal_write_sector"
+    ],
+    "fs/fat12/fat12_journal.c:fat12_journal_load_locked": [
+      "fs/fat12/fat12.c:fat12_journal_read_sector"
+    ],
+    "fs/fat12/fat12_journal.c:fat12_journal_recover_locked": [
+      "fs/fat12/fat12.c:fat12_journal_read_sector",
+      "fs/fat12/fat12.c:fat12_journal_write_sector"
+    ],
+    "fat12_journal_recover": [
+      "fs/fat12/fat12.c:fat12_journal_read_sector",
+      "fs/fat12/fat12.c:fat12_journal_write_sector"
+    ],
+    "fat12_remap_load": [
+      "fs/fat12/fat12.c:fat12_journal_read_sector"
+    ],
+    "fs/fat12/fat12_replica.c:load_copy": [
+      "fs/fat12/fat12.c:fat12_replica_read_sector"
+    ],
+    "fs/fat12/fat12_replica.c:write_verified": [
+      "fs/fat12/fat12.c:fat12_replica_read_sector",
+      "fs/fat12/fat12.c:fat12_replica_write_sector"
     ],
     "irq_handler": [
       "timer_irq_handler",
       "kb_handler",
       "hpet_timer_isr",
       "fdd_irq_handler",
-      "drivers/char/serial.c:serial_com1_irq_handler",
       "rtl8139_interrupt_handler",
+      "drivers/net/rtl8168.c:rtl8168_interrupt_handler",
       "ne2000_irq_handler",
-      "drivers/net/e1000.c:e1000_isr"
+      "drivers/net/e1000.c:e1000_isr",
+      "drivers/usb/xhci.c:xhci_irq_handler",
+      "kernel/init/device_domain.c:device_domain_irq_capture"
     ],
     "exception_dispatcher": [
       "generic_exception_handler",
@@ -32,6 +61,16 @@
       "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_close",
       "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_close"
     ],
+    "fs/vfs/vfs.c:vfs_mount_locked": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_mount",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_mount",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_mount"
+    ],
+    "vfs_unmount": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_unmount",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_unmount",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_unmount"
+    ],
     "vfs_open": [
       "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_open",
       "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_open",
@@ -39,6 +78,11 @@
       "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_close",
       "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_close",
       "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_close"
+    ],
+    "fs/vfs/vfs.c:vfs_path_open_locked": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_open",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_open",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_open"
     ],
     "vfs_read": [
       "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_read",
@@ -99,6 +143,23 @@
     "vfs_rename": [
       "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_rename"
     ],
+    "vfs_truncate": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_truncate",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_truncate",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_truncate"
+    ],
+    "vfs_fstat": [
+      "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_fstat",
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_fstat",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_fstat"
+    ],
+    "vfs_touch": [
+      "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_touch",
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_touch"
+    ],
+    "vfs_write_chunk_capacity": [
+      "fs/fat32/fat32_vfs_adapter.c:fat32_vfs_write_chunk_capacity"
+    ],
     "vfs_stat": [
       "fs/ext2/ext2_vfs_adapter.c:ext2_vfs_stat",
       "fs/fat12/fat12_vfs_adapter.c:fat12_vfs_stat",
@@ -120,6 +181,180 @@
     ],
     "fat32_operation_end": [
       "fs/fat32/fat32_vfs_adapter.c:fat32_sync_registered_contexts"
+    ],
+    "fat32_write_sector": [
+      "fs/fat32/fat32_vfs_adapter.c:fat32_mark_registered_context_mutated"
+    ],
+    "drivers/block/ata_journal.c:read_sector": [
+      "drivers/block/ata.c:ata_journal_core_read"
+    ],
+    "drivers/block/ata_journal.c:write_sector": [
+      "drivers/block/ata.c:ata_journal_core_write"
+    ],
+    "drivers/block/ata_journal.c:write_sector_deferred": [
+      "drivers/block/ata.c:ata_journal_core_write_deferred"
+    ],
+    "drivers/block/ata_journal.c:flush_deferred": [
+      "drivers/block/ata.c:ata_journal_core_flush"
+    ],
+    "drivers/block/ata_journal.c:write_record": [
+      "drivers/block/ata.c:ata_journal_core_write",
+      "drivers/block/ata.c:ata_journal_core_write_deferred"
+    ],
+    "drivers/block/ata_journal.c:commit_targets_deferred": [
+      "drivers/block/ata.c:ata_journal_core_commit_write_deferred",
+      "drivers/block/ata.c:ata_journal_core_commit_write_sectors_deferred"
+    ],
+    "drivers/block/ata_journal.c:transaction_end": [
+      "drivers/block/ata.c:ata_journal_core_write",
+      "drivers/block/ata.c:ata_journal_core_write_deferred",
+      "drivers/block/ata.c:ata_journal_core_write_sectors_deferred",
+      "drivers/block/ata.c:ata_journal_core_flush",
+      "drivers/block/ata.c:ata_journal_core_commit_begin",
+      "drivers/block/ata.c:ata_journal_core_commit_write",
+      "drivers/block/ata.c:ata_journal_core_commit_write_deferred",
+      "drivers/block/ata.c:ata_journal_core_commit_write_sectors_deferred",
+      "drivers/block/ata.c:ata_journal_core_commit_end"
+    ],
+    "kernel/init/component_control.c:perform_down": [
+      "netdev_component_down",
+      "storage_service_component_down",
+      "supervisor_probe_component_down"
+    ],
+    "kernel/init/component_control.c:perform_up": [
+      "netdev_component_down",
+      "netdev_component_up",
+      "netdev_component_ready",
+      "storage_service_component_down",
+      "storage_service_component_up",
+      "storage_service_component_ready",
+      "supervisor_probe_component_down",
+      "supervisor_probe_component_up",
+      "supervisor_probe_component_ready"
+    ],
+    "kernel/init/device_domain.c:fence_slot": [
+      "kernel/init/device_domain.c:pci_bus_master",
+      "kernel/init/device_domain.c:pci_revoke_irq",
+      "kernel/init/device_domain.c:revoke_dma_fail_closed"
+    ],
+    "kernel/init/device_domain.c:gr_channel_hardware_stop": [
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "kernel/init/device_domain.c:gr_channel_commit_runlist": [
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "kernel/init/device_domain.c:gr_read32": [
+      "kernel/init/device_domain.c:pci_read_region"
+    ],
+    "kernel/init/device_domain.c:gr_channel_prepare_bind_region": [
+      "kernel/init/device_domain.c:pci_describe_region",
+      "kernel/init/device_domain.c:pci_prepare_region"
+    ],
+    "kernel/init/device_domain.c:gr_write32": [
+      "kernel/init/device_domain.c:pci_write_region"
+    ],
+    "kernel/init/device_domain.c:mask_device_irq": [
+      "kernel/init/device_domain.c:pci_mask_intx"
+    ],
+    "kernel/init/device_domain.c:unmask_device_irq": [
+      "kernel/init/device_domain.c:pci_unmask_intx"
+    ],
+    "kernel/init/device_domain.c:toggle_gr_reset": [
+      "kernel/init/device_domain.c:pci_read_region",
+      "kernel/init/device_domain.c:pci_write_region"
+    ],
+    "kernel/init/device_domain.c:restore_dma_vm_page_mode": [
+      "kernel/init/device_domain.c:pci_read_region",
+      "kernel/init/device_domain.c:pci_write_region"
+    ],
+    "device_domain_activate": [
+      "kernel/init/device_domain.c:pci_bus_master",
+      "kernel/init/device_domain.c:pci_unmask_intx"
+    ],
+    "device_domain_bind_dma": [
+      "kernel/init/device_domain.c:pci_bind_mediated_dma"
+    ],
+    "device_domain_bind_irq": [
+      "kernel/init/device_domain.c:pci_bind_irq"
+    ],
+    "device_domain_deactivate": [
+      "kernel/init/device_domain.c:pci_bus_master",
+      "kernel/init/device_domain.c:pci_revoke_irq",
+      "kernel/init/device_domain.c:revoke_dma_fail_closed"
+    ],
+    "device_domain_dma_vm_page_mode": [
+      "kernel/init/device_domain.c:pci_read_region",
+      "kernel/init/device_domain.c:pci_write_region"
+    ],
+    "device_domain_gr_2d_submit": [
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "kernel/init/device_domain.c:gr_channel_submit_locked": [
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "device_domain_gr_channel_activate": [
+      "kernel/init/device_domain.c:pci_bus_master",
+      "kernel/init/device_domain.c:pci_describe_region",
+      "kernel/init/device_domain.c:pci_prepare_region",
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "device_domain_gr_channel_deactivate": [
+      "kernel/init/device_domain.c:pci_bus_master",
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "device_domain_gr_execute": [
+      "kernel/init/device_domain.c:pci_describe_region",
+      "kernel/init/device_domain.c:pci_prepare_region",
+      "kernel/init/device_domain.c:pci_read_region",
+      "kernel/init/device_domain.c:pci_write_region",
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "kernel/init/device_domain.c:gr_golden_vram_write32": [
+      "kernel/init/device_domain.c:pci_write_region"
+    ],
+    "kernel/init/device_domain.c:gr_mask32": [
+      "kernel/init/device_domain.c:pci_read_region",
+      "kernel/init/device_domain.c:pci_write_region"
+    ],
+    "kernel/init/device_domain.c:gr_wait_mask": [
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "kernel/init/device_domain.c:gr_zero_vram_buffer": [
+      "kernel/init/device_domain.c:pci_prepare_region",
+      "kernel/init/device_domain.c:pci_write_region"
+    ],
+    "device_domain_gr_firmware_upload": [
+      "kernel/init/device_domain.c:pci_describe_region",
+      "kernel/init/device_domain.c:pci_prepare_region",
+      "kernel/init/device_domain.c:pci_read_region",
+      "kernel/init/device_domain.c:pci_write_region",
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "device_domain_gr_golden_context": [
+      "kernel/init/device_domain.c:pci_describe_region",
+      "kernel/init/device_domain.c:pci_prepare_region",
+      "kernel/init/device_domain.c:pci_read_region",
+      "kernel/init/device_domain.c:pci_write_region",
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "kernel/init/device_domain.c:gr_golden_wait_fecs": [
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "kernel/init/device_domain.c:gr_golden_wait_idle": [
+      "kernel/init/device_domain.c:platform_monotonic_ms"
+    ],
+    "device_domain_open_region": [
+      "kernel/init/device_domain.c:pci_describe_region",
+      "kernel/init/device_domain.c:pci_prepare_region"
+    ],
+    "device_domain_region_bind_dma": [
+      "kernel/init/device_domain.c:pci_write_dma_address"
+    ],
+    "device_domain_region_read": [
+      "kernel/init/device_domain.c:pci_read_region"
+    ],
+    "device_domain_region_write": [
+      "kernel/init/device_domain.c:pci_write_region"
     ]
   },
   "registered_irq_handlers": [
@@ -127,10 +362,12 @@
     "kb_handler",
     "hpet_timer_isr",
     "fdd_irq_handler",
-    "serial_com1_irq_handler",
     "rtl8139_interrupt_handler",
+    "rtl8168_interrupt_handler",
     "ne2000_irq_handler",
-    "e1000_isr"
+    "e1000_isr",
+    "xhci_irq_handler",
+    "device_domain_irq_capture"
   ],
   "exception_handlers": [
     "generic_exception_handler",
@@ -142,6 +379,8 @@
     "fat12_vfs_close",
     "fat32_vfs_close"
   ],
+  "vfs_mount_handlers": ["ext2_vfs_mount", "fat12_vfs_mount", "fat32_vfs_mount"],
+  "vfs_unmount_handlers": ["ext2_vfs_unmount", "fat12_vfs_unmount", "fat32_vfs_unmount"],
   "vfs_open_handlers": ["ext2_vfs_open", "fat12_vfs_open", "fat32_vfs_open"],
   "vfs_read_handlers": ["ext2_vfs_read", "fat12_vfs_read", "fat32_vfs_read"],
   "vfs_write_handlers": ["ext2_vfs_write", "fat12_vfs_write", "fat32_vfs_write"],
@@ -153,10 +392,17 @@
   "vfs_create_handlers": ["ext2_vfs_create", "fat12_vfs_create", "fat32_vfs_create"],
   "vfs_delete_handlers": ["ext2_vfs_delete", "fat12_vfs_delete", "fat32_vfs_delete"],
   "vfs_rename_handlers": ["fat32_vfs_rename"],
+  "vfs_truncate_handlers": ["ext2_vfs_truncate", "fat12_vfs_truncate", "fat32_vfs_truncate"],
+  "vfs_fstat_handlers": ["ext2_vfs_fstat", "fat12_vfs_fstat", "fat32_vfs_fstat"],
+  "vfs_touch_handlers": ["fat12_vfs_touch", "fat32_vfs_touch"],
+  "vfs_write_chunk_capacity_handlers": ["fat32_vfs_write_chunk_capacity"],
   "vfs_stat_handlers": ["ext2_vfs_stat", "fat12_vfs_stat", "fat32_vfs_stat"],
   "vfs_space_handlers": ["ext2_vfs_space", "fat12_vfs_space", "fat32_vfs_space"],
   "fat32_sync_hooks": [
     "fat32_sync_registered_contexts"
+  ],
+  "fat32_mutation_hooks": [
+    "fat32_mark_registered_context_mutated"
   ],
   "ext2_dir_visitors": [
     "ext2_collect_entry",
@@ -169,13 +415,26 @@
   },
   "external_costs": {
     "swtch": 64,
-    "__udivmoddi4": 128
+    "__udivmoddi4": 128,
+    "__divdi3": 128,
+    "vbe_runtime_set_mode": 64,
+    "vbe_runtime_set_text_mode": 64
   },
+  "guarded_reentry_groups": [
+    {
+      "name": "panic_in_progress",
+      "members": ["panic", "panic_with_exception", "kassert_fail"]
+    }
+  ],
   "contract_notes": {
     "kernel/init/critical_object.c:copy_check": "640-byte bounded reserve covers the validator callback beneath the 80-byte wrapper",
     "output_fence_all": "1024-byte reserve covers one sequentially invoked registered fence callback",
     "swtch": "64-byte conservative assembly transition reserve",
     "__udivmoddi4": "128-byte compiler-runtime reserve",
-    "syscall_handler": "128-byte reserve covers the INT 0x80 privilege frame, synthetic vector/error fields, saved registers and alignment"
+    "__divdi3": "128-byte compiler-runtime reserve matching the bounded signed wrapper around 64-bit division",
+    "vbe_runtime_set_mode": "64-byte reserve covers the assembly-saved EFLAGS, segment registers and general registers before switching to the dedicated low-memory real-mode stack",
+    "vbe_runtime_set_text_mode": "64-byte reserve covers the assembly-saved EFLAGS, segment registers and general registers before switching to the dedicated low-memory real-mode stack",
+    "syscall_handler": "128-byte reserve covers the INT 0x80 privilege frame, synthetic vector/error fields, saved registers and alignment",
+    "panic_in_progress": "panic, panic_with_exception and kassert_fail atomically claim one global guard before diagnostics; a second family entry charges its own compiler frame and then halts with interrupts disabled before any child call"
   }
 }

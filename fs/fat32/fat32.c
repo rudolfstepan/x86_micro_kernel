@@ -95,7 +95,7 @@ static bool fat32_read_fat_sector(uint32_t sector, void *buffer) {
 static kernel_mutex_t fat32_operation_mutex = KERNEL_MUTEX_INIT;
 #endif
 
-uint32_t fat32_operation_begin(void) {
+static uint32_t fat32_operation_lock(void) {
 #ifdef KERNEL_HOST_TEST
     return 0;
 #else
@@ -105,14 +105,30 @@ uint32_t fat32_operation_begin(void) {
 #endif
 }
 
-void fat32_operation_end(uint32_t interrupt_flags) {
-    if (fat32_context_sync_hook) fat32_context_sync_hook();
+static void fat32_operation_unlock(uint32_t interrupt_flags) {
 #ifdef KERNEL_HOST_TEST
     (void)interrupt_flags;
 #else
     (void)interrupt_flags;
     kernel_mutex_unlock(&fat32_operation_mutex);
 #endif
+}
+
+uint32_t fat32_operation_begin(void) {
+    return fat32_operation_lock();
+}
+
+void fat32_operation_end(uint32_t interrupt_flags) {
+    if (fat32_context_sync_hook) fat32_context_sync_hook();
+    fat32_operation_unlock(interrupt_flags);
+}
+
+uint32_t fat32_operation_workspace_begin(void) {
+    return fat32_operation_lock();
+}
+
+void fat32_operation_workspace_end(uint32_t interrupt_flags) {
+    fat32_operation_unlock(interrupt_flags);
 }
 
 bool fat32_prepare_write(void) {

@@ -174,6 +174,11 @@ bool validate_fat12_boot_sector(fat12_boot_sector* bs);
 uint32_t fat12_cluster_count(void);
 uint16_t fat12_get_fat_entry(uint16_t cluster);
 bool fat12_write_supported(void);
+/* Fixed FAT12 scratch is serialized independently of VFS callback nesting.
+ * The mutex is recursive because metadata helpers call journaled I/O helpers
+ * while retaining distinct workspace owner slots. */
+bool fat12_operation_workspace_begin(void);
+void fat12_operation_workspace_end(void);
 bool fat12_set_fat_entry(uint16_t cluster, uint16_t value);
 bool fat12_sync_fat(void);
 bool fat12_read_logical_sectors(uint32_t logical_sector, uint32_t count,

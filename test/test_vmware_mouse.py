@@ -18,6 +18,8 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("-ExpectCompositorRestart", source)
         self.assertIn("'vmware-benchmark'", source)
         self.assertIn("& $VmwareMouseRunner -Benchmark", source)
+        self.assertIn("'vmware-rename'", source)
+        self.assertIn("& $VmwareMouseRunner -Rename", source)
 
     def test_runner_requires_virtual_hid_without_passthrough(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
@@ -198,6 +200,23 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("Wait-PostSuccessStability 'desktop'", source)
         self.assertIn("$stabilityDeadline =", source)
         self.assertIn("Assert-NoForbiddenMarker $stabilityText", source)
+
+    def test_rename_mode_requires_guest_vfat_proof_and_stability(self):
+        source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[switch]$Rename", source)
+        self.assertIn("Send-ExplicitRenameCommand", source)
+        self.assertIn("'gtest'", source)
+        self.assertIn("GUEST_TEST_BEGIN", source)
+        self.assertIn("VFAT_LFN_REPLACE_OK", source)
+        self.assertIn("TEST_STAGE VFAT_UTF8_OK", source)
+        self.assertIn("TEST_OK", source)
+        self.assertIn("$renamePromptAfter -ge 0", source)
+        self.assertIn("Wait-PostSuccessStability 'rename'", source)
+        self.assertIn("VMWARE RENAME PASS", source)
+        self.assertIn("TEST_FAIL", source)
+        self.assertIn("VFAT_LFN_FAIL", source)
 
 
 if __name__ == "__main__":

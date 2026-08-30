@@ -3,6 +3,8 @@
 from pathlib import Path
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -136,6 +138,34 @@ class StackEvidenceTests(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertIn("entry=96/96", summary)
 
+    def test_gcc_clone_uses_canonical_indirect_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry.part.0\t32\tstatic\n"
+                "u.c:2:1:leaf\t64\tstatic\n", encoding="utf-8")
+            (root / "unit.ci").write_text(
+                'graph: {\n'
+                'node: { title: "entry.part.0" '
+                'label: "entry.part.0\\n32 bytes (static)" }\n'
+                'node: { title: "leaf" '
+                'label: "leaf\\n64 bytes (static)" }\n'
+                'node: { title: "__indirect_call" '
+                'label: "Indirect Call Placeholder" }\n'
+                'edge: { sourcename: "entry.part.0" '
+                'targetname: "__indirect_call" }\n}\n',
+                encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "entry", "root": "entry.part.0", "limit": 96,
+                }],
+                "indirect_calls": {"entry": ["leaf"]},
+            }), encoding="utf-8")
+            errors, _, summary = VALIDATOR.validate(root, 1, 128, budget)
+        self.assertEqual([], errors)
+        self.assertIn("entry=96/96", summary)
+
     def test_entry_reserve_is_counted_and_validated(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -226,6 +256,179 @@ class StackEvidenceTests(unittest.TestCase):
         self.assertTrue(any(
             "stale VFS read handler budget: old_read" in error
             for error in errors))
+
+    def test_shared_callgraph_is_evaluated_in_bounded_time(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            levels = 28
+            names = ["entry"] + [
+                f"level_{level}_{branch}"
+                for level in range(levels)
+                for branch in ("a", "b")
+            ]
+            (root / "shared.su").write_text(
+                "".join(
+                    f"u.c:{index + 1}:1:{name}\t32\tstatic\n"
+                    for index, name in enumerate(names)
+                ),
+                encoding="utf-8",
+            )
+            graph = ["graph: {\n"]
+            for name in names:
+                graph.append(
+                    f'node: {{ title: "{name}" '
+                    f'label: "{name}\\n32 bytes (static)" }}\n'
+                )
+            graph.extend([
+                'edge: { sourcename: "entry" '
+                'targetname: "level_0_a" }\n',
+                'edge: { sourcename: "entry" '
+                'targetname: "level_0_b" }\n',
+            ])
+            for level in range(levels - 1):
+                for branch in ("a", "b"):
+                    for target in ("a", "b"):
+                        graph.append(
+                            'edge: { sourcename: '
+                            f'"level_{level}_{branch}" targetname: '
+                            f'"level_{level + 1}_{target}" }}\n'
+                        )
+            graph.append("}\n")
+            (root / "shared.ci").write_text(
+                "".join(graph), encoding="utf-8"
+            )
+            budget = root / "budgets.json"
+            expected_cost = (levels + 1) * 32
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "shared", "root": "entry",
+                    "limit": expected_cost,
+                }],
+            }), encoding="utf-8")
+            command = [
+                sys.executable,
+                str(ROOT / "scripts" / "validate_stack_usage.py"),
+                "--root", str(root),
+                "--expected", "1",
+                "--local-limit", "128",
+                "--budget-file", str(budget),
+            ]
+            completed = subprocess.run(
+                command, check=False, capture_output=True, text=True,
+                timeout=3,
+            )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        self.assertIn(
+            f"entry-budgets=shared={expected_cost}/{expected_cost}",
+            completed.stdout,
+        )
+
+    def test_indirect_callgraph_cycle_is_not_hidden(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n"
+                "u.c:2:1:leaf\t32\tstatic\n",
+                encoding="utf-8",
+            )
+            (root / "unit.ci").write_text(
+                'graph: {\n'
+                'node: { title: "entry" label: "entry" }\n'
+                'node: { title: "leaf" label: "leaf" }\n'
+                'node: { title: "__indirect_call" '
+                'label: "Indirect Call Placeholder" }\n'
+                'edge: { sourcename: "entry" '
+                'targetname: "__indirect_call" }\n'
+                'edge: { sourcename: "leaf" targetname: "entry" }\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "entry", "root": "entry", "limit": 128,
+                }],
+                "indirect_calls": {"entry": ["leaf"]},
+            }), encoding="utf-8")
+            errors, _, _ = VALIDATOR.validate(root, 1, 128, budget)
+        self.assertTrue(any(
+            "cycle in budgeted path" in error for error in errors
+        ))
+
+    def test_atomic_panic_guard_bounds_exactly_one_terminal_reentry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "unit.su").write_text(
+                "u.c:1:1:entry\t32\tstatic\n"
+                "u.c:2:1:work\t40\tstatic\n"
+                "u.c:3:1:panic\t48\tstatic\n",
+                encoding="utf-8",
+            )
+            (root / "unit.ci").write_text(
+                'graph: {\n'
+                'node: { title: "entry" label: "entry\\n32 bytes (static)" }\n'
+                'node: { title: "work" label: "work\\n40 bytes (static)" }\n'
+                'node: { title: "panic" label: "panic\\n48 bytes (static)" }\n'
+                'edge: { sourcename: "entry" targetname: "work" }\n'
+                'edge: { sourcename: "work" targetname: "panic" }\n'
+                'edge: { sourcename: "panic" targetname: "work" }\n'
+                '}\n',
+                encoding="utf-8",
+            )
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "entry", "root": "entry", "limit": 208,
+                }],
+                "guarded_reentry_groups": [{
+                    "name": "panic_in_progress",
+                    "members": ["panic"],
+                }],
+            }), encoding="utf-8")
+            errors, _, summary = VALIDATOR.validate(root, 1, 256, budget)
+        self.assertEqual([], errors)
+        self.assertIn("entry-budgets=entry=208/208", summary)
+
+    def test_panic_guard_does_not_hide_cycle_after_guard_activation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ("entry", "panic", "first", "second")
+            (root / "unit.su").write_text(
+                "".join(
+                    f"u.c:{index}:1:{name}\t32\tstatic\n"
+                    for index, name in enumerate(names, 1)
+                ),
+                encoding="utf-8",
+            )
+            graph = ["graph: {\n"]
+            for name in names:
+                graph.append(
+                    f'node: {{ title: "{name}" '
+                    f'label: "{name}\\n32 bytes (static)" }}\n'
+                )
+            graph.extend([
+                'edge: { sourcename: "entry" targetname: "panic" }\n',
+                'edge: { sourcename: "panic" targetname: "first" }\n',
+                'edge: { sourcename: "first" targetname: "second" }\n',
+                'edge: { sourcename: "second" targetname: "first" }\n',
+                '}\n',
+            ])
+            (root / "unit.ci").write_text("".join(graph), encoding="utf-8")
+            budget = root / "budgets.json"
+            budget.write_text(json.dumps({
+                "entry_budgets": [{
+                    "name": "entry", "root": "entry", "limit": 512,
+                }],
+                "guarded_reentry_groups": [{
+                    "name": "panic_in_progress",
+                    "members": ["panic"],
+                }],
+            }), encoding="utf-8")
+            errors, _, _ = VALIDATOR.validate(root, 1, 256, budget)
+        self.assertTrue(any(
+            "recursive callgraph cycle is forbidden" in error
+            for error in errors
+        ))
 
 
 if __name__ == "__main__":

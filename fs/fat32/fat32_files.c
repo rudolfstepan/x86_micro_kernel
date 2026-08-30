@@ -357,12 +357,40 @@ typedef struct {
     bool active;
 } fat32_lfn_reader_t;
 
+typedef struct {
+    struct fat32_dir_entry
+        sector_entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
+    fat32_lfn_reader_t lfn;
+    char visible_name[MAX_PATH_LENGTH];
+    char short_name[13];
+    char left_key[REIST_UNICODE_KEY_CAPACITY];
+    char right_key[REIST_UNICODE_KEY_CAPACITY];
+    bool in_use;
+} fat32_directory_scan_workspace_t;
+
+static fat32_directory_scan_workspace_t fat32_directory_scan_workspace;
+
 static void fat32_lfn_reset(fat32_lfn_reader_t* reader) {
     memset(reader, 0, sizeof(*reader));
 }
 
-static bool fat32_names_equal(const char* left, const char* right) {
-    return reist_unicode_caseless_nfc_equal(left, right) != 0;
+static bool fat32_names_equal(
+        const char* left, const char* right,
+        fat32_directory_scan_workspace_t* workspace) {
+    if (!workspace ||
+        !reist_unicode_nfc_casefold_key(left, workspace->left_key) ||
+        !reist_unicode_nfc_casefold_key(right, workspace->right_key)) {
+        return false;
+    }
+    size_t index = 0U;
+    while (workspace->left_key[index] != '\0' &&
+           workspace->right_key[index] != '\0') {
+        if (workspace->left_key[index] != workspace->right_key[index]) {
+            return false;
+        }
+        ++index;
+    }
+    return workspace->left_key[index] == workspace->right_key[index];
 }
 
 static uint16_t fat32_lfn_character(const struct fat32_lfn_entry* entry,
@@ -445,78 +473,103 @@ static fat32_lookup_result_t fat32_scan_directory(
         return FAT32_LOOKUP_ERROR;
     }
 
-    struct fat32_dir_entry sector_entries[SECTOR_SIZE / sizeof(struct fat32_dir_entry)];
+    uint32_t operation_flags = fat32_operation_workspace_begin();
+    fat32_directory_scan_workspace_t* workspace =
+        &fat32_directory_scan_workspace;
+    if (workspace->in_use) {
+        fat32_operation_workspace_end(operation_flags);
+        return FAT32_LOOKUP_ERROR;
+    }
+    workspace->in_use = true;
+    fat32_lfn_reset(&workspace->lfn);
+
+    fat32_lookup_result_t result = FAT32_LOOKUP_ERROR;
     uint32_t current_cluster = dir_cluster;
     uint32_t traversed = 0;
     uint32_t cluster_limit = get_total_clusters(&boot_sector);
     uint32_t visible_index = 0;
-    fat32_lfn_reader_t lfn;
-    fat32_lfn_reset(&lfn);
 
     while (is_valid_cluster(&boot_sector, current_cluster) &&
            traversed++ < cluster_limit) {
         uint32_t sector = cluster_to_sector(&boot_sector, current_cluster);
         if (sector == INVALID_CLUSTER) {
-            return FAT32_LOOKUP_ERROR;
+            goto release_workspace;
         }
 
         for (uint32_t i = 0; i < boot_sector.sectors_per_cluster; i++) {
             if (!ata_read_sector(ata_base_address, sector + i,
-                                 sector_entries, ata_is_master)) {
-                return FAT32_LOOKUP_ERROR;
+                                 workspace->sector_entries, ata_is_master)) {
+                goto release_workspace;
             }
 
             for (uint32_t j = 0;
                  j < SECTOR_SIZE / sizeof(struct fat32_dir_entry); j++) {
-                struct fat32_dir_entry* candidate = &sector_entries[j];
+                struct fat32_dir_entry* candidate =
+                    &workspace->sector_entries[j];
                 if (candidate->name[0] == 0x00) {
-                    return FAT32_LOOKUP_NOT_FOUND;
+                    result = FAT32_LOOKUP_NOT_FOUND;
+                    goto release_workspace;
                 }
                 if (candidate->name[0] == 0xE5) {
-                    fat32_lfn_reset(&lfn);
+                    fat32_lfn_reset(&workspace->lfn);
                     continue;
                 }
                 if (candidate->attr == ATTR_LONG_NAME) {
-                    fat32_lfn_consume(&lfn,
+                    fat32_lfn_consume(&workspace->lfn,
                         (const struct fat32_lfn_entry*)candidate);
                     continue;
                 }
                 if (candidate->attr & 0x08) {
-                    fat32_lfn_reset(&lfn);
+                    fat32_lfn_reset(&workspace->lfn);
                     continue;
                 }
 
-                char short_name[13];
-                char visible_name[MAX_PATH_LENGTH];
-                fat32_format_short_name(candidate, short_name);
-                strcpy(visible_name, short_name);
-                if (lfn.active &&
-                    lfn.checksum == fat32_short_name_checksum(candidate->name) &&
-                    fat32_lfn_finish(&lfn)) {
-                    strcpy(visible_name, lfn.name);
+                fat32_format_short_name(candidate, workspace->short_name);
+                strcpy(workspace->visible_name, workspace->short_name);
+                if (workspace->lfn.active &&
+                    workspace->lfn.checksum ==
+                        fat32_short_name_checksum(candidate->name) &&
+                    fat32_lfn_finish(&workspace->lfn)) {
+                    strcpy(workspace->visible_name, workspace->lfn.name);
                 }
                 bool match = by_index ? visible_index == wanted_index :
-                    (fat32_names_equal(visible_name, filename) ||
-                     fat32_names_equal(short_name, filename));
+                    (fat32_names_equal(workspace->visible_name, filename,
+                                       workspace) ||
+                     fat32_names_equal(workspace->short_name, filename,
+                                       workspace));
                 visible_index++;
-                fat32_lfn_reset(&lfn);
+                fat32_lfn_reset(&workspace->lfn);
                 if (match) {
                     if (found) *found = *candidate;
-                    if (resolved_name) strcpy(resolved_name, visible_name);
-                    return FAT32_LOOKUP_FOUND;
+                    if (resolved_name) {
+                        strcpy(resolved_name, workspace->visible_name);
+                    }
+                    result = FAT32_LOOKUP_FOUND;
+                    goto release_workspace;
                 }
             }
         }
 
         uint32_t next = get_next_cluster_in_chain(&boot_sector, current_cluster);
-        if (next == INVALID_CLUSTER) return FAT32_LOOKUP_ERROR;
-        if (is_end_of_cluster_chain(next)) return FAT32_LOOKUP_NOT_FOUND;
+        if (next == INVALID_CLUSTER) goto release_workspace;
+        if (is_end_of_cluster_chain(next)) {
+            result = FAT32_LOOKUP_NOT_FOUND;
+            goto release_workspace;
+        }
         current_cluster = next;
     }
 
     /* Falling out of the guarded traversal means the directory chain is
      * invalid or cyclic.  It must not be treated as a safe insertion point. */
-    return FAT32_LOOKUP_ERROR;
+release_workspace:
+    fat32_lfn_reset(&workspace->lfn);
+    workspace->visible_name[0] = '\0';
+    workspace->short_name[0] = '\0';
+    workspace->left_key[0] = '\0';
+    workspace->right_key[0] = '\0';
+    workspace->in_use = false;
+    fat32_operation_workspace_end(operation_flags);
+    return result;
 }
 
 fat32_lookup_result_t fat32_lookup_entry_named(

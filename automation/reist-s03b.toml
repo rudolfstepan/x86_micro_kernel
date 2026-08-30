@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1m-filesystem-metadata-stack-stability"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12939,7 +12939,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1m-filesystem-metadata-stack-stability"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Bound complete filesystem metadata and storage-failure stacks"
@@ -13020,4 +13020,10 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "kernel: bound filesystem metadata stack paths"
-evidence = []
+evidence = [
+  "The focused metadata-stack gate passed 136 FAT12 FAT32 storage journal Unicode panic syscall VMware-runner and host behavior checks.",
+  "The clean 104-object compiler analysis passed with 1967 stack records 3721 graph nodes 12134 edges and entry budgets legacy_irq=1408/7168 scheduler_irq=748/4096 cpu_exception=3580/7168 syscall=6820/7168; FAT12 create itself measured 3040 bytes.",
+  "After explicit user reauthorization the accepted VMware VGA package run used only existing process-local NASM 3.01 and Zig 0.16.0 paths and passed in 49 seconds.",
+  "The real four-vCPU VMware rename proof passed in 74 seconds with content validation cleanup Ring-3 shell return and ten seconds without panic restart degradation quarantine or storage fencing.",
+  "The real four-vCPU byte-verifying VMware benchmark passed in 37 seconds at 314.88 KiB/s sequential write and 450.70 KiB/s sequential read with cleanup Ring-3 shell return and ten stable post-success seconds."
+]

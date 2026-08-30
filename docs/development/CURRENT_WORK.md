@@ -1,30 +1,50 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 29. August 2026
+Stand: 30. August 2026
 
-Branch/Startpunkt: `working_branch` / `336b1f8`
+Branch/Startpunkt: `working_branch` / `cb34351`
 
-Aktives Thema: `R7.1k-fat32-directory-scan-stack-stability`.
+Abgeschlossenes Thema: `R7.1m-filesystem-metadata-stack-stability`.
 
-Der nach R7.1j verbliebene Rename-Befund ist jetzt als eigenes begrenztes
-Paket aktiv. Der GCC-Nachweis weist dem gemeinsamen FAT32-Verzeichnisscan
-3168 lokale Byte zu. Zusammen mit Unicode-Normalisierung, Rename-/VFS-, ATA-
-und Schedulerframes erreicht der tiefste Syscallpfad 8336 Byte und liegt damit
-ueber dem unveraenderten 7168-Byte-Budget des 8-KiB-Taskstacks. Das ist ein
-statischer Risikopfad, kein Beleg fuer einen bereits beobachteten zweiten
-Desktopfehler.
+R7.1k hat den ersten Teilbefund geschlossen: Der feste, unter einer
+verschachtelten Ebene der rekursiven FAT32-Operationsmutex gehaltene
+Verzeichnisscan reduzierte seinen GCC-Frame von 3168 auf 112 Byte und bestand
+36 fokussierte Tests. Der anschliessende vollstaendige Analysecompile zeigte
+jedoch einen tieferen, zuvor verdeckten Rename-Pfad mit 8384 Byte gegen das
+unveraenderte 7168-Byte-Syscallbudget. Weil Rename, LFN-Publikation,
+FAT-Sektorverifikation und Journal-Recovery ausserhalb des eingefrorenen
+R7.1k-Scopes lagen, wurde das Paket ohne Produktionscommit gestoppt.
 
-R7.1k verschiebt Sektorpuffer, LFN-Zustand, sichtbare Namen und die beiden
-Unicode-Schluessel in genau einen festen, durch eine verschachtelte Ebene der
-bestehenden rekursiven FAT32-Operationsmutex geschuetzten Arbeitsbereich. Ein
-rekursiver Scan wird vor Zugriff abgewiesen; jeder Ausgang gibt Besitz und
-Mutexebene frei, ohne den Context-Sync-Hook mitten in einer aeusseren
-Operation auszufuehren. Stackgroesse, Guardpage, Unicode-/VFAT-Semantik,
-Journal-v2 und oeffentliche ABIs bleiben unveraendert. Der offizielle
-Callgraph-Validator wird fuer den bereits zyklusgeprueften DAG memoisiert. Die
-Abnahme verlangt den kumulativen Compiler-Stacknachweis und einen realen
-Vier-vCPU-VMware-Lauf bis `VFAT_LFN_REPLACE_OK`, `TEST_OK`, Shell-Rueckkehr
-und zehn Sekunden stabilen Nachlauf.
+R7.1l nahm diese FAT32-Kette auf und schloss Rename-, LFN-, FAT-, ATA-Journal-,
+Unicode-, Panik- und Validatorbesitz. Der erste vollstaendige Analysebuild
+zeigte danach jedoch einen unabhaengigen FAT12-Create-Fehlerpfad: Vor dem
+ersten `kassert_fail` waren bereits 8116 Byte, mit dessen Frame 8164 Byte gegen
+das unveraenderte 7168-Byte-Syscallbudget belegt. Die gleichzeitig lebenden
+FAT12-Verzeichnis-, Allokations-, Ziel-, Journalheader- und Readbacksektoren
+lagen ausserhalb des R7.1l-Scopes; das Paket wurde deshalb ohne Kandidatenbuild
+oder Laufzeitclaim beendet.
+
+R7.1m uebernimmt die geprueften R7.1l-Arbeiten und bindet den vollstaendigen
+FAT12-Metadatenpfad ein. Core-I/O und alle VFS-Helfer besitzen getrennte feste
+Sektor-/Pfadslots unter einer deadline-begrenzten rekursiven FAT12-Mutex;
+gleichnamige Rekursion wird vor Payloadzugriff abgewiesen und jeder Ausgang
+loescht seinen Slot. Das FAT12-Journal besitzt genau vier nur zur Laufzeit
+existierende Sektoren im einzelnen Journalobjekt und einen atomaren
+Einmalbesitzer; Load und Recovery verwenden interne, nicht erneut sperrende
+Varianten. Eine Medienquarantaene publiziert Schutzobjekt, Read-only-Latch und
+Fences weiterhin synchron, stellt aber nur ihr Diagnosebit atomar bereit. Erst
+der Supervisor-Poll formatiert hoechstens einen Marker, nachdem die
+FDD-Transaktionsmutex frei ist. Der aktualisierte Entwicklungsgraph umfasst
+104 Objekte und liegt bei 6820/7168 Byte; der zuvor ueberlaufende FAT12-Create-
+Teilpfad sank auf 3040 Byte. Stackgroesse, Guardpage, Journal-v2-Medienbytes,
+VFAT-/Unicode-Semantik, Barrieren und ABI bleiben unveraendert. Die finale
+Abnahme bestand 136 fokussierte Pruefungen und den sauberen 104-Objekt-
+Stackbuild mit 1967 Stackdatensaetzen, 3721 Graphknoten und 12134 Kanten. Der
+VMware-VGA-Paketbuild bestand in 49 Sekunden. Der reale Vier-vCPU-Renamelauf
+bestand Inhaltspruefung, Cleanup, Shell-Rueckkehr und zehn Sekunden stabilen
+Nachlauf in 74 Sekunden. Der bytegepruefte Benchmark bestand dieselben
+Nachbedingungen in 37 Sekunden und erreichte 314,88 KiB/s Schreiben sowie
+450,70 KiB/s Lesen. Danach lief keine VMware-VM mehr.
 
 Nach dem erfolgreichen R7.1i-Benchmark trat erst nach der Shell-Rueckkehr ein
 Kernel-Panic auf; der beobachtete Neustart ist daher kein Absturz des Desktop-

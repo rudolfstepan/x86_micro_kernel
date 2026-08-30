@@ -95,6 +95,25 @@ class UserspaceFileSyscallSourceTests(unittest.TestCase):
             r"vfs_dir_entry_t\s+\w+\s*\["
         )
 
+    def test_rename_uses_generation_scoped_task_workspace(self):
+        source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("static int syscall_rename")
+        body = source[start:source.index("\n}\n", start)]
+        self.assertIn("syscall_rename_workspace_t", source)
+        self.assertIn("rename_workspaces[MAX_TASKS]", source)
+        self.assertIn("scheduler_current_task_identity", body)
+        self.assertIn("owner_generation", body)
+        self.assertIn("workspace->in_use", body)
+        self.assertIn("workspace->old_path", body)
+        self.assertIn("workspace->new_path", body)
+        claimed = body[body.index("workspace->in_use = 1U;"):]
+        self.assertIn("release_workspace:", claimed)
+        self.assertEqual(claimed.count("return "), 1)
+        self.assertNotIn("char old_path[PROCESS_PATH_MAX]", body)
+        self.assertNotIn("char new_path[PROCESS_PATH_MAX]", body)
+
     def test_file_writes_copy_data_from_userspace(self):
         source = (ROOT / "kernel/syscall/syscall_table.c").read_text(
             encoding="utf-8"

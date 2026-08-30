@@ -1024,6 +1024,39 @@ verbleibenden 1.024 Byte des realen 8-KiB-Taskstacks sind nicht Teil des
 zulässigen Budgets. WCET-Baselines der ausgewählten Plattformen folgen
 getrennt.
 
+Die VMware-Nacharbeit R7.1j/R7.1m behandelt drei später sichtbar gewordene
+Verstöße gegen diesen unveränderten Vertrag. Zuerst wurden die über einen
+blockierenden `SYS_READDIR_BATCH`-Aufruf lebenden Viererfelder in einen
+taskgenerationsgebundenen festen Arbeitsbereich verschoben. Danach zeigte die
+erneute GCC-Auswertung im gemeinsamen FAT32-Verzeichnisscan noch einen
+3168-Byte-Frame. Dessen fester Scan-Arbeitsbereich senkte den Frame auf 112
+Byte, legte aber den tieferen 8384-Byte-Metadatenpfad offen. R7.1l verschiebt
+deshalb auch taskgebundene Rename-Pfade, FAT32-Rename-/LFN-/FAT-Puffer und
+ATA-Journal-Recoveryscratch in ihre bereits serialisierten festen
+Besitzerdomänen. Unicode-Zerlegung ist iterativ und auf vier aus der
+Unicode-15-Tabelle geprüfte Pending-Skalare begrenzt. Der Stackvalidator
+modelliert den atomaren globalen Panikguard als Zustandswechsel und berechnet
+jeden übrigen azyklischen Zustandsknoten einmal; eine zweite Panikaufnahme
+endet vor Diagnosezugriff, jede andere Rekursion bleibt verboten. Stackgröße,
+Guardpage und das 7168-Byte-Syscallbudget bleiben unverändert. Diese
+Korrekturen legten anschließend einen zuvor verdeckten FAT12-Create-Pfad mit
+8164 Byte einschließlich `kassert_fail` offen. R7.1m verschiebt deshalb die
+dominanten FAT12-Core-, Journal- und VFS-Sektoren in getrennte feste
+Besitzerslots. Das Journal hält genau vier Runtime-Sektoren je Instanz; seine
+gepackten Header-/Entrybytes bleiben unverändert. Medienfehler publizieren
+Quarantäne, Read-only und Fences synchron, während die formatierte Meldung als
+atomares Bit bis zum lockfreien Supervisor-Poll wartet. Damit kann die
+gehaltene FDD-Transaktion nicht mehr in Displaymutex und Scheduler eintreten.
+Der aktualisierte 104-Objekt-Entwicklungsgraph misst 6820/7168 Byte im
+Gesamtsyscallpfad und 3040 Byte ab FAT12-Create. Der saubere Abnahmebuild
+bestätigte diese Grenze mit 1967 Stackdatensätzen, 3721 Graphknoten und 12134
+Kanten. Das reale Vier-vCPU-VMware-Gate bestand Rename und bytegeprüften
+Benchmark einschließlich Cleanup, Ring-3-Shell-Rückkehr und jeweils zehn
+Sekunden ohne Panic, Neustart, Degradation, Quarantäne oder Storage-Fence; der
+Benchmark erreichte 314,88 KiB/s Schreiben und 450,70 KiB/s Lesen. Diese
+Emulatorwerte sind Regressionsnachweise und keine Zielhardware- oder
+Zertifizierungsaussage.
+
 S0.4c-2c2b2a ergänzt dafür eine bewusst nicht steuernde Laufzeitdiagnostik.
 Der Scheduler misst mit serialisiertem `RDTSC` nur seine begrenzte
 Entscheidungsarbeit und beendet jede Probe vor einem Kontextwechsel. Der

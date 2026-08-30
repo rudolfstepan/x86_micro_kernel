@@ -286,12 +286,57 @@ unvollständige UTF-16-Paare. Vor Directory-Allokation müssen sowohl die
 die maximal 20 LFN-Slots werden nach Codeunits berechnet. BMP-Zeichen und
 Supplementary Planes werden verlustfrei zurückgegeben. ASCII bleibt
 case-insensitive. Für alle Unicode-Skalarwerte verwendet die FAT32-Identität
-Unicode 15.0.0 mit Full Default Case Folding, rekursiver kanonischer
+Unicode 15.0.0 mit Full Default Case Folding, vollständiger kanonischer
 Zerlegung, stabiler Combining-Class-Sortierung und NFC-Komposition samt
 algorithmischem Hangul. Die generierten Tabellen sind reproduzierbar
 eingecheckt; Laufzeitdaten, Locale und Heap werden nicht benötigt. Die
 255-Byte-Grenze beweist feste Maxima von 382 Zwischenskalaren und 763
-Schlüsselbytes. Gespeicherter Name und Readdir bewahren die Originalbytes.
+Schlüsselbytes. Eine iterative Tiefensuche ersetzt die frühere C-Rekursion;
+die vollständige Unicode-15-Tabelle beweist höchstens vier gleichzeitig
+wartende Zerlegungsskalare. Gespeicherter Name und Readdir bewahren die
+Originalbytes.
+
+R7.1k bindet den gemeinsamen FAT32-Verzeichnisscan an einen einzigen festen
+Arbeitsbereich. Der vorherige GCC-Frame von 3168 Byte enthielt Sektorpuffer,
+LFN-Leser, sichtbaren und kurzen Namen sowie beide Unicode-Vergleichsschlüssel
+und machte dadurch insbesondere den vollständigen Rename-Syscallpfad größer
+als sein zulässiges Stackbudget. Der Arbeitsbereich liegt nun statisch und
+wird über eine verschachtelte Ebene der bereits deadline-begrenzten,
+taskrekursiven FAT32-Operationsmutex gehalten, auch während der Scan auf I/O
+blockiert. Ein rekursiver Scan desselben Besitzers wird vor Datenzugriff
+abgewiesen. Jeder Found-, Not-found- und Fehlerausgang gibt Belegtstatus und
+Mutexebene genau einmal frei; nur der äußere Operationsabschluss darf den
+Context-Sync-Hook ausführen. Damit bleiben Scanresultat, VFAT-/Unicode-
+Identität, Journalformat und öffentliche VFS-ABI unverändert, ohne den
+8-KiB-Taskstack oder seine Guardpage zu vergrößern.
+
+R7.1l erweitert denselben Besitzvertrag auf die zusammenhängende
+Metadatenmutation. Zwei auflösbare Rename-Pfade gehören dem aktuellen
+Task-Slot und seiner Generation. LFN-Publikation, FAT-Update sowie Rename-
+Tombstone besitzen getrennte feste Puffer unter der FAT32-Operationsmutex;
+Journalheader und Recoverysektor gehören dem einzelnen Journalobjekt unter der
+ATA-Transaktionsmutex. Jeder Belegtstatus wird vor Datenzugriff geprüft und
+auf jedem Ausgang gelöscht. Die Laufzeitarbeitsbereiche sind kein Teil des
+gepackten Journal-v2-Medienformats; zwanzig Slots, vier Durabilitätsbarrieren,
+Readback, Cacheinvalidierung und Storage-Fence bleiben unverändert.
+
+R7.1m wendet denselben Vertrag auf den FAT12/FDD-Pfad an. Die globale
+VFS-Serialisierung wird durch eine deadline-begrenzte rekursive FAT12-
+Workspace-Mutex ergänzt. Core-Write, Verzeichnisscan, Pfadauflösung,
+Clusterallokation, Entry-Update, Write, Truncate, Mkdir und Fstat halten
+unterschiedliche feste Slots, sodass verschachtelte Journal-I/O keinen noch
+lebenden Eingabepuffer überschreibt. Ein zweiter Eintritt in denselben Slot
+scheitert vor Payloadzugriff; Freigabe löscht den vollständigen Slot. Das
+FAT12-Undo-Journal verwendet vier instanzgebundene Runtime-Sektoren für zwei
+Inputs, Header und Readback. Seine Version-2-Medienstrukturen, CRCs,
+Zielausschlüsse, Sequenz- und Recoveryreihenfolge ändern sich nicht. Die
+Quarantäneentscheidung bleibt synchron im Storage-Sicherheitsvertrag; nur die
+Konsolenformatierung erfolgt später im Supervisor-Poll und niemals unter der
+FDD-Transaktionsmutex. Der saubere 104-Objekt-Stacknachweis blieb mit
+6820/7168 Byte innerhalb des unveränderten Syscallbudgets. Reale
+Vier-vCPU-VMware-Läufe bestätigten Rename und bytegeprüften Benchmark mit
+Cleanup, Shell-Rückkehr und je zehn stabilen Sekunden; der Benchmark erreichte
+314,88 KiB/s Schreiben und 450,70 KiB/s Lesen.
 
 ## Migrationsreihenfolge
 

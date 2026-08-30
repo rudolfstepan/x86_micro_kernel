@@ -35,8 +35,12 @@ class Fat12JournalContracts(unittest.TestCase):
     def test_every_persistent_journal_write_is_read_back(self):
         source = self.read("fs/fat12/fat12_journal.c")
         self.assertIn("static bool write_verified", source)
-        self.assertIn("memcmp(data, verify, sizeof(verify)) == 0", source)
-        self.assertIn("write_verified(read, write, context", source)
+        self.assertIn(
+            "memcmp(data, verify, FAT12_JOURNAL_SECTOR_SIZE) == 0", source
+        )
+        self.assertIn("write_verified(journal, read, write, context", source)
+        self.assertIn("fat12_journal_scratch_begin", source)
+        self.assertIn("fat12_journal_scratch_end", source)
         self.assertIn("first.sequence == second.sequence", source)
         self.assertIn("memcmp(&first, &second, sizeof(first)) != 0", source)
 

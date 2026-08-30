@@ -11,6 +11,11 @@
 #include "unicode_tables_15_0.h"
 
 #define REIST_UNICODE_PATH_BYTES 255U
+/* The pinned Unicode-15 canonical-decomposition graph has maximum mapping
+ * width two and needs at most four pending scalars during a depth-first
+ * expansion. Regression-check the complete generated table before accepting
+ * a data update. */
+#define REIST_UNICODE_DECOMPOSITION_PENDING_CAPACITY 4U
 
 static inline const reist_unicode_mapping_t *reist_unicode_find_mapping(
         const reist_unicode_mapping_t *table, size_t count, uint32_t scalar) {
@@ -46,29 +51,39 @@ static inline int reist_unicode_append_decomposed(
         T_BASE = 0x11A7U, L_COUNT = 19U, V_COUNT = 21U, T_COUNT = 28U,
         N_COUNT = V_COUNT * T_COUNT, S_COUNT = L_COUNT * N_COUNT
     };
-    if (scalar >= S_BASE && scalar < S_BASE + S_COUNT) {
-        uint32_t index = scalar - S_BASE;
-        if (*count > REIST_UNICODE_DECOMPOSED_CAPACITY - 2U) return 0;
-        output[(*count)++] = L_BASE + index / N_COUNT;
-        output[(*count)++] = V_BASE + (index % N_COUNT) / T_COUNT;
-        if (index % T_COUNT != 0U) {
-            if (*count >= REIST_UNICODE_DECOMPOSED_CAPACITY) return 0;
-            output[(*count)++] = T_BASE + index % T_COUNT;
+    if (output == NULL || count == NULL) return 0;
+    uint32_t pending[REIST_UNICODE_DECOMPOSITION_PENDING_CAPACITY];
+    size_t pending_count = 1U;
+    pending[0] = scalar;
+    while (pending_count != 0U) {
+        uint32_t current = pending[--pending_count];
+        if (current >= S_BASE && current < S_BASE + S_COUNT) {
+            uint32_t index = current - S_BASE;
+            uint32_t required = index % T_COUNT == 0U ? 2U : 3U;
+            if (*count > REIST_UNICODE_DECOMPOSED_CAPACITY - required)
+                return 0;
+            output[(*count)++] = L_BASE + index / N_COUNT;
+            output[(*count)++] = V_BASE + (index % N_COUNT) / T_COUNT;
+            if (required == 3U)
+                output[(*count)++] = T_BASE + index % T_COUNT;
+            continue;
         }
-        return 1;
+        const reist_unicode_mapping_t *mapping = reist_unicode_find_mapping(
+            reist_unicode_decompositions, REIST_UNICODE_DECOMPOSITION_COUNT,
+            current);
+        if (mapping != NULL) {
+            if ((size_t)mapping->length >
+                REIST_UNICODE_DECOMPOSITION_PENDING_CAPACITY - pending_count)
+                return 0;
+            for (uint8_t index = mapping->length; index > 0U; --index) {
+                pending[pending_count++] = reist_unicode_decomposition_data[
+                    mapping->offset + index - 1U];
+            }
+            continue;
+        }
+        if (*count >= REIST_UNICODE_DECOMPOSED_CAPACITY) return 0;
+        output[(*count)++] = current;
     }
-    const reist_unicode_mapping_t *mapping = reist_unicode_find_mapping(
-        reist_unicode_decompositions, REIST_UNICODE_DECOMPOSITION_COUNT,
-        scalar);
-    if (mapping != NULL) {
-        for (uint8_t index = 0U; index < mapping->length; ++index)
-            if (!reist_unicode_append_decomposed(
-                    reist_unicode_decomposition_data[mapping->offset + index],
-                    output, count)) return 0;
-        return 1;
-    }
-    if (*count >= REIST_UNICODE_DECOMPOSED_CAPACITY) return 0;
-    output[(*count)++] = scalar;
     return 1;
 }
 

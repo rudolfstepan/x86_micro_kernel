@@ -4,10 +4,12 @@ param(
     [string]$GateLog = '',
     [ValidateRange(20, 120)] [int]$TimeoutSeconds = 75,
     [ValidateRange(30, 360)] [int]$BenchmarkTimeoutSeconds = 180,
+    [ValidateRange(30, 360)] [int]$RenameTimeoutSeconds = 240,
     [ValidateRange(1, 20)] [int]$InjectionAttempts = 12,
     [ValidateRange(10, 60)] [int]$PostSuccessStabilitySeconds = 10,
     [switch]$ExpectCompositorRestart,
-    [switch]$Benchmark
+    [switch]$Benchmark,
+    [switch]$Rename
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +18,9 @@ $minimumBenchmarkWriteKiB = 95.0
 $minimumBenchmarkReadKiB = 415.0
 if ($Benchmark -and $ExpectCompositorRestart) {
     throw 'Benchmark and compositor-restart modes are exclusive.'
+}
+if ($Rename -and ($Benchmark -or $ExpectCompositorRestart)) {
+    throw 'Rename, benchmark and compositor-restart modes are exclusive.'
 }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (!$SourcePackage) {
@@ -98,6 +103,12 @@ if ($Benchmark) {
     $forbidden += @(
         'BENCHMARK_STATUS phase=hdd-failed',
         'BENCHMARK FAILED'
+    )
+}
+if ($Rename) {
+    $forbidden += @(
+        'TEST_FAIL',
+        'VFAT_LFN_FAIL'
     )
 }
 $running = & $vmrun -T ws list 2>$null
@@ -356,6 +367,10 @@ function Send-ExplicitBenchmarkCommand {
     return [ReistRfbInput]::SendCommand($vncPort, 'benchmark')
 }
 
+function Send-ExplicitRenameCommand {
+    return [ReistRfbInput]::SendCommand($vncPort, 'gtest')
+}
+
 $started = $false
 $launched = $false
 $vmxProcessId = 0
@@ -392,6 +407,8 @@ try {
 
     $modeTimeout = if ($Benchmark) {
         $BenchmarkTimeoutSeconds
+    } elseif ($Rename) {
+        $RenameTimeoutSeconds
     } else {
         $TimeoutSeconds
     }
@@ -512,6 +529,67 @@ try {
                 'HDD result rows or shell return'
             }
             throw "VMware benchmark timed out waiting for: $lastMarker"
+        }
+    }
+    elseif ($Rename) {
+        $commandSent = $false
+        for ($attempt = 1; $attempt -le 3; ++$attempt) {
+            $commandSent = Send-ExplicitRenameCommand
+            "rename command attempt=$attempt injected=$commandSent transport=rfb-loopback" |
+                Add-Content -LiteralPath $GateLog -Encoding utf8
+            if ($commandSent) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$commandSent) {
+            throw 'VMware RFB rename-test command could not be injected.'
+        }
+
+        $renameMarkers = @(
+            'GUEST_TEST_BEGIN',
+            'VFAT_LFN_REPLACE_OK',
+            'TEST_STAGE VFAT_UTF8_OK',
+            'TEST_OK'
+        )
+        $renameMissing = $renameMarkers
+        while ($watch.Elapsed -lt $deadline) {
+            $text = Read-SerialText
+            Assert-NoForbiddenMarker $text
+            $position = $shellPosition
+            $renameMissing = @()
+            foreach ($marker in $renameMarkers) {
+                $found = $text.IndexOf($marker, $position + 1,
+                    [StringComparison]::Ordinal)
+                if ($found -lt 0) {
+                    $renameMissing += $marker
+                    break
+                }
+                $position = $found + $marker.Length - 1
+            }
+            if ($renameMissing.Count -eq 0) {
+                $renamePromptAfter = $text.IndexOf(
+                    $shellMarker, $position + 1,
+                    [StringComparison]::Ordinal)
+                if ($renamePromptAfter -ge 0) {
+                    $bootCount = ([regex]::Matches($text, 'BOOT_OK')).Count
+                    $loaderCount = ([regex]::Matches(
+                        $text, 'x86 native BIOS loader')).Count
+                    $text = Wait-PostSuccessStability 'rename' $bootCount `
+                        $loaderCount
+                    $text | Set-Content -LiteralPath $GateLog -Encoding utf8
+                    $passed = $true
+                    Write-Output "VMWARE RENAME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s cleanup=ok stability=$($PostSuccessStabilitySeconds)s log=$GateLog"
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$passed) {
+            $lastMarker = if ($renameMissing.Count -ne 0) {
+                $renameMissing[0]
+            } else {
+                'fresh Ring-3 shell prompt'
+            }
+            throw "VMware rename test timed out waiting for: $lastMarker"
         }
     }
     else {

@@ -23,6 +23,59 @@ extern directory_entry* entries;
    mount would redirect operations of the first mount to another floppy. */
 static vfs_filesystem_t* mounted_fat12_fs = NULL;
 
+enum {
+    FAT12_VFS_WORKSPACE_ALLOCATE = 1U << 0,
+    FAT12_VFS_WORKSPACE_SCAN = 1U << 1,
+    FAT12_VFS_WORKSPACE_RESOLVE_LOCATION = 1U << 2,
+    FAT12_VFS_WORKSPACE_RESOLVE_PARENT = 1U << 3,
+    FAT12_VFS_WORKSPACE_WRITE_ENTRY = 1U << 4,
+    FAT12_VFS_WORKSPACE_FREE_SLOT = 1U << 5,
+    FAT12_VFS_WORKSPACE_DIRECTORY_EMPTY = 1U << 6,
+    FAT12_VFS_WORKSPACE_WRITE_BYTES = 1U << 7,
+    FAT12_VFS_WORKSPACE_ZERO_RANGE = 1U << 8,
+    FAT12_VFS_WORKSPACE_FILE_WRITE = 1U << 9,
+    FAT12_VFS_WORKSPACE_TRUNCATE = 1U << 10,
+    FAT12_VFS_WORKSPACE_MKDIR = 1U << 11,
+    FAT12_VFS_WORKSPACE_FSTAT = 1U << 12,
+};
+
+typedef struct {
+    uint32_t in_use_mask;
+    uint8_t allocate_zero[FAT12_SECTOR_SIZE];
+    uint8_t scan_sector[FAT12_SECTOR_SIZE];
+    char resolve_location_path[FAT12_VFS_PATH_MAX];
+    char resolve_parent_path[FAT12_VFS_PATH_MAX];
+    uint8_t write_entry_sector[FAT12_SECTOR_SIZE];
+    uint8_t free_slot_sector[FAT12_SECTOR_SIZE];
+    uint8_t directory_empty_sector[FAT12_SECTOR_SIZE];
+    uint8_t write_bytes_sector[FAT12_SECTOR_SIZE];
+    uint8_t zero_range_sector[FAT12_SECTOR_SIZE];
+    uint8_t file_write_sector[FAT12_SECTOR_SIZE];
+    uint8_t truncate_sector[FAT12_SECTOR_SIZE];
+    uint8_t mkdir_sector[FAT12_SECTOR_SIZE];
+    uint8_t fstat_sector[FAT12_SECTOR_SIZE];
+} fat12_vfs_workspace_t;
+
+static fat12_vfs_workspace_t fat12_vfs_workspace;
+
+static bool fat12_vfs_workspace_claim(uint32_t owner) {
+    if (!fat12_operation_workspace_begin()) return false;
+    if ((fat12_vfs_workspace.in_use_mask & owner) != 0U) {
+        fat12_operation_workspace_end();
+        return false;
+    }
+    fat12_vfs_workspace.in_use_mask |= owner;
+    return true;
+}
+
+static void fat12_vfs_workspace_release(uint32_t owner, void *storage,
+                                        size_t storage_size) {
+    if (storage != NULL && storage_size != 0U)
+        memset(storage, 0, storage_size);
+    fat12_vfs_workspace.in_use_mask &= ~owner;
+    fat12_operation_workspace_end();
+}
+
 static int fat12_require_mutation(vfs_filesystem_t* fs) {
     if (!fs || fs != mounted_fat12_fs || fs->fs_data != fat12)
         return VFS_ERR_INVALID;
@@ -100,32 +153,42 @@ static bool fat12_short_name(const char* name, uint8_t output[11]) {
 }
 
 static uint16_t fat12_allocate_cluster(void) {
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_ALLOCATE)) return 0;
     uint32_t count = fat12_cluster_count();
-    uint8_t zero[FAT12_SECTOR_SIZE];
-    memset(zero, 0, sizeof(zero));
+    uint8_t *zero = fat12_vfs_workspace.allocate_zero;
+    memset(zero, 0, FAT12_SECTOR_SIZE);
+    uint16_t result = 0;
     for (uint32_t candidate = 2; candidate < count + 2U; ++candidate) {
         if (fat12_get_fat_entry((uint16_t)candidate) != FAT12_FREE_CLUSTER)
             continue;
         if (!fat12_set_fat_entry((uint16_t)candidate, FAT12_EOC_MAX))
-            return 0;
+            break;
         uint32_t first = fat12_cluster_sector((uint16_t)candidate);
         for (uint32_t sector = 0;
              sector < fat12->boot_sector.sectors_per_cluster; ++sector) {
             if (!fat12_write_logical_sectors(first + sector, 1, zero)) {
                 (void)fat12_set_fat_entry((uint16_t)candidate,
                                           FAT12_FREE_CLUSTER);
-                return 0;
+                goto release_workspace;
             }
         }
-        return (uint16_t)candidate;
+        result = (uint16_t)candidate;
+        break;
     }
-    return 0;
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_ALLOCATE, zero,
+                                FAT12_SECTOR_SIZE);
+    return result;
 }
 
 static int fat12_scan_directory(uint16_t directory_cluster,
                                 const char* name,
                                 fat12_entry_location_t* result) {
-    uint8_t sector_buffer[FAT12_SECTOR_SIZE];
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_SCAN))
+        return VFS_ERR_BUSY;
+    uint8_t *sector_buffer = fat12_vfs_workspace.scan_sector;
+    int status = VFS_ERR_IO;
     uint32_t root_sectors =
         ((uint32_t)fat12->boot_sector.root_entry_count * 32U +
          FAT12_SECTOR_SIZE - 1U) / FAT12_SECTOR_SIZE;
@@ -140,12 +203,15 @@ static int fat12_scan_directory(uint16_t directory_cluster,
              ++sector_index) {
             uint32_t logical = first + sector_index;
             if (!fat12_read_logical_sectors(logical, 1, sector_buffer))
-                return VFS_ERR_IO;
+                goto release_workspace;
             directory_entry* sector_entries =
                 (directory_entry*)sector_buffer;
             for (uint16_t slot = 0; slot < FAT12_SECTOR_SIZE / 32U; ++slot) {
                 directory_entry* entry = &sector_entries[slot];
-                if (entry->filename[0] == 0x00) return VFS_ERR_NOT_FOUND;
+                if (entry->filename[0] == 0x00) {
+                    status = VFS_ERR_NOT_FOUND;
+                    goto release_workspace;
+                }
                 if (entry->filename[0] == 0xE5 ||
                     entry->attributes == FILE_ATTR_LONG_NAME ||
                     (entry->attributes & FILE_ATTR_VOLUME_LABEL)) continue;
@@ -157,28 +223,46 @@ static int fat12_scan_directory(uint16_t directory_cluster,
                         result->sector = logical;
                         result->slot = slot;
                     }
-                    return VFS_OK;
+                    status = VFS_OK;
+                    goto release_workspace;
                 }
             }
         }
-        if (directory_cluster == 0) return VFS_ERR_NOT_FOUND;
+        if (directory_cluster == 0) {
+            status = VFS_ERR_NOT_FOUND;
+            goto release_workspace;
+        }
         uint16_t next = fat12_get_fat_entry(cluster);
-        if (next >= FAT12_EOC_MIN) return VFS_ERR_NOT_FOUND;
+        if (next >= FAT12_EOC_MIN) {
+            status = VFS_ERR_NOT_FOUND;
+            goto release_workspace;
+        }
         if (!is_valid_cluster_fat12(next) || clusters_left-- == 0)
-            return VFS_ERR_IO;
+            goto release_workspace;
         cluster = next;
     }
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_SCAN, sector_buffer,
+                                FAT12_SECTOR_SIZE);
+    return status;
 }
 
 static int fat12_resolve_location(const char* path,
                                   fat12_entry_location_t* result) {
     if (!path || !result || strlen(path) >= FAT12_VFS_PATH_MAX)
         return VFS_ERR_INVALID;
-    char copy[FAT12_VFS_PATH_MAX];
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_RESOLVE_LOCATION))
+        return VFS_ERR_BUSY;
+    char *copy = fat12_vfs_workspace.resolve_location_path;
+    int result_status = VFS_ERR_NOT_FOUND;
     strcpy(copy, path);
     char* cursor = copy;
     while (*cursor == '/') cursor++;
-    if (*cursor == '\0') return VFS_ERR_IS_DIR;
+    if (*cursor == '\0') {
+        result_status = VFS_ERR_IS_DIR;
+        goto release_workspace;
+    }
 
     uint32_t directory = 0;
     char* save = NULL;
@@ -187,17 +271,27 @@ static int fat12_resolve_location(const char* path,
         char* next = strtok_r(NULL, "/", &save);
         fat12_entry_location_t found;
         int status = fat12_scan_directory((uint16_t)directory, token, &found);
-        if (status != VFS_OK) return status;
+        if (status != VFS_OK) {
+            result_status = status;
+            goto release_workspace;
+        }
         if (!next) {
             *result = found;
-            return VFS_OK;
+            result_status = VFS_OK;
+            goto release_workspace;
         }
-        if (!(found.entry.attributes & FILE_ATTR_DIRECTORY))
-            return VFS_ERR_NOT_DIR;
+        if (!(found.entry.attributes & FILE_ATTR_DIRECTORY)) {
+            result_status = VFS_ERR_NOT_DIR;
+            goto release_workspace;
+        }
         directory = found.entry.first_cluster_low;
         token = next;
     }
-    return VFS_ERR_NOT_FOUND;
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_RESOLVE_LOCATION, copy,
+                                FAT12_VFS_PATH_MAX);
+    return result_status;
 }
 
 static int fat12_resolve(const char* path, directory_entry* result) {
@@ -293,46 +387,69 @@ static int fat12_resolve_parent(const char* path, uint16_t* parent,
                                 uint8_t short_name[11]) {
     if (!path || !parent || !short_name || strlen(path) >= FAT12_VFS_PATH_MAX)
         return VFS_ERR_INVALID;
-    char copy[FAT12_VFS_PATH_MAX];
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_RESOLVE_PARENT))
+        return VFS_ERR_BUSY;
+    char *copy = fat12_vfs_workspace.resolve_parent_path;
+    int result_status = VFS_ERR_INVALID;
     strcpy(copy, path);
     char* cursor = copy;
     while (*cursor == '/') ++cursor;
-    if (*cursor == '\0') return VFS_ERR_INVALID;
+    if (*cursor == '\0') goto release_workspace;
     uint16_t directory = 0;
     char* save = NULL;
     char* token = strtok_r(cursor, "/", &save);
     while (token) {
         char* next = strtok_r(NULL, "/", &save);
         if (!next) {
-            if (!fat12_short_name(token, short_name)) return VFS_ERR_INVALID;
+            if (!fat12_short_name(token, short_name)) goto release_workspace;
             *parent = directory;
-            return VFS_OK;
+            result_status = VFS_OK;
+            goto release_workspace;
         }
         fat12_entry_location_t location;
         int status = fat12_scan_directory(directory, token, &location);
-        if (status != VFS_OK) return status;
-        if (!(location.entry.attributes & FILE_ATTR_DIRECTORY))
-            return VFS_ERR_NOT_DIR;
+        if (status != VFS_OK) {
+            result_status = status;
+            goto release_workspace;
+        }
+        if (!(location.entry.attributes & FILE_ATTR_DIRECTORY)) {
+            result_status = VFS_ERR_NOT_DIR;
+            goto release_workspace;
+        }
         directory = location.entry.first_cluster_low;
         token = next;
     }
-    return VFS_ERR_INVALID;
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_RESOLVE_PARENT, copy,
+                                FAT12_VFS_PATH_MAX);
+    return result_status;
 }
 
 static bool fat12_write_entry(const fat12_entry_location_t* location,
                               const directory_entry* entry) {
-    uint8_t sector[FAT12_SECTOR_SIZE];
     if (!location || !entry || location->slot >= FAT12_SECTOR_SIZE / 32U ||
-        !fat12_read_logical_sectors(location->sector, 1, sector)) return false;
-    ((directory_entry*)sector)[location->slot] = *entry;
-    return fat12_write_logical_sectors(location->sector, 1, sector);
+        !fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_WRITE_ENTRY))
+        return false;
+    uint8_t *sector = fat12_vfs_workspace.write_entry_sector;
+    bool result = fat12_read_logical_sectors(location->sector, 1, sector);
+    if (result) {
+        ((directory_entry*)sector)[location->slot] = *entry;
+        result = fat12_write_logical_sectors(location->sector, 1, sector);
+    }
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_WRITE_ENTRY, sector,
+                                FAT12_SECTOR_SIZE);
+    return result;
 }
 
 static int fat12_find_free_slot(uint16_t directory_cluster,
                                 fat12_entry_location_t* location,
                                 bool* fat_changed) {
     if (!location || !fat_changed) return VFS_ERR_INVALID;
-    uint8_t sector_buffer[FAT12_SECTOR_SIZE];
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_FREE_SLOT))
+        return VFS_ERR_BUSY;
+    uint8_t *sector_buffer = fat12_vfs_workspace.free_slot_sector;
+    int status = VFS_ERR_IO;
     bool have_deleted = false;
     fat12_entry_location_t deleted;
     uint32_t root_sectors =
@@ -350,7 +467,7 @@ static int fat12_find_free_slot(uint16_t directory_cluster,
              ++sector_index) {
             uint32_t logical = first + sector_index;
             if (!fat12_read_logical_sectors(logical, 1, sector_buffer))
-                return VFS_ERR_IO;
+                goto release_workspace;
             directory_entry* sector_entries =
                 (directory_entry*)sector_buffer;
             for (uint16_t slot = 0; slot < FAT12_SECTOR_SIZE / 32U; ++slot) {
@@ -368,34 +485,54 @@ static int fat12_find_free_slot(uint16_t directory_cluster,
                         location->sector = logical;
                         location->slot = slot;
                     }
-                    return VFS_OK;
+                    status = VFS_OK;
+                    goto release_workspace;
                 }
             }
         }
         if (directory_cluster == 0) {
-            if (have_deleted) { *location = deleted; return VFS_OK; }
-            return VFS_ERR_NO_SPACE;
+            if (have_deleted) {
+                *location = deleted;
+                status = VFS_OK;
+            } else {
+                status = VFS_ERR_NO_SPACE;
+            }
+            goto release_workspace;
         }
         last_cluster = cluster;
         uint16_t next = fat12_get_fat_entry(cluster);
         if (next >= FAT12_EOC_MIN) break;
         if (!is_valid_cluster_fat12(next) || clusters_left-- == 0)
-            return VFS_ERR_IO;
+            goto release_workspace;
         cluster = next;
     }
-    if (have_deleted) { *location = deleted; return VFS_OK; }
+    if (have_deleted) {
+        *location = deleted;
+        status = VFS_OK;
+        goto release_workspace;
+    }
     uint16_t added = fat12_allocate_cluster();
-    if (added == 0 || !fat12_set_fat_entry(last_cluster, added))
-        return VFS_ERR_NO_SPACE;
+    if (added == 0 || !fat12_set_fat_entry(last_cluster, added)) {
+        status = VFS_ERR_NO_SPACE;
+        goto release_workspace;
+    }
     *fat_changed = true;
     memset(location, 0, sizeof(*location));
     location->sector = fat12_cluster_sector(added);
     location->slot = 0;
-    return VFS_OK;
+    status = VFS_OK;
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_FREE_SLOT, sector_buffer,
+                                FAT12_SECTOR_SIZE);
+    return status;
 }
 
 static bool fat12_directory_is_empty(uint16_t directory_cluster) {
-    uint8_t sector_buffer[FAT12_SECTOR_SIZE];
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_DIRECTORY_EMPTY))
+        return false;
+    uint8_t *sector_buffer = fat12_vfs_workspace.directory_empty_sector;
+    bool result = false;
     uint16_t cluster = directory_cluster;
     uint32_t clusters_left = fat12_cluster_count();
     while (is_valid_cluster_fat12(cluster) && clusters_left-- != 0) {
@@ -404,26 +541,37 @@ static bool fat12_directory_is_empty(uint16_t directory_cluster) {
              sector_index < fat12->boot_sector.sectors_per_cluster;
              ++sector_index) {
             if (!fat12_read_logical_sectors(first + sector_index, 1,
-                                            sector_buffer)) return false;
+                                            sector_buffer))
+                goto release_workspace;
             directory_entry* directory = (directory_entry*)sector_buffer;
             for (uint32_t slot = 0; slot < FAT12_SECTOR_SIZE / 32U; ++slot) {
                 directory_entry* entry = &directory[slot];
-                if (entry->filename[0] == 0x00) return true;
+                if (entry->filename[0] == 0x00) {
+                    result = true;
+                    goto release_workspace;
+                }
                 if (entry->filename[0] == 0xE5 ||
                     entry->attributes == FILE_ATTR_LONG_NAME ||
                     (entry->attributes & FILE_ATTR_VOLUME_LABEL)) continue;
                 char name[13];
                 fat12_entry_name(entry, name);
                 if (strcmp(name, ".") != 0 && strcmp(name, "..") != 0)
-                    return false;
+                    goto release_workspace;
             }
         }
         uint16_t next = fat12_get_fat_entry(cluster);
-        if (next >= FAT12_EOC_MIN) return true;
-        if (!is_valid_cluster_fat12(next)) return false;
+        if (next >= FAT12_EOC_MIN) {
+            result = true;
+            goto release_workspace;
+        }
+        if (!is_valid_cluster_fat12(next)) goto release_workspace;
         cluster = next;
     }
-    return false;
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_DIRECTORY_EMPTY,
+                                sector_buffer, FAT12_SECTOR_SIZE);
+    return result;
 }
 
 static bool fat12_free_chain(uint16_t start_cluster) {
@@ -524,14 +672,17 @@ static bool fat12_detach_chain_suffix(uint16_t start_cluster,
 
 static bool fat12_write_bytes(uint16_t start_cluster, uint32_t offset,
                               const uint8_t* input, uint32_t size) {
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_WRITE_BYTES))
+        return false;
     uint32_t cluster_bytes = FAT12_SECTOR_SIZE *
         fat12->boot_sector.sectors_per_cluster;
-    uint8_t sector_buffer[FAT12_SECTOR_SIZE];
+    uint8_t *sector_buffer = fat12_vfs_workspace.write_bytes_sector;
+    bool result = false;
     while (size != 0) {
         uint32_t cluster_index = offset / cluster_bytes;
         uint32_t within_cluster = offset % cluster_bytes;
         uint16_t cluster = fat12_cluster_at(start_cluster, cluster_index);
-        if (cluster == 0) return false;
+        if (cluster == 0) goto release_workspace;
         uint32_t sector_index = within_cluster / FAT12_SECTOR_SIZE;
         uint32_t within_sector = within_cluster % FAT12_SECTOR_SIZE;
         uint32_t logical = fat12_cluster_sector(cluster) + sector_index;
@@ -552,7 +703,7 @@ static bool fat12_write_bytes(uint16_t start_cluster, uint32_t offset,
                 if (addition < fat12->boot_sector.sectors_per_cluster) break;
             }
             if (!fat12_write_logical_sectors(logical, run, input))
-                return false;
+                goto release_workspace;
             uint32_t amount = run * FAT12_SECTOR_SIZE;
             input += amount;
             offset += amount;
@@ -563,34 +714,49 @@ static bool fat12_write_bytes(uint16_t start_cluster, uint32_t offset,
         if (amount > size) amount = size;
         if (within_sector != 0 || amount != FAT12_SECTOR_SIZE) {
             if (!fat12_read_logical_sectors(logical, 1, sector_buffer))
-                return false;
+                goto release_workspace;
         }
         if (within_sector == 0 && amount == FAT12_SECTOR_SIZE) {
-            if (!fat12_write_logical_sectors(logical, 1, input)) return false;
+            if (!fat12_write_logical_sectors(logical, 1, input))
+                goto release_workspace;
         } else {
             memcpy(sector_buffer + within_sector, input, amount);
             if (!fat12_write_logical_sectors(logical, 1, sector_buffer))
-                return false;
+                goto release_workspace;
         }
         input += amount;
         offset += amount;
         size -= amount;
     }
-    return true;
+    result = true;
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_WRITE_BYTES,
+                                sector_buffer, FAT12_SECTOR_SIZE);
+    return result;
 }
 
 static bool fat12_zero_range(uint16_t start_cluster, uint32_t offset,
                              uint32_t size) {
-    uint8_t zero[FAT12_SECTOR_SIZE];
-    memset(zero, 0, sizeof(zero));
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_ZERO_RANGE))
+        return false;
+    uint8_t *zero = fat12_vfs_workspace.zero_range_sector;
+    memset(zero, 0, FAT12_SECTOR_SIZE);
+    bool result = false;
     while (size != 0) {
-        uint32_t amount = size > sizeof(zero) ? sizeof(zero) : size;
+        uint32_t amount = size > FAT12_SECTOR_SIZE
+            ? FAT12_SECTOR_SIZE : size;
         if (!fat12_write_bytes(start_cluster, offset, zero, amount))
-            return false;
+            goto release_workspace;
         offset += amount;
         size -= amount;
     }
-    return true;
+    result = true;
+
+release_workspace:
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_ZERO_RANGE, zero,
+                                FAT12_SECTOR_SIZE);
+    return result;
 }
 
 static uint32_t fat12_truncate_transaction_sectors(uint32_t old_size,
@@ -698,12 +864,19 @@ static int fat12_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     fat12_file* handle = (fat12_file*)node->fs_specific;
     if (handle->attributes & FILE_ATTR_READONLY) return VFS_ERR_READ_ONLY;
 
-    uint8_t entry_sector[FAT12_SECTOR_SIZE];
-    if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U ||
-        !fat12_read_logical_sectors(handle->directory_sector, 1,
-                                    entry_sector)) return VFS_ERR_IO;
-    directory_entry entry =
-        ((directory_entry*)entry_sector)[handle->directory_slot];
+    if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U)
+        return VFS_ERR_IO;
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_FILE_WRITE))
+        return VFS_ERR_BUSY;
+    uint8_t *entry_sector = fat12_vfs_workspace.file_write_sector;
+    bool entry_read = fat12_read_logical_sectors(
+        handle->directory_sector, 1, entry_sector);
+    directory_entry entry;
+    if (entry_read)
+        entry = ((directory_entry*)entry_sector)[handle->directory_slot];
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_FILE_WRITE,
+                                entry_sector, FAT12_SECTOR_SIZE);
+    if (!entry_read) return VFS_ERR_IO;
     if (entry.filename[0] == 0x00 || entry.filename[0] == 0xE5 ||
         (entry.attributes & FILE_ATTR_DIRECTORY)) return VFS_ERR_NOT_FOUND;
 
@@ -809,12 +982,19 @@ static int fat12_vfs_truncate(vfs_node_t* node, uint32_t size) {
     if (fat12_is_critical_name((char*)handle->name))
         return VFS_ERR_UNSUPPORTED;
 
-    uint8_t entry_sector[FAT12_SECTOR_SIZE];
-    if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U ||
-        !fat12_read_logical_sectors(handle->directory_sector, 1,
-                                    entry_sector)) return VFS_ERR_IO;
-    directory_entry entry =
-        ((directory_entry*)entry_sector)[handle->directory_slot];
+    if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U)
+        return VFS_ERR_IO;
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_TRUNCATE))
+        return VFS_ERR_BUSY;
+    uint8_t *entry_sector = fat12_vfs_workspace.truncate_sector;
+    bool entry_read = fat12_read_logical_sectors(
+        handle->directory_sector, 1, entry_sector);
+    directory_entry entry;
+    if (entry_read)
+        entry = ((directory_entry*)entry_sector)[handle->directory_slot];
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_TRUNCATE, entry_sector,
+                                FAT12_SECTOR_SIZE);
+    if (!entry_read) return VFS_ERR_IO;
     char current_name[13];
     fat12_entry_name(&entry, current_name);
     if (entry.filename[0] == 0x00 || entry.filename[0] == 0xE5)
@@ -961,24 +1141,31 @@ static int fat12_vfs_mkdir(vfs_filesystem_t* fs, const char* path) {
     if (cluster == 0) status = status == VFS_OK ? VFS_ERR_NO_SPACE : status;
     if (status == VFS_OK) {
         fat_changed = true;
-        uint8_t sector[FAT12_SECTOR_SIZE];
-        memset(sector, 0, sizeof(sector));
-        directory_entry* dots = (directory_entry*)sector;
-        memset(dots[0].filename, ' ', 8);
-        memset(dots[0].extension, ' ', 3);
-        dots[0].filename[0] = '.';
-        dots[0].attributes = FILE_ATTR_DIRECTORY;
-        dots[0].first_cluster_low = cluster;
-        fat12_set_creation_time(&dots[0]);
-        memset(dots[1].filename, ' ', 8);
-        memset(dots[1].extension, ' ', 3);
-        dots[1].filename[0] = '.';
-        dots[1].filename[1] = '.';
-        dots[1].attributes = FILE_ATTR_DIRECTORY;
-        dots[1].first_cluster_low = parent;
-        fat12_set_creation_time(&dots[1]);
-        if (!fat12_write_logical_sectors(fat12_cluster_sector(cluster), 1,
-                                         sector)) status = VFS_ERR_IO;
+        if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_MKDIR)) {
+            status = VFS_ERR_BUSY;
+        } else {
+            uint8_t *sector = fat12_vfs_workspace.mkdir_sector;
+            memset(sector, 0, FAT12_SECTOR_SIZE);
+            directory_entry* dots = (directory_entry*)sector;
+            memset(dots[0].filename, ' ', 8);
+            memset(dots[0].extension, ' ', 3);
+            dots[0].filename[0] = '.';
+            dots[0].attributes = FILE_ATTR_DIRECTORY;
+            dots[0].first_cluster_low = cluster;
+            fat12_set_creation_time(&dots[0]);
+            memset(dots[1].filename, ' ', 8);
+            memset(dots[1].extension, ' ', 3);
+            dots[1].filename[0] = '.';
+            dots[1].filename[1] = '.';
+            dots[1].attributes = FILE_ATTR_DIRECTORY;
+            dots[1].first_cluster_low = parent;
+            fat12_set_creation_time(&dots[1]);
+            bool written = fat12_write_logical_sectors(
+                fat12_cluster_sector(cluster), 1, sector);
+            fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_MKDIR, sector,
+                                        FAT12_SECTOR_SIZE);
+            if (!written) status = VFS_ERR_IO;
+        }
     }
     if (status == VFS_OK && !fat12_sync_fat()) status = VFS_ERR_IO;
     if (status == VFS_OK) {
@@ -1143,11 +1330,17 @@ static int fat12_vfs_fstat(vfs_node_t* node, vfs_dir_entry_t* stat) {
     fat12_file* handle = (fat12_file*)node->fs_specific;
     if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U)
         return VFS_ERR_IO;
-    uint8_t sector[FAT12_SECTOR_SIZE];
-    if (!fat12_read_logical_sectors(handle->directory_sector, 1U, sector))
-        return VFS_ERR_IO;
-    directory_entry entry =
-        ((directory_entry*)sector)[handle->directory_slot];
+    if (!fat12_vfs_workspace_claim(FAT12_VFS_WORKSPACE_FSTAT))
+        return VFS_ERR_BUSY;
+    uint8_t *sector = fat12_vfs_workspace.fstat_sector;
+    bool entry_read = fat12_read_logical_sectors(
+        handle->directory_sector, 1U, sector);
+    directory_entry entry;
+    if (entry_read)
+        entry = ((directory_entry*)sector)[handle->directory_slot];
+    fat12_vfs_workspace_release(FAT12_VFS_WORKSPACE_FSTAT, sector,
+                                FAT12_SECTOR_SIZE);
+    if (!entry_read) return VFS_ERR_IO;
     char name[13];
     fat12_entry_name(&entry, name);
     if (entry.filename[0] == 0x00 || entry.filename[0] == 0xE5 ||

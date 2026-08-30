@@ -139,6 +139,11 @@ extern bool fat32_write_supported;
  * context. The legacy return value remains ABI-compatible and is reserved. */
 uint32_t fat32_operation_begin(void);
 void fat32_operation_end(uint32_t interrupt_flags);
+/* Acquire one recursive serialization level for a bounded internal workspace.
+ * Unlike fat32_operation_end(), the matching release does not publish a
+ * context synchronization in the middle of an outer FAT32 operation. */
+uint32_t fat32_operation_workspace_begin(void);
+void fat32_operation_workspace_end(uint32_t interrupt_flags);
 bool fat32_prepare_write(void);
 bool fat32_write_sector(unsigned int lba, void* buffer);
 /** Drop every fixed FAT-sector cache entry before an identity or data change. */

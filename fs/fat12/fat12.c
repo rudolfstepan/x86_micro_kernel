@@ -11,6 +11,10 @@
 #include "../../lib/libc/stdio.h"
 #include "../../lib/libc/stdlib.h"
 #include "../../lib/libc/string.h"
+#ifndef KERNEL_HOST_TEST
+#include "include/kernel/panic.h"
+#include "kernel/sched/mutex.h"
+#endif
 
 // Additional constants
 #define MAX_PATH_LENGTH 256
@@ -24,6 +28,62 @@ static directory_entry current_dir_storage;
 uint8_t* buffer = NULL;
 uint8_t current_fdd_drive = 0;
 static uint64_t fat12_journal_sequence = 1U;
+
+#define FAT12_OPERATION_LOCK_TIMEOUT_MS 10000U
+#ifndef KERNEL_HOST_TEST
+static kernel_mutex_t fat12_operation_mutex = KERNEL_MUTEX_INIT;
+#endif
+
+enum {
+    FAT12_CORE_WORKSPACE_PREPARE = 1U << 0,
+    FAT12_CORE_WORKSPACE_DEFECT = 1U << 1,
+    FAT12_CORE_WORKSPACE_WRITE = 1U << 2,
+    FAT12_CORE_WORKSPACE_REMAP = 1U << 3,
+};
+
+typedef struct {
+    uint32_t in_use_mask;
+    uint8_t prepare_primary[FAT12_SECTOR_SIZE];
+    uint8_t prepare_mirror[FAT12_SECTOR_SIZE];
+    uint8_t defect_probe[FAT12_SECTOR_SIZE];
+    uint8_t write_old[FAT12_SECTOR_SIZE];
+    uint8_t write_verify[FAT12_SECTOR_SIZE];
+    uint8_t remap_verify[FAT12_SECTOR_SIZE];
+} fat12_core_workspace_t;
+
+static fat12_core_workspace_t fat12_core_workspace;
+
+bool fat12_operation_workspace_begin(void) {
+#ifdef KERNEL_HOST_TEST
+    return true;
+#else
+    KASSERT_NOT_IRQ();
+    return kernel_mutex_lock_for(&fat12_operation_mutex,
+                                 FAT12_OPERATION_LOCK_TIMEOUT_MS) == 0;
+#endif
+}
+
+void fat12_operation_workspace_end(void) {
+#ifndef KERNEL_HOST_TEST
+    KASSERT_NOT_IRQ();
+    kernel_mutex_unlock(&fat12_operation_mutex);
+#endif
+}
+
+static bool fat12_core_workspace_claim(uint32_t owner) {
+    if (!fat12_operation_workspace_begin()) return false;
+    if ((fat12_core_workspace.in_use_mask & owner) != 0U) {
+        fat12_operation_workspace_end();
+        return false;
+    }
+    fat12_core_workspace.in_use_mask |= owner;
+    return true;
+}
+
+static void fat12_core_workspace_release(uint32_t owner) {
+    fat12_core_workspace.in_use_mask &= ~owner;
+    fat12_operation_workspace_end();
+}
 
 static bool fdc_read_logical_range(uint8_t drive, uint32_t logical_sector,
                                    uint32_t count, uint8_t *output);
@@ -65,28 +125,36 @@ static bool fat12_journal_prepare(void) {
     uint32_t remap_base = replica_base - FAT12_REMAP_SPARE_COUNT - 3U;
     uint32_t journal_base = remap_base -
         (2U + FAT12_JOURNAL_MAX_ENTRIES * 2U);
+    if (!fat12_core_workspace_claim(FAT12_CORE_WORKSPACE_PREPARE))
+        return false;
+    bool result = false;
+    uint8_t *primary = fat12_core_workspace.prepare_primary;
+    uint8_t *mirror = fat12_core_workspace.prepare_mirror;
     if (!fat12_journal_format(&fat12->journal, journal_base,
                               journal_base + 1U, journal_base + 2U,
-                              fat12->boot_sector.volume_id)) return false;
-    uint8_t primary[FAT12_SECTOR_SIZE], mirror[FAT12_SECTOR_SIZE];
+                              fat12->boot_sector.volume_id))
+        goto release_workspace;
     bool primary_ok = fdc_read_logical_range(current_fdd_drive,
         journal_base, 1U, primary);
     bool mirror_ok = fdc_read_logical_range(current_fdd_drive,
         journal_base + 1U, 1U, mirror);
     if (!primary_ok || !mirror_ok || !fat12_journal_load(&fat12->journal,
-            fat12_journal_read_sector, NULL)) return false;
+            fat12_journal_read_sector, NULL)) goto release_workspace;
     if (!fat12_journal_recover(&fat12->journal, fat12_journal_read_sector,
-                               fat12_journal_write_sector, NULL)) return false;
+                               fat12_journal_write_sector, NULL))
+        goto release_workspace;
     if (!fat12_remap_format(&fat12->remap, remap_base, remap_base + 1U,
                             remap_base + 2U,
-                            fat12->boot_sector.volume_id)) return false;
+                            fat12->boot_sector.volume_id))
+        goto release_workspace;
     if (!fat12_remap_load(&fat12->remap, fat12_journal_read_sector, NULL))
-        return false;
+        goto release_workspace;
     for (uint32_t slot = 0U; slot < FAT12_REPLICA_FILE_COUNT; ++slot) {
-        uint32_t primary = replica_base + slot * FAT12_REPLICA_SLOT_SECTORS;
-        if (!fat12_replica_init(&fat12->replicas[slot], primary,
-                primary + 1U + FAT12_REPLICA_DATA_SECTORS,
-                fat12->boot_sector.volume_id)) return false;
+        uint32_t replica_primary =
+            replica_base + slot * FAT12_REPLICA_SLOT_SECTORS;
+        if (!fat12_replica_init(&fat12->replicas[slot], replica_primary,
+                replica_primary + 1U + FAT12_REPLICA_DATA_SECTORS,
+                fat12->boot_sector.volume_id)) goto release_workspace;
     }
     fat12->journal_enabled = true;
     fat12->remap_enabled = true;
@@ -94,7 +162,13 @@ static bool fat12_journal_prepare(void) {
     fat12_journal_sequence = fat12->journal.header.sequence;
     fat12->transaction_active = false;
     fat12->write_fenced = false;
-    return true;
+    result = true;
+
+release_workspace:
+    memset(primary, 0, FAT12_SECTOR_SIZE);
+    memset(mirror, 0, FAT12_SECTOR_SIZE);
+    fat12_core_workspace_release(FAT12_CORE_WORKSPACE_PREPARE);
+    return result;
 }
 
 static uint32_t fat12_remap_sector(uint32_t sector) {
@@ -105,12 +179,20 @@ static uint32_t fat12_remap_sector(uint32_t sector) {
 }
 
 static bool fat12_confirm_sector_defect(uint32_t sector) {
-    uint8_t probe[FAT12_SECTOR_SIZE];
+    if (!fat12_core_workspace_claim(FAT12_CORE_WORKSPACE_DEFECT))
+        return false;
+    uint8_t *probe = fat12_core_workspace.defect_probe;
+    bool confirmed = true;
     for (uint32_t attempt = 0U; attempt < FAT12_DEFECT_CONFIRM_READS;
-         ++attempt)
-        if (fdc_read_logical_range(current_fdd_drive, sector, 1U, probe))
-            return false;
-    return true;
+         ++attempt) {
+        if (!fdc_read_logical_range(current_fdd_drive, sector, 1U, probe))
+            continue;
+        confirmed = false;
+        break;
+    }
+    memset(probe, 0, FAT12_SECTOR_SIZE);
+    fat12_core_workspace_release(FAT12_CORE_WORKSPACE_DEFECT);
+    return confirmed;
 }
 
 // Helper: read a single sector using DMA first, then fall back to no-DMA path
@@ -1267,12 +1349,15 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
         fat12->boot_sector.total_sectors_large;
     if (logical_sector >= total || count > total - logical_sector) return false;
     if (count > FAT12_JOURNAL_MAX_ENTRIES) return false;
+    if (!fat12_core_workspace_claim(FAT12_CORE_WORKSPACE_WRITE)) return false;
+    uint8_t *old_sector = fat12_core_workspace.write_old;
+    uint8_t *verify = fat12_core_workspace.write_verify;
+    bool result = false;
     bool owns_transaction = !fat12->transaction_active;
-    if (owns_transaction && !fat12_transaction_begin(count)) return false;
+    if (owns_transaction && !fat12_transaction_begin(count))
+        goto release_workspace;
     const uint8_t *bytes = (const uint8_t*)input;
     for (uint32_t index = 0U; index < count; ++index) {
-        uint8_t old_sector[FAT12_SECTOR_SIZE];
-        uint8_t verify[FAT12_SECTOR_SIZE];
         uint32_t physical = fat12_remap_sector(logical_sector + index);
         if (!fat12_read_logical_sectors(logical_sector + index, 1U,
                                         old_sector) ||
@@ -1286,10 +1371,16 @@ bool fat12_write_logical_sectors(uint32_t logical_sector, uint32_t count,
             memcmp(bytes + index * FAT12_SECTOR_SIZE, verify,
                    FAT12_SECTOR_SIZE) != 0) {
             fat12_transaction_fail();
-            return false;
+            goto release_workspace;
         }
     }
-    return !owns_transaction || fat12_transaction_commit();
+    result = !owns_transaction || fat12_transaction_commit();
+
+release_workspace:
+    memset(old_sector, 0, FAT12_SECTOR_SIZE);
+    memset(verify, 0, FAT12_SECTOR_SIZE);
+    fat12_core_workspace_release(FAT12_CORE_WORKSPACE_WRITE);
+    return result;
 }
 
 bool fat12_transaction_begin(uint32_t maximum_unique_sectors) {
@@ -1369,10 +1460,14 @@ bool fat12_install_sector_remap(uint32_t bad_sector,
         fat12->boot_sector.reserved_sectors < 23U + FAT12_REMAP_SPARE_COUNT +
                                               FAT12_REPLICA_RESERVED_SECTORS ||
         bad_sector < (uint32_t)fat12->fat_start ||
-        bad_sector >= (uint32_t)fat12->data_start ||
-        !fat12_confirm_sector_defect(bad_sector)) return false;
+        bad_sector >= (uint32_t)fat12->data_start) return false;
+    if (!fat12_core_workspace_claim(FAT12_CORE_WORKSPACE_REMAP)) return false;
+    uint8_t *verify = fat12_core_workspace.remap_verify;
+    bool result = false;
+    if (!fat12_confirm_sector_defect(bad_sector)) goto release_workspace;
     uint32_t existing = 0U;
-    if (fat12_remap_lookup(&fat12->remap, bad_sector, &existing)) return false;
+    if (fat12_remap_lookup(&fat12->remap, bad_sector, &existing))
+        goto release_workspace;
     uint32_t spare_start = fat12->boot_sector.reserved_sectors -
                            FAT12_REPLICA_RESERVED_SECTORS -
                            FAT12_REMAP_SPARE_COUNT;
@@ -1386,15 +1481,20 @@ bool fat12_install_sector_remap(uint32_t bad_sector,
                 used = true;
         if (!used) { replacement = candidate; break; }
     }
-    if (replacement == 0U) return false;
-    uint8_t verify[FAT12_SECTOR_SIZE];
+    if (replacement == 0U) goto release_workspace;
     if (!fdc_write_logical_range(current_fdd_drive, replacement, 1U,
                                  recovered_sector) ||
         !fdc_read_logical_range(current_fdd_drive, replacement, 1U, verify) ||
-        memcmp(recovered_sector, verify, sizeof(verify)) != 0) return false;
-    return fat12_remap_add(&fat12->remap, bad_sector, replacement,
-                           fat12_journal_read_sector,
-                           fat12_journal_write_sector, NULL);
+        memcmp(recovered_sector, verify, FAT12_SECTOR_SIZE) != 0)
+        goto release_workspace;
+    result = fat12_remap_add(&fat12->remap, bad_sector, replacement,
+                             fat12_journal_read_sector,
+                             fat12_journal_write_sector, NULL);
+
+release_workspace:
+    memset(verify, 0, FAT12_SECTOR_SIZE);
+    fat12_core_workspace_release(FAT12_CORE_WORKSPACE_REMAP);
+    return result;
 }
 
 static int fat12_critical_replica_slot(const char *name) {

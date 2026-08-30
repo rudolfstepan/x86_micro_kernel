@@ -78,6 +78,15 @@ typedef struct {
     ata_journal_commit_end_fn commit_end;
 } ata_journal_transport_t;
 
+/* Runtime-only scratch. It is deliberately part of the single journal
+ * instance rather than the kernel task stack; the ATA transaction mutex
+ * serializes every production user. This type is never written to disk. */
+typedef struct {
+    ata_journal_record_t primary;
+    ata_journal_record_t mirror;
+    uint8_t data[ATA_JOURNAL_SECTOR_SIZE];
+} ata_journal_scratch_t;
+
 typedef struct {
     bool enabled;
     unsigned short base;
@@ -96,6 +105,7 @@ typedef struct {
     } entries[ATA_JOURNAL_MAX_ENTRIES];
     uint8_t undo_data[ATA_JOURNAL_MAX_ENTRIES][ATA_JOURNAL_SECTOR_SIZE];
     uint8_t pending_data[ATA_JOURNAL_MAX_ENTRIES][ATA_JOURNAL_SECTOR_SIZE];
+    ata_journal_scratch_t scratch;
     const ata_journal_transport_t *transport;
     void *transport_context;
 } ata_undo_journal_t;

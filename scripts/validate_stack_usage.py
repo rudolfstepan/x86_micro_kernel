@@ -15,6 +15,8 @@ EDGE_RE = re.compile(
     r'edge:\s*\{\s*sourcename:\s*"([^"]+)"\s+'
     r'targetname:\s*"([^"]+)"')
 NODE_SIZE_RE = re.compile(r'\\n(\d+) bytes \(static\)"')
+GCC_CLONE_SUFFIX_RE = re.compile(
+    r'(?:\.(?:constprop|isra|part)\.\d+|\.cold)+$')
 IRQ_REGISTRATION_RE = re.compile(
     r'register_interrupt_handler\s*\(\s*[^,]+,\s*'
     r'(?:\(\s*void\s*\*\s*\)\s*)?([A-Za-z_]\w*)')
@@ -25,8 +27,9 @@ FAT32_SYNC_HOOK_RE = re.compile(
 EXT2_DIR_VISITOR_RE = re.compile(
     r'ext2_walk_dir\s*\(\s*[^,]+,\s*[^,]+,\s*([A-Za-z_]\w*)')
 VFS_BUDGETED_OPERATIONS = (
-    "open", "close", "read", "write", "sync", "readdir",
-    "readdir_batch", "mkdir", "rmdir", "create", "delete", "rename",
+    "mount", "unmount", "open", "close", "read", "write", "sync",
+    "readdir", "readdir_batch", "mkdir", "rmdir", "create", "delete",
+    "rename", "truncate", "fstat", "touch", "write_chunk_capacity",
     "stat", "space",
 )
 
@@ -96,40 +99,112 @@ def validate(root: Path, expected: int, local_limit: int,
             if source == target:
                 errors.append(f"direct recursion is forbidden: {source}")
 
-    visiting: set[str] = set()
-    visited: set[str] = set()
-
-    def visit(node: str, path: list[str]) -> None:
-        if node in visited:
-            return
-        if node in visiting:
-            cycle_start = path.index(node)
-            cycle = " -> ".join(path[cycle_start:] + [node])
-            errors.append(f"recursive callgraph cycle is forbidden: {cycle}")
-            return
-        visiting.add(node)
-        path.append(node)
-        for target in sorted(graph.get(node, ())):
-            visit(target, path)
-        path.pop()
-        visiting.remove(node)
-        visited.add(node)
-
-    for node in sorted(graph):
-        visit(node, [])
-
-    budget_summaries: list[str] = []
+    budget_data: dict = {}
     if budget_file is not None:
         try:
             budget_data = json.loads(
                 budget_file.read_text(encoding="utf-8"))
         except (OSError, ValueError) as error:
             errors.append(f"invalid stack budget file {budget_file}: {error}")
-            budget_data = {}
 
-        indirect: dict[str, list[str]] = budget_data.get("indirect_calls", {})
-        indirect_costs: dict[str, int] = budget_data.get("indirect_costs", {})
-        external: dict[str, int] = budget_data.get("external_costs", {})
+    indirect: dict[str, list[str]] = budget_data.get("indirect_calls", {})
+    indirect_costs: dict[str, int] = budget_data.get("indirect_costs", {})
+    external: dict[str, int] = budget_data.get("external_costs", {})
+
+    def budget_lookup(mapping: dict, node: str):
+        value = mapping.get(node)
+        if value is not None:
+            return value
+        canonical = GCC_CLONE_SUFFIX_RE.sub("", node)
+        return mapping.get(canonical) if canonical != node else None
+
+    guarded_member_group: dict[str, str] = {}
+    guarded_group_names: set[str] = set()
+    guarded_groups = budget_data.get("guarded_reentry_groups", [])
+    if not isinstance(guarded_groups, list):
+        errors.append("guarded_reentry_groups must be a list")
+        guarded_groups = []
+    for group in guarded_groups:
+        if not isinstance(group, dict):
+            errors.append(f"invalid guarded reentry group: {group!r}")
+            continue
+        name = group.get("name")
+        members = group.get("members")
+        if (not isinstance(name, str) or not name or
+                not isinstance(members, list) or not members or
+                any(not isinstance(member, str) or not member
+                    for member in members)):
+            errors.append(f"invalid guarded reentry group: {group!r}")
+            continue
+        if name in guarded_group_names:
+            errors.append(f"duplicate guarded reentry group: {name}")
+            continue
+        guarded_group_names.add(name)
+        for member in members:
+            previous = guarded_member_group.get(member)
+            if previous is not None:
+                errors.append(
+                    f"guarded reentry member {member} belongs to "
+                    f"both {previous} and {name}")
+                continue
+            guarded_member_group[member] = name
+    for member, group in sorted(guarded_member_group.items()):
+        if member not in stack_costs:
+            errors.append(
+                f"missing guarded reentry member {member} for {group}")
+
+    def effective_children(node: str) -> set[str]:
+        children = set(graph.get(node, ()))
+        if "__indirect_call" not in children:
+            return children
+        children.remove("__indirect_call")
+        targets = budget_lookup(indirect, node)
+        fixed_cost = budget_lookup(indirect_costs, node)
+        if targets:
+            children.update(targets)
+        elif isinstance(fixed_cost, int) and fixed_cost >= 0:
+            pass
+        else:
+            children.add("__indirect_call")
+        return children
+
+    cycle_visiting: set[tuple[str, frozenset[str]]] = set()
+    cycle_visited: set[tuple[str, frozenset[str]]] = set()
+    cycle_path: list[tuple[str, frozenset[str]]] = []
+    reported_cycles: set[tuple[tuple[str, tuple[str, ...]], ...]] = set()
+
+    def visit_state(node: str, guards: frozenset[str]) -> None:
+        group = guarded_member_group.get(node)
+        if group is not None and group in guards:
+            return
+        entered_guards = guards if group is None else guards | {group}
+        state = (node, entered_guards)
+        if state in cycle_visited:
+            return
+        if state in cycle_visiting:
+            cycle_start = cycle_path.index(state)
+            states = cycle_path[cycle_start:] + [state]
+            key = tuple((name, tuple(sorted(active_guards)))
+                        for name, active_guards in states)
+            if key not in reported_cycles:
+                errors.append(
+                    "recursive callgraph cycle is forbidden: " +
+                    " -> ".join(name for name, _ in states))
+                reported_cycles.add(key)
+            return
+        cycle_visiting.add(state)
+        cycle_path.append(state)
+        for target in sorted(effective_children(node)):
+            visit_state(target, entered_guards)
+        cycle_path.pop()
+        cycle_visiting.remove(state)
+        cycle_visited.add(state)
+
+    for node in sorted(set(graph) | set(stack_costs)):
+        visit_state(node, frozenset())
+
+    budget_summaries: list[str] = []
+    if budget_file is not None:
         entry_budgets = budget_data.get("entry_budgets", [])
         if not entry_budgets:
             errors.append("stack budget file contains no entry budgets")
@@ -141,6 +216,10 @@ def validate(root: Path, expected: int, local_limit: int,
              EXCEPTION_HANDLER_RE, set()),
             ("FAT32 sync hook", "fat32_sync_hooks",
              FAT32_SYNC_HOOK_RE, {"NULL"}),
+            ("FAT32 mutation hook", "fat32_mutation_hooks",
+             re.compile(
+                 r'fat32_context_mutation_hook\s*=\s*([A-Za-z_]\w*)'),
+             {"NULL"}),
             ("EXT2 directory visitor", "ext2_dir_visitors",
              EXT2_DIR_VISITOR_RE, {"visitor", "ext2_dir_visitor_t"}),
         ) + tuple(
@@ -180,38 +259,72 @@ def validate(root: Path, expected: int, local_limit: int,
                     errors.append(f"stale {label} budget: {name}")
 
         missing_reported: set[str] = set()
+        budget_cycle_reported: set[tuple[str, frozenset[str]]] = set()
+        unbound_indirect_reported: set[str] = set()
+        path_memo: dict[
+            tuple[str, frozenset[str]], tuple[int, tuple[str, ...]]
+        ] = {}
 
-        def path_cost(node: str, active: set[str]) -> tuple[int, list[str]]:
-            if node in active:
-                return 0, [node]
+        def path_cost(
+                node: str,
+                active: set[tuple[str, frozenset[str]]],
+                guards: frozenset[str]) -> tuple[int, list[str], bool]:
+            memo_key = (node, guards)
+            cached = path_memo.get(memo_key)
+            if cached is not None:
+                return cached[0], list(cached[1]), True
             if node == "__indirect_call":
-                errors.append("unbound indirect call in budgeted path")
-                return 0, [node]
+                if node not in unbound_indirect_reported:
+                    errors.append("unbound indirect call in budgeted path")
+                    unbound_indirect_reported.add(node)
+                return 0, [node], True
             cost = stack_costs.get(node, external.get(node))
             if cost is None:
                 if node not in missing_reported:
                     errors.append(f"missing stack cost in budgeted path: {node}")
                     missing_reported.add(node)
                 cost = 0
-            active.add(node)
+
+            group = guarded_member_group.get(node)
+            if group is not None and group in guards:
+                path = [node, f"<guarded-terminal:{group}>"]
+                path_memo[memo_key] = (cost, tuple(path))
+                return cost, path, True
+            entered_guards = guards if group is None else guards | {group}
+            state = (node, entered_guards)
+            if state in active:
+                if state not in budget_cycle_reported:
+                    errors.append(f"cycle in budgeted path: {node}")
+                    budget_cycle_reported.add(state)
+                return 0, [node], False
+
+            active.add(state)
             children = set(graph.get(node, ()))
             maximum_child = (0, [])
+            cycle_free = True
             if "__indirect_call" in children:
                 children.remove("__indirect_call")
-                targets = indirect.get(node)
-                fixed_cost = indirect_costs.get(node)
+                targets = budget_lookup(indirect, node)
+                fixed_cost = budget_lookup(indirect_costs, node)
                 if targets:
                     children.update(targets)
                 elif isinstance(fixed_cost, int) and fixed_cost >= 0:
                     maximum_child = (fixed_cost, ["<bounded-indirect>"])
                 else:
-                    errors.append(f"unbound indirect call from {node}")
+                    if node not in unbound_indirect_reported:
+                        errors.append(f"unbound indirect call from {node}")
+                        unbound_indirect_reported.add(node)
             for child in sorted(children):
-                candidate = path_cost(child, active)
+                candidate = path_cost(child, active, entered_guards)
+                cycle_free = cycle_free and candidate[2]
                 if candidate[0] > maximum_child[0]:
-                    maximum_child = candidate
-            active.remove(node)
-            return cost + maximum_child[0], [node] + maximum_child[1]
+                    maximum_child = (candidate[0], candidate[1])
+            active.remove(state)
+            total = cost + maximum_child[0]
+            path = [node] + maximum_child[1]
+            if cycle_free:
+                path_memo[memo_key] = (total, tuple(path))
+            return total, path, cycle_free
 
         for entry in entry_budgets:
             name = entry.get("name", "")
@@ -223,7 +336,8 @@ def validate(root: Path, expected: int, local_limit: int,
                     entry_reserve < 0):
                 errors.append(f"invalid entry budget: {entry!r}")
                 continue
-            total, worst_path = path_cost(root_name, set())
+            total, worst_path, _ = path_cost(
+                root_name, set(), frozenset())
             total += entry_reserve
             if entry_reserve:
                 worst_path.insert(0, f"<entry-reserve:{entry_reserve}>")

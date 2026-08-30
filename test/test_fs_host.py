@@ -24,6 +24,87 @@ class FilesystemSourceTests(unittest.TestCase):
         self.assertIn("fs->open_nodes = 0", mount)
         self.assertIn("fs->maintenance_blocked = maintenance_blocked", mount)
 
+    def test_fat32_directory_scan_uses_fixed_serialized_workspace(self) -> None:
+        source = (ROOT / "fs" / "fat32" / "fat32_files.c").read_text(
+            encoding="utf-8"
+        )
+        scan = source[source.index("static fat32_lookup_result_t "
+                                   "fat32_scan_directory("):
+                      source.index("fat32_lookup_result_t "
+                                   "fat32_lookup_entry_named(")]
+        self.assertIn("fat32_directory_scan_workspace_t", source)
+        self.assertIn("static fat32_directory_scan_workspace_t", source)
+        self.assertIn("fat32_operation_workspace_begin()", scan)
+        self.assertIn("workspace->in_use", scan)
+        self.assertIn("fat32_operation_workspace_end", scan)
+        self.assertIn("release_workspace:", scan)
+        self.assertNotIn("struct fat32_dir_entry sector_entries[", scan)
+        self.assertNotIn("fat32_lfn_reader_t lfn;", scan)
+        self.assertNotIn("char short_name[13]", scan)
+        self.assertNotIn("char visible_name[MAX_PATH_LENGTH]", scan)
+        self.assertNotIn("reist_unicode_caseless_nfc_equal", scan)
+
+    def test_fat32_metadata_mutations_use_fixed_serialized_workspaces(self) -> None:
+        directory = (ROOT / "fs" / "fat32" / "fat32_dir.c").read_text(
+            encoding="utf-8"
+        )
+        addition = directory[
+            directory.index("bool add_entry_to_directory_checked("):
+            directory.index("bool add_entry_to_directory(", directory.index(
+                "bool add_entry_to_directory_checked("))
+        ]
+        self.assertIn("fat32_directory_insert_workspace_t", directory)
+        self.assertIn("static fat32_directory_insert_workspace_t", directory)
+        self.assertIn("fat32_operation_workspace_begin()", addition)
+        self.assertIn("workspace->in_use", addition)
+        self.assertIn("release_workspace:", addition)
+        self.assertNotIn("uint16_t lfn_units[", addition)
+        self.assertNotIn("fat32_slot_location_t locations[", addition)
+        self.assertNotIn("struct fat32_dir_entry raw[", addition)
+
+        cluster = (ROOT / "fs" / "fat32" / "fat32_cluster.c").read_text(
+            encoding="utf-8"
+        )
+        update = cluster[
+            cluster.index("bool mark_cluster_in_fat("):
+            cluster.index("unsigned int get_first_data_sector(")
+        ]
+        copy = cluster[
+            cluster.index("static bool write_fat_copy_entry("):
+            cluster.index("bool mark_cluster_in_fat(")
+        ]
+        self.assertIn("fat32_fat_update_workspace_t", cluster)
+        self.assertIn("fat32_operation_workspace_begin()", update)
+        self.assertIn("release_workspace:", update)
+        self.assertNotIn("active_buffer[SECTOR_SIZE]", update)
+        self.assertNotIn("unsigned char buffer[SECTOR_SIZE];", copy)
+        self.assertNotIn("unsigned char verify[SECTOR_SIZE];", copy)
+
+        adapter = (ROOT / "fs" / "fat32" /
+                   "fat32_vfs_adapter.c").read_text(encoding="utf-8")
+        tombstone = adapter[
+            adapter.index("static bool fat32_tombstone_rename_source("):
+            adapter.index("static int fat32_vfs_rename_unlocked(")
+        ]
+        rename = adapter[
+            adapter.index("static int fat32_vfs_rename_unlocked("):
+            adapter.index("static int fat32_vfs_stat_unlocked(")
+        ]
+        wrapper = adapter[
+            adapter.index("static int fat32_vfs_rename("):
+            adapter.index("static int fat32_vfs_touch(")
+        ]
+        self.assertIn("fat32_rename_workspace_t", adapter)
+        self.assertIn("static fat32_rename_workspace_t", adapter)
+        self.assertIn("workspace->slots", tombstone)
+        self.assertIn("workspace->sector_entries", tombstone)
+        self.assertIn("workspace->old_leaf", rename)
+        self.assertIn("workspace->new_leaf", rename)
+        self.assertIn("workspace->in_use", wrapper)
+        self.assertNotIn("fat32_rename_slot_t slots[", tombstone)
+        self.assertNotIn("char old_leaf[MAX_PATH_LENGTH]", rename)
+        self.assertNotIn("char new_leaf[MAX_PATH_LENGTH]", rename)
+
 
 @unittest.skipUnless(GCC, "gcc is required for the C host regressions")
 class FilesystemHostTests(unittest.TestCase):

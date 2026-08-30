@@ -626,22 +626,31 @@ Lesen. Der Desktop passierte Splash, Explorer, `COMPOSITOR_READY`,
 zehnsekündige Nachlauf blieb ohne Panic, Fatal-Marker, wiederholten BIOS-Lader
 oder `BOOT_OK`, Degradation, Quarantaene oder Storage-Fence. R7.1j ist damit
 angenommen und die Queue leer.
-R7.1k ist als begrenzter Stack-Haertungsschritt aktiv. Die nach R7.1j erneut
-ausgewertete GCC-Evidenz zeigt fuer den gemeinsamen FAT32-Verzeichnisscan
-3168 lokale Byte; im Rename-Syscall ergibt der tiefste Pfad zusammen mit
-Unicode-Normalisierung, VFS, ATA und Scheduler 8336 Byte gegen das
-unveraenderte 7168-Byte-Budget. Sektorpuffer, VFAT-LFN-Leser, sichtbare Namen
-und Unicode-Vergleichsschluessel werden in einen einzigen festen
-mutexgeschuetzten Arbeitsbereich verschoben. Derselbe Besitzer darf ihn nicht
-rekursiv betreten, und jeder Fehlerpfad muss ihn vor Rueckkehr freigeben. Die
-bestehende FAT32-Operationsmutex bleibt die Serialisierungsgrenze; eine
-verschachtelte Freigabe darf den Context-Sync-Hook nicht vorzeitig ausloesen.
-Der offizielle Compiler-Callgraph-Nachweis wird fuer seinen bereits
-zyklusgeprueften DAG memoisiert und muss weiterhin jeden unbekannten oder
-ueberbudgetierten Pfad fail-closed melden. Die Zielabnahme umfasst ausserdem
-einen realen Vier-vCPU-VMware-Rename bis zum vorhandenen
-`VFAT_LFN_REPLACE_OK`, dem abschliessenden `TEST_OK`, Shell-Rueckkehr und zehn
-Sekunden ohne Neustart oder Panic.
+R7.1k reduzierte den gemeinsamen FAT32-Verzeichnisscan mit einem festen,
+mutexgeschuetzten Arbeitsbereich von 3168 auf 112 lokale GCC-Byte und bestand
+36 fokussierte Tests. Der erste vollstaendige Stack-Gatelauf deckte danach den
+tieferen Metadatenpfad `rename -> LFN insert -> FAT update -> journal attach`
+mit 8384 Byte gegen das unveraenderte 7168-Byte-Budget auf. Die benoetigten
+Produktionsdateien lagen ausserhalb des eingefrorenen Scopes; R7.1k wurde
+deshalb entsprechend seiner Stopbedingung ohne Kandidatencommit beendet.
+R7.1l schloss diese FAT32-/ATA-Kette, legte im vollstaendigen Graphen aber den
+naechsten unabhaengigen Pfad offen: FAT12-Create erreichte ueber Allokation,
+Undo-Journal, FDD-Fehlerausgabe und Scheduler 8164 Byte einschliesslich
+`kassert_fail`. Die dafuer noetigen FAT12- und Storage-Service-Dateien lagen
+ausserhalb des eingefrorenen Scopes; R7.1l endete ohne Kandidatenbuild.
+R7.1m uebernimmt die geprueften Arbeiten und verschiebt die dominanten
+FAT12-Core-, Journal- und VFS-Sektoren in feste, verschachtelungssichere
+Besitzerslots. Das Journal verwendet vier Runtime-Sektoren je Instanz und
+behaelt alle Version-2-Medienbytes. Medienfehler setzen Quarantaene,
+Read-only-Latch und Fences synchron; die exakte formatierte Meldung wird
+atomar bis zum Supervisor-Poll aufgeschoben, damit der gehaltene FDD-Pfad
+weder Displaymutex noch Scheduler erreicht. Der 104-Objekt-Entwicklungsgraph
+liegt bei 6820/7168 Byte, FAT12-Create selbst bei 3040 Byte. Rename- und
+Benchmarkabnahme bestanden real mit vier VMware-vCPUs, Inhaltstest, Cleanup,
+Shell-Rueckkehr und zehn Sekunden ohne Panic, Neustart, Degradation,
+Quarantaene oder Storage-Fence. Der VMware-VGA-Paketbuild bestand in 49
+Sekunden, Rename in 74 Sekunden und der bytegepruefte Benchmark in 37 Sekunden
+mit 314,88 KiB/s Schreiben sowie 450,70 KiB/s Lesen. R7.1m ist abgeschlossen.
 R6.2o
 hat auf der VMware-/ASUS-Basis den
 begrenzten BSP-Fence und die erneute post-READY-AP-Affinität nach einem

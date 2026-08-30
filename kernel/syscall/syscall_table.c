@@ -2109,6 +2109,18 @@ static syscall_readdir_batch_workspace_t
 _Static_assert(sizeof(syscall_readdir_batch_workspace_t) <= 3U * 1024U,
                "readdir batch task workspace exceeded its fixed bound");
 
+typedef struct {
+    uint32_t owner_generation;
+    uint32_t in_use;
+    char old_path[PROCESS_PATH_MAX];
+    char new_path[PROCESS_PATH_MAX];
+} syscall_rename_workspace_t;
+
+static syscall_rename_workspace_t rename_workspaces[MAX_TASKS];
+
+_Static_assert(sizeof(syscall_rename_workspace_t) <= 1024U,
+               "rename task workspace exceeded its fixed bound");
+
 static int syscall_copy_path(char resolved[PROCESS_PATH_MAX],
                              const char *user_path) {
     char path[PROCESS_PATH_MAX];
@@ -2936,13 +2948,46 @@ static int syscall_unlink(const char *user_path) {
 
 static int syscall_rename(const char *user_old_path,
                           const char *user_new_path) {
-    char old_path[PROCESS_PATH_MAX];
-    char new_path[PROCESS_PATH_MAX];
-    int result = syscall_copy_path(old_path, user_old_path);
-    if (result != 0) return result;
-    result = syscall_copy_path(new_path, user_new_path);
-    if (result != 0) return result;
-    return vfs_rename(old_path, new_path) == VFS_OK ? 0 : -5;
+    int task_id = -1;
+    uint32_t generation = 0U;
+    if (!scheduler_current_task_identity(&task_id, &generation) ||
+        task_id < 0 || task_id >= MAX_TASKS || generation == 0U) {
+        return -REIST_EAGAIN;
+    }
+
+    syscall_rename_workspace_t *workspace = &rename_workspaces[task_id];
+    if (workspace->in_use != 0U) {
+        if (workspace->owner_generation == generation)
+            return -REIST_EBUSY;
+        /* A different generation proves that the former task incarnation was
+         * reaped and cannot resume with this task slot. */
+        memset(workspace, 0, sizeof(*workspace));
+    }
+    workspace->owner_generation = generation;
+    __sync_synchronize();
+    workspace->in_use = 1U;
+
+    int final_result;
+    int result = syscall_copy_path(workspace->old_path, user_old_path);
+    if (result != 0) {
+        final_result = result;
+        goto release_workspace;
+    }
+    result = syscall_copy_path(workspace->new_path, user_new_path);
+    if (result != 0) {
+        final_result = result;
+        goto release_workspace;
+    }
+    final_result = vfs_rename(workspace->old_path, workspace->new_path) ==
+        VFS_OK ? 0 : -5;
+
+release_workspace:
+    memset(workspace->old_path, 0, sizeof(workspace->old_path));
+    memset(workspace->new_path, 0, sizeof(workspace->new_path));
+    workspace->owner_generation = 0U;
+    __sync_synchronize();
+    workspace->in_use = 0U;
+    return final_result;
 }
 
 static int syscall_getpid(void) {

@@ -5,8 +5,7 @@
 
 #include "include/kernel/panic.h"
 #include "arch/x86/include/interrupt.h"
-#include "lib/libc/stdio.h"
-#include "drivers/video/display.h"
+#include "drivers/char/serial.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -17,12 +16,15 @@
 #define EXCEPTION_KERNEL_FRAME_BYTES 20U
 #define PANIC_CONTEXT_TEXT_CAPACITY 32U
 #define PANIC_CONTEXT_VERSION 1U
+#define PANIC_OUTPUT_TEXT_LIMIT 160U
 
 extern const uint8_t _kernel_build_id_note_start[];
 extern const uint8_t _kernel_build_id_note_end[];
 
-// Prevent recursive panics
-static int panic_in_progress = 0;
+/* Exactly one CPU may enter diagnostic output. Recursive or concurrent panic
+ * entry observes the atomic claim and halts before touching display, locks or
+ * shared diagnostic state. */
+static volatile uint32_t panic_in_progress;
 static char build_id_text[GNU_BUILD_ID_SHA1_SIZE * 2U + 1U];
 static int build_id_initialized = 0;
 
@@ -150,6 +152,54 @@ static uint32_t read_le32(const uint8_t *value) {
            ((uint32_t)value[3] << 24);
 }
 
+/* Fatal output must not enter the display, formatter, mutex or scheduler
+ * paths: any of those may be the corrupted subsystem that raised the panic.
+ * The 16550 writer has a fixed poll limit and returns immediately when COM1
+ * was not detected. Every string is capped even when supplied by a caller. */
+static void panic_putc(char character) {
+    serial_write_char(SERIAL_COM1, character);
+}
+
+static void panic_write(const char *text) {
+    if (text == NULL) return;
+    for (uint32_t index = 0U;
+         index < PANIC_OUTPUT_TEXT_LIMIT && text[index] != '\0'; ++index)
+        panic_putc(text[index]);
+}
+
+static void panic_write_hex(uint32_t value, uint32_t digits) {
+    static const char hex[] = "0123456789ABCDEF";
+    if (digits > 8U) digits = 8U;
+    for (uint32_t index = digits; index > 0U; --index)
+        panic_putc(hex[(value >> ((index - 1U) * 4U)) & 0x0FU]);
+}
+
+static void panic_write_unsigned(uint32_t value) {
+    char digits[10];
+    uint32_t count = 0U;
+    do {
+        digits[count++] = (char)('0' + value % 10U);
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits));
+    while (count > 0U) panic_putc(digits[--count]);
+}
+
+static void panic_write_signed(int32_t value) {
+    uint32_t magnitude = (uint32_t)value;
+    if (value < 0) {
+        panic_putc('-');
+        magnitude = 0U - magnitude;
+    }
+    panic_write_unsigned(magnitude);
+}
+
+static void panic_write_hex_field(const char *label, uint32_t value,
+                                  uint32_t digits) {
+    panic_write(label);
+    panic_write("0x");
+    panic_write_hex(value, digits);
+}
+
 const char* kernel_build_id(void) {
     static const char hex[] = "0123456789ABCDEF";
     static const char unavailable[] = "unavailable";
@@ -188,11 +238,14 @@ const char* kernel_build_id(void) {
 }
 
 void panic_dump_exception_context(const Registers* registers, uint32_t cr2) {
-    printf("  Build ID   : %s\n", kernel_build_id());
-    printf("  CR2        : 0x%08X\n", cr2);
+    panic_write("  Build ID   : ");
+    panic_write(kernel_build_id());
+    panic_putc('\n');
+    panic_write_hex_field("  CR2        : ", cr2, 8U);
+    panic_putc('\n');
 
     if (registers == NULL) {
-        printf("  Register frame: unavailable\n");
+        panic_write("  Register frame: unavailable\n");
         return;
     }
 
@@ -207,73 +260,94 @@ void panic_dump_exception_context(const Registers* registers, uint32_t cr2) {
         fault_ss = read_ss();
     }
 
-    printf("  EAX=%08X EBX=%08X ECX=%08X EDX=%08X\n",
-           registers->eax, registers->ebx, registers->ecx, registers->edx);
-    printf("  ESI=%08X EDI=%08X EBP=%08X ESP=%08X\n",
-           registers->esi, registers->edi, registers->ebp, fault_esp);
-    printf("  EIP=%08X EFLAGS=%08X\n", registers->eip, registers->eflags);
-    printf("  CS=%04X SS=%04X DS=%04X ES=%04X FS=%04X GS=%04X\n",
-           registers->cs & 0xFFFFU, fault_ss & 0xFFFFU,
-           registers->ds & 0xFFFFU, registers->es & 0xFFFFU,
-           registers->fs & 0xFFFFU, registers->gs & 0xFFFFU);
-    printf("  VECTOR=%u ERROR=0x%08X\n",
-           registers->irq_number, registers->error_code);
+    panic_write_hex_field("  EAX=", registers->eax, 8U);
+    panic_write_hex_field(" EBX=", registers->ebx, 8U);
+    panic_write_hex_field(" ECX=", registers->ecx, 8U);
+    panic_write_hex_field(" EDX=", registers->edx, 8U);
+    panic_putc('\n');
+    panic_write_hex_field("  ESI=", registers->esi, 8U);
+    panic_write_hex_field(" EDI=", registers->edi, 8U);
+    panic_write_hex_field(" EBP=", registers->ebp, 8U);
+    panic_write_hex_field(" ESP=", fault_esp, 8U);
+    panic_putc('\n');
+    panic_write_hex_field("  EIP=", registers->eip, 8U);
+    panic_write_hex_field(" EFLAGS=", registers->eflags, 8U);
+    panic_putc('\n');
+    panic_write_hex_field("  CS=", registers->cs & 0xFFFFU, 4U);
+    panic_write_hex_field(" SS=", fault_ss & 0xFFFFU, 4U);
+    panic_write_hex_field(" DS=", registers->ds & 0xFFFFU, 4U);
+    panic_write_hex_field(" ES=", registers->es & 0xFFFFU, 4U);
+    panic_write_hex_field(" FS=", registers->fs & 0xFFFFU, 4U);
+    panic_write_hex_field(" GS=", registers->gs & 0xFFFFU, 4U);
+    panic_putc('\n');
+    panic_write("  VECTOR=");
+    panic_write_unsigned(registers->irq_number);
+    panic_write_hex_field(" ERROR=", registers->error_code, 8U);
+    panic_putc('\n');
 }
 
 static void panic_rule(void) {
-    display_set_color(LIGHT_RED);
-    printf("-------------------------------------------------------------------------------\n");
+    panic_write("-------------------------------------------------------------------------------\n");
 }
 
 static void panic_header(const char *title) {
-    display_set_color(WHITE);
-    display_clear();
     panic_rule();
-    display_set_color(LIGHT_RED);
-    printf("                            %s\n", title);
+    panic_write("                            ");
+    panic_write(title);
+    panic_putc('\n');
     panic_rule();
-    printf("\n");
-    display_set_color(WHITE);
-    printf("  The operating system encountered a fatal error and cannot continue.\n");
-    printf("  Your files on disk have not been modified by this panic handler.\n\n");
+    panic_write("\n");
+    panic_write("  The operating system encountered a fatal error and cannot continue.\n");
+    panic_write("  Your files on disk have not been modified by this panic handler.\n\n");
 }
 
 static void panic_label(const char *label) {
-    display_set_color(LIGHT_RED);
-    printf("  %s\n", label);
-    display_set_color(WHITE);
+    panic_write("  ");
+    panic_write(label);
+    panic_putc('\n');
 }
 
 static void panic_dump_failure_context(uintptr_t caller) {
     panic_context_record_t context;
     panic_label("FAILURE CONTEXT");
     if (!panic_context_snapshot(&context)) {
-        printf("  Diagnostic context: unavailable\n");
+        panic_write("  Diagnostic context: unavailable\n");
     } else {
-        printf("  Phase      : %s\n", context.phase[0] ? context.phase : "unknown");
-        printf("  Component  : %s\n",
-               context.component[0] ? context.component : "unknown");
-        printf("  Operation  : %s\n",
-               context.operation[0] ? context.operation : "unknown");
-        printf("  Subject    : %s\n",
-               context.subject[0] ? context.subject : "none");
+        panic_write("  Phase      : ");
+        panic_write(context.phase[0] ? context.phase : "unknown");
+        panic_putc('\n');
+        panic_write("  Component  : ");
+        panic_write(context.component[0] ? context.component : "unknown");
+        panic_putc('\n');
+        panic_write("  Operation  : ");
+        panic_write(context.operation[0] ? context.operation : "unknown");
+        panic_putc('\n');
+        panic_write("  Subject    : ");
+        panic_write(context.subject[0] ? context.subject : "none");
+        panic_putc('\n');
         if (context.has_result != 0U) {
-            printf("  Result     : %d\n", context.result);
-            printf("  Details    : 0x%08X 0x%08X\n",
-                   context.detail0, context.detail1);
+            panic_write("  Result     : ");
+            panic_write_signed(context.result);
+            panic_putc('\n');
+            panic_write_hex_field("  Details    : ", context.detail0, 8U);
+            panic_write_hex_field(" ", context.detail1, 8U);
+            panic_putc('\n');
         }
-        printf("  Sequence   : %u\n", context.sequence);
+        panic_write("  Sequence   : ");
+        panic_write_unsigned(context.sequence);
+        panic_putc('\n');
     }
-    if (caller != 0U) printf("  Panic call : 0x%08X\n", (uint32_t)caller);
+    if (caller != 0U) {
+        panic_write_hex_field("  Panic call : ", (uint32_t)caller, 8U);
+        panic_putc('\n');
+    }
 }
 
 static void panic_footer(void) {
-    printf("\n");
+    panic_putc('\n');
     panic_rule();
-    display_set_color(YELLOW);
-    printf("  ACTION REQUIRED\n");
-    display_set_color(WHITE);
-    printf("  Restart the computer. If this error repeats, record the message above.\n");
+    panic_write("  ACTION REQUIRED\n");
+    panic_write("  Restart the computer. If this error repeats, record the message above.\n");
     panic_rule();
 }
 
@@ -285,15 +359,16 @@ void __attribute__((noreturn)) panic(const char* message) {
     // Disable interrupts immediately
     irq_disable();
     
-    // Check for recursive panic
-    if (panic_in_progress) {
+    // Check for recursive or concurrent panic before diagnostic side effects.
+    if (__sync_lock_test_and_set(&panic_in_progress, 1U) != 0U) {
         halt();
     }
-    panic_in_progress = 1;
     
     panic_header("KERNEL PANIC");
     panic_label("ERROR");
-    printf("  %s\n", message ? message : "Unknown kernel error");
+    panic_write("  ");
+    panic_write(message ? message : "Unknown kernel error");
+    panic_putc('\n');
     panic_dump_failure_context(caller);
     panic_label("CPU STATE");
     panic_dump_exception_context(NULL, read_cr2());
@@ -306,14 +381,15 @@ void __attribute__((noreturn)) panic_with_exception(
     const char* message, const Registers* registers, uint32_t cr2) {
     irq_disable();
 
-    if (panic_in_progress) {
+    if (__sync_lock_test_and_set(&panic_in_progress, 1U) != 0U) {
         halt();
     }
-    panic_in_progress = 1;
 
     panic_header("KERNEL PANIC");
     panic_label("ERROR");
-    printf("  %s\n", message ? message : "Unknown CPU exception");
+    panic_write("  ");
+    panic_write(message ? message : "Unknown CPU exception");
+    panic_putc('\n');
     panic_dump_failure_context(0U);
     panic_label("CPU STATE");
     panic_dump_exception_context(registers, cr2);
@@ -330,17 +406,24 @@ void __attribute__((noreturn)) kassert_fail(const char* expr, const char* file,
     // Disable interrupts immediately
     irq_disable();
     
-    // Check for recursive panic
-    if (panic_in_progress) {
+    // Check for recursive or concurrent panic before diagnostic side effects.
+    if (__sync_lock_test_and_set(&panic_in_progress, 1U) != 0U) {
         halt();
     }
-    panic_in_progress = 1;
     
     panic_header("KERNEL ASSERTION FAILED");
     panic_label("FAILED CHECK");
-    printf("  Expression : %s\n", expr ? expr : "Unknown");
-    printf("  Source     : %s:%d\n", file ? file : "Unknown", line);
-    printf("  Function   : %s\n", func ? func : "Unknown");
+    panic_write("  Expression : ");
+    panic_write(expr ? expr : "Unknown");
+    panic_putc('\n');
+    panic_write("  Source     : ");
+    panic_write(file ? file : "Unknown");
+    panic_putc(':');
+    panic_write_signed(line);
+    panic_putc('\n');
+    panic_write("  Function   : ");
+    panic_write(func ? func : "Unknown");
+    panic_putc('\n');
     panic_dump_failure_context(0U);
     panic_label("CPU STATE");
     panic_dump_exception_context(NULL, read_cr2());

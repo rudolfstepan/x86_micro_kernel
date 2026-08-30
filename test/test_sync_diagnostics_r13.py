@@ -53,6 +53,41 @@ def macro_body(source: str, name: str) -> str:
     return match.group("body").replace("\\\n", " ")
 
 
+class PanicEntryGuardTests(unittest.TestCase):
+    def test_recursive_and_concurrent_panic_entry_halts_atomically(self) -> None:
+        source = read("kernel/init/panic.c")
+        self.assertIn("static volatile uint32_t panic_in_progress", source)
+        for signature in (
+            "void __attribute__((noreturn)) panic(",
+            "void __attribute__((noreturn)) panic_with_exception(",
+            "void __attribute__((noreturn)) kassert_fail(",
+        ):
+            with self.subTest(function=signature):
+                body = function_block(source, signature)
+                claim = body.index(
+                    "__sync_lock_test_and_set(&panic_in_progress, 1U)"
+                )
+                halt_guard = body.index("halt();", claim)
+                diagnostic_candidates = [
+                    position for token in ("panic_header(", "panic_label(")
+                    if (position := body.find(token)) >= 0
+                ]
+                self.assertTrue(diagnostic_candidates)
+                self.assertLess(claim, halt_guard)
+                self.assertLess(halt_guard, min(diagnostic_candidates))
+
+    def test_fatal_output_is_bounded_and_never_enters_display_or_printf(self) -> None:
+        source = read("kernel/init/panic.c")
+        self.assertIn("PANIC_OUTPUT_TEXT_LIMIT 160U", source)
+        self.assertIn("serial_write_char(SERIAL_COM1, character)", source)
+        self.assertIn("index < PANIC_OUTPUT_TEXT_LIMIT", source)
+        fatal_output = source[source.index("static void panic_putc("):]
+        for forbidden in ("printf(", "display_", "framebuffer_",
+                          "kernel_mutex_", "scheduler_"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, fatal_output)
+
+
 class IrqAndSleepContextContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -480,7 +515,8 @@ class PanicCrashContextContractTests(unittest.TestCase):
             self.panic_c, "void panic_dump_exception_context("
         )
         self.assertIn("CR2", dump)
-        self.assertRegex(dump, r"0x%08X")
+        self.assertIn("panic_write_hex_field", dump)
+        self.assertIn("8U", dump)
         self.assertIn("Register frame: unavailable", dump)
         for field in (
             "eax", "ebx", "ecx", "edx",

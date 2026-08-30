@@ -1,9 +1,12 @@
 """Unicode 15 NFC/full-casefold generation and bounded host behavior."""
 
 from pathlib import Path
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import unicodedata
 import unittest
 
 
@@ -25,8 +28,10 @@ class UnicodeNormalizationTests(unittest.TestCase):
             "userspace/storage/lib/vfs_shadow_fat32.c").read_text(
                 encoding="utf-8")
 
+    @unittest.skipUnless(unicodedata.unidata_version == "15.0.0",
+                         "Unicode 15.0 host database is required")
     def test_generated_table_is_reproducible(self) -> None:
-        subprocess.run(["python", "scripts/generate_unicode_tables.py",
+        subprocess.run([sys.executable, "scripts/generate_unicode_tables.py",
                         "--check"], check=True, cwd=ROOT, capture_output=True)
         self.assertIn('#define REIST_UNICODE_DATA_VERSION "15.0.0"',
                       self.tables)
@@ -47,6 +52,52 @@ class UnicodeNormalizationTests(unittest.TestCase):
         self.assertIn("reist_unicode_casefolds", self.normalizer)
         self.assertIn("S_BASE = 0xAC00U", self.normalizer)
         self.assertIn("reist_unicode_caseless_nfc_equal", self.normalizer)
+
+    def test_canonical_decomposition_uses_verified_fixed_pending_stack(self) -> None:
+        start = self.normalizer.index(
+            "static inline int reist_unicode_append_decomposed("
+        )
+        body = self.normalizer[
+            start:self.normalizer.index("static inline void ", start)
+        ]
+        self.assertIn(
+            "REIST_UNICODE_DECOMPOSITION_PENDING_CAPACITY 4U",
+            self.normalizer,
+        )
+        self.assertIn(
+            "pending[REIST_UNICODE_DECOMPOSITION_PENDING_CAPACITY]", body
+        )
+        self.assertEqual(body.count("reist_unicode_append_decomposed("), 1)
+
+        data_text = self.tables.split(
+            "static const uint32_t reist_unicode_decomposition_data[] = {", 1
+        )[1].split("};", 1)[0]
+        data = [
+            int(value, 16)
+            for value in re.findall(r"0x([0-9A-F]+)U", data_text)
+        ]
+        entry_text = self.tables.split(
+            "static const reist_unicode_mapping_t "
+            "reist_unicode_decompositions[] = {", 1
+        )[1].split("};", 1)[0]
+        mappings = {
+            int(scalar, 16): (int(offset), int(length))
+            for scalar, offset, length in re.findall(
+                r"\{0x([0-9A-F]+)U, (\d+)U, (\d+)U\}", entry_text
+            )
+        }
+        maximum_pending = 0
+        for scalar in mappings:
+            pending = [scalar]
+            while pending:
+                maximum_pending = max(maximum_pending, len(pending))
+                current = pending.pop()
+                mapping = mappings.get(current)
+                if mapping is not None:
+                    offset, length = mapping
+                    pending.extend(reversed(data[offset:offset + length]))
+        self.assertEqual(4, maximum_pending)
+        self.assertLessEqual(maximum_pending, 4)
 
     @unittest.skipUnless(GCC, "gcc is required for Unicode host behavior")
     def test_full_script_plane_and_combining_behavior(self) -> None:
@@ -92,11 +143,13 @@ int main(void) {
                            capture_output=True)
 
     def test_both_fat_readers_use_normalized_identity_only(self) -> None:
-        self.assertIn("reist_unicode_caseless_nfc_equal(left, right)", self.fat)
+        self.assertIn("static bool fat32_names_equal", self.fat)
+        self.assertIn("reist_unicode_nfc_casefold_key(left,", self.fat)
+        self.assertIn("reist_unicode_nfc_casefold_key(right,", self.fat)
+        self.assertIn("workspace->left_key", self.fat)
+        self.assertIn("workspace->right_key", self.fat)
         self.assertIn("reist_unicode_caseless_nfc_equal(left, right)",
                       self.shadow)
-        self.assertNotIn("reist_unicode_nfc_casefold_key(visible_name",
-                         self.fat)
 
 
 if __name__ == "__main__":

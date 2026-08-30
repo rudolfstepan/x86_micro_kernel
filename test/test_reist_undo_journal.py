@@ -114,14 +114,46 @@ class ReistUndoJournalTests(unittest.TestCase):
         start = source.index("bool ata_undo_journal_attach")
         end = source.index("bool ata_undo_journal_is_attached", start)
         body = source[start:end]
-        self.assertIn("primary.magic == ATA_JOURNAL_MAGIC", body)
-        self.assertIn("mirror.magic == ATA_JOURNAL_MAGIC", body)
-        self.assertIn("record_valid(&record)", body)
-        self.assertIn("record.entries[index].data_crc32", body)
+        self.assertIn("primary->magic == ATA_JOURNAL_MAGIC", body)
+        self.assertIn("mirror->magic == ATA_JOURNAL_MAGIC", body)
+        self.assertIn("record_valid(record)", body)
+        self.assertIn("record->entries[index].data_crc32", body)
         self.assertIn("data_lba + index", body)
         self.assertIn("write_sector(journal, base, target, data", body)
         ata = (ROOT / "drivers/block/ata.c").read_text(encoding="utf-8")
         self.assertIn("if (!result) ata_fence_writes();", ata)
+
+    def test_journal_records_and_recovery_sector_use_instance_scratch(self):
+        source = (ROOT / "drivers/block/ata_journal.c").read_text(
+            encoding="utf-8"
+        )
+        header = (ROOT / "drivers/block/ata_journal.h").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ata_journal_scratch_t", header)
+        self.assertIn("ata_journal_scratch_t scratch;", header)
+        self.assertIn("ata_journal_record_t primary;", header)
+        self.assertIn("ata_journal_record_t mirror;", header)
+        self.assertIn("uint8_t data[ATA_JOURNAL_SECTOR_SIZE];", header)
+
+        clear = source[source.index("static bool clear_journal"):
+                       source.index("static bool write_active")]
+        active = source[source.index("static bool write_active"):
+                        source.index("void ata_undo_journal_init")]
+        attach = source[source.index("bool ata_undo_journal_attach"):
+                        source.index("bool ata_undo_journal_is_attached")]
+        self.assertIn("journal->scratch.primary", clear)
+        self.assertIn("journal->scratch.primary", active)
+        self.assertIn("&journal->scratch.primary", attach)
+        self.assertIn("&journal->scratch.mirror", attach)
+        self.assertIn("journal->scratch.data", attach)
+        self.assertNotIn("ata_journal_record_t clean;", clear)
+        self.assertNotIn("ata_journal_record_t active;", active)
+        self.assertNotIn("ata_journal_record_t primary, mirror, record;", attach)
+        self.assertNotIn("uint8_t data[ATA_JOURNAL_SECTOR_SIZE];", attach)
+        valid = source[source.index("static bool record_valid"):
+                       source.index("static void seal_record")]
+        self.assertNotIn("ata_journal_record_t copy", valid)
 
     def test_vfs_transaction_spans_multiple_unique_sector_updates(self):
         ata = (ROOT / "drivers/block/ata_journal.c").read_text(
@@ -141,9 +173,9 @@ class ReistUndoJournalTests(unittest.TestCase):
         header = (ROOT / "drivers/block/ata_journal.h").read_text(
             encoding="utf-8")
         self.assertIn("#define ATA_JOURNAL_MIRROR_OFFSET 31U", header)
-        self.assertIn("primary.state != mirror.state", source)
-        self.assertIn("primary.state == ATA_JOURNAL_ACTIVE ? primary : mirror", source)
-        self.assertIn("record.state == ATA_JOURNAL_ACTIVE || repair_headers",
+        self.assertIn("primary->state != mirror->state", source)
+        self.assertIn("primary->state == ATA_JOURNAL_ACTIVE ? primary : mirror", source)
+        self.assertIn("record->state == ATA_JOURNAL_ACTIVE || repair_headers",
                       source)
         writer = source[source.index("static bool write_record"):
                         source.index("void ata_undo_journal_make_clean")]

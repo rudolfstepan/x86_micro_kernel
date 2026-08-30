@@ -79,6 +79,9 @@ static volatile bool service_administratively_enabled = true;
 static volatile uint32_t service_ap_execution_generation;
 static critical_object_t media_fingerprints[MAX_DRIVES];
 static uint32_t fingerprint_ready_mask;
+/* Media failure state is published synchronously. Console formatting is
+ * deferred until the supervisor worker is outside every block transaction. */
+static uint32_t pending_quarantine_reports;
 
 _Static_assert(sizeof(storage_service_control_t) <=
                    CRITICAL_OBJECT_MAX_PAYLOAD,
@@ -668,6 +671,24 @@ bool storage_service_report_io_failure(uint32_t resource) {
     return storage_service_report_media_failure(resource, false);
 }
 
+static void storage_service_emit_pending_quarantine(void) {
+    uint32_t observed = __atomic_load_n(&pending_quarantine_reports,
+                                         __ATOMIC_ACQUIRE);
+    while (observed != 0U) {
+        uint32_t bit = observed & (0U - observed);
+        uint32_t desired = observed & ~bit;
+        if (!__atomic_compare_exchange_n(&pending_quarantine_reports,
+                &observed, desired, false, __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) continue;
+        for (uint32_t resource = 0U; resource < MAX_DRIVES; ++resource) {
+            if (bit != (1U << resource)) continue;
+            printf("REIST_STORAGE RESOURCE_QUARANTINED %u\n", resource);
+            break;
+        }
+        return;
+    }
+}
+
 bool storage_service_report_media_failure(uint32_t resource,
                                           bool write_uncertain) {
     storage_service_control_t control;
@@ -681,9 +702,10 @@ bool storage_service_report_media_failure(uint32_t resource,
     /* Quarantine is published before any recovery work.  In particular an
      * uncertain write also latches read-only so a later identity match alone
      * cannot silently restore mutation authority. */
+    bool report_quarantine = false;
     if ((control.quarantined_resources & mask) == 0U) {
         control.quarantined_resources |= mask;
-        printf("REIST_STORAGE RESOURCE_QUARANTINED %u\n", resource);
+        report_quarantine = true;
     }
     control.recovering_resources &= ~mask;
     if (write_uncertain) control.read_only_resources |= mask;
@@ -699,6 +721,9 @@ bool storage_service_report_media_failure(uint32_t resource,
         storage_fence_writes();
         filesystem_fence_mutations();
     }
+    if (report_quarantine)
+        (void)__atomic_fetch_or(&pending_quarantine_reports, mask,
+                                __ATOMIC_RELEASE);
     return true;
 }
 
@@ -815,6 +840,7 @@ static void poll_media_reintegration(uint64_t now_ms) {
 
 void storage_service_poll(uint64_t now_ms) {
     if (!initialized) return;
+    storage_service_emit_pending_quarantine();
     poll_media_reintegration(now_ms);
     if (!service_administratively_enabled) return;
     if (!service_started || service_starting) return;

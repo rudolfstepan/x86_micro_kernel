@@ -17,6 +17,7 @@
 #define FAT12_JOURNAL_VERSION 2U
 #define FAT12_JOURNAL_MAX_ENTRIES 64U
 #define FAT12_JOURNAL_SECTOR_SIZE 512U
+#define FAT12_JOURNAL_SCRATCH_SECTORS 4U
 #define FAT12_JOURNAL_CLEAN 0U
 #define FAT12_JOURNAL_ACTIVE 1U
 
@@ -43,6 +44,16 @@ typedef struct __attribute__((packed)) {
     uint32_t metadata_crc32;
 } fat12_journal_entry_t;
 
+/* Runtime-only scratch. It is never serialized and belongs to exactly one
+ * journal instance. Four sectors cover the maximum live set: two input
+ * records, one encoded header and one independent readback buffer. */
+typedef struct {
+    uint8_t in_use;
+    uint8_t reserved[3];
+    uint8_t sectors[FAT12_JOURNAL_SCRATCH_SECTORS]
+                   [FAT12_JOURNAL_SECTOR_SIZE];
+} fat12_journal_scratch_t;
+
 typedef struct {
     uint32_t primary_header_sector;
     uint32_t mirror_header_sector;
@@ -50,6 +61,7 @@ typedef struct {
     uint32_t media_fingerprint;
     fat12_journal_header_t header;
     fat12_journal_entry_t entries[FAT12_JOURNAL_MAX_ENTRIES];
+    fat12_journal_scratch_t scratch;
 } fat12_journal_t;
 
 uint32_t fat12_journal_crc32(const void *data, size_t length);

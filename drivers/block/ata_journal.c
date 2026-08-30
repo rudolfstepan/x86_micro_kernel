@@ -18,33 +18,47 @@ _Static_assert(sizeof(ata_journal_record_t) == ATA_JOURNAL_SECTOR_SIZE,
 _Static_assert(sizeof(ata_journal_v1_record_t) == ATA_JOURNAL_SECTOR_SIZE,
                "ATA journal v1 record must remain one sector");
 
-static uint32_t journal_crc32(const void *data, size_t length) {
+static uint32_t journal_crc32_update(uint32_t crc, const void *data,
+                                     size_t length) {
     const uint8_t *bytes = (const uint8_t *)data;
-    uint32_t crc = 0xFFFFFFFFU;
     for (size_t i = 0; i < length; ++i) {
         crc ^= bytes[i];
         for (uint32_t bit = 0; bit < 8U; ++bit)
             crc = (crc >> 1) ^ (0xEDB88320U & (0U - (crc & 1U)));
     }
+    return crc;
+}
+
+static uint32_t journal_crc32(const void *data, size_t length) {
+    uint32_t crc = journal_crc32_update(0xFFFFFFFFU, data, length);
+    return crc ^ 0xFFFFFFFFU;
+}
+
+static uint32_t journal_record_crc32(const ata_journal_record_t *record) {
+    static const uint32_t zero = 0U;
+    const size_t crc_offset = offsetof(ata_journal_record_t, header_crc32);
+    uint32_t crc = journal_crc32_update(0xFFFFFFFFU, record, crc_offset);
+    crc = journal_crc32_update(crc, &zero, sizeof(zero));
+    crc = journal_crc32_update(
+        crc, (const uint8_t *)record + crc_offset + sizeof(uint32_t),
+        sizeof(*record) - crc_offset - sizeof(uint32_t));
     return crc ^ 0xFFFFFFFFU;
 }
 
 static bool record_valid(const ata_journal_record_t *record) {
-    ata_journal_record_t copy = *record;
-    uint32_t expected_crc = copy.header_crc32;
-    copy.header_crc32 = 0U;
-    return copy.magic == ATA_JOURNAL_MAGIC &&
+    uint32_t expected_crc = record->header_crc32;
+    return record->magic == ATA_JOURNAL_MAGIC &&
            record->version == ATA_JOURNAL_VERSION &&
            record->state <= ATA_JOURNAL_ACTIVE &&
            record->entry_count <= ATA_JOURNAL_MAX_ENTRIES &&
            (record->state == ATA_JOURNAL_ACTIVE ||
             record->entry_count == 0U) &&
-           expected_crc == journal_crc32(&copy, sizeof(copy));
+           expected_crc == journal_record_crc32(record);
 }
 
 static void seal_record(ata_journal_record_t *record) {
     record->header_crc32 = 0U;
-    record->header_crc32 = journal_crc32(record, sizeof(*record));
+    record->header_crc32 = journal_record_crc32(record);
 }
 
 static bool v1_record_valid(const ata_journal_v1_record_t *record) {
@@ -125,25 +139,25 @@ void ata_undo_journal_make_clean(ata_journal_record_t *record,
 }
 
 static bool clear_journal(ata_undo_journal_t *journal, bool deferred) {
-    ata_journal_record_t clean;
-    ata_undo_journal_make_clean(&clean, journal->sequence);
-    return write_record(journal, &clean, deferred);
+    ata_journal_record_t *clean = &journal->scratch.primary;
+    ata_undo_journal_make_clean(clean, journal->sequence);
+    return write_record(journal, clean, deferred);
 }
 
 static bool write_active(ata_undo_journal_t *journal, bool deferred) {
-    ata_journal_record_t active;
-    memset(&active, 0, sizeof(active));
-    active.magic = ATA_JOURNAL_MAGIC;
-    active.version = ATA_JOURNAL_VERSION;
-    active.state = ATA_JOURNAL_ACTIVE;
-    active.sequence = journal->sequence;
-    active.entry_count = journal->entry_count;
+    ata_journal_record_t *active = &journal->scratch.primary;
+    memset(active, 0, sizeof(*active));
+    active->magic = ATA_JOURNAL_MAGIC;
+    active->version = ATA_JOURNAL_VERSION;
+    active->state = ATA_JOURNAL_ACTIVE;
+    active->sequence = journal->sequence;
+    active->entry_count = journal->entry_count;
     for (uint32_t i = 0U; i < journal->entry_count; ++i) {
-        active.entries[i].target_lba = journal->entries[i].target_lba;
-        active.entries[i].data_crc32 = journal->entries[i].data_crc32;
+        active->entries[i].target_lba = journal->entries[i].target_lba;
+        active->entries[i].data_crc32 = journal->entries[i].data_crc32;
     }
-    seal_record(&active);
-    return write_record(journal, &active, deferred);
+    seal_record(active);
+    return write_record(journal, active, deferred);
 }
 
 void ata_undo_journal_init(ata_undo_journal_t *journal,
@@ -362,13 +376,15 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
     uint32_t data_lba = partition_lba + ATA_JOURNAL_DATA_OFFSET;
     uint32_t mirror_lba = reserved_sectors > ATA_JOURNAL_MIRROR_OFFSET
         ? partition_lba + ATA_JOURNAL_MIRROR_OFFSET : 0U;
-    ata_journal_record_t primary, mirror, record;
-    bool primary_read = read_sector(journal, base, header_lba, &primary,
+    ata_journal_record_t *primary = &journal->scratch.primary;
+    ata_journal_record_t *mirror = &journal->scratch.mirror;
+    bool primary_read = read_sector(journal, base, header_lba, primary,
                                     is_master);
     bool mirror_read = mirror_lba != 0U &&
-        read_sector(journal, base, mirror_lba, &mirror, is_master);
-    bool primary_marked = primary_read && primary.magic == ATA_JOURNAL_MAGIC;
-    bool mirror_marked = mirror_read && mirror.magic == ATA_JOURNAL_MAGIC;
+        read_sector(journal, base, mirror_lba, mirror, is_master);
+    bool primary_marked = primary_read &&
+        primary->magic == ATA_JOURNAL_MAGIC;
+    bool mirror_marked = mirror_read && mirror->magic == ATA_JOURNAL_MAGIC;
     if (!primary_marked && !mirror_marked) return true;
 
     journal->base = base;
@@ -382,31 +398,32 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
     journal->transaction_depth = inherited_depth;
 
     bool primary_valid = primary_marked &&
-        (primary.version == 1U
-            ? v1_record_valid((const ata_journal_v1_record_t *)&primary)
-            : record_valid(&primary));
+        (primary->version == 1U
+            ? v1_record_valid((const ata_journal_v1_record_t *)primary)
+            : record_valid(primary));
     bool mirror_valid = mirror_marked &&
-        mirror.version == ATA_JOURNAL_VERSION && record_valid(&mirror);
+        mirror->version == ATA_JOURNAL_VERSION && record_valid(mirror);
     bool repair_headers = !primary_valid || (mirror_lba != 0U && !mirror_valid);
     if (!primary_valid && !mirror_valid) return false;
+    const ata_journal_record_t *record;
     if (primary_valid && mirror_valid &&
-        primary.version == ATA_JOURNAL_VERSION) {
-        if (primary.sequence > mirror.sequence) {
+        primary->version == ATA_JOURNAL_VERSION) {
+        if (primary->sequence > mirror->sequence) {
             record = primary;
             repair_headers = true;
-        } else if (mirror.sequence > primary.sequence) {
+        } else if (mirror->sequence > primary->sequence) {
             record = mirror;
             repair_headers = true;
-        } else if (primary.state != mirror.state) {
-            record = primary.state == ATA_JOURNAL_ACTIVE ? primary : mirror;
+        } else if (primary->state != mirror->state) {
+            record = primary->state == ATA_JOURNAL_ACTIVE ? primary : mirror;
             repair_headers = true;
-        } else if (memcmp(&primary, &mirror, sizeof(primary)) != 0) {
+        } else if (memcmp(primary, mirror, sizeof(*primary)) != 0) {
             return false;
         } else {
             record = primary;
         }
     } else if (mirror_valid &&
-               (!primary_valid || primary.version != ATA_JOURNAL_VERSION)) {
+               (!primary_valid || primary->version != ATA_JOURNAL_VERSION)) {
         record = mirror;
         repair_headers = true;
     } else {
@@ -414,39 +431,41 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
         repair_headers = true;
     }
 
-    if (record.version == 1U) {
+    if (record->version == 1U) {
         const ata_journal_v1_record_t *old =
-            (const ata_journal_v1_record_t *)&record;
+            (const ata_journal_v1_record_t *)record;
         journal->sequence = old->sequence;
         if (old->state == ATA_JOURNAL_ACTIVE) {
-            uint8_t data[ATA_JOURNAL_SECTOR_SIZE];
+            uint8_t *data = journal->scratch.data;
             result = old->target_lba >= journal->volume_start_lba &&
                 old->target_lba < journal->volume_end_lba &&
                 read_sector(journal, base, data_lba, data, is_master) &&
-                journal_crc32(data, sizeof(data)) == old->data_crc32 &&
+                journal_crc32(data, ATA_JOURNAL_SECTOR_SIZE) ==
+                    old->data_crc32 &&
                 write_sector(journal, base, old->target_lba, data, is_master);
         }
         if (result) result = clear_journal(journal, false);
     } else {
         result = reserved_sectors >
                      ATA_JOURNAL_DATA_OFFSET + ATA_JOURNAL_MAX_ENTRIES - 1U &&
-                 record_valid(&record);
-        journal->sequence = record.sequence;
-        for (uint32_t i = record.entry_count; result && i > 0U; --i) {
+                 record_valid(record);
+        journal->sequence = record->sequence;
+        for (uint32_t i = record->entry_count; result && i > 0U; --i) {
             uint32_t index = i - 1U;
-            uint32_t target = record.entries[index].target_lba;
-            uint8_t data[ATA_JOURNAL_SECTOR_SIZE];
+            uint32_t target = record->entries[index].target_lba;
+            uint8_t *data = journal->scratch.data;
             result = target >= journal->volume_start_lba &&
                 target < journal->volume_end_lba &&
                 !(target >= header_lba &&
                   target < data_lba + ATA_JOURNAL_MAX_ENTRIES) &&
                 read_sector(journal, base, data_lba + index, data,
                             is_master) &&
-                journal_crc32(data, sizeof(data)) ==
-                    record.entries[index].data_crc32 &&
+                journal_crc32(data, ATA_JOURNAL_SECTOR_SIZE) ==
+                    record->entries[index].data_crc32 &&
                 write_sector(journal, base, target, data, is_master);
         }
-        if (result && (record.state == ATA_JOURNAL_ACTIVE || repair_headers))
+        if (result &&
+            (record->state == ATA_JOURNAL_ACTIVE || repair_headers))
             result = clear_journal(journal, false);
     }
     if (result) journal->enabled = true;
