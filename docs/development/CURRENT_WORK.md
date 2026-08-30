@@ -15,6 +15,27 @@ CA-/IP-SAN-Handshake und beobachtete `REIST_CURL_HTTPS_RUNTIME_OK`. Eine
 einzige 4-MiB-Backing-Arena haelt alle internen TLS-Allokationen innerhalb
 der 16 Prozess-Heapobjekte und der unveraenderten 8-MiB-MYPR-Grenze.
 
+`R4.1b-curl-public-https` ist abgeschlossen. Der lokale Nachweis war fuer den
+Produktionsbetrieb nicht hinreichend: Der
+normale QEMU-Start exponierte kein RDRAND, der Runtime-Probe-Build verwendete
+das gemeinsame Buildverzeichnis, und ein oeffentlicher DNS-Ausfall war wegen
+der zusammengefassten curl-Fehlermeldung nicht lokalisierbar. R4.1b setzt fuer
+alle dokumentierten QEMU-Starts explizit `qemu32,+rdrand`, behaelt den
+fail-closed CPUID-/RDRAND-Vertrag ohne schwachen Fallback, isoliert Test-CA und
+Testabbild unter `build/curl-https-runtime`, ergaenzt einen deadline- und
+groessenbegrenzten DNS-over-TCP-Fallback und trennt DNS-, TCP-, TLS-, Ausgabe-
+und Antwortfehler. Der Produktionsnachweis startet exakt
+`curl https://google.com` aus `/bin/shell.prg`; ein begrenzter Testpeer liefert
+die hostaufgeloeste oeffentliche A-Adresse an den Gast-DNS-Parser, danach laufen
+Gast-TCP und TLS ueber QEMUs User-Netzwerk zum Google-Endpunkt, ohne
+Host-TLS-Terminierung oder Test-Vertrauensanker.
+Große oeffentliche TCP-Segmente werden im validierenden Ring-3-Dienst
+sequenztreu in die unveraenderte 512-Byte-Ingress-ABI zerlegt. Die feste
+NIST-ECP-Reduktion und begrenzte Viererfenster-/Fixed-Point-Konfiguration
+bringen moderne Google-ECDSA-Handshakes innerhalb der Peerfrist zum Abschluss.
+Der fokussierte Test, das QEMU-VGA-Paket und der echte oeffentliche Runtime-
+Nachweis sind erfolgreich.
+
 R7.1k hat den ersten Teilbefund geschlossen: Der feste, unter einer
 verschachtelten Ebene der rekursiven FAT32-Operationsmutex gehaltene
 Verzeichnisscan reduzierte seinen GCC-Frame von 3168 auf 112 Byte und bestand

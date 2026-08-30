@@ -72,6 +72,42 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn("--expect-curl-client", runner)
         self.assertIn("'curl-https-client'", runtime)
         self.assertIn('"qemu32,+rdrand"', runner)
+        self.assertIn("-cpu qemu32,+rdrand", (ROOT / "Makefile").read_text())
+        self.assertIn("build/curl-https-runtime", runtime)
+        self.assertIn("$true $probeImage", runtime)
+        self.assertIn("build/curl-https-public-runtime", runtime)
+        self.assertIn("--expect-public-tls-curl-client", runtime)
+        self.assertIn("PUBLIC_TLS_CURL_TEST_COMMAND", runner)
+        self.assertIn('"-netdev", "user,id=reistnet0"', runner)
+        listener_clause = runner[
+            runner.index("if (inject_arp_request"):
+            runner.index("injection_listener, injection_port =", 1000)
+        ]
+        self.assertIn("expect_public_tls_curl_client", listener_clause)
+        self.assertNotIn("serve_public_tls_curl_client", runner)
+        self.assertIn("serve_public_curl_dns", runner)
+        self.assertIn('user_netdev += ",dns=10.0.2.99"', runner)
+        self.assertIn("observe_public_tls_traffic", runner)
+        self.assertIn("client_tls and server_tls", runner)
+        self.assertIn("answer_ip, True, False", runner)
+        self.assertIn("TLS clock or hardware entropy unavailable", source)
+        self.assertIn("TLS setup or authentication failed", source)
+        self.assertIn("TLS setup or authentication timed out", source)
+        probe = (ROOT / "userspace/programs/reist_probe.c").read_text()
+        self.assertIn("tcp_result.payload_length - delivered", probe)
+        self.assertIn("amount = X86OS_TCP_MAX_SEGMENT", probe)
+        self.assertIn("tcp_result.sequence + delivered", probe)
+        self.assertIn("delivered < tcp_result.payload_length", probe)
+        self.assertIn("REIST_TCP_FLAG_SYN", probe)
+        tls_config = (
+            ROOT / "userspace/tls/lib/reist_tls_config.h").read_text()
+        self.assertIn("PSA_WANT_ALG_SHA_1 1", tls_config)
+        self.assertIn("PSA_WANT_ECC_SECP_R1_521 1", tls_config)
+        self.assertIn("MBEDTLS_ECP_NIST_OPTIM", tls_config)
+        self.assertIn("MBEDTLS_ECP_WINDOW_SIZE 4", tls_config)
+        self.assertIn("MBEDTLS_ECP_FIXED_POINT_OPTIM 1", tls_config)
+        self.assertIn("default X.509 verification profile still rejects SHA-1",
+                      tls_config)
 
     def test_reist_tls_authenticated_host_behavior(self):
         zig = Path(r"C:\tools\zig-x86_64-windows-0.16.0\zig.exe")
@@ -346,21 +382,45 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn("vfs_file_client.c", mapping)
         self.assertIn("vfs_path.c", mapping)
 
-    @unittest.skipUnless(shutil.which("gcc"), "gcc is required")
     def test_dns_cname_and_compression_parser(self):
+        compiler = shutil.which("gcc")
+        command_prefix = [compiler] if compiler else []
+        use_zig = compiler is None
+        if compiler is None:
+            zig = Path(r"C:\tools\zig-x86_64-windows-0.16.0\zig.exe")
+            if not zig.is_file():
+                located = shutil.which("zig")
+                if located is None:
+                    self.skipTest("GCC or Zig is required")
+                zig = Path(located)
+            command_prefix = [str(zig), "cc"]
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "dns_test"
             if os.name == "nt":
                 executable = executable.with_suffix(".exe")
-            subprocess.run([
-                "gcc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+            environment = os.environ.copy()
+            if use_zig:
+                environment["ZIG_GLOBAL_CACHE_DIR"] = str(
+                    Path(directory) / "zig-global")
+                environment["ZIG_LOCAL_CACHE_DIR"] = str(
+                    Path(directory) / "zig-local")
+            subprocess.run([*command_prefix,
+                "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-ffunction-sections", "-fdata-sections", "-I", str(ROOT),
                 "-I", str(ROOT / "userspace/sdk/include"),
                 str(ROOT / "userspace/sdk/reist_dns.c"),
                 str(ROOT / "test/test_dns_host.c"),
                 "-Wl,--gc-sections", "-o", str(executable),
-            ], check=True, cwd=ROOT)
+            ], check=True, cwd=ROOT, env=environment)
             subprocess.run([str(executable)], check=True, cwd=ROOT)
+
+    def test_dns_has_bounded_tcp_fallback(self):
+        source = (ROOT / "userspace/sdk/reist_dns.c").read_text()
+        self.assertIn("dns_resolve_tcp", source)
+        self.assertIn("X86OS_UDP_MAX_DATAGRAM + 2U", source)
+        self.assertIn("DNS_TCP_CONNECT_MAX_MS", source)
+        self.assertIn("deadline_remaining", source)
+        self.assertIn("x86os_tcp_socket_close", source)
 
     @unittest.skipUnless(shutil.which("gcc"), "gcc is required")
     def test_tcp_connect_stream_and_close_behavior(self):

@@ -156,6 +156,10 @@ CURL_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x06))
 CURL_TEST_REPLY_MARKER = "REIST_CURL_RUNTIME_OK"
 TLS_CURL_TEST_COMMAND = "curl https://10.0.2.101/data.txt"
 TLS_CURL_TEST_REPLY_MARKER = "REIST_CURL_HTTPS_RUNTIME_OK"
+PUBLIC_TLS_CURL_TEST_COMMAND = "curl https://google.com"
+PUBLIC_TLS_CURL_TEST_REPLY_MARKER = "<H1>301 Moved</H1>"
+PUBLIC_TLS_HOST = "google.com"
+PUBLIC_TLS_DNS_TIMEOUT_SECONDS = 3.0
 DNS_TEST_COMMAND = "nslookup test.reist 10.0.2.99"
 DNS_TEST_REPLY_MARKER = "address: 10.0.2.77"
 HTTP_TEST_REQUESTS = 12
@@ -171,6 +175,7 @@ QEMU_MUX_SWITCH = "\x01c"
 KEY_INTERVAL_SECONDS = 0.075
 FAIL_MARKERS = (
     "TEST_FAIL",
+    "curl:",
     "PANIC:",
     "KERNEL ASSERTION FAILED",
     "Kernel exception:",
@@ -201,6 +206,7 @@ def qemu_command(
     vmware_vga: bool = False,
     smp: int = 1,
     hardware_entropy: bool = False,
+    public_dns: bool = False,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -253,8 +259,11 @@ def qemu_command(
             command.extend(["-device", f"{nic},netdev=reistnet0",
                             "-netdev", "user,id=reistnet0"])
         else:
+            user_netdev = "user,id=reistuser"
+            if public_dns:
+                user_netdev += ",dns=10.0.2.99"
             command.extend([
-                "-netdev", "user,id=reistuser",
+                "-netdev", user_netdev,
                 "-netdev", ("socket,id=reistsocket,connect=127.0.0.1:"
                             f"{injection_port}"),
                 "-netdev", "hubport,id=reistuserport,hubid=0,netdev=reistuser",
@@ -1076,41 +1085,90 @@ def serve_http_test_client(connection: socket.socket, deadline: float,
     return None if final_ack is not None else "final HTTP TCP ACK was not observed"
 
 
-def serve_dns_test_client(connection: socket.socket, deadline: float) -> str | None:
-    """Answer one bounded DNS A query from the guest through the socket hub."""
-    while time.monotonic() < deadline:
-        connection.settimeout(max(0.01, deadline - time.monotonic()))
+def serve_dns_a_query(connection: socket.socket, deadline: float,
+                      server_ip: bytes, server_mac: bytes,
+                      expected_question: bytes,
+                      answer_ip: bytes,
+                      allow_observed_server_mac: bool = False,
+                      inject_arp_reply: bool = True) -> str | None:
+    """Answer one exact checksum-valid bounded DNS A query."""
+    observed_frames = 0
+    last_frame = "none"
+    operation_deadline = min(deadline, time.monotonic() + 10.0)
+    while time.monotonic() < operation_deadline:
+        connection.settimeout(max(0.01,
+                                  operation_deadline - time.monotonic()))
         header = receive_exact(connection, 4)
         if header is None:
-            return "DNS peer frame header was not observed"
+            return ("DNS peer query was not observed "
+                    f"(frames={observed_frames}, last={last_frame})")
         length = struct.unpack("!I", header)[0]
         if length > 1514:
             return "DNS peer emitted an oversized frame"
         frame = receive_exact(connection, length)
         if frame is None:
             return "DNS peer frame was truncated"
+        observed_frames += 1
+        last_frame = f"length-{len(frame)}"
         if (len(frame) >= 42 and frame[12:14] == b"\x08\x06" and
                 frame[20:22] == b"\x00\x01" and
-                frame[38:42] == TCP_TEST_TARGET):
-            if not inject_ethernet_frame(connection, tcp_test_arp_reply_frame()):
+                frame[38:42] == server_ip):
+            last_frame = "dns-arp-request"
+            if inject_arp_reply and not inject_ethernet_frame(
+                    connection, peer_arp_reply_frame(server_mac, server_ip)):
                 return "unable to inject DNS peer ARP reply"
             continue
+        if len(frame) >= 42 and frame[12:14] == b"\x08\x06":
+            arp_operation = struct.unpack("!H", frame[20:22])[0]
+            arp_sender_mac = ":".join(f"{value:02x}" for value in frame[22:28])
+            arp_sender = ".".join(str(value) for value in frame[28:32])
+            arp_target = ".".join(str(value) for value in frame[38:42])
+            last_frame = (f"arp-operation-{arp_operation}-sender-"
+                          f"{arp_sender_mac}/{arp_sender}-target-{arp_target}")
+            continue
         if len(frame) < 42 or frame[12:14] != b"\x08\x00":
+            last_frame = f"non-ipv4-{frame[12:14].hex()}"
             continue
         if frame[23] != 17:
+            last_frame = f"ipv4-protocol-{frame[23]}"
             continue
-        if frame[26:30] != GUEST_IP or frame[30:34] != TCP_TEST_TARGET:
+        if frame[26:30] != GUEST_IP or frame[30:34] != server_ip:
+            last_frame = (f"udp-{'.'.join(str(value) for value in frame[26:30])}"
+                          f"-to-{'.'.join(str(value) for value in frame[30:34])}")
             continue
+        response_server_mac = server_mac
+        if frame[6:12] != GUEST_MAC:
+            return "guest DNS query did not use the validated ARP binding"
+        if frame[0:6] != server_mac:
+            if not allow_observed_server_mac:
+                return "guest DNS query did not use the validated ARP binding"
+            # QEMU usernet may answer ARP for its configured DNS alias before
+            # the deterministic socket peer. Mirror the already validated
+            # on-link source MAC so only the DNS answer is supplied here.
+            response_server_mac = frame[0:6]
         ihl = (frame[14] & 0x0f) * 4
         total = struct.unpack("!H", frame[16:18])[0]
         if ihl < 20 or total < ihl + 20 or len(frame) < 14 + total:
             continue
+        if internet_checksum(frame[14:14 + ihl]) != 0:
+            return "guest DNS IPv4 checksum is invalid"
         udp = frame[14 + ihl:14 + total]
-        source_port, destination_port, udp_length, _ = struct.unpack(
+        source_port, destination_port, udp_length, checksum = struct.unpack(
             "!HHHH", udp[:8])
+        pseudo = GUEST_IP + server_ip + struct.pack(
+            "!BBH", 0, 17, udp_length)
+        if (source_port == 0 or destination_port != 53 or
+                udp_length != len(udp) or checksum == 0 or
+                internet_checksum(pseudo + udp) != 0):
+            return "guest DNS UDP framing or checksum is invalid"
         query = udp[8:udp_length]
-        if destination_port != 53 or len(query) < 18:
+        if len(query) < 17:
             continue
+        transaction, flags, questions, answers, authorities, additional = \
+            struct.unpack("!6H", query[:12])
+        if (transaction == 0 or flags != 0x0100 or questions != 1 or
+                answers != 0 or authorities != 0 or additional != 0):
+            return "guest DNS query header is invalid"
         question_end = 12
         while question_end < len(query) and query[question_end] != 0:
             label = query[question_end]
@@ -1120,25 +1178,164 @@ def serve_dns_test_client(connection: socket.socket, deadline: float) -> str | N
         question_end += 5
         if question_end > len(query):
             return "guest DNS question is truncated"
+        if query[12:question_end] != expected_question or \
+                question_end != len(query):
+            return "guest DNS question does not match the expected query"
         answer = (query[:2] + b"\x81\x80\x00\x01\x00\x01\x00\x00\x00\x00" +
                   query[12:question_end] +
                   b"\xc0\x0c\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04" +
-                  bytes((10, 0, 2, 77)))
+                  answer_ip)
         response_udp = struct.pack("!HHHH", 53, source_port,
                                    8 + len(answer), 0) + answer
-        pseudo = TCP_TEST_TARGET + GUEST_IP + struct.pack(
+        pseudo = server_ip + GUEST_IP + struct.pack(
             "!BBH", 0, 17, len(response_udp))
         checksum = internet_checksum(pseudo + response_udp)
         response_udp = response_udp[:6] + struct.pack(
             "!H", checksum or 0xffff) + response_udp[8:]
         ip = struct.pack("!BBHHHBBH4s4s", 0x45, 0, 20 + len(response_udp),
-                         0x444e, 0, 64, 17, 0, TCP_TEST_TARGET, GUEST_IP)
+                         0x444e, 0, 64, 17, 0, server_ip, GUEST_IP)
         ip = ip[:10] + struct.pack("!H", internet_checksum(ip)) + ip[12:]
-        response = (GUEST_MAC + TCP_TEST_MAC + b"\x08\x00" + ip +
+        response = (GUEST_MAC + response_server_mac + b"\x08\x00" + ip +
                     response_udp).ljust(60, b"\x00")
         return None if inject_ethernet_frame(connection, response) else \
             "unable to inject DNS response"
     return "guest DNS query was not observed"
+
+
+def serve_dns_test_client(connection: socket.socket,
+                           deadline: float) -> str | None:
+    """Answer the deterministic local DNS test query."""
+    return serve_dns_a_query(
+        connection, deadline, TCP_TEST_TARGET, TCP_TEST_MAC,
+        b"\x04test\x05reist\x00\x00\x01\x00\x01",
+        bytes((10, 0, 2, 77)))
+
+
+def resolve_public_ipv4(deadline: float) -> tuple[bytes | None, str | None]:
+    """Resolve the public proof endpoint without an unbounded host wait."""
+    results: queue.Queue[tuple[bytes | None, str | None]] = queue.Queue(1)
+
+    def resolve() -> None:
+        try:
+            addresses = socket.getaddrinfo(
+                PUBLIC_TLS_HOST, 443, socket.AF_INET, socket.SOCK_STREAM)
+            if not addresses:
+                results.put((None, "public HTTPS host returned no IPv4 address"))
+                return
+            results.put((socket.inet_aton(addresses[0][4][0]), None))
+        except OSError as resolve_error:
+            results.put((None,
+                         f"public HTTPS host resolution failed: {resolve_error}"))
+
+    thread = threading.Thread(target=resolve, daemon=True)
+    thread.start()
+    timeout = min(PUBLIC_TLS_DNS_TIMEOUT_SECONDS,
+                  max(0.0, deadline - time.monotonic()))
+    try:
+        return results.get(timeout=timeout)
+    except queue.Empty:
+        return None, "public HTTPS host resolution deadline expired"
+
+
+def serve_public_curl_dns(connection: socket.socket, deadline: float,
+                          answer_ip: bytes) -> str | None:
+    """Return the bounded host-resolved public A record to guest DNS."""
+    return serve_dns_a_query(
+        connection, deadline, TCP_TEST_TARGET, TCP_TEST_MAC,
+        b"\x06google\x03com\x00\x00\x01\x00\x01", answer_ip, True, False)
+
+
+def observe_public_tls_traffic(connection: socket.socket, deadline: float,
+                               public_ip: bytes, stop: threading.Event,
+                               state: dict[str, object]) -> None:
+    """Drain the hub peer and prove the guest/public TLS record path."""
+    buffered = bytearray()
+    frames = 0
+    client_syn = False
+    server_syn_ack = False
+    client_tls = False
+    server_tls = False
+    last = "none"
+    trace: list[str] = []
+    error: str | None = None
+    connection.settimeout(0.2)
+    while not stop.is_set() and time.monotonic() < deadline:
+        try:
+            chunk = connection.recv(4096)
+        except socket.timeout:
+            continue
+        except OSError as socket_error:
+            error = f"public TLS frame observer failed: {socket_error}"
+            break
+        if not chunk:
+            error = "public TLS frame observer connection closed"
+            break
+        buffered.extend(chunk)
+        while len(buffered) >= 4:
+            length = struct.unpack("!I", buffered[:4])[0]
+            if length > 1514:
+                error = "public TLS frame observer saw an oversized frame"
+                stop.set()
+                break
+            if len(buffered) < 4 + length:
+                break
+            frame = bytes(buffered[4:4 + length])
+            del buffered[:4 + length]
+            frames += 1
+            last = f"ether-{frame[12:14].hex()}-length-{len(frame)}" \
+                if len(frame) >= 14 else f"short-length-{len(frame)}"
+            if len(frame) < 54 or frame[12:14] != b"\x08\x00" or \
+                    frame[23] != 6:
+                continue
+            ihl = (frame[14] & 0x0f) * 4
+            total = struct.unpack("!H", frame[16:18])[0]
+            if ihl < 20 or total < ihl + 20 or len(frame) < 14 + total:
+                continue
+            tcp_offset = 14 + ihl
+            tcp_header = (frame[tcp_offset + 12] >> 4) * 4
+            if tcp_header < 20 or total < ihl + tcp_header:
+                continue
+            source_port, destination_port = struct.unpack(
+                "!HH", frame[tcp_offset:tcp_offset + 4])
+            sequence, acknowledgement = struct.unpack(
+                "!II", frame[tcp_offset + 4:tcp_offset + 12])
+            flags = frame[tcp_offset + 13]
+            window = struct.unpack("!H", frame[tcp_offset + 14:
+                                                tcp_offset + 16])[0]
+            payload = frame[tcp_offset + tcp_header:14 + total]
+            source_ip = frame[26:30]
+            destination_ip = frame[30:34]
+            if (source_ip == GUEST_IP and destination_ip == public_ip and
+                    destination_port == 443):
+                last = f"guest-tcp-flags-{flags:02x}-payload-{len(payload)}"
+                if len(trace) < 24:
+                    trace.append(
+                        f"g:{flags:02x}:{sequence:x}:{acknowledgement:x}:"
+                        f"{len(payload)}:{window}")
+                if flags & 0x02:
+                    client_syn = True
+                if (len(payload) >= 3 and payload[0] == 0x16 and
+                        payload[1] == 0x03):
+                    client_tls = True
+            elif (source_ip == public_ip and destination_ip == GUEST_IP and
+                  source_port == 443):
+                last = f"server-tcp-flags-{flags:02x}-payload-{len(payload)}"
+                if len(trace) < 24:
+                    trace.append(
+                        f"s:{flags:02x}:{sequence:x}:{acknowledgement:x}:"
+                        f"{len(payload)}:{window}")
+                if (flags & 0x12) == 0x12:
+                    server_syn_ack = True
+                if (len(payload) >= 3 and payload[0] == 0x16 and
+                        payload[1] == 0x03):
+                    server_tls = True
+    state["error"] = error
+    state["complete"] = (client_syn and server_syn_ack and
+                         client_tls and server_tls)
+    state["summary"] = (
+        f"frames={frames},syn={int(client_syn)},synack={int(server_syn_ack)},"
+        f"client_tls={int(client_tls)},server_tls={int(server_tls)},last={last},"
+        f"trace={'|'.join(trace)}")
 
 
 def reader(
@@ -1327,6 +1524,7 @@ def run(
     expect_tcp_client: bool = False,
     expect_curl_client: bool = False,
     expect_tls_curl_client: bool = False,
+    expect_public_tls_curl_client: bool = False,
     expect_dns_client: bool = False,
     expect_http_server: bool = False,
     boot_only: bool = False,
@@ -1342,9 +1540,13 @@ def run(
     handover_port: int | None = None
     handover_thread: threading.Thread | None = None
     handover_result: list[str | None] = [None]
+    public_traffic_thread: threading.Thread | None = None
+    public_traffic_stop = threading.Event()
+    public_traffic_state: dict[str, object] = {}
     if (inject_arp_request or expect_arp_resolution or expect_outbound_ping or
             inject_icmp_echo or inject_udp_echo or expect_tcp_client or
             expect_curl_client or expect_tls_curl_client or
+            expect_public_tls_curl_client or
             expect_dns_client or expect_http_server):
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
@@ -1354,7 +1556,9 @@ def run(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
                          nic, persistent, injection_port, handover_port, sata,
                          auxiliary_sata_image, vmware_vga, smp,
-                         expect_tls_curl_client),
+                         (expect_tls_curl_client or
+                          expect_public_tls_curl_client),
+                         expect_public_tls_curl_client),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1409,9 +1613,53 @@ def run(
     deadline = time.monotonic() + timeout
     error: str | None = None
     try:
-        error, _ = wait_for_line(
+        error, initial_shell_position = wait_for_line(
             process, chunks, transcript, finished, SHELL_PROMPT, deadline
         )
+        if error is None and expect_public_tls_curl_client:
+            assert injection_connection is not None
+            public_ip, error = resolve_public_ipv4(deadline)
+            if error is None:
+                # QEMU 11.1 on Windows does not reliably return its virtual
+                # DNS reply through a hub. Keep the DHCP-proven user backend
+                # connected for TCP while the bounded socket peer supplies
+                # only the host-resolved A record. Run this before gtest
+                # deliberately recreates the network-service generation.
+                inject_ps2_command(process, PUBLIC_TLS_CURL_TEST_COMMAND)
+                assert public_ip is not None
+                error = serve_public_curl_dns(
+                    injection_connection, deadline, public_ip)
+            if error is None:
+                assert public_ip is not None
+                public_traffic_thread = threading.Thread(
+                    target=observe_public_tls_traffic,
+                    args=(injection_connection, deadline, public_ip,
+                          public_traffic_stop, public_traffic_state),
+                    daemon=True)
+                public_traffic_thread.start()
+            public_tls_position = -1
+            if error is None:
+                error, public_tls_position = wait_for_line(
+                    process, chunks, transcript, finished,
+                    PUBLIC_TLS_CURL_TEST_REPLY_MARKER, deadline,
+                    after=initial_shell_position)
+            if error is None:
+                error, _ = wait_for_line(
+                    process, chunks, transcript, finished, SHELL_PROMPT,
+                    deadline, after=public_tls_position)
+            if public_traffic_thread is not None:
+                public_traffic_stop.set()
+                public_traffic_thread.join(timeout=1.0)
+                summary = str(public_traffic_state.get("summary", "none"))
+                observer_error = public_traffic_state.get("error")
+                if error is not None:
+                    error = f"{error} (public traffic: {summary})"
+                elif public_traffic_thread.is_alive():
+                    error = "public TLS frame observer did not stop"
+                elif observer_error is not None:
+                    error = str(observer_error)
+                elif not bool(public_traffic_state.get("complete", False)):
+                    error = f"incomplete public guest TLS path ({summary})"
         if error is None and expect_reist_probe:
             error, _ = wait_for_line(
                 process, chunks, transcript, finished,
@@ -1762,6 +2010,9 @@ def run(
                 error = wait_for_wcet_marker(
                     process, chunks, transcript, finished, deadline)
     finally:
+        public_traffic_stop.set()
+        if public_traffic_thread is not None:
+            public_traffic_thread.join(timeout=1.0)
         if injection_connection is not None:
             injection_connection.close()
         if handover_thread is not None:
@@ -2274,6 +2525,11 @@ def main() -> int:
         help="run curl against an authenticated socket-hub HTTPS peer",
     )
     parser.add_argument(
+        "--expect-public-tls-curl-client", action="store_true",
+        help=("run production curl with bounded guest DNS and QEMU user "
+              "networking against the public google.com TLS endpoint"),
+    )
+    parser.add_argument(
         "--expect-dns-client", action="store_true",
         help="run nslookup against a deterministic socket-hub DNS peer",
     )
@@ -2403,6 +2659,7 @@ def main() -> int:
             args.inject_icmp_echo or args.inject_udp_echo or
             args.expect_tcp_client or args.expect_curl_client or
             args.expect_tls_curl_client or
+            args.expect_public_tls_curl_client or
             args.expect_dns_client or
             args.expect_http_server) and \
             args.nic == "none":
@@ -2439,6 +2696,7 @@ def main() -> int:
             args.expect_tcp_client,
             args.expect_curl_client,
             args.expect_tls_curl_client,
+            args.expect_public_tls_curl_client,
             args.expect_dns_client,
             args.expect_http_server,
             args.boot_only,

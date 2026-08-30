@@ -38,7 +38,10 @@ int main(int argc, char **argv) {
     }
     int rc = argc == 3 ? x86os_dns_resolve_at(argv[1], server, 3000U, &result)
                        : x86os_dns_resolve(argv[1], 3000U, &result);
-    if (rc != 0) { x86os_puts("nslookup: resolution failed\n"); return 1; }
+    if (rc != 0) {
+        x86os_puts("nslookup: resolution failed, status=");
+        x86os_print_number(rc); x86os_putchar('\n'); return 1;
+    }
     x86os_puts("name: "); x86os_puts(result.canonical_name);
     x86os_puts("\naddress: "); print_ip(result.address);
     x86os_puts("\nttl: "); print_unsigned(result.ttl_seconds);

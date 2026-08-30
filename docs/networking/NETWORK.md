@@ -42,10 +42,14 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
 - prozessgebundene UDP- und TCP-Socketdeskriptoren mit Cleanup bei Prozessende
 - UDP `bind`/`sendto`/`recvfrom`, vier Datagramme je Queue, 512 Byte je Paket
   und eine begrenzte `sendto`-ARP-Wartezeit von maximal zehn Sekunden
-- DNS-A-/CNAME-Auflösung mit begrenzten Kompressionszeigern und vier Cacheplätzen
+- DNS-A-/CNAME-Auflösung mit begrenzten Kompressionszeigern, vier Cacheplätzen
+  und einem RFC-konformen, auf 512 Byte und die gemeinsame Deadline begrenzten
+  TCP-Fallback nach ausbleibender oder unbrauchbarer UDP-Antwort
 - aktiver und passiver TCP-Verbindungsaufbau mit `listen`/`accept`, kleinem
   Backlog, ACK-/Sequenzprüfung über 32-Bit-Wrap, begrenzter Retransmission,
-  Empfangsfenster sowie aktivem/passivem Close
+  Empfangsfenster sowie aktivem/passivem Close; der Ring-3-Ingress zerlegt
+  größere validierte Wire-Segmente sequenztreu in höchstens 512 Byte große
+  Übergaben und übernimmt FIN nur in den letzten Teil
 - begrenzter HTTP/1.0-Server für `/htdocs`: `GET`, `HEAD`, statische Dateien
   bis 4096 Byte und Directory-Listings bis 32 Einträge beziehungsweise 1024 Byte
 - begrenzter HTTP-Downloadclient `curl` mit DNS, stdout oder atomarer
@@ -55,6 +59,11 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
   `libreisttls.a`: Mbed TLS 4.1.1 LTS, TLS 1.2/1.3, verpflichtende
   X.509-Ketten-, Gültigkeits- und SAN-Hostprüfung sowie der eingebettete,
   SHA-256-fixierte Mozilla/curl-Vertrauensspeicher vom 13. August 2026
+- ein Produktionsnachweis für `curl https://google.com`, bei dem der Gast die
+  öffentliche Google-Zertifikatskette selbst prüft; ein begrenzter Testpeer
+  liefert über die per DHCP angekündigte Test-DNS-Adresse `10.0.2.99` die
+  hostaufgelöste öffentliche A-Adresse an den Gast-DNS-Parser, danach laufen
+  Gast-TCP und TLS direkt über QEMUs User-Netzwerk
 - E1000 in der generierten VMware-VM und RTL8168/8111G auf dem ASUS H81M-K
 
 Ein Ping auf die eigene konfigurierte IPv4-Adresse wird lokal beantwortet und
@@ -83,6 +92,7 @@ C:\> nc example.test 80 "GET / HTTP/1.0"
 C:\> httpd 8080
 C:\> curl http://example.com/
 C:\> curl https://example.com/
+C:\> curl https://google.com
 C:\> curl -o /download.txt --max-bytes 65536 http://example.com/data.txt
 ```
 
@@ -99,6 +109,16 @@ Der TLS-Kontext ist auf 512 KiB, der TLS-Heap auf 4 MiB insgesamt und 512 KiB
 je Allokation, ein Entropieabruf auf 4096 Byte, der Handshake auf 30 Sekunden
 und ein einzelner I/O-Schritt auf fünf Sekunden begrenzt. Vor erfolgreichem
 Handshake werden keine HTTP-Nutzdaten gesendet oder ausgegeben.
+NIST-Kurven verwenden die mit Mbed TLS ausgelieferte spezialisierte modulare
+Reduktion sowie eine feste Viererfenster-/Fixed-Point-Konfiguration. Damit
+schließen auch moderne öffentliche ECDSA-Server den Handshake innerhalb der
+gleichen festen Speicher- und Zeitbudgets ab.
+HTTPS prüft RTC, monotone Zeit und CPUID-verifiziertes RDRAND bereits vor DNS
+und meldet anschließend DNS-, TCP-, TLS-, Ausgabe- und Antwortfehler getrennt.
+Die dokumentierten QEMU-Startziele emulieren RDRAND explizit; Systeme ohne
+diese Hardwareentropie bleiben absichtlich fail-closed. Der lokale CA-
+Runtime-Probe baut ausschließlich unter `build/curl-https-runtime` und ersetzt
+weder das Produktionsabbild noch dessen `CURL.PRG`.
 `netstat` zeigt
 neben dem Interfacezustand auch aktive UDP-/TCP-Sockets, Queuefüllung, Drops
 und TCP-Retransmissionen. Die bisherigen Shell-Built-ins bleiben aus

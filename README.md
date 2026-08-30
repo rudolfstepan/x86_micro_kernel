@@ -203,7 +203,14 @@ C:\> GETIP
 C:\> NET DHCP
 C:\> PING 192.168.1.1
 C:\> httpd 8080
+C:\> curl https://google.com
 ```
+
+Die QEMU-Startziele exponieren für TLS `qemu32,+rdrand`. Fehlt
+CPUID-verifiziertes RDRAND auf einem anderen Ziel, bricht HTTPS vor DNS und
+Netzwerkseiteneffekten ab; ein schwacher Software-Zufallsfallback existiert
+nicht. Lokale HTTPS-Test-CA-Abbilder werden getrennt unter
+`build/curl-https-runtime` erzeugt und überschreiben kein Produktionsabbild.
 
 Siehe [VMware](docs/hardware/VMWARE.md) und
 [Netzwerk](docs/networking/NETWORK.md).

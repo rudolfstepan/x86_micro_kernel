@@ -1167,7 +1167,8 @@ Netdev-Fence-Vertrag ein. Link und DHCP wurden auf dem physischen H81M-K
 beobachtet; der ARP-/ICMP-Retest des aktuellen Builds bleibt dort noch offen.
 Die QEMU-Referenz emuliert den Chip nicht. Die Socket-, DNS-, TCP- und HTTP-Pfade
 sind hostseitig sowie deterministisch in QEMU getestet: DHCP und ARP, aktiver
-TCP-Handshake/Daten/Close (`pong`), DNS-A über UDP (`test.reist` auf
+TCP-Handshake/Daten/Close (`pong`), DNS-A über UDP und den begrenzten
+DNS-over-TCP-Fallback (`test.reist` auf
 `10.0.2.77`) und drei aufeinanderfolgende passive HTTP-Verbindungen mit
 `/htdocs`-Directory-Listing laufen im selben Standard-Serverprozess; erst der
 anschließend injizierte `Strg+C`-Abbruch führt zurück zur Shell und zu
@@ -1176,6 +1177,16 @@ den Listener nicht. `curl.prg` verwendet die wiederverwendbare Ring-3-
 Bibliothek `libreisttls.a` für authentisiertes TLS 1.2/1.3. Der eingebettete
 Mozilla/curl-Vertrauensspeicher, X.509-Gültigkeit, RTC und SAN-Hostname sind
 verpflichtend; Entropie, Allokationen, Records und Fristen sind begrenzt.
+Der normale QEMU-Start emuliert RDRAND explizit, während fehlende Entropie im
+Client fail-closed bleibt. Der öffentliche Google-Abnahmepfad verwendet das
+Produktions-CURL.PRG mit einer begrenzt hostaufgelösten A-Antwort für den
+Gast-DNS-Parser und danach direkt über QEMUs User-Netzwerk; lokale
+Test-CA-Abbilder entstehen in einem getrennten Buildbaum.
+Der validierende Ring-3-Dienst zerlegt dabei große Internet-TCP-Segmente
+sequenztreu in die unveränderte 512-Byte-Ingress-ABI. Die feste NIST-ECP-
+Reduktion samt begrenztem Viererfenster beendet moderne Google-ECDSA-
+Handshakes rechtzeitig; der öffentliche QEMU-Lauf erhielt authentisiert die
+Google-301-Antwort.
 Nicht vorhanden sind IPv6, Zertifikatswiderruf, eine manipulationsgeschützte
 Uhr oder SMB.
 

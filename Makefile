@@ -1145,7 +1145,7 @@ test-quick:
 
 QEMU := qemu-system-i386
 QEMU_IMAGE := -boot c -drive file=$(OUTPUT_DIR)/reist-os.img,format=raw,if=ide,index=0
-QEMU_COMMON := -m 512M $(QEMU_IMAGE) -no-reboot -no-shutdown
+QEMU_COMMON := -m 512M -cpu qemu32,+rdrand $(QEMU_IMAGE) -no-reboot -no-shutdown
 
 run: run-native
 run-disk: run-native

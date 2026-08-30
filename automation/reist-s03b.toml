@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R4.1b-curl-public-https"
+active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
 
 [policy]
 one_package_per_run = true
@@ -13232,7 +13232,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2r-x86_64-ipc-revocation-wakeup"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Prove generation-scoped x86_64 IPC revocation wakeups"
@@ -13271,7 +13271,7 @@ evidence = []
 
 [[packages]]
 id = "R4.1b-curl-public-https"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Make production curl HTTPS work against public servers"
@@ -13280,6 +13280,7 @@ allowed_files = [
   "automation/reist-s03b.toml",
   "Makefile",
   "userspace/sdk/reist_dns.c",
+  "userspace/programs/reist_probe.c",
   "userspace/programs/nslookup.c",
   "userspace/programs/curl.c",
   "userspace/tls/lib/reist_tls.c",
@@ -13302,6 +13303,7 @@ invariants = [
   "normal QEMU launch targets advertise CPUID RDRAND explicitly and the TLS client still fails closed when RDRAND is absent or its bounded continuous test fails",
   "runtime-probe CA keys programs SDK files and disk images remain under an isolated ignored output directory and never replace build/reist-os.img or its production CURL.PRG",
   "DNS UDP and any standards-based TCP fallback validate transaction source framing response code question chain record count compression bounds lengths and deadlines before publishing one IPv4 address",
+  "validated Ring-3 TCP ingress resegments oversized wire payloads into at most 512-byte append-only submissions without changing the fixed kernel ABI sequence flags or receive capacity",
   "public HTTPS diagnostics distinguish name resolution TCP connection TLS authentication response framing byte-limit and timeout stages without printing secrets certificate internals or plaintext before authentication",
   "the reusable TLS ABI memory bounds trust store hostname and RTC verification TLS 1.2/1.3 restriction atomic output publication DNS TCP VFS ABI and shell image layouts remain unchanged",
   "the public-server proof exercises production CURL.PRG from the Ring-3 userspace shell through guest DNS TCP and encrypted TLS records and does not substitute a host-side TLS terminator"
@@ -13317,7 +13319,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fix: make curl public https usable"
-evidence = []
+evidence = [
+  "The focused network-tools gate passed all ten runnable checks, including the Zig-built DNS UDP/TCP parser and authenticated TLS host matrix; four GCC-only host checks were explicitly skipped because GCC was unavailable.",
+  "The QEMU VGA package gate passed in 63 seconds with the production CURL.PRG, reusable TLS archive and Ring-3 network service linked into the image.",
+  "The public runtime gate passed in 120 seconds: the userspace shell executed curl https://google.com, authenticated the public chain and hostname in the guest, observed bidirectional TLS records and received Google's 301 response without a host TLS terminator.",
+  "Production trust parsing accepts all 121 pinned roots, oversized public TCP wire segments are resegmented by the validated Ring-3 service into the unchanged 512-byte ingress ABI, and bounded NIST ECP acceleration completes modern ECDSA handshakes before the public peer closes."
+]
 
 [[packages]]
 id = "R4.1a-curl-https"

@@ -51,6 +51,9 @@
 #define PSA_WANT_ALG_RSA_PSS 1
 #define PSA_WANT_ALG_RSA_OAEP 1
 #define PSA_WANT_ALG_RSA_PKCS1V15_SIGN 1
+/* Required to parse three pinned legacy root self-signatures. Mbed TLS's
+ * default X.509 verification profile still rejects SHA-1 in peer chains. */
+#define PSA_WANT_ALG_SHA_1 1
 #define PSA_WANT_ALG_SHA_256 1
 #define PSA_WANT_ALG_SHA_384 1
 #define PSA_WANT_ALG_SHA_512 1
@@ -66,12 +69,14 @@
 #define PSA_WANT_KEY_TYPE_RSA_KEY_PAIR_BASIC 1
 #define PSA_WANT_ECC_SECP_R1_256 1
 #define PSA_WANT_ECC_SECP_R1_384 1
+#define PSA_WANT_ECC_SECP_R1_521 1
 
 #define MBEDTLS_SSL_IN_CONTENT_LEN 16384
 #define MBEDTLS_SSL_OUT_CONTENT_LEN 4096
 #define MBEDTLS_MPI_MAX_SIZE 512
-#define MBEDTLS_ECP_WINDOW_SIZE 2
-#define MBEDTLS_ECP_FIXED_POINT_OPTIM 0
+#define MBEDTLS_ECP_NIST_OPTIM
+#define MBEDTLS_ECP_WINDOW_SIZE 4
+#define MBEDTLS_ECP_FIXED_POINT_OPTIM 1
 
 #include <stdint.h>
 #include <stddef.h>

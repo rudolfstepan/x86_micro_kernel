@@ -20,7 +20,8 @@ extern const size_t reist_tls_runtime_test_ca_pem_size;
 #define CURL_HARD_MAX_BYTES (16U * 1024U * 1024U)
 #define CURL_DNS_TIMEOUT_MS 3000U
 #define CURL_CONNECT_TIMEOUT_MS 5000U
-#define CURL_IO_TIMEOUT_MS 3000U
+#define CURL_IO_TIMEOUT_MS 5000U
+#define CURL_TLS_HANDSHAKE_TIMEOUT_MS 30000U
 #define CURL_TRANSFER_DEADLINE_MS 30000U
 #define CURL_OUTPUT_PATH_CAPACITY 256U
 
@@ -40,7 +41,46 @@ typedef struct curl_stream {
     curl_stream_receive_fn receive;
 } curl_stream_t;
 
+typedef enum curl_failure_stage {
+    CURL_STAGE_TCP = 1,
+    CURL_STAGE_TLS = 2,
+    CURL_STAGE_OUTPUT = 3,
+    CURL_STAGE_REQUEST = 4,
+    CURL_STAGE_RESPONSE = 5
+} curl_failure_stage_t;
+
 static reist_tls_context_t tls_context;
+
+static void wipe_bytes(uint8_t *data, uint32_t length) {
+    volatile uint8_t *bytes = (volatile uint8_t *)data;
+    for (uint32_t index = 0U; index < length; ++index) bytes[index] = 0U;
+}
+
+static void print_failure(curl_failure_stage_t stage, int status) {
+    const char *message = stage == CURL_STAGE_TCP
+        ? "curl: TCP connection failed, status="
+        : stage == CURL_STAGE_TLS
+            ? "curl: TLS setup or authentication failed, status="
+            : stage == CURL_STAGE_OUTPUT
+                ? "curl: output publication failed, status="
+                : stage == CURL_STAGE_REQUEST
+                    ? "curl: request transmission failed, status="
+                    : "curl: invalid or incomplete response, status=";
+    x86os_puts(message); x86os_print_number(status); x86os_putchar('\n');
+}
+
+static void print_timeout(curl_failure_stage_t stage) {
+    const char *message = stage == CURL_STAGE_TCP
+        ? "curl: TCP connection timed out, status="
+        : stage == CURL_STAGE_TLS
+            ? "curl: TLS setup or authentication timed out, status="
+            : stage == CURL_STAGE_OUTPUT
+                ? "curl: output publication timed out, status="
+                : stage == CURL_STAGE_REQUEST
+                    ? "curl: request transmission timed out, status="
+                    : "curl: response transfer timed out, status=";
+    x86os_puts(message); x86os_print_number(-110); x86os_putchar('\n');
+}
 
 static uint32_t bounded_length(const char *text, uint32_t capacity) {
     uint32_t length = 0U;
@@ -312,11 +352,29 @@ int main(int argc, char **argv) {
         x86os_puts("curl: URL is too long for the bounded request\n");
         return 2;
     }
+    if (url.scheme == REIST_CURL_SCHEME_HTTPS) {
+        int64_t rtc = 0;
+        uint64_t monotonic = 0U;
+        uint8_t entropy[32];
+        result = reist_tls_rtc_time(0, &rtc);
+        if (result == 0) result = reist_tls_monotonic_time(0, &monotonic);
+        if (result == 0)
+            result = reist_tls_hardware_entropy(0, entropy, sizeof(entropy));
+        wipe_bytes(entropy, sizeof(entropy));
+        if (result != 0) {
+            x86os_puts("curl: TLS clock or hardware entropy unavailable, status=");
+            x86os_print_number(result); x86os_putchar('\n');
+            return 1;
+        }
+    }
     uint32_t address = 0U;
     if (parse_ipv4(url.host, &address) != 0) {
         x86os_dns_result_t dns;
-        if (x86os_dns_resolve(url.host, CURL_DNS_TIMEOUT_MS, &dns) != 0) {
-            x86os_puts("curl: name resolution failed\n");
+        int dns_status = x86os_dns_resolve(
+            url.host, CURL_DNS_TIMEOUT_MS, &dns);
+        if (dns_status != 0) {
+            x86os_puts("curl: name resolution failed, status=");
+            x86os_print_number(dns_status); x86os_putchar('\n');
             return 1;
         }
         address = dns.address;
@@ -324,6 +382,7 @@ int main(int argc, char **argv) {
 
     x86os_tcp_socket_t socket = 0U;
     int tls_open = 0;
+    curl_failure_stage_t failure_stage = CURL_STAGE_TCP;
     curl_stream_t stream = {&socket, plain_send, plain_receive};
     result = x86os_tcp_socket_open(&socket);
     if (result == 0) {
@@ -333,6 +392,7 @@ int main(int argc, char **argv) {
         result = x86os_tcp_connect(&connect);
     }
     if (result == 0 && url.scheme == REIST_CURL_SCHEME_HTTPS) {
+        failure_stage = CURL_STAGE_TLS;
         reist_tls_platform_t platform = {
             REIST_TLS_ABI_VERSION, sizeof(platform), 0, reist_tls_rtc_time,
             reist_tls_monotonic_time, reist_tls_hardware_entropy,
@@ -342,7 +402,7 @@ int main(int argc, char **argv) {
             tcp_transport_send, tcp_transport_receive};
         reist_tls_client_options_t tls_options = {
             REIST_TLS_ABI_VERSION, sizeof(tls_options), url.host,
-            REIST_TLS_DEFAULT_HANDSHAKE_MS, CURL_IO_TIMEOUT_MS, 0, 0U};
+            CURL_TLS_HANDSHAKE_TIMEOUT_MS, CURL_IO_TIMEOUT_MS, 0, 0U};
 #if defined(REIST_CURL_TLS_RUNTIME_PROBE)
         tls_options.trust_anchors_pem = reist_tls_runtime_test_ca_pem;
         tls_options.trust_anchors_pem_size =
@@ -359,6 +419,7 @@ int main(int argc, char **argv) {
     char temporary[CURL_OUTPUT_PATH_CAPACITY];
     int output = X86OS_STDOUT_FILENO;
     if (result == 0 && options.output != 0) {
+        failure_stage = CURL_STAGE_OUTPUT;
         if (make_temporary_path(options.output, temporary) != 0) {
             x86os_puts("curl: output path is too long\n");
             result = -22;
@@ -371,10 +432,14 @@ int main(int argc, char **argv) {
             }
         }
     }
-    if (result == 0)
+    if (result == 0) {
+        failure_stage = CURL_STAGE_REQUEST;
         result = send_all(&stream, (const uint8_t *)request, request_length);
-    if (result == 0)
+    }
+    if (result == 0) {
+        failure_stage = CURL_STAGE_RESPONSE;
         result = receive_body(&stream, output, options.maximum_bytes);
+    }
     if (tls_open) (void)reist_tls_client_close(&tls_context);
     if (socket != 0U) (void)x86os_tcp_socket_close(socket, 2000U);
 
@@ -385,8 +450,12 @@ int main(int argc, char **argv) {
         if (result != 0) (void)x86os_unlink(temporary);
     }
     if (result != 0) {
-        x86os_puts(result == -90 ? "curl: response exceeds byte limit\n"
-                                 : "curl: transfer failed\n");
+        if (result == -90)
+            x86os_puts("curl: response exceeds byte limit\n");
+        else if (result == -110)
+            print_timeout(failure_stage);
+        else
+            print_failure(failure_stage, result);
         return 1;
     }
     return 0;

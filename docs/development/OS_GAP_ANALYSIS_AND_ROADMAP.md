@@ -1434,8 +1434,10 @@ behauptet.
 - UDP-Socketobjekte sind als Prozessdeskriptoren mit `bind`, `sendto`,
   `recvfrom`, begrenzter ARP-/Empfangsdeadline und Cleanup umgesetzt; der
   QEMU-Datenpfad ist über DNS im kombinierten Gasttest belegt.
-- DNS-A/CNAME, begrenzte Kompressionszeiger und ein kleiner TTL-Cache sind
-  umgesetzt und gegen einen lokalen deterministischen QEMU-Testpeer belegt.
+- DNS-A/CNAME, begrenzte Kompressionszeiger, ein kleiner TTL-Cache und ein auf
+  512 Byte sowie die gemeinsame Deadline begrenzter DNS-over-TCP-Fallback sind
+  umgesetzt; lokale UDP-/TCP-Hosttests und der öffentliche curl-Pfad decken
+  beide Transporte ab.
 - Der TCP-Pfad besitzt feste CCBs, Sequenz-/ACK-Prüfung, Retransmission, RTO,
   Fenster, aktiven/passiven Close sowie begrenztes `listen`/`accept` mit kleinem
   Backlog. Aktiver und passiver TCP-Handshake, Nutzdaten und Close sind im
@@ -1444,7 +1446,13 @@ behauptet.
   HTTP/1.0-`GET`-/`HEAD`-Anfragen aus `/htdocs` einschließlich Directory-Listing.
   `curl.prg` nutzt `libreisttls.a` für TLS 1.2/1.3 mit verpflichtender
   X.509-/SAN-/RTC-Prüfung und festen Speicher- und Zeitgrenzen; Widerrufsprüfung
-  und ein sicherer Uhranker bleiben offen.
+  und ein sicherer Uhranker bleiben offen. Der Produktionslauf gegen
+  `https://google.com` speist eine hostaufgelöste öffentliche A-Adresse in den
+  Gast-DNS-Parser und nutzt danach direkt QEMUs User-Netzwerk; Test-CA und
+  Probe-Image bleiben von allen Produktionsartefakten getrennt. Der Ring-3-
+  Ingress zerlegt große Wire-Segmente in die unveränderte 512-Byte-ABI, und
+  feste NIST-ECP-Optimierungen schließen moderne ECDSA-Handshakes innerhalb
+  der begrenzten Fristen ab.
 - IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
 - reale H81M-K-Gegenprobe des nun vorhandenen RTL8111G-/RTL8168-PCIe-Treibers;
   die QEMU-Referenz emuliert diesen Controller nicht

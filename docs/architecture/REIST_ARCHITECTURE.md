@@ -662,6 +662,20 @@ Entropie, ungültige RTC, Trust-/Hostnamefehler oder Budgetüberschreitung
 schließen den Verbindungsaufbau. Widerrufsprüfung, sichere Uhr und
 Zertifizierung werden nicht behauptet.
 
+Der normale QEMU-Referenzstart exponiert CPUID-RDRAND explizit; die
+Produktionsbibliothek besitzt trotzdem keinen Software-Entropiefallback. Der
+lokale CA-Probe wird in einem separaten Buildbaum erzeugt und kann das
+Produktionsabbild nicht ersetzen. Ein zusätzlicher öffentlicher Abnahmepfad
+führt `curl https://google.com` aus der Ring-3-Shell aus. Ein begrenzter
+Testpeer liefert die vom Host öffentlich aufgelöste A-Adresse an den echten
+Gast-DNS-Parser; Gast-TCP und TLS laufen danach über QEMUs User-Netzwerk.
+Zertifikatskette, Hostname und TLS-Records sind vollständig Eigentum des Gasts.
+Der validierende Ring-3-Netzwerkdienst zerlegt große TCP-Wire-Nutzlasten mit
+fortgeschriebener Sequenz und FIN nur am letzten Teil in die unveränderte
+512-Byte-Ingress-ABI. Die feste NIST-ECP-Reduktion und begrenzte
+Fixed-Point-Tabelle halten moderne öffentliche ECDSA-Handshakes innerhalb der
+Handshakefrist, ohne Speicher- oder Vertrauensgrenzen zu erweitern.
+
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter
 256-Byte-Kernelsignatur. Es bindet das Kernelartefakt mit SHA-256 gemäß NIST

@@ -24,6 +24,8 @@
 #define REIST_WCET_MAX_ATTEMPTS 768U
 #define REIST_WCET_SAMPLE_INTERVAL_MS 20U
 #define REIST_WCET_SAMPLE_DEADLINE_MS 15000U
+#define REIST_TCP_FLAG_FIN 0x01U
+#define REIST_TCP_FLAG_SYN 0x02U
 
 static uint64_t probe_deadline_after(uint64_t now_ms, uint32_t interval_ms) {
     return UINT64_MAX - now_ms < interval_ms
@@ -689,26 +691,40 @@ int main(int argc, char **argv) {
                         socket_result != -105) return 41;
                 }
             }
-            if (ipv4_parse == 0 && tcp_parse == 0 &&
-                tcp_result.payload_length <= X86OS_TCP_MAX_SEGMENT) {
-                x86os_tcp_segment_t segment = {
-                    .version = X86OS_TCP_SOCKET_VERSION,
-                    .struct_size = sizeof(segment),
-                    .source_ip = ipv4_result.source_ip,
-                    .destination_ip = ipv4_result.destination_ip,
-                    .sequence = tcp_result.sequence,
-                    .acknowledgement = tcp_result.acknowledgement,
-                    .source_port = tcp_result.source_port,
-                    .destination_port = tcp_result.destination_port,
-                    .window = tcp_result.window,
-                    .length = tcp_result.payload_length,
-                    .flags = tcp_result.flags,
-                };
-                int tcp_ingress = x86os_tcp_socket_ingress(
-                    &segment, &network_frame.data[tcp_result.payload_offset]);
-                if (tcp_ingress != 0 && tcp_ingress != -2 &&
-                    tcp_ingress != -11 && tcp_ingress != -84)
+            if (ipv4_parse == 0 && tcp_parse == 0) {
+                if (tcp_result.payload_length > X86OS_TCP_MAX_SEGMENT &&
+                    (tcp_result.flags & REIST_TCP_FLAG_SYN) != 0U)
                     return 43;
+                uint32_t delivered = 0U;
+                do {
+                    uint32_t amount = tcp_result.payload_length - delivered;
+                    if (amount > X86OS_TCP_MAX_SEGMENT)
+                        amount = X86OS_TCP_MAX_SEGMENT;
+                    uint8_t flags = tcp_result.flags;
+                    if (delivered + amount < tcp_result.payload_length)
+                        flags &= (uint8_t)~REIST_TCP_FLAG_FIN;
+                    x86os_tcp_segment_t segment = {
+                        .version = X86OS_TCP_SOCKET_VERSION,
+                        .struct_size = sizeof(segment),
+                        .source_ip = ipv4_result.source_ip,
+                        .destination_ip = ipv4_result.destination_ip,
+                        .sequence = tcp_result.sequence + delivered,
+                        .acknowledgement = tcp_result.acknowledgement,
+                        .source_port = tcp_result.source_port,
+                        .destination_port = tcp_result.destination_port,
+                        .window = tcp_result.window,
+                        .length = amount,
+                        .flags = flags,
+                    };
+                    int tcp_ingress = x86os_tcp_socket_ingress(
+                        &segment,
+                        &network_frame.data[tcp_result.payload_offset +
+                                            delivered]);
+                    if (tcp_ingress != 0 && tcp_ingress != -2 &&
+                        tcp_ingress != -11 && tcp_ingress != -84)
+                        return 43;
+                    delivered += amount;
+                } while (delivered < tcp_result.payload_length);
             }
             } else if (frame_result == -11) {
                 break;

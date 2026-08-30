@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -80,6 +80,8 @@ $Make = if ($Mode -eq 'driver-domain') {
 if ($Target -eq 'qemu' -and $Mode -ne 'driver-domain' -and
     $Mode -ne 'vmware-mouse' -and
     $Mode -ne 'vmware-compositor-restart' -and
+    $Mode -ne 'curl-https-client' -and
+    $Mode -ne 'curl-https-public-client' -and
     !(Test-Path -LiteralPath $Image -PathType Leaf)) {
     throw 'build\reist-os.img is missing; run build-windows.ps1 first.'
 }
@@ -1107,15 +1109,30 @@ switch ($Mode) {
         )
     }
     'curl-https-client' {
+        $relativeOutput = 'build/curl-https-runtime'
+        $probeImage = Join-Path $RepoRoot "$relativeOutput/reist-os.img"
         & $BuildScript -Target qemu -Video vga -CurlTlsRuntimeProbe `
-            -SkipReleaseSbom
+            -OutputDirectory $relativeOutput -SkipReleaseSbom
         if ($LASTEXITCODE -ne 0) {
             throw 'curl HTTPS runtime-probe build failed.'
         }
         Invoke-Smoke 'guest-smoke-curl-https-client.log' @(
             '--nic', 'rtl8139', '--vmware-vga',
             '--expect-tls-curl-client', '--timeout', '180'
-        )
+        ) $true $probeImage
+    }
+    'curl-https-public-client' {
+        $relativeOutput = 'build/curl-https-public-runtime'
+        $publicImage = Join-Path $RepoRoot "$relativeOutput/reist-os.img"
+        & $BuildScript -Target qemu -Video vga `
+            -OutputDirectory $relativeOutput -SkipReleaseSbom
+        if ($LASTEXITCODE -ne 0) {
+            throw 'curl public HTTPS production build failed.'
+        }
+        Invoke-Smoke 'guest-smoke-curl-https-public-client.log' @(
+            '--nic', 'rtl8139', '--vmware-vga',
+            '--expect-public-tls-curl-client', '--timeout', '240'
+        ) $true $publicImage
     }
     'vmware-compositor-restart' {
         & $VmwareMouseRunner -ExpectCompositorRestart
