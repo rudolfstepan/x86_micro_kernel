@@ -15,18 +15,25 @@ id = "R3.4g-vmware-pointer-pipeline"
 status = "active"
 phase = "post-s0"
 risk = "high"
-title = "Bound VMware pointer presentation and recover SVGA2D control"
-scope = "Remove the measured VMware interactive bottlenecks without changing public ABI or moving policy into Ring 0. Present a moved software pointer as at most two exact old/new cursor rectangles in one bounded framebuffer publication instead of copying their potentially screen-sized bounding box. Drain already queued HID mouse reports before polling xHCI/OHCI so one desktop batch polls controllers only after the queue is empty. Make the single-compositor SVGA2D client tolerate only well-formed stale driver replies within the fixed IPC queue/deadline before matching its current request, preventing delayed VMware replies from poisoning reconnects. Preserve frame atomicity, cursor restoration, fail-closed IPC validation, input edge order, fixed capacities, software fallback and physical USB behavior."
+title = "Bound VMware pointer presentation and SMP scheduler contention"
+scope = "Remove the measured VMware interactive bottlenecks without changing public ABI or moving policy into Ring 0. Present a moved software pointer as at most two exact old/new cursor rectangles in one bounded framebuffer publication instead of copying their potentially screen-sized bounding box. Drain already queued HID mouse reports before polling xHCI/OHCI so one desktop batch polls controllers only after the queue is empty. Make the single-compositor SVGA2D client tolerate only well-formed stale driver replies within the fixed IPC queue/deadline before matching its current request, preventing delayed VMware replies from poisoning reconnects. Prevent synchronized SMP timer interrupts from spinning in IRQ context on the globally serialized task table: a contending CPU defers only that scheduling decision to the next periodic quantum while the uncontended one-vCPU path remains identical, and skip quadratic priority-inheritance propagation when no valid owner edge exists. Preserve frame atomicity, cursor restoration, fail-closed IPC validation, input edge order, fixed capacities, task-generation claims, wait ownership, watchdog progress, software fallback and physical USB behavior. The measured AMD VMware baseline is 651.54 MOp/s single and 492.54 MOp/s total on four vCPUs (0.75x); acceptance requires non-negative four-vCPU scaling and clean desktop liveness on the same target."
 allowed_files = [
   "automation/reist-s03b.toml",
   "drivers/video/framebuffer.c",
+  "kernel/sched/scheduler.c",
+  "kernel/sched/scheduling_policy.c",
   "kernel/syscall/syscall_table.c",
   "userspace/gui/compositor/desktop.c",
   "test/test_display_abi_minimal.py",
   "test/test_usb_mouse.py",
   "test/test_vmware_svga2d.py",
+  "test/test_vmware_mouse.py",
   "test/test_desktop_source.py",
+  "test/test_scheduler_time.py",
+  "test/test_reist_scheduling_policy.py",
+  "test/test_scheduling_policy_host.c",
   "scripts/run_vmware_mouse.ps1",
+  "scripts/run_qemu_benchmark.py",
   "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
   "docs/hardware/VMWARE.md",
   "docs/development/CURRENT_WORK.md",
@@ -37,34 +44,46 @@ invariants = [
   "active frame transactions retain both pointer rectangles atomically and capacity exhaustion keeps the existing full-damage fallback",
   "mouse event order and button edges are unchanged and each syscall performs at most one bounded xHCI and OHCI poll only after the software queue is empty",
   "SVGA2D accepts only the exact version operation request id response flag and fixed structure and drains no more than the fixed IPC queue depth",
-  "timeouts endpoint generations software fallback and Ring-3 driver authority remain fail closed"
+  "timeouts endpoint generations software fallback and Ring-3 driver authority remain fail closed",
+  "one task generation runs on at most one CPU and stale generations never become runnable",
+  "a contended periodic scheduling decision performs no IRQ spin and is deferred by at most the next fixed quantum while wait ownership and priority inheritance stay bounded",
+  "the one-vCPU scheduling order ABI and watchdog progress remain unchanged and four-vCPU performance is reported only as a measurement"
 ]
 targeted_tests = [
   "python test/test_display_abi_minimal.py -v",
   "python test/test_usb_mouse.py -v",
   "python test/test_vmware_svga2d.py -v",
-  "python test/test_desktop_source.py -v"
+  "python test/test_vmware_mouse.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_scheduler_time.py -v",
+  "python test/test_reist_scheduling_policy.py -v"
 ]
 package_tests = [
-  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer",
-  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
 ]
 runtime_tests = [
+  "python scripts/run_qemu_benchmark.py --image build/reist-os.img --smp 1 --timeout 600 --log build/codex-agent/r3.4g-smp1.log",
+  "python scripts/run_qemu_benchmark.py --image build/reist-os.img --smp 4 --timeout 600 --log build/codex-agent/r3.4g-smp4.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-benchmark",
   ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-mouse",
-  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-svga2d-lifecycle"
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-svga2d-lifecycle -Target vmware"
 ]
 stop_conditions = [
   "correct cursor publication requires an unbounded FIFO wait or dropping button edges",
   "SVGA2D recovery would consume malformed or foreign non-response traffic",
   "physical USB behavior regresses or a frozen VMware runtime gate fails after one focused in-scope repair",
+  "a task can be claimed by two CPUs or wakeup cleanup loses generation binding",
+  "the one-vCPU scheduler contract changes or a timer IRQ performs a bounded spin wait for the task table",
+  "the measured four-vCPU VMware CPU result remains below 1.00x the single-CPU result",
   "a required production file lies outside allowed_files"
 ]
-commit_message = "gui: bound VMware pointer presentation"
+commit_message = "gui: bound VMware SMP interaction latency"
 evidence = []
 
 [[packages]]
 id = "R7.1l-smp-scheduler-lock-scope"
-status = "queued"
+status = "cancelled"
 phase = "post-s0"
 risk = "high"
 title = "Remove negative SMP scheduler lock scaling"
@@ -106,7 +125,9 @@ stop_conditions = [
   "a required production file lies outside allowed_files"
 ]
 commit_message = "sched: reduce global SMP lock contention"
-evidence = []
+evidence = [
+  "Merged into active package R3.4g because the measured global timer-IRQ scheduler contention causes the target VMware pointer and service-liveness failure."
+]
 
 [[packages]]
 id = "R3.4f-desktop-smp-input-cadence"
