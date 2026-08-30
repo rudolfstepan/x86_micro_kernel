@@ -11,6 +11,208 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.4d-surface-pointer-routing"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Deliver physical pointer clicks to native GUI Surfaces"
+scope = "Repair the bounded physical mouse-button path from the HID queue through desktop window capture and the Surface broker to GUIDEMO controls and menus. Replace the former direct queue-only interaction proof with a real compositor routing proof and add a QEMU xHCI click gate that verifies observable Gallery control and menu state changes. Increase only the fixed hover-layer capacity from four to sixteen commands so complete tabs, menus and scrollbar feedback cannot terminate a conforming client. Decouple Notepad scrollbar feedback from editor viewport painting so each delivered drag position commits the thumb first while text repaint remains bounded and coalescible on the following event-loop turn. Add bounded opaque-region culling with a pixel-correct full-clip fallback. Preserve server-owned decorations, implicit button grabs, fixed queue capacities, process isolation and single-vCPU behavior."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/usb/hid_mouse.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/apps/control_gallery/main.c",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/include/reist/gui/surface.h",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_usb_hid_mouse_host.c",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_source.py",
+  "test/test_gui_control_gallery_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_gui_surface_source.py",
+  "test/test_vmware_mouse.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a physical left-button press and release are delivered in order to the Surface owning the client-area press",
+  "window move resize close taskbar and desktop UI captures never leak button events into a client Surface",
+  "motion may be coalesced but button edges are never silently replaced by motion or ignored after enqueue failure",
+  "all HID Surface and IPC queues remain fixed-capacity and every retry or runtime wait remains bounded",
+  "the compositor retains the implicit grab until release even when the pointer leaves the client area",
+  "server decorations and client-local control coordinates remain unchanged",
+  "the repair does not depend on multiple CPUs or affinity",
+  "the hover layer remains fixed at sixteen commands and overflow fails before retained state changes",
+  "an active Notepad scrollbar thumb is committed before any pending editor viewport repaint",
+  "editor viewport repaint may be coalesced during continuous drag but is committed after the latest thumb position without an unbounded wait",
+  "opaque-region capacity exhaustion falls back to drawing the original clip and never omits visible pixels"
+]
+targeted_tests = [
+  "python test/test_gui_control_gallery_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_vmware_mouse.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-guidemo-click"
+]
+stop_conditions = [
+  "the real QEMU xHCI click reaches HID but cannot be routed to the visible Gallery Surface",
+  "preserving a button edge would require an unbounded queue wait or queue growth",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: deliver physical clicks to surfaces"
+evidence = [
+  "All 112 frozen Gallery Notepad Surface Desktop VMware-runner and QEMU-runner source or host checks passed, including freestanding C11 builds, arbitrary-position Motion eviction and fail-closed nonreplaceable input overload.",
+  "The final VMware framebuffer package passed in 48 seconds with all Ring-3 GUI programs and the enlarged but fixed retained Surface storage linked into the package.",
+  "The final runtime-desktop-guidemo-click gate passed through a real emulated QEMU xHCI USB mouse, compositor capture and Surface routing, then observed both GUIDEMO_INTERACTION_OK and GUIDEMO_MENU_INTERACTION_OK.",
+  "The unusable Gallery was caused by the four-command hover capacity: one complete bevel tab with text needs six commands, overflow disconnected the client, and the fixed sixteen-command limit now accommodates tabs menus and scrollbar feedback without dynamic allocation.",
+  "Notepad commits active scrollbar Track and Thumb in the hover layer before the coalescible Dynamic editor viewport, while the compositor skips opaque covered regions with a fixed 128-rectangle list and full-clip correctness fallback.",
+  "No kernel driver authority DMA MMIO IRQ or global GUI coordinate authority was widened; measured one-core and multi-core p99 latency remains explicit future target-hardware evidence rather than a certification claim, and active_id is empty."
+]
+
+[[packages]]
+id = "R3.4c-guidemo-first-frame"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Restore the Control Gallery first retained Surface frame"
+scope = "Diagnose and remove the bounded first-frame failure of GUIDEMO.PRG after successful Surface create and configure. Enforce the native decorated-window contract for Control Gallery and Notepad: the compositor owns the outer frame title move resize focus and close controls while each application paints only its local client area using bounded GUI controls. Keep fixed retained-paint capacities, synchronous atomic commit, process isolation and compositor heartbeat deadlines unchanged, and prove a visible interactive Gallery Surface in QEMU."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/apps/control_gallery/main.c",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "test/test_gui_control_gallery_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_gui_surface_source.py",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "GUIDEMO publishes SURFACE_READY only after one successful retained paint commit",
+  "every retained paint list remains fixed-capacity and an overflow fails before committed state changes",
+  "the repair does not widen Surface IPC queues compositor heartbeat deadlines or process authority",
+  "the runtime harness grants each reached sound-bound and client-bound phase a separate fixed fifteen-second observation budget",
+  "all gallery redraws remain finite and preserve menu dialog control and configure behavior",
+  "legacy Surface clients and the four-layer Notepad rendering contract remain compatible"
+]
+targeted_tests = [
+  "python test/test_gui_control_gallery_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-audio"
+]
+stop_conditions = [
+  "GUIDEMO still exits between GUIDEMO_OK and GUIDEMO_SURFACE_READY",
+  "the first frame requires an unbounded list queue retry or deadline increase",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: restore control gallery rendering"
+evidence = [
+  "All 96 final Control Gallery Notepad Surface Desktop and runtime-source checks passed including freestanding C11 compilation and the native client-area contract.",
+  "The final QEMU framebuffer package passed in 34 seconds.",
+  "The real runtime-desktop-audio gate passed with captured stereo S16 audio GUIDEMO_SURFACE_READY GUIDEMO_INTERACTION_OK and DESKTOP_AUDIO_HEARTBEAT_OK.",
+  "The retained Gallery first-frame failure was an out-of-bounds centered text width at x=656 width=184 on an 800-pixel Surface; clipping to the remaining client width removed EINVAL without widening any capacity.",
+  "Runtime screenshots show exactly one compositor-owned title frame for REIST GUI Control Gallery and REIST Editor; the Gallery interaction probe selected the Eingabe tab through motion press and release Surface events."
+]
+
+[[packages]]
+id = "R3.4b-notepad-interaction-layers"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Remove Notepad scroll and menu-hover repaint latency"
+scope = "Extend retained Surface painting append-only with fixed-capacity dynamic-content and hover layers. Keep legacy base and overlay semantics unchanged, render base then dynamic then overlay then hover, and make Notepad replace only editor content plus controls while scrolling and at most the active title and hot menu item while hovering. Coalesce all pointer motion before one bounded paint decision, retain synchronous atomic commits and fail-closed retries, and prove the reduced command paths on a single-vCPU runtime."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/include/reist/gui/surface_client.h",
+  "userspace/gui/lib/surface_client.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/apps/notepad/main.c",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_surface_dispatch.c",
+  "test/test_gui_surface_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "legacy base and overlay layer values messages APIs capacities and replacement semantics remain source compatible",
+  "dynamic and hover are append-only fixed-capacity layers and invalid layers fail before retained state changes",
+  "the compositor always renders base dynamic overlay hover in that order and damage includes removed and inserted commands",
+  "scroll dragging replaces only dynamic content and never retransmits base menu or dialog commands",
+  "menu hover with an unchanged open menu replaces only the hover layer with at most four commands",
+  "resize dialog lifecycle menu open-close and retry exhaustion retain complete fail-closed repaint behavior",
+  "all queues input batches paint lists retries and runtime deadlines remain finite",
+  "the performance proof uses one vCPU and therefore does not depend on SMP scheduling"
+]
+targeted_tests = [
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "hover or scrollbar motion still causes a base-layer replacement",
+  "a layer can exceed its fixed capacity or survive surface generation destruction",
+  "an optimization weakens atomic commit damage retry or input ordering",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: accelerate notepad interaction"
+evidence = [
+  "All 64 final frozen Surface Notepad and Desktop source or host checks passed including four-layer capacity atomicity damage and render order.",
+  "All Ring-3 system programs linked successfully including the enlarged fixed-capacity DESKTOP.PRG and the refactored NOTEPAD.PRG.",
+  "The final QEMU framebuffer package passed in 59 seconds.",
+  "The real single-vCPU QEMU runtime-desktop Notepad probe passed in 23 seconds with document menu hover dialog and resize markers and no permanent or delayed Surface paint failure.",
+  "Pure menu hover now replaces at most four retained commands and scrollbar drag replaces only the dynamic editor layer; neither path retransmits the static base."
+]
+
+[[packages]]
 id = "R2.2ae-nvidia-phased-startup"
 status = "done"
 phase = "post-s0"

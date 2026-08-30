@@ -436,7 +436,8 @@ class UserProgramToolchainTests(unittest.TestCase):
                 timeout=240,
             )
             expected = {
-                "HELLO.PRG", "SYSINFO.PRG", "USBINFO.PRG", "REPEAT.PRG",
+                "HELLO.PRG", "SYSINFO.PRG", "USBINFO.PRG", "DMESG.PRG",
+                "REPEAT.PRG",
                 "CALC.PRG",
                 "DATE.PRG", "UPTIME.PRG", "MEMINFO.PRG", "BENCHMARK.PRG",
                 "ASCII.PRG",
@@ -485,6 +486,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "NSLOOKUP.PRG",
                 "NC.PRG",
                 "HTTPD.PRG",
+                "CURL.PRG",
                 "EDIT.PRG",
                 "CHILDEX.PRG",
                 "FAULTDE.PRG",

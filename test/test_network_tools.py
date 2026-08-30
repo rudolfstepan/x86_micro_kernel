@@ -25,13 +25,45 @@ class NetworkToolsSourceTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text()
         windows = (ROOT / "scripts/build-windows.ps1").read_text()
         for name in ("ifconfig", "ping", "netstat", "udp", "nslookup", "nc",
-                     "httpd"):
+                     "httpd", "curl"):
             upper = name.upper() + ".PRG"
             source = f'userspace/programs/{name}.c'
             self.assertIn(upper, programs)
             self.assertIn(source, programs)
-            self.assertIn(f'sbin/{name}.prg', makefile)
-            self.assertIn(f"'sbin/{name}.prg'", windows)
+            install = f'usr/bin/{name}.prg' if name == "curl" else f'sbin/{name}.prg'
+            self.assertIn(install, makefile)
+            self.assertIn(f"'{install}'", windows)
+
+    @unittest.skipUnless(shutil.which("gcc"), "gcc is required")
+    def test_curl_http_parser_host_behavior(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "curl_http_test"
+            if os.name == "nt": executable = executable.with_suffix(".exe")
+            subprocess.run([
+                "gcc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", str(ROOT),
+                str(ROOT / "userspace/programs/curl_http.c"),
+                str(ROOT / "test/test_curl_http_host.c"),
+                "-o", str(executable),
+            ], check=True, cwd=ROOT)
+            subprocess.run([str(executable)], check=True, cwd=ROOT)
+
+    def test_curl_is_bounded_and_uses_public_abis(self):
+        source = (ROOT / "userspace/programs/curl.c").read_text()
+        self.assertIn("CURL_HARD_MAX_BYTES", source)
+        self.assertIn("CURL_TRANSFER_DEADLINE_MS", source)
+        self.assertIn("x86os_dns_resolve", source)
+        self.assertIn("x86os_tcp_connect", source)
+        self.assertIn("x86os_tcp_receive", source)
+        self.assertIn("x86os_rename(temporary, options.output)", source)
+        self.assertIn("only http:// is supported; HTTPS needs TLS", source)
+        self.assertNotIn("x86os_syscall(", source)
+        runner = (ROOT / "scripts/run_qemu_smoke.py").read_text()
+        runtime = (ROOT / "scripts/test-reist-runtime.ps1").read_text()
+        self.assertIn("CURL_TEST_COMMAND", runner)
+        self.assertIn("serve_curl_test_client", runner)
+        self.assertIn("--expect-curl-client", runner)
+        self.assertIn("'curl-client'", runtime)
 
     def test_tools_use_public_network_control_abi(self):
         for name in ("ifconfig", "ping", "netstat"):

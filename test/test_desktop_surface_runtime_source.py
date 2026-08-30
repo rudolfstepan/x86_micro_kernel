@@ -29,7 +29,7 @@ def test_runtime_has_explicit_lifecycle():
     assert "desktop_surface_runtime_reserve" in HEADER
     assert "desktop_surface_runtime_bind" in HEADER
     assert "desktop_surface_runtime_cancel" in HEADER
-    assert "DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 64U" in HEADER
+    assert "DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 16U" in HEADER
     assert "request < X86OS_IPC_QUEUE_DEPTH" in SOURCE
     assert "x86os_yield()" in SOURCE
     assert "uint32_t input_sent[DESKTOP_SURFACE_RUNTIME_CAPACITY]" in SOURCE

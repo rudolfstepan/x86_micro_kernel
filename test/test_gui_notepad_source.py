@@ -56,6 +56,19 @@ class GuiNotepadSourceTests(unittest.TestCase):
             "paint_surface != 0 ? color_face : color_desktop", self.source
         )
 
+    def test_surface_mode_paints_client_content_without_window_decorations(self):
+        start = self.source.index("static void render_base_scene(")
+        end = self.source.index("static void render_dynamic_scene(", start)
+        base_scene = self.source[start:end]
+        self.assertIn("render_editor_chrome(display, state)", base_scene)
+        self.assertNotIn('"REIST Editor"', base_scene)
+        self.assertNotIn("color_active", base_scene)
+        self.assertIn(
+            'reist_gui_surface_client_set_title(\n'
+            '                &surface_client, "REIST Editor")',
+            self.source,
+        )
+
     def test_app_has_real_editing_persistence_and_dialog_flows(self):
         for contract in (
             "reist_gui_text_editor_dispatch",
@@ -122,6 +135,24 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("if (result.full_redraw &&", pointer)
         self.assertIn("synchronize_scrollbars(state)", pointer)
 
+    def test_scrollbar_thumb_commit_preempts_editor_viewport_redraw(self):
+        self.assertIn("render_scrollbar_feedback", self.source)
+        self.assertIn("request_scrollbar_redraw", self.source)
+        self.assertIn("application.scrollbar_redraw &&", self.source)
+        self.assertIn("application.scroll_drag != NOTEPAD_SCROLL_NONE", self.source)
+        self.assertIn("else if (urgent_scrollbar)\n                render_hover", self.source)
+        urgent = self.source[
+            self.source.index("uint32_t urgent_scrollbar") :
+            self.source.index("} else if (surface_mode", self.source.index(
+                "uint32_t urgent_scrollbar"))
+        ]
+        self.assertIn("application.scrollbar_redraw = 0U", urgent)
+        self.assertNotIn(
+            "application.dynamic_redraw = 0U;\n"
+            "                    application.scrollbar_redraw = 0U",
+            urgent,
+        )
+
     def test_resize_is_recoverable_and_dialog_is_a_separate_surface(self):
         self.assertIn("accept_configure_bounded", self.source)
         self.assertIn('"notepad: Resize verzoegert: "', self.source)
@@ -152,7 +183,19 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("render_overlay_scene(display, state)", overlay)
         self.assertNotIn("render_base_scene(display, state)", overlay)
         self.assertIn(
-            "application.redraw || application.overlay_redraw", self.source)
+            "application.redraw || application.dynamic_redraw", self.source)
+
+    def test_scroll_and_hover_use_single_cpu_efficient_layers(self):
+        self.assertIn("request_dynamic_redraw(state)", self.source)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC", self.source)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_HOVER", self.source)
+        self.assertIn("render_dynamic(&display, &application)", self.source)
+        self.assertIn("render_hover(&display, &application)", self.source)
+        hover = self.source[
+            self.source.index("static void render_menu_hover("):
+            self.source.index("static void render_scrollbar(")]
+        self.assertIn("state->menu.hot_item", hover)
+        self.assertNotIn("for (uint32_t index = 0U;", hover)
         self.assertIn('"notepad: Surface-Overlay verzoegert: "', self.source)
 
     def test_source_is_valid_freestanding_c11(self):

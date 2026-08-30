@@ -149,6 +149,10 @@ TCP_TEST_COMMAND = "nc 10.0.2.99 8080 ping"
 TCP_TEST_TARGET = bytes((10, 0, 2, 99))
 TCP_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x04))
 TCP_TEST_REPLY_MARKER = "pong"
+CURL_TEST_COMMAND = "curl http://10.0.2.101/data.txt"
+CURL_TEST_TARGET = bytes((10, 0, 2, 101))
+CURL_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x06))
+CURL_TEST_REPLY_MARKER = "REIST_CURL_RUNTIME_OK"
 DNS_TEST_COMMAND = "nslookup test.reist 10.0.2.99"
 DNS_TEST_REPLY_MARKER = "address: 10.0.2.77"
 HTTP_TEST_REQUESTS = 12
@@ -277,6 +281,8 @@ def monitor_key_commands(text: str) -> list[str]:
             key = "dot"
         elif character == "/":
             key = "slash"
+        elif character == ":":
+            key = "shift-semicolon"
         else:
             raise ValueError("unsupported PS/2 guest command character")
         commands.append(f"sendkey {key}\n")
@@ -802,6 +808,66 @@ def serve_tcp_test_client(connection: socket.socket, deadline: float) -> str | N
     return None
 
 
+def serve_curl_test_client(connection: socket.socket,
+                           deadline: float) -> str | None:
+    """Serve one bounded outbound HTTP download over the real guest TCP path."""
+    syn = receive_tcp_segment(connection, deadline, CURL_TEST_TARGET,
+                              CURL_TEST_MAC)
+    if syn is None or syn[4] != 0x02 or syn[5] != b"":
+        return "valid curl TCP SYN was not observed"
+    client_port, server_port, client_sequence = syn[0], syn[1], syn[2]
+    server_sequence = 12000
+    if server_port != 80:
+        return f"curl TCP destination port was {server_port}, expected 80"
+    if not inject_ethernet_frame(
+            connection, tcp_peer_frame(
+                CURL_TEST_TARGET, CURL_TEST_MAC, server_port, client_port,
+                server_sequence, client_sequence + 1, 0x12)):
+        return "unable to inject curl TCP SYN/ACK"
+    request_segment = None
+    for _ in range(4):
+        segment = receive_tcp_segment(connection, deadline, CURL_TEST_TARGET,
+                                      CURL_TEST_MAC)
+        if segment is None:
+            break
+        if segment[5]:
+            request_segment = segment
+            break
+    if (request_segment is None or
+            not request_segment[5].startswith(b"GET /data.txt HTTP/1.0\r\n") or
+            b"Host: 10.0.2.101\r\n" not in request_segment[5]):
+        return "valid curl HTTP request was not observed"
+    client_next = request_segment[2] + len(request_segment[5])
+    server_next = server_sequence + 1
+    body = CURL_TEST_REPLY_MARKER.encode("ascii") + b"\n"
+    response = (b"HTTP/1.0 200 OK\r\nContent-Length: " +
+                str(len(body)).encode("ascii") +
+                b"\r\nConnection: close\r\n\r\n" + body)
+    if not inject_ethernet_frame(
+        connection, tcp_peer_frame(CURL_TEST_TARGET, CURL_TEST_MAC,
+                                   server_port, client_port, server_next,
+                                   client_next, 0x18, response)):
+        return "unable to inject curl HTTP response"
+    server_next += len(response)
+    fin = None
+    for _ in range(4):
+        segment = receive_tcp_segment(connection, deadline, CURL_TEST_TARGET,
+                                      CURL_TEST_MAC)
+        if segment is None:
+            break
+        if segment[4] & 0x01:
+            fin = segment
+            break
+    if fin is None:
+        return "curl TCP FIN was not observed"
+    if not inject_ethernet_frame(
+        connection, tcp_peer_frame(CURL_TEST_TARGET, CURL_TEST_MAC,
+                                   server_port, client_port, server_next,
+                                   fin[2] + len(fin[5]) + 1, 0x11)):
+        return "unable to inject curl TCP FIN/ACK"
+    return None
+
+
 def serve_http_test_client(connection: socket.socket, deadline: float,
                            request_index: int) -> str | None:
     """Complete one of several real inbound HTTP/TCP transactions."""
@@ -1144,6 +1210,7 @@ def run(
     auxiliary_sata_image: Path | None = None,
     expect_outbound_ping: bool = False,
     expect_tcp_client: bool = False,
+    expect_curl_client: bool = False,
     expect_dns_client: bool = False,
     expect_http_server: bool = False,
     boot_only: bool = False,
@@ -1161,6 +1228,7 @@ def run(
     handover_result: list[str | None] = [None]
     if (inject_arp_request or expect_arp_resolution or expect_outbound_ping or
             inject_icmp_echo or inject_udp_echo or expect_tcp_client or
+            expect_curl_client or
             expect_dns_client or expect_http_server):
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
@@ -1468,6 +1536,30 @@ def run(
                     error, _ = wait_for_line(
                         process, chunks, transcript, finished, SHELL_PROMPT,
                         deadline, after=tcp_position)
+            if error is None and expect_curl_client:
+                assert injection_connection is not None
+                inject_ps2_command(process, CURL_TEST_COMMAND)
+                if not receive_arp_request(
+                        injection_connection, CURL_TEST_TARGET, deadline):
+                    error = "curl client ARP request was not observed"
+                if error is None and not inject_ethernet_frame(
+                        injection_connection,
+                        peer_arp_reply_frame(CURL_TEST_MAC,
+                                             CURL_TEST_TARGET)):
+                    error = "unable to inject curl peer ARP reply"
+                if error is None:
+                    error = serve_curl_test_client(
+                        injection_connection, deadline)
+                curl_position = -1
+                if error is None:
+                    error, curl_position = wait_for_line(
+                        process, chunks, transcript, finished,
+                        CURL_TEST_REPLY_MARKER, deadline,
+                        after=shell_position)
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished, SHELL_PROMPT,
+                        deadline, after=curl_position)
             if error is None and expect_dns_client:
                 assert injection_connection is not None
                 inject_ps2_command(process, DNS_TEST_COMMAND)
@@ -2033,6 +2125,10 @@ def main() -> int:
         help="run nc against a deterministic socket-hub TCP peer",
     )
     parser.add_argument(
+        "--expect-curl-client", action="store_true",
+        help="run curl against a deterministic socket-hub HTTP peer",
+    )
+    parser.add_argument(
         "--expect-dns-client", action="store_true",
         help="run nslookup against a deterministic socket-hub DNS peer",
     )
@@ -2160,7 +2256,8 @@ def main() -> int:
     if (args.inject_arp_request or args.expect_arp_resolution or
             args.expect_outbound_ping or
             args.inject_icmp_echo or args.inject_udp_echo or
-            args.expect_tcp_client or args.expect_dns_client or
+            args.expect_tcp_client or args.expect_curl_client or
+            args.expect_dns_client or
             args.expect_http_server) and \
             args.nic == "none":
         print("guest-smoke: network injection verification requires a NIC",
@@ -2194,6 +2291,7 @@ def main() -> int:
              if args.aux_sata_image is not None else None),
             args.expect_outbound_ping,
             args.expect_tcp_client,
+            args.expect_curl_client,
             args.expect_dns_client,
             args.expect_http_server,
             args.boot_only,

@@ -378,6 +378,14 @@ class DesktopSourceTests(unittest.TestCase):
     def test_audio_surface_probe_uses_packaged_startup_sound(self):
         self.assertIn('"/USR/SHARE/SOUNDS/STARTUP.WAV"', self.source)
         self.assertNotIn('"/USR/SHARE/SOUNDS/440HZ.WAV"', self.source)
+        self.assertIn(
+            "int lifecycle_clock_status = "
+            "x86os_monotonic_ms(&lifecycle_now_ms);",
+            self.source,
+        )
+        self.assertIn("GUIDEMO_INTERACTION_OK", (
+            ROOT / "scripts/run_qemu_runtime_desktop.py"
+        ).read_text(encoding="utf-8"))
 
     def test_navigation_and_program_launch_do_not_compete_with_audio_clients(self):
         explorer_open = self.source[
@@ -546,6 +554,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("client.height < surface->height", render_window)
         self.assertIn("buffer_clip.width, buffer_clip.height", render_window)
 
+        cached = self.source[
+            self.source.index("static uint32_t render_desktop_cached_move_frame") :
+            self.source.index("static void record_render_metrics")
+        ]
+        self.assertIn("move->kind == DESKTOP_MOVE_CACHE_RESIZE", cached)
+        self.assertIn("? -95", cached)
+
     def test_surface_program_is_async_and_owned_by_the_compositor(self):
         self.assertIn('"/usr/gui/bin/surfacedemo.prg"', self.source)
         self.assertIn('"/usr/gui/bin/notepad.prg"', self.source)
@@ -583,10 +598,17 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("fill_rect_clipped(context, bounds", paint_list)
         self.assertIn("context, bounds.x, bounds.y", paint_list)
         base = "surface->committed_paint_count"
+        dynamic = "surface->committed_dynamic_paint_count"
         overlay = "surface->committed_overlay_paint_count"
+        hover = "surface->committed_hover_paint_count"
         self.assertIn(base, render_window)
+        self.assertIn(dynamic, render_window)
         self.assertIn(overlay, render_window)
+        self.assertIn(hover, render_window)
+        self.assertLess(render_window.index(base), render_window.index(dynamic))
+        self.assertLess(render_window.index(dynamic), render_window.index(overlay))
         self.assertLess(render_window.index(base), render_window.index(overlay))
+        self.assertLess(render_window.index(overlay), render_window.index(hover))
 
     def test_surface_commit_maps_only_local_presentation_damage(self):
         sync = self.source[
@@ -703,6 +725,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("else if (!left_down && left_was_down)", self.source)
         self.assertNotIn("else if (left_was_down)", self.source)
 
+    def test_nonreplaceable_surface_input_overload_fences_the_client(self):
+        self.assertIn("DESKTOP_SURFACE_ECAPACITY", self.source)
+        self.assertIn(
+            "DESKTOP_SURFACE_INPUT_FENCED status=-75", self.source
+        )
+        self.assertIn("desktop_surface_destroy(", self.source)
+
     def test_mouse_motion_is_coalesced_between_button_edges(self):
         self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 32U", self.source)
         self.assertIn("static void accumulate_mouse_delta", self.source)
@@ -735,7 +764,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("render_desktop_rect_difference(", cached)
         self.assertIn("omitted_kind, move->window_index", cached)
         self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG", self.source)
-        self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_WINDOW", self.source)
+        self.assertIn("context->omitted_kind == DESKTOP_MOVE_CACHE_WINDOW", self.source)
         self.assertIn("ui->dialog.visible ||", self.source)
         self.assertIn("manager->z_order[DESKTOP_WM_CAPACITY - 1U]", self.source)
         self.assertNotIn("desktop_wm_t visual_manager = *manager", cached)
@@ -763,6 +792,21 @@ class DesktopSourceTests(unittest.TestCase):
         ]
         self.assertIn(".clip = dirty->rects[index]", dirty_redraw)
         self.assertNotIn("expanded_render_clip", self.source)
+
+    def test_compositor_culls_opaque_regions_with_bounded_safe_fallback(self):
+        start = self.source.index("#define DESKTOP_VISIBLE_REGION_CAPACITY")
+        end = self.source.index("static void render_dirty_regions", start)
+        culling = self.source[start:end]
+        self.assertIn("desktop_visible_region_t", culling)
+        self.assertIn("visible_region_subtract", culling)
+        self.assertIn("window_visual_bounds", culling)
+        self.assertIn("visible_region_subtract_system_ui", culling)
+        self.assertIn("higher = position + 1U", culling)
+        self.assertIn("render_desktop_background(&clipped", culling)
+        self.assertIn("render_window(\n                &clipped", culling)
+        self.assertIn("if (!background_culled)", culling)
+        self.assertIn("if (!culled)", culling)
+        self.assertNotIn("malloc", culling)
 
 if __name__ == "__main__":
     unittest.main()

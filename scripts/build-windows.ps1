@@ -370,6 +370,7 @@ try {
         'sbin/nslookup.prg' = 'NSLOOKUP.PRG'
         'sbin/nc.prg' = 'NC.PRG'
         'sbin/httpd.prg' = 'HTTPD.PRG'
+        'usr/bin/curl.prg' = 'CURL.PRG'
         'sbin/config.prg' = 'CONFIG.PRG'
         'usr/bin/repeat.prg' = 'REPEAT.PRG'; 'usr/bin/calc.prg' = 'CALC.PRG'
         'usr/bin/date.prg' = 'DATE.PRG'; 'usr/bin/uptime.prg' = 'UPTIME.PRG'

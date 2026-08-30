@@ -323,7 +323,7 @@ class NativeBootImageTests(unittest.TestCase):
             self.assertEqual(struct.unpack_from("<H", boot, 14)[0], 32)
             self.assertEqual(boot[16], 2)
             self.assertEqual(struct.unpack_from("<I", boot, 32)[0], total)
-            self.assertEqual(fat_sectors, 945)
+            self.assertEqual(fat_sectors, 8003)
             self.assertEqual(boot[82:90], b"FAT32   ")
             self.assertEqual(boot[510:512], b"\x55\xAA")
             self.assertEqual(
@@ -496,6 +496,9 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('ddb.geometry.cylinders = "130"', text)
         self.assertIn('ddb.geometry.heads = "16"', text)
         self.assertIn('ddb.geometry.sectors = "63"', text)
+
+    def test_native_reference_image_has_practical_os_capacity(self):
+        self.assertEqual(IMAGE_SIZE, 512 * 1024 * 1024)
 
     def test_vmware_package_is_self_contained_and_has_launcher(self):
         with tempfile.TemporaryDirectory() as directory:

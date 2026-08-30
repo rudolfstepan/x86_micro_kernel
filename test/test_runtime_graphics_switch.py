@@ -196,7 +196,18 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("--sound-probe", self.runtime_runner)
         self.assertIn("SOUNDPLAYER_PLAYBACK_OK", self.runtime_runner)
         self.assertIn("GUIDEMO_SURFACE_READY", self.runtime_runner)
+        self.assertIn("GUIDEMO_INTERACTION_OK", self.runtime_runner)
         self.assertIn("DESKTOP_AUDIO_HEARTBEAT_OK", self.runtime_runner)
+        self.assertIn('"DESKTOP_AUDIO_STAGE sound-bound"',
+                      self.runtime_runner)
+        self.assertIn("deadline = time.monotonic() + 15.0",
+                      self.runtime_runner)
+        self.assertIn('"DESKTOP_AUDIO_STAGE client-bound"',
+                      self.runtime_runner)
+        self.assertGreaterEqual(
+            self.runtime_runner.count("deadline = time.monotonic() + 15.0"),
+            2,
+        )
         self.assertIn("REIST_GUI COMPOSITOR_RESTARTED", self.runtime_runner)
         self.assertIn("REIST_GUI COMPOSITOR_DEGRADED", self.runtime_runner)
         self.assertIn("validate_system_sound_wave", self.runtime_runner)
@@ -249,6 +260,16 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn('"desktop.prg --notepad-probe"', self.runtime_runner)
         self.assertIn("NOTEPAD_SURFACE_DOCUMENT_READY", self.runtime_runner)
         self.assertIn("runtime-desktop-notepad", self.runtime_runner)
+
+    def test_runtime_guidemo_probe_uses_physical_usb_button_edges(self):
+        self.assertIn('"desktop.prg --guidemo-probe"', self.runtime_runner)
+        self.assertIn('"qemu-xhci,id=reistxhci"', self.runtime_runner)
+        self.assertIn('"usb-mouse,bus=reistxhci.0"', self.runtime_runner)
+        self.assertIn('"mouse_button 1"', self.runtime_runner)
+        self.assertIn('"mouse_button 0"', self.runtime_runner)
+        self.assertIn("GUIDEMO_INTERACTION_OK", self.runtime_runner)
+        self.assertIn("GUIDEMO_MENU_INTERACTION_OK", self.runtime_runner)
+        self.assertIn("runtime-desktop-guidemo-click", self.runtime_script)
 
     def test_png_capture_conversion_preserves_dimensions(self):
         with tempfile.TemporaryDirectory(prefix="reist-doc-shot-") as temp:

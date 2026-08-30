@@ -944,7 +944,8 @@ Queue-Scheiben. Auf dem SMP-Desktop verschlechterte das vollständige Frames:
 Notepad läuft auf CPU 0, der Compositor auf einem AP, und jeder nach vier
 Nachrichten blockierte Produzent wartete mangels CPU-übergreifendem Wakeup bis
 zum nächsten 10-ms-Schedulertick. Der Broker verarbeitet deshalb wieder bis zu
-64 faire Queue-Scheiben für einen kompletten, fest begrenzten Paintframe. Neu
+16 faire Queue-Scheiben pro Desktopzyklus; große Retained-Frames laufen über
+spätere Zyklen weiter, damit Hover- und Mauseingaben nicht warten. Neu
 fordert jeder Foreground-Wakeup erst nach Freigabe des Scheduler-Locks einen
 spin-begrenzten Reschedule-IPI für die entfernte Affinitäts-CPU an. Ein
 IPI-Fehler verändert den READY-Zustand nicht; der periodische Scheduler bleibt
@@ -1141,3 +1142,42 @@ und Prozesserzeugung liegen damit ausserhalb des Messfensters. Ein fehlender,
 verspaeteter oder fehlerhafter Worker verwirft den Multi-CPU-Wert. Die Tabelle
 weist zusaetzlich Multi/Single-Skalierung aus und kennzeichnet die Werte als
 schedulerbeeinflusste Vergleichsmessung, nicht als Hardwarezertifizierung.
+# R3.4b Notepad-Interaktionslatenz
+
+Notepad trennt statische Basis, dynamischen Editorinhalt, Menue/Dialog-Overlay
+und Hovermarkierung in vier atomare retained Surface-Layer. Scrollbar-Drag
+ersetzt nur sichtbaren Text, Cursor, Scrollleisten und Status. Ein Wechsel des
+Menue-Hovers uebertraegt höchstens 16 Kommandos fuer aktiven Titel,
+markierten Eintrag oder sofortige Scrollbar-Rückmeldung. Damit sinken IPC- und
+Repaint-Arbeit unabhaengig von SMP;
+eine einzelne CPU ist der Referenzpfad.
+
+# R3.4c native GUI-Clientflaechen
+
+Control Gallery und Notepad verwenden unter dem Desktop ausschliesslich ihre
+lokale Clientflaeche. Rahmen, Titel, Fokus, Verschieben, Groessenaenderung und
+Schliessen rendert der Window Manager genau einmal. GUIDEMO zeichnet keinen
+inneren Fensterrahmen mehr; sein zuvor fehlender erster Frame entstand durch
+eine zentrierte Textbreite ausserhalb der 800-Pixel-Surface und wird nun vor
+dem Paint auf die verbleibende Clientbreite begrenzt. Der Runtime-Nachweis
+wechselt den zweiten Tab ueber echte Motion-, Press- und Release-Ereignisse und
+beobachtet danach den fortlaufenden Compositor-Heartbeat. Notepad erfuellt
+denselben Vertrag mit dem OS-Titel `REIST Editor` und ohne eigene Titelleiste.
+
+# R3.4d physisches GUI-Routing und sichtbare Regionen
+
+Der Desktop hält ein Client-Capture vom akzeptierten Button-Down bis zum
+zugehörigen Button-Up und leitet Dekorations-Captures nicht an eine Surface
+weiter. Ein echter emulierter xHCI-USB-Mauspfad aktiviert in GUIDEMO sowohl
+den zweiten Tab als auch den Info-Menüpunkt. Der dabei gefundene Clientabbruch
+war keine SMT-Ursache: Ein Tab-Hover benötigte sechs Paint-Kommandos, während
+der feste Hover-Layer nur vier aufnehmen konnte. Die weiterhin statische und
+fail-closed Grenze beträgt jetzt 16 Kommandos.
+
+Notepad priorisiert während eines Scrollbar-Drags Track und Thumb in diesem
+kleinen Hover-Layer. Der größere Dynamic-Layer des Editors bleibt
+koaleszierbar und folgt im nächsten freien Eventloop-Umlauf beziehungsweise
+spätestens nach Button-Up. Der Compositor zerlegt Dirty-Regionen außerdem in
+feste sichtbare Teilrechtecke und rastert vollständig verdeckte Flächen nicht.
+Erschöpft die feste Regionliste, zeichnet er den ursprünglichen Clip komplett;
+Kapazitätsdruck darf daher Laufzeit, aber keine Pixelkorrektheit kosten.

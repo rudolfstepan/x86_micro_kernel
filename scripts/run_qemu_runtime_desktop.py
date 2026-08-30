@@ -300,6 +300,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         surface_probe: bool, notepad_probe: bool,
         control_probe: bool, trash_context_probe: bool,
         trash_confirm_probe: bool,
+        guidemo_click_probe: bool,
         sound_probe: bool, metrics_log: pathlib.Path | None,
         vmware_vga: bool, capture_only: bool = False) -> int:
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
@@ -307,6 +308,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         audio_capture.unlink()
     command = qemu_command(
         qemu, image, memory="512M", vmware_vga=vmware_vga)
+    if guidemo_click_probe:
+        command.extend([
+            "-device", "qemu-xhci,id=reistxhci",
+            "-device", "usb-mouse,bus=reistxhci.0",
+        ])
     if sound_probe:
         command.extend([
             "-audiodev",
@@ -348,13 +354,15 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 if notepad_probe else
                                 ("desktop.prg --control-probe"
                                  if control_probe else
+                                 ("desktop.prg --guidemo-probe"
+                                  if guidemo_click_probe else
                                  ("desktop.prg --sound-probe"
                                   if sound_probe else
                                  ("desktop.prg --trash-context-probe"
                                   if trash_context_probe else
                                   ("desktop.prg --trash-confirm-probe"
                                    if trash_confirm_probe else
-                                   "desktop.prg"))))))
+                                   "desktop.prg")))))))
                 send_command(process, command_name)
                 break
             time.sleep(0.02)
@@ -397,10 +405,78 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     capture_screenshot(process, screenshot, deadline)
                     print("runtime-desktop: PASS supervised-generation")
                     return 0
-                if sound_probe:
+                if guidemo_click_probe:
                     while time.monotonic() < deadline:
                         drain(output, transcript)
                         probe_text = "".join(transcript)
+                        if "DESKTOP_GUIDEMO_FAIL" in probe_text:
+                            raise RuntimeError("GUIDEMO probe launch failed")
+                        if ("DESKTOP_GUIDEMO_OK" in probe_text and
+                                "GUIDEMO_SURFACE_READY" in probe_text):
+                            break
+                        time.sleep(0.02)
+                    else:
+                        raise RuntimeError(
+                            "GUIDEMO Surface did not become visible"
+                        )
+                    capture_screenshot(process, screenshot, deadline)
+                    for command in (
+                            "mouse_move -100 -258",
+                            "mouse_button 1", "mouse_button 0"):
+                        qemu_monitor_command(process, command)
+                        time.sleep(0.08)
+                    tab_deadline = min(deadline, time.monotonic() + 5.0)
+                    while time.monotonic() < tab_deadline:
+                        drain(output, transcript)
+                        if "GUIDEMO_INTERACTION_OK" in "".join(transcript):
+                            break
+                        time.sleep(0.02)
+                    else:
+                        drain(output, transcript)
+                        pointer_trace = "\n".join(
+                            line for line in "".join(transcript).splitlines()
+                            if "GUIDEMO" in line
+                        )[-4000:]
+                        raise RuntimeError(
+                            "physical USB click did not activate GUIDEMO tab; "
+                            f"pointer trace:\n{pointer_trace}"
+                        )
+                    for command in (
+                            "mouse_move -132 -30",
+                            "mouse_button 1", "mouse_button 0",
+                            "mouse_move 68 27",
+                            "mouse_button 1", "mouse_button 0"):
+                        qemu_monitor_command(process, command)
+                        time.sleep(0.08)
+                    menu_deadline = min(deadline, time.monotonic() + 5.0)
+                    while time.monotonic() < menu_deadline:
+                        drain(output, transcript)
+                        if "GUIDEMO_MENU_INTERACTION_OK" in \
+                                "".join(transcript):
+                            capture_screenshot(process, screenshot, deadline)
+                            print("runtime-desktop-guidemo-click: PASS")
+                            return 0
+                        time.sleep(0.02)
+                    raise RuntimeError(
+                        "physical USB clicks did not activate GUIDEMO menu; "
+                        "inspect DESKTOP_GUIDEMO_POINTER trace"
+                    )
+                if sound_probe:
+                    audio_sound_bound = False
+                    audio_client_bound = False
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if (not audio_sound_bound and
+                                "DESKTOP_AUDIO_STAGE sound-bound" in
+                                probe_text):
+                            audio_sound_bound = True
+                            deadline = time.monotonic() + 15.0
+                        if (not audio_client_bound and
+                                "DESKTOP_AUDIO_STAGE client-bound" in
+                                probe_text):
+                            audio_client_bound = True
+                            deadline = time.monotonic() + 15.0
                         for failure in (
                                 "REIST_GUI COMPOSITOR_RESTARTED",
                                 "REIST_GUI COMPOSITOR_DEGRADED",
@@ -417,6 +493,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 )
                         if ("SOUNDPLAYER_PLAYBACK_OK" in probe_text and
                                 "GUIDEMO_SURFACE_READY" in probe_text and
+                                "GUIDEMO_INTERACTION_OK" in probe_text and
                                 "DESKTOP_AUDIO_HEARTBEAT_OK" in probe_text):
                             capture_screenshot(process, screenshot, deadline)
                             stop_process(process)
@@ -636,13 +713,14 @@ def main() -> int:
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--sound-probe", action="store_true")
+    parser.add_argument("--guidemo-click-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     parser.add_argument("--vmware-vga", action="store_true")
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.control_probe,
             args.trash_context_probe, args.trash_confirm_probe,
-            args.sound_probe)) > 1:
+            args.sound_probe, args.guidemo_click_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
     if args.metrics_log is not None and not args.render_probe:
         parser.error("--metrics-log requires --render-probe")
@@ -651,7 +729,8 @@ def main() -> int:
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
-                   args.sound_probe, args.metrics_log, args.vmware_vga)
+                   args.guidemo_click_probe, args.sound_probe,
+                   args.metrics_log, args.vmware_vga)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

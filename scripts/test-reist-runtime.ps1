@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-audio', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -115,9 +115,11 @@ function Invoke-Smoke(
     finally {
         $watch.Stop()
     }
-    if ($exitCode -eq 0 -and
-        (Select-String -LiteralPath $gateLog -SimpleMatch 'guest-smoke: FAIL' `
-            -Quiet)) {
+    $reportedFailure = Select-String -LiteralPath $gateLog `
+        -SimpleMatch 'guest-smoke: FAIL' -Quiet
+    $reportedPass = Select-String -LiteralPath $gateLog `
+        -SimpleMatch 'guest-smoke: PASS' -Quiet
+    if ($exitCode -eq 0 -and ($reportedFailure -or !$reportedPass)) {
         $exitCode = 1
     }
     if ($exitCode -ne 0) {
@@ -170,10 +172,12 @@ function Invoke-RuntimeDesktop(
     [bool]$SurfaceProbe = $false,
     [bool]$ControlProbe = $false,
     [bool]$VmwareSvga2d = $false,
-    [bool]$SoundProbe = $false
+    [bool]$SoundProbe = $false,
+    [bool]$GuidemoClickProbe = $false
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
-            [int]$ControlProbe + [int]$SoundProbe) -gt 1) {
+            [int]$ControlProbe + [int]$SoundProbe +
+            [int]$GuidemoClickProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
     $screenshot = Join-Path $RepoRoot 'build\runtime-desktop.ppm'
@@ -189,6 +193,7 @@ function Invoke-RuntimeDesktop(
     if ($SurfaceProbe) { $arguments += '--surface-probe' }
     if ($ControlProbe) { $arguments += '--control-probe' }
     if ($SoundProbe) { $arguments += '--sound-probe' }
+    if ($GuidemoClickProbe) { $arguments += '--guidemo-click-probe' }
     if ($VmwareSvga2d) { $arguments += '--vmware-vga' }
     & $Python $RuntimeDesktopRunner @arguments
     if ($ExpectFailure) {
@@ -1095,6 +1100,12 @@ switch ($Mode) {
             throw 'VMware mouse runtime failed.'
         }
     }
+    'curl-client' {
+        Invoke-Smoke 'guest-smoke-curl-client.log' @(
+            '--nic', 'rtl8139', '--vmware-vga', '--expect-curl-client',
+            '--timeout', '180'
+        )
+    }
     'vmware-compositor-restart' {
         & $VmwareMouseRunner -ExpectCompositorRestart
         if ($LASTEXITCODE -ne 0) {
@@ -1129,6 +1140,13 @@ switch ($Mode) {
             throw 'Sound Player Surface probe build failed.'
         }
         Invoke-RuntimeDesktop -SoundProbe $true
+    }
+    'runtime-desktop-guidemo-click' {
+        & $BuildScript -Target qemu -Video framebuffer -SkipReleaseSbom
+        if ($LASTEXITCODE -ne 0) {
+            throw 'GUIDEMO click probe build failed.'
+        }
+        Invoke-RuntimeDesktop -GuidemoClickProbe $true
     }
     'runtime-desktop-vbe' {
         & $BuildScript -Target qemu -Video vga -VbeRuntimeTest

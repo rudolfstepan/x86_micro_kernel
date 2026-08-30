@@ -172,7 +172,10 @@ typedef struct notepad_state {
     uint32_t exists;
     uint32_t io_blocked;
     uint32_t redraw;
+    uint32_t dynamic_redraw;
     uint32_t overlay_redraw;
+    uint32_t hover_redraw;
+    uint32_t scrollbar_redraw;
     uint32_t exit_requested;
     uint32_t scroll_drag;
     uint32_t scroll_drag_offset;
@@ -191,9 +194,35 @@ static int paint_status;
 static void request_overlay_redraw(notepad_state_t *state) {
     if (state == 0) return;
     if (main_surface != 0)
-        state->overlay_redraw = 1U;
+        state->overlay_redraw = state->hover_redraw = 1U;
     else
         state->redraw = 1U;
+}
+
+static void request_hover_redraw(notepad_state_t *state) {
+    if (state == 0) return;
+    if (main_surface != 0)
+        state->hover_redraw = 1U;
+    else
+        state->redraw = 1U;
+}
+
+static void request_dynamic_redraw(notepad_state_t *state) {
+    if (state == 0) return;
+    if (main_surface != 0)
+        state->dynamic_redraw = 1U;
+    else
+        state->redraw = 1U;
+}
+
+static void request_scrollbar_redraw(notepad_state_t *state) {
+    if (state == 0) return;
+    if (main_surface != 0) {
+        state->scrollbar_redraw = 1U;
+        state->hover_redraw = 1U;
+    } else {
+        state->redraw = 1U;
+    }
 }
 
 static uint32_t paint_status_retryable(int status) {
@@ -651,15 +680,14 @@ static void render_menu(const x86os_display_info_t *display,
         reist_gui_rect_t title;
         if (reist_gui_menu_title_rect(
                 &menu_model, &layout, index, &title) != 0) continue;
-        uint32_t active = state->menu.open_menu == index;
-        uint32_t background = active ? color_active : color_face;
-        fill(title, background);
+        uint32_t background = color_face;
+        fill(title, color_face);
         uint32_t y = title.height > display->font_height
             ? (title.height - display->font_height) / 2U : 0U;
         text(display, title.x + (int32_t)layout.title_padding_x,
              title.y + (int32_t)y, menu_model.menus[index].label,
              title.width - layout.title_padding_x * 2U,
-             active ? color_title_text : color_text, background);
+             color_text, background);
     }
     if (state->menu.open_menu == REIST_GUI_MENU_NO_INDEX) return;
     uint32_t menu_index = state->menu.open_menu;
@@ -675,16 +703,45 @@ static void render_menu(const x86os_display_info_t *display,
         if (reist_gui_menu_item_rect(
                 &menu_model, &layout, menu_index, index, &item) != 0)
             continue;
-        uint32_t hot = state->menu.hot_item == index;
-        uint32_t background = hot ? color_active : color_face;
-        if (hot) fill(item, background);
+        uint32_t background = color_face;
         uint32_t y = item.height > display->font_height
             ? (item.height - display->font_height) / 2U : 0U;
         text(display, item.x + (int32_t)layout.item_padding_x,
              item.y + (int32_t)y, menu->items[index].label,
              item.width - layout.item_padding_x * 2U,
-             hot ? color_title_text : color_text, background);
+             color_text, background);
     }
+}
+
+static void render_menu_hover(const x86os_display_info_t *display,
+                              const notepad_state_t *state) {
+    if (state->menu.open_menu == REIST_GUI_MENU_NO_INDEX) return;
+    reist_gui_menu_layout_t layout = menu_layout(display);
+    uint32_t menu_index = state->menu.open_menu;
+    reist_gui_rect_t title;
+    if (reist_gui_menu_title_rect(
+            &menu_model, &layout, menu_index, &title) == 0) {
+        fill(title, color_active);
+        uint32_t y = title.height > display->font_height
+            ? (title.height - display->font_height) / 2U : 0U;
+        text(display, title.x + (int32_t)layout.title_padding_x,
+             title.y + (int32_t)y, menu_model.menus[menu_index].label,
+             title.width - layout.title_padding_x * 2U,
+             color_title_text, color_active);
+    }
+    const reist_gui_menu_t *menu = &menu_model.menus[menu_index];
+    if (state->menu.hot_item >= menu->item_count) return;
+    reist_gui_rect_t item;
+    if (reist_gui_menu_item_rect(
+            &menu_model, &layout, menu_index,
+            state->menu.hot_item, &item) != 0) return;
+    fill(item, color_active);
+    uint32_t y = item.height > display->font_height
+        ? (item.height - display->font_height) / 2U : 0U;
+    text(display, item.x + (int32_t)layout.item_padding_x,
+         item.y + (int32_t)y, menu->items[state->menu.hot_item].label,
+         item.width - layout.item_padding_x * 2U,
+         color_title_text, color_active);
 }
 
 static void render_scrollbar(const x86os_display_info_t *display,
@@ -722,15 +779,49 @@ static void render_scrollbar(const x86os_display_info_t *display,
          display->font_width, foreground, color_face);
 }
 
-static void render_editor(const x86os_display_info_t *display,
-                          const notepad_state_t *state) {
+/* During an implicit scrollbar grab, keep only the changing track and thumb
+ * in the highest retained layer.  Replacing this small layer removes the old
+ * thumb before drawing the new position, while the larger editor viewport
+ * remains eligible for bounded coalescing on the next event-loop turn. */
+static void render_scrollbar_feedback(
+        const x86os_display_info_t *display,
+        const notepad_state_t *state) {
+    if (state->scroll_drag != NOTEPAD_SCROLL_VERTICAL &&
+        state->scroll_drag != NOTEPAD_SCROLL_HORIZONTAL)
+        return;
+    const reist_gui_range_model_t *model =
+        state->scroll_drag == NOTEPAD_SCROLL_VERTICAL
+            ? &state->vertical_scroll_model
+            : &state->horizontal_scroll_model;
+    const reist_gui_range_state_t *range =
+        state->scroll_drag == NOTEPAD_SCROLL_VERTICAL
+            ? &state->vertical_scroll
+            : &state->horizontal_scroll;
+    uint32_t maximum = state->scroll_drag == NOTEPAD_SCROLL_VERTICAL
+        ? state->viewport.maximum_first_line
+        : state->viewport.maximum_first_column;
+    if (maximum == 0U) return;
+    notepad_scrollbar_geometry_t geometry =
+        scrollbar_geometry(model, range, maximum);
+    fill(geometry.track, color_light);
+    bevel(geometry.thumb, color_face, 1U);
+    (void)display;
+}
+
+static void render_editor_chrome(const x86os_display_info_t *display,
+                                 const notepad_state_t *state) {
     reist_gui_rect_t frame = editor_frame(display);
     bevel(frame, color_face, 1U);
-
     reist_gui_rect_t editor = state->editor_model.bounds;
     bevel((reist_gui_rect_t){editor.x - 2, editor.y - 2,
                              editor.width + 4U, editor.height + 4U},
           color_face, 0U);
+}
+
+static void render_editor(const x86os_display_info_t *display,
+                          const notepad_state_t *state) {
+    reist_gui_rect_t frame = editor_frame(display);
+    reist_gui_rect_t editor = state->editor_model.bounds;
     fill(editor, color_editor);
     uint32_t rows = editor.height / display->font_height;
     uint32_t columns = editor.width / display->font_width;
@@ -943,6 +1034,11 @@ static void render_base_scene(const x86os_display_info_t *display,
                               const notepad_state_t *state) {
     fill((reist_gui_rect_t){0, 0, display->width, display->height},
          paint_surface != 0 ? color_face : color_desktop);
+    render_editor_chrome(display, state);
+}
+
+static void render_dynamic_scene(const x86os_display_info_t *display,
+                                 const notepad_state_t *state) {
     render_editor(display, state);
 }
 
@@ -953,10 +1049,18 @@ static void render_overlay_scene(const x86os_display_info_t *display,
     render_file_dialog(display, state);
 }
 
+static void render_hover_scene(const x86os_display_info_t *display,
+                               const notepad_state_t *state) {
+    render_scrollbar_feedback(display, state);
+    render_menu_hover(display, state);
+}
+
 static void render_scene(const x86os_display_info_t *display,
                          const notepad_state_t *state) {
     render_base_scene(display, state);
+    render_dynamic_scene(display, state);
     render_overlay_scene(display, state);
+    render_hover_scene(display, state);
 }
 
 static void render_separate_dialog(const notepad_state_t *state) {
@@ -981,11 +1085,25 @@ static void render(const x86os_display_info_t *display,
                 paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_BASE);
         if (paint_status == 0)
             paint_status = reist_gui_surface_client_paint_begin_layer(
+                paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
+        if (paint_status == 0) render_dynamic_scene(display, state);
+        if (paint_status == 0)
+            paint_status = reist_gui_surface_client_paint_commit_layer(
+                paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
+        if (paint_status == 0)
+            paint_status = reist_gui_surface_client_paint_begin_layer(
                 paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
         if (paint_status == 0) render_overlay_scene(display, state);
         if (paint_status == 0)
             paint_status = reist_gui_surface_client_paint_commit_layer(
                 paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
+        if (paint_status == 0)
+            paint_status = reist_gui_surface_client_paint_begin_layer(
+                paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
+        if (paint_status == 0) render_hover_scene(display, state);
+        if (paint_status == 0)
+            paint_status = reist_gui_surface_client_paint_commit_layer(
+                paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
         return;
     }
     uint32_t serial = 0U;
@@ -995,6 +1113,20 @@ static void render(const x86os_display_info_t *display,
         (void)x86os_display_frame_cancel(serial);
         render_scene(display, state);
     }
+}
+
+static void render_dynamic(const x86os_display_info_t *display,
+                           const notepad_state_t *state) {
+    if (paint_surface == 0) {
+        render(display, state);
+        return;
+    }
+    paint_status = reist_gui_surface_client_paint_begin_layer(
+        paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
+    if (paint_status == 0) render_dynamic_scene(display, state);
+    if (paint_status == 0)
+        paint_status = reist_gui_surface_client_paint_commit_layer(
+            paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
 }
 
 static void render_overlay(const x86os_display_info_t *display,
@@ -1009,6 +1141,20 @@ static void render_overlay(const x86os_display_info_t *display,
     if (paint_status == 0)
         paint_status = reist_gui_surface_client_paint_commit_layer(
             paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
+}
+
+static void render_hover(const x86os_display_info_t *display,
+                         const notepad_state_t *state) {
+    if (paint_surface == 0) {
+        render(display, state);
+        return;
+    }
+    paint_status = reist_gui_surface_client_paint_begin_layer(
+        paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
+    if (paint_status == 0) render_hover_scene(display, state);
+    if (paint_status == 0)
+        paint_status = reist_gui_surface_client_paint_commit_layer(
+            paint_surface, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
 }
 
 static int write_all(int descriptor, const char *data, size_t size) {
@@ -1281,9 +1427,17 @@ static void complete_dialog(notepad_state_t *state,
 
 static void apply_menu_result(notepad_state_t *state,
                               const x86os_display_info_t *display,
-                              const reist_gui_menu_result_t *result) {
-    if (result->damage_count || result->full_redraw)
-        request_overlay_redraw(state);
+                              const reist_gui_menu_result_t *result,
+                              uint32_t previous_open,
+                              uint32_t previous_hot) {
+    if (result->damage_count || result->full_redraw) {
+        if (previous_open == state->menu.open_menu &&
+            previous_open != REIST_GUI_MENU_NO_INDEX &&
+            previous_hot != state->menu.hot_item)
+            request_hover_redraw(state);
+        else
+            request_overlay_redraw(state);
+    }
     if (!result->activated) return;
     if (result->action == NOTEPAD_ACTION_OPEN) {
         open_file_dialog(state, display, REIST_GUI_FILE_DIALOG_OPEN);
@@ -1354,8 +1508,10 @@ static uint32_t apply_scroll_value(notepad_state_t *state,
         return 0U;
     state->viewport.first_line = state->editor.first_line;
     state->viewport.first_column = state->editor.first_column;
-    if (range_result.changed || editor_result.full_redraw)
-        state->redraw = 1U;
+    if (range_result.changed || editor_result.full_redraw) {
+        request_dynamic_redraw(state);
+    }
+    if (range_result.changed) request_scrollbar_redraw(state);
     return 1U;
 }
 
@@ -1393,7 +1549,8 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
         if (state->scroll_drag == axis) {
             state->scroll_drag = NOTEPAD_SCROLL_NONE;
             state->scroll_drag_offset = 0U;
-            state->redraw = 1U;
+            request_dynamic_redraw(state);
+            request_scrollbar_redraw(state);
             return 1U;
         }
         return point_inside(model->bounds, x, y);
@@ -1411,7 +1568,7 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
             ? (uint32_t)geometry.thumb.x : (uint32_t)geometry.thumb.y;
         state->scroll_drag = axis;
         state->scroll_drag_offset = coordinate - thumb_origin;
-        state->redraw = 1U;
+        request_scrollbar_redraw(state);
         return 1U;
     } else {
         uint32_t coordinate = scroll_coordinate(model, x, y);
@@ -1512,10 +1669,13 @@ static uint32_t dispatch_pointer(notepad_state_t *state,
     menu_event.pressed = pressed;
     reist_gui_menu_result_t menu_result;
     reist_gui_menu_result_initialize(&menu_result);
+    uint32_t previous_open = state->menu.open_menu;
+    uint32_t previous_hot = state->menu.hot_item;
     if (reist_gui_menu_dispatch(
             &menu_model, &layout, &state->menu,
             &menu_event, &menu_result) != 0) return 1U;
-    apply_menu_result(state, display, &menu_result);
+    apply_menu_result(state, display, &menu_result,
+                      previous_open, previous_hot);
     if (menu_result.consumed) {
         state->scroll_drag = NOTEPAD_SCROLL_NONE;
         return 1U;
@@ -1634,10 +1794,13 @@ static uint32_t dispatch_keyboard(notepad_state_t *state,
         event.key = mapped;
         reist_gui_menu_result_t result;
         reist_gui_menu_result_initialize(&result);
+        uint32_t previous_open = state->menu.open_menu;
+        uint32_t previous_hot = state->menu.hot_item;
         if (reist_gui_menu_dispatch(
                 &menu_model, &layout, &state->menu,
                 &event, &result) != 0) return 1U;
-        apply_menu_result(state, display, &result);
+        apply_menu_result(state, display, &result,
+                          previous_open, previous_hot);
         return 1U;
     }
     if (key == 19) {
@@ -1722,14 +1885,18 @@ static int run_hover_probe(notepad_state_t *state,
                 &menu_model, &layout, 0U, index, &item) != 0) return -1;
         (void)dispatch_pointer(
             state, display, item.x + 2, item.y + 2, 0U, 0U);
-        if (!state->redraw && !state->overlay_redraw) return -1;
+        if (!state->redraw && !state->overlay_redraw &&
+            !state->hover_redraw) return -1;
         if (state->redraw)
             render(display, state);
-        else
+        else if (state->overlay_redraw)
             render_overlay(display, state);
+        else
+            render_hover(display, state);
         if (paint_status != 0) return paint_status;
         state->redraw = 0U;
         state->overlay_redraw = 0U;
+        state->hover_redraw = 0U;
     }
     return 0;
 }
@@ -2032,7 +2199,10 @@ int main(int argc, char **argv) {
             x86os_puts("NOTEPAD_SURFACE_DIALOG_READY\n");
     }
     application.redraw = 0U;
+    application.dynamic_redraw = 0U;
     application.overlay_redraw = 0U;
+    application.hover_redraw = 0U;
+    application.scrollbar_redraw = 0U;
     if (!surface_mode) (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
 
     uint32_t paint_failures = 0U;
@@ -2125,6 +2295,11 @@ int main(int argc, char **argv) {
                         &application, dialog_surface_active
                             ? &dialog_display : &display,
                         pointer_x, pointer_y, 0U, 0U);
+                    if (application.scrollbar_redraw &&
+                        application.scroll_drag != NOTEPAD_SCROLL_NONE) {
+                        ++surface_events;
+                        break;
+                    }
                 } else if (message.type == REIST_GUI_SURFACE_INPUT &&
                            (!dialog_surface_active ||
                             same_surface(message.surface,
@@ -2137,6 +2312,11 @@ int main(int argc, char **argv) {
                         &application, dialog_surface_active
                             ? &dialog_display : &display, pointer_x, pointer_y,
                         1U, message.input.pressed);
+                    if (application.scrollbar_redraw &&
+                        application.scroll_drag != NOTEPAD_SCROLL_NONE) {
+                        ++surface_events;
+                        break;
+                    }
                 } else if (message.type == REIST_GUI_SURFACE_INPUT &&
                            (!dialog_surface_active ||
                             same_surface(message.surface,
@@ -2172,25 +2352,60 @@ int main(int argc, char **argv) {
                         &application, &display,
                         pointer_x, pointer_y, 1U, 0U);
                 previous_buttons = mouse.buttons;
+                if (application.scrollbar_redraw &&
+                    application.scroll_drag != NOTEPAD_SCROLL_NONE) {
+                    ++mouse_count;
+                    break;
+                }
             }
             if (key && key != NOTEPAD_KEY_NONE)
                 (void)dispatch_keyboard(&application, &display, key);
         }
-        if (application.redraw || application.overlay_redraw) {
+        if (application.redraw || application.dynamic_redraw ||
+            application.overlay_redraw || application.hover_redraw ||
+            application.scrollbar_redraw) {
             uint32_t full_redraw = application.redraw;
+            uint32_t urgent_scrollbar = !full_redraw &&
+                application.scrollbar_redraw &&
+                application.scroll_drag != NOTEPAD_SCROLL_NONE;
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             if (full_redraw)
                 render(&display, &application);
-            else
-                render_overlay(&display, &application);
+            else if (urgent_scrollbar)
+                render_hover(&display, &application);
+            else {
+                if (application.dynamic_redraw)
+                    render_dynamic(&display, &application);
+                if (paint_status == 0 && application.overlay_redraw)
+                    render_overlay(&display, &application);
+                if (paint_status == 0 && application.hover_redraw)
+                    render_hover(&display, &application);
+            }
             if (paint_status == 0 && full_redraw)
                 render_separate_dialog(&application);
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
             if (paint_status == 0) {
-                if (full_redraw) application.redraw = 0U;
-                application.overlay_redraw = 0U;
+                if (full_redraw) {
+                    application.redraw = 0U;
+                    application.dynamic_redraw = 0U;
+                    application.overlay_redraw = 0U;
+                    application.hover_redraw = 0U;
+                    application.scrollbar_redraw = 0U;
+                } else if (urgent_scrollbar) {
+                    application.hover_redraw = 0U;
+                    application.scrollbar_redraw = 0U;
+                } else {
+                    if (application.dynamic_redraw)
+                        application.dynamic_redraw = 0U;
+                    if (application.overlay_redraw)
+                        application.overlay_redraw = 0U;
+                    if (application.hover_redraw) {
+                        application.hover_redraw = 0U;
+                        application.scrollbar_redraw = 0U;
+                    }
+                }
                 paint_failures = 0U;
                 if (full_redraw && resize_marker_pending) {
                     x86os_puts("NOTEPAD_SURFACE_RESIZE_OK\n");
@@ -2201,8 +2416,16 @@ int main(int argc, char **argv) {
                     ++paint_failures;
                 if (full_redraw)
                     application.redraw = 1U;
-                else
+                else if (urgent_scrollbar) {
+                    application.scrollbar_redraw = 1U;
+                    application.hover_redraw = 1U;
+                }
+                else if (application.dynamic_redraw)
+                    application.dynamic_redraw = 1U;
+                else if (application.overlay_redraw)
                     application.overlay_redraw = 1U;
+                else
+                    application.hover_redraw = 1U;
                 if (paint_failures == 1U)
                     report_paint_failure(
                         full_redraw

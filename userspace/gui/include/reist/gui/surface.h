@@ -25,6 +25,8 @@ extern "C" {
 #define REIST_GUI_SURFACE_MAX_SURFACES 8U
 #define REIST_GUI_SURFACE_MAX_PAINT_COMMANDS 192U
 #define REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS 96U
+#define REIST_GUI_SURFACE_MAX_DYNAMIC_PAINT_COMMANDS 192U
+#define REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS 16U
 #define REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY 40U
 #define REIST_GUI_SURFACE_MAX_WIDTH 1024U
 #define REIST_GUI_SURFACE_MAX_HEIGHT 768U
@@ -49,16 +51,24 @@ enum reist_gui_surface_message_type {
     REIST_GUI_SURFACE_PAINT_FILL,
     REIST_GUI_SURFACE_PAINT_TEXT,
     REIST_GUI_SURFACE_PAINT_COMMIT,
-    /* Append-only retained overlay extension. Legacy base frames keep their
-     * original message values and semantics. */
+    /* Append-only retained-layer extensions. Legacy base and overlay frames
+     * keep their original message values and semantics. */
     REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN,
     REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT,
+    REIST_GUI_SURFACE_PAINT_DYNAMIC_BEGIN,
+    REIST_GUI_SURFACE_PAINT_DYNAMIC_COMMIT,
+    REIST_GUI_SURFACE_PAINT_HOVER_BEGIN,
+    REIST_GUI_SURFACE_PAINT_HOVER_COMMIT,
     REIST_GUI_SURFACE_CONFIGURE = 0x80U,
     REIST_GUI_SURFACE_INPUT,
     REIST_GUI_SURFACE_CLOSE,
     REIST_GUI_SURFACE_BUFFER_RELEASE
 };
 
+/* TOPLEVEL and DIALOG describe client areas, not complete windows. The
+ * compositor owns the outer frame, title, focus, move, resize and close
+ * affordances. Paint rectangles and pointer coordinates are always local to
+ * the undecorated client area with origin (0, 0). */
 enum reist_gui_surface_role {
     REIST_GUI_SURFACE_ROLE_NONE = 0U,
     REIST_GUI_SURFACE_ROLE_TOPLEVEL = 1U,
@@ -73,7 +83,9 @@ enum reist_gui_surface_input_type {
 
 enum reist_gui_surface_paint_layer {
     REIST_GUI_SURFACE_PAINT_LAYER_BASE = 0U,
-    REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY = 1U
+    REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY = 1U,
+    REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC = 2U,
+    REIST_GUI_SURFACE_PAINT_LAYER_HOVER = 3U
 };
 
 /** Stable owner identity. A recycled PID with another generation is invalid. */
@@ -165,8 +177,8 @@ typedef struct reist_gui_surface_message {
  * REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY bytes in ``input`` and records the
  * exact byte count in ``byte_size``. SET_TITLE uses the same bounded byte
  * storage. BASE begin/commit retain the original complete-scene contract;
- * OVERLAY begin/commit atomically replace a second, later-rendered list of at
- * most REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS commands. Applications
+ * OVERLAY, DYNAMIC and HOVER begin/commit atomically replace independent
+ * later-rendered lists with their declared fixed capacities. Applications
  * must use surface_client.h rather than constructing this representation
  * themselves.
  */

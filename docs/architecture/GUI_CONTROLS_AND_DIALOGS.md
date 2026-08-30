@@ -8,6 +8,10 @@ Bausteinen und geplanter Arbeit. Ein Häkchen bedeutet, dass Quell-API,
 Verhaltenstest, SDK-Installation und mindestens eine reale Verwendung
 vorhanden sind; eine gezeichnete Attrappe allein gilt nicht als Control.
 
+Der subsystemweite Vertrag für Eingaberouting, Pointer-Capture, Damage,
+Occlusion-Culling, atomare Frames und messbare Interaktionslatenz steht in
+[`GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md`](GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md).
+
 ## Ziel und Schichten
 
 REIST übernimmt etablierte Interaktionsmodelle, aber behauptet keine
@@ -17,6 +21,16 @@ sind rendererunabhängige, versionierte C11-Zustandsautomaten in
 Fensterdekoration und Eingaberouting. Ein Surface-Client besitzt nur seine
 lokale Oberfläche und die Controls darin; Notepad und Image Viewer verwenden
 diesen Vertrag bereits produktiv.
+
+Top-Level- und Dialog-Surfaces bezeichnen ausschließlich die Clientfläche.
+Der Window Manager zeichnet genau einen äußeren Rahmen samt Titel, Fokus,
+Verschieben, Größenänderung und Schließen. Anwendungen dürfen darin keinen
+zweiten Fensterrahmen und keine zweite Titelleiste nachbilden. Paint- und
+Pointerkoordinaten beginnen immer bei `(0, 0)` der Clientfläche. Diese
+Aufteilung entspricht der etablierten Trennung von Client- und Non-Client-Area
+bei nativen Desktoptoolkits; `libreistgui` stellt die portierbaren Controls und
+Layoutzustände bereit, ohne Win32-, Qt-, GTK- oder Wayland-Kompatibilität zu
+behaupten. Control Gallery und Notepad folgen demselben Vertrag.
 
 ```text
 GUI-Anwendung
@@ -51,21 +65,24 @@ eine deterministische Fokusreihenfolge. Zustandsänderungen liefern eine feste
 Anzahl lokaler Damage-Rechtecke; Überlauf fordert einen vollständigen Redraw
 der betroffenen Surface an.
 
-Retained-Command-Surfaces besitzen zusätzlich zur kompatiblen Basisliste eine
-append-only Protokollerweiterung für eine zweite Overlay-Liste. Basis und
-Overlay werden unabhängig atomar ersetzt; der Compositor zeichnet immer zuerst
-die höchstens 192 Basiskommandos und danach höchstens 96 Overlaykommandos.
+Retained-Command-Surfaces besitzen zusätzlich zur kompatiblen Basisliste
+append-only Protokollerweiterungen fuer Overlay, dynamischen Inhalt und Hover.
+Alle Listen werden unabhängig atomar ersetzt; der Compositor zeichnet immer
+Base, Dynamic, Overlay und Hover in dieser Reihenfolge. Die Grenzen sind 192,
+192, 96 und 16 Kommandos.
 Ungültige Layer oder ein Commit für den falschen aktiven Layer scheitern vor
-einer sichtbaren Zustandsänderung. Der REIST Editor hält Dokument, Scrollleisten
-und Statuszeile in der Basis und Menü sowie eingebettete Overlays in der
-Overlay-Liste. Ein Wechsel des hervorgehobenen Menüeintrags überträgt dadurch
-nicht mehr die vollständige Editorfläche. Separate Dialog-Surfaces und ältere
+einer sichtbaren Zustandsänderung. Der REIST Editor hält statische Geometrie in
+der Basis, Dokument, Scrollleisten und Statuszeile in Dynamic, Menü und Dialoge
+in Overlay sowie nur aktiven Titel und hervorgehobenen Eintrag in Hover. Ein
+Scroll-Drag ersetzt dadurch keine statische Basis; ein Hoverwechsel uebertraegt
+höchstens 16 Kommandos. Separate Dialog-Surfaces und ältere
 Clients verwenden unverändert die Basis-API; Eingaben werden nicht in laufende
 Transaktionsantworten umsortiert.
 
-Der Broker verarbeitet pro Desktopumlauf höchstens 64 faire Scheiben zu je
-einer IPC-Queue-Tiefe. Damit passt ein kompletter, weiterhin fest auf 192
-Kommandos begrenzter Retained-Paintframe in einen Umlauf. Ein nach jedem
+Der Broker verarbeitet pro Desktopumlauf höchstens 16 faire Scheiben zu je
+einer IPC-Queue-Tiefe. Große, weiterhin fest auf 192 Kommandos begrenzte
+Retained-Paintframes setzen sich über spätere Umläufe fort; ein kleiner
+Hover-Commit blockiert dadurch keinen langen Desktopumlauf. Ein nach jedem
 Queue-Drain freigegebener Produzent erhält auf seiner anderen CPU unmittelbar
 einen begrenzten Scheduler-IPI statt erst den nächsten periodischen Tick
 abzuwarten. Jedem aktiven Client wird auch während eines Paint-Bursts höchstens
@@ -77,6 +94,7 @@ einen lokalen Präsentationsschaden. Identische Commits erzeugen keine neue
 Paint-Generation. Damit zeichnet Menü-Hover nicht mehr das vollständige
 Notepad-Fenster neu; mehrere noch nicht präsentierte Commits bleiben durch das
 eine begrenzte Vereinigungsrechteck abgedeckt.
+Diese Reduktion gilt ausdruecklich auch auf einem System mit nur einer CPU.
 
 Im Produktionsprofil bleiben Session-Compositor und gewöhnliche Surface-
 Clients gemeinsam auf CPU 0. Ein maximaler Retained-Paintframe benötigt damit
