@@ -5,10 +5,9 @@
 #include "x86os.h"
 #include "desktop_surface.h"
 #define DESKTOP_SURFACE_RUNTIME_CAPACITY REIST_GUI_SURFACE_MAX_CLIENTS
-/* One retained paint frame contains at most 192 commands. The IPC queue holds
- * four messages, therefore 64 fair refill rounds cover one complete frame
- * plus transaction messages. Cross-CPU wakeups keep each refill immediate. */
-#define DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 64U
+/* Keep one compositor turn interactive on slow SMP hosts. Large retained
+ * frames continue over later turns; a hover layer fits in the first round. */
+#define DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 16U
 #define DESKTOP_SURFACE_RUNTIME_RETIRE_TIMEOUT_MS 1000U
 #define DESKTOP_SURFACE_RUNTIME_FREE 0U
 #define DESKTOP_SURFACE_RUNTIME_BOUND 1U

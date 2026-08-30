@@ -453,7 +453,9 @@ inkompatibler Fensterrahmen.
 - [x] Menü- und Dateidialog-Aktivierung im echten Surface-Gastpfad prüfen;
   vorübergehende Paint-Backpressure verwendet begrenzte Einzeloperationen mit
   5-ms-Backoff und beendet den Client nicht. Der Broker leert die vierfache
-  IPC-Queue in höchstens 64 fairen Round-Robin-Runden je Desktopzyklus.
+  IPC-Queue in höchstens 16 fairen Round-Robin-Runden je Desktopzyklus;
+  große Retained-Frames laufen über spätere Zyklen weiter, damit Eingaben
+  nicht verhungern.
 - [ ] Selection/Clipboard und eine allgemeine ScrollView ergänzen; TreeView
   und ComboBox folgen später.
 - [x] Fensterrahmen, Titel, Schließen und Größenänderung bleiben serverseitig;

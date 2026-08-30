@@ -79,9 +79,10 @@ höchstens 16 Kommandos. Separate Dialog-Surfaces und ältere
 Clients verwenden unverändert die Basis-API; Eingaben werden nicht in laufende
 Transaktionsantworten umsortiert.
 
-Der Broker verarbeitet pro Desktopumlauf höchstens 64 faire Scheiben zu je
-einer IPC-Queue-Tiefe. Damit passt ein kompletter, weiterhin fest auf 192
-Kommandos begrenzter Retained-Paintframe in einen Umlauf. Ein nach jedem
+Der Broker verarbeitet pro Desktopumlauf höchstens 16 faire Scheiben zu je
+einer IPC-Queue-Tiefe. Große, weiterhin fest auf 192 Kommandos begrenzte
+Retained-Paintframes setzen sich über spätere Umläufe fort; ein kleiner
+Hover-Commit blockiert dadurch keinen langen Desktopumlauf. Ein nach jedem
 Queue-Drain freigegebener Produzent erhält auf seiner anderen CPU unmittelbar
 einen begrenzten Scheduler-IPI statt erst den nächsten periodischen Tick
 abzuwarten. Jedem aktiven Client wird auch während eines Paint-Bursts höchstens

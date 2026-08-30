@@ -54,6 +54,12 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY", client)
         self.assertIn("reist_gui_surface_client_accept_configure", client)
 
+    def test_surface_broker_keeps_each_desktop_turn_bounded(self):
+        runtime = ROOT / "userspace/gui/compositor/desktop_surface_runtime.h"
+        header = runtime.read_text()
+        self.assertIn("DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 16U", header)
+        self.assertNotIn("DESKTOP_SURFACE_RUNTIME_DRAIN_ROUNDS 64U", header)
+
     def test_configure_ack_waits_for_compositor_confirmation(self):
         client = (ROOT / "userspace/gui/lib/surface_client.c").read_text()
         start = client.index("int reist_gui_surface_client_ack_configure(")

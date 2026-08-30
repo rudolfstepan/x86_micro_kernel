@@ -933,7 +933,8 @@ Queue-Scheiben. Auf dem SMP-Desktop verschlechterte das vollständige Frames:
 Notepad läuft auf CPU 0, der Compositor auf einem AP, und jeder nach vier
 Nachrichten blockierte Produzent wartete mangels CPU-übergreifendem Wakeup bis
 zum nächsten 10-ms-Schedulertick. Der Broker verarbeitet deshalb wieder bis zu
-64 faire Queue-Scheiben für einen kompletten, fest begrenzten Paintframe. Neu
+16 faire Queue-Scheiben pro Desktopzyklus; große Retained-Frames laufen über
+spätere Zyklen weiter, damit Hover- und Mauseingaben nicht warten. Neu
 fordert jeder Foreground-Wakeup erst nach Freigabe des Scheduler-Locks einen
 spin-begrenzten Reschedule-IPI für die entfernte Affinitäts-CPU an. Ein
 IPI-Fehler verändert den READY-Zustand nicht; der periodische Scheduler bleibt
