@@ -128,6 +128,10 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_read_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
+    "CURL.PRG": (
+        ROOT / "userspace/programs/curl.c",
+        ROOT / "userspace/programs/curl_http.c",
+    ),
     "EDIT.PRG": ROOT / "userspace/bin/edit.c",
     "CHILDEX.PRG": ROOT / "userspace/programs/child_exit.c",
     "FAULTDE.PRG": ROOT / "userspace/programs/fault_de.c",

@@ -536,6 +536,9 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         ping = RUNNER_MODULE.monitor_key_commands("ping 10.0.2.2")
         self.assertIn("sendkey spc\n", ping)
         self.assertEqual(ping.count("sendkey dot\n"), 3)
+        url = RUNNER_MODULE.monitor_key_commands("http://10.0.2.2/")
+        self.assertIn("sendkey shift-semicolon\n", url)
+        self.assertEqual(url.count("sendkey slash\n"), 3)
         self.assertIn('"-serial", "mon:stdio"', source)
         self.assertNotIn('process.stdin.write(character)', source)
 

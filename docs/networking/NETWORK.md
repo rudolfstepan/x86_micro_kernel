@@ -11,7 +11,7 @@ Loopback-Probleme sind nicht der aktuelle Referenzzustand.
 ## Architektur
 
 ```text
-Ring-3: ifconfig / ping / netstat / udp / nslookup / nc / httpd
+Ring-3: ifconfig / ping / netstat / udp / nslookup / nc / httpd / curl
                 |
 überwachter REIST.PRG-Netzdienst
                 |
@@ -48,6 +48,9 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
   Empfangsfenster sowie aktivem/passivem Close
 - begrenzter HTTP/1.0-Server für `/htdocs`: `GET`, `HEAD`, statische Dateien
   bis 4096 Byte und Directory-Listings bis 32 Einträge beziehungsweise 1024 Byte
+- begrenzter HTTP-Downloadclient `curl` mit DNS, stdout oder atomarer
+  `-o`-Dateiausgabe, 30-Sekunden-Transferdeadline und standardmäßig 1 MiB
+  beziehungsweise höchstens 16 MiB Antwortgröße
 - E1000 in der generierten VMware-VM und RTL8168/8111G auf dem ASUS H81M-K
 
 Ein Ping auf die eigene konfigurierte IPv4-Adresse wird lokal beantwortet und
@@ -73,6 +76,8 @@ C:\> udp recv 9001 3000
 C:\> nslookup example.test
 C:\> nc example.test 80 "GET / HTTP/1.0"
 C:\> httpd 8080
+C:\> curl http://example.com/
+C:\> curl -o /download.txt --max-bytes 65536 http://example.com/data.txt
 ```
 
 `udp send`, `udp recv`, DNS, `nc` und `httpd` verwenden monotone, begrenzte
@@ -80,6 +85,12 @@ Deadlines. `httpd [port]` läuft standardmäßig bis `Strg+C`; ein Leerlauf- ode
 Client-Timeout beendet den Listener nicht. Das optionale Argument
 `httpd [port] [requests]` begrenzt ausschließlich Testläufe auf höchstens 32
 erfolgreiche Anfragen.
+`curl` liegt standardüblich unter `/usr/bin`. Der aktuelle kompatible
+Teilumfang akzeptiert `http://`, HTTP/1.0-/1.1-Antwortköpfe und
+Content-Length oder Close-delimited Bodies. Chunked Transfer-Encoding,
+Redirect-Following und HTTPS werden fail-closed abgewiesen. Insbesondere darf
+der Befehl ohne einen späteren validierten TLS-Dienst nicht für vertrauliche
+oder authentisierte Daten verwendet werden.
 `netstat` zeigt
 neben dem Interfacezustand auch aktive UDP-/TCP-Sockets, Queuefüllung, Drops
 und TCP-Retransmissionen. Die bisherigen Shell-Built-ins bleiben aus
