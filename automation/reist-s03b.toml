@@ -13291,6 +13291,7 @@ allowed_files = [
   "userspace/tls/lib/reist_tls_trust_anchors.c",
   "userspace/tls/lib/reist_tls_trust_anchors.h",
   "scripts/build_user_sdk.py",
+  "scripts/build_user_program.py",
   "scripts/build_system_programs.py",
   "scripts/generate_curl_trust_store.py",
   "scripts/run_qemu_smoke.py",

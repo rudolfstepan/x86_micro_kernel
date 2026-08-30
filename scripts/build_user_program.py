@@ -93,6 +93,7 @@ def resolve_sysroot_runtime(
 def find_zig(explicit: Path | None = None) -> Path:
     candidates = [
         explicit,
+        Path(r"C:\tools\zig-x86_64-windows-0.16.0\zig.exe"),
         Path(shutil.which("zig")) if shutil.which("zig") else None,
         Path(r"C:\tmp\zig-0.16.0-portable\zig-x86_64-windows-0.16.0\zig.exe"),
     ]
