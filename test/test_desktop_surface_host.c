@@ -48,7 +48,7 @@ int main(void) {
            present_damage.width == 320U && present_damage.height == 200U);
     uint32_t base_generation = painted->paint_generation;
     assert(desktop_surface_paint_begin_layer(
-        &manager, owner, handle, 2U) == DESKTOP_SURFACE_EINVAL);
+        &manager, owner, handle, 4U) == DESKTOP_SURFACE_EINVAL);
     assert(!painted->paint_active &&
            painted->paint_generation == base_generation);
     assert(desktop_surface_paint_begin_layer(
@@ -72,6 +72,38 @@ int main(void) {
     assert(present_damage.x == 4 && present_damage.y == 4 &&
            present_damage.width == 80U && present_damage.height == 24U);
     uint32_t overlay_generation = painted->paint_generation;
+    assert(desktop_surface_paint_begin_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC) == 0);
+    assert(desktop_surface_paint_text(
+        &manager, owner, handle,
+        (reist_gui_rect_t){8, 40, 120U, 1U}, 0U, 0x00ffffffU,
+        "Dynamic", 7U) == 0);
+    assert(desktop_surface_paint_commit_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC) == 0);
+    assert(painted->committed_dynamic_paint_count == 1U);
+    assert(desktop_surface_paint_begin_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_HOVER) == 0);
+    for (uint32_t hover = 0U;
+         hover < REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS; ++hover)
+        assert(desktop_surface_paint_fill(
+            &manager, owner, handle,
+            (reist_gui_rect_t){(int32_t)(4U + hover), 4, 1U, 1U},
+            hover) == 0);
+    assert(desktop_surface_paint_fill(
+        &manager, owner, handle,
+        (reist_gui_rect_t){12, 4, 1U, 1U}, 0U) ==
+        DESKTOP_SURFACE_ECAPACITY);
+    assert(desktop_surface_paint_commit_layer(
+        &manager, owner, handle,
+        REIST_GUI_SURFACE_PAINT_LAYER_HOVER) == 0);
+    assert(painted->committed_hover_paint_count ==
+           REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS);
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == 0);
+    overlay_generation = painted->paint_generation;
     assert(desktop_surface_paint_begin_layer(
         &manager, owner, handle,
         REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) == 0);

@@ -152,7 +152,19 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("render_overlay_scene(display, state)", overlay)
         self.assertNotIn("render_base_scene(display, state)", overlay)
         self.assertIn(
-            "application.redraw || application.overlay_redraw", self.source)
+            "application.redraw || application.dynamic_redraw", self.source)
+
+    def test_scroll_and_hover_use_single_cpu_efficient_layers(self):
+        self.assertIn("request_dynamic_redraw(state)", self.source)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC", self.source)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_HOVER", self.source)
+        self.assertIn("render_dynamic(&display, &application)", self.source)
+        self.assertIn("render_hover(&display, &application)", self.source)
+        hover = self.source[
+            self.source.index("static void render_menu_hover("):
+            self.source.index("static void render_scrollbar(")]
+        self.assertIn("state->menu.hot_item", hover)
+        self.assertNotIn("for (uint32_t index = 0U;", hover)
         self.assertIn('"notepad: Surface-Overlay verzoegert: "', self.source)
 
     def test_source_is_valid_freestanding_c11(self):

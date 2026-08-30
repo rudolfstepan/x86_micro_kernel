@@ -583,10 +583,17 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("fill_rect_clipped(context, bounds", paint_list)
         self.assertIn("context, bounds.x, bounds.y", paint_list)
         base = "surface->committed_paint_count"
+        dynamic = "surface->committed_dynamic_paint_count"
         overlay = "surface->committed_overlay_paint_count"
+        hover = "surface->committed_hover_paint_count"
         self.assertIn(base, render_window)
+        self.assertIn(dynamic, render_window)
         self.assertIn(overlay, render_window)
+        self.assertIn(hover, render_window)
+        self.assertLess(render_window.index(base), render_window.index(dynamic))
+        self.assertLess(render_window.index(dynamic), render_window.index(overlay))
         self.assertLess(render_window.index(base), render_window.index(overlay))
+        self.assertLess(render_window.index(overlay), render_window.index(hover))
 
     def test_surface_commit_maps_only_local_presentation_damage(self):
         sync = self.source[

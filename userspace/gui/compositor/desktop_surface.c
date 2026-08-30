@@ -463,8 +463,7 @@ int desktop_surface_paint_begin_layer(desktop_surface_manager_t *manager,
                                       reist_gui_surface_owner_t owner,
                                       reist_gui_surface_handle_t handle,
                                       uint32_t layer) {
-    if (layer != REIST_GUI_SURFACE_PAINT_LAYER_BASE &&
-        layer != REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY)
+    if (layer > REIST_GUI_SURFACE_PAINT_LAYER_HOVER)
         return DESKTOP_SURFACE_EINVAL;
     int index = find_slot(manager, owner, handle);
     if (index < 0 || manager->slots[index].acknowledged_serial == 0U)
@@ -480,10 +479,16 @@ int desktop_surface_paint_begin_layer(desktop_surface_manager_t *manager,
 
 static desktop_surface_paint_command_t *reserve_paint_command(
     desktop_surface_slot_t *slot) {
-    uint32_t capacity = slot != 0 && slot->pending_paint_layer ==
-            REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY
-        ? REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS
-        : REIST_GUI_SURFACE_MAX_PAINT_COMMANDS;
+    uint32_t capacity = REIST_GUI_SURFACE_MAX_PAINT_COMMANDS;
+    if (slot != 0 && slot->pending_paint_layer ==
+            REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY)
+        capacity = REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS;
+    else if (slot != 0 && slot->pending_paint_layer ==
+            REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC)
+        capacity = REIST_GUI_SURFACE_MAX_DYNAMIC_PAINT_COMMANDS;
+    else if (slot != 0 && slot->pending_paint_layer ==
+            REIST_GUI_SURFACE_PAINT_LAYER_HOVER)
+        capacity = REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS;
     if (slot == 0 || !slot->paint_active ||
         slot->pending_paint_count >= capacity)
         return 0;
@@ -543,8 +548,7 @@ int desktop_surface_paint_commit_layer(desktop_surface_manager_t *manager,
                                        reist_gui_surface_owner_t owner,
                                        reist_gui_surface_handle_t handle,
                                        uint32_t layer) {
-    if (layer != REIST_GUI_SURFACE_PAINT_LAYER_BASE &&
-        layer != REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY)
+    if (layer > REIST_GUI_SURFACE_PAINT_LAYER_HOVER)
         return DESKTOP_SURFACE_EINVAL;
     int index = find_slot(manager, owner, handle);
     if (index < 0 || !manager->slots[index].paint_active ||
@@ -562,6 +566,26 @@ int desktop_surface_paint_commit_layer(desktop_surface_manager_t *manager,
             slot->committed_overlay_paint[command] =
                 slot->pending_paint[command];
         slot->committed_overlay_paint_count = slot->pending_paint_count;
+    } else if (layer == REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC) {
+        changed = accumulate_layer_difference(
+            slot, slot->committed_dynamic_paint,
+            slot->committed_dynamic_paint_count,
+            slot->pending_paint, slot->pending_paint_count);
+        for (uint32_t command = 0U; command < slot->pending_paint_count;
+             ++command)
+            slot->committed_dynamic_paint[command] =
+                slot->pending_paint[command];
+        slot->committed_dynamic_paint_count = slot->pending_paint_count;
+    } else if (layer == REIST_GUI_SURFACE_PAINT_LAYER_HOVER) {
+        changed = accumulate_layer_difference(
+            slot, slot->committed_hover_paint,
+            slot->committed_hover_paint_count,
+            slot->pending_paint, slot->pending_paint_count);
+        for (uint32_t command = 0U; command < slot->pending_paint_count;
+             ++command)
+            slot->committed_hover_paint[command] =
+                slot->pending_paint[command];
+        slot->committed_hover_paint_count = slot->pending_paint_count;
     } else {
         changed = accumulate_layer_difference(
             slot, slot->committed_paint, slot->committed_paint_count,
@@ -732,6 +756,16 @@ int desktop_surface_dispatch_message(
             manager, owner, request->surface,
             REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
         response->type = REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_DYNAMIC_BEGIN) {
+        result = desktop_surface_paint_begin_layer(
+            manager, owner, request->surface,
+            REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
+        response->type = REIST_GUI_SURFACE_PAINT_DYNAMIC_BEGIN;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_HOVER_BEGIN) {
+        result = desktop_surface_paint_begin_layer(
+            manager, owner, request->surface,
+            REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
+        response->type = REIST_GUI_SURFACE_PAINT_HOVER_BEGIN;
     } else if (request->type == REIST_GUI_SURFACE_PAINT_FILL) {
         result = desktop_surface_paint_fill(
             manager, owner, request->surface, request->damage,
@@ -753,6 +787,16 @@ int desktop_surface_dispatch_message(
             manager, owner, request->surface,
             REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
         response->type = REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_DYNAMIC_COMMIT) {
+        result = desktop_surface_paint_commit_layer(
+            manager, owner, request->surface,
+            REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
+        response->type = REIST_GUI_SURFACE_PAINT_DYNAMIC_COMMIT;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_HOVER_COMMIT) {
+        result = desktop_surface_paint_commit_layer(
+            manager, owner, request->surface,
+            REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
+        response->type = REIST_GUI_SURFACE_PAINT_HOVER_COMMIT;
     } else if (request->type == REIST_GUI_SURFACE_ATTACH) {
         result = desktop_surface_attach(
             manager, owner, request->surface, request->buffer_id,

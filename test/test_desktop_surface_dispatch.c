@@ -68,6 +68,28 @@ int main(void) {
     assert(response.type == REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT);
     assert(manager.slots[parent.id - 1U].committed_paint_count == 1U);
     assert(manager.slots[parent.id - 1U].committed_overlay_paint_count == 1U);
+    request.type = REIST_GUI_SURFACE_PAINT_DYNAMIC_BEGIN;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_FILL;
+    request.damage = (reist_gui_rect_t){8, 32, 80U, 20U};
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_DYNAMIC_COMMIT;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_HOVER_BEGIN;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_FILL;
+    request.damage = (reist_gui_rect_t){8, 56, 80U, 20U};
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    request.type = REIST_GUI_SURFACE_PAINT_HOVER_COMMIT;
+    assert(desktop_surface_dispatch_message(
+        &manager, owner, &request, &response) == 0);
+    assert(manager.slots[parent.id - 1U].committed_dynamic_paint_count == 1U);
+    assert(manager.slots[parent.id - 1U].committed_hover_paint_count == 1U);
     request.type = REIST_GUI_SURFACE_BUFFER_CREATE;
     request.buffer_id = 1U;
     request.buffer_generation = 1U;

@@ -2424,8 +2424,14 @@ static void render_window(const desktop_render_context_t *context,
             &surface_context, client, surface->committed_paint,
             surface->committed_paint_count);
         render_surface_paint_list(
+            &surface_context, client, surface->committed_dynamic_paint,
+            surface->committed_dynamic_paint_count);
+        render_surface_paint_list(
             &surface_context, client, surface->committed_overlay_paint,
             surface->committed_overlay_paint_count);
+        render_surface_paint_list(
+            &surface_context, client, surface->committed_hover_paint,
+            surface->committed_hover_paint_count);
     }
     if (explorer_window != 0)
         for (uint32_t entry = 0U; entry < explorer_window->entry_count; ++entry)

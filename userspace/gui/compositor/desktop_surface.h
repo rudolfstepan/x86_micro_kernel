@@ -66,9 +66,15 @@ typedef struct desktop_surface_slot {
         REIST_GUI_SURFACE_MAX_PAINT_COMMANDS];
     desktop_surface_paint_command_t committed_overlay_paint[
         REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS];
+    desktop_surface_paint_command_t committed_dynamic_paint[
+        REIST_GUI_SURFACE_MAX_DYNAMIC_PAINT_COMMANDS];
+    desktop_surface_paint_command_t committed_hover_paint[
+        REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS];
     uint32_t pending_paint_count;
     uint32_t committed_paint_count;
     uint32_t committed_overlay_paint_count;
+    uint32_t committed_dynamic_paint_count;
+    uint32_t committed_hover_paint_count;
     uint32_t paint_active;
     uint32_t pending_paint_layer;
     uint32_t paint_generation;

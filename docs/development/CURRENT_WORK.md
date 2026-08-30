@@ -1130,3 +1130,11 @@ und Prozesserzeugung liegen damit ausserhalb des Messfensters. Ein fehlender,
 verspaeteter oder fehlerhafter Worker verwirft den Multi-CPU-Wert. Die Tabelle
 weist zusaetzlich Multi/Single-Skalierung aus und kennzeichnet die Werte als
 schedulerbeeinflusste Vergleichsmessung, nicht als Hardwarezertifizierung.
+# R3.4b Notepad-Interaktionslatenz
+
+Notepad trennt statische Basis, dynamischen Editorinhalt, Menue/Dialog-Overlay
+und Hovermarkierung in vier atomare retained Surface-Layer. Scrollbar-Drag
+ersetzt nur sichtbaren Text, Cursor, Scrollleisten und Status. Ein Wechsel des
+Menue-Hovers uebertraegt hoechstens vier Kommandos fuer aktiven Titel und
+markierten Eintrag. Damit sinken IPC- und Repaint-Arbeit unabhaengig von SMP;
+eine einzelne CPU ist der Referenzpfad.

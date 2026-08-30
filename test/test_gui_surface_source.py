@@ -19,6 +19,10 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn("REIST_GUI_SURFACE_MAX_PAINT_COMMANDS 192U", header)
         self.assertIn(
             "REIST_GUI_SURFACE_MAX_OVERLAY_PAINT_COMMANDS 96U", header)
+        self.assertIn(
+            "REIST_GUI_SURFACE_MAX_DYNAMIC_PAINT_COMMANDS 192U", header)
+        self.assertIn(
+            "REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS 4U", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_BEGIN", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_COMMIT", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN", header)
@@ -28,6 +32,7 @@ class GuiSurfaceSourceTests(unittest.TestCase):
 
     def test_client_wrapper_has_no_display_access(self):
         client = (ROOT / "userspace/gui/lib/surface_client.c").read_text()
+        desktop = (ROOT / "userspace/gui/compositor/desktop_surface.h").read_text()
         self.assertIn("x86os_ipc_send_timeout", client)
         self.assertIn("x86os_ipc_receive_timeout", client)
         self.assertIn("ipc.version = X86OS_IPC_MESSAGE_VERSION", client)
@@ -42,6 +47,10 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn("reist_gui_surface_client_paint_text", client)
         self.assertIn("reist_gui_surface_client_paint_begin_layer", client)
         self.assertIn("reist_gui_surface_client_paint_commit_layer", client)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC", client)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_HOVER", client)
+        self.assertIn("committed_dynamic_paint", desktop)
+        self.assertIn("committed_hover_paint", desktop)
         self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY", client)
         self.assertIn("reist_gui_surface_client_accept_configure", client)
 

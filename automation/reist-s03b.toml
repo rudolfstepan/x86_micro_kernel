@@ -11,6 +11,68 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.4b-notepad-interaction-layers"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Remove Notepad scroll and menu-hover repaint latency"
+scope = "Extend retained Surface painting append-only with fixed-capacity dynamic-content and hover layers. Keep legacy base and overlay semantics unchanged, render base then dynamic then overlay then hover, and make Notepad replace only editor content plus controls while scrolling and at most the active title and hot menu item while hovering. Coalesce all pointer motion before one bounded paint decision, retain synchronous atomic commits and fail-closed retries, and prove the reduced command paths on a single-vCPU runtime."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/include/reist/gui/surface_client.h",
+  "userspace/gui/lib/surface_client.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/apps/notepad/main.c",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_surface_dispatch.c",
+  "test/test_gui_surface_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_desktop_source.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "legacy base and overlay layer values messages APIs capacities and replacement semantics remain source compatible",
+  "dynamic and hover are append-only fixed-capacity layers and invalid layers fail before retained state changes",
+  "the compositor always renders base dynamic overlay hover in that order and damage includes removed and inserted commands",
+  "scroll dragging replaces only dynamic content and never retransmits base menu or dialog commands",
+  "menu hover with an unchanged open menu replaces only the hover layer with at most four commands",
+  "resize dialog lifecycle menu open-close and retry exhaustion retain complete fail-closed repaint behavior",
+  "all queues input batches paint lists retries and runtime deadlines remain finite",
+  "the performance proof uses one vCPU and therefore does not depend on SMP scheduling"
+]
+targeted_tests = [
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = []
+stop_conditions = [
+  "hover or scrollbar motion still causes a base-layer replacement",
+  "a layer can exceed its fixed capacity or survive surface generation destruction",
+  "an optimization weakens atomic commit damage retry or input ordering",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: accelerate notepad interaction"
+evidence = [
+  "All 64 final frozen Surface Notepad and Desktop source or host checks passed including four-layer capacity atomicity damage and render order.",
+  "All Ring-3 system programs linked successfully including the enlarged fixed-capacity DESKTOP.PRG and the refactored NOTEPAD.PRG.",
+  "The final QEMU framebuffer package passed in 59 seconds.",
+  "The real single-vCPU QEMU runtime-desktop Notepad probe passed in 23 seconds with document menu hover dialog and resize markers and no permanent or delayed Surface paint failure.",
+  "Pure menu hover now replaces at most four retained commands and scrollbar drag replaces only the dynamic editor layer; neither path retransmits the static base."
+]
+
+[[packages]]
 id = "R2.2ae-nvidia-phased-startup"
 status = "done"
 phase = "post-s0"

@@ -51,15 +51,17 @@ eine deterministische Fokusreihenfolge. Zustandsänderungen liefern eine feste
 Anzahl lokaler Damage-Rechtecke; Überlauf fordert einen vollständigen Redraw
 der betroffenen Surface an.
 
-Retained-Command-Surfaces besitzen zusätzlich zur kompatiblen Basisliste eine
-append-only Protokollerweiterung für eine zweite Overlay-Liste. Basis und
-Overlay werden unabhängig atomar ersetzt; der Compositor zeichnet immer zuerst
-die höchstens 192 Basiskommandos und danach höchstens 96 Overlaykommandos.
+Retained-Command-Surfaces besitzen zusätzlich zur kompatiblen Basisliste
+append-only Protokollerweiterungen fuer Overlay, dynamischen Inhalt und Hover.
+Alle Listen werden unabhängig atomar ersetzt; der Compositor zeichnet immer
+Base, Dynamic, Overlay und Hover in dieser Reihenfolge. Die Grenzen sind 192,
+192, 96 und vier Kommandos.
 Ungültige Layer oder ein Commit für den falschen aktiven Layer scheitern vor
-einer sichtbaren Zustandsänderung. Der REIST Editor hält Dokument, Scrollleisten
-und Statuszeile in der Basis und Menü sowie eingebettete Overlays in der
-Overlay-Liste. Ein Wechsel des hervorgehobenen Menüeintrags überträgt dadurch
-nicht mehr die vollständige Editorfläche. Separate Dialog-Surfaces und ältere
+einer sichtbaren Zustandsänderung. Der REIST Editor hält statische Geometrie in
+der Basis, Dokument, Scrollleisten und Statuszeile in Dynamic, Menü und Dialoge
+in Overlay sowie nur aktiven Titel und hervorgehobenen Eintrag in Hover. Ein
+Scroll-Drag ersetzt dadurch keine statische Basis; ein Hoverwechsel uebertraegt
+hoechstens vier Kommandos. Separate Dialog-Surfaces und ältere
 Clients verwenden unverändert die Basis-API; Eingaben werden nicht in laufende
 Transaktionsantworten umsortiert.
 
@@ -77,6 +79,7 @@ einen lokalen Präsentationsschaden. Identische Commits erzeugen keine neue
 Paint-Generation. Damit zeichnet Menü-Hover nicht mehr das vollständige
 Notepad-Fenster neu; mehrere noch nicht präsentierte Commits bleiben durch das
 eine begrenzte Vereinigungsrechteck abgedeckt.
+Diese Reduktion gilt ausdruecklich auch auf einem System mit nur einer CPU.
 
 Im Produktionsprofil bleiben Session-Compositor und gewöhnliche Surface-
 Clients gemeinsam auf CPU 0. Ein maximaler Retained-Paintframe benötigt damit

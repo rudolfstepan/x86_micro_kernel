@@ -4308,3 +4308,10 @@ online CPUs. Synchronisierte Worker fuehren je dieselbe zuvor kalibrierte
 Arbeitslast aus; Spawnkosten werden nicht als Nutzarbeit bewertet. Aggregate
 MOp/s und der Multi/Single-Faktor bleiben diagnostische Vergleichswerte unter
 der aktuellen Schedulerlast.
+# R3.4b: latenzarme Notepad-Interaktion
+
+Die Surface-ABI besitzt append-only feste Dynamic- und Hover-Layer. Notepad
+erneuert beim Scrollen keine Basis- oder Menuekommandos mehr und beim Hover
+nur den alten/neuen Hervorhebungsbereich. Die Optimierung setzt keine zweite
+CPU voraus; verbleibende Unterschiede zwischen Ein- und Mehr-vCPU-Profilen
+sind getrennt als SMP-Contention zu untersuchen.
