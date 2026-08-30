@@ -1,9 +1,9 @@
 # Nativer BIOS-Boot ohne GRUB
 
-Stand: 16. August 2026.
+Stand: 30. August 2026.
 
 REIST OS startet QEMU, VMware und reale Legacy-BIOS-PCs über dasselbe
-64-MiB-Raw-Image. GRUB, ISO und QEMUs `-kernel`-Abkürzung gehören nicht zum
+512-MiB-Raw-Image. GRUB, ISO und QEMUs `-kernel`-Abkürzung gehören nicht zum
 Referenzpfad.
 
 ## Erzeugen
