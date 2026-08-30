@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
+active_id = "R4.1b-curl-public-https"
 
 [policy]
 one_package_per_run = true
@@ -13232,7 +13232,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2r-x86_64-ipc-revocation-wakeup"
-status = "active"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Prove generation-scoped x86_64 IPC revocation wakeups"
@@ -13267,6 +13267,56 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "ipc: revoke x86_64 blocked peers safely"
+evidence = []
+
+[[packages]]
+id = "R4.1b-curl-public-https"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Make production curl HTTPS work against public servers"
+scope = "Close the gap exposed by `curl https://google.com` failing in the normal QEMU image after the deterministic local-CA HTTPS package passed. Preserve the reusable Ring-3 TLS boundary while making the production path observable and usable: keep the runtime-test CA and image in an isolated build directory, expose CPUID-verified RDRAND in every documented normal QEMU launch without adding a weak entropy fallback, retain the production Mozilla/curl trust store in normal artifacts, and report bounded DNS TCP and TLS failure stages separately. Add bounded standards-compatible DNS fallback only if the captured public path proves the existing UDP-only resolver cannot make progress. Prove the production CURL.PRG from the userspace shell through DNS and the real guest TCP/TLS record path against google.com with its public certificate chain, while retaining the deterministic hostile-peer tests. This package adds no kernel cryptography entropy fabrication plaintext downgrade redirect following IPv6 revocation checking secure-clock claim or unrestricted upstream-curl compatibility."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "Makefile",
+  "userspace/sdk/reist_dns.c",
+  "userspace/programs/nslookup.c",
+  "userspace/programs/curl.c",
+  "userspace/tls/lib/reist_tls.c",
+  "userspace/tls/lib/reist_tls_config.h",
+  "scripts/build-windows.ps1",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_smoke.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_dns_host.c",
+  "test/test_network_tools.py",
+  "docs/networking/NETWORK.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
+  "README.md"
+]
+invariants = [
+  "the exact production command `curl https://google.com` resolves A records authenticates the public chain and hostname and completes without plaintext downgrade or test trust anchors",
+  "normal QEMU launch targets advertise CPUID RDRAND explicitly and the TLS client still fails closed when RDRAND is absent or its bounded continuous test fails",
+  "runtime-probe CA keys programs SDK files and disk images remain under an isolated ignored output directory and never replace build/reist-os.img or its production CURL.PRG",
+  "DNS UDP and any standards-based TCP fallback validate transaction source framing response code question chain record count compression bounds lengths and deadlines before publishing one IPv4 address",
+  "public HTTPS diagnostics distinguish name resolution TCP connection TLS authentication response framing byte-limit and timeout stages without printing secrets certificate internals or plaintext before authentication",
+  "the reusable TLS ABI memory bounds trust store hostname and RTC verification TLS 1.2/1.3 restriction atomic output publication DNS TCP VFS ABI and shell image layouts remain unchanged",
+  "the public-server proof exercises production CURL.PRG from the Ring-3 userspace shell through guest DNS TCP and encrypted TLS records and does not substitute a host-side TLS terminator"
+]
+targeted_tests = ["python test/test_network_tools.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode curl-https-public-client"]
+stop_conditions = [
+  "public success requires disabling certificate hostname RTC record or trust verification weakening entropy or sending HTTP plaintext",
+  "the real public certificate chain requires an unbounded parser allocator retry response or transfer",
+  "the runtime test can pass with a test CA host TLS terminator kernel TLS path rescue-shell-only dispatch or a nonproduction CURL.PRG",
+  "a required file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: make curl public https usable"
 evidence = []
 
 [[packages]]
