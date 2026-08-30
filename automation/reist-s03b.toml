@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1l-fat32-metadata-stack-stability"
+active_id = "R7.1m-filesystem-metadata-stack-stability"
 
 [policy]
 one_package_per_run = true
@@ -12859,7 +12859,7 @@ evidence = [
 
 [[packages]]
 id = "R7.1l-fat32-metadata-stack-stability"
-status = "active"
+status = "cancelled"
 phase = "post-s0"
 risk = "high"
 title = "Bound the complete FAT32 metadata syscall stack"
@@ -12931,4 +12931,92 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "kernel: bound FAT32 metadata stack paths"
+evidence = [
+  "The FAT32 workspaces iterative Unicode decomposition atomic panic guard and stateful cycle analysis passed 45 focused stack and synchronization regression checks after the first frozen stack gate exposed the wider path.",
+  "The first frozen stack-analysis gate compiled all 104 production C objects and the focused in-scope repair removed every callback-inventory unknown-indirect external-cost and recursive-panic diagnostic failure.",
+  "Compiler evidence still reached 8164 bytes including the kassert frame against the unchanged 7168-byte syscall budget through FAT12 create allocation undo-journal FDD failure reporting and scheduler assertion frames; the required FAT12 journal adapter and storage-service files lay outside R7.1l allowed_files, so no package build runtime gate or candidate commit followed."
+]
+
+[[packages]]
+id = "R7.1m-filesystem-metadata-stack-stability"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bound complete filesystem metadata and storage-failure stacks"
+scope = "Absorb the proven R7.1l FAT32 journal Unicode syscall panic and validator work, then close the compiler-proven FAT12 create and FDD media-failure chain without enlarging the 8-KiB task stack or weakening its guard page. Move every dominant FAT12 core write journal header verification recovery directory scan allocation and entry-update sector buffer into fixed owner-scoped workspaces protected by the existing VFS serialization plus a deadline-bounded recursive FAT12 workspace mutex, with explicit same-owner reentry rejection and complete cleanup. Keep journal scratch in its exact journal instance and preserve journal-v2 bytes sequence validation target exclusions write verification and rollback. Publish quarantine read-only and write fences synchronously before returning from media failure, but queue the exact quarantine diagnostic atomically and emit at most one pending marker from the supervisor poll so a held FDD transaction never enters printf display mutex or scheduler code. Preserve the R7.1l FAT32 VFAT Unicode ATA journal panic and callgraph contracts and complete both real four-vCPU VMware rename and byte-verifying benchmark proofs with ten-second post-success stability intervals."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/block/ata_journal.h",
+  "drivers/block/ata_journal.c",
+  "fs/fat12/fat12.h",
+  "fs/fat12/fat12.c",
+  "fs/fat12/fat12_journal.h",
+  "fs/fat12/fat12_journal.c",
+  "fs/fat12/fat12_vfs_adapter.c",
+  "fs/fat32/fat32.h",
+  "fs/fat32/fat32.c",
+  "fs/fat32/fat32_files.c",
+  "fs/fat32/fat32_dir.c",
+  "fs/fat32/fat32_cluster.c",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "include/reist/unicode_norm.h",
+  "kernel/init/panic.c",
+  "kernel/init/storage_service.c",
+  "kernel/syscall/syscall_table.c",
+  "safety/stack_budgets.json",
+  "scripts/validate_stack_usage.py",
+  "scripts/test-reist-stack-analysis.ps1",
+  "scripts/test-reist-fat32-metadata.ps1",
+  "scripts/test-reist-metadata-stack.ps1",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_fat12_stack_safety.py",
+  "test/test_fat32_host.c",
+  "test/test_fs_host.py",
+  "test/test_reist_storage_recovery.py",
+  "test/test_reist_undo_journal.py",
+  "test/test_stack_evidence.py",
+  "test/test_sync_diagnostics_r13.py",
+  "test/test_unicode_normalization.py",
+  "test/test_userspace_file_syscalls_source.py",
+  "test/test_vmware_mouse.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the real 8-KiB task stack guard page and complete 7168-byte syscall budget including its 128-byte entry reserve remain unchanged and every compiler-proven entry stays within its frozen budget",
+  "FAT12 core journal and VFS sector workspaces are fixed-capacity have distinct nested owner domains reject same-owner reentry before payload access and are cleared and released on every success not-found and error exit",
+  "the deadline-bounded recursive FAT12 workspace mutex is never acquired in IRQ context and no spinlock heap allocation unbounded wait context publication or shared workspace access occurs while acquisition is pending",
+  "journal scratch belongs to the exact fat12_journal instance and changes neither packed journal-v2 header or entry bytes nor sequence CRC target exclusion verified-write rollback or recovery ordering",
+  "media failure publishes quarantine read-only state and all required fences synchronously while its exact diagnostic is atomically queued; only the supervisor poll formats at most one queued marker and the FDD transaction path cannot reach printf display framebuffer mutex or scheduler code",
+  "every R7.1l FAT32 workspace task-generation rename slot iterative Unicode-15 decomposition ATA journal scratch atomic panic guard and stateful callgraph-cycle contract remains intact",
+  "journal target capacities durability barriers FAT cache invalidation AHCI and FDD verification storage fencing VFAT and FAT12 identity on-disk formats and all public ABIs remain unchanged",
+  "the final real four-vCPU VMware rename and benchmark runs preserve content verification cleanup shell return and ten seconds without panic restart degradation quarantine or storage fencing"
+]
+targeted_tests = [
+  ".\\scripts\\test-reist-metadata-stack.ps1"
+]
+package_tests = [
+  ".\\scripts\\test-reist-stack-analysis.ps1",
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-rename",
+  ".\\scripts\\test-reist-runtime.ps1 -Target vmware -Mode vmware-benchmark"
+]
+stop_conditions = [
+  "a fixed workspace can alias another live owner remain occupied after any exit or overwrite an input that remains live across a nested journal or filesystem call",
+  "a 512-byte FAT12 core journal or VFS local remains on any compiler-proven dominant metadata path or any frozen entry budget exceeds its limit",
+  "the FDD media-failure path can format display block sleep acquire another mutex or enter scheduler code before releasing its transaction domain",
+  "quarantine read-only publication fencing or exact diagnostic ordering is delayed lost duplicated or converted into success",
+  "the validator suppresses an ordinary recursion cycle unknown indirect target missing cost entry reserve or worst-path overrun or can revisit a graph state without a finite bound",
+  "journal media bytes ordering recovery verification FAT cache semantics guard pages stack size or a public ABI must change",
+  "either VMware proof loses byte or content verification cleanup shell return or its ten-second post-success fatal-marker rejection",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "kernel: bound filesystem metadata stack paths"
 evidence = []
