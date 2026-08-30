@@ -12970,6 +12970,7 @@ allowed_files = [
   "scripts/test-reist-metadata-stack.ps1",
   "scripts/run_vmware_mouse.ps1",
   "scripts/test-reist-runtime.ps1",
+  "test/test_fat12_journal.py",
   "test/test_fat12_stack_safety.py",
   "test/test_fat32_host.c",
   "test/test_fs_host.py",
