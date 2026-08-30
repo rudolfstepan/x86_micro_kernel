@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
+active_id = "R4.1c-curl-large-transfer"
 
 [policy]
 one_package_per_run = true
@@ -13232,7 +13232,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2r-x86_64-ipc-revocation-wakeup"
-status = "active"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Prove generation-scoped x86_64 IPC revocation wakeups"
@@ -13267,6 +13267,45 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "ipc: revoke x86_64 blocked peers safely"
+evidence = []
+
+[[packages]]
+id = "R4.1c-curl-large-transfer"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Keep bounded curl transfers progressing for large responses"
+scope = "Repair the production Ring-3 curl path exposed by authenticated HTTPS responses that continue transferring but exceed the old 30-second aggregate deadline. Replace that aggregate cutoff with a 30-second no-progress timeout plus a fixed five-minute hard ceiling, reset progress only after bytes are received and published, and keep the existing 16-MiB byte ceiling. When userspace drains the fixed TCP receive buffer, immediately advertise the reopened receive window so a conforming peer cannot remain stalled at a zero window. Preserve TLS authentication, HTTP framing, public ABIs, fixed storage, bounded waits, atomic file publication and userspace-shell image resolution. Prove the deadline policy and TCP window update with host regression coverage and the existing authenticated QEMU HTTPS client path."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/net/tcp_socket.c",
+  "userspace/programs/curl.c",
+  "test/test_tcp_socket_host.c",
+  "test/test_network_tools.py",
+  "docs/networking/NETWORK.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md"
+]
+invariants = [
+  "curl retains the existing one-MiB default and 16-MiB hard byte limits and has both a 30-second no-progress deadline and a five-minute aggregate deadline",
+  "only successful authenticated stream reads followed by successful output publication refresh transfer progress",
+  "draining TCP receive bytes advertises the newly available fixed receive window without changing the public socket ABI capacity sequence space or ownership generation",
+  "window-update transmission is bounded nonblocking and cannot make already copied receive bytes appear to fail",
+  "TLS chain hostname RTC record verification DNS HTTP framing atomic temporary-file publication and Ring-3 shell resolution remain unchanged"
+]
+targeted_tests = ["python test/test_network_tools.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode curl-https-client"]
+stop_conditions = [
+  "the repair requires an unbounded deadline retry allocation receive buffer or byte limit",
+  "the receive-window update can acknowledge unconsumed data alter sequence ownership or block while holding the TCP lock",
+  "HTTPS success requires weakening certificate hostname RTC entropy or record verification",
+  "a required file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: keep large curl transfers progressing"
 evidence = []
 
 [[packages]]
