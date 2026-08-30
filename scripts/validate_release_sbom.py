@@ -12,8 +12,8 @@ from pathlib import Path, PurePosixPath
 
 
 MAX_FILES = 160
-MAX_FILE_SIZE = 128 * 1024 * 1024
-MAX_TOTAL_SIZE = 512 * 1024 * 1024
+MAX_FILE_SIZE = 512 * 1024 * 1024
+MAX_TOTAL_SIZE = 768 * 1024 * 1024
 MAX_DOCUMENT_SIZE = 2 * 1024 * 1024
 TOP_KEYS = {
     "spdxVersion", "dataLicense", "SPDXID", "name", "documentNamespace",
@@ -164,7 +164,7 @@ def validate_sbom(sbom: Path, root: Path) -> int:
             raise ValueError("SPDX file identifier is invalid")
         total_size += size
         if total_size > MAX_TOTAL_SIZE:
-            raise ValueError("SPDX live artifacts exceed 512 MiB")
+            raise ValueError("SPDX live artifacts exceed 768 MiB")
         file_sha1s.append(checksums[0]["checksumValue"])
         digest = checksums[1]["checksumValue"]
         aggregate.update(name.encode("utf-8")); aggregate.update(b"\0" + str(size).encode("ascii") + b"\0"); aggregate.update(bytes.fromhex(digest))

@@ -23,6 +23,7 @@ param(
     [switch]$AudioServiceSmpLifecycleFaultInjection,
     [switch]$CompositorSmpLifecycleFaultInjection,
     [switch]$SoundplayerSurfaceProbe,
+    [switch]$CurlTlsRuntimeProbe,
     [switch]$SkipReleaseSbom,
     [ValidateRange(1, 8)]
     [int]$SystemBuildJobs = 2,
@@ -50,10 +51,6 @@ function Resolve-NativeTool {
         [Parameter(Mandatory)] [string]$Name,
         [Parameter(Mandatory)] [string[]]$Fallbacks
     )
-    $command = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($command) {
-        return $command.Source
-    }
     foreach ($candidate in $Fallbacks) {
         if ([System.Management.Automation.WildcardPattern]::ContainsWildcardCharacters(
                 $candidate)) {
@@ -65,6 +62,10 @@ function Resolve-NativeTool {
         } elseif (Test-Path -LiteralPath $candidate -PathType Leaf) {
             return (Resolve-Path -LiteralPath $candidate).Path
         }
+    }
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
     }
     throw "Required native Windows tool '$Name' was not found."
 }
@@ -80,11 +81,13 @@ $Make = Resolve-NativeTool 'make' @(
     'C:\msys64\mingw64\bin\mingw32-make.exe'
 )
 $Nasm = Resolve-NativeTool 'nasm' @(
+    'C:\tools\nasm-3.02\nasm.exe',
     'C:\tmp\nasm-3.02-portable\nasm-3.02\nasm.exe',
     (Join-Path $LocalAppDataRoot `
         'Microsoft\WinGet\Packages\BrechtSanders.WinLibs.*\mingw64\bin\nasm.exe')
 )
 $Zig = Resolve-NativeTool 'zig' @(
+    'C:\tools\zig-x86_64-windows-0.16.0\zig.exe',
     'C:\tmp\zig-0.16.0-portable\zig-x86_64-windows-0.16.0\zig.exe',
     (Join-Path $LocalAppDataRoot 'Microsoft\WinGet\Links\zig.exe'),
     (Join-Path $LocalAppDataRoot `
@@ -325,13 +328,17 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Floppy stage 1 assembly failed.' }
 
     New-Item -ItemType Directory -Force -Path $UserProgramDir | Out-Null
-    $systemProgramExitCode = Invoke-PythonProcess -Arguments @(
+    $systemProgramArguments = @(
         'scripts/build_system_programs.py',
         '--output-dir', $UserProgramDir,
         '--zig', $Zig,
         '--incremental',
         '--jobs', [string]$SystemBuildJobs
     )
+    if ($CurlTlsRuntimeProbe) {
+        $systemProgramArguments += '--curl-tls-runtime-probe'
+    }
+    $systemProgramExitCode = Invoke-PythonProcess -Arguments $systemProgramArguments
     if ($systemProgramExitCode -ne 0) {
         throw "System program build failed with exit code $systemProgramExitCode."
     }

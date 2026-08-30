@@ -7,10 +7,16 @@
 #define REIST_CURL_PATH_CAPACITY 256U
 #define REIST_CURL_HEADER_CAPACITY 2048U
 
+typedef enum reist_curl_scheme {
+    REIST_CURL_SCHEME_HTTP = 1,
+    REIST_CURL_SCHEME_HTTPS = 2
+} reist_curl_scheme_t;
+
 typedef struct reist_curl_url {
     char host[REIST_CURL_HOST_CAPACITY];
     char path[REIST_CURL_PATH_CAPACITY];
     uint16_t port;
+    uint16_t scheme;
 } reist_curl_url_t;
 
 typedef struct reist_curl_response_head {

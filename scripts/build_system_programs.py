@@ -12,7 +12,7 @@ from pathlib import Path
 from build_user_program import ROOT, build, find_zig
 from build_user_sdk import (
     AUDIO_INCLUDE_ROOT, CONFIG_INCLUDE_ROOT, CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT,
-    IMAGE_INCLUDE_ROOT, build_sdk,
+    IMAGE_INCLUDE_ROOT, TLS_INCLUDE_ROOT, build_sdk,
 )
 
 
@@ -170,6 +170,7 @@ GUI_PROGRAMS = {
 }
 IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
+TLS_PROGRAMS = {"CURL.PRG"}
 AUDIO_PROGRAMS = {
     "HDA.PRG", "AUDIO.PRG", "AUDIOINFO.PRG", "AUDIOTEST.PRG",
     "WAVPLAY.PRG", "SOUNDPLAYER.PRG",
@@ -188,6 +189,7 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--zig", type=Path)
     parser.add_argument("--incremental", action="store_true")
+    parser.add_argument("--curl-tls-runtime-probe", action="store_true")
     parser.add_argument(
         "-j", "--jobs", type=int, default=DEFAULT_SYSTEM_BUILD_WORKERS,
         help=("parallel PRG builds (default: up to 8 logical CPUs; "
@@ -211,6 +213,7 @@ def main() -> None:
         gui_headers = list(GUI_INCLUDE_ROOT.rglob("*.h"))
         audio_headers = list(AUDIO_INCLUDE_ROOT.rglob("*.h"))
         image_headers = list(IMAGE_INCLUDE_ROOT.rglob("*.h"))
+        tls_headers = list(TLS_INCLUDE_ROOT.rglob("*.h"))
         config_headers = list(CONFIG_INCLUDE_ROOT.rglob("*.h"))
 
         def build_one(item: tuple[str, object]) -> str:
@@ -218,6 +221,14 @@ def main() -> None:
             name, source = item
             output = output_dir / name
             before = output.stat().st_mtime_ns if output.is_file() else None
+            program_incremental = args.incremental
+            curl_mode_marker = sdk.root / ".curl-build-mode"
+            curl_mode = "runtime-probe" if args.curl_tls_runtime_probe \
+                else "production"
+            if name == "CURL.PRG":
+                program_incremental = args.incremental and \
+                    curl_mode_marker.is_file() and \
+                    curl_mode_marker.read_text(encoding="ascii") == curl_mode
             sources = list(source) if isinstance(source, tuple) else [source]
             runtime_libraries = [sdk.core_library]
             if name in NETWORK_PARSER_PROGRAMS:
@@ -229,6 +240,8 @@ def main() -> None:
                 link_libraries.append(sdk.audio_library)
             if name in IMAGE_PROGRAMS:
                 link_libraries.append(sdk.image_library)
+            if name in TLS_PROGRAMS:
+                link_libraries.append(sdk.tls_library)
             dependency_files = [*core_headers]
             if name in {"DESKTOP.PRG", "CONTROL.PRG", "CONFIG.PRG"}:
                 dependency_files.extend(config_headers)
@@ -242,18 +255,26 @@ def main() -> None:
                 dependency_files.extend(audio_headers)
             if name in IMAGE_PROGRAMS:
                 dependency_files.extend(image_headers)
+            if name in TLS_PROGRAMS:
+                dependency_files.extend(tls_headers)
             if name == "DESKTOP.PRG":
                 dependency_files.append(
                     ROOT / "assets/images/reist-splash.bmp")
             build(
-                sources, output, zig, incremental=args.incremental,
+                sources, output, zig, incremental=program_incremental,
                 include_dirs=[sdk.include_dir, STORAGE_INCLUDE_ROOT],
                 libraries=link_libraries or None,
                 runtime_objects=[sdk.startup_object],
                 runtime_libraries=runtime_libraries,
                 cache_directory=global_cache_directory,
                 dependency_files=dependency_files,
+                compile_flags=(
+                    ["-DREIST_CURL_TLS_RUNTIME_PROBE"]
+                    if args.curl_tls_runtime_probe and name == "CURL.PRG"
+                    else None),
             )
+            if name == "CURL.PRG":
+                curl_mode_marker.write_text(curl_mode, encoding="ascii")
             reused = before is not None and \
                 output.stat().st_mtime_ns == before
             action = "Reused" if reused else "Built"

@@ -1,8 +1,13 @@
 import unittest
+import hashlib
 import os
 import shutil
+import socket
+import ssl
 import subprocess
+import sys
 import tempfile
+import threading
 from pathlib import Path
 
 
@@ -56,14 +61,178 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn("x86os_tcp_connect", source)
         self.assertIn("x86os_tcp_receive", source)
         self.assertIn("x86os_rename(temporary, options.output)", source)
-        self.assertIn("only http:// is supported; HTTPS needs TLS", source)
+        self.assertIn("reist_tls_client_open", source)
+        self.assertIn("REIST_CURL_SCHEME_HTTPS", source)
+        self.assertIn("reist_tls_client_write", source)
         self.assertNotIn("x86os_syscall(", source)
         runner = (ROOT / "scripts/run_qemu_smoke.py").read_text()
         runtime = (ROOT / "scripts/test-reist-runtime.ps1").read_text()
         self.assertIn("CURL_TEST_COMMAND", runner)
         self.assertIn("serve_curl_test_client", runner)
         self.assertIn("--expect-curl-client", runner)
-        self.assertIn("'curl-client'", runtime)
+        self.assertIn("'curl-https-client'", runtime)
+        self.assertIn('"qemu32,+rdrand"', runner)
+
+    def test_reist_tls_authenticated_host_behavior(self):
+        zig = Path(r"C:\tools\zig-x86_64-windows-0.16.0\zig.exe")
+        if not zig.is_file():
+            located = shutil.which("zig")
+            if located is None:
+                self.skipTest("Zig is required for the Mbed TLS host proof")
+            zig = Path(located)
+        scripts = ROOT / "scripts"
+        sys.path.insert(0, str(scripts))
+        try:
+            import build_user_sdk as sdk
+        finally:
+            sys.path.pop(0)
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            vendor = sdk.extract_mbedtls(temporary / "mbedtls")
+            executable = temporary / "reist_tls_host"
+            if os.name == "nt":
+                executable = executable.with_suffix(".exe")
+            includes = (
+                ROOT / "userspace/sdk/include",
+                ROOT / "userspace/tls/include",
+                ROOT / "userspace/tls/lib",
+                vendor,
+                vendor / "include",
+                vendor / "library",
+                vendor / "tf-psa-crypto/include",
+                vendor / "tf-psa-crypto/core",
+                vendor / "tf-psa-crypto/drivers/builtin/include",
+                vendor / "tf-psa-crypto/drivers/builtin/src",
+                vendor / "tf-psa-crypto/extras",
+                vendor / "tf-psa-crypto/utilities",
+                vendor / "tf-psa-crypto/dispatch",
+                vendor / "tf-psa-crypto/platform",
+            )
+            command = [
+                str(zig), "cc", "-O1", "-std=c11", "-ffunction-sections",
+                "-fdata-sections", '-DMBEDTLS_CONFIG_FILE="reist_tls_config.h"',
+                '-DTF_PSA_CRYPTO_CONFIG_FILE="reist_tls_config.h"',
+            ]
+            for include in includes:
+                command.extend(("-I", str(include)))
+            command.extend(str(source) for source in (
+                ROOT / "userspace/tls/lib/reist_tls.c",
+                ROOT / "userspace/tls/lib/reist_tls_platform.c",
+                ROOT / "userspace/tls/lib/reist_tls_trust_anchors.c",
+                ROOT / "test/test_reist_tls_host.c",
+                *sdk.mbedtls_sources(vendor),
+            ))
+            command.extend(("-Wl,--gc-sections", "-o", str(executable)))
+            if os.name == "nt":
+                command.append("-lws2_32")
+            environment = os.environ.copy()
+            environment["ZIG_GLOBAL_CACHE_DIR"] = str(temporary / "zig-global")
+            environment["ZIG_LOCAL_CACHE_DIR"] = str(temporary / "zig-local")
+            subprocess.run(
+                command, check=True, cwd=ROOT, env=environment)
+
+            fixtures = ROOT / "test/fixtures"
+            cases = (
+                ("curl_tls_server.pem", "success", "local-ca",
+                 ssl.TLSVersion.TLSv1_2, None),
+                ("curl_tls_server.pem", "success", "local-ca",
+                 ssl.TLSVersion.TLSv1_3, None),
+                ("curl_tls_wrong_host.pem", "failure", "local-ca", None, None),
+                ("curl_tls_expired.pem", "failure", "local-ca", None, None),
+                ("curl_tls_server.pem", "failure", "system-ca", None, None),
+                ("curl_tls_server.pem", "record-failure", "local-ca",
+                 None, None),
+                (None, "failure", "local-ca", None, b"not-a-tls-record"),
+                (None, "failure", "local-ca", None, b"\x16\x03\x03\x00\x20bad"),
+                (None, "failure", "local-ca", None, b"\x17\x03\x03\x00\x04evil"),
+            )
+            for certificate, expected, trust, version, malformed in cases:
+                listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                listener.bind(("127.0.0.1", 0))
+                listener.listen(1)
+                port = listener.getsockname()[1]
+                server_errors = []
+
+                def serve() -> None:
+                    try:
+                        peer, _ = listener.accept()
+                        with peer:
+                            if malformed is not None:
+                                peer.recv(4096)
+                                peer.sendall(malformed)
+                                return
+                            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                            context.load_cert_chain(
+                                fixtures / certificate,
+                                fixtures / "curl_tls_server.key")
+                            if version is not None:
+                                context.minimum_version = version
+                                context.maximum_version = version
+                            with context.wrap_socket(peer, server_side=True) as tls:
+                                if expected in ("success", "record-failure"):
+                                    if tls.recv(4) != b"ping":
+                                        raise RuntimeError("unexpected TLS payload")
+                                    tls.sendall(b"pong")
+                    except (OSError, ssl.SSLError, RuntimeError) as error:
+                        if expected == "success":
+                            server_errors.append(error)
+                    finally:
+                        listener.close()
+
+                thread = threading.Thread(target=serve)
+                thread.start()
+                proof = subprocess.run([
+                    str(executable), str(port), expected, trust,
+                    str(fixtures / "curl_tls_ca.pem"),
+                ], check=False, cwd=ROOT, timeout=15, text=True,
+                   capture_output=True)
+                thread.join(timeout=5)
+                self.assertFalse(thread.is_alive())
+                self.assertFalse(server_errors, repr(server_errors))
+                self.assertEqual(
+                    proof.returncode, 0,
+                    f"{certificate or 'malformed'}: {proof.stderr.strip()}")
+
+    def test_reist_tls_contract_is_bounded_and_pinned(self):
+        public = (ROOT / "userspace/tls/include/reist/tls.h").read_text()
+        config = (ROOT / "userspace/tls/lib/reist_tls_config.h").read_text()
+        implementation = (ROOT / "userspace/tls/lib/reist_tls.c").read_text()
+        platform = (ROOT / "userspace/tls/lib/reist_tls_platform.c").read_text()
+        sdk = (ROOT / "scripts/build_user_sdk.py").read_text()
+        programs = (ROOT / "scripts/build_system_programs.py").read_text()
+        for marker in (
+            "REIST_TLS_CONTEXT_BYTES (512U * 1024U)",
+            "REIST_TLS_HEAP_BUDGET_BYTES (4U * 1024U * 1024U)",
+            "REIST_TLS_MAX_ALLOCATION_BYTES (512U * 1024U)",
+            "reist_tls_monotonic_fn", "reist_tls_entropy_fn",
+            "reist_tls_allocate_fn", "reist_tls_free_fn",
+        ):
+            self.assertIn(marker, public)
+        for marker in (
+            "MBEDTLS_SSL_PROTO_TLS1_2", "MBEDTLS_SSL_PROTO_TLS1_3",
+            "MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_EPHEMERAL_ENABLED",
+            "MBEDTLS_X509_RSASSA_PSS_SUPPORT",
+            "MBEDTLS_PSA_DRIVER_GET_ENTROPY", "MBEDTLS_CTR_DRBG_C",
+            "PSA_WANT_ALG_GCM",
+        ):
+            self.assertIn(marker, config)
+        for forbidden in ("MBEDTLS_SSL_RENEGOTIATION", "MBEDTLS_ARC4_C",
+                          "MBEDTLS_DES_C", "MBEDTLS_CIPHER_MODE_CBC"):
+            self.assertNotIn(forbidden, config)
+        self.assertIn("MBEDTLS_SSL_VERIFY_REQUIRED", implementation)
+        self.assertIn("mbedtls_ssl_set_hostname", implementation)
+        self.assertIn("mbedtls_ssl_get_verify_result", implementation)
+        self.assertIn("reist_tls_platform_bind", implementation)
+        self.assertIn("allocation_arena", platform)
+        self.assertIn("rdrand_supported", platform)
+        self.assertIn("attempt < 16U", platform)
+        self.assertIn("sample == previous", platform)
+        self.assertIn("libreisttls.a", sdk)
+        self.assertIn("sdk.tls_library", programs)
+        archive = ROOT / "third_party/mbedtls-4.1.1.tar.bz2"
+        self.assertEqual(
+            hashlib.sha256(archive.read_bytes()).hexdigest(),
+            "3359a349e23db3d5536fcee032ae7b2ecbfc08972fab643089b5cbf2a375c98c")
 
     def test_tools_use_public_network_control_abi(self):
         for name in ("ifconfig", "ping", "netstat"):

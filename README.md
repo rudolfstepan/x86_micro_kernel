@@ -193,8 +193,10 @@ RTL8111G/RTL8168-Treiber für PCI-ID `10EC:8168` enthalten. Der überwachte
 Ring-3-Dienst `REIST.PRG` verarbeitet die begrenzten Netzwerkentscheidungen
 einschließlich DHCP. Der aktuelle Stack umfasst Ethernet, ARP, IPv4, ICMP,
 DHCP, prozessgebundene UDP-/TCP-Sockets, DNS sowie aktives und passives TCP.
-`/sbin/httpd.prg` stellt Dateien und begrenzte Directory-Listings aus `/htdocs` bereit;
-TLS/HTTPS und SMB sind noch nicht vorhanden.
+`/sbin/httpd.prg` stellt Dateien und begrenzte Directory-Listings aus `/htdocs`
+bereit. `/usr/bin/curl.prg` unterstützt HTTP und authentisiertes HTTPS über die
+wiederverwendbare Ring-3-Bibliothek `libreisttls.a`; IPv6, SMB und
+Zertifikatswiderruf sind noch nicht vorhanden.
 
 ```text
 C:\> GETIP
@@ -253,8 +255,9 @@ Buildschritte müssen explizit ergänzt werden.
   keine Pipes, Signale oder allgemeine Socket-Schnittstelle.
 - FAT32-LFN ist derzeit auf druckbares ASCII begrenzt; vollständiges Unicode
   samt Normalisierung ist noch nicht implementiert.
-- Der Netzwerkstack besitzt noch kein IPv6, TLS/HTTPS oder vollständiges
-  POSIX-Socket-API; die vorhandene UDP-/TCP-ABI ist bewusst klein und begrenzt.
+- Der Netzwerkstack besitzt noch kein IPv6 oder vollständiges POSIX-Socket-API;
+  die vorhandene UDP-/TCP-/TLS-ABI ist bewusst klein und begrenzt. TLS besitzt
+  keine Widerrufsprüfung und keine gegen manipulierte Hardware geschützte Uhr.
 - Der native Bootpfad ist BIOS/MBR-basiert; UEFI ist nicht implementiert.
 - USB/xHCI-HID für Boot-Tastatur und -Maus ist experimentell. VMware nutzt
   eine virtuelle xHCI-Maus ohne physisches HID-Passthrough; einfache reale

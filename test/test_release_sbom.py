@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 from scripts.generate_release_sbom import generate_sbom
 from scripts.validate_release_sbom import validate_sbom
+from scripts import generate_release_sbom, validate_release_sbom
 
 
 class ReleaseSbomTests(unittest.TestCase):
@@ -73,6 +74,12 @@ class ReleaseSbomTests(unittest.TestCase):
                 (programs / f"P{index:03d}.PRG").write_bytes(b"x")
             with self.assertRaisesRegex(ValueError, "count"):
                 generate_sbom(root, output, artifacts, programs)
+
+    def test_capacity_covers_fixed_native_image_and_remains_bounded(self):
+        self.assertEqual(generate_release_sbom.MAX_FILE_SIZE, 512 * 1024 * 1024)
+        self.assertEqual(generate_release_sbom.MAX_TOTAL_SIZE, 768 * 1024 * 1024)
+        self.assertEqual(validate_release_sbom.MAX_FILE_SIZE, 512 * 1024 * 1024)
+        self.assertEqual(validate_release_sbom.MAX_TOTAL_SIZE, 768 * 1024 * 1024)
 
     def test_validator_is_structurally_independent(self):
         source = Path("scripts/validate_release_sbom.py").read_text("utf-8")

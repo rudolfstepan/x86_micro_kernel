@@ -18,23 +18,47 @@ static int equal_ascii_case(const uint8_t *left, uint32_t length,
 }
 
 int reist_curl_parse_http_url(const char *text, reist_curl_url_t *url) {
-    static const char scheme[] = "http://";
+    static const char http_scheme[] = "http://";
+    static const char https_scheme[] = "https://";
     if (text == 0 || url == 0) return -22;
     uint32_t index = 0U;
-    while (scheme[index] != '\0') {
-        if (text[index] != scheme[index]) return -95;
+    while (http_scheme[index] != '\0' && text[index] == http_scheme[index])
         ++index;
+    if (http_scheme[index] == '\0') {
+        url->scheme = REIST_CURL_SCHEME_HTTP;
+        url->port = 80U;
+    } else {
+        index = 0U;
+        while (https_scheme[index] != '\0' &&
+               text[index] == https_scheme[index]) ++index;
+        if (https_scheme[index] != '\0') return -95;
+        url->scheme = REIST_CURL_SCHEME_HTTPS;
+        url->port = 443U;
     }
-    uint32_t host_length = 0U;
+    uint32_t host_length = 0U, label_length = 0U;
+    int previous_hyphen = 0;
     while (text[index] != '\0' && text[index] != '/' && text[index] != ':') {
         uint8_t value = (uint8_t)text[index++];
-        if (value <= 0x20U || value >= 0x7fU || value == '[' || value == ']' ||
+        int alphanumeric = (value >= 'a' && value <= 'z') ||
+                           (value >= 'A' && value <= 'Z') ||
+                           (value >= '0' && value <= '9');
+        if ((!alphanumeric && value != '-' && value != '.') ||
             host_length + 1U >= REIST_CURL_HOST_CAPACITY) return -22;
+        if (value == '.') {
+            if (label_length == 0U || label_length > 63U || previous_hyphen)
+                return -22;
+            label_length = 0U;
+            previous_hyphen = 0;
+        } else {
+            if (label_length == 0U && value == '-') return -22;
+            ++label_length;
+            previous_hyphen = value == '-';
+        }
         url->host[host_length++] = (char)value;
     }
-    if (host_length == 0U) return -22;
+    if (host_length == 0U || label_length == 0U || label_length > 63U ||
+        previous_hyphen) return -22;
     url->host[host_length] = '\0';
-    url->port = 80U;
     if (text[index] == ':') {
         ++index;
         uint32_t port = 0U, digits = 0U;

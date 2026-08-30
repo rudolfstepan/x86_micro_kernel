@@ -10,9 +10,11 @@ compiler, linker or archive format.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
+import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,10 +28,36 @@ GUI_INCLUDE_ROOT = ROOT / "userspace" / "gui" / "include"
 AUDIO_INCLUDE_ROOT = ROOT / "userspace" / "audio" / "include"
 IMAGE_INCLUDE_ROOT = ROOT / "userspace" / "image" / "include"
 CONFIG_INCLUDE_ROOT = ROOT / "userspace" / "config" / "include"
+TLS_ROOT = ROOT / "userspace" / "tls"
+TLS_INCLUDE_ROOT = TLS_ROOT / "include"
+TLS_LIBRARY_ROOT = TLS_ROOT / "lib"
+MBEDTLS_ARCHIVE = ROOT / "third_party" / "mbedtls-4.1.1.tar.bz2"
+MBEDTLS_SHA256 = "3359a349e23db3d5536fcee032ae7b2ecbfc08972fab643089b5cbf2a375c98c"
 PUBLIC_INCLUDE_ROOTS = (
     CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
-    CONFIG_INCLUDE_ROOT,
+    CONFIG_INCLUDE_ROOT, TLS_INCLUDE_ROOT,
 )
+TLS_WRAPPER_SOURCES = (
+    TLS_LIBRARY_ROOT / "reist_tls.c",
+    TLS_LIBRARY_ROOT / "reist_tls_platform.c",
+    TLS_LIBRARY_ROOT / "reist_tls_trust_anchors.c",
+)
+MBEDTLS_LIBRARY_NAMES = (
+    "mbedtls_config.c", "ssl_ciphersuites.c", "ssl_client.c", "ssl_msg.c",
+    "ssl_tls.c", "ssl_tls12_client.c", "ssl_tls13_keys.c",
+    "ssl_tls13_client.c", "ssl_tls13_generic.c", "x509.c", "x509_crt.c",
+    "x509_oid.c",
+)
+MBEDTLS_SUPPORT_NAMES = (
+    "extras/md.c", "extras/pk.c", "extras/pk_ecc.c", "extras/pk_rsa.c",
+    "extras/pk_wrap.c", "extras/pkparse.c", "extras/pkwrite.c",
+    "platform/platform_util.c", "utilities/asn1parse.c",
+    "utilities/asn1write.c", "utilities/base64.c",
+    "utilities/constant_time.c", "utilities/oid.c", "utilities/pem.c",
+)
+MBEDTLS_CORE_EXCLUDED = {
+    "psa_its_file.c", "psa_crypto_storage.c",
+}
 
 CORE_LIBRARY_SOURCES = (
     CORE_ROOT / "x86os.c",
@@ -80,6 +108,7 @@ class SdkArtifacts:
     gui_library: Path
     audio_library: Path
     image_library: Path
+    tls_library: Path
 
 
 def sdk_artifacts(output: Path) -> SdkArtifacts:
@@ -96,6 +125,7 @@ def sdk_artifacts(output: Path) -> SdkArtifacts:
         gui_library=library_dir / "libreistgui.a",
         audio_library=library_dir / "libreistaudio.a",
         image_library=library_dir / "libreistimage.a",
+        tls_library=library_dir / "libreisttls.a",
     )
 
 
@@ -150,6 +180,15 @@ def write_pkg_config(library_dir: Path) -> None:
         "Cflags: -I${includedir}\n"
         "Libs: -L${libdir} -lreistimage\n",
     )
+    write_if_changed(
+        library_dir / "pkgconfig/reist-tls.pc",
+        common +
+        "Name: reist-tls\n"
+        "Description: Bounded authenticated REIST Ring-3 TLS client\n"
+        "Version: 1.0.0\n"
+        "Cflags: -I${includedir}\n"
+        "Libs: -L${libdir} -lreisttls -lreistos\n",
+    )
 
 
 def run(command: list[str], environment: dict[str, str]) -> None:
@@ -159,19 +198,63 @@ def run(command: list[str], environment: dict[str, str]) -> None:
 
 def compile_objects(
     sources: tuple[Path, ...], prefix: list[str], temporary: Path,
-    stem: str, environment: dict[str, str],
+    stem: str, environment: dict[str, str], extra_flags: list[str] | None = None,
 ) -> list[Path]:
     """Compile a fixed source tuple into temporary ELF32 objects."""
     objects: list[Path] = []
     for index, source in enumerate(sources):
         object_path = temporary / f"{stem}-{index}.o"
         run(
-            [*prefix, "-std=c11", "-c", str(source),
+            [*prefix, *(extra_flags or []), "-std=c11", "-c", str(source),
              "-o", str(object_path)],
             environment,
         )
         objects.append(object_path)
     return objects
+
+
+def extract_mbedtls(destination: Path) -> Path:
+    """Verify and extract only the pinned Mbed TLS build inputs."""
+    digest = hashlib.sha256(MBEDTLS_ARCHIVE.read_bytes()).hexdigest()
+    if digest != MBEDTLS_SHA256:
+        raise ValueError("Mbed TLS archive SHA-256 mismatch")
+    prefixes = (
+        "mbedtls-4.1.1/include/", "mbedtls-4.1.1/library/",
+        "mbedtls-4.1.1/tf-psa-crypto/include/",
+        "mbedtls-4.1.1/tf-psa-crypto/core/",
+        "mbedtls-4.1.1/tf-psa-crypto/drivers/builtin/",
+        "mbedtls-4.1.1/tf-psa-crypto/extras/",
+        "mbedtls-4.1.1/tf-psa-crypto/utilities/",
+        "mbedtls-4.1.1/tf-psa-crypto/dispatch/",
+        "mbedtls-4.1.1/tf-psa-crypto/platform/",
+    )
+    destination.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(MBEDTLS_ARCHIVE, "r:bz2") as archive:
+        members = []
+        for member in archive.getmembers():
+            if not member.isfile() or not member.name.startswith(prefixes):
+                continue
+            relative = Path(member.name).relative_to("mbedtls-4.1.1")
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError("unsafe Mbed TLS archive path")
+            member.name = relative.as_posix()
+            members.append(member)
+        archive.extractall(destination, members=members, filter="data")
+    return destination
+
+
+def mbedtls_sources(root: Path) -> tuple[Path, ...]:
+    sources = [root / "library" / name for name in MBEDTLS_LIBRARY_NAMES]
+    sources.extend(root / "tf-psa-crypto" / name
+                   for name in MBEDTLS_SUPPORT_NAMES)
+    sources.extend(sorted(
+        path for path in (root / "tf-psa-crypto/core").glob("*.c")
+        if path.name not in MBEDTLS_CORE_EXCLUDED))
+    sources.extend(sorted(
+        (root / "tf-psa-crypto/drivers/builtin/src").glob("*.c")))
+    if any(not path.is_file() for path in sources):
+        raise FileNotFoundError("pinned Mbed TLS source graph is incomplete")
+    return tuple(sources)
 
 
 def create_archive(
@@ -223,17 +306,22 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     config_headers = tuple(
         header for root, header in public_headers
         if root == CONFIG_INCLUDE_ROOT)
+    tls_headers = tuple(
+        header for root, header in public_headers
+        if root == TLS_INCLUDE_ROOT)
     all_sources = (
         STARTUP_SOURCE, *CORE_LIBRARY_SOURCES,
         *NETWORK_PARSER_SOURCES, *GUI_LIBRARY_SOURCES,
         *AUDIO_LIBRARY_SOURCES,
         *IMAGE_LIBRARY_SOURCES,
+        *TLS_WRAPPER_SOURCES,
     )
     if (not core_headers or not gui_headers or not audio_headers or
-            not image_headers or not config_headers or any(
+            not image_headers or not config_headers or not tls_headers or any(
             not source.is_file()
             for source in (*all_sources, *core_headers, *gui_headers,
-                           *audio_headers, *image_headers, *config_headers))):
+                           *audio_headers, *image_headers, *config_headers,
+                           *tls_headers, MBEDTLS_ARCHIVE))):
         raise FileNotFoundError("REIST SDK sources are incomplete")
 
     for root, header in public_headers:
@@ -263,8 +351,12 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     image_stale = artifact_requires_rebuild(
         artifacts.image_library,
         (*IMAGE_LIBRARY_SOURCES, *image_headers), incremental)
+    tls_stale = artifact_requires_rebuild(
+        artifacts.tls_library,
+        (*TLS_WRAPPER_SOURCES, *tls_headers, MBEDTLS_ARCHIVE,
+         TLS_LIBRARY_ROOT / "reist_tls_config.h"), incremental)
     if not (startup_stale or core_stale or parser_stale or gui_stale or
-            audio_stale or image_stale):
+            audio_stale or image_stale or tls_stale):
         return artifacts
 
     with tempfile.TemporaryDirectory(prefix="reist-user-sdk-") as temporary:
@@ -321,6 +413,33 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
             create_archive(
                 zig, artifacts.image_library, image_objects,
                 temporary_path, environment)
+        if tls_stale:
+            vendor = extract_mbedtls(temporary_path / "mbedtls")
+            tls_includes = [
+                TLS_INCLUDE_ROOT, TLS_LIBRARY_ROOT,
+                TLS_LIBRARY_ROOT / "compat", vendor,
+                vendor / "include", vendor / "library",
+                vendor / "tf-psa-crypto/include",
+                vendor / "tf-psa-crypto/core",
+                vendor / "tf-psa-crypto/drivers/builtin/include",
+                vendor / "tf-psa-crypto/drivers/builtin/src",
+                vendor / "tf-psa-crypto/extras",
+                vendor / "tf-psa-crypto/utilities",
+                vendor / "tf-psa-crypto/dispatch",
+                vendor / "tf-psa-crypto/platform",
+            ]
+            tls_prefix = freestanding_compile_prefix(zig, tls_includes)
+            tls_flags = [
+                "-ffunction-sections", "-fdata-sections",
+                '-DMBEDTLS_CONFIG_FILE="reist_tls_config.h"',
+                '-DTF_PSA_CRYPTO_CONFIG_FILE="reist_tls_config.h"',
+            ]
+            tls_objects = compile_objects(
+                (*TLS_WRAPPER_SOURCES, *mbedtls_sources(vendor)), tls_prefix,
+                temporary_path, "tls", environment, tls_flags)
+            create_archive(
+                zig, artifacts.tls_library, tls_objects,
+                temporary_path, environment)
     return artifacts
 
 
@@ -339,6 +458,7 @@ def main() -> None:
     print(f"REIST SDK GUI library: {artifacts.gui_library}")
     print(f"REIST SDK audio library: {artifacts.audio_library}")
     print(f"REIST SDK image library: {artifacts.image_library}")
+    print(f"REIST SDK TLS library: {artifacts.tls_library}")
 
 
 if __name__ == "__main__":

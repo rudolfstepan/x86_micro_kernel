@@ -1166,7 +1166,7 @@ und 10 verbindlich.
 | Prozesse | Spawn mit `argc/argv`, Exit-Status, atomarer Wait, Wait-Queues, Sleep/Yield, eigenes CWD, IPC-v1, generationsgebundene Capabilities, endliche Deadlines, Restartreserve, überwachte Ring-3-Domänen und CPU-affiner SMP-Kernelprobelauf | 32 feste Taskslots; allgemeine Mehrkern-Dienstausführung und dynamisch erweiterbare Taskkapazität fehlen |
 | Dateien | VFS, REIST-FAT12/FAT32 read/write, fremde FAT12/FAT32 read-only, ASCII-VFAT-LFN, Undo-Journale, FAT12-Remap/Replikate/Fehlermatrix, `fsync`, Same-Directory-Rename/Replace, EXT2 read-only | Unicode-Normalisierung, allgemeiner transaktionaler Reparaturpfad und medienunabhängige Persistenz fehlen |
 | Geräte | PCI, ATA/IDE, AHCI/SATA, FDD, PS/2, experimentelles xHCI-HID, VGA/VBE/QEMU-DISPI, überwachtes Ring-3-VMware-SVGA-II-2D und kernelvermitteltes HDA | mehrere QEMU-/VMware- und einzelne reale Nachweise; breite Hardware-, IOMMU- und Hotplugmatrix fehlt |
-| Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS und HTTP/1.0 | Host- und QEMU-Nachweise vorhanden; kein IPv6, TLS oder vollständiges POSIX-Socketmodell |
+| Netzwerk | E1000, RTL8139, RTL8168/8111G, NE2000, Ethernet, ARP, IPv4, ICMP, DHCP, UDP-/TCP-FD-Sockets, DNS, HTTP/1.0 und Ring-3-TLS 1.2/1.3 | Host- und QEMU-Nachweise vorhanden; kein IPv6, Zertifikatswiderruf oder vollständiges POSIX-Socketmodell |
 | USB | xHCI-Initialisierung, Root-Port-/Descriptorpfad und HID-Boot-Tastatur/-Maus einschließlich automatisiertem VMware-Desktop-Mausnachweis | einfache reale Geräte und VMware-Maus abgenommen; Composite-AULA, allgemeiner Hotplug und Mass Storage offen |
 | Userspace | SDK mit getrennten GUI-/Audio-/Image-Bibliotheken, Ring-3-Shell, Systemprogramme, Surface-Compositor, Explorer, Notepad und Image Viewer als Fensterclients | Sound Player und Control Gallery werden in R2.2ai migriert; Terminal und Systemwerkzeuge bleiben offen |
 | Qualität | Host-/Quelltests, Imagevalidatoren, QEMU-Runtimeprofile für Ring 3, Netzwerk, Storage, Handover, Grafik/Surface und PCI-Audio sowie manuelle VMware-/Hardwareevidenz | breite Hardware-, Langzeit-, EMV- und reale Power-Loss-Matrix fehlt |
@@ -1441,8 +1441,10 @@ behauptet.
   Backlog. Aktiver und passiver TCP-Handshake, Nutzdaten und Close sind im
   QEMU-End-to-End-Test belegt.
 - `nc.prg` ist als TCP-Client vorhanden. `httpd.prg` bedient begrenzte
-  HTTP/1.0-`GET`-/`HEAD`-Anfragen aus `/htdocs` einschließlich Directory-Listing;
-  TLS/HTTPS bleibt ein eigenes späteres Paket.
+  HTTP/1.0-`GET`-/`HEAD`-Anfragen aus `/htdocs` einschließlich Directory-Listing.
+  `curl.prg` nutzt `libreisttls.a` für TLS 1.2/1.3 mit verpflichtender
+  X.509-/SAN-/RTC-Prüfung und festen Speicher- und Zeitgrenzen; Widerrufsprüfung
+  und ein sicherer Uhranker bleiben offen.
 - IPv6 erst nach einer belastbaren IPv4-/Socket-Schicht
 - reale H81M-K-Gegenprobe des nun vorhandenen RTL8111G-/RTL8168-PCIe-Treibers;
   die QEMU-Referenz emuliert diesen Controller nicht
@@ -2224,7 +2226,7 @@ paketierten Ring-3-Programme. Jeder Eintrag bindet kanonischen Build-Pfad,
 Bytegröße im standardisierten Kommentarfeld sowie das erforderliche SHA-1 und
 zusätzlich SHA-256; ein separater Parser prüft die Live-Artefakte sowie die
 vollständigen `DESCRIBES`-/`CONTAINS`-Beziehungen. Die Verarbeitung ist auf
-160 Dateien, 128 MiB je Datei, 512 MiB Gesamteingang und 2 MiB JSON begrenzt.
+160 Dateien, 512 MiB je Datei, 768 MiB Gesamteingang und 2 MiB JSON begrenzt.
 Ungeklärte Lizenz- und Copyrightangaben bleiben sichtbar `NOASSERTION`. Das
 Dokument ist weder signierte Provenienz noch vollständiges Quellen-,
 Abhängigkeits-, Lizenz- oder Schwachstelleninventar und belegt noch keine

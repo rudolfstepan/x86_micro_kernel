@@ -199,7 +199,8 @@ def build(sources: list[Path], output: Path, zig: Path,
           runtime_objects: list[Path] | None = None,
           runtime_libraries: list[Path] | None = None,
           cache_directory: Path | None = None,
-          dependency_files: list[Path] | None = None) -> None:
+          dependency_files: list[Path] | None = None,
+          compile_flags: list[str] | None = None) -> None:
     """Compile, statically link and package one fixed-address Ring-3 program."""
     sdk = ROOT / "userspace" / "sdk"
     linker_script = ROOT / "config" / "user_program.ld"
@@ -275,6 +276,7 @@ def build(sources: list[Path], output: Path, zig: Path,
         objects: list[Path] = []
         common_flags = freestanding_compile_prefix(
             zig, include_dirs, include_repository_sdk=not prebuilt_runtime)
+        common_flags.extend(compile_flags or [])
         for index, source in enumerate(all_sources):
             object_path = temporary_path / f"source-{index}.o"
             language_flags = ["-std=c11"] if source.suffix.lower() == ".c" else []

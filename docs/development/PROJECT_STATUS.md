@@ -1172,7 +1172,12 @@ TCP-Handshake/Daten/Close (`pong`), DNS-A über UDP (`test.reist` auf
 `/htdocs`-Directory-Listing laufen im selben Standard-Serverprozess; erst der
 anschließend injizierte `Strg+C`-Abbruch führt zurück zur Shell und zu
 `guest-smoke: PASS`. Begrenzte Einzel-Timeouts und fehlerhafte Clients beenden
-den Listener nicht. Nicht vorhanden sind IPv6, TLS/HTTPS oder SMB.
+den Listener nicht. `curl.prg` verwendet die wiederverwendbare Ring-3-
+Bibliothek `libreisttls.a` für authentisiertes TLS 1.2/1.3. Der eingebettete
+Mozilla/curl-Vertrauensspeicher, X.509-Gültigkeit, RTC und SAN-Hostname sind
+verpflichtend; Entropie, Allokationen, Records und Fristen sind begrenzt.
+Nicht vorhanden sind IPv6, Zertifikatswiderruf, eine manipulationsgeschützte
+Uhr oder SMB.
 
 ## Verifikation
 
@@ -1204,8 +1209,8 @@ paketierten Ring-3-Programme mit exakter Größe im SPDX-Kommentarfeld sowie
 SHA-1 und SHA-256. Ein strukturell unabhängiger Validator prüft Pfadgrenzen,
 Eindeutigkeit, Kapazitäten,
 Dokumentstruktur, Beziehungen und jedes aktuelle Artefakt erneut; der QEMU-
-Paket-Gate verlangt das Ergebnis. Die Grenzen sind 160 Dateien, 128 MiB je
-Datei, 512 MiB Gesamteingang und 2 MiB Dokumentgröße. `NOASSERTION` markiert
+Paket-Gate verlangt das Ergebnis. Die Grenzen sind 160 Dateien, 512 MiB je
+Datei, 768 MiB Gesamteingang und 2 MiB Dokumentgröße. `NOASSERTION` markiert
 weiter ungeklärte Lizenz- und Copyrightdaten. Reproduzierbarkeit, vollständige
 Quellen-/Abhängigkeitsabdeckung, Lizenzfreigabe, Vulnerability-Analyse und
 signierte Provenienz bleiben offen.

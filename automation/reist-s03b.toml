@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R4.1a-curl-https"
+active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
 
 [policy]
 one_package_per_run = true
@@ -13232,7 +13232,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2r-x86_64-ipc-revocation-wakeup"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Prove generation-scoped x86_64 IPC revocation wakeups"
@@ -13271,7 +13271,7 @@ evidence = []
 
 [[packages]]
 id = "R4.1a-curl-https"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Provide reusable authenticated Ring-3 TLS and curl HTTPS"
@@ -13281,6 +13281,8 @@ allowed_files = [
   "third_party/mbedtls-4.1.1.tar.bz2",
   "third_party/mbedtls-4.1.1.sha256",
   "third_party/README.md",
+  "third_party/cacert-2026-08-13.pem",
+  "third_party/cacert-2026-08-13.pem.sha256",
   "userspace/programs/curl.c",
   "userspace/programs/curl_http.c",
   "userspace/programs/curl_http.h",
@@ -13290,15 +13292,25 @@ allowed_files = [
   "userspace/tls/lib/reist_tls_config.h",
   "userspace/tls/lib/reist_tls_trust_anchors.c",
   "userspace/tls/lib/reist_tls_trust_anchors.h",
+  "userspace/tls/lib/compat/string.h",
+  "userspace/tls/lib/compat/stdlib.h",
+  "userspace/tls/lib/compat/time.h",
+  "userspace/tls/lib/compat/assert.h",
+  "userspace/tls/lib/compat/inttypes.h",
+  "userspace/tls/lib/compat/stdio.h",
   "scripts/build_user_sdk.py",
   "scripts/build_user_program.py",
   "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
   "scripts/generate_curl_trust_store.py",
   "scripts/run_qemu_smoke.py",
   "scripts/test-reist-runtime.ps1",
+  "scripts/generate_release_sbom.py",
+  "scripts/validate_release_sbom.py",
   "test/test_curl_http_host.c",
   "test/test_reist_tls_host.c",
   "test/test_network_tools.py",
+  "test/test_release_sbom.py",
   "test/fixtures/curl_tls_ca.pem",
   "test/fixtures/curl_tls_server.pem",
   "test/fixtures/curl_tls_server.key",
@@ -13306,8 +13318,10 @@ allowed_files = [
   "test/fixtures/curl_tls_expired.pem",
   "docs/networking/NETWORK.md",
   "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/HIGH_ASSURANCE_CORE_CONTRACT.md",
   "docs/development/CURRENT_WORK.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/PROJECT_STATUS.md",
   "README.md"
 ]
 invariants = [
@@ -13334,4 +13348,10 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "net: authenticate bounded curl https"
-evidence = []
+evidence = [
+  "The frozen network-tools gate passed all 13 checks with five documented missing-GCC skips; the Zig-built native proof completed authenticated TLS 1.2 and TLS 1.3 exchanges and rejected wrong-host expired unknown-CA malformed truncated and record-tampered peers.",
+  "The reusable Ring-3 allocator used exactly one bounded 4-MiB backing allocation, retained the 512-KiB individual allocation ceiling, reclaimed every block, and fit CURL.PRG plus its fixed context inside the unchanged 8-MiB MYPR region.",
+  "The final QEMU VGA package passed in 69 seconds, produced the 512-MiB native image, linked CURL.PRG against libreisttls.a, and generated and validated the 79-file SPDX release SBOM.",
+  "The final curl-https-client runtime passed in 116 seconds on QEMU with explicitly emulated RDRAND and observed REIST_CURL_HTTPS_RUNTIME_OK only after the guest authenticated the deterministic CA, IP SAN, validity interval and TLS records and sent the HTTP request inside TLS.",
+  "Mbed TLS 4.1.1 and the 2026-08-13 Mozilla-derived trust store remain SHA-256 pinned; TLS stays in each client process with fixed deadlines and no kernel parser or device authority, while revocation checking secure-clock resistance IPv6 certification and unrestricted upstream curl compatibility remain explicitly out of scope."
+]

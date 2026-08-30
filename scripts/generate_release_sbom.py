@@ -13,8 +13,8 @@ from pathlib import Path
 
 
 MAX_FILES = 160
-MAX_FILE_SIZE = 128 * 1024 * 1024
-MAX_TOTAL_SIZE = 512 * 1024 * 1024
+MAX_FILE_SIZE = 512 * 1024 * 1024
+MAX_TOTAL_SIZE = 768 * 1024 * 1024
 MAX_DOCUMENT_SIZE = 2 * 1024 * 1024
 
 
@@ -92,10 +92,10 @@ def generate_sbom(
         seen.add(key)
         size = path.stat().st_size
         if size < 0 or size > MAX_FILE_SIZE:
-            raise ValueError(f"SBOM artifact exceeds 128 MiB: {canonical}")
+            raise ValueError(f"SBOM artifact exceeds 512 MiB: {canonical}")
         total_size += size
         if total_size > MAX_TOTAL_SIZE:
-            raise ValueError("SBOM artifacts exceed 512 MiB total")
+            raise ValueError("SBOM artifacts exceed 768 MiB total")
         sha1, sha256 = _checksums(path)
         collected.append((canonical, size, sha1, sha256))
     collected.sort(key=lambda item: item[0].casefold())

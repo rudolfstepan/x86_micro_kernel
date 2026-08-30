@@ -1,6 +1,6 @@
 # Netzwerkstack
 
-Stand: 18. August 2026.
+Stand: 30. August 2026.
 
 Der verifizierte VMware-Weg verwendet einen Intel-E1000-Adapter und VMware
 NAT-DHCP. Der überwachte Ring-3-Dienst `REIST.PRG` führt die
@@ -51,6 +51,10 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
 - begrenzter HTTP-Downloadclient `curl` mit DNS, stdout oder atomarer
   `-o`-Dateiausgabe, 30-Sekunden-Transferdeadline und standardmäßig 1 MiB
   beziehungsweise höchstens 16 MiB Antwortgröße
+- `https://` über die wiederverwendbare statische Ring-3-Bibliothek
+  `libreisttls.a`: Mbed TLS 4.1.1 LTS, TLS 1.2/1.3, verpflichtende
+  X.509-Ketten-, Gültigkeits- und SAN-Hostprüfung sowie der eingebettete,
+  SHA-256-fixierte Mozilla/curl-Vertrauensspeicher vom 13. August 2026
 - E1000 in der generierten VMware-VM und RTL8168/8111G auf dem ASUS H81M-K
 
 Ein Ping auf die eigene konfigurierte IPv4-Adresse wird lokal beantwortet und
@@ -58,10 +62,11 @@ benötigt weder ARP noch einen Ethernet-Loopback. Fremde oder vor einer
 validierten Lease eintreffende ICMP-Pakete werden kanonisch verworfen, ohne den
 überwachten Netzwerkdienst neu zu starten.
 
-Noch nicht implementiert sind IPv6, Routing zwischen mehreren Gastinterfaces,
-TLS/HTTPS sowie Anwendungen wie FTP oder SMB. Die DNS-/TCP-Schicht und der
-HTTP-Server sind hostseitig sowie in deterministischen QEMU-Gasttests gegen
-lokale DNS-/TCP-Testpeers verifiziert.
+Noch nicht implementiert sind IPv6, Routing zwischen mehreren Gastinterfaces
+sowie Anwendungen wie FTP oder SMB. TLS prüft keine Zertifikatswiderrufe und
+besitzt keinen gegen manipulierte Hardware geschützten Uhrendienst; die
+Mozilla-Name-Constraints sind im curl-PEM-Format nicht enthalten. Das ist
+weder eine Zertifizierung noch uneingeschränkte Upstream-curl-Kompatibilität.
 
 ## Shellbefehle
 
@@ -77,6 +82,7 @@ C:\> nslookup example.test
 C:\> nc example.test 80 "GET / HTTP/1.0"
 C:\> httpd 8080
 C:\> curl http://example.com/
+C:\> curl https://example.com/
 C:\> curl -o /download.txt --max-bytes 65536 http://example.com/data.txt
 ```
 
@@ -86,11 +92,13 @@ Client-Timeout beendet den Listener nicht. Das optionale Argument
 `httpd [port] [requests]` begrenzt ausschließlich Testläufe auf höchstens 32
 erfolgreiche Anfragen.
 `curl` liegt standardüblich unter `/usr/bin`. Der aktuelle kompatible
-Teilumfang akzeptiert `http://`, HTTP/1.0-/1.1-Antwortköpfe und
+Teilumfang akzeptiert `http://` und `https://`, HTTP/1.0-/1.1-Antwortköpfe und
 Content-Length oder Close-delimited Bodies. Chunked Transfer-Encoding,
-Redirect-Following und HTTPS werden fail-closed abgewiesen. Insbesondere darf
-der Befehl ohne einen späteren validierten TLS-Dienst nicht für vertrauliche
-oder authentisierte Daten verwendet werden.
+Redirect-Following, IPv6 und Zertifikatswiderruf bleiben ausgeschlossen.
+Der TLS-Kontext ist auf 512 KiB, der TLS-Heap auf 4 MiB insgesamt und 512 KiB
+je Allokation, ein Entropieabruf auf 4096 Byte, der Handshake auf 30 Sekunden
+und ein einzelner I/O-Schritt auf fünf Sekunden begrenzt. Vor erfolgreichem
+Handshake werden keine HTTP-Nutzdaten gesendet oder ausgegeben.
 `netstat` zeigt
 neben dem Interfacezustand auch aktive UDP-/TCP-Sockets, Queuefüllung, Drops
 und TCP-Retransmissionen. Die bisherigen Shell-Built-ins bleiben aus

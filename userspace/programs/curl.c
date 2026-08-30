@@ -1,14 +1,19 @@
 /**
  * @file curl.c
- * @brief Bounded curl-compatible HTTP/1.x download client.
+ * @brief Bounded curl-compatible HTTP/1.x and HTTPS download client.
  *
- * This first profile intentionally supports cleartext http:// only. It uses
- * the public Ring-3 DNS, TCP and VFS ABIs, fixed buffers, a total transfer
- * deadline and a caller-selected bounded byte limit. HTTPS is rejected until
- * a validated TLS service exists; no security property is implied by HTTP.
+ * HTTPS uses the reusable Ring-3 REIST TLS client with mandatory trust-chain,
+ * time and hostname verification. HTTP remains available without implying
+ * transport security. Both paths use fixed buffers and finite deadlines.
  */
 #include "x86os.h"
 #include "curl_http.h"
+#include "reist/tls.h"
+
+#if defined(REIST_CURL_TLS_RUNTIME_PROBE)
+extern const uint8_t reist_tls_runtime_test_ca_pem[];
+extern const size_t reist_tls_runtime_test_ca_pem_size;
+#endif
 
 #define CURL_REQUEST_CAPACITY X86OS_TCP_MAX_SEGMENT
 #define CURL_DEFAULT_MAX_BYTES (1024U * 1024U)
@@ -24,6 +29,18 @@ typedef struct curl_options {
     const char *output;
     uint32_t maximum_bytes;
 } curl_options_t;
+
+typedef int (*curl_stream_send_fn)(void *stream, const uint8_t *data,
+                                   uint32_t length);
+typedef int (*curl_stream_receive_fn)(void *stream, uint8_t *data,
+                                      uint32_t capacity);
+typedef struct curl_stream {
+    void *stream;
+    curl_stream_send_fn send;
+    curl_stream_receive_fn receive;
+} curl_stream_t;
+
+static reist_tls_context_t tls_context;
 
 static uint32_t bounded_length(const char *text, uint32_t capacity) {
     uint32_t length = 0U;
@@ -115,7 +132,8 @@ static int build_request(const reist_curl_url_t *url, char *request,
                     " HTTP/1.0\r\nHost: ") != 0 ||
         append_text(request, &used, CURL_REQUEST_CAPACITY, url->host) != 0)
         return -1;
-    if (url->port != 80U &&
+    uint16_t default_port = url->scheme == REIST_CURL_SCHEME_HTTPS ? 443U : 80U;
+    if (url->port != default_port &&
         (append_text(request, &used, CURL_REQUEST_CAPACITY, ":") != 0 ||
          append_unsigned(request, &used, CURL_REQUEST_CAPACITY,
                          url->port) != 0)) return -1;
@@ -143,18 +161,53 @@ static int parse_ipv4(const char *text, uint32_t *result) {
     return 0;
 }
 
-static int send_all(x86os_tcp_socket_t socket, const uint8_t *data,
+static int tcp_transport_send(void *opaque, const uint8_t *data,
+                              uint32_t length, uint32_t timeout_ms) {
+    x86os_tcp_socket_t socket = *(x86os_tcp_socket_t *)opaque;
+    uint32_t amount = length;
+    if (amount > X86OS_TCP_MAX_SEGMENT) amount = X86OS_TCP_MAX_SEGMENT;
+    x86os_tcp_io_t io = {
+        X86OS_TCP_SOCKET_VERSION, sizeof(io), socket, amount, timeout_ms};
+    return x86os_tcp_send(&io, data);
+}
+
+static int tcp_transport_receive(void *opaque, uint8_t *data,
+                                 uint32_t capacity, uint32_t timeout_ms) {
+    x86os_tcp_socket_t socket = *(x86os_tcp_socket_t *)opaque;
+    uint32_t amount = capacity;
+    if (amount > X86OS_TCP_RECEIVE_CAPACITY)
+        amount = X86OS_TCP_RECEIVE_CAPACITY;
+    x86os_tcp_io_t io = {
+        X86OS_TCP_SOCKET_VERSION, sizeof(io), socket, amount, timeout_ms};
+    return x86os_tcp_receive(&io, data);
+}
+
+static int plain_send(void *opaque, const uint8_t *data, uint32_t length) {
+    return tcp_transport_send(opaque, data, length, CURL_IO_TIMEOUT_MS);
+}
+
+static int plain_receive(void *opaque, uint8_t *data, uint32_t capacity) {
+    return tcp_transport_receive(opaque, data, capacity, CURL_IO_TIMEOUT_MS);
+}
+
+static int tls_send(void *opaque, const uint8_t *data, uint32_t length) {
+    return reist_tls_client_write((reist_tls_context_t *)opaque, data, length);
+}
+
+static int tls_receive(void *opaque, uint8_t *data, uint32_t capacity) {
+    return reist_tls_client_read((reist_tls_context_t *)opaque, data, capacity);
+}
+
+static int send_all(const curl_stream_t *stream, const uint8_t *data,
                     uint32_t length) {
     uint32_t sent = 0U;
     while (sent < length) {
         uint32_t amount = length - sent;
         if (amount > X86OS_TCP_MAX_SEGMENT) amount = X86OS_TCP_MAX_SEGMENT;
-        x86os_tcp_io_t io = {
-            X86OS_TCP_SOCKET_VERSION, sizeof(io), socket, amount,
-            CURL_IO_TIMEOUT_MS};
-        int result = x86os_tcp_send(&io, data + sent);
-        if (result != (int)amount) return result < 0 ? result : -5;
-        sent += amount;
+        int result = stream->send(stream->stream, data + sent, amount);
+        if (result <= 0 || (uint32_t)result > amount)
+            return result < 0 ? result : -5;
+        sent += (uint32_t)result;
     }
     return 0;
 }
@@ -183,16 +236,14 @@ static int make_temporary_path(const char *output, char *temporary) {
     return 0;
 }
 
-static int receive_body(x86os_tcp_socket_t socket, int output,
+static int receive_body(const curl_stream_t *stream, int output,
                         uint32_t maximum_bytes) {
     uint8_t header[REIST_CURL_HEADER_CAPACITY];
     uint32_t header_used = 0U, body_offset = 0U;
     int status = -11;
     while (status == -11) {
-        x86os_tcp_io_t io = {
-            X86OS_TCP_SOCKET_VERSION, sizeof(io), socket,
-            sizeof(header) - header_used, CURL_IO_TIMEOUT_MS};
-        int received = x86os_tcp_receive(&io, header + header_used);
+        int received = stream->receive(
+            stream->stream, header + header_used, sizeof(header) - header_used);
         if (received <= 0) return received == 0 ? -84 : received;
         header_used += (uint32_t)received;
         status = reist_curl_find_header_end(
@@ -227,10 +278,7 @@ static int receive_body(x86os_tcp_socket_t socket, int output,
             capacity = response.content_length - total;
         if (capacity > maximum_bytes - total) capacity = maximum_bytes - total;
         if (capacity == 0U) return -90;
-        x86os_tcp_io_t io = {
-            X86OS_TCP_SOCKET_VERSION, sizeof(io), socket, capacity,
-            CURL_IO_TIMEOUT_MS};
-        int received = x86os_tcp_receive(&io, buffer);
+        int received = stream->receive(stream->stream, buffer, capacity);
         if (received == 0)
             return response.content_length_present &&
                 total != response.content_length ? -84 : 0;
@@ -243,8 +291,9 @@ static int receive_body(x86os_tcp_socket_t socket, int output,
 
 int main(int argc, char **argv) {
     if (argc == 2 && argv != 0 && text_equal(argv[1], "--help")) {
-        x86os_puts("Usage: curl [-o file] [--max-bytes n] http://host/path\n"
-                   "HTTP only; HTTPS/TLS is not implemented.\n");
+        x86os_puts("Usage: curl [-o file] [--max-bytes n] "
+                   "http[s]://host/path\n"
+                   "HTTPS verifies the CA chain, RTC and exact host name.\n");
         return 0;
     }
     curl_options_t options;
@@ -254,10 +303,6 @@ int main(int argc, char **argv) {
     }
     reist_curl_url_t url;
     int result = reist_curl_parse_http_url(options.url, &url);
-    if (result == -95) {
-        x86os_puts("curl: only http:// is supported; HTTPS needs TLS\n");
-        return 2;
-    }
     if (result != 0) {
         x86os_puts("curl: invalid URL\n");
         return 2;
@@ -277,21 +322,9 @@ int main(int argc, char **argv) {
         address = dns.address;
     }
 
-    char temporary[CURL_OUTPUT_PATH_CAPACITY];
-    int output = X86OS_STDOUT_FILENO;
-    if (options.output != 0) {
-        if (make_temporary_path(options.output, temporary) != 0) {
-            x86os_puts("curl: output path is too long\n");
-            return 2;
-        }
-        output = x86os_create(temporary);
-        if (output < 0) {
-            x86os_puts("curl: temporary output already exists or is invalid\n");
-            return 1;
-        }
-    }
-
     x86os_tcp_socket_t socket = 0U;
+    int tls_open = 0;
+    curl_stream_t stream = {&socket, plain_send, plain_receive};
     result = x86os_tcp_socket_open(&socket);
     if (result == 0) {
         x86os_tcp_connect_t connect = {
@@ -299,13 +332,53 @@ int main(int argc, char **argv) {
             url.port, 0U, CURL_CONNECT_TIMEOUT_MS};
         result = x86os_tcp_connect(&connect);
     }
+    if (result == 0 && url.scheme == REIST_CURL_SCHEME_HTTPS) {
+        reist_tls_platform_t platform = {
+            REIST_TLS_ABI_VERSION, sizeof(platform), 0, reist_tls_rtc_time,
+            reist_tls_monotonic_time, reist_tls_hardware_entropy,
+            reist_tls_heap_allocate, reist_tls_heap_free};
+        reist_tls_transport_t transport = {
+            REIST_TLS_ABI_VERSION, sizeof(transport), &socket,
+            tcp_transport_send, tcp_transport_receive};
+        reist_tls_client_options_t tls_options = {
+            REIST_TLS_ABI_VERSION, sizeof(tls_options), url.host,
+            REIST_TLS_DEFAULT_HANDSHAKE_MS, CURL_IO_TIMEOUT_MS, 0, 0U};
+#if defined(REIST_CURL_TLS_RUNTIME_PROBE)
+        tls_options.trust_anchors_pem = reist_tls_runtime_test_ca_pem;
+        tls_options.trust_anchors_pem_size =
+            (uint32_t)reist_tls_runtime_test_ca_pem_size;
+#endif
+        result = reist_tls_client_open(
+            &tls_context, &platform, &transport, &tls_options);
+        if (result == 0) {
+            tls_open = 1;
+            stream = (curl_stream_t){&tls_context, tls_send, tls_receive};
+        }
+    }
+
+    char temporary[CURL_OUTPUT_PATH_CAPACITY];
+    int output = X86OS_STDOUT_FILENO;
+    if (result == 0 && options.output != 0) {
+        if (make_temporary_path(options.output, temporary) != 0) {
+            x86os_puts("curl: output path is too long\n");
+            result = -22;
+        } else {
+            output = x86os_create(temporary);
+            if (output < 0) {
+                x86os_puts(
+                    "curl: temporary output already exists or is invalid\n");
+                result = output;
+            }
+        }
+    }
     if (result == 0)
-        result = send_all(socket, (const uint8_t *)request, request_length);
+        result = send_all(&stream, (const uint8_t *)request, request_length);
     if (result == 0)
-        result = receive_body(socket, output, options.maximum_bytes);
+        result = receive_body(&stream, output, options.maximum_bytes);
+    if (tls_open) (void)reist_tls_client_close(&tls_context);
     if (socket != 0U) (void)x86os_tcp_socket_close(socket, 2000U);
 
-    if (options.output != 0) {
+    if (options.output != 0 && output >= 0 && output != X86OS_STDOUT_FILENO) {
         int close_status = x86os_close(output);
         if (result == 0 && close_status == 0)
             result = x86os_rename(temporary, options.output);

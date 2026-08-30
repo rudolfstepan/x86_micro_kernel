@@ -651,6 +651,17 @@ begrenzte `HTTPD.PRG`-Vordergrundserver Operation 5 für Metadaten, Operation 6
 HTTP/TCP-Transaktionen wechseln zwischen Datei und Verzeichnis, prüfen beide
 Ring-3-Erfolgsmarker, den Betrieb bis `Ctrl+C` und die Shell-Rückkehr.
 
+TLS verbleibt ebenfalls vollständig in der jeweiligen Ring-3-Fehlerdomäne.
+Die versionierte, transportneutrale `libreisttls.a` kapselt Mbed TLS 4.1.1 LTS
+mit caller-owned Kontext, festen Heap-/Recordgrenzen und monotonen Deadlines.
+TLS 1.2/1.3, X.509-Kette, Gültigkeitszeit und exakter SAN-Hostname sind vor
+jeder HTTP-Nutzlast verpflichtend. Die Bibliothek erhält nur Callback-
+Autorität für Transport, RTC, monotone Zeit, Entropie und Allokation; sie
+besitzt weder VFS- noch Geräte-, IRQ-, MMIO- oder DMA-Autorität. Fehlende
+Entropie, ungültige RTC, Trust-/Hostnamefehler oder Budgetüberschreitung
+schließen den Verbindungsaufbau. Widerrufsprüfung, sichere Uhr und
+Zertifizierung werden nicht behauptet.
+
 Der aktuelle BIOS-Referenzpfad verwendet ein festes Manifest v3 mit
 unveränderten bisherigen Feldpositionen, 336-Byte-Header und eingebetteter
 256-Byte-Kernelsignatur. Es bindet das Kernelartefakt mit SHA-256 gemäß NIST
@@ -718,7 +729,7 @@ Generator strukturell unabhängiger Validator hasht die
 Live-Dateien erneut und verlangt exakt eine beschriebene REIST-OS-Package-
 Entität sowie vollständige `CONTAINS`-Beziehungen. Pfade bleiben im Build-Root;
 Symlinks und das Ausgabedokument selbst sind verboten. Feste Grenzen von 160
-Dateien, 128 MiB je Datei, 512 MiB Gesamteingang und 2 MiB JSON halten den
+Dateien, 512 MiB je Datei, 768 MiB Gesamteingang und 2 MiB JSON halten den
 Hostpfad endlich. Atomarer Austausch erhält bei einem Fehler das vorherige
 Dokument. Unbekannte Lizenz- und Copyrightdaten werden nicht geraten, sondern
 als `NOASSERTION` ausgewiesen. Dieses Artefakt ist nicht signiert und behauptet

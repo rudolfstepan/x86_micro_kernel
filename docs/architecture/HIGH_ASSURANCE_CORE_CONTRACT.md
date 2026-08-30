@@ -376,7 +376,7 @@ SPDX-2.3-JSON-SBOM für Kernel, detached Signatur, BIOS-Image und unmittelbar
 paketierte Ring-3-Programme. Zulässig sind ausschließlich kanonische reguläre
 Dateien unter dem Repository-Build-Root; Symlinks, Duplikate, Nachlaufdaten und
 das Ausgabedokument als Eingabe scheitern geschlossen. Die festen Budgets sind
-160 Dateien, 128 MiB pro Datei, 512 MiB Gesamteingang und 2 MiB JSON. Jeder
+160 Dateien, 512 MiB pro Datei, 768 MiB Gesamteingang und 2 MiB JSON. Jeder
 Eintrag trägt die exakte Bytegröße im standardisierten Kommentarfeld, das von
 SPDX 2.3 geforderte SHA-1 und zusätzlich SHA-256. Ein unabhängiger Validator
 hasht die Live-Artefakte erneut und verlangt die vollständigen `DESCRIBES`- und
@@ -395,6 +395,19 @@ und Containment-Matrix. Nur der qualifizierte Status
 Hardware, physische Fault-Injection, Zielhardware-WCET, Langzeitbetrieb,
 reproduzierbare Builds, signierte Provenienz und Produktqualifikation bleiben
 ausdrücklich außerhalb dieses Abschlusses.
+
+Authentisiertes TLS ist kein Kernelmechanismus. `libreisttls.a` wird statisch
+in jeden nutzenden Ring-3-Prozess gelinkt und erhält ausschließlich explizite
+Callbacks für einen begrenzten Transport, RTC, monotone Zeit, Entropie und
+Allokation. Ein Kontext belegt höchstens 512 KiB caller-owned Speicher; der
+Bibliotheksheap ist auf 4 MiB insgesamt und 512 KiB je Allokation begrenzt.
+TLS 1.2/1.3, vollständiger Handshake, X.509-Kette, Zertifikatszeit und exakter
+SAN-Hostname sind vor Nutzdatenfreigabe verpflichtend. Der Mbed-TLS-4.1.1-
+Quellstand und der Mozilla/curl-Vertrauensspeicher sind SHA-256-fixierte
+Release-Eingaben. Entropie-, RTC-, Trust-, Hostname-, Record-, Timeout- oder
+Budgetfehler schließen die Verbindung. Widerrufsprüfung, Mozilla-Name-
+Constraints im PEM-Bundle, manipulationsgeschützte Uhr, Zertifizierung und
+uneingeschränkte curl-Kompatibilität werden nicht behauptet.
 
 ## Ziel-Failure-Domains
 

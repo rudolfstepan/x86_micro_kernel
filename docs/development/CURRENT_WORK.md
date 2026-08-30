@@ -4,7 +4,16 @@ Stand: 30. August 2026
 
 Branch/Startpunkt: `working_branch` / `ae9f1a1`
 
-Aktives Thema: `R8.2r-x86_64-ipc-revocation-wakeup`.
+Aktives Thema: `R8.2r-x86_64-ipc-revocation-wakeup` —
+generationsgebundene x86_64-IPC-Revocation-Wakeups.
+
+`R4.1a-curl-https` ist abgeschlossen. `libreisttls.a` kapselt das
+SHA-256-gepinnte Mbed TLS 4.1.1 als begrenzte Ring-3-Clientbibliothek mit
+TLS 1.2/1.3, X.509-Ketten-, SAN-, RTC- und Recordpruefung. `curl.prg` nutzt
+sie fuer authentisiertes HTTPS; der reale QEMU-Lauf bestand den lokalen
+CA-/IP-SAN-Handshake und beobachtete `REIST_CURL_HTTPS_RUNTIME_OK`. Eine
+einzige 4-MiB-Backing-Arena haelt alle internen TLS-Allokationen innerhalb
+der 16 Prozess-Heapobjekte und der unveraenderten 8-MiB-MYPR-Grenze.
 
 R7.1k hat den ersten Teilbefund geschlossen: Der feste, unter einer
 verschachtelten Ebene der rekursiven FAT32-Operationsmutex gehaltene

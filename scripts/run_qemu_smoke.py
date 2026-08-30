@@ -9,6 +9,7 @@ import queue
 import re
 import shutil
 import socket
+import ssl
 import struct
 import subprocess
 import sys
@@ -153,6 +154,8 @@ CURL_TEST_COMMAND = "curl http://10.0.2.101/data.txt"
 CURL_TEST_TARGET = bytes((10, 0, 2, 101))
 CURL_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x06))
 CURL_TEST_REPLY_MARKER = "REIST_CURL_RUNTIME_OK"
+TLS_CURL_TEST_COMMAND = "curl https://10.0.2.101/data.txt"
+TLS_CURL_TEST_REPLY_MARKER = "REIST_CURL_HTTPS_RUNTIME_OK"
 DNS_TEST_COMMAND = "nslookup test.reist 10.0.2.99"
 DNS_TEST_REPLY_MARKER = "address: 10.0.2.77"
 HTTP_TEST_REQUESTS = 12
@@ -197,6 +200,7 @@ def qemu_command(
     auxiliary_sata_image: Path | None = None,
     vmware_vga: bool = False,
     smp: int = 1,
+    hardware_entropy: bool = False,
 ) -> list[str]:
     command = [
         str(qemu),
@@ -240,6 +244,8 @@ def qemu_command(
         command.append("-no-reboot")
     if no_apic:
         command.extend(["-cpu", "qemu32,-apic"])
+    elif hardware_entropy:
+        command.extend(["-cpu", "qemu32,+rdrand"])
     if watchdog:
         command.extend(["-device", "ib700", "-watchdog-action", "reset"])
     if nic != "none":
@@ -868,6 +874,115 @@ def serve_curl_test_client(connection: socket.socket,
     return None
 
 
+def serve_tls_curl_test_client(connection: socket.socket,
+                               deadline: float) -> str | None:
+    """Serve authenticated HTTPS through the deterministic raw TCP peer."""
+    syn = receive_tcp_segment(connection, deadline, CURL_TEST_TARGET,
+                              CURL_TEST_MAC)
+    if syn is None or syn[4] != 0x02 or syn[5] != b"":
+        return "valid HTTPS curl TCP SYN was not observed"
+    client_port, server_port, client_sequence = syn[0], syn[1], syn[2]
+    server_next = 24000
+    client_next = client_sequence + 1
+    if server_port != 443:
+        return f"HTTPS curl destination port was {server_port}, expected 443"
+    if not inject_ethernet_frame(
+            connection, tcp_peer_frame(
+                CURL_TEST_TARGET, CURL_TEST_MAC, server_port, client_port,
+                server_next, client_next, 0x12)):
+        return "unable to inject HTTPS curl TCP SYN/ACK"
+    server_next += 1
+
+    root = Path(__file__).resolve().parents[1]
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.maximum_version = ssl.TLSVersion.TLSv1_3
+    context.load_cert_chain(root / "test/fixtures/curl_tls_server.pem",
+                            root / "test/fixtures/curl_tls_server.key")
+    incoming = ssl.MemoryBIO()
+    outgoing = ssl.MemoryBIO()
+    engine = context.wrap_bio(incoming, outgoing, server_side=True)
+    handshake_complete = False
+    response_queued = False
+    closing_started = False
+    plaintext = bytearray()
+    encrypted_out = bytearray()
+
+    for _ in range(256):
+        segment = receive_tcp_segment(connection, deadline, CURL_TEST_TARGET,
+                                      CURL_TEST_MAC)
+        if segment is None:
+            return "HTTPS curl TCP/TLS progress timed out"
+        sequence, flags, payload = segment[2], segment[4], segment[5]
+        if payload:
+            if sequence == client_next:
+                incoming.write(payload)
+                client_next += len(payload)
+            elif sequence > client_next:
+                return "out-of-order HTTPS curl TCP payload"
+            if not inject_ethernet_frame(
+                    connection, tcp_peer_frame(
+                        CURL_TEST_TARGET, CURL_TEST_MAC, server_port,
+                        client_port, server_next, client_next, 0x10)):
+                return "unable to acknowledge HTTPS curl TCP payload"
+
+        try:
+            if not handshake_complete:
+                engine.do_handshake()
+                handshake_complete = True
+            if handshake_complete and not response_queued:
+                while True:
+                    block = engine.read(4096)
+                    if not block:
+                        break
+                    plaintext.extend(block)
+                    if len(plaintext) > 4096:
+                        return "HTTPS curl request exceeded 4096 bytes"
+                    if b"\r\n\r\n" in plaintext:
+                        break
+                if b"\r\n\r\n" in plaintext:
+                    if (not plaintext.startswith(b"GET /data.txt HTTP/1.0\r\n")
+                            or b"Host: 10.0.2.101\r\n" not in plaintext):
+                        return "valid authenticated curl HTTPS request was not observed"
+                    body = TLS_CURL_TEST_REPLY_MARKER.encode("ascii") + b"\n"
+                    response = (b"HTTP/1.0 200 OK\r\nContent-Length: " +
+                                str(len(body)).encode("ascii") +
+                                b"\r\nConnection: close\r\n\r\n" + body)
+                    engine.write(response)
+                    response_queued = True
+            if response_queued and not closing_started:
+                closing_started = True
+                engine.unwrap()
+        except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+            pass
+        except ssl.SSLError as error:
+            return f"HTTPS curl TLS server failed: {error}"
+
+        while outgoing.pending:
+            encrypted_out.extend(outgoing.read())
+        if encrypted_out:
+            block = bytes(encrypted_out[:512])
+            del encrypted_out[:len(block)]
+            if not inject_ethernet_frame(
+                    connection, tcp_peer_frame(
+                        CURL_TEST_TARGET, CURL_TEST_MAC, server_port,
+                        client_port, server_next, client_next, 0x18, block)):
+                return "unable to inject HTTPS curl TLS record"
+            server_next += len(block)
+
+        if flags & 0x01:
+            client_next += 1
+            if not response_queued:
+                return "HTTPS curl closed before authenticated response"
+            if not inject_ethernet_frame(
+                    connection, tcp_peer_frame(
+                        CURL_TEST_TARGET, CURL_TEST_MAC, server_port,
+                        client_port, server_next, client_next, 0x11)):
+                return "unable to inject HTTPS curl TCP FIN/ACK"
+            return None
+    return "HTTPS curl exceeded bounded TLS/TCP segment count"
+
+
 def serve_http_test_client(connection: socket.socket, deadline: float,
                            request_index: int) -> str | None:
     """Complete one of several real inbound HTTP/TCP transactions."""
@@ -1211,6 +1326,7 @@ def run(
     expect_outbound_ping: bool = False,
     expect_tcp_client: bool = False,
     expect_curl_client: bool = False,
+    expect_tls_curl_client: bool = False,
     expect_dns_client: bool = False,
     expect_http_server: bool = False,
     boot_only: bool = False,
@@ -1228,7 +1344,7 @@ def run(
     handover_result: list[str | None] = [None]
     if (inject_arp_request or expect_arp_resolution or expect_outbound_ping or
             inject_icmp_echo or inject_udp_echo or expect_tcp_client or
-            expect_curl_client or
+            expect_curl_client or expect_tls_curl_client or
             expect_dns_client or expect_http_server):
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
@@ -1237,7 +1353,8 @@ def run(
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
                          nic, persistent, injection_port, handover_port, sata,
-                         auxiliary_sata_image, vmware_vga, smp),
+                         auxiliary_sata_image, vmware_vga, smp,
+                         expect_tls_curl_client),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1560,6 +1677,30 @@ def run(
                     error, _ = wait_for_line(
                         process, chunks, transcript, finished, SHELL_PROMPT,
                         deadline, after=curl_position)
+            if error is None and expect_tls_curl_client:
+                assert injection_connection is not None
+                inject_ps2_command(process, TLS_CURL_TEST_COMMAND)
+                if not receive_arp_request(
+                        injection_connection, CURL_TEST_TARGET, deadline):
+                    error = "HTTPS curl client ARP request was not observed"
+                if error is None and not inject_ethernet_frame(
+                        injection_connection,
+                        peer_arp_reply_frame(CURL_TEST_MAC,
+                                             CURL_TEST_TARGET)):
+                    error = "unable to inject HTTPS curl peer ARP reply"
+                if error is None:
+                    error = serve_tls_curl_test_client(
+                        injection_connection, deadline)
+                tls_curl_position = -1
+                if error is None:
+                    error, tls_curl_position = wait_for_line(
+                        process, chunks, transcript, finished,
+                        TLS_CURL_TEST_REPLY_MARKER, deadline,
+                        after=shell_position)
+                if error is None:
+                    error, _ = wait_for_line(
+                        process, chunks, transcript, finished, SHELL_PROMPT,
+                        deadline, after=tls_curl_position)
             if error is None and expect_dns_client:
                 assert injection_connection is not None
                 inject_ps2_command(process, DNS_TEST_COMMAND)
@@ -2129,6 +2270,10 @@ def main() -> int:
         help="run curl against a deterministic socket-hub HTTP peer",
     )
     parser.add_argument(
+        "--expect-tls-curl-client", action="store_true",
+        help="run curl against an authenticated socket-hub HTTPS peer",
+    )
+    parser.add_argument(
         "--expect-dns-client", action="store_true",
         help="run nslookup against a deterministic socket-hub DNS peer",
     )
@@ -2257,6 +2402,7 @@ def main() -> int:
             args.expect_outbound_ping or
             args.inject_icmp_echo or args.inject_udp_echo or
             args.expect_tcp_client or args.expect_curl_client or
+            args.expect_tls_curl_client or
             args.expect_dns_client or
             args.expect_http_server) and \
             args.nic == "none":
@@ -2292,6 +2438,7 @@ def main() -> int:
             args.expect_outbound_ping,
             args.expect_tcp_client,
             args.expect_curl_client,
+            args.expect_tls_curl_client,
             args.expect_dns_client,
             args.expect_http_server,
             args.boot_only,

@@ -8,14 +8,24 @@ int main(void) {
     assert(reist_curl_parse_http_url("http://example.com", &url) == 0);
     assert(strcmp(url.host, "example.com") == 0);
     assert(strcmp(url.path, "/") == 0 && url.port == 80U);
+    assert(url.scheme == REIST_CURL_SCHEME_HTTP);
     assert(reist_curl_parse_http_url(
         "http://10.0.2.2:8080/a?b=1", &url) == 0);
     assert(strcmp(url.host, "10.0.2.2") == 0);
     assert(strcmp(url.path, "/a?b=1") == 0 && url.port == 8080U);
-    assert(reist_curl_parse_http_url("https://example.com/", &url) == -95);
+    assert(reist_curl_parse_http_url("https://example.com/", &url) == 0);
+    assert(strcmp(url.host, "example.com") == 0);
+    assert(strcmp(url.path, "/") == 0 && url.port == 443U);
+    assert(url.scheme == REIST_CURL_SCHEME_HTTPS);
+    assert(reist_curl_parse_http_url(
+        "https://example.com:8443/private", &url) == 0);
+    assert(url.port == 8443U && url.scheme == REIST_CURL_SCHEME_HTTPS);
     assert(reist_curl_parse_http_url("http://:80/", &url) < 0);
     assert(reist_curl_parse_http_url("http://example.com:0/", &url) < 0);
     assert(reist_curl_parse_http_url("http://example.com/a#fragment", &url) < 0);
+    assert(reist_curl_parse_http_url("https://-bad.example/", &url) < 0);
+    assert(reist_curl_parse_http_url("https://bad-.example/", &url) < 0);
+    assert(reist_curl_parse_http_url("https://user@example.com/", &url) < 0);
 
     static const uint8_t response[] =
         "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello";
