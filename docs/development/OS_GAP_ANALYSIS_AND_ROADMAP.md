@@ -2,6 +2,13 @@
 
 Stand: 27. August 2026
 
+**R3.4g ist aktiv:** Der VMware-Softwarecursor soll alte und neue Position als
+zwei kleine Rechtecke in genau einem Present veroeffentlichen. Der Maus-Syscall
+leert zunaechst die vorhandene HID-Queue und pollt Controller erst bei leerer
+Queue. Der SVGA2D-Client ordnet verspaetete, aber nur vollstaendig validierte
+Antworten innerhalb der festen IPC-Tiefe zu. `R7.1l` bleibt als getrenntes
+Folgepaket fuer die gemessene negative SMP-Scheduler-Skalierung bereit.
+
 **R3.4f ist abgeschlossen:** Der Ein-vCPU-Pfad benoetigt nach Surface-Eingaben einen
 begrenzten Scheduler-Turn fuer die Client-Antwort. Auf SMP kann der Client
 parallel laufen; der freiwillige Compositor-Yield wird dort entfernt und mit

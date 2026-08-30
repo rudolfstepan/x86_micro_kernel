@@ -4,7 +4,9 @@ Stand: 30. August 2026
 
 Branch/Startpunkt: `working_branch` / `ae9f1a1`
 
-Aktives Thema: keines; die konfigurierte Paketwarteschlange ist leer.
+Aktives Thema: `R3.4g-vmware-pointer-pipeline` — exakte gebuendelte
+Softwarecursor-Schaeden, einmaliges USB-Polling und robuste begrenzte
+SVGA2D-Antwortzuordnung fuer VMware.
 
 `R3.4f-desktop-smp-input-cadence` ist abgeschlossen. Der Compositor behaelt
 den begrenzten Post-Input-Yield nur auf einem vCPU; auf SMP kann der Surface-
