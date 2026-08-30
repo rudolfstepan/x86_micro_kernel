@@ -4,7 +4,8 @@ Stand: 30. August 2026
 
 Branch/Startpunkt: `working_branch` / `ae9f1a1`
 
-Aktives Thema: keines; die konfigurierte Paketwarteschlange ist leer.
+Aktives Thema: `R3.4f-desktop-smp-input-cadence` — vermeidbare
+Scheduler-Contention nach Surface-Eingaben auf Mehrkernsystemen entfernen.
 
 `R3.4e-desktop-interaction-cadence` ist abgeschlossen. Es reduziert den
 inaktiven Desktop-Poll von fuenf auf eine Millisekunde.

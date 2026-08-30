@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.4f-desktop-smp-input-cadence"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,46 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.4f-desktop-smp-input-cadence"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Remove avoidable SMP scheduler contention from desktop input"
+scope = "Keep the bounded same-turn Surface paint handoff on one vCPU, but do not voluntarily yield the compositor after every delivered Surface input when multiple CPUs are online and the client can run concurrently. Read the versioned CPU topology once during desktop startup, fail safely to the one-vCPU behavior if it is unavailable or malformed, and extend the QEMU desktop metrics probe with a bounded selectable SMP topology. Preserve input ordering, fixed broker work, one-millisecond idle cadence, GUI ABI, process authority and all existing one-vCPU behavior."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_desktop_source.py",
+  "scripts/run_qemu_runtime_desktop.py",
+  "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "one-vCPU Surface input retains exactly one bounded scheduler handoff before the post-input broker drain",
+  "SMP Surface input never adds a voluntary compositor yield and still performs at most one fixed post-input broker drain",
+  "topology failure or malformed topology fails safely to the established one-vCPU path",
+  "input edges queues damage capacity GUI ABI and Ring-3 authority remain unchanged"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\tmp\\qemu-portable\\qemu-system-i386.exe --image build/reist-os.img --render-probe --smp 1 --metrics-log build/codex-agent/r3.4f-smp1.log --screenshot build/r3.4f-smp1.ppm",
+  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\tmp\\qemu-portable\\qemu-system-i386.exe --image build/reist-os.img --render-probe --smp 4 --metrics-log build/codex-agent/r3.4f-smp4.log --screenshot build/r3.4f-smp4.ppm"
+]
+stop_conditions = [
+  "SMP smoothness requires pinning all GUI work to Ring 0 changing public ABI or weakening a watchdog",
+  "the 4-vCPU render probe fails after one focused in-scope repair",
+  "a required production file lies outside allowed_files"
+]
+commit_message = "gui: avoid SMP input yield contention"
+evidence = []
 
 [[packages]]
 id = "R3.4e-desktop-interaction-cadence"
