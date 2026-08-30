@@ -670,3 +670,22 @@ Ein-vCPU-/128-MiB-QEMU-Dialog bestanden mit exakt zwei `RUN_OK`-Markern bis
 Abschlusscleanup hinterliessen Sendphase, Send-Waiter, Timer, Deadline,
 Receive-Waiter, Endpoint, Nachricht, Capabilities, Runqueue, Loader, Tasks und
 Frames null. Weitere Senderwaiter und tiefere Queues bleiben ausgeschlossen.
+
+## Aktiver IPC-Widerrufsnachweis R8.2r
+
+Der naechste begrenzte Schnitt verwendet weiterhin genau einen Endpoint,
+einen 140-Byte-Queue-Slot, je einen Receive- und Send-Waiter sowie die
+vorhandene Vier-Slot-Deadlinequeue. Beide realen `RUN`-Generationen muessen
+zuerst alle bisherigen Timeout-, Backpressure-, Retry- und Direct-Wakeup-
+Nachweise unveraendert durchlaufen.
+
+Danach blockiert Parentgeneration 40 erneut auf dem leeren Endpoint. Das
+delegierte Kind gibt seine `SEND`-Capability frei; die Implementierung muss
+Capability, Endpoint, Generation, Task, privaten Outputframe und exakte
+Deadline vor jeder Wirkung validieren, Deadline und Timer entfernen und nur
+den Parent mit `EPIPE` wecken. Nach der Resume-Pruefung wird dieselbe lebende
+Kindgeneration erneut delegiert. `token78` belegt den Queue-Slot, waehrend
+`token79` als kernel-eigener Send-Snapshot blockiert. Owner-`IPC_CLOSE`
+widerruft nach vollstaendiger Validierung Queue, Snapshot, Deadline, Timer,
+beide Capabilities und Endpoint und weckt nur dieses Kind mit `EBADF`.
+Startupstack, opakes Handle, REIST-v1-ABI und alle Kapazitaeten bleiben gleich.

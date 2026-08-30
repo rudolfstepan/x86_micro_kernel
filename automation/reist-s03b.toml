@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
 
 [policy]
 one_package_per_run = true
@@ -13027,3 +13027,42 @@ evidence = [
   "The real four-vCPU VMware rename proof passed in 74 seconds with content validation cleanup Ring-3 shell return and ten seconds without panic restart degradation quarantine or storage fencing.",
   "The real four-vCPU byte-verifying VMware benchmark passed in 37 seconds at 314.88 KiB/s sequential write and 450.70 KiB/s sequential read with cleanup Ring-3 shell return and ten stable post-success seconds."
 ]
+
+[[packages]]
+id = "R8.2r-x86_64-ipc-revocation-wakeup"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Prove generation-scoped x86_64 IPC revocation wakeups"
+scope = "Extend both existing real x86_64 scheduled-shell RUN lifecycles after every R8.2q timeout backpressure retry and direct receive-wakeup proof without changing the REIST-v1 syscall ABI packed 256-byte task record opaque handle message layout or the fixed four-task one-endpoint one-message one-receive-wait one-send-wait four-capability and four-deadline capacities. After the final token77 direct delivery the child yields so parent generation 40 can install one exact empty IPC_RECEIVE_TIMEOUT wait. The same live delegated child generation releases SEND; only after endpoint capability waiter task private output frame and exact deadline validation may release clear the child capability remove that deadline cancel the timer and wake generation 40 with POSIX EPIPE while leaving the user output byte-identical. Parent then delegates SEND again to the same still-live child generation, queues token78 and yields. Child SEND_TIMEOUT snapshots token79 against the full slot and blocks. Owner IPC_CLOSE validates the queued parent message blocked child snapshot both capabilities endpoint handle generations task states and exact deadline before atomically revoking the queue snapshot waiter deadline timer capabilities and endpoint, then wakes only that child generation with EBADF. The child accepts only that result and exits 77; WAIT reaps it and no second close occurs. Preserve both RUN markers dialogue count all earlier denial timeout queue retry direct-wakeup lifecycle and exact frame cleanup proofs C handoffs i386 and Windows QEMU behavior. Add no new syscall error number task field capacity endpoint registry deeper queue extra waiter kill cancellation API VFS SMP device physical hardware or production integration."
+allowed_files = [
+  "automation/reist-s03b.toml", "arch/x86_64/user/shell.c",
+  "arch/x86_64/user/child.asm", "arch/x86_64/proc/cooperative_scheduler.asm",
+  "test/test_x86_64_boot.py", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/X86_64_BOOTSTRAP.md", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "REIST-v1 IPC_RELEASE remains syscall 58 IPC_CLOSE remains syscall 52 EPIPE remains 32 EBADF remains 9 and every other syscall number message layout right opaque handle encoding packed task ABI fixed capacity i386 artifact C handoff marker and dialogue remains unchanged",
+  "each RUN first preserves the complete R8.2q parent timeout child backpressure dequeue-wakeup and direct receive-wakeup sequence before revocation testing begins",
+  "peer release is accepted only for the exact live delegated child generation while parent generation 40 is blocked on the same active empty endpoint with one exact receive deadline; all relations are validated before child capability deadline timer or waiter mutation",
+  "release removes the exact receive deadline cancels the timer clears only the peer capability and wakes only parent generation 40 with EPIPE while the complete private output message remains byte-identical",
+  "redelegation occurs only after the EPIPE resume and binds the same still-live child generation before parent token78 publication and child token79 SEND_TIMEOUT waiter publication",
+  "owner close validates token78 token79 endpoint owner and peer capabilities blocked child generation and exact send deadline before clearing queue snapshot receive and send waiters deadline timer capabilities endpoint and send phase; only that child wakes with EBADF",
+  "release close WAIT reap shell exit force cleanup and final verification leave timer deadline receive waiter send waiter endpoint message capability send phase task queue loader and frame state clear"
+]
+targeted_tests = ["py test/test_x86_64_boot.py -v"]
+package_tests = [".\\scripts\\build-x86_64-bootstrap.ps1"]
+runtime_tests = ["py scripts/run_qemu_x86_64_boot.py --image build/x86_64/reist-x86_64-bootstrap.elf --timeout 10 --log build/codex-agent/x86_64-bootstrap.log"]
+stop_conditions = [
+  "the public syscall ABI packed task record opaque handle startup stack or any fixed task endpoint message capability receive-wait send-wait deadline or runqueue capacity must change",
+  "release or close can act on a stale wrong-generation wrong-handle wrong-right wrong-phase nonblocked task or mismatched deadline or reaches any mutation before complete validation",
+  "release changes the parent output queue endpoint owner capability send waiter or send snapshot or returns anything other than EPIPE to the exact blocked parent",
+  "close leaves a queued message snapshot waiter deadline timer capability endpoint send phase or user pointer authoritative or returns anything other than EBADF to the exact blocked child",
+  "redelegation can occur before release cleanup or can bind a reaped stale or different child generation",
+  "an i386 artifact prior marker dialogue count denial timeout backpressure direct-wakeup lifecycle C handoff or production file changes",
+  "a required file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "ipc: revoke x86_64 blocked peers safely"
+evidence = []

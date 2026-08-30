@@ -320,6 +320,18 @@ Der reale Abschlussnachweis durchlief Parent-Timeout und Kind-Dequeue-Wakeup in
 beiden `RUN`-Generationen und erreichte nach vollstaendiger Bereinigung
 `RING3_SHELL_OK`.
 
+R8.2r prueft als aktiver naechster Schnitt die Widerrufsgrenze derselben
+festen IPC-Ressourcen. Nach den unveraenderten R8.2q-Nachweisen gibt eine
+delegierte Kindgeneration ihre `SEND`-Capability frei, waehrend Generation 40
+auf einem leeren Endpoint wartet. Erst nach exakter Validierung werden
+Receive-Deadline und Timer entfernt; nur der Parent wacht mit `EPIPE`, sein
+privater Ausgabepuffer bleibt unveraendert. Danach wird dieselbe noch lebende
+Kindgeneration erneut delegiert und blockiert mit einem kernel-eigenen
+Send-Snapshot auf dem einzelnen belegten Queue-Slot. `IPC_CLOSE` darf erst
+nach vollstaendiger Pruefung Queue, Snapshot, beide Capabilities, Deadline,
+Timer und Endpoint widerrufen und nur dieses Kind mit `EBADF` wecken. ABI,
+Handlekodierung, Taskrecord und alle festen Kapazitaeten bleiben unveraendert.
+
 ## Minimaler REIST-Kern
 
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein
