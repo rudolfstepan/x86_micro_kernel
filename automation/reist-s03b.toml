@@ -16,7 +16,7 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Bound VMware pointer presentation and SMP scheduler contention"
-scope = "Remove the measured VMware interactive bottlenecks without changing public ABI or moving policy into Ring 0. Present a moved software pointer as at most two exact old/new cursor rectangles in one bounded framebuffer publication instead of copying their potentially screen-sized bounding box. Drain already queued HID mouse reports before polling xHCI/OHCI so one desktop batch polls controllers only after the queue is empty. Make the single-compositor SVGA2D client tolerate only well-formed stale driver replies within the fixed IPC queue/deadline before matching its current request, preventing delayed VMware replies from poisoning reconnects. Prevent synchronized SMP timer interrupts from spinning in IRQ context on the globally serialized task table: a contending CPU defers only that scheduling decision to the next periodic quantum while the uncontended one-vCPU path remains identical, and skip quadratic priority-inheritance propagation when no valid owner edge exists. Preserve frame atomicity, cursor restoration, fail-closed IPC validation, input edge order, fixed capacities, task-generation claims, wait ownership, watchdog progress, software fallback and physical USB behavior. The measured AMD VMware baseline is 651.54 MOp/s single and 492.54 MOp/s total on four vCPUs (0.75x); acceptance requires non-negative four-vCPU scaling and clean desktop liveness on the same target."
+scope = "Remove the measured VMware interactive bottlenecks without changing public ABI or moving policy into Ring 0. Present a moved software pointer as at most two exact old/new cursor rectangles in one bounded framebuffer publication instead of copying their potentially screen-sized bounding box. Drain already queued HID mouse reports before polling xHCI/OHCI so one desktop batch polls controllers only after the queue is empty. Make the single-compositor SVGA2D client tolerate only well-formed stale driver replies within the fixed IPC queue/deadline before matching its current request, preventing delayed VMware replies from poisoning reconnects. Prevent synchronized SMP timer interrupts from spinning in IRQ context on the globally serialized task table: a contending CPU defers only that scheduling decision to the next periodic quantum while the uncontended one-vCPU path remains identical, and skip quadratic priority-inheritance propagation when no valid owner edge exists. Preserve frame atomicity, cursor restoration, fail-closed IPC validation, input edge order, fixed capacities, task-generation claims, wait ownership, watchdog progress, software fallback and physical USB behavior. The measured AMD VMware baseline is 651.54 MOp/s single and 492.54 MOp/s total on four vCPUs (0.75x). The existing benchmark workers are ordinary Ring-3 tasks and therefore intentionally BSP-only until their driver and syscall dependencies receive a separate AP-safety audit; this package must not bypass that boundary merely to manufacture positive scaling. Acceptance requires at least 0.90x for the four-worker BSP contention measurement plus clean accelerated desktop, mouse and service liveness on the same target."
 allowed_files = [
   "automation/reist-s03b.toml",
   "drivers/video/framebuffer.c",
@@ -46,7 +46,7 @@ invariants = [
   "SVGA2D accepts only the exact version operation request id response flag and fixed structure and drains no more than the fixed IPC queue depth",
   "timeouts endpoint generations software fallback and Ring-3 driver authority remain fail closed",
   "one task generation runs on at most one CPU and stale generations never become runnable",
-  "a contended periodic scheduling decision performs no IRQ spin and is deferred by at most the next fixed quantum while wait ownership and priority inheritance stay bounded",
+  "a contended periodic scheduling decision performs no task-table IRQ spin and is retried at each next fixed quantum while wait ownership and priority inheritance stay bounded",
   "the one-vCPU scheduling order ABI and watchdog progress remain unchanged and four-vCPU performance is reported only as a measurement"
 ]
 targeted_tests = [
@@ -75,7 +75,7 @@ stop_conditions = [
   "physical USB behavior regresses or a frozen VMware runtime gate fails after one focused in-scope repair",
   "a task can be claimed by two CPUs or wakeup cleanup loses generation binding",
   "the one-vCPU scheduler contract changes or a timer IRQ performs a bounded spin wait for the task table",
-  "the measured four-vCPU VMware CPU result remains below 1.00x the single-CPU result",
+  "the measured four-worker VMware BSP contention result remains below 0.90x the single-worker result",
   "a required production file lies outside allowed_files"
 ]
 commit_message = "gui: bound VMware SMP interaction latency"
