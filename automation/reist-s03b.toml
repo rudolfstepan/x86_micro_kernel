@@ -16,13 +16,20 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Make VMware pointer motion and Start-menu hover frame-bounded"
-scope = "Remove the reproduced VMware desktop interaction stalls without changing public ABI or moving GUI policy into Ring 0. Replace the obsolete compositor-wide menu invalidation with the menu controller's fixed exact damage now that the clipped-glyph raster ABI is available, and invalidate only old and new hot or pressed item rows instead of the complete popup. Bound software-pointer publication to the latest position at a fixed presentation cadence while preserving every button edge, exact old/new cursor rectangles, one bounded present batch, one-millisecond idle polling and immediate dirty UI feedback. Extend the render probe with six measured Start-menu hot transitions and add a real four-vCPU VMware RFB trajectory through virtual xHCI HID that opens Start, visits every item in order, proves bounded cursor publication and returns cleanly to the Ring-3 shell. Compare the same measured hover path under four-vCPU QEMU. Acceptance requires no full-scene hover frame, no software fallback or restart, six visible hot states, a maximum measured hot-frame time of 17 ms, and no more than 34 ms between cursor presents while continuous motion is available; these are reference-host measurements rather than a certification or universal hardware guarantee."
+scope = "Remove the reproduced VMware desktop interaction stalls without changing public ABI or moving GUI policy into Ring 0. Replace the obsolete compositor-wide menu invalidation with the menu controller's fixed exact damage now that the clipped-glyph raster ABI is available, and invalidate only old and new hot or pressed item rows instead of the complete popup. Bound software-pointer publication to the latest position at a fixed presentation cadence while preserving every button edge, exact old/new cursor rectangles, one bounded present batch, one-millisecond idle polling and immediate dirty UI feedback. Coalesce only consecutive pure relative HID motion inside the existing fixed queue by saturating and accumulating its deltas; retain button and wheel events in order, evict only replaceable motion to admit an edge, and reject a fully nonreplaceable queue without advancing the accepted button state. Extend the render probe with six measured Start-menu hot transitions and add a real four-vCPU VMware RFB trajectory through virtual xHCI HID that opens Start, visits every item in order, proves bounded cursor publication and returns cleanly to the Ring-3 shell. Build the VMware and QEMU hover probes with a compile-time-only supervisor argument so the measured compositor uses the same service class, generation lifecycle and authority as a production desktop while normal builds remain unchanged. Compare the same measured hover path under four-vCPU QEMU. Acceptance requires no full-scene hover frame, no software fallback or restart, six visible hot states, a maximum measured hot-frame time of 17 ms, and no more than 34 ms between cursor presents while continuous motion is available; these are reference-host measurements rather than a certification or universal hardware guarantee."
 allowed_files = [
   "automation/reist-s03b.toml",
+  "Makefile",
+  "scripts/build-windows.ps1",
+  "kernel/init/supervisor.c",
+  "drivers/usb/hid_mouse.c",
   "userspace/gui/lib/menu.c",
   "userspace/gui/compositor/desktop.c",
   "drivers/video/framebuffer.c",
   "drivers/video/display_control.c",
+  "test/test_usb_hid_mouse_host.c",
+  "test/test_usb_mouse.py",
+  "test/test_reist_supervisor.py",
   "test/test_gui_menu_source.py",
   "test/test_gui_menu_host.c",
   "test/test_desktop_source.py",
@@ -42,10 +49,14 @@ invariants = [
   "opening closing and overflow still cover every affected popup title shadow and underlying pixel and capacity exhaustion remains the explicit full-redraw fallback",
   "all text is rasterized through the explicit pixel clip so a narrow item redraw cannot erase a partially intersecting glyph",
   "pure motion may replace older unpresented motion but every button edge remains ordered and no input or damage queue grows",
+  "relative HID motion is accumulated only across consecutive replaceable reports in the same accepted button state and queue pressure never silently advances or discards a nonreplaceable edge",
   "pointer publication is deadline bounded without busy waiting and retains at most two exact cursor rectangles in one present batch",
+  "the measured probe is supervisor-owned and service-class while its compile-time argument is absent from every normal build",
   "Ring-3 compositor driver authority fixed capacities one-millisecond idle polling supervisor deadlines and software fallback semantics remain unchanged"
 ]
 targeted_tests = [
+  "python test/test_usb_mouse.py -v",
+  "python test/test_reist_supervisor.py -v",
   "python test/test_gui_menu_source.py -v",
   "python test/test_desktop_source.py -v",
   "python test/test_display_abi_minimal.py -v",
@@ -58,14 +69,14 @@ package_tests = [
 ]
 runtime_tests = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-hover-cadence",
-  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\Program Files\\qemu\\qemu-system-i386.exe --image build/reist-os.img --hover-probe --smp 4 --metrics-log build/codex-agent/r3.4h-qemu-hover.log --screenshot build/r3.4h-qemu-hover.ppm",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-hover-cadence",
   ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-mouse",
   ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-svga2d-lifecycle -Target vmware"
 ]
 stop_conditions = [
   "a valid hot transition still requires full-scene damage or can leave stale popup glyph shadow or background pixels",
   "the real xHCI trajectory loses or reorders a button edge or cannot visit all six Start-menu items with fixed work",
-  "a measured hot frame exceeds 17 ms or continuous-motion cursor-present gap exceeds 34 ms after one focused in-scope repair",
+  "a measured hot frame exceeds 17 ms or continuous-motion cursor-present gap exceeds 34 ms after bounded HID coalescing and service-class measurement",
   "smoothness would require busy waiting an unbounded queue weakened supervisor deadline new kernel GUI policy or a public ABI break",
   "a required production file lies outside allowed_files",
   "an unrelated worktree change overlaps an allowed file"
