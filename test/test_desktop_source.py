@@ -718,6 +718,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("else if (!left_down && left_was_down)", self.source)
         self.assertNotIn("else if (left_was_down)", self.source)
 
+    def test_nonreplaceable_surface_input_overload_fences_the_client(self):
+        self.assertIn("DESKTOP_SURFACE_ECAPACITY", self.source)
+        self.assertIn(
+            "DESKTOP_SURFACE_INPUT_FENCED status=-75", self.source
+        )
+        self.assertIn("desktop_surface_destroy(", self.source)
+
     def test_mouse_motion_is_coalesced_between_button_edges(self):
         self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 32U", self.source)
         self.assertIn("static void accumulate_mouse_delta", self.source)
@@ -750,7 +757,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("render_desktop_rect_difference(", cached)
         self.assertIn("omitted_kind, move->window_index", cached)
         self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_DIALOG", self.source)
-        self.assertIn("context->omitted_kind != DESKTOP_MOVE_CACHE_WINDOW", self.source)
+        self.assertIn("context->omitted_kind == DESKTOP_MOVE_CACHE_WINDOW", self.source)
         self.assertIn("ui->dialog.visible ||", self.source)
         self.assertIn("manager->z_order[DESKTOP_WM_CAPACITY - 1U]", self.source)
         self.assertNotIn("desktop_wm_t visual_manager = *manager", cached)
@@ -778,6 +785,21 @@ class DesktopSourceTests(unittest.TestCase):
         ]
         self.assertIn(".clip = dirty->rects[index]", dirty_redraw)
         self.assertNotIn("expanded_render_clip", self.source)
+
+    def test_compositor_culls_opaque_regions_with_bounded_safe_fallback(self):
+        start = self.source.index("#define DESKTOP_VISIBLE_REGION_CAPACITY")
+        end = self.source.index("static void render_dirty_regions", start)
+        culling = self.source[start:end]
+        self.assertIn("desktop_visible_region_t", culling)
+        self.assertIn("visible_region_subtract", culling)
+        self.assertIn("window_visual_bounds", culling)
+        self.assertIn("visible_region_subtract_system_ui", culling)
+        self.assertIn("higher = position + 1U", culling)
+        self.assertIn("render_desktop_background(&clipped", culling)
+        self.assertIn("render_window(\n                &clipped", culling)
+        self.assertIn("if (!background_culled)", culling)
+        self.assertIn("if (!culled)", culling)
+        self.assertNotIn("malloc", culling)
 
 if __name__ == "__main__":
     unittest.main()

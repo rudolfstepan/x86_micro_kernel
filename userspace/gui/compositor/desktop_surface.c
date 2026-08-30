@@ -381,6 +381,28 @@ int desktop_surface_attach(desktop_surface_manager_t *manager,
     return DESKTOP_SURFACE_OK;
 }
 
+static uint32_t discard_oldest_pointer_motion(desktop_surface_slot_t *slot) {
+    if (slot == 0) return 0U;
+    for (uint32_t offset = 0U; offset < slot->event_count; ++offset) {
+        uint32_t index = (slot->event_head + offset) %
+            REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
+        if (slot->pending_events[index].type !=
+            REIST_GUI_SURFACE_INPUT_POINTER_MOTION)
+            continue;
+        for (uint32_t shift = offset; shift + 1U < slot->event_count;
+             ++shift) {
+            uint32_t destination = (slot->event_head + shift) %
+                REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
+            uint32_t source = (slot->event_head + shift + 1U) %
+                REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
+            slot->pending_events[destination] = slot->pending_events[source];
+        }
+        --slot->event_count;
+        return 1U;
+    }
+    return 0U;
+}
+
 int desktop_surface_input_enqueue(desktop_surface_manager_t *manager,
                                   reist_gui_surface_owner_t owner,
                                   reist_gui_surface_handle_t handle,
@@ -409,13 +431,8 @@ int desktop_surface_input_enqueue(desktop_surface_manager_t *manager,
             return DESKTOP_SURFACE_OK;
         }
     }
-    if (slot->event_count >= REIST_GUI_SURFACE_MAX_PENDING_EVENTS &&
-        slot->pending_events[slot->event_head].type ==
-            REIST_GUI_SURFACE_INPUT_POINTER_MOTION) {
-        slot->event_head = (slot->event_head + 1U) %
-            REIST_GUI_SURFACE_MAX_PENDING_EVENTS;
-        --slot->event_count;
-    }
+    if (slot->event_count >= REIST_GUI_SURFACE_MAX_PENDING_EVENTS)
+        (void)discard_oldest_pointer_motion(slot);
     if (slot->event_count >= REIST_GUI_SURFACE_MAX_PENDING_EVENTS)
         return DESKTOP_SURFACE_ECAPACITY;
     uint32_t tail = (slot->event_head + slot->event_count) %

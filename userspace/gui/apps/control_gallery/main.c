@@ -19,6 +19,7 @@
 #define GALLERY_TEXT_LIMIT 128U
 #define GALLERY_SURFACE_EVENT_BATCH_LIMIT 32U
 #define GALLERY_SURFACE_CREATE_ATTEMPTS 250U
+#define GALLERY_PAINT_RETRY_LIMIT 3U
 #define GALLERY_DEFAULT_WIDTH 800U
 #define GALLERY_DEFAULT_HEIGHT 600U
 #define GALLERY_MIN_WIDTH 640U
@@ -129,6 +130,7 @@ static uint32_t gallery_paint_fail_command;
 static reist_gui_rect_t gallery_paint_fail_rect;
 static uint32_t gallery_interaction_probe;
 static uint32_t gallery_interaction_reported;
+static uint32_t gallery_menu_interaction_reported;
 
 static const reist_gui_menu_item_t gallery_items[] = {
     {"Beenden", GALLERY_ACTION_EXIT, 0U, 0U, 0U},
@@ -240,6 +242,7 @@ typedef struct {
     uint32_t dialog_kind;
     uint32_t exit_requested;
     uint32_t redraw;
+    uint32_t hover_redraw;
 } gallery_state_t;
 
 static const reist_gui_list_item_t gallery_list_items[] = {
@@ -478,15 +481,13 @@ static void render_menu(const x86os_display_info_t *display,
                 &gallery_menu_model, &layout,
                 menu_index, index, &item) != 0)
             continue;
-        uint32_t hot = state->menu.hot_item == index;
-        uint32_t background = hot ? color_active : color_face;
-        if (hot) fill(item, background);
+        uint32_t background = color_face;
         uint32_t y = item.height > display->font_height
             ? (item.height - display->font_height) / 2U : 0U;
         text(display, item.x + (int32_t)layout.item_padding_x,
              item.y + (int32_t)y, menu->items[index].label,
              item.width - layout.item_padding_x * 2U,
-             hot ? color_title_text : color_text, background);
+             color_text, background);
     }
 }
 
@@ -577,9 +578,7 @@ static void render_tabs(const x86os_display_info_t *display,
         if (reist_gui_tabs_tab_rect(
                 &state->tab_model, index, &rect) != 0) continue;
         uint32_t selected = state->tabs.selected == index;
-        uint32_t hot = state->tabs.hovered == index;
-        uint32_t background = selected ? color_face :
-            (hot ? color_light : color_inactive);
+        uint32_t background = selected ? color_face : color_inactive;
         bevel(rect, background, selected || !state->tabs.armed);
         if (selected && rect.height > 2U)
             fill((reist_gui_rect_t){
@@ -602,6 +601,50 @@ static void render_tabs(const x86os_display_info_t *display,
              state->tab_items[index].label, rect.width,
              color_text, background);
     }
+}
+
+static void render_hover(const x86os_display_info_t *display,
+                         const gallery_state_t *state) {
+    if (state->tabs.hovered < state->tab_model.tab_count &&
+        state->tabs.hovered != state->tabs.selected) {
+        uint32_t index = state->tabs.hovered;
+        reist_gui_rect_t rect;
+        if (reist_gui_tabs_tab_rect(
+                &state->tab_model, index, &rect) == 0) {
+            bevel(rect, color_light, state->tabs.armed == 0U);
+            size_t length = bounded_length(
+                state->tab_items[index].label, REIST_GUI_TABS_LABEL_LIMIT);
+            uint32_t label_width = (uint32_t)length * display->font_width;
+            text(display,
+                 rect.x + (int32_t)((rect.width > label_width
+                    ? rect.width - label_width : 0U) / 2U),
+                 rect.y + (int32_t)((rect.height > display->font_height
+                    ? rect.height - display->font_height : 0U) / 2U),
+                 state->tab_items[index].label, rect.width,
+                 color_text, color_light);
+        }
+    }
+    if (state->menu.open_menu == REIST_GUI_MENU_NO_INDEX) return;
+    uint32_t menu_index = state->menu.open_menu;
+    if (menu_index >= gallery_menu_model.menu_count ||
+        state->menu.hot_item >=
+            gallery_menu_model.menus[menu_index].item_count)
+        return;
+    reist_gui_menu_layout_t layout = menu_layout(display);
+    reist_gui_rect_t item;
+    if (reist_gui_menu_item_rect(
+            &gallery_menu_model, &layout, menu_index,
+            state->menu.hot_item, &item) != 0)
+        return;
+    const char *label = gallery_menu_model.menus[menu_index]
+        .items[state->menu.hot_item].label;
+    fill(item, color_active);
+    uint32_t y = item.height > display->font_height
+        ? (item.height - display->font_height) / 2U : 0U;
+    text(display, item.x + (int32_t)layout.item_padding_x,
+         item.y + (int32_t)y, label,
+         item.width - layout.item_padding_x * 2U,
+         color_title_text, color_active);
 }
 
 static void render_text_page(const x86os_display_info_t *display,
@@ -851,6 +894,29 @@ static int render(reist_gui_surface_client_t *client,
     render_scene(display, state);
     if (gallery_paint_failed != 0U) return gallery_paint_status;
     return reist_gui_surface_client_paint_commit(client);
+}
+
+static int render_hover_layer(reist_gui_surface_client_t *client,
+                              const x86os_display_info_t *display,
+                              const gallery_state_t *state) {
+    gallery_surface = client;
+    gallery_paint_failed = 0U;
+    gallery_paint_commands = 0U;
+    gallery_paint_status = 0;
+    gallery_paint_fail_command = 0U;
+    gallery_paint_fail_rect = (reist_gui_rect_t){0, 0, 0U, 0U};
+    int status = reist_gui_surface_client_paint_begin_layer(
+        client, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
+    if (status != 0) return status;
+    render_hover(display, state);
+    if (gallery_paint_failed != 0U) return gallery_paint_status;
+    return reist_gui_surface_client_paint_commit_layer(
+        client, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
+}
+
+static uint32_t paint_status_retryable(int status) {
+    return status == -11 || status == -75 || status == -110 ||
+        status == -114;
 }
 
 static void report_paint_failure(int status) {
@@ -1168,6 +1234,7 @@ static int initialize(gallery_state_t *state,
     state->dialog_kind = GALLERY_DIALOG_NONE;
     state->exit_requested = 0U;
     state->redraw = 1U;
+    state->hover_redraw = 1U;
     return 0;
 }
 
@@ -1212,8 +1279,6 @@ static uint32_t apply_dialog_result(
 static void apply_menu_result(gallery_state_t *state,
                               const x86os_display_info_t *display,
                               const reist_gui_menu_result_t *result) {
-    if (result->damage_count != 0U || result->full_redraw)
-        state->redraw = 1U;
     if (!result->activated) return;
     if (result->action == GALLERY_ACTION_EXIT)
         state->exit_requested = 1U;
@@ -1223,6 +1288,12 @@ static void apply_menu_result(gallery_state_t *state,
         open_dialog(state, display, GALLERY_DIALOG_MODAL);
     else if (result->action == GALLERY_ACTION_ABOUT)
         open_dialog(state, display, GALLERY_DIALOG_ABOUT);
+    if (gallery_interaction_probe &&
+        !gallery_menu_interaction_reported &&
+        result->action == GALLERY_ACTION_ABOUT) {
+        x86os_puts("GUIDEMO_MENU_INTERACTION_OK\n");
+        gallery_menu_interaction_reported = 1U;
+    }
 }
 
 static uint32_t apply_control_result(
@@ -1332,8 +1403,12 @@ static uint32_t dispatch_tabs_pointer(
     if (reist_gui_tabs_dispatch(
             &state->tab_model, &state->tabs, &event, &result) != 0)
         return 1U;
-    if (result.damage_count != 0U || result.full_redraw)
-        state->redraw = 1U;
+    if (result.damage_count != 0U || result.full_redraw) {
+        if (button_event)
+            state->redraw = 1U;
+        else
+            state->hover_redraw = 1U;
+    }
     if (result.focus_changed && button_event && pressed)
         set_focus_target(state, GALLERY_FOCUS_TABS);
     if (result.selection_changed) {
@@ -1421,12 +1496,20 @@ static uint32_t dispatch_pointer(gallery_state_t *state,
     event.pressed = pressed;
     reist_gui_menu_result_t result;
     reist_gui_menu_result_initialize(&result);
+    uint32_t previous_open = state->menu.open_menu;
+    uint32_t previous_hot = state->menu.hot_item;
     if (reist_gui_menu_dispatch(
             &gallery_menu_model, &layout, &state->menu,
             &event, &result) != 0) {
         reist_gui_menu_state_initialize(&state->menu);
         state->redraw = 1U;
         return 1U;
+    }
+    if (result.damage_count != 0U || result.full_redraw) {
+        if (button_event || previous_open != state->menu.open_menu)
+            state->redraw = 1U;
+        else if (previous_hot != state->menu.hot_item)
+            state->hover_redraw = 1U;
     }
     apply_menu_result(state, display, &result);
     if (result.consumed) return 1U;
@@ -1754,6 +1837,7 @@ int main(int argc, char **argv) {
     gallery_interaction_probe = argc == 3 && argv != 0 &&
         text_equal(argv[2], "--interaction-probe");
     gallery_interaction_reported = 0U;
+    gallery_menu_interaction_reported = 0U;
     if ((argc != 2 && !gallery_interaction_probe) ||
         reist_gui_surface_endpoint_from_argv(argc, argv, &endpoint) != 0) {
         x86os_puts("guidemo: compositor endpoint required\n");
@@ -1797,7 +1881,20 @@ int main(int argc, char **argv) {
         return 1;
     }
     x86os_puts("GUIDEMO_OK\n");
-    result = render(&client, &display, &state);
+    uint32_t startup_paint_failures = 0U;
+    for (;;) {
+        result = render(&client, &display, &state);
+        if (result == 0)
+            result = render_hover_layer(&client, &display, &state);
+        if (result == 0) break;
+        if (!paint_status_retryable(result) ||
+            startup_paint_failures >= GALLERY_PAINT_RETRY_LIMIT)
+            break;
+        if (startup_paint_failures == 0U)
+            report_paint_failure(result);
+        ++startup_paint_failures;
+        (void)x86os_sleep_ms(5U);
+    }
     if (result != 0) {
         report_paint_failure(result);
         (void)reist_gui_surface_client_destroy(&client);
@@ -1805,8 +1902,10 @@ int main(int argc, char **argv) {
         return 1;
     }
     state.redraw = 0U;
+    state.hover_redraw = 0U;
     x86os_puts("GUIDEMO_SURFACE_READY\n");
 
+    uint32_t paint_failures = 0U;
     while (!state.exit_requested) {
         uint32_t processed = 0U;
         for (; processed < GALLERY_SURFACE_EVENT_BATCH_LIMIT; ++processed) {
@@ -1815,11 +1914,15 @@ int main(int argc, char **argv) {
                 &client, &message, 0U);
             if (receive == -11) break;
             if (receive != 0) {
+                x86os_puts("GUIDEMO_INPUT_FAIL status=");
+                x86os_print_number(receive);
+                x86os_putchar('\n');
                 result = receive;
                 state.exit_requested = 1U;
                 break;
             }
             if (message.type == REIST_GUI_SURFACE_CLOSE) {
+                x86os_puts("GUIDEMO_CLOSE_REQUESTED\n");
                 state.exit_requested = 1U;
             } else if (message.type == REIST_GUI_SURFACE_CONFIGURE) {
                 result = reist_gui_surface_client_accept_configure(
@@ -1852,14 +1955,30 @@ int main(int argc, char **argv) {
                 int key = (int)message.input.key;
                 uint32_t consumed = dispatch_keyboard(
                     &state, &display, key);
-                if (!consumed && key == GALLERY_KEY_ESCAPE)
+                if (!consumed && key == GALLERY_KEY_ESCAPE) {
+                    x86os_puts("GUIDEMO_ESCAPE_REQUESTED\n");
                     state.exit_requested = 1U;
+                }
             }
         }
-        if (state.redraw) {
-            result = render(&client, &display, &state);
-            state.redraw = 0U;
-            if (result != 0) {
+        if (state.redraw || state.hover_redraw) {
+            uint32_t full_redraw = state.redraw;
+            result = full_redraw
+                ? render(&client, &display, &state)
+                : render_hover_layer(&client, &display, &state);
+            if (result == 0 && full_redraw)
+                result = render_hover_layer(&client, &display, &state);
+            if (result == 0) {
+                state.redraw = 0U;
+                state.hover_redraw = 0U;
+                paint_failures = 0U;
+            } else if (paint_status_retryable(result) &&
+                       paint_failures < GALLERY_PAINT_RETRY_LIMIT) {
+                ++paint_failures;
+                if (paint_failures == 1U)
+                    report_paint_failure(result);
+                (void)x86os_sleep_ms(5U);
+            } else {
                 report_paint_failure(result);
                 state.exit_requested = 1U;
             }
@@ -1870,6 +1989,7 @@ int main(int argc, char **argv) {
 
     (void)reist_gui_surface_client_destroy(&client);
     (void)x86os_ipc_release(endpoint);
-    x86os_puts("GUIDEMO_EXIT_OK\n");
+    x86os_puts(result == 0 ? "GUIDEMO_EXIT_OK\n"
+                           : "GUIDEMO_EXIT_FAIL\n");
     return result == 0 ? 0 : 1;
 }

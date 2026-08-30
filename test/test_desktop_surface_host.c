@@ -150,6 +150,36 @@ int main(void) {
         &manager, owner, handle, &input) == DESKTOP_SURFACE_ECAPACITY);
     while (desktop_surface_input_dequeue(
         &manager, owner, handle, &received_input) == 0) {}
+    uint32_t discarded_motion_serial = 0U;
+    for (uint32_t event_index = 0U;
+         event_index < REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++event_index) {
+        input.type = event_index == 5U
+            ? REIST_GUI_SURFACE_INPUT_POINTER_MOTION
+            : REIST_GUI_SURFACE_INPUT_KEYBOARD;
+        input.serial = 100U + event_index;
+        input.x = 12;
+        input.y = 8;
+        if (event_index == 5U) discarded_motion_serial = input.serial;
+        assert(desktop_surface_input_enqueue(
+            &manager, owner, handle, &input) == 0);
+    }
+    input.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON;
+    input.serial = 200U;
+    input.button = 1U;
+    input.pressed = 1U;
+    assert(desktop_surface_input_enqueue(
+        &manager, owner, handle, &input) == 0);
+    for (uint32_t event_index = 0U;
+         event_index < REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++event_index) {
+        assert(desktop_surface_input_dequeue(
+            &manager, owner, handle, &received_input) == 0);
+        assert(received_input.serial != discarded_motion_serial);
+        if (event_index + 1U == REIST_GUI_SURFACE_MAX_PENDING_EVENTS) {
+            assert(received_input.type ==
+                REIST_GUI_SURFACE_INPUT_POINTER_BUTTON);
+            assert(received_input.serial == 200U);
+        }
+    }
     reist_gui_surface_buffer_t buffer = {
         REIST_GUI_SURFACE_BUFFER_API_VERSION, sizeof(buffer), 1U, 1U,
         320U, 200U, 320U * 4U,

@@ -2746,6 +2746,123 @@ static void render_system_dialog(const desktop_render_context_t *context,
     }
 }
 
+#define DESKTOP_VISIBLE_REGION_CAPACITY 128U
+
+typedef struct desktop_visible_region {
+    desktop_rect_t rects[DESKTOP_VISIBLE_REGION_CAPACITY];
+    uint32_t count;
+} desktop_visible_region_t;
+
+static uint32_t visible_region_append(desktop_visible_region_t *region,
+                                      desktop_rect_t rect) {
+    if (rect.width == 0U || rect.height == 0U) return 1U;
+    if (region == 0 || region->count >= DESKTOP_VISIBLE_REGION_CAPACITY)
+        return 0U;
+    region->rects[region->count++] = rect;
+    return 1U;
+}
+
+/* Subtract one opaque rectangle without allocation.  On capacity exhaustion
+ * the caller discards the partial result and renders the original clip, so
+ * optimization pressure can never create missing pixels. */
+static uint32_t visible_region_subtract(desktop_visible_region_t *region,
+                                        desktop_rect_t opaque) {
+    if (region == 0 || opaque.width == 0U || opaque.height == 0U) return 1U;
+    desktop_visible_region_t next;
+    next.count = 0U;
+    for (uint32_t index = 0U; index < region->count; ++index) {
+        desktop_rect_t source = region->rects[index];
+        desktop_rect_t overlap;
+        if (!intersect_rects(source, opaque, &overlap)) {
+            if (!visible_region_append(&next, source)) return 0U;
+            continue;
+        }
+        int32_t source_right = source.x + (int32_t)source.width;
+        int32_t source_bottom = source.y + (int32_t)source.height;
+        int32_t overlap_right = overlap.x + (int32_t)overlap.width;
+        int32_t overlap_bottom = overlap.y + (int32_t)overlap.height;
+        if (!visible_region_append(&next, (desktop_rect_t){
+                source.x, source.y, source.width,
+                (uint32_t)(overlap.y - source.y)}) ||
+            !visible_region_append(&next, (desktop_rect_t){
+                source.x, overlap_bottom, source.width,
+                (uint32_t)(source_bottom - overlap_bottom)}) ||
+            !visible_region_append(&next, (desktop_rect_t){
+                source.x, overlap.y,
+                (uint32_t)(overlap.x - source.x), overlap.height}) ||
+            !visible_region_append(&next, (desktop_rect_t){
+                overlap_right, overlap.y,
+                (uint32_t)(source_right - overlap_right), overlap.height}))
+            return 0U;
+    }
+    region->count = next.count;
+    for (uint32_t index = 0U; index < next.count; ++index)
+        region->rects[index] = next.rects[index];
+    return 1U;
+}
+
+static desktop_rect_t window_visual_bounds(const desktop_wm_t *manager,
+                                           uint32_t window_index) {
+    return desktop_wm_window_bounds(manager, window_index);
+}
+
+static uint32_t visible_region_subtract_popup(
+        desktop_visible_region_t *region,
+        const reist_gui_menu_model_t *model,
+        const reist_gui_menu_layout_t *layout,
+        const reist_gui_menu_state_t *state) {
+    if (model == 0 || layout == 0 || state == 0 ||
+        state->open_menu == REIST_GUI_MENU_NO_INDEX ||
+        state->open_menu >= model->menu_count) return 1U;
+    reist_gui_rect_t popup;
+    if (reist_gui_menu_popup_rect(
+            model, layout, state->open_menu, &popup) != 0) return 1U;
+    desktop_rect_t opaque = desktop_rect_from_gui(popup);
+    if (opaque.width <= UINT32_MAX - 4U) opaque.width += 4U;
+    if (opaque.height <= UINT32_MAX - 4U) opaque.height += 4U;
+    return visible_region_subtract(region, opaque);
+}
+
+static uint32_t visible_region_subtract_system_ui(
+        desktop_visible_region_t *region,
+        const x86os_display_info_t *display,
+        const desktop_ui_state_t *ui) {
+    if (region == 0 || display == 0 || ui == 0) return 1U;
+    if (!visible_region_subtract(region, desktop_taskbar_rect(display)))
+        return 0U;
+    reist_gui_menu_layout_t desktop_layout = desktop_menu_layout(display);
+    if (!visible_region_subtract_popup(
+            region, &desktop_menu_model, &desktop_layout, &ui->menu))
+        return 0U;
+    reist_gui_menu_layout_t trash_layout = trash_context_layout(ui, display);
+    if (!visible_region_subtract_popup(
+            region, trash_context_model(ui), &trash_layout, &ui->trash_menu))
+        return 0U;
+    if (!ui->dialog.visible) return 1U;
+    const reist_gui_dialog_model_t *model =
+        desktop_dialog_model(ui, ui->dialog_kind);
+    reist_gui_dialog_layout_t layout = desktop_dialog_layout(display);
+    reist_gui_rect_t dialog;
+    if (model == 0 || reist_gui_dialog_frame_rect(
+            model, &layout, &ui->dialog, &dialog) != 0) return 1U;
+    desktop_rect_t opaque = desktop_rect_from_gui(dialog);
+    if (opaque.width <= UINT32_MAX - 4U) opaque.width += 4U;
+    if (opaque.height <= UINT32_MAX - 4U) opaque.height += 4U;
+    return visible_region_subtract(region, opaque);
+}
+
+static void render_desktop_background(
+        const desktop_render_context_t *context,
+        const desktop_explorer_t *explorer) {
+    fill_rect_clipped(
+        context,
+        (desktop_rect_t){0, 0, context->display->width,
+                         context->display->height},
+        color_desktop);
+    for (uint32_t index = 0U; index < DESKTOP_ICON_COUNT; ++index)
+        render_icon(context, explorer, index);
+}
+
 static void render_desktop_clip(const desktop_render_context_t *context,
                                 const desktop_wm_t *manager,
                                 const desktop_explorer_t *explorer,
@@ -2753,19 +2870,65 @@ static void render_desktop_clip(const desktop_render_context_t *context,
                                 const desktop_ui_state_t *ui) {
     const x86os_display_info_t *display = context->display;
 
-    fill_rect_clipped(
-        context, (desktop_rect_t){0, 0, display->width, display->height},
-        color_desktop);
-
-    for (uint32_t index = 0U; index < DESKTOP_ICON_COUNT; ++index)
-        render_icon(context, explorer, index);
+    desktop_visible_region_t background;
+    background.count = 0U;
+    (void)visible_region_append(&background, context->clip);
+    uint32_t background_culled = visible_region_subtract_system_ui(
+        &background, display, ui);
+    for (uint32_t position = 0U;
+         background_culled && position < DESKTOP_WM_CAPACITY; ++position) {
+        uint32_t window_index = manager->z_order[position];
+        if (window_index >= DESKTOP_WM_CAPACITY ||
+            !manager->windows[window_index].visible ||
+            (context->omitted_kind == DESKTOP_MOVE_CACHE_WINDOW &&
+             context->omitted_window == window_index))
+            continue;
+        background_culled = visible_region_subtract(
+            &background, window_visual_bounds(manager, window_index));
+    }
+    if (!background_culled) {
+        render_desktop_background(context, explorer);
+    } else {
+        for (uint32_t visible = 0U; visible < background.count; ++visible) {
+            desktop_render_context_t clipped = *context;
+            clipped.clip = background.rects[visible];
+            render_desktop_background(&clipped, explorer);
+        }
+    }
 
     for (uint32_t position = 0U; position < DESKTOP_WM_CAPACITY; ++position) {
         uint32_t window_index = manager->z_order[position];
-        if (window_index < DESKTOP_WM_CAPACITY &&
-            (context->omitted_kind != DESKTOP_MOVE_CACHE_WINDOW ||
-             context->omitted_window != window_index))
-            render_window(context, manager, explorer, surfaces, window_index);
+        if (window_index >= DESKTOP_WM_CAPACITY ||
+            (context->omitted_kind == DESKTOP_MOVE_CACHE_WINDOW &&
+             context->omitted_window == window_index))
+            continue;
+        desktop_visible_region_t visible;
+        visible.count = 0U;
+        (void)visible_region_append(&visible, context->clip);
+        uint32_t culled = visible_region_subtract_system_ui(
+            &visible, display, ui);
+        for (uint32_t higher = position + 1U;
+             culled && higher < DESKTOP_WM_CAPACITY; ++higher) {
+            uint32_t higher_window = manager->z_order[higher];
+            if (higher_window >= DESKTOP_WM_CAPACITY ||
+                !manager->windows[higher_window].visible ||
+                (context->omitted_kind == DESKTOP_MOVE_CACHE_WINDOW &&
+                 context->omitted_window == higher_window))
+                continue;
+            culled = visible_region_subtract(
+                &visible, window_visual_bounds(manager, higher_window));
+        }
+        if (!culled) {
+            render_window(
+                context, manager, explorer, surfaces, window_index);
+            continue;
+        }
+        for (uint32_t region = 0U; region < visible.count; ++region) {
+            desktop_render_context_t clipped = *context;
+            clipped.clip = visible.rects[region];
+            render_window(
+                &clipped, manager, explorer, surfaces, window_index);
+        }
     }
 
     render_taskbar(context, manager, explorer, surfaces, ui);
@@ -3102,19 +3265,29 @@ static uint32_t enqueue_surface_pointer(
     const desktop_wm_t *manager, desktop_surface_manager_t *surfaces,
     int32_t window_index, uint32_t type, int32_t pointer_x,
     int32_t pointer_y, int32_t delta_x, int32_t delta_y,
-    uint32_t pressed, uint32_t allow_outside) {
+    uint32_t pressed, uint32_t allow_outside, int *enqueue_status) {
+    if (enqueue_status != 0) *enqueue_status = 0;
     if (manager == 0 || surfaces == 0 || window_index < 0 ||
-        window_index >= (int32_t)DESKTOP_WM_CAPACITY) return 0U;
+        window_index >= (int32_t)DESKTOP_WM_CAPACITY) {
+        if (enqueue_status != 0) *enqueue_status = -22;
+        return 0U;
+    }
     desktop_surface_slot_t *surface = surface_for_window(
         surfaces, (uint32_t)window_index);
-    if (surface == 0) return 0U;
+    if (surface == 0) {
+        if (enqueue_status != 0) *enqueue_status = -2;
+        return 0U;
+    }
     desktop_rect_t client = desktop_window_client_rect(
         manager, (uint32_t)window_index);
     if (!allow_outside &&
         (pointer_x < client.x || pointer_y < client.y ||
         pointer_x >= client.x + (int32_t)client.width ||
         pointer_y >= client.y + (int32_t)client.height))
-        return 0U;
+        {
+            if (enqueue_status != 0) *enqueue_status = -34;
+            return 0U;
+        }
     int32_t local_x = pointer_x - client.x;
     int32_t local_y = pointer_y - client.y;
     if (local_x < 0) local_x = 0;
@@ -3130,8 +3303,10 @@ static uint32_t enqueue_surface_pointer(
         type == REIST_GUI_SURFACE_INPUT_POINTER_BUTTON ? 1U : 0U,
         pressed, 0U, 0U,
     };
-    return desktop_surface_input_enqueue(
-        surfaces, surface->owner, surface->handle, &event) == 0;
+    int status = desktop_surface_input_enqueue(
+        surfaces, surface->owner, surface->handle, &event);
+    if (enqueue_status != 0) *enqueue_status = status;
+    return status == 0;
 }
 
 static uint32_t enqueue_surface_keyboard(
@@ -5205,6 +5380,7 @@ int main(int argc, char **argv) {
     uint32_t surface_probe = 0U;
     uint32_t notepad_probe = 0U;
     uint32_t control_probe = 0U;
+    uint32_t guidemo_probe = 0U;
     uint32_t sound_probe = 0U;
     uint32_t trash_context_probe = 0U;
     uint32_t trash_confirm_probe = 0U;
@@ -5230,6 +5406,9 @@ int main(int argc, char **argv) {
                text_equal(argv[1], "--control-probe")) {
         control_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--guidemo-probe")) {
+        guidemo_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--sound-probe")) {
         sound_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
@@ -5244,7 +5423,7 @@ int main(int argc, char **argv) {
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--surface-probe|"
-            "--notepad-probe|--control-probe|--sound-probe|"
+            "--notepad-probe|--control-probe|--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
             "--trash-confirm-probe|--unicode-probe]\n");
         return 2;
@@ -5462,7 +5641,8 @@ int main(int argc, char **argv) {
     int system_sound_status = load_system_sounds(&system_sounds);
     desktop_startup_phase_metric("sounds", phase_started_ms);
     if (render_probe || surface_probe || notepad_probe || control_probe ||
-        sound_probe || trash_context_probe || trash_confirm_probe ||
+        guidemo_probe || sound_probe || trash_context_probe ||
+        trash_confirm_probe ||
         unicode_probe)
         system_sounds.enabled = 0U;
     if (system_sound_status != 0)
@@ -5543,7 +5723,8 @@ int main(int argc, char **argv) {
         x86os_puts("DESKTOP_TRASH_CONTEXT_READY\n");
     if (trash_confirm_probe)
         x86os_puts("DESKTOP_TRASH_CONFIRM_READY\n");
-    if (surface_probe || notepad_probe || control_probe || sound_probe) {
+    if (surface_probe || notepad_probe || control_probe || guidemo_probe ||
+        sound_probe) {
         /* Each client spawn is bounded, but two consecutive image loads can
          * legitimately cross one heartbeat interval.  Reset the deadline at
          * the phase boundary and, for the audio probe, between both clients. */
@@ -5559,6 +5740,12 @@ int main(int argc, char **argv) {
                 &surface_runtime, &surfaces,
                 "/USR/GUI/BIN/SOUNDPLAYER.PRG",
                 "/USR/SHARE/SOUNDS/STARTUP.WAV",
+                lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms)
+            : guidemo_probe
+            ? launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/GUIDEMO.PRG", "--interaction-probe",
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms)
             : control_probe
@@ -5622,6 +5809,8 @@ int main(int argc, char **argv) {
         if (probe_status != 0) {
             x86os_puts(sound_probe
                 ? "DESKTOP_AUDIO_FAIL launch status="
+                : guidemo_probe
+                ? "DESKTOP_GUIDEMO_FAIL launch status="
                 : control_probe
                 ? "DESKTOP_CONTROL_FAIL launch status="
                 : (surface_probe
@@ -5636,6 +5825,8 @@ int main(int argc, char **argv) {
         if (sound_probe) (void)x86os_monotonic_ms(&sound_probe_started_ms);
         x86os_puts(sound_probe
             ? "DESKTOP_AUDIO_STAGE client-bound\n"
+            : guidemo_probe
+            ? "DESKTOP_GUIDEMO_STAGE client-bound\n"
             : control_probe
             ? "DESKTOP_CONTROL_STAGE client-bound\n"
             : (surface_probe
@@ -5725,7 +5916,8 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-        if ((surface_probe || control_probe) && !surface_probe_reported) {
+        if ((surface_probe || control_probe || guidemo_probe) &&
+            !surface_probe_reported) {
             for (uint32_t surface_index = 0U;
                  surface_index < DESKTOP_SURFACE_CAPACITY; ++surface_index) {
                 if (surfaces.slots[surface_index].active &&
@@ -5737,7 +5929,9 @@ int main(int argc, char **argv) {
                     surfaces.slots[surface_index].acknowledged_serial != 0U &&
                     surfaces.slots[surface_index].window_index !=
                         DESKTOP_SURFACE_NO_SLOT) {
-                    x86os_puts(control_probe
+                    x86os_puts(guidemo_probe
+                        ? "DESKTOP_GUIDEMO_OK\n"
+                        : control_probe
                         ? "DESKTOP_CONTROL_OK\n"
                         : "DESKTOP_SURFACE_OK\n");
                     surface_probe_reported = 1U;
@@ -5835,18 +6029,67 @@ int main(int argc, char **argv) {
                             pointer_x, pointer_y, mouse.buttons,
                             previous_buttons);
                     int32_t captured_surface_window = manager.capture_window;
+                    uint32_t captured_surface_kind = manager.capture_kind;
                     actions |= dispatch_pointer_button(
                         &manager, &explorer, &ui, &display, &dirty,
                         pointer_x, pointer_y, mouse.buttons,
                         previous_buttons, &action_target, &activation);
-                    int32_t surface_button_window = left_down
-                        ? manager.capture_window : captured_surface_window;
-                    (void)enqueue_surface_pointer(
+                    uint32_t surface_capture_kind = left_down
+                        ? manager.capture_kind : captured_surface_kind;
+                    int32_t surface_button_window =
+                        surface_capture_kind == DESKTOP_WM_CAPTURE_CLIENT
+                            ? (left_down ? manager.capture_window
+                                         : captured_surface_window)
+                            : DESKTOP_WM_NO_WINDOW;
+                    int surface_button_status = 0;
+                    uint32_t surface_button_queued = enqueue_surface_pointer(
                         &manager, &surfaces, surface_button_window,
                         REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
                         pointer_x, pointer_y, 0, 0, left_down,
-                        !left_down || manager.capture_kind ==
-                            DESKTOP_WM_CAPTURE_CLIENT);
+                        !left_down || surface_capture_kind ==
+                            DESKTOP_WM_CAPTURE_CLIENT,
+                        &surface_button_status);
+                    if (!surface_button_queued &&
+                        surface_button_status == DESKTOP_SURFACE_ECAPACITY &&
+                        surface_button_window >= 0) {
+                        desktop_surface_slot_t *failed_surface =
+                            surface_for_window(
+                                &surfaces, (uint32_t)surface_button_window);
+                        if (left_down &&
+                            manager.capture_kind ==
+                                DESKTOP_WM_CAPTURE_CLIENT &&
+                            manager.capture_window == surface_button_window)
+                            (void)desktop_wm_pointer_release(
+                                &manager, pointer_x, pointer_y);
+                        if (failed_surface != 0) {
+                            reist_gui_surface_owner_t failed_owner =
+                                failed_surface->owner;
+                            reist_gui_surface_handle_t failed_handle =
+                                failed_surface->handle;
+                            (void)desktop_surface_destroy(
+                                &surfaces, failed_owner, failed_handle);
+                            desktop_dirty_full(&dirty);
+                        }
+                        x86os_puts(
+                            "DESKTOP_SURFACE_INPUT_FENCED status=-75\n");
+                    }
+                    if (guidemo_probe) {
+                        x86os_puts("DESKTOP_GUIDEMO_POINTER edge=");
+                        x86os_puts(left_down ? "down" : "up");
+                        x86os_puts(" x=");
+                        x86os_print_number(pointer_x);
+                        x86os_puts(" y=");
+                        x86os_print_number(pointer_y);
+                        x86os_puts(" capture=");
+                        x86os_print_number((int)surface_capture_kind);
+                        x86os_puts(" window=");
+                        x86os_print_number(surface_button_window);
+                        x86os_puts(" queued=");
+                        x86os_print_number((int)surface_button_queued);
+                        x86os_puts(" status=");
+                        x86os_print_number(surface_button_status);
+                        x86os_putchar('\n');
+                    }
                 }
             }
             previous_buttons = mouse.buttons;
@@ -5865,7 +6108,7 @@ int main(int argc, char **argv) {
                 &manager, &surfaces, surface_motion_window,
                 REIST_GUI_SURFACE_INPUT_POINTER_MOTION,
                 pointer_x, pointer_y, pending_delta_x, pending_delta_y, 0U,
-                manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT);
+                manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT, 0);
         }
 
         uint32_t drag_key_consumed = 0U;

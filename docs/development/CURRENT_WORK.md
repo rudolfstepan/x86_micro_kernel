@@ -1135,8 +1135,9 @@ schedulerbeeinflusste Vergleichsmessung, nicht als Hardwarezertifizierung.
 Notepad trennt statische Basis, dynamischen Editorinhalt, Menue/Dialog-Overlay
 und Hovermarkierung in vier atomare retained Surface-Layer. Scrollbar-Drag
 ersetzt nur sichtbaren Text, Cursor, Scrollleisten und Status. Ein Wechsel des
-Menue-Hovers uebertraegt hoechstens vier Kommandos fuer aktiven Titel und
-markierten Eintrag. Damit sinken IPC- und Repaint-Arbeit unabhaengig von SMP;
+Menue-Hovers uebertraegt höchstens 16 Kommandos fuer aktiven Titel,
+markierten Eintrag oder sofortige Scrollbar-Rückmeldung. Damit sinken IPC- und
+Repaint-Arbeit unabhaengig von SMP;
 eine einzelne CPU ist der Referenzpfad.
 
 # R3.4c native GUI-Clientflaechen
@@ -1150,3 +1151,21 @@ dem Paint auf die verbleibende Clientbreite begrenzt. Der Runtime-Nachweis
 wechselt den zweiten Tab ueber echte Motion-, Press- und Release-Ereignisse und
 beobachtet danach den fortlaufenden Compositor-Heartbeat. Notepad erfuellt
 denselben Vertrag mit dem OS-Titel `REIST Editor` und ohne eigene Titelleiste.
+
+# R3.4d physisches GUI-Routing und sichtbare Regionen
+
+Der Desktop hält ein Client-Capture vom akzeptierten Button-Down bis zum
+zugehörigen Button-Up und leitet Dekorations-Captures nicht an eine Surface
+weiter. Ein echter emulierter xHCI-USB-Mauspfad aktiviert in GUIDEMO sowohl
+den zweiten Tab als auch den Info-Menüpunkt. Der dabei gefundene Clientabbruch
+war keine SMT-Ursache: Ein Tab-Hover benötigte sechs Paint-Kommandos, während
+der feste Hover-Layer nur vier aufnehmen konnte. Die weiterhin statische und
+fail-closed Grenze beträgt jetzt 16 Kommandos.
+
+Notepad priorisiert während eines Scrollbar-Drags Track und Thumb in diesem
+kleinen Hover-Layer. Der größere Dynamic-Layer des Editors bleibt
+koaleszierbar und folgt im nächsten freien Eventloop-Umlauf beziehungsweise
+spätestens nach Button-Up. Der Compositor zerlegt Dirty-Regionen außerdem in
+feste sichtbare Teilrechtecke und rastert vollständig verdeckte Flächen nicht.
+Erschöpft die feste Regionliste, zeichnet er den ursprünglichen Clip komplett;
+Kapazitätsdruck darf daher Laufzeit, aber keine Pixelkorrektheit kosten.

@@ -8,6 +8,10 @@ Bausteinen und geplanter Arbeit. Ein Häkchen bedeutet, dass Quell-API,
 Verhaltenstest, SDK-Installation und mindestens eine reale Verwendung
 vorhanden sind; eine gezeichnete Attrappe allein gilt nicht als Control.
 
+Der subsystemweite Vertrag für Eingaberouting, Pointer-Capture, Damage,
+Occlusion-Culling, atomare Frames und messbare Interaktionslatenz steht in
+[`GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md`](GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md).
+
 ## Ziel und Schichten
 
 REIST übernimmt etablierte Interaktionsmodelle, aber behauptet keine
@@ -65,13 +69,13 @@ Retained-Command-Surfaces besitzen zusätzlich zur kompatiblen Basisliste
 append-only Protokollerweiterungen fuer Overlay, dynamischen Inhalt und Hover.
 Alle Listen werden unabhängig atomar ersetzt; der Compositor zeichnet immer
 Base, Dynamic, Overlay und Hover in dieser Reihenfolge. Die Grenzen sind 192,
-192, 96 und vier Kommandos.
+192, 96 und 16 Kommandos.
 Ungültige Layer oder ein Commit für den falschen aktiven Layer scheitern vor
 einer sichtbaren Zustandsänderung. Der REIST Editor hält statische Geometrie in
 der Basis, Dokument, Scrollleisten und Statuszeile in Dynamic, Menü und Dialoge
 in Overlay sowie nur aktiven Titel und hervorgehobenen Eintrag in Hover. Ein
 Scroll-Drag ersetzt dadurch keine statische Basis; ein Hoverwechsel uebertraegt
-hoechstens vier Kommandos. Separate Dialog-Surfaces und ältere
+höchstens 16 Kommandos. Separate Dialog-Surfaces und ältere
 Clients verwenden unverändert die Basis-API; Eingaben werden nicht in laufende
 Transaktionsantworten umsortiert.
 

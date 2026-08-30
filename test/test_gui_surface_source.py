@@ -22,7 +22,7 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn(
             "REIST_GUI_SURFACE_MAX_DYNAMIC_PAINT_COMMANDS 192U", header)
         self.assertIn(
-            "REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS 4U", header)
+            "REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS 16U", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_BEGIN", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_COMMIT", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN", header)

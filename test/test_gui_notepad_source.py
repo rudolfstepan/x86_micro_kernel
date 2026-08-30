@@ -135,6 +135,24 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("if (result.full_redraw &&", pointer)
         self.assertIn("synchronize_scrollbars(state)", pointer)
 
+    def test_scrollbar_thumb_commit_preempts_editor_viewport_redraw(self):
+        self.assertIn("render_scrollbar_feedback", self.source)
+        self.assertIn("request_scrollbar_redraw", self.source)
+        self.assertIn("application.scrollbar_redraw &&", self.source)
+        self.assertIn("application.scroll_drag != NOTEPAD_SCROLL_NONE", self.source)
+        self.assertIn("else if (urgent_scrollbar)\n                render_hover", self.source)
+        urgent = self.source[
+            self.source.index("uint32_t urgent_scrollbar") :
+            self.source.index("} else if (surface_mode", self.source.index(
+                "uint32_t urgent_scrollbar"))
+        ]
+        self.assertIn("application.scrollbar_redraw = 0U", urgent)
+        self.assertNotIn(
+            "application.dynamic_redraw = 0U;\n"
+            "                    application.scrollbar_redraw = 0U",
+            urgent,
+        )
+
     def test_resize_is_recoverable_and_dialog_is_a_separate_surface(self):
         self.assertIn("accept_configure_bounded", self.source)
         self.assertIn('"notepad: Resize verzoegert: "', self.source)

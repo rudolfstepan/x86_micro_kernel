@@ -11,6 +11,83 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.4d-surface-pointer-routing"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Deliver physical pointer clicks to native GUI Surfaces"
+scope = "Repair the bounded physical mouse-button path from the HID queue through desktop window capture and the Surface broker to GUIDEMO controls and menus. Replace the former direct queue-only interaction proof with a real compositor routing proof and add a QEMU xHCI click gate that verifies observable Gallery control and menu state changes. Increase only the fixed hover-layer capacity from four to sixteen commands so complete tabs, menus and scrollbar feedback cannot terminate a conforming client. Decouple Notepad scrollbar feedback from editor viewport painting so each delivered drag position commits the thumb first while text repaint remains bounded and coalescible on the following event-loop turn. Add bounded opaque-region culling with a pixel-correct full-clip fallback. Preserve server-owned decorations, implicit button grabs, fixed queue capacities, process isolation and single-vCPU behavior."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "drivers/usb/hid_mouse.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/apps/control_gallery/main.c",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/include/reist/gui/surface.h",
+  "scripts/run_vmware_mouse.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_usb_hid_mouse_host.c",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_source.py",
+  "test/test_gui_control_gallery_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_gui_surface_source.py",
+  "test/test_vmware_mouse.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "a physical left-button press and release are delivered in order to the Surface owning the client-area press",
+  "window move resize close taskbar and desktop UI captures never leak button events into a client Surface",
+  "motion may be coalesced but button edges are never silently replaced by motion or ignored after enqueue failure",
+  "all HID Surface and IPC queues remain fixed-capacity and every retry or runtime wait remains bounded",
+  "the compositor retains the implicit grab until release even when the pointer leaves the client area",
+  "server decorations and client-local control coordinates remain unchanged",
+  "the repair does not depend on multiple CPUs or affinity",
+  "the hover layer remains fixed at sixteen commands and overflow fails before retained state changes",
+  "an active Notepad scrollbar thumb is committed before any pending editor viewport repaint",
+  "editor viewport repaint may be coalesced during continuous drag but is committed after the latest thumb position without an unbounded wait",
+  "opaque-region capacity exhaustion falls back to drawing the original clip and never omits visible pixels"
+]
+targeted_tests = [
+  "python test/test_gui_control_gallery_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_vmware_mouse.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-guidemo-click"
+]
+stop_conditions = [
+  "the real QEMU xHCI click reaches HID but cannot be routed to the visible Gallery Surface",
+  "preserving a button edge would require an unbounded queue wait or queue growth",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: deliver physical clicks to surfaces"
+evidence = [
+  "All 112 frozen Gallery Notepad Surface Desktop VMware-runner and QEMU-runner source or host checks passed, including freestanding C11 builds, arbitrary-position Motion eviction and fail-closed nonreplaceable input overload.",
+  "The final VMware framebuffer package passed in 48 seconds with all Ring-3 GUI programs and the enlarged but fixed retained Surface storage linked into the package.",
+  "The final runtime-desktop-guidemo-click gate passed through a real emulated QEMU xHCI USB mouse, compositor capture and Surface routing, then observed both GUIDEMO_INTERACTION_OK and GUIDEMO_MENU_INTERACTION_OK.",
+  "The unusable Gallery was caused by the four-command hover capacity: one complete bevel tab with text needs six commands, overflow disconnected the client, and the fixed sixteen-command limit now accommodates tabs menus and scrollbar feedback without dynamic allocation.",
+  "Notepad commits active scrollbar Track and Thumb in the hover layer before the coalescible Dynamic editor viewport, while the compositor skips opaque covered regions with a fixed 128-rectangle list and full-clip correctness fallback.",
+  "No kernel driver authority DMA MMIO IRQ or global GUI coordinate authority was widened; measured one-core and multi-core p99 latency remains explicit future target-hardware evidence rather than a certification claim, and active_id is empty."
+]
+
+[[packages]]
 id = "R3.4c-guidemo-first-frame"
 status = "done"
 phase = "post-s0"

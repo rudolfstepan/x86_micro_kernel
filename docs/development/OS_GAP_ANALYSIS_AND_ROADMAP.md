@@ -4328,3 +4328,24 @@ weiterlaufenden Compositor-Heartbeat nachweisen. Gemeinsame thematische
 Control-Renderer fuer einfachere Quellportierungen bleiben ein eigener
 Ausbauschritt; Win32-, Qt-, GTK- oder Wayland-Kompatibilitaet wird nicht
 behauptet.
+
+# R3.4d: physisches Pointer-Routing und latenzkritisches Feedback
+
+Der Surface-Pfad verwendet das vom Window Manager etablierte implizite
+Client-Capture für Motion und die zugehörige Button-Up-Kante. Capture für
+Titel, Resize oder Close wird nicht in die Client-Queue gespiegelt. Der
+Runtime-Nachweis schreibt keine synthetischen Events direkt in den Broker,
+sondern führt Press und Release einer emulierten xHCI-USB-Maus durch HID,
+Compositor, Surface-Queue und Control-Zustandsautomat bis zu einem sichtbaren
+GUIDEMO-Tab- und Menüwechsel.
+
+Der feste Hover-Layer umfasst 16 statt vier Kommandos, weil ein vollständiger
+Tab mit Bevel und Text bereits sechs benötigt. Überlauf bleibt fail-closed und
+ändert keinen committed Zustand. Beim Notepad-Scrollbar-Drag wird der kleine
+Track-/Thumb-Layer vor dem koaleszierbaren Editor-Viewport committed. Der
+Compositor zieht opake höher liegende Fenster und System-UI aus jeder
+Dirty-Region ab; eine feste Regionkapazität und vollständiges Zeichnen als
+Überlauf-Fallback halten Arbeit und Fehlerwirkung begrenzt. Messbare
+Ein-/Mehrkern-p99-Latenz und hardwarebezogene Worst-Case-Evidenz bleiben
+separate Abnahmearbeit und werden nicht aus einem funktionalen Gasttest
+abgeleitet.

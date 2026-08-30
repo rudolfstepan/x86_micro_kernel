@@ -175,6 +175,7 @@ typedef struct notepad_state {
     uint32_t dynamic_redraw;
     uint32_t overlay_redraw;
     uint32_t hover_redraw;
+    uint32_t scrollbar_redraw;
     uint32_t exit_requested;
     uint32_t scroll_drag;
     uint32_t scroll_drag_offset;
@@ -212,6 +213,16 @@ static void request_dynamic_redraw(notepad_state_t *state) {
         state->dynamic_redraw = 1U;
     else
         state->redraw = 1U;
+}
+
+static void request_scrollbar_redraw(notepad_state_t *state) {
+    if (state == 0) return;
+    if (main_surface != 0) {
+        state->scrollbar_redraw = 1U;
+        state->hover_redraw = 1U;
+    } else {
+        state->redraw = 1U;
+    }
 }
 
 static uint32_t paint_status_retryable(int status) {
@@ -768,6 +779,35 @@ static void render_scrollbar(const x86os_display_info_t *display,
          display->font_width, foreground, color_face);
 }
 
+/* During an implicit scrollbar grab, keep only the changing track and thumb
+ * in the highest retained layer.  Replacing this small layer removes the old
+ * thumb before drawing the new position, while the larger editor viewport
+ * remains eligible for bounded coalescing on the next event-loop turn. */
+static void render_scrollbar_feedback(
+        const x86os_display_info_t *display,
+        const notepad_state_t *state) {
+    if (state->scroll_drag != NOTEPAD_SCROLL_VERTICAL &&
+        state->scroll_drag != NOTEPAD_SCROLL_HORIZONTAL)
+        return;
+    const reist_gui_range_model_t *model =
+        state->scroll_drag == NOTEPAD_SCROLL_VERTICAL
+            ? &state->vertical_scroll_model
+            : &state->horizontal_scroll_model;
+    const reist_gui_range_state_t *range =
+        state->scroll_drag == NOTEPAD_SCROLL_VERTICAL
+            ? &state->vertical_scroll
+            : &state->horizontal_scroll;
+    uint32_t maximum = state->scroll_drag == NOTEPAD_SCROLL_VERTICAL
+        ? state->viewport.maximum_first_line
+        : state->viewport.maximum_first_column;
+    if (maximum == 0U) return;
+    notepad_scrollbar_geometry_t geometry =
+        scrollbar_geometry(model, range, maximum);
+    fill(geometry.track, color_light);
+    bevel(geometry.thumb, color_face, 1U);
+    (void)display;
+}
+
 static void render_editor_chrome(const x86os_display_info_t *display,
                                  const notepad_state_t *state) {
     reist_gui_rect_t frame = editor_frame(display);
@@ -1011,6 +1051,7 @@ static void render_overlay_scene(const x86os_display_info_t *display,
 
 static void render_hover_scene(const x86os_display_info_t *display,
                                const notepad_state_t *state) {
+    render_scrollbar_feedback(display, state);
     render_menu_hover(display, state);
 }
 
@@ -1470,6 +1511,7 @@ static uint32_t apply_scroll_value(notepad_state_t *state,
     if (range_result.changed || editor_result.full_redraw) {
         request_dynamic_redraw(state);
     }
+    if (range_result.changed) request_scrollbar_redraw(state);
     return 1U;
 }
 
@@ -1508,6 +1550,7 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
             state->scroll_drag = NOTEPAD_SCROLL_NONE;
             state->scroll_drag_offset = 0U;
             request_dynamic_redraw(state);
+            request_scrollbar_redraw(state);
             return 1U;
         }
         return point_inside(model->bounds, x, y);
@@ -1525,7 +1568,7 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
             ? (uint32_t)geometry.thumb.x : (uint32_t)geometry.thumb.y;
         state->scroll_drag = axis;
         state->scroll_drag_offset = coordinate - thumb_origin;
-        request_dynamic_redraw(state);
+        request_scrollbar_redraw(state);
         return 1U;
     } else {
         uint32_t coordinate = scroll_coordinate(model, x, y);
@@ -2159,6 +2202,7 @@ int main(int argc, char **argv) {
     application.dynamic_redraw = 0U;
     application.overlay_redraw = 0U;
     application.hover_redraw = 0U;
+    application.scrollbar_redraw = 0U;
     if (!surface_mode) (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
 
     uint32_t paint_failures = 0U;
@@ -2251,6 +2295,11 @@ int main(int argc, char **argv) {
                         &application, dialog_surface_active
                             ? &dialog_display : &display,
                         pointer_x, pointer_y, 0U, 0U);
+                    if (application.scrollbar_redraw &&
+                        application.scroll_drag != NOTEPAD_SCROLL_NONE) {
+                        ++surface_events;
+                        break;
+                    }
                 } else if (message.type == REIST_GUI_SURFACE_INPUT &&
                            (!dialog_surface_active ||
                             same_surface(message.surface,
@@ -2263,6 +2312,11 @@ int main(int argc, char **argv) {
                         &application, dialog_surface_active
                             ? &dialog_display : &display, pointer_x, pointer_y,
                         1U, message.input.pressed);
+                    if (application.scrollbar_redraw &&
+                        application.scroll_drag != NOTEPAD_SCROLL_NONE) {
+                        ++surface_events;
+                        break;
+                    }
                 } else if (message.type == REIST_GUI_SURFACE_INPUT &&
                            (!dialog_surface_active ||
                             same_surface(message.surface,
@@ -2298,17 +2352,28 @@ int main(int argc, char **argv) {
                         &application, &display,
                         pointer_x, pointer_y, 1U, 0U);
                 previous_buttons = mouse.buttons;
+                if (application.scrollbar_redraw &&
+                    application.scroll_drag != NOTEPAD_SCROLL_NONE) {
+                    ++mouse_count;
+                    break;
+                }
             }
             if (key && key != NOTEPAD_KEY_NONE)
                 (void)dispatch_keyboard(&application, &display, key);
         }
         if (application.redraw || application.dynamic_redraw ||
-            application.overlay_redraw || application.hover_redraw) {
+            application.overlay_redraw || application.hover_redraw ||
+            application.scrollbar_redraw) {
             uint32_t full_redraw = application.redraw;
+            uint32_t urgent_scrollbar = !full_redraw &&
+                application.scrollbar_redraw &&
+                application.scroll_drag != NOTEPAD_SCROLL_NONE;
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
             if (full_redraw)
                 render(&display, &application);
+            else if (urgent_scrollbar)
+                render_hover(&display, &application);
             else {
                 if (application.dynamic_redraw)
                     render_dynamic(&display, &application);
@@ -2322,12 +2387,25 @@ int main(int argc, char **argv) {
             if (!surface_mode)
                 (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
             if (paint_status == 0) {
-                if (full_redraw) application.redraw = 0U;
-                if (full_redraw || application.dynamic_redraw)
+                if (full_redraw) {
+                    application.redraw = 0U;
                     application.dynamic_redraw = 0U;
-                if (full_redraw || application.overlay_redraw)
                     application.overlay_redraw = 0U;
-                application.hover_redraw = 0U;
+                    application.hover_redraw = 0U;
+                    application.scrollbar_redraw = 0U;
+                } else if (urgent_scrollbar) {
+                    application.hover_redraw = 0U;
+                    application.scrollbar_redraw = 0U;
+                } else {
+                    if (application.dynamic_redraw)
+                        application.dynamic_redraw = 0U;
+                    if (application.overlay_redraw)
+                        application.overlay_redraw = 0U;
+                    if (application.hover_redraw) {
+                        application.hover_redraw = 0U;
+                        application.scrollbar_redraw = 0U;
+                    }
+                }
                 paint_failures = 0U;
                 if (full_redraw && resize_marker_pending) {
                     x86os_puts("NOTEPAD_SURFACE_RESIZE_OK\n");
@@ -2338,6 +2416,10 @@ int main(int argc, char **argv) {
                     ++paint_failures;
                 if (full_redraw)
                     application.redraw = 1U;
+                else if (urgent_scrollbar) {
+                    application.scrollbar_redraw = 1U;
+                    application.hover_redraw = 1U;
+                }
                 else if (application.dynamic_redraw)
                     application.dynamic_redraw = 1U;
                 else if (application.overlay_redraw)

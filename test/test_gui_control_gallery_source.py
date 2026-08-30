@@ -69,6 +69,15 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         )
         self.assertIn("GUIDEMO_PAINT_FAIL status=", self.source)
 
+    def test_hover_is_a_small_retained_layer_and_paint_retries_are_bounded(self):
+        self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_HOVER", self.source)
+        self.assertIn("static void render_hover(", self.source)
+        self.assertIn("state->hover_redraw = 1U", self.source)
+        self.assertIn("GALLERY_PAINT_RETRY_LIMIT 3U", self.source)
+        self.assertIn("startup_paint_failures", self.source)
+        self.assertIn("paint_status_retryable", self.source)
+        self.assertIn("GUIDEMO_MENU_INTERACTION_OK", self.source)
+
     def test_gallery_uses_server_window_decorations_and_real_pointer_input(self):
         render_start = self.source.index("static void render_gallery(")
         render_end = self.source.index("static void render_dialog(",
