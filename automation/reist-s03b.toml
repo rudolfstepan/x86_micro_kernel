@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
+active_id = "R4.1a-curl-https"
 
 [policy]
 one_package_per_run = true
@@ -13232,7 +13232,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2r-x86_64-ipc-revocation-wakeup"
-status = "active"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Prove generation-scoped x86_64 IPC revocation wakeups"
@@ -13267,4 +13267,70 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "ipc: revoke x86_64 blocked peers safely"
+evidence = []
+
+[[packages]]
+id = "R4.1a-curl-https"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Provide reusable authenticated Ring-3 TLS and curl HTTPS"
+scope = "Add a reusable versioned libreisttls.a Ring-3 client library and use curl as its first consumer. Bind the library to the hash-pinned official Mbed TLS 4.1.1 LTS source release under Apache-2.0 and a versioned Mozilla-derived CA trust store; expose fixed-size caller-owned contexts plus bounded transport time entropy and allocator contracts so later PRG clients do not duplicate cryptography or certificate policy. Provide TLS 1.2 and TLS 1.3 client handshakes, mandatory X.509 chain validity and DNS SAN hostname verification, and publish no application plaintext before authentication succeeds. Seed one process-local DRBG only from bounded CPUID-verified RDRAND samples and fail closed when hardware entropy, RTC validity, trust anchors, certificate validation, hostname validation, handshake progress, record authentication, socket progress or fixed memory budgets fail. Keep HTTP behavior, DNS/TCP/VFS public ABIs, atomic output replacement, userspace shell installation and the 30-second aggregate transfer deadline compatible. Prove the generic library and curl against a deterministic local CA and server plus rejection of unknown-CA, wrong-host, expired, malformed, truncated and tampered TLS peers in host tests and a real QEMU guest runtime; make no certification, revocation-checking, secure-clock, IPv6 or unrestricted curl-compatibility claim."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "third_party/mbedtls-4.1.1.tar.bz2",
+  "third_party/mbedtls-4.1.1.sha256",
+  "third_party/README.md",
+  "userspace/programs/curl.c",
+  "userspace/programs/curl_http.c",
+  "userspace/programs/curl_http.h",
+  "userspace/tls/include/reist/tls.h",
+  "userspace/tls/lib/reist_tls.c",
+  "userspace/tls/lib/reist_tls_platform.c",
+  "userspace/tls/lib/reist_tls_config.h",
+  "userspace/tls/lib/reist_tls_trust_anchors.c",
+  "userspace/tls/lib/reist_tls_trust_anchors.h",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/generate_curl_trust_store.py",
+  "scripts/run_qemu_smoke.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_curl_http_host.c",
+  "test/test_reist_tls_host.c",
+  "test/test_network_tools.py",
+  "test/fixtures/curl_tls_ca.pem",
+  "test/fixtures/curl_tls_server.pem",
+  "test/fixtures/curl_tls_server.key",
+  "test/fixtures/curl_tls_wrong_host.pem",
+  "test/fixtures/curl_tls_expired.pem",
+  "docs/networking/NETWORK.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "README.md"
+]
+invariants = [
+  "the public TLS API is append-only versioned and transport-neutral with caller-owned fixed-size storage and explicit finite deadlines so independent PRG clients can link it without private cryptography",
+  "HTTPS plaintext request and response bytes are never published before a complete authenticated TLS handshake bound to the exact URL host",
+  "every HTTPS connection requires a valid X.509 chain to a versioned trust anchor plus SAN hostname and RTC validity checks; unknown CA wrong host expired malformed or unsupported certificates fail closed",
+  "TLS 1.2 and TLS 1.3 are the only enabled protocol versions and obsolete renegotiation compression early data weak hashes static RSA key exchange CBC RC4 and 3DES remain disabled",
+  "the DRBG is seeded only after bounded CPUID and RDRAND success and continuous duplicate-sample checks; entropy failure returns before network or output side effects",
+  "all TLS contexts records certificate chains trust anchors allocator storage retries socket waits and handshake or transfer deadlines have explicit fixed maxima",
+  "HTTP support public DNS TCP VFS and process ABIs atomic temporary-file replacement byte limits shell resolution and Windows and Makefile image layouts remain compatible",
+  "Mbed TLS stays in each linking Ring-3 client process and receives no device IRQ MMIO DMA kernel parser or ambient filesystem authority",
+  "the exact official Mbed TLS 4.1.1 archive is SHA-256 pinned and the generated trust store is deterministic and versioned",
+  "the documentation explicitly disclaims revocation checking secure-clock resistance certification and unrestricted upstream curl compatibility"
+]
+targeted_tests = ["python test/test_network_tools.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode curl-https-client"]
+stop_conditions = [
+  "authenticated HTTPS requires plaintext-before-authentication disabled certificate or hostname checks an unbounded allocator wait retry queue or record size",
+  "the freestanding i386 target cannot build the pinned TLS library within the fixed 8-MiB MYPR region and bounded process memory",
+  "the target cannot provide bounded hardware entropy or a valid RTC and the client does not fail closed before side effects",
+  "a malformed certificate handshake or record can escape fixed parser or memory bounds",
+  "a required production file lies outside allowed_files or an unrelated change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "net: authenticate bounded curl https"
 evidence = []
