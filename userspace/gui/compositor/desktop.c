@@ -31,6 +31,8 @@
 #define DESKTOP_SVGA2D_RETRY_MS 50U
 #define DESKTOP_SVGA2D_RECONNECT_MS 1000U
 #define DESKTOP_SVGA2D_PROBE_READY_DEADLINE_MS 2000U
+#define DESKTOP_SVGA2D_REPLY_MS 100U
+#define DESKTOP_SVGA2D_ACTIVATE_REPLY_MS 500U
 #define DESKTOP_ARGUMENT_LIMIT 32U
 #define DESKTOP_MENU_COUNT 1U
 #define DESKTOP_METRICS_VERSION 1U
@@ -162,13 +164,97 @@ static void desktop_svga2d_forget_endpoint(void) {
     desktop_svga2d_capabilities = 0U;
 }
 
+static int desktop_svga2d_decode_response(
+        const x86os_ipc_message_t *ipc,
+        reist_svga2d_message_t *response) {
+    if (ipc == 0 || response == 0 ||
+        ipc->version != X86OS_IPC_MESSAGE_VERSION ||
+        ipc->struct_size != sizeof(*ipc) ||
+        ipc->length != sizeof(*response)) return -84;
+    for (uint32_t index = 0U; index < sizeof(*response); ++index)
+        ((uint8_t *)response)[index] = ipc->payload[index];
+    if (response->version != REIST_SVGA2D_ABI_VERSION ||
+        response->struct_size != sizeof(*response) ||
+        response->request_id == 0U ||
+        response->operation < REIST_SVGA2D_ACTIVATE ||
+        response->operation > REIST_SVGA2D_INFO ||
+        response->flags != REIST_SVGA2D_FLAG_RESPONSE)
+        return -84;
+    return 0;
+}
+
+static uint32_t desktop_svga2d_response_is_stale(uint32_t response_id,
+                                                 uint32_t request_id) {
+    uint32_t age = request_id - response_id;
+    return age != 0U && age <= 0x7FFFFFFFU;
+}
+
+static int desktop_svga2d_drain_stale_responses(uint32_t request_id) {
+    for (uint32_t stale = 0U; stale < X86OS_IPC_QUEUE_DEPTH; ++stale) {
+        x86os_ipc_message_t ipc;
+        ipc.version = X86OS_IPC_MESSAGE_VERSION;
+        ipc.struct_size = sizeof(ipc);
+        ipc.length = 0U;
+        int status = x86os_ipc_receive_timeout(
+            desktop_svga2d_endpoint, &ipc, 0U);
+        if (status == -11) return 0;
+        if (status != 0) return status;
+        reist_svga2d_message_t stale_response;
+        status = desktop_svga2d_decode_response(&ipc, &stale_response);
+        if (status != 0) return status;
+        if (!desktop_svga2d_response_is_stale(
+                stale_response.request_id, request_id)) return -84;
+    }
+    return 0;
+}
+
+static int desktop_svga2d_receive_response(
+        uint32_t request_id, uint32_t operation,
+        reist_svga2d_message_t *wire, uint32_t timeout_ms) {
+    uint64_t started_ms = 0U;
+    if (timeout_ms == 0U || x86os_monotonic_ms(&started_ms) != 0 ||
+        started_ms > UINT64_MAX - timeout_ms) return -84;
+    uint64_t deadline_ms = started_ms + timeout_ms;
+    for (uint32_t reply = 0U;
+         reply < X86OS_IPC_QUEUE_DEPTH + 1U; ++reply) {
+        uint64_t now_ms = 0U;
+        if (x86os_monotonic_ms(&now_ms) != 0 || now_ms < started_ms)
+            return -84;
+        if (now_ms >= deadline_ms) return -110;
+        x86os_ipc_message_t ipc;
+        ipc.version = X86OS_IPC_MESSAGE_VERSION;
+        ipc.struct_size = sizeof(ipc);
+        ipc.length = 0U;
+        int status = x86os_ipc_receive_timeout(
+            desktop_svga2d_endpoint, &ipc,
+            (uint32_t)(deadline_ms - now_ms));
+        if (status != 0) return status;
+        reist_svga2d_message_t response;
+        status = desktop_svga2d_decode_response(&ipc, &response);
+        if (status != 0) return status;
+        if (response.request_id == request_id) {
+            if (response.operation != operation) return -84;
+            *wire = response;
+            desktop_svga2d_capabilities = response.capabilities;
+            desktop_svga2d_observed_capabilities |= response.capabilities;
+            return response.status;
+        }
+        if (!desktop_svga2d_response_is_stale(
+                response.request_id, request_id)) return -84;
+        continue;
+    }
+    return -110;
+}
+
 static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
     if (wire == 0 || desktop_svga2d_endpoint == X86OS_IPC_INVALID_HANDLE)
         return -19;
     if (++desktop_svga2d_request_id == 0U) desktop_svga2d_request_id = 1U;
+    uint32_t request_id = desktop_svga2d_request_id;
+    uint32_t operation = wire->operation;
     wire->version = REIST_SVGA2D_ABI_VERSION;
     wire->struct_size = sizeof(*wire);
-    wire->request_id = desktop_svga2d_request_id;
+    wire->request_id = request_id;
     x86os_ipc_message_t ipc = {
         .version = X86OS_IPC_MESSAGE_VERSION,
         .struct_size = sizeof(ipc),
@@ -176,33 +262,26 @@ static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
     };
     for (uint32_t index = 0U; index < sizeof(*wire); ++index)
         ipc.payload[index] = ((const uint8_t *)wire)[index];
-    if (x86os_ipc_send_timeout(desktop_svga2d_endpoint, &ipc, 50U) != 0) {
+    int status = desktop_svga2d_drain_stale_responses(request_id);
+    if (status != 0) {
         desktop_svga2d_forget_endpoint();
-        return -11;
+        return status;
     }
-    ipc.version = X86OS_IPC_MESSAGE_VERSION;
-    ipc.struct_size = sizeof(ipc);
-    if (x86os_ipc_receive_timeout(desktop_svga2d_endpoint, &ipc, 100U) != 0 ||
-        ipc.version != X86OS_IPC_MESSAGE_VERSION ||
-        ipc.struct_size != sizeof(ipc) || ipc.length != sizeof(*wire)) {
+    status = x86os_ipc_send_timeout(desktop_svga2d_endpoint, &ipc, 50U);
+    if (status != 0) {
         desktop_svga2d_forget_endpoint();
-        return -11;
+        return status;
     }
-    reist_svga2d_message_t response;
-    for (uint32_t index = 0U; index < sizeof(response); ++index)
-        ((uint8_t *)&response)[index] = ipc.payload[index];
-    if (response.version != REIST_SVGA2D_ABI_VERSION ||
-        response.struct_size != sizeof(response) ||
-        response.request_id != desktop_svga2d_request_id ||
-        response.operation != wire->operation ||
-        response.flags != REIST_SVGA2D_FLAG_RESPONSE) {
+    uint32_t reply_timeout_ms =
+        operation == REIST_SVGA2D_ACTIVATE ||
+        operation == REIST_SVGA2D_DEACTIVATE
+            ? DESKTOP_SVGA2D_ACTIVATE_REPLY_MS : DESKTOP_SVGA2D_REPLY_MS;
+    status = desktop_svga2d_receive_response(
+        request_id, operation, wire, reply_timeout_ms);
+    if (status == -84 || status == -110 || status == -32 || status == -9) {
         desktop_svga2d_forget_endpoint();
-        return -84;
     }
-    *wire = response;
-    desktop_svga2d_capabilities = response.capabilities;
-    desktop_svga2d_observed_capabilities |= response.capabilities;
-    return response.status;
+    return status;
 }
 
 static int desktop_svga2d_connect(uint32_t activate, uint32_t report_error) {

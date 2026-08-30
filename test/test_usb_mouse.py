@@ -431,6 +431,12 @@ class UsbMouseTests(unittest.TestCase):
         body = syscalls[start:syscalls.index("\n}", start)]
         self.assertLess(body.index("copy_from_user"),
                         body.index("hid_mouse_read_event"))
+        first_read = body.index("hid_mouse_read_event")
+        self.assertLess(first_read, body.index("xhci_poll()"))
+        self.assertLess(first_read, body.index("ohci_poll()"))
+        self.assertEqual(body.count("xhci_poll()"), 1)
+        self.assertEqual(body.count("ohci_poll()"), 1)
+        self.assertEqual(body.count("hid_mouse_read_event"), 2)
         self.assertIn("copy_to_user", body)
 
     def test_vmware_requests_the_actual_xhci_controller_key(self):

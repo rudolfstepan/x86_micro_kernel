@@ -1,6 +1,6 @@
 # VMware Workstation
 
-Stand: 27. August 2026.
+Stand: 30. August 2026.
 
 Der native Windows-Build erzeugt eine vollständige Legacy-BIOS-VM. ISO, GRUB
 und manuelles Anlegen einer VM sind nicht erforderlich.
@@ -82,6 +82,29 @@ PID. Start, Markerwartezeit und Aufräumen bleiben auf 30, 75 beziehungsweise
 .\scripts\test-reist-runtime.ps1 -Mode vmware-mouse
 ```
 
+Der Mauslauf verlangt zusätzlich `DESKTOP_ACCELERATION_READY`; Software-
+Fallback, SVGA2D-Transaktionsfehler, Driver-/Service-Restarts, Degradation,
+Panic oder ein zweiter Boot brechen ihn geschlossen ab. Der getrennte
+Grafik-Lifecycle verwendet denselben gehärteten Runner, startet nach
+`SVGA2D_READY` explizit `desktop.prg --render-probe` und verlangt geordnet
+Aktivierung, Beschleunigungsfreigabe, `RECT_COPY`, Deaktivierung, versionierte
+Metriken und `DESKTOP_EXIT_OK`. Anschließend sendet er `HELP` und akzeptiert
+den Lauf erst nach einer neuen Antwort samt Shell-Prompt und zehn stabilen
+Sekunden:
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode vmware-svga2d-lifecycle -Target vmware
+```
+
+Der Vier-vCPU-Benchmark prüft außerdem, dass vier gewöhnliche, gemäß SMP-
+Vertrag weiterhin BSP-gebundene Worker zusammen mindestens 0,90-mal den
+Single-Worker-Durchsatz erreichen. Das ist ein Kontentionsnachweis und keine
+Behauptung paralleler AP-Skalierung:
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode vmware-benchmark
+```
+
 Der getrennte R6.2o-Lifecycle-Nachweis verwendet dasselbe explizite
 Shell-Kommando und dieselbe loopbackgebundene RFB-Eingabe, unterdrückt aber
 compile-time-begrenzt nur den Heartbeat der ersten AP-affinen
@@ -118,11 +141,15 @@ dem VMware-VGA-Paketbuild. Damit ist die virtuelle xHCI-Maus gegen die engere
 Control-Short-Packet-Regel abgesichert; die getrennte physische USB-Abnahme
 wird dadurch nicht ersetzt.
 
-Nach dem finalen Imagebuild scheiterte ein zusätzlicher Host-Automationslauf
-noch vor dem Start von `vmware-vmx`. Das war kein Gastfehler. Der Benutzer
-startete das generierte Paket anschließend manuell und bestätigte den
-fehlerfreien VMware-Betrieb. Diese manuelle Bestätigung ersetzt keinen
-automatisierten Marker-Nachweis, schließt aber die praktische Image-Abnahme ab.
+Am 30. August 2026 bestand der finale R3.4g-Lauf auf dem AMD-Ryzen-/Radeon-
+Host unter VMware mit 645,27 MOp/s Single und 593,88 MOp/s Gesamt, also 0,92x
+gegenüber der gemessenen Ausgangslage von 0,75x. Schreiben und Lesen erreichten
+369,40 beziehungsweise 635,23 KiB/s. Der reale virtuelle xHCI-Mauspfad bestand
+in 28 Sekunden, der vollständige SVGA2D-Lifecycle in 29 Sekunden; beide
+enthielten zehn Sekunden fehlerfreien Nachlauf. Der Render-Probe meldete acht
+beschleunigte Frames, null Fallbacks, null Reconnects und null Transaktions-
+oder Probe-Fehler. Das belegt die Referenz-VM, ersetzt aber weder physische USB-
+Abnahme noch einen p99-Latenznachweis oder eine Windows-95-Paritätsbehauptung.
 
 ```text
 C:\> DRIVES

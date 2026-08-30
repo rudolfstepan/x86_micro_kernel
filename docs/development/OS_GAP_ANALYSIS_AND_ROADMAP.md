@@ -1,13 +1,20 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 27. August 2026
+Stand: 30. August 2026
 
-**R3.4g ist aktiv:** Der VMware-Softwarecursor soll alte und neue Position als
-zwei kleine Rechtecke in genau einem Present veroeffentlichen. Der Maus-Syscall
-leert zunaechst die vorhandene HID-Queue und pollt Controller erst bei leerer
-Queue. Der SVGA2D-Client ordnet verspaetete, aber nur vollstaendig validierte
-Antworten innerhalb der festen IPC-Tiefe zu. `R7.1l` bleibt als getrenntes
-Folgepaket fuer die gemessene negative SMP-Scheduler-Skalierung bereit.
+**R3.4g ist abgeschlossen:** Der VMware-Softwarecursor veröffentlicht alte und
+neue Position als höchstens zwei exakte Rechtecke in genau einem Present. Der
+Maus-Syscall leert zuerst die HID-Queue und pollt xHCI/OHCI nur einmal bei
+leerer Queue. Der SVGA2D-Client überspringt ausschließlich vollständig
+validierte alte Antworten innerhalb fester Queue- und absoluter Fristgrenzen.
+Der SMP-Timer wartet nicht auf den globalen Task-Lock, sondern verwendet zwei
+endliche Try-Locks und danach das nächste feste Quantum; Priority Inheritance
+überspringt die quadratische Propagation ohne gültige Owner-Kante. Das zuvor
+getrennte R7.1l wurde deshalb in R3.4g integriert und storniert. Auf dem
+betroffenen AMD-VMware-Host verbesserte sich der BSP-Kontentionswert von 0,75x
+auf final 0,92x. Beschleunigter realer Mauspfad und expliziter SVGA2D-Lifecycle
+bestanden ohne Fallback, Restart oder Degradation. Das ist keine Behauptung
+paralleler AP-Skalierung, physischer GPU-Abnahme oder Windows-95-Parität.
 
 **R3.4f ist abgeschlossen:** Der Ein-vCPU-Pfad benoetigt nach Surface-Eingaben einen
 begrenzten Scheduler-Turn fuer die Client-Antwort. Auf SMP kann der Client

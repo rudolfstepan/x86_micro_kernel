@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.4g-vmware-pointer-pipeline"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R3.4g-vmware-pointer-pipeline"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Bound VMware pointer presentation and SMP scheduler contention"
@@ -80,7 +80,14 @@ stop_conditions = [
   "a required production file lies outside allowed_files"
 ]
 commit_message = "gui: bound VMware SMP interaction latency"
-evidence = []
+evidence = [
+  "All 141 frozen targeted checks completed without failures: 135 passed and six optional host-C harnesses skipped because GCC was unavailable, while both target packages compiled the production paths.",
+  "The final VMware/VGA package passed in 46 seconds and the final QEMU/framebuffer package passed in 43 seconds.",
+  "Final QEMU benchmark runtimes passed with cleanup and shell return: 33.811 seconds at one vCPU and 38.286 seconds at four vCPUs.",
+  "The final AMD VMware four-worker BSP contention run improved the measured baseline from 0.75x to 0.92x: 645.27 MOp/s single and 593.88 MOp/s total, with 369.40 KiB/s write and 635.23 KiB/s read, cleanup and ten stable seconds.",
+  "The final real VMware virtual-xHCI mouse path passed in 28 seconds with DESKTOP_ACCELERATION_READY, DESKTOP_MOUSE_OK and ten stable seconds, without software fallback, transaction failure, restart or degradation.",
+  "The final explicit VMware SVGA2D lifecycle passed in 29 seconds: READY, ACTIVE, accelerated RECT_COPY, INACTIVE, versioned metrics, DESKTOP_EXIT_OK, a fresh HELP response and shell prompt, then ten stable seconds; it reported eight accelerated frames and zero fallbacks, reconnects, transaction errors or probe errors."
+]
 
 [[packages]]
 id = "R7.1l-smp-scheduler-lock-scope"

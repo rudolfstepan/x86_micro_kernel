@@ -1,18 +1,21 @@
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+GCC = shutil.which("gcc")
 
 
 class ReistSchedulingPolicyTests(unittest.TestCase):
+    @unittest.skipUnless(GCC, "gcc is required for the policy host harness")
     def test_weighted_fixed_priority_policy_is_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
             output = pathlib.Path(directory) / "scheduling-policy-test.exe"
             subprocess.run([
-                "gcc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                GCC, "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-I.", "kernel/sched/scheduling_policy.c",
                 "test/test_scheduling_policy_host.c", "-o", str(output),
             ], cwd=ROOT, check=True, capture_output=True)
@@ -64,11 +67,21 @@ class ReistSchedulingPolicyTests(unittest.TestCase):
         scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
             encoding="utf-8")
         self.assertIn("counterpart_identity_locked", ipc)
-        self.assertEqual(ipc.count("scheduler_set_wait_owner_locked("), 2)
-        self.assertEqual(ipc.count("scheduler_clear_wait_owner_locked();"), 4)
+        self.assertEqual(ipc.count("scheduler_set_wait_owner_locked("), 4)
+        self.assertEqual(ipc.count("scheduler_clear_wait_owner_locked();"), 8)
         self.assertIn("wait_queue_block_until_spinlocked", ipc)
         self.assertIn("blocked_owner_generation", scheduler)
         self.assertIn("scheduler_policy_inherit", scheduler)
+
+    def test_priority_inheritance_skips_quadratic_passes_without_edges(self):
+        policy = (ROOT / "kernel/sched/scheduling_policy.c").read_text(
+            encoding="utf-8")
+        inherit = policy[policy.index("void scheduler_policy_inherit("):
+                         policy.index("uint8_t scheduler_policy_budget(")]
+        self.assertIn("bool has_valid_owner = false;", inherit)
+        self.assertIn("if (!has_valid_owner) return;", inherit)
+        self.assertLess(inherit.index("if (!has_valid_owner) return;"),
+                        inherit.index("for (size_t pass = 0U;"))
 
 
 if __name__ == "__main__":

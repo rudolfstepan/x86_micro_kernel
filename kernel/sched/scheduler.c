@@ -1332,7 +1332,6 @@ void scheduler_interrupt_handler(void) {
         irq_restore(flags);
         return;
     }
-    preemption_pending = false;
     int previous = current_task;
     if (previous >= 0 && previous < num_tasks) {
         validate_running_task_stack_irq_or_panic(&tasks[previous]);
@@ -1344,7 +1343,23 @@ void scheduler_interrupt_handler(void) {
      * not constitute system progress. */
     if (scheduler_cpu_local()->cpu_index == 0U) watchdog_health_progress();
     uint64_t now_ms = pit_monotonic_ms();
-    spinlock_acquire(&task_table_lock);
+    /* Periodic timers on virtual CPUs commonly fire in the same host time
+     * slice.  Waiting here would keep IRQs disabled while the lock owner must
+     * itself be scheduled by the hypervisor.  A failed try-lock therefore
+     * defers only this periodic decision; the running task remains claimed
+     * and the next fixed timer quantum retries it. */
+    if (!spinlock_trylock(&task_table_lock)) {
+        /* Close the release/publication race with one finite retry. This is
+         * not a spin wait: a second collision returns immediately and the
+         * next fixed periodic quantum retries the scheduling decision. */
+        if (!spinlock_trylock(&task_table_lock)) {
+            preemption_pending = true;
+            runtime_timing_finish_scheduler(timing_start);
+            irq_restore(flags);
+            return;
+        }
+    }
+    preemption_pending = false;
     int next = claim_next_runnable(previous, now_ms);
     uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
 

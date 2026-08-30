@@ -2,11 +2,36 @@
 
 Stand: 30. August 2026
 
-Branch/Startpunkt: `working_branch` / `ae9f1a1`
+Branch/Startpunkt: `working_branch` / `498e6f48`
 
-Aktives Thema: `R3.4g-vmware-pointer-pipeline` — exakte gebuendelte
-Softwarecursor-Schaeden, einmaliges USB-Polling und robuste begrenzte
-SVGA2D-Antwortzuordnung fuer VMware.
+Aktives Thema: keines; `R3.4g-vmware-pointer-pipeline` ist abgeschlossen.
+
+R3.4g ersetzt die zwischen weit entfernten Cursorpositionen potenziell
+bildschirmgroße Softwarecursor-Bounding-Box durch höchstens zwei exakte alte
+und neue Rechtecke in einem Present-Batch. Der Maus-Syscall leert vorhandene
+HID-Ereignisse vor je höchstens einem xHCI-/OHCI-Poll. Der Compositor verwirft
+nur vollständig validierte alte SVGA2D-Antworten innerhalb der festen Queue
+und verwendet absolute 100-ms- beziehungsweise 500-ms-Fristen. Der periodische
+SMP-Scheduler wartet im IRQ nicht mehr auf den globalen Task-Lock: Nach zwei
+endlichen Try-Locks kehrt er zurück und wiederholt die Entscheidung im nächsten
+festen Quantum. Ohne gültige Owner-Kante entfällt außerdem die quadratische
+Priority-Inheritance-Passage.
+
+Die 141 fokussierten Prüfungen liefen ohne Fehler: 135 bestanden, sechs
+optionale Host-C-Harnesses wurden ohne verfügbaren GCC übersprungen, während
+die Zielpakete den Produktionscode kompilierten. VMware/VGA und
+QEMU/Framebuffer bestanden in 46 und 43 Sekunden. Die finalen QEMU-Benchmarks
+bestanden mit 1 vCPU in 33,8 und
+mit 4 vCPUs in 38,3 Sekunden. Auf dem betroffenen AMD-VMware-Host stieg das
+Vier-Worker-/Single-Verhältnis von 0,75x auf 0,92x (645,27 zu 593,88 MOp/s
+gesamt); die Worker bleiben vertragsgemäß BSP-gebunden, daher ist dies ein
+Kontentions- und kein AP-Skalierungsnachweis. Der beschleunigte echte
+VMware-Mauslauf bestand in 28 Sekunden. Der 29-sekündige SVGA2D-Render-Probe
+bestand Aktivierung, RECT_COPY, Deaktivierung, Metriken, Exit, erneute
+Ring-3-Shell-Antwort und zehn Sekunden Nachlauf mit acht beschleunigten Frames
+und ohne Fallback, Reconnect oder Transaktionsfehler. Ein p99-Latenznachweis,
+physische AMD-GPU-Beschleunigung und eine Windows-95-Paritätsbehauptung bleiben
+ausdrücklich offen.
 
 `R3.4f-desktop-smp-input-cadence` ist abgeschlossen. Der Compositor behaelt
 den begrenzten Post-Input-Yield nur auf einem vCPU; auf SMP kann der Surface-

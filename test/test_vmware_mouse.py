@@ -184,13 +184,35 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("$promptAfter -ge 0", source)
         self.assertIn("$minimumBenchmarkWriteKiB = 95.0", source)
         self.assertIn("$minimumBenchmarkReadKiB = 415.0", source)
+        self.assertIn("$minimumBenchmarkCpuRatio = 0.90", source)
         self.assertIn("$writeRate -lt $minimumBenchmarkWriteKiB", source)
         self.assertIn("$readRate -lt $minimumBenchmarkReadKiB", source)
+        self.assertIn("$cpuRatio -lt $minimumBenchmarkCpuRatio", source)
+        self.assertIn("Multi/Single", source)
         self.assertIn("REIST_STORAGE RESOURCE_QUARANTINED", source)
         self.assertIn("ATA_FLUSH_FAILED", source)
         self.assertIn("VMWARE BENCHMARK PASS", source)
         self.assertIn("stability=", source)
         self.assertIn("Wait-PostSuccessStability 'benchmark'", source)
+
+    def test_svga_lifecycle_uses_explicit_bounded_render_probe(self):
+        source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[switch]$SvgaLifecycle", source)
+        self.assertIn("desktop.prg --render-probe", source)
+        self.assertIn("Send-ExplicitShellProbeCommand", source)
+        self.assertIn("Built-ins: cd path pwd history help exit", source)
+        for marker in (
+            "REIST_VIDEO SVGA2D_ACTIVE",
+            "REIST_VIDEO SVGA2D_RECT_COPY_OK",
+            "REIST_VIDEO SVGA2D_INACTIVE",
+            "DESKTOP_METRICS",
+            "DESKTOP_EXIT_OK",
+        ):
+            self.assertIn(marker, source)
+        self.assertIn("Wait-PostSuccessStability 'svga2d'", source)
+        self.assertIn("VMWARE SVGA2D LIFECYCLE PASS", source)
 
     def test_desktop_mode_observes_post_success_stability_interval(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(

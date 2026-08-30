@@ -92,6 +92,19 @@ int main(void) {
     CHECK(effective[2] == SCHEDULER_CLASS_SAFETY, 61);
     CHECK(effective[3] == SCHEDULER_CLASS_AMBIENT, 62);
 
+    uint8_t no_owner_base[] = {
+        SCHEDULER_CLASS_AMBIENT, 99U, SCHEDULER_CLASS_SAFETY,
+        SCHEDULER_CLASS_SERVICE
+    };
+    uint8_t no_owner_effective[4] = {99U, 99U, 99U, 99U};
+    int8_t no_owners[] = {-1, 1, 7, -1};
+    scheduler_policy_inherit(
+        no_owner_effective, no_owner_base, no_owners, 4U);
+    CHECK(no_owner_effective[0] == SCHEDULER_CLASS_AMBIENT, 80);
+    CHECK(no_owner_effective[1] == SCHEDULER_CLASS_AMBIENT, 81);
+    CHECK(no_owner_effective[2] == SCHEDULER_CLASS_SAFETY, 82);
+    CHECK(no_owner_effective[3] == SCHEDULER_CLASS_SERVICE, 83);
+
     scheduler_candidate_t cyclic[] = {
         {true, SCHEDULER_CLASS_AMBIENT, 0U},
         {true, SCHEDULER_CLASS_SERVICE, 0U},

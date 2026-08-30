@@ -150,11 +150,16 @@ void scheduler_policy_inherit(uint8_t *effective_classes,
     if (effective_classes == NULL || base_classes == NULL ||
         blocked_owners == NULL || count == 0U ||
         count > SCHEDULER_POLICY_MAX_CANDIDATES) return;
+    bool has_valid_owner = false;
     for (size_t index = 0U; index < count; ++index) {
         effective_classes[index] =
             scheduler_policy_budget(base_classes[index]) != 0U
                 ? base_classes[index] : SCHEDULER_CLASS_AMBIENT;
+        int owner = blocked_owners[index];
+        if (owner >= 0 && owner < (int)count && owner != (int)index)
+            has_valid_owner = true;
     }
+    if (!has_valid_owner) return;
     /* At most count-1 inheritance edges can contribute to a simple chain.
      * Repeating exactly count times also converges safely in a cycle. */
     for (size_t pass = 0U; pass < count; ++pass) {

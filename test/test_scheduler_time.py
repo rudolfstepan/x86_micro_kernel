@@ -137,7 +137,11 @@ class SchedulerTimeSourceTests(unittest.TestCase):
         self.assertIn("schedule_blocked_current_locked(", block)
         self.assertIn("wait_queue_pop_locked(", wake_one)
         self.assertIn("TASK_READY", wake_one)
-        self.assertIn("wait_queue_wake_all_task_locked(queue)", wake_all)
+        self.assertIn(
+            "wait_queue_wake_all_task_locked(queue, &reschedule_mask)",
+            wake_all,
+        )
+        self.assertIn("x86_smp_request_reschedule(reschedule_mask)", wake_all)
 
     def test_sleep_uses_an_ordered_deadline_queue_and_does_not_poll(self) -> None:
         sleep = function_block(self.scheduler, "int scheduler_sleep_ms(")
@@ -158,8 +162,10 @@ class SchedulerTimeSourceTests(unittest.TestCase):
         )
         compact = re.sub(r"\s+", " ", wake)
         self.assertIn("sleep_waiters.head->key <= now_ms", compact)
-        self.assertIn("wait_queue_wake_one_task_locked(&sleep_waiters)",
-                      compact)
+        self.assertIn(
+            "wait_queue_wake_one_task_locked(&sleep_waiters, NULL)",
+            compact,
+        )
 
     def test_timed_waiters_use_bounded_task_scan(self) -> None:
         wake = function_block(
@@ -200,6 +206,36 @@ class SchedulerTimeSourceTests(unittest.TestCase):
             self.scheduler, "void scheduler_pit_interrupt_handler("
         )
         self.assertIn("scheduler_interrupt_handler();", pit_fallback)
+
+    def test_periodic_scheduler_defers_instead_of_spinning_on_smp_lock(self):
+        handler = function_block(
+            self.scheduler, "void scheduler_interrupt_handler("
+        )
+        self.assertIn("if (!spinlock_trylock(&task_table_lock))", handler)
+        self.assertEqual(handler.count("spinlock_trylock(&task_table_lock)"),
+                         2)
+        self.assertNotIn("spinlock_acquire(&task_table_lock)", handler)
+        self.assertLess(
+            handler.index("spinlock_trylock(&task_table_lock)"),
+            handler.index("claim_next_runnable(previous, now_ms)"),
+        )
+        contention = handler[handler.index(
+            "if (!spinlock_trylock(&task_table_lock))"
+        ):handler.index("int next = claim_next_runnable")]
+        self.assertIn("preemption_pending = true;", contention)
+        self.assertIn("runtime_timing_finish_scheduler(timing_start);",
+                      contention)
+        self.assertIn("irq_restore(flags);", contention)
+        self.assertRegex(contention, r"irq_restore\(flags\);\s*return;")
+        self.assertLess(
+            handler.index("watchdog_health_progress()"),
+            handler.index("spinlock_trylock(&task_table_lock)"),
+        )
+        self.assertEqual(handler.count("spinlock_release(&task_table_lock)"),
+                         3)
+        self.assertNotIn("scheduler_deferred_cpu_mask", handler)
+        self.assertNotIn("x86_smp_request_reschedule", handler)
+        self.assertNotRegex(contention, r"\bwhile\s*\(")
 
     def test_delay_syscall_keeps_number_two_but_uses_blocking_user_path(self):
         legacy = case_block(self.syscalls, "SYS_DELAY")

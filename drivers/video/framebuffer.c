@@ -4937,6 +4937,21 @@ static void framebuffer_publish_damage(
     display_control_present_rects(updates, count);
 }
 
+static void framebuffer_present_damage(const display_frame_rect_t *damage,
+                                       uint32_t count) {
+    if (damage == NULL || count == 0U ||
+        count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
+    bool deferred = false;
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    for (uint32_t index = 0U; index < count; ++index)
+        deferred |= display_frame_record_damage(
+            &frame_transaction, damage[index]);
+    bool transition_in_progress = frame_transaction.transitioning;
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (deferred || transition_in_progress) return;
+    framebuffer_publish_damage(damage, count, NULL);
+}
+
 static void framebuffer_restore_damage(const display_frame_rect_t *damage,
                                        uint32_t count) {
     if (damage == NULL || count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
@@ -4973,14 +4988,7 @@ static int framebuffer_reap_expired_frame(uint64_t now_ms) {
 static void framebuffer_present_rect(uint32_t x, uint32_t y,
                                      uint32_t width, uint32_t height) {
     display_frame_rect_t rect = {x, y, width, height};
-    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
-    bool deferred = display_frame_record_damage(&frame_transaction, rect);
-    bool transition_in_progress = frame_transaction.transitioning;
-    spinlock_release_irq(&frame_transaction_lock, flags);
-    if (deferred || transition_in_progress) return;
-    framebuffer_blit_rect(x, y, width, height);
-    framebuffer_scanout_fence();
-    display_control_present_rect(x, y, width, height);
+    framebuffer_present_damage(&rect, 1U);
 }
 
 int framebuffer_frame_begin(int owner_pid, uint32_t owner_generation,
@@ -5379,17 +5387,13 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
     if (pointer_visible && visible && x == pointer_x && y == pointer_y)
         return true;
 
-    int32_t dirty_left = 0;
-    int32_t dirty_top = 0;
-    int32_t dirty_right = 0;
-    int32_t dirty_bottom = 0;
-    bool dirty = false;
+    display_frame_rect_t damage[2];
+    uint32_t damage_count = 0U;
     if (pointer_visible) {
-        dirty_left = pointer_x;
-        dirty_top = pointer_y;
-        dirty_right = pointer_x + (int32_t)pointer_width;
-        dirty_bottom = pointer_y + (int32_t)pointer_height;
-        dirty = true;
+        damage[damage_count++] = (display_frame_rect_t){
+            (uint32_t)pointer_x, (uint32_t)pointer_y,
+            pointer_width, pointer_height,
+        };
         for (uint32_t row = 0U; row < pointer_height; ++row) {
             for (uint32_t column = 0U; column < pointer_width; ++column) {
                 uint8_t *pixel = fb_address +
@@ -5413,20 +5417,9 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
         if ((uint32_t)x + width > fb_width) width = fb_width - (uint32_t)x;
         if ((uint32_t)y + height > fb_height)
             height = fb_height - (uint32_t)y;
-        if (!dirty) {
-            dirty_left = x;
-            dirty_top = y;
-            dirty_right = x + (int32_t)width;
-            dirty_bottom = y + (int32_t)height;
-            dirty = true;
-        } else {
-            if (x < dirty_left) dirty_left = x;
-            if (y < dirty_top) dirty_top = y;
-            if (x + (int32_t)width > dirty_right)
-                dirty_right = x + (int32_t)width;
-            if (y + (int32_t)height > dirty_bottom)
-                dirty_bottom = y + (int32_t)height;
-        }
+        damage[damage_count++] = (display_frame_rect_t){
+            (uint32_t)x, (uint32_t)y, width, height,
+        };
         uint32_t black = framebuffer_native_color(0x00000000U);
         uint32_t white = framebuffer_native_color(0x00FFFFFFU);
         uint32_t shadow = framebuffer_native_color(0x00606060U);
@@ -5452,11 +5445,8 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
         pointer_height = height;
         pointer_visible = true;
     }
-    if (dirty)
-        framebuffer_present_rect((uint32_t)dirty_left,
-                                 (uint32_t)dirty_top,
-                                 (uint32_t)(dirty_right - dirty_left),
-                                 (uint32_t)(dirty_bottom - dirty_top));
+    if (damage_count != 0U)
+        framebuffer_present_damage(damage, damage_count);
     return true;
 }
 

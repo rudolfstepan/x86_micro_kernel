@@ -111,6 +111,12 @@ fencen; ein stiller Zustandsverlust ist verboten.
 Alle Queuegrößen, Drain-Runden und Wartezeiten sind feste Konstanten. Keine
 GUI-Komponente darf auf Input, Paint oder Present unbeschränkt warten.
 
+Der Maus-Syscall liest zuerst genau ein bereits veröffentlichtes HID-Ereignis.
+Nur wenn die feste Softwarequeue leer ist, pollt er xHCI und OHCI jeweils
+höchstens einmal und versucht danach genau einen weiteren Queue-Read. Damit
+verursacht ein Desktop-Batch mit bereits wartenden Events keine zusätzlichen
+Controller-Polls; Reihenfolge und Button-Kanten bleiben unverändert.
+
 ## Verbindlicher Renderingvertrag
 
 ### Invalidation statt unmittelbarer Vollbilder
@@ -170,6 +176,13 @@ und danach an der aktuellen Position wiederhergestellt. Bei Displayfehlern
 wird die Transaktion abgebrochen beziehungsweise auf den validierten
 Softwarepfad zurückgeführt; ein halber Frame gilt nicht als Erfolg.
 
+Eine Bewegung des Softwarepointers veröffentlicht höchstens zwei exakt
+geclippte Rechtecke: die alte und die neue Cursorfläche. Beide Schäden werden
+in derselben Frame-Transaktion beziehungsweise genau einem Present-Batch
+gesichert. Eine möglicherweise bildschirmgroße Bounding Box zwischen alter und
+neuer Position ist unzulässig. Erschöpft die vorhandene feste Damage-Kapazität,
+bleibt der etablierte vollständige Damage-Fallback maßgeblich.
+
 Während eines interaktiven Resize bleibt nur die zuletzt bestätigte
 Surface-Größe autoritativ. Nach dem finalen Configure-ACK invalidiert der
 Compositor die vollständige neue Clientfläche. Überlappende Resize-Kopien
@@ -177,6 +190,14 @@ verwenden den atomaren Shadow-Blit; VMware-SVGA-RECT_COPY bleibt auf
 gleich große Fensterverschiebungen begrenzt, weil ein asynchroner Device-Copy
 keine Grundlage für die Korrektheit einer gleichzeitig geänderten Geometrie
 sein darf.
+
+Der einzelne SVGA2D-Compositor-Client akzeptiert Antworten nur mit exakter
+IPC-Version, Strukturgröße, Payload-Länge, ABI-Version, Operation,
+Response-Flag und Request-ID. Vollständig validierte ältere Request-IDs dürfen
+innerhalb höchstens einer festen IPC-Queue-Tiefe übersprungen werden; aktuelle
+fremde, zukünftige oder fehlgeformte Antworten schließen den Endpoint. Normale
+Antworten haben eine absolute 100-ms-Frist, Aktivierung und Deaktivierung eine
+absolute 500-ms-Frist. Stale Traffic darf diese Frist nicht vervielfachen.
 
 ## Sofortiger Scrollbar-Feedbackpfad
 
@@ -210,6 +231,13 @@ verarbeitet der Compositor genau einen bereits auf 16 faire Runden und die
 feste IPC-Queue-Tiefe begrenzten Broker-Drain. Dadurch koennen Control-Zustand
 und retained Paint noch im selben Frame-Turn sichtbar werden, ohne Busy-Wait,
 Queuewachstum oder eine veraenderte Edge-Reihenfolge.
+
+Ein periodischer SMP-Timer versucht den globalen Task-Tabellen-Lock höchstens
+zweimal ohne Warteschleife. Kollidieren beide endlichen Try-Locks, bleibt die
+laufende Task-Generation autoritativ, der IRQ kehrt sofort zurück und das
+nächste feste Timerquantum versucht die Scheduling-Entscheidung erneut. Der
+Pfad sendet kein aus IRQ-Kontext unzulässiges Reschedule-IPI und verändert den
+unkontendierten Ein-vCPU-Ablauf nicht.
 
 Direkt an einer gemeinsamen Kante anliegende Dirty-Rechtecke werden nur dann
 vereinigt, wenn ihre orthogonale Projektion identisch ist und die bestehende

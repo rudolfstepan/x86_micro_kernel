@@ -2519,10 +2519,16 @@ static int syscall_mouse_event(hid_mouse_event_t *user_event) {
     if (copy_from_user(&header, user_event, sizeof(header)) != 0) return -14;
     if (header.version != HID_MOUSE_EVENT_VERSION ||
         header.struct_size < sizeof(hid_mouse_event_t)) return -22;
-    xhci_poll();
-    ohci_poll();
     hid_mouse_event_t event;
     int result = hid_mouse_read_event(&event);
+    if (result != 0) {
+        /* Drain reports already published by IRQ/task context before touching
+         * either emulated controller. A desktop batch therefore polls each
+         * controller only once, after its fixed software queue is empty. */
+        xhci_poll();
+        ohci_poll();
+        result = hid_mouse_read_event(&event);
+    }
     if (result != 0) return result;
     return copy_to_user(user_event, &event, sizeof(event)) == 0 ? 0 : -14;
 }

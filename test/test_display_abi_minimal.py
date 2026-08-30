@@ -253,7 +253,8 @@ class MinimalDisplayAbiTests(unittest.TestCase):
 
     def test_frame_commit_batches_vmware_updates(self) -> None:
         publish = function(
-            self.display_control, "void display_control_present_rects("
+            self.display_control,
+            "static void display_control_present_rects_locked("
         )
         self.assertIn("DISPLAY_CONTROL_PRESENT_CAPACITY", publish)
         self.assertIn("SVGA_CMD_UPDATE", publish)
@@ -275,6 +276,23 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertGreaterEqual(exclusion.count("framebuffer_blit_rect("), 5)
         self.assertIn("left >= right || top >= bottom", exclusion)
         self.assertIn("bottom - top", exclusion)
+
+    def test_software_pointer_publishes_two_exact_rectangles_once(self) -> None:
+        pointer = function(
+            self.framebuffer, "bool framebuffer_cursor_update("
+        )
+        self.assertIn("display_frame_rect_t damage[2]", pointer)
+        self.assertIn("damage[damage_count++]", pointer)
+        self.assertIn("framebuffer_present_damage(damage, damage_count)",
+                      pointer)
+        self.assertNotIn("dirty_left", pointer)
+        self.assertNotIn("dirty_right", pointer)
+        present = function(
+            self.framebuffer, "static void framebuffer_present_damage("
+        )
+        self.assertIn("count > DISPLAY_FRAME_DAMAGE_CAPACITY", present)
+        self.assertIn("display_frame_record_damage", present)
+        self.assertEqual(present.count("framebuffer_publish_damage("), 1)
 
     def test_accelerated_frame_accepts_vmware_or_active_gr_channel(self) -> None:
         self.assertIn(

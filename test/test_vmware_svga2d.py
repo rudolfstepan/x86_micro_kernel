@@ -169,13 +169,37 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("desktop_svga2d_forget_endpoint()", helper)
         self.assertIn("x86os_sleep_ms(DESKTOP_SVGA2D_RETRY_MS)", helper)
         self.assertIn("desktop_svga2d_activate_bounded()", desktop)
+
+    def test_desktop_discards_only_bounded_valid_stale_driver_replies(self):
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
+            encoding="utf-8")
+        helper = desktop[
+            desktop.index("static int desktop_svga2d_decode_response"):
+            desktop.index("static int desktop_svga2d_transact")
+        ]
+        self.assertIn("X86OS_IPC_QUEUE_DEPTH + 1U", helper)
+        self.assertIn("response->flags != REIST_SVGA2D_FLAG_RESPONSE", helper)
+        self.assertIn("response.request_id == request_id", helper)
+        self.assertIn("response.operation != operation", helper)
+        self.assertIn("desktop_svga2d_response_is_stale", helper)
+        self.assertEqual(
+            helper.count("if (!desktop_svga2d_response_is_stale("), 2
+        )
+        self.assertIn("continue;", helper)
+        self.assertNotIn("for (;;)", helper)
+        self.assertIn("x86os_monotonic_ms(&started_ms)", helper)
+        self.assertIn("deadline_ms - now_ms", helper)
+        self.assertIn("DESKTOP_SVGA2D_ACTIVATE_REPLY_MS", desktop)
+        self.assertIn("DESKTOP_SVGA2D_REPLY_MS", desktop)
         transact = desktop[
             desktop.index("static int desktop_svga2d_transact"):
             desktop.index("static int desktop_svga2d_connect")
         ]
-        self.assertIn("ipc.length != sizeof(*wire)) {", transact)
-        self.assertIn("response.flags != REIST_SVGA2D_FLAG_RESPONSE) {",
-                      transact)
+        self.assertIn(
+            "desktop_svga2d_drain_stale_responses(request_id)", transact
+        )
+        self.assertIn("desktop_svga2d_receive_response(", transact)
+        self.assertIn("desktop_svga2d_forget_endpoint()", transact)
 
     def test_desktop_recovers_late_acceleration_without_blocking_startup(self):
         desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
@@ -253,20 +277,24 @@ class VmwareSvga2dTests(unittest.TestCase):
             encoding="utf-8")
         vmware = (ROOT / "scripts/run_vmware_svga2d.ps1").read_text(
             encoding="utf-8")
+        vmware_mouse = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8")
         lifecycle = (ROOT / "scripts/run_qemu_runtime_desktop.py").read_text(
             encoding="utf-8")
         for marker in ("SVGA2D_ACTIVE", "SVGA2D_RECT_COPY_OK",
                        "SVGA2D_READY"):
             self.assertIn(marker, qemu)
-            self.assertIn(marker, vmware)
+            self.assertIn(marker, vmware_mouse)
         self.assertIn('"--vmware-vga"', qemu)
         self.assertIn("'vmware-svga2d'", runtime)
         self.assertIn("'vmware-svga2d-lifecycle'", runtime)
         self.assertIn("require_svga2d_console_lifecycle", lifecycle)
         for marker in ("SVGA2D_INACTIVE", "SVGA2D_READY"):
-            self.assertIn(marker, vmware)
+            self.assertIn(marker, vmware_mouse)
             self.assertIn(marker, lifecycle)
         self.assertIn("TimeoutSeconds = 60", vmware)
+        self.assertIn("run_vmware_mouse.ps1", vmware)
+        self.assertIn("-SvgaLifecycle", vmware)
 
 
     def test_smp_display_state_is_deadline_serialized_before_fifo(self):

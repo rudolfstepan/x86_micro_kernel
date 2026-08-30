@@ -9,18 +9,24 @@ param(
     [ValidateRange(10, 60)] [int]$PostSuccessStabilitySeconds = 10,
     [switch]$ExpectCompositorRestart,
     [switch]$Benchmark,
-    [switch]$Rename
+    [switch]$Rename,
+    [switch]$SvgaLifecycle
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $minimumBenchmarkWriteKiB = 95.0
 $minimumBenchmarkReadKiB = 415.0
+$minimumBenchmarkCpuRatio = 0.90
 if ($Benchmark -and $ExpectCompositorRestart) {
     throw 'Benchmark and compositor-restart modes are exclusive.'
 }
 if ($Rename -and ($Benchmark -or $ExpectCompositorRestart)) {
     throw 'Rename, benchmark and compositor-restart modes are exclusive.'
+}
+if ($SvgaLifecycle -and
+    ($Benchmark -or $Rename -or $ExpectCompositorRestart)) {
+    throw 'SVGA lifecycle, rename, benchmark and compositor-restart modes are exclusive.'
 }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (!$SourcePackage) {
@@ -77,11 +83,20 @@ $requiredBeforeInput = @(
     'REIST_SMP SCHEDULER_READY cpus=4 probe_mask=0000000E',
     $shellMarker
 )
-$requiredAfterDesktop = @(
-    'REIST_GUI COMPOSITOR_READY generation=',
-    'DESKTOP_OK',
-    'DESKTOP_EXPLORER_OK'
-)
+if ($SvgaLifecycle) {
+    $requiredBeforeInput = @('REIST_VIDEO SVGA2D_READY') +
+        $requiredBeforeInput
+}
+$requiredAfterDesktop = if ($SvgaLifecycle) {
+    @('DESKTOP_ACCELERATION_READY caps=', 'DESKTOP_OK')
+} else {
+    @(
+        'DESKTOP_ACCELERATION_READY caps=',
+        'REIST_GUI COMPOSITOR_READY generation=',
+        'DESKTOP_OK',
+        'DESKTOP_EXPLORER_OK'
+    )
+}
 $forbidden = @(
     '*** KERNEL PANIC ***',
     'KERNEL PANIC',
@@ -95,6 +110,8 @@ $forbidden = @(
     'REIST_STORAGE RESOURCE_QUARANTINED',
     'REIST_STORAGE RECOVERY_WAIT_',
     'ATA_FLUSH_FAILED'
+    'desktop: DISPLAY_SOFTWARE_FALLBACK'
+    'desktop: SVGA2D-Transaktion status='
 )
 if (!$ExpectCompositorRestart) {
     $forbidden += 'REIST_GUI COMPOSITOR_RESTARTED'
@@ -360,7 +377,16 @@ function Send-BoundedMouseInput([int]$Attempt) {
 }
 
 function Send-ExplicitDesktopCommand {
-    return [ReistRfbInput]::SendCommand($vncPort, 'desktop')
+    $command = if ($SvgaLifecycle) {
+        'desktop.prg --render-probe'
+    } else {
+        'desktop'
+    }
+    return [ReistRfbInput]::SendCommand($vncPort, $command)
+}
+
+function Send-ExplicitShellProbeCommand {
+    return [ReistRfbInput]::SendCommand($vncPort, 'help')
 }
 
 function Send-ExplicitBenchmarkCommand {
@@ -430,6 +456,12 @@ try {
     if ($shellPosition -lt 0) {
         throw 'VMware userspace shell marker disappeared before validation.'
     }
+    if ($SvgaLifecycle) {
+        $initialReady = $text.IndexOf('REIST_VIDEO SVGA2D_READY')
+        if ($initialReady -lt 0 -or $initialReady -ge $shellPosition) {
+            throw 'VMware SVGA2D readiness did not precede the Ring-3 shell.'
+        }
+    }
     $preShell = $text.Substring(0, $shellPosition)
     foreach ($unexpected in @('REIST_GUI COMPOSITOR_READY', 'DESKTOP_OK',
                                'DESKTOP_EXPLORER_OK', 'DESKTOP_MOUSE_OK')) {
@@ -496,13 +528,20 @@ try {
                     '\|\s*HDD\s*\|\s*Seq\. Schreiben\s*\|\s*(?<rate>[0-9]+(?:[.,][0-9]+)?)\s+KiB/s\s*\|\s*OK\s*\|')
                 $readMatch = [regex]::Match($text,
                     '\|\s*HDD\s*\|\s*Seq\. Lesen\s*\|\s*(?<rate>[0-9]+(?:[.,][0-9]+)?)\s+KiB/s\s*\|\s*OK\s*\|')
+                $cpuRatioMatch = [regex]::Match($text,
+                    '\|\s*CPU\s*\|\s*Multi/Single\s*\|\s*(?<ratio>[0-9]+(?:[.,][0-9]+)?)\s+x\s*\|\s*OK\s*\|')
                 if ($promptAfter -ge 0 -and $writeMatch.Success -and
-                    $readMatch.Success) {
+                    $readMatch.Success -and $cpuRatioMatch.Success) {
                     $culture = [Globalization.CultureInfo]::InvariantCulture
                     $writeText = $writeMatch.Groups['rate'].Value.Replace(',', '.')
                     $readText = $readMatch.Groups['rate'].Value.Replace(',', '.')
+                    $cpuRatioText = $cpuRatioMatch.Groups['ratio'].Value.Replace(',', '.')
                     $writeRate = [double]::Parse($writeText, $culture)
                     $readRate = [double]::Parse($readText, $culture)
+                    $cpuRatio = [double]::Parse($cpuRatioText, $culture)
+                    if ($cpuRatio -lt $minimumBenchmarkCpuRatio) {
+                        throw "VMware CPU scaling missed the frozen minimum: ratio=$cpuRatio/$minimumBenchmarkCpuRatio."
+                    }
                     if ($writeRate -lt $minimumBenchmarkWriteKiB -or
                         $readRate -lt $minimumBenchmarkReadKiB) {
                         throw "VMware HDD rates missed the frozen minimum: write=$writeRate/$minimumBenchmarkWriteKiB read=$readRate/$minimumBenchmarkReadKiB KiB/s."
@@ -514,9 +553,10 @@ try {
                         $loaderCount
                     $text | Set-Content -LiteralPath $GateLog -Encoding utf8
                     $passed = $true
-                    Write-Output ("VMWARE BENCHMARK PASS elapsed={0}s write={1}KiB/s read={2}KiB/s cleanup=ok stability={3}s log={4}" -f
-                        [int]$watch.Elapsed.TotalSeconds, $writeText, $readText,
-                        $PostSuccessStabilitySeconds, $GateLog)
+                    Write-Output ("VMWARE BENCHMARK PASS elapsed={0}s cpu_ratio={1}x write={2}KiB/s read={3}KiB/s cleanup=ok stability={4}s log={5}" -f
+                        [int]$watch.Elapsed.TotalSeconds, $cpuRatioText,
+                        $writeText, $readText, $PostSuccessStabilitySeconds,
+                        $GateLog)
                     break
                 }
             }
@@ -618,6 +658,112 @@ try {
         throw "VMware explicit desktop markers timed out: $($desktopMissing -join ', ')"
     }
 
+    if ($SvgaLifecycle) {
+        $lifecycleMissing = @(
+            'REIST_VIDEO SVGA2D_ACTIVE',
+            'DESKTOP_ACCELERATION_READY caps=',
+            'REIST_VIDEO SVGA2D_RECT_COPY_OK',
+            'REIST_VIDEO SVGA2D_INACTIVE',
+            'DESKTOP_METRICS',
+            'DESKTOP_EXIT_OK'
+        )
+        $lifecycleComplete = $false
+        $desktopExit = -1
+        while ($watch.Elapsed -lt $deadline) {
+            $text = Read-SerialText
+            Assert-NoForbiddenMarker $text
+            $active = $text.IndexOf(
+                'REIST_VIDEO SVGA2D_ACTIVE', $shellPosition + 1,
+                [StringComparison]::Ordinal)
+            $accelerated = if ($active -ge 0) {
+                $text.IndexOf(
+                    'DESKTOP_ACCELERATION_READY caps=', $active + 1,
+                    [StringComparison]::Ordinal)
+            } else { -1 }
+            $copy = if ($accelerated -ge 0) {
+                $text.IndexOf(
+                    'REIST_VIDEO SVGA2D_RECT_COPY_OK', $accelerated + 1,
+                    [StringComparison]::Ordinal)
+            } else { -1 }
+            $inactive = if ($copy -ge 0) {
+                $text.IndexOf(
+                    'REIST_VIDEO SVGA2D_INACTIVE', $copy + 1,
+                    [StringComparison]::Ordinal)
+            } else { -1 }
+            $desktopExit = if ($inactive -ge 0) {
+                $text.IndexOf(
+                    'DESKTOP_EXIT_OK', $inactive + 1,
+                    [StringComparison]::Ordinal)
+            } else { -1 }
+            $metrics = if ($active -ge 0) {
+                $text.IndexOf(
+                    'DESKTOP_METRICS', $active + 1,
+                    [StringComparison]::Ordinal)
+            } else { -1 }
+            $lifecycleMissing = @()
+            if ($active -lt 0) {
+                $lifecycleMissing += 'REIST_VIDEO SVGA2D_ACTIVE'
+            } elseif ($accelerated -lt 0) {
+                $lifecycleMissing += 'DESKTOP_ACCELERATION_READY caps='
+            } elseif ($copy -lt 0) {
+                $lifecycleMissing += 'REIST_VIDEO SVGA2D_RECT_COPY_OK'
+            } elseif ($inactive -lt 0) {
+                $lifecycleMissing += 'REIST_VIDEO SVGA2D_INACTIVE'
+            } elseif ($desktopExit -lt 0) {
+                $lifecycleMissing += 'DESKTOP_EXIT_OK'
+            } elseif ($metrics -lt 0 -or $metrics -gt $desktopExit) {
+                $lifecycleMissing += 'DESKTOP_METRICS'
+            }
+            if ($lifecycleMissing.Count -eq 0) {
+                $lifecycleComplete = $true
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$lifecycleComplete) {
+            throw "VMware SVGA2D lifecycle timed out waiting for: $($lifecycleMissing[0])"
+        }
+
+        $shellProbeSent = $false
+        for ($attempt = 1; $attempt -le 3; ++$attempt) {
+            $shellProbeSent = Send-ExplicitShellProbeCommand
+            "shell probe attempt=$attempt injected=$shellProbeSent transport=rfb-loopback" |
+                Add-Content -LiteralPath $GateLog -Encoding utf8
+            if ($shellProbeSent) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$shellProbeSent) {
+            throw 'VMware RFB post-lifecycle shell probe could not be injected.'
+        }
+        while ($watch.Elapsed -lt $deadline) {
+            $text = Read-SerialText
+            Assert-NoForbiddenMarker $text
+            $helpAfter = $text.IndexOf(
+                'Built-ins: cd path pwd history help exit', $desktopExit + 1,
+                [StringComparison]::Ordinal)
+            $promptAfter = if ($helpAfter -ge 0) {
+                $text.IndexOf(
+                    $shellMarker, $helpAfter + 1,
+                    [StringComparison]::Ordinal)
+            } else { -1 }
+            if ($promptAfter -ge 0) {
+                $bootCount = ([regex]::Matches($text, 'BOOT_OK')).Count
+                $loaderCount = ([regex]::Matches(
+                    $text, 'x86 native BIOS loader')).Count
+                $text = Wait-PostSuccessStability 'svga2d' $bootCount `
+                    $loaderCount
+                $text | Set-Content -LiteralPath $GateLog -Encoding utf8
+                $passed = $true
+                Write-Output "VMWARE SVGA2D LIFECYCLE PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s stability=$($PostSuccessStabilitySeconds)s log=$GateLog"
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (!$passed) {
+            throw 'VMware SVGA2D lifecycle did not return a responsive Ring-3 shell.'
+        }
+    }
+    else {
     if ($ExpectCompositorRestart) {
         $restartReady = $false
         while ($watch.Elapsed -lt $deadline) {
@@ -698,6 +844,7 @@ try {
     }
     if (!$passed) {
         throw 'VMware RFB pointer movement did not reach the desktop.'
+    }
     }
     }
 }
