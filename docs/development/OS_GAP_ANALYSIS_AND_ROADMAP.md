@@ -2,10 +2,12 @@
 
 Stand: 27. August 2026
 
-**R3.4f ist aktiv:** Der Ein-vCPU-Pfad benoetigt nach Surface-Eingaben einen
+**R3.4f ist abgeschlossen:** Der Ein-vCPU-Pfad benoetigt nach Surface-Eingaben einen
 begrenzten Scheduler-Turn fuer die Client-Antwort. Auf SMP kann der Client
 parallel laufen; der freiwillige Compositor-Yield wird dort entfernt und mit
-einem separaten 4-vCPU-Renderlauf abgesichert.
+einem separaten 4-vCPU-Renderlauf abgesichert. Dieser bestand mit 14 ms
+Vollbild, maximal 88 ms Drag und 87 ms Resize; auch der echte Surface-Control-
+Klick bestand unter vier vCPUs.
 
 **R3.4e ist abgeschlossen:** Der Desktop beseitigt vermeidbare Poll- und
 Turn-Latenz fuer Ring-3-Surface-Controls: ein Millisekunden-Idle-Poll, genau

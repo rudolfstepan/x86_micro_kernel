@@ -762,6 +762,17 @@ class DesktopSourceTests(unittest.TestCase):
         )
         self.assertNotIn("while (", bounded)
 
+    def test_surface_input_yields_only_when_client_cannot_run_in_parallel(self):
+        loop = self.source[self.source.index("for (;;) {") :]
+        post_input = loop[loop.index("if (surface_input_queued)") :]
+        post_input = post_input[:post_input.index("sync_surface_windows(")]
+        self.assertIn("if (online_cpu_count == 1U) (void)x86os_yield();",
+                      post_input)
+        self.assertIn("x86os_cpu_topology(&topology)", self.source)
+        self.assertIn("topology.version == X86OS_CPU_TOPOLOGY_VERSION",
+                      self.source)
+        self.assertIn("uint32_t online_cpu_count = 1U;", self.source)
+
     def test_idle_input_poll_cadence_is_one_millisecond(self):
         loop = self.source[self.source.index("for (;;) {") :]
         self.assertIn("x86os_sleep_ms(DESKTOP_IDLE_POLL_MS)", loop)

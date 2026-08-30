@@ -203,7 +203,9 @@ nicht koalesziert oder verworfen werden.
 
 Der interaktive Desktop pollt im inaktiven Zustand spaetestens nach einer
 Millisekunde erneut. Sobald eine Eingabe erfolgreich an eine Surface gestellt
-wurde, erhaelt der feste Ring-3-Arbeitspfad einen Scheduler-Turn; anschliessend
+worden ist, erhaelt der feste Ring-3-Arbeitspfad auf einem vCPU einen
+Scheduler-Turn; auf SMP kann der Client parallel laufen und der Compositor
+vermeidet den sonst nur Lock-Contention erzeugenden freiwilligen Yield. Danach
 verarbeitet der Compositor genau einen bereits auf 16 faire Runden und die
 feste IPC-Queue-Tiefe begrenzten Broker-Drain. Dadurch koennen Control-Zustand
 und retained Paint noch im selben Frame-Turn sichtbar werden, ohne Busy-Wait,

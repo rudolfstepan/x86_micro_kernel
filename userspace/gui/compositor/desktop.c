@@ -5400,6 +5400,14 @@ int main(int argc, char **argv) {
     uint64_t startup_started_ms = 0U;
     uint32_t startup_clock_valid =
         x86os_monotonic_ms(&startup_started_ms) == 0;
+    uint32_t online_cpu_count = 1U;
+    x86os_cpu_topology_t topology;
+    if (x86os_cpu_topology(&topology) == 0 &&
+        topology.version == X86OS_CPU_TOPOLOGY_VERSION &&
+        topology.struct_size == sizeof(topology) &&
+        topology.online_cpu_count > 0U &&
+        topology.online_cpu_count <= X86OS_CPU_TOPOLOGY_MAX_CPUS)
+        online_cpu_count = topology.online_cpu_count;
 
     if (argc == 2 && argv != 0 && text_equal(argv[1], "--render-probe")) {
         render_probe = 1U;
@@ -6199,11 +6207,10 @@ int main(int argc, char **argv) {
                 &manager, &explorer, &ui, &display, &dirty,
                 DESKTOP_TRASH_FILES_PATH, &action_target);
         if (surface_input_queued) {
-            /* Give the addressed Ring-3 client one bounded scheduling turn,
-             * then drain its already fixed broker batch. This lets a control
-             * input and its retained paint reach the same frame turn without
-             * spinning or enlarging either IPC queue. */
-            (void)x86os_yield();
+            /* One CPU needs an explicit bounded handoff so the addressed
+             * client can paint. On SMP it can run concurrently; yielding the
+             * compositor there only adds global scheduler contention. */
+            if (online_cpu_count == 1U) (void)x86os_yield();
             (void)desktop_surface_runtime_poll(
                 &surface_runtime, &surfaces);
         }

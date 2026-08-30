@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.4f-desktop-smp-input-cadence"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R3.4f-desktop-smp-input-cadence"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Remove avoidable SMP scheduler contention from desktop input"
@@ -39,8 +39,9 @@ package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
 ]
 runtime_tests = [
-  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\tmp\\qemu-portable\\qemu-system-i386.exe --image build/reist-os.img --render-probe --smp 1 --metrics-log build/codex-agent/r3.4f-smp1.log --screenshot build/r3.4f-smp1.ppm",
-  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\tmp\\qemu-portable\\qemu-system-i386.exe --image build/reist-os.img --render-probe --smp 4 --metrics-log build/codex-agent/r3.4f-smp4.log --screenshot build/r3.4f-smp4.ppm"
+  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\Program Files\\qemu\\qemu-system-i386.exe --image build/reist-os.img --render-probe --smp 1 --metrics-log build/codex-agent/r3.4f-smp1.log --screenshot build/r3.4f-smp1.ppm",
+  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\Program Files\\qemu\\qemu-system-i386.exe --image build/reist-os.img --render-probe --smp 4 --metrics-log build/codex-agent/r3.4f-smp4.log --screenshot build/r3.4f-smp4.ppm",
+  "python scripts/run_qemu_runtime_desktop.py --qemu C:\\Program Files\\qemu\\qemu-system-i386.exe --image build/reist-os.img --guidemo-click-probe --smp 4 --screenshot build/r3.4f-guidemo-smp4.ppm"
 ]
 stop_conditions = [
   "SMP smoothness requires pinning all GUI work to Ring 0 changing public ABI or weakening a watchdog",
@@ -48,7 +49,13 @@ stop_conditions = [
   "a required production file lies outside allowed_files"
 ]
 commit_message = "gui: avoid SMP input yield contention"
-evidence = []
+evidence = [
+  "desktop source gate passed: 51 tests with the optional host-C model skipped because no host C compiler was available",
+  "QEMU framebuffer package gate passed in 40 seconds",
+  "one-vCPU metrics passed: full_max_ms=75 drag_max_ms=90 resize_max_ms=83 damage_max=1 fallback_frames=0",
+  "four-vCPU metrics passed: full_max_ms=14 drag_max_ms=88 resize_max_ms=87 damage_max=1 fallback_frames=0",
+  "four-vCPU GUIDEMO Surface control click passed"
+]
 
 [[packages]]
 id = "R3.4e-desktop-interaction-cadence"

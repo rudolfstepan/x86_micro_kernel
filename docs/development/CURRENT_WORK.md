@@ -4,8 +4,14 @@ Stand: 30. August 2026
 
 Branch/Startpunkt: `working_branch` / `ae9f1a1`
 
-Aktives Thema: `R3.4f-desktop-smp-input-cadence` — vermeidbare
-Scheduler-Contention nach Surface-Eingaben auf Mehrkernsystemen entfernen.
+Aktives Thema: keines; die konfigurierte Paketwarteschlange ist leer.
+
+`R3.4f-desktop-smp-input-cadence` ist abgeschlossen. Der Compositor behaelt
+den begrenzten Post-Input-Yield nur auf einem vCPU; auf SMP kann der Surface-
+Client parallel laufen und der globale Scheduler-Lock wird nicht mehr nach
+jeder zugestellten Eingabe freiwillig beansprucht. Der 4-vCPU-Referenzlauf
+bestand mit 14 ms Vollbild, maximal 88 ms Drag und 87 ms Resize sowie einem
+echten GUIDEMO-Control-Klick; Fallback-Frames und Probe-Fehler blieben null.
 
 `R3.4e-desktop-interaction-cadence` ist abgeschlossen. Es reduziert den
 inaktiven Desktop-Poll von fuenf auf eine Millisekunde.

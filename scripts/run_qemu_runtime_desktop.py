@@ -302,12 +302,12 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         trash_confirm_probe: bool,
         guidemo_click_probe: bool,
         sound_probe: bool, metrics_log: pathlib.Path | None,
-        vmware_vga: bool, capture_only: bool = False) -> int:
+        vmware_vga: bool, smp: int, capture_only: bool = False) -> int:
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
         audio_capture.unlink()
     command = qemu_command(
-        qemu, image, memory="512M", vmware_vga=vmware_vga)
+        qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp)
     if guidemo_click_probe:
         command.extend([
             "-device", "qemu-xhci,id=reistxhci",
@@ -717,6 +717,7 @@ def main() -> int:
     parser.add_argument("--guidemo-click-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     parser.add_argument("--vmware-vga", action="store_true")
+    parser.add_argument("--smp", type=int, default=1)
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.control_probe,
@@ -725,13 +726,15 @@ def main() -> int:
         parser.error("desktop probe modes are mutually exclusive")
     if args.metrics_log is not None and not args.render_probe:
         parser.error("--metrics-log requires --render-probe")
+    if args.smp < 1 or args.smp > 16:
+        parser.error("--smp must be in 1..16")
     try:
         return run(args.qemu, args.image, args.screenshot, args.timeout,
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
                    args.guidemo_click_probe, args.sound_probe,
-                   args.metrics_log, args.vmware_vga)
+                   args.metrics_log, args.vmware_vga, args.smp)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1
