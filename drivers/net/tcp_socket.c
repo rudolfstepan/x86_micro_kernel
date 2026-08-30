@@ -381,7 +381,16 @@ int tcp_socket_receive(int pid, uint32_t process_generation,
                     TCP_SOCKET_RECEIVE_CAPACITY);
             }
             control->receive_count = (uint16_t)(control->receive_count - amount);
-            tcp_unlock(flags); return (int)amount;
+            tcp_wire_context_t snapshot = wire_context(control);
+            uint32_t sequence = control->send_next;
+            tcp_unlock(flags);
+            /* The ingress ACK advertised the pre-drain window. Publish the
+             * reopened fixed receive window immediately; otherwise a peer
+             * that reached a zero window has no reason to send again. The
+             * update is best-effort and nonblocking because bytes have already
+             * been copied to the caller and must not be reported as lost. */
+            (void)send_control(&snapshot, sequence, TCP_FLAG_ACK, NULL, 0U);
+            return (int)amount;
         }
         if (control->state == TCP_CLOSE_WAIT || control->state == TCP_CLOSED) {
             tcp_unlock(flags); return 0;

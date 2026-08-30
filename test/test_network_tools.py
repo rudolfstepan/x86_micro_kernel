@@ -56,7 +56,10 @@ class NetworkToolsSourceTests(unittest.TestCase):
     def test_curl_is_bounded_and_uses_public_abis(self):
         source = (ROOT / "userspace/programs/curl.c").read_text()
         self.assertIn("CURL_HARD_MAX_BYTES", source)
-        self.assertIn("CURL_TRANSFER_DEADLINE_MS", source)
+        self.assertIn("CURL_TRANSFER_IDLE_TIMEOUT_MS 30000U", source)
+        self.assertIn("CURL_TRANSFER_HARD_TIMEOUT_MS 300000U", source)
+        self.assertIn("now - progressed >= CURL_TRANSFER_IDLE_TIMEOUT_MS", source)
+        self.assertIn("now - started >= CURL_TRANSFER_HARD_TIMEOUT_MS", source)
         self.assertIn("x86os_dns_resolve", source)
         self.assertIn("x86os_tcp_connect", source)
         self.assertIn("x86os_tcp_receive", source)
@@ -422,18 +425,34 @@ class NetworkToolsSourceTests(unittest.TestCase):
         self.assertIn("deadline_remaining", source)
         self.assertIn("x86os_tcp_socket_close", source)
 
-    @unittest.skipUnless(shutil.which("gcc"), "gcc is required")
     def test_tcp_connect_stream_and_close_behavior(self):
+        compiler = shutil.which("gcc")
+        command_prefix = [compiler] if compiler else []
+        use_zig = compiler is None
+        if compiler is None:
+            zig = Path(r"C:\tools\zig-x86_64-windows-0.16.0\zig.exe")
+            if not zig.is_file():
+                located = shutil.which("zig")
+                if located is None:
+                    self.skipTest("GCC or Zig is required")
+                zig = Path(located)
+            command_prefix = [str(zig), "cc"]
         with tempfile.TemporaryDirectory() as directory:
             executable = Path(directory) / "tcp_test"
             if os.name == "nt": executable = executable.with_suffix(".exe")
-            subprocess.run([
-                "gcc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+            environment = os.environ.copy()
+            if use_zig:
+                environment["ZIG_GLOBAL_CACHE_DIR"] = str(
+                    Path(directory) / "zig-global")
+                environment["ZIG_LOCAL_CACHE_DIR"] = str(
+                    Path(directory) / "zig-local")
+            subprocess.run([*command_prefix,
+                "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-DREIST_HOST_TEST", "-I", str(ROOT),
                 str(ROOT / "drivers/net/tcp_socket.c"),
                 str(ROOT / "test/test_tcp_socket_host.c"),
                 "-o", str(executable),
-            ], check=True, cwd=ROOT)
+            ], check=True, cwd=ROOT, env=environment)
             subprocess.run([str(executable)], check=True, cwd=ROOT)
 
     @unittest.skipUnless(shutil.which("gcc"), "gcc is required")

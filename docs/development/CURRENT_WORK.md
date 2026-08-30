@@ -7,6 +7,11 @@ Branch/Startpunkt: `working_branch` / `ae9f1a1`
 Aktives Thema: `R8.2r-x86_64-ipc-revocation-wakeup` —
 generationsgebundene x86_64-IPC-Revocation-Wakeups.
 
+`R4.1c-curl-large-transfer` ist abgeschlossen. Große Antworten behalten bei
+laufendem Fortschritt die begrenzte HTTPS-Verbindung; TCP kündigt nach dem
+Lesen das wieder geöffnete feste Empfangsfenster an. Leerlauf bleibt auf 30
+Sekunden, Gesamtzeit auf fünf Minuten und Antwortgröße auf 16 MiB begrenzt.
+
 `R4.1a-curl-https` ist abgeschlossen. `libreisttls.a` kapselt das
 SHA-256-gepinnte Mbed TLS 4.1.1 als begrenzte Ring-3-Clientbibliothek mit
 TLS 1.2/1.3, X.509-Ketten-, SAN-, RTC- und Recordpruefung. `curl.prg` nutzt

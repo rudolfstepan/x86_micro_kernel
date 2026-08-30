@@ -22,7 +22,8 @@ extern const size_t reist_tls_runtime_test_ca_pem_size;
 #define CURL_CONNECT_TIMEOUT_MS 5000U
 #define CURL_IO_TIMEOUT_MS 5000U
 #define CURL_TLS_HANDSHAKE_TIMEOUT_MS 30000U
-#define CURL_TRANSFER_DEADLINE_MS 30000U
+#define CURL_TRANSFER_IDLE_TIMEOUT_MS 30000U
+#define CURL_TRANSFER_HARD_TIMEOUT_MS 300000U
 #define CURL_OUTPUT_PATH_CAPACITY 256U
 
 typedef struct curl_options {
@@ -303,15 +304,18 @@ static int receive_body(const curl_stream_t *stream, int output,
         return -84;
     if (total != 0U && write_all(output, header + body_offset, total) != 0)
         return -5;
-    uint64_t started = 0U;
+    uint64_t started = 0U, progressed = 0U;
     if (x86os_monotonic_ms(&started) != 0) return -5;
+    progressed = started;
     uint8_t buffer[X86OS_TCP_RECEIVE_CAPACITY];
     for (;;) {
         if (response.content_length_present && total == response.content_length)
             return 0;
         uint64_t now = 0U;
         if (x86os_monotonic_ms(&now) != 0 || now < started ||
-            now - started >= CURL_TRANSFER_DEADLINE_MS) return -110;
+            now < progressed ||
+            now - started >= CURL_TRANSFER_HARD_TIMEOUT_MS ||
+            now - progressed >= CURL_TRANSFER_IDLE_TIMEOUT_MS) return -110;
         uint32_t capacity = sizeof(buffer);
         if (response.content_length_present &&
             capacity > response.content_length - total)
@@ -326,6 +330,8 @@ static int receive_body(const curl_stream_t *stream, int output,
         if ((uint32_t)received > maximum_bytes - total ||
             write_all(output, buffer, (uint32_t)received) != 0) return -90;
         total += (uint32_t)received;
+        if (x86os_monotonic_ms(&progressed) != 0 || progressed < now)
+            return -5;
     }
 }
 

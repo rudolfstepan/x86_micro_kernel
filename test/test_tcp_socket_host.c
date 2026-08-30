@@ -11,7 +11,8 @@
 
 static uint64_t now_ms = 1U;
 static uint32_t sent_ip, sent_sequence, sent_acknowledgement;
-static uint16_t sent_source_port, sent_destination_port, sent_length;
+static uint16_t sent_source_port, sent_destination_port, sent_length,
+                sent_window;
 static uint8_t sent_flags;
 static bool pending_reply;
 static int reply_result;
@@ -23,10 +24,10 @@ bool netstack_send_tcp_segment(uint32_t ip, uint16_t source_port,
                                uint32_t acknowledgement, uint8_t flags,
                                uint16_t window, const uint8_t *data,
                                uint16_t length) {
-    (void)window; (void)data; sent_ip = ip; sent_source_port = source_port;
+    (void)data; sent_ip = ip; sent_source_port = source_port;
     sent_destination_port = destination_port; sent_sequence = sequence;
     sent_acknowledgement = acknowledgement; sent_flags = flags;
-    sent_length = length; pending_reply = true; return true;
+    sent_length = length; sent_window = window; pending_reply = true; return true;
 }
 void wait_queue_init(wait_queue_t *queue) { memset(queue, 0, sizeof(*queue)); }
 bool wait_queue_wake_one_locked(wait_queue_t *queue) {
@@ -88,6 +89,9 @@ int main(void) {
     uint8_t received[8];
     CHECK(tcp_socket_receive(7, 2U, socket, received, sizeof(received), 0U) == 2);
     CHECK(received[0] == 'O' && received[1] == 'K');
+    CHECK(sent_flags == TCP_FLAG_ACK && sent_length == 0U &&
+          sent_acknowledgement == 1003U &&
+          sent_window == TCP_SOCKET_RECEIVE_CAPACITY);
     CHECK(tcp_socket_close(7, 2U, socket, 2000U) == 0);
     CHECK(tcp_socket_receive(7, 2U, socket, received, sizeof(received), 0U) == -9);
 

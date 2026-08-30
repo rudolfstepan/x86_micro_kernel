@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R4.1c-curl-large-transfer"
+active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
 
 [policy]
 one_package_per_run = true
@@ -13232,7 +13232,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2r-x86_64-ipc-revocation-wakeup"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Prove generation-scoped x86_64 IPC revocation wakeups"
@@ -13271,7 +13271,7 @@ evidence = []
 
 [[packages]]
 id = "R4.1c-curl-large-transfer"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Keep bounded curl transfers progressing for large responses"
@@ -13306,7 +13306,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fix: keep large curl transfers progressing"
-evidence = []
+evidence = [
+  "The focused network-tools gate passed all ten runnable checks in 61 seconds; four unrelated GCC-only checks were skipped, and the TCP stream regression was then made Zig-capable and passed separately in 28 seconds with the reopened-window assertion.",
+  "The QEMU VGA package gate passed in 46 seconds with the updated kernel TCP socket and CURL.PRG in the production image.",
+  "The authenticated curl-https-client runtime passed in 116 seconds through the Ring-3 shell, deterministic TLS peer and real guest TCP/TLS path.",
+  "curl now retains a 30-second no-progress bound plus a five-minute hard bound and the unchanged 16-MiB byte ceiling, while each receive-buffer drain sends a bounded pure ACK advertising the reopened fixed window."
+]
 
 [[packages]]
 id = "R4.1b-curl-public-https"

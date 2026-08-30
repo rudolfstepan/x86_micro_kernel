@@ -53,8 +53,10 @@ permanenten Paket-Debugzeilen mehr auf dem VGA-Terminal aus.
 - begrenzter HTTP/1.0-Server für `/htdocs`: `GET`, `HEAD`, statische Dateien
   bis 4096 Byte und Directory-Listings bis 32 Einträge beziehungsweise 1024 Byte
 - begrenzter HTTP-Downloadclient `curl` mit DNS, stdout oder atomarer
-  `-o`-Dateiausgabe, 30-Sekunden-Transferdeadline und standardmäßig 1 MiB
-  beziehungsweise höchstens 16 MiB Antwortgröße
+  `-o`-Dateiausgabe, 30 Sekunden Leerlaufgrenze, fünf Minuten harter
+  Transfergrenze und standardmäßig 1 MiB beziehungsweise höchstens 16 MiB
+  Antwortgröße; erfolgreich ausgegebene Daten erneuern den Fortschritt und
+  TCP kündigt nach jedem Lesen das wieder geöffnete feste Empfangsfenster an
 - `https://` über die wiederverwendbare statische Ring-3-Bibliothek
   `libreisttls.a`: Mbed TLS 4.1.1 LTS, TLS 1.2/1.3, verpflichtende
   X.509-Ketten-, Gültigkeits- und SAN-Hostprüfung sowie der eingebettete,
