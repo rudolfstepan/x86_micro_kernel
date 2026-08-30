@@ -201,6 +201,20 @@ nicht koalesziert oder verworfen werden.
 
 ## Latenz- und Lastziele
 
+Der interaktive Desktop pollt im inaktiven Zustand spaetestens nach einer
+Millisekunde erneut. Sobald eine Eingabe erfolgreich an eine Surface gestellt
+wurde, erhaelt der feste Ring-3-Arbeitspfad einen Scheduler-Turn; anschliessend
+verarbeitet der Compositor genau einen bereits auf 16 faire Runden und die
+feste IPC-Queue-Tiefe begrenzten Broker-Drain. Dadurch koennen Control-Zustand
+und retained Paint noch im selben Frame-Turn sichtbar werden, ohne Busy-Wait,
+Queuewachstum oder eine veraenderte Edge-Reihenfolge.
+
+Direkt an einer gemeinsamen Kante anliegende Dirty-Rechtecke werden nur dann
+vereinigt, wenn ihre orthogonale Projektion identisch ist und die bestehende
+Flaechenregel den Overdraw begrenzt. Reine Eckkontakte und nur teilweise
+ausgerichtete Move-/Resize-Streifen bleiben getrennt;
+Kapazitaetserschoepfung bleibt der pixelkorrekte Vollbild-Fallback.
+
 Die folgenden Werte sind Abnahmekriterien für die Referenz-VM und ausdrücklich
 keine bereits bewiesenen Worst-Case-Garantien:
 

@@ -4,7 +4,18 @@ Stand: 30. August 2026
 
 Branch/Startpunkt: `working_branch` / `ae9f1a1`
 
-Aktives Thema: keines; die vorbereitete Queue ist leer.
+Aktives Thema: keines; die konfigurierte Paketwarteschlange ist leer.
+
+`R3.4e-desktop-interaction-cadence` ist abgeschlossen. Es reduziert den
+inaktiven Desktop-Poll von fuenf auf eine Millisekunde.
+Nach tatsaechlich zugestelltem Surface-Input erhaelt der Client einen
+begrenzten Scheduler-Turn und der Compositor verarbeitet einen festen
+Broker-Drain vor derselben Frame-Entscheidung. Effizient angrenzende
+Dirty-Rechtecke werden kanonisiert; Eckkontakte, feste Kapazitaeten,
+Edge-Reihenfolge und Vollbild-Fallback bleiben unveraendert. Der QEMU-Lauf
+mass 14 ms fuer den Vollbildaufbau, hoechstens 79 ms fuer Drag- und 88 ms fuer
+Resize-Frames bei maximal einer Schadensregion und ohne Fallback-Frame. Das
+belegt die Referenzgrenzen, aber keine Windows-95- oder Zielhardware-Paritaet.
 
 `R4.1c-curl-large-transfer` ist abgeschlossen. Große Antworten behalten bei
 laufendem Fortschritt die begrenzte HTTPS-Verbindung; TCP kündigt nach dem

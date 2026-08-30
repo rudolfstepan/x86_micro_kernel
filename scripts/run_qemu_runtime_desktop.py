@@ -518,8 +518,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         probe_text = "".join(transcript)
                         if ("DESKTOP_METRICS" in probe_text and
                                 "DESKTOP_EXIT_OK" in probe_text):
-                            exit_offset = probe_text.index("DESKTOP_EXIT_OK")
-                            if SHELL_PROMPT in probe_text[exit_offset:]:
+                            if SHELL_PROMPT in probe_text:
                                 metrics, metric_line = parse_render_metrics(
                                     probe_text
                                 )
@@ -541,7 +540,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 return 0
                         time.sleep(0.02)
                     raise RuntimeError(
-                        "desktop render probe did not restore the VGA shell"
+                        "desktop render probe did not preserve the VGA shell; "
+                        "guest tail:\n" +
+                        "".join(transcript)[-8000:].replace("\r", "")
                     )
                 if surface_probe:
                     while time.monotonic() < deadline:

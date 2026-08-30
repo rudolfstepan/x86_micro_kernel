@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.4e-desktop-interaction-cadence"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R3.4e-desktop-interaction-cadence"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Reduce bounded desktop application and control interaction latency"
@@ -60,7 +60,12 @@ stop_conditions = [
   "a frozen gate still fails after one focused in-scope repair"
 ]
 commit_message = "gui: reduce desktop interaction latency"
-evidence = []
+evidence = [
+  "desktop source gates passed: 50 desktop tests and 8 Surface tests (the optional host-C models were skipped because no host C compiler was available)",
+  "QEMU framebuffer package gate passed in 9 seconds",
+  "runtime desktop metrics passed: full_max_ms=14 drag_max_ms=79 resize_max_ms=88 damage_max=1 fallback_frames=0 clock_errors=0 probe_errors=0",
+  "runtime desktop guidemo click probe passed with the detached recovery shell preserved"
+]
 
 [[packages]]
 id = "R3.4d-surface-pointer-routing"

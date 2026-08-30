@@ -750,6 +750,24 @@ class DesktopSourceTests(unittest.TestCase):
             self.source,
         )
 
+    def test_surface_input_gets_same_turn_bounded_paint_drain(self):
+        loop = self.source[self.source.index("for (;;) {") :]
+        self.assertIn("surface_input_queued", loop)
+        post_input = loop.index("if (surface_input_queued)")
+        final_sync = loop.index("sync_surface_windows(", post_input)
+        bounded = loop[post_input:final_sync]
+        self.assertIn("x86os_yield()", bounded)
+        self.assertEqual(
+            bounded.count("desktop_surface_runtime_poll("), 1
+        )
+        self.assertNotIn("while (", bounded)
+
+    def test_idle_input_poll_cadence_is_one_millisecond(self):
+        loop = self.source[self.source.index("for (;;) {") :]
+        self.assertIn("x86os_sleep_ms(DESKTOP_IDLE_POLL_MS)", loop)
+        self.assertIn("#define DESKTOP_IDLE_POLL_MS 1U", self.source)
+        self.assertNotIn("x86os_sleep_ms(5U)", loop)
+
     def test_full_content_drag_uses_atomic_cached_shadow_blit(self):
         self.assertIn("desktop_move_cache_t", self.source)
         self.assertIn("desktop_move_cache_capture", self.source)

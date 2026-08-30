@@ -33,6 +33,18 @@ static void test_dirty_regions_and_event_dispatch(void) {
     assert(dirty.count == 1U);
     assert(dirty.rects[0].x == 10 && dirty.rects[0].y == 10);
     assert(dirty.rects[0].width == 35U && dirty.rects[0].height == 30U);
+
+    desktop_dirty_initialize(&dirty, 1024U, 768U);
+    desktop_dirty_add(&dirty, (desktop_rect_t){40, 40, 30U, 20U});
+    desktop_dirty_add(&dirty, (desktop_rect_t){70, 40, 30U, 20U});
+    assert(dirty.count == 1U);
+    assert(dirty.rects[0].x == 40 && dirty.rects[0].y == 40);
+    assert(dirty.rects[0].width == 60U && dirty.rects[0].height == 20U);
+
+    desktop_dirty_initialize(&dirty, 1024U, 768U);
+    desktop_dirty_add(&dirty, (desktop_rect_t){40, 40, 30U, 20U});
+    desktop_dirty_add(&dirty, (desktop_rect_t){70, 60, 30U, 20U});
+    assert(dirty.count == 2U);
     for (uint32_t index = 0U;
          index < DESKTOP_WM_DIRTY_CAPACITY + 1U; ++index) {
         desktop_dirty_add(

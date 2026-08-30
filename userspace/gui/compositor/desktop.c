@@ -40,6 +40,7 @@
 #define DESKTOP_RENDER_PROBE_STEPS 8U
 #define DESKTOP_RENDER_PROBE_STEP_X 4
 #define DESKTOP_MOUSE_BATCH_LIMIT 32U
+#define DESKTOP_IDLE_POLL_MS 1U
 #define DESKTOP_FILE_ICON_SIZE 32U
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
@@ -5963,6 +5964,7 @@ int main(int argc, char **argv) {
         int32_t pending_delta_x = 0;
         int32_t pending_delta_y = 0;
         unsigned int mouse_events = 0U;
+        uint32_t surface_input_queued = 0U;
         for (; mouse_events < DESKTOP_MOUSE_BATCH_LIMIT; ++mouse_events) {
             x86os_mouse_event_t mouse;
             if (x86os_mouse_event(&mouse) != 0) break;
@@ -6055,6 +6057,7 @@ int main(int argc, char **argv) {
                         !left_down || surface_capture_kind ==
                             DESKTOP_WM_CAPTURE_CLIENT,
                         &surface_button_status);
+                    surface_input_queued |= surface_button_queued;
                     if (!surface_button_queued &&
                         surface_button_status == DESKTOP_SURFACE_ECAPACITY &&
                         surface_button_window >= 0) {
@@ -6110,7 +6113,7 @@ int main(int argc, char **argv) {
                 DESKTOP_WM_CAPTURE_CLIENT ? manager.capture_window
                                           : desktop_wm_window_at(
                                                 &manager, pointer_x, pointer_y);
-            (void)enqueue_surface_pointer(
+            surface_input_queued |= enqueue_surface_pointer(
                 &manager, &surfaces, surface_motion_window,
                 REIST_GUI_SURFACE_INPUT_POINTER_MOTION,
                 pointer_x, pointer_y, pending_delta_x, pending_delta_y, 0U,
@@ -6138,6 +6141,7 @@ int main(int argc, char **argv) {
         if (!ui_key.consumed) {
             uint32_t surface_key_consumed = enqueue_surface_keyboard(
                 &manager, &surfaces, key);
+            surface_input_queued |= surface_key_consumed;
             uint32_t explorer_key = explorer_key_from_input(key);
             if (!surface_key_consumed && explorer_key != 0U &&
                 manager.keyboard_focus >= 0 &&
@@ -6194,6 +6198,15 @@ int main(int argc, char **argv) {
             actions |= open_explorer_path(
                 &manager, &explorer, &ui, &display, &dirty,
                 DESKTOP_TRASH_FILES_PATH, &action_target);
+        if (surface_input_queued) {
+            /* Give the addressed Ring-3 client one bounded scheduling turn,
+             * then drain its already fixed broker batch. This lets a control
+             * input and its retained paint reach the same frame turn without
+             * spinning or enlarging either IPC queue. */
+            (void)x86os_yield();
+            (void)desktop_surface_runtime_poll(
+                &surface_runtime, &surfaces);
+        }
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
 
@@ -6234,7 +6247,7 @@ int main(int argc, char **argv) {
         } else if (mouse_events != 0U) {
             (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
         } else {
-            (void)x86os_sleep_ms(5U);
+            (void)x86os_sleep_ms(DESKTOP_IDLE_POLL_MS);
         }
     }
 }

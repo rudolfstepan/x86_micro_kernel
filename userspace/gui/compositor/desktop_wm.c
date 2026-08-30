@@ -50,6 +50,18 @@ static uint32_t rect_merge_efficient(desktop_rect_t left,
     return combined_area <= separate_area * 2U;
 }
 
+static uint32_t rects_touch_edge(desktop_rect_t left,
+                                 desktop_rect_t right) {
+    int64_t left_right = (int64_t)left.x + left.width;
+    int64_t right_right = (int64_t)right.x + right.width;
+    int64_t left_bottom = (int64_t)left.y + left.height;
+    int64_t right_bottom = (int64_t)right.y + right.height;
+    return ((left_right == right.x || right_right == left.x) &&
+            left.y == right.y && left.height == right.height) ||
+        ((left_bottom == right.y || right_bottom == left.y) &&
+         left.x == right.x && left.width == right.width);
+}
+
 void desktop_dirty_initialize(desktop_dirty_region_t *dirty,
                               uint32_t screen_width,
                               uint32_t screen_height) {
@@ -89,7 +101,8 @@ void desktop_dirty_add(desktop_dirty_region_t *dirty, desktop_rect_t rect) {
     };
 
     for (uint32_t index = 0U; index < dirty->count;) {
-        if (!rects_intersect(rect, dirty->rects[index])) {
+        if (!rects_intersect(rect, dirty->rects[index]) &&
+            !rects_touch_edge(rect, dirty->rects[index])) {
             ++index;
             continue;
         }

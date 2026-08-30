@@ -2,6 +2,14 @@
 
 Stand: 27. August 2026
 
+**R3.4e ist abgeschlossen:** Der Desktop beseitigt vermeidbare Poll- und
+Turn-Latenz fuer Ring-3-Surface-Controls: ein Millisekunden-Idle-Poll, genau
+ein fester Post-Input-Broker-Drain und flaechenbegrenzt zusammengefuehrte
+Kantenschaeden. Die Aenderung vergroessert keine Queue oder Autoritaet und
+bleibt auf einem vCPU pruefbar; eine Zielhardware-Framerate wird nicht
+behauptet. Der Referenzlauf bestand mit 14 ms Vollbild-, maximal 79 ms Drag-
+und 88 ms Resize-Zeit, einer Schadensregion und keinem Fallback-Frame.
+
 Dieses Dokument beschreibt den anhand des aktuellen Quellstands geprüften
 Ist-Zustand, die wichtigsten noch fehlenden Betriebssystemfunktionen und eine
 Reihenfolge, in der sie ohne unnötige Umbauten ergänzt werden können. Es ist
