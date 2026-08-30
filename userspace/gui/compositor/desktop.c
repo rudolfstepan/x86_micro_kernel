@@ -3087,7 +3087,13 @@ static uint32_t render_desktop_cached_move_frame(
         outcome |= DESKTOP_RENDER_ACCELERATION_FALLBACK;
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
     } else {
-        int copy_status = desktop_svga2d_rect_copy(
+        /* VMware's asynchronous RECT_COPY is safe for equal-sized window
+         * moves, but resize changes the surrounding geometry concurrently.
+         * Keep resize on the staged shadow copy: commit publishes the copied
+         * destination atomically without trusting an in-flight device copy. */
+        int copy_status = move->kind == DESKTOP_MOVE_CACHE_RESIZE
+            ? -95
+            : desktop_svga2d_rect_copy(
                 (uint32_t)move->source.x, (uint32_t)move->source.y,
                 (uint32_t)move->destination.x,
                 (uint32_t)move->destination.y,

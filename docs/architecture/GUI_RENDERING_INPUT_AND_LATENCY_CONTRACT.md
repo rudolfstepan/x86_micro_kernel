@@ -170,6 +170,14 @@ und danach an der aktuellen Position wiederhergestellt. Bei Displayfehlern
 wird die Transaktion abgebrochen beziehungsweise auf den validierten
 Softwarepfad zurückgeführt; ein halber Frame gilt nicht als Erfolg.
 
+Während eines interaktiven Resize bleibt nur die zuletzt bestätigte
+Surface-Größe autoritativ. Nach dem finalen Configure-ACK invalidiert der
+Compositor die vollständige neue Clientfläche. Überlappende Resize-Kopien
+verwenden den atomaren Shadow-Blit; VMware-SVGA-RECT_COPY bleibt auf
+gleich große Fensterverschiebungen begrenzt, weil ein asynchroner Device-Copy
+keine Grundlage für die Korrektheit einer gleichzeitig geänderten Geometrie
+sein darf.
+
 ## Sofortiger Scrollbar-Feedbackpfad
 
 Beim akzeptierten Button-Down auf einen Scrollbar-Thumb beginnt ein lokales

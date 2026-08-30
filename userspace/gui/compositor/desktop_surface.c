@@ -315,7 +315,8 @@ int desktop_surface_ack_configure(desktop_surface_manager_t *manager,
     desktop_surface_slot_t *slot = &manager->slots[index];
     if ((slot->pending_width == 0U) != (slot->pending_height == 0U))
         return DESKTOP_SURFACE_ESTATE;
-    if (slot->pending_width != 0U) {
+    uint32_t resized = slot->pending_width != 0U;
+    if (resized) {
         slot->width = slot->pending_width;
         slot->height = slot->pending_height;
         slot->pending_width = 0U;
@@ -323,6 +324,16 @@ int desktop_surface_ack_configure(desktop_surface_manager_t *manager,
     }
     slot->acknowledged_serial = serial;
     slot->configure_sent = 1U;
+    if (resized) {
+        /* The window was interactively composed at provisional dimensions.
+         * Once the client accepts the final size, invalidate the complete
+         * local area. Layer-difference damage alone cannot cover newly
+         * exposed pixels when retained commands happen to stay unchanged. */
+        slot->present_damage = (reist_gui_rect_t){
+            0, 0, slot->width, slot->height};
+        slot->present_damage_valid = 1U;
+        slot->paint_generation = next_nonzero(&slot->paint_generation);
+    }
     return DESKTOP_SURFACE_OK;
 }
 

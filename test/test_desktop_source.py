@@ -554,6 +554,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("client.height < surface->height", render_window)
         self.assertIn("buffer_clip.width, buffer_clip.height", render_window)
 
+        cached = self.source[
+            self.source.index("static uint32_t render_desktop_cached_move_frame") :
+            self.source.index("static void record_render_metrics")
+        ]
+        self.assertIn("move->kind == DESKTOP_MOVE_CACHE_RESIZE", cached)
+        self.assertIn("? -95", cached)
+
     def test_surface_program_is_async_and_owned_by_the_compositor(self):
         self.assertIn('"/usr/gui/bin/surfacedemo.prg"', self.source)
         self.assertIn('"/usr/gui/bin/notepad.prg"', self.source)

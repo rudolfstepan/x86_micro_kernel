@@ -233,6 +233,10 @@ int main(void) {
     assert(resizing->width == 400U && resizing->height == 260U);
     assert(resizing->pending_width == 0U &&
            resizing->pending_height == 0U);
+    assert(desktop_surface_present_damage_take(
+        &manager, owner, handle, &present_damage) == 0);
+    assert(present_damage.x == 0 && present_damage.y == 0 &&
+           present_damage.width == 400U && present_damage.height == 260U);
     assert(desktop_surface_ack_configure(&manager, owner, handle,
         resized.serial + 1U) < 0);
     assert(desktop_surface_destroy(&manager, owner, handle) == 0);
