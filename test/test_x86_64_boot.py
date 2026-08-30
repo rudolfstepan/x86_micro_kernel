@@ -555,13 +555,13 @@ class X8664BootstrapContractTests(unittest.TestCase):
         queued_receive = shell.index("REIST_SYS_IPC_RECEIVE", fourth_yield)
         timeout_queued_receive = shell.index("REIST_SYS_IPC_RECEIVE", queued_receive + 1)
         receive = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT", timeout_queued_receive)
-        wait = shell.index("REIST_SYS_WAIT", receive)
-        close = shell.index("REIST_SYS_IPC_CLOSE", wait)
-        run_ok = shell.index("shell_write_exact(run_ok", close)
+        close = shell.index("REIST_SYS_IPC_CLOSE", receive)
+        wait = shell.index("REIST_SYS_WAIT", close)
+        run_ok = shell.index("shell_write_exact(run_ok", wait)
         order = [create, parent_send, parent_send_timeout, parent_probe,
                  empty_timeout, spawn, delegate, first_yield, second_yield,
                  third_yield, fourth_yield, queued_receive,
-                 timeout_queued_receive, receive, wait, close, run_ok]
+                 timeout_queued_receive, receive, close, wait, run_ok]
         self.assertEqual(order, sorted(order))
         self.assertIn("IPC_RECEIVE_TIMEOUT_MS 10ULL", shell)
         self.assertIn("REIST_ETIMEDOUT (-110LL)", shell)
@@ -578,6 +578,10 @@ class X8664BootstrapContractTests(unittest.TestCase):
         child_second_yield = child.index("mov eax, REIST_SYS_YIELD", child_yield + 1)
         child_send77 = child.index("mov eax, REIST_SYS_IPC_SEND", child_second_yield)
         child_release = child.index("mov eax, REIST_SYS_IPC_RELEASE", child_send77)
+        child_redelegate_yield = child.index("mov eax, REIST_SYS_YIELD",
+                                             child_release)
+        child_send79 = child.index("mov eax, REIST_SYS_IPC_SEND_TIMEOUT",
+                                   child_release)
         child_exit = child.index("mov eax, REIST_SYS_EXIT", child_release)
         self.assertEqual(
             [child_receive, child_send76, child_send_full, child_send_timeout,
@@ -592,6 +596,12 @@ class X8664BootstrapContractTests(unittest.TestCase):
                       child[child_send_full:child_send_timeout])
         self.assertIn("IPC_SEND_TIMEOUT_MS equ 10", child)
         self.assertLess(child_release, child_exit)
+        self.assertLess(child_release, child_send79)
+        self.assertLess(child_release, child_redelegate_yield)
+        self.assertLess(child_redelegate_yield, child_send79)
+        self.assertLess(child_send79, child_exit)
+        self.assertIn("REIST_EBADF     equ -9", child)
+        self.assertIn("cmp rax, REIST_EBADF", child[child_send79:child_exit])
         denied = scheduler.index("scheduler_handle_shell_ipc_receive64:")
         parent_receive = scheduler.index(".parent_receive:", denied)
         denial_path = scheduler[denied:parent_receive]
@@ -725,6 +735,64 @@ class X8664BootstrapContractTests(unittest.TestCase):
         force = scheduler.index("scheduler_force_cleanup64:")
         self.assertIn("scheduler_shell_ipc_end - scheduler_shell_ipc_begin",
                       scheduler[force:])
+
+    def test_ring3_ipc_revocation_wakes_exact_blocked_generations(self):
+        shell = self.read("arch/x86_64/user/shell.c")
+        scheduler = self.read("arch/x86_64/proc/cooperative_scheduler.asm")
+        run = shell.index('command_equals(command, "RUN",')
+        final_receive = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT",
+                                    shell.index("REIST_SYS_SPAWNV", run))
+        revoke_receive = shell.index("REIST_SYS_IPC_RECEIVE_TIMEOUT",
+                                     final_receive + 1)
+        redelegate = shell.index("REIST_SYS_IPC_DELEGATE", revoke_receive)
+        token78 = shell.index("prepare_ipc_token(&ipc_message, (shell_u8)'8')",
+                              redelegate)
+        parent_send = shell.index("REIST_SYS_IPC_SEND", token78)
+        close = shell.index("REIST_SYS_IPC_CLOSE", parent_send)
+        wait = shell.index("REIST_SYS_WAIT", close)
+        self.assertEqual([revoke_receive, redelegate, token78, parent_send,
+                          close, wait],
+                         sorted([revoke_receive, redelegate, token78,
+                                 parent_send, close, wait]))
+        self.assertIn("REIST_EPIPE (-32LL)", shell)
+        self.assertIn("REIST_EBADF (-9LL)", shell)
+        release = scheduler.index("scheduler_handle_shell_ipc_release64:")
+        close_handler = scheduler.index("scheduler_handle_shell_ipc_close64:",
+                                        release)
+        release_path = scheduler[release:close_handler]
+        release_validate = release_path.index(
+            "call scheduler_validate_shell_receive_deadline64")
+        release_mutation = release_path.index(
+            "call scheduler_deadline_remove_shell_receive64")
+        self.assertLess(release_validate, release_mutation)
+        for required in (
+            "scheduler_shell_ipc_wait_buffer_direct",
+            "scheduler_shell_ipc_wait_handle",
+            "scheduler_shell_ipc_wait_generation",
+            "TASK_RAX], REIST_EPIPE",
+            "TASK_STATE], TASK_READY",
+        ):
+            self.assertIn(required, release_path)
+        close_end = scheduler.index("scheduler_handle_shell_spawnv64:",
+                                    close_handler)
+        close_path = scheduler[close_handler:close_end]
+        close_validate = close_path.index(
+            "call scheduler_validate_shell_ipc_send_wait64")
+        close_mutation = close_path.index(
+            "call scheduler_deadline_remove_shell_send64")
+        self.assertLess(close_validate, close_mutation)
+        for required in (
+            "call scheduler_clear_shell_ipc_send_wait64",
+            "TASK_RAX], REIST_EBADF", "TASK_STATE], TASK_READY",
+            "scheduler_shell_ipc_endpoint_active], 0",
+        ):
+            self.assertIn(required, close_path)
+        validator = scheduler.index("scheduler_validate_shell_ipc_send_wait64:")
+        clear_wait = scheduler.index("scheduler_clear_shell_ipc_send_wait64:",
+                                     validator)
+        validator_path = scheduler[validator:clear_wait]
+        self.assertIn("0x0038376E656B6F74", validator_path)
+        self.assertIn("0x0039376E656B6F74", validator_path)
 
     def test_user_page_tables_are_private_fixed_and_wx(self):
         source = self.read("arch/x86_64/proc/user_execution.asm")

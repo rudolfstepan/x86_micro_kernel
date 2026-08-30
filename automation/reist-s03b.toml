@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R8.2r-x86_64-ipc-revocation-wakeup"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -13232,7 +13232,7 @@ evidence = [
 
 [[packages]]
 id = "R8.2r-x86_64-ipc-revocation-wakeup"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Prove generation-scoped x86_64 IPC revocation wakeups"
@@ -13267,7 +13267,13 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "ipc: revoke x86_64 blocked peers safely"
-evidence = []
+evidence = [
+  "All 55 final x86_64 source-contract tests passed, including the generation-scoped release and close wakeup ordering and fixed ABI checks.",
+  "The final native Windows x86_64 build linked the 155244-byte bootstrap, 3600-byte shell, 912-byte child and unchanged C handoff artifacts.",
+  "The real single-vCPU QEMU runtime completed both RUN generations through peer release EPIPE, redelegation, token78/token79 close EBADF, WAIT reap and final RING3_SHELL_OK.",
+  "The runtime defect was a missing bounded child yield after redelegation: round-robin scheduling otherwise ran token79 before the parent could publish token78; the exact empty redelegated state is now validated before yielding.",
+  "No syscall number, packed task record, handle encoding, message layout, fixed queue capacity, i386 artifact or C handoff changed."
+]
 
 [[packages]]
 id = "R4.1c-curl-large-transfer"

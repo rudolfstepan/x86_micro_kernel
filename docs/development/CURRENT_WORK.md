@@ -4,8 +4,7 @@ Stand: 30. August 2026
 
 Branch/Startpunkt: `working_branch` / `ae9f1a1`
 
-Aktives Thema: `R8.2r-x86_64-ipc-revocation-wakeup` —
-generationsgebundene x86_64-IPC-Revocation-Wakeups.
+Aktives Thema: keines; die vorbereitete Queue ist leer.
 
 `R4.1c-curl-large-transfer` ist abgeschlossen. Große Antworten behalten bei
 laufendem Fortschritt die begrenzte HTTPS-Verbindung; TCP kündigt nach dem
@@ -446,7 +445,7 @@ Snapshot in den frei gewordenen Slot und weckt nur diese Kindgeneration.
 QEMU-`RUN`-Zyklen bestanden bis `RING3_SHELL_OK`. Weitere Senderwaiter und
 tiefere Queues bleiben ausgeschlossen; die x86_64-Queue ist leer.
 
-R8.2r ist aktiv. Beide bestehenden `RUN`-Zyklen behalten zuerst den gesamten
+R8.2r ist abgeschlossen. Beide bestehenden `RUN`-Zyklen behalten zuerst den gesamten
 R8.2q-Ablauf. Danach gibt die exakte Kindgeneration ihre delegierte `SEND`-
 Capability frei, waehrend der Parent auf dem leeren Endpoint blockiert. Nur
 nach vollstaendiger Validierung werden Receive-Deadline und Timer entfernt;
@@ -454,8 +453,10 @@ der Parent erhaelt `EPIPE` bei bytegleichem Ausgabepuffer. Dieselbe noch
 lebende Kindgeneration wird erneut delegiert, `token78` belegt den einzelnen
 Queue-Slot und `token79` blockiert als Send-Snapshot. Owner-`IPC_CLOSE`
 widerruft Queue, Snapshot, beide Capabilities, Deadline, Timer und Endpoint
-und weckt nur dieses Kind mit `EBADF`. ABI und feste Kapazitaeten bleiben
-unveraendert.
+und weckt nur dieses Kind mit `EBADF`. Ein begrenzter Kind-`YIELD` nach der
+erneuten Delegation laesst den Parent vor `token79` exakt `token78` publizieren.
+55 Quellvertragstests, der 155.244-Byte-Build und der reale QEMU-Lauf bis
+`RING3_SHELL_OK` bestanden. ABI und feste Kapazitaeten bleiben unveraendert.
 
 R8.1a hat den Dual-Architekturpfad begonnen. Der vorhandene i386-Kernel samt
 Userspace, BIOS-Images, VMware-/Hardwarepaketen und Installern bleibt der

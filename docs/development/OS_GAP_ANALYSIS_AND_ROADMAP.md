@@ -405,15 +405,17 @@ Folgearbeiten. 54 Quellvertragstests, der warnungsfreie 145.572-Byte-Build und
 zwei native QEMU-`RUN`-Zyklen bestanden bis `RING3_SHELL_OK`; die x86_64-Queue
 ist leer.
 
-**R8.2r ist aktiv:** Der naechste IPC-Lebenszyklusschnitt prueft Widerruf gegen
+**R8.2r ist abgeschlossen:** Der IPC-Lebenszyklusschnitt prueft Widerruf gegen
 beide vorhandenen Blockierarten. Peer-`IPC_RELEASE` muss eine exakt gebundene
 Parent-Receive-Deadline entfernen und nur Generation 40 mit `EPIPE` wecken,
 ohne deren Ausgabepuffer zu veraendern. Nach erneuter Delegation blockiert das
 Kind mit `token79` auf dem von `token78` belegten Slot; Owner-`IPC_CLOSE`
 widerruft Queue, Snapshot, Deadline, Timer, Capabilities und Endpoint und
 weckt nur dieselbe Kindgeneration mit `EBADF`. Beide `RUN`-Zyklen bewahren
-zuvor alle R8.2q-Nachweise. ABI, Handle, Taskrecord und Kapazitaeten bleiben
-unveraendert.
+zuvor alle R8.2q-Nachweise. Der begrenzte Kind-`YIELD` nach erneuter Delegation
+ordnet `token78` vor `token79`. 55 Quellvertragstests, Build und realer QEMU-
+Lauf bestanden bis `RING3_SHELL_OK`; ABI, Handle, Taskrecord und Kapazitaeten
+bleiben unveraendert.
 
 Der grafische Ring-3-Launcher bleibt vorhanden, ist aber ausdrücklich
 nicht-sicherheitskritisch. Desktop, Netzwerk, Dateisysteme und Diagnose dürfen

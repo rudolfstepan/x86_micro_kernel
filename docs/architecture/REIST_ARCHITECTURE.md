@@ -320,7 +320,7 @@ Der reale Abschlussnachweis durchlief Parent-Timeout und Kind-Dequeue-Wakeup in
 beiden `RUN`-Generationen und erreichte nach vollstaendiger Bereinigung
 `RING3_SHELL_OK`.
 
-R8.2r prueft als aktiver naechster Schnitt die Widerrufsgrenze derselben
+R8.2r prueft abgeschlossen die Widerrufsgrenze derselben
 festen IPC-Ressourcen. Nach den unveraenderten R8.2q-Nachweisen gibt eine
 delegierte Kindgeneration ihre `SEND`-Capability frei, waehrend Generation 40
 auf einem leeren Endpoint wartet. Erst nach exakter Validierung werden
@@ -331,6 +331,9 @@ Send-Snapshot auf dem einzelnen belegten Queue-Slot. `IPC_CLOSE` darf erst
 nach vollstaendiger Pruefung Queue, Snapshot, beide Capabilities, Deadline,
 Timer und Endpoint widerrufen und nur dieses Kind mit `EBADF` wecken. ABI,
 Handlekodierung, Taskrecord und alle festen Kapazitaeten bleiben unveraendert.
+Ein validierter begrenzter Kind-`YIELD` nach der erneuten Delegation stellt in
+der Round-Robin-Runqueue sicher, dass `token78` vor dem `token79`-Snapshot
+publiziert wird; der reale QEMU-Abschluss erreicht `RING3_SHELL_OK`.
 
 ## Minimaler REIST-Kern
 

@@ -671,7 +671,7 @@ Abschlusscleanup hinterliessen Sendphase, Send-Waiter, Timer, Deadline,
 Receive-Waiter, Endpoint, Nachricht, Capabilities, Runqueue, Loader, Tasks und
 Frames null. Weitere Senderwaiter und tiefere Queues bleiben ausgeschlossen.
 
-## Aktiver IPC-Widerrufsnachweis R8.2r
+## Abgeschlossener IPC-Widerrufsnachweis R8.2r
 
 Der naechste begrenzte Schnitt verwendet weiterhin genau einen Endpoint,
 einen 140-Byte-Queue-Slot, je einen Receive- und Send-Waiter sowie die
@@ -688,4 +688,8 @@ Kindgeneration erneut delegiert. `token78` belegt den Queue-Slot, waehrend
 `token79` als kernel-eigener Send-Snapshot blockiert. Owner-`IPC_CLOSE`
 widerruft nach vollstaendiger Validierung Queue, Snapshot, Deadline, Timer,
 beide Capabilities und Endpoint und weckt nur dieses Kind mit `EBADF`.
-Startupstack, opakes Handle, REIST-v1-ABI und alle Kapazitaeten bleiben gleich.
+Ein begrenzter, vollstaendig validierter Kind-`YIELD` nach erneuter Delegation
+ordnet in der Round-Robin-Runqueue die Parent-Publikation von `token78` vor dem
+Kind-Snapshot `token79`. 55 Quellvertragstests, der native Build und beide
+realen QEMU-`RUN`-Generationen bestanden bis `RING3_SHELL_OK`. Startupstack,
+opakes Handle, REIST-v1-ABI und alle Kapazitaeten bleiben gleich.

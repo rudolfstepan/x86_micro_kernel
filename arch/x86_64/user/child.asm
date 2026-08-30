@@ -9,6 +9,7 @@ REIST_SYS_IPC_SEND_TIMEOUT equ 53
 REIST_SYS_IPC_RELEASE equ 58
 REIST_EACCES    equ -13
 REIST_EAGAIN    equ -11
+REIST_EBADF     equ -9
 CHILD_STATUS   equ 77
 FAIL_STATUS    equ 78
 USER_STACK_TOP equ 0x00409000
@@ -129,6 +130,13 @@ _start:
     syscall
     test rax, rax
     jnz .fail
+    mov eax, REIST_SYS_YIELD
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    syscall
+    test rax, rax
+    jnz .fail
     mov eax, REIST_SYS_IPC_RELEASE
     mov rdi, r12
     xor esi, esi
@@ -136,6 +144,21 @@ _start:
     syscall
     test rax, rax
     jnz .fail
+    mov eax, REIST_SYS_YIELD
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    syscall
+    test rax, rax
+    jnz .fail
+    mov byte [rsp + 18], '9'
+    mov eax, REIST_SYS_IPC_SEND_TIMEOUT
+    mov rdi, r12
+    mov rsi, rsp
+    mov edx, IPC_SEND_TIMEOUT_MS
+    syscall
+    cmp rax, REIST_EBADF
+    jne .fail
     mov edi, CHILD_STATUS
     jmp .exit
 .fail:

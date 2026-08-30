@@ -22,6 +22,8 @@ typedef unsigned char shell_u8;
 #define REIST_STDIN 0ULL
 #define REIST_STDOUT 1ULL
 #define REIST_EAGAIN (-11LL)
+#define REIST_EBADF (-9LL)
+#define REIST_EPIPE (-32LL)
 #define REIST_ETIMEDOUT (-110LL)
 #define SHELL_COMMAND_CAPACITY 16U
 #define SHELL_POLL_LIMIT 67108864U
@@ -321,15 +323,40 @@ void _start(void)
                     !ipc_message_is_token(&ipc_message, (shell_u8)'7')) {
                     shell_exit(17ULL);
                 }
+                clear_ipc_message(&ipc_message);
+                ipc_message.version = IPC_MESSAGE_VERSION;
+                ipc_message.struct_size = IPC_MESSAGE_SIZE;
+                if (shell_syscall3(REIST_SYS_IPC_RECEIVE_TIMEOUT,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)&ipc_message,
+                                   IPC_RECEIVE_TIMEOUT_MS) != REIST_EPIPE ||
+                    !ipc_message_is_empty(&ipc_message)) {
+                    shell_exit(26ULL);
+                }
+                if (shell_syscall3(REIST_SYS_IPC_DELEGATE,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)child_pid,
+                                   IPC_RIGHT_SEND) != 0LL) {
+                    shell_exit(27ULL);
+                }
+                prepare_ipc_token(&ipc_message, (shell_u8)'8');
+                if (shell_syscall3(REIST_SYS_IPC_SEND,
+                                   (shell_u64)ipc_handle,
+                                   (shell_u64)&ipc_message, 0ULL) != 0LL) {
+                    shell_exit(28ULL);
+                }
+                if (shell_syscall3(REIST_SYS_YIELD, 0ULL, 0ULL, 0ULL) != 0LL) {
+                    shell_exit(29ULL);
+                }
+                if (shell_syscall3(REIST_SYS_IPC_CLOSE,
+                                   (shell_u64)ipc_handle, 0ULL, 0ULL) != 0LL) {
+                    shell_exit(18ULL);
+                }
                 waited_pid = shell_syscall3(REIST_SYS_WAIT, (shell_u64)child_pid,
                                             (shell_u64)&child_status, 0ULL);
                 if (waited_pid != SHELL_CHILD_PID ||
                     child_status != SHELL_CHILD_STATUS) {
                     shell_exit(13ULL);
-                }
-                if (shell_syscall3(REIST_SYS_IPC_CLOSE,
-                                   (shell_u64)ipc_handle, 0ULL, 0ULL) != 0LL) {
-                    shell_exit(18ULL);
                 }
                 if (!shell_write_exact(run_ok, sizeof(run_ok) - 1U) ||
                     !shell_write_exact(prompt, sizeof(prompt) - 1U)) {
