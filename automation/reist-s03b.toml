@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.4e-desktop-interaction-cadence"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,58 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.4e-desktop-interaction-cadence"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Reduce bounded desktop application and control interaction latency"
+scope = "Reduce the compositor's avoidable idle-to-input and retained-Surface presentation latency without changing GUI ABI, authority or fixed capacities. Replace the five-millisecond idle poll gap with a one-millisecond bounded cadence, drain at most one fixed Surface broker batch per loop before input and one after client-facing input so paint acknowledgements and resulting local damage can reach the same frame turn, and canonicalize bounded dirty rectangles so contained or efficiently mergeable control damage is not rendered through repeated full scene traversals. Preserve edge ordering, synchronous atomic Surface commits, fail-closed overflow, server-owned decorations, cached move/resize correctness, one-vCPU behavior and all watchdog deadlines. Extend render metrics and the QEMU metrics probe only as needed to prove bounded dirty-region count and interaction progress; do not claim a target-hardware frame rate or certification result."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_wm.c",
+  "userspace/gui/compositor/desktop_wm.h",
+  "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/compositor/desktop_surface_runtime.h",
+  "test/test_desktop_source.py",
+  "test/test_desktop_wm_host.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all mouse button and keyboard edges retain their existing order and no motion or Surface input queue grows",
+  "each compositor turn performs only fixed-capacity Surface broker work and every idle wait remains a bounded monotonic one millisecond",
+  "dirty-region canonicalization never omits pixels and capacity exhaustion still falls back to one full-screen region",
+  "retained Surface commits remain synchronous atomic generation-scoped and fail closed before presentation state changes",
+  "cached move resize occlusion culling decorations and client-local coordinates remain pixel correct",
+  "the optimization remains valid on one vCPU and does not add kernel driver device or DMA authority"
+]
+targeted_tests = [
+  "python test/test_desktop_source.py -v",
+  "python test/test_gui_surface_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-metrics",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-guidemo-click"
+]
+stop_conditions = [
+  "lower latency requires busy waiting an unbounded broker drain a larger queue or a weakened watchdog deadline",
+  "button or keyboard edges can be reordered coalesced or dropped",
+  "dirty canonicalization can omit visible pixels or invalidate the cached move transaction",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: reduce desktop interaction latency"
+evidence = []
 
 [[packages]]
 id = "R3.4d-surface-pointer-routing"
