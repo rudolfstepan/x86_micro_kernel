@@ -378,6 +378,14 @@ class DesktopSourceTests(unittest.TestCase):
     def test_audio_surface_probe_uses_packaged_startup_sound(self):
         self.assertIn('"/USR/SHARE/SOUNDS/STARTUP.WAV"', self.source)
         self.assertNotIn('"/USR/SHARE/SOUNDS/440HZ.WAV"', self.source)
+        self.assertIn(
+            "int lifecycle_clock_status = "
+            "x86os_monotonic_ms(&lifecycle_now_ms);",
+            self.source,
+        )
+        self.assertIn("GUIDEMO_INTERACTION_OK", (
+            ROOT / "scripts/run_qemu_runtime_desktop.py"
+        ).read_text(encoding="utf-8"))
 
     def test_navigation_and_program_launch_do_not_compete_with_audio_clients(self):
         explorer_open = self.source[

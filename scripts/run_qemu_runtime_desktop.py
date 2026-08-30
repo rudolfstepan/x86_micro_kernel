@@ -398,9 +398,21 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     print("runtime-desktop: PASS supervised-generation")
                     return 0
                 if sound_probe:
+                    audio_sound_bound = False
+                    audio_client_bound = False
                     while time.monotonic() < deadline:
                         drain(output, transcript)
                         probe_text = "".join(transcript)
+                        if (not audio_sound_bound and
+                                "DESKTOP_AUDIO_STAGE sound-bound" in
+                                probe_text):
+                            audio_sound_bound = True
+                            deadline = time.monotonic() + 15.0
+                        if (not audio_client_bound and
+                                "DESKTOP_AUDIO_STAGE client-bound" in
+                                probe_text):
+                            audio_client_bound = True
+                            deadline = time.monotonic() + 15.0
                         for failure in (
                                 "REIST_GUI COMPOSITOR_RESTARTED",
                                 "REIST_GUI COMPOSITOR_DEGRADED",
@@ -417,6 +429,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                 )
                         if ("SOUNDPLAYER_PLAYBACK_OK" in probe_text and
                                 "GUIDEMO_SURFACE_READY" in probe_text and
+                                "GUIDEMO_INTERACTION_OK" in probe_text and
                                 "DESKTOP_AUDIO_HEARTBEAT_OK" in probe_text):
                             capture_screenshot(process, screenshot, deadline)
                             stop_process(process)

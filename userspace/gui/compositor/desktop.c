@@ -3745,6 +3745,32 @@ static uint32_t committed_surface_owned_by(
     return 0U;
 }
 
+static int enqueue_guidemo_interaction_probe(
+        desktop_surface_manager_t *surfaces) {
+    if (surfaces == 0) return -22;
+    for (uint32_t index = 0U; index < DESKTOP_SURFACE_CAPACITY; ++index) {
+        desktop_surface_slot_t *surface = &surfaces->slots[index];
+        if (!surface->active ||
+            !text_equal(surface->title, "REIST GUI Control Gallery"))
+            continue;
+        const reist_gui_surface_input_t events[3] = {
+            {REIST_GUI_SURFACE_INPUT_POINTER_MOTION,
+             next_surface_input_serial(), 300, 45, 0, 0, 0U, 0U, 0U, 0U},
+            {REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
+             next_surface_input_serial(), 300, 45, 0, 0, 1U, 1U, 0U, 0U},
+            {REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
+             next_surface_input_serial(), 300, 45, 0, 0, 1U, 0U, 0U, 0U},
+        };
+        for (uint32_t event = 0U; event < 3U; ++event) {
+            int status = desktop_surface_input_enqueue(
+                surfaces, surface->owner, surface->handle, &events[event]);
+            if (status != 0) return status;
+        }
+        return 0;
+    }
+    return -2;
+}
+
 static int launch_surface_probe_client(
     desktop_surface_runtime_t *runtime,
     desktop_surface_manager_t *surfaces,
@@ -5547,15 +5573,18 @@ int main(int argc, char **argv) {
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);
         if (sound_probe && probe_status == 0) {
+            x86os_puts("DESKTOP_AUDIO_STAGE sound-bound\n");
             probe_status = desktop_lifecycle_publish_progress(
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);
             if (probe_status == 0)
                 probe_status = launch_surface_probe_client(
                     &surface_runtime, &surfaces,
-                    "/USR/GUI/BIN/GUIDEMO.PRG", 0,
+                    "/USR/GUI/BIN/GUIDEMO.PRG", "--interaction-probe",
                     lifecycle_supervised, &lifecycle_sequence,
                     &lifecycle_heartbeat_ms);
+            if (probe_status == 0)
+                probe_status = enqueue_guidemo_interaction_probe(&surfaces);
         }
         if (surface_probe) {
             if (probe_status == 0)
@@ -5628,8 +5657,9 @@ int main(int argc, char **argv) {
     for (;;) {
         desktop_system_sound_poll(&system_sounds);
         uint64_t lifecycle_now_ms = 0U;
+        int lifecycle_clock_status = x86os_monotonic_ms(&lifecycle_now_ms);
         if (lifecycle_supervised &&
-            (x86os_monotonic_ms(&lifecycle_now_ms) != 0 ||
+            (lifecycle_clock_status != 0 ||
             lifecycle_now_ms < lifecycle_heartbeat_ms ||
             lifecycle_now_ms - lifecycle_heartbeat_ms >= 500U)) {
             if (x86os_reist_report(
@@ -5645,6 +5675,7 @@ int main(int argc, char **argv) {
          * client.  Crossing the supervisor's two-second deadline here proves
          * that delegated playback never blocked compositor progress. */
         if (sound_probe && !sound_probe_reported &&
+            lifecycle_clock_status == 0 &&
             sound_probe_started_ms != 0U &&
             lifecycle_now_ms >= sound_probe_started_ms &&
             lifecycle_now_ms - sound_probe_started_ms >= 2500U &&

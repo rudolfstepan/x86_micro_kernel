@@ -196,7 +196,18 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("--sound-probe", self.runtime_runner)
         self.assertIn("SOUNDPLAYER_PLAYBACK_OK", self.runtime_runner)
         self.assertIn("GUIDEMO_SURFACE_READY", self.runtime_runner)
+        self.assertIn("GUIDEMO_INTERACTION_OK", self.runtime_runner)
         self.assertIn("DESKTOP_AUDIO_HEARTBEAT_OK", self.runtime_runner)
+        self.assertIn('"DESKTOP_AUDIO_STAGE sound-bound"',
+                      self.runtime_runner)
+        self.assertIn("deadline = time.monotonic() + 15.0",
+                      self.runtime_runner)
+        self.assertIn('"DESKTOP_AUDIO_STAGE client-bound"',
+                      self.runtime_runner)
+        self.assertGreaterEqual(
+            self.runtime_runner.count("deadline = time.monotonic() + 15.0"),
+            2,
+        )
         self.assertIn("REIST_GUI COMPOSITOR_RESTARTED", self.runtime_runner)
         self.assertIn("REIST_GUI COMPOSITOR_DEGRADED", self.runtime_runner)
         self.assertIn("validate_system_sound_wave", self.runtime_runner)

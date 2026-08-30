@@ -57,6 +57,30 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         self.assertIn("GALLERY_SURFACE_CREATE_ATTEMPTS 250U", self.source)
         self.assertIn("x86os_sleep_ms(5U)", self.source)
 
+    def test_centered_text_is_clipped_to_the_surface_before_paint(self):
+        self.assertIn(
+            "uint32_t available_width = display->width - (uint32_t)x;",
+            self.source,
+        )
+        self.assertIn(
+            "if (maximum_width > available_width) maximum_width = "
+            "available_width;",
+            self.source,
+        )
+        self.assertIn("GUIDEMO_PAINT_FAIL status=", self.source)
+
+    def test_gallery_uses_server_window_decorations_and_real_pointer_input(self):
+        render_start = self.source.index("static void render_gallery(")
+        render_end = self.source.index("static void render_dialog(",
+                                       render_start)
+        renderer = self.source[render_start:render_end]
+        self.assertIn("gallery_client_area", self.source)
+        self.assertNotIn("gallery_frame", self.source)
+        self.assertNotIn('"REIST GUI Control Gallery"', renderer)
+        self.assertIn("GUIDEMO_INTERACTION_OK", self.source)
+        self.assertIn('text_equal(argv[2], "--interaction-probe")',
+                      self.source)
+
     def test_basic_control_layout_has_one_label_and_outline_only_focus(self):
         self.assertNotIn("Implementierte Basis-Controls", self.source)
         self.assertIn("static void outline(", self.source)

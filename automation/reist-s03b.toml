@@ -11,6 +11,69 @@ external_writes = false
 push = false
 
 [[packages]]
+id = "R3.4c-guidemo-first-frame"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Restore the Control Gallery first retained Surface frame"
+scope = "Diagnose and remove the bounded first-frame failure of GUIDEMO.PRG after successful Surface create and configure. Enforce the native decorated-window contract for Control Gallery and Notepad: the compositor owns the outer frame title move resize focus and close controls while each application paints only its local client area using bounded GUI controls. Keep fixed retained-paint capacities, synchronous atomic commit, process isolation and compositor heartbeat deadlines unchanged, and prove a visible interactive Gallery Surface in QEMU."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/apps/control_gallery/main.c",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "test/test_gui_control_gallery_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_gui_surface_source.py",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "GUIDEMO publishes SURFACE_READY only after one successful retained paint commit",
+  "every retained paint list remains fixed-capacity and an overflow fails before committed state changes",
+  "the repair does not widen Surface IPC queues compositor heartbeat deadlines or process authority",
+  "the runtime harness grants each reached sound-bound and client-bound phase a separate fixed fifteen-second observation budget",
+  "all gallery redraws remain finite and preserve menu dialog control and configure behavior",
+  "legacy Surface clients and the four-layer Notepad rendering contract remain compatible"
+]
+targeted_tests = [
+  "python test/test_gui_control_gallery_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-audio"
+]
+stop_conditions = [
+  "GUIDEMO still exits between GUIDEMO_OK and GUIDEMO_SURFACE_READY",
+  "the first frame requires an unbounded list queue retry or deadline increase",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "gui: restore control gallery rendering"
+evidence = [
+  "All 96 final Control Gallery Notepad Surface Desktop and runtime-source checks passed including freestanding C11 compilation and the native client-area contract.",
+  "The final QEMU framebuffer package passed in 34 seconds.",
+  "The real runtime-desktop-audio gate passed with captured stereo S16 audio GUIDEMO_SURFACE_READY GUIDEMO_INTERACTION_OK and DESKTOP_AUDIO_HEARTBEAT_OK.",
+  "The retained Gallery first-frame failure was an out-of-bounds centered text width at x=656 width=184 on an 800-pixel Surface; clipping to the remaining client width removed EINVAL without widening any capacity.",
+  "Runtime screenshots show exactly one compositor-owned title frame for REIST GUI Control Gallery and REIST Editor; the Gallery interaction probe selected the Eingabe tab through motion press and release Surface events."
+]
+
+[[packages]]
 id = "R3.4b-notepad-interaction-layers"
 status = "done"
 phase = "post-s0"

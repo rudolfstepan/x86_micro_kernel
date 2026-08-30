@@ -4315,3 +4315,16 @@ erneuert beim Scrollen keine Basis- oder Menuekommandos mehr und beim Hover
 nur den alten/neuen Hervorhebungsbereich. Die Optimierung setzt keine zweite
 CPU voraus; verbleibende Unterschiede zwischen Ein- und Mehr-vCPU-Profilen
 sind getrennt als SMP-Contention zu untersuchen.
+
+# R3.4c: native dekorierte GUI-Fenster
+
+Top-Level- und Dialog-Surfaces sind verbindlich reine Clientflaechen mit
+lokalem Ursprung `(0, 0)`. Der Compositor besitzt als Non-Client-Vertrag den
+einzigen aeusseren Rahmen, Titel, Fokus, Move, Resize und Close. Control Gallery
+zeichnet deshalb kein Fenster im Fenster mehr; Notepad verwendet denselben
+Vertrag. Ein QEMU-Probe muss nach dem ersten atomaren Paint einen vollstaendigen
+Pointer-Klick durch den Surface-Eventkanal bis zum Tabwechsel sowie einen
+weiterlaufenden Compositor-Heartbeat nachweisen. Gemeinsame thematische
+Control-Renderer fuer einfachere Quellportierungen bleiben ein eigener
+Ausbauschritt; Win32-, Qt-, GTK- oder Wayland-Kompatibilitaet wird nicht
+behauptet.

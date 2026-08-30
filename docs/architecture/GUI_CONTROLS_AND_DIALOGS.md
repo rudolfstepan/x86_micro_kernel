@@ -18,6 +18,16 @@ Fensterdekoration und Eingaberouting. Ein Surface-Client besitzt nur seine
 lokale Oberfläche und die Controls darin; Notepad und Image Viewer verwenden
 diesen Vertrag bereits produktiv.
 
+Top-Level- und Dialog-Surfaces bezeichnen ausschließlich die Clientfläche.
+Der Window Manager zeichnet genau einen äußeren Rahmen samt Titel, Fokus,
+Verschieben, Größenänderung und Schließen. Anwendungen dürfen darin keinen
+zweiten Fensterrahmen und keine zweite Titelleiste nachbilden. Paint- und
+Pointerkoordinaten beginnen immer bei `(0, 0)` der Clientfläche. Diese
+Aufteilung entspricht der etablierten Trennung von Client- und Non-Client-Area
+bei nativen Desktoptoolkits; `libreistgui` stellt die portierbaren Controls und
+Layoutzustände bereit, ohne Win32-, Qt-, GTK- oder Wayland-Kompatibilität zu
+behaupten. Control Gallery und Notepad folgen demselben Vertrag.
+
 ```text
 GUI-Anwendung
   -> Layout und Controls aus libreistgui

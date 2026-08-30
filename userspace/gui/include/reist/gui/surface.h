@@ -65,6 +65,10 @@ enum reist_gui_surface_message_type {
     REIST_GUI_SURFACE_BUFFER_RELEASE
 };
 
+/* TOPLEVEL and DIALOG describe client areas, not complete windows. The
+ * compositor owns the outer frame, title, focus, move, resize and close
+ * affordances. Paint rectangles and pointer coordinates are always local to
+ * the undecorated client area with origin (0, 0). */
 enum reist_gui_surface_role {
     REIST_GUI_SURFACE_ROLE_NONE = 0U,
     REIST_GUI_SURFACE_ROLE_TOPLEVEL = 1U,

@@ -1138,3 +1138,15 @@ ersetzt nur sichtbaren Text, Cursor, Scrollleisten und Status. Ein Wechsel des
 Menue-Hovers uebertraegt hoechstens vier Kommandos fuer aktiven Titel und
 markierten Eintrag. Damit sinken IPC- und Repaint-Arbeit unabhaengig von SMP;
 eine einzelne CPU ist der Referenzpfad.
+
+# R3.4c native GUI-Clientflaechen
+
+Control Gallery und Notepad verwenden unter dem Desktop ausschliesslich ihre
+lokale Clientflaeche. Rahmen, Titel, Fokus, Verschieben, Groessenaenderung und
+Schliessen rendert der Window Manager genau einmal. GUIDEMO zeichnet keinen
+inneren Fensterrahmen mehr; sein zuvor fehlender erster Frame entstand durch
+eine zentrierte Textbreite ausserhalb der 800-Pixel-Surface und wird nun vor
+dem Paint auf die verbleibende Clientbreite begrenzt. Der Runtime-Nachweis
+wechselt den zweiten Tab ueber echte Motion-, Press- und Release-Ereignisse und
+beobachtet danach den fortlaufenden Compositor-Heartbeat. Notepad erfuellt
+denselben Vertrag mit dem OS-Titel `REIST Editor` und ohne eigene Titelleiste.

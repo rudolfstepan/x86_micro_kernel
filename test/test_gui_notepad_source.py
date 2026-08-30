@@ -56,6 +56,19 @@ class GuiNotepadSourceTests(unittest.TestCase):
             "paint_surface != 0 ? color_face : color_desktop", self.source
         )
 
+    def test_surface_mode_paints_client_content_without_window_decorations(self):
+        start = self.source.index("static void render_base_scene(")
+        end = self.source.index("static void render_dynamic_scene(", start)
+        base_scene = self.source[start:end]
+        self.assertIn("render_editor_chrome(display, state)", base_scene)
+        self.assertNotIn('"REIST Editor"', base_scene)
+        self.assertNotIn("color_active", base_scene)
+        self.assertIn(
+            'reist_gui_surface_client_set_title(\n'
+            '                &surface_client, "REIST Editor")',
+            self.source,
+        )
+
     def test_app_has_real_editing_persistence_and_dialog_flows(self):
         for contract in (
             "reist_gui_text_editor_dispatch",
