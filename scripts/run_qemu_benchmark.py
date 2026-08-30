@@ -25,6 +25,8 @@ TABLE_MARKER = "REIST OS System Benchmark"
 DONE_MARKER = "BENCHMARK_STATUS phase=complete"
 EXPECTED_STATUS = (
     "BENCHMARK_STATUS phase=cpu",
+    "BENCHMARK_STATUS phase=cpu-single",
+    "BENCHMARK_STATUS phase=cpu-multi",
     "BENCHMARK_STATUS phase=ram-write",
     "BENCHMARK_STATUS phase=ram-read",
     "BENCHMARK_STATUS phase=hdd-create",
@@ -46,6 +48,10 @@ EXPECTED_STATUS = (
 STATUS_PATTERN = re.compile(r"^BENCHMARK_STATUS[^\r\n]*$", re.MULTILINE)
 ROW_PATTERN = re.compile(
     r"\|\s*HDD\s*\|\s*(Seq\. (?:Schreiben|Lesen))\s*\|"
+    r"\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|"
+)
+CPU_ROW_PATTERN = re.compile(
+    r"\|\s*CPU\s*\|\s*(Single CPU|Multi CPU gesamt|Multi/Single)\s*\|"
     r"\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|"
 )
 
@@ -170,6 +176,23 @@ def run(qemu: Path, image: Path, timeout: float, log: Path, smp: int = 1) -> int
                 f"HDD {name} failed: value={rows[name][0]} "
                 f"status={rows[name][1]}"
             )
+
+    cpu_rows = {
+        match.group(1): (match.group(2).strip(), match.group(3).strip())
+        for match in CPU_ROW_PATTERN.finditer(text)
+    }
+    required_cpu_rows = ("Single CPU", "Multi CPU gesamt", "Multi/Single")
+    for name in required_cpu_rows:
+        if error is None and name not in cpu_rows:
+            error = f"missing CPU result row: {name}"
+        elif error is None and smp == 1 and name != "Single CPU" and not (
+                cpu_rows[name][0] == "-" and cpu_rows[name][1] == "N/V"):
+            error = (f"CPU {name} must be unavailable with one CPU: "
+                     f"value={cpu_rows[name][0]} status={cpu_rows[name][1]}")
+        elif error is None and (smp > 1 or name == "Single CPU") and (
+                cpu_rows[name][0] == "-" or cpu_rows[name][1] != "OK"):
+            error = (f"CPU {name} failed: value={cpu_rows[name][0]} "
+                     f"status={cpu_rows[name][1]}")
 
     if error is not None:
         print(

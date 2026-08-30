@@ -71,6 +71,65 @@ evidence = [
 ]
 
 [[packages]]
+id = "R7.1k-cpu-scaling-benchmark"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Measure realistic single-CPU and multi-CPU scaling"
+scope = "Extend BENCHMARK.PRG with matched single-process and synchronized multi-process integer workloads. Expose only a versioned read-only online-CPU topology query, launch exactly one bounded worker per online CPU before a shared monotonic start deadline, exclude process construction from the measured interval, verify every worker exit, and report aggregate throughput plus scaling without claiming core affinity or hardware certification. Preserve the existing RAM, storage and VGA measurements and all cleanup contracts."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/reist/abi/syscall.h",
+  "lib/libc/stdlib.h",
+  "scripts/generate_syscall_abi.py",
+  "scripts/run_qemu_benchmark.py",
+  "userspace/sdk/include/reist/abi/syscall.h",
+  "userspace/sdk/include/x86os.h",
+  "userspace/sdk/x86os.c",
+  "kernel/syscall/syscall_table.c",
+  "kernel/proc/process.h",
+  "userspace/programs/benchmark.c",
+  "test/test_syscall_abi_source.py",
+  "test/test_benchmark_source.py",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "single and multi CPU results count the same fixed integer operation mix and multi throughput is aggregate useful work",
+  "worker creation completes before the shared monotonic start and is excluded from measured time",
+  "the worker count equals the reported online CPU count and is capped at the architectural maximum of sixteen",
+  "every spawn wait workload and deadline is finite and a failed late or missing worker invalidates the multi CPU result",
+  "the topology syscall is append-only read-only versioned fixed-size and validates the complete user output before copying",
+  "no result claims affinity dedicated cores certification or deterministic performance",
+  "existing disk byte verification private cleanup and framebuffer console restoration remain unchanged"
+]
+targeted_tests = [
+  "python test/test_syscall_abi_source.py -v",
+  "python test/test_benchmark_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_benchmark.py --image build/reist-os.img --timeout 120 --smp 4 --log build/codex-agent/r7.1k-benchmark-runtime.log"
+]
+stop_conditions = [
+  "the measured multi CPU interval includes process image loading or uses unsynchronized worker starts",
+  "a worker failure can still publish a throughput or scaling value",
+  "the topology query grants control authority or exposes mutable kernel state",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file",
+  "a frozen gate still fails after one focused in-scope repair"
+]
+commit_message = "tools: measure CPU scaling"
+evidence = [
+  "The append-only syscall ABI contains 127 contiguous entries and all 5 ABI source and generator checks passed.",
+  "All 8 bounded benchmark source packaging phase cleanup and synchronized CPU scaling checks passed.",
+  "The final QEMU VGA package passed in 13 seconds with the rebuilt BENCHMARK.PRG and syscall 126.",
+  "The hardened real four-vCPU QEMU runtime passed in 32.516 seconds and required 909.95 MOp/s single CPU 1079.13 MOp/s aggregate multi CPU and 1.18x scaling from four successful synchronized workers; HDD byte verification cleanup and shell return also passed."
+]
+
+[[packages]]
 id = "R3.4a-notepad-menu-overlay"
 status = "done"
 phase = "post-s0"

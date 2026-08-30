@@ -1141,6 +1141,16 @@ int x86os_drive_info(uint32_t index, x86os_drive_info_t* info) {
                               (uintptr_t)info, 0);
 }
 
+int x86os_cpu_topology(x86os_cpu_topology_t* topology) {
+    if (topology == NULL) return -22;
+    topology->version = X86OS_CPU_TOPOLOGY_VERSION;
+    topology->struct_size = sizeof(*topology);
+    return (int)x86os_syscall(X86OS_SYS_CPU_TOPOLOGY,
+                              (uintptr_t)topology,
+                              sizeof(*topology),
+                              X86OS_CPU_TOPOLOGY_VERSION);
+}
+
 int x86os_boot_status(x86os_boot_status_t *status) {
     if (status == NULL) return -22;
     return (int)x86os_syscall(X86OS_SYS_BOOT_STATUS,

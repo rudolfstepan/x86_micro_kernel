@@ -146,7 +146,8 @@ enum {
     X86OS_SYS_FSTAT = 122,
     X86OS_SYS_FTRUNCATE = 123,
     X86OS_SYS_STORAGE_BULK = 124,
-    X86OS_SYS_KERNEL_LOG_READ = 125
+    X86OS_SYS_KERNEL_LOG_READ = 125,
+    X86OS_SYS_CPU_TOPOLOGY = 126
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -400,6 +401,15 @@ typedef struct {
     uint64_t syscall_max_cycles;
     uint64_t clock_anomalies;
 } x86os_runtime_timing_t;
+
+#define X86OS_CPU_TOPOLOGY_VERSION 1U
+#define X86OS_CPU_TOPOLOGY_MAX_CPUS 16U
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t online_cpu_count;
+    uint32_t reserved;
+} x86os_cpu_topology_t;
 
 #define X86OS_IPC_MAX_MESSAGE_SIZE 128U
 #define X86OS_IPC_BULK_MAX_MESSAGE_SIZE 2048U
@@ -2001,6 +2011,7 @@ int x86os_getpid(void);
 int x86os_spawn(const char* path);
 int x86os_spawnv(const char* path, int argc, const char* const* argv);
 int x86os_wait(int pid, int* status);
+int x86os_cpu_topology(x86os_cpu_topology_t* topology);
 int x86os_process_info(uint32_t index, x86os_process_info_t* info);
 int x86os_process_identity(x86os_process_identity_t* identity);
 int x86os_process_identity_of(int pid,
