@@ -4,7 +4,12 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: keines; `N2b-copy-source-authority` ist abgeschlossen. Die
+Aktives Thema: `N2c-document-loader-authority`. BASIC LOAD und die letzte
+redundante Notepad-Dateidialog-Lesevorprüfung wechseln vollständig auf die
+bereits vorhandene generationgebundene Ring-3-Objektautorität; beide
+Speicherpfade und jede Mutation bleiben unverändert.
+
+`N2b-copy-source-authority` ist abgeschlossen. Die
 Quellseite von `COPY.PRG` verwendet ein generationgebundenes Ring-3-Storage-
 Objekt mit READ-/STAT-Rechten; Zielerzeugung und -mutation bleiben
 unverändert. 58 Targeted-Checks, VGA-Paketbuild und der reale

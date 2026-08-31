@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N2c-document-loader-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,58 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N2c-document-loader-authority"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Move remaining interactive document loads to Ring-3 VFS authority"
+scope = "Migrate the BASIC LOAD command from legacy SYS_STAT/SYS_OPEN/SYS_READ descriptors to one parser-authoritative generation-scoped Ring-3 storage-service object with only READ and STAT rights. Validate regular-file type and BASIC_MAX_SERIALIZED_SIZE before allocation, read exactly the bound object size through fixed-capacity bulk requests, require EOF and successful close before replacing the current program, and close on every post-open failure. Remove the redundant legacy SYS_STAT preflight from the Notepad Open-dialog completion so its already migrated load_document object is the sole read authority. Preserve BASIC SAVE, Notepad save, all mutation, editor, Surface, command syntax and public ABI behavior. Prove real interactive BASIC startup, packaged README load, EXIT and shell return plus the existing Notepad document runtime."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/build_system_programs.py",
+  "userspace/bin/basic.c",
+  "userspace/gui/apps/notepad/main.c",
+  "scripts/run_qemu_system_layout.py",
+  "test/test_system_layout.py",
+  "test/test_shell_source.py",
+  "test/test_gui_notepad_source.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "BASIC LOAD resolves its path exactly once through one object with READ and STAT rights and uses no legacy stat open read or close syscall",
+  "type size exact content EOF and close are validated before the current BASIC program can be replaced",
+  "allocation failure parse failure short read stale generation and every other post-open error close the object and preserve the prior program",
+  "Notepad Open completion delegates all existence type size and content validation to its single object-backed load_document path",
+  "BASIC SAVE Notepad save all mutation command syntax public ABI kernel VFS and service implementation remain unchanged",
+  "all reads waits retries allocations and parser work retain fixed capacity or explicit size bounds and monotonic deadlines"
+]
+targeted_tests = [
+  "python test/test_shell_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-notepad"
+]
+stop_conditions = [
+  "document loading requires a new syscall parser kernel filesystem policy or mutation change",
+  "a failed load can replace the prior BASIC program leak an object or silently use legacy read authority",
+  "interactive BASIC load EXIT shell return or packaged Notepad document load fails",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: move interactive document loads to Ring 3"
+evidence = []
 
 [[packages]]
 id = "N2b-copy-source-authority"
