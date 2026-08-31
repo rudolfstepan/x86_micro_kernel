@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N2d-chkdsk-readonly-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,60 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N2d-chkdsk-readonly-authority"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Run CHKDSK path scans under Ring-3 VFS parser authority"
+scope = "Migrate only the generic read-only path mode of packaged CHKDSK.PRG from legacy SYS_STAT/SYS_OPEN/SYS_READ/SYS_READDIR_BATCH calls to the existing parser-authoritative Ring-3 VFS stat, readdir-at and generation-scoped file-object clients. Keep the existing 256-node, 256-byte path and 512-byte read-buffer capacities, add one absolute monotonic 60-second scan deadline shared by every nested request, and add a local object-session timeout update so each operation is bounded by the remaining scan budget. Validate regular-file metadata through the same object before exact-size content reads, and publish success only after every object closes and the traversal completes without partial results. Preserve every --fat12 diagnosis, lease, repair, journal, remap, replica, confirmation and mutation request byte-for-byte. Prove the real packaged read-only scan against /htdocs plus all existing FAT12 maintenance contracts."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/build_system_programs.py",
+  "userspace/programs/chkdsk.c",
+  "userspace/storage/include/reist/vfs_file_client.h",
+  "userspace/storage/lib/vfs_file_client.c",
+  "scripts/run_qemu_system_layout.py",
+  "test/test_system_layout.py",
+  "test/test_fat12_maintenance.py",
+  "test/test_fat12_tools.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/filesystems/FAT12_IMPROVEMENTS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "generic CHKDSK path mode uses only Ring-3 stat readdir-at and object read clients and has no legacy namespace or content syscall",
+  "one absolute monotonic deadline bounds successful traversal and every scan request receives only its nonzero remaining budget while fail-closed cleanup remains independently bounded",
+  "each file object is opened with READ and STAT rights and validates type exact size EOF and close before the scan can succeed",
+  "node path read and directory capacities remain fixed and no partial traversal can emit the success marker",
+  "all FAT12 maintenance operations requests confirmations journals leases repairs and mutations remain unchanged",
+  "public command syntax syscall ABI kernel VFS storage service and media formats remain unchanged and the object-client timeout API is additive"
+]
+targeted_tests = [
+  "python test/test_fat12_maintenance.py -v",
+  "python test/test_fat12_tools.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode storage-maintenance"
+]
+stop_conditions = [
+  "the read-only scan requires a new syscall kernel parser mutation authority or change to a FAT12 maintenance request",
+  "deadline or capacity exhaustion can publish success leak an object or silently fall back to legacy VFS",
+  "the real /htdocs scan or any existing FAT12 maintenance gate regresses",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: move CHKDSK scans to Ring 3"
+evidence = []
 
 [[packages]]
 id = "N2c-document-loader-authority"

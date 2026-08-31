@@ -4,7 +4,12 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: keines; `N2c-document-loader-authority` ist abgeschlossen.
+Aktives Thema: `N2d-chkdsk-readonly-authority`. Der generische read-only
+Pfadmodus von `CHKDSK.PRG` wechselt auf Ring-3-Stat-, Readdir- und
+Objektclients mit einer gemeinsamen absoluten Scanfrist. Alle FAT12-
+Maintenance- und Mutationsrequests bleiben unverändert.
+
+`N2c-document-loader-authority` ist abgeschlossen.
 BASIC LOAD verwendet vollständig die generationgebundene Ring-3-
 Objektautorität; die redundante Notepad-Dateidialog-Lesevorprüfung ist
 entfernt. 73 Targeted-Checks, Framebuffer-Paketbuild, interaktiver BASIC-
