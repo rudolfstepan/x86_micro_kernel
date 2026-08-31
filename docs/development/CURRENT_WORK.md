@@ -4,7 +4,11 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: keines; `N2-control-panel-config-authority` ist abgeschlossen.
+Aktives Thema: `N2b-copy-source-authority`. Ausschließlich die Quellseite von
+`COPY.PRG` wechselt auf ein generationgebundenes Ring-3-Storage-Objekt mit
+READ-/STAT-Rechten; Zielerzeugung und -mutation bleiben unverändert.
+
+`N2-control-panel-config-authority` ist abgeschlossen.
 Der gemeinsame read-only Konfigurationsladepfad aller vier Control-Panel-
 Applets verwendet generationgebundene Ring-3-Storage-Objekte mit READ-/STAT-
 Rechten. Die `CONFIG.PRG`-Mutations-, Autorisierungs- und Persistenzgrenze

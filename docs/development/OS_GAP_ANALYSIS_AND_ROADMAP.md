@@ -3115,12 +3115,15 @@ durch den Status des ausführbaren Pakets aktualisiert.
    read-only Namensraumspfad vertikal umstellen. Abnahme: identische positive
    und negative Ergebnisse, begrenzte Parserarbeit sowie Crash-, Hang-,
    Restart- und stale-Generation-Nachweis ohne Verlust anderer Dienste.
-2. [x] **N2 · Parser-Autorität in Ring 3 vervollständigen.** Aufbauend auf N1
+2. [~] **N2 · Parser-Autorität in Ring 3 vervollständigen.** Aufbauend auf N1
    schrittweise FAT- und EXT2-Parserzustand, Objektlebenszyklen und
    Mediengenerationen aus dem Kernel entfernen. Ring 0 vermittelt nur
    validierte Blockressourcen, Capabilities, Quoten und Fences. Abnahme:
    maschinenlesbares Kernel-Restinventar und Fault-Injection für beschädigte,
    übergroße und während des Lesens gewechselte Medien.
+   `N2-control-panel-config-authority` ist als erster Client-Schnitt
+   abgeschlossen; `N2b-copy-source-authority` migriert als aktives Folgepaket
+   ausschließlich die Leseautorität der COPY-Quelle.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und

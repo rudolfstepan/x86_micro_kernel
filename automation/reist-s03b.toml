@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N2b-copy-source-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,54 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N2b-copy-source-authority"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Read COPY sources through Ring-3 VFS object authority"
+scope = "Migrate only the source side of packaged COPY.PRG from legacy SYS_OPEN/SYS_READ descriptors to the existing parser-authoritative generation-scoped Ring-3 storage-service object ABI. Open the source with only READ and STAT rights, validate a regular file, copy through a fixed 512-byte buffer with bounded one-second requests, reject stale malformed timeout read or close failures, and close the source object on every post-open exit. Preserve destination create write close semantics, mutation authority, overwrite behavior, public command syntax and success text. Prove a real shell copy of the packaged README, authoritative CAT readback, cleanup and shell liveness."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/build_system_programs.py",
+  "userspace/programs/copy.c",
+  "scripts/run_qemu_system_layout.py",
+  "test/test_system_layout.py",
+  "test/test_shell_source.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "COPY source path resolution and all source reads use one generation-scoped storage object with only READ and STAT rights",
+  "source type is validated before destination creation and every post-open error closes the source object",
+  "destination create write close mutation journal and overwrite semantics remain on the unchanged legacy descriptor path",
+  "no read write wait retry buffer or file count grows beyond an existing fixed capacity or deadline",
+  "a source or destination failure never emits the success marker and shell liveness is retained",
+  "public command syntax output ABI kernel VFS and storage-service implementation remain unchanged"
+]
+targeted_tests = [
+  "python test/test_shell_source.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout"
+]
+stop_conditions = [
+  "source migration requires a new syscall parser kernel filesystem policy or destination mutation change",
+  "a source failure can leak an object publish partial success or silently fall back to legacy source reads",
+  "the real copy readback cleanup or shell return fails",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: read copy sources through Ring 3"
+evidence = []
 
 [[packages]]
 id = "N2-control-panel-config-authority"
