@@ -4,9 +4,12 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: keines; `active_id` ist leer. Beim nächsten Lauf wird der
-nächste begrenzte N2-Schnitt aus dem verbleibenden Legacy-Leseinventar
-abgegrenzt und erst danach aktiviert.
+Aktives Thema: `N2e-audio-wave-read-authority`. Der gemeinsame WAV-Preview-
+Loader von `WAVPLAY.PRG` und `SOUNDPLAYER.PRG` wird als ein kohärenter
+read-only Schnitt auf genau ein generationgebundenes Ring-3-VFS-Objekt mit
+READ-/STAT-Rechten und absoluter 60-Sekunden-Ladefrist umgestellt. Audio-
+Service, HDA, Surface, Wiedergabe, Assets und Dateisystemmutationen bleiben
+außerhalb des Pakets.
 
 `N2d-chkdsk-readonly-authority` ist abgeschlossen. Der generische read-only
 Pfadmodus von `CHKDSK.PRG` verwendet Ring-3-Stat-, Readdir-at- und

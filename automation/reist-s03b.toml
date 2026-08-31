@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N2e-audio-wave-read-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,55 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N2e-audio-wave-read-authority"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Read shared WAV previews through Ring-3 VFS object authority"
+scope = "Migrate the shared public RIFF/WAVE preview loader used by packaged WAVPLAY.PRG and SOUNDPLAYER.PRG from legacy SYS_STAT/SYS_OPEN/SYS_READ/SYS_CLOSE descriptors to exactly one parser-authoritative generation-scoped Ring-3 VFS object with only READ and STAT rights. Resolve the path once, validate regular-file metadata through that object, retain the existing 512-byte header, 16-chunk, 512-byte transfer and 15360-frame limits, and bound open, fstat, every forward-only read and successful close by one absolute monotonic 60-second load deadline. Preserve accepted PCM format, mono duplication, preview truncation, error publication, audio service, HDA driver, playback, Surface, public audio ABI and system-sound assets. Package the VFS client implementation inside the public audio archive so ordinary SDK consumers of libreistaudio retain a complete conventional static-library link. Prove exact read, EOF, close, timeout and failure cleanup in a host harness, both packaged clients in the production build, and the real Sound Player Surface/audio runtime."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/audio/lib/audio_wave.c",
+  "scripts/build_user_sdk.py",
+  "test/test_audio_source.py",
+  "test/test_audio_wave_vfs_host.c",
+  "docs/architecture/AUDIO_SUBSYSTEM.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the shared WAV loader contains no legacy stat open read or close syscall and resolves each path exactly once through one object",
+  "the object receives only READ and STAT rights and regular-file type and size are read from the same generation-scoped object before content parsing",
+  "one absolute monotonic 60-second deadline bounds open fstat every read and successful close while failure cleanup remains independently bounded",
+  "header chunk transfer frame and sample capacities plus PCM validation mono duplication preview truncation and public result publication remain unchanged",
+  "every post-open failure closes or retires the local object session and no partial info structure is published",
+  "libreistaudio remains a complete conventional static archive for SDK consumers and both packaged clients link without private build-only fallbacks",
+  "audio service HDA driver DMA Surface playback public ABI assets and every filesystem mutation remain unchanged"
+]
+targeted_tests = [
+  "python test/test_audio_source.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-audio"
+]
+stop_conditions = [
+  "the loader requires a new syscall storage operation parser path seek mutation or public audio ABI change",
+  "deadline or read failure can publish partial wave metadata leak an object or silently fall back to legacy VFS",
+  "either packaged audio client fails to link or the real Sound Player cannot load and play the packaged startup wave",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: move shared WAV loading to Ring 3"
+evidence = []
 
 [[packages]]
 id = "N2d-chkdsk-readonly-authority"
