@@ -4,8 +4,10 @@
 
 #include "reist/audio.h"
 #include "reist/audio_wave.h"
+#include "reist/vfs_file_client.h"
 
 #define WAVE_FORMAT_PCM 1U
+#define WAVE_LOAD_DEADLINE_MS 60000U
 
 typedef struct wave_description {
     uint32_t data_offset;
@@ -98,15 +100,79 @@ int reist_audio_wave_parse_header(const uint8_t *bytes, uint32_t available,
     return result;
 }
 #else
-static int read_exact(int descriptor, uint8_t *buffer, uint32_t amount) {
+typedef struct wave_load_budget {
+    uint64_t start_ms;
+    uint64_t deadline_ms;
+} wave_load_budget_t;
+
+static int load_budget_start(wave_load_budget_t *budget) {
+    if (budget == NULL || x86os_monotonic_ms(&budget->start_ms) != 0)
+        return -5;
+    budget->deadline_ms = UINT64_MAX - budget->start_ms <
+        WAVE_LOAD_DEADLINE_MS ? UINT64_MAX :
+        budget->start_ms + WAVE_LOAD_DEADLINE_MS;
+    return 0;
+}
+
+static int load_budget_remaining(const wave_load_budget_t *budget,
+                                 uint32_t *remaining_ms) {
+    if (budget == NULL || remaining_ms == NULL) return -22;
+    uint64_t now = 0U;
+    if (x86os_monotonic_ms(&now) != 0 || now < budget->start_ms) return -5;
+    if (now >= budget->deadline_ms) return -110;
+    uint64_t remaining = budget->deadline_ms - now;
+    if (remaining > WAVE_LOAD_DEADLINE_MS) remaining = WAVE_LOAD_DEADLINE_MS;
+    *remaining_ms = (uint32_t)remaining;
+    return *remaining_ms == 0U ? -110 : 0;
+}
+
+static int prepare_request(reist_vfs_file_handle_t handle,
+                           const wave_load_budget_t *budget) {
+    uint32_t remaining_ms = 0U;
+    int result = load_budget_remaining(budget, &remaining_ms);
+    if (result != 0) return result;
+    return reist_vfs_file_set_timeout(handle, remaining_ms);
+}
+
+static int read_exact(reist_vfs_file_handle_t handle,
+                      const wave_load_budget_t *budget,
+                      uint8_t *buffer, uint32_t amount) {
     uint32_t completed = 0U;
     while (completed < amount) {
-        int result = x86os_read(descriptor, &buffer[completed], amount - completed);
+        int result = prepare_request(handle, budget);
+        if (result != 0) return result;
+        result = reist_vfs_file_read_bulk(
+            handle, &buffer[completed], amount - completed);
         if (result <= 0) return result < 0 ? result : -5;
         if ((uint32_t)result > amount - completed) return -84;
         completed += (uint32_t)result;
     }
     return 0;
+}
+
+static int close_object(reist_vfs_file_handle_t handle,
+                        const wave_load_budget_t *budget, int result) {
+    if (result != 0) {
+        /* Failure cleanup does not consume the remaining load budget. */
+        (void)reist_vfs_file_set_timeout(handle, 1U);
+        (void)reist_vfs_file_close(handle);
+        return result;
+    }
+    uint32_t remaining_ms = 0U;
+    int budget_status = load_budget_remaining(budget, &remaining_ms);
+    if (budget_status == 0) {
+        int timeout_status = reist_vfs_file_set_timeout(handle, remaining_ms);
+        if (timeout_status != 0) result = timeout_status;
+    } else {
+        /* Cleanup is still bounded after an exhausted load deadline. */
+        (void)reist_vfs_file_set_timeout(handle, 1U);
+        result = budget_status;
+    }
+    int close_status = reist_vfs_file_close(handle);
+    if (result == 0 && close_status != 0) result = close_status;
+    if (result == 0 && load_budget_remaining(budget, &remaining_ms) != 0)
+        result = -110;
+    return result;
 }
 
 static int16_t decode_sample(const uint8_t *source) {
@@ -133,14 +199,27 @@ int reist_audio_wave_load_preview(const char *path, int16_t *samples,
     if (path == NULL || samples == NULL || info == NULL ||
         capacity_frames == 0U || capacity_frames > REIST_AUDIO_MAX_STREAM_FRAMES)
         return -22;
+    wave_load_budget_t budget;
+    int result = load_budget_start(&budget);
+    if (result != 0) return result;
+    uint32_t open_timeout_ms = 0U;
+    result = load_budget_remaining(&budget, &open_timeout_ms);
+    if (result != 0) return result;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    result = reist_vfs_file_open_rights(
+        path, open_timeout_ms,
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &handle);
+    if (result != 0) return result;
     x86os_file_info_t file;
-    if (x86os_stat(path, &file) != 0 || file.type != X86OS_FILE || file.size < 20U)
-        return -2;
-    int descriptor = x86os_open(path);
-    if (descriptor < 0) return descriptor;
+    result = prepare_request(handle, &budget);
+    if (result == 0) result = reist_vfs_file_fstat(handle, &file);
+    if (result == 0 && (file.type != X86OS_FILE || file.size < 20U))
+        result = -2;
     uint8_t header[REIST_AUDIO_WAVE_HEADER_CAPACITY];
-    uint32_t header_bytes = file.size < sizeof(header) ? file.size : sizeof(header);
-    int result = read_exact(descriptor, header, header_bytes);
+    uint32_t header_bytes = 0U;
+    if (result == 0)
+        header_bytes = file.size < sizeof(header) ? file.size : sizeof(header);
+    if (result == 0) result = read_exact(handle, &budget, header, header_bytes);
     wave_description_t wave;
     uint32_t source_frames = 0U;
     uint32_t frames = 0U;
@@ -174,7 +253,7 @@ int reist_audio_wave_load_preview(const char *path, int16_t *samples,
             input[index] = header[wave.data_offset +
                 prefix_bytes - pending_bytes + index];
         uint32_t needed = wave.block_align - pending_bytes;
-        result = read_exact(descriptor, &input[pending_bytes], needed);
+        result = read_exact(handle, &budget, &input[pending_bytes], needed);
         if (result == 0) {
             decode_frames(input, 1U, &wave, samples, completed);
             ++completed;
@@ -193,15 +272,14 @@ int reist_audio_wave_load_preview(const char *path, int16_t *samples,
             result = -84;
             break;
         }
-        result = read_exact(descriptor, input, chunk * wave.block_align);
+        result = read_exact(handle, &budget, input, chunk * wave.block_align);
         if (result == 0) {
             decode_frames(input, chunk, &wave, samples, completed);
             completed += chunk;
             consumed_bytes += chunk * wave.block_align;
         }
     }
-    int closed = x86os_close(descriptor);
-    if (result == 0 && closed != 0) result = closed;
+    result = close_object(handle, &budget, result);
     if (result != 0) return result;
     reist_audio_wave_info_t published = {
         REIST_AUDIO_WAVE_API_VERSION, sizeof(reist_audio_wave_info_t),

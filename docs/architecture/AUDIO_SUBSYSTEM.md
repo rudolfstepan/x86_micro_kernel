@@ -245,7 +245,24 @@ Host-Parserfixture und wird nicht in das Systemimage installiert.
 
 Parser und bounded Preview-Loader gehören zur öffentlichen
 `<reist/audio_wave.h>`-Schicht und werden von `WAVPLAY` und `SOUNDPLAYER`
-gemeinsam verwendet. Jede Datei wird genau einmal geöffnet; bereits zusammen
+gemeinsam verwendet. Der gemeinsame Loader löst den Pfad genau einmal über ein
+generationgebundenes Ring-3-VFS-Objekt mit ausschließlich READ-/STAT-Rechten
+auf. Metadaten, regulärer Dateityp und sämtliche vorwärts gerichteten Reads
+stammen aus derselben Objektgeneration; direkte Legacy-Stat-/Open-/Read-/Close-
+Syscalls sind nicht Teil dieses Pfads. Eine absolute monotone 60-Sekunden-
+Ladefrist wird vor Fstat, jedem höchstens 512 Byte großen Read und dem für den
+Erfolg erforderlichen Close auf das verbleibende Budget verkürzt. Ablauf,
+Short-Read, veraltete Generation und Close-Fehler publizieren keine
+`reist_audio_wave_info_t`; die lokale Fehlerbereinigung bleibt separat auf
+höchstens eine Millisekunde begrenzt.
+
+`libreistaudio.a` enthält die feste VFS-Objektclient- und Pfadauflösung selbst,
+damit ein gewöhnlicher SDK-Link gegen die öffentliche Audiobibliothek keinen
+privaten Buildgraph benötigt. Das verlagert keinen Parser und keine
+Dateisystemmutation in die Audiobibliothek: Namensraum- und Medienparser bleiben
+im generationgebundenen Storage-Service, während die Bibliothek nur dessen
+versionierten read-only Objektvertrag nutzt. Jede Datei wird genau einmal
+geöffnet; bereits zusammen
 mit dem 512-Byte-Header gelesene PCM-Daten werden direkt übernommen, danach
 wird nur vorwärts weitergelesen. Die Desktop-Dateizuordnung `.wav` startet den grafischen
 Player mit dem kanonischen Dateipfad. Dieser bietet Abspielen, Stoppen und

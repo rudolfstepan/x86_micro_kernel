@@ -4,12 +4,19 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N2e-audio-wave-read-authority`. Der gemeinsame WAV-Preview-
-Loader von `WAVPLAY.PRG` und `SOUNDPLAYER.PRG` wird als ein kohärenter
-read-only Schnitt auf genau ein generationgebundenes Ring-3-VFS-Objekt mit
-READ-/STAT-Rechten und absoluter 60-Sekunden-Ladefrist umgestellt. Audio-
-Service, HDA, Surface, Wiedergabe, Assets und Dateisystemmutationen bleiben
-außerhalb des Pakets.
+Aktives Thema: keines; `active_id` ist leer. Der nächste Lauf grenzt aus dem
+verbleibenden mutationsgekoppelten Editor-, Konfigurations- und Desktop-
+Inventar genau einen weiteren N2-Schnitt ab.
+
+`N2e-audio-wave-read-authority` ist abgeschlossen. Der gemeinsame WAV-
+Preview-Loader von `WAVPLAY.PRG` und `SOUNDPLAYER.PRG` verwendet genau ein
+generationgebundenes Ring-3-VFS-Objekt mit READ-/STAT-Rechten und absoluter
+60-Sekunden-Ladefrist. `libreistaudio.a` enthält den festen Objektclient und
+die kanonische Pfadauflösung als vollständige SDK-Linkabhängigkeit. 52
+Targeted-Checks, der QEMU-Framebuffer-Paketbuild und der reale Sound-Player-
+Surface-Lauf mit gültiger Stereo-S16-Aufzeichnung sind bestanden. Audio-
+Service, HDA, DMA, Surface, Wiedergabe, Assets, öffentliche ABI und
+Dateisystemmutationen blieben unverändert.
 
 `N2d-chkdsk-readonly-authority` ist abgeschlossen. Der generische read-only
 Pfadmodus von `CHKDSK.PRG` verwendet Ring-3-Stat-, Readdir-at- und

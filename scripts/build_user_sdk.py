@@ -26,6 +26,8 @@ CORE_ROOT = ROOT / "userspace" / "sdk"
 CORE_INCLUDE_ROOT = CORE_ROOT / "include"
 GUI_INCLUDE_ROOT = ROOT / "userspace" / "gui" / "include"
 AUDIO_INCLUDE_ROOT = ROOT / "userspace" / "audio" / "include"
+STORAGE_INCLUDE_ROOT = ROOT / "userspace" / "storage" / "include"
+STORAGE_LIBRARY_ROOT = ROOT / "userspace" / "storage" / "lib"
 IMAGE_INCLUDE_ROOT = ROOT / "userspace" / "image" / "include"
 CONFIG_INCLUDE_ROOT = ROOT / "userspace" / "config" / "include"
 TLS_ROOT = ROOT / "userspace" / "tls"
@@ -87,6 +89,8 @@ GUI_LIBRARY_SOURCES = (
 AUDIO_LIBRARY_SOURCES = (
     ROOT / "userspace" / "audio" / "lib" / "audio.c",
     ROOT / "userspace" / "audio" / "lib" / "audio_wave.c",
+    STORAGE_LIBRARY_ROOT / "vfs_file_client.c",
+    STORAGE_LIBRARY_ROOT / "vfs_path.c",
 )
 IMAGE_LIBRARY_SOURCES = (
     ROOT / "userspace" / "image" / "lib" / "image.c",
@@ -300,6 +304,7 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     audio_headers = tuple(
         header for root, header in public_headers
         if root == AUDIO_INCLUDE_ROOT)
+    storage_headers = tuple(STORAGE_INCLUDE_ROOT.rglob("*.h"))
     image_headers = tuple(
         header for root, header in public_headers
         if root == IMAGE_INCLUDE_ROOT)
@@ -317,11 +322,12 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         *TLS_WRAPPER_SOURCES,
     )
     if (not core_headers or not gui_headers or not audio_headers or
+            not storage_headers or
             not image_headers or not config_headers or not tls_headers or any(
             not source.is_file()
             for source in (*all_sources, *core_headers, *gui_headers,
-                           *audio_headers, *image_headers, *config_headers,
-                           *tls_headers, MBEDTLS_ARCHIVE))):
+                           *audio_headers, *storage_headers, *image_headers,
+                           *config_headers, *tls_headers, MBEDTLS_ARCHIVE))):
         raise FileNotFoundError("REIST SDK sources are incomplete")
 
     for root, header in public_headers:
@@ -347,7 +353,8 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         (*GUI_LIBRARY_SOURCES, *core_headers, *gui_headers), incremental)
     audio_stale = artifact_requires_rebuild(
         artifacts.audio_library,
-        (*AUDIO_LIBRARY_SOURCES, *core_headers, *audio_headers), incremental)
+        (*AUDIO_LIBRARY_SOURCES, *core_headers, *audio_headers,
+         *storage_headers), incremental)
     image_stale = artifact_requires_rebuild(
         artifacts.image_library,
         (*IMAGE_LIBRARY_SOURCES, *image_headers), incremental)
@@ -371,7 +378,7 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
             temporary_path / "zig-local")
         prefix = freestanding_compile_prefix(
             zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
-                  CONFIG_INCLUDE_ROOT])
+                  CONFIG_INCLUDE_ROOT, STORAGE_INCLUDE_ROOT])
 
         if startup_stale:
             startup = compile_objects(

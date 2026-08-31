@@ -25,6 +25,7 @@ class AudioSubsystemTests(unittest.TestCase):
                 compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-I", str(ROOT / "userspace/audio/include"),
                 "-I", str(ROOT / "userspace/sdk/include"),
+                "-I", str(ROOT / "userspace/storage/include"),
                 "-I", str(ROOT / "userspace/drivers/audio"),
             ]
             if extra:
@@ -98,6 +99,13 @@ class AudioSubsystemTests(unittest.TestCase):
         self.compile_and_run(
             "audio-sdk-test.exe",
             ["userspace/audio/lib/audio.c", "test/test_audio_sdk_host.c"],
+        )
+
+    def test_wave_loader_uses_one_bounded_read_only_vfs_object(self):
+        self.compile_and_run(
+            "audio-wave-vfs-test.exe",
+            ["userspace/audio/lib/audio_wave.c",
+             "test/test_audio_wave_vfs_host.c"],
         )
 
     def test_public_abi_is_versioned_fixed_and_pcm_only(self):
@@ -310,6 +318,9 @@ class AudioSubsystemTests(unittest.TestCase):
             self.assertIn(f"usr/share/sounds/{sound}.wav", makefile)
             self.assertIn(f"'{sound}'", windows)
         self.assertIn("libreistaudio.a", sdk)
+        self.assertIn('STORAGE_LIBRARY_ROOT / "vfs_file_client.c"', sdk)
+        self.assertIn('STORAGE_LIBRARY_ROOT / "vfs_path.c"', sdk)
+        self.assertIn("STORAGE_INCLUDE_ROOT", sdk)
         self.assertIn("reist-audio.pc", sdk)
         self.assertIn("intel-hda,msi=off,debug=1", runner)
         self.assertIn("hda-output,audiodev=reistaudio,debug=1", runner)
@@ -372,7 +383,16 @@ class AudioSubsystemTests(unittest.TestCase):
         main = soundplayer[soundplayer.index("int main(int argc") :]
         self.assertLess(main.index("int audio_result = begin_audio(&state)"),
                         main.index("reist_gui_surface_client_init"))
-        self.assertEqual(wave.count("x86os_open(path)"), 1)
+        for legacy in ("x86os_stat(", "x86os_open(", "x86os_read(",
+                       "x86os_close("):
+            self.assertNotIn(legacy, wave)
+        self.assertEqual(wave.count("reist_vfs_file_open_rights("), 1)
+        self.assertIn("REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT",
+                      wave)
+        self.assertIn("reist_vfs_file_fstat", wave)
+        self.assertIn("reist_vfs_file_read_bulk", wave)
+        self.assertIn("reist_vfs_file_set_timeout", wave)
+        self.assertIn("reist_vfs_file_close", wave)
         self.assertNotIn("skip_exact", wave)
         self.assertIn('x86os_puts("SOUNDPLAYER_PLAYBACK_OK\\n")', soundplayer)
         for stage in ("connect", "open", "write", "start"):
@@ -398,6 +418,12 @@ class AudioSubsystemTests(unittest.TestCase):
         for term in ("Ring 3", "S16_LE", "48 kHz", "Generation",
                      "Bus-Mastering", "libreistaudio"):
             self.assertIn(term, architecture)
+        for term in ("READ-/STAT", "60-Sekunden", "VFS-Objekt"):
+            self.assertIn(term, architecture)
+        vfs = self.read("docs/filesystems/VFS_ARCHITECTURE.md")
+        self.assertIn("WAVPLAY", vfs)
+        self.assertIn("SOUNDPLAYER", vfs)
+        self.assertIn("libreistaudio.a", vfs)
         self.assertIn("QEMU", package)
         self.assertIn("VMware", package)
 

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2e-audio-wave-read-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "N2e-audio-wave-read-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Read shared WAV previews through Ring-3 VFS object authority"
@@ -57,7 +57,13 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: move shared WAV loading to Ring 3"
-evidence = []
+evidence = [
+  "All four targeted groups passed with 52 checks across the audio host contracts, VFS object sessions, canonical system layout and the complete userspace SDK and production-program toolchain.",
+  "The host WAV harness proved one READ-and-STAT object, exact bounded reads, mono decoding, deadline expiry, short read, fstat failure, close failure, cleanup and non-publication of partial wave metadata.",
+  "The final QEMU framebuffer package passed in 36 seconds with both WAVPLAY.PRG and SOUNDPLAYER.PRG linked through the complete conventional libreistaudio.a archive.",
+  "The final real QEMU Sound Player Surface runtime loaded the packaged startup wave through the Ring-3 object path and passed with a valid stereo S16 capture of 15349 frames, 15348 active frames and peak 12451.",
+  "Audio service HDA DMA Surface playback assets public ABI and filesystem mutation behavior remained unchanged; no queued package remains and active_id is empty."
+]
 
 [[packages]]
 id = "N2d-chkdsk-readonly-authority"

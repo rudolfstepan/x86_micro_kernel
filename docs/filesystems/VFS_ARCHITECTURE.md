@@ -173,6 +173,15 @@ Bulk-Collect-Autorität mehr. Der Kernel akzeptiert aus dieser Domain neben den
 exklusiven FAT12-Operationen 11 bis 30 nur den bestehenden geschützten
 VFS-Shadow-Umschlag; Bulk-Reads, generische Writes, Formatierung und
 Blockzugriff bleiben verweigert.
+Der gemeinsame WAV-Preview-Lader von `WAVPLAY.PRG` und `SOUNDPLAYER.PRG`
+verwendet ebenfalls genau ein `READ|STAT`-Objekt. Die unveränderten 512-Byte-
+Header-, 16-Chunk-, 512-Byte-Transfer- und 15360-Frame-Grenzen liegen unter
+einer gemeinsamen absoluten monotonen 60-Sekunden-Frist. Fstat, alle
+vorwärtsgerichteten Reads und der erfolgreiche Close erhalten nur deren
+Restbudget; Fehler publizieren keine Wave-Infostruktur. `libreistaudio.a`
+enthält Objektclient und kanonische Pfadauflösung als feste interne
+Linkabhängigkeit, aber weder Parser- noch Mutationsautorität: Beide bleiben im
+generationgebundenen Ring-3-Storage-Service.
 Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits
