@@ -14,6 +14,7 @@
  */
 
 #include "x86os.h"
+#include "reist/vfs_file_client.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -705,13 +706,24 @@ void cmd_load(const char* filename) {
 
     printf("Loading %s...\n", full_filename);
 
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int open_status = reist_vfs_file_open_rights(
+        full_filename, REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &handle);
+    if (open_status != 0) {
+        printf("ERROR: Could not find file '%s'\n", full_filename);
+        return;
+    }
     x86os_file_info_t info;
-    if (x86os_stat(full_filename, &info) != 0 || info.type != X86OS_FILE) {
+    int stat_status = reist_vfs_file_fstat(handle, &info);
+    if (stat_status != 0 || info.type != X86OS_FILE) {
+        (void)reist_vfs_file_close(handle);
         printf("ERROR: Could not find file '%s'\n", full_filename);
         return;
     }
     uint32_t file_size = info.size;
     if (file_size > BASIC_MAX_SERIALIZED_SIZE) {
+        (void)reist_vfs_file_close(handle);
         printf("ERROR: File is too large (%u bytes, maximum %u)\n",
                file_size, (unsigned int)BASIC_MAX_SERIALIZED_SIZE);
         return;
@@ -719,20 +731,22 @@ void cmd_load(const char* filename) {
 
     char* file_buffer = (char*)malloc((size_t)file_size + 1u);
     if (!file_buffer) {
+        (void)reist_vfs_file_close(handle);
         printf("ERROR: Not enough memory to load file\n");
         return;
     }
 
-    int descriptor = x86os_open(full_filename);
     uint32_t loaded_size = 0;
-    while (descriptor >= 0 && loaded_size < file_size) {
-        int amount = x86os_read(descriptor, file_buffer + loaded_size,
-                                file_size - loaded_size);
+    while (loaded_size < file_size) {
+        int amount = reist_vfs_file_read_bulk(
+            handle, file_buffer + loaded_size, file_size - loaded_size);
         if (amount <= 0) break;
         loaded_size += (uint32_t)amount;
     }
-    if (descriptor >= 0) (void)x86os_close(descriptor);
-    if (descriptor < 0 || loaded_size != file_size) {
+    char extra = 0;
+    int extra_status = reist_vfs_file_read(handle, &extra, 1U);
+    int close_status = reist_vfs_file_close(handle);
+    if (loaded_size != file_size || extra_status != 0 || close_status != 0) {
         printf("ERROR: Could not load file '%s'\n", full_filename);
         free(file_buffer);
         return;

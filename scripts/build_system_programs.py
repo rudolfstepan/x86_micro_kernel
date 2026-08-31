@@ -45,7 +45,11 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "SAVE.PRG": ROOT / "userspace/programs/save.c",
-    "BASIC.PRG": ROOT / "userspace/bin/basic.c",
+    "BASIC.PRG": (
+        ROOT / "userspace/bin/basic.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "SPAWN.PRG": ROOT / "userspace/programs/spawn.c",
     "PS.PRG": ROOT / "userspace/programs/ps.c",
     "KILL.PRG": ROOT / "userspace/programs/kill.c",

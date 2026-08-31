@@ -106,6 +106,7 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
             ("cat /copy-vfs.txt", "REIST OS"),
             ("del /copy-vfs.txt", "del /copy-vfs.txt"),
             ("stat /copy-vfs.txt", "stat: path not found"),
+            ("save /vfsload.bas 10 print 1", "save /vfsload.bas 10 print 1"),
         ]
         for command, marker in commands:
             if error is not None:
@@ -113,6 +114,36 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
             error, position = send_and_wait(
                 process, chunks, transcript, finished, command, marker,
                 deadline, position,
+            )
+        if error is None:
+            inject(process, "basic")
+            error, position = smoke.wait_for_line(
+                process, chunks, transcript, finished,
+                "Commands: RUN, LIST, NEW, LOAD, SAVE, EXIT, HELP",
+                deadline, after=position,
+            )
+        if error is None:
+            inject(process, "load /vfsload.bas")
+            error, position = smoke.wait_for_line(
+                process, chunks, transcript, finished,
+                "Loaded 11 bytes successfully.", deadline, after=position,
+            )
+        if error is None:
+            inject(process, "exit")
+            error, position = smoke.wait_for_line(
+                process, chunks, transcript, finished, smoke.SHELL_PROMPT,
+                deadline, after=position,
+            )
+        if error is None:
+            error, position = send_and_wait(
+                process, chunks, transcript, finished,
+                "del /vfsload.bas", "del /vfsload.bas", deadline, position,
+            )
+        if error is None:
+            error, position = send_and_wait(
+                process, chunks, transcript, finished,
+                "stat /vfsload.bas", "stat: path not found", deadline,
+                position,
             )
     except (OSError, RuntimeError, TimeoutError, ValueError) as caught:
         error = str(caught)
@@ -134,7 +165,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--qemu", type=Path, required=True)
     parser.add_argument("--image", type=Path, required=True)
-    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--timeout", type=float, default=150.0)
     parser.add_argument(
         "--log", type=Path, default=Path("build/test-results/system-layout.log")
     )

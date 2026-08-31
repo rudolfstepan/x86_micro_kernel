@@ -151,6 +151,12 @@ ausschließlich Aufgabe des getrennten `CONFIG.PRG`-Dienstprozesses.
 Storage-Objekt mit `READ|STAT`, während ausschließlich der Zielpfad die
 bestehende mutierende VFS-Deskriptorautorität behält. Ein Quellfehler oder
 stale Objekt kann daher keine erfolgreiche Kopie publizieren.
+Auch BASIC `LOAD` verwendet ein einzelnes `READ|STAT`-Objekt. Die bestehende
+Maximalgröße wird vor der Allokation geprüft; exakt gebundener Inhalt, EOF und
+Close müssen vor dem atomaren Austausch des aktuellen Programms erfolgreich
+sein. Der Notepad-Dateidialog besitzt keine getrennte Legacy-Stat-Vorprüfung
+mehr, sondern überlässt Existenz, Typ, Größe und Inhalt demselben bereits
+objektgebundenen Ladepfad.
 Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits

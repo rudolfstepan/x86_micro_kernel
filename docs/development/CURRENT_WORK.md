@@ -4,10 +4,11 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N2c-document-loader-authority`. BASIC LOAD und die letzte
-redundante Notepad-Dateidialog-Lesevorprüfung wechseln vollständig auf die
-bereits vorhandene generationgebundene Ring-3-Objektautorität; beide
-Speicherpfade und jede Mutation bleiben unverändert.
+Aktives Thema: keines; `N2c-document-loader-authority` ist abgeschlossen.
+BASIC LOAD verwendet vollständig die generationgebundene Ring-3-
+Objektautorität; die redundante Notepad-Dateidialog-Lesevorprüfung ist
+entfernt. 73 Targeted-Checks, Framebuffer-Paketbuild, interaktiver BASIC-
+Lauf samt Cleanup sowie der Notepad-Desktoplauf sind bestanden.
 
 `N2b-copy-source-authority` ist abgeschlossen. Die
 Quellseite von `COPY.PRG` verwendet ein generationgebundenes Ring-3-Storage-

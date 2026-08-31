@@ -108,6 +108,11 @@ class GuiNotepadSourceTests(unittest.TestCase):
             self.assertNotIn(legacy, load)
         self.assertLess(load.rindex("reist_vfs_file_close(handle)"),
                         load.index("reist_gui_text_editor_set_text("))
+        dialog = self.source[
+            self.source.index("static void complete_file_dialog("):
+            self.source.index("static void request_exit", self.source.index(
+                "static void complete_file_dialog("))]
+        self.assertNotIn("x86os_stat(", dialog)
 
     def test_editor_renders_utf8_on_scalar_boundaries(self):
         self.assertIn("reist_utf8_prefix", self.source)

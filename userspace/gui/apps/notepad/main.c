@@ -1389,12 +1389,6 @@ static void complete_file_dialog(
                        "Zuerst speichern oder den Editor neu starten.");
             return;
         }
-        x86os_file_info_t info;
-        if (x86os_stat(result->path, &info) != 0 || info.type != X86OS_FILE) {
-            open_error(state, display, "Datei wurde nicht gefunden.",
-                       result->path);
-            return;
-        }
         if (!copy_text(state->path, sizeof(state->path), result->path) ||
             load_document(state) != 0 || synchronize_scrollbars(state) != 0)
             open_error(state, display, "Datei konnte nicht gelesen werden.",

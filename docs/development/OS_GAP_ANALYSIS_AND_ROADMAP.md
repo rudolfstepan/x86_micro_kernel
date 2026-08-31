@@ -3123,9 +3123,9 @@ durch den Status des ausführbaren Pakets aktualisiert.
    übergroße und während des Lesens gewechselte Medien.
    `N2-control-panel-config-authority` und `N2b-copy-source-authority` sind als
    erste Client-Schnitte abgeschlossen. Weitere Legacy-Lesekonsumenten bleiben
-   offen; N2 ist deshalb noch nicht abgeschlossen. Aktiver Folgeschnitt ist
-   `N2c-document-loader-authority` für BASIC LOAD und die letzte redundante
-   Notepad-Lesevorprüfung.
+   offen; N2 ist deshalb noch nicht abgeschlossen.
+   `N2c-document-loader-authority` hat BASIC LOAD und die letzte redundante
+   Notepad-Lesevorprüfung abgeschlossen.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und

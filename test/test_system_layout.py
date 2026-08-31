@@ -320,6 +320,26 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn(
             '("stat /copy-vfs.txt", "stat: path not found")', runner)
 
+    def test_runtime_exercises_interactive_basic_object_load(self):
+        source = self.read("userspace/bin/basic.c")
+        runner = self.read("scripts/run_qemu_system_layout.py")
+        self.assertIn('#include "reist/vfs_file_client.h"', source)
+        self.assertIn("reist_vfs_file_open_rights(", source)
+        self.assertIn("reist_vfs_file_read_bulk(", source)
+        load = source[source.index("void cmd_load("):
+                      source.index("void cmd_save(")]
+        for legacy in ("x86os_stat(", "x86os_open(", "x86os_read(",
+                       "x86os_close("):
+            self.assertNotIn(legacy, load)
+        self.assertIn('inject(process, "basic")', runner)
+        self.assertIn(
+            '("save /vfsload.bas 10 print 1", '
+            '"save /vfsload.bas 10 print 1")', runner)
+        self.assertIn('inject(process, "load /vfsload.bas")', runner)
+        self.assertIn('"Loaded 11 bytes successfully."', runner)
+        self.assertIn('inject(process, "exit")', runner)
+        self.assertIn('"stat /vfsload.bas", "stat: path not found"', runner)
+
 
 if __name__ == "__main__":
     unittest.main()

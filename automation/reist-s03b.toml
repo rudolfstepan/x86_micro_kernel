@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2c-document-loader-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,11 +12,11 @@ push = false
 
 [[packages]]
 id = "N2c-document-loader-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Move remaining interactive document loads to Ring-3 VFS authority"
-scope = "Migrate the BASIC LOAD command from legacy SYS_STAT/SYS_OPEN/SYS_READ descriptors to one parser-authoritative generation-scoped Ring-3 storage-service object with only READ and STAT rights. Validate regular-file type and BASIC_MAX_SERIALIZED_SIZE before allocation, read exactly the bound object size through fixed-capacity bulk requests, require EOF and successful close before replacing the current program, and close on every post-open failure. Remove the redundant legacy SYS_STAT preflight from the Notepad Open-dialog completion so its already migrated load_document object is the sole read authority. Preserve BASIC SAVE, Notepad save, all mutation, editor, Surface, command syntax and public ABI behavior. Prove real interactive BASIC startup, packaged README load, EXIT and shell return plus the existing Notepad document runtime."
+scope = "Migrate the BASIC LOAD command from legacy SYS_STAT/SYS_OPEN/SYS_READ descriptors to one parser-authoritative generation-scoped Ring-3 storage-service object with only READ and STAT rights. Validate regular-file type and BASIC_MAX_SERIALIZED_SIZE before allocation, read exactly the bound object size through fixed-capacity bulk requests, require EOF and successful close before replacing the current program, and close on every post-open failure. Remove the redundant legacy SYS_STAT preflight from the Notepad Open-dialog completion so its already migrated load_document object is the sole read authority. Preserve BASIC SAVE, Notepad save, all mutation, editor, Surface, command syntax and public ABI behavior. Prove real shell creation of a bounded BASIC source, interactive BASIC startup and LOAD, EXIT, cleanup and shell return plus the existing Notepad document runtime."
 allowed_files = [
   "automation/reist-s03b.toml",
   "scripts/build_system_programs.py",
@@ -60,7 +60,12 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: move interactive document loads to Ring 3"
-evidence = []
+evidence = [
+  "All five targeted groups passed with 73 checks across shell integration, Notepad loading, VFS object sessions, system layout and userspace toolchain builds.",
+  "The QEMU framebuffer package passed in 34 seconds and built BASIC.PRG with the production Ring-3 VFS object client.",
+  "The real QEMU system-layout run passed in 150 seconds after creating a bounded BASIC source, loading all 11 bytes through BASIC LOAD, exiting to the shell, deleting it and proving absence.",
+  "The real QEMU Notepad document Surface probe passed in 22 seconds after removal of the redundant legacy stat preflight."
+]
 
 [[packages]]
 id = "N2b-copy-source-authority"
