@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N1-notepad-readonly-vfs"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,59 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N1-notepad-readonly-vfs"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Load Notepad documents through generation-scoped Ring-3 VFS objects"
+scope = "Migrate exactly the read-only document-load path of the packaged Notepad client from legacy SYS_STAT/SYS_OPEN/SYS_READ descriptors to the existing parser-authoritative Ring-3 storage-service object ABI. Open with only READ and STAT rights, bind metadata and content to one generation-scoped object, keep every wait deadline-bounded, reject stale or malformed replies without publishing partial editor text, and close the object on every exit. Preserve the existing size limit, UTF-8 editor validation, new-file behavior, Surface lifecycle and all save, fsync, rename, journal and mutation paths. Prove the packaged Notepad loads its real document through the production desktop and retain the independent storage-service crash/restart/stale-generation evidence for the reused object ABI."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/build_system_programs.py",
+  "userspace/gui/apps/notepad/main.c",
+  "test/test_gui_notepad_source.py",
+  "test/test_vfs_file_client.py",
+  "scripts/test-reist-runtime.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "Notepad document loading resolves the path exactly once through a parser-authoritative storage-service object and invokes no legacy stat open read or close syscall",
+  "the object carries only READ and STAT rights and remains bound to the opening client generation service generation and media identity",
+  "metadata size and type are validated before content publication and every read close protocol timeout stale-generation or short-read failure leaves editor text unpublished",
+  "the object is closed on every post-open exit and no wait retry queue read or text buffer grows without a fixed bound",
+  "a missing path retains the existing bounded new-document behavior while malformed service results fail closed",
+  "save fsync rename journal mutation Surface rendering UTF-8 validation public ABI and kernel VFS behavior remain unchanged"
+]
+targeted_tests = [
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_vfs_file_client.py -v",
+  "python test/test_reist_storage_recovery.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-notepad",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode storage-service-restart"
+]
+stop_conditions = [
+  "the Notepad load path requires a new syscall parser kernel filesystem policy or mutation authority",
+  "a failure can publish partial document text leak an object slot or silently fall back to the legacy VFS path",
+  "the packaged Notepad cannot load the reference document through the production desktop or loses shell and compositor liveness",
+  "storage-service crash restart or stale-generation handling regresses",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: migrate Notepad document loading to Ring 3"
+evidence = []
 
 [[packages]]
 id = "R3.4h-vmware-hover-cadence"
