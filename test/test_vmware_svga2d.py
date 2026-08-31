@@ -238,6 +238,7 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("vmware_rect_valid(request->source_x", display[command:publish])
         self.assertIn("vmware_fifo_write_batch(commands, command_count)",
                       display[command:])
+        self.assertIn("vmware_fifo_doorbell_needed", display[command:])
 
     def test_desktop_retains_software_fallback(self):
         desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
@@ -319,6 +320,24 @@ class VmwareSvga2dTests(unittest.TestCase):
                         command_wrapper.index(
                             "display_control_driver_command_locked("))
         self.assertIn("spinlock_acquire_irq(&vmware_fifo_lock)", display)
+        pointer_wrapper = display[display.index(
+            "int display_control_cursor_update("):display.index(
+                "static bool vmware_rect_valid")]
+        self.assertIn("scheduler_preempt_disable()", pointer_wrapper)
+        self.assertIn("kernel_mutex_lock_for(&display_state_mutex",
+                      pointer_wrapper)
+        self.assertIn("&display_state_mutex, 0U", pointer_wrapper)
+        self.assertIn("if (lock_result != 0)", pointer_wrapper)
+        self.assertIn("framebuffer_cursor_update(", pointer_wrapper)
+        self.assertIn("kernel_mutex_unlock(&display_state_mutex)",
+                      pointer_wrapper)
+        self.assertIn("scheduler_preempt_enable()", pointer_wrapper)
+        self.assertLess(pointer_wrapper.index("scheduler_preempt_disable()"),
+                        pointer_wrapper.index("kernel_mutex_lock_for("))
+        self.assertLess(pointer_wrapper.index("kernel_mutex_lock_for("),
+                        pointer_wrapper.rindex("framebuffer_cursor_update("))
+        self.assertLess(pointer_wrapper.rindex("framebuffer_cursor_update("),
+                        pointer_wrapper.rindex("scheduler_preempt_enable()"))
         self.assertIn("VIDEO_DEVICE_BACKEND_VMWARE_SVGA2", kernel)
         self.assertIn("video_ap_mask", kernel)
         self.assertIn("supervisor_set_device_driver_current_affinity(", kernel)

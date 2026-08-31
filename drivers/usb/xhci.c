@@ -40,10 +40,15 @@
 #define XHCI_PORT_RESET_RECOVERY_MS 10U
 #define XHCI_SET_ADDRESS_RECOVERY_MS 2U
 #define XHCI_PORT_MAX_RECOVERY_MS XHCI_PORT_POWER_SETTLE_MS
+#define XHCI_RUNTIME_EVENT_BUDGET 16U
+#define XHCI_IRQ_EVENT_BUDGET     32U
+#define XHCI_VMWARE_EVENT_BUDGET  4U
 
 #define XHCI_INTEL_VENDOR_ID       0x8086U
 #define XHCI_SONY_VENDOR_ID        0x104DU
 #define XHCI_SONY_VAIO_SUBDEVICE   0x90A8U
+#define XHCI_VMWARE_VENDOR_ID      0x15ADU
+#define XHCI_VMWARE_XHCI_DEVICE_ID 0x0779U
 #define XHCI_PCI_SUBSYSTEM_IDS     0x2CU
 #define XHCI_INTEL_XUSB2PR         0xD0U
 #define XHCI_INTEL_USB2PRM         0xD4U
@@ -169,6 +174,7 @@ typedef struct {
     bool event_cycle;
     bool port_change_pending;
     bool runtime_published;
+    bool vmware_profile;
 } xhci_state_t;
 
 typedef struct {
@@ -677,6 +683,8 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
                               uint32_t *status_out, uint32_t *residual_out,
                               uint32_t *pointer_out) {
     bool found = false;
+    uint32_t consumed = 0U;
+    uint32_t requeue_mask = 0U;
     for (uint32_t count = 0U; count < limit; ++count) {
         xhci_trb_t *event = &event_ring[controller.event_index];
         xhci_dma_read_barrier();
@@ -727,7 +735,7 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
                         diagnostics.rejected_mouse_reports++;
                 }
                 xhci_queue_interrupt_report(hid);
-                xhci_ring_doorbell(hid->slot_id, hid->endpoint_id);
+                requeue_mask |= 1U << xhci_hid_index(hid);
             }
         } else if (type == TRB_EVENT_PORT) {
             controller.port_change_pending = true;
@@ -746,6 +754,7 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
          * visible so that, after the consumer-cycle toggle at ring wrap, an
          * entry is not mistaken for a newly produced event before hardware
          * has written it with the new producer cycle. */
+        ++consumed;
         controller.event_index++;
         if (controller.event_index >= XHCI_EVENT_RING_TRBS) {
             controller.event_index = 0U;
@@ -753,8 +762,23 @@ static bool xhci_drain_events(uint32_t limit, uint32_t expected,
         }
         if (found) break;
     }
-    xhci_write64(controller.runtime_base + XHCI_RT_ERDP,
-                 (uint64_t)xhci_dma32(&event_ring[controller.event_index]) | 8U);
+    /* ERDP is an emulated MMIO publication on VMware.  A late legacy IRQ may
+     * arrive after the bounded task fallback has already consumed its event;
+     * do not issue a second, empty publication in that case. */
+    if (consumed != 0U) {
+        xhci_write64(controller.runtime_base + XHCI_RT_ERDP,
+                     (uint64_t)xhci_dma32(&event_ring[controller.event_index]) |
+                         8U);
+    }
+    /* Several completed reports for one endpoint can share the single
+     * bounded doorbell after their replacement TRBs are visible. VMware
+     * emulates each MMIO doorbell synchronously, so ringing once per event
+     * makes a normal pointer batch wait behind avoidable host transitions. */
+    for (uint32_t index = 0U; index < XHCI_MAX_HID_DEVICES; ++index) {
+        xhci_hid_device_t *hid = &hid_devices[index];
+        if ((requeue_mask & (1U << index)) != 0U && hid->online)
+            xhci_ring_doorbell(hid->slot_id, hid->endpoint_id);
+    }
     return found;
 }
 
@@ -1501,7 +1525,9 @@ static void xhci_irq_handler(void *opaque) {
         spinlock_release_irq(&xhci_runtime_lock, flags);
         return;
     }
-    (void)xhci_drain_events(32U, 0U, 0U, NULL, NULL, NULL, NULL);
+    uint32_t event_budget = controller.vmware_profile
+        ? XHCI_VMWARE_EVENT_BUDGET : XHCI_IRQ_EVENT_BUDGET;
+    (void)xhci_drain_events(event_budget, 0U, 0U, NULL, NULL, NULL, NULL);
     /* IMAN.IP is RW1C.  Leaving it asserted keeps the legacy PCI interrupt
      * active even after USBSTS.EINT was acknowledged and can starve the
      * remainder of early boot as soon as the mouse produces reports. */
@@ -1535,6 +1561,8 @@ int xhci_probe(pci_device_t *dev) {
     }
     pci_enable_device(dev);
     memset(&controller, 0, sizeof(controller));
+    controller.vmware_profile = dev->vendor_id == XHCI_VMWARE_VENDOR_ID &&
+        dev->device_id == XHCI_VMWARE_XHCI_DEVICE_ID;
     memset(hid_devices, 0, sizeof(hid_devices));
     controller.mmio = map_mmio_region((uint64_t)(bar & ~0x0FU), XHCI_MMIO_SIZE);
     if (controller.mmio == NULL) {
@@ -1715,13 +1743,16 @@ int xhci_probe(pci_device_t *dev) {
     return 0;
 }
 
-/* Called from task-context console polling.  IRQ context only records changes. */
+/* Called from task-context console polling. IRQ context only records changes.
+ * xhci_drain_events() avoids an empty ERDP MMIO publication itself. */
 void xhci_poll(void) {
     if (irq_in_context()) return;
     uint32_t flags = spinlock_acquire_irq(&xhci_runtime_lock);
     if (controller.runtime_published && controller.mmio != NULL &&
         xhci_any_hid_online())
-        (void)xhci_drain_events(16U, 0U, 0U, NULL, NULL, NULL, NULL);
+        (void)xhci_drain_events(controller.vmware_profile
+                ? XHCI_VMWARE_EVENT_BUDGET : XHCI_RUNTIME_EVENT_BUDGET,
+            0U, 0U, NULL, NULL, NULL, NULL);
     spinlock_release_irq(&xhci_runtime_lock, flags);
 }
 

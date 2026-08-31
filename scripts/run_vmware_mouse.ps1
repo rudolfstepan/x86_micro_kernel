@@ -10,7 +10,8 @@ param(
     [switch]$ExpectCompositorRestart,
     [switch]$Benchmark,
     [switch]$Rename,
-    [switch]$SvgaLifecycle
+    [switch]$SvgaLifecycle,
+    [switch]$HoverCadence
 )
 
 Set-StrictMode -Version Latest
@@ -18,6 +19,9 @@ $ErrorActionPreference = 'Stop'
 $minimumBenchmarkWriteKiB = 95.0
 $minimumBenchmarkReadKiB = 415.0
 $minimumBenchmarkCpuRatio = 0.90
+$maximumHoverFrameMs = 17
+$maximumPointerGapMs = 34
+$maximumMouseBatchReports = 4
 if ($Benchmark -and $ExpectCompositorRestart) {
     throw 'Benchmark and compositor-restart modes are exclusive.'
 }
@@ -27,6 +31,11 @@ if ($Rename -and ($Benchmark -or $ExpectCompositorRestart)) {
 if ($SvgaLifecycle -and
     ($Benchmark -or $Rename -or $ExpectCompositorRestart)) {
     throw 'SVGA lifecycle, rename, benchmark and compositor-restart modes are exclusive.'
+}
+if ($HoverCadence -and
+    ($Benchmark -or $Rename -or $SvgaLifecycle -or
+     $ExpectCompositorRestart)) {
+    throw 'Hover cadence and all other specialized modes are exclusive.'
 }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if (!$SourcePackage) {
@@ -89,6 +98,14 @@ if ($SvgaLifecycle) {
 }
 $requiredAfterDesktop = if ($SvgaLifecycle) {
     @('DESKTOP_ACCELERATION_READY caps=', 'DESKTOP_OK')
+} elseif ($HoverCadence) {
+    @(
+        'DESKTOP_ACCELERATION_READY caps=',
+        'REIST_GUI COMPOSITOR_READY generation=',
+        'DESKTOP_OK',
+        'DESKTOP_EXPLORER_OK',
+        'DESKTOP_HOVER_PROBE_READY'
+    )
 } else {
     @(
         'DESKTOP_ACCELERATION_READY caps=',
@@ -112,6 +129,7 @@ $forbidden = @(
     'ATA_FLUSH_FAILED'
     'desktop: DISPLAY_SOFTWARE_FALLBACK'
     'desktop: SVGA2D-Transaktion status='
+    'DESKTOP_HOVER_FAIL'
 )
 if (!$ExpectCompositorRestart) {
     $forbidden += 'REIST_GUI COMPOSITOR_RESTARTED'
@@ -215,6 +233,157 @@ public static class ReistRfbInput {
         };
         stream.Write(message, 0, message.Length);
         stream.Flush();
+    }
+
+    public sealed class HoverSession : IDisposable {
+        private readonly TcpClient client;
+        private readonly NetworkStream stream;
+        private readonly int width;
+        private readonly int height;
+
+        internal HoverSession(TcpClient client, NetworkStream stream,
+                              int width, int height) {
+            this.client = client;
+            this.stream = stream;
+            this.width = width;
+            this.height = height;
+        }
+
+        private void MovePointerSmooth(int fromX, int fromY,
+                                       int toX, int toY) {
+            int distance = Math.Max(Math.Abs(toX - fromX),
+                                    Math.Abs(toY - fromY));
+            int steps = Math.Max(1, (distance + 1) / 2);
+            for (int step = 1; step <= steps; ++step) {
+                int x = fromX + (toX - fromX) * step / steps;
+                int y = fromY + (toY - fromY) * step / steps;
+                SendPointer(stream, x, y, 0);
+                // Keep the reference path at 60 Hz. Faster RFB injection can
+                // burst replaceable relative reports ahead of VMware's virtual
+                // xHCI path without representing a smoother visible cursor.
+                Thread.Sleep(16);
+            }
+        }
+
+        public bool SendCommand(string command) {
+            if (String.IsNullOrEmpty(command) || command.Length > 32)
+                return false;
+            try {
+                foreach (char character in command) {
+                    if (character < 0x20 || character > 0x7E) return false;
+                    SendKey(stream, character, true);
+                    SendKey(stream, character, false);
+                    Thread.Sleep(20);
+                }
+                SendKey(stream, 0xFF0D, true);
+                SendKey(stream, 0xFF0D, false);
+                return true;
+            }
+            catch {
+                return false;
+            }
+        }
+
+        public bool SendHoverStart() {
+            try {
+                int centerX = width / 2;
+                int centerY = height / 2;
+                int startX = Math.Min(width - 1, 40);
+                int startY = Math.Max(0, height - 15);
+                SendPointer(stream, centerX, centerY, 0);
+                MovePointerSmooth(centerX, centerY, startX, startY);
+                SendPointer(stream, startX, startY, 1);
+                Thread.Sleep(24);
+                SendPointer(stream, startX, startY, 0);
+                Thread.Sleep(100);
+                return true;
+            }
+            catch {
+                return false;
+            }
+        }
+
+        public bool SendHoverItems() {
+            try {
+                int startX = Math.Min(width - 1, 40);
+                int startY = Math.Max(0, height - 15);
+                int itemX = Math.Min(width - 1, 100);
+                int previousX = startX;
+                int previousY = startY;
+                for (int item = 0; item < 6; ++item) {
+                    int itemY = Math.Max(0, height - 41 - item * 24);
+                    MovePointerSmooth(previousX, previousY, itemX, itemY);
+                    Thread.Sleep(100);
+                    previousX = itemX;
+                    previousY = itemY;
+                }
+                return true;
+            }
+            catch {
+                return false;
+            }
+        }
+
+        public void Dispose() {
+            try {
+                stream.Dispose();
+            }
+            finally {
+                client.Dispose();
+            }
+        }
+    }
+
+    public static HoverSession OpenHoverSession(int port) {
+        TcpClient client = null;
+        try {
+            client = new TcpClient();
+            IAsyncResult pending = client.BeginConnect("127.0.0.1", port,
+                                                        null, null);
+            bool connected = pending.AsyncWaitHandle.WaitOne(2000);
+            pending.AsyncWaitHandle.Close();
+            if (!connected) {
+                client.Dispose();
+                return null;
+            }
+            client.EndConnect(pending);
+            client.ReceiveTimeout = 2000;
+            client.SendTimeout = 2000;
+            NetworkStream stream = client.GetStream();
+            string serverVersion = Encoding.ASCII.GetString(
+                ReadExact(stream, 12));
+            if (!serverVersion.StartsWith("RFB 003.008"))
+                throw new InvalidOperationException("RFB version");
+            byte[] version = Encoding.ASCII.GetBytes("RFB 003.008\n");
+            stream.Write(version, 0, version.Length);
+            int securityCount = stream.ReadByte();
+            if (securityCount <= 0)
+                throw new InvalidOperationException("RFB security");
+            byte[] security = ReadExact(stream, securityCount);
+            bool supportsNone = false;
+            foreach (byte kind in security) {
+                if (kind == 1) supportsNone = true;
+            }
+            if (!supportsNone)
+                throw new InvalidOperationException("RFB authentication");
+            stream.WriteByte(1);
+            if (ReadU32(stream) != 0)
+                throw new InvalidOperationException("RFB handshake");
+            stream.WriteByte(1);
+            byte[] geometry = ReadExact(stream, 4);
+            int width = (geometry[0] << 8) | geometry[1];
+            int height = (geometry[2] << 8) | geometry[3];
+            ReadExact(stream, 16);
+            uint nameLength = ReadU32(stream);
+            if (width < 320 || height < 240 || nameLength > 1048576)
+                throw new InvalidOperationException("RFB geometry");
+            ReadExact(stream, (int)nameLength);
+            return new HoverSession(client, stream, width, height);
+        }
+        catch {
+            if (client != null) client.Dispose();
+            return null;
+        }
     }
 
     public static bool SendCommand(int port, string command) {
@@ -330,6 +499,7 @@ public static class ReistRfbInput {
             return false;
         }
     }
+
 }
 '@
 
@@ -339,6 +509,14 @@ function Read-SerialText {
             -ErrorAction SilentlyContinue)
     }
     return ''
+}
+
+function Get-DesktopMarkerText([string]$Text) {
+    # The Ring-3 shell is independent from the desktop process and can publish
+    # its prompt between two serial writes of one desktop marker. Remove only
+    # that known prompt for presence checks; raw evidence and ordering remain
+    # untouched everywhere else.
+    return $Text.Replace($shellMarker, '')
 }
 
 function Assert-NoForbiddenMarker([string]$Text) {
@@ -376,16 +554,68 @@ function Send-BoundedMouseInput([int]$Attempt) {
     return [ReistRfbInput]::SendPointer($vncPort, $Attempt)
 }
 
+function Send-HoverCadenceInput {
+    if ($null -ne $script:hoverSession) {
+        return $script:hoverSession.SendHoverItems()
+    }
+    return $false
+}
+
+function Send-HoverStartInput {
+    if ($null -ne $script:hoverSession) {
+        return $script:hoverSession.SendHoverStart()
+    }
+    return $false
+}
+
+function Refresh-HoverSession {
+    # The desktop command is injected while the guest still presents its
+    # text-mode framebuffer.  VMware can publish a different RFB geometry
+    # once the compositor selects the graphics mode, so never reuse that
+    # pre-graphics connection for absolute pointer coordinates.
+    if ($null -ne $script:hoverSession) {
+        try {
+            $script:hoverSession.Dispose()
+        }
+        catch {
+            # Socket teardown is best effort. A dead pre-graphics connection
+            # must not prevent the graphics-mode session from being opened.
+        }
+        finally {
+            $script:hoverSession = $null
+        }
+    }
+    $script:hoverSession = [ReistRfbInput]::OpenHoverSession($vncPort)
+    if ($null -eq $script:hoverSession) {
+        return $false
+    }
+    'hover graphics-session refreshed transport=rfb-loopback' |
+        Add-Content -LiteralPath $GateLog -Encoding utf8
+    return $true
+}
+
 function Send-ExplicitDesktopCommand {
     $command = if ($SvgaLifecycle) {
         'desktop.prg --render-probe'
+    } elseif ($HoverCadence) {
+        'desktop'
     } else {
         'desktop'
+    }
+    if ($HoverCadence) {
+        if ($null -eq $script:hoverSession) {
+            $script:hoverSession = [ReistRfbInput]::OpenHoverSession($vncPort)
+        }
+        return $null -ne $script:hoverSession -and
+            $script:hoverSession.SendCommand($command)
     }
     return [ReistRfbInput]::SendCommand($vncPort, $command)
 }
 
 function Send-ExplicitShellProbeCommand {
+    if ($HoverCadence -and $null -ne $script:hoverSession) {
+        return $script:hoverSession.SendCommand('help')
+    }
     return [ReistRfbInput]::SendCommand($vncPort, 'help')
 }
 
@@ -402,6 +632,7 @@ $launched = $false
 $vmxProcessId = 0
 $workstationProcess = $null
 $passed = $false
+$script:hoverSession = $null
 $watch = [System.Diagnostics.Stopwatch]::StartNew()
 try {
     "Starting exact package VM: $vmx" |
@@ -649,13 +880,22 @@ try {
     while ($watch.Elapsed -lt $deadline) {
         $text = Read-SerialText
         Assert-NoForbiddenMarker $text
+        $desktopMarkerText = Get-DesktopMarkerText $text
         $desktopMissing = @($requiredAfterDesktop |
-            Where-Object { !$text.Contains($_) })
+            Where-Object { !$desktopMarkerText.Contains($_) })
         if ($desktopMissing.Count -eq 0) { break }
         Start-Sleep -Milliseconds 250
     }
     if ($desktopMissing.Count -ne 0) {
         throw "VMware explicit desktop markers timed out: $($desktopMissing -join ', ')"
+    }
+    if ($HoverCadence) {
+        # Re-negotiate RFB only after the compositor has selected its final
+        # graphics mode.  The hover trajectory uses absolute coordinates.
+        $hoverSessionRefreshed = Refresh-HoverSession
+        if (!$hoverSessionRefreshed) {
+            throw 'VMware RFB graphics-mode hover session could not be opened.'
+        }
     }
 
     if ($SvgaLifecycle) {
@@ -764,6 +1004,156 @@ try {
         }
     }
     else {
+    if ($HoverCadence) {
+        $hoverInputStarted = $watch.Elapsed
+        $hoverStartInjected = Send-HoverStartInput
+        "hover Start-menu press injected=$hoverStartInjected transport=rfb-loopback" |
+            Add-Content -LiteralPath $GateLog -Encoding utf8
+        if (!$hoverStartInjected) {
+            throw 'VMware RFB Start-menu press could not be injected.'
+        }
+        $hoverMenuReady = $false
+        while ($watch.Elapsed -lt $deadline) {
+            $text = Read-SerialText
+            Assert-NoForbiddenMarker $text
+            $hoverMenuReady = $text.IndexOf(
+                'DESKTOP_HOVER_MENU_READY', $shellPosition + 1,
+                [StringComparison]::Ordinal) -ge 0
+            if ($hoverMenuReady) { break }
+            Start-Sleep -Milliseconds 50
+        }
+        if (!$hoverMenuReady) {
+            throw 'VMware Start-menu did not acknowledge the hover trajectory.'
+        }
+        $hoverInjected = Send-HoverCadenceInput
+        "hover row trajectory injected=$hoverInjected transport=rfb-loopback" |
+            Add-Content -LiteralPath $GateLog -Encoding utf8
+        if (!$hoverInjected) {
+            throw 'VMware RFB hover row trajectory could not be injected.'
+        }
+        $hoverPattern =
+            'DESKTOP_HOVER_METRICS\s+version=(?<version>[0-9]+)\s+items=(?<items>[0-9]+)\s+frames=(?<frames>[0-9]+)\s+full_frames=(?<full_frames>[0-9]+)\s+total_ms=(?<total_ms>[0-9]+)\s+max_ms=(?<max_ms>[0-9]+)\s+damage_max=(?<damage_max>[0-9]+)\s+mouse_reports=(?<mouse_reports>[0-9]+)\s+mouse_batch_max_ms=(?<mouse_batch_max_ms>[0-9]+)\s+mouse_batch_max_reports=(?<mouse_batch_max_reports>[0-9]+)\s+pointer_frames=(?<pointer_frames>[0-9]+)\s+pointer_max_gap_ms=(?<pointer_max_gap_ms>[0-9]+)\s+pointer_latency_max_ms=(?<pointer_latency_max_ms>[0-9]+)\s+pointer_call_max_ms=(?<pointer_call_max_ms>[0-9]+)\s+pointer_failures=(?<pointer_failures>[0-9]+)\s+order_errors=(?<order_errors>[0-9]+)\s+clock_errors=(?<clock_errors>[0-9]+)'
+        $hoverShellProbeSent = $false
+        while ($watch.Elapsed -lt $deadline) {
+            $text = Read-SerialText
+            Assert-NoForbiddenMarker $text
+            $hoverMatch = [regex]::Match($text, $hoverPattern)
+            if ($hoverMatch.Success) {
+                $hoverOk = $text.IndexOf(
+                    'DESKTOP_HOVER_OK', $hoverMatch.Index,
+                    [StringComparison]::Ordinal)
+                $desktopExit = if ($hoverOk -ge 0) {
+                    $text.IndexOf(
+                        'DESKTOP_EXIT_OK', $hoverOk + 1,
+                        [StringComparison]::Ordinal)
+                } else { -1 }
+                if ($desktopExit -ge 0 -and !$hoverShellProbeSent) {
+                    $hoverShellProbeSent = Send-ExplicitShellProbeCommand
+                    "hover shell probe injected=$hoverShellProbeSent transport=rfb-loopback" |
+                        Add-Content -LiteralPath $GateLog -Encoding utf8
+                    if (!$hoverShellProbeSent) {
+                        throw 'VMware RFB post-hover shell probe could not be injected.'
+                    }
+                }
+                $helpAfter = if ($desktopExit -ge 0) {
+                    $text.IndexOf(
+                        'Built-ins: cd path pwd history help exit',
+                        $desktopExit + 1, [StringComparison]::Ordinal)
+                } else { -1 }
+                $promptAfter = if ($helpAfter -ge 0) {
+                    $text.IndexOf(
+                        $shellMarker, $helpAfter + 1,
+                        [StringComparison]::Ordinal)
+                } else { -1 }
+                if ($hoverOk -ge 0 -and $promptAfter -ge 0) {
+                    $version = [int]$hoverMatch.Groups['version'].Value
+                    $items = [int]$hoverMatch.Groups['items'].Value
+                    $frames = [int]$hoverMatch.Groups['frames'].Value
+                    $fullFrames = [int]$hoverMatch.Groups['full_frames'].Value
+                    $totalMs = [int]$hoverMatch.Groups['total_ms'].Value
+                    $maxMs = [int]$hoverMatch.Groups['max_ms'].Value
+                    $damageMax = [int]$hoverMatch.Groups['damage_max'].Value
+                    $mouseReports = [int]$hoverMatch.Groups['mouse_reports'].Value
+                    $mouseBatchMaxMs = [int]$hoverMatch.Groups['mouse_batch_max_ms'].Value
+                    $mouseBatchMaxReports = [int]$hoverMatch.Groups['mouse_batch_max_reports'].Value
+                    $pointerFrames = [int]$hoverMatch.Groups['pointer_frames'].Value
+                    $pointerMaxGapMs = [int]$hoverMatch.Groups['pointer_max_gap_ms'].Value
+                    $pointerLatencyMaxMs = [int]$hoverMatch.Groups['pointer_latency_max_ms'].Value
+                    $pointerCallMaxMs = [int]$hoverMatch.Groups['pointer_call_max_ms'].Value
+                    $pointerFailures = [int]$hoverMatch.Groups['pointer_failures'].Value
+                    $orderErrors = [int]$hoverMatch.Groups['order_errors'].Value
+                    $clockErrors = [int]$hoverMatch.Groups['clock_errors'].Value
+                    if ($version -ne 1 -or $items -ne 6 -or $frames -ne 6) {
+                        throw "VMware hover coverage is invalid: version=$version items=$items frames=$frames."
+                    }
+                    if ($fullFrames -ne 0 -or $damageMax -gt 2) {
+                        throw "VMware hover used excessive damage: full_frames=$fullFrames damage_max=$damageMax."
+                    }
+                    if ($maxMs -gt $maximumHoverFrameMs) {
+                        throw "VMware hover frame missed the frozen maximum: max_ms=$maxMs/$maximumHoverFrameMs."
+                    }
+                    if ($mouseBatchMaxReports -lt 1 -or
+                        $mouseBatchMaxReports -gt $maximumMouseBatchReports -or
+                        $mouseBatchMaxMs -gt $maximumPointerGapMs) {
+                        throw "VMware mouse batch missed the frozen bound: reports=$mouseBatchMaxReports/$maximumMouseBatchReports elapsed_ms=$mouseBatchMaxMs/$maximumPointerGapMs."
+                    }
+                    if ($pointerMaxGapMs -gt $maximumPointerGapMs) {
+                        throw "VMware pointer cadence missed the frozen maximum: gap_ms=$pointerMaxGapMs/$maximumPointerGapMs."
+                    }
+                    if ($pointerLatencyMaxMs -gt $maximumPointerGapMs -or
+                        $pointerCallMaxMs -gt $maximumPointerGapMs) {
+                        throw "VMware pointer service missed the frozen maximum: latency_ms=$pointerLatencyMaxMs call_ms=$pointerCallMaxMs/$maximumPointerGapMs."
+                    }
+                    if ($mouseReports -lt 6 -or $pointerFrames -lt 2 -or
+                        $pointerFailures -ne 0 -or
+                        $orderErrors -ne 0 -or $clockErrors -ne 0) {
+                        throw "VMware hover input proof is invalid: reports=$mouseReports pointer_frames=$pointerFrames pointer_failures=$pointerFailures order_errors=$orderErrors clock_errors=$clockErrors."
+                    }
+                    $explorer = $text.IndexOf(
+                        'DESKTOP_EXPLORER_OK', $shellPosition + 1,
+                        [StringComparison]::Ordinal)
+                    $ready = $text.IndexOf(
+                        'REIST_GUI COMPOSITOR_READY generation=',
+                        $shellPosition + 1, [StringComparison]::Ordinal)
+                    $desktop = $text.IndexOf(
+                        'DESKTOP_OK', $shellPosition + 1,
+                        [StringComparison]::Ordinal)
+                    $hoverReady = $text.IndexOf(
+                        'DESKTOP_HOVER_PROBE_READY', $shellPosition + 1,
+                        [StringComparison]::Ordinal)
+                    $menuReady = $text.IndexOf(
+                        'DESKTOP_HOVER_MENU_READY', $hoverReady + 1,
+                        [StringComparison]::Ordinal)
+                    $mouse = $text.IndexOf(
+                        'DESKTOP_MOUSE_OK', $shellPosition + 1,
+                        [StringComparison]::Ordinal)
+                    if (!($shellPosition -lt $explorer -and
+                        $explorer -lt $ready -and $ready -lt $desktop -and
+                        $desktop -lt $hoverReady -and $hoverReady -lt $mouse -and
+                        $mouse -lt $menuReady -and
+                        $mouse -lt $hoverMatch.Index)) {
+                        throw 'VMware supervised hover markers or xHCI input are out of order.'
+                    }
+                    $bootCount = ([regex]::Matches($text, 'BOOT_OK')).Count
+                    $loaderCount = ([regex]::Matches(
+                        $text, 'x86 native BIOS loader')).Count
+                    $text = Wait-PostSuccessStability 'hover' $bootCount `
+                        $loaderCount
+                    $text | Set-Content -LiteralPath $GateLog -Encoding utf8
+                    $passed = $true
+                    $inputElapsedMs = [int](
+                        ($watch.Elapsed - $hoverInputStarted).TotalMilliseconds)
+                    Write-Output "VMWARE HOVER CADENCE PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s input_elapsed_ms=$inputElapsedMs hover_total_ms=$totalMs hover_max_ms=$maxMs pointer_gap_max_ms=$pointerMaxGapMs pointer_latency_max_ms=$pointerLatencyMaxMs pointer_call_max_ms=$pointerCallMaxMs stability=$($PostSuccessStabilitySeconds)s log=$GateLog"
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 50
+        }
+        if (!$passed) {
+            throw 'VMware physical Start-menu hover cadence timed out.'
+        }
+    }
+    if (!$HoverCadence) {
     if ($ExpectCompositorRestart) {
         $restartReady = $false
         while ($watch.Elapsed -lt $deadline) {
@@ -847,8 +1237,20 @@ try {
     }
     }
     }
+    }
 }
 finally {
+    if ($null -ne $script:hoverSession) {
+        try {
+            $script:hoverSession.Dispose()
+        }
+        catch {
+            # Continue with the process-scoped VMware teardown below.
+        }
+        finally {
+            $script:hoverSession = $null
+        }
+    }
     if ($launched) {
         # A hard runtime teardown is intentionally process-scoped. vmrun stop
         # can block after the guest is already gone; the captured PID belongs

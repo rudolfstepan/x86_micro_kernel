@@ -101,9 +101,83 @@ int main(void) {
     assert(hid_mouse_read_event(&event) == -19);
     assert(!hid_mouse_report(9U, move, sizeof(move)));
 
+    const uint8_t pure_motion[3] = {0U, 2U, (uint8_t)-1};
+    hid_mouse_attach(10U);
+    for (uint32_t index = 0U; index < 100U; ++index)
+        assert(hid_mouse_report(10U, pure_motion, sizeof(pure_motion)));
+    assert(hid_mouse_read_event(&event) == 0);
+    assert(event.delta_x == 200 && event.delta_y == -100);
+    assert(event.buttons == 0U && event.wheel == 0);
+    assert(hid_mouse_read_event(&event) == -11);
+    hid_mouse_detach(10U);
+
+    /* Fill the queue with alternating edges and replaceable drag motion.
+     * A final edge must evict only motion and retain every button transition. */
+    hid_mouse_attach(11U);
+    uint8_t accepted_buttons = 0U;
+    for (uint32_t index = 0U; index < 15U; ++index) {
+        accepted_buttons ^= 1U;
+        uint8_t edge[3] = {accepted_buttons, 0U, 0U};
+        uint8_t drag[3] = {accepted_buttons, 1U, 1U};
+        assert(hid_mouse_report(11U, edge, sizeof(edge)));
+        assert(hid_mouse_report(11U, drag, sizeof(drag)));
+    }
+    uint8_t retained_wheel[4] = {accepted_buttons, 0U, 0U, 1U};
+    assert(hid_mouse_report(11U, retained_wheel, sizeof(retained_wheel)));
+    accepted_buttons ^= 1U;
+    uint8_t final_edge[3] = {accepted_buttons, 0U, 0U};
+    assert(hid_mouse_report(11U, final_edge, sizeof(final_edge)));
+
+    uint32_t edge_count = 0U;
+    uint32_t wheel_count = 0U;
+    uint32_t event_count = 0U;
+    uint32_t prior_buttons = 0U;
+    while (hid_mouse_read_event(&event) == 0) {
+        event_count++;
+        if (event.buttons != prior_buttons) {
+            uint32_t expected = (edge_count & 1U) == 0U ? 1U : 0U;
+            assert(event.buttons == expected);
+            prior_buttons = event.buttons;
+            edge_count++;
+        }
+        if (event.wheel != 0) {
+            assert(event.wheel == 1);
+            wheel_count++;
+        }
+    }
+    assert(event_count == 31U);
+    assert(edge_count == 16U && wheel_count == 1U);
+    assert(prior_buttons == 0U);
+    hid_mouse_detach(11U);
+
+    /* A queue containing only nonreplaceable edges fails closed. The rejected
+     * state is not accepted, so the same report remains an edge after drain. */
+    hid_mouse_attach(12U);
+    accepted_buttons = 0U;
+    for (uint32_t index = 0U; index < 31U; ++index) {
+        accepted_buttons ^= 1U;
+        uint8_t edge[3] = {accepted_buttons, 0U, 0U};
+        assert(hid_mouse_report(12U, edge, sizeof(edge)));
+    }
+    accepted_buttons ^= 1U;
+    uint8_t rejected_edge[3] = {accepted_buttons, 0U, 0U};
+    assert(!hid_mouse_report(12U, rejected_edge, sizeof(rejected_edge)));
+    edge_count = 0U;
+    prior_buttons = 0U;
+    while (hid_mouse_read_event(&event) == 0) {
+        assert(event.buttons != prior_buttons);
+        prior_buttons = event.buttons;
+        edge_count++;
+    }
+    assert(edge_count == 31U && prior_buttons == 1U);
+    assert(hid_mouse_report(12U, rejected_edge, sizeof(rejected_edge)));
+    assert(hid_mouse_read_event(&event) == 0 && event.buttons == 0U);
+    assert(hid_mouse_read_event(&event) == -11);
+    hid_mouse_detach(12U);
+
     atomic_uint remaining = 2U;
-    producer_context_t first = {{1U, 1U, 1U, 0U}, &remaining};
-    producer_context_t second = {{2U, (uint8_t)-1, 2U, 1U}, &remaining};
+    producer_context_t first = {{0U, 1U, 1U, 0U}, &remaining};
+    producer_context_t second = {{0U, (uint8_t)-1, 2U, 0U}, &remaining};
     reader_context_t reader = {&remaining, ATOMIC_VAR_INIT(0U)};
     hid_mouse_attach(19U);
     test_thread_t consumer = test_thread_start(consume_reports, &reader);

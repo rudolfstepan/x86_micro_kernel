@@ -28,6 +28,29 @@ class DesktopSmokeRunnerTests(unittest.TestCase):
         self.assertNotIn('"x/64wx $esp"', runtime)
         self.assertIn('"SOUNDPLAYER_AUDIO_FAIL"', runtime)
 
+    def test_runtime_hover_probe_uses_usb_mouse_and_enforces_metrics(self):
+        runtime = (ROOT / "scripts/run_qemu_runtime_desktop.py").read_text(
+            encoding="utf-8")
+        self.assertIn('parser.add_argument("--hover-probe"', runtime)
+        self.assertIn('parser.add_argument("--supervised-probe"', runtime)
+        self.assertIn('"desktop.prg --hover-probe"', runtime)
+        self.assertIn('"desktop" if supervised_probe', runtime)
+        self.assertIn("hover probe bypassed compositor supervisor", runtime)
+        self.assertIn('send_command(process, "help")', runtime)
+        self.assertIn("SHELL_HELP_MARKER", runtime)
+        self.assertIn('"usb-mouse,bus=reistxhci.0"', runtime)
+        self.assertIn("DESKTOP_HOVER_METRICS", runtime)
+        self.assertIn("DESKTOP_HOVER_OK", runtime)
+        self.assertIn("MAXIMUM_HOVER_FRAME_MS = 17", runtime)
+        self.assertIn("MAXIMUM_POINTER_GAP_MS = 34", runtime)
+        self.assertIn("pointer_latency_max_ms", runtime)
+        self.assertIn("pointer_call_max_ms", runtime)
+        self.assertIn("pointer_failures", runtime)
+        self.assertIn("mouse_batch_max_ms", runtime)
+        self.assertIn("mouse_batch_max_reports", runtime)
+        self.assertIn("send_hover_trajectory", runtime)
+        self.assertIn("0.016", runtime)
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

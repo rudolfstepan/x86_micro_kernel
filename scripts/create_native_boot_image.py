@@ -604,6 +604,12 @@ mks.enable3d = "FALSE"
 # "Free Stretch" in the UI and stores it as "fullfill" in the VMX.
 gui.enableStretchGuest = "TRUE"
 gui.stretchGuestMode = "fullfill"
+# Keep Workstation's existing logical window viewport across the VGA-text to
+# SVGA transition. Native-host-pixel fitting can leave a tools-free guest at
+# postage-stamp size on a high-DPI host until the user resizes the window.
+gui.fitGuestUsingNativeDisplayResolution = "FALSE"
+gui.applyHostDisplayScalingToGuest = "FALSE"
+gui.viewModeAtPowerOn = "windowed"
 gui.fullScreenAtPowerOn = "FALSE"
 serial0.present = "TRUE"
 serial0.fileType = "file"

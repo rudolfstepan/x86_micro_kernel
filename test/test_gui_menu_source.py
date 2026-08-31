@@ -42,6 +42,23 @@ class GuiMenuSourceTests(unittest.TestCase):
         self.assertNotIn("desktop_wm", example)
         self.assertNotIn("x86os", example.lower())
 
+    def test_hot_and_pressed_items_have_exact_fixed_damage(self):
+        source = SOURCE.read_text(encoding="utf-8")
+        hot = source[source.index("static void set_hot_item") :]
+        hot = hot[: hot.index("\n}") + 2]
+        self.assertIn("add_item_damage", hot)
+        self.assertNotIn("popup_rect_unchecked", hot)
+        self.assertGreaterEqual(hot.count("add_item_damage"), 2)
+        press = source[source.index("static void dispatch_press") :]
+        press = press[: source.index("static void dispatch_release") -
+                      source.index("static void dispatch_press")]
+        self.assertIn("add_item_damage", press)
+        self.assertNotIn("add_damage(layout, result, popup)", press)
+        item_damage = source[source.index("static void add_item_damage") :]
+        item_damage = item_damage[: item_damage.index("\n}") + 2]
+        self.assertIn("append_damage(layout, result, rect)", item_damage)
+        self.assertNotIn("add_damage(layout, result, rect)", item_damage)
+
     def test_menu_controller_host_behavior(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
         if compiler is None:

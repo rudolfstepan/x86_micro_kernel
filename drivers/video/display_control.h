@@ -155,6 +155,9 @@ void display_control_present_rect(uint32_t x, uint32_t y,
                                   uint32_t width, uint32_t height);
 void display_control_present_rects(const display_control_rect_t *rects,
                                    uint32_t count);
+/* Fixed-work software-cursor update. Lifecycle contention is reported as a
+ * retryable error before framebuffer or cursor state is changed. */
+int display_control_cursor_update(int32_t x, int32_t y, bool visible);
 bool display_control_graphics_active(void);
 bool display_control_acceleration_active(void);
 int display_control_driver_command(display_driver_request_t *request);

@@ -10,6 +10,7 @@
 #include "include/kernel/device_domain.h"
 #include "include/lib/spinlock.h"
 #include "kernel/sched/mutex.h"
+#include "kernel/sched/scheduler.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/string.h"
 
@@ -58,6 +59,9 @@
 #define SVGA_FIFO_MAX 1U
 #define SVGA_FIFO_NEXT_CMD 2U
 #define SVGA_FIFO_STOP 3U
+/* VMware SVGA-II FIFO synchronization register. It is available only when
+ * FIFO_MIN reserves all 291 register words reported by this exact device. */
+#define SVGA_FIFO_BUSY 290U
 #define SVGA_CMD_UPDATE 1U
 #define SVGA_CMD_RECT_FILL 2U
 #define SVGA_CMD_RECT_COPY 3U
@@ -128,6 +132,21 @@ static bool vmware_fifo_write_batch(const uint32_t *values, uint32_t count) {
     return true;
 }
 
+/* Call only with vmware_fifo_lock held after committing FIFO commands. VMware
+ * SVGA-II specifies FIFO_BUSY as the low-cost asynchronous wakeup latch: when
+ * the host is already consuming the FIFO, newly committed commands are
+ * guaranteed to be observed and another synchronous I/O doorbell is harmful
+ * for cursor cadence. Old or minimal FIFO layouts retain one SYNC per batch. */
+static bool vmware_fifo_doorbell_needed(void) {
+    if (!vmware_fifo) return false;
+    uint32_t minimum = vmware_fifo[SVGA_FIFO_MIN];
+    if (minimum < (SVGA_FIFO_BUSY + 1U) * sizeof(uint32_t)) return true;
+    __asm__ __volatile__("" ::: "memory");
+    if (vmware_fifo[SVGA_FIFO_BUSY] != 0U) return false;
+    vmware_fifo[SVGA_FIFO_BUSY] = 1U;
+    return true;
+}
+
 void display_control_present_rect(uint32_t x, uint32_t y,
                                   uint32_t width, uint32_t height) {
     const display_control_rect_t rect = {x, y, width, height};
@@ -151,17 +170,44 @@ static void display_control_present_rects_locked(
     if (command_count == 0U) return;
     uint32_t flags = spinlock_acquire_irq(&vmware_fifo_lock);
     bool submitted = vmware_fifo_write_batch(commands, command_count);
-    if (submitted)
-        svga_write(vmware_index_port, vmware_value_port, SVGA_REG_SYNC, 1U);
+    bool doorbell = submitted && vmware_fifo_doorbell_needed();
+    /* FIFO metadata is committed before the doorbell. VMware may trap the
+     * SYNC port access into the host, so it must never extend the raw
+     * spinlock/IRQ critical section and stall an unrelated cursor update. */
     spinlock_release_irq(&vmware_fifo_lock, flags);
+    if (doorbell)
+        svga_write(vmware_index_port, vmware_value_port, SVGA_REG_SYNC, 1U);
 }
 
 void display_control_present_rects(const display_control_rect_t *rects,
                                    uint32_t count) {
     if (kernel_mutex_lock_for(&display_state_mutex,
                               DISPLAY_STATE_TIMEOUT_MS) != 0) return;
+    /* This owner executes only one fixed-capacity FIFO publication.  Keeping
+     * it on its vCPU prevents a timer switch from stranding the sleepable
+     * cross-CPU state mutex for an entire scheduling round. */
+    scheduler_preempt_disable();
     display_control_present_rects_locked(rects, count);
     kernel_mutex_unlock(&display_state_mutex);
+    scheduler_preempt_enable();
+}
+
+int display_control_cursor_update(int32_t x, int32_t y, bool visible) {
+    /* Cursor publication is a latency-sensitive fixed-size operation. Take
+     * the recursive display-state mutex while preemption is disabled, so an
+     * owner transition returns KERNEL_MUTEX_WOULD_BLOCK before the pointer
+     * state or scanout can change. framebuffer_cursor_update() re-enters the
+     * mutex only for its one bounded present batch. */
+    scheduler_preempt_disable();
+    int lock_result = kernel_mutex_lock_for(&display_state_mutex, 0U);
+    if (lock_result != 0) {
+        scheduler_preempt_enable();
+        return lock_result;
+    }
+    bool updated = framebuffer_cursor_update(x, y, visible);
+    kernel_mutex_unlock(&display_state_mutex);
+    scheduler_preempt_enable();
+    return updated ? 0 : -19;
 }
 
 static bool vmware_rect_valid(uint32_t x, uint32_t y,
@@ -615,6 +661,8 @@ static int activate_vmware(pci_device_t *device) {
     fifo[SVGA_FIFO_MAX] = fifo_size;
     fifo[SVGA_FIFO_NEXT_CMD] = fifo_minimum;
     fifo[SVGA_FIFO_STOP] = fifo_minimum;
+    if (fifo_minimum >= (SVGA_FIFO_BUSY + 1U) * sizeof(uint32_t))
+        fifo[SVGA_FIFO_BUSY] = 0U;
     svga_write(index_port, value_port, SVGA_REG_CONFIG_DONE, 1U);
     multiboot_framebuffer_info_t info = {
         .framebuffer_addr = framebuffer_address,
@@ -839,15 +887,18 @@ int display_control_deactivate(void) {
 bool display_control_graphics_active(void) {
     if (kernel_mutex_lock_for(&display_state_mutex,
                               DISPLAY_STATE_TIMEOUT_MS) != 0) return false;
+    scheduler_preempt_disable();
     bool active = active_backend != DISPLAY_BACKEND_NONE &&
         framebuffer_available();
     kernel_mutex_unlock(&display_state_mutex);
+    scheduler_preempt_enable();
     return active;
 }
 
 bool display_control_acceleration_active(void) {
     if (kernel_mutex_lock_for(&display_state_mutex,
                               DISPLAY_STATE_TIMEOUT_MS) != 0) return false;
+    scheduler_preempt_disable();
     bool active = false;
     if (active_backend == DISPLAY_BACKEND_VMWARE) {
         active = vmware_fifo != NULL &&
@@ -856,6 +907,7 @@ bool display_control_acceleration_active(void) {
         active = device_domain_gr_acceleration_active();
     }
     kernel_mutex_unlock(&display_state_mutex);
+    scheduler_preempt_enable();
     return active;
 }
 
@@ -973,10 +1025,13 @@ static int display_control_driver_command_locked(
         if (command_count != 0U) {
             uint32_t flags = spinlock_acquire_irq(&vmware_fifo_lock);
             bool submitted = vmware_fifo_write_batch(commands, command_count);
-            if (submitted)
+            bool doorbell = submitted && vmware_fifo_doorbell_needed();
+            /* The FIFO write is atomic before the doorbell; do not retain a
+             * raw spinlock across a VMware-trapped SYNC port access. */
+            spinlock_release_irq(&vmware_fifo_lock, flags);
+            if (doorbell)
                 svga_write(vmware_index_port, vmware_value_port,
                            SVGA_REG_SYNC, 1U);
-            spinlock_release_irq(&vmware_fifo_lock, flags);
             result = submitted ? 0 : -11;
             if (submitted && request->command == DISPLAY_DRIVER_RECT_COPY &&
                 !vmware_rect_copy_reported) {
@@ -999,13 +1054,21 @@ static int display_control_driver_command_locked(
 
 int display_control_driver_command(display_driver_request_t *request) {
     if (request == NULL) return -22;
+    bool bounded_command =
+        request->command != DISPLAY_DRIVER_ACTIVATE &&
+        request->command != DISPLAY_DRIVER_DEACTIVATE;
     int lock_result = kernel_mutex_lock_for(&display_state_mutex,
                                             DISPLAY_STATE_TIMEOUT_MS);
     if (lock_result != 0) {
         request->status = lock_result;
         return lock_result;
     }
+    /* Probe, query and 2D submissions have fixed register/FIFO work and must
+     * release display_state_mutex before their task can be timer-preempted.
+     * Lifecycle commands can map memory and therefore remain sleepable. */
+    if (bounded_command) scheduler_preempt_disable();
     int result = display_control_driver_command_locked(request);
     kernel_mutex_unlock(&display_state_mutex);
+    if (bounded_command) scheduler_preempt_enable();
     return result;
 }

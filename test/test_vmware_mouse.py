@@ -20,6 +20,8 @@ class VmwareMouseTests(unittest.TestCase):
         self.assertIn("& $VmwareMouseRunner -Benchmark", source)
         self.assertIn("'vmware-rename'", source)
         self.assertIn("& $VmwareMouseRunner -Rename", source)
+        self.assertIn("'vmware-hover-cadence'", source)
+        self.assertIn("& $VmwareMouseRunner -HoverCadence", source)
 
     def test_runner_requires_virtual_hid_without_passthrough(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
@@ -213,6 +215,56 @@ class VmwareMouseTests(unittest.TestCase):
             self.assertIn(marker, source)
         self.assertIn("Wait-PostSuccessStability 'svga2d'", source)
         self.assertIn("VMWARE SVGA2D LIFECYCLE PASS", source)
+
+    def test_hover_mode_uses_real_xhci_motion_and_hard_frame_bounds(self):
+        source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(
+            encoding="utf-8"
+        )
+        dispatch = (ROOT / "scripts/test-reist-runtime.ps1").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[switch]$HoverCadence", source)
+        command = source[source.index("function Send-ExplicitDesktopCommand"):
+                         source.index("function Send-ExplicitShellProbeCommand")]
+        self.assertIn("elseif ($HoverCadence)", command)
+        self.assertNotIn("desktop.prg --hover-probe", command)
+        self.assertIn("'desktop'", command)
+        self.assertIn("REIST_GUI COMPOSITOR_READY generation=", source)
+        self.assertIn("-CompositorHoverProbe", dispatch)
+        self.assertIn("-SourcePackage $sourcePackage", dispatch)
+        self.assertIn("OpenHoverSession", source)
+        self.assertIn("$script:hoverSession.SendHoverStart()", source)
+        self.assertIn("$script:hoverSession.SendHoverItems()", source)
+        self.assertIn("$script:hoverSession.SendCommand($command)", source)
+        self.assertIn("$script:hoverSession.Dispose()", source)
+        self.assertIn("function Refresh-HoverSession", source)
+        self.assertIn("hover graphics-session refreshed", source)
+        self.assertIn("$hoverSessionRefreshed = Refresh-HoverSession", source)
+        self.assertLess(
+            source.index("$hoverSessionRefreshed = Refresh-HoverSession"),
+            source.index("$hoverInputStarted = $watch.Elapsed"),
+        )
+        self.assertIn("function Get-DesktopMarkerText", source)
+        self.assertIn("$Text.Replace($shellMarker, '')", source)
+        self.assertIn("$desktopMarkerText = Get-DesktopMarkerText $text", source)
+        self.assertIn("SendHoverStart", source)
+        self.assertIn("SendHoverItems", source)
+        self.assertIn("DESKTOP_HOVER_MENU_READY", source)
+        self.assertIn("Thread.Sleep(16)", source)
+        self.assertIn("DESKTOP_HOVER_METRICS", source)
+        self.assertIn("DESKTOP_HOVER_OK", source)
+        self.assertIn("$maximumHoverFrameMs = 17", source)
+        self.assertIn("$maximumPointerGapMs = 34", source)
+        self.assertIn("$maximumMouseBatchReports = 4", source)
+        self.assertIn("mouse_batch_max_ms", source)
+        self.assertIn("mouse_batch_max_reports", source)
+        self.assertIn("pointer_latency_max_ms", source)
+        self.assertIn("pointer_call_max_ms", source)
+        self.assertIn("pointer_failures", source)
+        self.assertIn("items -ne 6", source)
+        self.assertIn("$fullFrames -ne 0", source)
+        self.assertIn("Wait-PostSuccessStability 'hover'", source)
+        self.assertIn("VMWARE HOVER CADENCE PASS", source)
 
     def test_desktop_mode_observes_post_success_stability_interval(self):
         source = (ROOT / "scripts/run_vmware_mouse.ps1").read_text(

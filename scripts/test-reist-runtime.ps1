@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -62,6 +62,7 @@ $OpenSsl = if ($Mode -eq 'boot-control' -or $Mode -eq 'boot-success') {
     )
 } else { $null }
 $Qemu = if (($Target -eq 'qemu' -and $Mode -ne 'vmware-mouse' -and
+    $Mode -ne 'vmware-hover-cadence' -and
     $Mode -ne 'vmware-compositor-restart') -or
     $Mode -eq 'pci-audio') {
     Resolve-NativeTool 'qemu-system-i386' @(
@@ -79,7 +80,9 @@ $Make = if ($Mode -eq 'driver-domain') {
 
 if ($Target -eq 'qemu' -and $Mode -ne 'driver-domain' -and
     $Mode -ne 'vmware-mouse' -and
+    $Mode -ne 'vmware-hover-cadence' -and
     $Mode -ne 'vmware-compositor-restart' -and
+    $Mode -ne 'runtime-desktop-hover-cadence' -and
     $Mode -ne 'curl-https-client' -and
     $Mode -ne 'curl-https-public-client' -and
     !(Test-Path -LiteralPath $Image -PathType Leaf)) {
@@ -175,16 +178,23 @@ function Invoke-RuntimeDesktop(
     [bool]$ControlProbe = $false,
     [bool]$VmwareSvga2d = $false,
     [bool]$SoundProbe = $false,
-    [bool]$GuidemoClickProbe = $false
+    [bool]$GuidemoClickProbe = $false,
+    [bool]$HoverProbe = $false,
+    [bool]$SupervisedProbe = $false,
+    [string]$ImagePath = $Image,
+    [int]$Smp = 1
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
             [int]$ControlProbe + [int]$SoundProbe +
-            [int]$GuidemoClickProbe) -gt 1) {
+            [int]$GuidemoClickProbe + [int]$HoverProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
+    if ($SupervisedProbe -and !$HoverProbe) {
+        throw 'A supervised runtime probe requires hover mode.'
+    }
     $screenshot = Join-Path $RepoRoot 'build\runtime-desktop.ppm'
-    $arguments = @('--qemu', $Qemu, '--image', $Image,
-        '--screenshot', $screenshot)
+    $arguments = @('--qemu', $Qemu, '--image', $ImagePath,
+        '--screenshot', $screenshot, '--smp', [string]$Smp)
     if ($ExpectFailure) { $arguments += '--expect-failure' }
     if ($RenderProbe) {
         New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
@@ -196,6 +206,13 @@ function Invoke-RuntimeDesktop(
     if ($ControlProbe) { $arguments += '--control-probe' }
     if ($SoundProbe) { $arguments += '--sound-probe' }
     if ($GuidemoClickProbe) { $arguments += '--guidemo-click-probe' }
+    if ($HoverProbe) {
+        New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $metricsLog = Join-Path $LogRoot "$stamp-runtime-desktop-hover.log"
+        $arguments += @('--hover-probe', '--metrics-log', $metricsLog)
+    }
+    if ($SupervisedProbe) { $arguments += '--supervised-probe' }
     if ($VmwareSvga2d) { $arguments += '--vmware-vga' }
     & $Python $RuntimeDesktopRunner @arguments
     if ($ExpectFailure) {
@@ -1102,6 +1119,26 @@ switch ($Mode) {
             throw 'VMware mouse runtime failed.'
         }
     }
+    'vmware-hover-cadence' {
+        $relativeOutput = 'build/vmware-hover-cadence'
+        $sourcePackage = Join-Path $RepoRoot `
+            "$relativeOutput/vmware/reist-os"
+        New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $buildLog = Join-Path $LogRoot `
+            "$stamp-runtime-vmware-hover-build.log"
+        & $BuildScript -Target vmware -Video vga -CompositorHoverProbe `
+            -OutputDirectory $relativeOutput -SkipReleaseSbom *> $buildLog
+        if ($LASTEXITCODE -ne 0 -or
+            !(Test-Path -LiteralPath $sourcePackage -PathType Container)) {
+            Get-Content -LiteralPath $buildLog -Tail 40
+            throw 'VMware supervised hover image build failed.'
+        }
+        & $VmwareMouseRunner -HoverCadence -SourcePackage $sourcePackage
+        if ($LASTEXITCODE -ne 0) {
+            throw 'VMware hover cadence runtime failed.'
+        }
+    }
     'curl-client' {
         Invoke-Smoke 'guest-smoke-curl-client.log' @(
             '--nic', 'rtl8139', '--vmware-vga', '--expect-curl-client',
@@ -1160,6 +1197,24 @@ switch ($Mode) {
     }
     'runtime-desktop-surface' {
         Invoke-RuntimeDesktop $false $false $true
+    }
+    'runtime-desktop-hover-cadence' {
+        $relativeOutput = 'build/runtime-desktop-hover-cadence'
+        $probeImage = Join-Path $RepoRoot "$relativeOutput/reist-os.img"
+        New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $buildLog = Join-Path $LogRoot `
+            "$stamp-runtime-qemu-hover-build.log"
+        & $BuildScript -Target qemu -Video framebuffer `
+            -CompositorHoverProbe -OutputDirectory $relativeOutput `
+            -SkipReleaseSbom *> $buildLog
+        if ($LASTEXITCODE -ne 0 -or
+            !(Test-Path -LiteralPath $probeImage -PathType Leaf)) {
+            Get-Content -LiteralPath $buildLog -Tail 40
+            throw 'QEMU supervised hover image build failed.'
+        }
+        Invoke-RuntimeDesktop -HoverProbe $true -SupervisedProbe $true `
+            -ImagePath $probeImage -Smp 4
     }
     'runtime-desktop-audio' {
         & $BuildScript -Target qemu -Video framebuffer `

@@ -23,6 +23,7 @@ param(
     [switch]$AudioServiceSmpLifecycleFaultInjection,
     [switch]$CompositorSmpLifecycleFaultInjection,
     [switch]$SoundplayerSurfaceProbe,
+    [switch]$CompositorHoverProbe,
     [switch]$CurlTlsRuntimeProbe,
     [switch]$SkipReleaseSbom,
     [ValidateRange(1, 8)]
@@ -221,6 +222,7 @@ try {
         audio_service_smp_lifecycle_fault_injection = [bool]$AudioServiceSmpLifecycleFaultInjection
         compositor_smp_lifecycle_fault_injection = [bool]$CompositorSmpLifecycleFaultInjection
         soundplayer_surface_probe = [bool]$SoundplayerSurfaceProbe
+        compositor_hover_probe = [bool]$CompositorHoverProbe
         skip_release_sbom = [bool]$SkipReleaseSbom
         nasm = $Nasm
         zig = $Zig
@@ -308,6 +310,9 @@ try {
     }
     if ($SoundplayerSurfaceProbe) {
         $makeArguments += 'SOUNDPLAYER_SURFACE_PROBE=1'
+    }
+    if ($CompositorHoverProbe) {
+        $makeArguments += 'COMPOSITOR_HOVER_PROBE=1'
     }
     & $Make @makeArguments
     if ($LASTEXITCODE -ne 0) {

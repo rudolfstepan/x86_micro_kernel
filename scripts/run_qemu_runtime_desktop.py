@@ -29,6 +29,9 @@ from run_qemu_pci_audio import finalize_qemu_wave
 
 METRICS_VERSION = 1
 RENDER_PROBE_STEPS = 8
+MAXIMUM_HOVER_FRAME_MS = 17
+MAXIMUM_POINTER_GAP_MS = 34
+SHELL_HELP_MARKER = "Built-ins: cd path pwd history help exit"
 QEMU_CREATION_FLAGS = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
 METRIC_KEYS = {
     "version", "full_frames", "full_total_ms", "full_max_ms",
@@ -37,6 +40,13 @@ METRIC_KEYS = {
     "resize_frames", "resize_total_ms", "resize_max_ms",
     "fallback_frames", "damage_regions", "damage_max",
     "clock_errors", "probe_errors",
+}
+HOVER_METRIC_KEYS = {
+    "version", "items", "frames", "full_frames", "total_ms", "max_ms",
+    "damage_max", "mouse_reports", "mouse_batch_max_ms",
+    "mouse_batch_max_reports", "pointer_frames",
+    "pointer_max_gap_ms", "pointer_latency_max_ms", "pointer_call_max_ms",
+    "pointer_failures", "order_errors", "clock_errors",
 }
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -118,6 +128,58 @@ def parse_render_metrics(text: str) -> tuple[dict[str, int], str]:
     return metrics, normalized
 
 
+def parse_hover_metrics(text: str) -> tuple[dict[str, int], str]:
+    match = re.search(
+        r"DESKTOP_HOVER_METRICS(?:\s+[a-z_]+=[0-9]+)+", text
+    )
+    if match is None:
+        raise RuntimeError("desktop hover metrics not observed")
+    pairs = re.findall(r"([a-z_]+)=([0-9]+)", match.group(0))
+    metrics = {name: int(value) for name, value in pairs}
+    if len(metrics) != len(pairs) or set(metrics) != HOVER_METRIC_KEYS:
+        raise RuntimeError("desktop hover metrics are missing or duplicated")
+    if (metrics["version"] != 1 or metrics["items"] != 6 or
+            metrics["frames"] != 6):
+        raise RuntimeError("desktop hover coverage is invalid")
+    if metrics["full_frames"] != 0 or not 1 <= metrics["damage_max"] <= 2:
+        raise RuntimeError("desktop hover used excessive damage")
+    if metrics["max_ms"] > MAXIMUM_HOVER_FRAME_MS:
+        raise RuntimeError(
+            "desktop hover frame missed the frozen maximum: "
+            f"{metrics['max_ms']}/{MAXIMUM_HOVER_FRAME_MS} ms"
+        )
+    if (metrics["mouse_batch_max_reports"] < 1 or
+            metrics["mouse_batch_max_reports"] > 4 or
+            metrics["mouse_batch_max_ms"] > MAXIMUM_POINTER_GAP_MS):
+        raise RuntimeError(
+            "desktop mouse batch missed the frozen bound: "
+            f"reports={metrics['mouse_batch_max_reports']}/4 "
+            f"elapsed={metrics['mouse_batch_max_ms']}/"
+            f"{MAXIMUM_POINTER_GAP_MS} ms"
+        )
+    if metrics["pointer_max_gap_ms"] > MAXIMUM_POINTER_GAP_MS:
+        raise RuntimeError(
+            "desktop pointer cadence missed the frozen maximum: "
+            f"{metrics['pointer_max_gap_ms']}/{MAXIMUM_POINTER_GAP_MS} ms"
+        )
+    if (metrics["pointer_latency_max_ms"] > MAXIMUM_POINTER_GAP_MS or
+            metrics["pointer_call_max_ms"] > MAXIMUM_POINTER_GAP_MS):
+        raise RuntimeError(
+            "desktop pointer service missed the frozen maximum: "
+            f"latency={metrics['pointer_latency_max_ms']} "
+            f"call={metrics['pointer_call_max_ms']}/"
+            f"{MAXIMUM_POINTER_GAP_MS} ms"
+        )
+    if (metrics["mouse_reports"] < 6 or metrics["pointer_frames"] < 2 or
+            metrics["pointer_failures"] != 0 or
+            metrics["order_errors"] != 0 or metrics["clock_errors"] != 0):
+        raise RuntimeError("desktop hover input proof is invalid")
+    normalized = "DESKTOP_HOVER_METRICS " + " ".join(
+        f"{name}={value}" for name, value in pairs
+    )
+    return metrics, normalized
+
+
 def reader(stream, output: queue.Queue[str], finished: threading.Event) -> None:
     try:
         while True:
@@ -173,6 +235,44 @@ def send_key(process: subprocess.Popen[str], key: str) -> None:
     time.sleep(0.05)
     process.stdin.write(QEMU_MUX_SWITCH)
     process.stdin.flush()
+
+
+def send_hover_trajectory(process: subprocess.Popen[str]) -> None:
+    """Send one bounded center-to-Start path and six real USB hot states."""
+    if process.stdin is None:
+        raise RuntimeError("QEMU monitor input unavailable")
+
+    def monitor(command: str, delay: float) -> None:
+        if "\n" in command or "\r" in command:
+            raise RuntimeError("invalid QEMU hover command")
+        assert process.stdin is not None
+        process.stdin.write(command + "\n")
+        process.stdin.flush()
+        time.sleep(delay)
+
+    process.stdin.write(QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    time.sleep(0.05)
+    try:
+        previous_x = 0
+        previous_y = 0
+        for step in range(1, 33):
+            target_x = -472 * step // 32
+            target_y = 369 * step // 32
+            monitor(
+                f"mouse_move {target_x - previous_x} {target_y - previous_y}",
+                0.016,
+            )
+            previous_x = target_x
+            previous_y = target_y
+        monitor("mouse_button 1", 0.024)
+        monitor("mouse_button 0", 0.070)
+        monitor("mouse_move 60 -26", 0.070)
+        for _ in range(5):
+            monitor("mouse_move 0 -24", 0.070)
+    finally:
+        process.stdin.write(QEMU_MUX_SWITCH)
+        process.stdin.flush()
 
 
 def read_ppm(path: pathlib.Path) -> tuple[int, int, bytes] | None:
@@ -299,7 +399,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool,
         control_probe: bool, trash_context_probe: bool,
-        trash_confirm_probe: bool,
+        trash_confirm_probe: bool, hover_probe: bool,
+        supervised_probe: bool,
         guidemo_click_probe: bool,
         sound_probe: bool, metrics_log: pathlib.Path | None,
         vmware_vga: bool, smp: int, capture_only: bool = False) -> int:
@@ -308,7 +409,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         audio_capture.unlink()
     command = qemu_command(
         qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp)
-    if guidemo_click_probe:
+    if guidemo_click_probe or hover_probe:
         command.extend([
             "-device", "qemu-xhci,id=reistxhci",
             "-device", "usb-mouse,bus=reistxhci.0",
@@ -339,6 +440,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
     transcript: list[str] = []
     deadline = time.monotonic() + timeout
     supervised_boot_detected = False
+    hover_shell_probe_sent = False
     try:
         while time.monotonic() < deadline:
             drain(output, transcript)
@@ -348,21 +450,29 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 supervised_boot_detected = True
                 break
             if SHELL_PROMPT in text:
-                command_name = "desktop.prg --render-probe" if render_probe \
-                    else ("desktop.prg --surface-probe" if surface_probe
-                          else ("desktop.prg --notepad-probe"
-                                if notepad_probe else
-                                ("desktop.prg --control-probe"
-                                 if control_probe else
-                                 ("desktop.prg --guidemo-probe"
-                                  if guidemo_click_probe else
-                                 ("desktop.prg --sound-probe"
-                                  if sound_probe else
-                                 ("desktop.prg --trash-context-probe"
-                                  if trash_context_probe else
-                                  ("desktop.prg --trash-confirm-probe"
-                                   if trash_confirm_probe else
-                                   "desktop.prg")))))))
+                if render_probe:
+                    command_name = "desktop.prg --render-probe"
+                elif hover_probe:
+                    command_name = (
+                        "desktop" if supervised_probe
+                        else "desktop.prg --hover-probe"
+                    )
+                elif surface_probe:
+                    command_name = "desktop.prg --surface-probe"
+                elif notepad_probe:
+                    command_name = "desktop.prg --notepad-probe"
+                elif control_probe:
+                    command_name = "desktop.prg --control-probe"
+                elif guidemo_click_probe:
+                    command_name = "desktop.prg --guidemo-probe"
+                elif sound_probe:
+                    command_name = "desktop.prg --sound-probe"
+                elif trash_context_probe:
+                    command_name = "desktop.prg --trash-context-probe"
+                elif trash_confirm_probe:
+                    command_name = "desktop.prg --trash-confirm-probe"
+                else:
+                    command_name = "desktop.prg"
                 send_command(process, command_name)
                 break
             time.sleep(0.02)
@@ -405,6 +515,89 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     capture_screenshot(process, screenshot, deadline)
                     print("runtime-desktop: PASS supervised-generation")
                     return 0
+                if hover_probe:
+                    hover_ready_deadline = min(
+                        deadline, time.monotonic() + 5.0
+                    )
+                    while time.monotonic() < hover_ready_deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if "DESKTOP_HOVER_PROBE_READY" in probe_text:
+                            break
+                        time.sleep(0.02)
+                    else:
+                        raise RuntimeError(
+                            "desktop hover probe did not become ready"
+                        )
+                    capture_screenshot(process, screenshot, deadline)
+                    send_hover_trajectory(process)
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        for failure in (
+                                "DESKTOP_HOVER_FAIL",
+                                "REIST_GUI COMPOSITOR_RESTARTED",
+                                "REIST_GUI COMPOSITOR_DEGRADED"):
+                            if failure in probe_text:
+                                tail = probe_text[-8000:].replace("\r", "")
+                                raise RuntimeError(
+                                    "desktop hover probe failed: "
+                                    f"{failure}; guest tail:\n{tail}"
+                                )
+                        if ("DESKTOP_HOVER_METRICS" in probe_text and
+                                "DESKTOP_HOVER_OK" in probe_text and
+                                "DESKTOP_EXIT_OK" in probe_text):
+                            if (supervised_probe and
+                                    "REIST_GUI COMPOSITOR_READY generation="
+                                    not in probe_text):
+                                raise RuntimeError(
+                                    "hover probe bypassed compositor supervisor"
+                                )
+                            exit_offset = probe_text.index("DESKTOP_EXIT_OK")
+                            if not hover_shell_probe_sent:
+                                send_command(process, "help")
+                                hover_shell_probe_sent = True
+                                time.sleep(0.02)
+                                continue
+                            help_offset = probe_text.find(
+                                SHELL_HELP_MARKER, exit_offset
+                            )
+                            prompt_offset = probe_text.find(
+                                SHELL_PROMPT, help_offset
+                            ) if help_offset >= 0 else -1
+                            if prompt_offset < 0:
+                                time.sleep(0.02)
+                                continue
+                            if "DESKTOP_MOUSE_OK" not in probe_text:
+                                raise RuntimeError(
+                                    "hover metrics did not follow USB input"
+                                )
+                            metrics, metric_line = parse_hover_metrics(
+                                probe_text
+                            )
+                            if metrics_log is not None:
+                                metrics_log.parent.mkdir(
+                                    parents=True, exist_ok=True
+                                )
+                                metrics_log.write_text(
+                                    metric_line + "\n", encoding="utf-8"
+                                )
+                            print(
+                                "runtime-desktop-hover: PASS "
+                                f"hover_max_ms={metrics['max_ms']} "
+                                "pointer_gap_max_ms="
+                                f"{metrics['pointer_max_gap_ms']} "
+                                "pointer_latency_max_ms="
+                                f"{metrics['pointer_latency_max_ms']} "
+                                "pointer_call_max_ms="
+                                f"{metrics['pointer_call_max_ms']}"
+                            )
+                            return 0
+                        time.sleep(0.02)
+                    raise RuntimeError(
+                        "desktop hover probe did not finish; guest tail:\n" +
+                        "".join(transcript)[-8000:].replace("\r", "")
+                    )
                 if guidemo_click_probe:
                     while time.monotonic() < deadline:
                         drain(output, transcript)
@@ -715,6 +908,8 @@ def main() -> int:
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--sound-probe", action="store_true")
     parser.add_argument("--guidemo-click-probe", action="store_true")
+    parser.add_argument("--hover-probe", action="store_true")
+    parser.add_argument("--supervised-probe", action="store_true")
     parser.add_argument("--metrics-log", type=pathlib.Path)
     parser.add_argument("--vmware-vga", action="store_true")
     parser.add_argument("--smp", type=int, default=1)
@@ -722,10 +917,14 @@ def main() -> int:
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.control_probe,
             args.trash_context_probe, args.trash_confirm_probe,
-            args.sound_probe, args.guidemo_click_probe)) > 1:
+            args.sound_probe, args.guidemo_click_probe,
+            args.hover_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
-    if args.metrics_log is not None and not args.render_probe:
-        parser.error("--metrics-log requires --render-probe")
+    if (args.metrics_log is not None and
+            not (args.render_probe or args.hover_probe)):
+        parser.error("--metrics-log requires --render-probe or --hover-probe")
+    if args.supervised_probe and not args.hover_probe:
+        parser.error("--supervised-probe requires --hover-probe")
     if args.smp < 1 or args.smp > 16:
         parser.error("--smp must be in 1..16")
     try:
@@ -733,6 +932,8 @@ def main() -> int:
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
+                   args.hover_probe,
+                   args.supervised_probe,
                    args.guidemo_click_probe, args.sound_probe,
                    args.metrics_log, args.vmware_vga, args.smp)
     except (OSError, RuntimeError) as error:

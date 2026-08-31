@@ -358,11 +358,10 @@ static reist_gui_rect_t expanded_damage(
     };
 }
 
-static void add_damage(const reist_gui_menu_layout_t *layout,
-                       reist_gui_menu_result_t *result,
-                       reist_gui_rect_t rect) {
+static void append_damage(const reist_gui_menu_layout_t *layout,
+                          reist_gui_menu_result_t *result,
+                          reist_gui_rect_t rect) {
     if (rect.width == 0U || rect.height == 0U || result->full_redraw) return;
-    rect = expanded_damage(layout, rect);
     if (result->damage_count >= REIST_GUI_MENU_DAMAGE_CAPACITY) {
         /* Fixed-capacity overflow degrades to one explicit full redraw. */
         result->damage[0] = (reist_gui_rect_t){
@@ -375,6 +374,12 @@ static void add_damage(const reist_gui_menu_layout_t *layout,
     result->damage[result->damage_count++] = rect;
 }
 
+static void add_damage(const reist_gui_menu_layout_t *layout,
+                       reist_gui_menu_result_t *result,
+                       reist_gui_rect_t rect) {
+    append_damage(layout, result, expanded_damage(layout, rect));
+}
+
 static void add_menu_damage(const reist_gui_menu_model_t *model,
                             const reist_gui_menu_layout_t *layout,
                             uint32_t menu_index,
@@ -384,6 +389,20 @@ static void add_menu_damage(const reist_gui_menu_model_t *model,
         add_damage(layout, result, rect);
     if (popup_rect_unchecked(model, layout, menu_index, &rect) == 0)
         add_damage(layout, result, rect);
+}
+
+static void add_item_damage(const reist_gui_menu_model_t *model,
+                            const reist_gui_menu_layout_t *layout,
+                            uint32_t menu_index, uint32_t item_index,
+                            reist_gui_menu_result_t *result) {
+    if (item_index == REIST_GUI_MENU_NO_INDEX) return;
+    reist_gui_rect_t rect;
+    if (item_rect_unchecked(
+            model, layout, menu_index, item_index, &rect) == 0)
+        /* Hot and pressed pixels are fully contained by the item row.  An
+         * outer margin would expose lower scene layers to an otherwise local
+         * hover update and defeat opaque-overlay composition. */
+        append_damage(layout, result, rect);
 }
 
 /* Invalidate both old and new ownership before publishing the state change. */
@@ -408,10 +427,10 @@ static void set_hot_item(const reist_gui_menu_model_t *model,
                          reist_gui_menu_result_t *result) {
     if (state->hot_item == item_index) return;
     if (state->open_menu != REIST_GUI_MENU_NO_INDEX) {
-        reist_gui_rect_t popup;
-        if (popup_rect_unchecked(
-                model, layout, state->open_menu, &popup) == 0)
-            add_damage(layout, result, popup);
+        add_item_damage(
+            model, layout, state->open_menu, state->hot_item, result);
+        add_item_damage(
+            model, layout, state->open_menu, item_index, result);
     }
     state->hot_item = item_index;
 }
@@ -522,6 +541,7 @@ static void dispatch_press(const reist_gui_menu_model_t *model,
     uint32_t item = item_at(
         model, layout, state->open_menu, event->x, event->y);
     if (item != REIST_GUI_MENU_NO_INDEX) {
+        uint32_t previous_hot = state->hot_item;
         state->capture_kind = REIST_GUI_MENU_CAPTURE_ITEM;
         state->capture_menu = state->open_menu;
         state->capture_item = item;
@@ -530,10 +550,9 @@ static void dispatch_press(const reist_gui_menu_model_t *model,
              REIST_GUI_MENU_ITEM_DISABLED) == 0U
                 ? item : REIST_GUI_MENU_NO_INDEX;
         set_hot_item(model, layout, state, enabled_item, result);
-        reist_gui_rect_t popup;
-        if (popup_rect_unchecked(
-                model, layout, state->open_menu, &popup) == 0)
-            add_damage(layout, result, popup);
+        if (previous_hot == enabled_item)
+            add_item_damage(
+                model, layout, state->open_menu, enabled_item, result);
         return;
     }
     set_open_menu(
@@ -558,16 +577,11 @@ static void dispatch_release(const reist_gui_menu_model_t *model,
     if (capture == REIST_GUI_MENU_CAPTURE_ITEM &&
         state->open_menu == menu &&
         item_at(model, layout, menu, event->x, event->y) == item) {
-        reist_gui_rect_t popup;
-        if (popup_rect_unchecked(model, layout, menu, &popup) == 0)
-            add_damage(layout, result, popup);
         activate_item(model, layout, state, menu, item, result);
     } else if (capture == REIST_GUI_MENU_CAPTURE_ITEM &&
                state->open_menu != REIST_GUI_MENU_NO_INDEX) {
-        reist_gui_rect_t popup;
-        if (popup_rect_unchecked(
-                model, layout, state->open_menu, &popup) == 0)
-            add_damage(layout, result, popup);
+        add_item_damage(
+            model, layout, state->open_menu, item, result);
     }
     state->capture_kind = REIST_GUI_MENU_CAPTURE_NONE;
     state->capture_menu = REIST_GUI_MENU_NO_INDEX;

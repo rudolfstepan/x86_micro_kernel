@@ -377,7 +377,7 @@ class UsbMouseTests(unittest.TestCase):
     def test_desktop_batches_mouse_reports_and_uses_software_pointer(self):
         source = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
             encoding="utf-8")
-        self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 32U", source)
+        self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 4U", source)
         self.assertIn("mouse_events < DESKTOP_MOUSE_BATCH_LIMIT", source)
         self.assertIn("x86os_pointer_update(pointer_x, pointer_y, 1U)", source)
         self.assertNotIn("draw_mouse_pointer", source)
@@ -391,12 +391,18 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("static spinlock_t xhci_runtime_lock = SPINLOCK_INIT",
                       xhci)
         self.assertIn("controller.runtime_published", xhci)
-        for function in ("xhci_irq_handler", "xhci_poll",
-                         "xhci_get_diagnostics"):
+        for function in ("xhci_irq_handler", "xhci_get_diagnostics"):
             start = xhci.index(function)
             body = xhci[start:xhci.index("\n}", start)]
             self.assertIn("spinlock_acquire_irq(&xhci_runtime_lock)", body)
             self.assertIn("spinlock_release_irq(&xhci_runtime_lock", body)
+        poll_start = xhci.index("void xhci_poll")
+        poll = xhci[poll_start:xhci.index("bool xhci_get_diagnostics", poll_start)]
+        self.assertIn(
+            "uint32_t flags = spinlock_acquire_irq(&xhci_runtime_lock)",
+            poll,
+        )
+        self.assertIn("spinlock_release_irq(&xhci_runtime_lock, flags)", poll)
         probe = xhci[xhci.index("int xhci_probe"):
                      xhci.index("void xhci_poll")]
         wait = probe[probe.index("xhci_wait_connected_ports"):
@@ -405,6 +411,56 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("mouse_state_lock", mouse)
         self.assertGreaterEqual(mouse.count("hid_sync_lock_acquire"), 4)
         self.assertGreaterEqual(mouse.count("hid_sync_lock_release"), 7)
+
+    def test_xhci_irq_and_poll_fallback_are_bounded(self):
+        xhci = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        irq = xhci[xhci.index("static void xhci_irq_handler") :
+                   xhci.index("int xhci_probe")]
+        self.assertIn("XHCI_VMWARE_EVENT_BUDGET", irq)
+        self.assertIn("XHCI_IRQ_EVENT_BUDGET", irq)
+        self.assertIn("XHCI_IMAN_IP | XHCI_IMAN_IE", irq)
+        publish = xhci[xhci.index("runtime_flags =") :
+                       xhci.index("void xhci_poll")]
+        self.assertIn("XHCI_CMD_INTE | XHCI_CMD_RUN", publish)
+        self.assertNotIn("~XHCI_CMD_INTE", publish)
+        poll = xhci[xhci.index("void xhci_poll") :
+                    xhci.index("bool xhci_get_diagnostics")]
+        self.assertIn("XHCI_VMWARE_EVENT_BUDGET", poll)
+        self.assertIn("XHCI_RUNTIME_EVENT_BUDGET", poll)
+        self.assertIn("XHCI_VMWARE_VENDOR_ID", xhci)
+        self.assertIn("XHCI_VMWARE_XHCI_DEVICE_ID", xhci)
+
+    def test_xhci_avoids_empty_erdp_publication(self):
+        xhci = (ROOT / "drivers/usb/xhci.c").read_text(encoding="utf-8")
+        drain = xhci[xhci.index("static bool xhci_drain_events"):
+                     xhci.index("static bool xhci_wait_command")]
+        self.assertIn("uint32_t consumed = 0U", drain)
+        self.assertIn("++consumed", drain)
+        erdp = drain[drain.index("if (consumed != 0U)"):]
+        self.assertIn("xhci_write64(controller.runtime_base + XHCI_RT_ERDP",
+                      erdp)
+        self.assertIn("uint32_t requeue_mask = 0U", drain)
+        self.assertIn("requeue_mask |= 1U << xhci_hid_index(hid)", drain)
+        self.assertLess(
+            drain.index("xhci_write64(controller.runtime_base + XHCI_RT_ERDP"),
+            drain.index("xhci_ring_doorbell(hid->slot_id, hid->endpoint_id)")
+        )
+
+    def test_hid_queue_coalesces_only_motion_and_fails_edges_closed(self):
+        mouse = (ROOT / "drivers/usb/hid_mouse.c").read_text(
+            encoding="utf-8")
+        self.assertIn("event_replaceable[HID_MOUSE_QUEUE_CAPACITY]", mouse)
+        self.assertIn("hid_mouse_accumulate_delta", mouse)
+        self.assertIn("hid_mouse_coalesce_latest", mouse)
+        self.assertIn("hid_mouse_discard_oldest_motion", mouse)
+        report = mouse[mouse.index("bool hid_mouse_report("):
+                       mouse.index("int hid_mouse_read_event(")]
+        self.assertIn("bool button_edge = buttons != current_buttons", report)
+        self.assertIn("bool replaceable = !button_edge && wheel == 0", report)
+        self.assertIn("if (!hid_mouse_discard_oldest_motion())", report)
+        self.assertNotIn("event_tail = (event_tail + 1U)", report)
+        self.assertLess(report.index("event_head = next"),
+                        report.index("current_buttons = buttons"))
 
     def test_mouse_syscall_is_append_only_and_pointer_checked(self):
         stdlib = (ROOT / "lib/libc/stdlib.h").read_text(encoding="utf-8")
@@ -416,17 +472,15 @@ class UsbMouseTests(unittest.TestCase):
         self.assertIn("X86OS_SYS_MOUSE_EVENT = 110", header)
         self.assertIn("X86OS_SYS_POINTER_UPDATE = 111", header)
         self.assertIn("SYS_POINTER_UPDATE 111", stdlib)
-        self.assertIn("framebuffer_cursor_update", syscalls)
         pointer_start = syscalls.index("static int syscall_pointer_update")
         pointer_end = syscalls.index("static int syscall_display_control",
                                      pointer_start)
         pointer_body = syscalls[pointer_start:pointer_end]
+        self.assertIn("display_control_cursor_update", pointer_body)
         self.assertNotIn("scheduler_preempt_disable", pointer_body)
         self.assertNotIn("scheduler_preempt_enable", pointer_body)
-        self.assertLess(pointer_body.index("framebuffer_frame_draw_enter"),
-                        pointer_body.index("framebuffer_cursor_update"))
-        self.assertLess(pointer_body.index("framebuffer_cursor_update"),
-                        pointer_body.index("framebuffer_frame_draw_leave"))
+        self.assertNotIn("framebuffer_frame_draw_enter", pointer_body)
+        self.assertNotIn("framebuffer_frame_draw_leave", pointer_body)
         start = syscalls.index("static int syscall_mouse_event")
         body = syscalls[start:syscalls.index("\n}", start)]
         self.assertLess(body.index("copy_from_user"),

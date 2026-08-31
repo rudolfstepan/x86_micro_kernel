@@ -269,12 +269,110 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("fill_rect_clipped", self.source)
         self.assertIn("draw_text_clipped", self.source)
 
-    def test_menu_state_changes_use_an_atomic_frame_without_partial_glyphs(self):
+    def test_menu_state_changes_keep_exact_clipped_damage(self):
         collect = self.source[self.source.index("static void collect_menu_damage") :]
         collect = collect[: collect.index("\n}") + 2]
-        self.assertIn("menu_result->damage_count != 0U", collect)
+        self.assertIn("if (menu_result->full_redraw)", collect)
         self.assertIn("desktop_dirty_full(dirty)", collect)
-        self.assertIn("explicit glyph clip rectangle", collect)
+        self.assertIn("index < menu_result->damage_count", collect)
+        self.assertIn("desktop_dirty_add", collect)
+        self.assertIn("desktop_rect_from_gui", collect)
+        self.assertNotIn("damage_count != 0U", collect)
+
+    def test_vmware_menu_feedback_uses_a_bounded_start_item_strip(self):
+        activation = self.source[
+            self.source.index("static int desktop_activate_with_fallback") :
+            self.source.index("static int desktop_svga2d_activate_until_ready")
+        ]
+        self.assertIn("desktop_low_latency_menu_feedback = 0U", activation)
+        self.assertIn("REIST_SVGA2D_CAP_RECT_COPY", activation)
+        collect = self.source[self.source.index("static void collect_menu_damage") :]
+        collect = collect[: collect.index("\n}") + 2]
+        self.assertIn("desktop_start_menu_item_damage(display, damage)", collect)
+        self.assertIn("ui->menu.open_menu == DESKTOP_MENU_START", collect)
+        self.assertIn("DESKTOP_MENU_FAST_FEEDBACK_WIDTH", collect)
+        render_item = self.source[
+            self.source.index("static void render_menu_item_model") :
+            self.source.index("static void render_menu_popup_model")
+        ]
+        self.assertIn("model == &desktop_menu_model", render_item)
+        self.assertIn("fast_feedback", render_item)
+        self.assertIn("(desktop_rect_t){item.x, item.y, feedback_width, item.height}", render_item)
+
+    def test_opaque_start_menu_damage_skips_lower_scene_layers(self):
+        classifier = self.source[
+            self.source.index("static uint32_t menu_overlay_local_damage") :
+            self.source.index("static void render_menu_overlay_damage")
+        ]
+        self.assertIn("dirty->full", classifier)
+        self.assertIn("ui->menu.open_menu != DESKTOP_MENU_START", classifier)
+        self.assertIn("ui->dialog.visible", classifier)
+        self.assertIn("desktop_drag.phase != DESKTOP_DRAG_PHASE_IDLE", classifier)
+        self.assertIn("start_menu_damage_bounds(display, &bounds)", classifier)
+        self.assertIn("rect_contains(bounds, dirty->rects[index])", classifier)
+        popup = self.source[
+            self.source.index("static void render_menu_overlay_damage") :
+            self.source.index("static void render_desktop_rect(")
+        ]
+        self.assertIn("index < dirty->count", popup)
+        self.assertIn("visible_region_subtract_popup", popup)
+        self.assertIn("desktop_taskbar_rect(display)", popup)
+        self.assertIn("render_desktop_clip(", popup)
+        self.assertIn("render_taskbar(&context", popup)
+        self.assertIn("render_menu_popup(&context, ui)", popup)
+        frame = self.source[
+            self.source.index("static uint32_t render_desktop_frame") :
+            self.source.index("static uint32_t render_desktop_cached_move_frame")
+        ]
+        self.assertIn("menu_overlay_local_damage(display, ui, dirty)", frame)
+        self.assertIn("render_menu_overlay_damage(", frame)
+
+    def test_pointer_motion_publishes_without_scheduler_throttle(self):
+        self.assertIn(
+            "#define DESKTOP_POINTER_CONTINUOUS_INPUT_INTERVAL_MS 16U",
+            self.source,
+        )
+        self.assertNotIn("static uint32_t pointer_present_due", self.source)
+        main = self.source[self.source.index("int main(") :]
+        self.assertIn("pointer_present_pending", main)
+        self.assertIn("pointer_pending_since_ms", main)
+        self.assertIn("pointer_overlay_active", main)
+        self.assertIn("desktop_pointer_present(", main)
+        self.assertIn("pointer_latency_max_ms", self.source)
+        self.assertIn("pointer_call_max_ms", self.source)
+        self.assertIn("pointer_failures", self.source)
+        no_damage = main[main.index("} else if (pointer_present_pending) {") :]
+        self.assertLess(
+            no_damage.index("desktop_pointer_present(pointer_x, pointer_y, 1U)"),
+            no_damage.index("x86os_sleep_ms(DESKTOP_IDLE_POLL_MS)"),
+        )
+        self.assertIn(
+            "pointer_pending_clock_valid = 0U;\n"
+            "            }\n"
+            "            (void)x86os_sleep_ms(DESKTOP_IDLE_POLL_MS);",
+            no_damage,
+        )
+        self.assertIn("x86os_sleep_ms(DESKTOP_IDLE_POLL_MS)", main)
+        self.assertNotIn("while (pointer_present", main)
+
+    def test_hover_probe_measures_all_start_menu_rows(self):
+        self.assertIn('text_equal(argv[1], "--hover-probe")', self.source)
+        self.assertIn("DESKTOP_HOVER_PROBE_ITEMS", self.source)
+        self.assertIn("DESKTOP_HOVER_METRICS", self.source)
+        self.assertIn("DESKTOP_HOVER_OK", self.source)
+        self.assertIn("DESKTOP_HOVER_MENU_READY", self.source)
+        self.assertIn("!left_down && left_was_down", self.source)
+        self.assertIn("hover_menu_ready_pending = 1U", self.source)
+        self.assertIn("mouse_batch_max_ms", self.source)
+        self.assertIn("mouse_batch_max_reports", self.source)
+        self.assertIn("hover_probe_record_transition", self.source)
+        self.assertIn("hover_probe_record_pointer_present", self.source)
+        transition = self.source[
+            self.source.index("static void hover_probe_record_transition") :
+            self.source.index("static void print_render_metrics")
+        ]
+        self.assertNotIn("x86os_puts", transition)
+        self.assertNotIn("x86os_putchar", transition)
 
     def test_ansi_arrow_keys_change_explorer_selection(self):
         self.assertIn("desktop_explorer_keyboard", self.source)
@@ -643,7 +741,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_move_cache_capture", probe)
         self.assertIn("move_cache.valid ? &move_cache : 0", probe)
         measured = self.source[
-            self.source.index("static void render_desktop_measured") :
+            self.source.index("static uint32_t render_desktop_measured") :
             self.source.index("static int read_escape_byte")
         ]
         self.assertGreaterEqual(measured.count("x86os_monotonic_ms"), 2)
@@ -733,7 +831,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_surface_destroy(", self.source)
 
     def test_mouse_motion_is_coalesced_between_button_edges(self):
-        self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 32U", self.source)
+        self.assertIn("#define DESKTOP_MOUSE_BATCH_LIMIT 4U", self.source)
         self.assertIn("static void accumulate_mouse_delta", self.source)
         self.assertIn("static uint32_t dispatch_pointer_motion", self.source)
         self.assertIn("static uint32_t dispatch_pointer_button", self.source)

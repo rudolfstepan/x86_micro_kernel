@@ -136,6 +136,30 @@ class ReistSupervisorTests(unittest.TestCase):
         self.assertIn("#ifdef REIST_SOUNDPLAYER_SURFACE_PROBE", spawn)
         self.assertIn('"--sound-probe"', spawn)
 
+    def test_hover_probe_is_compile_time_only_and_supervisor_owned(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        windows = (ROOT / "scripts/build-windows.ps1").read_text(
+            encoding="utf-8")
+        self.assertIn("COMPOSITOR_HOVER_PROBE ?= 0", makefile)
+        self.assertIn("REIST_COMPOSITOR_HOVER_PROBE", makefile)
+        self.assertIn("CompositorHoverProbe", windows)
+        spawn = source[source.index("static bool compositor_spawn_next"):
+                       source.index("static bool compositor_fence_apply")]
+        self.assertIn("REIST_COMPOSITOR_HOVER_PROBE", spawn)
+        self.assertIn('"--hover-probe"', spawn)
+        self.assertIn("process_spawn_supervised_prepared", spawn)
+        self.assertIn("PROCESS_DOMAIN_COMPOSITOR", spawn)
+        monitor = source[source.index("static void compositor_monitor_process"):
+                         source.index("static bool compositor_event")]
+        clean_stop = monitor[monitor.index("if (control.stop_requested != 0U)"):]
+        self.assertIn("supervisor_admin_pause(control.supervisor)", clean_stop)
+        self.assertLess(clean_stop.index("supervisor_admin_pause"),
+                        clean_stop.index("control.pid = 0"))
+        self.assertLess(clean_stop.index("supervisor_admin_pause"),
+                        clean_stop.index("compositor_control_write"))
+
     def test_driver_control_is_published_before_prepared_task_starts(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(
             encoding="utf-8")

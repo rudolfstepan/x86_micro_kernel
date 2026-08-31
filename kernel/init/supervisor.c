@@ -5821,8 +5821,17 @@ static bool compositor_spawn_next(supervisor_handle_t handle) {
     if (compositor_control_read(&control) != 0 || control.active == 0U ||
         control.administratively_enabled == 0U || control.pid != 0 ||
         control.fenced == 0U) return false;
+#if defined(REIST_SOUNDPLAYER_SURFACE_PROBE) && \
+    defined(REIST_COMPOSITOR_HOVER_PROBE)
+#error "Compositor diagnostic arguments are mutually exclusive"
+#endif
 #ifdef REIST_SOUNDPLAYER_SURFACE_PROBE
     const char *arguments[] = {"desktop.prg", "--sound-probe"};
+    const int argument_count = 2;
+#elif defined(REIST_COMPOSITOR_HOVER_PROBE)
+    /* Compile-time-only runtime evidence: the measured desktop retains the
+     * production compositor domain, service class and restart lifecycle. */
+    const char *arguments[] = {"desktop.prg", "--hover-probe"};
     const int argument_count = 2;
 #else
     const char *arguments[] = {"desktop.prg"};
@@ -6039,6 +6048,14 @@ static void compositor_monitor_process(void) {
             control.pid, control.process_generation)) return;
     if (control.stop_requested != 0U) {
         if (display_control_graphics_active()) {
+            (void)supervisor_force_isolate(control.supervisor);
+            return;
+        }
+        /* Intentional session exit is an administrative transition, not a
+         * heartbeat failure. Quiesce the generic deadline before publishing
+         * the empty compositor generation or it will later consume the
+         * restart budget and report a false degraded state. */
+        if (supervisor_admin_pause(control.supervisor) != 0) {
             (void)supervisor_force_isolate(control.supervisor);
             return;
         }

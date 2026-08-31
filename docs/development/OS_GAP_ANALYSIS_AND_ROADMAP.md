@@ -1,6 +1,23 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 30. August 2026
+Stand: 31. August 2026
+
+**R3.4h ist abgeschlossen:** Die manuelle AMD-VMware-Nachprüfung zeigte, dass
+der bisherige Einzelevent-Mausnachweis keine Hover-Kadenz bewies. Der
+Menü-Controller liefert weiterhin feste alte/neue Itemrechtecke; auf dem
+aktiven VMware-SVGA-II-RECT_COPY-Pfad ohne RECT_FILL zeichnet der Compositor
+jedoch nur einen sichtbaren vier Pixel breiten linken Auswahlstreifen. xHCI
+ringt je Endpoint nur einmal nach einem begrenzten Event-Batch. Der
+Compositor veröffentlicht die neueste reine Softwarepointer-Position im selben
+begrenzten Turn mit anschließendem 1-ms-Handoff und verarbeitet höchstens vier
+Reports pro Turn. Der Vier-vCPU-xHCI-Hoverlauf besucht sechs verschiedene
+Startmenüeinträge. Sein RFB-Runner baut nach dem Grafik-Ready-Marker eine
+frische Sitzung auf, damit die absolute Trajektorie nicht Textmoduskoordinaten
+weiterverwendet. Die finalen VMware-Messwerte betrugen 3 ms Hot-Frame,
+18 ms Pointer-Abstand, 6 ms Pointer-Latenz und 6 ms Cursor-Aufrufzeit; QEMU
+bestand denselben Pfad mit 0/12/2/1 ms. Vollbild-Probe-, Fallback-, Restart-
+und Degradationsmarker blieben aus. Das ist kein universeller p99- oder
+Windows-95-Paritätsclaim.
 
 **R3.4g ist abgeschlossen:** Der VMware-Softwarecursor veröffentlicht alte und
 neue Position als höchstens zwei exakte Rechtecke in genau einem Present. Der

@@ -77,6 +77,11 @@ static reist_gui_menu_result_t dispatch(
     return result;
 }
 
+static int same_rect(reist_gui_rect_t left, reist_gui_rect_t right) {
+    return left.x == right.x && left.y == right.y &&
+           left.width == right.width && left.height == right.height;
+}
+
 int main(void) {
     reist_gui_menu_model_t menu_model = model();
     reist_gui_menu_layout_t menu_layout = layout();
@@ -132,6 +137,38 @@ int main(void) {
         workspace_title.x + 2, workspace_title.y + 2, 0U, 0U);
     assert(result.consumed && state.open_menu == 0U);
 
+    /* Hover and pressed feedback invalidate only the rows whose visual
+     * state changed.  No ordinary item transition may promote to popup or
+     * full-surface damage. */
+    reist_gui_rect_t workspace_item_0;
+    reist_gui_rect_t workspace_item_1;
+    assert(reist_gui_menu_item_rect(
+               &menu_model, &menu_layout, 0U, 0U,
+               &workspace_item_0) == REIST_GUI_MENU_OK);
+    assert(reist_gui_menu_item_rect(
+               &menu_model, &menu_layout, 0U, 1U,
+               &workspace_item_1) == REIST_GUI_MENU_OK);
+    result = dispatch(
+        &menu_model, &menu_layout, &state,
+        REIST_GUI_MENU_EVENT_POINTER_MOTION,
+        workspace_item_0.x + 2, workspace_item_0.y + 2, 0U, 0U);
+    assert(state.hot_item == 0U && !result.full_redraw);
+    assert(result.damage_count == 1U);
+    assert(same_rect(result.damage[0], workspace_item_0));
+    result = dispatch(
+        &menu_model, &menu_layout, &state,
+        REIST_GUI_MENU_EVENT_POINTER_MOTION,
+        workspace_item_1.x + 2, workspace_item_1.y + 2, 0U, 0U);
+    assert(state.hot_item == 1U && !result.full_redraw);
+    assert(result.damage_count == 2U);
+    assert(same_rect(result.damage[0], workspace_item_0));
+    assert(same_rect(result.damage[1], workspace_item_1));
+    result = dispatch(
+        &menu_model, &menu_layout, &state,
+        REIST_GUI_MENU_EVENT_POINTER_MOTION,
+        workspace_item_1.x + 2, workspace_item_1.y + 2, 0U, 0U);
+    assert(result.damage_count == 0U && !result.full_redraw);
+
     result = dispatch(
         &menu_model, &menu_layout, &state,
         REIST_GUI_MENU_EVENT_POINTER_MOTION,
@@ -139,15 +176,18 @@ int main(void) {
     assert(result.consumed && state.open_menu == 2U);
     assert(reist_gui_menu_item_rect(
                &menu_model, &menu_layout, 2U, 0U, &help_item) == 0);
-    (void)dispatch(
+    result = dispatch(
         &menu_model, &menu_layout, &state,
         REIST_GUI_MENU_EVENT_POINTER_MOTION,
         help_item.x + 2, help_item.y + 2, 0U, 0U);
-    assert(state.hot_item == 0U);
-    (void)dispatch(
+    assert(state.hot_item == 0U && result.damage_count == 1U &&
+           !result.full_redraw);
+    result = dispatch(
         &menu_model, &menu_layout, &state,
         REIST_GUI_MENU_EVENT_POINTER_BUTTON,
         help_item.x + 2, help_item.y + 2, 1U, 0U);
+    assert(result.damage_count == 1U && !result.full_redraw);
+    assert(same_rect(result.damage[0], help_item));
     result = dispatch(
         &menu_model, &menu_layout, &state,
         REIST_GUI_MENU_EVENT_POINTER_BUTTON,

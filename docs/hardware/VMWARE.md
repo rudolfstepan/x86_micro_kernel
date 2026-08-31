@@ -96,6 +96,46 @@ Sekunden:
 .\scripts\test-reist-runtime.ps1 -Mode vmware-svga2d-lifecycle -Target vmware
 ```
 
+Der getrennte Vier-vCPU-Hoverlauf startet das normale `desktop` mit einem
+compile-time-only Supervisor-Probe-Argument. Nach
+`DESKTOP_HOVER_PROBE_READY` verwirft der RFB-Runner seine für das Shell-Kommando
+geöffnete Sitzung und handelt eine neue Sitzung mit der finalen
+Grafikmodus-Geometrie aus; die absolute Trajektorie kann daher weder den
+Textmodus noch eine veraltete VMware-Viewportgröße verwenden. Sie bewegt
+dieselbe virtuelle xHCI-Basic-Mouse in begrenzten 60-Hz-Schritten zum
+Startknopf und danach geordnet über alle sechs Menüeinträge. Der Nachweis
+akzeptiert ausschließlich sechs gemessene Hot-Frames ohne Vollbild-Fallback,
+höchstens zwei Schadensregionen, maximal 17 ms je Hot-Frame und maximal 34 ms
+zwischen Pointer-Presents während kontinuierlicher Motion. Button-Eingabe,
+`DESKTOP_MOUSE_OK`, Desktop-Exit, neue Ring-3-Shell und zehn Sekunden stabiler
+Nachlauf sind Teil desselben Nachweises:
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode vmware-hover-cadence
+```
+
+Diese deterministische Referenztrajektorie begrenzt den reproduzierten Pfad;
+sie ist kein universeller p99-Nachweis für beliebige Hostlast oder Hardware.
+
+VMware SVGA-II bietet in diesem Pfad `RECT_COPY`, aber kein `RECT_FILL`.
+Der Startmenü-Controller liefert weiterhin die exakten alten/neuen
+Itemzeilen; nur der beschleunigte Compositor zeichnet daraus einen festen
+vier Pixel breiten linken Auswahlstreifen. Damit bleibt die Rückmeldung klar
+sichtbar, ohne bei jeder Hover-Änderung eine vollständige Zeile über den
+langsamen Framebuffer-BAR zu schreiben. QEMU, Software-Fallback und andere
+Menüs behalten die normale vollständige Zeilenrückmeldung.
+
+Auf dem VMware-SVGA-II-FIFO verwendet der Cursorpfad den vorhandenen
+`SVGA_FIFO_BUSY`-Wakeup-Latch: Solange die virtuelle Hostseite bereits FIFO
+verarbeitet, werden neue begrenzte Rechtecke nur angehängt statt einen weiteren
+`SYNC`-Portzugriff auszulösen. Das erhält die feste FIFO-Reihenfolge und
+vermeidet einen Host-Übergang pro Bewegungsreport.
+
+Am 31. August 2026 bestand der finale R3.4h-Vier-vCPU-Lauf auf dem
+AMD-VMware-Host: sechs verschiedene Hot-Zustände, kein Vollbild-Probe- oder
+Fallback-Frame, höchstens 3 ms Hot-Framezeit, 18 ms maximaler Pointer-Abstand,
+6 ms Eingabe-zu-Pointer-Latenz und 6 ms Cursor-Syscallzeit.
+
 Der Vier-vCPU-Benchmark prüft außerdem, dass vier gewöhnliche, gemäß SMP-
 Vertrag weiterhin BSP-gebundene Worker zusammen mindestens 0,90-mal den
 Single-Worker-Durchsatz erreichen. Das ist ein Kontentionsnachweis und keine

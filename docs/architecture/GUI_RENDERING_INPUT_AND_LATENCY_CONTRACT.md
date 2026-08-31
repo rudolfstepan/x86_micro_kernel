@@ -171,10 +171,11 @@ Deckungssemantik versioniert und getestet sind.
 ### Atomare Präsentation
 
 Alle Dirty-Regionen eines Desktopumlaufs werden innerhalb einer begrenzten
-Frame-Transaktion gezeichnet. Der Hardwarepointer wird vor dem Frame verborgen
-und danach an der aktuellen Position wiederhergestellt. Bei Displayfehlern
-wird die Transaktion abgebrochen beziehungsweise auf den validierten
-Softwarepfad zurückgeführt; ein halber Frame gilt nicht als Erfolg.
+Frame-Transaktion gezeichnet. Der Softwarepointer liegt außerhalb des
+Szenenschattenpuffers und wird nach einem ihn schneidenden Scene-Present erneut
+auf das Scanout-Overlay gelegt. Bei Displayfehlern wird die Transaktion
+abgebrochen beziehungsweise auf den validierten Softwarepfad zurückgeführt;
+ein halber Frame gilt nicht als Erfolg.
 
 Eine Bewegung des Softwarepointers veröffentlicht höchstens zwei exakt
 geclippte Rechtecke: die alte und die neue Cursorfläche. Beide Schäden werden
@@ -182,6 +183,30 @@ in derselben Frame-Transaktion beziehungsweise genau einem Present-Batch
 gesichert. Eine möglicherweise bildschirmgroße Bounding Box zwischen alter und
 neuer Position ist unzulässig. Erschöpft die vorhandene feste Damage-Kapazität,
 bleibt der etablierte vollständige Damage-Fallback maßgeblich.
+
+Reine Pointer-Motion darf eine noch nicht veröffentlichte ältere Position
+durch die neueste Position ersetzen. Ohne anderen Bildschirmschaden wird diese
+Position in derselben begrenzten Compositorrunde veröffentlicht; danach folgt
+der bestehende höchstens ein Millisekunde lange blockierende Handoff. Eine
+Button-Kante wird nie zeitlich verworfen, umgeordnet oder mit einer anderen
+Kante zusammengefasst. Erzeugt Motion sichtbaren UI-Schaden, werden UI-Frame
+und Pointerposition unmittelbar veröffentlicht. Ein Cursor-Overlay betritt
+nicht die allgemeine Frame-Reservierung, weil deren abgelaufene Szenen-Recovery
+unbegrenzte Cursorlatenz verursachen würde.
+
+Ein Menü-Hot-State liefert ausschließlich die geclippten alten und neuen
+Itemzeilen einschließlich des festen Damage-Rands. Auf dem aktivierten
+VMware-SVGA-II-RECT_COPY-Pfad ohne RECT_FILL bildet der Compositor dieses
+Startmenü-Ergebnis als festen vier Pixel breiten linken Auswahlstreifen ab;
+Hintergrund und Text der Zeile bleiben dort unverändert. Alle nicht
+beschleunigten und nicht zum Startmenü gehörenden Pfade zeichnen weiterhin die
+vollständige Zeile. Pressed/Released zeichnet nur die betroffene Rückmeldung
+neu, sofern das Menü nicht gleichzeitig geöffnet, geschlossen oder aktiviert
+wird. Öffnen und Schließen decken weiterhin Titel, Popup, Schatten und
+darunterliegende Pixel vollständig ab; Kapazitätsüberlauf bleibt ein expliziter
+Vollbild-Fallback. Der pixelgeclippte Text-Syscall bindet jeden Glyphenpixel an
+dasselbe Schadensrechteck wie Fills und Bevels, sodass eine schmale
+Aktualisierung weder Nachbarpixel löscht noch halbe Glyphen hinterlässt.
 
 Während eines interaktiven Resize bleibt nur die zuletzt bestätigte
 Surface-Größe autoritativ. Nach dem finalen Configure-ACK invalidiert der

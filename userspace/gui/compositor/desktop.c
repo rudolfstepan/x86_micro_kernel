@@ -34,6 +34,7 @@
 #define DESKTOP_SVGA2D_REPLY_MS 100U
 #define DESKTOP_SVGA2D_ACTIVATE_REPLY_MS 500U
 #define DESKTOP_ARGUMENT_LIMIT 32U
+#define DESKTOP_MENU_FAST_FEEDBACK_WIDTH 4U
 #define DESKTOP_MENU_COUNT 1U
 #define DESKTOP_METRICS_VERSION 1U
 #define DESKTOP_RENDER_FALLBACK (1U << 0)
@@ -41,8 +42,11 @@
 #define DESKTOP_RENDER_ACCELERATION_FALLBACK (1U << 2)
 #define DESKTOP_RENDER_PROBE_STEPS 8U
 #define DESKTOP_RENDER_PROBE_STEP_X 4
-#define DESKTOP_MOUSE_BATCH_LIMIT 32U
+#define DESKTOP_MOUSE_BATCH_LIMIT 4U
 #define DESKTOP_IDLE_POLL_MS 1U
+#define DESKTOP_POINTER_CONTINUOUS_INPUT_INTERVAL_MS 16U
+#define DESKTOP_HOVER_PROBE_VERSION 1U
+#define DESKTOP_HOVER_PROBE_ITEMS 6U
 #define DESKTOP_FILE_ICON_SIZE 32U
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
@@ -156,6 +160,7 @@ static int32_t desktop_svga2d_last_service_status;
 static int32_t desktop_svga2d_last_transaction_status;
 static int32_t desktop_svga2d_last_copy_status;
 static int32_t desktop_svga2d_last_mark_status;
+static uint32_t desktop_low_latency_menu_feedback;
 
 static void desktop_svga2d_forget_endpoint(void) {
     if (desktop_svga2d_endpoint != X86OS_IPC_INVALID_HANDLE)
@@ -327,8 +332,11 @@ static int desktop_svga2d_activate_bounded(void) {
 }
 
 static int desktop_activate_with_fallback(void) {
+    desktop_low_latency_menu_feedback = 0U;
     int driver_status = desktop_svga2d_activate_bounded();
     if (driver_status == 0) {
+        desktop_low_latency_menu_feedback =
+            (desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) != 0U;
         x86os_puts("DESKTOP_ACCELERATION_READY caps=");
         x86os_print_number((int)desktop_svga2d_capabilities);
         x86os_putchar('\n');
@@ -603,6 +611,9 @@ static const reist_gui_dialog_model_t empty_trash_dialog_model = {
 _Static_assert(sizeof(start_menu_items) / sizeof(start_menu_items[0]) <=
                    REIST_GUI_MENU_MAX_ITEMS,
                "Start menu exceeds fixed item capacity");
+_Static_assert(sizeof(start_menu_items) / sizeof(start_menu_items[0]) ==
+                   DESKTOP_HOVER_PROBE_ITEMS,
+               "hover probe must cover every Start-menu item");
 
 /* Deliberately small, high-contrast palette inspired by classic desktops. */
 static const uint32_t color_desktop = 0x00006E8EU;
@@ -697,6 +708,37 @@ typedef struct {
     uint32_t clock_errors;
     uint32_t probe_errors;
 } desktop_render_metrics_t;
+
+typedef struct {
+    uint32_t enabled;
+    uint32_t visited_mask;
+    uint32_t last_hot;
+    uint32_t hover_frames;
+    uint32_t hover_full_frames;
+    uint32_t hover_total_ms;
+    uint32_t hover_max_ms;
+    uint32_t hover_damage_max;
+    uint32_t mouse_reports;
+    uint32_t mouse_batch_max_ms;
+    uint32_t mouse_batch_max_reports;
+    uint32_t pointer_frames;
+    uint32_t pointer_max_gap_ms;
+    uint32_t pointer_latency_max_ms;
+    uint32_t pointer_call_max_ms;
+    uint32_t pointer_failures;
+    uint32_t order_errors;
+    uint32_t clock_errors;
+    uint32_t complete;
+    uint32_t success;
+    uint64_t pointer_last_present_ms;
+} desktop_hover_probe_t;
+
+typedef struct {
+    int status;
+    uint32_t clock_valid;
+    uint64_t started_ms;
+    uint64_t finished_ms;
+} desktop_pointer_present_result_t;
 
 typedef struct {
     reist_gui_menu_state_t menu;
@@ -1600,18 +1642,56 @@ static reist_gui_dialog_layout_t desktop_dialog_layout(
     };
 }
 
+static uint32_t desktop_start_menu_item_damage(
+    const x86os_display_info_t *display, desktop_rect_t candidate) {
+    if (display == 0 || candidate.width == 0U || candidate.height == 0U)
+        return 0U;
+    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
+    uint32_t item_count = desktop_menu_model.menus[DESKTOP_MENU_START]
+        .item_count;
+    for (uint32_t item = 0U; item < item_count; ++item) {
+        reist_gui_rect_t gui_item;
+        if (reist_gui_menu_item_rect(
+                &desktop_menu_model, &layout, DESKTOP_MENU_START, item,
+                &gui_item) != 0)
+            return 0U;
+        desktop_rect_t row = desktop_rect_from_gui(gui_item);
+        if (candidate.x == row.x && candidate.y == row.y &&
+            candidate.width == row.width && candidate.height == row.height)
+            return 1U;
+    }
+    return 0U;
+}
+
 static void collect_menu_damage(
+    const desktop_ui_state_t *ui, const x86os_display_info_t *display,
     desktop_dirty_region_t *dirty,
     const reist_gui_menu_result_t *menu_result) {
     if (dirty == 0 || menu_result == 0) return;
-    if (menu_result->full_redraw || menu_result->damage_count != 0U) {
-        /* The current text syscall clips only at the screen edge. Repainting
-         * a narrow scene region can therefore clear half of a glyph while
-         * draw_text_clipped() correctly refuses to draw that partial glyph.
-         * Publish one atomic full scene for visible menu state changes until
-         * the raster ABI provides an explicit glyph clip rectangle. Motion
-         * inside an unchanged item reports no damage and remains redraw-free. */
+    if (menu_result->full_redraw) {
         desktop_dirty_full(dirty);
+        return;
+    }
+    /* The append-only clipped-text ABI now clips every glyph pixel against
+     * the same update rectangle as fills and bevels.  Preserve the menu
+     * controller's fixed old/new item damage instead of repainting the scene. */
+    for (uint32_t index = 0U; index < menu_result->damage_count; ++index) {
+        desktop_rect_t damage =
+            desktop_rect_from_gui(menu_result->damage[index]);
+        /* VMware's SVGA-II device exposes rectangle copy but no rectangle
+         * fill.  A complete 95-style blue row would therefore be a slow
+         * uncached BAR write.  Keep the controller's exact row contract, but
+         * render the accelerated desktop feedback as a narrow left-hand band.
+         * The shape change is enabled only with the copy-capable service and
+         * only for an already open Start-menu item; all other damage remains
+         * byte-for-byte the normal compositor path. */
+        if (desktop_low_latency_menu_feedback != 0U && ui != 0 &&
+            ui->menu.open_menu == DESKTOP_MENU_START &&
+            desktop_start_menu_item_damage(display, damage)) {
+            if (damage.width > DESKTOP_MENU_FAST_FEEDBACK_WIDTH)
+                damage.width = DESKTOP_MENU_FAST_FEEDBACK_WIDTH;
+        }
+        desktop_dirty_add(dirty, damage);
     }
 }
 
@@ -1739,7 +1819,7 @@ static desktop_ui_result_t desktop_ui_apply_trash_menu_result(
     const reist_gui_menu_result_t *menu_result) {
     desktop_ui_result_t result = desktop_ui_result_none();
     result.consumed = menu_result->consumed;
-    collect_menu_damage(dirty, menu_result);
+    collect_menu_damage(ui, display, dirty, menu_result);
     if (!menu_result->activated) return result;
     if (menu_result->action == DESKTOP_TRASH_MENU_ACTION_OPEN) {
         result.action = DESKTOP_UI_ACTION_OPEN_TRASH;
@@ -1777,7 +1857,7 @@ static desktop_ui_result_t desktop_ui_apply_menu_result(
     const reist_gui_menu_result_t *menu_result) {
     desktop_ui_result_t result = desktop_ui_result_none();
     result.consumed = menu_result->consumed;
-    collect_menu_damage(dirty, menu_result);
+    collect_menu_damage(ui, display, dirty, menu_result);
     if (!menu_result->activated) return result;
     if (menu_result->action == DESKTOP_MENU_ACTION_HELP ||
         menu_result->action == DESKTOP_MENU_ACTION_ABOUT) {
@@ -2635,6 +2715,62 @@ static void render_taskbar(
         color_text, color_face);
 }
 
+static void render_menu_item_model(
+    const desktop_render_context_t *context,
+    const reist_gui_menu_model_t *model,
+    const reist_gui_menu_layout_t *layout,
+    const reist_gui_menu_state_t *state, uint32_t menu_index,
+    uint32_t item_index) {
+    if (context == 0 || model == 0 || layout == 0 || state == 0 ||
+        menu_index >= model->menu_count ||
+        item_index >= model->menus[menu_index].item_count)
+        return;
+    reist_gui_rect_t gui_item;
+    if (reist_gui_menu_item_rect(
+            model, layout, menu_index, item_index, &gui_item) != 0)
+        return;
+    const x86os_display_info_t *display = context->display;
+    desktop_rect_t item = desktop_rect_from_gui(gui_item);
+    const reist_gui_menu_item_t *model_item =
+        &model->menus[menu_index].items[item_index];
+    uint32_t disabled =
+        (model_item->flags & REIST_GUI_MENU_ITEM_DISABLED) != 0U;
+    uint32_t hot = !disabled && state->hot_item == item_index;
+    uint32_t pressed = hot &&
+        state->capture_kind == REIST_GUI_MENU_CAPTURE_ITEM &&
+        state->capture_menu == menu_index &&
+        state->capture_item == item_index;
+    uint32_t fast_feedback = desktop_low_latency_menu_feedback != 0U &&
+        model == &desktop_menu_model && menu_index == DESKTOP_MENU_START &&
+        (hot || pressed);
+    uint32_t background = fast_feedback ? color_face :
+        (hot ? color_active : color_face);
+    uint32_t foreground = disabled
+        ? color_shadow : (hot && !fast_feedback ? color_title_text : color_text);
+    fill_rect_clipped(context, item, background);
+    if (fast_feedback) {
+        uint32_t feedback_width = item.width > DESKTOP_MENU_FAST_FEEDBACK_WIDTH
+            ? DESKTOP_MENU_FAST_FEEDBACK_WIDTH : item.width;
+        fill_rect_clipped(
+            context,
+            (desktop_rect_t){item.x, item.y, feedback_width, item.height},
+            pressed ? color_dark : color_active);
+    } else if (pressed) {
+        draw_bevel(context, item, background, 0U);
+    }
+    uint32_t text_y = item.height > display->font_height
+        ? (item.height - display->font_height) / 2U : 0U;
+    int32_t marker_x = item.x + (int32_t)layout->item_padding_x;
+    int32_t label_x = marker_x + (int32_t)(display->font_width * 2U);
+    uint32_t used = layout->item_padding_x * 2U +
+                    display->font_width * 2U;
+    draw_text_clipped(
+        context, label_x, item.y + (int32_t)text_y,
+        model_item->label,
+        item.width > used ? item.width - used : 1U,
+        foreground, background);
+}
+
 static void render_menu_popup_model(
     const desktop_render_context_t *context,
     const reist_gui_menu_model_t *model,
@@ -2643,7 +2779,6 @@ static void render_menu_popup_model(
     if (model == 0 || layout == 0 || state == 0 ||
         state->open_menu == REIST_GUI_MENU_NO_INDEX ||
         state->open_menu >= model->menu_count) return;
-    const x86os_display_info_t *display = context->display;
     uint32_t menu_index = state->open_menu;
     reist_gui_rect_t gui_popup;
     if (reist_gui_menu_popup_rect(
@@ -2658,44 +2793,11 @@ static void render_menu_popup_model(
         color_dark);
     draw_bevel(context, popup, color_face, 1U);
 
-    const reist_gui_menu_t *menu_model =
-        &model->menus[menu_index];
+    const reist_gui_menu_t *menu_model = &model->menus[menu_index];
     for (uint32_t item_index = 0U;
-         item_index < menu_model->item_count; ++item_index) {
-        reist_gui_rect_t gui_item;
-        if (reist_gui_menu_item_rect(
-                model, layout, menu_index,
-                item_index, &gui_item) != 0)
-            continue;
-        desktop_rect_t item = desktop_rect_from_gui(gui_item);
-        const reist_gui_menu_item_t *model_item =
-            &menu_model->items[item_index];
-        uint32_t disabled =
-            (model_item->flags & REIST_GUI_MENU_ITEM_DISABLED) != 0U;
-        uint32_t hot = !disabled && state->hot_item == item_index;
-        uint32_t pressed = hot &&
-            state->capture_kind == REIST_GUI_MENU_CAPTURE_ITEM &&
-            state->capture_menu == menu_index &&
-            state->capture_item == item_index;
-        uint32_t background = hot ? color_active : color_face;
-        uint32_t foreground = disabled
-            ? color_shadow : (hot ? color_title_text : color_text);
-        if (hot) {
-            fill_rect_clipped(context, item, background);
-            if (pressed) draw_bevel(context, item, background, 0U);
-        }
-        uint32_t text_y = item.height > display->font_height
-            ? (item.height - display->font_height) / 2U : 0U;
-        int32_t marker_x = item.x + (int32_t)layout->item_padding_x;
-        int32_t label_x = marker_x + (int32_t)(display->font_width * 2U);
-        uint32_t used = layout->item_padding_x * 2U +
-                        display->font_width * 2U;
-        draw_text_clipped(
-            context, label_x, item.y + (int32_t)text_y,
-            model_item->label,
-            item.width > used ? item.width - used : 1U,
-            foreground, background);
-    }
+         item_index < menu_model->item_count; ++item_index)
+        render_menu_item_model(
+            context, model, layout, state, menu_index, item_index);
 }
 
 static void render_menu_popup(const desktop_render_context_t *context,
@@ -3054,6 +3156,162 @@ static void render_desktop(const x86os_display_info_t *display,
         DESKTOP_MOVE_CACHE_NONE, DESKTOP_WM_NO_TARGET);
 }
 
+static uint32_t rect_contains(desktop_rect_t outer, desktop_rect_t inner) {
+    int64_t outer_right = (int64_t)outer.x + outer.width;
+    int64_t outer_bottom = (int64_t)outer.y + outer.height;
+    int64_t inner_right = (int64_t)inner.x + inner.width;
+    int64_t inner_bottom = (int64_t)inner.y + inner.height;
+    return inner.width != 0U && inner.height != 0U &&
+        inner.x >= outer.x && inner.y >= outer.y &&
+        inner_right <= outer_right && inner_bottom <= outer_bottom;
+}
+
+static uint32_t start_menu_damage_bounds(
+    const x86os_display_info_t *display, desktop_rect_t *bounds) {
+    if (display == 0 || bounds == 0 || display->width == 0U ||
+        display->height == 0U) return 0U;
+    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
+    reist_gui_rect_t gui_popup;
+    reist_gui_rect_t gui_title;
+    if (reist_gui_menu_popup_rect(
+            &desktop_menu_model, &layout, DESKTOP_MENU_START,
+            &gui_popup) != 0 ||
+        reist_gui_menu_title_rect(
+            &desktop_menu_model, &layout, DESKTOP_MENU_START,
+            &gui_title) != 0)
+        return 0U;
+    int64_t left = gui_popup.x < gui_title.x
+        ? gui_popup.x : gui_title.x;
+    int64_t top = gui_popup.y < gui_title.y
+        ? gui_popup.y : gui_title.y;
+    int64_t popup_right = (int64_t)gui_popup.x + gui_popup.width;
+    int64_t title_right = (int64_t)gui_title.x + gui_title.width;
+    int64_t right = popup_right > title_right ? popup_right : title_right;
+    int64_t popup_bottom = (int64_t)gui_popup.y + gui_popup.height;
+    int64_t title_bottom = (int64_t)gui_title.y + gui_title.height;
+    int64_t bottom = popup_bottom > title_bottom
+        ? popup_bottom : title_bottom;
+    left -= layout.damage_margin;
+    top -= layout.damage_margin;
+    right += layout.damage_margin;
+    bottom += layout.damage_margin;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > display->width) right = display->width;
+    if (bottom > display->height) bottom = display->height;
+    if (left >= right || top >= bottom) return 0U;
+    *bounds = (desktop_rect_t){
+        (int32_t)left, (int32_t)top,
+        (uint32_t)(right - left), (uint32_t)(bottom - top),
+    };
+    return 1U;
+}
+
+/* Start-menu damage is confined to one fixed popup/title envelope.  The
+ * optimized composer below still reconstructs every exposed margin pixel;
+ * this classifier therefore remains correct even if another local invalid
+ * rectangle merges with menu damage.  Mixed or ambiguous frames fail closed
+ * to the complete scene renderer. */
+static uint32_t menu_overlay_local_damage(
+    const x86os_display_info_t *display, const desktop_ui_state_t *ui,
+    const desktop_dirty_region_t *dirty) {
+    if (display == 0 || ui == 0 || dirty == 0 || dirty->full ||
+        dirty->count == 0U ||
+        ui->menu.open_menu != DESKTOP_MENU_START || ui->dialog.visible ||
+        ui->trash_menu.open_menu != REIST_GUI_MENU_NO_INDEX ||
+        desktop_drag.phase != DESKTOP_DRAG_PHASE_IDLE)
+        return 0U;
+    desktop_rect_t bounds;
+    if (!start_menu_damage_bounds(display, &bounds)) return 0U;
+    for (uint32_t index = 0U; index < dirty->count; ++index)
+        if (!rect_contains(bounds, dirty->rects[index])) return 0U;
+    return 1U;
+}
+
+static void render_menu_overlay_damage(
+    const x86os_display_info_t *display, const desktop_wm_t *manager,
+    const desktop_explorer_t *explorer,
+    const desktop_surface_manager_t *surfaces,
+    const desktop_ui_state_t *ui,
+    const desktop_dirty_region_t *dirty) {
+    if (display == 0 || manager == 0 || ui == 0 || dirty == 0) return;
+    reist_gui_menu_layout_t layout = desktop_menu_layout(display);
+    for (uint32_t index = 0U; index < dirty->count; ++index) {
+        desktop_render_context_t context = {
+            .display = display,
+            .clip = dirty->rects[index],
+            .omitted_kind = DESKTOP_MOVE_CACHE_NONE,
+            .omitted_window = DESKTOP_WM_NO_TARGET,
+        };
+
+        /* A hover transition damages complete item rows on the ordinary
+         * renderer, or a narrow item-column feedback strip on VMware's
+         * copy-capable path.  Popup borders, shadow, taskbar and lower scene
+         * are unchanged and must not consume the compositor's bounded service
+         * window. Adjacent old/new rows may already be merged by the damage
+         * accumulator, so classify either fixed item-column envelope. */
+        reist_gui_rect_t first_gui_item;
+        reist_gui_rect_t last_gui_item;
+        uint32_t item_count = desktop_menu_model.menus[DESKTOP_MENU_START]
+            .item_count;
+        if (item_count != 0U &&
+            reist_gui_menu_item_rect(
+                &desktop_menu_model, &layout, DESKTOP_MENU_START, 0U,
+                &first_gui_item) == 0 &&
+            reist_gui_menu_item_rect(
+                &desktop_menu_model, &layout, DESKTOP_MENU_START,
+                item_count - 1U, &last_gui_item) == 0) {
+            desktop_rect_t first = desktop_rect_from_gui(first_gui_item);
+            desktop_rect_t last = desktop_rect_from_gui(last_gui_item);
+            int64_t clip_bottom =
+                (int64_t)context.clip.y + context.clip.height;
+            int64_t item_bottom = (int64_t)last.y + last.height;
+            uint32_t complete_item_column = context.clip.x == first.x &&
+                context.clip.width == first.width &&
+                context.clip.y >= first.y && clip_bottom <= item_bottom;
+            uint32_t feedback_item_column =
+                desktop_low_latency_menu_feedback != 0U &&
+                context.clip.x == first.x &&
+                context.clip.width <= DESKTOP_MENU_FAST_FEEDBACK_WIDTH &&
+                context.clip.y >= first.y && clip_bottom <= item_bottom;
+            uint32_t item_column = complete_item_column ||
+                feedback_item_column;
+            if (item_column) {
+                for (uint32_t item = 0U; item < item_count; ++item)
+                    render_menu_item_model(
+                        &context, &desktop_menu_model, &layout, &ui->menu,
+                        DESKTOP_MENU_START, item);
+                continue;
+            }
+        }
+
+        /* Opening damage includes the popup shadow margin and Start-button
+         * margin. Recompose only those fixed strips which are not hidden by
+         * the opaque popup or taskbar; a capacity failure falls back to the
+         * original complete clip before any overlay-only shortcut is used. */
+        desktop_visible_region_t exposed;
+        exposed.count = 0U;
+        uint32_t culled = visible_region_append(&exposed, context.clip) &&
+            visible_region_subtract(
+                &exposed, desktop_taskbar_rect(display)) &&
+            visible_region_subtract_popup(
+                &exposed, &desktop_menu_model, &layout, &ui->menu);
+        if (!culled) {
+            render_desktop_clip(
+                &context, manager, explorer, surfaces, ui);
+            continue;
+        }
+        for (uint32_t region = 0U; region < exposed.count; ++region) {
+            desktop_render_context_t lower = context;
+            lower.clip = exposed.rects[region];
+            render_desktop_clip(
+                &lower, manager, explorer, surfaces, ui);
+        }
+        render_taskbar(&context, manager, explorer, surfaces, ui);
+        render_menu_popup(&context, ui);
+    }
+}
+
 static void render_desktop_rect(
     const x86os_display_info_t *display, const desktop_wm_t *manager,
     const desktop_explorer_t *explorer,
@@ -3119,6 +3377,7 @@ static uint32_t render_desktop_frame(const x86os_display_info_t *display,
                                      const desktop_ui_state_t *ui,
                                      const desktop_dirty_region_t *dirty) {
     if (dirty == 0 || dirty->count == 0U) return 0U;
+    uint32_t menu_local = menu_overlay_local_damage(display, ui, dirty);
     uint32_t serial = 0U;
     int begin = x86os_display_frame_begin(&serial);
     if (begin != 0) {
@@ -3126,8 +3385,13 @@ static uint32_t render_desktop_frame(const x86os_display_info_t *display,
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
         return DESKTOP_RENDER_FALLBACK;
     }
-    render_desktop(display, manager, explorer, surfaces, ui, dirty);
-    if (x86os_display_frame_commit(serial) != 0) {
+    if (menu_local)
+        render_menu_overlay_damage(
+            display, manager, explorer, surfaces, ui, dirty);
+    else
+        render_desktop(display, manager, explorer, surfaces, ui, dirty);
+    int commit = x86os_display_frame_commit(serial);
+    if (commit != 0) {
         (void)x86os_display_frame_cancel(serial);
         render_desktop(display, manager, explorer, surfaces, ui, dirty);
         return DESKTOP_RENDER_FALLBACK;
@@ -3255,7 +3519,7 @@ static void record_render_metrics(desktop_render_metrics_t *metrics,
     }
 }
 
-static void render_desktop_measured(
+static uint32_t render_desktop_measured(
     const x86os_display_info_t *display, const desktop_wm_t *manager,
     const desktop_explorer_t *explorer,
     const desktop_surface_manager_t *surfaces,
@@ -3263,7 +3527,7 @@ static void render_desktop_measured(
     const desktop_dirty_region_t *dirty,
     const desktop_move_cache_t *move_cache,
     uint32_t drag, uint32_t resize, desktop_render_metrics_t *metrics) {
-    if (dirty == 0 || dirty->count == 0U) return;
+    if (dirty == 0 || dirty->count == 0U) return 0U;
     uint64_t started_ms = 0U;
     uint64_t finished_ms = 0U;
     uint32_t clock_valid = x86os_monotonic_ms(&started_ms) == 0;
@@ -3278,6 +3542,7 @@ static void render_desktop_measured(
         ? UINT32_MAX : (uint32_t)elapsed;
     record_render_metrics(metrics, dirty, drag, resize, fallback,
                           clock_valid, elapsed_ms);
+    return fallback;
 }
 
 static int read_escape_byte(void) {
@@ -3599,6 +3864,178 @@ static void print_metric(const char *name, uint32_t value) {
     x86os_puts(name);
     x86os_putchar('=');
     print_unsigned(value);
+}
+
+static desktop_pointer_present_result_t desktop_pointer_present(
+        int32_t x, int32_t y, uint32_t visible) {
+    desktop_pointer_present_result_t result = {0};
+    result.clock_valid = x86os_monotonic_ms(&result.started_ms) == 0;
+    result.status = x86os_pointer_update(x, y, visible);
+    if (!result.clock_valid ||
+        x86os_monotonic_ms(&result.finished_ms) != 0 ||
+        result.finished_ms < result.started_ms)
+        result.clock_valid = 0U;
+    return result;
+}
+
+static void hover_probe_initialize(desktop_hover_probe_t *probe,
+                                   uint32_t enabled) {
+    if (probe == 0) return;
+    *probe = (desktop_hover_probe_t){
+        .enabled = enabled != 0U,
+        .last_hot = REIST_GUI_MENU_NO_INDEX,
+    };
+}
+
+static void hover_probe_record_pointer_present(
+    desktop_hover_probe_t *probe, uint32_t pending_clock_valid,
+    uint64_t pending_since_ms,
+    const desktop_pointer_present_result_t *result) {
+    if (probe == 0 || !probe->enabled || probe->complete || result == 0)
+        return;
+    if (result->status != 0) {
+        /* Display lifecycle contention is deliberately nonblocking. The
+         * pending position remains queued and is retried next turn; only a
+         * hard service failure invalidates the probe. */
+        if (result->status != -11)
+            saturating_increment(&probe->pointer_failures);
+        return;
+    }
+    saturating_increment(&probe->pointer_frames);
+    if (!pending_clock_valid || !result->clock_valid ||
+        result->finished_ms < pending_since_ms) {
+        saturating_increment(&probe->clock_errors);
+        return;
+    }
+
+    uint64_t call = result->finished_ms - result->started_ms;
+    uint32_t call_ms = call > UINT32_MAX ? UINT32_MAX : (uint32_t)call;
+    if (call_ms > probe->pointer_call_max_ms)
+        probe->pointer_call_max_ms = call_ms;
+    uint64_t latency = result->finished_ms - pending_since_ms;
+    uint32_t latency_ms = latency > UINT32_MAX
+        ? UINT32_MAX : (uint32_t)latency;
+    if (latency_ms > probe->pointer_latency_max_ms)
+        probe->pointer_latency_max_ms = latency_ms;
+
+    if (probe->pointer_last_present_ms != 0U) {
+        if (result->finished_ms < probe->pointer_last_present_ms ||
+            pending_since_ms < probe->pointer_last_present_ms) {
+            saturating_increment(&probe->clock_errors);
+        } else {
+            uint64_t continuous_deadline =
+                probe->pointer_last_present_ms >
+                    UINT64_MAX - DESKTOP_POINTER_CONTINUOUS_INPUT_INTERVAL_MS
+                ? UINT64_MAX
+                : probe->pointer_last_present_ms +
+                    DESKTOP_POINTER_CONTINUOUS_INPUT_INTERVAL_MS;
+            if (pending_since_ms <= continuous_deadline) {
+                uint64_t gap = result->finished_ms -
+                    probe->pointer_last_present_ms;
+                uint32_t gap_ms = gap > UINT32_MAX
+                    ? UINT32_MAX : (uint32_t)gap;
+                if (gap_ms > probe->pointer_max_gap_ms)
+                    probe->pointer_max_gap_ms = gap_ms;
+            }
+        }
+    }
+    probe->pointer_last_present_ms = result->finished_ms;
+}
+
+static uint32_t desktop_pointer_present_completed(
+    desktop_hover_probe_t *probe, uint32_t pending_clock_valid,
+    uint64_t pending_since_ms,
+    const desktop_pointer_present_result_t *result) {
+    hover_probe_record_pointer_present(
+        probe, pending_clock_valid, pending_since_ms, result);
+    return result != 0 && result->status == 0;
+}
+
+static void print_hover_probe_metrics(const desktop_hover_probe_t *probe) {
+    if (probe == 0) return;
+    x86os_puts("DESKTOP_HOVER_METRICS");
+    print_metric("version", DESKTOP_HOVER_PROBE_VERSION);
+    print_metric("items", DESKTOP_HOVER_PROBE_ITEMS);
+    print_metric("frames", probe->hover_frames);
+    print_metric("full_frames", probe->hover_full_frames);
+    print_metric("total_ms", probe->hover_total_ms);
+    print_metric("max_ms", probe->hover_max_ms);
+    print_metric("damage_max", probe->hover_damage_max);
+    print_metric("mouse_reports", probe->mouse_reports);
+    print_metric("mouse_batch_max_ms", probe->mouse_batch_max_ms);
+    print_metric("mouse_batch_max_reports", probe->mouse_batch_max_reports);
+    print_metric("pointer_frames", probe->pointer_frames);
+    print_metric("pointer_max_gap_ms", probe->pointer_max_gap_ms);
+    print_metric("pointer_latency_max_ms", probe->pointer_latency_max_ms);
+    print_metric("pointer_call_max_ms", probe->pointer_call_max_ms);
+    print_metric("pointer_failures", probe->pointer_failures);
+    print_metric("order_errors", probe->order_errors);
+    print_metric("clock_errors", probe->clock_errors);
+    x86os_putchar('\n');
+    x86os_puts(probe->success
+        ? "DESKTOP_HOVER_OK\n" : "DESKTOP_HOVER_FAIL\n");
+}
+
+static void hover_probe_record_transition(
+    desktop_hover_probe_t *probe, const desktop_ui_state_t *ui,
+    const desktop_dirty_region_t *dirty,
+    const desktop_render_metrics_t *metrics,
+    uint32_t full_frames_before, uint32_t full_total_before,
+    uint32_t dirty_frames_before, uint32_t dirty_total_before,
+    uint32_t clock_errors_before) {
+    if (probe == 0 || !probe->enabled || probe->complete || ui == 0 ||
+        dirty == 0 || metrics == 0) return;
+    uint32_t hot = ui->menu.open_menu == DESKTOP_MENU_START
+        ? ui->menu.hot_item : REIST_GUI_MENU_NO_INDEX;
+    if (hot == probe->last_hot) return;
+    probe->last_hot = hot;
+    if (hot == REIST_GUI_MENU_NO_INDEX) return;
+    if (hot >= DESKTOP_HOVER_PROBE_ITEMS) {
+        saturating_increment(&probe->order_errors);
+        return;
+    }
+    uint32_t bit = 1U << hot;
+    if ((probe->visited_mask & bit) != 0U) return;
+    /* The virtual HID path may coalesce consecutive, replaceable motion
+     * reports before this outer render iteration observes the selected row.
+     * Coverage is therefore established by every distinct row receiving its
+     * own bounded repaint, rather than by requiring an implementation-specific
+     * observation order between those independent iterations. */
+    probe->visited_mask |= bit;
+    saturating_increment(&probe->hover_frames);
+    if (dirty->count == 0U) saturating_increment(&probe->order_errors);
+    if (dirty->count > probe->hover_damage_max)
+        probe->hover_damage_max = dirty->count;
+
+    uint32_t elapsed_ms = 0U;
+    uint32_t rendered_frames = 0U;
+    if (dirty->full) {
+        saturating_increment(&probe->hover_full_frames);
+        rendered_frames = metrics->full_frames - full_frames_before;
+        elapsed_ms = metrics->full_total_ms - full_total_before;
+    } else {
+        rendered_frames = metrics->dirty_frames - dirty_frames_before;
+        elapsed_ms = metrics->dirty_total_ms - dirty_total_before;
+    }
+    if (rendered_frames != 1U)
+        saturating_increment(&probe->order_errors);
+    if (metrics->clock_errors > clock_errors_before)
+        probe->clock_errors = saturating_add_u32(
+            probe->clock_errors,
+            metrics->clock_errors - clock_errors_before);
+    probe->hover_total_ms = saturating_add_u32(
+        probe->hover_total_ms, elapsed_ms);
+    if (elapsed_ms > probe->hover_max_ms)
+        probe->hover_max_ms = elapsed_ms;
+    uint32_t all_items = (1U << DESKTOP_HOVER_PROBE_ITEMS) - 1U;
+    if (probe->visited_mask != all_items) return;
+    probe->complete = 1U;
+    probe->success = probe->hover_frames == DESKTOP_HOVER_PROBE_ITEMS &&
+        probe->hover_full_frames == 0U && probe->hover_damage_max <= 2U &&
+        probe->mouse_reports >= DESKTOP_HOVER_PROBE_ITEMS &&
+        probe->pointer_frames >= 2U && probe->order_errors == 0U &&
+        probe->clock_errors == 0U;
+    print_hover_probe_metrics(probe);
 }
 
 static void print_render_metrics(const desktop_render_metrics_t *metrics) {
@@ -5463,6 +5900,7 @@ int main(int argc, char **argv) {
     uint32_t previous_buttons = 0U;
     unsigned int runtime_activated = 0U;
     uint32_t render_probe = 0U;
+    uint32_t hover_probe = 0U;
     uint32_t surface_probe = 0U;
     uint32_t notepad_probe = 0U;
     uint32_t control_probe = 0U;
@@ -5476,6 +5914,13 @@ int main(int argc, char **argv) {
     uint32_t surface_resize_requested = 0U;
     uint32_t sound_probe_reported = 0U;
     uint64_t sound_probe_started_ms = 0U;
+    uint32_t pointer_present_pending = 0U;
+    uint64_t pointer_pending_since_ms = 0U;
+    uint32_t pointer_pending_clock_valid = 0U;
+    uint32_t pointer_overlay_active = 0U;
+    desktop_hover_probe_t hover_probe_state;
+    uint32_t hover_menu_ready_reported = 0U;
+    uint32_t hover_menu_ready_pending = 0U;
     uint64_t startup_started_ms = 0U;
     uint32_t startup_clock_valid =
         x86os_monotonic_ms(&startup_started_ms) == 0;
@@ -5490,6 +5935,9 @@ int main(int argc, char **argv) {
 
     if (argc == 2 && argv != 0 && text_equal(argv[1], "--render-probe")) {
         render_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--hover-probe")) {
+        hover_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--surface-probe")) {
         surface_probe = 1U;
@@ -5516,12 +5964,13 @@ int main(int argc, char **argv) {
         unicode_probe = 1U;
     } else if (argc != 1) {
         x86os_puts(
-            "Usage: desktop [--render-probe|--surface-probe|"
+            "Usage: desktop [--render-probe|--hover-probe|--surface-probe|"
             "--notepad-probe|--control-probe|--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
             "--trash-confirm-probe|--unicode-probe]\n");
         return 2;
     }
+    hover_probe_initialize(&hover_probe_state, hover_probe);
 
     int activation_status = desktop_activate_with_fallback();
     if (activation_status == 0) runtime_activated = 1U;
@@ -5734,7 +6183,8 @@ int main(int argc, char **argv) {
     (void)x86os_monotonic_ms(&phase_started_ms);
     int system_sound_status = load_system_sounds(&system_sounds);
     desktop_startup_phase_metric("sounds", phase_started_ms);
-    if (render_probe || surface_probe || notepad_probe || control_probe ||
+    if (render_probe || hover_probe || surface_probe || notepad_probe ||
+        control_probe ||
         guidemo_probe || sound_probe || trash_context_probe ||
         trash_confirm_probe ||
         unicode_probe)
@@ -5784,9 +6234,11 @@ int main(int argc, char **argv) {
     }
     desktop_clock_refresh(&display, &initial_dirty, 1U);
     desktop_dirty_full(&initial_dirty);
-    render_desktop_measured(
+    uint32_t initial_render_outcome = render_desktop_measured(
         &display, &manager, &explorer, &surfaces, &ui,
         &initial_dirty, 0, 0U, 0U, &metrics);
+    pointer_overlay_active =
+        (initial_render_outcome & DESKTOP_RENDER_FALLBACK) == 0U;
     (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
     if (desktop_lifecycle_publish_progress(
             lifecycle_supervised, &lifecycle_sequence,
@@ -5809,6 +6261,7 @@ int main(int argc, char **argv) {
         x86os_putchar('\n');
     }
     x86os_puts("DESKTOP_OK\n");
+    if (hover_probe) x86os_puts("DESKTOP_HOVER_PROBE_READY\n");
     desktop_system_sound_request(
         &system_sounds, ui.error_sequence != 0U
             ? DESKTOP_SYSTEM_SOUND_ERROR
@@ -5987,6 +6440,11 @@ int main(int argc, char **argv) {
         int key = read_key();
         desktop_dirty_region_t dirty;
         desktop_dirty_initialize(&dirty, display.width, display.height);
+        uint32_t hover_full_frames_before = metrics.full_frames;
+        uint32_t hover_full_total_before = metrics.full_total_ms;
+        uint32_t hover_dirty_frames_before = metrics.dirty_frames;
+        uint32_t hover_dirty_total_before = metrics.dirty_total_ms;
+        uint32_t hover_clock_errors_before = metrics.clock_errors;
         desktop_clock_refresh(&display, &dirty, 0U);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
@@ -6051,17 +6509,46 @@ int main(int argc, char **argv) {
         int32_t pending_delta_x = 0;
         int32_t pending_delta_y = 0;
         unsigned int mouse_events = 0U;
+        uint64_t mouse_batch_started_ms = 0U;
+        uint32_t mouse_batch_clock_valid = 0U;
         uint32_t surface_input_queued = 0U;
         for (; mouse_events < DESKTOP_MOUSE_BATCH_LIMIT; ++mouse_events) {
             x86os_mouse_event_t mouse;
+            uint32_t hover_transition = 0U;
             if (x86os_mouse_event(&mouse) != 0) break;
             static uint32_t mouse_ready_reported;
             if (!mouse_ready_reported) {
                 x86os_puts("DESKTOP_MOUSE_OK\n");
                 mouse_ready_reported = 1U;
             }
+            if (hover_probe_state.enabled) {
+                if (mouse_events == 0U)
+                    mouse_batch_clock_valid = x86os_monotonic_ms(
+                        &mouse_batch_started_ms) == 0;
+                saturating_increment(&hover_probe_state.mouse_reports);
+            }
+            if ((mouse.delta_x != 0 || mouse.delta_y != 0) &&
+                !pointer_present_pending) {
+                pointer_present_pending = 1U;
+                pointer_pending_clock_valid =
+                    x86os_monotonic_ms(&pointer_pending_since_ms) == 0;
+            }
             accumulate_mouse_delta(&pending_delta_x, mouse.delta_x);
             accumulate_mouse_delta(&pending_delta_y, mouse.delta_y);
+            if (hover_probe_state.enabled &&
+                (mouse.delta_x != 0 || mouse.delta_y != 0)) {
+                uint32_t menu_before = ui.menu.open_menu;
+                uint32_t hot_before = ui.menu.hot_item;
+                actions |= dispatch_pointer_motion(
+                    &manager, &explorer, &ui, &display, &dirty,
+                    &pointer_x, &pointer_y,
+                    pending_delta_x, pending_delta_y, &action_target,
+                    &drag_render, &resize_render, &move_cache);
+                pending_delta_x = 0;
+                pending_delta_y = 0;
+                hover_transition = menu_before != ui.menu.open_menu ||
+                    hot_before != ui.menu.hot_item;
+            }
             uint32_t left_down =
                 (mouse.buttons & X86OS_MOUSE_BUTTON_LEFT) != 0U;
             uint32_t left_was_down =
@@ -6129,6 +6616,17 @@ int main(int argc, char **argv) {
                         &manager, &explorer, &ui, &display, &dirty,
                         pointer_x, pointer_y, mouse.buttons,
                         previous_buttons, &action_target, &activation);
+                    /* The RFB cadence probe must not begin its row sweep
+                     * until the Start-menu click has completely reached the
+                     * compositor. Defer its probe-only acknowledgement until
+                     * this turn has committed the opening damage as well, so
+                     * a delayed release or its SVGA update cannot share the
+                     * first hover batch. */
+                    if (hover_probe_state.enabled &&
+                        !hover_menu_ready_reported &&
+                        !left_down && left_was_down &&
+                        ui.menu.open_menu == DESKTOP_MENU_START)
+                        hover_menu_ready_pending = 1U;
                     uint32_t surface_capture_kind = left_down
                         ? manager.capture_kind : captured_surface_kind;
                     int32_t surface_button_window =
@@ -6189,6 +6687,28 @@ int main(int argc, char **argv) {
                 }
             }
             previous_buttons = mouse.buttons;
+            if (hover_transition) {
+                ++mouse_events;
+                break;
+            }
+        }
+        if (hover_probe_state.enabled && mouse_events != 0U) {
+            uint64_t mouse_batch_finished_ms = 0U;
+            if (!mouse_batch_clock_valid ||
+                x86os_monotonic_ms(&mouse_batch_finished_ms) != 0 ||
+                mouse_batch_finished_ms < mouse_batch_started_ms) {
+                saturating_increment(&hover_probe_state.clock_errors);
+            } else {
+                uint64_t elapsed =
+                    mouse_batch_finished_ms - mouse_batch_started_ms;
+                uint32_t elapsed_ms = elapsed > UINT32_MAX
+                    ? UINT32_MAX : (uint32_t)elapsed;
+                if (elapsed_ms > hover_probe_state.mouse_batch_max_ms)
+                    hover_probe_state.mouse_batch_max_ms = elapsed_ms;
+                if (mouse_events >
+                    hover_probe_state.mouse_batch_max_reports)
+                    hover_probe_state.mouse_batch_max_reports = mouse_events;
+            }
         }
         actions |= dispatch_pointer_motion(
             &manager, &explorer, &ui, &display, &dirty,
@@ -6324,16 +6844,79 @@ int main(int argc, char **argv) {
             move_cache.valid = 0U;
 
         if (dirty.count != 0U) {
-            (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
-            render_desktop_measured(
-                &display, &manager, &explorer, &surfaces, &ui, &dirty,
-                move_cache.valid ? &move_cache : 0,
-                drag_render, resize_render, &metrics);
-            (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
-        } else if (mouse_events != 0U) {
-            (void)x86os_pointer_update(pointer_x, pointer_y, 1U);
+            uint32_t motion_present = pointer_present_pending;
+            if (pointer_overlay_active && !move_cache.valid) {
+                /* Publish the newest pointer before raster work. The kernel
+                 * keeps it out of the scene shadow and reapplies it after an
+                 * intersecting commit, so hover no longer emits hide/show
+                 * frames or makes cursor latency depend on GUI rendering. */
+                if (motion_present) {
+                    desktop_pointer_present_result_t pointer_result =
+                        desktop_pointer_present(
+                            pointer_x, pointer_y, 1U);
+                    if (desktop_pointer_present_completed(
+                            &hover_probe_state,
+                            pointer_pending_clock_valid,
+                            pointer_pending_since_ms, &pointer_result)) {
+                        pointer_present_pending = 0U;
+                        pointer_pending_clock_valid = 0U;
+                    }
+                }
+                (void)render_desktop_measured(
+                    &display, &manager, &explorer, &surfaces, &ui, &dirty,
+                    0, drag_render, resize_render, &metrics);
+            } else {
+                (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+                (void)render_desktop_measured(
+                    &display, &manager, &explorer, &surfaces, &ui, &dirty,
+                    move_cache.valid ? &move_cache : 0,
+                    drag_render, resize_render, &metrics);
+                desktop_pointer_present_result_t pointer_result =
+                    desktop_pointer_present(pointer_x, pointer_y, 1U);
+                if (motion_present && desktop_pointer_present_completed(
+                        &hover_probe_state, pointer_pending_clock_valid,
+                        pointer_pending_since_ms, &pointer_result)) {
+                    pointer_present_pending = 0U;
+                    pointer_pending_clock_valid = 0U;
+                } else if (!motion_present && pointer_result.status != 0) {
+                    pointer_present_pending = 1U;
+                    pointer_pending_clock_valid =
+                        x86os_monotonic_ms(&pointer_pending_since_ms) == 0;
+                }
+            }
+        } else if (pointer_present_pending) {
+            /* Pure motion has no scene damage. Publish its newest coalesced
+             * position in this desktop turn, then block for exactly the
+             * existing one-millisecond poll interval. */
+            desktop_pointer_present_result_t pointer_result =
+                desktop_pointer_present(pointer_x, pointer_y, 1U);
+            if (desktop_pointer_present_completed(
+                    &hover_probe_state, pointer_pending_clock_valid,
+                    pointer_pending_since_ms, &pointer_result)) {
+                pointer_present_pending = 0U;
+                pointer_pending_clock_valid = 0U;
+            }
+            (void)x86os_sleep_ms(DESKTOP_IDLE_POLL_MS);
         } else {
             (void)x86os_sleep_ms(DESKTOP_IDLE_POLL_MS);
+        }
+        hover_probe_record_transition(
+            &hover_probe_state, &ui, &dirty, &metrics,
+            hover_full_frames_before, hover_full_total_before,
+            hover_dirty_frames_before, hover_dirty_total_before,
+            hover_clock_errors_before);
+        if (hover_menu_ready_pending && !hover_menu_ready_reported &&
+            ui.menu.open_menu == DESKTOP_MENU_START) {
+            x86os_puts("DESKTOP_HOVER_MENU_READY\n");
+            hover_menu_ready_reported = 1U;
+            hover_menu_ready_pending = 0U;
+        }
+        if (hover_probe_state.complete) {
+            uint32_t probe_success = hover_probe_state.success;
+            uint32_t exited = desktop_try_exit(
+                pointer_x, pointer_y, runtime_activated, &metrics);
+            desktop_surface_runtime_shutdown(&surface_runtime);
+            return exited && probe_success ? 0 : 1;
         }
     }
 }

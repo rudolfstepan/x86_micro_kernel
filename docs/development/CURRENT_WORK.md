@@ -1,10 +1,27 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 30. August 2026
+Stand: 31. August 2026
 
-Branch/Startpunkt: `working_branch` / `498e6f48`
+Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: keines; `R3.4g-vmware-pointer-pipeline` ist abgeschlossen.
+Aktives Thema: keines; `R3.4h-vmware-hover-cadence` ist abgeschlossen.
+
+R3.4h behält im Menü-Controller die exakten alten/neuen Itemzeilen, bildet
+sie auf dem aktiven VMware-RECT_COPY-Pfad ohne RECT_FILL jedoch als sichtbaren
+vier Pixel breiten linken Auswahlstreifen ab. Damit entfällt der langsame
+vollständige Framebuffer-BAR-Write pro Hoverwechsel. xHCI fasst Requeues je
+Endpoint zu einem Doorbell pro begrenztem Event-Batch zusammen; der
+Compositor verarbeitet weiterhin höchstens vier Reports pro Turn und hält den
+1-ms-Handoff ein. Alle neun eingefrorenen Quellprüfungen bestanden; sechs
+optionale Host-C-Harnesses wurden mangels Compiler übersprungen. VMware/VGA
+und QEMU/Framebuffer bauten erfolgreich. Der finale Vier-vCPU-VMware-Hoverlauf
+meldete sechs verschiedene Hot-Zustände ohne Vollbild-Probe-Frame, maximal
+3 ms je Hot-Frame, 18 ms Pointer-Abstand, 6 ms Eingabe-zu-Pointer-Latenz und
+6 ms Cursor-Aufrufzeit. QEMU bestand denselben Nachweis mit 0/12/2/1 ms
+(Hot-Frame/Pointer-Abstand/Latenz/Aufruf). Der reale VMware-Maus- und
+SVGA2D-Lifecycle-Lauf bestanden jeweils mit zehn Sekunden stabilem Nachlauf.
+Das ist eine reproduzierbare Referenzmessung, keine universelle Windows-95-
+oder p99-Behauptung.
 
 R3.4g ersetzt die zwischen weit entfernten Cursorpositionen potenziell
 bildschirmgroße Softwarecursor-Bounding-Box durch höchstens zwei exakte alte

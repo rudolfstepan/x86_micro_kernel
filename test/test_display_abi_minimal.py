@@ -195,7 +195,7 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("framebuffer_pointer_shape_color", self.framebuffer)
         self.assertIn("shadow", self.framebuffer)
 
-    def test_framebuffer_write_combining_is_feature_checked_and_falls_back(self) -> None:
+    def test_framebuffer_write_combining_is_feature_checked(self) -> None:
         self.assertIn("map_kernel_write_combining", self.paging_h)
         self.assertIn("CPUID_FEATURE_PAT", self.paging)
         self.assertIn("CPUID_FEATURE_MSR", self.paging)
@@ -205,8 +205,11 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         mapping = function(self.framebuffer, "static void framebuffer_initialize(")
         self.assertLess(mapping.index("map_kernel_write_combining("),
                         mapping.index("map_kernel_mmio("))
-        self.assertIn("if (mapping != NULL) fb_scanout_write_combining = true",
-                      mapping)
+        self.assertIn("fb_scanout_write_combining = true", mapping)
+        copy = function(
+            self.framebuffer, "static void framebuffer_copy_to_scanout("
+        )
+        self.assertIn("rep movsl", copy)
         self.assertIn('__volatile__("sfence"', self.framebuffer)
 
     def test_sdk_hides_request_marshalling(self) -> None:
@@ -259,6 +262,15 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("DISPLAY_CONTROL_PRESENT_CAPACITY", publish)
         self.assertIn("SVGA_CMD_UPDATE", publish)
         self.assertEqual(publish.count("SVGA_REG_SYNC"), 1)
+        self.assertIn("vmware_fifo_doorbell_needed", publish)
+        self.assertLess(publish.index("spinlock_release_irq"),
+                        publish.index("svga_write"))
+        wake = function(
+            self.display_control, "static bool vmware_fifo_doorbell_needed("
+        )
+        self.assertIn("SVGA_FIFO_BUSY", wake)
+        self.assertIn("vmware_fifo[SVGA_FIFO_BUSY] != 0U", wake)
+        self.assertIn("vmware_fifo[SVGA_FIFO_BUSY] = 1U", wake)
         commit = function(self.framebuffer, "int framebuffer_frame_commit(")
         self.assertIn("framebuffer_publish_damage", commit)
         self.assertIn("display_frame_prepare_commit", commit)
@@ -277,22 +289,96 @@ class MinimalDisplayAbiTests(unittest.TestCase):
         self.assertIn("left >= right || top >= bottom", exclusion)
         self.assertIn("bottom - top", exclusion)
 
+    def test_smp_fifo_publish_owner_cannot_be_timer_preempted(self) -> None:
+        present = function(
+            self.display_control, "void display_control_present_rects("
+        )
+        self.assertLess(
+            present.index("kernel_mutex_lock_for("),
+            present.index("scheduler_preempt_disable()"),
+        )
+        self.assertLess(
+            present.index("scheduler_preempt_disable()"),
+            present.index("display_control_present_rects_locked("),
+        )
+        self.assertLess(
+            present.index("kernel_mutex_unlock("),
+            present.index("scheduler_preempt_enable()"),
+        )
+
+        command = function(
+            self.display_control, "int display_control_driver_command("
+        )
+        self.assertIn("bounded_command", command)
+        self.assertIn("scheduler_preempt_disable()", command)
+        self.assertIn("scheduler_preempt_enable()", command)
+        for signature in (
+            "int display_control_activate(void)",
+            "int display_control_deactivate(void)",
+        ):
+            lifecycle = function(self.display_control, signature)
+            self.assertNotIn("scheduler_preempt_disable()", lifecycle)
+
+    def test_pointer_display_state_attempt_is_nonblocking_and_cpu_local(self) -> None:
+        cursor = function(
+            self.display_control, "int display_control_cursor_update("
+        )
+        self.assertIn("scheduler_preempt_disable()", cursor)
+        self.assertIn("kernel_mutex_lock_for(&display_state_mutex", cursor)
+        self.assertIn("&display_state_mutex, 0U", cursor)
+        self.assertIn("if (lock_result != 0)", cursor)
+        self.assertIn("framebuffer_cursor_update(", cursor)
+        self.assertIn("kernel_mutex_unlock(&display_state_mutex)", cursor)
+        self.assertIn("scheduler_preempt_enable()", cursor)
+        self.assertLess(cursor.index("scheduler_preempt_disable()"),
+                        cursor.index("kernel_mutex_lock_for("))
+        self.assertLess(cursor.index("kernel_mutex_lock_for("),
+                        cursor.rindex("framebuffer_cursor_update("))
+        self.assertLess(cursor.rindex("framebuffer_cursor_update("),
+                        cursor.rindex("scheduler_preempt_enable()"))
+
+        pointer = function(self.syscalls, "static int syscall_pointer_update(")
+        self.assertIn("display_control_cursor_update(", pointer)
+        self.assertNotIn("bool updated", pointer)
+        self.assertNotIn("scheduler_preempt_disable", pointer)
+        self.assertNotIn("scheduler_preempt_enable", pointer)
+        self.assertNotIn("framebuffer_frame_draw_enter(", pointer)
+        self.assertNotIn("framebuffer_frame_draw_leave(", pointer)
+
     def test_software_pointer_publishes_two_exact_rectangles_once(self) -> None:
         pointer = function(
             self.framebuffer, "bool framebuffer_cursor_update("
         )
         self.assertIn("display_frame_rect_t damage[2]", pointer)
         self.assertIn("damage[damage_count++]", pointer)
+        self.assertIn("if (fb_shadow_enabled)", pointer)
         self.assertIn("framebuffer_present_damage(damage, damage_count)",
                       pointer)
         self.assertNotIn("dirty_left", pointer)
         self.assertNotIn("dirty_right", pointer)
+        overlay_signature = (
+            "static void framebuffer_overlay_pointer_for_damage("
+        )
+        overlay_source = self.framebuffer[
+            self.framebuffer.rindex(overlay_signature):
+        ]
+        overlay = function(overlay_source, overlay_signature)
+        self.assertIn("fb_scanout_address", overlay)
+        self.assertIn("framebuffer_pointer_color", overlay)
+        self.assertNotIn("pointer_saved", overlay)
         present = function(
             self.framebuffer, "static void framebuffer_present_damage("
         )
         self.assertIn("count > DISPLAY_FRAME_DAMAGE_CAPACITY", present)
         self.assertIn("display_frame_record_damage", present)
         self.assertEqual(present.count("framebuffer_publish_damage("), 1)
+        publish = function(
+            self.framebuffer, "static void framebuffer_publish_damage("
+        )
+        self.assertLess(
+            publish.index("framebuffer_overlay_pointer_for_damage("),
+            publish.index("framebuffer_scanout_fence()"),
+        )
 
     def test_accelerated_frame_accepts_vmware_or_active_gr_channel(self) -> None:
         self.assertIn(

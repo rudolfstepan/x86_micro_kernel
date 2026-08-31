@@ -4752,6 +4752,9 @@ static bool pointer_visible;
 static display_frame_transaction_t frame_transaction;
 static spinlock_t frame_transaction_lock = SPINLOCK_INIT;
 
+static void framebuffer_overlay_pointer_for_damage(
+    const display_frame_rect_t *damage, uint32_t count);
+
 typedef struct {
     int owner_pid;
     uint32_t owner_generation;
@@ -4812,9 +4815,8 @@ static void framebuffer_copy_to_scanout(
     volatile uint32_t *destination =
         (volatile uint32_t*)destination_bytes;
     if (words != 0U) {
-        /* REP MOVSL produces sequential stores without using FPU/SIMD state.
-         * This is materially cheaper than one volatile C store per pixel on
-         * legacy VBE apertures and still works for the uncached fallback. */
+        /* REP MOVSL produces sequential stores without using FPU/SIMD
+         * state and remains the compatible uncached-aperture fallback. */
         __asm__ __volatile__("cld\n\trep movsl"
                              : "+S"(source_words), "+D"(destination),
                                "+c"(words)
@@ -4933,6 +4935,10 @@ static void framebuffer_publish_damage(
             .height = damage[index].height,
         };
     }
+    /* The shadow never contains the software pointer.  Reapply its bounded
+     * scanout overlay after scene pixels so a GUI frame cannot erase it and
+     * no compositor-side hide/show presentations are needed. */
+    framebuffer_overlay_pointer_for_damage(damage, count);
     framebuffer_scanout_fence();
     display_control_present_rects(updates, count);
 }
@@ -5381,6 +5387,53 @@ static int framebuffer_pointer_color(uint32_t x, uint32_t y) {
     return -1;
 }
 
+static void framebuffer_store_scanout_native(volatile uint8_t *pixel,
+                                             uint32_t native_color) {
+    if (fb_bytes_per_pixel == sizeof(uint32_t)) {
+        *(volatile uint32_t*)pixel = native_color;
+        return;
+    }
+    for (uint8_t byte = 0U; byte < fb_bytes_per_pixel; ++byte)
+        pixel[byte] = (uint8_t)(native_color >> (byte * 8U));
+}
+
+static void framebuffer_overlay_pointer_for_damage(
+        const display_frame_rect_t *damage, uint32_t count) {
+    if (!fb_shadow_enabled || !pointer_visible || damage == NULL ||
+        count == 0U || fb_scanout_address == NULL) return;
+
+    uint32_t pointer_right = (uint32_t)pointer_x + pointer_width;
+    uint32_t pointer_bottom = (uint32_t)pointer_y + pointer_height;
+    bool intersects = false;
+    for (uint32_t index = 0U; index < count; ++index) {
+        uint32_t damage_right = damage[index].x + damage[index].width;
+        uint32_t damage_bottom = damage[index].y + damage[index].height;
+        if (damage[index].x < pointer_right &&
+            damage_right > (uint32_t)pointer_x &&
+            damage[index].y < pointer_bottom &&
+            damage_bottom > (uint32_t)pointer_y) {
+            intersects = true;
+            break;
+        }
+    }
+    if (!intersects) return;
+
+    uint32_t black = framebuffer_native_color(0x00000000U);
+    uint32_t white = framebuffer_native_color(0x00FFFFFFU);
+    uint32_t shadow = framebuffer_native_color(0x00606060U);
+    for (uint32_t row = 0U; row < pointer_height; ++row) {
+        for (uint32_t column = 0U; column < pointer_width; ++column) {
+            int color = framebuffer_pointer_color(column, row);
+            if (color < 0) continue;
+            volatile uint8_t *pixel = fb_scanout_address +
+                ((uint32_t)pointer_y + row) * fb_pitch +
+                ((uint32_t)pointer_x + column) * fb_bytes_per_pixel;
+            framebuffer_store_scanout_native(
+                pixel, color == 0 ? black : (color == 1 ? white : shadow));
+        }
+    }
+}
+
 bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
     if (!fb_address || fb_bytes_per_pixel == 0U ||
         fb_bytes_per_pixel > FB_POINTER_MAX_BYTES) return false;
@@ -5389,6 +5442,37 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
 
     display_frame_rect_t damage[2];
     uint32_t damage_count = 0U;
+    if (fb_shadow_enabled) {
+        if (pointer_visible) {
+            damage[damage_count++] = (display_frame_rect_t){
+                (uint32_t)pointer_x, (uint32_t)pointer_y,
+                pointer_width, pointer_height,
+            };
+        }
+        pointer_visible = false;
+        pointer_width = pointer_height = 0U;
+        if (visible && x >= 0 && y >= 0 && x < (int32_t)fb_width &&
+            y < (int32_t)fb_height) {
+            uint32_t width = FB_POINTER_WIDTH;
+            uint32_t height = FB_POINTER_HEIGHT;
+            if ((uint32_t)x + width > fb_width)
+                width = fb_width - (uint32_t)x;
+            if ((uint32_t)y + height > fb_height)
+                height = fb_height - (uint32_t)y;
+            damage[damage_count++] = (display_frame_rect_t){
+                (uint32_t)x, (uint32_t)y, width, height,
+            };
+            pointer_x = x;
+            pointer_y = y;
+            pointer_width = width;
+            pointer_height = height;
+            pointer_visible = true;
+        }
+        if (damage_count != 0U)
+            framebuffer_present_damage(damage, damage_count);
+        return true;
+    }
+
     if (pointer_visible) {
         damage[damage_count++] = (display_frame_rect_t){
             (uint32_t)pointer_x, (uint32_t)pointer_y,

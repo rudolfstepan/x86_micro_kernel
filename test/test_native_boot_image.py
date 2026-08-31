@@ -458,6 +458,11 @@ class NativeBootImageTests(unittest.TestCase):
         self.assertIn('usb.generic.allowLastHID = "FALSE"', text)
         self.assertIn('gui.enableStretchGuest = "TRUE"', text)
         self.assertIn('gui.stretchGuestMode = "fullfill"', text)
+        self.assertIn(
+            'gui.fitGuestUsingNativeDisplayResolution = "FALSE"', text
+        )
+        self.assertIn('gui.applyHostDisplayScalingToGuest = "FALSE"', text)
+        self.assertIn('gui.viewModeAtPowerOn = "windowed"', text)
         self.assertNotIn("usb.autoConnect", text)
         self.assertNotIn("usb.quirks", text)
 
@@ -525,6 +530,13 @@ class NativeBootImageTests(unittest.TestCase):
             self.assertIn('floppy0.present = "FALSE"', config)
             self.assertIn('gui.enableStretchGuest = "TRUE"', config)
             self.assertIn('gui.stretchGuestMode = "fullfill"', config)
+            self.assertIn(
+                'gui.fitGuestUsingNativeDisplayResolution = "FALSE"', config
+            )
+            self.assertIn(
+                'gui.applyHostDisplayScalingToGuest = "FALSE"', config
+            )
+            self.assertIn('gui.viewModeAtPowerOn = "windowed"', config)
             launcher = (package / "START-VMWARE.cmd").read_text(
                 encoding="ascii"
             )

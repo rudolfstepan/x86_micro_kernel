@@ -2265,14 +2265,12 @@ static int syscall_pointer_update(int32_t x, int32_t y, uint32_t visible) {
     if (visible > 1U) return -22;
     Process *process = scheduler_current_process();
     if (process == NULL) return -13;
-    int reservation = framebuffer_frame_draw_enter(
-        process->pid, process->generation, pit_monotonic_ms());
-    if (reservation != 0) return reservation;
-    bool updated = framebuffer_cursor_update(x, y, visible != 0U);
-    int release = framebuffer_frame_draw_leave(
-        process->pid, process->generation, pit_monotonic_ms());
-    if (release != 0) return release;
-    return updated ? 0 : -19;
+    /* The cursor is an overlay outside the scene shadow. Do not enter the
+     * general frame transaction here: its expired-frame recovery can restore
+     * a large scene damage region synchronously and turn a fixed cursor update
+     * into a visible multi-tick stall. The display helper owns the atomic,
+     * nonblocking display-state attempt and returns its retryable status. */
+    return display_control_cursor_update(x, y, visible != 0U);
 }
 
 static int syscall_display_control(display_control_request_t *user_request) {
