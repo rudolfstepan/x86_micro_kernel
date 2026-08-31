@@ -258,6 +258,9 @@ caller-owned Dokument mit höchstens 200 Zeilen zu je 255 ASCII-Zeichen,
 Cursor, horizontalem/vertikalem Viewport, Pointer-Capture und explizitem
 Dirty-State. Persistenz bleibt Anwendungsverantwortung; erst nach erfolgreichem
 `fsync` und Rename ruft `notepad.prg` `reist_gui_text_editor_mark_saved()` auf.
+Das Laden verwendet dagegen ausschließlich ein generationgebundenes
+Ring-3-Storage-Objekt mit `READ|STAT`; ein Fehler publiziert keinen teilweise
+gelesenen Text. Der mutierende Speicherpfad bleibt davon getrennt.
 Damit kann ein fehlgeschlagener Schreibpfad den sichtbaren Dirty-State nicht
 fälschlich löschen.
 Scrollbar-Drag übernimmt den bereits begrenzten neuen Zeilen- oder Spaltenwert

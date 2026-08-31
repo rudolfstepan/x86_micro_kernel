@@ -22,6 +22,7 @@ class GuiNotepadSourceTests(unittest.TestCase):
             '#include "reist/gui/surface_client.h"',
             '#include "reist/gui/text_editor.h"',
             '#include "reist/gui/value_controls.h"',
+            '#include "reist/vfs_file_client.h"',
         ):
             self.assertIn(include, self.source)
         self.assertNotIn("desktop_wm", self.source)
@@ -91,6 +92,22 @@ class GuiNotepadSourceTests(unittest.TestCase):
             self.assertIn(contract, self.source)
         self.assertIn("NOTEPAD_MOUSE_BATCH_LIMIT 32U", self.source)
         self.assertIn('"/untitled.txt"', self.source)
+
+    def test_document_load_uses_one_minimal_ring3_storage_object(self):
+        start = self.source.index("static int load_document(")
+        end = self.source.index("static void initialize_error_model", start)
+        load = self.source[start:end]
+        self.assertIn("reist_vfs_file_open_rights(", load)
+        self.assertIn(
+            "REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT", load)
+        self.assertIn("reist_vfs_file_fstat(handle, &info)", load)
+        self.assertIn("reist_vfs_file_read(", load)
+        self.assertIn("reist_vfs_file_close(handle)", load)
+        for legacy in ("x86os_stat(", "x86os_open(", "x86os_read(",
+                       "x86os_close("):
+            self.assertNotIn(legacy, load)
+        self.assertLess(load.rindex("reist_vfs_file_close(handle)"),
+                        load.index("reist_gui_text_editor_set_text("))
 
     def test_editor_renders_utf8_on_scalar_boundaries(self):
         self.assertIn("reist_utf8_prefix", self.source)
@@ -205,7 +222,8 @@ class GuiNotepadSourceTests(unittest.TestCase):
         subprocess.run(
             [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
              "-fsyntax-only", "-Iuserspace/sdk/include",
-             "-Iuserspace/gui/include", str(SOURCE)],
+             "-Iuserspace/gui/include", "-Iuserspace/storage/include",
+             str(SOURCE)],
             cwd=ROOT, check=True, capture_output=True, text=True,
         )
 

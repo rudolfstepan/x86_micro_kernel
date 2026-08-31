@@ -3109,7 +3109,7 @@ abgeschlossen oder seine Unabhängigkeit im Paketvertrag ausdrücklich
 begründet ist. Fortschritt wird gleichzeitig hier, in `CURRENT_WORK.md` und
 durch den Status des ausführbaren Pakets aktualisiert.
 
-1. [~] **N1 · Read-only-VFS-Policy aus Ring 0 migrieren.** Bestehende
+1. [x] **N1 · Read-only-VFS-Policy aus Ring 0 migrieren.** Bestehende
    Shadow-Ergebnisse für FAT12, FAT32 und EXT2 inventarisieren, eine feste
    Ring-3-Anfrage samt Äquivalenzprüfung definieren und genau einen
    read-only Namensraumspfad vertikal umstellen. Abnahme: identische positive
@@ -3171,11 +3171,12 @@ durch den Status des ausführbaren Pakets aktualisiert.
     wenn N1 bis N7 abgeschlossen sind. Jeder Funktionsblock bleibt ein eigenes
     begrenztes Paket.
 
-**Aktiver Paketschnitt:** `N1-notepad-readonly-vfs` migriert genau den
-read-only Dokument-Ladepfad des Notepads auf generationgebundene
-Storage-Service-Objekte. Speichern und jede Mutation bleiben außerhalb des
-Pakets. Scope, Invarianten, Gates und Stop-Bedingungen sind in
-`automation/reist-s03b.toml` eingefroren.
+**N1 abgeschlossen:** `N1-notepad-readonly-vfs` migriert genau den read-only
+Dokument-Ladepfad des Notepads auf generationgebundene Storage-Service-Objekte
+mit `READ|STAT`. Speichern und jede Mutation bleiben außerhalb des Pakets.
+Targeted-, QEMU-Paket-, realer Notepad-Desktop- und isolierter Storage-
+Restartlauf sind bestanden. Als nächstes ist N2 als begrenzter
+Parser-Autoritäts-Schnitt zu definieren; bis dahin bleibt `active_id` leer.
 
 ### Historischer NVIDIA-GK208-Hardwarepfad
 

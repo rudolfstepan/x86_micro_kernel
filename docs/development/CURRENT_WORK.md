@@ -4,12 +4,13 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N1-notepad-readonly-vfs`. Genau der read-only Dokument-
-Ladepfad des Notepads wird von den Legacy-VFS-Syscalls auf ein
-generationgebundenes Ring-3-Storage-Objekt mit ausschließlich READ-/STAT-
-Rechten umgestellt. Speichern, `fsync`, Rename, Journal und andere Mutationen
-bleiben unverändert. Der Paketvertrag mit Scope, Invarianten, Gates und
-Stop-Bedingungen ist in `automation/reist-s03b.toml` eingefroren.
+Aktives Thema: keines; `N1-notepad-readonly-vfs` ist abgeschlossen. Genau der
+read-only Dokument-Ladepfad des Notepads verwendet nun statt Legacy-VFS-
+Syscalls ein generationgebundenes Ring-3-Storage-Objekt mit ausschließlich
+READ-/STAT-Rechten. Speichern, `fsync`, Rename, Journal und andere Mutationen
+bleiben unverändert. 80 Targeted-Checks, der QEMU-Framebuffer-Paketbuild, der
+reale Notepad-Desktop-Lauf und der isolierte Storage-Service-Restartlauf sind
+bestanden. Als nächstes ist N2 abzugrenzen; `active_id` bleibt bis dahin leer.
 
 R3.4h behält im Menü-Controller die exakten alten/neuen Itemzeilen, bildet
 sie auf dem aktiven VMware-RECT_COPY-Pfad ohne RECT_FILL jedoch als sichtbaren

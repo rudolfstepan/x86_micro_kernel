@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N1-notepad-readonly-vfs"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "N1-notepad-readonly-vfs"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Load Notepad documents through generation-scoped Ring-3 VFS objects"
@@ -22,7 +22,7 @@ allowed_files = [
   "scripts/build_system_programs.py",
   "userspace/gui/apps/notepad/main.c",
   "test/test_gui_notepad_source.py",
-  "test/test_vfs_file_client.py",
+  "test/test_reist_vfs_file_client.py",
   "scripts/test-reist-runtime.ps1",
   "scripts/run_qemu_runtime_desktop.py",
   "docs/filesystems/VFS_ARCHITECTURE.md",
@@ -40,7 +40,7 @@ invariants = [
 ]
 targeted_tests = [
   "python test/test_gui_notepad_source.py -v",
-  "python test/test_vfs_file_client.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
   "python test/test_reist_storage_recovery.py -v",
   "python test/test_runtime_graphics_switch.py -v",
   "python test/test_user_program_toolchain.py -v"
@@ -61,7 +61,12 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: migrate Notepad document loading to Ring 3"
-evidence = []
+evidence = [
+  "All five targeted groups passed: 80 checks covered Notepad source and compile behavior, generation-scoped VFS object sessions, storage recovery, desktop runtime dispatch and the packaged userspace toolchain.",
+  "The QEMU framebuffer package passed in 34 seconds and built NOTEPAD.PRG with the production Ring-3 VFS object client.",
+  "The real QEMU desktop Notepad probe passed in 23 seconds with the packaged reference document and clean shell return.",
+  "The isolated four-vCPU StorageFaultInjection build passed the storage-service crash, generation restart, stale-authority rejection and AP-reapplication runtime gate in 64 seconds."
+]
 
 [[packages]]
 id = "R3.4h-vmware-hover-cadence"

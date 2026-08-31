@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -182,10 +182,11 @@ function Invoke-RuntimeDesktop(
     [bool]$HoverProbe = $false,
     [bool]$SupervisedProbe = $false,
     [string]$ImagePath = $Image,
-    [int]$Smp = 1
+    [int]$Smp = 1,
+    [bool]$NotepadProbe = $false
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
-            [int]$ControlProbe + [int]$SoundProbe +
+            [int]$ControlProbe + [int]$NotepadProbe + [int]$SoundProbe +
             [int]$GuidemoClickProbe + [int]$HoverProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
@@ -204,6 +205,7 @@ function Invoke-RuntimeDesktop(
     }
     if ($SurfaceProbe) { $arguments += '--surface-probe' }
     if ($ControlProbe) { $arguments += '--control-probe' }
+    if ($NotepadProbe) { $arguments += '--notepad-probe' }
     if ($SoundProbe) { $arguments += '--sound-probe' }
     if ($GuidemoClickProbe) { $arguments += '--guidemo-click-probe' }
     if ($HoverProbe) {
@@ -1021,6 +1023,21 @@ switch ($Mode) {
     'storage-recovery' {
         Invoke-StorageRecoverySmoke
     }
+    'storage-service-restart' {
+        $relativeOutput = 'build/storage-service-restart'
+        $restartImage = Join-Path $RepoRoot "$relativeOutput/reist-os.img"
+        & $BuildScript -Target qemu -Video vga -StorageFaultInjection `
+            -OutputDirectory $relativeOutput -SkipReleaseSbom
+        if ($LASTEXITCODE -ne 0 -or
+            !(Test-Path -LiteralPath $restartImage -PathType Leaf)) {
+            throw 'Isolated storage-service restart image build failed.'
+        }
+        Invoke-Smoke 'guest-smoke-storage-service-restart.log' @(
+            '--smp', '4', '--expect-smp', '--vmware-vga', '--expect-svga2d',
+            '--expect-storage-recovery', '--expect-storage-ap-restart',
+            '--timeout', '120'
+        ) $true $restartImage
+    }
     'storage-io-failure' {
         Invoke-Smoke 'guest-smoke-storage-io-failure.log' @(
             '--expect-storage-io-failure'
@@ -1191,6 +1208,9 @@ switch ($Mode) {
     }
     'runtime-desktop' {
         Invoke-RuntimeDesktop $false $false $false $true
+    }
+    'runtime-desktop-notepad' {
+        Invoke-RuntimeDesktop -NotepadProbe $true
     }
     'runtime-desktop-metrics' {
         Invoke-RuntimeDesktop $false $true

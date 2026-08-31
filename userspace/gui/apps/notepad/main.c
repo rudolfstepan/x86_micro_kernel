@@ -15,6 +15,7 @@
 #include "reist/gui/surface_client.h"
 #include "reist/gui/text_editor.h"
 #include "reist/gui/value_controls.h"
+#include "reist/vfs_file_client.h"
 
 #include "../../../../include/reist/utf.h"
 
@@ -1216,29 +1217,43 @@ static int save_document(notepad_state_t *state) {
 }
 
 static int load_document(notepad_state_t *state) {
-    x86os_file_info_t info;
-    if (x86os_stat(state->path, &info) != 0) {
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int open_status = reist_vfs_file_open_rights(
+        state->path, REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &handle);
+    if (open_status == -2) {
         state->exists = 0U;
         (void)copy_text(state->status, sizeof(state->status), "Neue Datei");
         return 0;
     }
+    if (open_status != 0) return -1;
+    x86os_file_info_t info;
+    int stat_status = reist_vfs_file_fstat(handle, &info);
+    if (stat_status != 0) {
+        (void)reist_vfs_file_close(handle);
+        return -1;
+    }
     if (info.type != X86OS_FILE ||
-        info.size > REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY) return -2;
-    int descriptor = x86os_open(state->path);
-    if (descriptor < 0) return -1;
+        info.size > REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY) {
+        (void)reist_vfs_file_close(handle);
+        return -2;
+    }
     size_t offset = 0U;
     while (offset < info.size) {
-        int amount = x86os_read(
-            descriptor, serialized + offset, info.size - offset);
+        size_t remaining = info.size - offset;
+        size_t request = remaining > X86OS_VFS_SHADOW_READ_CAPACITY
+            ? X86OS_VFS_SHADOW_READ_CAPACITY : remaining;
+        int amount = reist_vfs_file_read(
+            handle, serialized + offset, request);
         if (amount <= 0) {
-            (void)x86os_close(descriptor);
+            (void)reist_vfs_file_close(handle);
             return -1;
         }
         offset += (size_t)amount;
     }
     char extra;
-    int extra_read = x86os_read(descriptor, &extra, 1U);
-    int close_status = x86os_close(descriptor);
+    int extra_read = reist_vfs_file_read(handle, &extra, 1U);
+    int close_status = reist_vfs_file_close(handle);
     if (extra_read != 0 || close_status < 0) return -1;
     reist_gui_text_editor_result_t result;
     reist_gui_text_editor_result_initialize(&result);

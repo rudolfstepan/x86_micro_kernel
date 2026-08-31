@@ -73,7 +73,11 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
-    "NOTEPAD.PRG": ROOT / "userspace/gui/apps/notepad/main.c",
+    "NOTEPAD.PRG": (
+        ROOT / "userspace/gui/apps/notepad/main.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "SOUNDPLAYER.PRG": ROOT / "userspace/gui/apps/sound_player/main.c",
     "IMAGEVIEWER.PRG": (
         ROOT / "userspace/gui/apps/image_viewer/main.c",

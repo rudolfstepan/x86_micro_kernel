@@ -134,7 +134,15 @@ Ressourcenstreams bleiben unverändert. Programmsuche und Completion der Shell
 teilen pro Aktion eine absolute monotone Fünf-Sekunden-Deadline, höchstens
 einsekündige Requests und eine feste Grenze von 128 akzeptierten Einträgen.
 Fehler oder Kapazitätserschöpfung publizieren kein Teilergebnis in die
-Eingabezeile; der geschützte Resident-Fallback bleibt davon unabhängig. Der FAT12-Nachweis
+Eingabezeile; der geschützte Resident-Fallback bleibt davon unabhängig.
+Der Dokument-Ladepfad von `NOTEPAD.PRG` verwendet ebenfalls ein stabiles
+Objekthandle, jedoch ausdrücklich nur mit `READ|STAT`. Pfadauflösung und
+Metadaten stammen vom selben generationgebundenen Storage-Objekt; Inhalt wird
+erst nach vollständig geprüftem EOF und erfolgreichem Close an das
+Editormodell publiziert. Ein fehlender Pfad erzeugt weiterhin ein neues leeres
+Dokument. Speichern, `fsync`, Rename und Journalmutation bleiben auf dem
+bisherigen VFS-Mutationspfad und sind nicht Bestandteil dieses Cutovers.
+Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits
 erkannte CHS-Geometrie als 2880 LBA-Sektoren; der vermittelte Blockread prüft
