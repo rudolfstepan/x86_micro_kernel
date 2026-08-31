@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2b-copy-source-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "N2b-copy-source-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Read COPY sources through Ring-3 VFS object authority"
@@ -56,7 +56,11 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: read copy sources through Ring 3"
-evidence = []
+evidence = [
+  "All four targeted groups passed with 58 checks across shell dispatch, VFS object sessions, system layout and packaged userspace compilation.",
+  "The QEMU VGA package passed in 34 seconds and built COPY.PRG with the production Ring-3 VFS object client.",
+  "The real QEMU shell workflow passed in 90 seconds: COPY read the packaged README through one object, CAT verified REIST OS content, DEL removed the target and authoritative STAT confirmed absence."
+]
 
 [[packages]]
 id = "N2-control-panel-config-authority"

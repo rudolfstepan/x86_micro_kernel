@@ -4,9 +4,12 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N2b-copy-source-authority`. Ausschließlich die Quellseite von
-`COPY.PRG` wechselt auf ein generationgebundenes Ring-3-Storage-Objekt mit
-READ-/STAT-Rechten; Zielerzeugung und -mutation bleiben unverändert.
+Aktives Thema: keines; `N2b-copy-source-authority` ist abgeschlossen. Die
+Quellseite von `COPY.PRG` verwendet ein generationgebundenes Ring-3-Storage-
+Objekt mit READ-/STAT-Rechten; Zielerzeugung und -mutation bleiben
+unverändert. 58 Targeted-Checks, VGA-Paketbuild und der reale
+Copy/CAT/Delete/Stat-Shelllauf sind bestanden. N2 bleibt für weitere
+Legacy-Lesekonsumenten offen.
 
 `N2-control-panel-config-authority` ist abgeschlossen.
 Der gemeinsame read-only Konfigurationsladepfad aller vier Control-Panel-

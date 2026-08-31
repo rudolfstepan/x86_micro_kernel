@@ -102,6 +102,10 @@ def run(qemu: Path, image: Path, timeout: float, log: Path) -> int:
             ("/svcctl.prg status 5",
              "COMPONENT STATUS 5 name=storage-service state=READY generation=1"),
             ("storage", "STORAGE SERVICE_BIND_FAILED code=-13"),
+            ("copy /readme.txt /copy-vfs.txt", "1 file(s) copied."),
+            ("cat /copy-vfs.txt", "REIST OS"),
+            ("del /copy-vfs.txt", "del /copy-vfs.txt"),
+            ("stat /copy-vfs.txt", "stat: path not found"),
         ]
         for command, marker in commands:
             if error is not None:

@@ -147,6 +147,10 @@ denselben Objektvertrag mit `READ|STAT`. Typ, feste Dateigröße, vollständiger
 Inhalt, EOF und Close werden geprüft, bevor der bestehende begrenzte
 Konfigurationsparser einen neuen sichtbaren Wert liefern darf. Mutation bleibt
 ausschließlich Aufgabe des getrennten `CONFIG.PRG`-Dienstprozesses.
+`COPY.PRG` trennt die Autoritäten: Die Quelle ist ein read-only
+Storage-Objekt mit `READ|STAT`, während ausschließlich der Zielpfad die
+bestehende mutierende VFS-Deskriptorautorität behält. Ein Quellfehler oder
+stale Objekt kann daher keine erfolgreiche Kopie publizieren.
 Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits

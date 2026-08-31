@@ -94,7 +94,11 @@ PROGRAMS = {
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": ROOT / "userspace/programs/del.c",
-    "COPY.PRG": ROOT / "userspace/programs/copy.c",
+    "COPY.PRG": (
+        ROOT / "userspace/programs/copy.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "RENAME.PRG": ROOT / "userspace/programs/rename.c",
     "STAT.PRG": (
         ROOT / "userspace/programs/stat.c",

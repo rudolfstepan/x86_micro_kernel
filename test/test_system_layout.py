@@ -302,6 +302,24 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('"/sbin/svcctl.prg"', shell)
         self.assertIn("program[length++] = 'p';", shell)
 
+    def test_copy_source_uses_ring3_object_and_runtime_readback(self):
+        source = self.read("userspace/programs/copy.c")
+        build = self.read("scripts/build_system_programs.py")
+        runner = self.read("scripts/run_qemu_system_layout.py")
+        self.assertIn('#include "reist/vfs_file_client.h"', source)
+        self.assertIn("reist_vfs_file_open_rights(", source)
+        self.assertIn(
+            "REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT", source)
+        self.assertIn("reist_vfs_file_read_bulk(", source)
+        self.assertIn("reist_vfs_file_close(source)", source)
+        self.assertNotIn("x86os_read(source", source)
+        self.assertIn('"COPY.PRG": (', build)
+        self.assertIn('("copy /readme.txt /copy-vfs.txt",', runner)
+        self.assertIn('("cat /copy-vfs.txt", "REIST OS")', runner)
+        self.assertIn('("del /copy-vfs.txt", "del /copy-vfs.txt")', runner)
+        self.assertIn(
+            '("stat /copy-vfs.txt", "stat: path not found")', runner)
+
 
 if __name__ == "__main__":
     unittest.main()

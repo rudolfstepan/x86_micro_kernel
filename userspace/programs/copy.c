@@ -7,20 +7,31 @@
  * Safety: Ressourcenarbeit ist begrenzt; Fehler werden an die Shell gemeldet und nicht verschleiert.
  */
 #include "x86os.h"
+#include "reist/vfs_file_client.h"
 
 int main(int argc, char** argv) {
     if (argc != 3) {
         x86os_puts("Usage: copy <source> <destination>\n");
         return 2;
     }
-    int source = x86os_open(argv[1]);
-    if (source < 0) {
+    reist_vfs_file_handle_t source = REIST_VFS_FILE_INVALID_HANDLE;
+    int source_status = reist_vfs_file_open_rights(
+        argv[1], REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &source);
+    if (source_status != 0) {
+        x86os_puts("copy: source file not found\n");
+        return 1;
+    }
+    x86os_file_info_t source_info;
+    if (reist_vfs_file_fstat(source, &source_info) != 0 ||
+        source_info.type != X86OS_FILE) {
+        (void)reist_vfs_file_close(source);
         x86os_puts("copy: source file not found\n");
         return 1;
     }
     int destination = x86os_create(argv[2]);
     if (destination < 0) {
-        (void)x86os_close(source);
+        (void)reist_vfs_file_close(source);
         x86os_puts("copy: destination already exists or cannot be created\n");
         return 1;
     }
@@ -28,7 +39,7 @@ int main(int argc, char** argv) {
     char buffer[512];
     int failed = 0;
     for (;;) {
-        int amount = x86os_read(source, buffer, sizeof(buffer));
+        int amount = reist_vfs_file_read_bulk(source, buffer, sizeof(buffer));
         if (amount < 0) { failed = 1; break; }
         if (amount == 0) break;
         int offset = 0;
@@ -40,7 +51,7 @@ int main(int argc, char** argv) {
         }
         if (failed) break;
     }
-    if (x86os_close(source) < 0) failed = 1;
+    if (reist_vfs_file_close(source) < 0) failed = 1;
     if (x86os_close(destination) < 0) failed = 1;
     if (failed) {
         x86os_puts("copy: I/O error\n");
