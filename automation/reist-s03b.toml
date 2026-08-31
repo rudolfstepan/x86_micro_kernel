@@ -27,6 +27,8 @@ allowed_files = [
   "test/test_system_layout.py",
   "test/test_fat12_maintenance.py",
   "test/test_fat12_tools.py",
+  "test/test_reist_vfs_file_client.py",
+  "test/test_vfs_file_client_host.c",
   "docs/filesystems/VFS_ARCHITECTURE.md",
   "docs/filesystems/FAT12_IMPROVEMENTS.md",
   "docs/development/CURRENT_WORK.md",
