@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2-control-panel-config-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "N2-control-panel-config-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Move Control Panel configuration reads to Ring-3 VFS authority"
@@ -39,7 +39,7 @@ invariants = [
 targeted_tests = [
   "python test/test_gui_control_panel_source.py -v",
   "python test/test_reist_vfs_file_client.py -v",
-  "python test/test_system_configuration.py -v",
+  "python test/test_reist_config_source.py -v",
   "python test/test_runtime_graphics_switch.py -v",
   "python test/test_user_program_toolchain.py -v"
 ]
@@ -59,7 +59,12 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: move Control Panel reads to Ring 3"
-evidence = []
+evidence = [
+  "All five targeted groups passed with 58 checks across Control Panel source behavior, VFS object sessions, configuration parsing, desktop dispatch and userspace packaging.",
+  "The QEMU framebuffer package passed in 10 seconds and built CONTROL.PRG with the production Ring-3 VFS object client.",
+  "The real QEMU Control Panel desktop probe passed in 22 seconds with all four packaged applets and clean session progress.",
+  "The isolated four-vCPU StorageFaultInjection image passed storage-service crash, generation restart, stale-authority rejection and AP reapplication in 59 seconds."
+]
 
 [[packages]]
 id = "N1-notepad-readonly-vfs"

@@ -2,6 +2,12 @@
 
 Stand: 27. August 2026.
 
+Die grafische Systemsteuerung liest ihre festen Konfigurationsdateien über
+generationgebundene Ring-3-Storage-Objekte mit ausschließlich `READ|STAT`.
+Fehler oder ein Dienst-/Medienwechsel veröffentlichen keinen teilweise
+gelesenen Appletwert. Schreibzugriffe bleiben am getrennten `CONFIG.PRG`-
+Prozess und dessen Autorisierungs- und Persistenzvertrag gebunden.
+
 REIST OS verwendet fuer systemweit veraenderbare Einstellungen das Verzeichnis
 `/etc/reist`. Die Konfiguration bleibt damit von Programmen unter `/usr`,
 Laufzeitdaten unter `/var` und spaeteren benutzerspezifischen Einstellungen

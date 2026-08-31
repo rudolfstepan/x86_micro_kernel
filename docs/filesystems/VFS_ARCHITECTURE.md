@@ -142,6 +142,11 @@ erst nach vollständig geprüftem EOF und erfolgreichem Close an das
 Editormodell publiziert. Ein fehlender Pfad erzeugt weiterhin ein neues leeres
 Dokument. Speichern, `fsync`, Rename und Journalmutation bleiben auf dem
 bisherigen VFS-Mutationspfad und sind nicht Bestandteil dieses Cutovers.
+Die vier Applets von `CONTROL.PRG` lesen ihre drei Konfigurationsdateien über
+denselben Objektvertrag mit `READ|STAT`. Typ, feste Dateigröße, vollständiger
+Inhalt, EOF und Close werden geprüft, bevor der bestehende begrenzte
+Konfigurationsparser einen neuen sichtbaren Wert liefern darf. Mutation bleibt
+ausschließlich Aufgabe des getrennten `CONFIG.PRG`-Dienstprozesses.
 Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits

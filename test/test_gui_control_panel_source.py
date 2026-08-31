@@ -15,6 +15,7 @@ class GuiControlPanelSourceTests(unittest.TestCase):
 
     def test_control_panel_is_a_separate_surface_client(self):
         self.assertIn('#include "reist/gui/surface_client.h"', self.source)
+        self.assertIn('#include "reist/vfs_file_client.h"', self.source)
         self.assertIn("reist_gui_surface_endpoint_from_argv", self.source)
         self.assertIn("REIST_GUI_SURFACE_ROLE_TOPLEVEL", self.source)
         self.assertIn("reist_gui_surface_client_set_title", self.source)
@@ -50,6 +51,23 @@ class GuiControlPanelSourceTests(unittest.TestCase):
         self.assertIn("x86os_wait", self.source)
         self.assertIn("Nur-Lese-Modus", self.source)
 
+    def test_configuration_reads_use_minimal_ring3_objects(self):
+        start = self.source.index("static int read_config(")
+        end = self.source.index("static void load_applet", start)
+        read_config = self.source[start:end]
+        self.assertIn("reist_vfs_file_open_rights(", read_config)
+        self.assertIn(
+            "REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT",
+            read_config)
+        self.assertIn("reist_vfs_file_fstat(handle, &info)", read_config)
+        self.assertIn("reist_vfs_file_read(", read_config)
+        self.assertIn("reist_vfs_file_close(handle)", read_config)
+        self.assertIn("info.size > sizeof(config_buffer)", read_config)
+        for legacy in ("x86os_open(", "x86os_read(", "x86os_close("):
+            self.assertNotIn(legacy, read_config)
+        self.assertLess(read_config.rindex("reist_vfs_file_close(handle)"),
+                        read_config.index("reist_config_parse("))
+
     def test_desktop_has_a_distinct_control_panel_icon_and_surface_launch(self):
         self.assertIn('{"Systemsteuerung", "/usr/gui/bin/control.prg"',
                       self.desktop)
@@ -66,6 +84,7 @@ class GuiControlPanelSourceTests(unittest.TestCase):
             encoding="utf-8")
         for program in ("CONTROL.PRG", "CONFIG.PRG"):
             self.assertIn(f'"{program}"', programs)
+        self.assertIn("vfs_file_client.c", programs)
         self.assertIn("usr/gui/bin/control.prg=", makefile)
         self.assertIn("sbin/config.prg=", makefile)
         self.assertIn("'usr/gui/bin/control.prg'", windows)

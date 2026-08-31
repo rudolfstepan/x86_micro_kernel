@@ -85,7 +85,11 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "SURFACEDEMO.PRG": ROOT / "userspace/gui/apps/surface_demo/main.c",
-    "CONTROL.PRG": ROOT / "userspace/gui/apps/control_panel/main.c",
+    "CONTROL.PRG": (
+        ROOT / "userspace/gui/apps/control_panel/main.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "CONFIG.PRG": ROOT / "userspace/services/config/config_service.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",

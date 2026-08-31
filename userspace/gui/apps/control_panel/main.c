@@ -9,6 +9,7 @@
 #include "x86os.h"
 #include "reist/config.h"
 #include "reist/gui/surface_client.h"
+#include "reist/vfs_file_client.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -88,22 +89,34 @@ static void set_status(control_panel_state_t *state, const char *status) {
 
 static int read_config(const control_panel_applet_t *applet,
                        reist_config_document_t *document) {
-    int descriptor = x86os_open(applet->path);
-    if (descriptor < 0) return descriptor;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int status = reist_vfs_file_open_rights(
+        applet->path, REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &handle);
+    if (status != 0) return status;
+    x86os_file_info_t info;
+    status = reist_vfs_file_fstat(handle, &info);
+    if (status != 0 || info.type != X86OS_FILE ||
+        info.size > sizeof(config_buffer)) {
+        (void)reist_vfs_file_close(handle);
+        return status != 0 ? status : -75;
+    }
     size_t used = 0U;
-    while (used < sizeof(config_buffer)) {
-        int amount = x86os_read(
-            descriptor, config_buffer + used, sizeof(config_buffer) - used);
-        if (amount < 0) {
-            (void)x86os_close(descriptor);
-            return amount;
+    while (used < info.size) {
+        size_t remaining = info.size - used;
+        size_t request = remaining > X86OS_VFS_SHADOW_READ_CAPACITY
+            ? X86OS_VFS_SHADOW_READ_CAPACITY : remaining;
+        int amount = reist_vfs_file_read(
+            handle, config_buffer + used, request);
+        if (amount <= 0) {
+            (void)reist_vfs_file_close(handle);
+            return amount < 0 ? amount : -5;
         }
-        if (amount == 0) break;
         used += (size_t)amount;
     }
     char extra = 0;
-    int extra_status = x86os_read(descriptor, &extra, 1U);
-    int close_status = x86os_close(descriptor);
+    int extra_status = reist_vfs_file_read(handle, &extra, 1U);
+    int close_status = reist_vfs_file_close(handle);
     if (extra_status != 0 || close_status != 0) return -75;
     return reist_config_parse(
         config_buffer, used, applet->schema, document);
