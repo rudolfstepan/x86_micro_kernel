@@ -24,8 +24,8 @@ if not exist "%IMAGE%" (
     exit /b 1
 )
 for %%I in ("%IMAGE%") do set "IMAGE_SIZE=%%~zI"
-if not "%IMAGE_SIZE%"=="67108864" (
-    echo ERROR: Expected a 67108864-byte REIST image, got %IMAGE_SIZE% bytes.
+if not "%IMAGE_SIZE%"=="536870912" (
+    echo ERROR: Expected a 536870912-byte REIST image, got %IMAGE_SIZE% bytes.
     pause
     exit /b 1
 )
