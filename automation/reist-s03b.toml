@@ -16,13 +16,16 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Make VMware pointer motion and Start-menu hover frame-bounded"
-scope = "Remove the reproduced VMware desktop interaction stalls without changing public ABI or moving GUI policy into Ring 0. Replace the obsolete compositor-wide menu invalidation with the menu controller's fixed exact damage now that the clipped-glyph raster ABI is available, invalidate only old and new hot or pressed item rows instead of the complete popup, and recompose an entirely opaque Start-menu damage frame without traversing hidden lower layers. Bound software-pointer publication to the latest position at a fixed presentation cadence while preserving every button edge, exact old/new cursor rectangles, one bounded present batch, one-millisecond idle polling and immediate dirty UI feedback. Make the pointer's display-state acquisition nonblocking while preemption is disabled: lifecycle contention must leave cursor and framebuffer state unchanged and return a retryable status to Ring 3 instead of sleeping for a scheduler round. Coalesce only consecutive pure relative HID motion inside the existing fixed queue by saturating and accumulating its deltas; retain button and wheel events in order, evict only replaceable motion to admit an edge, and reject a fully nonreplaceable queue without advancing the accepted button state. For the exact VMware 15AD:0779 xHCI profile only, keep runtime legacy interrupts disabled after successful enumeration and use the existing one-millisecond task-context fallback with a fixed one-event budget; preflight the DMA event-ring cycle in memory so an empty poll performs no emulated ERDP MMIO publication. Retain the existing IRQ enablement, bounded poll fallback and event budgets for every other controller and physical profile. Extend the render probe with six measured Start-menu hot transitions and add a real four-vCPU VMware RFB trajectory through virtual xHCI HID that opens Start, moves continuously through every item in order, proves bounded cursor publication and returns cleanly to the Ring-3 shell. Build the VMware and QEMU hover probes with a compile-time-only supervisor argument so the measured compositor uses the same service class, generation lifecycle and authority as a production desktop while normal builds remain unchanged. Compare the same measured hover path under four-vCPU QEMU. Generate a VMware windowed Free-Stretch viewport that explicitly disables native-host-pixel fitting and guest-side host-DPI propagation, so the 720x400 boot console to 1024x768 SVGA transition fills the existing Workstation window without VMware Tools or a manual resize. Acceptance requires no full-scene hover frame, no software fallback or restart, six visible hot states, a maximum measured hot-frame time of 17 ms, no more than 34 ms between cursor presents while continuous motion is available, and a generated VMX with the fixed logical-viewport settings; these are reference-host measurements rather than a certification or universal hardware guarantee."
+scope = "Remove the reproduced VMware desktop interaction stalls without changing public ABI or moving GUI policy into Ring 0. Replace the obsolete compositor-wide menu invalidation with the menu controller's fixed exact damage now that the clipped-glyph raster ABI is available, invalidate only old and new hot or pressed item rows instead of the complete popup, and recompose an entirely opaque Start-menu damage frame without traversing hidden lower layers. Bound software-pointer publication to the latest position at a fixed presentation cadence while preserving every button edge, exact old/new cursor rectangles, one bounded present batch, one-millisecond idle polling and immediate dirty UI feedback. Make the pointer's display-state acquisition nonblocking while preemption is disabled: lifecycle contention must leave cursor and framebuffer state unchanged and return a retryable status to Ring 3 instead of sleeping for a scheduler round. Coalesce only consecutive pure relative HID motion inside the existing fixed queue by saturating and accumulating its deltas; retain button and wheel events in order, evict only replaceable motion to admit an edge, and reject a fully nonreplaceable queue without advancing the accepted button state. For the exact VMware 15AD:0779 xHCI profile only, keep runtime legacy interrupts disabled after successful enumeration and use the existing one-millisecond task-context fallback with a fixed one-event budget; preflight the DMA event-ring cycle in memory so an empty poll performs no emulated ERDP MMIO publication. Retain the existing IRQ enablement, bounded poll fallback and event budgets for every other controller and physical profile. Shorten only the BSP periodic scheduling decision from ten to two milliseconds for both calibrated LAPIC operation and PIT fallback while every AP retains the ten-millisecond period; preserve the weighted class cycle, absolute class windows, lock-free defer-on-contention rule and all existing affinity policy. Extend the render probe with six measured Start-menu hot transitions and add a real four-vCPU VMware RFB trajectory through virtual xHCI HID that opens Start, moves continuously through every item in order, proves bounded cursor publication and returns cleanly to the Ring-3 shell. Build the VMware and QEMU hover probes with a compile-time-only supervisor argument so the measured compositor uses the same service class, generation lifecycle and authority as a production desktop while normal builds remain unchanged. Compare the same measured hover path under four-vCPU QEMU. Generate a VMware windowed Free-Stretch viewport that explicitly disables native-host-pixel fitting and guest-side host-DPI propagation, so the 720x400 boot console to 1024x768 SVGA transition fills the existing Workstation window without VMware Tools or a manual resize. Acceptance requires no full-scene hover frame, no software fallback or restart, six visible hot states, a maximum measured hot-frame time of 17 ms, no more than 34 ms between cursor presents while continuous motion is available, and a generated VMX with the fixed logical-viewport settings; these are reference-host measurements rather than a certification or universal hardware guarantee."
 allowed_files = [
   "automation/reist-s03b.toml",
   "Makefile",
   "scripts/build-windows.ps1",
   "scripts/create_native_boot_image.py",
   "kernel/init/supervisor.c",
+  "kernel/sched/scheduler.c",
+  "kernel/time/apic.c",
+  "kernel/time/apic.h",
   "drivers/usb/hid_mouse.c",
   "drivers/usb/xhci.c",
   "userspace/gui/lib/menu.c",
@@ -34,6 +37,8 @@ allowed_files = [
   "test/test_usb_hid_mouse_host.c",
   "test/test_usb_mouse.py",
   "test/test_reist_supervisor.py",
+  "test/test_scheduler_time.py",
+  "test/test_smp.py",
   "test/test_gui_menu_source.py",
   "test/test_gui_menu_host.c",
   "test/test_desktop_source.py",
@@ -57,6 +62,7 @@ invariants = [
   "pure motion may replace older unpresented motion but every button edge remains ordered and no input or damage queue grows",
   "relative HID motion is accumulated only across consecutive replaceable reports in the same accepted button state and queue pressure never silently advances or discards a nonreplaceable edge",
   "only the exact VMware xHCI profile keeps runtime legacy interrupts disabled and uses one-event task polling with an in-memory empty-ring preflight while every other controller retains its existing IRQ enablement physical event budgets and poll fallback",
+  "the BSP scheduler period is two milliseconds under calibrated LAPIC operation and PIT fallback while every AP remains at ten milliseconds and class ordering windows budgets and affinity are unchanged",
   "pointer publication is nonblocking without busy waiting and retains at most two exact cursor rectangles in one present batch while display lifecycle contention changes no pointer or framebuffer state",
   "the measured probe is supervisor-owned and service-class while its compile-time argument is absent from every normal build",
   "the generated VMware viewport keeps Free Stretch enabled while disabling native-host-pixel fitting and guest-side host-DPI propagation without requiring VMware Tools or mutable host preferences",
@@ -65,6 +71,8 @@ invariants = [
 targeted_tests = [
   "python test/test_usb_mouse.py -v",
   "python test/test_reist_supervisor.py -v",
+  "python test/test_scheduler_time.py -v",
+  "python test/test_smp.py -v",
   "python test/test_gui_menu_source.py -v",
   "python test/test_desktop_source.py -v",
   "python test/test_display_abi_minimal.py -v",
@@ -90,6 +98,7 @@ stop_conditions = [
   "a measured hot frame exceeds 17 ms or continuous-motion cursor-present gap exceeds 34 ms after bounded HID coalescing and service-class measurement",
   "the generated VMware desktop still depends on a manual host-window resize host-global display preference or VMware Tools to fill the logical viewport",
   "smoothness would require busy waiting an unbounded queue weakened supervisor deadline new kernel GUI policy or a public ABI break",
+  "the lower BSP cadence alters AP timer cadence weighted scheduling classes absolute class windows or the defer-on-contention bound",
   "a required production file lies outside allowed_files",
   "an unrelated worktree change overlaps an allowed file"
 ]
