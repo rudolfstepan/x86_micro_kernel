@@ -4,9 +4,11 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: keines; `active_id` ist leer. Der nächste Lauf grenzt aus dem
-verbleibenden mutationsgekoppelten Editor-, Konfigurations- und Desktop-
-Inventar genau einen weiteren N2-Schnitt ab.
+Aktives Thema: `N2f-editor-load-authority`. Nur der bestehende read-only
+Ladepfad von `EDIT.PRG` wechselt auf ein generationgebundenes Ring-3-VFS-
+Objekt mit READ-/STAT-Rechten, fester 51200-Byte-Gesamtgrenze und absoluter
+60-Sekunden-Frist. Der atomare Tempfile-/Fsync-/Rename-Savepfad sowie die
+Editorinteraktion bleiben unverändert.
 
 `N2e-audio-wave-read-authority` ist abgeschlossen. Der gemeinsame WAV-
 Preview-Loader von `WAVPLAY.PRG` und `SOUNDPLAYER.PRG` verwendet genau ein

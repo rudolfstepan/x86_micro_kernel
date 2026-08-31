@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N2f-editor-load-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,58 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N2f-editor-load-authority"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Read EDIT documents through Ring-3 VFS object authority"
+scope = "Migrate only the existing-file load path of packaged EDIT.PRG from legacy SYS_STAT/SYS_OPEN/SYS_READ/SYS_CLOSE descriptors to exactly one parser-authoritative generation-scoped Ring-3 VFS object with only READ and STAT rights. Preserve missing-file creation semantics, 200 lines, 256 bytes per line, CRLF normalization and fixed 256-byte transfer buffer; reject existing files larger than the fixed 51200-byte editor capacity before content publication. Use one absolute monotonic 60-second load deadline for open, fstat, every forward read, exact-size EOF validation and successful close, with independently one-millisecond-bounded failure cleanup. Emit one diagnostic runtime marker only after an existing file is fully loaded and closed. Keep the temporary-file create, write, fsync, close, atomic rename, cleanup, editor interaction, command syntax and public ABI unchanged. Prove success, missing file, partial read, premature EOF, fstat, deadline and close failures in a host harness, package EDIT.PRG with the existing VFS object client, and exercise real shell create, editor load, Ctrl-X exit, readback, cleanup and shell liveness."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/bin/edit.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_system_layout.py",
+  "test/test_shell_source.py",
+  "test/test_edit_vfs_host.c",
+  "test/test_system_layout.py",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "EDIT existing-file loading contains no legacy stat open read or close syscall and resolves the path exactly once through one object",
+  "the source object receives only READ and STAT rights and its fstat type exact size content EOF and close all belong to the same generation",
+  "one absolute monotonic 60-second deadline bounds successful loading while every failure cleanup close is independently bounded to one millisecond",
+  "the fixed 200-line 256-byte-line 51200-byte-file and 256-byte-transfer capacities prevent unbounded work and no failed load enters the editor loop",
+  "missing paths still open a new empty editor buffer and the runtime marker is emitted only for a completely loaded and closed existing file",
+  "temporary create write fsync close rename cleanup editor interaction command syntax public ABI kernel VFS parser and storage service remain unchanged",
+  "EDIT.PRG is linked with the existing VFS object and path clients and remains reachable from the normal userspace shell"
+]
+targeted_tests = [
+  "python test/test_shell_source.py -v",
+  "python test/test_reist_atomic_rename.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout"
+]
+stop_conditions = [
+  "the load path requires a new syscall storage operation parser mutation request or change to editor save semantics",
+  "a failed or stale read can enter the editor loop publish the success marker leak an object or silently fall back to legacy VFS",
+  "the real editor cannot load exit preserve content clean up and return a live shell",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: move EDIT document loads to Ring 3"
+evidence = []
 
 [[packages]]
 id = "N2e-audio-wave-read-authority"

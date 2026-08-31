@@ -3115,7 +3115,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    read-only Namensraumspfad vertikal umstellen. Abnahme: identische positive
    und negative Ergebnisse, begrenzte Parserarbeit sowie Crash-, Hang-,
    Restart- und stale-Generation-Nachweis ohne Verlust anderer Dienste.
-2. [ ] **N2 · Parser-Autorität in Ring 3 vervollständigen.** Aufbauend auf N1
+2. [~] **N2 · Parser-Autorität in Ring 3 vervollständigen.** Aufbauend auf N1
    schrittweise FAT- und EXT2-Parserzustand, Objektlebenszyklen und
    Mediengenerationen aus dem Kernel entfernen. Ring 0 vermittelt nur
    validierte Blockressourcen, Capabilities, Quoten und Fences. Abnahme:
@@ -3133,9 +3133,10 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Pfaden. `N2e-audio-wave-read-authority` hat den gemeinsamen Loader von
    WAVPLAY und SOUNDPLAYER auf ein einziges READ-/STAT-Objekt mit absoluter
    Ladefrist umgestellt; Audio-, Surface- und Mutationsverhalten blieben
-   unverändert. `active_id` ist nach den bestandenen Gates leer. Der nächste
-   Lauf grenzt genau einen mutationsgekoppelten Editor-, Konfigurations- oder
-   Desktop-Schnitt ab, ohne N3-Mutation vorwegzunehmen.
+   unverändert. Aktiver Folgeschnitt ist `N2f-editor-load-authority`: Nur das
+   Laden bestehender Dokumente in EDIT wechselt auf ein begrenztes READ-/STAT-
+   Objekt; der atomare Tempfile-/Fsync-/Rename-Savepfad bleibt als spätere
+   N3-Mutation ausdrücklich unverändert.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und
