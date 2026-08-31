@@ -3098,9 +3098,89 @@ make test-generated-images
 make test-fuzz
 ```
 
-## 10. Unmittelbar nächster Schritt
+## 10. Geordneter Umsetzungs-Backlog
 
-Der vom Benutzer gewählte nächste Hardwarepfad ist native NVIDIA-GK208-2D-
+Diese Liste ist ab dem 31. August 2026 die kanonische Reihenfolge für neue
+Arbeit. Sie ergänzt die ausführbare Paket-Queue, ersetzt sie aber nicht. `[ ]`
+bedeutet geplant, `[~]` bedeutet durch genau ein `active_id` in
+`automation/reist-s03b.toml` aktiv und `[x]` bedeutet nach allen eingefrorenen
+Gates abgeschlossen. Ein Punkt darf erst aktiviert werden, wenn sein Vorgänger
+abgeschlossen oder seine Unabhängigkeit im Paketvertrag ausdrücklich
+begründet ist. Fortschritt wird gleichzeitig hier, in `CURRENT_WORK.md` und
+durch den Status des ausführbaren Pakets aktualisiert.
+
+1. [ ] **N1 · Read-only-VFS-Policy aus Ring 0 migrieren.** Bestehende
+   Shadow-Ergebnisse für FAT12, FAT32 und EXT2 inventarisieren, eine feste
+   Ring-3-Anfrage samt Äquivalenzprüfung definieren und genau einen
+   read-only Namensraumspfad vertikal umstellen. Abnahme: identische positive
+   und negative Ergebnisse, begrenzte Parserarbeit sowie Crash-, Hang-,
+   Restart- und stale-Generation-Nachweis ohne Verlust anderer Dienste.
+2. [ ] **N2 · Parser-Autorität in Ring 3 vervollständigen.** Aufbauend auf N1
+   schrittweise FAT- und EXT2-Parserzustand, Objektlebenszyklen und
+   Mediengenerationen aus dem Kernel entfernen. Ring 0 vermittelt nur
+   validierte Blockressourcen, Capabilities, Quoten und Fences. Abnahme:
+   maschinenlesbares Kernel-Restinventar und Fault-Injection für beschädigte,
+   übergroße und während des Lesens gewechselte Medien.
+3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
+   read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
+   Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und
+   Generation bleiben fail-closed. Abnahme: Power-Cut-/Teilwrite-Matrix,
+   Dienstneustart und kontrollierter Remount ohne ABI-Bruch.
+4. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
+   SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
+   MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend
+   jeweils genau eine weitere Produktionsdomäne auditieren. Ohne IOMMU bleibt
+   DMA ausschließlich kernelvalidiert vermittelt. Abnahme: Normal-, Crash-,
+   Hang-, stale-Reply- und Budgeterschöpfungspfad auf BSP und freigegebenem AP.
+5. [ ] **N5 · Übergangs-Syscalls konsolidieren.** Nach N1 bis N4 ungenutzte
+   spezialisierte Syscalls inventarisieren und Clients auf wenige generische
+   IPC-, Capability- und Resource-Primitiven umstellen. Nummern und alte
+   Wrapper bleiben append-only kompatibel, bis Quell-, Image- und Runtime-
+   Nachweise ihre Entfernung erlauben.
+6. [ ] **N6 · Vollständige Desktop-Sitzungsrecovery.** Compositor-Crash und
+   -Hang müssen Displayfence, Generationstausch, Surface-Neubindung und
+   begrenzte Client-Reintegration demonstrieren. Ein fehlerhafter Client darf
+   weder Shell noch andere Fenster verlieren; Budgeterschöpfung endet im
+   definierten Shell-/Safe-State-Fallback.
+7. [ ] **N7 · Maschinenlesbares TCB- und Ring-0-Restinventar.** Kernelobjekte,
+   privilegierte Pfade, öffentliche ABIs, Autoritäten und zugehörige Tests in
+   einer validierten Manifestquelle erfassen. Jeder Build muss neue oder
+   vergrößerte TCB-Bestandteile ohne ausdrückliche Freigabe ablehnen.
+8. [ ] **N8 · Physisch unabhängiges Fence/Interlock (`S0.3c-7b2b`).** Den
+   vorhandenen Epoch-/Leasevertrag an einen elektrisch unabhängigen,
+   rücklesbaren Zielhardwarepfad binden. Leaseablauf allein darf niemals als
+   Fencebestätigung gelten.
+9. [ ] **N9 · Common-Cause- und Hardware-Failover (`S0.3c-7d`).** Erst nach N8
+   zwei unabhängige Domänen, reale Ausgangseinzäunung, Storagezustand,
+   FTTI-Übernahme und Reintegration unter Strom-, Transport- und
+   Taktfehlern prüfen. Bis dahin bleibt jeder Fail-operational-Claim verboten.
+10. [ ] **N10 · Release- und Langzeitevidenz schließen.** Reproduzierbare
+    Toolchainbindung, signierte Provenienz, SBOM-Zuordnung, Langzeitläufe,
+    reale Power-Loss-, Hardware- und – soweit für ein Zielprofil relevant –
+    EMV-Evidenz automatisiert und rückverfolgbar erfassen.
+11. [ ] **N11 · Zusätzliche Speicherhärtung.** Systematische Allocation-
+    Failure-Injection, weitere Reaper-Stresstests, einen begrenzten
+    IRQ-tauglichen Allocator und Highmem/`kmap` oberhalb 1 GiB getrennt
+    umsetzen; jeder Teil benötigt eigene Kapazitäts- und Degradationsgates.
+12. [ ] **N12 · Breitere USB- und Hardwareabdeckung.** Composite-Geräte,
+    allgemeiner Hotplug und USB-Mass-Storage nur über die in N4 gehärtete
+    Vermittlung ergänzen; reale Geräte- und Reconnectmatrix je Controller.
+13. [ ] **N13 · Nachgelagerte Produktfunktionen.** Terminal und weitere
+    Ring-3-Systemwerkzeuge vor zusätzlichen GUI-Controls umsetzen; IPv6,
+    Zertifikatswiderruf, erweitertes Socketmodell und UEFI erst priorisieren,
+    wenn N1 bis N7 abgeschlossen sind. Jeder Funktionsblock bleibt ein eigenes
+    begrenztes Paket.
+
+**Nächster zu definierender Paketschnitt:** N1, genau ein read-only
+Namensraumspfad mit Ring-3-Äquivalenz- und Lifecycle-Nachweis. Vor seiner
+Aktivierung sind `allowed_files`, Invarianten, eingefrorene Gates und
+Stop-Bedingungen in `automation/reist-s03b.toml` festzulegen. Bis dahin bleibt
+`active_id` leer; die bloße Aufnahme in diese Liste ist kein
+Implementierungs- oder Abnahmeclaim.
+
+### Historischer NVIDIA-GK208-Hardwarepfad
+
+Der vom Benutzer gewählte nächste Hardwarepfad war native NVIDIA-GK208-2D-
 Beschleunigung für das ASUS-Board. Das abgeschlossene Paket
 `R2.2-nvidia-gk208-bringup` bindet ausschließlich `10de:1280`, startet einen
 überwachten Ring-3-Treiber und prüft passive PMC-/PTIMER-/PFIFO-/PGRAPH-

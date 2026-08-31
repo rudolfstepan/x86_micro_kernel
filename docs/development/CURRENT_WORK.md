@@ -5,6 +5,12 @@ Stand: 31. August 2026
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
 Aktives Thema: keines; `R3.4h-vmware-hover-cadence` ist abgeschlossen.
+Der geordnete Planungs-Backlog steht in Abschnitt 10 der Roadmap. Als nächstes
+ist N1 vorgesehen: genau ein read-only VFS-Namensraumspfad wird mit
+Äquivalenz-, Crash-, Restart- und stale-Generation-Nachweis aus Ring 0 in den
+Ring-3-Dienst verlagert. N1 ist noch nicht aktiv; vor Implementierungsbeginn
+müssen Scope, `allowed_files`, Invarianten, Gates und Stop-Bedingungen in
+`automation/reist-s03b.toml` eingefroren und `active_id` gesetzt werden.
 
 R3.4h behält im Menü-Controller die exakten alten/neuen Itemzeilen, bildet
 sie auf dem aktiven VMware-RECT_COPY-Pfad ohne RECT_FILL jedoch als sichtbaren
