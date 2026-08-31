@@ -38,6 +38,9 @@ int reist_vfs_file_read(reist_vfs_file_handle_t handle, void *data,
                         size_t capacity);
 int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data,
                              size_t capacity);
+/** Updates only the local bound used by subsequent object requests. */
+int reist_vfs_file_set_timeout(reist_vfs_file_handle_t handle,
+                               uint32_t timeout_ms);
 int reist_vfs_file_seek(reist_vfs_file_handle_t handle, int64_t offset,
                         uint32_t whence, uint32_t *new_offset);
 int reist_vfs_file_fstat(reist_vfs_file_handle_t handle,

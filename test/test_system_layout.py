@@ -340,6 +340,42 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('inject(process, "exit")', runner)
         self.assertIn('"stat /vfsload.bas", "stat: path not found"', runner)
 
+    def test_chkdsk_path_scan_uses_ring3_clients_and_runtime(self):
+        source = self.read("userspace/programs/chkdsk.c")
+        build = self.read("scripts/build_system_programs.py")
+        runner = self.read("scripts/run_qemu_system_layout.py")
+        runtime = self.read("scripts/test-reist-runtime.ps1")
+        for token in ('#include "reist/vfs_file_client.h"',
+                      '#include "reist/vfs_stat_client.h"',
+                      '#include "reist/vfs_read_client.h"',
+                      "scan_remaining_ms(", "reist_vfs_file_open_rights(",
+                      "scan_failure_stage", "CHKDSK: failure stage=",
+                      "reist_vfs_file_set_timeout(",
+                      "reist_vfs_file_fstat(", "reist_vfs_file_read(",
+                      "reist_vfs_readdir_at(", "reist_vfs_stat("):
+            self.assertIn(token, source)
+        for legacy in ("x86os_stat(", "x86os_open(", "x86os_read(",
+                       "x86os_close(", "x86os_readdir_batch("):
+            self.assertNotIn(legacy, source)
+        self.assertIn('"CHKDSK.PRG": (', build)
+        for client in ("vfs_file_client.c", "vfs_stat_client.c",
+                       "vfs_read_client.c", "vfs_path.c"):
+            self.assertIn(client, build[build.index('"CHKDSK.PRG": ('):])
+        self.assertIn(
+            '("chkdsk /htdocs", "CHKDSK: read-only check passed")', runner)
+        self.assertIn('default=600.0', runner)
+        self.assertIn('parser.add_argument("--chkdsk-only"', runner)
+        self.assertIn("if chkdsk_only:", runner)
+        self.assertIn("chkdsk_failure not in smoke.FAIL_MARKERS", runner)
+        self.assertEqual(
+            runner.count("if error is None and not chkdsk_only:"), 5)
+        layout = runtime[runtime.index("function Invoke-SystemLayout"):
+                         runtime.index("function Invoke-StorageReconnect")]
+        self.assertIn("'SYSTEM LAYOUT FAIL'", layout)
+        self.assertIn("'SYSTEM LAYOUT PASS'", layout)
+        self.assertIn("if ($ChkdskOnly)", layout)
+        self.assertIn("'chkdsk-readonly'", runtime)
+
 
 if __name__ == "__main__":
     unittest.main()

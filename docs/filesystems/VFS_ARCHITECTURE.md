@@ -157,6 +157,22 @@ Close müssen vor dem atomaren Austausch des aktuellen Programms erfolgreich
 sein. Der Notepad-Dateidialog besitzt keine getrennte Legacy-Stat-Vorprüfung
 mehr, sondern überlässt Existenz, Typ, Größe und Inhalt demselben bereits
 objektgebundenen Ladepfad.
+Der generische Pfadmodus von `CHKDSK.PRG` traversiert ebenfalls ausschließlich
+über die Ring-3-Stat- und Readdir-at-Clients. Reguläre Dateien werden mit
+`READ|STAT` geöffnet; Fstat, exakt größenbegrenztes Lesen, EOF und Close müssen
+am selben generationgebundenen Objekt erfolgreich sein. Eine gemeinsame
+absolute monotone Frist von 60 Sekunden begrenzt den vollständigen Scan. Der
+Objektclient erlaubt dafür eine additive lokale Aktualisierung seines
+Request-Timeouts, sodass jede folgende Operation nur das noch verbleibende
+Budget erhält. Bei Frist- oder Kapazitätsfehler wird kein Erfolg publiziert;
+ein bereits geöffnetes Objekt wird mit einem getrennt begrenzten Close-Versuch
+freigegeben. Die `--fat12`-Maintenance-Aufträge verwenden unverändert ihren
+versionierten Storage-Service-Vertrag. Das Maintenance-Prozessprofil besitzt
+dazu keine direkten Legacy-Open-/Read-/Close-/Stat-/Readdir-Syscalls und keine
+Bulk-Collect-Autorität mehr. Der Kernel akzeptiert aus dieser Domain neben den
+exklusiven FAT12-Operationen 11 bis 30 nur den bestehenden geschützten
+VFS-Shadow-Umschlag; Bulk-Reads, generische Writes, Formatierung und
+Blockzugriff bleiben verweigert.
 Der FAT12-Nachweis
 erfolgt separat mit dem paketierten `STAT.PRG` auf einer realen
 QEMU-Hotplug-Diskette. Der FDD-Ressourceneintrag publiziert dazu seine bereits

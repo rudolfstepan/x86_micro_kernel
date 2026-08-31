@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-control', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-control', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -332,20 +332,26 @@ function Invoke-SataHotplug {
 }
 
 function Invoke-AdminMaintenance {
+    param([switch]$ChkdskOnly)
     New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $gateLog = Join-Path $LogRoot "$stamp-runtime-admin-maintenance"
+    $gateName = if ($ChkdskOnly) { 'chkdsk-fat12' } else { 'admin-maintenance' }
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-$gateName"
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     $exitCode = 0
     try {
         $LASTEXITCODE = 0
-        & $Python $AdminMaintenanceRunner `
-            --qemu $Qemu `
-            --image $Image `
-            --disk (Join-Path $RepoRoot 'build\admin-maintenance.img') `
-            --floppy (Join-Path $RepoRoot 'build\admin-maintenance-fdd.img') `
-            --log (Join-Path $RepoRoot 'build\guest-admin-maintenance.log') `
-            *> $gateLog
+        $runnerArgs = @(
+            '--qemu', $Qemu,
+            '--image', $Image,
+            '--disk', (Join-Path $RepoRoot 'build\admin-maintenance.img'),
+            '--floppy', (Join-Path $RepoRoot 'build\admin-maintenance-fdd.img'),
+            '--log', (Join-Path $RepoRoot "build\guest-$gateName.log")
+        )
+        if ($ChkdskOnly) {
+            $runnerArgs += '--chkdsk-only'
+        }
+        & $Python $AdminMaintenanceRunner @runnerArgs *> $gateLog
         $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
     }
     catch {
@@ -355,10 +361,18 @@ function Invoke-AdminMaintenance {
     finally {
         $watch.Stop()
     }
+    $passMarker = if ($ChkdskOnly) { 'CHKDSK FAT12 PASS' } else { 'ADMIN MAINTENANCE PASS' }
+    $reportedFailure = Select-String -LiteralPath $gateLog `
+        -SimpleMatch 'FAIL' -Quiet
+    $reportedPass = Select-String -LiteralPath $gateLog `
+        -SimpleMatch $passMarker -Quiet
+    if ($exitCode -eq 0 -and ($reportedFailure -or !$reportedPass)) {
+        $exitCode = 1
+    }
     if ($exitCode -ne 0) {
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
         Get-Content -LiteralPath $gateLog -Tail 40
-        throw "REIST runtime smoke 'admin-maintenance' failed with exit $exitCode."
+        throw "REIST runtime smoke '$gateName' failed with exit $exitCode."
     }
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
@@ -431,7 +445,7 @@ function Invoke-DriverDomain {
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
-function Invoke-SystemLayout {
+function Invoke-SystemLayout([bool]$ChkdskOnly = $false) {
     New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $gateLog = Join-Path $LogRoot "$stamp-runtime-system-layout"
@@ -439,11 +453,14 @@ function Invoke-SystemLayout {
     $exitCode = 0
     try {
         $LASTEXITCODE = 0
-        & $Python $SystemLayoutRunner `
-            --qemu $Qemu `
-            --image $Image `
-            --log (Join-Path $RepoRoot 'build\guest-system-layout.log') `
-            *> $gateLog
+        $arguments = @(
+            $SystemLayoutRunner,
+            '--qemu', $Qemu,
+            '--image', $Image,
+            '--log', (Join-Path $RepoRoot 'build\guest-system-layout.log')
+        )
+        if ($ChkdskOnly) { $arguments += '--chkdsk-only' }
+        & $Python @arguments *> $gateLog
         $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
     }
     catch {
@@ -452,6 +469,13 @@ function Invoke-SystemLayout {
     }
     finally {
         $watch.Stop()
+    }
+    $reportedFailure = Select-String -LiteralPath $gateLog `
+        -SimpleMatch 'SYSTEM LAYOUT FAIL' -Quiet
+    $reportedPass = Select-String -LiteralPath $gateLog `
+        -SimpleMatch 'SYSTEM LAYOUT PASS' -Quiet
+    if ($exitCode -eq 0 -and ($reportedFailure -or !$reportedPass)) {
+        $exitCode = 1
     }
     if ($exitCode -ne 0) {
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
@@ -1080,6 +1104,12 @@ switch ($Mode) {
     }
     'system-layout' {
         Invoke-SystemLayout
+    }
+    'chkdsk-readonly' {
+        Invoke-SystemLayout $true
+    }
+    'chkdsk-fat12' {
+        Invoke-AdminMaintenance -ChkdskOnly
     }
     'pci-audio' {
         # Prove VMware readiness before the independent QEMU TCG capture.

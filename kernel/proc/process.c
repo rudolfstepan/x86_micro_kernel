@@ -411,14 +411,14 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         return true;
     }
     if (kind == PROCESS_DOMAIN_MAINTENANCE) {
-        /* CHKDSK can inspect the VFS and submit bounded maintenance requests,
-         * but receives no raw block, controller, DMA or port authority. */
+        /* CHKDSK can submit the parser-authoritative read-only VFS envelope
+         * and bounded FAT12 maintenance requests, but receives no direct
+         * namespace, content, raw block, bulk, controller, DMA or port
+         * authority. */
         static const uint8_t maintenance_syscalls[] = {
             0U, 1U, SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS,
-            SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_OPEN, SYS_READ,
-            SYS_CLOSE, SYS_STAT, SYS_READDIR_BATCH, SYS_DRIVE_INFO,
-            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL,
-            SYS_STORAGE_BULK
+            SYS_TERMINAL_WRITE, SYS_MONOTONIC_MS, SYS_DRIVE_INFO,
+            SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT, SYS_STORAGE_CANCEL
         };
         for (size_t index = 0;
              index < sizeof(maintenance_syscalls) /

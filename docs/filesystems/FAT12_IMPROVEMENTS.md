@@ -128,10 +128,18 @@ C:\> CHKDSK --fat12 1 --record-bad-sector 196 --confirm
 FDISK
 ```
 
-Der Pfadmodus von `CHKDSK.PRG` bleibt ein begrenzter read-only VFS-Scan. Der
-FAT12-Modus sendet ausschließlich versionierte Check-/Repair-Requests; das
-Programm besitzt weder Blockzugriff noch FDC-, DMA- oder Portautorität. Der
-Storage-Dienst akzeptiert die Reparatur nur auf einem markierten REIST-FAT12-
+Der Pfadmodus von `CHKDSK.PRG` ist ein auf 256 Knoten, 256-Byte-Pfade und eine
+absolute monotone Frist von 60 Sekunden begrenzter read-only VFS-Scan. Stat,
+Verzeichnisiteration und Dateiinhalt laufen ausschließlich über die
+parserautoritativen Ring-3-Clients. Jede reguläre Datei wird als stabiles
+`READ|STAT`-Objekt geöffnet und erst nach Fstat, exakter Größenprüfung, EOF und
+Close akzeptiert. Der FAT12-Modus sendet davon getrennt und unverändert
+ausschließlich versionierte Check-/Repair-Requests; das
+Programm besitzt weder Blockzugriff noch FDC-, DMA- oder Portautorität. Dem
+Maintenance-Domainprofil wurden für diesen Tausch die direkten Legacy-VFS-Syscalls
+und Bulk-Collect entzogen. Neben dem exakt read-only VFS-Shadow-Umschlag darf
+sie weiterhin nur die exklusiven FAT12-Operationen 11 bis 30 einreichen.
+Der Storage-Dienst akzeptiert die Reparatur nur auf einem markierten REIST-FAT12-
 Medium, wenn genau eine FAT-Kopie strukturell gültig ist. Nach exklusivem
 Unmount und erneuter Diagnose werden alle neun alten Zielsektoren im
 Undo-Journal gesichert, die beschädigte Kopie mit verifiziertem Readback

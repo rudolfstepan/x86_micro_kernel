@@ -28,7 +28,8 @@ class ReistVfsFileClientTests(unittest.TestCase):
         source = read("userspace/storage/lib/vfs_file_client.c")
         header = read("userspace/storage/include/reist/vfs_file_client.h")
         for token in ("REIST_VFS_FILE_CAPACITY 4U", "REIST_VFS_SEEK_SET",
-                      "REIST_VFS_SEEK_CUR", "REIST_VFS_SEEK_END"):
+                      "REIST_VFS_SEEK_CUR", "REIST_VFS_SEEK_END",
+                      "reist_vfs_file_set_timeout"):
             self.assertIn(token, header)
         for token in ("FILE_HANDLE_GENERATION_MAX", "session->retired = 1U",
                       "reist_vfs_resolve_path", "session->object_token",
@@ -39,8 +40,11 @@ class ReistVfsFileClientTests(unittest.TestCase):
                       "X86OS_VFS_SHADOW_OBJECT_CLOSE",
                       "X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS",
                       "X86OS_VFS_SHADOW_OBJECT_DELEGATE",
-                      "X86OS_VFS_SHADOW_OBJECT_ADOPT"):
+                      "X86OS_VFS_SHADOW_OBJECT_ADOPT",
+                      "session->timeout_ms = timeout_ms",
+                      "x86os_monotonic_ms(&start)"):
             self.assertIn(token, source)
+        self.assertNotIn("x86os_uptime_ms", source)
         for token in ("reist_vfs_file_read_bulk",
                       "X86OS_VFS_SHADOW_OBJECT_BULK_READ",
                       "X86OS_STORAGE_VFS_BULK_READ", "file_crc32"):

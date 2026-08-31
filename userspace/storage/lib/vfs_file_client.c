@@ -83,12 +83,19 @@ static int file_transact(void *frame, uint32_t timeout_ms) {
     int status = x86os_storage_submit(&request, frame, &request_handle);
     if (status != 0 || request_handle == 0U)
         return status != 0 ? status : -5;
-    uint32_t start = x86os_uptime_ms();
-    uint32_t deadline = start + timeout_ms;
-    if (deadline < start) deadline = UINT32_MAX;
+    uint64_t start = 0U;
+    if (x86os_monotonic_ms(&start) != 0) {
+        (void)x86os_storage_cancel(request_handle);
+        return -5;
+    }
+    uint64_t deadline = UINT64_MAX - start < timeout_ms
+        ? UINT64_MAX : start + timeout_ms;
     for (;;) {
-        uint32_t now = x86os_uptime_ms();
-        if (now < start) { (void)x86os_storage_cancel(request_handle); return -5; }
+        uint64_t now = 0U;
+        if (x86os_monotonic_ms(&now) != 0 || now < start) {
+            (void)x86os_storage_cancel(request_handle);
+            return -5;
+        }
         if (now >= deadline) {
             (void)x86os_storage_cancel(request_handle);
             return -110;
@@ -274,14 +281,21 @@ int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data,
     status = x86os_storage_submit(&request, &frame, &request_handle);
     if (status != 0 || request_handle == 0U)
         return status != 0 ? status : -5;
-    uint32_t start = x86os_uptime_ms();
-    uint32_t deadline = start + session->timeout_ms;
-    if (deadline < start) deadline = UINT32_MAX;
+    uint64_t start = 0U;
+    if (x86os_monotonic_ms(&start) != 0) {
+        (void)x86os_storage_cancel(request_handle);
+        return -5;
+    }
+    uint64_t deadline = UINT64_MAX - start < session->timeout_ms
+        ? UINT64_MAX : start + session->timeout_ms;
     uint32_t transferred = 0U;
     int32_t service_result = 0;
     for (;;) {
-        uint32_t now = x86os_uptime_ms();
-        if (now < start) { (void)x86os_storage_cancel(request_handle); return -5; }
+        uint64_t now = 0U;
+        if (x86os_monotonic_ms(&now) != 0 || now < start) {
+            (void)x86os_storage_cancel(request_handle);
+            return -5;
+        }
         if (now >= deadline) {
             (void)x86os_storage_cancel(request_handle);
             return -110;
@@ -315,6 +329,18 @@ int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data,
     file_copy(data, file_bulk_staging, transferred);
     session->offset += transferred;
     return (int)transferred;
+}
+
+int reist_vfs_file_set_timeout(reist_vfs_file_handle_t handle,
+                               uint32_t timeout_ms) {
+    if (timeout_ms == 0U || timeout_ms > 60000U) return -22;
+    uint32_t slot = 0U;
+    file_session_t *session = 0;
+    int status = file_resolve(handle, &slot, &session);
+    (void)slot;
+    if (status != 0) return status;
+    session->timeout_ms = timeout_ms;
+    return 0;
 }
 
 int reist_vfs_file_fstat(reist_vfs_file_handle_t handle,

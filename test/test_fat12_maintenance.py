@@ -33,8 +33,12 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         source = self.read("userspace/programs/chkdsk.c")
         process_h = self.read("kernel/proc/process.h")
         process = self.read("kernel/proc/process.c")
+        syscall = self.read("kernel/syscall/syscall_table.c")
         self.assertIn("MAX_NODES", source)
         self.assertIn("CHKDSK_TIMEOUT_MS 60000U", source)
+        self.assertIn("scan_remaining_ms", source)
+        self.assertIn("reist_vfs_file_open_rights", source)
+        self.assertIn("reist_vfs_readdir_at", source)
         self.assertIn('"--repair"', source)
         self.assertIn('"--confirm"', source)
         self.assertIn("X86OS_STORAGE_CHECK_FAT12", source)
@@ -79,14 +83,35 @@ class Fat12MaintenanceContracts(unittest.TestCase):
         self.assertNotIn("x86os_storage_block_write", source)
         self.assertNotIn("x86os_write(", source)
         self.assertNotIn("x86os_unlink(", source)
+        for forbidden in ("x86os_stat(", "x86os_open(", "x86os_read(",
+                          "x86os_close(", "x86os_readdir_batch("):
+            self.assertNotIn(forbidden, source)
         self.assertIn("PROCESS_DOMAIN_MAINTENANCE = 8", process_h)
         profile = process[process.index(
             "if (kind == PROCESS_DOMAIN_MAINTENANCE)"):
             process.index("if (kind == PROCESS_DOMAIN_COMPONENT_ADMIN)")]
         self.assertIn("SYS_STORAGE_SUBMIT, SYS_STORAGE_COLLECT", profile)
-        for forbidden in ("SYS_STORAGE_BLOCK_READ", "SYS_STORAGE_BLOCK_WRITE",
+        for forbidden in ("SYS_OPEN", "SYS_READ,", "SYS_CLOSE", "SYS_STAT",
+                          "SYS_READDIR_BATCH", "SYS_STORAGE_BULK",
+                          "SYS_STORAGE_BLOCK_READ", "SYS_STORAGE_BLOCK_WRITE",
                           "SYS_STORAGE_MAINT_ACQUIRE", "SYS_DEVICE_CONTROL"):
             self.assertNotIn(forbidden, profile)
+        submit = syscall[syscall.index("static int syscall_storage_submit"):
+                         syscall.index("static int syscall_storage_claim")]
+        maintenance = submit[submit.index(
+            "process->domain_profile.kind == PROCESS_DOMAIN_MAINTENANCE"):
+            submit.index("request.operation >= STORAGE_REQUEST_CHECK_FAT12",
+                         submit.index(
+                             "process->domain_profile.kind == "
+                             "PROCESS_DOMAIN_MAINTENANCE"))]
+        self.assertIn(
+            "request.operation != STORAGE_REQUEST_VFS_SHADOW_STAT",
+            maintenance)
+        self.assertIn("request.operation < STORAGE_REQUEST_CHECK_FAT12",
+                      maintenance)
+        self.assertIn("request.operation > "
+                      "STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR", maintenance)
+        self.assertNotIn("STORAGE_REQUEST_VFS_BULK_READ", maintenance)
 
     def test_fat12_requests_are_append_only_and_exactly_authorized(self):
         header = self.read("include/kernel/storage_request_pool.h")

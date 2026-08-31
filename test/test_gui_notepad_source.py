@@ -244,7 +244,8 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn('"NOTEPAD.PRG"', programs.split("GUI_PROGRAMS", 1)[1])
         self.assertEqual(windows.count("'usr/gui/bin/notepad.prg'"), 1)
         self.assertEqual(makefile.count("usr/gui/bin/notepad.prg="), 1)
-        self.assertIn('(\"notepad --help\", \"Usage: notepad\")', runtime)
+        self.assertIn(
+            '(\"notepad --help\", \"Usage: notepad [file]\")', runtime)
 
 
 if __name__ == "__main__":

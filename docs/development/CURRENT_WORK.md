@@ -4,10 +4,20 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N2d-chkdsk-readonly-authority`. Der generische read-only
-Pfadmodus von `CHKDSK.PRG` wechselt auf Ring-3-Stat-, Readdir- und
-Objektclients mit einer gemeinsamen absoluten Scanfrist. Alle FAT12-
-Maintenance- und Mutationsrequests bleiben unverändert.
+Aktives Thema: keines; `active_id` ist leer. Beim nächsten Lauf wird der
+nächste begrenzte N2-Schnitt aus dem verbleibenden Legacy-Leseinventar
+abgegrenzt und erst danach aktiviert.
+
+`N2d-chkdsk-readonly-authority` ist abgeschlossen. Der generische read-only
+Pfadmodus von `CHKDSK.PRG` verwendet Ring-3-Stat-, Readdir-at- und
+Objektclients mit einer gemeinsamen absoluten 60-Sekunden-Scanfrist. Das
+Maintenance-Profil besitzt keine direkten Legacy-Open-/Read-/Close-/Stat-/
+Readdir- oder Storage-Bulk-Syscalls mehr und darf nur den bestehenden
+read-only VFS-Shadow-Umschlag sowie die unveränderten FAT12-Operationen 11 bis
+30 senden. 137 Targeted-Checks, der QEMU-Framebuffer-Paketbuild, der reale
+`/htdocs`-Scan und die reale FAT12-BPB-/Spiegelprüfung sind bestanden. Der
+unabhängige alte FDD-Remount-Lauf reproduziert weiterhin `ADMIN MOUNT_FAILED`
+und wurde weder verändert noch als N2d-Nachweis gewertet.
 
 `N2c-document-loader-authority` ist abgeschlossen.
 BASIC LOAD verwendet vollständig die generationgebundene Ring-3-

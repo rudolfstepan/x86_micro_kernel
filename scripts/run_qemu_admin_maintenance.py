@@ -91,7 +91,7 @@ def discover_resources(output: str) -> tuple[int, int]:
 
 
 def run(qemu: Path, reference_image: Path, disk: Path, floppy: Path,
-        timeout: float, log: Path) -> int:
+        timeout: float, log: Path, chkdsk_only: bool = False) -> int:
     if reference_image in (disk, floppy) or disk == floppy:
         raise ValueError("all disposable images must differ from reference")
     reference_digest = file_sha256(reference_image)
@@ -143,6 +143,11 @@ def run(qemu: Path, reference_image: Path, disk: Path, floppy: Path,
                  f"ADMIN STATUS_MOUNT resource={auxiliary} path=/mnt/admin"),
                 (f"devctl down {root}", "ADMIN ROOT_PROTECTED"),
             ]
+            if chkdsk_only:
+                commands = [
+                    (f"chkdsk --fat12 {auxiliary}",
+                     "CHKDSK: FAT12 BPB and both FAT mirrors are clean"),
+                ]
             position = list_position
             for command, marker in commands:
                 error, position = send_and_wait(
@@ -150,7 +155,7 @@ def run(qemu: Path, reference_image: Path, disk: Path, floppy: Path,
                     deadline, after=position)
                 if error is not None:
                     break
-        if error is None:
+        if error is None and not chkdsk_only:
             qmp.execute("blockdev-set-active", {
                 "node-name": "reistdisk", "active": False,
             }, deadline)
@@ -167,7 +172,7 @@ def run(qemu: Path, reference_image: Path, disk: Path, floppy: Path,
             qmp.execute("blockdev-set-active", {
                 "node-name": "reistdisk", "active": True,
             }, deadline)
-        if error is None:
+        if error is None and not chkdsk_only:
             error, _ = wait_marker(process, chunks, transcript, finished,
                                    smoke.SHELL_PROMPT, deadline,
                                    after=position)
@@ -188,7 +193,8 @@ def run(qemu: Path, reference_image: Path, disk: Path, floppy: Path,
     if error is not None:
         print(f"ADMIN MAINTENANCE FAIL: {error}; log={log}")
         return 1
-    print(f"ADMIN MAINTENANCE PASS log={log}")
+    marker = "CHKDSK FAT12 PASS" if chkdsk_only else "ADMIN MAINTENANCE PASS"
+    print(f"{marker} log={log}")
     return 0
 
 
@@ -202,12 +208,14 @@ def main() -> int:
                         default=Path("build/admin-maintenance-fdd.img"))
     parser.add_argument("--log", type=Path,
                         default=Path("build/test-results/admin-maintenance.log"))
-    parser.add_argument("--timeout", type=float, default=90.0)
+    parser.add_argument("--timeout", type=float, default=150.0)
+    parser.add_argument("--chkdsk-only", action="store_true")
     args = parser.parse_args()
     if not args.qemu.is_file() or not args.image.is_file() or args.timeout <= 0:
         parser.error("qemu/image must exist and timeout must be positive")
     return run(args.qemu.resolve(), args.image.resolve(), args.disk.resolve(),
-               args.floppy.resolve(), args.timeout, args.log.resolve())
+               args.floppy.resolve(), args.timeout, args.log.resolve(),
+               args.chkdsk_only)
 
 
 if __name__ == "__main__":

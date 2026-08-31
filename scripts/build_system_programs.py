@@ -35,7 +35,13 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_read_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
-    "CHKDSK.PRG": ROOT / "userspace/programs/chkdsk.c",
+    "CHKDSK.PRG": (
+        ROOT / "userspace/programs/chkdsk.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_read_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "FDISK.PRG": ROOT / "userspace/programs/fdisk.c",
     "FORMAT.PRG": ROOT / "userspace/programs/format.c",
     "LS.PRG": (

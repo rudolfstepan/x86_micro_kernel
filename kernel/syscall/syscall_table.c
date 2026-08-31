@@ -1359,6 +1359,7 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
         request.operation <= STORAGE_REQUEST_FORMAT_FAT32_PREPARE &&
         process->domain_profile.kind != PROCESS_DOMAIN_ADMIN) return -13;
     if (process->domain_profile.kind == PROCESS_DOMAIN_MAINTENANCE &&
+        request.operation != STORAGE_REQUEST_VFS_SHADOW_STAT &&
         (request.operation < STORAGE_REQUEST_CHECK_FAT12 ||
          request.operation > STORAGE_REQUEST_RECORD_FAT12_BAD_SECTOR))
         return -13;

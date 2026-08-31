@@ -128,7 +128,9 @@ class GuiControlGallerySourceTests(unittest.TestCase):
         self.assertEqual(windows.count("'usr/gui/bin/guidemo.prg'"), 1)
         self.assertEqual(makefile.count("usr/gui/bin/guidemo.prg="), 1)
         self.assertIn('"/usr/gui/bin"', shell)
-        self.assertIn('(\"guidemo --help\", \"Usage: guidemo\")', runtime_layout)
+        self.assertIn(
+            '(\"guidemo --help\", '
+            '\"Usage: guidemo --reist-surface=<handle>\")', runtime_layout)
 
     def test_gallery_source_is_valid_freestanding_c11(self):
         compiler = shutil.which("gcc") or shutil.which("clang")

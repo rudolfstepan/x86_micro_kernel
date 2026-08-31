@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2d-chkdsk-readonly-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,21 +12,30 @@ push = false
 
 [[packages]]
 id = "N2d-chkdsk-readonly-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Run CHKDSK path scans under Ring-3 VFS parser authority"
-scope = "Migrate only the generic read-only path mode of packaged CHKDSK.PRG from legacy SYS_STAT/SYS_OPEN/SYS_READ/SYS_READDIR_BATCH calls to the existing parser-authoritative Ring-3 VFS stat, readdir-at and generation-scoped file-object clients. Keep the existing 256-node, 256-byte path and 512-byte read-buffer capacities, add one absolute monotonic 60-second scan deadline shared by every nested request, and add a local object-session timeout update so each operation is bounded by the remaining scan budget. Validate regular-file metadata through the same object before exact-size content reads, and publish success only after every object closes and the traversal completes without partial results. Preserve every --fat12 diagnosis, lease, repair, journal, remap, replica, confirmation and mutation request byte-for-byte. Prove the real packaged read-only scan against /htdocs plus all existing FAT12 maintenance contracts."
+scope = "Migrate only the generic read-only path mode of packaged CHKDSK.PRG from legacy SYS_STAT/SYS_OPEN/SYS_READ/SYS_READDIR_BATCH calls to the existing parser-authoritative Ring-3 VFS stat, readdir-at and generation-scoped file-object clients. Replace the maintenance process profile's direct legacy namespace/content syscalls and unused bulk-collect authority with permission for exactly the existing protected VFS_SHADOW_STAT request envelope while preserving its exclusive FAT12 operation range 11 through 30 and denying VFS bulk read, generic writes, formatting, raw blocks and every other storage operation. Keep the existing 256-node, 256-byte path and 512-byte read-buffer capacities, add one absolute monotonic 60-second scan deadline shared by every nested request, and add a local object-session timeout update so each operation is bounded by the remaining scan budget. Validate regular-file metadata through the same object before exact-size content reads, and publish success only after every object closes and the traversal completes without partial results. Preserve every --fat12 diagnosis, lease, repair, journal, remap, replica, confirmation and mutation request byte-for-byte. Prove the real packaged read-only scan against /htdocs plus all existing FAT12 maintenance contracts."
 allowed_files = [
   "automation/reist-s03b.toml",
   "scripts/build_system_programs.py",
+  "scripts/test-reist-runtime.ps1",
+  "kernel/proc/process.c",
+  "kernel/syscall/syscall_table.c",
   "userspace/programs/chkdsk.c",
   "userspace/storage/include/reist/vfs_file_client.h",
   "userspace/storage/lib/vfs_file_client.c",
   "scripts/run_qemu_system_layout.py",
+  "scripts/run_qemu_admin_maintenance.py",
+  "scripts/run_qemu_smoke.py",
   "test/test_system_layout.py",
+  "test/test_qemu_admin_maintenance.py",
+  "test/test_qemu_smoke.py",
   "test/test_fat12_maintenance.py",
   "test/test_fat12_tools.py",
+  "test/test_gui_control_gallery_source.py",
+  "test/test_gui_notepad_source.py",
   "test/test_reist_vfs_file_client.py",
   "test/test_vfs_file_client_host.c",
   "docs/filesystems/VFS_ARCHITECTURE.md",
@@ -40,31 +49,43 @@ invariants = [
   "each file object is opened with READ and STAT rights and validates type exact size EOF and close before the scan can succeed",
   "node path read and directory capacities remain fixed and no partial traversal can emit the success marker",
   "all FAT12 maintenance operations requests confirmations journals leases repairs and mutations remain unchanged",
-  "public command syntax syscall ABI kernel VFS storage service and media formats remain unchanged and the object-client timeout API is additive"
+  "the maintenance domain loses legacy open read close stat readdir-batch and storage-bulk syscalls and can submit only FAT12 operations 11 through 30 or the read-only VFS shadow envelope",
+  "public command syntax syscall ABI kernel VFS parser storage service and media formats remain unchanged and the object-client timeout API is additive"
 ]
 targeted_tests = [
   "python test/test_fat12_maintenance.py -v",
   "python test/test_fat12_tools.py -v",
+  "python test/test_gui_control_gallery_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
   "python test/test_reist_vfs_file_client.py -v",
   "python test/test_system_layout.py -v",
+  "python test/test_qemu_admin_maintenance.py -v",
+  "python test/test_qemu_smoke.py -v",
   "python test/test_user_program_toolchain.py -v"
 ]
 package_tests = [
-  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
 ]
 runtime_tests = [
-  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout",
-  ".\\scripts\\test-reist-runtime.ps1 -Mode storage-maintenance"
+  ".\\scripts\\test-reist-runtime.ps1 -Mode chkdsk-readonly",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode chkdsk-fat12"
 ]
 stop_conditions = [
-  "the read-only scan requires a new syscall kernel parser mutation authority or change to a FAT12 maintenance request",
+  "the read-only scan requires a new syscall parser mutation request envelope bulk transport or change to a FAT12 maintenance request",
   "deadline or capacity exhaustion can publish success leak an object or silently fall back to legacy VFS",
   "the real /htdocs scan or any existing FAT12 maintenance gate regresses",
   "a required production file lies outside allowed_files",
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: move CHKDSK scans to Ring 3"
-evidence = []
+evidence = [
+  "All nine targeted groups passed with 137 checks across FAT12 maintenance and tools, GUI read-policy consumers, VFS object sessions, QEMU command injection, system layout and userspace toolchain builds.",
+  "The QEMU framebuffer package passed in 33 seconds with CHKDSK.PRG linked against the Ring-3 stat, readdir-at and file-object clients.",
+  "The real QEMU read-only path scan passed against /htdocs in 11 seconds with the packaged Maintenance process and no legacy namespace or content syscall authority.",
+  "The isolated real QEMU FAT12 read-only diagnosis passed in 14 seconds and observed clean BPB and mirror validation under the preserved operation range.",
+  "The unrelated legacy admin FDD remount runtime remains outside this package after reproducing ADMIN MOUNT_FAILED; it is not accepted as N2d evidence and no remount behavior was changed.",
+  "No queued package remains and active_id is empty."
+]
 
 [[packages]]
 id = "N2c-document-loader-authority"

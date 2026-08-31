@@ -12,6 +12,7 @@ static uint32_t open_calls;
 static uint32_t close_calls;
 static uint32_t delegate_calls;
 static uint32_t delegated_rights;
+static uint32_t observed_timeout;
 static int delegation_pending;
 static int bulk_corrupt;
 static uint32_t next_request = 1U;
@@ -34,6 +35,7 @@ int x86os_storage_submit(const x86os_storage_submit_t *request,
         (request->operation != X86OS_STORAGE_VFS_SHADOW_STAT &&
          request->operation != X86OS_STORAGE_VFS_BULK_READ) ||
         request->length != X86OS_STORAGE_BLOCK_SIZE) return -22;
+    observed_timeout = request->timeout_ms;
     uint32_t operation = ((const x86os_vfs_shadow_object_frame_t *)data)->operation;
     if (request->operation == X86OS_STORAGE_VFS_BULK_READ) {
         if (operation != X86OS_VFS_SHADOW_OBJECT_BULK_READ) return -22;
@@ -158,9 +160,11 @@ int x86os_storage_bulk_collect(x86os_storage_handle_t handle,
     return 0;
 }
 
-uint32_t x86os_uptime_ms(void) {
-    static uint32_t now;
-    return ++now;
+int x86os_monotonic_ms(uint64_t *value) {
+    static uint64_t now;
+    if (value == 0) return -22;
+    *value = ++now;
+    return 0;
 }
 
 int x86os_sleep_ms(uint32_t milliseconds) {
@@ -174,10 +178,14 @@ int main(void) {
     uint8_t data[3];
     if (reist_vfs_file_open("FILE.TXT", 1000U, &first) != 0 || first == 0U ||
         strcmp(opened_path, "/A/FILE.TXT") != 0) return 1;
+    if (reist_vfs_file_set_timeout(first, 17U) != 0 ||
+        reist_vfs_file_set_timeout(first, 0U) != -22 ||
+        reist_vfs_file_set_timeout(first, 60001U) != -22 ||
+        reist_vfs_file_set_timeout(0U, 17U) != -9) return 25;
     cwd_variant = 1;
     if (reist_vfs_file_read(first, data, sizeof(data)) != 3 ||
         observed_offset != 0U || strcmp(opened_path, "/A/FILE.TXT") != 0 ||
-        memcmp(data, "012", 3U) != 0) return 2;
+        memcmp(data, "012", 3U) != 0 || observed_timeout != 17U) return 2;
     if (reist_vfs_file_read(first, data, sizeof(data)) != 3 ||
         observed_offset != 3U || memcmp(data, "345", 3U) != 0) return 3;
 

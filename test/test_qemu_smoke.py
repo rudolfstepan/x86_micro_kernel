@@ -538,6 +538,8 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertEqual(ping.count("sendkey dot\n"), 3)
         url = RUNNER_MODULE.monitor_key_commands("http://10.0.2.2/")
         self.assertIn("sendkey shift-semicolon\n", url)
+        option = RUNNER_MODULE.monitor_key_commands("chkdsk --fat12 1")
+        self.assertEqual(option.count("sendkey minus\n"), 2)
         self.assertEqual(url.count("sendkey slash\n"), 3)
         self.assertIn('"-serial", "mon:stdio"', source)
         self.assertNotIn('process.stdin.write(character)', source)

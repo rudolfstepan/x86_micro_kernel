@@ -8,6 +8,10 @@
  */
 #include "x86os.h"
 
+#include "reist/vfs_file_client.h"
+#include "reist/vfs_read_client.h"
+#include "reist/vfs_stat_client.h"
+
 /* Raw-media access and every filesystem mutation remain in the supervised
  * storage service. CHKDSK only validates CLI input and submits bounded,
  * versioned requests from its default-deny maintenance domain. */
@@ -16,6 +20,17 @@
 #define MAX_NODES 256U
 #define CHKDSK_TIMEOUT_MS 60000U
 #define CHKDSK_POLL_MS 10U
+
+typedef struct {
+    uint64_t deadline_ms;
+} scan_budget_t;
+
+static unsigned scan_failure_stage;
+
+static int scan_fail(unsigned stage) {
+    if (scan_failure_stage == 0U) scan_failure_stage = stage;
+    return -1;
+}
 
 static unsigned length(const char *text) {
     unsigned value = 0;
@@ -46,6 +61,19 @@ static int parse_resource(const char *text, uint32_t *resource) {
 static uint64_t monotonic_now(void) {
     uint64_t value = 0U;
     return x86os_monotonic_ms(&value) == 0 ? value : UINT64_MAX;
+}
+
+static int scan_remaining_ms(const scan_budget_t *budget,
+                             uint32_t *remaining_ms) {
+    if (budget == 0 || remaining_ms == 0) return -22;
+    *remaining_ms = 0U;
+    uint64_t now = monotonic_now();
+    if (now == UINT64_MAX || now >= budget->deadline_ms) return -110;
+    uint64_t remaining = budget->deadline_ms - now;
+    if (remaining > CHKDSK_TIMEOUT_MS) remaining = CHKDSK_TIMEOUT_MS;
+    if (remaining == 0U) return -110;
+    *remaining_ms = (uint32_t)remaining;
+    return 0;
 }
 
 static int run_fat12_request(uint32_t operation, uint32_t resource,
@@ -320,49 +348,109 @@ static int join_path(char *out, const char *parent, const char *name) {
     return 0;
 }
 
-static int check_file(const char *path, uint32_t expected) {
+static int close_file(reist_vfs_file_handle_t handle,
+                      const scan_budget_t *budget) {
+    uint32_t remaining = 0U;
+    int budget_status = scan_remaining_ms(budget, &remaining);
+    if (budget_status != 0) remaining = 1U;
+    if (reist_vfs_file_set_timeout(handle, remaining) != 0) return -1;
+    int close_status = reist_vfs_file_close(handle);
+    return budget_status == 0 && close_status == 0 ? 0 : -1;
+}
+
+static int check_file(const char *path, uint32_t expected,
+                      const scan_budget_t *budget) {
     char buffer[READ_CAPACITY];
-    int descriptor = x86os_open(path);
-    if (descriptor < 0) return -1;
-    uint32_t total = 0;
-    for (;;) {
-        int count = x86os_read(descriptor, buffer, sizeof(buffer));
-        if (count < 0 || total > expected || (uint32_t)count > expected - total) {
-            (void)x86os_close(descriptor);
-            return -1;
+    uint32_t remaining = 0U;
+    if (scan_remaining_ms(budget, &remaining) != 0) return scan_fail(10U);
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    if (reist_vfs_file_open_rights(
+            path, remaining,
+            REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT,
+            &handle) != 0 || handle == REIST_VFS_FILE_INVALID_HANDLE)
+        return scan_fail(11U);
+    x86os_file_info_t info;
+    if (scan_remaining_ms(budget, &remaining) != 0 ||
+        reist_vfs_file_set_timeout(handle, remaining) != 0 ||
+        reist_vfs_file_fstat(handle, &info) != 0) {
+        (void)close_file(handle, budget);
+        return scan_fail(12U);
+    }
+    if (info.type != X86OS_FILE || info.size != expected) {
+        (void)close_file(handle, budget);
+        return scan_fail(13U);
+    }
+    uint32_t total = 0U;
+    while (total < expected) {
+        uint32_t request = expected - total;
+        if (request > X86OS_VFS_SHADOW_READ_CAPACITY)
+            request = X86OS_VFS_SHADOW_READ_CAPACITY;
+        if (request > sizeof(buffer)) request = sizeof(buffer);
+        if (scan_remaining_ms(budget, &remaining) != 0 ||
+            reist_vfs_file_set_timeout(handle, remaining) != 0) {
+            (void)close_file(handle, budget);
+            return scan_fail(14U);
         }
-        if (count == 0) break;
+        int count = reist_vfs_file_read(handle, buffer, request);
+        if (count <= 0 || (uint32_t)count > expected - total) {
+            (void)close_file(handle, budget);
+            return scan_fail(15U);
+        }
         total += (uint32_t)count;
     }
-    if (x86os_close(descriptor) < 0 || total != expected) return -1;
+    int eof_status = -1;
+    if (scan_remaining_ms(budget, &remaining) == 0 &&
+        reist_vfs_file_set_timeout(handle, remaining) == 0)
+        eof_status = reist_vfs_file_read(handle, buffer, 1U);
+    int close_status = close_file(handle, budget);
+    if (eof_status != 0) return scan_fail(16U);
+    if (close_status != 0) return scan_fail(17U);
+    if (scan_remaining_ms(budget, &remaining) != 0) return scan_fail(18U);
     return 0;
 }
 
-static int scan(const char *path, unsigned *visited, unsigned *errors) {
+static int scan(const char *path, unsigned *visited, unsigned *errors,
+                const scan_budget_t *budget) {
     x86os_file_info_t info;
-    if (*visited >= MAX_NODES || x86os_stat(path, &info) < 0) {
-        ++*errors; return -1;
+    uint32_t remaining = 0U;
+    if (*visited >= MAX_NODES) {
+        ++*errors; return scan_fail(1U);
+    }
+    if (scan_remaining_ms(budget, &remaining) != 0) {
+        ++*errors; return scan_fail(2U);
+    }
+    if (reist_vfs_stat(path, &info, remaining) < 0) {
+        ++*errors; return scan_fail(3U);
     }
     ++*visited;
     if (info.type == X86OS_FILE) {
-        if (check_file(path, info.size) < 0) ++*errors;
+        if (check_file(path, info.size, budget) < 0) {
+            ++*errors;
+            return -1;
+        }
         return 0;
     }
+    if (info.type != X86OS_DIRECTORY) {
+        ++*errors; return scan_fail(4U);
+    }
     for (uint32_t index = 0;;) {
-        x86os_file_info_t entries[X86OS_READDIR_BATCH_CAPACITY];
-        int count = x86os_readdir_batch(path, index, entries);
-        if (count < 0) { ++*errors; return -1; }
-        if (count == 0) break;
-        for (int item = 0; item < count; ++item) {
-            if (equal(entries[item].name, ".") || equal(entries[item].name, ".."))
-                continue;
-            char child[PATH_CAPACITY];
-            if (join_path(child, path, entries[item].name) < 0 ||
-                scan(child, visited, errors) < 0) {
-                if (*errors == 0) ++*errors;
-            }
+        x86os_file_info_t entry;
+        if (scan_remaining_ms(budget, &remaining) != 0) {
+            ++*errors; return scan_fail(5U);
         }
-        index += (uint32_t)count;
+        int present = reist_vfs_readdir_at(path, index, &entry, remaining);
+        if (present < 0) { ++*errors; return scan_fail(6U); }
+        if (present == 0) break;
+        ++index;
+        if (equal(entry.name, ".") || equal(entry.name, "..")) continue;
+        char child[PATH_CAPACITY];
+        if (join_path(child, path, entry.name) < 0) {
+            ++*errors; return scan_fail(7U);
+        }
+        if (scan(child, visited, errors, budget) < 0) {
+            if (*errors == 0) ++*errors;
+            return -1;
+        }
     }
     return 0;
 }
@@ -395,10 +483,21 @@ int main(int argc, char **argv) {
                    "       chkdsk --fat12 <resource> --record-bad-sector <sector> --confirm\n");
         return 2;
     }
+    uint64_t start = monotonic_now();
+    if (start == UINT64_MAX || UINT64_MAX - start < CHKDSK_TIMEOUT_MS) {
+        scan_failure_stage = 8U;
+        x86os_puts("CHKDSK: read-only check failed; medium left unchanged\n");
+        x86os_puts("CHKDSK: failure stage=8\n");
+        return 1;
+    }
+    scan_budget_t budget = {start + CHKDSK_TIMEOUT_MS};
     unsigned visited = 0, errors = 0;
-    (void)scan(path, &visited, &errors);
+    (void)scan(path, &visited, &errors, &budget);
     if (errors != 0) {
         x86os_puts("CHKDSK: read-only check failed; medium left unchanged\n");
+        x86os_puts("CHKDSK: failure stage=");
+        x86os_print_number((int)scan_failure_stage);
+        x86os_putchar('\n');
         return 1;
     }
     x86os_puts("CHKDSK: read-only check passed\n");

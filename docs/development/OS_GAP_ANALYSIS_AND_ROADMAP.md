@@ -3115,7 +3115,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    read-only Namensraumspfad vertikal umstellen. Abnahme: identische positive
    und negative Ergebnisse, begrenzte Parserarbeit sowie Crash-, Hang-,
    Restart- und stale-Generation-Nachweis ohne Verlust anderer Dienste.
-2. [~] **N2 · Parser-Autorität in Ring 3 vervollständigen.** Aufbauend auf N1
+2. [ ] **N2 · Parser-Autorität in Ring 3 vervollständigen.** Aufbauend auf N1
    schrittweise FAT- und EXT2-Parserzustand, Objektlebenszyklen und
    Mediengenerationen aus dem Kernel entfernen. Ring 0 vermittelt nur
    validierte Blockressourcen, Capabilities, Quoten und Fences. Abnahme:
@@ -3125,9 +3125,12 @@ durch den Status des ausführbaren Pakets aktualisiert.
    erste Client-Schnitte abgeschlossen. Weitere Legacy-Lesekonsumenten bleiben
    offen; N2 ist deshalb noch nicht abgeschlossen.
    `N2c-document-loader-authority` hat BASIC LOAD und die letzte redundante
-   Notepad-Lesevorprüfung abgeschlossen. Aktiver Folgeschnitt ist
-   `N2d-chkdsk-readonly-authority` für den generischen read-only
-   Wartungsscan; FAT12-Reparatur bleibt unverändert.
+   Notepad-Lesevorprüfung abgeschlossen. `N2d-chkdsk-readonly-authority` hat
+   den generischen read-only Wartungsscan auf begrenzte Ring-3-VFS-Clients
+   umgestellt und dem Maintenance-Profil die direkten Legacy-Leserechte
+   entzogen; FAT12-Reparatur bleibt unverändert. `active_id` ist für die
+   Übergabe leer; als Nächstes wird der verbleibende Legacy-Leseumfang
+   inventarisiert und als genau ein begrenzter N2-Folgeschnitt aktiviert.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und

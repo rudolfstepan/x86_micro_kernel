@@ -298,6 +298,8 @@ def monitor_key_commands(text: str) -> list[str]:
             key = "slash"
         elif character == ":":
             key = "shift-semicolon"
+        elif character == "-":
+            key = "minus"
         else:
             raise ValueError("unsupported PS/2 guest command character")
         commands.append(f"sendkey {key}\n")
