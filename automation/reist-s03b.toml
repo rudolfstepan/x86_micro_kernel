@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N2-control-panel-config-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,57 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N2-control-panel-config-authority"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Move Control Panel configuration reads to Ring-3 VFS authority"
+scope = "Migrate the complete read-only configuration-loading path shared by the four packaged Control Panel applets from legacy SYS_OPEN/SYS_READ descriptors to the existing parser-authoritative generation-scoped Ring-3 storage-service object ABI. Open each configuration file with only READ and STAT rights, validate regular-file type and the fixed configuration capacity before parsing, reject short stale malformed timeout or close failures without publishing a new applet value, and close every object on every post-open exit. Preserve the renderer-neutral config parser, Surface lifecycle, read-only fallback, CONFIG.PRG process boundary and every mutation, persistence and authorization behavior."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "scripts/build_system_programs.py",
+  "userspace/gui/apps/control_panel/main.c",
+  "test/test_gui_control_panel_source.py",
+  "scripts/test-reist-runtime.ps1",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/architecture/SYSTEM_CONFIGURATION.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "all four applets share one bounded helper that resolves each configuration path exactly once through a parser-authoritative storage-service object",
+  "each object carries only READ and STAT rights and remains bound to client service and media generations",
+  "type size full content EOF and close are validated before the parser can publish a new applet value",
+  "every post-open error closes the object and no buffer request retry or wait exceeds its existing fixed capacity or deadline",
+  "CONFIG.PRG remains the only mutation boundary and failed authorization or persistence retains the existing read-only panel behavior",
+  "Surface lifecycle config syntax public ABI kernel VFS and storage-service implementation remain unchanged"
+]
+targeted_tests = [
+  "python test/test_gui_control_panel_source.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_system_configuration.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-control",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode storage-service-restart"
+]
+stop_conditions = [
+  "configuration loading requires a new syscall parser kernel filesystem policy or mutation authority",
+  "a failure can publish a partial applet value leak an object slot or silently fall back to legacy VFS reads",
+  "the packaged Control Panel cannot load all four applets or loses compositor and shell liveness",
+  "the CONFIG.PRG authorization persistence or read-only fallback contract changes",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: move Control Panel reads to Ring 3"
+evidence = []
 
 [[packages]]
 id = "N1-notepad-readonly-vfs"

@@ -4,7 +4,13 @@ Stand: 31. August 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: keines; `N1-notepad-readonly-vfs` ist abgeschlossen. Genau der
+Aktives Thema: `N2-control-panel-config-authority`. Der gemeinsame read-only
+Konfigurationsladepfad aller vier Control-Panel-Applets wechselt auf
+generationgebundene Ring-3-Storage-Objekte mit READ-/STAT-Rechten. Die
+`CONFIG.PRG`-Mutations-, Autorisierungs- und Persistenzgrenze bleibt
+unverändert.
+
+`N1-notepad-readonly-vfs` ist abgeschlossen. Genau der
 read-only Dokument-Ladepfad des Notepads verwendet nun statt Legacy-VFS-
 Syscalls ein generationgebundenes Ring-3-Storage-Objekt mit ausschließlich
 READ-/STAT-Rechten. Speichern, `fsync`, Rename, Journal und andere Mutationen
