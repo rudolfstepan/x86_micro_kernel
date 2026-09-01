@@ -4,7 +4,11 @@ Stand: 1. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Kein aktives Paket; die Queue ist leer.
+Aktives Paket: `N2g-desktop-trash-metadata-authority`. Ausschliesslich das
+Lesen vorhandener `.trashinfo`-Metadaten fuer Restore und Empty-Validierung
+wechselt auf ein generationgebundenes Ring-3-VFS-Objekt mit READ-/STAT-Rechten,
+fester 640-Byte-Kapazitaet und absoluter Fuenf-Sekunden-Frist. Alle
+Papierkorb-Mutationen und das persistente Format bleiben unveraendert.
 
 `N2f-editor-load-authority` ist abgeschlossen. Der read-only Ladepfad von
 `EDIT.PRG` verwendet ein generationgebundenes Ring-3-VFS-Objekt mit READ-/

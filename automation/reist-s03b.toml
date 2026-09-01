@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N2g-desktop-trash-metadata-authority"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,61 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N2g-desktop-trash-metadata-authority"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Read desktop trash metadata through Ring-3 VFS object authority"
+scope = "Migrate only the existing .trashinfo metadata load used by desktop restore and empty validation from legacy SYS_OPEN/SYS_READ/SYS_CLOSE descriptors to exactly one parser-authoritative generation-scoped Ring-3 VFS object with only READ and STAT rights. Preserve the restricted freedesktop.org Trash Specification adaptation, format version 2, 640-byte metadata capacity, local ASCII path validation, catalog identity checks and every create, write, fsync, rename, unlink, directory scan, restore and emptying mutation. Use one absolute monotonic five-second metadata deadline for open, fstat, every forward bulk read, exact-size EOF validation and successful close, with independently one-millisecond-bounded failure cleanup. Reject non-regular and oversized metadata before content publication, publish no parsed metadata or mutation after any object failure, and emit one diagnostic marker only after exact content and EOF have been read and the object has closed successfully. Prove rights, one resolution, success, partial read, premature EOF, non-file, oversized, fstat, deadline and close failures in the host harness, retain DESKTOP.PRG's existing VFS object linkage, and exercise a real move and restore through packaged DESKTOP.PRG in QEMU."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop_trash.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_desktop_trash_host.c",
+  "test/test_desktop_trash_source.py",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "desktop trash metadata loading contains no legacy open read or close syscall and resolves each .trashinfo path exactly once through one object",
+  "the metadata object receives only READ and STAT rights and its fstat type exact size content EOF and close all belong to the same generation",
+  "one absolute monotonic five-second deadline bounds successful metadata loading while every failure cleanup close is independently bounded to one millisecond",
+  "the fixed 640-byte metadata capacity rejects non-regular oversized truncated extended or failed input before parser or mutation publication",
+  "catalog identity original and storage path validation restore collision behavior and the restricted freedesktop.org Trash Specification adaptation remain unchanged",
+  "create write fsync rename unlink directory scan restore emptying public ABI kernel VFS parser and storage service remain unchanged",
+  "DESKTOP.PRG retains its existing VFS object and path clients and the real QEMU probe performs move metadata load restore and continued desktop progress"
+]
+targeted_tests = [
+  "python test/test_desktop_trash_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-trash-restore"
+]
+stop_conditions = [
+  "the metadata load requires a new syscall storage operation parser mutation request persistent-format change or broader trash mutation migration",
+  "a failed stale oversized non-file truncated or extended read can reach parsing mutation publication or silently fall back to legacy VFS",
+  "the real desktop cannot move load restore and remain live through the packaged Ring-3 path",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: move desktop trash metadata reads to Ring 3"
+evidence = []
 
 [[packages]]
 id = "N2f-editor-load-authority"
