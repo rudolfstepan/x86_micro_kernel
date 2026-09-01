@@ -3133,10 +3133,12 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Pfaden. `N2e-audio-wave-read-authority` hat den gemeinsamen Loader von
    WAVPLAY und SOUNDPLAYER auf ein einziges READ-/STAT-Objekt mit absoluter
    Ladefrist umgestellt; Audio-, Surface- und Mutationsverhalten blieben
-   unverändert. Aktiver Folgeschnitt ist `N2f-editor-load-authority`: Nur das
-   Laden bestehender Dokumente in EDIT wechselt auf ein begrenztes READ-/STAT-
-   Objekt; der atomare Tempfile-/Fsync-/Rename-Savepfad bleibt als spätere
-   N3-Mutation ausdrücklich unverändert.
+   unverändert. `N2f-editor-load-authority` hat nur das Laden bestehender
+   Dokumente in EDIT auf ein begrenztes READ-/STAT-Objekt mit exaktem EOF,
+   erfolgreichem Close und absoluter Ladefrist um; der atomare Tempfile-/
+   Fsync-/Rename-Savepfad bleibt als spätere N3-Mutation ausdrücklich
+   unverändert. Der Host-Fehlervertrag, der QEMU-Paketbuild und der reale
+   Shell-/Editor-/Readback-/Cleanup-Lauf sind bestanden; die Queue ist leer.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und

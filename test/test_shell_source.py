@@ -181,6 +181,22 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn("return x86os_getchar();", editor)
         self.assertNotIn("x86os_getchar_nonblocking", editor)
 
+    def test_text_editor_object_loader_host_contract(self):
+        compiler = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "edit-vfs-host"
+            subprocess.run(
+                [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 "-Wno-unused-function",
+                 "-DREIST_EDIT_HOST_TEST", "-Iuserspace/sdk/include",
+                 "-Iuserspace/storage/include", "userspace/bin/edit.c",
+                 "test/test_edit_vfs_host.c", "-o", str(executable)],
+                cwd=ROOT, check=True,
+            )
+            subprocess.run([str(executable)], cwd=ROOT, check=True)
+
     def test_audio_tools_are_reachable_from_the_userspace_shell(self):
         programs = (ROOT / "scripts/build_system_programs.py").read_text(
             encoding="utf-8"

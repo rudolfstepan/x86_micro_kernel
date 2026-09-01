@@ -7,6 +7,9 @@
  * Safety: Puffer und History sind fest begrenzt; Fehler beenden nur das aktuelle Kommando.
  */
 #include "x86os.h"
+#include "reist/vfs_file_client.h"
+
+#include <stdint.h>
 
 /*
  * Experimental full-screen editor. The basic editing workflow works, but the
@@ -18,6 +21,8 @@
 #define LINE_CAPACITY 256
 #define SCREEN_COLUMNS 80
 #define VIEW_ROWS 21
+#define EDIT_FILE_CAPACITY (MAX_LINES * LINE_CAPACITY)
+#define EDIT_LOAD_DEADLINE_MS 60000U
 
 enum { KEY_NONE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END,
        KEY_DELETE, KEY_PAGE_UP, KEY_PAGE_DOWN };
@@ -29,6 +34,7 @@ static unsigned int cursor_column;
 static unsigned int first_line;
 static unsigned int first_column;
 static int modified;
+static char load_lines[MAX_LINES][LINE_CAPACITY];
 static char status_text[80] = "^S Save   ^X Exit   ^C Abort   Arrows Move   Backspace/Delete Edit";
 
 static unsigned int text_length(const char *text) {
@@ -216,34 +222,134 @@ static void cut_line(void) {
     copy_status("Line cut");
 }
 
+typedef struct edit_load_budget {
+    uint64_t start_ms;
+    uint64_t deadline_ms;
+} edit_load_budget_t;
+
+static int load_budget_start(edit_load_budget_t *budget) {
+    if (budget == NULL || x86os_monotonic_ms(&budget->start_ms) != 0)
+        return -1;
+    budget->deadline_ms = UINT64_MAX - budget->start_ms <
+        EDIT_LOAD_DEADLINE_MS ? UINT64_MAX :
+        budget->start_ms + EDIT_LOAD_DEADLINE_MS;
+    return 0;
+}
+
+static int load_budget_remaining(const edit_load_budget_t *budget,
+                                 uint32_t *remaining_ms) {
+    uint64_t now = 0U;
+    if (budget == NULL || remaining_ms == NULL ||
+        x86os_monotonic_ms(&now) != 0 || now < budget->start_ms)
+        return -1;
+    if (now >= budget->deadline_ms) return -1;
+    uint64_t remaining = budget->deadline_ms - now;
+    if (remaining > EDIT_LOAD_DEADLINE_MS) remaining = EDIT_LOAD_DEADLINE_MS;
+    *remaining_ms = (uint32_t)remaining;
+    return *remaining_ms == 0U ? -1 : 0;
+}
+
+static int prepare_load_request(reist_vfs_file_handle_t handle,
+                                const edit_load_budget_t *budget) {
+    uint32_t remaining_ms = 0U;
+    if (load_budget_remaining(budget, &remaining_ms) != 0) return -1;
+    return reist_vfs_file_set_timeout(handle, remaining_ms) == 0 ? 0 : -1;
+}
+
+static int close_load_object(reist_vfs_file_handle_t handle,
+                             const edit_load_budget_t *budget, int result) {
+    if (result != 0) {
+        (void)reist_vfs_file_set_timeout(handle, 1U);
+        (void)reist_vfs_file_close(handle);
+        return result;
+    }
+    if (prepare_load_request(handle, budget) != 0) {
+        (void)reist_vfs_file_set_timeout(handle, 1U);
+        (void)reist_vfs_file_close(handle);
+        return -1;
+    }
+    if (reist_vfs_file_close(handle) != 0) return -1;
+    uint32_t remaining_ms = 0U;
+    return load_budget_remaining(budget, &remaining_ms) == 0 ? 0 : -1;
+}
+
 static int load_file(const char *path, int *exists) {
+    edit_load_budget_t budget;
+    if (path == NULL || exists == NULL || load_budget_start(&budget) != 0)
+        return -1;
+    uint32_t open_timeout_ms = 0U;
+    if (load_budget_remaining(&budget, &open_timeout_ms) != 0) return -1;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int result = reist_vfs_file_open_rights(
+        path, open_timeout_ms,
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &handle);
+    if (result == -2) {
+        *exists = 0;
+        return 0;
+    }
+    if (result != 0) return -1;
+    *exists = 1;
     x86os_file_info_t info;
-    *exists = x86os_stat(path, &info) == 0;
-    if (!*exists) return 0;
-    if (info.type != X86OS_FILE) return -1;
-    int descriptor = x86os_open(path);
-    if (descriptor < 0) return -1;
-    line_count = 1;
+    result = prepare_load_request(handle, &budget);
+    if (result == 0 && reist_vfs_file_fstat(handle, &info) != 0) result = -1;
+    if (result == 0 && info.type != X86OS_FILE) result = -1;
+    if (result == 0 && info.size > EDIT_FILE_CAPACITY) result = -2;
+    for (unsigned int line = 0U; line < MAX_LINES; ++line)
+        load_lines[line][0] = '\0';
+    unsigned int staged_line_count = 1U;
     unsigned int column = 0;
     char buffer[256];
-    int count;
-    while ((count = x86os_read(descriptor, buffer, sizeof(buffer))) > 0) {
+    uint32_t consumed = 0U;
+    while (result == 0 && consumed < info.size) {
+        uint32_t request = info.size - consumed;
+        if (request > sizeof(buffer)) request = sizeof(buffer);
+        result = prepare_load_request(handle, &budget);
+        int count = result == 0
+            ? reist_vfs_file_read_bulk(handle, buffer, request) : -1;
+        if (count <= 0 || (uint32_t)count > request) {
+            result = -1;
+            break;
+        }
+        consumed += (uint32_t)count;
         for (int index = 0; index < count; ++index) {
             char ch = buffer[index];
             if (ch == '\r') continue;
             if (ch == '\n') {
-                if (line_count == MAX_LINES) { (void)x86os_close(descriptor); return -2; }
-                ++line_count;
+                if (staged_line_count == MAX_LINES) { result = -2; break; }
+                ++staged_line_count;
                 column = 0;
             } else if (column + 1U < LINE_CAPACITY) {
-                lines[line_count - 1U][column++] = ch;
-                lines[line_count - 1U][column] = '\0';
+                load_lines[staged_line_count - 1U][column++] = ch;
+                load_lines[staged_line_count - 1U][column] = '\0';
             }
         }
     }
-    if (count < 0) { (void)x86os_close(descriptor); return -1; }
-    return x86os_close(descriptor) < 0 ? -1 : 0;
+    if (result == 0) {
+        result = prepare_load_request(handle, &budget);
+        int eof = result == 0
+            ? reist_vfs_file_read_bulk(handle, buffer, sizeof(buffer)) : -1;
+        if (eof != 0) result = -1;
+    }
+    result = close_load_object(handle, &budget, result);
+    if (result != 0) return result;
+    for (unsigned int line = 0U; line < staged_line_count; ++line)
+        copy_line(lines[line], load_lines[line]);
+    line_count = staged_line_count;
+    x86os_puts("EDIT_VFS_LOAD_OK\n");
+    return 0;
 }
+
+#ifdef REIST_EDIT_HOST_TEST
+int reist_edit_test_load(const char *path, int *exists) {
+    return load_file(path, exists);
+}
+
+unsigned int reist_edit_test_line_count(void) { return line_count; }
+
+const char *reist_edit_test_line(unsigned int index) {
+    return index < line_count ? lines[index] : NULL;
+}
+#endif
 
 static int write_all(int descriptor, const char *buffer, unsigned int size) {
     unsigned int offset = 0;
@@ -331,6 +437,7 @@ static void move_cursor(int key) {
     if (cursor_column > length) cursor_column = length;
 }
 
+#ifndef REIST_EDIT_HOST_TEST
 int main(int argc, char **argv) {
     if (argc != 2) { x86os_puts("Usage: edit <file>\n"); return 1; }
     int exists = 0;
@@ -370,3 +477,4 @@ int main(int argc, char **argv) {
     x86os_clear();
     return 0;
 }
+#endif

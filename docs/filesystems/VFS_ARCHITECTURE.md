@@ -157,6 +157,13 @@ Close müssen vor dem atomaren Austausch des aktuellen Programms erfolgreich
 sein. Der Notepad-Dateidialog besitzt keine getrennte Legacy-Stat-Vorprüfung
 mehr, sondern überlässt Existenz, Typ, Größe und Inhalt demselben bereits
 objektgebundenen Ladepfad.
+Der Ladepfad von `EDIT.PRG` folgt demselben Objektvertrag. Ein vorhandenes
+Dokument wird genau einmal mit `READ|STAT` geöffnet; Fstat, die auf 51200 Byte
+begrenzten Vorwärtsreads, exakter EOF und Close gehören zu derselben
+Generation und zu einer absoluten monotonen 60-Sekunden-Frist. Erst danach
+werden die höchstens 200 Zeilen veröffentlicht und der Laufzeitmarker
+ausgegeben. Fehlende Pfade bleiben neue leere Dokumente. Tempfile, Schreiben,
+`fsync`, Close und atomarer Rename des Speicherpfads bleiben unverändert.
 Der generische Pfadmodus von `CHKDSK.PRG` traversiert ebenfalls ausschließlich
 über die Ring-3-Stat- und Readdir-at-Clients. Reguläre Dateien werden mit
 `READ|STAT` geöffnet; Fstat, exakt größenbegrenztes Lesen, EOF und Close müssen

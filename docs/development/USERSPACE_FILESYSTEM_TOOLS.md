@@ -75,6 +75,15 @@ Damit benötigt `rename.prg` keine neue Syscall- oder SDK-ABI.
 Die Implementierung muss nur Argumente, absolute/relative Pfade,
 Laufwerksgrenzen und Fehlercodes sauber behandeln.
 
+`EDIT.PRG` liest vorhandene Dokumente über genau ein generationgebundenes
+Ring-3-VFS-Objekt mit ausschließlich `READ|STAT`. Die feste 51200-Byte-Grenze,
+200 Zeilen, 256 Bytes je Zeile, CRLF-Normalisierung und der 256-Byte-
+Transferpuffer bleiben erhalten. Eine absolute monotone 60-Sekunden-Frist
+begrenzt Open, Fstat, Reads, EOF und erfolgreichen Close; Fehlercleanup erhält
+einen getrennten Ein-Millisekunden-Closeversuch. Der bestehende atomare
+Tempfile-/`fsync`-/Rename-Speicherpfad verwendet weiterhin die bisherige
+mutierende Deskriptor-ABI.
+
 ## Filesystem-Abdeckung der vorhandenen Mutation
 
 | Operation | FAT12 | FAT32 | EXT2 | Bemerkung |
