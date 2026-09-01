@@ -399,7 +399,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool,
         control_probe: bool, trash_context_probe: bool,
-        trash_confirm_probe: bool, hover_probe: bool,
+        trash_confirm_probe: bool, trash_restore_probe: bool,
+        hover_probe: bool,
         supervised_probe: bool,
         guidemo_click_probe: bool,
         sound_probe: bool, metrics_log: pathlib.Path | None,
@@ -471,6 +472,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     command_name = "desktop.prg --trash-context-probe"
                 elif trash_confirm_probe:
                     command_name = "desktop.prg --trash-confirm-probe"
+                elif trash_restore_probe:
+                    command_name = "desktop.prg --trash-restore-probe"
                 else:
                     command_name = "desktop.prg"
                 send_command(process, command_name)
@@ -853,6 +856,35 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     raise RuntimeError(
                         "Trash documentation state was not published"
                     )
+                if trash_restore_probe:
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        for failure in (
+                                "DESKTOP_TRASH_PROBE_FAIL",
+                                "REIST_GUI COMPOSITOR_RESTARTED",
+                                "REIST_GUI COMPOSITOR_DEGRADED"):
+                            if failure in probe_text:
+                                raise RuntimeError(
+                                    f"Trash restore probe failed: {failure}"
+                                )
+                        metadata_offset = probe_text.find(
+                            "DESKTOP_TRASH_VFS_METADATA_OK"
+                        )
+                        restore_offset = probe_text.find(
+                            "DESKTOP_TRASH_RESTORE_READY"
+                        )
+                        desktop_offset = probe_text.find("DESKTOP_OK")
+                        if (metadata_offset >= 0 and
+                                metadata_offset < restore_offset <
+                                desktop_offset):
+                            capture_screenshot(process, screenshot, deadline)
+                            print("runtime-desktop-trash-restore: PASS")
+                            return 0
+                        time.sleep(0.02)
+                    raise RuntimeError(
+                        "Trash metadata object did not complete move/restore"
+                    )
                 # The marker is emitted immediately before the single
                 # backbuffer render so it is overwritten by the desktop.
                 # Give the guest a bounded interval to finish that frame
@@ -906,6 +938,7 @@ def main() -> int:
     parser.add_argument("--control-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
+    parser.add_argument("--trash-restore-probe", action="store_true")
     parser.add_argument("--sound-probe", action="store_true")
     parser.add_argument("--guidemo-click-probe", action="store_true")
     parser.add_argument("--hover-probe", action="store_true")
@@ -917,6 +950,7 @@ def main() -> int:
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.control_probe,
             args.trash_context_probe, args.trash_confirm_probe,
+            args.trash_restore_probe,
             args.sound_probe, args.guidemo_click_probe,
             args.hover_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
@@ -932,6 +966,7 @@ def main() -> int:
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
+                   args.trash_restore_probe,
                    args.hover_probe,
                    args.supervised_probe,
                    args.guidemo_click_probe, args.sound_probe,

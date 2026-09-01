@@ -3138,11 +3138,13 @@ durch den Status des ausführbaren Pakets aktualisiert.
    erfolgreichem Close und absoluter Ladefrist um; der atomare Tempfile-/
    Fsync-/Rename-Savepfad bleibt als spätere N3-Mutation ausdrücklich
    unverändert. Der Host-Fehlervertrag, der QEMU-Paketbuild und der reale
-   Shell-/Editor-/Readback-/Cleanup-Lauf sind bestanden. Aktiver Folgeschnitt
-   ist `N2g-desktop-trash-metadata-authority`: Nur der bestehende
-   `.trashinfo`-Lader fuer Restore und Empty-Validierung wechselt auf ein
-   begrenztes READ-/STAT-Objekt; Papierkorb-Mutationen und Formatversion 2
-   bleiben unveraendert.
+   Shell-/Editor-/Readback-/Cleanup-Lauf sind bestanden.
+   `N2g-desktop-trash-metadata-authority` hat danach den `.trashinfo`-Lader
+   fuer Restore und Empty-Validierung auf ein einziges begrenztes
+   READ-/STAT-Objekt mit Typ-, Groessen-, EOF-, Close- und Deadline-Pruefung
+   vor Parser und Mutation umgestellt. Papierkorb-Mutationen und Formatversion
+   2 blieben unveraendert; Hostmatrix, QEMU-Paket und realer Move-/Restore-Lauf
+   sind bestanden. Die Queue ist leer.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und

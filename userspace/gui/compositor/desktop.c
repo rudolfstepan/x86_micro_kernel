@@ -5800,7 +5800,7 @@ static int prepare_trash_documentation_probe(
     desktop_wm_t *manager, desktop_explorer_t *explorer,
     desktop_ui_state_t *ui, const x86os_display_info_t *display,
     desktop_dirty_region_t *dirty, uint32_t show_confirmation,
-    uint32_t *target) {
+    uint32_t restore_immediately, uint32_t *target) {
     static const char sample_path[] = "/trash-demo.txt";
     static const char sample_text[] =
         "REIST Workspace Papierkorb-Dokumentationsprobe\n";
@@ -5845,6 +5845,31 @@ static int prepare_trash_documentation_probe(
             DESKTOP_TRASH_OK ||
         result.moved == 0U)
         return -1;
+
+    if (restore_immediately) {
+        desktop_trash_restore_request_t restore_request;
+        desktop_trash_restore_request_initialize(&restore_request);
+        uint32_t index = 0U;
+        while (index + 1U < sizeof(restore_request.catalog_path) &&
+               result.catalog_path[index] != '\0') {
+            restore_request.catalog_path[index] = result.catalog_path[index];
+            ++index;
+        }
+        if (result.catalog_path[index] != '\0' ||
+            x86os_stat(result.catalog_path, &restore_request.identity) != 0)
+            return -1;
+        desktop_trash_restore_result_t restore_result;
+        desktop_trash_restore_result_initialize(&restore_result);
+        if (desktop_trash_restore(
+                &desktop_trash, &restore_request, &restore_result) !=
+                DESKTOP_TRASH_OK || restore_result.restored == 0U ||
+            restore_result.cleanup_complete == 0U ||
+            x86os_stat(sample_path, &existing) != 0 ||
+            existing.type != X86OS_FILE)
+            return -1;
+        x86os_puts("DESKTOP_TRASH_RESTORE_READY\n");
+        return 0;
+    }
 
     uint32_t trash_window = desktop_explorer_free_window(explorer);
     if (trash_window >= DESKTOP_WM_CAPACITY) return -1;
@@ -5908,6 +5933,7 @@ int main(int argc, char **argv) {
     uint32_t sound_probe = 0U;
     uint32_t trash_context_probe = 0U;
     uint32_t trash_confirm_probe = 0U;
+    uint32_t trash_restore_probe = 0U;
     uint32_t unicode_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
@@ -5960,6 +5986,9 @@ int main(int argc, char **argv) {
                text_equal(argv[1], "--trash-confirm-probe")) {
         trash_confirm_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--trash-restore-probe")) {
+        trash_restore_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--unicode-probe")) {
         unicode_probe = 1U;
     } else if (argc != 1) {
@@ -5967,7 +5996,7 @@ int main(int argc, char **argv) {
             "Usage: desktop [--render-probe|--hover-probe|--surface-probe|"
             "--notepad-probe|--control-probe|--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
-            "--trash-confirm-probe|--unicode-probe]\n");
+            "--trash-confirm-probe|--trash-restore-probe|--unicode-probe]\n");
         return 2;
     }
     hover_probe_initialize(&hover_probe_state, hover_probe);
@@ -6186,7 +6215,7 @@ int main(int argc, char **argv) {
     if (render_probe || hover_probe || surface_probe || notepad_probe ||
         control_probe ||
         guidemo_probe || sound_probe || trash_context_probe ||
-        trash_confirm_probe ||
+        trash_confirm_probe || trash_restore_probe ||
         unicode_probe)
         system_sounds.enabled = 0U;
     if (system_sound_status != 0)
@@ -6216,10 +6245,10 @@ int main(int argc, char **argv) {
         desktop_ui_open_error(
             &ui, &display, &initial_dirty,
             "Papierkorb ist nicht verfuegbar.", DESKTOP_TRASH_ROOT_PATH);
-    if ((trash_context_probe || trash_confirm_probe) &&
+    if ((trash_context_probe || trash_confirm_probe || trash_restore_probe) &&
         prepare_trash_documentation_probe(
             &manager, &explorer, &ui, &display, &initial_dirty,
-            trash_confirm_probe, &initial_target) != 0) {
+            trash_confirm_probe, trash_restore_probe, &initial_target) != 0) {
         x86os_puts("DESKTOP_TRASH_PROBE_FAIL setup\n");
         desktop_surface_runtime_shutdown(&surface_runtime);
         if (runtime_activated) (void)desktop_display_deactivate();

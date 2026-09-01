@@ -594,7 +594,12 @@ Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
   `/trash/info` eine versionierte `.trashinfo`-Datei mit ursprünglichem Pfad,
   tatsächlichem `StoragePath` und Löschzeitpunkt. Formatversion 2 trennt damit
   Katalog und Nutzdaten explizit. Pfade werden als validierte lokale ASCII-Pfade
-  und nicht URL-kodiert gespeichert. Das Papierkorbfenster reserviert eine
+  und nicht URL-kodiert gespeichert. Restore und Empty-Validierung laden jede
+  Metadatendatei genau einmal ueber ein generationgebundenes Ring-3-VFS-Objekt
+  mit ausschliesslich `READ|STAT`. Regulaerer Typ, die feste 640-Byte-Grenze,
+  exakte Laenge, EOF und erfolgreicher Close werden innerhalb einer absoluten
+  Fuenf-Sekunden-Frist vor dem Parser und vor jeder Mutation geprueft. Das
+  Papierkorbfenster reserviert eine
   sichtbare Aktion `Wiederherstellen`; Button, Doppelklick und Enter führen
   denselben generationengebundenen Restore aus. Ein vorhandenes Originalziel
   wird nicht überschrieben.

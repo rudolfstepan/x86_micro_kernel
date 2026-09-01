@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2g-desktop-trash-metadata-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "N2g-desktop-trash-metadata-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Read desktop trash metadata through Ring-3 VFS object authority"
@@ -63,7 +63,13 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: move desktop trash metadata reads to Ring 3"
-evidence = []
+evidence = [
+  "All five targeted groups passed with 107 checks across the trash host failure matrix, desktop integration, runtime dispatch, generation-scoped VFS sessions and the complete production-program toolchain.",
+  "The host harness proved exactly one READ-and-STAT metadata object, forward partial reads, premature EOF, non-file and oversized rejection, fstat and read failure, clock failure, deadline expiry, extended content, close failure, one-millisecond cleanup and no restore mutation after failed publication.",
+  "The QEMU framebuffer package passed in 52 seconds with DESKTOP.PRG retaining the existing VFS object and canonical path clients.",
+  "The focused real QEMU runtime passed in 27 seconds after packaged DESKTOP.PRG created and moved a real file, loaded its .trashinfo through the Ring-3 object, restored it, completed cleanup and reached DESKTOP_OK without compositor restart or degradation.",
+  "The restricted Trash Specification format version 2, 640-byte capacity, catalog identity checks, create, write, fsync, rename, unlink, directory scans, public ABI, kernel parser and storage service remained unchanged; no queued package remains and active_id is empty."
+]
 
 [[packages]]
 id = "N2f-editor-load-authority"
