@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3a-vfs-symbolic-links"
+active_id = "R3.3c-desktop-explorer-details-view"
 
 [policy]
 one_package_per_run = true
@@ -14568,8 +14568,60 @@ evidence = [
 ]
 
 [[packages]]
-id = "N3a-vfs-symbolic-links"
+id = "R3.3c-desktop-explorer-details-view"
 status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Switch Explorer between icon and detailed list views"
+scope = "Add one fixed View control to each compositor-internal Explorer toolbar and keep the existing icon grid as the default view. Toggling selects a vertically scrollable details view in the same window and snapshot, with one fixed-height row per entry plus a non-scrolling column header for Name, Type, Size and Modified. Derive both view geometries from the current decorated client rectangle: icon mode retains its existing columns and cell height, details mode uses one logical column, a bounded row height and clipped responsive metadata columns. Format uint32 file sizes as decimal bytes and Unix modification seconds as a bounded UTC YYYY-MM-DD HH:MM value, with a deterministic placeholder for missing or invalid metadata. Store only one validated view enum per window; successful navigation and refresh preserve it, a newly opened window defaults to icons, and toggling performs no VFS access or allocation. Recompute and clamp the shared first-visible-row range on toggle and resize, retaining the selected snapshot entry and revealing it when possible. Keep scrollbar arrows page clicks captured thumb wheel keyboard selection double click file activation drag identity history address status trash behavior sorting and snapshot generation checks common to both modes. Prove mode switching, header/row geometry, details hit testing, clipping, metadata formatting, selection reveal, scrolling and resize in host/source tests and a real packaged QEMU Explorer view probe. Do not add sortable headers horizontal scrolling an editable path parser preview panes tree navigation or filesystem mutation."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_explorer.h",
+  "userspace/gui/compositor/desktop_explorer.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_desktop_explorer_host.c",
+  "test/test_desktop_explorer_source.py",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "each Explorer window stores exactly one validated fixed view mode and a new window always starts in icon mode",
+  "toggling views performs no VFS request allocation snapshot mutation history mutation or entry reorder and preserves the selected generation-bound entry",
+  "one shared layout function derives the fixed header row viewport scrollbar row count visible range and right-edge placement for both modes from the current client rectangle",
+  "details mode exposes one entry per fixed-height row below a non-scrolling header and never draws or hit-tests outside the clipped viewport",
+  "Name Type Size and Modified columns use only already published snapshot metadata fixed local buffers bounded conversion and deterministic clipping",
+  "Unix modification seconds are labelled and rendered as UTC without changing the public metadata ABI or claiming local-time semantics",
+  "toggle resize arrow page thumb wheel and keyboard paths clamp through the same maximum-first-row range and reveal the current selection when possible",
+  "icon and details rows preserve identical selection double-click activation drag snapshot-generation navigation refresh trash and error contracts",
+  "sortable columns horizontal scrolling preview panes tree navigation editable addresses and filesystem mutation remain outside this package",
+  "the packaged QEMU probe toggles both directions and scrolls activates and resizes details mode while the compositor and returning Ring-3 shell remain live"
+]
+targeted_tests = [
+  "python test/test_desktop_explorer_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-explorer-views"]
+stop_conditions = [
+  "details rendering requires a new syscall dynamic storage render-time VFS access or an unbounded timestamp or text conversion",
+  "switching view can invalidate snapshot identity history selection or scrollbar capture state",
+  "details row or scrollbar geometry can escape the current client rectangle or activate an unpublished entry",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "gui: add Explorer details view"
+evidence = []
+
+[[packages]]
+id = "N3a-vfs-symbolic-links"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Resolve and create bounded POSIX symbolic links on EXT2"

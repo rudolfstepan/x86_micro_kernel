@@ -4,7 +4,15 @@ Stand: 3. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N3a-vfs-symbolic-links`: begrenzte POSIX-Symlinks auf EXT2 mit
+Aktives Thema: `R3.3c-desktop-explorer-details-view`. Der Explorer erhält im
+aktuellen Fenster einen festen Ansichtsschalter zwischen der bestehenden
+Symbolmatrix und einer vertikal scrollbaren Detail-Liste. Deren feststehende
+Kopfzeile zeigt Name, Typ, Größe und UTC-Änderungszeit; Einträge bleiben an den
+vorhandenen atomaren Snapshot gebunden. Umschalten behält Auswahl, Navigation,
+Verlauf und Aktivierungssemantik bei, führt keine VFS-Anfrage aus und verwendet
+dieselbe begrenzte Scrollrange wie die Symbolansicht.
+
+Danach folgt `N3a-vfs-symbolic-links`: begrenzte POSIX-Symlinks auf EXT2 mit
 append-only Storage-Service-/Client-ABI, generationgebundener Ring-3-Auflösung
 sowie festen Pfad-, Tiefen-, I/O- und Zeitbudgets. FAT12/32 weisen Symlinks
 mangels nativem Standardformat vor jeder Wirkung mit `EOPNOTSUPP` ab.
