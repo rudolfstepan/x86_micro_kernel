@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3a-vfs-symbolic-links"
+active_id = "R3.2b-pixel-hinted-editor-fonts"
 
 [policy]
 one_package_per_run = true
@@ -14417,8 +14417,94 @@ evidence = [
 ]
 
 [[packages]]
-id = "N3a-vfs-symbolic-links"
+id = "R3.2b-pixel-hinted-editor-fonts"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Rasterize every selectable editor size directly"
+scope = "Replace runtime resampling of the four outline-derived editor families with deterministic size-specific PSF2 assets for exactly 10, 12, 14, 16, 18, 20, 24 and 28 pixel cells. Rasterize each pinned TTF or OTF through the pinned host Pillow/FreeType path at the largest hinted point size whose complete printable ASCII bounds fit the selected cell, apply one fixed grayscale threshold, and package only the resulting standard PSF2 files plus the existing sources and licenses. Keep GNU Unifont as the validated Unicode fallback and preserve Surface v6, numeric family IDs, size IDs, Notepad document state and the old PAINT_TEXT path. Extend the fixed catalog with exact per-size paths and widths, preload every variant into fixed compositor storage with lifecycle progress, select an exact raster before retained rendering and perform no VFS access or outline parsing in a frame. Prove every family-size pair has the requested PSF2 height, bounded width, nonempty distinct readable glyph structure and matching catalog metadata, then rerun the real large-document Notepad family and edge-size probe without compositor restart."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "assets/fonts/README.md",
+  "assets/fonts/catalog.toml",
+  "assets/fonts/reist-jetbrains-mono.psf",
+  "assets/fonts/reist-jetbrains-mono-10.psf",
+  "assets/fonts/reist-jetbrains-mono-12.psf",
+  "assets/fonts/reist-jetbrains-mono-14.psf",
+  "assets/fonts/reist-jetbrains-mono-16.psf",
+  "assets/fonts/reist-jetbrains-mono-18.psf",
+  "assets/fonts/reist-jetbrains-mono-20.psf",
+  "assets/fonts/reist-jetbrains-mono-28.psf",
+  "assets/fonts/reist-source-code-pro.psf",
+  "assets/fonts/reist-source-code-pro-10.psf",
+  "assets/fonts/reist-source-code-pro-12.psf",
+  "assets/fonts/reist-source-code-pro-14.psf",
+  "assets/fonts/reist-source-code-pro-16.psf",
+  "assets/fonts/reist-source-code-pro-18.psf",
+  "assets/fonts/reist-source-code-pro-20.psf",
+  "assets/fonts/reist-source-code-pro-28.psf",
+  "assets/fonts/reist-iosevka.psf",
+  "assets/fonts/reist-iosevka-10.psf",
+  "assets/fonts/reist-iosevka-12.psf",
+  "assets/fonts/reist-iosevka-14.psf",
+  "assets/fonts/reist-iosevka-16.psf",
+  "assets/fonts/reist-iosevka-18.psf",
+  "assets/fonts/reist-iosevka-20.psf",
+  "assets/fonts/reist-iosevka-28.psf",
+  "assets/fonts/reist-fira-code.psf",
+  "assets/fonts/reist-fira-code-10.psf",
+  "assets/fonts/reist-fira-code-12.psf",
+  "assets/fonts/reist-fira-code-14.psf",
+  "assets/fonts/reist-fira-code-16.psf",
+  "assets/fonts/reist-fira-code-18.psf",
+  "assets/fonts/reist-fira-code-20.psf",
+  "assets/fonts/reist-fira-code-28.psf",
+  "scripts/generate_psf2_font.py",
+  "scripts/build-windows.ps1",
+  "Makefile",
+  "userspace/gui/include/reist/gui/font_catalog.h",
+  "userspace/gui/lib/font_catalog.c",
+  "userspace/gui/compositor/desktop.c",
+  "test/test_gui_font.py",
+  "test/test_gui_font_catalog_host.c",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "test/test_system_layout.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "each of the four outline-derived families has exactly eight standard PSF2 assets whose header height equals the selected editor height and whose width is fixed in the catalog",
+  "the host generator version Pillow version grayscale threshold point-size search sources licenses outputs and SHA-256 values are deterministic and catalogued",
+  "the target parses no TTF OTF WOFF archive or arbitrary font path and performs no VFS work while rendering retained text",
+  "the compositor preloads all variants into fixed storage publishes no partial malformed slot and falls back only to validated GNU Unifont",
+  "Surface v6 numeric family and size selection legacy PAINT_TEXT system UI font Notepad Piece Table document bytes modified state and save protocol remain unchanged",
+  "the real large-document Notepad probe completes all families and edge sizes without malformed glyph loss scrollbar corruption compositor restart or degraded service state"
+]
+targeted_tests = [
+  "python test/test_gui_font.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-notepad-fonts"]
+stop_conditions = [
+  "any selectable outline family still depends on runtime downscaling from a shared master bitmap",
+  "a size-specific glyph can exceed its fixed cell clip or omit required printable ASCII or fallback coverage",
+  "the implementation requires dynamic storage target-side outline parsing arbitrary paths or frame-time VFS access",
+  "a font asset failure can publish partial state crash the compositor or bypass GNU Unifont fallback",
+  "Surface or Notepad document save Piece Table scrollbar or public text ABI semantics change",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one"
+]
+commit_message = "gui: rasterize editor fonts at native sizes"
+evidence = []
+
+[[packages]]
+id = "N3a-vfs-symbolic-links"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Resolve and create bounded POSIX symbolic links on EXT2"

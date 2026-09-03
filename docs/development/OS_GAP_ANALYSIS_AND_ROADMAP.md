@@ -3155,7 +3155,13 @@ durch den Status des ausführbaren Pakets aktualisiert.
    24 und 28 Pixel, ohne die Systemschrift oder Dokumentdaten zu verändern.
    Abnahme: fünf unterscheidbare Raster, kapazitätsgebundener Fallback sowie
    realer großer Notepad-Lauf über alle Familien und Randgrößen.
-4. [~] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+4. [~] **R3.2b · Outline-Editorfonts in jeder Größe direkt rastern.** Für die
+   vier Outline-Familien wird jede feste Höhe von 10 bis 28 Pixeln als eigenes
+   gehintetes PSF2 erzeugt und katalogisiert. Der Compositor lädt alle Varianten
+   vorab in feste Slots; Frame-Rendering skaliert diese Glyphen nicht mehr.
+   Abnahme: lesbare, nicht abgeschnittene Raster jeder Familie und Größe sowie
+   der reale große Notepad-Fontlauf ohne Compositor-Neustart.
+5. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
    restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird
@@ -3164,7 +3170,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    FAT12/32 liefern mangels nativem Standardformat vor jeder Wirkung
    `EOPNOTSUPP`. Abnahme: `ln -s`/`readlink` aus der Userspace-Shell sowie ein
    realer EXT2-Lauf einschließlich Dienstneustart und unterbrochener Mutation.
-5. [ ] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
+6. [ ] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
    begrenzter `/desktop`-Katalog liest versionierte `reist.shortcut/1`-
    Dateien und rendert sie mit einem neuen Shortcut-Icon. Ein Rechtsklick auf
    ein validiertes Programm oder eine reguläre Datei im Explorer bietet
@@ -3173,7 +3179,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Microsoft-Shell-Link-Kompatibilitätsbehauptung. Abnahme: reale Maus-
    Erstellung, Reload und sichere Aktivierung je einer Programm- und
    Dateiverknüpfung sowie Ablehnung manipulierter oder veralteter Ziele.
-6. [ ] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
+7. [ ] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
    dynamische Shortcut-Icons verwenden den vorhandenen begrenzten Drag-
    Controller, rasten kollisionsfrei im sichtbaren Arbeitsbereich ein und
    bleiben von Fensterbewegung, Start und Explorer-Papierkorb-MOVE getrennt.
