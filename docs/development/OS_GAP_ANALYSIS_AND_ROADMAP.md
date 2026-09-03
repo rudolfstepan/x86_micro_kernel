@@ -3147,52 +3147,87 @@ durch den Status des ausführbaren Pakets aktualisiert.
    READ-/STAT-Objekt mit Typ-, Groessen-, EOF-, Close- und Deadline-Pruefung
    vor Parser und Mutation umgestellt. Papierkorb-Mutationen und Formatversion
    2 blieben unveraendert; Hostmatrix, QEMU-Paket und realer Move-/Restore-Lauf
-   sind bestanden. Die Queue ist leer.
-3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
-   read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
-   Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und
-   Generation bleiben fail-closed. Abnahme: Power-Cut-/Teilwrite-Matrix,
-   Dienstneustart und kontrollierter Remount ohne ABI-Bruch.
-4. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
+   sind bestanden.
+3. [ ] **R3.2a · Fünf freie Editorfonts und begrenzte Größen bereitstellen.**
+   GNU Unifont, JetBrains Mono, Source Code Pro, Iosevka und Fira Code aus
+   gepinnten freien Quellen deterministisch als PSF2 paketieren. Eine additive
+   Surface-Fontauswahl erlaubt Notepad genau die Höhen 10, 12, 14, 16, 18, 20,
+   24 und 28 Pixel, ohne die Systemschrift oder Dokumentdaten zu verändern.
+   Abnahme: fünf unterscheidbare Raster, kapazitätsgebundener Fallback sowie
+   realer großer Notepad-Lauf über alle Familien und Randgrößen.
+4. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+   append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
+   `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
+   restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird
+   nicht erweitert. Relative und absolute Ziele, Ketten, Dangling Links und
+   Zyklen werden mit festen Pfad-, Tiefen-, I/O- und Zeitbudgets behandelt.
+   FAT12/32 liefern mangels nativem Standardformat vor jeder Wirkung
+   `EOPNOTSUPP`. Abnahme: `ln -s`/`readlink` aus der Userspace-Shell sowie ein
+   realer EXT2-Lauf einschließlich Dienstneustart und unterbrochener Mutation.
+5. [ ] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
+   begrenzter `/desktop`-Katalog liest versionierte `reist.shortcut/1`-
+   Dateien und rendert sie mit einem neuen Shortcut-Icon. Ein Rechtsklick auf
+   ein validiertes Programm oder eine reguläre Datei im Explorer bietet
+   „Verknüpfung auf Desktop erstellen“; die Erzeugung erfolgt per Tempdatei,
+   `fsync`, Close und atomarem Rename. Das lokale 8.3-`.LNK`-Format ist keine
+   Microsoft-Shell-Link-Kompatibilitätsbehauptung. Abnahme: reale Maus-
+   Erstellung, Reload und sichere Aktivierung je einer Programm- und
+   Dateiverknüpfung sowie Ablehnung manipulierter oder veralteter Ziele.
+6. [ ] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
+   dynamische Shortcut-Icons verwenden den vorhandenen begrenzten Drag-
+   Controller, rasten kollisionsfrei im sichtbaren Arbeitsbereich ein und
+   bleiben von Fensterbewegung, Start und Explorer-Papierkorb-MOVE getrennt.
+   Ein eigenes `reist.desktop-layout/1`-Dokument speichert nur stabile Icon-
+   Identitäten und Rasterkoordinaten atomar. Abnahme: Verschieben, Neustart,
+   Größenwechsel, Korruptionsfallback und unveränderte Klick-/Kontextmenü-
+   Semantik im realen QEMU-Desktop.
+7. [ ] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
+   führen.** N3a liefert nur den für native EXT2-Symlinks benötigten ersten
+   begrenzten Mutationsschnitt. Danach die übrigen versionierten Create-,
+   Write-, Rename-, Replace- und Reparaturtransaktionen migrieren. Journal,
+   Readback, Medienidentität und Generation bleiben fail-closed. Abnahme:
+   Power-Cut-/Teilwrite-Matrix, Dienstneustart und kontrollierter Remount ohne
+   ABI-Bruch.
+8. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
    SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
    MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend
    jeweils genau eine weitere Produktionsdomäne auditieren. Ohne IOMMU bleibt
    DMA ausschließlich kernelvalidiert vermittelt. Abnahme: Normal-, Crash-,
    Hang-, stale-Reply- und Budgeterschöpfungspfad auf BSP und freigegebenem AP.
-5. [ ] **N5 · Übergangs-Syscalls konsolidieren.** Nach N1 bis N4 ungenutzte
+9. [ ] **N5 · Übergangs-Syscalls konsolidieren.** Nach N1 bis N4 ungenutzte
    spezialisierte Syscalls inventarisieren und Clients auf wenige generische
    IPC-, Capability- und Resource-Primitiven umstellen. Nummern und alte
    Wrapper bleiben append-only kompatibel, bis Quell-, Image- und Runtime-
    Nachweise ihre Entfernung erlauben.
-6. [ ] **N6 · Vollständige Desktop-Sitzungsrecovery.** Compositor-Crash und
+10. [ ] **N6 · Vollständige Desktop-Sitzungsrecovery.** Compositor-Crash und
    -Hang müssen Displayfence, Generationstausch, Surface-Neubindung und
    begrenzte Client-Reintegration demonstrieren. Ein fehlerhafter Client darf
    weder Shell noch andere Fenster verlieren; Budgeterschöpfung endet im
    definierten Shell-/Safe-State-Fallback.
-7. [ ] **N7 · Maschinenlesbares TCB- und Ring-0-Restinventar.** Kernelobjekte,
+11. [ ] **N7 · Maschinenlesbares TCB- und Ring-0-Restinventar.** Kernelobjekte,
    privilegierte Pfade, öffentliche ABIs, Autoritäten und zugehörige Tests in
    einer validierten Manifestquelle erfassen. Jeder Build muss neue oder
    vergrößerte TCB-Bestandteile ohne ausdrückliche Freigabe ablehnen.
-8. [ ] **N8 · Physisch unabhängiges Fence/Interlock (`S0.3c-7b2b`).** Den
+12. [ ] **N8 · Physisch unabhängiges Fence/Interlock (`S0.3c-7b2b`).** Den
    vorhandenen Epoch-/Leasevertrag an einen elektrisch unabhängigen,
    rücklesbaren Zielhardwarepfad binden. Leaseablauf allein darf niemals als
    Fencebestätigung gelten.
-9. [ ] **N9 · Common-Cause- und Hardware-Failover (`S0.3c-7d`).** Erst nach N8
+13. [ ] **N9 · Common-Cause- und Hardware-Failover (`S0.3c-7d`).** Erst nach N8
    zwei unabhängige Domänen, reale Ausgangseinzäunung, Storagezustand,
    FTTI-Übernahme und Reintegration unter Strom-, Transport- und
    Taktfehlern prüfen. Bis dahin bleibt jeder Fail-operational-Claim verboten.
-10. [ ] **N10 · Release- und Langzeitevidenz schließen.** Reproduzierbare
+14. [ ] **N10 · Release- und Langzeitevidenz schließen.** Reproduzierbare
     Toolchainbindung, signierte Provenienz, SBOM-Zuordnung, Langzeitläufe,
     reale Power-Loss-, Hardware- und – soweit für ein Zielprofil relevant –
     EMV-Evidenz automatisiert und rückverfolgbar erfassen.
-11. [ ] **N11 · Zusätzliche Speicherhärtung.** Systematische Allocation-
+15. [ ] **N11 · Zusätzliche Speicherhärtung.** Systematische Allocation-
     Failure-Injection, weitere Reaper-Stresstests, einen begrenzten
     IRQ-tauglichen Allocator und Highmem/`kmap` oberhalb 1 GiB getrennt
     umsetzen; jeder Teil benötigt eigene Kapazitäts- und Degradationsgates.
-12. [ ] **N12 · Breitere USB- und Hardwareabdeckung.** Composite-Geräte,
+16. [ ] **N12 · Breitere USB- und Hardwareabdeckung.** Composite-Geräte,
     allgemeiner Hotplug und USB-Mass-Storage nur über die in N4 gehärtete
     Vermittlung ergänzen; reale Geräte- und Reconnectmatrix je Controller.
-13. [ ] **N13 · Nachgelagerte Produktfunktionen.** Terminal und weitere
+17. [ ] **N13 · Nachgelagerte Produktfunktionen.** Terminal und weitere
     Ring-3-Systemwerkzeuge vor zusätzlichen GUI-Controls umsetzen; IPv6,
     Zertifikatswiderruf, erweitertes Socketmodell und UEFI erst priorisieren,
     wenn N1 bis N7 abgeschlossen sind. Jeder Funktionsblock bleibt ein eigenes

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.2a-notepad-font-selection"
 
 [policy]
 one_package_per_run = true
@@ -14317,3 +14317,305 @@ evidence = [
   "The final curl-https-client runtime passed in 116 seconds on QEMU with explicitly emulated RDRAND and observed REIST_CURL_HTTPS_RUNTIME_OK only after the guest authenticated the deterministic CA, IP SAN, validity interval and TLS records and sent the HTTP request inside TLS.",
   "Mbed TLS 4.1.1 and the 2026-08-13 Mozilla-derived trust store remain SHA-256 pinned; TLS stays in each client process with fixed deadlines and no kernel parser or device authority, while revocation checking secure-clock resistance IPv6 certification and unrestricted upstream curl compatibility remain explicitly out of scope."
 ]
+
+[[packages]]
+id = "R3.2a-notepad-font-selection"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Provide five free selectable Notepad fonts and bounded sizes"
+scope = "Install and expose at least five freely redistributable monospaced font families: GNU Unifont, JetBrains Mono, Source Code Pro, Iosevka and Fira Code. Vendor exact upstream regular-face sources and license texts, pin their versions and SHA-256 values in one deterministic catalog, and generate bounded PSF2 runtime assets during development rather than parsing TTF or OTF in the target OS. Extend the append-only Ring-3 GUI font and Surface paint contracts so a client may select one catalog family and one of the fixed 10, 12, 14, 16, 18, 20, 24 or 28 pixel heights while legacy text commands retain the system 8x16 font. Keep font files and parsing outside Ring 0, validate family, size, PSF2 structure, Unicode mappings and scaled geometry before retained paint publication, and use fixed total file, mapping, glyph-cache, paint-command and raster-work capacities with a deterministic default-font fallback. Add a Notepad Schrift menu with radio selection for all five families and eight sizes; apply it only to document text and cursor geometry, preserve the system font for menus, dialogs and status, atomically recalculate viewport and scrollbar state, and retain document content, selection, Piece Table, save protocol and public text-editor ABI. Preferences remain process-local in this package; no new configuration mutation or document-format metadata is introduced. Prove each installed family has distinct raster output, required ASCII and visible fallback coverage, every size changes bounded editor metrics without clipping or scrollbar corruption, missing or malformed assets fail closed to GNU Unifont, and a real Surface Notepad cycles all five families plus minimum and maximum sizes while editing and scrolling a large document without compositor restart."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "assets/fonts/README.md",
+  "assets/fonts/catalog.toml",
+  "assets/fonts/reist-jetbrains-mono.psf",
+  "assets/fonts/reist-source-code-pro.psf",
+  "assets/fonts/reist-iosevka.psf",
+  "assets/fonts/reist-fira-code.psf",
+  "assets/fonts/source/jetbrains-mono/JetBrainsMono-Regular.ttf",
+  "assets/fonts/source/jetbrains-mono/OFL.txt",
+  "assets/fonts/source/source-code-pro/SourceCodePro-Regular.otf",
+  "assets/fonts/source/source-code-pro/OFL.txt",
+  "assets/fonts/source/iosevka/Iosevka-Regular.ttf",
+  "assets/fonts/source/iosevka/OFL.txt",
+  "assets/fonts/source/fira-code/FiraCode-Regular.ttf",
+  "assets/fonts/source/fira-code/OFL.txt",
+  "scripts/generate_psf2_font.py",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "userspace/gui/include/reist/gui/font.h",
+  "userspace/gui/lib/font.c",
+  "userspace/gui/include/reist/gui/font_catalog.h",
+  "userspace/gui/lib/font_catalog.c",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/include/reist/gui/surface_client.h",
+  "userspace/gui/lib/surface_client.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/apps/notepad/main.c",
+  "test/test_gui_font.py",
+  "test/test_gui_font_host.c",
+  "test/test_gui_font_catalog_host.c",
+  "test/test_gui_surface_source.py",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_surface_dispatch.c",
+  "test/test_desktop_surface_runtime_source.py",
+  "test/test_desktop_source.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "test/test_system_layout.py",
+  "test/test_user_program_toolchain.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the installed catalog contains GNU Unifont JetBrains Mono Source Code Pro Iosevka and Fira Code with exact source version SHA-256 copyright license and generated PSF2 path metadata",
+  "all five runtime assets and license texts are packaged in both Makefile and Windows HDD images and no target process parses TTF OTF WOFF archives or network input",
+  "legacy Surface text commands retain the existing system font while the additive versioned font-text command validates a fixed catalog identifier and one of exactly eight pixel heights before publication",
+  "font loading Unicode mapping glyph lookup scaling rasterization retained commands cache replacement and redraw are bounded by fixed byte entry command glyph and per-frame work capacities",
+  "missing malformed oversized stale or unsupported font assets publish no partial font state and deterministically fall back to validated GNU Unifont without compositor restart",
+  "Notepad applies family and size only to document glyphs cursor viewport and scroll ranges and atomically clamps the preserved viewport after every selection or resize",
+  "font selection does not mutate document bytes Piece Table modified state save output configuration storage or the public text-editor ABI",
+  "the real Surface probe selects and visibly distinguishes all five families exercises 10 and 28 pixel heights edits and scrolls a document above 51200 bytes and leaves Notepad and the compositor live"
+]
+targeted_tests = [
+  "python test/test_gui_font.py -v",
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_desktop_surface_runtime_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-notepad-fonts"]
+stop_conditions = [
+  "fewer than five independently named freely redistributable monospaced families with packaged license evidence are available",
+  "the implementation requires an in-kernel font parser dynamic unbounded storage target-side TTF or OTF parsing or a global framebuffer mapping",
+  "a font or size change can alter document content modified state Piece Table save bytes or persistent configuration",
+  "a failed asset validation can publish partial font state crash the compositor or bypass the deterministic default fallback",
+  "retained Surface commands can reference an unbounded arbitrary path face name or size or trigger unbounded VFS work during frame rendering",
+  "the real Notepad cannot cycle all five families and bounded sizes while editing and scrolling a large document with correct scrollbar geometry",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one"
+]
+commit_message = "gui: add five selectable bounded Notepad fonts"
+evidence = []
+
+[[packages]]
+id = "N3a-vfs-symbolic-links"
+status = "queued"
+phase = "post-s0"
+risk = "high"
+title = "Resolve and create bounded POSIX symbolic links on EXT2"
+scope = "Add POSIX-shaped symbolic-link semantics to the append-only public Storage-Service ABI and the generation-scoped Ring-3 filesystem domain. Append symlink, readlink and lstat operations plus O_NOFOLLOW without renumbering or changing existing calls: open and stat follow links, lstat and readlink inspect the link itself, and unlink or rename never follow the final component. Resolve absolute targets from the VFS root and relative targets from the containing directory with fixed path, component, link-depth, sector-read, retry and deadline budgets; detect cycles and reject malformed, oversized, escaping or stale resolution before opening or mutating an object. Implement native EXT2 fast and block-backed symlink reading plus transactionally bounded creation, readback and recovery in the Ring-3 EXT2 shadow implementation, while FAT12 and FAT32 return EOPNOTSUPP because those formats define no interoperable native symlink. Do not extend the legacy Ring-0 VFS or EXT2 parser: Ring 0 only validates and mediates fixed requests, rights, generations and sectors. Package ln -s and readlink as normal Ring-3 PRGs reachable through the userspace shell. Prove relative, absolute, dangling, chained, cyclic, no-follow, unlink, rename, service-restart and interrupted-write behavior in host tests and on a real QEMU EXT2 volume without broadening the writable FAT path or claiming hard-link support."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/ln.c",
+  "userspace/programs/readlink.c",
+  "userspace/storage/include/reist/vfs_path.h",
+  "userspace/storage/lib/vfs_path.c",
+  "userspace/storage/include/reist/vfs_file_client.h",
+  "userspace/storage/lib/vfs_file_client.c",
+  "userspace/storage/include/reist/vfs_stat_client.h",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "userspace/storage/include/reist/vfs_symlink_client.h",
+  "userspace/storage/lib/vfs_symlink_client.c",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/create_ext2_disk.sh",
+  "scripts/run_qemu_ext2_symlink.py",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "test/test_ext2_host.c",
+  "test/test_reist_vfs_file_client.py",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_vfs_symlink.py",
+  "test/test_reist_vfs_symlink_host.c",
+  "test/test_user_program_toolchain.py",
+  "test/test_system_layout.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md"
+]
+invariants = [
+  "the append-only public Storage-Service and client ABI follows POSIX symlink readlink lstat stat open unlink rename and O_NOFOLLOW terminology and leaves every existing syscall number structure and wrapper unchanged",
+  "link targets path composition component walking cycle detection and all EXT2 inode or block reads have fixed capacities depth budgets and one absolute monotonic deadline",
+  "relative targets are resolved from the link parent absolute targets from the VFS root and dot or dot-dot normalization can never escape the caller-authorized namespace",
+  "lstat and readlink inspect the final link while unlink and rename mutate the final directory entry itself; open and stat follow only after complete bounded validation",
+  "the restartable Ring-3 storage service owns symlink resolution and all EXT2 metadata parsing while the legacy Ring-0 VFS and EXT2 implementations remain unchanged and Ring 0 gains only append-only fixed request validation generation checks and bounded sector mediation",
+  "EXT2 creation is published only after complete metadata allocation write flush and readback under a recoverable bounded transaction; interruption retains either the old namespace or one complete link",
+  "FAT12 and FAT32 return EOPNOTSUPP before media mutation because no native interoperable symbolic-link representation exists",
+  "ln and readlink are packaged on both image layouts and resolve through the userspace shell rather than the kernel rescue shell",
+  "a storage-service crash stale reply malformed inode dangling target cycle or exhausted budget publishes no descriptor target object or partial namespace mutation"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_symlink.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_user_program_toolchain.py -v",
+  "python test/test_system_layout.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode vfs-symbolic-links"]
+stop_conditions = [
+  "link resolution or EXT2 metadata parsing must execute in Ring 0 or requires an unbounded path walk allocation retry wait or recovery scan",
+  "EXT2 link creation cannot be made recoverable and readback-verified within fixed transaction and sector budgets",
+  "FAT support requires inventing or silently accepting a proprietary on-disk symlink representation",
+  "unlink rename lstat readlink or O_NOFOLLOW can accidentally operate on the resolved target instead of the final link",
+  "the runtime proof can pass without real relative absolute dangling chained and cyclic links on the packaged EXT2 volume",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fs: add bounded POSIX symbolic links"
+evidence = []
+
+[[packages]]
+id = "R3.5-desktop-shortcuts"
+status = "queued"
+phase = "post-s0"
+risk = "medium"
+title = "Create bounded desktop shortcuts from Explorer"
+scope = "Add a fixed-capacity /desktop shortcut catalog and render its validated entries beside the three built-in desktop icons with one new packaged shortcut icon. Use a documented append-only reist.shortcut/1 text format in 8.3 .LNK files; this is a deliberately small REIST desktop-entry adaptation and must not be described as Microsoft Shell Link compatibility. Each entry contains one bounded display name, target kind and canonical absolute program or data-file path, with no shell text, argument expansion, environment substitution, working-directory override or embedded icon payload. Add a right-click Explorer context menu action named Verknuepfung auf Desktop erstellen for validated program and regular-file entries. Creation selects one collision-free 8.3 name within a fixed attempt budget and uses temporary-file write, fsync, close and atomic rename before the desktop catalog refreshes. Activation revalidates the target and routes programs through the normal supervised spawn path and data files through the existing file-type association path. Missing, stale, malformed, duplicate or capacity-exceeding entries stay invisible and cannot launch. Prove creation, reload, activation, deletion, collisions, malformed files, missing targets, storage-service restart and a real mouse context-menu flow without giving the compositor parser, shell or ambient filesystem authority."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "assets/icons/shortcut.ico",
+  "assets/icons/README.md",
+  "config/etc/reist/filetypes.conf",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_explorer.h",
+  "userspace/gui/compositor/desktop_explorer.c",
+  "userspace/gui/compositor/desktop_drag.h",
+  "userspace/gui/compositor/desktop_drag.c",
+  "userspace/gui/compositor/desktop_filetypes.h",
+  "userspace/gui/compositor/desktop_filetypes.c",
+  "userspace/gui/compositor/desktop_shortcut.h",
+  "userspace/gui/compositor/desktop_shortcut.c",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "test/test_desktop_source.py",
+  "test/test_desktop_explorer_source.py",
+  "test/test_desktop_explorer_host.c",
+  "test/test_desktop_drag_source.py",
+  "test/test_desktop_drag_host.c",
+  "test/test_desktop_shortcut_source.py",
+  "test/test_desktop_shortcut_host.c",
+  "test/test_system_layout.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "the desktop reads at most a fixed number of bounded reist.shortcut/1 files from /desktop and publishes the catalog only after every accepted field and target kind is validated",
+  "the .LNK suffix and REIST text schema are documented as a bounded local adaptation and never claimed to parse or produce Microsoft Shell Link files",
+  "shortcut content cannot contain shell commands arguments environment expansion relative targets embedded payloads or an arbitrary icon path",
+  "the right-click action is offered only for a generation-stable Explorer program or regular file and creates exactly one shortcut through temporary write fsync close and atomic rename",
+  "collision exhaustion malformed content missing targets stale snapshots read or close errors and storage-service restart publish no launchable or partially written shortcut",
+  "program targets use supervised spawn and data targets use the validated file-type association path after a fresh stat without bypassing capability process or path checks",
+  "the new shortcut icon is packaged in both image layouts loaded once through the bounded icon cache and rendering performs no VFS access or decoding",
+  "the existing Computer Systemsteuerung Papierkorb trash context menu and Explorer drag-to-trash behavior remain compatible"
+]
+targeted_tests = [
+  "python test/test_desktop_shortcut_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_desktop_explorer_source.py -v",
+  "python test/test_desktop_drag_source.py -v",
+  "python test/test_system_layout.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-shortcuts"]
+stop_conditions = [
+  "shortcut activation requires a shell command parser ambient arguments an unbounded directory scan or target parsing in Ring 0",
+  "creation can expose an incomplete shortcut or overwrite an existing file before full write fsync close and rename validation",
+  "a malformed stale or missing target can become launchable or a shortcut can bypass supervised spawn and file-type routing",
+  "the real mouse probe cannot create reload activate and remove both one program and one data-file shortcut while the compositor remains live",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "gui: add bounded desktop shortcuts"
+evidence = []
+
+[[packages]]
+id = "R3.5a-desktop-icon-drag-layout"
+status = "queued"
+phase = "post-s0"
+risk = "medium"
+title = "Drag desktop icons and persist a bounded layout"
+scope = "Make built-in and shortcut desktop icons movable by mouse drag and drop on the desktop work area. Reuse the existing fixed DragSource/Object/DropTarget controller with a dedicated layout operation that never launches an icon and never falls through to Explorer-to-trash MOVE. Snap each accepted drop to a bounded collision-free grid inside the current work area, preserve click, double-click, keyboard selection, context menus and trash behavior, and expose visible valid or rejected drop feedback. Persist only stable icon identities and grid coordinates in a separate append-only reist.desktop-layout/1 document with fixed entry and byte capacities; write a complete sorted candidate through temporary-file, fsync, close and atomic rename, then publish it in memory. Missing, stale, duplicate, overlapping, off-screen or malformed records fail closed to deterministic default placement without deleting shortcuts. On display resize, calculate a temporary clamped layout for rendering and hit-testing while preserving valid stored coordinates until the user commits a new drop. Prove pointer capture, drag thresholds, overlap resolution, resize clamping, persistence, interrupted writes, corrupted layouts and real QEMU mouse movement across multiple resolutions without compositor restart or unbounded repaint."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "config/etc/reist/desktop-layout.conf",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_drag.h",
+  "userspace/gui/compositor/desktop_drag.c",
+  "userspace/gui/compositor/desktop_shortcut.h",
+  "userspace/gui/compositor/desktop_shortcut.c",
+  "userspace/gui/compositor/desktop_layout.h",
+  "userspace/gui/compositor/desktop_layout.c",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "Makefile",
+  "test/test_desktop_source.py",
+  "test/test_desktop_drag_source.py",
+  "test/test_desktop_drag_host.c",
+  "test/test_desktop_shortcut_source.py",
+  "test/test_desktop_layout_source.py",
+  "test/test_desktop_layout_host.c",
+  "test/test_system_layout.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "desktop icon movement uses the existing fixed-capacity drag controller and cannot alias window movement Explorer-to-trash MOVE shortcut activation or context-menu capture",
+  "each accepted drop resolves to one in-bounds unoccupied grid cell within fixed icon and search capacities and rejected drops have no persistent side effect",
+  "click double-click keyboard activation and right-click context menus remain distinct from drag after the fixed motion threshold",
+  "reist.desktop-layout/1 stores only stable bounded icon identities and integer grid coordinates and is parsed atomically with duplicate overlap range and trailing-data rejection",
+  "layout persistence uses temporary write fsync close and atomic rename and publishes new in-memory coordinates only after durable success",
+  "missing malformed stale interrupted or oversized layout data falls back to deterministic placement without deleting shortcuts or crashing the compositor",
+  "display resize uses one bounded temporary clamped placement for rendering hit-testing and drops while retaining valid stored coordinates until a successful user move",
+  "drag feedback dirty regions catalog refresh and repaint work remain fixed per input turn and the compositor performs no unbounded VFS scan during rendering"
+]
+targeted_tests = [
+  "python test/test_desktop_layout_source.py -v",
+  "python test/test_desktop_shortcut_source.py -v",
+  "python test/test_desktop_drag_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_system_layout.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-icon-layout"]
+stop_conditions = [
+  "desktop icon movement requires an unbounded placement search allocation repaint queue or filesystem operation in the render path",
+  "dragging can accidentally launch an icon move an Explorer source to trash or commit an overlapping or off-screen layout",
+  "a partial failed or corrupted layout write can replace the last valid document or remove shortcut definitions",
+  "the real mouse probe cannot move reload and reactivate built-in and shortcut icons correctly before and after display resize",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "gui: persist bounded desktop icon layout"
+evidence = []

@@ -1,10 +1,24 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 1. September 2026
+Stand: 3. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Kein aktives Paket; die Queue ist leer.
+Aktives Thema: `R3.2a-notepad-font-selection`. Das OS installiert mindestens
+fünf freie Monospace-Familien (GNU Unifont, JetBrains Mono, Source Code Pro,
+Iosevka und Fira Code) als deterministisch erzeugte PSF2-Assets. Notepad erhält
+eine sitzungsbezogene Schrift- und Größenauswahl von 10 bis 28 Pixeln; Auswahl,
+Rasterung, Cache, Retained-Paint und Layout-Neuberechnung bleiben fest
+begrenzt. TTF/OTF wird nur im Host-Build verarbeitet, niemals im Zielsystem.
+
+Danach sind drei getrennte Pakete vorgemerkt: `N3a-vfs-symbolic-links`
+ergänzt begrenzte POSIX-Symlinks auf EXT2 und weist sie auf FAT mangels
+Standardformat explizit ab. `R3.5-desktop-shortcuts` fügt validierte
+Verknüpfungsdateien, ein eigenes Icon und die Explorer-Kontextaktion
+„Verknüpfung auf Desktop erstellen“ hinzu. Anschließend macht
+`R3.5a-desktop-icon-drag-layout` Desktop-Icons per Maus verschiebbar und
+speichert ihre Positionen atomar in einem getrennten, versionierten
+Layoutformat.
 
 `N2g-desktop-trash-metadata-authority` ist abgeschlossen. Restore und
 Empty-Validierung lesen `.trashinfo` genau einmal ueber ein
