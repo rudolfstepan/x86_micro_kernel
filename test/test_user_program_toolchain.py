@@ -214,6 +214,12 @@ class UserProgramToolchainTests(unittest.TestCase):
                 (include / "reist/gui/value_controls.h").is_file())
             self.assertTrue((include / "reist/audio.h").is_file())
             self.assertTrue((include / "reist/image.h").is_file())
+            self.assertTrue(
+                (include / "reist/vfs_symlink_client.h").is_file())
+            self.assertTrue(
+                (include / "reist/vfs_file_client.h").is_file())
+            self.assertTrue(
+                (include / "reist/vfs_stat_client.h").is_file())
             self.assertTrue((library / "crt0.o").is_file())
             self.assertEqual(
                 (library / "libreistos.a").read_bytes()[:8], b"!<arch>\n"
@@ -466,6 +472,8 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "DEL.PRG",
                 "COPY.PRG",
                 "RENAME.PRG",
+                "LN.PRG",
+                "READLINK.PRG",
                 "STAT.PRG",
                 "DF.PRG",
                 "TOUCH.PRG",
@@ -574,6 +582,15 @@ class UserProgramToolchainTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertEqual(build_script.count("'bin/edit.prg'"), 1)
+
+    def test_symlink_tools_are_packaged_in_both_native_images(self):
+        build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(
+            encoding="utf-8"
+        )
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        for program in ("ln", "readlink"):
+            self.assertEqual(build_script.count(f"'bin/{program}.prg'"), 1)
+            self.assertEqual(makefile.count(f"bin/{program}.prg="), 1)
 
     def test_desktop_is_packaged_in_both_native_images(self):
         build_script = (ROOT / "scripts" / "build-windows.ps1").read_text(

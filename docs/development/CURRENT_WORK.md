@@ -2,12 +2,25 @@
 
 Stand: 3. September 2026
 
-Branch/Startpunkt: `working_branch` / `d6d58e50`
+Branch/Startpunkt: `working_branch` / `ce27e090`
 
-Aktives Thema: `N3a-vfs-symbolic-links`: begrenzte POSIX-Symlinks auf EXT2 mit
-append-only Storage-Service-/Client-ABI, generationgebundener Ring-3-Auflösung
-sowie festen Pfad-, Tiefen-, I/O- und Zeitbudgets. FAT12/32 weisen Symlinks
-mangels nativem Standardformat vor jeder Wirkung mit `EOPNOTSUPP` ab.
+Aktives Thema: `R3.5-desktop-shortcuts`: ein fester `/desktop`-Katalog für
+versionierte `reist.shortcut/1`-Dateien, ein eigenes Shortcut-Icon und die
+Explorer-Kontextaktion „Verknüpfung auf Desktop erstellen“. Erzeugung und
+Veröffentlichung bleiben begrenzt und atomar; Programme starten über den
+überwachten Spawn-Pfad, Datendateien über die vorhandene Dateitypzuordnung.
+
+`N3a-vfs-symbolic-links` ist abgeschlossen. Die öffentliche Storage-Service-/
+Client-ABI ergänzt append-only `symlink`, `readlink`, `lstat` und
+`O_NOFOLLOW`; Auflösung, native EXT2-Fast-/Block-Symlinks sowie das feste
+Undo-Journal liegen im restartbaren Ring-3-Storage-Dienst. Relative und
+absolute Ziele, Dangling Links, Ketten und Zyklen sind durch feste Pfad-,
+Walk-, Tiefen-, Sektor-, Retry-, Transaktions- und Zeitbudgets gebunden.
+FAT12/32 lehnen die Erzeugung vor jeder Wirkung mit `EOPNOTSUPP` ab. Alle 44
+Targeted-Checks, der QEMU-Framebuffer-Paketbuild in 87 Sekunden und der reale
+EXT2-Lauf in 69 Sekunden einschließlich unterbrochener Mutation,
+Dienstneustart, persistiertem Testimage und sauberem Journal sind bestanden.
+Der alte Ring-0-VFS-/EXT2-Parser blieb unverändert.
 
 `R3.3c-desktop-explorer-details-view` ist abgeschlossen. Der feste
 Ansichtsschalter wechselt ohne VFS-Zugriff oder Snapshotwechsel zwischen der
@@ -31,12 +44,9 @@ reale Navigations-/Scrolllauf mit abschließender Ring-3-Shell-Antwort sind
 bestanden. Suche, Baumansicht, editierbare Adresse und Dateimutationen bleiben
 getrennte spätere Pakete.
 
-Danach sind zwei getrennte Pakete vorgemerkt: `R3.5-desktop-shortcuts` fügt validierte
-Verknüpfungsdateien, ein eigenes Icon und die Explorer-Kontextaktion
-„Verknüpfung auf Desktop erstellen“ hinzu. Anschließend macht
-`R3.5a-desktop-icon-drag-layout` Desktop-Icons per Maus verschiebbar und
-speichert ihre Positionen atomar in einem getrennten, versionierten
-Layoutformat.
+`R3.5-desktop-shortcuts` ist jetzt aktiv. Anschließend macht das getrennte
+Paket `R3.5a-desktop-icon-drag-layout` Desktop-Icons per Maus verschiebbar und
+speichert ihre Positionen atomar in einem eigenen versionierten Layoutformat.
 
 `R3.2b-pixel-hinted-editor-fonts` ist abgeschlossen. Die vier Outline-Familien
 werden jetzt in allen acht auswählbaren Höhen direkt als gehintete PSF2-Raster

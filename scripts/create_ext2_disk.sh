@@ -59,6 +59,14 @@ echo "echo 'Hello from test script'" > "$MOUNT_POINT/bin/test.sh"
 echo "Configuration file" > "$MOUNT_POINT/etc/config.conf"
 echo "User data file" > "$MOUNT_POINT/home/userdata.txt"
 
+# Reserve the fixed, block-backed undo journal used by the Ring-3 symbolic
+# link transaction engine.  The versioned REIST journal is intentionally held
+# in ordinary EXT2 data blocks, so it needs no EXT2 format extension or Ring-0
+# parser.
+dd if=/dev/zero of="$MOUNT_POINT/.reist-symlink-journal" \
+    bs=512 count=26 conv=fsync 2>/dev/null
+chmod 600 "$MOUNT_POINT/.reist-symlink-journal"
+
 # Create a larger test file
 echo "Creating large test file..."
 dd if=/dev/urandom of="$MOUNT_POINT/usr/testdata.bin" bs=1K count=100 2>/dev/null

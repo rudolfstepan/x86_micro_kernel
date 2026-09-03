@@ -24,10 +24,11 @@ static uint32_t client_length(const char *text, uint32_t capacity) {
 }
 
 static int client_frame_valid(const x86os_vfs_shadow_frame_t *frame,
-                              const char *path, uint32_t path_length) {
+                              const char *path, uint32_t path_length,
+                              uint32_t operation) {
     if (frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame->struct_size != sizeof(*frame) ||
-        frame->operation != X86OS_VFS_SHADOW_FS_STAT_AUTHORITY ||
+        frame->operation != operation ||
         frame->flags != 0U || frame->path_length != path_length ||
         frame->path[path_length] != '\0') return 0;
     for (uint32_t index = 0U; index < path_length; ++index)
@@ -41,7 +42,9 @@ static int client_frame_valid(const x86os_vfs_shadow_frame_t *frame,
         return 1;
     }
     if (frame->info.type != X86OS_FILE &&
-        frame->info.type != X86OS_DIRECTORY) return 0;
+        frame->info.type != X86OS_DIRECTORY &&
+        (operation != X86OS_VFS_SHADOW_FS_LSTAT ||
+         frame->info.type != X86OS_SYMLINK)) return 0;
     return client_length(frame->info.name, sizeof(frame->info.name)) <
         sizeof(frame->info.name);
 }
@@ -52,9 +55,11 @@ static int client_cancel_failure(x86os_storage_handle_t handle,
     return cancel == 0 || cancel == -22 ? failure : cancel;
 }
 
-int reist_vfs_stat(const char *path, x86os_file_info_t *info,
-                   uint32_t timeout_ms) {
+static int client_stat(const char *path, x86os_file_info_t *info,
+                       uint32_t timeout_ms, uint32_t operation) {
     if (info == 0 || timeout_ms == 0U || timeout_ms > 60000U) return -22;
+    if (operation != X86OS_VFS_SHADOW_FS_STAT_AUTHORITY &&
+        operation != X86OS_VFS_SHADOW_FS_LSTAT) return -22;
     client_zero(info, sizeof(*info));
     x86os_vfs_shadow_frame_t frame;
     client_zero(&frame, sizeof(frame));
@@ -64,7 +69,7 @@ int reist_vfs_stat(const char *path, x86os_file_info_t *info,
     if (status != 0) return status;
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
     frame.struct_size = sizeof(frame);
-    frame.operation = X86OS_VFS_SHADOW_FS_STAT_AUTHORITY;
+    frame.operation = operation;
     frame.path_length = path_length;
     client_copy(frame.path, resolved, path_length + 1U);
 
@@ -93,7 +98,20 @@ int reist_vfs_stat(const char *path, x86os_file_info_t *info,
             return client_cancel_failure(handle, -5);
     }
     if (service_result != 0) return service_result;
-    if (!client_frame_valid(&frame, resolved, path_length)) return -84;
+    if (!client_frame_valid(&frame, resolved, path_length, operation))
+        return -84;
     if (frame.result == 0) client_copy(info, &frame.info, sizeof(*info));
     return frame.result;
+}
+
+int reist_vfs_stat(const char *path, x86os_file_info_t *info,
+                   uint32_t timeout_ms) {
+    return client_stat(path, info, timeout_ms,
+                       X86OS_VFS_SHADOW_FS_STAT_AUTHORITY);
+}
+
+int reist_vfs_lstat(const char *path, x86os_file_info_t *info,
+                    uint32_t timeout_ms) {
+    return client_stat(path, info, timeout_ms,
+                       X86OS_VFS_SHADOW_FS_LSTAT);
 }

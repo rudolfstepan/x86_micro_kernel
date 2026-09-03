@@ -111,6 +111,16 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "RENAME.PRG": ROOT / "userspace/programs/rename.c",
+    "LN.PRG": (
+        ROOT / "userspace/programs/ln.c",
+        ROOT / "userspace/storage/lib/vfs_symlink_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
+    "READLINK.PRG": (
+        ROOT / "userspace/programs/readlink.c",
+        ROOT / "userspace/storage/lib/vfs_symlink_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "STAT.PRG": (
         ROOT / "userspace/programs/stat.c",
         ROOT / "userspace/storage/lib/vfs_stat_client.c",
@@ -274,7 +284,8 @@ def main() -> None:
                 dependency_files.extend(config_headers)
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
-                        "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG"}:
+                        "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG",
+                        "LN.PRG", "READLINK.PRG"}:
                 dependency_files.extend(storage_headers)
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)

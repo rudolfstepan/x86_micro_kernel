@@ -39,6 +39,8 @@ class ReistVfsFileClientTests(unittest.TestCase):
                       "X86OS_VFS_SHADOW_OBJECT_FSTAT",
                       "X86OS_VFS_SHADOW_OBJECT_CLOSE",
                       "X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS",
+                      "X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS",
+                      "X86OS_O_NOFOLLOW",
                       "X86OS_VFS_SHADOW_OBJECT_DELEGATE",
                       "X86OS_VFS_SHADOW_OBJECT_ADOPT",
                       "session->timeout_ms = timeout_ms",
@@ -53,6 +55,7 @@ class ReistVfsFileClientTests(unittest.TestCase):
                           "x86os_close(", "x86os_readdir", "reist_vfs_read_at",
                           "reist_vfs_stat", "char path["):
             self.assertNotIn(forbidden, source)
+        self.assertIn("reist_vfs_file_open_flags", header)
 
     def test_rights_are_local_and_service_enforced_before_publication(self):
         source = read("userspace/storage/lib/vfs_file_client.c")

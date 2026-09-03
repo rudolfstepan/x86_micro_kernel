@@ -37,7 +37,7 @@ MBEDTLS_ARCHIVE = ROOT / "third_party" / "mbedtls-4.1.1.tar.bz2"
 MBEDTLS_SHA256 = "3359a349e23db3d5536fcee032ae7b2ecbfc08972fab643089b5cbf2a375c98c"
 PUBLIC_INCLUDE_ROOTS = (
     CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
-    CONFIG_INCLUDE_ROOT, TLS_INCLUDE_ROOT,
+    CONFIG_INCLUDE_ROOT, STORAGE_INCLUDE_ROOT, TLS_INCLUDE_ROOT,
 )
 TLS_WRAPPER_SOURCES = (
     TLS_LIBRARY_ROOT / "reist_tls.c",
@@ -66,6 +66,11 @@ CORE_LIBRARY_SOURCES = (
     CORE_ROOT / "reist_dhcp_state.c",
     CORE_ROOT / "reist_dns.c",
     ROOT / "userspace" / "config" / "lib" / "config.c",
+    STORAGE_LIBRARY_ROOT / "vfs_path.c",
+    STORAGE_LIBRARY_ROOT / "vfs_file_client.c",
+    STORAGE_LIBRARY_ROOT / "vfs_stat_client.c",
+    STORAGE_LIBRARY_ROOT / "vfs_read_client.c",
+    STORAGE_LIBRARY_ROOT / "vfs_symlink_client.c",
 )
 NETWORK_PARSER_SOURCES = (
     CORE_ROOT / "reist_ipv4_parser.c",
@@ -306,7 +311,9 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     audio_headers = tuple(
         header for root, header in public_headers
         if root == AUDIO_INCLUDE_ROOT)
-    storage_headers = tuple(STORAGE_INCLUDE_ROOT.rglob("*.h"))
+    storage_headers = tuple(
+        header for root, header in public_headers
+        if root == STORAGE_INCLUDE_ROOT)
     image_headers = tuple(
         header for root, header in public_headers
         if root == IMAGE_INCLUDE_ROOT)
@@ -346,7 +353,8 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         (STARTUP_SOURCE, *core_headers), incremental)
     core_stale = artifact_requires_rebuild(
         artifacts.core_library,
-        (*CORE_LIBRARY_SOURCES, *core_headers, *config_headers), incremental)
+        (*CORE_LIBRARY_SOURCES, *core_headers, *config_headers,
+         *storage_headers), incremental)
     parser_stale = artifact_requires_rebuild(
         artifacts.network_parser_library,
         (*NETWORK_PARSER_SOURCES, *core_headers), incremental)

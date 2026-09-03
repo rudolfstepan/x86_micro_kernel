@@ -1,0 +1,471 @@
+/** Host behavior and interruption test for bounded Ring-3 EXT2 symlinks. */
+#include <stdint.h>
+#include <string.h>
+
+#include "userspace/storage/include/reist/vfs_shadow_ext2.h"
+#include "userspace/storage/include/reist/vfs_symlink_client.h"
+
+#define BLOCK_SIZE 1024U
+#define BLOCKS 256U
+#define SECTORS (BLOCKS * 2U)
+#define CHECK(condition) do { if (!(condition)) return __LINE__; } while (0)
+
+typedef struct {
+    uint8_t image[SECTORS * X86OS_STORAGE_BLOCK_SIZE];
+    uint64_t now_ms;
+    uint32_t reads;
+    uint32_t writes;
+    uint32_t flushes;
+    uint32_t fail_write;
+    uint32_t fail_flush;
+} context_t;
+
+static void put16(uint8_t *data, uint16_t value) {
+    data[0U] = (uint8_t)value;
+    data[1U] = (uint8_t)(value >> 8U);
+}
+
+static void put32(uint8_t *data, uint32_t value) {
+    data[0U] = (uint8_t)value;
+    data[1U] = (uint8_t)(value >> 8U);
+    data[2U] = (uint8_t)(value >> 16U);
+    data[3U] = (uint8_t)(value >> 24U);
+}
+
+static uint8_t *block_at(context_t *context, uint32_t block) {
+    return context->image + block * BLOCK_SIZE;
+}
+
+static uint8_t *inode_at(context_t *context, uint32_t number) {
+    uint32_t offset = (number - 1U) * 128U;
+    return block_at(context, 5U + offset / BLOCK_SIZE) + offset % BLOCK_SIZE;
+}
+
+static void make_inode(context_t *context, uint32_t number, uint16_t mode,
+                       uint32_t size, uint32_t block) {
+    uint8_t *inode = inode_at(context, number);
+    put16(inode + 0U, mode);
+    put32(inode + 4U, size);
+    put16(inode + 26U, 1U);
+    put32(inode + 28U, block == 0U ? 0U : 2U);
+    put32(inode + 40U, block);
+    put32(inode + 100U, number);
+}
+
+static void make_fast_link(context_t *context, uint32_t number,
+                           const char *target) {
+    uint32_t length = (uint32_t)strlen(target);
+    make_inode(context, number, 0xA1FFU, length, 0U);
+    memcpy(inode_at(context, number) + 40U, target, length);
+}
+
+static uint16_t record_size(uint32_t length) {
+    return (uint16_t)((8U + length + 3U) & ~3U);
+}
+
+static uint32_t add_entry(uint8_t *directory, uint32_t offset,
+                          uint32_t inode, const char *name, uint8_t type,
+                          uint16_t record) {
+    uint32_t length = (uint32_t)strlen(name);
+    put32(directory + offset, inode);
+    put16(directory + offset + 4U, record);
+    directory[offset + 6U] = (uint8_t)length;
+    directory[offset + 7U] = type;
+    memcpy(directory + offset + 8U, name, length);
+    return offset + record;
+}
+
+static void mark_allocated(uint8_t *bitmap, uint32_t first,
+                           uint32_t last) {
+    for (uint32_t number = first; number <= last; ++number) {
+        uint32_t bit = number - first;
+        bitmap[bit / 8U] |= (uint8_t)(1U << (bit & 7U));
+    }
+}
+
+static void initialize(context_t *context) {
+    memset(context, 0, sizeof(*context));
+    context->now_ms = 100U;
+    context->fail_write = UINT32_MAX;
+    context->fail_flush = UINT32_MAX;
+    uint8_t *superblock = block_at(context, 1U);
+    put32(superblock + 0U, 128U);
+    put32(superblock + 4U, BLOCKS);
+    put32(superblock + 12U, 216U);
+    put32(superblock + 16U, 106U);
+    put32(superblock + 20U, 1U);
+    put32(superblock + 24U, 0U);
+    put32(superblock + 32U, BLOCKS);
+    put32(superblock + 40U, 128U);
+    put16(superblock + 56U, 0xEF53U);
+    put16(superblock + 58U, 1U);
+    put32(superblock + 76U, 1U);
+    put32(superblock + 84U, 11U);
+    put16(superblock + 88U, 128U);
+    put32(superblock + 96U, 2U);
+
+    uint8_t *descriptor = block_at(context, 2U);
+    put32(descriptor + 0U, 3U);
+    put32(descriptor + 4U, 4U);
+    put32(descriptor + 8U, 5U);
+    put16(descriptor + 12U, 216U);
+    put16(descriptor + 14U, 106U);
+    mark_allocated(block_at(context, 3U), 1U, 39U);
+    mark_allocated(block_at(context, 4U), 1U, 22U);
+
+    make_inode(context, 2U, 0x41EDU, BLOCK_SIZE, 21U);
+    put16(inode_at(context, 2U) + 26U, 3U);
+    make_inode(context, 12U, 0x81A4U, 8U, 22U);
+    memcpy(block_at(context, 22U), "payload\n", 8U);
+    make_inode(context, 13U, 0x41EDU, BLOCK_SIZE, 23U);
+    put16(inode_at(context, 13U) + 26U, 2U);
+    make_fast_link(context, 14U, "target.txt");
+    make_fast_link(context, 15U, "/mnt/ext2/target.txt");
+    make_fast_link(context, 16U, "fast-link");
+    make_fast_link(context, 17U, "missing.txt");
+    make_fast_link(context, 18U, "cycle-b");
+    make_fast_link(context, 19U, "cycle-a");
+    const char *long_target =
+        "dir/../dir/../dir/../dir/../dir/../dir/../dir/../dir/../target.txt";
+    make_inode(context, 20U, 0xA1FFU, (uint32_t)strlen(long_target), 39U);
+    memcpy(block_at(context, 39U), long_target, strlen(long_target));
+    make_inode(context, 21U, 0x81A4U,
+               REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS *
+                   X86OS_STORAGE_BLOCK_SIZE,
+               25U);
+    for (uint32_t logical = 0U; logical < 12U; ++logical)
+        put32(inode_at(context, 21U) + 40U + logical * 4U, 25U + logical);
+    put32(inode_at(context, 21U) + 40U + 12U * 4U, 38U);
+    put32(block_at(context, 38U), 37U);
+    put32(inode_at(context, 21U) + 28U, 28U);
+    make_fast_link(context, 22U, "../target.txt");
+
+    uint8_t *root = block_at(context, 21U);
+    uint32_t offset = add_entry(root, 0U, 2U, ".", 2U, 12U);
+    offset = add_entry(root, offset, 2U, "..", 2U, 12U);
+    offset = add_entry(root, offset, 12U, "target.txt", 1U,
+                       record_size(10U));
+    offset = add_entry(root, offset, 13U, "dir", 2U, record_size(3U));
+    offset = add_entry(root, offset, 14U, "fast-link", 7U,
+                       record_size(9U));
+    offset = add_entry(root, offset, 15U, "absolute-link", 7U,
+                       record_size(13U));
+    offset = add_entry(root, offset, 16U, "chain-link", 7U,
+                       record_size(10U));
+    offset = add_entry(root, offset, 17U, "dangling-link", 7U,
+                       record_size(13U));
+    offset = add_entry(root, offset, 18U, "cycle-a", 7U,
+                       record_size(7U));
+    offset = add_entry(root, offset, 19U, "cycle-b", 7U,
+                       record_size(7U));
+    offset = add_entry(root, offset, 20U, "long-link", 7U,
+                       record_size(9U));
+    add_entry(root, offset, 21U, ".reist-symlink-journal", 1U,
+              (uint16_t)(BLOCK_SIZE - offset));
+
+    uint8_t *directory = block_at(context, 23U);
+    offset = add_entry(directory, 0U, 13U, ".", 2U, 12U);
+    offset = add_entry(directory, offset, 2U, "..", 2U, 12U);
+    add_entry(directory, offset, 22U, "relative-link", 7U,
+              (uint16_t)(BLOCK_SIZE - offset));
+}
+
+static int drive_info(void *opaque, uint32_t resource,
+                      x86os_drive_info_t *info) {
+    (void)opaque;
+    memset(info, 0, sizeof(*info));
+    if (resource > 1U) return 0;
+    info->type = X86OS_DRIVE_ATA;
+    info->sectors = SECTORS;
+    strcpy(info->mount_point, resource == 0U ? "/" : "/mnt/ext2");
+    return 1;
+}
+
+static int read_sector(void *opaque, uint32_t resource, uint32_t sector,
+                       uint8_t *data) {
+    context_t *context = opaque;
+    ++context->reads;
+    if (resource != 1U || sector >= SECTORS) {
+        memset(data, 0, X86OS_STORAGE_BLOCK_SIZE);
+        return resource == 0U && sector < SECTORS ? 0 : -5;
+    }
+    memcpy(data, context->image + sector * X86OS_STORAGE_BLOCK_SIZE,
+           X86OS_STORAGE_BLOCK_SIZE);
+    return 0;
+}
+
+static int write_sector(void *opaque, uint32_t resource, uint32_t sector,
+                        const uint8_t *data) {
+    context_t *context = opaque;
+    uint32_t ordinal = context->writes++;
+    if (ordinal == context->fail_write) return -5;
+    if (resource != 1U || sector >= SECTORS) return -5;
+    memcpy(context->image + sector * X86OS_STORAGE_BLOCK_SIZE, data,
+           X86OS_STORAGE_BLOCK_SIZE);
+    return 0;
+}
+
+static int flush(void *opaque, uint32_t resource) {
+    context_t *context = opaque;
+    uint32_t ordinal = context->flushes++;
+    if (ordinal == context->fail_flush) return -5;
+    return resource == 1U ? 0 : -5;
+}
+
+static int monotonic(void *opaque, uint64_t *milliseconds) {
+    context_t *context = opaque;
+    *milliseconds = context->now_ms++;
+    return 0;
+}
+
+static reist_vfs_shadow_ext2_io_t io_for(context_t *context) {
+    const reist_vfs_shadow_ext2_io_t io = {
+        context, drive_info, read_sector, write_sector, flush, monotonic
+    };
+    return io;
+}
+
+static int lstat_path(context_t *context, const char *path,
+                      x86os_file_info_t *info) {
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    return reist_vfs_shadow_ext2_stat_bounded(
+        &io, path, (uint32_t)strlen(path),
+        REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL,
+        context->now_ms + 10000U, info);
+}
+
+static int stat_path(context_t *context, const char *path,
+                     x86os_file_info_t *info) {
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    return reist_vfs_shadow_ext2_stat_bounded(
+        &io, path, (uint32_t)strlen(path), 0U,
+        context->now_ms + 10000U, info);
+}
+
+static int readlink_path(context_t *context, const char *path,
+                         char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY],
+                         uint32_t *length) {
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    return reist_vfs_shadow_ext2_readlink(
+        &io, path, (uint32_t)strlen(path), target, length,
+        context->now_ms + 10000U);
+}
+
+static int create_link(context_t *context, const char *target,
+                       const char *path) {
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    return reist_vfs_shadow_ext2_symlink(
+        &io, target, (uint32_t)strlen(target), path,
+        (uint32_t)strlen(path), context->now_ms + 10000U);
+}
+
+static int recover_link(context_t *context, const char *path,
+                        const char *expected_target, int created) {
+    context->fail_write = UINT32_MAX;
+    context->fail_flush = UINT32_MAX;
+    context->writes = 0U;
+    context->flushes = 0U;
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    CHECK(reist_vfs_shadow_ext2_recover_path(
+        &io, path, (uint32_t)strlen(path),
+        context->now_ms + 10000U) == 0);
+    x86os_file_info_t info;
+    int visible = lstat_path(context, path, &info);
+    CHECK(visible == -2 || visible == 0);
+    if (visible == 0) {
+        char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
+        uint32_t length = 0U;
+        CHECK(info.type == X86OS_SYMLINK);
+        CHECK(readlink_path(context, path, target, &length) == 0);
+        CHECK(length == strlen(expected_target));
+        CHECK(memcmp(target, expected_target, length) == 0);
+    }
+    CHECK(created == 0 || created == -5);
+    CHECK(context->reads <=
+          REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS * 4U);
+    return 0;
+}
+
+static x86os_storage_submit_t client_request;
+static x86os_vfs_symlink_frame_t client_frame;
+static uint64_t client_now;
+static uint8_t client_corrupt_reply;
+static uint8_t client_recover_once;
+static uint32_t client_submits;
+
+int x86os_getcwd(char *buffer, size_t size) {
+    const char *cwd = "/mnt/ext2";
+    if (buffer == 0 || size <= strlen(cwd)) return -22;
+    strcpy(buffer, cwd);
+    return 0;
+}
+
+int x86os_drive_info(uint32_t index, x86os_drive_info_t *info) {
+    (void)index;
+    (void)info;
+    return 0;
+}
+
+int x86os_storage_submit(const x86os_storage_submit_t *request,
+                         const void *data, x86os_storage_handle_t *handle) {
+    if (request == 0 || data == 0 || handle == 0) return -22;
+    client_request = *request;
+    memcpy(&client_frame, data, sizeof(client_frame));
+    ++client_submits;
+    *handle = 0x10001U;
+    return 0;
+}
+
+int x86os_storage_collect(x86os_storage_handle_t handle, int32_t *result,
+                          void *data) {
+    if (handle != 0x10001U || result == 0 || data == 0) return -22;
+    if (client_frame.operation == X86OS_VFS_SHADOW_FS_READLINK) {
+        memcpy(client_frame.target, "target.txt", 10U);
+        client_frame.target[10U] = '\0';
+        client_frame.target_length = 10U;
+    }
+    if (client_corrupt_reply != 0U) client_frame.path[1U] ^= 1;
+    client_frame.result = client_recover_once != 0U && client_submits == 1U
+        ? -11 : 0;
+    memcpy(data, &client_frame, sizeof(client_frame));
+    *result = 0;
+    return 0;
+}
+
+int x86os_storage_cancel(x86os_storage_handle_t handle) {
+    return handle == 0x10001U ? 0 : -22;
+}
+
+int x86os_monotonic_ms(uint64_t *value) {
+    if (value == 0) return -22;
+    *value = client_now++;
+    return 0;
+}
+
+int x86os_sleep_ms(uint32_t milliseconds) {
+    (void)milliseconds;
+    return 0;
+}
+
+int x86os_yield(void) {
+    return 0;
+}
+
+static int client_contract(void) {
+    memset(&client_request, 0, sizeof(client_request));
+    client_now = 1U;
+    client_corrupt_reply = 0U;
+    client_recover_once = 0U;
+    client_submits = 0U;
+    CHECK(reist_vfs_symlink("target.txt", "created", 100U) == 0);
+    CHECK(client_submits == 1U);
+    CHECK(client_request.operation == X86OS_STORAGE_VFS_SYMLINK);
+    CHECK(client_request.length == X86OS_STORAGE_BLOCK_SIZE);
+    CHECK(client_frame.operation == X86OS_VFS_SHADOW_FS_SYMLINK);
+    CHECK(strcmp(client_frame.path, "/mnt/ext2/created") == 0);
+    CHECK(client_frame.target_length == 10U);
+    char short_target[5U] = {'X', 'X', 'X', 'X', 'X'};
+    CHECK(reist_vfs_readlink("fast-link", short_target, 4U, 100U) == 4);
+    CHECK(memcmp(short_target, "targ", 4U) == 0);
+    CHECK(short_target[4U] == 'X');
+    CHECK(client_request.operation == X86OS_STORAGE_VFS_SHADOW_STAT);
+    CHECK(client_frame.operation == X86OS_VFS_SHADOW_FS_READLINK);
+    CHECK(reist_vfs_symlink("", "bad", 100U) == -36);
+    client_submits = 0U;
+    client_recover_once = 1U;
+    CHECK(reist_vfs_symlink("target.txt", "recovered", 100U) == 0);
+    CHECK(client_submits == 2U);
+    client_recover_once = 0U;
+    client_corrupt_reply = 1U;
+    CHECK(reist_vfs_readlink("fast-link", short_target, 4U, 100U) == -84);
+    return 0;
+}
+
+int main(void) {
+    CHECK(client_contract() == 0);
+    static context_t context;
+    initialize(&context);
+    x86os_file_info_t info;
+    char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
+    uint32_t length = 0U;
+    CHECK(lstat_path(&context, "/mnt/ext2/fast-link", &info) == 0);
+    CHECK(info.type == X86OS_SYMLINK && info.size == 10U);
+    CHECK(stat_path(&context, "/mnt/ext2/fast-link", &info) == 0);
+    CHECK(info.type == X86OS_FILE && info.size == 8U);
+    CHECK(readlink_path(&context, "/mnt/ext2/fast-link", target, &length) == 0);
+    CHECK(length == 10U && memcmp(target, "target.txt", 10U) == 0);
+    CHECK(stat_path(&context, "/mnt/ext2/absolute-link", &info) == 0);
+    CHECK(stat_path(&context, "/mnt/ext2/chain-link", &info) == 0);
+    CHECK(stat_path(&context, "/mnt/ext2/dir/relative-link", &info) == 0);
+    CHECK(stat_path(&context, "/mnt/ext2/dangling-link", &info) == -2);
+    CHECK(lstat_path(&context, "/mnt/ext2/dangling-link", &info) == 0);
+    CHECK(info.type == X86OS_SYMLINK);
+    CHECK(stat_path(&context, "/mnt/ext2/cycle-a", &info) == -40);
+    CHECK(stat_path(&context, "/mnt/ext2/long-link", &info) == 0);
+    CHECK(readlink_path(&context, "/mnt/ext2/target.txt", target, &length) ==
+          -22);
+
+    inode_at(&context, 14U)[40U] = 1U;
+    CHECK(stat_path(&context, "/mnt/ext2/fast-link", &info) == -5);
+    inode_at(&context, 14U)[40U] = 't';
+    reist_vfs_shadow_ext2_io_t expired_io = io_for(&context);
+    memset(&info, 0xA5, sizeof(info));
+    CHECK(reist_vfs_shadow_ext2_stat_bounded(
+        &expired_io, "/mnt/ext2/target.txt", 20U, 0U,
+        context.now_ms, &info) == -110);
+    CHECK(info.type == 0U);
+
+    reist_vfs_shadow_ext2_io_t io = io_for(&context);
+    reist_vfs_shadow_object_t object;
+    CHECK(reist_vfs_shadow_ext2_object_open_bounded(
+        &io, "/mnt/ext2/fast-link", 19U, 0U,
+        context.now_ms + 10000U, &object, &info) == 0);
+    CHECK(object.locator_a == 12U);
+    memset(&object, 0xA5, sizeof(object));
+    CHECK(reist_vfs_shadow_ext2_object_open_bounded(
+        &io, "/mnt/ext2/fast-link", 19U, X86OS_O_NOFOLLOW,
+        context.now_ms + 10000U, &object, &info) == -40);
+    CHECK(object.version == 0U);
+
+    CHECK(create_link(&context, "target.txt", "/mnt/ext2/created") == 0);
+    CHECK(readlink_path(&context, "/mnt/ext2/created", target, &length) == 0);
+    CHECK(length == 10U && memcmp(target, "target.txt", 10U) == 0);
+    CHECK(stat_path(&context, "/mnt/ext2/created", &info) == 0);
+    CHECK(create_link(&context, "target.txt", "/mnt/ext2/created") == -17);
+    const char *long_target =
+        "dir/../dir/../dir/../dir/../dir/../dir/../dir/../dir/../target.txt";
+    CHECK(create_link(&context, long_target, "/mnt/ext2/created-long") == 0);
+    CHECK(readlink_path(
+        &context, "/mnt/ext2/created-long", target, &length) == 0);
+    CHECK(length == strlen(long_target) &&
+          memcmp(target, long_target, length) == 0);
+    uint32_t writes_before = context.writes;
+    CHECK(create_link(&context, "target.txt", "/unsupported") == -95);
+    CHECK(context.writes == writes_before);
+
+    const char *failure_targets[2U] = {"target.txt", long_target};
+    const char *failure_paths[2U] = {
+        "/mnt/ext2/interrupted", "/mnt/ext2/interrupted-long"
+    };
+    for (uint32_t variant = 0U; variant < 2U; ++variant) {
+        for (uint32_t failure = 0U; failure < 24U; ++failure) {
+            initialize(&context);
+            context.fail_write = failure;
+            int created = create_link(
+                &context, failure_targets[variant], failure_paths[variant]);
+            CHECK(recover_link(
+                &context, failure_paths[variant], failure_targets[variant],
+                created) == 0);
+        }
+        for (uint32_t failure = 0U; failure < 8U; ++failure) {
+            initialize(&context);
+            context.fail_flush = failure;
+            int created = create_link(
+                &context, failure_targets[variant], failure_paths[variant]);
+            CHECK(recover_link(
+                &context, failure_paths[variant], failure_targets[variant],
+                created) == 0);
+        }
+    }
+    return 0;
+}

@@ -151,11 +151,16 @@ static void file_release(file_session_t *session) {
 }
 
 static int file_open(const char *path, uint32_t timeout_ms, uint32_t rights,
-                     uint32_t operation, reist_vfs_file_handle_t *handle) {
+                     uint32_t operation, uint32_t open_flags,
+                     reist_vfs_file_handle_t *handle) {
     if (handle == 0 || timeout_ms == 0U || timeout_ms > 60000U ||
         rights == 0U || (rights & ~X86OS_VFS_OBJECT_RIGHT_ALL) != 0U ||
+        (open_flags & ~X86OS_O_NOFOLLOW) != 0U ||
         (operation != X86OS_VFS_SHADOW_OBJECT_OPEN &&
-         operation != X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS)) return -22;
+         operation != X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS &&
+         operation != X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS) ||
+        (operation != X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS &&
+         open_flags != 0U)) return -22;
     *handle = REIST_VFS_FILE_INVALID_HANDLE;
     uint32_t free_slot = UINT32_MAX;
     for (uint32_t slot = 0U; slot < REIST_VFS_FILE_CAPACITY; ++slot)
@@ -173,8 +178,8 @@ static int file_open(const char *path, uint32_t timeout_ms, uint32_t rights,
     frame.version = X86OS_VFS_SHADOW_FRAME_VERSION;
     frame.struct_size = sizeof(frame);
     frame.operation = operation;
-    frame.flags = operation == X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS
-        ? rights : 0U;
+    frame.flags = operation == X86OS_VFS_SHADOW_OBJECT_OPEN ? 0U
+        : rights | open_flags;
     frame.path_length = length;
     file_copy(frame.path, resolved, length + 1U);
     status = file_transact(&frame, timeout_ms);
@@ -182,8 +187,8 @@ static int file_open(const char *path, uint32_t timeout_ms, uint32_t rights,
     if (frame.version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame.struct_size != sizeof(frame) ||
         frame.operation != operation ||
-        frame.flags != (operation == X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS
-            ? rights : 0U) || frame.path_length != length ||
+        frame.flags != (operation == X86OS_VFS_SHADOW_OBJECT_OPEN
+            ? 0U : rights | open_flags) || frame.path_length != length ||
         frame.result != 0 || frame.object_token == 0U ||
         frame.service_generation == 0U) return frame.result != 0
             ? frame.result : -84;
@@ -203,14 +208,21 @@ static int file_open(const char *path, uint32_t timeout_ms, uint32_t rights,
 int reist_vfs_file_open(const char *path, uint32_t timeout_ms,
                         reist_vfs_file_handle_t *handle) {
     return file_open(path, timeout_ms, X86OS_VFS_OBJECT_RIGHT_DATA,
-                     X86OS_VFS_SHADOW_OBJECT_OPEN, handle);
+                     X86OS_VFS_SHADOW_OBJECT_OPEN, 0U, handle);
 }
 
 int reist_vfs_file_open_rights(const char *path, uint32_t timeout_ms,
                                uint32_t rights,
                                reist_vfs_file_handle_t *handle) {
     return file_open(path, timeout_ms, rights,
-                     X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS, handle);
+                     X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS, 0U, handle);
+}
+
+int reist_vfs_file_open_flags(const char *path, uint32_t timeout_ms,
+                              uint32_t rights, uint32_t open_flags,
+                              reist_vfs_file_handle_t *handle) {
+    return file_open(path, timeout_ms, rights,
+                     X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS, open_flags, handle);
 }
 
 int reist_vfs_file_read(reist_vfs_file_handle_t handle, void *data,

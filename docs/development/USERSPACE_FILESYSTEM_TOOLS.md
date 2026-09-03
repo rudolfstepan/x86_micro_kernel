@@ -1,6 +1,6 @@
 # REIST Userspace-Dateisystemwerkzeuge
 
-Stand: 18. August 2026
+Stand: 3. September 2026
 
 Diese Liste beschreibt den tatsächlich vorhandenen Userspace-Stand aus
 `userspace/programs`, `userspace/bin`, `scripts/build_system_programs.py`,
@@ -18,6 +18,7 @@ Boot-Image aufgenommen wird.
 | `pwd` | Arbeitsverzeichnis anzeigen | `/bin/pwd.prg` |
 | `ls`, `dir` | Verzeichnisinhalt anzeigen | `/bin/ls.prg`, `dir` Alias |
 | `cat`, `type` | Datei lesen/anzeigen | `/bin/cat.prg`, `type` Alias |
+| `readlink` | Ziel eines nativen symbolischen Links anzeigen | `/bin/readlink.prg`; EXT2, fester Ring-3-Storage-Frame |
 | `more` | eigenständiges Pager-Programm | fehlt; `ls` besitzt nur begrenzte Ausgabe-Pause |
 | `echo` | Text ausgeben | `/bin/echo.prg` |
 | `cls`, `clear` | Bildschirm löschen | `/bin/cls.prg`, `clear` Alias |
@@ -37,6 +38,7 @@ Boot-Image aufgenommen wird.
 | `notepad` | grafischer Editor | `/usr/gui/bin/notepad.prg`; große Dateien über begrenzte Piece Table und fensterweisen Ring-3-VFS-Zugriff |
 | `basic` | BASIC-Interpreter | `/bin/basic.prg` |
 | `rename`, `ren`, `mv` | Datei umbenennen | `/bin/rename.prg`, `ren`/`mv` Alias; FAT32 |
+| `ln -s` | nativen symbolischen Link erzeugen | `/bin/ln.prg`; begrenzter EXT2-Schnitt, keine Hard Links |
 
 ### Dateisystem-, Laufwerks- und Wartungswerkzeuge
 
@@ -68,6 +70,8 @@ Aufrufe:
 - `x86os_getcwd`, `x86os_chdir`, `x86os_mkdir`, `x86os_rmdir`
 - `x86os_fsync` und `x86os_space`
 - `x86os_touch` (Syscall 108) für FAT-Zeitstempel
+- Ring-3-Clients `reist_vfs_symlink`, `reist_vfs_readlink`,
+  `reist_vfs_lstat` und `reist_vfs_file_open_flags(..., O_NOFOLLOW, ...)`
 - VFS `create`, `delete`, `rename`, `stat`, `readdir`, `mkdir`, `rmdir`
 - VFS `touch`; `vfs_dir_entry_t` liefert `create_time`, `modify_time` und
   `access_time` als Sekunden seit 1970-01-01.
@@ -85,19 +89,32 @@ einen getrennten Ein-Millisekunden-Closeversuch. Der bestehende atomare
 Tempfile-/`fsync`-/Rename-Speicherpfad verwendet weiterhin die bisherige
 mutierende Deskriptor-ABI.
 
+`LN.PRG` akzeptiert ausschließlich `ln -s <target> <link-path>` und erzeugt
+keine Hard Links. `READLINK.PRG` gibt die gespeicherten Zielbytes aus, ohne den
+letzten Link zu folgen. Beide Programme verwenden nur den append-only
+Storage-Service-Vertrag; der alte Ring-0-EXT2-Parser erhält weder Auflösung
+noch Schreiblogik. Ziele sind in dieser ersten Teilmenge auf 191 druckbare
+ASCII-Bytes begrenzt. EXT2-Erzeugung setzt das provisionierte 26-Sektor-
+Undo-Journal sowie vorhandenen Directory-Slack in einem einzigen 512-Byte-
+Publikationssektor voraus. FAT12/32 melden vor jeder Wirkung
+`EOPNOTSUPP`. Relative und absolute Ziele, Ketten, Dangling Links und Zyklen
+werden unter festen Hop-, Komponenten-, I/O-, Retry- und Deadlinegrenzen
+behandelt.
+
 ## Filesystem-Abdeckung der vorhandenen Mutation
 
 | Operation | FAT12 | FAT32 | EXT2 | Bemerkung |
 |---|---:|---:|---:|---|
 | öffnen/lesen | ja | ja | ja | über VFS/SDK |
-| erstellen/schreiben | ja | ja | begrenzt | EXT2 ohne REIST-Persistenzgarantie |
-| `mkdir` | ja | ja | ja | Adapter vorhanden |
-| `rmdir` | ja | ja | ja | nur leere Verzeichnisse |
-| `del`/unlink | ja | ja | ja | Adapter vorhanden |
+| erstellen/schreiben | ja | ja | nein | generischer Legacy-EXT2-Adapter ist read-only |
+| `mkdir` | ja | ja | nein | EXT2-Adapter ist read-only |
+| `rmdir` | ja | ja | nein | EXT2-Adapter ist read-only |
+| `del`/unlink | ja | ja | nein | Legacy-EXT2-Adapter bleibt read-only; Links werden nicht verfolgt |
 | `rename` | nein | ja | nein | FAT12/EXT2 liefern unsupported |
 | Zeitstempel lesen | ja | ja | ja | FAT-Auflösung und FAT-Zugriffsdatum bleiben erhalten |
 | `touch` | ja | ja | nein | EXT2-Adapter ist read-only |
-| `fsync` | REIST-spezifisch | REIST-spezifisch | begrenzt | kein allgemeines Persistenzversprechen |
+| `fsync` | REIST-spezifisch | REIST-spezifisch | nein | kein generischer EXT2-Schreibdeskriptor |
+| symbolischer Link | `EOPNOTSUPP` | `EOPNOTSUPP` | ja, begrenzt | native Fast-/Block-Symlinks; 26-Sektor-Undo-Journal |
 
 Wichtig: Der generische VFS-Rename-Pfad und `x86os_rename()` sind vorhanden.
 `rename.prg` meldet FAT12/EXT2 als nicht unterstützt, weil deren Adapter
@@ -134,7 +151,7 @@ fail-closed abgelehnt.
 
 - `chmod`, `chown` und `umask`: Es gibt noch kein ausformuliertes
   Userspace-Rechte-/Ownership-Modell.
-- `ln`/Symlinks: VFS- und Filesystem-ABI stellen keinen Symlink-Vertrag bereit.
+- Hard Links (`ln` ohne `-s`) bleiben ohne öffentlichen Vertrag.
 - `truncate`: Es fehlt ein sicherer Größenänderungsaufruf.
 - Zeitstempelpflege ist für FAT12/FAT32 umgesetzt; FAT liefert Sekunden seit
   1970, wobei Schreibzeiten auf zwei Sekunden und Zugriffszeiten auf einen

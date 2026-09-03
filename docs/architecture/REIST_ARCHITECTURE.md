@@ -1,6 +1,6 @@
 # REIST-OS-Zielarchitektur
 
-Stand: 18. August 2026
+Stand: 3. September 2026
 
 ## Standard-first-Kompatibilitätsregel
 
@@ -421,8 +421,10 @@ nur die unabhängigen FAT12/FAT32- beziehungsweise EXT2-Parser. Der EXT2-Subset
 ist fest auf Revision 0/1, 1--4-KiB-Blöcke, lineare Verzeichnisse, 16
 Pfadkomponenten, 32 Verzeichnisblöcke und 192 vermittelte Sektorreads begrenzt.
 Direkte und einfach-indirekte Directory-Blöcke sind unterstützt; HTree,
-Extents, Symlinkauflösung, 64-Bit-Größen und unbekannte Features werden
-fail-closed abgewiesen. Auch dieser Pfad ruft `SYS_STAT` nicht auf.
+Extents, 64-Bit-Größen und unbekannte Features werden fail-closed abgewiesen.
+Die zunächst abgewiesene Symlinkauflösung wird ausschließlich durch den unten
+beschriebenen append-only Ring-3-Vertrag ergänzt. Auch dieser Pfad ruft
+`SYS_STAT` nicht auf.
 Append-only Operationen 6 und 7 erweitern denselben festen 512-Byte-Transport
 um pfadbasiertes `read-at` mit maximal 256 Byte und um genau einen indexierten
 Verzeichniseintrag. Beide Pfade verwenden nur die unabhängigen FAT12/FAT32-
@@ -455,7 +457,9 @@ Deskriptorvererbung. `CAT.PRG`, `LS.PRG`, `FIND.PRG`, `TREE.PRG` und der
 vollständige read-only Pfad von `HTTPD.PRG` besitzen keinen Kernel-VFS-
 Fallback. Die beiden Baumläufe reichen eine absolute monotone
 Fünf-Sekunden-Deadline als höchstens einsekündige Restbudgets an Operationen 5
-und 7 weiter. Mutationen bleiben ein getrenntes Folgepaket.
+und 7 weiter. Allgemeine Mutationen bleiben ein getrenntes Folgepaket; nur die
+unten beschriebene native EXT2-Symlinkerzeugung bildet einen eng begrenzten
+ersten Mutationsschnitt.
 Der Desktop-Explorer verwendet dieselbe Autoritätsgrenze für Verzeichnis-
 `stat`, indexierte Einträge und die Leer/Voll-Ordnerentscheidung. Ein Snapshot
 publiziert höchstens 32 sichtbare Einträge, scannt höchstens 128 und besitzt
@@ -486,6 +490,43 @@ Widerruf scheitern geschlossen und ändern keinen Clientoffset.
 Der zusätzliche Servicepfad einschließlich vollständiger Unicode-15-Tabellen
 bleibt unter der festen 224-KiB-Einzelgrenze; der statische Gesamtpool ist auf
 448 KiB begrenzt.
+Append-only Storage-Operation 33 und Frameoperationen 16 bis 19 ergänzen den
+POSIX-geformten Vertrag um `lstat`, `readlink`, `symlink` und `O_NOFOLLOW`, ohne
+vorhandene Nummern, Frames oder Wrapper zu ändern. `stat`, Lesen und normales
+Objekt-`open` folgen nativen EXT2-Symlinks; `lstat` und `readlink` lassen nur
+die letzte Komponente stehen, und `readlink` kopiert wie POSIX kein
+abschließendes NUL-Byte in den Aufruferpuffer. `O_NOFOLLOW` liefert für einen
+finalen Link `ELOOP`, bevor ein serviceeigener Objektslot publiziert wird.
+Relative Ziele beginnen am Elternverzeichnis des Links, absolute Ziele am
+globalen VFS-Wurzelpfad. Ein Ziel darf höchstens 191 druckbare ASCII-Bytes
+enthalten; höchstens acht Linkhops, 64 insgesamt gelaufene Komponenten und die
+192-Byte-Pfadkapazität verhindern unendliche oder expandierende Auflösung.
+Ein Wechsel auf ein nicht als EXT2 validierbares Zielmedium scheitert in diesem
+ersten Schnitt geschlossen; dies ist keine vollständige POSIX- oder
+dateisystemübergreifende Kompatibilitätsbehauptung.
+
+Fast-Symlinks bis 60 Byte werden aus dem Inode gelesen, längere Ziele aus
+direkten beziehungsweise einfach-indirekten Datenblöcken. Die Erzeugung bleibt
+heapfrei und verwendet höchstens 384 Sektorreads, 64 Sektorwrites, acht Flushes,
+32 Allokationsgruppen und 24 Undo-Sektoren. Ein als reguläre EXT2-Datei
+provisioniertes, 26 Sektoren großes `.reist-symlink-journal` enthält zwei
+CRC-geschützte Zustandsheader und die festen Before-Images. Erst nach
+Before-Image-Flush, `ACTIVE`, vollständig geschriebenen Metadaten, gesondert
+geflushtem Directory-Publikationssektor sowie byte- und semantikgenauem
+Readback wird `COMMITTED` und danach `CLEAN` geschrieben. Recovery entfernt
+zuerst einen möglicherweise sichtbaren Directory-Eintrag und stellt dann die
+Metadaten idempotent wieder her; ein vollständiger Commit wird nur noch
+bereinigt. Die begrenzte erste Version benötigt vorhandenen Directory-Slack,
+der neue Eintrag samt Split muss in einem 512-Byte-Publikationssektor liegen.
+Fehlt dieses sichere Layout oder das Journal, liefert sie vor Namespacewirkung
+`ENOSPC` beziehungsweise `EROFS`. Nach einer vorausgehenden Recovery darf der
+Client genau einmal unter derselben absoluten Deadline wiederholen. FAT12 und
+FAT32 liefern vor jeder Wirkung `EOPNOTSUPP`, da diese Formate kein natives,
+interoperables Symlinkformat definieren. Der alte Ring-0-VFS-/EXT2-Parser wird
+nicht erweitert; Ring 0 validiert nur den festen 512-Byte-Transport,
+Generationen, Prozessdomäne und vermittelte Sektoren. Der weiterhin read-only
+Legacy-EXT2-Mutationspfad folgt einen finalen Link weder bei `unlink` noch bei
+`rename`, sondern lehnt beide Operationen ohne Zielwirkung ab.
 Der gemeinsame feste Prozess-Deskriptorraum reserviert 0 für READ-only
 Terminaleingabe sowie 1 und 2 für WRITE-only Terminalausgabe. Acht dynamische
 Datei-/Socket-Slots behalten unverändert die Nummern 3 bis 10. Jede neue

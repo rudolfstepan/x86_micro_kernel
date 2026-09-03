@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-trash-restore', 'runtime-desktop-explorer-scroll', 'runtime-desktop-explorer-views', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'vfs-symbolic-links', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-trash-restore', 'runtime-desktop-explorer-scroll', 'runtime-desktop-explorer-views', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -21,6 +21,7 @@ $RuntimeDesktopRunner = Join-Path $RepoRoot 'scripts\run_qemu_runtime_desktop.py
 $BuildScript = Join-Path $RepoRoot 'scripts\build-windows.ps1'
 $FddHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_fdd_hotplug.py'
 $Ext2StatRunner = Join-Path $RepoRoot 'scripts\run_qemu_ext2_stat.py'
+$Ext2SymlinkRunner = Join-Path $RepoRoot 'scripts\run_qemu_ext2_symlink.py'
 $SataHotplugRunner = Join-Path $RepoRoot 'scripts\run_qemu_sata_hotplug.py'
 $AdminMaintenanceRunner = Join-Path $RepoRoot 'scripts\run_qemu_admin_maintenance.py'
 $ComponentControlRunner = Join-Path $RepoRoot 'scripts\run_qemu_component_control.py'
@@ -307,6 +308,44 @@ function Invoke-Ext2Stat {
         Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
         Get-Content -LiteralPath $gateLog -Tail 40
         throw "REIST runtime smoke 'ext2-stat' failed with exit $exitCode."
+    }
+    Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+}
+
+function Invoke-Ext2Symlink {
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $gateLog = Join-Path $LogRoot "$stamp-runtime-ext2-symlink"
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    $exitCode = 0
+    try {
+        $LASTEXITCODE = 0
+        & $Python $Ext2SymlinkRunner `
+            --qemu $Qemu `
+            --image $Image `
+            --disk (Join-Path $RepoRoot 'build\ext2-symlink.img') `
+            --log (Join-Path $RepoRoot 'build\guest-ext2-symlink.log') `
+            *> $gateLog
+        $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
+    }
+    catch {
+        $exitCode = 1
+        $_ | Out-String | Add-Content -LiteralPath $gateLog
+    }
+    finally {
+        $watch.Stop()
+    }
+    $runnerPassed = Select-String -LiteralPath $gateLog -SimpleMatch `
+        'EXT2 SYMLINK PASS' -Quiet
+    $runnerFailed = Select-String -LiteralPath $gateLog -SimpleMatch `
+        'EXT2 SYMLINK FAIL' -Quiet
+    if ($exitCode -eq 0 -and (!$runnerPassed -or $runnerFailed)) {
+        $exitCode = 1
+    }
+    if ($exitCode -ne 0) {
+        Write-Output "RUNTIME FAIL exit=$exitCode elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
+        Get-Content -LiteralPath $gateLog -Tail 40
+        throw "REIST runtime smoke 'vfs-symbolic-links' failed with exit $exitCode."
     }
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
@@ -1102,6 +1141,9 @@ switch ($Mode) {
     }
     'ext2-stat' {
         Invoke-Ext2Stat
+    }
+    'vfs-symbolic-links' {
+        Invoke-Ext2Symlink
     }
     'sata-hotplug' {
         Invoke-SataHotplug

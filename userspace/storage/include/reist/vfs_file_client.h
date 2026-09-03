@@ -34,6 +34,11 @@ int reist_vfs_file_open(const char *path, uint32_t timeout_ms,
 int reist_vfs_file_open_rights(const char *path, uint32_t timeout_ms,
                                uint32_t rights,
                                reist_vfs_file_handle_t *handle);
+/** Opens a regular object with explicit rights and POSIX-shaped open flags.
+ * The only currently accepted open flag is X86OS_O_NOFOLLOW. */
+int reist_vfs_file_open_flags(const char *path, uint32_t timeout_ms,
+                              uint32_t rights, uint32_t open_flags,
+                              reist_vfs_file_handle_t *handle);
 int reist_vfs_file_read(reist_vfs_file_handle_t handle, void *data,
                         size_t capacity);
 int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data,

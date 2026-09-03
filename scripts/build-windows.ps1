@@ -363,6 +363,7 @@ try {
         'bin/mkdir.prg' = 'MKDIR.PRG'; 'bin/rmdir.prg' = 'RMDIR.PRG'
         'bin/del.prg' = 'DEL.PRG'; 'bin/copy.prg' = 'COPY.PRG'
         'bin/rename.prg' = 'RENAME.PRG'; 'bin/stat.prg' = 'STAT.PRG'
+        'bin/ln.prg' = 'LN.PRG'; 'bin/readlink.prg' = 'READLINK.PRG'
         'bin/df.prg' = 'DF.PRG'; 'bin/touch.prg' = 'TOUCH.PRG'
         'bin/tree.prg' = 'TREE.PRG'; 'bin/find.prg' = 'FIND.PRG'
         'bin/rm.prg' = 'RM.PRG'

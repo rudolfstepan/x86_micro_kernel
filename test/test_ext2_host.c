@@ -112,6 +112,15 @@ static void make_test_volume(void) {
     symlink->i_size = 6;
     memcpy(symlink->i_block, "target", 6);
 
+    ext2_inode_t* block_symlink = &inodes[6];
+    block_symlink->i_mode = EXT2_S_IFLNK | 0777;
+    block_symlink->i_size = 64;
+    block_symlink->i_blocks = 2;
+    block_symlink->i_block[0] = 12;
+    memcpy(block(12),
+           "directory/../directory/../directory/../directory/target-file",
+           64);
+
     uint8_t* directory = block(5);
     uint32_t offset = 0;
     offset = add_directory_entry(directory, offset, 2, EXT2_FT_DIR, ".", false);
@@ -174,6 +183,14 @@ int main(void) {
     char link_target[6];
     CHECK(ext2_read_file(&fs, &inode, 0, sizeof(link_target), link_target) == 6);
     CHECK(memcmp(link_target, "target", 6) == 0);
+
+    CHECK(ext2_read_inode(&fs, 7, &inode));
+    char block_link_target[64];
+    CHECK(ext2_read_file(&fs, &inode, 0, sizeof(block_link_target),
+                         block_link_target) == 64);
+    CHECK(memcmp(block_link_target,
+                 "directory/../directory/../directory/../directory/target-file",
+                 64) == 0);
 
     ext2_cleanup(&fs);
     return 0;

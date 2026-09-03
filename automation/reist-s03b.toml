@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3a-vfs-symbolic-links"
+active_id = "R3.5-desktop-shortcuts"
 
 [policy]
 one_package_per_run = true
@@ -14627,7 +14627,7 @@ evidence = [
 
 [[packages]]
 id = "N3a-vfs-symbolic-links"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Resolve and create bounded POSIX symbolic links on EXT2"
@@ -14701,11 +14701,17 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fs: add bounded POSIX symbolic links"
-evidence = []
+evidence = [
+  "All five frozen targeted groups passed with 44 checks across the symlink host matrix, EXT2 shadow implementation, generation-scoped file clients, complete production-program toolchain and canonical system layout.",
+  "The heap-free EXT2 host proof covered fast and block-backed targets, relative and absolute resolution, dangling links, chains, cycles, O_NOFOLLOW, lstat and readlink final-component semantics, malformed metadata, deadlines, service recovery plus 48 write and 16 flush interruption points that retained either the old namespace or one complete link.",
+  "The final QEMU framebuffer package passed in 87 seconds with LN.PRG, READLINK.PRG and the enlarged Ring-3 STORAGE.PRG packaged in the canonical image layout.",
+  "The focused real QEMU EXT2 runtime passed in 69 seconds after recovering a pre-existing ACTIVE transaction, creating and resolving relative absolute dangling chained and cyclic links, rejecting legacy unlink and rename safely, restarting storage component 5, preserving the reference system image, persisting the separate EXT2 image and leaving both journal headers clean.",
+  "The public ABI was extended append-only through storage operation 33 and frame operations 16 through 19; FAT12 and FAT32 remain EOPNOTSUPP for creation, the legacy Ring-0 VFS and EXT2 parsers were not extended, and all path, walk, link-depth, sector, retry, transaction and deadline work remains fixed-bound."
+]
 
 [[packages]]
 id = "R3.5-desktop-shortcuts"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "medium"
 title = "Create bounded desktop shortcuts from Explorer"

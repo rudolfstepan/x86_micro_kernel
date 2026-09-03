@@ -5574,6 +5574,11 @@ static int format_fat12(uint32_t resource) {
 
 _Static_assert(sizeof(x86os_vfs_shadow_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
                "VFS shadow frame must fill one storage payload");
+_Static_assert(sizeof(x86os_vfs_symlink_frame_t) == X86OS_STORAGE_BLOCK_SIZE,
+               "VFS symlink frame must fill one storage payload");
+
+#define VFS_EXT2_READ_DEADLINE_MS 2000U
+#define VFS_EXT2_MUTATION_DEADLINE_MS 5000U
 
 static int vfs_shadow_drive_info(void *context, uint32_t resource,
                                  x86os_drive_info_t *info) {
@@ -5585,6 +5590,43 @@ static int vfs_shadow_read_sector(void *context, uint32_t resource,
                                   uint32_t sector, uint8_t *data) {
     (void)context;
     return x86os_storage_block_read(resource, sector, data);
+}
+
+static int vfs_shadow_write_sector(void *context, uint32_t resource,
+                                   uint32_t sector, const uint8_t *data) {
+    (void)context;
+    return x86os_storage_block_write(resource, sector, data);
+}
+
+static int vfs_shadow_flush(void *context, uint32_t resource) {
+    (void)context;
+    return x86os_storage_block_flush(resource);
+}
+
+static int vfs_shadow_monotonic(void *context, uint64_t *milliseconds) {
+    (void)context;
+    return x86os_monotonic_ms(milliseconds);
+}
+
+static int vfs_shadow_deadline(uint32_t budget_ms, uint64_t *deadline) {
+    uint64_t now = 0U;
+    if (deadline == 0 || budget_ms == 0U ||
+        x86os_monotonic_ms(&now) != 0) return -5;
+    *deadline = UINT64_MAX - now < budget_ms
+        ? UINT64_MAX : now + budget_ms;
+    return 0;
+}
+
+static reist_vfs_shadow_ext2_io_t vfs_shadow_ext2_io(void) {
+    const reist_vfs_shadow_ext2_io_t io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+        .write_sector = vfs_shadow_write_sector,
+        .flush = vfs_shadow_flush,
+        .monotonic_ms = vfs_shadow_monotonic,
+    };
+    return io;
 }
 
 static void vfs_shadow_publish(x86os_vfs_shadow_frame_t *frame, int status,
@@ -5617,7 +5659,7 @@ static int vfs_shadow_authoritative_fat_stat(
 }
 
 static int vfs_shadow_authoritative_filesystem_stat(
-        x86os_vfs_shadow_frame_t *frame) {
+        x86os_vfs_shadow_frame_t *frame, uint32_t resolve_flags) {
     static uint8_t ext2_authority_reported;
     x86os_file_info_t parsed_info;
     uint8_t *parsed_bytes = (uint8_t *)&parsed_info;
@@ -5633,8 +5675,15 @@ static int vfs_shadow_authoritative_filesystem_stat(
     if (status == -2) {
         for (uint32_t index = 0U; index < sizeof(parsed_info); ++index)
             parsed_bytes[index] = 0U;
-        status = reist_vfs_shadow_ext2_stat(
-            &io, frame->path, frame->path_length, &parsed_info);
+        uint64_t deadline = 0U;
+        status = vfs_shadow_deadline(
+            VFS_EXT2_READ_DEADLINE_MS, &deadline);
+        if (status == 0) {
+            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_stat_bounded(
+                &ext2_io, frame->path, frame->path_length, resolve_flags,
+                deadline, &parsed_info);
+        }
         if (status == 0 && ext2_authority_reported == 0U) {
             ext2_authority_reported = 1U;
             x86os_puts("STORAGE_VFS_EXT2_STAT_AUTHORITY_OK\n");
@@ -5651,7 +5700,8 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
          frame->operation != X86OS_VFS_SHADOW_FAT32_STAT &&
          frame->operation != X86OS_VFS_SHADOW_FAT_STAT &&
          frame->operation != X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY &&
-         frame->operation != X86OS_VFS_SHADOW_FS_STAT_AUTHORITY) ||
+         frame->operation != X86OS_VFS_SHADOW_FS_STAT_AUTHORITY &&
+         frame->operation != X86OS_VFS_SHADOW_FS_LSTAT) ||
         frame->flags != 0U ||
         frame->path_length == 0U ||
         frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
@@ -5665,7 +5715,10 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
     if (frame->operation == X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY)
         return vfs_shadow_authoritative_fat_stat(frame);
     if (frame->operation == X86OS_VFS_SHADOW_FS_STAT_AUTHORITY)
-        return vfs_shadow_authoritative_filesystem_stat(frame);
+        return vfs_shadow_authoritative_filesystem_stat(frame, 0U);
+    if (frame->operation == X86OS_VFS_SHADOW_FS_LSTAT)
+        return vfs_shadow_authoritative_filesystem_stat(
+            frame, REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL);
 
     x86os_file_info_t legacy_info;
     uint8_t *legacy_bytes = (uint8_t *)&legacy_info;
@@ -5733,9 +5786,15 @@ static int vfs_shadow_read_at(x86os_vfs_shadow_read_frame_t *frame) {
     if (status == -2) {
         for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
             frame->data[index] = 0U;
-        status = reist_vfs_shadow_ext2_read(
-            &io, frame->path, frame->path_length, frame->offset, frame->data,
-            frame->requested, &transferred);
+        uint64_t deadline = 0U;
+        status = vfs_shadow_deadline(
+            VFS_EXT2_READ_DEADLINE_MS, &deadline);
+        if (status == 0) {
+            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_read_bounded(
+                &ext2_io, frame->path, frame->path_length, frame->offset,
+                frame->data, frame->requested, deadline, &transferred);
+        }
     }
     if (status != 0) {
         for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
@@ -5855,9 +5914,15 @@ static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame,
         owner_pid, owner_generation, service_generation, frame);
     int status;
     if (slot->filesystem == VFS_READDIR_FILESYSTEM_EXT2) {
-        status = reist_vfs_shadow_ext2_readdir_continue(
-            &io, frame->path, frame->path_length, frame->index,
-            &slot->ext2, &parsed);
+        uint64_t deadline = 0U;
+        status = vfs_shadow_deadline(
+            VFS_EXT2_READ_DEADLINE_MS, &deadline);
+        if (status == 0) {
+            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_readdir_bounded(
+                &ext2_io, frame->path, frame->path_length, frame->index,
+                &slot->ext2, deadline, &parsed);
+        }
         if (status == -2) {
             vfs_readdir_cursor_zero(&slot->fat, sizeof(slot->fat));
             status = reist_vfs_shadow_fat_readdir_continue(
@@ -5872,9 +5937,15 @@ static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame,
             &slot->fat, &parsed);
         if (status == -2) {
             vfs_readdir_cursor_zero(&slot->ext2, sizeof(slot->ext2));
-            status = reist_vfs_shadow_ext2_readdir_continue(
-                &io, frame->path, frame->path_length, frame->index,
-                &slot->ext2, &parsed);
+            uint64_t deadline = 0U;
+            status = vfs_shadow_deadline(
+                VFS_EXT2_READ_DEADLINE_MS, &deadline);
+            if (status == 0) {
+                reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+                status = reist_vfs_shadow_ext2_readdir_bounded(
+                    &ext2_io, frame->path, frame->path_length, frame->index,
+                    &slot->ext2, deadline, &parsed);
+            }
             if (status != -2)
                 slot->filesystem = VFS_READDIR_FILESYSTEM_EXT2;
         } else {
@@ -5896,6 +5967,7 @@ typedef union {
     x86os_vfs_shadow_object_read_frame_t object_read;
     x86os_vfs_shadow_object_delegate_frame_t object_delegate;
     x86os_vfs_shadow_object_bulk_read_frame_t object_bulk_read;
+    x86os_vfs_symlink_frame_t symlink;
 } vfs_shadow_request_t;
 
 #define VFS_OBJECT_CAPACITY 16U
@@ -6004,9 +6076,31 @@ static int vfs_object_reserved_zero(const uint32_t *reserved,
     return 1;
 }
 
+static int vfs_ext2_object_stat(
+        const reist_vfs_shadow_object_t *object, x86os_file_info_t *info) {
+    uint64_t deadline = 0U;
+    int status = vfs_shadow_deadline(VFS_EXT2_READ_DEADLINE_MS, &deadline);
+    if (status != 0) return status;
+    reist_vfs_shadow_ext2_io_t io = vfs_shadow_ext2_io();
+    return reist_vfs_shadow_ext2_object_stat_bounded(
+        &io, object, deadline, info);
+}
+
+static int vfs_ext2_object_read(
+        const reist_vfs_shadow_object_t *object, uint32_t offset,
+        uint8_t *data, uint32_t capacity, uint32_t *transferred) {
+    uint64_t deadline = 0U;
+    int status = vfs_shadow_deadline(VFS_EXT2_READ_DEADLINE_MS, &deadline);
+    if (status != 0) return status;
+    reist_vfs_shadow_ext2_io_t io = vfs_shadow_ext2_io();
+    return reist_vfs_shadow_ext2_object_read_bounded(
+        &io, object, offset, data, capacity, deadline, transferred);
+}
+
 static int vfs_object_open(x86os_vfs_shadow_object_frame_t *frame,
         int32_t owner_pid, uint32_t owner_generation,
-        uint32_t service_generation, uint32_t rights) {
+        uint32_t service_generation, uint32_t rights,
+        uint32_t open_flags) {
     if (frame->path_length == 0U ||
         frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
         frame->path[0U] != '/' || frame->path[frame->path_length] != '\0' ||
@@ -6033,9 +6127,17 @@ static int vfs_object_open(x86os_vfs_shadow_object_frame_t *frame,
     x86os_file_info_t info;
     int status = reist_vfs_shadow_fat_object_open(
         &io, frame->path, frame->path_length, &locator, &info);
-    if (status == -2)
-        status = reist_vfs_shadow_ext2_object_open(
-            &io, frame->path, frame->path_length, &locator, &info);
+    if (status == -2) {
+        uint64_t deadline = 0U;
+        status = vfs_shadow_deadline(
+            VFS_EXT2_READ_DEADLINE_MS, &deadline);
+        if (status == 0) {
+            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_object_open_bounded(
+                &ext2_io, frame->path, frame->path_length, open_flags,
+                deadline, &locator, &info);
+        }
+    }
     if (status != 0) {
         frame->result = status;
         return 0;
@@ -6069,13 +6171,21 @@ static int vfs_object_control(x86os_vfs_shadow_object_frame_t *frame,
         if (frame->flags != 0U) return -22;
         return vfs_object_open(frame, owner_pid, owner_generation,
                                service_generation,
-                               X86OS_VFS_OBJECT_RIGHT_DATA);
+                               X86OS_VFS_OBJECT_RIGHT_DATA, 0U);
     }
     if (frame->operation == X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS) {
         if (frame->flags == 0U ||
             (frame->flags & ~X86OS_VFS_OBJECT_RIGHT_ALL) != 0U) return -22;
         return vfs_object_open(frame, owner_pid, owner_generation,
-                               service_generation, frame->flags);
+                               service_generation, frame->flags, 0U);
+    }
+    if (frame->operation == X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS) {
+        uint32_t rights = frame->flags & X86OS_VFS_OBJECT_RIGHT_ALL;
+        uint32_t open_flags = frame->flags & ~X86OS_VFS_OBJECT_RIGHT_ALL;
+        if (rights == 0U ||
+            (open_flags & ~X86OS_O_NOFOLLOW) != 0U) return -22;
+        return vfs_object_open(frame, owner_pid, owner_generation,
+                               service_generation, rights, open_flags);
     }
     if (frame->operation == X86OS_VFS_SHADOW_OBJECT_ADOPT) {
         if (frame->flags != 0U || frame->path_length != 0U ||
@@ -6137,7 +6247,7 @@ static int vfs_object_control(x86os_vfs_shadow_object_frame_t *frame,
     };
     status = slot->locator.filesystem == REIST_VFS_SHADOW_OBJECT_FAT
         ? reist_vfs_shadow_fat_object_stat(&io, &slot->locator, &frame->info)
-        : reist_vfs_shadow_ext2_object_stat(&io, &slot->locator, &frame->info);
+        : vfs_ext2_object_stat(&slot->locator, &frame->info);
     frame->result = status;
     if (status == -116) vfs_object_release(slot);
     return 0;
@@ -6175,8 +6285,8 @@ static int vfs_object_read(x86os_vfs_shadow_object_read_frame_t *frame,
         ? reist_vfs_shadow_fat_object_read(
             &io, &slot->locator, frame->offset, frame->data,
             frame->requested, &transferred)
-        : reist_vfs_shadow_ext2_object_read(
-            &io, &slot->locator, frame->offset, frame->data,
+        : vfs_ext2_object_read(
+            &slot->locator, frame->offset, frame->data,
             frame->requested, &transferred);
     if (status != 0) {
         for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
@@ -6223,8 +6333,8 @@ static int vfs_object_bulk_read(
         ? reist_vfs_shadow_fat_object_read(
             &io, &slot->locator, frame->offset, vfs_bulk_data,
             frame->requested, &transferred)
-        : reist_vfs_shadow_ext2_object_read(
-            &io, &slot->locator, frame->offset, vfs_bulk_data,
+        : vfs_ext2_object_read(
+            &slot->locator, frame->offset, vfs_bulk_data,
             frame->requested, &transferred);
     if (status != 0) {
         transferred = 0U;
@@ -6282,7 +6392,7 @@ static int vfs_object_delegate(
     x86os_file_info_t scratch;
     status = source->locator.filesystem == REIST_VFS_SHADOW_OBJECT_FAT
         ? reist_vfs_shadow_fat_object_stat(&io, &source->locator, &scratch)
-        : reist_vfs_shadow_ext2_object_stat(&io, &source->locator, &scratch);
+        : vfs_ext2_object_stat(&source->locator, &scratch);
     if (status != 0) {
         frame->result = status;
         if (status == -116) vfs_object_release(source);
@@ -6311,6 +6421,91 @@ static int vfs_object_delegate(
     return 0;
 }
 
+static int vfs_symlink_reserved_zero(const uint32_t *reserved) {
+    for (uint32_t index = 0U; index < 25U; ++index)
+        if (reserved[index] != 0U) return 0;
+    return 1;
+}
+
+static int vfs_symlink_frame_path_valid(
+        const x86os_vfs_symlink_frame_t *frame) {
+    if (frame->path_length == 0U ||
+        frame->path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY ||
+        frame->path[0U] != '/' || frame->path[frame->path_length] != '\0')
+        return 0;
+    for (uint32_t index = 0U; index < frame->path_length; ++index)
+        if (frame->path[index] == '\0') return 0;
+    return 1;
+}
+
+static int vfs_symlink_readlink(x86os_vfs_symlink_frame_t *frame) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) ||
+        frame->operation != X86OS_VFS_SHADOW_FS_READLINK ||
+        frame->flags != 0U || frame->result != 0 ||
+        frame->target_length != 0U ||
+        !vfs_symlink_frame_path_valid(frame) ||
+        !vfs_symlink_reserved_zero(frame->reserved)) return -22;
+    for (uint32_t index = 0U; index < sizeof(frame->target); ++index)
+        if (frame->target[index] != '\0') return -22;
+    const reist_vfs_shadow_io_t fat_io = {
+        .context = 0,
+        .drive_info = vfs_shadow_drive_info,
+        .read_sector = vfs_shadow_read_sector,
+    };
+    x86os_file_info_t info;
+    int status = reist_vfs_shadow_fat_stat(
+        &fat_io, frame->path, frame->path_length, &info);
+    if (status == 0) status = -22;
+    if (status == -2) {
+        uint64_t deadline = 0U;
+        status = vfs_shadow_deadline(VFS_EXT2_READ_DEADLINE_MS, &deadline);
+        if (status == 0) {
+            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_readlink(
+                &ext2_io, frame->path, frame->path_length,
+                frame->target, &frame->target_length, deadline);
+        }
+    }
+    if (status != 0) {
+        for (uint32_t index = 0U; index < sizeof(frame->target); ++index)
+            frame->target[index] = '\0';
+        frame->target_length = 0U;
+    }
+    frame->result = status;
+    return 0;
+}
+
+static int vfs_symlink_create(x86os_vfs_symlink_frame_t *frame) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) ||
+        frame->operation != X86OS_VFS_SHADOW_FS_SYMLINK ||
+        frame->flags != 0U || frame->result != 0 ||
+        frame->target_length == 0U ||
+        frame->target_length >= X86OS_VFS_SYMLINK_TARGET_CAPACITY ||
+        frame->target[frame->target_length] != '\0' ||
+        !vfs_symlink_frame_path_valid(frame) ||
+        !vfs_symlink_reserved_zero(frame->reserved)) return -22;
+    for (uint32_t index = 0U; index < frame->target_length; ++index) {
+        uint8_t value = (uint8_t)frame->target[index];
+        if (value < 0x20U || value > 0x7EU || value == '\0') return -22;
+    }
+    for (uint32_t index = frame->target_length + 1U;
+         index < sizeof(frame->target); ++index)
+        if (frame->target[index] != '\0') return -22;
+    uint64_t deadline = 0U;
+    int status = vfs_shadow_deadline(
+        VFS_EXT2_MUTATION_DEADLINE_MS, &deadline);
+    if (status == 0) {
+        reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+        status = reist_vfs_shadow_ext2_symlink(
+            &ext2_io, frame->target, frame->target_length,
+            frame->path, frame->path_length, deadline);
+    }
+    frame->result = status;
+    return 0;
+}
+
 static int vfs_shadow_request(vfs_shadow_request_t *request,
         int32_t owner_pid, uint32_t owner_generation,
         uint32_t service_generation) {
@@ -6323,6 +6518,7 @@ static int vfs_shadow_request(vfs_shadow_request_t *request,
                                owner_generation, service_generation);
     if (request->stat.operation == X86OS_VFS_SHADOW_OBJECT_OPEN ||
         request->stat.operation == X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS ||
+        request->stat.operation == X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS ||
         request->stat.operation == X86OS_VFS_SHADOW_OBJECT_ADOPT ||
         request->stat.operation == X86OS_VFS_SHADOW_OBJECT_FSTAT ||
         request->stat.operation == X86OS_VFS_SHADOW_OBJECT_CLOSE)
@@ -6334,6 +6530,10 @@ static int vfs_shadow_request(vfs_shadow_request_t *request,
         return vfs_shadow_readdir_at(
             &request->readdir, owner_pid, owner_generation,
             service_generation);
+    if (request->stat.operation == X86OS_VFS_SHADOW_FS_READLINK)
+        return vfs_symlink_readlink(&request->symlink);
+    if (request->stat.operation == X86OS_VFS_SHADOW_FS_SYMLINK)
+        return -22;
     return vfs_shadow_stat(&request->stat);
 }
 
@@ -6413,13 +6613,26 @@ int main(void) {
             if (result == 0 &&
                 (frame.stat.operation == X86OS_VFS_SHADOW_OBJECT_OPEN ||
                  frame.stat.operation ==
-                    X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS) &&
+                    X86OS_VFS_SHADOW_OBJECT_OPEN_RIGHTS ||
+                 frame.stat.operation ==
+                    X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS) &&
                 frame.object.result == 0)
                 object_open_completed = 1U;
             if (result == 0 &&
                 frame.stat.operation == X86OS_VFS_SHADOW_OBJECT_ADOPT &&
                 frame.object.result == 0)
                 object_adopt_completed = 1U;
+            if (result == 0)
+                for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                    data[index] = frame_bytes[index];
+        }
+        if (request.operation == X86OS_STORAGE_VFS_SYMLINK &&
+            request.length == X86OS_STORAGE_BLOCK_SIZE) {
+            x86os_vfs_symlink_frame_t frame;
+            uint8_t *frame_bytes = (uint8_t *)&frame;
+            for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                frame_bytes[index] = data[index];
+            result = vfs_symlink_create(&frame);
             if (result == 0)
                 for (uint32_t index = 0U; index < sizeof(frame); ++index)
                     data[index] = frame_bytes[index];

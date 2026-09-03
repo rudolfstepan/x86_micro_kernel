@@ -1,6 +1,6 @@
 # VFS-Architektur
 
-Stand: 25. August 2026.
+Stand: 3. September 2026.
 
 VFS ist die einzige reguläre Dateisystemschnittstelle für Shell,
 Programmlader und Ring-3-Datei-ABI. Direkte globale FAT-Sonderpfade gehören
@@ -12,9 +12,9 @@ Ring-3-Programm / Shell
           |                                                               v
       Syscall-/FD-Schicht                                      Storage-Service
           |                                                     (Ring 3)
-          VFS                                          FAT12/FAT32/VFAT-Parser
+          VFS                                      FAT12/FAT32/EXT2-Parser
        /   |   \                                                   |
-   FAT32 FAT12 EXT2                                      mediated Block Read
+   FAT32 FAT12 EXT2                             mediated bounded Block I/O
           |                                                       |
   Blockgerät / Partition
        /    |    \
@@ -51,8 +51,9 @@ Pfad, Offset, Deadline und Slotgeneration. Er bietet read-only `open`, `read`,
 `SEEK_SET`/`SEEK_CUR`/`SEEK_END`, `fstat` und `close`; stale Handles werden
 abgewiesen und bei Generationserschöpfung wird der Slot stillgelegt. Weil jede
 Operation den Pfad erneut auflöst, ist dies keine stabile Inode-Identität und
-keine POSIX-Binärkompatibilität. Mutationen, Vererbung, Controllerzugriff und
-DMA bleiben verboten.
+keine POSIX-Binärkompatibilität. Mit Ausnahme der unten beschriebenen nativen
+EXT2-Symlinkerzeugung bleiben Mutationen, Vererbung, Controllerzugriff und DMA
+verboten.
 
 Damit besitzt Ring 3 echte FAT12-/FAT32-Parsersemantik. Als erster
 kontrollierter Cutover verwendet das kurzlebige `STAT.PRG` inzwischen
@@ -106,8 +107,37 @@ FAT-Verzeichnisläufe sind dafür auf 128 Cluster und alle FAT-Operationen auf
 320 Sektorreads begrenzt; nur Dateiinhalte dürfen bis zu 6400 Cluster besuchen.
 Eine konstante Brent-Zykluswache ersetzt dabei das proportional zur Dateigröße
 wachsende Clusterarray. Ein operationseigener FAT-Sektorcache macht auch späte
-128-KiB-Lesezugriffe auf 3-MiB-Dateien innerhalb dieses Budgets möglich. EXT2 bleibt auf 192
-Sektorreads pro Operation fest begrenzt.
+128-KiB-Lesezugriffe auf 3-MiB-Dateien innerhalb dieses Budgets möglich. Der
+direkte EXT2-Kompatibilitätswrapper bleibt auf 192 Sektorreads begrenzt; der
+serviceeigene Pfad einschließlich einer möglicherweise nötigen
+Symlink-Journal-Recovery besitzt ein festes Gesamtlimit von 384 Reads.
+
+Storage-Operation 33 und die append-only Frameoperationen 16 bis 19 ergänzen
+`symlink`, `readlink`, `lstat` und Objekt-`open` mit `O_NOFOLLOW`. Normales
+`stat`, Lesen und Öffnen folgen nativen EXT2-Links; `lstat`/`readlink` und
+`O_NOFOLLOW` behandeln die letzte Komponente selbst. Relative Ziele werden am
+Link-Elternverzeichnis zusammengesetzt, absolute am globalen `/`; `..` darf
+den globalen Namespace nicht verlassen. Die erste feste Teilmenge akzeptiert
+maximal 191 druckbare ASCII-Bytes je Ziel, acht Linkhops und 64 insgesamt
+gelaufene Komponenten. Zyklen liefern `ELOOP`, Dangling Links `ENOENT`,
+malformed oder nicht darstellbare Ziele einen Fehler ohne Objektpublikation.
+Ein absoluter Link wird vom globalen Root neu gemountet, muss in diesem ersten
+Schnitt aber wieder auf einem validierbaren EXT2-Medium landen; ein Übergang zu
+FAT scheitert geschlossen.
+
+EXT2 speichert Ziele bis 60 Byte im Inode und längere Ziele blockgestützt. Für
+die Erzeugung reserviert das Image die reguläre Datei
+`/.reist-symlink-journal` mit 26 Sektoren. Zwei redundante CRC-Header führen
+`CLEAN -> ACTIVE -> COMMITTED -> CLEAN`; bis zu 24 Before-Images erlauben nach
+jeder Schreib- oder Flush-Unterbrechung entweder die vollständige Rückkehr zum
+alten Namespace oder die Bestätigung eines vollständigen Links. Der Dienst
+begrenzt die gesamte Transaktion auf 384 Reads, 64 Writes, acht Flushes und 32
+untersuchte Allokationsgruppen. In Version 1 wird kein neuer Directory-Block
+angelegt: ausreichender vorhandener Slack und ein einzelner 512-Byte-
+Publikationssektor sind Voraussetzung. Der Client wiederholt nach einer
+abgeschlossenen Recovery höchstens einmal unter derselben absoluten Deadline.
+FAT12/32 liefern für die Erzeugung `EOPNOTSUPP`. Der Legacy-Ring-0-EXT2-Adapter
+bleibt read-only und erhält weder Linkauflösung noch Mutation.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus
@@ -304,8 +334,10 @@ Userpointer, Größen, Deskriptoren und Pfade werden vor Wirkung validiert.
 Storage-Quarantäne und globales Write-Fencing werden unterhalb von VFS
 durchgesetzt. Markierte FAT32- und FAT12-Volumes besitzen eigene
 Persistenzprotokolle. Fremde FAT12- und FAT32-Medien bleiben lesbar, sind aber
-ohne gültigen REIST-Journalmarker grundsätzlich read-only; EXT2 bleibt
-ebenfalls read-only. Ein unklarer Commit darf nicht als Erfolg erscheinen.
+ohne gültigen REIST-Journalmarker grundsätzlich read-only. Der Legacy-EXT2-
+VFS-Adapter bleibt ebenfalls read-only; ausschließlich Storage-Operation 33
+darf die oben begrenzte, eigene Symlinktransaktion ausführen. Ein unklarer
+Commit darf nicht als Erfolg erscheinen.
 Für FAT12 schneidet ein fest begrenzter Hosttest eine vollständige
 Cross-Cluster-VFS-Erweiterung nach jedem tatsächlich abgeschlossenen
 512-Byte-Write ab. Vor Recovery darf jeder Nicht-Journalsektor nur seinem
@@ -440,19 +472,25 @@ Cleanup, Shell-Rückkehr und je zehn stabilen Sekunden; der Benchmark erreichte
     gemeinsamen begrenzten Deadline auf Operationen 5/7 umstellen.
 17. [x] Zwei feste 128-KiB-Bulk-Slots mit CRC, ownergebundener Publikation und
     atomarer Sammlung für Objektoperation 15 ergänzen.
-18. Mutationen erst nach eigenem Journal-, Flush-, Restart- und Power-Loss-
-   Nachweis aus Ring 0 entfernen.
+18. [~] Allgemeine Mutationen erst nach eigenem Journal-, Flush-, Restart- und
+    Power-Loss-Nachweis aus Ring 0 entfernen. Die native EXT2-
+    Symlinkerzeugung ist der erste isolierte Ring-3-Schnitt; Create, Write,
+    Rename, Replace und Reparatur bleiben offen.
 
 ### Begrenzter EXT2-Subset in Ring 3
 
 Der Parser folgt dem Linux-EXT2-On-Disk-Format, akzeptiert aber nur Revision 0
 oder 1 mit 1, 2 oder 4 KiB großen Blöcken und festen, potenz-of-two großen
 Inodes. Er verarbeitet lineare Verzeichnisse über zwölf direkte und einen
-einfach-indirekten Blockzeiger. Höchstens 22 Ressourcen, 16 Pfadkomponenten,
-32 Verzeichnisblöcke und 128 vermittelte 512-Byte-Sektorreads werden besucht;
-der größte feste Stackpuffer ist 4096 Byte. Namen sind im öffentlichen REIST-
+einfach-indirekten Blockzeiger. Höchstens 22 Ressourcen, 16 Komponenten je
+materialisiertem Pfad, 64 Komponenten über eine vollständige Linkkette, acht
+Linkhops und 32 Verzeichnisblöcke werden besucht. Der direkte
+Kompatibilitätspfad besitzt 192 vermittelte 512-Byte-Sektorreads; der
+serviceeigene Pfad einschließlich Recovery höchstens 384. Der größte feste
+Stackpuffer ist 4096 Byte. Namen und Linkziele sind im öffentlichen REIST-
 Pfadvertrag druckbares ASCII und werden EXT2-konform case-sensitive verglichen.
 Unbekannte Incompat-/Read-only-Compat-Features, HTree-Verzeichnisse, Extents,
-Symlinkauflösung, doppelt oder dreifach indirekte Verzeichnisblöcke und
-64-Bit-Dateigrößen werden fail-closed abgewiesen. Schreibautorität entsteht
-daraus nicht.
+doppelt oder dreifach indirekte Verzeichnisblöcke und 64-Bit-Dateigrößen werden
+fail-closed abgewiesen. Allgemeine Schreibautorität entsteht daraus nicht;
+nur der oben beschriebene journalisierte Symlinkschnitt darf Inode-, Block- und
+Directory-Metadaten innerhalb seiner festen Transaktion verändern.

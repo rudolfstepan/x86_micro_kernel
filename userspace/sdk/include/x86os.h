@@ -304,7 +304,8 @@ typedef struct {
 
 enum {
     X86OS_FILE = 1,
-    X86OS_DIRECTORY = 2
+    X86OS_DIRECTORY = 2,
+    X86OS_SYMLINK = 6
 };
 
 /* POSIX-shaped access and status flags for x86os_open_flags(). */
@@ -315,6 +316,7 @@ enum {
 #define X86OS_O_CREAT   0x0040U
 #define X86OS_O_TRUNC   0x0200U
 #define X86OS_O_APPEND  0x0400U
+#define X86OS_O_NOFOLLOW 0x00020000U
 
 #define X86OS_SEEK_SET 0U
 #define X86OS_SEEK_CUR 1U
@@ -640,6 +642,7 @@ typedef struct {
 #define X86OS_STORAGE_RECORD_FAT12_BAD_SECTOR 30U
 #define X86OS_STORAGE_VFS_SHADOW_STAT 31U
 #define X86OS_STORAGE_VFS_BULK_READ 32U
+#define X86OS_STORAGE_VFS_SYMLINK 33U
 #define X86OS_STORAGE_BULK_VERSION 1U
 #define X86OS_STORAGE_BULK_PUBLISH 1U
 #define X86OS_STORAGE_BULK_COLLECT 2U
@@ -732,6 +735,10 @@ typedef struct {
 #define X86OS_VFS_SHADOW_OBJECT_DELEGATE 13U
 #define X86OS_VFS_SHADOW_OBJECT_ADOPT 14U
 #define X86OS_VFS_SHADOW_OBJECT_BULK_READ 15U
+#define X86OS_VFS_SHADOW_FS_LSTAT 16U
+#define X86OS_VFS_SHADOW_FS_READLINK 17U
+#define X86OS_VFS_SHADOW_FS_SYMLINK 18U
+#define X86OS_VFS_SHADOW_OBJECT_OPEN_FLAGS 19U
 #define X86OS_VFS_OBJECT_RIGHT_READ     (1U << 0)
 #define X86OS_VFS_OBJECT_RIGHT_SEEK     (1U << 1)
 #define X86OS_VFS_OBJECT_RIGHT_STAT     (1U << 2)
@@ -840,6 +847,20 @@ typedef struct {
     uint32_t rights;
     uint32_t reserved[118];
 } x86os_vfs_shadow_object_delegate_frame_t;
+
+#define X86OS_VFS_SYMLINK_TARGET_CAPACITY X86OS_VFS_SHADOW_PATH_CAPACITY
+typedef struct {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t operation;
+    uint32_t flags;
+    int32_t result;
+    uint32_t target_length;
+    uint32_t path_length;
+    char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
+    char path[X86OS_VFS_SHADOW_PATH_CAPACITY];
+    uint32_t reserved[25];
+} x86os_vfs_symlink_frame_t;
 
 typedef uint32_t x86os_ipc_handle_t;
 

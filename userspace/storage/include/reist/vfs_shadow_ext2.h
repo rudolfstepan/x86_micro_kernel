@@ -1,6 +1,6 @@
 /**
  * @file userspace/storage/include/reist/vfs_shadow_ext2.h
- * @brief Bounded read-only EXT2 metadata parser for the storage service.
+ * @brief Bounded EXT2 parser and native symbolic-link transaction engine.
  */
 #ifndef REIST_VFS_SHADOW_EXT2_H
 #define REIST_VFS_SHADOW_EXT2_H
@@ -11,6 +11,32 @@
 #define REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS 32U
 #define REIST_VFS_SHADOW_EXT2_MAX_SECTOR_READS 192U
 #define REIST_VFS_SHADOW_EXT2_MAX_BLOCK_SIZE 4096U
+#define REIST_VFS_SHADOW_EXT2_MAX_LINK_DEPTH 8U
+#define REIST_VFS_SHADOW_EXT2_MAX_WALK_COMPONENTS 64U
+#define REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS 384U
+#define REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_WRITES 64U
+#define REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_FLUSHES 8U
+#define REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS 26U
+#define REIST_VFS_SHADOW_EXT2_MAX_JOURNAL_ENTRIES 24U
+#define REIST_VFS_SHADOW_EXT2_MAX_ALLOCATION_GROUPS 32U
+#define REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL (1U << 0U)
+
+typedef int (*reist_vfs_shadow_ext2_write_sector_fn)(
+    void *context, uint32_t resource, uint32_t sector,
+    const uint8_t data[X86OS_STORAGE_BLOCK_SIZE]);
+typedef int (*reist_vfs_shadow_ext2_flush_fn)(
+    void *context, uint32_t resource);
+typedef int (*reist_vfs_shadow_ext2_monotonic_fn)(
+    void *context, uint64_t *milliseconds);
+
+typedef struct {
+    void *context;
+    reist_vfs_shadow_drive_info_fn drive_info;
+    reist_vfs_shadow_read_sector_fn read_sector;
+    reist_vfs_shadow_ext2_write_sector_fn write_sector;
+    reist_vfs_shadow_ext2_flush_fn flush;
+    reist_vfs_shadow_ext2_monotonic_fn monotonic_ms;
+} reist_vfs_shadow_ext2_io_t;
 
 /** Replaceable, non-authoritative continuation hint for EXT2 readdir. */
 typedef struct {
@@ -62,5 +88,45 @@ int reist_vfs_shadow_ext2_object_read(
     const reist_vfs_shadow_io_t *io,
     const reist_vfs_shadow_object_t *object, uint32_t offset, uint8_t *data,
     uint32_t capacity, uint32_t *transferred);
+
+int reist_vfs_shadow_ext2_stat_bounded(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint32_t resolve_flags, uint64_t deadline_ms,
+    x86os_file_info_t *info);
+int reist_vfs_shadow_ext2_read_bounded(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint32_t offset, uint8_t *data, uint32_t capacity,
+    uint64_t deadline_ms, uint32_t *transferred);
+int reist_vfs_shadow_ext2_readdir_bounded(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint32_t index,
+    reist_vfs_shadow_ext2_readdir_cursor_t *cursor,
+    uint64_t deadline_ms, x86os_file_info_t *info);
+int reist_vfs_shadow_ext2_object_open_bounded(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint32_t open_flags, uint64_t deadline_ms,
+    reist_vfs_shadow_object_t *object, x86os_file_info_t *info);
+int reist_vfs_shadow_ext2_object_stat_bounded(
+    const reist_vfs_shadow_ext2_io_t *io,
+    const reist_vfs_shadow_object_t *object, uint64_t deadline_ms,
+    x86os_file_info_t *info);
+int reist_vfs_shadow_ext2_object_read_bounded(
+    const reist_vfs_shadow_ext2_io_t *io,
+    const reist_vfs_shadow_object_t *object, uint32_t offset, uint8_t *data,
+    uint32_t capacity, uint64_t deadline_ms, uint32_t *transferred);
+int reist_vfs_shadow_ext2_readlink(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY],
+    uint32_t *target_length, uint64_t deadline_ms);
+int reist_vfs_shadow_ext2_symlink(
+    const reist_vfs_shadow_ext2_io_t *io, const char *target,
+    uint32_t target_length, const char *absolute_link_path,
+    uint32_t link_path_length, uint64_t deadline_ms);
+int reist_vfs_shadow_ext2_recover_path(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint64_t deadline_ms);
+int reist_vfs_shadow_ext2_recover_object(
+    const reist_vfs_shadow_ext2_io_t *io, uint32_t resource,
+    uint64_t deadline_ms);
 
 #endif

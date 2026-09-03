@@ -24,7 +24,10 @@ class ReistVfsShadowExt2Tests(unittest.TestCase):
         source = (ROOT / "userspace/storage/lib/vfs_shadow_ext2.c").read_text()
         header = (ROOT / "userspace/storage/include/reist/vfs_shadow_ext2.h").read_text()
         for bound in ("MAX_COMPONENTS 16U", "MAX_DIRECTORY_BLOCKS 32U",
-                      "MAX_SECTOR_READS 192U", "MAX_BLOCK_SIZE 4096U"):
+                      "MAX_SECTOR_READS 192U", "MAX_BLOCK_SIZE 4096U",
+                      "MAX_LINK_DEPTH 8U", "MAX_WALK_COMPONENTS 64U",
+                      "MAX_TRANSACTION_READS 384U",
+                      "MAX_TRANSACTION_WRITES 64U"):
             self.assertIn(bound, header)
         self.assertIn("EXT2_SIGNATURE 0xEF53U", source)
         self.assertIn("EXT2_INCOMPAT_FILETYPE", source)
@@ -40,8 +43,9 @@ class ReistVfsShadowExt2Tests(unittest.TestCase):
         self.assertIn("volume->signature", source)
         self.assertIn("object->locator_a", source)
         self.assertIn("inode->bytes + 100U", source)
-        self.assertIn("volume->reads >= REIST_VFS_SHADOW_EXT2_MAX_SECTOR_READS",
-                      source)
+        self.assertIn("volume->reads >= volume->request->read_limit", source)
+        self.assertIn("ext2_read_symlink_inode", source)
+        self.assertIn("ext2_journal_recover", source)
         self.assertNotIn("malloc(", source)
         self.assertNotIn("free(", source)
         self.assertNotIn("x86os_syscall", source)

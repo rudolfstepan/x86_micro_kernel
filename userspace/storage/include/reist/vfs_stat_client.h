@@ -13,5 +13,8 @@
 /* Timeout and protocol failures are returned without a legacy VFS fallback. */
 int reist_vfs_stat(const char *path, x86os_file_info_t *info,
                    uint32_t timeout_ms);
+/** POSIX-shaped metadata lookup that does not follow the final symlink. */
+int reist_vfs_lstat(const char *path, x86os_file_info_t *info,
+                    uint32_t timeout_ms);
 
 #endif

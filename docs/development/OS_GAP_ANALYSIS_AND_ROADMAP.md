@@ -1,6 +1,6 @@
 # Fehlstellenanalyse und Implementierungsfahrplan
 
-Stand: 31. August 2026
+Stand: 3. September 2026
 
 **R3.4h ist abgeschlossen:** Die manuelle AMD-VMware-Nachprüfung zeigte, dass
 der bisherige Einzelevent-Mausnachweis keine Hover-Kadenz bewies. Der
@@ -3188,7 +3188,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    mit 106 Targeted-Checks, QEMU-Framebuffer-Paketbuild und realem Guest-Lauf
    einschließlich Doppelklick, Wheel, Thumb, Resize, Navigation, VGA-Rückkehr
    und antwortender Ring-3-Shell.
-7. [~] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+7. [x] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
    restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird
@@ -3197,7 +3197,11 @@ durch den Status des ausführbaren Pakets aktualisiert.
    FAT12/32 liefern mangels nativem Standardformat vor jeder Wirkung
    `EOPNOTSUPP`. Abnahme: `ln -s`/`readlink` aus der Userspace-Shell sowie ein
    realer EXT2-Lauf einschließlich Dienstneustart und unterbrochener Mutation.
-8. [ ] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
+   Abgenommen mit 44 Targeted-Checks, dem QEMU-Framebuffer-Paketbuild in 87
+   Sekunden und dem realen 69-Sekunden-EXT2-Lauf mit Recovery, persistentem
+   Testmedium, Dienstneustart und sauberem Journal. Der alte Ring-0-Parser
+   blieb unverändert.
+8. [~] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
    begrenzter `/desktop`-Katalog liest versionierte `reist.shortcut/1`-
    Dateien und rendert sie mit einem neuen Shortcut-Icon. Ein Rechtsklick auf
    ein validiertes Programm oder eine reguläre Datei im Explorer bietet

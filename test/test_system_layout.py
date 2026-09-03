@@ -239,7 +239,8 @@ class SystemLayoutContracts(unittest.TestCase):
             NATIVE_SYSTEM_DIRECTORIES, ("trash/files", "trash/info")
         )
         for target in (
-            "bin/shell.prg", "sbin/svcctl.prg",
+            "bin/shell.prg", "bin/ln.prg", "bin/readlink.prg",
+            "sbin/svcctl.prg",
             "libexec/reist/storage.prg",
             "sbin/audioinfo.prg", "usr/bin/audiotest.prg",
             "usr/bin/wavplay.prg",
