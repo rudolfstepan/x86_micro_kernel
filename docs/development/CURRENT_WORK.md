@@ -4,22 +4,22 @@ Stand: 3. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `R3.3b-desktop-explorer-scrollbar`. Der compositorinterne
-Explorer ersetzt beim Öffnen eines Unterordners atomar den Inhalt des aktuellen
-Fensters. Die klassische feste Chrome bietet Zurück, Vor, Aufwärts,
-Aktualisieren, eine schreibgeschützte Adresszeile und eine Statusleiste; Zurück
-und Vor besitzen je einen festen 16-Pfad-Verlauf. Pro Ordnerfenster kommen
-außerdem ein fester Zeilenviewport und eine aus der jeweils aktuellen
-Clientfläche berechnete vertikale Scrollbar hinzu. Pfeile,
-Seitenklick, Thumb-Drag, Mausrad, Tastatur-Nachführung und Resize verwenden
-dieselbe begrenzte Range; der Snapshot wächst nur bis zum Scanbudget von 128
-Einträgen. Suche, Baumansicht, editierbare Adresse und Dateimutationen bleiben
-getrennte spätere Pakete.
-
-Danach folgt `N3a-vfs-symbolic-links`: begrenzte POSIX-Symlinks auf EXT2 mit
+Aktives Thema: `N3a-vfs-symbolic-links`: begrenzte POSIX-Symlinks auf EXT2 mit
 append-only Storage-Service-/Client-ABI, generationgebundener Ring-3-Auflösung
 sowie festen Pfad-, Tiefen-, I/O- und Zeitbudgets. FAT12/32 weisen Symlinks
 mangels nativem Standardformat vor jeder Wirkung mit `EOPNOTSUPP` ab.
+
+`R3.3b-desktop-explorer-scrollbar` ist abgeschlossen. Unterordner ersetzen
+atomar den Inhalt desselben Fensters; Zurück, Vor, Aufwärts und Aktualisieren,
+schreibgeschützte Adress- und Statuszeile sowie feste 16-Pfad-Verläufe bilden
+die klassische Chrome. Der 128 Einträge große Snapshot besitzt eine gemeinsame
+monotone Zehn-Sekunden-Grenze und einsekündige Requests. Pfeile, Seitenklick,
+Thumb-Drag, Mausrad, Tastatur-Nachführung und Resize verwenden dieselbe
+Zeilenrange und berechnen die Scrollbar stets aus der aktuellen Clientfläche.
+104 Targeted-Checks, der QEMU-Framebuffer-Paketbuild in 17 Sekunden und der
+reale Navigations-/Scrolllauf mit abschließender Ring-3-Shell-Antwort sind
+bestanden. Suche, Baumansicht, editierbare Adresse und Dateimutationen bleiben
+getrennte spätere Pakete.
 
 Danach sind zwei getrennte Pakete vorgemerkt: `R3.5-desktop-shortcuts` fügt validierte
 Verknüpfungsdateien, ein eigenes Icon und die Explorer-Kontextaktion

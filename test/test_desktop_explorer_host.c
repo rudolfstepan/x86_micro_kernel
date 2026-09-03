@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "desktop_explorer.h"
@@ -17,11 +18,13 @@ static const x86os_file_info_t root_entries[] = {
 static uint64_t monotonic_now = 100U;
 static uint32_t monotonic_calls;
 static uint32_t expire_call;
+static uint32_t many_entry_count = 50U;
 
 int x86os_monotonic_ms(uint64_t *value) {
     assert(value != NULL);
     ++monotonic_calls;
-    if (monotonic_calls == expire_call) monotonic_now += 6000U;
+    if (monotonic_calls == expire_call)
+        monotonic_now += DESKTOP_EXPLORER_SNAPSHOT_TIMEOUT_MS + 1000U;
     *value = monotonic_now++;
     return 0;
 }
@@ -30,6 +33,8 @@ int reist_vfs_stat(const char *path, x86os_file_info_t *info,
                    uint32_t timeout_ms) {
     assert(timeout_ms != 0U && timeout_ms <= 1000U);
     if (strcmp(path, "/") != 0 && strcmp(path, "/Docs") != 0 &&
+        strcmp(path, "/Docs/Sub") != 0 &&
+        strcmp(path, "/Many") != 0 &&
         strcmp(path, "/BIN") != 0) return -2;
     memset(info, 0, sizeof(*info));
     strcpy(info->name, path);
@@ -40,7 +45,22 @@ int reist_vfs_stat(const char *path, x86os_file_info_t *info,
 int reist_vfs_readdir_at(const char *path, uint32_t index,
                          x86os_file_info_t *entry, uint32_t timeout_ms) {
     assert(timeout_ms != 0U && timeout_ms <= 1000U);
-    if (strcmp(path, "/Docs") == 0) return 0;
+    if (strcmp(path, "/Docs") == 0) {
+        if (index != 0U) return 0;
+        *entry = (x86os_file_info_t){
+            "Sub", X86OS_DIRECTORY, 0U, 0U, 0U, 0U};
+        return 1;
+    }
+    if (strcmp(path, "/Docs/Sub") == 0) return 0;
+    if (strcmp(path, "/Many") == 0) {
+        if (index >= many_entry_count) return 0;
+        memset(entry, 0, sizeof(*entry));
+        (void)snprintf(entry->name, sizeof(entry->name),
+                       "ITEM%03u.TXT", index);
+        entry->type = X86OS_FILE;
+        entry->size = index;
+        return 1;
+    }
     if (strcmp(path, "/BIN") == 0) {
         if (index != 0U) return 0;
         *entry = (x86os_file_info_t){
@@ -63,11 +83,11 @@ static void test_directory_snapshot_is_sorted_and_atomic(void) {
     assert(strcmp(window->entries[2].name, "alpha.prg") == 0);
     assert(strcmp(window->entries[3].name, "ZETA.TXT") == 0);
     assert(window->directory_nonempty[0] == 1U);
-    assert(window->directory_nonempty[1] == 0U);
+    assert(window->directory_nonempty[1] == 1U);
     assert(desktop_explorer_icon_kind(&window->entries[0],
         window->directory_nonempty[0]) == DESKTOP_EXPLORER_ICON_FOLDER_FULL);
     assert(desktop_explorer_icon_kind(&window->entries[1],
-        window->directory_nonempty[1]) == DESKTOP_EXPLORER_ICON_FOLDER_EMPTY);
+        window->directory_nonempty[1]) == DESKTOP_EXPLORER_ICON_FOLDER_FULL);
     assert(desktop_explorer_open(&explorer, 0U, "/missing") ==
            DESKTOP_EXPLORER_ENOENT);
     assert(strcmp(explorer.windows[0].path, "/") == 0);
@@ -124,6 +144,72 @@ static void test_child_path_and_window_capacity(void) {
     assert(desktop_explorer_free_window(&explorer) == 0U);
 }
 
+static void test_same_window_navigation_history_and_atomic_failure(void) {
+    desktop_explorer_t explorer;
+    desktop_explorer_initialize(&explorer);
+    assert(desktop_explorer_open(&explorer, 0U, "/") == 0);
+    desktop_explorer_window_t *window = &explorer.windows[0];
+    uint32_t initial_generation = window->snapshot_generation;
+
+    assert(desktop_explorer_navigate(&explorer, 0U, "/Docs") == 0);
+    assert(strcmp(window->path, "/Docs") == 0);
+    assert(window->snapshot_generation != initial_generation);
+    assert(window->back_count == 1U && window->forward_count == 0U);
+    assert(desktop_explorer_can_back(window));
+    assert(!desktop_explorer_can_forward(window));
+    assert(desktop_explorer_can_up(window));
+
+    assert(desktop_explorer_back(&explorer, 0U) == 0);
+    assert(strcmp(window->path, "/") == 0);
+    assert(window->back_count == 0U && window->forward_count == 1U);
+    assert(!desktop_explorer_can_up(window));
+    assert(desktop_explorer_forward(&explorer, 0U) == 0);
+    assert(strcmp(window->path, "/Docs") == 0);
+    assert(window->back_count == 1U && window->forward_count == 0U);
+    assert(desktop_explorer_navigate(
+        &explorer, 0U, "/Docs/Sub") == 0);
+    assert(desktop_explorer_up(&explorer, 0U) == 0);
+    assert(strcmp(window->path, "/Docs") == 0);
+
+    uint32_t back_count = window->back_count;
+    uint32_t forward_count = window->forward_count;
+    uint32_t generation = window->snapshot_generation;
+    uint32_t entry_count = window->entry_count;
+    assert(desktop_explorer_navigate(
+        &explorer, 0U, "/missing") == DESKTOP_EXPLORER_ENOENT);
+    assert(strcmp(window->path, "/Docs") == 0);
+    assert(window->back_count == back_count);
+    assert(window->forward_count == forward_count);
+    assert(window->snapshot_generation == generation);
+    assert(window->entry_count == entry_count);
+
+    assert(desktop_explorer_refresh(&explorer, 0U) == 0);
+    assert(strcmp(window->path, "/Docs") == 0);
+    assert(window->back_count == back_count);
+    assert(window->forward_count == forward_count);
+    assert(window->snapshot_generation != generation);
+}
+
+static void test_navigation_history_rolls_over_at_fixed_capacity(void) {
+    desktop_explorer_t explorer;
+    desktop_explorer_initialize(&explorer);
+    assert(desktop_explorer_open(&explorer, 0U, "/") == 0);
+    desktop_explorer_window_t *window = &explorer.windows[0];
+    for (uint32_t index = 0U;
+         index < DESKTOP_EXPLORER_HISTORY_CAPACITY + 4U; ++index) {
+        const char *path = (index & 1U) != 0U ? "/Docs" : "/BIN";
+        assert(desktop_explorer_navigate(&explorer, 0U, path) == 0);
+    }
+    assert(window->back_count == DESKTOP_EXPLORER_HISTORY_CAPACITY);
+    for (uint32_t index = 0U;
+         index < DESKTOP_EXPLORER_HISTORY_CAPACITY; ++index)
+        assert(desktop_explorer_back(&explorer, 0U) == 0);
+    assert(window->back_count == 0U);
+    assert(window->forward_count == DESKTOP_EXPLORER_HISTORY_CAPACITY);
+    assert(desktop_explorer_back(&explorer, 0U) ==
+           DESKTOP_EXPLORER_ENOENT);
+}
+
 static void test_same_item_double_click_activates_once(void) {
     desktop_explorer_t explorer;
     desktop_explorer_result_t result;
@@ -157,18 +243,130 @@ static void test_keyboard_grid_navigation_and_activation(void) {
     desktop_explorer_result_t result;
     desktop_explorer_initialize(&explorer);
     assert(desktop_explorer_open(&explorer, 0U, "/") == 0);
+    desktop_rect_t client = {20, 40, 226U, 152U};
     desktop_explorer_result_initialize(&result);
     assert(desktop_explorer_keyboard(
-        &explorer, 0U, 2U, DESKTOP_EXPLORER_KEY_RIGHT, &result) == 0);
+        &explorer, 0U, client, DESKTOP_EXPLORER_KEY_RIGHT, &result) == 0);
     assert(result.selection_changed && result.entry_index == 0U);
     desktop_explorer_result_initialize(&result);
     assert(desktop_explorer_keyboard(
-        &explorer, 0U, 2U, DESKTOP_EXPLORER_KEY_DOWN, &result) == 0);
+        &explorer, 0U, client, DESKTOP_EXPLORER_KEY_DOWN, &result) == 0);
     assert(result.selection_changed && result.entry_index == 2U);
     desktop_explorer_result_initialize(&result);
     assert(desktop_explorer_keyboard(
-        &explorer, 0U, 2U, DESKTOP_EXPLORER_KEY_ENTER, &result) == 0);
+        &explorer, 0U, client, DESKTOP_EXPLORER_KEY_ENTER, &result) == 0);
     assert(result.activated && result.entry_index == 2U);
+}
+
+static void test_scrollbar_geometry_input_and_resize_are_bounded(void) {
+    desktop_explorer_t explorer;
+    desktop_explorer_result_t result;
+    desktop_rect_t client = {20, 40, 330U, 152U};
+    desktop_explorer_initialize(&explorer);
+    many_entry_count = 50U;
+    assert(desktop_explorer_open(&explorer, 0U, "/Many") == 0);
+    desktop_explorer_window_t *window = &explorer.windows[0];
+    assert(window->entry_count == 50U && !window->truncated);
+
+    desktop_explorer_layout_t layout =
+        desktop_explorer_layout(window, client);
+    assert(layout.scrollbar.x == client.x + (int32_t)client.width -
+                                  (int32_t)DESKTOP_EXPLORER_SCROLLBAR_EXTENT);
+    assert(layout.scrollbar.y == client.y);
+    assert(layout.scrollbar.height == client.height);
+    assert(layout.viewport.width + layout.scrollbar.width == client.width);
+    assert(layout.columns == 3U && layout.visible_rows == 2U);
+    assert(layout.total_rows == 17U && layout.maximum_first_row == 15U);
+    assert(layout.enabled && layout.first_row == 0U);
+
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_pointer_press(
+        &explorer, 0U, client,
+        layout.increment.x + 1,
+        layout.increment.y + 1, &result) == 0);
+    assert(result.consumed && result.viewport_changed);
+    assert(window->first_row == 1U);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_pointer_release(
+        &explorer, 0U, client, layout.increment.x + 1,
+        layout.increment.y + 1, 1000U, &result) == 0);
+    assert(window->scroll_capture == DESKTOP_EXPLORER_SCROLL_NONE);
+
+    layout = desktop_explorer_layout(window, client);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_pointer_press(
+        &explorer, 0U, client, layout.thumb.x + 1,
+        layout.thumb.y + 1, &result) == 0);
+    assert(window->scroll_capture == DESKTOP_EXPLORER_SCROLL_THUMB);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_pointer_motion(
+        &explorer, 0U, client, layout.thumb.x + 1,
+        layout.track.y + (int32_t)layout.track.height + 50,
+        &result) == 0);
+    assert(result.viewport_changed);
+    assert(window->first_row == layout.maximum_first_row);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_pointer_release(
+        &explorer, 0U, client, layout.thumb.x + 1,
+        layout.track.y + 1, 1100U, &result) == 0);
+
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_wheel(
+        &explorer, 0U, client, 1, &result) == 0);
+    assert(result.viewport_changed && window->first_row == 12U);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_wheel(
+        &explorer, 0U, client, -1, &result) == 0);
+    assert(result.viewport_changed && window->first_row == 15U);
+
+    desktop_rect_t enlarged = {20, 40, 330U, 2000U};
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_resize(
+        &explorer, 0U, enlarged, &result) == 0);
+    assert(result.viewport_changed && window->first_row == 0U);
+    layout = desktop_explorer_layout(window, enlarged);
+    assert(layout.scrollbar.x == enlarged.x + (int32_t)enlarged.width -
+                                  (int32_t)layout.scrollbar.width);
+    assert(!layout.enabled && layout.first_row == 0U);
+}
+
+static void test_scrolled_hit_test_keyboard_reveal_and_capacity(void) {
+    desktop_explorer_t explorer;
+    desktop_explorer_result_t result;
+    desktop_rect_t client = {10, 10, 226U, 152U};
+    desktop_explorer_initialize(&explorer);
+    many_entry_count = 50U;
+    assert(desktop_explorer_open(&explorer, 0U, "/Many") == 0);
+    desktop_explorer_window_t *window = &explorer.windows[0];
+
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_wheel(
+        &explorer, 0U, client, -1, &result) == 0);
+    assert(window->first_row == 3U);
+    desktop_rect_t visible = desktop_explorer_entry_rect(window, client, 6U);
+    assert(visible.width != 0U && visible.y == client.y);
+    assert(desktop_explorer_entry_rect(window, client, 0U).width == 0U);
+    assert(desktop_explorer_entry_at(
+        window, client, visible.x + 1, visible.y + 1) == 6U);
+
+    window->selected = 6U;
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_keyboard(
+        &explorer, 0U, client, DESKTOP_EXPLORER_KEY_UP, &result) == 0);
+    assert(window->selected == 4U && window->first_row == 2U);
+    window->selected = 48U;
+    window->first_row = 0U;
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_keyboard(
+        &explorer, 0U, client, DESKTOP_EXPLORER_KEY_RIGHT, &result) == 0);
+    assert(window->selected == 49U && result.viewport_changed);
+    assert(window->first_row == 23U);
+
+    many_entry_count = DESKTOP_EXPLORER_ENTRY_CAPACITY + 1U;
+    assert(desktop_explorer_open(&explorer, 0U, "/Many") == 0);
+    assert(window->entry_count == DESKTOP_EXPLORER_ENTRY_CAPACITY);
+    assert(window->truncated);
+    many_entry_count = 50U;
 }
 
 static void test_drag_object_is_bound_to_snapshot_generation(void) {
@@ -200,8 +398,12 @@ int main(void) {
     test_deadline_failure_keeps_published_snapshot();
     test_extension_icons_are_case_insensitive();
     test_child_path_and_window_capacity();
+    test_same_window_navigation_history_and_atomic_failure();
+    test_navigation_history_rolls_over_at_fixed_capacity();
     test_same_item_double_click_activates_once();
     test_keyboard_grid_navigation_and_activation();
+    test_scrollbar_geometry_input_and_resize_are_bounded();
+    test_scrolled_hit_test_keyboard_reveal_and_capacity();
     test_drag_object_is_bound_to_snapshot_generation();
     return 0;
 }

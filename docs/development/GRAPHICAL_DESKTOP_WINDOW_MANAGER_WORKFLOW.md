@@ -476,8 +476,9 @@ inkompatibler Fensterrahmen.
   generationengebundenen XRGB8888-Buffern betreiben.
 - [ ] Sound Player und Control Gallery auf Surface-Clients migrieren.
 - [ ] Terminalemulator als eigener GUI-Client statt globaler Console-Ausgabe.
-- [x] Verzeichnisse per Doppelklick/Enter in einem neuen Fenster öffnen und
-  `.PRG`-Dateien über ihren kanonischen VFS-Pfad starten.
+- [x] Verzeichnisse per Doppelklick/Enter atomar im aktuellen Fenster öffnen,
+  mit Zurück, Vor und Aufwärts navigieren und `.PRG`-Dateien über ihren
+  kanonischen VFS-Pfad starten.
 - [x] Versionierte, fest begrenzte Dateizuordnungen aus
   `/etc/reist/filetypes.conf` laden und den Dateipfad per `argv[1]` an das
   zugeordnete GUI-Programm übergeben.
@@ -498,11 +499,11 @@ Bildschirm temporär verwenden; der Desktop bleibt Elternprozess und setzt
 seine Szene nach `wait` ohne Shellwechsel oder zusätzlichen Tastendialog neu
 zusammen.
 
-Explorer-Snapshots blenden die synthetischen Einträge `.` und `..` aus, weil
-jeder Ordner in einem eigenen Fenster geöffnet wird. Dateisymbole werden über
+Explorer-Snapshots blenden die synthetischen Einträge `.` und `..` aus; die
+Aufwärts-Aktion übernimmt die Elternnavigation explizit. Dateisymbole werden über
 eine begrenzte, ASCII-groß-/kleinschreibungsunabhängige Endungstabelle gewählt:
 `.PRG`, Text, Konfiguration, WAVE sowie BMP/GIF/ICO besitzen eigene Motive.
-Verzeichnisse werden beim Snapshot mit höchstens zwei zusätzlichen Batches als
+Verzeichnisse werden beim Snapshot mit höchstens acht zusätzlichen Einträgen als
 nachweislich leer oder als belegt/unlesbar klassifiziert. Während eines
 Redraws erfolgen weder Verzeichniszugriffe noch Dateidekodierung.
 

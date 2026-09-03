@@ -17,15 +17,19 @@
 #include "x86os.h"
 
 #define DESKTOP_EXPLORER_WINDOW_CAPACITY 8U
-#define DESKTOP_EXPLORER_ENTRY_CAPACITY 32U
+#define DESKTOP_EXPLORER_ENTRY_CAPACITY 128U
 #define DESKTOP_EXPLORER_PATH_CAPACITY 256U
 #define DESKTOP_EXPLORER_NO_ENTRY UINT32_MAX
 #define DESKTOP_EXPLORER_DOUBLE_CLICK_MS 500U
 #define DESKTOP_EXPLORER_ICON_WIDTH 104U
 #define DESKTOP_EXPLORER_ICON_HEIGHT 76U
-#define DESKTOP_EXPLORER_SCAN_CAPACITY 128U
+#define DESKTOP_EXPLORER_SCAN_CAPACITY 129U
+#define DESKTOP_EXPLORER_SCROLLBAR_EXTENT 18U
+#define DESKTOP_EXPLORER_SCROLLBAR_MIN_THUMB 8U
+#define DESKTOP_EXPLORER_WHEEL_ROWS 3U
+#define DESKTOP_EXPLORER_HISTORY_CAPACITY 16U
 #define DESKTOP_EXPLORER_DIRECTORY_PROBE_ENTRIES 8U
-#define DESKTOP_EXPLORER_SNAPSHOT_TIMEOUT_MS 5000U
+#define DESKTOP_EXPLORER_SNAPSHOT_TIMEOUT_MS 10000U
 #define DESKTOP_EXPLORER_REQUEST_TIMEOUT_MS 1000U
 
 enum desktop_explorer_status {
@@ -59,6 +63,15 @@ enum desktop_explorer_icon {
     DESKTOP_EXPLORER_ICON_COUNT
 };
 
+enum desktop_explorer_scroll_capture {
+    DESKTOP_EXPLORER_SCROLL_NONE = 0U,
+    DESKTOP_EXPLORER_SCROLL_DECREMENT,
+    DESKTOP_EXPLORER_SCROLL_INCREMENT,
+    DESKTOP_EXPLORER_SCROLL_PAGE_DECREMENT,
+    DESKTOP_EXPLORER_SCROLL_PAGE_INCREMENT,
+    DESKTOP_EXPLORER_SCROLL_THUMB
+};
+
 typedef struct desktop_explorer_window {
     uint32_t active;
     uint32_t snapshot_generation;
@@ -71,7 +84,31 @@ typedef struct desktop_explorer_window {
     uint32_t pressed;
     uint32_t last_click;
     uint64_t last_click_ms;
+    uint32_t first_row;
+    uint32_t scroll_capture;
+    uint32_t scroll_drag_offset;
+    char back_paths[DESKTOP_EXPLORER_HISTORY_CAPACITY]
+                   [DESKTOP_EXPLORER_PATH_CAPACITY];
+    char forward_paths[DESKTOP_EXPLORER_HISTORY_CAPACITY]
+                      [DESKTOP_EXPLORER_PATH_CAPACITY];
+    uint32_t back_count;
+    uint32_t forward_count;
 } desktop_explorer_window_t;
+
+typedef struct desktop_explorer_layout {
+    desktop_rect_t viewport;
+    desktop_rect_t scrollbar;
+    desktop_rect_t decrement;
+    desktop_rect_t increment;
+    desktop_rect_t track;
+    desktop_rect_t thumb;
+    uint32_t columns;
+    uint32_t visible_rows;
+    uint32_t total_rows;
+    uint32_t maximum_first_row;
+    uint32_t first_row;
+    uint32_t enabled;
+} desktop_explorer_layout_t;
 
 typedef struct desktop_explorer {
     desktop_explorer_window_t windows[DESKTOP_EXPLORER_WINDOW_CAPACITY];
@@ -102,6 +139,7 @@ typedef struct desktop_explorer_drag_file {
 typedef struct desktop_explorer_result {
     uint32_t consumed;
     uint32_t selection_changed;
+    uint32_t viewport_changed;
     uint32_t activated;
     uint32_t window_index;
     uint32_t entry_index;
@@ -123,6 +161,23 @@ void desktop_explorer_desktop_release(desktop_explorer_t *explorer,
 /** Read and atomically publish one bounded directory snapshot. */
 int desktop_explorer_open(desktop_explorer_t *explorer,
                           uint32_t window_index, const char *path);
+/** Navigate one existing window and push its old path onto Back history. */
+int desktop_explorer_navigate(desktop_explorer_t *explorer,
+                              uint32_t window_index, const char *path);
+/** Atomically publish the previous or next bounded history snapshot. */
+int desktop_explorer_back(desktop_explorer_t *explorer,
+                          uint32_t window_index);
+int desktop_explorer_forward(desktop_explorer_t *explorer,
+                             uint32_t window_index);
+/** Navigate to the canonical parent, or ENOENT at the VFS root. */
+int desktop_explorer_up(desktop_explorer_t *explorer,
+                        uint32_t window_index);
+/** Reload the current path without changing Back or Forward history. */
+int desktop_explorer_refresh(desktop_explorer_t *explorer,
+                             uint32_t window_index);
+uint32_t desktop_explorer_can_back(const desktop_explorer_window_t *window);
+uint32_t desktop_explorer_can_forward(const desktop_explorer_window_t *window);
+uint32_t desktop_explorer_can_up(const desktop_explorer_window_t *window);
 /** Drop one window snapshot after the WM closes its corresponding slot. */
 void desktop_explorer_close(desktop_explorer_t *explorer,
                             uint32_t window_index);
@@ -133,6 +188,10 @@ uint32_t desktop_explorer_free_window(const desktop_explorer_t *explorer);
 int desktop_explorer_child_path(const desktop_explorer_window_t *window,
                                 uint32_t entry_index,
                                 char *path, uint32_t capacity);
+
+/** Derive the bounded icon viewport and vertical scrollbar from a client. */
+desktop_explorer_layout_t desktop_explorer_layout(
+    const desktop_explorer_window_t *window, desktop_rect_t client);
 
 /** Compute one icon-cell rectangle in a window client rectangle. */
 desktop_rect_t desktop_explorer_entry_rect(
@@ -148,6 +207,11 @@ int desktop_explorer_pointer_press(
     desktop_explorer_t *explorer, uint32_t window_index,
     desktop_rect_t client, int32_t x, int32_t y,
     desktop_explorer_result_t *result);
+/** Update a captured scrollbar thumb without changing icon press state. */
+int desktop_explorer_pointer_motion(
+    desktop_explorer_t *explorer, uint32_t window_index,
+    desktop_rect_t client, int32_t x, int32_t y,
+    desktop_explorer_result_t *result);
 /** Finish the captured click and recognize a bounded same-item double click. */
 int desktop_explorer_pointer_release(
     desktop_explorer_t *explorer, uint32_t window_index,
@@ -156,6 +220,15 @@ int desktop_explorer_pointer_release(
 /** Cancel an entry press after the drag controller owns button release. */
 void desktop_explorer_pointer_cancel(desktop_explorer_t *explorer,
                                      uint32_t window_index);
+/** Scroll the Explorer under the pointer; positive wheel values move up. */
+int desktop_explorer_wheel(
+    desktop_explorer_t *explorer, uint32_t window_index,
+    desktop_rect_t client, int32_t wheel,
+    desktop_explorer_result_t *result);
+/** Clamp row state and cancel scrollbar capture after client resize. */
+int desktop_explorer_resize(
+    desktop_explorer_t *explorer, uint32_t window_index,
+    desktop_rect_t client, desktop_explorer_result_t *result);
 /** Publish one generation-bound Explorer entry as a generic file object. */
 int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
                                  uint32_t window_index, uint32_t entry_index,
@@ -164,9 +237,9 @@ int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
 int desktop_explorer_drag_validate(
     const desktop_explorer_t *explorer, const desktop_drag_object_t *object,
     desktop_explorer_drag_file_t *file);
-/** Move selection in the visible icon grid or activate it with Enter. */
+/** Move selection in the icon grid, reveal it, or activate it with Enter. */
 int desktop_explorer_keyboard(
     desktop_explorer_t *explorer, uint32_t window_index,
-    uint32_t columns, uint32_t key, desktop_explorer_result_t *result);
+    desktop_rect_t client, uint32_t key, desktop_explorer_result_t *result);
 
 #endif

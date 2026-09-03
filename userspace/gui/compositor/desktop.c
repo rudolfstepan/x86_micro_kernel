@@ -79,6 +79,13 @@
 #define DESKTOP_TRASH_ICON_COUNT 2U
 #define DESKTOP_DRAG_FEEDBACK_SIZE 34U
 #define DESKTOP_TRASH_ACTION_HEIGHT 34U
+#define DESKTOP_EXPLORER_TOOLBAR_HEIGHT 32U
+#define DESKTOP_EXPLORER_ADDRESS_HEIGHT 26U
+#define DESKTOP_EXPLORER_STATUS_HEIGHT 24U
+#define DESKTOP_EXPLORER_BUTTON_GAP 4U
+#define DESKTOP_EXPLORER_BACK_WIDTH 96U
+#define DESKTOP_EXPLORER_SMALL_BUTTON_WIDTH 36U
+#define DESKTOP_EXPLORER_REFRESH_WIDTH 64U
 #define DESKTOP_SYSTEM_SOUND_CONFIG_PATH "/etc/reist/sounds.conf"
 #define DESKTOP_SYSTEM_SOUND_SCHEMA "reist.sounds/1"
 #define DESKTOP_SYSTEM_SOUND_PLAYER "/usr/bin/wavplay.prg"
@@ -121,6 +128,25 @@ typedef struct {
     uint32_t pending_event;
 } desktop_system_sound_state_t;
 
+enum desktop_explorer_navigation_action {
+    DESKTOP_EXPLORER_NAVIGATION_NONE = 0U,
+    DESKTOP_EXPLORER_NAVIGATION_BACK,
+    DESKTOP_EXPLORER_NAVIGATION_FORWARD,
+    DESKTOP_EXPLORER_NAVIGATION_UP,
+    DESKTOP_EXPLORER_NAVIGATION_REFRESH
+};
+
+typedef struct desktop_explorer_chrome {
+    desktop_rect_t toolbar;
+    desktop_rect_t address;
+    desktop_rect_t content;
+    desktop_rect_t status;
+    desktop_rect_t back;
+    desktop_rect_t forward;
+    desktop_rect_t up;
+    desktop_rect_t refresh;
+} desktop_explorer_chrome_t;
+
 static const char *const desktop_system_sound_keys[
         DESKTOP_SYSTEM_SOUND_EVENT_COUNT] = {
     "event.startup",
@@ -152,6 +178,8 @@ static uint64_t trash_last_click_ms;
 static desktop_drag_state_t desktop_drag;
 static desktop_trash_state_t desktop_trash;
 static uint32_t trash_restore_pressed_window = DESKTOP_WM_NO_TARGET;
+static uint32_t explorer_navigation_pressed_window = DESKTOP_WM_NO_TARGET;
+static uint32_t explorer_navigation_pressed_action;
 static x86os_ipc_handle_t desktop_svga2d_endpoint;
 static uint32_t desktop_svga2d_request_id;
 static uint32_t desktop_svga2d_capabilities;
@@ -2607,16 +2635,72 @@ static uint32_t desktop_window_is_trash(
             DESKTOP_TRASH_FILES_PATH);
 }
 
-static desktop_rect_t desktop_explorer_content_rect(
+static desktop_rect_t desktop_explorer_toolbar_button(
+    desktop_rect_t toolbar, uint32_t *offset, uint32_t requested_width) {
+    desktop_rect_t empty = {0, 0, 0U, 0U};
+    if (offset == 0 || toolbar.width <= DESKTOP_EXPLORER_BUTTON_GAP * 2U ||
+        toolbar.height <= 6U || *offset >= toolbar.width) return empty;
+    uint32_t remaining = toolbar.width - *offset;
+    uint32_t width = requested_width < remaining ? requested_width : remaining;
+    desktop_rect_t result = {
+        toolbar.x + (int32_t)*offset, toolbar.y + 3,
+        width, toolbar.height - 6U};
+    uint32_t advance = width;
+    if (advance <= UINT32_MAX - DESKTOP_EXPLORER_BUTTON_GAP)
+        advance += DESKTOP_EXPLORER_BUTTON_GAP;
+    *offset = advance > toolbar.width - *offset
+        ? toolbar.width : *offset + advance;
+    return result;
+}
+
+static desktop_explorer_chrome_t desktop_explorer_chrome(
     const desktop_wm_t *manager, const desktop_explorer_t *explorer,
     uint32_t window_index) {
+    desktop_explorer_chrome_t chrome = {0};
     desktop_rect_t client = desktop_window_client_rect(manager, window_index);
     if (desktop_window_is_trash(explorer, window_index)) {
         uint32_t reserved = min_u32(client.height,
                                     DESKTOP_TRASH_ACTION_HEIGHT);
         client.height -= reserved;
     }
-    return client;
+    uint32_t toolbar_height = min_u32(
+        client.height, DESKTOP_EXPLORER_TOOLBAR_HEIGHT);
+    chrome.toolbar = (desktop_rect_t){
+        client.x, client.y, client.width, toolbar_height};
+    client.y += (int32_t)toolbar_height;
+    client.height -= toolbar_height;
+    uint32_t address_height = min_u32(
+        client.height, DESKTOP_EXPLORER_ADDRESS_HEIGHT);
+    chrome.address = (desktop_rect_t){
+        client.x, client.y, client.width, address_height};
+    client.y += (int32_t)address_height;
+    client.height -= address_height;
+    uint32_t status_height = min_u32(
+        client.height, DESKTOP_EXPLORER_STATUS_HEIGHT);
+    chrome.content = (desktop_rect_t){
+        client.x, client.y, client.width, client.height - status_height};
+    chrome.status = (desktop_rect_t){
+        client.x,
+        client.y + (int32_t)(client.height - status_height),
+        client.width, status_height};
+
+    uint32_t offset = DESKTOP_EXPLORER_BUTTON_GAP;
+    chrome.back = desktop_explorer_toolbar_button(
+        chrome.toolbar, &offset, DESKTOP_EXPLORER_BACK_WIDTH);
+    chrome.forward = desktop_explorer_toolbar_button(
+        chrome.toolbar, &offset, DESKTOP_EXPLORER_SMALL_BUTTON_WIDTH);
+    chrome.up = desktop_explorer_toolbar_button(
+        chrome.toolbar, &offset, DESKTOP_EXPLORER_SMALL_BUTTON_WIDTH);
+    chrome.refresh = desktop_explorer_toolbar_button(
+        chrome.toolbar, &offset, DESKTOP_EXPLORER_REFRESH_WIDTH);
+    return chrome;
+}
+
+static desktop_rect_t desktop_explorer_content_rect(
+    const desktop_wm_t *manager, const desktop_explorer_t *explorer,
+    uint32_t window_index) {
+    return desktop_explorer_chrome(
+        manager, explorer, window_index).content;
 }
 
 static desktop_rect_t desktop_trash_restore_rect(
@@ -2677,6 +2761,168 @@ static void render_explorer_entry(
         label_y, entry->name, label_width,
         selected ? color_title_text : color_text,
         selected ? color_active : color_client);
+}
+
+static void render_explorer_scrollbar(
+    const desktop_render_context_t *context,
+    const desktop_explorer_window_t *explorer_window,
+    desktop_rect_t client) {
+    if (context == 0 || explorer_window == 0) return;
+    desktop_explorer_layout_t layout =
+        desktop_explorer_layout(explorer_window, client);
+    if (layout.scrollbar.width == 0U || layout.scrollbar.height == 0U)
+        return;
+    const x86os_display_info_t *display = context->display;
+    fill_rect_clipped(context, layout.track, color_light);
+    draw_bevel(context, layout.decrement, color_face,
+               explorer_window->scroll_capture !=
+                   DESKTOP_EXPLORER_SCROLL_DECREMENT);
+    draw_bevel(context, layout.increment, color_face,
+               explorer_window->scroll_capture !=
+                   DESKTOP_EXPLORER_SCROLL_INCREMENT);
+    draw_bevel(context, layout.thumb, color_face,
+               explorer_window->scroll_capture !=
+                   DESKTOP_EXPLORER_SCROLL_THUMB);
+    uint32_t foreground = layout.enabled ? color_text : color_shadow;
+    int32_t decrement_x = layout.decrement.x +
+        (int32_t)((layout.decrement.width > display->font_width
+            ? layout.decrement.width - display->font_width : 0U) / 2U);
+    int32_t decrement_y = layout.decrement.y +
+        (int32_t)((layout.decrement.height > display->font_height
+            ? layout.decrement.height - display->font_height : 0U) / 2U);
+    int32_t increment_x = layout.increment.x +
+        (int32_t)((layout.increment.width > display->font_width
+            ? layout.increment.width - display->font_width : 0U) / 2U);
+    int32_t increment_y = layout.increment.y +
+        (int32_t)((layout.increment.height > display->font_height
+            ? layout.increment.height - display->font_height : 0U) / 2U);
+    draw_text_clipped(context, decrement_x, decrement_y, "^",
+                      layout.decrement.width, foreground, color_face);
+    draw_text_clipped(context, increment_x, increment_y, "v",
+                      layout.increment.width, foreground, color_face);
+}
+
+static uint32_t explorer_navigation_enabled(
+    const desktop_explorer_window_t *window, uint32_t action) {
+    if (window == 0 || !window->active) return 0U;
+    if (action == DESKTOP_EXPLORER_NAVIGATION_BACK)
+        return desktop_explorer_can_back(window);
+    if (action == DESKTOP_EXPLORER_NAVIGATION_FORWARD)
+        return desktop_explorer_can_forward(window);
+    if (action == DESKTOP_EXPLORER_NAVIGATION_UP)
+        return desktop_explorer_can_up(window);
+    return action == DESKTOP_EXPLORER_NAVIGATION_REFRESH;
+}
+
+static void render_explorer_navigation_button(
+    const desktop_render_context_t *context,
+    const desktop_explorer_window_t *window, uint32_t window_index,
+    desktop_rect_t button, uint32_t action, const char *label) {
+    if (button.width == 0U || button.height == 0U) return;
+    uint32_t enabled = explorer_navigation_enabled(window, action);
+    uint32_t pressed = enabled &&
+        explorer_navigation_pressed_window == window_index &&
+        explorer_navigation_pressed_action == action;
+    draw_bevel(context, button, color_face, !pressed);
+    const x86os_display_info_t *display = context->display;
+    int32_t y = button.y + (int32_t)((button.height > display->font_height
+        ? button.height - display->font_height : 0U) / 2U);
+    draw_text_clipped(
+        context, button.x + 4, y, label,
+        button.width > 8U ? button.width - 8U : 1U,
+        enabled ? color_text : color_shadow, color_face);
+}
+
+static uint32_t unsigned_decimal(uint32_t value, char output[11]) {
+    char reverse[10];
+    uint32_t count = 0U;
+    do {
+        reverse[count++] = (char)('0' + value % 10U);
+        value /= 10U;
+    } while (value != 0U && count < sizeof(reverse));
+    for (uint32_t index = 0U; index < count; ++index)
+        output[index] = reverse[count - index - 1U];
+    output[count] = '\0';
+    return count;
+}
+
+static void render_explorer_chrome(
+    const desktop_render_context_t *context,
+    const desktop_wm_t *manager,
+    const desktop_explorer_t *explorer, uint32_t window_index) {
+    const desktop_explorer_window_t *window =
+        &explorer->windows[window_index];
+    desktop_explorer_chrome_t chrome = desktop_explorer_chrome(
+        manager, explorer, window_index);
+    fill_rect_clipped(context, chrome.toolbar, color_face);
+    render_explorer_navigation_button(
+        context, window, window_index, chrome.back,
+        DESKTOP_EXPLORER_NAVIGATION_BACK, "< Zurueck");
+    render_explorer_navigation_button(
+        context, window, window_index, chrome.forward,
+        DESKTOP_EXPLORER_NAVIGATION_FORWARD, ">");
+    render_explorer_navigation_button(
+        context, window, window_index, chrome.up,
+        DESKTOP_EXPLORER_NAVIGATION_UP, "^");
+    render_explorer_navigation_button(
+        context, window, window_index, chrome.refresh,
+        DESKTOP_EXPLORER_NAVIGATION_REFRESH, "Aktual.");
+
+    if (chrome.address.width != 0U && chrome.address.height != 0U) {
+        fill_rect_clipped(context, chrome.address, color_face);
+        desktop_rect_t field = chrome.address;
+        if (field.width > 8U) {
+            field.x += 4;
+            field.width -= 8U;
+        }
+        if (field.height > 4U) {
+            field.y += 2;
+            field.height -= 4U;
+        }
+        draw_bevel(context, field, color_client, 0U);
+        const x86os_display_info_t *display = context->display;
+        int32_t text_y = field.y +
+            (int32_t)((field.height > display->font_height
+                ? field.height - display->font_height : 0U) / 2U);
+        uint32_t label_width = display->font_width * 9U;
+        draw_text_clipped(
+            context, field.x + 4, text_y, "Adresse:", label_width,
+            color_text, color_client);
+        if (field.width > label_width + 8U)
+            draw_text_clipped(
+                context, field.x + 4 + (int32_t)label_width, text_y,
+                window->path, field.width - label_width - 8U,
+                color_text, color_client);
+    }
+
+    if (chrome.status.width != 0U && chrome.status.height != 0U) {
+        draw_bevel(context, chrome.status, color_face, 0U);
+        const x86os_display_info_t *display = context->display;
+        int32_t text_y = chrome.status.y +
+            (int32_t)((chrome.status.height > display->font_height
+                ? chrome.status.height - display->font_height : 0U) / 2U);
+        char number[11];
+        uint32_t digits = unsigned_decimal(window->entry_count, number);
+        draw_text_clipped(
+            context, chrome.status.x + 4, text_y, number,
+            digits * display->font_width, color_text, color_face);
+        int32_t suffix_x = chrome.status.x + 4 +
+            (int32_t)(digits * display->font_width);
+        const char *suffix = window->truncated ? "+ Objekte" : " Objekte";
+        uint32_t left_width = chrome.status.width / 3U;
+        draw_text_clipped(
+            context, suffix_x, text_y, suffix,
+            left_width > digits * display->font_width
+                ? left_width - digits * display->font_width : 1U,
+            color_text, color_face);
+        if (window->selected < window->entry_count &&
+            chrome.status.width > left_width + 8U)
+            draw_text_clipped(
+                context, chrome.status.x + (int32_t)left_width, text_y,
+                window->entries[window->selected].name,
+                chrome.status.width - left_width - 4U,
+                color_text, color_face);
+    }
 }
 
 static void render_surface_paint_list(
@@ -2819,18 +3065,28 @@ static void render_window(const desktop_render_context_t *context,
             surface->committed_hover_paint_count);
     }
     if (explorer_window != 0)
+        render_explorer_chrome(
+            context, manager, explorer, window_index);
+    if (explorer_window != 0)
         for (uint32_t entry = 0U; entry < explorer_window->entry_count; ++entry)
             render_explorer_entry(
                 context, explorer_window, explorer_client, entry);
+    if (explorer_window != 0)
+        render_explorer_scrollbar(context, explorer_window, explorer_client);
     if (explorer_window != 0 && explorer_window->truncated &&
-        explorer_client.height > display->font_height + 4U)
+        explorer_client.height > display->font_height + 4U) {
+        desktop_explorer_layout_t explorer_layout =
+            desktop_explorer_layout(explorer_window, explorer_client);
         draw_text_clipped(
-            context, explorer_client.x + 4,
-            explorer_client.y + (int32_t)explorer_client.height -
+            context, explorer_layout.viewport.x + 4,
+            explorer_layout.viewport.y +
+                (int32_t)explorer_layout.viewport.height -
                 (int32_t)display->font_height - 3,
-            "Weitere Eintraege nicht angezeigt",
-            explorer_client.width > 8U ? explorer_client.width - 8U : 1U,
+            "Weitere Eintraege nicht geladen",
+            explorer_layout.viewport.width > 8U
+                ? explorer_layout.viewport.width - 8U : 1U,
             color_shadow, color_client);
+    }
     if (explorer_window != 0 &&
         desktop_window_is_trash(explorer, window_index)) {
         desktop_rect_t action = desktop_trash_restore_rect(
@@ -4324,6 +4580,102 @@ static uint32_t desktop_try_exit(
     return 1U;
 }
 
+static int desktop_explorer_scroll_probe_run(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    const x86os_display_info_t *display) {
+    if (manager == 0 || explorer == 0 || display == 0 ||
+        !explorer->windows[0].active ||
+        explorer->windows[0].entry_count < 8U) return -1;
+    desktop_explorer_window_t *window = &explorer->windows[0];
+    if (desktop_explorer_up(explorer, 0U) != DESKTOP_EXPLORER_OK ||
+        !text_equal(window->path, "/usr/share") ||
+        desktop_explorer_navigate(
+            explorer, 0U, "/usr/share/fonts") != DESKTOP_EXPLORER_OK ||
+        !text_equal(window->path, "/usr/share/fonts") ||
+        desktop_explorer_back(explorer, 0U) != DESKTOP_EXPLORER_OK ||
+        !text_equal(window->path, "/usr/share") ||
+        desktop_explorer_forward(explorer, 0U) != DESKTOP_EXPLORER_OK ||
+        !text_equal(window->path, "/usr/share/fonts")) return -2;
+    uint32_t refreshed_generation = window->snapshot_generation;
+    if (desktop_explorer_refresh(explorer, 0U) != DESKTOP_EXPLORER_OK ||
+        window->snapshot_generation == refreshed_generation ||
+        !text_equal(window->path, "/usr/share/fonts")) return -3;
+    desktop_rect_t actual = desktop_explorer_content_rect(
+        manager, explorer, 0U);
+    desktop_rect_t client = actual;
+    uint32_t probe_height = DESKTOP_EXPLORER_ICON_HEIGHT * 2U;
+    if (client.height > probe_height) client.height = probe_height;
+    desktop_explorer_layout_t layout =
+        desktop_explorer_layout(window, client);
+    if (!layout.enabled || layout.maximum_first_row == 0U ||
+        layout.scrollbar.x != client.x + (int32_t)client.width -
+            (int32_t)layout.scrollbar.width) return -4;
+
+    desktop_explorer_result_t result;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_press(
+            explorer, 0U, client, layout.increment.x + 1,
+            layout.increment.y + 1, &result) != DESKTOP_EXPLORER_OK ||
+        !result.viewport_changed || window->first_row != 1U) return -5;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_release(
+            explorer, 0U, client, layout.increment.x + 1,
+            layout.increment.y + 1, 1U, &result) != DESKTOP_EXPLORER_OK ||
+        window->scroll_capture != DESKTOP_EXPLORER_SCROLL_NONE) return -6;
+
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_wheel(
+            explorer, 0U, client, -1, &result) != DESKTOP_EXPLORER_OK ||
+        !result.viewport_changed || window->first_row <= 1U) return -7;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_wheel(
+            explorer, 0U, client, INT32_MAX, &result) !=
+            DESKTOP_EXPLORER_OK || window->first_row != 0U) return -8;
+
+    layout = desktop_explorer_layout(window, client);
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_press(
+            explorer, 0U, client, layout.thumb.x + 1,
+            layout.thumb.y + 1, &result) != DESKTOP_EXPLORER_OK ||
+        window->scroll_capture != DESKTOP_EXPLORER_SCROLL_THUMB) return -9;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_motion(
+            explorer, 0U, client, layout.thumb.x + 1,
+            layout.track.y + (int32_t)layout.track.height + 1,
+            &result) != DESKTOP_EXPLORER_OK ||
+        window->first_row != layout.maximum_first_row) return -10;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_release(
+            explorer, 0U, client, layout.thumb.x + 1,
+            layout.track.y + 1, 2U, &result) != DESKTOP_EXPLORER_OK) return -11;
+
+    window->first_row = 0U;
+    window->selected = window->entry_count - 1U;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_keyboard(
+            explorer, 0U, client, DESKTOP_EXPLORER_KEY_LEFT,
+            &result) != DESKTOP_EXPLORER_OK ||
+        !result.viewport_changed || window->first_row == 0U) return -12;
+
+    desktop_rect_t resized = client;
+    if (resized.width > DESKTOP_EXPLORER_SCROLLBAR_EXTENT + 80U)
+        resized.width -= 80U;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_resize(
+            explorer, 0U, resized, &result) != DESKTOP_EXPLORER_OK)
+        return -13;
+    layout = desktop_explorer_layout(window, resized);
+    if (layout.scrollbar.x != resized.x + (int32_t)resized.width -
+            (int32_t)layout.scrollbar.width ||
+        layout.scrollbar.y != resized.y ||
+        layout.scrollbar.height != resized.height) return -14;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_resize(
+            explorer, 0U, actual, &result) != DESKTOP_EXPLORER_OK)
+        return -15;
+    return 0;
+}
+
 static char filetypes_config[DESKTOP_FILETYPES_CONFIG_CAPACITY + 1U];
 static char system_sound_config[REIST_CONFIG_FILE_CAPACITY + 1U];
 static reist_config_document_t system_sound_document;
@@ -4955,16 +5307,7 @@ static uint32_t apply_trash_restore(
              (!parent_valid || !path_equal_ascii_case(
                  explorer->windows[index].path, original_parent))))
             continue;
-        char current[DESKTOP_EXPLORER_PATH_CAPACITY];
-        size_t length = bounded_text_length(
-            explorer->windows[index].path, sizeof(current));
-        if (length == sizeof(current)) {
-            refreshed = 0U;
-            continue;
-        }
-        for (size_t offset = 0U; offset <= length; ++offset)
-            current[offset] = explorer->windows[index].path[offset];
-        if (desktop_explorer_open(explorer, index, current) !=
+        if (desktop_explorer_refresh(explorer, index) !=
             DESKTOP_EXPLORER_OK) refreshed = 0U;
         desktop_dirty_add(
             dirty, desktop_wm_window_bounds(manager, index));
@@ -5011,9 +5354,19 @@ static uint32_t apply_desktop_activation(
     if (desktop_explorer_child_path(
             window, activation->entry_index, path, sizeof(path)) !=
         DESKTOP_EXPLORER_OK) return 0U;
-    if (window->entries[activation->entry_index].type == X86OS_DIRECTORY)
-        return open_explorer_path(
-            manager, explorer, ui, display, dirty, path, target);
+    if (window->entries[activation->entry_index].type == X86OS_DIRECTORY) {
+        int navigation_status = desktop_explorer_navigate(
+            explorer, activation->window_index, path);
+        if (navigation_status != DESKTOP_EXPLORER_OK) {
+            desktop_ui_open_error(
+                ui, display, dirty,
+                "Ordner kann nicht geoeffnet werden.", path);
+        }
+        desktop_dirty_add(
+            dirty, desktop_wm_window_bounds(
+                manager, activation->window_index));
+        return 0U;
+    }
     const char *program = path;
     const char *document = 0;
     if (!has_program_extension(path)) {
@@ -5126,6 +5479,92 @@ static uint32_t desktop_taskbar_pointer_button(
         *actions |= dispatch_desktop_event(
             manager, display, dirty, &select, target);
     }
+    return 1U;
+}
+
+static uint32_t desktop_explorer_navigation_action_at(
+    const desktop_wm_t *manager, const desktop_explorer_t *explorer,
+    uint32_t window_index, int32_t x, int32_t y) {
+    if (manager == 0 || explorer == 0 ||
+        window_index >= DESKTOP_WM_CAPACITY ||
+        !explorer->windows[window_index].active)
+        return DESKTOP_EXPLORER_NAVIGATION_NONE;
+    desktop_explorer_chrome_t chrome = desktop_explorer_chrome(
+        manager, explorer, window_index);
+    if (point_in_rect(chrome.back, x, y))
+        return DESKTOP_EXPLORER_NAVIGATION_BACK;
+    if (point_in_rect(chrome.forward, x, y))
+        return DESKTOP_EXPLORER_NAVIGATION_FORWARD;
+    if (point_in_rect(chrome.up, x, y))
+        return DESKTOP_EXPLORER_NAVIGATION_UP;
+    if (point_in_rect(chrome.refresh, x, y))
+        return DESKTOP_EXPLORER_NAVIGATION_REFRESH;
+    return DESKTOP_EXPLORER_NAVIGATION_NONE;
+}
+
+static int desktop_explorer_apply_navigation(
+    desktop_explorer_t *explorer, uint32_t window_index, uint32_t action) {
+    if (action == DESKTOP_EXPLORER_NAVIGATION_BACK)
+        return desktop_explorer_back(explorer, window_index);
+    if (action == DESKTOP_EXPLORER_NAVIGATION_FORWARD)
+        return desktop_explorer_forward(explorer, window_index);
+    if (action == DESKTOP_EXPLORER_NAVIGATION_UP)
+        return desktop_explorer_up(explorer, window_index);
+    if (action == DESKTOP_EXPLORER_NAVIGATION_REFRESH)
+        return desktop_explorer_refresh(explorer, window_index);
+    return DESKTOP_EXPLORER_EINVAL;
+}
+
+static uint32_t desktop_explorer_navigation_pointer_button(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    desktop_ui_state_t *ui, const x86os_display_info_t *display,
+    desktop_dirty_region_t *dirty, int32_t x, int32_t y,
+    uint32_t pressed, uint32_t *actions, uint32_t *target) {
+    if (manager == 0 || explorer == 0 || ui == 0 || display == 0 ||
+        dirty == 0 || actions == 0) return 0U;
+    if (pressed) {
+        int window = desktop_wm_window_at(manager, x, y);
+        if (window < 0 || window >= (int32_t)DESKTOP_WM_CAPACITY)
+            return 0U;
+        uint32_t window_index = (uint32_t)window;
+        uint32_t action = desktop_explorer_navigation_action_at(
+            manager, explorer, window_index, x, y);
+        if (action == DESKTOP_EXPLORER_NAVIGATION_NONE) return 0U;
+        explorer_navigation_pressed_window = window_index;
+        explorer_navigation_pressed_action = action;
+        desktop_wm_event_t select = {
+            .type = DESKTOP_WM_EVENT_SELECT,
+            .target = window_index,
+        };
+        *actions |= dispatch_desktop_event(
+            manager, display, dirty, &select, target);
+        desktop_dirty_add(
+            dirty, desktop_wm_window_bounds(manager, window_index));
+        return 1U;
+    }
+    if (explorer_navigation_pressed_window == DESKTOP_WM_NO_TARGET)
+        return 0U;
+    uint32_t window_index = explorer_navigation_pressed_window;
+    uint32_t captured_action = explorer_navigation_pressed_action;
+    explorer_navigation_pressed_window = DESKTOP_WM_NO_TARGET;
+    explorer_navigation_pressed_action = DESKTOP_EXPLORER_NAVIGATION_NONE;
+    if (window_index >= DESKTOP_WM_CAPACITY ||
+        !explorer->windows[window_index].active) return 1U;
+    uint32_t released_action = desktop_explorer_navigation_action_at(
+        manager, explorer, window_index, x, y);
+    if (released_action == captured_action &&
+        explorer_navigation_enabled(
+            &explorer->windows[window_index], captured_action)) {
+        int status = desktop_explorer_apply_navigation(
+            explorer, window_index, captured_action);
+        if (status != DESKTOP_EXPLORER_OK)
+            desktop_ui_open_error(
+                ui, display, dirty,
+                "Ordnernavigation ist fehlgeschlagen.",
+                explorer->windows[window_index].path);
+    }
+    desktop_dirty_add(
+        dirty, desktop_wm_window_bounds(manager, window_index));
     return 1U;
 }
 
@@ -5279,6 +5718,32 @@ static uint32_t dispatch_pointer_motion(
         };
         actions |= dispatch_desktop_event(
             manager, display, dirty, &motion, target);
+        if (manager->capture_kind == DESKTOP_WM_CAPTURE_CLIENT &&
+            manager->capture_window >= 0 &&
+            manager->capture_window < (int32_t)DESKTOP_WM_CAPACITY) {
+            uint32_t window_index = (uint32_t)manager->capture_window;
+            desktop_explorer_result_t scroll_result;
+            desktop_explorer_result_initialize(&scroll_result);
+            (void)desktop_explorer_pointer_motion(
+                explorer, window_index,
+                desktop_explorer_content_rect(
+                    manager, explorer, window_index),
+                *pointer_x, *pointer_y, &scroll_result);
+            if (scroll_result.viewport_changed)
+                desktop_dirty_add(
+                    dirty, desktop_wm_window_bounds(manager, window_index));
+        } else if (manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE &&
+                   manager->capture_window >= 0 &&
+                   manager->capture_window < (int32_t)DESKTOP_WM_CAPACITY) {
+            uint32_t window_index = (uint32_t)manager->capture_window;
+            desktop_explorer_result_t resize_result;
+            desktop_explorer_result_initialize(&resize_result);
+            (void)desktop_explorer_resize(
+                explorer, window_index,
+                desktop_explorer_content_rect(
+                    manager, explorer, window_index),
+                &resize_result);
+        }
     }
     if (can_cache) {
         uint32_t destination_kind = DESKTOP_MOVE_CACHE_NONE;
@@ -5302,7 +5767,7 @@ static void collect_explorer_pointer_result(
     const desktop_explorer_result_t *result, uint32_t root,
     desktop_activation_t *activation) {
     if (result == 0) return;
-    if (result->selection_changed) {
+    if (result->selection_changed || result->viewport_changed) {
         if (root) {
             desktop_dirty_add(dirty, desktop_icon_rect(display, 0U));
         } else if (result->window_index < DESKTOP_WM_CAPACITY) {
@@ -5410,13 +5875,7 @@ static uint32_t refresh_explorer_snapshot(
     if (explorer == 0 || manager == 0 || dirty == 0 ||
         window_index >= DESKTOP_WM_CAPACITY ||
         !explorer->windows[window_index].active) return 0U;
-    char path[DESKTOP_EXPLORER_PATH_CAPACITY];
-    size_t length = bounded_text_length(
-        explorer->windows[window_index].path, sizeof(path));
-    if (length == sizeof(path)) return 0U;
-    for (size_t index = 0U; index <= length; ++index)
-        path[index] = explorer->windows[window_index].path[index];
-    if (desktop_explorer_open(explorer, window_index, path) !=
+    if (desktop_explorer_refresh(explorer, window_index) !=
         DESKTOP_EXPLORER_OK) return 0U;
     desktop_dirty_add(
         dirty, desktop_wm_window_bounds(manager, window_index));
@@ -5531,8 +5990,7 @@ static void apply_trash_empty(
     uint32_t refreshed = 1U;
     for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
         if (!desktop_window_is_trash(explorer, index)) continue;
-        if (desktop_explorer_open(
-                explorer, index, DESKTOP_TRASH_FILES_PATH) !=
+        if (desktop_explorer_refresh(explorer, index) !=
             DESKTOP_EXPLORER_OK) refreshed = 0U;
         desktop_dirty_add(
             dirty, desktop_wm_window_bounds(manager, index));
@@ -5581,6 +6039,10 @@ static uint32_t dispatch_pointer_button(
                     manager, ui, display, dirty, pointer_x, pointer_y,
                     1U, &actions, target);
         }
+        if (!ui_press_consumed)
+            ui_press_consumed = desktop_explorer_navigation_pointer_button(
+                manager, explorer, ui, display, dirty,
+                pointer_x, pointer_y, 1U, &actions, target);
         if (!ui_press_consumed) {
             int restore_window = desktop_wm_window_at(
                 manager, pointer_x, pointer_y);
@@ -5655,6 +6117,12 @@ static uint32_t dispatch_pointer_button(
             }
         }
     } else if (!left_down && left_was_down) {
+        if (explorer_navigation_pressed_window != DESKTOP_WM_NO_TARGET) {
+            (void)desktop_explorer_navigation_pointer_button(
+                manager, explorer, ui, display, dirty,
+                pointer_x, pointer_y, 0U, &actions, target);
+            return actions;
+        }
         if (trash_restore_pressed_window != DESKTOP_WM_NO_TARGET) {
             uint32_t restore_window = trash_restore_pressed_window;
             trash_restore_pressed_window = DESKTOP_WM_NO_TARGET;
@@ -6160,6 +6628,7 @@ int main(int argc, char **argv) {
     uint32_t trash_context_probe = 0U;
     uint32_t trash_confirm_probe = 0U;
     uint32_t trash_restore_probe = 0U;
+    uint32_t explorer_scroll_probe = 0U;
     uint32_t unicode_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
@@ -6220,13 +6689,17 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--unicode-probe")) {
         unicode_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--explorer-scroll-probe")) {
+        explorer_scroll_probe = 1U;
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--hover-probe|--surface-probe|"
             "--notepad-probe|--notepad-font-probe|--control-probe|"
             "--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
-            "--trash-confirm-probe|--trash-restore-probe|--unicode-probe]\n");
+            "--trash-confirm-probe|--trash-restore-probe|--unicode-probe|"
+            "--explorer-scroll-probe]\n");
         return 2;
     }
     hover_probe_initialize(&hover_probe_state, hover_probe);
@@ -6454,7 +6927,7 @@ int main(int argc, char **argv) {
         control_probe ||
         guidemo_probe || sound_probe || trash_context_probe ||
         trash_confirm_probe || trash_restore_probe ||
-        unicode_probe)
+        unicode_probe || explorer_scroll_probe)
         system_sounds.enabled = 0U;
     if (system_sound_status != 0)
         x86os_puts("desktop: Systemklangkonfiguration ungueltig\n");
@@ -6472,7 +6945,9 @@ int main(int argc, char **argv) {
     uint32_t initial_target = DESKTOP_WM_NO_TARGET;
     if (open_explorer_path(
             &manager, &explorer, &ui, &display,
-            &initial_dirty, "/", &initial_target) != 0U)
+            &initial_dirty,
+            explorer_scroll_probe ? "/usr/share/fonts" : "/",
+            &initial_target) != 0U)
         x86os_puts("DESKTOP_EXPLORER_OK\n");
     if (filetypes_status != 0)
         desktop_ui_open_error(
@@ -6528,6 +7003,28 @@ int main(int argc, char **argv) {
         x86os_putchar('\n');
     }
     x86os_puts("DESKTOP_OK\n");
+    if (explorer_scroll_probe) {
+        int probe_status = desktop_explorer_scroll_probe_run(
+            &manager, &explorer, &display);
+        if (probe_status == 0) {
+            desktop_dirty_region_t probe_dirty;
+            desktop_dirty_initialize(
+                &probe_dirty, display.width, display.height);
+            desktop_dirty_full(&probe_dirty);
+            (void)render_desktop_frame(
+                &display, &manager, &explorer, &surfaces, &ui,
+                &probe_dirty);
+            x86os_puts("DESKTOP_EXPLORER_SCROLL_OK\n");
+        } else {
+            x86os_puts("DESKTOP_EXPLORER_SCROLL_FAIL status=");
+            x86os_print_number(probe_status);
+            x86os_putchar('\n');
+        }
+        uint32_t exited = desktop_try_exit(
+            pointer_x, pointer_y, runtime_activated, &metrics);
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        return probe_status == 0 && exited ? 0 : 1;
+    }
     if (hover_probe) x86os_puts("DESKTOP_HOVER_PROBE_READY\n");
     desktop_system_sound_request(
         &system_sounds, ui.error_sequence != 0U
@@ -6967,6 +7464,27 @@ int main(int argc, char **argv) {
                     }
                 }
             }
+            if (mouse.wheel != 0 && !desktop_ui_owns_pointer(&ui) &&
+                desktop_drag.phase == DESKTOP_DRAG_PHASE_IDLE) {
+                int scroll_window = desktop_wm_window_at(
+                    &manager, pointer_x, pointer_y);
+                if (scroll_window >= 0 &&
+                    scroll_window < (int32_t)DESKTOP_WM_CAPACITY) {
+                    uint32_t window_index = (uint32_t)scroll_window;
+                    desktop_rect_t client = desktop_explorer_content_rect(
+                        &manager, &explorer, window_index);
+                    if (point_in_rect(client, pointer_x, pointer_y)) {
+                        desktop_explorer_result_t scroll_result;
+                        desktop_explorer_result_initialize(&scroll_result);
+                        if (desktop_explorer_wheel(
+                                &explorer, window_index, client, mouse.wheel,
+                                &scroll_result) == DESKTOP_EXPLORER_OK)
+                            collect_explorer_pointer_result(
+                                &display, &manager, &dirty, &scroll_result,
+                                0U, &activation);
+                    }
+                }
+            }
             previous_buttons = mouse.buttons;
             if (hover_transition) {
                 ++mouse_events;
@@ -7027,23 +7545,44 @@ int main(int argc, char **argv) {
             &manager, &explorer, &ui, &display, &dirty,
             &ui_key, &action_target);
         if (!ui_key.consumed) {
-            uint32_t surface_key_consumed = enqueue_surface_keyboard(
-                &manager, &surfaces, key);
+            uint32_t navigation_key_consumed = 0U;
+            if ((key == '\b' || key == 0x7F) &&
+                manager.keyboard_focus >= 0 &&
+                manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
+                uint32_t focused = (uint32_t)manager.keyboard_focus;
+                if (explorer.windows[focused].active) {
+                    navigation_key_consumed = 1U;
+                    if (desktop_explorer_can_back(
+                            &explorer.windows[focused])) {
+                        int navigation_status = desktop_explorer_back(
+                            &explorer, focused);
+                        if (navigation_status != DESKTOP_EXPLORER_OK)
+                            desktop_ui_open_error(
+                                &ui, &display, &dirty,
+                                "Zurueck-Navigation ist fehlgeschlagen.",
+                                explorer.windows[focused].path);
+                        desktop_dirty_add(
+                            &dirty, desktop_wm_window_bounds(
+                                &manager, focused));
+                    }
+                }
+            }
+            uint32_t surface_key_consumed = navigation_key_consumed ? 0U :
+                enqueue_surface_keyboard(&manager, &surfaces, key);
             surface_input_queued |= surface_key_consumed;
             uint32_t explorer_key = explorer_key_from_input(key);
-            if (!surface_key_consumed && explorer_key != 0U &&
+            if (!navigation_key_consumed && !surface_key_consumed &&
+                explorer_key != 0U &&
                 manager.keyboard_focus >= 0 &&
                 manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
                 uint32_t focused = (uint32_t)manager.keyboard_focus;
                 desktop_rect_t client = desktop_explorer_content_rect(
                     &manager, &explorer, focused);
-                uint32_t columns = client.width /
-                    DESKTOP_EXPLORER_ICON_WIDTH;
                 desktop_explorer_result_t explorer_result;
                 desktop_explorer_result_initialize(&explorer_result);
                 (void)desktop_explorer_keyboard(
-                    &explorer, focused, columns != 0U ? columns : 1U,
-                    explorer_key, &explorer_result);
+                    &explorer, focused, client, explorer_key,
+                    &explorer_result);
                 collect_explorer_pointer_result(
                     &display, &manager, &dirty, &explorer_result, 0U,
                     &activation);

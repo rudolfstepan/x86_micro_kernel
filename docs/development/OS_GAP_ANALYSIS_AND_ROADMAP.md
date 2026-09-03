@@ -2355,9 +2355,10 @@ Langzeitbetrieb und Produktqualifikation bleiben außerhalb dieses Abschlusses.
   Deadline den vollständigen Lauf; jeder Request erhält höchstens eine Sekunde
   der verbleibenden Zeit. Der Desktop-Explorer verwendet für
   Verzeichnisvalidierung, Einträge und Leer/Voll-Ordnerproben nun ebenfalls
-  ausschließlich Operationen 5 und 7. Pro atomarem Snapshot gelten 32
-  sichtbare und 128 gescannte Einträge sowie eine absolute monotone
-  Fünf-Sekunden-Deadline; Fehler bewahren das zuvor veröffentlichte Fenster.
+  ausschließlich Operationen 5 und 7. Pro atomarem Snapshot gelten 128
+  sichtbare Einträge plus ein begrenzter Überlaufprobeeintrag sowie eine
+  absolute monotone Zehn-Sekunden-Deadline mit einsekündigen Requests; Fehler
+  bewahren das zuvor veröffentlichte Fenster.
   Die langlebige Userspace-Shell verwendet für Programmsuche und
   Tab-Vervollständigung nun ebenfalls ausschließlich diese Operationen. Eine
   Aktion teilt eine absolute monotone Fünf-Sekunden-Deadline, einsekündige
@@ -3161,7 +3162,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    vorab in feste Slots; Frame-Rendering skaliert diese Glyphen nicht mehr.
    Abnahme: lesbare, nicht abgeschnittene Raster jeder Familie und Größe sowie
    der reale große Notepad-Fontlauf ohne Compositor-Neustart.
-5. [~] **R3.3b · Explorer im Fenster navigierbar und scrollbar machen.** Ein
+5. [x] **R3.3b · Explorer im Fenster navigierbar und scrollbar machen.** Ein
    Unterordner ersetzt atomar den Inhalt desselben Fensters. Eine klassische
    Leiste mit Zurück, Vor, Aufwärts und Aktualisieren verwendet feste
    16-Pfad-Verläufe; eine schreibgeschützte Adresszeile und eine Statusleiste
@@ -3173,8 +3174,10 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Der atomare sortierte Snapshot bleibt auf 128 Einträge begrenzt; Überlauf
    wird weiterhin explizit gemeldet. Abnahme: Hostmatrix für Navigation,
    Zurück-/Vor-Verlauf, Refresh, Range, Capture, Hit-Test und Resize sowie realer
-   QEMU-Explorer-Navigations-/Scrolllauf.
-6. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+   QEMU-Explorer-Navigations-/Scrolllauf. Abgenommen mit 104 Targeted-Checks,
+   QEMU-Framebuffer-Paketbuild und realem Guest-Lauf einschließlich
+   VGA-Rückkehr und antwortender Ring-3-Shell.
+6. [~] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
    restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird

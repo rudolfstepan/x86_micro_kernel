@@ -282,6 +282,23 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("runtime-desktop-notepad-fonts: PASS",
                       self.runtime_runner)
 
+    def test_runtime_explorer_mode_proves_navigation_and_scroll(self):
+        desktop = (ROOT / "userspace" / "gui" / "compositor" /
+                   "desktop.c").read_text(encoding="utf-8")
+        self.assertIn("runtime-desktop-explorer-scroll", self.runtime_script)
+        self.assertIn("-ExplorerScrollProbe $true", self.runtime_script)
+        self.assertIn("--explorer-scroll-probe", self.runtime_runner)
+        self.assertIn("desktop.prg --explorer-scroll-probe",
+                      self.runtime_runner)
+        self.assertIn("DESKTOP_EXPLORER_SCROLL_OK", self.runtime_runner)
+        self.assertIn("QEMU_SENDKEY_INTERVAL_SECONDS = 0.12",
+                      self.runtime_runner)
+        self.assertIn('send_command(process, "help")', self.runtime_runner)
+        self.assertIn("SHELL_HELP_MARKER", self.runtime_runner)
+        self.assertIn("desktop_explorer_scroll_probe_run", desktop)
+        self.assertIn('x86os_puts("DESKTOP_EXPLORER_SCROLL_OK\\n")',
+                      desktop)
+
     def test_runtime_guidemo_probe_uses_physical_usb_button_edges(self):
         self.assertIn('"desktop.prg --guidemo-probe"', self.runtime_runner)
         self.assertIn('"qemu-xhci,id=reistxhci"', self.runtime_runner)

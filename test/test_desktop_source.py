@@ -109,6 +109,72 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("desktop_icon_rect", self.source)
         self.assertIn("render_window", self.source)
 
+    def test_explorer_scrollbar_uses_current_client_and_all_input_paths(self):
+        explorer = (
+            ROOT / "userspace" / "gui" / "compositor" /
+            "desktop_explorer.c"
+        ).read_text(encoding="utf-8")
+        header = (
+            ROOT / "userspace" / "gui" / "compositor" /
+            "desktop_explorer.h"
+        ).read_text(encoding="utf-8")
+        self.assertIn("DESKTOP_EXPLORER_ENTRY_CAPACITY 128U", header)
+        self.assertIn("DESKTOP_EXPLORER_SCROLLBAR_EXTENT 18U", header)
+        self.assertIn("static void render_explorer_scrollbar", self.source)
+        self.assertIn("desktop_explorer_layout(explorer_window, client)",
+                      self.source)
+        self.assertIn("desktop_explorer_pointer_motion(", self.source)
+        self.assertIn("desktop_explorer_wheel(", self.source)
+        self.assertIn("desktop_explorer_resize(", self.source)
+        self.assertIn("mouse.wheel", self.source)
+        self.assertIn("layout.maximum_first_row", explorer)
+        self.assertIn("layout.scrollbar.x", self.source)
+        render = self.source[
+            self.source.index("static void render_explorer_scrollbar"):
+            self.source.index("static void render_surface_paint_list")
+        ]
+        self.assertNotRegex(
+            render, r"\b(x86os_open|x86os_read|reist_vfs_|malloc)\s*\("
+        )
+
+    def test_explorer_has_bounded_classic_same_window_navigation_chrome(self):
+        explorer = (
+            ROOT / "userspace" / "gui" / "compositor" /
+            "desktop_explorer.c"
+        ).read_text(encoding="utf-8")
+        header = (
+            ROOT / "userspace" / "gui" / "compositor" /
+            "desktop_explorer.h"
+        ).read_text(encoding="utf-8")
+        self.assertIn("DESKTOP_EXPLORER_HISTORY_CAPACITY 16U", header)
+        for api in ("desktop_explorer_navigate", "desktop_explorer_back",
+                    "desktop_explorer_forward", "desktop_explorer_up",
+                    "desktop_explorer_refresh"):
+            self.assertIn(api, explorer)
+            self.assertIn(api, self.source)
+        activation = self.source[
+            self.source.index("static uint32_t apply_desktop_activation"):
+            self.source.index("static void apply_control_panel_activation")
+        ]
+        self.assertIn("desktop_explorer_navigate(", activation)
+        directory_branch = activation[
+            activation.index("X86OS_DIRECTORY"):
+        ]
+        self.assertNotIn("open_explorer_path(", directory_branch)
+        for label in ("< Zurueck", '"Adresse:"', '"Aktual."'):
+            self.assertIn(label, self.source)
+        self.assertIn("DESKTOP_EXPLORER_NAVIGATION_FORWARD", self.source)
+        self.assertIn("DESKTOP_EXPLORER_NAVIGATION_UP", self.source)
+        self.assertIn("DESKTOP_EXPLORER_STATUS_HEIGHT", self.source)
+        self.assertIn("key == '\\b' || key == 0x7F", self.source)
+        chrome = self.source[
+            self.source.index("static void render_explorer_chrome"):
+            self.source.index("static void render_surface_paint_list")
+        ]
+        self.assertNotRegex(
+            chrome, r"\b(x86os_open|x86os_read|reist_vfs_|malloc)\s*\("
+        )
+
     def test_icon_focus_is_compact_and_does_not_fill_the_hit_cell(self):
         render = self.source[self.source.index("static void render_icon") :]
         render = render[: render.index("\n}") + 2]

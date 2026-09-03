@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-trash-restore', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-trash-restore', 'runtime-desktop-explorer-scroll', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -185,13 +185,14 @@ function Invoke-RuntimeDesktop(
     [int]$Smp = 1,
     [bool]$NotepadProbe = $false,
     [bool]$NotepadFontProbe = $false,
-    [bool]$TrashRestoreProbe = $false
+    [bool]$TrashRestoreProbe = $false,
+    [bool]$ExplorerScrollProbe = $false
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
             [int]$ControlProbe + [int]$NotepadProbe +
             [int]$NotepadFontProbe + [int]$SoundProbe +
             [int]$GuidemoClickProbe + [int]$HoverProbe +
-            [int]$TrashRestoreProbe) -gt 1) {
+            [int]$TrashRestoreProbe + [int]$ExplorerScrollProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
     if ($SupervisedProbe -and !$HoverProbe) {
@@ -212,6 +213,7 @@ function Invoke-RuntimeDesktop(
     if ($NotepadProbe) { $arguments += '--notepad-probe' }
     if ($NotepadFontProbe) { $arguments += '--notepad-font-probe' }
     if ($TrashRestoreProbe) { $arguments += '--trash-restore-probe' }
+    if ($ExplorerScrollProbe) { $arguments += '--explorer-scroll-probe' }
     if ($SoundProbe) { $arguments += '--sound-probe' }
     if ($GuidemoClickProbe) { $arguments += '--guidemo-click-probe' }
     if ($HoverProbe) {
@@ -1261,6 +1263,9 @@ switch ($Mode) {
     }
     'runtime-desktop-trash-restore' {
         Invoke-RuntimeDesktop -TrashRestoreProbe $true
+    }
+    'runtime-desktop-explorer-scroll' {
+        Invoke-RuntimeDesktop -ExplorerScrollProbe $true
     }
     'runtime-desktop-metrics' {
         Invoke-RuntimeDesktop $false $true
