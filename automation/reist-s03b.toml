@@ -14513,8 +14513,8 @@ id = "R3.3b-desktop-explorer-scrollbar"
 status = "active"
 phase = "post-s0"
 risk = "medium"
-title = "Scroll bounded Explorer folder viewports"
-scope = "Replace the compositor-internal Explorer's visible-cell truncation with one fixed-capacity vertical viewport and classic scrollbar per folder window. Raise the atomic sorted snapshot capacity only to the existing bounded scan budget, reserve scrollbar geometry from the current decorated client rectangle on every render and input event, and clamp the first visible row after open, resize or column-count changes. Support decrement and increment buttons, page-track clicks, captured thumb dragging, mouse wheel scrolling and keyboard selection reveal through the same row range. Keep icon-grid hit testing, double click, drag identity, trash restore controls and directory generation checks aligned with the scrolled viewport. Capacity overflow remains explicit and fail-closed; no target-side allocation, VFS read during rendering or unbounded directory walk is introduced. Prove exact right-edge geometry under resize, range clamping, pointer capture, wheel direction, keyboard reveal, snapshot overflow and a real packaged Explorer scroll probe while the compositor remains live."
+title = "Add bounded classic Explorer navigation and scrolling"
+scope = "Complete the compositor-internal folder window as a bounded classic Explorer view: child-folder activation atomically replaces content in the current WM slot; a fixed toolbar provides Back, Forward, Up and Refresh; a read-only address row displays the canonical path; a status row displays bounded object and selection information; and a vertical scrollbar replaces visible-cell truncation. Raise the atomic sorted snapshot capacity only to the existing bounded scan budget, derive toolbar, address, status, icon viewport and scrollbar from the current decorated client rectangle on every render and input event, and clamp the first visible row after open, navigation, refresh, resize or column-count changes. Keep fixed sixteen-path Back and Forward stacks per window: successful child or Up navigation pushes the prior path and clears Forward, Back and Forward stage and validate their target before moving history, and failed navigation leaves path, both histories, selection and content unchanged. Refresh stages the same path without changing either history; Backspace invokes Back. Support decrement and increment buttons, page-track clicks, captured thumb dragging, mouse wheel scrolling and keyboard selection reveal through the same row range. Keep icon-grid hit testing, regular-file/program activation, double click, drag identity, trash restore controls and directory generation checks aligned with the current snapshot. Capacity overflow remains explicit and fail-closed; no target-side allocation, editable address parser, VFS read during rendering or unbounded directory walk is introduced. Prove same-window child/Back/Forward/Up/Refresh navigation, bounded history rollover, failed-navigation atomicity, disabled controls, address/status clipping, exact right-edge geometry under resize, range clamping, pointer capture, wheel direction, keyboard reveal, snapshot overflow and a real packaged Explorer navigation/scroll probe while the compositor remains live."
 allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/gui/compositor/desktop.c",
@@ -14534,10 +14534,14 @@ invariants = [
   "each active Explorer window owns only fixed snapshot and row viewport state and rendering performs no VFS access or allocation",
   "the atomic case-insensitively sorted snapshot stores at most 128 visible entries and explicitly reports any bounded scan overflow without partial publication",
   "one geometry function derives grid viewport buttons track thumb row range and right-edge placement from the current client rectangle with overflow-safe arithmetic",
+  "activating a child directory atomically replaces the snapshot in the same WM slot while regular files and programs retain their existing launch path",
+  "each window keeps at most sixteen Back and Forward canonical paths and no navigation publishes path history or snapshot change until the target directory is completely staged and validated",
+  "Up follows the canonical parent Refresh preserves both histories and Backspace uses Back while the address row remains read-only and introduces no path parser",
+  "toolbar address status icon viewport and scrollbar remain disjoint and are recalculated from the current client rectangle with deterministic disabled states",
   "arrow page thumb wheel keyboard and resize paths clamp through the same maximum-first-row calculation and can never expose or activate an entry outside the published snapshot",
   "thumb dragging uses one bounded implicit capture that is cancelled on release close resize incompatibility or drag takeover",
   "icon selection double click file drag generation validation trash restore action window manager capture and unrelated Surface clients preserve their existing contracts",
-  "the packaged QEMU Explorer probe scrolls a directory beyond one viewport through pointer wheel keyboard and resize paths and leaves the compositor live"
+  "the packaged QEMU Explorer probe exercises child Back Forward Up Refresh and Backspace in one window then scrolls beyond one viewport through pointer wheel keyboard and resize paths and leaves the compositor live"
 ]
 targeted_tests = [
   "python test/test_desktop_explorer_source.py -v",
@@ -14554,7 +14558,7 @@ stop_conditions = [
   "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
   "a frozen gate fails after one focused in-scope repair"
 ]
-commit_message = "gui: add bounded Explorer scrollbars"
+commit_message = "gui: navigate and scroll Explorer windows"
 evidence = []
 
 [[packages]]

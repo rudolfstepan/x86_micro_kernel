@@ -3161,14 +3161,19 @@ durch den Status des ausführbaren Pakets aktualisiert.
    vorab in feste Slots; Frame-Rendering skaliert diese Glyphen nicht mehr.
    Abnahme: lesbare, nicht abgeschnittene Raster jeder Familie und Größe sowie
    der reale große Notepad-Fontlauf ohne Compositor-Neustart.
-5. [~] **R3.3b · Explorer-Ordnerfenster begrenzt scrollbar machen.** Ein
-   fester Zeilenviewport ersetzt die Beschränkung auf gerade sichtbare
-   Iconzellen. Eine aus der aktuellen Clientfläche abgeleitete vertikale
-   Scrollbar unterstützt Pfeile, Seitenklick, Thumb-Drag, Mausrad und
-   Tastatur-Nachführung und bleibt nach jedem Resize am rechten Fensterrand.
+5. [~] **R3.3b · Explorer im Fenster navigierbar und scrollbar machen.** Ein
+   Unterordner ersetzt atomar den Inhalt desselben Fensters. Eine klassische
+   Leiste mit Zurück, Vor, Aufwärts und Aktualisieren verwendet feste
+   16-Pfad-Verläufe; eine schreibgeschützte Adresszeile und eine Statusleiste
+   vervollständigen die begrenzte Ordner-Chrome. Ein Zeilenviewport ersetzt die
+   Beschränkung auf gerade sichtbare Iconzellen. Die aus der aktuellen
+   Clientfläche abgeleitete vertikale Scrollbar unterstützt Pfeile,
+   Seitenklick, Thumb-Drag, Mausrad und Tastatur-Nachführung und bleibt nach
+   jedem Resize am rechten Fensterrand.
    Der atomare sortierte Snapshot bleibt auf 128 Einträge begrenzt; Überlauf
-   wird weiterhin explizit gemeldet. Abnahme: Hostmatrix für Range, Capture,
-   Hit-Test und Resize sowie realer QEMU-Explorer-Scrolllauf.
+   wird weiterhin explizit gemeldet. Abnahme: Hostmatrix für Navigation,
+   Zurück-/Vor-Verlauf, Refresh, Range, Capture, Hit-Test und Resize sowie realer
+   QEMU-Explorer-Navigations-/Scrolllauf.
 6. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im

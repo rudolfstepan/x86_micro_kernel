@@ -488,7 +488,10 @@ inkompatibler Fensterrahmen.
   getestete GUI-Variante besitzen.
 
 Der aktuelle Explorer ist bewusst compositorintern und auf acht Fenster sowie
-128 Einträge je atomarem Snapshot begrenzt. Ein vollständiger Client/Server-Dateimanager
+128 Einträge je atomarem Snapshot begrenzt. Seine feste klassische Chrome
+bietet Zurück, Vor, Aufwärts, Aktualisieren, eine schreibgeschützte Adresszeile,
+Statuszeile und vertikales Scrollen; Ordner wechseln atomar im selben Fenster.
+Ein vollständiger Client/Server-Dateimanager
 folgt als eigener Client in einer späteren Stufe. Noch nicht migrierte
 Legacy-Programme können den
 Bildschirm temporär verwenden; der Desktop bleibt Elternprozess und setzt

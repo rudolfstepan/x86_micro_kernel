@@ -5,11 +5,16 @@ Stand: 3. September 2026
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
 Aktives Thema: `R3.3b-desktop-explorer-scrollbar`. Der compositorinterne
-Explorer erhält pro Ordnerfenster einen festen Zeilenviewport und eine aus der
-jeweils aktuellen Clientfläche berechnete vertikale Scrollbar. Pfeile,
+Explorer ersetzt beim Öffnen eines Unterordners atomar den Inhalt des aktuellen
+Fensters. Die klassische feste Chrome bietet Zurück, Vor, Aufwärts,
+Aktualisieren, eine schreibgeschützte Adresszeile und eine Statusleiste; Zurück
+und Vor besitzen je einen festen 16-Pfad-Verlauf. Pro Ordnerfenster kommen
+außerdem ein fester Zeilenviewport und eine aus der jeweils aktuellen
+Clientfläche berechnete vertikale Scrollbar hinzu. Pfeile,
 Seitenklick, Thumb-Drag, Mausrad, Tastatur-Nachführung und Resize verwenden
-dieselbe begrenzte Range; der atomare Snapshot wächst nur bis zum bereits
-festen Scanbudget von 128 Einträgen.
+dieselbe begrenzte Range; der Snapshot wächst nur bis zum Scanbudget von 128
+Einträgen. Suche, Baumansicht, editierbare Adresse und Dateimutationen bleiben
+getrennte spätere Pakete.
 
 Danach folgt `N3a-vfs-symbolic-links`: begrenzte POSIX-Symlinks auf EXT2 mit
 append-only Storage-Service-/Client-ABI, generationgebundener Ring-3-Auflösung
