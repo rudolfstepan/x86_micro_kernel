@@ -6303,7 +6303,8 @@ int main(int argc, char **argv) {
                 &lifecycle_heartbeat_ms)
             : launch_surface_probe_client(
                 &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT",
+                "/USR/GUI/BIN/NOTEPAD.PRG",
+                notepad_probe ? "--large-document-probe" : "/README.TXT",
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);
         if (sound_probe && probe_status == 0) {

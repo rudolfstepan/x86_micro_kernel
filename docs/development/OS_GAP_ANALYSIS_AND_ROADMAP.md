@@ -3133,10 +3133,12 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Pfaden. `N2e-audio-wave-read-authority` hat den gemeinsamen Loader von
    WAVPLAY und SOUNDPLAYER auf ein einziges READ-/STAT-Objekt mit absoluter
    Ladefrist umgestellt; Audio-, Surface- und Mutationsverhalten blieben
-   unverändert. Aktiver Folgeschnitt ist `N2f-editor-load-authority`: Nur das
-   Laden bestehender Dokumente in EDIT wechselt auf ein begrenztes READ-/STAT-
-   Objekt; der atomare Tempfile-/Fsync-/Rename-Savepfad bleibt als spätere
-   N3-Mutation ausdrücklich unverändert.
+   unverändert. Der vorgezogene Schnitt `N2g-notepad-piece-table` beseitigt die
+   51200-Byte-Gesamtdateigrenze des grafischen Notepad durch eine feste Piece
+   Table, fensterweises READ-/STAT-/SEEK-Objekt-I/O und gestreamtes atomisches
+   Speichern. `N2f-editor-load-authority` folgt danach weiterhin nur für EDIT;
+   dessen Tempfile-/Fsync-/Rename-Savepfad bleibt als spätere N3-Mutation
+   ausdrücklich unverändert.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und

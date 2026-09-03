@@ -786,11 +786,21 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         f"guest tail:\n{tail}"
                     )
                 if notepad_probe:
+                    notepad_surface_seen = False
                     while time.monotonic() < deadline:
                         drain(output, transcript)
                         probe_text = "".join(transcript)
+                        if (not notepad_surface_seen and
+                                "NOTEPAD_SURFACE_READY" in probe_text):
+                            notepad_surface_seen = True
+                            deadline = time.monotonic() + 60.0
                         if "DESKTOP_NOTEPAD_FAIL" in probe_text:
                             raise RuntimeError("Notepad probe launch failed")
+                        if "NOTEPAD_PIECE_DOCUMENT_FAIL" in probe_text:
+                            marker = re.findall(
+                                r"NOTEPAD_PIECE_DOCUMENT_FAIL[^\r\n]*",
+                                probe_text)[-1]
+                            raise RuntimeError(f"Large Notepad document failed: {marker}")
                         if ("notepad: Surface-Frame dauerhaft" in probe_text or
                                 "notepad: Surface-Frame konnte" in probe_text or
                                 "notepad: Surface konnte" in probe_text):
@@ -802,14 +812,17 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             )
                         if ("NOTEPAD_SURFACE_READY" in probe_text and
                                 "NOTEPAD_SURFACE_DOCUMENT_READY" in
-                                probe_text):
+                                probe_text and
+                                "NOTEPAD_PIECE_DOCUMENT_READY" in probe_text):
                             time.sleep(0.2)
                             capture_screenshot(process, screenshot, deadline)
                             print("runtime-desktop-notepad: PASS")
                             return 0
                         time.sleep(0.02)
+                    tail = "".join(transcript)[-4000:].replace("\r", "")
                     raise RuntimeError(
-                        "Notepad did not publish a visible document window"
+                        "Notepad did not publish a visible document window; "
+                        f"guest tail:\n{tail}"
                     )
                 if control_probe:
                     while time.monotonic() < deadline:

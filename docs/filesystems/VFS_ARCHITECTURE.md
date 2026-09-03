@@ -157,6 +157,13 @@ Close müssen vor dem atomaren Austausch des aktuellen Programms erfolgreich
 sein. Der Notepad-Dateidialog besitzt keine getrennte Legacy-Stat-Vorprüfung
 mehr, sondern überlässt Existenz, Typ, Größe und Inhalt demselben bereits
 objektgebundenen Ladepfad.
+Große Notepad-Dokumente bleiben nun über ein einziges generationgebundenes
+`READ|STAT|SEEK`-Objekt als unveränderliche Originalquelle geöffnet. Eine
+feste Piece Table mit 256 Einträgen und 65536 Byte append-only Add-Speicher
+materialisiert jeweils nur ein UTF-8-gültiges Controllerfenster. Der atomare
+Savepfad streamt Original- und Add-Pieces in die Tempdatei und bindet erst nach
+Fsync, Close und Rename die neue Objektgeneration; ein Fehler lässt die alte
+Datei maßgeblich.
 Der generische Pfadmodus von `CHKDSK.PRG` traversiert ebenfalls ausschließlich
 über die Ring-3-Stat- und Readdir-at-Clients. Reguläre Dateien werden mit
 `READ|STAT` geöffnet; Fstat, exakt größenbegrenztes Lesen, EOF und Close müssen

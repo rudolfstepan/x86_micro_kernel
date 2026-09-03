@@ -85,6 +85,7 @@ PROGRAMS = {
     "GUIDEMO.PRG": ROOT / "userspace/gui/apps/control_gallery/main.c",
     "NOTEPAD.PRG": (
         ROOT / "userspace/gui/apps/notepad/main.c",
+        ROOT / "userspace/gui/lib/piece_document.c",
         ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),

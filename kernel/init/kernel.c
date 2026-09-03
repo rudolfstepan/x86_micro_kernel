@@ -660,8 +660,11 @@ static bool program_path_for_drive(const drive_t *drive,
         path[length] = '/';
         strcpy(path + length + 1U, filename);
     }
-    vfs_dir_entry_t entry;
-    return vfs_stat(path, &entry) == VFS_OK && entry.type == VFS_FILE;
+    /* Do not probe VFS here.  The process loader validates the selected path
+     * and image, and may satisfy critical programs from its integrity-checked
+     * resident rescue cache.  A preliminary stat would make that cache
+     * unreachable during the storage service's bounded recovery window. */
+    return true;
 }
 
 static int start_userspace_program(const multiboot1_info_t *boot_info,

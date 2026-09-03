@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2g-notepad-piece-table"
+active_id = "N2f-editor-load-authority"
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "N2g-notepad-piece-table"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Edit large Notepad documents through a bounded Piece Table"
@@ -20,12 +20,15 @@ scope = "Replace Notepad's whole-file 51200-byte loading model with a BigPad-ins
 allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/compositor/desktop.c",
   "userspace/gui/include/reist/gui/piece_document.h",
   "userspace/gui/lib/piece_document.c",
+  "kernel/init/kernel.c",
   "scripts/build_user_sdk.py",
   "scripts/build_system_programs.py",
-  "scripts/run_qemu_desktop_notepad.py",
+  "scripts/run_qemu_runtime_desktop.py",
   "test/test_gui_notepad_source.py",
+  "test/test_shell_source.py",
   "test/test_piece_document_host.c",
   "test/test_system_layout.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
@@ -64,7 +67,7 @@ evidence = []
 
 [[packages]]
 id = "N2f-editor-load-authority"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "medium"
 title = "Read EDIT documents through Ring-3 VFS object authority"

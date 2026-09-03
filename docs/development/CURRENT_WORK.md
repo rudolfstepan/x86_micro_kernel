@@ -10,6 +10,10 @@ Objekt mit READ-/STAT-Rechten, fester 51200-Byte-Gesamtgrenze und absoluter
 60-Sekunden-Frist. Der atomare Tempfile-/Fsync-/Rename-Savepfad sowie die
 Editorinteraktion bleiben unverändert.
 
+`N2g-notepad-piece-table` ist abgeschlossen. Der grafische Notepad hält große
+Dokumente in einer festen Piece Table, materialisiert nur ein begrenztes
+Editorfenster und streamt beim atomischen Speichern höchstens 256 Pieces.
+
 `N2e-audio-wave-read-authority` ist abgeschlossen. Der gemeinsame WAV-
 Preview-Loader von `WAVPLAY.PRG` und `SOUNDPLAYER.PRG` verwendet genau ein
 generationgebundenes Ring-3-VFS-Objekt mit READ-/STAT-Rechten und absoluter

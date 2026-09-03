@@ -617,6 +617,16 @@ Shaping, Combining-Positionierung, Grapheme, Bidi und IME bleiben Ring-3-Dienste
 beziehungsweise GUI-Textpakete; sie werden nicht in den Framebuffer-Treiber
 verlagert. Die Supplementary-Plane-Abdeckung ist eine Glyphauswahl, keine
 Behauptung vollständiger Unicode-Textdarstellung.
+
+Der grafische Notepad legt große Dokumente nicht in diesen vollständigen
+Controllerpuffer. Eine an BigPads Piece-Table-Muster angelehnte, für REIST
+begrenzte Schicht hält höchstens 256 Original- oder Add-Pieces und 65536 Byte
+append-only Änderungsspeicher. Das unveränderte Original bleibt über genau ein
+generationgebundenes READ-/STAT-/SEEK-Objekt erreichbar; nur ein UTF-8-gültiges
+Fenster innerhalb der öffentlichen 200-mal-256-Byte-Controllergrenzen wird
+materialisiert. Speichern streamt die Pieces in die bestehende atomare
+Tempdatei-/Fsync-/Rename-Transaktion. Kapazitäts- oder I/O-Fehler ersetzen die
+Zieldatei nicht.
 Der überwachte Lauf lädt und validiert den großen Font vor der Gerätebindung.
 Er verbindet sich danach innerhalb einer festen Zwei-Sekunden-Deadline neu
 mit der aktuell freigegebenen SVGA2D-Servicegeneration; alte IPC-Fähigkeiten

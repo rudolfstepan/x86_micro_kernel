@@ -34,6 +34,7 @@ Boot-Image aufgenommen wird.
 | `copy` | einzelne Datei blockweise kopieren | `/bin/copy.prg`; kein rekursives Kopieren |
 | `save` | neue Datei aus Argumenttext erzeugen | `/usr/bin/save.prg` |
 | `edit` | interaktiver Editor | `/bin/edit.prg` |
+| `notepad` | grafischer Editor | `/usr/gui/bin/notepad.prg`; große Dateien über begrenzte Piece Table und fensterweisen Ring-3-VFS-Zugriff |
 | `basic` | BASIC-Interpreter | `/bin/basic.prg` |
 | `rename`, `ren`, `mv` | Datei umbenennen | `/bin/rename.prg`, `ren`/`mv` Alias; FAT32 |
 

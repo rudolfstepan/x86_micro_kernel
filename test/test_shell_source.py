@@ -242,6 +242,20 @@ class ShellSourceRegressionTests(unittest.TestCase):
         self.assertIn('"bin/shell.prg"', kernel)
         self.assertIn("wait_for_process(pid)", kernel)
 
+    def test_boot_shell_can_reach_resident_cache_without_vfs_stat(self):
+        kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
+        match = re.search(
+            r"static bool program_path_for_drive\s*\([^)]*\)\s*"
+            r"\{(?P<body>.*?)\n\}",
+            kernel,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        helper = match.group("body")
+        self.assertNotIn("vfs_stat(", helper)
+        self.assertIn("drive->mount_point", helper)
+        self.assertIn("PROCESS_PATH_MAX", helper)
+
     def test_every_boot_starts_shell_without_desktop_autostart(self):
         kernel = (ROOT / "kernel/init/kernel.c").read_text(encoding="utf-8")
         framebuffer = kernel.index("if (framebuffer_available())")

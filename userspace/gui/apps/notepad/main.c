@@ -12,6 +12,7 @@
 #include "reist/gui/dialog.h"
 #include "reist/gui/file_dialog.h"
 #include "reist/gui/menu.h"
+#include "reist/gui/piece_document.h"
 #include "reist/gui/surface_client.h"
 #include "reist/gui/text_editor.h"
 #include "reist/gui/value_controls.h"
@@ -180,17 +181,85 @@ typedef struct notepad_state {
     uint32_t exit_requested;
     uint32_t scroll_drag;
     uint32_t scroll_drag_offset;
+    uint32_t scroll_pending_value;
+    uint32_t scroll_pending_valid;
+    reist_gui_piece_document_t document;
+    reist_vfs_file_handle_t source_object;
+    uint32_t window_offset;
+    uint32_t window_length;
+    uint32_t previous_window_offset;
+    uint32_t cache_start;
+    uint32_t cache_size;
+    uint8_t read_cache[REIST_GUI_PIECE_IO_CAPACITY];
 } notepad_state_t;
 
 /* Large document storage remains static so the process stack stays bounded. */
 static notepad_state_t application;
 static char serialized[REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY + 1U];
+static reist_gui_piece_document_t document_snapshot;
 static reist_gui_surface_client_t *paint_surface;
 static reist_gui_surface_client_t *main_surface;
 static reist_gui_surface_client_t dialog_surface;
 static x86os_display_info_t dialog_display;
 static uint32_t dialog_surface_active;
 static int paint_status;
+
+static void copy_piece_document(reist_gui_piece_document_t *destination,
+                                const reist_gui_piece_document_t *source) {
+    uint8_t *to = (uint8_t *)destination;
+    const uint8_t *from = (const uint8_t *)source;
+    for (uint32_t index = 0U; index < sizeof(*destination); ++index)
+        to[index] = from[index];
+}
+
+static uint32_t notepad_modified(const notepad_state_t *state) {
+    return state != 0 && (state->editor.modified || state->document.modified);
+}
+
+static int object_read_at(reist_vfs_file_handle_t object, uint32_t offset,
+                          void *data, uint32_t size) {
+    uint32_t positioned = 0U;
+    if (reist_vfs_file_set_timeout(object, 1000U) != 0 ||
+        reist_vfs_file_seek(object, offset, REIST_VFS_SEEK_SET, &positioned) != 0 ||
+        positioned != offset) return -1;
+    uint32_t completed = 0U;
+    while (completed < size) {
+        uint32_t amount = size - completed;
+        if (amount > REIST_GUI_PIECE_IO_CAPACITY)
+            amount = REIST_GUI_PIECE_IO_CAPACITY;
+        if (reist_vfs_file_set_timeout(object, 1000U) != 0) return -1;
+        int count = reist_vfs_file_read_bulk(
+            object, (uint8_t *)data + completed, amount);
+        if (count <= 0 || (uint32_t)count > amount) return -1;
+        completed += (uint32_t)count;
+    }
+    return 0;
+}
+
+static int piece_read_original(void *context, uint32_t offset,
+                               void *data, uint32_t size) {
+    notepad_state_t *state = (notepad_state_t *)context;
+    if (state == 0 || state->source_object == REIST_VFS_FILE_INVALID_HANDLE)
+        return -1;
+    if (size <= sizeof(state->read_cache)) {
+        if (state->cache_size == 0U || offset < state->cache_start ||
+            offset - state->cache_start > state->cache_size ||
+            size > state->cache_size - (offset - state->cache_start)) {
+            uint32_t fill = state->document.original_size - offset;
+            if (fill > sizeof(state->read_cache)) fill = sizeof(state->read_cache);
+            if (object_read_at(state->source_object, offset,
+                               state->read_cache, fill) != 0) return -1;
+            state->cache_start = offset;
+            state->cache_size = fill;
+        }
+        uint8_t *output = (uint8_t *)data;
+        uint32_t within = offset - state->cache_start;
+        for (uint32_t index = 0U; index < size; ++index)
+            output[index] = state->read_cache[within + index];
+        return 0;
+    }
+    return object_read_at(state->source_object, offset, data, size);
+}
 
 static void request_overlay_redraw(notepad_state_t *state) {
     if (state == 0) return;
@@ -644,14 +713,23 @@ static notepad_scrollbar_geometry_t scrollbar_geometry(
             model->bounds.width, track_extent};
     }
     uint32_t page = model->page_step ? model->page_step : 1U;
+    uint32_t denominator = maximum <= UINT32_MAX - page
+        ? maximum + page : UINT32_MAX;
+    uint32_t thumb_product = page != 0U &&
+        track_extent > UINT32_MAX / page ? UINT32_MAX : track_extent * page;
     uint32_t thumb_extent = maximum == 0U ? track_extent :
-        track_extent * page / (maximum + page);
+        thumb_product / denominator;
     if (thumb_extent < NOTEPAD_SCROLLBAR_MIN_THUMB)
         thumb_extent = NOTEPAD_SCROLLBAR_MIN_THUMB;
     if (thumb_extent > track_extent) thumb_extent = track_extent;
     geometry.travel = track_extent - thumb_extent;
+    uint32_t range_value = range->value < 0 ? 0U : (uint32_t)range->value;
+    if (range_value > maximum) range_value = maximum;
+    uint32_t offset_product = range_value != 0U &&
+        geometry.travel > UINT32_MAX / range_value
+        ? UINT32_MAX : geometry.travel * range_value;
     uint32_t offset = maximum && geometry.travel
-        ? geometry.travel * (uint32_t)range->value / maximum : 0U;
+        ? offset_product / maximum : 0U;
     if (model->orientation == REIST_GUI_HORIZONTAL)
         geometry.thumb = (reist_gui_rect_t){
             geometry.track.x + (int32_t)offset, geometry.track.y,
@@ -880,7 +958,7 @@ static void render_editor(const x86os_display_info_t *display,
     size_t used = 0U;
     status_text[0] = '\0';
     append_text(status_text, sizeof(status_text), &used, state->path);
-    if (state->editor.modified)
+    if (notepad_modified(state))
         append_text(status_text, sizeof(status_text), &used, " *");
     append_text(status_text, sizeof(status_text), &used, "  ");
     append_text(status_text, sizeof(status_text), &used, state->status);
@@ -1168,6 +1246,72 @@ static int write_all(int descriptor, const char *data, size_t size) {
     return 0;
 }
 
+static int piece_write_descriptor(void *context, const void *data,
+                                  uint32_t size) {
+    if (context == 0) return -1;
+    return write_all(*(int *)context, (const char *)data, size);
+}
+
+static int load_document(notepad_state_t *state);
+
+static int sync_piece_window(notepad_state_t *state) {
+    if (!state->editor.modified) return 0;
+    size_t length = 0U;
+    if (reist_gui_text_editor_get_text(
+            &state->editor_model, &state->editor,
+            serialized, sizeof(serialized), &length) != 0) return -1;
+    copy_piece_document(&document_snapshot, &state->document);
+    if (reist_gui_piece_document_erase(
+            &state->document, state->window_offset,
+            state->window_length) != 0 ||
+        reist_gui_piece_document_insert(
+            &state->document, state->window_offset,
+            serialized, (uint32_t)length) != 0) {
+        copy_piece_document(&state->document, &document_snapshot);
+        return -1;
+    }
+    state->window_length = (uint32_t)length;
+    return 0;
+}
+
+static int materialize_piece_window(notepad_state_t *state, uint32_t offset) {
+    if (offset > state->document.size) return -1;
+    uint32_t amount = state->document.size - offset;
+    if (amount > REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY) amount =
+        REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY;
+    if (reist_gui_piece_document_read(
+            &state->document, offset, serialized, amount) != 0) return -1;
+    size_t valid_bytes = amount, scalars = 0U;
+    while (valid_bytes != 0U &&
+           !reist_utf8_scan(serialized, valid_bytes, &scalars) &&
+           amount - valid_bytes < 3U) --valid_bytes;
+    if (!reist_utf8_scan(serialized, valid_bytes, &scalars)) return -1;
+    size_t selected = 0U;
+    uint32_t lines_used = 1U, line_bytes = 0U;
+    while (selected < valid_bytes) {
+        size_t consumed = 0U; uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(serialized + selected,
+                valid_bytes - selected, &consumed, &scalar)) return -1;
+        if (scalar == '\n') {
+            if (lines_used == REIST_GUI_TEXT_EDITOR_MAX_LINES) break;
+            ++lines_used; line_bytes = 0U;
+        } else {
+            if (line_bytes + consumed >= REIST_GUI_TEXT_EDITOR_LINE_CAPACITY)
+                break;
+            line_bytes += (uint32_t)consumed;
+        }
+        selected += consumed;
+    }
+    reist_gui_text_editor_result_t result;
+    reist_gui_text_editor_result_initialize(&result);
+    if (reist_gui_text_editor_set_text(
+            &state->editor_model, &state->editor,
+            serialized, selected, &result) != 0) return -1;
+    state->window_offset = offset;
+    state->window_length = (uint32_t)selected;
+    return 0;
+}
+
 static int make_temp_path(const char *path, char temp[NOTEPAD_PATH_CAPACITY]) {
     size_t length = bounded_length(path, NOTEPAD_PATH_CAPACITY);
     if (length == 0U || length >= NOTEPAD_PATH_CAPACITY) return -1;
@@ -1188,17 +1332,15 @@ static int make_temp_path(const char *path, char temp[NOTEPAD_PATH_CAPACITY]) {
 }
 
 static int save_document(notepad_state_t *state) {
-    size_t length = 0U;
     if (state->io_blocked) return -1;
-    if (reist_gui_text_editor_get_text(
-            &state->editor_model, &state->editor,
-            serialized, sizeof(serialized), &length) != 0) return -1;
+    if (sync_piece_window(state) != 0) return -1;
     char temp[NOTEPAD_PATH_CAPACITY];
     if (make_temp_path(state->path, temp) != 0) return -1;
     (void)x86os_unlink(temp);
     int descriptor = x86os_create(temp);
     if (descriptor < 0) return -1;
-    int write_status = write_all(descriptor, serialized, length);
+    int write_status = reist_gui_piece_document_stream(
+        &state->document, piece_write_descriptor, &descriptor);
     int sync_status = write_status == 0 ? x86os_fsync(descriptor) : -1;
     int close_status = x86os_close(descriptor);
     if (write_status != 0 || sync_status < 0 || close_status < 0 ||
@@ -1206,11 +1348,12 @@ static int save_document(notepad_state_t *state) {
         (void)x86os_unlink(temp);
         return -1;
     }
-    reist_gui_text_editor_result_t result;
-    reist_gui_text_editor_result_initialize(&result);
-    if (reist_gui_text_editor_mark_saved(
-            &state->editor_model, &state->editor, &result) != 0) return -1;
-    state->exists = 1U;
+    if (state->source_object != REIST_VFS_FILE_INVALID_HANDLE) {
+        (void)reist_vfs_file_set_timeout(state->source_object, 1U);
+        (void)reist_vfs_file_close(state->source_object);
+        state->source_object = REIST_VFS_FILE_INVALID_HANDLE;
+    }
+    if (load_document(state) != 0) return -1;
     (void)copy_text(state->status, sizeof(state->status), "Gespeichert");
     state->redraw = 1U;
     return 0;
@@ -1220,9 +1363,17 @@ static int load_document(notepad_state_t *state) {
     reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
     int open_status = reist_vfs_file_open_rights(
         state->path, REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
-        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &handle);
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT |
+            REIST_VFS_FILE_RIGHT_SEEK, &handle);
     if (open_status == -2) {
         state->exists = 0U;
+        if (state->source_object != REIST_VFS_FILE_INVALID_HANDLE) {
+            (void)reist_vfs_file_set_timeout(state->source_object, 1U);
+            (void)reist_vfs_file_close(state->source_object);
+        }
+        state->source_object = REIST_VFS_FILE_INVALID_HANDLE;
+        reist_gui_piece_document_initialize(&state->document);
+        state->window_offset = state->window_length = 0U;
         (void)copy_text(state->status, sizeof(state->status), "Neue Datei");
         return 0;
     }
@@ -1233,37 +1384,75 @@ static int load_document(notepad_state_t *state) {
         (void)reist_vfs_file_close(handle);
         return -1;
     }
-    if (info.type != X86OS_FILE ||
-        info.size > REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY) {
+    if (info.type != X86OS_FILE) {
         (void)reist_vfs_file_close(handle);
         return -2;
     }
-    size_t offset = 0U;
-    while (offset < info.size) {
-        size_t remaining = info.size - offset;
-        size_t request = remaining > X86OS_VFS_SHADOW_READ_CAPACITY
-            ? X86OS_VFS_SHADOW_READ_CAPACITY : remaining;
-        int amount = reist_vfs_file_read(
-            handle, serialized + offset, request);
-        if (amount <= 0) {
-            (void)reist_vfs_file_close(handle);
-            return -1;
-        }
-        offset += (size_t)amount;
+    reist_vfs_file_handle_t previous_object = state->source_object;
+    copy_piece_document(&document_snapshot, &state->document);
+    state->source_object = handle;
+    state->cache_start = state->cache_size = 0U;
+    if (reist_gui_piece_document_open(
+            &state->document, info.size, piece_read_original, state) != 0) {
+        (void)reist_vfs_file_close(handle);
+        state->source_object = previous_object;
+        copy_piece_document(&state->document, &document_snapshot);
+        return -1;
     }
-    char extra;
-    int extra_read = reist_vfs_file_read(handle, &extra, 1U);
-    int close_status = reist_vfs_file_close(handle);
-    if (extra_read != 0 || close_status < 0) return -1;
+    if (materialize_piece_window(state, 0U) != 0) {
+        (void)reist_vfs_file_close(handle);
+        state->source_object = previous_object;
+        copy_piece_document(&state->document, &document_snapshot);
+        return -3;
+    }
+    if (previous_object != REIST_VFS_FILE_INVALID_HANDLE) {
+        (void)reist_vfs_file_set_timeout(previous_object, 1U);
+        (void)reist_vfs_file_close(previous_object);
+    }
+    state->exists = 1U;
+    (void)copy_text(state->status, sizeof(state->status),
+        info.size > state->window_length
+            ? "Geladen (Piece-Table-Fenster)" : "Geladen");
+    return 0;
+}
+
+static int create_large_probe_document(const char *path) {
+    static char block[REIST_GUI_PIECE_IO_CAPACITY];
+    for (uint32_t offset = 0U; offset < sizeof(block); ++offset)
+        block[offset] = (offset % 80U) == 79U
+            ? '\n' : (char)('a' + (offset % 26U));
+    int descriptor = x86os_create(path);
+    if (descriptor < 0) return -1;
+    for (uint32_t index = 0U; index < 13U; ++index) {
+        if (write_all(descriptor, block, sizeof(block)) != 0) {
+            (void)x86os_close(descriptor); (void)x86os_unlink(path); return -1;
+        }
+    }
+    int sync_status = x86os_fsync(descriptor);
+    int close_status = x86os_close(descriptor);
+    if (sync_status != 0 || close_status != 0) {
+        (void)x86os_unlink(path); return -1;
+    }
+    return 0;
+}
+
+static int run_large_document_probe(notepad_state_t *state) {
+    reist_gui_text_editor_event_t event;
+    reist_gui_text_editor_event_initialize(&event);
+    event.type = REIST_GUI_TEXT_EDITOR_EVENT_TEXT;
+    event.codepoint = 'X';
     reist_gui_text_editor_result_t result;
     reist_gui_text_editor_result_initialize(&result);
-    int status = reist_gui_text_editor_set_text(
-        &state->editor_model, &state->editor,
-        serialized, offset, &result);
-    if (status == REIST_GUI_TEXT_EDITOR_ECAPACITY) return -2;
-    if (status != 0) return -3;
-    state->exists = 1U;
-    (void)copy_text(state->status, sizeof(state->status), "Geladen");
+    if (state->document.size <= REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY ||
+        reist_gui_text_editor_dispatch(
+            &state->editor_model, &state->editor, &event, &result) != 0 ||
+        !result.changed || save_document(state) != 0 ||
+        state->document.size <= REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY)
+        return -1;
+    char first = 0;
+    if (reist_gui_piece_document_read(&state->document, 0U, &first, 1U) != 0 ||
+        first != 'X') return -1;
+    x86os_puts("NOTEPAD_PIECE_DOCUMENT_READY\n");
     return 0;
 }
 
@@ -1383,7 +1572,7 @@ static void complete_file_dialog(
     state->redraw = 1U;
     if (result->response != REIST_GUI_FILE_DIALOG_RESPONSE_ACCEPT) return;
     if (state->file_dialog_mode == REIST_GUI_FILE_DIALOG_OPEN) {
-        if (state->editor.modified) {
+        if (notepad_modified(state)) {
             open_error(state, display,
                        "Ungespeicherte Aenderungen verhindern das Oeffnen.",
                        "Zuerst speichern oder den Editor neu starten.");
@@ -1413,7 +1602,7 @@ static void request_exit(notepad_state_t *state,
         state->redraw = 1U;
         return;
     }
-    if (state->editor.modified)
+    if (notepad_modified(state))
         open_dialog(state, display, NOTEPAD_DIALOG_CONFIRM_EXIT);
     else state->exit_requested = 1U;
 }
@@ -1490,6 +1679,23 @@ static uint32_t scroll_coordinate(
     return coordinate < 0 ? 0U : (uint32_t)coordinate;
 }
 
+static uint32_t scrollbar_state_valid(const notepad_state_t *state,
+                                      uint32_t axis) {
+    if (state == 0 || (axis != NOTEPAD_SCROLL_VERTICAL &&
+        axis != NOTEPAD_SCROLL_HORIZONTAL)) return 0U;
+    const reist_gui_range_model_t *model = axis == NOTEPAD_SCROLL_VERTICAL
+        ? &state->vertical_scroll_model : &state->horizontal_scroll_model;
+    const reist_gui_range_state_t *range = axis == NOTEPAD_SCROLL_VERTICAL
+        ? &state->vertical_scroll : &state->horizontal_scroll;
+    uint32_t maximum = axis == NOTEPAD_SCROLL_VERTICAL
+        ? state->viewport.maximum_first_line
+        : state->viewport.maximum_first_column;
+    if (!range->configured || model->bounds.width == 0U ||
+        model->bounds.height == 0U || range->value < 0 ||
+        (uint32_t)range->value > maximum) return 0U;
+    return 1U;
+}
+
 static uint32_t apply_scroll_value(notepad_state_t *state,
                                    uint32_t axis, uint32_t value) {
     reist_gui_range_model_t *model = axis == NOTEPAD_SCROLL_VERTICAL
@@ -1499,6 +1705,7 @@ static uint32_t apply_scroll_value(notepad_state_t *state,
     uint32_t maximum = axis == NOTEPAD_SCROLL_VERTICAL
         ? state->viewport.maximum_first_line
         : state->viewport.maximum_first_column;
+    if (!scrollbar_state_valid(state, axis)) return 0U;
     if (value > maximum) value = maximum;
     reist_gui_value_result_t range_result;
     reist_gui_value_result_initialize(&range_result);
@@ -1507,10 +1714,18 @@ static uint32_t apply_scroll_value(notepad_state_t *state,
         return 0U;
     reist_gui_text_editor_result_t editor_result;
     reist_gui_text_editor_result_initialize(&editor_result);
+    uint32_t vertical_value = state->vertical_scroll.value < 0
+        ? 0U : (uint32_t)state->vertical_scroll.value;
+    uint32_t horizontal_value = state->horizontal_scroll.value < 0
+        ? 0U : (uint32_t)state->horizontal_scroll.value;
+    if (vertical_value > state->viewport.maximum_first_line)
+        vertical_value = state->viewport.maximum_first_line;
+    if (horizontal_value > state->viewport.maximum_first_column)
+        horizontal_value = state->viewport.maximum_first_column;
     uint32_t first_line = axis == NOTEPAD_SCROLL_VERTICAL
-        ? value : (uint32_t)state->vertical_scroll.value;
+        ? value : vertical_value;
     uint32_t first_column = axis == NOTEPAD_SCROLL_HORIZONTAL
-        ? value : (uint32_t)state->horizontal_scroll.value;
+        ? value : horizontal_value;
     if (reist_gui_text_editor_scroll_to(
             &state->editor_model, &state->editor,
             first_line, first_column, &editor_result) != 0)
@@ -1529,6 +1744,11 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
                                        int32_t x, int32_t y,
                                        uint32_t button_event,
                                        uint32_t pressed) {
+    if (!scrollbar_state_valid(state, axis)) {
+        state->scroll_drag = NOTEPAD_SCROLL_NONE;
+        state->scroll_drag_offset = 0U;
+        return 1U;
+    }
     reist_gui_range_model_t *model = axis == NOTEPAD_SCROLL_VERTICAL
         ? &state->vertical_scroll_model : &state->horizontal_scroll_model;
     reist_gui_range_state_t *range = axis == NOTEPAD_SCROLL_VERTICAL
@@ -1546,18 +1766,33 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
                 state->scroll_drag_offset
             ? coordinate - track_origin - state->scroll_drag_offset : 0U;
         if (position > geometry.travel) position = geometry.travel;
+        uint32_t scaled = position != 0U && maximum > UINT32_MAX / position
+            ? UINT32_MAX : maximum * position;
+        uint32_t rounding = geometry.travel / 2U;
+        scaled = scaled > UINT32_MAX - rounding
+            ? UINT32_MAX : scaled + rounding;
         uint32_t value = maximum && geometry.travel
-            ? (maximum * position + geometry.travel / 2U) /
-                geometry.travel : 0U;
-        (void)apply_scroll_value(state, axis, value);
+            ? scaled / geometry.travel : 0U;
+        reist_gui_value_result_t preview_result;
+        reist_gui_value_result_initialize(&preview_result);
+        if (reist_gui_range_set(model, range, (int32_t)value,
+                                &preview_result) == 0) {
+            state->scroll_pending_value = value;
+            state->scroll_pending_valid = 1U;
+            if (preview_result.changed) request_scrollbar_redraw(state);
+        }
         return 1U;
     }
     if (!button_event)
         return point_inside(model->bounds, x, y);
     if (!pressed) {
         if (state->scroll_drag == axis) {
+            if (state->scroll_pending_valid)
+                (void)apply_scroll_value(
+                    state, axis, state->scroll_pending_value);
             state->scroll_drag = NOTEPAD_SCROLL_NONE;
             state->scroll_drag_offset = 0U;
+            state->scroll_pending_valid = 0U;
             request_dynamic_redraw(state);
             request_scrollbar_redraw(state);
             return 1U;
@@ -1566,7 +1801,8 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
     }
     if (!point_inside(model->bounds, x, y)) return 0U;
     if (maximum == 0U) return 1U;
-    uint32_t value = (uint32_t)range->value;
+    uint32_t value = range->value < 0 ? 0U : (uint32_t)range->value;
+    if (value > maximum) value = maximum;
     if (point_inside(geometry.decrement, x, y)) {
         if (value != 0U) --value;
     } else if (point_inside(geometry.increment, x, y)) {
@@ -1577,6 +1813,8 @@ static uint32_t dispatch_one_scrollbar(notepad_state_t *state,
             ? (uint32_t)geometry.thumb.x : (uint32_t)geometry.thumb.y;
         state->scroll_drag = axis;
         state->scroll_drag_offset = coordinate - thumb_origin;
+        state->scroll_pending_value = value;
+        state->scroll_pending_valid = 1U;
         request_scrollbar_redraw(state);
         return 1U;
     } else {
@@ -1822,6 +2060,40 @@ static uint32_t dispatch_keyboard(notepad_state_t *state,
         request_exit(state, display);
         return 1U;
     }
+    if (key == NOTEPAD_KEY_PAGE_DOWN &&
+        state->window_offset + state->window_length < state->document.size) {
+        if (sync_piece_window(state) != 0) {
+            open_error(state, display, "Aenderungskapazitaet ist erschoepft.",
+                       state->path);
+            return 1U;
+        }
+        uint32_t next = state->window_offset + state->window_length;
+        state->previous_window_offset = state->window_offset;
+        if (materialize_piece_window(state, next) != 0 ||
+            synchronize_scrollbars(state) != 0) {
+            open_error(state, display, "Dokumentfenster konnte nicht geladen werden.",
+                       state->path);
+            return 1U;
+        }
+        (void)copy_text(state->status, sizeof(state->status),
+                        "Naechstes Piece-Table-Fenster");
+        state->redraw = 1U;
+        return 1U;
+    }
+    if (key == NOTEPAD_KEY_PAGE_UP && state->window_offset != 0U) {
+        if (sync_piece_window(state) != 0 ||
+            materialize_piece_window(state, state->previous_window_offset) != 0 ||
+            synchronize_scrollbars(state) != 0) {
+            open_error(state, display, "Dokumentfenster konnte nicht geladen werden.",
+                       state->path);
+            return 1U;
+        }
+        state->previous_window_offset = 0U;
+        (void)copy_text(state->status, sizeof(state->status),
+                        "Vorheriges Piece-Table-Fenster");
+        state->redraw = 1U;
+        return 1U;
+    }
     reist_gui_text_editor_event_t event;
     reist_gui_text_editor_event_initialize(&event);
     uint32_t mapped = editor_key(key);
@@ -1958,6 +2230,7 @@ static void update_editor_model(notepad_state_t *state,
                                 const x86os_display_info_t *display) {
     state->scroll_drag = NOTEPAD_SCROLL_NONE;
     state->scroll_drag_offset = 0U;
+    state->scroll_pending_valid = 0U;
     reist_gui_rect_t frame = editor_frame(display);
     uint32_t status = display->font_height + 12U;
     int32_t top = frame.y + 7;
@@ -1981,6 +2254,32 @@ static void update_editor_model(notepad_state_t *state,
         {0U, 0U, 0U, 0U}};
     if (state->io_blocked)
         state->editor_model.flags |= REIST_GUI_TEXT_EDITOR_READ_ONLY;
+}
+
+static int resize_editor_model(notepad_state_t *state,
+                               const x86os_display_info_t *display) {
+    uint32_t old_bottom = state->viewport.maximum_first_line != 0U &&
+        state->viewport.first_line == state->viewport.maximum_first_line;
+    uint32_t old_right = state->viewport.maximum_first_column != 0U &&
+        state->viewport.first_column == state->viewport.maximum_first_column;
+    uint32_t first_line = state->viewport.first_line;
+    uint32_t first_column = state->viewport.first_column;
+    update_editor_model(state, display);
+    reist_gui_text_editor_viewport_t next;
+    if (reist_gui_text_editor_get_viewport(
+            &state->editor_model, &state->editor, &next) != 0) return -1;
+    first_line = old_bottom ? next.maximum_first_line : first_line;
+    first_column = old_right ? next.maximum_first_column : first_column;
+    if (first_line > next.maximum_first_line)
+        first_line = next.maximum_first_line;
+    if (first_column > next.maximum_first_column)
+        first_column = next.maximum_first_column;
+    reist_gui_text_editor_result_t result;
+    reist_gui_text_editor_result_initialize(&result);
+    if (reist_gui_text_editor_scroll_to(
+            &state->editor_model, &state->editor,
+            first_line, first_column, &result) != 0) return -1;
+    return synchronize_scrollbars(state);
 }
 
 static int initialize(notepad_state_t *state,
@@ -2046,6 +2345,7 @@ int main(int argc, char **argv) {
     uint32_t file_dialog_probe = 0U;
     uint32_t hover_probe = 0U;
     uint32_t dialog_probe = 0U;
+    uint32_t large_document_probe = 0U;
     for (int argument = 1; argument < argc; ++argument) {
         if (is_surface_argument(argv[argument])) continue;
         if (text_equal(argv[argument], "--menu-probe")) {
@@ -2064,6 +2364,12 @@ int main(int argc, char **argv) {
             dialog_probe = 1U;
             continue;
         }
+        if (text_equal(argv[argument], "--large-document-probe")) {
+            large_document_probe = 1U;
+            path = "/notepad-big.txt";
+            document_seen = 1U;
+            continue;
+        }
         if (document_seen) {
             x86os_puts("Usage: notepad [file]\n");
             return 2;
@@ -2072,6 +2378,7 @@ int main(int argc, char **argv) {
         document_seen = 1U;
     }
 
+    if (large_document_probe) (void)x86os_unlink(path);
     x86os_display_info_t display;
     uint32_t runtime_activated = 0U;
     if (x86os_display_info(&display) != 0) {
@@ -2142,7 +2449,6 @@ int main(int argc, char **argv) {
         open_error(&application, &display,
                    "Datei enthaelt ungueltiges UTF-8 oder Steuerzeichen.",
                    path);
-
     reist_gui_menu_layout_t menu_metrics = menu_layout(&display);
     reist_gui_file_dialog_layout_t file_metrics = file_dialog_layout(&display);
     if (reist_gui_menu_validate(
@@ -2198,7 +2504,7 @@ int main(int argc, char **argv) {
     }
     if (surface_mode) {
         x86os_puts("NOTEPAD_SURFACE_READY\n");
-        if (document_seen && load_status == 0)
+        if (document_seen && load_status == 0 && !large_document_probe)
             x86os_puts("NOTEPAD_SURFACE_DOCUMENT_READY\n");
         if (menu_probe) x86os_puts("NOTEPAD_SURFACE_MENU_READY\n");
         if (file_dialog_probe)
@@ -2206,6 +2512,24 @@ int main(int argc, char **argv) {
         if (hover_probe) x86os_puts("NOTEPAD_SURFACE_HOVER_READY\n");
         if (dialog_probe && dialog_surface_active)
             x86os_puts("NOTEPAD_SURFACE_DIALOG_READY\n");
+    }
+    if (large_document_probe) {
+        if (create_large_probe_document(path) != 0) {
+            x86os_puts("NOTEPAD_PIECE_DOCUMENT_FAIL create\n");
+            application.exit_requested = 1U;
+        } else if (load_document(&application) != 0 ||
+                   run_large_document_probe(&application) != 0) {
+            x86os_puts("NOTEPAD_PIECE_DOCUMENT_FAIL edit-save-reopen\n");
+            application.exit_requested = 1U;
+        } else {
+            render(&display, &application);
+            if (surface_mode && paint_status != 0) {
+                x86os_puts("NOTEPAD_PIECE_DOCUMENT_FAIL repaint\n");
+                application.exit_requested = 1U;
+            } else if (surface_mode) {
+                x86os_puts("NOTEPAD_SURFACE_DOCUMENT_READY\n");
+            }
+        }
     }
     application.redraw = 0U;
     application.dynamic_redraw = 0U;
@@ -2251,8 +2575,7 @@ int main(int argc, char **argv) {
                     } else {
                         display.width = surface_client.width;
                         display.height = surface_client.height;
-                        update_editor_model(&application, &display);
-                        if (synchronize_scrollbars(&application) != 0) {
+                        if (resize_editor_model(&application, &display) != 0) {
                             application.exit_requested = 1U;
                             break;
                         }
@@ -2461,6 +2784,11 @@ int main(int argc, char **argv) {
         (void)reist_gui_surface_client_destroy(&surface_client);
         (void)x86os_ipc_release(surface_endpoint);
     } else (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+    if (application.source_object != REIST_VFS_FILE_INVALID_HANDLE) {
+        (void)reist_vfs_file_set_timeout(application.source_object, 1U);
+        (void)reist_vfs_file_close(application.source_object);
+        application.source_object = REIST_VFS_FILE_INVALID_HANDLE;
+    }
     if (runtime_activated) {
         if (x86os_display_deactivate() != 0) {
             x86os_puts("notepad: VGA-Rueckkehr fehlgeschlagen\n");

@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -75,7 +76,7 @@ class GuiNotepadSourceTests(unittest.TestCase):
             "reist_gui_text_editor_dispatch",
             "reist_gui_text_editor_set_text",
             "reist_gui_text_editor_get_text",
-            "reist_gui_text_editor_mark_saved",
+            "reist_gui_piece_document_stream",
             "x86os_fsync",
             "x86os_rename",
             "REIST_GUI_DIALOG_RESPONSE_SAVE",
@@ -94,25 +95,28 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn('"/untitled.txt"', self.source)
 
     def test_document_load_uses_one_minimal_ring3_storage_object(self):
-        start = self.source.index("static int load_document(")
-        end = self.source.index("static void initialize_error_model", start)
+        start = self.source.index("static int load_document(notepad_state_t *state) {")
+        end = self.source.index("static int create_large_probe_document", start)
         load = self.source[start:end]
         self.assertIn("reist_vfs_file_open_rights(", load)
         self.assertIn(
             "REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT", load)
+        self.assertIn("REIST_VFS_FILE_RIGHT_SEEK", load)
         self.assertIn("reist_vfs_file_fstat(handle, &info)", load)
-        self.assertIn("reist_vfs_file_read(", load)
+        self.assertIn("reist_vfs_file_read_bulk(", self.source)
         self.assertIn("reist_vfs_file_close(handle)", load)
         for legacy in ("x86os_stat(", "x86os_open(", "x86os_read(",
                        "x86os_close("):
             self.assertNotIn(legacy, load)
-        self.assertLess(load.rindex("reist_vfs_file_close(handle)"),
-                        load.index("reist_gui_text_editor_set_text("))
+        self.assertIn("reist_gui_text_editor_set_text(", self.source)
         dialog = self.source[
             self.source.index("static void complete_file_dialog("):
             self.source.index("static void request_exit", self.source.index(
                 "static void complete_file_dialog("))]
         self.assertNotIn("x86os_stat(", dialog)
+        self.assertIn("reist_gui_piece_document_open(", load)
+        self.assertIn("materialize_piece_window(state, 0U)", load)
+        self.assertIn("NOTEPAD_PIECE_DOCUMENT_READY", self.source)
 
     def test_editor_renders_utf8_on_scalar_boundaries(self):
         self.assertIn("reist_utf8_prefix", self.source)
@@ -120,6 +124,29 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("utf8_slice", self.source)
         self.assertIn("scalar_amount * display->font_width", self.source)
         self.assertNotIn("line + state->editor.first_column", self.source)
+
+    def test_bounded_piece_document_behavior(self):
+        header = (ROOT / "userspace/gui/include/reist/gui/piece_document.h").read_text(
+            encoding="utf-8")
+        source = (ROOT / "userspace/gui/lib/piece_document.c").read_text(
+            encoding="utf-8")
+        for contract in ("REIST_GUI_PIECE_CAPACITY 256U",
+                         "REIST_GUI_PIECE_ADDED_CAPACITY 65536U",
+                         "REIST_GUI_PIECE_IO_CAPACITY 4096U"):
+            self.assertIn(contract, header)
+        self.assertNotIn("malloc(", source)
+        self.assertNotIn("realloc(", source)
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        if compiler is None:
+            self.skipTest("host C compiler unavailable")
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "piece-document-host"
+            subprocess.run([
+                compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-Iuserspace/gui/include", "userspace/gui/lib/piece_document.c",
+                "test/test_piece_document_host.c", "-o", str(executable),
+            ], cwd=ROOT, check=True)
+            subprocess.run([str(executable)], cwd=ROOT, check=True)
 
     def test_editor_has_bounded_horizontal_and_vertical_scrollbars(self):
         for contract in (
@@ -149,6 +176,10 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("state->viewport.first_column =",
                       apply_scroll)
         self.assertNotIn("synchronize_scrollbars(state)", apply_scroll)
+        self.assertIn("scrollbar_state_valid(state, axis)", apply_scroll)
+        self.assertIn("UINT32_MAX / position", self.source)
+        self.assertIn("state->scroll_pending_value = value", self.source)
+        self.assertIn("state, axis, state->scroll_pending_value", self.source)
         self.assertNotIn("reist_gui_text_editor_get_viewport", apply_scroll)
 
         start = self.source.index("static uint32_t dispatch_editor_pointer(")
@@ -178,6 +209,8 @@ class GuiNotepadSourceTests(unittest.TestCase):
     def test_resize_is_recoverable_and_dialog_is_a_separate_surface(self):
         self.assertIn("accept_configure_bounded", self.source)
         self.assertIn('"notepad: Resize verzoegert: "', self.source)
+        self.assertIn("resize_editor_model(&application, &display)", self.source)
+        self.assertIn("old_bottom ? next.maximum_first_line", self.source)
         self.assertNotIn(
             "reist_gui_surface_client_accept_configure(\n"
             "                            &surface_client, &message) != 0) {\n"
