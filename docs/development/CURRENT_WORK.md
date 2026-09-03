@@ -4,12 +4,17 @@ Stand: 3. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N3a-vfs-symbolic-links`. Das Paket ergänzt begrenzte
-POSIX-Symlinks auf EXT2 mit append-only Storage-Service-/Client-ABI,
-generationgebundener Ring-3-Auflösung sowie festen Pfad-, Tiefen-, I/O- und
-Zeitbudgets. FAT12/32 weisen Symlinks mangels nativem Standardformat vor jeder
-Wirkung mit `EOPNOTSUPP` ab; der alte Ring-0-VFS-/EXT2-Pfad wird nicht
-erweitert.
+Aktives Thema: `R3.3b-desktop-explorer-scrollbar`. Der compositorinterne
+Explorer erhält pro Ordnerfenster einen festen Zeilenviewport und eine aus der
+jeweils aktuellen Clientfläche berechnete vertikale Scrollbar. Pfeile,
+Seitenklick, Thumb-Drag, Mausrad, Tastatur-Nachführung und Resize verwenden
+dieselbe begrenzte Range; der atomare Snapshot wächst nur bis zum bereits
+festen Scanbudget von 128 Einträgen.
+
+Danach folgt `N3a-vfs-symbolic-links`: begrenzte POSIX-Symlinks auf EXT2 mit
+append-only Storage-Service-/Client-ABI, generationgebundener Ring-3-Auflösung
+sowie festen Pfad-, Tiefen-, I/O- und Zeitbudgets. FAT12/32 weisen Symlinks
+mangels nativem Standardformat vor jeder Wirkung mit `EOPNOTSUPP` ab.
 
 Danach sind zwei getrennte Pakete vorgemerkt: `R3.5-desktop-shortcuts` fügt validierte
 Verknüpfungsdateien, ein eigenes Icon und die Explorer-Kontextaktion

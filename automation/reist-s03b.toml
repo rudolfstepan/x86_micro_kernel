@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3a-vfs-symbolic-links"
+active_id = "R3.3b-desktop-explorer-scrollbar"
 
 [policy]
 one_package_per_run = true
@@ -14509,8 +14509,57 @@ evidence = [
 ]
 
 [[packages]]
-id = "N3a-vfs-symbolic-links"
+id = "R3.3b-desktop-explorer-scrollbar"
 status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Scroll bounded Explorer folder viewports"
+scope = "Replace the compositor-internal Explorer's visible-cell truncation with one fixed-capacity vertical viewport and classic scrollbar per folder window. Raise the atomic sorted snapshot capacity only to the existing bounded scan budget, reserve scrollbar geometry from the current decorated client rectangle on every render and input event, and clamp the first visible row after open, resize or column-count changes. Support decrement and increment buttons, page-track clicks, captured thumb dragging, mouse wheel scrolling and keyboard selection reveal through the same row range. Keep icon-grid hit testing, double click, drag identity, trash restore controls and directory generation checks aligned with the scrolled viewport. Capacity overflow remains explicit and fail-closed; no target-side allocation, VFS read during rendering or unbounded directory walk is introduced. Prove exact right-edge geometry under resize, range clamping, pointer capture, wheel direction, keyboard reveal, snapshot overflow and a real packaged Explorer scroll probe while the compositor remains live."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_explorer.h",
+  "userspace/gui/compositor/desktop_explorer.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_desktop_explorer_host.c",
+  "test/test_desktop_explorer_source.py",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "each active Explorer window owns only fixed snapshot and row viewport state and rendering performs no VFS access or allocation",
+  "the atomic case-insensitively sorted snapshot stores at most 128 visible entries and explicitly reports any bounded scan overflow without partial publication",
+  "one geometry function derives grid viewport buttons track thumb row range and right-edge placement from the current client rectangle with overflow-safe arithmetic",
+  "arrow page thumb wheel keyboard and resize paths clamp through the same maximum-first-row calculation and can never expose or activate an entry outside the published snapshot",
+  "thumb dragging uses one bounded implicit capture that is cancelled on release close resize incompatibility or drag takeover",
+  "icon selection double click file drag generation validation trash restore action window manager capture and unrelated Surface clients preserve their existing contracts",
+  "the packaged QEMU Explorer probe scrolls a directory beyond one viewport through pointer wheel keyboard and resize paths and leaves the compositor live"
+]
+targeted_tests = [
+  "python test/test_desktop_explorer_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-explorer-scroll"]
+stop_conditions = [
+  "scrolling requires dynamic storage a new syscall an unbounded directory scan or VFS access from rendering",
+  "resize pointer capture or row arithmetic can place the scrollbar outside its current client rectangle or address an unpublished entry",
+  "the real packaged Explorer cannot traverse beyond its first visible rows and remain live",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "gui: add bounded Explorer scrollbars"
+evidence = []
+
+[[packages]]
+id = "N3a-vfs-symbolic-links"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Resolve and create bounded POSIX symbolic links on EXT2"

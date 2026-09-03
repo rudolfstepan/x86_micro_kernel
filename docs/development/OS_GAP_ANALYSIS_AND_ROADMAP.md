@@ -3161,7 +3161,15 @@ durch den Status des ausführbaren Pakets aktualisiert.
    vorab in feste Slots; Frame-Rendering skaliert diese Glyphen nicht mehr.
    Abnahme: lesbare, nicht abgeschnittene Raster jeder Familie und Größe sowie
    der reale große Notepad-Fontlauf ohne Compositor-Neustart.
-5. [~] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+5. [~] **R3.3b · Explorer-Ordnerfenster begrenzt scrollbar machen.** Ein
+   fester Zeilenviewport ersetzt die Beschränkung auf gerade sichtbare
+   Iconzellen. Eine aus der aktuellen Clientfläche abgeleitete vertikale
+   Scrollbar unterstützt Pfeile, Seitenklick, Thumb-Drag, Mausrad und
+   Tastatur-Nachführung und bleibt nach jedem Resize am rechten Fensterrand.
+   Der atomare sortierte Snapshot bleibt auf 128 Einträge begrenzt; Überlauf
+   wird weiterhin explizit gemeldet. Abnahme: Hostmatrix für Range, Capture,
+   Hit-Test und Resize sowie realer QEMU-Explorer-Scrolllauf.
+6. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
    restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird
@@ -3170,7 +3178,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    FAT12/32 liefern mangels nativem Standardformat vor jeder Wirkung
    `EOPNOTSUPP`. Abnahme: `ln -s`/`readlink` aus der Userspace-Shell sowie ein
    realer EXT2-Lauf einschließlich Dienstneustart und unterbrochener Mutation.
-6. [ ] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
+7. [ ] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
    begrenzter `/desktop`-Katalog liest versionierte `reist.shortcut/1`-
    Dateien und rendert sie mit einem neuen Shortcut-Icon. Ein Rechtsklick auf
    ein validiertes Programm oder eine reguläre Datei im Explorer bietet
@@ -3179,7 +3187,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Microsoft-Shell-Link-Kompatibilitätsbehauptung. Abnahme: reale Maus-
    Erstellung, Reload und sichere Aktivierung je einer Programm- und
    Dateiverknüpfung sowie Ablehnung manipulierter oder veralteter Ziele.
-7. [ ] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
+8. [ ] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
    dynamische Shortcut-Icons verwenden den vorhandenen begrenzten Drag-
    Controller, rasten kollisionsfrei im sichtbaren Arbeitsbereich ein und
    bleiben von Fensterbewegung, Start und Explorer-Papierkorb-MOVE getrennt.
