@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2f-editor-load-authority"
+active_id = "N2g-notepad-piece-table"
 
 [policy]
 one_package_per_run = true
@@ -11,8 +11,60 @@ external_writes = false
 push = false
 
 [[packages]]
-id = "N2f-editor-load-authority"
+id = "N2g-notepad-piece-table"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Edit large Notepad documents through a bounded Piece Table"
+scope = "Replace Notepad's whole-file 51200-byte loading model with a BigPad-inspired but REIST-bounded Piece Table. Keep one generation-scoped Ring-3 VFS object with READ, STAT and SEEK rights open for the immutable original, use fixed piece, added-byte and read-cache capacities, materialize only a bounded editor window, and translate accepted edits back into append-only added storage and piece splits. Stream original and added pieces into the existing temporary-file, fsync, close and atomic-rename publication path without assembling the document in memory. Preserve the public text-editor ABI, Surface interaction, dialogs, UTF-8 validation, command syntax and missing-file behavior. Fail closed on stale objects, deadline, malformed UTF-8 or any fixed-capacity exhaustion, retaining the original file. Prove fragmented reads, cache windows, insert, erase, coalescing, capacity failure and streaming output in a host harness plus a real Notepad Surface load/edit/save/reopen run whose document exceeds the legacy 51200-byte ceiling."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/include/reist/gui/piece_document.h",
+  "userspace/gui/lib/piece_document.c",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_desktop_notepad.py",
+  "test/test_gui_notepad_source.py",
+  "test/test_piece_document_host.c",
+  "test/test_system_layout.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md"
+]
+invariants = [
+  "large documents are represented by fixed-capacity pieces over one immutable generation-scoped source object and append-only added bytes rather than a whole-file buffer",
+  "the source object receives only READ STAT and SEEK rights and remains generation-bound until close replacement or successful save reopens the new generation",
+  "all reads seeks writes cache fills piece scans rendering work and retries are bounded by fixed capacities or monotonic deadlines",
+  "insert erase split and coalesce validate every range and required capacity before publishing a new piece topology",
+  "saving streams each validated piece through the unchanged temporary-file fsync close and atomic-rename protocol and never assembles the full document in memory",
+  "stale objects malformed UTF-8 partial reads writes or capacity exhaustion retain the prior document and original file without partial success publication",
+  "the public text-editor ABI Surface protocol dialogs command syntax missing-file behavior and unrelated GUI applications remain unchanged"
+]
+targeted_tests = [
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_system_layout.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-notepad"]
+stop_conditions = [
+  "the design requires dynamic unbounded storage a new syscall a kernel parser or weakening generation and rights checks",
+  "an edit can partially mutate piece topology or saving can replace the target before every piece is written synced and closed",
+  "large-file rendering or navigation requires scanning the entire file without a finite deadline",
+  "the real Notepad cannot load edit save reopen and close a document larger than 51200 bytes while the desktop remains live",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "gui: edit large documents with a bounded piece table"
+evidence = []
+
+[[packages]]
+id = "N2f-editor-load-authority"
+status = "queued"
 phase = "post-s0"
 risk = "medium"
 title = "Read EDIT documents through Ring-3 VFS object authority"
