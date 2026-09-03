@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import hashlib
+import importlib.util
 import shutil
 import struct
 import subprocess
@@ -12,6 +13,11 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 GCC = shutil.which("gcc")
+GENERATOR_SPEC = importlib.util.spec_from_file_location(
+    "reist_generate_psf2_font", ROOT / "scripts/generate_psf2_font.py")
+assert GENERATOR_SPEC is not None and GENERATOR_SPEC.loader is not None
+GENERATOR = importlib.util.module_from_spec(GENERATOR_SPEC)
+GENERATOR_SPEC.loader.exec_module(GENERATOR)
 
 
 class GuiFontTests(unittest.TestCase):
@@ -27,7 +33,9 @@ class GuiFontTests(unittest.TestCase):
     def test_catalog_pins_five_sources_licenses_and_psf2_outputs(self) -> None:
         catalog = tomllib.loads(
             (ROOT / "assets/fonts/catalog.toml").read_text(encoding="utf-8"))
-        self.assertEqual(catalog["schema"], "reist.font-catalog/1")
+        self.assertEqual(catalog["schema"], "reist.font-catalog/2")
+        self.assertEqual(catalog["generator_version"], 2)
+        self.assertEqual(catalog["generator_grayscale_threshold"], 96)
         self.assertEqual(catalog["pixel_heights"],
                          [10, 12, 14, 16, 18, 20, 24, 28])
         families = catalog["families"]
@@ -37,6 +45,10 @@ class GuiFontTests(unittest.TestCase):
             "GNU Unifont", "JetBrains Mono", "Source Code Pro", "Iosevka",
             "Fira Code"])
         raster_fingerprints = set()
+        sized_fingerprints = {height: set()
+                              for height in catalog["pixel_heights"]}
+        outline_sources = {
+            name: source for name, source, _ in GENERATOR.EDITOR_FONTS}
         for family in families:
             for field in ("version", "copyright", "license", "source_url"):
                 self.assertTrue(family[field])
@@ -56,10 +68,55 @@ class GuiFontTests(unittest.TestCase):
             self.assertEqual(header[6:8],
                              (family["base_height"], family["base_width"]))
             raster_fingerprints.add(self._glyph_fingerprint(data, ord("A")))
+            if family["id"] == 1:
+                continue
+            self.assertEqual(len(family["runtime_paths"]), 8)
+            self.assertEqual(len(family["runtime_sha256s"]), 8)
+            self.assertEqual(len(family["raster_point_sizes"]), 8)
+            self.assertEqual(len(family["cell_widths"]), 8)
+            family_key = Path(family["runtime_path"]).stem.removeprefix(
+                "reist-")
+            for index, height in enumerate(catalog["pixel_heights"]):
+                sized_runtime = ROOT / "assets/fonts" / Path(
+                    family["runtime_paths"][index]).name
+                sized_data = sized_runtime.read_bytes()
+                self.assertEqual(
+                    hashlib.sha256(sized_data).hexdigest(),
+                    family["runtime_sha256s"][index])
+                sized_header = struct.unpack_from("<8I", sized_data)
+                self.assertEqual(sized_header[0:4],
+                                 (0x864AB572, 0, 32, 1))
+                self.assertEqual(sized_header[4], 96)
+                self.assertEqual(sized_header[6], height)
+                self.assertEqual(sized_header[7],
+                                 family["cell_widths"][index])
+                selected = GENERATOR.editor_font_for_height(
+                    outline_sources[family_key], height)
+                self.assertEqual(selected[1], family["cell_widths"][index])
+                self.assertEqual(selected[4],
+                                 family["raster_point_sizes"][index])
+                self.assertLessEqual(sized_header[7], 32)
+                self.assertEqual(
+                    set(self._glyph_bytes(sized_data, ord(" "))), {0})
+                for scalar in map(ord, "AEeg09"):
+                    glyph = self._glyph_bytes(sized_data, scalar)
+                    foreground = sum(byte.bit_count() for byte in glyph)
+                    self.assertGreaterEqual(foreground, 2)
+                    self.assertLess(foreground,
+                                    sized_header[6] * sized_header[7] * 3 // 4)
+                sized_fingerprints[height].add(
+                    self._glyph_fingerprint(sized_data, ord("A")))
         self.assertEqual(len(raster_fingerprints), 5)
+        for fingerprints in sized_fingerprints.values():
+            self.assertEqual(len(fingerprints), 4)
 
     @staticmethod
     def _glyph_fingerprint(data: bytes, scalar: int) -> str:
+        return hashlib.sha256(
+            GuiFontTests._glyph_bytes(data, scalar)).hexdigest()
+
+    @staticmethod
+    def _glyph_bytes(data: bytes, scalar: int) -> bytes:
         _, _, header_size, flags, count, char_size, _, _ = struct.unpack_from(
             "<8I", data)
         if not flags & 1:
@@ -71,7 +128,7 @@ class GuiFontTests(unittest.TestCase):
             for sequence in data[cursor:end].split(b"\xfe"):
                 if sequence == encoded:
                     start = header_size + glyph * char_size
-                    return hashlib.sha256(data[start:start + char_size]).hexdigest()
+                    return data[start:start + char_size]
             cursor = end + 1
         raise AssertionError(f"missing U+{scalar:04X}")
 
@@ -131,6 +188,13 @@ class GuiFontTests(unittest.TestCase):
                 "usr/share/fonts/fira-code-ofl.txt"):
             self.assertIn(spec, makefile)
             self.assertIn(spec, windows)
+        for family in (
+                "jetbrains-mono", "source-code-pro", "iosevka", "fira-code"):
+            for height in (10, 12, 14, 16, 18, 20, 28):
+                self.assertIn(
+                    f"usr/share/fonts/reist-{family}-{height}.psf", makefile)
+            self.assertIn(f"'{family}'", windows)
+        self.assertIn("@(10, 12, 14, 16, 18, 20, 28)", windows)
 
     def test_desktop_loads_and_overlays_extension_glyphs(self) -> None:
         desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text(
@@ -143,6 +207,11 @@ class GuiFontTests(unittest.TestCase):
         self.assertIn("desktop_editor_font_catalog_load", desktop)
         self.assertIn("DESKTOP_EDITOR_FONT_FALLBACK", desktop)
         self.assertIn("reist_gui_font_raster_scaled_xrgb", desktop)
+        self.assertIn("[REIST_GUI_FONT_SIZE_COUNT]", desktop)
+        self.assertIn("DESKTOP_EDITOR_FONT_FILE_CAPACITY 12288U", desktop)
+        self.assertIn("reist_gui_font_catalog_asset", desktop)
+        self.assertIn("font->width == width && font->height == height", desktop)
+        self.assertIn("reist_gui_font_raster_xrgb(", desktop)
 
 
 if __name__ == "__main__":

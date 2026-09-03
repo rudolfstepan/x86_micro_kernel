@@ -56,7 +56,7 @@
 #define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 262144U
 #define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode.psf"
-#define DESKTOP_EDITOR_FONT_FILE_CAPACITY 8192U
+#define DESKTOP_EDITOR_FONT_FILE_CAPACITY 12288U
 #define DESKTOP_EDITOR_FONT_MAPPING_CAPACITY 128U
 #define DESKTOP_FONT_GLYPH_CACHE_CAPACITY 64U
 #define DESKTOP_SPLASH_WIDTH 512U
@@ -669,7 +669,7 @@ typedef struct desktop_editor_font_slot {
     uint32_t ready;
 } desktop_editor_font_slot_t;
 static desktop_editor_font_slot_t desktop_editor_fonts[
-    REIST_GUI_FONT_FAMILY_COUNT - 1U];
+    REIST_GUI_FONT_FAMILY_COUNT - 1U][REIST_GUI_FONT_SIZE_COUNT];
 typedef struct desktop_font_glyph_cache_entry {
     uint32_t valid;
     uint32_t family;
@@ -1134,48 +1134,58 @@ static int desktop_editor_font_catalog_load(
     if (fallback_status != 0) return fallback_status;
     for (uint32_t family = REIST_GUI_FONT_FAMILY_JETBRAINS_MONO;
          family <= REIST_GUI_FONT_FAMILY_FIRA_CODE; ++family) {
-        desktop_editor_font_slot_t *slot =
-            &desktop_editor_fonts[family -
-                                  REIST_GUI_FONT_FAMILY_JETBRAINS_MONO];
-        slot->ready = 0U;
-        const reist_gui_font_catalog_entry_t *entry =
-            reist_gui_font_catalog_entry(family);
-        size_t size = 0U;
-        int status = entry != 0
-            ? read_file_bounded_progress(
-                entry->path, slot->bytes, sizeof(slot->bytes), &size,
-                lifecycle_supervised, lifecycle_sequence,
-                lifecycle_heartbeat_ms)
-            : -22;
-        reist_gui_font_t candidate = {0};
-        if (status == 0)
-            status = reist_gui_font_open_psf2(
-                &candidate, slot->bytes, size, slot->mappings,
-                DESKTOP_EDITOR_FONT_MAPPING_CAPACITY, 0x25A0U);
-        if (status == 0 && entry != 0 &&
-            (candidate.width != entry->base_width ||
-             candidate.height != entry->base_height)) status = -84;
-        if (status == 0) {
-            slot->font = candidate;
-            slot->ready = 1U;
-        } else {
-            x86os_puts("DESKTOP_EDITOR_FONT_FALLBACK family=");
-            x86os_print_number((int)family);
-            x86os_puts(" status=");
-            x86os_print_number(status);
-            x86os_putchar('\n');
+        for (uint32_t size_index = 0U;
+             size_index < REIST_GUI_FONT_SIZE_COUNT; ++size_index) {
+            uint32_t pixel_height =
+                reist_gui_font_catalog_height(size_index);
+            desktop_editor_font_slot_t *slot = &desktop_editor_fonts[
+                family - REIST_GUI_FONT_FAMILY_JETBRAINS_MONO][size_index];
+            slot->ready = 0U;
+            const reist_gui_font_catalog_asset_t *asset =
+                reist_gui_font_catalog_asset(family, pixel_height);
+            size_t size = 0U;
+            int status = asset != 0
+                ? read_file_bounded_progress(
+                    asset->path, slot->bytes, sizeof(slot->bytes), &size,
+                    lifecycle_supervised, lifecycle_sequence,
+                    lifecycle_heartbeat_ms)
+                : -22;
+            reist_gui_font_t candidate = {0};
+            if (status == 0)
+                status = reist_gui_font_open_psf2(
+                    &candidate, slot->bytes, size, slot->mappings,
+                    DESKTOP_EDITOR_FONT_MAPPING_CAPACITY, 0x25A0U);
+            if (status == 0 &&
+                (candidate.width != asset->cell_width ||
+                 candidate.height != asset->cell_height)) status = -84;
+            if (status == 0) {
+                slot->font = candidate;
+                slot->ready = 1U;
+            } else {
+                x86os_puts("DESKTOP_EDITOR_FONT_FALLBACK family=");
+                x86os_print_number((int)family);
+                x86os_puts(" height=");
+                x86os_print_number((int)pixel_height);
+                x86os_puts(" status=");
+                x86os_print_number(status);
+                x86os_putchar('\n');
+            }
         }
     }
     x86os_puts("DESKTOP_EDITOR_FONT_CATALOG_READY families=5 sizes=8\n");
     return 0;
 }
 
-static const reist_gui_font_t *desktop_editor_font(uint32_t family) {
+static const reist_gui_font_t *desktop_editor_font(uint32_t family,
+                                                   uint32_t pixel_height) {
     if (family >= REIST_GUI_FONT_FAMILY_JETBRAINS_MONO &&
         family <= REIST_GUI_FONT_FAMILY_FIRA_CODE) {
+        uint32_t size_index = 0U;
+        if (reist_gui_font_catalog_size_index(
+                pixel_height, &size_index) != 0) return 0;
         const desktop_editor_font_slot_t *slot =
             &desktop_editor_fonts[family -
-                                  REIST_GUI_FONT_FAMILY_JETBRAINS_MONO];
+                REIST_GUI_FONT_FAMILY_JETBRAINS_MONO][size_index];
         if (slot->ready) return &slot->font;
     }
     return desktop_font_ready ? &desktop_font : 0;
@@ -1198,7 +1208,7 @@ static desktop_font_glyph_cache_entry_t *desktop_font_glyph(
             cached->scalar == scalar && cached->foreground == foreground &&
             cached->background == background) return cached;
     }
-    const reist_gui_font_t *font = desktop_editor_font(family);
+    const reist_gui_font_t *font = desktop_editor_font(family, pixel_height);
     if (font == 0) return 0;
     uint32_t glyph = 0U;
     int mapped = reist_gui_font_lookup(font, scalar, &glyph);
@@ -1213,10 +1223,15 @@ static desktop_font_glyph_cache_entry_t *desktop_font_glyph(
         (desktop_font_glyph_cache_next + 1U) %
         DESKTOP_FONT_GLYPH_CACHE_CAPACITY;
     cached->valid = 0U;
-    if (reist_gui_font_raster_scaled_xrgb(
+    int raster_status = font->width == width && font->height == height
+        ? reist_gui_font_raster_xrgb(
+            font, glyph, foreground, background, cached->pixels, width,
+            sizeof(cached->pixels) / sizeof(cached->pixels[0]))
+        : reist_gui_font_raster_scaled_xrgb(
             font, glyph, width, height, foreground, background,
             cached->pixels, width,
-            sizeof(cached->pixels) / sizeof(cached->pixels[0])) != 0)
+            sizeof(cached->pixels) / sizeof(cached->pixels[0]));
+    if (raster_status != 0)
         return 0;
     cached->family = family;
     cached->pixel_height = pixel_height;

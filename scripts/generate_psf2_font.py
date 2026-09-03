@@ -15,9 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "drivers/video/framebuffer.c"
 DEFAULT_OUTPUT = ROOT / "assets/fonts/reist-vga.psf"
 MAGIC = 0x864AB572
-EDITOR_HEIGHT = 24
-EDITOR_POINT_SIZE = 20
 EDITOR_PILLOW_VERSION = "12.1.0"
+EDITOR_HEIGHTS = (10, 12, 14, 16, 18, 20, 24, 28)
+EDITOR_MIN_POINT_SIZE = 4
+EDITOR_MAX_POINT_SIZE = 32
+EDITOR_GRAYSCALE_THRESHOLD = 96
 EDITOR_SCALARS = tuple(range(0x20, 0x7F)) + (0x25A0,)
 EDITOR_FONTS = (
     ("jetbrains-mono",
@@ -87,8 +89,8 @@ def generate_vga() -> bytes:
     return header + glyphs + bytes(table)
 
 
-def generate_editor(source: Path) -> bytes:
-    """Rasterize a pinned outline face into one small, bounded PSF2 subset."""
+def editor_font_for_height(source: Path, target_height: int):
+    """Choose the largest hinted face whose ASCII box fits the exact cell."""
     try:
         from PIL import Image, ImageDraw, ImageFont, __version__ as pillow_version
     except ImportError as error:
@@ -97,54 +99,90 @@ def generate_editor(source: Path) -> bytes:
         raise RuntimeError(
             f"Pillow {EDITOR_PILLOW_VERSION} is required, found {pillow_version}")
 
-    font = ImageFont.truetype(
-        str(source), EDITOR_POINT_SIZE, layout_engine=ImageFont.Layout.BASIC)
-    advances = [float(font.getlength(chr(scalar))) for scalar in EDITOR_SCALARS]
-    printable = advances[:-1]
-    if max(printable) - min(printable) > 0.01:
-        raise RuntimeError(f"{source.name} is not monospaced")
-    cell_width = max(1, math.ceil(max(printable)))
-    if cell_width > 32:
-        raise RuntimeError(f"{source.name} exceeds the PSF2 width bound")
+    selected = None
+    for point_size in range(EDITOR_MIN_POINT_SIZE,
+                            EDITOR_MAX_POINT_SIZE + 1):
+        font = ImageFont.truetype(
+            str(source), point_size, layout_engine=ImageFont.Layout.BASIC)
+        printable = [float(font.getlength(chr(scalar)))
+                     for scalar in EDITOR_SCALARS[:-1]]
+        if max(printable) - min(printable) > 0.01:
+            raise RuntimeError(f"{source.name} is not monospaced")
+        cell_width = max(1, math.ceil(max(printable)))
+        probe_height = 96
+        probe_baseline = probe_height // 2
+        top = probe_height
+        bottom = 0
+        for scalar in EDITOR_SCALARS[1:-1]:
+            character = chr(scalar)
+            box = font.getbbox(character, anchor="ls")
+            glyph_width = box[2] - box[0]
+            left = (cell_width - glyph_width) // 2 - box[0]
+            probe = Image.new("L", (cell_width, probe_height), 0)
+            ImageDraw.Draw(probe).text(
+                (left, probe_baseline), character, font=font, fill=255,
+                anchor="ls")
+            thresholded = probe.point(
+                lambda value: 255
+                if value >= EDITOR_GRAYSCALE_THRESHOLD else 0)
+            bounds = thresholded.getbbox()
+            if bounds is not None:
+                top = min(top, bounds[1] - probe_baseline)
+                bottom = max(bottom, bounds[3] - probe_baseline)
+        if cell_width <= 32 and bottom - top <= target_height:
+            selected = (font, cell_width, top, bottom, point_size)
+    if selected is None:
+        raise RuntimeError(
+            f"{source.name} has no face fitting {target_height}px")
+    return selected
 
-    boxes = [font.getbbox(chr(scalar), anchor="ls") for scalar in EDITOR_SCALARS]
-    top = min(box[1] for box in boxes)
-    bottom = max(box[3] for box in boxes)
-    if bottom - top > EDITOR_HEIGHT:
-        raise RuntimeError(f"{source.name} exceeds the PSF2 height bound")
-    baseline = (EDITOR_HEIGHT - (bottom - top)) // 2 - top
+
+def generate_editor(source: Path, target_height: int) -> tuple[bytes, int, int]:
+    """Rasterize one exact hinted size into a bounded standard PSF2 subset."""
+    from PIL import Image, ImageDraw
+
+    font, cell_width, top, bottom, point_size = editor_font_for_height(
+        source, target_height)
+    baseline = (target_height - (bottom - top)) // 2 - top
     row_bytes = (cell_width + 7) // 8
     glyphs = bytearray()
     table = bytearray()
     for scalar in EDITOR_SCALARS:
-        canvas = Image.new("1", (cell_width, EDITOR_HEIGHT), 0)
+        canvas = Image.new("L", (cell_width, target_height), 0)
         draw = ImageDraw.Draw(canvas)
         if scalar == 0x25A0:
-            inset = max(1, min(cell_width, EDITOR_HEIGHT) // 5)
-            draw.rectangle((inset, (EDITOR_HEIGHT - cell_width) // 2 + inset,
+            inset = max(1, min(cell_width, target_height) // 5)
+            draw.rectangle((inset, (target_height - cell_width) // 2 + inset,
                             cell_width - inset - 1,
-                            (EDITOR_HEIGHT + cell_width) // 2 - inset - 1),
-                           fill=1)
+                            (target_height + cell_width) // 2 - inset - 1),
+                           fill=255)
         else:
             box = font.getbbox(chr(scalar), anchor="ls")
             glyph_width = box[2] - box[0]
             left = (cell_width - glyph_width) // 2 - box[0]
-            draw.text((left, baseline), chr(scalar), font=font, fill=1,
+            draw.text((left, baseline), chr(scalar), font=font, fill=255,
                       anchor="ls")
-        for y in range(EDITOR_HEIGHT):
+        for y in range(target_height):
             for byte_index in range(row_bytes):
                 value = 0
                 for bit in range(8):
                     x = byte_index * 8 + bit
-                    if x < cell_width and canvas.getpixel((x, y)):
+                    if (x < cell_width and canvas.getpixel((x, y)) >=
+                            EDITOR_GRAYSCALE_THRESHOLD):
                         value |= 0x80 >> bit
                 glyphs.append(value)
         table.extend(chr(scalar).encode("utf-8"))
         table.append(0xFF)
     header = struct.pack(
         "<8I", MAGIC, 0, 32, 1, len(EDITOR_SCALARS),
-        row_bytes * EDITOR_HEIGHT, EDITOR_HEIGHT, cell_width)
-    return header + bytes(glyphs) + bytes(table)
+        row_bytes * target_height, target_height, cell_width)
+    return header + bytes(glyphs) + bytes(table), cell_width, point_size
+
+
+def editor_output(base: Path, target_height: int) -> Path:
+    if target_height == 24:
+        return base
+    return base.with_name(f"{base.stem}-{target_height}{base.suffix}")
 
 
 def generated_assets() -> list[tuple[Path, bytes]]:
@@ -152,7 +190,10 @@ def generated_assets() -> list[tuple[Path, bytes]]:
     for _name, source, output in EDITOR_FONTS:
         if not source.is_file():
             raise RuntimeError(f"missing pinned editor font: {source}")
-        assets.append((output, generate_editor(source)))
+        for target_height in EDITOR_HEIGHTS:
+            generated, _width, _point_size = generate_editor(
+                source, target_height)
+            assets.append((editor_output(output, target_height), generated))
     editor_hashes = [hashlib.sha256(data).digest() for _, data in assets[1:]]
     if len(editor_hashes) != len(set(editor_hashes)):
         raise RuntimeError("editor PSF2 outputs are not distinct")

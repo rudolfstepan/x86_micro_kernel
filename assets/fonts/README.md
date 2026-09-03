@@ -36,9 +36,11 @@ Code 6.2 contribute regular-face ASCII editor glyphs plus a visible fallback
 cell. Their exact upstream outline files and family-specific OFL texts are
 stored below `source/`; no target process parses those TTF or OTF files.
 
-`scripts/generate_psf2_font.py` rasterizes the four outline faces into small
-24-pixel-high PSF2 subsets using the generator versions recorded in the
-catalog. The target scales only those validated bitmap glyphs to the supported
-10, 12, 14, 16, 18, 20, 24 and 28 pixel heights. A scalar absent from the
-selected subset is looked up in GNU Unifont. OpenType ligatures, shaping and
-hinting are intentionally outside this bitmap editor contract.
+`scripts/generate_psf2_font.py` rasterizes each outline face directly into one
+small PSF2 subset for every supported 10, 12, 14, 16, 18, 20, 24 and 28 pixel
+cell. The pinned host rasterizer chooses the largest hinted point size whose
+complete printable-ASCII bounds fit the cell and applies the catalogued fixed
+grayscale threshold. The target therefore selects an exact bitmap and never
+rescales an outline-derived editor glyph. A scalar absent from the selected
+subset is looked up in GNU Unifont. OpenType ligatures, shaping, kerning and
+subpixel antialiasing remain outside this fixed-cell bitmap editor contract.

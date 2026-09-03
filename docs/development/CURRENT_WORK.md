@@ -4,20 +4,27 @@ Stand: 3. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `R3.2b-pixel-hinted-editor-fonts`. Die vier aus Outline-Fonts
-abgeleiteten Familien erhalten für jede auswählbare Höhe ein direkt mit dem
-gepinnten Host-Rasterizer erzeugtes, gehintetes PSF2. Damit entfallen die bei
-10 bis 20 Pixeln zu dünnen oder durch Coverage-Downsampling zu fetten Glyphen;
-im Zielsystem bleiben Parsing, Speicher und Rasterauswahl vollständig fest
-begrenzt.
+Aktives Thema: `N3a-vfs-symbolic-links`. Das Paket ergänzt begrenzte
+POSIX-Symlinks auf EXT2 mit append-only Storage-Service-/Client-ABI,
+generationgebundener Ring-3-Auflösung sowie festen Pfad-, Tiefen-, I/O- und
+Zeitbudgets. FAT12/32 weisen Symlinks mangels nativem Standardformat vor jeder
+Wirkung mit `EOPNOTSUPP` ab; der alte Ring-0-VFS-/EXT2-Pfad wird nicht
+erweitert.
 
-Danach sind drei getrennte Pakete vorgemerkt: `N3a-vfs-symbolic-links`
-ergänzt begrenzte POSIX-Symlinks auf EXT2. `R3.5-desktop-shortcuts` fügt validierte
+Danach sind zwei getrennte Pakete vorgemerkt: `R3.5-desktop-shortcuts` fügt validierte
 Verknüpfungsdateien, ein eigenes Icon und die Explorer-Kontextaktion
 „Verknüpfung auf Desktop erstellen“ hinzu. Anschließend macht
 `R3.5a-desktop-icon-drag-layout` Desktop-Icons per Maus verschiebbar und
 speichert ihre Positionen atomar in einem getrennten, versionierten
 Layoutformat.
+
+`R3.2b-pixel-hinted-editor-fonts` ist abgeschlossen. Die vier Outline-Familien
+werden jetzt in allen acht auswählbaren Höhen direkt als gehintete PSF2-Raster
+erzeugt und aus 32 festen Compositor-Slots ohne Laufzeit-Downsampling gerendert.
+Damit sind die zuvor zerfallenden oder blockartig verdickten Glyphen beseitigt.
+118 Targeted-Checks, der QEMU-Framebuffer-Paketbuild in 18 Sekunden und der
+reale große Notepad-Fontlauf ohne Fallback oder Compositor-Neustart sind
+bestanden.
 
 `R3.2a-notepad-font-selection` ist abgeschlossen. GNU Unifont, JetBrains Mono,
 Source Code Pro, Iosevka und Fira Code sind aus gepinnten freien Quellen als

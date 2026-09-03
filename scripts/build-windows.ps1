@@ -437,6 +437,16 @@ try {
         '--data-file', "usr/share/fonts/readme.txt=$(Join-Path $RepoRoot 'assets\fonts\README.md')"
         '--data-file', "usr/share/fonts/unicode.txt=$(Join-Path $RepoRoot 'assets\fonts\unicode.txt')"
     )
+    foreach ($fontFamily in @(
+        'jetbrains-mono', 'source-code-pro', 'iosevka', 'fira-code')) {
+        foreach ($fontHeight in @(10, 12, 14, 16, 18, 20, 28)) {
+            $fontName = "reist-$fontFamily-$fontHeight.psf"
+            $imageDataArguments += @(
+                '--data-file',
+                "usr/share/fonts/$fontName=$(Join-Path (Join-Path $RepoRoot 'assets\fonts') $fontName)"
+            )
+        }
+    }
     foreach ($soundName in @(
         'startup', 'shutdown', 'error', 'notify',
         'trash-drop', 'trash-empty'

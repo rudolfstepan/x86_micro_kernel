@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#define REIST_GUI_FONT_CATALOG_API_VERSION 1U
+#define REIST_GUI_FONT_CATALOG_API_VERSION 2U
 #define REIST_GUI_FONT_FAMILY_COUNT 5U
 #define REIST_GUI_FONT_SIZE_COUNT 8U
 #define REIST_GUI_FONT_DEFAULT_FAMILY 1U
@@ -32,9 +32,19 @@ typedef struct reist_gui_font_catalog_entry {
     uint32_t mapping_capacity;
 } reist_gui_font_catalog_entry_t;
 
+typedef struct reist_gui_font_catalog_asset {
+    const char *path;
+    uint32_t cell_width;
+    uint32_t cell_height;
+} reist_gui_font_catalog_asset_t;
+
 const reist_gui_font_catalog_entry_t *reist_gui_font_catalog_entry(
     uint32_t family);
 uint32_t reist_gui_font_catalog_height(uint32_t index);
+int reist_gui_font_catalog_size_index(uint32_t pixel_height,
+                                      uint32_t *size_index);
+const reist_gui_font_catalog_asset_t *reist_gui_font_catalog_asset(
+    uint32_t family, uint32_t pixel_height);
 int reist_gui_font_catalog_selection_valid(uint32_t family,
                                            uint32_t pixel_height);
 int reist_gui_font_catalog_metrics(uint32_t family, uint32_t pixel_height,

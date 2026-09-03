@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.2b-pixel-hinted-editor-fonts"
+active_id = "N3a-vfs-symbolic-links"
 
 [policy]
 one_package_per_run = true
@@ -14418,7 +14418,7 @@ evidence = [
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Rasterize every selectable editor size directly"
@@ -14500,11 +14500,17 @@ stop_conditions = [
   "a required production file lies outside allowed_files or an unrelated worktree change overlaps one"
 ]
 commit_message = "gui: rasterize editor fonts at native sizes"
-evidence = []
+evidence = [
+  "All five frozen targeted gates passed with 118 checks across deterministic font generation, per-size catalog metadata, PSF2 glyph structure, fixed compositor slots, desktop startup, runtime dispatch, canonical image layout and the complete userspace toolchain.",
+  "The pinned Pillow and FreeType host path generated 32 standard PSF2 variants: each outline family has exact 10 12 14 16 18 20 24 and 28 pixel cells, a catalogued fixed grayscale threshold, selected point size, cell width, path and SHA-256 hash, with distinct bounded nonempty glyph proofs.",
+  "The compositor preloads the 32 variants into fixed 12-KiB file and 128-entry mapping slots with lifecycle progress; exact outline rasters use direct bounded XRGB conversion while missing malformed or unmapped input retains the validated GNU Unifont fallback.",
+  "The final QEMU framebuffer package passed in 18 seconds with every native-size PSF2 installed in the HDD image and no target-side TTF OTF WOFF archive parser or frame-time VFS access.",
+  "The final runtime-desktop-notepad-fonts QEMU gate passed without any font fallback after real Notepad selected all five families at 10 and 28 pixels while editing saving and scrolling a document above 51200 bytes; Surface v6 Piece Table document bytes modified state save protocol and system UI font remain unchanged."
+]
 
 [[packages]]
 id = "N3a-vfs-symbolic-links"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Resolve and create bounded POSIX symbolic links on EXT2"

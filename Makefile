@@ -749,10 +749,38 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
 	usr/share/fonts/reist-vga.psf=assets/fonts/reist-vga.psf \
 	usr/share/fonts/reist-unicode.psf=assets/fonts/reist-unicode.psf \
+	usr/share/fonts/reist-jetbrains-mono-10.psf=assets/fonts/reist-jetbrains-mono-10.psf \
+	usr/share/fonts/reist-jetbrains-mono-12.psf=assets/fonts/reist-jetbrains-mono-12.psf \
+	usr/share/fonts/reist-jetbrains-mono-14.psf=assets/fonts/reist-jetbrains-mono-14.psf \
+	usr/share/fonts/reist-jetbrains-mono-16.psf=assets/fonts/reist-jetbrains-mono-16.psf \
+	usr/share/fonts/reist-jetbrains-mono-18.psf=assets/fonts/reist-jetbrains-mono-18.psf \
+	usr/share/fonts/reist-jetbrains-mono-20.psf=assets/fonts/reist-jetbrains-mono-20.psf \
 	usr/share/fonts/reist-jetbrains-mono.psf=assets/fonts/reist-jetbrains-mono.psf \
+	usr/share/fonts/reist-jetbrains-mono-28.psf=assets/fonts/reist-jetbrains-mono-28.psf \
+	usr/share/fonts/reist-source-code-pro-10.psf=assets/fonts/reist-source-code-pro-10.psf \
+	usr/share/fonts/reist-source-code-pro-12.psf=assets/fonts/reist-source-code-pro-12.psf \
+	usr/share/fonts/reist-source-code-pro-14.psf=assets/fonts/reist-source-code-pro-14.psf \
+	usr/share/fonts/reist-source-code-pro-16.psf=assets/fonts/reist-source-code-pro-16.psf \
+	usr/share/fonts/reist-source-code-pro-18.psf=assets/fonts/reist-source-code-pro-18.psf \
+	usr/share/fonts/reist-source-code-pro-20.psf=assets/fonts/reist-source-code-pro-20.psf \
 	usr/share/fonts/reist-source-code-pro.psf=assets/fonts/reist-source-code-pro.psf \
+	usr/share/fonts/reist-source-code-pro-28.psf=assets/fonts/reist-source-code-pro-28.psf \
+	usr/share/fonts/reist-iosevka-10.psf=assets/fonts/reist-iosevka-10.psf \
+	usr/share/fonts/reist-iosevka-12.psf=assets/fonts/reist-iosevka-12.psf \
+	usr/share/fonts/reist-iosevka-14.psf=assets/fonts/reist-iosevka-14.psf \
+	usr/share/fonts/reist-iosevka-16.psf=assets/fonts/reist-iosevka-16.psf \
+	usr/share/fonts/reist-iosevka-18.psf=assets/fonts/reist-iosevka-18.psf \
+	usr/share/fonts/reist-iosevka-20.psf=assets/fonts/reist-iosevka-20.psf \
 	usr/share/fonts/reist-iosevka.psf=assets/fonts/reist-iosevka.psf \
+	usr/share/fonts/reist-iosevka-28.psf=assets/fonts/reist-iosevka-28.psf \
+	usr/share/fonts/reist-fira-code-10.psf=assets/fonts/reist-fira-code-10.psf \
+	usr/share/fonts/reist-fira-code-12.psf=assets/fonts/reist-fira-code-12.psf \
+	usr/share/fonts/reist-fira-code-14.psf=assets/fonts/reist-fira-code-14.psf \
+	usr/share/fonts/reist-fira-code-16.psf=assets/fonts/reist-fira-code-16.psf \
+	usr/share/fonts/reist-fira-code-18.psf=assets/fonts/reist-fira-code-18.psf \
+	usr/share/fonts/reist-fira-code-20.psf=assets/fonts/reist-fira-code-20.psf \
 	usr/share/fonts/reist-fira-code.psf=assets/fonts/reist-fira-code.psf \
+	usr/share/fonts/reist-fira-code-28.psf=assets/fonts/reist-fira-code-28.psf \
 	usr/share/fonts/catalog.toml=assets/fonts/catalog.toml \
 	usr/share/fonts/unifont_all-16.0.04.hex.gz=assets/fonts/source/unifont_all-16.0.04.hex.gz \
 	usr/share/fonts/ofl-1.1.txt=assets/fonts/source/OFL-1.1.txt \
@@ -855,9 +883,9 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/share/images/reist-splash.bmp=% \
 	usr/share/images/demo-colors.gif=% \
 	usr/share/fonts/reist-unicode.psf=% \
-	usr/share/fonts/reist-jetbrains-mono.psf=% \
-	usr/share/fonts/reist-source-code-pro.psf=% \
-	usr/share/fonts/reist-iosevka.psf=% usr/share/fonts/reist-fira-code.psf=% \
+	usr/share/fonts/reist-jetbrains-mono% \
+	usr/share/fonts/reist-source-code-pro% \
+	usr/share/fonts/reist-iosevka% usr/share/fonts/reist-fira-code% \
 	usr/share/fonts/catalog.toml=% usr/share/fonts/jetbrains-mono-ofl.txt=% \
 	usr/share/fonts/source-code-pro-ofl.txt=% \
 	usr/share/fonts/iosevka-ofl.txt=% usr/share/fonts/fira-code-ofl.txt=% \

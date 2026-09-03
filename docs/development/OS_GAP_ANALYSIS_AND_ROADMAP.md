@@ -3155,13 +3155,13 @@ durch den Status des ausführbaren Pakets aktualisiert.
    24 und 28 Pixel, ohne die Systemschrift oder Dokumentdaten zu verändern.
    Abnahme: fünf unterscheidbare Raster, kapazitätsgebundener Fallback sowie
    realer großer Notepad-Lauf über alle Familien und Randgrößen.
-4. [~] **R3.2b · Outline-Editorfonts in jeder Größe direkt rastern.** Für die
+4. [x] **R3.2b · Outline-Editorfonts in jeder Größe direkt rastern.** Für die
    vier Outline-Familien wird jede feste Höhe von 10 bis 28 Pixeln als eigenes
    gehintetes PSF2 erzeugt und katalogisiert. Der Compositor lädt alle Varianten
    vorab in feste Slots; Frame-Rendering skaliert diese Glyphen nicht mehr.
    Abnahme: lesbare, nicht abgeschnittene Raster jeder Familie und Größe sowie
    der reale große Notepad-Fontlauf ohne Compositor-Neustart.
-5. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+5. [~] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
    restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird

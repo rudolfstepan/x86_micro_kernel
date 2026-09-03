@@ -613,14 +613,15 @@ Surface-v6-Nachricht `PAINT_FONT_TEXT` transportiert nur eine numerische
 Katalog-ID und eine der Höhen 10, 12, 14, 16, 18, 20, 24 oder 28 Pixel. Der
 Compositor validiert beides vor Retained-Paint-Publikation, lädt jeden Font in
 feste Dateispeicher und Unicode-Mappingtabellen und rastert über einen festen
-64-Glyphen-XRGB-Cache. Fehlende oder ungültige Zusatzfonts veröffentlichen
-keinen Teilzustand und verwenden den bereits vollständig validierten GNU-
-Unifont; unbekannte Skalare eines ASCII-Subsetfonts durchlaufen denselben
-Fallback. Beim Verkleinern bildet jede Zielzelle die von ihr abgedeckten
-Quellpixel zusammen, damit dünne Querstriche und Bögen nicht durch ausgelassene
-Nearest-Neighbor-Zeilen verschwinden; Vergrößerung bleibt pixelstabil und alle
-Schleifen bleiben durch 32x32 Pixel begrenzt. Der alte `PAINT_TEXT`-Vertrag und
-die 8x16-Systemschrift bleiben unverändert.
+64-Glyphen-XRGB-Cache. R3.2b erzeugt jede der acht Größen der vier Outline-
+Familien bereits auf dem Host als eigenes gehintetes PSF2 mit festem
+Graustufenschwellwert. Der Compositor lädt diese 32 Varianten in feste Slots
+und kopiert die exakt passenden Raster ohne Laufzeitskalierung. Fehlende oder
+ungültige Zusatzfonts veröffentlichen keinen Teilzustand und verwenden den
+bereits vollständig validierten GNU-Unifont; unbekannte Skalare eines ASCII-
+Subsetfonts durchlaufen denselben Fallback. Nur dieser Bitmap-Fallback nutzt
+den durch 32x32 Pixel begrenzten Coverage-Downscaler. Der alte `PAINT_TEXT`-
+Vertrag und die 8x16-Systemschrift bleiben unverändert.
 
 Notepad hält Familie und Größe ausschließlich pro Prozess. Nur Dokumentglyphen,
 Cursorzelle, sichtbare Zeilen und Spalten sowie daraus abgeleitete Scrollranges
