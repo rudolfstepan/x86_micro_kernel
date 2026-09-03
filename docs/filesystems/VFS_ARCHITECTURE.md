@@ -164,6 +164,21 @@ materialisiert jeweils nur ein UTF-8-gültiges Controllerfenster. Der atomare
 Savepfad streamt Original- und Add-Pieces in die Tempdatei und bindet erst nach
 Fsync, Close und Rename die neue Objektgeneration; ein Fehler lässt die alte
 Datei maßgeblich.
+Der Ladepfad von `EDIT.PRG` folgt demselben Objektvertrag. Ein vorhandenes
+Dokument wird genau einmal mit `READ|STAT` geöffnet; Fstat, die auf 51200 Byte
+begrenzten Vorwärtsreads, exakter EOF und Close gehören zu derselben
+Generation und zu einer absoluten monotonen 60-Sekunden-Frist. Erst danach
+werden die höchstens 200 Zeilen veröffentlicht und der Laufzeitmarker
+ausgegeben. Fehlende Pfade bleiben neue leere Dokumente. Tempfile, Schreiben,
+`fsync`, Close und atomarer Rename des Speicherpfads bleiben unverändert.
+Auch der `.trashinfo`-Lader des Desktops verwendet fuer Restore und
+Empty-Validierung genau ein `READ|STAT`-Objekt. Fstat muss eine regulaere Datei
+kleiner als die feste 640-Byte-Metadatenkapazitaet liefern; danach muessen
+exakt diese Generation und Groesse, EOF und Close innerhalb einer gemeinsamen
+absoluten monotonen Fuenf-Sekunden-Frist erfolgreich sein. Erst dann erreicht
+der Inhalt den bestehenden Format-v2-Parser. Fehler-Close ist separat auf eine
+Millisekunde begrenzt. Katalogpruefung, Create, Write, `fsync`, Rename, Unlink,
+Restore und Empty-Mutationen bleiben auf dem bisherigen Pfad.
 Der generische Pfadmodus von `CHKDSK.PRG` traversiert ebenfalls ausschließlich
 über die Ring-3-Stat- und Readdir-at-Clients. Reguläre Dateien werden mit
 `READ|STAT` geöffnet; Fstat, exakt größenbegrenztes Lesen, EOF und Close müssen

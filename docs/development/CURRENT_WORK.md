@@ -1,14 +1,29 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 31. August 2026
+Stand: 1. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `N2f-editor-load-authority`. Nur der bestehende read-only
-Ladepfad von `EDIT.PRG` wechselt auf ein generationgebundenes Ring-3-VFS-
-Objekt mit READ-/STAT-Rechten, fester 51200-Byte-Gesamtgrenze und absoluter
-60-Sekunden-Frist. Der atomare Tempfile-/Fsync-/Rename-Savepfad sowie die
-Editorinteraktion bleiben unverändert.
+Kein aktives Paket; die Queue ist leer.
+
+`N2g-desktop-trash-metadata-authority` ist abgeschlossen. Restore und
+Empty-Validierung lesen `.trashinfo` genau einmal ueber ein
+generationgebundenes Ring-3-VFS-Objekt mit READ-/STAT-Rechten, fester
+640-Byte-Kapazitaet und absoluter Fuenf-Sekunden-Frist. Typ, exakte Groesse,
+Inhalt, EOF und Close sind vor Parser und Mutation gebunden. 107 Targeted-
+Checks, der QEMU-Framebuffer-Paketbuild in 52 Sekunden und der fokussierte
+reale Move-/Restore-Lauf in 27 Sekunden bestanden. Papierkorb-Mutationen,
+Formatversion 2, oeffentliche ABI, Kernelparser und Storage-Service blieben
+unveraendert.
+
+`N2f-editor-load-authority` ist abgeschlossen. Der read-only Ladepfad von
+`EDIT.PRG` verwendet ein generationgebundenes Ring-3-VFS-Objekt mit READ-/
+STAT-Rechten, fester 51200-Byte-Gesamtgrenze und absoluter 60-Sekunden-Frist.
+Inhalt wird erst nach exaktem EOF und erfolgreichem Close in den Editor
+übernommen. 68 Targeted-Checks, der QEMU-Framebuffer-Paketbuild und der
+fokussierte reale QEMU-Editorlauf mit Shell-Erstellung, `EDIT_VFS_LOAD_OK`,
+`Ctrl-X`, CAT-Readback und Cleanup bestanden. Der atomare Tempfile-/Fsync-/
+Rename-Savepfad sowie die Editorinteraktion blieben unverändert.
 
 `N2g-notepad-piece-table` ist abgeschlossen. Der grafische Notepad hält große
 Dokumente in einer festen Piece Table, materialisiert nur ein begrenztes

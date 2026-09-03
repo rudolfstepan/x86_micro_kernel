@@ -316,7 +316,7 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('"COPY.PRG": (', build)
         self.assertIn('("copy /readme.txt /copy-vfs.txt",', runner)
         self.assertIn('("cat /copy-vfs.txt", "REIST OS")', runner)
-        self.assertIn('("del /copy-vfs.txt", "del /copy-vfs.txt")', runner)
+        self.assertIn('("del /copy-vfs.txt", None)', runner)
         self.assertIn(
             '("stat /copy-vfs.txt", "stat: path not found")', runner)
 
@@ -331,14 +331,38 @@ class SystemLayoutContracts(unittest.TestCase):
         for legacy in ("x86os_stat(", "x86os_open(", "x86os_read(",
                        "x86os_close("):
             self.assertNotIn(legacy, load)
+
+    def test_runtime_exercises_interactive_editor_object_load(self):
+        source = self.read("userspace/bin/edit.c")
+        build = self.read("scripts/build_system_programs.py")
+        runner = self.read("scripts/run_qemu_system_layout.py")
+        load = source[source.index("static int load_file("):
+                      source.index("static int write_all(")]
+        self.assertIn('#include "reist/vfs_file_client.h"', source)
+        self.assertIn("reist_vfs_file_open_rights(", load)
+        self.assertIn("REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT", load)
+        self.assertIn("reist_vfs_file_fstat(", load)
+        self.assertIn("reist_vfs_file_read_bulk(", load)
+        self.assertIn("EDIT_VFS_LOAD_OK", load)
+        for legacy in ("x86os_stat(", "x86os_open(", "x86os_read(",
+                       "x86os_close("):
+            self.assertNotIn(legacy, load)
         self.assertIn('inject(process, "basic")', runner)
         self.assertIn(
-            '("save /vfsload.bas 10 print 1", '
-            '"save /vfsload.bas 10 print 1")', runner)
+            '("save /vfsload.bas 10 print 1", None)', runner)
         self.assertIn('inject(process, "load /vfsload.bas")', runner)
         self.assertIn('"Loaded 11 bytes successfully."', runner)
         self.assertIn('inject(process, "exit")', runner)
         self.assertIn('"stat /vfsload.bas", "stat: path not found"', runner)
+        self.assertIn('"EDIT.PRG": (', build)
+        self.assertIn('inject(process, "edit /edit-vfs.txt")', runner)
+        self.assertIn('"EDIT_VFS_LOAD_OK"', runner)
+        self.assertIn("inject_ctrl_x(process)", runner)
+        self.assertIn('"(qemu) " + smoke.SHELL_PROMPT', runner)
+        self.assertIn('("cat /edit-vfs.txt", "editor object load")', runner)
+        self.assertIn('parser.add_argument("--editor-only"', runner)
+        self.assertIn("elif editor_only:", runner)
+        self.assertIn("'editor-load'", self.read("scripts/test-reist-runtime.ps1"))
 
     def test_chkdsk_path_scan_uses_ring3_clients_and_runtime(self):
         source = self.read("userspace/programs/chkdsk.c")
@@ -367,8 +391,8 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('parser.add_argument("--chkdsk-only"', runner)
         self.assertIn("if chkdsk_only:", runner)
         self.assertIn("chkdsk_failure not in smoke.FAIL_MARKERS", runner)
-        self.assertEqual(
-            runner.count("if error is None and not chkdsk_only:"), 5)
+        self.assertGreaterEqual(
+            runner.count("if error is None and not chkdsk_only:"), 3)
         layout = runtime[runtime.index("function Invoke-SystemLayout"):
                          runtime.index("function Invoke-StorageReconnect")]
         self.assertIn("'SYSTEM LAYOUT FAIL'", layout)

@@ -3,6 +3,9 @@
  * @brief Recoverable single-user trash implementation for REIST.
  */
 #include "desktop_trash.h"
+#include "reist/vfs_file_client.h"
+
+#define DESKTOP_TRASH_METADATA_DEADLINE_MS 5000U
 
 static void clear_bytes(void *value, uint32_t size) {
     volatile uint8_t *bytes = (volatile uint8_t *)value;
@@ -517,34 +520,113 @@ static int catalog_info_path(const char *catalog_path, char *info_path) {
     return DESKTOP_TRASH_OK;
 }
 
+typedef struct desktop_trash_metadata_budget {
+    uint64_t start_ms;
+    uint64_t deadline_ms;
+} desktop_trash_metadata_budget_t;
+
+static int metadata_budget_start(desktop_trash_metadata_budget_t *budget) {
+    if (budget == 0 || x86os_monotonic_ms(&budget->start_ms) != 0)
+        return DESKTOP_TRASH_EIO;
+    budget->deadline_ms = UINT64_MAX - budget->start_ms <
+            DESKTOP_TRASH_METADATA_DEADLINE_MS
+        ? UINT64_MAX : budget->start_ms + DESKTOP_TRASH_METADATA_DEADLINE_MS;
+    return DESKTOP_TRASH_OK;
+}
+
+static int metadata_budget_remaining(
+    const desktop_trash_metadata_budget_t *budget, uint32_t *remaining_ms) {
+    uint64_t now_ms = 0U;
+    if (budget == 0 || remaining_ms == 0 ||
+        x86os_monotonic_ms(&now_ms) != 0 || now_ms < budget->start_ms ||
+        now_ms >= budget->deadline_ms) return DESKTOP_TRASH_EIO;
+    uint64_t remaining = budget->deadline_ms - now_ms;
+    if (remaining > DESKTOP_TRASH_METADATA_DEADLINE_MS)
+        remaining = DESKTOP_TRASH_METADATA_DEADLINE_MS;
+    *remaining_ms = (uint32_t)remaining;
+    return *remaining_ms == 0U ? DESKTOP_TRASH_EIO : DESKTOP_TRASH_OK;
+}
+
+static int prepare_metadata_request(
+    reist_vfs_file_handle_t handle,
+    const desktop_trash_metadata_budget_t *budget) {
+    uint32_t remaining_ms = 0U;
+    if (metadata_budget_remaining(budget, &remaining_ms) != DESKTOP_TRASH_OK)
+        return DESKTOP_TRASH_EIO;
+    return reist_vfs_file_set_timeout(handle, remaining_ms) == 0
+        ? DESKTOP_TRASH_OK : DESKTOP_TRASH_EIO;
+}
+
+static int close_metadata_object(
+    reist_vfs_file_handle_t handle,
+    const desktop_trash_metadata_budget_t *budget, int status) {
+    if (status != DESKTOP_TRASH_OK) {
+        (void)reist_vfs_file_set_timeout(handle, 1U);
+        (void)reist_vfs_file_close(handle);
+        return status;
+    }
+    if (prepare_metadata_request(handle, budget) != DESKTOP_TRASH_OK) {
+        (void)reist_vfs_file_set_timeout(handle, 1U);
+        (void)reist_vfs_file_close(handle);
+        return DESKTOP_TRASH_EIO;
+    }
+    if (reist_vfs_file_close(handle) != 0) return DESKTOP_TRASH_EIO;
+    uint32_t remaining_ms = 0U;
+    return metadata_budget_remaining(budget, &remaining_ms);
+}
+
 static int read_metadata_file(const char *info_path, char *metadata,
                               uint32_t *size_out) {
-    int descriptor = x86os_open(info_path);
-    if (descriptor < 0) return DESKTOP_TRASH_ENOENT;
+    desktop_trash_metadata_budget_t budget;
+    if (info_path == 0 || metadata == 0 || size_out == 0 ||
+        metadata_budget_start(&budget) != DESKTOP_TRASH_OK)
+        return DESKTOP_TRASH_EIO;
+    uint32_t timeout_ms = 0U;
+    if (metadata_budget_remaining(&budget, &timeout_ms) != DESKTOP_TRASH_OK)
+        return DESKTOP_TRASH_EIO;
+    reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
+    int status = reist_vfs_file_open_rights(
+        info_path, timeout_ms,
+        REIST_VFS_FILE_RIGHT_READ | REIST_VFS_FILE_RIGHT_STAT, &handle);
+    if (status != 0) return status == DESKTOP_TRASH_ENOENT
+        ? DESKTOP_TRASH_ENOENT : DESKTOP_TRASH_EIO;
+
+    x86os_file_info_t info;
+    status = prepare_metadata_request(handle, &budget);
+    if (status == DESKTOP_TRASH_OK &&
+        reist_vfs_file_fstat(handle, &info) != 0)
+        status = DESKTOP_TRASH_EIO;
+    if (status == DESKTOP_TRASH_OK && info.type != X86OS_FILE)
+        status = DESKTOP_TRASH_EINVAL;
+    if (status == DESKTOP_TRASH_OK &&
+        info.size >= DESKTOP_TRASH_METADATA_CAPACITY)
+        status = DESKTOP_TRASH_ECAPACITY;
+
     uint32_t used = 0U;
-    int status = DESKTOP_TRASH_OK;
-    while (used + 1U < DESKTOP_TRASH_METADATA_CAPACITY) {
-        uint32_t remaining = DESKTOP_TRASH_METADATA_CAPACITY - 1U - used;
-        int count = x86os_read(descriptor, metadata + used, remaining);
-        if (count < 0 || (uint32_t)count > remaining) {
+    while (status == DESKTOP_TRASH_OK && used < info.size) {
+        uint32_t remaining = info.size - used;
+        status = prepare_metadata_request(handle, &budget);
+        int count = status == DESKTOP_TRASH_OK
+            ? reist_vfs_file_read_bulk(handle, metadata + used, remaining) : -1;
+        if (count <= 0 || (uint32_t)count > remaining) {
             status = DESKTOP_TRASH_EIO;
             break;
         }
-        if (count == 0) break;
         used += (uint32_t)count;
     }
-    if (status == DESKTOP_TRASH_OK &&
-        used + 1U == DESKTOP_TRASH_METADATA_CAPACITY) {
+    if (status == DESKTOP_TRASH_OK) {
         char extra = 0;
-        int count = x86os_read(descriptor, &extra, 1U);
+        status = prepare_metadata_request(handle, &budget);
+        int count = status == DESKTOP_TRASH_OK
+            ? reist_vfs_file_read_bulk(handle, &extra, 1U) : -1;
         if (count < 0 || count > 1) status = DESKTOP_TRASH_EIO;
         else if (count != 0) status = DESKTOP_TRASH_ECAPACITY;
     }
-    if (x86os_close(descriptor) != 0 && status == DESKTOP_TRASH_OK)
-        status = DESKTOP_TRASH_EIO;
+    status = close_metadata_object(handle, &budget, status);
     if (status != DESKTOP_TRASH_OK) return status;
     metadata[used] = '\0';
     *size_out = used;
+    x86os_puts("DESKTOP_TRASH_VFS_METADATA_OK\n");
     return DESKTOP_TRASH_OK;
 }
 

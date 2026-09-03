@@ -256,6 +256,17 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("DESKTOP_TRASH_CONTEXT_READY", self.runtime_runner)
         self.assertIn("DESKTOP_TRASH_CONFIRM_READY", self.runtime_runner)
 
+    def test_runtime_trash_restore_uses_packaged_object_loader(self):
+        self.assertIn("runtime-desktop-trash-restore", self.runtime_script)
+        self.assertIn("-TrashRestoreProbe $true", self.runtime_script)
+        self.assertIn(
+            '"desktop.prg --trash-restore-probe"', self.runtime_runner
+        )
+        self.assertIn("DESKTOP_TRASH_VFS_METADATA_OK", self.runtime_runner)
+        self.assertIn("DESKTOP_TRASH_RESTORE_READY", self.runtime_runner)
+        self.assertIn("runtime-desktop-trash-restore: PASS",
+                      self.runtime_runner)
+
     def test_runtime_notepad_mode_starts_a_visible_document_window(self):
         self.assertIn('"desktop.prg --notepad-probe"', self.runtime_runner)
         self.assertIn("NOTEPAD_SURFACE_DOCUMENT_READY", self.runtime_runner)

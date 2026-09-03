@@ -41,10 +41,12 @@ class ReistAtomicRenameTests(unittest.TestCase):
         end = adapter.index("static int fat32_vfs_stat_unlocked(", start)
         rename = adapter[start:end]
         destination = rename.index(
-            "update_directory_entry(new_parent, destination.name, &renamed)"
+            "update_directory_entry(new_parent, workspace->destination.name,\n"
+            "                                    &workspace->renamed)"
         )
         tombstone = rename.index(
-            "update_directory_entry(old_parent, source.name, &tombstone)"
+            "update_directory_entry(old_parent, workspace->source.name,\n"
+            "                                    &workspace->tombstone)"
         )
         reclaim = rename.index(
             "free_cluster_chain(&boot_sector, replaced_cluster)", tombstone
@@ -61,16 +63,25 @@ class ReistAtomicRenameTests(unittest.TestCase):
         start = adapter.index("static int fat32_vfs_rename_unlocked(")
         end = adapter.index("static int fat32_vfs_stat_unlocked(", start)
         rename = adapter[start:end]
-        self.assertIn("struct fat32_dir_entry replacement = source", rename)
-        self.assertIn("memcpy(replacement.name, destination.name,", rename)
-        self.assertIn("sizeof(replacement.name))", rename)
-        self.assertIn("replacement.nt_res = destination.nt_res", rename)
-        publish = rename.index(
-            "update_directory_entry(new_parent, destination.name,"
+        self.assertIn("workspace->replacement = workspace->source", rename)
+        self.assertIn(
+            "memcpy(workspace->replacement.name, workspace->destination.name,",
+            rename,
         )
-        self.assertIn("&replacement", rename[publish:publish + 160])
+        self.assertIn("sizeof(workspace->replacement.name))", rename)
+        self.assertIn(
+            "workspace->replacement.nt_res = workspace->destination.nt_res",
+            rename,
+        )
+        publish = rename.index(
+            "update_directory_entry(new_parent,\n"
+            "                                        workspace->destination.name,"
+        )
+        self.assertIn("&workspace->replacement", rename[publish:publish + 240])
         tombstone = rename.index(
-            "fat32_tombstone_rename_source(old_parent, &source)", publish
+            "fat32_tombstone_rename_source(\n"
+            "                    old_parent, &workspace->source, workspace)",
+            publish,
         )
         reclaim = rename.index(
             "free_cluster_chain(&boot_sector, replaced_cluster)", tombstone

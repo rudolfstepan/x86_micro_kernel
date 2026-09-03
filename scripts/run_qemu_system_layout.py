@@ -46,9 +46,29 @@ def inject(process: subprocess.Popen[str], command: str) -> None:
         process.stdin.flush()
 
 
+def inject_ctrl_x(process: subprocess.Popen[str]) -> None:
+    if process.stdin is None:
+        raise RuntimeError("QEMU monitor input unavailable")
+    process.stdin.write(smoke.QEMU_MUX_SWITCH)
+    process.stdin.flush()
+    time.sleep(smoke.KEY_INTERVAL_SECONDS)
+    try:
+        process.stdin.write("sendkey ctrl-x\n")
+        process.stdin.flush()
+        time.sleep(smoke.KEY_INTERVAL_SECONDS)
+    finally:
+        process.stdin.write(smoke.QEMU_MUX_SWITCH)
+        process.stdin.flush()
+
+
 def send_and_wait(process, chunks, transcript, finished, command, marker,
                   deadline, after):
     inject(process, command)
+    if marker is None:
+        return smoke.wait_for_line(
+            process, chunks, transcript, finished, smoke.SHELL_PROMPT,
+            deadline, after=after,
+        )
     error, position = smoke.wait_for_line(
         process, chunks, transcript, finished, marker, deadline, after=after
     )
@@ -61,7 +81,7 @@ def send_and_wait(process, chunks, transcript, finished, command, marker,
 
 
 def run(qemu: Path, image: Path, timeout: float, log: Path,
-        chkdsk_only: bool = False) -> int:
+        chkdsk_only: bool = False, editor_only: bool = False) -> int:
     chkdsk_failure = "CHKDSK: read-only check failed; medium left unchanged"
     if chkdsk_failure not in smoke.FAIL_MARKERS:
         smoke.FAIL_MARKERS = (*smoke.FAIL_MARKERS, chkdsk_failure)
@@ -109,15 +129,18 @@ def run(qemu: Path, image: Path, timeout: float, log: Path,
             ("storage", "STORAGE SERVICE_BIND_FAILED code=-13"),
             ("copy /readme.txt /copy-vfs.txt", "1 file(s) copied."),
             ("cat /copy-vfs.txt", "REIST OS"),
-            ("del /copy-vfs.txt", "del /copy-vfs.txt"),
+            ("del /copy-vfs.txt", None),
             ("stat /copy-vfs.txt", "stat: path not found"),
             ("chkdsk /htdocs", "CHKDSK: read-only check passed"),
-            ("save /vfsload.bas 10 print 1", "save /vfsload.bas 10 print 1"),
+            ("save /vfsload.bas 10 print 1", None),
+            ("save /edit-vfs.txt editor object load",
+             None),
         ]
         if chkdsk_only:
             commands = [commands[0],
-                        ("chkdsk /htdocs",
-                         "CHKDSK: read-only check passed")]
+                        ("chkdsk /htdocs", "CHKDSK: read-only check passed")]
+        elif editor_only:
+            commands = [commands[0], commands[-1]]
         for command, marker in commands:
             if error is not None:
                 break
@@ -125,31 +148,56 @@ def run(qemu: Path, image: Path, timeout: float, log: Path,
                 process, chunks, transcript, finished, command, marker,
                 deadline, position,
             )
-        if error is None and not chkdsk_only:
+        if error is None and not chkdsk_only and not editor_only:
             inject(process, "basic")
             error, position = smoke.wait_for_line(
                 process, chunks, transcript, finished,
                 "Commands: RUN, LIST, NEW, LOAD, SAVE, EXIT, HELP",
                 deadline, after=position,
             )
-        if error is None and not chkdsk_only:
+        if error is None and not chkdsk_only and not editor_only:
             inject(process, "load /vfsload.bas")
             error, position = smoke.wait_for_line(
                 process, chunks, transcript, finished,
                 "Loaded 11 bytes successfully.", deadline, after=position,
             )
-        if error is None and not chkdsk_only:
+        if error is None and not chkdsk_only and not editor_only:
             inject(process, "exit")
             error, position = smoke.wait_for_line(
                 process, chunks, transcript, finished, smoke.SHELL_PROMPT,
                 deadline, after=position,
             )
         if error is None and not chkdsk_only:
-            error, position = send_and_wait(
-                process, chunks, transcript, finished,
-                "del /vfsload.bas", "del /vfsload.bas", deadline, position,
+            inject(process, "edit /edit-vfs.txt")
+            error, position = smoke.wait_for_line(
+                process, chunks, transcript, finished, "EDIT_VFS_LOAD_OK",
+                deadline, after=position,
             )
         if error is None and not chkdsk_only:
+            inject_ctrl_x(process)
+            error, position = smoke.wait_for_line(
+                process, chunks, transcript, finished,
+                "(qemu) " + smoke.SHELL_PROMPT,
+                deadline, after=position,
+            )
+        if error is None and not chkdsk_only:
+            for command, marker in (
+                ("cat /edit-vfs.txt", "editor object load"),
+                ("del /edit-vfs.txt", None),
+                ("stat /edit-vfs.txt", "stat: path not found"),
+            ):
+                error, position = send_and_wait(
+                    process, chunks, transcript, finished, command, marker,
+                    deadline, position,
+                )
+                if error is not None:
+                    break
+        if error is None and not chkdsk_only and not editor_only:
+            error, position = send_and_wait(
+                process, chunks, transcript, finished,
+                "del /vfsload.bas", None, deadline, position,
+            )
+        if error is None and not chkdsk_only and not editor_only:
             error, position = send_and_wait(
                 process, chunks, transcript, finished,
                 "stat /vfsload.bas", "stat: path not found", deadline,
@@ -177,14 +225,17 @@ def main() -> int:
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=600.0)
     parser.add_argument("--chkdsk-only", action="store_true")
+    parser.add_argument("--editor-only", action="store_true")
     parser.add_argument(
         "--log", type=Path, default=Path("build/test-results/system-layout.log")
     )
     args = parser.parse_args()
     if not args.qemu.is_file() or not args.image.is_file() or args.timeout <= 0:
         parser.error("qemu/image must exist and timeout must be positive")
+    if args.chkdsk_only and args.editor_only:
+        parser.error("chkdsk-only and editor-only are mutually exclusive")
     return run(args.qemu.resolve(), args.image.resolve(), args.timeout,
-               args.log.resolve(), args.chkdsk_only)
+               args.log.resolve(), args.chkdsk_only, args.editor_only)
 
 
 if __name__ == "__main__":

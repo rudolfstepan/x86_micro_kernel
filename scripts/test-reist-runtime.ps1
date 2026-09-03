@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-control', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-control', 'runtime-desktop-trash-restore', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -183,11 +183,13 @@ function Invoke-RuntimeDesktop(
     [bool]$SupervisedProbe = $false,
     [string]$ImagePath = $Image,
     [int]$Smp = 1,
-    [bool]$NotepadProbe = $false
+    [bool]$NotepadProbe = $false,
+    [bool]$TrashRestoreProbe = $false
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
             [int]$ControlProbe + [int]$NotepadProbe + [int]$SoundProbe +
-            [int]$GuidemoClickProbe + [int]$HoverProbe) -gt 1) {
+            [int]$GuidemoClickProbe + [int]$HoverProbe +
+            [int]$TrashRestoreProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
     if ($SupervisedProbe -and !$HoverProbe) {
@@ -206,6 +208,7 @@ function Invoke-RuntimeDesktop(
     if ($SurfaceProbe) { $arguments += '--surface-probe' }
     if ($ControlProbe) { $arguments += '--control-probe' }
     if ($NotepadProbe) { $arguments += '--notepad-probe' }
+    if ($TrashRestoreProbe) { $arguments += '--trash-restore-probe' }
     if ($SoundProbe) { $arguments += '--sound-probe' }
     if ($GuidemoClickProbe) { $arguments += '--guidemo-click-probe' }
     if ($HoverProbe) {
@@ -445,7 +448,8 @@ function Invoke-DriverDomain {
     Write-Output "RUNTIME PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$gateLog"
 }
 
-function Invoke-SystemLayout([bool]$ChkdskOnly = $false) {
+function Invoke-SystemLayout([bool]$ChkdskOnly = $false,
+                             [bool]$EditorOnly = $false) {
     New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $gateLog = Join-Path $LogRoot "$stamp-runtime-system-layout"
@@ -460,6 +464,7 @@ function Invoke-SystemLayout([bool]$ChkdskOnly = $false) {
             '--log', (Join-Path $RepoRoot 'build\guest-system-layout.log')
         )
         if ($ChkdskOnly) { $arguments += '--chkdsk-only' }
+        if ($EditorOnly) { $arguments += '--editor-only' }
         & $Python @arguments *> $gateLog
         $exitCode = if ($null -eq $LASTEXITCODE) { 1 } else { $LASTEXITCODE }
     }
@@ -1105,6 +1110,9 @@ switch ($Mode) {
     'system-layout' {
         Invoke-SystemLayout
     }
+    'editor-load' {
+        Invoke-SystemLayout -EditorOnly $true
+    }
     'chkdsk-readonly' {
         Invoke-SystemLayout $true
     }
@@ -1244,6 +1252,9 @@ switch ($Mode) {
     }
     'runtime-desktop-control' {
         Invoke-RuntimeDesktop -ControlProbe $true
+    }
+    'runtime-desktop-trash-restore' {
+        Invoke-RuntimeDesktop -TrashRestoreProbe $true
     }
     'runtime-desktop-metrics' {
         Invoke-RuntimeDesktop $false $true

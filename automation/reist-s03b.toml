@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2f-editor-load-authority"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -66,8 +66,69 @@ commit_message = "gui: edit large documents with a bounded piece table"
 evidence = []
 
 [[packages]]
+id = "N2g-desktop-trash-metadata-authority"
+status = "done"
+phase = "post-s0"
+risk = "medium"
+title = "Read desktop trash metadata through Ring-3 VFS object authority"
+scope = "Migrate only the existing .trashinfo metadata load used by desktop restore and empty validation from legacy SYS_OPEN/SYS_READ/SYS_CLOSE descriptors to exactly one parser-authoritative generation-scoped Ring-3 VFS object with only READ and STAT rights. Preserve the restricted freedesktop.org Trash Specification adaptation, format version 2, 640-byte metadata capacity, local ASCII path validation, catalog identity checks and every create, write, fsync, rename, unlink, directory scan, restore and emptying mutation. Use one absolute monotonic five-second metadata deadline for open, fstat, every forward bulk read, exact-size EOF validation and successful close, with independently one-millisecond-bounded failure cleanup. Reject non-regular and oversized metadata before content publication, publish no parsed metadata or mutation after any object failure, and emit one diagnostic marker only after exact content and EOF have been read and the object has closed successfully. Prove rights, one resolution, success, partial read, premature EOF, non-file, oversized, fstat, deadline and close failures in the host harness, retain DESKTOP.PRG's existing VFS object linkage, and exercise a real move and restore through packaged DESKTOP.PRG in QEMU."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/compositor/desktop_trash.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_desktop_trash_host.c",
+  "test/test_desktop_trash_source.py",
+  "test/test_desktop_source.py",
+  "test/test_runtime_graphics_switch.py",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "desktop trash metadata loading contains no legacy open read or close syscall and resolves each .trashinfo path exactly once through one object",
+  "the metadata object receives only READ and STAT rights and its fstat type exact size content EOF and close all belong to the same generation",
+  "one absolute monotonic five-second deadline bounds successful metadata loading while every failure cleanup close is independently bounded to one millisecond",
+  "the fixed 640-byte metadata capacity rejects non-regular oversized truncated extended or failed input before parser or mutation publication",
+  "catalog identity original and storage path validation restore collision behavior and the restricted freedesktop.org Trash Specification adaptation remain unchanged",
+  "create write fsync rename unlink directory scan restore emptying public ABI kernel VFS parser and storage service remain unchanged",
+  "DESKTOP.PRG retains its existing VFS object and path clients and the real QEMU probe performs move metadata load restore and continued desktop progress"
+]
+targeted_tests = [
+  "python test/test_desktop_trash_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_runtime_graphics_switch.py -v",
+  "python test/test_reist_vfs_file_client.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-trash-restore"
+]
+stop_conditions = [
+  "the metadata load requires a new syscall storage operation parser mutation request persistent-format change or broader trash mutation migration",
+  "a failed stale oversized non-file truncated or extended read can reach parsing mutation publication or silently fall back to legacy VFS",
+  "the real desktop cannot move load restore and remain live through the packaged Ring-3 path",
+  "a required production file lies outside allowed_files",
+  "an unrelated worktree change overlaps an allowed file"
+]
+commit_message = "vfs: move desktop trash metadata reads to Ring 3"
+evidence = [
+  "All five targeted groups passed with 107 checks across the trash host failure matrix, desktop integration, runtime dispatch, generation-scoped VFS sessions and the complete production-program toolchain.",
+  "The host harness proved exactly one READ-and-STAT metadata object, forward partial reads, premature EOF, non-file and oversized rejection, fstat and read failure, clock failure, deadline expiry, extended content, close failure, one-millisecond cleanup and no restore mutation after failed publication.",
+  "The QEMU framebuffer package passed in 52 seconds with DESKTOP.PRG retaining the existing VFS object and canonical path clients.",
+  "The focused real QEMU runtime passed in 27 seconds after packaged DESKTOP.PRG created and moved a real file, loaded its .trashinfo through the Ring-3 object, restored it, completed cleanup and reached DESKTOP_OK without compositor restart or degradation.",
+  "The restricted Trash Specification format version 2, 640-byte capacity, catalog identity checks, create, write, fsync, rename, unlink, directory scans, public ABI, kernel parser and storage service remained unchanged; no queued package remains and active_id is empty."
+]
+
+[[packages]]
 id = "N2f-editor-load-authority"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Read EDIT documents through Ring-3 VFS object authority"
@@ -77,8 +138,10 @@ allowed_files = [
   "userspace/bin/edit.c",
   "scripts/build_system_programs.py",
   "scripts/run_qemu_system_layout.py",
+  "scripts/test-reist-runtime.ps1",
   "test/test_shell_source.py",
   "test/test_edit_vfs_host.c",
+  "test/test_reist_atomic_rename.py",
   "test/test_system_layout.py",
   "docs/development/USERSPACE_FILESYSTEM_TOOLS.md",
   "docs/filesystems/VFS_ARCHITECTURE.md",
@@ -105,7 +168,7 @@ package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"
 ]
 runtime_tests = [
-  ".\\scripts\\test-reist-runtime.ps1 -Mode system-layout"
+  ".\\scripts\\test-reist-runtime.ps1 -Mode editor-load"
 ]
 stop_conditions = [
   "the load path requires a new syscall storage operation parser mutation request or change to editor save semantics",
@@ -115,7 +178,13 @@ stop_conditions = [
   "an unrelated worktree change overlaps an allowed file"
 ]
 commit_message = "vfs: move EDIT document loads to Ring 3"
-evidence = []
+evidence = [
+  "All five targeted groups passed with 68 checks across shell and EDIT host behavior, atomic rename, generation-scoped VFS sessions, canonical system layout and the complete production-program toolchain.",
+  "The EDIT host harness proved one READ-and-STAT object, success, missing-file creation semantics, forward partial reads, premature EOF, oversized input, fstat failure, deadline expiry, close failure, one-millisecond cleanup and non-publication after failure.",
+  "The QEMU framebuffer package passed in 84 seconds with EDIT.PRG linked against the existing VFS object and canonical path clients.",
+  "The focused real QEMU editor-load runtime passed in 23 seconds after shell creation, EDIT_VFS_LOAD_OK, Ctrl-X shell return, authoritative CAT readback, cleanup and absence verification.",
+  "The atomic Tempfile fsync close rename save path, editor interaction, command syntax, public ABI, kernel VFS parser and storage service remained unchanged; no queued package remains and active_id is empty."
+]
 
 [[packages]]
 id = "N2e-audio-wave-read-authority"

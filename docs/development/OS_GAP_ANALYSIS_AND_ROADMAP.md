@@ -3133,12 +3133,21 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Pfaden. `N2e-audio-wave-read-authority` hat den gemeinsamen Loader von
    WAVPLAY und SOUNDPLAYER auf ein einziges READ-/STAT-Objekt mit absoluter
    Ladefrist umgestellt; Audio-, Surface- und Mutationsverhalten blieben
-   unverändert. Der vorgezogene Schnitt `N2g-notepad-piece-table` beseitigt die
-   51200-Byte-Gesamtdateigrenze des grafischen Notepad durch eine feste Piece
-   Table, fensterweises READ-/STAT-/SEEK-Objekt-I/O und gestreamtes atomisches
-   Speichern. `N2f-editor-load-authority` folgt danach weiterhin nur für EDIT;
-   dessen Tempfile-/Fsync-/Rename-Savepfad bleibt als spätere N3-Mutation
-   ausdrücklich unverändert.
+   unverändert. Der vorgezogene Schnitt `N2g-notepad-piece-table` beseitigte
+   die 51200-Byte-Gesamtdateigrenze des grafischen Notepad durch eine feste
+   Piece Table, fensterweises READ-/STAT-/SEEK-Objekt-I/O und gestreamtes
+   atomisches Speichern. `N2f-editor-load-authority` hat danach nur das Laden bestehender
+   Dokumente in EDIT auf ein begrenztes READ-/STAT-Objekt mit exaktem EOF,
+   erfolgreichem Close und absoluter Ladefrist um; der atomare Tempfile-/
+   Fsync-/Rename-Savepfad bleibt als spätere N3-Mutation ausdrücklich
+   unverändert. Der Host-Fehlervertrag, der QEMU-Paketbuild und der reale
+   Shell-/Editor-/Readback-/Cleanup-Lauf sind bestanden.
+   `N2g-desktop-trash-metadata-authority` hat danach den `.trashinfo`-Lader
+   fuer Restore und Empty-Validierung auf ein einziges begrenztes
+   READ-/STAT-Objekt mit Typ-, Groessen-, EOF-, Close- und Deadline-Pruefung
+   vor Parser und Mutation umgestellt. Papierkorb-Mutationen und Formatversion
+   2 blieben unveraendert; Hostmatrix, QEMU-Paket und realer Move-/Restore-Lauf
+   sind bestanden. Die Queue ist leer.
 3. [ ] **N3 · Dateisystemmutation über den Ring-3-Dienst führen.** Erst nach
    read-only Äquivalenz versionierte Create-, Write-, Rename-, Replace- und
    Reparaturtransaktionen migrieren. Journal, Readback, Medienidentität und

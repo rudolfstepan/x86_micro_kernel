@@ -25,11 +25,18 @@ class DesktopTrashSourceTests(unittest.TestCase):
             "DESKTOP_TRASH_DELETE_ENTRY_LIMIT",
             "desktop_trash_refresh", "desktop_trash_source_allowed",
             "x86os_create", "x86os_rename", "x86os_fsync", "DeletionDate=",
-            "x86os_open", "x86os_read", "x86os_rmdir",
+            "reist_vfs_file_open_rights", "reist_vfs_file_read_bulk",
+            "reist_vfs_file_fstat", "reist_vfs_file_close", "x86os_rmdir",
             "[Trash Info]", "Version=2", "StoragePath=",
         ):
             self.assertIn(token, header + source)
         self.assertNotIn("x86os_unlink(request->source_path", source)
+        self.assertNotIn("x86os_open(", source)
+        self.assertNotIn("x86os_read(", source)
+        self.assertIn("REIST_VFS_FILE_RIGHT_READ |", source)
+        self.assertIn("REIST_VFS_FILE_RIGHT_STAT", source)
+        self.assertIn("DESKTOP_TRASH_METADATA_DEADLINE_MS 5000U", source)
+        self.assertIn("reist_vfs_file_set_timeout(handle, 1U)", source)
         self.assertIn("build_storage_path", source)
         self.assertNotRegex(source, r"\b(malloc|calloc|realloc|free)\s*\(")
         self.assertIn('"Papierkorb"', desktop)
@@ -66,6 +73,7 @@ class DesktopTrashSourceTests(unittest.TestCase):
             subprocess.run(
                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
                  "-I.", "-Iuserspace/sdk/include",
+                 "-Iuserspace/storage/include",
                  "test/test_desktop_trash_host.c",
                  "userspace/gui/compositor/desktop_trash.c",
                  "-o", str(executable)],

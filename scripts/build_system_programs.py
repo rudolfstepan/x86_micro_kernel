@@ -155,7 +155,11 @@ PROGRAMS = {
         ROOT / "userspace/programs/curl.c",
         ROOT / "userspace/programs/curl_http.c",
     ),
-    "EDIT.PRG": ROOT / "userspace/bin/edit.c",
+    "EDIT.PRG": (
+        ROOT / "userspace/bin/edit.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "CHILDEX.PRG": ROOT / "userspace/programs/child_exit.c",
     "FAULTDE.PRG": ROOT / "userspace/programs/fault_de.c",
     "FAULTUD.PRG": ROOT / "userspace/programs/fault_ud.c",

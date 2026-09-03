@@ -253,10 +253,13 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("prepare_trash_documentation_probe", self.source)
         self.assertIn('"--trash-context-probe"', self.source)
         self.assertIn('"--trash-confirm-probe"', self.source)
+        self.assertIn('"--trash-restore-probe"', self.source)
         self.assertIn('"/trash-demo.txt"', self.source)
         self.assertIn("desktop_trash_move(", self.source)
         self.assertIn("DESKTOP_TRASH_CONTEXT_READY", self.source)
         self.assertIn("DESKTOP_TRASH_CONFIRM_READY", self.source)
+        self.assertIn("DESKTOP_TRASH_RESTORE_READY", self.source)
+        self.assertIn("desktop_trash_restore(", self.source)
         self.assertIn(
             "DESKTOP_DIALOG_EMPTY_TRASH", self.source
         )
