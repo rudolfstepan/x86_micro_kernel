@@ -1,0 +1,95 @@
+schema = "reist.font-catalog/1"
+generator = "scripts/generate_psf2_font.py"
+generator_version = 1
+generator_pillow = "12.1.0"
+pixel_heights = [10, 12, 14, 16, 18, 20, 24, 28]
+fallback_id = 1
+
+[[families]]
+id = 1
+name = "GNU Unifont"
+version = "16.0.04"
+copyright = "Copyright 1998-2024 Roman Czyborra, Paul Hardy, et al."
+license = "SIL Open Font License 1.1"
+source_url = "https://unifoundry.com/pub/unifont/unifont-16.0.04/font-builds/unifont_all-16.0.04.hex.gz"
+source_path = "assets/fonts/source/unifont_all-16.0.04.hex.gz"
+source_sha256 = "20e8b505f602488697979eefc69857f7f6106bceab702f5ac559f4f84e0e7494"
+license_path = "assets/fonts/source/OFL-1.1.txt"
+license_sha256 = "4c69dde8dbfb1c9847065cea5053ef59fb7e5768fae9f7f5edc52bfb8ce0e4c3"
+runtime_path = "/usr/share/fonts/reist-unicode.psf"
+runtime_sha256 = "74ce52a2e0b3ec44b2494900b031f7b68446946683761eec4ca7bfe4a452c8e4"
+base_width = 8
+base_height = 16
+glyph_count = 126086
+
+[[families]]
+id = 2
+name = "JetBrains Mono"
+version = "2.304"
+copyright = "Copyright 2020 The JetBrains Mono Project Authors"
+license = "SIL Open Font License 1.1"
+source_url = "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip"
+archive_sha256 = "6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf"
+source_path = "assets/fonts/source/jetbrains-mono/JetBrainsMono-Regular.ttf"
+source_sha256 = "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f"
+license_path = "assets/fonts/source/jetbrains-mono/OFL.txt"
+license_sha256 = "60d55f23c6ce05a81099a762cb67ca2c9b6ea251c7912720998b4c89ebfd4faa"
+runtime_path = "/usr/share/fonts/reist-jetbrains-mono.psf"
+runtime_sha256 = "099a95cb46e4ca07879a4917a086630437fc149a805a25903b13d194bf873f20"
+base_width = 12
+base_height = 24
+glyph_count = 96
+
+[[families]]
+id = 3
+name = "Source Code Pro"
+version = "2.042R-u/1.062R-i/1.026R-vf"
+copyright = "Copyright 2023 Adobe"
+license = "SIL Open Font License 1.1"
+source_url = "https://github.com/adobe-fonts/source-code-pro/releases/download/2.042R-u%2F1.062R-i%2F1.026R-vf/OTF-source-code-pro-2.042R-u_1.062R-i.zip"
+archive_sha256 = "754a2e3ebb945ae905d720ac5896b3b34acc9546dd6551ef9536869788629dae"
+source_path = "assets/fonts/source/source-code-pro/SourceCodePro-Regular.otf"
+source_sha256 = "9f9664e2edf6f045c11e774f9bd0be6993971f2544a39061a5ce478b96b051f8"
+license_path = "assets/fonts/source/source-code-pro/OFL.txt"
+license_sha256 = "7c940e28a5388e9bba866cf0e408edda45fe0899ba98665b8f6ab31dc5e4b8ff"
+runtime_path = "/usr/share/fonts/reist-source-code-pro.psf"
+runtime_sha256 = "e16adde909875df6631f7f7611e74231607ac6037555b2a0623e777e3a78f4fc"
+base_width = 12
+base_height = 24
+glyph_count = 96
+
+[[families]]
+id = 4
+name = "Iosevka"
+version = "34.8.0"
+copyright = "Copyright 2015-2026 Renzhi Li"
+license = "SIL Open Font License 1.1"
+source_url = "https://github.com/be5invis/Iosevka/releases/download/v34.8.0/PkgTTF-Iosevka-34.8.0.zip"
+archive_sha256 = "882dd68d3b2f1ad0e44b094d869b261d09ce17cc29818a28a19d60970483247f"
+source_path = "assets/fonts/source/iosevka/Iosevka-Regular.ttf"
+source_sha256 = "d1da5c2a3ce59781df12a4607f678e3f499d3483182329d14d8bad8cbf6e3c90"
+license_path = "assets/fonts/source/iosevka/OFL.txt"
+license_sha256 = "ff2d9cbefd347992429b8d23a0eddba73a45ad502f81147d9be52b2e2557e373"
+runtime_path = "/usr/share/fonts/reist-iosevka.psf"
+runtime_sha256 = "342ca214b760ef0c8a7c9de21ea24b3ece7714c69a6a7284756593e3551db630"
+base_width = 10
+base_height = 24
+glyph_count = 96
+
+[[families]]
+id = 5
+name = "Fira Code"
+version = "6.2"
+copyright = "Copyright 2014 The Fira Code Project Authors"
+license = "SIL Open Font License 1.1"
+source_url = "https://github.com/tonsky/FiraCode/releases/download/6.2/Fira_Code_v6.2.zip"
+archive_sha256 = "0949915ba8eb24d89fd93d10a7ff623f42830d7c5ffc3ecbf960e4ecad3e3e79"
+source_path = "assets/fonts/source/fira-code/FiraCode-Regular.ttf"
+source_sha256 = "5992ab9640e2df491b2f609467b1de60e8bc39b2c28db184342a0592d98f6117"
+license_path = "assets/fonts/source/fira-code/OFL.txt"
+license_sha256 = "1d41e10031ab125302780a05ec4c91d218e47db0c7e37cf315cce5e608cdc25c"
+runtime_path = "/usr/share/fonts/reist-fira-code.psf"
+runtime_sha256 = "18869f32ed1c7e23069aa9020a287ec5e3abb23229ad63083171b92ea5e02275"
+base_width = 12
+base_height = 24
+glyph_count = 96

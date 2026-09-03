@@ -19,6 +19,7 @@ def test_runtime_is_bounded_and_nonblocking():
     assert "ipc.struct_size = sizeof(ipc)" in SOURCE
     assert "if (status == -11) return 0;" in SOURCE
     assert "active != DESKTOP_SURFACE_RUNTIME_BOUND" in SOURCE
+    assert "request.type != REIST_GUI_SURFACE_PAINT_FONT_TEXT" in SOURCE
 
 
 def test_runtime_has_explicit_lifecycle():

@@ -20,6 +20,7 @@
 #include "reist/vfs_file_client.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/font.h"
+#include "reist/gui/font_catalog.h"
 #include "reist/gui/menu.h"
 #include "../../video/include/reist/svga2d.h"
 #include "../../../include/reist/utf.h"
@@ -55,6 +56,9 @@
 #define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 262144U
 #define DESKTOP_FONT_PATH "/usr/share/fonts/reist-unicode.psf"
+#define DESKTOP_EDITOR_FONT_FILE_CAPACITY 8192U
+#define DESKTOP_EDITOR_FONT_MAPPING_CAPACITY 128U
+#define DESKTOP_FONT_GLYPH_CACHE_CAPACITY 64U
 #define DESKTOP_SPLASH_WIDTH 512U
 #define DESKTOP_SPLASH_HEIGHT 288U
 #define DESKTOP_SPLASH_BMP_HEADER_SIZE 54U
@@ -657,6 +661,28 @@ static uint32_t desktop_font_pixels[
     REIST_GUI_FONT_MAX_WIDTH * REIST_GUI_FONT_MAX_HEIGHT];
 static uint32_t desktop_font_ready;
 static uint32_t desktop_font_attempted;
+typedef struct desktop_editor_font_slot {
+    reist_gui_font_t font;
+    reist_gui_font_mapping_t mappings[
+        DESKTOP_EDITOR_FONT_MAPPING_CAPACITY];
+    uint8_t bytes[DESKTOP_EDITOR_FONT_FILE_CAPACITY];
+    uint32_t ready;
+} desktop_editor_font_slot_t;
+static desktop_editor_font_slot_t desktop_editor_fonts[
+    REIST_GUI_FONT_FAMILY_COUNT - 1U];
+typedef struct desktop_font_glyph_cache_entry {
+    uint32_t valid;
+    uint32_t family;
+    uint32_t pixel_height;
+    uint32_t scalar;
+    uint32_t foreground;
+    uint32_t background;
+    uint32_t width;
+    uint32_t pixels[REIST_GUI_FONT_MAX_WIDTH * REIST_GUI_FONT_MAX_HEIGHT];
+} desktop_font_glyph_cache_entry_t;
+static desktop_font_glyph_cache_entry_t desktop_font_glyph_cache[
+    DESKTOP_FONT_GLYPH_CACHE_CAPACITY];
+static uint32_t desktop_font_glyph_cache_next;
 static const char *const desktop_file_icon_paths[
     DESKTOP_EXPLORER_ICON_COUNT] = {
         "/usr/share/icons/folder-empty.ico",
@@ -893,8 +919,13 @@ static uint32_t intersect_rects(desktop_rect_t left, desktop_rect_t right,
     return 1U;
 }
 
-static int read_file_bounded(const char *path, uint8_t *bytes,
-                             size_t capacity, size_t *size_out) {
+static int desktop_lifecycle_publish_progress(
+    uint32_t supervised, uint32_t *sequence, uint64_t *heartbeat_ms);
+
+static int read_file_bounded_progress(
+        const char *path, uint8_t *bytes, size_t capacity, size_t *size_out,
+        uint32_t lifecycle_supervised, uint32_t *lifecycle_sequence,
+        uint64_t *lifecycle_heartbeat_ms) {
     if (path == 0 || bytes == 0 || capacity == 0U || size_out == 0) return -22;
     *size_out = 0U;
     reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
@@ -919,11 +950,23 @@ static int read_file_bounded(const char *path, uint8_t *bytes,
             return -5;
         }
         used += (size_t)amount;
+        if (desktop_lifecycle_publish_progress(
+                lifecycle_supervised, lifecycle_sequence,
+                lifecycle_heartbeat_ms) != 0) {
+            (void)reist_vfs_file_close(handle);
+            return -1;
+        }
     }
     int close_status = reist_vfs_file_close(handle);
     if (close_status != 0) return close_status;
     *size_out = used;
     return 0;
+}
+
+static int read_file_bounded(const char *path, uint8_t *bytes,
+                             size_t capacity, size_t *size_out) {
+    return read_file_bounded_progress(
+        path, bytes, capacity, size_out, 0U, 0, 0);
 }
 
 static void desktop_startup_phase_metric(const char *phase,
@@ -938,9 +981,6 @@ static void desktop_startup_phase_metric(const char *phase,
     x86os_print_number((int)(finished_ms - started_ms));
     x86os_putchar('\n');
 }
-
-static int desktop_lifecycle_publish_progress(
-    uint32_t supervised, uint32_t *sequence, uint64_t *heartbeat_ms);
 
 static int32_t desktop_splash_center_x(
     const x86os_display_info_t *display, size_t text_length) {
@@ -1045,16 +1085,20 @@ static int desktop_splash_show(
         lifecycle_heartbeat_ms);
 }
 
-static int desktop_font_load(const x86os_display_info_t *display) {
+static int desktop_font_load_progress(
+        const x86os_display_info_t *display,
+        uint32_t lifecycle_supervised, uint32_t *lifecycle_sequence,
+        uint64_t *lifecycle_heartbeat_ms) {
     desktop_font_ready = 0U;
     desktop_font_attempted = 1U;
     if (display == 0) return -22;
     uint64_t phase_started = 0U;
     (void)x86os_monotonic_ms(&phase_started);
     size_t size = 0U;
-    int status = read_file_bounded(
+    int status = read_file_bounded_progress(
         DESKTOP_FONT_PATH, desktop_font_file.bytes,
-        sizeof(desktop_font_file.bytes), &size);
+        sizeof(desktop_font_file.bytes), &size, lifecycle_supervised,
+        lifecycle_sequence, lifecycle_heartbeat_ms);
     desktop_startup_phase_metric("font-io", phase_started);
     if (status != 0) return status;
     (void)x86os_monotonic_ms(&phase_started);
@@ -1070,6 +1114,118 @@ static int desktop_font_load(const x86os_display_info_t *display) {
     desktop_font = candidate;
     desktop_font_ready = 1U;
     return 0;
+}
+
+static int desktop_font_load(const x86os_display_info_t *display) {
+    return desktop_font_load_progress(display, 0U, 0, 0);
+}
+
+static int desktop_editor_font_catalog_load(
+        const x86os_display_info_t *display,
+        uint32_t lifecycle_supervised, uint32_t *lifecycle_sequence,
+        uint64_t *lifecycle_heartbeat_ms) {
+    for (uint32_t index = 0U;
+         index < DESKTOP_FONT_GLYPH_CACHE_CAPACITY; ++index)
+        desktop_font_glyph_cache[index].valid = 0U;
+    desktop_font_glyph_cache_next = 0U;
+    int fallback_status = desktop_font_load_progress(
+        display, lifecycle_supervised, lifecycle_sequence,
+        lifecycle_heartbeat_ms);
+    if (fallback_status != 0) return fallback_status;
+    for (uint32_t family = REIST_GUI_FONT_FAMILY_JETBRAINS_MONO;
+         family <= REIST_GUI_FONT_FAMILY_FIRA_CODE; ++family) {
+        desktop_editor_font_slot_t *slot =
+            &desktop_editor_fonts[family -
+                                  REIST_GUI_FONT_FAMILY_JETBRAINS_MONO];
+        slot->ready = 0U;
+        const reist_gui_font_catalog_entry_t *entry =
+            reist_gui_font_catalog_entry(family);
+        size_t size = 0U;
+        int status = entry != 0
+            ? read_file_bounded_progress(
+                entry->path, slot->bytes, sizeof(slot->bytes), &size,
+                lifecycle_supervised, lifecycle_sequence,
+                lifecycle_heartbeat_ms)
+            : -22;
+        reist_gui_font_t candidate = {0};
+        if (status == 0)
+            status = reist_gui_font_open_psf2(
+                &candidate, slot->bytes, size, slot->mappings,
+                DESKTOP_EDITOR_FONT_MAPPING_CAPACITY, 0x25A0U);
+        if (status == 0 && entry != 0 &&
+            (candidate.width != entry->base_width ||
+             candidate.height != entry->base_height)) status = -84;
+        if (status == 0) {
+            slot->font = candidate;
+            slot->ready = 1U;
+        } else {
+            x86os_puts("DESKTOP_EDITOR_FONT_FALLBACK family=");
+            x86os_print_number((int)family);
+            x86os_puts(" status=");
+            x86os_print_number(status);
+            x86os_putchar('\n');
+        }
+    }
+    x86os_puts("DESKTOP_EDITOR_FONT_CATALOG_READY families=5 sizes=8\n");
+    return 0;
+}
+
+static const reist_gui_font_t *desktop_editor_font(uint32_t family) {
+    if (family >= REIST_GUI_FONT_FAMILY_JETBRAINS_MONO &&
+        family <= REIST_GUI_FONT_FAMILY_FIRA_CODE) {
+        const desktop_editor_font_slot_t *slot =
+            &desktop_editor_fonts[family -
+                                  REIST_GUI_FONT_FAMILY_JETBRAINS_MONO];
+        if (slot->ready) return &slot->font;
+    }
+    return desktop_font_ready ? &desktop_font : 0;
+}
+
+static desktop_font_glyph_cache_entry_t *desktop_font_glyph(
+        uint32_t family, uint32_t pixel_height, uint32_t scalar,
+        uint32_t foreground, uint32_t background) {
+    uint32_t width = 0U;
+    uint32_t height = 0U;
+    if (!desktop_font_ready ||
+        reist_gui_font_catalog_metrics(
+            family, pixel_height, &width, &height) != 0) return 0;
+    for (uint32_t index = 0U;
+         index < DESKTOP_FONT_GLYPH_CACHE_CAPACITY; ++index) {
+        desktop_font_glyph_cache_entry_t *cached =
+            &desktop_font_glyph_cache[index];
+        if (cached->valid && cached->family == family &&
+            cached->pixel_height == pixel_height &&
+            cached->scalar == scalar && cached->foreground == foreground &&
+            cached->background == background) return cached;
+    }
+    const reist_gui_font_t *font = desktop_editor_font(family);
+    if (font == 0) return 0;
+    uint32_t glyph = 0U;
+    int mapped = reist_gui_font_lookup(font, scalar, &glyph);
+    if (mapped < 0) return 0;
+    if (family != REIST_GUI_FONT_FAMILY_UNIFONT && mapped == 0) {
+        font = &desktop_font;
+        if (reist_gui_font_lookup(font, scalar, &glyph) < 0) return 0;
+    }
+    desktop_font_glyph_cache_entry_t *cached =
+        &desktop_font_glyph_cache[desktop_font_glyph_cache_next];
+    desktop_font_glyph_cache_next =
+        (desktop_font_glyph_cache_next + 1U) %
+        DESKTOP_FONT_GLYPH_CACHE_CAPACITY;
+    cached->valid = 0U;
+    if (reist_gui_font_raster_scaled_xrgb(
+            font, glyph, width, height, foreground, background,
+            cached->pixels, width,
+            sizeof(cached->pixels) / sizeof(cached->pixels[0])) != 0)
+        return 0;
+    cached->family = family;
+    cached->pixel_height = pixel_height;
+    cached->scalar = scalar;
+    cached->foreground = foreground;
+    cached->background = background;
+    cached->width = width;
+    cached->valid = 1U;
+    return cached;
 }
 
 static uint32_t compose_icon_pixel(uint32_t argb, uint32_t background) {
@@ -1289,6 +1445,54 @@ static void draw_text_clipped(const desktop_render_context_t *context,
             context->clip.width, context->clip.height);
         (void)desktop_font_overlay_extensions(
             context, x, y, text, prefix_bytes, foreground, background);
+    }
+}
+
+static void draw_font_text_clipped(
+        const desktop_render_context_t *context, int32_t x, int32_t y,
+        const char *text, size_t length, uint32_t maximum_width,
+        uint32_t foreground, uint32_t background,
+        uint32_t family, uint32_t pixel_height) {
+    size_t scalar_count = 0U;
+    uint32_t cell_width = 0U;
+    uint32_t cell_height = 0U;
+    if (context == 0 || context->display == 0 || text == 0 || length == 0U ||
+        !reist_utf8_scan(text, length, &scalar_count) || scalar_count == 0U ||
+        reist_gui_font_catalog_metrics(
+            family, pixel_height, &cell_width, &cell_height) != 0 ||
+        maximum_width < cell_width) return;
+    desktop_rect_t physical = {
+        0, 0, context->display->width, context->display->height
+    };
+    uint32_t maximum_cells = maximum_width / cell_width;
+    size_t source = 0U;
+    uint32_t cell = 0U;
+    while (source < length && cell < maximum_cells) {
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(
+                text + source, length - source, &consumed, &scalar)) return;
+        desktop_font_glyph_cache_entry_t *cached = desktop_font_glyph(
+            family, pixel_height, scalar, foreground, background);
+        if (cached == 0 || cached->width != cell_width) return;
+        int64_t glyph_x = (int64_t)x + (uint64_t)cell * cell_width;
+        if (glyph_x >= INT32_MIN && glyph_x <= INT32_MAX) {
+            desktop_rect_t glyph = {
+                (int32_t)glyph_x, y, cell_width, cell_height
+            };
+            desktop_rect_t clipped;
+            if (intersect_rects(glyph, context->clip, &clipped) &&
+                intersect_rects(clipped, physical, &clipped)) {
+                uint32_t source_x = (uint32_t)(clipped.x - glyph.x);
+                uint32_t source_y = (uint32_t)(clipped.y - glyph.y);
+                (void)x86os_draw_pixels(
+                    clipped.x, clipped.y, clipped.width, clipped.height,
+                    cached->pixels + (size_t)source_y * cell_width + source_x,
+                    cell_width);
+            }
+        }
+        source += consumed;
+        ++cell;
     }
 }
 
@@ -2477,6 +2681,12 @@ static void render_surface_paint_list(
             draw_text_clipped(
                 context, bounds.x, bounds.y, command->text,
                 bounds.width, command->foreground, command->background);
+        else if (command->type == DESKTOP_SURFACE_PAINT_FONT_TEXT)
+            draw_font_text_clipped(
+                context, bounds.x, bounds.y, command->text,
+                command->text_length, bounds.width,
+                command->foreground, command->background,
+                command->font_family, command->font_height);
     }
 }
 
@@ -5928,6 +6138,7 @@ int main(int argc, char **argv) {
     uint32_t hover_probe = 0U;
     uint32_t surface_probe = 0U;
     uint32_t notepad_probe = 0U;
+    uint32_t notepad_font_probe = 0U;
     uint32_t control_probe = 0U;
     uint32_t guidemo_probe = 0U;
     uint32_t sound_probe = 0U;
@@ -5971,6 +6182,9 @@ int main(int argc, char **argv) {
                text_equal(argv[1], "--notepad-probe")) {
         notepad_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--notepad-font-probe")) {
+        notepad_font_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--control-probe")) {
         control_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
@@ -5994,7 +6208,8 @@ int main(int argc, char **argv) {
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--hover-probe|--surface-probe|"
-            "--notepad-probe|--control-probe|--guidemo-probe|--sound-probe|"
+            "--notepad-probe|--notepad-font-probe|--control-probe|"
+            "--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
             "--trash-confirm-probe|--trash-restore-probe|--unicode-probe]\n");
         return 2;
@@ -6162,6 +6377,13 @@ int main(int argc, char **argv) {
         x86os_puts("desktop: Supervisor-Lifecycle nicht verfuegbar\n");
         return 1;
     }
+    if (surface_probe || notepad_probe || notepad_font_probe || argc == 1) {
+        (void)x86os_monotonic_ms(&phase_started_ms);
+        font_status = desktop_editor_font_catalog_load(&display,
+            lifecycle_supervised, &lifecycle_sequence,
+            &lifecycle_heartbeat_ms);
+        desktop_startup_phase_metric("font-catalog", phase_started_ms);
+    }
     /* SERVICE_READY remains withheld until all fixed startup work and the
      * first complete desktop frame have finished on the BSP.  Keep the
      * existing two-second healthy deadline alive between bounded strips and
@@ -6213,6 +6435,7 @@ int main(int argc, char **argv) {
     int system_sound_status = load_system_sounds(&system_sounds);
     desktop_startup_phase_metric("sounds", phase_started_ms);
     if (render_probe || hover_probe || surface_probe || notepad_probe ||
+        notepad_font_probe ||
         control_probe ||
         guidemo_probe || sound_probe || trash_context_probe ||
         trash_confirm_probe || trash_restore_probe ||
@@ -6299,8 +6522,8 @@ int main(int argc, char **argv) {
         x86os_puts("DESKTOP_TRASH_CONTEXT_READY\n");
     if (trash_confirm_probe)
         x86os_puts("DESKTOP_TRASH_CONFIRM_READY\n");
-    if (surface_probe || notepad_probe || control_probe || guidemo_probe ||
-        sound_probe) {
+    if (surface_probe || notepad_probe || notepad_font_probe ||
+        control_probe || guidemo_probe || sound_probe) {
         /* Each client spawn is bounded, but two consecutive image loads can
          * legitimately cross one heartbeat interval.  Reset the deadline at
          * the phase boundary and, for the audio probe, between both clients. */
@@ -6331,10 +6554,12 @@ int main(int argc, char **argv) {
                 "/USR/GUI/BIN/CONTROL.PRG", 0,
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);
-        } else if (notepad_probe) {
+        } else if (notepad_probe || notepad_font_probe) {
             probe_status = launch_surface_probe_client(
                 &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/NOTEPAD.PRG", "--large-document-probe",
+                "/USR/GUI/BIN/NOTEPAD.PRG",
+                notepad_font_probe ? "--font-probe" :
+                    "--large-document-probe",
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);
         } else {
@@ -6461,9 +6686,12 @@ int main(int argc, char **argv) {
         }
         int surface_poll_status = desktop_surface_runtime_poll(
             &surface_runtime, &surfaces);
-        if ((surface_probe || sound_probe) && surface_poll_status != 0) {
+        if ((surface_probe || sound_probe || notepad_probe ||
+             notepad_font_probe) && surface_poll_status != 0) {
             x86os_puts(sound_probe
                 ? "DESKTOP_AUDIO_FAIL protocol status="
+                : (notepad_probe || notepad_font_probe)
+                ? "DESKTOP_NOTEPAD_FAIL protocol status="
                 : "DESKTOP_SURFACE_FAIL protocol status=");
             x86os_print_number(surface_poll_status);
             x86os_putchar('\n');

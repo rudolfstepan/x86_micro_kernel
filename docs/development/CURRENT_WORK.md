@@ -4,21 +4,29 @@ Stand: 3. September 2026
 
 Branch/Startpunkt: `working_branch` / `d6d58e50`
 
-Aktives Thema: `R3.2a-notepad-font-selection`. Das OS installiert mindestens
-fünf freie Monospace-Familien (GNU Unifont, JetBrains Mono, Source Code Pro,
-Iosevka und Fira Code) als deterministisch erzeugte PSF2-Assets. Notepad erhält
-eine sitzungsbezogene Schrift- und Größenauswahl von 10 bis 28 Pixeln; Auswahl,
-Rasterung, Cache, Retained-Paint und Layout-Neuberechnung bleiben fest
-begrenzt. TTF/OTF wird nur im Host-Build verarbeitet, niemals im Zielsystem.
+Aktives Thema: `N3a-vfs-symbolic-links`. Das Paket ergänzt begrenzte
+POSIX-Symlinks auf EXT2 mit append-only Storage-Service-/Client-ABI,
+generationgebundener Ring-3-Auflösung sowie festen Pfad-, Tiefen-, I/O- und
+Zeitbudgets. FAT12/32 weisen Symlinks mangels nativem Standardformat vor jeder
+Wirkung mit `EOPNOTSUPP` ab; der alte Ring-0-VFS-/EXT2-Pfad wird nicht
+erweitert.
 
-Danach sind drei getrennte Pakete vorgemerkt: `N3a-vfs-symbolic-links`
-ergänzt begrenzte POSIX-Symlinks auf EXT2 und weist sie auf FAT mangels
-Standardformat explizit ab. `R3.5-desktop-shortcuts` fügt validierte
+Danach sind zwei getrennte Pakete vorgemerkt: `R3.5-desktop-shortcuts` fügt validierte
 Verknüpfungsdateien, ein eigenes Icon und die Explorer-Kontextaktion
 „Verknüpfung auf Desktop erstellen“ hinzu. Anschließend macht
 `R3.5a-desktop-icon-drag-layout` Desktop-Icons per Maus verschiebbar und
 speichert ihre Positionen atomar in einem getrennten, versionierten
 Layoutformat.
+
+`R3.2a-notepad-font-selection` ist abgeschlossen. GNU Unifont, JetBrains Mono,
+Source Code Pro, Iosevka und Fira Code sind aus gepinnten freien Quellen als
+deterministische PSF2-Assets samt Lizenznachweisen installiert. Notepad wählt
+Familie und 10 bis 28 Pixel große Schrift sitzungsbezogen nur für Dokument,
+Cursor und Viewport; Systemschrift, Dokumentbytes, Piece Table, Modified-State
+und Saveprotokoll bleiben unverändert. Der begrenzte Downscaler erhält dünne
+Schriftstriche beim Verkleinern. 142 Unit-Checks plus der Surface-Quellvertrag,
+der QEMU-Framebuffer-Paketbuild in 9 Sekunden und der reale große Notepad-
+Fontlauf über alle fünf Familien und beide Randgrößen sind bestanden.
 
 `N2g-desktop-trash-metadata-authority` ist abgeschlossen. Restore und
 Empty-Validierung lesen `.trashinfo` genau einmal ueber ein

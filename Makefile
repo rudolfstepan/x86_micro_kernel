@@ -749,8 +749,17 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/images/demo-colors.gif=assets/images/demo-colors.gif \
 	usr/share/fonts/reist-vga.psf=assets/fonts/reist-vga.psf \
 	usr/share/fonts/reist-unicode.psf=assets/fonts/reist-unicode.psf \
+	usr/share/fonts/reist-jetbrains-mono.psf=assets/fonts/reist-jetbrains-mono.psf \
+	usr/share/fonts/reist-source-code-pro.psf=assets/fonts/reist-source-code-pro.psf \
+	usr/share/fonts/reist-iosevka.psf=assets/fonts/reist-iosevka.psf \
+	usr/share/fonts/reist-fira-code.psf=assets/fonts/reist-fira-code.psf \
+	usr/share/fonts/catalog.toml=assets/fonts/catalog.toml \
 	usr/share/fonts/unifont_all-16.0.04.hex.gz=assets/fonts/source/unifont_all-16.0.04.hex.gz \
 	usr/share/fonts/ofl-1.1.txt=assets/fonts/source/OFL-1.1.txt \
+	usr/share/fonts/jetbrains-mono-ofl.txt=assets/fonts/source/jetbrains-mono/OFL.txt \
+	usr/share/fonts/source-code-pro-ofl.txt=assets/fonts/source/source-code-pro/OFL.txt \
+	usr/share/fonts/iosevka-ofl.txt=assets/fonts/source/iosevka/OFL.txt \
+	usr/share/fonts/fira-code-ofl.txt=assets/fonts/source/fira-code/OFL.txt \
 	usr/share/fonts/readme.txt=assets/fonts/README.md \
 	usr/share/fonts/unicode.txt=assets/fonts/unicode.txt \
 	bin/shell.prg=$(SYSTEM_PROGRAM_DIR)/SHELL.PRG \
@@ -846,6 +855,12 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/share/images/reist-splash.bmp=% \
 	usr/share/images/demo-colors.gif=% \
 	usr/share/fonts/reist-unicode.psf=% \
+	usr/share/fonts/reist-jetbrains-mono.psf=% \
+	usr/share/fonts/reist-source-code-pro.psf=% \
+	usr/share/fonts/reist-iosevka.psf=% usr/share/fonts/reist-fira-code.psf=% \
+	usr/share/fonts/catalog.toml=% usr/share/fonts/jetbrains-mono-ofl.txt=% \
+	usr/share/fonts/source-code-pro-ofl.txt=% \
+	usr/share/fonts/iosevka-ofl.txt=% usr/share/fonts/fira-code-ofl.txt=% \
 	usr/share/fonts/unifont_all-16.0.04.hex.gz=% \
 	usr/share/fonts/ofl-1.1.txt=% usr/share/fonts/readme.txt=% \
 	usr/share/fonts/unicode.txt=% \

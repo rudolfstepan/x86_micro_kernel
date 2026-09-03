@@ -1,5 +1,6 @@
 /** @file surface_client.c @brief Bounded Surface IPC client wrapper. */
 #include "reist/gui/surface_client.h"
+#include "reist/gui/font_catalog.h"
 
 static void clear_bytes(void *memory, uint32_t size) {
     uint8_t *bytes = (uint8_t *)memory;
@@ -137,6 +138,7 @@ static uint32_t deferred_response_type(uint32_t type) {
         type == REIST_GUI_SURFACE_PAINT_BEGIN ||
         type == REIST_GUI_SURFACE_PAINT_FILL ||
         type == REIST_GUI_SURFACE_PAINT_TEXT ||
+        type == REIST_GUI_SURFACE_PAINT_FONT_TEXT ||
         type == REIST_GUI_SURFACE_PAINT_COMMIT ||
         type == REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN ||
         type == REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT ||
@@ -155,7 +157,8 @@ static int asynchronous_paint_error(
     const reist_gui_surface_message_t *response) {
     if (client == 0 || response == 0 ||
         (response->type != REIST_GUI_SURFACE_PAINT_FILL &&
-         response->type != REIST_GUI_SURFACE_PAINT_TEXT) ||
+         response->type != REIST_GUI_SURFACE_PAINT_TEXT &&
+         response->type != REIST_GUI_SURFACE_PAINT_FONT_TEXT) ||
         response->surface.id != client->surface.id ||
         response->surface.generation != client->surface.generation)
         return 0;
@@ -421,6 +424,33 @@ int reist_gui_surface_client_paint_text(reist_gui_surface_client_t *client,
     request.damage = (reist_gui_rect_t){x, y, maximum_width, 1U};
     request.flags = foreground;
     request.buffer_id = background;
+    request.byte_size = length;
+    uint8_t *destination = (uint8_t *)&request.input;
+    for (uint32_t i = 0U; i < length; ++i)
+        destination[i] = (uint8_t)text_value[i];
+    return send_message(client, &request);
+}
+
+int reist_gui_surface_client_paint_font_text(
+    reist_gui_surface_client_t *client, int32_t x, int32_t y,
+    uint32_t maximum_width, const char *text_value, uint32_t length,
+    uint32_t foreground, uint32_t background,
+    uint32_t font_family, uint32_t pixel_height) {
+    if (!valid_client(client) || text_value == 0 || length == 0U ||
+        length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY || x < 0 || y < 0 ||
+        maximum_width == 0U || (uint32_t)x >= client->width ||
+        (uint32_t)y >= client->height ||
+        maximum_width > client->width - (uint32_t)x ||
+        pixel_height > client->height - (uint32_t)y ||
+        !reist_gui_font_catalog_selection_valid(font_family, pixel_height))
+        return -22;
+    reist_gui_surface_message_t request;
+    prepare(&request, REIST_GUI_SURFACE_PAINT_FONT_TEXT, client);
+    request.damage = (reist_gui_rect_t){x, y, maximum_width, pixel_height};
+    request.flags = foreground;
+    request.buffer_id = background;
+    request.format = font_family;
+    request.stride_bytes = pixel_height;
     request.byte_size = length;
     uint8_t *destination = (uint8_t *)&request.input;
     for (uint32_t i = 0U; i < length; ++i)

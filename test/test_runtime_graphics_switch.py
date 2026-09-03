@@ -129,7 +129,7 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn('"REIST_GUI COMPOSITOR_READY" in text',
                       self.runtime_runner)
         self.assertIn('default=120.0', self.runtime_runner)
-        self.assertIn("desktop_deadline = time.monotonic() + 30.0",
+        self.assertIn("90.0 if font_catalog_start else 30.0",
                       self.runtime_runner)
 
     def test_vbe_lfb_may_be_inside_a_sized_display_bar(self):
@@ -271,6 +271,16 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn('"desktop.prg --notepad-probe"', self.runtime_runner)
         self.assertIn("NOTEPAD_SURFACE_DOCUMENT_READY", self.runtime_runner)
         self.assertIn("runtime-desktop-notepad", self.runtime_runner)
+
+    def test_runtime_notepad_font_mode_exercises_catalog_extremes(self):
+        self.assertIn('"desktop.prg --notepad-font-probe"',
+                      self.runtime_runner)
+        self.assertIn("NOTEPAD_FONT_SELECTION_READY", self.runtime_runner)
+        self.assertIn("DESKTOP_EDITOR_FONT_FALLBACK", self.runtime_runner)
+        self.assertIn("for family in range(1, 6)", self.runtime_runner)
+        self.assertIn("for height in (10, 28)", self.runtime_runner)
+        self.assertIn("runtime-desktop-notepad-fonts: PASS",
+                      self.runtime_runner)
 
     def test_runtime_guidemo_probe_uses_physical_usb_button_edges(self):
         self.assertIn('"desktop.prg --guidemo-probe"', self.runtime_runner)

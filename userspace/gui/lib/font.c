@@ -229,3 +229,71 @@ int reist_gui_font_raster_xrgb_region(
     }
     return 0;
 }
+
+int reist_gui_font_scaled_width(const reist_gui_font_t *font,
+                                uint32_t target_height,
+                                uint32_t *target_width) {
+    if (!font_valid(font) || target_width == NULL || target_height == 0U ||
+        target_height > REIST_GUI_FONT_MAX_HEIGHT) return -22;
+    uint32_t scaled = font->width * target_height +
+        font->height / 2U;
+    scaled /= font->height;
+    if (scaled == 0U) scaled = 1U;
+    if (scaled > REIST_GUI_FONT_MAX_WIDTH) return -75;
+    *target_width = scaled;
+    return 0;
+}
+
+int reist_gui_font_raster_scaled_xrgb(
+    const reist_gui_font_t *font, uint32_t glyph_index,
+    uint32_t target_width, uint32_t target_height,
+    uint32_t foreground_rgb, uint32_t background_rgb,
+    uint32_t *pixels, uint32_t stride_pixels, size_t pixel_capacity) {
+    if (!font_valid(font) || glyph_index >= font->glyph_count ||
+        target_width == 0U || target_width > REIST_GUI_FONT_MAX_WIDTH ||
+        target_height == 0U || target_height > REIST_GUI_FONT_MAX_HEIGHT ||
+        pixels == NULL || stride_pixels < target_width ||
+        (foreground_rgb & 0xFF000000U) != 0U ||
+        (background_rgb & 0xFF000000U) != 0U ||
+        stride_pixels > pixel_capacity / target_height) return -22;
+    size_t glyph_offset = font->glyph_data_offset +
+        (size_t)glyph_index * font->bytes_per_glyph;
+    if (glyph_offset > font->data_size ||
+        font->bytes_per_glyph > font->data_size - glyph_offset) return -84;
+    const uint8_t *glyph = font->data + glyph_offset;
+    for (uint32_t y = 0U; y < target_height; ++y) {
+        uint32_t source_y_begin = (y * font->height) / target_height;
+        uint32_t source_y_end = source_y_begin + 1U;
+        if (target_height < font->height) {
+            source_y_end = ((y + 1U) * font->height +
+                            target_height - 1U) / target_height;
+            if (source_y_end > font->height) source_y_end = font->height;
+        }
+        for (uint32_t x = 0U; x < target_width; ++x) {
+            uint32_t source_x_begin = (x * font->width) / target_width;
+            uint32_t source_x_end = source_x_begin + 1U;
+            if (target_width < font->width) {
+                source_x_end = ((x + 1U) * font->width +
+                                target_width - 1U) / target_width;
+                if (source_x_end > font->width) source_x_end = font->width;
+            }
+            uint32_t covered = 0U;
+            for (uint32_t source_y = source_y_begin;
+                 source_y < source_y_end && !covered; ++source_y) {
+                for (uint32_t source_x = source_x_begin;
+                     source_x < source_x_end; ++source_x) {
+                    uint8_t bits = glyph[
+                        source_y * font->row_bytes + source_x / 8U];
+                    if ((bits & (uint8_t)(
+                            0x80U >> (source_x & 7U))) != 0U) {
+                        covered = 1U;
+                        break;
+                    }
+                }
+            }
+            pixels[y * stride_pixels + x] = covered
+                ? foreground_rgb : background_rgb;
+        }
+    }
+    return 0;
+}

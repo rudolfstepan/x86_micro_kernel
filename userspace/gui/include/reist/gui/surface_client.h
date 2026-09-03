@@ -73,6 +73,12 @@ int reist_gui_surface_client_paint_text(reist_gui_surface_client_t *client,
                                         const char *text, uint32_t length,
                                         uint32_t foreground,
                                         uint32_t background);
+/** Append text using one validated fixed catalog family and pixel height. */
+int reist_gui_surface_client_paint_font_text(
+    reist_gui_surface_client_t *client, int32_t x, int32_t y,
+    uint32_t maximum_width, const char *text, uint32_t length,
+    uint32_t foreground, uint32_t background,
+    uint32_t font_family, uint32_t pixel_height);
 /** Atomically publish the complete pending paint frame. */
 int reist_gui_surface_client_paint_commit(reist_gui_surface_client_t *client);
 /** Publish only the selected layer; the other committed layer is preserved. */

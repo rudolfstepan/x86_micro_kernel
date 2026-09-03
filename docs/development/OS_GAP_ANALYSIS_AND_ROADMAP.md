@@ -3148,14 +3148,14 @@ durch den Status des ausführbaren Pakets aktualisiert.
    vor Parser und Mutation umgestellt. Papierkorb-Mutationen und Formatversion
    2 blieben unveraendert; Hostmatrix, QEMU-Paket und realer Move-/Restore-Lauf
    sind bestanden.
-3. [ ] **R3.2a · Fünf freie Editorfonts und begrenzte Größen bereitstellen.**
+3. [x] **R3.2a · Fünf freie Editorfonts und begrenzte Größen bereitstellen.**
    GNU Unifont, JetBrains Mono, Source Code Pro, Iosevka und Fira Code aus
    gepinnten freien Quellen deterministisch als PSF2 paketieren. Eine additive
    Surface-Fontauswahl erlaubt Notepad genau die Höhen 10, 12, 14, 16, 18, 20,
    24 und 28 Pixel, ohne die Systemschrift oder Dokumentdaten zu verändern.
    Abnahme: fünf unterscheidbare Raster, kapazitätsgebundener Fallback sowie
    realer großer Notepad-Lauf über alle Familien und Randgrößen.
-4. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+4. [~] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
    restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird

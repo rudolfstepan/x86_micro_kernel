@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.2a-notepad-font-selection"
+active_id = "N3a-vfs-symbolic-links"
 
 [policy]
 one_package_per_run = true
@@ -14320,7 +14320,7 @@ evidence = [
 
 [[packages]]
 id = "R3.2a-notepad-font-selection"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Provide five free selectable Notepad fonts and bounded sizes"
@@ -14408,11 +14408,17 @@ stop_conditions = [
   "a required production file lies outside allowed_files or an unrelated worktree change overlaps one"
 ]
 commit_message = "gui: add five selectable bounded Notepad fonts"
-evidence = []
+evidence = [
+  "All eight frozen targeted gates passed with 142 unittest checks plus the bounded desktop Surface runtime-source contract, including deterministic asset hashes, PSF2 validation, fail-closed catalog metrics, retained Surface ABI validation, Notepad Piece Table preservation, scrollbar geometry and complete userspace toolchain builds.",
+  "The font host proof verifies parser and mapping bounds, 10-to-28-pixel scaling and coverage-preserving downsampling so thin source rows and columns cannot disappear; all five packaged families retain distinct A-glyph raster fingerprints.",
+  "The final QEMU framebuffer package passed in 9 seconds with all five PSF2 runtime assets, the pinned catalog and flat OFL license evidence installed in the native HDD image; target code parses no TTF or OTF input.",
+  "The final runtime-desktop-notepad-fonts QEMU gate passed after a real Surface Notepad edited and saved a document above 51200 bytes, selected all five families at both 10 and 28 pixels, scrolled to every required edge and remained live with its compositor.",
+  "Surface v6 remains append-only, legacy PAINT_TEXT and the 8x16 system UI font are unchanged, malformed optional faces fall back to validated GNU Unifont, and font selection changes no document bytes, Piece Table state, modified state, save protocol or persistent configuration."
+]
 
 [[packages]]
 id = "N3a-vfs-symbolic-links"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Resolve and create bounded POSIX symbolic links on EXT2"

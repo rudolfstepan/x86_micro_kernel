@@ -7,6 +7,7 @@
 static uint8_t font_bytes[16384];
 static reist_gui_font_mapping_t mappings[512];
 static uint32_t pixels[32U * 32U];
+static uint32_t native_pixels[32U * 32U];
 
 int main(int argc, char **argv) {
     assert(argc == 2);
@@ -40,6 +41,37 @@ int main(int argc, char **argv) {
     }
     assert(foreground != 0U && background != 0U &&
            foreground + background == 8U * 16U);
+    uint32_t scaled_width = 0U;
+    assert(reist_gui_font_scaled_width(&font, 10U, &scaled_width) == 0);
+    assert(scaled_width == 5U);
+    assert(reist_gui_font_raster_xrgb(
+        &font, 256U, 0x00FFFFFFU, 0x00000000U,
+        native_pixels, 32U, 32U * 32U) == 0);
+    assert(reist_gui_font_raster_scaled_xrgb(
+        &font, 256U, scaled_width, 10U,
+        0x00FFFFFFU, 0x00000000U,
+        pixels, 32U, 32U * 32U) == 0);
+    /* Every source stroke must survive in its covered destination cell.
+     * Nearest-neighbour row sampling used to drop Source Code Pro's thin
+     * bowls and bars at the normal 16-pixel editor size. */
+    for (uint32_t y = 0U; y < font.height; ++y) {
+        for (uint32_t x = 0U; x < font.width; ++x) {
+            if (native_pixels[y * 32U + x] != 0x00FFFFFFU) continue;
+            uint32_t scaled_x = x * scaled_width / font.width;
+            uint32_t scaled_y = y * 10U / font.height;
+            assert(pixels[scaled_y * 32U + scaled_x] == 0x00FFFFFFU);
+        }
+    }
+    assert(reist_gui_font_scaled_width(&font, 28U, &scaled_width) == 0);
+    assert(scaled_width == 14U);
+    assert(reist_gui_font_raster_scaled_xrgb(
+        &font, 256U, scaled_width, 28U,
+        0x00FFFFFFU, 0x00000000U,
+        pixels, 32U, 32U * 32U) == 0);
+    assert(reist_gui_font_scaled_width(&font, 0U, &scaled_width) < 0);
+    assert(reist_gui_font_raster_scaled_xrgb(
+        &font, 256U, 33U, 16U, 0U, 0U,
+        pixels, 32U, 32U * 32U) < 0);
 
     reist_gui_font_t unchanged = {.version = 77U};
     assert(reist_gui_font_open_psf2(

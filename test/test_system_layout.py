@@ -293,6 +293,11 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('"etc/reist/$configFile=$configPath"', windows)
         self.assertIn("usr/gui/bin/notepad.prg", makefile)
         self.assertIn("'usr/gui/bin/notepad.prg'", windows)
+        for font in ("reist-unicode.psf", "reist-jetbrains-mono.psf",
+                     "reist-source-code-pro.psf", "reist-iosevka.psf",
+                     "reist-fira-code.psf", "catalog.toml"):
+            self.assertIn(f"usr/share/fonts/{font}", makefile)
+            self.assertIn(f"usr/share/fonts/{font}", windows)
         self.assertIn("usr/gui/bin/soundplayer.prg", makefile)
         self.assertIn("'usr/gui/bin/soundplayer.prg'", windows)
         self.assertIn('{"/DESKTOP.PRG", "/usr/gui/bin/desktop.prg"}', process)

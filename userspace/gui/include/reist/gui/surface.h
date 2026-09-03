@@ -18,7 +18,7 @@ extern "C" {
 #endif
 
 #define REIST_GUI_SURFACE_API_VERSION 2U
-#define REIST_GUI_SURFACE_PROTOCOL_VERSION 5U
+#define REIST_GUI_SURFACE_PROTOCOL_VERSION 6U
 #define REIST_GUI_SURFACE_MAX_DAMAGE 8U
 #define REIST_GUI_SURFACE_MAX_PENDING_EVENTS 16U
 #define REIST_GUI_SURFACE_MAX_CLIENTS 8U
@@ -59,6 +59,8 @@ enum reist_gui_surface_message_type {
     REIST_GUI_SURFACE_PAINT_DYNAMIC_COMMIT,
     REIST_GUI_SURFACE_PAINT_HOVER_BEGIN,
     REIST_GUI_SURFACE_PAINT_HOVER_COMMIT,
+    /* Version 6: catalog family in format and pixel height in stride_bytes. */
+    REIST_GUI_SURFACE_PAINT_FONT_TEXT,
     REIST_GUI_SURFACE_CONFIGURE = 0x80U,
     REIST_GUI_SURFACE_INPUT,
     REIST_GUI_SURFACE_CLOSE,
@@ -171,12 +173,16 @@ typedef struct reist_gui_surface_message {
  * Paint-command wire mapping used by the public client wrapper.
  *
  * The fixed envelope is deliberately reused instead of exposing a global
- * framebuffer mapping. For PAINT_FILL and PAINT_TEXT, ``damage`` contains
+ * framebuffer mapping. For PAINT_FILL, PAINT_TEXT and PAINT_FONT_TEXT,
+ * ``damage`` contains
  * client-local geometry, ``flags`` the foreground/fill color and
  * ``buffer_id`` the text background color. PAINT_TEXT stores at most
  * REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY bytes in ``input`` and records the
- * exact byte count in ``byte_size``. SET_TITLE uses the same bounded byte
- * storage. BASE begin/commit retain the original complete-scene contract;
+ * exact byte count in ``byte_size``. PAINT_FONT_TEXT additionally stores a
+ * fixed catalog family in ``format`` and one supported pixel height in
+ * ``stride_bytes``; damage.height equals that pixel height. SET_TITLE uses
+ * the same bounded byte storage. BASE begin/commit retain the original
+ * complete-scene contract;
  * OVERLAY, DYNAMIC and HOVER begin/commit atomically replace independent
  * later-rendered lists with their declared fixed capacities. Applications
  * must use surface_client.h rather than constructing this representation

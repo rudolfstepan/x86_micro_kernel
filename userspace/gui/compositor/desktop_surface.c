@@ -1,5 +1,8 @@
 /** @file desktop_surface.c @brief Bounded compositor Surface state. */
 #include "desktop_surface.h"
+#include "reist/gui/font_catalog.h"
+
+#include "../../../include/reist/utf.h"
 
 static int valid_owner(reist_gui_surface_owner_t owner) {
     return owner.pid != 0U && owner.process_generation != 0U;
@@ -44,7 +47,9 @@ static int same_paint_command(const desktop_surface_paint_command_t *left,
         !same_rect(left->rect, right->rect) ||
         left->foreground != right->foreground ||
         left->background != right->background ||
-        left->text_length != right->text_length)
+        left->text_length != right->text_length ||
+        left->font_family != right->font_family ||
+        left->font_height != right->font_height)
         return 0;
     for (uint32_t index = 0U; index < left->text_length; ++index) {
         if (left->text[index] != right->text[index]) return 0;
@@ -538,6 +543,8 @@ int desktop_surface_paint_fill(desktop_surface_manager_t *manager,
     command->foreground = color;
     command->background = 0U;
     command->text_length = 0U;
+    command->font_family = 0U;
+    command->font_height = 0U;
     copy_bounded_text(command->text, "", 0U);
     return DESKTOP_SURFACE_OK;
 }
@@ -561,6 +568,36 @@ int desktop_surface_paint_text(desktop_surface_manager_t *manager,
     command->foreground = foreground;
     command->background = background;
     command->text_length = length;
+    command->font_family = 0U;
+    command->font_height = 0U;
+    copy_bounded_text(command->text, text, length);
+    return DESKTOP_SURFACE_OK;
+}
+
+int desktop_surface_paint_font_text(
+    desktop_surface_manager_t *manager, reist_gui_surface_owner_t owner,
+    reist_gui_surface_handle_t handle, reist_gui_rect_t rect,
+    uint32_t foreground, uint32_t background, const char *text,
+    uint32_t length, uint32_t font_family, uint32_t font_height) {
+    int index = find_slot(manager, owner, handle);
+    size_t scalars = 0U;
+    if (index < 0 || text == 0 || length == 0U ||
+        length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY ||
+        rect.height != font_height ||
+        !valid_local_rect(&manager->slots[index], rect) ||
+        !reist_gui_font_catalog_selection_valid(font_family, font_height) ||
+        !reist_utf8_scan(text, length, &scalars) || scalars == 0U)
+        return DESKTOP_SURFACE_EINVAL;
+    desktop_surface_paint_command_t *command =
+        reserve_paint_command(&manager->slots[index]);
+    if (command == 0) return DESKTOP_SURFACE_ECAPACITY;
+    command->type = DESKTOP_SURFACE_PAINT_FONT_TEXT;
+    command->rect = rect;
+    command->foreground = foreground;
+    command->background = background;
+    command->text_length = length;
+    command->font_family = font_family;
+    command->font_height = font_height;
     copy_bounded_text(command->text, text, length);
     return DESKTOP_SURFACE_OK;
 }
@@ -805,6 +842,13 @@ int desktop_surface_dispatch_message(
             request->flags, request->buffer_id,
             (const char *)&request->input, request->byte_size);
         response->type = REIST_GUI_SURFACE_PAINT_TEXT;
+    } else if (request->type == REIST_GUI_SURFACE_PAINT_FONT_TEXT) {
+        result = desktop_surface_paint_font_text(
+            manager, owner, request->surface, request->damage,
+            request->flags, request->buffer_id,
+            (const char *)&request->input, request->byte_size,
+            request->format, request->stride_bytes);
+        response->type = REIST_GUI_SURFACE_PAINT_FONT_TEXT;
     } else if (request->type == REIST_GUI_SURFACE_PAINT_COMMIT) {
         result = desktop_surface_paint_commit_layer(
             manager, owner, request->surface,

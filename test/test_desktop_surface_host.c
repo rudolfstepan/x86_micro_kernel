@@ -1,5 +1,6 @@
 #include <assert.h>
 #include "userspace/gui/compositor/desktop_surface.h"
+#include "reist/gui/font_catalog.h"
 
 int main(void) {
     desktop_surface_manager_t manager;
@@ -37,9 +38,27 @@ int main(void) {
         &manager, owner, handle,
         (reist_gui_rect_t){8, 8, 120U, 1U}, 0U, 0x00ffffffU,
         "Document", 8U) == 0);
+    assert(desktop_surface_paint_font_text(
+        &manager, owner, handle,
+        (reist_gui_rect_t){8, 24, 120U, 16U}, 0U, 0x00ffffffU,
+        "Font", 4U, REIST_GUI_FONT_FAMILY_UNIFONT, 11U) ==
+        DESKTOP_SURFACE_EINVAL);
+    assert(desktop_surface_paint_font_text(
+        &manager, owner, handle,
+        (reist_gui_rect_t){8, 24, 120U, 16U}, 0U, 0x00ffffffU,
+        "Font", 4U, 99U, 16U) == DESKTOP_SURFACE_EINVAL);
+    assert(desktop_surface_paint_font_text(
+        &manager, owner, handle,
+        (reist_gui_rect_t){8, 24, 120U, 16U}, 0U, 0x00ffffffU,
+        "Font", 4U, REIST_GUI_FONT_FAMILY_UNIFONT, 16U) == 0);
     assert(desktop_surface_paint_commit(&manager, owner, handle) == 0);
     desktop_surface_slot_t *painted = &manager.slots[handle.id - 1U];
-    assert(painted->committed_paint_count == 2U);
+    assert(painted->committed_paint_count == 3U);
+    assert(painted->committed_paint[2].type ==
+           DESKTOP_SURFACE_PAINT_FONT_TEXT);
+    assert(painted->committed_paint[2].font_family ==
+           REIST_GUI_FONT_FAMILY_UNIFONT);
+    assert(painted->committed_paint[2].font_height == 16U);
     assert(painted->paint_generation != 0U);
     reist_gui_rect_t present_damage;
     assert(desktop_surface_present_damage_take(
@@ -64,7 +83,7 @@ int main(void) {
     assert(desktop_surface_paint_commit_layer(
         &manager, owner, handle,
         REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) == 0);
-    assert(painted->committed_paint_count == 2U);
+    assert(painted->committed_paint_count == 3U);
     assert(painted->committed_overlay_paint_count == 1U);
     assert(painted->committed_overlay_paint[0].foreground == 0x00000080U);
     assert(desktop_surface_present_damage_take(
@@ -126,7 +145,7 @@ int main(void) {
     assert(desktop_surface_present_damage_take(
         &manager, owner, handle, &present_damage) == 0);
     assert(present_damage.x == 8 && present_damage.y == 8 &&
-           present_damage.width == 120U && present_damage.height == 1U);
+           present_damage.width == 120U && present_damage.height == 32U);
     reist_gui_surface_input_t input = {
         REIST_GUI_SURFACE_INPUT_POINTER_MOTION, 1U, 12, 8,
         1, -1, 0U, 0U, 0U, 0U};

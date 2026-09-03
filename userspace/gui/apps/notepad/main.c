@@ -11,6 +11,7 @@
 #include "x86os.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/file_dialog.h"
+#include "reist/gui/font_catalog.h"
 #include "reist/gui/menu.h"
 #include "reist/gui/piece_document.h"
 #include "reist/gui/surface_client.h"
@@ -47,7 +48,9 @@ enum {
     NOTEPAD_ACTION_SAVE,
     NOTEPAD_ACTION_SAVE_AS,
     NOTEPAD_ACTION_EXIT,
-    NOTEPAD_ACTION_ABOUT
+    NOTEPAD_ACTION_ABOUT,
+    NOTEPAD_ACTION_FONT_FAMILY,
+    NOTEPAD_ACTION_FONT_SIZE
 };
 
 enum {
@@ -89,14 +92,40 @@ static const reist_gui_menu_item_t help_items[] = {
     {"Ueber Editor", NOTEPAD_ACTION_ABOUT, 0U, 0U, 0U},
 };
 
+static const reist_gui_menu_item_t font_family_items[] = {
+    {"GNU Unifont", NOTEPAD_ACTION_FONT_FAMILY,
+     REIST_GUI_FONT_FAMILY_UNIFONT, 0U, 0U},
+    {"JetBrains Mono", NOTEPAD_ACTION_FONT_FAMILY,
+     REIST_GUI_FONT_FAMILY_JETBRAINS_MONO, 0U, 0U},
+    {"Source Code Pro", NOTEPAD_ACTION_FONT_FAMILY,
+     REIST_GUI_FONT_FAMILY_SOURCE_CODE_PRO, 0U, 0U},
+    {"Iosevka", NOTEPAD_ACTION_FONT_FAMILY,
+     REIST_GUI_FONT_FAMILY_IOSEVKA, 0U, 0U},
+    {"Fira Code", NOTEPAD_ACTION_FONT_FAMILY,
+     REIST_GUI_FONT_FAMILY_FIRA_CODE, 0U, 0U},
+};
+
+static const reist_gui_menu_item_t font_size_items[] = {
+    {"10 Pixel", NOTEPAD_ACTION_FONT_SIZE, 10U, 0U, 0U},
+    {"12 Pixel", NOTEPAD_ACTION_FONT_SIZE, 12U, 0U, 0U},
+    {"14 Pixel", NOTEPAD_ACTION_FONT_SIZE, 14U, 0U, 0U},
+    {"16 Pixel", NOTEPAD_ACTION_FONT_SIZE, 16U, 0U, 0U},
+    {"18 Pixel", NOTEPAD_ACTION_FONT_SIZE, 18U, 0U, 0U},
+    {"20 Pixel", NOTEPAD_ACTION_FONT_SIZE, 20U, 0U, 0U},
+    {"24 Pixel", NOTEPAD_ACTION_FONT_SIZE, 24U, 0U, 0U},
+    {"28 Pixel", NOTEPAD_ACTION_FONT_SIZE, 28U, 0U, 0U},
+};
+
 static const reist_gui_menu_t menus[] = {
     {"Datei", file_items, 4U, 0U, 0U},
+    {"Schrift", font_family_items, REIST_GUI_FONT_FAMILY_COUNT, 0U, 0U},
+    {"Groesse", font_size_items, REIST_GUI_FONT_SIZE_COUNT, 0U, 0U},
     {"Hilfe", help_items, 1U, 0U, 0U},
 };
 
 static const reist_gui_menu_model_t menu_model = {
     REIST_GUI_MENU_API_VERSION, sizeof(reist_gui_menu_model_t),
-    menus, 2U, {0U, 0U, 0U, 0U}
+    menus, 4U, {0U, 0U, 0U, 0U}
 };
 
 static const reist_gui_dialog_button_t confirm_buttons[] = {
@@ -183,6 +212,9 @@ typedef struct notepad_state {
     uint32_t scroll_drag_offset;
     uint32_t scroll_pending_value;
     uint32_t scroll_pending_valid;
+    uint32_t font_family;
+    uint32_t font_width;
+    uint32_t font_height;
     reist_gui_piece_document_t document;
     reist_vfs_file_handle_t source_object;
     uint32_t window_offset;
@@ -203,6 +235,9 @@ static reist_gui_surface_client_t dialog_surface;
 static x86os_display_info_t dialog_display;
 static uint32_t dialog_surface_active;
 static int paint_status;
+
+static int resize_editor_model(notepad_state_t *state,
+                               const x86os_display_info_t *display);
 
 static void copy_piece_document(reist_gui_piece_document_t *destination,
                                 const reist_gui_piece_document_t *source) {
@@ -495,6 +530,59 @@ static void text(const x86os_display_info_t *display,
         x, y, value, selected_bytes, foreground, background);
 }
 
+static void editor_text(const x86os_display_info_t *display,
+                        const notepad_state_t *state,
+                        int32_t x, int32_t y, const char *value,
+                        uint32_t maximum_width, uint32_t foreground,
+                        uint32_t background) {
+    if (display == 0 || state == 0 || value == 0 ||
+        state->font_width == 0U || state->font_height == 0U) return;
+    if (paint_surface == 0) {
+        text(display, x, y, value, maximum_width, foreground, background);
+        return;
+    }
+    if (x < 0 || y < 0 || (uint32_t)x >= paint_surface->width ||
+        (uint32_t)y >= paint_surface->height ||
+        state->font_height > paint_surface->height - (uint32_t)y) return;
+    uint32_t available = paint_surface->width - (uint32_t)x;
+    if (maximum_width > available) maximum_width = available;
+    size_t length = bounded_length(value, NOTEPAD_TEXT_LIMIT);
+    size_t capacity = maximum_width / state->font_width;
+    size_t selected_bytes = 0U;
+    size_t selected_scalars = 0U;
+    if (!reist_utf8_prefix(value, length, capacity,
+                           &selected_bytes, &selected_scalars) ||
+        selected_bytes == 0U) return;
+    size_t offset = 0U;
+    uint32_t painted_scalars = 0U;
+    while (offset < selected_bytes && paint_status == 0) {
+        size_t chunk_bytes = 0U;
+        uint32_t chunk_scalars = 0U;
+        while (offset + chunk_bytes < selected_bytes) {
+            size_t consumed = 0U;
+            uint32_t scalar = 0U;
+            if (!reist_utf8_decode_one(
+                    value + offset + chunk_bytes,
+                    selected_bytes - offset - chunk_bytes,
+                    &consumed, &scalar) ||
+                chunk_bytes + consumed >=
+                    REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY) break;
+            chunk_bytes += consumed;
+            ++chunk_scalars;
+        }
+        if (chunk_bytes == 0U) return;
+        uint32_t chunk_width = chunk_scalars * state->font_width;
+        paint_status = reist_gui_surface_client_paint_font_text(
+            paint_surface,
+            x + (int32_t)(painted_scalars * state->font_width), y,
+            chunk_width, value + offset, (uint32_t)chunk_bytes,
+            foreground, background, state->font_family,
+            state->font_height);
+        offset += chunk_bytes;
+        painted_scalars += chunk_scalars;
+    }
+}
+
 static void bevel(reist_gui_rect_t rect, uint32_t face, uint32_t raised) {
     if (!rect.width || !rect.height) return;
     fill(rect, face);
@@ -751,6 +839,19 @@ static const reist_gui_dialog_model_t *dialog_model(
     return 0;
 }
 
+static uint32_t font_menu_selected(const notepad_state_t *state,
+                                   uint32_t menu_index,
+                                   const reist_gui_menu_item_t *item) {
+    if (state == 0 || item == 0) return 0U;
+    if (menu_index == 1U)
+        return item->action == NOTEPAD_ACTION_FONT_FAMILY &&
+            item->target == state->font_family;
+    if (menu_index == 2U)
+        return item->action == NOTEPAD_ACTION_FONT_SIZE &&
+            item->target == state->font_height;
+    return 0U;
+}
+
 static void render_menu(const x86os_display_info_t *display,
                         const notepad_state_t *state) {
     reist_gui_menu_layout_t layout = menu_layout(display);
@@ -785,9 +886,21 @@ static void render_menu(const x86os_display_info_t *display,
         uint32_t background = color_face;
         uint32_t y = item.height > display->font_height
             ? (item.height - display->font_height) / 2U : 0U;
-        text(display, item.x + (int32_t)layout.item_padding_x,
+        int32_t label_x = item.x + (int32_t)layout.item_padding_x;
+        uint32_t label_width = item.width - layout.item_padding_x * 2U;
+        if (menu_index == 1U || menu_index == 2U) {
+            text(display, label_x, item.y + (int32_t)y,
+                 font_menu_selected(state, menu_index, &menu->items[index])
+                    ? "*" : " ",
+                 display->font_width, color_text, background);
+            label_x += (int32_t)(display->font_width * 2U);
+            uint32_t marker_width = display->font_width * 2U;
+            label_width = label_width > marker_width
+                ? label_width - marker_width : 1U;
+        }
+        text(display, label_x,
              item.y + (int32_t)y, menu->items[index].label,
-             item.width - layout.item_padding_x * 2U,
+             label_width,
              color_text, background);
     }
 }
@@ -817,9 +930,22 @@ static void render_menu_hover(const x86os_display_info_t *display,
     fill(item, color_active);
     uint32_t y = item.height > display->font_height
         ? (item.height - display->font_height) / 2U : 0U;
-    text(display, item.x + (int32_t)layout.item_padding_x,
+    int32_t label_x = item.x + (int32_t)layout.item_padding_x;
+    uint32_t label_width = item.width - layout.item_padding_x * 2U;
+    if (menu_index == 1U || menu_index == 2U) {
+        text(display, label_x, item.y + (int32_t)y,
+             font_menu_selected(
+                 state, menu_index, &menu->items[state->menu.hot_item])
+                ? "*" : " ",
+             display->font_width, color_title_text, color_active);
+        label_x += (int32_t)(display->font_width * 2U);
+        uint32_t marker_width = display->font_width * 2U;
+        label_width = label_width > marker_width
+            ? label_width - marker_width : 1U;
+    }
+    text(display, label_x,
          item.y + (int32_t)y, menu->items[state->menu.hot_item].label,
-         item.width - layout.item_padding_x * 2U,
+         label_width,
          color_title_text, color_active);
 }
 
@@ -902,8 +1028,8 @@ static void render_editor(const x86os_display_info_t *display,
     reist_gui_rect_t frame = editor_frame(display);
     reist_gui_rect_t editor = state->editor_model.bounds;
     fill(editor, color_editor);
-    uint32_t rows = editor.height / display->font_height;
-    uint32_t columns = editor.width / display->font_width;
+    uint32_t rows = editor.height / state->font_height;
+    uint32_t columns = editor.width / state->font_width;
     for (uint32_t row = 0U; row < rows; ++row) {
         uint32_t line_index = state->editor.first_line + row;
         if (line_index >= state->editor.line_count) break;
@@ -915,11 +1041,11 @@ static void render_editor(const x86os_display_info_t *display,
         if (!utf8_slice(line, length, state->editor.first_column, columns,
                         &offset, &amount, &scalar_amount) ||
             amount == 0U) continue;
-        uint32_t line_width = scalar_amount * display->font_width;
-        text(display, editor.x,
-             editor.y + (int32_t)(row * display->font_height),
-             line + offset, line_width,
-             color_text, color_editor);
+        uint32_t line_width = scalar_amount * state->font_width;
+        editor_text(display, state, editor.x,
+                    editor.y + (int32_t)(row * state->font_height),
+                    line + offset, line_width,
+                    color_text, color_editor);
     }
     if (state->editor.focused && !state->dialog.visible &&
         state->menu.open_menu == REIST_GUI_MENU_NO_INDEX &&
@@ -930,9 +1056,9 @@ static void render_editor(const x86os_display_info_t *display,
             state->editor.cursor_column - state->editor.first_column;
         if (row < rows && column < columns)
             fill((reist_gui_rect_t){
-                editor.x + (int32_t)(column * display->font_width),
-                editor.y + (int32_t)(row * display->font_height),
-                2U, display->font_height}, color_dark);
+                editor.x + (int32_t)(column * state->font_width),
+                editor.y + (int32_t)(row * state->font_height),
+                2U, state->font_height}, color_dark);
     }
 
     render_scrollbar(display, &state->vertical_scroll_model,
@@ -1623,6 +1749,34 @@ static void complete_dialog(notepad_state_t *state,
     }
 }
 
+static int apply_font_selection(notepad_state_t *state,
+                                const x86os_display_info_t *display,
+                                uint32_t family, uint32_t height) {
+    uint32_t width = 0U;
+    uint32_t measured_height = 0U;
+    if (state == 0 || display == 0 || main_surface == 0 ||
+        reist_gui_font_catalog_metrics(
+            family, height, &width, &measured_height) != 0)
+        return -22;
+    uint32_t old_family = state->font_family;
+    uint32_t old_width = state->font_width;
+    uint32_t old_height = state->font_height;
+    state->font_family = family;
+    state->font_width = width;
+    state->font_height = measured_height;
+    if (resize_editor_model(state, display) != 0) {
+        state->font_family = old_family;
+        state->font_width = old_width;
+        state->font_height = old_height;
+        (void)resize_editor_model(state, display);
+        return -1;
+    }
+    (void)copy_text(state->status, sizeof(state->status),
+                    "Schrift geaendert");
+    state->redraw = 1U;
+    return 0;
+}
+
 static void apply_menu_result(notepad_state_t *state,
                               const x86os_display_info_t *display,
                               const reist_gui_menu_result_t *result,
@@ -1649,6 +1803,17 @@ static void apply_menu_result(notepad_state_t *state,
         request_exit(state, display);
     else if (result->action == NOTEPAD_ACTION_ABOUT)
         open_dialog(state, display, NOTEPAD_DIALOG_ABOUT);
+    else if (result->action == NOTEPAD_ACTION_FONT_FAMILY) {
+        if (apply_font_selection(
+                state, display, result->target, state->font_height) != 0)
+            (void)copy_text(state->status, sizeof(state->status),
+                            "Schrift nicht verfuegbar");
+    } else if (result->action == NOTEPAD_ACTION_FONT_SIZE) {
+        if (apply_font_selection(
+                state, display, state->font_family, result->target) != 0)
+            (void)copy_text(state->status, sizeof(state->status),
+                            "Schriftgroesse nicht verfuegbar");
+    }
 }
 
 static uint32_t dispatch_editor_pointer(notepad_state_t *state,
@@ -2122,9 +2287,9 @@ static int run_menu_probe(notepad_state_t *state,
     reist_gui_rect_t title;
     reist_gui_rect_t item;
     if (reist_gui_menu_title_rect(
-            &menu_model, &layout, 1U, &title) != 0 ||
+            &menu_model, &layout, 3U, &title) != 0 ||
         reist_gui_menu_item_rect(
-            &menu_model, &layout, 1U, 0U, &item) != 0)
+            &menu_model, &layout, 3U, 0U, &item) != 0)
         return -1;
     (void)dispatch_pointer(state, display, title.x + 2, title.y + 2, 1U, 1U);
     (void)dispatch_pointer(state, display, title.x + 2, title.y + 2, 1U, 0U);
@@ -2132,6 +2297,45 @@ static int run_menu_probe(notepad_state_t *state,
     (void)dispatch_pointer(state, display, item.x + 2, item.y + 2, 1U, 0U);
     return state->dialog.visible &&
         state->dialog_kind == NOTEPAD_DIALOG_ABOUT ? 0 : -1;
+}
+
+static int run_font_probe(notepad_state_t *state,
+                          const x86os_display_info_t *display) {
+    if (state == 0 || display == 0 || main_surface == 0 ||
+        state->document.size <= REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY)
+        return -1;
+    const uint32_t heights[2] = {10U, 28U};
+    for (uint32_t family = 1U;
+         family <= REIST_GUI_FONT_FAMILY_COUNT; ++family) {
+        for (uint32_t size = 0U; size < 2U; ++size) {
+            uint32_t modified = notepad_modified(state);
+            if (apply_font_selection(
+                    state, display, family, heights[size]) != 0 ||
+                modified != notepad_modified(state)) return -1;
+            reist_gui_text_editor_viewport_t viewport;
+            if (reist_gui_text_editor_get_viewport(
+                    &state->editor_model, &state->editor, &viewport) != 0)
+                return -1;
+            reist_gui_text_editor_result_t result;
+            reist_gui_text_editor_result_initialize(&result);
+            uint32_t line = size == 0U ? viewport.maximum_first_line : 0U;
+            if (reist_gui_text_editor_scroll_to(
+                    &state->editor_model, &state->editor, line,
+                    viewport.maximum_first_column, &result) != 0 ||
+                synchronize_scrollbars(state) != 0) return -1;
+            render(display, state);
+            if (paint_status != 0) return paint_status;
+            x86os_puts("NOTEPAD_FONT_SELECTION_OK family=");
+            x86os_print_number((int)family);
+            x86os_puts(" height=");
+            x86os_print_number((int)heights[size]);
+            x86os_puts(" width=");
+            x86os_print_number((int)state->font_width);
+            x86os_putchar('\n');
+        }
+    }
+    x86os_puts("NOTEPAD_FONT_SELECTION_READY\n");
+    return 0;
 }
 
 static int run_file_dialog_probe(notepad_state_t *state,
@@ -2249,7 +2453,7 @@ static void update_editor_model(notepad_state_t *state,
              ? available_width - scrollbar_space : 1U,
          available_height > scrollbar_space
              ? available_height - scrollbar_space : 1U},
-        display->font_width, display->font_height,
+        state->font_width, state->font_height,
         REIST_GUI_TEXT_EDITOR_VISIBLE | REIST_GUI_TEXT_EDITOR_ENABLED,
         {0U, 0U, 0U, 0U}};
     if (state->io_blocked)
@@ -2291,6 +2495,14 @@ static int initialize(notepad_state_t *state,
     reist_gui_text_editor_state_initialize(&state->editor);
     reist_gui_range_state_initialize(&state->vertical_scroll);
     reist_gui_range_state_initialize(&state->horizontal_scroll);
+    state->font_family = REIST_GUI_FONT_DEFAULT_FAMILY;
+    state->font_height = REIST_GUI_FONT_DEFAULT_HEIGHT;
+    uint32_t measured_height = 0U;
+    if (reist_gui_font_catalog_metrics(
+            state->font_family, state->font_height,
+            &state->font_width, &measured_height) != 0)
+        return -4;
+    state->font_height = measured_height;
     if (!copy_text(state->path, sizeof(state->path), path)) return -4;
     update_editor_model(state, display);
     reist_gui_text_editor_result_t result;
@@ -2346,6 +2558,7 @@ int main(int argc, char **argv) {
     uint32_t hover_probe = 0U;
     uint32_t dialog_probe = 0U;
     uint32_t large_document_probe = 0U;
+    uint32_t font_probe = 0U;
     for (int argument = 1; argument < argc; ++argument) {
         if (is_surface_argument(argv[argument])) continue;
         if (text_equal(argv[argument], "--menu-probe")) {
@@ -2365,6 +2578,13 @@ int main(int argc, char **argv) {
             continue;
         }
         if (text_equal(argv[argument], "--large-document-probe")) {
+            large_document_probe = 1U;
+            path = "/notepad-big.txt";
+            document_seen = 1U;
+            continue;
+        }
+        if (text_equal(argv[argument], "--font-probe")) {
+            font_probe = 1U;
             large_document_probe = 1U;
             path = "/notepad-big.txt";
             document_seen = 1U;
@@ -2530,6 +2750,11 @@ int main(int argc, char **argv) {
                 x86os_puts("NOTEPAD_SURFACE_DOCUMENT_READY\n");
             }
         }
+    }
+    if (font_probe && !application.exit_requested &&
+        run_font_probe(&application, &display) != 0) {
+        x86os_puts("NOTEPAD_FONT_SELECTION_FAIL\n");
+        application.exit_requested = 1U;
     }
     application.redraw = 0U;
     application.dynamic_redraw = 0U;

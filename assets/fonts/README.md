@@ -26,3 +26,19 @@ a shaping, bidirectional-layout or grapheme engine.
 `unicode.txt` is installed as `/usr/share/fonts/unicode.txt` as a visual
 coverage sample. It uses real BMP and supplementary-plane text and labels the
 still-open combining, bidirectional, shaping and grapheme behavior explicitly.
+
+## Selectable editor families
+
+`catalog.toml` pins five redistributable monospaced families and every source,
+license and generated-runtime hash. GNU Unifont is the complete deterministic
+fallback. JetBrains Mono 2.304, Source Code Pro 2.042, Iosevka 34.8.0 and Fira
+Code 6.2 contribute regular-face ASCII editor glyphs plus a visible fallback
+cell. Their exact upstream outline files and family-specific OFL texts are
+stored below `source/`; no target process parses those TTF or OTF files.
+
+`scripts/generate_psf2_font.py` rasterizes the four outline faces into small
+24-pixel-high PSF2 subsets using the generator versions recorded in the
+catalog. The target scales only those validated bitmap glyphs to the supported
+10, 12, 14, 16, 18, 20, 24 and 28 pixel heights. A scalar absent from the
+selected subset is looked up in GNU Unifont. OpenType ligatures, shaping and
+hinting are intentionally outside this bitmap editor contract.

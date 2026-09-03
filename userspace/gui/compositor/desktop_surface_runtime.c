@@ -101,7 +101,8 @@ static int poll_client(desktop_surface_runtime_client_t *client, desktop_surface
     reist_gui_surface_message_t request,response; uint8_t *d=(uint8_t *)&request; for (uint32_t i=0;i<sizeof(request);++i) d[i]=ipc.payload[i]; clear_bytes(&response,sizeof(response));
     status=desktop_surface_dispatch_message(manager,client->owner,&request,&response); response.flags=(uint32_t)status;
     if ((request.type != REIST_GUI_SURFACE_PAINT_FILL &&
-         request.type != REIST_GUI_SURFACE_PAINT_TEXT) || status != 0) {
+         request.type != REIST_GUI_SURFACE_PAINT_TEXT &&
+         request.type != REIST_GUI_SURFACE_PAINT_FONT_TEXT) || status != 0) {
         int response_status = send_response(client->endpoint, &response);
         if (response_status != 0) return response_status;
     }

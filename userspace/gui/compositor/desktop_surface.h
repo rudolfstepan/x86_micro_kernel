@@ -26,7 +26,8 @@ enum desktop_surface_status {
 enum desktop_surface_paint_type {
     DESKTOP_SURFACE_PAINT_NONE = 0U,
     DESKTOP_SURFACE_PAINT_FILL,
-    DESKTOP_SURFACE_PAINT_TEXT
+    DESKTOP_SURFACE_PAINT_TEXT,
+    DESKTOP_SURFACE_PAINT_FONT_TEXT
 };
 
 typedef struct desktop_surface_paint_command {
@@ -35,6 +36,8 @@ typedef struct desktop_surface_paint_command {
     uint32_t foreground;
     uint32_t background;
     uint32_t text_length;
+    uint32_t font_family;
+    uint32_t font_height;
     char text[REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY];
 } desktop_surface_paint_command_t;
 
@@ -187,6 +190,11 @@ int desktop_surface_paint_text(desktop_surface_manager_t *manager,
                                reist_gui_rect_t rect, uint32_t foreground,
                                uint32_t background, const char *text,
                                uint32_t length);
+int desktop_surface_paint_font_text(
+    desktop_surface_manager_t *manager, reist_gui_surface_owner_t owner,
+    reist_gui_surface_handle_t handle, reist_gui_rect_t rect,
+    uint32_t foreground, uint32_t background, const char *text,
+    uint32_t length, uint32_t font_family, uint32_t font_height);
 int desktop_surface_paint_commit(desktop_surface_manager_t *manager,
                                  reist_gui_surface_owner_t owner,
                                  reist_gui_surface_handle_t handle);

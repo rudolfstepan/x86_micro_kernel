@@ -603,6 +603,33 @@ Font- und Icondateien werden trotz fester großer Zielpuffer in höchstens
 explizit an den Scheduler abgegeben. Damit bleibt jeder VFS-Aufruf begrenzt,
 ohne den rund 2,47 MiB großen Referenzfont durch mehrere hundert freiwillige
 Scheduling-Umläufe unnötig zu verzögern.
+
+R3.2a ergänzt diesen Ring-3-Pfad um einen festen Editorfont-Katalog mit GNU
+Unifont als Fallback sowie JetBrains Mono, Source Code Pro, Iosevka und Fira
+Code. Exakte Upstream-Versionen, Quellen, OFL-Lizenztexte und SHA-256-Werte
+stehen in `assets/fonts/catalog.toml`; das Zielsystem erhält ausschließlich
+vorab erzeugte PSF2-Dateien und parst weder TTF noch OTF. Die additive
+Surface-v6-Nachricht `PAINT_FONT_TEXT` transportiert nur eine numerische
+Katalog-ID und eine der Höhen 10, 12, 14, 16, 18, 20, 24 oder 28 Pixel. Der
+Compositor validiert beides vor Retained-Paint-Publikation, lädt jeden Font in
+feste Dateispeicher und Unicode-Mappingtabellen und rastert über einen festen
+64-Glyphen-XRGB-Cache. Fehlende oder ungültige Zusatzfonts veröffentlichen
+keinen Teilzustand und verwenden den bereits vollständig validierten GNU-
+Unifont; unbekannte Skalare eines ASCII-Subsetfonts durchlaufen denselben
+Fallback. Beim Verkleinern bildet jede Zielzelle die von ihr abgedeckten
+Quellpixel zusammen, damit dünne Querstriche und Bögen nicht durch ausgelassene
+Nearest-Neighbor-Zeilen verschwinden; Vergrößerung bleibt pixelstabil und alle
+Schleifen bleiben durch 32x32 Pixel begrenzt. Der alte `PAINT_TEXT`-Vertrag und
+die 8x16-Systemschrift bleiben unverändert.
+
+Notepad hält Familie und Größe ausschließlich pro Prozess. Nur Dokumentglyphen,
+Cursorzelle, sichtbare Zeilen und Spalten sowie daraus abgeleitete Scrollranges
+verwenden die ausgewählten Metriken; Menüs, Dialoge und Status bleiben in der
+Systemschrift. Ein Wechsel berechnet die festen Zellmaße zuerst, baut danach
+Editor- und Scrollmodelle neu auf und klemmt die erhaltene Viewportposition.
+Dokumentbytes, Piece Table, Modified-Status, Speichertransaktion und
+Texteditor-ABI werden dabei nicht verändert; Konfigurationspersistenz gehört
+nicht zu diesem Paket.
 Eine ungebundene Escape-Taste ist im Desktop kein Sitzungs-Exit. Escape bleibt
 lokaler Abbruch für Drag, Menü, Dialog oder fokussierten Surface-Client; der
 normale globale Exit wird ausschließlich über `Desktop beenden` im Startmenü

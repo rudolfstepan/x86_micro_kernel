@@ -86,6 +86,7 @@ GUI_LIBRARY_SOURCES = (
     ROOT / "userspace" / "gui" / "lib" / "text_editor.c",
     ROOT / "userspace" / "gui" / "lib" / "piece_document.c",
     ROOT / "userspace" / "gui" / "lib" / "font.c",
+    ROOT / "userspace" / "gui" / "lib" / "font_catalog.c",
 )
 AUDIO_LIBRARY_SOURCES = (
     ROOT / "userspace" / "audio" / "lib" / "audio.c",

@@ -122,7 +122,7 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("reist_utf8_prefix", self.source)
         self.assertIn("reist_utf8_decode_one", self.source)
         self.assertIn("utf8_slice", self.source)
-        self.assertIn("scalar_amount * display->font_width", self.source)
+        self.assertIn("scalar_amount * state->font_width", self.source)
         self.assertNotIn("line + state->editor.first_column", self.source)
 
     def test_bounded_piece_document_behavior(self):
@@ -252,6 +252,32 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("state->menu.hot_item", hover)
         self.assertNotIn("for (uint32_t index = 0U;", hover)
         self.assertIn('"notepad: Surface-Overlay verzoegert: "', self.source)
+
+    def test_font_selection_is_document_local_and_bounded(self):
+        self.assertIn('"Schrift"', self.source)
+        self.assertIn('"Groesse"', self.source)
+        for family in ("GNU Unifont", "JetBrains Mono", "Source Code Pro",
+                       "Iosevka", "Fira Code"):
+            self.assertIn(f'"{family}"', self.source)
+        for height in (10, 12, 14, 16, 18, 20, 24, 28):
+            self.assertIn(
+                f'NOTEPAD_ACTION_FONT_SIZE, {height}U', self.source)
+        editor = self.source[
+            self.source.index("static void render_editor("):
+            self.source.index("static void render_dialog(")]
+        self.assertIn("editor_text(display, state", editor)
+        self.assertIn("state->font_width", editor)
+        self.assertIn("state->font_height", editor)
+        self.assertNotIn("text(display, editor.x", editor)
+        selection = self.source[
+            self.source.index("static int apply_font_selection("):
+            self.source.index("static void apply_menu_result(")]
+        self.assertIn("reist_gui_font_catalog_metrics", selection)
+        self.assertIn("resize_editor_model(state, display)", selection)
+        self.assertNotIn("state->document", selection)
+        self.assertNotIn("state->editor.modified", selection)
+        self.assertIn("NOTEPAD_FONT_SELECTION_READY", self.source)
+        self.assertIn("viewport.maximum_first_line", self.source)
 
     def test_source_is_valid_freestanding_c11(self):
         compiler = shutil.which("gcc") or shutil.which("clang")

@@ -27,6 +27,7 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn("REIST_GUI_SURFACE_PAINT_COMMIT", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_OVERLAY_BEGIN", header)
         self.assertIn("REIST_GUI_SURFACE_PAINT_OVERLAY_COMMIT", header)
+        self.assertIn("REIST_GUI_SURFACE_PAINT_FONT_TEXT", header)
         self.assertIn("sizeof(reist_gui_surface_message_t) <= 128U", header)
         self.assertIn("global window coordinates never cross the ABI", header)
 
@@ -45,6 +46,10 @@ class GuiSurfaceSourceTests(unittest.TestCase):
         self.assertIn("reist_gui_surface_buffer_validate", client)
         self.assertIn("reist_gui_surface_client_paint_fill", client)
         self.assertIn("reist_gui_surface_client_paint_text", client)
+        self.assertIn("reist_gui_surface_client_paint_font_text", client)
+        self.assertIn(
+            "reist_gui_font_catalog_selection_valid(font_family, pixel_height)",
+            client)
         self.assertIn("reist_gui_surface_client_paint_begin_layer", client)
         self.assertIn("reist_gui_surface_client_paint_commit_layer", client)
         self.assertIn("REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC", client)
@@ -101,6 +106,7 @@ class GuiSurfaceSourceTests(unittest.TestCase):
                     compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
                     "-I.", "-Iuserspace/gui/include", source,
                     "userspace/gui/compositor/desktop_surface.c",
+                    "userspace/gui/lib/font_catalog.c",
                     "-o", str(executable)], cwd=ROOT, check=True,
                     capture_output=True, text=True)
                 subprocess.run([str(executable)], cwd=ROOT, check=True,

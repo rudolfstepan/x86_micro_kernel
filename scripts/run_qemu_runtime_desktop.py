@@ -397,7 +397,7 @@ def require_svga2d_console_lifecycle(text: str) -> None:
 
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
-        surface_probe: bool, notepad_probe: bool,
+        surface_probe: bool, notepad_probe: bool, notepad_font_probe: bool,
         control_probe: bool, trash_context_probe: bool,
         trash_confirm_probe: bool, trash_restore_probe: bool,
         hover_probe: bool,
@@ -462,6 +462,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     command_name = "desktop.prg --surface-probe"
                 elif notepad_probe:
                     command_name = "desktop.prg --notepad-probe"
+                elif notepad_font_probe:
+                    command_name = "desktop.prg --notepad-font-probe"
                 elif control_probe:
                     command_name = "desktop.prg --control-probe"
                 elif guidemo_click_probe:
@@ -503,7 +505,13 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 raise RuntimeError(
                     "supervised desktop or VGA shell prompt not observed; "
                     f"guest tail:\n{tail}")
-        desktop_deadline = time.monotonic() + 30.0
+        font_catalog_start = (surface_probe or notepad_probe or
+                              notepad_font_probe) or not any((
+            expect_failure, render_probe, surface_probe, control_probe,
+            trash_context_probe, trash_confirm_probe, trash_restore_probe,
+            hover_probe, guidemo_click_probe, sound_probe))
+        desktop_deadline = time.monotonic() + (
+            90.0 if font_catalog_start else 30.0)
         deadline = desktop_deadline
         while time.monotonic() < deadline:
             drain(output, transcript)
@@ -827,6 +835,49 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         "Notepad did not publish a visible document window; "
                         f"guest tail:\n{tail}"
                     )
+                if notepad_font_probe:
+                    font_surface_seen = False
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if (not font_surface_seen and
+                                "NOTEPAD_SURFACE_READY" in probe_text):
+                            font_surface_seen = True
+                            deadline = time.monotonic() + 90.0
+                        for failure in (
+                                "DESKTOP_NOTEPAD_FAIL",
+                                "NOTEPAD_PIECE_DOCUMENT_FAIL",
+                                "NOTEPAD_FONT_SELECTION_FAIL",
+                                "DESKTOP_EDITOR_FONT_FALLBACK"):
+                            if failure in probe_text:
+                                marker = re.findall(
+                                    re.escape(failure) + r"[^\r\n]*",
+                                    probe_text)[-1]
+                                raise RuntimeError(
+                                    f"Notepad font probe failed: {marker}")
+                        selections = re.findall(
+                            r"NOTEPAD_FONT_SELECTION_OK family=(\d+) "
+                            r"height=(10|28) width=(\d+)", probe_text)
+                        expected = {
+                            (str(family), str(height))
+                            for family in range(1, 6)
+                            for height in (10, 28)
+                        }
+                        observed = {(family, height)
+                                    for family, height, _ in selections}
+                        if ("NOTEPAD_FONT_SELECTION_READY" in probe_text and
+                                "NOTEPAD_PIECE_DOCUMENT_READY" in probe_text and
+                                expected == observed):
+                            time.sleep(0.2)
+                            capture_screenshot(process, screenshot, deadline)
+                            print("runtime-desktop-notepad-fonts: PASS")
+                            return 0
+                        time.sleep(0.02)
+                    tail = "".join(transcript)[-5000:].replace("\r", "")
+                    raise RuntimeError(
+                        "Notepad font catalog was not exercised completely; "
+                        f"guest tail:\n{tail}"
+                    )
                 if control_probe:
                     while time.monotonic() < deadline:
                         drain(output, transcript)
@@ -948,6 +999,7 @@ def main() -> int:
     parser.add_argument("--render-probe", action="store_true")
     parser.add_argument("--surface-probe", action="store_true")
     parser.add_argument("--notepad-probe", action="store_true")
+    parser.add_argument("--notepad-font-probe", action="store_true")
     parser.add_argument("--control-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
@@ -961,7 +1013,7 @@ def main() -> int:
     parser.add_argument("--smp", type=int, default=1)
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
-            args.notepad_probe, args.control_probe,
+            args.notepad_probe, args.notepad_font_probe, args.control_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.sound_probe, args.guidemo_click_probe,
@@ -977,7 +1029,8 @@ def main() -> int:
     try:
         return run(args.qemu, args.image, args.screenshot, args.timeout,
                    args.expect_failure, args.render_probe,
-                   args.surface_probe, args.notepad_probe, args.control_probe,
+                   args.surface_probe, args.notepad_probe,
+                   args.notepad_font_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
                    args.trash_restore_probe,
                    args.hover_probe,

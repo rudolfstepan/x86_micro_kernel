@@ -570,7 +570,9 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('x86os_puts("DESKTOP_STARTUP_MS value=")', main)
         self.assertIn('desktop_startup_phase_metric("font-io"', self.source)
         self.assertIn('desktop_startup_phase_metric("font-parse"', self.source)
-        self.assertIn("unicode_probe ? desktop_font_load(&display) : 0",
+        self.assertIn("desktop_editor_font_catalog_load(&display,",
+                      self.source)
+        self.assertIn("DESKTOP_EDITOR_FONT_CATALOG_READY families=5 sizes=8",
                       self.source)
         self.assertIn("if (!extension_needed) return 0", self.source)
         self.assertIn("if (desktop_font_attempted) return 0", self.source)

@@ -60,4 +60,19 @@ int reist_gui_font_raster_xrgb_region(
     uint32_t foreground_rgb, uint32_t background_rgb,
     uint32_t *pixels, uint32_t stride_pixels, size_t pixel_capacity);
 
+/** Calculate the fixed-width bounded cell for a target height. */
+int reist_gui_font_scaled_width(const reist_gui_font_t *font,
+                                uint32_t target_height,
+                                uint32_t *target_width);
+
+/**
+ * Rasterize one glyph at a bounded scaled cell size. Downscaling preserves
+ * covered source pixels so thin stems and horizontal strokes cannot vanish.
+ */
+int reist_gui_font_raster_scaled_xrgb(
+    const reist_gui_font_t *font, uint32_t glyph_index,
+    uint32_t target_width, uint32_t target_height,
+    uint32_t foreground_rgb, uint32_t background_rgb,
+    uint32_t *pixels, uint32_t stride_pixels, size_t pixel_capacity);
+
 #endif
