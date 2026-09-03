@@ -41,7 +41,8 @@ static uint32_t rect_valid(reist_gui_rect_t rect) {
 static uint32_t flags_valid(uint32_t flags) {
     return (flags & ~(REIST_GUI_TEXT_EDITOR_VISIBLE |
                       REIST_GUI_TEXT_EDITOR_ENABLED |
-                      REIST_GUI_TEXT_EDITOR_READ_ONLY)) == 0U;
+                      REIST_GUI_TEXT_EDITOR_READ_ONLY |
+                      REIST_GUI_TEXT_EDITOR_VIRTUAL_WRAP)) == 0U;
 }
 
 static uint32_t interactive(uint32_t flags) {
@@ -130,6 +131,68 @@ static uint32_t line_scalar_count(const char *line) {
     if (!reist_utf8_scan(line, bytes, &count) || count > UINT32_MAX)
         return UINT32_MAX;
     return (uint32_t)count;
+}
+
+static uint32_t visible_rows(const reist_gui_text_editor_model_t *model);
+static uint32_t visible_columns(const reist_gui_text_editor_model_t *model);
+
+static uint32_t wrap_enabled(const reist_gui_text_editor_model_t *model) {
+    return (model->flags & REIST_GUI_TEXT_EDITOR_VIRTUAL_WRAP) != 0U;
+}
+
+static uint32_t line_visual_rows(
+    const reist_gui_text_editor_model_t *model, const char *line) {
+    if (!wrap_enabled(model)) return 1U;
+    uint32_t columns = visible_columns(model);
+    uint32_t length = line_scalar_count(line);
+    if (length == UINT32_MAX) return 0U;
+    return length == 0U ? 1U : 1U + (length - 1U) / columns;
+}
+
+static uint32_t document_visual_rows(
+    const reist_gui_text_editor_model_t *model,
+    const reist_gui_text_editor_state_t *state) {
+    uint32_t rows = 0U;
+    for (uint32_t line = 0U; line < state->line_count; ++line) {
+        uint32_t amount = line_visual_rows(model, state->lines[line]);
+        if (amount == 0U || rows > UINT32_MAX - amount) return 0U;
+        rows += amount;
+    }
+    return rows;
+}
+
+static uint32_t locate_visual_row(
+    const reist_gui_text_editor_model_t *model,
+    const reist_gui_text_editor_state_t *state, uint32_t visual_row,
+    uint32_t *line_out, uint32_t *first_column_out) {
+    uint32_t columns = visible_columns(model);
+    for (uint32_t line = 0U; line < state->line_count; ++line) {
+        uint32_t rows = line_visual_rows(model, state->lines[line]);
+        if (visual_row < rows) {
+            *line_out = line;
+            *first_column_out = wrap_enabled(model)
+                ? visual_row * columns : 0U;
+            return 1U;
+        }
+        visual_row -= rows;
+    }
+    return 0U;
+}
+
+static uint32_t cursor_visual_row(
+    const reist_gui_text_editor_model_t *model,
+    const reist_gui_text_editor_state_t *state) {
+    uint32_t row = 0U;
+    for (uint32_t line = 0U; line < state->cursor_line; ++line)
+        row += line_visual_rows(model, state->lines[line]);
+    if (wrap_enabled(model)) {
+        uint32_t columns = visible_columns(model);
+        uint32_t length = line_scalar_count(state->lines[state->cursor_line]);
+        uint32_t column = state->cursor_column;
+        if (column == length && column != 0U) --column;
+        row += column / columns;
+    }
+    return row;
 }
 
 static uint32_t line_byte_offset(const char *line, uint32_t scalar_column) {
@@ -253,7 +316,8 @@ int reist_gui_text_editor_validate(
     if (state->line_count == 0U ||
         state->line_count > REIST_GUI_TEXT_EDITOR_MAX_LINES ||
         state->cursor_line >= state->line_count ||
-        state->first_line >= state->line_count ||
+        state->first_line >= REIST_GUI_TEXT_EDITOR_MAX_LINES *
+            REIST_GUI_TEXT_EDITOR_LINE_CAPACITY ||
         (!interactive(model->flags) && (state->focused || state->captured)) ||
         (!state->focused && state->captured))
         return REIST_GUI_TEXT_EDITOR_EINVAL;
@@ -437,10 +501,12 @@ int reist_gui_text_editor_get_viewport(
     viewport->struct_size = sizeof(*viewport);
     viewport->visible_lines = visible_rows(model);
     viewport->visible_columns = visible_columns(model);
-    viewport->maximum_first_line = state->line_count > viewport->visible_lines
-        ? state->line_count - viewport->visible_lines : 0U;
+    uint32_t visual_rows = document_visual_rows(model, state);
+    if (visual_rows == 0U) return REIST_GUI_TEXT_EDITOR_EINVAL;
+    viewport->maximum_first_line = visual_rows > viewport->visible_lines
+        ? visual_rows - viewport->visible_lines : 0U;
     uint32_t maximum_columns = maximum_line_columns(state);
-    viewport->maximum_first_column =
+    viewport->maximum_first_column = wrap_enabled(model) ? 0U :
         maximum_columns > viewport->visible_columns
             ? maximum_columns - viewport->visible_columns : 0U;
     viewport->first_line = state->first_line > viewport->maximum_first_line
@@ -448,6 +514,20 @@ int reist_gui_text_editor_get_viewport(
     viewport->first_column =
         state->first_column > viewport->maximum_first_column
             ? viewport->maximum_first_column : state->first_column;
+    return REIST_GUI_TEXT_EDITOR_OK;
+}
+
+int reist_gui_text_editor_visual_row(
+    const reist_gui_text_editor_model_t *model,
+    const reist_gui_text_editor_state_t *state,
+    uint32_t visual_row, uint32_t *line_out,
+    uint32_t *first_column_out) {
+    if (reist_gui_text_editor_validate(model, state) != 0 ||
+        !state->configured || line_out == NULL || first_column_out == NULL)
+        return REIST_GUI_TEXT_EDITOR_EINVAL;
+    if (!locate_visual_row(
+            model, state, visual_row, line_out, first_column_out))
+        return REIST_GUI_TEXT_EDITOR_EINVAL;
     return REIST_GUI_TEXT_EDITOR_OK;
 }
 
@@ -484,11 +564,13 @@ static uint32_t keep_cursor_visible(
     uint32_t old_column = state->first_column;
     uint32_t rows = visible_rows(model);
     uint32_t columns = visible_columns(model);
-    if (state->cursor_line < state->first_line)
-        state->first_line = state->cursor_line;
-    else if (state->cursor_line >= state->first_line + rows)
-        state->first_line = state->cursor_line - rows + 1U;
-    if (state->cursor_column < state->first_column)
+    uint32_t cursor_row = cursor_visual_row(model, state);
+    if (cursor_row < state->first_line)
+        state->first_line = cursor_row;
+    else if (cursor_row >= state->first_line + rows)
+        state->first_line = cursor_row - rows + 1U;
+    if (wrap_enabled(model)) state->first_column = 0U;
+    else if (state->cursor_column < state->first_column)
         state->first_column = state->cursor_column;
     else if (state->cursor_column >= state->first_column + columns)
         state->first_column = state->cursor_column - columns + 1U;
@@ -579,7 +661,8 @@ static uint32_t backspace(reist_gui_text_editor_state_t *state) {
     return delete_at_cursor(state);
 }
 
-static void move_cursor(reist_gui_text_editor_state_t *state,
+static void move_cursor(const reist_gui_text_editor_model_t *model,
+                        reist_gui_text_editor_state_t *state,
                         uint32_t key, uint32_t page_rows) {
     uint32_t length = line_scalar_count(state->lines[state->cursor_line]);
     if (key == REIST_GUI_TEXT_EDITOR_KEY_LEFT) {
@@ -604,18 +687,41 @@ static void move_cursor(reist_gui_text_editor_state_t *state,
         uint32_t amount = (key == REIST_GUI_TEXT_EDITOR_KEY_PAGE_UP ||
                            key == REIST_GUI_TEXT_EDITOR_KEY_PAGE_DOWN)
             ? page_rows : 1U;
-        if (key == REIST_GUI_TEXT_EDITOR_KEY_UP ||
-            key == REIST_GUI_TEXT_EDITOR_KEY_PAGE_UP)
-            state->cursor_line = state->cursor_line > amount
-                ? state->cursor_line - amount : 0U;
-        else {
-            uint64_t next = (uint64_t)state->cursor_line + amount;
-            state->cursor_line = next >= state->line_count
-                ? state->line_count - 1U : (uint32_t)next;
+        if (wrap_enabled(model)) {
+            uint32_t visual = cursor_visual_row(model, state);
+            uint32_t total = document_visual_rows(model, state);
+            if (key == REIST_GUI_TEXT_EDITOR_KEY_UP ||
+                key == REIST_GUI_TEXT_EDITOR_KEY_PAGE_UP)
+                visual = visual > amount ? visual - amount : 0U;
+            else
+                visual = total - 1U - visual > amount
+                    ? visual + amount : total - 1U;
+            uint32_t line = 0U, first_column = 0U;
+            uint32_t visual_column = state->cursor_column %
+                visible_columns(model);
+            if (locate_visual_row(
+                    model, state, visual, &line, &first_column)) {
+                state->cursor_line = line;
+                length = line_scalar_count(state->lines[line]);
+                uint32_t requested = first_column + visual_column;
+                state->cursor_column = requested < length
+                    ? requested : length;
+                state->preferred_column = state->cursor_column;
+            }
+        } else {
+            if (key == REIST_GUI_TEXT_EDITOR_KEY_UP ||
+                key == REIST_GUI_TEXT_EDITOR_KEY_PAGE_UP)
+                state->cursor_line = state->cursor_line > amount
+                    ? state->cursor_line - amount : 0U;
+            else {
+                uint64_t next = (uint64_t)state->cursor_line + amount;
+                state->cursor_line = next >= state->line_count
+                    ? state->line_count - 1U : (uint32_t)next;
+            }
+            length = line_scalar_count(state->lines[state->cursor_line]);
+            state->cursor_column = state->preferred_column < length
+                ? state->preferred_column : length;
         }
-        length = line_scalar_count(state->lines[state->cursor_line]);
-        state->cursor_column = state->preferred_column < length
-            ? state->preferred_column : length;
     } else if (key == REIST_GUI_TEXT_EDITOR_KEY_HOME) {
         state->cursor_column = 0U;
         state->preferred_column = 0U;
@@ -640,10 +746,19 @@ static void place_cursor(const reist_gui_text_editor_model_t *model,
     uint32_t row = (uint32_t)(y - model->bounds.y) / model->glyph_height;
     uint32_t column =
         (uint32_t)(x - model->bounds.x) / model->glyph_width;
-    uint64_t line = (uint64_t)state->first_line + row;
-    state->cursor_line = line >= state->line_count
-        ? state->line_count - 1U : (uint32_t)line;
-    uint64_t requested = (uint64_t)state->first_column + column;
+    uint32_t first_column = state->first_column;
+    uint64_t visual = (uint64_t)state->first_line + row;
+    uint32_t line = 0U;
+    if (visual > UINT32_MAX || !locate_visual_row(
+            model, state, (uint32_t)visual, &line, &first_column)) {
+        line = state->line_count - 1U;
+        first_column = wrap_enabled(model)
+            ? (line_visual_rows(model, state->lines[line]) - 1U) *
+                visible_columns(model)
+            : state->first_column;
+    }
+    state->cursor_line = line;
+    uint64_t requested = (uint64_t)first_column + column;
     uint32_t length = line_scalar_count(state->lines[state->cursor_line]);
     state->cursor_column = requested > length ? length : (uint32_t)requested;
     state->preferred_column = state->cursor_column;
@@ -726,7 +841,7 @@ int reist_gui_text_editor_dispatch(
         if (event->key <= REIST_GUI_TEXT_EDITOR_KEY_PAGE_DOWN ||
             event->key == REIST_GUI_TEXT_EDITOR_KEY_DOCUMENT_HOME ||
             event->key == REIST_GUI_TEXT_EDITOR_KEY_DOCUMENT_END) {
-            move_cursor(state, event->key, visible_rows(model));
+            move_cursor(model, state, event->key, visible_rows(model));
         } else if ((model->flags & REIST_GUI_TEXT_EDITOR_READ_ONLY) == 0U &&
                    event->key == REIST_GUI_TEXT_EDITOR_KEY_BACKSPACE) {
             changed = backspace(state);

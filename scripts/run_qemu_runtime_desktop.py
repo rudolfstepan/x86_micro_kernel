@@ -1092,6 +1092,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         if ("NOTEPAD_SURFACE_READY" in probe_text and
                                 "NOTEPAD_SURFACE_DOCUMENT_READY" in
                                 probe_text and
+                                "NOTEPAD_DOCUMENT_NAVIGATION_READY" in
+                                probe_text and
+                                "NOTEPAD_VIRTUAL_WRAP_READY" in probe_text and
                                 "NOTEPAD_PIECE_DOCUMENT_READY" in probe_text):
                             time.sleep(0.2)
                             capture_screenshot(process, screenshot, deadline)

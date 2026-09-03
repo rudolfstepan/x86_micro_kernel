@@ -2,7 +2,7 @@
 
 Stand: 3. September 2026
 
-Branch/Startpunkt: `working_branch` / `69e05c6a`
+Branch/Startpunkt: `working_branch` / `fd874689`
 
 Aktives Thema: `R3.5a-desktop-icon-drag-layout`: Eingebaute und dynamische
 dateisystemgestützte Desktop-Icons sollen sich innerhalb des sichtbaren
@@ -10,6 +10,15 @@ Arbeitsbereichs verschieben und kollisionsfrei einrasten lassen. Ein getrenntes
 fest begrenztes `reist.desktop-layout/1`-Dokument speichert ausschließlich
 stabile Icon-Identitäten und Rasterpositionen atomar; Datei-MOVE, Aktivierung,
 Fensterbewegung und Papierkorb bleiben davon getrennte Operationen.
+
+`N2g1-notepad-document-navigation-wrap` ist abgeschlossen. Der vertikale
+Scrollbereich bildet das vollständige Piece-Table-Dokument ab und erreicht
+auch bei logischen Zeilen über 256 Byte Anfang, beliebige Position, exaktes
+Ende und lückenlose Rückwärtsfenster. `Format -> Zeilenumbruch` schaltet eine
+gemeinsame visuelle-Zeilen-Abbildung für Rendering, Cursor, Pointer und
+Viewport ein, deaktiviert horizontales Scrollen und verändert keine
+Dokumentbytes. 32 gezielte Prüfungen, der QEMU-Framebuffer-Paketbuild in 14
+Sekunden und der reale große Surface-Notepad-Lauf sind bestanden.
 
 `N3a-vfs-symbolic-links` ist abgeschlossen. Die öffentliche Storage-Service-/
 Client-ABI ergänzt append-only `symlink`, `readlink`, `lstat` und
@@ -97,6 +106,8 @@ Rename-Savepfad sowie die Editorinteraktion blieben unverändert.
 `N2g-notepad-piece-table` ist abgeschlossen. Der grafische Notepad hält große
 Dokumente in einer festen Piece Table, materialisiert nur ein begrenztes
 Editorfenster und streamt beim atomischen Speichern höchstens 256 Pieces.
+Die nachgezogene Korrektur N2g1 behebt nun die zuvor nur fensterlokale
+Scrollbar-Range und ergänzt byte-neutralen virtuellen Zeilenumbruch.
 
 `N2e-audio-wave-read-authority` ist abgeschlossen. Der gemeinsame WAV-
 Preview-Loader von `WAVPLAY.PRG` und `SOUNDPLAYER.PRG` verwendet genau ein

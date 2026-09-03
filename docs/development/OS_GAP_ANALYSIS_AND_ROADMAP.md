@@ -3218,7 +3218,18 @@ durch den Status des ausführbaren Pakets aktualisiert.
    dem QEMU-Framebuffer-Paketbuild in 46 Sekunden und dem realen USB-Mauslauf,
    der beide Objektarten nach Storage-Neustart und Editor-Aktivierung wieder
    aus dem anschließend leeren `/desktop` zurückverschob.
-9. [~] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
+9. [x] **N2g1 · Vollständige Notepad-Navigation und virtueller Zeilenumbruch.**
+   Die vertikale Scrollbar repräsentiert das vollständige Piece-Table-Dokument
+   und materialisiert bei Navigation feste UTF-8-sichere Fenster bis zum
+   letzten Byte. Pfeile, Seitenbewegung, Thumb-Drag und Tastatur wechseln ohne
+   verlorene Änderungen vorwärts und rückwärts. `Format -> Zeilenumbruch`
+   schaltet eine gemeinsame visuelle-Zeilen-Abbildung für Rendering, Cursor,
+   Pointer und Viewport ein; horizontales Scrollen ist dabei deaktiviert und
+   gespeicherte Bytes bleiben unverändert. Abnahme: Hostmatrix sowie realer
+   großer Surface-Notepad-Lauf über Anfang, Mitte, Ende, Rückweg und Wrap.
+   Abgenommen mit 32 gezielten Prüfungen, QEMU-Framebuffer-Paketbuild und
+   realem Surface-Lauf einschließlich einer logischen Zeile über 256 Byte.
+10. [~] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
    dynamische dateisystemgestützte Icons verwenden den vorhandenen begrenzten
    Drag-Controller, rasten kollisionsfrei im sichtbaren Arbeitsbereich ein und
    bleiben von Fensterbewegung, Start, Datei-MOVE und Papierkorb-MOVE getrennt.
@@ -3226,53 +3237,53 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Identitäten und Rasterkoordinaten atomar. Abnahme: Verschieben, Neustart,
    Größenwechsel, Korruptionsfallback und unveränderte Klick-/Kontextmenü-
    Semantik im realen QEMU-Desktop.
-10. [ ] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
+11. [ ] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
    führen.** N3a liefert nur den für native EXT2-Symlinks benötigten ersten
    begrenzten Mutationsschnitt. Danach die übrigen versionierten Create-,
    Write-, Rename-, Replace- und Reparaturtransaktionen migrieren. Journal,
    Readback, Medienidentität und Generation bleiben fail-closed. Abnahme:
    Power-Cut-/Teilwrite-Matrix, Dienstneustart und kontrollierter Remount ohne
    ABI-Bruch.
-11. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
+12. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
    SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
    MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend
    jeweils genau eine weitere Produktionsdomäne auditieren. Ohne IOMMU bleibt
    DMA ausschließlich kernelvalidiert vermittelt. Abnahme: Normal-, Crash-,
    Hang-, stale-Reply- und Budgeterschöpfungspfad auf BSP und freigegebenem AP.
-12. [ ] **N5 · Übergangs-Syscalls konsolidieren.** Nach N1 bis N4 ungenutzte
+13. [ ] **N5 · Übergangs-Syscalls konsolidieren.** Nach N1 bis N4 ungenutzte
    spezialisierte Syscalls inventarisieren und Clients auf wenige generische
    IPC-, Capability- und Resource-Primitiven umstellen. Nummern und alte
    Wrapper bleiben append-only kompatibel, bis Quell-, Image- und Runtime-
    Nachweise ihre Entfernung erlauben.
-13. [ ] **N6 · Vollständige Desktop-Sitzungsrecovery.** Compositor-Crash und
+14. [ ] **N6 · Vollständige Desktop-Sitzungsrecovery.** Compositor-Crash und
    -Hang müssen Displayfence, Generationstausch, Surface-Neubindung und
    begrenzte Client-Reintegration demonstrieren. Ein fehlerhafter Client darf
    weder Shell noch andere Fenster verlieren; Budgeterschöpfung endet im
    definierten Shell-/Safe-State-Fallback.
-14. [ ] **N7 · Maschinenlesbares TCB- und Ring-0-Restinventar.** Kernelobjekte,
+15. [ ] **N7 · Maschinenlesbares TCB- und Ring-0-Restinventar.** Kernelobjekte,
    privilegierte Pfade, öffentliche ABIs, Autoritäten und zugehörige Tests in
    einer validierten Manifestquelle erfassen. Jeder Build muss neue oder
    vergrößerte TCB-Bestandteile ohne ausdrückliche Freigabe ablehnen.
-15. [ ] **N8 · Physisch unabhängiges Fence/Interlock (`S0.3c-7b2b`).** Den
+16. [ ] **N8 · Physisch unabhängiges Fence/Interlock (`S0.3c-7b2b`).** Den
    vorhandenen Epoch-/Leasevertrag an einen elektrisch unabhängigen,
    rücklesbaren Zielhardwarepfad binden. Leaseablauf allein darf niemals als
    Fencebestätigung gelten.
-16. [ ] **N9 · Common-Cause- und Hardware-Failover (`S0.3c-7d`).** Erst nach N8
+17. [ ] **N9 · Common-Cause- und Hardware-Failover (`S0.3c-7d`).** Erst nach N8
    zwei unabhängige Domänen, reale Ausgangseinzäunung, Storagezustand,
    FTTI-Übernahme und Reintegration unter Strom-, Transport- und
    Taktfehlern prüfen. Bis dahin bleibt jeder Fail-operational-Claim verboten.
-17. [ ] **N10 · Release- und Langzeitevidenz schließen.** Reproduzierbare
+18. [ ] **N10 · Release- und Langzeitevidenz schließen.** Reproduzierbare
     Toolchainbindung, signierte Provenienz, SBOM-Zuordnung, Langzeitläufe,
     reale Power-Loss-, Hardware- und – soweit für ein Zielprofil relevant –
     EMV-Evidenz automatisiert und rückverfolgbar erfassen.
-18. [ ] **N11 · Zusätzliche Speicherhärtung.** Systematische Allocation-
+19. [ ] **N11 · Zusätzliche Speicherhärtung.** Systematische Allocation-
     Failure-Injection, weitere Reaper-Stresstests, einen begrenzten
     IRQ-tauglichen Allocator und Highmem/`kmap` oberhalb 1 GiB getrennt
     umsetzen; jeder Teil benötigt eigene Kapazitäts- und Degradationsgates.
-19. [ ] **N12 · Breitere USB- und Hardwareabdeckung.** Composite-Geräte,
+20. [ ] **N12 · Breitere USB- und Hardwareabdeckung.** Composite-Geräte,
     allgemeiner Hotplug und USB-Mass-Storage nur über die in N4 gehärtete
     Vermittlung ergänzen; reale Geräte- und Reconnectmatrix je Controller.
-20. [ ] **N13 · Nachgelagerte Produktfunktionen.** Terminal und weitere
+21. [ ] **N13 · Nachgelagerte Produktfunktionen.** Terminal und weitere
     Ring-3-Systemwerkzeuge vor zusätzlichen GUI-Controls umsetzen; IPv6,
     Zertifikatswiderruf, erweitertes Socketmodell und UEFI erst priorisieren,
     wenn N1 bis N7 abgeschlossen sind. Jeder Funktionsblock bleibt ein eigenes

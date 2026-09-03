@@ -241,6 +241,65 @@ static void test_viewport_scrolling_is_clamped_and_document_neutral(void) {
     assert(state.first_line == 0U && state.first_column == 0U);
 }
 
+static void test_virtual_wrap_uses_visual_rows_without_changing_bytes(void) {
+    static const char document[] =
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\nend";
+    reist_gui_text_editor_model_t wrapped = model;
+    wrapped.bounds.height = 32U;
+    wrapped.flags |= REIST_GUI_TEXT_EDITOR_VIRTUAL_WRAP;
+    reist_gui_text_editor_state_t state;
+    reist_gui_text_editor_result_t result;
+    reist_gui_text_editor_viewport_t viewport;
+    reist_gui_text_editor_event_t event;
+    reist_gui_text_editor_state_initialize(&state);
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_configure(&wrapped, &state, &result) == 0);
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_set_text(
+        &wrapped, &state, document, sizeof(document) - 1U, &result) == 0);
+    assert(reist_gui_text_editor_get_viewport(
+        &wrapped, &state, &viewport) == 0);
+    assert(viewport.visible_lines == 2U);
+    assert(viewport.visible_columns == 40U);
+    assert(viewport.maximum_first_line == 1U);
+    assert(viewport.maximum_first_column == 0U);
+
+    uint32_t line = UINT32_MAX;
+    uint32_t column = UINT32_MAX;
+    assert(reist_gui_text_editor_visual_row(
+        &wrapped, &state, 1U, &line, &column) == 0);
+    assert(line == 0U && column == 40U);
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_scroll_to(
+        &wrapped, &state, 1U, UINT32_MAX, &result) == 0);
+    assert(state.first_line == 1U && state.first_column == 0U);
+
+    reist_gui_text_editor_event_initialize(&event);
+    event.type = REIST_GUI_TEXT_EDITOR_EVENT_POINTER_BUTTON;
+    event.x = wrapped.bounds.x + 16;
+    event.y = wrapped.bounds.y;
+    event.button = REIST_GUI_TEXT_EDITOR_BUTTON_LEFT;
+    event.pressed = 1U;
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_dispatch(
+        &wrapped, &state, &event, &result) == 0);
+    assert(state.cursor_line == 0U && state.cursor_column == 42U);
+    reist_gui_text_editor_event_initialize(&event);
+    event.type = REIST_GUI_TEXT_EDITOR_EVENT_KEYBOARD;
+    event.key = REIST_GUI_TEXT_EDITOR_KEY_DOWN;
+    reist_gui_text_editor_result_initialize(&result);
+    assert(reist_gui_text_editor_dispatch(
+        &wrapped, &state, &event, &result) == 0);
+    assert(state.cursor_line == 1U && state.cursor_column == 2U);
+
+    char serialized[REIST_GUI_TEXT_EDITOR_SERIALIZED_CAPACITY];
+    size_t length = 0U;
+    assert(reist_gui_text_editor_get_text(
+        &wrapped, &state, serialized, sizeof(serialized), &length) == 0);
+    assert(length == sizeof(document) - 1U);
+    assert(strcmp(serialized, document) == 0);
+}
+
 int main(void) {
     test_replace_normalizes_and_fails_closed();
     test_multiline_editing_and_navigation();
@@ -249,5 +308,6 @@ int main(void) {
     test_saved_marker_changes_only_after_explicit_commit();
     test_utf8_scalars_roundtrip_and_edit_atomically();
     test_viewport_scrolling_is_clamped_and_document_neutral();
+    test_virtual_wrap_uses_visual_rows_without_changing_bytes();
     return 0;
 }

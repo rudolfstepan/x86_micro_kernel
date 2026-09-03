@@ -724,6 +724,11 @@ Skalarzellen und bewahrt die UTF-8-Bytes beim Speichern. Seine festen 200
 Zeilen zu je 256 Bytes bleiben unverändert. Mehrbytefolgen werden bei
 Cursorbewegung, Löschen und Surface-Paint-Clipping nicht geteilt; komplexes
 Layout und Eingabemethoden bleiben außerhalb dieses Controllers.
+Ein append-only Modellflag aktiviert virtuellen Zeilenumbruch. Dann werden
+Viewport, vertikale Cursorbewegung und Pointer-Hit-Test aus einer gemeinsam
+begrenzten Abbildung visueller Zeilen berechnet und der horizontale Viewport
+ist null. Diese Darstellung fügt keine Trennzeichen ein und die bestehende
+LF-Serialisierung bleibt bytegleich.
 Shaping, Combining-Positionierung, Grapheme, Bidi und IME bleiben Ring-3-Dienste
 beziehungsweise GUI-Textpakete; sie werden nicht in den Framebuffer-Treiber
 verlagert. Die Supplementary-Plane-Abdeckung ist eine Glyphauswahl, keine
@@ -738,6 +743,14 @@ Fenster innerhalb der öffentlichen 200-mal-256-Byte-Controllergrenzen wird
 materialisiert. Speichern streamt die Pieces in die bestehende atomare
 Tempdatei-/Fsync-/Rename-Transaktion. Kapazitäts- oder I/O-Fehler ersetzen die
 Zieldatei nicht.
+Die vertikale Notepad-Scrollbar bildet ihre feste Integer-Range proportional
+auf alle Bytes dieser Piece Table ab, nicht auf die Zeilen des gerade
+materialisierten Fensters. Pointerbewegungen verschieben nur den Thumb; erst
+das Loslassen synchronisiert lokale Änderungen und lädt ein neues Fenster.
+Pfeile und Seitenbewegungen verbrauchen zunächst die lokalen visuellen Zeilen
+und wechseln an der Grenze vorwärts oder rückwärts. Eine kleine, UTF-8-sicher
+ausgerichtete Endsuffix-Materialisierung garantiert, dass auch das letzte Byte
+eines Dokuments mit überlangen logischen Zeilen erreichbar bleibt.
 Der überwachte Lauf lädt und validiert den großen Font vor der Gerätebindung.
 Er verbindet sich danach innerhalb einer festen Zwei-Sekunden-Deadline neu
 mit der aktuell freigegebenen SVGA2D-Servicegeneration; alte IPC-Fähigkeiten

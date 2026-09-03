@@ -14793,6 +14793,59 @@ evidence = [
 ]
 
 [[packages]]
+id = "N2g1-notepad-document-navigation-wrap"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Navigate complete windowed Notepad documents with virtual line wrap"
+scope = "Correct the bounded Piece-Table editor so its vertical scrollbar represents the complete document rather than only the currently materialized text-editor window. Map scrollbar drag, track paging, arrow keys and Page Up/Page Down through bounded document offsets, rematerialize UTF-8-safe windows in both directions without dropping accepted edits, and make the last document byte reachable even when a logical line exceeds the 256-byte controller line capacity. Add a checked virtual line-wrap menu item using an append-only text-editor model flag: wrapped visual rows drive rendering, pointer-to-cursor mapping, cursor visibility and vertical viewport limits while horizontal scrolling is disabled and serialized file bytes remain unchanged. Preserve fixed capacities, deferred scrollbar commit, the Piece Table save protocol, Surface responsiveness, selected font behavior and resize geometry. Prove long-line and multi-window beginning/middle/end/back navigation, byte-neutral wrapping, edit/save/reopen and a real QEMU Surface run."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/include/reist/gui/text_editor.h",
+  "userspace/gui/lib/text_editor.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_gui_notepad_source.py",
+  "test/test_gui_text_editor_source.py",
+  "test/test_gui_text_editor_host.c",
+  "test/test_system_layout.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md"
+]
+invariants = [
+  "the vertical scrollbar reaches every bounded Piece-Table window from byte zero through the final document byte and never derives its global range solely from the current materialized window",
+  "window changes synchronize accepted edits before rematerialization and preserve the temporary-file fsync close atomic-rename save path without whole-document assembly",
+  "all offset scaling UTF-8 alignment line scanning and previous/next navigation are fixed-capacity and overflow checked",
+  "virtual line wrap changes only visual row mapping and never inserts removes or rewrites a document byte",
+  "wrapped rendering pointer placement cursor visibility keyboard paging and scrollbar metrics share one bounded visual-row mapping while horizontal scrolling is disabled",
+  "scrollbar dragging remains preview-only until release and performs no VFS read or Piece-Table mutation per pointer-motion event",
+  "font selection resize dialogs Surface layering public ABI version and unrelated desktop filesystem behavior remain unchanged"
+]
+targeted_tests = [
+  "python test/test_gui_text_editor_source.py -v",
+  "python test/test_gui_notepad_source.py -v",
+  "python test/test_system_layout.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-notepad"]
+stop_conditions = [
+  "complete navigation requires loading or indexing the whole document in memory or an unbounded scan in an input or render turn",
+  "virtual wrap changes serialized bytes or allows rendering pointer and cursor mappings to disagree",
+  "scrollbar drag performs document I/O before release or a stale range can address beyond the current Piece Table",
+  "the real Surface probe cannot reach and verify beginning middle end and return navigation for a document containing an over-capacity logical line",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: navigate complete notepad documents"
+evidence = [
+  "All three frozen targeted groups passed with 32 checks, including the heap-free text-editor host harness for visual-row viewport, pointer, keyboard and byte-neutral serialization behavior plus the Notepad source and canonical layout contracts.",
+  "The final QEMU framebuffer package passed in 14 seconds with the append-only virtual-wrap flag and visual-row mapper linked into libreistgui and the updated Notepad linked into the canonical image.",
+  "The final real QEMU Surface runtime passed after creating and editing a document above 51200 bytes with a logical line above 256 bytes, saving and reopening it, navigating beginning to middle to exact end and through a contiguous previous window back to byte zero, toggling virtual wrap without changing modified state, and keeping the compositor live."
+]
+
+[[packages]]
 id = "R3.5a-desktop-icon-drag-layout"
 status = "active"
 phase = "post-s0"

@@ -42,7 +42,9 @@ enum reist_gui_text_editor_status {
 enum reist_gui_text_editor_flags {
     REIST_GUI_TEXT_EDITOR_VISIBLE = 1U << 0,
     REIST_GUI_TEXT_EDITOR_ENABLED = 1U << 1,
-    REIST_GUI_TEXT_EDITOR_READ_ONLY = 1U << 2
+    REIST_GUI_TEXT_EDITOR_READ_ONLY = 1U << 2,
+    /** Wrap visual rows at the viewport width without changing text bytes. */
+    REIST_GUI_TEXT_EDITOR_VIRTUAL_WRAP = 1U << 3
 };
 
 enum reist_gui_text_editor_event_type {
@@ -213,6 +215,16 @@ int reist_gui_text_editor_get_viewport(
     const reist_gui_text_editor_model_t *model,
     const reist_gui_text_editor_state_t *state,
     reist_gui_text_editor_viewport_t *viewport);
+
+/** Map one absolute visual row to a logical line and scalar column.
+ * With virtual wrap disabled, each logical line is one visual row and the
+ * returned column is zero. Work is bounded by fixed document capacities.
+ * @return OK or EINVAL without mutation. */
+int reist_gui_text_editor_visual_row(
+    const reist_gui_text_editor_model_t *model,
+    const reist_gui_text_editor_state_t *state,
+    uint32_t visual_row, uint32_t *line_out,
+    uint32_t *first_column_out);
 
 /** Set the viewport origin without moving the cursor or editing the document.
  * Requested origins are clamped to the current document and visible-cell

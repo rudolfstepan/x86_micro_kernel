@@ -167,17 +167,40 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("model->page_step", self.source)
         self.assertIn("synchronize_scrollbars(state)", self.source)
 
+    def test_complete_piece_document_navigation_and_virtual_wrap(self):
+        for contract in (
+            '"Zeilenumbruch"',
+            "NOTEPAD_ACTION_VIRTUAL_WRAP",
+            "REIST_GUI_TEXT_EDITOR_VIRTUAL_WRAP",
+            "notepad_vertical_maximum",
+            "document_offset_to_scroll",
+            "scroll_to_document_offset",
+            "materialize_previous_piece_window",
+            "reist_gui_text_editor_visual_row",
+            "NOTEPAD_DOCUMENT_NAVIGATION_READY",
+            "NOTEPAD_VIRTUAL_WRAP_READY",
+        ):
+            self.assertIn(contract, self.source)
+        self.assertIn("state->document.size - 1U", self.source)
+        self.assertIn("sync_piece_window(state)", self.source)
+        self.assertIn("state->window_offset + state->window_length",
+                      self.source)
+        self.assertIn("uint32_t horizontal_maximum = state->virtual_wrap",
+                      self.source)
+
     def test_scroll_drag_uses_cached_viewport_and_coalesced_redraw(self):
-        start = self.source.index("static uint32_t apply_scroll_value(")
-        end = self.source.index("static uint32_t dispatch_one_scrollbar", start)
+        start = self.source.index(
+            "static uint32_t apply_scroll_value(",
+            self.source.index("static uint32_t dispatch_editor_pointer("))
+        end = self.source.index("static uint32_t scroll_piece_viewport", start)
         apply_scroll = self.source[start:end]
         self.assertIn("state->viewport.first_line = state->editor.first_line",
                       apply_scroll)
         self.assertIn("state->viewport.first_column =",
                       apply_scroll)
-        self.assertNotIn("synchronize_scrollbars(state)", apply_scroll)
+        self.assertIn("materialize_document_position(", apply_scroll)
         self.assertIn("scrollbar_state_valid(state, axis)", apply_scroll)
-        self.assertIn("UINT32_MAX / position", self.source)
+        self.assertIn("multiply_divide_u32(maximum, position", self.source)
         self.assertIn("state->scroll_pending_value = value", self.source)
         self.assertIn("state, axis, state->scroll_pending_value", self.source)
         self.assertNotIn("reist_gui_text_editor_get_viewport", apply_scroll)
@@ -229,7 +252,8 @@ class GuiNotepadSourceTests(unittest.TestCase):
             "static uint32_t dispatch_editor_pointer", apply_start)
         apply_menu = self.source[apply_start:apply_end]
         self.assertIn("request_overlay_redraw(state)", apply_menu)
-        self.assertNotIn("state->redraw = 1U", apply_menu)
+        hover_only = apply_menu[:apply_menu.index("if (!result->activated)")]
+        self.assertNotIn("state->redraw = 1U", hover_only)
 
         overlay_start = self.source.index("static void render_overlay(")
         overlay_end = self.source.index("static int write_all", overlay_start)
