@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'vfs-symbolic-links', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-trash-restore', 'runtime-desktop-explorer-scroll', 'runtime-desktop-explorer-views', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+    [ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'vfs-symbolic-links', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-trash-restore', 'runtime-desktop-explorer-scroll', 'runtime-desktop-explorer-views', 'runtime-desktop-shortcuts', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -188,14 +188,15 @@ function Invoke-RuntimeDesktop(
     [bool]$NotepadFontProbe = $false,
     [bool]$TrashRestoreProbe = $false,
     [bool]$ExplorerScrollProbe = $false,
-    [bool]$ExplorerViewsProbe = $false
+    [bool]$ExplorerViewsProbe = $false,
+    [bool]$ShortcutProbe = $false
 ) {
     if (([int]$ExpectFailure + [int]$RenderProbe + [int]$SurfaceProbe +
             [int]$ControlProbe + [int]$NotepadProbe +
             [int]$NotepadFontProbe + [int]$SoundProbe +
             [int]$GuidemoClickProbe + [int]$HoverProbe +
             [int]$TrashRestoreProbe + [int]$ExplorerScrollProbe +
-            [int]$ExplorerViewsProbe) -gt 1) {
+            [int]$ExplorerViewsProbe + [int]$ShortcutProbe) -gt 1) {
         throw 'Runtime desktop probe modes are exclusive.'
     }
     if ($SupervisedProbe -and !$HoverProbe) {
@@ -218,6 +219,7 @@ function Invoke-RuntimeDesktop(
     if ($TrashRestoreProbe) { $arguments += '--trash-restore-probe' }
     if ($ExplorerScrollProbe) { $arguments += '--explorer-scroll-probe' }
     if ($ExplorerViewsProbe) { $arguments += '--explorer-views-probe' }
+    if ($ShortcutProbe) { $arguments += '--shortcut-probe' }
     if ($SoundProbe) { $arguments += '--sound-probe' }
     if ($GuidemoClickProbe) { $arguments += '--guidemo-click-probe' }
     if ($HoverProbe) {
@@ -1314,6 +1316,22 @@ switch ($Mode) {
     }
     'runtime-desktop-explorer-views' {
         Invoke-RuntimeDesktop -ExplorerViewsProbe $true
+    }
+    'runtime-desktop-shortcuts' {
+        $relativeOutput = 'build/runtime-desktop-shortcuts'
+        $probeImage = Join-Path $RepoRoot "$relativeOutput/reist-os.img"
+        New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $buildLog = Join-Path $LogRoot `
+            "$stamp-runtime-desktop-shortcuts-build.log"
+        & $BuildScript -Target qemu -Video framebuffer `
+            -OutputDirectory $relativeOutput -SkipReleaseSbom *> $buildLog
+        if ($LASTEXITCODE -ne 0 -or
+            !(Test-Path -LiteralPath $probeImage -PathType Leaf)) {
+            Get-Content -LiteralPath $buildLog -Tail 40
+            throw 'Desktop shortcut runtime image build failed.'
+        }
+        Invoke-RuntimeDesktop -ShortcutProbe $true -ImagePath $probeImage
     }
     'runtime-desktop-metrics' {
         Invoke-RuntimeDesktop $false $true

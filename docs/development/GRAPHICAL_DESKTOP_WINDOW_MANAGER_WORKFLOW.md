@@ -591,6 +591,41 @@ ersten Frame und komponiert feste Varianten für Desktop-, Client- und
 Auswahlhintergrund vor. Ungültige oder fehlende Dateien aktivieren begrenzte
 Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
 
+- [x] `/desktop` ist ein echtes Dateisystemverzeichnis. Sein eigener atomarer
+  Explorer-Snapshot liefert bis zu 128 dynamische Datei-, Ordner- und
+  Verknüpfungssymbole neben den drei eingebauten Desktop-Icons. Ein Überlauf
+  oder Scanfehler behält den letzten gültigen Snapshot; Rendering arbeitet nur
+  auf diesem festen Speicher. Das eigene 32x32-Shortcut-ICO wird wie die
+  bestehenden Symbole genau einmal vor dem ersten Frame dekodiert.
+
+  Explorer bietet für ein generationsstabiles Programm oder eine reguläre
+  Datei per Rechtsklick `Verknuepfung erstellen`. Die Aktion erzeugt die
+  Verknüpfung als gewöhnliche 8.3-`.LNK`-Datei im selben Verzeichnis wie die
+  Quelle und kopiert sie nicht automatisch nach `/desktop`. Das lokale,
+  höchstens 512 Byte große `reist.shortcut/1`-Textformat ist ausdrücklich kein
+  Microsoft-Shell-Link-Format und kann nur Anzeigename, Zieltyp und kanonischen
+  absoluten Pfad ausdrücken. Bis zu 32 Kollisionsversuche und die Folge private
+  Tempdatei, vollständiges Schreiben, `fsync`, Close, erneute Identitätsprüfung
+  und atomarer Same-Parent-Rename begrenzen die Veröffentlichung. Desktop und
+  Explorer lesen eine `.LNK` vor jeder Aktivierung erneut über
+  generationsgebundene `READ|STAT`-Autorität. Programme verwenden den
+  überwachten Startpfad, Datendateien die bestehende Dateitypzuordnung.
+
+  Der vorhandene `DragSource -> DragObject/Data -> DropTarget -> Operation`-
+  Controller verschiebt jede ungeschützte reguläre Datei einschließlich einer
+  `.LNK` zwischen Explorer-Verzeichnissen und `/desktop`. Verzeichnisse bleiben
+  reine Navigationselemente und Dropziele. Ein Cross-Directory-MOVE schreibt
+  höchstens 64 MiB in 1024-Byte-Stücken unter einer 30-Sekunden-Frist in eine
+  private Zieldatei, synchronisiert und liest sie vollständig mit Größen-,
+  EOF- und Hashprüfung zurück und veröffentlicht sie erst danach per atomarem
+  Same-Parent-Rename. Erst die erneut validierte Quelle wird gelöscht.
+  Vorherige Fehler lassen Quelle und sichtbaren Zielnamensraum unverändert;
+  ein abschließender Löschfehler meldet die erhaltene verifizierte Kopie als
+  partiellen Ausgang. Bestehende Ziele, gleiche Verzeichnisse, geschützte
+  Systemwurzeln und Symlinksubstitutionen werden abgelehnt. Beide betroffenen
+  Explorer-Snapshots und der Desktop-Snapshot werden nach einer Mutation
+  aktualisiert.
+
 - [x] Papierkorb als eigener Desktop-Workflow: Eine feste
   `DragSource -> DragObject/Data -> DropTarget -> Operation`-Schicht trägt
   generationengebundene Dateiobjekte und die Operationen Move, Copy und Link.

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.5-desktop-shortcuts"
+active_id = "R3.5a-desktop-icon-drag-layout"
 
 [policy]
 one_package_per_run = true
@@ -14711,11 +14711,11 @@ evidence = [
 
 [[packages]]
 id = "R3.5-desktop-shortcuts"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
-title = "Create bounded desktop shortcuts from Explorer"
-scope = "Add a fixed-capacity /desktop shortcut catalog and render its validated entries beside the three built-in desktop icons with one new packaged shortcut icon. Use a documented append-only reist.shortcut/1 text format in 8.3 .LNK files; this is a deliberately small REIST desktop-entry adaptation and must not be described as Microsoft Shell Link compatibility. Each entry contains one bounded display name, target kind and canonical absolute program or data-file path, with no shell text, argument expansion, environment substitution, working-directory override or embedded icon payload. Add a right-click Explorer context menu action named Verknuepfung auf Desktop erstellen for validated program and regular-file entries. Creation selects one collision-free 8.3 name within a fixed attempt budget and uses temporary-file write, fsync, close and atomic rename before the desktop catalog refreshes. Activation revalidates the target and routes programs through the normal supervised spawn path and data files through the existing file-type association path. Missing, stale, malformed, duplicate or capacity-exceeding entries stay invisible and cannot launch. Prove creation, reload, activation, deletion, collisions, malformed files, missing targets, storage-service restart and a real mouse context-menu flow without giving the compositor parser, shell or ambient filesystem authority."
+title = "Back the desktop with a directory and move bounded shortcut files"
+scope = "Make /desktop an ordinary fixed-capacity filesystem directory whose validated snapshot supplies every dynamic desktop file, folder and shortcut icon beside the three built-in icons. The Explorer right-click action is named Verknuepfung erstellen and creates one reist.shortcut/1 8.3 .LNK sibling in the currently displayed source directory; it must never place the new file on the desktop implicitly. The local text format remains a deliberately small REIST desktop-entry adaptation, not Microsoft Shell Link compatibility, and contains only one bounded display name, target kind and canonical absolute program or data-file path with no shell text, arguments, environment expansion, working-directory override or embedded icon payload. Explorer and desktop activation re-read a .LNK through generation-scoped READ|STAT authority, reject malformed stale or missing targets, and route programs through supervised spawn and data through the existing file-type association. Reuse the fixed DragSource/Object/DropTarget controller so any generation-stable unprotected regular file, including a .LNK, can be moved between an Explorer directory and /desktop or another Explorer directory; directories themselves remain navigation targets rather than move sources. Because the legacy FAT rename cannot cross parent directories, perform the move in Ring 3 as a bounded source read and collision-free destination-temp write, fsync, close, exact readback and same-parent atomic publish before revalidating and deleting the source. A failed pre-publication move leaves the source intact and no destination; a failed source deletion may retain one verified duplicate and reports that partial result explicitly. Refresh every affected desktop and Explorer snapshot after mutation. Prove sibling shortcut creation without implicit desktop publication, desktop directory reload, ordinary-file and shortcut moves in both directions, safe activation, collisions, malformed files, missing targets, partial I/O, storage-service restart and a real USB-mouse flow without adding a Ring-0 parser, shell authority or unbounded GUI work."
 allowed_files = [
   "automation/reist-s03b.toml",
   "assets/icons/shortcut.ico",
@@ -14730,6 +14730,8 @@ allowed_files = [
   "userspace/gui/compositor/desktop_filetypes.c",
   "userspace/gui/compositor/desktop_shortcut.h",
   "userspace/gui/compositor/desktop_shortcut.c",
+  "userspace/gui/compositor/desktop_file_move.h",
+  "userspace/gui/compositor/desktop_file_move.c",
   "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
   "scripts/run_qemu_runtime_desktop.py",
@@ -14742,6 +14744,8 @@ allowed_files = [
   "test/test_desktop_drag_host.c",
   "test/test_desktop_shortcut_source.py",
   "test/test_desktop_shortcut_host.c",
+  "test/test_desktop_file_move_source.py",
+  "test/test_desktop_file_move_host.c",
   "test/test_system_layout.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
   "docs/development/CURRENT_WORK.md",
@@ -14749,17 +14753,20 @@ allowed_files = [
   "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
 ]
 invariants = [
-  "the desktop reads at most a fixed number of bounded reist.shortcut/1 files from /desktop and publishes the catalog only after every accepted field and target kind is validated",
+  "/desktop is a real non-symlink directory and one atomically published fixed-capacity Explorer snapshot is the sole source of all dynamic desktop files folders and shortcut icons",
   "the .LNK suffix and REIST text schema are documented as a bounded local adaptation and never claimed to parse or produce Microsoft Shell Link files",
   "shortcut content cannot contain shell commands arguments environment expansion relative targets embedded payloads or an arbitrary icon path",
-  "the right-click action is offered only for a generation-stable Explorer program or regular file and creates exactly one shortcut through temporary write fsync close and atomic rename",
-  "collision exhaustion malformed content missing targets stale snapshots read or close errors and storage-service restart publish no launchable or partially written shortcut",
+  "the right-click action is offered only for a generation-stable Explorer program or regular file and creates exactly one collision-free sibling shortcut in that Explorer directory through temporary write fsync close and atomic rename without changing /desktop",
+  "desktop and Explorer .LNK activation re-read the exact generation-bound file and collision exhaustion malformed content missing targets stale snapshots read or close errors publish no launchable or partially written shortcut",
   "program targets use supervised spawn and data targets use the validated file-type association path after a fresh stat without bypassing capability process or path checks",
+  "a drag MOVE accepts only one generation-stable unprotected regular file and one freshly revalidated desktop or Explorer directory target and rejects same-directory no-ops existing destinations symlink substitutions and capacity exhaustion before publication",
+  "cross-directory MOVE writes and fsyncs one private bounded temp file verifies exact size EOF close and readback publishes it atomically in the destination and deletes the revalidated source only afterward; every earlier failure keeps the source and exposes no destination while delete failure reports one verified duplicate",
   "the new shortcut icon is packaged in both image layouts loaded once through the bounded icon cache and rendering performs no VFS access or decoding",
   "the existing Computer Systemsteuerung Papierkorb trash context menu and Explorer drag-to-trash behavior remain compatible"
 ]
 targeted_tests = [
   "python test/test_desktop_shortcut_source.py -v",
+  "python test/test_desktop_file_move_source.py -v",
   "python test/test_desktop_source.py -v",
   "python test/test_desktop_explorer_source.py -v",
   "python test/test_desktop_drag_source.py -v",
@@ -14769,22 +14776,29 @@ package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebu
 runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-shortcuts"]
 stop_conditions = [
   "shortcut activation requires a shell command parser ambient arguments an unbounded directory scan or target parsing in Ring 0",
-  "creation can expose an incomplete shortcut or overwrite an existing file before full write fsync close and rename validation",
+  "creation places a shortcut in /desktop instead of beside its Explorer source or can expose an incomplete shortcut before full write fsync close and rename validation",
   "a malformed stale or missing target can become launchable or a shortcut can bypass supervised spawn and file-type routing",
-  "the real mouse probe cannot create reload activate and remove both one program and one data-file shortcut while the compositor remains live",
+  "a cross-directory drag can overwrite a destination delete the source before verified publication move a protected or non-regular source or leave a partial destination visible",
+  "the real mouse probe cannot create a sibling shortcut keep the desktop unchanged move both a data file and shortcut between Explorer and /desktop reload activate and return them while the compositor remains live",
   "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
   "a frozen gate fails after one focused in-scope repair"
 ]
-commit_message = "gui: add bounded desktop shortcuts"
-evidence = []
+commit_message = "gui: back desktop shortcuts with filesystem moves"
+evidence = [
+  "All six frozen targeted groups passed with 81 checks across the sibling shortcut format, verified Ring-3 file MOVE, desktop compositor, Explorer snapshots, generic drag controller and canonical image layout.",
+  "The heap-free host matrices covered collision exhaustion, malformed and stale shortcuts, missing targets, partial and failed I/O, protected and non-regular sources, same-directory and existing-destination rejection, exact readback, timeout and post-publication source-delete failure without exposing an unverified destination.",
+  "The final QEMU framebuffer package passed in 46 seconds with the shortcut icon and both bounded desktop modules linked into the canonical DESKTOP.PRG image.",
+  "The focused real QEMU runtime passed with a USB-mouse flow that created a sibling .LNK while /desktop remained empty, survived storage component restart, moved and activated the shortcut from /desktop, closed the real Notepad Surface, and returned both the shortcut and an ordinary file to /htdocs with /desktop empty again.",
+  "The implementation keeps shortcut parsing and cross-directory copy-verify-publish-delete policy in Ring 3, uses a fixed 128-entry /desktop snapshot, performs no VFS work in rendering, and does not extend the kernel or claim Microsoft Shell Link compatibility."
+]
 
 [[packages]]
 id = "R3.5a-desktop-icon-drag-layout"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "medium"
-title = "Drag desktop icons and persist a bounded layout"
-scope = "Make built-in and shortcut desktop icons movable by mouse drag and drop on the desktop work area. Reuse the existing fixed DragSource/Object/DropTarget controller with a dedicated layout operation that never launches an icon and never falls through to Explorer-to-trash MOVE. Snap each accepted drop to a bounded collision-free grid inside the current work area, preserve click, double-click, keyboard selection, context menus and trash behavior, and expose visible valid or rejected drop feedback. Persist only stable icon identities and grid coordinates in a separate append-only reist.desktop-layout/1 document with fixed entry and byte capacities; write a complete sorted candidate through temporary-file, fsync, close and atomic rename, then publish it in memory. Missing, stale, duplicate, overlapping, off-screen or malformed records fail closed to deterministic default placement without deleting shortcuts. On display resize, calculate a temporary clamped layout for rendering and hit-testing while preserving valid stored coordinates until the user commits a new drop. Prove pointer capture, drag thresholds, overlap resolution, resize clamping, persistence, interrupted writes, corrupted layouts and real QEMU mouse movement across multiple resolutions without compositor restart or unbounded repaint."
+title = "Arrange filesystem-backed desktop icons and persist a bounded layout"
+scope = "Make built-in and dynamic filesystem-backed desktop icons movable by mouse drag and drop inside the desktop work area without confusing layout movement with the R3.5 file MOVE into or out of /desktop. Reuse the existing fixed DragSource/Object/DropTarget controller with a dedicated layout operation that never launches an icon and never falls through to Explorer-to-trash or directory MOVE. Snap each accepted drop to a bounded collision-free grid inside the current work area, preserve click, double-click, keyboard selection, context menus and trash behavior, and expose visible valid or rejected drop feedback. Persist only stable built-in identities or /desktop entry identities and grid coordinates in a separate append-only reist.desktop-layout/1 document with fixed entry and byte capacities; write a complete sorted candidate through temporary-file, fsync, close and atomic rename, then publish it in memory. Missing, stale, duplicate, overlapping, off-screen or malformed records fail closed to deterministic default placement without deleting filesystem entries. On display resize, calculate a temporary clamped layout for rendering and hit-testing while preserving valid stored coordinates until the user commits a new drop. Prove pointer capture, drag thresholds, overlap resolution, resize clamping, persistence, interrupted writes, corrupted layouts and real QEMU mouse movement across multiple resolutions without compositor restart or unbounded repaint."
 allowed_files = [
   "automation/reist-s03b.toml",
   "config/etc/reist/desktop-layout.conf",

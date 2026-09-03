@@ -2,13 +2,14 @@
 
 Stand: 3. September 2026
 
-Branch/Startpunkt: `working_branch` / `ce27e090`
+Branch/Startpunkt: `working_branch` / `69e05c6a`
 
-Aktives Thema: `R3.5-desktop-shortcuts`: ein fester `/desktop`-Katalog für
-versionierte `reist.shortcut/1`-Dateien, ein eigenes Shortcut-Icon und die
-Explorer-Kontextaktion „Verknüpfung auf Desktop erstellen“. Erzeugung und
-Veröffentlichung bleiben begrenzt und atomar; Programme starten über den
-überwachten Spawn-Pfad, Datendateien über die vorhandene Dateitypzuordnung.
+Aktives Thema: `R3.5a-desktop-icon-drag-layout`: Eingebaute und dynamische
+dateisystemgestützte Desktop-Icons sollen sich innerhalb des sichtbaren
+Arbeitsbereichs verschieben und kollisionsfrei einrasten lassen. Ein getrenntes
+fest begrenztes `reist.desktop-layout/1`-Dokument speichert ausschließlich
+stabile Icon-Identitäten und Rasterpositionen atomar; Datei-MOVE, Aktivierung,
+Fensterbewegung und Papierkorb bleiben davon getrennte Operationen.
 
 `N3a-vfs-symbolic-links` ist abgeschlossen. Die öffentliche Storage-Service-/
 Client-ABI ergänzt append-only `symlink`, `readlink`, `lstat` und
@@ -44,9 +45,17 @@ reale Navigations-/Scrolllauf mit abschließender Ring-3-Shell-Antwort sind
 bestanden. Suche, Baumansicht, editierbare Adresse und Dateimutationen bleiben
 getrennte spätere Pakete.
 
-`R3.5-desktop-shortcuts` ist jetzt aktiv. Anschließend macht das getrennte
-Paket `R3.5a-desktop-icon-drag-layout` Desktop-Icons per Maus verschiebbar und
-speichert ihre Positionen atomar in einem eigenen versionierten Layoutformat.
+`R3.5-desktop-shortcuts` ist mit der korrigierten Dateisystemsemantik
+abgeschlossen. `/desktop` ist ein echtes Verzeichnis und sein atomarer,
+128 Einträge großer Snapshot liefert alle dynamischen Desktop-Icons.
+„Verknüpfung erstellen“ legt eine begrenzte `reist.shortcut/1`-`.LNK` neben
+der Quelle an und verändert den Desktop nicht automatisch. Reguläre Dateien
+einschließlich `.LNK` werden über einen synchronisierten, zurückgelesenen
+Ring-3-MOVE erst am Ziel veröffentlicht und erst danach an der erneut
+validierten Quelle gelöscht. 81 Targeted-Checks, der QEMU-Framebuffer-
+Paketbuild in 46 Sekunden und der reale USB-Mauslauf mit Storage-Neustart,
+Aktivierung im Editor sowie beidseitigem MOVE von Verknüpfung und normaler
+Datei sind bestanden; `/desktop` war danach wieder leer.
 
 `R3.2b-pixel-hinted-editor-fonts` ist abgeschlossen. Die vier Outline-Familien
 werden jetzt in allen acht auswählbaren Höhen direkt als gehintete PSF2-Raster

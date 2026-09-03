@@ -3201,19 +3201,27 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Sekunden und dem realen 69-Sekunden-EXT2-Lauf mit Recovery, persistentem
    Testmedium, Dienstneustart und sauberem Journal. Der alte Ring-0-Parser
    blieb unverändert.
-8. [~] **R3.5 · Desktop-Verknüpfungen mit eigenem Icon und Kontextmenü.** Ein
-   begrenzter `/desktop`-Katalog liest versionierte `reist.shortcut/1`-
-   Dateien und rendert sie mit einem neuen Shortcut-Icon. Ein Rechtsklick auf
-   ein validiertes Programm oder eine reguläre Datei im Explorer bietet
-   „Verknüpfung auf Desktop erstellen“; die Erzeugung erfolgt per Tempdatei,
-   `fsync`, Close und atomarem Rename. Das lokale 8.3-`.LNK`-Format ist keine
-   Microsoft-Shell-Link-Kompatibilitätsbehauptung. Abnahme: reale Maus-
-   Erstellung, Reload und sichere Aktivierung je einer Programm- und
-   Dateiverknüpfung sowie Ablehnung manipulierter oder veralteter Ziele.
-9. [ ] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
-   dynamische Shortcut-Icons verwenden den vorhandenen begrenzten Drag-
-   Controller, rasten kollisionsfrei im sichtbaren Arbeitsbereich ein und
-   bleiben von Fensterbewegung, Start und Explorer-Papierkorb-MOVE getrennt.
+8. [x] **R3.5 · Dateisystemgestützten Desktop und Verknüpfungen bereitstellen.**
+   `/desktop` ist ein echtes Verzeichnis, dessen fester Explorer-Snapshot alle
+   dynamischen Desktop-Datei-, Ordner- und Shortcut-Icons liefert. Ein
+   Rechtsklick auf ein validiertes Programm oder eine reguläre Datei erzeugt
+   `reist.shortcut/1` als 8.3-`.LNK` im selben Explorer-Verzeichnis, niemals
+   implizit auf dem Desktop. Gewöhnliche Dateien einschließlich `.LNK` können
+   über den vorhandenen Drag-Controller zwischen Explorer-Verzeichnissen und
+   `/desktop` verschoben werden. Der bounded Ring-3-MOVE veröffentlicht erst
+   eine vollständig synchronisierte und zurückgelesene Zielkopie und löscht
+   danach die erneut validierte Quelle. Das lokale Shortcut-Format ist keine
+   Microsoft-Shell-Link-Kompatibilitätsbehauptung. Abnahme: reale
+   Maus-Erstellung ohne Desktopänderung, Storage-Neustart, beidseitiger MOVE
+   einer Datei und `.LNK`, sichere Aktivierung sowie Ablehnung kollidierender,
+   manipulierter oder veralteter Objekte. Abgenommen mit 81 Targeted-Checks,
+   dem QEMU-Framebuffer-Paketbuild in 46 Sekunden und dem realen USB-Mauslauf,
+   der beide Objektarten nach Storage-Neustart und Editor-Aktivierung wieder
+   aus dem anschließend leeren `/desktop` zurückverschob.
+9. [~] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
+   dynamische dateisystemgestützte Icons verwenden den vorhandenen begrenzten
+   Drag-Controller, rasten kollisionsfrei im sichtbaren Arbeitsbereich ein und
+   bleiben von Fensterbewegung, Start, Datei-MOVE und Papierkorb-MOVE getrennt.
    Ein eigenes `reist.desktop-layout/1`-Dokument speichert nur stabile Icon-
    Identitäten und Rasterkoordinaten atomar. Abnahme: Verschieben, Neustart,
    Größenwechsel, Korruptionsfallback und unveränderte Klick-/Kontextmenü-

@@ -375,6 +375,257 @@ def capture_screenshot(process: subprocess.Popen[str],
     convert_screenshot_if_png(screenshot)
 
 
+def wait_for_desktop_pattern(
+        output: queue.Queue[str], transcript: list[str], pattern: str,
+        deadline: float, after: int = 0) -> tuple[re.Match[str], str]:
+    compiled = re.compile(pattern)
+    while time.monotonic() < deadline:
+        drain(output, transcript)
+        text = "".join(transcript)
+        for failure in (
+                "REIST_GUI COMPOSITOR_RESTARTED",
+                "REIST_GUI COMPOSITOR_DEGRADED",
+                "DESKTOP_SHORTCUT_PROBE_FAIL"):
+            failure_offset = text.find(failure, after)
+            if failure_offset >= 0:
+                raise RuntimeError(
+                    f"desktop shortcut probe failed: {failure}; "
+                    f"guest tail:\n{text[-8000:].replace(chr(13), '')}"
+                )
+        match = compiled.search(text, after)
+        if match is not None:
+            return match, text
+        time.sleep(0.02)
+    drain(output, transcript)
+    text = "".join(transcript)
+    raise RuntimeError(
+        f"desktop shortcut marker not observed: {pattern}; "
+        f"guest tail:\n{text[-8000:].replace(chr(13), '')}"
+    )
+
+
+def shortcut_probe_point(
+        output: queue.Queue[str], transcript: list[str], marker: str,
+        kind: str, deadline: float, after: int = 0) -> tuple[int, int]:
+    match, _ = wait_for_desktop_pattern(
+        output, transcript,
+        rf"DESKTOP_SHORTCUT_PROBE_{marker} kind={kind} "
+        r"x=([0-9]+) y=([0-9]+)",
+        deadline, after,
+    )
+    return int(match.group(1)), int(match.group(2))
+
+
+def shortcut_probe_display_size(
+        screenshot: pathlib.Path, transcript: list[str]) -> tuple[int, int]:
+    ppm = read_ppm(screenshot)
+    if ppm is not None:
+        return ppm[0], ppm[1]
+    match = re.search(
+        r"Framebuffer initialized: ([0-9]+)x([0-9]+)x[0-9]+",
+        "".join(transcript),
+    )
+    if match is None:
+        raise RuntimeError("desktop shortcut probe display size is unknown")
+    return int(match.group(1)), int(match.group(2))
+
+
+def shortcut_probe_move_mouse(
+        process: subprocess.Popen[str], pointer: list[int],
+        target_x: int, target_y: int) -> None:
+    while pointer[0] != target_x or pointer[1] != target_y:
+        delta_x = target_x - pointer[0]
+        delta_y = target_y - pointer[1]
+        step_x = max(-120, min(120, delta_x))
+        step_y = max(-120, min(120, delta_y))
+        qemu_monitor_command(process, f"mouse_move {step_x} {step_y}")
+        pointer[0] += step_x
+        pointer[1] += step_y
+        time.sleep(0.04)
+
+
+def shortcut_probe_click(
+        process: subprocess.Popen[str], button: int,
+        count: int = 1) -> None:
+    for _ in range(count):
+        qemu_monitor_command(process, f"mouse_button {button}")
+        time.sleep(0.08)
+        qemu_monitor_command(process, "mouse_button 0")
+        time.sleep(0.12)
+
+
+def shortcut_probe_drag(
+        process: subprocess.Popen[str], pointer: list[int],
+        source: tuple[int, int], destination: tuple[int, int]) -> None:
+    shortcut_probe_move_mouse(process, pointer, source[0], source[1])
+    qemu_monitor_command(process, "mouse_button 1")
+    time.sleep(0.12)
+    shortcut_probe_move_mouse(
+        process, pointer, destination[0], destination[1])
+    time.sleep(0.12)
+    qemu_monitor_command(process, "mouse_button 0")
+    time.sleep(0.25)
+
+
+def shortcut_probe_context_action(
+        process: subprocess.Popen[str], output: queue.Queue[str],
+        transcript: list[str], pointer: list[int], target: tuple[int, int],
+        action: str, deadline: float) -> int:
+    shortcut_probe_move_mouse(process, pointer, target[0], target[1])
+    event_offset = len("".join(transcript))
+    shortcut_probe_click(process, 2)
+    menu, text = wait_for_desktop_pattern(
+        output, transcript,
+        rf"DESKTOP_SHORTCUT_PROBE_MENU action={action} "
+        r"x=([0-9]+) y=([0-9]+)",
+        deadline, event_offset,
+    )
+    shortcut_probe_move_mouse(
+        process, pointer, int(menu.group(1)), int(menu.group(2)))
+    action_offset = len(text)
+    shortcut_probe_click(process, 1)
+    return action_offset
+
+
+def run_shortcut_mouse_probe(
+        process: subprocess.Popen[str], output: queue.Queue[str],
+        transcript: list[str], screenshot: pathlib.Path,
+        initial_deadline: float) -> int:
+    deadline = max(initial_deadline, time.monotonic() + 120.0)
+    _, initial_text = wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_SHORTCUTS_READY count=0", deadline)
+    initial_offset = initial_text.rfind("DESKTOP_OK")
+    file_target = shortcut_probe_point(
+        output, transcript, "TARGET", "file", deadline, initial_offset)
+    desktop_drop = shortcut_probe_point(
+        output, transcript, "DROP", "desktop", deadline, initial_offset)
+    source_drop = shortcut_probe_point(
+        output, transcript, "DROP", "source", deadline, initial_offset)
+    capture_screenshot(process, screenshot, deadline)
+    width, height = shortcut_probe_display_size(screenshot, transcript)
+    pointer = [width // 2, height // 2]
+
+    outcome_offset = shortcut_probe_context_action(
+        process, output, transcript, pointer, file_target,
+        "create", deadline)
+    created, created_text = wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_SHORTCUT_CREATED kind=file path=/htdocs/readme\.txt "
+        r"shortcut=(/htdocs/[A-Za-z0-9_-]{1,8}\.LNK)",
+        deadline, outcome_offset,
+    )
+    shortcut_path = created.group(1)
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_SHORTCUT_SIBLING_OK path=" +
+        re.escape(shortcut_path), deadline, outcome_offset)
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_SHORTCUT_DESKTOP_UNCHANGED",
+        deadline, outcome_offset)
+    restart_offset = created.start()
+    wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_SHORTCUT_STORAGE_RESTART_REQUESTED",
+        deadline, restart_offset)
+    wait_for_desktop_pattern(
+        output, transcript,
+        r"COMPONENT RESTART_OK component=5 generation=[0-9]+",
+        deadline, restart_offset)
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_SHORTCUT_STORAGE_RELOAD_OK count=0",
+        deadline, restart_offset)
+    sibling = shortcut_probe_point(
+        output, transcript, "SIBLING", "shortcut", deadline,
+        restart_offset)
+    desktop_drop = shortcut_probe_point(
+        output, transcript, "DROP", "desktop", deadline, restart_offset)
+    move_offset = len("".join(transcript))
+    shortcut_probe_drag(process, pointer, sibling, desktop_drop)
+    wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_FILE_MOVE_OK source=" + re.escape(shortcut_path) +
+        r" destination=/desktop/[A-Za-z0-9_-]{1,8}\.LNK",
+        deadline, move_offset)
+    shortcut_icon = shortcut_probe_point(
+        output, transcript, "ICON", "shortcut", deadline, move_offset)
+    capture_screenshot(process, screenshot, deadline)
+
+    shortcut_probe_move_mouse(
+        process, pointer, shortcut_icon[0], shortcut_icon[1])
+    activation_offset = len("".join(transcript))
+    shortcut_probe_click(process, 1, 2)
+    wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_SHORTCUT_ACTIVATED kind=file "
+        r"path=/htdocs/readme\.txt",
+        deadline, activation_offset,
+    )
+    wait_for_desktop_pattern(
+        output, transcript, r"NOTEPAD_SURFACE_READY",
+        deadline, activation_offset,
+    )
+    wait_for_desktop_pattern(
+        output, transcript, r"NOTEPAD_SURFACE_DOCUMENT_READY",
+        deadline, activation_offset,
+    )
+    client_close = shortcut_probe_point(
+        output, transcript, "CLOSE", "client", deadline,
+        activation_offset)
+    close_offset = len("".join(transcript))
+    shortcut_probe_move_mouse(
+        process, pointer, client_close[0], client_close[1])
+    shortcut_probe_click(process, 1)
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_SHORTCUT_CLIENT_CLOSED",
+        deadline, close_offset,
+    )
+
+    source_drop = shortcut_probe_point(
+        output, transcript, "DROP", "source", deadline, move_offset)
+    move_offset = len("".join(transcript))
+    shortcut_probe_drag(process, pointer, shortcut_icon, source_drop)
+    wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_FILE_MOVE_OK source=/desktop/"
+        r"[A-Za-z0-9_-]{1,8}\.LNK destination=" +
+        re.escape(shortcut_path), deadline, move_offset)
+
+    file_target = shortcut_probe_point(
+        output, transcript, "TARGET", "file", deadline, move_offset)
+    desktop_drop = shortcut_probe_point(
+        output, transcript, "DROP", "desktop", deadline, move_offset)
+    move_offset = len("".join(transcript))
+    shortcut_probe_drag(process, pointer, file_target, desktop_drop)
+    wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_FILE_MOVE_OK source=/htdocs/readme\.txt "
+        r"destination=/desktop/readme\.txt",
+        deadline, move_offset)
+    file_icon = shortcut_probe_point(
+        output, transcript, "ICON", "file", deadline, move_offset)
+    source_drop = shortcut_probe_point(
+        output, transcript, "DROP", "source", deadline, move_offset)
+    move_offset = len("".join(transcript))
+    shortcut_probe_drag(process, pointer, file_icon, source_drop)
+    _, final_text = wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_FILE_MOVE_OK "
+        r"source=(?i:/desktop/readme\.txt) "
+        r"destination=(?i:/htdocs/readme\.txt)",
+        deadline, move_offset)
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_DIRECTORY_RELOAD count=0",
+        deadline, move_offset)
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_MOUSE_OK", deadline, initial_offset)
+    if "DESKTOP_EXIT_OK" in final_text[initial_offset:]:
+        raise RuntimeError(
+            "desktop exited during the live storage-restart shortcut flow"
+        )
+    capture_screenshot(process, screenshot, deadline)
+    print("runtime-desktop-shortcuts: PASS")
+    return 0
+
+
 def require_svga2d_console_lifecycle(text: str) -> None:
     if text.count("REIST_VIDEO SVGA2D_ACTIVE") < 2:
         raise RuntimeError("SVGA2D was not activated for the desktop")
@@ -403,6 +654,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         trash_confirm_probe: bool, trash_restore_probe: bool,
         explorer_scroll_probe: bool,
         explorer_views_probe: bool,
+        shortcut_probe: bool,
         hover_probe: bool,
         supervised_probe: bool,
         guidemo_click_probe: bool,
@@ -413,7 +665,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         audio_capture.unlink()
     command = qemu_command(
         qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp)
-    if guidemo_click_probe or hover_probe:
+    if guidemo_click_probe or hover_probe or shortcut_probe:
         command.extend([
             "-device", "qemu-xhci,id=reistxhci",
             "-device", "usb-mouse,bus=reistxhci.0",
@@ -484,6 +736,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     command_name = "desktop.prg --explorer-scroll-probe"
                 elif explorer_views_probe:
                     command_name = "desktop.prg --explorer-views-probe"
+                elif shortcut_probe:
+                    command_name = "desktop.prg --shortcut-probe"
                 else:
                     command_name = "desktop.prg"
                 send_command(process, command_name)
@@ -514,10 +768,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     "supervised desktop or VGA shell prompt not observed; "
                     f"guest tail:\n{tail}")
         font_catalog_start = (surface_probe or notepad_probe or
-                              notepad_font_probe) or not any((
+                              notepad_font_probe or shortcut_probe) or not any((
             expect_failure, render_probe, surface_probe, control_probe,
             trash_context_probe, trash_confirm_probe, trash_restore_probe,
             explorer_scroll_probe, explorer_views_probe,
+            shortcut_probe,
             hover_probe, guidemo_click_probe,
             sound_probe))
         desktop_deadline = time.monotonic() + (
@@ -536,6 +791,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     capture_screenshot(process, screenshot, deadline)
                     print("runtime-desktop: PASS supervised-generation")
                     return 0
+                if shortcut_probe:
+                    return run_shortcut_mouse_probe(
+                        process, output, transcript, screenshot, deadline)
                 if hover_probe:
                     hover_ready_deadline = min(
                         deadline, time.monotonic() + 5.0
@@ -1082,6 +1340,7 @@ def main() -> int:
     parser.add_argument("--trash-restore-probe", action="store_true")
     parser.add_argument("--explorer-scroll-probe", action="store_true")
     parser.add_argument("--explorer-views-probe", action="store_true")
+    parser.add_argument("--shortcut-probe", action="store_true")
     parser.add_argument("--sound-probe", action="store_true")
     parser.add_argument("--guidemo-click-probe", action="store_true")
     parser.add_argument("--hover-probe", action="store_true")
@@ -1095,6 +1354,7 @@ def main() -> int:
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
+            args.shortcut_probe,
             args.sound_probe, args.guidemo_click_probe,
             args.hover_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
@@ -1113,6 +1373,7 @@ def main() -> int:
                    args.trash_context_probe, args.trash_confirm_probe,
                    args.trash_restore_probe,
                    args.explorer_scroll_probe, args.explorer_views_probe,
+                   args.shortcut_probe,
                    args.hover_probe,
                    args.supervised_probe,
                    args.guidemo_click_probe, args.sound_probe,

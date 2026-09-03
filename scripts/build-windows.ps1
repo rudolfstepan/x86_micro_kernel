@@ -463,7 +463,7 @@ try {
     foreach ($iconName in @(
         'folder-empty', 'folder-full', 'program', 'text',
         'audio', 'image', 'settings', 'unknown',
-        'trash-empty', 'trash-full'
+        'trash-empty', 'trash-full', 'shortcut'
     )) {
         $iconPath = Join-Path $RepoRoot "assets\icons\$iconName.ico"
         $iconSpec = "usr/share/icons/$iconName.ico=$iconPath"

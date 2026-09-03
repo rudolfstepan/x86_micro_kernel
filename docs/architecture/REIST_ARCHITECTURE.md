@@ -462,12 +462,54 @@ unten beschriebene native EXT2-Symlinkerzeugung bildet einen eng begrenzten
 ersten Mutationsschnitt.
 Der Desktop-Explorer verwendet dieselbe Autoritätsgrenze für Verzeichnis-
 `stat`, indexierte Einträge und die Leer/Voll-Ordnerentscheidung. Ein Snapshot
-publiziert höchstens 32 sichtbare Einträge, scannt höchstens 128 und besitzt
+publiziert höchstens 128 sichtbare Einträge, scannt höchstens 129 und besitzt
 eine absolute monotone Fünf-Sekunden-Deadline. Fehler lassen den zuvor
 publizierten Pfad, Inhalt und die Snapshotgeneration unverändert. Große Font-,
 Icon- und Konfigurationsdateien bleiben auf dem vorhandenen, schedulerfreundlich
 geschnittenen Legacy-Lesepfad, bis sie einzeln auf den nun vorhandenen
 begrenzten Bulk-Transport umgestellt werden.
+Desktop-Verknüpfungen sind davon und von nativen Dateisystem-Symlinks getrennt.
+`/desktop` ist ein gewöhnliches, nicht durch einen Symlink ersetzbares
+Dateisystemverzeichnis. Ein eigener Explorer-Snapshot scannt höchstens 129 und
+publiziert höchstens 128 Einträge atomar; ein Überlauf lässt den vorherigen
+Snapshot unverändert. Dieser Snapshot ist die einzige Quelle der dynamischen
+Desktop-Datei-, Ordner- und Verknüpfungssymbole. Der Renderpfad führt weder
+VFS-Zugriffe noch Dekodierung aus. Das einmalig geladene Shortcut-ICO und sein
+begrenzter Vektor-Fallback folgen demselben Icon-Cache-Vertrag wie die übrigen
+Dateitypen.
+
+Die Explorer-Kontextaktion `Verknuepfung erstellen` erzeugt aus einem erneut
+validierten, generationsgebundenen regulären Dateiobjekt genau eine
+8.3-`.LNK`-Datei im aktuell angezeigten Verzeichnis. Sie veröffentlicht nichts
+implizit unter `/desktop`. Innerhalb von 32 Versuchen wählt sie einen freien
+Namen, schreibt eine private Tempdatei im selben Verzeichnis vollständig,
+führt `fsync` und Close aus, validiert Verzeichnis und Ziel erneut und
+publiziert erst danach per atomarem Same-Parent-Rename. Das höchstens 512 Byte
+große Textformat beginnt mit `schema=reist.shortcut/1` und enthält nur einen
+begrenzten Anzeigenamen, den Typ `program` oder `file` und einen kanonischen
+absoluten Zielpfad. Es ist eine lokale REIST-Desktop-Adaption und ausdrücklich
+keine Microsoft-Shell-Link-Kompatibilitätsbehauptung. Relative Ziele,
+Shelltext, Argumente, Umgebungsersetzung, Arbeitsverzeichnisse und eingebettete
+Iconpfade sind nicht darstellbar. Bei jeder Aktivierung liest der Desktop oder
+Explorer die konkrete `.LNK` erneut über generationsgebundene `READ|STAT`-
+Autorität, prüft exakte Länge, EOF, Close und Zielidentität und leitet Programme
+an den überwachten Startpfad sowie Datendateien an die versionierte
+Dateitypzuordnung weiter.
+
+Drag-and-drop verschiebt eine generationsstabile, ungeschützte reguläre Datei
+einschließlich `.LNK` zwischen Explorer-Verzeichnissen und `/desktop`;
+Verzeichnisse sind dabei ausschließlich Navigations- und Dropziele. Da der
+alte FAT-Rename keine Elternverzeichnisgrenze überschreitet, kopiert der
+Ring-3-Compositor höchstens 64 MiB in 1024-Byte-Stücken unter einer absoluten
+30-Sekunden-Frist in eine private Zieldatei. Erst nach vollständigem Schreiben,
+`fsync`, Close, exakter Größen-/EOF-/Hash-Readback-Prüfung sowie erneuter Quell-
+und Zielverzeichnisvalidierung wird sie per Same-Parent-Rename veröffentlicht;
+danach wird die Quelle nochmals geprüft und gelöscht. Vor
+Zielveröffentlichung bleibt bei jedem Fehler die Quelle erhalten und keine
+Zieldatei sichtbar. Schlägt nur das abschließende Löschen fehl, bleibt eine
+verifizierte Kopie erhalten und der partielle Ausgang wird ausdrücklich
+gemeldet. Bestehende Zielnamen, gleiche Verzeichnisse, Symlinksubstitutionen,
+private Tempnamen und geschützte Systemwurzeln werden fail-closed abgelehnt.
 Die langlebige Userspace-Shell verwendet Operation 5 für die Programmsuche und
 Operation 7 für Tab-Vervollständigungen. Alle PATH-Kandidaten beziehungsweise
 Verzeichnisse einer Aktion teilen eine absolute monotone Fünf-Sekunden-

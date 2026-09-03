@@ -738,6 +738,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/share/icons/unknown.ico=assets/icons/unknown.ico \
 	usr/share/icons/trash-empty.ico=assets/icons/trash-empty.ico \
 	usr/share/icons/trash-full.ico=assets/icons/trash-full.ico \
+	usr/share/icons/shortcut.ico=assets/icons/shortcut.ico \
 	usr/share/sounds/startup.wav=assets/audio/startup.wav \
 	usr/share/sounds/shutdown.wav=assets/audio/shutdown.wav \
 	usr/share/sounds/error.wav=assets/audio/error.wav \
@@ -899,6 +900,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/share/icons/audio.ico=% usr/share/icons/image.ico=% \
 	usr/share/icons/settings.ico=% usr/share/icons/unknown.ico=% \
 	usr/share/icons/trash-empty.ico=% usr/share/icons/trash-full.ico=% \
+	usr/share/icons/shortcut.ico=% \
 	libexec/reist/hda.prg=% libexec/reist/audio.prg=% \
 	libexec/reist/svga2d.prg=% libexec/reist/nvidia.prg=%,$(SYSTEM_IMAGE_FILES))
 

@@ -17,6 +17,8 @@
 #include "x86os.h"
 
 #define DESKTOP_EXPLORER_WINDOW_CAPACITY 8U
+#define DESKTOP_EXPLORER_DESKTOP_SOURCE_ID \
+    (DESKTOP_EXPLORER_WINDOW_CAPACITY)
 #define DESKTOP_EXPLORER_ENTRY_CAPACITY 128U
 #define DESKTOP_EXPLORER_PATH_CAPACITY 256U
 #define DESKTOP_EXPLORER_NO_ENTRY UINT32_MAX
@@ -63,6 +65,7 @@ enum desktop_explorer_icon {
     DESKTOP_EXPLORER_ICON_AUDIO,
     DESKTOP_EXPLORER_ICON_IMAGE,
     DESKTOP_EXPLORER_ICON_SETTINGS,
+    DESKTOP_EXPLORER_ICON_SHORTCUT,
     DESKTOP_EXPLORER_ICON_UNKNOWN,
     DESKTOP_EXPLORER_ICON_COUNT
 };
@@ -86,6 +89,7 @@ typedef struct desktop_explorer_window {
     uint32_t active;
     uint32_t snapshot_generation;
     char path[DESKTOP_EXPLORER_PATH_CAPACITY];
+    x86os_file_info_t directory_identity;
     x86os_file_info_t entries[DESKTOP_EXPLORER_ENTRY_CAPACITY];
     uint8_t directory_nonempty[DESKTOP_EXPLORER_ENTRY_CAPACITY];
     uint32_t entry_count;
@@ -124,9 +128,13 @@ typedef struct desktop_explorer_layout {
 
 typedef struct desktop_explorer {
     desktop_explorer_window_t windows[DESKTOP_EXPLORER_WINDOW_CAPACITY];
+    /* /desktop is an ordinary directory but has a dedicated snapshot because
+     * its icons exist without consuming a window-manager slot. */
+    desktop_explorer_window_t desktop_directory;
     x86os_file_info_t staging[DESKTOP_EXPLORER_ENTRY_CAPACITY];
     uint8_t staging_directory_nonempty[DESKTOP_EXPLORER_ENTRY_CAPACITY];
     char staging_path[DESKTOP_EXPLORER_PATH_CAPACITY];
+    x86os_file_info_t staging_directory_identity;
     uint32_t staging_count;
     uint32_t staging_truncated;
     uint32_t next_snapshot_generation;
@@ -196,6 +204,10 @@ int desktop_explorer_up(desktop_explorer_t *explorer,
 /** Reload the current path without changing Back or Forward history. */
 int desktop_explorer_refresh(desktop_explorer_t *explorer,
                              uint32_t window_index);
+/** Publish or reload the dedicated /desktop directory snapshot. */
+int desktop_explorer_desktop_open(desktop_explorer_t *explorer,
+                                  const char *path);
+int desktop_explorer_desktop_refresh(desktop_explorer_t *explorer);
 uint32_t desktop_explorer_can_back(const desktop_explorer_window_t *window);
 uint32_t desktop_explorer_can_forward(const desktop_explorer_window_t *window);
 uint32_t desktop_explorer_can_up(const desktop_explorer_window_t *window);
@@ -258,10 +270,19 @@ int desktop_explorer_toggle_view(
 int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
                                  uint32_t window_index, uint32_t entry_index,
                                  desktop_drag_object_t *object);
+/** Publish one /desktop entry using the dedicated non-WM source identity. */
+int desktop_explorer_desktop_drag_object(
+    const desktop_explorer_t *explorer, uint32_t entry_index,
+    desktop_drag_object_t *object);
 /** Validate and decode a file object against the current Explorer snapshot. */
 int desktop_explorer_drag_validate(
     const desktop_explorer_t *explorer, const desktop_drag_object_t *object,
     desktop_explorer_drag_file_t *file);
+/** Resolve the generation-bound parent snapshot of a validated drag object. */
+int desktop_explorer_drag_source_directory(
+    const desktop_explorer_t *explorer, const desktop_drag_object_t *object,
+    char path[DESKTOP_EXPLORER_PATH_CAPACITY],
+    x86os_file_info_t *identity);
 /** Move selection in the icon grid, reveal it, or activate it with Enter. */
 int desktop_explorer_keyboard(
     desktop_explorer_t *explorer, uint32_t window_index,

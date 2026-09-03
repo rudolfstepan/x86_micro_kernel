@@ -105,8 +105,22 @@ static uint32_t entry_is_trash_storage_name(
         entry->name[DESKTOP_TRASH_STORAGE_NAME_LENGTH] == '\0';
 }
 
+static uint32_t entry_is_move_temporary_name(
+    const x86os_file_info_t *entry) {
+    if (entry == 0 || fold_ascii((uint8_t)entry->name[0]) != 'r' ||
+        fold_ascii((uint8_t)entry->name[1]) != 'm') return 0U;
+    for (uint32_t index = 2U; index < 8U; ++index)
+        if (!explorer_hex_digit((uint8_t)entry->name[index])) return 0U;
+    return entry->name[8] == '.' &&
+        fold_ascii((uint8_t)entry->name[9]) == 't' &&
+        fold_ascii((uint8_t)entry->name[10]) == 'm' &&
+        fold_ascii((uint8_t)entry->name[11]) == 'p' &&
+        entry->name[12] == '\0';
+}
+
 static uint32_t entry_is_hidden_name(const x86os_file_info_t *entry) {
-    return entry_is_dot_name(entry) || entry_is_trash_storage_name(entry);
+    return entry_is_dot_name(entry) || entry_is_trash_storage_name(entry) ||
+        entry_is_move_temporary_name(entry);
 }
 
 static uint32_t extension_equal(const char *extension, const char *expected) {
@@ -150,6 +164,8 @@ uint32_t desktop_explorer_icon_kind(const x86os_file_info_t *entry,
         extension_equal(extension, "cfg") ||
         extension_equal(extension, "ini"))
         return DESKTOP_EXPLORER_ICON_SETTINGS;
+    if (extension_equal(extension, "lnk"))
+        return DESKTOP_EXPLORER_ICON_SHORTCUT;
     if (extension_equal(extension, "wav"))
         return DESKTOP_EXPLORER_ICON_AUDIO;
     if (extension_equal(extension, "bmp") ||
@@ -272,6 +288,9 @@ void desktop_explorer_initialize(desktop_explorer_t *explorer) {
         explorer->windows[index].pressed = DESKTOP_EXPLORER_NO_ENTRY;
         explorer->windows[index].last_click = DESKTOP_EXPLORER_NO_ENTRY;
     }
+    explorer->desktop_directory.selected = DESKTOP_EXPLORER_NO_ENTRY;
+    explorer->desktop_directory.pressed = DESKTOP_EXPLORER_NO_ENTRY;
+    explorer->desktop_directory.last_click = DESKTOP_EXPLORER_NO_ENTRY;
 }
 
 void desktop_explorer_result_initialize(desktop_explorer_result_t *result) {
@@ -313,7 +332,8 @@ void desktop_explorer_desktop_release(desktop_explorer_t *explorer,
     } else explorer->desktop_last_click_ms = now_ms;
 }
 
-static int stage_directory(desktop_explorer_t *explorer, const char *path) {
+static int stage_directory(desktop_explorer_t *explorer, const char *path,
+                           uint32_t nofollow) {
     uint32_t path_length = 0U;
     if (explorer == 0 || !text_length(
             path, DESKTOP_EXPLORER_PATH_CAPACITY, &path_length) ||
@@ -327,11 +347,14 @@ static int stage_directory(desktop_explorer_t *explorer, const char *path) {
     int remaining_status = snapshot_remaining_timeout(deadline, &timeout);
     if (remaining_status != DESKTOP_EXPLORER_OK) return remaining_status;
     x86os_file_info_t target;
-    int stat_status = reist_vfs_stat(path, &target, timeout);
+    int stat_status = nofollow
+        ? reist_vfs_lstat(path, &target, timeout)
+        : reist_vfs_stat(path, &target, timeout);
     if (stat_status == -110) return DESKTOP_EXPLORER_ETIMEDOUT;
     if (stat_status == -2) return DESKTOP_EXPLORER_ENOENT;
     if (stat_status != 0) return DESKTOP_EXPLORER_EIO;
     if (target.type != X86OS_DIRECTORY) return DESKTOP_EXPLORER_ENOTDIR;
+    copy_entry(&explorer->staging_directory_identity, &target);
 
     explorer->staging_count = 0U;
     explorer->staging_truncated = 0U;
@@ -364,6 +387,18 @@ static int stage_directory(desktop_explorer_t *explorer, const char *path) {
                 ? probe_directory_nonempty(path, &entry, deadline) : 0U;
         ++explorer->staging_count;
     }
+    if (nofollow) {
+        remaining_status = snapshot_remaining_timeout(deadline, &timeout);
+        if (remaining_status != DESKTOP_EXPLORER_OK)
+            return remaining_status;
+        x86os_file_info_t current;
+        stat_status = reist_vfs_lstat(path, &current, timeout);
+        if (stat_status == -110) return DESKTOP_EXPLORER_ETIMEDOUT;
+        if (stat_status == -2) return DESKTOP_EXPLORER_ENOENT;
+        if (stat_status != 0) return DESKTOP_EXPLORER_EIO;
+        if (!entries_equal(&target, &current))
+            return DESKTOP_EXPLORER_ESTALE;
+    }
     for (uint32_t index = 0U; index <= path_length; ++index)
         explorer->staging_path[index] = path[index];
     sort_staging(explorer);
@@ -381,6 +416,8 @@ static void publish_staging(desktop_explorer_t *explorer,
     if (++explorer->next_snapshot_generation == 0U)
         explorer->next_snapshot_generation = 1U;
     window->snapshot_generation = explorer->next_snapshot_generation;
+    copy_entry(&window->directory_identity,
+               &explorer->staging_directory_identity);
     window->entry_count = explorer->staging_count;
     window->truncated = explorer->staging_truncated;
     window->selected = DESKTOP_EXPLORER_NO_ENTRY;
@@ -430,7 +467,7 @@ int desktop_explorer_open(desktop_explorer_t *explorer,
                           uint32_t window_index, const char *path) {
     if (explorer == 0 || window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY)
         return DESKTOP_EXPLORER_EINVAL;
-    int result = stage_directory(explorer, path);
+    int result = stage_directory(explorer, path, 0U);
     if (result != DESKTOP_EXPLORER_OK) return result;
     publish_staging(explorer, &explorer->windows[window_index], 1U);
     return DESKTOP_EXPLORER_OK;
@@ -443,7 +480,7 @@ int desktop_explorer_navigate(desktop_explorer_t *explorer,
         !explorer->windows[window_index].active)
         return DESKTOP_EXPLORER_EINVAL;
     desktop_explorer_window_t *window = &explorer->windows[window_index];
-    int result = stage_directory(explorer, path);
+    int result = stage_directory(explorer, path, 0U);
     if (result != DESKTOP_EXPLORER_OK) return result;
     push_history(window->back_paths, &window->back_count, window->path);
     window->forward_count = 0U;
@@ -459,7 +496,7 @@ int desktop_explorer_back(desktop_explorer_t *explorer,
     desktop_explorer_window_t *window = &explorer->windows[window_index];
     if (window->back_count == 0U) return DESKTOP_EXPLORER_ENOENT;
     const char *target = window->back_paths[window->back_count - 1U];
-    int result = stage_directory(explorer, target);
+    int result = stage_directory(explorer, target, 0U);
     if (result != DESKTOP_EXPLORER_OK) return result;
     push_history(window->forward_paths, &window->forward_count, window->path);
     --window->back_count;
@@ -475,7 +512,7 @@ int desktop_explorer_forward(desktop_explorer_t *explorer,
     desktop_explorer_window_t *window = &explorer->windows[window_index];
     if (window->forward_count == 0U) return DESKTOP_EXPLORER_ENOENT;
     const char *target = window->forward_paths[window->forward_count - 1U];
-    int result = stage_directory(explorer, target);
+    int result = stage_directory(explorer, target, 0U);
     if (result != DESKTOP_EXPLORER_OK) return result;
     push_history(window->back_paths, &window->back_count, window->path);
     --window->forward_count;
@@ -516,9 +553,30 @@ int desktop_explorer_refresh(desktop_explorer_t *explorer,
         !explorer->windows[window_index].active)
         return DESKTOP_EXPLORER_EINVAL;
     desktop_explorer_window_t *window = &explorer->windows[window_index];
-    int result = stage_directory(explorer, window->path);
+    int result = stage_directory(explorer, window->path, 0U);
     if (result != DESKTOP_EXPLORER_OK) return result;
     publish_staging(explorer, window, 0U);
+    return DESKTOP_EXPLORER_OK;
+}
+
+int desktop_explorer_desktop_open(desktop_explorer_t *explorer,
+                                  const char *path) {
+    if (explorer == 0 || path == 0) return DESKTOP_EXPLORER_EINVAL;
+    int result = stage_directory(explorer, path, 1U);
+    if (result != DESKTOP_EXPLORER_OK) return result;
+    if (explorer->staging_truncated) return DESKTOP_EXPLORER_ECAPACITY;
+    publish_staging(explorer, &explorer->desktop_directory, 1U);
+    return DESKTOP_EXPLORER_OK;
+}
+
+int desktop_explorer_desktop_refresh(desktop_explorer_t *explorer) {
+    if (explorer == 0 || !explorer->desktop_directory.active)
+        return DESKTOP_EXPLORER_EINVAL;
+    int result = stage_directory(
+        explorer, explorer->desktop_directory.path, 1U);
+    if (result != DESKTOP_EXPLORER_OK) return result;
+    if (explorer->staging_truncated) return DESKTOP_EXPLORER_ECAPACITY;
+    publish_staging(explorer, &explorer->desktop_directory, 0U);
     return DESKTOP_EXPLORER_OK;
 }
 
@@ -580,6 +638,7 @@ const char *desktop_explorer_type_text(const x86os_file_info_t *entry,
     if (kind == DESKTOP_EXPLORER_ICON_AUDIO) return "Audio";
     if (kind == DESKTOP_EXPLORER_ICON_IMAGE) return "Bild";
     if (kind == DESKTOP_EXPLORER_ICON_SETTINGS) return "Konfiguration";
+    if (kind == DESKTOP_EXPLORER_ICON_SHORTCUT) return "Verknuepfung";
     return "Datei";
 }
 
@@ -1072,14 +1131,21 @@ int desktop_explorer_toggle_view(
     return DESKTOP_EXPLORER_OK;
 }
 
-int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
-                                 uint32_t window_index, uint32_t entry_index,
-                                 desktop_drag_object_t *object) {
-    if (explorer == 0 || object == 0 ||
-        window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY)
+static const desktop_explorer_window_t *drag_source_window(
+    const desktop_explorer_t *explorer, uint32_t source_id) {
+    if (explorer == 0) return 0;
+    if (source_id < DESKTOP_EXPLORER_WINDOW_CAPACITY)
+        return &explorer->windows[source_id];
+    if (source_id == DESKTOP_EXPLORER_DESKTOP_SOURCE_ID)
+        return &explorer->desktop_directory;
+    return 0;
+}
+
+static int drag_object_from_window(
+    const desktop_explorer_window_t *window, uint32_t source_id,
+    uint32_t entry_index, desktop_drag_object_t *object) {
+    if (window == 0 || object == 0)
         return DESKTOP_EXPLORER_EINVAL;
-    const desktop_explorer_window_t *window =
-        &explorer->windows[window_index];
     if (!window->active || window->snapshot_generation == 0U ||
         entry_index >= window->entry_count)
         return DESKTOP_EXPLORER_EINVAL;
@@ -1087,7 +1153,7 @@ int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
     clear_bytes(&file, sizeof(file));
     file.version = DESKTOP_EXPLORER_DRAG_FILE_VERSION;
     file.struct_size = sizeof(file);
-    file.window_index = window_index;
+    file.window_index = source_id;
     file.entry_index = entry_index;
     file.snapshot_generation = window->snapshot_generation;
     copy_entry(&file.identity, &window->entries[entry_index]);
@@ -1097,11 +1163,30 @@ int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
     desktop_drag_object_initialize(object);
     object->kind = DESKTOP_DRAG_OBJECT_FILE;
     object->operations = DESKTOP_DRAG_OPERATION_ALL;
-    object->source_id = window_index;
+    object->source_id = source_id;
     object->source_generation = window->snapshot_generation;
     object->data_size = sizeof(file);
     copy_bytes(object->data, (const uint8_t *)&file, sizeof(file));
     return DESKTOP_EXPLORER_OK;
+}
+
+int desktop_explorer_drag_object(const desktop_explorer_t *explorer,
+                                 uint32_t window_index, uint32_t entry_index,
+                                 desktop_drag_object_t *object) {
+    if (explorer == 0 ||
+        window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY)
+        return DESKTOP_EXPLORER_EINVAL;
+    return drag_object_from_window(
+        &explorer->windows[window_index], window_index, entry_index, object);
+}
+
+int desktop_explorer_desktop_drag_object(
+    const desktop_explorer_t *explorer, uint32_t entry_index,
+    desktop_drag_object_t *object) {
+    if (explorer == 0) return DESKTOP_EXPLORER_EINVAL;
+    return drag_object_from_window(
+        &explorer->desktop_directory,
+        DESKTOP_EXPLORER_DESKTOP_SOURCE_ID, entry_index, object);
 }
 
 int desktop_explorer_drag_validate(
@@ -1116,13 +1201,13 @@ int desktop_explorer_drag_validate(
         file->struct_size != sizeof(*file) ||
         file->window_index != object->source_id ||
         file->snapshot_generation != object->source_generation ||
-        file->window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY ||
+        file->window_index > DESKTOP_EXPLORER_DESKTOP_SOURCE_ID ||
         file->reserved[0] != 0U || file->reserved[1] != 0U ||
         file->reserved[2] != 0U)
         return DESKTOP_EXPLORER_EINVAL;
     const desktop_explorer_window_t *window =
-        &explorer->windows[file->window_index];
-    if (!window->active ||
+        drag_source_window(explorer, file->window_index);
+    if (window == 0 || !window->active ||
         window->snapshot_generation != file->snapshot_generation ||
         file->entry_index >= window->entry_count ||
         !entries_equal(&window->entries[file->entry_index], &file->identity))
@@ -1133,6 +1218,27 @@ int desktop_explorer_drag_validate(
             sizeof(current_path)) != DESKTOP_EXPLORER_OK ||
         !path_equal(current_path, file->path))
         return DESKTOP_EXPLORER_ESTALE;
+    return DESKTOP_EXPLORER_OK;
+}
+
+int desktop_explorer_drag_source_directory(
+    const desktop_explorer_t *explorer, const desktop_drag_object_t *object,
+    char path[DESKTOP_EXPLORER_PATH_CAPACITY],
+    x86os_file_info_t *identity) {
+    if (explorer == 0 || object == 0 || path == 0 || identity == 0)
+        return DESKTOP_EXPLORER_EINVAL;
+    desktop_explorer_drag_file_t file;
+    int status = desktop_explorer_drag_validate(explorer, object, &file);
+    if (status != DESKTOP_EXPLORER_OK) return status;
+    const desktop_explorer_window_t *window =
+        drag_source_window(explorer, file.window_index);
+    if (window == 0) return DESKTOP_EXPLORER_ESTALE;
+    uint32_t length = 0U;
+    if (!text_length(window->path, sizeof(window->path), &length))
+        return DESKTOP_EXPLORER_ESTALE;
+    for (uint32_t index = 0U; index <= length; ++index)
+        path[index] = window->path[index];
+    copy_entry(identity, &window->directory_identity);
     return DESKTOP_EXPLORER_OK;
 }
 

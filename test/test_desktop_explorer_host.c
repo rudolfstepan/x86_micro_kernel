@@ -13,9 +13,16 @@ static const x86os_file_info_t root_entries[] = {
     {"alpha.prg", X86OS_FILE, 20U, 0U, 0U, 0U},
     {"Docs", X86OS_DIRECTORY, 0U, 0U, 0U, 0U},
     {"RT12AB34.TRS", X86OS_FILE, 42U, 0U, 0U, 0U},
+    {"RM12AB34.TMP", X86OS_FILE, 42U, 0U, 0U, 0U},
+};
+
+static const x86os_file_info_t desktop_entries[] = {
+    {"readme.txt", X86OS_FILE, 11U, 4U, 5U, 6U},
+    {"LINK.LNK", X86OS_FILE, 72U, 7U, 8U, 9U},
 };
 
 static uint64_t monotonic_now = 100U;
+static uint32_t desktop_path_type = X86OS_DIRECTORY;
 static uint32_t monotonic_calls;
 static uint32_t expire_call;
 static uint32_t many_entry_count = 50U;
@@ -34,12 +41,20 @@ int reist_vfs_stat(const char *path, x86os_file_info_t *info,
     assert(timeout_ms != 0U && timeout_ms <= 1000U);
     if (strcmp(path, "/") != 0 && strcmp(path, "/Docs") != 0 &&
         strcmp(path, "/Docs/Sub") != 0 &&
+        strcmp(path, "/desktop") != 0 &&
         strcmp(path, "/Many") != 0 &&
         strcmp(path, "/BIN") != 0) return -2;
     memset(info, 0, sizeof(*info));
     strcpy(info->name, path);
-    info->type = X86OS_DIRECTORY;
+    info->type = strcmp(path, "/desktop") == 0
+        ? desktop_path_type : X86OS_DIRECTORY;
+    info->create_time = strcmp(path, "/desktop") == 0 ? 77U : 11U;
     return 0;
+}
+
+int reist_vfs_lstat(const char *path, x86os_file_info_t *info,
+                    uint32_t timeout_ms) {
+    return reist_vfs_stat(path, info, timeout_ms);
 }
 
 int reist_vfs_readdir_at(const char *path, uint32_t index,
@@ -52,6 +67,12 @@ int reist_vfs_readdir_at(const char *path, uint32_t index,
         return 1;
     }
     if (strcmp(path, "/Docs/Sub") == 0) return 0;
+    if (strcmp(path, "/desktop") == 0) {
+        if (index >= sizeof(desktop_entries) /
+                sizeof(desktop_entries[0])) return 0;
+        *entry = desktop_entries[index];
+        return 1;
+    }
     if (strcmp(path, "/Many") == 0) {
         if (index >= many_entry_count) return 0;
         memset(entry, 0, sizeof(*entry));
@@ -67,7 +88,7 @@ int reist_vfs_readdir_at(const char *path, uint32_t index,
             "TOOL.PRG", X86OS_FILE, 1U, 0U, 0U, 0U};
         return 1;
     }
-    if (strcmp(path, "/") != 0 || index >= 7U) return 0;
+    if (strcmp(path, "/") != 0 || index >= 8U) return 0;
     *entry = root_entries[index];
     return 1;
 }
@@ -119,6 +140,7 @@ static void test_extension_icons_are_case_insensitive(void) {
         {"photo.BMP", DESKTOP_EXPLORER_ICON_IMAGE},
         {"anim.gif", DESKTOP_EXPLORER_ICON_IMAGE},
         {"native.ico", DESKTOP_EXPLORER_ICON_IMAGE},
+        {"document.LNK", DESKTOP_EXPLORER_ICON_SHORTCUT},
         {"archive.bin", DESKTOP_EXPLORER_ICON_UNKNOWN},
         {"no-extension", DESKTOP_EXPLORER_ICON_UNKNOWN},
     };
@@ -532,6 +554,50 @@ static void test_drag_object_is_bound_to_snapshot_generation(void) {
                &explorer, &object, &file) == DESKTOP_EXPLORER_ESTALE);
 }
 
+static void test_desktop_directory_snapshot_and_drag_identity(void) {
+    desktop_explorer_t explorer;
+    desktop_drag_object_t object;
+    desktop_explorer_drag_file_t file;
+    char source_directory[DESKTOP_EXPLORER_PATH_CAPACITY];
+    x86os_file_info_t directory_identity;
+    desktop_explorer_initialize(&explorer);
+    assert(desktop_explorer_desktop_open(
+               &explorer, "/desktop") == DESKTOP_EXPLORER_OK);
+    assert(explorer.desktop_directory.active);
+    assert(explorer.desktop_directory.entry_count == 2U);
+    assert(explorer.desktop_directory.directory_identity.type ==
+           X86OS_DIRECTORY);
+    assert(explorer.desktop_directory.directory_identity.create_time == 77U);
+    assert(strcmp(explorer.desktop_directory.entries[0].name,
+                  "LINK.LNK") == 0);
+    assert(desktop_explorer_desktop_drag_object(
+               &explorer, 0U, &object) == DESKTOP_EXPLORER_OK);
+    assert(object.source_id == DESKTOP_EXPLORER_DESKTOP_SOURCE_ID);
+    assert(desktop_explorer_drag_validate(
+               &explorer, &object, &file) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(file.path, "/desktop/LINK.LNK") == 0);
+    assert(desktop_explorer_drag_source_directory(
+               &explorer, &object, source_directory,
+               &directory_identity) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(source_directory, "/desktop") == 0);
+    assert(directory_identity.create_time == 77U);
+    uint32_t generation =
+        explorer.desktop_directory.snapshot_generation;
+    assert(desktop_explorer_desktop_refresh(&explorer) ==
+           DESKTOP_EXPLORER_OK);
+    assert(explorer.desktop_directory.snapshot_generation != generation);
+    assert(desktop_explorer_drag_validate(
+               &explorer, &object, &file) == DESKTOP_EXPLORER_ESTALE);
+
+    generation = explorer.desktop_directory.snapshot_generation;
+    desktop_path_type = X86OS_SYMLINK;
+    assert(desktop_explorer_desktop_refresh(&explorer) ==
+           DESKTOP_EXPLORER_ENOTDIR);
+    assert(explorer.desktop_directory.snapshot_generation == generation);
+    assert(explorer.desktop_directory.active);
+    desktop_path_type = X86OS_DIRECTORY;
+}
+
 int main(void) {
     test_directory_snapshot_is_sorted_and_atomic();
     test_deadline_failure_keeps_published_snapshot();
@@ -546,5 +612,6 @@ int main(void) {
     test_details_view_toggle_layout_and_state_are_bounded();
     test_details_metadata_formatting_is_deterministic();
     test_drag_object_is_bound_to_snapshot_generation();
+    test_desktop_directory_snapshot_and_drag_identity();
     return 0;
 }

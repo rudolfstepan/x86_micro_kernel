@@ -1,6 +1,6 @@
 # REIST desktop icons
 
-These ten 32x32 RGBA icons are generated source artwork reduced to a single
+These eleven 32x32 RGBA icons are generated source artwork reduced to a single
 Microsoft ICO image each. The packaged payload is deliberately an uncompressed
 40-byte BITMAPINFOHEADER followed by 32-bit BGRA pixels and a 1-bit AND mask;
 PNG-compressed ICO entries are not used.
@@ -16,3 +16,8 @@ cropped and downsampled offline. Files contain no third-party icon resources.
 The empty/full trash variants are original vector-style shapes rasterized with
 ImageMagick into the same uncompressed 32-bit ICO profile. They deliberately
 share one silhouette while visible paper distinguishes the full state.
+
+`shortcut.ico` uses an ivory document and a compact blue arrow so a local
+`reist.shortcut/1` desktop entry remains visually distinct from its program or
+data-file target. It was generated as original transparent pixel artwork and
+reduced with nearest-neighbour sampling into the same fixed ICO profile.

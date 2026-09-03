@@ -22,6 +22,7 @@ class DesktopExplorerSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_EXPLORER_DOUBLE_CLICK_MS 500U", header)
         self.assertIn("reist_vfs_readdir_at", source)
         self.assertIn("reist_vfs_stat", source)
+        self.assertIn("reist_vfs_lstat", source)
         self.assertNotIn("x86os_readdir", source)
         self.assertNotIn("x86os_stat", source)
         self.assertIn("DESKTOP_EXPLORER_SCAN_CAPACITY 129U", header)
@@ -55,8 +56,22 @@ class DesktopExplorerSourceTests(unittest.TestCase):
         self.assertIn("UINT64_MAX - started", source)
         self.assertIn("entry_is_dot_name", source)
         self.assertIn("entry_is_trash_storage_name", source)
+        self.assertIn("entry_is_move_temporary_name", source)
         self.assertIn("desktop_explorer_icon_kind", source)
+        self.assertIn("DESKTOP_EXPLORER_ICON_SHORTCUT", header)
         self.assertIn("snapshot_generation", header)
+        self.assertIn("directory_identity", header)
+        self.assertIn("desktop_directory", header)
+        self.assertIn("DESKTOP_EXPLORER_DESKTOP_SOURCE_ID", header)
+        self.assertIn("desktop_explorer_desktop_open", source)
+        self.assertIn("desktop_explorer_desktop_refresh", source)
+        desktop_open = source.split(
+            "int desktop_explorer_desktop_open", 1)[1]
+        desktop_open = desktop_open.split(
+            "uint32_t desktop_explorer_can_back", 1)[0]
+        self.assertIn("stage_directory(explorer, path, 1U)", desktop_open)
+        self.assertIn("desktop_explorer_desktop_drag_object", source)
+        self.assertIn("desktop_explorer_drag_source_directory", source)
         self.assertIn("desktop_explorer_drag_object", header)
         self.assertIn("desktop_explorer_drag_validate", header)
         self.assertIn("/usr/share/icons/program.ico", desktop)
