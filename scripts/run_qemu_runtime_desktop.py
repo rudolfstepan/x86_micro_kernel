@@ -402,6 +402,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         control_probe: bool, trash_context_probe: bool,
         trash_confirm_probe: bool, trash_restore_probe: bool,
         explorer_scroll_probe: bool,
+        explorer_views_probe: bool,
         hover_probe: bool,
         supervised_probe: bool,
         guidemo_click_probe: bool,
@@ -481,6 +482,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     command_name = "desktop.prg --trash-restore-probe"
                 elif explorer_scroll_probe:
                     command_name = "desktop.prg --explorer-scroll-probe"
+                elif explorer_views_probe:
+                    command_name = "desktop.prg --explorer-views-probe"
                 else:
                     command_name = "desktop.prg"
                 send_command(process, command_name)
@@ -514,7 +517,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                               notepad_font_probe) or not any((
             expect_failure, render_probe, surface_probe, control_probe,
             trash_context_probe, trash_confirm_probe, trash_restore_probe,
-            explorer_scroll_probe, hover_probe, guidemo_click_probe,
+            explorer_scroll_probe, explorer_views_probe,
+            hover_probe, guidemo_click_probe,
             sound_probe))
         desktop_deadline = time.monotonic() + (
             90.0 if font_catalog_start else 30.0)
@@ -988,6 +992,39 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         "Explorer scroll probe did not restore the shell; "
                         f"guest tail:\n{tail}"
                     )
+                if explorer_views_probe:
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if "DESKTOP_EXPLORER_VIEWS_FAIL" in probe_text:
+                            marker = re.findall(
+                                r"DESKTOP_EXPLORER_VIEWS_FAIL[^\r\n]*",
+                                probe_text)[-1]
+                            raise RuntimeError(
+                                f"Explorer views probe failed: {marker}")
+                        if ("DESKTOP_EXPLORER_VIEWS_OK" in probe_text and
+                                "DESKTOP_EXIT_OK" in probe_text):
+                            exit_offset = probe_text.index("DESKTOP_EXIT_OK")
+                            if not explorer_shell_probe_sent:
+                                send_command(process, "help")
+                                explorer_shell_probe_sent = True
+                                time.sleep(0.02)
+                                continue
+                            help_offset = probe_text.find(
+                                SHELL_HELP_MARKER, exit_offset
+                            )
+                            prompt_offset = probe_text.find(
+                                SHELL_PROMPT, help_offset
+                            ) if help_offset >= 0 else -1
+                            if prompt_offset >= 0:
+                                print("runtime-desktop-explorer-views: PASS")
+                                return 0
+                        time.sleep(0.02)
+                    tail = "".join(transcript)[-8000:].replace("\r", "")
+                    raise RuntimeError(
+                        "Explorer views probe did not restore the shell; "
+                        f"guest tail:\n{tail}"
+                    )
                 # The marker is emitted immediately before the single
                 # backbuffer render so it is overwritten by the desktop.
                 # Give the guest a bounded interval to finish that frame
@@ -1044,6 +1081,7 @@ def main() -> int:
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--trash-restore-probe", action="store_true")
     parser.add_argument("--explorer-scroll-probe", action="store_true")
+    parser.add_argument("--explorer-views-probe", action="store_true")
     parser.add_argument("--sound-probe", action="store_true")
     parser.add_argument("--guidemo-click-probe", action="store_true")
     parser.add_argument("--hover-probe", action="store_true")
@@ -1056,7 +1094,7 @@ def main() -> int:
             args.notepad_probe, args.notepad_font_probe, args.control_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
-            args.explorer_scroll_probe,
+            args.explorer_scroll_probe, args.explorer_views_probe,
             args.sound_probe, args.guidemo_click_probe,
             args.hover_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
@@ -1074,7 +1112,7 @@ def main() -> int:
                    args.notepad_font_probe, args.control_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
                    args.trash_restore_probe,
-                   args.explorer_scroll_probe,
+                   args.explorer_scroll_probe, args.explorer_views_probe,
                    args.hover_probe,
                    args.supervised_probe,
                    args.guidemo_click_probe, args.sound_probe,

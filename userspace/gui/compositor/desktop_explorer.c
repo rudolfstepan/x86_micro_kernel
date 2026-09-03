@@ -373,7 +373,10 @@ static int stage_directory(desktop_explorer_t *explorer, const char *path) {
 static void publish_staging(desktop_explorer_t *explorer,
                             desktop_explorer_window_t *window,
                             uint32_t reset_history) {
-    if (reset_history) clear_bytes(window, sizeof(*window));
+    if (reset_history) {
+        clear_bytes(window, sizeof(*window));
+        window->view = DESKTOP_EXPLORER_VIEW_ICONS;
+    }
     window->active = 1U;
     if (++explorer->next_snapshot_generation == 0U)
         explorer->next_snapshot_generation = 1U;
@@ -567,6 +570,104 @@ static uint32_t divide_round_up(uint32_t value, uint32_t divisor) {
     return divisor != 0U ? value / divisor + (value % divisor != 0U) : 0U;
 }
 
+const char *desktop_explorer_type_text(const x86os_file_info_t *entry,
+                                       uint32_t directory_nonempty) {
+    uint32_t kind = desktop_explorer_icon_kind(entry, directory_nonempty);
+    if (kind == DESKTOP_EXPLORER_ICON_FOLDER_EMPTY ||
+        kind == DESKTOP_EXPLORER_ICON_FOLDER_FULL) return "Ordner";
+    if (kind == DESKTOP_EXPLORER_ICON_PROGRAM) return "Programm";
+    if (kind == DESKTOP_EXPLORER_ICON_TEXT) return "Textdokument";
+    if (kind == DESKTOP_EXPLORER_ICON_AUDIO) return "Audio";
+    if (kind == DESKTOP_EXPLORER_ICON_IMAGE) return "Bild";
+    if (kind == DESKTOP_EXPLORER_ICON_SETTINGS) return "Konfiguration";
+    return "Datei";
+}
+
+int desktop_explorer_format_size(uint32_t bytes, char *output,
+                                 uint32_t capacity) {
+    if (output == 0 || capacity < DESKTOP_EXPLORER_SIZE_TEXT_CAPACITY)
+        return DESKTOP_EXPLORER_EINVAL;
+    char reverse[10];
+    uint32_t count = 0U;
+    do {
+        reverse[count++] = (char)('0' + bytes % 10U);
+        bytes /= 10U;
+    } while (bytes != 0U && count < sizeof(reverse));
+    for (uint32_t index = 0U; index < count; ++index)
+        output[index] = reverse[count - index - 1U];
+    output[count] = '\0';
+    return DESKTOP_EXPLORER_OK;
+}
+
+static uint32_t explorer_year_is_leap(uint32_t year) {
+    return year % 4U == 0U &&
+        (year % 100U != 0U || year % 400U == 0U);
+}
+
+static uint32_t explorer_month_days(uint32_t year, uint32_t month) {
+    static const uint8_t days[12] = {
+        31U, 28U, 31U, 30U, 31U, 30U,
+        31U, 31U, 30U, 31U, 30U, 31U,
+    };
+    if (month == 0U || month > 12U) return 0U;
+    if (month == 2U && explorer_year_is_leap(year)) return 29U;
+    return days[month - 1U];
+}
+
+static void explorer_write_two_digits(char *output, uint32_t value) {
+    output[0] = (char)('0' + (value / 10U) % 10U);
+    output[1] = (char)('0' + value % 10U);
+}
+
+int desktop_explorer_format_modified_utc(uint32_t unix_seconds,
+                                         char *output, uint32_t capacity) {
+    static const char missing[] = "---- -- -- --:--";
+    if (output == 0 || capacity < DESKTOP_EXPLORER_MODIFIED_TEXT_CAPACITY)
+        return DESKTOP_EXPLORER_EINVAL;
+    if (unix_seconds == 0U) {
+        for (uint32_t index = 0U; index < sizeof(missing); ++index)
+            output[index] = missing[index];
+        return DESKTOP_EXPLORER_OK;
+    }
+
+    uint32_t days = unix_seconds / 86400U;
+    uint32_t seconds_of_day = unix_seconds % 86400U;
+    uint32_t year = 1970U;
+    while (year <= 2106U) {
+        uint32_t year_days = explorer_year_is_leap(year) ? 366U : 365U;
+        if (days < year_days) break;
+        days -= year_days;
+        ++year;
+    }
+    uint32_t month = 1U;
+    while (month <= 12U) {
+        uint32_t month_days = explorer_month_days(year, month);
+        if (days < month_days) break;
+        days -= month_days;
+        ++month;
+    }
+    if (year > 2106U || month > 12U) {
+        for (uint32_t index = 0U; index < sizeof(missing); ++index)
+            output[index] = missing[index];
+        return DESKTOP_EXPLORER_OK;
+    }
+    output[0] = (char)('0' + (year / 1000U) % 10U);
+    output[1] = (char)('0' + (year / 100U) % 10U);
+    output[2] = (char)('0' + (year / 10U) % 10U);
+    output[3] = (char)('0' + year % 10U);
+    output[4] = '-';
+    explorer_write_two_digits(&output[5], month);
+    output[7] = '-';
+    explorer_write_two_digits(&output[8], days + 1U);
+    output[10] = ' ';
+    explorer_write_two_digits(&output[11], seconds_of_day / 3600U);
+    output[13] = ':';
+    explorer_write_two_digits(&output[14],
+                              (seconds_of_day % 3600U) / 60U);
+    output[16] = '\0';
+    return DESKTOP_EXPLORER_OK;
+}
+
 /* Freestanding i386 does not provide the compiler's 64-bit division helper.
  * Keep scrollbar interpolation exact and bounded with fixed-step long
  * division instead of allowing the compiler to emit __udivdi3. */
@@ -597,21 +698,36 @@ desktop_explorer_layout_t desktop_explorer_layout(
     const desktop_explorer_window_t *window, desktop_rect_t client) {
     desktop_explorer_layout_t layout;
     clear_bytes(&layout, sizeof(layout));
-    if (window == 0 || !window->active || client.width == 0U ||
-        client.height == 0U || client.x < 0 || client.y < 0) return layout;
+    if (window == 0 || !window->active ||
+        window->view >= DESKTOP_EXPLORER_VIEW_COUNT ||
+        client.width == 0U || client.height == 0U ||
+        client.x < 0 || client.y < 0) return layout;
 
     uint32_t scrollbar_width = client.width < DESKTOP_EXPLORER_SCROLLBAR_EXTENT
         ? client.width : DESKTOP_EXPLORER_SCROLLBAR_EXTENT;
-    uint32_t viewport_width = client.width > scrollbar_width
-        ? client.width - scrollbar_width : 1U;
+    uint32_t viewport_width = client.width - scrollbar_width;
+    uint32_t header_height = window->view == DESKTOP_EXPLORER_VIEW_DETAILS
+        ? (client.height < DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT
+            ? client.height : DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT)
+        : 0U;
+    uint32_t viewport_height = client.height - header_height;
+    if (header_height != 0U)
+        layout.header = (desktop_rect_t){
+            client.x, client.y, viewport_width, header_height};
     layout.viewport = (desktop_rect_t){
-        client.x, client.y, viewport_width, client.height};
+        client.x, client.y + (int32_t)header_height,
+        viewport_width, viewport_height};
     layout.scrollbar = (desktop_rect_t){
-        client.x + (int32_t)(client.width - scrollbar_width), client.y,
-        scrollbar_width, client.height};
-    layout.columns = viewport_width / DESKTOP_EXPLORER_ICON_WIDTH;
+        client.x + (int32_t)(client.width - scrollbar_width),
+        client.y + (int32_t)header_height,
+        scrollbar_width, viewport_height};
+    layout.columns = window->view == DESKTOP_EXPLORER_VIEW_DETAILS
+        ? 1U : viewport_width / DESKTOP_EXPLORER_ICON_WIDTH;
     if (layout.columns == 0U) layout.columns = 1U;
-    layout.visible_rows = client.height / DESKTOP_EXPLORER_ICON_HEIGHT;
+    uint32_t row_height = window->view == DESKTOP_EXPLORER_VIEW_DETAILS
+        ? DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT
+        : DESKTOP_EXPLORER_ICON_HEIGHT;
+    layout.visible_rows = viewport_height / row_height;
     if (layout.visible_rows == 0U) layout.visible_rows = 1U;
     layout.total_rows = divide_round_up(window->entry_count, layout.columns);
     layout.maximum_first_row = layout.total_rows > layout.visible_rows
@@ -621,14 +737,14 @@ desktop_explorer_layout_t desktop_explorer_layout(
     layout.enabled = layout.maximum_first_row != 0U;
 
     uint32_t button = scrollbar_width;
-    if (button * 2U > client.height) button = client.height / 2U;
-    uint32_t track_height = client.height > button * 2U
-        ? client.height - button * 2U : 0U;
+    if (button * 2U > viewport_height) button = viewport_height / 2U;
+    uint32_t track_height = viewport_height > button * 2U
+        ? viewport_height - button * 2U : 0U;
     layout.decrement = (desktop_rect_t){
         layout.scrollbar.x, layout.scrollbar.y, scrollbar_width, button};
     layout.increment = (desktop_rect_t){
         layout.scrollbar.x,
-        layout.scrollbar.y + (int32_t)client.height - (int32_t)button,
+        layout.scrollbar.y + (int32_t)viewport_height - (int32_t)button,
         scrollbar_width, button};
     layout.track = (desktop_rect_t){
         layout.scrollbar.x, layout.scrollbar.y + (int32_t)button,
@@ -677,6 +793,21 @@ static void scroll_rows(desktop_explorer_window_t *window,
     set_first_row(window, next, layout->maximum_first_row, result);
 }
 
+static void reveal_selection(
+    desktop_explorer_window_t *window,
+    const desktop_explorer_layout_t *layout,
+    desktop_explorer_result_t *result) {
+    if (window->selected >= window->entry_count || layout->columns == 0U ||
+        layout->visible_rows == 0U) return;
+    uint32_t selected_row = window->selected / layout->columns;
+    if (selected_row < layout->first_row)
+        set_first_row(window, selected_row,
+                      layout->maximum_first_row, result);
+    else if (selected_row >= layout->first_row + layout->visible_rows)
+        set_first_row(window, selected_row - layout->visible_rows + 1U,
+                      layout->maximum_first_row, result);
+}
+
 desktop_rect_t desktop_explorer_entry_rect(
     const desktop_explorer_window_t *window, desktop_rect_t client,
     uint32_t entry_index) {
@@ -690,16 +821,22 @@ desktop_rect_t desktop_explorer_entry_rect(
     uint32_t row = entry_index / layout.columns;
     if (row < layout.first_row) return empty;
     uint32_t visible_row = row - layout.first_row;
+    uint32_t row_height = window->view == DESKTOP_EXPLORER_VIEW_DETAILS
+        ? DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT
+        : DESKTOP_EXPLORER_ICON_HEIGHT;
     uint64_t y = (uint64_t)(uint32_t)layout.viewport.y +
-                 (uint64_t)visible_row * DESKTOP_EXPLORER_ICON_HEIGHT;
+                 (uint64_t)visible_row * row_height;
     if (y >= (uint64_t)(uint32_t)layout.viewport.y + layout.viewport.height)
         return empty;
     desktop_rect_t result = {
-        layout.viewport.x +
-            (int32_t)(column * DESKTOP_EXPLORER_ICON_WIDTH),
+        window->view == DESKTOP_EXPLORER_VIEW_DETAILS
+            ? layout.viewport.x
+            : layout.viewport.x +
+                (int32_t)(column * DESKTOP_EXPLORER_ICON_WIDTH),
         (int32_t)y,
-        DESKTOP_EXPLORER_ICON_WIDTH,
-        DESKTOP_EXPLORER_ICON_HEIGHT,
+        window->view == DESKTOP_EXPLORER_VIEW_DETAILS
+            ? layout.viewport.width : DESKTOP_EXPLORER_ICON_WIDTH,
+        row_height,
     };
     if ((uint64_t)(uint32_t)result.x + result.width >
         (uint64_t)(uint32_t)layout.viewport.x + layout.viewport.width)
@@ -735,7 +872,19 @@ int desktop_explorer_pointer_press(
         return DESKTOP_EXPLORER_EINVAL;
     desktop_explorer_window_t *window = &explorer->windows[window_index];
     desktop_explorer_layout_t layout = desktop_explorer_layout(window, client);
+    if (layout.columns == 0U || layout.visible_rows == 0U)
+        return DESKTOP_EXPLORER_EINVAL;
     result->window_index = window_index;
+    if (window->view == DESKTOP_EXPLORER_VIEW_DETAILS &&
+        y >= client.y && y < layout.viewport.y &&
+        x >= client.x &&
+        (uint64_t)(uint32_t)(x - client.x) < client.width) {
+        result->consumed = 1U;
+        window->pressed = DESKTOP_EXPLORER_NO_ENTRY;
+        window->last_click = DESKTOP_EXPLORER_NO_ENTRY;
+        window->last_click_ms = 0U;
+        return DESKTOP_EXPLORER_OK;
+    }
     if (point_in_rect(layout.scrollbar, x, y)) {
         result->consumed = 1U;
         window->pressed = DESKTOP_EXPLORER_NO_ENTRY;
@@ -886,10 +1035,40 @@ int desktop_explorer_resize(
         return DESKTOP_EXPLORER_EINVAL;
     desktop_explorer_window_t *window = &explorer->windows[window_index];
     desktop_explorer_layout_t layout = desktop_explorer_layout(window, client);
+    if (layout.columns == 0U || layout.visible_rows == 0U)
+        return DESKTOP_EXPLORER_EINVAL;
     result->window_index = window_index;
     set_first_row(window, layout.first_row, layout.maximum_first_row, result);
+    reveal_selection(window, &layout, result);
     window->scroll_capture = DESKTOP_EXPLORER_SCROLL_NONE;
     window->scroll_drag_offset = 0U;
+    return DESKTOP_EXPLORER_OK;
+}
+
+int desktop_explorer_toggle_view(
+    desktop_explorer_t *explorer, uint32_t window_index,
+    desktop_rect_t client, desktop_explorer_result_t *result) {
+    if (explorer == 0 || result == 0 || client.width == 0U ||
+        client.height == 0U || client.x < 0 || client.y < 0 ||
+        window_index >= DESKTOP_EXPLORER_WINDOW_CAPACITY ||
+        !explorer->windows[window_index].active ||
+        explorer->windows[window_index].view >= DESKTOP_EXPLORER_VIEW_COUNT)
+        return DESKTOP_EXPLORER_EINVAL;
+    desktop_explorer_window_t *window = &explorer->windows[window_index];
+    window->view = window->view == DESKTOP_EXPLORER_VIEW_ICONS
+        ? DESKTOP_EXPLORER_VIEW_DETAILS : DESKTOP_EXPLORER_VIEW_ICONS;
+    window->pressed = DESKTOP_EXPLORER_NO_ENTRY;
+    window->last_click = DESKTOP_EXPLORER_NO_ENTRY;
+    window->last_click_ms = 0U;
+    window->scroll_capture = DESKTOP_EXPLORER_SCROLL_NONE;
+    window->scroll_drag_offset = 0U;
+    desktop_explorer_layout_t layout = desktop_explorer_layout(window, client);
+    set_first_row(window, layout.first_row, layout.maximum_first_row, result);
+    reveal_selection(window, &layout, result);
+    result->consumed = 1U;
+    result->viewport_changed = 1U;
+    result->window_index = window_index;
+    result->entry_index = window->selected;
     return DESKTOP_EXPLORER_OK;
 }
 
@@ -967,6 +1146,8 @@ int desktop_explorer_keyboard(
     desktop_explorer_window_t *window = &explorer->windows[window_index];
     desktop_explorer_layout_t layout = desktop_explorer_layout(window, client);
     uint32_t columns = layout.columns;
+    if (columns == 0U || layout.visible_rows == 0U)
+        return DESKTOP_EXPLORER_EINVAL;
     result->consumed = 1U;
     result->window_index = window_index;
     result->entry_index = window->selected;
@@ -1003,13 +1184,7 @@ int desktop_explorer_keyboard(
         window->selected = next;
         result->selection_changed = 1U;
     }
-    uint32_t selected_row = window->selected / columns;
-    if (selected_row < layout.first_row)
-        set_first_row(window, selected_row,
-                      layout.maximum_first_row, result);
-    else if (selected_row >= layout.first_row + layout.visible_rows)
-        set_first_row(window, selected_row - layout.visible_rows + 1U,
-                      layout.maximum_first_row, result);
+    reveal_selection(window, &layout, result);
     result->entry_index = window->selected;
     return DESKTOP_EXPLORER_OK;
 }

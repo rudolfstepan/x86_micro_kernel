@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.3c-desktop-explorer-details-view"
+active_id = "N3a-vfs-symbolic-links"
 
 [policy]
 one_package_per_run = true
@@ -14569,7 +14569,7 @@ evidence = [
 
 [[packages]]
 id = "R3.3c-desktop-explorer-details-view"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Switch Explorer between icon and detailed list views"
@@ -14617,11 +14617,17 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "gui: add Explorer details view"
-evidence = []
+evidence = [
+  "All four frozen targeted gates passed with 106 checks across Explorer host behavior, compositor integration, runtime dispatch and the complete production-program toolchain.",
+  "The host matrix proved icon-default initialization, generation and selection preservation, fixed 24-pixel header and row geometry, one-entry details hit testing, header no-op input, tiny-client clipping, shared wheel range, selection reveal, view persistence through Navigate Refresh and Back, invalid-view rejection, decimal UINT32 sizes and UTC timestamps through 2106.",
+  "The final QEMU framebuffer package passed in 41 seconds and linked the enlarged Explorer layout into the freestanding DESKTOP.PRG without heap allocation, render-time VFS access or compiler runtime memory helpers.",
+  "The real QEMU Explorer views runtime passed after toggling both directions, rendering the fixed details header and metadata rows, exercising double click wheel captured thumb resize Up Back Refresh and view persistence, restoring VGA and receiving a live Ring-3 shell help response and prompt.",
+  "No syscall, public VFS metadata ABI, filesystem mutation, sortable header, horizontal scrollbar, editable address, preview pane or tree navigation was added."
+]
 
 [[packages]]
 id = "N3a-vfs-symbolic-links"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Resolve and create bounded POSIX symbolic links on EXT2"

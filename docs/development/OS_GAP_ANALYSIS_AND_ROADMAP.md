@@ -3177,15 +3177,18 @@ durch den Status des ausführbaren Pakets aktualisiert.
    QEMU-Explorer-Navigations-/Scrolllauf. Abgenommen mit 104 Targeted-Checks,
    QEMU-Framebuffer-Paketbuild und realem Guest-Lauf einschließlich
    VGA-Rückkehr und antwortender Ring-3-Shell.
-6. [~] **R3.3c · Explorer-Symbol- und Detailansicht umschaltbar machen.** Die
+6. [x] **R3.3c · Explorer-Symbol- und Detailansicht umschaltbar machen.** Die
    vorhandene Symbolmatrix bleibt Standard. Ein fester Toolbar-Schalter wechselt
    ohne neuen Snapshot in eine einzeilige Detail-Liste mit feststehender
    Kopfzeile für Name, Typ, Größe und UTC-Änderungszeit. Auswahl, Aktivierung,
    Drag-Identität und Verlauf bleiben erhalten; dieselbe begrenzte Scrollbar
    verwendet ansichtsabhängige Zeilenhöhen und klemmt bei Umschalten und Resize.
    Abnahme: Hostmatrix für beide Layouts, Metadatenformatierung, Hit-Test,
-   Auswahl-Reveal und Scrollrange sowie realer QEMU-Ansichtswechsel.
-7. [ ] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
+   Auswahl-Reveal und Scrollrange sowie realer QEMU-Ansichtswechsel. Abgenommen
+   mit 106 Targeted-Checks, QEMU-Framebuffer-Paketbuild und realem Guest-Lauf
+   einschließlich Doppelklick, Wheel, Thumb, Resize, Navigation, VGA-Rückkehr
+   und antwortender Ring-3-Shell.
+7. [~] **N3a · Begrenzte POSIX-Symlinks auf EXT2 bereitstellen.** Die
    append-only Storage-Service-/Client-ABI ergänzt `symlink`, `readlink`,
    `lstat` und `O_NOFOLLOW`; Auflösung und EXT2-Metadatenpolicy bleiben im
    restartbaren Ring-3-Storage-Dienst. Der alte Ring-0-VFS-/EXT2-Pfad wird

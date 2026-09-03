@@ -26,11 +26,20 @@ class DesktopExplorerSourceTests(unittest.TestCase):
         self.assertNotIn("x86os_stat", source)
         self.assertIn("DESKTOP_EXPLORER_SCAN_CAPACITY 129U", header)
         self.assertIn("DESKTOP_EXPLORER_SCROLLBAR_EXTENT 18U", header)
+        self.assertIn("DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT 24U", header)
+        self.assertIn("DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT 24U", header)
         self.assertIn("DESKTOP_EXPLORER_HISTORY_CAPACITY 16U", header)
         self.assertIn("desktop_explorer_layout", source)
         self.assertIn("desktop_explorer_pointer_motion", source)
         self.assertIn("desktop_explorer_wheel", source)
         self.assertIn("desktop_explorer_resize", source)
+        self.assertIn("desktop_explorer_toggle_view", source)
+        self.assertIn("desktop_explorer_format_size", source)
+        self.assertIn("desktop_explorer_format_modified_utc", source)
+        self.assertIn("desktop_explorer_type_text", source)
+        self.assertIn("DESKTOP_EXPLORER_VIEW_ICONS", header)
+        self.assertIn("DESKTOP_EXPLORER_VIEW_DETAILS", header)
+        self.assertIn("desktop_rect_t header", header)
         self.assertIn("desktop_explorer_navigate", source)
         self.assertIn("desktop_explorer_back", source)
         self.assertIn("desktop_explorer_forward", source)
@@ -59,6 +68,16 @@ class DesktopExplorerSourceTests(unittest.TestCase):
             render, r"\b(x86os_open|x86os_read|reist_image_decode|malloc)\s*\("
         )
         self.assertNotRegex(source, r"\b(malloc|calloc|realloc|free)\s*\(")
+        toggle = source.split("int desktop_explorer_toggle_view", 1)[1]
+        toggle = toggle.split("int desktop_explorer_drag_object", 1)[0]
+        self.assertNotRegex(
+            toggle, r"\b(reist_vfs_|x86os_open|x86os_read|malloc)\s*\("
+        )
+        modified = source.split(
+            "int desktop_explorer_format_modified_utc", 1)[1]
+        modified = modified.split("desktop_explorer_layout_t", 1)[0]
+        self.assertIn("year <= 2106U", modified)
+        self.assertIn("month <= 12U", modified)
         build = (ROOT / "scripts/build_system_programs.py").read_text(
             encoding="utf-8")
         mapping = build[build.index('"DESKTOP.PRG": ('):

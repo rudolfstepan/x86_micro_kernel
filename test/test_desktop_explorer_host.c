@@ -369,6 +369,145 @@ static void test_scrolled_hit_test_keyboard_reveal_and_capacity(void) {
     many_entry_count = 50U;
 }
 
+static void test_details_view_toggle_layout_and_state_are_bounded(void) {
+    desktop_explorer_t explorer;
+    desktop_explorer_result_t result;
+    desktop_rect_t client = {20, 40, 330U, 176U};
+    desktop_explorer_initialize(&explorer);
+    many_entry_count = 50U;
+    assert(desktop_explorer_open(&explorer, 0U, "/Many") == 0);
+    desktop_explorer_window_t *window = &explorer.windows[0];
+    assert(window->view == DESKTOP_EXPLORER_VIEW_ICONS);
+    uint32_t generation = window->snapshot_generation;
+    window->selected = 17U;
+    window->first_row = 4U;
+
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_toggle_view(
+        &explorer, 0U, client, &result) == DESKTOP_EXPLORER_OK);
+    assert(result.consumed && result.viewport_changed);
+    assert(window->view == DESKTOP_EXPLORER_VIEW_DETAILS);
+    assert(window->snapshot_generation == generation);
+    assert(window->entry_count == 50U && window->selected == 17U);
+    assert(strcmp(window->entries[17].name, "ITEM017.TXT") == 0);
+
+    desktop_explorer_layout_t layout =
+        desktop_explorer_layout(window, client);
+    assert(layout.header.x == client.x && layout.header.y == client.y);
+    assert(layout.header.width == layout.viewport.width);
+    assert(layout.header.height == DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT);
+    assert(layout.viewport.y ==
+           client.y + (int32_t)DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT);
+    assert(layout.viewport.height ==
+           client.height - DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT);
+    assert(layout.scrollbar.y == layout.viewport.y);
+    assert(layout.scrollbar.height == layout.viewport.height);
+    assert(layout.columns == 1U && layout.visible_rows == 6U);
+    assert(layout.total_rows == 50U && layout.maximum_first_row == 44U);
+    assert(layout.first_row == 12U && window->first_row == 12U);
+
+    desktop_rect_t first = desktop_explorer_entry_rect(window, client, 12U);
+    assert(first.x == layout.viewport.x && first.y == layout.viewport.y);
+    assert(first.width == layout.viewport.width);
+    assert(first.height == DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT);
+    assert(desktop_explorer_entry_rect(window, client, 11U).width == 0U);
+    assert(desktop_explorer_entry_at(
+        window, client, layout.header.x + 2, layout.header.y + 2) ==
+        DESKTOP_EXPLORER_NO_ENTRY);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_pointer_press(
+        &explorer, 0U, client, layout.header.x + 2,
+        layout.header.y + 2, &result) == DESKTOP_EXPLORER_OK);
+    assert(result.consumed && window->selected == 17U);
+    assert(desktop_explorer_entry_at(
+        window, client, first.x + 2, first.y + 2) == 12U);
+
+    desktop_rect_t tiny = {20, 40, 12U, 12U};
+    desktop_explorer_layout_t tiny_layout =
+        desktop_explorer_layout(window, tiny);
+    assert(tiny_layout.header.height == tiny.height);
+    assert(tiny_layout.header.width == 0U);
+    assert(tiny_layout.viewport.width == 0U &&
+           tiny_layout.viewport.height == 0U);
+    assert(tiny_layout.scrollbar.x == tiny.x &&
+           tiny_layout.scrollbar.y == tiny.y + (int32_t)tiny.height);
+    assert(desktop_explorer_entry_rect(window, tiny, 17U).width == 0U);
+
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_wheel(
+        &explorer, 0U, client, -1, &result) == DESKTOP_EXPLORER_OK);
+    assert(result.viewport_changed && window->first_row == 15U);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_toggle_view(
+        &explorer, 0U, client, &result) == DESKTOP_EXPLORER_OK);
+    assert(window->view == DESKTOP_EXPLORER_VIEW_ICONS);
+    assert(window->snapshot_generation == generation && window->selected == 17U);
+    layout = desktop_explorer_layout(window, client);
+    assert(layout.header.width == 0U && layout.header.height == 0U);
+    assert(layout.columns == 3U && window->first_row == 5U);
+
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_toggle_view(
+        &explorer, 0U, client, &result) == DESKTOP_EXPLORER_OK);
+    assert(desktop_explorer_navigate(
+        &explorer, 0U, "/Docs") == DESKTOP_EXPLORER_OK);
+    assert(window->view == DESKTOP_EXPLORER_VIEW_DETAILS);
+    assert(desktop_explorer_refresh(
+        &explorer, 0U) == DESKTOP_EXPLORER_OK);
+    assert(window->view == DESKTOP_EXPLORER_VIEW_DETAILS);
+    assert(desktop_explorer_back(
+        &explorer, 0U) == DESKTOP_EXPLORER_OK);
+    assert(window->view == DESKTOP_EXPLORER_VIEW_DETAILS);
+
+    assert(desktop_explorer_open(&explorer, 0U, "/") ==
+           DESKTOP_EXPLORER_OK);
+    assert(window->view == DESKTOP_EXPLORER_VIEW_ICONS);
+    window->view = DESKTOP_EXPLORER_VIEW_COUNT;
+    layout = desktop_explorer_layout(window, client);
+    assert(layout.viewport.width == 0U && layout.scrollbar.width == 0U);
+    desktop_explorer_result_initialize(&result);
+    assert(desktop_explorer_toggle_view(
+        &explorer, 0U, client, &result) == DESKTOP_EXPLORER_EINVAL);
+    assert(window->view == DESKTOP_EXPLORER_VIEW_COUNT);
+    many_entry_count = 50U;
+}
+
+static void test_details_metadata_formatting_is_deterministic(void) {
+    char size[DESKTOP_EXPLORER_SIZE_TEXT_CAPACITY];
+    char modified[DESKTOP_EXPLORER_MODIFIED_TEXT_CAPACITY];
+    char too_small[3] = "ok";
+    assert(desktop_explorer_format_size(
+        UINT32_MAX, size, sizeof(size)) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(size, "4294967295") == 0);
+    assert(desktop_explorer_format_modified_utc(
+        0U, modified, sizeof(modified)) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(modified, "---- -- -- --:--") == 0);
+    assert(desktop_explorer_format_modified_utc(
+        1U, modified, sizeof(modified)) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(modified, "1970-01-01 00:00") == 0);
+    assert(desktop_explorer_format_modified_utc(
+        951827696U, modified, sizeof(modified)) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(modified, "2000-02-29 12:34") == 0);
+    assert(desktop_explorer_format_modified_utc(
+        UINT32_MAX, modified, sizeof(modified)) == DESKTOP_EXPLORER_OK);
+    assert(strcmp(modified, "2106-02-07 06:28") == 0);
+    assert(desktop_explorer_format_size(
+        1U, too_small, sizeof(too_small)) == DESKTOP_EXPLORER_EINVAL);
+    assert(strcmp(too_small, "ok") == 0);
+
+    x86os_file_info_t entry = {0};
+    entry.type = X86OS_DIRECTORY;
+    assert(strcmp(desktop_explorer_type_text(&entry, 0U), "Ordner") == 0);
+    entry.type = X86OS_FILE;
+    strcpy(entry.name, "SETUP.PRG");
+    assert(strcmp(desktop_explorer_type_text(&entry, 0U), "Programm") == 0);
+    strcpy(entry.name, "README.TXT");
+    assert(strcmp(desktop_explorer_type_text(&entry, 0U),
+                  "Textdokument") == 0);
+    strcpy(entry.name, "DATA.BIN");
+    assert(strcmp(desktop_explorer_type_text(&entry, 0U), "Datei") == 0);
+}
+
 static void test_drag_object_is_bound_to_snapshot_generation(void) {
     desktop_explorer_t explorer;
     desktop_drag_object_t object;
@@ -404,6 +543,8 @@ int main(void) {
     test_keyboard_grid_navigation_and_activation();
     test_scrollbar_geometry_input_and_resize_are_bounded();
     test_scrolled_hit_test_keyboard_reveal_and_capacity();
+    test_details_view_toggle_layout_and_state_are_bounded();
+    test_details_metadata_formatting_is_deterministic();
     test_drag_object_is_bound_to_snapshot_generation();
     return 0;
 }

@@ -175,6 +175,25 @@ class DesktopSourceTests(unittest.TestCase):
             chrome, r"\b(x86os_open|x86os_read|reist_vfs_|malloc)\s*\("
         )
 
+    def test_explorer_switches_between_icons_and_fixed_details_rows(self):
+        for token in (
+                "DESKTOP_EXPLORER_NAVIGATION_VIEW",
+                "desktop_explorer_toggle_view(",
+                "render_explorer_details_header",
+                "desktop_explorer_detail_columns",
+                '"Details"', '"Symbole"', '"Name"', '"Typ"',
+                '"Groesse"', '"Geaendert UTC"'):
+            self.assertIn(token, self.source)
+        self.assertIn("desktop_explorer_format_size(", self.source)
+        self.assertIn("desktop_explorer_format_modified_utc(", self.source)
+        details = self.source[
+            self.source.index("static void render_explorer_details_header"):
+            self.source.index("static void render_explorer_scrollbar")
+        ]
+        self.assertNotRegex(
+            details, r"\b(x86os_open|x86os_read|reist_vfs_|malloc)\s*\("
+        )
+
     def test_icon_focus_is_compact_and_does_not_fill_the_hit_cell(self):
         render = self.source[self.source.index("static void render_icon") :]
         render = render[: render.index("\n}") + 2]

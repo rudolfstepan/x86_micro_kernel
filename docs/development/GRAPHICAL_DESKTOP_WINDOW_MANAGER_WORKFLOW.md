@@ -479,6 +479,9 @@ inkompatibler Fensterrahmen.
 - [x] Verzeichnisse per Doppelklick/Enter atomar im aktuellen Fenster öffnen,
   mit Zurück, Vor und Aufwärts navigieren und `.PRG`-Dateien über ihren
   kanonischen VFS-Pfad starten.
+- [x] Pro Explorerfenster zwischen der bestehenden Symbolmatrix und einer
+  einzeiligen, vertikal scrollbaren Detailansicht umschalten. Die feststehende
+  Kopfzeile zeigt Name, Typ, Größe und UTC-Änderungszeit.
 - [x] Versionierte, fest begrenzte Dateizuordnungen aus
   `/etc/reist/filetypes.conf` laden und den Dateipfad per `argv[1]` an das
   zugeordnete GUI-Programm übergeben.
@@ -490,8 +493,15 @@ inkompatibler Fensterrahmen.
 
 Der aktuelle Explorer ist bewusst compositorintern und auf acht Fenster sowie
 128 Einträge je atomarem Snapshot begrenzt. Seine feste klassische Chrome
-bietet Zurück, Vor, Aufwärts, Aktualisieren, eine schreibgeschützte Adresszeile,
-Statuszeile und vertikales Scrollen; Ordner wechseln atomar im selben Fenster.
+bietet Zurück, Vor, Aufwärts, Aktualisieren, einen Ansichtsschalter, eine
+schreibgeschützte Adresszeile, Statuszeile und vertikales Scrollen; Ordner
+wechseln atomar im selben Fenster. Neue Fenster beginnen in der Symbolansicht.
+`Details` wechselt ohne VFS-Zugriff oder zweiten Snapshot auf feste 24-Pixel-
+Zeilen unter einer 24-Pixel-Kopfzeile. Lange Namen und Metadaten werden an den
+responsiven Spalten geclippt; Dateigrößen erscheinen als dezimale Bytes und der
+32-Bit-Unix-Zeitstempel als `YYYY-MM-DD HH:MM` in ausdrücklich bezeichnetem
+UTC. Die Auswahl und Snapshotgeneration bleiben beim Umschalten unverändert;
+Navigation und Aktualisieren behalten den Ansichtsmodus bei.
 Ein vollständiger Client/Server-Dateimanager
 folgt als eigener Client in einer späteren Stufe. Noch nicht migrierte
 Legacy-Programme können den

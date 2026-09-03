@@ -86,6 +86,8 @@
 #define DESKTOP_EXPLORER_BACK_WIDTH 96U
 #define DESKTOP_EXPLORER_SMALL_BUTTON_WIDTH 36U
 #define DESKTOP_EXPLORER_REFRESH_WIDTH 64U
+#define DESKTOP_EXPLORER_VIEW_WIDTH 80U
+#define DESKTOP_EXPLORER_DETAILS_ICON_SIZE 18U
 #define DESKTOP_SYSTEM_SOUND_CONFIG_PATH "/etc/reist/sounds.conf"
 #define DESKTOP_SYSTEM_SOUND_SCHEMA "reist.sounds/1"
 #define DESKTOP_SYSTEM_SOUND_PLAYER "/usr/bin/wavplay.prg"
@@ -133,7 +135,8 @@ enum desktop_explorer_navigation_action {
     DESKTOP_EXPLORER_NAVIGATION_BACK,
     DESKTOP_EXPLORER_NAVIGATION_FORWARD,
     DESKTOP_EXPLORER_NAVIGATION_UP,
-    DESKTOP_EXPLORER_NAVIGATION_REFRESH
+    DESKTOP_EXPLORER_NAVIGATION_REFRESH,
+    DESKTOP_EXPLORER_NAVIGATION_VIEW
 };
 
 typedef struct desktop_explorer_chrome {
@@ -145,7 +148,15 @@ typedef struct desktop_explorer_chrome {
     desktop_rect_t forward;
     desktop_rect_t up;
     desktop_rect_t refresh;
+    desktop_rect_t view;
 } desktop_explorer_chrome_t;
+
+typedef struct desktop_explorer_detail_columns {
+    desktop_rect_t name;
+    desktop_rect_t type;
+    desktop_rect_t size;
+    desktop_rect_t modified;
+} desktop_explorer_detail_columns_t;
 
 static const char *const desktop_system_sound_keys[
         DESKTOP_SYSTEM_SOUND_EVENT_COUNT] = {
@@ -2693,6 +2704,8 @@ static desktop_explorer_chrome_t desktop_explorer_chrome(
         chrome.toolbar, &offset, DESKTOP_EXPLORER_SMALL_BUTTON_WIDTH);
     chrome.refresh = desktop_explorer_toolbar_button(
         chrome.toolbar, &offset, DESKTOP_EXPLORER_REFRESH_WIDTH);
+    chrome.view = desktop_explorer_toolbar_button(
+        chrome.toolbar, &offset, DESKTOP_EXPLORER_VIEW_WIDTH);
     return chrome;
 }
 
@@ -2722,6 +2735,139 @@ static desktop_rect_t desktop_trash_restore_rect(
     };
 }
 
+static desktop_explorer_detail_columns_t desktop_explorer_detail_columns(
+    desktop_rect_t row) {
+    desktop_explorer_detail_columns_t columns = {0};
+    uint32_t name_width = row.width / 2U;
+    uint32_t remaining = row.width - name_width;
+    uint32_t type_width = remaining / 3U;
+    remaining -= type_width;
+    uint32_t size_width = remaining / 3U;
+    uint32_t modified_width = remaining - size_width;
+    columns.name = (desktop_rect_t){
+        row.x, row.y, name_width, row.height};
+    columns.type = (desktop_rect_t){
+        row.x + (int32_t)name_width, row.y, type_width, row.height};
+    columns.size = (desktop_rect_t){
+        columns.type.x + (int32_t)type_width,
+        row.y, size_width, row.height};
+    columns.modified = (desktop_rect_t){
+        columns.size.x + (int32_t)size_width,
+        row.y, modified_width, row.height};
+    return columns;
+}
+
+static void render_explorer_details_header_cell(
+    const desktop_render_context_t *context, desktop_rect_t cell,
+    const char *label) {
+    if (cell.width == 0U || cell.height == 0U) return;
+    draw_bevel(context, cell, color_face, 1U);
+    const x86os_display_info_t *display = context->display;
+    int32_t y = cell.y + (int32_t)((cell.height > display->font_height
+        ? cell.height - display->font_height : 0U) / 2U);
+    draw_text_clipped(
+        context, cell.x + 4, y, label,
+        cell.width > 8U ? cell.width - 8U : 1U,
+        color_text, color_face);
+}
+
+static void render_explorer_details_header(
+    const desktop_render_context_t *context,
+    const desktop_explorer_window_t *explorer_window,
+    desktop_rect_t client) {
+    if (context == 0 || explorer_window == 0 ||
+        explorer_window->view != DESKTOP_EXPLORER_VIEW_DETAILS) return;
+    desktop_explorer_layout_t layout =
+        desktop_explorer_layout(explorer_window, client);
+    if (layout.header.width == 0U || layout.header.height == 0U) return;
+    desktop_explorer_detail_columns_t columns =
+        desktop_explorer_detail_columns(layout.header);
+    render_explorer_details_header_cell(context, columns.name, "Name");
+    render_explorer_details_header_cell(context, columns.type, "Typ");
+    render_explorer_details_header_cell(context, columns.size, "Groesse");
+    render_explorer_details_header_cell(
+        context, columns.modified, "Geaendert UTC");
+    desktop_rect_t corner = {
+        layout.scrollbar.x, layout.header.y,
+        layout.scrollbar.width, layout.header.height,
+    };
+    draw_bevel(context, corner, color_face, 1U);
+}
+
+static void render_explorer_details_entry(
+    const desktop_render_context_t *context,
+    const desktop_explorer_window_t *explorer_window,
+    desktop_rect_t cell, uint32_t entry_index) {
+    const x86os_display_info_t *display = context->display;
+    const x86os_file_info_t *entry = &explorer_window->entries[entry_index];
+    uint32_t selected = explorer_window->selected == entry_index;
+    uint32_t background = selected ? color_active : color_client;
+    uint32_t foreground = selected ? color_title_text : color_text;
+    fill_rect_clipped(context, cell, background);
+    desktop_explorer_detail_columns_t columns =
+        desktop_explorer_detail_columns(cell);
+    uint32_t symbol_size = min_u32(
+        DESKTOP_EXPLORER_DETAILS_ICON_SIZE,
+        cell.height > 4U ? cell.height - 4U : 1U);
+    if (symbol_size > columns.name.width)
+        symbol_size = columns.name.width;
+    desktop_rect_t symbol = {
+        columns.name.x + 2,
+        columns.name.y + (int32_t)((columns.name.height - symbol_size) / 2U),
+        symbol_size, symbol_size,
+    };
+    uint32_t kind = desktop_explorer_icon_kind(
+        entry, explorer_window->directory_nonempty[entry_index]);
+    if (symbol.width != 0U && symbol.height != 0U &&
+        !draw_cached_file_icon(context, symbol, kind, selected, 0U))
+        draw_file_icon_fallback(context, symbol, kind);
+    int32_t text_y = cell.y + (int32_t)((cell.height > display->font_height
+        ? cell.height - display->font_height : 0U) / 2U);
+    uint32_t name_offset = symbol_size + 6U;
+    draw_text_clipped(
+        context, columns.name.x + (int32_t)name_offset, text_y,
+        entry->name,
+        columns.name.width > name_offset + 4U
+            ? columns.name.width - name_offset - 4U : 1U,
+        foreground, background);
+    draw_text_clipped(
+        context, columns.type.x + 4, text_y,
+        desktop_explorer_type_text(
+            entry, explorer_window->directory_nonempty[entry_index]),
+        columns.type.width > 8U ? columns.type.width - 8U : 1U,
+        foreground, background);
+
+    char size[DESKTOP_EXPLORER_SIZE_TEXT_CAPACITY];
+    const char *size_text = "-";
+    if (entry->type != X86OS_DIRECTORY &&
+        desktop_explorer_format_size(
+            entry->size, size, sizeof(size)) == DESKTOP_EXPLORER_OK)
+        size_text = size;
+    size_t size_length = bounded_text_length(
+        size_text, DESKTOP_EXPLORER_SIZE_TEXT_CAPACITY);
+    uint32_t size_pixels = size_length != 0U &&
+        display->font_width > UINT32_MAX / size_length
+        ? UINT32_MAX : (uint32_t)size_length * display->font_width;
+    int32_t size_x = columns.size.x + 4;
+    if (size_pixels != UINT32_MAX && columns.size.width > size_pixels &&
+        columns.size.width - size_pixels > 8U)
+        size_x = columns.size.x +
+            (int32_t)(columns.size.width - size_pixels - 4U);
+    draw_text_clipped(
+        context, size_x, text_y, size_text,
+        columns.size.width > 8U ? columns.size.width - 8U : 1U,
+        foreground, background);
+
+    char modified[DESKTOP_EXPLORER_MODIFIED_TEXT_CAPACITY];
+    if (desktop_explorer_format_modified_utc(
+            entry->modify_time, modified, sizeof(modified)) !=
+        DESKTOP_EXPLORER_OK) modified[0] = '\0';
+    draw_text_clipped(
+        context, columns.modified.x + 4, text_y, modified,
+        columns.modified.width > 8U ? columns.modified.width - 8U : 1U,
+        foreground, background);
+}
+
 static void render_explorer_entry(
     const desktop_render_context_t *context,
     const desktop_explorer_window_t *explorer_window,
@@ -2730,6 +2876,11 @@ static void render_explorer_entry(
         explorer_window, client, entry_index);
     if (cell.width == 0U || cell.height == 0U ||
         !intersect_rects(cell, context->clip, 0)) return;
+    if (explorer_window->view == DESKTOP_EXPLORER_VIEW_DETAILS) {
+        render_explorer_details_entry(
+            context, explorer_window, cell, entry_index);
+        return;
+    }
     const x86os_display_info_t *display = context->display;
     const x86os_file_info_t *entry = &explorer_window->entries[entry_index];
     uint32_t selected = explorer_window->selected == entry_index;
@@ -2811,7 +2962,9 @@ static uint32_t explorer_navigation_enabled(
         return desktop_explorer_can_forward(window);
     if (action == DESKTOP_EXPLORER_NAVIGATION_UP)
         return desktop_explorer_can_up(window);
-    return action == DESKTOP_EXPLORER_NAVIGATION_REFRESH;
+    if (action == DESKTOP_EXPLORER_NAVIGATION_REFRESH) return 1U;
+    return action == DESKTOP_EXPLORER_NAVIGATION_VIEW &&
+        window->view < DESKTOP_EXPLORER_VIEW_COUNT;
 }
 
 static void render_explorer_navigation_button(
@@ -2867,6 +3020,11 @@ static void render_explorer_chrome(
     render_explorer_navigation_button(
         context, window, window_index, chrome.refresh,
         DESKTOP_EXPLORER_NAVIGATION_REFRESH, "Aktual.");
+    render_explorer_navigation_button(
+        context, window, window_index, chrome.view,
+        DESKTOP_EXPLORER_NAVIGATION_VIEW,
+        window->view == DESKTOP_EXPLORER_VIEW_DETAILS
+            ? "Symbole" : "Details");
 
     if (chrome.address.width != 0U && chrome.address.height != 0U) {
         fill_rect_clipped(context, chrome.address, color_face);
@@ -3067,6 +3225,9 @@ static void render_window(const desktop_render_context_t *context,
     if (explorer_window != 0)
         render_explorer_chrome(
             context, manager, explorer, window_index);
+    if (explorer_window != 0)
+        render_explorer_details_header(
+            context, explorer_window, explorer_client);
     if (explorer_window != 0)
         for (uint32_t entry = 0U; entry < explorer_window->entry_count; ++entry)
             render_explorer_entry(
@@ -4632,22 +4793,24 @@ static int desktop_explorer_scroll_probe_run(
             explorer, 0U, client, INT32_MAX, &result) !=
             DESKTOP_EXPLORER_OK || window->first_row != 0U) return -8;
 
-    layout = desktop_explorer_layout(window, client);
+    desktop_explorer_layout_t thumb_layout =
+        desktop_explorer_layout(window, client);
     desktop_explorer_result_initialize(&result);
     if (desktop_explorer_pointer_press(
-            explorer, 0U, client, layout.thumb.x + 1,
-            layout.thumb.y + 1, &result) != DESKTOP_EXPLORER_OK ||
+            explorer, 0U, client, thumb_layout.thumb.x + 1,
+            thumb_layout.thumb.y + 1, &result) != DESKTOP_EXPLORER_OK ||
         window->scroll_capture != DESKTOP_EXPLORER_SCROLL_THUMB) return -9;
     desktop_explorer_result_initialize(&result);
     if (desktop_explorer_pointer_motion(
-            explorer, 0U, client, layout.thumb.x + 1,
-            layout.track.y + (int32_t)layout.track.height + 1,
+            explorer, 0U, client, thumb_layout.thumb.x + 1,
+            thumb_layout.track.y + (int32_t)thumb_layout.track.height + 1,
             &result) != DESKTOP_EXPLORER_OK ||
-        window->first_row != layout.maximum_first_row) return -10;
+        window->first_row != thumb_layout.maximum_first_row) return -10;
     desktop_explorer_result_initialize(&result);
     if (desktop_explorer_pointer_release(
-            explorer, 0U, client, layout.thumb.x + 1,
-            layout.track.y + 1, 2U, &result) != DESKTOP_EXPLORER_OK) return -11;
+            explorer, 0U, client, thumb_layout.thumb.x + 1,
+            thumb_layout.track.y + 1, 2U, &result) != DESKTOP_EXPLORER_OK)
+        return -11;
 
     window->first_row = 0U;
     window->selected = window->entry_count - 1U;
@@ -4664,15 +4827,168 @@ static int desktop_explorer_scroll_probe_run(
     if (desktop_explorer_resize(
             explorer, 0U, resized, &result) != DESKTOP_EXPLORER_OK)
         return -13;
-    layout = desktop_explorer_layout(window, resized);
-    if (layout.scrollbar.x != resized.x + (int32_t)resized.width -
-            (int32_t)layout.scrollbar.width ||
-        layout.scrollbar.y != resized.y ||
-        layout.scrollbar.height != resized.height) return -14;
+    desktop_explorer_layout_t resized_layout =
+        desktop_explorer_layout(window, resized);
+    if (resized_layout.scrollbar.x !=
+            resized.x + (int32_t)resized.width -
+                (int32_t)resized_layout.scrollbar.width ||
+        resized_layout.scrollbar.y != resized.y ||
+        resized_layout.scrollbar.height != resized.height) return -14;
     desktop_explorer_result_initialize(&result);
     if (desktop_explorer_resize(
             explorer, 0U, actual, &result) != DESKTOP_EXPLORER_OK)
         return -15;
+    return 0;
+}
+
+static int desktop_explorer_views_probe_run(
+    desktop_wm_t *manager, desktop_explorer_t *explorer,
+    const x86os_display_info_t *display) {
+    if (manager == 0 || explorer == 0 || display == 0 ||
+        !explorer->windows[0].active ||
+        explorer->windows[0].entry_count < 8U) return -1;
+    desktop_explorer_window_t *window = &explorer->windows[0];
+    if (window->view != DESKTOP_EXPLORER_VIEW_ICONS ||
+        !text_equal(window->path, "/usr/share/fonts")) return -2;
+    desktop_rect_t actual = desktop_explorer_content_rect(
+        manager, explorer, 0U);
+    desktop_rect_t client = actual;
+    uint32_t probe_height = DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT +
+        DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT * 5U;
+    if (client.height > probe_height) client.height = probe_height;
+    uint32_t generation = window->snapshot_generation;
+    window->selected = window->entry_count - 1U;
+    window->first_row = 0U;
+
+    desktop_explorer_result_t result;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_toggle_view(
+            explorer, 0U, client, &result) != DESKTOP_EXPLORER_OK ||
+        window->view != DESKTOP_EXPLORER_VIEW_DETAILS ||
+        window->snapshot_generation != generation ||
+        window->selected != window->entry_count - 1U ||
+        !result.viewport_changed) return -3;
+    desktop_explorer_layout_t layout =
+        desktop_explorer_layout(window, client);
+    uint32_t expected_visible_rows =
+        (client.height - layout.header.height) /
+            DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT;
+    if (expected_visible_rows == 0U) expected_visible_rows = 1U;
+    if (layout.header.height != DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT ||
+        layout.viewport.y != layout.header.y +
+            (int32_t)layout.header.height ||
+        layout.scrollbar.y != layout.viewport.y ||
+        layout.scrollbar.height != layout.viewport.height ||
+        layout.columns != 1U ||
+        layout.visible_rows != expected_visible_rows ||
+        !layout.enabled || window->first_row != layout.maximum_first_row ||
+        desktop_explorer_entry_at(
+            window, client, layout.header.x + 1,
+            layout.header.y + 1) != DESKTOP_EXPLORER_NO_ENTRY) return -4;
+
+    desktop_rect_t selected = desktop_explorer_entry_rect(
+        window, client, window->selected);
+    if (selected.width != layout.viewport.width ||
+        selected.height != DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT) return -5;
+    int32_t hit_x = selected.x + 2;
+    int32_t hit_y = selected.y + 2;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_press(
+            explorer, 0U, client, hit_x, hit_y, &result) !=
+        DESKTOP_EXPLORER_OK) return -6;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_release(
+            explorer, 0U, client, hit_x, hit_y, 100U, &result) !=
+            DESKTOP_EXPLORER_OK || result.activated) return -7;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_press(
+            explorer, 0U, client, hit_x, hit_y, &result) !=
+        DESKTOP_EXPLORER_OK) return -8;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_release(
+            explorer, 0U, client, hit_x, hit_y, 300U, &result) !=
+            DESKTOP_EXPLORER_OK || !result.activated) return -9;
+
+    desktop_explorer_result_initialize(&result);
+    uint32_t bottom_row = window->first_row;
+    if (desktop_explorer_wheel(
+            explorer, 0U, client, 1, &result) != DESKTOP_EXPLORER_OK ||
+        !result.viewport_changed || window->first_row >= bottom_row)
+        return -10;
+    desktop_explorer_layout_t thumb_layout =
+        desktop_explorer_layout(window, client);
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_press(
+            explorer, 0U, client, thumb_layout.thumb.x + 1,
+            thumb_layout.thumb.y + 1, &result) != DESKTOP_EXPLORER_OK ||
+        window->scroll_capture != DESKTOP_EXPLORER_SCROLL_THUMB) return -11;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_motion(
+            explorer, 0U, client, thumb_layout.thumb.x + 1,
+            thumb_layout.track.y + (int32_t)thumb_layout.track.height + 1,
+            &result) != DESKTOP_EXPLORER_OK ||
+        window->first_row != thumb_layout.maximum_first_row) return -12;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_pointer_release(
+            explorer, 0U, client, thumb_layout.thumb.x + 1,
+            thumb_layout.track.y + 1, 400U, &result) != DESKTOP_EXPLORER_OK)
+        return -13;
+
+    desktop_rect_t resized = client;
+    if (resized.width > DESKTOP_EXPLORER_SCROLLBAR_EXTENT + 80U)
+        resized.width -= 80U;
+    resized.height = DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT +
+        DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT * 3U;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_resize(
+            explorer, 0U, resized, &result) != DESKTOP_EXPLORER_OK)
+        return -14;
+    desktop_explorer_layout_t resized_layout =
+        desktop_explorer_layout(window, resized);
+    if (resized_layout.scrollbar.x !=
+            resized.x + (int32_t)resized.width -
+                (int32_t)resized_layout.scrollbar.width ||
+        resized_layout.scrollbar.y != resized.y +
+            (int32_t)DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT ||
+        resized_layout.scrollbar.height !=
+            resized.height - DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT ||
+        resized_layout.visible_rows != 3U ||
+        window->first_row != resized_layout.maximum_first_row) return -15;
+
+    if (desktop_explorer_up(explorer, 0U) != DESKTOP_EXPLORER_OK ||
+        window->view != DESKTOP_EXPLORER_VIEW_DETAILS ||
+        !text_equal(window->path, "/usr/share") ||
+        desktop_explorer_back(explorer, 0U) != DESKTOP_EXPLORER_OK ||
+        window->view != DESKTOP_EXPLORER_VIEW_DETAILS ||
+        !text_equal(window->path, "/usr/share/fonts")) return -16;
+    uint32_t refreshed_generation = window->snapshot_generation;
+    if (desktop_explorer_refresh(explorer, 0U) != DESKTOP_EXPLORER_OK ||
+        window->view != DESKTOP_EXPLORER_VIEW_DETAILS ||
+        window->snapshot_generation == refreshed_generation) return -17;
+
+    generation = window->snapshot_generation;
+    window->selected = 0U;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_toggle_view(
+            explorer, 0U, actual, &result) != DESKTOP_EXPLORER_OK ||
+        window->view != DESKTOP_EXPLORER_VIEW_ICONS ||
+        window->snapshot_generation != generation ||
+        window->selected != 0U) return -18;
+    desktop_explorer_layout_t icon_layout =
+        desktop_explorer_layout(window, actual);
+    if (icon_layout.header.width != 0U || icon_layout.header.height != 0U ||
+        icon_layout.columns == 0U) return -19;
+    desktop_explorer_result_initialize(&result);
+    if (desktop_explorer_toggle_view(
+            explorer, 0U, actual, &result) != DESKTOP_EXPLORER_OK ||
+        window->view != DESKTOP_EXPLORER_VIEW_DETAILS ||
+        window->snapshot_generation != generation ||
+        window->selected != 0U) return -20;
+    desktop_explorer_layout_t details_layout =
+        desktop_explorer_layout(window, actual);
+    if (details_layout.header.height !=
+            DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT ||
+        details_layout.columns != 1U) return -21;
     return 0;
 }
 
@@ -5499,11 +5815,14 @@ static uint32_t desktop_explorer_navigation_action_at(
         return DESKTOP_EXPLORER_NAVIGATION_UP;
     if (point_in_rect(chrome.refresh, x, y))
         return DESKTOP_EXPLORER_NAVIGATION_REFRESH;
+    if (point_in_rect(chrome.view, x, y))
+        return DESKTOP_EXPLORER_NAVIGATION_VIEW;
     return DESKTOP_EXPLORER_NAVIGATION_NONE;
 }
 
 static int desktop_explorer_apply_navigation(
-    desktop_explorer_t *explorer, uint32_t window_index, uint32_t action) {
+    const desktop_wm_t *manager, desktop_explorer_t *explorer,
+    uint32_t window_index, uint32_t action) {
     if (action == DESKTOP_EXPLORER_NAVIGATION_BACK)
         return desktop_explorer_back(explorer, window_index);
     if (action == DESKTOP_EXPLORER_NAVIGATION_FORWARD)
@@ -5512,6 +5831,14 @@ static int desktop_explorer_apply_navigation(
         return desktop_explorer_up(explorer, window_index);
     if (action == DESKTOP_EXPLORER_NAVIGATION_REFRESH)
         return desktop_explorer_refresh(explorer, window_index);
+    if (action == DESKTOP_EXPLORER_NAVIGATION_VIEW) {
+        desktop_explorer_result_t result;
+        desktop_explorer_result_initialize(&result);
+        return desktop_explorer_toggle_view(
+            explorer, window_index,
+            desktop_explorer_content_rect(manager, explorer, window_index),
+            &result);
+    }
     return DESKTOP_EXPLORER_EINVAL;
 }
 
@@ -5556,11 +5883,11 @@ static uint32_t desktop_explorer_navigation_pointer_button(
         explorer_navigation_enabled(
             &explorer->windows[window_index], captured_action)) {
         int status = desktop_explorer_apply_navigation(
-            explorer, window_index, captured_action);
+            manager, explorer, window_index, captured_action);
         if (status != DESKTOP_EXPLORER_OK)
             desktop_ui_open_error(
                 ui, display, dirty,
-                "Ordnernavigation ist fehlgeschlagen.",
+                "Explorer-Aktion ist fehlgeschlagen.",
                 explorer->windows[window_index].path);
     }
     desktop_dirty_add(
@@ -6629,6 +6956,7 @@ int main(int argc, char **argv) {
     uint32_t trash_confirm_probe = 0U;
     uint32_t trash_restore_probe = 0U;
     uint32_t explorer_scroll_probe = 0U;
+    uint32_t explorer_views_probe = 0U;
     uint32_t unicode_probe = 0U;
     uint32_t surface_probe_reported = 0U;
     uint32_t surface_probe_created_reported = 0U;
@@ -6692,6 +7020,9 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--explorer-scroll-probe")) {
         explorer_scroll_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--explorer-views-probe")) {
+        explorer_views_probe = 1U;
     } else if (argc != 1) {
         x86os_puts(
             "Usage: desktop [--render-probe|--hover-probe|--surface-probe|"
@@ -6699,7 +7030,7 @@ int main(int argc, char **argv) {
             "--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
             "--trash-confirm-probe|--trash-restore-probe|--unicode-probe|"
-            "--explorer-scroll-probe]\n");
+            "--explorer-scroll-probe|--explorer-views-probe]\n");
         return 2;
     }
     hover_probe_initialize(&hover_probe_state, hover_probe);
@@ -6927,7 +7258,7 @@ int main(int argc, char **argv) {
         control_probe ||
         guidemo_probe || sound_probe || trash_context_probe ||
         trash_confirm_probe || trash_restore_probe ||
-        unicode_probe || explorer_scroll_probe)
+        unicode_probe || explorer_scroll_probe || explorer_views_probe)
         system_sounds.enabled = 0U;
     if (system_sound_status != 0)
         x86os_puts("desktop: Systemklangkonfiguration ungueltig\n");
@@ -6946,7 +7277,8 @@ int main(int argc, char **argv) {
     if (open_explorer_path(
             &manager, &explorer, &ui, &display,
             &initial_dirty,
-            explorer_scroll_probe ? "/usr/share/fonts" : "/",
+            (explorer_scroll_probe || explorer_views_probe)
+                ? "/usr/share/fonts" : "/",
             &initial_target) != 0U)
         x86os_puts("DESKTOP_EXPLORER_OK\n");
     if (filetypes_status != 0)
@@ -7017,6 +7349,28 @@ int main(int argc, char **argv) {
             x86os_puts("DESKTOP_EXPLORER_SCROLL_OK\n");
         } else {
             x86os_puts("DESKTOP_EXPLORER_SCROLL_FAIL status=");
+            x86os_print_number(probe_status);
+            x86os_putchar('\n');
+        }
+        uint32_t exited = desktop_try_exit(
+            pointer_x, pointer_y, runtime_activated, &metrics);
+        desktop_surface_runtime_shutdown(&surface_runtime);
+        return probe_status == 0 && exited ? 0 : 1;
+    }
+    if (explorer_views_probe) {
+        int probe_status = desktop_explorer_views_probe_run(
+            &manager, &explorer, &display);
+        if (probe_status == 0) {
+            desktop_dirty_region_t probe_dirty;
+            desktop_dirty_initialize(
+                &probe_dirty, display.width, display.height);
+            desktop_dirty_full(&probe_dirty);
+            (void)render_desktop_frame(
+                &display, &manager, &explorer, &surfaces, &ui,
+                &probe_dirty);
+            x86os_puts("DESKTOP_EXPLORER_VIEWS_OK\n");
+        } else {
+            x86os_puts("DESKTOP_EXPLORER_VIEWS_FAIL status=");
             x86os_print_number(probe_status);
             x86os_putchar('\n');
         }

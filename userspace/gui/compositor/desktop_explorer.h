@@ -23,6 +23,10 @@
 #define DESKTOP_EXPLORER_DOUBLE_CLICK_MS 500U
 #define DESKTOP_EXPLORER_ICON_WIDTH 104U
 #define DESKTOP_EXPLORER_ICON_HEIGHT 76U
+#define DESKTOP_EXPLORER_DETAILS_HEADER_HEIGHT 24U
+#define DESKTOP_EXPLORER_DETAILS_ROW_HEIGHT 24U
+#define DESKTOP_EXPLORER_SIZE_TEXT_CAPACITY 11U
+#define DESKTOP_EXPLORER_MODIFIED_TEXT_CAPACITY 17U
 #define DESKTOP_EXPLORER_SCAN_CAPACITY 129U
 #define DESKTOP_EXPLORER_SCROLLBAR_EXTENT 18U
 #define DESKTOP_EXPLORER_SCROLLBAR_MIN_THUMB 8U
@@ -63,6 +67,12 @@ enum desktop_explorer_icon {
     DESKTOP_EXPLORER_ICON_COUNT
 };
 
+enum desktop_explorer_view {
+    DESKTOP_EXPLORER_VIEW_ICONS = 0U,
+    DESKTOP_EXPLORER_VIEW_DETAILS,
+    DESKTOP_EXPLORER_VIEW_COUNT
+};
+
 enum desktop_explorer_scroll_capture {
     DESKTOP_EXPLORER_SCROLL_NONE = 0U,
     DESKTOP_EXPLORER_SCROLL_DECREMENT,
@@ -85,6 +95,7 @@ typedef struct desktop_explorer_window {
     uint32_t last_click;
     uint64_t last_click_ms;
     uint32_t first_row;
+    uint32_t view;
     uint32_t scroll_capture;
     uint32_t scroll_drag_offset;
     char back_paths[DESKTOP_EXPLORER_HISTORY_CAPACITY]
@@ -96,6 +107,7 @@ typedef struct desktop_explorer_window {
 } desktop_explorer_window_t;
 
 typedef struct desktop_explorer_layout {
+    desktop_rect_t header;
     desktop_rect_t viewport;
     desktop_rect_t scrollbar;
     desktop_rect_t decrement;
@@ -150,6 +162,15 @@ void desktop_explorer_result_initialize(desktop_explorer_result_t *result);
 /** Classify one snapshot entry with a bounded case-insensitive extension. */
 uint32_t desktop_explorer_icon_kind(const x86os_file_info_t *entry,
                                     uint32_t directory_nonempty);
+/** Return the bounded German details label for one published entry. */
+const char *desktop_explorer_type_text(const x86os_file_info_t *entry,
+                                       uint32_t directory_nonempty);
+/** Format one uint32 byte count without allocation. */
+int desktop_explorer_format_size(uint32_t bytes, char *output,
+                                 uint32_t capacity);
+/** Format Unix seconds as UTC YYYY-MM-DD HH:MM or a missing-time marker. */
+int desktop_explorer_format_modified_utc(uint32_t unix_seconds,
+                                         char *output, uint32_t capacity);
 /** Track the single bounded root-volume desktop icon. */
 void desktop_explorer_desktop_press(desktop_explorer_t *explorer,
                                     uint32_t hit,
@@ -189,11 +210,11 @@ int desktop_explorer_child_path(const desktop_explorer_window_t *window,
                                 uint32_t entry_index,
                                 char *path, uint32_t capacity);
 
-/** Derive the bounded icon viewport and vertical scrollbar from a client. */
+/** Derive the bounded active-view header, viewport and vertical scrollbar. */
 desktop_explorer_layout_t desktop_explorer_layout(
     const desktop_explorer_window_t *window, desktop_rect_t client);
 
-/** Compute one icon-cell rectangle in a window client rectangle. */
+/** Compute one visible icon cell or details row in a client rectangle. */
 desktop_rect_t desktop_explorer_entry_rect(
     const desktop_explorer_window_t *window, desktop_rect_t client,
     uint32_t entry_index);
@@ -227,6 +248,10 @@ int desktop_explorer_wheel(
     desktop_explorer_result_t *result);
 /** Clamp row state and cancel scrollbar capture after client resize. */
 int desktop_explorer_resize(
+    desktop_explorer_t *explorer, uint32_t window_index,
+    desktop_rect_t client, desktop_explorer_result_t *result);
+/** Toggle icons/details without reading VFS data or replacing the snapshot. */
+int desktop_explorer_toggle_view(
     desktop_explorer_t *explorer, uint32_t window_index,
     desktop_rect_t client, desktop_explorer_result_t *result);
 /** Publish one generation-bound Explorer entry as a generic file object. */

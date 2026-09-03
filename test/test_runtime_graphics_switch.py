@@ -299,6 +299,19 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn('x86os_puts("DESKTOP_EXPLORER_SCROLL_OK\\n")',
                       desktop)
 
+    def test_runtime_explorer_views_mode_proves_both_layouts(self):
+        desktop = (ROOT / "userspace" / "gui" / "compositor" /
+                   "desktop.c").read_text(encoding="utf-8")
+        self.assertIn("runtime-desktop-explorer-views", self.runtime_script)
+        self.assertIn("-ExplorerViewsProbe $true", self.runtime_script)
+        self.assertIn("--explorer-views-probe", self.runtime_runner)
+        self.assertIn("desktop.prg --explorer-views-probe",
+                      self.runtime_runner)
+        self.assertIn("DESKTOP_EXPLORER_VIEWS_OK", self.runtime_runner)
+        self.assertIn("desktop_explorer_views_probe_run", desktop)
+        self.assertIn('x86os_puts("DESKTOP_EXPLORER_VIEWS_OK\\n")',
+                      desktop)
+
     def test_runtime_guidemo_probe_uses_physical_usb_button_edges(self):
         self.assertIn('"desktop.prg --guidemo-probe"', self.runtime_runner)
         self.assertIn('"qemu-xhci,id=reistxhci"', self.runtime_runner)
