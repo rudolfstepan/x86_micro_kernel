@@ -190,6 +190,36 @@ class RuntimeGraphicsSwitchTests(unittest.TestCase):
         self.assertIn("desktop screenshot contains no menu text",
                       self.runtime_runner)
 
+    def test_runtime_desktop_relaunches_after_clean_exit_and_keeps_shell_live(self):
+        self.assertIn("run_desktop_relaunch_probe", self.runtime_runner)
+        self.assertIn("send_desktop_exit_click", self.runtime_runner)
+        self.assertIn("normal_lifecycle_probe", self.runtime_runner)
+        dispatch = self.runtime_script[
+            self.runtime_script.index("    'runtime-desktop' {"):
+            self.runtime_script.index("    'runtime-desktop-notepad' {")]
+        self.assertIn("Invoke-RuntimeDesktop", dispatch)
+        self.assertNotIn("$true", dispatch)
+        probe = self.runtime_runner[
+            self.runtime_runner.index("def run_desktop_relaunch_probe"):
+            self.runtime_runner.index("def require_svga2d_console_lifecycle")]
+        first_exit = probe.index('"DESKTOP_EXIT_OK"')
+        stopped = probe.index('"REIST_GUI COMPOSITOR_STOPPED epoch="')
+        vfs_command = probe.index('send_command(process, "shell --vfs-probe")')
+        vfs_ready = probe.index('"SHELL_VFS_NAMESPACE_OK"')
+        relaunch = probe.index('send_command(process, "desktop")')
+        resumed = probe.index('"REIST_GUI COMPOSITOR_SESSION_STARTED epoch="')
+        second_exit = probe.index('text.count("DESKTOP_EXIT_OK") < 2')
+        shell_command = probe.index('send_command(process, "help")')
+        self.assertEqual(
+            [first_exit, stopped, vfs_command, vfs_ready, relaunch, resumed,
+             second_exit, shell_command],
+            sorted([first_exit, stopped, vfs_command, vfs_ready, relaunch,
+                    resumed, second_exit, shell_command]),
+        )
+        self.assertIn('"Bad command or program file."', probe)
+        self.assertIn('"REIST_GUI COMPOSITOR_DEGRADED"', probe)
+        self.assertIn('"REIST_GUI COMPOSITOR_RESTARTED"', probe)
+
     def test_runtime_sound_surface_probe_crosses_heartbeat_with_real_audio(self):
         self.assertIn("runtime-desktop-audio", self.runtime_script)
         self.assertIn("SoundplayerSurfaceProbe", self.runtime_script)

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.5a-desktop-icon-drag-layout"
+active_id = "N2g2-notepad-stable-global-wrap"
 
 [policy]
 one_package_per_run = true
@@ -14846,8 +14846,100 @@ evidence = [
 ]
 
 [[packages]]
-id = "R3.5a-desktop-icon-drag-layout"
+id = "R3.5b-desktop-session-relaunch"
+status = "done"
+phase = "post-s0"
+risk = "high"
+title = "Relaunch a cleanly stopped supervised desktop session"
+scope = "Repair the explicit shell desktop lifecycle after an intentional compositor exit. Reuse the existing protected compositor control record and generic supervisor slot only when the prior generation has reported its stop intent, restored VGA, exited, been observed dead and reached the exact fenced administrative-idle state. A subsequent plain desktop command starts a new epoch through the same supervisor state machine, republishes the desired BSP affinity before a prepared compositor process can run, and retains the existing restart count and budget so repeated user starts cannot bypass recovery limits. Concurrent starts, still-live, stopping, degraded, malformed or incompletely fenced sessions fail closed without a second compositor. Preserve ordinary shell command resolution, VFS authority, display-driver ownership, public ABI and direct argument-bearing diagnostic launches. Extend the real QEMU desktop gate to prove exit, Ring-3 shell/VFS liveness, supervised relaunch, second clean exit and continued shell command execution."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/init/supervisor.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_reist_supervisor.py",
+  "test/test_runtime_graphics_switch.py"
+]
+invariants = [
+  "only the exact active fenced pid-less healthy-less ready-less administratively disabled compositor record may be resumed after an intentional clean stop",
+  "a resumed desktop increments the existing supervisor epoch resets startup progress and deadlines and retains the existing restart count restart budget generation and slot",
+  "the updated supervisor handle administrative intent desired affinity and empty process identity are protected before a prepared compositor generation can execute",
+  "a live stopping recovering degraded safe-state malformed or concurrently started compositor cannot create a second session or regain display authority",
+  "failed protected publication prepared spawn identity lookup or start is forced through the existing bounded isolate fence and safe-state path",
+  "the shell remains detached and live and ordinary VFS lookup process loading display deactivation driver authority and public ABI remain unchanged",
+  "the real packaged QEMU path proves first clean exit shell VFS liveness supervised epoch relaunch second clean exit and a subsequent shell response"
+]
+targeted_tests = [
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_runtime_graphics_switch.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop"]
+stop_conditions = [
+  "relaunch requires unregistering the supervisor widening restart budgets changing public ABI or bypassing protected control validation",
+  "a second compositor can start before the old process is dead VGA is restored and the supervisor is administratively idle",
+  "the QEMU proof can pass without two supervised compositor epochs and shell VFS command execution after both exits",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: relaunch clean desktop sessions"
+evidence = [
+  "The final frozen targeted gates passed with 15 supervisor lifecycle checks and 28 graphics-switch/runtime-dispatch checks, including exact clean-stop resume ordering and rejection of the former Control-Panel mode alias.",
+  "The final QEMU framebuffer package passed in 12 seconds with the updated protected compositor lifecycle linked into the kernel.",
+  "The real QEMU gate passed through first supervised desktop readiness, Start-menu USB-mouse shutdown, administrative idle, Ring-3 shell VFS namespace proof, explicit desktop relaunch in a new epoch, a second clean shutdown and a final live shell help response.",
+  "The resumed session reuses the existing supervisor slot and generation, increments only its epoch, retains the restart count and budget, republishes protected intent before prepared process start, and admits no concurrent or incompletely fenced compositor."
+]
+
+[[packages]]
+id = "N2g2-notepad-stable-global-wrap"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Keep virtual-wrap extent stable across the complete Notepad document"
+scope = "Repair virtual line wrapping for Piece-Table documents whose content exceeds the materialized editor window. Build and maintain a fixed-capacity bounded global wrap-position index over immutable original and added pieces so rendering cursor mapping keyboard paging and the vertical scrollbar share one complete-document visual-row extent instead of recalculating it from each loaded window. Keep scrollbar range and thumb size stable while scrolling, rematerialize UTF-8-safe rows around the selected global visual position, preserve edits and invalidate only affected index suffixes within a monotonic deadline. Horizontal scrolling remains disabled in wrap mode and serialized bytes remain unchanged. The real guest proof first downloads the user's reference HTML with `curl -o test.txt https://intracom.at`, opens that exact file in Notepad, verifies stable scrollbar geometry and reachable beginning middle and true end, then retains a deterministic packaged equivalent for offline regression."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/apps/notepad/main.c",
+  "userspace/gui/include/reist/gui/piece_document.h",
+  "userspace/gui/lib/piece_document.c",
+  "userspace/gui/include/reist/gui/text_editor.h",
+  "userspace/gui/lib/text_editor.c",
+  "scripts/run_qemu_runtime_desktop.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_gui_notepad_source.py",
+  "test/test_gui_text_editor_source.py",
+  "test/test_gui_text_editor_host.c",
+  "test/test_piece_document_host.c"
+]
+invariants = [
+  "wrapped visual-row count scrollbar range thumb size rendering pointer mapping and cursor navigation derive from one complete-document index rather than the current materialized window",
+  "the wrap index has fixed entry and byte capacities bounded build and invalidation work overflow-checked offsets and UTF-8-safe boundaries",
+  "scrollbar geometry remains stable while moving through unchanged content and every accepted global visual position maps to a reachable Piece-Table byte offset",
+  "edits synchronize before rematerialization invalidate only a bounded affected suffix and cannot publish a stale partial wrap index",
+  "virtual wrapping changes no serialized bytes and disables horizontal scrolling without changing non-wrap behavior",
+  "the public text-editor ABI Piece-Table save transaction selected font Surface responsiveness and unrelated desktop behavior remain unchanged",
+  "the real guest proof uses curl -o test.txt https://intracom.at and validates beginning middle true end and stable thumb geometry while deterministic host coverage remains network independent"
+]
+targeted_tests = [
+  "python test/test_gui_text_editor_source.py -v",
+  "python test/test_gui_notepad_source.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-notepad"]
+stop_conditions = [
+  "stable wrapping requires unbounded storage a whole-document text copy or an unbounded scan in an input render or scrollbar turn",
+  "the wrap index can disagree with rendered rows cursor mapping or serialized Piece-Table offsets",
+  "the scrollbar thumb changes size while scrolling unchanged content or the true final byte remains unreachable",
+  "the requested intracom.at file cannot be exercised in the real guest and no byte-equivalent captured fixture can preserve deterministic coverage",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: stabilize global notepad wrapping"
+evidence = []
+
+[[packages]]
+id = "R3.5a-desktop-icon-drag-layout"
+status = "queued"
 phase = "post-s0"
 risk = "medium"
 title = "Arrange filesystem-backed desktop icons and persist a bounded layout"

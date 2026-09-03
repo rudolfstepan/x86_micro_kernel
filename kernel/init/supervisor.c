@@ -5909,6 +5909,43 @@ static bool compositor_fence_verify(void *context) {
         control.ready == 0U;
 }
 
+static bool compositor_resume_stopped_session(
+        supervisor_compositor_control_t *control, uint64_t now_ms,
+        uint32_t post_ready_cpu_affinity_mask, int *pid_out) {
+    if (control == NULL || pid_out == NULL || control->active == 0U ||
+        control->administratively_enabled != 0U || control->fenced == 0U ||
+        control->pid != 0 || control->process_generation != 0U ||
+        control->healthy != 0U || control->ready != 0U ||
+        control->stop_requested != 0U) return false;
+
+    supervisor_handle_t updated = {0};
+    bool published = false;
+    scheduler_preempt_disable();
+    if (supervisor_admin_start(control->supervisor, now_ms, &updated) == 0) {
+        control->supervisor = updated;
+        control->administratively_enabled = 1U;
+        control->post_ready_cpu_affinity_mask =
+            post_ready_cpu_affinity_mask;
+        published = compositor_control_write(control) == 0;
+    }
+    scheduler_preempt_enable();
+    if (!published) {
+        if (updated.generation != 0U)
+            (void)supervisor_force_isolate(updated);
+        return false;
+    }
+    if (!compositor_spawn_next(updated) ||
+        compositor_control_read(control) != 0 || control->pid <= 0 ||
+        control->process_generation == 0U) {
+        (void)supervisor_force_isolate(updated);
+        return false;
+    }
+    *pid_out = control->pid;
+    printf("REIST_GUI COMPOSITOR_SESSION_STARTED epoch=%u\n",
+           updated.epoch);
+    return true;
+}
+
 bool supervisor_start_compositor(uint64_t now_ms,
                                  uint32_t post_ready_cpu_affinity_mask,
                                  int *pid_out) {
@@ -5923,8 +5960,10 @@ bool supervisor_start_compositor(uint64_t now_ms,
 #endif
     if ((post_ready_cpu_affinity_mask & 0xFFFF0001U) != 0U) return false;
     supervisor_compositor_control_t control;
-    if (compositor_control_read(&control) != 0 || control.active != 0U)
-        return false;
+    if (compositor_control_read(&control) != 0) return false;
+    if (control.active != 0U)
+        return compositor_resume_stopped_session(
+            &control, now_ms, post_ready_cpu_affinity_mask, pid_out);
     const supervisor_config_t config = {
         .heartbeat_timeout_ms = 2000U,
         .recovery_timeout_ms = 1000U,
@@ -6067,6 +6106,8 @@ static void compositor_monitor_process(void) {
         control.fenced = 1U;
         control.administratively_enabled = 0U;
         if (compositor_control_write(&control) != 0) output_fence_all();
+        else printf("REIST_GUI COMPOSITOR_STOPPED epoch=%u\n",
+                    control.supervisor.epoch);
         return;
     }
     (void)supervisor_force_isolate(control.supervisor);

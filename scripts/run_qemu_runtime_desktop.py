@@ -276,6 +276,17 @@ def send_hover_trajectory(process: subprocess.Popen[str]) -> None:
         process.stdin.flush()
 
 
+def send_desktop_exit_click(process: subprocess.Popen[str]) -> None:
+    """Activate the production Start-menu exit item with real USB edges."""
+    for command, delay in (
+            ("mouse_move -472 369", 0.10),
+            ("mouse_button 1", 0.08), ("mouse_button 0", 0.10),
+            ("mouse_move 60 -26", 0.10),
+            ("mouse_button 1", 0.08), ("mouse_button 0", 0.10)):
+        qemu_monitor_command(process, command)
+        time.sleep(delay)
+
+
 def read_ppm(path: pathlib.Path) -> tuple[int, int, bytes] | None:
     """Read the bounded P6 format emitted by QEMU's screendump command."""
     try:
@@ -626,6 +637,97 @@ def run_shortcut_mouse_probe(
     return 0
 
 
+def run_desktop_relaunch_probe(
+        process: subprocess.Popen[str], output: queue.Queue[str],
+        transcript: list[str]) -> int:
+    first_exit_offset = len("".join(transcript))
+    send_desktop_exit_click(process)
+    deadline = time.monotonic() + 45.0
+    while time.monotonic() < deadline:
+        drain(output, transcript)
+        text = "".join(transcript)
+        tail = text[first_exit_offset:]
+        if ("REIST_GUI COMPOSITOR_RESTARTED" in tail or
+                "REIST_GUI COMPOSITOR_DEGRADED" in tail):
+            raise RuntimeError("clean desktop exit entered recovery")
+        if ("DESKTOP_EXIT_OK" in tail and
+                "REIST_GUI COMPOSITOR_STOPPED epoch=" in tail):
+            break
+        time.sleep(0.02)
+    else:
+        tail = "".join(transcript)[-8000:].replace("\r", "")
+        raise RuntimeError(
+            "first desktop did not reach supervised administrative idle; "
+            f"guest tail:\n{tail}")
+
+    vfs_offset = len("".join(transcript))
+    send_command(process, "shell --vfs-probe")
+    deadline = time.monotonic() + 20.0
+    while time.monotonic() < deadline:
+        drain(output, transcript)
+        text = "".join(transcript)
+        tail = text[vfs_offset:]
+        if "Bad command or program file." in tail:
+            raise RuntimeError("shell program loading failed after desktop exit")
+        ready = tail.find("SHELL_VFS_NAMESPACE_OK")
+        if ready >= 0 and SHELL_PROMPT in tail[ready:]:
+            break
+        time.sleep(0.02)
+    else:
+        raise RuntimeError("Ring-3 shell/VFS did not survive desktop exit")
+
+    relaunch_offset = len("".join(transcript))
+    send_command(process, "desktop")
+    deadline = time.monotonic() + 90.0
+    while time.monotonic() < deadline:
+        drain(output, transcript)
+        text = "".join(transcript)
+        tail = text[relaunch_offset:]
+        if "Bad command or program file." in tail:
+            raise RuntimeError("desktop command was rejected after clean exit")
+        if ("REIST_GUI COMPOSITOR_RESTARTED" in tail or
+                "REIST_GUI COMPOSITOR_DEGRADED" in tail):
+            raise RuntimeError("desktop relaunch consumed recovery budget")
+        resumed = tail.find("REIST_GUI COMPOSITOR_SESSION_STARTED epoch=")
+        ready = tail.find("REIST_GUI COMPOSITOR_READY generation=")
+        desktop = tail.find("DESKTOP_OK")
+        if resumed >= 0 and resumed < ready < desktop:
+            break
+        time.sleep(0.02)
+    else:
+        raise RuntimeError("second supervised desktop did not become ready")
+
+    second_exit_offset = len("".join(transcript))
+    send_desktop_exit_click(process)
+    deadline = time.monotonic() + 45.0
+    while time.monotonic() < deadline:
+        drain(output, transcript)
+        text = "".join(transcript)
+        tail = text[second_exit_offset:]
+        if text.count("DESKTOP_EXIT_OK") < 2:
+            time.sleep(0.02)
+            continue
+        if "REIST_GUI COMPOSITOR_STOPPED epoch=" in tail:
+            break
+        time.sleep(0.02)
+    else:
+        raise RuntimeError("second desktop did not stop cleanly")
+
+    shell_offset = len("".join(transcript))
+    send_command(process, "help")
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        drain(output, transcript)
+        text = "".join(transcript)
+        tail = text[shell_offset:]
+        help_offset = tail.find(SHELL_HELP_MARKER)
+        if help_offset >= 0 and SHELL_PROMPT in tail[help_offset:]:
+            print("runtime-desktop: PASS exit-vfs-relaunch-exit-shell")
+            return 0
+        time.sleep(0.02)
+    raise RuntimeError("Ring-3 shell did not respond after second desktop exit")
+
+
 def require_svga2d_console_lifecycle(text: str) -> None:
     if text.count("REIST_VIDEO SVGA2D_ACTIVE") < 2:
         raise RuntimeError("SVGA2D was not activated for the desktop")
@@ -665,7 +767,15 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         audio_capture.unlink()
     command = qemu_command(
         qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp)
-    if guidemo_click_probe or hover_probe or shortcut_probe:
+    normal_lifecycle_probe = not any((
+        expect_failure, render_probe, surface_probe, notepad_probe,
+        notepad_font_probe, control_probe, trash_context_probe,
+        trash_confirm_probe, trash_restore_probe, explorer_scroll_probe,
+        explorer_views_probe, shortcut_probe, hover_probe,
+        guidemo_click_probe, sound_probe,
+    ))
+    if (guidemo_click_probe or hover_probe or shortcut_probe or
+            normal_lifecycle_probe):
         command.extend([
             "-device", "qemu-xhci,id=reistxhci",
             "-device", "usb-mouse,bus=reistxhci.0",
@@ -1298,20 +1408,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 if supervised_boot_detected:
                     print("runtime-desktop: PASS supervised-generation")
                     return 0
-                send_key(process, "esc")
-                while time.monotonic() < deadline:
-                    drain(output, transcript)
-                    exited = "DESKTOP_EXIT_OK" in "".join(transcript)
-                    if exited:
-                        exit_offset = "".join(transcript).index(
-                            "DESKTOP_EXIT_OK")
-                        if SHELL_PROMPT in "".join(transcript)[exit_offset:]:
-                            print("runtime-desktop: PASS")
-                            return 0
-                    time.sleep(0.02)
-                tail = "".join(transcript)[-8000:].replace("\r", "")
-                raise RuntimeError(
-                    f"desktop did not restore the VGA shell; guest tail:\n{tail}")
+                return run_desktop_relaunch_probe(
+                    process, output, transcript)
             if "desktop: Grafikmodus nicht verfuegbar" in text:
                 tail = text[-12000:].replace("\r", "")
                 raise RuntimeError(

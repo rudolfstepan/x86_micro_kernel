@@ -1297,7 +1297,7 @@ switch ($Mode) {
         }
     }
     'runtime-desktop' {
-        Invoke-RuntimeDesktop $false $false $false $true
+        Invoke-RuntimeDesktop
     }
     'runtime-desktop-notepad' {
         Invoke-RuntimeDesktop -NotepadProbe $true

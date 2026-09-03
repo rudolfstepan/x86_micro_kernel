@@ -122,6 +122,45 @@ class ReistSupervisorTests(unittest.TestCase):
                       makefile)
         self.assertIn("CompositorSmpLifecycleFaultInjection", windows)
 
+    def test_clean_compositor_stop_can_start_one_new_supervised_epoch(self):
+        source = (ROOT / "kernel/init/supervisor.c").read_text(
+            encoding="utf-8")
+        resume = source[source.index(
+            "static bool compositor_resume_stopped_session"):
+            source.index("bool supervisor_start_compositor(")]
+        for required in (
+                "control->active == 0U",
+                "control->administratively_enabled != 0U",
+                "control->fenced == 0U",
+                "control->pid != 0",
+                "control->process_generation != 0U",
+                "control->healthy != 0U",
+                "control->ready != 0U",
+                "control->stop_requested != 0U"):
+            self.assertIn(required, resume)
+        admin_start = resume.index("supervisor_admin_start(")
+        publish = resume.index("compositor_control_write(control)")
+        spawn = resume.index("compositor_spawn_next(updated)")
+        self.assertLess(admin_start, publish)
+        self.assertLess(publish, spawn)
+        self.assertIn("control->supervisor = updated", resume)
+        self.assertIn("control->administratively_enabled = 1U", resume)
+        self.assertIn("control->post_ready_cpu_affinity_mask =", resume)
+        self.assertIn("supervisor_force_isolate(updated)", resume)
+        self.assertIn("REIST_GUI COMPOSITOR_SESSION_STARTED epoch=%u", resume)
+
+        start = source[source.index("bool supervisor_start_compositor("):
+                       source.index(
+                           "bool supervisor_compositor_session_active")]
+        self.assertIn("if (control.active != 0U)", start)
+        self.assertIn("compositor_resume_stopped_session(", start)
+
+        monitor = source[source.index("static void compositor_monitor_process"):
+                         source.index("static bool compositor_event")]
+        stopped = monitor.index("REIST_GUI COMPOSITOR_STOPPED epoch=%u")
+        self.assertLess(monitor.index("compositor_control_write(&control)"),
+                        stopped)
+
     def test_sound_surface_probe_is_compile_time_only(self):
         source = (ROOT / "kernel/init/supervisor.c").read_text(
             encoding="utf-8")
