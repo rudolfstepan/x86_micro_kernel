@@ -1,6 +1,6 @@
 /**
  * @file userspace/storage/include/reist/vfs_shadow_ext2.h
- * @brief Bounded EXT2 parser and native symbolic-link transaction engine.
+ * @brief Bounded EXT2 parser and native Ring-3 namespace transaction engine.
  */
 #ifndef REIST_VFS_SHADOW_EXT2_H
 #define REIST_VFS_SHADOW_EXT2_H
@@ -19,6 +19,7 @@
 #define REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS 26U
 #define REIST_VFS_SHADOW_EXT2_MAX_JOURNAL_ENTRIES 24U
 #define REIST_VFS_SHADOW_EXT2_MAX_ALLOCATION_GROUPS 32U
+#define REIST_VFS_SHADOW_EXT2_MAX_UNLINK_BLOCKS 64U
 #define REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL (1U << 0U)
 
 typedef int (*reist_vfs_shadow_ext2_write_sector_fn)(
@@ -123,6 +124,9 @@ int reist_vfs_shadow_ext2_symlink(
     uint32_t target_length, const char *absolute_link_path,
     uint32_t link_path_length, uint64_t deadline_ms);
 int reist_vfs_shadow_ext2_unlink_symlink(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint64_t deadline_ms);
+int reist_vfs_shadow_ext2_unlink(
     const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
     uint32_t path_length, uint64_t deadline_ms);
 int reist_vfs_shadow_ext2_rename(

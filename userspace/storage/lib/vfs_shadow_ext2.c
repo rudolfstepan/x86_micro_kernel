@@ -93,9 +93,16 @@ typedef struct {
 
 typedef struct {
     uint32_t sectors[REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS];
+    uint32_t indirect_block;
+    uint32_t inode_number;
     uint32_t sequence;
     uint8_t present;
 } ext2_journal_t;
+
+typedef struct {
+    uint32_t count;
+    uint32_t blocks[REIST_VFS_SHADOW_EXT2_MAX_UNLINK_BLOCKS];
+} ext2_regular_allocations_t;
 
 /* The storage service is single-threaded; fixed storage avoids a 25 KiB stack
  * frame while preserving a heap-free, bounded transaction. */
@@ -1196,6 +1203,7 @@ static int ext2_journal_locate(ext2_shadow_volume_t *volume,
         ext2_get32(inode.bytes + 4U) <
             REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS *
                 X86OS_STORAGE_BLOCK_SIZE) return -5;
+    journal->inode_number = journal_inode;
     for (uint32_t index = 0U;
          index < REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS; ++index) {
         uint32_t byte_offset = index * X86OS_STORAGE_BLOCK_SIZE;
@@ -1211,6 +1219,11 @@ static int ext2_journal_locate(ext2_shadow_volume_t *volume,
         for (uint32_t prior = 0U; prior < index; ++prior)
             if (journal->sectors[prior] == journal->sectors[index]) return -5;
     }
+    uint32_t indirect = ext2_get32(
+        inode.bytes + 40U + EXT2_SINGLE_INDIRECT_INDEX * 4U);
+    if (indirect != 0U && !ext2_data_block_valid(volume, indirect))
+        return -5;
+    journal->indirect_block = indirect;
     journal->present = 1U;
     return 0;
 }
@@ -1219,6 +1232,168 @@ static int ext2_bytes_zero(const uint8_t *data, uint32_t length) {
     for (uint32_t index = 0U; index < length; ++index)
         if (data[index] != 0U) return 0;
     return 1;
+}
+
+static void ext2_journal_publish(ext2_journal_t *destination,
+                                 const ext2_journal_t *source) {
+    volatile uint32_t *sectors = destination->sectors;
+    for (uint32_t index = 0U;
+         index < REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS; ++index)
+        sectors[index] = source->sectors[index];
+    destination->indirect_block = source->indirect_block;
+    destination->inode_number = source->inode_number;
+    destination->sequence = source->sequence;
+    destination->present = source->present;
+}
+
+static int ext2_directory_allocation_blocks(
+        ext2_shadow_volume_t *volume, const ext2_shadow_inode_t *directory,
+        uint32_t *blocks,
+        uint32_t *count) {
+    if (volume == 0 || directory == 0 || blocks == 0 || count == 0)
+        return -22;
+    uint32_t logical_count = ext2_div_ceil_u32(
+        ext2_get32(directory->bytes + 4U), volume->block_size);
+    if (logical_count == 0U ||
+        logical_count > REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS)
+        return -110;
+    *count = logical_count;
+    for (uint32_t index = 0U; index < logical_count; ++index) {
+        int status = ext2_inode_block(
+            volume, directory, index, &blocks[index]);
+        if (status != 0) return status;
+    }
+    if (logical_count > EXT2_DIRECT_BLOCKS) {
+        uint32_t indirect = ext2_get32(
+            directory->bytes + 40U + EXT2_SINGLE_INDIRECT_INDEX * 4U);
+        if (!ext2_data_block_valid(volume, indirect)) return -5;
+        blocks[(*count)++] = indirect;
+    }
+    return 0;
+}
+
+static int ext2_regular_block_safe(
+        ext2_shadow_volume_t *volume, const ext2_journal_t *journal,
+        const uint32_t *directory_blocks, uint32_t directory_count,
+        uint32_t block) {
+    if (!ext2_data_block_valid(volume, block)) return -5;
+    for (uint32_t index = 0U;
+         index < REIST_VFS_SHADOW_EXT2_JOURNAL_SECTORS; ++index)
+        if (journal->sectors[index] / volume->sectors_per_block == block)
+            return -5;
+    if (journal->indirect_block == block) return -5;
+    for (uint32_t index = 0U; index < directory_count; ++index)
+        if (directory_blocks[index] == block) return -5;
+    uint32_t zero_based = block - volume->first_data_block;
+    uint32_t group = zero_based / volume->blocks_per_group;
+    uint8_t descriptor[EXT2_GROUP_DESCRIPTOR_SIZE];
+    int status = ext2_group_descriptor(volume, group, descriptor);
+    if (status != 0) return status;
+    uint32_t block_bitmap = ext2_get32(descriptor + 0U);
+    uint32_t inode_bitmap = ext2_get32(descriptor + 4U);
+    uint32_t inode_table = ext2_get32(descriptor + 8U);
+    uint32_t inode_table_blocks = ext2_div_ceil_u32(
+        volume->inodes_per_group * volume->inode_size,
+        volume->block_size);
+    if (block == block_bitmap || block == inode_bitmap ||
+        (block >= inode_table && block < inode_table + inode_table_blocks))
+        return -5;
+    if (volume->group_count >
+        UINT32_MAX / EXT2_GROUP_DESCRIPTOR_SIZE) return -5;
+    uint32_t descriptor_blocks = ext2_div_ceil_u32(
+        volume->group_count * EXT2_GROUP_DESCRIPTOR_SIZE,
+        volume->block_size);
+    if (group >
+        (UINT32_MAX - volume->first_data_block) /
+            volume->blocks_per_group) return -5;
+    uint32_t group_first = volume->first_data_block +
+        group * volume->blocks_per_group;
+    if (descriptor_blocks > UINT32_MAX - group_first) return -5;
+    if (block >= group_first &&
+        block <= group_first + descriptor_blocks) return -5;
+    return 0;
+}
+
+static int ext2_regular_allocation_append(
+        ext2_shadow_volume_t *volume, const ext2_journal_t *journal,
+        const uint32_t *directory_blocks, uint32_t directory_count,
+        ext2_regular_allocations_t *allocations, uint32_t block) {
+    if (allocations->count >= REIST_VFS_SHADOW_EXT2_MAX_UNLINK_BLOCKS)
+        return -27;
+    int status = ext2_regular_block_safe(
+        volume, journal, directory_blocks, directory_count, block);
+    if (status != 0) return status;
+    for (uint32_t index = 0U; index < allocations->count; ++index)
+        if (allocations->blocks[index] == block) return -5;
+    allocations->blocks[allocations->count++] = block;
+    return 0;
+}
+
+static int ext2_regular_allocations(
+        ext2_shadow_volume_t *volume, const ext2_shadow_inode_t *inode,
+        const ext2_shadow_inode_t *directory, const ext2_journal_t *journal,
+        ext2_regular_allocations_t *allocations) {
+    if (volume == 0 || inode == 0 || directory == 0 || journal == 0 ||
+        allocations == 0) return -22;
+    ext2_zero(allocations, sizeof(*allocations));
+    if (ext2_get32(inode->bytes + 32U) != 0U ||
+        ext2_get32(inode->bytes + 104U) != 0U ||
+        ext2_get32(inode->bytes + 112U) != 0U ||
+        !ext2_bytes_zero(inode->bytes + 116U, 12U)) return -95;
+    uint32_t data_blocks = ext2_div_ceil_u32(
+        ext2_get32(inode->bytes + 4U), volume->block_size);
+    uint32_t has_indirect = data_blocks > EXT2_DIRECT_BLOCKS ? 1U : 0U;
+    if (data_blocks + has_indirect >
+        REIST_VFS_SHADOW_EXT2_MAX_UNLINK_BLOCKS) return -27;
+    if (ext2_get32(inode->bytes + 40U + 13U * 4U) != 0U ||
+        ext2_get32(inode->bytes + 40U + 14U * 4U) != 0U) return -95;
+    uint32_t directory_blocks[
+        REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS + 1U];
+    uint32_t directory_count = 0U;
+    int status = ext2_directory_allocation_blocks(
+        volume, directory, directory_blocks, &directory_count);
+    if (status != 0) return status;
+    for (uint32_t index = 0U; index < EXT2_DIRECT_BLOCKS; ++index) {
+        uint32_t block = ext2_get32(inode->bytes + 40U + index * 4U);
+        if (index >= data_blocks) {
+            if (block != 0U) return -5;
+            continue;
+        }
+        status = ext2_regular_allocation_append(
+            volume, journal, directory_blocks, directory_count,
+            allocations, block);
+        if (status != 0) return status;
+    }
+    uint32_t indirect = ext2_get32(
+        inode->bytes + 40U + EXT2_SINGLE_INDIRECT_INDEX * 4U);
+    if (has_indirect == 0U) {
+        if (indirect != 0U) return -5;
+    } else {
+        status = ext2_regular_allocation_append(
+            volume, journal, directory_blocks, directory_count,
+            allocations, indirect);
+        if (status != 0) return status;
+        uint8_t indirect_data[REIST_VFS_SHADOW_EXT2_MAX_BLOCK_SIZE];
+        status = ext2_read_block(volume, indirect, indirect_data);
+        if (status != 0) return status;
+        uint32_t required = data_blocks - EXT2_DIRECT_BLOCKS;
+        uint32_t entries = volume->block_size / sizeof(uint32_t);
+        if (required > entries) return -27;
+        for (uint32_t index = 0U; index < entries; ++index) {
+            uint32_t block = ext2_get32(indirect_data + index * 4U);
+            if (index >= required) {
+                if (block != 0U) return -5;
+                continue;
+            }
+            status = ext2_regular_allocation_append(
+                volume, journal, directory_blocks, directory_count,
+                allocations, block);
+            if (status != 0) return status;
+        }
+    }
+    uint32_t expected_sectors = allocations->count *
+        volume->sectors_per_block;
+    return ext2_get32(inode->bytes + 28U) == expected_sectors ? 0 : -5;
 }
 
 static int ext2_journal_header_decode(
@@ -1373,7 +1548,7 @@ static int ext2_journal_recover(ext2_request_t *request,
         !ext2_bytes_zero(raw[other], X86OS_STORAGE_BLOCK_SIZE)) return -5;
     journal.sequence = header->sequence;
     if (header->state == EXT2_JOURNAL_STATE_CLEAN) {
-        if (journal_out != 0) *journal_out = journal;
+        if (journal_out != 0) ext2_journal_publish(journal_out, &journal);
         return 0;
     }
     if (request->write_sector == 0 || request->flush == 0) return -30;
@@ -1411,12 +1586,14 @@ static int ext2_journal_recover(ext2_request_t *request,
     if (header->state == EXT2_JOURNAL_STATE_COMMITTED && complete != 0U) {
             status = ext2_journal_clean(
                 request, volume, &journal, header->sequence);
-            if (status == 0 && journal_out != 0) *journal_out = journal;
+            if (status == 0 && journal_out != 0)
+                ext2_journal_publish(journal_out, &journal);
             return status;
     }
     status = ext2_journal_restore(
         request, volume, &journal, header, before);
-    if (status == 0 && journal_out != 0) *journal_out = journal;
+    if (status == 0 && journal_out != 0)
+        ext2_journal_publish(journal_out, &journal);
     return status;
 }
 
@@ -2194,8 +2371,9 @@ static int ext2_namespace_commit(ext2_request_t *request,
     return status;
 }
 
-static int ext2_unlink_symlink_request(ext2_request_t *request,
-        const char *absolute_path, uint32_t path_length) {
+static int ext2_unlink_request(ext2_request_t *request,
+        const char *absolute_path, uint32_t path_length,
+        uint8_t symlink_only) {
     char parent[X86OS_VFS_SHADOW_PATH_CAPACITY];
     char name[256];
     uint32_t parent_length = 0U;
@@ -2231,17 +2409,29 @@ static int ext2_unlink_symlink_request(ext2_request_t *request,
     ext2_shadow_inode_t inode;
     status = ext2_read_inode(&parent_volume, location.inode_number, &inode);
     if (status != 0) return status;
-    if ((ext2_get16(inode.bytes) & EXT2_S_IFMT) != EXT2_S_IFLNK)
+    if (location.inode_number == journal.inode_number) return -16;
+    uint16_t mode = ext2_get16(inode.bytes) & EXT2_S_IFMT;
+    if (mode != EXT2_S_IFLNK &&
+        (symlink_only != 0U || mode != EXT2_S_IFREG))
         return -95;
     if (ext2_get16(inode.bytes + 26U) != 1U) return -31;
     char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
     uint32_t target_length = 0U;
-    status = ext2_read_symlink_inode(
-        &parent_volume, &inode, target, &target_length);
+    if (mode == EXT2_S_IFLNK)
+        status = ext2_read_symlink_inode(
+            &parent_volume, &inode, target, &target_length);
     if (status != 0) return status;
-    uint32_t target_block = target_length > EXT2_FAST_SYMLINK_CAPACITY
+    uint32_t target_block = mode == EXT2_S_IFLNK &&
+        target_length > EXT2_FAST_SYMLINK_CAPACITY
         ? ext2_get32(inode.bytes + 40U) : 0U;
-    if (target_block != 0U) {
+    ext2_regular_allocations_t regular_allocations;
+    ext2_zero(&regular_allocations, sizeof(regular_allocations));
+    if (mode == EXT2_S_IFREG) {
+        status = ext2_regular_allocations(
+            &parent_volume, &inode, &directory, &journal,
+            &regular_allocations);
+        if (status != 0) return status;
+    } else if (target_block != 0U) {
         if (!ext2_data_block_valid(&parent_volume, target_block) ||
             ext2_get32(inode.bytes + 28U) !=
                 parent_volume.sectors_per_block) return -5;
@@ -2259,6 +2449,10 @@ static int ext2_unlink_symlink_request(ext2_request_t *request,
     if (status == 0 && target_block != 0U)
         status = ext2_release_allocation(
             &parent_volume, target_block, 0U);
+    for (uint32_t index = 0U;
+         status == 0 && index < regular_allocations.count; ++index)
+        status = ext2_release_allocation(
+            &parent_volume, regular_allocations.blocks[index], 0U);
     if (status == 0)
         status = ext2_release_allocation(
             &parent_volume, location.inode_number, 1U);
@@ -2676,7 +2870,21 @@ int reist_vfs_shadow_ext2_unlink_symlink(
         &request, io, deadline_ms,
         REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
     return status == 0
-        ? ext2_unlink_symlink_request(&request, absolute_path, path_length)
+        ? ext2_unlink_request(
+            &request, absolute_path, path_length, 1U)
+        : status;
+}
+
+int reist_vfs_shadow_ext2_unlink(
+        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+        uint32_t path_length, uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(
+        &request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0
+        ? ext2_unlink_request(
+            &request, absolute_path, path_length, 0U)
         : status;
 }
 

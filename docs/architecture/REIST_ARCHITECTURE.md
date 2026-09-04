@@ -596,13 +596,18 @@ Legacy-EXT2-Mutationspfad folgt einen finalen Link weder bei `unlink` noch bei
 `rename`, sondern lehnt beide Operationen ohne Zielwirkung ab.
 
 Append-only Storage-Operation 34 und die Frameoperationen 20/21 ergänzen
-`unlink` für native EXT2-Symlinkobjekte sowie das begrenzte `rename` für
-Symlinks und reguläre EXT2-Dateien. Der feste
+`unlink` und `rename` für native EXT2-Symlinkobjekte sowie die begrenzten
+Varianten beider Operationen für reguläre EXT2-Dateien. Der feste
 512-Byte-Frame trägt kanonischen Quell- und optionalen Zielpfad; Kernel und
 Storage-Dienst prüfen Prozessgeneration, Operation, Längen, reservierte Bytes
 und den vollständig zurückgegebenen Frame. `unlink` löst die letzte Komponente
-nicht auf und gibt bei genau einem Linkzähler den Inode sowie bei langen
-Symlinks dessen einzigen direkten Zielblock frei. `rename` erhält Inode und
+nicht auf. Bei genau einem Linkzähler gibt es einen Symlink-Inode samt
+optionalem Zielblock oder einen regulären Inode samt höchstens 64 geprüften
+direkten/einfach-indirekten Allokationen frei. Reguläre Dateien mit Sparse-
+Holes, EA, Sonderflags, Double-/Triple-Indirection, Duplikaten oder Verweisen
+auf Journal-, Directory- beziehungsweise Strukturblöcke werden vor dem ersten
+Write abgewiesen; dasselbe gilt, wenn die vollständige Freigabe nicht in das
+vorhandene 24-Sektor-Journal passt. `rename` erhält Inode und
 bei Symlinks die Zielbytes und akzeptiert nur ein nicht vorhandenes Ziel im
 selben Verzeichnis, dessen Name in den bestehenden Directory-Record und
 denselben 512-Byte-Publikationssektor passt. Bei einer regulären Datei bleiben
@@ -617,9 +622,9 @@ einmal unter derselben absoluten Deadline. `DEL.PRG`, `RM.PRG` und
 `RENAME.PRG` fallen ausschließlich bei `EOPNOTSUPP` auf die unveränderte
 Legacy-Mutation zurück, sodass FAT erhalten bleibt und ein EXT2-Fehler den
 Dienst nicht umgehen kann.
-Der bisherige symlinkspezifische interne Wrapper bleibt für bestehende Clients
-erhalten und lehnt reguläre Dateien weiterhin mit `EOPNOTSUPP` ab; der Dienst
-verwendet den typgeprüften allgemeinen Rename-Einstieg.
+Die bisherigen symlinkspezifischen internen Wrapper bleiben für bestehende
+Clients erhalten und lehnen reguläre Dateien weiterhin mit `EOPNOTSUPP` ab;
+der Dienst verwendet die typgeprüften allgemeinen Namespace-Einstiege.
 Damit die zusätzliche Parserlogik innerhalb der festen 224-KiB-Grenze des
 residenten Rescue-Caches bleibt, wird ausschließlich `STORAGE.PRG` weiterhin
 mit O2, aber ohne Funktions-Inlining gebaut. Das verändert weder ABI noch

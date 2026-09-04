@@ -180,6 +180,40 @@ static void initialize(context_t *context) {
               (uint16_t)(BLOCK_SIZE - offset));
 }
 
+static void allocate_block(context_t *context, uint32_t block) {
+    uint32_t bit = block - 1U;
+    block_at(context, 3U)[bit / 8U] |=
+        (uint8_t)(1U << (bit & 7U));
+}
+
+static uint32_t regular_allocation_block(uint32_t index) {
+    if (index == 0U) return 22U;
+    if (index <= 11U) return 39U + index;
+    return index == 12U ? 51U : 52U;
+}
+
+static void initialize_indirect_regular(context_t *context) {
+    initialize(context);
+    uint8_t *inode = inode_at(context, 12U);
+    memset(inode, 0, 128U);
+    make_inode(context, 12U, 0x81A4U, 13U * BLOCK_SIZE, 22U);
+    for (uint32_t index = 1U; index < 12U; ++index)
+        put32(inode + 40U + index * 4U, 39U + index);
+    put32(inode + 40U + 12U * 4U, 52U);
+    put32(inode + 28U, 28U);
+    put32(block_at(context, 52U), 51U);
+    for (uint32_t index = 0U; index < 13U; ++index) {
+        uint32_t block = regular_allocation_block(index);
+        memset(block_at(context, block), (int)(uint8_t)block, BLOCK_SIZE);
+        if (block >= 40U) allocate_block(context, block);
+    }
+    memset(block_at(context, 52U), 0, BLOCK_SIZE);
+    put32(block_at(context, 52U), 51U);
+    allocate_block(context, 52U);
+    put32(block_at(context, 1U) + 12U, 203U);
+    put16(block_at(context, 2U) + 12U, 203U);
+}
+
 static int drive_info(void *opaque, uint32_t resource,
                       x86os_drive_info_t *info) {
     (void)opaque;
@@ -272,6 +306,12 @@ static int create_link(context_t *context, const char *target,
 static int unlink_link(context_t *context, const char *path) {
     reist_vfs_shadow_ext2_io_t io = io_for(context);
     return reist_vfs_shadow_ext2_unlink_symlink(
+        &io, path, (uint32_t)strlen(path), context->now_ms + 10000U);
+}
+
+static int unlink_entry(context_t *context, const char *path) {
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    return reist_vfs_shadow_ext2_unlink(
         &io, path, (uint32_t)strlen(path), context->now_ms + 10000U);
 }
 
@@ -446,6 +486,79 @@ static int recover_regular_rename(context_t *context, const char *source,
     CHECK(read16(block_at(context, 2U) + 14U) == 106U);
     CHECK(read32(block_at(context, 1U) + 12U) == 216U);
     CHECK(read16(block_at(context, 2U) + 12U) == 216U);
+    CHECK(read32(block_at(context, 25U) + 8U) == 0U);
+    CHECK(read32(block_at(context, 25U) + 512U + 8U) == 0U);
+    return 0;
+}
+
+static int regular_data_unchanged(context_t *context, uint8_t indirect) {
+    if (indirect == 0U) {
+        CHECK(memcmp(block_at(context, 22U), "payload\n", 8U) == 0);
+        for (uint32_t index = 8U; index < BLOCK_SIZE; ++index)
+            CHECK(block_at(context, 22U)[index] == 0U);
+        return 0;
+    }
+    for (uint32_t index = 0U; index < 13U; ++index) {
+        uint32_t block = regular_allocation_block(index);
+        for (uint32_t byte = 0U; byte < BLOCK_SIZE; ++byte)
+            CHECK(block_at(context, block)[byte] == (uint8_t)block);
+    }
+    CHECK(read32(block_at(context, 52U)) == 51U);
+    for (uint32_t byte = 4U; byte < BLOCK_SIZE; ++byte)
+        CHECK(block_at(context, 52U)[byte] == 0U);
+    return 0;
+}
+
+static int recover_regular_unlink(context_t *context, const char *path,
+                                  uint8_t indirect) {
+    context->fail_write = UINT32_MAX;
+    context->fail_flush = UINT32_MAX;
+    context->writes = 0U;
+    context->flushes = 0U;
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    CHECK(reist_vfs_shadow_ext2_recover_path(
+        &io, path, (uint32_t)strlen(path),
+        context->now_ms + 10000U) == 0);
+    x86os_file_info_t info;
+    int visible = lstat_path(context, path, &info);
+    CHECK(visible == 0 || visible == -2);
+    uint32_t allocation_count = indirect != 0U ? 14U : 1U;
+    for (uint32_t index = 0U; index < allocation_count; ++index) {
+        uint32_t block = indirect != 0U
+            ? regular_allocation_block(index) : 22U;
+        uint32_t bit = block - 1U;
+        uint8_t allocated = (uint8_t)(block_at(context, 3U)[bit / 8U] &
+            (uint8_t)(1U << (bit & 7U)));
+        CHECK((visible == 0 && allocated != 0U) ||
+              (visible == -2 && allocated == 0U));
+    }
+    uint32_t inode_bit = 11U;
+    uint8_t inode_allocated = (uint8_t)(
+        block_at(context, 4U)[inode_bit / 8U] &
+        (uint8_t)(1U << (inode_bit & 7U)));
+    uint32_t initial_free = indirect != 0U ? 203U : 216U;
+    if (visible == 0) {
+        CHECK(info.type == X86OS_FILE);
+        CHECK(info.size == (indirect != 0U ? 13U * BLOCK_SIZE : 8U));
+        CHECK(inode_allocated != 0U);
+        CHECK(read32(block_at(context, 1U) + 12U) == initial_free);
+        CHECK(read16(block_at(context, 2U) + 12U) == initial_free);
+        CHECK(read32(block_at(context, 1U) + 16U) == 106U);
+        CHECK(read16(block_at(context, 2U) + 14U) == 106U);
+    } else {
+        CHECK(inode_allocated == 0U);
+        CHECK(read32(block_at(context, 1U) + 12U) ==
+              initial_free + allocation_count);
+        CHECK(read16(block_at(context, 2U) + 12U) ==
+              initial_free + allocation_count);
+        CHECK(read32(block_at(context, 1U) + 16U) == 107U);
+        CHECK(read16(block_at(context, 2U) + 14U) == 107U);
+        for (uint32_t index = 0U; index < 128U; ++index)
+            CHECK(inode_at(context, 12U)[index] == 0U);
+    }
+    CHECK(regular_data_unchanged(context, indirect) == 0);
+    CHECK(lstat_path(context, "/mnt/ext2/fast-link", &info) == 0);
+    CHECK(info.type == X86OS_SYMLINK);
     CHECK(read32(block_at(context, 25U) + 8U) == 0U);
     CHECK(read32(block_at(context, 25U) + 512U + 8U) == 0U);
     return 0;
@@ -781,5 +894,68 @@ int main(void) {
             &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt",
             regular_inode, regular_data) == 0);
     }
+
+    for (uint32_t variant = 0U; variant < 2U; ++variant) {
+        if (variant == 0U) initialize(&context);
+        else initialize_indirect_regular(&context);
+        CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == 0);
+        uint32_t regular_unlink_writes = context.writes;
+        uint32_t regular_unlink_flushes = context.flushes;
+        CHECK(recover_regular_unlink(
+            &context, "/mnt/ext2/target.txt", (uint8_t)variant) == 0);
+        for (uint32_t failure = 0U;
+             failure < regular_unlink_writes; ++failure) {
+            if (variant == 0U) initialize(&context);
+            else initialize_indirect_regular(&context);
+            context.fail_write = failure;
+            int removed = unlink_entry(&context, "/mnt/ext2/target.txt");
+            CHECK(removed == 0 || removed == -5);
+            CHECK(recover_regular_unlink(
+                &context, "/mnt/ext2/target.txt", (uint8_t)variant) == 0);
+        }
+        for (uint32_t failure = 0U;
+             failure < regular_unlink_flushes; ++failure) {
+            if (variant == 0U) initialize(&context);
+            else initialize_indirect_regular(&context);
+            context.fail_flush = failure;
+            int removed = unlink_entry(&context, "/mnt/ext2/target.txt");
+            CHECK(removed == 0 || removed == -5);
+            CHECK(recover_regular_unlink(
+                &context, "/mnt/ext2/target.txt", (uint8_t)variant) == 0);
+        }
+    }
+
+    initialize(&context);
+    uint32_t regular_unlink_reject_writes = context.writes;
+    uint32_t regular_unlink_reject_flushes = context.flushes;
+    CHECK(unlink_entry(&context, "/mnt/ext2/dir") == -95);
+    CHECK(unlink_entry(
+        &context, "/mnt/ext2/.reist-symlink-journal") == -16);
+    put16(inode_at(&context, 12U) + 26U, 2U);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -31);
+    put16(inode_at(&context, 12U) + 26U, 1U);
+    put32(inode_at(&context, 12U) + 40U, 3U);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -5);
+    put32(inode_at(&context, 12U) + 40U, 21U);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -5);
+    put32(inode_at(&context, 12U) + 40U, 25U);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -5);
+    put32(inode_at(&context, 12U) + 40U, 54U);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -5);
+    CHECK(context.writes == regular_unlink_reject_writes);
+    CHECK(context.flushes == regular_unlink_reject_flushes);
+
+    initialize_indirect_regular(&context);
+    put32(block_at(&context, 52U), 22U);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -5);
+    CHECK(context.writes == 0U && context.flushes == 0U);
+    initialize_indirect_regular(&context);
+    put32(inode_at(&context, 12U) + 4U, 64U * BLOCK_SIZE);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -27);
+    CHECK(context.writes == 0U && context.flushes == 0U);
+    initialize(&context);
+    put32(inode_at(&context, 12U) + 32U, 1U);
+    CHECK(unlink_entry(&context, "/mnt/ext2/target.txt") == -95);
+    CHECK(context.writes == 0U && context.flushes == 0U);
     return 0;
 }

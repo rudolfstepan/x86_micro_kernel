@@ -3245,7 +3245,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    eingebautes Icon und eine echte Verknüpfung verschob, beide Anordnungen
    dauerhaft neu lud, einen kleineren Arbeitsbereich prüfte und die
    Verknüpfung anschließend ohne Compositor-Neustart im Editor aktivierte.
-11. [~] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
+11. [ ] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
    führen.** N3a liefert nur den für native EXT2-Symlinks benötigten ersten
    begrenzten Mutationsschnitt. Danach die übrigen versionierten Create-,
    Write-, Rename-, Replace- und Reparaturtransaktionen migrieren. Journal,
@@ -3272,11 +3272,17 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Framebuffer-Paketbuild und einem realen 94-Sekunden-EXT2-Lauf mit
    Dienstneustart, persistentem Rename und sauberen redundanten
    Journalheadern. Bis zur Abgrenzung des nächsten N3-Fehlermodells bleibt
-   `active_id` leer. Der aktive Schnitt `N3d` ergänzt ausschließlich Unlink
+   `active_id` leer. Der abgeschlossene Schnitt `N3d` ergänzt ausschließlich Unlink
    regulärer EXT2-Dateien mit Linkzähler eins und höchstens 64 validierten
    direkten/einfach-indirekten Allokationen; nichtstandardmäßige Layouts,
    Journal-, Directory- und Strukturblöcke sowie jede Überschreitung des
-   vorhandenen 24-Sektor-Undo-Journals scheitern vor Medienwirkung.
+   vorhandenen 24-Sektor-Undo-Journals scheitern vor Medienwirkung. Abgenommen
+   mit 38 finalen Targeted-Checks, einem 68-Sekunden-QEMU-Framebuffer-
+   Paketbuild und einem realen 104-Sekunden-EXT2-Lauf mit persistentem DEL,
+   erneutem Dienstneustart, freigegebenen Inode-/Block-Bitmapbits und sauberen
+   redundanten Journalheadern. Allgemeines EXT2-Create/Write/Replace,
+   Verzeichnisse, Cross-Directory-Mutationen und größere beziehungsweise
+   nichtstandardmäßige Dateilayouts bleiben offen; `active_id` ist leer.
 12. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
    SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
    MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend

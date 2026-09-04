@@ -53,7 +53,7 @@ class ReistVfsNamespaceTests(unittest.TestCase):
             "vfs_namespace_mutate",
             "vfs_namespace_path_valid",
             "vfs_namespace_reserved_zero",
-            "reist_vfs_shadow_ext2_unlink_symlink",
+            "reist_vfs_shadow_ext2_unlink",
             "reist_vfs_shadow_ext2_rename",
             "X86OS_STORAGE_VFS_NAMESPACE",
         ):
@@ -67,6 +67,7 @@ class ReistVfsNamespaceTests(unittest.TestCase):
             "EXT2_JOURNAL_STATE_COMMITTED",
         ):
             self.assertIn(token, ext2)
+        self.assertIn("reist_vfs_shadow_ext2_unlink_symlink", ext2)
         self.assertNotRegex(ext2, r"\b(malloc|calloc|realloc|free)\s*\(")
         self.assertIn('name == "STORAGE.PRG"', build)
         self.assertIn('"-fno-inline-functions"', build)
@@ -91,7 +92,8 @@ class ReistVfsNamespaceTests(unittest.TestCase):
         self.assertIn("del", runner)
         self.assertIn("svcctl restart 5", runner)
         self.assertIn("moved.txt", runner)
-        self.assertIn("regular EXT2 inode changed", runner)
+        self.assertIn("regular EXT2 inode was not cleared", runner)
+        self.assertIn("regular EXT2 data block changed during unlink", runner)
 
 
 if __name__ == "__main__":

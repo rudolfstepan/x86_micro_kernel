@@ -141,11 +141,14 @@ bleibt read-only und erhält weder Linkauflösung noch Mutation.
 
 Storage-Operation 34 transportiert zusätzlich einen eigenen, exakt 512 Byte
 großen Namespace-Frame. Seine append-only Operationen 20 und 21 entsprechen
-den POSIX-Begriffen `unlink` und `rename`. `unlink` bleibt bewusst auf native
-EXT2-Symlinkobjekte begrenzt und bearbeitet ausschließlich den finalen
-Directory-Eintrag und folgt dem Ziel nicht. Es entfernt einen Link mit
-Linkzähler eins, setzt den Inode frei und gibt bei einem blockbasierten Ziel
-genau dessen validierten direkten Block zurück. `rename` ist no-replace und
+den POSIX-Begriffen `unlink` und `rename`. `unlink` bearbeitet ausschließlich
+den finalen Directory-Eintrag und folgt einem Symlinkziel nicht. Es entfernt
+einen Symlink oder eine reguläre Datei mit Linkzähler eins, setzt den Inode
+frei und gibt ausschließlich die validierten Objektblöcke zurück. Reguläre
+Dateien dürfen höchstens 64 eindeutige direkte/einfach-indirekte Allokationen
+einschließlich Indirect-Block besitzen. Sparse-, EA-, Sonderflag-, Double-/
+Triple-Indirect-, Journal-, Directory- und Strukturblockfälle scheitern ebenso
+wie Journal-Kapazitätsüberschreitungen vor dem ersten Medienwrite. `rename` ist no-replace und
 akzeptiert Symlinks sowie reguläre Dateien, aber nur Quell- und Zielnamen
 desselben Verzeichnisses, wenn der neue Name in den vorhandenen Record und denselben
 512-Byte-Sektor passt. Der reguläre Dateipfad publiziert ausschließlich diesen
@@ -164,8 +167,8 @@ höchstens einen Recovery-Retry unter einer gemeinsamen absoluten Deadline aus.
 FAT und alle nicht unterstützten Objektarten liefern `EOPNOTSUPP`; nur in
 diesem Fall dürfen `del`, `rm` und `rename` den bisherigen Legacy-Pfad nutzen.
 Allgemeines EXT2-Create/Write/Replace sowie Verzeichnis- und
-Cross-Directory-Mutationen und Unlink regulärer Dateien bleiben spätere
-N3-Schritte.
+Cross-Directory-Mutationen und größere oder nichtstandardmäßige reguläre
+Dateilayouts bleiben spätere N3-Schritte.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus

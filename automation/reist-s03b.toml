@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3d-ext2-regular-unlink"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -14561,7 +14561,7 @@ evidence = [
 
 [[packages]]
 id = "N3d-ext2-regular-unlink"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Unlink bounded regular EXT2 files through Ring 3"
@@ -14613,7 +14613,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fs: unlink bounded regular EXT2 files in Ring 3"
-evidence = []
+evidence = [
+  "All five final targeted groups passed with 38 checks across the unchanged namespace ABI and client, direct and single-indirect EXT2 behavior, parser bounds, Storage Service dispatch and complete userspace toolchain. One stale source assertion was narrowed from the service dispatch to the retained compatibility wrapper, and the freestanding build then replaced compiler-generated memcpy and 64-bit division dependencies with bounded field publication and checked 32-bit arithmetic before the final passing runs.",
+  "The host matrix proves normal completion and every successful-operation write and flush interruption for both one-direct-block and 13-data-block single-indirect files. Recovery always produced exactly the intact old file or complete removal, with exact inode and allocation-state deltas, unchanged freed data bytes, CLEAN redundant headers and no change to the remaining symbolic link.",
+  "Negative host cases reject the journal inode, directories, link counts above one, metadata, parent-directory, journal, unallocated and duplicate blocks, special flags and the 64-block capacity before any write or flush. The existing symlink-only unlink entry remains present and continues to reject regular files with EOPNOTSUPP.",
+  "The QEMU framebuffer package passed in 68 seconds with STORAGE.PRG at 188416 bytes, 40960 bytes below the unchanged 224 KiB bound. The real persistent EXT2 runtime passed in 104 seconds after RENAME moved the regular file, DEL removed it, a third Storage-Service generation confirmed absence, inode and block bitmap bits were clear, freed data bytes remained unchanged and both journal headers were CLEAN."
+]
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"

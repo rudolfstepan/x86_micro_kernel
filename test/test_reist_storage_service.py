@@ -64,7 +64,7 @@ class ReistStorageServiceTests(unittest.TestCase):
         self.assertIn("X86OS_STORAGE_VFS_SHADOW_STAT", service)
         self.assertIn("X86OS_STORAGE_VFS_NAMESPACE", service)
         self.assertIn("vfs_namespace_mutate", service)
-        self.assertIn("reist_vfs_shadow_ext2_unlink_symlink", service)
+        self.assertIn("reist_vfs_shadow_ext2_unlink", service)
         self.assertIn("reist_vfs_shadow_ext2_rename", service)
         self.assertIn("X86OS_VFS_SHADOW_FAT32_STAT", service)
         self.assertIn("X86OS_VFS_SHADOW_FAT_STAT", service)

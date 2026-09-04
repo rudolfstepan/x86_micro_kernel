@@ -4,12 +4,17 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: `N3d-ext2-regular-unlink`. Der nächste N3-Schnitt erweitert
-Operation 34 ohne ABI-Änderung auf reguläre EXT2-Dateien mit Linkzähler eins,
+Aktives Thema: keines. `N3d-ext2-regular-unlink` ist abgeschlossen. Operation
+34 entfernt nun ohne ABI-Änderung reguläre EXT2-Dateien mit Linkzähler eins,
 höchstens 64 eindeutigen direkten/einfach-indirekten Allokationen und einem
 vollständig in das vorhandene 24-Sektor-Undo-Journal passenden Commit.
-Sparse-, EA-, Double-/Triple-Indirect-, Journal-, Directory- und
-Strukturblockfälle werden vor jedem Medienwrite abgewiesen.
+Sparse-, EA-, Double-/Triple-Indirect-, Journal-, Directory-, Struktur-,
+Duplikat- und unallokierte Blockfälle werden vor jedem Medienwrite abgewiesen.
+Die Direct-/Single-Indirect-Hostmatrix deckt jeden Write-/Flush-Abbruch ab.
+Alle 38 finalen Targeted-Checks, der 68-Sekunden-QEMU-Framebuffer-Paketbuild
+und der reale 104-Sekunden-EXT2-Lauf mit persistentem DEL, erneutem
+Storage-Neustart, freigegebenen Bitmapbits und sauberen Journalheadern sind
+bestanden. `STORAGE.PRG` bleibt 188416 Byte groß.
 
 `N3c-ext2-regular-rename` ist abgeschlossen. Der
 begrenzte N3-Schnitt erweitert die vorhandene gleichverzeichnisige

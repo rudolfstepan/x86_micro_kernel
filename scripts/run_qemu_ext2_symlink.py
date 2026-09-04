@@ -280,6 +280,12 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
         command(f"cat {MOUNT}/moved.txt", (PAYLOAD,))
         command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
         command(f"cat {MOUNT}/renamed-link", ("cat: cannot open file",))
+        command(f"del {MOUNT}/moved.txt",
+                forbidden=("del: file not found or cannot be removed",))
+        command(f"cat {MOUNT}/moved.txt", ("cat: cannot open file",))
+        command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
+        command(f"cat {MOUNT}/moved.txt", ("cat: cannot open file",))
+        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
     except (OSError, RuntimeError, ValueError) as caught:
         error = str(caught)
     finally:
@@ -294,12 +300,17 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
     if file_sha256(disk) == initial_disk_digest:
         error = error or "EXT2 test disk did not persist link transactions"
     raw = disk.read_bytes()
-    if raw[inode_offset(12):inode_offset(12) + 128] != \
-            initial_raw[inode_offset(12):inode_offset(12) + 128]:
-        error = error or "regular EXT2 inode changed during rename"
+    if any(raw[inode_offset(12):inode_offset(12) + 128]):
+        error = error or "regular EXT2 inode was not cleared by unlink"
     if raw[22 * BLOCK_SIZE:23 * BLOCK_SIZE] != \
             initial_raw[22 * BLOCK_SIZE:23 * BLOCK_SIZE]:
-        error = error or "regular EXT2 file data changed during rename"
+        error = error or "regular EXT2 data block changed during unlink"
+    block_bit = 22 - 1
+    if raw[3 * BLOCK_SIZE + block_bit // 8] & (1 << (block_bit & 7)):
+        error = error or "regular EXT2 data block remained allocated"
+    inode_bit = 12 - 1
+    if raw[4 * BLOCK_SIZE + inode_bit // 8] & (1 << (inode_bit & 7)):
+        error = error or "regular EXT2 inode remained allocated"
     for offset in (24 * BLOCK_SIZE, 24 * BLOCK_SIZE + 512):
         header = raw[offset:offset + 512]
         recorded = int.from_bytes(header[24:28], "little")

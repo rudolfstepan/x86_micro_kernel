@@ -104,7 +104,10 @@ behandelt.
 
 `DEL.PRG` und nichtrekursives `RM.PRG` entfernen über denselben
 generationgebundenen Namespace-Client die finale EXT2-Symlinkkomponente, ohne
-deren Ziel zu berühren. `RENAME.PRG` erhält bei Symlinks Inode und Ziel und bei
+deren Ziel zu berühren, oder eine reguläre Datei mit Linkzähler eins und
+höchstens 64 validierten direkten/einfach-indirekten Allokationen. Sparse-,
+EA-, Sonderflag-, Double-/Triple-Indirect- und geschützte Blocklayouts werden
+abgewiesen. `RENAME.PRG` erhält bei Symlinks Inode und Ziel und bei
 regulären Dateien den bytegleichen Inode samt unveränderten Datenblockzeigern.
 Es akzeptiert nur einen freien Namen im selben Verzeichnis, der in denselben
 Directory-Record und 512-Byte-Publikationssektor passt. Alle drei Werkzeuge
@@ -120,7 +123,7 @@ keine zweite Mutation aus.
 | erstellen/schreiben | ja | ja | nein | generischer Legacy-EXT2-Adapter ist read-only |
 | `mkdir` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `rmdir` | ja | ja | nein | EXT2-Adapter ist read-only |
-| `del`/unlink | ja | ja | Symlinks | EXT2 nur finaler nativer Link; Ziel wird nicht verfolgt |
+| `del`/unlink | ja | ja | Symlinks/Dateien, begrenzt | EXT2 finaler nativer Link oder reguläre Standarddatei bis 64 Allokationen |
 | `rename` | nein | ja | Symlinks/Dateien, begrenzt | EXT2 nur no-replace im selben Verzeichnis und vorhandenen Record |
 | Zeitstempel lesen | ja | ja | ja | FAT-Auflösung und FAT-Zugriffsdatum bleiben erhalten |
 | `touch` | ja | ja | nein | EXT2-Adapter ist read-only |
@@ -129,8 +132,9 @@ keine zweite Mutation aus.
 
 Wichtig: Der generische VFS-Rename-Pfad und `x86os_rename()` bleiben für FAT32
 vorhanden. Der Ring-3-Schnitt deckt auf EXT2 native Symlinks und das begrenzte
-Rename regulärer Dateien ab; Create, Write, Unlink regulärer Dateien,
-Verzeichnisse, Cross-Directory und Ersetzen sind weiterhin nicht unterstützt.
+Rename und Unlink regulärer Standarddateien ab; Create, Write, größere oder
+nichtstandardmäßige Dateien, Verzeichnisse, Cross-Directory und Ersetzen sind
+weiterhin nicht unterstützt.
 FAT32 erlaubt nur die im Adapter validierten Dateioperationen;
 Verzeichnisse und unsichere Zielzustände werden fail-closed abgelehnt.
 
