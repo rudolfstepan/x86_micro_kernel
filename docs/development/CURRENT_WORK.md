@@ -16,11 +16,14 @@ für genau diesen Pfad. Außerdem wird der veraltete Hover-Nachweis auf die
 aktuellen sieben Startmenüeinträge aktualisiert. Normale Mutexbesitzer bleiben
 vollständig generationgenau verfolgt. Der erste Reparaturlauf öffnete Start und
 erreichte alle sieben Zeilen; Menüframes blieben bei 3 ms, der bisherige
-Softwarecursor benötigte jedoch bis zu 66 ms pro Publikation. Deshalb nutzt
-der Schnitt bei expliziter Geräteunterstützung zusätzlich VMwares
-`SVGA_FIFO_CAP_CURSOR_BYPASS_3`: ein festes Cursorbild wird einmal definiert,
-Bewegungen ändern danach nur die asynchronen FIFO-Cursorregister. Der bisherige
-Softwarecursor bleibt für alle anderen Geräte erhalten.
+Softwarecursor benötigte jedoch bis zu 66 ms pro Publikation. Ein daraufhin
+capability-geprüft implementierter `SVGA_FIFO_CAP_CURSOR_BYPASS_3`-Prototyp
+beseitigte zwar die Pixelpublikation, unterbrach im getesteten Workstation-
+Profil aber sowohl reale als auch RFB-gesteuerte relative xHCI-Mausbewegung und
+wurde verworfen. Der aktive Schnitt definiert bei `SVGA_CAP_CURSOR` einmal ein
+festes Bild für den physischen VMware-Hostcursor und übermittelt danach nur
+Sichtbarkeitswechsel; VMware führt dessen Position ohne Gastpublikation. Der
+bisherige Softwarecursor bleibt für alle anderen Geräte erhalten.
 
 `R3.6a-browser-input-and-mutex-owner-recovery` ist abgeschlossen. Ein Klick in
 die Browser-Adressleiste ersetzt beim ersten Editieren jetzt den bisherigen
