@@ -101,6 +101,9 @@ typedef struct page_directory {
 
 
 void init_paging(void);
+/** Initialize CPU-local PAT during serial bootstrap, before online/tasks.
+ * Unsupported CPUs retain UC fallback; heterogeneous PAT profiles fail. */
+bool paging_prepare_cpu_memory_types(void);
 void test_paging(void);
 page_directory_t* create_page_directory(void);
 void free_page_directory(page_directory_t* pd);

@@ -11,7 +11,8 @@ param(
     [switch]$Benchmark,
     [switch]$Rename,
     [switch]$SvgaLifecycle,
-    [switch]$HoverCadence
+    [switch]$HoverCadence,
+    [switch]$Visible
 )
 
 Set-StrictMode -Version Latest
@@ -286,12 +287,16 @@ public static class ReistRfbInput {
 
         public bool SendHoverStart() {
             try {
-                int centerX = width / 2;
-                int centerY = height / 2;
                 int startX = Math.Min(width - 1, 40);
                 int startY = Math.Max(0, height - 15);
-                SendPointer(stream, centerX, centerY, 0);
-                MovePointerSmooth(centerX, centerY, startX, startY);
+                // A new absolute RFB session does not reset the guest's
+                // relative USB pointer. Saturate at bottom-right using small
+                // reports (a single screen-sized jump can be HID-clipped),
+                // then approach Start from that known guest position.
+                SendPointer(stream, 0, 0, 0);
+                MovePointerSmooth(0, 0, width - 1, height - 1);
+                Thread.Sleep(100);
+                MovePointerSmooth(width - 1, height - 1, startX, startY);
                 SendPointer(stream, startX, startY, 1);
                 Thread.Sleep(24);
                 SendPointer(stream, startX, startY, 0);
@@ -310,7 +315,7 @@ public static class ReistRfbInput {
                 int itemX = Math.Min(width - 1, 100);
                 int previousX = startX;
                 int previousY = startY;
-                for (int item = 0; item < 6; ++item) {
+                for (int item = 0; item < 7; ++item) {
                     int itemY = Math.Max(0, height - 41 - item * 24);
                     MovePointerSmooth(previousX, previousY, itemX, itemY);
                     Thread.Sleep(100);
@@ -637,11 +642,11 @@ $watch = [System.Diagnostics.Stopwatch]::StartNew()
 try {
     "Starting exact package VM: $vmx" |
         Set-Content -LiteralPath $GateLog -Encoding utf8
-    # Start through Workstation itself: the runtime proof needs its visible
-    # input window, and -x powers on the exact package VM in that window.
+    # Visibility is opt-in for an explicitly authorized interactive proof.
+    $windowStyle = if ($Visible) { 'Normal' } else { 'Hidden' }
     $workstationProcess = Start-Process -FilePath $workstation -ArgumentList @(
         '-x', ('"' + $vmx + '"')
-    ) -PassThru -WindowStyle Normal
+    ) -PassThru -WindowStyle $windowStyle
     $publishDeadline = (Get-Date).AddSeconds(30)
     do {
         $vmxProcesses = @(Get-Process vmware-vmx -ErrorAction SilentlyContinue)
@@ -1083,7 +1088,7 @@ try {
                     $pointerFailures = [int]$hoverMatch.Groups['pointer_failures'].Value
                     $orderErrors = [int]$hoverMatch.Groups['order_errors'].Value
                     $clockErrors = [int]$hoverMatch.Groups['clock_errors'].Value
-                    if ($version -ne 1 -or $items -ne 6 -or $frames -ne 6) {
+                    if ($version -ne 1 -or $items -ne 7 -or $frames -ne 7) {
                         throw "VMware hover coverage is invalid: version=$version items=$items frames=$frames."
                     }
                     if ($fullFrames -ne 0 -or $damageMax -gt 2) {

@@ -110,6 +110,17 @@ static void test_dirty_regions_and_event_dispatch(void) {
     assert(manager.pointer_focus == 0);
     assert(manager.keyboard_focus == 0);
     assert(manager.capture_window == 0);
+
+    /* Capture preserves the exact title-bar pixel under the cursor, even
+     * after raising a background window. Neither press nor zero motion jumps. */
+    assert(manager.windows[0].x == 100 && manager.windows[0].y == 100);
+    assert(manager.drag_offset_x == 60 && manager.drag_offset_y == 10);
+    assert(desktop_wm_pointer_motion(&manager, 160, 110) == 0U);
+    assert(manager.windows[0].x == 100 && manager.windows[0].y == 100);
+    assert(desktop_wm_pointer_motion(&manager, 300, 240) != 0U);
+    assert(manager.windows[0].x == 240 && manager.windows[0].y == 230);
+    assert(desktop_wm_pointer_motion(&manager, 160, 110) != 0U);
+    assert(manager.windows[0].x == 100 && manager.windows[0].y == 100);
     assert(result.flags & DESKTOP_WM_RESULT_REDRAW);
     assert(result.dirty.count != 0U);
 

@@ -24,6 +24,25 @@ capability-gated `RECT_COPY`, one `BUSY` sample and the existing bounded
 `UPDATE` publication. Geometry, arithmetic, FIFO metadata and free space are
 checked before the next-command pointer is published.
 
+The validated VMware scanout aperture requests write-combining (WC) on its
+first mapping during discovery, with an uncached (UC) fallback. Mapping it UC
+first made later WC activation fail closed on the conflicting PTEs, leaving
+every scene copy uncached. FIFO and registers remain UC. Existing conflicting
+cache mappings are still rejected, never promoted or aliased in place. PAT
+entry 1 is prepared on every CPU before online, as described in the SMP
+contract; a global ready flag is insufficient for this per-CPU register.
+
+The visible pointer remains a fixed 14x19 software overlay on VMware. Both
+capability-valid hardware alternatives were rejected by runtime evidence:
+Cursor Bypass 3 broke relative virtual-xHCI coupling, while the physical-host
+cursor stayed invisible and did not preserve real or RFB-driven clicks. In
+shadow mode, motion restores only the old pointer rectangle from the
+authoritative scene, draws the new overlay directly into scanout, fences once
+and publishes the exact old/new update rectangles. It does not copy the new
+background redundantly. Ordinary scene damage still copies authoritative
+pixels first and reapplies the overlay when intersecting the pointer. This is
+fixed work, uses no heap and does not change the public display ABI.
+
 No DMA is required for this profile: all accepted 2D operations address
 device-owned VRAM through fixed FIFO coordinates. GMR, surfaces, 3D and direct
 guest-memory DMA remain excluded. A later DMA extension would require either

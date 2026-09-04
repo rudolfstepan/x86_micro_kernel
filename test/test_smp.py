@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import importlib.util
 import re
+import os
 from pathlib import Path
 
 
@@ -12,6 +13,45 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SmpTests(unittest.TestCase):
+    def test_pat_is_initialized_on_each_cpu_before_online(self):
+        paging = (ROOT / "arch/x86/mm/paging.c").read_text(encoding="utf-8")
+        smp = (ROOT / "arch/x86/cpu/smp.c").read_text(encoding="utf-8")
+        self.assertIn("pat_checked[X86_CPU_LOCAL_MAX]", paging)
+        self.assertIn("pat_write_combining[X86_CPU_LOCAL_MAX]", paging)
+        self.assertIn("KASSERT(paging_prepare_cpu_memory_types())", paging)
+        self.assertIn("write_combining == pat_write_combining[0]", paging)
+        entry = smp[smp.index("void x86_smp_ap_entry"):smp.index("bool x86_smp_initialize")]
+        self.assertLess(entry.index("paging_prepare_cpu_memory_types()"),
+                        entry.index("x86_cpu_local_mark_online(cpu_index)"))
+        mapping = paging[paging.index("void *map_kernel_write_combining"):
+                         paging.index("int map_page(")]
+        self.assertIn("!pat_write_combining[cpu]", mapping)
+        self.assertNotIn("prepare_pat_write_combining()", mapping)
+
+    def test_cpu_local_gdtr_binding_behavior(self):
+        smp = (ROOT / "arch/x86/cpu/smp.c").read_text(encoding="utf-8")
+        self.assertIn("gdtr.base = (uint32_t)(uintptr_t)bootstrap_gdt", smp)
+        self.assertIn("gdtr.limit = sizeof(bootstrap_gdt) - 1U", smp)
+        compiler = shutil.which("gcc") or shutil.which("clang")
+        command = [compiler] if compiler else [shutil.which("zig"), "cc"]
+        self.assertIsNotNone(command[0], "C compiler required for CPU identity proof")
+        environment = os.environ.copy()
+        environment["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/zig-global-cache")
+        environment["ZIG_LOCAL_CACHE_DIR"] = str(ROOT / "build/zig-cache")
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "cpu-local-test.exe"
+            compiled = subprocess.run(command + [
+                "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-DREIST_HOST_TEST", "-I", str(ROOT),
+                str(ROOT / "arch/x86/cpu/cpu_local.c"),
+                str(ROOT / "test/test_cpu_local_host.c"),
+                "-o", str(executable)], env=environment,
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            result = subprocess.run([str(executable)], check=True,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertIn("runtime_cpuid=0", result.stdout)
+
     def test_cross_cpu_wait_queue_wake_requests_bounded_reschedule(self):
         header = (ROOT / "arch/x86/include/smp.h").read_text(
             encoding="utf-8")
@@ -445,6 +485,9 @@ class SmpTests(unittest.TestCase):
         self.assertIn("scheduler_current_task_identity", source)
         self.assertIn("owner_generation", header)
         self.assertIn("kernel_mutex_abandon_task_owner", header)
+        self.assertIn("kernel_mutex_trylock_pinned", header)
+        self.assertIn("owner_preempt_pinned", header)
+        self.assertIn("scheduler_current_task_identity_pinned", source)
         self.assertIn("scheduler_mutex_owner_register", source)
         self.assertIn("scheduler_mutex_owner_unregister", source)
         self.assertIn("SCHEDULER_HELD_MUTEX_CAPACITY 8U", (ROOT /

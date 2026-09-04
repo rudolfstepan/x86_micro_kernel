@@ -10,6 +10,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class VmwareSvga2dTests(unittest.TestCase):
 
+    def test_probe_establishes_scanout_cache_type_before_activation(self):
+        display = (ROOT / "drivers/video/display_control.c").read_text(
+            encoding="utf-8")
+        prepare = display[display.index("void display_control_prepare(void)"):
+                          display.index("static int activate_vbe(void)")]
+        self.assertIn("map_kernel_write_combining(framebuffer_start,", prepare)
+        self.assertLess(prepare.index("map_kernel_write_combining(framebuffer_start,"),
+                        prepare.index("map_mmio_region(framebuffer_start,"))
+        self.assertIn("map_mmio_region(fifo_start, fifo_size)", prepare)
+        self.assertNotIn("map_kernel_write_combining(fifo_start", prepare)
+
     def test_driver_fence_still_disables_device_owned_scanout(self):
         supervisor = (ROOT / "kernel/init/supervisor.c").read_text(
             encoding="utf-8")
@@ -324,17 +335,16 @@ class VmwareSvga2dTests(unittest.TestCase):
             "int display_control_cursor_update("):display.index(
                 "static bool vmware_rect_valid")]
         self.assertIn("scheduler_preempt_disable()", pointer_wrapper)
-        self.assertIn("kernel_mutex_lock_for(&display_state_mutex",
+        self.assertIn("kernel_mutex_trylock_pinned(&display_state_mutex",
                       pointer_wrapper)
-        self.assertIn("&display_state_mutex, 0U", pointer_wrapper)
         self.assertIn("if (lock_result != 0)", pointer_wrapper)
         self.assertIn("framebuffer_cursor_update(", pointer_wrapper)
         self.assertIn("kernel_mutex_unlock(&display_state_mutex)",
                       pointer_wrapper)
         self.assertIn("scheduler_preempt_enable()", pointer_wrapper)
         self.assertLess(pointer_wrapper.index("scheduler_preempt_disable()"),
-                        pointer_wrapper.index("kernel_mutex_lock_for("))
-        self.assertLess(pointer_wrapper.index("kernel_mutex_lock_for("),
+                        pointer_wrapper.index("kernel_mutex_trylock_pinned("))
+        self.assertLess(pointer_wrapper.index("kernel_mutex_trylock_pinned("),
                         pointer_wrapper.rindex("framebuffer_cursor_update("))
         self.assertLess(pointer_wrapper.rindex("framebuffer_cursor_update("),
                         pointer_wrapper.rindex("scheduler_preempt_enable()"))
@@ -344,6 +354,31 @@ class VmwareSvga2dTests(unittest.TestCase):
         self.assertIn("process_set_supervised_affinity(", supervisor)
         self.assertIn("SVGA2D_AP_EXEC cpu=%u", supervisor)
         self.assertIn("missing SVGA2D AP execution marker", smoke)
+
+    def test_vmware_uses_bounded_visible_software_cursor(self):
+        display = (ROOT / "drivers/video/display_control.c").read_text(
+            encoding="utf-8")
+        framebuffer = (ROOT / "drivers/video/framebuffer.c").read_text(
+            encoding="utf-8")
+        self.assertNotIn("SVGA_CMD_DEFINE_CURSOR", display)
+        self.assertNotIn("SVGA_CMD_DISPLAY_CURSOR", display)
+        self.assertNotIn("SVGA_FIFO_CURSOR_X", display)
+        self.assertNotIn("SVGA_FIFO_CURSOR_Y", display)
+        update = framebuffer[framebuffer.index(
+            "bool framebuffer_cursor_update"):
+            framebuffer.index("static void fb_draw_glyph_pixels")]
+        self.assertIn("bool restore_old_pointer = pointer_visible", update)
+        self.assertIn("framebuffer_present_cursor_damage(", update)
+        self.assertNotIn("framebuffer_present_damage(damage, damage_count)",
+                         update[:update.index("if (pointer_visible) {", 1)])
+        publish = framebuffer[framebuffer.index(
+            "static void framebuffer_publish_cursor_damage"):
+            framebuffer.index("static void framebuffer_present_damage")]
+        self.assertIn("if (restore_old_pointer)", publish)
+        self.assertEqual(publish.count("framebuffer_blit_rect("), 1)
+        self.assertIn("framebuffer_overlay_pointer_for_damage", publish)
+        self.assertIn("framebuffer_scanout_fence()", publish)
+        self.assertIn("display_control_present_rects(updates, count)", publish)
 
     def test_smp_lifecycle_fault_is_compile_time_bounded(self):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")

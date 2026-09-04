@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tempfile
@@ -18,15 +19,19 @@ class DesktopSourceTests(unittest.TestCase):
 
     def test_window_manager_model_host_behavior(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
-        if compiler is None:
-            self.skipTest("host C compiler unavailable")
+        command = [compiler] if compiler else [shutil.which("zig"), "cc"]
+        self.assertIsNotNone(command[0], "C compiler required for drag-anchor proof")
+        environment = os.environ.copy()
+        environment["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/zig-global-cache")
+        environment["ZIG_LOCAL_CACHE_DIR"] = str(ROOT / "build/zig-cache")
         with tempfile.TemporaryDirectory(prefix="reist-desktop-wm-") as temp:
             executable = Path(temp) / "desktop-wm-test.exe"
             subprocess.run(
-                 [compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                 command + ["-std=c11", "-Wall", "-Wextra", "-Werror",
                  "-I.", "test/test_desktop_wm_host.c",
                  "userspace/gui/compositor/desktop_wm.c", "-o", str(executable)],
-                cwd=ROOT, check=True, capture_output=True, text=True)
+                cwd=ROOT, env=environment, check=True, capture_output=True,
+                text=True, timeout=60)
             subprocess.run([str(executable)], cwd=ROOT, check=True,
                            capture_output=True, text=True, timeout=5)
 

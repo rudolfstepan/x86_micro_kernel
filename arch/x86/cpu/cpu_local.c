@@ -4,7 +4,13 @@
  */
 #include "arch/x86/include/cpu_local.h"
 
+#ifdef REIST_HOST_TEST
+#include <string.h>
+extern uint8_t x86_cpu_test_apic_id(void);
+extern void x86_cpu_test_gdtr(uint32_t *base, uint16_t *limit);
+#else
 #include "lib/libc/string.h"
+#endif
 
 #include <stddef.h>
 #include <stdint.h>
@@ -15,8 +21,33 @@
 static x86_cpu_local_t cpu_locals[X86_CPU_LOCAL_MAX];
 static uint8_t apic_to_cpu[APIC_ID_COUNT];
 static bool cpu_local_initialized;
+typedef struct {
+    uint16_t limit;
+    uint32_t base;
+} __attribute__((packed)) cpu_gdtr_t;
+static cpu_gdtr_t cpu_gdtrs[X86_CPU_LOCAL_MAX];
+static uint32_t cpu_gdtr_bound[X86_CPU_LOCAL_MAX];
+
+static cpu_gdtr_t current_gdtr(void) {
+    cpu_gdtr_t descriptor;
+#ifdef REIST_HOST_TEST
+    uint32_t base;
+    uint16_t limit;
+    x86_cpu_test_gdtr(&base, &limit);
+    descriptor.base = base;
+    descriptor.limit = limit;
+#else
+    /* Intel SDM SGDT, 32-bit operand size: six bytes, independent of the
+     * current task's user segment selectors. Only Ring 0 can change GDTR. */
+    __asm__ __volatile__("sgdt %0" : "=m"(descriptor) : : "memory");
+#endif
+    return descriptor;
+}
 
 uint8_t x86_cpu_initial_apic_id(void) {
+#ifdef REIST_HOST_TEST
+    return x86_cpu_test_apic_id();
+#else
     uint32_t original_flags;
     uint32_t changed_flags;
     __asm__ __volatile__("pushf\n pop %0" : "=r"(original_flags));
@@ -43,6 +74,27 @@ uint8_t x86_cpu_initial_apic_id(void) {
     __asm__ __volatile__("cpuid"
                          : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
     return (uint8_t)(ebx >> 24U);
+#endif
+}
+
+bool x86_cpu_local_bind_gdt(uint32_t cpu_index) {
+    if (!cpu_local_initialized || cpu_index >= X86_CPU_LOCAL_MAX ||
+        cpu_locals[cpu_index].registered == 0U ||
+        __atomic_load_n(&cpu_gdtr_bound[cpu_index], __ATOMIC_ACQUIRE) != 0U ||
+        cpu_locals[cpu_index].apic_id != x86_cpu_initial_apic_id())
+        return false;
+    cpu_gdtr_t descriptor = current_gdtr();
+    if (descriptor.base == 0U || descriptor.limit != 7U * 8U - 1U)
+        return false;
+    /* BSP starts APs serially. Bind only after LGDT and before online/IRQs;
+     * published records are immutable and may be read by every CPU. */
+    for (uint32_t index = 0U; index < X86_CPU_LOCAL_MAX; ++index) {
+        if (__atomic_load_n(&cpu_gdtr_bound[index], __ATOMIC_ACQUIRE) != 0U &&
+            cpu_gdtrs[index].base == descriptor.base) return false;
+    }
+    cpu_gdtrs[cpu_index] = descriptor;
+    __atomic_store_n(&cpu_gdtr_bound[cpu_index], 1U, __ATOMIC_RELEASE);
+    return true;
 }
 
 static void initialize_slot(uint32_t cpu_index, uint8_t apic_id) {
@@ -87,12 +139,24 @@ x86_cpu_local_t *x86_cpu_local_by_index(uint32_t cpu_index) {
 
 x86_cpu_local_t *x86_cpu_local_current(void) {
     if (!cpu_local_initialized) return NULL;
+    cpu_gdtr_t descriptor = current_gdtr();
+    for (uint32_t index = 0U; index < X86_CPU_LOCAL_MAX; ++index) {
+        if (__atomic_load_n(&cpu_gdtr_bound[index], __ATOMIC_ACQUIRE) != 0U &&
+            cpu_gdtrs[index].base == descriptor.base &&
+            cpu_gdtrs[index].limit == descriptor.limit)
+            return &cpu_locals[index];
+    }
+    /* Bootstrap uses a shared loader/trampoline GDT. Once this CPU has bound
+     * its private table, an unexpected GDTR must fail closed, not disguise
+     * the mismatch by falling back to CPUID. */
     uint8_t apic_id = x86_cpu_initial_apic_id();
     uint8_t cpu_index = apic_to_cpu[apic_id];
     if (cpu_index == CPU_INDEX_UNMAPPED || cpu_index >= X86_CPU_LOCAL_MAX)
         return NULL;
     x86_cpu_local_t *local = &cpu_locals[cpu_index];
-    if (local->registered == 0U || local->apic_id != apic_id) return NULL;
+    if (local->registered == 0U || local->apic_id != apic_id ||
+        __atomic_load_n(&cpu_gdtr_bound[cpu_index], __ATOMIC_ACQUIRE) != 0U)
+        return NULL;
     return local;
 }
 

@@ -8686,13 +8686,19 @@ static void run_menu_probe(const x86os_display_info_t *display,
     reist_gui_menu_layout_t layout = desktop_menu_layout(display);
     reist_gui_rect_t help_title;
     reist_gui_rect_t help_item;
-    if (reist_gui_menu_validate(
+    uint32_t help_index = 0U;
+    const uint32_t item_count = sizeof(start_menu_items) /
+                                sizeof(start_menu_items[0]);
+    for (; help_index < item_count; ++help_index)
+        if (start_menu_items[help_index].action == DESKTOP_MENU_ACTION_HELP)
+            break;
+    if (help_index == item_count || reist_gui_menu_validate(
             &desktop_menu_model, &layout, &ui->menu) != 0 ||
         reist_gui_menu_title_rect(
             &desktop_menu_model, &layout, DESKTOP_MENU_START,
             &help_title) != 0 ||
         reist_gui_menu_item_rect(
-            &desktop_menu_model, &layout, DESKTOP_MENU_START, 3U,
+            &desktop_menu_model, &layout, DESKTOP_MENU_START, help_index,
             &help_item) != 0) {
         render_probe_error(metrics);
         desktop_ui_initialize(ui);
@@ -8794,6 +8800,8 @@ static void run_render_probe(
         return;
     }
     desktop_window_t *window = &manager->windows[0];
+    const int32_t initial_window_x = window->x;
+    const int32_t initial_window_y = window->y;
     *pointer_x = window->x + (int32_t)(window->width / 2U);
     *pointer_y = window->y + (int32_t)manager->frame_border +
                  (int32_t)(manager->title_height / 2U);
@@ -8811,7 +8819,10 @@ static void run_render_probe(
     };
     desktop_dirty_initialize(&dirty, display->width, display->height);
     (void)dispatch_desktop_event(manager, display, &dirty, &event, &target);
-    if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE)
+    const int32_t anchor_x = *pointer_x - initial_window_x;
+    const int32_t anchor_y = *pointer_y - initial_window_y;
+    if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE ||
+        window->x != initial_window_x || window->y != initial_window_y)
         render_probe_error(metrics);
     for (uint32_t step = 0U; step < DESKTOP_RENDER_PROBE_STEPS; ++step) {
         uint32_t move_kind = DESKTOP_MOVE_CACHE_NONE;
@@ -8831,6 +8842,9 @@ static void run_render_probe(
         };
         (void)dispatch_desktop_event(
             manager, display, &dirty, &event, &target);
+        if (*pointer_x - window->x != anchor_x ||
+            *pointer_y - window->y != anchor_y)
+            render_probe_error(metrics);
         uint32_t destination_kind = DESKTOP_MOVE_CACHE_NONE;
         uint32_t destination_window = DESKTOP_WM_NO_TARGET;
         desktop_rect_t destination = {0, 0, 0U, 0U};

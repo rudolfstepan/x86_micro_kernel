@@ -44,8 +44,8 @@ static uint32_t
 #define LOCAL_APIC_DIRECTORY_INDEX (LOCAL_APIC_BASE >> 22)
 #define LOCAL_APIC_TABLE_INDEX ((LOCAL_APIC_BASE >> 12) & 0x3FFU)
 static bool paging_enabled;
-static bool pat_checked;
-static bool pat_write_combining;
+static bool pat_checked[X86_CPU_LOCAL_MAX];
+static bool pat_write_combining[X86_CPU_LOCAL_MAX];
 static spinlock_t page_table_lock = SPINLOCK_INIT;
 
 /* A CPU waiting for the page-table lock must remain able to acknowledge a
@@ -240,8 +240,10 @@ static inline void write_msr(uint32_t msr, uint64_t value) {
 }
 
 static bool prepare_pat_write_combining(void) {
-    if (pat_checked) return pat_write_combining;
-    pat_checked = true;
+    uint32_t cpu = x86_cpu_current_index();
+    if (cpu >= X86_CPU_LOCAL_MAX) return false;
+    if (pat_checked[cpu]) return pat_write_combining[cpu];
+    pat_checked[cpu] = true;
 
     uint32_t maximum_leaf;
     uint32_t unused_b;
@@ -282,12 +284,23 @@ static bool prepare_pat_write_combining(void) {
         __asm__ __volatile__("push %0\n popf"
                              : : "r"(flags) : "memory");
     }
-    pat_write_combining =
+    pat_write_combining[cpu] =
         ((read_msr(IA32_PAT_MSR) >> PAT_ENTRY_WIDTH) & 0xFFU) ==
         PAT_WRITE_COMBINING;
-    if (pat_write_combining)
-        printf("PAGING: PAT write-combining enabled\n");
-    return pat_write_combining;
+    if (pat_write_combining[cpu])
+        printf("PAGING: PAT write-combining enabled cpu=%u\n", cpu);
+    return pat_write_combining[cpu];
+}
+
+bool paging_prepare_cpu_memory_types(void) {
+    /* IA32_PAT belongs to each logical processor, not to the shared page
+     * tables. Establish matching entry-1 semantics before that CPU can run
+     * tasks which consume an existing WC mapping. Bootstrap is serial. */
+    uint32_t cpu = x86_cpu_current_index();
+    if (cpu >= X86_CPU_LOCAL_MAX || (cpu != 0U && !pat_checked[0]))
+        return false;
+    bool write_combining = prepare_pat_write_combining();
+    return cpu == 0U || write_combining == pat_write_combining[0];
 }
 
 static void *allocate_page(void) {
@@ -394,6 +407,7 @@ void init_paging(void) {
     switch_page_directory(paging_kernel_directory());
     write_cr0(read_cr0() | CR0_PG);
     paging_enabled = true;
+    KASSERT(paging_prepare_cpu_memory_types());
     printf("Paging enabled; identity-mapped the first %u MB.\n",
            (unsigned int)(KERNEL_IDENTITY_LIMIT / 1024U / 1024U));
 }
@@ -666,7 +680,9 @@ void *map_kernel_mmio(uint32_t physical_address, size_t length) {
 }
 
 void *map_kernel_write_combining(uint32_t physical_address, size_t length) {
-    if (!prepare_pat_write_combining()) return NULL;
+    uint32_t cpu = x86_cpu_current_index();
+    if (cpu >= X86_CPU_LOCAL_MAX || !pat_checked[cpu] ||
+        !pat_write_combining[cpu]) return NULL;
     __asm__ __volatile__("wbinvd" : : : "memory");
     void *mapping = map_kernel_identity_range(
         paging_kernel_directory(), physical_address, length,

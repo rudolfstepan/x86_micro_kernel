@@ -29,6 +29,7 @@ typedef struct {
     uint32_t owner_generation;
     uint32_t owner_cpu;
     uint32_t recursion_depth;
+    uint32_t owner_preempt_pinned;
 } kernel_mutex_t;
 
 #define KERNEL_MUTEX_INIT { \
@@ -37,7 +38,8 @@ typedef struct {
     .owner_task = KERNEL_MUTEX_NO_OWNER_TASK, \
     .owner_generation = 0U, \
     .owner_cpu = X86_CPU_INDEX_INVALID, \
-    .recursion_depth = 0U \
+    .recursion_depth = 0U, \
+    .owner_preempt_pinned = 0U \
 }
 
 void kernel_mutex_init(kernel_mutex_t *mutex);
@@ -47,6 +49,10 @@ int kernel_mutex_lock_until(kernel_mutex_t *mutex, uint64_t deadline_ms);
 
 /** Acquire within timeout_ms; timeout zero is a non-blocking attempt. */
 int kernel_mutex_lock_for(kernel_mutex_t *mutex, uint32_t timeout_ms);
+
+/** Nonblocking acquisition for a current running task whose caller already
+ * disabled preemption. Success retains an internal pin through final release. */
+int kernel_mutex_trylock_pinned(kernel_mutex_t *mutex);
 
 /** Release one recursive level.  A non-owner release is a kernel defect. */
 void kernel_mutex_unlock(kernel_mutex_t *mutex);

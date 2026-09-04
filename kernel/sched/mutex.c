@@ -24,7 +24,8 @@ static bool kernel_mutex_owner_identity(kernel_mutex_identity_t *identity) {
 
     int task = -1;
     uint32_t generation = 0U;
-    (void)scheduler_current_task_identity(&task, &generation);
+    if (!scheduler_current_task_identity_pinned(&task, &generation))
+        (void)scheduler_current_task_identity(&task, &generation);
     if (task >= MAX_TASKS || (task >= 0 && generation == 0U)) return false;
     identity->task = task;
     identity->generation = generation;
@@ -49,6 +50,7 @@ void kernel_mutex_init(kernel_mutex_t *mutex) {
     mutex->owner_generation = 0U;
     mutex->owner_cpu = X86_CPU_INDEX_INVALID;
     mutex->recursion_depth = 0U;
+    mutex->owner_preempt_pinned = 0U;
 }
 
 int kernel_mutex_lock_until(kernel_mutex_t *mutex, uint64_t deadline_ms) {
@@ -84,12 +86,14 @@ int kernel_mutex_lock_until(kernel_mutex_t *mutex, uint64_t deadline_ms) {
             mutex->owner_generation = identity.generation;
             mutex->owner_cpu = identity.cpu;
             mutex->recursion_depth = 1U;
+            mutex->owner_preempt_pinned = 0U;
             if (identity.task >= 0 && scheduler_mutex_owner_register(
                     identity.task, identity.generation, mutex) != 0) {
                 mutex->owner_task = KERNEL_MUTEX_NO_OWNER_TASK;
                 mutex->owner_generation = 0U;
                 mutex->owner_cpu = X86_CPU_INDEX_INVALID;
                 mutex->recursion_depth = 0U;
+                mutex->owner_preempt_pinned = 0U;
                 (void)wait_queue_wake_one_locked(&mutex->waiters);
                 spinlock_release_irq(&mutex->state_lock, flags);
                 return KERNEL_MUTEX_INVALID;
@@ -136,6 +140,41 @@ int kernel_mutex_lock_for(kernel_mutex_t *mutex, uint32_t timeout_ms) {
     return kernel_mutex_lock_until(mutex, deadline);
 }
 
+int kernel_mutex_trylock_pinned(kernel_mutex_t *mutex) {
+    KASSERT_NOT_IRQ();
+    if (mutex == NULL || !scheduler_preempt_is_disabled())
+        return KERNEL_MUTEX_INVALID;
+    kernel_mutex_identity_t identity;
+    if (!kernel_mutex_owner_identity(&identity) || identity.task < 0)
+        return KERNEL_MUTEX_INVALID;
+
+    uint32_t flags = irq_save();
+    spinlock_acquire(&mutex->state_lock);
+    int result = KERNEL_MUTEX_WOULD_BLOCK;
+    if (mutex->owner_task == KERNEL_MUTEX_NO_OWNER_TASK) {
+        KASSERT(mutex->recursion_depth == 0U);
+        mutex->owner_task = identity.task;
+        mutex->owner_generation = identity.generation;
+        mutex->owner_cpu = identity.cpu;
+        mutex->recursion_depth = 1U;
+        mutex->owner_preempt_pinned = 1U;
+        /* Retain an internal guard for the complete ownership lifetime. The
+         * caller's required guard proves admission; this second count keeps
+         * the task running even if that outer scope is balanced too early. */
+        scheduler_preempt_disable();
+        result = 0;
+    } else if (kernel_mutex_identity_matches(mutex, &identity)) {
+        if (mutex->recursion_depth < KERNEL_MUTEX_RECURSION_LIMIT) {
+            ++mutex->recursion_depth;
+            result = 0;
+        } else {
+            result = KERNEL_MUTEX_INVALID;
+        }
+    }
+    spinlock_release_irq(&mutex->state_lock, flags);
+    return result;
+}
+
 void kernel_mutex_unlock(kernel_mutex_t *mutex) {
     KASSERT_NOT_IRQ();
     KASSERT(mutex != NULL);
@@ -147,19 +186,25 @@ void kernel_mutex_unlock(kernel_mutex_t *mutex) {
     spinlock_acquire(&mutex->state_lock);
     KASSERT(kernel_mutex_identity_matches(mutex, &identity));
     KASSERT(mutex->recursion_depth > 0U);
+    if (mutex->owner_preempt_pinned != 0U)
+        KASSERT(scheduler_preempt_is_disabled());
     bool release_kernel_preempt_guard = mutex->owner_task == -1;
+    bool release_task_preempt_guard = false;
     --mutex->recursion_depth;
     if (mutex->recursion_depth == 0U) {
-        if (mutex->owner_task >= 0)
+        if (mutex->owner_task >= 0 && mutex->owner_preempt_pinned == 0U)
             KASSERT(scheduler_mutex_owner_unregister(
                 mutex->owner_task, mutex->owner_generation, mutex) == 0);
+        release_task_preempt_guard = mutex->owner_preempt_pinned != 0U;
         mutex->owner_task = KERNEL_MUTEX_NO_OWNER_TASK;
         mutex->owner_generation = 0U;
         mutex->owner_cpu = X86_CPU_INDEX_INVALID;
+        mutex->owner_preempt_pinned = 0U;
         (void)wait_queue_wake_one_locked(&mutex->waiters);
     }
     spinlock_release_irq(&mutex->state_lock, flags);
     if (release_kernel_preempt_guard) scheduler_preempt_enable();
+    if (release_task_preempt_guard) scheduler_preempt_enable();
 }
 
 bool kernel_mutex_abandon_task_owner(kernel_mutex_t *mutex, int task_id,
@@ -170,12 +215,14 @@ bool kernel_mutex_abandon_task_owner(kernel_mutex_t *mutex, int task_id,
     spinlock_acquire(&mutex->state_lock);
     bool matched = mutex->owner_task == task_id &&
                    mutex->owner_generation == task_generation &&
-                   mutex->recursion_depth != 0U;
+                   mutex->recursion_depth != 0U &&
+                   mutex->owner_preempt_pinned == 0U;
     if (matched) {
         mutex->owner_task = KERNEL_MUTEX_NO_OWNER_TASK;
         mutex->owner_generation = 0U;
         mutex->owner_cpu = X86_CPU_INDEX_INVALID;
         mutex->recursion_depth = 0U;
+        mutex->owner_preempt_pinned = 0U;
         (void)wait_queue_wake_one_locked(&mutex->waiters);
     }
     spinlock_release_irq(&mutex->state_lock, flags);

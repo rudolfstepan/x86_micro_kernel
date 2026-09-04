@@ -4943,6 +4943,29 @@ static void framebuffer_publish_damage(
     display_control_present_rects(updates, count);
 }
 
+static void framebuffer_publish_cursor_damage(
+        const display_frame_rect_t *damage, uint32_t count,
+        bool restore_old_pointer) {
+    if (damage == NULL || count == 0U ||
+        count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
+    display_control_rect_t updates[DISPLAY_FRAME_DAMAGE_CAPACITY];
+    if (restore_old_pointer) {
+        framebuffer_blit_rect(damage[0].x, damage[0].y,
+                              damage[0].width, damage[0].height);
+    }
+    framebuffer_overlay_pointer_for_damage(damage, count);
+    for (uint32_t index = 0U; index < count; ++index) {
+        updates[index] = (display_control_rect_t){
+            .x = damage[index].x,
+            .y = damage[index].y,
+            .width = damage[index].width,
+            .height = damage[index].height,
+        };
+    }
+    framebuffer_scanout_fence();
+    display_control_present_rects(updates, count);
+}
+
 static void framebuffer_present_damage(const display_frame_rect_t *damage,
                                        uint32_t count) {
     if (damage == NULL || count == 0U ||
@@ -4956,6 +4979,23 @@ static void framebuffer_present_damage(const display_frame_rect_t *damage,
     spinlock_release_irq(&frame_transaction_lock, flags);
     if (deferred || transition_in_progress) return;
     framebuffer_publish_damage(damage, count, NULL);
+}
+
+static void framebuffer_present_cursor_damage(
+        const display_frame_rect_t *damage, uint32_t count,
+        bool restore_old_pointer) {
+    if (damage == NULL || count == 0U ||
+        count > DISPLAY_FRAME_DAMAGE_CAPACITY) return;
+    bool deferred = false;
+    uint32_t flags = spinlock_acquire_irq(&frame_transaction_lock);
+    for (uint32_t index = 0U; index < count; ++index)
+        deferred |= display_frame_record_damage(
+            &frame_transaction, damage[index]);
+    bool transition_in_progress = frame_transaction.transitioning;
+    spinlock_release_irq(&frame_transaction_lock, flags);
+    if (deferred || transition_in_progress) return;
+    framebuffer_publish_cursor_damage(
+        damage, count, restore_old_pointer);
 }
 
 static void framebuffer_restore_damage(const display_frame_rect_t *damage,
@@ -5443,6 +5483,7 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
     display_frame_rect_t damage[2];
     uint32_t damage_count = 0U;
     if (fb_shadow_enabled) {
+        bool restore_old_pointer = pointer_visible;
         if (pointer_visible) {
             damage[damage_count++] = (display_frame_rect_t){
                 (uint32_t)pointer_x, (uint32_t)pointer_y,
@@ -5469,7 +5510,8 @@ bool framebuffer_cursor_update(int32_t x, int32_t y, bool visible) {
             pointer_visible = true;
         }
         if (damage_count != 0U)
-            framebuffer_present_damage(damage, damage_count);
+            framebuffer_present_cursor_damage(
+                damage, damage_count, restore_old_pointer);
         return true;
     }
 

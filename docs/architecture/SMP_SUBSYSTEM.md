@@ -21,11 +21,29 @@ Mailbox nicht wiederverwendet, damit ein verspäteter AP niemals Stack oder
 Identität eines anderen Prozessors erbt.
 
 Eine feste APIC-ID-Tabelle ordnet jeder CPU genau einen von 16 Slots zu.
+Nach dem Laden der privaten GDT bindet jede CPU deren GDTR (Basis und Limit)
+an ihren Slot; das AP-Trampolin verwendet davor eine separate Kopie der drei
+flachen Bootdeskriptoren, niemals die bereits gebundene BSP-GDT. Die Bindung
+validiert den Slot einmal per CPUID. Der laufende Kernel liest diese
+Identität mit `SGDT` nach Intel SDM Volume 2; wiederholte CPUID-Aufrufe in
+IRQ-, Lock- und Schedulerpfaden entfallen. Die maximal 16 Bindungen werden
+beim seriellen Bootstrap unveränderlich publiziert. Eine bereits gebundene
+CPU mit unbekannter Tabelle wird abgewiesen; nur vor der Bindung ist der
+CPUID-Bootstrappfad zulässig. User-Segmentregister bestimmen diese Identität
+nicht. Der Hosttest prüft sämtliche Slots und null CPUID-Aufrufe im Laufpfad.
 IRQ-Kontexttiefe, Präemptionszähler, Pending-Präemption und aktueller
 Seitentabellenzeiger liegen bereits CPU-lokal. Das gilt nun auch für aktuellen
 Task, gespeicherten Kernel-Schedulerkontext und dessen Gültigkeitsmarker.
 Unbekannte oder doppelte Identitäten werden vor der Online-Publikation
 abgewiesen.
+
+Auch `IA32_PAT` ist CPU-lokal. Der BSP programmiert den WC-Eintrag 1 bei der
+Paginginitialisierung; jeder AP wiederholt Cache-/TLB-Flush, Programmierung
+und Readback vor Online. Die unterstützte WC-Eigenschaft muss zum BSP passen.
+Erst dann sind gemeinsame WC-Mappings zulässig. Eine globale Lazy-Ready-Flag
+genügt nicht: Sie konnte nach Grafikaktivierung auf einem AP eine auf dem BSP
+weiterhin gültige Reset-Cache-Einstellung verdecken. Gleichmäßig fehlende
+PAT-Unterstützung bewahrt den bestehenden uncached Rückfallpfad.
 
 Kurze Kernel-Critical-Sections verwenden einen atomaren Test-and-set-Lock mit
 logischem CPU-Besitz und einer festen Obergrenze von `2^20` `PAUSE`-Versuchen.

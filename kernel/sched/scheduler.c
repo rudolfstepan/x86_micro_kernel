@@ -1288,6 +1288,23 @@ bool scheduler_current_task_identity(int *task_id_out,
     return valid;
 }
 
+bool scheduler_current_task_identity_pinned(int *task_id_out,
+                                            uint32_t *generation_out) {
+    if (task_id_out == NULL || generation_out == NULL ||
+        !scheduler_preempt_is_disabled()) return false;
+    uint32_t flags = irq_save();
+    x86_cpu_local_t *local = scheduler_cpu_local();
+    int task_id = local->scheduler_current_task;
+    bool valid = task_id >= 0 && task_id < num_tasks &&
+                 tasks[task_id].status == TASK_RUNNING &&
+                 tasks[task_id].running_cpu == (int32_t)local->cpu_index &&
+                 tasks[task_id].task_generation != 0U;
+    *task_id_out = valid ? task_id : -1;
+    *generation_out = valid ? tasks[task_id].task_generation : 0U;
+    irq_restore(flags);
+    return valid;
+}
+
 int scheduler_mutex_owner_register(int task_id, uint32_t task_generation,
                                    void *mutex) {
     if (task_id < 0 || task_generation == 0U || mutex == NULL) return -22;

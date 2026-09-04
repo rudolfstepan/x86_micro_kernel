@@ -171,6 +171,10 @@ int scheduler_yield(void);
 int scheduler_current_task_id(void);
 bool scheduler_current_task_identity(int *task_id_out,
                                      uint32_t *generation_out);
+/** Snapshot only the current CPU's running task while its caller already
+ * holds a preemption pin. This path takes no global task-table lock. */
+bool scheduler_current_task_identity_pinned(int *task_id_out,
+                                            uint32_t *generation_out);
 int scheduler_mutex_owner_register(int task_id, uint32_t task_generation,
                                    void *mutex);
 int scheduler_mutex_owner_unregister(int task_id, uint32_t task_generation,

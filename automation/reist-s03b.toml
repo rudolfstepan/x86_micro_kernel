@@ -16,6 +16,9 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Restore bounded VMware pointer responsiveness after mutex recovery"
+user_checkpoint = "2026-09-04: The user confirms substantially improved desktop speed and explicitly requests committing all current changes after being informed that mouse/offset acceptance remains incomplete. Record a local checkpoint only; keep the package active, preserve frozen gates and do not claim failed or unexecuted runtime proofs passed."
+repair_extension = "The user confirms functional mouse input but severe desktop-wide stalls, including window moves and browser typing. Observed manual VMware evidence records 414-ms full frames and 399-ms resize frames. Continue this repair by replacing repeated runtime CPUID-based CPU-local lookup with validated private-GDTR bindings established after each CPU loads its GDT. Keep CPUID only for bootstrap and binding validation. Host behavior tests cover all slots, duplicate and foreign binding rejection, unknown descriptors and absence of runtime CPUID. Preserve existing acceptance bounds and add a four-vCPU QEMU runtime proof; no successful performance claim without real VMware evidence."
+root_cause = "Split runtime measurement finds 264 ms in scanout copy versus 0.2 ms in publication. The early VMware probe establishes UC framebuffer PTEs, so later WC activation correctly rejects the cache-type conflict and falls back to UC. Establish WC at the first validated scanout mapping, retain UC for FIFO/registers and retain fail-closed cache conflicts. Independently, IA32_PAT was lazily programmed on one CPU behind global flags: initialize/read back index 1 on the BSP and every AP before online and require a uniform profile. PAT repair alone did not improve the timing. After both repairs VMware full frames measure 17 ms and resize at most 3 ms. Verify the reported drag anchor with native host behavior and the guest render probe; repair the stale Help-menu probe index without weakening assertions."
 scope = "Repair the reproduced current-image VMware interaction failure in which the supervised desktop reaches DESKTOP_MOUSE_OK but cannot acknowledge the real virtual-xHCI Start-menu click inside 75 seconds. The regression follows task-generation mutex ownership tracking on the latency-sensitive cursor path: current identity lookup plus each pointer publication's display-mutex registration and deregistration traverse the global scheduler task-table lock while preemption is already disabled. Add a lock-free exact current-task identity snapshot that is valid only for the already preemption-pinned running task on the current CPU, and an explicit nonblocking pinned-task mutex acquisition whose owner retains its own preemption guard through final release, never enters the task ownership set, and therefore cannot become a non-running abandoned owner. The first repaired run proves that menu repaint is bounded to 3 ms but the remaining software-cursor update takes up to 66 ms; direct measurement shows the conditional SVGA SYNC doorbell itself consumes 0 guest milliseconds. Both capability-valid VMware cursor prototypes are rejected: Cursor Bypass 3 breaks relative virtual-xHCI coupling and the physical host-cursor command leaves the pointer invisible and does not preserve real or RFB-driven clicks on the tested Workstation profile. Keep the visible software cursor. In shadow mode restore only its bounded old rectangle from the authoritative scene, draw its bounded new overlay directly into scanout, fence once and publish exact old/new update rectangles without redundantly copying the new background from shadow. Scene damage continues to re-overlay the pointer through the existing general publication path. Reject pinned-mutex use without a current running task and balanced preemption pin, preserve normal tracked recursive acquisition and forced-generation cleanup everywhere else, and keep Surface policy and all public ABI unchanged. Repair the stale real-hover trajectory for the seven-item Start menu and require the real VMware path to show the pointer, open Start, visit every row, meet the existing 17-ms frame and 34-ms cursor bounds, exit cleanly and retain a responsive Ring-3 shell."
 allowed_files = [
   "automation/reist-s03b.toml",
@@ -25,6 +28,19 @@ allowed_files = [
   "kernel/sched/scheduler.h",
   "drivers/video/display_control.c",
   "drivers/video/framebuffer.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_wm.c",
+  "test/test_display_abi_minimal.py",
+  "test/test_desktop_wm_host.c",
+  "test/test_desktop_source.py",
+  "arch/x86/cpu/cpu_local.c",
+  "arch/x86/include/cpu_local.h",
+  "arch/x86/cpu/gdt.c",
+  "arch/x86/cpu/smp.c",
+  "arch/x86/mm/paging.c",
+  "arch/x86/mm/paging.h",
+  "test/test_cpu_local_host.c",
+  "docs/architecture/SMP_SUBSYSTEM.md",
   "scripts/run_vmware_mouse.ps1",
   "test/test_smp.py",
   "test/test_vmware_svga2d.py",
@@ -46,14 +62,20 @@ invariants = [
 targeted_tests = [
   "python test/test_smp.py -v",
   "python test/test_vmware_svga2d.py -v",
-  "python test/test_vmware_mouse.py -v"
+  "python test/test_vmware_mouse.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_display_abi_minimal.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
 ]
 runtime_tests = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-hover-cadence -Target vmware",
-  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-mouse -Target vmware"
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-mouse -Target vmware",
+  ".\\scripts\\run_vmware_mouse.ps1 -SvgaLifecycle -SourcePackage build/vmware/reist-os",
+  "python scripts/run_qemu_smoke.py --qemu 'C:\\Program Files\\qemu\\qemu-system-i386.exe' --image build/reist-os.img --smp 4 --expect-smp --boot-only --timeout 90 --log build/codex-agent/final-qemu-smp.log",
+  "python scripts/run_qemu_runtime_desktop.py --qemu 'C:\\Program Files\\qemu\\qemu-system-i386.exe' --image build/reist-os.img --screenshot build/codex-agent/final-render.png --smp 4 --vmware-vga --render-probe --metrics-log build/codex-agent/final-render-metrics.log",
+  "python scripts/run_qemu_runtime_desktop.py --qemu 'C:\\Program Files\\qemu\\qemu-system-i386.exe' --image build/reist-os.img --screenshot build/codex-agent/final-browser.png --smp 4 --vmware-vga --browser-probe"
 ]
 stop_conditions = [
   "a pinned acquisition can sleep wait or succeed without a current exact running task and an active preemption pin",

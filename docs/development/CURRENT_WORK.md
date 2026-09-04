@@ -2,6 +2,51 @@
 
 Stand: 4. September 2026
 
+Der Nutzer bestätigt die deutlich verbesserte Geschwindigkeit und hat
+ausdrücklich angewiesen, den gesamten Änderungsstand lokal zu committen.
+Dieser Sicherungscommit ist keine vollständige Paketabnahme: Die unten
+genannten offenen Laufzeitnachweise bleiben offen, das Paket bleibt aktiv.
+
+Aktueller Reparaturstand (vollständige Abnahme noch offen): Die frühe
+VMware-Erkennung legte den Framebuffer UC an; die spätere WC-Anforderung
+scheiterte korrekt am Cache-Konflikt. Der erste Scanout-Mappingversuch verwendet
+jetzt WC, FIFO/Register bleiben UC. PAT wird zusätzlich auf jeder CPU vor
+Online vorbereitet; die PAT-Korrektur allein beseitigte die Kopierlatenz nicht.
+Runtime-CPUID im CPU-lokalen Pfad ist durch validierte private GDTR-Bindungen
+ersetzt. Die gemessene Pixelkopie war die entscheidende verbleibende Bremse.
+
+Der normale VMware-Paketbuild ist bestanden (14 s). Fünf Targeted-Suites
+melden 144 Fälle, davon 141 bestanden und drei optionale Hostcompiler-Skips;
+die neuen CPU-Identitäts- und Greifpunkt-Hosttests laufen wirklich über Zig.
+Der Vier-vCPU-QEMU-Boot einschließlich SMP-Prüfungen ist bestanden. Der echte
+Vier-vCPU-VMware-Render-/Lifecycle-Lauf mit anschließender Shell und zehn
+Sekunden Stabilitätsprüfung ist bestanden (26 s): Vollbild 15 ms,
+Verschieben maximal 11 ms, Resize maximal 2 ms, acht beschleunigte Moves,
+keine Fallbacks, keine Clock-/Probe-Fehler. Greifpunkt und Fensterposition
+bleiben im nativen WM-Test und im Gast-Renderprobe exakt gekoppelt.
+Die temporären Laufzeitmessausgaben sind aus dem Produktionscode entfernt.
+
+Offene Abnahme: Der RFB-Hoverlauf bestätigt Start weder versteckt noch nach
+ausdrücklich erlaubtem sichtbarem Start. Die temporäre Koordinatensonde sah
+beide Tastenflanken bei unverändert `(512,384)` trotz eingespeister Bewegung;
+das ist kein bestandener realer Bewegungs-/Latenznachweis. Die Sichtbarkeit des
+Testfensters ist deshalb ausdrücklich über `-Visible` opt-in. Der ergänzende
+Vier-vCPU-QEMU-Desktop-Renderlauf erreichte nach der Befehlseingabe kein
+`DESKTOP_OK`; Boot/SMP dagegen sind nachgewiesen. Keine Schwelle wurde gelockert,
+kein fehlgeschlagener Lauf als Erfolg verbucht. Das Paket bleibt aktiv.
+Logs liegen unter `build/codex-agent/`, insbesondere
+`20260904-225234-runtime-vmware-mouse.log`, `final-qemu-smp.log` und
+`final-qemu-render.log`. Die nachfolgende Beschreibung ist der frühere
+Diagnoseverlauf; die vorstehenden Werte sind der aktuelle Kandidatenstand.
+
+Frühere Nachprüfung: Die Maus funktioniert laut Nutzer, der Desktop bleibt jedoch
+unbrauchbar langsam. Die manuelle VMware-Spur enthält 414 ms für ein Vollbild
+und bis zu 399 ms für Resize. Die bisherige Reparatur ist nicht abgenommen.
+Eine weitere gemeinsame Kostenquelle ist die doppelte CPUID-Abfrage bei jedem
+CPU-lokalen Zugriff (auch IRQ, Locks und Scheduler). Der aktive Reparaturschnitt
+prüft daher eine validierte Zuordnung über die bereits private GDT jeder CPU;
+CPUID bleibt für Bootstrap und Identitätsprüfung beim Binden erhalten.
+
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
 Aktives Reparaturthema: `R3.6b-vmware-pointer-pinned-mutex`. Das aktuelle

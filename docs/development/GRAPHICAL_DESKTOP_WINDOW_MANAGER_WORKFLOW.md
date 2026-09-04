@@ -197,7 +197,8 @@ noch SMP-Unterstützung behauptet.
 - [x] VGA-Boot kann `desktop.prg` starten und VMware SVGA-II aktivieren.
 - [x] Escape deaktiviert den Laufzeitgrafikmodus und stellt die VGA-Shell her.
 - [x] Ring-3-Rechtecke und Pixelschrift sind geclippt und validiert.
-- [x] Der Kernel zeichnet einen sichtbaren Softwarepointer über der Szene.
+- [x] Der Kernel zeichnet einen sichtbaren, fest begrenzten Softwarepointer
+  über der Szene; untaugliche VMware-Hardwarecursorpfade bleiben deaktiviert.
 - [x] VMware-HID-Passthrough ist in der generierten VMX verboten.
 - [x] Vier vorhandene Programme sind über den Desktop startbar.
 - [x] Der bisherige Stand ist als Vollbild-Launcher, nicht als Window-Manager,

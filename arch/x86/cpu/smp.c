@@ -220,10 +220,20 @@ static bool send_ipi(uint8_t apic_id, uint32_t command) {
 }
 
 static bool start_ap(uint32_t cpu_index, uint8_t apic_id) {
+    /* AP bootstrap must not borrow a bound CPU's GDTR identity. Copy only
+     * the three flat boot descriptors; each AP installs its own TSS/GDT
+     * before online. Serial AP startup keeps this fixed table immutable
+     * while a candidate processor is entering C. */
+    static uint64_t bootstrap_gdt[3];
     smp_ap_mailbox_t *shared = mailbox();
     x86_descriptor_pointer_t gdtr;
     x86_descriptor_pointer_t idtr;
     descriptor_tables(&gdtr, &idtr);
+    if (gdtr.limit < sizeof(bootstrap_gdt) - 1U) return false;
+    memcpy(bootstrap_gdt, (const void *)(uintptr_t)gdtr.base,
+           sizeof(bootstrap_gdt));
+    gdtr.base = (uint32_t)(uintptr_t)bootstrap_gdt;
+    gdtr.limit = sizeof(bootstrap_gdt) - 1U;
 
     if (!x86_cpu_local_register(cpu_index, apic_id)) return false;
     uint32_t *idle_stack = scheduler_allocate_kernel_stack();
@@ -274,7 +284,8 @@ __attribute__((noreturn)) void x86_smp_ap_entry(uint32_t cpu_index) {
         !apic_calibrate_current_cpu_timer_masked(&timer_ticks) ||
         timer_ticks == 0U ||
         !tss_init_cpu(cpu_index, shared->stack_top, 0x10U) ||
-        !gdt_install_cpu(cpu_index)) {
+        !gdt_install_cpu(cpu_index) ||
+        !paging_prepare_cpu_memory_types()) {
         shared->state = SMP_AP_STATE_FAILED;
         cpu_halt_forever();
     }

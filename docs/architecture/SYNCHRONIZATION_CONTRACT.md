@@ -91,6 +91,16 @@ dürfen ihn nur konkurrenzfrei erwerben. Timeout und ein konkurrierender
 Erwerb aus einem solchen Kontext werden vor fachlichen Seiteneffekten
 abgewiesen.
 
+Der präemptionsgepinnte Sondererwerb `kernel_mutex_trylock_pinned()` ist nur
+bei bereits deaktivierter Präemption zulässig. Er validiert Besitzer-PID,
+-Generation und lokale laufende CPU ohne erneuten globalen Task-Table-Lock,
+registriert den Mutex nicht in der Exit-Liste und fügt bis zum finalen Unlock
+einen eigenen Präemptions-Guard hinzu. Er darf niemals warten oder schlafen;
+Kontendenz liefert vor jeder fachlichen Änderung `WOULD_BLOCK`, ein ungültiger
+Kontext `INVALID`. Normale Erwerbe und deren generationgenaue Exit-Bereinigung
+bleiben unverändert. Der einzige aktuelle Nutzer ist die feste
+Cursor-Publikation des Displaymediators.
+
 Priority Inheritance gilt nur für blockierende IPC-Endpunkte mit genau einem
 generationssicher identifizierten Gegenprozess. Sie propagiert transitiv über
 höchstens `MAX_TASKS` und endet bei Wakeup, Timeout, Cancel oder Exit.

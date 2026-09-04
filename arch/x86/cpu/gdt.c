@@ -9,6 +9,7 @@
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/cpu_local.h"
 #include "arch/x86/include/tss.h"
+#include "include/kernel/panic.h"
 
 
 // Global Descriptor Table
@@ -130,6 +131,7 @@ void gdt_install() {
     // Flush out the old GDT and install the new changes!
     // method is in gdt.asm
     gdt_flush();
+    KASSERT(x86_cpu_local_bind_gdt(0U));
     
     // Load TSS into Task Register (TR)
     // Selector 0x28 = index 5, RPL 0 (Ring 0)
@@ -146,6 +148,7 @@ bool gdt_install_cpu(uint32_t cpu_index) {
     pointer->limit = sizeof(ap_gdt[0]) - 1U;
     pointer->base = (uint32_t)(uintptr_t)table;
     gdt_load(pointer);
+    if (!x86_cpu_local_bind_gdt(cpu_index)) return false;
     tss_flush(0x28U);
     uint16_t task_register;
     __asm__ __volatile__("str %0" : "=r"(task_register));

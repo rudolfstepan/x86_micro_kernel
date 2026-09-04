@@ -7,6 +7,7 @@
 #include "drivers/char/io.h"
 #include "drivers/video/framebuffer.h"
 #include "arch/x86/boot/vbe_runtime.h"
+#include "arch/x86/mm/paging.h"
 #include "include/kernel/device_domain.h"
 #include "include/lib/spinlock.h"
 #include "kernel/sched/mutex.h"
@@ -199,7 +200,7 @@ int display_control_cursor_update(int32_t x, int32_t y, bool visible) {
      * state or scanout can change. framebuffer_cursor_update() re-enters the
      * mutex only for its one bounded present batch. */
     scheduler_preempt_disable();
-    int lock_result = kernel_mutex_lock_for(&display_state_mutex, 0U);
+    int lock_result = kernel_mutex_trylock_pinned(&display_state_mutex);
     if (lock_result != 0) {
         scheduler_preempt_enable();
         return lock_result;
@@ -537,7 +538,14 @@ void display_control_prepare(void) {
                     framebuffer_size <= 64U * 1024U * 1024U &&
                     fifo_start != 0U && fifo_size >= 4096U &&
                     fifo_size <= 16U * 1024U * 1024U &&
-                    map_mmio_region(framebuffer_start, framebuffer_size) != NULL &&
+                    /* Establish the scanout cache type on its FIRST mapping.
+                     * A UC probe mapping cannot later be promoted to WC by
+                     * framebuffer activation: conflicting mappings fail closed.
+                     * Command FIFO/register memory must remain uncached. */
+                    (map_kernel_write_combining(framebuffer_start,
+                                                framebuffer_size) != NULL ||
+                     map_mmio_region(framebuffer_start,
+                                     framebuffer_size) != NULL) &&
                     map_mmio_region(fifo_start, fifo_size) != NULL)
                     vmware_prepared = true;
             }

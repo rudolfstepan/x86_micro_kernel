@@ -47,6 +47,11 @@ bool x86_cpu_local_bootstrap(uint8_t bsp_apic_id);
 /** Register one AP identity before issuing INIT/SIPI. */
 bool x86_cpu_local_register(uint32_t cpu_index, uint8_t apic_id);
 
+/** Bind the current private seven-entry GDTR after LGDT, before CPU online.
+ * Bootstrap is serial and IRQ-disabled; each hardware-validated binding is
+ * immutable. Runtime lookup then requires no repeated CPUID instruction. */
+bool x86_cpu_local_bind_gdt(uint32_t cpu_index);
+
 /** Validate current hardware identity and publish the local slot online. */
 bool x86_cpu_local_mark_online(uint32_t cpu_index);
 

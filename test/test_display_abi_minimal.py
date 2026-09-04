@@ -324,15 +324,14 @@ class MinimalDisplayAbiTests(unittest.TestCase):
             self.display_control, "int display_control_cursor_update("
         )
         self.assertIn("scheduler_preempt_disable()", cursor)
-        self.assertIn("kernel_mutex_lock_for(&display_state_mutex", cursor)
-        self.assertIn("&display_state_mutex, 0U", cursor)
+        self.assertIn("kernel_mutex_trylock_pinned(&display_state_mutex", cursor)
         self.assertIn("if (lock_result != 0)", cursor)
         self.assertIn("framebuffer_cursor_update(", cursor)
         self.assertIn("kernel_mutex_unlock(&display_state_mutex)", cursor)
         self.assertIn("scheduler_preempt_enable()", cursor)
         self.assertLess(cursor.index("scheduler_preempt_disable()"),
-                        cursor.index("kernel_mutex_lock_for("))
-        self.assertLess(cursor.index("kernel_mutex_lock_for("),
+                        cursor.index("kernel_mutex_trylock_pinned("))
+        self.assertLess(cursor.index("kernel_mutex_trylock_pinned("),
                         cursor.rindex("framebuffer_cursor_update("))
         self.assertLess(cursor.rindex("framebuffer_cursor_update("),
                         cursor.rindex("scheduler_preempt_enable()"))
