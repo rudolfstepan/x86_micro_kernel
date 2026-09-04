@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3b-ext2-symlink-namespace"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -14418,7 +14418,7 @@ evidence = [
 
 [[packages]]
 id = "N3b-ext2-symlink-namespace"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Complete the bounded EXT2 symbolic-link namespace lifecycle"
@@ -14491,7 +14491,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fs: complete EXT2 symlink namespace lifecycle"
-evidence = []
+evidence = [
+  "All six targeted groups passed with 47 checks across the namespace client, EXT2 symlink transaction engine, parser, request pool, Storage Service and complete userspace toolchain; the sole focused source-test repair replaced a stale readdir_continue spelling with the production readdir_bounded entry point.",
+  "The host matrices proved canonical fixed-frame transport, deadline cancellation, one recovery retry, corrupt-reply rejection, final-component non-following, no-replace and same-directory rejection, exact inode and optional direct-block release, unchanged targets, and old-or-new recovery with matching bitmap and free-counter state after every write and flush interruption.",
+  "The final QEMU framebuffer package gate passed in 16 seconds. Its rebuilt STORAGE.PRG is 188416 bytes, 40960 bytes below the unchanged 224 KiB resident-rescue per-program bound; the Storage-specific O2 no-inline recipe is itself an incremental dependency.",
+  "The final real EXT2 runtime gate passed in 77 seconds after DEL removed a native link, RENAME preserved another link's inode target under its new name, the Storage Service restarted, the mutations persisted, the target file remained intact and both redundant journal headers were CLEAN."
+]
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"

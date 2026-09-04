@@ -65,6 +65,9 @@ _Static_assert(sizeof(x86os_vfs_shadow_object_delegate_frame_t) ==
 _Static_assert(sizeof(x86os_vfs_shadow_object_bulk_read_frame_t) ==
                    X86OS_STORAGE_BLOCK_SIZE,
                "VFS bulk-read frame must fill one request payload");
+_Static_assert(sizeof(x86os_vfs_namespace_frame_t) ==
+                   X86OS_STORAGE_BLOCK_SIZE,
+               "VFS namespace frame must fill one request payload");
 
 static uint8_t vfs_bulk_data[X86OS_STORAGE_BULK_MAX_BYTES];
 
@@ -5968,6 +5971,7 @@ typedef union {
     x86os_vfs_shadow_object_delegate_frame_t object_delegate;
     x86os_vfs_shadow_object_bulk_read_frame_t object_bulk_read;
     x86os_vfs_symlink_frame_t symlink;
+    x86os_vfs_namespace_frame_t namespace;
 } vfs_shadow_request_t;
 
 #define VFS_OBJECT_CAPACITY 16U
@@ -6506,6 +6510,64 @@ static int vfs_symlink_create(x86os_vfs_symlink_frame_t *frame) {
     return 0;
 }
 
+static int vfs_namespace_reserved_zero(const uint32_t *reserved) {
+    for (uint32_t index = 0U; index < 25U; ++index)
+        if (reserved[index] != 0U) return 0;
+    return 1;
+}
+
+static int vfs_namespace_path_valid(const char *path, uint32_t length) {
+    if (path == 0 || length <= 1U ||
+        length >= X86OS_VFS_SHADOW_PATH_CAPACITY || path[0U] != '/' ||
+        path[length] != '\0') return 0;
+    for (uint32_t index = 0U; index < length; ++index)
+        if (path[index] == '\0') return 0;
+    for (uint32_t index = length + 1U;
+         index < X86OS_VFS_SHADOW_PATH_CAPACITY; ++index)
+        if (path[index] != '\0') return 0;
+    return 1;
+}
+
+static int vfs_namespace_mutate(x86os_vfs_namespace_frame_t *frame) {
+    if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
+        frame->struct_size != sizeof(*frame) || frame->flags != 0U ||
+        frame->result != 0 ||
+        (frame->operation != X86OS_VFS_SHADOW_FS_UNLINK &&
+         frame->operation != X86OS_VFS_SHADOW_FS_RENAME) ||
+        !vfs_namespace_path_valid(
+            frame->source, frame->source_length) ||
+        !vfs_namespace_reserved_zero(frame->reserved)) return -22;
+    if (frame->operation == X86OS_VFS_SHADOW_FS_UNLINK) {
+        if (frame->destination_length != 0U) return -22;
+        for (uint32_t index = 0U; index < sizeof(frame->destination); ++index)
+            if (frame->destination[index] != '\0') return -22;
+    } else {
+        if (!vfs_namespace_path_valid(
+                frame->destination, frame->destination_length)) return -22;
+        if (frame->source_length == frame->destination_length) {
+            uint32_t different = 0U;
+            for (uint32_t index = 0U; index <= frame->source_length; ++index)
+                if (frame->source[index] != frame->destination[index])
+                    different = 1U;
+            if (different == 0U) return -22;
+        }
+    }
+    uint64_t deadline = 0U;
+    int status = vfs_shadow_deadline(
+        VFS_EXT2_MUTATION_DEADLINE_MS, &deadline);
+    if (status == 0) {
+        reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+        status = frame->operation == X86OS_VFS_SHADOW_FS_UNLINK
+            ? reist_vfs_shadow_ext2_unlink_symlink(
+                &ext2_io, frame->source, frame->source_length, deadline)
+            : reist_vfs_shadow_ext2_rename_symlink(
+                &ext2_io, frame->source, frame->source_length,
+                frame->destination, frame->destination_length, deadline);
+    }
+    frame->result = status;
+    return 0;
+}
+
 static int vfs_shadow_request(vfs_shadow_request_t *request,
         int32_t owner_pid, uint32_t owner_generation,
         uint32_t service_generation) {
@@ -6633,6 +6695,17 @@ int main(void) {
             for (uint32_t index = 0U; index < sizeof(frame); ++index)
                 frame_bytes[index] = data[index];
             result = vfs_symlink_create(&frame);
+            if (result == 0)
+                for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                    data[index] = frame_bytes[index];
+        }
+        if (request.operation == X86OS_STORAGE_VFS_NAMESPACE &&
+            request.length == X86OS_STORAGE_BLOCK_SIZE) {
+            x86os_vfs_namespace_frame_t frame;
+            uint8_t *frame_bytes = (uint8_t *)&frame;
+            for (uint32_t index = 0U; index < sizeof(frame); ++index)
+                frame_bytes[index] = data[index];
+            result = vfs_namespace_mutate(&frame);
             if (result == 0)
                 for (uint32_t index = 0U; index < sizeof(frame); ++index)
                     data[index] = frame_bytes[index];

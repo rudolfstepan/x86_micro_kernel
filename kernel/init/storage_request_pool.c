@@ -156,7 +156,7 @@ static bool metadata_valid(const void *payload, size_t length) {
         value->client_generation == 0U ||
         value->deadline_ms == 0U ||
         value->operation < STORAGE_REQUEST_READ ||
-        value->operation > STORAGE_REQUEST_VFS_SYMLINK)
+        value->operation > STORAGE_REQUEST_VFS_NAMESPACE)
         return false;
     if (value->state == STORAGE_SLOT_QUEUED &&
         (value->service_pid != 0 || value->service_generation != 0U))
@@ -212,7 +212,8 @@ static bool operation_has_input(uint32_t operation) {
            operation == STORAGE_REQUEST_VFS_WRITE ||
            operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
            operation == STORAGE_REQUEST_VFS_BULK_READ ||
-           operation == STORAGE_REQUEST_VFS_SYMLINK;
+           operation == STORAGE_REQUEST_VFS_SYMLINK ||
+           operation == STORAGE_REQUEST_VFS_NAMESPACE;
 }
 
 static bool operation_has_output(uint32_t operation) {
@@ -220,7 +221,8 @@ static bool operation_has_output(uint32_t operation) {
            operation == STORAGE_REQUEST_VFS_READ ||
            operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
            operation == STORAGE_REQUEST_VFS_BULK_READ ||
-           operation == STORAGE_REQUEST_VFS_SYMLINK;
+           operation == STORAGE_REQUEST_VFS_SYMLINK ||
+           operation == STORAGE_REQUEST_VFS_NAMESPACE;
 }
 
 static bool identity_valid(const void *payload, size_t length) {
@@ -419,7 +421,7 @@ static int submit_locked(int client_pid, uint32_t client_generation,
         handle_out == NULL || request->version != STORAGE_REQUEST_VERSION ||
         request->struct_size < sizeof(*request) ||
         request->operation < STORAGE_REQUEST_READ ||
-        request->operation > STORAGE_REQUEST_VFS_SYMLINK ||
+        request->operation > STORAGE_REQUEST_VFS_NAMESPACE ||
         request->timeout_ms == 0U ||
         request->timeout_ms > STORAGE_REQUEST_MAX_TIMEOUT_MS)
         return STORAGE_EINVAL;
@@ -460,9 +462,11 @@ static int submit_locked(int client_pid, uint32_t client_generation,
          request->length > STORAGE_REQUEST_BLOCK_SIZE)) return STORAGE_EMSGSIZE;
     if ((request->operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
          request->operation == STORAGE_REQUEST_VFS_BULK_READ ||
-         request->operation == STORAGE_REQUEST_VFS_SYMLINK) &&
+         request->operation == STORAGE_REQUEST_VFS_SYMLINK ||
+         request->operation == STORAGE_REQUEST_VFS_NAMESPACE) &&
         request->length != STORAGE_REQUEST_BLOCK_SIZE) return STORAGE_EMSGSIZE;
-    if (request->operation == STORAGE_REQUEST_VFS_SYMLINK &&
+    if ((request->operation == STORAGE_REQUEST_VFS_SYMLINK ||
+         request->operation == STORAGE_REQUEST_VFS_NAMESPACE) &&
         (request->resource != 0U || request->offset != 0U))
         return STORAGE_EINVAL;
     if (request->length != expected) return STORAGE_EMSGSIZE;

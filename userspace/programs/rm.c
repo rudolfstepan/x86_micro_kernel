@@ -1,12 +1,21 @@
 /** @file userspace/programs/rm.c @brief Löschen mit explizitem --recursive. */
 #include "fs_walk.h"
+#include "reist/vfs_namespace_client.h"
+#include "reist/vfs_stat_client.h"
+
+static int remove_leaf(const char *path) {
+    int status = reist_vfs_unlink(
+        path, REIST_VFS_NAMESPACE_DEFAULT_TIMEOUT_MS);
+    return status == -95 ? x86os_unlink(path) : status;
+}
 
 static int remove_tree(const char *path, unsigned depth, unsigned *nodes) {
     x86os_file_info_t info;
-    if (x86os_stat(path, &info) < 0) return -1;
+    if (reist_vfs_lstat(
+            path, &info, REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) < 0) return -1;
     if (*nodes >= FS_TOOL_MAX_ENTRIES || depth > FS_TOOL_MAX_DEPTH) return -2;
     ++*nodes;
-    if (info.type != X86OS_DIRECTORY) return x86os_unlink(path) < 0 ? -1 : 0;
+    if (info.type != X86OS_DIRECTORY) return remove_leaf(path) < 0 ? -1 : 0;
     uint32_t index = 0U;
     unsigned entries_seen = 0U;
     for (;;) {
@@ -40,7 +49,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     x86os_file_info_t info;
-    if (x86os_stat(path, &info) < 0) {
+    if (reist_vfs_lstat(
+            path, &info, REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) < 0) {
         x86os_puts("rm: path not found\n");
         return 1;
     }
@@ -50,7 +60,7 @@ int main(int argc, char **argv) {
     }
     unsigned nodes = 0U;
     int result = recursive ? remove_tree(path, 0U, &nodes) :
-        (x86os_unlink(path) < 0 ? -1 : 0);
+        (remove_leaf(path) < 0 ? -1 : 0);
     if (result == -2) x86os_puts("rm: traversal limit reached\n");
     else if (result != 0) x86os_puts("rm: remove failed\n");
     return result == 0 ? 0 : 1;

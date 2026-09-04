@@ -4,13 +4,29 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: `N3b-ext2-symlink-namespace`. Der nächste begrenzte N3-Schnitt
-ergänzt den in N3a eingeführten nativen EXT2-Symlinks um servicegebundenes
-`unlink` und gleichverzeichnisiges `rename`, ohne den alten Ring-0-EXT2-Parser
-zu erweitern. Die erste Rename-Teilmenge bleibt auf einen vorhandenen
-512-Byte-Publikationssektor und ein nicht vorhandenes Ziel beschränkt;
-reguläre Dateien, Verzeichnisse, Cross-Directory-Moves und allgemeines
-Dateischreiben bleiben getrennte spätere N3-Pakete.
+Aktives Thema: keines. `N3b-ext2-symlink-namespace` ist abgeschlossen. Der
+begrenzte N3-Schnitt ergänzt den in N3a eingeführten nativen EXT2-Symlinks um
+servicegebundenes `unlink` und gleichverzeichnisiges `rename`, ohne den alten
+Ring-0-EXT2-Parser zu erweitern. Die erste Rename-Teilmenge bleibt auf einen
+vorhandenen 512-Byte-Publikationssektor und ein nicht vorhandenes Ziel
+beschränkt; reguläre Dateien, Verzeichnisse, Cross-Directory-Moves und
+allgemeines Dateischreiben bleiben getrennte spätere N3-Pakete.
+
+Die Implementierung ergänzt die append-only Storage-Operation 34 mit einem
+festen 512-Byte-Namespace-Frame und den Operationen `unlink`/`rename`. Fast-
+und Block-Symlinks nutzen das vorhandene 26-Sektor-Undo-Journal, genau einen
+Directory-Publikationssektor und verifizierenden Readback. `DEL.PRG`,
+`RM.PRG` und `RENAME.PRG` verwenden den generationgebundenen Client zuerst und
+fallen nur bei `EOPNOTSUPP` auf FAT-Legacyoperationen zurück. Host-Preflights
+für Client, Request-Pool und die vollständige EXT2-Unterbrechungsmatrix sowie
+alle 47 eingefrorenen Targeted-Checks sind erfolgreich. Der erste Runtime-Lauf
+deckte vor `BOOT_OK` eine Überschreitung der unveränderten
+224-KiB-Rescue-Einzelgrenze durch `STORAGE.PRG` auf. Die O2-Codeerzeugung ohne
+Funktions-Inlining und ihre explizite inkrementelle Buildabhängigkeit reduzieren
+das Programm von 233472 auf 188416 Byte, ohne die Grenze anzuheben. Der finale
+QEMU-Framebuffer-Paketbuild bestand in 16 Sekunden; der reale 77-Sekunden-
+EXT2-Lauf bestätigte Unlink, Rename, Dienstneustart, Persistenz, unverändertes
+Linkziel und zwei saubere Journalheader.
 
 `R3.5a-desktop-icon-drag-layout` ist abgeschlossen. Ein reines, heapfreies
 Layoutmodul parst und serialisiert bis zu 131 Einträge, berechnet eine

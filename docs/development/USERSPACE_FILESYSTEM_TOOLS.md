@@ -37,7 +37,7 @@ Boot-Image aufgenommen wird.
 | `edit` | interaktiver Editor | `/bin/edit.prg` |
 | `notepad` | grafischer Editor | `/usr/gui/bin/notepad.prg`; große Dateien über begrenzte Piece Table und fensterweisen Ring-3-VFS-Zugriff |
 | `basic` | BASIC-Interpreter | `/bin/basic.prg` |
-| `rename`, `ren`, `mv` | Datei umbenennen | `/bin/rename.prg`, `ren`/`mv` Alias; FAT32 |
+| `rename`, `ren`, `mv` | Datei umbenennen | `/bin/rename.prg`, `ren`/`mv` Alias; FAT32 sowie gleichverzeichnisige EXT2-Symlinks ohne Ersetzen |
 | `ln -s` | nativen symbolischen Link erzeugen | `/bin/ln.prg`; begrenzter EXT2-Schnitt, keine Hard Links |
 
 ### Dateisystem-, Laufwerks- und Wartungswerkzeuge
@@ -71,14 +71,15 @@ Aufrufe:
 - `x86os_fsync` und `x86os_space`
 - `x86os_touch` (Syscall 108) für FAT-Zeitstempel
 - Ring-3-Clients `reist_vfs_symlink`, `reist_vfs_readlink`,
-  `reist_vfs_lstat` und `reist_vfs_file_open_flags(..., O_NOFOLLOW, ...)`
+  `reist_vfs_lstat`, `reist_vfs_unlink`, `reist_vfs_rename` und
+  `reist_vfs_file_open_flags(..., O_NOFOLLOW, ...)`
 - VFS `create`, `delete`, `rename`, `stat`, `readdir`, `mkdir`, `rmdir`
 - VFS `touch`; `vfs_dir_entry_t` liefert `create_time`, `modify_time` und
   `access_time` als Sekunden seit 1970-01-01.
 
-Damit benötigt `rename.prg` keine neue Syscall- oder SDK-ABI.
-Die Implementierung muss nur Argumente, absolute/relative Pfade,
-Laufwerksgrenzen und Fehlercodes sauber behandeln.
+`rename.prg` verwendet für Lstat und die begrenzte EXT2-Symlinkmutation den
+Storage-Dienst. Ausschließlich dessen `EOPNOTSUPP` erlaubt den Rückfall auf
+`x86os_rename()`, womit die vorhandene FAT32-Semantik erhalten bleibt.
 
 `EDIT.PRG` liest vorhandene Dokumente über genau ein generationgebundenes
 Ring-3-VFS-Objekt mit ausschließlich `READ|STAT`. Die feste 51200-Byte-Grenze,
@@ -101,6 +102,15 @@ Publikationssektor voraus. FAT12/32 melden vor jeder Wirkung
 werden unter festen Hop-, Komponenten-, I/O-, Retry- und Deadlinegrenzen
 behandelt.
 
+`DEL.PRG` und nichtrekursives `RM.PRG` entfernen über denselben
+generationgebundenen Namespace-Client die finale EXT2-Symlinkkomponente, ohne
+deren Ziel zu berühren. `RENAME.PRG` erhält Inode und Ziel eines Symlinks und
+akzeptiert nur einen freien Namen im selben Verzeichnis, der in denselben
+Directory-Record und 512-Byte-Publikationssektor passt. Alle drei Werkzeuge
+verwenden Legacy-Unlink/Rename ausschließlich nach `EOPNOTSUPP`; andere
+Service-, Medien-, Deadline- oder Recoveryfehler bleiben sichtbar und lösen
+keine zweite Mutation aus.
+
 ## Filesystem-Abdeckung der vorhandenen Mutation
 
 | Operation | FAT12 | FAT32 | EXT2 | Bemerkung |
@@ -109,18 +119,18 @@ behandelt.
 | erstellen/schreiben | ja | ja | nein | generischer Legacy-EXT2-Adapter ist read-only |
 | `mkdir` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `rmdir` | ja | ja | nein | EXT2-Adapter ist read-only |
-| `del`/unlink | ja | ja | nein | Legacy-EXT2-Adapter bleibt read-only; Links werden nicht verfolgt |
-| `rename` | nein | ja | nein | FAT12/EXT2 liefern unsupported |
+| `del`/unlink | ja | ja | Symlinks | EXT2 nur finaler nativer Link; Ziel wird nicht verfolgt |
+| `rename` | nein | ja | Symlinks, begrenzt | EXT2 nur no-replace im selben Verzeichnis und vorhandenen Record |
 | Zeitstempel lesen | ja | ja | ja | FAT-Auflösung und FAT-Zugriffsdatum bleiben erhalten |
 | `touch` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `fsync` | REIST-spezifisch | REIST-spezifisch | nein | kein generischer EXT2-Schreibdeskriptor |
 | symbolischer Link | `EOPNOTSUPP` | `EOPNOTSUPP` | ja, begrenzt | native Fast-/Block-Symlinks; 26-Sektor-Undo-Journal |
 
-Wichtig: Der generische VFS-Rename-Pfad und `x86os_rename()` sind vorhanden.
-`rename.prg` meldet FAT12/EXT2 als nicht unterstützt, weil deren Adapter
-keinen atomaren Rename-Vertrag besitzen. FAT32 erlaubt nur die im Adapter
-validierten Dateioperationen; Verzeichnisse und unsichere Zielzustände werden
-fail-closed abgelehnt.
+Wichtig: Der generische VFS-Rename-Pfad und `x86os_rename()` bleiben für FAT32
+vorhanden. Der Ring-3-Schnitt deckt auf EXT2 nur native Symlinks ab; allgemeine
+Dateien, Verzeichnisse, Cross-Directory und Ersetzen sind weiterhin nicht
+unterstützt. FAT32 erlaubt nur die im Adapter validierten Dateioperationen;
+Verzeichnisse und unsichere Zielzustände werden fail-closed abgelehnt.
 
 ## Umgesetzte Reihenfolge und verbleibende Folgearbeiten
 
@@ -128,11 +138,11 @@ fail-closed abgelehnt.
 
 1. `rename.prg` mit Alias `ren` und optionalem `mv`-Alias.
    - exakt zwei Pfade akzeptieren
-   - `x86os_rename()` verwenden
-   - Quelle und Ziel vorab per `stat` prüfen
+   - Ring-3-Namespace zuerst, `x86os_rename()` nur bei `EOPNOTSUPP`
+   - Quelle und Ziel vorab per `lstat` prüfen
    - Cross-Mount- und Cross-Filesystem-Rename ablehnen
    - vorhandene Ziele nicht still überschreiben
-   - FAT12/EXT2-`unsupported` verständlich melden
+   - FAT12 sowie nicht abgedeckte EXT2-Objekte verständlich ablehnen
 2. `stat.prg` für Typ, Größe und die drei VFS-Zeitstempel.
 3. `df.prg` auf Basis von `x86os_space()` und Laufwerks-/Ressourcenstatus.
 4. `touch.prg` für neue leere Dateien und die Aktualisierung von mtime/atime.

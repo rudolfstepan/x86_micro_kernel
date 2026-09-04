@@ -257,15 +257,20 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
         command(f"ln -s cycle-a {MOUNT}/cycle-b")
         command(f"cat {MOUNT}/cycle-a", ("cat: cannot open file",))
         command(f"del {MOUNT}/relative-link",
-                ("del: file not found or cannot be removed",))
-        command(f"readlink {MOUNT}/relative-link", ("target.txt",))
+                forbidden=("del: file not found or cannot be removed",))
+        command(f"readlink {MOUNT}/relative-link",
+                ("readlink: path is not a readable symbolic link",))
+        command(f"cat {MOUNT}/target.txt", (PAYLOAD,))
         command(f"rename {MOUNT}/absolute-link {MOUNT}/renamed-link",
-                ("rename: operation unsupported or failed",))
-        command(f"readlink {MOUNT}/absolute-link", (MOUNT + "/target.txt",))
+                forbidden=("rename: operation unsupported or failed",))
+        command(f"readlink {MOUNT}/absolute-link",
+                ("readlink: path is not a readable symbolic link",))
+        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
         command(f"cat {MOUNT}/target.txt", (PAYLOAD,))
         command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
+        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
         command(f"readlink {MOUNT}/chain-link", ("relative-link",))
-        command(f"cat {MOUNT}/chain-link", (PAYLOAD,))
+        command(f"cat {MOUNT}/chain-link", ("cat: cannot open file",))
     except (OSError, RuntimeError, ValueError) as caught:
         error = str(caught)
     finally:

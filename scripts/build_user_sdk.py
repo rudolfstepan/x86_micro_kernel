@@ -71,6 +71,7 @@ CORE_LIBRARY_SOURCES = (
     STORAGE_LIBRARY_ROOT / "vfs_stat_client.c",
     STORAGE_LIBRARY_ROOT / "vfs_read_client.c",
     STORAGE_LIBRARY_ROOT / "vfs_symlink_client.c",
+    STORAGE_LIBRARY_ROOT / "vfs_namespace_client.c",
 )
 NETWORK_PARSER_SOURCES = (
     CORE_ROOT / "reist_ipv4_parser.c",

@@ -122,6 +122,13 @@ int reist_vfs_shadow_ext2_symlink(
     const reist_vfs_shadow_ext2_io_t *io, const char *target,
     uint32_t target_length, const char *absolute_link_path,
     uint32_t link_path_length, uint64_t deadline_ms);
+int reist_vfs_shadow_ext2_unlink_symlink(
+    const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+    uint32_t path_length, uint64_t deadline_ms);
+int reist_vfs_shadow_ext2_rename_symlink(
+    const reist_vfs_shadow_ext2_io_t *io, const char *source_path,
+    uint32_t source_length, const char *destination_path,
+    uint32_t destination_length, uint64_t deadline_ms);
 int reist_vfs_shadow_ext2_recover_path(
     const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
     uint32_t path_length, uint64_t deadline_ms);

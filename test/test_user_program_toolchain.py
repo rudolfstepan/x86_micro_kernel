@@ -217,6 +217,8 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertTrue(
                 (include / "reist/vfs_symlink_client.h").is_file())
             self.assertTrue(
+                (include / "reist/vfs_namespace_client.h").is_file())
+            self.assertTrue(
                 (include / "reist/vfs_file_client.h").is_file())
             self.assertTrue(
                 (include / "reist/vfs_stat_client.h").is_file())

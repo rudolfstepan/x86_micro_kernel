@@ -35,6 +35,8 @@ class ReistStorageRequestPoolTests(unittest.TestCase):
         self.assertIn("STORAGE_REQUEST_VFS_SYNC", header)
         self.assertIn("STORAGE_REQUEST_VFS_SHADOW_STAT = 31", header)
         self.assertIn("STORAGE_REQUEST_VFS_BULK_READ = 32", header)
+        self.assertIn("STORAGE_REQUEST_VFS_SYMLINK = 33", header)
+        self.assertIn("STORAGE_REQUEST_VFS_NAMESPACE = 34", header)
         self.assertIn("STORAGE_REQUEST_BULK_CAPACITY 2U", header)
         self.assertIn("STORAGE_REQUEST_BULK_MAX_BYTES (128U * 1024U)", header)
         self.assertIn("X86OS_STORAGE_BULK_MAX_BYTES (128U * 1024U)", sdk_h)

@@ -1937,6 +1937,447 @@ static int ext2_symlink_request(ext2_request_t *request,
     return status;
 }
 
+typedef struct {
+    uint32_t sector;
+    uint32_t local_offset;
+    uint32_t record_length;
+    uint32_t name_length;
+    uint32_t inode_number;
+} ext2_directory_location_t;
+
+static int ext2_namespace_split(
+        const char *path, uint32_t path_length,
+        char parent[X86OS_VFS_SHADOW_PATH_CAPACITY],
+        uint32_t *parent_length, char name[256], uint32_t *name_length) {
+    if (path == 0 || parent == 0 || parent_length == 0 || name == 0 ||
+        name_length == 0 || path_length <= 1U ||
+        path_length >= X86OS_VFS_SHADOW_PATH_CAPACITY || path[0U] != '/' ||
+        path[path_length] != '\0') return -22;
+    uint32_t start = path_length;
+    while (start > 0U && path[start - 1U] != '/') --start;
+    if (start == 0U || start >= path_length) return -22;
+    *name_length = path_length - start;
+    if (!ext2_component_valid(path + start, *name_length)) return -22;
+    *parent_length = start - 1U;
+    if (*parent_length == 0U) *parent_length = 1U;
+    ext2_zero(parent, X86OS_VFS_SHADOW_PATH_CAPACITY);
+    ext2_zero(name, 256U);
+    ext2_copy(parent, path, *parent_length);
+    parent[*parent_length] = '\0';
+    ext2_copy(name, path + start, *name_length);
+    name[*name_length] = '\0';
+    return 0;
+}
+
+static int ext2_directory_locate(
+        ext2_shadow_volume_t *volume, const ext2_shadow_inode_t *directory,
+        const char *name, ext2_directory_location_t *location) {
+    if (volume == 0 || directory == 0 || name == 0 || location == 0)
+        return -22;
+    uint32_t size = ext2_get32(directory->bytes + 4U);
+    uint32_t blocks = ext2_div_ceil_u32(size, volume->block_size);
+    if (blocks == 0U || blocks > REIST_VFS_SHADOW_EXT2_MAX_DIRECTORY_BLOCKS)
+        return -110;
+    uint8_t data[REIST_VFS_SHADOW_EXT2_MAX_BLOCK_SIZE];
+    for (uint32_t logical = 0U; logical < blocks; ++logical) {
+        uint32_t block = 0U;
+        int status = ext2_inode_block(volume, directory, logical, &block);
+        if (status != 0) return status;
+        status = ext2_read_block(volume, block, data);
+        if (status != 0) return status;
+        uint32_t remaining = size - logical * volume->block_size;
+        uint32_t limit = remaining < volume->block_size
+            ? remaining : volume->block_size;
+        for (uint32_t offset = 0U; offset < limit;) {
+            if (limit - offset < EXT2_DIRECTORY_HEADER_SIZE) return -5;
+            uint32_t inode_number = ext2_get32(data + offset);
+            uint32_t record = ext2_get16(data + offset + 4U);
+            uint32_t found_length = volume->has_file_type != 0U
+                ? data[offset + 6U] : ext2_get16(data + offset + 6U);
+            if (record < EXT2_DIRECTORY_HEADER_SIZE || (record & 3U) != 0U ||
+                record > limit - offset || found_length > 255U ||
+                found_length > record - EXT2_DIRECTORY_HEADER_SIZE ||
+                (inode_number != 0U && inode_number > volume->inodes_count))
+                return -5;
+            if (inode_number != 0U && ext2_name_equal(
+                    data + offset + 8U, found_length, name)) {
+                uint32_t local = offset % X86OS_STORAGE_BLOCK_SIZE;
+                if (local + EXT2_DIRECTORY_HEADER_SIZE + found_length >
+                    X86OS_STORAGE_BLOCK_SIZE) return -28;
+                location->sector = block * volume->sectors_per_block +
+                    offset / X86OS_STORAGE_BLOCK_SIZE;
+                location->local_offset = local;
+                location->record_length = record;
+                location->name_length = found_length;
+                location->inode_number = inode_number;
+                return 0;
+            }
+            offset += record;
+        }
+    }
+    return -2;
+}
+
+static int ext2_transaction_increment_counters(
+        ext2_shadow_volume_t *volume, uint32_t group, uint8_t inode) {
+    uint8_t *superblock = 0;
+    int status = ext2_transaction_sector(
+        volume, EXT2_SUPERBLOCK_SECTOR, 0U, &superblock);
+    if (status != 0) return status;
+    uint32_t super_offset = inode != 0U ? 16U : 12U;
+    uint32_t super_count = ext2_get32(superblock + super_offset);
+    uint32_t super_limit = inode != 0U
+        ? volume->inodes_count : volume->blocks_count;
+    if (super_count >= super_limit) return -5;
+    ext2_put32(superblock + super_offset, super_count + 1U);
+    uint32_t descriptor_sector = 0U;
+    uint32_t descriptor_offset = 0U;
+    status = ext2_group_descriptor_location(
+        volume, group, &descriptor_sector, &descriptor_offset);
+    if (status != 0) return status;
+    uint8_t *descriptor = 0;
+    status = ext2_transaction_sector(
+        volume, descriptor_sector, 0U, &descriptor);
+    if (status != 0) return status;
+    uint32_t count_offset = descriptor_offset + (inode != 0U ? 14U : 12U);
+    uint16_t count = ext2_get16(descriptor + count_offset);
+    uint32_t group_limit = inode != 0U
+        ? volume->inodes_per_group : volume->blocks_per_group;
+    if ((uint32_t)count >= group_limit) return -5;
+    ext2_put16(descriptor + count_offset, (uint16_t)(count + 1U));
+    return 0;
+}
+
+static int ext2_release_allocation(ext2_shadow_volume_t *volume,
+                                   uint32_t number, uint8_t inode) {
+    if (volume == 0 || number == 0U) return -22;
+    uint32_t group = 0U;
+    uint32_t local = 0U;
+    uint32_t bitmap_offset = inode != 0U ? 4U : 0U;
+    if (inode != 0U) {
+        if (number > volume->inodes_count) return -5;
+        uint32_t zero_based = number - 1U;
+        group = zero_based / volume->inodes_per_group;
+        local = zero_based % volume->inodes_per_group;
+    } else {
+        if (!ext2_data_block_valid(volume, number) ||
+            number < volume->first_data_block) return -5;
+        uint32_t zero_based = number - volume->first_data_block;
+        group = zero_based / volume->blocks_per_group;
+        local = zero_based % volume->blocks_per_group;
+    }
+    uint8_t descriptor[EXT2_GROUP_DESCRIPTOR_SIZE];
+    int status = ext2_group_descriptor(volume, group, descriptor);
+    if (status != 0) return status;
+    uint32_t bitmap_block = ext2_get32(descriptor + bitmap_offset);
+    if (!ext2_data_block_valid(volume, bitmap_block)) return -5;
+    uint32_t byte = local / 8U;
+    uint32_t sector = bitmap_block * volume->sectors_per_block +
+        byte / X86OS_STORAGE_BLOCK_SIZE;
+    uint32_t local_byte = byte % X86OS_STORAGE_BLOCK_SIZE;
+    uint8_t mask = (uint8_t)(1U << (local & 7U));
+    uint8_t *bitmap = 0;
+    status = ext2_transaction_sector(volume, sector, 0U, &bitmap);
+    if (status != 0) return status;
+    if ((bitmap[local_byte] & mask) == 0U) return -5;
+    bitmap[local_byte] &= (uint8_t)~mask;
+    return ext2_transaction_increment_counters(volume, group, inode);
+}
+
+static int ext2_clear_inode(ext2_shadow_volume_t *volume,
+                            uint32_t inode_number) {
+    if (volume == 0 || inode_number == 0U ||
+        inode_number > volume->inodes_count) return -22;
+    uint32_t zero_based = inode_number - 1U;
+    uint32_t group = zero_based / volume->inodes_per_group;
+    uint32_t index = zero_based % volume->inodes_per_group;
+    uint8_t descriptor[EXT2_GROUP_DESCRIPTOR_SIZE];
+    int status = ext2_group_descriptor(volume, group, descriptor);
+    if (status != 0) return status;
+    uint32_t inode_table = ext2_get32(descriptor + 8U);
+    uint64_t absolute = (uint64_t)inode_table * volume->block_size +
+        (uint64_t)index * volume->inode_size;
+    uint32_t remaining = volume->inode_size;
+    while (remaining != 0U) {
+        uint32_t sector = (uint32_t)(absolute / X86OS_STORAGE_BLOCK_SIZE);
+        uint32_t offset = (uint32_t)(absolute % X86OS_STORAGE_BLOCK_SIZE);
+        uint32_t amount = X86OS_STORAGE_BLOCK_SIZE - offset;
+        if (amount > remaining) amount = remaining;
+        uint8_t *data = 0;
+        status = ext2_transaction_sector(volume, sector, 0U, &data);
+        if (status != 0) return status;
+        ext2_zero(data + offset, amount);
+        absolute += amount;
+        remaining -= amount;
+    }
+    return 0;
+}
+
+static int ext2_plan_directory_remove(
+        ext2_shadow_volume_t *volume,
+        const ext2_directory_location_t *location, const char *name) {
+    if (volume == 0 || location == 0 || name == 0) return -22;
+    uint8_t *data = 0;
+    int status = ext2_transaction_sector(
+        volume, location->sector, 1U, &data);
+    if (status != 0) return status;
+    uint32_t local = location->local_offset;
+    if (ext2_get32(data + local) != location->inode_number ||
+        ext2_get16(data + local + 4U) != location->record_length ||
+        !ext2_name_equal(data + local + 8U, location->name_length, name))
+        return -5;
+    ext2_put32(data + local, 0U);
+    if (volume->has_file_type != 0U) {
+        data[local + 6U] = 0U;
+        data[local + 7U] = 0U;
+    } else {
+        ext2_put16(data + local + 6U, 0U);
+    }
+    ext2_zero(data + local + 8U, location->name_length);
+    return 0;
+}
+
+static int ext2_plan_directory_rename(
+        ext2_shadow_volume_t *volume,
+        const ext2_directory_location_t *location, const char *old_name,
+        const char *new_name, uint32_t new_length) {
+    if (volume == 0 || location == 0 || old_name == 0 || new_name == 0 ||
+        !ext2_component_valid(new_name, new_length) ||
+        new_length > location->record_length - EXT2_DIRECTORY_HEADER_SIZE ||
+        location->local_offset + EXT2_DIRECTORY_HEADER_SIZE + new_length >
+            X86OS_STORAGE_BLOCK_SIZE)
+        return -28;
+    uint8_t *data = 0;
+    int status = ext2_transaction_sector(
+        volume, location->sector, 1U, &data);
+    if (status != 0) return status;
+    uint32_t local = location->local_offset;
+    if (ext2_get32(data + local) != location->inode_number ||
+        ext2_get16(data + local + 4U) != location->record_length ||
+        !ext2_name_equal(data + local + 8U, location->name_length, old_name))
+        return -5;
+    uint32_t clear = location->name_length > new_length
+        ? location->name_length : new_length;
+    ext2_zero(data + local + 8U, clear);
+    if (volume->has_file_type != 0U)
+        data[local + 6U] = (uint8_t)new_length;
+    else
+        ext2_put16(data + local + 6U, (uint16_t)new_length);
+    ext2_copy(data + local + 8U, new_name, new_length);
+    return 0;
+}
+
+static int ext2_namespace_finish(ext2_request_t *request,
+        ext2_shadow_volume_t *volume, const ext2_journal_t *journal,
+        uint32_t sequence) {
+    int status = ext2_transaction_journal(
+        request, volume, journal, sequence);
+    if (status == 0) status = ext2_transaction_apply(request, volume);
+    ext2_shadow_volume_t verify_volume;
+    if (status == 0)
+        status = ext2_volume_for_resource(
+            request, volume->resource, &verify_volume);
+    if (status == 0) status = ext2_transaction_verify(&verify_volume);
+    return status;
+}
+
+static int ext2_namespace_commit(ext2_request_t *request,
+        ext2_shadow_volume_t *volume, const ext2_journal_t *journal,
+        uint32_t sequence) {
+    int status = ext2_journal_write_headers(
+        request, volume, journal, EXT2_JOURNAL_STATE_COMMITTED,
+        sequence, &ext2_transaction);
+    if (status == 0) status = ext2_request_flush(request, volume->resource);
+    if (status == 0)
+        status = ext2_journal_clean(request, volume, journal, sequence);
+    if (status == 0) ext2_transaction_reset();
+    return status;
+}
+
+static int ext2_unlink_symlink_request(ext2_request_t *request,
+        const char *absolute_path, uint32_t path_length) {
+    char parent[X86OS_VFS_SHADOW_PATH_CAPACITY];
+    char name[256];
+    uint32_t parent_length = 0U;
+    uint32_t name_length = 0U;
+    int status = ext2_namespace_split(
+        absolute_path, path_length, parent, &parent_length,
+        name, &name_length);
+    if (status != 0 || request == 0 || request->write_sector == 0 ||
+        request->flush == 0) return status != 0 ? status : -30;
+    ext2_shadow_volume_t volume;
+    ext2_journal_t journal;
+    status = ext2_recover_path_request(
+        request, absolute_path, path_length, 1U, &volume, &journal);
+    if (status == -2) return -95;
+    if (status != 0) return status;
+    if (request->writes != 0U || request->flushes != 0U) return -11;
+    ext2_shadow_volume_t parent_volume;
+    ext2_shadow_inode_t directory;
+    char visible[256];
+    uint32_t directory_inode = 0U;
+    status = ext2_resolve(
+        request, parent, parent_length, 0U, &parent_volume, &directory,
+        visible, &directory_inode);
+    if (status != 0) return status;
+    if (parent_volume.resource != volume.resource ||
+        parent_volume.signature != volume.signature) return -18;
+    if ((ext2_get16(directory.bytes) & EXT2_S_IFMT) != EXT2_S_IFDIR)
+        return -20;
+    ext2_directory_location_t location;
+    status = ext2_directory_locate(
+        &parent_volume, &directory, name, &location);
+    if (status != 0) return status;
+    ext2_shadow_inode_t inode;
+    status = ext2_read_inode(&parent_volume, location.inode_number, &inode);
+    if (status != 0) return status;
+    if ((ext2_get16(inode.bytes) & EXT2_S_IFMT) != EXT2_S_IFLNK)
+        return -95;
+    if (ext2_get16(inode.bytes + 26U) != 1U) return -31;
+    char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
+    uint32_t target_length = 0U;
+    status = ext2_read_symlink_inode(
+        &parent_volume, &inode, target, &target_length);
+    if (status != 0) return status;
+    uint32_t target_block = target_length > EXT2_FAST_SYMLINK_CAPACITY
+        ? ext2_get32(inode.bytes + 40U) : 0U;
+    if (target_block != 0U) {
+        if (!ext2_data_block_valid(&parent_volume, target_block) ||
+            ext2_get32(inode.bytes + 28U) !=
+                parent_volume.sectors_per_block) return -5;
+        for (uint32_t index = 1U; index < 15U; ++index)
+            if (ext2_get32(inode.bytes + 40U + index * 4U) != 0U)
+                return -5;
+    } else if (ext2_get32(inode.bytes + 28U) != 0U) {
+        return -5;
+    }
+    if (journal.sequence == UINT32_MAX) return -75;
+    uint32_t sequence = journal.sequence + 1U;
+    ext2_transaction_reset();
+    status = ext2_plan_directory_remove(
+        &parent_volume, &location, name);
+    if (status == 0 && target_block != 0U)
+        status = ext2_release_allocation(
+            &parent_volume, target_block, 0U);
+    if (status == 0)
+        status = ext2_release_allocation(
+            &parent_volume, location.inode_number, 1U);
+    if (status == 0)
+        status = ext2_clear_inode(&parent_volume, location.inode_number);
+    if (status != 0 || ext2_transaction.count == 0U)
+        return status != 0 ? status : -5;
+    status = ext2_namespace_finish(
+        request, &parent_volume, &journal, sequence);
+    if (status == 0) {
+        status = ext2_resolve(
+            request, absolute_path, path_length,
+            REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL, &volume, &inode,
+            visible, &directory_inode);
+        if (status == -2) status = 0;
+        else status = status == 0 ? -5 : status;
+    }
+    if (status != 0) return status;
+    return ext2_namespace_commit(
+        request, &parent_volume, &journal, sequence);
+}
+
+static int ext2_rename_symlink_request(ext2_request_t *request,
+        const char *source_path, uint32_t source_length,
+        const char *destination_path, uint32_t destination_length) {
+    char source_parent[X86OS_VFS_SHADOW_PATH_CAPACITY];
+    char destination_parent[X86OS_VFS_SHADOW_PATH_CAPACITY];
+    char source_name[256];
+    char destination_name[256];
+    uint32_t source_parent_length = 0U;
+    uint32_t destination_parent_length = 0U;
+    uint32_t source_name_length = 0U;
+    uint32_t destination_name_length = 0U;
+    int status = ext2_namespace_split(
+        source_path, source_length, source_parent, &source_parent_length,
+        source_name, &source_name_length);
+    if (status == 0)
+        status = ext2_namespace_split(
+            destination_path, destination_length, destination_parent,
+            &destination_parent_length, destination_name,
+            &destination_name_length);
+    if (status != 0 || request == 0 || request->write_sector == 0 ||
+        request->flush == 0) return status != 0 ? status : -30;
+    if (source_parent_length != destination_parent_length)
+        return -18;
+    for (uint32_t index = 0U; index <= source_parent_length; ++index)
+        if (source_parent[index] != destination_parent[index]) return -18;
+    ext2_shadow_volume_t volume;
+    ext2_journal_t journal;
+    status = ext2_recover_path_request(
+        request, source_path, source_length, 1U, &volume, &journal);
+    if (status == -2) return -95;
+    if (status != 0) return status;
+    if (request->writes != 0U || request->flushes != 0U) return -11;
+    ext2_shadow_inode_t directory;
+    char visible[256];
+    uint32_t directory_inode = 0U;
+    status = ext2_resolve(
+        request, source_parent, source_parent_length, 0U, &volume,
+        &directory, visible, &directory_inode);
+    if (status != 0) return status;
+    ext2_directory_location_t location;
+    status = ext2_directory_locate(&volume, &directory, source_name,
+                                   &location);
+    if (status != 0) return status;
+    uint32_t existing = 0U;
+    status = ext2_find_entry(
+        &volume, &directory, destination_name, &existing, visible);
+    if (status == 0) return -17;
+    if (status != -2) return status;
+    ext2_shadow_inode_t inode;
+    status = ext2_read_inode(&volume, location.inode_number, &inode);
+    if (status != 0) return status;
+    if ((ext2_get16(inode.bytes) & EXT2_S_IFMT) != EXT2_S_IFLNK)
+        return -95;
+    char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
+    uint32_t target_length = 0U;
+    status = ext2_read_symlink_inode(
+        &volume, &inode, target, &target_length);
+    if (status != 0) return status;
+    if (journal.sequence == UINT32_MAX) return -75;
+    uint32_t sequence = journal.sequence + 1U;
+    ext2_transaction_reset();
+    status = ext2_plan_directory_rename(
+        &volume, &location, source_name, destination_name,
+        destination_name_length);
+    if (status != 0 || ext2_transaction.count != 1U)
+        return status != 0 ? status : -5;
+    status = ext2_namespace_finish(request, &volume, &journal, sequence);
+    if (status == 0) {
+        ext2_shadow_inode_t verify_inode;
+        uint32_t verify_number = 0U;
+        status = ext2_resolve(
+            request, source_path, source_length,
+            REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL, &volume, &verify_inode,
+            visible, &verify_number);
+        if (status == -2) status = 0;
+        else status = status == 0 ? -5 : status;
+        if (status == 0)
+            status = ext2_resolve(
+                request, destination_path, destination_length,
+                REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL, &volume,
+                &verify_inode, visible, &verify_number);
+        if (status == 0 && verify_number != location.inode_number)
+            status = -5;
+        char verify_target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
+        uint32_t verify_length = 0U;
+        if (status == 0)
+            status = ext2_read_symlink_inode(
+                &volume, &verify_inode, verify_target, &verify_length);
+        if (status == 0 && verify_length != target_length) status = -5;
+        for (uint32_t index = 0U;
+             status == 0 && index < target_length; ++index)
+            if (verify_target[index] != target[index]) status = -5;
+    }
+    if (status != 0) return status;
+    return ext2_namespace_commit(request, &volume, &journal, sequence);
+}
+
 static int ext2_bridge_drive_info(void *opaque, uint32_t resource,
                                   x86os_drive_info_t *info) {
     ext2_request_t *request = (ext2_request_t *)opaque;
@@ -2215,5 +2656,32 @@ int reist_vfs_shadow_ext2_symlink(
         ? ext2_symlink_request(
             &request, target, target_length,
             absolute_link_path, link_path_length)
+        : status;
+}
+
+int reist_vfs_shadow_ext2_unlink_symlink(
+        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+        uint32_t path_length, uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(
+        &request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0
+        ? ext2_unlink_symlink_request(&request, absolute_path, path_length)
+        : status;
+}
+
+int reist_vfs_shadow_ext2_rename_symlink(
+        const reist_vfs_shadow_ext2_io_t *io, const char *source_path,
+        uint32_t source_length, const char *destination_path,
+        uint32_t destination_length, uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(
+        &request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0
+        ? ext2_rename_symlink_request(
+            &request, source_path, source_length,
+            destination_path, destination_length)
         : status;
 }

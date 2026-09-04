@@ -1355,7 +1355,8 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
     if (process->domain_profile.kind == PROCESS_DOMAIN_COMPOSITOR &&
         request.operation != STORAGE_REQUEST_VFS_SHADOW_STAT &&
         request.operation != STORAGE_REQUEST_VFS_BULK_READ) return -13;
-    if (request.operation == STORAGE_REQUEST_VFS_SYMLINK &&
+    if ((request.operation == STORAGE_REQUEST_VFS_SYMLINK ||
+         request.operation == STORAGE_REQUEST_VFS_NAMESPACE) &&
         process->domain_profile.kind != PROCESS_DOMAIN_COMPATIBILITY)
         return -13;
     if (request.operation >= STORAGE_REQUEST_FORMAT_FAT12 &&
@@ -1375,7 +1376,8 @@ static int syscall_storage_submit(const storage_request_submit_t *user_request,
         request.operation == STORAGE_REQUEST_VFS_WRITE ||
         request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
         request.operation == STORAGE_REQUEST_VFS_BULK_READ ||
-        request.operation == STORAGE_REQUEST_VFS_SYMLINK) {
+        request.operation == STORAGE_REQUEST_VFS_SYMLINK ||
+        request.operation == STORAGE_REQUEST_VFS_NAMESPACE) {
         uint32_t data_address = (uint32_t)(uintptr_t)user_data;
         if (request.length > sizeof(data) ||
             !user_range_accessible(directory, data_address, request.length,
@@ -1422,7 +1424,8 @@ static int syscall_storage_claim(storage_request_descriptor_t *user_request,
           request.operation == STORAGE_REQUEST_VFS_WRITE ||
           request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
           request.operation == STORAGE_REQUEST_VFS_BULK_READ ||
-          request.operation == STORAGE_REQUEST_VFS_SYMLINK) &&
+          request.operation == STORAGE_REQUEST_VFS_SYMLINK ||
+          request.operation == STORAGE_REQUEST_VFS_NAMESPACE) &&
          copy_to_user_space(directory, data_address, data,
                             request.length) != 0)) return -14;
     return 0;
@@ -1450,7 +1453,8 @@ static int syscall_storage_claim_identity(
         request.operation == STORAGE_REQUEST_VFS_WRITE ||
         request.operation == STORAGE_REQUEST_VFS_SHADOW_STAT ||
         request.operation == STORAGE_REQUEST_VFS_BULK_READ ||
-        request.operation == STORAGE_REQUEST_VFS_SYMLINK;
+        request.operation == STORAGE_REQUEST_VFS_SYMLINK ||
+        request.operation == STORAGE_REQUEST_VFS_NAMESPACE;
     if ((has_payload && copy_to_user_space(directory, data_address, data,
                                            request.length) != 0) ||
         copy_to_user_space(directory, request_address, &request,

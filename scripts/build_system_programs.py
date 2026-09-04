@@ -107,13 +107,22 @@ PROGRAMS = {
     "CONFIG.PRG": ROOT / "userspace/services/config/config_service.c",
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
-    "DEL.PRG": ROOT / "userspace/programs/del.c",
+    "DEL.PRG": (
+        ROOT / "userspace/programs/del.c",
+        ROOT / "userspace/storage/lib/vfs_namespace_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "COPY.PRG": (
         ROOT / "userspace/programs/copy.c",
         ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
-    "RENAME.PRG": ROOT / "userspace/programs/rename.c",
+    "RENAME.PRG": (
+        ROOT / "userspace/programs/rename.c",
+        ROOT / "userspace/storage/lib/vfs_namespace_client.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "LN.PRG": (
         ROOT / "userspace/programs/ln.c",
         ROOT / "userspace/storage/lib/vfs_symlink_client.c",
@@ -143,7 +152,12 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_read_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
-    "RM.PRG": ROOT / "userspace/programs/rm.c",
+    "RM.PRG": (
+        ROOT / "userspace/programs/rm.c",
+        ROOT / "userspace/storage/lib/vfs_namespace_client.c",
+        ROOT / "userspace/storage/lib/vfs_stat_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "ECHO.PRG": ROOT / "userspace/programs/echo.c",
     "CLS.PRG": ROOT / "userspace/programs/cls.c",
     "DRIVES.PRG": ROOT / "userspace/programs/drives.c",
@@ -288,8 +302,11 @@ def main() -> None:
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
                         "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG",
-                        "LN.PRG", "READLINK.PRG"}:
+                        "LN.PRG", "READLINK.PRG", "DEL.PRG",
+                        "RENAME.PRG", "RM.PRG"}:
                 dependency_files.extend(storage_headers)
+            if name == "STORAGE.PRG":
+                dependency_files.append(Path(__file__).resolve())
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)
             if name in AUDIO_PROGRAMS:
@@ -310,9 +327,11 @@ def main() -> None:
                 cache_directory=global_cache_directory,
                 dependency_files=dependency_files,
                 compile_flags=(
-                    ["-DREIST_CURL_TLS_RUNTIME_PROBE"]
-                    if args.curl_tls_runtime_probe and name == "CURL.PRG"
-                    else None),
+                    (["-fno-inline-functions"]
+                     if name == "STORAGE.PRG" else []) +
+                    (["-DREIST_CURL_TLS_RUNTIME_PROBE"]
+                     if args.curl_tls_runtime_probe and name == "CURL.PRG"
+                     else [])) or None,
             )
             if name == "CURL.PRG":
                 curl_mode_marker.write_text(curl_mode, encoding="ascii")

@@ -6,6 +6,8 @@
  * Das Programm verweigert ein vorhandenes Ziel bewusst vor dem Syscall.
  */
 #include "x86os.h"
+#include "reist/vfs_namespace_client.h"
+#include "reist/vfs_stat_client.h"
 
 static int text_equal(const char *left, const char *right) {
     while (*left != '\0' && *left == *right) { ++left; ++right; }
@@ -22,7 +24,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     x86os_file_info_t source;
-    if (x86os_stat(argv[1], &source) < 0) {
+    if (reist_vfs_lstat(
+            argv[1], &source, REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) < 0) {
         x86os_puts("rename: source not found\n");
         return 1;
     }
@@ -31,11 +34,15 @@ int main(int argc, char **argv) {
         return 1;
     }
     x86os_file_info_t destination;
-    if (x86os_stat(argv[2], &destination) == 0) {
+    if (reist_vfs_lstat(
+            argv[2], &destination, REIST_VFS_STAT_DEFAULT_TIMEOUT_MS) == 0) {
         x86os_puts("rename: destination already exists\n");
         return 1;
     }
-    if (x86os_rename(argv[1], argv[2]) < 0) {
+    int status = reist_vfs_rename(
+        argv[1], argv[2], REIST_VFS_NAMESPACE_DEFAULT_TIMEOUT_MS);
+    if (status == -95) status = x86os_rename(argv[1], argv[2]);
+    if (status < 0) {
         x86os_puts("rename: operation unsupported or failed\n");
         return 1;
     }

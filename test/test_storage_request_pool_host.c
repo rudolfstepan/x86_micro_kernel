@@ -158,6 +158,27 @@ int main(void) {
             3, 5U, shadow_handle, &result, transfer) != 0 || result != 0 ||
         memcmp(read_data, transfer, sizeof(read_data)) != 0) return 23;
 
+    storage_request_submit_t namespace_request = {
+        STORAGE_REQUEST_VERSION, sizeof(namespace_request),
+        STORAGE_REQUEST_VFS_NAMESPACE, 0U, 0U,
+        STORAGE_REQUEST_BLOCK_SIZE, 1000U,
+    };
+    fill(write_data, 23U);
+    storage_request_handle_t namespace_handle = 0U;
+    if (storage_request_submit(3, 5U, &namespace_request, write_data, 49U,
+                               &namespace_handle) != 0 ||
+        storage_request_claim_v2(7, 11U, 50U, &descriptor_v2,
+                                 transfer) != 0 ||
+        descriptor_v2.operation != STORAGE_REQUEST_VFS_NAMESPACE ||
+        descriptor_v2.resource != 0U || descriptor_v2.offset != 0U ||
+        memcmp(write_data, transfer, sizeof(write_data)) != 0) return 32;
+    fill(read_data, 83U);
+    if (storage_request_complete(
+            7, 11U, namespace_handle, 0, read_data) != 0 ||
+        storage_request_collect(
+            3, 5U, namespace_handle, &result, transfer) != 0 || result != 0 ||
+        memcmp(read_data, transfer, sizeof(read_data)) != 0) return 33;
+
     storage_request_submit_t bulk_read = {
         STORAGE_REQUEST_VERSION, sizeof(bulk_read),
         STORAGE_REQUEST_VFS_BULK_READ, 0U, 0U,
