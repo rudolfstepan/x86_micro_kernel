@@ -51,4 +51,9 @@ int kernel_mutex_lock_for(kernel_mutex_t *mutex, uint32_t timeout_ms);
 /** Release one recursive level.  A non-owner release is a kernel defect. */
 void kernel_mutex_unlock(kernel_mutex_t *mutex);
 
+/** Revoke one exact non-running task generation's ownership. The scheduler
+ * must first detach the mutex from that pinned task's fixed ownership set. */
+bool kernel_mutex_abandon_task_owner(kernel_mutex_t *mutex, int task_id,
+                                     uint32_t task_generation);
+
 #endif

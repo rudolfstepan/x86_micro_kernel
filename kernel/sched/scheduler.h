@@ -25,6 +25,7 @@
  * applications while preserving the dedicated recovery reserve. */
 #define MAX_TASKS 32
 #define SUPERVISED_TASK_RESERVE 1U
+#define SCHEDULER_HELD_MUTEX_CAPACITY 8U
 
 #define TASK_READY 0
 #define TASK_RUNNING 1
@@ -100,6 +101,11 @@ typedef struct task {
     volatile int32_t running_cpu;
     uint32_t cpu_affinity_mask;
     uint32_t blocked_owner_generation;
+    /* Distinct first-acquisition records only. Recursive depth remains in
+     * the mutex. Fixed storage lets forced termination revoke an abandoned
+     * task generation before cleanup needs another filesystem lock. */
+    void *held_mutexes[SCHEDULER_HELD_MUTEX_CAPACITY];
+    uint32_t held_mutex_count;
 } task_t;
 
 typedef enum {
@@ -165,6 +171,10 @@ int scheduler_yield(void);
 int scheduler_current_task_id(void);
 bool scheduler_current_task_identity(int *task_id_out,
                                      uint32_t *generation_out);
+int scheduler_mutex_owner_register(int task_id, uint32_t task_generation,
+                                   void *mutex);
+int scheduler_mutex_owner_unregister(int task_id, uint32_t task_generation,
+                                     void *mutex);
 int scheduler_task_state_snapshot(int task_id, const Process *owner,
                                   uint32_t generation, int *state_out);
 void scheduler_wake_expired_sleepers_locked(uint64_t now_ms);

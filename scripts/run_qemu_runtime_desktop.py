@@ -855,7 +855,15 @@ def run_desktop_relaunch_probe(
         tail = text[shell_offset:]
         help_offset = tail.find(SHELL_HELP_MARKER)
         if help_offset >= 0 and SHELL_PROMPT in tail[help_offset:]:
-            print("runtime-desktop: PASS exit-vfs-relaunch-exit-shell")
+            startup_values = [int(value) for value in re.findall(
+                r"DESKTOP_STARTUP_MS value=([0-9]+)", text)]
+            if len(startup_values) < 2:
+                raise RuntimeError("desktop startup metrics are incomplete")
+            print(
+                "runtime-desktop: PASS exit-vfs-relaunch-exit-shell "
+                f"startup_ms={startup_values[-2]} "
+                f"relaunch_ms={startup_values[-1]}"
+            )
             return 0
         time.sleep(0.02)
     raise RuntimeError("Ring-3 shell did not respond after second desktop exit")
@@ -1104,6 +1112,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         while time.monotonic() < deadline:
             drain(output, transcript)
             text = "".join(transcript)
+            if ("Program load open failed: /usr/gui/bin/desktop.prg (-11)"
+                    in text):
+                raise RuntimeError(
+                    "desktop image load hit the abandoned VFS mutex timeout"
+                )
             if "DESKTOP_OK" in text:
                 if expect_failure:
                     print("runtime-desktop: FAIL: unsupported mode was accepted",
@@ -1509,6 +1522,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             raise RuntimeError("Browser probe failed")
                         required = (
                             "DESKTOP_BROWSER_OK", "BROWSER_RENDER_OK",
+                            "BROWSER_ADDRESS_REPLACE_OK",
+                            "BROWSER_HTTPS_DEFAULT_OK",
                             "BROWSER_SCROLL_OK", "BROWSER_LINK_OK",
                             "BROWSER_RELOAD_OK", "BROWSER_RELOAD_PAINTED",
                         )

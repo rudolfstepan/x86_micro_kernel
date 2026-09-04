@@ -58,10 +58,11 @@ class VfsSynchronizationContractTests(unittest.TestCase):
     def test_guard_uses_deadline_bounded_sleepable_mutex(self) -> None:
         begin = function_block("static bool vfs_operation_begin(")
         not_irq = begin.index("KASSERT_NOT_IRQ();")
-        can_sleep = begin.index("KASSERT_CAN_SLEEP();")
+        can_sleep = begin.index("if (!scheduler_can_sleep())")
         acquire = begin.index("kernel_mutex_lock_for(")
         self.assertLess(not_irq, can_sleep)
         self.assertLess(can_sleep, acquire)
+        self.assertIn("VFS_SLEEP_CONTEXT", begin)
         self.assertIn("VFS_OPERATION_LOCK_TIMEOUT_MS", begin)
 
         end = function_block("static void vfs_operation_end(")

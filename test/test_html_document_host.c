@@ -85,6 +85,22 @@ static void resolves_navigation_targets(void) {
     assert(strcmp(resolved, "/htdocs/index.html#details") == 0);
     assert(reist_html_url_resolve("/htdocs/index.html", "javascript:run()",
            resolved, sizeof(resolved)) == REIST_HTML_INVALID);
+
+    assert(reist_html_navigation_normalize(
+           "example.test/docs", resolved, sizeof(resolved)) == REIST_HTML_OK);
+    assert(strcmp(resolved, "https://example.test/docs") == 0);
+    assert(reist_html_navigation_normalize(
+           "HTTP://example.test/", resolved, sizeof(resolved)) ==
+           REIST_HTML_OK);
+    assert(strcmp(resolved, "http://example.test/") == 0);
+    assert(reist_html_navigation_normalize(
+           "/htdocs/index.html", resolved, sizeof(resolved)) == REIST_HTML_OK);
+    assert(strcmp(resolved, "/htdocs/index.html") == 0);
+    assert(reist_html_navigation_normalize(
+           "javascript:run()", resolved, sizeof(resolved)) ==
+           REIST_HTML_INVALID);
+    assert(reist_html_navigation_normalize(
+           "https://", resolved, sizeof(resolved)) == REIST_HTML_INVALID);
 }
 
 int main(void) {

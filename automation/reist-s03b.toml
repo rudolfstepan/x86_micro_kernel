@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6a-browser-input-and-mutex-owner-recovery"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R3.6a-browser-input-and-mutex-owner-recovery"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Repair browser address entry and abandoned task mutex recovery"
@@ -64,7 +64,15 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fix browser input and abandoned task mutexes"
-evidence = []
+evidence = [
+  "python test/test_gui_browser_source.py -v: PASS (5 tests including native address normalization and replacement probe contracts)",
+  "python test/test_smp.py -v: PASS (29 tests; one unrelated optional host-compiler probe skipped)",
+  "python test/test_vfs_sync_r13.py -v: PASS (5 tests)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (43 seconds)",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop: PASS with two desktop generations, no -11 VFS timeout or compositor degradation, startup_ms=23811 and relaunch_ms=23507",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser: PASS with address replacement, HTTPS default, render, scroll, link, reload and clean close markers",
+  "The abandoned-mutex timeout cascade is closed; the remaining approximately 24-second desktop startup is measured synchronous Unicode font I/O and remains explicit follow-up work. No queued package remains and active_id is empty."
+]
 
 [[packages]]
 id = "R3.6-surface-web-browser"

@@ -782,11 +782,18 @@ Absätze, Umbrüche, Hervorhebungen, Vorformatierung, Listen und Links aus einem
 festkapazitiven Dokumentmodell. Lokale Pfade laufen über READ|STAT-VFS-Objekte;
 HTTP(S) wird ausschließlich vom getrennten `CURL.PRG` in eine begrenzte
 Tempdatei übertragen. Fehler behalten die letzte vollständig validierte Seite.
+Ein Klick in die Adressleiste markiert den bisherigen Inhalt logisch für
+begrenztes Ersetzen beim ersten Druck- oder Backspace-Ereignis. Explizite
+`http://`- und `https://`-Adressen bleiben erhalten; ein Hostname ohne Schema
+erhält vor jedem Seiteneffekt automatisch `https://`. Andere explizite
+Schemata sowie Leerraum, leere Autoritäten und überlange Ziele werden
+abgewiesen.
 
 Der deterministische Gastnachweis öffnet die paketierte HTML-Seite in einer
 echten Surface, aktiviert einen sichtbaren Link über denselben Hit-Test wie
-Mauseingabe, scrollt, lädt erneut und schließt den Client, während Desktop und
-Shell erhalten bleiben:
+Mauseingabe, ersetzt die bestehende Adresse, prüft die HTTPS-Vervollständigung,
+scrollt, lädt erneut und schließt den Client, während Desktop und Shell erhalten
+bleiben:
 
 ```powershell
 .\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser

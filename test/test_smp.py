@@ -286,8 +286,12 @@ class SmpTests(unittest.TestCase):
             start = scheduler.index(signature)
             end = scheduler.index(end_signature, start)
             body = scheduler[start:end]
+            lock_positions = [body.index(marker) for marker in (
+                "spinlock_acquire(&task_table_lock)",
+                "spinlock_trylock(&task_table_lock)") if marker in body]
+            self.assertTrue(lock_positions)
             self.assertLess(body.index("pit_monotonic_ms()"),
-                            body.index("spinlock_acquire(&task_table_lock)"))
+                            min(lock_positions))
 
     def test_task_table_admin_transactions_are_locked_but_switches_are_not(self):
         scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
@@ -306,7 +310,7 @@ class SmpTests(unittest.TestCase):
                                         interrupt_start)
         self.assertNotIn("task_table_lock_irqsave", scheduler[
             interrupt_start:interrupt_end])
-        self.assertIn("spinlock_acquire(&task_table_lock)", scheduler[
+        self.assertIn("spinlock_trylock(&task_table_lock)", scheduler[
             interrupt_start:interrupt_end])
         self.assertIn("spinlock_release(&task_table_lock)", scheduler[
             interrupt_start:interrupt_end])
@@ -427,6 +431,8 @@ class SmpTests(unittest.TestCase):
     def test_sleepable_kernel_mutex_has_bounded_atomic_wait_transfer(self):
         header = (ROOT / "kernel/sched/mutex.h").read_text(encoding="utf-8")
         source = (ROOT / "kernel/sched/mutex.c").read_text(encoding="utf-8")
+        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
+            encoding="utf-8")
         self.assertIn("KERNEL_MUTEX_RECURSION_LIMIT", header)
         self.assertIn("kernel_mutex_lock_until", header)
         self.assertIn("kernel_mutex_lock_for", header)
@@ -438,6 +444,26 @@ class SmpTests(unittest.TestCase):
         self.assertIn("wait_queue_wake_one_locked(&mutex->waiters)", source)
         self.assertIn("scheduler_current_task_identity", source)
         self.assertIn("owner_generation", header)
+        self.assertIn("kernel_mutex_abandon_task_owner", header)
+        self.assertIn("scheduler_mutex_owner_register", source)
+        self.assertIn("scheduler_mutex_owner_unregister", source)
+        self.assertIn("SCHEDULER_HELD_MUTEX_CAPACITY 8U", (ROOT /
+                      "kernel/sched/scheduler.h").read_text(encoding="utf-8"))
+        self.assertIn("scheduler_abandon_task_mutexes", scheduler)
+        terminate = scheduler[
+            scheduler.index("void scheduler_terminate_task("):
+            scheduler.index("void task_exit(void)")]
+        self.assertLess(terminate.index("scheduler_abandon_task_mutexes("),
+                        terminate.index("process_close_all_files(process)"))
+        abandon = source[source.index(
+            "bool kernel_mutex_abandon_task_owner("):]
+        for reset in (
+                "mutex->owner_task = KERNEL_MUTEX_NO_OWNER_TASK",
+                "mutex->owner_generation = 0U",
+                "mutex->owner_cpu = X86_CPU_INDEX_INVALID",
+                "mutex->recursion_depth = 0U",
+                "wait_queue_wake_one_locked(&mutex->waiters)"):
+            self.assertIn(reset, abandon)
         self.assertIn("if (identity.task < 0)", source)
         self.assertIn("scheduler_preempt_disable();", source)
         self.assertIn("if (release_kernel_preempt_guard)", source)
@@ -446,8 +472,6 @@ class SmpTests(unittest.TestCase):
                             source.index("wait_queue_block_until_spinlocked(")]
         self.assertIn("identity.task < 0 || !may_block", contention)
         self.assertIn("return KERNEL_MUTEX_WOULD_BLOCK;", contention)
-        scheduler = (ROOT / "kernel/sched/scheduler.c").read_text(
-            encoding="utf-8")
         self.assertIn("uint32_t task_generation", (ROOT /
                       "kernel/sched/scheduler.h").read_text(encoding="utf-8"))
         self.assertIn("KASSERT(next_task_generation != UINT32_MAX)", scheduler)

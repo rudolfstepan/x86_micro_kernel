@@ -366,7 +366,14 @@ nach. Drei konkurrierende AP-Probetasks weisen zusätzlich den atomaren
 Waitqueue-Übergang des rekursiven Timed-Kernelmutex nach. VFS, FAT32 und ATA
 verwenden diesen Mutex bereits für lange globale Transaktionen; AHCI schützt
 damit jeden veröffentlichten Command-Port und FDD zusätzlich FIFO, ISA-DMA und
-IRQ6-Abschluss. Ein barriere-synchroner AP-Probelauf liest denselben Root-Sektor
+IRQ6-Abschluss. Jede erste Mutexakquisition eines Scheduler-Tasks wird einmal
+in dessen festem Acht-Slot-Besitzsatz erfasst; Rekursion verändert nur die
+Tiefe im Mutex. Wird eine bereits nicht mehr laufende Taskgeneration erzwungen
+beendet, trennt der Scheduler genau ihren Besitzsatz ab und setzt diese Mutexe
+vor VFS- und Prozesscleanup generationgenau frei. Dadurch bleibt weder ein
+staler VFS-Besitzer noch dessen 10-Sekunden-Timeoutkaskade erhalten;
+Kernelkontexte mit `owner_task=-1` bleiben davon ausgeschlossen und durch den
+bestehenden Präemptionsschutz gepinnt. Ein barriere-synchroner AP-Probelauf liest denselben Root-Sektor
 über ATA-PIO beziehungsweise AHCI und akzeptiert ausschließlich bytegleiche
 Ergebnisse. Alle regulären
 Kernel- und Ring-3-Dienste bleiben CPU-0-affin, bis ihre übrigen

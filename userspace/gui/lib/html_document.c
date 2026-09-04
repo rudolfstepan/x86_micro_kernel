@@ -513,6 +513,41 @@ static int url_copy(char *output, size_t capacity, size_t *used,
     return REIST_HTML_OK;
 }
 
+int reist_html_navigation_normalize(const char *input, char *output,
+                                    size_t capacity) {
+    if (input == 0 || output == 0 || capacity < 2U)
+        return REIST_HTML_INVALID;
+    output[0U] = '\0';
+    size_t length = text_length(input, REIST_HTML_HREF_CAPACITY);
+    if (length == 0U || length >= REIST_HTML_HREF_CAPACITY)
+        return REIST_HTML_INVALID;
+    for (size_t index = 0U; index < length; ++index) {
+        uint8_t byte = (uint8_t)input[index];
+        if (byte <= 0x20U || byte == 0x7FU) return REIST_HTML_INVALID;
+    }
+    size_t used = 0U;
+    size_t scheme = prefix_equal(input, "https://") ? 8U
+                  : prefix_equal(input, "http://") ? 7U : 0U;
+    if (scheme != 0U) {
+        size_t authority_end = scheme;
+        while (authority_end < length && input[authority_end] != '/' &&
+               input[authority_end] != '#') ++authority_end;
+        if (authority_end == scheme) return REIST_HTML_INVALID;
+        const char *canonical = scheme == 8U ? "https://" : "http://";
+        int status = url_copy(output, capacity, &used, canonical, scheme);
+        return status == REIST_HTML_OK
+            ? url_copy(output, capacity, &used, input + scheme,
+                       length - scheme) : status;
+    }
+    if (input[0U] == '/' || input[0U] == '#')
+        return url_copy(output, capacity, &used, input, length);
+    for (size_t index = 0U; index < length; ++index)
+        if (input[index] == ':') return REIST_HTML_INVALID;
+    int status = url_copy(output, capacity, &used, "https://", 8U);
+    return status == REIST_HTML_OK
+        ? url_copy(output, capacity, &used, input, length) : status;
+}
+
 int reist_html_url_resolve(const char *base, const char *reference,
                            char *output, size_t capacity) {
     if (base == 0 || reference == 0 || output == 0 || capacity < 2U)

@@ -61,6 +61,8 @@ class GuiBrowserSourceTests(unittest.TestCase):
             "BROWSER_LAYOUT_LINE_CAPACITY",
             "BROWSER_LINK_HIT_CAPACITY",
             "reist_html_document_parse",
+            "reist_html_navigation_normalize",
+            "address_replace_pending",
         ):
             self.assertIn(contract, source)
         self.assertNotRegex(source, r"\b(malloc|calloc|realloc|free)\s*\(")

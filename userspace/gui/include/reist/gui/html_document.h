@@ -69,4 +69,9 @@ int reist_html_document_parse(const uint8_t *input, size_t length,
 int reist_html_url_resolve(const char *base, const char *reference,
                            char *output, size_t capacity);
 
+/** Normalize direct address-bar input. Explicit HTTP(S) and local absolute
+ * paths are retained; a host/path without a scheme receives https://. */
+int reist_html_navigation_normalize(const char *input, char *output,
+                                    size_t capacity);
+
 #endif

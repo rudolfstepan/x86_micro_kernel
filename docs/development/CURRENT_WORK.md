@@ -4,15 +4,20 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Reparaturthema: `R3.6a-browser-input-and-mutex-owner-recovery`.
-Die Browser-Adressleiste erhält begrenztes Ersetzen des bisherigen Inhalts
-sowie `https://`-Vervollständigung für Hostnamen ohne Schema. Parallel wird
-der reproduzierte Desktop-Startfehler geschlossen: Ein beim Storage-Recovery
-beendeter Task kann derzeit einen taskgebundenen Kernel-Mutex hinterlassen;
-darauf folgen drei VFS-Timeouts zu je zehn Sekunden und ein degradierter
-Compositor. Der Fix verfolgt pro Taskgeneration eine feste Zahl gehaltener
-Mutexe und gibt ausschließlich die exakt gepinnte, nicht mehr laufende
-Generation vor deren VFS-Cleanup frei.
+`R3.6a-browser-input-and-mutex-owner-recovery` ist abgeschlossen. Ein Klick in
+die Browser-Adressleiste ersetzt beim ersten Editieren jetzt den bisherigen
+Inhalt; nackte Hostnamen erhalten begrenzt `https://`, explizites `http://` und
+`https://` bleibt möglich. Taskgenerationen verfolgen außerdem bis zu acht
+verschiedene gehaltene Kernel-Mutexe. Bei erzwungener Beendigung wird nur der
+Besitz der exakt gepinnten, nicht mehr laufenden Generation vor dem VFS-Cleanup
+aufgehoben. Damit entfällt die reproduzierte Kaskade aus drei VFS-Timeouts zu je
+zehn Sekunden samt degradiertem Compositor. Die fünf Browser-, 29 SMP-/Mutex-
+und fünf VFS-Prüfungen, das 43-Sekunden-QEMU-Paketgate sowie beide realen
+Desktop-Läufe sind bestanden. Der normale Start und Neustart wurden ohne
+`-11`-Ladefehler mit 23 811 ms beziehungsweise 23 507 ms gemessen. Diese
+verbleibende Startzeit stammt aus dem bereits vorhandenen synchronen Laden des
+großen Unicode-Fontkatalogs und ist ausdrücklich ein separates Folgethema. Es
+ist kein weiteres Paket eingereiht und `active_id` ist leer.
 
 Abgeschlossenes Thema: `R3.6-surface-web-browser`. Der neue Ring-3-Surface-Client
 verwendet den vorhandenen, abgenommenen `CURL.PRG`-Transport mit festem

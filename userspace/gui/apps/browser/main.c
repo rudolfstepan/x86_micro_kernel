@@ -64,6 +64,7 @@ typedef struct browser_state {
     uint32_t redraw;
     uint32_t exit_requested;
     uint32_t address_focused;
+    uint32_t address_replace_pending;
     uint32_t address_length;
     uint32_t scroll_y;
     uint32_t probe;
@@ -349,8 +350,20 @@ static int load_candidate(browser_state_t *state,
 static int navigate(browser_state_t *state,
                     reist_gui_surface_client_t *client,
                     const char *target) {
+    char normalized[BROWSER_URL_CAPACITY];
+    int normalize_status;
+    if (target != 0 && target[0U] == '#' && state->loaded)
+        normalize_status = reist_html_url_resolve(
+            state->active_url, target, normalized, sizeof(normalized));
+    else
+        normalize_status = reist_html_navigation_normalize(
+            target, normalized, sizeof(normalized));
+    if (normalize_status != 0) {
+        set_status(state, "Adresse nicht unterstuetzt");
+        return normalize_status;
+    }
     set_status(state, "Lade Dokument ...");
-    int status = load_candidate(state, client, target);
+    int status = load_candidate(state, client, normalized);
     if (status != 0) {
         set_status(state, "Laden abgelehnt - bisherige Seite bleibt");
         return status;
@@ -549,6 +562,7 @@ static void handle_pointer(browser_state_t *state,
         input->button != 1U || !input->pressed) return;
     if (input->y >= 10 && input->y < 42) {
         state->address_focused = 1U;
+        state->address_replace_pending = 1U;
         state->redraw = 1U;
         return;
     }
@@ -572,19 +586,30 @@ static void handle_keyboard(browser_state_t *state,
     }
     if (state->address_focused) {
         if (key == 8U || key == 127U) {
-            if (state->address_length != 0U)
+            if (state->address_replace_pending) {
+                state->address[0U] = '\0';
+                state->address_length = 0U;
+                state->address_replace_pending = 0U;
+            } else if (state->address_length != 0U) {
                 state->address[--state->address_length] = '\0';
+            }
             state->redraw = 1U;
         } else if (key == '\r' || key == '\n') {
             char target[BROWSER_URL_CAPACITY];
             if (copy_text(target, sizeof(target), state->address) == 0)
                 (void)navigate(state, client, target);
             state->address_focused = 0U;
-        } else if (key >= 0x20U && key <= 0x7EU &&
-                   state->address_length + 1U < sizeof(state->address)) {
-            state->address[state->address_length++] = (char)key;
-            state->address[state->address_length] = '\0';
-            state->redraw = 1U;
+        } else if (key >= 0x20U && key <= 0x7EU) {
+            if (state->address_replace_pending) {
+                state->address_length = 0U;
+                state->address[0U] = '\0';
+                state->address_replace_pending = 0U;
+            }
+            if (state->address_length + 1U < sizeof(state->address)) {
+                state->address[state->address_length++] = (char)key;
+                state->address[state->address_length] = '\0';
+                state->redraw = 1U;
+            }
         }
         return;
     }
@@ -605,8 +630,34 @@ static void handle_keyboard(browser_state_t *state,
         (void)navigate(state, client, state->active_url);
     else if (key == '\r' || key == '\n') {
         state->address_focused = 1U;
+        state->address_replace_pending = 1U;
         state->redraw = 1U;
     }
+}
+
+static int probe_address_input(browser_state_t *state,
+                               reist_gui_surface_client_t *client) {
+    static const char local[] = "/htdocs/index.html";
+    reist_gui_surface_input_t focus = {0};
+    focus.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON;
+    focus.button = 1U;
+    focus.pressed = 1U;
+    focus.x = 20;
+    focus.y = 20;
+    handle_pointer(state, client, &focus);
+    for (uint32_t index = 0U; local[index] != '\0'; ++index)
+        handle_keyboard(state, client, (uint32_t)(uint8_t)local[index]);
+    handle_keyboard(state, client, '\n');
+    if (!text_equal(state->address, local) ||
+        !text_equal(state->active_url, local)) return -1;
+    x86os_puts("BROWSER_ADDRESS_REPLACE_OK\n");
+
+    char normalized[BROWSER_URL_CAPACITY];
+    if (reist_html_navigation_normalize(
+            "example.test/docs", normalized, sizeof(normalized)) != 0 ||
+        !text_equal(normalized, "https://example.test/docs")) return -1;
+    x86os_puts("BROWSER_HTTPS_DEFAULT_OK\n");
+    return 0;
 }
 
 static const char *initial_target(int argc, char **argv, uint32_t *probe) {
@@ -649,6 +700,7 @@ int main(int argc, char **argv) {
     state.address_length = (uint32_t)bounded_length(
         state.address, sizeof(state.address));
     state.address_focused = 1U;
+    state.address_replace_pending = 1U;
     state.redraw = 1U;
     (void)navigate(&state, &client, state.address);
 
@@ -664,6 +716,11 @@ int main(int argc, char **argv) {
             if (paint_status != 0) break;
             state.redraw = 0U;
             if (state.probe && state.loaded && state.probe_phase == 0U) {
+                if (probe_address_input(&state, &client) != 0)
+                    x86os_puts("BROWSER_PROBE_FAIL address-input\n");
+                state.probe_phase = 1U;
+            } else if (state.probe && state.loaded &&
+                       state.probe_phase == 1U) {
                 if (state.hit_count == 0U) {
                     x86os_puts("BROWSER_PROBE_FAIL link-hit\n");
                 } else {
@@ -675,25 +732,25 @@ int main(int argc, char **argv) {
                     click.y = state.hits[0U].rect.y + 1;
                     handle_pointer(&state, &client, &click);
                 }
-                state.probe_phase = 1U;
+                state.probe_phase = 2U;
             } else if (state.probe && state.loaded &&
-                       state.probe_phase == 1U) {
+                       state.probe_phase == 2U) {
                 uint32_t maximum = maximum_scroll(&state, &client);
                 set_scroll(&state, &client, maximum);
                 x86os_puts(maximum != 0U
                     ? "BROWSER_SCROLL_OK\n" : "BROWSER_PROBE_FAIL scroll\n");
-                state.probe_phase = 2U;
-            } else if (state.probe && state.loaded &&
-                       state.probe_phase == 2U) {
-                if (navigate(&state, &client, state.active_url) == 0)
-                    x86os_puts("BROWSER_RELOAD_OK\n");
                 state.probe_phase = 3U;
             } else if (state.probe && state.loaded &&
                        state.probe_phase == 3U) {
+                if (navigate(&state, &client, state.active_url) == 0)
+                    x86os_puts("BROWSER_RELOAD_OK\n");
+                state.probe_phase = 4U;
+            } else if (state.probe && state.loaded &&
+                       state.probe_phase == 4U) {
                 x86os_puts("BROWSER_RELOAD_PAINTED\n");
                 (void)x86os_sleep_ms(1000U);
                 state.exit_requested = 1U;
-                state.probe_phase = 4U;
+                state.probe_phase = 5U;
             }
         }
         reist_gui_surface_message_t message;

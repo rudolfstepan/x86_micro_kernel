@@ -24,6 +24,7 @@
 #include "include/kernel/device_domain.h"
 #include "include/kernel/storage_request_pool.h"
 #include "include/lib/spinlock.h"
+#include "kernel/sched/mutex.h"
 #include "drivers/video/framebuffer.h"
 #include "mm/kmalloc.h"
 
@@ -1287,6 +1288,79 @@ bool scheduler_current_task_identity(int *task_id_out,
     return valid;
 }
 
+int scheduler_mutex_owner_register(int task_id, uint32_t task_generation,
+                                   void *mutex) {
+    if (task_id < 0 || task_generation == 0U || mutex == NULL) return -22;
+    uint32_t flags = task_table_lock_irqsave();
+    int result = -116;
+    if (task_id < num_tasks &&
+        tasks[task_id].task_generation == task_generation &&
+        tasks[task_id].status != TASK_FINISHED &&
+        tasks[task_id].status != TASK_REAPING) {
+        task_t *task = &tasks[task_id];
+        result = -28;
+        for (uint32_t index = 0U; index < task->held_mutex_count; ++index)
+            KASSERT(task->held_mutexes[index] != mutex);
+        if (task->held_mutex_count < SCHEDULER_HELD_MUTEX_CAPACITY) {
+            task->held_mutexes[task->held_mutex_count++] = mutex;
+            result = 0;
+        }
+    }
+    task_table_unlock_irqrestore(flags);
+    return result;
+}
+
+int scheduler_mutex_owner_unregister(int task_id, uint32_t task_generation,
+                                     void *mutex) {
+    if (task_id < 0 || task_generation == 0U || mutex == NULL) return -22;
+    uint32_t flags = task_table_lock_irqsave();
+    int result = -116;
+    if (task_id < num_tasks &&
+        tasks[task_id].task_generation == task_generation) {
+        task_t *task = &tasks[task_id];
+        result = -2;
+        for (uint32_t index = 0U; index < task->held_mutex_count; ++index) {
+            if (task->held_mutexes[index] != mutex) continue;
+            --task->held_mutex_count;
+            task->held_mutexes[index] =
+                task->held_mutexes[task->held_mutex_count];
+            task->held_mutexes[task->held_mutex_count] = NULL;
+            result = 0;
+            break;
+        }
+    }
+    task_table_unlock_irqrestore(flags);
+    return result;
+}
+
+static void scheduler_abandon_task_mutexes(int task_id,
+                                           uint32_t task_generation) {
+    for (uint32_t released = 0U;
+         released < SCHEDULER_HELD_MUTEX_CAPACITY; ++released) {
+        kernel_mutex_t *mutex = NULL;
+        uint32_t flags = task_table_lock_irqsave();
+        if (task_id >= 0 && task_id < num_tasks &&
+            tasks[task_id].task_generation == task_generation &&
+            tasks[task_id].running_cpu == TASK_CPU_NONE &&
+            tasks[task_id].held_mutex_count != 0U) {
+            task_t *task = &tasks[task_id];
+            --task->held_mutex_count;
+            mutex = (kernel_mutex_t*)task->held_mutexes[
+                task->held_mutex_count];
+            task->held_mutexes[task->held_mutex_count] = NULL;
+        }
+        task_table_unlock_irqrestore(flags);
+        if (mutex == NULL) return;
+        KASSERT(kernel_mutex_abandon_task_owner(
+            mutex, task_id, task_generation));
+    }
+    uint32_t flags = task_table_lock_irqsave();
+    KASSERT(task_id < 0 || task_id >= num_tasks ||
+            tasks[task_id].task_generation != task_generation ||
+            tasks[task_id].held_mutex_count == 0U);
+    task_table_unlock_irqrestore(flags);
+}
+
 int scheduler_current_task_id(void) {
     int task_id = -1;
     uint32_t generation = 0U;
@@ -1449,6 +1523,7 @@ void scheduler_terminate_task(int task_id) {
     task_t *task = &tasks[task_id];
     Process *process = task->process;
     uint32_t generation = task->process_generation;
+    uint32_t task_generation = task->task_generation;
     if (task->status == TASK_FINISHED || task->status == TASK_REAPING ||
         task->running_cpu != TASK_CPU_NONE ||
         process == NULL || process->generation != generation ||
@@ -1464,6 +1539,7 @@ void scheduler_terminate_task(int task_id) {
      * and running_cpu == NONE pin the target identity while the calling task
      * is allowed to be scheduled normally. */
     scheduler_preempt_enable();
+    scheduler_abandon_task_mutexes(task_id, task_generation);
     /* Revoke DMA and mask device IRQs before any capability or address-space
      * teardown. The later process-slot cleanup is deliberately idempotent. */
     device_domain_process_cleanup(process->pid, generation);
