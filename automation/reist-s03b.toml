@@ -14450,7 +14450,7 @@ allowed_files = [
   "test/test_reist_vfs_symlink.py",
   "test/test_reist_vfs_shadow_ext2.py",
   "test/test_reist_storage_request_pool.py",
-  "test/test_reist_storage_request_pool_host.c",
+  "test/test_storage_request_pool_host.c",
   "test/test_reist_storage_service.py",
   "test/test_user_program_toolchain.py",
   "docs/architecture/REIST_ARCHITECTURE.md",
