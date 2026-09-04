@@ -4,7 +4,14 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: keines. `N3d-ext2-regular-unlink` ist abgeschlossen. Operation
+Aktives Thema: `N3e-ext2-same-sector-rename-growth`. Der begrenzte Schnitt
+erweitert das vorhandene gleichverzeichnisige No-replace-Rename ausschließlich
+um längere Zielnamen, wenn Quellentfernung, Donor-Record-Split und vollständiger
+Ziel-Record in genau denselben 512-Byte-Publikationssektor passen. Inode,
+Dateidaten, Allokationen, ABI und Ring 0 bleiben unverändert; Cross-Sector,
+Cross-Directory, Replace und Verzeichnisse scheitern vor Medienwirkung.
+
+`N3d-ext2-regular-unlink` ist abgeschlossen. Operation
 34 entfernt nun ohne ABI-Änderung reguläre EXT2-Dateien mit Linkzähler eins,
 höchstens 64 eindeutigen direkten/einfach-indirekten Allokationen und einem
 vollständig in das vorhandene 24-Sektor-Undo-Journal passenden Commit.

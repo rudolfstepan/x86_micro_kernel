@@ -3282,7 +3282,12 @@ durch den Status des ausführbaren Pakets aktualisiert.
    erneutem Dienstneustart, freigegebenen Inode-/Block-Bitmapbits und sauberen
    redundanten Journalheadern. Allgemeines EXT2-Create/Write/Replace,
    Verzeichnisse, Cross-Directory-Mutationen und größere beziehungsweise
-   nichtstandardmäßige Dateilayouts bleiben offen; `active_id` ist leer.
+   nichtstandardmäßige Dateilayouts bleiben offen. Der aktive Schnitt `N3e`
+   erweitert das vorhandene gleichverzeichnisige No-replace-Rename um
+   Record-Wachstum ausschließlich innerhalb desselben 512-Byte-
+   Publikationssektors: Quellentfernung, Donor-Split und vollständiger neuer
+   Eintrag bilden weiterhin genau eine alte-oder-neue Journalpublikation.
+   Cross-Sector, Cross-Directory, Replace und Verzeichnisse bleiben offen.
 12. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
    SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
    MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend

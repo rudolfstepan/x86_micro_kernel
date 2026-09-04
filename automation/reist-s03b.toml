@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N3e-ext2-same-sector-rename-growth"
 
 [policy]
 one_package_per_run = true
@@ -14619,6 +14619,58 @@ evidence = [
   "Negative host cases reject the journal inode, directories, link counts above one, metadata, parent-directory, journal, unallocated and duplicate blocks, special flags and the 64-block capacity before any write or flush. The existing symlink-only unlink entry remains present and continues to reject regular files with EOPNOTSUPP.",
   "The QEMU framebuffer package passed in 68 seconds with STORAGE.PRG at 188416 bytes, 40960 bytes below the unchanged 224 KiB bound. The real persistent EXT2 runtime passed in 104 seconds after RENAME moved the regular file, DEL removed it, a third Storage-Service generation confirmed absence, inode and block bitmap bits were clear, freed data bytes remained unchanged and both journal headers were CLEAN."
 ]
+
+[[packages]]
+id = "N3e-ext2-same-sector-rename-growth"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Grow EXT2 rename records inside one publication sector"
+scope = "Extend only the existing Storage operation 34 same-directory no-replace EXT2 rename so a native symbolic link or bounded regular file may move from its current directory record into existing free space or live-record slack in the same 512-byte publication sector. Preserve the fixed frame, operation number, client ABI, legacy Ring-0 parser, FAT fallback, inode, file data, allocation state and one-sector undo-journal publication. The source removal, donor-record split and complete destination header and name must all fit that source sector; malformed records, insufficient same-sector capacity, directories, overwrite, cross-directory and cross-sector relocation fail before media mutation. Prove normal completion and every bounded write and flush interruption for both symbolic links and regular files, retain the former in-place rename path, and exercise both growing renames on the persistent QEMU EXT2 image across Storage-Service restart with clean redundant journal headers. General create, write, replace, directory mutation and cross-sector or cross-directory rename remain later N3 packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "scripts/run_qemu_ext2_symlink.py",
+  "test/test_reist_vfs_symlink.py",
+  "test/test_reist_vfs_symlink_host.c",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_storage_service.py",
+  "test/test_user_program_toolchain.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md"
+]
+invariants = [
+  "the fixed append-only Storage operation 34 frame client ABI syscall numbers FAT fallback and existing in-place rename behavior remain unchanged",
+  "a growing rename accepts only an absent destination in the same directory whose complete new record source removal and donor split change exactly the source 512-byte publication sector",
+  "rename preserves the exact inode number inode bytes file bytes data-block pointers allocation bitmaps free counters and every unrelated directory entry",
+  "insufficient same-sector slack malformed records directories overwrite cross-directory and cross-sector relocation fail before any media write or flush",
+  "ACTIVE recovery exposes only the complete old name and COMMITTED recovery only the complete new name before both redundant journal headers become CLEAN",
+  "all scans transactions retries waits reads writes flushes paths and recovery work retain their existing fixed capacities and absolute deadlines",
+  "service crash stale generation interrupted media I O or malformed metadata yields either the complete old or new namespace and never both names namespace loss or partial record publication"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_namespace.py -v",
+  "python test/test_reist_vfs_symlink.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode vfs-symbolic-links"]
+stop_conditions = [
+  "a growing rename modifies more than the source publication sector an inode file byte allocation counter or unrelated directory entry",
+  "a directory overwrite cross-directory or cross-sector relocation can reach a media write or flush",
+  "interruption can expose both names neither recoverable name a partial destination record or a non-clean recovered journal",
+  "the implementation requires a new ABI operation Ring-0 filesystem parser unbounded traversal allocation or second publication sector",
+  "the real EXT2 runtime cannot grow both a symbolic-link and regular-file name across Storage-Service restart with clean journal headers",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fs: grow EXT2 rename records within one sector"
+evidence = []
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"
