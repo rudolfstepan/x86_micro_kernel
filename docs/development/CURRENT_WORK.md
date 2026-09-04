@@ -4,7 +4,15 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: keines. `N3b-ext2-symlink-namespace` ist abgeschlossen. Der
+Aktives Thema: `N3c-ext2-regular-rename`. Der nächste begrenzte N3-Schnitt
+erweitert die vorhandene gleichverzeichnisige EXT2-Rename-Transaktion auf
+reguläre Dateien. Operation 34, der feste Frame, der Ring-3-Client und der
+FAT-Fallback bleiben unverändert; ein akzeptierter Rename verändert genau
+einen vorhandenen Directory-Sektor und bewahrt Inode, Datenblöcke und
+Dateiinhalt. Verzeichnisse, Replace, Cross-Directory, Record-Wachstum und
+Unlink regulärer Dateien bleiben getrennte Pakete.
+
+`N3b-ext2-symlink-namespace` ist abgeschlossen. Der
 begrenzte N3-Schnitt ergänzt den in N3a eingeführten nativen EXT2-Symlinks um
 servicegebundenes `unlink` und gleichverzeichnisiges `rename`, ohne den alten
 Ring-0-EXT2-Parser zu erweitern. Die erste Rename-Teilmenge bleibt auf einen

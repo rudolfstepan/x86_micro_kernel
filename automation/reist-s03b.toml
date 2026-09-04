@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N3c-ext2-regular-rename"
 
 [policy]
 one_package_per_run = true
@@ -14497,6 +14497,62 @@ evidence = [
   "The final QEMU framebuffer package gate passed in 16 seconds. Its rebuilt STORAGE.PRG is 188416 bytes, 40960 bytes below the unchanged 224 KiB resident-rescue per-program bound; the Storage-specific O2 no-inline recipe is itself an incremental dependency.",
   "The final real EXT2 runtime gate passed in 77 seconds after DEL removed a native link, RENAME preserved another link's inode target under its new name, the Storage Service restarted, the mutations persisted, the target file remained intact and both redundant journal headers were CLEAN."
 ]
+
+[[packages]]
+id = "N3c-ext2-regular-rename"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Rename regular EXT2 files through the bounded Ring-3 namespace transaction"
+scope = "Extend only the existing Storage operation 34 rename path from native symbolic links to regular EXT2 files without changing the fixed frame, operation number, client ABI, legacy Ring-0 parser or FAT fallback. The accepted subset remains POSIX-shaped no-replace rename in one directory: source and absent destination must be representable by one existing 512-byte directory publication sector, and the transaction changes only that directory sector while preserving the exact inode, data-block pointers, file bytes and allocation counters. Directory sources, overwrite, cross-directory moves, record growth, unlink of regular files and general create/write/replace fail before media mutation with errno-compatible results. Rename validation and readback bind the original inode number, inode bytes, volume identity and final old-or-new namespace to the existing fixed EXT2 undo journal. Prove normal completion and every bounded write/flush interruption in the host fixture, preserve native symlink rename, reject unsupported object classes before effect, and exercise packaged RENAME.PRG on a persistent real QEMU EXT2 image across a Storage-Service restart with clean redundant journal headers."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/programs/storage_service.c",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "scripts/run_qemu_ext2_symlink.py",
+  "test/test_reist_vfs_namespace.py",
+  "test/test_reist_vfs_symlink.py",
+  "test/test_reist_vfs_symlink_host.c",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_storage_service.py",
+  "test/test_user_program_toolchain.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md"
+]
+invariants = [
+  "the fixed append-only Storage operation 34 frame client ABI syscall numbers and existing symbolic-link behavior remain unchanged",
+  "regular-file rename accepts only an absent same-directory destination that fits the source directory record and changes exactly one existing 512-byte publication sector",
+  "rename preserves the exact source inode number inode bytes data-block pointers file bytes allocation bitmaps free counters and unrelated directory entries",
+  "directory overwrite cross-directory record-growth unlink create write and replace cases fail before any media write or flush",
+  "ACTIVE recovery exposes the complete old name and COMMITTED recovery the complete new name before both redundant journal headers become CLEAN",
+  "the service validates the source class and readback identity before success and a non-EOPNOTSUPP failure never reaches the legacy mutation path",
+  "all walks transactions retries waits reads writes flushes paths and recovery work retain their existing fixed capacities and absolute deadlines",
+  "service crash stale generation interrupted media I O or malformed metadata yields either the old or new complete regular file and never partial success data mutation or namespace loss"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_namespace.py -v",
+  "python test/test_reist_vfs_symlink.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode vfs-symbolic-links"]
+stop_conditions = [
+  "regular-file rename changes an inode data block allocation counter unrelated entry or more than one namespace publication sector",
+  "a directory overwrite cross-directory move or record-growth case can reach a media write or flush",
+  "interruption can expose both names neither recoverable name changed file bytes or a non-clean recovered journal",
+  "the implementation requires a new ABI operation Ring-0 filesystem parser unbounded traversal or regular-file unlink allocation recovery",
+  "the real EXT2 runtime cannot rename and read the regular file across Storage-Service restart while preserving symlink behavior and clean journal headers",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fs: rename regular EXT2 files through Ring 3"
+evidence = []
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"
