@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
+active_id = "R3.6c-browser-interaction-and-images"
 
 [policy]
 one_package_per_run = true
@@ -11,8 +11,72 @@ external_writes = false
 push = false
 
 [[packages]]
-id = "R3.6b-vmware-pointer-pinned-mutex"
+id = "R3.6c-browser-interaction-and-images"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Make browser input, navigation, scrolling and bounded images usable"
+scope = "User-directed cohesive Ring-3 browser repair: isolate address/status retained painting from document painting, batch bounded input before paint, implement cursor editing, use the existing GUI range controller with standard scrollbar track/thumb/arrow behavior, activate links only on matching release and resolve RFC 3986 relative/query/fragment references including same-document anchors. Add bounded img metadata, alt fallback and aspect-preserving images through existing Surface buffers, reusing BMP/GIF decoders and pinned MIT stb_image for PNG/JPEG in a fixed-workspace browser-only adapter. Downloads remain separate CURL.PRG children with explicit byte, count and deadline budgets, generation checks and cleanup; malformed or exhausted image resources cannot replace the prior valid document or grant network/local-file authority. Preserve inert scripts and the later versioned IPC adapter to a separate quota-bound generation-scoped Ring-3 JavaScript service. No CSS engine, forms, video, animation playback, general HTML5 compatibility, kernel driver, syscall or Surface ABI expansion."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/gui/apps/browser/main.c",
+  "userspace/gui/apps/browser/browser_model.c",
+  "userspace/gui/apps/browser/browser_model.h",
+  "userspace/gui/apps/browser/browser_images.c",
+  "userspace/gui/apps/browser/browser_images.h",
+  "userspace/gui/apps/browser/compat/stdlib.h",
+  "userspace/gui/apps/browser/compat/string.h",
+  "userspace/gui/apps/browser/compat/assert.h",
+  "userspace/gui/include/reist/gui/html_document.h",
+  "userspace/gui/lib/html_document.c",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "Makefile",
+  "htdocs/index.html",
+  "htdocs/browser-test.html",
+  "htdocs/browser-test.bmp",
+  "third_party/stb_image.h",
+  "third_party/stb_image.sha256",
+  "third_party/README.md",
+  "test/test_gui_browser_source.py",
+  "test/test_html_document_host.c",
+  "test/test_browser_model_host.c",
+  "test/test_browser_images_host.c",
+  "test/test_browser_runtime_source.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "all parsing decoding layout and application policy remain in Ring 3 with fixed capacities and no new kernel or device authority",
+  "typing updates only address chrome and drains a bounded ordered event batch; no document raster or image upload on each character",
+  "scrollbar drag preserves thumb grab offset, release outside cancels capture and navigation only follows a matching link press/release",
+  "network documents cannot turn relative references into arbitrary local-file reads; schemes and resource limits are validated before side effects",
+  "resource exhaustion and failed downloads preserve the last valid document; close and cancellation reap owned child generations and release Surface buffers",
+  "scripts stay inert, dependency bytes are pinned and decoder allocation is bounded before decoding"
+]
+targeted_tests = [
+  "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_runtime_source.py -v",
+  "python test/test_gui_value_controls_source.py -v",
+  "python test/test_gui_surface_source.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga"]
+stop_conditions = [
+  "a required source file lies outside allowed_files or an unrelated change overlaps the package",
+  "resource bounds or Ring-3 containment require changing a kernel or Surface ABI",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix browser interaction navigation and bounded image rendering"
+evidence = []
+
+[[packages]]
+id = "R3.6b-vmware-pointer-pinned-mutex"
+status = "queued"
+deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
 risk = "high"
 title = "Restore bounded VMware pointer responsiveness after mutex recovery"
