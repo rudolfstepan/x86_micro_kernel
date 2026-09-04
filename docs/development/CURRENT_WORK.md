@@ -4,7 +4,16 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: keines. `N3f-ext2-cross-sector-rename` ist abgeschlossen. Der begrenzte Folgeschnitt
+Aktives Thema: `R3.6-surface-web-browser`. Der neue Ring-3-Surface-Client
+verwendet den vorhandenen, abgenommenen `CURL.PRG`-Transport mit festem
+64-KiB-Limit und rendert einen dokumentierten HTML-Teilsatz aus einem
+heapfreien, festkapazitiven Dokumentmodell. URL-Leiste, semantische
+Überschriften/Absätze/Listen/Links, Umbruch, Scrollen und Linknavigation werden
+begrenzt; CSS, JavaScript, Formulare und Medien bleiben ausdrücklich
+unsupported. Browser und Curl erhalten getrennte Fehlerdomänen, der Browser
+selbst keine rohe Netzwerk- oder TLS-Autorität.
+
+`N3f-ext2-cross-sector-rename` ist abgeschlossen. Der begrenzte Folgeschnitt
 erweitert gleichverzeichnisiges No-replace-Rename ausschließlich auf einen
 vorhandenen Zielrecord in einem zweiten 512-Byte-Sektor desselben EXT2-
 Directory-Blocks. Beide vollständigen Sektoren werden vor Planung validiert

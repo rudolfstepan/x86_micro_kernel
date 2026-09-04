@@ -3347,6 +3347,13 @@ durch den Status des ausführbaren Pakets aktualisiert.
     wenn N1 bis N7 abgeschlossen sind. Jeder Funktionsblock bleibt ein eigenes
     begrenztes Paket.
 
+**Explizit vorgezogener Produktschnitt:** `R3.6-surface-web-browser` ist auf
+Nutzerwunsch aktiv. Er bleibt als eigener Ring-3-Surface-Prozess außerhalb des
+Kerns, verwendet `CURL.PRG` als getrennte Transportdomäne und begrenzt HTML-
+Eingabe, Token, Dokumentelemente, Links, Verschachtelung, Layout und Rendering
+fest. Der erste Schnitt unterstützt semantischen Text und Links, nicht CSS,
+JavaScript, Formulare, Bilder oder allgemeine HTML5-Kompatibilität.
+
 **N1 abgeschlossen:** `N1-notepad-readonly-vfs` migriert genau den read-only
 Dokument-Ladepfad des Notepads auf generationgebundene Storage-Service-Objekte
 mit `READ|STAT`. Speichern und jede Mutation bleiben außerhalb des Pakets.
