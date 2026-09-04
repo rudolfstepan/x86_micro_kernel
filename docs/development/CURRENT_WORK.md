@@ -10,10 +10,11 @@ realen RFB-zu-xHCI-Trajektorie danach aber nicht innerhalb von 75 Sekunden.
 Seit der generationgenauen Mutex-Recovery registriert jede Cursor-Publikation
 den Display-Mutex unter dem globalen Task-Table-Lock, obwohl der kurze
 Cursorpfad bereits präemptionsgepinnt ist. Der Reparaturschnitt ergänzt eine
+lockfreie Validierung der bereits gepinnten lokalen Taskidentität sowie eine
 explizite nichtblockierende, bis zum finalen Unlock gepinnte Mutexakquisition
-für genau diesen Pfad und aktualisiert den veralteten Hover-Nachweis auf die
-aktuellen sieben Startmenüeinträge. Normale Mutexbesitzer bleiben vollständig
-generationgenau verfolgt.
+für genau diesen Pfad. Außerdem wird der veraltete Hover-Nachweis auf die
+aktuellen sieben Startmenüeinträge aktualisiert. Normale Mutexbesitzer bleiben
+vollständig generationgenau verfolgt.
 
 `R3.6a-browser-input-and-mutex-owner-recovery` ist abgeschlossen. Ein Klick in
 die Browser-Adressleiste ersetzt beim ersten Editieren jetzt den bisherigen
