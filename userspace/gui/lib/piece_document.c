@@ -3,6 +3,8 @@
  */
 #include "reist/gui/piece_document.h"
 
+#include "../../../include/reist/utf.h"
+
 static void bytes_copy(void *destination, const void *source, uint32_t size) {
     uint8_t *to = (uint8_t *)destination;
     const uint8_t *from = (const uint8_t *)source;
@@ -193,5 +195,157 @@ int reist_gui_piece_document_stream(const reist_gui_piece_document_t *document,
             done += amount;
         }
     }
+    return REIST_GUI_PIECE_OK;
+}
+
+static int wrap_index_valid(const reist_gui_piece_wrap_index_t *index) {
+    return index != 0 &&
+        index->api_version == REIST_GUI_PIECE_DOCUMENT_API_VERSION &&
+        index->struct_size == sizeof(*index) && index->columns != 0U &&
+        index->row_count != 0U &&
+        index->row_count <= REIST_GUI_PIECE_WRAP_INDEX_CAPACITY &&
+        index->scanned_offset <= index->document_size &&
+        index->complete <= 1U && index->row_offsets[0] == 0U;
+}
+
+static void wrap_hard_set(reist_gui_piece_wrap_index_t *index,
+                          uint32_t row, uint32_t hard) {
+    uint32_t mask = 1U << (row & 31U);
+    uint32_t *word = &index->hard_starts[row >> 5U];
+    if (hard) *word |= mask;
+    else *word &= ~mask;
+}
+
+static int wrap_append_row(reist_gui_piece_wrap_index_t *index,
+                           uint32_t offset, uint32_t hard) {
+    if (index->row_count == REIST_GUI_PIECE_WRAP_INDEX_CAPACITY)
+        return REIST_GUI_PIECE_ECAPACITY;
+    if (offset < index->row_offsets[index->row_count - 1U] ||
+        offset > index->document_size)
+        return REIST_GUI_PIECE_EINVAL;
+    uint32_t row = index->row_count++;
+    index->row_offsets[row] = offset;
+    wrap_hard_set(index, row, hard);
+    return REIST_GUI_PIECE_OK;
+}
+
+void reist_gui_piece_wrap_index_initialize(
+    reist_gui_piece_wrap_index_t *index, uint32_t columns,
+    uint32_t document_size) {
+    if (index == 0) return;
+    bytes_zero(index, sizeof(*index));
+    index->api_version = REIST_GUI_PIECE_DOCUMENT_API_VERSION;
+    index->struct_size = sizeof(*index);
+    index->columns = columns;
+    index->document_size = document_size;
+    index->row_count = 1U;
+    index->complete = document_size == 0U;
+    wrap_hard_set(index, 0U, 1U);
+}
+
+int reist_gui_piece_wrap_index_advance(
+    const reist_gui_piece_document_t *document,
+    reist_gui_piece_wrap_index_t *index, uint32_t byte_budget) {
+    if (!valid(document) || !wrap_index_valid(index) || byte_budget < 4U ||
+        index->document_size != document->size)
+        return REIST_GUI_PIECE_EINVAL;
+    if (index->complete) return 1;
+
+    uint8_t buffer[REIST_GUI_PIECE_IO_CAPACITY];
+    uint32_t amount = index->document_size - index->scanned_offset;
+    if (amount > sizeof(buffer)) amount = sizeof(buffer);
+    if (amount > byte_budget) amount = byte_budget;
+    if (reist_gui_piece_document_read(
+            document, index->scanned_offset, buffer, amount) != 0)
+        return REIST_GUI_PIECE_EIO;
+
+    uint32_t used = 0U;
+    while (used < amount) {
+        uint32_t absolute = index->scanned_offset + used;
+        uint32_t newline_bytes = 0U;
+        if (buffer[used] == '\r') {
+            if (used + 1U == amount && absolute + 1U < index->document_size)
+                break;
+            newline_bytes = used + 1U < amount && buffer[used + 1U] == '\n'
+                ? 2U : 1U;
+        } else if (buffer[used] == '\n') newline_bytes = 1U;
+        if (newline_bytes != 0U) {
+            int status = wrap_append_row(
+                index, absolute + newline_bytes, 1U);
+            if (status != 0) return status;
+            used += newline_bytes;
+            index->current_column = 0U;
+            index->current_row_bytes = 0U;
+            continue;
+        }
+
+        size_t consumed = 0U;
+        uint32_t scalar = 0U;
+        if (!reist_utf8_decode_one(
+                (const char *)buffer + used, amount - used,
+                &consumed, &scalar)) {
+            if (amount - used < 4U && absolute + amount - used <
+                    index->document_size)
+                break;
+            return REIST_GUI_PIECE_EINVAL;
+        }
+        if (scalar < 0x20U || (scalar >= 0x7FU && scalar <= 0x9FU))
+            return REIST_GUI_PIECE_EINVAL;
+        if (index->current_column == index->columns ||
+            consumed >= REIST_GUI_PIECE_WRAP_ROW_BYTE_CAPACITY -
+                index->current_row_bytes) {
+            int status = wrap_append_row(index, absolute, 0U);
+            if (status != 0) return status;
+            index->current_column = 0U;
+            index->current_row_bytes = 0U;
+        }
+        index->current_column++;
+        index->current_row_bytes += (uint32_t)consumed;
+        used += (uint32_t)consumed;
+    }
+    if (used == 0U) return REIST_GUI_PIECE_EINVAL;
+    index->scanned_offset += used;
+    if (index->scanned_offset == index->document_size) {
+        index->complete = 1U;
+        return 1;
+    }
+    return 0;
+}
+
+uint32_t reist_gui_piece_wrap_index_row_hard(
+    const reist_gui_piece_wrap_index_t *index, uint32_t row) {
+    if (!wrap_index_valid(index) || row >= index->row_count) return 0U;
+    return (index->hard_starts[row >> 5U] >> (row & 31U)) & 1U;
+}
+
+uint32_t reist_gui_piece_wrap_index_row_for_offset(
+    const reist_gui_piece_wrap_index_t *index, uint32_t byte_offset) {
+    if (!wrap_index_valid(index) || !index->complete ||
+        byte_offset > index->document_size) return UINT32_MAX;
+    uint32_t low = 0U, high = index->row_count;
+    while (low + 1U < high) {
+        uint32_t middle = low + (high - low) / 2U;
+        if (index->row_offsets[middle] <= byte_offset) low = middle;
+        else high = middle;
+    }
+    return low;
+}
+
+int reist_gui_piece_wrap_index_invalidate(
+    reist_gui_piece_wrap_index_t *index, uint32_t byte_offset,
+    uint32_t document_size) {
+    if (!wrap_index_valid(index) || !index->complete ||
+        byte_offset > index->document_size) return REIST_GUI_PIECE_EINVAL;
+    uint32_t row = reist_gui_piece_wrap_index_row_for_offset(
+        index, byte_offset);
+    if (row == UINT32_MAX) return REIST_GUI_PIECE_EINVAL;
+    while (row != 0U && !reist_gui_piece_wrap_index_row_hard(index, row))
+        --row;
+    index->row_count = row + 1U;
+    index->scanned_offset = index->row_offsets[row];
+    index->current_column = 0U;
+    index->current_row_bytes = 0U;
+    index->document_size = document_size;
+    index->complete = index->scanned_offset == document_size;
     return REIST_GUI_PIECE_OK;
 }

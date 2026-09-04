@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N2g2-notepad-stable-global-wrap"
+active_id = "R3.5a-desktop-icon-drag-layout"
 
 [policy]
 one_package_per_run = true
@@ -14892,7 +14892,7 @@ evidence = [
 
 [[packages]]
 id = "N2g2-notepad-stable-global-wrap"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Keep virtual-wrap extent stable across the complete Notepad document"
@@ -14935,11 +14935,15 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fix: stabilize global notepad wrapping"
-evidence = []
+evidence = [
+  "The final targeted gates passed 3 public text-editor checks and 18 Notepad checks, including the fixed-capacity Piece-Table wrap-index host behavior and unchanged text-editor ABI.",
+  "The final QEMU framebuffer package passed in 42 seconds with the append-only Piece wrap-index API and rebuilt Notepad program.",
+  "The real guest enabled RDRAND and a bounded checksum-valid DNS reply path, executed curl -o test.txt https://intracom.at, opened the resulting 16707-byte file, and passed stable beginning, middle, true-end and thumb-geometry checks while leaving virtual wrap active for the captured final frame."
+]
 
 [[packages]]
 id = "R3.5a-desktop-icon-drag-layout"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "medium"
 title = "Arrange filesystem-backed desktop icons and persist a bounded layout"

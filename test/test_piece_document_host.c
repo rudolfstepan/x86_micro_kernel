@@ -8,9 +8,9 @@ static const uint8_t original[] = "alpha-beta-gamma";
 static uint8_t output[128];
 static uint32_t output_used, read_calls;
 static int read_original(void *context, uint32_t offset, void *data, uint32_t size) {
-    (void)context; ++read_calls;
-    if (offset > sizeof(original) - 1U || size > sizeof(original) - 1U - offset) return -1;
-    memcpy(data, original + offset, size); return 0;
+    const uint8_t *source = context != 0 ? context : original;
+    ++read_calls;
+    memcpy(data, source + offset, size); return 0;
 }
 static int write_output(void *context, const void *data, uint32_t size) {
     (void)context;
@@ -42,5 +42,47 @@ int main(void) {
     output_used = 0U;
     assert(reist_gui_piece_document_stream(&document, write_output, 0) == 0);
     assert(output_used == 3U && memcmp(output, "new", 3U) == 0);
+
+    static const uint8_t wrapped_original[] =
+        "0123456789abcdefghij\n"
+        "\xC3\xA4\xC3\xB6\xC3\xBC-ende";
+    assert(reist_gui_piece_document_open(
+               &document, sizeof(wrapped_original) - 1U,
+               read_original, 0) == 0);
+    document.read_context = (void *)wrapped_original;
+    reist_gui_piece_wrap_index_t index;
+    reist_gui_piece_wrap_index_initialize(
+        &index, 10U, document.size);
+    while (!index.complete)
+        assert(reist_gui_piece_wrap_index_advance(
+                   &document, &index, 7U) >= 0);
+    assert(index.row_count == 3U);
+    assert(index.row_offsets[0] == 0U);
+    assert(index.row_offsets[1] == 10U);
+    assert(index.row_offsets[2] == 21U);
+    assert(reist_gui_piece_wrap_index_row_hard(&index, 2U) == 1U);
+    assert(reist_gui_piece_wrap_index_row_for_offset(&index, 15U) == 1U);
+
+    assert(reist_gui_piece_document_insert(&document, 5U, "XX", 2U) == 0);
+    assert(reist_gui_piece_wrap_index_invalidate(
+               &index, 5U, document.size) == 0);
+    assert(index.complete == 0U && index.row_count == 1U);
+    while (!index.complete)
+        assert(reist_gui_piece_wrap_index_advance(
+                   &document, &index, 11U) >= 0);
+    assert(index.row_count == 4U);
+    assert(index.row_offsets[index.row_count - 1U] == 23U);
+
+    static uint8_t capacity_original[REIST_GUI_PIECE_WRAP_INDEX_CAPACITY + 1U];
+    memset(capacity_original, 'x', sizeof(capacity_original));
+    assert(reist_gui_piece_document_open(
+               &document, sizeof(capacity_original), read_original, 0) == 0);
+    document.read_context = capacity_original;
+    reist_gui_piece_wrap_index_initialize(&index, 1U, document.size);
+    int capacity_status = 0;
+    while (!index.complete && capacity_status >= 0)
+        capacity_status = reist_gui_piece_wrap_index_advance(
+            &document, &index, REIST_GUI_PIECE_IO_CAPACITY);
+    assert(capacity_status == REIST_GUI_PIECE_ECAPACITY);
     return 0;
 }

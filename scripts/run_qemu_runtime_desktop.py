@@ -8,6 +8,7 @@ import binascii
 import pathlib
 import queue
 import re
+import socket
 import struct
 import subprocess
 import sys
@@ -19,9 +20,13 @@ import zlib
 from run_qemu_smoke import (
     QEMU_MUX_SWITCH,
     SHELL_PROMPT,
+    TCP_TEST_MAC,
+    TCP_TEST_TARGET,
     monitor_key_commands,
+    open_injection_listener,
     qemu_command,
     qemu_monitor_command,
+    serve_dns_a_query,
     stop_process,
 )
 from run_qemu_pci_audio import finalize_qemu_wave
@@ -50,6 +55,33 @@ HOVER_METRIC_KEYS = {
     "pointer_failures", "order_errors", "clock_errors",
 }
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+NOTEPAD_REFERENCE_HOST = "intracom.at"
+NOTEPAD_REFERENCE_QUESTION = b"\x08intracom\x02at\x00\x00\x01\x00\x01"
+
+
+def resolve_notepad_reference_ipv4(
+        deadline: float) -> tuple[bytes | None, str | None]:
+    """Resolve the exact Notepad reference host under a fixed host deadline."""
+    results: queue.Queue[tuple[bytes | None, str | None]] = queue.Queue(1)
+
+    def resolve() -> None:
+        try:
+            addresses = socket.getaddrinfo(
+                NOTEPAD_REFERENCE_HOST, 443,
+                socket.AF_INET, socket.SOCK_STREAM)
+            if not addresses:
+                results.put((None, "intracom.at returned no IPv4 address"))
+                return
+            results.put((socket.inet_aton(addresses[0][4][0]), None))
+        except OSError as error:
+            results.put((None, f"intracom.at resolution failed: {error}"))
+
+    threading.Thread(target=resolve, daemon=True).start()
+    try:
+        return results.get(timeout=min(
+            3.0, max(0.01, deadline - time.monotonic())))
+    except queue.Empty:
+        return None, "intracom.at resolution deadline expired"
 
 
 def validate_system_sound_wave(path: pathlib.Path) -> tuple[bool, str]:
@@ -765,8 +797,17 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
         audio_capture.unlink()
+    dns_listener = None
+    dns_connection = None
+    dns_port = None
+    if notepad_probe:
+        dns_listener, dns_port = open_injection_listener()
+        dns_listener.settimeout(10.0)
     command = qemu_command(
-        qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp)
+        qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp,
+        nic="rtl8139" if notepad_probe else "none",
+        injection_port=dns_port, hardware_entropy=notepad_probe,
+        public_dns=notepad_probe)
     normal_lifecycle_probe = not any((
         expect_failure, render_probe, surface_probe, notepad_probe,
         notepad_font_probe, control_probe, trash_context_probe,
@@ -797,6 +838,14 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                                stderr=subprocess.STDOUT, text=True,
                                encoding="utf-8", errors="replace", bufsize=0,
                                creationflags=QEMU_CREATION_FLAGS)
+    if dns_listener is not None:
+        try:
+            dns_connection, _ = dns_listener.accept()
+            dns_connection.settimeout(None)
+            dns_connection.setsockopt(
+                socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        finally:
+            dns_listener.close()
     assert process.stdout is not None
     output: queue.Queue[str] = queue.Queue()
     finished = threading.Event()
@@ -817,6 +866,60 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 supervised_boot_detected = True
                 break
             if SHELL_PROMPT in text:
+                if notepad_probe:
+                    download_offset = len(text)
+                    reference_ip, resolve_error = \
+                        resolve_notepad_reference_ipv4(deadline)
+                    if resolve_error is not None or reference_ip is None or \
+                            dns_connection is None:
+                        raise RuntimeError(resolve_error or
+                                           "Notepad DNS peer unavailable")
+                    send_command(
+                        process, "curl -o test.txt https://intracom.at")
+                    dns_error = serve_dns_a_query(
+                        dns_connection, deadline, TCP_TEST_TARGET,
+                        TCP_TEST_MAC, NOTEPAD_REFERENCE_QUESTION,
+                        reference_ip, True, False)
+                    if dns_error is not None:
+                        raise RuntimeError(
+                            "intracom.at DNS injection failed: " + dns_error)
+                    download_deadline = min(
+                        deadline, time.monotonic() + 60.0)
+                    while time.monotonic() < download_deadline:
+                        drain(output, transcript)
+                        download_tail = "".join(transcript)[download_offset:]
+                        if SHELL_PROMPT in download_tail:
+                            if ("Bad command or program file." in
+                                    download_tail or "curl:" in download_tail):
+                                raise RuntimeError(
+                                    "curl could not download intracom.at; "
+                                    "guest tail:\n" +
+                                    download_tail[-2000:].replace("\r", ""))
+                            break
+                        time.sleep(0.02)
+                    else:
+                        raise RuntimeError(
+                            "curl -o test.txt https://intracom.at timed out")
+                    stat_offset = len("".join(transcript))
+                    send_command(process, "stat test.txt")
+                    while time.monotonic() < download_deadline:
+                        drain(output, transcript)
+                        stat_tail = "".join(transcript)[stat_offset:]
+                        if SHELL_PROMPT in stat_tail:
+                            if "Bad command or program file." in stat_tail:
+                                raise RuntimeError(
+                                    "downloaded test.txt could not be stated")
+                            stat_lines = [line.strip() for line in
+                                          stat_tail.replace("\r", "").split("\n")
+                                          if line.strip() and
+                                          "sendkey" not in line and
+                                          "(qemu)" not in line]
+                            print("notepad-reference-stat: " +
+                                  " | ".join(stat_lines[-8:]))
+                            break
+                        time.sleep(0.02)
+                    else:
+                        raise RuntimeError("stat test.txt timed out")
                 if render_probe:
                     command_name = "desktop.prg --render-probe"
                 elif hover_probe:
@@ -1186,10 +1289,16 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         if "DESKTOP_NOTEPAD_FAIL" in probe_text:
                             raise RuntimeError("Notepad probe launch failed")
                         if "NOTEPAD_PIECE_DOCUMENT_FAIL" in probe_text:
-                            marker = re.findall(
+                            failures = re.findall(
+                                r"NOTEPAD_GLOBAL_WRAP_FAIL[^\r\n]*",
+                                probe_text)
+                            marker = failures[-1] if failures else re.findall(
                                 r"NOTEPAD_PIECE_DOCUMENT_FAIL[^\r\n]*",
                                 probe_text)[-1]
-                            raise RuntimeError(f"Large Notepad document failed: {marker}")
+                            raise RuntimeError(
+                                f"Large Notepad document failed: {marker}; "
+                                "guest tail:\n" +
+                                probe_text[-4000:].replace("\r", ""))
                         if ("notepad: Surface-Frame dauerhaft" in probe_text or
                                 "notepad: Surface-Frame konnte" in probe_text or
                                 "notepad: Surface konnte" in probe_text):
@@ -1202,9 +1311,12 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         if ("NOTEPAD_SURFACE_READY" in probe_text and
                                 "NOTEPAD_SURFACE_DOCUMENT_READY" in
                                 probe_text and
+                                "NOTEPAD_REFERENCE_DOCUMENT_READY" in
+                                probe_text and
                                 "NOTEPAD_DOCUMENT_NAVIGATION_READY" in
                                 probe_text and
                                 "NOTEPAD_VIRTUAL_WRAP_READY" in probe_text and
+                                "NOTEPAD_GLOBAL_WRAP_STABLE" in probe_text and
                                 "NOTEPAD_PIECE_DOCUMENT_READY" in probe_text):
                             time.sleep(0.2)
                             capture_screenshot(process, screenshot, deadline)
@@ -1421,6 +1533,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         tail = "".join(transcript)[-8000:].replace("\r", "")
         raise RuntimeError(f"DESKTOP_OK marker not observed; guest tail:\n{tail}")
     finally:
+        if dns_connection is not None:
+            dns_connection.close()
         stop_process(process)
 
 

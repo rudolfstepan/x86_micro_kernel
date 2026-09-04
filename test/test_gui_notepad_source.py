@@ -188,6 +188,34 @@ class GuiNotepadSourceTests(unittest.TestCase):
         self.assertIn("uint32_t horizontal_maximum = state->virtual_wrap",
                       self.source)
 
+    def test_virtual_wrap_uses_one_stable_complete_document_index(self):
+        header = (ROOT / "userspace/gui/include/reist/gui/piece_document.h").read_text(
+            encoding="utf-8")
+        source = (ROOT / "userspace/gui/lib/piece_document.c").read_text(
+            encoding="utf-8")
+        self.assertIn("REIST_GUI_PIECE_WRAP_INDEX_CAPACITY 16384U", header)
+        for contract in (
+            "reist_gui_piece_wrap_index_initialize",
+            "reist_gui_piece_wrap_index_advance",
+            "reist_gui_piece_wrap_index_invalidate",
+            "reist_gui_piece_wrap_index_row_for_offset",
+        ):
+            self.assertIn(contract, header)
+            self.assertIn(contract, source)
+        self.assertIn("wrap_index", self.source)
+        self.assertIn("window_first_visual_row", self.source)
+        self.assertIn("materialize_wrapped_rows", self.source)
+        self.assertIn("NOTEPAD_WRAP_INDEX_DEADLINE_MS", self.source)
+        self.assertIn("x86os_monotonic_ms", self.source)
+        self.assertIn("state->wrap_index.row_count", self.source)
+        self.assertIn("state->viewport.visible_lines", self.source)
+        self.assertIn("NOTEPAD_GLOBAL_WRAP_STABLE", self.source)
+        runtime = (ROOT / "scripts/run_qemu_runtime_desktop.py").read_text(
+            encoding="utf-8")
+        self.assertIn("curl -o test.txt https://intracom.at", runtime)
+        self.assertIn("NOTEPAD_REFERENCE_DOCUMENT_READY", runtime)
+        self.assertIn("NOTEPAD_GLOBAL_WRAP_STABLE", runtime)
+
     def test_scroll_drag_uses_cached_viewport_and_coalesced_redraw(self):
         start = self.source.index(
             "static uint32_t apply_scroll_value(",
