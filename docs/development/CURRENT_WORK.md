@@ -4,12 +4,16 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: `N3e-ext2-same-sector-rename-growth`. Der begrenzte Schnitt
-erweitert das vorhandene gleichverzeichnisige No-replace-Rename ausschließlich
-um längere Zielnamen, wenn Quellentfernung, Donor-Record-Split und vollständiger
-Ziel-Record in genau denselben 512-Byte-Publikationssektor passen. Inode,
-Dateidaten, Allokationen, ABI und Ring 0 bleiben unverändert; Cross-Sector,
-Cross-Directory, Replace und Verzeichnisse scheitern vor Medienwirkung.
+Aktives Thema: keines. `N3e-ext2-same-sector-rename-growth` ist abgeschlossen.
+Das vorhandene gleichverzeichnisige No-replace-Rename kann einen längeren
+Zielnamen nun in einen freien EXT2-Record oder `rec_len`-Slack umplatzieren,
+wenn Quellentfernung, Donor-Split sowie vollständiger Zielheader und -name in
+genau denselben 512-Byte-Publikationssektor passen. Inode, Dateidaten,
+Allokationen, ABI und Ring 0 bleiben unverändert; Cross-Sector,
+Cross-Directory, Replace und Verzeichnisse scheitern vor Medienwirkung. Alle
+38 Targeted-Checks, der 80-Sekunden-QEMU-Framebuffer-Paketbuild und der finale
+110-Sekunden-EXT2-Lauf mit beiden wachsenden Renames, Dienstneustarts,
+anschließendem Unlink und sauberen Journalheadern sind bestanden.
 
 `N3d-ext2-regular-unlink` ist abgeschlossen. Operation
 34 entfernt nun ohne ABI-Änderung reguläre EXT2-Dateien mit Linkzähler eins,

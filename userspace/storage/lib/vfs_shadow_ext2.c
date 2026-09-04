@@ -2116,6 +2116,8 @@ static int ext2_symlink_request(ext2_request_t *request,
 
 typedef struct {
     uint32_t sector;
+    uint32_t sector_first_offset;
+    uint32_t sector_block_remaining;
     uint32_t local_offset;
     uint32_t record_length;
     uint32_t name_length;
@@ -2165,7 +2167,14 @@ static int ext2_directory_locate(
         uint32_t remaining = size - logical * volume->block_size;
         uint32_t limit = remaining < volume->block_size
             ? remaining : volume->block_size;
+        uint32_t sector_index = UINT32_MAX;
+        uint32_t sector_first_offset = 0U;
         for (uint32_t offset = 0U; offset < limit;) {
+            uint32_t entry_sector = offset / X86OS_STORAGE_BLOCK_SIZE;
+            if (entry_sector != sector_index) {
+                sector_index = entry_sector;
+                sector_first_offset = offset % X86OS_STORAGE_BLOCK_SIZE;
+            }
             if (limit - offset < EXT2_DIRECTORY_HEADER_SIZE) return -5;
             uint32_t inode_number = ext2_get32(data + offset);
             uint32_t record = ext2_get16(data + offset + 4U);
@@ -2183,6 +2192,9 @@ static int ext2_directory_locate(
                     X86OS_STORAGE_BLOCK_SIZE) return -28;
                 location->sector = block * volume->sectors_per_block +
                     offset / X86OS_STORAGE_BLOCK_SIZE;
+                location->sector_first_offset = sector_first_offset;
+                location->sector_block_remaining = limit -
+                    entry_sector * X86OS_STORAGE_BLOCK_SIZE;
                 location->local_offset = local;
                 location->record_length = record;
                 location->name_length = found_length;
@@ -2341,6 +2353,101 @@ static int ext2_plan_directory_rename(
     else
         ext2_put16(data + local + 6U, (uint16_t)new_length);
     ext2_copy(data + local + 8U, new_name, new_length);
+    return 0;
+}
+
+static int ext2_plan_directory_relocate(
+        ext2_shadow_volume_t *volume,
+        const ext2_directory_location_t *location, const char *old_name,
+        const char *new_name, uint32_t new_length) {
+    if (volume == 0 || location == 0 || old_name == 0 || new_name == 0 ||
+        !ext2_component_valid(new_name, new_length) ||
+        location->sector_first_offset >= X86OS_STORAGE_BLOCK_SIZE ||
+        location->sector_block_remaining < EXT2_DIRECTORY_HEADER_SIZE ||
+        location->local_offset + EXT2_DIRECTORY_HEADER_SIZE +
+            location->name_length > X86OS_STORAGE_BLOCK_SIZE)
+        return -28;
+    uint32_t required = ext2_directory_record_size(new_length);
+    uint8_t current[X86OS_STORAGE_BLOCK_SIZE];
+    int status = ext2_read_sector(volume, location->sector, current);
+    if (status != 0) return status;
+    uint32_t source = location->local_offset;
+    if (ext2_get32(current + source) != location->inode_number ||
+        ext2_get16(current + source + 4U) != location->record_length ||
+        !ext2_name_equal(
+            current + source + 8U, location->name_length, old_name))
+        return -5;
+
+    uint32_t donor = UINT32_MAX;
+    uint32_t destination = 0U;
+    uint32_t donor_used = 0U;
+    uint32_t destination_record = 0U;
+    for (uint32_t cursor = location->sector_first_offset;
+         cursor < X86OS_STORAGE_BLOCK_SIZE;) {
+        if (cursor >= location->sector_block_remaining ||
+            X86OS_STORAGE_BLOCK_SIZE - cursor <
+                EXT2_DIRECTORY_HEADER_SIZE ||
+            location->sector_block_remaining - cursor <
+                EXT2_DIRECTORY_HEADER_SIZE)
+            break;
+        uint32_t inode_number = ext2_get32(current + cursor);
+        uint32_t record = ext2_get16(current + cursor + 4U);
+        uint32_t name_length = volume->has_file_type != 0U
+            ? current[cursor + 6U]
+            : ext2_get16(current + cursor + 6U);
+        if (record < EXT2_DIRECTORY_HEADER_SIZE || (record & 3U) != 0U ||
+            record > location->sector_block_remaining - cursor ||
+            name_length > 255U ||
+            name_length > record - EXT2_DIRECTORY_HEADER_SIZE ||
+            (inode_number != 0U && inode_number > volume->inodes_count))
+            return -5;
+        uint32_t used = inode_number == 0U ? 0U
+            : ext2_directory_record_size(name_length);
+        uint32_t new_offset = inode_number == 0U ? cursor : cursor + used;
+        uint32_t available = inode_number == 0U ? record : record - used;
+        if (cursor != source && available >= required &&
+            new_offset <= X86OS_STORAGE_BLOCK_SIZE - required) {
+            donor = cursor;
+            destination = new_offset;
+            donor_used = used;
+            destination_record = available;
+            break;
+        }
+        if (record > UINT32_MAX - cursor) return -5;
+        cursor += record;
+    }
+    if (donor == UINT32_MAX) return -28;
+
+    uint8_t *planned = 0;
+    status = ext2_transaction_sector(
+        volume, location->sector, 1U, &planned);
+    if (status != 0) return status;
+    for (uint32_t index = 0U; index < X86OS_STORAGE_BLOCK_SIZE; ++index)
+        if (planned[index] != current[index]) return -11;
+    uint8_t file_type = volume->has_file_type != 0U
+        ? planned[source + 7U] : 0U;
+    if (donor_used != 0U)
+        ext2_put16(planned + donor + 4U, (uint16_t)donor_used);
+    ext2_zero(planned + destination, required);
+    ext2_put32(planned + destination, location->inode_number);
+    ext2_put16(planned + destination + 4U,
+               (uint16_t)destination_record);
+    if (volume->has_file_type != 0U) {
+        planned[destination + 6U] = (uint8_t)new_length;
+        planned[destination + 7U] = file_type;
+    } else {
+        ext2_put16(planned + destination + 6U, (uint16_t)new_length);
+    }
+    ext2_copy(planned + destination + 8U, new_name, new_length);
+
+    ext2_put32(planned + source, 0U);
+    if (volume->has_file_type != 0U) {
+        planned[source + 6U] = 0U;
+        planned[source + 7U] = 0U;
+    } else {
+        ext2_put16(planned + source + 6U, 0U);
+    }
+    ext2_zero(planned + source + 8U, location->name_length);
     return 0;
 }
 
@@ -2543,6 +2650,12 @@ static int ext2_rename_request(ext2_request_t *request,
     status = ext2_plan_directory_rename(
         &volume, &location, source_name, destination_name,
         destination_name_length);
+    if (status == -28) {
+        ext2_transaction_reset();
+        status = ext2_plan_directory_relocate(
+            &volume, &location, source_name, destination_name,
+            destination_name_length);
+    }
     if (status != 0 || ext2_transaction.count != 1U)
         return status != 0 ? status : -5;
     status = ext2_namespace_finish(request, &volume, &journal, sequence);

@@ -262,30 +262,37 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
         command(f"readlink {MOUNT}/relative-link",
                 ("readlink: path is not a readable symbolic link",))
         command(f"cat {MOUNT}/target.txt", (PAYLOAD,))
-        command(f"rename {MOUNT}/absolute-link {MOUNT}/renamed-link",
+        command(f"rename {MOUNT}/absolute-link {MOUNT}/symbolic-link-long",
                 forbidden=("rename: operation unsupported or failed",))
         command(f"readlink {MOUNT}/absolute-link",
                 ("readlink: path is not a readable symbolic link",))
-        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
+        command(f"readlink {MOUNT}/symbolic-link-long",
+                (MOUNT + "/target.txt",))
         command(f"cat {MOUNT}/target.txt", (PAYLOAD,))
         command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
-        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
+        command(f"readlink {MOUNT}/symbolic-link-long",
+                (MOUNT + "/target.txt",))
         command(f"readlink {MOUNT}/chain-link", ("relative-link",))
         command(f"cat {MOUNT}/chain-link", ("cat: cannot open file",))
-        command(f"rename {MOUNT}/target.txt {MOUNT}/moved.txt",
+        command(f"rename {MOUNT}/target.txt {MOUNT}/regular-long.txt",
                 forbidden=("rename: operation unsupported or failed",))
         command(f"cat {MOUNT}/target.txt", ("cat: cannot open file",))
-        command(f"cat {MOUNT}/moved.txt", (PAYLOAD,))
+        command(f"cat {MOUNT}/regular-long.txt", (PAYLOAD,))
         command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
-        command(f"cat {MOUNT}/moved.txt", (PAYLOAD,))
-        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
-        command(f"cat {MOUNT}/renamed-link", ("cat: cannot open file",))
-        command(f"del {MOUNT}/moved.txt",
+        command(f"cat {MOUNT}/regular-long.txt", (PAYLOAD,))
+        command(f"readlink {MOUNT}/symbolic-link-long",
+                (MOUNT + "/target.txt",))
+        command(f"cat {MOUNT}/symbolic-link-long",
+                ("cat: cannot open file",))
+        command(f"del {MOUNT}/regular-long.txt",
                 forbidden=("del: file not found or cannot be removed",))
-        command(f"cat {MOUNT}/moved.txt", ("cat: cannot open file",))
+        command(f"cat {MOUNT}/regular-long.txt",
+                ("cat: cannot open file",))
         command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
-        command(f"cat {MOUNT}/moved.txt", ("cat: cannot open file",))
-        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
+        command(f"cat {MOUNT}/regular-long.txt",
+                ("cat: cannot open file",))
+        command(f"readlink {MOUNT}/symbolic-link-long",
+                (MOUNT + "/target.txt",))
     except (OSError, RuntimeError, ValueError) as caught:
         error = str(caught)
     finally:

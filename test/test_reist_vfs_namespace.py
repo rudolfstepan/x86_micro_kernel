@@ -87,11 +87,11 @@ class ReistVfsNamespaceTests(unittest.TestCase):
 
     def test_runtime_expects_successful_final_component_mutations(self):
         runner = read("scripts/run_qemu_ext2_symlink.py")
-        self.assertIn("renamed-link", runner)
+        self.assertIn("symbolic-link-long", runner)
         self.assertIn("readlink", runner)
         self.assertIn("del", runner)
         self.assertIn("svcctl restart 5", runner)
-        self.assertIn("moved.txt", runner)
+        self.assertIn("regular-long.txt", runner)
         self.assertIn("regular EXT2 inode was not cleared", runner)
         self.assertIn("regular EXT2 data block changed during unlink", runner)
 

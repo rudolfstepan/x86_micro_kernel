@@ -180,6 +180,32 @@ static void initialize(context_t *context) {
               (uint16_t)(BLOCK_SIZE - offset));
 }
 
+static void initialize_without_source_sector_slack(context_t *context) {
+    initialize(context);
+    uint8_t *root = block_at(context, 21U);
+    uint32_t cursor = 0U;
+    while (cursor < X86OS_STORAGE_BLOCK_SIZE) {
+        uint32_t record = read16(root + cursor + 4U);
+        uint32_t name_length = root[cursor + 6U];
+        if (name_length == strlen(".reist-symlink-journal") &&
+            memcmp(root + cursor + 8U, ".reist-symlink-journal",
+                   name_length) == 0)
+            break;
+        cursor += record;
+    }
+    uint16_t journal_record = record_size(
+        (uint32_t)strlen(".reist-symlink-journal"));
+    put16(root + cursor + 4U, journal_record);
+    cursor += journal_record;
+    char padding[256U];
+    memset(padding, 'p', sizeof(padding) - 1U);
+    padding[sizeof(padding) - 1U] = '\0';
+    add_entry(root, cursor, 14U, padding, 7U,
+              (uint16_t)(X86OS_STORAGE_BLOCK_SIZE - cursor));
+    add_entry(root, X86OS_STORAGE_BLOCK_SIZE, 0U, "", 0U,
+              X86OS_STORAGE_BLOCK_SIZE);
+}
+
 static void allocate_block(context_t *context, uint32_t block) {
     uint32_t bit = block - 1U;
     block_at(context, 3U)[bit / 8U] |=
@@ -449,6 +475,9 @@ static int recover_rename(context_t *context, const char *source,
     CHECK(read16(block_at(context, 2U) + 14U) == 106U);
     CHECK(read32(block_at(context, 1U) + 12U) == 216U);
     CHECK(read16(block_at(context, 2U) + 12U) == 216U);
+    for (uint32_t index = X86OS_STORAGE_BLOCK_SIZE;
+         index < BLOCK_SIZE; ++index)
+        CHECK(block_at(context, 21U)[index] == 0U);
     return 0;
 }
 
@@ -488,6 +517,9 @@ static int recover_regular_rename(context_t *context, const char *source,
     CHECK(read16(block_at(context, 2U) + 12U) == 216U);
     CHECK(read32(block_at(context, 25U) + 8U) == 0U);
     CHECK(read32(block_at(context, 25U) + 512U + 8U) == 0U);
+    for (uint32_t index = X86OS_STORAGE_BLOCK_SIZE;
+         index < BLOCK_SIZE; ++index)
+        CHECK(block_at(context, 21U)[index] == 0U);
     return 0;
 }
 
@@ -744,13 +776,16 @@ int main(void) {
     CHECK(rename_entry(
         &context, "/mnt/ext2/dir",
         "/mnt/ext2/dir-new") == -95);
+    initialize_without_source_sector_slack(&context);
     uint32_t rename_reject_writes = context.writes;
+    uint32_t rename_reject_flushes = context.flushes;
     CHECK(rename_entry(
-        &context, "/mnt/ext2/renamed-link",
-        "/mnt/ext2/this-name-does-not-fit") == -28);
+        &context, "/mnt/ext2/absolute-link",
+        "/mnt/ext2/renamed-symbolic-link-long") == -28);
     CHECK(context.writes == rename_reject_writes);
+    CHECK(context.flushes == rename_reject_flushes);
     CHECK(readlink_path(
-        &context, "/mnt/ext2/renamed-link", target, &length) == 0);
+        &context, "/mnt/ext2/absolute-link", target, &length) == 0);
 
     const char *failure_targets[2U] = {"target.txt", long_target};
     const char *failure_paths[2U] = {
@@ -811,7 +846,7 @@ int main(void) {
     initialize(&context);
     CHECK(rename_entry(
         &context, "/mnt/ext2/absolute-link",
-        "/mnt/ext2/renamed-link") == 0);
+        "/mnt/ext2/renamed-symbolic-link-long") == 0);
     uint32_t rename_writes = context.writes;
     uint32_t rename_flushes = context.flushes;
     for (uint32_t failure = 0U; failure < rename_writes; ++failure) {
@@ -819,22 +854,24 @@ int main(void) {
         context.fail_write = failure;
         int renamed = rename_entry(
             &context, "/mnt/ext2/absolute-link",
-            "/mnt/ext2/renamed-link");
+            "/mnt/ext2/renamed-symbolic-link-long");
         CHECK(renamed == 0 || renamed == -5);
         CHECK(recover_rename(
             &context, "/mnt/ext2/absolute-link",
-            "/mnt/ext2/renamed-link", "/mnt/ext2/target.txt") == 0);
+            "/mnt/ext2/renamed-symbolic-link-long",
+            "/mnt/ext2/target.txt") == 0);
     }
     for (uint32_t failure = 0U; failure < rename_flushes; ++failure) {
         initialize(&context);
         context.fail_flush = failure;
         int renamed = rename_entry(
             &context, "/mnt/ext2/absolute-link",
-            "/mnt/ext2/renamed-link");
+            "/mnt/ext2/renamed-symbolic-link-long");
         CHECK(renamed == 0 || renamed == -5);
         CHECK(recover_rename(
             &context, "/mnt/ext2/absolute-link",
-            "/mnt/ext2/renamed-link", "/mnt/ext2/target.txt") == 0);
+            "/mnt/ext2/renamed-symbolic-link-long",
+            "/mnt/ext2/target.txt") == 0);
     }
 
     initialize(&context);
@@ -850,19 +887,31 @@ int main(void) {
     CHECK(rename_entry(
         &context, "/mnt/ext2/target.txt",
         "/mnt/ext2/dir/moved.txt") == -18);
-    CHECK(rename_entry(
-        &context, "/mnt/ext2/target.txt",
-        "/mnt/ext2/regular-name-too-long") == -28);
     CHECK(context.writes == regular_reject_writes);
     CHECK(context.flushes == regular_reject_flushes);
     CHECK(memcmp(inode_at(&context, 12U), regular_inode, 128U) == 0);
     CHECK(memcmp(block_at(&context, 22U), regular_data, BLOCK_SIZE) == 0);
+    initialize_without_source_sector_slack(&context);
+    regular_reject_writes = context.writes;
+    regular_reject_flushes = context.flushes;
     CHECK(rename_entry(
-        &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt") == 0);
+        &context, "/mnt/ext2/target.txt",
+        "/mnt/ext2/regular-file-renamed-long.txt") == -28);
+    CHECK(context.writes == regular_reject_writes);
+    CHECK(context.flushes == regular_reject_flushes);
+    CHECK(stat_path(&context, "/mnt/ext2/target.txt", &info) == 0);
+
+    initialize(&context);
+    memcpy(regular_inode, inode_at(&context, 12U), sizeof(regular_inode));
+    memcpy(regular_data, block_at(&context, 22U), sizeof(regular_data));
+    CHECK(rename_entry(
+        &context, "/mnt/ext2/target.txt",
+        "/mnt/ext2/regular-file-renamed-long.txt") == 0);
     uint32_t regular_rename_writes = context.writes;
     uint32_t regular_rename_flushes = context.flushes;
     CHECK(recover_regular_rename(
-        &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt",
+        &context, "/mnt/ext2/target.txt",
+        "/mnt/ext2/regular-file-renamed-long.txt",
         regular_inode, regular_data) == 0);
     for (uint32_t failure = 0U;
          failure < regular_rename_writes; ++failure) {
@@ -873,10 +922,12 @@ int main(void) {
                sizeof(regular_data));
         context.fail_write = failure;
         int renamed = rename_entry(
-            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt");
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt");
         CHECK(renamed == 0 || renamed == -5);
         CHECK(recover_regular_rename(
-            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt",
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt",
             regular_inode, regular_data) == 0);
     }
     for (uint32_t failure = 0U;
@@ -888,10 +939,12 @@ int main(void) {
                sizeof(regular_data));
         context.fail_flush = failure;
         int renamed = rename_entry(
-            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt");
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt");
         CHECK(renamed == 0 || renamed == -5);
         CHECK(recover_regular_rename(
-            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt",
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt",
             regular_inode, regular_data) == 0);
     }
 

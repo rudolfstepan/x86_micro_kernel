@@ -73,6 +73,7 @@ class ReistVfsSymlinkTests(unittest.TestCase):
                 "EXT2_JOURNAL_STATE_ACTIVE",
                 "EXT2_JOURNAL_STATE_COMMITTED",
                 "ext2_journal_restore", "ext2_transaction_verify",
+                "ext2_plan_directory_relocate", "sector_first_offset",
                 "REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL",
                 "components >= REIST_VFS_SHADOW_EXT2_MAX_COMPONENTS",
                 "publications != 1U", "current_crc != header->old_crc",

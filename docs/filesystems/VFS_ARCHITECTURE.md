@@ -150,12 +150,14 @@ einschließlich Indirect-Block besitzen. Sparse-, EA-, Sonderflag-, Double-/
 Triple-Indirect-, Journal-, Directory- und Strukturblockfälle scheitern ebenso
 wie Journal-Kapazitätsüberschreitungen vor dem ersten Medienwrite. `rename` ist no-replace und
 akzeptiert Symlinks sowie reguläre Dateien, aber nur Quell- und Zielnamen
-desselben Verzeichnisses, wenn der neue Name in den vorhandenen Record und denselben
-512-Byte-Sektor passt. Der reguläre Dateipfad publiziert ausschließlich diesen
+desselben Verzeichnisses. Ein längerer Name darf in einen freien EXT2-Record
+oder in den `rec_len`-Slack eines Live-Records umplatziert werden, wenn
+Quellentfernung, Donor-Split sowie vollständiger Zielheader und -name in
+demselben 512-Byte-Sektor liegen. Der reguläre Dateipfad publiziert ausschließlich diesen
 Directory-Sektor und verifiziert danach ursprüngliche Inodenummer und alle
 Inodebytes; Datenblockzeiger, Dateibytes, Bitmaps und freie Zähler bleiben
-unverändert. Cross-Directory, Verzeichnisse, vorhandene Ziele und wachsender
-Layoutbedarf werden vor dem ersten Write abgewiesen.
+unverändert. Cross-Directory, Cross-Sector-Umplatzierung, Verzeichnisse und
+vorhandene Ziele werden vor dem ersten Write abgewiesen.
 
 Beide Mutationen verwenden das vorhandene 26-Sektor-Undo-Journal und genau
 einen Directory-Publikationssektor. Nicht sichtbare Inode-, Bitmap- und

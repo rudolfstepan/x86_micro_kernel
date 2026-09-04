@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3e-ext2-same-sector-rename-growth"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -14622,7 +14622,7 @@ evidence = [
 
 [[packages]]
 id = "N3e-ext2-same-sector-rename-growth"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Grow EXT2 rename records inside one publication sector"
@@ -14631,6 +14631,7 @@ allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/storage/lib/vfs_shadow_ext2.c",
   "scripts/run_qemu_ext2_symlink.py",
+  "test/test_reist_vfs_namespace.py",
   "test/test_reist_vfs_symlink.py",
   "test/test_reist_vfs_symlink_host.c",
   "test/test_reist_vfs_shadow_ext2.py",
@@ -14670,7 +14671,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fs: grow EXT2 rename records within one sector"
-evidence = []
+evidence = [
+  "All five targeted groups passed with 38 checks across the unchanged namespace ABI and client, the EXT2 parser and transaction engine, Storage Service dispatch and the complete userspace toolchain. After shortening only the runtime dialogue, its affected five-check namespace source contract was rerun and passed.",
+  "The host matrix proves normal and every write or flush interruption for growing symbolic-link and regular-file renames. Recovery exposes exactly one complete old-or-new name, preserves inode and file bytes plus allocation counters, leaves the second directory sector byte-identical, and a fixture whose usable slack exists only in the following sector rejects both object classes before any write or flush.",
+  "The QEMU framebuffer package gate passed in 80 seconds. STORAGE.PRG remains 188416 bytes, 40960 bytes below the unchanged 224 KiB bound; operation 34, its fixed frame, FAT fallback and the Ring-0 parser did not change.",
+  "The final persistent QEMU EXT2 runtime passed in 110 seconds: RENAME grew both a native symbolic-link name and a regular-file name directly, readback survived Storage-Service restarts, DEL removed the regular file, and both redundant journal headers were CLEAN. An earlier overlong dialogue reached its final redundant readlink only after the 180-second deadline; the focused shorter dialogue then encountered one unrelated early FAT program-load validation panic, while the clean-process rerun of the identical image completed successfully."
+]
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"

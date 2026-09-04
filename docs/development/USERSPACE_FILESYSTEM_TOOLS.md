@@ -109,8 +109,10 @@ höchstens 64 validierten direkten/einfach-indirekten Allokationen. Sparse-,
 EA-, Sonderflag-, Double-/Triple-Indirect- und geschützte Blocklayouts werden
 abgewiesen. `RENAME.PRG` erhält bei Symlinks Inode und Ziel und bei
 regulären Dateien den bytegleichen Inode samt unveränderten Datenblockzeigern.
-Es akzeptiert nur einen freien Namen im selben Verzeichnis, der in denselben
-Directory-Record und 512-Byte-Publikationssektor passt. Alle drei Werkzeuge
+Es akzeptiert nur einen freien Namen im selben Verzeichnis. Ein längerer Name
+darf vorhandenen freien EXT2-Recordplatz oder `rec_len`-Slack verwenden, wenn
+Quellentfernung, Record-Split sowie vollständiger neuer Header und Name in
+demselben 512-Byte-Publikationssektor liegen. Alle drei Werkzeuge
 verwenden Legacy-Unlink/Rename ausschließlich nach `EOPNOTSUPP`; andere
 Service-, Medien-, Deadline- oder Recoveryfehler bleiben sichtbar und lösen
 keine zweite Mutation aus.
@@ -124,7 +126,7 @@ keine zweite Mutation aus.
 | `mkdir` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `rmdir` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `del`/unlink | ja | ja | Symlinks/Dateien, begrenzt | EXT2 finaler nativer Link oder reguläre Standarddatei bis 64 Allokationen |
-| `rename` | nein | ja | Symlinks/Dateien, begrenzt | EXT2 nur no-replace im selben Verzeichnis und vorhandenen Record |
+| `rename` | nein | ja | Symlinks/Dateien, begrenzt | EXT2 no-replace im selben Verzeichnis, bei Wachstum nur innerhalb eines Publikationssektors |
 | Zeitstempel lesen | ja | ja | ja | FAT-Auflösung und FAT-Zugriffsdatum bleiben erhalten |
 | `touch` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `fsync` | REIST-spezifisch | REIST-spezifisch | nein | kein generischer EXT2-Schreibdeskriptor |

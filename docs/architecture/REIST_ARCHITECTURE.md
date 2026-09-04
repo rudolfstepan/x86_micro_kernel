@@ -609,12 +609,15 @@ auf Journal-, Directory- beziehungsweise Strukturblöcke werden vor dem ersten
 Write abgewiesen; dasselbe gilt, wenn die vollständige Freigabe nicht in das
 vorhandene 24-Sektor-Journal passt. `rename` erhält Inode und
 bei Symlinks die Zielbytes und akzeptiert nur ein nicht vorhandenes Ziel im
-selben Verzeichnis, dessen Name in den bestehenden Directory-Record und
-denselben 512-Byte-Publikationssektor passt. Bei einer regulären Datei bleiben
+selben Verzeichnis. Passt der Name nicht in den Quell-Record, darf Version N3e
+den Eintrag in einen freien EXT2-Record oder den `rec_len`-Slack eines
+Live-Records umplatzieren, sofern Quellentfernung, Donor-Split sowie der
+vollständige Zielheader und -name in demselben 512-Byte-Publikationssektor
+liegen. Bei einer regulären Datei bleiben
 Inodenummer, sämtliche Inodebytes, Datenblockzeiger, Dateibytes, Bitmaps und
 freie Zähler unverändert; nur der Directory-Sektor wird publiziert.
-Verzeichnisse, Überschreiben, Cross-Directory-Moves und layoutvergrößernde
-Namen scheitern vor Medienwirkung. Metadaten werden vor dem einen Namespace-
+Verzeichnisse, Überschreiben, Cross-Directory-Moves sowie Cross-Sector-
+Umplatzierung scheitern vor Medienwirkung. Metadaten werden vor dem einen Namespace-
 Publikationssektor
 geschrieben; Readback, `COMMITTED` und `CLEAN` verwenden dasselbe feste
 Undo-Journal wie die Erzeugung. Nach Recovery wiederholt der Client höchstens
