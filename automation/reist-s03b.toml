@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N3d-ext2-regular-unlink"
 
 [policy]
 one_package_per_run = true
@@ -14558,6 +14558,62 @@ evidence = [
   "The QEMU framebuffer package gate passed in 77 seconds. The rebuilt STORAGE.PRG remains 188416 bytes, 40960 bytes below the unchanged 224 KiB resident-rescue per-program bound; no ABI operation, syscall, fixed frame, Ring-0 parser or FAT fallback changed.",
   "The real persistent QEMU EXT2 runtime passed in 94 seconds: packaged RENAME.PRG moved target.txt to moved.txt, the old name disappeared, payload readback succeeded before and after a second Storage-Service restart, the existing link retained its unchanged now-dangling target, the regular inode and data block stayed byte-identical and both journal headers were CLEAN."
 ]
+
+[[packages]]
+id = "N3d-ext2-regular-unlink"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Unlink bounded regular EXT2 files through Ring 3"
+scope = "Extend only Storage operation 34 unlink from native symbolic links to regular EXT2 files while preserving the fixed frame, operation number, client ABI, legacy Ring-0 parser, FAT fallback and symlink-specific compatibility entry. Accept a final regular file only with link count one, standard direct or single-indirect allocation, no sparse holes, extended attributes, special flags, double or triple indirection, and at most 64 distinct allocated file blocks including the indirect block. Every candidate block must be allocated, outside structural metadata, the journal and parent-directory blocks, and the complete transaction must fit the existing 24-sector undo journal before any media write. The transaction removes exactly one final directory entry, releases the validated file and inode allocations, clears the inode, performs semantic readback and leaves one complete old-or-new state after every write or flush interruption. Reject directories, journal deletion, shared-link inodes, malformed or unsupported layouts and transaction-capacity exhaustion before effect. Prove direct and single-indirect normal and interruption behavior in the host fixture and exercise DEL.PRG on the persistent QEMU EXT2 image across Storage-Service restart with clean redundant journal headers. General create, write, replace, directories, cross-directory mutation and larger or nonstandard regular-file layouts remain later N3 packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/programs/storage_service.c",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "scripts/run_qemu_ext2_symlink.py",
+  "test/test_reist_vfs_namespace.py",
+  "test/test_reist_vfs_symlink.py",
+  "test/test_reist_vfs_symlink_host.c",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_storage_service.py",
+  "test/test_user_program_toolchain.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md"
+]
+invariants = [
+  "the fixed append-only Storage operation 34 frame client ABI syscall numbers FAT fallback and existing symbolic-link behavior remain unchanged",
+  "regular unlink accepts only link-count-one standard non-sparse direct or single-indirect files with at most 64 distinct allocated file blocks including the indirect block",
+  "journal structural metadata parent-directory duplicate unallocated extended-attribute double-indirect triple-indirect flagged or malformed blocks fail before any write or flush",
+  "one transaction removes exactly one final directory entry releases only the validated file blocks and inode allocation clears only that inode and fits the existing 24-sector journal",
+  "unrelated inode data directory bitmap counter and journal bytes remain unchanged except for the exact planned allocation and free-counter deltas",
+  "ACTIVE recovery restores the complete file namespace inode and allocations while COMMITTED recovery retains their complete removal before both headers become CLEAN",
+  "client and service retain existing generation validation one recovery retry fixed capacities absolute deadlines and non-EOPNOTSUPP no-fallback behavior",
+  "service crash stale generation interruption or malformed media yields either the complete old file or complete removal and never a reachable cleared inode leaked accepted block target mutation or partial success"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_namespace.py -v",
+  "python test/test_reist_vfs_symlink.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode vfs-symbolic-links"]
+stop_conditions = [
+  "regular unlink can release a journal metadata parent-directory duplicate unallocated shared or unvalidated block or can follow a symbolic-link target",
+  "an accepted file exceeds 64 total allocated file blocks uses unsupported allocation metadata or cannot fit the fixed 24-sector transaction",
+  "interruption can expose a reachable cleared inode lose both recoverable states leak an accepted allocation alter unrelated bytes or leave a dirty recovered journal",
+  "the implementation requires a new ABI operation Ring-0 filesystem parser unbounded scan or trust in a client-supplied block identity",
+  "the real EXT2 runtime cannot delete the regular file across Storage-Service restart while preserving link behavior and clean journal headers",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fs: unlink bounded regular EXT2 files in Ring 3"
+evidence = []
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"

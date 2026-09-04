@@ -4,7 +4,14 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: keines. `N3c-ext2-regular-rename` ist abgeschlossen. Der
+Aktives Thema: `N3d-ext2-regular-unlink`. Der nächste N3-Schnitt erweitert
+Operation 34 ohne ABI-Änderung auf reguläre EXT2-Dateien mit Linkzähler eins,
+höchstens 64 eindeutigen direkten/einfach-indirekten Allokationen und einem
+vollständig in das vorhandene 24-Sektor-Undo-Journal passenden Commit.
+Sparse-, EA-, Double-/Triple-Indirect-, Journal-, Directory- und
+Strukturblockfälle werden vor jedem Medienwrite abgewiesen.
+
+`N3c-ext2-regular-rename` ist abgeschlossen. Der
 begrenzte N3-Schnitt erweitert die vorhandene gleichverzeichnisige
 EXT2-Rename-Transaktion auf reguläre Dateien. Operation 34, der feste Frame,
 der Ring-3-Client und der FAT-Fallback bleiben unverändert; ein akzeptierter
