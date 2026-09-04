@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6-surface-web-browser"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,11 +12,11 @@ push = false
 
 [[packages]]
 id = "R3.6-surface-web-browser"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Render bounded HTML documents in a graphical web browser"
-scope = "Add BROWSER.PRG as a restartable Ring-3 Surface client reachable from the userspace shell and desktop Start menu. Reuse the already accepted CURL.PRG executable for HTTP and HTTPS transfer into a PID-scoped temporary file, with a fixed 65536-byte response ceiling and the curl process's existing authenticated TLS, DNS, connect, idle and aggregate deadlines; the browser receives no raw socket or TLS authority. Read the completed file through one generation-scoped READ and STAT VFS object, unlink browser-owned temporary files on every exit, and publish a new page only after fetch, exact bounded read, close, UTF-8 and parse success. Implement a renderer-neutral fixed-capacity HTML document module using WHATWG terminology for start tags, end tags, character references and raw-text suppression while explicitly claiming only a deliberate subset: title, headings, paragraphs, line breaks, emphasis, preformatted text, unordered and ordered lists and anchors with http, https, absolute-path and fragment hrefs. Ignore comments, declarations, script, style, forms, media, CSS and JavaScript; reject malformed UTF-8, token, text, link, nesting or work-budget exhaustion without partial publication. Render semantic blocks with distinct heading, body, link and list styling, viewport wrapping, vertical scrolling, editable URL bar, Enter navigation and clickable links. Package .html and .htm associations, preserve the desktop and all unrelated applications if the browser exits or hangs, and prove parser entities, nesting, ignored active content, malformed input, capacity failures, URL resolution, curl child arguments, packaging and a real Surface render/scroll/link/reload/close run."
+scope = "Add BROWSER.PRG as a restartable Ring-3 Surface client reachable from the userspace shell and desktop Start menu. Reuse the already accepted CURL.PRG executable for HTTP and HTTPS transfer into a PID-scoped temporary file, with a fixed 65536-byte response ceiling and the curl process's existing authenticated TLS, DNS, connect, idle and aggregate deadlines; the browser receives no raw socket or TLS authority. Read the completed file through one generation-scoped READ and STAT VFS object, unlink browser-owned temporary files on every exit, and publish a new page only after fetch, exact bounded read, close, UTF-8 and parse success. Implement a renderer-neutral fixed-capacity HTML document module using WHATWG terminology for start tags, end tags, character references and raw-text suppression while explicitly claiming only a deliberate subset: title, headings, paragraphs, line breaks, emphasis, preformatted text, unordered and ordered lists and anchors with http, https, absolute-path and fragment hrefs. Ignore comments, declarations, script, style, forms, media and CSS in this slice; script elements remain inert but the document and navigation boundary must permit a later versioned IPC adapter to a separate quota-bound generation-scoped Ring-3 JavaScript service, never in-process evaluation or kernel execution. Reject malformed UTF-8, token, text, link, nesting or work-budget exhaustion without partial publication. Render semantic blocks with distinct heading, body, link and list styling, viewport wrapping, vertical scrolling, editable URL bar, Enter navigation and clickable links. Package .html and .htm associations, preserve the desktop and all unrelated applications if the browser exits or hangs, and prove parser entities, nesting, ignored active content, malformed input, capacity failures, URL resolution, curl child arguments, packaging and a real Surface render/scroll/link/reload/close run."
 allowed_files = [
   "automation/reist-s03b.toml",
   "userspace/gui/apps/browser/main.c",
@@ -26,7 +26,7 @@ allowed_files = [
   "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
   "Makefile",
-  "assets/config/filetypes.conf",
+  "config/etc/reist/filetypes.conf",
   "htdocs/index.html",
   "scripts/run_qemu_runtime_desktop.py",
   "scripts/test-reist-runtime.ps1",
@@ -46,7 +46,7 @@ invariants = [
   "network authority remains in the existing CURL.PRG child with its authenticated HTTPS and bounded transport contract while the browser receives no raw socket TLS parser or certificate authority",
   "each fetch uses one PID-scoped temporary path a fixed 65536-byte maximum and publication only after successful child exit exact generation-scoped VFS read close UTF-8 validation and complete parse",
   "the HTML parser uses only fixed-capacity text element link nesting and work storage and fails closed without partially publishing a document when any capacity or syntax invariant is exceeded",
-  "supported markup follows HTML start-tag end-tag character-reference and raw-text terminology but the documented subset makes no HTML5 CSS JavaScript form media cookie cache or same-origin compatibility claim",
+  "supported markup follows HTML start-tag end-tag character-reference and raw-text terminology but the documented subset makes no HTML5 CSS JavaScript form media cookie cache or same-origin compatibility claim; future JavaScript is an explicit versioned adapter to a separately contained Ring-3 service rather than an in-process parser side effect",
   "rendering navigation wrapping scrolling hit testing and link activation are bounded by fixed element line link event paint and deadline budgets",
   "BROWSER.PRG is packaged in Windows and Makefile images is recognized as a Surface client is reachable from the userspace shell and Start menu and owns html and htm file associations without changing public ABI"
 ]
@@ -68,7 +68,15 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "gui: add a bounded Surface web browser"
-evidence = []
+evidence = [
+  "python test/test_gui_browser_source.py -v: PASS (5 tests including the native fixed-capacity parser host test)",
+  "python test/test_desktop_source.py -v: PASS (58 tests; one unrelated optional host-compiler probe skipped)",
+  "python test/test_system_layout.py -v: PASS (12 tests)",
+  "python test/test_user_program_toolchain.py -v: PASS (20 tests in 83.188 seconds)",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer: PASS (42 seconds)",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser: PASS with real Surface render scroll link reload painted-frame and clean-close markers",
+  "The browser remains a restartable Ring-3 Surface client, CURL.PRG retains network and TLS authority, scripts are inert, and no queued package remains so active_id is empty."
+]
 
 [[packages]]
 id = "N3f-ext2-cross-sector-rename"

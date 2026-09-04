@@ -4,14 +4,19 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: `R3.6-surface-web-browser`. Der neue Ring-3-Surface-Client
+Abgeschlossenes Thema: `R3.6-surface-web-browser`. Der neue Ring-3-Surface-Client
 verwendet den vorhandenen, abgenommenen `CURL.PRG`-Transport mit festem
 64-KiB-Limit und rendert einen dokumentierten HTML-Teilsatz aus einem
 heapfreien, festkapazitiven Dokumentmodell. URL-Leiste, semantische
 Überschriften/Absätze/Listen/Links, Umbruch, Scrollen und Linknavigation werden
-begrenzt; CSS, JavaScript, Formulare und Medien bleiben ausdrücklich
-unsupported. Browser und Curl erhalten getrennte Fehlerdomänen, der Browser
-selbst keine rohe Netzwerk- oder TLS-Autorität.
+begrenzt; CSS, Formulare und Medien bleiben ausdrücklich unsupported und
+Skripte in diesem Schnitt inert. Eine spätere JavaScript-Engine wird als
+eigener quota- und generationgebundener Ring-3-Dienst über versionierte IPC
+angebunden, nicht in den Browser oder Kernel eingebettet. Browser und Curl
+erhalten getrennte Fehlerdomänen, der Browser selbst keine rohe Netzwerk- oder
+TLS-Autorität. Alle vier Targeted-Gates, das QEMU-Framebuffer-Paketgate und der
+reale Surface-Lauf für Rendern, Scrollen, Link, Reload und sauberes Schließen
+sind bestanden; es ist kein weiteres Paket eingereiht und `active_id` ist leer.
 
 `N3f-ext2-cross-sector-rename` ist abgeschlossen. Der begrenzte Folgeschnitt
 erweitert gleichverzeichnisiges No-replace-Rename ausschließlich auf einen

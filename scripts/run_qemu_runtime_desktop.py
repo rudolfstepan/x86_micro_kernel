@@ -271,7 +271,7 @@ def send_key(process: subprocess.Popen[str], key: str) -> None:
 
 
 def send_hover_trajectory(process: subprocess.Popen[str]) -> None:
-    """Send one bounded center-to-Start path and six real USB hot states."""
+    """Send one bounded center-to-Start path and seven real USB hot states."""
     if process.stdin is None:
         raise RuntimeError("QEMU monitor input unavailable")
 
@@ -301,7 +301,7 @@ def send_hover_trajectory(process: subprocess.Popen[str]) -> None:
         monitor("mouse_button 1", 0.024)
         monitor("mouse_button 0", 0.070)
         monitor("mouse_move 60 -26", 0.070)
-        for _ in range(5):
+        for _ in range(6):
             monitor("mouse_move 0 -24", 0.070)
     finally:
         process.stdin.write(QEMU_MUX_SWITCH)
@@ -885,7 +885,7 @@ def require_svga2d_console_lifecycle(text: str) -> None:
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool, notepad_font_probe: bool,
-        control_probe: bool, trash_context_probe: bool,
+        control_probe: bool, browser_probe: bool, trash_context_probe: bool,
         trash_confirm_probe: bool, trash_restore_probe: bool,
         explorer_scroll_probe: bool,
         explorer_views_probe: bool,
@@ -912,7 +912,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         public_dns=notepad_probe)
     normal_lifecycle_probe = not any((
         expect_failure, render_probe, surface_probe, notepad_probe,
-        notepad_font_probe, control_probe, trash_context_probe,
+        notepad_font_probe, control_probe, browser_probe, trash_context_probe,
         trash_confirm_probe, trash_restore_probe, explorer_scroll_probe,
         explorer_views_probe, shortcut_probe, icon_layout_probe, hover_probe,
         guidemo_click_probe, sound_probe,
@@ -1038,6 +1038,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     command_name = "desktop.prg --notepad-font-probe"
                 elif control_probe:
                     command_name = "desktop.prg --control-probe"
+                elif browser_probe:
+                    command_name = "desktop.prg --browser-probe"
                 elif guidemo_click_probe:
                     command_name = "desktop.prg --guidemo-probe"
                 elif sound_probe:
@@ -1086,9 +1088,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     "supervised desktop or VGA shell prompt not observed; "
                     f"guest tail:\n{tail}")
         font_catalog_start = (surface_probe or notepad_probe or
-                              notepad_font_probe or shortcut_probe or
+                              notepad_font_probe or browser_probe or
+                              shortcut_probe or
                               icon_layout_probe) or not any((
             expect_failure, render_probe, surface_probe, control_probe,
+            browser_probe,
             trash_context_probe, trash_confirm_probe, trash_restore_probe,
             explorer_scroll_probe, explorer_views_probe,
             shortcut_probe, icon_layout_probe,
@@ -1496,6 +1500,33 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     raise RuntimeError(
                         "Control Panel did not publish a visible window"
                     )
+                if browser_probe:
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        probe_text = "".join(transcript)
+                        if ("DESKTOP_BROWSER_FAIL" in probe_text or
+                                "BROWSER_PROBE_FAIL" in probe_text):
+                            raise RuntimeError("Browser probe failed")
+                        required = (
+                            "DESKTOP_BROWSER_OK", "BROWSER_RENDER_OK",
+                            "BROWSER_SCROLL_OK", "BROWSER_LINK_OK",
+                            "BROWSER_RELOAD_OK", "BROWSER_RELOAD_PAINTED",
+                        )
+                        if all(marker in probe_text for marker in required):
+                            capture_screenshot(process, screenshot, deadline)
+                            break
+                        time.sleep(0.02)
+                    else:
+                        raise RuntimeError(
+                            "Browser did not render, scroll, follow and reload"
+                        )
+                    while time.monotonic() < deadline:
+                        drain(output, transcript)
+                        if "BROWSER_CLOSE_OK" in "".join(transcript):
+                            print("runtime-desktop-browser: PASS")
+                            return 0
+                        time.sleep(0.02)
+                    raise RuntimeError("Browser did not close cleanly")
                 if trash_context_probe or trash_confirm_probe:
                     ready_marker = (
                         "DESKTOP_TRASH_CONTEXT_READY"
@@ -1659,6 +1690,7 @@ def main() -> int:
     parser.add_argument("--notepad-probe", action="store_true")
     parser.add_argument("--notepad-font-probe", action="store_true")
     parser.add_argument("--control-probe", action="store_true")
+    parser.add_argument("--browser-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--trash-restore-probe", action="store_true")
@@ -1676,6 +1708,7 @@ def main() -> int:
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.notepad_font_probe, args.control_probe,
+            args.browser_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
@@ -1695,6 +1728,7 @@ def main() -> int:
                    args.expect_failure, args.render_probe,
                    args.surface_probe, args.notepad_probe,
                    args.notepad_font_probe, args.control_probe,
+                   args.browser_probe,
                    args.trash_context_probe, args.trash_confirm_probe,
                    args.trash_restore_probe,
                    args.explorer_scroll_probe, args.explorer_views_probe,

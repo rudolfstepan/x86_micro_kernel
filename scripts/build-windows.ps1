@@ -395,6 +395,7 @@ try {
         'usr/gui/bin/desktop.prg' = 'DESKTOP.PRG'
         'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
         'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
+        'usr/gui/bin/browser.prg' = 'BROWSER.PRG'
         'usr/gui/bin/soundplayer.prg' = 'SOUNDPLAYER.PRG'
         'usr/gui/bin/imageviewer.prg' = 'IMAGEVIEWER.PRG'
         'usr/gui/bin/surfacedemo.prg' = 'SURFACEDEMO.PRG'
@@ -472,6 +473,7 @@ try {
     $floppyExcluded = @(
         'sbin/audioinfo.prg', 'usr/bin/audiotest.prg', 'usr/bin/wavplay.prg',
         'usr/gui/bin/soundplayer.prg', 'usr/gui/bin/imageviewer.prg',
+        'usr/gui/bin/browser.prg',
         'libexec/reist/hda.prg', 'libexec/reist/audio.prg',
         'libexec/reist/svga2d.prg', 'libexec/reist/nvidia.prg'
     )
@@ -498,14 +500,16 @@ try {
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
-    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn')) {
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
-        $floppyDataArguments += @(
-            '--data-file', "htdocs/$demoFile=$demoPath"
-        )
+        if ($demoFile -ne 'index.html') {
+            $floppyDataArguments += @(
+                '--data-file', "htdocs/$demoFile=$demoPath"
+            )
+        }
     }
 
     $signingExitCode = Invoke-PythonProcess -Arguments @(

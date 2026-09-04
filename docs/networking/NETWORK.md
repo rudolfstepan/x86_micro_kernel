@@ -12,6 +12,7 @@ Loopback-Probleme sind nicht der aktuelle Referenzzustand.
 
 ```text
 Ring-3: ifconfig / ping / netstat / udp / nslookup / nc / httpd / curl
+         browser (nur Dokument/Layout; Transportkind CURL.PRG)
                 |
 überwachter REIST.PRG-Netzdienst
                 |
@@ -121,6 +122,16 @@ Die dokumentierten QEMU-Startziele emulieren RDRAND explizit; Systeme ohne
 diese Hardwareentropie bleiben absichtlich fail-closed. Der lokale CA-
 Runtime-Probe baut ausschließlich unter `build/curl-https-runtime` und ersetzt
 weder das Produktionsabbild noch dessen `CURL.PRG`.
+
+Der grafische Befehl `browser [Pfad|http(s)://URL]` liegt unter
+`/usr/gui/bin`. Für Netzwerkziele startet er `CURL.PRG` mit
+`--max-bytes 65536` und einer PID-eigenen Tempdatei. Erst erfolgreicher
+Child-Exit, exaktes generationgebundenes VFS-Lesen, Close, UTF-8-Prüfung,
+HTML-Parse und Layout dürfen die sichtbare Seite ersetzen. Dadurch besitzt
+der Browser selbst weder Socket- noch TLS- oder Zertifikatsautorität. Der
+HTML-Teilsatz ist keine allgemeine Webkompatibilitätszusage; JavaScript bleibt
+in diesem Schnitt inert und wird später nur als isolierter Ring-3-Dienst
+angebunden.
 `netstat` zeigt
 neben dem Interfacezustand auch aktive UDP-/TCP-Sockets, Queuefüllung, Drops
 und TCP-Retransmissionen. Die bisherigen Shell-Built-ins bleiben aus

@@ -247,7 +247,8 @@ class SystemLayoutContracts(unittest.TestCase):
             "usr/bin/wavplay.prg",
             "usr/gui/bin/soundplayer.prg",
             "usr/gui/bin/imageviewer.prg",
-            "usr/gui/bin/control.prg", "sbin/config.prg",
+            "usr/gui/bin/control.prg", "usr/gui/bin/browser.prg",
+            "sbin/config.prg",
             "usr/share/images/demo-desktop.bmp",
             "usr/share/images/demo-colors.gif",
             "libexec/reist/hda.prg", "libexec/reist/audio.prg",
@@ -295,6 +296,10 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn('"etc/reist/$configFile=$configPath"', windows)
         self.assertIn("usr/gui/bin/notepad.prg", makefile)
         self.assertIn("'usr/gui/bin/notepad.prg'", windows)
+        self.assertIn("usr/gui/bin/browser.prg", makefile)
+        self.assertIn("'usr/gui/bin/browser.prg'", windows)
+        self.assertIn("htdocs/index.html", makefile)
+        self.assertIn("'index.html'", windows)
         for font in ("reist-unicode.psf", "reist-jetbrains-mono.psf",
                      "reist-source-code-pro.psf", "reist-iosevka.psf",
                      "reist-fira-code.psf", "catalog.toml"):

@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>REIST Web</title>
+  <style>body { font-family: sans-serif; }</style>
+</head>
+<body>
+  <h1>REIST Web</h1>
+  <p>Willkommen im begrenzten grafischen Browser von REIST OS.</p>
+  <p><strong>Transport:</strong> HTTP und HTTPS werden durch das getrennte
+  CURL.PRG geladen. Der Browser erhaelt selbst keine Netzwerk- oder
+  TLS-Autoritaet.</p>
+  <p><a href="#details">Zu den unterstuetzten HTML-Elementen</a></p>
+  <h2>Sicheres Grundmodell</h2>
+  <p>Eine neue Seite wird erst sichtbar, wenn Download, VFS-Lesen,
+  UTF-8-Pruefung, Parsing und Layout vollstaendig erfolgreich waren.</p>
+  <p>Fehlerhafte oder zu grosse Dokumente ersetzen die bisherige Seite nicht.
+  Alle Text-, Element-, Link-, Verschachtelungs- und Layoutspeicher haben feste
+  Kapazitaeten.</p>
+  <p>Das Browserfenster ist ein normaler Ring-3-Surface-Client. Ein Absturz
+  beschaedigt weder Desktop noch Kernel oder andere Programme.</p>
+  <h2 id="details">HTML-Teilsatz</h2>
+  <ul>
+    <li>Ueberschriften der Ebenen eins bis drei</li>
+    <li>Absaetze und explizite Zeilenumbrueche</li>
+    <li>Fette und hervorgehobene Textabschnitte</li>
+    <li>Vorformatierter Text</li>
+    <li>Ungeordnete und geordnete Listen</li>
+    <li>HTTP-, HTTPS-, Pfad- und Fragmentlinks</li>
+  </ul>
+  <h2>Bedienung</h2>
+  <p>Die URL-Leiste nimmt lokale absolute Pfade sowie HTTP- und HTTPS-Adressen
+  an. Enter startet die Navigation.</p>
+  <p>Pfeil hoch und runter scrollen zeilenweise. Bild hoch und Bild runter
+  scrollen seitenweise; Pos1 und Ende springen zum Anfang oder Ende.</p>
+  <p>Links werden blau und unterstrichen dargestellt und koennen mit der Maus
+  aktiviert werden. R laedt die aktuelle Seite erneut.</p>
+  <h2>Ausblick</h2>
+  <p>JavaScript ist in diesem ersten Schnitt inert. Eine spaetere Engine wird
+  als eigener, quota- und generationgebundener Ring-3-Dienst ueber eine
+  versionierte IPC- und DOM-Adaptergrenze angebunden.</p>
+  <p>Damit bleibt ein Skriptfehler in einer anderen Fehlerdomaene und kann dem
+  Browser, dem Compositor und dem Kernel keine direkte Autoritaet geben.</p>
+  <pre>detect -&gt; isolate -&gt; revoke -&gt; reap -&gt; recreate -&gt; self-test</pre>
+  <p>Ende der lokalen Browser-Demoseite.</p>
+  <script>throw new Error("Dieser Text darf niemals gerendert werden");</script>
+</body>
+</html>

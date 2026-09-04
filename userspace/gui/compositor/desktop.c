@@ -50,7 +50,7 @@
 #define DESKTOP_IDLE_POLL_MS 1U
 #define DESKTOP_POINTER_CONTINUOUS_INPUT_INTERVAL_MS 16U
 #define DESKTOP_HOVER_PROBE_VERSION 1U
-#define DESKTOP_HOVER_PROBE_ITEMS 6U
+#define DESKTOP_HOVER_PROBE_ITEMS 7U
 #define DESKTOP_FILE_ICON_SIZE 32U
 #define DESKTOP_FILE_ICON_PIXELS \
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
@@ -81,6 +81,7 @@
 #define DESKTOP_ACTION_CREATE_SHORTCUT (1U << 19)
 #define DESKTOP_ACTION_OPEN_SHORTCUT (1U << 20)
 #define DESKTOP_ACTION_REMOVE_SHORTCUT (1U << 21)
+#define DESKTOP_ACTION_OPEN_BROWSER (1U << 22)
 #define DESKTOP_TASKBAR_CAPTURE_BACKGROUND DESKTOP_WM_CAPACITY
 #define DESKTOP_TRASH_TARGET_ID 1U
 #define DESKTOP_DIRECTORY_TARGET_DESKTOP 2U
@@ -541,7 +542,8 @@ enum {
     DESKTOP_MENU_ACTION_OPEN_ROOT,
     DESKTOP_MENU_ACTION_CLOSE_ALL,
     DESKTOP_MENU_ACTION_HELP,
-    DESKTOP_MENU_ACTION_OPEN_CONTROL_PANEL
+    DESKTOP_MENU_ACTION_OPEN_CONTROL_PANEL,
+    DESKTOP_MENU_ACTION_OPEN_BROWSER
 };
 
 enum {
@@ -572,6 +574,7 @@ enum {
     DESKTOP_UI_ACTION_OPEN_ROOT,
     DESKTOP_UI_ACTION_CLOSE_ALL,
     DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL,
+    DESKTOP_UI_ACTION_OPEN_BROWSER,
     DESKTOP_UI_ACTION_OPEN_TRASH,
     DESKTOP_UI_ACTION_EMPTY_TRASH,
     DESKTOP_UI_ACTION_CREATE_SHORTCUT,
@@ -590,6 +593,7 @@ enum {
  * opaque IDs while this compositor translates them into typed WM actions. */
 static const reist_gui_menu_item_t start_menu_items[] = {
     {"Computer oeffnen", DESKTOP_MENU_ACTION_OPEN_ROOT, 0U, 0U, 0U},
+    {"Webbrowser", DESKTOP_MENU_ACTION_OPEN_BROWSER, 0U, 0U, 0U},
     {"Systemsteuerung", DESKTOP_MENU_ACTION_OPEN_CONTROL_PANEL,
      0U, 0U, 0U},
     {"Alle Fenster schliessen", DESKTOP_MENU_ACTION_CLOSE_ALL, 0U, 0U, 0U},
@@ -2420,6 +2424,8 @@ static desktop_ui_result_t desktop_ui_apply_menu_result(
     } else if (menu_result->action ==
                DESKTOP_MENU_ACTION_OPEN_CONTROL_PANEL) {
         result.action = DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL;
+    } else if (menu_result->action == DESKTOP_MENU_ACTION_OPEN_BROWSER) {
+        result.action = DESKTOP_UI_ACTION_OPEN_BROWSER;
     }
     return result;
 }
@@ -6419,7 +6425,8 @@ static uint32_t program_uses_surface(const char *program) {
         path_equal_ascii_case(program, "/usr/gui/bin/notepad.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/imageviewer.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/soundplayer.prg") ||
-        path_equal_ascii_case(program, "/usr/gui/bin/control.prg");
+        path_equal_ascii_case(program, "/usr/gui/bin/control.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/browser.prg");
 }
 
 static int launch_program(desktop_surface_runtime_t *surface_runtime,
@@ -6981,6 +6988,20 @@ static void apply_control_panel_activation(
             "Systemsteuerung konnte nicht gestartet werden.", path);
 }
 
+static void apply_browser_activation(
+    desktop_surface_runtime_t *surface_runtime, desktop_ui_state_t *ui,
+    const x86os_display_info_t *display, desktop_dirty_region_t *dirty,
+    int32_t pointer_x, int32_t pointer_y) {
+    static const char path[] = "/usr/gui/bin/browser.prg";
+    (void)x86os_pointer_update(pointer_x, pointer_y, 0U);
+    int launch_status = launch_program(surface_runtime, path, 0);
+    desktop_dirty_full(dirty);
+    if (launch_status != 0)
+        desktop_ui_open_error(
+            ui, display, dirty,
+            "Webbrowser konnte nicht gestartet werden.", path);
+}
+
 static uint32_t desktop_shortcut_display_name(
     const desktop_explorer_drag_file_t *file,
     char output[DESKTOP_SHORTCUT_DISPLAY_NAME_CAPACITY]) {
@@ -7394,6 +7415,8 @@ static uint32_t apply_desktop_ui_result(
             manager, explorer, display, dirty, target);
     if (ui_result->action == DESKTOP_UI_ACTION_OPEN_CONTROL_PANEL)
         return DESKTOP_ACTION_OPEN_CONTROL_PANEL;
+    if (ui_result->action == DESKTOP_UI_ACTION_OPEN_BROWSER)
+        return DESKTOP_ACTION_OPEN_BROWSER;
     if (ui_result->action == DESKTOP_UI_ACTION_OPEN_TRASH)
         return DESKTOP_ACTION_OPEN_TRASH;
     if (ui_result->action == DESKTOP_UI_ACTION_EMPTY_TRASH)
@@ -9032,6 +9055,7 @@ int main(int argc, char **argv) {
     uint32_t notepad_probe = 0U;
     uint32_t notepad_font_probe = 0U;
     uint32_t control_probe = 0U;
+    uint32_t browser_probe = 0U;
     uint32_t guidemo_probe = 0U;
     uint32_t sound_probe = 0U;
     uint32_t trash_context_probe = 0U;
@@ -9084,6 +9108,9 @@ int main(int argc, char **argv) {
                text_equal(argv[1], "--control-probe")) {
         control_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--browser-probe")) {
+        browser_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--guidemo-probe")) {
         guidemo_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
@@ -9117,6 +9144,7 @@ int main(int argc, char **argv) {
         x86os_puts(
             "Usage: desktop [--render-probe|--hover-probe|--surface-probe|"
             "--notepad-probe|--notepad-font-probe|--control-probe|"
+            "--browser-probe|"
             "--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
             "--trash-confirm-probe|--trash-restore-probe|--unicode-probe|"
@@ -9304,7 +9332,7 @@ int main(int argc, char **argv) {
         x86os_puts("desktop: Supervisor-Lifecycle nicht verfuegbar\n");
         return 1;
     }
-    if (surface_probe || notepad_probe || notepad_font_probe ||
+    if (surface_probe || notepad_probe || notepad_font_probe || browser_probe ||
         shortcut_probe || icon_layout_probe || argc == 1) {
         (void)x86os_monotonic_ms(&phase_started_ms);
         font_status = desktop_editor_font_catalog_load(&display,
@@ -9404,7 +9432,7 @@ int main(int argc, char **argv) {
     desktop_startup_phase_metric("sounds", phase_started_ms);
     if (render_probe || hover_probe || surface_probe || notepad_probe ||
         notepad_font_probe ||
-        control_probe ||
+        control_probe || browser_probe ||
         guidemo_probe || sound_probe || trash_context_probe ||
         trash_confirm_probe || trash_restore_probe ||
         unicode_probe || explorer_scroll_probe || explorer_views_probe ||
@@ -9562,7 +9590,7 @@ int main(int argc, char **argv) {
     if (trash_confirm_probe)
         x86os_puts("DESKTOP_TRASH_CONFIRM_READY\n");
     if (surface_probe || notepad_probe || notepad_font_probe ||
-        control_probe || guidemo_probe || sound_probe) {
+        control_probe || browser_probe || guidemo_probe || sound_probe) {
         /* Each client spawn is bounded, but two consecutive image loads can
          * legitimately cross one heartbeat interval.  Reset the deadline at
          * the phase boundary and, for the audio probe, between both clients. */
@@ -9591,6 +9619,12 @@ int main(int argc, char **argv) {
             probe_status = launch_surface_probe_client(
                 &surface_runtime, &surfaces,
                 "/USR/GUI/BIN/CONTROL.PRG", 0,
+                lifecycle_supervised, &lifecycle_sequence,
+                &lifecycle_heartbeat_ms);
+        } else if (browser_probe) {
+            probe_status = launch_surface_probe_client(
+                &surface_runtime, &surfaces,
+                "/USR/GUI/BIN/BROWSER.PRG", "--browser-probe",
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);
         } else if (notepad_probe || notepad_font_probe) {
@@ -9662,6 +9696,8 @@ int main(int argc, char **argv) {
                 ? "DESKTOP_GUIDEMO_FAIL launch status="
                 : control_probe
                 ? "DESKTOP_CONTROL_FAIL launch status="
+                : browser_probe
+                ? "DESKTOP_BROWSER_FAIL launch status="
                 : (surface_probe
                     ? "DESKTOP_SURFACE_FAIL launch status="
                     : "DESKTOP_NOTEPAD_FAIL launch status="));
@@ -9678,6 +9714,8 @@ int main(int argc, char **argv) {
             ? "DESKTOP_GUIDEMO_STAGE client-bound\n"
             : control_probe
             ? "DESKTOP_CONTROL_STAGE client-bound\n"
+            : browser_probe
+            ? "DESKTOP_BROWSER_STAGE client-bound\n"
             : (surface_probe
                 ? "DESKTOP_SURFACE_STAGE client-bound\n"
                 : "DESKTOP_NOTEPAD_STAGE client-bound\n"));
@@ -9726,11 +9764,13 @@ int main(int argc, char **argv) {
         int surface_poll_status = desktop_surface_runtime_poll(
             &surface_runtime, &surfaces);
         if ((surface_probe || sound_probe || notepad_probe ||
-             notepad_font_probe) && surface_poll_status != 0) {
+             notepad_font_probe || browser_probe) && surface_poll_status != 0) {
             x86os_puts(sound_probe
                 ? "DESKTOP_AUDIO_FAIL protocol status="
                 : (notepad_probe || notepad_font_probe)
                 ? "DESKTOP_NOTEPAD_FAIL protocol status="
+                : browser_probe
+                ? "DESKTOP_BROWSER_FAIL protocol status="
                 : "DESKTOP_SURFACE_FAIL protocol status=");
             x86os_print_number(surface_poll_status);
             x86os_putchar('\n');
@@ -9775,7 +9815,7 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-        if ((surface_probe || control_probe || guidemo_probe) &&
+        if ((surface_probe || control_probe || browser_probe || guidemo_probe) &&
             !surface_probe_reported) {
             for (uint32_t surface_index = 0U;
                  surface_index < DESKTOP_SURFACE_CAPACITY; ++surface_index) {
@@ -9792,6 +9832,8 @@ int main(int argc, char **argv) {
                         ? "DESKTOP_GUIDEMO_OK\n"
                         : control_probe
                         ? "DESKTOP_CONTROL_OK\n"
+                        : browser_probe
+                        ? "DESKTOP_BROWSER_OK\n"
                         : "DESKTOP_SURFACE_OK\n");
                     surface_probe_reported = 1U;
                     break;
@@ -9812,6 +9854,7 @@ int main(int argc, char **argv) {
             .entry_index = DESKTOP_EXPLORER_NO_ENTRY,
         };
         uint32_t control_panel_activate = 0U;
+        uint32_t browser_activate = 0U;
         uint32_t trash_activate = 0U;
         uint32_t shortcut_activate_index = UINT32_MAX;
         uint32_t shortcut_activate_generation = 0U;
@@ -10119,6 +10162,10 @@ int main(int argc, char **argv) {
             control_panel_activate = 1U;
             actions &= ~DESKTOP_ACTION_OPEN_CONTROL_PANEL;
         }
+        if ((actions & DESKTOP_ACTION_OPEN_BROWSER) != 0U) {
+            browser_activate = 1U;
+            actions &= ~DESKTOP_ACTION_OPEN_BROWSER;
+        }
         if ((actions & DESKTOP_ACTION_OPEN_TRASH) != 0U) {
             trash_activate = 1U;
             actions &= ~DESKTOP_ACTION_OPEN_TRASH;
@@ -10173,6 +10220,10 @@ int main(int argc, char **argv) {
                 &action_target, pointer_x, pointer_y);
         if (control_panel_activate)
             apply_control_panel_activation(
+                &surface_runtime, &ui, &display, &dirty,
+                pointer_x, pointer_y);
+        if (browser_activate)
+            apply_browser_activation(
                 &surface_runtime, &ui, &display, &dirty,
                 pointer_x, pointer_y);
         if (trash_activate)

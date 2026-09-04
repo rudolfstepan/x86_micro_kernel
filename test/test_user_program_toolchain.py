@@ -464,6 +464,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "DESKTOP.PRG",
                 "GUIDEMO.PRG",
                 "NOTEPAD.PRG",
+                "BROWSER.PRG",
                 "SOUNDPLAYER.PRG",
                 "IMAGEVIEWER.PRG",
                 "SURFACEDEMO.PRG",
@@ -550,7 +551,7 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertEqual(
                 rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
                           "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG",
-                          "SURFACEDEMO.PRG", "CONTROL.PRG"}
+                          "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG"}
             )
 
     def test_drives_reports_versioned_storage_health(self):
@@ -605,6 +606,8 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertEqual(makefile.count("usr/gui/bin/guidemo.prg="), 1)
         self.assertNotIn("'usr/bin/desktop.prg' = 'DESKTOP.PRG'", build_script)
         self.assertNotIn("usr/bin/desktop.prg=", makefile)
+        self.assertEqual(build_script.count("'usr/gui/bin/browser.prg'"), 2)
+        self.assertEqual(makefile.count("usr/gui/bin/browser.prg="), 2)
 
         shell = (ROOT / "userspace" / "bin" / "shell.c").read_text(
             encoding="utf-8"

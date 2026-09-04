@@ -92,6 +92,12 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
+    "BROWSER.PRG": (
+        ROOT / "userspace/gui/apps/browser/main.c",
+        ROOT / "userspace/gui/lib/html_document.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "SOUNDPLAYER.PRG": ROOT / "userspace/gui/apps/sound_player/main.c",
     "IMAGEVIEWER.PRG": (
         ROOT / "userspace/gui/apps/image_viewer/main.c",
@@ -220,7 +226,7 @@ PROGRAMS = {
 
 GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
-    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG",
+    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG",
 }
 IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
@@ -303,7 +309,7 @@ def main() -> None:
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
                         "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG",
                         "LN.PRG", "READLINK.PRG", "DEL.PRG",
-                        "RENAME.PRG", "RM.PRG"}:
+                        "RENAME.PRG", "RM.PRG", "BROWSER.PRG"}:
                 dependency_files.extend(storage_headers)
             if name == "STORAGE.PRG":
                 dependency_files.append(Path(__file__).resolve())

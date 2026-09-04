@@ -773,6 +773,18 @@ Subsetfonts durchlaufen denselben Fallback. Nur dieser Bitmap-Fallback nutzt
 den durch 32x32 Pixel begrenzten Coverage-Downscaler. Der alte `PAINT_TEXT`-
 Vertrag und die 8x16-Systemschrift bleiben unverändert.
 
+R3.6 ergänzt einen eigenständigen Ring-3-Webbrowser als Surface-Client. Sein
+erster Dokumentvertrag ist ein absichtlich kleiner HTML-Teilsatz mit festem
+64-KiB-Eingang, festen Element-, Link-, Verschachtelungs- und Layoutspeichern
+sowie vollständiger UTF-8-Prüfung vor Publikation. HTTP(S), DNS, TLS und
+Zertifikatsprüfung bleiben im separat gestarteten `CURL.PRG`; der Browser liest
+erst dessen vollständig publizierte PID-Tempdatei über ein generationgebundenes
+READ|STAT-VFS-Objekt. Skript- und Style-Inhalte sind inert. Eine spätere
+JavaScript-Laufzeit darf nur als eigener quota- und generationgebundener
+Ring-3-Dienst über einen versionierten IPC-/DOM-Adapter hinzukommen; weder
+Browserprozess noch Compositor oder Kernel erhalten dafür eine eingebettete
+Skript-Engine.
+
 Notepad hält Familie und Größe ausschließlich pro Prozess. Nur Dokumentglyphen,
 Cursorzelle, sichtbare Zeilen und Spalten sowie daraus abgeleitete Scrollranges
 verwenden die ausgewählten Metriken; Menüs, Dialoge und Status bleiben in der

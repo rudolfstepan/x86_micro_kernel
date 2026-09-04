@@ -268,7 +268,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn("DESKTOP_WM_EVENT_SELECT", self.source)
         gui_programs = programs.split("GUI_PROGRAMS", 1)[1]
         for program in ("DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
-                        "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG"):
+                        "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG", "BROWSER.PRG"):
             self.assertIn(f'"{program}"', gui_programs)
         self.assertIn("gui_library", programs)
 
@@ -277,6 +277,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('"Start"', self.source)
         self.assertIn('"Computer oeffnen"', self.source)
         self.assertIn('"Systemsteuerung"', self.source)
+        self.assertIn('"Webbrowser"', self.source)
         self.assertIn("REIST_GUI_MENU_POPUP_ABOVE", self.source)
         self.assertIn("desktop_task_button_rect", self.source)
         self.assertIn("desktop_taskbar_window_at", self.source)
@@ -500,6 +501,7 @@ class DesktopSourceTests(unittest.TestCase):
             self.source.index("static int launch_program")
         ]
         self.assertIn('"/usr/gui/bin/soundplayer.prg"', selector)
+        self.assertIn('"/usr/gui/bin/browser.prg"', selector)
         self.assertIn('"/usr/gui/bin/guidemo.prg"', selector)
         launch = self.source[self.source.index("static int launch_program"):]
         surface = launch[:launch.index(
@@ -753,6 +755,7 @@ class DesktopSourceTests(unittest.TestCase):
         self.assertIn('"/usr/gui/bin/surfacedemo.prg"', self.source)
         self.assertIn('"/usr/gui/bin/notepad.prg"', self.source)
         self.assertIn('"/usr/gui/bin/imageviewer.prg"', self.source)
+        self.assertIn('"/usr/gui/bin/browser.prg"', self.source)
         self.assertIn("launch_surface_probe_client", self.source)
         self.assertIn('"/USR/GUI/BIN/NOTEPAD.PRG", "/README.TXT",',
                       self.source)
@@ -763,7 +766,7 @@ class DesktopSourceTests(unittest.TestCase):
             self.source.index("static int launch_program")
         ]
         self.assertNotIn("text_equal(program", surface_classifier)
-        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 6)
+        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 7)
         self.assertIn("desktop_surface_runtime_reserve", self.source)
         self.assertIn("desktop_surface_runtime_bind", self.source)
         self.assertIn("sync_surface_windows", self.source)

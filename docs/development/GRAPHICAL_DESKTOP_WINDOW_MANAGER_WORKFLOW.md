@@ -774,6 +774,28 @@ keinen Immediate-Fallback, keine Zeitquellen- oder Probe-Fehler und höchstens
 acht Damage-Rechtecke je Frame. Die manuelle VMware-Checkbox bleibt davon
 getrennt, weil nur sie die sichtbare Interaktion und Flüssigkeit belegt.
 
+### Begrenzter Surface-Webbrowser
+
+`BROWSER.PRG` ist über `browser` in der Ring-3-Shell, das Startmenü sowie die
+Dateizuordnungen `.html` und `.htm` erreichbar. Es rendert Überschriften,
+Absätze, Umbrüche, Hervorhebungen, Vorformatierung, Listen und Links aus einem
+festkapazitiven Dokumentmodell. Lokale Pfade laufen über READ|STAT-VFS-Objekte;
+HTTP(S) wird ausschließlich vom getrennten `CURL.PRG` in eine begrenzte
+Tempdatei übertragen. Fehler behalten die letzte vollständig validierte Seite.
+
+Der deterministische Gastnachweis öffnet die paketierte HTML-Seite in einer
+echten Surface, aktiviert einen sichtbaren Link über denselben Hit-Test wie
+Mauseingabe, scrollt, lädt erneut und schließt den Client, während Desktop und
+Shell erhalten bleiben:
+
+```powershell
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser
+```
+
+Skripte sind zunächst inert. Die vorgesehene Erweiterungsgrenze für JavaScript
+ist ein separater quota- und generationgebundener Ring-3-Dienst mit
+versionierter IPC-/DOM-Schnittstelle, kein Bibliotheks-`eval` im Browser.
+
 Seit dem Performance-Schnitt vom 26. August 2026 erzeugt ein Live-Resize keine
 Configure-/Ack-Kaskade mehr: Der Compositor zeigt während des Ziehens die
 zuletzt bestätigte Surface innerhalb der neuen Fenstergeometrie und sendet der
