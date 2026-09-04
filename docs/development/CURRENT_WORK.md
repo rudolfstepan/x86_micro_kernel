@@ -14,7 +14,13 @@ lockfreie Validierung der bereits gepinnten lokalen Taskidentität sowie eine
 explizite nichtblockierende, bis zum finalen Unlock gepinnte Mutexakquisition
 für genau diesen Pfad. Außerdem wird der veraltete Hover-Nachweis auf die
 aktuellen sieben Startmenüeinträge aktualisiert. Normale Mutexbesitzer bleiben
-vollständig generationgenau verfolgt.
+vollständig generationgenau verfolgt. Der erste Reparaturlauf öffnete Start und
+erreichte alle sieben Zeilen; Menüframes blieben bei 3 ms, der bisherige
+Softwarecursor benötigte jedoch bis zu 66 ms pro Publikation. Deshalb nutzt
+der Schnitt bei expliziter Geräteunterstützung zusätzlich VMwares
+`SVGA_FIFO_CAP_CURSOR_BYPASS_3`: ein festes Cursorbild wird einmal definiert,
+Bewegungen ändern danach nur die asynchronen FIFO-Cursorregister. Der bisherige
+Softwarecursor bleibt für alle anderen Geräte erhalten.
 
 `R3.6a-browser-input-and-mutex-owner-recovery` ist abgeschlossen. Ein Klick in
 die Browser-Adressleiste ersetzt beim ersten Editieren jetzt den bisherigen
