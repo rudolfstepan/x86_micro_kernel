@@ -16,7 +16,7 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Restore bounded VMware pointer responsiveness after mutex recovery"
-scope = "Repair the reproduced current-image VMware interaction failure in which the supervised desktop reaches DESKTOP_MOUSE_OK but cannot acknowledge the real virtual-xHCI Start-menu click inside 75 seconds. The regression follows task-generation mutex ownership tracking on the latency-sensitive cursor path: current identity lookup plus each pointer publication's display-mutex registration and deregistration traverse the global scheduler task-table lock while preemption is already disabled. Add a lock-free exact current-task identity snapshot that is valid only for the already preemption-pinned running task on the current CPU, and an explicit nonblocking pinned-task mutex acquisition whose owner retains its own preemption guard through final release, never enters the task ownership set, and therefore cannot become a non-running abandoned owner. The first repaired run proves that menu repaint is bounded to 3 ms but the remaining software-cursor old/new framebuffer update and synchronous SVGA doorbell take up to 66 ms. A capability-valid Cursor Bypass 3 prototype removes that stall but breaks both physical and RFB-driven relative xHCI mouse coupling on the tested Workstation profile, so reject it. Follow VMware's separate physical-cursor contract instead: when SVGA_CAP_CURSOR is advertised, define one fixed 12x16 monochrome arrow with SVGA_CMD_DEFINE_CURSOR and publish only bounded visibility transitions with SVGA_CMD_DISPLAY_CURSOR while VMware owns physical pointer positioning. Motion then performs no FIFO command, framebuffer copy, virtual-cursor coordinate update or synchronous doorbell. Unsupported devices retain the existing exact old/new software-cursor damage path. Reject pinned-mutex use without a current running task and balanced preemption pin, preserve normal tracked recursive acquisition and forced-generation cleanup everywhere else, and keep Surface policy and all public ABI unchanged. Repair the stale real-hover trajectory for the seven-item Start menu and require the real VMware path to open Start, visit every row, meet the existing 17-ms frame and 34-ms cursor bounds, exit cleanly and retain a responsive Ring-3 shell."
+scope = "Repair the reproduced current-image VMware interaction failure in which the supervised desktop reaches DESKTOP_MOUSE_OK but cannot acknowledge the real virtual-xHCI Start-menu click inside 75 seconds. The regression follows task-generation mutex ownership tracking on the latency-sensitive cursor path: current identity lookup plus each pointer publication's display-mutex registration and deregistration traverse the global scheduler task-table lock while preemption is already disabled. Add a lock-free exact current-task identity snapshot that is valid only for the already preemption-pinned running task on the current CPU, and an explicit nonblocking pinned-task mutex acquisition whose owner retains its own preemption guard through final release, never enters the task ownership set, and therefore cannot become a non-running abandoned owner. The first repaired run proves that menu repaint is bounded to 3 ms but the remaining software-cursor update takes up to 66 ms; direct measurement shows the conditional SVGA SYNC doorbell itself consumes 0 guest milliseconds. Both capability-valid VMware cursor prototypes are rejected: Cursor Bypass 3 breaks relative virtual-xHCI coupling and the physical host-cursor command leaves the pointer invisible and does not preserve real or RFB-driven clicks on the tested Workstation profile. Keep the visible software cursor. In shadow mode restore only its bounded old rectangle from the authoritative scene, draw its bounded new overlay directly into scanout, fence once and publish exact old/new update rectangles without redundantly copying the new background from shadow. Scene damage continues to re-overlay the pointer through the existing general publication path. Reject pinned-mutex use without a current running task and balanced preemption pin, preserve normal tracked recursive acquisition and forced-generation cleanup everywhere else, and keep Surface policy and all public ABI unchanged. Repair the stale real-hover trajectory for the seven-item Start menu and require the real VMware path to show the pointer, open Start, visit every row, meet the existing 17-ms frame and 34-ms cursor bounds, exit cleanly and retain a responsive Ring-3 shell."
 allowed_files = [
   "automation/reist-s03b.toml",
   "kernel/sched/mutex.c",
@@ -24,6 +24,7 @@ allowed_files = [
   "kernel/sched/scheduler.c",
   "kernel/sched/scheduler.h",
   "drivers/video/display_control.c",
+  "drivers/video/framebuffer.c",
   "scripts/run_vmware_mouse.ps1",
   "test/test_smp.py",
   "test/test_vmware_svga2d.py",
@@ -37,8 +38,9 @@ invariants = [
   "a pinned mutex acquisition is nonblocking requires one current running task with preemption already disabled and cannot be published as task-owned unless the mutex state transition succeeds",
   "a pinned owner remains generation-identified and recursive and retains its own balanced preemption guard until final unlock; it never enters forced-termination ownership cleanup because a pinned running task cannot be terminated",
   "ordinary task mutex acquisition remains fixed-capacity tracked and exact-generation forced cleanup remains unchanged",
-  "the VMware physical cursor activates only after SVGA_CAP_CURSOR validation and a successful fixed-capacity monochrome definition; motion publishes no guest coordinates, visibility changes are bounded, deactivation hides it and every unsupported backend retains exact old/new software-pointer damage",
-  "the cursor path remains atomic and fixed-work without full-scene redraw lost button edges heap allocation synchronous per-motion SVGA doorbells or a public ABI change",
+  "the visible software cursor remains the sole pointer path; both VMware hardware-cursor protocols remain absent after their real-input failures",
+  "shadow cursor motion restores only the bounded old rectangle from the authoritative scene draws the new fixed-size scanout overlay and publishes exact old/new damage without a redundant new-background copy",
+  "the cursor path remains atomic and fixed-work without full-scene redraw lost button edges heap allocation unconditional synchronous per-motion SVGA doorbells or a public ABI change",
   "the real four-vCPU VMware virtual-xHCI trajectory opens Start visits all seven current items meets the existing 17-ms frame and 34-ms pointer bounds and returns to a responsive Ring-3 shell without panic restart or degradation"
 ]
 targeted_tests = [
@@ -57,8 +59,8 @@ stop_conditions = [
   "a pinned acquisition can sleep wait or succeed without a current exact running task and an active preemption pin",
   "a task can re-enable preemption or become terminable while retaining a pinned mutex",
   "the change weakens ordinary mutex tracking forced-generation abandonment display lifecycle serialization cursor damage or button-edge ordering",
-  "the physical cursor can activate without advertised SVGA_CAP_CURSOR or a successful bounded definition command, can publish guest coordinates, or can leave the cursor visible during deactivation",
-  "the real VMware hover path cannot acknowledge Start visit all seven rows meet the frozen latency bounds or return to a responsive shell",
+  "a VMware hardware cursor path is reintroduced despite the reproduced invisible or uncoupled pointer behavior",
+  "the real VMware hover path cannot show the software pointer acknowledge Start visit all seven rows meet the frozen latency bounds or return to a responsive shell",
   "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
   "a frozen gate fails after one focused in-scope repair"
 ]

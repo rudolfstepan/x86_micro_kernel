@@ -19,11 +19,14 @@ erreichte alle sieben Zeilen; Menüframes blieben bei 3 ms, der bisherige
 Softwarecursor benötigte jedoch bis zu 66 ms pro Publikation. Ein daraufhin
 capability-geprüft implementierter `SVGA_FIFO_CAP_CURSOR_BYPASS_3`-Prototyp
 beseitigte zwar die Pixelpublikation, unterbrach im getesteten Workstation-
-Profil aber sowohl reale als auch RFB-gesteuerte relative xHCI-Mausbewegung und
-wurde verworfen. Der aktive Schnitt definiert bei `SVGA_CAP_CURSOR` einmal ein
-festes Bild für den physischen VMware-Hostcursor und übermittelt danach nur
-Sichtbarkeitswechsel; VMware führt dessen Position ohne Gastpublikation. Der
-bisherige Softwarecursor bleibt für alle anderen Geräte erhalten.
+Profil aber sowohl reale als auch RFB-gesteuerte relative xHCI-Mausbewegung.
+Auch der anschließend erprobte physische VMware-Hostcursor blieb unsichtbar und
+erhielt die Klickkopplung nicht. Beide Hardwarepfade sind deshalb verworfen.
+Der aktive Schnitt behält den sichtbaren Softwarecursor und entfernt stattdessen
+in Shadow-Modus dessen redundante zweite Hintergrundkopie: alte Zeigerfläche
+restaurieren, neuen Zeiger direkt in den Scanout zeichnen, alten und neuen
+Schaden einmal publizieren. Eine Messsonde bestätigte zuvor, dass der bedingte
+SVGA-Doorbell selbst 0 Gastmillisekunden beansprucht.
 
 `R3.6a-browser-input-and-mutex-owner-recovery` ist abgeschlossen. Ein Klick in
 die Browser-Adressleiste ersetzt beim ersten Editieren jetzt den bisherigen
