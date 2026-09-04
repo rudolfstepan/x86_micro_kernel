@@ -4,6 +4,16 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
+Aktives Reparaturthema: `R3.6a-browser-input-and-mutex-owner-recovery`.
+Die Browser-Adressleiste erhält begrenztes Ersetzen des bisherigen Inhalts
+sowie `https://`-Vervollständigung für Hostnamen ohne Schema. Parallel wird
+der reproduzierte Desktop-Startfehler geschlossen: Ein beim Storage-Recovery
+beendeter Task kann derzeit einen taskgebundenen Kernel-Mutex hinterlassen;
+darauf folgen drei VFS-Timeouts zu je zehn Sekunden und ein degradierter
+Compositor. Der Fix verfolgt pro Taskgeneration eine feste Zahl gehaltener
+Mutexe und gibt ausschließlich die exakt gepinnte, nicht mehr laufende
+Generation vor deren VFS-Cleanup frei.
+
 Abgeschlossenes Thema: `R3.6-surface-web-browser`. Der neue Ring-3-Surface-Client
 verwendet den vorhandenen, abgenommenen `CURL.PRG`-Transport mit festem
 64-KiB-Limit und rendert einen dokumentierten HTML-Teilsatz aus einem

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.6a-browser-input-and-mutex-owner-recovery"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,62 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.6a-browser-input-and-mutex-owner-recovery"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Repair browser address entry and abandoned task mutex recovery"
+scope = "Repair two regressions observed after the first Surface-browser slice. Give the browser address bar bounded select-all replacement semantics on pointer focus and normalize bare host names to https:// while preserving explicit http://, https://, local absolute paths and fragments and rejecting unsupported explicit schemes before side effects. Extend the parser host contract and real browser probe so address replacement and normalization are exercised. Separately close the measured desktop-start delay in which a force-terminated generation can retain one or more task-owned recursive kernel mutexes, causing three consecutive 10000-ms VFS lock timeouts and compositor degradation. Track a fixed-capacity set of distinct mutexes in each scheduler task, register only first acquisition, unregister only final release, and during generation-pinned non-running task termination atomically detach and abandon only that exact task generation's owned mutexes before VFS and process cleanup. Kernel-context ownership remains non-preemptible and is never abandoned. Prove stale-generation rejection, recursive ownership accounting, capacity failure without leaked ownership, waiter wakeup, ordinary VFS serialization, normal desktop startup without VFS timeout or degraded state, and browser address navigation through the compositor."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/sched/mutex.c",
+  "kernel/sched/mutex.h",
+  "kernel/sched/scheduler.c",
+  "kernel/sched/scheduler.h",
+  "userspace/gui/apps/browser/main.c",
+  "userspace/gui/include/reist/gui/html_document.h",
+  "userspace/gui/lib/html_document.c",
+  "test/test_mutex_owner_cleanup_host.c",
+  "test/test_gui_browser_source.py",
+  "test/test_html_document_host.c",
+  "test/test_smp.py",
+  "test/test_vfs_sync_r13.py",
+  "scripts/run_qemu_runtime_desktop.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "a mutex is registered once per owning task generation on first acquisition and removed only on final recursive release with fixed-capacity bookkeeping and fail-closed acquisition rollback",
+  "forced termination abandons mutexes only after the exact task generation is pinned non-running and before cleanup paths need VFS; stale task generations cannot release a reused slot's ownership",
+  "kernel-context owner_task=-1 remains protected by its balanced preemption guard and is never reclaimed as a task-owned mutex",
+  "abandonment clears owner generation CPU and recursion state under the mutex state lock and wakes bounded waiters without transferring ownership",
+  "the address bar replaces its prior value on the first edit after pointer focus and accepts bare hosts by prepending https:// without weakening explicit-scheme validation or URL capacity bounds",
+  "browser network and TLS authority remains exclusively in CURL.PRG and malformed or unsupported navigation cannot replace the active document",
+  "normal desktop startup and browser input complete without VFS lock timeout compositor degradation kernel panic or loss of unrelated Surface clients"
+]
+targeted_tests = [
+  "python test/test_gui_browser_source.py -v",
+  "python test/test_smp.py -v",
+  "python test/test_vfs_sync_r13.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser"
+]
+stop_conditions = [
+  "mutex cleanup can release an owner that is still running or whose task generation does not exactly match",
+  "mutex bookkeeping requires heap allocation unbounded traversal or more than one registration for recursive acquisition",
+  "the desktop still emits Program load open failed -11 REIST_GUI COMPOSITOR_DEGRADED or misses DESKTOP_OK",
+  "address replacement or host normalization can overflow the fixed URL buffer accept an unsupported explicit scheme or grant the browser raw network authority",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix browser input and abandoned task mutexes"
+evidence = []
 
 [[packages]]
 id = "R3.6-surface-web-browser"
