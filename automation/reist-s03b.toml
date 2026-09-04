@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N3f-ext2-cross-sector-rename"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,59 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "N3f-ext2-cross-sector-rename"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Relocate EXT2 rename records across two directory sectors"
+scope = "Extend only the existing Storage operation 34 same-directory no-replace EXT2 rename so a native symbolic link or bounded regular file may move from its source record into existing free space or live-record slack in one different 512-byte sector of the same directory block. Preserve the fixed frame, operation number, client ABI, legacy Ring-0 parser, FAT fallback, inode, file data and allocation state. Validate the complete source and destination sectors before planning either mutation, then journal and publish exactly those two sectors as one old-or-new transaction. Malformed records, missing capacity, directories, overwrite, cross-directory movement, destination space in another directory block and any transaction-capacity excess fail before media mutation. Prove normal completion and every bounded write and flush interruption for both symbolic links and regular files, retain all one-sector rename paths, and exercise both cross-sector renames on the persistent QEMU EXT2 image across Storage-Service restart with clean redundant journal headers. General create, write, replace, directory mutation and cross-directory rename remain later N3 packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "scripts/run_qemu_ext2_symlink.py",
+  "test/test_reist_vfs_namespace.py",
+  "test/test_reist_vfs_symlink.py",
+  "test/test_reist_vfs_symlink_host.c",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_storage_service.py",
+  "test/test_user_program_toolchain.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md"
+]
+invariants = [
+  "the fixed append-only Storage operation 34 frame client ABI syscall numbers FAT fallback and every existing one-sector rename path remain unchanged",
+  "cross-sector rename accepts only an absent destination in the same directory block and changes exactly the validated source and destination 512-byte sectors",
+  "rename preserves the exact inode number inode bytes file bytes data-block pointers allocation bitmaps free counters and every unrelated directory entry",
+  "both sectors and all records are validated before either planned mutation and malformed layout insufficient capacity directories overwrite cross-directory or cross-block relocation fail before media write or flush",
+  "ACTIVE recovery exposes only the complete old name and COMMITTED recovery only the complete new name before both redundant journal headers become CLEAN",
+  "all scans transactions retries waits reads writes flushes paths and recovery work retain their existing fixed capacities and absolute deadlines",
+  "service crash stale generation interrupted media I O or malformed metadata yields either the complete old or new namespace and never both names namespace loss or partial record publication"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_namespace.py -v",
+  "python test/test_reist_vfs_symlink.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode vfs-symbolic-links"]
+stop_conditions = [
+  "a cross-sector rename modifies more than two directory sectors an inode file byte allocation counter or unrelated directory entry",
+  "a directory overwrite cross-directory or cross-directory-block relocation can reach a media write or flush",
+  "interruption can expose both names neither recoverable name a partial destination record or a non-clean recovered journal",
+  "the implementation requires a new ABI operation Ring-0 filesystem parser unbounded traversal allocation or more than two publication sectors",
+  "the real EXT2 runtime cannot rename both a symbolic link and regular file across sectors and Storage-Service restart with clean journal headers",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fs: relocate EXT2 renames across directory sectors"
+evidence = []
 
 [[packages]]
 id = "N2g-notepad-piece-table"

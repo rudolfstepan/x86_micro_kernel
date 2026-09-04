@@ -4,7 +4,15 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: keines. `N3e-ext2-same-sector-rename-growth` ist abgeschlossen.
+Aktives Thema: `N3f-ext2-cross-sector-rename`. Der begrenzte Folgeschnitt
+erweitert gleichverzeichnisiges No-replace-Rename ausschließlich auf einen
+vorhandenen Zielrecord in einem zweiten 512-Byte-Sektor desselben EXT2-
+Directory-Blocks. Beide vollständigen Sektoren werden vor Planung validiert
+und als eine alte-oder-neue Undo-Journaltransaktion publiziert. ABI, Inode,
+Dateidaten, Allokation, Cross-Directory, Replace und Verzeichnisse bleiben
+unverändert beziehungsweise ausgeschlossen.
+
+`N3e-ext2-same-sector-rename-growth` ist abgeschlossen.
 Das vorhandene gleichverzeichnisige No-replace-Rename kann einen längeren
 Zielnamen nun in einen freien EXT2-Record oder `rec_len`-Slack umplatzieren,
 wenn Quellentfernung, Donor-Split sowie vollständiger Zielheader und -name in
