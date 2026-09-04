@@ -3245,13 +3245,16 @@ durch den Status des ausführbaren Pakets aktualisiert.
    eingebautes Icon und eine echte Verknüpfung verschob, beide Anordnungen
    dauerhaft neu lud, einen kleineren Arbeitsbereich prüfte und die
    Verknüpfung anschließend ohne Compositor-Neustart im Editor aktivierte.
-11. [ ] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
+11. [~] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
    führen.** N3a liefert nur den für native EXT2-Symlinks benötigten ersten
    begrenzten Mutationsschnitt. Danach die übrigen versionierten Create-,
    Write-, Rename-, Replace- und Reparaturtransaktionen migrieren. Journal,
    Readback, Medienidentität und Generation bleiben fail-closed. Abnahme:
    Power-Cut-/Teilwrite-Matrix, Dienstneustart und kontrollierter Remount ohne
-   ABI-Bruch.
+   ABI-Bruch. Aktiver erster Folgeschnitt `N3b` vervollständigt ausschließlich
+   den Namespace-Lebenszyklus nativer EXT2-Symlinks: finalkomponentengetreues
+   `unlink` und gleichverzeichnisiges No-replace-`rename` über den
+   generationgebundenen Storage-Dienst und das bestehende feste Undo-Journal.
 12. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
    SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
    MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend

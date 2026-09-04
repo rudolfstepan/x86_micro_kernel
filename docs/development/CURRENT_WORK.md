@@ -4,8 +4,13 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: keines. Alle definierten Pakete sind abgeschlossen; `active_id`
-bleibt leer, bis das nächste Architekturpaket abgegrenzt wird.
+Aktives Thema: `N3b-ext2-symlink-namespace`. Der nächste begrenzte N3-Schnitt
+ergänzt den in N3a eingeführten nativen EXT2-Symlinks um servicegebundenes
+`unlink` und gleichverzeichnisiges `rename`, ohne den alten Ring-0-EXT2-Parser
+zu erweitern. Die erste Rename-Teilmenge bleibt auf einen vorhandenen
+512-Byte-Publikationssektor und ein nicht vorhandenes Ziel beschränkt;
+reguläre Dateien, Verzeichnisse, Cross-Directory-Moves und allgemeines
+Dateischreiben bleiben getrennte spätere N3-Pakete.
 
 `R3.5a-desktop-icon-drag-layout` ist abgeschlossen. Ein reines, heapfreies
 Layoutmodul parst und serialisiert bis zu 131 Einträge, berechnet eine

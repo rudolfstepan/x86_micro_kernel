@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "N3b-ext2-symlink-namespace"
 
 [policy]
 one_package_per_run = true
@@ -14415,6 +14415,82 @@ evidence = [
   "The final runtime-desktop-notepad-fonts QEMU gate passed after a real Surface Notepad edited and saved a document above 51200 bytes, selected all five families at both 10 and 28 pixels, scrolled to every required edge and remained live with its compositor.",
   "Surface v6 remains append-only, legacy PAINT_TEXT and the 8x16 system UI font are unchanged, malformed optional faces fall back to validated GNU Unifont, and font selection changes no document bytes, Piece Table state, modified state, save protocol or persistent configuration."
 ]
+
+[[packages]]
+id = "N3b-ext2-symlink-namespace"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Complete the bounded EXT2 symbolic-link namespace lifecycle"
+scope = "Complete the native EXT2 symbolic-link lifecycle started by N3a without widening the legacy Ring-0 EXT2 parser. Append POSIX-shaped unlink and rename operations to the fixed Storage-Service frame and request ABI while preserving all existing numbers and structures. Unlink removes exactly the final symbolic-link object rather than its target; same-directory no-replace rename changes only one symbolic-link directory entry and preserves its inode and target. The first bounded rename subset requires source and destination in the same directory and one 512-byte publication sector; cross-directory, directory, regular-file, overwrite and layout-expanding cases fail before media mutation with explicit errno-compatible results. Fast and block-backed links release their inode and optional direct target block through the existing fixed EXT2 undo journal, with one namespace publication sector, readback and CLEAN recovery. Add a generation-scoped namespace client with one absolute deadline and at most one post-recovery retry. DEL, non-recursive RM and RENAME use the service path first and fall back to their unchanged legacy path only for the explicit EOPNOTSUPP result so writable FAT behavior remains available while EXT2 symlinks never reach Ring 0. Prove malformed frames, stale generations, target non-following, dangling links, interrupted writes and flushes, service restart, persistence and clean journal state in host tests and a real QEMU EXT2 image. General regular-file create, write, replace, cross-directory rename, directories and FAT parser migration remain later N3 packages."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/del.c",
+  "userspace/programs/rm.c",
+  "userspace/programs/rename.c",
+  "userspace/storage/include/reist/vfs_path.h",
+  "userspace/storage/lib/vfs_path.c",
+  "userspace/storage/include/reist/vfs_stat_client.h",
+  "userspace/storage/lib/vfs_stat_client.c",
+  "userspace/storage/include/reist/vfs_shadow_ext2.h",
+  "userspace/storage/lib/vfs_shadow_ext2.c",
+  "userspace/storage/include/reist/vfs_namespace_client.h",
+  "userspace/storage/lib/vfs_namespace_client.c",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_ext2_symlink.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_reist_vfs_namespace.py",
+  "test/test_reist_vfs_namespace_host.c",
+  "test/test_reist_vfs_symlink.py",
+  "test/test_reist_vfs_shadow_ext2.py",
+  "test/test_reist_storage_request_pool.py",
+  "test/test_reist_storage_request_pool_host.c",
+  "test/test_reist_storage_service.py",
+  "test/test_user_program_toolchain.py",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/filesystems/VFS_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USERSPACE_FILESYSTEM_TOOLS.md"
+]
+invariants = [
+  "the append-only Storage-Service ABI uses POSIX unlink and rename terminology and leaves every existing operation number frame syscall and wrapper unchanged",
+  "unlink and rename operate on the final symbolic-link directory entry itself and never resolve or mutate the link target",
+  "the first rename subset accepts only a symbolic link with an absent same-directory destination representable in one existing 512-byte publication sector and rejects overwrite cross-directory directories regular files and growth before effect",
+  "fast and block-backed symlink removal releases only the exact inode and optional direct target block while preserving unrelated bitmap counter inode directory and journal bytes",
+  "one transaction has fixed read write flush entry path retry and deadline bounds and exactly one namespace publication sector",
+  "ACTIVE recovery restores the complete old namespace and COMMITTED recovery retains the complete final namespace before leaving both journal headers CLEAN",
+  "client and service validate exact process generations paths operations reserved bytes and returned frames before publishing success or retrying once",
+  "DEL RM and RENAME fall back to the existing legacy mutation only on EOPNOTSUPP so FAT behavior remains unchanged and an EXT2 mutation failure cannot bypass the service",
+  "service crash stale reply malformed metadata exhaustion or interrupted media I O exposes either the complete old or complete new namespace and never a target mutation or partial success"
+]
+targeted_tests = [
+  "python test/test_reist_vfs_namespace.py -v",
+  "python test/test_reist_vfs_symlink.py -v",
+  "python test/test_reist_vfs_shadow_ext2.py -v",
+  "python test/test_reist_storage_request_pool.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target qemu -Video framebuffer"]
+runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode vfs-symbolic-links"]
+stop_conditions = [
+  "unlink or rename follows or modifies a symbolic-link target or can affect a directory regular file or a second publication sector",
+  "the mutation requires an unbounded walk allocation retry wait recovery scan or new Ring-0 filesystem parser",
+  "interruption can leave both old and new names visible neither recoverable or an allocated inode or block unreachable",
+  "a non-EOPNOTSUPP service failure can fall through to the legacy syscall path",
+  "the real EXT2 runtime cannot unlink rename reload and preserve links across storage-service restart with a clean journal",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fs: complete EXT2 symlink namespace lifecycle"
+evidence = []
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"
