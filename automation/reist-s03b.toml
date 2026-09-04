@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = ""
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,57 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.6b-vmware-pointer-pinned-mutex"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Restore bounded VMware pointer responsiveness after mutex recovery"
+scope = "Repair the reproduced current-image VMware interaction failure in which the supervised desktop reaches DESKTOP_MOUSE_OK but cannot acknowledge the real virtual-xHCI Start-menu click inside 75 seconds. The regression follows task-generation mutex ownership tracking on the latency-sensitive cursor path: each pointer publication currently registers and unregisters the display-state mutex through the global scheduler task-table lock while preemption is already disabled. Add an explicit nonblocking pinned-task mutex acquisition whose owner must remain preemption-disabled through final release, records this state in the mutex, never enters the task ownership set, and therefore cannot become a non-running abandoned owner. Reject use without a current running task and balanced preemption pin, preserve normal tracked recursive acquisition and forced-generation cleanup everywhere else, and use the new path only for the fixed-work display cursor transaction. Keep the recursive framebuffer present batch, exact old/new cursor damage, VMware FIFO publication, Surface policy and all public ABI unchanged. Repair the stale real-hover trajectory for the seven-item Start menu and require the real VMware path to open Start, visit every row, meet the existing 17-ms frame and 34-ms cursor bounds, exit cleanly and retain a responsive Ring-3 shell."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "kernel/sched/mutex.c",
+  "kernel/sched/mutex.h",
+  "drivers/video/display_control.c",
+  "scripts/run_vmware_mouse.ps1",
+  "test/test_smp.py",
+  "test/test_vmware_svga2d.py",
+  "test/test_vmware_mouse.py",
+  "docs/architecture/SYNCHRONIZATION_CONTRACT.md",
+  "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md"
+]
+invariants = [
+  "a pinned mutex acquisition is nonblocking requires one current running task with preemption already disabled and cannot be published as task-owned unless the mutex state transition succeeds",
+  "a pinned owner remains generation-identified and recursive but final unlock asserts the preemption pin is still active; it never enters forced-termination ownership cleanup because a pinned running task cannot be terminated",
+  "ordinary task mutex acquisition remains fixed-capacity tracked and exact-generation forced cleanup remains unchanged",
+  "the cursor path preserves one atomic fixed-work old/new pointer damage publication without full-scene redraw lost button edges heap allocation or a public ABI change",
+  "the real four-vCPU VMware virtual-xHCI trajectory opens Start visits all seven current items meets the existing 17-ms frame and 34-ms pointer bounds and returns to a responsive Ring-3 shell without panic restart or degradation"
+]
+targeted_tests = [
+  "python test/test_smp.py -v",
+  "python test/test_vmware_svga2d.py -v",
+  "python test/test_vmware_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-hover-cadence -Target vmware",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode vmware-mouse -Target vmware"
+]
+stop_conditions = [
+  "a pinned acquisition can sleep wait or succeed without a current exact running task and an active preemption pin",
+  "a task can re-enable preemption or become terminable while retaining a pinned mutex",
+  "the change weakens ordinary mutex tracking forced-generation abandonment display lifecycle serialization cursor damage or button-edge ordering",
+  "the real VMware hover path cannot acknowledge Start visit all seven rows meet the frozen latency bounds or return to a responsive shell",
+  "a required production file lies outside allowed_files or an unrelated worktree change overlaps one",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix VMware pointer mutex hot path"
+evidence = []
 
 [[packages]]
 id = "R3.6a-browser-input-and-mutex-owner-recovery"

@@ -4,6 +4,17 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
+Aktives Reparaturthema: `R3.6b-vmware-pointer-pinned-mutex`. Das aktuelle
+VMware-Abbild erreicht zwar `DESKTOP_MOUSE_OK`, bestätigt den Start-Klick der
+realen RFB-zu-xHCI-Trajektorie danach aber nicht innerhalb von 75 Sekunden.
+Seit der generationgenauen Mutex-Recovery registriert jede Cursor-Publikation
+den Display-Mutex unter dem globalen Task-Table-Lock, obwohl der kurze
+Cursorpfad bereits präemptionsgepinnt ist. Der Reparaturschnitt ergänzt eine
+explizite nichtblockierende, bis zum finalen Unlock gepinnte Mutexakquisition
+für genau diesen Pfad und aktualisiert den veralteten Hover-Nachweis auf die
+aktuellen sieben Startmenüeinträge. Normale Mutexbesitzer bleiben vollständig
+generationgenau verfolgt.
+
 `R3.6a-browser-input-and-mutex-owner-recovery` ist abgeschlossen. Ein Klick in
 die Browser-Adressleiste ersetzt beim ersten Editieren jetzt den bisherigen
 Inhalt; nackte Hostnamen erhalten begrenzt `https://`, explizites `http://` und
