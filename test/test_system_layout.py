@@ -85,6 +85,7 @@ class SystemLayoutContracts(unittest.TestCase):
             "system.conf": "schema=reist.system/1",
             "input.conf": "schema=reist.input/1",
             "desktop.conf": "schema=reist.desktop/1",
+            "desktop-layout.conf": "schema=reist.desktop-layout/1",
             "filetypes.conf": "schema=reist.filetypes/1",
             "sounds.conf": "schema=reist.sounds/1",
         }
@@ -285,8 +286,8 @@ class SystemLayoutContracts(unittest.TestCase):
         self.assertIn("usr/gui/bin/guidemo.prg", makefile)
         self.assertIn("'usr/gui/bin/guidemo.prg'", windows)
         for config in (
-            "system.conf", "input.conf", "desktop.conf", "filetypes.conf",
-            "sounds.conf"
+            "system.conf", "input.conf", "desktop.conf",
+            "desktop-layout.conf", "filetypes.conf", "sounds.conf"
         ):
             self.assertIn(
                 f"etc/reist/{config}=config/etc/reist/{config}", makefile

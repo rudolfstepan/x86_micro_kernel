@@ -48,6 +48,8 @@ static uint32_t choose_operation(uint32_t available, uint32_t requested) {
         return DESKTOP_DRAG_OPERATION_COPY;
     if ((available & DESKTOP_DRAG_OPERATION_LINK) != 0U)
         return DESKTOP_DRAG_OPERATION_LINK;
+    if ((available & DESKTOP_DRAG_OPERATION_LAYOUT) != 0U)
+        return DESKTOP_DRAG_OPERATION_LAYOUT;
     return 0U;
 }
 

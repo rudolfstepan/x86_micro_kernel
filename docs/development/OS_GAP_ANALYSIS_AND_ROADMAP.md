@@ -3229,14 +3229,22 @@ durch den Status des ausführbaren Pakets aktualisiert.
    großer Surface-Notepad-Lauf über Anfang, Mitte, Ende, Rückweg und Wrap.
    Abgenommen mit 32 gezielten Prüfungen, QEMU-Framebuffer-Paketbuild und
    realem Surface-Lauf einschließlich einer logischen Zeile über 256 Byte.
-10. [~] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
+10. [x] **R3.5a · Desktop-Icons per Drag-and-drop anordnen.** Eingebaute und
    dynamische dateisystemgestützte Icons verwenden den vorhandenen begrenzten
    Drag-Controller, rasten kollisionsfrei im sichtbaren Arbeitsbereich ein und
    bleiben von Fensterbewegung, Start, Datei-MOVE und Papierkorb-MOVE getrennt.
    Ein eigenes `reist.desktop-layout/1`-Dokument speichert nur stabile Icon-
    Identitäten und Rasterkoordinaten atomar. Abnahme: Verschieben, Neustart,
    Größenwechsel, Korruptionsfallback und unveränderte Klick-/Kontextmenü-
-   Semantik im realen QEMU-Desktop.
+   Semantik im realen QEMU-Desktop. Implementiert sind die separate
+   Drag-Operation, eine feste 131-Eintrag-/73728-Byte-Tabelle, höchstens 4096
+   geprüfte Dropzellen, dieselbe View für Rendering und Hit-Test, temporäre
+   Resize-Klemmung sowie die Veröffentlichung erst nach Tempdatei, `fsync`,
+   Close und atomarem Rename. Abgenommen mit 80 eingefrorenen Targeted-Checks,
+   dem QEMU-Framebuffer-Paketlauf und einem realen USB-Mauslauf, der ein
+   eingebautes Icon und eine echte Verknüpfung verschob, beide Anordnungen
+   dauerhaft neu lud, einen kleineren Arbeitsbereich prüfte und die
+   Verknüpfung anschließend ohne Compositor-Neustart im Editor aktivierte.
 11. [ ] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
    führen.** N3a liefert nur den für native EXT2-Symlinks benötigten ersten
    begrenzten Mutationsschnitt. Danach die übrigen versionierten Create-,

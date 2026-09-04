@@ -71,6 +71,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/compositor/desktop.c",
         ROOT / "userspace/gui/compositor/desktop_splash.s",
         ROOT / "userspace/gui/compositor/desktop_drag.c",
+        ROOT / "userspace/gui/compositor/desktop_layout.c",
         ROOT / "userspace/gui/compositor/desktop_wm.c",
         ROOT / "userspace/gui/compositor/desktop_explorer.c",
         ROOT / "userspace/gui/compositor/desktop_trash.c",

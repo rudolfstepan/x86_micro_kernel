@@ -8,7 +8,8 @@ int main(void) {
     desktop_drag_object_initialize(&object);
     object.kind = DESKTOP_DRAG_OBJECT_FILE;
     object.operations = DESKTOP_DRAG_OPERATION_MOVE |
-        DESKTOP_DRAG_OPERATION_COPY | DESKTOP_DRAG_OPERATION_LINK;
+        DESKTOP_DRAG_OPERATION_COPY | DESKTOP_DRAG_OPERATION_LINK |
+        DESKTOP_DRAG_OPERATION_LAYOUT;
     object.source_id = 3U;
     object.source_generation = 9U;
     object.data_size = 3U;
@@ -16,6 +17,31 @@ int main(void) {
     object.data[1] = 'b';
     object.data[2] = 'c';
     assert(desktop_drag_validate_object(&object) == DESKTOP_DRAG_OK);
+
+    desktop_drag_state_t state;
+    desktop_drag_result_t result;
+
+    desktop_drag_target_t layout_target;
+    desktop_drag_target_initialize(&layout_target);
+    layout_target.bounds = (desktop_rect_t){0, 0, 80U, 80U};
+    layout_target.accepted_kinds = DESKTOP_DRAG_KIND_MASK(
+        DESKTOP_DRAG_OBJECT_FILE);
+    layout_target.operations = DESKTOP_DRAG_OPERATION_LAYOUT;
+    layout_target.target_id = 19U;
+    layout_target.target_generation = 12U;
+    assert(desktop_drag_validate_target(&layout_target) == DESKTOP_DRAG_OK);
+
+    desktop_drag_state_initialize(&state);
+    assert(desktop_drag_arm(&state, &object, 4, 4) == DESKTOP_DRAG_OK);
+    assert(desktop_drag_motion(&state, 30, 30, &layout_target,
+                               DESKTOP_DRAG_OPERATION_LAYOUT) ==
+           DESKTOP_DRAG_OK);
+    desktop_drag_result_initialize(&result);
+    assert(desktop_drag_drop(&state, 30, 30, &layout_target,
+                             DESKTOP_DRAG_OPERATION_LAYOUT, &result) ==
+           DESKTOP_DRAG_OK);
+    assert(result.accepted == 1U);
+    assert(result.operation == DESKTOP_DRAG_OPERATION_LAYOUT);
 
     desktop_drag_target_t target;
     desktop_drag_target_initialize(&target);
@@ -27,7 +53,6 @@ int main(void) {
     target.target_generation = 11U;
     assert(desktop_drag_validate_target(&target) == DESKTOP_DRAG_OK);
 
-    desktop_drag_state_t state;
     desktop_drag_state_initialize(&state);
     assert(desktop_drag_arm(&state, &object, 10, 10) == DESKTOP_DRAG_OK);
     assert(state.phase == DESKTOP_DRAG_PHASE_ARMED);
@@ -41,7 +66,6 @@ int main(void) {
                DESKTOP_DRAG_OPERATION_MOVE) == DESKTOP_DRAG_OK);
     assert(state.feedback == DESKTOP_DRAG_FEEDBACK_VALID);
 
-    desktop_drag_result_t result;
     desktop_drag_result_initialize(&result);
     assert(desktop_drag_drop(
                &state, 110, 110, &target,

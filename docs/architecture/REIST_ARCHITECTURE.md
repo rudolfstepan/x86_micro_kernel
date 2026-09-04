@@ -510,6 +510,31 @@ Zieldatei sichtbar. Schlägt nur das abschließende Löschen fehl, bleibt eine
 verifizierte Kopie erhalten und der partielle Ausgang wird ausdrücklich
 gemeldet. Bestehende Zielnamen, gleiche Verzeichnisse, Symlinksubstitutionen,
 private Tempnamen und geschützte Systemwurzeln werden fail-closed abgelehnt.
+
+Die räumliche Anordnung der Desktop-Icons ist eine davon getrennte
+Compositor-Operation `LAYOUT`; sie erteilt insbesondere keine VFS-MOVE-
+Autorität. Eingebaute Icons sowie die Datei-, Ordner- und `.LNK`-Identitäten
+des bereits publizierten `/desktop`-Snapshots werden in einer festen Tabelle
+auf ein höchstens 256 x 256 großes Raster abgebildet. Ein Drop durchsucht
+höchstens 4096 Rasterzellen, nimmt genau eine freie Zelle im sichtbaren
+Arbeitsbereich an und verändert bei Ablehnung keinen Zustand. Rendering,
+Hit-Test und Drop-Feedback lesen dieselbe vorab berechnete View und führen
+keinen VFS-Zugriff aus. Bei einer kleineren Anzeige entsteht nur eine
+temporäre, deterministisch geklemmte und kollisionsfreie View; gespeicherte
+Koordinaten bleiben bis zu einem erfolgreichen Benutzer-Drop unverändert.
+
+Das separate Textdokument beginnt mit
+`schema=reist.desktop-layout/1` und enthält höchstens 131 hexadezimal
+kodierte stabile Identitäten mit je zwei dezimalen Rasterkoordinaten.
+Parser und Serializer besitzen feste 73728-Byte-Kapazität und lehnen
+unbekannte Syntax, Überlappungen, doppelte Identitäten, Bereichsfehler und
+nachlaufende Teilzeilen atomar ab. Fehlende, beschädigte, veraltete oder für
+die aktuelle Anzeige außerhalb liegende Einträge führen zur deterministischen
+Standardplatzierung und löschen niemals Dateien oder Verknüpfungen. Speichern
+schreibt einen vollständigen, nach Identität sortierten Kandidaten nach
+`/etc/reist/desktop-layout.tmp`, führt `fsync` und Close aus und ersetzt erst
+danach `/etc/reist/desktop-layout.conf` per atomarem Rename. Der Compositor
+publiziert die neue In-Memory-Tabelle ausschließlich nach diesem Erfolg.
 Die langlebige Userspace-Shell verwendet Operation 5 für die Programmsuche und
 Operation 7 für Tab-Vervollständigungen. Alle PATH-Kandidaten beziehungsweise
 Verzeichnisse einer Aktion teilen eine absolute monotone Fünf-Sekunden-

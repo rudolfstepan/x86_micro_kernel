@@ -36,12 +36,15 @@ enum desktop_drag_object_kind {
 enum desktop_drag_operation {
     DESKTOP_DRAG_OPERATION_MOVE = 1U << 0,
     DESKTOP_DRAG_OPERATION_COPY = 1U << 1,
-    DESKTOP_DRAG_OPERATION_LINK = 1U << 2
+    DESKTOP_DRAG_OPERATION_LINK = 1U << 2,
+    /* Compositor-local icon-grid movement.  This never authorizes a VFS
+     * rename and therefore cannot alias Explorer's MOVE operation. */
+    DESKTOP_DRAG_OPERATION_LAYOUT = 1U << 3
 };
 
 #define DESKTOP_DRAG_OPERATION_ALL \
     (DESKTOP_DRAG_OPERATION_MOVE | DESKTOP_DRAG_OPERATION_COPY | \
-     DESKTOP_DRAG_OPERATION_LINK)
+     DESKTOP_DRAG_OPERATION_LINK | DESKTOP_DRAG_OPERATION_LAYOUT)
 
 enum desktop_drag_phase {
     DESKTOP_DRAG_PHASE_IDLE = 0U,

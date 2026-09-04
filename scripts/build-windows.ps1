@@ -486,7 +486,8 @@ try {
         }
     }
     foreach ($configFile in @(
-        'system.conf', 'input.conf', 'desktop.conf', 'filetypes.conf',
+        'system.conf', 'input.conf', 'desktop.conf', 'desktop-layout.conf',
+        'filetypes.conf',
         'sounds.conf'
     )) {
         $configPath = Join-Path $RepoRoot "config\etc\reist\$configFile"

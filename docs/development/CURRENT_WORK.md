@@ -1,15 +1,23 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 3. September 2026
+Stand: 4. September 2026
 
-Branch/Startpunkt: `working_branch` / `fd874689`
+Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: `R3.5a-desktop-icon-drag-layout`: Eingebaute und dynamische
-dateisystemgestützte Desktop-Icons sollen sich innerhalb des sichtbaren
-Arbeitsbereichs verschieben und kollisionsfrei einrasten lassen. Ein getrenntes
-fest begrenztes `reist.desktop-layout/1`-Dokument speichert ausschließlich
-stabile Icon-Identitäten und Rasterpositionen atomar; Datei-MOVE, Aktivierung,
-Fensterbewegung und Papierkorb bleiben davon getrennte Operationen.
+Aktives Thema: keines. Alle definierten Pakete sind abgeschlossen; `active_id`
+bleibt leer, bis das nächste Architekturpaket abgegrenzt wird.
+
+`R3.5a-desktop-icon-drag-layout` ist abgeschlossen. Ein reines, heapfreies
+Layoutmodul parst und serialisiert bis zu 131 Einträge, berechnet eine
+kollisionsfreie temporäre View und begrenzt die Rasterzellensuche auf 4096
+Kandidaten. Der Desktop verwendet diese View gemeinsam für Rendering, Hit-Test
+und Drop, unterscheidet `LAYOUT` von Datei-`MOVE` und publiziert eine neue
+Anordnung erst nach Tempdatei, `fsync`, Close und atomarem Rename. Alle 80
+eingefrorenen Targeted-Checks und der QEMU-Framebuffer-Paketlauf in 23 Sekunden
+sind bestanden. Der reale USB-Mauslauf verschob und lud ein eingebautes Icon
+und eine echte Verknüpfung dauerhaft neu, prüfte die temporäre Platzierung in
+einem kleineren Arbeitsbereich und öffnete die verschobene Verknüpfung danach
+ohne Compositor-Neustart wieder im Editor.
 
 `N2g1-notepad-document-navigation-wrap` ist abgeschlossen. Der vertikale
 Scrollbereich bildet das vollständige Piece-Table-Dokument ab und erreicht

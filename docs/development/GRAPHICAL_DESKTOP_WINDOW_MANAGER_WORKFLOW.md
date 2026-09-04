@@ -626,6 +626,27 @@ Vektor-Fallbacks; der Zeichenpfad führt nur einen geclippten Pixel-Upload aus.
   Explorer-Snapshots und der Desktop-Snapshot werden nach einer Mutation
   aktualisiert.
 
+- [x] Eingebaute und dynamische Desktop-Icons verwenden denselben festen
+  Drag-Controller mit der separaten Operation `LAYOUT`. Sie rastet innerhalb
+  des Desktop-Arbeitsbereichs auf eine freie Rasterzelle ein und kann weder
+  Fensterbewegung noch Explorer-/Papierkorb-`MOVE` auslösen. Rendering,
+  Hit-Test und grünes/rotes Drop-Feedback beziehen ihre Geometrie aus derselben
+  festen View. Klick, Doppelklick, Tastaturauswahl und Rechtsklick bleiben bis
+  zum Überschreiten der bestehenden Vier-Pixel-Drag-Schwelle unverändert.
+
+  `reist.desktop-layout/1` speichert höchstens 131 stabile Built-in- oder
+  `/desktop`-Identitäten mit Rasterkoordinaten in maximal 73728 Byte. Laden
+  lehnt doppelte Identitäten, überlappende Zellen, Bereichsfehler,
+  unvollständige Zeilen und Übergröße atomar ab. Fehlende, stale oder bei
+  kleinerer Anzeige außerhalb liegende Einträge verwenden eine
+  deterministische temporäre Platzierung. Ein Benutzer-Drop serialisiert den
+  vollständigen Kandidaten sortiert und veröffentlicht ihn erst nach
+  Tempdatei, `fsync`, Close und atomarem Rename. 80 eingefrorene
+  Targeted-Checks, der QEMU-Framebuffer-Paketlauf und der reale USB-Mauslauf
+  mit Built-in- und echter Shortcut-Verschiebung, dauerhaftem Reload,
+  Größenklemmung und erneuter Editor-Aktivierung sind bestanden; der
+  Compositor wurde dabei weder neu gestartet noch degradiert.
+
 - [x] Papierkorb als eigener Desktop-Workflow: Eine feste
   `DragSource -> DragObject/Data -> DropTarget -> Operation`-Schicht trägt
   generationengebundene Dateiobjekte und die Operationen Move, Copy und Link.

@@ -726,6 +726,7 @@ SYSTEM_IMAGE_FILES := \
 	etc/reist/system.conf=config/etc/reist/system.conf \
 	etc/reist/input.conf=config/etc/reist/input.conf \
 	etc/reist/desktop.conf=config/etc/reist/desktop.conf \
+	etc/reist/desktop-layout.conf=config/etc/reist/desktop-layout.conf \
 	etc/reist/filetypes.conf=config/etc/reist/filetypes.conf \
 	etc/reist/sounds.conf=config/etc/reist/sounds.conf \
 	usr/share/icons/folder-empty.ico=assets/icons/folder-empty.ico \

@@ -18,7 +18,8 @@ class DesktopDragSourceTests(unittest.TestCase):
             "DESKTOP_DRAG_OBJECT_FILE", "DESKTOP_DRAG_OBJECT_TEXT",
             "DESKTOP_DRAG_OBJECT_IMAGE", "DESKTOP_DRAG_OBJECT_APPLICATION",
             "DESKTOP_DRAG_OPERATION_MOVE", "DESKTOP_DRAG_OPERATION_COPY",
-            "DESKTOP_DRAG_OPERATION_LINK", "desktop_drag_object_t",
+            "DESKTOP_DRAG_OPERATION_LINK", "DESKTOP_DRAG_OPERATION_LAYOUT",
+            "desktop_drag_object_t",
             "desktop_drag_target_t", "desktop_drag_drop",
         ):
             self.assertIn(token, header)

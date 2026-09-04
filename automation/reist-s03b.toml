@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.5a-desktop-icon-drag-layout"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -14943,7 +14943,7 @@ evidence = [
 
 [[packages]]
 id = "R3.5a-desktop-icon-drag-layout"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "medium"
 title = "Arrange filesystem-backed desktop icons and persist a bounded layout"
@@ -14958,6 +14958,7 @@ allowed_files = [
   "userspace/gui/compositor/desktop_shortcut.c",
   "userspace/gui/compositor/desktop_layout.h",
   "userspace/gui/compositor/desktop_layout.c",
+  "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
   "scripts/run_qemu_runtime_desktop.py",
   "scripts/test-reist-runtime.ps1",
@@ -15002,4 +15003,8 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "gui: persist bounded desktop icon layout"
-evidence = []
+evidence = [
+  "All 80 frozen targeted checks passed: 4 desktop-layout source and host checks, 4 shortcut checks, 2 drag-controller checks, 58 desktop checks and 12 system-layout checks.",
+  "The final QEMU framebuffer package gate passed in 23 seconds and rebuilt the production desktop with the fixed-capacity layout module and packaged reist.desktop-layout/1 document.",
+  "The real QEMU USB-mouse runtime moved and durably reloaded a built-in icon and a real filesystem shortcut, validated temporary placement in a smaller work area, reopened the moved shortcut in Notepad and observed no compositor restart or degraded state; no queued package remains and active_id is empty."
+]

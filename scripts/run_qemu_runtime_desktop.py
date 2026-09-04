@@ -669,6 +669,107 @@ def run_shortcut_mouse_probe(
     return 0
 
 
+def icon_layout_probe_point(
+        output: queue.Queue[str], transcript: list[str], marker: str,
+        index: int, deadline: float, after: int = 0) -> tuple[int, int]:
+    match, _ = wait_for_desktop_pattern(
+        output, transcript,
+        rf"DESKTOP_ICON_LAYOUT_{marker} index={index} "
+        r"(?:kind=[a-z]+ )?x=([0-9]+) y=([0-9]+)",
+        deadline, after,
+    )
+    return int(match.group(1)), int(match.group(2))
+
+
+def run_icon_layout_mouse_probe(
+        process: subprocess.Popen[str], output: queue.Queue[str],
+        transcript: list[str], screenshot: pathlib.Path,
+        initial_deadline: float) -> int:
+    deadline = max(initial_deadline, time.monotonic() + 90.0)
+    ready, initial_text = wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_ICON_LAYOUT_READY width=([0-9]+) height=([0-9]+) "
+        r"count=([0-9]+) columns=([0-9]+) rows=([0-9]+)",
+        deadline,
+    )
+    if int(ready.group(3)) < 4:
+        raise RuntimeError("desktop layout probe did not create a shortcut")
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_ICON_LAYOUT_RESIZE_OK "
+        r"width=[0-9]+ height=[0-9]+", deadline)
+    initial_offset = initial_text.rfind("DESKTOP_OK")
+    computer = icon_layout_probe_point(
+        output, transcript, "ICON", 0, deadline, initial_offset)
+    computer_target = icon_layout_probe_point(
+        output, transcript, "DROP_TARGET", 0, deadline, initial_offset)
+    capture_screenshot(process, screenshot, deadline)
+    width, height = shortcut_probe_display_size(screenshot, transcript)
+    pointer = [width // 2, height // 2]
+
+    move_offset = len("".join(transcript))
+    shortcut_probe_drag(process, pointer, computer, computer_target)
+    _, moved_text = wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_ICON_LAYOUT_DROP_OK index=0 column=[0-9]+ row=[0-9]+",
+        deadline, move_offset,
+    )
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_ICON_LAYOUT_RELOAD_OK",
+        deadline, move_offset)
+    geometry_offset = moved_text.find("DESKTOP_ICON_LAYOUT_READY", move_offset)
+    if geometry_offset < 0:
+        geometry_offset = move_offset
+    shortcut_match, _ = wait_for_desktop_pattern(
+        output, transcript,
+        r"DESKTOP_ICON_LAYOUT_ICON index=([3-9][0-9]*) kind=shortcut "
+        r"x=([0-9]+) y=([0-9]+)", deadline, geometry_offset)
+    shortcut_index = int(shortcut_match.group(1))
+    shortcut = (int(shortcut_match.group(2)), int(shortcut_match.group(3)))
+    shortcut_target = icon_layout_probe_point(
+        output, transcript, "DROP_TARGET", shortcut_index,
+        deadline, geometry_offset)
+
+    shortcut_move_offset = len("".join(transcript))
+    shortcut_probe_drag(process, pointer, shortcut, shortcut_target)
+    _, second_text = wait_for_desktop_pattern(
+        output, transcript,
+        rf"DESKTOP_ICON_LAYOUT_DROP_OK index={shortcut_index} "
+        r"column=[0-9]+ row=[0-9]+",
+        deadline, shortcut_move_offset,
+    )
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_ICON_LAYOUT_RELOAD_OK",
+        deadline, shortcut_move_offset)
+    second_geometry = second_text.find(
+        "DESKTOP_ICON_LAYOUT_READY", shortcut_move_offset)
+    if second_geometry < 0:
+        second_geometry = shortcut_move_offset
+    shortcut = icon_layout_probe_point(
+        output, transcript, "ICON", shortcut_index,
+        deadline, second_geometry)
+    shortcut_probe_move_mouse(process, pointer, shortcut[0], shortcut[1])
+    activation_offset = len("".join(transcript))
+    shortcut_probe_click(process, 1, 2)
+    _, final_text = wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_ICON_LAYOUT_ACTIVATED",
+        deadline, activation_offset)
+    wait_for_desktop_pattern(
+        output, transcript, r"NOTEPAD_SURFACE_DOCUMENT_READY",
+        deadline, activation_offset)
+    wait_for_desktop_pattern(
+        output, transcript, r"DESKTOP_MOUSE_OK", deadline, initial_offset)
+    for failure in (
+            "DESKTOP_ICON_LAYOUT_PROBE_FAIL",
+            "REIST_GUI COMPOSITOR_RESTARTED",
+            "REIST_GUI COMPOSITOR_DEGRADED",
+            "DESKTOP_EXIT_OK"):
+        if failure in final_text[initial_offset:]:
+            raise RuntimeError(f"desktop layout probe observed {failure}")
+    capture_screenshot(process, screenshot, deadline)
+    print("runtime-desktop-icon-layout: PASS")
+    return 0
+
+
 def run_desktop_relaunch_probe(
         process: subprocess.Popen[str], output: queue.Queue[str],
         transcript: list[str]) -> int:
@@ -789,6 +890,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         explorer_scroll_probe: bool,
         explorer_views_probe: bool,
         shortcut_probe: bool,
+        icon_layout_probe: bool,
         hover_probe: bool,
         supervised_probe: bool,
         guidemo_click_probe: bool,
@@ -812,10 +914,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         expect_failure, render_probe, surface_probe, notepad_probe,
         notepad_font_probe, control_probe, trash_context_probe,
         trash_confirm_probe, trash_restore_probe, explorer_scroll_probe,
-        explorer_views_probe, shortcut_probe, hover_probe,
+        explorer_views_probe, shortcut_probe, icon_layout_probe, hover_probe,
         guidemo_click_probe, sound_probe,
     ))
     if (guidemo_click_probe or hover_probe or shortcut_probe or
+            icon_layout_probe or
             normal_lifecycle_probe):
         command.extend([
             "-device", "qemu-xhci,id=reistxhci",
@@ -951,6 +1054,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     command_name = "desktop.prg --explorer-views-probe"
                 elif shortcut_probe:
                     command_name = "desktop.prg --shortcut-probe"
+                elif icon_layout_probe:
+                    command_name = "desktop.prg --icon-layout-probe"
                 else:
                     command_name = "desktop.prg"
                 send_command(process, command_name)
@@ -981,11 +1086,12 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     "supervised desktop or VGA shell prompt not observed; "
                     f"guest tail:\n{tail}")
         font_catalog_start = (surface_probe or notepad_probe or
-                              notepad_font_probe or shortcut_probe) or not any((
+                              notepad_font_probe or shortcut_probe or
+                              icon_layout_probe) or not any((
             expect_failure, render_probe, surface_probe, control_probe,
             trash_context_probe, trash_confirm_probe, trash_restore_probe,
             explorer_scroll_probe, explorer_views_probe,
-            shortcut_probe,
+            shortcut_probe, icon_layout_probe,
             hover_probe, guidemo_click_probe,
             sound_probe))
         desktop_deadline = time.monotonic() + (
@@ -1006,6 +1112,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     return 0
                 if shortcut_probe:
                     return run_shortcut_mouse_probe(
+                        process, output, transcript, screenshot, deadline)
+                if icon_layout_probe:
+                    return run_icon_layout_mouse_probe(
                         process, output, transcript, screenshot, deadline)
                 if hover_probe:
                     hover_ready_deadline = min(
@@ -1556,6 +1665,7 @@ def main() -> int:
     parser.add_argument("--explorer-scroll-probe", action="store_true")
     parser.add_argument("--explorer-views-probe", action="store_true")
     parser.add_argument("--shortcut-probe", action="store_true")
+    parser.add_argument("--icon-layout-probe", action="store_true")
     parser.add_argument("--sound-probe", action="store_true")
     parser.add_argument("--guidemo-click-probe", action="store_true")
     parser.add_argument("--hover-probe", action="store_true")
@@ -1569,7 +1679,7 @@ def main() -> int:
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
-            args.shortcut_probe,
+            args.shortcut_probe, args.icon_layout_probe,
             args.sound_probe, args.guidemo_click_probe,
             args.hover_probe)) > 1:
         parser.error("desktop probe modes are mutually exclusive")
@@ -1588,7 +1698,7 @@ def main() -> int:
                    args.trash_context_probe, args.trash_confirm_probe,
                    args.trash_restore_probe,
                    args.explorer_scroll_probe, args.explorer_views_probe,
-                   args.shortcut_probe,
+                   args.shortcut_probe, args.icon_layout_probe,
                    args.hover_probe,
                    args.supervised_probe,
                    args.guidemo_click_probe, args.sound_probe,
