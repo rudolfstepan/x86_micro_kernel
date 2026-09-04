@@ -2281,9 +2281,10 @@ static int ext2_unlink_symlink_request(ext2_request_t *request,
         request, &parent_volume, &journal, sequence);
 }
 
-static int ext2_rename_symlink_request(ext2_request_t *request,
+static int ext2_rename_request(ext2_request_t *request,
         const char *source_path, uint32_t source_length,
-        const char *destination_path, uint32_t destination_length) {
+        const char *destination_path, uint32_t destination_length,
+        uint8_t symlink_only) {
     char source_parent[X86OS_VFS_SHADOW_PATH_CAPACITY];
     char destination_parent[X86OS_VFS_SHADOW_PATH_CAPACITY];
     char source_name[256];
@@ -2332,12 +2333,15 @@ static int ext2_rename_symlink_request(ext2_request_t *request,
     ext2_shadow_inode_t inode;
     status = ext2_read_inode(&volume, location.inode_number, &inode);
     if (status != 0) return status;
-    if ((ext2_get16(inode.bytes) & EXT2_S_IFMT) != EXT2_S_IFLNK)
+    uint16_t mode = ext2_get16(inode.bytes) & EXT2_S_IFMT;
+    if (mode != EXT2_S_IFLNK &&
+        (symlink_only != 0U || mode != EXT2_S_IFREG))
         return -95;
     char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
     uint32_t target_length = 0U;
-    status = ext2_read_symlink_inode(
-        &volume, &inode, target, &target_length);
+    if (mode == EXT2_S_IFLNK)
+        status = ext2_read_symlink_inode(
+            &volume, &inode, target, &target_length);
     if (status != 0) return status;
     if (journal.sequence == UINT32_MAX) return -75;
     uint32_t sequence = journal.sequence + 1U;
@@ -2364,14 +2368,19 @@ static int ext2_rename_symlink_request(ext2_request_t *request,
                 &verify_inode, visible, &verify_number);
         if (status == 0 && verify_number != location.inode_number)
             status = -5;
+        for (uint32_t index = 0U;
+             status == 0 && index < sizeof(inode.bytes); ++index)
+            if (verify_inode.bytes[index] != inode.bytes[index]) status = -5;
         char verify_target[X86OS_VFS_SYMLINK_TARGET_CAPACITY];
         uint32_t verify_length = 0U;
-        if (status == 0)
+        if (status == 0 && mode == EXT2_S_IFLNK)
             status = ext2_read_symlink_inode(
                 &volume, &verify_inode, verify_target, &verify_length);
-        if (status == 0 && verify_length != target_length) status = -5;
+        if (status == 0 && mode == EXT2_S_IFLNK &&
+            verify_length != target_length) status = -5;
         for (uint32_t index = 0U;
-             status == 0 && index < target_length; ++index)
+             status == 0 && mode == EXT2_S_IFLNK &&
+             index < target_length; ++index)
             if (verify_target[index] != target[index]) status = -5;
     }
     if (status != 0) return status;
@@ -2680,8 +2689,23 @@ int reist_vfs_shadow_ext2_rename_symlink(
         &request, io, deadline_ms,
         REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
     return status == 0
-        ? ext2_rename_symlink_request(
+        ? ext2_rename_request(
             &request, source_path, source_length,
-            destination_path, destination_length)
+            destination_path, destination_length, 1U)
+        : status;
+}
+
+int reist_vfs_shadow_ext2_rename(
+        const reist_vfs_shadow_ext2_io_t *io, const char *source_path,
+        uint32_t source_length, const char *destination_path,
+        uint32_t destination_length, uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(
+        &request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0
+        ? ext2_rename_request(
+            &request, source_path, source_length,
+            destination_path, destination_length, 0U)
         : status;
 }

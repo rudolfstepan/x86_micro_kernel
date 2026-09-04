@@ -596,23 +596,30 @@ Legacy-EXT2-Mutationspfad folgt einen finalen Link weder bei `unlink` noch bei
 `rename`, sondern lehnt beide Operationen ohne Zielwirkung ab.
 
 Append-only Storage-Operation 34 und die Frameoperationen 20/21 ergänzen
-`unlink` und `rename` für genau diese nativen EXT2-Symlinkobjekte. Der feste
+`unlink` für native EXT2-Symlinkobjekte sowie das begrenzte `rename` für
+Symlinks und reguläre EXT2-Dateien. Der feste
 512-Byte-Frame trägt kanonischen Quell- und optionalen Zielpfad; Kernel und
 Storage-Dienst prüfen Prozessgeneration, Operation, Längen, reservierte Bytes
 und den vollständig zurückgegebenen Frame. `unlink` löst die letzte Komponente
 nicht auf und gibt bei genau einem Linkzähler den Inode sowie bei langen
 Symlinks dessen einzigen direkten Zielblock frei. `rename` erhält Inode und
-Zielbytes und akzeptiert zunächst nur ein nicht vorhandenes Ziel im selben
-Verzeichnis, dessen Name in den bestehenden Directory-Record und denselben
-512-Byte-Publikationssektor passt. Reguläre Dateien, Verzeichnisse,
-Überschreiben, Cross-Directory-Moves und layoutvergrößernde Namen scheitern vor
-Medienwirkung. Metadaten werden vor dem einen Namespace-Publikationssektor
+bei Symlinks die Zielbytes und akzeptiert nur ein nicht vorhandenes Ziel im
+selben Verzeichnis, dessen Name in den bestehenden Directory-Record und
+denselben 512-Byte-Publikationssektor passt. Bei einer regulären Datei bleiben
+Inodenummer, sämtliche Inodebytes, Datenblockzeiger, Dateibytes, Bitmaps und
+freie Zähler unverändert; nur der Directory-Sektor wird publiziert.
+Verzeichnisse, Überschreiben, Cross-Directory-Moves und layoutvergrößernde
+Namen scheitern vor Medienwirkung. Metadaten werden vor dem einen Namespace-
+Publikationssektor
 geschrieben; Readback, `COMMITTED` und `CLEAN` verwenden dasselbe feste
 Undo-Journal wie die Erzeugung. Nach Recovery wiederholt der Client höchstens
 einmal unter derselben absoluten Deadline. `DEL.PRG`, `RM.PRG` und
 `RENAME.PRG` fallen ausschließlich bei `EOPNOTSUPP` auf die unveränderte
 Legacy-Mutation zurück, sodass FAT erhalten bleibt und ein EXT2-Fehler den
 Dienst nicht umgehen kann.
+Der bisherige symlinkspezifische interne Wrapper bleibt für bestehende Clients
+erhalten und lehnt reguläre Dateien weiterhin mit `EOPNOTSUPP` ab; der Dienst
+verwendet den typgeprüften allgemeinen Rename-Einstieg.
 Damit die zusätzliche Parserlogik innerhalb der festen 224-KiB-Grenze des
 residenten Rescue-Caches bleibt, wird ausschließlich `STORAGE.PRG` weiterhin
 mit O2, aber ohne Funktions-Inlining gebaut. Das verändert weder ABI noch

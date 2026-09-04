@@ -3245,7 +3245,7 @@ durch den Status des ausführbaren Pakets aktualisiert.
    eingebautes Icon und eine echte Verknüpfung verschob, beide Anordnungen
    dauerhaft neu lud, einen kleineren Arbeitsbereich prüfte und die
    Verknüpfung anschließend ohne Compositor-Neustart im Editor aktivierte.
-11. [~] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
+11. [ ] **N3 · Verbleibende Dateisystemmutationen über den Ring-3-Dienst
    führen.** N3a liefert nur den für native EXT2-Symlinks benötigten ersten
    begrenzten Mutationsschnitt. Danach die übrigen versionierten Create-,
    Write-, Rename-, Replace- und Reparaturtransaktionen migrieren. Journal,
@@ -3263,12 +3263,16 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Targeted-Checks, dem finalen 16-Sekunden-QEMU-Framebuffer-Paketbuild und
    einem realen 77-Sekunden-EXT2-Lauf einschließlich Dienstneustart,
    Persistenz und zwei sauberen Journalheadern. Allgemeines Create, Write,
-   Replace, Verzeichnis- und Cross-Directory-Mutation bleiben offen. Der aktive
+   Replace, Verzeichnis- und Cross-Directory-Mutation bleiben offen. Der abgeschlossene
    Folgeschnitt `N3c` erweitert ausschließlich das vorhandene
    gleichverzeichnisige No-replace-Rename auf reguläre EXT2-Dateien, sofern
    genau der bestehende Directory-Record und ein 512-Byte-Publikationssektor
    genügen; Inode, Datenblöcke, Dateiinhalt und Allokationszähler bleiben
-   bytegleich.
+   bytegleich. Abgenommen mit 38 Targeted-Checks, einem 77-Sekunden-QEMU-
+   Framebuffer-Paketbuild und einem realen 94-Sekunden-EXT2-Lauf mit
+   Dienstneustart, persistentem Rename und sauberen redundanten
+   Journalheadern. Bis zur Abgrenzung des nächsten N3-Fehlermodells bleibt
+   `active_id` leer.
 12. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
    SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
    MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend

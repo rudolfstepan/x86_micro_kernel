@@ -141,16 +141,18 @@ bleibt read-only und erhält weder Linkauflösung noch Mutation.
 
 Storage-Operation 34 transportiert zusätzlich einen eigenen, exakt 512 Byte
 großen Namespace-Frame. Seine append-only Operationen 20 und 21 entsprechen
-den POSIX-Begriffen `unlink` und `rename`, sind aber bewusst auf native
-EXT2-Symlinkobjekte begrenzt. `unlink` bearbeitet ausschließlich den finalen
+den POSIX-Begriffen `unlink` und `rename`. `unlink` bleibt bewusst auf native
+EXT2-Symlinkobjekte begrenzt und bearbeitet ausschließlich den finalen
 Directory-Eintrag und folgt dem Ziel nicht. Es entfernt einen Link mit
 Linkzähler eins, setzt den Inode frei und gibt bei einem blockbasierten Ziel
-genau dessen validierten direkten Block zurück. `rename` ist no-replace,
-erhält Inode und Linkziel und akzeptiert nur Quell- und Zielnamen desselben
-Verzeichnisses, wenn der neue Name in den vorhandenen Record und denselben
-512-Byte-Sektor passt. Cross-Directory, Verzeichnisse, reguläre Dateien,
-vorhandene Ziele und wachsender Layoutbedarf werden vor dem ersten Write
-abgewiesen.
+genau dessen validierten direkten Block zurück. `rename` ist no-replace und
+akzeptiert Symlinks sowie reguläre Dateien, aber nur Quell- und Zielnamen
+desselben Verzeichnisses, wenn der neue Name in den vorhandenen Record und denselben
+512-Byte-Sektor passt. Der reguläre Dateipfad publiziert ausschließlich diesen
+Directory-Sektor und verifiziert danach ursprüngliche Inodenummer und alle
+Inodebytes; Datenblockzeiger, Dateibytes, Bitmaps und freie Zähler bleiben
+unverändert. Cross-Directory, Verzeichnisse, vorhandene Ziele und wachsender
+Layoutbedarf werden vor dem ersten Write abgewiesen.
 
 Beide Mutationen verwenden das vorhandene 26-Sektor-Undo-Journal und genau
 einen Directory-Publikationssektor. Nicht sichtbare Inode-, Bitmap- und
@@ -162,7 +164,8 @@ höchstens einen Recovery-Retry unter einer gemeinsamen absoluten Deadline aus.
 FAT und alle nicht unterstützten Objektarten liefern `EOPNOTSUPP`; nur in
 diesem Fall dürfen `del`, `rm` und `rename` den bisherigen Legacy-Pfad nutzen.
 Allgemeines EXT2-Create/Write/Replace sowie Verzeichnis- und
-Cross-Directory-Mutationen bleiben spätere N3-Schritte.
+Cross-Directory-Mutationen und Unlink regulärer Dateien bleiben spätere
+N3-Schritte.
 
 Append-only Syscall 119 ergänzt nun einen getrennten, exakt 40 Byte großen
 Claim-v2-Deskriptor. Nur die gebundene Storage-Servicegeneration erhält daraus

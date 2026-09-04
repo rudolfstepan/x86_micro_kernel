@@ -4,13 +4,17 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: `N3c-ext2-regular-rename`. Der nächste begrenzte N3-Schnitt
-erweitert die vorhandene gleichverzeichnisige EXT2-Rename-Transaktion auf
-reguläre Dateien. Operation 34, der feste Frame, der Ring-3-Client und der
-FAT-Fallback bleiben unverändert; ein akzeptierter Rename verändert genau
-einen vorhandenen Directory-Sektor und bewahrt Inode, Datenblöcke und
-Dateiinhalt. Verzeichnisse, Replace, Cross-Directory, Record-Wachstum und
-Unlink regulärer Dateien bleiben getrennte Pakete.
+Aktives Thema: keines. `N3c-ext2-regular-rename` ist abgeschlossen. Der
+begrenzte N3-Schnitt erweitert die vorhandene gleichverzeichnisige
+EXT2-Rename-Transaktion auf reguläre Dateien. Operation 34, der feste Frame,
+der Ring-3-Client und der FAT-Fallback bleiben unverändert; ein akzeptierter
+Rename verändert genau einen vorhandenen Directory-Sektor und bewahrt Inode,
+Datenblöcke, Dateiinhalt, Bitmaps und freie Zähler bytegleich. Die Hostmatrix
+deckt jeden Write-/Flush-Abbruch ab. Alle 38 Targeted-Checks, der
+77-Sekunden-QEMU-Framebuffer-Paketbuild und der reale 94-Sekunden-EXT2-Lauf
+mit zweitem Storage-Neustart und sauberen redundanten Journalheadern sind
+bestanden. Verzeichnisse, Replace, Cross-Directory, Record-Wachstum und Unlink
+regulärer Dateien bleiben getrennte Pakete.
 
 `N3b-ext2-symlink-namespace` ist abgeschlossen. Der
 begrenzte N3-Schnitt ergänzt den in N3a eingeführten nativen EXT2-Symlinks um

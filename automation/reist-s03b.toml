@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3c-ext2-regular-rename"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -14500,7 +14500,7 @@ evidence = [
 
 [[packages]]
 id = "N3c-ext2-regular-rename"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Rename regular EXT2 files through the bounded Ring-3 namespace transaction"
@@ -14552,7 +14552,12 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fs: rename regular EXT2 files through Ring 3"
-evidence = []
+evidence = [
+  "All five frozen targeted groups passed with 38 checks across the unchanged namespace client and ABI, the EXT2 parser and transaction engine, Storage Service dispatch and complete userspace program toolchain. The fully collected toolchain gate passed all 20 checks in 129 seconds; an earlier identical invocation completed after its terminal collector detached and was not used as acceptance evidence.",
+  "The host behavior matrix proves normal regular-file rename plus every bounded write and flush interruption, followed by recovery to exactly one old-or-new name, file type and payload readback, byte-identical 128-byte inode and 1024-byte data block, unchanged allocation counters and CLEAN redundant journal headers. Existing symbolic-link rename and its compatibility wrapper remain covered.",
+  "The QEMU framebuffer package gate passed in 77 seconds. The rebuilt STORAGE.PRG remains 188416 bytes, 40960 bytes below the unchanged 224 KiB resident-rescue per-program bound; no ABI operation, syscall, fixed frame, Ring-0 parser or FAT fallback changed.",
+  "The real persistent QEMU EXT2 runtime passed in 94 seconds: packaged RENAME.PRG moved target.txt to moved.txt, the old name disappeared, payload readback succeeded before and after a second Storage-Service restart, the existing link retained its unchanged now-dangling target, the regular inode and data block stayed byte-identical and both journal headers were CLEAN."
+]
 
 [[packages]]
 id = "R3.2b-pixel-hinted-editor-fonts"

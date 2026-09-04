@@ -54,7 +54,7 @@ class ReistVfsNamespaceTests(unittest.TestCase):
             "vfs_namespace_path_valid",
             "vfs_namespace_reserved_zero",
             "reist_vfs_shadow_ext2_unlink_symlink",
-            "reist_vfs_shadow_ext2_rename_symlink",
+            "reist_vfs_shadow_ext2_rename",
             "X86OS_STORAGE_VFS_NAMESPACE",
         ):
             self.assertIn(token, service)
@@ -90,6 +90,8 @@ class ReistVfsNamespaceTests(unittest.TestCase):
         self.assertIn("readlink", runner)
         self.assertIn("del", runner)
         self.assertIn("svcctl restart 5", runner)
+        self.assertIn("moved.txt", runner)
+        self.assertIn("regular EXT2 inode changed", runner)
 
 
 if __name__ == "__main__":

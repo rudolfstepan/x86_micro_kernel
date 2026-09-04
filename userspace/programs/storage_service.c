@@ -6560,7 +6560,7 @@ static int vfs_namespace_mutate(x86os_vfs_namespace_frame_t *frame) {
         status = frame->operation == X86OS_VFS_SHADOW_FS_UNLINK
             ? reist_vfs_shadow_ext2_unlink_symlink(
                 &ext2_io, frame->source, frame->source_length, deadline)
-            : reist_vfs_shadow_ext2_rename_symlink(
+            : reist_vfs_shadow_ext2_rename(
                 &ext2_io, frame->source, frame->source_length,
                 frame->destination, frame->destination_length, deadline);
     }

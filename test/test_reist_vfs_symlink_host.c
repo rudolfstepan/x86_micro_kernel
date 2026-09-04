@@ -275,12 +275,28 @@ static int unlink_link(context_t *context, const char *path) {
         &io, path, (uint32_t)strlen(path), context->now_ms + 10000U);
 }
 
-static int rename_link(context_t *context, const char *source,
-                       const char *destination) {
+static int rename_entry(context_t *context, const char *source,
+                        const char *destination) {
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    return reist_vfs_shadow_ext2_rename(
+        &io, source, (uint32_t)strlen(source), destination,
+        (uint32_t)strlen(destination), context->now_ms + 10000U);
+}
+
+static int rename_link_only(context_t *context, const char *source,
+                            const char *destination) {
     reist_vfs_shadow_ext2_io_t io = io_for(context);
     return reist_vfs_shadow_ext2_rename_symlink(
         &io, source, (uint32_t)strlen(source), destination,
         (uint32_t)strlen(destination), context->now_ms + 10000U);
+}
+
+static int read_path(context_t *context, const char *path, uint8_t *data,
+                     uint32_t capacity, uint32_t *transferred) {
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    return reist_vfs_shadow_ext2_read_bounded(
+        &io, path, (uint32_t)strlen(path), 0U, data, capacity,
+        context->now_ms + 10000U, transferred);
 }
 
 static int recover_link(context_t *context, const char *path,
@@ -393,6 +409,45 @@ static int recover_rename(context_t *context, const char *source,
     CHECK(read16(block_at(context, 2U) + 14U) == 106U);
     CHECK(read32(block_at(context, 1U) + 12U) == 216U);
     CHECK(read16(block_at(context, 2U) + 12U) == 216U);
+    return 0;
+}
+
+static int recover_regular_rename(context_t *context, const char *source,
+                                  const char *destination,
+                                  const uint8_t expected_inode[128U],
+                                  const uint8_t expected_data[BLOCK_SIZE]) {
+    context->fail_write = UINT32_MAX;
+    context->fail_flush = UINT32_MAX;
+    context->writes = 0U;
+    context->flushes = 0U;
+    reist_vfs_shadow_ext2_io_t io = io_for(context);
+    CHECK(reist_vfs_shadow_ext2_recover_path(
+        &io, source, (uint32_t)strlen(source),
+        context->now_ms + 10000U) == 0);
+    x86os_file_info_t source_info;
+    x86os_file_info_t destination_info;
+    int source_visible = lstat_path(context, source, &source_info);
+    int destination_visible = lstat_path(
+        context, destination, &destination_info);
+    CHECK((source_visible == 0 && destination_visible == -2) ||
+          (source_visible == -2 && destination_visible == 0));
+    const char *visible = source_visible == 0 ? source : destination;
+    const x86os_file_info_t *visible_info = source_visible == 0
+        ? &source_info : &destination_info;
+    CHECK(visible_info->type == X86OS_FILE && visible_info->size == 8U);
+    uint8_t data[8U];
+    uint32_t transferred = 0U;
+    CHECK(read_path(context, visible, data, sizeof(data), &transferred) == 0);
+    CHECK(transferred == sizeof(data));
+    CHECK(memcmp(data, "payload\n", sizeof(data)) == 0);
+    CHECK(memcmp(inode_at(context, 12U), expected_inode, 128U) == 0);
+    CHECK(memcmp(block_at(context, 22U), expected_data, BLOCK_SIZE) == 0);
+    CHECK(read32(block_at(context, 1U) + 16U) == 106U);
+    CHECK(read16(block_at(context, 2U) + 14U) == 106U);
+    CHECK(read32(block_at(context, 1U) + 12U) == 216U);
+    CHECK(read16(block_at(context, 2U) + 12U) == 216U);
+    CHECK(read32(block_at(context, 25U) + 8U) == 0U);
+    CHECK(read32(block_at(context, 25U) + 512U + 8U) == 0U);
     return 0;
 }
 
@@ -557,27 +612,27 @@ int main(void) {
     CHECK(lstat_path(&context, "/mnt/ext2/fast-link", &info) == -2);
     CHECK(stat_path(&context, "/mnt/ext2/target.txt", &info) == 0);
     CHECK(unlink_link(&context, "/mnt/ext2/target.txt") == -95);
-    CHECK(rename_link(
+    CHECK(rename_entry(
         &context, "/mnt/ext2/absolute-link",
         "/mnt/ext2/renamed-link") == 0);
     CHECK(lstat_path(&context, "/mnt/ext2/absolute-link", &info) == -2);
     CHECK(readlink_path(
         &context, "/mnt/ext2/renamed-link", target, &length) == 0);
     CHECK(length == strlen("/mnt/ext2/target.txt"));
-    CHECK(rename_link(
+    CHECK(rename_entry(
         &context, "/mnt/ext2/renamed-link",
         "/mnt/ext2/dangling-link") == -17);
-    CHECK(rename_link(
+    CHECK(rename_entry(
         &context, "/mnt/ext2/renamed-link",
         "/mnt/ext2/dir/moved-link") == -18);
-    CHECK(rename_link(
+    CHECK(rename_link_only(
         &context, "/mnt/ext2/target.txt",
         "/mnt/ext2/target-new") == -95);
-    CHECK(rename_link(
+    CHECK(rename_entry(
         &context, "/mnt/ext2/dir",
         "/mnt/ext2/dir-new") == -95);
     uint32_t rename_reject_writes = context.writes;
-    CHECK(rename_link(
+    CHECK(rename_entry(
         &context, "/mnt/ext2/renamed-link",
         "/mnt/ext2/this-name-does-not-fit") == -28);
     CHECK(context.writes == rename_reject_writes);
@@ -641,7 +696,7 @@ int main(void) {
     }
 
     initialize(&context);
-    CHECK(rename_link(
+    CHECK(rename_entry(
         &context, "/mnt/ext2/absolute-link",
         "/mnt/ext2/renamed-link") == 0);
     uint32_t rename_writes = context.writes;
@@ -649,7 +704,7 @@ int main(void) {
     for (uint32_t failure = 0U; failure < rename_writes; ++failure) {
         initialize(&context);
         context.fail_write = failure;
-        int renamed = rename_link(
+        int renamed = rename_entry(
             &context, "/mnt/ext2/absolute-link",
             "/mnt/ext2/renamed-link");
         CHECK(renamed == 0 || renamed == -5);
@@ -660,13 +715,71 @@ int main(void) {
     for (uint32_t failure = 0U; failure < rename_flushes; ++failure) {
         initialize(&context);
         context.fail_flush = failure;
-        int renamed = rename_link(
+        int renamed = rename_entry(
             &context, "/mnt/ext2/absolute-link",
             "/mnt/ext2/renamed-link");
         CHECK(renamed == 0 || renamed == -5);
         CHECK(recover_rename(
             &context, "/mnt/ext2/absolute-link",
             "/mnt/ext2/renamed-link", "/mnt/ext2/target.txt") == 0);
+    }
+
+    initialize(&context);
+    uint8_t regular_inode[128U];
+    uint8_t regular_data[BLOCK_SIZE];
+    memcpy(regular_inode, inode_at(&context, 12U), sizeof(regular_inode));
+    memcpy(regular_data, block_at(&context, 22U), sizeof(regular_data));
+    uint32_t regular_reject_writes = context.writes;
+    uint32_t regular_reject_flushes = context.flushes;
+    CHECK(rename_entry(
+        &context, "/mnt/ext2/target.txt",
+        "/mnt/ext2/dangling-link") == -17);
+    CHECK(rename_entry(
+        &context, "/mnt/ext2/target.txt",
+        "/mnt/ext2/dir/moved.txt") == -18);
+    CHECK(rename_entry(
+        &context, "/mnt/ext2/target.txt",
+        "/mnt/ext2/regular-name-too-long") == -28);
+    CHECK(context.writes == regular_reject_writes);
+    CHECK(context.flushes == regular_reject_flushes);
+    CHECK(memcmp(inode_at(&context, 12U), regular_inode, 128U) == 0);
+    CHECK(memcmp(block_at(&context, 22U), regular_data, BLOCK_SIZE) == 0);
+    CHECK(rename_entry(
+        &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt") == 0);
+    uint32_t regular_rename_writes = context.writes;
+    uint32_t regular_rename_flushes = context.flushes;
+    CHECK(recover_regular_rename(
+        &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt",
+        regular_inode, regular_data) == 0);
+    for (uint32_t failure = 0U;
+         failure < regular_rename_writes; ++failure) {
+        initialize(&context);
+        memcpy(regular_inode, inode_at(&context, 12U),
+               sizeof(regular_inode));
+        memcpy(regular_data, block_at(&context, 22U),
+               sizeof(regular_data));
+        context.fail_write = failure;
+        int renamed = rename_entry(
+            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt");
+        CHECK(renamed == 0 || renamed == -5);
+        CHECK(recover_regular_rename(
+            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt",
+            regular_inode, regular_data) == 0);
+    }
+    for (uint32_t failure = 0U;
+         failure < regular_rename_flushes; ++failure) {
+        initialize(&context);
+        memcpy(regular_inode, inode_at(&context, 12U),
+               sizeof(regular_inode));
+        memcpy(regular_data, block_at(&context, 22U),
+               sizeof(regular_data));
+        context.fail_flush = failure;
+        int renamed = rename_entry(
+            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt");
+        CHECK(renamed == 0 || renamed == -5);
+        CHECK(recover_regular_rename(
+            &context, "/mnt/ext2/target.txt", "/mnt/ext2/moved.txt",
+            regular_inode, regular_data) == 0);
     }
     return 0;
 }

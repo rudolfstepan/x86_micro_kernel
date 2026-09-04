@@ -196,6 +196,7 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
     reference_digest = file_sha256(image)
     create_ext2_image(disk)
     initial_disk_digest = file_sha256(disk)
+    initial_raw = disk.read_bytes()
     process = subprocess.Popen(
         qemu_command(qemu, image, disk), stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -271,6 +272,14 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
         command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
         command(f"readlink {MOUNT}/chain-link", ("relative-link",))
         command(f"cat {MOUNT}/chain-link", ("cat: cannot open file",))
+        command(f"rename {MOUNT}/target.txt {MOUNT}/moved.txt",
+                forbidden=("rename: operation unsupported or failed",))
+        command(f"cat {MOUNT}/target.txt", ("cat: cannot open file",))
+        command(f"cat {MOUNT}/moved.txt", (PAYLOAD,))
+        command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
+        command(f"cat {MOUNT}/moved.txt", (PAYLOAD,))
+        command(f"readlink {MOUNT}/renamed-link", (MOUNT + "/target.txt",))
+        command(f"cat {MOUNT}/renamed-link", ("cat: cannot open file",))
     except (OSError, RuntimeError, ValueError) as caught:
         error = str(caught)
     finally:
@@ -285,6 +294,12 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
     if file_sha256(disk) == initial_disk_digest:
         error = error or "EXT2 test disk did not persist link transactions"
     raw = disk.read_bytes()
+    if raw[inode_offset(12):inode_offset(12) + 128] != \
+            initial_raw[inode_offset(12):inode_offset(12) + 128]:
+        error = error or "regular EXT2 inode changed during rename"
+    if raw[22 * BLOCK_SIZE:23 * BLOCK_SIZE] != \
+            initial_raw[22 * BLOCK_SIZE:23 * BLOCK_SIZE]:
+        error = error or "regular EXT2 file data changed during rename"
     for offset in (24 * BLOCK_SIZE, 24 * BLOCK_SIZE + 512):
         header = raw[offset:offset + 512]
         recorded = int.from_bytes(header[24:28], "little")
