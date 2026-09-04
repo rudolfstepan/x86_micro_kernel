@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "N3f-ext2-cross-sector-rename"
+active_id = ""
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "N3f-ext2-cross-sector-rename"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Relocate EXT2 rename records across two directory sectors"
@@ -61,7 +61,13 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fs: relocate EXT2 renames across directory sectors"
-evidence = []
+evidence = [
+  "All five targeted groups passed with 38 checks across the unchanged namespace ABI and client, the EXT2 parser and transaction engine, Storage Service dispatch and the complete userspace toolchain.",
+  "The host matrix proves normal completion and every write or flush interruption for symbolic-link and regular-file two-sector renames. Recovery exposes exactly one complete old-or-new name, preserves inode and file bytes plus allocation counters, and leaves both redundant journal headers CLEAN.",
+  "The final QEMU framebuffer package gate passed in 46 seconds with the fixed operation 34 frame, FAT fallback and legacy Ring-0 parser unchanged.",
+  "The final 95-second persistent QEMU EXT2 runtime filled the source sector with bounded shell-safe records, moved both a native symbolic link and a regular file into sector two, restarted Storage Service, verified both payloads and then proved directly from the disk image that offsets 512 and 540 contain the expected inode-bound names, both source names are absent, the regular inode and data block are byte-identical and both journal headers are CLEAN.",
+  "Cross-directory, cross-block, replace, directories, general create and write remain fail-closed; no queued package remains and active_id is empty."
+]
 
 [[packages]]
 id = "N2g-notepad-piece-table"

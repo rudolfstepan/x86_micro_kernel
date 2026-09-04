@@ -151,16 +151,17 @@ Triple-Indirect-, Journal-, Directory- und Strukturblockfälle scheitern ebenso
 wie Journal-Kapazitätsüberschreitungen vor dem ersten Medienwrite. `rename` ist no-replace und
 akzeptiert Symlinks sowie reguläre Dateien, aber nur Quell- und Zielnamen
 desselben Verzeichnisses. Ein längerer Name darf in einen freien EXT2-Record
-oder in den `rec_len`-Slack eines Live-Records umplatziert werden, wenn
-Quellentfernung, Donor-Split sowie vollständiger Zielheader und -name in
-demselben 512-Byte-Sektor liegen. Der reguläre Dateipfad publiziert ausschließlich diesen
-Directory-Sektor und verifiziert danach ursprüngliche Inodenummer und alle
+oder in den `rec_len`-Slack eines Live-Records umplatziert werden. N3e bindet
+dies an denselben 512-Byte-Sektor; N3f erlaubt genau einen zweiten Sektor
+desselben Directory-Blocks, nachdem beide vollständigen Sektoren und Records
+vorvalidiert wurden. Der reguläre Dateipfad publiziert ausschließlich diese
+ein oder zwei Directory-Sektoren und verifiziert danach ursprüngliche Inodenummer und alle
 Inodebytes; Datenblockzeiger, Dateibytes, Bitmaps und freie Zähler bleiben
-unverändert. Cross-Directory, Cross-Sector-Umplatzierung, Verzeichnisse und
+unverändert. Cross-Directory, Cross-Block-Umplatzierung, Verzeichnisse und
 vorhandene Ziele werden vor dem ersten Write abgewiesen.
 
-Beide Mutationen verwenden das vorhandene 26-Sektor-Undo-Journal und genau
-einen Directory-Publikationssektor. Nicht sichtbare Inode-, Bitmap- und
+Beide Mutationen verwenden das vorhandene 26-Sektor-Undo-Journal und höchstens
+zwei Directory-Publikationssektoren. Nicht sichtbare Inode-, Bitmap- und
 Zählermetadaten werden zuerst geschrieben und verifiziert; erst danach wird
 der Namespace publiziert. `ACTIVE`-Recovery stellt sämtliche Before-Images
 wieder her, `COMMITTED`-Recovery behält den vollständig geprüften Endzustand,

@@ -126,7 +126,7 @@ keine zweite Mutation aus.
 | `mkdir` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `rmdir` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `del`/unlink | ja | ja | Symlinks/Dateien, begrenzt | EXT2 finaler nativer Link oder reguläre Standarddatei bis 64 Allokationen |
-| `rename` | nein | ja | Symlinks/Dateien, begrenzt | EXT2 no-replace im selben Verzeichnis, bei Wachstum nur innerhalb eines Publikationssektors |
+| `rename` | nein | ja | Symlinks/Dateien, begrenzt | EXT2 no-replace im selben Verzeichnis, höchstens zwei Sektoren desselben Directory-Blocks |
 | Zeitstempel lesen | ja | ja | ja | FAT-Auflösung und FAT-Zugriffsdatum bleiben erhalten |
 | `touch` | ja | ja | nein | EXT2-Adapter ist read-only |
 | `fsync` | REIST-spezifisch | REIST-spezifisch | nein | kein generischer EXT2-Schreibdeskriptor |

@@ -4,13 +4,18 @@ Stand: 4. September 2026
 
 Branch/Startpunkt: `working_branch` / `50bf1044`
 
-Aktives Thema: `N3f-ext2-cross-sector-rename`. Der begrenzte Folgeschnitt
+Aktives Thema: keines. `N3f-ext2-cross-sector-rename` ist abgeschlossen. Der begrenzte Folgeschnitt
 erweitert gleichverzeichnisiges No-replace-Rename ausschließlich auf einen
 vorhandenen Zielrecord in einem zweiten 512-Byte-Sektor desselben EXT2-
 Directory-Blocks. Beide vollständigen Sektoren werden vor Planung validiert
 und als eine alte-oder-neue Undo-Journaltransaktion publiziert. ABI, Inode,
 Dateidaten, Allokation, Cross-Directory, Replace und Verzeichnisse bleiben
-unverändert beziehungsweise ausgeschlossen.
+unverändert beziehungsweise ausgeschlossen. Alle 38 Targeted-Checks, der
+46-Sekunden-QEMU-Framebuffer-Paketbuild und der finale 95-Sekunden-EXT2-Lauf
+sind bestanden. Der Lauf erzwang beide Zielrecords in Sektor 2, startete den
+Storage-Dienst neu und bestätigte anschließend direkt im persistenten Image
+Offsets 512 und 540, unveränderte reguläre Inode-/Dateidaten sowie zwei saubere
+Journalheader.
 
 `N3e-ext2-same-sector-rename-growth` ist abgeschlossen.
 Das vorhandene gleichverzeichnisige No-replace-Rename kann einen längeren

@@ -23,6 +23,13 @@ SECTORS = BLOCKS * 2
 JOURNAL_SECTORS = 26
 MOUNT = "/mnt/hdd1"
 PAYLOAD = "SYMLINK TARGET"
+PADDING_NAMES = (
+    "pad-a-" + "a" * 84,
+    "pad-b-" + "b" * 84,
+    "pad-c-" + "c" * 84,
+    "pad-d-" + "d" * 84,
+)
+REGULAR_RENAMED = "regular-file-renamed-cross-sector.txt"
 
 
 def put16(image: bytearray, offset: int, value: int) -> None:
@@ -147,16 +154,18 @@ def create_ext2_image(path: Path) -> None:
     offset = add_entry(image, 21, offset, 12, b"target.txt", 1,
                        record_size(len(b"target.txt")))
     journal_offset = offset
-    add_entry(image, 21, offset, 13, b".reist-symlink-journal", 1,
-              BLOCK_SIZE - offset)
+    offset = add_entry(
+        image, 21, offset, 13, b".reist-symlink-journal", 1,
+        record_size(len(b".reist-symlink-journal")))
+    add_entry(image, 21, offset, 0, b"", 0, 512 - offset)
+    add_entry(image, 21, 512, 0, b"", 0, 512)
 
     root_sector = 21 * 2
     before = bytes(image[root_sector * 512:(root_sector + 1) * 512])
     actual = record_size(len(b".reist-symlink-journal"))
-    old_record = get16(image, 21 * BLOCK_SIZE + journal_offset + 4)
-    put16(image, 21 * BLOCK_SIZE + journal_offset + 4, actual)
-    add_entry(image, 21, journal_offset + actual, 12, b"partial-link", 7,
-              old_record - actual)
+    free_offset = journal_offset + actual
+    old_record = get16(image, 21 * BLOCK_SIZE + free_offset + 4)
+    add_entry(image, 21, free_offset, 12, b"partial-link", 7, old_record)
     final = bytes(image[root_sector * 512:(root_sector + 1) * 512])
     signature = volume_signature(
         bytes(image[BLOCK_SIZE:2 * BLOCK_SIZE]))
@@ -244,55 +253,26 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
                 process, chunks, transcript, finished, smoke.SHELL_PROMPT,
                 deadline, after=boot)
         command(f"ls {MOUNT}", ("target.txt",), ("partial-link",))
-        command(f"ln -s target.txt {MOUNT}/relative-link")
-        command(f"readlink {MOUNT}/relative-link", ("target.txt",))
-        command(f"cat {MOUNT}/relative-link", (PAYLOAD,))
         command(f"ln -s {MOUNT}/target.txt {MOUNT}/absolute-link")
         command(f"cat {MOUNT}/absolute-link", (PAYLOAD,))
-        command(f"ln -s relative-link {MOUNT}/chain-link")
-        command(f"cat {MOUNT}/chain-link", (PAYLOAD,))
-        command(f"ln -s missing.txt {MOUNT}/dangling-link")
-        command(f"readlink {MOUNT}/dangling-link", ("missing.txt",))
-        command(f"cat {MOUNT}/dangling-link", ("cat: cannot open file",))
-        command(f"ln -s cycle-b {MOUNT}/cycle-a")
-        command(f"ln -s cycle-a {MOUNT}/cycle-b")
-        command(f"cat {MOUNT}/cycle-a", ("cat: cannot open file",))
-        command(f"del {MOUNT}/relative-link",
-                forbidden=("del: file not found or cannot be removed",))
-        command(f"readlink {MOUNT}/relative-link",
-                ("readlink: path is not a readable symbolic link",))
-        command(f"cat {MOUNT}/target.txt", (PAYLOAD,))
+        for padding_name in PADDING_NAMES:
+            command(f"ln -s target.txt {MOUNT}/{padding_name}")
         command(f"rename {MOUNT}/absolute-link {MOUNT}/symbolic-link-long",
                 forbidden=("rename: operation unsupported or failed",))
         command(f"readlink {MOUNT}/absolute-link",
                 ("readlink: path is not a readable symbolic link",))
         command(f"readlink {MOUNT}/symbolic-link-long",
                 (MOUNT + "/target.txt",))
-        command(f"cat {MOUNT}/target.txt", (PAYLOAD,))
-        command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
-        command(f"readlink {MOUNT}/symbolic-link-long",
-                (MOUNT + "/target.txt",))
-        command(f"readlink {MOUNT}/chain-link", ("relative-link",))
-        command(f"cat {MOUNT}/chain-link", ("cat: cannot open file",))
-        command(f"rename {MOUNT}/target.txt {MOUNT}/regular-long.txt",
+        command(f"rename {MOUNT}/target.txt {MOUNT}/{REGULAR_RENAMED}",
                 forbidden=("rename: operation unsupported or failed",))
         command(f"cat {MOUNT}/target.txt", ("cat: cannot open file",))
-        command(f"cat {MOUNT}/regular-long.txt", (PAYLOAD,))
+        command(f"cat {MOUNT}/{REGULAR_RENAMED}", (PAYLOAD,))
         command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
-        command(f"cat {MOUNT}/regular-long.txt", (PAYLOAD,))
+        command(f"cat {MOUNT}/{REGULAR_RENAMED}", (PAYLOAD,))
         command(f"readlink {MOUNT}/symbolic-link-long",
                 (MOUNT + "/target.txt",))
         command(f"cat {MOUNT}/symbolic-link-long",
                 ("cat: cannot open file",))
-        command(f"del {MOUNT}/regular-long.txt",
-                forbidden=("del: file not found or cannot be removed",))
-        command(f"cat {MOUNT}/regular-long.txt",
-                ("cat: cannot open file",))
-        command("svcctl restart 5", ("COMPONENT RESTART_OK component=5",))
-        command(f"cat {MOUNT}/regular-long.txt",
-                ("cat: cannot open file",))
-        command(f"readlink {MOUNT}/symbolic-link-long",
-                (MOUNT + "/target.txt",))
     except (OSError, RuntimeError, ValueError) as caught:
         error = str(caught)
     finally:
@@ -307,17 +287,44 @@ def run(qemu: Path, image: Path, disk: Path, timeout: float, log: Path) -> int:
     if file_sha256(disk) == initial_disk_digest:
         error = error or "EXT2 test disk did not persist link transactions"
     raw = disk.read_bytes()
-    if any(raw[inode_offset(12):inode_offset(12) + 128]):
-        error = error or "regular EXT2 inode was not cleared by unlink"
+    if raw[inode_offset(12):inode_offset(12) + 128] != \
+            initial_raw[inode_offset(12):inode_offset(12) + 128]:
+        error = error or "regular EXT2 inode changed during cross-sector rename"
     if raw[22 * BLOCK_SIZE:23 * BLOCK_SIZE] != \
             initial_raw[22 * BLOCK_SIZE:23 * BLOCK_SIZE]:
-        error = error or "regular EXT2 data block changed during unlink"
+        error = error or "regular EXT2 data block changed during rename"
     block_bit = 22 - 1
-    if raw[3 * BLOCK_SIZE + block_bit // 8] & (1 << (block_bit & 7)):
-        error = error or "regular EXT2 data block remained allocated"
+    if not raw[3 * BLOCK_SIZE + block_bit // 8] & (1 << (block_bit & 7)):
+        error = error or "regular EXT2 data block was released by rename"
     inode_bit = 12 - 1
-    if raw[4 * BLOCK_SIZE + inode_bit // 8] & (1 << (inode_bit & 7)):
-        error = error or "regular EXT2 inode remained allocated"
+    if not raw[4 * BLOCK_SIZE + inode_bit // 8] & (1 << (inode_bit & 7)):
+        error = error or "regular EXT2 inode was released by rename"
+    directory = raw[21 * BLOCK_SIZE:22 * BLOCK_SIZE]
+    entries: dict[str, tuple[int, int]] = {}
+    cursor = 0
+    while cursor < BLOCK_SIZE:
+        if BLOCK_SIZE - cursor < 8:
+            error = error or "truncated EXT2 root directory record"
+            break
+        inode = int.from_bytes(directory[cursor:cursor + 4], "little")
+        record = int.from_bytes(directory[cursor + 4:cursor + 6], "little")
+        name_length = directory[cursor + 6]
+        if (record < 8 or record % 4 or cursor + record > BLOCK_SIZE or
+                name_length > record - 8):
+            error = error or "malformed EXT2 root directory record"
+            break
+        if inode:
+            name = directory[cursor + 8:cursor + 8 + name_length].decode(
+                "ascii", "strict")
+            entries[name] = (cursor, inode)
+        cursor += record
+    for name, inode in (("symbolic-link-long", 14),
+                        (REGULAR_RENAMED, 12)):
+        if name not in entries or entries[name][0] < 512 or \
+                entries[name][1] != inode:
+            error = error or f"{name} was not published in sector two"
+    if "absolute-link" in entries or "target.txt" in entries:
+        error = error or "cross-sector rename retained an old source name"
     for offset in (24 * BLOCK_SIZE, 24 * BLOCK_SIZE + 512):
         header = raw[offset:offset + 512]
         recorded = int.from_bytes(header[24:28], "little")

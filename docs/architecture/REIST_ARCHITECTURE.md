@@ -613,12 +613,15 @@ selben Verzeichnis. Passt der Name nicht in den Quell-Record, darf Version N3e
 den Eintrag in einen freien EXT2-Record oder den `rec_len`-Slack eines
 Live-Records umplatzieren, sofern Quellentfernung, Donor-Split sowie der
 vollständige Zielheader und -name in demselben 512-Byte-Publikationssektor
-liegen. Bei einer regulären Datei bleiben
+liegen. N3f erlaubt darüber hinaus genau einen zweiten vorhandenen Sektor
+desselben Directory-Blocks: Quelle und Zielrecord werden vollständig
+vorvalidiert und als eine Zwei-Sektor-Publikation in derselben Undo-
+Journaltransaktion geführt. Bei einer regulären Datei bleiben
 Inodenummer, sämtliche Inodebytes, Datenblockzeiger, Dateibytes, Bitmaps und
-freie Zähler unverändert; nur der Directory-Sektor wird publiziert.
-Verzeichnisse, Überschreiben, Cross-Directory-Moves sowie Cross-Sector-
-Umplatzierung scheitern vor Medienwirkung. Metadaten werden vor dem einen Namespace-
-Publikationssektor
+freie Zähler unverändert; nur die ein oder zwei Directory-Sektoren werden
+publiziert. Verzeichnisse, Überschreiben, Cross-Directory-Moves sowie
+Cross-Block-Umplatzierung scheitern vor Medienwirkung. Metadaten werden vor den Namespace-
+Publikationssektoren
 geschrieben; Readback, `COMMITTED` und `CLEAN` verwenden dasselbe feste
 Undo-Journal wie die Erzeugung. Nach Recovery wiederholt der Client höchstens
 einmal unter derselben absoluten Deadline. `DEL.PRG`, `RM.PRG` und

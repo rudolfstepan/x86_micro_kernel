@@ -475,9 +475,6 @@ static int recover_rename(context_t *context, const char *source,
     CHECK(read16(block_at(context, 2U) + 14U) == 106U);
     CHECK(read32(block_at(context, 1U) + 12U) == 216U);
     CHECK(read16(block_at(context, 2U) + 12U) == 216U);
-    for (uint32_t index = X86OS_STORAGE_BLOCK_SIZE;
-         index < BLOCK_SIZE; ++index)
-        CHECK(block_at(context, 21U)[index] == 0U);
     return 0;
 }
 
@@ -517,9 +514,6 @@ static int recover_regular_rename(context_t *context, const char *source,
     CHECK(read16(block_at(context, 2U) + 12U) == 216U);
     CHECK(read32(block_at(context, 25U) + 8U) == 0U);
     CHECK(read32(block_at(context, 25U) + 512U + 8U) == 0U);
-    for (uint32_t index = X86OS_STORAGE_BLOCK_SIZE;
-         index < BLOCK_SIZE; ++index)
-        CHECK(block_at(context, 21U)[index] == 0U);
     return 0;
 }
 
@@ -777,15 +771,12 @@ int main(void) {
         &context, "/mnt/ext2/dir",
         "/mnt/ext2/dir-new") == -95);
     initialize_without_source_sector_slack(&context);
-    uint32_t rename_reject_writes = context.writes;
-    uint32_t rename_reject_flushes = context.flushes;
     CHECK(rename_entry(
         &context, "/mnt/ext2/absolute-link",
-        "/mnt/ext2/renamed-symbolic-link-long") == -28);
-    CHECK(context.writes == rename_reject_writes);
-    CHECK(context.flushes == rename_reject_flushes);
+        "/mnt/ext2/renamed-symbolic-link-long") == 0);
     CHECK(readlink_path(
-        &context, "/mnt/ext2/absolute-link", target, &length) == 0);
+        &context, "/mnt/ext2/renamed-symbolic-link-long",
+        target, &length) == 0);
 
     const char *failure_targets[2U] = {"target.txt", long_target};
     const char *failure_paths[2U] = {
@@ -873,6 +864,36 @@ int main(void) {
             "/mnt/ext2/renamed-symbolic-link-long",
             "/mnt/ext2/target.txt") == 0);
     }
+    initialize_without_source_sector_slack(&context);
+    CHECK(rename_entry(
+        &context, "/mnt/ext2/absolute-link",
+        "/mnt/ext2/renamed-symbolic-link-long") == 0);
+    rename_writes = context.writes;
+    rename_flushes = context.flushes;
+    for (uint32_t failure = 0U; failure < rename_writes; ++failure) {
+        initialize_without_source_sector_slack(&context);
+        context.fail_write = failure;
+        int renamed = rename_entry(
+            &context, "/mnt/ext2/absolute-link",
+            "/mnt/ext2/renamed-symbolic-link-long");
+        CHECK(renamed == 0 || renamed == -5);
+        CHECK(recover_rename(
+            &context, "/mnt/ext2/absolute-link",
+            "/mnt/ext2/renamed-symbolic-link-long",
+            "/mnt/ext2/target.txt") == 0);
+    }
+    for (uint32_t failure = 0U; failure < rename_flushes; ++failure) {
+        initialize_without_source_sector_slack(&context);
+        context.fail_flush = failure;
+        int renamed = rename_entry(
+            &context, "/mnt/ext2/absolute-link",
+            "/mnt/ext2/renamed-symbolic-link-long");
+        CHECK(renamed == 0 || renamed == -5);
+        CHECK(recover_rename(
+            &context, "/mnt/ext2/absolute-link",
+            "/mnt/ext2/renamed-symbolic-link-long",
+            "/mnt/ext2/target.txt") == 0);
+    }
 
     initialize(&context);
     uint8_t regular_inode[128U];
@@ -892,14 +913,11 @@ int main(void) {
     CHECK(memcmp(inode_at(&context, 12U), regular_inode, 128U) == 0);
     CHECK(memcmp(block_at(&context, 22U), regular_data, BLOCK_SIZE) == 0);
     initialize_without_source_sector_slack(&context);
-    regular_reject_writes = context.writes;
-    regular_reject_flushes = context.flushes;
     CHECK(rename_entry(
         &context, "/mnt/ext2/target.txt",
-        "/mnt/ext2/regular-file-renamed-long.txt") == -28);
-    CHECK(context.writes == regular_reject_writes);
-    CHECK(context.flushes == regular_reject_flushes);
-    CHECK(stat_path(&context, "/mnt/ext2/target.txt", &info) == 0);
+        "/mnt/ext2/regular-file-renamed-long.txt") == 0);
+    CHECK(stat_path(
+        &context, "/mnt/ext2/regular-file-renamed-long.txt", &info) == 0);
 
     initialize(&context);
     memcpy(regular_inode, inode_at(&context, 12U), sizeof(regular_inode));
@@ -933,6 +951,48 @@ int main(void) {
     for (uint32_t failure = 0U;
          failure < regular_rename_flushes; ++failure) {
         initialize(&context);
+        memcpy(regular_inode, inode_at(&context, 12U),
+               sizeof(regular_inode));
+        memcpy(regular_data, block_at(&context, 22U),
+               sizeof(regular_data));
+        context.fail_flush = failure;
+        int renamed = rename_entry(
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt");
+        CHECK(renamed == 0 || renamed == -5);
+        CHECK(recover_regular_rename(
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt",
+            regular_inode, regular_data) == 0);
+    }
+    initialize_without_source_sector_slack(&context);
+    memcpy(regular_inode, inode_at(&context, 12U), sizeof(regular_inode));
+    memcpy(regular_data, block_at(&context, 22U), sizeof(regular_data));
+    CHECK(rename_entry(
+        &context, "/mnt/ext2/target.txt",
+        "/mnt/ext2/regular-file-renamed-long.txt") == 0);
+    regular_rename_writes = context.writes;
+    regular_rename_flushes = context.flushes;
+    for (uint32_t failure = 0U;
+         failure < regular_rename_writes; ++failure) {
+        initialize_without_source_sector_slack(&context);
+        memcpy(regular_inode, inode_at(&context, 12U),
+               sizeof(regular_inode));
+        memcpy(regular_data, block_at(&context, 22U),
+               sizeof(regular_data));
+        context.fail_write = failure;
+        int renamed = rename_entry(
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt");
+        CHECK(renamed == 0 || renamed == -5);
+        CHECK(recover_regular_rename(
+            &context, "/mnt/ext2/target.txt",
+            "/mnt/ext2/regular-file-renamed-long.txt",
+            regular_inode, regular_data) == 0);
+    }
+    for (uint32_t failure = 0U;
+         failure < regular_rename_flushes; ++failure) {
+        initialize_without_source_sector_slack(&context);
         memcpy(regular_inode, inode_at(&context, 12U),
                sizeof(regular_inode));
         memcpy(regular_data, block_at(&context, 22U),

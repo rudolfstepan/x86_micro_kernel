@@ -3291,12 +3291,17 @@ durch den Status des ausführbaren Pakets aktualisiert.
    Paketbuild und einem finalen 110-Sekunden-EXT2-Lauf mit beiden wachsenden
    Renames, Dienstneustarts, anschließendem Unlink und sauberen redundanten
    Journalheadern. Cross-Sector, Cross-Directory, Replace und Verzeichnisse
-   bleiben offen. Als nächster begrenzter Schnitt ist
-   `N3f-ext2-cross-sector-rename` aktiv: Ein fehlender Zielname darf in genau
+   bleiben offen. Der abgeschlossene begrenzte Schnitt
+   `N3f-ext2-cross-sector-rename` erlaubt einen fehlenden Zielnamen in genau
    einem zweiten 512-Byte-Sektor desselben vorhandenen Directory-Blocks
    angelegt werden. Quelle und Ziel werden vollständig vorvalidiert und als
    eine Zwei-Sektor-Undo-Journaltransaktion publiziert; Cross-Directory,
-   Cross-Block, Replace und Verzeichnisse bleiben ausgeschlossen.
+   Cross-Block, Replace und Verzeichnisse bleiben ausgeschlossen. Abgenommen
+   mit 38 Targeted-Checks, dem 46-Sekunden-QEMU-Framebuffer-Paketbuild und
+   einem finalen 95-Sekunden-EXT2-Lauf, der beide Zielrecords in Sektor 2,
+   Dienstneustart, bytegleiche Inode-/Dateidaten und saubere redundante
+   Journalheader nachwies. Bis zur Abgrenzung des nächsten N3-Fehlermodells
+   bleibt `active_id` leer.
 12. [ ] **N4 · Gemeinsames Driver-Host-/Resource-Mediator-Modell.** HDA und
    SVGA2D zuerst auf einen gemeinsamen generationsgebundenen Vertrag für
    MMIO/PIO, IRQ, DMA, Fence, Self-Test und Restart bringen; anschließend

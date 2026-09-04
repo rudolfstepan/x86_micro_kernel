@@ -89,11 +89,14 @@ class ReistVfsNamespaceTests(unittest.TestCase):
         runner = read("scripts/run_qemu_ext2_symlink.py")
         self.assertIn("symbolic-link-long", runner)
         self.assertIn("readlink", runner)
-        self.assertIn("del", runner)
         self.assertIn("svcctl restart 5", runner)
-        self.assertIn("regular-long.txt", runner)
-        self.assertIn("regular EXT2 inode was not cleared", runner)
-        self.assertIn("regular EXT2 data block changed during unlink", runner)
+        self.assertIn("regular-file-renamed-cross-sector.txt", runner)
+        self.assertIn("was not published in sector two", runner)
+        self.assertIn("PADDING_NAMES", runner)
+        self.assertIn("for padding_name in PADDING_NAMES", runner)
+        self.assertIn("regular EXT2 inode changed during cross-sector rename",
+                      runner)
+        self.assertIn("regular EXT2 data block changed during rename", runner)
 
 
 if __name__ == "__main__":
