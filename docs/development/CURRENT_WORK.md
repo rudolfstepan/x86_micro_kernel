@@ -3,8 +3,18 @@
 Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
-Aktiv ist `R3.9-browser-html5-worker`: echter NetSurf-HTML5-Baumaufbau in einem
-separaten, begrenzten Ring-3-Kindprozess. Noch keine Implementierungsabnahme.
+Aktiv ist `R7.1n-ata-pio-read-throughput`: Der Nutzer verlangt die Korrektur
+des ATA-Flaschenhalses; Performance ist ebenso verbindlich wie Resilienz.
+Der unfertige R3.9-Browser ist vollständig einschließlich unversionierter
+Dateien im lokalen Stash `a58233043f81ee80f08b7db3591d7ab2de76803c` gesichert.
+Die Logs bleiben unverändert unter `build/codex-agent/`. Danach war der
+Hauptarbeitsbaum sauber. Keine Browser-Abnahme und kein Verlust der Arbeit.
+Nach dem separaten ATA-Paket wird R3.9 mit seinen unveränderten Gates fortgesetzt.
+Die erfolglose ATA-Sleep-only-Probe und reine Zeitdiagnosen aus dem Stash dürfen
+dabei die neue ATA-Implementierung nicht überschreiben.
+Baseline: QEMU-Benchmark 101,91 KiB/s Lesen, 15,61 KiB/s Schreiben, vollständige
+256-KiB-Prüfung, Cleanup und Shell-Rückkehr. Ziel: mindestens 400 KiB/s Lesen
+bei unveränderten Zeitgrenzen und verpflichtenden Fehler-/Persistenztests.
 Der Nutzer hat R3.6b ausdrücklich mit unveränderten Anforderungen zurückgestellt
 und automatische Browser-Fortsetzung ohne erneute Routinefreigaben beauftragt.
 Keine parallelen manuellen Builds während der Agentenabnahme: Der erste

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.9-browser-html5-worker"
+active_id = "R7.1n-ata-pio-read-throughput"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,55 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R7.1n-ata-pio-read-throughput"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Remove per-sector ATA PIO read stalls with verified multiple-sector blocks"
+user_direction = "2026-09-05: User explicitly requires correcting the ATA contract bottleneck and makes performance equally important to resilience. Both are acceptance conditions; do not extend deadlines or remove failure containment. The attributable unaccepted HTML5 candidate is preserved in local stash a58233043f81ee80f08b7db3591d7ab2de76803c (including untracked files), with ignored logs untouched. The main worktree was verified clean before defining this independent hardware package. Resume R3.9 after this package, preserving its original gates; do not restore obsolete ATA trial changes from the stash."
+scope = "One existing ATA PIO read-transaction boundary: implement standard READ MULTIPLE and READ MULTIPLE EXT with fresh, validated IDENTIFY word 47/59 capability and volatile mode state under the existing channel mutex. If needed, use bounded SET MULTIPLE MODE and validate its completion before reading; do not cache mode across reset or media generations. Retain the current bounded batch buffer/range ABI, distinguish sectors from DRQ blocks and handle final partial blocks exactly. Ineligible capabilities use the established READ SECTORS path before any multiple-mode transfer; command errors and ambiguous completion fail without blind retries or partial cache publication. Task waits use absolute monotone deadlines and bounded sleep; pre-task probing stays separately bounded. No changes to write commands, journal barriers, DMA, AHCI, kernel process lifecycle or browser implementation. Prove actual command/port behavior including reset-like fresh capability changes, malformed identify, LBA28/48, remainder blocks, errors, deadline and cleanup on host. In QEMU require full 256-KiB byte verification, fsync, cleanup and shell return, plus at least 400 KiB/s sequential read versus the recorded 101.91 KiB/s baseline, without lengthening any timeout."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/ATA_PIO_TRANSFER_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "drivers/block/ata.c",
+  "drivers/block/ata.h",
+  "test/test_ata_multiple.py",
+  "test/test_ata_multiple_host.c",
+  "scripts/run_qemu_benchmark.py",
+  "test/test_benchmark_source.py"
+]
+invariants = [
+  "performance and resilience are simultaneous required gates, not interchangeable scores",
+  "fresh capability/mode state is validated inside the same existing channel transaction as data transfer; no stale state after reset",
+  "all caller ranges are validated before commands; bounded complete blocks and exact final remainder fit the original caller capacity",
+  "failed or timed out transfers never publish read-cache entries and are not automatically retried using another command",
+  "write durability journal DMA and AHCI paths and public ABIs remain unchanged"
+]
+targeted_tests = [
+  "python test/test_ata_multiple.py -v",
+  "python test/test_ata_source.py -v",
+  "python test/test_ata_pci_ide.py -v",
+  "python test/test_ata_lba48_source.py -v",
+  "python test/test_reist_undo_journal.py -v",
+  "python test/test_benchmark_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = ["python scripts/run_qemu_benchmark.py --image build/reist-os.img --min-read-kib-per-sec 400 --log build/codex-agent/ata-multiple-runtime.log"]
+stop_conditions = [
+  "a required source lies outside allowed_files or an unrelated writer overlaps the candidate",
+  "read optimization requires weakening write durability or expanding device authority",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "perf: batch ATA PIO reads with validated multiple-sector transfers"
+evidence = []
 
 [[packages]]
 id = "R3.7-browser-http-navigation"
@@ -226,7 +275,8 @@ evidence = []
 
 [[packages]]
 id = "R3.9-browser-html5-worker"
-status = "active"
+status = "queued"
+prerequisite = "User-directed ATA read throughput package R7.1n; unaccepted browser candidate preserved in stash a58233043f81ee80f08b7db3591d7ab2de76803c, not discarded or accepted."
 inventory_completion = "Before candidate implementation, upstream aliases.c was inspected completely and found to require ISO C bsearch in addition to strncpy, tolower and POSIX strncasecmp. Include the existing opt-in stdlib.h declaration file in the setup contract; implementation and host behavior remain in the already listed bytes.c/tests. This adds no authority or new runtime failure domain."
 phase = "post-s0"
 risk = "high"
