@@ -16,6 +16,7 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Grow private Ring-3 heaps without long allocator stalls or weakening resilience"
+repair_extension = "2026-09-05: User explicitly authorizes extending this blocked candidate to the existing Desktop/VFS startup path and requests continuing to correctness. Continue the attributable in-place R1.2c candidate; no unrelated changes were found. Instrument the exact font open/stat/bulk-read/close phase with bounded Ring-3 diagnostics; repair only reproduced progress, deadline or cleanup defects in the existing compositor/read-only VFS client, with real-code host regression. No new kernel driver, storage authority, public ABI, cache policy, timer calibration or hardware-profile change. Preserve all original frozen gates, failed evidence, Unicode self-test and 180-second host deadline; do not bypass GTEST or retry until a lucky pass. Append startup/client regressions; unaffected passed memory host evidence remains valid, changed-source gates and both reference builds must validate the repaired final candidate. Further out-of-scope production changes require a new explicit architectural handoff."
 user_direction = "2026-09-05: User prioritizes the OS memory foundation before further browser work, requests generous private Ring-3 memory and explicitly forbids weakening REIST memory resilience. The attributable unaccepted R3.10 candidate, including untracked files, is preserved in local stash 121cb536d7c2ef63df59b7d3aa08a4f4b3da0086 on c8eda742. Ignored evidence is untouched and the worktree was verified clean. No browser acceptance is claimed; resume that candidate with its original frozen gates after this independent foundation. Direct interactive implementation only; no agents or push."
 scope = "One private anonymous process-memory lifetime from admission through malloc/calloc/realloc/free to fault/kill/reap. Inventory the existing page allocator, address-space ownership, reserved/resilient objects and Ring-3 arena first. Retain syscall numbers and the explicit legacy 4-MiB arena mode; add an opt-in versioned backing-provider mode with demand-driven, noncontiguous process-private arenas and a caller-selected budget up to 512 MiB. Empty backing regions can be returned; no eager reservation of the whole budget, implicit network/filesystem authority or application cache in Ring 0. Enforce a kernel heap budget capped at half managed RAM and 512 MiB, expand fixed region metadata capacity, reuse released virtual holes and roll back failed mapping without slot or frame leaks. Preserve a physical frame reserve at allocation admission. Keep frame acquisition/zeroing/PTE publication indivisible against task termination but IRQ-friendly, and yield between bounded batches during large allocation, rollback, free and retired-address-space teardown; cleanup progress must remain owned after caller termination. Correct SDK pointer/error decoding over the complete existing user VA window. Prove real allocator behavior, failure rollback, zeroing, isolation, ownership, quota exhaustion, fresh generations, complete reap and peer scheduling progress in host tests and QEMU. This is not a high-memory/PAE/x86_64 migration: the current 1-GiB physical ceiling and all reserved/direct-map/resilient-object formats remain unchanged and visible debt. Do not implement CSS, browser cache policy or shared file cache in this run."
 allowed_files = [
@@ -38,7 +39,12 @@ allowed_files = [
   "test/test_process_memory.py", "test/test_process_memory_host.c",
   "test/test_process_heap_host.c", "test/test_libc_source.py",
   "test/test_memory_r12.py", "test/test_shell_source.py",
-  "test/test_user_program_toolchain.py"
+  "test/test_user_program_toolchain.py",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/storage/lib/vfs_file_client.c",
+  "test/test_desktop_startup_source.py", "test/test_desktop_source.py",
+  "test/test_reist_vfs_file_client.py", "test/test_vfs_file_client_host.c",
+  "docs/architecture/VIDEO_SUBSYSTEM.md"
 ]
 invariants = [
   "performance and resilience must both pass; no timeout extension as a performance repair",
@@ -57,7 +63,10 @@ targeted_tests = [
   "python test/test_memory_fault_injection.py -v",
   "python test/test_memory_resilience.py -v",
   "python test/test_shell_source.py -v",
-  "python test/test_user_program_toolchain.py -v"
+  "python test/test_user_program_toolchain.py -v",
+  "python test/test_desktop_startup_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_reist_vfs_file_client.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
