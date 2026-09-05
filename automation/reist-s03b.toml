@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.8-ring3-browser-c-runtime"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 
 [policy]
 one_package_per_run = true
@@ -155,7 +155,8 @@ evidence = []
 
 [[packages]]
 id = "R3.8-ring3-browser-c-runtime"
-status = "active"
+status = "done"
+repair_continuation = "2026-09-05: After the documented Zig -fsyntax-only FileNotFound stop, the user explicitly approves one further repair of the C++ header test driver: compile the same header fixture into an object and require that artifact, retaining the existing timeout and every frozen gate. Resume the attributed in-place candidate; preserve previous passing shell/SDK evidence, run the repaired libc gate and then the unchanged package/runtime gates. No unrelated source expansion or acceptance waiver."
 phase = "post-s0"
 risk = "high"
 title = "Provide a reusable bounded C runtime and execute a NetSurf dependency in Ring 3"
@@ -225,7 +226,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
 risk = "high"

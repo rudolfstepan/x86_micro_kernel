@@ -15,6 +15,21 @@ Schichten- und Portabilitätsvertrag steht unter
 
 ## Schnelltest unter Windows
 
+Opt-in C-Laufzeit und erste NetSurf-Abhängigkeit (R3.8):
+
+```powershell
+python scripts/build_user_sdk.py --output-dir build/sdk --incremental
+python scripts/build_user_program.py userspace/programs/crtest.c --sysroot build/sdk -I build/sdk/usr/include/reist/libc -l wapcaplet -l reistc --output build/CRTEST.PRG
+```
+
+`CRTEST.PRG` wird im Referenzimage unter `/usr/bin/crtest.prg` installiert und
+ist als `crtest` in der Ring-3-Shell erreichbar. Der Test prüft Alignment,
+Speichermangel, Realloc-Erhalt und echte Upstream-Strings, beendet eigene
+Kindprozesse normal sowie durch Heapfehler, `abort` und CPL3-`UD2`, holt jede
+Generation ab und startet anschließend einen sauberen neuen Kindprozess.
+Er verändert keine Nutzerdokumente. Dies ist ein absichtlicher Prozessfehlertest,
+kein Browser-Renderer oder vollständiger libc-/POSIX-Kompatibilitätstest.
+
 Eine einzelne Programmdatei bauen:
 
 ```powershell

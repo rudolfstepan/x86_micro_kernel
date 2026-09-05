@@ -15,6 +15,10 @@ ZIG = shutil.which("zig") or Path(
 
 sys.path.insert(0, str(ROOT))
 from scripts import build_user_program as builder  # noqa: E402
+try:
+    ZIG = builder.find_zig()
+except FileNotFoundError:
+    pass
 
 
 def make_elf32(segments, entry, *, runtime_relocations=False):
@@ -154,7 +158,7 @@ class UserProgramToolchainTests(unittest.TestCase):
         self.assertIn('library_dir / "libreistimage.a"', sdk_builder)
         self.assertIn('"image_ico.c"', sdk_builder)
         self.assertIn(
-            'IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG"}',
+            'IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG", "BROWSER.PRG"}',
             system_builder,
         )
         self.assertIn("MAX_SYSTEM_BUILD_WORKERS = 8", system_builder)
@@ -204,6 +208,25 @@ class UserProgramToolchainTests(unittest.TestCase):
             include = sdk / "usr" / "include"
             library = sdk / "usr" / "lib"
             self.assertTrue((include / "x86os.h").is_file())
+            self.assertFalse((include / "stdlib.h").exists())
+            self.assertTrue((include / "reist/libc/stdlib.h").is_file())
+            self.assertTrue((include / "libwapcaplet/libwapcaplet.h").is_file())
+            for archive in ("libreistc.a", "libwapcaplet.a"):
+                self.assertEqual((library / archive).read_bytes()[:8], b"!<arch>\n")
+            self.assertTrue((sdk / "usr/share/licenses/libwapcaplet/COPYING").is_file())
+            external = temporary / "external.c"
+            external.write_text(
+                '#include <stdlib.h>\n#include <libwapcaplet/libwapcaplet.h>\n'
+                'static _Alignas(max_align_t) char arena[65536];\n'
+                'int main(void) { lwc_string *s=0;\n'
+                'if (reist_libc_init(arena,sizeof(arena))) return 1;\n'
+                'return lwc_intern_string("sdk",3,&s); }\n', encoding="ascii")
+            subprocess.run([sys.executable, str(ROOT / "scripts/build_user_program.py"),
+                str(external), "--sysroot", str(sdk), "-I", str(include / "reist/libc"),
+                "-l", "wapcaplet", "-l", "reistc", "--zig", str(ZIG),
+                "--output", str(temporary / "CRTEST.PRG")], cwd=temporary,
+                check=True, capture_output=True, timeout=60)
+            self.assertEqual((temporary / "CRTEST.PRG").read_bytes()[:4], b"MYPR")
             self.assertTrue((include / "reist/gui/types.h").is_file())
             self.assertTrue((include / "reist/gui/menu.h").is_file())
             self.assertTrue((include / "reist/gui/dialog.h").is_file())
@@ -498,6 +521,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "NC.PRG",
                 "HTTPD.PRG",
                 "CURL.PRG",
+                "CRTEST.PRG",
                 "EDIT.PRG",
                 "CHILDEX.PRG",
                 "FAULTDE.PRG",

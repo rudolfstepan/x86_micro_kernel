@@ -1538,6 +1538,7 @@ def run(
     expect_wcet_baseline: bool = False,
     vmware_vga: bool = False,
     smp: int = 1,
+    expect_libc_client: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -1819,6 +1820,32 @@ def run(
                     deadline,
                     after=test_position,
                 )
+            if error is None and expect_libc_client:
+                # Two complete shell invocations, each with normal, heap-fault,
+                # CPU-fault and fresh normal children. No raw image mutation.
+                seen_identities: set[tuple[str, str]] = set()
+                for attempt in range(2):
+                    if error is not None:
+                        break
+                    inject_ps2_command(process, "crtest")
+                    error, position = wait_for_line(
+                        process, chunks, transcript, finished,
+                        "REIST_LIBC_RUNTIME_OK", deadline, after=shell_position)
+                    if error is None:
+                        error, end = wait_for_line(process, chunks, transcript, finished,
+                            SHELL_PROMPT, deadline, after=position)
+                        if error is None:
+                            section = "".join(transcript)[shell_position:end]
+                            identities = re.findall(r"CRTEST_GENERATION pid=(\d+) generation=(\d+)", section)
+                            if (len(identities) != 6 or len(set(identities)) != 6 or
+                                    seen_identities.intersection(identities) or
+                                    section.count("REIST_LIBC_CHILD_REAP_OK") != 5 or
+                                    section.count("REIST_LIBC_ALLOC_UPSTREAM_OK") != 3 or
+                                    "REIST_LIBC_ABORT" not in section or
+                                    "REIST_LIBC_HEAP_FAULT" not in section):
+                                error = "libc generation, upstream or child-reap proof incomplete"
+                            seen_identities.update(identities)
+                            shell_position = end
             if error is None and expect_arp_resolution:
                 assert injection_connection is not None
                 error, _ = wait_for_line(
@@ -2531,6 +2558,8 @@ def main() -> int:
         "--expect-curl-client", action="store_true",
         help="run curl against a deterministic socket-hub HTTP peer",
     )
+    parser.add_argument("--expect-libc-client", action="store_true",
+                        help="prove the C runtime, upstream library and contained child failures")
     parser.add_argument(
         "--expect-tls-curl-client", action="store_true",
         help="run curl against an authenticated socket-hub HTTPS peer",
@@ -2714,6 +2743,7 @@ def main() -> int:
             args.expect_wcet_baseline,
             args.vmware_vga,
             args.smp,
+            args.expect_libc_client,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)

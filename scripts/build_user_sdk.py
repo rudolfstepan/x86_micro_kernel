@@ -105,6 +105,42 @@ IMAGE_LIBRARY_SOURCES = (
     ROOT / "userspace" / "image" / "lib" / "image_ico.c",
 )
 STARTUP_SOURCE = CORE_ROOT / "crt0.c"
+LIBC_ROOT = ROOT / "userspace/libc"
+LIBC_INCLUDE_ROOT = LIBC_ROOT / "include"
+LIBC_SOURCES = tuple(LIBC_ROOT / "lib" / name for name in
+                     ("heap.c", "bytes.c", "runtime.c"))
+WAPCAPLET_ARCHIVE = ROOT / "third_party/libwapcaplet.tar.gz"
+WAPCAPLET_SHA256 = "9b2aa1dd6d6645f8e992b3697fdbd87f0c0e1da5721fa54ed29b484d13160c5c"
+
+
+def extract_wapcaplet(destination: Path) -> Path:
+    """Extract exactly the verified source/header/license, never archive links.
+
+    The public header includes sys/types.h but uses none of its declarations.
+    Drop only that unused include in the generated SDK header: no fake POSIX
+    header, API/type change or modification to the archived upstream source.
+    """
+    if hashlib.sha256(WAPCAPLET_ARCHIVE.read_bytes()).hexdigest() != WAPCAPLET_SHA256:
+        raise ValueError("LibWapcaplet archive SHA-256 mismatch")
+    members = ("src/libwapcaplet.c", "include/libwapcaplet/libwapcaplet.h", "COPYING")
+    with tarfile.open(WAPCAPLET_ARCHIVE, "r:gz") as archive:
+        for relative in members:
+            member = archive.getmember("libwapcaplet-0.4.3/" + relative)
+            if not member.isfile() or member.size > 65536:
+                raise ValueError("invalid pinned LibWapcaplet member")
+            stream = archive.extractfile(member)
+            if stream is None:
+                raise ValueError("missing pinned LibWapcaplet member")
+            data = stream.read()
+            if relative.endswith(".h"):
+                include = b"#include <sys/types.h>\n"
+                if data.count(include) != 1:
+                    raise ValueError("unexpected LibWapcaplet header")
+                data = data.replace(include, b"")
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+    return destination
 
 
 @dataclass(frozen=True)
@@ -121,6 +157,9 @@ class SdkArtifacts:
     audio_library: Path
     image_library: Path
     tls_library: Path
+    libc_include_dir: Path
+    libc_library: Path
+    wapcaplet_library: Path
 
 
 def sdk_artifacts(output: Path) -> SdkArtifacts:
@@ -138,6 +177,9 @@ def sdk_artifacts(output: Path) -> SdkArtifacts:
         audio_library=library_dir / "libreistaudio.a",
         image_library=library_dir / "libreistimage.a",
         tls_library=library_dir / "libreisttls.a",
+        libc_include_dir=root / "usr/include/reist/libc",
+        libc_library=library_dir / "libreistc.a",
+        wapcaplet_library=library_dir / "libwapcaplet.a",
     )
 
 
@@ -298,6 +340,12 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
               cache_directory: Path | None = None) -> SdkArtifacts:
     """Build headers, startup object and reusable static libraries once."""
     artifacts = sdk_artifacts(output)
+    libc_headers = tuple(LIBC_INCLUDE_ROOT.rglob("*.h"))
+    for header in libc_headers:
+        destination = artifacts.libc_include_dir / header.relative_to(LIBC_INCLUDE_ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.is_file() or destination.read_bytes() != header.read_bytes():
+            shutil.copy2(header, destination)
     public_headers = tuple(
         (root, header)
         for root in PUBLIC_INCLUDE_ROOTS
@@ -348,6 +396,16 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
             shutil.copy2(header, destination)
     artifacts.library_dir.mkdir(parents=True, exist_ok=True)
     write_pkg_config(artifacts.library_dir)
+    common = ("prefix=${pcfiledir}/../..\nincludedir=${prefix}/include\n"
+              "libdir=${prefix}/lib\n\n")
+    write_if_changed(artifacts.library_dir / "pkgconfig/reist-c.pc", common +
+                    "Name: reist-c\nDescription: Opt-in bounded C11 memory/byte subset\n"
+                    "Version: 1.0.0\nCflags: -I${includedir}/reist/libc\n"
+                    "Libs: -L${libdir} -lreistc -lreistos\n")
+    write_if_changed(artifacts.library_dir / "pkgconfig/libwapcaplet.pc", common +
+                    "Name: libwapcaplet\nDescription: NetSurf string interning for REIST\n"
+                    "Version: 0.4.3\nRequires: reist-c\n"
+                    "Cflags: -I${includedir}\nLibs: -L${libdir} -lwapcaplet\n")
 
     startup_stale = artifact_requires_rebuild(
         artifacts.startup_object,
@@ -373,8 +431,13 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         artifacts.tls_library,
         (*TLS_WRAPPER_SOURCES, *tls_headers, MBEDTLS_ARCHIVE,
          TLS_LIBRARY_ROOT / "reist_tls_config.h"), incremental)
+    libc_stale = artifact_requires_rebuild(
+        artifacts.libc_library, (*LIBC_SOURCES, *libc_headers, *core_headers), incremental)
+    wapcaplet_stale = artifact_requires_rebuild(
+        artifacts.wapcaplet_library,
+        (WAPCAPLET_ARCHIVE, Path(__file__).resolve(), *libc_headers), incremental)
     if not (startup_stale or core_stale or parser_stale or gui_stale or
-            audio_stale or image_stale or tls_stale):
+            audio_stale or image_stale or tls_stale or libc_stale or wapcaplet_stale):
         return artifacts
 
     with tempfile.TemporaryDirectory(prefix="reist-user-sdk-") as temporary:
@@ -390,6 +453,24 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         prefix = freestanding_compile_prefix(
             zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
                   CONFIG_INCLUDE_ROOT, STORAGE_INCLUDE_ROOT])
+
+        if libc_stale:
+            objects = compile_objects(LIBC_SOURCES,
+                freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT]),
+                temporary_path, "libc", environment)
+            create_archive(zig, artifacts.libc_library, objects, temporary_path, environment)
+        if wapcaplet_stale:
+            vendor = extract_wapcaplet(temporary_path / "wapcaplet")
+            public = artifacts.include_dir / "libwapcaplet/libwapcaplet.h"
+            public.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(vendor / "include/libwapcaplet/libwapcaplet.h", public)
+            license_path = artifacts.root / "usr/share/licenses/libwapcaplet/COPYING"
+            license_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(vendor / "COPYING", license_path)
+            objects = compile_objects((vendor / "src/libwapcaplet.c",),
+                freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT, vendor / "include"]),
+                temporary_path, "wapcaplet", environment)
+            create_archive(zig, artifacts.wapcaplet_library, objects, temporary_path, environment)
 
         if startup_stale:
             startup = compile_objects(

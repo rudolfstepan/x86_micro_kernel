@@ -97,5 +97,12 @@ IPC-/DOM-Adapter. NetSurfs vorhandene JavaScript-Einbettung wird nicht ungeprüf
 in den REIST-Browser übernommen. Vollständige moderne Webkompatibilität wird
 nicht behauptet.
 
-Die offenen Abnahmen von R3.6c und R3.6b bleiben erhalten. Ein erfolgreicher
-neuer Transporttest ersetzt weder ihre QEMU-Gates noch die reale Mausprüfung.
+R3.6c ist inzwischen vollständig abgenommen; die reale VMware-Mausabnahme
+R3.6b bleibt offen. R3.8 implementiert die erste wiederverwendbare C-Speicher-/
+Byte-Laufzeit und führt LibWapcaplet 0.4.3 aus dem NetSurf-Projekt auf ihr aus.
+Die Standardheader und Archive sind opt-in im Sysroot installiert; TLS und
+bestehende Browserprogramme werden nicht umgestellt. `CRTEST.PRG` prüft im Gast
+Speichermangel, Kindfehler, Reap und neue Generationen. Die R3.8-Abnahme steht in
+`CURRENT_WORK.md`; ein geplanter oder implementierter Test ist allein noch kein
+bestandener Gastnachweis. DOM/CSS und eigentliche Engine-Integration bleiben offen.
+Der genaue Speicher-/Fehlervertrag steht in `USERSPACE_SDK_AND_PORTABILITY.md`.

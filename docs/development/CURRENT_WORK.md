@@ -10,19 +10,87 @@ und vor dem unveränderten Browser-Gastgate. Alle vier bisherigen Targeted-Gates
 sind erhalten und bestanden. Grundlage: `805132f0`, Testvoraussetzung:
 `de3ca2f5`. Dieser Lauf schließt die offene Abnahme der vorhandenen Implementierung;
 er fügt noch keine neue Browser-Engine hinzu.
-R3.6b bleibt queued. Kein Push.
+Nach R3.8 rückt gemäß Queue R3.6b vor; seine bisher offenen Nachweise sind
+dadurch nicht bestanden. Kein Push.
 
-Aktives Paket ist `R3.8-ring3-browser-c-runtime`.
-Inventar: `x86os_malloc/free/realloc` sind vorhanden, aber nur Syscall-Wrapper;
+`R3.8-ring3-browser-c-runtime` ist abgenommen; aktives Queue-Paket ist R3.6b.
+Inventar vor R3.8: `x86os_malloc/free/realloc` sind vorhanden, aber nur Syscall-Wrapper;
 TLS besitzt einen privaten Arena-Allocator und Bytefunktionen, der Browser
 eigene Decoder-Bytefunktionen. Eine installierbare allgemeine C-Schnittstelle
-für Upstream-Bibliotheken fehlt. R3.8 bündelt deshalb begrenzte Speicherverwaltung,
+für Upstream-Bibliotheken fehlte. R3.8 bündelt deshalb begrenzte Speicherverwaltung,
 die benötigten C-Byte-/Stringfunktionen, SDK-Integration und die echte
 NetSurf-Abhängigkeit LibWapcaplet einschließlich Host-/Gast-Fehlernachweis.
-Der Vertrag ist vorbereitet, nicht implementiert. Kernel, TLS und vorhandene
-SDK-Verbraucher bleiben unverändert; vollständiges libc, DOM/CSS und JavaScript
-werden damit noch nicht behauptet. Gemäß Ein-Paket-Regel wurde in diesem
-R3.6c-Abnahmelauf noch kein R3.8-Quellcode implementiert.
+Der Nutzer beauftragt die automatische Fortsetzung bis zum Abschluss.
+R3.8 ist jetzt implementiert und abgenommen: opt-in `libreistc.a`, gepinnte
+LibWapcaplet 0.4.3, installierte Standardheader und `CRTEST.PRG`. Kernel, TLS und
+vorhandene SDK-Verbraucher bleiben unverändert. Die Entwicklungsprüfung mit
+echtem Allocator/Upstream-OOM ist bestanden, ebenso der Link aus dem installierten
+SDK. Nach ausdrücklicher Reparaturfreigabe sind auch alle restlichen Gates
+bestanden. Vollständiges libc, DOM/CSS und JavaScript werden damit nicht
+behauptet. In diesem Paketdurchlauf wurde ausschließlich R3.8 umgesetzt.
+
+### R3.8: abgeschlossene Abnahme
+
+Alle drei Targeted-Gates bestehen: 51 Tests, davon 49 erfolgreich und zwei
+bestehende optionale Shell-Hostcompiler-Tests übersprungen. Shell und vollständige
+SDK-/Toolchainprüfung wurden nach dem alleinigen C++-Testtreiberfix nicht wiederholt.
+Der reparierte libc-Gate wurde auf ausdrückliche Nutzerfreigabe einmal ausgeführt;
+beide Referenzbuilds und der unveränderte Gastgate anschließend jeweils einmal.
+
+| Befehl | Ergebnis | Dauer |
+| --- | --- | --- |
+| `python test/test_libc_source.py -v` | PASS, 4 Tests inkl. C++-Objekt | 0,8 s |
+| `python test/test_user_program_toolchain.py -v` | PASS, 20 Tests | 100,8 s |
+| `python test/test_shell_source.py -v` | PASS, 27 Tests, davon 2 übersprungen | 0,1 s |
+| `.\scripts\test-reist-package.ps1 -Target vmware -Video vga` | PASS | 51 s |
+| `.\scripts\test-reist-package.ps1 -Target qemu -Video vga` | PASS | 44 s |
+| `.\scripts\test-reist-runtime.ps1 -Mode libc-client -Target qemu -Video vga` | PASS | 108 s |
+
+Logs unter `build/codex-agent/`: `r38-gate-test_libc_source-object.log`,
+`r38-gate-test_user_program_toolchain.py.log`, `r38-gate-test_shell_source.py.log`,
+`20260905-121145-package-vmware-vga.log`, `20260905-121332-package-qemu-vga.log`,
+`20260905-121455-runtime-guest-smoke-libc-client.log` und
+`r38-libc-accepted-guest-transcript.log`.
+Zwei vollständige Ring-3-Shellaufrufe von `crtest` bestätigen zwölf verschiedene
+PID-/Generationspaare, zehn exakt abgeholte Kinder, sechs erfolgreiche Heap-/
+Upstream-Prüfungen, zweimal kontrollierten Heapfehler/Abort und zweimal CPL3-UD2.
+Nach jedem Aufruf kehrt die Shell zurück; kein Kernelpanic oder Neustart.
+Das rohe Referenzimage enthält das QEMU-Profil, das separate VMware-Paket ist
+unter `build/vmware/reist-os/` gebaut. Keine VMware-Laufzeit- oder CSS-/Browser-
+Funktionsabnahme wird daraus abgeleitet. Die früheren Fehlversuche bleiben unten
+als historische Evidenz erhalten.
+
+### R3.8: historischer Testtreiber-Stopp
+
+- `python test/test_shell_source.py -v`: PASS, 27 Tests, davon zwei bestehende
+  optionale Hostcompiler-Tests übersprungen, 0,1 s.
+- `python test/test_user_program_toolchain.py -v`: PASS, 20 Tests, 100,8 s.
+  Der gemeinsame Zig-Resolver aktiviert die zuvor wegen eines veralteten
+  Fallbackpfads übersprungenen Toolchain-Tests. Enthalten sind ein vollständiger
+  Systemprogrammbuild, ein wirklich externes C-Programm gegen das installierte
+  SDK, MYPR-Validierung und die unveränderte GUI-Inkrementalgrenze. Der veraltete
+  Image-Verbrauchervergleich berücksichtigt jetzt den bereits vorhandenen Browser.
+- `python test/test_libc_source.py -v`: FAIL, 29,1 s, nur der zusätzliche
+  C++-Headercheck. Zig 0.16.0 meldet bei `-fsyntax-only` `FileNotFound` für seine
+  stdin-Quelldatei. Der eine fokussierte Reparaturversuch schreibt die vier
+  Header-Includes in eine echte temporäre `.cpp`-Datei; derselbe Gate-Befehl
+  scheitert erneut nach 0,8 s an `headers.cpp:1:1: error: FileNotFound`.
+  Die übrigen drei Tests einschließlich echtem Heap und Upstream-OOM bestehen.
+- Die Paket-Stoppregel „a frozen gate fails after one focused in-scope repair“
+  ist erreicht. Keine zweite Implementierungsreparatur und keine Paket-/Gastgates
+  gestartet. Ein begrenzter Diagnosecompile desselben SDK-`stdlib.h` mit `-c`
+  statt `-fsyntax-only` besteht in 0,3 s; das ersetzt den offenen Header-Gate nicht.
+
+Logs unter `build/codex-agent/`: `r38-gate-test_shell_source.py.log`,
+`r38-gate-test_user_program_toolchain.py.log`, `r38-gate-test_libc_source.py.log`,
+`r38-gate-test_libc_source-repair.log`, `r38-header-diagnostic.log`.
+Der Nutzer hat danach mit „ja und mach weiter“ ausdrücklich einen weiteren auf
+den C++-Testtreiber begrenzten Reparaturversuch freigegeben: reguläre
+Objektübersetzung statt Syntax-only, dieselben Header und dieselbe Frist,
+zusätzlich ein zwingender Objektdateinachweis. Der attributierte Kandidat wird
+im Hauptworktree fortgesetzt; Shell-/SDK-Ergebnisse bleiben erhalten, danach
+folgen der reparierte libc-Gate und die unveränderten Paket-/Gastgates.
+Quelländerungen und Evidenz bleiben im sichtbaren Hauptworktree erhalten.
 
 ## Abnahme R3.6c
 

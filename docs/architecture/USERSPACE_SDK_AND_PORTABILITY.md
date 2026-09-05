@@ -159,6 +159,54 @@ separat nachzuweisende Ziele.
 
 ## Installiertes SDK
 
+### Opt-in C-Speicher-/Byte-Laufzeit (R3.8)
+
+`libreistc.a` ergänzt einen getesteten ISO-C11-Teilsatz: `malloc`, `calloc`,
+`realloc`, `free`, `memcpy`, `memmove`, `memset`, `memcmp`, `memchr`, `strlen`,
+`strcmp`, `strncmp`, `strchr` und `strrchr`. Standardheader liegen bewusst
+unter `usr/include/reist/libc/`, nur ein zusätzliches `-I` aktiviert sie.
+Der öffentliche Adapter `<reist/libc.h>` ist dort ebenfalls verfügbar.
+`pkg-config reist-c` beschreibt Header und Archive; bestehende SDK-Verbraucher
+und `libreisttls.a` werden nicht umgestellt.
+
+Vor Allocation bindet `reist_libc_init` caller-owned, `max_align_t`-ausgerichteten
+Speicher. Maximal 4 MiB und 4096 gleichzeitig lebende Objekte, eine Ausführungs-
+und Allocation-Domäne je Prozess, keine Threads, IRQ-Nutzung oder Reentranz.
+Die maximal 8193 Out-of-band-Deskriptoren bilden eine vor jeder Änderung
+validierte, lückenlose Partition. Bereiche, Ausrichtung, Prüfwörter und
+Live-Zähler werden ohne Dereferenzierung fremder Freigabezeiger geprüft.
+Speicherwachstum führt nicht zu impliziten Syscalls; vorhandene Heap-Syscalls,
+Kernel-Allocator, MYPR und öffentliche Syscall-ABI bleiben unverändert.
+
+Allocation-Fehler liefern NULL und POSIX-artiges `ENOMEM`; `calloc` prüft
+Multiplikation, gescheitertes `realloc` erhält das alte Objekt. Bewusst gewählte
+ISO-C11-Nullgrößenvariante: `malloc(0)`/`calloc(0,n)` liefern NULL,
+`realloc(p,0)` gibt frei und liefert NULL. `free(NULL)` hat keine Wirkung.
+Init eines gebundenen Heaps und Reset bei lebenden Objekten liefern `-EBUSY`.
+`errno` ist pro Prozess, nicht Thread-local. Ungültige Ownership oder erkannte
+Metadatenkorruption beendet nur den Prozess mit begrenzter Diagnose und Status 70.
+REIST-Abweichung des `abort`-Adapters: endgültiger Prozess-Exit mit Status 134,
+keine SIGABRT-Zustellung oder Signalhandler, da dieser Teilsatz keine Signale
+implementiert. `assert` ist im Debugbuild aktiv und bei `NDEBUG` ohne Auswertung.
+Keine vollständige Hosted-C-/POSIX- oder Signal-Kompatibilität wird behauptet.
+
+Alle C-Zeiger bleiben gewöhnliche prozesslokale Zeiger: gleiche Adresse nach
+Wiederverwendung ist nicht von einer alten Referenz unterscheidbar. Prüfwörter
+erkennen Korruption, schützen aber nicht gegen absichtliche Manipulation im
+selben Adressraum. Prozess-Reap und die neue Generation sind die eigentliche
+OS-Isolationsgrenze. Byte-/Stringfunktionen behalten die normalen C-Vorbedingungen;
+sie validieren keine untrusted IPC-Zeiger oder unbegrenzt terminierte Netztexte.
+
+`libwapcaplet.a` enthält den unveränderten C-Code der MIT-lizenzierten
+NetSurf-Bibliothek 0.4.3. Archiv und Lizenz sind gepinnt; nur das unbenutzte
+`sys/types.h`-Include entfällt im generierten Header (siehe `third_party/README.md`).
+Upstream-Aufrufer benötigen weiterhin begrenzte Stringlängen und balancierte
+Referenzen; ein späterer Parser-/IPC-Adapter muss diese Grenzen selbst erzwingen.
+`lwc_iterate_strings` gibt nach Freigabe aller Strings auch den Upstream-Kontext
+frei, bevor der Heap zurückgesetzt wird. C-Locale-/ctype-Funktionen werden nicht
+vorgetäuscht: Diese Abhängigkeit benötigt keine davon. Stdio, Dateistreams, DOM/CSS
+und JavaScript bleiben außerhalb dieses Speicherschnitts.
+
 `scripts/build_user_sdk.py` erzeugt ein Sysroot mit konventionellem Aufbau:
 
 ```text

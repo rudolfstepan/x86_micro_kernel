@@ -833,6 +833,7 @@ SYSTEM_IMAGE_FILES := \
 	sbin/nc.prg=$(SYSTEM_PROGRAM_DIR)/NC.PRG \
 	sbin/httpd.prg=$(SYSTEM_PROGRAM_DIR)/HTTPD.PRG \
 	usr/bin/curl.prg=$(SYSTEM_PROGRAM_DIR)/CURL.PRG \
+	usr/bin/crtest.prg=$(SYSTEM_PROGRAM_DIR)/CRTEST.PRG \
 	htdocs/about.txt=htdocs/about.txt \
 	htdocs/readme.txt=htdocs/readme.txt \
 	htdocs/status.jsn=htdocs/status.jsn \

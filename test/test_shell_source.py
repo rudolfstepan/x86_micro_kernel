@@ -11,6 +11,17 @@ COMMAND_SOURCE = ROOT / "kernel" / "shell" / "command.c"
 
 
 class ShellSourceRegressionTests(unittest.TestCase):
+    def test_c_runtime_probe_is_reached_by_userspace_search(self):
+        for path in ("Makefile", "scripts/build-windows.ps1"):
+            self.assertIn("usr/bin/crtest.prg", (ROOT / path).read_text())
+        shell = (ROOT / "userspace/bin/shell.c").read_text()
+        self.assertIn('"/usr/bin"', shell)
+        self.assertIn("join_program_path", shell)
+        self.assertIn('"CRTEST.PRG"', (ROOT / "scripts/build_system_programs.py").read_text())
+        runner = (ROOT / "scripts/run_qemu_smoke.py").read_text()
+        self.assertIn('inject_ps2_command(process, "crtest")', runner)
+        self.assertIn("REIST_LIBC_CHILD_REAP_OK", runner)
+
     @classmethod
     def setUpClass(cls):
         cls.source = COMMAND_SOURCE.read_text(encoding="utf-8")

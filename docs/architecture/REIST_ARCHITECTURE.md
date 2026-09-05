@@ -804,6 +804,14 @@ festen Puffern im CURL-Kind dekodiert. Der Adapter führt weder einen neuen
 Kernelmechanismus noch eine neue Surface-/Syscall-ABI ein. Grenzen und der
 noch nicht vollzogene Engine-Port stehen in `BROWSER_ENGINE_PORT_PLAN.md`.
 
+R3.8 ergänzt als Engine-Voraussetzung eine opt-in Ring-3-C-Speicher-/Byte-Laufzeit
+und die echte NetSurf-Bibliothek LibWapcaplet. Maximal 4 MiB caller-owned Arena
+und 4096 lebende Objekte je Prozess; keine neue Kernel-Allocation oder versteckte
+Datei-/Geräteautorität. Gewöhnlicher Speichermangel bleibt ein Allocation-Fehler,
+erkannte Heapkorruption stoppt nur die eigene Prozessgeneration. Der konkrete
+Adapter und seine Standardabweichungen stehen in `USERSPACE_SDK_AND_PORTABILITY.md`;
+Host-/Gastabnahme in `CURRENT_WORK.md`. Das ist noch keine Layout-Engine.
+
 R3.6c trennt das Browser-Rendering in eine unveränderliche Pixel-Unterlage
 für Bilder, BASE für Dokumenttext, OVERLAY für Status und HOVER für die
 Adressleiste. Ein geordneter Batch von höchstens 32 Eingaben wird vor dem

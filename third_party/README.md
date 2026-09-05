@@ -1,5 +1,19 @@
 # Third-party source archives
 
+`libwapcaplet.tar.gz` is the unmodified official LibWapcaplet 0.4.3 source
+archive from https://download.netsurf-browser.org/libs/releases/libwapcaplet-0.4.3-src.tar.gz
+(project: https://www.netsurf-browser.org/projects/libwapcaplet/).
+SHA-256: `9b2aa1dd6d6645f8e992b3697fdbd87f0c0e1da5721fa54ed29b484d13160c5c`.
+The complete MIT license is retained as `COPYING` inside the archive and
+installed under `usr/share/licenses/libwapcaplet/`. Extraction is restricted
+to the pinned C source, public header and license. The generated public header
+removes only its unused `#include <sys/types.h>`; no declaration requires that
+header, no fake POSIX types are supplied, and upstream source/API is unchanged.
+The opt-in Ring-3 C runtime supplies actual malloc/free and byte operations.
+These upstream C calls still require valid caller-owned data, finite string
+lengths and balanced references; this is not a validated untrusted-input IPC
+adapter or a complete browser engine. Runtime probes bound all such inputs.
+
 `stb_image.h` v2.30 is pinned to upstream commit
 `013ac3beddff3dbffafd5177e7972067cd2b5083` of
 https://github.com/nothings/stb (raw source at that exact revision).
