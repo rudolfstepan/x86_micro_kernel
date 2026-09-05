@@ -783,6 +783,14 @@ Absätze, Umbrüche, Hervorhebungen, Vorformatierung, Listen, Links und Bilder a
 festkapazitiven Dokumentmodell. Lokale Pfade laufen über READ|STAT-VFS-Objekte;
 HTTP(S) wird ausschließlich vom getrennten `CURL.PRG` in eine begrenzte
 Tempdatei übertragen. Fehler behalten die letzte vollständig validierte Seite.
+Der R3.7-Kandidat erhält dafür HTTP-Header über `curl --include` und folgt
+301/302/303/307/308 bis zu fünfmal innerhalb von 30 Sekunden; je Kind gelten
+weiterhin höchstens zehn Sekunden. Nach Weiterleitung gilt die Zieladresse
+als Basis für Links und Bilder. HTTPS-Downgrades und lokale Redirect-Ziele
+werden abgewiesen. Chunked-Antworten werden im CURL-Kind dekodiert; HTML wird
+nur bei unterstütztem Inhaltstyp und UTF-8/ASCII-Kodierung veröffentlicht.
+Die Body-Grenzen bleiben unverändert, zusätzlich sind insgesamt 8 KiB Header
+zugelassen. Komprimierte HTTP-Inhalte, Cookies und POST fehlen weiterhin.
 Ein Klick in die Adressleiste markiert den bisherigen Inhalt logisch für
 begrenztes Ersetzen beim ersten Druck- oder Backspace-Ereignis. Explizite
 `http://`- und `https://`-Adressen bleiben erhalten; ein Hostname ohne Schema

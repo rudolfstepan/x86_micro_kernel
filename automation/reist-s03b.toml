@@ -13,6 +13,7 @@ push = false
 [[packages]]
 id = "R3.7-browser-http-navigation"
 status = "active"
+user_checkpoint = "2026-09-05: The user explicitly approves saving the HTTP/browser candidate as a non-accepted checkpoint after being informed that curl-client times out before CURL in GTEST's desktop --unicode-probe. Preserve all frozen gates and active status; no acceptance or push. Then extend the same active package by an explicitly bounded desktop-start repair before continuing browser features."
 phase = "post-s0"
 risk = "high"
 title = "Preserve HTTP response semantics for the browser engine migration"

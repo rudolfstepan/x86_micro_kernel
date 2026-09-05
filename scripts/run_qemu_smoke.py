@@ -150,10 +150,11 @@ TCP_TEST_COMMAND = "nc 10.0.2.99 8080 ping"
 TCP_TEST_TARGET = bytes((10, 0, 2, 99))
 TCP_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x04))
 TCP_TEST_REPLY_MARKER = "pong"
-CURL_TEST_COMMAND = "curl http://10.0.2.101/data.txt"
+CURL_TEST_COMMAND = "curl --include http://10.0.2.101/data.txt"
 CURL_TEST_TARGET = bytes((10, 0, 2, 101))
 CURL_TEST_MAC = bytes((0x02, 0xCA, 0xFE, 0x00, 0x00, 0x06))
 CURL_TEST_REPLY_MARKER = "REIST_CURL_RUNTIME_OK"
+CURL_TEST_HEADER_MARKER = "X-Reist-Transport: chunked-include"
 TLS_CURL_TEST_COMMAND = "curl https://10.0.2.101/data.txt"
 TLS_CURL_TEST_REPLY_MARKER = "REIST_CURL_HTTPS_RUNTIME_OK"
 PUBLIC_TLS_CURL_TEST_COMMAND = "curl https://google.com"
@@ -851,15 +852,19 @@ def serve_curl_test_client(connection: socket.socket,
             request_segment = segment
             break
     if (request_segment is None or
-            not request_segment[5].startswith(b"GET /data.txt HTTP/1.0\r\n") or
-            b"Host: 10.0.2.101\r\n" not in request_segment[5]):
+            not request_segment[5].startswith(b"GET /data.txt HTTP/1.1\r\n") or
+            b"Host: 10.0.2.101\r\n" not in request_segment[5] or
+            b"Accept-Encoding: identity\r\n" not in request_segment[5]):
         return "valid curl HTTP request was not observed"
     client_next = request_segment[2] + len(request_segment[5])
     server_next = server_sequence + 1
     body = CURL_TEST_REPLY_MARKER.encode("ascii") + b"\n"
-    response = (b"HTTP/1.0 200 OK\r\nContent-Length: " +
-                str(len(body)).encode("ascii") +
-                b"\r\nConnection: close\r\n\r\n" + body)
+    # Split the marker across chunks: unchanged raw wire output cannot pass.
+    first, second = body[:7], body[7:]
+    response = (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n" +
+                CURL_TEST_HEADER_MARKER.encode("ascii") + b"\r\nConnection: close\r\n\r\n" +
+                f"{len(first):x};test=1\r\n".encode("ascii") + first + b"\r\n" +
+                f"{len(second):x}\r\n".encode("ascii") + second + b"\r\n0\r\n\r\n")
     if not inject_ethernet_frame(
         connection, tcp_peer_frame(CURL_TEST_TARGET, CURL_TEST_MAC,
                                    server_port, client_port, server_next,
@@ -952,7 +957,7 @@ def serve_tls_curl_test_client(connection: socket.socket,
                     if b"\r\n\r\n" in plaintext:
                         break
                 if b"\r\n\r\n" in plaintext:
-                    if (not plaintext.startswith(b"GET /data.txt HTTP/1.0\r\n")
+                    if (not plaintext.startswith(b"GET /data.txt HTTP/1.1\r\n")
                             or b"Host: 10.0.2.101\r\n" not in plaintext):
                         return "valid authenticated curl HTTPS request was not observed"
                     body = TLS_CURL_TEST_REPLY_MARKER.encode("ascii") + b"\n"
@@ -1921,8 +1926,12 @@ def run(
                 if error is None:
                     error, curl_position = wait_for_line(
                         process, chunks, transcript, finished,
+                        CURL_TEST_HEADER_MARKER, deadline, after=shell_position)
+                if error is None:
+                    error, curl_position = wait_for_line(
+                        process, chunks, transcript, finished,
                         CURL_TEST_REPLY_MARKER, deadline,
-                        after=shell_position)
+                        after=curl_position)
                 if error is None:
                     error, _ = wait_for_line(
                         process, chunks, transcript, finished, SHELL_PROMPT,

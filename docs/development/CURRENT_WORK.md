@@ -2,7 +2,55 @@
 
 Stand: 5. September 2026
 
-Aktueller Auftrag: Browser-Bedienung und Bilder verbessern. Aktives Paket ist
+Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
+Aktives Paket: `R3.7-browser-http-navigation`, Vertrag `e5ae16b8`, Basis
+`cd7025a2`. R3.6c und R3.6b bleiben mit unveränderten offenen Gates queued.
+Der neue Kandidat `BROWSER_BUILD navigation-20260905-r5` ergänzt HTTP/1.1-GET,
+`curl --include/-i`, begrenztes chunked-Decoding und echte HTTP-Weiterleitungen
+für Dokumente und Bilder. Kopf und dekodierter Body werden gemeinsam publiziert;
+Close-/Rename-Fehler melden Misserfolg. Abgebrochene eigene Kindprozesse werden
+vor dem Entfernen ihrer Teil-/Ergebnisdateien abgeholt. Fehlerantworten,
+ungeeignete Darstellungen, HTTPS-Downgrades und Schleifen erhalten die alte Seite.
+
+Entwicklungstests führen den echten CURL-Stream-/Publikationscode und den
+Browser-Ladezustand aus: fragmentierte Antworten, Weiterleitungsketten, effektive
+Bild-/Linkbasis, Esc, neue Navigation, Zeit-/Bytebudgets und Schreibfehler.
+Die fünf eingefrorenen Targeted-Gates sind bestanden (38 erfolgreich, vier
+bestehende optionale Tests übersprungen): Navigation 1,4 s, Browser 29,7 s,
+Browser-Laufzeitmodell 1,6 s, Surface 0,3 s, Netzwerk 84,3 s. Die neue zwingende
+Zig-Hostprüfung führt den CURL-URL-/Headerparser auch ohne GCC aus.
+Logs: `build/codex-agent/r37-gate-*.log`.
+
+`test-reist-package.ps1 -Target vmware -Video vga` besteht in 22 s,
+Log `build/codex-agent/20260905-103403-package-vmware-vga.log`.
+`test-reist-runtime.ps1 -Mode curl-client -Target qemu -Video vga` scheitert
+nach 180 s **vor** dem CURL-Aufruf: GTEST erreicht `VFAT_UTF8_OK`, startet
+`desktop --unicode-probe` und erreicht `TEST_OK` nicht. Der Desktop protokolliert
+`splash`, aber noch kein `font`/`font-io`. Das grenzt den fehlenden Fortschritt
+auf den unveränderten Desktop-Startpfad zwischen SVGA-Verbindung und Font-Laden
+ein; die genaue Blockierstelle ist noch nicht bewiesen. Log:
+`build/codex-agent/20260905-103457-runtime-guest-smoke-curl-client.log`.
+Der anschließende eingefrorene Browser-Gasttest wurde nach diesem ersten
+Fehlschlag nicht gestartet. Der neue CURL-/Browser-Gastnachweis bleibt offen.
+
+Paketstopp: `userspace/gui/compositor/desktop.c` und der allgemeine
+`userspace/programs/guest_test.c` liegen außerhalb des Transportpakets. Keine
+Abschwächung oder Umgehung des GTEST-Gates und keine stille Umfangserweiterung.
+Der Nutzer hat danach ausdrücklich zugestimmt, R3.7 als **nicht abgenommenen
+Zwischenstand** zu committen und den Paketumfang anschließend um die
+Desktop-Startblockade zu erweitern. R3.7 bleibt aktiv; kein Queue-Fortschritt,
+keine Abnahme und kein Push. Die folgende Reparatur wird vor Umsetzung getrennt
+abgegrenzt; alle bisherigen Gates bleiben erhalten.
+
+NetSurf bleibt der bevorzugte Portierungskandidat, noch nicht integriert.
+Fehlende allgemeine ISO-C-/Datei-/Zeit-/Speichergrundlagen werden als echte
+Ring-3-SDK-Verträge nachimplementiert, nicht als funktionslose Browser-Stubs.
+CSS, DOM/Formulare und später isoliertes JavaScript sind noch nicht umgesetzt.
+Details: `docs/architecture/BROWSER_ENGINE_PORT_PLAN.md`.
+
+## Historischer Checkpoint R4 (`cd7025a2`)
+
+Damals aktiver Auftrag: Browser-Bedienung und Bilder verbessern. Aktives Paket war
 `R3.6c-browser-interaction-and-images`; `R3.6b-vmware-pointer-pinned-mutex` ist
 mit offenen Nachweisen zurückgestellt (`queued`), nicht abgeschlossen.
 Basis: `7b365f3b`; Paketvertrag: `337318d9`. Der Browser-Kandidat wird auf
@@ -20,7 +68,7 @@ Funktions-/Engine-Schnitt ist noch nicht definiert und wird mit diesem
 Sicherungsauftrag nicht implementiert. JavaScript bleibt für einen späteren
 isolierten Ring-3-Dienst vorgesehen.
 
-Aktueller Build: `BROWSER_BUILD interaction-20260905-r4`. Der neu erfasste
+Damals aktueller Build: `BROWSER_BUILD interaction-20260905-r4`. Der neu erfasste
 Scrollfehler ist `buffer-unregister code=-110`, bei Scrollposition 719 nach
 zwölf Dokumentframes; anschließend ebenfalls Surface-Cleanup-Timeout.
 Der Nutzer hat die Reparatur der gemeinsamen Surface-IPC-Bibliothek und ihrer

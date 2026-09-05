@@ -6,6 +6,7 @@
 #include "reist/vfs_file_client.h"
 #include "browser_model.h"
 #include "browser_images.h"
+#include "browser_response.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -42,10 +43,11 @@ typedef struct browser_state {
     char pending_url[BROWSER_URL_CAPACITY], job_url[BROWSER_URL_CAPACITY];
     uint32_t pending, job_kind, job_image, image_next, image_deadline, job_deadline;
     uint32_t job_cancelled, child_generation, poll_at;
+    uint32_t redirect_count, redirect_deadline, follow_redirect, response_status;
     int child_pid;
 } browser_state_t;
-static uint8_t document_bytes[BROWSER_DOCUMENT_LIMIT];
-static uint8_t image_bytes[BROWSER_IMAGE_INPUT_LIMIT];
+static uint8_t document_bytes[BROWSER_DOCUMENT_LIMIT + REIST_CURL_HEADER_CAPACITY];
+static uint8_t image_bytes[BROWSER_IMAGE_INPUT_LIMIT + REIST_CURL_HEADER_CAPACITY];
 typedef struct browser_workspace {
     uint32_t decoded[BROWSER_IMAGE_PIXEL_LIMIT];
     uint32_t surface[REIST_GUI_SURFACE_MAX_WIDTH * REIST_GUI_SURFACE_MAX_HEIGHT];
@@ -271,26 +273,48 @@ static void cancel_fetch(browser_state_t *state) {
         state->exit_requested = 1U;
     }
 }
-static int start_fetch(browser_state_t *state, const char *url, uint32_t kind, uint32_t index) {
+static void cleanup_fetch_files(browser_state_t *state) {
+    if (state->child_pid > 0) return; /* A writer must be reaped first. */
+    char partial[sizeof(state->temporary_path) + sizeof(".curl-part")];
+    uint32_t used = (uint32_t)bounded_length(state->temporary_path, sizeof(state->temporary_path));
+    if (!used || used >= sizeof(state->temporary_path)) return;
+    for (uint32_t i=0; i<used; ++i) partial[i]=state->temporary_path[i];
+    static const char suffix[]=".curl-part";
+    for (uint32_t i=0; i<sizeof(suffix); ++i) partial[used+i]=suffix[i];
+    (void)x86os_unlink(partial);
+    (void)x86os_unlink(state->temporary_path);
+}
+static int start_fetch_hop(browser_state_t *state, const char *url, uint32_t kind, uint32_t index) {
     if (state->child_pid > 0 || copy_text(state->job_url, sizeof(state->job_url), url) != 0) return -16;
     char fetch[BROWSER_URL_CAPACITY];
     if (strip_fragment(url, fetch, sizeof(fetch)) != 0) return -22;
-    (void)x86os_unlink(state->temporary_path);
     const char *arguments[] = {"/usr/bin/curl.prg", "-o", state->temporary_path,
-        "--max-bytes", kind == 1U ? "65536" : "262144", fetch};
-    int pid = x86os_spawnv("/usr/bin/curl.prg", 6, arguments);
+        "--max-bytes", kind == 1U ? "65536" : "262144", "--include", fetch};
+    uint32_t now = x86os_uptime_ms();
+    if ((int32_t)(now - state->redirect_deadline) >= 0) return -110;
+    cleanup_fetch_files(state);
+    int pid = x86os_spawnv("/usr/bin/curl.prg", 7, arguments);
     if (pid <= 0) return -5;
     state->child_pid = pid;
     state->child_generation = 0U;
     state->job_kind = kind; state->job_image = index;
     state->job_cancelled = 0U;
-    state->job_deadline = x86os_uptime_ms() + BROWSER_FETCH_DEADLINE_MS;
+    state->response_status = 0U;
+    state->job_deadline = now + BROWSER_FETCH_DEADLINE_MS;
+    if ((int32_t)(state->job_deadline - state->redirect_deadline) > 0)
+        state->job_deadline = state->redirect_deadline;
     state->poll_at = x86os_uptime_ms();
     x86os_process_info_t info;
     if (child_info(state, &info) != 0) {
         state->exit_requested = 1U; return -84;
     }
     return 0;
+}
+static int start_fetch(browser_state_t *state, const char *url, uint32_t kind, uint32_t index) {
+    if (state->child_pid > 0) return -16;
+    state->redirect_count = state->follow_redirect = 0U;
+    state->redirect_deadline = x86os_uptime_ms() + BROWSER_REDIRECT_DEADLINE_MS;
+    return start_fetch_hop(state, url, kind, index);
 }
 static const char *fragment_of(const char *url) {
     for (uint32_t i = 0; i < BROWSER_URL_CAPACITY && url[i]; ++i)
@@ -303,12 +327,12 @@ static void scroll_to_fragment(browser_state_t *state, reist_gui_surface_client_
     if (fragment && browser_anchor_y(&documents[state->active], &layouts[state->active], fragment, &y) == 0)
         set_scroll(state, client, y);
 }
-static int publish_document(browser_state_t *state, reist_gui_surface_client_t *client,
-                             const char *path, const char *url) {
-    uint32_t length = 0U, candidate = state->active ^ 1U;
-    int result = read_file(path, document_bytes, sizeof(document_bytes), &length);
+static int publish_document_bytes(browser_state_t *state, reist_gui_surface_client_t *client,
+                                   const char *url, uint32_t length) {
+    uint32_t candidate = state->active ^ 1U;
+    if (!length || length > BROWSER_DOCUMENT_LIMIT) return -27;
     for (uint32_t i = 0; i < BROWSER_IMAGE_CACHE_COUNT; ++i) image_cache[candidate][i].decoded = 0U;
-    if (result == 0) result = reist_html_document_parse(document_bytes, length, &documents[candidate]);
+    int result = reist_html_document_parse(document_bytes, length, &documents[candidate]);
     if (result == 0) result = browser_build_layout(&documents[candidate], client->width,
                                                     image_cache[candidate], &layouts[candidate]);
     if (result != 0) return result;
@@ -338,13 +362,17 @@ static int publish_document(browser_state_t *state, reist_gui_surface_client_t *
     x86os_puts("BROWSER_RENDER_OK\n");
     return 0;
 }
-static int load_image(browser_state_t *state, reist_gui_surface_client_t *client,
-                       const char *path, uint32_t index) {
-    if (index >= BROWSER_IMAGE_CACHE_COUNT) return -28;
+static int publish_document(browser_state_t *state, reist_gui_surface_client_t *client,
+                             const char *path, const char *url) {
     uint32_t length = 0U;
+    int result = read_file(path, document_bytes, BROWSER_DOCUMENT_LIMIT, &length);
+    return result != 0 ? result : publish_document_bytes(state, client, url, length);
+}
+static int load_image_bytes(browser_state_t *state, reist_gui_surface_client_t *client,
+                             uint32_t index, uint32_t length) {
+    if (index >= BROWSER_IMAGE_CACHE_COUNT) return -28;
     reist_image_info_t info;
-    int result = read_file(path, image_bytes, sizeof(image_bytes), &length);
-    if (result == 0) result = browser_image_decode(image_bytes, length, decoded_pixels,
+    int result = browser_image_decode(image_bytes, length, decoded_pixels,
                                                   BROWSER_IMAGE_PIXEL_LIMIT, &info);
     if (result != 0) return result;
     browser_image_slot_t *slot = &image_cache[state->active][index];
@@ -371,6 +399,44 @@ static int load_image(browser_state_t *state, reist_gui_surface_client_t *client
     x86os_puts("BROWSER_IMAGE_OK\n");
     return 0;
 }
+static int load_image(browser_state_t *state, reist_gui_surface_client_t *client,
+                       const char *path, uint32_t index) {
+    uint32_t length = 0U;
+    int result = read_file(path, image_bytes, BROWSER_IMAGE_INPUT_LIMIT, &length);
+    return result != 0 ? result : load_image_bytes(state, client, index, length);
+}
+static int finish_fetch(browser_state_t *state, reist_gui_surface_client_t *client) {
+    uint32_t document = state->job_kind == 1U;
+    uint8_t *bytes = document ? document_bytes : image_bytes;
+    uint32_t limit = document ? BROWSER_DOCUMENT_LIMIT : BROWSER_IMAGE_INPUT_LIMIT;
+    uint32_t length = 0U;
+    int result = read_file(state->temporary_path, bytes, limit + REIST_CURL_HEADER_CAPACITY, &length);
+    if (result != 0) return result;
+    browser_response_t response = {0};
+    result = browser_response_open(bytes, length, state->job_url, !document, &response);
+    state->response_status = response.status;
+    if (result < 0) return result;
+    if (response.body_length > limit) return -90;
+    if (result == 1) {
+        if (state->redirect_count >= BROWSER_REDIRECT_LIMIT) return -40;
+        if ((int32_t)(x86os_uptime_ms() - state->redirect_deadline) >= 0) return -110;
+        if (copy_text(state->job_url, sizeof(state->job_url), response.redirect) != 0) return -90;
+        ++state->redirect_count;
+        /* Start only on the next UI turn, after the old temp was unlinked.
+         * Otherwise a fast new child could publish a file cleanup then erases. */
+        state->follow_redirect = 1U;
+        if (document && !state->address_focused) {
+            copy_text(state->address, sizeof(state->address), response.redirect);
+            state->address_cursor = state->address_length = (uint32_t)bounded_length(state->address, sizeof(state->address));
+            state->chrome_redraw = 1U;
+        }
+        set_status(state, "HTTP-Weiterleitung ... Esc: abbrechen");
+        x86os_puts("BROWSER_REDIRECT_OK\n"); return 0;
+    }
+    for (uint32_t i = 0; i < response.body_length; ++i) bytes[i] = bytes[response.body_offset + i];
+    return document ? publish_document_bytes(state, client, state->job_url, response.body_length)
+                    : load_image_bytes(state, client, state->job_image, response.body_length);
+}
 static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, const char *target) {
     char normalized[BROWSER_URL_CAPACITY];
     int result = target && target[0] == '#' && state->loaded
@@ -381,8 +447,9 @@ static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, 
     strip_fragment(normalized, new_path, sizeof(new_path));
     strip_fragment(state->active_url, old_path, sizeof(old_path));
     if (state->loaded && fragment_of(normalized) && text_equal(old_path, new_path)) {
-        if (state->pending || (state->child_pid > 0 && state->job_kind == 1U)) {
+        if (state->pending || ((state->child_pid > 0 || state->follow_redirect) && state->job_kind == 1U)) {
             state->pending = 0U;
+            state->follow_redirect = 0U;
             cancel_fetch(state);
         }
         copy_text(state->active_url, sizeof(state->active_url), normalized);
@@ -393,6 +460,7 @@ static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, 
     }
     copy_text(state->pending_url, sizeof(state->pending_url), normalized);
     state->pending = 1U;
+    state->follow_redirect = 0U;
     state->image_next = BROWSER_IMAGE_CACHE_COUNT;
     state->armed_link = UINT32_MAX;
     cancel_fetch(state);
@@ -417,14 +485,22 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
         state->child_pid = 0;
         state->child_generation = 0U;
         int result = -5;
-        if (!state->job_cancelled && status == 0)
-            result = state->job_kind == 1U
-                ? publish_document(state, client, state->temporary_path, state->job_url)
-                : load_image(state, client, state->temporary_path, state->job_image);
-        (void)x86os_unlink(state->temporary_path);
-        if (result != 0 && !state->pending)
-            set_status(state, state->job_kind == 1U
-                ? "Laden abgelehnt - bisherige Seite bleibt" : "Bild nicht verfuegbar - Alternativtext");
+        if (!state->job_cancelled && status == 0) result = finish_fetch(state, client);
+        cleanup_fetch_files(state);
+        if (result != 0 && !state->pending) {
+            state->follow_redirect = 0U;
+            if (state->job_kind != 1U) set_status(state, "Bild nicht verfuegbar - Alternativtext");
+            else if (result == -40) set_status(state, "Zu viele Weiterleitungen - Seite bleibt");
+            else if (result == -95) set_status(state, "Inhaltstyp/Kodierung nicht unterstuetzt");
+            else if (result == -13) set_status(state, "Unsichere Weiterleitung abgewiesen");
+            else if (state->response_status >= 400U) {
+                char message[] = "HTTP 000 - bisherige Seite bleibt";
+                message[5] = (char)('0' + state->response_status / 100U);
+                message[6] = (char)('0' + state->response_status / 10U % 10U);
+                message[7] = (char)('0' + state->response_status % 10U);
+                set_status(state, message);
+            } else set_status(state, "Laden abgelehnt - bisherige Seite bleibt");
+        }
         return;
     }
     if (state->pending) {
@@ -434,6 +510,12 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
         int result = is_network(path) ? start_fetch(state, state->pending_url, 1U, 0U)
             : publish_document(state, client, path, state->pending_url);
         if (result != 0) set_status(state, "Laden abgelehnt - bisherige Seite bleibt");
+        return;
+    }
+    if (state->follow_redirect) {
+        state->follow_redirect = 0U;
+        if (start_fetch_hop(state, state->job_url, state->job_kind, state->job_image) != 0)
+            set_status(state, "Weiterleitung fehlgeschlagen - Seite bleibt");
         return;
     }
     if (!state->loaded || state->image_next >= documents[state->active].image_count ||
@@ -726,8 +808,9 @@ static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *c
 }
 static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *client, uint32_t key) {
     if (key == BROWSER_KEY_ESCAPE || key == 27U) {
-        if (state->child_pid > 0 || state->pending) {
+        if (state->child_pid > 0 || state->pending || state->follow_redirect) {
             state->pending = 0U; state->image_next = BROWSER_IMAGE_CACHE_COUNT;
+            state->follow_redirect = 0U;
             cancel_fetch(state); set_status(state, "Laden abgebrochen");
         } else if (state->address_focused) {
             state->address_focused = 0U; state->chrome_redraw = 1U;
@@ -763,7 +846,7 @@ static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *
 static int probe_step(browser_state_t *state, reist_gui_surface_client_t *client) {
     uint32_t count = documents[state->active].image_count;
     if (count > BROWSER_IMAGE_CACHE_COUNT) count = BROWSER_IMAGE_CACHE_COUNT;
-    if (state->pending || state->child_pid > 0 || state->image_next < count) return 0;
+    if (state->pending || state->follow_redirect || state->child_pid > 0 || state->image_next < count) return 0;
     if (!state->loaded) return -1;
     if (state->probe_phase == 0U) {
         if (!image_cache[state->active][0].decoded) return -1;
@@ -861,7 +944,7 @@ static const char *initial_target(int argc, char **argv, uint32_t *probe) {
 }
 
 int main(int argc, char **argv) {
-    x86os_puts("BROWSER_BUILD interaction-20260905-r4\n");
+    x86os_puts("BROWSER_BUILD navigation-20260905-r5\n");
     x86os_ipc_handle_t endpoint = 0U;
     if (reist_gui_surface_endpoint_from_argv(argc, argv, &endpoint) != 0) {
         x86os_puts("browser: compositor endpoint missing\n");
@@ -945,7 +1028,7 @@ int main(int argc, char **argv) {
         }
         (void)x86os_sleep_ms(1U);
     }
-    if (state.child_pid == 0) (void)x86os_unlink(state.temporary_path);
+    if (state.child_pid == 0) cleanup_fetch_files(&state);
     int destroyed = reist_gui_surface_client_destroy(&client);
     int released = state.buffer_id ? x86os_display_surface_buffer_destroy(state.buffer_id, state.buffer_generation) : 0;
     (void)x86os_ipc_release(endpoint);

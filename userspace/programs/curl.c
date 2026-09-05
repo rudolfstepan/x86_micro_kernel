@@ -30,6 +30,7 @@ typedef struct curl_options {
     const char *url;
     const char *output;
     uint32_t maximum_bytes;
+    uint32_t include_headers;
 } curl_options_t;
 
 typedef int (*curl_stream_send_fn)(void *stream, const uint8_t *data,
@@ -118,9 +119,11 @@ static int parse_positive(const char *text, uint32_t maximum,
 
 static int parse_options(int argc, char **argv, curl_options_t *options) {
     if (argc < 2 || argv == 0 || options == 0) return -1;
-    *options = (curl_options_t){0, 0, CURL_DEFAULT_MAX_BYTES};
+    *options = (curl_options_t){0, 0, CURL_DEFAULT_MAX_BYTES, 0U};
     for (int index = 1; index < argc; ++index) {
-        if (text_equal(argv[index], "-o")) {
+        if (text_equal(argv[index], "--include") || text_equal(argv[index], "-i")) {
+            options->include_headers = 1U;
+        } else if (text_equal(argv[index], "-o")) {
             if (++index >= argc || options->output != 0) return -1;
             options->output = argv[index];
         } else if (text_equal(argv[index], "--max-bytes")) {
@@ -170,7 +173,7 @@ static int build_request(const reist_curl_url_t *url, char *request,
         append_text(request, &used, CURL_REQUEST_CAPACITY, "GET ") != 0 ||
         append_text(request, &used, CURL_REQUEST_CAPACITY, url->path) != 0 ||
         append_text(request, &used, CURL_REQUEST_CAPACITY,
-                    " HTTP/1.0\r\nHost: ") != 0 ||
+                    " HTTP/1.1\r\nHost: ") != 0 ||
         append_text(request, &used, CURL_REQUEST_CAPACITY, url->host) != 0)
         return -1;
     uint16_t default_port = url->scheme == REIST_CURL_SCHEME_HTTPS ? 443U : 80U;
@@ -179,7 +182,7 @@ static int build_request(const reist_curl_url_t *url, char *request,
          append_unsigned(request, &used, CURL_REQUEST_CAPACITY,
                          url->port) != 0)) return -1;
     if (append_text(request, &used, CURL_REQUEST_CAPACITY,
-            "\r\nUser-Agent: REIST-curl/1\r\nAccept: */*\r\n"
+            "\r\nUser-Agent: REIST-curl/1\r\nAccept: */*\r\nAccept-Encoding: identity\r\n"
             "Connection: close\r\n\r\n") != 0) return -1;
     *request_length = used;
     return 0;
@@ -258,7 +261,7 @@ static int write_all(int descriptor, const uint8_t *data, uint32_t length) {
     while (written < length) {
         int result = x86os_write(
             descriptor, data + written, (size_t)(length - written));
-        if (result <= 0) return result < 0 ? result : -5;
+        if (result <= 0 || (uint32_t)result > length - written) return result < 0 ? result : -5;
         written += (uint32_t)result;
     }
     return 0;
@@ -277,67 +280,234 @@ static int make_temporary_path(const char *output, char *temporary) {
     return 0;
 }
 
-static int receive_body(const curl_stream_t *stream, int output,
-                        uint32_t maximum_bytes) {
+static int finish_output(const char *temporary, curl_options_t options, int output, int result) {
+    int close_status = x86os_close(output);
+    if (result == 0 && close_status != 0) result = close_status;
+    if (result == 0) result = x86os_rename(temporary, options.output);
+    if (result != 0) (void)x86os_unlink(temporary);
+    return result;
+}
+
+typedef struct curl_body_reader {
+    const curl_stream_t *stream;
+    const uint8_t *bytes;
+    uint32_t used, position;
+    uint8_t buffer[X86OS_TCP_RECEIVE_CAPACITY];
+    uint64_t started, progressed;
+} curl_body_reader_t;
+
+static int reader_available(curl_body_reader_t *reader) {
+    if (reader->position < reader->used) return 1;
+    uint64_t now = 0U, started = reader->started, progressed = reader->progressed;
+    if (x86os_monotonic_ms(&now) != 0 || now < started || now < progressed)
+        return -5;
+    if (now - started >= CURL_TRANSFER_HARD_TIMEOUT_MS ||
+        now - progressed >= CURL_TRANSFER_IDLE_TIMEOUT_MS) return -110;
+    int received = reader->stream->receive(reader->stream->stream, reader->buffer, sizeof(reader->buffer));
+    if (received <= 0) return received;
+    if ((uint32_t)received > sizeof(reader->buffer)) return -84;
+    if (x86os_monotonic_ms(&reader->progressed) != 0 || reader->progressed < now) return -5;
+    reader->bytes = reader->buffer; reader->used = (uint32_t)received; reader->position = 0U;
+    return 1;
+}
+static int reader_byte(curl_body_reader_t *reader, uint8_t *byte) {
+    int result = reader_available(reader);
+    if (result != 1) return result == 0 ? -84 : result;
+    *byte = reader->bytes[reader->position++]; return 0;
+}
+static int reader_line(curl_body_reader_t *reader, uint8_t *line, uint32_t capacity,
+                        uint32_t *length, uint32_t *framing) {
+    uint32_t used = 0U;
+    for (;;) {
+        uint8_t byte = 0;
+        int result = reader_byte(reader, &byte);
+        if (result != 0) return result;
+        if (++*framing > 65536U) return -90;
+        if (byte == '\r') {
+            result = reader_byte(reader, &byte);
+            if (result != 0) return result;
+            if (++*framing > 65536U || byte != '\n') return -84;
+            *length = used; return 0;
+        }
+        if (used >= capacity || (byte < 32U && byte != '\t') || byte == 127U) return -84;
+        line[used++] = byte;
+    }
+}
+static int reader_write(curl_body_reader_t *reader, int output, uint32_t amount) {
+    while (amount) {
+        int result = reader_available(reader);
+        if (result != 1) return result == 0 ? -84 : result;
+        uint32_t part = reader->used - reader->position;
+        if (part > amount) part = amount;
+        result = write_all(output, reader->bytes + reader->position, part);
+        if (result != 0) return result;
+        reader->position += part; amount -= part;
+    }
+    return 0;
+}
+static int chunk_token(uint8_t ch) {
+    if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+        (ch >= '0' && ch <= '9')) return 1;
+    static const char punctuation[] = "!#$%&'*+-.^_`|~";
+    for (uint32_t i = 0; i < sizeof(punctuation) - 1U; ++i)
+        if (ch == (uint8_t)punctuation[i]) return 1;
+    return 0;
+}
+/* RFC 9112 section 7.1.1: ignore unknown values, not malformed framing. */
+static int chunk_extensions(const uint8_t *line, uint32_t at, uint32_t length) {
+    while (at < length) {
+        while (at < length && (line[at] == ' ' || line[at] == '\t')) ++at;
+        if (at == length || line[at++] != ';') return -84;
+        while (at < length && (line[at] == ' ' || line[at] == '\t')) ++at;
+        uint32_t name = at;
+        while (at < length && chunk_token(line[at])) ++at;
+        if (at == name) return -84;
+        uint32_t name_end = at;
+        while (at < length && (line[at] == ' ' || line[at] == '\t')) ++at;
+        if (at == length) return at == name_end ? 0 : -84;
+        if (line[at] == ';') continue;
+        if (line[at++] != '=') return -84;
+        while (at < length && (line[at] == ' ' || line[at] == '\t')) ++at;
+        if (at == length) return -84;
+        if (line[at] == '"') {
+            ++at;
+            while (at < length && line[at] != '"') {
+                if (line[at++] == '\\') {
+                    if (at == length) return -84;
+                    ++at;
+                }
+            }
+            if (at == length) return -84;
+            ++at;
+        } else {
+            uint32_t value = at;
+            while (at < length && chunk_token(line[at])) ++at;
+            if (value == at) return -84;
+        }
+    }
+    return 0;
+}
+static int receive_chunked(curl_body_reader_t *reader, int output, uint32_t maximum_bytes) {
+    uint32_t total = 0U, framing = 0U;
+    for (uint32_t chunk = 0U; chunk < 16384U; ++chunk) {
+        uint8_t line[1024U]; uint32_t length = 0U;
+        int result = reader_line(reader, line, sizeof(line), &length, &framing);
+        if (result != 0) return result;
+        uint32_t amount = 0U, digits = 0U;
+        while (digits < length) {
+            uint8_t ch = line[digits];
+            uint32_t digit = ch >= '0' && ch <= '9' ? ch - '0' :
+                ch >= 'a' && ch <= 'f' ? ch - 'a' + 10U :
+                ch >= 'A' && ch <= 'F' ? ch - 'A' + 10U : 16U;
+            if (digit == 16U) break;
+            if (amount > (UINT32_MAX - digit) / 16U) return -90;
+            amount = amount * 16U + digit; ++digits;
+        }
+        if (!digits || chunk_extensions(line, digits, length) != 0) return -84;
+        if (!amount) {
+            uint32_t trailer_bytes = 0U;
+            for (uint32_t trailers = 0U; trailers < 128U; ++trailers) {
+                result = reader_line(reader, line, sizeof(line), &length, &framing);
+                if (result != 0) return result;
+                trailer_bytes += length + 2U;
+                if (trailer_bytes > REIST_CURL_HEADER_CAPACITY) return -90;
+                if (!length) return reader->position == reader->used ? 0 : -84;
+                /* Ignore extension trailers, but never let trailers redefine
+                 * framing, representation metadata, or redirect authority. */
+                uint32_t colon = 0U;
+                while (colon < length && line[colon] != ':') ++colon;
+                if (!colon || colon == length) return -84;
+                for (uint32_t i = 0; i < colon; ++i) if (!chunk_token(line[i])) return -84;
+                static const char *const forbidden[] = {"content-length", "transfer-encoding", "location", "content-type", "content-encoding"};
+                for (uint32_t f = 0U; f < sizeof(forbidden) / sizeof(forbidden[0]); ++f) {
+                    uint32_t i = 0U;
+                    while (i < colon && forbidden[f][i]) {
+                        uint8_t ch = line[i]; if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';
+                        if (ch != (uint8_t)forbidden[f][i]) break;
+                        ++i;
+                    }
+                    if (i == colon && !forbidden[f][i]) return -84;
+                }
+            }
+            return -90;
+        }
+        if (amount > maximum_bytes - total) return -90;
+        result = reader_write(reader, output, amount);
+        if (result != 0) return result;
+        total += amount;
+        uint8_t cr = 0, lf = 0;
+        result = reader_byte(reader, &cr);
+        if (result == 0) result = reader_byte(reader, &lf);
+        if (result != 0) return result;
+        if (cr != '\r' || lf != '\n') return -84;
+        framing += 2U; if (framing > 65536U) return -90;
+    }
+    return -90;
+}
+
+static int receive_response(const curl_stream_t *stream, int output,
+                            uint32_t maximum_bytes, uint32_t include_headers) {
     uint8_t header[REIST_CURL_HEADER_CAPACITY];
     uint32_t header_used = 0U, body_offset = 0U;
-    int status = -11;
-    while (status == -11) {
-        int received = stream->receive(
-            stream->stream, header + header_used, sizeof(header) - header_used);
-        if (received <= 0) return received == 0 ? -84 : received;
-        header_used += (uint32_t)received;
-        status = reist_curl_find_header_end(
-            header, header_used, &body_offset);
-    }
-    if (status != 0) return status;
     reist_curl_response_head_t response;
-    status = reist_curl_parse_response_head(header, body_offset, &response);
-    if (status != 0 || response.transfer_encoding_unsupported) return -84;
-    if (response.status < 100U || response.status > 599U) return -84;
+    uint64_t started = 0U;
+    if (x86os_monotonic_ms(&started) != 0) return -5;
+    uint32_t header_total = 0U;
+    for (uint32_t informational = 0U;; ++informational) {
+        if (informational > 4U) return -90;
+        int status = reist_curl_find_header_end(header, header_used, &body_offset);
+        while (status == -11) {
+            uint64_t now = 0U;
+            if (x86os_monotonic_ms(&now) != 0 || now < started) return -5;
+            if (now - started >= CURL_TRANSFER_IDLE_TIMEOUT_MS) return -110;
+            int received = stream->receive(stream->stream, header + header_used, sizeof(header) - header_used);
+            if (received <= 0) return received == 0 ? -84 : received;
+            if ((uint32_t)received > sizeof(header) - header_used) return -84;
+            header_used += (uint32_t)received;
+            status = reist_curl_find_header_end(header, header_used, &body_offset);
+        }
+        if (status != 0) return status;
+        status = reist_curl_parse_response_head(header, body_offset, &response);
+        if (status != 0 || response.transfer_encoding_unsupported) return -84;
+        header_total += body_offset;
+        if (header_total > sizeof(header)) return -90;
+        if (include_headers && write_all(output, header, body_offset) != 0) return -5;
+        if (response.status >= 200U) break;
+        if (response.status == 101U || response.content_length_present || response.chunked) return -84;
+        header_used -= body_offset;
+        for (uint32_t i = 0; i < header_used; ++i) header[i] = header[i + body_offset];
+    }
+    if (response.status == 204U && (response.content_length_present || response.chunked)) return -84;
+    if (response.status == 204U || response.status == 304U)
+        return header_used == body_offset ? 0 : -84;
     if (response.content_length_present &&
         response.content_length > maximum_bytes) return -90;
-
-    uint32_t total = header_used - body_offset;
-    if (total > maximum_bytes) return -90;
-    if (response.content_length_present && total > response.content_length)
-        return -84;
-    if (total != 0U && write_all(output, header + body_offset, total) != 0)
-        return -5;
-    uint64_t started = 0U, progressed = 0U;
-    if (x86os_monotonic_ms(&started) != 0) return -5;
-    progressed = started;
-    uint8_t buffer[X86OS_TCP_RECEIVE_CAPACITY];
+    curl_body_reader_t reader = {0};
+    reader.stream = stream; reader.bytes = header + body_offset;
+    reader.used = header_used - body_offset; reader.started = reader.progressed = started;
+    if (response.chunked) return receive_chunked(&reader, output, maximum_bytes);
+    uint32_t total = 0U;
     for (;;) {
         if (response.content_length_present && total == response.content_length)
-            return 0;
-        uint64_t now = 0U;
-        if (x86os_monotonic_ms(&now) != 0 || now < started ||
-            now < progressed ||
-            now - started >= CURL_TRANSFER_HARD_TIMEOUT_MS ||
-            now - progressed >= CURL_TRANSFER_IDLE_TIMEOUT_MS) return -110;
-        uint32_t capacity = sizeof(buffer);
-        if (response.content_length_present &&
-            capacity > response.content_length - total)
-            capacity = response.content_length - total;
-        if (capacity > maximum_bytes - total) capacity = maximum_bytes - total;
-        if (capacity == 0U) return -90;
-        int received = stream->receive(stream->stream, buffer, capacity);
-        if (received == 0)
-            return response.content_length_present &&
-                total != response.content_length ? -84 : 0;
-        if (received < 0) return received;
-        if ((uint32_t)received > maximum_bytes - total ||
-            write_all(output, buffer, (uint32_t)received) != 0) return -90;
-        total += (uint32_t)received;
-        if (x86os_monotonic_ms(&progressed) != 0 || progressed < now)
-            return -5;
+            return reader.position == reader.used ? 0 : -84;
+        int status = reader_available(&reader);
+        if (status == 0) return response.content_length_present ? -84 : 0;
+        if (status < 0) return status;
+        uint32_t amount = reader.used - reader.position;
+        if (amount > maximum_bytes - total) return -90;
+        if (response.content_length_present && amount > response.content_length - total) return -84;
+        status = reader_write(&reader, output, amount);
+        if (status != 0) return status;
+        total += amount;
     }
+}
+static int receive_body(const curl_stream_t *stream, int output, uint32_t maximum_bytes) {
+    return receive_response(stream, output, maximum_bytes, 0U);
 }
 
 int main(int argc, char **argv) {
     if (argc == 2 && argv != 0 && text_equal(argv[1], "--help")) {
-        x86os_puts("Usage: curl [-o file] [--max-bytes n] "
+        x86os_puts("Usage: curl [-i|--include] [-o file] [--max-bytes n] "
                    "http[s]://host/path\n"
                    "HTTPS verifies the CA chain, RTC and exact host name.\n");
         return 0;
@@ -444,16 +614,16 @@ int main(int argc, char **argv) {
     }
     if (result == 0) {
         failure_stage = CURL_STAGE_RESPONSE;
-        result = receive_body(&stream, output, options.maximum_bytes);
+        result = options.include_headers
+            ? receive_response(&stream, output, options.maximum_bytes, 1U)
+            : receive_body(&stream, output, options.maximum_bytes);
     }
     if (tls_open) (void)reist_tls_client_close(&tls_context);
     if (socket != 0U) (void)x86os_tcp_socket_close(socket, 2000U);
 
     if (options.output != 0 && output >= 0 && output != X86OS_STDOUT_FILENO) {
-        int close_status = x86os_close(output);
-        if (result == 0 && close_status == 0)
-            result = x86os_rename(temporary, options.output);
-        if (result != 0) (void)x86os_unlink(temporary);
+        if (result == 0) failure_stage = CURL_STAGE_OUTPUT;
+        result = finish_output(temporary, options, output, result);
     }
     if (result != 0) {
         if (result == -90)

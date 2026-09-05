@@ -54,6 +54,15 @@ POST, Kompressionsformate oder stillschweigende Zeichensatzkonvertierung.
 `--include` erhält die Originalheader auch bei dekodiertem chunked Body, wie
 curl; die gespeicherte Kombination ist deshalb kein unverändert wiederholbarer
 HTTP-Datenstrom. Der Browseradapter kennt diesen ausdrücklich benannten Vertrag.
+Der RFC-9112-Decoder verarbeitet höchstens vier Informationsantworten, 16384
+Chunks und 64 KiB Framing. Eine Chunk-/Trailerzeile hat höchstens 1024 Byte,
+der Trailerbereich höchstens 8 KiB und 128 Zeilen. Unbekannte korrekt gerahmte
+Extensions/Trailer werden ignoriert; Trailer dürfen Framing, Redirect-Ziel und
+Darstellungsmetadaten nicht nachträglich umdefinieren. Mehrdeutiges Framing
+(etwa Content-Length zusammen mit Transfer-Encoding), doppelte Location-Felder
+und ungültige Steuerzeichen scheitern geschlossen. Explizite Ports sind auf
+fünf Dezimalziffern und 1..65535 begrenzt. Dies ist ein begrenzter HTTP/1.x-
+Clientvertrag, keine vollständige curl-/HTTP-Kompatibilitätsbehauptung.
 
 ## Nachfolgende, noch nicht implementierte Arbeit
 

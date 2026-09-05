@@ -44,12 +44,36 @@ int main(void) {
     assert(reist_curl_find_header_end(
         chunked, sizeof(chunked) - 1U, &body) == 0);
     assert(reist_curl_parse_response_head(chunked, body, &head) == 0);
-    assert(head.transfer_encoding_unsupported == 1U);
+    assert(head.transfer_encoding_unsupported == 0U && head.chunked == 1U);
 
     static const uint8_t conflicting[] =
         "HTTP/1.0 200 OK\r\nContent-Length: 4\r\nContent-Length: 5\r\n\r\n";
     assert(reist_curl_find_header_end(
         conflicting, sizeof(conflicting) - 1U, &body) == 0);
     assert(reist_curl_parse_response_head(conflicting, body, &head) < 0);
+    assert(reist_curl_parse_http_url("HtTpS://example.com?x=1", &url) == 0);
+    assert(!strcmp(url.path,"/?x=1") && url.port==443);
+    assert(reist_curl_parse_http_url("http://example.com:8080?x=1", &url) == 0);
+    assert(!strcmp(url.path,"/?x=1") && url.port==8080);
+    const char *invalid[] = {
+        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n",
+        "HTTP/1.1 302 Moved\r\nLocation: /a\r\nLocation: /b\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length : 1\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nX: x\r\n folded\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nX: a\nb\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nX: a\x7f\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length: 4294967296\r\n\r\n",
+        "HTTP/1.1 2000 OK\r\n\r\n", "HTTP/1.1 099 Invalid\r\n\r\n"
+    };
+    for (unsigned i=0; i<sizeof(invalid)/sizeof(invalid[0]); ++i)
+        assert(reist_curl_parse_response_head((const uint8_t *)invalid[i],(uint32_t)strlen(invalid[i]),&head)<0);
+    static const char metadata[] = "HTTP/1.1 302 Found\r\nloCATion: /next?q=1#f\t\r\n"
+        "Content-Type: text/html; charset=utf-8\r\nContent-Encoding: identity\r\n\r\n";
+    assert(reist_curl_parse_response_head((const uint8_t *)metadata,sizeof(metadata)-1,&head)==0);
+    assert(!strcmp(head.location,"/next?q=1#f") && !strcmp(head.content_encoding,"identity"));
+    static const char unsupported[] = "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n";
+    assert(reist_curl_parse_response_head((const uint8_t *)unsupported,sizeof(unsupported)-1,&head)==0);
+    assert(head.transfer_encoding_unsupported);
     return 0;
 }

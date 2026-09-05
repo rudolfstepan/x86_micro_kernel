@@ -3362,6 +3362,14 @@ damals war `active_id` leer. Das auf Nutzerwunsch aktive Folgepaket
 Cursorbearbeitung, standardnahe Scrollbarinteraktion, Link-Release und
 Fragmentziele sowie begrenzte PNG/JPEG/BMP/GIF-Bilder. Seine aktuelle Abnahme
 steht in `CURRENT_WORK.md`; die früheren Nachweise ersetzen sie nicht.
+Nach Nutzer-Checkpoint `cd7025a2` ist R3.6c mit seinen offenen Gates queued;
+aktiv ist `R3.7-browser-http-navigation` als erster Transport-/Publikationsschnitt
+des Engine-Umbaus. Er erhält HTTP-Metadaten, dekodiert chunked und begrenzt
+Weiterleitungen für Seiten und Bilder. NetSurf ist ein geprüfter Kandidat,
+keine bereits integrierte Engine. Fehlende wiederverwendbare C-/OS-Grundlagen
+werden gemäß Nutzerauftrag tatsächlich nachimplementiert; ihre Standardverträge,
+Ring-3-Isolation und Regressionen dürfen nicht durch Browser-Stubs umgangen
+werden. Siehe `docs/architecture/BROWSER_ENGINE_PORT_PLAN.md`.
 
 **N1 abgeschlossen:** `N1-notepad-readonly-vfs` migriert genau den read-only
 Dokument-Ladepfad des Notepads auf generationgebundene Storage-Service-Objekte

@@ -97,6 +97,8 @@ PROGRAMS = {
         ROOT / "userspace/gui/apps/browser/main.c",
         ROOT / "userspace/gui/apps/browser/browser_model.c",
         ROOT / "userspace/gui/apps/browser/browser_images.c",
+        ROOT / "userspace/gui/apps/browser/browser_response.c",
+        ROOT / "userspace/programs/curl_http.c",
         ROOT / "userspace/gui/lib/html_document.c",
         ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",

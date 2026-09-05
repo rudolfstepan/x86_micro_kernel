@@ -792,6 +792,18 @@ Ring-3-Dienst über einen versionierten IPC-/DOM-Adapter hinzukommen; weder
 Browserprozess noch Compositor oder Kernel erhalten dafür eine eingebettete
 Skript-Engine.
 
+R3.7 ergänzt als HTTP-Transportkandidat vor dem eigentlichen Engine-Port den
+expliziten `curl --include`-Adapter: Originalheader und dekodierter Body werden
+in einer Datei atomar publiziert. Der Browser validiert Status und MIME-Metadaten
+und folgt GET-Weiterleitungen 301/302/303/307/308 über höchstens fünf weitere
+Kindprozesse, seriell innerhalb eines 30-s-Kettenbudgets. Die effektive URL ist
+die Basis relativer Ressourcen. Ein Redirect kann weder lokale Dateiautorität
+gewinnen noch HTTPS auf HTTP herabstufen; fehlerhafte oder nicht unterstützte
+Darstellungen ersetzen die aktive Seite nicht. RFC-9112-Chunk-Framing wird mit
+festen Puffern im CURL-Kind dekodiert. Der Adapter führt weder einen neuen
+Kernelmechanismus noch eine neue Surface-/Syscall-ABI ein. Grenzen und der
+noch nicht vollzogene Engine-Port stehen in `BROWSER_ENGINE_PORT_PLAN.md`.
+
 R3.6c trennt das Browser-Rendering in eine unveränderliche Pixel-Unterlage
 für Bilder, BASE für Dokumenttext, OVERLAY für Status und HOVER für die
 Adressleiste. Ein geordneter Batch von höchstens 32 Eingaben wird vor dem

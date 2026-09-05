@@ -22,19 +22,22 @@ TRANSPORT_HOST = r'''
 
 static x86os_process_info_t process;
 static unsigned exists, generation, identity_exit, kill_exit, waits, kills, clock_ms;
-static const char *file_bytes = "<title>Downloaded</title><p>Working page</p>";
+static const char *file_bytes = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<title>Downloaded</title><p>Working page</p>";
 static size_t file_length, file_offset;
 static unsigned opens, closes;
+static unsigned spawns, unlinks, image_decodes;
+static char spawned_url[BROWSER_URL_CAPACITY];
 static browser_workspace_t host_workspace;
 
 int x86os_getpid(void) { return 77; }
 uint32_t x86os_uptime_ms(void) { return clock_ms; }
-int x86os_unlink(const char *path) { assert(path[0]); return 0; }
+int x86os_unlink(const char *path) { assert(path[0] && !exists); ++unlinks; return 0; }
 int x86os_spawnv(const char *path, int argc, const char *const *argv) {
-    assert(!strcmp(path, "/usr/bin/curl.prg") && argc == 6);
+    assert(!strcmp(path, "/usr/bin/curl.prg") && argc == 7);
     assert(!strcmp(argv[3], "--max-bytes"));
     assert(!strcmp(argv[4], "65536") || !strcmp(argv[4], "262144"));
-    assert(!strchr(argv[5], '#'));
+    assert(!strcmp(argv[5], "--include") && !strchr(argv[6], '#'));
+    assert(!exists); ++spawns; strcpy(spawned_url,argv[6]);
     exists = 1; return process.pid;
 }
 int x86os_process_info(uint32_t index, x86os_process_info_t *info) {
@@ -83,12 +86,16 @@ int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data, size_t 
 int reist_vfs_file_close(reist_vfs_file_handle_t handle) { assert(handle == 1); ++closes; return 0; }
 int browser_image_decode(const uint8_t *bytes, size_t length, uint32_t *pixels,
                          size_t capacity, reist_image_info_t *info) {
-    (void)bytes; (void)length; (void)pixels; (void)capacity; (void)info; return -22;
+    ++image_decodes;
+    if (length != 3 || memcmp(bytes,"PNG",3)) return -22;
+    assert(capacity >= 1); memset(info,0,sizeof(*info));
+    info->width=info->height=info->stride_pixels=1; pixels[0]=0x123456; return 0;
 }
 static browser_state_t fresh(void) {
     browser_state_t state = {0};
     process = (x86os_process_info_t){81, 77, X86OS_PROCESS_RUNNING, 0, "curl"};
     exists = waits = kills = identity_exit = kill_exit = 0; generation = 23;
+    spawns = unlinks = image_decodes = 0;
     clock_ms = 100; state.loaded = 1; state.image_next = BROWSER_IMAGE_CACHE_COUNT;
     copy_text(state.active_url, sizeof(state.active_url), "/htdocs/index.html");
     make_temporary_path(&state); return state;
@@ -104,6 +111,82 @@ static void failed_load(int exited_before_identity, int race, uint32_t kind) {
     assert(state.loaded && !state.active && !strcmp(state.active_url, "/htdocs/index.html"));
     assert(state.status_redraw);
     service_loads(&state, &client); assert(waits == 1);
+}
+static void complete(browser_state_t *state, reist_gui_surface_client_t *client, const char *response) {
+    assert(exists); file_bytes=response; file_length=strlen(response);
+    clock_ms+=10; process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=0;
+    service_loads(state,client);
+    assert(!exists && !state->child_pid && !state->exit_requested && opens==closes);
+}
+static void follow(browser_state_t *state, reist_gui_surface_client_t *client) {
+    assert(state->follow_redirect && !exists);
+    unsigned before=unlinks;
+    process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
+    assert(exists && state->child_pid && !state->follow_redirect && unlinks==before+2);
+}
+static void redirect_cases(void) {
+    reist_gui_surface_client_t client={0}; client.width=800; client.height=600;
+    browser_state_t state=fresh();
+    assert(start_fetch(&state,"https://example.test/start#section",1,0)==0);
+    uint32_t deadline=state.redirect_deadline;
+    clock_ms+=5;
+    assert(start_fetch(&state,"https://other.test/",1,0)==-16);
+    assert(state.redirect_deadline==deadline && spawns==1);
+    state.address_focused=1; strcpy(state.address,"https://typed.test/");
+    complete(&state,&client,"HTTP/1.1 301 Moved\r\nLocation: /new/index.html\r\nContent-Length: 0\r\n\r\n");
+    assert(!state.active && !strcmp(state.active_url,"/htdocs/index.html"));
+    assert(spawns==1 && waits==1 && unlinks==4 && state.redirect_count==1);
+    assert(!strcmp(state.job_url,"https://example.test/new/index.html#section"));
+    assert(!strcmp(state.address,"https://typed.test/"));
+    follow(&state,&client);
+    assert(state.redirect_deadline==deadline && !strcmp(spawned_url,"https://example.test/new/index.html"));
+    complete(&state,&client,"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+        "<p id='section'><a href='next.html'>Next</a><img src='icon.png'></p>");
+    assert(state.active==1 && !strcmp(state.active_url,"https://example.test/new/index.html#section"));
+    assert(!strcmp(state.address,"https://typed.test/"));
+    char resolved[BROWSER_URL_CAPACITY];
+    assert(reist_html_url_resolve(state.active_url,"next.html",resolved,sizeof(resolved))==0);
+    assert(!strcmp(resolved,"https://example.test/new/next.html"));
+    process.state=X86OS_PROCESS_RUNNING; service_loads(&state,&client);
+    assert(state.job_kind==2 && !strcmp(spawned_url,"https://example.test/new/icon.png"));
+    complete(&state,&client,"HTTP/1.1 307 Moved\r\nLocation: https://cdn.test/picture.png\r\n\r\n");
+    assert(!image_decodes); follow(&state,&client);
+    assert(!strcmp(spawned_url,"https://cdn.test/picture.png"));
+    complete(&state,&client,"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 3\r\n\r\nPNG");
+    assert(image_decodes==1 && image_cache[state.active][0].decoded);
+    assert(!strcmp(state.active_url,"https://example.test/new/index.html#section"));
+    for (unsigned mode=0; mode<4; ++mode) {
+        state=fresh(); assert(start_fetch(&state,"https://example.test/loop",1,0)==0);
+        unsigned limit=mode==0 ? BROWSER_REDIRECT_LIMIT+1 : 1;
+        for (unsigned hop=0; hop<limit; ++hop) {
+            complete(&state,&client,"HTTP/1.1 302 Found\r\nLocation: /loop\r\n\r\n");
+            if (hop+1<limit) follow(&state,&client);
+        }
+        if (mode==1) { clock_ms=state.redirect_deadline; service_loads(&state,&client); }
+        if (mode==2) { handle_keyboard(&state,&client,BROWSER_KEY_ESCAPE); service_loads(&state,&client); }
+        if (mode==3) {
+            assert(navigate(&state,&client,"https://replacement.test/")==0);
+            process.state=X86OS_PROCESS_RUNNING; service_loads(&state,&client);
+            assert(!strcmp(spawned_url,"https://replacement.test/"));
+            complete(&state,&client,"HTTP/1.1 500 Error\r\n\r\nfailed");
+        }
+        assert(!state.exit_requested && !state.follow_redirect && !state.child_pid && !exists);
+        assert(!state.active && !strcmp(state.active_url,"/htdocs/index.html"));
+        assert(spawns==(mode==0 ? BROWSER_REDIRECT_LIMIT+1 : mode==3 ? 2U : 1U));
+    }
+    const char *bad[] = {
+        "HTTP/1.1 302 Found\r\nLocation: http://insecure.test/\r\n\r\n",
+        "HTTP/1.1 302 Found\r\nLocation: file:///htdocs/index.html\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\n\r\npdf",
+        "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\n\r\ncompressed",
+        "HTTP/1.1 404 Missing\r\n\r\nmissing", "truncated header"
+    };
+    for (unsigned i=0; i<sizeof(bad)/sizeof(bad[0]); ++i) {
+        state=fresh(); assert(start_fetch(&state,"https://example.test/",1,0)==0);
+        complete(&state,&client,bad[i]);
+        assert(!state.active && !state.follow_redirect && !strcmp(state.active_url,"/htdocs/index.html"));
+        assert(spawns==1 && waits==1 && !kills);
+    }
 }
 int main(int argc, char **argv) {
     workspace = &host_workspace; file_length = strlen(file_bytes);
@@ -142,6 +225,7 @@ int main(int argc, char **argv) {
         cancel_fetch(&state);
         assert(state.exit_requested && !kills && !waits);
     }
+    redirect_cases();
     /* Optional captured public response: no network or test-fixture dependency. */
     if (argc == 2) {
         static char captured[BROWSER_DOCUMENT_LIMIT + 1];
@@ -320,7 +404,8 @@ class BrowserRuntimeTests(unittest.TestCase):
             source.write_text(TRANSPORT_HOST, encoding="utf-8")
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
-                      "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c"],
+                      "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
+                      "userspace/gui/apps/browser/browser_response.c", "userspace/programs/curl_http.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])
 
@@ -345,7 +430,7 @@ class BrowserRuntimeTests(unittest.TestCase):
 
     def test_page_replacement_invalidates_old_hit_map(self):
         source = APP.read_text()
-        publish = source.split("static int publish_document(")[1].split("static int load_image(")[0]
+        publish = source.split("static int publish_document_bytes(")[1].split("static int publish_document(")[0]
         self.assertIn("state->hit_count = 0U", publish)
         self.assertIn("state->armed_link = UINT32_MAX", publish)
 
