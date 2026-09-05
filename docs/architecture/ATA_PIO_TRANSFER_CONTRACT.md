@@ -1,6 +1,6 @@
 # ATA-PIO-Lesetransfer: Performance und Resilienz
 
-Stand: 5. September 2026. Paket R7.1n, noch nicht abgenommen.
+Stand: 5. September 2026. Paket R7.1n abgenommen.
 
 Performance und Resilienz sind gleichwertige, gleichzeitig zu bestehende
 Abnahmekriterien. Ein unnötiger Bereitschaftswechsel je Sektor ist kein
@@ -60,3 +60,14 @@ abschließen und zur Shell zurückkehren. Lesen muss mindestens 400 KiB/s
 erreichen; seine 120-Sekunden-Gesamtfrist bleibt unverändert. Beide
 Referenzbuilds sind Pflicht. Diese Abnahme behauptet keine neue VMware-AHCI-
 oder universelle Hardware-Performance.
+
+Alle sechs eingefrorenen Hostbefehle bestanden mit insgesamt 43 Tests.
+Die Referenzbuilds VMware/QEMU bestanden in 50/45 Sekunden. Der endgültige
+QEMU-Lauf bestand mit 635,23 KiB/s Lesen (6,23-mal der Ausgangswert),
+vollständiger Byteprüfung, fsync, Cleanup und Rückkehr zur Ring-3-Shell.
+Der Benchmark dauerte 30,720 Sekunden; Schreiben maß 14,14 KiB/s und wurde
+in diesem reinen Lesepaket nicht optimiert. Logs: `ata-gate-*.log`,
+`20260905-153147-package-vmware-vga.log`,
+`20260905-153311-package-qemu-vga.log`, `ata-multiple-runtime.log` unter
+`build/codex-agent/`. Die Quellprüfung bestätigt unveränderte Schreibbefehle,
+Journalbarrieren und öffentliche ABIs. Die breitere Hardwarematrix bleibt offen.

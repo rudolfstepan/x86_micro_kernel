@@ -2,13 +2,24 @@
 """Source and packaging contract for the bounded Ring-3 benchmark."""
 
 import unittest
+import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from run_qemu_benchmark import read_rate_meets_minimum
 
 
 class BenchmarkSourceTests(unittest.TestCase):
+    def test_read_performance_requirement_fails_closed(self):
+        self.assertTrue(read_rate_meets_minimum("400.00 KiB/s", 400))
+        self.assertTrue(read_rate_meets_minimum("800.25 KiB/s", 400))
+        for value in ("399.99 KiB/s", "-", "NaN KiB/s", "Inf KiB/s", "400 MB/s"):
+            self.assertFalse(read_rate_meets_minimum(value, 400), value)
+        self.assertFalse(read_rate_meets_minimum("800.00 KiB/s", float("nan")))
+        self.assertFalse(read_rate_meets_minimum("800.00 KiB/s", -1))
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = (ROOT / "userspace/programs/benchmark.c").read_text(

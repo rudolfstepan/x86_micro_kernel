@@ -728,6 +728,70 @@ static bool ata_read_sector_impl(unsigned short base, unsigned int lba,
     return true;
 }
 
+/* Read-only PIO transaction waits share one absolute deadline. A task may
+ * sleep while holding the existing recursive channel mutex; boot probing
+ * without a task retains a bounded timer poll, never an IRQ-off wait. */
+static bool ata_pio_wait_status(uint16_t base, uint8_t wanted,
+                                uint8_t forbidden, bool selecting,
+                                uint64_t deadline) {
+    for (uint32_t polls = 0U; polls <= ATA_WAIT_TIMEOUT_MS; ++polls) {
+        uint64_t now = pit_monotonic_ms();
+        if (now >= deadline) return false;
+        uint8_t status = inb(ATA_STATUS(base));
+        if (status == 0U || status == 0xFFU) return false;
+        if ((status & 0x80U) == 0U) {
+            /* Selection can observe a preceding empty-slot IDENTIFY error.
+             * Only the newly issued command owns its completion status. */
+            if (!selecting && (status & (0x01U | 0x20U)) != 0U) return false;
+            if (!selecting && (status & forbidden) != 0U) return false;
+            if ((status & wanted) == wanted && !(status & forbidden)) return true;
+        }
+        uint32_t delay = ATA_POLL_DELAY_MS;
+        if (deadline - now < delay) delay = (uint32_t)(deadline - now);
+        if (scheduler_current_task_id() >= 0) {
+            if (!scheduler_can_sleep() || scheduler_sleep_ms(delay) != 0) return false;
+        } else {
+            if (!irq_enabled() || irq_in_context()) return false;
+            pit_delay(delay);
+        }
+    }
+    return false;
+}
+
+static bool ata_pio_select_read(uint16_t base, uint8_t head, uint64_t deadline) {
+    outb(ATA_DRIVE_HEAD(base), head);
+    ata_selection_delay(base);
+    return ata_pio_wait_status(base, 0U, 0x08U, true, deadline);
+}
+
+static int ata_pio_read_block_size(uint16_t base, bool master, uint64_t deadline) {
+    uint16_t identify[256];
+    if (!ata_pio_select_read(base, master ? 0xA0U : 0xB0U, deadline)) return -1;
+    outb(ATA_COMMAND(base), ATA_IDENTIFY);
+    ata_selection_delay(base);
+    if (!ata_pio_wait_status(base, 0x08U, 0U, false, deadline)) return -1;
+    insw(ATA_DATA(base), identify, 256U);
+    if (!ata_pio_wait_status(base, 0x40U, 0x08U, false, deadline)) return -1;
+    if (identify[0] == 0U || (identify[0] & 0x8000U) != 0U) return -1;
+
+    /* T13 IDENTIFY words 47/59. Do not infer an enabled mode from a maximum,
+     * nor retain volatile mode state across reset or a new media generation. */
+    uint32_t maximum = identify[47] & 0xFFU;
+    if ((identify[47] & 0xFF00U) != 0x8000U || maximum < 2U ||
+        maximum > 128U || (maximum & (maximum - 1U))) return 1;
+    uint32_t current = identify[59] & 0xFFU;
+    if ((identify[59] & 0x100U) != 0U && current != 0U) {
+        if (current > maximum || (current & (current - 1U))) return 1;
+        return (int)current;
+    }
+    uint32_t chosen = maximum > 16U ? 16U : maximum;
+    outb(ATA_SECTOR_CNT(base), (uint8_t)chosen);
+    outb(ATA_COMMAND(base), ATA_SET_MULTIPLE_MODE);
+    ata_selection_delay(base);
+    if (!ata_pio_wait_status(base, 0x40U, 0x08U, false, deadline)) return -1;
+    return (int)chosen;
+}
+
 static bool ata_pio_range_valid(drive_t *drive, uint32_t lba,
                                 uint32_t count) {
     return drive != NULL && count != 0U && count <= ATA_PIO_MAX_SECTORS &&
@@ -736,11 +800,14 @@ static bool ata_pio_range_valid(drive_t *drive, uint32_t lba,
 
 static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
                                   uint32_t count, bool is_master,
-                                  bool write, bool use_lba48) {
+                                  bool write, bool use_lba48, bool multiple,
+                                  uint64_t deadline) {
     uint8_t head = use_lba48 ? 0x40U :
         (uint8_t)(0xE0U | ((lba >> 24U) & 0x0FU));
     head |= is_master ? 0U : 0x10U;
-    if (!ata_select_target(base, head, ATA_WAIT_TIMEOUT_MS)) return false;
+    if (write) {
+        if (!ata_select_target(base, head, ATA_WAIT_TIMEOUT_MS)) return false;
+    } else if (!ata_pio_select_read(base, head, deadline)) return false;
     if (use_lba48) {
         outb(ATA_SECTOR_CNT(base), 0U);
         outb(ATA_LBA_LOW(base), (uint8_t)(lba >> 24U));
@@ -752,8 +819,10 @@ static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
     outb(ATA_LBA_MID(base), (uint8_t)(lba >> 8U));
     outb(ATA_LBA_HIGH(base), (uint8_t)(lba >> 16U));
     outb(ATA_COMMAND(base), use_lba48
-        ? (write ? ATA_WRITE_SECTORS_EXT : ATA_READ_SECTORS_EXT)
-        : (write ? ATA_WRITE_SECTORS : ATA_READ_SECTORS));
+        ? (write ? ATA_WRITE_SECTORS_EXT :
+            (multiple ? ATA_READ_MULTIPLE_EXT : ATA_READ_SECTORS_EXT))
+        : (write ? ATA_WRITE_SECTORS :
+            (multiple ? ATA_READ_MULTIPLE : ATA_READ_SECTORS)));
     for (volatile int delay = 0; delay < 4; ++delay)
         (void)inb(ATA_ALT_STATUS(base));
     return true;
@@ -769,12 +838,25 @@ static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
     uint32_t last = lba + count - 1U;
     bool use_lba48 = last >= ATA_LBA28_LIMIT;
     if (use_lba48 && !drive->lba48_supported) return false;
+    uint64_t now = pit_monotonic_ms();
+    uint64_t deadline = UINT64_MAX - now < ATA_WAIT_TIMEOUT_MS
+        ? UINT64_MAX : now + ATA_WAIT_TIMEOUT_MS;
+    int block = count > 1U ? ata_pio_read_block_size(base, is_master, deadline) : 1;
+    if (block < 1) return false;
     if (!ata_program_pio_batch(base, lba, count, is_master, false,
-                               use_lba48)) return false;
+                               use_lba48, block > 1, deadline)) return false;
     uint8_t *bytes = buffer;
+    for (uint32_t done = 0U; done < count;) {
+        uint32_t amount = count - done;
+        if (amount > (uint32_t)block) amount = (uint32_t)block;
+        if (!ata_pio_wait_status(base, 0x08U, 0U, false, deadline)) return false;
+        insw(ATA_DATA(base), bytes + done * SECTOR_SIZE, amount * (SECTOR_SIZE / 2U));
+        ata_selection_delay(base);
+        done += amount;
+    }
+    if (!ata_pio_wait_status(base, 0x40U, 0x08U, false, deadline)) return false;
+    /* A partial or failed command must not make any new cache entry visible. */
     for (uint32_t index = 0U; index < count; ++index) {
-        if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
-        insw(ATA_DATA(base), bytes + index * SECTOR_SIZE, SECTOR_SIZE / 2U);
         ata_cache_entry_t *cached =
             ata_cache_slot(base, lba + index, is_master);
         cached->base = base;
@@ -784,7 +866,7 @@ static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
         memcpy(cached->data, bytes + index * SECTOR_SIZE, SECTOR_SIZE);
     }
     consecutive_read_failures = 0U;
-    return wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+    return true;
 }
 
 bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
@@ -1087,7 +1169,7 @@ static bool ata_write_sectors_pio_deferred_impl(unsigned short base,
     for (uint32_t index = 0U; index < count; ++index)
         ata_cache_slot(base, lba + index, is_master)->valid = false;
     if (!ata_program_pio_batch(base, lba, count, is_master, true,
-                               use_lba48)) return false;
+                               use_lba48, false, 0U)) return false;
     const uint8_t *bytes = buffer;
     for (uint32_t index = 0U; index < count; ++index) {
         if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
@@ -1135,7 +1217,7 @@ static bool ata_write_sectors_pio_impl(unsigned short base, uint32_t lba,
         cached->valid = false;
     }
     if (!ata_program_pio_batch(base, lba, count, is_master, true,
-                               use_lba48)) return false;
+                               use_lba48, false, 0U)) return false;
     const uint8_t *bytes = buffer;
     for (uint32_t index = 0U; index < count; ++index) {
         if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;

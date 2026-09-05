@@ -2436,6 +2436,19 @@ der Floating Bus, `ERR`, `DF` oder unerwartetes `DRQ` mit Befehl, Status und
 ATA-Fehlerregister diagnostiziert. Ein fehlgeschlagener oder unklarer Flush
 wird nicht mit dem jeweils anderen Befehl wiederholt.
 
+R7.1n behandelt Performance und Resilienz als gleichzeitig verbindliche
+Abnahmekriterien. Der gebündelte PIO-Lesepfad prüft IDENTIFY-Wörter 47/59 vor
+jeder Transaktion frisch und nutzt READ MULTIPLE beziehungsweise dessen
+LBA48-Variante. Ein vollständiger DRQ-Block umfasst mehrere Sektoren; der
+letzte Restblock wird exakt begrenzt. Erforderlicher flüchtiger Moduswechsel,
+Auswahl und Datenphase bleiben unter dem vorhandenen Kanalmutex. Es gibt
+keinen über Reset hinweg angenommenen Moduszustand und keine Veröffentlichung
+neuer Cache-Einträge nach Teilfehler. Absolute Deadlines und Task-Sleep ersetzen
+aktive Wartearbeit in diesem Lesepfad; Schreibbefehle, AHCI, DMA und Journal
+bleiben unverändert. Geltungsbereich und Abnahmen stehen im
+[ATA-PIO-Transfervertrag](ATA_PIO_TRANSFER_CONTRACT.md); die Ring-0-
+Treiberimplementierung bleibt ausdrücklich Migrationsschuld.
+
 `SYS_WRITE` validiert den gesamten Ring-3-Quellbereich vor dem ersten Zugriff,
 uebergibt aber weiterhin keinen Benutzerpointer an VFS oder Blocktreiber.
 Dateiinhalte werden unter einem auf zehn Sekunden begrenzten, schlafenden

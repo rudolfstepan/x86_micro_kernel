@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import queue
 import re
@@ -79,7 +80,16 @@ def latest_status(text: str) -> str:
     return matches[-1].group(0).rstrip("\r") if matches else "none"
 
 
-def run(qemu: Path, image: Path, timeout: float, log: Path, smp: int = 1) -> int:
+def read_rate_meets_minimum(value: str, minimum: float) -> bool:
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?) KiB/s", value)
+    if match is None or not math.isfinite(minimum) or minimum < 0:
+        return False
+    rate = float(match.group(1))
+    return math.isfinite(rate) and rate >= minimum
+
+
+def run(qemu: Path, image: Path, timeout: float, log: Path, smp: int = 1,
+        min_read_kib_per_sec: float = 0.0) -> int:
     log.parent.mkdir(parents=True, exist_ok=True)
     descriptor, clone_name = tempfile.mkstemp(
         prefix="reist-benchmark-", suffix=".img", dir=log.parent
@@ -177,6 +187,11 @@ def run(qemu: Path, image: Path, timeout: float, log: Path, smp: int = 1) -> int
                 f"status={rows[name][1]}"
             )
 
+    if error is None and not read_rate_meets_minimum(
+            rows["Seq. Lesen"][0], min_read_kib_per_sec):
+        error = (f"HDD read below required {min_read_kib_per_sec:.2f} KiB/s: "
+                 f"{rows['Seq. Lesen'][0]}")
+
     cpu_rows = {
         match.group(1): (match.group(2).strip(), match.group(3).strip())
         for match in CPU_ROW_PATTERN.finditer(text)
@@ -215,6 +230,7 @@ def main() -> int:
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--smp", type=int, default=1)
+    parser.add_argument("--min-read-kib-per-sec", type=float, default=0.0)
     parser.add_argument(
         "--log", type=Path,
         default=Path("build/codex-agent/benchmark-runtime.log"),
@@ -224,12 +240,14 @@ def main() -> int:
         parser.error("image must exist and timeout must be positive")
     if args.smp < 1 or args.smp > 16:
         parser.error("smp must be in 1..16")
+    if not math.isfinite(args.min_read_kib_per_sec) or args.min_read_kib_per_sec < 0:
+        parser.error("minimum read throughput must be finite and nonnegative")
     try:
         qemu = resolve_qemu(args.qemu)
     except FileNotFoundError as error:
         parser.error(str(error))
     return run(qemu, args.image.resolve(), args.timeout, args.log.resolve(),
-               args.smp)
+               args.smp, args.min_read_kib_per_sec)
 
 
 if __name__ == "__main__":

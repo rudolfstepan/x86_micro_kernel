@@ -3,18 +3,29 @@
 Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
-Aktiv ist `R7.1n-ata-pio-read-throughput`: Der Nutzer verlangt die Korrektur
-des ATA-Flaschenhalses; Performance ist ebenso verbindlich wie Resilienz.
+`R7.1n-ata-pio-read-throughput` ist abgenommen; aktiv ist wieder
+`R3.9-browser-html5-worker`. Performance ist ebenso verbindlich wie Resilienz.
 Der unfertige R3.9-Browser ist vollständig einschließlich unversionierter
 Dateien im lokalen Stash `a58233043f81ee80f08b7db3591d7ab2de76803c` gesichert.
 Die Logs bleiben unverändert unter `build/codex-agent/`. Danach war der
 Hauptarbeitsbaum sauber. Keine Browser-Abnahme und kein Verlust der Arbeit.
-Nach dem separaten ATA-Paket wird R3.9 mit seinen unveränderten Gates fortgesetzt.
+R3.9 wird mit seinen unveränderten Gates fortgesetzt. Zur Wiederaufnahme nur
+seine Browser-/SDK-/Build-/Testdateien aus dem Stash übernehmen; Queue und
+Dokumentation mit dem abgenommenen ATA-Stand zusammenführen, nicht überschreiben.
 Die erfolglose ATA-Sleep-only-Probe und reine Zeitdiagnosen aus dem Stash dürfen
 dabei die neue ATA-Implementierung nicht überschreiben.
-Baseline: QEMU-Benchmark 101,91 KiB/s Lesen, 15,61 KiB/s Schreiben, vollständige
-256-KiB-Prüfung, Cleanup und Shell-Rückkehr. Ziel: mindestens 400 KiB/s Lesen
-bei unveränderten Zeitgrenzen und verpflichtenden Fehler-/Persistenztests.
+ATA-Abnahme: alle 43 Tests der sechs eingefrorenen Hostbefehle bestanden.
+`test-reist-package.ps1 -Target vmware -Video vga` bestand in 50 s;
+derselbe QEMU-Befehl in 45 s. Der eingefrorene QEMU-Benchmark mit
+`--min-read-kib-per-sec 400` bestand mit 635,23 KiB/s Lesen gegenüber
+101,91 KiB/s zuvor: Faktor 6,23, vollständige 256-KiB-Byteprüfung, fsync,
+Cleanup und Shell-Rückkehr. Benchmarkdauer 30,720 s. Schreiben maß
+14,14 KiB/s und war ausdrücklich nicht Teil dieser Lesepfadoptimierung.
+Kein Timeout, Journalformat, Schreibbefehl, AHCI-/DMA-Pfad oder öffentliches
+ABI wurde gelockert. Logs: `ata-gate-*.log`, `ata-multiple-runtime.log` und
+`20260905-153147-package-vmware-vga.log` /
+`20260905-153311-package-qemu-vga.log` unter `build/codex-agent/`.
+Der neue HTML5-Browser muss auf diesem ATA-Stand noch separat abgenommen werden.
 Der Nutzer hat R3.6b ausdrücklich mit unveränderten Anforderungen zurückgestellt
 und automatische Browser-Fortsetzung ohne erneute Routinefreigaben beauftragt.
 Keine parallelen manuellen Builds während der Agentenabnahme: Der erste

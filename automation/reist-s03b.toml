@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R7.1n-ata-pio-read-throughput"
+active_id = "R3.9-browser-html5-worker"
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R7.1n-ata-pio-read-throughput"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Remove per-sector ATA PIO read stalls with verified multiple-sector blocks"
@@ -275,7 +275,7 @@ evidence = []
 
 [[packages]]
 id = "R3.9-browser-html5-worker"
-status = "queued"
+status = "active"
 prerequisite = "User-directed ATA read throughput package R7.1n; unaccepted browser candidate preserved in stash a58233043f81ee80f08b7db3591d7ab2de76803c, not discarded or accepted."
 inventory_completion = "Before candidate implementation, upstream aliases.c was inspected completely and found to require ISO C bsearch in addition to strncpy, tolower and POSIX strncasecmp. Include the existing opt-in stdlib.h declaration file in the setup contract; implementation and host behavior remain in the already listed bytes.c/tests. This adds no authority or new runtime failure domain."
 phase = "post-s0"

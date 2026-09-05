@@ -649,6 +649,17 @@ Der reale Vier-vCPU-Lauf bestand in 17 Sekunden mit vollstaendiger
 Schreiben und 640,00 KiB/s Lesen. Journal-v2, zwanzig Slots, exakt vier
 Barrieren, vollstaendiger Readback, Fencing und oeffentliche ABIs blieben
 unveraendert; R7.1i ist damit angenommen.
+R7.1n ergänzt auf ausdrücklichen Nutzerauftrag gleichwertige Performance-
+und Resilienzgates für den PIO-Lesepfad. Der QEMU-Ausgangswert von
+101,91 KiB/s blockierte den Browser-Workerstart; bloßes Task-Sleep genügte
+nicht. READ MULTIPLE mit frischer Fähigkeit-/Modusprüfung bündelt nun mehrere
+Sektoren je Bereitschaftswechsel. Ein erster vollständiger Gastversuch erreicht
+528,92 KiB/s mit Byteprüfung und Cleanup. Die eingefrorene Abnahme verlangt
+mindestens 400 KiB/s sowie unveränderte Fehler- und Persistenzregeln;
+die endgültige Abnahme bestand mit 635,23 KiB/s, 43 Hosttests, beiden
+Referenzbuilds und vollständiger Gastprüfung. Größere Grenzwerte allein
+oder längere Timeouts gelten nicht als Performance-Reparatur. Details und
+der weiterhin gesicherte HTML5-Browser-Zwischenstand stehen in CURRENT_WORK.
 R7.1j bearbeitet den erst nach dieser Erfolgsmarke sichtbar gewordenen
 Vier-vCPU-Stabilitaetsfehler. Der anschliessende Kernel-Panic meldete einen
 begrenzten SMP-Lock-Timeout mit Besitzer CPU 2; der fruehere Build-ID-Befund

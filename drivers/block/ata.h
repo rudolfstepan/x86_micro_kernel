@@ -20,6 +20,9 @@
 #define ATA_WRITE_SECTORS   0x30               // Write sectors command
 #define ATA_READ_SECTORS_EXT 0x24              // 48-bit PIO read
 #define ATA_WRITE_SECTORS_EXT 0x34             // 48-bit PIO write
+#define ATA_READ_MULTIPLE     0xC4             // PIO data-in, sectors per DRQ block
+#define ATA_READ_MULTIPLE_EXT 0x29             // 48-bit PIO multiple read
+#define ATA_SET_MULTIPLE_MODE 0xC6             // Volatile sectors-per-block setting
 #define ATA_FLUSH_CACHE      0xE7
 #define ATA_FLUSH_CACHE_EXT  0xEA
 #define ATA_IDENTIFY        0xEC               // Identify command
