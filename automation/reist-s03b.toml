@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6c-browser-interaction-and-images"
+active_id = "R3.7-browser-http-navigation"
 
 [policy]
 one_package_per_run = true
@@ -11,8 +11,66 @@ external_writes = false
 push = false
 
 [[packages]]
-id = "R3.6c-browser-interaction-and-images"
+id = "R3.7-browser-http-navigation"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Preserve HTTP response semantics for the browser engine migration"
+scope = "User-directed first engine-migration prerequisite after checkpoint cd7025a2: inventory NetSurf versus litehtml, document the C/POSIX and isolated-engine boundary, and implement one cohesive Ring-3 HTTP response/publication slice. Reuse CURL.PRG and its TLS authority; add standard curl --include/-i output, strict bounded response metadata and streaming chunked decoding. Browser consumes the original HTTP headers plus decoded body, follows GET 301/302/303/307/308 Location references with five-hop and aggregate deadlines, preserves effective URL for relative links/images, and handles unsupported representations and HTTP failures without replacing the last valid page or exiting. Never follow redirects into local files or from HTTPS to HTTP. Keep kernel, compositor, Surface ABI, HTML/CSS engine replacement, forms, cookies, POST and JavaScript out of this transport slice; NetSurf remains an assessed port candidate, not a claimed completed port."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/GRAPHICAL_DESKTOP_WINDOW_MANAGER_WORKFLOW.md",
+  "userspace/programs/curl.c",
+  "userspace/programs/curl_http.c",
+  "userspace/programs/curl_http.h",
+  "userspace/gui/apps/browser/browser_response.c",
+  "userspace/gui/apps/browser/browser_response.h",
+  "userspace/gui/apps/browser/main.c",
+  "scripts/build_system_programs.py",
+  "scripts/run_qemu_smoke.py",
+  "test/test_browser_navigation_source.py",
+  "test/test_browser_response_host.c",
+  "test/test_curl_http_host.c",
+  "test/test_curl_stream_host.c",
+  "test/test_browser_runtime_source.py",
+  "test/test_gui_browser_source.py"
+]
+invariants = [
+  "network TLS certificate and HTTP wire parsing remain in a separate CURL Ring-3 child with fixed byte storage and finite deadlines",
+  "browser redirect decisions are based on validated HTTP Location metadata and never on scraping a redirect body",
+  "redirect bodies unsupported MIME types corrupt chunk framing and failed child generations cannot replace the active document",
+  "every redirect hop is validated before spawn and cannot gain local-file authority or downgrade HTTPS",
+  "original response headers and decoded bytes are published in one temporary-file rename; errors retain the prior file and every child is reaped",
+  "NetSurf evaluation makes no full browser HTML5 CSS JavaScript or POSIX compatibility claim and old checkpoint gates remain intact"
+]
+targeted_tests = [
+  "python test/test_browser_navigation_source.py -v",
+  "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_runtime_source.py -v",
+  "python test/test_gui_surface_source.py -v",
+  "python test/test_network_tools.py -v"
+]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode curl-client -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required implementation source lies outside allowed_files or unrelated user changes overlap the package",
+  "the implementation requires a kernel Surface ABI or raw-network-authority change",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: preserve HTTP semantics for browser navigation"
+evidence = []
+
+[[packages]]
+id = "R3.6c-browser-interaction-and-images"
+status = "queued"
+deferral = "2026-09-05: User explicitly requests continuing the browser redesign after checkpoint cd7025a2. Preserve this incomplete acceptance as queued with every original gate; stability confirmation is not a QEMU acceptance waiver."
 phase = "post-s0"
 risk = "high"
 title = "Make browser input, navigation, scrolling and bounded images usable"
