@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6c-browser-interaction-and-images"
+active_id = "R3.8-ring3-browser-c-runtime"
 
 [policy]
 one_package_per_run = true
@@ -82,7 +82,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6c-browser-interaction-and-images"
-status = "active"
+status = "done"
 verification_precondition = "Apply the R3.7-proven target prerequisite to this resumed acceptance: preserve the frozen VMware reference build and append a QEMU reference build before the unchanged QEMU browser gate. Runtime -Target qemu does not rebuild the shared raw image. No runtime deadline, assertion or prior gate is removed or weakened."
 deferral = "2026-09-05: User explicitly requests continuing the browser redesign after checkpoint cd7025a2. Preserve this incomplete acceptance as queued with every original gate; stability confirmation is not a QEMU acceptance waiver."
 phase = "post-s0"
@@ -151,6 +151,76 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fix browser interaction navigation and bounded image rendering"
+evidence = []
+
+[[packages]]
+id = "R3.8-ring3-browser-c-runtime"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Provide a reusable bounded C runtime and execute a NetSurf dependency in Ring 3"
+scope = "Next user-directed browser-engine prerequisite after R3.6c acceptance: implement one reusable opt-in Ring-3 C memory/byte-runtime slice and port the real NetSurf libwapcaplet dependency through it. Inventory the existing x86os heap wrappers, TLS arena and browser-private byte routines first; do not replace the validated kernel allocator or TLS adapter. Supply ISO C11 malloc/calloc/realloc/free and the memory/string/ASCII classification subset actually required by the pinned dependency, with documented C-locale and zero-size behavior and POSIX-style ENOMEM where applicable. Back allocation with an explicitly initialized caller-owned process-local arena capped at 4 MiB and 4096 simultaneous objects; no implicit heap-growth syscall, global kernel pool or hidden device/filesystem authority. Publish opt-in standard headers, libreistc.a, libwapcaplet.a and pkg-config metadata in the normal sysroot using upstream Zig/LLVM, retaining the existing default SDK/link order. Pin the upstream archive by version, origin and SHA-256 and retain its complete license; execute real string interning/refcount/equality and allocation-failure cases on host and in a separately packaged CRTEST.PRG. Exercise ordinary exhaustion, invalid-pointer containment, child exit/fault, exact reap and clean subsequent process generation through the Ring-3 shell. This completes the memory/byte foundation, not a full libc/POSIX, NetSurf renderer, CSS layout, stdio/filesystem, threading or JavaScript port. File-backed streams, renderer IPC and DOM/CSS remain later authority contracts, not nonfunctional stubs in this one."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/development/USER_PROGRAM_TOOLCHAIN.md",
+  "userspace/libc/include/reist/libc.h",
+  "userspace/libc/include/stdlib.h",
+  "userspace/libc/include/string.h",
+  "userspace/libc/include/strings.h",
+  "userspace/libc/include/ctype.h",
+  "userspace/libc/include/errno.h",
+  "userspace/libc/include/assert.h",
+  "userspace/libc/lib/heap.c",
+  "userspace/libc/lib/bytes.c",
+  "userspace/libc/lib/runtime.c",
+  "userspace/programs/crtest.c",
+  "third_party/libwapcaplet.tar.gz",
+  "third_party/libwapcaplet.sha256",
+  "third_party/README.md",
+  "scripts/build_user_sdk.py",
+  "scripts/build_user_program.py",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "Makefile",
+  "scripts/run_qemu_smoke.py",
+  "scripts/test-reist-runtime.ps1",
+  "test/test_libc_source.py",
+  "test/test_libc_host.c",
+  "test/test_user_program_toolchain.py",
+  "test/test_shell_source.py"
+]
+invariants = [
+  "the memory/byte runtime remains entirely Ring 3 and opt-in; no kernel allocator syscall executable format default SDK ABI TLS library or browser behavior is changed",
+  "ISO C11 fundamental alignment, nonoverlapping live allocations, calloc multiplication overflow and realloc failure preservation are proven before upstream use; all allocator traversal is capped by the fixed object count",
+  "arena ownership is explicit and process-local; live allocations forbid reinitialization and normal free cannot publish an overlapping allocation; foreign interior double-free and corrupted metadata fail closed without dereferencing an unvalidated pointer",
+  "quota exhaustion returns a documented ordinary allocation failure; metadata corruption or invalid ownership cannot release unrelated memory and is contained in the owning process with bounded diagnostics",
+  "the opt-in headers and archives build an external program from an installed sysroot without repository-private includes or host libc linkage; existing SDK consumers remain unchanged",
+  "pinned real libwapcaplet bytes are exercised under allocation failure rather than replaced by local stubs; upstream licenses and provenance are preserved",
+  "CRTEST.PRG is resolved by the Ring-3 shell and present in Windows and Makefile layouts; guest evidence includes contained child failure, exact reap and successful fresh-generation rerun without kernel panic or loss of the shell"
+]
+targeted_tests = [
+  "python test/test_libc_source.py -v",
+  "python test/test_user_program_toolchain.py -v",
+  "python test/test_shell_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode libc-client -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required implementation source is outside allowed_files or unrelated user changes overlap the package",
+  "the pinned upstream dependency requires file network thread locale or kernel authority outside this memory/byte slice",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded Ring-3 C runtime for browser dependencies"
 evidence = []
 
 [[packages]]

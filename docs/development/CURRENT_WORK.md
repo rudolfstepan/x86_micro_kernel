@@ -4,14 +4,52 @@ Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
 `R3.7-browser-http-navigation` ist nach allen eingefrorenen Gates abgenommen.
-Aktiv ist wieder `R3.6c-browser-interaction-and-images`; dessen eigene offene
-Abnahme wird auf Nutzerauftrag fortgesetzt. Wie in R3.7 steht jetzt ein
-zusätzlicher QEMU-Referenzbuild nach dem unveränderten VMware-Build und vor
-dem unveränderten Browser-Gastgate. Alle vier bisherigen Targeted-Gates
-bleiben erhalten. Grundlage ist der saubere Stand `805132f0`; keine erneute
-Implementierung bereits vorhandener Browserfunktionen und keine Aufweichung
-der Prüfungen. Die Ergebnisse dieses neuen Abnahmelaufs sind noch offen.
+Auch `R3.6c-browser-interaction-and-images` ist jetzt abgenommen. Wie in R3.7
+steht ein zusätzlicher QEMU-Referenzbuild nach dem unveränderten VMware-Build
+und vor dem unveränderten Browser-Gastgate. Alle vier bisherigen Targeted-Gates
+sind erhalten und bestanden. Grundlage: `805132f0`, Testvoraussetzung:
+`de3ca2f5`. Dieser Lauf schließt die offene Abnahme der vorhandenen Implementierung;
+er fügt noch keine neue Browser-Engine hinzu.
 R3.6b bleibt queued. Kein Push.
+
+Aktives Paket ist `R3.8-ring3-browser-c-runtime`.
+Inventar: `x86os_malloc/free/realloc` sind vorhanden, aber nur Syscall-Wrapper;
+TLS besitzt einen privaten Arena-Allocator und Bytefunktionen, der Browser
+eigene Decoder-Bytefunktionen. Eine installierbare allgemeine C-Schnittstelle
+für Upstream-Bibliotheken fehlt. R3.8 bündelt deshalb begrenzte Speicherverwaltung,
+die benötigten C-Byte-/Stringfunktionen, SDK-Integration und die echte
+NetSurf-Abhängigkeit LibWapcaplet einschließlich Host-/Gast-Fehlernachweis.
+Der Vertrag ist vorbereitet, nicht implementiert. Kernel, TLS und vorhandene
+SDK-Verbraucher bleiben unverändert; vollständiges libc, DOM/CSS und JavaScript
+werden damit noch nicht behauptet. Gemäß Ein-Paket-Regel wurde in diesem
+R3.6c-Abnahmelauf noch kein R3.8-Quellcode implementiert.
+
+## Abnahme R3.6c
+
+Alle Gates liefen für den wiederaufgenommenen Paketstand jeweils einmal.
+26 Targeted-Tests: 24 erfolgreich, zwei bestehende optionale Compiler-Tests
+übersprungen. Der echte Surface-Rückstautest und die Browser-/Bildmodelle
+wurden mit Zig ausgeführt; die Browser-Range-Fälle sind dort ebenfalls enthalten.
+
+| Befehl | Ergebnis | Dauer |
+| --- | --- | --- |
+| `python test/test_gui_browser_source.py -v` | PASS, 8 Tests | 27,3 s |
+| `python test/test_browser_runtime_source.py -v` | PASS, 7 Tests | 1,5 s |
+| `python test/test_gui_value_controls_source.py -v` | PASS, 2 Tests, davon 1 übersprungen | 0,03 s |
+| `python test/test_gui_surface_source.py -v` | PASS, 9 Tests, davon 1 übersprungen | 0,4 s |
+| `.\scripts\test-reist-package.ps1 -Target vmware -Video vga` | PASS | 47 s |
+| `.\scripts\test-reist-package.ps1 -Target qemu -Video vga` | PASS | 43 s |
+| `.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga` | PASS | 94 s |
+
+Logs unter `build/codex-agent/`: `r36c-resume-test_*.log`,
+`20260905-112202-package-vmware-vga.log`,
+`20260905-112304-package-qemu-vga.log`,
+`r36c-resume-browser-runtime.log` und `r36c-resume-browser-guest-transcript.log`.
+Der Gast bestätigt URL-Eingabe ohne Dokument-Repaint, Bilder, Link-Release,
+Anker, Scrollbar-Capture, Scroll-Clipping, Reload, Transportfehler-Abholung und
+sauberes Schließen. Keine neue VMware-Laufzeit- oder öffentliche Webseitenabnahme;
+R3.6b bleibt offen. Das rohe Image enthält das QEMU-Profil, das separat gebaute
+VMware-Paket liegt weiterhin unter `build/vmware/reist-os/`.
 
 Der abgenommene Stand `BROWSER_BUILD navigation-20260905-r5` ergänzt HTTP/1.1-GET,
 `curl --include/-i`, begrenztes chunked-Decoding und echte HTTP-Weiterleitungen

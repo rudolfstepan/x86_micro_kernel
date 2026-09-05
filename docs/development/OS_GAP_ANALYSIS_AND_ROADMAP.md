@@ -3366,7 +3366,13 @@ Nach Nutzer-Checkpoint `cd7025a2` wurde R3.6c mit seinen offenen Gates
 zurückgestellt. `R3.7-browser-http-navigation` ist jetzt als erster
 Transport-/Publikationsschnitt des Engine-Umbaus abgenommen: sieben
 Targeted-Gates, VMware-/QEMU-Referenzbuild und beide QEMU-Gastgates bestanden.
-R3.6c ist wieder aktiv; seine eigenen offenen Abnahmen bleiben unverändert.
+R3.6c ist inzwischen ebenfalls mit seinen vier Targeted-Gates, beiden
+Referenzbuilds und dem unveränderten QEMU-Browser-Gasttest abgenommen.
+Aktiv ist `R3.8-ring3-browser-c-runtime`: wiederverwendbare begrenzte
+C-Speicher-/Bytefunktionen, opt-in SDK-Integration und eine echte gepinnte
+NetSurf-Abhängigkeit (LibWapcaplet) mit Host- und Ring-3-Fehlernachweis.
+Dieser nächste Vertrag ist vorbereitet, noch nicht implementiert; er ersetzt
+weder den späteren DOM/CSS-Port noch die separate VMware-Mausabnahme R3.6b.
 R3.7 erhält HTTP-Metadaten, dekodiert chunked und begrenzt Weiterleitungen
 für Seiten und Bilder. NetSurf ist ein geprüfter Kandidat,
 keine bereits integrierte Engine. Fehlende wiederverwendbare C-/OS-Grundlagen
