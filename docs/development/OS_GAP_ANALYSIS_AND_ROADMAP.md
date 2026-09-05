@@ -3362,10 +3362,13 @@ damals war `active_id` leer. Das auf Nutzerwunsch aktive Folgepaket
 Cursorbearbeitung, standardnahe Scrollbarinteraktion, Link-Release und
 Fragmentziele sowie begrenzte PNG/JPEG/BMP/GIF-Bilder. Seine aktuelle Abnahme
 steht in `CURRENT_WORK.md`; die früheren Nachweise ersetzen sie nicht.
-Nach Nutzer-Checkpoint `cd7025a2` ist R3.6c mit seinen offenen Gates queued;
-aktiv ist `R3.7-browser-http-navigation` als erster Transport-/Publikationsschnitt
-des Engine-Umbaus. Er erhält HTTP-Metadaten, dekodiert chunked und begrenzt
-Weiterleitungen für Seiten und Bilder. NetSurf ist ein geprüfter Kandidat,
+Nach Nutzer-Checkpoint `cd7025a2` wurde R3.6c mit seinen offenen Gates
+zurückgestellt. `R3.7-browser-http-navigation` ist jetzt als erster
+Transport-/Publikationsschnitt des Engine-Umbaus abgenommen: sieben
+Targeted-Gates, VMware-/QEMU-Referenzbuild und beide QEMU-Gastgates bestanden.
+R3.6c ist wieder aktiv; seine eigenen offenen Abnahmen bleiben unverändert.
+R3.7 erhält HTTP-Metadaten, dekodiert chunked und begrenzt Weiterleitungen
+für Seiten und Bilder. NetSurf ist ein geprüfter Kandidat,
 keine bereits integrierte Engine. Fehlende wiederverwendbare C-/OS-Grundlagen
 werden gemäß Nutzerauftrag tatsächlich nachimplementiert; ihre Standardverträge,
 Ring-3-Isolation und Regressionen dürfen nicht durch Browser-Stubs umgangen

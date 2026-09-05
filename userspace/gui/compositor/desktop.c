@@ -9192,6 +9192,7 @@ int main(int argc, char **argv) {
     (void)x86os_monotonic_ms(&phase_started_ms);
     if (argc != 1) desktop_startup_phase_metric("splash", phase_started_ms);
     (void)desktop_svga2d_connect(0U, 0U);
+    desktop_startup_phase_metric("accel-info", phase_started_ms);
     (void)x86os_monotonic_ms(&phase_started_ms);
     int font_status = unicode_probe ? desktop_font_load(&display) : 0;
     desktop_startup_phase_metric("font", phase_started_ms);

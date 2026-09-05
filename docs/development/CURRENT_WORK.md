@@ -3,27 +3,85 @@
 Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
-Aktives Paket: `R3.7-browser-http-navigation`, Vertrag `e5ae16b8`, Basis
-`cd7025a2`. R3.6c und R3.6b bleiben mit unveränderten offenen Gates queued.
-Der neue Kandidat `BROWSER_BUILD navigation-20260905-r5` ergänzt HTTP/1.1-GET,
+`R3.7-browser-http-navigation` ist nach allen eingefrorenen Gates abgenommen.
+Aktiv ist wieder `R3.6c-browser-interaction-and-images`; dessen eigene offene
+Abnahme bleibt erhalten und wurde in diesem Lauf nicht zusätzlich durchgeführt.
+R3.6b bleibt queued. Kein Push.
+
+Der abgenommene Stand `BROWSER_BUILD navigation-20260905-r5` ergänzt HTTP/1.1-GET,
 `curl --include/-i`, begrenztes chunked-Decoding und echte HTTP-Weiterleitungen
 für Dokumente und Bilder. Kopf und dekodierter Body werden gemeinsam publiziert;
 Close-/Rename-Fehler melden Misserfolg. Abgebrochene eigene Kindprozesse werden
 vor dem Entfernen ihrer Teil-/Ergebnisdateien abgeholt. Fehlerantworten,
 ungeeignete Darstellungen, HTTPS-Downgrades und Schleifen erhalten die alte Seite.
 
-Entwicklungstests führen den echten CURL-Stream-/Publikationscode und den
+Hosttests führen den echten CURL-Stream-/Publikationscode und den
 Browser-Ladezustand aus: fragmentierte Antworten, Weiterleitungsketten, effektive
 Bild-/Linkbasis, Esc, neue Navigation, Zeit-/Bytebudgets und Schreibfehler.
-Die fünf eingefrorenen Targeted-Gates sind bestanden (38 erfolgreich, vier
-bestehende optionale Tests übersprungen): Navigation 1,4 s, Browser 29,7 s,
-Browser-Laufzeitmodell 1,6 s, Surface 0,3 s, Netzwerk 84,3 s. Die neue zwingende
-Zig-Hostprüfung führt den CURL-URL-/Headerparser auch ohne GCC aus.
-Logs: `build/codex-agent/r37-gate-*.log`.
+Die neue Desktop-Hostregression führt den echten Start-Dateileser mit
+fragmentierten Reads, Größen-/Antwortfehlern, Timeout, Lifecycle-Fortschritt
+und Handle-Cleanup aus. Sie fixiert außerdem die Build-/Runtime-Zielreihenfolge.
+Der Desktop meldet die optionale Beschleuniger-Verbindung separat als
+`accel-info`; funktionale VFS-, Treiber-, Kernel- oder ABI-Änderungen waren
+für die aufgeklärte Startblockade nicht erforderlich.
 
-`test-reist-package.ps1 -Target vmware -Video vga` besteht in 22 s,
+## Abnahme R3.7
+
+Alle folgenden Gates wurden für den finalen Kandidaten jeweils einmal
+ausgeführt und bestanden. Targeted insgesamt: 102 Tests, davon 98 erfolgreich
+und vier bestehende optionale Tests übersprungen. Die zwingende Zig-Hostprüfung
+führt den CURL-URL-/Headerparser auch ohne GCC aus; der TLS-Hostnachweis besteht.
+
+| Befehl | Ergebnis | Dauer |
+| --- | --- | --- |
+| `python test/test_desktop_startup_source.py -v` | PASS, 2 Tests | 0,6 s |
+| `python test/test_desktop_source.py -v` | PASS, 58 Tests | 0,4 s |
+| `python test/test_browser_navigation_source.py -v` | PASS, 4 Tests | 0,9 s |
+| `python test/test_gui_browser_source.py -v` | PASS, 8 Tests | 29,4 s |
+| `python test/test_browser_runtime_source.py -v` | PASS, 7 Tests | 1,4 s |
+| `python test/test_gui_surface_source.py -v` | PASS, 9 Tests, davon 1 übersprungen | 0,3 s |
+| `python test/test_network_tools.py -v` | PASS, 14 Tests, davon 3 übersprungen | 89,9 s |
+| `.\scripts\test-reist-package.ps1 -Target vmware -Video vga` | PASS | 14 s |
+| `.\scripts\test-reist-package.ps1 -Target qemu -Video vga` | PASS | 45 s |
+| `.\scripts\test-reist-runtime.ps1 -Mode curl-client -Target qemu -Video vga` | PASS | 117 s |
+| `.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga` | PASS | ca. 86 s |
+
+Logs unter `build/codex-agent/`:
+
+- `r37-startfix-gate-*.log`
+- `20260905-110240-package-vmware-vga.log`
+- `20260905-110344-package-qemu-vga.log`
+- `20260905-110443-runtime-guest-smoke-curl-client.log`
+- `r37-startfix-curl-guest-transcript.log`
+- `r37-startfix-browser-runtime.log`
+- `r37-startfix-browser-guest-transcript.log`
+
+Der CURL-Gast erreicht `TEST_OK`, die unveränderte Unicode-Prüfung und
+`REIST_CURL_RUNTIME_OK` mit `X-Reist-Transport: chunked-include`.
+Gemessene Startphasen dort: `accel-info` 4 ms, `font-io` 20507 ms,
+`font-parse` 25 ms. Der Browser-Gast bestätigt URL-Eingabe ohne Dokument-Repaint,
+Bilder, Links/Anker, Scrollbar-Capture, Scroll-Clipping, Reload, Transportfehler
+und sauberes Schließen. Das sind begrenzte QEMU-Nachweise, keine Abnahme beliebiger
+öffentlicher Webseiten oder der VMware-Laufzeit/Zeigerlatenz.
+
+`build/reist-os.img` enthält nach der Abnahme das QEMU-Profil; das separat
+gebaute VMware-Paket liegt weiterhin unter `build/vmware/reist-os/`.
+Die Tests verwenden eigene Snapshot-Gäste; keine Benutzer-VM wurde bedient.
+
+NetSurf bleibt der bevorzugte Portierungskandidat, noch nicht integriert.
+Fehlende allgemeine ISO-C-/Datei-/Zeit-/Speichergrundlagen werden als echte
+Ring-3-SDK-Verträge nachimplementiert, nicht als funktionslose Browser-Stubs.
+CSS, DOM/Formulare und später isoliertes JavaScript sind noch nicht umgesetzt.
+Details: `docs/architecture/BROWSER_ENGINE_PORT_PLAN.md`.
+
+## Historischer R3.7-Zwischenstand und Startdiagnose
+
+Transportvertrag: `e5ae16b8`, Ausgangsbasis `cd7025a2`. Die ersten fünf
+Targeted-Gates bestanden (38 erfolgreich, vier optionale Tests übersprungen),
+Logs `build/codex-agent/r37-gate-*.log`. Der erste VMware-Build bestand in 22 s,
 Log `build/codex-agent/20260905-103403-package-vmware-vga.log`.
-`test-reist-runtime.ps1 -Mode curl-client -Target qemu -Video vga` scheitert
+
+`test-reist-runtime.ps1 -Mode curl-client -Target qemu -Video vga` scheiterte
 nach 180 s **vor** dem CURL-Aufruf: GTEST erreicht `VFAT_UTF8_OK`, startet
 `desktop --unicode-probe` und erreicht `TEST_OK` nicht. Der Desktop protokolliert
 `splash`, aber noch kein `font`/`font-io`. Das grenzt den fehlenden Fortschritt
@@ -31,18 +89,18 @@ auf den unveränderten Desktop-Startpfad zwischen SVGA-Verbindung und Font-Laden
 ein; die genaue Blockierstelle ist noch nicht bewiesen. Log:
 `build/codex-agent/20260905-103457-runtime-guest-smoke-curl-client.log`.
 Der anschließende eingefrorene Browser-Gasttest wurde nach diesem ersten
-Fehlschlag nicht gestartet. Der neue CURL-/Browser-Gastnachweis bleibt offen.
+Fehlschlag nicht gestartet. Der CURL-/Browser-Gastnachweis blieb damals offen.
 
 Paketstopp: `userspace/gui/compositor/desktop.c` und der allgemeine
 `userspace/programs/guest_test.c` liegen außerhalb des Transportpakets. Keine
 Abschwächung oder Umgehung des GTEST-Gates und keine stille Umfangserweiterung.
 Der Nutzer hat danach ausdrücklich zugestimmt, R3.7 als **nicht abgenommenen
 Zwischenstand** zu committen und den Paketumfang anschließend um die
-Desktop-Startblockade zu erweitern. R3.7 bleibt aktiv; kein Queue-Fortschritt,
-keine Abnahme und kein Push. Die folgende Reparatur wird vor Umsetzung getrennt
-abgegrenzt; alle bisherigen Gates bleiben erhalten.
+Desktop-Startblockade zu erweitern. R3.7 blieb bis zur oben dokumentierten
+Abnahme aktiv; der Checkpoint allein bewirkte keinen Queue-Fortschritt.
 
-Zwischenstand: `abe907e1`. Der freigegebene Reparaturumfang ergänzt ausschließlich
+Zwischenstand: `abe907e1`, begrenzte Reparaturfreigabe: `780dbe65`.
+Der freigegebene Reparaturumfang ergänzte ausschließlich
 den bestehenden Ring-3-Desktop-Startpfad, dessen VFS-Dateiclient und reale
 Hostregressionen/Diagnosen. Kernel, öffentliche ABI, GTEST-Anforderungen und
 Gastzeitgrenzen bleiben unverändert. Accelerator-Verbindung und Font-I/O werden
@@ -57,15 +115,10 @@ gestartet: `test-reist-runtime -Target qemu` wählt nur den Emulator und baut
 das Image nicht neu. `VMWARE_BUILD` verwendet 10-ms-ATA-Polls, `QEMU_BUILD`
 1-ms-Polls. Ein zusätzlicher QEMU-Referenzbuild vor den unveränderten Gastgates
 stellt nun die korrekte Testvoraussetzung her; der VMware-Paketbuild bleibt
-erhalten. Kein Treibertiming und keine Gastfrist werden gelockert. Die genaue
-Laufzeitwirkung wird durch die nachfolgenden Abnahmen geprüft, nicht aus den
-Diagnoseläufen als bestanden abgeleitet.
-
-NetSurf bleibt der bevorzugte Portierungskandidat, noch nicht integriert.
-Fehlende allgemeine ISO-C-/Datei-/Zeit-/Speichergrundlagen werden als echte
-Ring-3-SDK-Verträge nachimplementiert, nicht als funktionslose Browser-Stubs.
-CSS, DOM/Formulare und später isoliertes JavaScript sind noch nicht umgesetzt.
-Details: `docs/architecture/BROWSER_ENGINE_PORT_PLAN.md`.
+erhalten. Diese Testvoraussetzung wurde vor dem finalen Kandidaten in
+`e829a48f` festgelegt. Kein Treibertiming und keine Gastfrist wurden gelockert.
+Die anschließenden regulären Abnahmen sind oben getrennt von den Diagnoseläufen
+belegt. Ein Kernel-Deadlock wurde nicht nachgewiesen oder als behoben behauptet.
 
 ## Historischer Checkpoint R4 (`cd7025a2`)
 

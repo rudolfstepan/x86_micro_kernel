@@ -792,7 +792,7 @@ Ring-3-Dienst über einen versionierten IPC-/DOM-Adapter hinzukommen; weder
 Browserprozess noch Compositor oder Kernel erhalten dafür eine eingebettete
 Skript-Engine.
 
-R3.7 ergänzt als HTTP-Transportkandidat vor dem eigentlichen Engine-Port den
+R3.7 ergänzt als abgenommenen begrenzten HTTP-Transport vor dem Engine-Port den
 expliziten `curl --include`-Adapter: Originalheader und dekodierter Body werden
 in einer Datei atomar publiziert. Der Browser validiert Status und MIME-Metadaten
 und folgt GET-Weiterleitungen 301/302/303/307/308 über höchstens fünf weitere

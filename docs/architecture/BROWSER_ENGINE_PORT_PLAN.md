@@ -26,12 +26,12 @@ Quellen: `scripts/build_user_sdk.py`, `scripts/build_user_program.py`,
 Upstream-Lizenzhinweise und genaue Quellpins müssen vor Aufnahme der jeweiligen
 Abhängigkeit erhalten und im Third-Party-Verzeichnis dokumentiert werden.
 
-## Aktiver vertikaler Schnitt: HTTP-Antworten und Navigation
+## Abgenommener vertikaler Schnitt: HTTP-Antworten und Navigation
 
 `R3.7-browser-http-navigation` behandelt genau die Transport-/Publikationsgrenze,
 die jede spätere Engine benötigt. Der bisherige CURL-Prozess lieferte nur den
 Body; Status, `Location` und Inhaltstyp gingen verloren. Daher erschien eine
-301-Antwort als Webseite. Der Browser erhält künftig mit `--include` den
+301-Antwort als Webseite. Der Browser erhält jetzt mit `--include` den
 originalen HTTP-Kopf und den dekodierten Body in einer atomar publizierten
 Datei. Weiterleitungen verwenden den echten Location-Wert und die effektive
 URL wird zur Basis für weitere Ressourcen. Chunked Transfer-Encoding wird im
@@ -63,6 +63,14 @@ Darstellungsmetadaten nicht nachträglich umdefinieren. Mehrdeutiges Framing
 und ungültige Steuerzeichen scheitern geschlossen. Explizite Ports sind auf
 fünf Dezimalziffern und 1..65535 begrenzt. Dies ist ein begrenzter HTTP/1.x-
 Clientvertrag, keine vollständige curl-/HTTP-Kompatibilitätsbehauptung.
+
+R3.7 ist am 5. September 2026 mit allen sieben Targeted-Gates, VMware- und
+QEMU-Referenzbuild sowie den QEMU-Gates `curl-client` und
+`runtime-desktop-browser` abgenommen. Der QEMU-Build muss unmittelbar vor den
+QEMU-Gastgates stehen: Die Laufzeitoption allein baut das vorherige
+VMware-Image nicht neu. Befehle, Laufzeiten und Logs stehen in
+`docs/development/CURRENT_WORK.md`. Dies ist kein Nachweis vollständiger
+öffentlicher Webseiten oder einer VMware-Laufzeitabnahme.
 
 ## Nachfolgende, noch nicht implementierte Arbeit
 

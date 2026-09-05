@@ -783,7 +783,7 @@ Absätze, Umbrüche, Hervorhebungen, Vorformatierung, Listen, Links und Bilder a
 festkapazitiven Dokumentmodell. Lokale Pfade laufen über READ|STAT-VFS-Objekte;
 HTTP(S) wird ausschließlich vom getrennten `CURL.PRG` in eine begrenzte
 Tempdatei übertragen. Fehler behalten die letzte vollständig validierte Seite.
-Der R3.7-Kandidat erhält dafür HTTP-Header über `curl --include` und folgt
+Der abgenommene R3.7-Transport erhält dafür HTTP-Header über `curl --include` und folgt
 301/302/303/307/308 bis zu fünfmal innerhalb von 30 Sekunden; je Kind gelten
 weiterhin höchstens zehn Sekunden. Nach Weiterleitung gilt die Zieladresse
 als Basis für Links und Bilder. HTTPS-Downgrades und lokale Redirect-Ziele

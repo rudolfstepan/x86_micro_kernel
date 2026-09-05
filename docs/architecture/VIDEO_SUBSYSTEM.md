@@ -475,6 +475,16 @@ allowed to follow the system timer resolution.
 
 ## Desktop startup splash
 
+Startup diagnostics report `accel-info` separately before font loading, so
+an optional accelerator transaction cannot be confused with font I/O. QEMU
+acceptance must use a QEMU-built image: `test-reist-runtime -Target qemu`
+selects the emulator but does not rebuild the shared raw image. The R3.7
+package retains its VMware reference build and adds a QEMU reference build
+immediately before its unchanged QEMU runtime gates. ATA profile timings,
+guest deadlines, Unicode self-tests and the packaged VMware VM are unchanged.
+The real-code startup-reader host test verifies partial reads, bounded
+requests, service-progress reporting and closed handles on publication errors.
+
 After successful display activation and validation, the Ring-3 desktop now
 publishes a deterministic dark background and the exact `REIST OS` title
 before performing optional filesystem reads. It then reads the fixed
