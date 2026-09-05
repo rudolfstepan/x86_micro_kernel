@@ -337,6 +337,12 @@ publiziert wird; der reale QEMU-Abschluss erreicht `RING3_SHELL_OK`.
 
 ## Minimaler REIST-Kern
 
+R1.2c priorisiert auf Nutzeranweisung den
+[privaten Prozessspeicher-Lifecycle](PRIVATE_PROCESS_MEMORY_CONTRACT.md) vor
+weiterem Browserumbau. Grosszuegigere bedarfsgerechte Ring-3-Heaps duerfen weder
+IRQ-/Schedulinglatenz noch Speicherresilienz aufweichen. Der Vertrag ist noch
+nicht abgenommen; die i386-Physikgrenze bleibt in diesem Paket bei 1 GiB.
+
 Die oberste Architekturregel ist die Stabilität der Microkernel-Grenze. Ein
 gewöhnlicher Fehler in einem Treiber, Dienst, Prozess oder Programm darf weder
 den Kernel beenden noch unabhängige Essential Functions verlieren lassen. Alle

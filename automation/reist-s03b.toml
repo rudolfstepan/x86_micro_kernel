@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.10-browser-css-layout"
+active_id = "R1.2c-private-process-memory"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,73 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R1.2c-private-process-memory"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Grow private Ring-3 heaps without long allocator stalls or weakening resilience"
+user_direction = "2026-09-05: User prioritizes the OS memory foundation before further browser work, requests generous private Ring-3 memory and explicitly forbids weakening REIST memory resilience. The attributable unaccepted R3.10 candidate, including untracked files, is preserved in local stash 121cb536d7c2ef63df59b7d3aa08a4f4b3da0086 on c8eda742. Ignored evidence is untouched and the worktree was verified clean. No browser acceptance is claimed; resume that candidate with its original frozen gates after this independent foundation. Direct interactive implementation only; no agents or push."
+scope = "One private anonymous process-memory lifetime from admission through malloc/calloc/realloc/free to fault/kill/reap. Inventory the existing page allocator, address-space ownership, reserved/resilient objects and Ring-3 arena first. Retain syscall numbers and the explicit legacy 4-MiB arena mode; add an opt-in versioned backing-provider mode with demand-driven, noncontiguous process-private arenas and a caller-selected budget up to 512 MiB. Empty backing regions can be returned; no eager reservation of the whole budget, implicit network/filesystem authority or application cache in Ring 0. Enforce a kernel heap budget capped at half managed RAM and 512 MiB, expand fixed region metadata capacity, reuse released virtual holes and roll back failed mapping without slot or frame leaks. Preserve a physical frame reserve at allocation admission. Keep frame acquisition/zeroing/PTE publication indivisible against task termination but IRQ-friendly, and yield between bounded batches during large allocation, rollback, free and retired-address-space teardown; cleanup progress must remain owned after caller termination. Correct SDK pointer/error decoding over the complete existing user VA window. Prove real allocator behavior, failure rollback, zeroing, isolation, ownership, quota exhaustion, fresh generations, complete reap and peer scheduling progress in host tests and QEMU. This is not a high-memory/PAE/x86_64 migration: the current 1-GiB physical ceiling and all reserved/direct-map/resilient-object formats remain unchanged and visible debt. Do not implement CSS, browser cache policy or shared file cache in this run."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/CURRENT_WORK.md",
+  "kernel/proc/process.c", "kernel/proc/process.h", "kernel/proc/user_memory.c",
+  "kernel/sched/scheduler.c", "kernel/sched/scheduler.h",
+  "arch/x86/mm/paging.c", "arch/x86/mm/paging.h",
+  "mm/kmalloc.c", "mm/kmalloc.h",
+  "userspace/sdk/x86os.c",
+  "userspace/libc/include/reist/libc.h",
+  "userspace/libc/lib/heap.c", "userspace/libc/lib/process_heap.c",
+  "userspace/programs/memtest.c",
+  "scripts/build_user_sdk.py", "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1", "Makefile", "scripts/run_qemu_smoke.py",
+  "test/test_process_memory.py", "test/test_process_memory_host.c",
+  "test/test_process_heap_host.c", "test/test_libc_source.py",
+  "test/test_memory_r12.py", "test/test_shell_source.py",
+  "test/test_user_program_toolchain.py"
+]
+invariants = [
+  "performance and resilience must both pass; no timeout extension as a performance repair",
+  "kernel mappings reserved physical regions rescue reserves and redundant resilient objects are not exposed repurposed or weakened",
+  "private pages are zeroed before publication and owned by one exact process generation; ordinary exhaustion returns failure and preserves live allocations",
+  "every acquired frame or retired directory remains owned through cancellation; mapping failure free kill and reap are leak-free and idempotent at the lifecycle boundary",
+  "large operations do not hold IRQ or preemption exclusion for their full byte size; yields occur only with no locally unowned resources",
+  "legacy arena users keep their selected capacity and authority; larger heaps are explicitly opted into and bounded by actual committed backing bytes",
+  "normal heaps are not claimed mirrored or physically DIMM fault tolerant; existing memory-resilience proofs remain mandatory"
+]
+targeted_tests = [
+  "python test/test_process_memory.py -v",
+  "python test/test_libc_source.py -v",
+  "python test/test_paging_source.py -v",
+  "python test/test_memory_r12.py -v",
+  "python test/test_memory_fault_injection.py -v",
+  "python test/test_memory_resilience.py -v",
+  "python test/test_shell_source.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --memory 1024M --expect-process-memory --timeout 180 --log build/codex-agent/private-memory-1024.log",
+  "python scripts/run_qemu_smoke.py --image build/reist-os.img --memory 128M --expect-process-memory --timeout 180 --log build/codex-agent/private-memory-128.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode libc-client -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode memory-resilience -Target qemu -Video vga"
+]
+stop_conditions = [
+  "an unrelated writer overlaps or a required production source is outside allowed_files",
+  "progress requires weakening memory resilience reserved mappings generation cleanup or frozen deadlines",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: admit scalable private Ring-3 heaps with bounded memory lifecycle"
+evidence = []
 
 [[packages]]
 id = "R7.1n-ata-pio-read-throughput"
@@ -360,7 +427,7 @@ evidence = []
 
 [[packages]]
 id = "R3.10-browser-css-layout"
-status = "active"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "Render styled HTML5 documents through an isolated CSS cascade and box layout"

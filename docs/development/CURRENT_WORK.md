@@ -4,9 +4,20 @@ Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
 `R7.1n-ata-pio-read-throughput` und `R3.9-browser-html5-worker` sind abgenommen;
-aktiv ist `R3.10-browser-css-layout`. Performance ist ebenso verbindlich wie
-Resilienz. Der nächste CSS-Vertrag ist in `094cfe69` definiert, noch nicht
-implementiert. In diesem Paketdurchlauf wurde ausschließlich R3.9 umgesetzt.
+aktiv ist auf Nutzeranweisung `R1.2c-private-process-memory`. Performance und
+Speicherresilienz sind gleichzeitig verbindlich. Der noch nicht abgenommene
+CSS-Kandidat ist einschliesslich neuer Dateien im lokalen Stash
+`121cb536d7c2ef63df59b7d3aa08a4f4b3da0086` auf `c8eda742` gesichert; die
+ignorierten Entwicklungslogs bleiben erhalten. Der Arbeitsbaum war danach
+sauber. R3.10 ist mit unveraenderten Gates zurueckgestellt, nicht abgenommen.
+Zuerst wird der private Prozessspeicher-Lifecycle fuer groessere, bedarfsgerecht
+wachsende Ring-3-Heaps implementiert. Vertrag:
+`docs/architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md`. Die bestehende
+1-GiB-Physikgrenze, Redundanzobjekte und geschuetzten Reserven bleiben sichtbar;
+High-Memory/Paging und Anwendungs-/Dateicaches sind separate Folgearbeiten.
+
+## Historie: abgenommener R3.9-Stand
+
 Der unfertige R3.9-Browser ist vollständig einschließlich unversionierter
 Dateien im lokalen Stash `a58233043f81ee80f08b7db3591d7ab2de76803c` gesichert.
 Auf sauberer Grundlage `d725efb0` wurde die Wiederaufnahme in `495ed85f`
