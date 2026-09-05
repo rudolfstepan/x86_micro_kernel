@@ -500,12 +500,12 @@ try {
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
-    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html')) {
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'browser-test.html')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
-        if ($demoFile -ne 'index.html') {
+        if ($demoFile -notin @('index.html', 'browser-test.html')) {
             $floppyDataArguments += @(
                 '--data-file', "htdocs/$demoFile=$demoPath"
             )

@@ -9,6 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class GuiSurfaceSourceTests(unittest.TestCase):
+    def test_client_drains_input_backpressure_without_losing_events(self):
+        from test_gui_browser_source import run_host
+        run_host(["test/test_gui_surface_client_host.c",
+                  "userspace/gui/lib/surface_client.c",
+                  "userspace/gui/lib/font_catalog.c"],
+                 flags=["-Iuserspace/sdk/include"])
+
     def test_public_protocol_is_bounded_and_local(self):
         header = (ROOT / "userspace/gui/include/reist/gui/surface.h").read_text()
         self.assertIn("REIST_GUI_SURFACE_MAX_DAMAGE 8U", header)

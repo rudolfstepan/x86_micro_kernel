@@ -7,7 +7,7 @@ enum html_tag {
     HTML_TAG_P, HTML_TAG_DIV, HTML_TAG_H1, HTML_TAG_H2, HTML_TAG_H3,
     HTML_TAG_BR, HTML_TAG_STRONG, HTML_TAG_B, HTML_TAG_EM, HTML_TAG_I,
     HTML_TAG_PRE, HTML_TAG_UL, HTML_TAG_OL, HTML_TAG_LI, HTML_TAG_A,
-    HTML_TAG_SCRIPT, HTML_TAG_STYLE
+    HTML_TAG_SCRIPT, HTML_TAG_STYLE, HTML_TAG_IMG
 };
 
 typedef struct html_frame {
@@ -31,6 +31,7 @@ typedef struct html_parser {
     uint8_t title;
     uint8_t suppress;
     uint8_t pending_space;
+    uint8_t title_truncated;
 } html_parser_t;
 
 static void zero_bytes(void *target, size_t length) {
@@ -75,6 +76,14 @@ static uint16_t tag_from_name(const uint8_t *name, size_t length) {
     if (name_equal(name, length, "a")) return HTML_TAG_A;
     if (name_equal(name, length, "script")) return HTML_TAG_SCRIPT;
     if (name_equal(name, length, "style")) return HTML_TAG_STYLE;
+    if (name_equal(name, length, "img")) return HTML_TAG_IMG;
+    if (name_equal(name, length, "section") || name_equal(name, length, "article") ||
+        name_equal(name, length, "header") || name_equal(name, length, "footer") ||
+        name_equal(name, length, "main") || name_equal(name, length, "nav") ||
+        name_equal(name, length, "table") || name_equal(name, length, "tr"))
+        return HTML_TAG_DIV;
+    if (name_equal(name, length, "h4") || name_equal(name, length, "h5") ||
+        name_equal(name, length, "h6")) return HTML_TAG_H3;
     return HTML_TAG_UNKNOWN;
 }
 
@@ -133,11 +142,16 @@ static int append_bytes(html_parser_t *parser, const uint8_t *bytes,
                         size_t length) {
     if (parser->suppress || length == 0U) return REIST_HTML_OK;
     if (parser->title) {
+        if (parser->title_truncated) return REIST_HTML_OK;
         size_t used = 0U;
         while (used < REIST_HTML_TITLE_CAPACITY &&
                parser->document->title[used] != '\0') ++used;
-        if (used + length >= REIST_HTML_TITLE_CAPACITY)
-            return REIST_HTML_CAPACITY;
+        if (used + length >= REIST_HTML_TITLE_CAPACITY) {
+            /* Optional display metadata: retain a valid UTF-8 prefix, not a
+             * failed document. Input validation continues after truncation. */
+            parser->title_truncated = 1U;
+            return REIST_HTML_OK;
+        }
         for (size_t index = 0U; index < length; ++index)
             parser->document->title[used + index] = (char)bytes[index];
         parser->document->title[used + length] = '\0';
@@ -257,44 +271,122 @@ static int add_link(html_parser_t *parser, const uint8_t *value,
     return REIST_HTML_OK;
 }
 
-static int parse_href(html_parser_t *parser, const uint8_t *input,
-                      size_t start, size_t end) {
+static int attribute(const uint8_t *input, size_t start, size_t end,
+                      const char *wanted, char *output, size_t capacity) {
+    output[0] = '\0';
     size_t cursor = start;
     while (cursor < end) {
-        while (cursor < end && (input[cursor] == ' ' || input[cursor] == '\t' ||
-               input[cursor] == '\r' || input[cursor] == '\n' ||
-               input[cursor] == '/')) ++cursor;
+        while (cursor < end && (input[cursor] <= ' ' || input[cursor] == '/')) ++cursor;
         size_t name = cursor;
-        while (cursor < end && input[cursor] != '=' && input[cursor] != ' ' &&
-               input[cursor] != '\t' && input[cursor] != '\r' &&
-               input[cursor] != '\n') ++cursor;
+        while (cursor < end && input[cursor] != '=' && input[cursor] > ' ' &&
+               input[cursor] != '/') ++cursor;
         size_t name_length = cursor - name;
-        while (cursor < end && (input[cursor] == ' ' || input[cursor] == '\t' ||
-               input[cursor] == '\r' || input[cursor] == '\n')) ++cursor;
-        if (cursor >= end || input[cursor] != '=') {
-            while (cursor < end && input[cursor] != ' ') ++cursor;
-            continue;
-        }
+        while (cursor < end && input[cursor] <= ' ') ++cursor;
+        if (cursor >= end) break;
+        if (input[cursor] != '=') { if (cursor == name) ++cursor; continue; }
         ++cursor;
-        while (cursor < end && (input[cursor] == ' ' || input[cursor] == '\t' ||
-               input[cursor] == '\r' || input[cursor] == '\n')) ++cursor;
-        uint8_t quote = cursor < end && (input[cursor] == '"' ||
-            input[cursor] == '\'') ? input[cursor++] : 0U;
+        while (cursor < end && input[cursor] <= ' ') ++cursor;
+        uint8_t quote = cursor < end && (input[cursor] == '"' || input[cursor] == '\'')
+            ? input[cursor++] : 0U;
         size_t value = cursor;
-        while (cursor < end && ((quote != 0U && input[cursor] != quote) ||
-               (quote == 0U && input[cursor] != ' ' && input[cursor] != '\t' &&
-                input[cursor] != '\r' && input[cursor] != '\n'))) ++cursor;
-        size_t value_length = cursor - value;
-        if (quote != 0U && cursor < end) ++cursor;
-        if (name_equal(input + name, name_length, "href"))
-            return add_link(parser, input + value, value_length);
+        while (cursor < end && (quote ? input[cursor] != quote : input[cursor] > ' '))
+            ++cursor;
+        size_t value_end = cursor;
+        if (quote && cursor < end) ++cursor;
+        if (!name_equal(input + name, name_length, wanted)) continue;
+        size_t used = 0U;
+        while (value < value_end) {
+            uint8_t decoded[4U];
+            size_t consumed = 0U, amount = 0U;
+            const uint8_t *bytes = input + value;
+            if (input[value] == '&' && character_reference(input + value,
+                    value_end - value, &consumed, decoded, &amount)) bytes = decoded;
+            else {
+                if (!utf8_scalar(input + value, value_end - value, &consumed))
+                    return REIST_HTML_ENCODING;
+                amount = consumed;
+            }
+            if (used + amount >= capacity) return REIST_HTML_CAPACITY;
+            for (size_t i = 0; i < amount; ++i) {
+                if (bytes[i] < 0x20U || bytes[i] == 0x7FU) return REIST_HTML_INVALID;
+                output[used++] = (char)bytes[i];
+            }
+            value += consumed;
+        }
+        output[used] = '\0';
+        return 1;
     }
-    return REIST_HTML_OK;
+    return 0;
+}
+
+static int parse_href(html_parser_t *parser, const uint8_t *input,
+                      size_t start, size_t end) {
+    char href[REIST_HTML_HREF_CAPACITY];
+    int found = attribute(input, start, end, "href", href, sizeof(href));
+    if (found < 0) return found;
+    if (!found) return 0;
+    /* Empty href is a valid current-document reference. */
+    if (href[0] == '\0') { href[0] = '#'; href[1] = '\0'; }
+    size_t length = 0U;
+    while (href[length]) ++length;
+    return add_link(parser, (const uint8_t *)href, length);
+}
+
+static uint16_t image_dimension(const uint8_t *input, size_t start, size_t end,
+                                const char *name) {
+    char value[16];
+    if (attribute(input, start, end, name, value, sizeof(value)) <= 0) return 0U;
+    uint32_t number = 0U;
+    for (size_t i = 0; value[i]; ++i) {
+        if (value[i] < '0' || value[i] > '9' || number > 1024U) return 0U;
+        number = number * 10U + (uint32_t)(value[i] - '0');
+    }
+    return number <= 1024U ? (uint16_t)number : 0U;
+}
+
+static int parse_anchor(html_parser_t *parser, uint16_t tag, const uint8_t *input,
+                         size_t start, size_t end) {
+    if (parser->suppress || parser->title) return 0;
+    char name[128U];
+    int found = attribute(input, start, end, "id", name, sizeof(name));
+    if (found == 0 && tag == HTML_TAG_A)
+        found = attribute(input, start, end, "name", name, sizeof(name));
+    if (found < 0) return found;
+    if (!found || name[0] == '\0') return 0;
+    reist_html_document_t *document = parser->document;
+    if (document->anchor_count >= REIST_HTML_ANCHOR_CAPACITY) return REIST_HTML_CAPACITY;
+    uint32_t index = document->anchor_count++;
+    for (size_t i = 0; i < sizeof(name); ++i) {
+        document->anchors[index].name[i] = name[i];
+        if (!name[i]) break;
+    }
+    return add_element(parser, REIST_HTML_ELEMENT_ANCHOR, index, 0U);
+}
+
+static int parse_image(html_parser_t *parser, const uint8_t *input,
+                        size_t start, size_t end) {
+    if (parser->suppress || parser->title) return 0;
+    reist_html_document_t *document = parser->document;
+    if (document->image_count >= REIST_HTML_IMAGE_CAPACITY) return 0;
+    uint32_t index = document->image_count;
+    reist_html_image_t *image = &document->images[index];
+    int found = attribute(input, start, end, "src", image->source, sizeof(image->source));
+    if (found < 0) return found;
+    int alt = attribute(input, start, end, "alt", image->alt, sizeof(image->alt));
+    if (alt < 0) return alt;
+    image->width = image_dimension(input, start, end, "width");
+    image->height = image_dimension(input, start, end, "height");
+    ++document->image_count;
+    return add_element(parser, REIST_HTML_ELEMENT_IMAGE, index, 0U);
 }
 
 static int start_tag(html_parser_t *parser, uint16_t tag,
                      const uint8_t *input, size_t attributes_start,
                      size_t attributes_end, uint8_t self_closing) {
+    int anchor_status = parse_anchor(parser, tag, input, attributes_start, attributes_end);
+    if (anchor_status != 0) return anchor_status;
+    if (tag == HTML_TAG_IMG)
+        return parse_image(parser, input, attributes_start, attributes_end);
     if (tag == HTML_TAG_BR)
         return add_break(parser, REIST_HTML_ELEMENT_LINE_BREAK);
     /* Unknown and therefore unsupported elements are transparent.  In
@@ -513,88 +605,196 @@ static int url_copy(char *output, size_t capacity, size_t *used,
     return REIST_HTML_OK;
 }
 
-int reist_html_navigation_normalize(const char *input, char *output,
-                                    size_t capacity) {
-    if (input == 0 || output == 0 || capacity < 2U)
-        return REIST_HTML_INVALID;
-    output[0U] = '\0';
-    size_t length = text_length(input, REIST_HTML_HREF_CAPACITY);
-    if (length == 0U || length >= REIST_HTML_HREF_CAPACITY)
-        return REIST_HTML_INVALID;
-    for (size_t index = 0U; index < length; ++index) {
-        uint8_t byte = (uint8_t)input[index];
-        if (byte <= 0x20U || byte == 0x7FU) return REIST_HTML_INVALID;
+/* RFC 3986 sections 3 and 5, restricted to HTTP(S) and local absolute paths.
+ * Work and scratch storage are bounded by REIST_HTML_HREF_CAPACITY. */
+typedef struct uri_parts {
+    size_t scheme_end, authority_start, authority_end;
+    size_t path_start, path_end, query_start, fragment_start, length;
+    uint8_t network, has_authority, has_query, has_fragment;
+} uri_parts_t;
+
+static int split_uri(const char *text, uri_parts_t *parts) {
+    zero_bytes(parts, sizeof(*parts));
+    size_t length = text_length(text, REIST_HTML_HREF_CAPACITY);
+    if (length >= REIST_HTML_HREF_CAPACITY) return REIST_HTML_CAPACITY;
+    parts->length = length;
+    for (size_t i = 0; i < length; ++i)
+        if ((uint8_t)text[i] <= 0x20U || (uint8_t)text[i] == 0x7FU ||
+            text[i] == '\\') return REIST_HTML_INVALID;
+    size_t cursor = 0U;
+    for (size_t i = 0; i < length && text[i] != '/' &&
+         text[i] != '?' && text[i] != '#'; ++i) {
+        if (text[i] != ':') continue;
+        if (!prefix_equal(text, "http://") && !prefix_equal(text, "https://"))
+            return REIST_HTML_INVALID;
+        parts->network = 1U;
+        parts->scheme_end = i + 1U;
+        cursor = i + 1U;
+        break;
     }
-    size_t used = 0U;
-    size_t scheme = prefix_equal(input, "https://") ? 8U
-                  : prefix_equal(input, "http://") ? 7U : 0U;
-    if (scheme != 0U) {
-        size_t authority_end = scheme;
-        while (authority_end < length && input[authority_end] != '/' &&
-               input[authority_end] != '#') ++authority_end;
-        if (authority_end == scheme) return REIST_HTML_INVALID;
-        const char *canonical = scheme == 8U ? "https://" : "http://";
-        int status = url_copy(output, capacity, &used, canonical, scheme);
-        return status == REIST_HTML_OK
-            ? url_copy(output, capacity, &used, input + scheme,
-                       length - scheme) : status;
+    if (cursor + 1U < length && text[cursor] == '/' && text[cursor + 1U] == '/') {
+        parts->has_authority = 1U;
+        cursor += 2U;
+        parts->authority_start = cursor;
+        while (cursor < length && text[cursor] != '/' &&
+               text[cursor] != '?' && text[cursor] != '#') {
+            if (text[cursor] == '@') return REIST_HTML_INVALID;
+            ++cursor;
+        }
+        parts->authority_end = cursor;
+        if (parts->authority_start == cursor) return REIST_HTML_INVALID;
     }
-    if (input[0U] == '/' || input[0U] == '#')
-        return url_copy(output, capacity, &used, input, length);
-    for (size_t index = 0U; index < length; ++index)
-        if (input[index] == ':') return REIST_HTML_INVALID;
-    int status = url_copy(output, capacity, &used, "https://", 8U);
-    return status == REIST_HTML_OK
-        ? url_copy(output, capacity, &used, input, length) : status;
+    if (parts->network && !parts->has_authority) return REIST_HTML_INVALID;
+    parts->path_start = cursor;
+    while (cursor < length && text[cursor] != '?' && text[cursor] != '#') ++cursor;
+    parts->path_end = cursor;
+    if (cursor < length && text[cursor] == '?') {
+        parts->has_query = 1U;
+        parts->query_start = ++cursor;
+        while (cursor < length && text[cursor] != '#') ++cursor;
+    }
+    parts->fragment_start = cursor;
+    if (cursor < length && text[cursor] == '#') {
+        parts->has_fragment = 1U;
+        parts->fragment_start = cursor + 1U;
+    }
+    return 0;
+}
+
+static size_t query_end(const uri_parts_t *p) {
+    return p->has_fragment ? p->fragment_start - 1U : p->length;
+}
+
+static int normalized_path(const char *path, size_t length,
+                            char *output, size_t capacity, size_t *used) {
+    /* RFC dot segments affect only the path, never query/fragment bytes.
+     * Preserve empty segments (double slashes) and terminal directory slash. */
+    size_t marks[REIST_HTML_HREF_CAPACITY];
+    size_t count = 0U, cursor = 0U;
+    if (length == 0U) return 0;
+    if (path[0] != '/') return REIST_HTML_INVALID;
+    if (url_copy(output, capacity, used, "/", 1U) != 0) return REIST_HTML_CAPACITY;
+    cursor = 1U;
+    while (cursor <= length) {
+        size_t end = cursor;
+        while (end < length && path[end] != '/') ++end;
+        size_t n = end - cursor;
+        if (n == 1U && path[cursor] == '.') {
+            /* Dropped; the separator already present preserves a trailing /. */
+        } else if (n == 2U && path[cursor] == '.' && path[cursor + 1U] == '.') {
+            if (count != 0U) { *used = marks[--count]; output[*used] = '\0'; }
+        } else {
+            marks[count++] = *used;
+            int status = url_copy(output, capacity, used, path + cursor, n);
+            if (status != 0) return status;
+            if (end < length && url_copy(output, capacity, used, "/", 1U) != 0)
+                return REIST_HTML_CAPACITY;
+        }
+        if (end == length) break;
+        cursor = end + 1U;
+    }
+    return 0;
 }
 
 int reist_html_url_resolve(const char *base, const char *reference,
                            char *output, size_t capacity) {
     if (base == 0 || reference == 0 || output == 0 || capacity < 2U)
         return REIST_HTML_INVALID;
-    output[0U] = '\0';
-    size_t base_length = text_length(base, REIST_HTML_HREF_CAPACITY);
-    size_t reference_length = text_length(
-        reference, REIST_HTML_HREF_CAPACITY);
-    if (base_length == 0U || base_length >= REIST_HTML_HREF_CAPACITY ||
-        reference_length == 0U ||
-        reference_length >= REIST_HTML_HREF_CAPACITY)
-        return REIST_HTML_INVALID;
+    uri_parts_t b, r;
+    int status = split_uri(base, &b);
+    if (status == 0) status = split_uri(reference, &r);
+    if (status != 0 || b.length == 0U ||
+        (!b.network && (b.has_authority || base[0] != '/'))) {
+        output[0] = '\0'; return status != 0 ? status : REIST_HTML_INVALID;
+    }
+    char candidate[REIST_HTML_HREF_CAPACITY] = {0};
+    char path[REIST_HTML_HREF_CAPACITY] = {0};
+    size_t used = 0U, path_used = 0U;
+    uint8_t network = r.network || b.network;
+    if (r.has_authority && !network) { output[0] = '\0'; return REIST_HTML_INVALID; }
+    if (network) {
+        const char *scheme = r.network ? reference : base;
+        size_t scheme_length = r.network ? r.scheme_end : b.scheme_end;
+        const char *canonical = scheme_length == 6U ? "https:" : "http:";
+        (void)scheme;
+        status = url_copy(candidate, sizeof(candidate), &used, canonical, scheme_length);
+        if (status == 0) status = url_copy(candidate, sizeof(candidate), &used, "//", 2U);
+        const uri_parts_t *authority = r.has_authority ? &r : &b;
+        const char *source = r.has_authority ? reference : base;
+        if (status == 0)
+            status = url_copy(candidate, sizeof(candidate), &used,
+                source + authority->authority_start,
+                authority->authority_end - authority->authority_start);
+    }
+    const char *query_source = reference;
+    const uri_parts_t *query = &r;
+    if (r.path_start == r.path_end && !r.has_authority && !r.network) {
+        status = status == 0 ? url_copy(path, sizeof(path), &path_used,
+            base + b.path_start, b.path_end - b.path_start) : status;
+        if (!r.has_query) { query_source = base; query = &b; }
+    } else if (r.has_authority || reference[r.path_start] == '/') {
+        if (status == 0) status = url_copy(path, sizeof(path), &path_used,
+            reference + r.path_start, r.path_end - r.path_start);
+    } else {
+        size_t directory_end = b.path_end;
+        while (directory_end > b.path_start && base[directory_end - 1U] != '/')
+            --directory_end;
+        if (directory_end == b.path_start && network)
+            status = status == 0 ? url_copy(path, sizeof(path), &path_used, "/", 1U) : status;
+        else if (status == 0) status = url_copy(path, sizeof(path), &path_used,
+            base + b.path_start, directory_end - b.path_start);
+        if (status == 0) status = url_copy(path, sizeof(path), &path_used,
+            reference + r.path_start, r.path_end - r.path_start);
+    }
+    if (status == 0) status = normalized_path(path, path_used, candidate, sizeof(candidate), &used);
+    if (status == 0 && query->has_query) {
+        status = url_copy(candidate, sizeof(candidate), &used, "?", 1U);
+        if (status == 0) status = url_copy(candidate, sizeof(candidate), &used,
+            query_source + query->query_start, query_end(query) - query->query_start);
+    }
+    if (status == 0 && r.has_fragment) {
+        status = url_copy(candidate, sizeof(candidate), &used, "#", 1U);
+        if (status == 0) status = url_copy(candidate, sizeof(candidate), &used,
+            reference + r.fragment_start, r.length - r.fragment_start);
+    }
+    output[0] = '\0';
+    size_t published = 0U;
+    if (status == 0) status = url_copy(output, capacity, &published, candidate, used);
+    if (status != 0) output[0] = '\0';
+    return status;
+}
+
+int reist_html_navigation_normalize(const char *input, char *output,
+                                    size_t capacity) {
+    if (input == 0 || output == 0 || capacity < 2U) return REIST_HTML_INVALID;
+    size_t length = text_length(input, REIST_HTML_HREF_CAPACITY);
+    if (length == 0U || length >= REIST_HTML_HREF_CAPACITY) {
+        output[0] = '\0'; return REIST_HTML_INVALID;
+    }
+    char target[REIST_HTML_HREF_CAPACITY] = {0};
     size_t used = 0U;
-    if (prefix_equal(reference, "http://") ||
-        prefix_equal(reference, "https://"))
-        return url_copy(output, capacity, &used, reference, reference_length);
-    for (size_t index = 0U; index < reference_length; ++index)
-        if (reference[index] == ':') return REIST_HTML_INVALID;
-
-    size_t fragmentless = 0U;
-    while (fragmentless < base_length && base[fragmentless] != '#')
-        ++fragmentless;
-    if (reference[0U] == '#') {
-        int status = url_copy(output, capacity, &used, base, fragmentless);
-        return status == 0 ? url_copy(output, capacity, &used, reference,
-                                      reference_length) : status;
-    }
-
-    uint8_t network = prefix_equal(base, "http://") ||
-                      prefix_equal(base, "https://");
-    if (reference[0U] == '/') {
-        if (network) {
-            size_t authority = prefix_equal(base, "https://") ? 8U : 7U;
-            while (authority < fragmentless && base[authority] != '/')
-                ++authority;
-            int status = url_copy(output, capacity, &used, base, authority);
-            return status == 0 ? url_copy(output, capacity, &used, reference,
-                                          reference_length) : status;
+    int status = 0;
+    if (input[0] != '/' && input[0] != '#' &&
+        !prefix_equal(input, "http://") && !prefix_equal(input, "https://")) {
+        /* Schemes are rejected before adding a default; host:port is allowed. */
+        size_t colon = 0U;
+        while (colon < length && input[colon] != ':' && input[colon] != '/') ++colon;
+        if (colon < length && input[colon] == ':') {
+            size_t digit = colon + 1U;
+            while (digit < length && input[digit] >= '0' && input[digit] <= '9') ++digit;
+            if (digit == colon + 1U || (digit < length && input[digit] != '/'))
+                status = REIST_HTML_INVALID;
         }
-        return url_copy(output, capacity, &used, reference, reference_length);
+        if (status == 0) status = url_copy(target, sizeof(target), &used, "https://", 8U);
     }
-
-    size_t directory = fragmentless;
-    while (directory != 0U && base[directory - 1U] != '/') --directory;
-    if (directory == 0U || (!network && base[0U] != '/'))
-        return REIST_HTML_INVALID;
-    int status = url_copy(output, capacity, &used, base, directory);
-    return status == 0 ? url_copy(output, capacity, &used, reference,
-                                  reference_length) : status;
+    if (status == 0) status = url_copy(target, sizeof(target), &used, input, length);
+    if (status != 0) { output[0] = '\0'; return status; }
+    if (input[0] == '#') {
+        uri_parts_t parts;
+        status = split_uri(input, &parts);
+        used = 0U; output[0] = '\0';
+        return status == 0 ? url_copy(output, capacity, &used, input, length) : status;
+    }
+    return reist_html_url_resolve(input[0] == '/' && input[1] != '/' ? "/" :
+                                  "https://invalid.test/", target, output, capacity);
 }

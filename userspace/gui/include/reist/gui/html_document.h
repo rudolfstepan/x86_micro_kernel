@@ -11,12 +11,16 @@
 #define REIST_HTML_HREF_CAPACITY 256U
 #define REIST_HTML_TITLE_CAPACITY 128U
 #define REIST_HTML_NESTING_CAPACITY 32U
+#define REIST_HTML_IMAGE_CAPACITY 16U
+#define REIST_HTML_ANCHOR_CAPACITY 128U
 
 typedef enum reist_html_element_kind {
     REIST_HTML_ELEMENT_TEXT = 1,
     REIST_HTML_ELEMENT_LINE_BREAK,
     REIST_HTML_ELEMENT_PARAGRAPH_BREAK,
-    REIST_HTML_ELEMENT_LIST_MARKER
+    REIST_HTML_ELEMENT_LIST_MARKER,
+    REIST_HTML_ELEMENT_IMAGE,
+    REIST_HTML_ELEMENT_ANCHOR
 } reist_html_element_kind_t;
 
 enum {
@@ -43,6 +47,17 @@ typedef struct reist_html_link {
     char href[REIST_HTML_HREF_CAPACITY];
 } reist_html_link_t;
 
+typedef struct reist_html_image {
+    char source[REIST_HTML_HREF_CAPACITY];
+    char alt[128U];
+    uint16_t width;
+    uint16_t height;
+} reist_html_image_t;
+
+typedef struct reist_html_anchor {
+    char name[128U];
+} reist_html_anchor_t;
+
 typedef struct reist_html_document {
     char title[REIST_HTML_TITLE_CAPACITY];
     char text[REIST_HTML_TEXT_CAPACITY];
@@ -51,6 +66,10 @@ typedef struct reist_html_document {
     uint32_t text_length;
     uint32_t element_count;
     uint32_t link_count;
+    reist_html_image_t images[REIST_HTML_IMAGE_CAPACITY];
+    reist_html_anchor_t anchors[REIST_HTML_ANCHOR_CAPACITY];
+    uint32_t image_count;
+    uint32_t anchor_count;
 } reist_html_document_t;
 
 enum {

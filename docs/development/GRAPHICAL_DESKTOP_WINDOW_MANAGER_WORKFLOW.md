@@ -779,7 +779,7 @@ getrennt, weil nur sie die sichtbare Interaktion und Flüssigkeit belegt.
 
 `BROWSER.PRG` ist über `browser` in der Ring-3-Shell, das Startmenü sowie die
 Dateizuordnungen `.html` und `.htm` erreichbar. Es rendert Überschriften,
-Absätze, Umbrüche, Hervorhebungen, Vorformatierung, Listen und Links aus einem
+Absätze, Umbrüche, Hervorhebungen, Vorformatierung, Listen, Links und Bilder aus einem
 festkapazitiven Dokumentmodell. Lokale Pfade laufen über READ|STAT-VFS-Objekte;
 HTTP(S) wird ausschließlich vom getrennten `CURL.PRG` in eine begrenzte
 Tempdatei übertragen. Fehler behalten die letzte vollständig validierte Seite.
@@ -788,16 +788,40 @@ begrenztes Ersetzen beim ersten Druck- oder Backspace-Ereignis. Explizite
 `http://`- und `https://`-Adressen bleiben erhalten; ein Hostname ohne Schema
 erhält vor jedem Seiteneffekt automatisch `https://`. Andere explizite
 Schemata sowie Leerraum, leere Autoritäten und überlange Ziele werden
-abgewiesen.
+abgewiesen. Bei bereits fokussierter Adressleiste setzt ein weiterer Klick
+den Cursor. Links/Rechts, Pos1, Ende, Backspace und Entf bearbeiten die URL
+auch mitten im Text. Die Adressleiste hat eine separate retained Ebene;
+Tippen zeichnet nicht die ganze Seite neu.
+
+Die Scrollbar verwendet den vorhandenen GUI-Range-Controller, einschließlich
+Pfeilen, Seitenklick und Ziehen mit erhaltenem Griffpunkt. Links werden erst
+bei passendem Loslassen aktiviert; Wegziehen bricht den Klick ab. Relative
+Pfade mit `..`, Query-Referenzen, schema-relative URLs und `#id`-/`name`-Ziele
+werden aufgelöst. Fragmentnavigation lädt die Seite nicht erneut.
+
+PNG, JPEG, unkomprimiertes 24/32-Bit-BMP und das erste GIF-Bild werden begrenzt
+dekodiert. Höchstens acht Downloads zu je 256 KiB, 1024x768 Quellpixel und
+256x256 Cache-Pixel pro Bild; Fehler zeigen den Alternativtext. Größere
+Abbildungen können durch das begrenzte Cache unscharf sein. HTTP(S)-Downloads
+laufen im separaten CURL-Kind; Esc bricht Laden ab. SVG, WebP, CSS-Layout,
+Formulare, Animation und JavaScript werden nicht unterstützt.
+Ein regulär beendetes CURL-Kind wird auch bei Ladefehlern abgeholt, ohne das
+Browserfenster zu schließen. Lange Seitentitel werden UTF-8-sicher gekürzt;
+sie verhindern nicht mehr das Laden des eigentlichen Inhalts.
+`/htdocs/browser-test.html` nutzt die bereits paketierte GIF-Farbdemo.
 
 Der deterministische Gastnachweis öffnet die paketierte HTML-Seite in einer
 echten Surface, aktiviert einen sichtbaren Link über denselben Hit-Test wie
 Mauseingabe, ersetzt die bestehende Adresse, prüft die HTTPS-Vervollständigung,
-scrollt, lädt erneut und schließt den Client, während Desktop und Shell erhalten
-bleiben:
+prüft unveränderte Dokument-Framezähler beim Tippen, Link-Release und Anker,
+zieht die Scrollbar einschließlich Loslassen außerhalb, zeichnet ein Bild,
+lädt erneut, lässt ein echtes CURL-Kind eine hostlose URL vor Netzwerkzugriff
+ablehnen und prüft dessen Abholung bei erhaltener Seite. Danach schließt der
+Client, während Desktop und Shell erhalten bleiben. Dieser Fehlerpfad ersetzt
+keinen Nachweis erfolgreicher DNS-/HTTPS-Verbindungen im Gast:
 
 ```powershell
-.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser
+.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga
 ```
 
 Skripte sind zunächst inert. Die vorgesehene Erweiterungsgrenze für JavaScript

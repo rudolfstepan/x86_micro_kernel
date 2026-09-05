@@ -792,6 +792,64 @@ Ring-3-Dienst über einen versionierten IPC-/DOM-Adapter hinzukommen; weder
 Browserprozess noch Compositor oder Kernel erhalten dafür eine eingebettete
 Skript-Engine.
 
+R3.6c trennt das Browser-Rendering in eine unveränderliche Pixel-Unterlage
+für Bilder, BASE für Dokumenttext, OVERLAY für Status und HOVER für die
+Adressleiste. Ein geordneter Batch von höchstens 32 Eingaben wird vor dem
+Zeichnen verarbeitet. URL-Cursorbewegungen und Tippen ändern ausschließlich
+HOVER; sie lösen weder Dokumentlayout noch Pixel-Upload aus. Scrollbarwerte
+werden durch den vorhandenen GUI-Range-Controller validiert. Der lokale
+Adapter erhält Fokus, Capture und den ursprünglichen Griffpunkt; ein leerer
+Scrollbereich ist ein deaktiviertes, weiterhin gültiges Range-Modell.
+
+Die gemeinsame Surface-Clientbibliothek behandelt IPC-Rückstau als normalen
+Betriebszustand. Die vier Plätze des Kernelendpoints werden von beiden
+Nachrichtenrichtungen geteilt: ein blockierender Send kann deshalb auf vom
+Compositor gesendete Eingaben warten, die nur der Client abholen kann. Der
+Client versucht zuerst nichtblockierend zu senden, puffert bei Rückstau
+validierte eingehende Ereignisse geordnet im vorhandenen gemeinsamen
+Event-Owner-Speicher und versucht erneut. Ohne abholbare Eingabe schläft er
+eine Millisekunde. Das bisherige Sendebudget von 500 ms sowie eine feste
+Arbeitsobergrenze bleiben erhalten; kein reentranter Event-Dispatch, keine
+neue Kernel-/Surface-ABI und keine verlorenen Close-/Button-Kanten.
+Erschöpfte lokale Ereigniskapazität und ungültige Protokollnachrichten bleiben
+explizite Fehler, keine stillschweigende Fortsetzung beschädigter Zustände.
+
+URL-Referenzen verwenden die Pfad-/Query-/Fragment-Trennung und
+Dot-Segment-Auflösung nach RFC 3986; nicht unterstützte Schemata, Userinfo,
+Leerraum und Backslashes werden vor Transport abgewiesen. Links aktivieren
+erst bei passendem Press/Release, Fragmentziele sind rendererneutrale
+Dokumentanker. Dies ist keine vollständige WHATWG-URL-/HTML5-Implementierung.
+
+Der Browser akzeptiert höchstens 16 Bildbeschreibungen und lädt die ersten
+acht Ressourcen seriell (je 256 KiB, höchstens 1024x768 Quellpixel). Jeder
+Cache-Eintrag hat höchstens 256x256 Pixel; Darstellung berücksichtigt das
+Seitenverhältnis und HTML-Breiten-/Höhenangaben. BMP/GIF verwenden
+libreistimage, PNG/JPEG den quellgepinnten MIT-stb_image-Adapter mit einer
+12-MiB-Arena und zusätzlicher PNG-CRC-Prüfung. Der gesamte Bild-Workspace von
+rund 22 MiB wird einmal vor untrusted Verarbeitung reserviert und bei
+Admission-Fehler nicht benutzt. Die bestehende 8-MiB-Programmgrenze bleibt
+unverändert. Fehlerhafte oder nicht unterstützte Bilder ergeben Alternativtext.
+
+Es existiert höchstens ein CURL-Kind mit geprüftem PID-/Generation-/Parent-
+Bezug. Der Browser pollt begrenzt und ruft wait nur für Zombies auf;
+`PROCESS_IDENTITY` liefert ausschließlich lebende Identitäten. Ein vom Browser
+gestartetes, noch nicht abgeholtes Kind bleibt nach Kernelvertrag bis zum
+`wait` dieses Parents an PID und Slot gebunden. Der Browser prüft deshalb
+zuerst Parent/PID/Status und verlangt nur bei lebenden Kindern die Generation.
+Ein Exit zwischen Status- und Identitätsabfrage wird einmal nachgeprüft; ein
+Exit vor dem ersten Identitätssnapshot ist ebenfalls abholbar. Fehlgeschlagene
+Downloads erhalten Fenster und bisherige Seite. Fremde oder verlorene
+Identitäten erteilen keine Kill-/Wait-Autorität.
+Downloadbudget 10 Sekunden pro Kind, Startbudget 30 Sekunden für die Bildserie.
+Schließen und Navigation brechen alte Jobs ab und geben Ressourcen frei.
+Netzwerkdokumente können Bildreferenzen nicht in lokale Leseautorität wandeln;
+HTTPS-Bilder dürfen nicht still auf HTTP zurückfallen. CSS, Formulare,
+Animation und JavaScript bleiben außerhalb dieses Schnitts. Die Laufzeit-
+Abnahme des Kandidaten wird separat im aktuellen Arbeitsstand festgehalten.
+Lange HTML-Titel werden als optionale Anzeigemetadaten auf einen gültigen
+UTF-8-Präfix begrenzt (Parser 127, Surface 39 Bytes), nicht als Dokumentfehler
+behandelt. Die UTF-8-Validierung des restlichen Eingangs bleibt unverändert.
+
 Notepad hält Familie und Größe ausschließlich pro Prozess. Nur Dokumentglyphen,
 Cursorzelle, sichtbare Zeilen und Spalten sowie daraus abgeleitete Scrollranges
 verwenden die ausgewählten Metriken; Menüs, Dialoge und Status bleiben in der

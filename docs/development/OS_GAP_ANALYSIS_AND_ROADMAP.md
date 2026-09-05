@@ -3352,11 +3352,16 @@ Nutzerwunsch abgeschlossen. Er bleibt als eigener Ring-3-Surface-Prozess außerh
 Kerns, verwendet `CURL.PRG` als getrennte Transportdomäne und begrenzt HTML-
 Eingabe, Token, Dokumentelemente, Links, Verschachtelung, Layout und Rendering
 fest. Der erste Schnitt unterstützt semantischen Text und Links; Skripte sind
-inert, CSS, Formulare, Bilder und allgemeine HTML5-Kompatibilität fehlen. Eine
+inert, CSS, Formulare, Bilder und allgemeine HTML5-Kompatibilität fehlten in
+diesem ersten Schnitt. Eine
 spätere JavaScript-Laufzeit bleibt ein eigener quota- und generationgebundener
 Ring-3-Dienst hinter einer versionierten IPC-/DOM-Adaptergrenze. Targeted-,
 QEMU-Framebuffer-Paket- und realer Surface-Browser-Lauf sind bestanden;
-`active_id` ist leer.
+damals war `active_id` leer. Das auf Nutzerwunsch aktive Folgepaket
+`R3.6c-browser-interaction-and-images` ergänzt getrennte URL-Zeichnung,
+Cursorbearbeitung, standardnahe Scrollbarinteraktion, Link-Release und
+Fragmentziele sowie begrenzte PNG/JPEG/BMP/GIF-Bilder. Seine aktuelle Abnahme
+steht in `CURRENT_WORK.md`; die früheren Nachweise ersetzen sie nicht.
 
 **N1 abgeschlossen:** `N1-notepad-readonly-vfs` migriert genau den read-only
 Dokument-Ladepfad des Notepads auf generationgebundene Storage-Service-Objekte

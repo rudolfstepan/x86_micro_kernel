@@ -1,3 +1,6 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
@@ -49,6 +52,20 @@ static void coalesces_long_text(void) {
            REIST_HTML_OK);
     assert(document.text_length == sizeof(markup));
     assert(document.element_count == 1U);
+}
+
+static void truncates_optional_title_at_utf8_boundary(void) {
+    uint8_t markup[REIST_HTML_TITLE_CAPACITY + 96U];
+    const size_t prefix = REIST_HTML_TITLE_CAPACITY - 2U;
+    memcpy(markup, "<title>", 7U);
+    memset(markup + 7U, 'a', prefix);
+    static const char tail[] = "\xe2\x82\xac suffix</title><p>Visible body</p>";
+    memcpy(markup + 7U + prefix, tail, sizeof(tail));
+    assert(reist_html_document_parse(markup, 7U + prefix + sizeof(tail) - 1U, &document) == REIST_HTML_OK);
+    assert(strlen(document.title) == prefix && text_contains("Visible body"));
+    /* A truncated title does not hide malformed input from validation. */
+    markup[10U + prefix] = 0xC0U;
+    assert(reist_html_document_parse(markup, 7U + prefix + sizeof(tail) - 1U, &document) == REIST_HTML_ENCODING);
 }
 
 static void rejects_invalid_input(void) {
@@ -104,8 +121,26 @@ static void resolves_navigation_targets(void) {
 }
 
 int main(void) {
+    static const struct { const char *base, *ref, *expected; } cases[] = {
+        {"https://example.test", "a", "https://example.test/a"},
+        {"https://example.test/a/b?old#x", "../c?x=1#z", "https://example.test/c?x=1#z"},
+        {"https://example.test/a/b?old#x", "?new", "https://example.test/a/b?new"},
+        {"https://example.test/a/b?old#x", "", "https://example.test/a/b?old"},
+        {"https://example.test/a/b", "//cdn.test/p.png", "https://cdn.test/p.png"},
+        {"https://example.test/a/b", "./c/../d", "https://example.test/a/d"},
+        {"/htdocs/index.html", "../assets/p.bmp", "/assets/p.bmp"},
+        {"https://example.test/a", "#details", "https://example.test/a#details"},
+        {"https://example.test/a", "/q?next=https://b.test", "https://example.test/q?next=https://b.test"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        char resolved[256];
+        assert(reist_html_url_resolve(cases[i].base, cases[i].ref,
+                                      resolved, sizeof(resolved)) == 0);
+        assert(strcmp(resolved, cases[i].expected) == 0);
+    }
     semantic_document();
     coalesces_long_text();
+    truncates_optional_title_at_utf8_boundary();
     rejects_invalid_input();
     resolves_navigation_targets();
     return 0;

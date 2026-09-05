@@ -16,6 +16,8 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Make browser input, navigation, scrolling and bounded images usable"
+user_checkpoint = "2026-09-05: After being informed of the failed QEMU desktop-start gate, the user confirms visibly improved browser stability and explicitly requests committing the current state before any larger browser redesign. Save a local checkpoint only; keep this package active, retain every frozen gate and open runtime proof, and do not claim acceptance or start the next implementation package. The supplied Google screenshot shows a rendered 301 response, documenting missing automatic redirect handling for future browser scope."
+repair_extension = "User-approved 2026-09-05 Surface client backpressure repair: the shared four-message bidirectional IPC queue can be filled by desktop input while a browser buffer operation blocks in send. Keep the kernel and public ABI unchanged. The Ring-3 Surface client must try a nonblocking send, preserve validated incoming events in its existing bounded shared deferred queue, and retry only within the existing 500-ms send budget with bounded sleeping when no input can be drained. Add real-client host regressions for full input queues, ordered delivery, shared clients, protocol failures and exhausted capacity/deadlines. Existing frozen gates remain required."
 scope = "User-directed cohesive Ring-3 browser repair: isolate address/status retained painting from document painting, batch bounded input before paint, implement cursor editing, use the existing GUI range controller with standard scrollbar track/thumb/arrow behavior, activate links only on matching release and resolve RFC 3986 relative/query/fragment references including same-document anchors. Add bounded img metadata, alt fallback and aspect-preserving images through existing Surface buffers, reusing BMP/GIF decoders and pinned MIT stb_image for PNG/JPEG in a fixed-workspace browser-only adapter. Downloads remain separate CURL.PRG children with explicit byte, count and deadline budgets, generation checks and cleanup; malformed or exhausted image resources cannot replace the prior valid document or grant network/local-file authority. Preserve inert scripts and the later versioned IPC adapter to a separate quota-bound generation-scoped Ring-3 JavaScript service. No CSS engine, forms, video, animation playback, general HTML5 compatibility, kernel driver, syscall or Surface ABI expansion."
 allowed_files = [
   "automation/reist-s03b.toml",
@@ -29,6 +31,9 @@ allowed_files = [
   "userspace/gui/apps/browser/compat/assert.h",
   "userspace/gui/include/reist/gui/html_document.h",
   "userspace/gui/lib/html_document.c",
+  "userspace/gui/lib/surface_client.c",
+  "test/test_gui_surface_source.py",
+  "test/test_gui_surface_client_host.c",
   "scripts/build_system_programs.py",
   "scripts/build-windows.ps1",
   "scripts/run_qemu_runtime_desktop.py",

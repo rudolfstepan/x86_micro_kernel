@@ -65,19 +65,6 @@ static void prepare(reist_gui_surface_message_t *message, uint32_t type,
     if (client) message->surface = client->surface;
 }
 
-static int send_message(reist_gui_surface_client_t *client,
-                        const reist_gui_surface_message_t *message) {
-    if (!valid_client(client) || !message) return -22;
-    x86os_ipc_message_t ipc;
-    clear_bytes(&ipc, sizeof(ipc));
-    ipc.version = X86OS_IPC_MESSAGE_VERSION;
-    ipc.struct_size = sizeof(ipc);
-    ipc.length = sizeof(*message);
-    const uint8_t *source = (const uint8_t *)message;
-    for (uint32_t i = 0U; i < sizeof(*message); ++i) ipc.payload[i] = source[i];
-    return x86os_ipc_send_timeout(client->endpoint, &ipc, 500U);
-}
-
 static int receive_wire_message(reist_gui_surface_client_t *client,
                                 reist_gui_surface_message_t *message,
                                 uint32_t timeout_ms) {
@@ -163,6 +150,62 @@ static int asynchronous_paint_error(
         response->surface.generation != client->surface.generation)
         return 0;
     return (int32_t)response->flags;
+}
+
+static int send_message(reist_gui_surface_client_t *client,
+                        const reist_gui_surface_message_t *message) {
+    if (!valid_client(client) || !message) return -22;
+    x86os_ipc_message_t ipc;
+    clear_bytes(&ipc, sizeof(ipc));
+    ipc.version = X86OS_IPC_MESSAGE_VERSION;
+    ipc.struct_size = sizeof(ipc);
+    ipc.length = sizeof(*message);
+    const uint8_t *source = (const uint8_t *)message;
+    for (uint32_t i = 0U; i < sizeof(*message); ++i) ipc.payload[i] = source[i];
+    int result = x86os_ipc_send_timeout(client->endpoint, &ipc, 0U);
+    if (result != -11) return result;
+
+    /* The endpoint has one shared bidirectional queue. When desktop input
+     * fills it, only this client can free space: a blocking send would wait
+     * on the peer even though the peer cannot receive its own messages.
+     * Preserve input (including other Surfaces on this endpoint) in the
+     * existing ordered event-owner queue; never dispatch reentrantly here.
+     * The fast path needs no clock syscall. Backpressure retains the former
+     * 500-ms send budget, plus a work cap if the clock stops progressing. */
+    uint64_t started_ms = 0U;
+    result = x86os_monotonic_ms(&started_ms);
+    if (result != 0) return result;
+    for (uint32_t attempt = 0U;
+         attempt < 500U + REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++attempt) {
+        uint64_t now_ms = 0U;
+        result = x86os_monotonic_ms(&now_ms);
+        if (result != 0) return result;
+        if (now_ms < started_ms) return -5;
+        if (now_ms - started_ms >= 500U) return -110;
+        reist_gui_surface_client_t *queue = client->event_owner;
+        if (queue == 0 || queue->deferred_count >=
+                REIST_GUI_SURFACE_MAX_PENDING_EVENTS) return -75;
+        reist_gui_surface_message_t incoming;
+        result = receive_wire_message(client, &incoming, 0U);
+        if (result == 0) {
+            int error = asynchronous_paint_error(client, &incoming);
+            if (error != 0) return error;
+            if (!deferred_response_type(incoming.type)) return -84;
+            result = defer_message(client, &incoming);
+            if (result != 0) return result;
+        } else if (result == -11) {
+            /* Queue contains our requests, so let the broker consume them. */
+            result = x86os_sleep_ms(1U);
+            if (result != 0) return result;
+        } else return result;
+        result = x86os_monotonic_ms(&now_ms);
+        if (result != 0) return result;
+        if (now_ms < started_ms) return -5;
+        if (now_ms - started_ms >= 500U) return -110;
+        result = x86os_ipc_send_timeout(client->endpoint, &ipc, 0U);
+        if (result != -11) return result;
+    }
+    return -110;
 }
 
 static int transact_response(reist_gui_surface_client_t *client,

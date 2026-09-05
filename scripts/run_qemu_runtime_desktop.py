@@ -1524,16 +1524,25 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             "DESKTOP_BROWSER_OK", "BROWSER_RENDER_OK",
                             "BROWSER_ADDRESS_REPLACE_OK",
                             "BROWSER_HTTPS_DEFAULT_OK",
+                            "BROWSER_ADDRESS_CHROME_ONLY_OK",
+                            "BROWSER_IMAGE_PAINTED", "BROWSER_ANCHOR_OK",
+                            "BROWSER_LINK_RELEASE_OK", "BROWSER_SCROLLBAR_CAPTURE_OK",
                             "BROWSER_SCROLL_OK", "BROWSER_LINK_OK",
                             "BROWSER_RELOAD_OK", "BROWSER_RELOAD_PAINTED",
+                            "BROWSER_TRANSPORT_EXIT_OK",
+                            "BROWSER_SCROLL_CLIP_OK",
                         )
                         if all(marker in probe_text for marker in required):
                             capture_screenshot(process, screenshot, deadline)
                             break
                         time.sleep(0.02)
                     else:
+                        missing = [marker for marker in required
+                                   if marker not in "".join(transcript)]
                         raise RuntimeError(
-                            "Browser did not render, scroll, follow and reload"
+                            "Browser did not render, scroll, follow and reload; "
+                            f"missing={missing}; guest tail:\n" +
+                            "".join(transcript)[-12000:].replace("\r", "")
                         )
                     while time.monotonic() < deadline:
                         drain(output, transcript)
@@ -1688,6 +1697,10 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         tail = "".join(transcript)[-8000:].replace("\r", "")
         raise RuntimeError(f"DESKTOP_OK marker not observed; guest tail:\n{tail}")
     finally:
+        if browser_probe:
+            drain(output, transcript)
+            screenshot.with_suffix(".browser.log").write_text(
+                "".join(transcript), encoding="utf-8")
         if dns_connection is not None:
             dns_connection.close()
         stop_process(process)

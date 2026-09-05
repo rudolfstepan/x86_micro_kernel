@@ -1,32 +1,23 @@
-/**
- * @file main.c
- * @brief Bounded semantic HTML browser implemented as a Ring-3 Surface client.
- *
- * Network and TLS authority stay in the separately restartable CURL.PRG child.
- * This process owns only a Surface, one completed VFS object at a time and its
- * fixed-capacity renderer-neutral document/layout state.  Script elements are
- * inert; a future JavaScript engine must cross a versioned service boundary.
- */
+/* Ring-3 browser: bounded semantic HTML, immutable image underlay and retained
+ * text/chrome. CURL alone owns network/TLS authority. Scripts remain inert. */
 #include "x86os.h"
 #include "reist/gui/font_catalog.h"
-#include "reist/gui/html_document.h"
 #include "reist/gui/surface_client.h"
 #include "reist/vfs_file_client.h"
-
+#include "browser_model.h"
+#include "browser_images.h"
 #include <stddef.h>
 #include <stdint.h>
 
 #define BROWSER_DOCUMENT_LIMIT 65536U
 #define BROWSER_URL_CAPACITY 256U
-#define BROWSER_LAYOUT_LINE_CAPACITY 2048U
 #define BROWSER_LINK_HIT_CAPACITY 128U
 #define BROWSER_READ_CHUNK 4096U
 #define BROWSER_CREATE_ATTEMPTS 250U
-#define BROWSER_PAINT_ATTEMPTS 20U
 #define BROWSER_VISIBLE_RUN_BUDGET 150U
-#define BROWSER_CONTENT_TOP 76U
-#define BROWSER_STATUS_HEIGHT 22U
-#define BROWSER_BODY_FONT 16U
+#define BROWSER_EVENT_BATCH_LIMIT 32U
+#define BROWSER_FETCH_DEADLINE_MS 10000U
+#define BROWSER_PAGE_IMAGE_DEADLINE_MS 30000U
 #define BROWSER_KEY_ESCAPE 0x101U
 #define BROWSER_KEY_UP 0x102U
 #define BROWSER_KEY_DOWN 0x103U
@@ -34,50 +25,37 @@
 #define BROWSER_KEY_END 0x107U
 #define BROWSER_KEY_PAGE_UP 0x109U
 #define BROWSER_KEY_PAGE_DOWN 0x10AU
-
-typedef struct browser_layout_run {
-    uint32_t kind;
-    uint32_t text_offset;
-    uint32_t text_length;
-    uint32_t style;
-    uint32_t link_index;
-    int32_t x;
-    uint32_t y;
-    uint32_t width;
-    uint32_t height;
-} browser_layout_run_t;
-
-typedef struct browser_layout {
-    browser_layout_run_t runs[BROWSER_LAYOUT_LINE_CAPACITY];
-    uint32_t run_count;
-    uint32_t total_height;
-} browser_layout_t;
-
 typedef struct browser_link_hit {
     reist_gui_rect_t rect;
     uint32_t link_index;
 } browser_link_hit_t;
-
 typedef struct browser_state {
-    uint32_t active;
-    uint32_t loaded;
-    uint32_t redraw;
-    uint32_t exit_requested;
-    uint32_t address_focused;
-    uint32_t address_replace_pending;
-    uint32_t address_length;
-    uint32_t scroll_y;
-    uint32_t probe;
-    uint32_t probe_phase;
-    char address[BROWSER_URL_CAPACITY];
-    char active_url[BROWSER_URL_CAPACITY];
-    char temporary_path[40U];
-    char status[64U];
+    uint32_t active, loaded, redraw, chrome_redraw, status_redraw, exit_requested;
+    uint32_t address_focused, address_replace_pending, address_length, address_cursor, address_start;
+    uint32_t scroll_y, armed_link, probe, probe_phase;
+    uint32_t buffer_id, buffer_generation, body_frames, chrome_frames;
+    browser_scrollbar_t scrollbar;
+    char address[BROWSER_URL_CAPACITY], active_url[BROWSER_URL_CAPACITY];
+    char temporary_path[40U], status[64U];
     browser_link_hit_t hits[BROWSER_LINK_HIT_CAPACITY];
     uint32_t hit_count;
+    char pending_url[BROWSER_URL_CAPACITY], job_url[BROWSER_URL_CAPACITY];
+    uint32_t pending, job_kind, job_image, image_next, image_deadline, job_deadline;
+    uint32_t job_cancelled, child_generation, poll_at;
+    int child_pid;
 } browser_state_t;
-
 static uint8_t document_bytes[BROWSER_DOCUMENT_LIMIT];
+static uint8_t image_bytes[BROWSER_IMAGE_INPUT_LIMIT];
+typedef struct browser_workspace {
+    uint32_t decoded[BROWSER_IMAGE_PIXEL_LIMIT];
+    uint32_t surface[REIST_GUI_SURFACE_MAX_WIDTH * REIST_GUI_SURFACE_MAX_HEIGHT];
+    browser_image_slot_t images[2U][BROWSER_IMAGE_CACHE_COUNT];
+    uint64_t arena[BROWSER_DECODE_ARENA_BYTES / sizeof(uint64_t)];
+} browser_workspace_t;
+static browser_workspace_t *workspace;
+#define decoded_pixels (workspace->decoded)
+#define surface_pixels (workspace->surface)
+#define image_cache (workspace->images)
 static reist_html_document_t documents[2U];
 static browser_layout_t layouts[2U];
 
@@ -85,6 +63,12 @@ static size_t bounded_length(const char *text, size_t capacity) {
     size_t length = 0U;
     if (text == 0) return capacity;
     while (length < capacity && text[length] != '\0') ++length;
+    return length;
+}
+
+static size_t utf8_prefix_length(const char *text, size_t maximum) {
+    size_t length = bounded_length(text, maximum);
+    while (length > 0U && ((uint8_t)text[length] & 0xC0U) == 0x80U) --length;
     return length;
 }
 
@@ -119,131 +103,6 @@ static int copy_text(char *target, size_t capacity, const char *source) {
     return 0;
 }
 
-static void set_status(browser_state_t *state, const char *status) {
-    if (copy_text(state->status, sizeof(state->status), status) != 0)
-        state->status[0U] = '\0';
-    state->redraw = 1U;
-}
-
-static uint32_t utf8_length(const char *text, uint32_t remaining) {
-    if (remaining == 0U) return 0U;
-    uint8_t first = (uint8_t)text[0U];
-    if (first < 0x80U) return 1U;
-    if (first >= 0xC2U && first <= 0xDFU && remaining >= 2U) return 2U;
-    if (first >= 0xE0U && first <= 0xEFU && remaining >= 3U) return 3U;
-    return remaining >= 4U ? 4U : remaining;
-}
-
-static uint32_t font_height(uint32_t style) {
-    if (style & REIST_HTML_STYLE_HEADING_1) return 24U;
-    if (style & REIST_HTML_STYLE_HEADING_2) return 20U;
-    if (style & REIST_HTML_STYLE_HEADING_3) return 18U;
-    return BROWSER_BODY_FONT;
-}
-
-static uint32_t font_cell(uint32_t height) {
-    return height > 16U ? (height + 1U) / 2U : 8U;
-}
-
-static int add_run(browser_layout_t *layout, uint32_t kind,
-                   uint32_t offset, uint32_t length, uint32_t style,
-                   uint32_t link_index, int32_t x, uint32_t y,
-                   uint32_t width, uint32_t height) {
-    if (layout->run_count >= BROWSER_LAYOUT_LINE_CAPACITY) return -28;
-    if (kind == REIST_HTML_ELEMENT_TEXT && layout->run_count != 0U) {
-        browser_layout_run_t *previous = &layout->runs[layout->run_count - 1U];
-        if (previous->kind == kind && previous->style == style &&
-            previous->link_index == link_index && previous->y == y &&
-            previous->x + (int32_t)previous->width == x &&
-            previous->text_offset + previous->text_length == offset &&
-            previous->text_length + length <
-                REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY) {
-            previous->text_length += length;
-            previous->width += width;
-            return 0;
-        }
-    }
-    layout->runs[layout->run_count++] = (browser_layout_run_t){
-        kind, offset, length, style, link_index, x, y, width, height};
-    return 0;
-}
-
-static void next_line(uint32_t *x, uint32_t *y, uint32_t *line_height,
-                      uint32_t indent) {
-    *y += *line_height;
-    *x = 16U + indent;
-    *line_height = BROWSER_BODY_FONT + 2U;
-}
-
-static int build_layout(const reist_html_document_t *document,
-                        uint32_t width, browser_layout_t *layout) {
-    layout->run_count = 0U;
-    layout->total_height = 0U;
-    uint32_t right = width > 36U ? width - 20U : 17U;
-    uint32_t x = 16U, y = 4U, line_height = BROWSER_BODY_FONT + 2U;
-    uint32_t has_content = 0U;
-    for (uint32_t element_index = 0U;
-         element_index < document->element_count; ++element_index) {
-        const reist_html_element_t *element =
-            &document->elements[element_index];
-        uint32_t indent = element->list_depth > 8U
-            ? 128U : (uint32_t)element->list_depth * 16U;
-        if (element->kind == REIST_HTML_ELEMENT_PARAGRAPH_BREAK) {
-            if (has_content) {
-                next_line(&x, &y, &line_height, 0U);
-                y += 7U;
-            }
-            continue;
-        }
-        if (element->kind == REIST_HTML_ELEMENT_LINE_BREAK) {
-            next_line(&x, &y, &line_height, indent);
-            has_content = 1U;
-            continue;
-        }
-        if (element->kind == REIST_HTML_ELEMENT_LIST_MARKER) {
-            if (x != 16U) next_line(&x, &y, &line_height, indent);
-            x = 16U + indent;
-            if (add_run(layout, element->kind, 0U, element->text_length,
-                        element->style,
-                        UINT32_MAX, (int32_t)x - 20, y, 18U,
-                        BROWSER_BODY_FONT) != 0) return -28;
-            has_content = 1U;
-            continue;
-        }
-        if (element->kind != REIST_HTML_ELEMENT_TEXT ||
-            element->text_offset + element->text_length >
-                document->text_length) return -22;
-        uint32_t height = font_height(element->style);
-        uint32_t cell = font_cell(height);
-        if (x == 16U && indent != 0U) x += indent;
-        if (height + 2U > line_height) line_height = height + 2U;
-        uint32_t consumed = 0U;
-        while (consumed < element->text_length) {
-            const char *scalar = document->text + element->text_offset + consumed;
-            uint32_t scalar_length = utf8_length(
-                scalar, element->text_length - consumed);
-            if ((element->style & REIST_HTML_STYLE_PREFORMATTED) &&
-                scalar_length == 1U && scalar[0U] == '\n') {
-                next_line(&x, &y, &line_height, indent);
-                consumed += scalar_length;
-                continue;
-            }
-            if (x + cell > right && x > 16U + indent)
-                next_line(&x, &y, &line_height, indent);
-            if (height + 2U > line_height) line_height = height + 2U;
-            if (add_run(layout, element->kind,
-                        element->text_offset + consumed, scalar_length,
-                        element->style, element->link_index, (int32_t)x, y,
-                        cell, height) != 0) return -28;
-            x += cell;
-            consumed += scalar_length;
-            has_content = 1U;
-        }
-    }
-    layout->total_height = y + line_height + 4U;
-    return 0;
-}
-
 static int make_temporary_path(browser_state_t *state) {
     static const char prefix[] = "/browser-";
     static const char suffix[] = ".tmp";
@@ -272,21 +131,7 @@ static int strip_fragment(const char *url, char *target, size_t capacity) {
     return used == 0U ? -22 : 0;
 }
 
-static int fetch_network(browser_state_t *state, const char *url) {
-    (void)x86os_unlink(state->temporary_path);
-    const char *arguments[] = {
-        "/usr/bin/curl.prg", "-o", state->temporary_path,
-        "--max-bytes", "65536", url};
-    int pid = x86os_spawnv("/usr/bin/curl.prg", 6, arguments);
-    int child_status = 1;
-    if (pid < 0 || x86os_wait(pid, &child_status) != pid || child_status != 0) {
-        (void)x86os_unlink(state->temporary_path);
-        return -5;
-    }
-    return 0;
-}
-
-static int read_document(const char *path, uint32_t *length) {
+static int read_file(const char *path, uint8_t *bytes, uint32_t limit, uint32_t *length) {
     reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
     int status = reist_vfs_file_open_rights(
         path, REIST_VFS_FILE_DEFAULT_TIMEOUT_MS,
@@ -295,13 +140,13 @@ static int read_document(const char *path, uint32_t *length) {
     x86os_file_info_t info;
     status = reist_vfs_file_fstat(handle, &info);
     if (status == 0 && (info.type != X86OS_FILE || info.size == 0U ||
-                        info.size > BROWSER_DOCUMENT_LIMIT)) status = -27;
+                        info.size > limit)) status = -27;
     uint32_t used = 0U;
     while (status == 0 && used < info.size) {
         uint32_t amount = info.size - used;
         if (amount > BROWSER_READ_CHUNK) amount = BROWSER_READ_CHUNK;
         int count = reist_vfs_file_read_bulk(
-            handle, document_bytes + used, amount);
+            handle, bytes + used, amount);
         if (count <= 0 || (uint32_t)count > amount) {
             status = count < 0 ? count : -5;
             break;
@@ -313,67 +158,6 @@ static int read_document(const char *path, uint32_t *length) {
     if (status == 0 && used != info.size) status = -5;
     if (status == 0) *length = used;
     return status;
-}
-
-static int load_candidate(browser_state_t *state,
-                          reist_gui_surface_client_t *client,
-                          const char *target) {
-    char fetch_target[BROWSER_URL_CAPACITY];
-    if (strip_fragment(target, fetch_target, sizeof(fetch_target)) != 0)
-        return -22;
-    uint8_t network = text_prefix(fetch_target, "http://") ||
-                      text_prefix(fetch_target, "https://");
-    int status = network ? fetch_network(state, fetch_target) : 0;
-    const char *path = network ? state->temporary_path : fetch_target;
-    uint32_t length = 0U;
-    if (status == 0) status = read_document(path, &length);
-    uint32_t candidate = state->active ^ 1U;
-    if (status == 0)
-        status = reist_html_document_parse(
-            document_bytes, length, &documents[candidate]);
-    if (status == 0)
-        status = build_layout(
-            &documents[candidate], client->width, &layouts[candidate]);
-    if (network) (void)x86os_unlink(state->temporary_path);
-    if (status != 0) return status;
-    if (copy_text(state->active_url, sizeof(state->active_url), target) != 0 ||
-        copy_text(state->address, sizeof(state->address), target) != 0)
-        return -28;
-    state->address_length = (uint32_t)bounded_length(
-        state->address, sizeof(state->address));
-    state->active = candidate;
-    state->loaded = 1U;
-    state->scroll_y = 0U;
-    return 0;
-}
-
-static int navigate(browser_state_t *state,
-                    reist_gui_surface_client_t *client,
-                    const char *target) {
-    char normalized[BROWSER_URL_CAPACITY];
-    int normalize_status;
-    if (target != 0 && target[0U] == '#' && state->loaded)
-        normalize_status = reist_html_url_resolve(
-            state->active_url, target, normalized, sizeof(normalized));
-    else
-        normalize_status = reist_html_navigation_normalize(
-            target, normalized, sizeof(normalized));
-    if (normalize_status != 0) {
-        set_status(state, "Adresse nicht unterstuetzt");
-        return normalize_status;
-    }
-    set_status(state, "Lade Dokument ...");
-    int status = load_candidate(state, client, normalized);
-    if (status != 0) {
-        set_status(state, "Laden abgelehnt - bisherige Seite bleibt");
-        return status;
-    }
-    const char *title = documents[state->active].title[0U] != '\0'
-        ? documents[state->active].title : "REIST Web";
-    (void)reist_gui_surface_client_set_title(client, title);
-    set_status(state, "Bereit - HTML-Teilsatz, Skripte inert");
-    x86os_puts("BROWSER_RENDER_OK\n");
-    return 0;
 }
 
 static uint32_t viewport_height(const reist_gui_surface_client_t *client) {
@@ -397,8 +181,18 @@ static void set_scroll(browser_state_t *state,
     if ((uint64_t)desired > maximum) desired = maximum;
     if (state->scroll_y != (uint32_t)desired) {
         state->scroll_y = (uint32_t)desired;
+        state->armed_link = UINT32_MAX;
+        state->hit_count = 0U;
         state->redraw = 1U;
     }
+}
+
+static int render_result(const char *stage, int result) {
+    if (result != 0) {
+        x86os_puts("BROWSER_RENDER_ERROR stage="); x86os_puts(stage);
+        x86os_puts(" code="); x86os_print_number(result); x86os_puts("\n");
+    }
+    return result;
 }
 
 static int paint_text(reist_gui_surface_client_t *client,
@@ -407,42 +201,324 @@ static int paint_text(reist_gui_surface_client_t *client,
                       uint32_t foreground, uint32_t background,
                       uint32_t height) {
     if (length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY) return -28;
-    return reist_gui_surface_client_paint_font_text(
+    int result = reist_gui_surface_client_paint_font_text(
         client, x, y, width, text, length, foreground, background,
         REIST_GUI_FONT_FAMILY_UNIFONT, height);
+    if (result != 0) {
+        x86os_puts("BROWSER_TEXT_ERROR x="); x86os_print_number(x);
+        x86os_puts(" y="); x86os_print_number(y);
+        x86os_puts(" w="); x86os_print_number((int)width);
+        x86os_puts(" h="); x86os_print_number((int)height);
+        x86os_puts(" bytes="); x86os_print_number((int)length);
+        x86os_puts(" code="); x86os_print_number(result); x86os_puts("\n");
+    }
+    return result;
 }
 
-static int render(browser_state_t *state,
-                  reist_gui_surface_client_t *client) {
-    static const uint32_t chrome = 0x00D4D0C8U;
-    static const uint32_t white = 0x00FFFFFFU;
-    static const uint32_t dark = 0x00202020U;
-    static const uint32_t link = 0x000000CCU;
-    static const uint32_t heading = 0x00203070U;
-    static const uint32_t muted = 0x00606060U;
-    if (reist_gui_surface_client_paint_begin(client) != 0) return -1;
-    reist_gui_rect_t full = {0, 0, client->width, client->height};
-    reist_gui_rect_t bar = {10, 10,
-        client->width > 20U ? client->width - 20U : 1U, 32U};
-    if (reist_gui_surface_client_paint_fill(client, full, white) != 0 ||
-        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){
-            0, 0, client->width, BROWSER_CONTENT_TOP}, chrome) != 0 ||
-        reist_gui_surface_client_paint_fill(client, bar,
-            state->address_focused ? 0x00FFFDE0U : white) != 0)
-        return -1;
-    uint32_t shown = state->address_length;
-    if (shown >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY)
-        shown = REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U;
-    const char *address = state->address + (state->address_length - shown);
-    if (paint_text(client, 16, 18, bar.width > 12U ? bar.width - 12U : 1U,
-                   address, shown, dark,
-                   state->address_focused ? 0x00FFFDE0U : white,
-                   BROWSER_BODY_FONT) != 0) return -1;
-    static const char help[] = "Enter: oeffnen  Pfeile/Bild: scrollen";
-    if (paint_text(client, 12, 51, client->width > 24U ? client->width - 24U : 1U,
-                   help, (uint32_t)(sizeof(help) - 1U),
-                   muted, chrome, 14U) != 0) return -1;
 
+static void set_status(browser_state_t *state, const char *status) {
+    if (copy_text(state->status, sizeof(state->status), status) != 0) state->status[0] = '\0';
+    state->status_redraw = 1U;
+}
+static uint32_t is_network(const char *url) {
+    return text_prefix(url, "http://") || text_prefix(url, "https://");
+}
+static int owned_child_info(browser_state_t *state, x86os_process_info_t *result) {
+    for (uint32_t index = 0; index < 32U; ++index) {
+        x86os_process_info_t info;
+        if (x86os_process_info(index, &info) <= 0) break;
+        if (info.pid == state->child_pid && info.parent_pid == x86os_getpid()) {
+            *result = info; return 0;
+        }
+    }
+    return -84;
+}
+static int child_info(browser_state_t *state, x86os_process_info_t *result) {
+    /* PROCESS_IDENTITY describes live processes only, not waitable zombies.
+     * A child returned by spawnv stays pinned to this single-threaded parent:
+     * the kernel cannot reuse its PID/slot until THIS parent calls wait.
+     * Confirm that ownership before reaping, including exit before the first
+     * identity lookup. Never invent a generation or kill a zombie by PID. */
+    for (uint32_t attempt = 0U; attempt < 2U; ++attempt) {
+        if (owned_child_info(state, result) != 0) return -84;
+        if (result->state == X86OS_PROCESS_ZOMBIE) return 0;
+        x86os_process_identity_t identity;
+        int status = x86os_process_identity_of(state->child_pid, &identity);
+        if (status == -3) continue; /* Exit raced the snapshot: recheck once. */
+        if (status != 0 || identity.version != 1U ||
+            identity.struct_size != sizeof(identity) ||
+            identity.pid != state->child_pid || identity.generation == 0U ||
+            (state->child_generation != 0U &&
+             identity.generation != state->child_generation)) return -84;
+        state->child_generation = identity.generation;
+        return 0;
+    }
+    return -84;
+}
+static void cancel_fetch(browser_state_t *state) {
+    if (state->child_pid <= 0 || state->job_cancelled) return;
+    x86os_process_info_t info;
+    state->job_cancelled = 1U;
+    int result = child_info(state, &info);
+    if (result == 0 && info.state != X86OS_PROCESS_ZOMBIE &&
+        x86os_kill(state->child_pid) != 0) {
+        /* A normal exit between observation and kill is already cancelled. */
+        result = child_info(state, &info);
+        if (result == 0 && info.state != X86OS_PROCESS_ZOMBIE) result = -84;
+    }
+    if (result != 0) {
+        set_status(state, "Transportgeneration verloren");
+        state->exit_requested = 1U;
+    }
+}
+static int start_fetch(browser_state_t *state, const char *url, uint32_t kind, uint32_t index) {
+    if (state->child_pid > 0 || copy_text(state->job_url, sizeof(state->job_url), url) != 0) return -16;
+    char fetch[BROWSER_URL_CAPACITY];
+    if (strip_fragment(url, fetch, sizeof(fetch)) != 0) return -22;
+    (void)x86os_unlink(state->temporary_path);
+    const char *arguments[] = {"/usr/bin/curl.prg", "-o", state->temporary_path,
+        "--max-bytes", kind == 1U ? "65536" : "262144", fetch};
+    int pid = x86os_spawnv("/usr/bin/curl.prg", 6, arguments);
+    if (pid <= 0) return -5;
+    state->child_pid = pid;
+    state->child_generation = 0U;
+    state->job_kind = kind; state->job_image = index;
+    state->job_cancelled = 0U;
+    state->job_deadline = x86os_uptime_ms() + BROWSER_FETCH_DEADLINE_MS;
+    state->poll_at = x86os_uptime_ms();
+    x86os_process_info_t info;
+    if (child_info(state, &info) != 0) {
+        state->exit_requested = 1U; return -84;
+    }
+    return 0;
+}
+static const char *fragment_of(const char *url) {
+    for (uint32_t i = 0; i < BROWSER_URL_CAPACITY && url[i]; ++i)
+        if (url[i] == '#') return url + i + 1U;
+    return 0;
+}
+static void scroll_to_fragment(browser_state_t *state, reist_gui_surface_client_t *client) {
+    const char *fragment = fragment_of(state->active_url);
+    uint32_t y;
+    if (fragment && browser_anchor_y(&documents[state->active], &layouts[state->active], fragment, &y) == 0)
+        set_scroll(state, client, y);
+}
+static int publish_document(browser_state_t *state, reist_gui_surface_client_t *client,
+                             const char *path, const char *url) {
+    uint32_t length = 0U, candidate = state->active ^ 1U;
+    int result = read_file(path, document_bytes, sizeof(document_bytes), &length);
+    for (uint32_t i = 0; i < BROWSER_IMAGE_CACHE_COUNT; ++i) image_cache[candidate][i].decoded = 0U;
+    if (result == 0) result = reist_html_document_parse(document_bytes, length, &documents[candidate]);
+    if (result == 0) result = browser_build_layout(&documents[candidate], client->width,
+                                                    image_cache[candidate], &layouts[candidate]);
+    if (result != 0) return result;
+    copy_text(state->active_url, sizeof(state->active_url), url);
+    /* Do not overwrite input typed while a previous navigation was loading. */
+    if (!state->address_focused) {
+        copy_text(state->address, sizeof(state->address), url);
+        state->address_length = (uint32_t)bounded_length(state->address, sizeof(state->address));
+        state->address_cursor = state->address_length;
+    }
+    state->active = candidate; state->loaded = 1U; state->scroll_y = 0U;
+    state->hit_count = 0U;
+    state->armed_link = UINT32_MAX; state->scrollbar.state.captured = 0U;
+    state->image_next = 0U;
+    state->image_deadline = x86os_uptime_ms() + BROWSER_PAGE_IMAGE_DEADLINE_MS;
+    state->redraw = state->chrome_redraw = 1U;
+    scroll_to_fragment(state, client);
+    char title[REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY];
+    const char *source = documents[candidate].title[0] ? documents[candidate].title : "REIST Web";
+    size_t title_length = utf8_prefix_length(source, sizeof(title) - 1U);
+    /* The Surface title limit is smaller than the parser's metadata quota.
+     * Cut at a UTF-8 scalar boundary, never inside a multibyte character. */
+    for (size_t i = 0U; i < title_length; ++i) title[i] = source[i];
+    title[title_length] = '\0';
+    (void)reist_gui_surface_client_set_title(client, title);
+    set_status(state, "Bereit - Bilder werden begrenzt nachgeladen");
+    x86os_puts("BROWSER_RENDER_OK\n");
+    return 0;
+}
+static int load_image(browser_state_t *state, reist_gui_surface_client_t *client,
+                       const char *path, uint32_t index) {
+    if (index >= BROWSER_IMAGE_CACHE_COUNT) return -28;
+    uint32_t length = 0U;
+    reist_image_info_t info;
+    int result = read_file(path, image_bytes, sizeof(image_bytes), &length);
+    if (result == 0) result = browser_image_decode(image_bytes, length, decoded_pixels,
+                                                  BROWSER_IMAGE_PIXEL_LIMIT, &info);
+    if (result != 0) return result;
+    browser_image_slot_t *slot = &image_cache[state->active][index];
+    slot->source_width = info.width; slot->source_height = info.height;
+    uint32_t largest = info.width > info.height ? info.width : info.height;
+    slot->width = largest > BROWSER_IMAGE_CACHE_SIDE ? info.width * BROWSER_IMAGE_CACHE_SIDE / largest : info.width;
+    slot->height = largest > BROWSER_IMAGE_CACHE_SIDE ? info.height * BROWSER_IMAGE_CACHE_SIDE / largest : info.height;
+    if (!slot->width) slot->width = 1U;
+    if (!slot->height) slot->height = 1U;
+    for (uint32_t y = 0; y < slot->height; ++y)
+        for (uint32_t x = 0; x < slot->width; ++x)
+            slot->pixels[y * slot->width + x] = decoded_pixels[
+                (y * info.height / slot->height) * info.stride_pixels + x * info.width / slot->width];
+    slot->decoded = 1U;
+    /* Layout always has the same bounded run count; publish via the spare layout. */
+    uint32_t spare = state->active ^ 1U;
+    result = browser_build_layout(&documents[state->active], client->width,
+                                    image_cache[state->active], &layouts[spare]);
+    if (result != 0) { slot->decoded = 0U; return result; }
+    layouts[state->active] = layouts[spare];
+    state->hit_count = 0U; state->armed_link = UINT32_MAX;
+    set_scroll(state, client, state->scroll_y);
+    state->redraw = 1U;
+    x86os_puts("BROWSER_IMAGE_OK\n");
+    return 0;
+}
+static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, const char *target) {
+    char normalized[BROWSER_URL_CAPACITY];
+    int result = target && target[0] == '#' && state->loaded
+        ? reist_html_url_resolve(state->active_url, target, normalized, sizeof(normalized))
+        : reist_html_navigation_normalize(target, normalized, sizeof(normalized));
+    if (result != 0) { set_status(state, "Adresse nicht unterstuetzt"); return result; }
+    char old_path[BROWSER_URL_CAPACITY], new_path[BROWSER_URL_CAPACITY];
+    strip_fragment(normalized, new_path, sizeof(new_path));
+    strip_fragment(state->active_url, old_path, sizeof(old_path));
+    if (state->loaded && fragment_of(normalized) && text_equal(old_path, new_path)) {
+        if (state->pending || (state->child_pid > 0 && state->job_kind == 1U)) {
+            state->pending = 0U;
+            cancel_fetch(state);
+        }
+        copy_text(state->active_url, sizeof(state->active_url), normalized);
+        copy_text(state->address, sizeof(state->address), normalized);
+        state->address_cursor = state->address_length = (uint32_t)bounded_length(normalized, sizeof(normalized));
+        state->chrome_redraw = 1U; scroll_to_fragment(state, client);
+        return 0;
+    }
+    copy_text(state->pending_url, sizeof(state->pending_url), normalized);
+    state->pending = 1U;
+    state->image_next = BROWSER_IMAGE_CACHE_COUNT;
+    state->armed_link = UINT32_MAX;
+    cancel_fetch(state);
+    set_status(state, "Lade Dokument ... Esc: abbrechen");
+    return 0;
+}
+/* Poll only completed owned generations: x86os_wait never blocks the UI.
+ * A single child and a single immutable temporary resource exist at a time. */
+static void service_loads(browser_state_t *state, reist_gui_surface_client_t *client) {
+    uint32_t now = x86os_uptime_ms();
+    if (state->child_pid > 0) {
+        if ((int32_t)(now - state->job_deadline) >= 0) cancel_fetch(state);
+        if ((int32_t)(now - state->poll_at) < 0) return;
+        state->poll_at = now + 10U;
+        x86os_process_info_t info;
+        if (child_info(state, &info) != 0) { state->exit_requested = 1U; return; }
+        if (info.state != X86OS_PROCESS_ZOMBIE) return;
+        int status = -1;
+        if (x86os_wait(state->child_pid, &status) != state->child_pid) {
+            state->exit_requested = 1U; return;
+        }
+        state->child_pid = 0;
+        state->child_generation = 0U;
+        int result = -5;
+        if (!state->job_cancelled && status == 0)
+            result = state->job_kind == 1U
+                ? publish_document(state, client, state->temporary_path, state->job_url)
+                : load_image(state, client, state->temporary_path, state->job_image);
+        (void)x86os_unlink(state->temporary_path);
+        if (result != 0 && !state->pending)
+            set_status(state, state->job_kind == 1U
+                ? "Laden abgelehnt - bisherige Seite bleibt" : "Bild nicht verfuegbar - Alternativtext");
+        return;
+    }
+    if (state->pending) {
+        state->pending = 0U;
+        char path[BROWSER_URL_CAPACITY];
+        strip_fragment(state->pending_url, path, sizeof(path));
+        int result = is_network(path) ? start_fetch(state, state->pending_url, 1U, 0U)
+            : publish_document(state, client, path, state->pending_url);
+        if (result != 0) set_status(state, "Laden abgelehnt - bisherige Seite bleibt");
+        return;
+    }
+    if (!state->loaded || state->image_next >= documents[state->active].image_count ||
+        state->image_next >= BROWSER_IMAGE_CACHE_COUNT) return;
+    if ((int32_t)(now - state->image_deadline) >= 0) {
+        state->image_next = BROWSER_IMAGE_CACHE_COUNT;
+        set_status(state, "Bildzeitbudget erschoepft - Alternativtext"); return;
+    }
+    uint32_t index = state->image_next++;
+    const char *source = documents[state->active].images[index].source;
+    char resolved[BROWSER_URL_CAPACITY], path[BROWSER_URL_CAPACITY];
+    int result = source[0] ? reist_html_url_resolve(state->active_url, source, resolved, sizeof(resolved)) : -22;
+    if (result == 0 && is_network(state->active_url) && !is_network(resolved)) result = -13;
+    /* HTTPS pages cannot silently downgrade image transport. */
+    if (result == 0 && text_prefix(state->active_url, "https://") && text_prefix(resolved, "http://")) result = -13;
+    if (result == 0) {
+        strip_fragment(resolved, path, sizeof(path));
+        result = is_network(path) ? start_fetch(state, resolved, 2U, index) : load_image(state, client, path, index);
+    }
+    if (result != 0) set_status(state, "Bild nicht verfuegbar - Alternativtext");
+}
+
+static int publish_pixels(browser_state_t *state, reist_gui_surface_client_t *client) {
+    uint32_t width = client->width, height = client->height;
+    if (!width || !height || width > REIST_GUI_SURFACE_MAX_WIDTH || height > REIST_GUI_SURFACE_MAX_HEIGHT) return -22;
+    for (uint32_t i = 0; i < width * height; ++i) surface_pixels[i] = 0x00FFFFFFU;
+    if (state->loaded) {
+        const browser_layout_t *layout = &layouts[state->active];
+        int32_t bottom = (int32_t)(BROWSER_CONTENT_TOP + viewport_height(client));
+        for (uint32_t i = 0; i < layout->run_count; ++i) {
+            const browser_layout_run_t *run = &layout->runs[i];
+            if (run->kind != REIST_HTML_ELEMENT_IMAGE || run->text_offset >= BROWSER_IMAGE_CACHE_COUNT) continue;
+            const browser_image_slot_t *slot = &image_cache[state->active][run->text_offset];
+            if (!slot->decoded) continue;
+            int32_t top = (int32_t)BROWSER_CONTENT_TOP + (int32_t)run->y - (int32_t)state->scroll_y;
+            int32_t first = top < (int32_t)BROWSER_CONTENT_TOP ? (int32_t)BROWSER_CONTENT_TOP : top;
+            int32_t end = top + (int32_t)run->height;
+            if (end > bottom) end = bottom;
+            for (int32_t y = first; y < end; ++y) {
+                uint32_t source_y = (uint32_t)(y - top) * slot->height / run->height;
+                for (uint32_t x = 0; x < run->width && run->x + (int32_t)x < (int32_t)width; ++x) {
+                    if (run->x + (int32_t)x < 0) continue;
+                    surface_pixels[(uint32_t)y * width + (uint32_t)run->x + x] =
+                        slot->pixels[source_y * slot->width + x * slot->width / run->width];
+                }
+            }
+        }
+    }
+    uint32_t id = 0U, generation = 0U, registered = 0U;
+    int result = x86os_display_surface_buffer_create(width, height, surface_pixels, width, &id, &generation);
+    if (result != 0) return render_result("buffer-create", result);
+    reist_gui_surface_buffer_t descriptor = {REIST_GUI_SURFACE_BUFFER_API_VERSION, sizeof(descriptor),
+        id, generation, width, height, width * 4U, REIST_GUI_SURFACE_BUFFER_FORMAT_XRGB8888, width * height * 4U, 0U};
+    result = render_result("buffer-register", reist_gui_surface_client_buffer_create(client, &descriptor));
+    if (result == 0) registered = 1U;
+    if (result == 0) result = render_result("buffer-attach", reist_gui_surface_client_attach(client, id, generation));
+    if (result == 0) result = render_result("buffer-damage", reist_gui_surface_client_damage(client, (reist_gui_rect_t){0, 0, width, height}));
+    uint32_t released = 0U, released_generation = 0U;
+    if (result == 0) result = render_result("buffer-commit", reist_gui_surface_client_commit_with_release(client, &released, &released_generation));
+    if (result != 0) {
+        if (registered) (void)reist_gui_surface_client_buffer_destroy(client, id, generation);
+        (void)x86os_display_surface_buffer_destroy(id, generation);
+        return result;
+    }
+    uint32_t old_id = state->buffer_id, old_generation = state->buffer_generation;
+    state->buffer_id = id; state->buffer_generation = generation;
+    if (released != 0U) {
+        if (released != old_id || released_generation != old_generation) return render_result("buffer-release-identity", -84);
+        result = render_result("buffer-unregister", reist_gui_surface_client_buffer_destroy(client, released, released_generation));
+        if (result == 0) result = render_result("buffer-release", x86os_display_surface_buffer_destroy(released, released_generation));
+    }
+    return result;
+}
+static int paint_button(reist_gui_surface_client_t *client, reist_gui_rect_t rect) {
+    if (reist_gui_surface_client_paint_fill(client, rect, 0x00D4D0C8U) != 0 ||
+        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){rect.x, rect.y, rect.width, 1U}, 0x00FFFFFFU) != 0 ||
+        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){rect.x, rect.y, 1U, rect.height}, 0x00FFFFFFU) != 0 ||
+        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){rect.x, rect.y + (int32_t)rect.height - 1, rect.width, 1U}, 0x00808080U) != 0 ||
+        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){rect.x + (int32_t)rect.width - 1, rect.y, 1U, rect.height}, 0x00808080U) != 0) return -1;
+    return 0;
+}
+static int render_body(browser_state_t *state, reist_gui_surface_client_t *client) {
+    const uint32_t white = 0x00FFFFFFU, dark = 0x00202020U, link = 0x000000CCU;
+    const uint32_t heading = 0x00203070U, muted = 0x00606060U;
+    if (publish_pixels(state, client) != 0 || render_result("base-begin", reist_gui_surface_client_paint_begin(client)) != 0) return -1;
     state->hit_count = 0U;
     uint32_t view = viewport_height(client);
     uint32_t body_bottom = BROWSER_CONTENT_TOP + view;
@@ -456,6 +532,11 @@ static int render(browser_state_t *state,
                                state->scroll_y;
             if (screen_y + run->height <= BROWSER_CONTENT_TOP ||
                 screen_y >= body_bottom) continue;
+            /* Retained font calls cannot crop a partial glyph. Omit edge text
+             * rows; image pixels and image hit regions are clipped separately. */
+            if (run->kind != REIST_HTML_ELEMENT_IMAGE &&
+                (screen_y < BROWSER_CONTENT_TOP || screen_y + run->height > body_bottom)) continue;
+            if (run->kind == REIST_HTML_ELEMENT_ANCHOR) continue;
             uint32_t needed = (run->style & REIST_HTML_STYLE_LINK) ? 2U : 1U;
             if (commands + needed > BROWSER_VISIBLE_RUN_BUDGET) break;
             commands += needed;
@@ -480,186 +561,295 @@ static int render(browser_state_t *state,
                                BROWSER_BODY_FONT) != 0) return -1;
                 continue;
             }
+            if (run->kind == REIST_HTML_ELEMENT_IMAGE) {
+                uint32_t image_index = run->text_offset;
+                if (image_index >= document->image_count) return -1;
+                if ((image_index >= BROWSER_IMAGE_CACHE_COUNT || !image_cache[state->active][image_index].decoded) &&
+                    screen_y >= BROWSER_CONTENT_TOP && screen_y + BROWSER_BODY_FONT <= body_bottom) {
+                    const char *alt = document->images[image_index].alt;
+                    if (!alt[0]) alt = "[Bild]";
+                    uint32_t length = (uint32_t)utf8_prefix_length(alt, REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U);
+                    if (paint_text(client, run->x, (int32_t)screen_y, run->width,
+                                   alt, length, muted, white, BROWSER_BODY_FONT) != 0) return -1;
+                }
+            }
             uint32_t foreground = run->style & REIST_HTML_STYLE_LINK ? link
                 : run->style & (REIST_HTML_STYLE_HEADING_1 |
                                 REIST_HTML_STYLE_HEADING_2 |
                                 REIST_HTML_STYLE_HEADING_3) ? heading
                 : run->style & REIST_HTML_STYLE_ITALIC ? 0x00405050U : dark;
-            if (paint_text(client, run->x, (int32_t)screen_y, run->width,
+            if (run->kind == REIST_HTML_ELEMENT_TEXT && paint_text(client, run->x, (int32_t)screen_y, run->width,
                            document->text + run->text_offset,
                            run->text_length, foreground, white,
                            run->height) != 0) return -1;
             if ((run->style & REIST_HTML_STYLE_LINK) &&
                 run->link_index < document->link_count) {
-                if (reist_gui_surface_client_paint_fill(client,
-                    (reist_gui_rect_t){run->x,
-                        (int32_t)screen_y + (int32_t)run->height - 2,
-                        run->width, 1U}, link) != 0) return -1;
-                if (state->hit_count < BROWSER_LINK_HIT_CAPACITY)
+                int64_t top = screen_y < BROWSER_CONTENT_TOP ? BROWSER_CONTENT_TOP : screen_y;
+                int64_t bottom = screen_y + run->height;
+                if (bottom > body_bottom) bottom = body_bottom;
+                /* Preserve the link's actual bottom edge, not an artificial
+                 * underline pinned to the viewport while an image scrolls. */
+                int64_t underline = screen_y + (run->height >= 2U ? run->height - 2U : 0U);
+                if (underline >= BROWSER_CONTENT_TOP && underline < body_bottom &&
+                    reist_gui_surface_client_paint_fill(client,
+                        (reist_gui_rect_t){run->x, (int32_t)underline,
+                            run->width, 1U}, link) != 0) return -1;
+                if (bottom > top && state->hit_count < BROWSER_LINK_HIT_CAPACITY)
                     state->hits[state->hit_count++] = (browser_link_hit_t){
-                        {run->x, (int32_t)screen_y, run->width, run->height},
+                        {run->x, (int32_t)top, run->width, (uint32_t)(bottom - top)},
                         run->link_index};
             }
         }
-        uint32_t maximum = maximum_scroll(state, client);
-        if (maximum != 0U && client->width >= 12U) {
-            uint32_t total = layout->total_height;
-            uint32_t thumb = view * view / total;
-            if (thumb < 18U) thumb = 18U;
-            if (thumb > view) thumb = view;
-            uint32_t travel = view - thumb;
-            uint32_t top = maximum == 0U ? 0U
-                : (state->scroll_y * travel) / maximum;
-            if (reist_gui_surface_client_paint_fill(client,
-                    (reist_gui_rect_t){(int32_t)client->width - 9,
-                    (int32_t)BROWSER_CONTENT_TOP + (int32_t)top,
-                    7U, thumb}, 0x00909090U) != 0) return -1;
-        }
+
     }
-    uint32_t status_top = client->height > BROWSER_STATUS_HEIGHT
-        ? client->height - BROWSER_STATUS_HEIGHT : 0U;
-    if (reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){
-            0, (int32_t)status_top,
-            client->width, BROWSER_STATUS_HEIGHT}, chrome) != 0)
-        return -1;
-    uint32_t status_length = (uint32_t)bounded_length(
-        state->status, sizeof(state->status));
-    if (status_length >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY)
-        status_length = REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U;
-    if (paint_text(client, 8, (int32_t)status_top + 3,
-                   client->width > 16U ? client->width - 16U : 1U,
-                   state->status, status_length, dark, chrome, 14U) != 0)
-        return -1;
-    return reist_gui_surface_client_paint_commit(client);
+    browser_scrollbar_configure(&state->scrollbar, client->width, view,
+        state->loaded ? layouts[state->active].total_height : 0U, state->scroll_y);
+    browser_scrollbar_t *bar = &state->scrollbar;
+    if (reist_gui_surface_client_paint_fill(client, bar->bounds, 0x00E0E0E0U) != 0 ||
+        paint_button(client, bar->thumb) != 0) return -1;
+    if (view > 36U) {
+        if (paint_button(client, (reist_gui_rect_t){bar->bounds.x, bar->bounds.y, bar->bounds.width, 18U}) != 0 ||
+            paint_button(client, (reist_gui_rect_t){bar->bounds.x, bar->bounds.y + (int32_t)view - 18, bar->bounds.width, 18U}) != 0 ||
+            paint_text(client, bar->bounds.x + 5, bar->bounds.y, 12U, "^", 1U, dark, 0x00D4D0C8U, 16U) != 0 ||
+            paint_text(client, bar->bounds.x + 5, bar->bounds.y + (int32_t)view - 18, 12U, "v", 1U, dark, 0x00D4D0C8U, 16U) != 0) return -1;
+    }
+    int result = render_result("base-commit", reist_gui_surface_client_paint_commit(client));
+    if (result == 0) { state->redraw = 0U; ++state->body_frames; }
+    return result;
 }
-
-static uint32_t point_in_rect(reist_gui_rect_t rect, int32_t x, int32_t y) {
-    return x >= rect.x && y >= rect.y &&
-        (uint32_t)(x - rect.x) < rect.width &&
-        (uint32_t)(y - rect.y) < rect.height;
+/* HOVER contains only the top chrome, never page or image operations. */
+static int render_chrome(browser_state_t *state, reist_gui_surface_client_t *client) {
+    uint32_t background = state->address_focused ? 0x00FFFDE0U : 0x00FFFFFFU;
+    if (reist_gui_surface_client_paint_begin_layer(client, REIST_GUI_SURFACE_PAINT_LAYER_HOVER) != 0 ||
+        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){0, 0, client->width, BROWSER_CONTENT_TOP}, 0x00D4D0C8U) != 0 ||
+        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){10, 10, client->width > 20U ? client->width - 20U : 1U, 32U}, background) != 0) return -1;
+    uint32_t cells = client->width > 40U ? (client->width - 40U) / 8U : 1U;
+    if (cells > BROWSER_URL_CAPACITY - 1U) cells = BROWSER_URL_CAPACITY - 1U;
+    if (state->address_cursor < state->address_start) state->address_start = state->address_cursor;
+    if (state->address_cursor >= state->address_start + cells) state->address_start = state->address_cursor - cells + 1U;
+    uint32_t count = state->address_length - state->address_start;
+    if (count > cells) count = cells;
+    for (uint32_t at = 0; at < count;) {
+        uint32_t amount = count - at;
+        if (amount >= REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY) amount = REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U;
+        amount = (uint32_t)utf8_prefix_length(state->address + state->address_start + at, amount);
+        if (amount == 0U) break;
+        if (paint_text(client, 16 + (int32_t)at * 8, 18, amount * 8U,
+            state->address + state->address_start + at, amount, 0x00202020U, background, 16U) != 0) return -1;
+        at += amount;
+    }
+    if (state->address_focused && reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){
+        16 + (int32_t)(state->address_cursor - state->address_start) * 8, 17, 1U, 18U}, 0x00202020U) != 0) return -1;
+    static const char help[] = "Enter: URL  R: neu laden  Esc: Abbruch";
+    if (paint_text(client, 12, 51, client->width > 24U ? client->width - 24U : 1U,
+        help, sizeof(help) - 1U, 0x00606060U, 0x00D4D0C8U, 14U) != 0) return -1;
+    int result = reist_gui_surface_client_paint_commit_layer(client, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
+    if (result == 0) { state->chrome_redraw = 0U; ++state->chrome_frames; }
+    return result;
 }
-
-static void activate_link(browser_state_t *state,
-                          reist_gui_surface_client_t *client,
-                          uint32_t link_index) {
-    if (!state->loaded || link_index >= documents[state->active].link_count)
-        return;
-    char resolved[BROWSER_URL_CAPACITY];
-    if (reist_html_url_resolve(
-            state->active_url, documents[state->active].links[link_index].href,
-            resolved, sizeof(resolved)) != 0) {
-        set_status(state, "Linkziel nicht unterstuetzt");
-        return;
-    }
-    if (navigate(state, client, resolved) == 0)
-        x86os_puts("BROWSER_LINK_OK\n");
+static int render_status(browser_state_t *state, reist_gui_surface_client_t *client) {
+    uint32_t top = client->height > BROWSER_STATUS_HEIGHT ? client->height - BROWSER_STATUS_HEIGHT : 0U;
+    if (reist_gui_surface_client_paint_begin_layer(client, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY) != 0 ||
+        reist_gui_surface_client_paint_fill(client, (reist_gui_rect_t){0, (int32_t)top, client->width, BROWSER_STATUS_HEIGHT}, 0x00D4D0C8U) != 0) return -1;
+    uint32_t count = (uint32_t)utf8_prefix_length(state->status, REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY - 1U);
+    if (paint_text(client, 8, (int32_t)top + 3, client->width > 16U ? client->width - 16U : 1U,
+        state->status, count, 0x00202020U, 0x00D4D0C8U, 14U) != 0) return -1;
+    int result = reist_gui_surface_client_paint_commit_layer(client, REIST_GUI_SURFACE_PAINT_LAYER_OVERLAY);
+    if (result == 0) state->status_redraw = 0U;
+    return result;
 }
-
-static void handle_pointer(browser_state_t *state,
-                           reist_gui_surface_client_t *client,
-                           const reist_gui_surface_input_t *input) {
-    if (input->type != REIST_GUI_SURFACE_INPUT_POINTER_BUTTON ||
-        input->button != 1U || !input->pressed) return;
-    if (input->y >= 10 && input->y < 42) {
-        state->address_focused = 1U;
-        state->address_replace_pending = 1U;
-        state->redraw = 1U;
-        return;
+static int render(browser_state_t *state, reist_gui_surface_client_t *client) {
+    if (state->redraw && render_body(state, client) != 0) {
+        x86os_puts("BROWSER_RENDER_STATE scroll="); x86os_print_number((int)state->scroll_y);
+        x86os_puts(" frames="); x86os_print_number((int)state->body_frames); x86os_puts("\n");
+        x86os_puts("BROWSER_PROBE_FAIL render-body\n"); return -1;
     }
-    state->address_focused = 0U;
-    for (uint32_t index = 0U; index < state->hit_count; ++index) {
-        if (point_in_rect(state->hits[index].rect, input->x, input->y)) {
-            uint32_t link_index = state->hits[index].link_index;
-            activate_link(state, client, link_index);
-            return;
-        }
+    if (state->chrome_redraw && render_chrome(state, client) != 0) {
+        x86os_puts("BROWSER_PROBE_FAIL render-chrome\n"); return -1;
     }
-    state->redraw = 1U;
-}
-
-static void handle_keyboard(browser_state_t *state,
-                            reist_gui_surface_client_t *client,
-                            uint32_t key) {
-    if (key == BROWSER_KEY_ESCAPE || key == 27U) {
-        state->exit_requested = 1U;
-        return;
+    if (state->status_redraw && render_status(state, client) != 0) {
+        x86os_puts("BROWSER_PROBE_FAIL render-status\n"); return -1;
     }
-    if (state->address_focused) {
-        if (key == 8U || key == 127U) {
-            if (state->address_replace_pending) {
-                state->address[0U] = '\0';
-                state->address_length = 0U;
-                state->address_replace_pending = 0U;
-            } else if (state->address_length != 0U) {
-                state->address[--state->address_length] = '\0';
-            }
-            state->redraw = 1U;
-        } else if (key == '\r' || key == '\n') {
-            char target[BROWSER_URL_CAPACITY];
-            if (copy_text(target, sizeof(target), state->address) == 0)
-                (void)navigate(state, client, target);
-            state->address_focused = 0U;
-        } else if (key >= 0x20U && key <= 0x7EU) {
-            if (state->address_replace_pending) {
-                state->address_length = 0U;
-                state->address[0U] = '\0';
-                state->address_replace_pending = 0U;
-            }
-            if (state->address_length + 1U < sizeof(state->address)) {
-                state->address[state->address_length++] = (char)key;
-                state->address[state->address_length] = '\0';
-                state->redraw = 1U;
-            }
-        }
-        return;
-    }
-    uint32_t page = viewport_height(client);
-    if (key == BROWSER_KEY_UP)
-        set_scroll(state, client, (int64_t)state->scroll_y - 24);
-    else if (key == BROWSER_KEY_DOWN)
-        set_scroll(state, client, (int64_t)state->scroll_y + 24);
-    else if (key == BROWSER_KEY_PAGE_UP)
-        set_scroll(state, client, (int64_t)state->scroll_y - page);
-    else if (key == BROWSER_KEY_PAGE_DOWN || key == ' ')
-        set_scroll(state, client, (int64_t)state->scroll_y + page);
-    else if (key == BROWSER_KEY_HOME)
-        set_scroll(state, client, 0);
-    else if (key == BROWSER_KEY_END)
-        set_scroll(state, client, maximum_scroll(state, client));
-    else if (key == 'r' || key == 'R')
-        (void)navigate(state, client, state->active_url);
-    else if (key == '\r' || key == '\n') {
-        state->address_focused = 1U;
-        state->address_replace_pending = 1U;
-        state->redraw = 1U;
-    }
-}
-
-static int probe_address_input(browser_state_t *state,
-                               reist_gui_surface_client_t *client) {
-    static const char local[] = "/htdocs/index.html";
-    reist_gui_surface_input_t focus = {0};
-    focus.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON;
-    focus.button = 1U;
-    focus.pressed = 1U;
-    focus.x = 20;
-    focus.y = 20;
-    handle_pointer(state, client, &focus);
-    for (uint32_t index = 0U; local[index] != '\0'; ++index)
-        handle_keyboard(state, client, (uint32_t)(uint8_t)local[index]);
-    handle_keyboard(state, client, '\n');
-    if (!text_equal(state->address, local) ||
-        !text_equal(state->active_url, local)) return -1;
-    x86os_puts("BROWSER_ADDRESS_REPLACE_OK\n");
-
-    char normalized[BROWSER_URL_CAPACITY];
-    if (reist_html_navigation_normalize(
-            "example.test/docs", normalized, sizeof(normalized)) != 0 ||
-        !text_equal(normalized, "https://example.test/docs")) return -1;
-    x86os_puts("BROWSER_HTTPS_DEFAULT_OK\n");
     return 0;
 }
 
+static uint32_t link_at(browser_state_t *state, reist_gui_surface_client_t *client, int32_t x, int32_t y) {
+    if (y < (int32_t)BROWSER_CONTENT_TOP || y >= (int32_t)(BROWSER_CONTENT_TOP + viewport_height(client))) return UINT32_MAX;
+    for (uint32_t i = 0; i < state->hit_count; ++i)
+        if (browser_point_in_rect(state->hits[i].rect, x, y)) return state->hits[i].link_index;
+    return UINT32_MAX;
+}
+static void activate_link(browser_state_t *state, reist_gui_surface_client_t *client, uint32_t index) {
+    char resolved[BROWSER_URL_CAPACITY];
+    if (!state->loaded || index >= documents[state->active].link_count) return;
+    if (reist_html_url_resolve(state->active_url, documents[state->active].links[index].href,
+                               resolved, sizeof(resolved)) != 0) {
+        set_status(state, "Linkziel nicht unterstuetzt"); return;
+    }
+    if (navigate(state, client, resolved) == 0) x86os_puts("BROWSER_LINK_OK\n");
+}
+static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *client,
+                            const reist_gui_surface_input_t *input) {
+    uint32_t motion = input->type == REIST_GUI_SURFACE_INPUT_POINTER_MOTION;
+    if (!motion && (input->type != REIST_GUI_SURFACE_INPUT_POINTER_BUTTON || input->button != 1U)) return;
+    if (browser_scrollbar_pointer(&state->scrollbar, motion, input->pressed, input->x, input->y)) {
+        state->armed_link = UINT32_MAX;
+        set_scroll(state, client, state->scrollbar.state.value);
+        return;
+    }
+    if (motion) {
+        if (link_at(state, client, input->x, input->y) != state->armed_link) state->armed_link = UINT32_MAX;
+        return;
+    }
+    if (input->pressed && browser_point_in_rect((reist_gui_rect_t){10, 10,
+        client->width > 20U ? client->width - 20U : 1U, 32U}, input->x, input->y)) {
+        if (!state->address_focused) {
+            state->address_focused = 1U; state->address_replace_pending = 1U;
+            state->address_cursor = state->address_length;
+        } else {
+            uint32_t cursor = state->address_start + (uint32_t)(input->x > 16 ? input->x - 16 : 0) / 8U;
+            state->address_cursor = cursor > state->address_length ? state->address_length : cursor;
+            state->address_replace_pending = 0U;
+        }
+        state->armed_link = UINT32_MAX;
+        state->chrome_redraw = 1U; return;
+    }
+    uint32_t hit = link_at(state, client, input->x, input->y);
+    if (input->pressed) {
+        if (state->address_focused) state->chrome_redraw = 1U;
+        state->address_focused = 0U; state->armed_link = hit;
+    } else {
+        uint32_t armed = state->armed_link;
+        state->armed_link = UINT32_MAX;
+        if (armed != UINT32_MAX && armed == hit) activate_link(state, client, armed);
+    }
+}
+static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *client, uint32_t key) {
+    if (key == BROWSER_KEY_ESCAPE || key == 27U) {
+        if (state->child_pid > 0 || state->pending) {
+            state->pending = 0U; state->image_next = BROWSER_IMAGE_CACHE_COUNT;
+            cancel_fetch(state); set_status(state, "Laden abgebrochen");
+        } else if (state->address_focused) {
+            state->address_focused = 0U; state->chrome_redraw = 1U;
+        } else state->exit_requested = 1U;
+        return;
+    }
+    if (state->address_focused) {
+        if (key == '\r' || key == '\n') {
+            char target[BROWSER_URL_CAPACITY];
+            copy_text(target, sizeof(target), state->address);
+            state->address_focused = 0U; state->chrome_redraw = 1U;
+            (void)navigate(state, client, target);
+        } else if (browser_address_edit(state->address, sizeof(state->address),
+            &state->address_length, &state->address_cursor, &state->address_replace_pending, key) > 0)
+            state->chrome_redraw = 1U;
+        return;
+    }
+    uint32_t page = viewport_height(client);
+    if (key == BROWSER_KEY_UP) set_scroll(state, client, (int64_t)state->scroll_y - 24);
+    else if (key == BROWSER_KEY_DOWN) set_scroll(state, client, (int64_t)state->scroll_y + 24);
+    else if (key == BROWSER_KEY_PAGE_UP) set_scroll(state, client, (int64_t)state->scroll_y - page);
+    else if (key == BROWSER_KEY_PAGE_DOWN || key == ' ') set_scroll(state, client, (int64_t)state->scroll_y + page);
+    else if (key == BROWSER_KEY_HOME) set_scroll(state, client, 0);
+    else if (key == BROWSER_KEY_END) set_scroll(state, client, maximum_scroll(state, client));
+    else if (key == 'r' || key == 'R') {
+        char path[BROWSER_URL_CAPACITY];
+        if (strip_fragment(state->active_url, path, sizeof(path)) == 0) (void)navigate(state, client, path);
+    } else if (key == '\r' || key == '\n') {
+        state->address_focused = state->address_replace_pending = 1U;
+        state->address_cursor = state->address_length; state->chrome_redraw = 1U;
+    }
+}
+static int probe_step(browser_state_t *state, reist_gui_surface_client_t *client) {
+    uint32_t count = documents[state->active].image_count;
+    if (count > BROWSER_IMAGE_CACHE_COUNT) count = BROWSER_IMAGE_CACHE_COUNT;
+    if (state->pending || state->child_pid > 0 || state->image_next < count) return 0;
+    if (!state->loaded) return -1;
+    if (state->probe_phase == 0U) {
+        if (!image_cache[state->active][0].decoded) return -1;
+        x86os_puts("BROWSER_IMAGE_PAINTED\n");
+        uint32_t body = state->body_frames;
+        state->address_focused = 0U;
+        reist_gui_surface_input_t click = {0};
+        click.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON; click.button = click.pressed = 1U; click.x = click.y = 20;
+        handle_pointer(state, client, &click);
+        static const char typed[] = "/htdocs/browser-test.html";
+        for (uint32_t i = 0; typed[i]; ++i) {
+            handle_keyboard(state, client, (uint8_t)typed[i]);
+            if (state->redraw || render(state, client) != 0 || state->body_frames != body) return -1;
+        }
+        if (!text_equal(state->address, typed)) return -1;
+        x86os_puts("BROWSER_ADDRESS_CHROME_ONLY_OK\nBROWSER_ADDRESS_REPLACE_OK\n");
+        char normalized[BROWSER_URL_CAPACITY];
+        if (reist_html_navigation_normalize("example.test/docs", normalized, sizeof(normalized)) != 0 ||
+            !text_equal(normalized, "https://example.test/docs")) return -1;
+        x86os_puts("BROWSER_HTTPS_DEFAULT_OK\n");
+        handle_keyboard(state, client, '\n');
+    } else if (state->probe_phase == 1U) {
+        if (!state->hit_count) return -1;
+        reist_gui_surface_input_t click = {0};
+        click.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON; click.button = click.pressed = 1U;
+        click.x = state->hits[0].rect.x + 1; click.y = state->hits[0].rect.y + 1;
+        uint32_t old_scroll = state->scroll_y;
+        handle_pointer(state, client, &click);
+        if (state->scroll_y != old_scroll || state->pending) return -1;
+        click.pressed = 0U; click.x = -1; handle_pointer(state, client, &click);
+        if (state->scroll_y != old_scroll || state->pending) return -1;
+        click.x = state->hits[0].rect.x + 1; click.pressed = 1U;
+        handle_pointer(state, client, &click);
+        click.pressed = 0U; handle_pointer(state, client, &click);
+        if (state->scroll_y == old_scroll || state->pending) return -1;
+        x86os_puts("BROWSER_LINK_RELEASE_OK\nBROWSER_ANCHOR_OK\n");
+    } else if (state->probe_phase == 2U) {
+        set_scroll(state, client, 0);
+        if (render(state, client) != 0 || !maximum_scroll(state, client)) return -1;
+        reist_gui_surface_input_t click = {0};
+        click.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON; click.button = click.pressed = 1U;
+        click.x = state->scrollbar.thumb.x + 5; click.y = state->scrollbar.thumb.y + 7;
+        handle_pointer(state, client, &click);
+        if (!state->scrollbar.state.captured || state->scroll_y != 0U) return -1;
+        click.type = REIST_GUI_SURFACE_INPUT_POINTER_MOTION; click.y += 70;
+        handle_pointer(state, client, &click);
+        if (!state->scroll_y) return -1;
+        click.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON; click.pressed = 0U; click.x = -1;
+        handle_pointer(state, client, &click);
+        if (state->scrollbar.state.captured) return -1;
+        x86os_puts("BROWSER_SCROLLBAR_CAPTURE_OK\nBROWSER_SCROLL_OK\n");
+        /* The real Surface validator must accept partly visible linked
+         * images and a failed image's long UTF-8 alternative text. */
+        for (uint32_t i = 0U; i < layouts[state->active].run_count; ++i) {
+            const browser_layout_run_t *run = &layouts[state->active].runs[i];
+            if (run->kind != REIST_HTML_ELEMENT_IMAGE) continue;
+            int64_t positions[] = {(int64_t)run->y - viewport_height(client) + 1,
+                run->y, (int64_t)run->y + run->height / 2U};
+            for (uint32_t p = 0U; p < 3U; ++p) {
+                set_scroll(state, client, positions[p]);
+                if (render(state, client) != 0) return -1;
+            }
+        }
+        x86os_puts("BROWSER_SCROLL_CLIP_OK\n");
+        set_scroll(state, client, 0);
+    } else if (state->probe_phase == 3U) {
+        handle_keyboard(state, client, 'r');
+        if (!state->pending) return -1;
+        x86os_puts("BROWSER_RELOAD_OK\n");
+    } else if (state->probe_phase == 4U) {
+        x86os_puts("BROWSER_RELOAD_PAINTED\n");
+        /* A real CURL child rejects a missing host before any network access.
+         * Exercise normal nonzero exit/reaping even in the NIC-less guest. */
+        if (start_fetch(state, "https://", 1U, 0U) != 0) return -1;
+    } else {
+        if (state->job_cancelled || state->exit_requested || !state->loaded ||
+            is_network(state->active_url)) return -1;
+        x86os_puts("BROWSER_TRANSPORT_EXIT_OK\n");
+        /* Leave the image viewport available to bounded screenshot capture. */
+        set_scroll(state, client, 0);
+        if (render(state, client) != 0) return -1;
+        (void)x86os_sleep_ms(1000U); state->exit_requested = 1U;
+    }
+    ++state->probe_phase;
+    return 0;
+}
 static const char *initial_target(int argc, char **argv, uint32_t *probe) {
     const char *target = "/htdocs/index.html";
     for (int index = 1; index < argc; ++index) {
@@ -667,10 +857,11 @@ static const char *initial_target(int argc, char **argv, uint32_t *probe) {
         else if (!text_prefix(argv[index], "--reist-surface="))
             target = argv[index];
     }
-    return target;
+    return *probe ? "/htdocs/browser-test.html" : target;
 }
 
 int main(int argc, char **argv) {
+    x86os_puts("BROWSER_BUILD interaction-20260905-r4\n");
     x86os_ipc_handle_t endpoint = 0U;
     if (reist_gui_surface_endpoint_from_argv(argc, argv, &endpoint) != 0) {
         x86os_puts("browser: compositor endpoint missing\n");
@@ -692,94 +883,80 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+
+    /* A single, fixed 22 MiB quota is reserved before document processing;
+     * admission failure leaves the kernel's 8 MiB executable limit unchanged. */
+    workspace = x86os_malloc(sizeof(*workspace));
+    if (workspace == 0 || browser_image_workspace(workspace->arena, sizeof(workspace->arena)) != 0) {
+        if (workspace) x86os_free(workspace);
+        (void)reist_gui_surface_client_destroy(&client);
+        (void)x86os_ipc_release(endpoint);
+        x86os_puts("browser: image workspace admission failed\n"); return 1;
+    }
     static browser_state_t state;
     make_temporary_path(&state);
+    state.armed_link = UINT32_MAX;
     const char *target = initial_target(argc, argv, &state.probe);
-    if (copy_text(state.address, sizeof(state.address), target) != 0)
-        copy_text(state.address, sizeof(state.address), "/htdocs/index.html");
-    state.address_length = (uint32_t)bounded_length(
-        state.address, sizeof(state.address));
-    state.address_focused = 1U;
-    state.address_replace_pending = 1U;
-    state.redraw = 1U;
-    (void)navigate(&state, &client, state.address);
-
+    state.redraw = state.chrome_redraw = state.status_redraw = 1U;
+    (void)navigate(&state, &client, target);
+    uint32_t probe_deadline = x86os_uptime_ms() + 30000U;
     while (!state.exit_requested) {
-        if (state.redraw) {
-            int paint_status = -11;
-            for (uint32_t attempt = 0U; attempt < BROWSER_PAINT_ATTEMPTS;
-                 ++attempt) {
-                paint_status = render(&state, &client);
-                if (paint_status == 0) break;
-                (void)x86os_sleep_ms(5U);
-            }
-            if (paint_status != 0) break;
-            state.redraw = 0U;
-            if (state.probe && state.loaded && state.probe_phase == 0U) {
-                if (probe_address_input(&state, &client) != 0)
-                    x86os_puts("BROWSER_PROBE_FAIL address-input\n");
-                state.probe_phase = 1U;
-            } else if (state.probe && state.loaded &&
-                       state.probe_phase == 1U) {
-                if (state.hit_count == 0U) {
-                    x86os_puts("BROWSER_PROBE_FAIL link-hit\n");
-                } else {
-                    reist_gui_surface_input_t click = {0};
-                    click.type = REIST_GUI_SURFACE_INPUT_POINTER_BUTTON;
-                    click.button = 1U;
-                    click.pressed = 1U;
-                    click.x = state.hits[0U].rect.x + 1;
-                    click.y = state.hits[0U].rect.y + 1;
-                    handle_pointer(&state, &client, &click);
+        uint32_t processed = 0U;
+        for (; processed < BROWSER_EVENT_BATCH_LIMIT; ++processed) {
+            reist_gui_surface_message_t message;
+            status = reist_gui_surface_client_receive(&client, &message, 0U);
+            if (status == -11) break;
+            if (status != 0 || message.type == REIST_GUI_SURFACE_CLOSE) { state.exit_requested = 1U; break; }
+            if (message.type == REIST_GUI_SURFACE_CONFIGURE) {
+                if (reist_gui_surface_client_accept_configure(&client, &message) != 0) { state.exit_requested = 1U; break; }
+                state.scrollbar.state.captured = 0U; state.armed_link = UINT32_MAX;
+                if (state.loaded) {
+                    uint32_t spare = state.active ^ 1U;
+                    if (browser_build_layout(&documents[state.active], client.width,
+                        image_cache[state.active], &layouts[spare]) != 0) { state.exit_requested = 1U; break; }
+                    layouts[state.active] = layouts[spare];
                 }
-                state.probe_phase = 2U;
-            } else if (state.probe && state.loaded &&
-                       state.probe_phase == 2U) {
-                uint32_t maximum = maximum_scroll(&state, &client);
-                set_scroll(&state, &client, maximum);
-                x86os_puts(maximum != 0U
-                    ? "BROWSER_SCROLL_OK\n" : "BROWSER_PROBE_FAIL scroll\n");
-                state.probe_phase = 3U;
-            } else if (state.probe && state.loaded &&
-                       state.probe_phase == 3U) {
-                if (navigate(&state, &client, state.active_url) == 0)
-                    x86os_puts("BROWSER_RELOAD_OK\n");
-                state.probe_phase = 4U;
-            } else if (state.probe && state.loaded &&
-                       state.probe_phase == 4U) {
-                x86os_puts("BROWSER_RELOAD_PAINTED\n");
-                (void)x86os_sleep_ms(1000U);
-                state.exit_requested = 1U;
-                state.probe_phase = 5U;
+                set_scroll(&state, &client, state.scroll_y);
+                state.redraw = state.chrome_redraw = state.status_redraw = 1U;
+            } else if (message.type == REIST_GUI_SURFACE_INPUT && message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD && message.input.pressed)
+                handle_keyboard(&state, &client, message.input.key);
+            else if (message.type == REIST_GUI_SURFACE_INPUT) handle_pointer(&state, &client, &message.input);
+            if (state.exit_requested) break;
+        }
+        if (state.exit_requested) break;
+        if (render(&state, &client) != 0) { status = -5; break; }
+        if (state.probe) {
+            if ((state.loaded && probe_step(&state, &client) != 0) || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
+                x86os_puts("BROWSER_PROBE_FAIL interaction\n"); status = -5; break;
             }
         }
-        reist_gui_surface_message_t message;
-        status = reist_gui_surface_client_receive(&client, &message, 0U);
-        if (status == -11) {
-            (void)x86os_sleep_ms(5U);
-            continue;
+        if (!state.exit_requested && processed < BROWSER_EVENT_BATCH_LIMIT) service_loads(&state, &client);
+        if (!processed) (void)x86os_sleep_ms(1U);
+    }
+    cancel_fetch(&state);
+    uint32_t reap_deadline = x86os_uptime_ms() + 1000U;
+    while (state.child_pid > 0 && (int32_t)(x86os_uptime_ms() - reap_deadline) < 0) {
+        x86os_process_info_t info;
+        if (child_info(&state, &info) != 0) break;
+        if (info.state == X86OS_PROCESS_ZOMBIE) {
+            int child_status;
+            if (x86os_wait(state.child_pid, &child_status) == state.child_pid) state.child_pid = 0;
+            break;
         }
-        if (status != 0 || message.type == REIST_GUI_SURFACE_CLOSE) break;
-        if (message.type == REIST_GUI_SURFACE_CONFIGURE) {
-            if (reist_gui_surface_client_accept_configure(
-                    &client, &message) != 0) break;
-            if (state.loaded && build_layout(&documents[state.active],
-                    client.width, &layouts[state.active]) != 0) {
-                set_status(&state, "Layoutkapazitaet erschoepft");
-            }
-            set_scroll(&state, &client, state.scroll_y);
-            state.redraw = 1U;
-        } else if (message.type == REIST_GUI_SURFACE_INPUT &&
-                   message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD &&
-                   message.input.pressed) {
-            handle_keyboard(&state, &client, message.input.key);
-        } else if (message.type == REIST_GUI_SURFACE_INPUT) {
-            handle_pointer(&state, &client, &message.input);
-        }
+        (void)x86os_sleep_ms(1U);
+    }
+    if (state.child_pid == 0) (void)x86os_unlink(state.temporary_path);
+    int destroyed = reist_gui_surface_client_destroy(&client);
+    int released = state.buffer_id ? x86os_display_surface_buffer_destroy(state.buffer_id, state.buffer_generation) : 0;
+    (void)x86os_ipc_release(endpoint);
+    x86os_free(workspace);
+    workspace = 0;
+    if (state.child_pid != 0 || destroyed != 0 || released != 0) {
+        x86os_puts("BROWSER_CLEANUP_STATE child="); x86os_print_number(state.child_pid);
+        x86os_puts(" surface="); x86os_print_number(destroyed);
+        x86os_puts(" buffer="); x86os_print_number(released); x86os_puts("\n");
+        x86os_puts("BROWSER_PROBE_FAIL cleanup\n"); return 1;
     }
     x86os_puts("BROWSER_CLOSE_OK\n");
-    (void)x86os_unlink(state.temporary_path);
-    (void)reist_gui_surface_client_destroy(&client);
-    (void)x86os_ipc_release(endpoint);
-    return 0;
+    return status == -5 ? 1 : 0;
 }

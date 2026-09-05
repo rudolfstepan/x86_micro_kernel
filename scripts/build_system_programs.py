@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -94,6 +95,8 @@ PROGRAMS = {
     ),
     "BROWSER.PRG": (
         ROOT / "userspace/gui/apps/browser/main.c",
+        ROOT / "userspace/gui/apps/browser/browser_model.c",
+        ROOT / "userspace/gui/apps/browser/browser_images.c",
         ROOT / "userspace/gui/lib/html_document.c",
         ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
@@ -228,7 +231,7 @@ GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
     "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG",
 }
-IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG"}
+IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG", "BROWSER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
 TLS_PROGRAMS = {"CURL.PRG"}
 AUDIO_PROGRAMS = {
@@ -324,9 +327,20 @@ def main() -> None:
             if name == "DESKTOP.PRG":
                 dependency_files.append(
                     ROOT / "assets/images/reist-splash.bmp")
+            includes = [sdk.include_dir, STORAGE_INCLUDE_ROOT]
+            if name == "BROWSER.PRG":
+                vendor = ROOT / "third_party/stb_image.h"
+                pin = ROOT / "third_party/stb_image.sha256"
+                # Normalize checkout newlines; source bytes remain pinned.
+                digest = hashlib.sha256(vendor.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+                if digest != pin.read_text(encoding="ascii").split()[0]:
+                    raise RuntimeError("stb_image source checksum mismatch")
+                compat = ROOT / "userspace/gui/apps/browser/compat"
+                includes.insert(0, compat)
+                dependency_files.extend([vendor, pin, *compat.glob("*.h"), Path(__file__).resolve()])
             build(
                 sources, output, zig, incremental=program_incremental,
-                include_dirs=[sdk.include_dir, STORAGE_INCLUDE_ROOT],
+                include_dirs=includes,
                 libraries=link_libraries or None,
                 runtime_objects=[sdk.startup_object],
                 runtime_libraries=runtime_libraries,

@@ -1,6 +1,153 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 4. September 2026
+Stand: 5. September 2026
+
+Aktueller Auftrag: Browser-Bedienung und Bilder verbessern. Aktives Paket ist
+`R3.6c-browser-interaction-and-images`; `R3.6b-vmware-pointer-pinned-mutex` ist
+mit offenen Nachweisen zurückgestellt (`queued`), nicht abgeschlossen.
+Basis: `7b365f3b`; Paketvertrag: `337318d9`. Der Browser-Kandidat wird auf
+ausdrücklichen Nutzerwunsch als lokaler Zwischenstand gesichert und ist
+**nicht abgenommen**. Das Paket bleibt aktiv, alle eingefrorenen Gates und
+offenen Nachweise bleiben bestehen; kein Push.
+
+Der Nutzer bestätigt jetzt sichtbar verbesserte Stabilität, fordert aber einen
+umfangreicheren Browser und vor dem nächsten großen Umbau diesen Commit.
+Sein Screenshot von `https://google.com` zeigt eine gerenderte `301 Moved`-
+Antwort mit Link sowie den Status „Laden abgelehnt – bisherige Seite bleibt“.
+Dies dokumentiert insbesondere die fehlende automatische HTTP-Weiterleitung,
+nicht eine erfolgreiche vollständige Darstellung von Google. Der nächste
+Funktions-/Engine-Schnitt ist noch nicht definiert und wird mit diesem
+Sicherungsauftrag nicht implementiert. JavaScript bleibt für einen späteren
+isolierten Ring-3-Dienst vorgesehen.
+
+Aktueller Build: `BROWSER_BUILD interaction-20260905-r4`. Der neu erfasste
+Scrollfehler ist `buffer-unregister code=-110`, bei Scrollposition 719 nach
+zwölf Dokumentframes; anschließend ebenfalls Surface-Cleanup-Timeout.
+Der Nutzer hat die Reparatur der gemeinsamen Surface-IPC-Bibliothek und ihrer
+Tests ausdrücklich freigegeben und verlangt, dass gewöhnlicher Rückstau keine
+Anwendung beendet. Der Paketumfang wurde genau dafür erweitert; Kernel und
+öffentliche Schnittstellen bleiben unverändert.
+
+Ursache: Der Kernelendpunkt hat vier gemeinsame Nachrichtenplätze für beide
+Richtungen. Füllen Desktop-Eingaben diese Plätze, wartet der bisherige
+blockierende Client-Send auf den Desktop, der seine eigenen Eingaben nicht
+abholen darf. Die echte Clientbibliothek reproduziert im Hosttest den Timeout
+ohne einen einzigen Receive. Jetzt versucht sie nichtblockierend zu senden,
+holt bei Rückstau validierte Ereignisse in die vorhandene geordnete gemeinsame
+Event-Owner-Queue und versucht erneut. Keine reentrante Verarbeitung und keine
+verlorenen Close-/Button-Kanten; ohne abholbare Eingabe begrenztes Schlafen.
+500-ms-Sendebudget, Arbeitsobergrenze, Kapazitäts- und Protokollprüfungen bleiben
+erhalten. Der neue Hosttest deckt mehrere Surfaces, Reihenfolge, Rückstau beider
+Richtungen, fortgesetzten Eingang, volle lokale Queue, Deadline, stehende und
+rückwärtslaufende Uhr, Schlaf-/Protokollfehler und Close ab. Vorher rot, danach
+grün: `surface-backpressure-before.log`, `surface-backpressure-after.log` und
+`surface-backpressure-final-targeted.log` unter `build/codex-agent/`.
+
+Zuvor ergänzt: UTF-8-sichere Alternativtexte, geclippte Bild-Link-Treffer und
+Unterstreichungen sowie vollständige Glyphen im Viewport. Der Renderer-Hosttest
+benutzt den echten Surface-Manager und Fontvalidator für jede Scrollposition,
+dekodierte/fehlgeschlagene Bilder, kleine Fenster und hochgeladene Pixel.
+
+Isolierter VMware-Selbsttest des R4-Builds bestanden: tatsächliche Bildanzeige
+per Framebuffer-Aufnahme, Scroll-Clipping, Adress-Chrome, Links, Reload,
+abgeholtes fehlerhaftes CURL-Kind und sauberes Schließen. Belege:
+`build/codex-agent/r4-isolated-selftest.log` und
+`build/codex-agent/browser-isolated-r3/vmware/reist-os/selftest.png`.
+Der Ordnername bleibt historisch R3, der Gast meldet ausdrücklich R4.
+Ein längerer echter Maus-Scrolllauf mit beiden `intracom.at`-Adressvarianten
+ist damit noch nicht nachgewiesen. Die automatische Public-Prüfung kam wegen
+nicht ankommender RFB-Mausbewegungen nicht bis zum Seitenaufruf. Der sichtbare
+R3-Lauf lieferte den oben genannten Timeout, nicht eine erfolgreiche Abnahme.
+
+Bei der ergänzenden Screenshotprüfung kollidierte Port 5909 der Testkopie mit
+der inzwischen gestarteten Nutzer-VM. Teile eines Testkommandos erreichten
+offenbar diese VM. Prüfung gestoppt, nur Testkopie beendet, Nutzer informiert.
+Die Fortsetzung benutzt ausschließlich Test-Port 5997, separate VM-Dateien und
+prüft Listener-PID, exakten VMX-Pfad, aktuelles VMware-Log und RFB-Servernamen
+vor Eingaben. Keine Eingabe geht an 5909. Der R4-Referenzbuild erfolgte erst
+nach bestätigtem Stillstand aller VMs; seine Disk wurde in die ausgeschaltete
+Test-VM kopiert. Die Test-VM wurde nach dem Selbsttest beendet.
+
+Implementierter, noch nicht im Gast abgenommener Gesamtstand: separate Adress-/Statusebenen,
+32er-Eingabebatches, URL-Cursor, Link-Press/Release, Fragmentziele, vorhandener
+Range-Controller als Scrollbar, Bild-Unterlage über generationgebundene Surface-
+Buffer und serielle CURL-Jobs mit Zeit-/Bytegrenzen. PNG/JPEG verwenden den
+gepinnten stb_image-v2.30-Adapter mit 12-MiB-Arena; BMP/GIF die vorhandene
+Bibliothek. Einmalige feste Workspace-Reservierung von etwa 22 MiB beim Start;
+keine Änderung der 8-MiB-Programmgrenze oder Kernel-/Surface-ABIs.
+
+Aktuelle Fortsetzung: Nutzer meldet sofortiges Schließen bei fast jeder URL,
+darunter `intracom.at` und `https://intracom.at`. Das echte VMware-Protokoll
+zeigt nach `BROWSER_RENDER_OK` wiederholt `BROWSER_PROBE_FAIL cleanup`, einmal
+zusätzlich einen CURL-DNS-Fehler. Ursache im Browser: `PROCESS_IDENTITY` wird
+auch nach regulärem Kind-Exit verlangt, obwohl diese Kernelabfrage nur lebende
+Identitäten liefert. Dadurch endet der Browser und kann das Zombie-Kind auch
+beim Cleanup nicht abholen. Keine Kernel-/ABI-Änderung erforderlich.
+
+Korrigiert: zuerst Parent/PID/Status prüfen, für lebende Kinder zusätzlich die
+Generation; der parentgebundene, nicht wiederverwendbare Zombie bleibt bis zum
+eigenen `wait` abholbar. Exit vor dem ersten Identitätssnapshot, zwischen
+Status/Identität und zwischen Status/Kill werden begrenzt behandelt. Unbekannte
+Generationen oder fremde Eltern bleiben fail-closed. Normale Transportfehler
+erhalten Fenster und bisherige Seite. Regression vor Reparatur reproduziert,
+danach bestanden: Host-Harness inkludiert die echte `main.c` und mockt nur
+OS-/IPC-Grenzen; erfolgreiche Veröffentlichung, DNS-/Bildfehler, Exit-Races,
+Abbruch, Zeitlimit, idempotentes Abholen und fremde/stale Identitäten geprüft.
+
+Titel werden UTF-8-sicher gekürzt: Parser höchstens 127, Surface höchstens
+39 Bytes. Die erste Annahme einer 63-Byte-Parsergrenze war falsch und wurde
+korrigiert; der Titel von `intracom.at` überschreitet nur die Surfacegrenze.
+Zu lange optionale Parser-Titel verhindern ebenfalls nicht mehr das Laden;
+ungültiges UTF-8 nach einer Kürzung wird weiterhin abgelehnt. Die öffentliche
+HTML-Antwort (16707 Bytes) besteht den echten Parser-/Layout-/Publikationspfad
+auf dem Host: 156 Elemente, 176 Layout-Runs. Das beweist keine erfolgreiche
+DNS-/HTTPS-Verbindung aus der VM; der beobachtete DNS-Fehler ist nicht behoben.
+
+Targeted R4: `python test/test_gui_browser_source.py -v` besteht mit acht
+tatsächlich ausgeführten Fällen (29,3 s), darunter Bilddekodierung samt
+beschädigten Eingaben, Titelgrenzen und Scrollbar-/URL-Hostverhalten.
+Der neue Titeltest hatte zunächst selbst eine falsche Kapazitätsannahme;
+korrigierter Grenztest und explizit aktive Assertions bestehen.
+`test_browser_runtime_source.py -v`: sieben bestanden (1,5 s);
+`test_gui_value_controls_source.py -v`: einer bestanden, ein optionaler
+Compiler-Skip; `test_gui_surface_source.py -v`: acht bestanden, ein
+optionaler Compiler-Skip. Zusammen 24 bestanden und zwei Skips.
+Die neuen Browser-Hostfälle verwenden Zig; sie wurden nicht übersprungen.
+Das gilt auch für den neuen echten Surface-Client-Hosttest. Logs:
+`build/codex-agent/r4-test_*.log`.
+
+`.\scripts\test-reist-package.ps1 -Target vmware -Video vga`: PASS,
+R4-Kandidatenbuild 25 s, Log
+`build/codex-agent/20260905-094020-package-vmware-vga.log`.
+Der normale Build einschließlich VM-Abbildern enthält R4; alle GUI-Programme
+wurden mit der korrigierten gemeinsamen Clientbibliothek neu gelinkt.
+Die Kernel-/Surface-Schnittstellen sind unverändert. Die Erweiterung des
+Paket-Dateiumfangs um die gemeinsame Clientbibliothek und Tests ist explizit
+freigegeben und im Paketvertrag dokumentiert.
+`git diff --check` und Scope-Prüfung bestehen.
+
+QEMU-Gastabnahme weiterhin offen: Der einmal ausgeführte eingefrorene R4-Lauf
+`.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga`
+scheitert nach rund 120 s erneut vor der Browserprüfung. Ring-3-Shell und
+Display-Aktivierung vorhanden, letzter Startup-Marker `font`, kein
+`DESKTOP_OK` und keine Browser-Marker. Log:
+`build/codex-agent/r4-runtime-qemu.log`. Diagnoseursache des QEMU-Desktopstarts
+weiterhin nicht gesichert; keine Abschwächung von Markern, Schwellen oder
+Hardwareprofil. VMware-Erfolg ersetzt dieses eingefrorene Gate nicht.
+Frühere QEMU- und Nutzerdiagnosen bleiben unverändert erhalten.
+Quelländerungen am Start-/Compositorpfad außerhalb des aktuellen Dateiumfangs
+benötigen einen explizit freigegebenen Reparaturschnitt. Nach dieser Runde
+greift die Stop-Regel erneut.
+Weitere offene Browser-Nachprüfung: langer Public-URL-/Mauslauf und extreme
+Bildseitenverhältnisse gegen die gekappte Scrollbar-Obergrenze. Das bestätigte
+256-KiB-/1024x768-Limit bleibt bestehen: zu große Seitenbilder ergeben weiterhin
+Alternativtext. Lokale Format-/Kapazitäts-Hosttests ersetzen diese
+Laufzeitnachweise nicht.
+Keine Schwelle gelockert und kein Paket als fertig markiert. Der ausdrücklich
+gewünschte Zwischenstand-Commit ersetzt keine Abnahme. Vollständige allgemeine HTML5-/CSS-/JavaScript-
+Kompatibilität wird nicht behauptet; JavaScript bleibt inert.
+
+Die folgenden Abschnitte dokumentieren den vorangegangenen VMware-Auftrag.
 
 Der Nutzer bestätigt die deutlich verbesserte Geschwindigkeit und hat
 ausdrücklich angewiesen, den gesamten Änderungsstand lokal zu committen.
