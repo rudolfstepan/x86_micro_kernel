@@ -1,7 +1,6 @@
 import pathlib
-import subprocess
-import tempfile
 import unittest
+from test_gui_browser_source import run_host
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -13,16 +12,9 @@ def read(path: str) -> str:
 
 class ReistVfsFileClientTests(unittest.TestCase):
     def test_host_session_behavior(self):
-        with tempfile.TemporaryDirectory() as directory:
-            executable = pathlib.Path(directory) / "vfs_file_client.exe"
-            subprocess.run([
-                "gcc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                f"-I{ROOT}", f"-I{ROOT / 'userspace/sdk/include'}",
-                str(ROOT / "test/test_vfs_file_client_host.c"),
-                str(ROOT / "userspace/storage/lib/vfs_file_client.c"),
-                "-o", str(executable),
-            ], check=True, cwd=ROOT)
-            subprocess.run([str(executable)], check=True, cwd=ROOT)
+        run_host([str(ROOT / "test/test_vfs_file_client_host.c"),
+                  str(ROOT / "userspace/storage/lib/vfs_file_client.c")],
+                 flags=[f"-I{ROOT}", f"-I{ROOT / 'userspace/sdk/include'}"])
 
     def test_session_is_fixed_generation_safe_and_service_object_backed(self):
         source = read("userspace/storage/lib/vfs_file_client.c")

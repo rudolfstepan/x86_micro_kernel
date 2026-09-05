@@ -1,6 +1,6 @@
 # Private Prozessspeicher – R1.2c
 
-Stand: 5. September 2026. Vertrag definiert, noch nicht implementiert/abgenommen.
+Stand: 5. September 2026. R1.2c auf den eingefrorenen Referenzprofilen abgenommen.
 
 ## Grenze und Standards
 
@@ -70,3 +70,32 @@ Provideradmission sowie Adressen im gesamten bisherigen Userfenster.
 QEMU muss grosse private Allokationen, OOM ohne Verlust vorhandener Daten,
 Peer-Fortschritt, Fault/Kill/Reap und eine saubere Folgegeneration beweisen.
 Die bisherigen libc- und Memory-Resilience-Gastnachweise bleiben Pflicht.
+
+Die Implementierung nutzt 128 feste Kernelregionen und 120 libc-Backingregionen;
+der bisherige Grenzwert von 4096 gleichzeitig lebenden C-Objekten bleibt.
+Die SDK-Anbindung fordert bedarfsgerecht in 256-KiB-Schritten an; groessere
+Einzelobjekte erhalten eine entsprechend groessere Region. Die private
+Frameadmission haelt 1/16 der verwalteten Frames fuer Kernel/Recovery zurueck.
+Mapping und Freigabe geben nach je 64 Seiten den Scheduler frei. Der Reaper
+speichert Verzeichnis, Cursor und Bearbeitungszustand im generationstreuen
+Taskslot, statt Ressourcen ueber eine Unterbrechung nur lokal zu besitzen.
+
+`memtest` ist als `/usr/bin/memtest.prg` aus der Ring-3-Shell erreichbar und
+in beiden Imagelayouts enthalten. Der 1-GiB-Gast prueft 256-MiB-`calloc`,
+der 128-MiB-Gast 16 MiB; beide pruefen OOM-Erhalt, SDK-`realloc`, exakte
+Frame-Rueckgabe, private Kinddaten sowie Fault/Kill/Reap. Ein paralleler
+Heartbeat muss mindestens dreimal laufen und darf hoechstens 100 ms Pause
+messen. Sein IPC-Poll verwendet explizit Timeout 0: der alte Receive-Wrapper
+hat 1000 ms Standardwartezeit und darf hier nicht als Schedulerprobe dienen.
+Jeder Gastlauf startet das komplette Programm zweimal aus der Shell.
+
+Die formalen 1024-/128-MiB-Gates bestanden in 93,67/78,90 Hostsekunden;
+die groessten Peer-Pausen aller Durchlaeufe waren 85/88 ms. Beide Referenzbuilds
+sowie libc-client und Memory-Resilience im echten QEMU-Gast bestanden.
+Von 172 Hosttests bestanden 169; drei alte Compiler-abhaengige Faelle wurden
+uebersprungen. Neue Allocator-/Reaper-Verhaltenstests liefen ohne Skip.
+Einzelbefehle, Logs, negative Erstbefunde und die verifizierte Windows-11-
+QEMU-Timer-Voraussetzung sind in
+[CURRENT_WORK](../development/CURRENT_WORK.md) dokumentiert. Die Abnahme
+erweitert weder die physische Adressierungsgrenze noch die genannten
+Resilienz-/Kompatibilitaetszusagen.

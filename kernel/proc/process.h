@@ -19,7 +19,9 @@
 
 
 #define MAX_PROGRAMS 256 // Maximum number of running programs
-#define MAX_USER_ALLOCATIONS 16
+#define MAX_USER_ALLOCATIONS 128
+#define PROCESS_HEAP_MAX_BYTES (512U * 1024U * 1024U)
+#define PROCESS_MEMORY_BATCH_PAGES 64U
 #define MAX_PROCESS_FILES 8
 #define PROCESS_STANDARD_DESCRIPTOR_COUNT 3
 #define PROCESS_FD_BASE PROCESS_STANDARD_DESCRIPTOR_COUNT
@@ -110,6 +112,8 @@ typedef struct Process {
     bool terminating;
     bool uses_shared_program_image;
     uint32_t heap_next;
+    uint32_t heap_bytes;
+    uint32_t heap_budget;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
     process_file_t files[MAX_PROCESS_DESCRIPTORS];
     process_domain_profile_t domain_profile;

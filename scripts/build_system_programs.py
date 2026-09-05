@@ -18,6 +18,7 @@ from build_user_sdk import (
 
 
 PROGRAMS = {
+    "MEMTEST.PRG": ROOT / "userspace/programs/memtest.c",
     "CRTEST.PRG": ROOT / "userspace/programs/crtest.c",
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
     "SYSINFO.PRG": ROOT / "userspace/programs/sysinfo.c",
@@ -351,6 +352,10 @@ def main() -> None:
                 link_libraries.extend([sdk.wapcaplet_library, sdk.libc_library])
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.append(sdk.include_dir / "libwapcaplet/libwapcaplet.h")
+            if name == "MEMTEST.PRG":
+                includes.insert(0, sdk.libc_include_dir)
+                link_libraries.append(sdk.libc_library)
+                dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
             if name == "BROWSER.PRG":
                 vendor = ROOT / "third_party/stb_image.h"
                 pin = ROOT / "third_party/stb_image.sha256"

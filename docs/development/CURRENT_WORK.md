@@ -3,18 +3,72 @@
 Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
-`R7.1n-ata-pio-read-throughput` und `R3.9-browser-html5-worker` sind abgenommen;
-aktiv ist auf Nutzeranweisung `R1.2c-private-process-memory`. Performance und
-Speicherresilienz sind gleichzeitig verbindlich. Der noch nicht abgenommene
-CSS-Kandidat ist einschliesslich neuer Dateien im lokalen Stash
-`121cb536d7c2ef63df59b7d3aa08a4f4b3da0086` auf `c8eda742` gesichert; die
-ignorierten Entwicklungslogs bleiben erhalten. Der Arbeitsbaum war danach
-sauber. R3.10 ist mit unveraenderten Gates zurueckgestellt, nicht abgenommen.
-Zuerst wird der private Prozessspeicher-Lifecycle fuer groessere, bedarfsgerecht
-wachsende Ring-3-Heaps implementiert. Vertrag:
+`R7.1n-ata-pio-read-throughput` und `R3.9-browser-html5-worker` sind abgenommen.
+R1.2c ist mit beiden Referenzbuilds und allen vier Gastgates abgenommen;
+169 Hosttests bestanden, drei alte Compiler-abhaengige Faelle wurden
+uebersprungen. Die Queue aktiviert als naechstes R3.10. Der noch nicht
+abgenommene CSS-Kandidat bleibt einschliesslich neuer Dateien im lokalen Stash
+`121cb536d7c2ef63df59b7d3aa08a4f4b3da0086` auf `c8eda742`; ignorierte Logs
+bleiben erhalten. R3.10 wird in diesem Speicherpaket nicht implementiert.
+
+R1.2c liefert bedarfsgerechtes privates Backing bis zur Haelfte des verwalteten
+RAM, maximal 512 MiB je Prozess, wiederverwendbare VA-Luecken und eine globale
+1/16-Frame-Reserve. Die libc gibt vollstaendig leere Regionen automatisch
+zurueck; Fault/Kill/Exit werden generationstreu und fortsetzbar aufgeraeumt.
+64-Seiten-Batches erhalten den Fortschritt anderer Prozesse. Das ist kein
+Tracing-GC fuer lebende C-Objekte. Vertrag und Grenzen:
 `docs/architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md`. Die bestehende
-1-GiB-Physikgrenze, Redundanzobjekte und geschuetzten Reserven bleiben sichtbar;
-High-Memory/Paging und Anwendungs-/Dateicaches sind separate Folgearbeiten.
+1-GiB-Physikgrenze bleibt; High-Memory/Paging und Anwendungs-/Dateicaches sind
+separate Folgearbeiten. Reservierte und redundante Speicherobjekte bleiben
+unveraendert. Keine allgemeine DIMM-Fehlertoleranz oder VMware-Laufzeitzusage.
+
+Elf eingefrorene Hostbefehle: 172 Tests, davon 169 bestanden und drei alte
+Compiler-abhaengige Faelle uebersprungen (ein Memory-Resilience-Hostfall und
+zwei Shell-Hostfaelle). Alle neuen realen Allocator-, Provider-, Reaper-,
+Desktop-Deadline- und Win32-Runner-Verhaltenstests liefen ohne Skip. Nach der
+autorisierten Reparatur wurden nur betroffene Hostgates erneut ausgefuehrt;
+unveraenderte erfolgreiche Gates bleiben gueltig. Logs unter
+`build/codex-agent/private-memory-gate-test_*.log` und
+`private-memory-repair-gate-test_*.log`. Der Toolchain-Test bestand nach der
+fokussierten Ergaenzung von MEMTEST in seiner Artefaktmenge in 99,29 s.
+
+Finale Referenzbuilds (`scripts/test-reist-package.ps1`, jeweils `-Video vga`):
+VMware PASS in 8 s, QEMU PASS in 43 s. Logs unter `build/codex-agent/`:
+`20260905-203644-package-vmware-vga.log` und
+`20260905-203701-package-qemu-vga.log`. Formale Gastpruefungen:
+
+| Eingefrorener Befehl / Modus | Ergebnis | Hostsekunden |
+| --- | --- | ---: |
+| `run_qemu_smoke.py --memory 1024M --expect-process-memory --timeout 180` | PASS, zweimal 256-MiB-calloc, Peer maximal 85 ms | 93,67 |
+| `run_qemu_smoke.py --memory 128M --expect-process-memory --timeout 180` | PASS, zweimal 16-MiB-calloc, Peer maximal 88 ms | 78,90 |
+| `test-reist-runtime.ps1 -Mode libc-client -Target qemu -Video vga` | PASS | 74,98 |
+| `test-reist-runtime.ps1 -Mode memory-resilience -Target qemu -Video vga` | PASS, separates Resilienzimage | 176,13 inkl. Build; 73 Gast-Runner |
+
+Beide MEMTEST-Gates pruefen OOM-Datenerhalt, SDK-realloc, Nullung, exakte
+Frame-Rueckgabe und Fault/Kill/Reap nach dem unveraenderten GTEST. Vollstaendige
+Befehle stehen in `automation/reist-s03b.toml`; finale Logs:
+`private-memory-1024.log`, `private-memory-128.log` und
+`private-memory-repair-gate-*.log` im selben Logverzeichnis.
+Die bestehenden Gastvertraege belegen ausserdem
+`20260905-204438-runtime-guest-smoke-libc-client.log` und
+`20260905-204736-runtime-guest-smoke-memory-resilience.log`.
+
+Historischer Blocker und Reparatur: Die erste 1024-MiB-Abnahme endete nach
+180,41 s vor GTEST; ihr negatives Log bleibt als
+`private-memory-gate-runtime-1024.log` und `private-memory-1024-first-failure.log`
+erhalten. Nach expliziter Umfangsfreigabe (`e9f1bed0`) zeigten begrenzte
+Font-I/O-Marker vollstaendigen VFS-Fortschritt statt Deadlock. Ein kontrollierter
+Same-Image-A/B-Lauf belegte die Windows-11-Timerpolitik des unsichtbaren
+QEMU-Prozesses als Testvoraussetzung: ca. 59-GHz-Fehlkalibrierung ohne Opt-out,
+5,33 GHz und vollstaendiger Gastnachweis mit prozesslokalem Opt-out. Der
+freigegebene Vertrag (`d687cbeb`) verlangt Readback und Reaping bei Fehlern;
+andere Power-Policies, globale Windows-Einstellungen, Gastkalibrierung und
+Zeitlimits bleiben unveraendert. Details und Microsoft-Referenz stehen im
+Videovertrag. Der Desktop-Dateilader hat jetzt zusaetzlich eine aggregierte
+30-s-Grenze und genau einen lokalen Session-Abschluss auch nach Fehlern.
+Ein PowerShell-Parameterbindungsfehler in der Abschlusskette startete die
+letzten zwei Gates zunaechst nicht; erst ihre korrigierten direkten Aufrufe
+zaehlen als Ausfuehrung. Keine erfolgreichen Gastgates wurden wiederholt.
 
 ## Historie: abgenommener R3.9-Stand
 

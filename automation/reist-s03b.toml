@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R1.2c-private-process-memory"
+active_id = "R3.10-browser-css-layout"
 
 [policy]
 one_package_per_run = true
@@ -12,7 +12,7 @@ push = false
 
 [[packages]]
 id = "R1.2c-private-process-memory"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Grow private Ring-3 heaps without long allocator stalls or weakening resilience"
@@ -437,7 +437,7 @@ evidence = []
 
 [[packages]]
 id = "R3.10-browser-css-layout"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Render styled HTML5 documents through an isolated CSS cascade and box layout"

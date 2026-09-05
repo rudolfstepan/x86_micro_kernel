@@ -614,6 +614,8 @@ static void release_task_resources(task_t *task) {
         task->page_directory != paging_kernel_directory()
             ? task->page_directory : NULL;
     task->reap_kernel_stack = task->kernel_stack;
+    task->reap_page_cursor = 0U;
+    task->reap_busy = false;
     task->page_directory = NULL;
     task->kernel_stack = NULL;
     task->process = NULL;
@@ -660,40 +662,53 @@ size_t scheduler_reap_finished_tasks(void) {
     spinlock_release(&task_table_lock);
     process_table_unlock_irqrestore(process_flags);
 
-    /* Page-directory walks and heap coalescing can be proportional to a
-     * process's allocation count.  Detach atomically above, then do that work
-     * with hardware interrupts enabled while task preemption is suppressed. */
+    /* Each bounded step retains its directory/cursor in TASK_REAPING. No
+     * process can inherit it; a killed reaper leaves progress for another one.
+     * Suppress preemption only for one step, not a multi-hundred-MiB teardown. */
     for (int task_id = 0; task_id < num_tasks; ++task_id) {
+      uint32_t expected_generation = 0U;
+      for (uint32_t step = 0U;
+           step < (USER_PAGE_END-USER_PAGE_START)*PAGE_TABLE_ENTRIES/64U+1U; ++step) {
         page_directory_t *page_directory = NULL;
         uint32_t *kernel_stack = NULL;
 
         uint32_t flags = task_table_lock_irqsave();
         task_t *task = &tasks[task_id];
-        if (task->status == TASK_REAPING &&
+        if (task->status == TASK_REAPING && !task->reap_busy &&
+            (expected_generation == 0U || task->task_generation == expected_generation) &&
             (task->reap_page_directory != NULL ||
              task->reap_kernel_stack != NULL)) {
+            KASSERT(task->task_generation != 0U);
+            expected_generation = task->task_generation;
+            task->reap_busy = true;
             page_directory = task->reap_page_directory;
             kernel_stack = task->reap_kernel_stack;
-            task->reap_page_directory = NULL;
-            task->reap_kernel_stack = NULL;
         }
         task_table_unlock_irqrestore(flags);
 
-        if (page_directory != NULL) free_page_directory(page_directory);
-        if (kernel_stack != NULL) scheduler_free_kernel_stack(kernel_stack);
-        if (page_directory == NULL && kernel_stack == NULL) continue;
+        if (page_directory == NULL && kernel_stack == NULL) break;
+        bool complete = page_directory == NULL ||
+            free_page_directory_step(page_directory, &task->reap_page_cursor);
+        if (complete && kernel_stack != NULL) scheduler_free_kernel_stack(kernel_stack);
 
         flags = task_table_lock_irqsave();
         task = &tasks[task_id];
-        if (task->status == TASK_REAPING &&
-            task->reap_page_directory == NULL &&
-            task->reap_kernel_stack == NULL) {
+        KASSERT(task->status == TASK_REAPING && task->reap_busy);
+        task->reap_busy = false;
+        if (complete) {
             memset(task, 0, sizeof(*task));
             task->status = TASK_FINISHED;
             task->running_cpu = TASK_CPU_NONE;
             ++reaped;
         }
         task_table_unlock_irqrestore(flags);
+        if (complete) break;
+        scheduler_preempt_enable();
+        bool can_continue = scheduler_can_sleep();
+        if (can_continue) (void)scheduler_yield();
+        scheduler_preempt_disable();
+        if (!can_continue) break;
+      }
     }
 
     scheduler_preempt_enable();

@@ -15,12 +15,16 @@ HOST = r'''
 #include "userspace/gui/compositor/desktop.c"
 #undef main
 
-static unsigned mode, opened, closed, reads, reports;
+static unsigned mode, opened, closed, reads, reports, traces;
 static uint64_t now;
-void x86os_puts(const char *text) { (void)text; }
+void x86os_puts(const char *text) { if (!strcmp(text,"DESKTOP_FONT_IO phase=")) ++traces; }
 void x86os_print_number(int number) { (void)number; }
 void x86os_putchar(char ch) { (void)ch; }
-int x86os_monotonic_ms(uint64_t *value) { *value=++now; return 0; }
+int x86os_monotonic_ms(uint64_t *value) {
+    if (mode==11 || (mode==9 && reads)) return -5;
+    if (mode==10 && reads) { *value=0; return 0; }
+    *value=++now; return 0;
+}
 int x86os_reist_report(uint32_t event, uint32_t sequence) {
     assert(event==X86OS_REIST_REPORT_PROGRESS && sequence==reports+1);
     ++reports; return mode==6 ? -5 : 0;
@@ -32,7 +36,11 @@ int reist_vfs_file_open(const char *path, uint32_t timeout, reist_vfs_file_handl
 }
 int reist_vfs_file_fstat(reist_vfs_file_handle_t handle, x86os_file_info_t *info) {
     assert(handle==7 && opened && !closed); memset(info,0,sizeof(*info));
-    info->type=X86OS_FILE; info->size=mode==2 ? 65 : 17; return 0;
+    info->type=X86OS_FILE; info->size=mode==2 ? 65 : mode==8 ? 64 : 17; return 0;
+}
+int reist_vfs_file_set_timeout(reist_vfs_file_handle_t handle, uint32_t timeout) {
+    assert(handle==7 && opened && !closed && timeout && timeout<=DESKTOP_FILE_READ_TIMEOUT_MS);
+    return 0;
 }
 int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *target, size_t size) {
     assert(handle==7 && opened && !closed && size<=X86OS_STORAGE_BULK_MAX_BYTES);
@@ -40,27 +48,36 @@ int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *target, size_
     if (mode==3) return 0;
     if (mode==4) return (int)size+1;
     if (mode==7) return -110;
+    if (mode==8) { now+=1500; memset(target,'x',1); return 1; }
     size_t amount=size>7 ? 7 : size;
     memset(target,'x',amount); return (int)amount;
 }
 int reist_vfs_file_close(reist_vfs_file_handle_t handle) {
-    assert(handle==7 && opened && !closed); ++closed; return mode==5 ? -5 : 0;
+    assert(handle==7 && opened && !closed); ++closed;
+    if (mode==12) now+=30000;
+    return mode==5 ? -5 : 0;
 }
 int main(void) {
-    for (mode=0; mode<8; ++mode) {
-        opened=closed=reads=reports=0; now=0;
+    for (mode=0; mode<13; ++mode) {
+        opened=closed=reads=reports=traces=0; now=0;
         unsigned char bytes[66]; memset(bytes,0xcc,sizeof(bytes));
         size_t length=99; uint32_t sequence=1; uint64_t heartbeat=0;
         int result=read_file_bounded_progress(DESKTOP_FONT_PATH,bytes+1,64,&length,
-                                               1,&sequence,&heartbeat);
+                                               mode==9 || mode==10 ? 0 : 1,&sequence,&heartbeat);
         assert(bytes[0]==0xcc && bytes[65]==0xcc);
-        assert(closed==opened && opened==(mode!=1));
+        /* Full font path exceeds the 32-byte argument comparator. */
+        assert(mode==11 ? !traces : traces>=2);
+        assert(closed==opened && opened==(mode!=1 && mode!=11));
         if (mode==0) {
             assert(!result && length==17 && reads==3 && reports==3 && sequence==4 && heartbeat);
             for (unsigned i=1; i<=17; ++i) assert(bytes[i]=='x');
         } else assert(result<0 && !length);
         if (mode==1 || mode==2) assert(!reads && !reports);
         if (mode==3 || mode==4 || mode==7) assert(reads==1 && !reports);
+        if (mode==8) assert(result==-110 && reads<=20 && now<30100);
+        if (mode==9 || mode==10) assert(result==-5 && reads==1 && !reports);
+        if (mode==11) assert(result==-5 && !reads);
+        if (mode==12) assert(result==-110 && reads==3 && !length);
     }
     puts("DESKTOP_STARTUP_READER_HOST_OK"); return 0;
 }

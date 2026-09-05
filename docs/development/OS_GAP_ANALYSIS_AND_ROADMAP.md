@@ -2,10 +2,12 @@
 
 Stand: 3. September 2026
 
-Priorisierung vom 5. September 2026: `R1.2c-private-process-memory` stellt vor
+Abnahme vom 5. September 2026: `R1.2c-private-process-memory` liefert vor
 dem weiteren Browserumbau die Grundlage fuer groessere private Ring-3-Heaps
-her. Performance und Speicherresilienz sind gemeinsame Abnahmekriterien.
-Der CSS-Kandidat bleibt gesichert und unangetastet. High-Memory oberhalb der
+mit Rueckgabe leerer Regionen und generationstreuem Reaping. Performance und
+Speicherresilienz bestanden gemeinsam in den eingefrorenen Gastpruefungen.
+Als naechstes ist R3.10 aktiv; sein CSS-Kandidat bleibt gesichert und wurde
+im Speicherpaket nicht veraendert. High-Memory oberhalb der
 heutigen 1-GiB-Direct-Map und freigebbare Anwendungs-/Dateicaches bleiben eigene
 Folgearbeiten. Einzelheiten und Nachweisgrenzen stehen im
 [Prozessspeichervertrag](../architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md).

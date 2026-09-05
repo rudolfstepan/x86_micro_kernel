@@ -467,11 +467,14 @@ desktop shutdown still restores VGA.
 The same reproduction showed why the generation changed during startup. The
 desktop already split font and asset reads into fixed calls, but a voluntary
 yield between calls could immediately select the application class again and
-did not guarantee time for supervised driver heartbeats. Startup reads now
-use 24-KiB chunks and sleep for one bounded millisecond between them. The
-3-MiB maximum font therefore exposes 128 scheduling points while each storage
-syscall and the overall initialization remain bounded; actual wake latency is
-allowed to follow the system timer resolution.
+did not guarantee time for supervised driver heartbeats. Startup reads
+used 24-KiB chunks with a bounded one-millisecond sleep in the earlier direct
+read path. The current service-owned VFS path uses at most 128-KiB bulk reads;
+pending transactions sleep in its client. R1.2c adds a 30-second aggregate
+file budget, keeping every request at or below the original two-second bound.
+Partial replies cannot restart that aggregate budget. A failed read gets one
+final one-millisecond close attempt and retires the local session; neither a
+clock failure/regression nor a late close can publish a partially read font.
 
 ## Desktop startup splash
 
@@ -484,6 +487,22 @@ immediately before its unchanged QEMU runtime gates. ATA profile timings,
 guest deadlines, Unicode self-tests and the packaged VMware VM are unchanged.
 The real-code startup-reader host test verifies partial reads, bounded
 requests, service-progress reporting and closed handles on publication errors.
+It now also tests trickling partial replies, aggregate expiry, clock faults
+and late completion. Bounded font open/stat/read/close markers disambiguate
+progress from deadlock; they compare the complete path rather than a 32-byte
+command argument.
+
+On Windows 11 the headless QEMU child must explicitly retain its requested
+timer resolution. The same-image diagnostic comparison reproduced distorted
+PIT/TSC calibration (~59 GHz) and a 180-second timeout under the default
+invisible-process policy; disabling only
+`PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION` for that child restored
+~5.33 GHz and completed GTEST and both memory proofs. This follows the
+[Microsoft process power-throttling contract](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessinformation).
+The runner preserves other policy bits, verifies readback and terminates/reaps
+the new child if configuration fails. Earlier Windows and non-Windows hosts
+are untouched. No global host setting, priority boost, injected timer request,
+guest-clock scaling, timer calibration or acceptance deadline is changed.
 
 After successful display activation and validation, the Ring-3 desktop now
 publishes a deterministic dark background and the exact `REIST OS` title

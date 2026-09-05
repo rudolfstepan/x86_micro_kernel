@@ -172,11 +172,23 @@ und `libreisttls.a` werden nicht umgestellt.
 Vor Allocation bindet `reist_libc_init` caller-owned, `max_align_t`-ausgerichteten
 Speicher. Maximal 4 MiB und 4096 gleichzeitig lebende Objekte, eine Ausführungs-
 und Allocation-Domäne je Prozess, keine Threads, IRQ-Nutzung oder Reentranz.
-Die maximal 8193 Out-of-band-Deskriptoren bilden eine vor jeder Änderung
+Die maximal 8312 Out-of-band-Deskriptoren bilden eine vor jeder Änderung
 validierte, lückenlose Partition. Bereiche, Ausrichtung, Prüfwörter und
 Live-Zähler werden ohne Dereferenzierung fremder Freigabezeiger geprüft.
-Speicherwachstum führt nicht zu impliziten Syscalls; vorhandene Heap-Syscalls,
-Kernel-Allocator, MYPR und öffentliche Syscall-ABI bleiben unverändert.
+Im alten Arena-Modus fuehrt Speicherwachstum nicht zu impliziten Syscalls.
+R1.2c ergaenzt den expliziten versionierten Backingvertrag
+`reist_libc_init_backing` sowie den SDK-Adapter `reist_libc_init_process(budget)`.
+Bis zu 120 private Regionen wachsen bedarfsgerecht innerhalb des gewaehlt festen
+Budgets (maximal 512 MiB). Der Prozessadapter verwendet 256-KiB-Wachstumsschritte
+und die vorhandenen Heap-Syscalls. Vollstaendig leere Regionen gehen bei `free`
+sofort an den Provider zurueck; Statistik-`capacity` meldet tatsaechliches
+Backing, nicht reserviertes Budget. 4096 gleichzeitig lebende C-Objekte und
+ein Ausfuehrungskontext bleiben die dokumentierte Metadatengrenze.
+Der Kernel begrenzt privaten Heap zusaetzlich auf die Haelfte verwalteten RAM,
+hoechstens 512 MiB, und bewahrt eine globale Frame-Reserve. MYPR und die
+oeffentliche Syscall-ABI bleiben unveraendert. Der neue Modus ist mit den
+R1.2c-Host- und QEMU-Gastnachweisen abgenommen; Details und Nachweisgrenzen im
+[Prozessspeichervertrag](PRIVATE_PROCESS_MEMORY_CONTRACT.md).
 
 Allocation-Fehler liefern NULL und POSIX-artiges `ENOMEM`; `calloc` prüft
 Multiplikation, gescheitertes `realloc` erhält das alte Objekt. Bewusst gewählte

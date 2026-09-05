@@ -47,6 +47,9 @@ void* k_malloc(size_t size);
 void* k_realloc(void *ptr, size_t new_size);
 
 size_t allocate_frame(void);
+/* Private user-page admission retains 1/16 of managed frames for kernel and
+ * recovery allocations. Reserved/allocated frames are never candidates. */
+size_t allocate_user_frame(void);
 size_t allocate_frame_at_or_above(size_t minimum_address);
 void free_frame(size_t addr);
 

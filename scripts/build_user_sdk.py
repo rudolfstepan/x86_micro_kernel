@@ -108,7 +108,7 @@ STARTUP_SOURCE = CORE_ROOT / "crt0.c"
 LIBC_ROOT = ROOT / "userspace/libc"
 LIBC_INCLUDE_ROOT = LIBC_ROOT / "include"
 LIBC_SOURCES = tuple(LIBC_ROOT / "lib" / name for name in
-                     ("heap.c", "bytes.c", "runtime.c"))
+                     ("heap.c", "bytes.c", "runtime.c", "process_heap.c"))
 WAPCAPLET_ARCHIVE = ROOT / "third_party/libwapcaplet.tar.gz"
 WAPCAPLET_SHA256 = "9b2aa1dd6d6645f8e992b3697fdbd87f0c0e1da5721fa54ed29b484d13160c5c"
 

@@ -834,6 +834,7 @@ SYSTEM_IMAGE_FILES := \
 	sbin/httpd.prg=$(SYSTEM_PROGRAM_DIR)/HTTPD.PRG \
 	usr/bin/curl.prg=$(SYSTEM_PROGRAM_DIR)/CURL.PRG \
 	usr/bin/crtest.prg=$(SYSTEM_PROGRAM_DIR)/CRTEST.PRG \
+	usr/bin/memtest.prg=$(SYSTEM_PROGRAM_DIR)/MEMTEST.PRG \
 	htdocs/about.txt=htdocs/about.txt \
 	htdocs/readme.txt=htdocs/readme.txt \
 	htdocs/status.jsn=htdocs/status.jsn \

@@ -11,6 +11,17 @@ COMMAND_SOURCE = ROOT / "kernel" / "shell" / "command.c"
 
 
 class ShellSourceRegressionTests(unittest.TestCase):
+    def test_memory_probe_is_reached_by_userspace_search(self):
+        for path in ("Makefile", "scripts/build-windows.ps1"):
+            self.assertIn("usr/bin/memtest.prg", (ROOT / path).read_text())
+        shell = (ROOT / "userspace/bin/shell.c").read_text()
+        self.assertIn('"/usr/bin"', shell)
+        self.assertIn("join_program_path(search_paths[index], program,", shell)
+        self.assertIn("x86os_spawnv(executable", shell)
+        self.assertIn('"MEMTEST.PRG"', (ROOT / "scripts/build_system_programs.py").read_text())
+        self.assertIn('inject_ps2_command(process, "memtest")',
+                      (ROOT / "scripts/run_qemu_smoke.py").read_text())
+
     def test_html_worker_is_packaged_on_userspace_search_path(self):
         for path in ("Makefile", "scripts/build-windows.ps1"):
             self.assertIn("usr/bin/htmlwork.prg", (ROOT / path).read_text())

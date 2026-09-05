@@ -88,6 +88,8 @@ typedef struct task {
     page_directory_t *page_directory;
     uint32_t *reap_kernel_stack;
     page_directory_t *reap_page_directory;
+    uint32_t reap_page_cursor;
+    bool reap_busy;
     uint32_t user_entry;
     uint32_t user_stack;
     bool user_mode;

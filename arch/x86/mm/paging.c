@@ -461,30 +461,49 @@ void test_paging(void) {
     printf("Paging identity-map test passed at %p.\n", (void*)mapped_address);
 }
 
-void free_page_directory(page_directory_t *pd) {
+bool free_page_directory_step(page_directory_t *pd, uint32_t *cursor) {
     if (pd == NULL || (void*)pd == (void*)page_directory) {
-        return;
+        return true;
     }
-
+    if (cursor == NULL) return false;
     uint32_t flags = page_table_lock_acquire_irq();
     uint32_t *entries = (uint32_t*)pd->entries;
-    /* Only the user window is private. Kernel and MMIO page tables are shared
-     * with the kernel directory and must never be released with a process. */
-    for (size_t i = USER_PAGE_START; i < USER_PAGE_END; ++i) {
+    if (*cursor < USER_PAGE_START * PAGE_TABLE_ENTRIES)
+        *cursor = USER_PAGE_START * PAGE_TABLE_ENTRIES;
+    /* Retired directories cannot be active on a CPU. Kernel/MMIO tables are
+     * shared and are never candidates. Persistent cursor makes cancellation
+     * between steps safe without locally detached, unowned frames. */
+    for (uint32_t work = 0U; work < 64U &&
+         *cursor < USER_PAGE_END * PAGE_TABLE_ENTRIES; ++work) {
+        uint32_t i = *cursor / PAGE_TABLE_ENTRIES;
+        uint32_t j = *cursor % PAGE_TABLE_ENTRIES;
         if ((entries[i] & PAGE_PRESENT) != 0) {
             uint32_t *table =
                 (uint32_t*)(uintptr_t)(entries[i] & 0xFFFFF000U);
-            for (size_t j = 0; j < PAGE_TABLE_ENTRIES; ++j) {
-                if ((table[j] & (PAGE_PRESENT | PAGE_USER)) ==
-                    (PAGE_PRESENT | PAGE_USER)) {
-                    free_page((void*)(uintptr_t)(table[j] & 0xFFFFF000U));
-                }
+            uint32_t entry = table[j];
+            table[j] = 0U;
+            if ((entry & (PAGE_PRESENT | PAGE_USER)) == (PAGE_PRESENT | PAGE_USER))
+                free_page((void*)(uintptr_t)(entry & 0xFFFFF000U));
+            ++*cursor;
+            if (j + 1U == PAGE_TABLE_ENTRIES) {
+                entries[i] = 0U;
+                free_page(table);
             }
-            free_page(table);
-        }
+        } else *cursor = (i + 1U) * PAGE_TABLE_ENTRIES;
     }
-    free_page(pd);
+    bool complete = *cursor >= USER_PAGE_END * PAGE_TABLE_ENTRIES;
+    if (complete) free_page(pd);
     page_table_lock_release_irq(flags);
+    return complete;
+}
+
+void free_page_directory(page_directory_t *pd) {
+    uint32_t cursor = USER_PAGE_START * PAGE_TABLE_ENTRIES;
+    /* Loader rollback owns unpublished resources and cannot transfer ownership
+     * here. The scheduler uses the step API with persistent task-owned state. */
+    for (uint32_t i = USER_PAGE_START; i < USER_PAGE_END; ++i)
+        for (uint32_t batch = 0U; batch < PAGE_TABLE_ENTRIES / 64U; ++batch)
+            if (free_page_directory_step(pd, &cursor)) return;
 }
 
 int unmap_page(page_directory_t *pd, uint32_t virtual_address,
@@ -511,6 +530,29 @@ int unmap_page(page_directory_t *pd, uint32_t virtual_address,
     if (free_physical_frame) free_page((void*)physical);
     page_table_lock_release_irq(flags);
     return 0;
+}
+
+void paging_trim_user_tables(page_directory_t *pd, uint32_t address, uint32_t length) {
+    if (!pd || (void *)pd == (void *)page_directory ||
+        address < USER_BASE || address >= USER_TOP || !length ||
+        length > USER_TOP-address) return;
+    uint32_t last = (address+length-1U) >> 22;
+    for (uint32_t i = address >> 22; i <= last; ++i) {
+        uint32_t flags = page_table_lock_acquire_irq();
+        uint32_t *entries = (uint32_t *)pd->entries;
+        if ((entries[i] & (PAGE_PRESENT | PAGE_USER)) == (PAGE_PRESENT | PAGE_USER)) {
+            uint32_t *table = (uint32_t *)(uintptr_t)(entries[i] & 0xFFFFF000U);
+            bool empty = true;
+            for (uint32_t j=0U; j<PAGE_TABLE_ENTRIES; ++j)
+                if (table[j] & PAGE_PRESENT) { empty=false; break; }
+            if (empty) {
+                entries[i]=0U;
+                tlb_shootdown_or_panic(pd, i << 22, true);
+                free_page(table);
+            }
+        }
+        page_table_lock_release_irq(flags);
+    }
 }
 
 bool user_range_accessible(const page_directory_t *pd, uint32_t address,

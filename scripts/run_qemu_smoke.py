@@ -175,6 +175,7 @@ GUEST_MAC = bytes((0x52, 0x54, 0x00, 0x12, 0x34, 0x56))
 QEMU_MUX_SWITCH = "\x01c"
 KEY_INTERVAL_SECONDS = 0.075
 FAIL_MARKERS = (
+    "PRIVATE_MEMORY_RUNTIME_FAIL",
     "TEST_FAIL",
     "curl:",
     "PANIC:",
@@ -1506,6 +1507,47 @@ def stop_process(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=3)
 
 
+def configure_qemu_host_timers(process: subprocess.Popen[str]) -> bool:
+    """Keep the Windows-11 invisible child on its requested timer resolution.
+
+    Microsoft SetProcessInformation / ProcessPowerThrottling contract. This
+    changes only this child, preserves other power policies and neither scales
+    guest clocks nor changes any test deadline. No global timer request.
+    """
+    if sys.platform != "win32" or sys.getwindowsversion().build < 22000:
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    class PowerState(ctypes.Structure):
+        _fields_ = [("Version", ctypes.c_uint32),
+                    ("ControlMask", ctypes.c_uint32),
+                    ("StateMask", ctypes.c_uint32)]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    query = kernel.GetProcessInformation
+    update = kernel.SetProcessInformation
+    for function in (query, update):
+        function.argtypes = [wintypes.HANDLE, ctypes.c_int,
+                             ctypes.c_void_p, wintypes.DWORD]
+        function.restype = wintypes.BOOL
+    handle = int(process._handle)
+    state = PowerState(1, 0, 0)
+    if not query(handle, 4, ctypes.byref(state), ctypes.sizeof(state)) or state.Version != 1:
+        raise OSError(f"QEMU timer-policy query failed: {ctypes.get_last_error()}")
+    state.ControlMask |= 4  # PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+    state.StateMask &= ~4
+    expected = (state.ControlMask, state.StateMask)
+    if not update(handle, 4, ctypes.byref(state), ctypes.sizeof(state)):
+        raise OSError(f"QEMU timer-policy update failed: {ctypes.get_last_error()}")
+    observed = PowerState(1, 0, 0)
+    if (not query(handle, 4, ctypes.byref(observed), ctypes.sizeof(observed)) or
+            observed.Version != 1 or
+            (observed.ControlMask, observed.StateMask) != expected):
+        raise OSError("QEMU timer-policy readback did not preserve the requested policy")
+    return True
+
+
 def run(
     qemu: Path,
     image: Path,
@@ -1539,6 +1581,7 @@ def run(
     vmware_vga: bool = False,
     smp: int = 1,
     expect_libc_client: bool = False,
+    expect_process_memory: bool = False,
 ) -> tuple[int, str, str | None]:
     injection_listener: socket.socket | None = None
     injection_connection: socket.socket | None = None
@@ -1559,11 +1602,12 @@ def run(
         injection_listener, injection_port = open_injection_listener()
     if expect_handover:
         handover_listener, handover_port = open_injection_listener()
+    process = None
     try:
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
                          nic, persistent, injection_port, handover_port, sata,
-                         auxiliary_sata_image, vmware_vga, smp,
+                         auxiliary_sata_image, vmware_vga or expect_process_memory, smp,
                          (expect_tls_curl_client or
                           expect_public_tls_curl_client),
                          expect_public_tls_curl_client),
@@ -1575,11 +1619,19 @@ def run(
             errors="replace",
             bufsize=0,
         )
+        host_timers_configured = configure_qemu_host_timers(process)
     except BaseException:
         if injection_listener is not None:
             injection_listener.close()
         if handover_listener is not None:
             handover_listener.close()
+        if process is not None:
+            try:
+                stop_process(process)
+            finally:
+                for pipe in (process.stdin, process.stdout):
+                    if pipe is not None:
+                        pipe.close()
         raise
     if injection_listener is not None:
         try:
@@ -1610,7 +1662,9 @@ def run(
             handover_listener.close()
     assert process.stdin is not None and process.stdout is not None
     chunks: queue.Queue[str] = queue.Queue()
-    transcript: list[str] = []
+    transcript: list[str] = (
+        ["HOST_QEMU_TIMER_POLICY verified=1 scope=child\n"]
+        if host_timers_configured else [])
     finished = threading.Event()
     thread = threading.Thread(
         target=reader,
@@ -1820,6 +1874,25 @@ def run(
                     deadline,
                     after=test_position,
                 )
+            if error is None and expect_process_memory:
+                for attempt in range(2):
+                    inject_ps2_command(process, "memtest")
+                    error, position = wait_for_line(process, chunks, transcript, finished,
+                        "PRIVATE_MEMORY_RUNTIME_OK", deadline, after=shell_position)
+                    if error is not None:
+                        break
+                    error, end = wait_for_line(process, chunks, transcript, finished,
+                        SHELL_PROMPT, deadline, after=position)
+                    if error is not None:
+                        break
+                    section = "".join(transcript)[shell_position:end]
+                    required = ("PRIVATE_MEMORY_BUDGET", "PRIVATE_MEMORY_RETURN_OK", "PRIVATE_MEMORY_REALLOC_OK",
+                        "PRIVATE_MEMORY_FAULT_REAP_OK", "PRIVATE_MEMORY_KILL_REAP_OK",
+                        "PRIVATE_MEMORY_PEER ticks=")
+                    if "PRIVATE_MEMORY_RUNTIME_FAIL" in section or any(m not in section for m in required):
+                        error = "private memory admission, collection or containment proof incomplete"
+                        break
+                    shell_position = end
             if error is None and expect_libc_client:
                 # Two complete shell invocations, each with normal, heap-fault,
                 # CPU-fault and fresh normal children. No raw image mutation.
@@ -2558,6 +2631,8 @@ def main() -> int:
         "--expect-curl-client", action="store_true",
         help="run curl against a deterministic socket-hub HTTP peer",
     )
+    parser.add_argument("--expect-process-memory", action="store_true",
+                        help="prove large private heaps, collection and peer progress")
     parser.add_argument("--expect-libc-client", action="store_true",
                         help="prove the C runtime, upstream library and contained child failures")
     parser.add_argument(
@@ -2744,6 +2819,7 @@ def main() -> int:
             args.vmware_vga,
             args.smp,
             args.expect_libc_client,
+            args.expect_process_memory,
         )
     except OSError as error:
         print(f"guest-smoke: unable to start QEMU: {error}", file=sys.stderr)

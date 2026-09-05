@@ -107,6 +107,10 @@ bool paging_prepare_cpu_memory_types(void);
 void test_paging(void);
 page_directory_t* create_page_directory(void);
 void free_page_directory(page_directory_t* pd);
+/* Exclusive retired/unpublished directory only. Each step visits at most 64
+ * entries; cursor and directory stay owned by the reaping task until true. */
+bool free_page_directory_step(page_directory_t *pd, uint32_t *cursor);
+void paging_trim_user_tables(page_directory_t *pd, uint32_t address, uint32_t length);
 int map_page(page_directory_t* pd, uint32_t virtual_address,
              uint32_t physical_address, uint32_t flags);
 int unmap_page(page_directory_t* pd, uint32_t virtual_address,

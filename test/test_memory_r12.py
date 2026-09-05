@@ -422,7 +422,12 @@ class KernelStackAndReapingTests(unittest.TestCase):
         self.assertLess(detach_call, first_restore)
         self.assertIn("task->status == TASK_REAPING", compact)
 
-        free_directory = reap_all.index("free_page_directory(page_directory)")
+        free_directory = reap_all.index("free_page_directory_step(page_directory, &task->reap_page_cursor)")
+        self.assertIn("!task->reap_busy", reap_all)
+        self.assertIn("task->reap_busy = true", reap_all)
+        self.assertIn("task->reap_busy = false", reap_all)
+        self.assertNotIn("task->reap_page_directory = NULL", reap_all)
+        self.assertIn("scheduler_yield()", reap_all)
         free_stack = reap_all.index("scheduler_free_kernel_stack(kernel_stack)")
         claimed = reap_all.index("page_directory = task->reap_page_directory")
         claim_restore = reap_all.index(
@@ -454,11 +459,13 @@ class KernelStackAndReapingTests(unittest.TestCase):
                 )
             ]
             self.assertNotIn("free_page_directory(", critical)
+            self.assertNotIn("free_page_directory_step(", critical)
             self.assertNotIn("scheduler_free_kernel_stack(", critical)
 
         first_critical = reap_all[first_save:first_restore]
         self.assertIn("spinlock_acquire(&task_table_lock)", first_critical)
         self.assertNotIn("free_page_directory(", first_critical)
+        self.assertNotIn("free_page_directory_step(", first_critical)
         self.assertNotIn("scheduler_free_kernel_stack(", first_critical)
 
     def test_wait_completes_detached_reaping_after_restoring_interrupts(self):

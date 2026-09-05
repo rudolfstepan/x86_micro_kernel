@@ -56,6 +56,7 @@
     (DESKTOP_FILE_ICON_SIZE * DESKTOP_FILE_ICON_SIZE)
 #define DESKTOP_FILE_ICON_ENCODED_CAPACITY 8192U
 #define DESKTOP_FILE_READ_TIMEOUT_MS 2000U
+#define DESKTOP_FILE_TOTAL_TIMEOUT_MS 30000U
 #define DESKTOP_SHORTCUT_PROBE_RESTART_TIMEOUT_MS 5000U
 #define DESKTOP_FONT_FILE_CAPACITY (3U * 1024U * 1024U)
 #define DESKTOP_FONT_MAPPING_CAPACITY 262144U
@@ -1062,43 +1063,85 @@ static uint32_t intersect_rects(desktop_rect_t left, desktop_rect_t right,
 static int desktop_lifecycle_publish_progress(
     uint32_t supervised, uint32_t *sequence, uint64_t *heartbeat_ms);
 
+static void desktop_font_io_metric(const char *phase, uint32_t offset, int status) {
+    x86os_puts("DESKTOP_FONT_IO phase="); x86os_puts(phase);
+    x86os_puts(" offset="); x86os_print_number((int)offset);
+    x86os_puts(" status="); x86os_print_number(status); x86os_putchar('\n');
+}
+
+static int desktop_file_remaining(uint64_t start, uint64_t *last,
+                                   uint32_t *timeout) {
+    uint64_t now = 0U;
+    if (x86os_monotonic_ms(&now) != 0 || now < *last) return -5;
+    *last = now;
+    if (now - start >= DESKTOP_FILE_TOTAL_TIMEOUT_MS) return -110;
+    uint64_t remaining = DESKTOP_FILE_TOTAL_TIMEOUT_MS - (now - start);
+    *timeout = remaining < DESKTOP_FILE_READ_TIMEOUT_MS
+        ? (uint32_t)remaining : DESKTOP_FILE_READ_TIMEOUT_MS;
+    return 0;
+}
+
 static int read_file_bounded_progress(
         const char *path, uint8_t *bytes, size_t capacity, size_t *size_out,
         uint32_t lifecycle_supervised, uint32_t *lifecycle_sequence,
         uint64_t *lifecycle_heartbeat_ms) {
     if (path == 0 || bytes == 0 || capacity == 0U || size_out == 0) return -22;
     *size_out = 0U;
+    uint64_t started = 0U;
+    if (x86os_monotonic_ms(&started) != 0) return -5;
+    uint64_t last = started;
+    uint32_t timeout = DESKTOP_FILE_READ_TIMEOUT_MS;
+    uint32_t font_diagnostic = path_equal_ascii_case(path, DESKTOP_FONT_PATH);
+    if (font_diagnostic) desktop_font_io_metric("open-begin", 0U, 0);
     reist_vfs_file_handle_t handle = REIST_VFS_FILE_INVALID_HANDLE;
     int status = reist_vfs_file_open(
         path, DESKTOP_FILE_READ_TIMEOUT_MS, &handle);
+    if (font_diagnostic) desktop_font_io_metric("open-end", 0U, status);
     if (status != 0) return status;
     x86os_file_info_t info;
-    status = reist_vfs_file_fstat(handle, &info);
-    if (status != 0 || info.type != X86OS_FILE || info.size == 0U ||
-        info.size > capacity) {
-        (void)reist_vfs_file_close(handle);
-        return status != 0 ? status : -75;
-    }
     size_t used = 0U;
-    while (used < info.size) {
+    status = desktop_file_remaining(started, &last, &timeout);
+    if (status == 0) status = reist_vfs_file_set_timeout(handle, timeout);
+    if (status == 0) status = reist_vfs_file_fstat(handle, &info);
+    if (font_diagnostic) desktop_font_io_metric("stat-end", 0U, status);
+    if (status == 0 && (info.type != X86OS_FILE || info.size == 0U ||
+                       info.size > capacity)) status = -75;
+    while (status == 0 && used < info.size) {
+        status = desktop_file_remaining(started, &last, &timeout);
+        if (status == 0) status = reist_vfs_file_set_timeout(handle, timeout);
+        if (status != 0) break;
         size_t request = info.size - used;
         if (request > X86OS_STORAGE_BULK_MAX_BYTES)
             request = X86OS_STORAGE_BULK_MAX_BYTES;
+        uint32_t trace = font_diagnostic && (used % (512U * 1024U) == 0U);
+        if (trace) desktop_font_io_metric("read-begin", (uint32_t)used, 0);
         int amount = reist_vfs_file_read_bulk(handle, bytes + used, request);
+        if (trace || (font_diagnostic && amount <= 0))
+            desktop_font_io_metric("read-end", (uint32_t)used, amount);
         if (amount <= 0 || (size_t)amount > request) {
-            (void)reist_vfs_file_close(handle);
-            return -5;
+            status = amount == -110 ? -110 : -5;
+            break;
         }
         used += (size_t)amount;
         if (desktop_lifecycle_publish_progress(
                 lifecycle_supervised, lifecycle_sequence,
                 lifecycle_heartbeat_ms) != 0) {
-            (void)reist_vfs_file_close(handle);
-            return -1;
+            status = -1;
+            break;
         }
     }
+    if (status == 0) status = desktop_file_remaining(started, &last, &timeout);
+    /* The local session must be retired even after a timeout/clock failure.
+     * Give that final close only one millisecond once the read has failed. */
+    int timeout_status = reist_vfs_file_set_timeout(handle, status == 0 ? timeout : 1U);
+    if (status == 0) status = timeout_status;
+    if (font_diagnostic) desktop_font_io_metric("close-begin", (uint32_t)used, 0);
     int close_status = reist_vfs_file_close(handle);
+    if (font_diagnostic) desktop_font_io_metric("close-end", (uint32_t)used, close_status);
+    if (status != 0) return status;
     if (close_status != 0) return close_status;
+    status = desktop_file_remaining(started, &last, &timeout);
+    if (status != 0) return status;
     *size_out = used;
     return 0;
 }

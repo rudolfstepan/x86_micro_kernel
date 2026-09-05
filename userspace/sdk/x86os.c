@@ -747,7 +747,7 @@ int x86os_getchar_nonblocking(void) {
 
 void* x86os_malloc(size_t size) {
     uintptr_t result = x86os_syscall(X86OS_SYS_MALLOC, size, 0, 0);
-    return (int32_t)result < 0 ? NULL : (void*)result;
+    return result >= (uintptr_t)(uint32_t)-4095 ? NULL : (void*)result;
 }
 
 void x86os_free(void* pointer) {
@@ -757,7 +757,7 @@ void x86os_free(void* pointer) {
 void* x86os_realloc(void* pointer, size_t size) {
     uintptr_t result = x86os_syscall(X86OS_SYS_REALLOC,
                                      (uintptr_t)pointer, size, 0);
-    return (int32_t)result < 0 ? NULL : (void*)result;
+    return result >= (uintptr_t)(uint32_t)-4095 ? NULL : (void*)result;
 }
 
 uint32_t x86os_get_date(void) {

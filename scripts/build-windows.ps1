@@ -385,6 +385,7 @@ try {
         'sbin/httpd.prg' = 'HTTPD.PRG'
         'usr/bin/curl.prg' = 'CURL.PRG'
         'usr/bin/crtest.prg' = 'CRTEST.PRG'
+        'usr/bin/memtest.prg' = 'MEMTEST.PRG'
         'sbin/config.prg' = 'CONFIG.PRG'
         'usr/bin/repeat.prg' = 'REPEAT.PRG'; 'usr/bin/calc.prg' = 'CALC.PRG'
         'usr/bin/date.prg' = 'DATE.PRG'; 'usr/bin/uptime.prg' = 'UPTIME.PRG'

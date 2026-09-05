@@ -528,6 +528,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "HTTPD.PRG",
                 "CURL.PRG",
                 "CRTEST.PRG",
+                "MEMTEST.PRG",
                 "EDIT.PRG",
                 "CHILDEX.PRG",
                 "FAULTDE.PRG",

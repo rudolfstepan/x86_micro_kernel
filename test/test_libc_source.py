@@ -31,7 +31,8 @@ class LibcTests(unittest.TestCase):
     def test_guest_flag_is_appended_without_changing_qemu_options(self):
         import inspect
         import run_qemu_smoke as smoke
-        self.assertEqual(list(inspect.signature(smoke.run).parameters)[-1], "expect_libc_client")
+        self.assertEqual(list(inspect.signature(smoke.run).parameters)[-2:],
+                         ["expect_libc_client", "expect_process_memory"])
         self.assertNotIn("expect_libc_client", inspect.signature(smoke.qemu_command).parameters)
         script = (ROOT / "scripts/test-reist-runtime.ps1").read_text()
         self.assertIn("'libc-client'", script)

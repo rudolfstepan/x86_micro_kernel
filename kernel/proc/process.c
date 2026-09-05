@@ -648,6 +648,8 @@ static int claim_process_slot(const char *name, bool shared_image,
             process->terminating = false;
             process->uses_shared_program_image = shared_image;
             process->heap_next = USER_HEAP_BASE;
+            process->heap_bytes = 0U;
+            process->heap_budget = 0U;
             memset(process->user_allocations, 0,
                    sizeof(process->user_allocations));
             memset(process->files, 0, sizeof(process->files));
@@ -926,139 +928,6 @@ int create_process(void* entry_point) {
         return -1;
     }
     return pid;
-}
-
-static int map_user_allocation(user_allocation_t *allocation) {
-    uint32_t mapped = 0;
-    while (mapped < allocation->mapped_size) {
-        uint32_t frame = (uint32_t)allocate_frame();
-        if (frame == 0 ||
-            map_page(paging_current_directory(), allocation->address + mapped,
-                     frame, PAGE_USER | PAGE_RW) != 0) {
-            if (frame != 0) free_frame(frame);
-            while (mapped != 0) {
-                mapped -= PAGE_SIZE;
-                (void)unmap_page(paging_current_directory(),
-                                 allocation->address + mapped, true);
-            }
-            return -1;
-        }
-        memset((void*)(uintptr_t)frame, 0, PAGE_SIZE);
-        mapped += PAGE_SIZE;
-    }
-    return 0;
-}
-
-void *process_user_malloc(size_t size) {
-    Process *process = scheduler_current_process();
-    if (process == NULL || size == 0 || size > UINT32_MAX - PAGE_SIZE) {
-        return NULL;
-    }
-    uint32_t mapped_size = ((uint32_t)size + PAGE_SIZE - 1U) &
-                           ~(PAGE_SIZE - 1U);
-    uint32_t flags = irq_save();
-    user_allocation_t *slot = NULL;
-
-    for (int i = 0; i < MAX_USER_ALLOCATIONS; ++i) {
-        user_allocation_t *candidate = &process->user_allocations[i];
-        if (!candidate->allocated && candidate->address != 0 &&
-            candidate->mapped_size >= mapped_size) {
-            slot = candidate;
-            break;
-        }
-        if (!candidate->allocated && candidate->address == 0 && slot == NULL) {
-            slot = candidate;
-        }
-    }
-    if (slot == NULL) {
-        irq_restore(flags);
-        return NULL;
-    }
-
-    if (slot->address == 0) {
-        if (process->heap_next < USER_HEAP_BASE ||
-            process->heap_next >= USER_HEAP_TOP ||
-            mapped_size > USER_HEAP_TOP - process->heap_next) {
-            irq_restore(flags);
-            return NULL;
-        }
-        slot->address = process->heap_next;
-        slot->mapped_size = mapped_size;
-        process->heap_next += mapped_size;
-    }
-    if (map_user_allocation(slot) != 0) {
-        irq_restore(flags);
-        return NULL;
-    }
-    slot->requested_size = (uint32_t)size;
-    slot->allocated = true;
-    void *result = (void*)(uintptr_t)slot->address;
-    irq_restore(flags);
-    return result;
-}
-
-int process_user_free(void *pointer) {
-    if (pointer == NULL) return 0;
-    Process *process = scheduler_current_process();
-    if (process == NULL) return -1;
-
-    uint32_t address = (uint32_t)(uintptr_t)pointer;
-    uint32_t flags = irq_save();
-    for (int i = 0; i < MAX_USER_ALLOCATIONS; ++i) {
-        user_allocation_t *allocation = &process->user_allocations[i];
-        if (allocation->allocated && allocation->address == address) {
-            for (uint32_t offset = 0; offset < allocation->mapped_size;
-                 offset += PAGE_SIZE) {
-                (void)unmap_page(paging_current_directory(), address + offset,
-                                 true);
-            }
-            allocation->requested_size = 0;
-            allocation->allocated = false;
-            irq_restore(flags);
-            return 0;
-        }
-    }
-    irq_restore(flags);
-    return -1;
-}
-
-void *process_user_realloc(void *pointer, size_t size) {
-    if (pointer == NULL) return process_user_malloc(size);
-    if (size == 0) {
-        (void)process_user_free(pointer);
-        return NULL;
-    }
-    Process *process = scheduler_current_process();
-    if (process == NULL) return NULL;
-
-    user_allocation_t *old = NULL;
-    uint32_t flags = irq_save();
-    for (int i = 0; i < MAX_USER_ALLOCATIONS; ++i) {
-        if (process->user_allocations[i].allocated &&
-            process->user_allocations[i].address ==
-                (uint32_t)(uintptr_t)pointer) {
-            old = &process->user_allocations[i];
-            break;
-        }
-    }
-    if (old == NULL) {
-        irq_restore(flags);
-        return NULL;
-    }
-    uint32_t old_size = old->requested_size;
-    if (size <= old->mapped_size) {
-        old->requested_size = (uint32_t)size;
-        irq_restore(flags);
-        return pointer;
-    }
-    irq_restore(flags);
-
-    void *replacement = process_user_malloc(size);
-    if (replacement == NULL) return NULL;
-    size_t copy_size = old_size < size ? old_size : size;
-    memcpy(replacement, pointer, copy_size);
-    (void)process_user_free(pointer);
-    return replacement;
 }
 
 static int append_path_components(char *output, size_t capacity,

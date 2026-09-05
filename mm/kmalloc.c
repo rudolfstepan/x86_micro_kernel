@@ -479,9 +479,16 @@ int initialize_memory_system(void) {
     return 0;
 }
 
-static size_t allocate_frame_from(size_t minimum_address, bool report_failure) {
+static size_t allocate_frame_from(size_t minimum_address, bool report_failure,
+                                  bool user_admission) {
     uint32_t flags = spinlock_acquire_irq(&frame_lock);
     if (!memory_initialized) {
+        spinlock_release_irq(&frame_lock, flags);
+        return 0;
+    }
+
+    if (user_admission && free_frame_count <= managed_frame_count / 16U) {
+        if (frame_allocation_failures != UINT64_MAX) ++frame_allocation_failures;
         spinlock_release_irq(&frame_lock, flags);
         return 0;
     }
@@ -537,11 +544,15 @@ static size_t allocate_frame_from(size_t minimum_address, bool report_failure) {
 }
 
 size_t allocate_frame(void) {
-    return allocate_frame_from(FRAME_SIZE, true);
+    return allocate_frame_from(FRAME_SIZE, true, false);
+}
+
+size_t allocate_user_frame(void) {
+    return allocate_frame_from(FRAME_SIZE, false, true);
 }
 
 size_t allocate_frame_at_or_above(size_t minimum_address) {
-    return allocate_frame_from(minimum_address, false);
+    return allocate_frame_from(minimum_address, false, false);
 }
 
 void free_frame(size_t addr) {
