@@ -207,6 +207,17 @@ frei, bevor der Heap zurückgesetzt wird. C-Locale-/ctype-Funktionen werden nich
 vorgetäuscht: Diese Abhängigkeit benötigt keine davon. Stdio, Dateistreams, DOM/CSS
 und JavaScript bleiben außerhalb dieses Speicherschnitts.
 
+R3.9 ergänzt `strncpy` und `bsearch` gemäß ISO C11 sowie C-Locale-`tolower`
+und POSIX-`strncasecmp`. Die normalen C-Objekt-/Zeigervorbedingungen bleiben
+erhalten; `bsearch` weist zusätzlich einen überlaufenden Größenbereich ab.
+`ctype.h` und `strings.h` deklarieren nur diese tatsächlich implementierten
+Teilsätze, keine vollständige Locale-/POSIX-Laufzeit. Der SDK-Build installiert
+auch gepinnte `libparserutils.a`/`libhubbub.a`, Header, MIT-Lizenzen und
+pkg-config-Dateien. Die Archive bleiben opt-in; allein HTMLWORK linkt diese
+Parserabhängigkeiten. Host-Generatorvoraussetzungen: Perl und GNU gperf.
+Der Parserprozess und sein privater geprüfter Dateiadapter sind in
+`BROWSER_ENGINE_PORT_PLAN.md` beschrieben; keine Erweiterung des Kernel-ABI.
+
 `scripts/build_user_sdk.py` erzeugt ein Sysroot mit konventionellem Aufbau:
 
 ```text

@@ -1514,12 +1514,19 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         "Control Panel did not publish a visible window"
                     )
                 if browser_probe:
+                    browser_captured = False
                     while time.monotonic() < deadline:
                         drain(output, transcript)
                         probe_text = "".join(transcript)
                         if ("DESKTOP_BROWSER_FAIL" in probe_text or
                                 "BROWSER_PROBE_FAIL" in probe_text):
                             raise RuntimeError("Browser probe failed")
+                        # Capture the fully repainted image fixture while the
+                        # subsequent worker fault/timeout tests keep it open.
+                        # Screenshot latency must not require a guest sleep.
+                        if not browser_captured and "BROWSER_RELOAD_PAINTED" in probe_text:
+                            capture_screenshot(process, screenshot, deadline)
+                            browser_captured = True
                         required = (
                             "DESKTOP_BROWSER_OK", "BROWSER_RENDER_OK",
                             "BROWSER_ADDRESS_REPLACE_OK",
@@ -1531,9 +1538,12 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             "BROWSER_RELOAD_OK", "BROWSER_RELOAD_PAINTED",
                             "BROWSER_TRANSPORT_EXIT_OK",
                             "BROWSER_SCROLL_CLIP_OK",
+                            "BROWSER_HTML5_WORKER_OK",
+                            "BROWSER_HTML5_FAULT_CONTAINED_OK",
+                            "BROWSER_HTML5_TIMEOUT_CONTAINED_OK",
+                            "BROWSER_HTML5_RECOVERY_OK",
                         )
                         if all(marker in probe_text for marker in required):
-                            capture_screenshot(process, screenshot, deadline)
                             break
                         time.sleep(0.02)
                     else:
@@ -1546,7 +1556,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         )
                     while time.monotonic() < deadline:
                         drain(output, transcript)
-                        if "BROWSER_CLOSE_OK" in "".join(transcript):
+                        probe_text = "".join(transcript)
+                        if ("DESKTOP_BROWSER_FAIL" in probe_text or
+                                "BROWSER_PROBE_FAIL" in probe_text):
+                            raise RuntimeError("Browser probe failed")
+                        if "BROWSER_CLOSE_OK" in probe_text:
                             print("runtime-desktop-browser: PASS")
                             return 0
                         time.sleep(0.02)

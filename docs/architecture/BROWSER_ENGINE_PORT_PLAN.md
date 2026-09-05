@@ -72,9 +72,9 @@ VMware-Image nicht neu. Befehle, Laufzeiten und Logs stehen in
 `docs/development/CURRENT_WORK.md`. Dies ist kein Nachweis vollständiger
 öffentlicher Webseiten oder einer VMware-Laufzeitabnahme.
 
-## Nachfolgende, noch nicht implementierte Arbeit
+## HTML5-Worker und nachfolgende Arbeit
 
-Aktiver nächster Schnitt ist R3.9: Hubbub 0.3.8 und LibParserUtils 0.2.5
+Abgenommener Schnitt ist R3.9: Hubbub 0.3.8 und LibParserUtils 0.2.5
 liefern den echten HTML5-Tokenizer und Baumaufbau in `HTMLWORK.PRG`. Der
 Browser erhält nur eine vollständig validierte semantische Projektion; seine
 bisherige Zeichen-/Bild-/Linkschicht bleibt zunächst bestehen. Ein Parserfehler
@@ -82,6 +82,62 @@ darf daher nicht die Browser-Chrome beenden. Die Ausgabe ist kein vollständiges
 öffentliches DOM und keine CSS-Layout-Engine. CSS/DOM-Layout folgt als nächster
 Browser-Schnitt. Die offene VMware-Mausabnahme bleibt auf ausdrückliche
 Nutzerfreigabe zurückgestellt, nicht bestanden.
+
+Implementiertes R3.9, Abnahme separat in `CURRENT_WORK.md`: lokale
+und HTTP-Dokumente gehen erst nach Transport-Reap an `/usr/bin/htmlwork.prg`.
+Ein Kind verarbeitet genau einen Auftrag: 64 KiB Eingabe, 2048 kumulative
+Baumknoten, 4096 Attribute, 256 KiB Strings, 128 Baumebenen, 262144
+Callback-Arbeitsschritte und 4 MiB Upstream-Heap. Die semantische Projektion
+behält zusätzlich die bisherigen 512 Elemente und 16 Bildmetadaten bei.
+Die Limits sind Ablehnungsgrenzen, keine Vollseiten-Kompatibilitätszusage.
+
+Der private Little-Endian-i386-Dateiadapter hat Version 2 und einen
+48-Byte-Header ohne Zeiger. V1 übertrug 133380 Byte auch bei leeren Arrays;
+die nicht abgenommene V1-Drahtdarstellung wird explizit abgewiesen. V2 überträgt
+Titel, fünf geprüfte Zähler und nur belegte Array-Präfixe: Text, Elemente, Links,
+Bilder, Anker. Die maximale Antwort bleibt 133380 Byte. Vor Rekonstruktion
+werden Dateilänge, Headergröße, Zähler und die exakt berechnete Nutzlastgröße
+geprüft. Nur der private Kandidat wird vollständig mit Nullen initialisiert;
+der Decoder normalisiert dessen Headergröße auf die In-Memory-Strukturgröße.
+Es gibt keine Kompressionsbibliothek, dynamische Allokation oder neue
+Dateiautorität. Die semantische Prüfung bleibt vollständig erhalten.
+Auftrag, Parent-Generation und
+beobachtete Kind-Generation werden geprüft; ein früh beendetes Kind bleibt
+bis zum Wait an den bestätigten Parent gebunden. Erst nach dessen Reap wird
+die gesamte Antwort auf Größe, Zähler, UTF-8, Indizes, Styles und Reserven
+geprüft. Die Darstellung wird erst nach erfolgreichem Layout umgeschaltet.
+Eingabe und Ausgabe gehören dem Parent; während ein Kind lebt, werden sie
+nicht entfernt. Auch partielle Ausgabe nach Fehler ist nicht publizierbar.
+Fünf Sekunden Parent-Deadline umfassen Auftragsdatei, Spawn und Parser;
+Abbruch beendet/reapt das eigene Kind, behält die Seite und erlaubt den nächsten
+Auftrag ohne automatischen Wiederholungszyklus. Die bisherigen begrenzten
+VFS-/Syscall-Dateiadapter bleiben Migrationsbestand, kein Capability-Sandbox-
+Nachweis für ein bösartiges Programm. Der Worker ruft keine Netzwerk-/GUI-API auf.
+Explizite lokale Testmodi injizieren UD2 und verzögerten Exit; Webseiten können
+diese Modi nicht aktivieren. JavaScript und Stylesheets werden nicht ausgeführt.
+
+Die R3.9-Gastabnahme ist bestanden. Vor der getrennten ATA-Reparatur
+wurden 4009 ms Laden und 88 ms Speicheraufbau des Workers gemessen. Ein
+Sleep-only-Versuch verschlechterte das Laden auf 6370 ms und wurde
+zurückgenommen. R7.1n ist inzwischen in `d725efb0` separat abgenommen:
+fähigkeitsgeprüfte READ-MULTIPLE-Transaktionen erreichen im eingefrorenen
+QEMU-Benchmark 635,23 statt 101,91 KiB/s. Fähigkeiten, Reset und Teilfehler
+sind im `ATA_PIO_TRANSFER_CONTRACT.md` samt Prüfungen beschrieben. Auf dieser
+Grundlage bestand der Browser seinen separaten QEMU-Gastnachweis einschließlich
+Parserfehler, Timeout, anschließender Navigation und Close. Ein zuvor falsch
+positiver Diagnose-Runner wurde durch einen Verhaltenstest abgesichert und
+repariert; Screenshot-Capture erfordert keine künstliche Gastpause mehr.
+Der vollständige finale Lauf hat keinen späten Fehlermarker. Das ist sichtbare
+Legacy-Treiberschuld, kein Nachweis
+der geplanten Ring-3-Treiberisolation. Journalbarrieren, öffentliche ABIs und
+alle Browser-Zeitlimits bleiben unverändert; auch die negative Evidenz bleibt
+in CURRENT_WORK dokumentiert.
+
+Als nächstes ist R3.10 für echte LibCSS-Kaskade und begrenztes CSS-Boxlayout
+definiert, noch nicht implementiert. Style-Attribute und eingebettete Styles
+teilen die isolierte Dokumentgrenze. Externe Stylesheets, Imports und CSS-URLs
+brauchen dagegen einen separaten Ressourcen-/Herkunftsvertrag; dieser Auftrag
+erteilt dem Parser keine implizite Netzwerk- oder Dateiautorität.
 
 Die Engine-Portierung braucht einen eigenen Ring-3-Laufzeit-/Allocatoradapter,
 einen hostgeprüften und im Gast ausgeführten DOM/CSS-/Layoutpfad sowie feste

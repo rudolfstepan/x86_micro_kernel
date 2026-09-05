@@ -3,17 +3,69 @@
 Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
-`R7.1n-ata-pio-read-throughput` ist abgenommen; aktiv ist wieder
-`R3.9-browser-html5-worker`. Performance ist ebenso verbindlich wie Resilienz.
+`R7.1n-ata-pio-read-throughput` und `R3.9-browser-html5-worker` sind abgenommen;
+aktiv ist `R3.10-browser-css-layout`. Performance ist ebenso verbindlich wie
+Resilienz. Der nächste CSS-Vertrag ist in `094cfe69` definiert, noch nicht
+implementiert. In diesem Paketdurchlauf wurde ausschließlich R3.9 umgesetzt.
 Der unfertige R3.9-Browser ist vollständig einschließlich unversionierter
 Dateien im lokalen Stash `a58233043f81ee80f08b7db3591d7ab2de76803c` gesichert.
-Die Logs bleiben unverändert unter `build/codex-agent/`. Danach war der
-Hauptarbeitsbaum sauber. Keine Browser-Abnahme und kein Verlust der Arbeit.
-R3.9 wird mit seinen unveränderten Gates fortgesetzt. Zur Wiederaufnahme nur
-seine Browser-/SDK-/Build-/Testdateien aus dem Stash übernehmen; Queue und
-Dokumentation mit dem abgenommenen ATA-Stand zusammenführen, nicht überschreiben.
-Die erfolglose ATA-Sleep-only-Probe und reine Zeitdiagnosen aus dem Stash dürfen
-dabei die neue ATA-Implementierung nicht überschreiben.
+Auf sauberer Grundlage `d725efb0` wurde die Wiederaufnahme in `495ed85f`
+festgehalten. Die erlaubten Browser-/SDK-/Build-/Testdateien sind daraus jetzt
+wiederhergestellt; Dokumentation wird mit der ATA-Abnahme zusammengeführt.
+Die erfolglose ATA-Sleep-only-Probe und Kernel-/Treiber-Zeitdiagnosen wurden
+nicht übernommen. Der akzeptierte ATA-/Prozesscode bleibt unverändert.
+Die Logs bleiben unter `build/codex-agent/`; die bisherigen negativen
+Gastnachweise werden nicht als Abnahme umgedeutet. R3.9 wird mit seinen
+unveränderten Gates und Zeitlimits fortgesetzt. Der diagnostische QEMU-Build
+ist bestanden. Der erste Gastlauf erreichte alle Interaktions-, HTML5-Fehler-
+und Recovery-Marker, überschritt aber danach durch die alte einsekündige
+Screenshot-Pause die 30-s-Probegrenze. Sein Runner-PASS war falsch: In der
+abschließenden Close-Warteschleife fehlte die Prüfung später Fehlermarker.
+`r39-resume-diagnostic.browser.log` bleibt negative Evidenz, keine Abnahme.
+Der neue Host-Verhaltenstest führt den echten Runner-Zweig mit gestaffelten
+Transkripten aus; er reproduzierte drei falsche Erfolge und besteht nach der
+Korrektur. Screenshot-Aufnahme erfolgt jetzt nach dem Bild-Reload während
+der nachfolgenden Fehlertests, ohne künstliche Gastpause; Fehler werden bis
+zum Close geprüft. Kein Testschritt oder Zeitlimit wurde entfernt/verlängert.
+Die eingefrorene R3.9-Abnahme ist vollständig bestanden. Alle sieben
+Hostbefehle liefen einmal gegen ihren finalen Quellstand: 74 Tests insgesamt,
+72 bestanden, zwei optionale Shell-Hosttests mangels erkanntem GCC/Clang
+übersprungen. Die Browser-/Parser-C-Verhaltenstests liefen mit Zig und aktiven
+Assertions. Befehle (jeweils `python test/<Datei> -v`), Ergebnis und Laufzeit:
+
+| Datei | Ergebnis | Sekunden |
+| --- | --- | ---: |
+| `test_html_engine.py` | PASS, 1 Test mit 8 zusätzlichen Fallprozessen | 3,37 |
+| `test_libc_source.py` | PASS, 4 Tests | 1,03 |
+| `test_gui_browser_source.py` | PASS, 8 Tests | 27,28 |
+| `test_browser_runtime_source.py` | PASS, 9 Tests | 1,92 |
+| `test_browser_navigation_source.py` | PASS, 4 Tests | 1,21 |
+| `test_shell_source.py` | PASS, 26/28, 2 optionale Skips | 0,24 |
+| `test_user_program_toolchain.py` | PASS, 20 Tests | 112,55 |
+
+`test-reist-package.ps1 -Target vmware -Video vga`: PASS in 52 s;
+danach `test-reist-package.ps1 -Target qemu -Video vga`: PASS in 45 s.
+`test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga`:
+PASS in etwa 86 s Hostzeit. Vollständiges Gasttranskript ohne späten
+`BROWSER_PROBE_FAIL`: Bilder, URL-Chrome, Link-Release, Anker, Scrollbar-Capture,
+Clipping, Reload, CURL-Fehler/Reap, echter HTML5-Worker, injiziertes UD2,
+erzwungener Timeout, erfolgreiche anschließende Navigation und Close.
+Der Worker-Spawn brauchte im finalen Gastlauf 604–904 ms einschließlich
+synchronem Laden/Mapping; die erste komplette Worker-Transaktion bis
+Output-Close 1592 ms. Die erste Fixture benötigte 14 ms Parserzeit.
+Der kompakte Host-Fixture-Reply hat 4254 statt 133380 Byte. Worker-5-s-,
+Browser-Probe-30-s- und Gastzeitlimits bleiben unverändert. Keine allgemeine
+Latenzzusage für beliebige Webseiten oder VMware-Laufzeitabnahme.
+Alle Logs unter `build/codex-agent/`: `r39-resume-gate-*.log`,
+`20260905-160145-package-vmware-vga.log`,
+`20260905-160253-package-qemu-vga.log`, `r39-accepted.browser.log` und
+`r39-accepted.ppm` (unveränderte Aufnahme; PNG-Kopie ebenfalls abgelegt).
+
+R3.9 liefert echten HTML5-Baumaufbau mit semantischer Projektion, keine
+vollständige Browser-Engine. R3.10 übernimmt als nächster eigener Schnitt
+CSS-Kaskade und Boxlayout im isolierten Worker. Externe CSS-Ressourcen,
+Formulare, Cookies/POST und JavaScript sind weiterhin nicht implementiert.
+
 ATA-Abnahme: alle 43 Tests der sechs eingefrorenen Hostbefehle bestanden.
 `test-reist-package.ps1 -Target vmware -Video vga` bestand in 50 s;
 derselbe QEMU-Befehl in 45 s. Der eingefrorene QEMU-Benchmark mit
@@ -25,7 +77,7 @@ Kein Timeout, Journalformat, Schreibbefehl, AHCI-/DMA-Pfad oder öffentliches
 ABI wurde gelockert. Logs: `ata-gate-*.log`, `ata-multiple-runtime.log` und
 `20260905-153147-package-vmware-vga.log` /
 `20260905-153311-package-qemu-vga.log` unter `build/codex-agent/`.
-Der neue HTML5-Browser muss auf diesem ATA-Stand noch separat abgenommen werden.
+Die separate HTML5-Browser-Abnahme auf diesem ATA-Stand ist oben dokumentiert.
 Der Nutzer hat R3.6b ausdrücklich mit unveränderten Anforderungen zurückgestellt
 und automatische Browser-Fortsetzung ohne erneute Routinefreigaben beauftragt.
 Keine parallelen manuellen Builds während der Agentenabnahme: Der erste

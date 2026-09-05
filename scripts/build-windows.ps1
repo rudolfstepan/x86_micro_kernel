@@ -397,6 +397,7 @@ try {
         'usr/gui/bin/guidemo.prg' = 'GUIDEMO.PRG'
         'usr/gui/bin/notepad.prg' = 'NOTEPAD.PRG'
         'usr/gui/bin/browser.prg' = 'BROWSER.PRG'
+        'usr/bin/htmlwork.prg' = 'HTMLWORK.PRG'
         'usr/gui/bin/soundplayer.prg' = 'SOUNDPLAYER.PRG'
         'usr/gui/bin/imageviewer.prg' = 'IMAGEVIEWER.PRG'
         'usr/gui/bin/surfacedemo.prg' = 'SURFACEDEMO.PRG'
@@ -501,12 +502,12 @@ try {
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
-    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'browser-test.html')) {
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'browser-test.html', 'browser-html5-test.html')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
-        if ($demoFile -notin @('index.html', 'browser-test.html')) {
+        if ($demoFile -notin @('index.html', 'browser-test.html', 'browser-html5-test.html')) {
             $floppyDataArguments += @(
                 '--data-file', "htdocs/$demoFile=$demoPath"
             )

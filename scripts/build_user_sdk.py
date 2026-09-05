@@ -396,6 +396,8 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
             shutil.copy2(header, destination)
     artifacts.library_dir.mkdir(parents=True, exist_ok=True)
     write_pkg_config(artifacts.library_dir)
+    from build_html_engine import build as build_html_libraries
+    build_html_libraries(artifacts, zig, incremental)
     common = ("prefix=${pcfiledir}/../..\nincludedir=${prefix}/include\n"
               "libdir=${prefix}/lib\n\n")
     write_if_changed(artifacts.library_dir / "pkgconfig/reist-c.pc", common +

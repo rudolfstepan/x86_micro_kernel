@@ -35,3 +35,29 @@ licensed under MPL-2.0. Its adjacent upstream SHA-256 file pins the exact
 curl's PEM conversion does not carry Mozilla name constraints. REIST therefore
 does not claim equivalent policy enforcement, certificate revocation checking
 or secure-clock resistance.
+
+## NetSurf HTML5 dependencies (R3.9)
+
+`libparserutils.tar.gz` is the unmodified LibParserUtils 0.2.5 release archive:
+https://download.netsurf-browser.org/libs/releases/libparserutils-0.2.5-src.tar.gz
+SHA-256: `317ed5c718f17927b5721974bae5de32c3fd6d055db131ad31b4312a032ed139`.
+
+`libhubbub.tar.gz` is the unmodified Hubbub 0.3.8 release archive:
+https://download.netsurf-browser.org/libs/releases/libhubbub-0.3.8-src.tar.gz
+SHA-256: `8ac1e6f5f3d48c05141d59391719534290c59cd029efc249eb4fdbac102cd5a5`.
+Both use the MIT license; each complete COPYING is retained in its archive and
+installed under `usr/share/licenses/{libparserutils,libhubbub}/COPYING` in the SDK.
+
+`scripts/build_html_engine.py` verifies pins and extracts only bounded source,
+headers, generators and license files. Host Perl and GNU gperf generate the
+upstream charset/entity/element lookup tables using the included generators;
+generated sources are not a network build dependency. On Windows the normal
+MSYS2 tools (`perl`, `gperf`) are used. No host library is linked into the guest.
+The generated source adapter removes debug-only stdio includes and substitutes
+stdint for inttypes (only typedefs are required outside debug printing).
+NDEBUG is mandatory. The upstream WITHOUT_ICONV_FILTER configuration disables
+the optional iconv filter, not its UTF-8 decoder. Parser algorithms and archived
+bytes are unchanged. The worker explicitly fixes UTF-8; it does not claim
+arbitrary charset conversion, all current HTML Living Standard features, CSS
+layout or JavaScript support. Tree ownership is an append-only quota-bound
+worker arena; slots are retained until process teardown, never reused in-place.

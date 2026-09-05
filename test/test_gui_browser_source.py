@@ -79,12 +79,13 @@ class GuiBrowserSourceTests(unittest.TestCase):
             "BROWSER_DOCUMENT_LIMIT 65536U",
             "browser_model.h",
             "BROWSER_LINK_HIT_CAPACITY",
-            "reist_html_document_parse",
+            "browser_html_validate",
             "reist_html_navigation_normalize",
             "address_replace_pending",
         ):
             self.assertIn(contract, source)
         self.assertNotRegex(source, r"\b(malloc|calloc|realloc|free)\s*\(")
+        self.assertNotIn("reist_html_document_parse(", source)
 
     def test_transport_and_vfs_authority_are_separated(self):
         source = APP.read_text(encoding="utf-8")

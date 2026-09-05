@@ -99,6 +99,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/apps/browser/browser_model.c",
         ROOT / "userspace/gui/apps/browser/browser_images.c",
         ROOT / "userspace/gui/apps/browser/browser_response.c",
+        ROOT / "userspace/gui/apps/browser/html_protocol.c",
         ROOT / "userspace/programs/curl_http.c",
         ROOT / "userspace/gui/lib/html_document.c",
         ROOT / "userspace/storage/lib/vfs_file_client.c",
@@ -230,6 +231,13 @@ PROGRAMS = {
     "SATAWR.PRG": ROOT / "userspace/programs/sata_write_test.c",
 }
 
+PROGRAMS["HTMLWORK.PRG"] = (
+    ROOT / "userspace/gui/apps/browser/html_worker.c",
+    ROOT / "userspace/gui/apps/browser/html_engine.c",
+    ROOT / "userspace/gui/apps/browser/html_protocol.c",
+    ROOT / "userspace/gui/lib/html_document.c",
+)
+
 GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
     "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG",
@@ -331,6 +339,13 @@ def main() -> None:
                 dependency_files.append(
                     ROOT / "assets/images/reist-splash.bmp")
             includes = [sdk.include_dir, STORAGE_INCLUDE_ROOT]
+            if name == "HTMLWORK.PRG":
+                includes[:0] = [sdk.libc_include_dir, GUI_INCLUDE_ROOT]
+                link_libraries.extend([sdk.library_dir / "libhubbub.a",
+                    sdk.library_dir / "libparserutils.a", sdk.libc_library])
+                dependency_files.extend([*gui_headers, *sdk.libc_include_dir.rglob("*.h"),
+                    *sdk.include_dir.joinpath("hubbub").rglob("*.h"),
+                    *sdk.include_dir.joinpath("parserutils").rglob("*.h"), Path(__file__).resolve()])
             if name == "CRTEST.PRG":
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.extend([sdk.wapcaplet_library, sdk.libc_library])

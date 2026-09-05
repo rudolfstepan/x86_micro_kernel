@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.9-browser-html5-worker"
+active_id = "R3.10-browser-css-layout"
 
 [policy]
 one_package_per_run = true
@@ -275,7 +275,7 @@ evidence = []
 
 [[packages]]
 id = "R3.9-browser-html5-worker"
-status = "active"
+status = "done"
 resumption = "2026-09-05: User directs continuation after accepted ATA prerequisite d725efb0. Restore only R3.9 allowed browser/SDK/build/test files from preserved stash a58233043f81ee80f08b7db3591d7ab2de76803c; merge documentation without losing accepted ATA evidence and never restore the old ATA/process diagnostics or failing ATA trial test. Baseline main worktree is clean. Retain all original frozen gates and the five-second worker, thirty-second browser probe and guest deadlines. Prior compact-transfer and UTF-8 repairs are attributable candidates, not accepted implementation. First localize any remaining guest failure on the faster ATA baseline, then execute every frozen acceptance gate for the final candidate. No further kernel/driver scope expansion or later browser package implementation in this run."
 prerequisite = "User-directed ATA read throughput package R7.1n; unaccepted browser candidate preserved in stash a58233043f81ee80f08b7db3591d7ab2de76803c, not discarded or accepted."
 inventory_completion = "Before candidate implementation, upstream aliases.c was inspected completely and found to require ISO C bsearch in addition to strncpy, tolower and POSIX strncasecmp. Include the existing opt-in stdlib.h declaration file in the setup contract; implementation and host behavior remain in the already listed bytes.c/tests. This adds no authority or new runtime failure domain."
@@ -360,7 +360,7 @@ evidence = []
 
 [[packages]]
 id = "R3.10-browser-css-layout"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Render styled HTML5 documents through an isolated CSS cascade and box layout"

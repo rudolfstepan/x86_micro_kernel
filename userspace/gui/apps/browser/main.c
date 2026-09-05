@@ -7,6 +7,7 @@
 #include "browser_model.h"
 #include "browser_images.h"
 #include "browser_response.h"
+#include "html_protocol.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -38,6 +39,9 @@ typedef struct browser_state {
     browser_scrollbar_t scrollbar;
     char address[BROWSER_URL_CAPACITY], active_url[BROWSER_URL_CAPACITY];
     char temporary_path[40U], status[64U];
+    char html_input_path[48U], html_output_path[48U];
+    browser_html_header_t html_request;
+    uint32_t parse_pending, parse_mode, parser_failures, parser_timeouts;
     browser_link_hit_t hits[BROWSER_LINK_HIT_CAPACITY];
     uint32_t hit_count;
     char pending_url[BROWSER_URL_CAPACITY], job_url[BROWSER_URL_CAPACITY];
@@ -48,6 +52,7 @@ typedef struct browser_state {
 } browser_state_t;
 static uint8_t document_bytes[BROWSER_DOCUMENT_LIMIT + REIST_CURL_HEADER_CAPACITY];
 static uint8_t image_bytes[BROWSER_IMAGE_INPUT_LIMIT + REIST_CURL_HEADER_CAPACITY];
+static browser_html_reply_t html_reply;
 typedef struct browser_workspace {
     uint32_t decoded[BROWSER_IMAGE_PIXEL_LIMIT];
     uint32_t surface[REIST_GUI_SURFACE_MAX_WIDTH * REIST_GUI_SURFACE_MAX_HEIGHT];
@@ -119,6 +124,10 @@ static int make_temporary_path(browser_state_t *state) {
     for (uint32_t index = 0U; suffix[index] != '\0'; ++index)
         state->temporary_path[used++] = suffix[index];
     state->temporary_path[used] = '\0';
+    copy_text(state->html_input_path, sizeof(state->html_input_path), state->temporary_path);
+    copy_text(state->html_output_path, sizeof(state->html_output_path), state->temporary_path);
+    copy_text(state->html_input_path + used, sizeof(state->html_input_path)-used, ".html-in");
+    copy_text(state->html_output_path + used, sizeof(state->html_output_path)-used, ".html-out");
     return 0;
 }
 
@@ -283,6 +292,59 @@ static void cleanup_fetch_files(browser_state_t *state) {
     for (uint32_t i=0; i<sizeof(suffix); ++i) partial[used+i]=suffix[i];
     (void)x86os_unlink(partial);
     (void)x86os_unlink(state->temporary_path);
+    (void)x86os_unlink(state->html_input_path);
+    (void)x86os_unlink(state->html_output_path);
+}
+static int write_html_part(int fd, const void *data, uint32_t length, uint32_t deadline) {
+    const uint8_t *bytes=data;
+    for (uint32_t done=0; done<length;) {
+        if ((int32_t)(x86os_uptime_ms()-deadline)>=0) return -110;
+        uint32_t n=length-done; if (n>BROWSER_READ_CHUNK) n=BROWSER_READ_CHUNK;
+        int rc=x86os_write(fd,bytes+done,n);
+        if (rc<=0 || (uint32_t)rc>n) return -5;
+        done+=(uint32_t)rc;
+    }
+    return 0;
+}
+static void html_parent_phase(const char *name) {
+    x86os_puts("BROWSER_HTML_PHASE "); x86os_puts(name); x86os_puts(" ms=");
+    x86os_print_number((int)x86os_uptime_ms()); x86os_puts("\n");
+}
+static int start_html_worker(browser_state_t *state) {
+    uint32_t length=state->parse_pending;
+    state->parse_pending=0U;
+    if (state->child_pid>0 || !length || length>BROWSER_DOCUMENT_LIMIT ||
+        state->html_request.request==UINT32_MAX) return -28;
+    x86os_process_identity_t identity;
+    if (x86os_process_identity_of(x86os_getpid(),&identity)!=0 ||
+        identity.version!=1U || identity.struct_size!=sizeof(identity) ||
+        identity.pid!=x86os_getpid() || !identity.generation) return -84;
+    uint32_t sequence=state->html_request.request+1U;
+    state->html_request=(browser_html_header_t){BROWSER_HTML_MAGIC,BROWSER_HTML_VERSION,
+        sizeof(browser_html_header_t)+length,sequence,(uint32_t)identity.pid,identity.generation,
+        0,0,length,state->probe ? state->parse_mode : 0U,{0,0}};
+    state->parse_mode=0U;
+    state->job_deadline=x86os_uptime_ms()+BROWSER_HTML_DEADLINE_MS;
+    html_parent_phase("budget-start");
+    cleanup_fetch_files(state);
+    int fd=x86os_create(state->html_input_path);
+    if (fd<0) return fd;
+    int rc=write_html_part(fd,&state->html_request,sizeof(state->html_request),state->job_deadline);
+    if (!rc) rc=write_html_part(fd,document_bytes,length,state->job_deadline);
+    int closed=x86os_close(fd);
+    html_parent_phase("input-closed");
+    if (rc || closed) { cleanup_fetch_files(state); return rc ? rc : closed; }
+    const char *argv[]={"/usr/bin/htmlwork.prg",state->html_input_path,state->html_output_path};
+    int pid=x86os_spawnv(argv[0],3,argv);
+    html_parent_phase("spawn-returned");
+    if (pid<=0) { cleanup_fetch_files(state); return -5; }
+    state->child_pid=pid; state->child_generation=0U; state->job_kind=3U;
+    x86os_puts("BROWSER_HTML5_STARTED\n");
+    state->job_cancelled=0U; state->response_status=0U; state->poll_at=x86os_uptime_ms();
+    x86os_process_info_t info;
+    if (child_info(state,&info)!=0) { state->exit_requested=1U; return -84; }
+    set_status(state,"HTML5 wird isoliert verarbeitet ...");
+    return 0;
 }
 static int start_fetch_hop(browser_state_t *state, const char *url, uint32_t kind, uint32_t index) {
     if (state->child_pid > 0 || copy_text(state->job_url, sizeof(state->job_url), url) != 0) return -16;
@@ -327,13 +389,19 @@ static void scroll_to_fragment(browser_state_t *state, reist_gui_surface_client_
     if (fragment && browser_anchor_y(&documents[state->active], &layouts[state->active], fragment, &y) == 0)
         set_scroll(state, client, y);
 }
-static int publish_document_bytes(browser_state_t *state, reist_gui_surface_client_t *client,
-                                   const char *url, uint32_t length) {
+static int publish_html_reply(browser_state_t *state, reist_gui_surface_client_t *client,
+                              uint32_t pid, uint32_t generation) {
     uint32_t candidate = state->active ^ 1U;
-    if (!length || length > BROWSER_DOCUMENT_LIMIT) return -27;
+    uint32_t length=0U;
+    /* Image input scratch is idle while the only child is HTMLWORK. */
+    int result=read_file(state->html_output_path,image_bytes,sizeof(html_reply),&length);
+    if (!result) result=browser_html_unpack(image_bytes,length,&html_reply);
+    if (!result) result=browser_html_validate(&html_reply,sizeof(html_reply),&state->html_request,pid,generation);
+    if (result) return result;
+    documents[candidate]=html_reply.document;
+    const char *url=state->job_url;
     for (uint32_t i = 0; i < BROWSER_IMAGE_CACHE_COUNT; ++i) image_cache[candidate][i].decoded = 0U;
-    int result = reist_html_document_parse(document_bytes, length, &documents[candidate]);
-    if (result == 0) result = browser_build_layout(&documents[candidate], client->width,
+    result = browser_build_layout(&documents[candidate], client->width,
                                                     image_cache[candidate], &layouts[candidate]);
     if (result != 0) return result;
     copy_text(state->active_url, sizeof(state->active_url), url);
@@ -360,7 +428,16 @@ static int publish_document_bytes(browser_state_t *state, reist_gui_surface_clie
     (void)reist_gui_surface_client_set_title(client, title);
     set_status(state, "Bereit - Bilder werden begrenzt nachgeladen");
     x86os_puts("BROWSER_RENDER_OK\n");
+    x86os_puts("BROWSER_HTML5_WORKER_OK\n");
     return 0;
+}
+static int publish_document_bytes(browser_state_t *state, reist_gui_surface_client_t *client,
+                                   const char *url, uint32_t length) {
+    (void)client;
+    if (!length || length>BROWSER_DOCUMENT_LIMIT ||
+        copy_text(state->job_url,sizeof(state->job_url),url)!=0) return -27;
+    state->parse_pending=length;
+    return 0; /* Spawn on the next UI turn, after transport cleanup. */
 }
 static int publish_document(browser_state_t *state, reist_gui_surface_client_t *client,
                              const char *path, const char *url) {
@@ -447,8 +524,9 @@ static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, 
     strip_fragment(normalized, new_path, sizeof(new_path));
     strip_fragment(state->active_url, old_path, sizeof(old_path));
     if (state->loaded && fragment_of(normalized) && text_equal(old_path, new_path)) {
-        if (state->pending || ((state->child_pid > 0 || state->follow_redirect) && state->job_kind == 1U)) {
+        if (state->pending || state->parse_pending || ((state->child_pid > 0 || state->follow_redirect) && state->job_kind != 2U)) {
             state->pending = 0U;
+            state->parse_pending = 0U;
             state->follow_redirect = 0U;
             cancel_fetch(state);
         }
@@ -460,6 +538,7 @@ static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, 
     }
     copy_text(state->pending_url, sizeof(state->pending_url), normalized);
     state->pending = 1U;
+    state->parse_pending = 0U;
     state->follow_redirect = 0U;
     state->image_next = BROWSER_IMAGE_CACHE_COUNT;
     state->armed_link = UINT32_MAX;
@@ -472,24 +551,36 @@ static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, 
 static void service_loads(browser_state_t *state, reist_gui_surface_client_t *client) {
     uint32_t now = x86os_uptime_ms();
     if (state->child_pid > 0) {
-        if ((int32_t)(now - state->job_deadline) >= 0) cancel_fetch(state);
+        if ((int32_t)(now - state->job_deadline) >= 0) {
+            if (state->job_kind==3U && !state->job_cancelled) ++state->parser_timeouts;
+            cancel_fetch(state);
+        }
         if ((int32_t)(now - state->poll_at) < 0) return;
         state->poll_at = now + 10U;
         x86os_process_info_t info;
         if (child_info(state, &info) != 0) { state->exit_requested = 1U; return; }
         if (info.state != X86OS_PROCESS_ZOMBIE) return;
         int status = -1;
+        uint32_t pid=(uint32_t)state->child_pid, generation=state->child_generation;
         if (x86os_wait(state->child_pid, &status) != state->child_pid) {
             state->exit_requested = 1U; return;
         }
         state->child_pid = 0;
         state->child_generation = 0U;
         int result = -5;
-        if (!state->job_cancelled && status == 0) result = finish_fetch(state, client);
+        if (!state->job_cancelled && status == 0) result = state->job_kind==3U
+            ? publish_html_reply(state,client,pid,generation) : finish_fetch(state, client);
+        if (state->job_kind==3U && result!=0) {
+            ++state->parser_failures;
+            x86os_puts("BROWSER_HTML5_REJECT exit="); x86os_print_number(status);
+            x86os_puts(" result="); x86os_print_number(result);
+            x86os_puts(" cancelled="); x86os_print_number((int)state->job_cancelled); x86os_puts("\n");
+        }
         cleanup_fetch_files(state);
         if (result != 0 && !state->pending) {
             state->follow_redirect = 0U;
-            if (state->job_kind != 1U) set_status(state, "Bild nicht verfuegbar - Alternativtext");
+            if (state->job_kind == 3U) set_status(state, "HTML5 abgelehnt - bisherige Seite bleibt");
+            else if (state->job_kind == 2U) set_status(state, "Bild nicht verfuegbar - Alternativtext");
             else if (result == -40) set_status(state, "Zu viele Weiterleitungen - Seite bleibt");
             else if (result == -95) set_status(state, "Inhaltstyp/Kodierung nicht unterstuetzt");
             else if (result == -13) set_status(state, "Unsichere Weiterleitung abgewiesen");
@@ -503,13 +594,24 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
         }
         return;
     }
+    if (state->parse_pending && !state->pending) {
+        int result=start_html_worker(state);
+        if (result!=0) {
+            x86os_puts("BROWSER_HTML5_START_ERROR result="); x86os_print_number(result); x86os_puts("\n");
+            set_status(state,"HTML5 nicht verfuegbar - Seite bleibt");
+        }
+        return;
+    }
     if (state->pending) {
         state->pending = 0U;
         char path[BROWSER_URL_CAPACITY];
         strip_fragment(state->pending_url, path, sizeof(path));
         int result = is_network(path) ? start_fetch(state, state->pending_url, 1U, 0U)
             : publish_document(state, client, path, state->pending_url);
-        if (result != 0) set_status(state, "Laden abgelehnt - bisherige Seite bleibt");
+        if (result != 0) {
+            x86os_puts("BROWSER_DOCUMENT_ERROR result="); x86os_print_number(result); x86os_puts("\n");
+            set_status(state, "Laden abgelehnt - bisherige Seite bleibt");
+        }
         return;
     }
     if (state->follow_redirect) {
@@ -808,8 +910,9 @@ static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *c
 }
 static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *client, uint32_t key) {
     if (key == BROWSER_KEY_ESCAPE || key == 27U) {
-        if (state->child_pid > 0 || state->pending || state->follow_redirect) {
+        if (state->child_pid > 0 || state->pending || state->follow_redirect || state->parse_pending) {
             state->pending = 0U; state->image_next = BROWSER_IMAGE_CACHE_COUNT;
+            state->parse_pending = 0U;
             state->follow_redirect = 0U;
             cancel_fetch(state); set_status(state, "Laden abgebrochen");
         } else if (state->address_focused) {
@@ -846,7 +949,7 @@ static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *
 static int probe_step(browser_state_t *state, reist_gui_surface_client_t *client) {
     uint32_t count = documents[state->active].image_count;
     if (count > BROWSER_IMAGE_CACHE_COUNT) count = BROWSER_IMAGE_CACHE_COUNT;
-    if (state->pending || state->follow_redirect || state->child_pid > 0 || state->image_next < count) return 0;
+    if (state->pending || state->parse_pending || state->follow_redirect || state->child_pid > 0 || state->image_next < count) return 0;
     if (!state->loaded) return -1;
     if (state->probe_phase == 0U) {
         if (!image_cache[state->active][0].decoded) return -1;
@@ -921,14 +1024,31 @@ static int probe_step(browser_state_t *state, reist_gui_surface_client_t *client
         /* A real CURL child rejects a missing host before any network access.
          * Exercise normal nonzero exit/reaping even in the NIC-less guest. */
         if (start_fetch(state, "https://", 1U, 0U) != 0) return -1;
-    } else {
+    } else if (state->probe_phase == 5U) {
         if (state->job_cancelled || state->exit_requested || !state->loaded ||
             is_network(state->active_url)) return -1;
         x86os_puts("BROWSER_TRANSPORT_EXIT_OK\n");
-        /* Leave the image viewport available to bounded screenshot capture. */
+        state->parse_mode=1U;
+        if (navigate(state,client,"/htdocs/browser-html5-test.html")!=0) return -1;
+    } else if (state->probe_phase == 6U) {
+        if (state->parser_failures!=1U || state->parser_timeouts ||
+            !text_equal(state->active_url,"/htdocs/browser-test.html")) return -1;
+        x86os_puts("BROWSER_HTML5_FAULT_CONTAINED_OK\n");
+        state->parse_mode=2U;
+        if (navigate(state,client,"/htdocs/browser-html5-test.html")!=0) return -1;
+    } else if (state->probe_phase == 7U) {
+        if (state->parser_failures!=2U || state->parser_timeouts!=1U ||
+            !text_equal(state->active_url,"/htdocs/browser-test.html")) return -1;
+        x86os_puts("BROWSER_HTML5_TIMEOUT_CONTAINED_OK\n");
+        if (navigate(state,client,"/htdocs/browser-html5-test.html")!=0) return -1;
+    } else {
+        if (!text_equal(state->active_url,"/htdocs/browser-html5-test.html") ||
+            !text_equal(documents[state->active].title,"HTML5 Recovery") ||
+            state->parser_failures!=2U || state->parser_timeouts!=1U) return -1;
         set_scroll(state, client, 0);
         if (render(state, client) != 0) return -1;
-        (void)x86os_sleep_ms(1000U); state->exit_requested = 1U;
+        x86os_puts("BROWSER_HTML5_RECOVERY_OK\n");
+        state->exit_requested = 1U;
     }
     ++state->probe_phase;
     return 0;
@@ -944,7 +1064,7 @@ static const char *initial_target(int argc, char **argv, uint32_t *probe) {
 }
 
 int main(int argc, char **argv) {
-    x86os_puts("BROWSER_BUILD navigation-20260905-r5\n");
+    x86os_puts("BROWSER_BUILD html5-worker-20260905-r1\n");
     x86os_ipc_handle_t endpoint = 0U;
     if (reist_gui_surface_endpoint_from_argv(argc, argv, &endpoint) != 0) {
         x86os_puts("browser: compositor endpoint missing\n");
@@ -1010,6 +1130,11 @@ int main(int argc, char **argv) {
         if (render(&state, &client) != 0) { status = -5; break; }
         if (state.probe) {
             if ((state.loaded && probe_step(&state, &client) != 0) || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
+                x86os_puts("BROWSER_PROBE_STATE phase="); x86os_print_number((int)state.probe_phase);
+                x86os_puts(" loaded="); x86os_print_number((int)state.loaded);
+                x86os_puts(" child="); x86os_print_number(state.child_pid);
+                x86os_puts(" pending="); x86os_print_number((int)state.parse_pending);
+                x86os_puts(" status="); x86os_puts(state.status); x86os_puts("\n");
                 x86os_puts("BROWSER_PROBE_FAIL interaction\n"); status = -5; break;
             }
         }

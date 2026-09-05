@@ -13,7 +13,7 @@ from build_user_program import find_zig
 
 class LibcTests(unittest.TestCase):
     def test_headers_are_cpp_includable(self):
-        source = '#include <stdlib.h>\n#include <string.h>\n#include <errno.h>\n#include <assert.h>\n'
+        source = '#include <stdlib.h>\n#include <string.h>\n#include <errno.h>\n#include <assert.h>\n#include <strings.h>\n#include <ctype.h>\n'
         env = os.environ.copy()
         env["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/libc-host/zig-global")
         env["ZIG_LOCAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/libc-host/cpp-local")
@@ -44,7 +44,7 @@ class LibcTests(unittest.TestCase):
             # Prefix all implemented CRT symbols in host objects. The Windows
             # loader and host stdio keep their own allocation domain.
             symbols = ("malloc calloc realloc free memcpy memmove memset memcmp "
-                       "memchr strlen strcmp strncmp strchr strrchr").split()
+                       "memchr strlen strcmp strncmp strchr strrchr strncpy bsearch tolower strncasecmp").split()
             executable = directory / "libc-host.exe"
             env = os.environ.copy()
             env["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/libc-host/zig-global")

@@ -3387,8 +3387,15 @@ Speichermangel, Prozessfehler und Generationen sind bestanden. Die Abnahme steht
 `CURRENT_WORK.md`. Dieser Schnitt ersetzt weder den späteren DOM/CSS-Port
 noch die separate VMware-Mausabnahme R3.6b.
 R3.7 erhält HTTP-Metadaten, dekodiert chunked und begrenzt Weiterleitungen
-für Seiten und Bilder. NetSurf ist ein geprüfter Kandidat,
-keine bereits integrierte Engine. Fehlende wiederverwendbare C-/OS-Grundlagen
+für Seiten und Bilder. R3.9 integriert abgenommen Hubbub/LibParserUtils
+für echten HTML5-Baumaufbau im getrennten, begrenzten HTMLWORK-Prozess.
+Eine vollständig geprüfte semantische Antwort nutzt noch die bestehende
+Zeichen-/Bildschicht; CSS-Layout, Formulare und JavaScript bleiben offen.
+R3.10 ist als nächster CSS-Kaskaden-/Boxlayout-Schnitt definiert und aktiv,
+noch nicht implementiert. Die R3.9-Gates bestanden separat auf dem in R7.1n
+beschleunigten ATA-Lesepfad, mit unveränderten Worker- und Gastzeitlimits.
+Abnahmen stehen ausschließlich in `CURRENT_WORK.md`; die VMware-Mausabnahme
+bleibt mit Nutzerfreigabe zurückgestellt. Fehlende wiederverwendbare C-/OS-Grundlagen
 werden gemäß Nutzerauftrag tatsächlich nachimplementiert; ihre Standardverträge,
 Ring-3-Isolation und Regressionen dürfen nicht durch Browser-Stubs umgangen
 werden. Siehe `docs/architecture/BROWSER_ENGINE_PORT_PLAN.md`.

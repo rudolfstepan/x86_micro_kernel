@@ -804,6 +804,15 @@ festen Puffern im CURL-Kind dekodiert. Der Adapter führt weder einen neuen
 Kernelmechanismus noch eine neue Surface-/Syscall-ABI ein. Grenzen und der
 noch nicht vollzogene Engine-Port stehen in `BROWSER_ENGINE_PORT_PLAN.md`.
 
+R3.9 verlagert den HTML5-Baumaufbau mit Hubbub/LibParserUtils in HTMLWORK.PRG:
+ein begrenzter Ring-3-Auftrag pro Generation, 4 MiB Heap und fünf Sekunden
+Parent-Deadline. Fenster-/Eingabeverarbeitung parst kein HTML mehr. Nur nach
+Reap, vollständiger privater Reply-Validierung und erfolgreichem Layout wird
+die bisherige Seite ersetzt. Fehler, unvollständige Antworten und Timeout
+belassen die alte Seite. Der Callback-Baum wird semantisch projiziert; dies
+ist weder ein vollständiges DOM/CSS-Layout noch eine JavaScript-Engine.
+Vertrag, Quoten und bestehende Dateiadaptergrenzen: BROWSER_ENGINE_PORT_PLAN.md.
+
 R3.8 ergänzt als Engine-Voraussetzung eine opt-in Ring-3-C-Speicher-/Byte-Laufzeit
 und die echte NetSurf-Bibliothek LibWapcaplet. Maximal 4 MiB caller-owned Arena
 und 4096 lebende Objekte je Prozess; keine neue Kernel-Allocation oder versteckte

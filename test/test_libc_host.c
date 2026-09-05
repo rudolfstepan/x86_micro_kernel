@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <ctype.h>
+#include <strings.h>
 #include <libwapcaplet/libwapcaplet.h>
 #include "../userspace/libc/lib/heap.c"
 
@@ -19,7 +21,21 @@ static void expect_fault(void *p) {
     if (!setjmp(fault_target)) { free(p); assert(0); }
     assert(fault_code == REIST_LIBC_FAULT_HEAP);
 }
+static int compare_int(const void *a, const void *b) {
+    int x=*(const int *)a, y=*(const int *)b; return (x>y)-(x<y);
+}
 int main(void) {
+    assert(tolower('A')=='a' && tolower('z')=='z' && tolower(-1)==-1 && tolower(255)==255);
+    assert(!strncasecmp("aBc","AbCd",3) && strncasecmp("a","AB",2)<0);
+    assert(strncasecmp("\xff","\x80",1)>0 && !strncasecmp(NULL,NULL,0));
+    char copied[5]={'x','x','x','x','x'};
+    assert(strncpy(copied,"a",4)==copied && copied[0]=='a' && !copied[1] && !copied[3] && copied[4]=='x');
+    strncpy(copied,"abcd",2); assert(copied[0]=='a' && copied[1]=='b' && !copied[2]);
+    int sorted[]={1,3,5,7,9}, key=5;
+    assert(bsearch(&key,sorted,5,sizeof(int),compare_int)==sorted+2);
+    key=2; assert(!bsearch(&key,sorted,5,sizeof(int),compare_int));
+    assert(!bsearch(NULL,NULL,0,sizeof(int),compare_int));
+    assert(!bsearch(&key,sorted,SIZE_MAX,sizeof(int),compare_int));
     assert(!malloc(1) && errno==ENOMEM);
     assert(reist_libc_init(storage+1,sizeof(storage)-1)==-EINVAL);
     assert(reist_libc_init(storage,sizeof(storage)+1)==-EINVAL);

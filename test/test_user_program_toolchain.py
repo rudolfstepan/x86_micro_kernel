@@ -211,8 +211,13 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertFalse((include / "stdlib.h").exists())
             self.assertTrue((include / "reist/libc/stdlib.h").is_file())
             self.assertTrue((include / "libwapcaplet/libwapcaplet.h").is_file())
-            for archive in ("libreistc.a", "libwapcaplet.a"):
+            for archive in ("libreistc.a", "libwapcaplet.a", "libhubbub.a", "libparserutils.a"):
                 self.assertEqual((library / archive).read_bytes()[:8], b"!<arch>\n")
+            for dependency in ("libhubbub", "libparserutils"):
+                self.assertTrue((sdk / "usr/share/licenses" / dependency / "COPYING").is_file())
+                self.assertTrue((library / "pkgconfig" / (dependency + ".pc")).is_file())
+            self.assertTrue((include / "hubbub/parser.h").is_file())
+            self.assertTrue((include / "parserutils/input/inputstream.h").is_file())
             self.assertTrue((sdk / "usr/share/licenses/libwapcaplet/COPYING").is_file())
             external = temporary / "external.c"
             external.write_text(
@@ -488,6 +493,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "GUIDEMO.PRG",
                 "NOTEPAD.PRG",
                 "BROWSER.PRG",
+                "HTMLWORK.PRG",
                 "SOUNDPLAYER.PRG",
                 "IMAGEVIEWER.PRG",
                 "SURFACEDEMO.PRG",
@@ -577,6 +583,8 @@ class UserProgramToolchainTests(unittest.TestCase):
                           "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG",
                           "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG"}
             )
+            # HTMLWORK shares a semantic struct, not the GUI archive/failure domain.
+            self.assertNotIn("HTMLWORK.PRG", rebuilt)
 
     def test_drives_reports_versioned_storage_health(self):
         header = (ROOT / "userspace" / "sdk" / "include" / "x86os.h").read_text(

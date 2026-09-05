@@ -15,6 +15,15 @@ Schichten- und Portabilitätsvertrag steht unter
 
 ## Schnelltest unter Windows
 
+R3.9 baut außerdem `/usr/bin/htmlwork.prg` in Windows- und Makefile-Images.
+Der Ring-3-Shell-Suchpfad `/usr/bin` erreicht den Worker auch direkt; er benötigt
+zwei private Auftrags-/Antwortpfade und ist kein interaktives Anzeigeprogramm.
+Der Browser startet ihn mit argv, nicht über die Kernel-Rescue-Shell. Der SDK
+installiert Hubbub 0.3.8 und LibParserUtils 0.2.5 als opt-in Archive samt Headern,
+pkg-config-Metadaten und MIT-Lizenzen. Für die unveränderten Upstream-
+Tabellengeneratoren werden auf dem Host Perl und GNU gperf benötigt (Windows:
+MSYS2 `perl`, `gperf`). Es findet kein Download während des Builds statt.
+
 Opt-in C-Laufzeit und erste NetSurf-Abhängigkeit (R3.8):
 
 ```powershell

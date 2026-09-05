@@ -1,4 +1,6 @@
+import ast
 import os
+import types
 import tempfile
 import unittest
 from pathlib import Path
@@ -28,11 +30,19 @@ static unsigned opens, closes;
 static unsigned spawns, unlinks, image_decodes;
 static char spawned_url[BROWSER_URL_CAPACITY];
 static browser_workspace_t host_workspace;
+static browser_html_reply_t worker_reply;
+static uint8_t worker_wire[sizeof(worker_reply)];
+static unsigned request_written;
 
 int x86os_getpid(void) { return 77; }
 uint32_t x86os_uptime_ms(void) { return clock_ms; }
 int x86os_unlink(const char *path) { assert(path[0] && !exists); ++unlinks; return 0; }
 int x86os_spawnv(const char *path, int argc, const char *const *argv) {
+    if (!strcmp(path,"/usr/bin/htmlwork.prg")) {
+        assert(argc==3 && !exists && request_written>sizeof(browser_html_header_t));
+        assert(strstr(argv[1],".html-in") && strstr(argv[2],".html-out"));
+        exists=1; ++spawns; return process.pid;
+    }
     assert(!strcmp(path, "/usr/bin/curl.prg") && argc == 7);
     assert(!strcmp(argv[3], "--max-bytes"));
     assert(!strcmp(argv[4], "65536") || !strcmp(argv[4], "262144"));
@@ -45,6 +55,7 @@ int x86os_process_info(uint32_t index, x86os_process_info_t *info) {
     *info = process; return 1;
 }
 int x86os_process_identity_of(int pid, x86os_process_identity_t *identity) {
+    if (pid==77) { *identity=(x86os_process_identity_t){1,sizeof(*identity),77,19}; return 0; }
     assert(pid == process.pid);
     if (identity_exit) { process.state = X86OS_PROCESS_ZOMBIE; identity_exit = 0; }
     if (!exists || process.state == X86OS_PROCESS_ZOMBIE) return -3;
@@ -84,6 +95,11 @@ int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data, size_t 
     return (int)capacity;
 }
 int reist_vfs_file_close(reist_vfs_file_handle_t handle) { assert(handle == 1); ++closes; return 0; }
+int x86os_create(const char *path) { assert(strstr(path,".html-in") && !exists); request_written=0; return 2; }
+int x86os_write(int fd, const void *bytes, size_t length) {
+    assert(fd==2 && bytes && length<=4096); request_written+=(unsigned)length; return (int)length;
+}
+int x86os_close(int fd) { assert(fd==2); return 0; }
 int browser_image_decode(const uint8_t *bytes, size_t length, uint32_t *pixels,
                          size_t capacity, reist_image_info_t *info) {
     ++image_decodes;
@@ -118,11 +134,31 @@ static void complete(browser_state_t *state, reist_gui_surface_client_t *client,
     service_loads(state,client);
     assert(!exists && !state->child_pid && !state->exit_requested && opens==closes);
 }
+/* The child boundary supplies a semantic reply; the real upstream parser and
+ * worker I/O are exercised separately in test_html_engine.py. */
+static void complete_html(browser_state_t *state, reist_gui_surface_client_t *client, unsigned corrupt) {
+    assert(state->parse_pending && !exists);
+    uint32_t length=state->parse_pending;
+    process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
+    assert(exists && state->job_kind==3 && state->child_generation==generation && !state->parse_pending);
+    memset(&worker_reply,0,sizeof(worker_reply)); worker_reply.header=state->html_request;
+    worker_reply.header.size=sizeof(worker_reply); worker_reply.header.child_pid=81;
+    worker_reply.header.child_generation=generation;
+    assert(!reist_html_document_parse(document_bytes,length,&worker_reply.document));
+    if (corrupt) ++worker_reply.header.request;
+    const char *saved=file_bytes; size_t saved_length=file_length;
+    int packed=browser_html_pack(&worker_reply,worker_wire,sizeof(worker_wire)); assert(packed>0);
+    file_bytes=(const char *)worker_wire; file_length=(size_t)packed;
+    clock_ms+=10; process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=0;
+    service_loads(state,client);
+    assert(!exists && !state->child_pid && !state->exit_requested && opens==closes);
+    file_bytes=saved; file_length=saved_length;
+}
 static void follow(browser_state_t *state, reist_gui_surface_client_t *client) {
     assert(state->follow_redirect && !exists);
     unsigned before=unlinks;
     process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
-    assert(exists && state->child_pid && !state->follow_redirect && unlinks==before+2);
+    assert(exists && state->child_pid && !state->follow_redirect && unlinks==before+4);
 }
 static void redirect_cases(void) {
     reist_gui_surface_client_t client={0}; client.width=800; client.height=600;
@@ -135,13 +171,15 @@ static void redirect_cases(void) {
     state.address_focused=1; strcpy(state.address,"https://typed.test/");
     complete(&state,&client,"HTTP/1.1 301 Moved\r\nLocation: /new/index.html\r\nContent-Length: 0\r\n\r\n");
     assert(!state.active && !strcmp(state.active_url,"/htdocs/index.html"));
-    assert(spawns==1 && waits==1 && unlinks==4 && state.redirect_count==1);
+    assert(spawns==1 && waits==1 && unlinks==8 && state.redirect_count==1);
     assert(!strcmp(state.job_url,"https://example.test/new/index.html#section"));
     assert(!strcmp(state.address,"https://typed.test/"));
     follow(&state,&client);
     assert(state.redirect_deadline==deadline && !strcmp(spawned_url,"https://example.test/new/index.html"));
     complete(&state,&client,"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
         "<p id='section'><a href='next.html'>Next</a><img src='icon.png'></p>");
+    assert(!state.active && state.parse_pending);
+    complete_html(&state,&client,0);
     assert(state.active==1 && !strcmp(state.active_url,"https://example.test/new/index.html#section"));
     assert(!strcmp(state.address,"https://typed.test/"));
     char resolved[BROWSER_URL_CAPACITY];
@@ -201,6 +239,7 @@ int main(int argc, char **argv) {
         if (!race) process.state = X86OS_PROCESS_ZOMBIE;
         service_loads(&state, &client);
         assert(!state.exit_requested && !state.child_pid && waits == 1);
+        complete_html(&state,&client,0);
         assert(state.active == 1 && !strcmp(state.active_url, "https://intracom.at/"));
         assert(opens == closes);
     }
@@ -226,6 +265,24 @@ int main(int argc, char **argv) {
         assert(state.exit_requested && !kills && !waits);
     }
     redirect_cases();
+    for (unsigned failure=0; failure<4; ++failure) {
+        state=fresh(); client.width=800; client.height=600;
+        memcpy(document_bytes,"<p>safe</p>",11);
+        assert(!publish_document_bytes(&state,&client,"/new.html",11));
+        if (!failure) complete_html(&state,&client,1); /* stale reply */
+        else {
+            service_loads(&state,&client); assert(state.child_pid>0 && state.job_kind==3);
+            if (failure==1) { process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=70; }
+            if (failure==2) clock_ms=state.job_deadline;
+            if (failure==3) handle_keyboard(&state,&client,BROWSER_KEY_ESCAPE);
+            service_loads(&state,&client);
+        }
+        assert(!state.active && !state.exit_requested && !state.child_pid && waits==1);
+        assert(state.parser_failures==1 && state.parser_timeouts==(failure==2));
+        assert(!publish_document_bytes(&state,&client,"/next.html",11));
+        complete_html(&state,&client,0);
+        assert(state.active==1 && !strcmp(state.active_url,"/next.html") && waits==2);
+    }
     /* Optional captured public response: no network or test-fixture dependency. */
     if (argc == 2) {
         static char captured[BROWSER_DOCUMENT_LIMIT + 1];
@@ -234,6 +291,7 @@ int main(int argc, char **argv) {
         assert(file_length > 0 && file_length <= BROWSER_DOCUMENT_LIMIT);
         file_bytes = captured; state = fresh(); client.width = 800; client.height = 600;
         assert(publish_document(&state, &client, "/captured.html", "https://intracom.at/") == 0);
+        complete_html(&state,&client,0);
         assert(state.loaded && state.active == 1 && layouts[1].run_count > 0);
         printf("BROWSER_CAPTURED_HTML_OK bytes=%zu elements=%u runs=%u\n", file_length,
                documents[1].element_count, layouts[1].run_count);
@@ -387,6 +445,43 @@ int main(int argc, char **argv) {
 
 
 class BrowserRuntimeTests(unittest.TestCase):
+    def run_browser_probe_transcript(self, chunks):
+        # Execute the actual guest-runner branch. Only time, QEMU output and
+        # screenshot I/O are mocked, so late failure/close ordering is real.
+        tree = ast.parse((ROOT / "scripts/run_qemu_runtime_desktop.py").read_text())
+        branch = next(node for node in ast.walk(tree)
+                      if isinstance(node, ast.If) and isinstance(node.test, ast.Name)
+                      and node.test.id == "browser_probe"
+                      and any(isinstance(item, ast.Constant) and item.value == "Browser probe failed"
+                              for item in ast.walk(node)))
+        required = next(ast.literal_eval(node.value) for node in ast.walk(branch)
+                        if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == "required"
+                                for target in node.targets))
+        pending = iter(chunk.replace("ALL_REQUIRED", "\n".join(required)) for chunk in chunks)
+        ticks = iter(range(100))
+        captures = []
+        namespace = dict(time=types.SimpleNamespace(monotonic=lambda: next(ticks), sleep=lambda _: None),
+                         deadline=20, transcript=[], process=None, output=None, screenshot=None,
+                         drain=lambda output, transcript: transcript.append(next(pending, "")),
+                         capture_screenshot=lambda *args: captures.append(True), print=lambda *args: None)
+        function = ast.parse("def run():\n    pass\n")
+        function.body[0].body = branch.body
+        exec(compile(ast.fix_missing_locations(function), "real-browser-probe", "exec"), namespace)
+        return namespace["run"](), captures
+
+    def test_guest_runner_rejects_late_failure(self):
+        for failure in ("BROWSER_PROBE_FAIL interaction", "BROWSER_PROBE_FAIL cleanup", "DESKTOP_BROWSER_FAIL"):
+            with self.subTest(failure=failure), self.assertRaisesRegex(RuntimeError, "Browser probe failed"):
+                self.run_browser_probe_transcript(["ALL_REQUIRED", failure + "\nBROWSER_CLOSE_OK"])
+
+    def test_guest_runner_requires_close_and_preserves_screenshot(self):
+        result, captures = self.run_browser_probe_transcript(["ALL_REQUIRED", "BROWSER_CLOSE_OK"])
+        self.assertEqual(result, 0)
+        self.assertEqual(captures, [True])
+        with self.assertRaisesRegex(RuntimeError, "close cleanly"):
+            self.run_browser_probe_transcript(["ALL_REQUIRED"])
+
     def test_real_renderer_scroll_clipping_and_image_pixels(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "browser-render-host.c"
@@ -405,7 +500,8 @@ class BrowserRuntimeTests(unittest.TestCase):
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
-                      "userspace/gui/apps/browser/browser_response.c", "userspace/programs/curl_http.c"],
+                      "userspace/gui/apps/browser/browser_response.c", "userspace/programs/curl_http.c",
+                      "userspace/gui/apps/browser/html_protocol.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])
 
@@ -430,7 +526,7 @@ class BrowserRuntimeTests(unittest.TestCase):
 
     def test_page_replacement_invalidates_old_hit_map(self):
         source = APP.read_text()
-        publish = source.split("static int publish_document_bytes(")[1].split("static int publish_document(")[0]
+        publish = source.split("static int publish_html_reply(")[1].split("static int publish_document_bytes(")[0]
         self.assertIn("state->hit_count = 0U", publish)
         self.assertIn("state->armed_link = UINT32_MAX", publish)
 
@@ -439,7 +535,8 @@ class BrowserRuntimeTests(unittest.TestCase):
         runner = (ROOT / "scripts/run_qemu_runtime_desktop.py").read_text()
         for marker in ("BROWSER_ADDRESS_CHROME_ONLY_OK", "BROWSER_IMAGE_PAINTED", "BROWSER_ANCHOR_OK",
                        "BROWSER_LINK_RELEASE_OK", "BROWSER_SCROLLBAR_CAPTURE_OK", "BROWSER_CLOSE_OK",
-                       "BROWSER_TRANSPORT_EXIT_OK", "BROWSER_SCROLL_CLIP_OK"):
+                       "BROWSER_TRANSPORT_EXIT_OK", "BROWSER_SCROLL_CLIP_OK", "BROWSER_HTML5_WORKER_OK",
+                       "BROWSER_HTML5_FAULT_CONTAINED_OK", "BROWSER_HTML5_TIMEOUT_CONTAINED_OK", "BROWSER_HTML5_RECOVERY_OK"):
             self.assertIn(marker, source)
             self.assertIn(marker, runner)
         self.assertIn("click.x = -1", source)

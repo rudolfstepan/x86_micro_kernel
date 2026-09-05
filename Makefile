@@ -839,6 +839,7 @@ SYSTEM_IMAGE_FILES := \
 	htdocs/status.jsn=htdocs/status.jsn \
 	htdocs/index.html=htdocs/index.html \
 	htdocs/browser-test.html=htdocs/browser-test.html \
+	htdocs/browser-html5-test.html=htdocs/browser-html5-test.html \
 	sbin/mount.prg=$(SYSTEM_PROGRAM_DIR)/MOUNT.PRG \
 	sbin/umount.prg=$(SYSTEM_PROGRAM_DIR)/UMOUNT.PRG \
 	sbin/svcctl.prg=$(SYSTEM_PROGRAM_DIR)/SVCCTL.PRG \
@@ -857,6 +858,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/gui/bin/guidemo.prg=$(SYSTEM_PROGRAM_DIR)/GUIDEMO.PRG \
 	usr/gui/bin/notepad.prg=$(SYSTEM_PROGRAM_DIR)/NOTEPAD.PRG \
 	usr/gui/bin/browser.prg=$(SYSTEM_PROGRAM_DIR)/BROWSER.PRG \
+	usr/bin/htmlwork.prg=$(SYSTEM_PROGRAM_DIR)/HTMLWORK.PRG \
 	usr/gui/bin/soundplayer.prg=$(SYSTEM_PROGRAM_DIR)/SOUNDPLAYER.PRG \
 	usr/gui/bin/imageviewer.prg=$(SYSTEM_PROGRAM_DIR)/IMAGEVIEWER.PRG \
 	usr/gui/bin/control.prg=$(SYSTEM_PROGRAM_DIR)/CONTROL.PRG \
@@ -882,7 +884,7 @@ SYSTEM_IMAGE_FILES := \
 FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
-	usr/gui/bin/browser.prg=% htdocs/index.html=% htdocs/browser-test.html=% \
+	usr/gui/bin/browser.prg=% usr/bin/htmlwork.prg=% htdocs/index.html=% htdocs/browser-test.html=% htdocs/browser-html5-test.html=% \
 	usr/share/sounds/startup.wav=% \
 	usr/share/sounds/shutdown.wav=% \
 	usr/share/sounds/error.wav=% usr/share/sounds/notify.wav=% \
