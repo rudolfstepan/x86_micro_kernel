@@ -15,6 +15,7 @@ id = "R3.7-browser-http-navigation"
 status = "active"
 user_checkpoint = "2026-09-05: The user explicitly approves saving the HTTP/browser candidate as a non-accepted checkpoint after being informed that curl-client times out before CURL in GTEST's desktop --unicode-probe. Preserve all frozen gates and active status; no acceptance or push. Then extend the same active package by an explicitly bounded desktop-start repair before continuing browser features."
 repair_extension = "User-approved desktop-start repair after checkpoint abe907e1: locate the stalled optional accelerator/font initialization in the existing Ring-3 compositor and its read-only VFS client. Repair only a reproduced startup progress, transaction or deadline failure, preserving generation validation, bounded fixed storage, cleanup, Unicode rendering and the optional-accelerator fallback. Add a real-code host regression and bounded phase diagnostics where needed. Do not bypass GTEST, pre-start the browser to hide the failure, lengthen frozen guest deadlines, grant raw device/filesystem authority or change kernel/public ABI. All original HTTP and browser acceptance gates remain mandatory. If the cause requires a source outside this extension, stop with the concrete dependency."
+verification_precondition = "Startup diagnosis found that test-reist-runtime -Target qemu chooses QEMU but does not rebuild build/reist-os.img. The preceding VMware package therefore supplied VMWARE_BUILD/10-ms ATA polls to a QEMU gate. Preserve that frozen VMware build and append a QEMU reference build before the unchanged QEMU runtime commands. This validates both requested profiles without changing driver timing or guest deadlines; the packaged VMware directory remains separate. Host regression pins this build/runtime target ordering."
 phase = "post-s0"
 risk = "high"
 title = "Preserve HTTP response semantics for the browser engine migration"
@@ -63,7 +64,10 @@ targeted_tests = [
   "python test/test_gui_surface_source.py -v",
   "python test/test_network_tools.py -v"
 ]
-package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
 runtime_tests = [
   ".\\scripts\\test-reist-runtime.ps1 -Mode curl-client -Target qemu -Video vga",
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga"

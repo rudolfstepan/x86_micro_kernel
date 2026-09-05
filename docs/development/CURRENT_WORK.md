@@ -49,6 +49,18 @@ Gastzeitgrenzen bleiben unverändert. Accelerator-Verbindung und Font-I/O werden
 vor einer funktionalen Änderung getrennt beobachtet; eine fehlende optionale
 Ressource darf keine endlose Startabhängigkeit erzeugen.
 
+Die begrenzte Diagnose zeigt: Das separat mit `Target=qemu` gebaute Image
+erreicht nach Font-I/O (11 s ohne NIC, rund 20 s im GTEST mit RTL8139) die
+Unicode-Marker. Die Beschleuniger-INFO dauert 3 ms. Der vorangegangene
+Abnahmeablauf hatte dagegen nach dem VMware-Paket dessen Image unter QEMU
+gestartet: `test-reist-runtime -Target qemu` wählt nur den Emulator und baut
+das Image nicht neu. `VMWARE_BUILD` verwendet 10-ms-ATA-Polls, `QEMU_BUILD`
+1-ms-Polls. Ein zusätzlicher QEMU-Referenzbuild vor den unveränderten Gastgates
+stellt nun die korrekte Testvoraussetzung her; der VMware-Paketbuild bleibt
+erhalten. Kein Treibertiming und keine Gastfrist werden gelockert. Die genaue
+Laufzeitwirkung wird durch die nachfolgenden Abnahmen geprüft, nicht aus den
+Diagnoseläufen als bestanden abgeleitet.
+
 NetSurf bleibt der bevorzugte Portierungskandidat, noch nicht integriert.
 Fehlende allgemeine ISO-C-/Datei-/Zeit-/Speichergrundlagen werden als echte
 Ring-3-SDK-Verträge nachimplementiert, nicht als funktionslose Browser-Stubs.
