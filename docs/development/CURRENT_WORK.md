@@ -5,7 +5,12 @@ Stand: 5. September 2026
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
 `R3.7-browser-http-navigation` ist nach allen eingefrorenen Gates abgenommen.
 Aktiv ist wieder `R3.6c-browser-interaction-and-images`; dessen eigene offene
-Abnahme bleibt erhalten und wurde in diesem Lauf nicht zusätzlich durchgeführt.
+Abnahme wird auf Nutzerauftrag fortgesetzt. Wie in R3.7 steht jetzt ein
+zusätzlicher QEMU-Referenzbuild nach dem unveränderten VMware-Build und vor
+dem unveränderten Browser-Gastgate. Alle vier bisherigen Targeted-Gates
+bleiben erhalten. Grundlage ist der saubere Stand `805132f0`; keine erneute
+Implementierung bereits vorhandener Browserfunktionen und keine Aufweichung
+der Prüfungen. Die Ergebnisse dieses neuen Abnahmelaufs sind noch offen.
 R3.6b bleibt queued. Kein Push.
 
 Der abgenommene Stand `BROWSER_BUILD navigation-20260905-r5` ergänzt HTTP/1.1-GET,

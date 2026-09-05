@@ -83,6 +83,7 @@ evidence = []
 [[packages]]
 id = "R3.6c-browser-interaction-and-images"
 status = "active"
+verification_precondition = "Apply the R3.7-proven target prerequisite to this resumed acceptance: preserve the frozen VMware reference build and append a QEMU reference build before the unchanged QEMU browser gate. Runtime -Target qemu does not rebuild the shared raw image. No runtime deadline, assertion or prior gate is removed or weakened."
 deferral = "2026-09-05: User explicitly requests continuing the browser redesign after checkpoint cd7025a2. Preserve this incomplete acceptance as queued with every original gate; stability confirmation is not a QEMU acceptance waiver."
 phase = "post-s0"
 risk = "high"
@@ -139,7 +140,10 @@ targeted_tests = [
   "python test/test_gui_value_controls_source.py -v",
   "python test/test_gui_surface_source.py -v"
 ]
-package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga"]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
 runtime_tests = [".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga"]
 stop_conditions = [
   "a required source file lies outside allowed_files or an unrelated change overlaps the package",
