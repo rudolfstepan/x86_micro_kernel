@@ -227,6 +227,7 @@ evidence = []
 [[packages]]
 id = "R3.9-browser-html5-worker"
 status = "active"
+inventory_completion = "Before candidate implementation, upstream aliases.c was inspected completely and found to require ISO C bsearch in addition to strncpy, tolower and POSIX strncasecmp. Include the existing opt-in stdlib.h declaration file in the setup contract; implementation and host behavior remain in the already listed bytes.c/tests. This adds no authority or new runtime failure domain."
 phase = "post-s0"
 risk = "high"
 title = "Integrate the real NetSurf HTML5 tree builder behind a bounded browser worker"
@@ -241,6 +242,7 @@ allowed_files = [
   "docs/development/USER_PROGRAM_TOOLCHAIN.md",
   "userspace/libc/include/ctype.h",
   "userspace/libc/include/strings.h",
+  "userspace/libc/include/stdlib.h",
   "userspace/libc/include/string.h",
   "userspace/libc/lib/bytes.c",
   "userspace/gui/apps/browser/html_engine.h",
