@@ -42,6 +42,13 @@ Desktop-Startblockade zu erweitern. R3.7 bleibt aktiv; kein Queue-Fortschritt,
 keine Abnahme und kein Push. Die folgende Reparatur wird vor Umsetzung getrennt
 abgegrenzt; alle bisherigen Gates bleiben erhalten.
 
+Zwischenstand: `abe907e1`. Der freigegebene Reparaturumfang ergänzt ausschließlich
+den bestehenden Ring-3-Desktop-Startpfad, dessen VFS-Dateiclient und reale
+Hostregressionen/Diagnosen. Kernel, öffentliche ABI, GTEST-Anforderungen und
+Gastzeitgrenzen bleiben unverändert. Accelerator-Verbindung und Font-I/O werden
+vor einer funktionalen Änderung getrennt beobachtet; eine fehlende optionale
+Ressource darf keine endlose Startabhängigkeit erzeugen.
+
 NetSurf bleibt der bevorzugte Portierungskandidat, noch nicht integriert.
 Fehlende allgemeine ISO-C-/Datei-/Zeit-/Speichergrundlagen werden als echte
 Ring-3-SDK-Verträge nachimplementiert, nicht als funktionslose Browser-Stubs.
