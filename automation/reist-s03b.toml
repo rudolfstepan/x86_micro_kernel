@@ -359,6 +359,98 @@ commit_message = "feat: isolate NetSurf HTML5 parsing in a browser worker"
 evidence = []
 
 [[packages]]
+id = "R3.10-browser-css-layout"
+status = "queued"
+phase = "post-s0"
+risk = "high"
+title = "Render styled HTML5 documents through an isolated CSS cascade and box layout"
+user_direction = "Continue the user-requested browser migration automatically after accepted R3.9; performance and resilience are simultaneous requirements. The incomplete VMware pointer acceptance remains deferred with unchanged gates. Define this next package only during R3.9 completion; do not implement a second package in that run."
+scope = "One styled-document rendering boundary: inventory the retained Hubbub tree, current semantic projection, layout, image sizing and bulk IPC before implementation. Pin and port an actual MIT NetSurf LibCSS release with its real selector/cascade engine through the opt-in Ring-3 SDK; preserve provenance and license. Retain sufficient HTML5 tree structure for element/class/id selectors, descendant/child relationships, inline and embedded author styles, inheritance, specificity, source order and important declarations. Implement a documented CSS 2.1 normal-flow subset for block/inline/none, text and background colors, font size/weight/style, alignment, margins, padding, borders and constrained width/height, with px/em/percent units where that property's containing-block semantics are implemented. Keep complex style and layout work in HTMLWORK, emit a private versioned bounded scene, and validate all geometry, text, resource references, counts, enums and generations before presentation. Preserve native browser chrome, link hit testing, image clipping, scrolling, resizing and the last valid page on failure. Use only existing process/IPC/file APIs, prefer bounded bulk IPC over increasing temporary-file traffic, and measure document/resize latency without extending the existing five-second worker bound. This first CSS scene deliberately has no stylesheet resource-fetch authority: external CSS, imports, CSS URL resources, forms, cookies, POST and JavaScript need a separately defined resource/origin contract, not silent browser stubs. Unknown CSS is handled according to the parser's error-recovery rules; unsupported layout features are documented without claiming full CSS or NetSurf compatibility."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USER_PROGRAM_TOOLCHAIN.md",
+  "userspace/gui/apps/browser/html_engine.h",
+  "userspace/gui/apps/browser/html_engine.c",
+  "userspace/gui/apps/browser/html_protocol.h",
+  "userspace/gui/apps/browser/html_protocol.c",
+  "userspace/gui/apps/browser/html_worker.c",
+  "userspace/gui/apps/browser/css_engine.h",
+  "userspace/gui/apps/browser/css_engine.c",
+  "userspace/gui/apps/browser/browser_scene.h",
+  "userspace/gui/apps/browser/browser_scene.c",
+  "userspace/gui/apps/browser/browser_model.h",
+  "userspace/gui/apps/browser/browser_model.c",
+  "userspace/gui/apps/browser/main.c",
+  "userspace/libc/include/stdlib.h",
+  "userspace/libc/include/string.h",
+  "userspace/libc/include/strings.h",
+  "userspace/libc/include/ctype.h",
+  "userspace/libc/lib/bytes.c",
+  "scripts/build_html_engine.py",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "Makefile",
+  "htdocs/browser-html5-test.html",
+  "htdocs/browser-css-test.html",
+  "third_party/libcss.tar.gz",
+  "third_party/libcss.sha256",
+  "third_party/README.md",
+  "test/test_css_engine.py",
+  "test/test_css_engine_host.c",
+  "test/test_html_engine.py",
+  "test/test_html_engine_host.c",
+  "test/test_html_worker_host.c",
+  "test/test_browser_runtime_source.py",
+  "test/test_browser_navigation_source.py",
+  "test/test_gui_browser_source.py",
+  "test/test_browser_model_host.c",
+  "test/test_shell_source.py",
+  "test/test_user_program_toolchain.py",
+  "test/test_libc_source.py",
+  "test/test_libc_host.c"
+]
+invariants = [
+  "the real upstream CSS parser and cascade execute only in an isolated bounded worker, never in browser chrome compositor or kernel",
+  "the existing 64-KiB document and 4-MiB worker arena remain hard bounds; scene storage tree walks selector work and output have explicit finite quotas",
+  "no style can request network files scripts fonts or images through an unvalidated implicit callback; this package grants no external stylesheet resource authority",
+  "publication is atomic after exact generation full scene validation and successful presentation preparation; malformed geometry stale replies worker faults and timeout retain the previous page",
+  "input remains responsive while waiting; resize work is coalesced and generation checked; no synchronous wait in input handlers no unbounded retry and no longer worker or original guest deadline",
+  "host tests execute real LibCSS plus adapter/layout behavior; the guest proves observable CSS pixels and geometry as well as unchanged image link scroll fault timeout recovery and close checks",
+  "both Windows and Makefile layouts retain shell-reachable HTMLWORK; public Surface syscall and semantic-document ABIs remain compatible"
+]
+targeted_tests = [
+  "python test/test_css_engine.py -v",
+  "python test/test_html_engine.py -v",
+  "python test/test_libc_source.py -v",
+  "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_runtime_source.py -v",
+  "python test/test_browser_navigation_source.py -v",
+  "python test/test_shell_source.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production source or runtime prerequisite lies outside allowed_files; report the concrete architecture dependency before changing scope",
+  "CSS integration requires widening kernel Surface filesystem network or device authority or weakening existing timing memory or recovery bounds",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: render isolated HTML5 documents with a real CSS cascade"
+evidence = []
+
+[[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
 status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
