@@ -3,6 +3,19 @@
 Stand: 5. September 2026
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
+Aktiv ist `R3.9-browser-html5-worker`: echter NetSurf-HTML5-Baumaufbau in einem
+separaten, begrenzten Ring-3-Kindprozess. Noch keine Implementierungsabnahme.
+Der Nutzer hat R3.6b ausdrücklich mit unveränderten Anforderungen zurückgestellt
+und automatische Browser-Fortsetzung ohne erneute Routinefreigaben beauftragt.
+Keine parallelen manuellen Builds während der Agentenabnahme: Der erste
+Hover-Neulauf verlor sein SDK durch einen gleichzeitig gestarteten Nutzerbuild.
+Der anschließende unveränderte Lauf erreichte Desktop und Mauseingang, aber
+keine Startmenü-Bestätigung. Logs: `r36b-hover-20260905-125318-serial.log` und
+`r36b-hover-20260905-125318-vmware.log` unter `build/codex-agent/`.
+Die Test-VM und ihre Oberfläche sind beendet; R3.6b ist nicht abgenommen.
+
+Die folgenden Abschnitte halten die bisherigen Abnahmen und ihren historischen
+Queue-Stand fest.
 `R3.7-browser-http-navigation` ist nach allen eingefrorenen Gates abgenommen.
 Auch `R3.6c-browser-interaction-and-images` ist jetzt abgenommen. Wie in R3.7
 steht ein zusätzlicher QEMU-Referenzbuild nach dem unveränderten VMware-Build

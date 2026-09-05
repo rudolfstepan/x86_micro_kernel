@@ -74,6 +74,15 @@ VMware-Image nicht neu. Befehle, Laufzeiten und Logs stehen in
 
 ## Nachfolgende, noch nicht implementierte Arbeit
 
+Aktiver nächster Schnitt ist R3.9: Hubbub 0.3.8 und LibParserUtils 0.2.5
+liefern den echten HTML5-Tokenizer und Baumaufbau in `HTMLWORK.PRG`. Der
+Browser erhält nur eine vollständig validierte semantische Projektion; seine
+bisherige Zeichen-/Bild-/Linkschicht bleibt zunächst bestehen. Ein Parserfehler
+darf daher nicht die Browser-Chrome beenden. Die Ausgabe ist kein vollständiges
+öffentliches DOM und keine CSS-Layout-Engine. CSS/DOM-Layout folgt als nächster
+Browser-Schnitt. Die offene VMware-Mausabnahme bleibt auf ausdrückliche
+Nutzerfreigabe zurückgestellt, nicht bestanden.
+
 Die Engine-Portierung braucht einen eigenen Ring-3-Laufzeit-/Allocatoradapter,
 einen hostgeprüften und im Gast ausgeführten DOM/CSS-/Layoutpfad sowie feste
 Speicher- und Ausführungsbudgets. Renderer-Absturz oder Hänger müssen gegenüber

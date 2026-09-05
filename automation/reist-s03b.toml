@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
+active_id = "R3.9-browser-html5-worker"
 
 [policy]
 one_package_per_run = true
@@ -225,8 +225,90 @@ commit_message = "feat: add bounded Ring-3 C runtime for browser dependencies"
 evidence = []
 
 [[packages]]
-id = "R3.6b-vmware-pointer-pinned-mutex"
+id = "R3.9-browser-html5-worker"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Integrate the real NetSurf HTML5 tree builder behind a bounded browser worker"
+scope = "User explicitly defers the incomplete VMware mouse acceptance and directs automatic browser implementation. Port pinned MIT LibParserUtils 0.2.5 and Hubbub 0.3.8 through the opt-in Ring-3 C runtime, extending only the actually required standard byte/ASCII interfaces. Integrate the real HTML5 tokenizer and tree builder, not a tokenizer-only substitute, with a fixed-capacity node/attribute/text adapter and an explicit projection onto the existing semantic document/layout contract. Run this complex parser in a separate HTMLWORK.PRG child for both local and HTTP pages, with no network or device authority, one request per process generation, a 4-MiB allocator arena and a five-second parent-enforced deadline. Transfer bounded input and versioned, size-checked semantic results through parent-owned temporary files; validate all counts, offsets, strings, enums, indices and reserved fields before browser publication. Preserve the current page and responsive chrome on parser OOM, invalid output, fault, timeout and cancellation; reap the exact owned child before cleaning files. Keep CURL transport, links, images and scroll behavior. Prove HTML5 named entities, raw text, implied elements, malformed nesting/table recovery and bounded failures on host and in the QEMU browser. DOM/CSS style/layout and forms remain the next browser slice; script execution remains disabled and a later JS engine retains its separate generation-scoped authority boundary. No kernel, syscall, public Surface ABI or global compiler replacement."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/USER_PROGRAM_TOOLCHAIN.md",
+  "userspace/libc/include/ctype.h",
+  "userspace/libc/include/strings.h",
+  "userspace/libc/include/string.h",
+  "userspace/libc/lib/bytes.c",
+  "userspace/gui/apps/browser/html_engine.h",
+  "userspace/gui/apps/browser/html_engine.c",
+  "userspace/gui/apps/browser/html_protocol.h",
+  "userspace/gui/apps/browser/html_protocol.c",
+  "userspace/gui/apps/browser/html_worker.c",
+  "userspace/gui/apps/browser/main.c",
+  "scripts/build_html_engine.py",
+  "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "scripts/run_qemu_runtime_desktop.py",
+  "Makefile",
+  "htdocs/browser-html5-test.html",
+  "third_party/libparserutils.tar.gz",
+  "third_party/libparserutils.sha256",
+  "third_party/libhubbub.tar.gz",
+  "third_party/libhubbub.sha256",
+  "third_party/README.md",
+  "test/test_html_engine.py",
+  "test/test_html_engine_host.c",
+  "test/test_html_worker_host.c",
+  "test/test_browser_runtime_source.py",
+  "test/test_browser_navigation_source.py",
+  "test/test_gui_browser_source.py",
+  "test/test_shell_source.py",
+  "test/test_user_program_toolchain.py",
+  "test/test_libc_source.py",
+  "test/test_libc_host.c"
+]
+invariants = [
+  "only HTMLWORK.PRG links the complex HTML5 parser; browser chrome, compositor, kernel and CURL retain independent process failure domains",
+  "archive origins hashes and licenses are pinned; build-time removal of unused debug stdio includes is explicit and no fake filesystem or stdio implementation is added",
+  "input is capped at 64 KiB, the DOM adapter at 2048 nodes and 4096 attributes with 256 KiB string storage, and the upstream arena at 4 MiB; callback and tree walks have explicit work and depth limits",
+  "HTML parser worker has a five-second parent deadline, no automatic retry loop, exact generation/parent validation and zombie reap before unlink; input output and partial paths never overlap",
+  "the result envelope is versioned and validated completely before layout, title image or link publication; malformed or failed replies preserve the last valid document",
+  "JavaScript event handlers and script contents never execute; no external CSS fetch form submission cookie or new network authority is introduced",
+  "the worker is packaged on the Ring-3 shell search path in both Windows and Makefile layouts; guest tests demonstrate successful rendering and child fault/timeout containment with subsequent navigation"
+]
+targeted_tests = [
+  "python test/test_html_engine.py -v",
+  "python test/test_libc_source.py -v",
+  "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_runtime_source.py -v",
+  "python test/test_browser_navigation_source.py -v",
+  "python test/test_shell_source.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production source lies outside allowed_files or an unrelated writer overlaps the candidate",
+  "parser integration requires kernel Surface network or filesystem authority beyond existing bounded Ring-3 APIs",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: isolate NetSurf HTML5 parsing in a browser worker"
+evidence = []
+
+[[packages]]
+id = "R3.6b-vmware-pointer-pinned-mutex"
+status = "queued"
+browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
 risk = "high"
