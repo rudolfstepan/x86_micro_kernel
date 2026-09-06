@@ -14,6 +14,7 @@
 #include "include/kernel/panic.h"
 #include "include/lib/spinlock.h"
 #include "kernel/sched/scheduler.h"
+#include "kernel/proc/terminal_input.h"
 #include "kernel/time/pit.h"
 #include "drivers/usb/xhci.h"
 #include "drivers/usb/ohci.h"
@@ -153,7 +154,7 @@ static volatile kbd_state_t kbd_state = {
 static volatile char input_queue[INPUT_QUEUE_SIZE];
 static volatile int input_queue_head = 0;
 static volatile int input_queue_tail = 0;
-static spinlock_t input_queue_lock = SPINLOCK_INIT;  // Protect queue access
+#define input_queue_lock terminal_input_lock
 static wait_queue_t input_waiters = WAIT_QUEUE_INIT;
 static bool keyboard_irq_registered;
 static bool keyboard_scanning_enabled;
@@ -269,9 +270,10 @@ static bool input_queue_push(char ch) {
 }
 
 /* The caller owns input_queue_lock with IRQs disabled. */
-static char input_queue_pop_locked(void) {
+static char input_queue_pop_locked(int pid, uint32_t generation) {
     KASSERT_IRQ_DISABLED();
     KASSERT(spinlock_is_owned_by_current(&input_queue_lock));
+    if (!terminal_input_admitted_locked(pid, generation)) return '\0';
     if (input_queue_head == input_queue_tail) return '\0';
 
     char ch = input_queue[input_queue_head];
@@ -286,10 +288,24 @@ static char input_queue_pop_locked(void) {
  * Thread-safe: Uses spinlock with IRQ disable (prevents race with IRQ handler)
  */
 char input_queue_pop(void) {
+    Process *reader = scheduler_current_process();
+    int pid = reader != NULL ? reader->pid : 0;
+    uint32_t generation = reader != NULL ? reader->generation : 0U;
     uint32_t flags = spinlock_acquire_irq(&input_queue_lock);
-    char ch = input_queue_pop_locked();
+    char ch = input_queue_pop_locked(pid, generation);
     spinlock_release_irq(&input_queue_lock, flags);
     return ch;
+}
+
+void kb_input_owner_changed_locked(void) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(spinlock_is_owned_by_current(&input_queue_lock));
+    input_queue_head = input_queue_tail = 0;
+}
+
+void kb_input_owner_wake(void) {
+    KASSERT_IRQ_DISABLED();
+    (void)wait_queue_wake_all_locked(&input_waiters);
 }
 
 /**
@@ -762,6 +778,9 @@ char getchar(void) {
     /* Blocking console input must preserve, not silently change, the caller's
      * interrupt contract. */
     KASSERT_CAN_SLEEP();
+    Process *reader = scheduler_current_process();
+    int pid = reader != NULL ? reader->pid : 0;
+    uint32_t generation = reader != NULL ? reader->generation : 0U;
 
     while (1) {
         /* A physical xHCI controller may not deliver its legacy PCI IRQ even
@@ -777,7 +796,7 @@ char getchar(void) {
         kb_service_leds_locked();
 
         spinlock_acquire(&input_queue_lock);
-        char ch = input_queue_pop_locked();
+        char ch = input_queue_pop_locked(pid, generation);
         if (ch != 0) {
             spinlock_release_irq(&input_queue_lock, flags);
             return ch;

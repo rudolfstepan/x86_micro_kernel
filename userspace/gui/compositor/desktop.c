@@ -522,14 +522,32 @@ static int desktop_svga2d_rect_copy(uint32_t source_x, uint32_t source_y,
 }
 
 static int desktop_display_deactivate(void) {
+    int status = -1;
     if (desktop_svga2d_endpoint != X86OS_IPC_INVALID_HANDLE) {
         reist_svga2d_message_t request = {0};
         request.operation = REIST_SVGA2D_DEACTIVATE;
-        int status = desktop_svga2d_transact(&request);
-        if (status == 0) return 0;
-        desktop_svga2d_forget_endpoint();
+        status = desktop_svga2d_transact(&request);
+        if (status != 0) desktop_svga2d_forget_endpoint();
     }
-    return x86os_display_deactivate();
+    if (status != 0) status = x86os_display_deactivate();
+    if (status == 0)
+        status = x86os_terminal_input(REIST_TERMINAL_RELEASE, 0, 0U);
+    return status;
+}
+
+static int desktop_terminal_acquire(void) {
+    uint64_t start = 0U, now = 0U;
+    if (x86os_monotonic_ms(&start) != 0) return -5;
+    for (;;) {
+        if (x86os_terminal_input(REIST_TERMINAL_CHECK, 0, 0U) == 0) return 0;
+        int status = x86os_terminal_input(REIST_TERMINAL_ACQUIRE_SERVICE, 0, 0U);
+        if (status == 0) return 0;
+        if (status != -13 && status != -16) return status;
+        if (x86os_monotonic_ms(&now) != 0 || now < start || now - start >= 1000U)
+            return -110;
+        /* Manual children wait for their shell's exact-generation grant. */
+        if (x86os_sleep_ms(10U) != 0) return -5;
+    }
 }
 
 enum {
@@ -9113,6 +9131,7 @@ int main(int argc, char **argv) {
     uint32_t notepad_font_probe = 0U;
     uint32_t control_probe = 0U;
     uint32_t browser_probe = 0U;
+    uint32_t terminal_probe = 0U, terminal_probe_idle = 0U, terminal_probe_seen = 0U;
     uint32_t guidemo_probe = 0U;
     uint32_t sound_probe = 0U;
     uint32_t trash_context_probe = 0U;
@@ -9168,6 +9187,9 @@ int main(int argc, char **argv) {
                text_equal(argv[1], "--browser-probe")) {
         browser_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--browser-input-probe")) {
+        browser_probe = terminal_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--guidemo-probe")) {
         guidemo_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
@@ -9201,7 +9223,7 @@ int main(int argc, char **argv) {
         x86os_puts(
             "Usage: desktop [--render-probe|--hover-probe|--surface-probe|"
             "--notepad-probe|--notepad-font-probe|--control-probe|"
-            "--browser-probe|"
+            "--browser-probe|--browser-input-probe|"
             "--guidemo-probe|--sound-probe|"
             "--trash-context-probe|"
             "--trash-confirm-probe|--trash-restore-probe|--unicode-probe|"
@@ -9218,6 +9240,10 @@ int main(int argc, char **argv) {
     desktop_layout_probe_enabled = icon_layout_probe;
     hover_probe_initialize(&hover_probe_state, hover_probe);
 
+    if (desktop_terminal_acquire() != 0) {
+        x86os_puts("desktop: terminal ownership unavailable\n");
+        return 1;
+    }
     int activation_status = desktop_activate_with_fallback();
     if (activation_status == 0) runtime_activated = 1U;
     int display_status = x86os_display_info(&display);
@@ -9579,6 +9605,13 @@ int main(int argc, char **argv) {
         x86os_putchar('\n');
     }
     x86os_puts("DESKTOP_OK\n");
+    if (terminal_probe) {
+        x86os_process_identity_t identity;
+        if (x86os_process_identity(&identity) != 0) return 1;
+        x86os_puts("TERMINAL_INPUT_OWNER pid="); x86os_print_number(identity.pid);
+        x86os_puts(" generation="); x86os_print_number((int)identity.generation);
+        x86os_puts("\n");
+    }
     if (shortcut_status == DESKTOP_SHORTCUT_OK) {
         x86os_puts("DESKTOP_SHORTCUTS_READY count=");
         x86os_print_number(
@@ -9682,7 +9715,8 @@ int main(int argc, char **argv) {
         } else if (browser_probe) {
             probe_status = launch_surface_probe_client(
                 &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/BROWSER.PRG", "--browser-probe",
+                "/USR/GUI/BIN/BROWSER.PRG", terminal_probe
+                    ? "--browser-input-probe" : "--browser-probe",
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);
         } else if (notepad_probe || notepad_font_probe) {
@@ -9841,6 +9875,21 @@ int main(int argc, char **argv) {
          * bound so readiness is adopted even without a later drag gesture. */
         (void)desktop_svga2d_reconnect_if_ready();
         int key = read_key();
+        if (terminal_probe && active_surface_count(&surfaces) != 0U)
+            terminal_probe_seen = 1U;
+        if (terminal_probe_seen && !terminal_probe_idle &&
+            active_surface_count(&surfaces) == 0U) {
+            /* Armed only after the client-bound startup completed. */
+            terminal_probe_idle = 1U;
+            x86os_puts("TERMINAL_INPUT_IDLE\n");
+        }
+        if (terminal_probe_idle && key == 7) {
+            x86os_puts("TERMINAL_INPUT_FAULT\n");
+            /* Explicit diagnostic launch + real Ctrl-G, never web content.
+             * Deliberately bypass graceful release to prove exception fencing. */
+            __asm__ __volatile__("ud2");
+            return 1;
+        }
         desktop_dirty_region_t dirty;
         desktop_dirty_initialize(&dirty, display.width, display.height);
         desktop_shortcut_probe_poll_storage_restart(

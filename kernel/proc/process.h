@@ -16,6 +16,7 @@
 #include "include/kernel/ipc.h"
 #include "include/lib/spinlock.h"
 #include "kernel/sched/wait_queue.h"
+#include "include/reist/abi/syscall.h"
 
 
 #define MAX_PROGRAMS 256 // Maximum number of running programs
@@ -32,8 +33,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 1U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscall 126 is append-only CPU_TOPOLOGY. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 127U
+/* Exclusive upper bound; syscall 127 is append-only TERMINAL_INPUT. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 128U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -218,5 +219,7 @@ void process_table_unlock_irqrestore(uint32_t flags);
 spinlock_t *process_table_lock_ref(void);
 bool process_table_lock_is_owned(void);
 bool process_begin_exit(Process *process, uint32_t generation);
+int process_terminal_input(Process *caller,
+                           const reist_terminal_input_request_t *request);
 
 #endif // PROCESS_H

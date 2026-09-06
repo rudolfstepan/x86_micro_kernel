@@ -4,6 +4,14 @@ Stand: 30. August 2026.
 
 ## Zweck und Geltungsbereich
 
+Mit dem abgenommenen R3.12 steht vor der Surface-Fokusverteilung die gemeinsame,
+generationgebundene [Terminal-Zulassung](TERMINAL_INPUT_OWNERSHIP_CONTRACT.md).
+Der aktive Compositor ist alleiniger Zeichenleser; die weiterhin laufende
+Recovery-Shell darf seine Tasten weder entnehmen noch beobachten. Prozessende
+sperrt diese Autoritaet vor der langsameren Ressourcenbereinigung. Der
+Displaytreiber bleibt bei einem Compositorfehler separat beaufsichtigt;
+Eingabesicherung darf seinen Scanout nicht eigenmaechtig deaktivieren.
+
 Dieses Dokument definiert den verbindlichen Architekturvertrag für die
 interaktive REIST-Desktop-GUI. Er gilt für Window Manager, Session-Compositor,
 `libreistgui`, Surface-Protokoll und alle grafischen Anwendungen. Ziel ist ein

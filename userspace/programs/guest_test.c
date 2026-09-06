@@ -766,7 +766,22 @@ static int test_unicode_raster(void) {
     int pid = x86os_spawnv(program, 2, arguments);
     if (pid <= 0) return -1;
     int status = -1;
-    return x86os_wait(pid, &status) == pid && status == 0 ? 0 : -1;
+    x86os_process_identity_t child;
+    int admission = x86os_process_identity_of(pid, &child);
+    if (admission == 0 && (child.pid != pid || child.generation == 0U))
+        admission = -84;
+    if (admission == 0)
+        admission = x86os_terminal_input(REIST_TERMINAL_TRANSFER,
+                                          child.pid, child.generation);
+    if (admission != 0) {
+        /* This unreaped direct child still belongs to GTEST. A concurrent
+         * exit can reject kill; retain the existing wait/reap path either way. */
+        (void)x86os_kill(pid);
+        (void)x86os_wait(pid, &status);
+        return -1;
+    }
+    return x86os_wait(pid, &status) == pid && status == 0 &&
+        x86os_terminal_input(REIST_TERMINAL_CHECK, 0, 0U) == 0 ? 0 : -1;
 }
 
 static int test_vfs_readonly_walkers(void) {

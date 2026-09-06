@@ -1,8 +1,18 @@
 # Browser-Engine-Umbau
 
-Stand: 5. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
+Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 
 ## Entscheidung und Grenzen
+
+Abgenommenes R3.12: Der Browser bekommt reale Tastatureingaben ueber den
+fokussierten Surface-Pfad, abgesichert durch den separaten
+[Terminal-Mediator](TERMINAL_INPUT_OWNERSHIP_CONTRACT.md). Dies schliesst die
+Shell/Compositor-Konkurrenz; Formulare und JavaScript sind damit noch nicht
+implementiert. R3.11 bleibt der letzte abgenommene Engine-Schnitt; R3.12
+ergaenzt die OS-Eingabegrundlage. Alle Hostgruppen, beide Referenzbuilds und
+alle fuenf Gastgates bestehen, auch GTEST-Unicode und Speicherresilienz.
+Die Nachweise und ihre Grenzen stehen in CURRENT_WORK. R3.13 ist nun als
+separater Formularvertrag aktiv, noch nicht implementiert.
 
 NetSurf ist der bevorzugte **Portierungskandidat**, noch keine integrierte
 Engine. Es besitzt eine eigene in C geschriebene Layout-Engine, mehrere
@@ -360,9 +370,10 @@ Die zusaetzliche Gastprobe wird im vorhandenen `--browser-probe`-Fenster mit
 einer echten USB-Mausrad-Raste aufwaerts gewaehlt (nur initiale Testphase,
 ohne Fristreset). Der Controller wartet auf Fenster- und Browserbereitschaft;
 der echte Gastmarker bestaetigt die Auswahl, nicht bloss der QMP-ACK.
-Der zuvor versuchte Tastaturselektor ist entfernt: Shell und abgekoppelter
-Desktop konkurrieren noch um dieselbe Terminal-Eingabequeue. Deren saubere
-Foreground-/Fokusautoritaet ist separate OS-Schuld, hier nicht repariert.
+Der zuvor versuchte Tastaturselektor ist entfernt: R3.11 hatte konkurrierende
+Shell-/Desktop-Leser derselben Terminal-Eingabequeue nachgewiesen. Der
+abgenommene R3.12-Mediator vermittelt diese Foreground-Autoritaet separat; die
+R3.11-Ressourcenprobe behaelt ihre unveraenderte USB-Auswahl.
 Sie verwendet PID-gebundene temporaere HTML/CSS-Dateien und die paketierten
 Importfixtures. Nach echter Farb-/Pixelpruefung fehlen absichtlich CSS-Bytes;
 die alte Seite muss bleiben. Abbruch und Reload mit geaenderten Bytes muessen
@@ -403,6 +414,16 @@ unterstützt wären.
 
 Formulare und ihre Navigation müssen mit DOM und Layout integriert werden;
 POST-/Cookie-Persistenz und Herkunftsregeln sind eigene Autoritätsgrenzen.
+Der separate Queuevertrag R3.13 plant native GET-Formulare als zusammenhaengenden
+Schnitt von der HTML5-Formzuordnung ueber CSS-Platzierung und bedienbare Felder
+bis zur Navigation. Referenzen sind die
+[WHATWG-Formularregeln](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html)
+und die [URL-Formkodierung](https://url.spec.whatwg.org/#application/x-www-form-urlencoded).
+Dieser Vertrag ist nur vorbereitet, nicht implementiert: begrenzte
+generationgebundene Modelle, Werteerhalt beim Reflow, native Tastatur-/Maus-
+Bedienung, exakte GET-Pruefung an einer kontrollierten HTTP-Fixture und
+sichtbare Ablehnung nicht unterstuetzter Formulare vor dem Transport.
+Es gibt keinen Parserstart pro Taste und keinen stillen POST-zu-GET-Fallback.
 JavaScript bleibt zunächst aus. Eine spätere Engine läuft in einem separaten,
 quota- und generationgebundenen Ring-3-Dienst hinter einem versionierten
 IPC-/DOM-Adapter. NetSurfs vorhandene JavaScript-Einbettung wird nicht ungeprüft
@@ -418,8 +439,8 @@ Speichermangel, Kindfehler, Reap und neue Generationen. Die R3.8-Abnahme steht i
 `CURRENT_WORK.md`; ein geplanter oder implementierter Test ist allein noch kein
 bestandener Gastnachweis. R3.9/R3.10 haben seither HTML5 und begrenztes CSS-Layout
 integriert und abgenommen; R3.11 ergaenzt abgenommen externe Stylesheets/Imports
-mit einem validierten Ressourcenbuendel. Der naechste separate OS-Schnitt
-R3.12 soll die beim Gasttest beobachtete konkurrierende Terminal-Eingabe
-zwischen Shell und aktivem Desktop generationgebunden vermitteln. Das ist
-noch nicht implementiert. Formulare und JavaScript bleiben offen.
+mit einem validierten Ressourcenbuendel. Der abgenommene separate OS-Schnitt
+R3.12 vermittelt die beim Gasttest beobachtete konkurrierende Terminal-Eingabe
+zwischen Shell und aktivem Desktop generationgebunden. Das naechste aktive
+Paket R3.13 ist fuer Formulare definiert; Formulare und JavaScript bleiben offen.
 Der genaue Speicher-/Fehlervertrag steht in `USERSPACE_SDK_AND_PORTABILITY.md`.

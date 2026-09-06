@@ -9,6 +9,15 @@ vorschnelle Behauptung von POSIX-, Wayland- oder Binärkompatibilität.
 
 ## Standard-first-API-Vertrag
 
+R3.12: `x86os_terminal_input(operation, pid, generation)` ist der abgenommene
+versionierte Single-Terminal-Adapter auf Syscall 127 (24-Byte-Request).
+ATTACH_CONSOLE registriert die Root-Shell; TRANSFER delegiert an ein lebendes
+Kind; ACQUIRE_SERVICE ist dem ueberwachten Compositor vorbehalten; RELEASE
+gibt die Eingabe zurueck; CHECK liefert 0 oder -EAGAIN ohne Tasteninhalt.
+Bestehende Zeichenleser behalten ihre Signaturen. Vollstaendige Semantik,
+Quoten und Abweichungen zu POSIX stehen im
+[Terminalvertrag](TERMINAL_INPUT_OWNERSHIP_CONTRACT.md).
+
 Jede wiederverwendbare Bibliothek beginnt beim nächstliegenden etablierten API-
 und Datenmodellstandard. Namen, Frame-/Byte-Einheiten, Objektlebensdauer,
 Zustandsübergänge, negative Fehlercodes und gewöhnliche Compiler-/Linker-

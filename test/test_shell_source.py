@@ -326,9 +326,17 @@ class ShellSourceRegressionTests(unittest.TestCase):
         )
         wait = shell.index("x86os_wait(pid, &status)", spawn)
         self.assertLess(spawn, detached)
+        self.assertLess(shell.index("x86os_terminal_input(REIST_TERMINAL_TRANSFER", spawn), detached)
         self.assertLess(detached, wait)
         self.assertIn('strcmp(path, "/usr/gui/bin/desktop.prg") == 0', syscall)
         self.assertIn("supervisor_start_compositor(", syscall)
+
+    def test_console_attach_is_bounded_and_desktop_remains_detached(self):
+        shell = (ROOT / "userspace/bin/shell.c").read_text()
+        self.assertIn("REIST_TERMINAL_ATTACH_CONSOLE", shell)
+        self.assertIn("now - start >= 1000U", shell)
+        self.assertIn("x86os_sleep_ms(10U)", shell)
+        self.assertIn("child.pid, child.generation", shell)
 
     def test_prompt_has_no_trailing_space(self):
         self.assertIn('printf("%s:%s>", drive_label, dos_path);', self.source)

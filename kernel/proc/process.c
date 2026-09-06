@@ -7,6 +7,7 @@
  * Safety: Fehler werden vor sichtbaren Seiteneffekten abgewiesen; Arbeit und Speicher sind begrenzt.
  */
 #include "kernel/proc/process.h"
+#include "kernel/proc/terminal_input.h"
 #include "kernel/proc/program_image.h"
 #include <stdbool.h>
 
@@ -355,9 +356,36 @@ bool process_begin_exit(Process *process, uint32_t generation) {
     uint32_t flags = process_table_lock_irqsave();
     bool accepted = process->is_running && !process->terminating &&
                     process->generation == generation;
-    if (accepted) process->terminating = true;
+    if (accepted) {
+        terminal_input_process_cleanup(process->pid, generation);
+        process->terminating = true;
+    }
     process_table_unlock_irqrestore(flags);
     return accepted;
+}
+
+int process_terminal_input(Process *caller,
+                           const reist_terminal_input_request_t *request) {
+    if (caller == NULL || request == NULL) return -22;
+    uint32_t flags = process_table_lock_irqsave();
+    int result = -3;
+    if (caller->is_running && !caller->terminating && !caller->has_exited) {
+        Process *target = NULL;
+        if (request->operation == REIST_TERMINAL_TRANSFER) {
+            for (uint32_t i = 0U; i < MAX_PROGRAMS; ++i) {
+                Process *candidate = &process_list[i];
+                if (candidate->is_running && !candidate->terminating &&
+                    !candidate->has_exited && candidate->pid == request->target_pid &&
+                    candidate->generation == request->target_generation) {
+                    target = candidate;
+                    break;
+                }
+            }
+        }
+        result = terminal_input_control_locked(caller, target, request);
+    }
+    process_table_unlock_irqrestore(flags);
+    return result;
 }
 
 static void profile_allow(process_domain_profile_t *profile,
@@ -476,7 +504,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             SYS_OPEN, SYS_READ, SYS_CLOSE, SYS_STAT, SYS_READDIR_BATCH,
             SYS_CREATE, SYS_WRITE, SYS_UNLINK, SYS_SPAWN, SYS_WAIT, SYS_KILL,
             SYS_SPAWNV, SYS_MKDIR, SYS_RMDIR, SYS_CLEAR,
-            SYS_TERMINAL_WRITE, SYS_GETCHAR_NONBLOCKING,
+            SYS_TERMINAL_WRITE, SYS_GETCHAR_NONBLOCKING, SYS_TERMINAL_INPUT,
             SYS_YIELD, SYS_SLEEP_MS,
             SYS_MONOTONIC_MS, SYS_DISPLAY_INFO, SYS_FILL_RECT, SYS_DRAW_TEXT,
             SYS_RENAME, SYS_FSYNC, SYS_IPC_CREATE, SYS_IPC_CLOSE,
@@ -571,6 +599,7 @@ static void release_process_slot(Process *process) {
     admin_maintenance_process_cleanup(process->pid, process->generation);
     component_control_process_cleanup(process->pid, process->generation);
     uint32_t flags = process_table_lock_irqsave();
+    terminal_input_process_cleanup(process->pid, process->generation);
     process->is_running = false;
     process->terminating = false;
     process->uses_shared_program_image = false;
@@ -1665,7 +1694,10 @@ int process_terminate(int pid) {
                 return -1;
             }
             bool self = task_id == scheduler_current_task_id();
-            if (!self) process_list[i].terminating = true;
+            if (!self) {
+                terminal_input_process_cleanup(pid, process_list[i].generation);
+                process_list[i].terminating = true;
+            }
             process_table_unlock_irqrestore(flags);
             if (self) {
                 scheduler_preempt_enable();

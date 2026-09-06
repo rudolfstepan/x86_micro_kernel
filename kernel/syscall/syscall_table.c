@@ -336,6 +336,14 @@ static int syscall_reist_report(uint32_t report_type, uint32_t value) {
                                    report_type, value, pit_monotonic_ms());
 }
 
+static int syscall_terminal_input(const reist_terminal_input_request_t *user_request) {
+    reist_terminal_input_request_t request;
+    _Static_assert(sizeof(request) == 24U, "terminal input ABI changed");
+    if (syscall_copy_from_user_space(&request, user_request,
+                                     sizeof(request)) != 0) return -14;
+    return process_terminal_input(scheduler_current_process(), &request);
+}
+
 static int syscall_network_probe(void) {
     Process *process = scheduler_current_process();
     if (process == NULL) return -13;
@@ -3823,6 +3831,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_storage_bulk,        // Syscall 124: Bounded bulk transfer
     (void*)&syscall_kernel_log_read,     // Syscall 125: Bounded kernel log
     (void*)&syscall_cpu_topology,        // Syscall 126: Read CPU topology
+    (void*)&syscall_terminal_input,      // Syscall 127: Foreground input lifecycle
     // Add more syscalls here as needed
 };
 
@@ -4371,6 +4380,10 @@ void syscall_handler(Registers* regs) {
         case SYS_CPU_TOPOLOGY:
             result = (uint32_t)syscall_cpu_topology(
                 (syscall_cpu_topology_t*)(uintptr_t)arg1, arg2, arg3);
+            break;
+        case SYS_TERMINAL_INPUT:
+            result = (uint32_t)syscall_terminal_input(
+                (const reist_terminal_input_request_t*)(uintptr_t)arg1);
             break;
         default:
             result = (uint32_t)-1;

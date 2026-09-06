@@ -1011,6 +1011,20 @@ static void run_program(int argc, const char* argv[SHELL_MAX_ARGUMENTS]) {
         x86os_puts("Bad command or program file.\n");
         return;
     }
+    x86os_process_identity_t child;
+    int input_status = x86os_process_identity_of(pid, &child);
+    if (input_status == 0)
+        input_status = x86os_terminal_input(REIST_TERMINAL_TRANSFER,
+                                             child.pid, child.generation);
+    /* A short-lived noninteractive child may already have exited. It cannot
+     * retain terminal ownership; keep its ordinary wait/reap contract. */
+    if (input_status != 0 && input_status != -3 && input_status != -116) {
+        x86os_puts("Unable to transfer terminal input.\n");
+        (void)x86os_kill(pid);
+        int failed_status;
+        (void)x86os_wait(pid, &failed_status);
+        return;
+    }
     /* The explicit desktop command starts a detached, supervisor-owned
      * session. The shell must remain available as its recovery console. */
     if (text_equal(executable, "/usr/gui/bin/desktop.prg")) return;
@@ -1036,9 +1050,26 @@ static int shell_vfs_probe(void) {
     return 0;
 }
 
+static int shell_terminal_attach(void) {
+    uint64_t start, now;
+    if (x86os_monotonic_ms(&start) != 0) return -5;
+    for (;;) {
+        if (x86os_terminal_input(REIST_TERMINAL_CHECK, 0, 0U) == 0 ||
+            x86os_terminal_input(REIST_TERMINAL_ATTACH_CONSOLE, 0, 0U) == 0)
+            return 0;
+        if (x86os_monotonic_ms(&now) != 0 || now < start || now - start >= 1000U)
+            return -110;
+        if (x86os_sleep_ms(10U) != 0) return -5;
+    }
+}
+
 int main(int argc, char **startup_argv) {
     if (argc == 2 && text_equal(startup_argv[1], "--vfs-probe"))
         return shell_vfs_probe();
+    if (shell_terminal_attach() != 0) {
+        x86os_puts("shell: terminal ownership unavailable\n");
+        return 1;
+    }
     char line[SHELL_LINE_CAPACITY];
     const char* argv[SHELL_MAX_ARGUMENTS];
     x86os_puts("REIST OS userspace shell\nType HELP for available commands.\n");

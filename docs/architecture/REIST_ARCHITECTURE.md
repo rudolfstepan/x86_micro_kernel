@@ -30,12 +30,17 @@ begrenzte Kernelvertrag bleibt eindeutig und klein.
 
 Die append-only Syscall-ABI v1 besitzt genau eine autoritative Liste in
 `include/reist/abi/syscall.h`. Sie umfasst lückenlos die unveränderten Indizes
-0 bis 119 einschließlich des gesperrten IRQ-Slots 8. Ein begrenzter Generator
+0 bis 127 einschließlich des gesperrten IRQ-Slots 8. Ein begrenzter Generator
 projiziert daraus die historischen `SYS_*`- und `X86OS_SYS_*`-Namen; Make- und
 Windows-Build prüfen diese Projektionen vor der Kompilierung fail-closed auf
 Drift. Derselbe Header benennt den bereits verwendeten POSIX-`errno`-Subset,
 ohne damit alte grobe VFS-Fehler oder subsystemeigene Fehler stillschweigend
 umzudeuten. Neue Nummern dürfen weiterhin nur am Ende angefügt werden.
+
+Das abgenommene R3.12 ergaenzt einen generationgebundenen Terminal-Eingabe-
+Mediator (Syscall 127), keine GUI-Policy im Kernel. Der
+[Terminalvertrag](TERMINAL_INPUT_OWNERSHIP_CONTRACT.md) beschreibt die
+POSIX-inspirierte Vordergrunduebergabe und die ausdruecklichen REIST-Adapter.
 
 **REIST OS** steht für **Resilient Execution, Isolation and Stability
 Technology**. Das zentrale Architekturprinzip lautet:
@@ -833,9 +838,11 @@ werden im abgenommenen R3.11 als navigationsgebundene immutable Bundles ergaenzt
 64 Ressourcen, acht Importkanten, 1 MiB CSS und 30 Sekunden Akquisition;
 Worker behalten fuenf Sekunden und erhalten nur Bytes. Nichtleere Bundles
 nutzen den bestehenden privaten Heapprovider mit 32 MiB Budget. Abnahme steht
-in CURRENT_WORK; kein globaler Cache und kein neuer Kernelpfad. R3.12 soll
-als separater OS-Schnitt konkurrierende Terminal-Eingabe zwischen Recovery-
-Shell und aktivem Desktop beseitigen; noch nicht implementiert. Formulare und JavaScript sind
+in CURRENT_WORK; kein globaler Cache und kein neuer Kernelpfad. R3.12
+vermittelt als abgenommener separater OS-Schnitt die konkurrierende Terminal-
+Eingabe zwischen Recovery-Shell und aktivem Desktop. Alle vier Desktop-/
+Browsergates sowie das Speicherresilienz-Gate einschliesslich GTEST-
+Kinduebergabe und Unicode-Raster bestehen. Formulare und JavaScript sind
 noch nicht implementiert. Kein neuer Kernelparser oder neue Geraeteautoritaet.
 
 R3.8 ergänzt als Engine-Voraussetzung eine opt-in Ring-3-C-Speicher-/Byte-Laufzeit

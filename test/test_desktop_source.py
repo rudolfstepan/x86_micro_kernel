@@ -13,6 +13,15 @@ WM_HEADER = ROOT / "userspace" / "gui" / "compositor" / "desktop_wm.h"
 
 
 class DesktopSourceTests(unittest.TestCase):
+    def test_terminal_generation_admission_precedes_desktop_activation(self):
+        source = (ROOT / "userspace/gui/compositor/desktop.c").read_text()
+        self.assertLess(source.index("if (desktop_terminal_acquire()"),
+                        source.index("int activation_status = desktop_activate_with_fallback()"))
+        self.assertIn("REIST_TERMINAL_ACQUIRE_SERVICE", source)
+        self.assertIn("REIST_TERMINAL_RELEASE", source)
+        self.assertIn("now - start >= 1000U", source)
+        self.assertIn("terminal_probe_idle && key == 7", source)
+
     @classmethod
     def setUpClass(cls):
         cls.source = DESKTOP.read_text(encoding="utf-8")

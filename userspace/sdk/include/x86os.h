@@ -147,7 +147,8 @@ enum {
     X86OS_SYS_FTRUNCATE = 123,
     X86OS_SYS_STORAGE_BULK = 124,
     X86OS_SYS_KERNEL_LOG_READ = 125,
-    X86OS_SYS_CPU_TOPOLOGY = 126
+    X86OS_SYS_CPU_TOPOLOGY = 126,
+    X86OS_SYS_TERMINAL_INPUT = 127
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -2051,6 +2052,9 @@ int x86os_wait(int pid, int* status);
 int x86os_cpu_topology(x86os_cpu_topology_t* topology);
 int x86os_process_info(uint32_t index, x86os_process_info_t* info);
 int x86os_process_identity(x86os_process_identity_t* identity);
+/* Foreground terminal adapter; -EAGAIN from CHECK means no input authority. */
+int x86os_terminal_input(uint32_t operation, int target_pid,
+                         uint32_t target_generation);
 int x86os_process_identity_of(int pid,
                               x86os_process_identity_t* identity);
 int x86os_kill(int pid);

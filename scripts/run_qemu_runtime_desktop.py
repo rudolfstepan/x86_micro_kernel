@@ -586,6 +586,28 @@ class BrowserInputMonitor:
             raise RuntimeError("Invalid browser QMP input command")
         self.execute("input-send-event", {"events": events})
 
+    def key(self, key):
+        # Native QMP InputKeyEvent, https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html
+        parts = key.split("-")
+        allowed = {"ret", "esc", "backspace", "left", "right", "shift",
+                   "ctrl", "semicolon", "slash", "dot", "minus", "spc"}
+        if (not 1 <= len(parts) <= 2 or any(
+                part not in allowed and not re.fullmatch(r"[a-z0-9]", part)
+                for part in parts)):
+            raise ValueError("Unsupported browser keyboard probe key")
+        events = [{"type": "key", "data": {"down": down,
+                   "key": {"type": "qcode", "data": part}}}
+                  for down, sequence in ((True, parts), (False, parts[::-1]))
+                  for part in sequence]
+        self.execute("input-send-event", {"events": events})
+        time.sleep(0.04)  # bounded device pacing, not acceptance
+
+    def type_text(self, value):
+        if len(value) > 128:
+            raise ValueError("Browser keyboard probe text quota")
+        for command in monitor_key_commands(value)[:-1]:
+            self.key(command.removeprefix("sendkey ").strip())
+
 
 def shortcut_probe_move_mouse(
         process: subprocess.Popen[str], pointer: list[int],
@@ -1157,6 +1179,82 @@ def run_browser_resource_probe(process, output, transcript, screenshot, deadline
     raise RuntimeError(f"Browser resource probe deadline; missing={missing}")
 
 
+def run_browser_input_probe(process, output, transcript, screenshot, deadline, monitor):
+    """Real PS/2 -> admission -> focused Surface, then crash and fresh session."""
+    def wait(marker, offset=0, pattern=None):
+        while time.monotonic() < deadline:
+            drain(output, transcript)
+            section = "".join(transcript)[offset:]
+            if any(bad in section for bad in ("BROWSER_PROBE_FAIL", "DESKTOP_BROWSER_FAIL",
+                                               "KERNEL PANIC", "kernel panic")):
+                raise RuntimeError("Terminal input probe observed a guest failure")
+            if (re.search(pattern, section) if pattern else marker in section):
+                return section
+            time.sleep(0.02)
+        raise RuntimeError(f"Terminal input deadline waiting for {marker}")
+
+    previous_identity = None
+    offset = 0
+    for session in range(2):
+        section = wait("BROWSER_INPUT_READY", offset)
+        identity = re.search(r"TERMINAL_INPUT_OWNER pid=(\d+) generation=(\d+)", section)
+        if identity is None or identity.groups() == previous_identity:
+            raise RuntimeError("Terminal owner identity missing or stale on restart")
+        previous_identity = identity.groups()
+        ordinal = 0
+        def confirmed_key(value):
+            nonlocal ordinal
+            ordinal += 1
+            monitor.key(value)
+            received = wait(f"BROWSER_INPUT_KEY ordinal={ordinal} code=", offset,
+                            rf"BROWSER_INPUT_KEY ordinal={ordinal} code=\d+\r?\n")
+            code = re.search(rf"BROWSER_INPUT_KEY ordinal={ordinal} code=(\d+)", received)
+            expected = {"ret":10, "esc":257, "backspace":8, "left":260, "right":261,
+                        "shift-semicolon":58, "slash":47, "dot":46, "minus":45, "spc":32}
+            wanted = expected[value] if value in expected else ord(value)
+            if code is None or int(code[1]) != wanted:
+                raise RuntimeError(f"Terminal key mismatch ordinal={ordinal} wanted={wanted} got={code[1] if code else None}")
+        def type_text(value):
+            for command in monitor_key_commands(value)[:-1]:
+                confirmed_key(command.removeprefix("sendkey ").strip())
+        confirmed_key("ret")
+        type_text("https://intracom.ax")
+        for value in ("backspace", "t", "left", "right"):
+            # One injection per observed key, never replay a missing event.
+            confirmed_key(value)
+        wait("BROWSER_INPUT_ADDRESS_OK", offset)
+        confirmed_key("esc")
+        confirmed_key("ret")
+        type_text("/htdocs/index.html")
+        confirmed_key("ret")
+        wait("BROWSER_INPUT_NAVIGATION_OK", offset)
+        capture_screenshot(process, screenshot, deadline)
+        confirmed_key("esc")
+        wait("BROWSER_CLOSE_OK", offset)
+        wait("TERMINAL_INPUT_IDLE", offset)
+        if session == 0:
+            monitor.key("ctrl-g")
+            wait("TERMINAL_INPUT_FAULT", offset)
+            # The shell was actively attempting nonblocking reads throughout
+            # both edit sequences. A complete HELP proves return after the
+            # unhandled Ring-3 exception, without disabling or waiting on it.
+            help_offset = len("".join(transcript))
+            send_command(process, "help")
+            wait(SHELL_HELP_MARKER, help_offset)
+            transcript.append("HOST_TERMINAL_EXCEPTION_CONSOLE_OK\n")
+            offset = len("".join(transcript))
+            send_command(process, "desktop.prg --browser-input-probe")
+        else:
+            send_desktop_exit_click(process)
+            wait("DESKTOP_EXIT_OK", offset)
+            help_offset = len("".join(transcript))
+            send_command(process, "help")
+            wait(SHELL_HELP_MARKER, help_offset)
+            transcript.append("HOST_TERMINAL_FRESH_RESTART_CONSOLE_OK\n")
+    print("runtime-desktop-browser-input: PASS keyboard-edit-navigation-crash-restart-console")
+    return 0
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool, notepad_font_probe: bool,
@@ -1171,8 +1269,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         guidemo_click_probe: bool,
         sound_probe: bool, metrics_log: pathlib.Path | None,
         vmware_vga: bool, smp: int, capture_only: bool = False,
-        browser_resource_probe: bool = False) -> int:
-    if browser_resource_probe:
+        browser_resource_probe: bool = False,
+        browser_input_probe: bool = False) -> int:
+    if browser_resource_probe or browser_input_probe:
         browser_probe = True
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
@@ -1258,6 +1357,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         ["HOST_QEMU_TIMER_POLICY verified=1 scope=child\n"]
         if host_timers_configured else [])
     deadline = time.monotonic() + timeout
+    overall_deadline = deadline
     supervised_boot_detected = False
     hover_shell_probe_sent = False
     explorer_shell_probe_sent = False
@@ -1345,7 +1445,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 elif control_probe:
                     command_name = "desktop.prg --control-probe"
                 elif browser_probe:
-                    command_name = "desktop.prg --browser-probe"
+                    command_name = ("desktop.prg --browser-input-probe" if browser_input_probe
+                                    else "desktop.prg --browser-probe")
                 elif guidemo_click_probe:
                     command_name = "desktop.prg --guidemo-probe"
                 elif sound_probe:
@@ -1406,7 +1507,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
             sound_probe))
         desktop_deadline = time.monotonic() + (
             90.0 if font_catalog_start else 30.0)
-        deadline = desktop_deadline
+        deadline = min(overall_deadline, desktop_deadline) if browser_input_probe else desktop_deadline
         while time.monotonic() < deadline:
             drain(output, transcript)
             text = "".join(transcript)
@@ -1811,6 +1912,10 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     raise RuntimeError(
                         "Control Panel did not publish a visible window"
                     )
+                if browser_input_probe:
+                    # Both sessions share the original absolute budget. The
+                    # first-start limit above must not replace that budget.
+                    return run_browser_input_probe(process, output, transcript, screenshot, overall_deadline, browser_input)
                 if browser_resource_probe:
                     return run_browser_resource_probe(process, output, transcript, screenshot, deadline, browser_input)
                 if browser_probe:
@@ -2064,6 +2169,7 @@ def main() -> int:
     parser.add_argument("--control-probe", action="store_true")
     parser.add_argument("--browser-probe", action="store_true")
     parser.add_argument("--browser-resource-probe", action="store_true")
+    parser.add_argument("--browser-input-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--trash-restore-probe", action="store_true")
@@ -2081,7 +2187,7 @@ def main() -> int:
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.notepad_font_probe, args.control_probe,
-            args.browser_probe, args.browser_resource_probe,
+            args.browser_probe, args.browser_resource_probe, args.browser_input_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
@@ -2110,7 +2216,8 @@ def main() -> int:
                    args.supervised_probe,
                    args.guidemo_click_probe, args.sound_probe,
                    args.metrics_log, args.vmware_vga, args.smp,
-                   browser_resource_probe=args.browser_resource_probe)
+                   browser_resource_probe=args.browser_resource_probe,
+                   browser_input_probe=args.browser_input_probe)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.12-terminal-input-ownership"
+active_id = "R3.13-browser-native-get-forms"
 
 [policy]
 one_package_per_run = true
@@ -632,7 +632,10 @@ evidence = []
 
 [[packages]]
 id = "R3.12-terminal-input-ownership"
-status = "active"
+status = "done"
+guest_handoff_authorization = "2026-09-06: User explicitly approves adding userspace/programs/guest_test.c and repairing its child input handoff with a regression. Resume the attributable in-place R3.12 candidate on e2b61b9a; no unrelated source changes. Add the smallest caller-side exact-generation delegation before the existing Unicode child wait, fail cleanup and verify input return. Do not bypass desktop or kernel admission, change ABI, relax deadlines or alter Unicode assertions. Exercise the real GTEST function together with the real terminal mediator in the existing host fixture, including failed spawn/identity/handoff, child failure and cleanup. Run affected terminal/shell/toolchain host gates, both reference builds and all five original runtime gates on the final image; preserve unaffected passing host evidence and every earlier failure log. No next-package implementation, agent or push."
+repair_authorization = "2026-09-06: User requests continuation after the documented stop. Resume only this attributable in-place candidate; baseline e2b61b9a and final image/kernel/configuration hashes are unchanged, with no unrelated modifications. Correct the test's deadline assignment, add real-runner regression for both sessions and expiry without renewal, and execute the affected host gate plus the remaining frozen runtime gates. The unchanged passing host/build evidence remains valid; no guest/source/ABI change, fresh timeout, later package implementation, agent or push."
+acceptance_resolution = "2026-09-06: User-authorized GTEST delegation repaired with a failing-before real-code regression and eight caller/mediator cases. Final balance: 151 host tests, 149 PASS and two existing skips; both reference builds and all five frozen runtime gates pass. The last memory gate includes DESKTOP_UNICODE_OK, UNICODE_RASTER_OK, resilient-page rebuild, TEST_OK and shell return. Final QEMU image C0BC4A07949BEE5E78321101FE0721DA862734F50D5EA96F6D4ADB553C27A210 remains identical before/after all desktop gates; separate memory proof image 999F16E984BCA8ADC31BFDEC0A9AC65E7FBD9BE506170DEAECB6F31DCEF1E5DB. Evidence and limitations in CURRENT_WORK.md and build/codex-agent/r312-gtest-*. Earlier failures remain preserved. R3.13 becomes active by contract only; no forms implementation or VMware runtime acceptance is claimed."
 phase = "post-s0"
 risk = "high"
 title = "Keep terminal keystrokes with the active generation-scoped desktop session"
@@ -656,6 +659,7 @@ allowed_files = [
   "userspace/sdk/include/reist/abi/syscall.h",
   "userspace/sdk/include/x86os.h", "userspace/sdk/x86os.c",
   "userspace/bin/shell.c", "userspace/gui/compositor/desktop.c",
+  "userspace/programs/guest_test.c",
   "userspace/gui/apps/browser/main.c",
   "scripts/generate_syscall_abi.py", "scripts/build_user_sdk.py",
   "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
@@ -700,6 +704,82 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fix: mediate terminal input ownership across desktop generations"
+evidence = []
+
+[[packages]]
+id = "R3.13-browser-native-get-forms"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Integrate native HTML form interaction and bounded GET submission"
+user_direction = "Next cohesive browser slice for the user's standing request to finish the new browser automatically. Define its contract while closing R3.12; do not implement it in the R3.12 run. Keep R3.6b VMware acceptance deferred with every frozen requirement unchanged. No agents or push."
+scope = "One navigation-generation-bound form lifetime from the retained HTML5 tree through validated worker projection, CSS placement, native Surface interaction and user-triggered GET navigation to replacement or cleanup. Reference WHATWG HTML form ownership, entry-list construction, reset and submission, and WHATWG URL application/x-www-form-urlencoded; explicitly document the bounded static-document subset, not DOM or full HTML compatibility. Inventory Hubbub's existing form association and current native widgets before adding adapters. Support form, text/search input, hidden values, checkbox/radio groups, textarea, select/options, submit/reset buttons, labels, disabled/readonly controls and explicit form owners as one shared model. Preserve values and focus across scroll/image/CSS reflow within the same navigation generation, never across a replacement document. Carry only bounded indices/strings/rectangles through a versioned private worker projection; validate all counts, relationships, flags, UTF-8, geometry and generation before publication. Admission allows at most 16 forms, 256 controls, 512 options, 128 KiB immutable form strings and 128 KiB mutable values using the existing private Ring-3 allocator, without eager global RAM reservation or enlarged kernel authority. Honor document order, duplicate names, successful-control and activated-submitter rules, defaults/reset, UTF-8 percent encoding, spaces and newline normalization within existing URL admission capacity; reject overflow without truncation or partial navigation. Only explicit user submission reaches the established CURL GET/redirect/response lifecycle. Reject unsupported methods, password/file-bearing submissions, encodings, validation requirements, targets and schemes before side effects with a visible explanation; never silently turn POST into GET or send an incomplete unsupported form. Reuse standard input semantics and native widget drawing, with no worker spawn, network request or document reparse per keystroke. Add real-code host regressions and a bounded QEMU probe with actual pointer/keyboard input plus a controlled host HTTP fixture that observes the exact GET query, rejected submissions with no request, successful result navigation, reflow state, failure containment and clean close. Keep all existing browser/input/resource runtime assertions. Cookies, credentials, POST, JavaScript, file upload, persistent storage, global caches, Surface ABI and kernel/driver changes are separate authority boundaries."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/BROWSER_FORM_INTERACTION_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "userspace/gui/apps/browser/main.c",
+  "userspace/gui/apps/browser/browser_forms.c", "userspace/gui/apps/browser/browser_forms.h",
+  "userspace/gui/apps/browser/browser_model.c", "userspace/gui/apps/browser/browser_model.h",
+  "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/html_engine.h",
+  "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/html_protocol.h",
+  "userspace/gui/apps/browser/html_worker.c",
+  "userspace/gui/apps/browser/css_engine.c", "userspace/gui/apps/browser/css_engine.h",
+  "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/browser_scene.h",
+  "userspace/gui/include/reist/gui/html_document.h", "userspace/gui/lib/html_document.c",
+  "userspace/gui/compositor/desktop.c",
+  "scripts/build_system_programs.py", "scripts/build_user_sdk.py",
+  "scripts/build-windows.ps1", "Makefile",
+  "scripts/run_qemu_runtime_desktop.py", "scripts/test-reist-runtime.ps1",
+  "htdocs/browser-forms-test.html",
+  "test/test_browser_forms.py", "test/test_browser_forms_host.c",
+  "test/test_browser_runtime_source.py", "test/test_gui_browser_source.py",
+  "test/test_html_engine.py", "test/test_html_engine_host.c", "test/test_html_worker_host.c",
+  "test/test_css_engine.py", "test/test_css_engine_host.c",
+  "test/test_html_document_host.c", "test/test_browser_model_host.c",
+  "test/test_browser_navigation_source.py", "test/test_desktop_source.py",
+  "test/test_shell_source.py", "test/test_user_program_toolchain.py"
+]
+invariants = [
+  "form state and hit targets belong to one accepted navigation generation; reflow cannot reset edits or grant stale controls authority",
+  "all worker data remains untrusted until complete bounded validation and exact-generation reap; failed projection retains the previous document",
+  "GET submission uses standard entry-list and URL encoding rules for the declared subset, preserving order and duplicate names without truncation",
+  "unsupported or invalid forms fail visibly before transport; POST password file upload cookies and credentials never acquire implicit authority",
+  "typing edits only the bounded native control state and damage; no parser spawn resource reload full-document reparse or synchronous transport per key",
+  "focus scroll resize and reset use actual native interaction; capacities exhaustion cancellation fault timeout and close retain bounded cleanup",
+  "kernel device drivers public syscall and Surface ABIs memory resilience and all prior browser recovery assertions remain unchanged"
+]
+targeted_tests = [
+  "python test/test_browser_forms.py -v",
+  "python test/test_html_engine.py -v",
+  "python test/test_css_engine.py -v",
+  "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_runtime_source.py -v",
+  "python test/test_browser_navigation_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_shell_source.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-resources -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production source lies outside allowed_files or an unrelated writer overlaps the candidate",
+  "progress requires weakening generation validation user-triggered transport admission private memory isolation or existing frozen deadlines",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: integrate native HTML forms with validated GET navigation"
 evidence = []
 
 [[packages]]

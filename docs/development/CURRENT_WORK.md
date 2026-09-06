@@ -2,6 +2,195 @@
 
 Stand: 6. September 2026
 
+## R3.12 abgenommen: generationgebundene Eingabe und GTEST-Kinduebergabe
+
+Alle eingefrorenen Paketgates bestehen. Der begrenzte Terminal-Mediator
+prueft die Vordergrundgeneration vor jedem Entnehmen von Zeichen; Shell,
+Desktop und GTEST verwenden explizite Uebergaben. Prozessende fenced diese
+Autoritaet und verwirft alte Queuebytes vor der langsameren Bereinigung.
+GUI-Fokus bleibt in Ring 3; Syscall 127 ist append-only. R3.12 geht auf done,
+der vorbereitete R3.13-Vertrag fuer native GET-Formulare auf active. In diesem
+Lauf keine Formularimplementierung; VMware-Pointerabnahme bleibt offen.
+
+Der Nutzer hat `guest_test.c` samt Regression explizit in den Paketumfang
+aufgenommen. Die unveraenderten 32 Kandidatenpfade sind weiterhin zugeordnet;
+kein fremder Source-Writer. GTEST identifiziert sein unreaptes Desktopkind,
+delegiert an dessen exakte PID/Generation und prueft nach erfolgreichem
+Unicode-Test die Rueckkehr seiner Vordergrundautoritaet. Fehlgeschlagene
+Identitaetsabfrage oder Uebergabe fuehren ueber Kill und den bestehenden
+Wait-/Reappfad zum Testfehler, ohne Wiederholung oder Schonung der Probe.
+Kernel, Desktop, ABI, Unicode-Assertions und Gastfristen bleiben unveraendert.
+
+Die reale GTEST-Funktion laeuft im Hostfixture zusammen mit dem echten
+Terminal-Mediator. Acht Faelle pruefen Erfolg, Spawnfehler, Identitaetsfehler,
+veraltete Generation, abgewiesene Uebergabe, fehlgeschlagene Probe, Waitfehler
+und einen mit Kill konkurrierenden Exit. Kindtasten duerfen weder GTEST noch
+Shell entnehmen; bei Ende werden alte Bytes verworfen und die vorherige
+Generation bekommt die Eingabe zurueck. Vor Reparatur scheitert die echte
+Funktion nachweislich an fehlender Uebergabe (0,924 s,
+`r312-gtest-handoff-before.log`). Danach `python test/test_terminal_input.py -v`:
+2 PASS (0,798 s); `python test/test_shell_source.py -v`: 28 PASS/2 bestehende
+SKIP (0,233 s). `python test/test_user_program_toolchain.py -v`: 21 PASS
+(114,082 s). Referenzbuilds ueber `test-reist-package.ps1 -Target ... -Video vga`:
+VMware PASS (8,825 s), QEMU PASS (45,676 s).
+
+Finale Hostbilanz: sieben Gruppen, 151 Tests, 149 PASS und zwei bestehende
+Shell-Skips. Die unveraenderten erfolgreichen ABI-, Desktop-, Browserlaufzeit-
+und Prozessspeicher-Gruppen behalten ihre unten dokumentierte Evidenz.
+Alle fuenf finalen Laufzeitgates wurden auf den neu gebauten Images einmal
+in der eingefrorenen Reihenfolge ausgefuehrt. Befehl jeweils
+`scripts/test-reist-runtime.ps1 -Target qemu -Video vga` mit:
+
+- `-Mode runtime-desktop-browser-input`: PASS (154,348 s), echte URL-Korrektur
+  und lokale Navigation in zwei Generationen, Compositor-UD2, antwortende
+  Shell, frischer Desktop und saubere Konsolenrueckkehr.
+- `-Mode runtime-desktop-browser`: PASS (92,312 s), Bilder, Links, Scrollbar,
+  CSS-Pixel, Resize, Mausrad ab/auf, Worker-Absturz/Timeout, Recovery und Close.
+- `-Mode runtime-desktop-browser-resources`: PASS (82,157 s), externe/importierte
+  Cascade, Zyklen/Dubletten, Fehlerbehandlung, Abbruch, frischer Reload und Cleanup.
+- `-Mode runtime-desktop`: PASS (90,113 s), `exit-vfs-relaunch-exit-shell`,
+  Start 24454 Gast-ms, Neustart 23907 Gast-ms.
+- `-Mode memory-resilience`: PASS (75,553 s einschliesslich separatem Build,
+  Gastabschnitt 71 s), resiliente Seiten rekonstruiert, `DESKTOP_UNICODE_OK`,
+  `TEST_STAGE UNICODE_RASTER_OK`, vollstaendiges `TEST_OK` und Shellprompt.
+
+Neue Belege stehen unter `build/codex-agent/r312-gtest-*`; Speicher-Detail
+`20260906-105420-runtime-guest-smoke-memory-resilience.log`. Fruehere Fehler
+bleiben unveraendert erhalten. Der Tastaturgast beweist generationstreue
+Zustaendigkeit, keinen Burst-Durchsatz und keinen oeffentlichen HTTPS-Abruf.
+Der absichtliche Compositorfehler benutzt den Diagnoseprozess, nicht einen
+automatischen Supervisor-Crash-/Restart-Nachweis. JavaScript bleibt offen.
+
+QEMU-Image SHA256 vor/nach den finalen Desktopgates unveraendert:
+`C0BC4A07949BEE5E78321101FE0721DA862734F50D5EA96F6D4ADB553C27A210`.
+Kernel `AB7639D9043E5D4EA3AECB35F1F2949974D69D57E14F4D36C6747FF0AF606E10`,
+Konfiguration `0618FA93CD8CF57B055498C7D05531200AC9E9252E39DDB08628733C75AB80A7`.
+Separates Speicher-Proofimage:
+`999F16E984BCA8ADC31BFDEC0A9AC65E7FBD9BE506170DEAECB6F31DCEF1E5DB`,
+Kernel `6D8DEB7876B3278A274E1A03869CDFA598347461CF258E010361A1F23DF3B905`,
+Konfiguration `15C2F95547CE9BB0D2F954543795163FEB0BCBC767A40B2155FA8E2C3721349B`.
+
+### Vorheriger Stopp: GTEST-Kinduebergabe ausserhalb des Pakets
+
+Der Nutzer hat die Fortsetzung des dokumentierten Kandidaten freigegeben.
+Bei Wiederaufnahme waren Baseline `e2b61b9a`, Gastcode und die unten genannten
+Image-/Kernel-/Konfigurationspruefsummen unveraendert. Keine fremden Source-
+Aenderungen; eine spaetere externe Buildartefakt-Aenderung ist unten abgegrenzt.
+Der Runner behaelt jetzt die urspruengliche absolute 180-s-Gesamtfrist fuer
+beide Eingabesitzungen; der erste Desktopstart bleibt zusaetzlich auf seine
+bisherige Frist begrenzt. Keine Frist wird beim Neustart erneuert. Ein
+Verhaltenstest fuehrt die echten Fristzuweisungen und den echten Dispatch
+auch bei spaetem Start und abgelaufener Gesamtfrist aus.
+
+Finale Hostbilanz: sieben Gruppen, 151 Tests, 149 PASS, zwei bestehende
+Shell-Skips. Nur die betroffene Browserlaufzeit-Gruppe wurde erneut
+ausgefuehrt: `python test/test_browser_runtime_source.py -v`, 24 PASS
+(2,799 s), `build/codex-agent/r312-resume-browser-host.log`.
+Die unveraenderten erfolgreichen Hostgruppen und beide Referenzbuilds
+bleiben gueltig; keine unnoetige Wiederholung derselben Builds.
+
+Laufzeitgates, jeweils `scripts/test-reist-runtime.ps1 -Target qemu -Video vga`:
+
+- `-Mode runtime-desktop-browser-input`: PASS (141,236 s). Zwei verschiedene
+  Desktopidentitaeten (PID 7/Generation 1, PID 12/Generation 2), jeweils
+  echte URL-Korrektur und lokale Navigation; nach absichtlichem Ring-3-UD2
+  antwortet die konkurrierende Shell auf HELP. Der frische Desktop beendet
+  sich sauber, danach antwortet die Shell erneut.
+- `-Mode runtime-desktop-browser`: PASS (92,629 s). Bilder, Links, native
+  Scrollbar, CSS-Pixel, Resize, beide Mausradrichtungen, isolierter Worker-
+  Absturz/Timeout, anschliessende Recovery und Close.
+- `-Mode runtime-desktop-browser-resources`: PASS (80,057 s). Externe/importierte
+  Stylesheets, Dubletten/Zyklen, alte Seite bei fehlenden Ressourcen, Abbruch,
+  frischer Reload, temporaere Dateien entfernt und Close.
+- `-Mode runtime-desktop`: PASS (86,148 s), `exit-vfs-relaunch-exit-shell`,
+  normaler ueberwachter Start 23170 Gast-ms, Neustart 22706 Gast-ms.
+- `-Mode memory-resilience`: FAIL (107,908 s einschliesslich separatem Build;
+  Gastabschnitt 18 s), `desktop: terminal ownership unavailable`, danach
+  `TEST_FAIL UNICODE_RASTER`. Der vorherige eigentliche Seiten-Rebuild-
+  Bootnachweis meldet `REIST_RESILIENT_PAGE BOOT_PROOF_OK objects=2`; das
+  Gesamtgate bleibt trotzdem fehlgeschlagen.
+
+Read-only-Diagnose: Die laufende Shell delegiert an GTEST. Dessen
+`test_unicode_raster()` in `userspace/programs/guest_test.c` startet einen
+direkten Desktop-Kindprozess und wartet ohne explizite Eingabeuebergabe.
+Dieser ist weder aktueller Besitzer noch ueberwachter Compositor und wird
+deshalb korrekt abgewiesen. Es handelt sich nicht um fehlenden Shellstart
+oder einen Fehler des resilienten Seiten-Rebuilds. Das neue Terminal-API
+muss im aufrufenden GTEST integriert werden, einschliesslich exakter
+Kindgeneration, Fehlercleanup und Rueckgabe; keine Probe-Ausnahme im Kernel
+oder Desktop. `guest_test.c` liegt ausserhalb der erlaubten Dateien. Vor
+dieser weiteren Reparatur ist eine explizite Scope-Erweiterung samt realem
+Regressionstest erforderlich. Kein Retry, kein Commit und kein done/
+active_id-Wechsel. R3.13 ist nur als nachfolgender Formularvertrag queued,
+nicht implementiert oder aktiv; VMware bleibt zurueckgestellt.
+
+Neue Belege: `r312-resume-*` unter `build/codex-agent/`; fruehere Fehlerbelege
+bleiben erhalten. Letztes Gate-Detail:
+`20260906-103444-runtime-guest-smoke-memory-resilience.log`.
+Der Eingabegast laedt keine oeffentliche HTTPS-Seite und bestaetigt jede
+Taste einzeln. Er beweist Eingabezustaendigkeit und Recovery, keinen
+Burst-Tastaturdurchsatz oder automatischen Supervisor-Neustart nach Crash.
+
+Artefaktabgrenzung: Das QEMU-Hauptimage blieb ueber alle vier Desktopgates
+hashidentisch (`8BBB...1876`, voller Digest unten). Ausserhalb dieser Laeufe
+wurden um 10:26:11 Uhr Hauptkernel und Hauptkonfiguration fuer VMware neu
+erzeugt; ihr derzeitiger Hash ist nicht der unten dokumentierte QEMU-Build.
+Ein lesender Prozesscheck fand vor dem Speicherlauf keinen fremden Build
+mehr. Keine fremden Quellen wurden veraendert oder Artefakte zurueckgesetzt.
+Die Speicherpruefung erstellte regulaer ihr eigenes Image unter
+`build/memory-resilience/`: SHA256
+`C45F6D76FBC75886F33EA3DA92BBEDB29E24B8F12B9C1AF858017789FB22A320`,
+Kernel `6D8DEB7876B3278A274E1A03869CDFA598347461CF258E010361A1F23DF3B905`,
+Konfiguration `15C2F95547CE9BB0D2F954543795163FEB0BCBC767A40B2155FA8E2C3721349B`.
+
+### Vorheriger Stopp: falsche Testfrist nach Tastatur-/Crash-Teilnachweis
+
+Kandidat: feste Vordergrundkette, Zulassung unter derselben Sperre wie das
+Entnehmen von Tasten, explizite Shell-Uebergabe, ueberwachter Compositor-
+Erwerb und idempotentes Fencing bei Prozessende. Syscall 127 ist append-only;
+alte Leseadapter, Surface-Fokus und Maus bleiben erhalten. Der neue echte
+Tastatur-Gasttest verlangt URL-Korrektur, Navigation, Ring-3-UD2, frische
+Desktopgeneration und Konsolenrueckkehr. Noch kein R3.12-Abnahmeclaim/Commit.
+
+Damals alle sieben Hostgruppen: 150 Tests, 148 PASS, zwei bestehende Shell-Skips.
+Terminal-Verhalten 2 PASS (29,240 s einschliesslich kaltem Compiler-Cache),
+Shell 28 PASS/2 SKIP (0,247 s), ABI 5 PASS (0,246 s), Desktop 59 PASS
+(0,572 s), Speicher 10 PASS (3,283 s). Nach dem gezielten Reparaturversuch:
+Browserlaufzeit 23 PASS (3,486 s), Toolchain 21 PASS (111,870 s),
+VMware-Referenzbuild PASS (53,282 s), QEMU-Referenzbuild PASS (45,548 s).
+Die unveraenderten Hostgruppen wurden nicht erneut ausgefuehrt.
+
+Erster neuer Tastatur-Gastlauf: FAIL (98,566 s), Phase 1. Sein Ready-Marker
+kam vor Bild-/CSS-Reflow. Der einzige gezielte Reparaturversuch wartet auf
+das abgeschlossene initiale Layout und bestaetigt jede echte Taste einzeln,
+ohne Replay oder Verlaengerung der 30-s-Browserfrist. Kein Burst-Durchsatz-
+Nachweis wird daraus abgeleitet.
+
+Wiederholung: FAIL (104,404 s), aber alle 46 PS/2-/Surface-Tastencodes,
+`BROWSER_INPUT_ADDRESS_OK`, `BROWSER_INPUT_NAVIGATION_OK`, Browser-Close,
+echter Compositor-UD2 und `HOST_TERMINAL_EXCEPTION_CONSOLE_OK` sind vorhanden.
+`https://intracom.at` wurde bearbeitet, nicht aus dem Netz geladen; die
+Navigation ging deterministisch auf `/htdocs/index.html`. Der Kernel bleibt
+aktiv und die Shell beantwortet HELP nach dem Fehler.
+
+Konkreter verbleibender Blocker: `run_qemu_runtime_desktop.py` ueberschreibt
+die angeforderte absolute 180-s-Gesamtfrist mit `deadline = desktop_deadline`
+(90 s ab erstem Start). Die Wiederholung endet deshalb waehrend des
+Font-Ladens der zweiten Desktopinstanz, nicht an einer zweiten Gast-Exception.
+Nach einem fehlgeschlagenen Gate trotz eines Reparaturversuchs verlangt das
+aktive Paket einen Stopp. Es gab keinen weiteren Implementierungsversuch,
+keinen Commit und keine Queue-Weiterschaltung. Die vier nachfolgenden
+Laufzeitgates wurden in R3.12 noch nicht ausgefuehrt.
+
+Belege: `build/codex-agent/r312-*`, final
+`r312-repair-input-runtime.log`, `r312-repair-input-guest.log` und das frische
+`r312-repair-input.ppm`. Achtung: `r312-input.ppm` ist ein versehentlich
+kopiertes altes R3.11-Bild (09:24 Uhr), kein Bildnachweis des ersten R3.12-Laufs.
+QEMU-Imagepruefsumme des unveraenderten Kandidaten:
+`8BBB2E351FB0591FFEB5C4ED46D9DE19C3AD3261A4F972414B8C561D22DD1876`.
+Kernel `AB7639D9043E5D4EA3AECB35F1F2949974D69D57E14F4D36C6747FF0AF606E10`,
+Buildkonfiguration `0618FA93CD8CF57B055498C7D05531200AC9E9252E39DDB08628733C75AB80A7`.
+
 ## R3.11 abgenommen: externe Stylesheets und isolierte Recovery
 
 Die gezielt reparierte R3.11-Implementierung besteht alle eingefrorenen

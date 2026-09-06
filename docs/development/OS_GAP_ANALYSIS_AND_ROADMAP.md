@@ -12,9 +12,12 @@ sowie Worker-Fault-/Timeout-Recovery bis Close. Der nachfolgende externe
 Stylesheet-/Import-Ressourcenvertrag R3.11 ist ebenfalls vollstaendig
 abgenommen: navigationsgebundene Bundles, echte LibCSS-Imports, frischer
 Reload, Abbruch und 32-MiB-Worker-Heap ohne neue Kernelautoritaet. R3.12
-definiert als naechstes getrenntes Paket generationgebundene Terminal-
-Eingabezustaendigkeit: Shell und Desktop duerfen nicht um dieselben
-Browser-Tastendruecke konkurrieren. Noch keine R3.12-Implementierung.
+liefert inzwischen abgenommen die generationgebundene Terminal-
+Eingabezustaendigkeit: Shell und Desktop konkurrieren nicht mehr um dieselben
+Browser-Tastendruecke. Alle Hostgruppen, beide Referenzbuilds und alle fuenf
+Gastgates bestehen, einschliesslich der expliziten GTEST-Kinduebergabe im
+Unicode-/Speicherresilienz-Gate. Naechstes aktives Browserpaket ist R3.13
+fuer native GET-Formulare; nur der Vertrag ist vorbereitet, keine Umsetzung.
 Der gemessene Worker-/Dateiladepfad bleibt Performance-Schuld. High-Memory oberhalb der
 heutigen 1-GiB-Direct-Map und freigebbare Anwendungs-/Dateicaches bleiben eigene
 Folgearbeiten. Einzelheiten und Nachweisgrenzen stehen im

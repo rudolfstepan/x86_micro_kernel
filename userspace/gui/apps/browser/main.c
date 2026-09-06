@@ -49,6 +49,7 @@ typedef struct browser_state {
     uint32_t probe_resize_width;
     int32_t wheel_remainder;
     uint32_t probe_wheel_down, probe_wheel_up;
+    uint32_t input_backspace, input_left, input_right, input_keys;
     uint32_t scene_image_sizes[BROWSER_IMAGE_CACHE_COUNT][2];
     uint32_t parse_pending, parse_mode, parser_failures, parser_timeouts;
     uint32_t resource_generation, resource_loading, resource_deadline, resource_document_length;
@@ -1544,10 +1545,38 @@ static int probe_step(browser_state_t *state, reist_gui_surface_client_t *client
     ++state->probe_phase;
     return 0;
 }
+static int input_probe_step(browser_state_t *state) {
+    /* Assertions only: every edit/navigation originates in a real Surface
+     * keyboard message. Do not synthesize calls to handle_keyboard here. */
+    if (state->probe_phase == 0U) {
+        uint32_t images = documents[state->active].image_count;
+        if (images > BROWSER_IMAGE_CACHE_COUNT) images = BROWSER_IMAGE_CACHE_COUNT;
+        if (!state->loaded || state->child_pid || state->pending ||
+            state->parse_pending || state->resource_loading || state->reflow_pending ||
+            state->follow_redirect || state->image_next < images) return 0;
+        x86os_puts("BROWSER_INPUT_READY\n");
+        state->probe_phase = 1U;
+    } else if (state->probe_phase == 1U && state->address_focused &&
+               text_equal(state->address,"https://intracom.at") &&
+               state->address_cursor == state->address_length &&
+               state->input_backspace == 1U && state->input_left == 1U &&
+               state->input_right == 1U) {
+        x86os_puts("BROWSER_INPUT_ADDRESS_OK\n");
+        state->probe_phase = 2U;
+    } else if (state->probe_phase == 2U && !state->address_focused &&
+               state->loaded && !state->child_pid && !state->pending &&
+               !state->parse_pending && !state->resource_loading &&
+               text_equal(state->active_url,"/htdocs/index.html")) {
+        x86os_puts("BROWSER_INPUT_NAVIGATION_OK\n");
+        state->probe_phase = 3U;
+    }
+    return 0;
+}
 static const char *initial_target(int argc, char **argv, uint32_t *probe) {
     const char *target = "/htdocs/index.html";
     for (int index = 1; index < argc; ++index) {
         if (text_equal(argv[index], "--browser-probe")) *probe = 1U;
+        else if (text_equal(argv[index], "--browser-input-probe")) *probe = 3U;
         else if (!text_prefix(argv[index], "--reist-surface="))
             target = argv[index];
     }
@@ -1623,8 +1652,18 @@ int main(int argc, char **argv) {
                 }
                 set_scroll(&state, &client, state.scroll_y);
                 state.redraw = state.chrome_redraw = state.status_redraw = 1U;
-            } else if (message.type == REIST_GUI_SURFACE_INPUT && message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD && message.input.pressed)
+            } else if (message.type == REIST_GUI_SURFACE_INPUT && message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD && message.input.pressed) {
+                if (state.probe == 3U) {
+                    x86os_puts("BROWSER_INPUT_KEY ordinal="); x86os_print_number((int)++state.input_keys);
+                    x86os_puts(" code="); x86os_print_number((int)message.input.key); x86os_puts("\n");
+                }
+                if (state.probe == 3U && state.probe_phase == 1U) {
+                    if (message.input.key == 8U || message.input.key == 127U) ++state.input_backspace;
+                    if (message.input.key == 0x104U) ++state.input_left;
+                    if (message.input.key == 0x105U) ++state.input_right;
+                }
                 handle_keyboard(&state, &client, message.input.key);
+            }
             else if (message.type == REIST_GUI_SURFACE_INPUT) handle_pointer(&state, &client, &message.input);
             if (state.exit_requested) break;
         }
@@ -1632,7 +1671,7 @@ int main(int argc, char **argv) {
         int rendered=render(&state, &client);
         if (rendered != 0) { browser_runtime_failure(&state,"render",rendered); status = -5; break; }
         if (state.probe) {
-            int probe_status=state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
+            int probe_status=state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
             if (probe_status || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
                 timing_dump();
                 x86os_puts("BROWSER_PROBE_STATE phase="); x86os_print_number((int)state.probe_phase);
@@ -1640,6 +1679,13 @@ int main(int argc, char **argv) {
                 x86os_puts(" child="); x86os_print_number(state.child_pid);
                 x86os_puts(" pending="); x86os_print_number((int)state.parse_pending);
                 x86os_puts(" status="); x86os_puts(state.status); x86os_puts("\n");
+                if (state.probe == 3U) {
+                    x86os_puts("BROWSER_INPUT_STATE address="); x86os_puts(state.address);
+                    x86os_puts(" cursor="); x86os_print_number((int)state.address_cursor);
+                    x86os_puts(" backspace="); x86os_print_number((int)state.input_backspace);
+                    x86os_puts(" left="); x86os_print_number((int)state.input_left);
+                    x86os_puts(" right="); x86os_print_number((int)state.input_right); x86os_puts("\n");
+                }
                 x86os_puts("BROWSER_PROBE_FAIL interaction\n"); status = -5; break;
             }
         }

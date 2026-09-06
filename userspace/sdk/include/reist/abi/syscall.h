@@ -8,8 +8,10 @@
 #ifndef REIST_ABI_SYSCALL_H
 #define REIST_ABI_SYSCALL_H
 
+#include <stdint.h>
+
 #define REIST_SYSCALL_ABI_VERSION 1U
-#define REIST_SYSCALL_COUNT 127U
+#define REIST_SYSCALL_COUNT 128U
 
 #define REIST_SYSCALL_LIST(X) \
     X(TERMINAL_PUTCHAR, PUTCHAR, 0U) \
@@ -138,7 +140,21 @@
     X(FTRUNCATE, FTRUNCATE, 123U) \
     X(STORAGE_BULK, STORAGE_BULK, 124U) \
     X(KERNEL_LOG_READ, KERNEL_LOG_READ, 125U) \
-    X(CPU_TOPOLOGY, CPU_TOPOLOGY, 126U)
+    X(CPU_TOPOLOGY, CPU_TOPOLOGY, 126U) \
+    X(TERMINAL_INPUT, TERMINAL_INPUT, 127U)
+
+/* REIST single-terminal foreground adapter, not POSIX termios/job control. */
+#define REIST_TERMINAL_INPUT_VERSION 1U
+#define REIST_TERMINAL_ATTACH_CONSOLE 1U
+#define REIST_TERMINAL_TRANSFER 2U
+#define REIST_TERMINAL_RELEASE 3U
+#define REIST_TERMINAL_ACQUIRE_SERVICE 4U
+#define REIST_TERMINAL_CHECK 5U
+typedef struct {
+    uint32_t version, struct_size, operation, reserved;
+    int32_t target_pid;
+    uint32_t target_generation;
+} reist_terminal_input_request_t;
 
 #define REIST_DECLARE_SYSCALL(kernel_name, sdk_name, number) \
     REIST_SYS_##sdk_name = number,

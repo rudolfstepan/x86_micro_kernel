@@ -790,6 +790,70 @@ int main(void) {
 
 
 class BrowserRuntimeTests(unittest.TestCase):
+    def test_input_probe_keeps_overall_deadline_across_both_sessions(self):
+        # Execute the real runner's deadline assignments and dispatch, with a
+        # late first startup. No replacement deadline model or guest sleep.
+        tree = ast.parse((ROOT / "scripts/run_qemu_runtime_desktop.py").read_text())
+        run = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "run")
+        assignments = [n for n in ast.walk(run) if isinstance(n, ast.Assign)
+                       and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+                       and n.targets[0].id in ("overall_deadline", "desktop_deadline")]
+        start = next(n for n in run.body if isinstance(n, ast.Assign)
+                     and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "deadline")
+        bounded = next(n for n in ast.walk(run) if isinstance(n, ast.Assign)
+                       and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "deadline"
+                       and isinstance(n.value, ast.IfExp))
+        dispatch = next(n for n in ast.walk(run) if isinstance(n, ast.If)
+                        and isinstance(n.test, ast.Name) and n.test.id == "browser_input_probe")
+        for now in (60.0, 170.0, 205.0):
+            for selected in (False, True):
+                clock = mock.Mock(side_effect=(10.0, now))
+                capture = mock.Mock(return_value=0)
+                namespace = dict(time=types.SimpleNamespace(monotonic=clock), timeout=180.0,
+                    font_catalog_start=True, browser_input_probe=selected,
+                    process=None, output=None, transcript=[], screenshot=None, browser_input=None,
+                    run_browser_input_probe=capture)
+                body = [start, *sorted(assignments, key=lambda n:n.lineno), bounded,
+                        ast.parse("first_deadline = deadline").body[0]]
+                exec(compile(ast.fix_missing_locations(ast.Module(body=body,type_ignores=[])),
+                             "real-input-deadlines", "exec"), namespace)
+                self.assertEqual(namespace["overall_deadline"], 190.0)
+                self.assertEqual(namespace["first_deadline"], min(190.0,now+90.0) if selected else now+90.0)
+                if selected:
+                    function = ast.parse("def dispatch_probe():\n    pass\n")
+                    function.body[0].body = dispatch.body
+                    exec(compile(ast.fix_missing_locations(function), "real-input-dispatch", "exec"), namespace)
+                    namespace["dispatch_probe"]()
+                    self.assertEqual(capture.call_args.args[4], 190.0)
+                    self.assertEqual(clock.call_count, 2) # no renewal at dispatch/relaunch
+
+    def test_input_probe_requires_real_edits_and_never_synthesizes_them(self):
+        from test_memory_r12 import function_block
+        source = APP.read_text()
+        probe = function_block(source, "static int input_probe_step(")
+        self.assertNotIn("handle_keyboard(", probe)
+        self.assertIn("state->input_backspace == 1U", probe)
+        self.assertIn("state->input_left == 1U", probe)
+        self.assertIn("state->input_right == 1U", probe)
+        self.assertIn('"/htdocs/index.html"', probe)
+        self.assertIn("BROWSER_INPUT_NAVIGATION_OK", probe)
+        self.assertIn("state->image_next < images", probe)
+        self.assertIn("state->reflow_pending", probe)
+
+    def test_native_keyboard_probe_sends_balanced_modifier_events(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        monitor = desktop.BrowserInputMonitor(None, 1)
+        monitor.execute = mock.Mock()
+        with mock.patch.object(desktop.time, "sleep"):
+            monitor.key("shift-semicolon")
+            events = monitor.execute.call_args.args[1]["events"]
+            self.assertEqual([(e["data"]["key"]["data"],e["data"]["down"]) for e in events],
+                             [("shift",True),("semicolon",True),("semicolon",False),("shift",False)])
+            for bad in ("ctrl-alt-delete", "", "reset", "left;quit"):
+                with self.assertRaises(ValueError): monitor.key(bad)
+        monitor.execute.assert_called_once()
+
     @staticmethod
     def qmp_socket(*messages):
         peer = mock.Mock()

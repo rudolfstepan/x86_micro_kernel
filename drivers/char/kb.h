@@ -65,6 +65,9 @@ void kb_wait_enter(void);
 char getchar(void);
 char getchar_nonblocking(void);
 char input_queue_pop(void);
+/* Terminal mediator hooks; IRQs disabled, changed also owns the input lock. */
+void kb_input_owner_changed_locked(void);
+void kb_input_owner_wake(void);
 void get_input_line(char *buffer, int max_len);
 
 // Keyboard state queries

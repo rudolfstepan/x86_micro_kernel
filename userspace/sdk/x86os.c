@@ -1157,6 +1157,16 @@ int x86os_boot_status(x86os_boot_status_t *status) {
                               (uintptr_t)status, 0U, 0U);
 }
 
+int x86os_terminal_input(uint32_t operation, int target_pid,
+                         uint32_t target_generation) {
+    const reist_terminal_input_request_t request = {
+        REIST_TERMINAL_INPUT_VERSION, sizeof(request), operation, 0U,
+        target_pid, target_generation
+    };
+    return (int)x86os_syscall(X86OS_SYS_TERMINAL_INPUT,
+                              (uint32_t)(uintptr_t)&request, 0U, 0U);
+}
+
 int x86os_process_identity(x86os_process_identity_t* identity) {
     if (identity == NULL) return -22;
     return (int)x86os_syscall(X86OS_SYS_PROCESS_IDENTITY,
