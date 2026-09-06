@@ -1440,7 +1440,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         dns_listener, dns_port = open_injection_listener()
         dns_listener.settimeout(10.0)
     command = qemu_command(
-        qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp,
+        qemu, image, memory="1024M", vmware_vga=vmware_vga, smp=smp,
         nic="rtl8139" if notepad_probe or browser_forms_probe else "none",
         injection_port=dns_port, hardware_entropy=notepad_probe,
         public_dns=notepad_probe)

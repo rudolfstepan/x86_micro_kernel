@@ -1211,7 +1211,7 @@ test-quick:
 
 QEMU := qemu-system-i386
 QEMU_IMAGE := -boot c -drive file=$(OUTPUT_DIR)/reist-os.img,format=raw,if=ide,index=0
-QEMU_COMMON := -m 512M -cpu qemu32,+rdrand $(QEMU_IMAGE) -no-reboot -no-shutdown
+QEMU_COMMON := -m 1024M -cpu qemu32,+rdrand $(QEMU_IMAGE) -no-reboot -no-shutdown
 
 run: run-native
 run-disk: run-native
@@ -1245,7 +1245,7 @@ run-debug: native-image
 		-s -S -vga std
 
 run-floppy: floppy-image
-	@$(QEMU) -m 512M -boot a \
+	@$(QEMU) -m 1024M -boot a \
 		-drive file=$(OUTPUT_DIR)/reist-os-floppy.img,format=raw,if=floppy \
 		-device rtl8139,netdev=net0 -netdev user,id=net0 -vga std \
 		-no-reboot -no-shutdown

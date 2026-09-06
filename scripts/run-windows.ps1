@@ -44,7 +44,7 @@ if (-not $Qemu) {
 $arguments = @(
     '-accel', 'tcg',
     '-machine', 'pc',
-    '-m', '512M',
+    '-m', '1024M',
     '-boot', 'c',
     '-device', 'rtl8139,netdev=net0',
     '-netdev', 'user,id=net0',

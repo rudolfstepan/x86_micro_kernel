@@ -196,7 +196,7 @@ def qemu_command(
     qemu: Path,
     image: Path,
     no_apic: bool = False,
-    memory: str = "512M",
+    memory: str = "1024M",
     watchdog: bool = False,
     allow_reboot: bool = False,
     nic: str = "none",
@@ -1553,7 +1553,7 @@ def run(
     image: Path,
     timeout: float,
     no_apic: bool = False,
-    memory: str = "512M",
+    memory: str = "1024M",
     watchdog: bool = False,
     allow_reboot: bool = False,
     nic: str = "none",
@@ -1603,11 +1603,15 @@ def run(
     if expect_handover:
         handover_listener, handover_port = open_injection_listener()
     process = None
+    # Full GTEST includes Unicode rasterization. -nodefaults removes QEMU's
+    # display, so select the existing SVGA profile explicitly for that test.
+    # Boot-only runs and callers of qemu_command keep their own device policy.
+    guest_test_vga = vmware_vga or expect_process_memory or not boot_only
     try:
         process = subprocess.Popen(
             qemu_command(qemu, image, no_apic, memory, watchdog, allow_reboot,
                          nic, persistent, injection_port, handover_port, sata,
-                         auxiliary_sata_image, vmware_vga or expect_process_memory, smp,
+                         auxiliary_sata_image, guest_test_vga, smp,
                          (expect_tls_curl_client or
                           expect_public_tls_curl_client),
                          expect_public_tls_curl_client),
@@ -2496,8 +2500,8 @@ def main() -> int:
     parser.add_argument("--log", type=Path)
     parser.add_argument(
         "--memory",
-        default="512M",
-        help="QEMU guest RAM size (for example 64M, 512M, or 1024M)",
+        default="1024M",
+        help="QEMU guest RAM size (default: 1024M; for example 64M or 256M)",
     )
     parser.add_argument(
         "--no-apic",

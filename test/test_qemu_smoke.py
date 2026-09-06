@@ -663,6 +663,7 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         sata: bool = False,
         auxiliary_sata_image: Path | None = None,
         boot_only: bool = False,
+        vmware_vga: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment["FAKE_QEMU_MODE"] = mode
@@ -691,6 +692,8 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
             command.extend(["--aux-sata-image", str(auxiliary_sata_image)])
         if boot_only:
             command.append("--boot-only")
+        if vmware_vga:
+            command.append("--vmware-vga")
         return subprocess.run(
             command,
             cwd=ROOT,
@@ -755,6 +758,9 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
         self.assertIn("-snapshot", arguments)
         self.assertIn("-no-reboot", arguments)
         self.assertIn("-no-shutdown", arguments)
+        self.assertRegex(arguments, r"(?:^|\s)-m\s+1024M(?:\s|$)")
+        self.assertRegex(arguments, r"(?:^|\s)-vga\s+vmware(?:\s|$)")
+        self.assertEqual(arguments.split().count("-vga"), 1)
         self.assertIn(f"file={self.image}", arguments)
         self.assertIn("format=raw", arguments)
         self.assertIn("if=ide", arguments)
@@ -806,6 +812,15 @@ class QemuGuestSmokeRunnerTests(unittest.TestCase):
     def test_boot_only_does_not_require_guest_file_io_test(self) -> None:
         result = self.run_smoke("success", boot_only=True)
         self.assertEqual(result.returncode, 0, self.combined_output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        self.assertNotIn("-vga", arguments.split())
+
+    def test_boot_only_preserves_explicit_vmware_display(self) -> None:
+        result = self.run_smoke("success", boot_only=True, vmware_vga=True)
+        self.assertEqual(result.returncode, 0, self.combined_output(result))
+        arguments = self.arguments_file.read_text(encoding="utf-8")
+        self.assertRegex(arguments, r"(?:^|\s)-vga\s+vmware(?:\s|$)")
+        self.assertEqual(arguments.split().count("-vga"), 1)
 
         transcript = "\n".join((
             RUNNER_MODULE.REIST_PROBE_COMPLETION_MARKER,

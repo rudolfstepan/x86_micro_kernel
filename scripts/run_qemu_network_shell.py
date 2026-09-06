@@ -76,7 +76,7 @@ def send_key(process: subprocess.Popen[bytes], key: str) -> None:
 
 def qemu_command(qemu: Path, image: Path, serial: Path) -> list[str]:
     return [
-        str(qemu), "-accel", "tcg", "-machine", "pc", "-m", "512M",
+        str(qemu), "-accel", "tcg", "-machine", "pc", "-m", "1024M",
         "-drive", f"file={image},format=raw,if=ide,snapshot=on",
         "-boot", "c", "-display", "none", "-serial", f"file:{serial}",
         "-monitor", "stdio", "-nic", "user,model=rtl8139",

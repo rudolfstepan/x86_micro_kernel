@@ -48,7 +48,7 @@ def qemu_command(qemu: Path, image: Path, serial_log: Path) -> list[str]:
         str(qemu),
         "-accel", "tcg",
         "-machine", "pc",
-        "-m", "512M",
+        "-m", "1024M",
         "-drive", f"file={image},format=raw,if=ide,snapshot=on",
         "-boot", "c",
         "-display", "none",

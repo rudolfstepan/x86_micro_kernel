@@ -368,7 +368,7 @@ def main() -> int:
     parser.add_argument("--qemu", type=Path, default=Path("qemu-system-i386"))
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=90.0)
-    parser.add_argument("--memory", default="512M")
+    parser.add_argument("--memory", default="1024M")
     parser.add_argument("--smp", type=int, default=1)
     parser.add_argument("--log", type=Path)
     parser.add_argument(

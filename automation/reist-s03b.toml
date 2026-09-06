@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R1.2d-vm-ram-default-1g"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 
 [policy]
 one_package_per_run = true
@@ -786,10 +786,11 @@ evidence = []
 
 [[packages]]
 id = "R1.2d-vm-ram-default-1g"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "low"
 title = "Use 1 GiB of guest RAM by default in VMware and QEMU"
+repair_authorization = "2026-09-06: User explicitly approves repairing the missing virtual display in the general QEMU test profile and resuming the attributable candidate. The sole authorized exception to unchanged device configuration is selecting the existing QEMU VMware-SVGA profile for full GTEST runs, whose mandatory Unicode raster test needs a display. Preserve boot-only and standalone desktop device selection, explicit video selection, kernel, memory reserves, deadlines and every frozen gate assertion. Regress actual CLI launch arguments, rerun affected host tests and the failed normal guest gate, retaining unchanged image-build and browser-form evidence. No repeated build or runtime gate whose executable image and effective command are unchanged."
 user_direction = "2026-09-06: New explicit user request raises VMware and QEMU guest RAM from 512 MiB to 1 GiB. Close the already accepted browser candidate first, then execute this configuration-only package in the clean main worktree. Defer R3.6b without changing its frozen gates. No agents or push."
 scope = "Set VMware VMX memsize to 1024 MiB and QEMU -m defaults to 1024M consistently across Windows, Makefile, common smoke, desktop and standalone reference runners. Preserve explicit low-memory overrides and the complete memory test matrix. Rebuild both reference packages, inspect both generated VMX files and prove the default QEMU boot and real-input browser forms at 1 GiB. Disk images remain 512 MiB; kernel direct-map ceiling, process heap quotas, physical rescue reserves, memory resilience, device configuration and runtime deadlines stay unchanged. This is a virtual-machine launch configuration, not high-memory support or new allocator policy."
 allowed_files = [
@@ -834,7 +835,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

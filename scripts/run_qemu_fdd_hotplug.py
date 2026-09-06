@@ -131,7 +131,7 @@ def qemu_command(qemu: Path, image: Path, floppy: Path,
                  qmp_port: int) -> list[str]:
     return [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
-        "-m", "512M", "-boot", "c",
+        "-m", "1024M", "-boot", "c",
         "-drive", f"file={image},format=raw,if=ide,index=0,media=disk",
         "-drive", (f"file={floppy},format=raw,if=floppy,index=0,"
                    "media=disk,id=reistfloppy"),

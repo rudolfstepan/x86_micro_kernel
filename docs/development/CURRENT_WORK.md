@@ -2,7 +2,7 @@
 
 Stand: 6. September 2026
 
-## R1.2d aktiv: VMware-/QEMU-Standard auf 1 GiB RAM
+## R1.2d abgenommen: VMware-/QEMU-Standard auf 1 GiB RAM
 
 Neuer ausdruecklicher Nutzerauftrag nach Browser-Abnahme `9d4635fa`:
 VMX `memsize=1024` und QEMU `-m 1024M` fuer die normalen Start-/Testpfade.
@@ -10,7 +10,60 @@ Die virtuelle Festplatte bleibt 512 MiB. Keine Kernel-/Allocatoraenderung,
 keine gelockerte Prozessquote oder Reserve. Explizite kleine RAM-Profile
 bleiben erhalten. Der bereits nachgewiesene 1-GiB-Direct-Map-Vertrag gilt
 unveraendert; dies fuehrt keine Unterstuetzung oberhalb von 1 GiB ein.
-Die Queue definiert Umfang und Abnahme; R3.6b bleibt unabgenommen queued.
+Alle Paketgates bestehen. R1.2d geht auf done; das naechste Queuepaket
+R3.6b wird active, seine reale VMware-Pointerabnahme bleibt offen.
+
+Implementiert im sichtbaren Worktree auf sauberem Vertragscommit `e1f7fd9c`.
+Die Regression weist vor der Aenderung `512M != 1024M` nach
+(`build/codex-agent/r12d-memory-default-before.log`). Nach der freigegebenen
+Testprofil-Reparatur bestehen alle fuenf eingefrorenen Hostgruppen, 109 Tests
+ohne Skip: RAM-Vorgaben 5/0,106 s, Imagegenerator 18/5,083 s,
+QEMU-Smoke 47/18,931 s, Desktop-Smoke 15/3,411 s, Browser-Runtime 24/2,718 s.
+Logs: `build/codex-agent/r12d-test_*.log` sowie fuer die erneut betroffenen
+RAM-/QEMU-Gruppen `r12d-display-test_*.log`. Unbetroffene Evidenz bleibt gueltig.
+
+Beide Referenzbuilds bestehen: VMware 51 s
+(`20260906-121913-package-vmware-vga.log`), QEMU 46 s
+(`20260906-122004-package-qemu-vga.log`), jeweils unter `build/codex-agent`.
+Beide erzeugten VMX-Dateien (`build/reist-os.vmx` und
+`build/vmware/reist-os/reist-os.vmx`) enthalten genau `memsize = "1024"`.
+RAW und VMware-Flat-Disk bleiben jeweils 536870912 Bytes gross.
+Kernel-SHA256 bleibt unveraendert
+`AB7639D9043E5D4EA3AECB35F1F2949974D69D57E14F4D36C6747FF0AF606E10`;
+finales QEMU-Image:
+`DF327168E161C52A806B5206D43C6565009B116EE49AB68FFD537516C2B8FF59`.
+
+Der erste Standardgast meldete `Memory: 1023 MiB detected, 1023 MiB managed,
+996 MiB free` und `BOOT_OK`. Der erste Lauf von `-Mode normal` scheiterte nach 16 s
+jedoch an `TEST_FAIL UNICODE_RASTER`: `-nodefaults` stellt ohne explizite
+Grafikkarte kein PCI-Display bereit. Der unveraenderte verpflichtende
+GTEST-Grafiktest bekommt deshalb `driver=-19 fallback=-19`. Dies ist kein
+Speichermangel. Evidenz: `r12d-runtime-normal.log` und
+`r12d-runtime-normal.serial.log` unter `build/codex-agent`.
+
+Das unabhaengige Gate `-Mode runtime-desktop-browser-forms` mit vorhandenem
+Grafikprofil besteht bei 1 GiB (81,875 s): reale Eingabe, Scrollen/Resize,
+exakter GET, Ablehnung ohne Request, Reset, Worker-Recovery und Close.
+Log/Screenshot: `build/codex-agent/r12d-runtime-browser-forms*`.
+
+Der Nutzer hat die Korrektur des allgemeinen QEMU-Testprofils ausdruecklich
+freigegeben. Ein echter CLI-Regressionstest weist vor der Reparatur das
+fehlende `-vga vmware` nach (`r12d-display-before.log`). Vollstaendige
+GTEST-Laeufe waehlen jetzt das bereits bestehende SVGA-Profil; reine Boottests
+und direkte Desktop-Runner behalten ihre eigene Geraetewahl. Ein explizites
+`--vmware-vga` bleibt auch bei `--boot-only` wirksam und erzeugt nur ein Display.
+Keine Kernel-/Treiber-/ABI-Aenderung, keine gelockerte Frist oder Assertion.
+
+Das zuvor fehlgeschlagene Gate `-Mode normal -Target qemu -Video vga`
+besteht nach dieser einen gezielten Reparatur (72,479 s), mit 1023 MiB
+verwaltetem RAM und 995 MiB frei beim Boot, einschliesslich
+Unicode-Raster, kompletter GTEST-Sequenz und Shell-Rueckkehr. Nachweise:
+`build/codex-agent/r12d-display-runtime-normal.log` und `.serial.log` sowie
+`20260906-122842-runtime-guest-smoke.log`. Alte Fehlerevidenz bleibt erhalten.
+Die Image-/Kernel-Hashes wurden erneut verglichen und sind unveraendert;
+Builds und Browser-Formulargate wurden deshalb nicht unnoetig wiederholt.
+Alle 17 Kandidatenpfade liegen im freigegebenen Umfang. Keine spaetere
+Paketimplementierung und kein Push.
 
 ## R3.13 abgenommen: native statische GET-Formulare
 

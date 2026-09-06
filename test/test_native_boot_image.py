@@ -436,7 +436,7 @@ class NativeBootImageTests(unittest.TestCase):
             text = vmx.read_text(encoding="ascii")
         self.assertIn('firmware = "bios"', text)
         self.assertIn('bios.bootOrder = "hdd"', text)
-        self.assertIn('memsize = "512"', text)
+        self.assertIn('memsize = "1024"', text)
         self.assertIn('sata0:0.fileName = "kernel.vmdk"', text)
         self.assertIn('serial0.fileName = "vmware-serial.log"', text)
         self.assertIn('serial0.tryNoRxLoss = "TRUE"', text)
@@ -527,6 +527,7 @@ class NativeBootImageTests(unittest.TestCase):
                 encoding="ascii"
             )
             self.assertIn('bios.bootOrder = "hdd"', config)
+            self.assertIn('memsize = "1024"', config)
             self.assertIn('floppy0.present = "FALSE"', config)
             self.assertIn('gui.enableStretchGuest = "TRUE"', config)
             self.assertIn('gui.stretchGuestMode = "fullfill"', config)

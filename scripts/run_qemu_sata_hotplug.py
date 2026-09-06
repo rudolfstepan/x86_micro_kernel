@@ -92,7 +92,7 @@ class QmpClient:
 def qemu_command(qemu: Path, disk: Path, qmp_port: int) -> list[str]:
     return [
         str(qemu), "-accel", "tcg", "-machine", "pc", "-nodefaults",
-        "-m", "512M", "-boot", "c",
+        "-m", "1024M", "-boot", "c",
         "-device", "ich9-ahci,id=reistahci",
         "-blockdev", (f"driver=file,filename={disk},"
                       "node-name=reistfile"),

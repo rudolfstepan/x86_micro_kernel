@@ -61,6 +61,12 @@ GiB benoetigt einen eigenen High-Memory-/64-Bit-Adressierungsnachweis; ein
 groesseres Heapbudget kann sie nicht ersetzen. Browser- und Dateicaches sind
 nachfolgende Ring-3-Nutzer, nicht Teil dieses Speicher-Lifecycle-Pakets.
 
+R1.2d setzt die VMware-/QEMU-Startvorgaben auf 1024 MiB Gast-RAM, also
+1 GiB. Explizite kleinere Testprofile bleiben waehlbar. Das aendert weder
+die 512-MiB-Festplattenimages noch Prozessquoten, Reserven oder diese
+Adressierungsgrenze. Firmware-reservierter RAM ist weiterhin nicht frei
+nutzbar; die Bootanzeige kann deshalb weniger als 1024 MiB melden.
+
 ## Nachweis
 
 Die unveraenderliche Befehlsliste steht in `automation/reist-s03b.toml`.
