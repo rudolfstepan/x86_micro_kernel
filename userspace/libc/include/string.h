@@ -10,6 +10,8 @@ void *memset(void *destination, int value, size_t size);
 int memcmp(const void *left, const void *right, size_t size);
 void *memchr(const void *data, int value, size_t size);
 size_t strlen(const char *text);
+/* POSIX strdup: process-arena allocation; NULL/ENOMEM on exhaustion. */
+char *strdup(const char *text);
 char *strncpy(char *destination, const char *source, size_t size);
 int strcmp(const char *left, const char *right);
 int strncmp(const char *left, const char *right, size_t size);

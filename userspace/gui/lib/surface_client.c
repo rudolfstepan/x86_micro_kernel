@@ -80,8 +80,12 @@ static int receive_wire_message(reist_gui_surface_client_t *client,
     uint8_t *destination = (uint8_t *)message;
     for (uint32_t i = 0U; i < sizeof(*message); ++i)
         destination[i] = ipc.payload[i];
-    return message->protocol_version == REIST_GUI_SURFACE_PROTOCOL_VERSION &&
-        message->message_size == sizeof(*message) ? 0 : -84;
+    if (message->protocol_version != REIST_GUI_SURFACE_PROTOCOL_VERSION ||
+        message->message_size != sizeof(*message)) return -84;
+    if (message->type==REIST_GUI_SURFACE_INPUT &&
+        message->input.type==REIST_GUI_SURFACE_INPUT_POINTER_SCROLL &&
+        !reist_gui_surface_scroll_valid(&message->input)) return -84;
+    return 0;
 }
 
 static int defer_message(reist_gui_surface_client_t *client,
@@ -115,7 +119,7 @@ static int receive_message(reist_gui_surface_client_t *client,
 }
 
 static uint32_t deferred_response_type(uint32_t type) {
-    return type == REIST_GUI_SURFACE_INPUT ||
+    return type == REIST_GUI_SURFACE_ENABLE_SCROLL || type == REIST_GUI_SURFACE_INPUT ||
         type == REIST_GUI_SURFACE_CLOSE ||
         type == REIST_GUI_SURFACE_CONFIGURE ||
         type == REIST_GUI_SURFACE_ACK_CONFIGURE ||
@@ -410,6 +414,16 @@ int reist_gui_surface_client_set_title(reist_gui_surface_client_t *client,
     return transact(client, &request, REIST_GUI_SURFACE_SET_TITLE);
 }
 
+int reist_gui_surface_client_enable_scroll(reist_gui_surface_client_t *client) {
+    if (!valid_client(client) || !client->acknowledged_serial) return -22;
+    reist_gui_surface_message_t request,response;
+    prepare(&request,REIST_GUI_SURFACE_ENABLE_SCROLL,client);
+    request.serial=REIST_GUI_SURFACE_SCROLL_VERSION;
+    int result=transact_response(client,&request,request.type,&response);
+    if (result) return result;
+    return response.serial==REIST_GUI_SURFACE_SCROLL_VERSION ? 0 : -84;
+}
+
 int reist_gui_surface_client_paint_begin(reist_gui_surface_client_t *client) {
     return reist_gui_surface_client_paint_begin_layer(
         client, REIST_GUI_SURFACE_PAINT_LAYER_BASE);
@@ -622,7 +636,7 @@ int reist_gui_surface_client_receive_input(
         message.surface.generation != client->surface.generation ||
         message.input.serial == 0U ||
         message.input.type < REIST_GUI_SURFACE_INPUT_POINTER_MOTION ||
-        message.input.type > REIST_GUI_SURFACE_INPUT_KEYBOARD)
+        message.input.type > REIST_GUI_SURFACE_INPUT_POINTER_SCROLL)
         return -84;
     *event = message.input;
     return 0;

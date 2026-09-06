@@ -5,6 +5,16 @@
 #include <stdlib.h>
 #include <strings.h>
 #include <ctype.h>
+/* ISO C precondition: the positive result is representable as int. */
+int abs(int value) { return value<0 ? (int)(0U-(unsigned)value) : value; }
+
+char *strdup(const char *text) {
+    size_t n=strlen(text);
+    if (n==SIZE_MAX) return NULL;
+    char *copy=malloc(n+1);
+    if (copy) memcpy(copy,text,n+1);
+    return copy;
+}
 
 int tolower(int value) { return value >= 'A' && value <= 'Z' ? value + ('a'-'A') : value; }
 int strncasecmp(const char *a, const char *b, size_t n) {

@@ -25,6 +25,7 @@ static int compare_int(const void *a, const void *b) {
     int x=*(const int *)a, y=*(const int *)b; return (x>y)-(x<y);
 }
 int main(void) {
+    assert(abs(-17)==17 && abs(0)==0 && abs(2147483647)==2147483647);
     assert(tolower('A')=='a' && tolower('z')=='z' && tolower(-1)==-1 && tolower(255)==255);
     assert(!strncasecmp("aBc","AbCd",3) && strncasecmp("a","AB",2)<0);
     assert(strncasecmp("\xff","\x80",1)>0 && !strncasecmp(NULL,NULL,0));
@@ -37,9 +38,13 @@ int main(void) {
     assert(!bsearch(NULL,NULL,0,sizeof(int),compare_int));
     assert(!bsearch(&key,sorted,SIZE_MAX,sizeof(int),compare_int));
     assert(!malloc(1) && errno==ENOMEM);
+    assert(!strdup("unbound") && errno==ENOMEM);
     assert(reist_libc_init(storage+1,sizeof(storage)-1)==-EINVAL);
     assert(reist_libc_init(storage,sizeof(storage)+1)==-EINVAL);
     assert(!reist_libc_init(storage,sizeof(storage)));
+    char *duplicate=strdup("CSS"); assert(duplicate && !strcmp(duplicate,"CSS"));
+    duplicate[0]='x'; assert(!strcmp(duplicate,"xSS")); free(duplicate);
+    duplicate=strdup(""); assert(duplicate && !duplicate[0]); free(duplicate);
     assert(!malloc(0) && !calloc(0,9)); free(NULL);
     assert(!calloc(SIZE_MAX,2) && errno==ENOMEM);
     assert(!malloc(SIZE_MAX) && errno==ENOMEM);

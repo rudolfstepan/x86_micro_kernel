@@ -17,6 +17,7 @@ import subprocess
 import tarfile
 import tempfile
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from build_user_program import ROOT, find_zig, freestanding_compile_prefix
@@ -254,17 +255,22 @@ def compile_objects(
     sources: tuple[Path, ...], prefix: list[str], temporary: Path,
     stem: str, environment: dict[str, str], extra_flags: list[str] | None = None,
 ) -> list[Path]:
-    """Compile a fixed source tuple into temporary ELF32 objects."""
-    objects: list[Path] = []
-    for index, source in enumerate(sources):
+    """Compile independent objects with four workers and stable archive order.
+
+    Each job owns a unique output. The caller can publish an archive only
+    after every compiler succeeds; the pool joins before temporary cleanup.
+    """
+    def compile_one(item):
+        index, source = item
         object_path = temporary / f"{stem}-{index}.o"
         run(
             [*prefix, *(extra_flags or []), "-std=c11", "-c", str(source),
              "-o", str(object_path)],
             environment,
         )
-        objects.append(object_path)
-    return objects
+        return object_path
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return list(pool.map(compile_one, enumerate(sources)))
 
 
 def extract_mbedtls(destination: Path) -> Path:
@@ -340,6 +346,27 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
               cache_directory: Path | None = None) -> SdkArtifacts:
     """Build headers, startup object and reusable static libraries once."""
     artifacts = sdk_artifacts(output)
+    # Conventional freestanding compiler support, from the selected toolchain.
+    # CSS uses signed 64-bit intermediates; do not couple it to TLS's private
+    # arithmetic shim or provide incomplete compiler ABI stubs in the parser.
+    builtins = artifacts.library_dir / "libclang_rt.builtins-i386.a"
+    compiler_source = zig.parent / "lib/compiler_rt.zig"
+    compiler_inputs = (zig, compiler_source, *compiler_source.with_suffix("").rglob("*.zig"), Path(__file__))
+    if artifact_requires_rebuild(builtins, compiler_inputs, incremental):
+        artifacts.library_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="reist-builtins-") as temporary_name:
+            temporary = Path(temporary_name)
+            environment = os.environ.copy()
+            environment["ZIG_GLOBAL_CACHE_DIR"] = str(artifacts.root / "builtins-cache")
+            environment["ZIG_LOCAL_CACHE_DIR"] = str(temporary / "cache")
+            obj = temporary / "builtins.o"
+            subprocess.run([str(zig), "build-obj", str(compiler_source), "-target", "x86-freestanding-none",
+                "-mcpu=i386", "-O", "ReleaseSmall", "-fno-stack-check", "-fno-stack-protector",
+                "-fno-compiler-rt", "-femit-bin=" + str(obj)], env=environment, check=True, timeout=30)
+            create_archive(zig,builtins,[obj],temporary,environment)
+        license_file = artifacts.root / "usr/share/licenses/zig-compiler-rt/LICENSE"
+        license_file.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(zig.parent / "LICENSE",license_file)
     libc_headers = tuple(LIBC_INCLUDE_ROOT.rglob("*.h"))
     for header in libc_headers:
         destination = artifacts.libc_include_dir / header.relative_to(LIBC_INCLUDE_ROOT)

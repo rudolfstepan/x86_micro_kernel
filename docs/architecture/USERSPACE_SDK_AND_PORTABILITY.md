@@ -297,6 +297,16 @@ versionierten Vertrag im Repository.
 
 ## Definition of Done für ein neues SDK-Modul
 
+R3.10 ergänzt `abs` (ISO C11; nur wenn der positive Wert als int darstellbar
+ist) und `strdup` (POSIX, Allocation aus derselben begrenzten Prozessarena,
+NULL/ENOMEM bei Erschöpfung). Es gibt keine globale Host-libc-Allokation.
+Das opt-in SDK installiert LibCSS 0.9.2 samt MIT-Lizenz, Headern und pkg-config-
+Abhängigkeiten auf LibParserUtils und LibWapcaplet. Standard-i386-Arithmetik-
+Builtins der ausgewählten Zig-Toolchain stehen separat in
+`libclang_rt.builtins-i386.a`; CSS linkt sie für 64-Bit-Zwischenwerte. Das fügt
+keine neue OS- oder Shared-Library-ABI hinzu. Der CSS-Adapter bleibt privat im
+Browser-Worker; seine Grenzen stehen in BROWSER_ENGINE_PORT_PLAN.md.
+
 - [ ] Öffentlicher Namensraum, Layer und Owner sind festgelegt.
 - [ ] Vorhandener Standard oder etablierte Bibliothekssemantik wurde geprüft.
 - [ ] Abweichungen sind begründet; es wird keine falsche Kompatibilität behauptet.

@@ -74,13 +74,13 @@ VMware-Image nicht neu. Befehle, Laufzeiten und Logs stehen in
 
 ## HTML5-Worker und nachfolgende Arbeit
 
-Abgenommener Schnitt ist R3.9: Hubbub 0.3.8 und LibParserUtils 0.2.5
-liefern den echten HTML5-Tokenizer und Baumaufbau in `HTMLWORK.PRG`. Der
+Der erste abgenommene HTML5-Schnitt R3.9 nutzt Hubbub 0.3.8 und LibParserUtils 0.2.5;
+diese liefern den echten HTML5-Tokenizer und Baumaufbau in `HTMLWORK.PRG`. Der
 Browser erhält nur eine vollständig validierte semantische Projektion; seine
 bisherige Zeichen-/Bild-/Linkschicht bleibt zunächst bestehen. Ein Parserfehler
 darf daher nicht die Browser-Chrome beenden. Die Ausgabe ist kein vollständiges
-öffentliches DOM und keine CSS-Layout-Engine. CSS/DOM-Layout folgt als nächster
-Browser-Schnitt. Die offene VMware-Mausabnahme bleibt auf ausdrückliche
+öffentliches DOM. R3.10 ergaenzt inzwischen abgenommen echte CSS-Kaskade und
+begrenztes Boxlayout; Details folgen unten. Die offene VMware-Mausabnahme bleibt auf ausdrückliche
 Nutzerfreigabe zurückgestellt, nicht bestanden.
 
 Implementiertes R3.9, Abnahme separat in `CURRENT_WORK.md`: lokale
@@ -133,11 +133,166 @@ der geplanten Ring-3-Treiberisolation. Journalbarrieren, öffentliche ABIs und
 alle Browser-Zeitlimits bleiben unverändert; auch die negative Evidenz bleibt
 in CURRENT_WORK dokumentiert.
 
-Als nächstes ist R3.10 für echte LibCSS-Kaskade und begrenztes CSS-Boxlayout
-definiert, noch nicht implementiert. Style-Attribute und eingebettete Styles
-teilen die isolierte Dokumentgrenze. Externe Stylesheets, Imports und CSS-URLs
-brauchen dagegen einen separaten Ressourcen-/Herkunftsvertrag; dieser Auftrag
-erteilt dem Parser keine implizite Netzwerk- oder Dateiautorität.
+R3.10 liefert abgenommen echte LibCSS-0.9.2-Kaskade und begrenztes
+CSS-Boxlayout; die vollstaendige Host-/Gastabnahme steht in CURRENT_WORK.
+Der unveränderte MIT-Release wird geprüft/gepinnt, seine C-Property-Generatoren
+laufen nur auf dem Host. Nur HTMLWORK linkt LibCSS, Hubbub und LibWapcaplet.
+Der erhaltene HTML5-Baum trägt Elementnamen, Attribute, Eltern und Geschwister.
+Element-/Klassen-/ID-Selektoren, Kind-/Nachfahren-/Geschwisterbeziehungen,
+Attributselektoren, Inline- und eingebettete Styles verwenden die tatsächlichen
+Upstream-Regeln für Spezifität, Reihenfolge, Vererbung und `!important`.
+
+Referenz ist [CSS 2.1, Boxdimensionen](https://www.w3.org/TR/CSS21/visudet.html):
+implementiert sind normaler Block-/Inline-Fluss und
+`display:none`, Text-/Hintergrundfarben, Fontgröße 1–32 CSS-Pixel, synthetisches
+Fett/Kursiv, links/zentriert/rechts ausgerichtete Zeilen, Blockränder, Padding,
+Rahmen und begrenzte Breite/Höhe. CSS-Pixel sind bei diesem 96-dpi-Profil
+Gerätepixel. em bezieht sich auf die berechnete Fontgröße; Prozentbreiten und
+Padding/Margins auf den umschließenden Inhaltsblock. Prozenthöhen wirken nur
+bei bestimmter Elternhöhe, sonst auto. Benachbarte vertikale Blockmargins
+kollabieren; Eltern-/Kind-Margin-Collapsing ist noch nicht vollständig.
+Die Schriftfamilie ist die feste Unicode-Monospace-Schrift; ihre vorhandenen
+PSF2-Daten sind wie das Desktop-Splash-Asset read-only ins Programm eingebettet
+und werden einmal vor der Dokumentverarbeitung geprüft. Das spart einen
+weiteren langsamen VFS-Transfer, repariert aber nicht dessen allgemeine
+Durchsatzgrenze. Das Programm wächst um 2585144 Byte, bleibt innerhalb der
+unveränderten 8-MiB-MYPR-Grenze und braucht keinen Font-Dateihandle. LibCSS löst
+thin/medium/thick auf 1/2/4 CSS-Pixel auf. Rahmen werden einfarbig gezeichnet.
+Inline-Box-Dekoration, CSS-Tabellenlayout, Float/Positionierung, Flex/Grid,
+Pseudoelement-Inhalte, CSS-Fonts, vollständiges Bidi/Shaping und Animation sind
+nicht implementiert. Andere display-Werte nutzen den dokumentierten einfachen
+Block-Fallback; inline-block nutzt Inline-Fluss. Keine vollständige CSS-,
+NetSurf- oder moderne Web-Kompatibilitätszusage.
+
+Der private CSS1-Auftrag enthält den bestehenden 48-Byte-HTML-Header,
+Viewport, 16 intrinsische Bildgrößen und die Dokument-URL (444 Byte), gefolgt
+von maximal 64 KiB HTML. Generation-scoped Bulk-IPC-Pakete enthalten 16 Byte
+Framing (Magic, Request, Offset, Gesamtlänge) und höchstens 2032 Datenbytes.
+Ein Parent-eigener Endpoint dient genau einem Kind. Pro UI-Runde werden
+höchstens acht Pakete ohne Warten verarbeitet; Replies werden schon vor dem
+Reap privat abgeholt, damit kein voller Kanal den Worker blockiert.
+Vor der ersten akzeptierten Nachricht wartet der Worker bei EBADF/EACCES
+auf die erst nach Spawn moegliche Rechteuebergabe: jeweils 1 ms Schlaf,
+innerhalb seiner unveraenderten absoluten Deadline. Fehlgeschlagenes Schlafen
+oder Rechteverlust nach Empfangsbeginn beendet den Auftrag ohne Antwort.
+Fehlende Delegation bleibt damit begrenzt; ein alter Auftrag erhaelt durch
+diese Startbehandlung keine erneute Autoritaet.
+Bei exakt vollstaendiger Rahmung endet der Receive-Pfad: Das regulaere EPIPE
+nach sofortigem Worker-Exit darf eine fertige Antwort nicht verwerfen.
+EPIPE vor dem Ende, falsche Laengen und falsche Generationen bleiben Fehler.
+Abbruch widerruft den Endpoint, beendet/reapt das Kind und verwirft die Ausgabe.
+Die fünfsekündige Parent-Deadline umfasst Spawn, Parsing, Layout und Transfer.
+Der alte V2-Datei-CLI-Adapter bleibt separat kompatibel; neue Browseraufträge
+schreiben keine Parser-Temporärdateien. Das erweitert keine OS-Capabilities.
+Auch deren vorsorgliche Bereinigung entfaellt: Nur ein tatsaechlich gestartetes
+CURL-Kind markiert seine Body-/Teil-Datei als aufzuraeumen. Vor Reap erfolgt
+kein Unlink, nach Bereinigung ist der Pfad ohne weiteren VFS-Aufruf idempotent.
+Die alte grobe Unlink-Fehlerabbildung bleibt sichtbare Legacy-Schuld, kein
+neuer Nachweis exakter POSIX-errno- oder garantierter Loeschsemantik.
+Die Entfernung dieser Aufrufe allein beseitigte den gemessenen Engpass nicht:
+das wiederholte Laden des 874540-Byte-Workers blieb dominant. Die echten
+Parserbibliotheken werden deshalb mit dem regulaeren LLVM-`-Os` sowie
+Funktions-/Datensektionen gebaut; der bestehende Linker entfernt unerreichbare
+Sektionen. Quellen, Parserregeln, Heap-/Arbeitsquoten und Fristen bleiben gleich.
+
+Chrome darf ausschliesslich seine letzte vollstaendig validierte Szene
+wiederverwenden: zuvor ist das Dokument erfolgreich frisch gelesen/geladen,
+der Inhalt bytegenau gleich (kein Hash-Ersatz), die effektive Ressourcen-URL identisch,
+Viewport und verwendete intrinsische Bildmasse passen. Fehler-/Timeoutmodi,
+geaenderte Bytes, URL, Geometrie oder noch ausstehendes Reflow verhindern den
+Treffer. Vorhandene HTML-/Szenenpuffer tragen diesen Ein-Dokument-Cache; hinzu
+kommen nur 64 Byte intrinsische Vergleichsmasse, kein neuer Heap oder Dateicache.
+Reload laedt Bilder weiterhin frisch, blendet alte Bitmapdaten bis zur
+Neudekodierung aus und zeigt bei Fehlern Alternativtext. Nur tatsaechlich
+geaenderte intrinsische Masse erfordern dann ein neues isoliertes Reflow;
+fehlgeschlagene Bilder duerfen ihre zuletzt bekannten Boxmasse behalten.
+Nur das Fragment wird beim Ressourcenvergleich entfernt, wie bei der
+Dereferenzierung nach [RFC 3986, Abschnitt 3.5](https://www.rfc-editor.org/rfc/rfc3986#section-3.5).
+Nach `#details` und Reload startet damit kein identischer CSS-/Bild-Reflow
+erneut. Query, Pfad, Schema und Authority bleiben bytegleich erforderlich;
+Adressleiste und Fragment-Scrollziel werden dennoch aktualisiert. Die aktuelle
+CSS-Szene besitzt keine dynamischen Pseudoklassen wie `:target`; deren spaetere
+Einfuehrung muss den Szenenschluessel um diesen Zustand erweitern. Ein echter
+Datei-Reload vor dem Treffer bleibt vorgeschrieben, ebenso Bildaktualisierung.
+Das ist keine HTTP-Cache-Control-, externe Stylesheet- oder Script-Cache-API.
+Dateiinhalte werden innerhalb der bereits vorhandenen 128-KiB-VFS-Bulkgrenze
+gelesen, nicht mehr in 4-KiB-Transaktionen. Fuer das 214860-Byte-GIF sind damit
+zwei statt 53 Aufrufe erforderlich. Maximalgroesse, exact-size/short-read-
+Pruefung, generationgebundenes Dateiobjekt und Close-Pfad bleiben erhalten;
+neue VFS-/Kernelmechanismen oder groessere Bildpuffer sind nicht erforderlich.
+
+Der Reply enthält den geprüften V2-Dokumentteil und eine Szene mit Version,
+Viewport, Gesamthöhe und höchstens 2048 zeigerfreien 40-Byte-Zeichenbefehlen.
+Text (höchstens 128 Byte je Run, insgesamt 64 KiB), Bilder, Anker und Farbflächen
+haben geprüfte Typen, Indizes, UTF-8-Grenzen, Flags und Koordinaten bis 262144.
+Bild-Pixel und Fonts werden nicht vom Worker mitgeliefert. Chrome prüft die
+komplette Szene und die exakte Kind-/Auftragsgeneration vor Veröffentlichung;
+komplexe CSS-/Layoutarbeit verbleibt im Worker. Zeichenarbeit ist auf vier
+Millionen sichtbare Pixeloperationen pro Frame begrenzt. Ein überschrittenes
+Darstellungsbudget behält die bisherige Ansicht, statt Chrome zu beenden.
+Der private Single-Thread-Renderer bereitet gleiche Glyphen/Pixelhoehen pro
+Frame nur einmal vor, solange ihr direkter Cacheplatz nicht verdraengt wird.
+128 feste Plaetze benoetigen 263168 Byte Prozessspeicher; Tag-Invalidierung
+vor jedem Rasteraufruf verhindert die Wiederverwendung alter Fontinhalte.
+Farbe, Deckkraft, Fett/Kursiv und Clipping wirken weiterhin auf jedes Zeichen.
+Es gibt keine Allokation im Zeichenpfad, kein neues Dateicache-/Font-Handle
+und keine erweiterte Zeichenarbeitsquote. Ein Hostfall prueft 256 gleiche
+Zeichen mit einer statt 256 Glyphrasterungen und unveraenderten Pixeln sowie
+neue Schriftbytes, kaputte Fontgrenzen und verschiedene Pixelhoehen.
+64 Stylesheets, 262144 Adapter-Arbeitsschritte und der bestehende 4-MiB-Heap
+begrenzen den Worker. Chrome reserviert vorab die bisherigen 22 MiB plus
+2 MiB für Unicode-Mappings; die Bitmapdaten liegen im read-only-Programmsegment.
+
+Resize-Aufträge werden auf den jüngsten Viewport zusammengefasst, Ergebnisse
+für überholte Größen nicht dargestellt. Intrinsische Bildgrößen werden nach
+der begrenzten Ladefolge gemeinsam neu berechnet; Scrollposition und Cache
+bleiben beim Reflow erhalten. Links und die native Scrollbar verwenden die
+geprüfte Szenengeometrie, Pixel/Glyphen werden am Viewport abgeschnitten.
+Der Browser aktiviert die kompatible Surface-Scroll-Erweiterung v1 explizit.
+Das Mausrad scrollt den vorhandenen Dokumentzustand um 48 Pixel je Rasterstufe;
+Bruchteile werden ohne Verlust akkumuliert und Anfang/Ende ueberlaufssicher
+begrenzt. Adress-/Statuszeile und ein aktives Thumb-Capture bleiben unberuehrt.
+Kein Laden, CSS-Auftrag, Fokuswechsel oder synchrones Paint im Mausradhandler;
+der feste Event-Batch fasst die noetige Neuzeichnung zusammen. Der Gasttest
+verlangt echte QEMU-USB-HID-Radereignisse abwaerts/aufwaerts und gezeichnete
+Scrollpositionen, nicht direkt im Test aufgerufene Browserhandler.
+Die Browser-Teststeuerung verwendet quittiertes natives
+[`input-send-event`](https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html#command-input-send-event)
+nach der [QMP-Spezifikation](https://www.qemu.org/docs/master/interop/qmp-spec.html).
+Eine kurzlebige Loopback-Verbindung ersetzt ausschliesslich die zweimalige
+75-ms-Serial-Mux-Pause je Mauskommando; andere Desktop-Proben behalten ihren
+Adapter. QMP-ACK bedeutet nur eingespeistes Geraeteereignis: HID-Pacing und
+Gastmarker fuer Configure, Reflow und gezeichnetes Scrollen bleiben notwendig.
+Admission hoechstens fuenf Sekunden, ein Kommando hoechstens eine Sekunde,
+jeweils innerhalb der bestehenden absoluten Hostfrist; 64-KiB-Antwortpuffer,
+4096-Byte-Kommando und 32 Zwischenereignisse. Fehler beenden die Abnahme und
+schliessen Verbindung/Listener sowie den QEMU-Prozess. Der Gast bekommt weder
+zusaetzliche Zeit noch einen alternativen Eingabehandler. Probe-only-Zeitzaehler
+trennen Datei, Dekoder, Raster, Pixelpuffer/IPC, Body, Chrome, Status und Spawn;
+Body enthaelt Raster/Puffer/IPC, die Summen sind deshalb nicht additiv.
+Der erste QMP-Lauf quittierte die Eingaben, erreichte aber kein Resize.
+QEMU kann noch ungelesene relative Bewegungen vor der Randbegrenzung
+zusammenfassen. Deshalb muss der volle sichtbare Softwarepfeil einschliesslich
+Schatten nach Homing und vor dem Resize-Button-down an der erwarteten Position
+stehen. Quittierte native Screendumps mit frischen Dateinamen liefern diesen
+beobachtbaren Gastnachweis; maximal eine Sekunde/16 Versuche pro Barriere,
+innerhalb der unveraenderten Gesamtfrist. Wire-ACK oder berechnete Position
+genuegen nicht. Abnahme und erhaltene Negativbelege stehen in CURRENT_WORK.
+Style-URLs werden rein syntaktisch aufgelöst, niemals geladen. Externe link-
+Stylesheets und CSS-Bilder sind inert; ausstehende `@import`-Abhängigkeiten
+führen zu einer begrenzten Ablehnung des Auftrags, nicht zu vorgetäuschtem
+Import-Erfolg. Das benötigt später einen eigenen Ressourcen-/Herkunftsvertrag.
+Unbekannte Deklarationen behandelt LibCSS nach seiner Parser-Fehlererholung.
+Formulare, Cookies, POST und JavaScript bleiben aus; es gibt keine implizite
+Netzwerk-, Datei- oder Skriptautorität durch einen CSS-Callback.
+
+Die Wiederaufnahme auf der abgenommenen R1.2c-Speicherbasis behaelt die
+eingefrorene CSS-Auftragsgrenze von 64 KiB und den 4-MiB-Worker-Heap; sie sind
+keine allgemeine OS-Speichergrenze. Der Browser-Testprozess nutzt denselben
+verifizierten Windows-11-Timer-Helper wie die Speicherabnahme, mit unveraenderter
+Prioritaet und Gastfrist. Konfigurationsfehler beenden/reapen das neue QEMU-Kind
+vor dem Readerstart. Der alte VFS-Schriftfehler bleibt als negative Evidenz
+erhalten, die aktuelle eingebettete Schrift benoetigt keinen Dateitransfer.
 
 Die Engine-Portierung braucht einen eigenen Ring-3-Laufzeit-/Allocatoradapter,
 einen hostgeprüften und im Gast ausgeführten DOM/CSS-/Layoutpfad sowie feste
@@ -169,5 +324,8 @@ Die Standardheader und Archive sind opt-in im Sysroot installiert; TLS und
 bestehende Browserprogramme werden nicht umgestellt. `CRTEST.PRG` prüft im Gast
 Speichermangel, Kindfehler, Reap und neue Generationen. Die R3.8-Abnahme steht in
 `CURRENT_WORK.md`; ein geplanter oder implementierter Test ist allein noch kein
-bestandener Gastnachweis. DOM/CSS und eigentliche Engine-Integration bleiben offen.
+bestandener Gastnachweis. R3.9/R3.10 haben seither HTML5 und begrenztes CSS-Layout
+integriert und abgenommen; R3.11 ergaenzt als naechster separater Schnitt externe
+Stylesheets/Imports mit einem validierten Ressourcenbuendel. Formulare und
+JavaScript bleiben offen.
 Der genaue Speicher-/Fehlervertrag steht in `USERSPACE_SDK_AND_PORTABILITY.md`.

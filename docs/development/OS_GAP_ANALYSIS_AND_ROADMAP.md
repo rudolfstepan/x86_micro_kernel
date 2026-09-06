@@ -6,8 +6,11 @@ Abnahme vom 5. September 2026: `R1.2c-private-process-memory` liefert vor
 dem weiteren Browserumbau die Grundlage fuer groessere private Ring-3-Heaps
 mit Rueckgabe leerer Regionen und generationstreuem Reaping. Performance und
 Speicherresilienz bestanden gemeinsam in den eingefrorenen Gastpruefungen.
-Als naechstes ist R3.10 aktiv; sein CSS-Kandidat bleibt gesichert und wurde
-im Speicherpaket nicht veraendert. High-Memory oberhalb der
+R3.10 ist am 6. September vollstaendig abgenommen: echte LibCSS-Kaskade,
+begrenztes Boxlayout, Bilder, native Scrollbar, USB-Maus-Resize und Mausrad
+sowie Worker-Fault-/Timeout-Recovery bis Close. Der nachfolgende externe
+Stylesheet-/Import-Ressourcenvertrag R3.11 ist definiert, noch nicht umgesetzt.
+Der gemessene Worker-/Dateiladepfad bleibt Performance-Schuld. High-Memory oberhalb der
 heutigen 1-GiB-Direct-Map und freigebbare Anwendungs-/Dateicaches bleiben eigene
 Folgearbeiten. Einzelheiten und Nachweisgrenzen stehen im
 [Prozessspeichervertrag](../architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md).
@@ -3399,10 +3402,10 @@ noch die separate VMware-Mausabnahme R3.6b.
 R3.7 erhält HTTP-Metadaten, dekodiert chunked und begrenzt Weiterleitungen
 für Seiten und Bilder. R3.9 integriert abgenommen Hubbub/LibParserUtils
 für echten HTML5-Baumaufbau im getrennten, begrenzten HTMLWORK-Prozess.
-Eine vollständig geprüfte semantische Antwort nutzt noch die bestehende
-Zeichen-/Bildschicht; CSS-Layout, Formulare und JavaScript bleiben offen.
-R3.10 ist als nächster CSS-Kaskaden-/Boxlayout-Schnitt definiert und aktiv,
-noch nicht implementiert. Die R3.9-Gates bestanden separat auf dem in R7.1n
+R3.10 liefert darauf abgenommen echte LibCSS-Kaskade und begrenztes Boxlayout
+im isolierten Worker sowie eine validierte private Szene. Externe Stylesheets
+und Imports folgen mit R3.11; Formulare und JavaScript sind weiterhin offen.
+Die R3.9-Gates bestanden separat auf dem in R7.1n
 beschleunigten ATA-Lesepfad, mit unveränderten Worker- und Gastzeitlimits.
 Abnahmen stehen ausschließlich in `CURRENT_WORK.md`; die VMware-Mausabnahme
 bleibt mit Nutzerfreigabe zurückgestellt. Fehlende wiederverwendbare C-/OS-Grundlagen

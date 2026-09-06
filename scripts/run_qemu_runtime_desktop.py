@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import array
 import binascii
+import json
 import pathlib
 import queue
 import re
@@ -22,6 +23,7 @@ from run_qemu_smoke import (
     SHELL_PROMPT,
     TCP_TEST_MAC,
     TCP_TEST_TARGET,
+    configure_qemu_host_timers,
     monitor_key_commands,
     open_injection_listener,
     qemu_command,
@@ -473,15 +475,128 @@ def shortcut_probe_display_size(
     return int(match.group(1)), int(match.group(2))
 
 
+class BrowserInputMonitor:
+    """Bounded, acknowledged QMP input; no serial-mux sleeps or guest hooks.
+
+    QEMU QMP specification + input-send-event (since 2.6). An ACK confirms
+    device-event injection, NOT guest consumption; existing HID pacing and
+    guest configure/paint/wheel markers remain mandatory.
+    """
+    def __init__(self, peer, deadline):
+        self.peer = peer
+        self.deadline = deadline
+        self.pending = b""
+        self.sequence = 0
+
+    @staticmethod
+    def accept(listener, deadline):
+        limit = min(deadline, time.monotonic() + 5.0)
+        remaining = limit - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Browser QMP admission deadline")
+        listener.settimeout(remaining)
+        peer, _ = listener.accept()
+        try:
+            peer.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            monitor = BrowserInputMonitor(peer, deadline)
+            monitor.negotiate(limit)
+            return monitor
+        except BaseException:
+            peer.close()
+            raise
+
+    def receive(self, deadline):
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Browser QMP reply deadline")
+            if b"\n" in self.pending:
+                line, self.pending = self.pending.split(b"\n", 1)
+                try:
+                    reply = json.loads(line)
+                except (ValueError, RecursionError) as error:
+                    raise RuntimeError("Invalid browser QMP JSON") from error
+                if not isinstance(reply, dict):
+                    raise RuntimeError("Invalid browser QMP object")
+                return reply
+            if len(self.pending) >= 65536:
+                raise RuntimeError("Browser QMP frame quota")
+            self.peer.settimeout(remaining)
+            chunk = self.peer.recv(65536 - len(self.pending))
+            if not chunk:
+                raise RuntimeError("Browser QMP peer closed")
+            self.pending += chunk
+
+    def negotiate(self, deadline=None):
+        limit = min(self.deadline, time.monotonic() + 5.0)
+        if deadline is not None:
+            limit = min(limit, deadline)
+        greeting = self.receive(limit).get("QMP")
+        if (not isinstance(greeting, dict) or
+                not isinstance(greeting.get("version"), dict) or
+                not isinstance(greeting.get("capabilities"), list)):
+            raise RuntimeError("Invalid browser QMP greeting")
+        self.execute("qmp_capabilities", {}, limit)
+
+    def execute(self, name, arguments, deadline=None):
+        limit = min(self.deadline, time.monotonic() + 1.0)
+        if deadline is not None:
+            limit = min(limit, deadline)
+        remaining = limit - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Browser QMP command deadline")
+        self.sequence += 1
+        packet = json.dumps({"execute": name, "arguments": arguments,
+                             "id": self.sequence}).encode() + b"\r\n"
+        if len(packet) > 4096:
+            raise RuntimeError("Browser QMP command quota")
+        self.peer.settimeout(remaining)
+        self.peer.sendall(packet)
+        for _ in range(32):
+            reply = self.receive(limit)
+            if "event" in reply and "id" not in reply:
+                continue
+            if (type(reply.get("id")) is not int or reply["id"] != self.sequence or
+                    "error" in reply or reply.get("return") != {}):
+                raise RuntimeError("Browser QMP command not acknowledged")
+            return
+        raise RuntimeError("Browser QMP event quota")
+
+    def mouse(self, process, command):
+        # Accept only the existing probe's bounded relative motion/button
+        # vocabulary. Translate wheel signs explicitly, using native QMP,
+        # not the unstable human-monitor-command compatibility bridge.
+        move = re.fullmatch(r"mouse_move (-?\d+) (-?\d+)(?: (-?\d+))?", command)
+        button = re.fullmatch(r"mouse_button ([01])", command)
+        if move:
+            dx, dy, dz = int(move[1]), int(move[2]), int(move[3] or 0)
+            if abs(dx) > 120 or abs(dy) > 120 or abs(dz) > 1:
+                raise RuntimeError("Browser QMP motion range")
+            events = [{"type": "rel", "data": {"axis": axis, "value": value}}
+                      for axis, value in (("x", dx), ("y", dy)) if value]
+            if dz:
+                wheel = "wheel-up" if dz > 0 else "wheel-down"
+                events.extend({"type": "btn", "data": {"button": wheel, "down": down}}
+                              for down in (True, False))
+            if not events:
+                raise RuntimeError("Browser QMP empty motion")
+        elif button:
+            events = [{"type": "btn", "data": {"button": "left", "down": button[1] == "1"}}]
+        else:
+            raise RuntimeError("Invalid browser QMP input command")
+        self.execute("input-send-event", {"events": events})
+
+
 def shortcut_probe_move_mouse(
         process: subprocess.Popen[str], pointer: list[int],
-        target_x: int, target_y: int) -> None:
+        target_x: int, target_y: int, monitor=None) -> None:
+    send = monitor or qemu_monitor_command
     while pointer[0] != target_x or pointer[1] != target_y:
         delta_x = target_x - pointer[0]
         delta_y = target_y - pointer[1]
         step_x = max(-120, min(120, delta_x))
         step_y = max(-120, min(120, delta_y))
-        qemu_monitor_command(process, f"mouse_move {step_x} {step_y}")
+        send(process, f"mouse_move {step_x} {step_y}")
         pointer[0] += step_x
         pointer[1] += step_y
         time.sleep(0.04)
@@ -499,15 +614,125 @@ def shortcut_probe_click(
 
 def shortcut_probe_drag(
         process: subprocess.Popen[str], pointer: list[int],
-        source: tuple[int, int], destination: tuple[int, int]) -> None:
-    shortcut_probe_move_mouse(process, pointer, source[0], source[1])
-    qemu_monitor_command(process, "mouse_button 1")
+        source: tuple[int, int], destination: tuple[int, int], monitor=None) -> None:
+    send = monitor or qemu_monitor_command
+    shortcut_probe_move_mouse(process, pointer, source[0], source[1], monitor)
+    send(process, "mouse_button 1")
     time.sleep(0.12)
     shortcut_probe_move_mouse(
-        process, pointer, destination[0], destination[1])
+        process, pointer, destination[0], destination[1], monitor)
     time.sleep(0.12)
-    qemu_monitor_command(process, "mouse_button 0")
+    send(process, "mouse_button 0")
     time.sleep(0.25)
+
+
+# Opaque pixels of the current classic software pointer. The regression builds
+# its fixture independently from framebuffer.c; a shape change must update
+# this observational adapter, never the guest merely to satisfy this test.
+BROWSER_POINTER_SHAPE = (
+    "B............", "BB...........", "BWB..........", "BWWB.........",
+    "BWWWB........", "BWWWWB.......", "BWWWWWB......", "BWWWWWWB.....",
+    "BWWWWWWWB....", "BWWWWWWWWB...", "BWWWWBBBBBB..", "BWWBWB.......",
+    "BWB.WB.......", "BB...WB......", "B....WB......", ".....WB......",
+    ".....BB......", ".............",
+)
+
+
+def browser_probe_pointer_at(ppm, point):
+    if ppm is None:
+        return False
+    width, height, pixels = ppm
+    px, py = point
+    if not (0 < width <= 4096 and 0 < height <= 4096 and
+            len(pixels) == width * height * 3 and
+            0 <= px <= width - 14 and 0 <= py <= height - 19):
+        return False
+    for y in range(19):
+        for x in range(14):
+            color = BROWSER_POINTER_SHAPE[y][x] if y < 18 and x < 13 else "."
+            rgb = {"B": b"\0\0\0", "W": b"\xff\xff\xff"}.get(color)
+            if rgb is None and x and y and BROWSER_POINTER_SHAPE[y-1][x-1] in "BW":
+                rgb = b"\x60\x60\x60"
+            offset = ((py + y) * width + px + x) * 3
+            if rgb is not None and pixels[offset:offset+3] != rgb:
+                return False
+    return True
+
+
+def browser_probe_wait_pointer(monitor, screenshot, point, phase):
+    """Observe guest consumption at a direction/button boundary, not QMP ACK.
+
+    Native screendump ACK follows the file write. Each attempt has a fresh
+    name, retained as evidence; no stale screenshot may satisfy the check.
+    """
+    limit = min(monitor.deadline, time.monotonic() + 1.0)
+    capture_id = time.monotonic_ns()
+    for attempt in range(16):
+        if time.monotonic() >= limit:
+            break
+        shot = screenshot.with_name(f"{screenshot.stem}-pointer-{phase}-{capture_id}-{attempt}.ppm")
+        monitor.execute("screendump", {"filename": str(shot.resolve())}, limit)
+        if browser_probe_pointer_at(read_ppm(shot), point):
+            return
+        time.sleep(0.02)
+    raise RuntimeError(f"Browser pointer not observed at {phase} {point}")
+
+
+def browser_probe_css_resize(process, screenshot, deadline, client_width, client_height, input_monitor):
+    """Locate the proven CSS box in real scanout, then drag the native frame.
+
+    No guest geometry mutation or deadline extension: QEMU pointer input must
+    traverse compositor configure, worker reflow and a validated new scene.
+    """
+    send = input_monitor.mouse
+    css_shot = screenshot.with_name(screenshot.stem + "-css.ppm")
+    found = None
+    for _ in range(3):
+        if time.monotonic() >= deadline:
+            raise RuntimeError("CSS resize deadline")
+        capture_screenshot(process, css_shot, deadline)
+        ppm = read_ppm(css_shot)
+        if ppm is None:
+            raise RuntimeError("CSS scanout capture missing")
+        width, height, pixels = ppm
+        if not (0 < width <= 4096 and 0 < height <= 4096):
+            raise RuntimeError("CSS scanout size")
+        for pos in range(0, len(pixels), 3):
+            if pixels[pos:pos+3] == b"\xe0\xf0\xff":
+                found = (pos//3 % width, pos//3//width)
+                break
+        if found is not None:
+            break
+        time.sleep(0.03)
+    if found is None or b"\x12\x34\x56" not in pixels or b"\x22\x44\x88" not in pixels:
+        raise RuntimeError("CSS background, text or border absent from scanout")
+    scene_width = client_width - 18
+    box_x = (scene_width - (scene_width//2+30))//2
+    origin = (found[0]-box_x-3, found[1]-76-12-3)
+    corner = (origin[0]+client_width-1, origin[1]+client_height-1)
+    if not (64 < corner[0] < width and 32 < corner[1] < height):
+        raise RuntimeError("CSS window bounds inconsistent with scanout")
+    # Establish a known pointer origin with bounded clamped relative packets.
+    for _ in range((max(width,height)+119)//120):
+        send(process, "mouse_move -120 -120")
+        time.sleep(0.01)
+    # Unguest-consumed QEMU relative events can merge, including opposite
+    # directions. Prove the clamped origin before starting the return path.
+    browser_probe_wait_pointer(input_monitor, screenshot, (0, 0), "home")
+    pointer = [0, 0]
+    shortcut_probe_move_mouse(process, pointer, *corner, monitor=send)
+    browser_probe_wait_pointer(input_monitor, screenshot, corner, "grip")
+    send(process, "mouse_button 1")
+    time.sleep(0.12)
+    shortcut_probe_move_mouse(process, pointer, corner[0]-64, corner[1]-32, monitor=send)
+    time.sleep(0.12)
+    send(process, "mouse_button 0")
+    time.sleep(0.25)
+    # Wheel over the nearest document point, eight pixels inside the native
+    # scrollbar/status boundaries (18/22). Crossing the whole window costs six
+    # unnecessary HID packets before testing any wheel input. Resize, real
+    # wheel delivery, painted scroll assertions and both deadlines stay intact.
+    return pointer, (pointer[0]-18-8, pointer[1]-22-8)
 
 
 def shortcut_probe_context_action(
@@ -926,7 +1151,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         guidemo_click_probe, sound_probe,
     ))
     if (guidemo_click_probe or hover_probe or shortcut_probe or
-            icon_layout_probe or
+            icon_layout_probe or browser_probe or
             normal_lifecycle_probe):
         command.extend([
             "-device", "qemu-xhci,id=reistxhci",
@@ -944,11 +1169,32 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         command.extend([
             "-device", "VGA,vgamem_mb=1" if expect_failure else "VGA"
         ])
-    process = subprocess.Popen(command, stdin=subprocess.PIPE,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, text=True,
-                               encoding="utf-8", errors="replace", bufsize=0,
-                               creationflags=QEMU_CREATION_FLAGS)
+    process = None
+    browser_listener = None
+    browser_input = None
+    try:
+        if browser_probe:
+            browser_listener, browser_port = open_injection_listener()
+            command.extend(["-qmp", f"tcp:127.0.0.1:{browser_port},server=off,nodelay=on"])
+        process = subprocess.Popen(command, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, text=True,
+                                   encoding="utf-8", errors="replace", bufsize=0,
+                                   creationflags=QEMU_CREATION_FLAGS)
+        host_timers_configured = configure_qemu_host_timers(process)
+    except BaseException:
+        if browser_listener is not None:
+            browser_listener.close()
+        if dns_listener is not None:
+            dns_listener.close()
+        if process is not None:
+            try:
+                stop_process(process)
+            finally:
+                for pipe in (process.stdin, process.stdout):
+                    if pipe is not None:
+                        pipe.close()
+        raise
     if dns_listener is not None:
         try:
             dns_connection, _ = dns_listener.accept()
@@ -963,12 +1209,19 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
     thread = threading.Thread(target=reader,
                               args=(process.stdout, output, finished), daemon=True)
     thread.start()
-    transcript: list[str] = []
+    transcript: list[str] = (
+        ["HOST_QEMU_TIMER_POLICY verified=1 scope=child\n"]
+        if host_timers_configured else [])
     deadline = time.monotonic() + timeout
     supervised_boot_detected = False
     hover_shell_probe_sent = False
     explorer_shell_probe_sent = False
     try:
+        if browser_listener is not None:
+            try:
+                browser_input = BrowserInputMonitor.accept(browser_listener, deadline)
+            finally:
+                browser_listener.close()
         while time.monotonic() < deadline:
             drain(output, transcript)
             text = "".join(transcript)
@@ -1515,6 +1768,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     )
                 if browser_probe:
                     browser_captured = False
+                    css_resize_sent = False
+                    wheel_down_sent = wheel_up_sent = False
+                    wheel_pointer = wheel_target = None
                     while time.monotonic() < deadline:
                         drain(output, transcript)
                         probe_text = "".join(transcript)
@@ -1527,6 +1783,27 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                         if not browser_captured and "BROWSER_RELOAD_PAINTED" in probe_text:
                             capture_screenshot(process, screenshot, deadline)
                             browser_captured = True
+                        resize = re.search(r"BROWSER_CSS_RESIZE_WAIT width=(\d+) height=(\d+)", probe_text)
+                        if resize and not css_resize_sent:
+                            control_started = time.monotonic()
+                            wheel_pointer, wheel_target = browser_probe_css_resize(
+                                process,screenshot,deadline,int(resize[1]),int(resize[2]),browser_input)
+                            transcript.append(f"HOST_BROWSER_CONTROL phase=resize elapsed_ms={int((time.monotonic()-control_started)*1000)}\n")
+                            css_resize_sent = True
+                        if "BROWSER_WHEEL_WAIT" in probe_text and not wheel_down_sent:
+                            if wheel_pointer is None or wheel_target is None:
+                                raise RuntimeError("Wheel probe without proven client geometry")
+                            control_started = time.monotonic()
+                            shortcut_probe_move_mouse(process,wheel_pointer,*wheel_target,monitor=browser_input.mouse)
+                            # HMP dz has the opposite sign to v120: -1 is down.
+                            browser_input.mouse(process,"mouse_move 0 0 -1")
+                            transcript.append(f"HOST_BROWSER_CONTROL phase=down elapsed_ms={int((time.monotonic()-control_started)*1000)}\n")
+                            wheel_down_sent = True
+                        if "BROWSER_WHEEL_DOWN_OK" in probe_text and not wheel_up_sent and wheel_down_sent:
+                            control_started = time.monotonic()
+                            browser_input.mouse(process,"mouse_move 0 0 1")
+                            transcript.append(f"HOST_BROWSER_CONTROL phase=up elapsed_ms={int((time.monotonic()-control_started)*1000)}\n")
+                            wheel_up_sent = True
                         required = (
                             "DESKTOP_BROWSER_OK", "BROWSER_RENDER_OK",
                             "BROWSER_ADDRESS_REPLACE_OK",
@@ -1542,6 +1819,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                             "BROWSER_HTML5_FAULT_CONTAINED_OK",
                             "BROWSER_HTML5_TIMEOUT_CONTAINED_OK",
                             "BROWSER_HTML5_RECOVERY_OK",
+                            "BROWSER_CSS_PIXELS_OK", "BROWSER_CSS_RESIZE_OK",
+                            "BROWSER_WHEEL_DOWN_OK", "BROWSER_WHEEL_UP_OK",
                         )
                         if all(marker in probe_text for marker in required):
                             break
@@ -1711,13 +1990,17 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         tail = "".join(transcript)[-8000:].replace("\r", "")
         raise RuntimeError(f"DESKTOP_OK marker not observed; guest tail:\n{tail}")
     finally:
-        if browser_probe:
-            drain(output, transcript)
-            screenshot.with_suffix(".browser.log").write_text(
-                "".join(transcript), encoding="utf-8")
-        if dns_connection is not None:
-            dns_connection.close()
-        stop_process(process)
+        try:
+            if browser_probe:
+                drain(output, transcript)
+                screenshot.with_suffix(".browser.log").write_text(
+                    "".join(transcript), encoding="utf-8")
+        finally:
+            if browser_input is not None:
+                browser_input.peer.close()
+            if dns_connection is not None:
+                dns_connection.close()
+            stop_process(process)
 
 
 def main() -> int:

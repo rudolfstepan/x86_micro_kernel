@@ -12,16 +12,6 @@
 #define STRINGS (256U*1024U)
 #define DEPTH 128U
 #define WORK 262144U
-typedef struct attribute attribute;
-typedef struct node node;
-struct attribute { char *name, *value; attribute *next; };
-struct node {
-    uint32_t kind, ns, refs;
-    char *name, *text;
-    size_t length;
-    node *parent, *first, *last, *next, *previous, *form;
-    attribute *attributes;
-};
 static struct {
     node nodes[NODES];
     attribute attributes[ATTRS];
@@ -244,8 +234,9 @@ static int project(node *n, uint32_t depth) {
     return 0;
 }
 
-int browser_html5_parse(const uint8_t *input, size_t length, reist_html_document_t *document) {
-    if (!input || !document || !length || length>REIST_HTML_INPUT_CAPACITY) return -22;
+int browser_html5_tree(const uint8_t *input, size_t length, node **result) {
+    if (!input || !result || !length || length>REIST_HTML_INPUT_CAPACITY) return -22;
+    *result=NULL;
     memset(&tree,0,sizeof(tree));
     if (reist_libc_init(arena,sizeof(arena))) return -12;
     node *root=create(9);
@@ -268,6 +259,14 @@ int browser_html5_parse(const uint8_t *input, size_t length, reist_html_document
     if (parser) hubbub_parser_destroy(parser);
     if (error==HUBBUB_ENCODINGCHANGE) return -84;
     if (error!=HUBBUB_OK || tree.failed) return -28;
+    *result=root;
+    return 0;
+}
+int browser_html5_parse(const uint8_t *input, size_t length, reist_html_document_t *document) {
+    if (!document) return -22;
+    node *root;
+    int result=browser_html5_tree(input,length,&root);
+    if (result) return result;
     if (project(root,0)) return -28;
     return reist_html_document_parse(tree.projection,tree.projected,document);
 }

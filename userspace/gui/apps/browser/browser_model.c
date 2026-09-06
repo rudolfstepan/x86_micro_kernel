@@ -28,7 +28,7 @@ static int add_run(browser_layout_t *layout, uint32_t kind,
     if (kind == REIST_HTML_ELEMENT_TEXT && layout->run_count != 0U) {
         browser_layout_run_t *previous = &layout->runs[layout->run_count - 1U];
         if (previous->kind == kind && previous->style == style &&
-            previous->link_index == link_index && previous->y == y &&
+            previous->link_index == link_index && previous->y == (int32_t)y &&
             previous->x + (int32_t)previous->width == x &&
             previous->text_offset + previous->text_length == offset &&
             previous->text_length + length <
@@ -193,7 +193,7 @@ int browser_anchor_y(const reist_html_document_t *document,
         const char *candidate = document->anchors[run->text_offset].name;
         size_t n = 0U;
         while (n < used && candidate[n] == decoded[n]) ++n;
-        if (n == used && candidate[n] == '\0') { *y = run->y; return 0; }
+        if (n == used && candidate[n] == '\0') { *y = run->y>0 ? (uint32_t)run->y : 0; return 0; }
     }
     return -2;
 }

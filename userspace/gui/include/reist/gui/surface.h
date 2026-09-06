@@ -32,6 +32,9 @@ extern "C" {
 #define REIST_GUI_SURFACE_MAX_HEIGHT 768U
 #define REIST_GUI_SURFACE_MAX_BUFFER_BYTES (1024U * 768U * 4U)
 #define REIST_GUI_SURFACE_BUFFER_API_VERSION 1U
+/* Additive opt-in to the existing v6 envelope. Legacy clients get no scroll. */
+#define REIST_GUI_SURFACE_SCROLL_VERSION 1U
+#define REIST_GUI_SURFACE_SCROLL_STEP 120
 
 enum reist_gui_surface_buffer_format {
     REIST_GUI_SURFACE_BUFFER_FORMAT_XRGB8888 = 1U
@@ -61,6 +64,7 @@ enum reist_gui_surface_message_type {
     REIST_GUI_SURFACE_PAINT_HOVER_COMMIT,
     /* Version 6: catalog family in format and pixel height in stride_bytes. */
     REIST_GUI_SURFACE_PAINT_FONT_TEXT,
+    REIST_GUI_SURFACE_ENABLE_SCROLL,
     REIST_GUI_SURFACE_CONFIGURE = 0x80U,
     REIST_GUI_SURFACE_INPUT,
     REIST_GUI_SURFACE_CLOSE,
@@ -80,7 +84,8 @@ enum reist_gui_surface_role {
 enum reist_gui_surface_input_type {
     REIST_GUI_SURFACE_INPUT_POINTER_MOTION = 1U,
     REIST_GUI_SURFACE_INPUT_POINTER_BUTTON,
-    REIST_GUI_SURFACE_INPUT_KEYBOARD
+    REIST_GUI_SURFACE_INPUT_KEYBOARD,
+    REIST_GUI_SURFACE_INPUT_POINTER_SCROLL
 };
 
 enum reist_gui_surface_paint_layer {
@@ -136,6 +141,15 @@ typedef struct reist_gui_surface_input {
     uint32_t key;
     uint32_t reserved;
 } reist_gui_surface_input_t;
+
+/* Scroll extension v1 follows wl_pointer.axis_value120 units: delta_x/y
+ * are signed 1/120-detent values, positive right/down; x/y stay client-local.
+ * Other input fields must be zero. No heap or arithmetic on unchecked deltas. */
+static inline int reist_gui_surface_scroll_valid(const reist_gui_surface_input_t *event) {
+    return event && event->type==REIST_GUI_SURFACE_INPUT_POINTER_SCROLL &&
+        event->serial && (event->delta_x || event->delta_y) &&
+        !event->button && !event->pressed && !event->key && !event->reserved;
+}
 
 /** Configure serial and local size proposed by the compositor. */
 typedef struct reist_gui_surface_configure {

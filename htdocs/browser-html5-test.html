@@ -1,7 +1,16 @@
-<!doctype html><html><head><meta charset="utf-8"><title>HTML5 Recovery</title></head><body>
+<!doctype html><html><head><meta charset="utf-8"><title>HTML5 Recovery</title>
+<style>
+body { margin:0 }
+#css-proof { width:50%; margin:12px auto; padding:12px; border:3px solid #224488; background:#e0f0ff; font-size:20px; color:#008040 }
+#css-proof > span { color:#123456 !important; font-weight:bold; font-style:italic }
+.css-hidden { display:none }
+</style></head><body>
+<div id="css-proof"><span style="color:red">CSS Cascade</span></div>
+<p class="css-hidden">CSS_MUST_NOT_PAINT</p>
 <h1>HTML5 Recovery</h1><p>First paragraph<p>Second paragraph &copy; &euro;
 <p><b>bold <i>both</b> italic</i>
 <table>Foster text<tr><td>Table cell</table>
 <script>if (a < b) document.write("MUST_NOT_EXECUTE");</script>
 <p><a href="browser-test.html">Back to image and scroll test</a>
+<p style="height:900px">Mouse wheel: scroll down and back up.</p>
 </body></html>

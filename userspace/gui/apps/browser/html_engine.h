@@ -1,6 +1,19 @@
 #ifndef REIST_BROWSER_HTML_ENGINE_H
 #define REIST_BROWSER_HTML_ENGINE_H
 #include "reist/gui/html_document.h"
+/* Private worker-local retained tree. Never serialized as pointers. */
+typedef struct attribute attribute;
+typedef struct node node;
+struct attribute { char *name, *value; attribute *next; };
+struct node {
+    uint32_t kind, ns, refs;
+    char *name, *text;
+    size_t length;
+    node *parent, *first, *last, *next, *previous, *form;
+    attribute *attributes;
+    void *css_data, *css_style, *css_classes;
+};
+int browser_html5_tree(const uint8_t *input, size_t length, node **root);
 /* Worker-local HTML5 tree and semantic projection. Not a public DOM API.
  * Single call per process generation; no network, file or device authority.
  * Input 64 KiB, arena 4 MiB, 2048 cumulative nodes, 4096 attributes, string

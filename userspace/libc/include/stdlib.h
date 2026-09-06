@@ -6,6 +6,7 @@ extern "C" {
 #endif
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
+int abs(int value);
 void *malloc(size_t size);
 void *calloc(size_t count, size_t size);
 void *realloc(void *pointer, size_t size);

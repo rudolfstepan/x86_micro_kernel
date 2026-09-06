@@ -61,3 +61,24 @@ bytes are unchanged. The worker explicitly fixes UTF-8; it does not claim
 arbitrary charset conversion, all current HTML Living Standard features, CSS
 layout or JavaScript support. Tree ownership is an append-only quota-bound
 worker arena; slots are retained until process teardown, never reused in-place.
+
+## NetSurf CSS dependency (R3.10)
+
+`libcss.tar.gz` is the unmodified MIT LibCSS 0.9.2 release archive:
+https://download.netsurf-browser.org/libs/releases/libcss-0.9.2-src.tar.gz
+SHA-256: `2df215bbec34d51d60c1a04b01b2df4d5d18f510f1f3a7af4b80cddb5671154e`.
+The complete COPYING is installed in the SDK under
+`usr/share/licenses/libcss/COPYING`. The SDK exposes `libcss.a`, public headers
+and `libcss.pc` (LibParserUtils/LibWapcaplet dependencies); the browser chrome
+does not link LibCSS. The included C property generator runs only on the host.
+The extraction adapter uses the existing NDEBUG/stdint substitutions, includes
+the POSIX strings.h declaration missing from mq.c, and supplies NetSurf's
+buildsystem/Makefile.clang `_ALIGNED=__attribute__((aligned))` definition.
+Archived source bytes and parser/cascade algorithms are unchanged.
+
+The selected Zig installation's compiler_rt.zig supplies standard i386 compiler
+builtins in `libclang_rt.builtins-i386.a`, compiled freestanding for i386 without
+stack-check dependencies. Its license is installed at
+`usr/share/licenses/zig-compiler-rt/LICENSE`. This is toolchain support, not a
+new OS ABI or a TLS dependency. REIST's actual CSS normal-flow subset, limits
+and blocked resource loading are documented in BROWSER_ENGINE_PORT_PLAN.md.

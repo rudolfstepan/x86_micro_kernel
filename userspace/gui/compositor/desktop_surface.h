@@ -62,6 +62,7 @@ typedef struct desktop_surface_slot {
     uint32_t committed_buffer_generation;
     uint32_t window_index;
     uint32_t close_sent;
+    uint32_t scroll_enabled;
     char title[REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY];
     desktop_surface_paint_command_t pending_paint[
         REIST_GUI_SURFACE_MAX_PAINT_COMMANDS];

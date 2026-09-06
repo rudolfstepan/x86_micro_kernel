@@ -5,6 +5,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import threading
+from unittest import mock
 from pathlib import Path
 
 
@@ -127,6 +129,41 @@ class MyprV1BuilderContractTests(unittest.TestCase):
 
 @unittest.skipUnless(Path(ZIG).is_file(), "Zig is required for user programs")
 class UserProgramToolchainTests(unittest.TestCase):
+    def test_sdk_object_batch_is_parallel_ordered_and_fail_closed(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_user_sdk as sdk_builder
+        sources = tuple(Path(f"source-{i}.c") for i in range(8))
+        barrier = threading.Barrier(4)
+        lock = threading.Lock()
+        active = maximum = 0
+        calls = []
+        environment = {"ZIG_GLOBAL_CACHE_DIR": "shared", "ZIG_LOCAL_CACHE_DIR": "local"}
+        def compiler(command, env):
+            nonlocal active, maximum
+            self.assertIs(env, environment)
+            self.assertIn("-std=c11", command)
+            self.assertIn("-DNDEBUG", command)
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+                calls.append(command)
+            try:
+                barrier.wait(timeout=2)
+            finally:
+                with lock:
+                    active -= 1
+        with mock.patch.object(sdk_builder, "run", side_effect=compiler):
+            objects = sdk_builder.compile_objects(sources, ["zig", "cc"], Path("objects"),
+                                                   "lib", environment, ["-DNDEBUG"])
+        self.assertEqual(objects, [Path("objects") / f"lib-{i}.o" for i in range(8)])
+        self.assertEqual(len(calls), 8)
+        self.assertEqual(maximum, 4)
+        self.assertEqual(active, 0)
+        with mock.patch.object(sdk_builder, "run", side_effect=RuntimeError("compiler failed")):
+            with self.assertRaisesRegex(RuntimeError, "compiler failed"):
+                sdk_builder.compile_objects(sources, ["zig", "cc"], Path("objects"),
+                                            "lib", environment)
+
     def test_userspace_toolchain_uses_release_flags(self):
         source = (ROOT / "scripts/build_user_program.py").read_text(
             encoding="utf-8"
@@ -211,12 +248,14 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertFalse((include / "stdlib.h").exists())
             self.assertTrue((include / "reist/libc/stdlib.h").is_file())
             self.assertTrue((include / "libwapcaplet/libwapcaplet.h").is_file())
-            for archive in ("libreistc.a", "libwapcaplet.a", "libhubbub.a", "libparserutils.a"):
+            for archive in ("libreistc.a", "libwapcaplet.a", "libhubbub.a", "libparserutils.a", "libcss.a", "libclang_rt.builtins-i386.a"):
                 self.assertEqual((library / archive).read_bytes()[:8], b"!<arch>\n")
-            for dependency in ("libhubbub", "libparserutils"):
+            for dependency in ("libhubbub", "libparserutils", "libcss"):
                 self.assertTrue((sdk / "usr/share/licenses" / dependency / "COPYING").is_file())
                 self.assertTrue((library / "pkgconfig" / (dependency + ".pc")).is_file())
             self.assertTrue((include / "hubbub/parser.h").is_file())
+            self.assertTrue((include / "libcss/select.h").is_file())
+            self.assertTrue((sdk / "usr/share/licenses/zig-compiler-rt/LICENSE").is_file())
             self.assertTrue((include / "parserutils/input/inputstream.h").is_file())
             self.assertTrue((sdk / "usr/share/licenses/libwapcaplet/COPYING").is_file())
             external = temporary / "external.c"

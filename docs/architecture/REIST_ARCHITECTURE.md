@@ -820,6 +820,18 @@ belassen die alte Seite. Der Callback-Baum wird semantisch projiziert; dies
 ist weder ein vollständiges DOM/CSS-Layout noch eine JavaScript-Engine.
 Vertrag, Quoten und bestehende Dateiadaptergrenzen: BROWSER_ENGINE_PORT_PLAN.md.
 
+R3.10 ergaenzt abgenommen die echte LibCSS-0.9.2-Kaskade und ein dokumentiertes
+CSS-2.1-Normalfluss-Subset im selben isolierten HTMLWORK-Lebenszyklus.
+Bulk-IPC ersetzt den CSS-Dateiaustausch; die gesamte private Szene wird nach
+erfolgreichem Reap und vor Pixelpublikation auf Generation, Geometrie, Text-
+und Ressourcenbereiche geprueft. Workerfehler behalten die letzte gueltige
+Seite. Native Chrome und Scrollbar bleiben bestehen; eine additive opt-in
+Surface-Erweiterung liefert Mausradwerte in v120-Einheiten bei unveraenderter
+Nachrichtengroesse. QEMU beweist CSS-Pixel, Resize, beide Rad-Richtungen und
+Fault-/Timeout-Recovery bis zum sauberen Close. Externe Stylesheets/Imports
+folgen als eigener R3.11-Ressourcenvertrag; Formulare und JavaScript sind
+noch nicht implementiert. Kein neuer Kernelparser oder neue Geraeteautoritaet.
+
 R3.8 ergänzt als Engine-Voraussetzung eine opt-in Ring-3-C-Speicher-/Byte-Laufzeit
 und die echte NetSurf-Bibliothek LibWapcaplet. Maximal 4 MiB caller-owned Arena
 und 4096 lebende Objekte je Prozess; keine neue Kernel-Allocation oder versteckte

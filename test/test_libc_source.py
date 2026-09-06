@@ -45,7 +45,7 @@ class LibcTests(unittest.TestCase):
             # Prefix all implemented CRT symbols in host objects. The Windows
             # loader and host stdio keep their own allocation domain.
             symbols = ("malloc calloc realloc free memcpy memmove memset memcmp "
-                       "memchr strlen strcmp strncmp strchr strrchr strncpy bsearch tolower strncasecmp").split()
+                       "memchr strlen strcmp strncmp strchr strrchr strncpy bsearch tolower strncasecmp strdup abs").split()
             executable = directory / "libc-host.exe"
             env = os.environ.copy()
             env["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/libc-host/zig-global")

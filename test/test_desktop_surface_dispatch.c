@@ -23,6 +23,36 @@ int main(void) {
     request.serial = response.serial;
     assert(desktop_surface_dispatch_message(
         &manager, owner, &request, &response) == 0);
+    /* Legacy clients must never receive an unnegotiated new input type. */
+    reist_gui_surface_input_t scroll={.type=REIST_GUI_SURFACE_INPUT_POINTER_SCROLL,
+        .serial=1,.x=10,.y=10,.delta_y=120}, delivered;
+    assert(desktop_surface_input_enqueue(&manager,owner,parent,&scroll)<0);
+    request.type=REIST_GUI_SURFACE_ENABLE_SCROLL;
+    request.flags=0; request.serial=REIST_GUI_SURFACE_SCROLL_VERSION+1;
+    assert(desktop_surface_dispatch_message(&manager,owner,&request,&response)<0);
+    request.serial=REIST_GUI_SURFACE_SCROLL_VERSION;
+    reist_gui_surface_owner_t stale=owner; ++stale.process_generation;
+    assert(desktop_surface_dispatch_message(&manager,stale,&request,&response)<0);
+    assert(desktop_surface_dispatch_message(&manager,owner,&request,&response)==0);
+    assert(response.serial==REIST_GUI_SURFACE_SCROLL_VERSION);
+    /* No coalescing of opposite directions or wheel/button edges. */
+    for (unsigned i=0;i<REIST_GUI_SURFACE_MAX_PENDING_EVENTS;++i) {
+        scroll.serial=i+1; scroll.delta_y=(i&1) ? -120 : 120;
+        assert(!desktop_surface_input_enqueue(&manager,owner,parent,&scroll));
+    }
+    assert(desktop_surface_input_enqueue(&manager,owner,parent,&scroll)==DESKTOP_SURFACE_ECAPACITY);
+    for (unsigned i=0;i<REIST_GUI_SURFACE_MAX_PENDING_EVENTS;++i) {
+        assert(!desktop_surface_input_dequeue(&manager,owner,parent,&delivered));
+        assert(delivered.serial==i+1 && delivered.delta_y==((i&1) ? -120 : 120));
+    }
+    scroll.key=1; assert(desktop_surface_input_enqueue(&manager,owner,parent,&scroll)<0);
+    scroll.key=0; scroll.delta_y=0;
+    assert(desktop_surface_input_enqueue(&manager,owner,parent,&scroll)<0);
+    scroll.delta_y=INT32_MIN; scroll.x=-1;
+    assert(desktop_surface_input_enqueue(&manager,owner,parent,&scroll)<0);
+    scroll.x=10; assert(!desktop_surface_input_enqueue(&manager,owner,parent,&scroll));
+    assert(!desktop_surface_input_dequeue(&manager,owner,parent,&delivered));
+    assert(delivered.delta_y==INT32_MIN);
     request = (reist_gui_surface_message_t){
         .protocol_version = REIST_GUI_SURFACE_PROTOCOL_VERSION,
         .message_size = sizeof(request),

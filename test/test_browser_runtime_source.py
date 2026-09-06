@@ -1,8 +1,13 @@
 import ast
 import os
+import re
 import types
 import tempfile
 import unittest
+import inspect
+import json
+import sys
+from unittest import mock
 from pathlib import Path
 from test_gui_browser_source import run_host
 
@@ -23,24 +28,47 @@ TRANSPORT_HOST = r'''
 #undef main
 
 static x86os_process_info_t process;
-static unsigned exists, generation, identity_exit, kill_exit, waits, kills, clock_ms;
+static unsigned exists, generation, identity_exit, kill_exit, waits, kills, clock_ms, clock_reads;
 static const char *file_bytes = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<title>Downloaded</title><p>Working page</p>";
 static size_t file_length, file_offset;
 static unsigned opens, closes;
+static unsigned bulk_calls;
 static unsigned spawns, unlinks, image_decodes;
 static char spawned_url[BROWSER_URL_CAPACITY];
 static browser_workspace_t host_workspace;
 static browser_html_reply_t worker_reply;
-static uint8_t worker_wire[sizeof(worker_reply)];
-static unsigned request_written;
+static uint8_t worker_wire[BROWSER_CSS_WIRE_CAPACITY];
+static unsigned request_written, worker_length, worker_offset, endpoint_live;
+static browser_scene_t worker_scene;
+int x86os_ipc_create(x86os_ipc_handle_t *h) { assert(!endpoint_live); *h=42; endpoint_live=1; request_written=worker_length=worker_offset=0; return 0; }
+int x86os_ipc_close(x86os_ipc_handle_t h) { assert(h==42 && endpoint_live); endpoint_live=0; return 0; }
+int x86os_ipc_delegate(x86os_ipc_handle_t h,int pid,uint32_t rights) { assert(h==42 && endpoint_live && pid==81 && rights==3);return 0; }
+int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t h,const x86os_ipc_bulk_message_t *m,uint32_t timeout) {
+    assert(h==42 && endpoint_live && !timeout && m->length>16);
+    browser_css_packet_t p; memcpy(&p,m->payload,sizeof(p));
+    assert(p.offset==request_written && p.total==css_input.request.header.size);
+    assert(!memcmp(p.bytes,(uint8_t *)&css_input+request_written,m->length-16));
+    request_written+=m->length-16; return 0;
+}
+int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t h,x86os_ipc_bulk_message_t *m,uint32_t timeout) {
+    assert(h==42 && endpoint_live && !timeout);
+    /* A reaped peer's last queued packet remains readable, then the real
+     * kernel reports EPIPE, not EAGAIN. Never confuse stream EOF with OOM. */
+    if(worker_offset==worker_length) return worker_length ? -32 : -11;
+    uint32_t n=worker_length-worker_offset; if(n>BROWSER_CSS_PACKET_DATA)n=BROWSER_CSS_PACKET_DATA;
+    browser_css_packet_t p={BROWSER_CSS_PACKET_MAGIC,css_input.request.header.request,worker_offset,worker_length,{0}};
+    memcpy(p.bytes,worker_wire+worker_offset,n); memcpy(m->payload,&p,16+n); m->length=16+n; worker_offset+=n;
+    if (worker_offset==worker_length) { process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=0; }
+    return 0;
+}
 
 int x86os_getpid(void) { return 77; }
-uint32_t x86os_uptime_ms(void) { return clock_ms; }
+uint32_t x86os_uptime_ms(void) { ++clock_reads; return clock_ms; }
 int x86os_unlink(const char *path) { assert(path[0] && !exists); ++unlinks; return 0; }
 int x86os_spawnv(const char *path, int argc, const char *const *argv) {
     if (!strcmp(path,"/usr/bin/htmlwork.prg")) {
-        assert(argc==3 && !exists && request_written>sizeof(browser_html_header_t));
-        assert(strstr(argv[1],".html-in") && strstr(argv[2],".html-out"));
+        assert(argc==3 && !exists && endpoint_live && !request_written);
+        assert(!strcmp(argv[1],"--ipc") && !strcmp(argv[2],"42"));
         exists=1; ++spawns; return process.pid;
     }
     assert(!strcmp(path, "/usr/bin/curl.prg") && argc == 7);
@@ -90,16 +118,12 @@ int reist_vfs_file_fstat(reist_vfs_file_handle_t handle, x86os_file_info_t *info
 }
 int reist_vfs_file_read_bulk(reist_vfs_file_handle_t handle, void *data, size_t capacity) {
     assert(handle == 1);
+    assert(capacity<=131072); ++bulk_calls;
     if (capacity > file_length - file_offset) capacity = file_length - file_offset;
     memcpy(data, file_bytes + file_offset, capacity); file_offset += capacity;
     return (int)capacity;
 }
 int reist_vfs_file_close(reist_vfs_file_handle_t handle) { assert(handle == 1); ++closes; return 0; }
-int x86os_create(const char *path) { assert(strstr(path,".html-in") && !exists); request_written=0; return 2; }
-int x86os_write(int fd, const void *bytes, size_t length) {
-    assert(fd==2 && bytes && length<=4096); request_written+=(unsigned)length; return (int)length;
-}
-int x86os_close(int fd) { assert(fd==2); return 0; }
 int browser_image_decode(const uint8_t *bytes, size_t length, uint32_t *pixels,
                          size_t capacity, reist_image_info_t *info) {
     ++image_decodes;
@@ -113,6 +137,7 @@ static browser_state_t fresh(void) {
     exists = waits = kills = identity_exit = kill_exit = 0; generation = 23;
     spawns = unlinks = image_decodes = 0;
     clock_ms = 100; state.loaded = 1; state.image_next = BROWSER_IMAGE_CACHE_COUNT;
+    endpoint_live=0; memset(scenes,0,sizeof(scenes));
     copy_text(state.active_url, sizeof(state.active_url), "/htdocs/index.html");
     make_temporary_path(&state); return state;
 }
@@ -138,27 +163,67 @@ static void complete(browser_state_t *state, reist_gui_surface_client_t *client,
  * worker I/O are exercised separately in test_html_engine.py. */
 static void complete_html(browser_state_t *state, reist_gui_surface_client_t *client, unsigned corrupt) {
     assert(state->parse_pending && !exists);
+    unsigned old_unlinks=unlinks;
+    if (!client->width) { client->width=800; client->height=600; }
     uint32_t length=state->parse_pending;
     process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
     assert(exists && state->job_kind==3 && state->child_generation==generation && !state->parse_pending);
+    for(unsigned i=0;i<40 && state->css_sent<css_input.request.header.size;++i) assert(!service_css_ipc(state));
+    assert(request_written==css_input.request.header.size);
     memset(&worker_reply,0,sizeof(worker_reply)); worker_reply.header=state->html_request;
     worker_reply.header.size=sizeof(worker_reply); worker_reply.header.child_pid=81;
     worker_reply.header.child_generation=generation;
     assert(!reist_html_document_parse(document_bytes,length,&worker_reply.document));
+    static browser_layout_t layout;
+    assert(!browser_build_layout(&worker_reply.document,client->width,NULL,&layout));
+    memset(&worker_scene,0,sizeof(worker_scene)); worker_scene.version=1;
+    worker_scene.width=css_input.request.width; worker_scene.height=css_input.request.height;
+    worker_scene.total_height=layout.total_height;
+    for(unsigned i=0;i<layout.run_count;++i) {
+        browser_layout_run_t *r=&layout.runs[i];
+        if(r->kind!=1 && r->kind!=5 && r->kind!=6) continue;
+        worker_scene.runs[worker_scene.count++]=(browser_scene_run_t){r->kind,r->text_offset,r->text_length,r->link_index,
+            r->x,r->y,r->width,r->height,0xff202020,r->style&67};
+    }
     if (corrupt) ++worker_reply.header.request;
-    const char *saved=file_bytes; size_t saved_length=file_length;
-    int packed=browser_html_pack(&worker_reply,worker_wire,sizeof(worker_wire)); assert(packed>0);
-    file_bytes=(const char *)worker_wire; file_length=(size_t)packed;
+    int packed=browser_css_pack(&worker_reply,&worker_scene,worker_wire,sizeof(worker_wire)); assert(packed>0);
+    worker_length=(unsigned)packed; worker_offset=0;
+    for(unsigned i=0;i<40 && state->css_received<worker_length;++i) assert(!service_css_ipc(state));
     clock_ms+=10; process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=0;
     service_loads(state,client);
     assert(!exists && !state->child_pid && !state->exit_requested && opens==closes);
-    file_bytes=saved; file_length=saved_length;
+    assert(!endpoint_live);
+    assert(unlinks==old_unlinks); /* CSS IPC never creates temporary files. */
 }
 static void follow(browser_state_t *state, reist_gui_surface_client_t *client) {
     assert(state->follow_redirect && !exists);
     unsigned before=unlinks;
     process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
-    assert(exists && state->child_pid && !state->follow_redirect && unlinks==before+4);
+    assert(exists && state->child_pid && !state->follow_redirect && unlinks==before);
+}
+static void wheel_cases(void) {
+    browser_state_t state=fresh();
+    reist_gui_surface_client_t client={.width=800,.height=600};
+    layouts[state.active].total_height=4000;
+    state.address_focused=1; state.redraw=0; state.armed_link=0; state.hit_count=3;
+    reist_gui_surface_input_t input={.type=REIST_GUI_SURFACE_INPUT_POINTER_SCROLL,
+        .serial=1,.x=20,.y=BROWSER_CONTENT_TOP+20,.delta_y=120};
+    handle_pointer(&state,&client,&input);
+    assert(state.scroll_y==48 && state.redraw && state.address_focused && !state.hit_count);
+    assert(state.armed_link==UINT32_MAX && !spawns && !unlinks && !state.pending);
+    input.delta_y=-120; handle_pointer(&state,&client,&input); assert(!state.scroll_y);
+    state.redraw=0; handle_pointer(&state,&client,&input); assert(!state.scroll_y && !state.redraw);
+    input.delta_y=1;
+    for(unsigned i=0;i<120;++i) handle_pointer(&state,&client,&input);
+    assert(state.scroll_y==48);
+    input.delta_y=INT32_MAX; handle_pointer(&state,&client,&input);
+    assert(state.scroll_y==maximum_scroll(&state,&client));
+    input.delta_y=INT32_MIN; handle_pointer(&state,&client,&input); assert(!state.scroll_y);
+    input.delta_y=120; input.y=20; handle_pointer(&state,&client,&input); assert(!state.scroll_y);
+    input.y=BROWSER_CONTENT_TOP+20; state.scrollbar.state.captured=1;
+    handle_pointer(&state,&client,&input); assert(!state.scroll_y);
+    state.scrollbar.state.captured=0; input.pressed=1;
+    handle_pointer(&state,&client,&input); assert(!state.scroll_y);
 }
 static void redirect_cases(void) {
     reist_gui_surface_client_t client={0}; client.width=800; client.height=600;
@@ -171,7 +236,7 @@ static void redirect_cases(void) {
     state.address_focused=1; strcpy(state.address,"https://typed.test/");
     complete(&state,&client,"HTTP/1.1 301 Moved\r\nLocation: /new/index.html\r\nContent-Length: 0\r\n\r\n");
     assert(!state.active && !strcmp(state.active_url,"/htdocs/index.html"));
-    assert(spawns==1 && waits==1 && unlinks==8 && state.redirect_count==1);
+    assert(spawns==1 && waits==1 && unlinks==2 && state.redirect_count==1);
     assert(!strcmp(state.job_url,"https://example.test/new/index.html#section"));
     assert(!strcmp(state.address,"https://typed.test/"));
     follow(&state,&client);
@@ -228,6 +293,38 @@ static void redirect_cases(void) {
 }
 int main(int argc, char **argv) {
     workspace = &host_workspace; file_length = strlen(file_bytes);
+    /* Disabled counters add no clock syscalls. Enabled counters remain bounded
+     * across uptime wrap and saturated totals, without changing any deadline. */
+    clock_reads=0; assert(!timing_start()); timing_end(TIME_READ,0);
+    assert(!clock_reads && !timings[TIME_READ].calls);
+    timing_enabled=1; clock_ms=UINT32_MAX-4; uint32_t started=timing_start();
+    clock_ms=3; timing_end(TIME_READ,started);
+    assert(timings[TIME_READ].total==8 && timings[TIME_READ].maximum==8);
+    timings[TIME_READ].total=INT32_MAX-1; clock_ms=5; timing_end(TIME_READ,3);
+    assert(timings[TIME_READ].total==INT32_MAX && timings[TIME_READ].calls==2);
+    timing_end(TIME_COUNT,0); timing_enabled=0; memset(timings,0,sizeof(timings));
+    static const char bulk_file[214860]={1,2,3};
+    const char *saved_file=file_bytes; size_t saved_length=file_length;
+    file_bytes=bulk_file; file_length=sizeof(bulk_file); uint32_t bulk_length=0;
+    assert(!read_file("/large.gif",image_bytes,sizeof(image_bytes),&bulk_length));
+    assert(bulk_calls==2 && bulk_length==sizeof(bulk_file) && !memcmp(image_bytes,bulk_file,bulk_length));
+    file_bytes=saved_file; file_length=saved_length;
+    browser_state_t clean=fresh();
+    cleanup_fetch_files(&clean); cleanup_fetch_files(&clean);
+    assert(!unlinks); /* No speculative VFS work at startup or after cleanup. */
+    wheel_cases();
+    static uint32_t font_data[13];
+    font_data[0]=REIST_GUI_FONT_PSF2_MAGIC; font_data[2]=32; font_data[3]=1; font_data[4]=1;
+    font_data[5]=16; font_data[6]=16; font_data[7]=8;
+    ((uint8_t *)font_data)[48]='?'; ((uint8_t *)font_data)[49]=255;
+    assert(!reist_gui_font_open_psf2(&workspace->font,(uint8_t *)font_data,50,workspace->font_map,262144,'?'));
+    /* EOF before the declared end still fails closed; only a complete stream
+     * stops receiving. Do not broadly ignore EPIPE from an incomplete child. */
+    browser_state_t truncated=fresh(); truncated.css_endpoint=42; endpoint_live=1;
+    truncated.css_sent=css_input.request.header.size;
+    worker_offset=worker_length=32; truncated.css_total=32; truncated.css_received=31;
+    assert(service_css_ipc(&truncated)==-84 && truncated.css_received==31);
+    endpoint_live=0;
     failed_load(0, 0, 1); failed_load(1, 0, 1); failed_load(0, 1, 1);
     failed_load(0, 0, 2); failed_load(1, 0, 2);
     for (unsigned race = 0; race < 2; ++race) {
@@ -265,6 +362,48 @@ int main(int argc, char **argv) {
         assert(state.exit_requested && !kills && !waits);
     }
     redirect_cases();
+    /* Exact document/URL/viewport reuse must not start another parser. Reload
+     * still refreshes images; changed bytes, origin, geometry or fault mode do. */
+    state=fresh(); client.width=800; client.height=600;
+    memcpy(document_bytes,"<p>safe</p>",11);
+    assert(!publish_document_bytes(&state,&client,"/cache.html",11));
+    complete_html(&state,&client,0);
+    unsigned cached_spawns=spawns;
+    assert(!publish_document_bytes(&state,&client,"/cache.html",11));
+    assert(!state.parse_pending && spawns==cached_spawns && !state.child_pid);
+    /* A real fragment navigation then reload must refresh the file, not start
+     * another identical CSS generation just because active_url has an anchor. */
+    assert(!navigate(&state,&client,"#details"));
+    assert(!strcmp(state.active_url,"/cache.html#details"));
+    file_bytes="<p>safe</p>"; file_length=11;
+    unsigned cached_opens=opens;
+    handle_keyboard(&state,&client,'r'); assert(state.pending);
+    service_loads(&state,&client);
+    assert(opens==cached_opens+1 && opens==closes);
+    assert(!state.pending && !state.parse_pending && !state.reflow_pending && spawns==cached_spawns);
+    assert(!strcmp(state.active_url,"/cache.html") && !strcmp(state.address,"/cache.html"));
+    assert(!publish_document_bytes(&state,&client,"/cache.html#another",11));
+    assert(!state.parse_pending && !strcmp(state.active_url,"/cache.html#another"));
+    assert(!publish_document_bytes(&state,&client,"/cache.html?changed=1",11) && state.parse_pending);
+    state.parse_pending=0;
+    assert(!publish_document_bytes(&state,&client,"https://other.test/cache.html",11) && state.parse_pending);
+    state.parse_pending=0;
+    assert(!publish_document_bytes(&state,&client,"/cache.html",11) && !state.parse_pending);
+    state.parse_mode=1;
+    assert(!publish_document_bytes(&state,&client,"/cache.html",11) && state.parse_pending);
+    state.parse_mode=state.parse_pending=0;
+    assert(!publish_document_bytes(&state,&client,"/other.html",11) && state.parse_pending);
+    state.parse_pending=0; ++client.width;
+    assert(!publish_document_bytes(&state,&client,"/cache.html",11) && state.parse_pending);
+    state.parse_pending=0; --client.width; document_bytes[3]='S';
+    assert(!publish_document_bytes(&state,&client,"/cache.html",11) && state.parse_pending);
+    state.parse_pending=0; document_bytes[3]='s';
+    documents[state.active].images[0].width=documents[state.active].images[0].height=0;
+    memcpy(image_bytes,"PNG",3); state.reflow_pending=0;
+    state.scene_image_sizes[0][0]=state.scene_image_sizes[0][1]=1;
+    assert(!load_image_bytes(&state,&client,0,3) && !state.reflow_pending);
+    state.scene_image_sizes[0][0]=0;
+    assert(!load_image_bytes(&state,&client,0,3) && state.reflow_pending);
     for (unsigned failure=0; failure<4; ++failure) {
         state=fresh(); client.width=800; client.height=600;
         memcpy(document_bytes,"<p>safe</p>",11);
@@ -318,6 +457,7 @@ static desktop_surface_manager_t manager;
 static const reist_gui_surface_owner_t owner = {77, 23};
 static unsigned live[2], generations[2], uploads, paint_failures;
 static const uint32_t image_color = 0x00AB1234U;
+uint32_t x86os_uptime_ms(void) { return 0; }
 void x86os_puts(const char *text) { fputs(text, stderr); }
 void x86os_print_number(int number) { fprintf(stderr, "%d", number); }
 int x86os_display_surface_buffer_create(uint32_t w, uint32_t h, const uint32_t *pixels,
@@ -444,8 +584,300 @@ int main(int argc, char **argv) {
 '''
 
 
+RASTER_CACHE_HOST = r'''
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "userspace/gui/apps/browser/browser_scene.h"
+static unsigned raster_calls;
+static int counted_raster(const reist_gui_font_t *f, uint32_t g, uint32_t w, uint32_t h,
+    uint32_t fg, uint32_t bg, uint32_t *p, uint32_t stride, size_t capacity) {
+    ++raster_calls;
+    return reist_gui_font_raster_scaled_xrgb(f,g,w,h,fg,bg,p,stride,capacity);
+}
+#define reist_gui_font_raster_scaled_xrgb counted_raster
+#include "userspace/gui/apps/browser/browser_scene.c"
+#undef reist_gui_font_raster_scaled_xrgb
+static reist_html_document_t doc;
+static browser_scene_t scene;
+static uint32_t pixels[320*256], first[320*256];
+int main(void) {
+    /* Valid PSF metadata and a real mapping/raster; no fake glyph generator. */
+    uint8_t bits[16]; memset(bits,0xa5,sizeof(bits));
+    reist_gui_font_mapping_t mapping={65,0};
+    reist_gui_font_t font={.version=REIST_GUI_FONT_API_VERSION,.struct_size=sizeof(font),
+        .data=bits,.data_size=sizeof(bits),.glyph_count=1,.width=8,.height=16,
+        .row_bytes=1,.bytes_per_glyph=16,.mappings=&mapping,.mapping_capacity=1};
+    const char html[]="<p>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</p>";
+    assert(!reist_html_document_parse((const uint8_t *)html,sizeof(html)-1,&doc));
+    assert(doc.text_length>=32);
+    scene=(browser_scene_t){.version=1,.width=320,.height=256,.total_height=256,.count=8};
+    for (unsigned i=0;i<8;++i) scene.runs[i]=(browser_scene_run_t){
+        .kind=1,.length=32,.link=UINT32_MAX,.y=(int32_t)i*24,.width=256,.height=16,.color=0xff123456};
+    assert(!browser_scene_raster(&doc,&scene,&font,NULL,0,pixels,320,256,0,256));
+    printf("GLYPH_RASTER_CALLS actual=%u repeated=256\n",raster_calls);
+    assert(raster_calls==1); /* All 256 equal glyph/size pairs share preparation. */
+    for (unsigned y=0;y<256;++y) for (unsigned x=0;x<320;++x) {
+        unsigned row=y/24, gy=y%24;
+        uint32_t expected=row<8 && gy<16 && x<256 && (0xa5U&(0x80U>>(x%8))) ? 0x123456 : 0;
+        assert(pixels[y*320+x]==expected);
+    }
+    memcpy(first,pixels,sizeof(first));
+    memset(pixels,0,sizeof(pixels)); raster_calls=0;
+    assert(!browser_scene_raster(&doc,&scene,&font,NULL,0,pixels,320,256,0,256));
+    assert(raster_calls==1 && !memcmp(first,pixels,sizeof(first)));
+    /* A new invocation must not reuse a prior font's bytes or success. */
+    memset(bits,0,sizeof(bits)); memset(pixels,0,sizeof(pixels));
+    assert(!browser_scene_raster(&doc,&scene,&font,NULL,0,pixels,320,256,0,256));
+    for(unsigned i=0;i<320*256;++i) assert(!pixels[i]);
+    font.data_size=1;
+    assert(browser_scene_raster(&doc,&scene,&font,NULL,0,pixels,320,256,0,256)==-84);
+    font.data_size=sizeof(bits); memset(bits,0xff,sizeof(bits));
+    scene.runs[1].height=20; scene.runs[1].width=320;
+    raster_calls=0;
+    assert(!browser_scene_raster(&doc,&scene,&font,NULL,13,pixels,320,256,0,256));
+    assert(raster_calls==2); /* Size is part of the key; clipped runs are safe. */
+    puts("BROWSER_GLYPH_CACHE_HOST_OK");
+    return 0;
+}
+'''
+
+
 class BrowserRuntimeTests(unittest.TestCase):
-    def run_browser_probe_transcript(self, chunks):
+    @staticmethod
+    def qmp_socket(*messages):
+        peer = mock.Mock()
+        peer.recv.side_effect = [message if isinstance(message, bytes) else
+                                json.dumps(message).encode() + b"\r\n"
+                                for message in messages] + [b""]
+        return peer
+
+    def test_browser_qmp_input_is_acknowledged_without_mux_sleeps(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        peer = self.qmp_socket(b'{"QMP":', b'{"version":{},"capabilities":[]}}\r\n',
+                               {"return": {}, "id": 1}, {"event": "RESUME"},
+                               *({"return": {}, "id": i} for i in range(2, 7)))
+        with mock.patch.object(desktop.time, "monotonic", return_value=0), \
+             mock.patch.object(desktop.time, "sleep", side_effect=AssertionError("fixed mux sleep")):
+            monitor = desktop.BrowserInputMonitor(peer, 30)
+            monitor.negotiate()
+            for command in ("mouse_move -64 -32", "mouse_button 1", "mouse_button 0",
+                            "mouse_move 0 0 -1", "mouse_move 0 0 1"):
+                monitor.mouse(None, command)
+        requests = [json.loads(call.args[0]) for call in peer.sendall.call_args_list]
+        self.assertEqual(requests[0]["execute"], "qmp_capabilities")
+        self.assertEqual([r["id"] for r in requests], list(range(1, 7)))
+        self.assertTrue(all(r["execute"] == "input-send-event" for r in requests[1:]))
+        self.assertEqual(requests[1]["arguments"]["events"], [
+            {"type": "rel", "data": {"axis": "x", "value": -64}},
+            {"type": "rel", "data": {"axis": "y", "value": -32}}])
+        for index, button, down in ((2, "left", True), (3, "left", False),
+                                     (4, "wheel-down", True), (5, "wheel-up", True)):
+            events = requests[index]["arguments"]["events"]
+            self.assertEqual(events[0], {"type": "btn", "data": {"button": button, "down": down}})
+            if index >= 4:
+                self.assertEqual(events[1], {"type": "btn", "data": {"button": button, "down": False}})
+        self.assertTrue(all(0 < c.args[0] <= 5 for c in peer.settimeout.call_args_list))
+
+    def test_browser_qmp_rejects_bad_replies_and_bounds_work(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        cases = [[b""], [b"invalid\r\n"], [[1]], [{"return": {}, "id": 99}],
+                 [{"return": {}, "id": True}], [{"error": {"class": "GenericError"}, "id": 1}],
+                 [b"x" * 65536], [{"event": "RESUME"}] * 33]
+        for replies in cases:
+            with self.subTest(replies=str(replies)[:80]), \
+                 mock.patch.object(desktop.time, "monotonic", return_value=0):
+                peer = self.qmp_socket(*replies)
+                monitor = desktop.BrowserInputMonitor(peer, 30)
+                with self.assertRaises(RuntimeError):
+                    monitor.execute("qmp_capabilities", {})
+                self.assertLessEqual(peer.recv.call_count, 32)
+        peer = self.qmp_socket()
+        monitor = desktop.BrowserInputMonitor(peer, 0)
+        with self.assertRaises(TimeoutError):
+            monitor.mouse(None, "mouse_button 1")
+        peer.sendall.assert_not_called()
+        for command in ("quit", "mouse_move 121 0", "mouse_move 0 0 2", "mouse_button 7",
+                        "mouse_move 1 2\nquit"):
+            with self.subTest(command=command), self.assertRaises(RuntimeError):
+                monitor.mouse(None, command)
+        peer.sendall.assert_not_called()
+
+    def test_browser_qmp_failed_admission_closes_peer(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        for greeting in ({"not-qmp": {}}, b"", b"{bad}\r\n"):
+            peer = self.qmp_socket(greeting)
+            listener = mock.Mock()
+            listener.accept.return_value = (peer, ("127.0.0.1", 12345))
+            with mock.patch.object(desktop.time, "monotonic", return_value=0), \
+                 self.assertRaises(RuntimeError):
+                desktop.BrowserInputMonitor.accept(listener, 30)
+            peer.close.assert_called_once_with()
+
+    def test_browser_qmp_failure_reaps_guest_and_listener(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        child = mock.Mock()
+        child.poll.return_value = None
+        peer = self.qmp_socket(b"")
+        listener = mock.Mock()
+        listener.accept.return_value = (peer, ("127.0.0.1", 12345))
+        arguments = {name: False for name in inspect.signature(desktop.run).parameters}
+        with tempfile.TemporaryDirectory() as directory:
+            arguments.update(qemu=Path("qemu.exe"), image=Path("disk.img"),
+                             screenshot=Path(directory) / "browser.ppm", timeout=30,
+                             metrics_log=None, smp=1, browser_probe=True, vmware_vga=True)
+            with mock.patch.object(desktop.subprocess, "Popen", return_value=child) as spawn, \
+                 mock.patch.object(desktop, "open_injection_listener", return_value=(listener, 4321)), \
+                 mock.patch.object(desktop, "configure_qemu_host_timers", return_value=False), \
+                 mock.patch.object(desktop.threading, "Thread"):
+                with self.assertRaisesRegex(RuntimeError, "peer closed"):
+                    desktop.run(**arguments)
+            self.assertIn("tcp:127.0.0.1:4321,server=off,nodelay=on", spawn.call_args.args[0])
+            self.assertTrue((Path(directory) / "browser.browser.log").exists())
+        listener.close.assert_called_once_with()
+        peer.close.assert_called_once_with()
+        child.terminate.assert_called_once_with()
+        child.wait.assert_called_once_with(timeout=3)
+
+    def test_repeated_glyph_preparation_is_bounded_and_frame_local(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "browser-glyph-cache-host.c"
+            source.write_text(RASTER_CACHE_HOST, encoding="utf-8")
+            run_host([str(source), "userspace/gui/apps/browser/html_protocol.c",
+                      "userspace/gui/lib/html_document.c", "userspace/gui/lib/font.c"],
+                     flags=["-I.", "-Iuserspace/sdk/include"])
+
+    def test_wheel_probe_targets_nearest_document_point_after_real_resize(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        width, height = 1024, 768
+        client_width, client_height = 800, 600
+        origin = (100, 50)
+        scene_width = client_width - 18
+        box_x = (scene_width - (scene_width // 2 + 30)) // 2
+        pixels = bytearray(b"\xff" * (width * height * 3))
+        at = ((origin[1] + 76 + 12 + 3) * width + origin[0] + box_x + 3) * 3
+        pixels[at:at+9] = b"\xe0\xf0\xff\x12\x34\x56\x22\x44\x88"
+        commands = []
+        observed = []
+        input_monitor = mock.Mock(side_effect=lambda _, c: commands.append(c))
+        input_monitor.mouse.side_effect = lambda _, c: commands.append(c)
+        def observe(_, path, point, stage):
+            if stage == "home":
+                self.assertEqual(point, (0, 0))
+                self.assertTrue(all(c == "mouse_move -120 -120" for c in commands))
+            else:
+                self.assertEqual(stage, "grip")
+                self.assertEqual(point, (origin[0] + client_width - 1, origin[1] + client_height - 1))
+                self.assertNotIn("mouse_button 1", commands)
+            observed.append(stage)
+        with mock.patch.object(desktop, "capture_screenshot"), \
+             mock.patch.object(desktop, "browser_probe_wait_pointer", side_effect=observe, create=True), \
+             mock.patch.object(desktop, "read_ppm", return_value=(width, height, pixels)), \
+             mock.patch.object(desktop.time, "monotonic", return_value=0), \
+             mock.patch.object(desktop.time, "sleep"), \
+             mock.patch.object(desktop, "qemu_monitor_command", side_effect=lambda _, c: commands.append(c)):
+            pointer, target = desktop.browser_probe_css_resize(None, Path("browser.ppm"), 30, client_width, client_height, input_monitor)
+            self.assertEqual(observed, ["home", "grip"], "wire ACK cannot replace guest consumption")
+            self.assertIn("mouse_button 1", commands)
+            self.assertIn("mouse_move -64 -32", commands)
+            self.assertEqual(commands[-1], "mouse_button 0")
+            self.assertGreaterEqual(target[0], origin[0])
+            self.assertLess(target[0], origin[0] + client_width - 64 - 18)
+            self.assertGreaterEqual(target[1], origin[1] + 76)
+            self.assertLess(target[1], origin[1] + client_height - 32 - 22)
+            commands.clear()
+            desktop.shortcut_probe_move_mouse(None, pointer, *target)
+            self.assertEqual(len(commands), 1, "wheel target must not traverse the entire document")
+            self.assertEqual(pointer, list(target))
+
+    @staticmethod
+    def pointer_frame(point=(0, 0)):
+        # Build the observed pixels from the production pointer, not the
+        # matcher constant. Include the real one-pixel 0x606060 shadow.
+        text = (ROOT / "drivers/video/framebuffer.c").read_text()
+        shape = re.findall(r'"([BW.]+)"', text.split("static const char pointer_shape")[1].split("};")[0])
+        width, height = 96, 72
+        pixels = bytearray(b"\x20\x40\x60" * (width * height))
+        for y in range(19):
+            for x in range(14):
+                color = shape[y][x] if y < len(shape) and x < len(shape[0]) else "."
+                rgb = {"B": b"\0\0\0", "W": b"\xff\xff\xff"}.get(color)
+                if rgb is None and x and y and shape[y-1][x-1] in "BW":
+                    rgb = b"\x60\x60\x60"
+                if rgb is not None:
+                    offset = ((point[1] + y) * width + point[0] + x) * 3
+                    pixels[offset:offset+3] = rgb
+        return width, height, pixels
+
+    def test_pointer_scanout_match_rejects_wrong_or_corrupt_pixels(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        for point in ((0, 0), (71, 42)):
+            frame = self.pointer_frame(point)
+            self.assertTrue(desktop.browser_probe_pointer_at(frame, point))
+            self.assertFalse(desktop.browser_probe_pointer_at(frame, (point[0]+1, point[1])))
+            frame[2][(point[1] * frame[0] + point[0]) * 3] = 1
+            self.assertFalse(desktop.browser_probe_pointer_at(frame, point))
+        for frame, point in ((None, (0, 0)), ((96, 72, b""), (0, 0)),
+                             (self.pointer_frame(), (-1, 0)), (self.pointer_frame(), (95, 71))):
+            self.assertFalse(desktop.browser_probe_pointer_at(frame, point))
+
+    def test_pointer_wait_requires_fresh_scanout_and_is_bounded(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        monitor = types.SimpleNamespace(deadline=30, execute=mock.Mock())
+        with mock.patch.object(desktop.time, "monotonic", return_value=0), \
+             mock.patch.object(desktop.time, "sleep"), \
+             mock.patch.object(desktop, "read_ppm", side_effect=[self.pointer_frame((20, 10)), self.pointer_frame()]):
+            desktop.browser_probe_wait_pointer(monitor, Path("browser.ppm"), (0, 0), "home")
+        self.assertEqual(monitor.execute.call_count, 2)
+        calls = monitor.execute.call_args_list
+        self.assertTrue(all(c.args[0] == "screendump" and c.args[2] <= 1 for c in calls))
+        self.assertNotEqual(calls[0].args[1]["filename"], calls[1].args[1]["filename"])
+        monitor.execute.reset_mock()
+        with mock.patch.object(desktop.time, "monotonic", return_value=0), \
+             mock.patch.object(desktop.time, "sleep"), \
+             mock.patch.object(desktop, "read_ppm", return_value=self.pointer_frame((20, 10))), \
+             self.assertRaisesRegex(RuntimeError, "pointer.*home"):
+            desktop.browser_probe_wait_pointer(monitor, Path("browser.ppm"), (0, 0), "home")
+        self.assertEqual(monitor.execute.call_count, 16)
+        monitor.execute.side_effect = RuntimeError("no capture ACK")
+        with mock.patch.object(desktop, "read_ppm") as read, self.assertRaisesRegex(RuntimeError, "no capture ACK"):
+            monitor.deadline = float("inf")
+            desktop.browser_probe_wait_pointer(monitor, Path("browser.ppm"), (0, 0), "home")
+        read.assert_not_called()
+
+    def test_desktop_runner_reaps_on_timer_policy_failure(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        child = mock.Mock()
+        child.poll.return_value = None
+        listener = mock.Mock()
+        arguments = {name: False for name in inspect.signature(desktop.run).parameters}
+        arguments.update(qemu=Path("qemu.exe"), image=Path("disk.img"),
+                         screenshot=Path("browser.ppm"), timeout=1,
+                         metrics_log=None, smp=1, browser_probe=True, vmware_vga=True)
+        with mock.patch.object(desktop.subprocess, "Popen", return_value=child), \
+             mock.patch.object(desktop, "open_injection_listener", return_value=(listener, 4321)), \
+             mock.patch.object(desktop, "configure_qemu_host_timers", create=True,
+                               side_effect=OSError("timer policy refused")) as policy, \
+             mock.patch.object(desktop.threading, "Thread",
+                               side_effect=AssertionError("reader started before timer admission")):
+            with self.assertRaisesRegex(OSError, "timer policy refused"):
+                desktop.run(**arguments)
+        policy.assert_called_once_with(child)
+        listener.close.assert_called_once_with()
+        child.terminate.assert_called_once_with()
+        child.wait.assert_called_once_with(timeout=3)
+        child.stdin.close.assert_called_once_with()
+        child.stdout.close.assert_called_once_with()
+
+    def run_browser_probe_transcript(self, chunks, events=None):
         # Execute the actual guest-runner branch. Only time, QEMU output and
         # screenshot I/O are mocked, so late failure/close ordering is real.
         tree = ast.parse((ROOT / "scripts/run_qemu_runtime_desktop.py").read_text())
@@ -461,14 +893,41 @@ class BrowserRuntimeTests(unittest.TestCase):
         pending = iter(chunk.replace("ALL_REQUIRED", "\n".join(required)) for chunk in chunks)
         ticks = iter(range(100))
         captures = []
-        namespace = dict(time=types.SimpleNamespace(monotonic=lambda: next(ticks), sleep=lambda _: None),
+        if events is None:
+            events = []
+        def resize(*args):
+            events.append("resize")
+            return [900, 600], (874, 570)
+        namespace = dict(re=re,time=types.SimpleNamespace(monotonic=lambda: next(ticks), sleep=lambda _: None),
                          deadline=20, transcript=[], process=None, output=None, screenshot=None,
                          drain=lambda output, transcript: transcript.append(next(pending, "")),
+                         browser_probe_css_resize=resize,
+                         shortcut_probe_move_mouse=lambda *args, **kwargs: events.append("move-target"),
+                         browser_input=types.SimpleNamespace(mouse=lambda _, command: events.append(command)),
+                         qemu_monitor_command=lambda _, command: events.append(command),
                          capture_screenshot=lambda *args: captures.append(True), print=lambda *args: None)
         function = ast.parse("def run():\n    pass\n")
         function.body[0].body = branch.body
         exec(compile(ast.fix_missing_locations(function), "real-browser-probe", "exec"), namespace)
         return namespace["run"](), captures
+
+    def test_guest_runner_wheel_direction_and_ack_order(self):
+        events = []
+        def chunks():
+            yield "BROWSER_CSS_RESIZE_WAIT width=800 height=600"
+            yield "BROWSER_WHEEL_WAIT"
+            yield "BROWSER_WHEEL_WAIT"
+            self.assertEqual(events, ["resize", "move-target", "mouse_move 0 0 -1"])
+            yield "BROWSER_WHEEL_DOWN_OK"
+            yield "BROWSER_WHEEL_DOWN_OK"
+            yield "ALL_REQUIRED"
+            yield "BROWSER_CLOSE_OK"
+        result, _ = self.run_browser_probe_transcript(chunks(), events)
+        self.assertEqual(result, 0)
+        # QEMU hmp_mouse_move: dz>0 is WHEEL_UP, dz<0 is WHEEL_DOWN.
+        # Repeated markers must not replay a wheel; up waits for down's ACK.
+        self.assertEqual(events, ["resize", "move-target",
+                                  "mouse_move 0 0 -1", "mouse_move 0 0 1"])
 
     def test_guest_runner_rejects_late_failure(self):
         for failure in ("BROWSER_PROBE_FAIL interaction", "BROWSER_PROBE_FAIL cleanup", "DESKTOP_BROWSER_FAIL"):
@@ -489,7 +948,8 @@ class BrowserRuntimeTests(unittest.TestCase):
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
-                      "userspace/gui/compositor/desktop_surface.c", "userspace/gui/lib/font_catalog.c"],
+                      "userspace/gui/compositor/desktop_surface.c", "userspace/gui/lib/font_catalog.c",
+                      "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/lib/font.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])
 
@@ -501,7 +961,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/apps/browser/browser_response.c", "userspace/programs/curl_http.c",
-                      "userspace/gui/apps/browser/html_protocol.c"],
+                      "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/lib/font.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])
 

@@ -426,9 +426,12 @@ int desktop_surface_input_enqueue(desktop_surface_manager_t *manager,
     int index = find_slot(manager, owner, handle);
     if (index < 0 || event == 0 || event->serial == 0U ||
         event->type < REIST_GUI_SURFACE_INPUT_POINTER_MOTION ||
-        event->type > REIST_GUI_SURFACE_INPUT_KEYBOARD)
+        event->type > REIST_GUI_SURFACE_INPUT_POINTER_SCROLL)
         return DESKTOP_SURFACE_EINVAL;
     desktop_surface_slot_t *slot = &manager->slots[index];
+    if (event->type==REIST_GUI_SURFACE_INPUT_POINTER_SCROLL &&
+        (!slot->scroll_enabled || !reist_gui_surface_scroll_valid(event)))
+        return DESKTOP_SURFACE_EINVAL;
     if (event->type != REIST_GUI_SURFACE_INPUT_KEYBOARD &&
         (event->x < 0 || event->y < 0 ||
          (uint32_t)event->x >= slot->width ||
@@ -791,6 +794,15 @@ int desktop_surface_dispatch_message(
             manager, owner, request->surface, request->serial);
         response->type = REIST_GUI_SURFACE_ACK_CONFIGURE;
         response->serial = request->serial;
+    } else if (request->type == REIST_GUI_SURFACE_ENABLE_SCROLL) {
+        int index=find_slot(manager,owner,request->surface);
+        response->type=REIST_GUI_SURFACE_ENABLE_SCROLL;
+        response->serial=request->serial;
+        if (index>=0 && request->serial==REIST_GUI_SURFACE_SCROLL_VERSION &&
+            !request->flags && !request->reserved && manager->slots[index].acknowledged_serial) {
+            manager->slots[index].scroll_enabled=1;
+            result=DESKTOP_SURFACE_OK;
+        }
     } else if (request->type == REIST_GUI_SURFACE_BUFFER_CREATE) {
         reist_gui_surface_buffer_t buffer = {
             REIST_GUI_SURFACE_BUFFER_API_VERSION, sizeof(buffer),

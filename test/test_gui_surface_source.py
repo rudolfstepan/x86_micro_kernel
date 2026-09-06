@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import shutil
+import os
 import subprocess
 import tempfile
 import unittest
@@ -9,6 +10,99 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class GuiSurfaceSourceTests(unittest.TestCase):
+    def test_real_compositor_routes_wheel_after_pending_motion(self):
+        from test_gui_browser_source import run_host
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text()
+        start = desktop.index("            if (mouse.wheel != 0")
+        block = desktop[start:desktop.index("            previous_buttons = mouse.buttons;", start)]
+        harness = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include "reist/gui/surface.h"
+#define DESKTOP_WM_CAPTURE_NONE 0
+#define DESKTOP_WM_CAPTURE_CLIENT 1
+#define DESKTOP_DRAG_PHASE_IDLE 0
+#define DESKTOP_WM_CAPACITY 2
+#define DESKTOP_SURFACE_ECAPACITY -75
+#define DESKTOP_EXPLORER_OK 0
+typedef reist_gui_rect_t desktop_rect_t;
+typedef struct { int scroll_enabled; reist_gui_surface_owner_t owner; } desktop_surface_slot_t;
+typedef struct { int unused; } desktop_explorer_result_t;
+static desktop_surface_slot_t slot={.scroll_enabled=1};
+static unsigned motions, client_motions, wheels, explorer_wheels, fenced;
+static int wheel_window, wheel_x, wheel_y, wheel_delta, overflow;
+static int desktop_ui_owns_pointer(int *ui) { return *ui; }
+unsigned dispatch_pointer_motion(void *m,void *e,void *u,void *d,void *dirty,
+    int32_t *x,int32_t *y,int32_t dx,int32_t dy,void *t,void *drag,void *resize,void *cache) {
+    (void)m;(void)e;(void)u;(void)d;(void)dirty;(void)t;(void)drag;(void)resize;(void)cache;
+    ++motions; *x+=dx; *y+=dy; return 0;
+}
+static int desktop_wm_window_at(void *m,int x,int y) { (void)m;(void)y; return x<100 ? 0 : 1; }
+static desktop_surface_slot_t *surface_for_window(void *s,unsigned w) { (void)s;(void)w; return &slot; }
+static unsigned enqueue_surface_pointer(void *m,void *s,int w,unsigned type,
+    int x,int y,int dx,int dy,unsigned pressed,unsigned capture,int *status) {
+    (void)m;(void)s;
+    if (type==REIST_GUI_SURFACE_INPUT_POINTER_MOTION) {
+        assert(x==110 && y==60 && dx==30 && dy==-20 && !pressed);
+        assert(!status && !wheels); ++client_motions; return 1;
+    }
+    assert(type==REIST_GUI_SURFACE_INPUT_POINTER_SCROLL && client_motions==1);
+    assert(!dx && !pressed && !capture);
+    ++wheels; wheel_window=w; wheel_x=x; wheel_y=y; wheel_delta=dy;
+    *status=overflow ? DESKTOP_SURFACE_ECAPACITY : 0; return !overflow;
+}
+static void desktop_surface_revoke_owner(void *s,reist_gui_surface_owner_t o) { (void)s;(void)o; ++fenced; }
+static void desktop_dirty_full(void *d) { (void)d; }
+static void x86os_puts(const char *t) { (void)t; }
+static desktop_rect_t desktop_explorer_content_rect(void *m,void *e,unsigned w) {
+    (void)m;(void)e;(void)w; return (desktop_rect_t){0,0,200,200};
+}
+static int point_in_rect(desktop_rect_t r,int x,int y) { return x>=r.x && y>=r.y && x<200 && y<200; }
+static void desktop_explorer_result_initialize(desktop_explorer_result_t *r) { (void)r; }
+static int desktop_explorer_wheel(void *e,unsigned w,desktop_rect_t c,int d,desktop_explorer_result_t *r) {
+    (void)e;(void)w;(void)c;(void)d;(void)r; ++explorer_wheels; return 0;
+}
+static void collect_explorer_pointer_result(void *d,void *m,void *dirty,desktop_explorer_result_t *r,unsigned b,void *a) {
+    (void)d;(void)m;(void)dirty;(void)r;(void)b;(void)a;
+}
+static void run(int wheel,int menu,int capture,int drag_phase,int enabled,int fail) {
+    struct { int wheel; } mouse={wheel};
+    struct { int capture_kind, capture_window; } manager={capture,0};
+    struct { int phase; } desktop_drag={drag_phase};
+    int ui=menu,explorer=0,display=0,dirty=0,move_cache=0,surfaces=0,activation=0;
+    uint32_t actions=0,action_target=0,drag_render=0,resize_render=0,surface_input_queued=0;
+    int32_t pointer_x=80,pointer_y=80,pending_delta_x=30,pending_delta_y=-20;
+    motions=client_motions=wheels=explorer_wheels=fenced=0; slot.scroll_enabled=enabled; overflow=fail;
+    @BLOCK@
+    (void)actions;(void)action_target;(void)drag_render;(void)resize_render;(void)move_cache;
+    if (wheel) {
+        assert(pointer_x==110 && pointer_y==60 && !pending_delta_x && !pending_delta_y && motions==1);
+        assert(client_motions==1); /* Legacy/disabled-wheel clients keep motion. */
+        if (!menu && !capture && !drag_phase && enabled) {
+            assert(wheels==1 && wheel_window==1 && wheel_x==110 && wheel_y==60);
+            int64_t expected=-(int64_t)wheel*120;
+            if(expected>INT32_MAX) expected=INT32_MAX;
+            if(expected<INT32_MIN) expected=INT32_MIN;
+            assert(wheel_delta==(int32_t)expected && fenced==(unsigned)fail);
+            assert(surface_input_queued); /* Earlier motion remains accounted. */
+        } else assert(!wheels && !fenced);
+        assert(explorer_wheels==(unsigned)(!menu && !capture && !drag_phase));
+    } else assert(!motions && !wheels && pointer_x==80 && pending_delta_x==30);
+}
+int main(void) {
+    run(-1,0,0,0,1,0); run(1,0,0,0,1,0);
+    run(INT32_MIN,0,0,0,1,0); run(INT32_MAX,0,0,0,1,0);
+    run(1,1,0,0,1,0); run(1,0,1,0,1,0); run(1,0,0,1,1,0);
+    run(1,0,0,0,0,0); run(1,0,0,0,1,1); run(0,0,0,0,1,0);
+    puts("COMPOSITOR_WHEEL_ORDER_HOST_OK"); return 0;
+}
+'''.replace("@BLOCK@", block)
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "compositor-wheel-order-host.c"
+            source.write_text(harness, encoding="utf-8")
+            run_host([str(source)])
+
     def test_client_drains_input_backpressure_without_losing_events(self):
         from test_gui_browser_source import run_host
         run_host(["test/test_gui_surface_client_host.c",
@@ -103,19 +197,22 @@ class GuiSurfaceSourceTests(unittest.TestCase):
 
     def test_surface_manager_host_behavior(self):
         compiler = shutil.which("gcc") or shutil.which("clang")
-        if compiler is None:
-            self.skipTest("host C compiler unavailable")
+        command = [compiler] if compiler else [r"C:\tools\zig-x86_64-windows-0.16.0\zig.exe", "cc"]
+        environment = os.environ.copy()
+        environment["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/browser-host/zig-global")
+        environment["ZIG_LOCAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/browser-host/zig-local")
         for source in ("test/test_desktop_surface_host.c",
                        "test/test_desktop_surface_dispatch.c"):
             with tempfile.TemporaryDirectory(prefix="reist-surface-") as temp:
                 executable = Path(temp) / "surface-test.exe"
-                subprocess.run([
-                    compiler, "-std=c11", "-Wall", "-Wextra", "-Werror",
+                result = subprocess.run([
+                    *command, "-std=c11", "-Wall", "-Wextra", "-Werror",
                     "-I.", "-Iuserspace/gui/include", source,
                     "userspace/gui/compositor/desktop_surface.c",
                     "userspace/gui/lib/font_catalog.c",
-                    "-o", str(executable)], cwd=ROOT, check=True,
-                    capture_output=True, text=True)
+                    "-o", str(executable)], cwd=ROOT, env=environment,
+                    capture_output=True, text=True, timeout=90)
+                self.assertEqual(result.returncode, 0, result.stderr)
                 subprocess.run([str(executable)], cwd=ROOT, check=True,
                                capture_output=True, text=True, timeout=5)
 

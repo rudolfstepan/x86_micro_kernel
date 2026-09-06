@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.10-browser-css-layout"
+active_id = "R3.11-browser-stylesheet-resources"
 
 [policy]
 one_package_per_run = true
@@ -437,10 +437,18 @@ evidence = []
 
 [[packages]]
 id = "R3.10-browser-css-layout"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Render styled HTML5 documents through an isolated CSS cascade and box layout"
+pointer_observation_resume = "2026-09-06: User explicitly authorizes continuing the remaining mouse-test repair after the failed QMP resize gate. Resume only the attributable R3.10 candidate on 8eb525d0, with no unrelated changes found. Add bounded scanout observation of the real software pointer after homing and before the native resize grip; a QMP device-event ACK must not stand in for guest consumption. Preserve real USB input, pixel/geometry/resize/wheel/recovery/close assertions, all frozen gates and guest/host deadlines. No OS production, authority or quota expansion is needed for this test-control repair. Reuse unchanged reference artifacts after digest/profile validation and unaffected host evidence; run the changed runner/browser host gate and the complete guest gate. Preserve all negative evidence. At most one focused in-scope repair after a new failed gate; no retry-until-pass, queue advance or local implementation commit without full acceptance."
+automatic_completion_resume = "2026-09-06: User explicitly requests automatic end-to-end diagnosis, repair, full verification and a local commit on success without routine handoffs. Resume only the attributable R3.10 candidate on 8eb525d0. Separate measured browser read/decode/raster/pixel-publication/paint/spawn time from HMP test-control time before further optimization. Add bounded probe-only timing counters without changing deadlines or dispatch semantics; diagnose within existing allowed files, then repair the reproduced bottleneck with real-code regression. Preserve all frozen gates, prior negative and user-confirmed standby evidence, image/profile digest checks, no kernel/device authority expansion and no push. Reuse unaffected passed evidence; validate changed-source host tests, both final reference builds and the complete final guest gate. Existing architectural stop conditions remain; no retry-until-pass or artificial acceptance by skipping the final deadline check."
+completion_latency_resume = "2026-09-05: User explicitly authorizes repairing the remaining browser/input latency and repeating complete acceptance without relaxing safety or timing bounds. Resume only the attributable R3.10 candidate on 8eb525d0; all 49 existing changed paths were inventoried and no unrelated changes found. Add real-code regression for redundant glyph rasterization and motion-before-wheel routing, repair within existing allowed files and the single-generation rendering/input failure boundary, retain fixed capacity and all original gates. No kernel/device authority, persistent worker pool, deadline extension, skipped final deadline check or test-only performance bypass. Preserve prior phase-12 negative evidence and verify image/kernel/config hashes before and after the final guest gate. Reuse unaffected passed host evidence, validate changed-source host gates and both reference builds, then run the full guest gate once; at most one focused in-scope repair after a failed gate, stop on another failure."
+reference_rebuild_resume = "2026-09-05: User explicitly authorizes rebuilding the QEMU reference image and repeating complete acceptance after an intervening VMware build replaced the expected artifact. No production or runner changes in this resumption. Rebuild the frozen qemu/vga package once, check its generated configuration and record image/kernel/config digests before and after one complete guest gate. Preserve all negative evidence and stop on profile/artifact changes or another failed gate. Reuse unaffected passed host and VMware build evidence. Never lengthen deadlines or claim the wrong-profile failure was caused by the profile alone."
+wheel_direction_resume = "2026-09-05: User explicitly authorizes correcting the proven HMP wheel direction error and repeating the unchanged complete guest acceptance. Resume the attributable R3.10 candidate without unrelated edits. Change only runner direction, its real-branch regression and package/status documentation; positive HMP dz means wheel up, negative means wheel down. Preserve all runtime markers, guest and host deadlines, geometry checks, previous negative evidence and all OS production sources. Reuse the unchanged passed reference images and unaffected host evidence, rerun the changed browser/runner host gate and exactly one full guest gate. Stop on another guest failure; no retry-until-pass."
+worker_performance_resume = "2026-09-05: User explicitly authorizes continuing the worker-start and image-reflow performance repair after the prior guest reached CSS pixels and recovery but exhausted the unchanged total deadline before resize. Resume only the attributable in-place R3.10 candidate on 8eb525d0; preserve all negative evidence. Remove reproduced redundant worker starts/reflows within the existing single-disposable-generation failure boundary, with real browser regressions. Resource identity may exclude only the URI fragment in this static CSS snapshot; path query origin fresh document validation image refresh and fault-injection execution remain mandatory. No persistent worker pool, implicit resource authority, kernel changes, quota or deadline extension. Retain the existing allowed files and frozen gates, reuse unaffected passed host evidence, validate changed-source gates and both reference builds, then run the complete guest gate. At most one focused in-scope repair after a new failed gate; stop on a further failure."
+scroll_performance_extension = "2026-09-05: User explicitly approves the shared GUI mouse-wheel path and browser load/reflow performance repair after the startup-fixed candidate exhausted the original 30-second guest probe. Continue the attributable in-place candidate; preserve every negative log. Add an opt-in versioned append-only Surface scroll extension using v120 units (120 per detent, positive down/right), no event-layout or old-message semantic change; old clients receive no new input without opting in. Validate generations, local coordinates, flags, finite work and unchanged fixed queues; route only the visible client under the pointer outside captures and menus, preserving Explorer behavior and fencing on nonreplaceable input overflow. Browser scrolling uses its existing clipped scroll state without load, parse or synchronous painting. Remove reproduced redundant CSS temporary-file cleanup and reduce unnecessary load/reflow work without weakening freshness, cleanup, private publication or five-second job and 30-second guest deadlines. No kernel or device authority changes. Retain all original frozen gates, append shared-Surface regression gate and real hardware-event wheel assertions to the existing guest gate; reuse unaffected passed host evidence and rerun affected gates and both reference builds. Permit at most one focused in-scope repair after a failed gate in this newly authorized run."
+repair_extension = "2026-09-05: User explicitly authorizes correcting the blocked CSS worker startup error. Resume only the attributable in-place R3.10 candidate on accepted memory baseline 8eb525d0. Handle pre-delegation EBADF and EACCES only before the first accepted packet, with sleeping and the unchanged absolute five-second deadline; authority loss after reception starts remains fatal to that job. Add real-worker regressions for delayed/missing delegation, post-start revocation and failed sleeping. No kernel, ABI, scope or deadline expansion. Preserve negative evidence and all frozen gates; reuse unaffected passed host evidence, rerun changed-source host gates, both reference builds and one final browser guest gate. Stop on a further failed frozen gate rather than retrying until success."
 user_direction = "Continue the user-requested browser migration automatically after accepted R3.9; performance and resilience are simultaneous requirements. The incomplete VMware pointer acceptance remains deferred with unchanged gates. Define this next package only during R3.9 completion; do not implement a second package in that run."
 scope = "One styled-document rendering boundary: inventory the retained Hubbub tree, current semantic projection, layout, image sizing and bulk IPC before implementation. Pin and port an actual MIT NetSurf LibCSS release with its real selector/cascade engine through the opt-in Ring-3 SDK; preserve provenance and license. Retain sufficient HTML5 tree structure for element/class/id selectors, descendant/child relationships, inline and embedded author styles, inheritance, specificity, source order and important declarations. Implement a documented CSS 2.1 normal-flow subset for block/inline/none, text and background colors, font size/weight/style, alignment, margins, padding, borders and constrained width/height, with px/em/percent units where that property's containing-block semantics are implemented. Keep complex style and layout work in HTMLWORK, emit a private versioned bounded scene, and validate all geometry, text, resource references, counts, enums and generations before presentation. Preserve native browser chrome, link hit testing, image clipping, scrolling, resizing and the last valid page on failure. Use only existing process/IPC/file APIs, prefer bounded bulk IPC over increasing temporary-file traffic, and measure document/resize latency without extending the existing five-second worker bound. This first CSS scene deliberately has no stylesheet resource-fetch authority: external CSS, imports, CSS URL resources, forms, cookies, POST and JavaScript need a separately defined resource/origin contract, not silent browser stubs. Unknown CSS is handled according to the parser's error-recovery rules; unsupported layout features are documented without claiming full CSS or NetSurf compatibility."
 allowed_files = [
@@ -463,6 +471,17 @@ allowed_files = [
   "userspace/gui/apps/browser/browser_model.h",
   "userspace/gui/apps/browser/browser_model.c",
   "userspace/gui/apps/browser/main.c",
+  "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/include/reist/gui/surface_client.h",
+  "userspace/gui/lib/surface_client.c",
+  "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface.c",
+  "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "test/test_gui_surface_source.py",
+  "test/test_gui_surface_client_host.c",
+  "test/test_desktop_surface_host.c",
+  "test/test_desktop_surface_dispatch.c",
   "userspace/libc/include/stdlib.h",
   "userspace/libc/include/string.h",
   "userspace/libc/include/strings.h",
@@ -510,7 +529,8 @@ targeted_tests = [
   "python test/test_browser_runtime_source.py -v",
   "python test/test_browser_navigation_source.py -v",
   "python test/test_shell_source.py -v",
-  "python test/test_user_program_toolchain.py -v"
+  "python test/test_user_program_toolchain.py -v",
+  "python test/test_gui_surface_source.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
@@ -525,6 +545,83 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "feat: render isolated HTML5 documents with a real CSS cascade"
+evidence = []
+
+[[packages]]
+id = "R3.11-browser-stylesheet-resources"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Load external and imported CSS through a generation-scoped resource bundle"
+user_direction = "Continue the user-requested real browser migration after accepted R3.10. Define this next cohesive resource-authority slice during R3.10 completion only; implement it in a separate run. Keep the incomplete VMware pointer acceptance deferred with all original gates. Performance and resilience remain simultaneous requirements; the measured synchronous worker/image load latency is visible OS debt, not solved by a faster host test controller."
+scope = "One stylesheet resource-bundle lifecycle from discovery and URL admission through bounded read-only GET/file acquisition, immutable snapshot delivery, real LibCSS cascade, failure isolation and generation cleanup. Inventory the existing curl metadata/redirect adapter, fresh-document scene cache, private process heap and worker protocol first. Follow HTML stylesheet-link semantics, CSS 2.1 import ordering/media/error recovery, RFC 3986 resolution and RFC 9110 status/MIME handling. Keep acquisition in the browser's bounded coordinator and existing disposable transport child; the CSS worker receives bytes only and gains no network/filesystem/font/script authority. Support external link stylesheets and nested imports in source order without double-fetching a canonical resource inside one navigation. Maximum 64 resources including imports, eight import levels, 256 KiB decoded bytes per resource and 1 MiB aggregate CSS. Use the existing private-memory provider with an explicit worker budget up to 32 MiB if the validated bundle cannot fit the legacy arena; no kernel or global quota change. Keep each parse/layout worker's original five-second deadline and existing transport-chain deadlines, add an absolute 30-second stylesheet-acquisition deadline, and fail closed on resource/heap/work exhaustion. Version the private bundle protocol; fully validate offsets, exact lengths, identities and generations before parse or publication. Preserve inline/embedded cascade order, native chrome, images, links, scroll, resize and prior-page recovery. Prove reload freshness, navigation cancellation, duplicate/cyclic imports, quota boundaries, transport/worker faults and complete cleanup with real-code host tests and deterministic guest resources. CSS image/font URLs, forms, cookies, POST and JavaScript remain inert and are not implemented in this slice. No permanent worker pool, hidden kernel parser or relaxation of R3.10 gates."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "userspace/gui/apps/browser/main.c",
+  "userspace/gui/apps/browser/browser_resources.h",
+  "userspace/gui/apps/browser/browser_resources.c",
+  "userspace/gui/apps/browser/browser_model.h",
+  "userspace/gui/apps/browser/browser_model.c",
+  "userspace/gui/apps/browser/browser_scene.h",
+  "userspace/gui/apps/browser/browser_scene.c",
+  "userspace/gui/apps/browser/html_engine.h",
+  "userspace/gui/apps/browser/html_engine.c",
+  "userspace/gui/apps/browser/html_protocol.h",
+  "userspace/gui/apps/browser/html_protocol.c",
+  "userspace/gui/apps/browser/html_worker.c",
+  "userspace/gui/apps/browser/css_engine.h",
+  "userspace/gui/apps/browser/css_engine.c",
+  "scripts/build_html_engine.py", "scripts/build_system_programs.py",
+  "scripts/build_user_sdk.py", "scripts/build-windows.ps1", "Makefile",
+  "scripts/run_qemu_runtime_desktop.py", "scripts/test-reist-runtime.ps1",
+  "htdocs/browser-css-test.html", "htdocs/browser-stylesheet-test.html",
+  "htdocs/browser-stylesheet-main.css", "htdocs/browser-stylesheet-import.css",
+  "test/test_browser_resources.py", "test/test_browser_resources_host.c",
+  "test/test_css_engine.py", "test/test_css_engine_host.c",
+  "test/test_html_engine.py", "test/test_html_engine_host.c",
+  "test/test_html_worker_host.c", "test/test_browser_runtime_source.py",
+  "test/test_browser_navigation_source.py", "test/test_browser_model_host.c",
+  "test/test_gui_browser_source.py", "test/test_user_program_toolchain.py",
+  "test/test_shell_source.py", "test/test_libc_source.py"
+]
+invariants = [
+  "only the existing coordinator and disposable transport hold resource authority; CSS callbacks never open files sockets devices fonts or scripts",
+  "network redirects cannot gain local file authority or downgrade HTTPS; stylesheet MIME and effective URL are validated before bundle publication",
+  "all resource bytes work queues import recursion and memory have explicit admission bounds; no partial or stale-generation bundle can replace a valid page",
+  "resource identity and deduplication are navigation-scoped; reload must revalidate fresh bytes and cancellation reaps all children and releases all owned buffers",
+  "real upstream CSS cascade determines source order specificity inheritance and imports; unsupported resource types remain explicit limitations",
+  "legacy R3.10 five-second layout and all original image input scroll resize fault timeout recovery and close assertions remain mandatory"
+]
+targeted_tests = [
+  "python test/test_browser_resources.py -v",
+  "python test/test_css_engine.py -v",
+  "python test/test_html_engine.py -v",
+  "python test/test_libc_source.py -v",
+  "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_runtime_source.py -v",
+  "python test/test_browser_navigation_source.py -v",
+  "python test/test_shell_source.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-resources -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production source or runtime prerequisite lies outside allowed_files or an unrelated writer overlaps the candidate",
+  "progress requires weakening the microkernel boundary generation cleanup memory isolation or an existing frozen deadline",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: load bounded stylesheet bundles into isolated CSS workers"
 evidence = []
 
 [[packages]]

@@ -16,6 +16,18 @@ Schichten- und Portabilitätsvertrag steht unter
 ## Schnelltest unter Windows
 
 R3.9 baut außerdem `/usr/bin/htmlwork.prg` in Windows- und Makefile-Images.
+R3.10 linkt dort zusätzlich die echte LibCSS-Kaskade und die freestanding
+i386-Compiler-Builtins der ausgewählten Zig-Installation. `libcss.pc` beschreibt
+die statischen Upstream-Abhängigkeiten; Fonts und Pixelrasterung bleiben in
+der Chrome, die LibCSS nicht linkt. `/htdocs/browser-css-test.html` ist in
+beiden Images als sichtbare Normalfluss-/Style-Demonstration enthalten.
+Die Shell-Auflösung von `htmlwork` bleibt unverändert; der private `--ipc`
+Aufruf benötigt einen ausdrücklich vom Parent delegierten Endpoint.
+SDK-Objektbatches werden mit hoechstens vier Compilerjobs gleichzeitig gebaut.
+Die Ausgabeobjekte sind getrennt, die Archivreihenfolge bleibt deterministisch;
+ein Compilerfehler verhindert die Rueckgabe des Batches und damit dessen
+Archivpublikation. Der Pool wartet vor dem Entfernen seines Temporaerbereichs
+auf die laufenden Jobs. Die bestehende 60-s-SDK-Testfrist bleibt unveraendert.
 Der Ring-3-Shell-Suchpfad `/usr/bin` erreicht den Worker auch direkt; er benötigt
 zwei private Auftrags-/Antwortpfade und ist kein interaktives Anzeigeprogramm.
 Der Browser startet ihn mit argv, nicht über die Kernel-Rescue-Shell. Der SDK

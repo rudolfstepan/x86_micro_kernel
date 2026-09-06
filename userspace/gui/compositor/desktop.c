@@ -10088,13 +10088,56 @@ int main(int argc, char **argv) {
                     }
                 }
             }
+            if (mouse.wheel != 0) {
+                /* A wheel is an ordering boundary, like a button edge. Apply
+                 * accumulated motion before hit-testing, including a combined
+                 * HID motion/wheel report. Keep pure-motion batches coalesced. */
+                actions |= dispatch_pointer_motion(
+                    &manager, &explorer, &ui, &display, &dirty,
+                    &pointer_x, &pointer_y,
+                    pending_delta_x, pending_delta_y, &action_target,
+                    &drag_render, &resize_render, &move_cache);
+                if (pending_delta_x != 0 || pending_delta_y != 0) {
+                    int32_t surface_motion_window = manager.capture_kind ==
+                        DESKTOP_WM_CAPTURE_CLIENT ? manager.capture_window
+                            : desktop_wm_window_at(&manager, pointer_x, pointer_y);
+                    /* Keep normal motion delivery, even to legacy clients
+                     * without scroll opt-in, before consuming this batch. */
+                    surface_input_queued |= enqueue_surface_pointer(
+                        &manager, &surfaces, surface_motion_window,
+                        REIST_GUI_SURFACE_INPUT_POINTER_MOTION,
+                        pointer_x, pointer_y, pending_delta_x, pending_delta_y, 0U,
+                        manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT, 0);
+                }
+                pending_delta_x = 0;
+                pending_delta_y = 0;
+            }
             if (mouse.wheel != 0 && !desktop_ui_owns_pointer(&ui) &&
+                manager.capture_kind == DESKTOP_WM_CAPTURE_NONE &&
                 desktop_drag.phase == DESKTOP_DRAG_PHASE_IDLE) {
                 int scroll_window = desktop_wm_window_at(
                     &manager, pointer_x, pointer_y);
                 if (scroll_window >= 0 &&
                     scroll_window < (int32_t)DESKTOP_WM_CAPACITY) {
                     uint32_t window_index = (uint32_t)scroll_window;
+                    desktop_surface_slot_t *wheel_surface=surface_for_window(&surfaces,window_index);
+                    if (wheel_surface && wheel_surface->scroll_enabled) {
+                        /* HID detents are positive up; v120 is positive down.
+                         * Widen before negation/multiplication, then saturate. */
+                        int64_t delta=-(int64_t)mouse.wheel*REIST_GUI_SURFACE_SCROLL_STEP;
+                        if (delta>INT32_MAX) delta=INT32_MAX;
+                        if (delta<INT32_MIN) delta=INT32_MIN;
+                        int wheel_status=0;
+                        surface_input_queued |= enqueue_surface_pointer(
+                            &manager,&surfaces,scroll_window,REIST_GUI_SURFACE_INPUT_POINTER_SCROLL,
+                            pointer_x,pointer_y,0,(int32_t)delta,0,0,&wheel_status);
+                        if (wheel_status==DESKTOP_SURFACE_ECAPACITY) {
+                            reist_gui_surface_owner_t failed_owner=wheel_surface->owner;
+                            desktop_surface_revoke_owner(&surfaces,failed_owner);
+                            desktop_dirty_full(&dirty);
+                            x86os_puts("DESKTOP_SURFACE_INPUT_FENCED status=-75\n");
+                        }
+                    }
                     desktop_rect_t client = desktop_explorer_content_rect(
                         &manager, &explorer, window_index);
                     if (point_in_rect(client, pointer_x, pointer_y)) {

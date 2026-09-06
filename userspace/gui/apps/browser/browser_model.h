@@ -16,8 +16,8 @@ typedef struct browser_image_slot {
 } browser_image_slot_t;
 typedef struct browser_layout_run {
     uint32_t kind, text_offset, text_length, style, link_index;
-    int32_t x;
-    uint32_t y, width, height;
+    int32_t x, y;
+    uint32_t width, height;
 } browser_layout_run_t;
 typedef struct browser_layout {
     browser_layout_run_t runs[BROWSER_LAYOUT_LINE_CAPACITY];

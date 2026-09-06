@@ -100,6 +100,39 @@ notwendige visuelle Feedback invalidieren.
 
 ### Queue- und Koaleszierungsregeln
 
+Die additive Scroll-Erweiterung v1 behaelt den Surface-v6-Umschlag und alle
+bisherigen Nachrichtenwerte/Strukturgroessen bei. Ein Client aktiviert sie
+nach Configure-ACK mit `ENABLE_SCROLL`, `serial=1` und Null-Flags fuer genau
+seine Surface-Generation. Der Broker bestaetigt dieselbe Version; unbekannte
+Versionen oder fremde Generationen werden abgewiesen. Alte Clients erhalten
+keine neuen Ereignisse. Destroy/Revoke entfernt auch dieses Opt-in.
+
+`INPUT_POINTER_SCROLL` behaelt lokale x/y-Koordinaten. delta_x/delta_y folgen
+den v120-Einheiten von
+[wl_pointer.axis_value120](https://wayland.freedesktop.org/docs/html/apa.html#protocol-spec-wl_pointer-event-axis_value120)
+und der [libinput-Richtungskonvention](https://wayland.freedesktop.org/libinput/doc/latest/api/group__event__pointer.html):
+120 entspricht einer Rasterstufe, positiv bedeutet rechts/unten. Mindestens
+eine Achse muss ungleich Null sein; Button, Pressed, Key und Reserved sind Null.
+Das ist ein versionierter REIST-Adapter, keine Wayland-Protokollkompatibilitaet.
+HID-Vertikalraster werden im Ring-3-Compositor vorzeichenrichtig mit breiter
+Arithmetik umgerechnet und auf int32 begrenzt. Kernel und Maus-Syscall bleiben
+unveraendert. Der oberste Client unter dem Pointer erhaelt Scrollen nur ausserhalb
+von Menues, Drag und Pointer-Capture; der interne Explorer behaelt seinen Pfad.
+Eine Radbewegung ist wie eine Buttonkante eine Grenze fuer Motion-Batching:
+angesammelte Bewegung wird vor dem Scroll-Hit-Test angewandt, auch bei einem
+kombinierten HID-Report. Danach ist der Delta-Akkumulator leer; die Bewegung
+wird am Batchende nicht doppelt ausgefuehrt. Reine Motion bleibt koalesziert.
+Das normale Motion-Ereignis wird vor dem Scrollereignis weitergereicht,
+auch an Clients ohne Scroll-Opt-in; Capture-Ziel und bestehende Regeln zum
+Verwerfen ersetzbarer Motion bei Queue-Ueberlast bleiben erhalten.
+
+Scrollereignisse sind geordnet und nicht ersetzbar: insbesondere werden
+Gegenrichtungen oder dazwischenliegende Buttonkanten nicht zusammengelegt.
+Die bestehenden Queuekapazitaeten bleiben unveraendert. Bei Ueberlauf ohne
+ersetzbare Motion fencet der Compositor die betroffene Owner-Generation samt
+Dialogen und Buffern. Clientvalidierung weist fehlgeformte Scrollereignisse
+vor Dispatch oder Deferred-Queue-Aufnahme ab.
+
 Button-, Keyboard-, Cancel- und Configure-Ereignisse sind nicht ersetzbar.
 Aufeinanderfolgende reine Motion-Ereignisse KÖNNEN auf die jüngste Position
 koalesziert werden. Ist eine Queue voll, DARF ein altes reines Motion-Ereignis

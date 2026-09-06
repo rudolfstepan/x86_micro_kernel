@@ -97,6 +97,25 @@ static void expect_events(unsigned amount) {
 }
 int main(void) {
     _Static_assert(X86OS_IPC_QUEUE_DEPTH == 4, "recheck shared IPC contract");
+    _Static_assert(REIST_GUI_SURFACE_PROTOCOL_VERSION == 6 &&
+        REIST_GUI_SURFACE_INPUT_KEYBOARD == 3 && REIST_GUI_SURFACE_PAINT_FONT_TEXT == 20,
+        "scroll extension must preserve old ABI");
+    reset(); owner.acknowledged_serial=1;
+    assert(!reist_gui_surface_client_enable_scroll(&owner));
+    reset(); full_input();
+    reist_gui_surface_message_t wheel_message;
+    memcpy(&wheel_message,queue[0].payload,sizeof(wheel_message));
+    wheel_message.input=(reist_gui_surface_input_t){.type=REIST_GUI_SURFACE_INPUT_POINTER_SCROLL,
+        .serial=1,.x=10,.y=80,.delta_y=-120};
+    memcpy(queue[0].payload,&wheel_message,sizeof(wheel_message));
+    assert(!unregister(&owner));
+    reist_gui_surface_input_t wheel_event;
+    assert(!reist_gui_surface_client_receive_input(&owner,&wheel_event,0));
+    assert(wheel_event.delta_y==-120 && wheel_event.type==REIST_GUI_SURFACE_INPUT_POINTER_SCROLL);
+    reset(); enqueue(REIST_GUI_SURFACE_INPUT,1,0);
+    wheel_message.input.key=1; /* Fail before dispatch/defer of malformed wheel data. */
+    memcpy(queue[0].payload,&wheel_message,sizeof(wheel_message));
+    assert(reist_gui_surface_client_receive_input(&owner,&wheel_event,0)==-84);
     reset();
     assert(unregister(&owner) == 0 && published == 1 && !sleeps && !clock_calls);
 

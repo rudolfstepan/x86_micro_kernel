@@ -83,7 +83,10 @@ int browser_html_validate(const browser_html_reply_t *r, size_t length,
         h->parent_generation!=q->parent_generation || !pid || h->child_pid!=pid ||
         !h->child_generation || (generation && h->child_generation!=generation) ||
         h->input_length!=q->input_length || h->mode || h->reserved[0] || h->reserved[1]) return -84;
-    const reist_html_document_t *d=&r->document;
+    return browser_html_document_validate(&r->document);
+}
+int browser_html_document_validate(const reist_html_document_t *d) {
+    if (!d) return -84;
     if (d->text_length>REIST_HTML_TEXT_CAPACITY || d->element_count>REIST_HTML_ELEMENT_CAPACITY ||
         d->link_count>REIST_HTML_LINK_CAPACITY || d->image_count>REIST_HTML_IMAGE_CAPACITY ||
         d->anchor_count>REIST_HTML_ANCHOR_CAPACITY || !string(d->title,sizeof(d->title)) ||

@@ -1,6 +1,609 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 5. September 2026
+Stand: 6. September 2026
+
+## R3.10 abgeschlossen: echte CSS-Kaskade, Boxlayout und Mausrad
+
+Die vollstaendige eingefrorene Browser-Gastabnahme besteht am 6. September
+2026 in 94,94 Hostsekunden: Eingabe, Bilder, Links, native Scrollbar/Clipping,
+Reload, Transportfehler, isolierter Worker-Fault/Timeout, Recovery, echte CSS-
+Scanout-Pixel, USB-Maus-Resize, Mausrad ab/auf mit Paint-Nachweis und
+`BROWSER_CLOSE_OK`, ohne nachfolgenden Fehlermarker. Die fuenf Sekunden pro
+Layoutauftrag und 30 Sekunden fuer den Gastprobe bleiben unveraendert.
+
+Alle neun gezielten Hostgruppen sind bestanden: 97 Tests, 95 PASS und zwei
+unveraenderte Shell-Skips; zusaetzlich 58 Desktoptests PASS. Geaenderter Runner:
+19 Browsertests PASS (2,335 s), `r310-pointer-host.log`. Unveraenderte
+Referenzbuilds werden nach Digestpruefung wiederverwendet: VMware PASS
+44,76 s (`20260906-011739-package-vmware-vga.log`), QEMU PASS 42,66 s
+(`20260906-011901-package-qemu-vga.log`). Alle Nachweise liegen unter
+`build/codex-agent/`; die vollstaendige Befehlsliste bleibt in der Queue.
+Finale Gastbelege: `r310-pointer-runtime.log`,
+`r310-pointer-accepted.browser.log`, `r310-pointer-config.json`,
+`r310-pointer-digests-{before,after}.json`,
+`r310-pointer-{css-scanout,image-fixture}.ppm` sowie die frischen Home-/Grip-
+Zeiger-Scanouts. Alle frueheren Fehlversuche einschliesslich des vom Nutzer
+erklaerten Standby-Laufs bleiben als negative Evidenz erhalten.
+
+Image/Kernel/Config sind vor/nach der Abnahme identisch; qemu/vga ohne
+Injection. Image-SHA256:
+`97AEBD0CC759AB1DB1E6030951F6F37859D556479A7DA2B11D6E9C0121519845`.
+Dokumentauftraege 1653/1673 ms, Bild-/Resize-Reflow 2404/2601 ms. Hoststeuerung
+Resize 1169 ms, Rad ab 42 ms, Rad auf 1 ms. Beide Zeigerbarrieren bestehen mit
+dem ersten frischen Scanout. Die kumulierten sechs Worker-Starts kosten noch
+8320 ms, zwoelf Dateiladevorgaenge 5449 ms: der OS-Ladepfad bleibt messbare
+Performance-Schuld; der schnellere Testcontroller behebt ihn nicht.
+
+R3.10 wird auf `done` gesetzt. Als naechster Browser-Schnitt ist
+`R3.11-browser-stylesheet-resources` definiert und aktiv, in diesem Lauf
+nicht implementiert. Er ergaenzt externe Stylesheets/Imports ueber ein
+begrenztes Ressourcenbuendel ohne Worker-Datei-/Netzwerkautoritaet.
+Formulare, Cookies, POST, CSS-Bild-/Font-Ressourcen und JavaScript bleiben
+offen; keine Behauptung eines vollstaendigen modernen Browsers oder einer
+VMware-Laufzeitabnahme. R3.6b bleibt mit unveraenderten Anforderungen vertagt.
+
+### Abschliessende Wiederaufnahme mit beobachteter Mausposition
+
+Nutzerfreigabe zur Fortsetzung der verbleibenden Teststeuerungsreparatur.
+Die 50 vorhandenen geaenderten Pfade sind dem Kandidaten zugeordnet, keine
+fremden Aenderungen. Nur Runner, seine Browser-Regression und Dokumentation/
+Queue werden geaendert; OS-Produktionscode und Referenzartefakte bleiben gleich.
+Vor der Richtungsumkehr nach Homing und vor dem Resize-Button-down prueft der
+Runner den vollstaendigen sichtbaren Schwarz-/Weiss-/Schattenpfeil an der
+erwarteten Position. Native QMP-Screendumps haben quittierte Dateierzeugung
+und pro Versuch einen frischen Namen; kein alter Scanout kann bestehen.
+Jede Barriere hat maximal eine Sekunde und 16 Versuche innerhalb der bisherigen
+absoluten Hostfrist. Keine neue Gastfrist, kein direktes Pointer-Setzen und
+kein Entfernen der eigentlichen Resize-/Wheel-/Paint-/Close-Pruefungen.
+
+Die reale Runner-Regression scheitert vor der Reparatur an den fehlenden
+Beobachtungsbarrieren (`r310-pointer-behavior-red.log`) und besteht danach.
+Der Pixeltest erzeugt seine Referenz unabhaengig aus der produktiven
+Framebuffer-Zeigerform, nicht aus der Matcher-Konstante. Falsche Position,
+beschaedigte Pixel, kaputte Groessen, fehlende Capture-ACKs und endlose
+unpassende Bilder werden abgewiesen. Browser-Host: 19 PASS (2,335 s),
+`r310-pointer-host.log`. Die unveraenderten VMware-/QEMU-Builds und Hostgruppen
+werden wiederverwendet; Image/Kernel/Config wurden vor dem Gastlauf exakt
+gegen die letzte Referenz geprueft. Die anschliessende vollstaendige Gastabnahme
+ist bestanden; siehe Abschlussnachweis oben.
+
+## R3.10: Abschluss blockiert an der quittierten Maus-Teststeuerung
+
+**Vorheriger Abschluss: kein Commit; R3.10 blieb aktiv.** Nach der fokussierten QMP-Reparatur
+scheitert die finale Gastabnahme (96,45 Hostsekunden) in Phase 9. CSS-Pixel,
+Bilder, Eingabe, Links, Scrollbar, Reload und Worker-Fault-/Timeout-Recovery
+bestehen. QMP quittiert die Mauskommandos, der Gast meldet `DESKTOP_MOUSE_OK`,
+aber kein Resize/Reflow; Rad und Close werden in diesem Lauf nicht erreicht.
+Die Steuerung braucht nur noch 1137 statt 4126 ms; daraus folgt keine
+bestandene Interaktionspruefung und kein behobener Worker-Ladeengpass.
+
+Finale Referenzbuilds: VMware PASS 44,76 s
+(`20260906-011739-package-vmware-vga.log`), QEMU PASS 42,66 s
+(`20260906-011901-package-qemu-vga.log`). Browser-Host 17 PASS (2,106 s),
+ergaenzend Desktop 58 PASS (0,365 s); die acht unveraenderten gezielten
+Hostgruppen bleiben wiederverwendbare Evidenz, insgesamt 95 Tests mit
+93 PASS und zwei alten Shell-Skips. Finales Profil qemu/vga ohne Injection;
+Image-/Kernel-/Config-SHA256 sind vor/nach dem Gastlauf identisch. Image:
+`97AEBD0CC759AB1DB1E6030951F6F37859D556479A7DA2B11D6E9C0121519845`.
+Logs, Digests, Konfiguration und beide frischen Scanouts liegen unter
+`build/codex-agent/r310-qmp-final-*`; Wrapper-Buildlogs unter
+`r310-qmp-package-{vmware,qemu}.log`. Alle frueheren Negativbelege und der
+nutzergestaetigte Standby-Befund bleiben erhalten.
+
+Read-only-Nachpruefung des primaeren QEMU-HID-Quellcodes:
+[`hid_pointer_sync`](https://github.com/qemu/qemu/blob/master/hw/input/hid.c)
+fasst noch ungelesene Motion-Ereignisse bei gleichem Buttonzustand zusammen.
+QMP-ACK beweist daher keinen konsumierten Homing-Pfad. Die neue schnellere
+Folge kann Homing und Gegenbewegung zusammenziehen, bevor der Gast am
+Bildschirmrand klemmt; die behauptete Ausgangsposition `(0,0)` ist dann nicht
+bewiesen. Das ist eine plausible konkrete Fehlerhypothese, noch kein
+Trace-Nachweis fuer die installierte QEMU-Binary. Die Hosttests pruefen bisher
+Wire-ACK und Geometriearithmetik, nicht diese Geraete-/Gast-Konsumbarriere.
+Naechste notwendige Arbeit ist ein begrenzter beobachtbarer Zeiger-/Homing-
+Nachweis vor dem Drag, ohne willkuerliche Fristverlaengerung oder Umgehen des
+echten USB-Eingabepfads. Nach fehlgeschlagener fokussierter Reparatur gilt
+die Paket-Stopregel: keine weitere Implementierung/Gastwiederholung oder
+Queue-Weiterschaltung in dieser Wiederaufnahme.
+
+### Messung und Reparaturverlauf
+
+Neue ausdrueckliche Freigabe: Diagnose, Reparatur, vollstaendige Abnahme und
+lokaler Commit bei Erfolg ohne Routine-Rueckfragen. Keine fremden Aenderungen,
+keine Erweiterung der Produktionsautoritaet oder der eingefrorenen Grenzen.
+Der instrumentierte Gastlauf scheitert nach 94,81 Hostsekunden erneut in
+Phase 12; beide Rad-Richtungen bestehen, Close fehlt. Image/Kernel/Config sind
+vor/nach dem Lauf identisch. Negative Evidenz bleibt erhalten:
+`r310-timing-runtime.log`, `r310-timing-failure.browser.log`,
+`r310-timing-digests-{before,after}.json` und `r310-timing-config.json`.
+
+Feste, nur im Probe-Modus aktive Zaehler messen kumuliert: sechs Worker-Starts
+9302 ms, zwoelf Datei-Lesevorgaenge 4713 ms, drei Bilddekodierungen 273 ms,
+22 Rasterungen 124 ms, Puffererzeugung 51 ms, Pixel-IPC 1247 ms. Body-Zeit
+3627 ms schliesst Raster/Puffer/IPC ein und darf nicht zu diesen addiert werden;
+Chrome 1312 ms, Status 559 ms. Teststeuerung: Resize 4126 ms, Rad ab 341 ms,
+Rad auf 150 ms. Somit ist Glyphvorbereitung nicht der verbleibende Engpass.
+Die 150-ms-Mux-Pause je HMP-Kommando ist unnoetige Testlatenz; langsame Worker-
+Starts bleiben ein separater OS-Ladepfad-Befund, kein behobener Performancefehler.
+
+Gezielte Reparatur: nur der Browser-Test nutzt quittiertes natives QMP
+`input-send-event` ueber eine kurzlebige Loopback-Verbindung. Kein HMP-
+Kompatibilitaetsaufruf, keine gefaelschten Gastmarker und kein direktes
+Handler-Aufrufen. Relative Bewegung, USB-HID-Geraet, Pausen zur HID-Verarbeitung,
+Scanout-Geometrie, Configure/Reflow, beide Rad-/Paint-ACKs, Fault/Timeout-
+Recovery, Close und alle Fristen bleiben unveraendert. Negativtests pruefen
+Fragmentierung, Ereignisquota, Antwort-ID, EOF/kaputte Antworten, Fristablauf
+und Schliessen/Reapen bei Admissionfehler. Rot-/Gruennachweis in
+`r310-qmp-{red,green}.log`; abschliessende Hostpruefung 17 Tests PASS (2,106 s)
+in `r310-qmp-final-host.log`. Abschliessende Build-/Gastbefunde stehen oben;
+keine Abnahme durch Hosttests allein.
+
+## R3.10: CSS, Resize und Mausrad im Gast bestaetigt; Gesamtabnahme blockiert
+
+**Vorheriger Abschluss am 6. September: kein Commit, R3.10 blieb aktiv.**
+Die Glyphvorbereitung ist reduziert, Motion/Wheel-Reihenfolge inklusive
+Legacy-Client-Motion korrigiert. Alle neun gezielten Hostgates bestehen
+(91 Tests: 89 bestanden, zwei unveraenderte Shell-Skips); zusaetzlich bestehen
+58 vorhandene Desktop-Regressionspruefungen. Unveraenderte Hostevidenz wurde
+wiederverwendet, geaenderte Pfade erneut geprueft. Finale Referenzbuilds:
+VMware PASS 52,77 s (`20260906-004815-package-vmware-vga.log`), QEMU PASS
+42,77 s (`20260906-004908-package-qemu-vga.log`). Kernel und oeffentliche
+Protokollgroessen, Queues, Fristen und Quoten wurden nicht geaendert.
+
+Die einzige finale Gastwiederholung scheitert nach 96,36 Hostsekunden:
+`test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga`.
+Dieser regulaere Lauf bestaetigt Eingabe, Bilder, Links, Scrollbar/Clipping,
+Reload, Transportfehler, Worker-Fault-/Timeout-Recovery, CSS-Pixel, Resize
+und beide echten Mausrad-Richtungen. Danach erneut Phase 12 und
+`BROWSER_PROBE_FAIL interaction`; kein `BROWSER_CLOSE_OK`. Das unveraenderte
+30-s-Gesamtbudget ist beim Abschluss erschoepft. Dokumentauftraege 1576/1717 ms,
+Bild-/Resize-Reflow 2368/2701 ms; ein belastbarer Gesamt-Performancegewinn
+ist durch die reduzierte Glypharbeit allein somit nicht nachgewiesen.
+Profil qemu/vga, Fault-Injection-Schalter false und Image-/Kernel-/Config-
+Hashes sind vor/nach diesem Lauf identisch. Der vorherige Standby-Lauf ist
+ein separater Befund, nicht die Erklaerung dieses regulaeren Fehlschlags.
+
+Finale Evidenz in `build/codex-agent/`:
+`r310-completion-final-runtime.log`,
+`r310-completion-final-failure.browser.log`,
+`r310-completion-final-config.json`,
+`r310-completion-final-digests-{before,after}.json`,
+`r310-completion-final-css-scanout.ppm` und
+`r310-completion-final-image-fixture.ppm` (beide frisch).
+Nach erschoepfter fokussierter Reparatur gilt Stop: kein weiterer Umbau,
+kein weiterer Gastversuch, keine Queue-Weiterschaltung. Naechster Bedarf
+ist eine genaue End-to-End-Messung des Bildpuffer-/Surface-/Eingabepfads und
+gezielte Reparatur des nachgewiesenen Engpasses; kein blind groesserer Cache
+und keine Fristverlaengerung. SDK/Framebuffer/Monitor wurden dazu nur gelesen:
+Pixelpublikation erzeugt weiterhin einen neuen unveraenderlichen Vollpuffer
+und mehrere Surface-Transaktionen, der HMP-Adapter wartet zweimal 75 ms je
+Kommando. Die jeweiligen Anteile am Restengpass sind noch nicht vermessen.
+
+### Reparaturverlauf dieser Wiederaufnahme
+
+Neue ausdrueckliche Freigabe fuer die verbleibende Browser-/Eingabelatenz:
+der zugeordnete Kandidat wird auf 8eb525d0 fortgesetzt; keine fremden
+Aenderungen gefunden. Keine Fristen-/Quotenerhoehung und kein Ueberspringen
+der abschliessenden Fristpruefung. Die echte Glyphraster-Regression zeigt
+256 redundante Vorbereitungen und besteht nach frame-lokalem Cache mit einer;
+Pixel bleiben identisch, Font-/Hoehenwechsel und kaputte Grenzen bleiben
+geprueft. Der echte extrahierte Compositor-Zweig reproduziert ausserdem
+Scroll-Hit-Testing an der alten Zeigerposition bei ausstehender Bewegung;
+nach der Korrektur werden Motion und Wheel in dieser Reihenfolge verarbeitet.
+Rot-/Gruennachweise: `r310-completion-glyph-{red,green}.log` und
+`r310-completion-motion-{red,green}.log` unter `build/codex-agent/`.
+Die vollstaendige Abnahme dieses reparierten Kandidaten steht noch aus.
+
+Erste Wiederaufnahme: Browser-Host 13 Tests (2,55 s), Surface 10 (1,36 s),
+CSS (30,40 s), HTML (3,70 s) und zusaetzlich Desktop 58 Tests (0,74 s) PASS.
+Unveraenderte Hostgates bleiben gueltig. Referenzbuilds: VMware 52,75 s
+(`20260905-231524-package-vmware-vga.log`), QEMU 43,09 s
+(`20260905-231616-package-qemu-vga.log`). Der Gastlauf ist dennoch FAIL:
+5290,36 Hostsekunden einschliesslich einer unerwarteten Werkzeugunterbrechung
+von rund 5208 Sekunden. Der Host-Runner bricht mit fehlender Recovery-/CSS-/
+Resize-/Wheel-Evidenz ab, waehrend das letzte Gastlog den Recovery-Workerstart
+bei 59743 ms zeigt. Der Nutzer bestaetigt am 6. September, dass er den PC
+waehrenddessen selbst in Standby versetzt hatte. Die lange Unterbrechung
+ist damit erklaert und kein nachgewiesener REIST-OS-Fehler; der unvollstaendige
+Lauf bleibt dennoch ohne erfolgreichen Gastnachweis oder belastbaren
+Gesamt-Latenzvergleich.
+Image-/Kernel-/Konfigurationshashes sind vor/nach dem Lauf unveraendert.
+Logs: `r310-completion-runtime.log`, `r310-completion-interrupted.browser.log`,
+`r310-completion-digests-{before,after}.json`. Das alte CSS-PPM ist nicht aus
+diesem Lauf und wird nicht als frische Evidenz verwendet.
+
+Eine bei direkter Diffpruefung gefundene und real reproduzierte Luecke wird
+als einzige fokussierte Nachreparatur geschlossen: Nach vorgezogenem Motion-
+Flush muss das normale Client-Motion-Ereignis erhalten bleiben, insbesondere
+fuer Clients ohne Scroll-Opt-in. Der echte Branch-Test scheitert zuvor daran
+(`r310-completion-motion-legacy-red.log`); der finale Surface-Host besteht
+mit 10 Tests in 1,42 s, Desktop mit 58 Tests in 0,46 s
+(`r310-completion-final-gate-{surface,desktop}.log`). Keine neue Frist,
+keine Aenderung an Glyphcache, Browserprobe oder Kernel. Nach beiden finalen
+Referenzbuilds folgt genau eine weitere vollstaendige Gastabnahme; bei
+erneutem Fehlschlag Stop ohne Commit und ohne weitere Reparatur.
+
+### Letzte abgeschlossene Abnahme vor der aktuellen Reparatur
+
+**Aktueller Abschluss: kein Commit, keine Queue-Weiterschaltung.** Die neue
+ausdrueckliche Freigabe fuer QEMU-Referenzbuild und eine vollstaendige
+Gastabnahme ist ausgefuehrt, ohne Produktions- oder Runner-Aenderung.
+`test-reist-package.ps1 -Target qemu -Video vga`: PASS, 42,69 s
+(`20260905-225752-package-qemu-vga.log`). Das zuvor vorhandene generierte
+VMware-Image wurde wie freigegeben durch die QEMU-Referenz ersetzt;
+Quellen, alter CSS-Stash und negative Evidenz sind erhalten.
+
+`test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga`:
+FAIL, 95,86 Hostsekunden. In diesem Lauf bestehen Bilder, Eingabe, Links,
+Scrollbar/Clipping, Reload, Transportfehler, Worker-Fault-/Timeout-Recovery,
+CSS-Pixel und echter Resize/Reflow. Erstmals sind auch beide realen
+Mausrad-Richtungen einschliesslich gezeichneter Scrollposition nachgewiesen:
+`BROWSER_WHEEL_DOWN_OK`, `BROWSER_WHEEL_UP_OK`. Unmittelbar danach folgt
+`BROWSER_PROBE_STATE phase=12 loaded=1 child=0 pending=0` und
+`BROWSER_PROBE_FAIL interaction`; `BROWSER_CLOSE_OK` fehlt.
+Die lesende Codepruefung lokalisiert den Abbruch im weiterhin unveraenderten
+30-s-Gesamtbudget: Der erfolgreiche Up-Schritt setzt exit_requested und
+erhoeht die Phase auf 12; noch in derselben Iteration prueft main die Frist.
+Das ist keine gescheiterte Scrollbewegung und kein nachgewiesener Browser-
+Absturz, aber weiterhin keine bestandene Gesamtabnahme. Die Frist darf nicht
+durch Ueberspringen der Abschlusspruefung umgangen werden.
+
+Dokumentauftraege: 1510/1722 ms; Bild-/Resize-Reflow: 2392/2800 ms.
+Profil qemu/vga und alle Fault-Injection-Schalter false; SHA256 von Image,
+Kernel und Konfiguration vor/nach dem Gastlauf exakt identisch. Damit ist
+ein erneuter Artefaktwechsel fuer diesen Lauf ausgeschlossen.
+Evidenz unter `build/codex-agent/`: `r310-reference-restored-package.log`,
+`r310-reference-restored-runtime.log`,
+`r310-reference-restored-failure.browser.log`,
+`r310-reference-restored-config.json`,
+`r310-reference-restored-digests-before.json`,
+`r310-reference-restored-digests-after.json`,
+`r310-reference-restored-css-scanout.ppm` und
+`r310-reference-restored-image-fixture.ppm` (beide frisch aus diesem Lauf).
+Unveraenderte Host-/VMware-Gates behalten ihre dokumentierte Evidenz;
+Scope und diff --check bestehen fuer alle 49 zugeordneten Kandidatenpfade.
+Gemaess Freigabe kein weiterer Reparatur- oder Gastversuch. Naechster Bedarf:
+gezielte Laufzeitreparatur im bestehenden Browser-/Eingabepfad mit Regression
+und erneuter vollstaendiger Abnahme, nicht eine laengere Frist. Der offene
+Motion-/Wheel-Batching-Nebenbefund ist durch diesen Lauf nicht erledigt.
+
+### Vorheriger Lauf mit zwischenzeitlich ausgetauschtem Referenzimage
+
+**Vorheriger Abschluss: HMP-Richtung korrigiert, Gastabnahme blockiert.**
+Der echte Runner-Zweig reproduzierte die falsche Down-/Up-Reihenfolge und
+sendet nun -1 fuer Down, +1 fuer Up. Die Regression prueft Wiederholungen
+und dass Up erst nach Down-ACK gesendet wird. Browser-/Runner-Hostgate:
+12 Tests bestanden, 1,97 s (`r310-wheel-direction-host.log`); Rotnachweis:
+`r310-wheel-direction-red.log`. Mit unveraenderten anderen Hostgates sind
+es 89 Tests, 87 bestanden und zwei alte Shell-Skips. Keine OS-Quellaenderung.
+
+Der freigegebene Gastlauf scheitert nach 67,92 Hostsekunden schon in Phase 0:
+erstes Testbild nicht verfuegbar, davor Desktop-Font-Read und Close mit -110
+sowie Storage-Service-Neustart. Erster CSS-Auftrag 3370 ms, davon Spawn
+3018 ms. Mausrad, CSS-Recovery und Resize werden in diesem Lauf nicht erreicht;
+ihre fruehere Teil-Evidenz ist keine Abnahme dieses Laufs.
+
+Die nachtraegliche lesende Artefaktpruefung zeigt einen unerwarteten Wechsel:
+`build/.windows-build-config.json` hat jetzt `target=vmware`, alle
+Fault-Injection-Schalter sind false. Konfiguration/Kernel wurden um 22:45:15,
+das Image um 22:45:17 neu erzeugt, nach dem letzten dokumentierten
+QEMU-Referenzbuild um 22:31. Der Testrunner verwendet vorhandene Images und
+startet QEMU mit Snapshot; dieser Lauf hat den Profilwechsel nicht erzeugt.
+Die vorab angenommene unveraenderte QEMU-Referenz war somit falsch und wurde
+nicht rechtzeitig geprueft. Das belegt den Artefaktwechsel, nicht bereits
+dessen Kausalitaet fuer den I/O-Timeout. Kein weiterer Gastversuch.
+
+Evidenz unter `build/codex-agent/`: `r310-wheel-direction-runtime.log`,
+`r310-wheel-direction-failure.browser.log`,
+`r310-wheel-direction-observed-build-config.json`,
+`r310-wheel-direction-observed-sbom.json`. Kein frischer Screenshot in diesem
+Lauf; alte PPMs werden nicht als aktuelle Evidenz ausgegeben. Kein Commit,
+keine Queue-Weiterschaltung. Vor einer weiteren Abnahme muss der freigegebene
+QEMU-Referenzbuild wiederhergestellt und ein paralleler Profilwechsel
+ausgeschlossen werden. Vorhandenes VMware-Image wurde nicht ueberschrieben.
+
+Neue ausdrueckliche Freigabe: ausschliesslich HMP-Richtung im Runner,
+echte Runner-Regression und erneute vollstaendige Gastabnahme. OS-Quellen,
+Images, Quoten, Fristen und vorhandene Nachweise bleiben unveraendert.
+Der zugeordnete Kandidat wird fortgesetzt; keine fremden Aenderungen gefunden.
+
+**Letztes Ergebnis: blockiert, kein Commit.** Die Performance-Korrektur spart
+im Gast zwei identische Workerstarts nach Fragmentnavigation. CSS, Bilder,
+Links, Scrollbar, Worker-Fault-/Timeout-Recovery und echter Resize/Reflow
+sind nachgewiesen. Alle neun Hostgates bestehen mit aktuell 88 Tests
+(86 bestanden, zwei alte Shell-Skips); der zuletzt geaenderte Browser-/Runner-
+Hostgate besteht mit 11 Tests in 1,98 s. Beide unten genannten finalen
+Referenzbuilds bleiben gueltig: Die letzte Korrektur aendert nur den Runner.
+
+Die abschliessende erlaubte Gastwiederholung scheitert nach 95,03 Hostsekunden
+weiter in Phase 10. Im Gegensatz zum vorherigen Lauf sind nun sowohl der
+kurze Mausweg als auch `mouse_move 0 0 1` vor dem Abbruch im Transkript sichtbar.
+Dokumentauftraege 1698/1759 ms, Reflows 2570/2602 ms; Resize-Reflow ist fertig
+bei 64921 ms. Negative Evidenz: `r310-wheel-path-runtime.log`,
+`r310-wheel-path-failure.browser.log`, `r310-wheel-path-css-scanout.ppm`.
+
+Die anschliessende **nur lesende Diagnose** belegt einen Vorzeichenfehler im
+Gasttest: QEMUs `hmp_mouse_move` ordnet positives dz `WHEEL_UP` zu, der Runner
+sendet aber +1 fuer seinen Down-Check. Am Seitenanfang ist dies korrekt ohne
+Scrollbewegung; die Down-Bestaetigung kann so nicht kommen. -1 ist Down, +1 Up.
+Referenz: [QEMU HMP-Implementierung](https://github.com/qemu/qemu/blob/master/ui/ui-hmp-cmds.c),
+auch im Release v10.0.0; installiert ist 11.1.0-12130-ge470268ff4. Der Fehler
+liegt nachweislich im Testrichtungssignal; das ist noch kein Gastnachweis
+fuer die vollstaendige Mausrad-Zustellung. USB-HID/xHCI und Kernel wurden
+nur gelesen, nicht geaendert. Nebenbefund: gemeinsames Batching von Motion
+und Wheel muss die Reihenfolge am Routingpunkt bewahren; dafuer ist noch
+kein neuer Verhaltensnachweis gefuehrt.
+
+Die Stop-Regel nach einer fokussierten Reparatur ist erreicht. Keine weitere
+Quellaenderung oder Gastwiederholung in diesem Lauf, keine Queue-Weiterschaltung,
+kein Commit. Erforderlich ist eine neue Freigabe fuer Korrektur und Regression
+der HMP-Richtung sowie die erneute unveraenderte vollstaendige Gastabnahme.
+Alle negativen Logs und der gesicherte CSS-Stash bleiben erhalten.
+
+Erneute ausdrueckliche Freigabe am 5. September: Worker-Starts und Bild-Reflows
+weiter optimieren, ohne Sicherheits- oder Zeitgrenzen zu lockern. Nur der
+zugeordnete bestehende Kandidat wird fortgesetzt; keine fremden Aenderungen.
+Erster reproduzierbarer Ansatz ist der durch Fragmentnavigation unnoetig
+verworfene Szenencache. Einweg-Worker, Frischepruefung und alle Gastchecks
+bleiben unveraendert; untenstehende Fehlschlaege bleiben negative Evidenz.
+
+Der echte Browser-Hostfall reproduzierte den Fragmentfehler und besteht mit
+frischem Datei-Reload, unveraendertem Szeneninhalt sowie Ablehnung geaenderter
+Query/Herkunft (`r310-fragment-red.log`, `r310-fragment-gate-browser.log`,
+10 Tests, 1,89 s). Beide Referenzbuilds bestanden (VMware 11,31 s,
+`20260905-223009-package-vmware-vga.log`; QEMU 42,25 s,
+`20260905-223103-package-qemu-vga.log`). Unveraenderte Hostgates behalten ihre
+bestandene Evidenz; SDK, Parser, gemeinsame Surface-Dateien und ihre Tests
+wurden seit deren letzter Abnahme nicht geaendert.
+
+Erster Gast dieser erneuten Freigabe: FAIL nach 96,47 Hostsekunden.
+Der Fragmentfix spart nachweislich zwei Workerstarts: zweiter
+`BROWSER_CSS_SCENE_REUSED` statt Dokument- und Bild-Reflow. Fault/Timeout-
+Recovery, CSS-Pixel und nun auch echter Resize/Reflow bestehen. Der letzte
+Abbruch erfolgt in Phase 10, bevor der Monitor die erste Radbewegung sendet.
+Resize-Reflow startet bei 62521 ms und dauert 2591 ms; danach verbraucht
+der unnoetige Sechs-Paket-Mausweg zum Seitenanfang das restliche Gesamtbudget.
+`r310-fragment-failure.browser.log`, `r310-fragment-runtime.log` und
+`r310-fragment-css-scanout.ppm` bleiben negative Evidenz, kein Gesamterfolg.
+
+Die einzige fokussierte Reparatur nach diesem Fehlversuch aendert deshalb
+lediglich den Test-Zielpunkt: naechster Dokumentpunkt acht Pixel innerhalb
+von Scrollbar-/Statusgrenze statt Rueckweg quer ueber die Seite. Der echte
+Runner-Hostfall reproduziert sechs statt eines Bewegungspakets und prueft
+Resize-Press/Release sowie den Zielpunkt im Dokument (`r310-wheel-path-red.log`).
+Keine simulierten Browserhandler, entfallenden Wheel-/Pixel-/Recovery-Checks,
+Produktionsaenderung oder Fristverlaengerung. Nach finalem Hostgate folgt genau
+eine erneute Gastpruefung auf den unveraenderten finalen Referenzimages.
+
+Abschluss der freigegebenen Scroll-/Performance-Erweiterung am 5. September:
+**Kein Commit, keine Queue-Weiterschaltung.** Alle neun Hostgates bestehen
+(87 Tests, 85 bestanden, zwei unveraenderte Shell-Skips). Die finalen
+Referenzbuilds nach der Bulk-Read-Anpassung bestehen: VMware 50,13 s
+(`20260905-221141-package-vmware-vga.log`), QEMU 43,21 s
+(`20260905-221231-package-qemu-vga.log`).
+
+Die einzige fokussierte Gastwiederholung scheitert nach 97,93 Hostsekunden:
+`test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga`.
+Der Lauf erreicht nun Szene-Wiederverwendung, Bilddarstellung, Eingabe,
+Links, Scrollbar/Clipping, Reload, Transportfehler sowie echte Worker-Fault-,
+Timeout- und Recovery-Erfolgsmarker. Auch `BROWSER_CSS_PIXELS_OK` und der
+CSS-Scanout mit Hintergrund, Text und Rahmen sind erreicht. Dokumentauftraege
+dauern 1507/2145/1643 ms, Bild-Reflows 2496/2495 ms; allein die gemessenen
+Worker-Starts benoetigen weiterhin 1134 bis 1904 ms.
+
+Der konkrete Restblocker ist Phase 9 am unveraenderten 30-s-Gesamtbudget:
+`BROWSER_PROBE_STATE phase=9 loaded=1 child=0 pending=0`. Das Monitortranskript
+zeigt den Abbruch waehrend der Mauspositionierung, noch vor dem ersten
+Resize-Button-down; danach gibt es keinen weiteren Worker-Start. Daher kein
+Nachweis fuer abgeschlossenen Resize, echte Wheel-down/up-Ereignisse oder
+sauberes Close in diesem Lauf. Das ist keine erfolgreiche Mausrad-Gastabnahme.
+Die Mausrad-Implementierung und ihre Hostregressionen bleiben als Kandidat
+erhalten; keine Frist wurde verlaengert und kein Test entfernt.
+
+Negative Evidenz unter `build/codex-agent/`:
+`r310-perf-final-runtime.log`, `r310-perf-final-failure.browser.log`,
+`r310-perf-final-css-scanout.ppm`, `r310-perf-final-image-fixture.ppm`.
+Die CSS-Pixelpruefung stammt aus Gast und Runner; der lokale Bildbetrachter
+konnte das PPM nicht oeffnen. Nach der Stop-Regel keine weitere
+Implementierung oder Gatewiederholung ohne neue Reparaturfreigabe.
+Naechster Bedarf: weitere gezielte Lade-/Worker-Start-/Reflow-Optimierung
+innerhalb der unveraenderten Fehlergrenzen, nicht eine laengere Testfrist.
+Aktiv bleibt R3.10 auf `8eb525d0`; der alte CSS-Stash bleibt unangetastet.
+
+### Verlauf und erhaltene negative Evidenz
+
+Neue ausdrueckliche Freigabe: gemeinsame Surface-/Compositor-Dateien fuer
+Mausrad-Scrollen sowie Lade-/Reflow-Optimierung, ohne Lockerung von Kernel-,
+Sicherheits- oder Zeitgrenzen. Der zugeordnete Kandidat wird im selben
+Arbeitsbaum fortgesetzt. Die Queue listet die additiven Dateien und den
+zusaetzlichen Surface-Hostgate; alte Gates und negative Evidenz bleiben erhalten.
+Implementiert sind opt-in Scroll-v1 im unveraenderten v6-Umschlag, geordnete
+gepruefte Radereignisse und Wiederverwendung des Browser-Scrollpfads.
+Ueberfluessige Loeschungen von vier nie erzeugten CSS-Tempdateien je Worker
+sind entfernt; nur gestartete CURL-Kinder loesen noch ihre bisherige
+Body-/Teil-Dateibereinigung nach Reap aus. Neue Regressionen reproduzierten
+beide alten Verhaltensfehler. Die ersten Hostlaeufe brauchten eine lokale
+Zig-Cachekonfiguration im bisher compilerbedingt uebersprungenen Surface-Test
+und eine signierte Koordinatenpruefung im Mausradhandler; keine Warnung oder
+Pruefung wurde abgeschaltet. Finale Gateergebnisse stehen oben.
+
+Der anschliessende Toolchain-Gate zeigte einen i386-Linkfehler. Die begrenzte
+separate Assemblierdiagnose (`r310-wheel-browser.s`) belegte `__divdi3` fuer
+die neue 64-Bit-Scrollrechnung. Quotient-/Restzerlegung verwendet nun nur
+sichere 32-Bit-Division und breite Addition, ohne neue Laufzeitabhaengigkeit.
+Browser-Runtime-Hostgate bestand in 1,83 s, Toolchain mit 21 Tests in 101,05 s;
+Surface (9 ohne Skip), GUI-Browser, CSS und HTML bestanden ebenfalls.
+Referenzbuilds: VMware 57,31 s (`20260905-215546-package-vmware-vga.log`),
+QEMU 43,09 s (`20260905-215644-package-qemu-vga.log`).
+
+Erster Gast dieser Erweiterung: FAIL nach 96,39 Hostsekunden, erneut in Phase 6
+am originalen 30-s-Limit. Dokumente 1593/2311/2287 ms, Reflows 2583/2598/2677 ms;
+die entfernten spekulativen Unlinks waren nicht der dominante Zeitanteil.
+Die Start-/Scroll-/Bildchecks erreichten ihre bisherigen Marker, nicht aber
+CSS-Pixel, Resize oder Mausrad. Negative Evidenz bleibt als
+`r310-wheel-gate-runtime.log` und `r310-wheel-failure.browser.log` erhalten.
+
+Die fokussierte Performance-Reparatur nach diesem Gastfehler verwendet nur
+die letzte validierte Szene bei frisch gelesenem, byteidentischem HTML unter
+identischer URL, Geometrie und intrinsischen Massen. Bilder werden weiter
+frisch geladen; identische Masse benoetigen kein weiteres CSS-Reflow.
+Geaenderte Bytes/URL/Viewport und explizite Fehlermodi bleiben Workerauftraege.
+Echte Hostregression Rot/Gruen: `r310-wheel-scene-cache-{red,green}.log`.
+Zusaetzlich bauen die echten Parserbibliotheken mit Standard-LLVM-`-Os` und
+Linker-Garbage-Collection fuer Funktionen/Daten, ohne Quoten oder Regeln zu
+lockern. Keine weitere Gastwiederholung nach einem erneuten Misserfolg.
+Vor dieser abschliessenden Wiederholung wurde der zweite messbare Faktor
+abgesichert: `demo-colors.gif` hat 214860 Byte; die bisherigen 4096-Byte-Reads
+verursachten 53 IPC-Aufrufe. `BROWSER_READ_CHUNK` verwendet jetzt die vorhandene
+128-KiB-Bulkgrenze, ein echter Hostfall beweist genau zwei Reads und bytegleiche
+Ausgabe (`r310-perf-bulk-red.log`, finaler Browserhostgate in 1,89 s).
+Der groessenoptimierte Worker hat 821292 statt 874540 Byte. Der Toolchain-Gate
+bestand nach der Compilerprofil-Aenderung in 101,45 s; die danach ausschliesslich
+geaenderte Read-Batchgroesse wird durch finalen Browserhostgate und beide
+erneuten Referenzbuilds geprueft. Vorlaeufige Builds vor der Batchanpassung
+sind keine finale Gastevidenz.
+
+Erneute Freigabe am 5. September 2026: Der Nutzer beauftragt ausdruecklich
+die unten diagnostizierte Worker-Startreparatur. Der zugeordnete Kandidat wird
+im bestehenden Arbeitsbaum fortgesetzt; keine fremden Aenderungen gefunden.
+Nur vor dem ersten gueltigen Paket darf EBADF/EACCES begrenzt abgewartet
+werden. Kernel, Autoritaet und absolute Fristen bleiben unveraendert.
+Betroffene Hostgates, beide Referenzbuilds und genau eine weitere Gastabnahme
+werden erneut ausgefuehrt; unbeeinflusste bestandene Hostevidenz bleibt gueltig.
+Die vorherige Sperre und saemtliche negativen Ergebnisse bleiben unten erhalten.
+
+Ergebnis dieser freigegebenen Reparatur: Der Worker wartet nun nur vor dem
+ersten akzeptierten Paket bei EBADF/EACCES auf Delegation, jeweils mit 1 ms
+Schlaf und unveraenderter absoluter Deadline. Spaeterer Rechteverlust oder
+fehlgeschlagenes Schlafen beendet den Auftrag sofort. Der echte CSS-Hostlauf
+prueft jetzt 13 Faelle einschliesslich fehlender Delegation und Revocation.
+Eine erste Testfassung benutzte versehentlich das nicht im SDK vorhandene
+strstr; nur der Test wurde auf bestehende Stringfunktionen korrigiert.
+Danach reproduzierte der alte Worker sechs Verhaltensfehler. Beide negativen
+Entwicklungslogs bleiben als `r310-startup-regression-red*.log` erhalten.
+
+Finale betroffene Hostgates bestanden: `python test/test_css_engine.py -v`
+(27,74 s), `python test/test_html_engine.py -v` (3,40 s),
+`python test/test_browser_runtime_source.py -v` (1,80 s). Die uebrigen fuenf
+unveraenderten Hostgates behalten ihre unten dokumentierte bestandene Evidenz:
+insgesamt weiterhin 76 bestandene Tests und zwei alte Shell-Skips. Logs der
+neuen Gates: `build/codex-agent/r310-startup-gate-test_*.log`.
+Beide Referenzbuilds bestanden mit finaler Startreparatur:
+`test-reist-package.ps1 -Target vmware -Video vga` (46,55 s,
+`20260905-213230-package-vmware-vga.log`) und anschliessend
+`test-reist-package.ps1 -Target qemu -Video vga` (41,23 s,
+`20260905-213316-package-qemu-vga.log`).
+
+**Weiterhin blockiert, kein Commit:** Der einzige freigegebene Gastlauf
+`test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga`
+scheiterte nach 95,34 Hostsekunden am unveraenderten 30-s-Gesamtbudget der
+Browserprobe. Der Startfehler trat nicht mehr auf: Sechs CSS-Workerauftraege
+publizierten erfolgreich, Bilder, Adressleisteneingabe, Links, Anker,
+Scrollbar-Capture, Scroll-Clipping und Reload lieferten ihre Erfolgsmarker.
+Dokumentauftraege dauerten 1700/2357/2379 ms, Bild-Reflows 2596/2679/2582 ms.
+Alle lagen unter der unveraenderten 5-s-Workergrenze, zusammen mit Bild-/
+Dateiladen war aber das Gesamtbudget bereits in Phase 6 beim gestarteten
+Fehlerinjektionsauftrag erschoepft (`loaded=1 child=16`). Timeout-Recovery,
+CSS-Testpixel, echter Resize und Close wurden nicht mehr nachgewiesen.
+Kein weiterer Gastversuch, kein verlaengertes Limit, keine Queue-Weiterschaltung.
+Vollstaendige negative Evidenz: `r310-startup-gate-runtime.log` und
+`r310-startup-failure.browser.log`; der frische Screenshot der normalen
+Bildfixture ist als `r310-startup-image-fixture.ppm` gesichert, kein Nachweis
+der noch nicht erreichten CSS-Pixel-/Resize-Probe. Naechste erforderliche
+Reparatur ist die tatsaechliche Lade-/Reflow-Leistung, nicht die Testfrist.
+
+Historischer Stand vor der oben dokumentierten Erweiterungsfreigabe:
+Zusaetzlicher Nutzerauftrag waehrend dieses Laufs war Scrollen per Mausrad.
+Nur lesende Bestandsaufnahme: Das bestehende Maus-Syscall liefert `wheel`,
+aber `desktop.c` leitet es nur an den internen Explorer weiter. Surface kennt
+lediglich Motion, Button und Keyboard; `desktop_surface.c` und
+`surface_client.c` weisen andere Typen ab. Der Browser ignoriert nicht passende
+Pointertypen. Ein echter Mausradpfad braucht daher eine versionierte,
+append-only Surface-Scrollereignis-Erweiterung, begrenzte gemeinsame
+Queue-/Validierungslogik, Compositor-Routing und Browser-Anwendung mit
+Richtung, Randbegrenzung und Gastnachweis. Diese gemeinsamen Produktionsdateien
+liegen ausserhalb von R3.10 und dessen bisherigem ABI-invarianten Umfang.
+Noch keine Mausradimplementierung; keine stille Scope-Erweiterung oder
+Umdeutung von Motion/Keyboard-Ereignissen. Architekturfreigabe steht aus.
+
+Aktiv ist `R3.10-browser-css-layout` auf der abgenommenen Speicherbasis
+`8eb525d0`. Der gesicherte CSS-Kandidat wurde durch kontextgepruefte Patches
+aus `121cb536d7c2ef63df59b7d3aa08a4f4b3da0086` wiederhergestellt; die neuen
+MEMTEST-/SDK-/Speicheraenderungen bleiben erhalten. Das unveraenderte
+LibCSS-0.9.2-Archiv ist gegen seinen eingefrorenen SHA-256 geprueft.
+Alte Diagnoseergebnisse sind keine Abnahme dieses zusammengefuehrten Stands.
+
+Die Schrift ist read-only ins Browserprogramm eingebettet. Der erste alte
+Gastlauf scheiterte vor der Dokumentverarbeitung mit nicht verfuegbarer
+Schrift; `r310-development.browser.log` bleibt negative Evidenz. Der nun
+verwendete Browser-Runner uebernimmt die in R1.2c nachgewiesene prozesslokale
+Windows-QEMU-Timerpraemisse aus dem gemeinsamen Helper. Ein neuer echter
+Runner-Verhaltenstest beweist dessen Aufruf und vollstaendiges Child-Reaping
+vor Readerstart bei verweigerter Konfiguration (Rot-/Gruen-Logs:
+`r310-resume-timer-{red,green}.log`). Keine Gastfrist oder Power-Prioritaet
+wurde geaendert. Sieben Hostgates bestanden. Der erste Toolchain-Gate-Lauf
+scheiterte nach 144,60 s ausschliesslich am 60-s-Limit des SDK-Unterprozesses.
+Die fokussierte Reparatur parallelisiert unabhaengige SDK-Objekte mit genau
+vier festen Arbeitern und stabiler Rueckgabereihenfolge; der neue echte
+Helper-Verhaltenstest beweist Parallelitaetsgrenze, Vollstaendigkeit und
+Fehlerweitergabe. Sein vorheriger serieller Pfad scheiterte an der Testbarriere.
+Keine Timeout-Erhoehung, kein Weglassen von Bibliotheken oder Tests. Der
+Toolchain-Wiederholungslauf bestand mit 21 Tests in 101,37 s. Alle acht
+Hostbefehle zusammen: 78 Tests, 76 bestanden, zwei alte Shell-Compilerfaelle
+uebersprungen. Erste Referenzbuilds: VMware 11,30 s, QEMU 41,74 s.
+
+Der erste formale Browsergast erreichte `BROWSER_FONT_READY` und einen
+erfolgreich beendeten CSS-Worker, verwarf jedoch dessen Antwort. Der Parent
+las nach dem letzten vollstaendigen Paket erneut; das Kernel-IPC liefert
+nach Peer-Exit dann korrekt EPIPE. `service_css_ipc` normalisierte dies zu
+einem Protokollfehler und brach den Auftrag ab. Die fokussierte Reparatur
+stoppt den Empfang ausschliesslich bei exakt vollstaendiger Rahmung; Reap,
+Generation und gesamte Szene werden danach weiterhin validiert.
+Der echte Hosttransport stellt nun den Exit unmittelbar nach dem letzten
+Paket und EPIPE beim Folgeaufruf nach. Vollstaendige Antwort besteht;
+unvollstaendige bleibt abgewiesen. Der erste neue Trunkierungs-Test erwartete
+versehentlich den rohen -32-Code statt des normalisierten -84; die Erwartung
+wurde korrigiert, nicht die Fehlerbehandlung gelockert. Die anschliessende
+Rot-/Gruen-Probe reproduzierte den eigentlichen zusaetzlichen Receive.
+Alle negativen Logs bleiben erhalten, insbesondere
+`r310-resume-first-failure.browser.log`, `r310-resume-ipc-eof-*.log` und
+`r310-resume-gate-test_browser_runtime_source-repair.log`.
+Die betroffenen Hostgates bestanden gegen die finale Reparatur:
+`test_browser_runtime_source.py -v` (10 Tests, 1,81 s) und
+`test_gui_browser_source.py -v` (8 Tests, 25,51 s). Die finalen Referenzbuilds
+bestanden: VMware/VGA 48,26 s, QEMU/VGA 41,70 s; Logs
+`20260905-211704-package-vmware-vga.log` und
+`20260905-211752-package-qemu-vga.log` unter `build/codex-agent/`.
+
+**BLOCKIERT / Wiederholungsgrenze erreicht:** Der zweite formale
+`test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga`
+scheiterte ebenfalls (etwa 94 Hostsekunden). Kein Commit, keine Queue-
+Weiterschaltung und keine weitere Gastwiederholung. HEAD bleibt `8eb525d0`,
+R3.10 bleibt aktiv; nur sein zugeordneter Kandidat liegt sichtbar im Arbeitsbaum.
+Der zweite Lauf kam nicht zur CSS-Publikation: `BROWSER_FONT_READY`,
+`BROWSER_HTML5_STARTED`, `BROWSER_HTML5_START_ERROR result=-84`, danach
+`BROWSER_HTML5_REJECT exit=74 result=-5 cancelled=1`. Die 5,36-GHz-
+Bootkalibrierung ist unauffaellig. Vollstaendige negative Evidenz:
+`r310-resume-repair-failure.browser.log` und
+`r310-resume-gate-runtime-repair.log`.
+
+Die anschliessende reine Quellpruefung identifiziert einen weiteren
+Start-Race: `kernel/ipc/ipc.c:resolve_capability` liefert bei noch nicht
+delegiertem Handle korrekt EBADF (-9). `html_worker.c:css_worker` wartet in
+dieser Phase bisher nur bei EACCES (-13); EBADF fuehrt sofort zu Exit 74,
+sodass die nachfolgende Parent-Delegation scheitern kann. Der vorhandene
+CSS-Hostmock stellte vor Delegation nur -13 nach und verfehlte diesen Fall.
+Das passt zur beobachteten Exit-/Startfehlerfolge; ein korrigierter Gastnachweis
+fehlt weiterhin. Erforderlich ist eine erneut freigegebene fokussierte
+Worker-Startreparatur mit realem EBADF-Regressionstest: nur vor dem ersten
+empfangenen Paket begrenzt auf Delegation warten, ohne neue Autoritaet,
+Kernelveraenderung oder Fristverlaengerung. Vollstaendiger CSS-Gasterfolg,
+Pixel-/Resize-Nachweis und Abnahme sind ausdruecklich noch offen.
+
+Logs insgesamt: `build/codex-agent/r310-resume-*`. Der originale CSS-Stash
+bleibt unangetastet; keine spaetere Browser- oder VMware-Pointer-Implementierung
+wurde in diesem Lauf begonnen.
+
+## R1.2c: abgenommene Speichergrundlage
 
 Aktiver Auftrag: Browser-Engine-Umbau einschließlich fehlender OS-Grundlagen.
 `R7.1n-ata-pio-read-throughput` und `R3.9-browser-html5-worker` sind abgenommen.

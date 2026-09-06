@@ -17,6 +17,7 @@ typedef struct browser_html_reply {
 int browser_html_validate(const browser_html_reply_t *reply, size_t length,
                           const browser_html_header_t *request,
                           uint32_t child_pid, uint32_t child_generation);
+int browser_html_document_validate(const reist_html_document_t *document);
 /* V2 wire: header, title[128], five counts (text/elements/links/images/anchors),
  * then the occupied prefix of each array in that order. Header.size is wire
  * length; unpack checks it and normalizes size to the in-memory reply size.

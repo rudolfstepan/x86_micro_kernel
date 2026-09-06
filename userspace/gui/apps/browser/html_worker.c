@@ -6,6 +6,64 @@
 static struct { browser_html_header_t header; uint8_t bytes[REIST_HTML_INPUT_CAPACITY]; } input;
 static browser_html_reply_t reply;
 static uint8_t wire_reply[sizeof(reply)];
+#ifdef REIST_CSS_WORKER
+#include "css_engine.h"
+static struct { browser_css_request_t request; uint8_t bytes[65536]; } css_input;
+static browser_scene_t css_scene;
+static uint8_t css_wire[BROWSER_CSS_WIRE_CAPACITY];
+static int css_worker(const char *number) {
+    uint32_t endpoint=0;
+    for (uint32_t i=0;number[i];++i) {
+        if (i>=10 || number[i]<'0' || number[i]>'9' ||
+            endpoint>(UINT32_MAX-(uint32_t)(number[i]-'0'))/10) return 64;
+        endpoint=endpoint*10+(uint32_t)(number[i]-'0');
+    }
+    if (!endpoint) return 64;
+    uint32_t deadline=x86os_uptime_ms()+BROWSER_HTML_DEADLINE_MS;
+    uint32_t at=0,total=0,request=0;
+    for (;;) {
+        int32_t left=(int32_t)(deadline-x86os_uptime_ms()); if (left<=0) return 74;
+        x86os_ipc_bulk_message_t message={X86OS_IPC_BULK_MESSAGE_VERSION,sizeof(message),0,{0}};
+        int rc=x86os_ipc_receive_bulk_timeout(endpoint,&message,(uint32_t)left);
+        /* Parent can delegate only after spawn returns: a not-yet-held handle
+         * is EBADF. Retry only before the first accepted packet; later loss of
+         * authority must abort. Never extend this generation's deadline. */
+        if (!at && (rc==-9 || rc==-13)) {
+            if (x86os_sleep_ms(1)) return 74;
+            continue;
+        }
+        if (rc || message.version!=X86OS_IPC_BULK_MESSAGE_VERSION || message.struct_size!=sizeof(message)) return 74;
+        browser_css_packet_t packet; memcpy(&packet,message.payload,sizeof(packet));
+        if (!at) request=packet.request;
+        if (browser_css_packet_accept(&packet,message.length,request,(uint8_t *)&css_input,sizeof(css_input),&at,&total)) return 74;
+        if (at==total) break;
+    }
+    const browser_css_request_t *q=&css_input.request;
+    if (browser_css_request_validate(q) || q->header.size!=total || q->header.request!=request) return 74;
+    if (q->header.mode==1) { __asm__ volatile("ud2"); return 70; }
+    if (q->header.mode==2) { (void)x86os_sleep_ms(BROWSER_HTML_DEADLINE_MS+1000); return 70; }
+    if (browser_css_render(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,q->document_url,&reply.document,&css_scene)) return 65;
+    x86os_process_identity_t identity;
+    if (x86os_process_identity_of(x86os_getpid(),&identity) || identity.version!=1 ||
+        identity.struct_size!=sizeof(identity) || identity.pid!=x86os_getpid() || !identity.generation) return 70;
+    reply.header=q->header; reply.header.size=sizeof(reply);
+    reply.header.child_pid=(uint32_t)identity.pid; reply.header.child_generation=identity.generation;
+    int size=browser_css_pack(&reply,&css_scene,css_wire,sizeof(css_wire)); if (size<0) return 65;
+    for (at=0;at<(uint32_t)size;) {
+        int32_t left=(int32_t)(deadline-x86os_uptime_ms()); if (left<=0) return 74;
+        uint32_t n=(uint32_t)size-at; if (n>BROWSER_CSS_PACKET_DATA) n=BROWSER_CSS_PACKET_DATA;
+        browser_css_packet_t packet={BROWSER_CSS_PACKET_MAGIC,request,at,(uint32_t)size,{0}};
+        memcpy(packet.bytes,css_wire+at,n);
+        x86os_ipc_bulk_message_t message={X86OS_IPC_BULK_MESSAGE_VERSION,sizeof(message),16+n,{0}};
+        memcpy(message.payload,&packet,16+n);
+        if (x86os_ipc_send_bulk_timeout(endpoint,&message,(uint32_t)left)) return 74;
+        at+=n;
+    }
+    /* The owner retains the endpoint until the final packet is drained and this
+     * exact generation has been reaped. Child exit revokes only its own rights. */
+    return 0;
+}
+#endif
 static void phase(const char *name) {
     x86os_puts("HTMLWORK_PHASE "); x86os_puts(name); x86os_puts(" ms=");
     x86os_print_number((int)x86os_uptime_ms()); x86os_puts("\n");
@@ -22,6 +80,9 @@ static int read_exact(int fd, void *buffer, uint32_t length) {
 }
 int main(int argc, char **argv) {
     if (argc!=3 || !argv || !argv[1] || !argv[2]) return 64;
+#ifdef REIST_CSS_WORKER
+    if (!strcmp(argv[1],"--ipc")) return css_worker(argv[2]);
+#endif
     phase("open-input");
     int fd=x86os_open(argv[1]); if (fd<0) return 74;
     int rc=read_exact(fd,&input.header,sizeof(input.header));

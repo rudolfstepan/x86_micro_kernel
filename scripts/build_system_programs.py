@@ -100,6 +100,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/apps/browser/browser_model.c",
         ROOT / "userspace/gui/apps/browser/browser_images.c",
         ROOT / "userspace/gui/apps/browser/browser_response.c",
+        ROOT / "userspace/gui/apps/browser/browser_scene.c",
         ROOT / "userspace/gui/apps/browser/html_protocol.c",
         ROOT / "userspace/programs/curl_http.c",
         ROOT / "userspace/gui/lib/html_document.c",
@@ -235,6 +236,8 @@ PROGRAMS = {
 PROGRAMS["HTMLWORK.PRG"] = (
     ROOT / "userspace/gui/apps/browser/html_worker.c",
     ROOT / "userspace/gui/apps/browser/html_engine.c",
+    ROOT / "userspace/gui/apps/browser/css_engine.c",
+    ROOT / "userspace/gui/apps/browser/browser_scene.c",
     ROOT / "userspace/gui/apps/browser/html_protocol.c",
     ROOT / "userspace/gui/lib/html_document.c",
 )
@@ -343,7 +346,9 @@ def main() -> None:
             if name == "HTMLWORK.PRG":
                 includes[:0] = [sdk.libc_include_dir, GUI_INCLUDE_ROOT]
                 link_libraries.extend([sdk.library_dir / "libhubbub.a",
-                    sdk.library_dir / "libparserutils.a", sdk.libc_library])
+                    sdk.library_dir / "libcss.a", sdk.wapcaplet_library,
+                    sdk.library_dir / "libparserutils.a", sdk.libc_library,
+                    sdk.library_dir / "libclang_rt.builtins-i386.a"])
                 dependency_files.extend([*gui_headers, *sdk.libc_include_dir.rglob("*.h"),
                     *sdk.include_dir.joinpath("hubbub").rglob("*.h"),
                     *sdk.include_dir.joinpath("parserutils").rglob("*.h"), Path(__file__).resolve()])
@@ -357,6 +362,7 @@ def main() -> None:
                 link_libraries.append(sdk.libc_library)
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
             if name == "BROWSER.PRG":
+                dependency_files.append(ROOT / "assets/fonts/reist-unicode.psf")
                 vendor = ROOT / "third_party/stb_image.h"
                 pin = ROOT / "third_party/stb_image.sha256"
                 # Normalize checkout newlines; source bytes remain pinned.
@@ -377,6 +383,7 @@ def main() -> None:
                 compile_flags=(
                     (["-fno-inline-functions"]
                      if name == "STORAGE.PRG" else []) +
+                    (["-DREIST_CSS_WORKER", "-ffunction-sections", "-fdata-sections"] if name == "HTMLWORK.PRG" else []) +
                     (["-DREIST_CURL_TLS_RUNTIME_PROBE"]
                      if args.curl_tls_runtime_probe and name == "CURL.PRG"
                      else [])) or None,

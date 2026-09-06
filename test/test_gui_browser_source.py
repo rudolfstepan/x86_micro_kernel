@@ -79,7 +79,7 @@ class GuiBrowserSourceTests(unittest.TestCase):
             "BROWSER_DOCUMENT_LIMIT 65536U",
             "browser_model.h",
             "BROWSER_LINK_HIT_CAPACITY",
-            "browser_html_validate",
+            "browser_css_unpack",
             "reist_html_navigation_normalize",
             "address_replace_pending",
         ):

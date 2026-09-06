@@ -109,5 +109,7 @@ int reist_gui_surface_client_receive_input(
     reist_gui_surface_client_t *client, reist_gui_surface_input_t *event,
     uint32_t timeout_ms);
 int reist_gui_surface_client_destroy(reist_gui_surface_client_t *client);
+/** Opt in to scroll extension v1; legacy clients remain unchanged. */
+int reist_gui_surface_client_enable_scroll(reist_gui_surface_client_t *client);
 
 #endif

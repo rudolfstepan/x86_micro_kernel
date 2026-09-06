@@ -17,7 +17,7 @@ class HtmlEngineTests(unittest.TestCase):
             tmp = Path(tmp)
             roots = extract(tmp)
             symbols = ("malloc calloc realloc free memcpy memmove memset memcmp "
-                       "memchr strlen strcmp strncmp strchr strrchr strncpy bsearch tolower strncasecmp").split()
+                       "memchr strlen strcmp strncmp strchr strrchr strncpy bsearch tolower strncasecmp strdup abs").split()
             command = [str(find_zig()), "cc", "-std=c11", "-O1", "-fno-builtin", "-DNDEBUG",
                        "-DWITHOUT_ICONV_FILTER", *["-D" + n + "=r39_" + n for n in symbols],
                        "-I" + str(ROOT), "-I" + str(ROOT / "userspace/libc/include"),
