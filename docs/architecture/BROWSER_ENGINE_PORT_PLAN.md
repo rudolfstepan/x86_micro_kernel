@@ -7,6 +7,14 @@ Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 Am 6. September 2026 bestaetigte Reihenfolge: R3.15-Formularreparatur abnehmen
 und committen, danach `R3.16-ring3-cpp-runtime`, erst dann schrittweise C++-
 Migration des Browsers. Das SDK-Paket ist definiert, noch nicht implementiert.
+Die spaeter hinzugefuegte [Nutzeranleitung](../REIST_CPP_MIGRATION_PLAN.md)
+praezisiert diese Reihenfolge: committete Baseline TASK-0001, gemischte Toolchain
+und eingeschraenktes C++20-Profil TASK-1001/1002, minimale `libreist++`-Typen
+TASK-2001, dann `browser_response`, `browser_resources`, `browser_model`.
+Keine globale dynamische Initialisierung. Der erste Pilot besitzt heute keine
+eigenen Ressourcen; seine Rechtfertigung muss messbar bessere Zustandsinvarianten
+sein, nicht kuenstliche Cleanup-Methoden. GUI und Compositor folgen nur selektiv
+nach belegtem Nutzen. Die Sprachwahl aendert keine Ring-3-Fehlergrenze.
 Die spaetere Migration trennt Dokument-/Navigations-/Ressourcenbesitz durch
 RAII und kleine Schnittstellen; Vererbung nur fuer echte austauschbare Rollen.
 Hubbub, LibCSS und andere vorhandene C-Bibliotheken werden weiterverwendet.

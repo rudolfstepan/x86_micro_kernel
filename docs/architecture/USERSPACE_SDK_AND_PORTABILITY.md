@@ -44,20 +44,27 @@ versehen.
 
 ## Grundentscheidung
 
-Geplanter naechster Schnitt `R3.16-ring3-cpp-runtime` (Nutzerfreigabe vom
-6. September 2026, noch nicht implementiert): opt-in freestanding C++17 ueber
-denselben Clang/LLD-/ELF32-/MYPR-Pfad, eigene C++-Startlaufzeit und installiertes
-SDK-Archiv. Bestehende C-Verbraucher behalten ihren Startcode und ihre Defaults.
-Konstruktoren, begrenzte Finalisierung, RAII, virtuelle Schnittstellen und
-C-Linkage werden gemeinsam mit dem vorhandenen privaten Allocator nachgewiesen.
-Das erste explizite Profil umfasst weder Exceptions/RTTI/Threads/TLS noch eine
-vollstaendige Standardbibliothek. Nicht unterstuetzte Abhaengigkeiten duerfen
-nicht als erfolgreiche Attrappen erscheinen. Nothrow-OOM erhaelt den alten
-Zustand; gewoehnliches new-OOM beendet im dokumentierten No-Exceptions-Profil
-nur den Prozess. Bei Crash ist OS-Reaping der Sicherheitsnachweis, nicht die
-Behauptung, dass C++-Destruktoren noch ausgefuehrt werden. Hosttests und ein
-aus der Ring-3-Shell gestartetes Gastprogramm sind vor Browsermigration Pflicht.
-Dateien und eingefrorene Abnahme stehen in `automation/reist-s03b.toml`.
+Verbindliche Nutzervorgabe vom 6. September 2026:
+[selektiver C++-Migrationsplan](../REIST_CPP_MIGRATION_PLAN.md).
+Zuerst wird TASK-0001 als `R3.16a-cpp-migration-baseline` committed;
+`R3.16-ring3-cpp-runtime` liefert danach TASK-1001/1002 als opt-in C++20-
+Profil ueber denselben Clang/LLD-/ELF32-/MYPR-Pfad. Noch nicht implementiert.
+Bestehende C-Verbraucher behalten Startcode und Defaults. Pflichtflags sind
+`-ffreestanding -fno-exceptions -fno-rtti -fno-threadsafe-statics
+-fno-use-cxa-atexit`. Globale dynamische Initialisierung, dynamische lokale
+Statics, Exit-Registrierung und implizite Heapinitialisierung werden abgewiesen,
+nicht als leere Stubs implementiert oder vom Linker lautlos verworfen.
+Konstante Initialisierung ohne Laufzeitabhaengigkeit bleibt moeglich.
+Automatische/ausdruecklich erzeugte Objekte nutzen `noexcept`-Destruktoren und
+explizite Move-Semantik; Allocation ist explizit oder im Typvertrag dokumentiert.
+Kein gehostetes STL, keine Exceptions/RTTI/Threads/TLS. Nothrow-OOM erhaelt den
+alten Zustand; gewoehnliches new-OOM beendet im dokumentierten No-Exceptions-
+Profil nur den Prozess. Bei Crash beweist generationstreues OS-Reaping die
+Freigabe, nicht die Behauptung noch laufender Destruktoren.
+Danach folgen die minimalen allokationsfreien `libreist++`-Typen (TASK-2001),
+erst dann der Browserpilot. Dateien und unveraenderte bisherige Gastgates stehen
+in `automation/reist-s03b.toml`. Der alte C++17-/Finalisierungstabellenentwurf
+ist vor Implementierung durch die neue Nutzervorgabe ersetzt.
 
 REIST übernimmt bewährte, frei verfügbare Buildbausteine, solange sie das
 freistehende i386-Ziel korrekt unterstützen. Eigener Code beginnt erst an der

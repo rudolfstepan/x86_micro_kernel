@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.16-ring3-cpp-runtime"
+active_id = "R3.16a-cpp-migration-baseline"
 
 [policy]
 one_package_per_run = true
@@ -975,13 +975,54 @@ commit_message = "fix: support native form maxlength and search submission"
 evidence = []
 
 [[packages]]
-id = "R3.16-ring3-cpp-runtime"
+id = "R3.16a-cpp-migration-baseline"
 status = "active"
 phase = "post-s0"
+risk = "low"
+title = "Commit the user-directed pre-migration baseline and C++20 contract"
+user_direction = "2026-09-06: User supplies docs/REIST_CPP_MIGRATION_PLAN.md and explicitly requests the necessary steps after the differences were reported. Adopt that document unchanged; TASK-0001 requires a committed baseline before mixed-language implementation. This is a measurement/documentation prerequisite, not a browser conversion. The sole pre-existing change is this user-authored, expressly in-scope new document. Commit the contract and document first to establish a clean worktree for the bounded measurement tools. No agents or push."
+scope = "Record reproducible source inventories for browser, GUI library and compositor at cc3d0dcb, physical/nonblank/code-line counts, explicitly labelled lexical cleanup/error/state proxies, lifecycle and ownership audit, artifact sizes and hashes, current regression evidence and bounded actual-code host timing samples. Preserve exact file manifests and counting rules so later deltas are comparable; do not present token counts as semantic cleanup paths or test-suite wall time as UI latency. Reuse unchanged R3.15 browser/reference evidence with explicit provenance; run current GUI/compositor host behavior suites and the existing QEMU render-metrics proof. No production source, build output semantics, acceptance assertion or deadline changes. Record the browser_response pilot's current lack of owned resources: type-level validity must justify it, not invented cleanup. Align the queued SDK contract with C++20, no global dynamic initialization, no implicit runtime registration or hidden allocation, and explicit C ABI boundaries. Do not implement a later package in this baseline run."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/REIST_CPP_MIGRATION_PLAN.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/development/CPP_MIGRATION_BASELINE.md", "docs/development/cpp_migration_baseline.json",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "scripts/measure_cpp_baseline.py", "test/test_cpp_baseline.py", "test/test_cpp_baseline_bench.c"
+]
+invariants = [
+  "the user migration document is preserved verbatim; no production C/ASM source or public ABI changes",
+  "every source/artifact count has an exact manifest digest unit and reproducible rule; heuristic metrics are explicitly not semantic proof",
+  "performance samples execute real component code with fixed work and checked results; host timings are not target WCET or VMware acceptance",
+  "prior evidence is reused only for unchanged source/build inputs; new GUI/compositor and guest checks may not be skipped or weakened"
+]
+targeted_tests = [
+  "python test/test_cpp_baseline.py -v",
+  "python -m unittest discover -s test -p test_desktop_*source.py -v",
+  "python -m unittest discover -s test -p test_gui_*source.py -v",
+  "python test/test_gui_font.py -v",
+  "python scripts/measure_cpp_baseline.py --revision cc3d0dcb --artifacts build --output build/codex-agent/cpp-baseline.json"
+]
+package_tests = []
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-metrics -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production change or unattributed overlapping edit is discovered",
+  "baseline artifacts cannot be attributed to the measured source or required runtime evidence is absent",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "docs: record verified pre-migration C++ baseline"
+evidence = []
+
+[[packages]]
+id = "R3.16-ring3-cpp-runtime"
+status = "queued"
+phase = "post-s0"
 risk = "high"
-title = "Establish an opt-in bounded Ring-3 C++ SDK and object lifetime"
+title = "Establish an opt-in C++20 SDK with explicit Ring-3 object lifetime"
+plan_alignment = "2026-09-06: The user-authored REIST_CPP_MIGRATION_PLAN.md supersedes the initial C++17/static-finalization proposal before implementation. TASK-0001 must be committed first. This package covers TASK-1001/1002 only; minimal libreist++ types (TASK-2001) precede the browser_response pilot in later packages. C++ language choice never moves drivers/services into Ring 0. Existing runtime/host gates remain; initialization tests must now prove rejection of forbidden startup/finalization instead of enabling it."
 user_direction = "2026-09-06: User approves completing the native form repair first, then a tested C++ SDK/runtime foundation, then incremental browser migration. Define this next package without implementing it in R3.15. Keep the incomplete VMware pointer acceptance queued with all its gates unchanged. Direct visible-main-worktree execution only; no nested agents or push."
-scope = "One opt-in freestanding C++17 program lifetime: conventional Clang/LLVM translation of mixed C/C++ sources, installed SDK headers/archive/startup, ELF32/MYPR validation, private allocator initialization, bounded static initialization/finalization and explicit allocation failure. Inventory existing startup, libc allocator, process-private backing and reaping before adding adapters; reuse them. Preserve the existing C startup and C consumer defaults. Provide constructors/destructors, deterministic RAII ownership, move-only objects, virtual interfaces and C ABI linkage through tested standard language/toolchain mechanisms, not a rewritten compiler or C parser. The initial single-execution-context profile excludes exceptions, RTTI, threads/TLS, dynamic libraries and a full standard library; unsupported runtime dependencies fail at build/link time instead of silently succeeding. Nothrow allocation reports exhaustion without publication; ordinary allocation failure terminates only the owning process under the documented no-exceptions profile. Bound initialization/termination registration and detect recursive/invalid runtime state without busy-wait. Prove zero-size, overflow, null delete, matching object/array destruction, private backing return and generation reap using actual runtime code. Package a C++ proof PRG on the userspace shell search path in both image layouts; execute normal lifetime, exhaustion and controlled process-fault cases in QEMU, followed by a responsive shell and a fresh healthy generation. No browser component conversion, new kernel mechanism, public syscall/Surface wire change, unrestricted heap or compatibility claim in this package."
+scope = "One opt-in freestanding C++20 program lifetime after committed TASK-0001: conventional Clang/LLVM translation of mixed C/C++ sources with -ffreestanding -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-use-cxa-atexit, installed SDK adapters and ELF32/MYPR validation. Reject global dynamic initialization, exit-time destructor registration, dynamic local statics, hosted/STL runtime, exceptions, RTTI and threads/TLS rather than silently discarding their sections or providing success stubs. Inventory/reuse existing C startup, private allocator, process backing and generation reaping. Preserve C startup/defaults and public C ABI; no implicit startup allocation. Automatic and explicitly constructed owned objects use noexcept destruction and explicit move-only transfer. Constant initialization is permitted only without runtime dependencies. Allocation is explicit/documented and reuses the existing private allocator; nothrow exhaustion must preserve state, ordinary new failure terminates only the process under the documented no-exceptions profile. Test forbidden dependencies at both translation and link admission, mixed C/C++ C-linkage/layout, deterministic object/array lifetime, null/zero/overflow allocation, private backing return, failure containment and fresh generation recovery. Package the C++ proof PRG on the userspace shell search path in Windows and Makefile images. No foundational Result/Optional/Span/fixed-container library or browser migration in this package; those follow TASK-2001 then browser_response, browser_resources and browser_model in dependency order. No new kernel mechanism, Surface wire change, unrestricted heap or compatibility claim."
 allowed_files = [
   "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
@@ -999,7 +1040,7 @@ allowed_files = [
 invariants = [
   "C programs retain their existing startup and installed SDK defaults; C ABI linkage and MYPR segment validation are unchanged",
   "all C++ allocation uses the existing private allocator and unchanged reserve/backing/reap rules; no new kernel or device authority",
-  "initialization finalization and registration have fixed capacities; recursive or corrupt runtime state fails locally without an unbounded wait",
+  "global dynamic initialization local dynamic statics and exit-time registration are rejected; no implicit constructors heap setup or finalization table is introduced",
   "unsupported runtime features fail explicitly at compile/link or documented admission; no fake standard-library compatibility",
   "normal destruction returns backing; forced termination relies on exact-generation OS reaping, never on a promise that destructors run after a crash",
   "the real Ring-3 shell resolves the packaged proof program in Windows and Makefile layouts and remains usable after every fault case"

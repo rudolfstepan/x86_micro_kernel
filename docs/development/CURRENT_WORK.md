@@ -2,6 +2,19 @@
 
 Stand: 6. September 2026
 
+## R3.16a aktiv: Nutzervorgabe und C++-Baseline vor dem Umbau
+
+Nutzerauftrag nach `cc3d0dcb`: neue Migrationsanleitung uebernehmen und die
+noetigen Schritte ausfuehren. Einzige Vorabaenderung ist die eindeutig
+zugeordnete `docs/REIST_CPP_MIGRATION_PLAN.md`; ihr Inhalt bleibt unveraendert.
+Vertrags-/Dokumentcommit vor Kandidatenarbeit stellt einen sauberen Worktree her.
+TASK-0001 ist ein ausdruecklich vorgeschalteter committeter Nachweis. R3.16a
+misst nur, ohne Produktionscode zu migrieren. R3.16 ist mit erhaltenen bisherigen
+Gates queued: C++20, keine globale dynamische Initialisierung, keine automatische
+Exit-Registrierung/Heapinitialisierung. Danach minimale libreist++-Typen und der
+Browserpilot in der neuen Abhaengigkeitsreihenfolge. Keine Agenten oder Push.
+Baseline-/Testnachweise stehen nach Abschluss in CPP_MIGRATION_BASELINE.md.
+
 ## R3.15 abgenommen: maxlength und native Formulargeometrie
 
 Aktuell: **alle acht Hostgruppen, beide Referenzen und alle fuenf Gastgates

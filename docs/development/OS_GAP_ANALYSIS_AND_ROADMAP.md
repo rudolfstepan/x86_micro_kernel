@@ -2,6 +2,14 @@
 
 Stand: 3. September 2026
 
+Neue Nutzervorgabe vom 6. September: `docs/REIST_CPP_MIGRATION_PLAN.md` wird
+unveraendert uebernommen. TASK-0001 erfordert zunaechst eine committete Baseline
+fuer Browser, GUI-Bibliothek und Compositor (`R3.16a` active). Das noch nicht
+implementierte `R3.16` ist queued und auf C++20 ohne globale dynamische
+Initialisierung/Exit-Registrierung umgestellt. Anschliessend TASK-2001 fuer
+minimale Hilfstypen, danach Browserpilot response -> resources -> model.
+Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.
+
 Am 6. September ausdruecklich bestaetigte Browserreihenfolge: R3.15 fuer
 maxlength und native Formulardarstellung zuerst vollstaendig abnehmen und
 committen; anschliessend ein eigenes geprueftes C++-Userspace-SDK-/Runtimepaket,
