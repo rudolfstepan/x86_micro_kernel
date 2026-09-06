@@ -44,3 +44,42 @@ grayscale threshold. The target therefore selects an exact bitmap and never
 rescales an outline-derived editor glyph. A scalar absent from the selected
 subset is looked up in GNU Unifont. OpenType ligatures, shaping, kerning and
 subpixel antialiasing remain outside this fixed-cell bitmap editor contract.
+
+## License-byte provenance and host verification
+
+`license_sha256` always hashes the exact checked-in license bytes, without
+normalization during verification. On 2026-09-06 the two inconsistent pins
+were corrected without editing any license or font payload:
+
+- GNU Unifont: the [official 16.0.04 source archive](https://unifoundry.com/pub/unifont/unifont-16.0.04/unifont-16.0.04.tar.gz)
+  has SHA-256 `2bd4e4679757126f48e1bf2c1be40b09aa92162bfedda4683ce5fbc70a2a5972`.
+  Its `unifont-16.0.04/OFL-1.1.txt` has upstream SHA-256
+  `869692af094c57fb7258c57fe26820c759319603321d0ffeb278de3651763ded`.
+  CRLF-to-LF conversion and stripping the trailing space on line 18 reproduce
+  the existing local file byte for byte. The previous catalog hash was not
+  the hash of either of these files.
+- Source Code Pro: release tag `2.042R-u/1.062R-i/1.026R-vf` resolves through
+  annotated tag `a0e3aa19323549af1e6f60a1ebf32b912bc1a497` to commit
+  `d3f1a5962cde503f9409c21e58527611d4a19ef1`. Its [LICENSE.md](https://raw.githubusercontent.com/adobe-fonts/source-code-pro/d3f1a5962cde503f9409c21e58527611d4a19ef1/LICENSE.md)
+  matches the former catalog hash; converting CRLF to LF reproduces the local
+  `source/source-code-pro/OFL.txt` exactly, as required by `.gitattributes`.
+  The release OTF ZIP matches its existing archive pin but contains no license;
+  license provenance therefore uses the immutable source commit.
+
+Separate upstream hashes and transformations are recorded in the catalog.
+The host regression reconstructs the exact upstream byte sequences and
+verifies both digests; the existing raw-byte asset checks remain unchanged.
+No network connection is needed for the regression itself.
+
+The rasterizer requires exactly Pillow 12.1.0. For an isolated Windows setup:
+
+```powershell
+python scripts/measure_cpp_baseline.py --host-test -m pip install --target build/codex-agent/cpp-baseline-deps --no-user --only-binary=:all: --no-deps Pillow==12.1.0
+$env:PYTHONPATH = (Resolve-Path build/codex-agent/cpp-baseline-deps).Path
+$env:PATH = 'C:\msys64\mingw64\bin;' + $env:PATH
+python scripts/measure_cpp_baseline.py --host-test test/test_gui_font.py -v
+```
+
+These environment changes affect only the current shell and its children.
+The host-test prefix suppresses Windows error UI for that process tree, not
+assertions or failure exit codes. It does not change system-wide WER policy.

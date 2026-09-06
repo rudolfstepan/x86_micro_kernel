@@ -2,7 +2,35 @@
 
 Stand: 6. September 2026
 
-## R3.16a aktiv: Nutzervorgabe und C++-Baseline vor dem Umbau
+## R3.16a abgenommen: Baseline vor der C++-Migration
+
+Alle fuenf eingefrorenen Host-/Messgates und die QEMU-Renderprobe bestehen.
+169 Hosttests ohne Skips; 72 Quelldateien, Lifecycle-/Ownership-Audit,
+Artefaktgroessen/-Hashes und Host-/Gastmesswerte sind in
+[CPP_MIGRATION_BASELINE.md](CPP_MIGRATION_BASELINE.md) und dem verlinkten
+JSON festgehalten. Produktions-C/ASM, Font-/Lizenzpayloads und die
+Nutzervorgabe bleiben unveraendert. Testharness- und Fontkatalogkorrekturen
+wurden ausdruecklich freigegeben, Originalherkunft nachgewiesen. Pillow
+12.1.0 liegt nur unter ignoriertem build/codex-agent; keine globalen Aenderungen
+oder neuen Fehlerdialoge. Alle fehlgeschlagenen Erstlogs bleiben erhalten.
+
+Finale Fontgruppe: 8 PASS/16,912 s; Messung: PASS/38,781 s.
+Die neue QEMU-Renderprobe endet mit Status 0 nach 31,485 s:
+1 Fullframe/15 ms, 8 Dragframes/max. 79 ms, 8 Resizeframes/max. 91 ms,
+keine Fallback-/Clock-/Probefehler, Rueckkehr zur Shell. Nachweis ist
+`20260906-180136-runtime-desktop-metrics.log`; die zusaetzliche versteckte
+stdout-Umleitung blieb leer und wird nicht als Beweis verwendet.
+Das vorhandene Hauptimage stammt laut Buildkonfiguration von vmware/vga,
+wurde fuer diese Messung in QEMU TCG gebootet. Die drei gemessenen PRGs
+stimmen exakt mit Image und SBOM ueberein; keine Behauptung einer kompletten
+aktuellen SBOM-Imageidentitaet oder neuen VMware-Pointerabnahme.
+
+R3.16a ist done, R3.16 active fuer TASK-1001/1002. Dessen C++-Implementierung
+beginnt erst nach dem lokalen Baseline-Commit im naechsten Paketlauf.
+Keine Agenten und kein Push. Die folgende Diagnosechronik beschreibt die
+frueheren, inzwischen aufgeloesten Blocker.
+
+### Diagnosechronik vor der Abnahme
 
 Nutzerauftrag nach `cc3d0dcb`: neue Migrationsanleitung uebernehmen und die
 noetigen Schritte ausfuehren. Einzige Vorabaenderung ist die eindeutig
@@ -14,6 +42,84 @@ Gates queued: C++20, keine globale dynamische Initialisierung, keine automatisch
 Exit-Registrierung/Heapinitialisierung. Danach minimale libreist++-Typen und der
 Browserpilot in der neuen Abhaengigkeitsreihenfolge. Keine Agenten oder Push.
 Baseline-/Testnachweise stehen nach Abschluss in CPP_MIGRATION_BASELINE.md.
+
+Aktueller Befund nach ausdruecklicher Freigabe der beiden Testdateien:
+Explorer erwartet jetzt exakt MOVE/COPY/LINK/LAYOUT; der Startup-Harness
+deklariert sein umbenanntes main vorab statisch. Keine Produktionsaenderung,
+Warnungsabschaltung oder entfernte Assertion. Finale Desktop-Gruppe:
+81 PASS/3,669 s (`cpp-baseline-desktop-final.log`), GUI-Gruppe:
+75 PASS/9,378 s (`cpp-baseline-gui.log`), jeweils ohne Skips und durch den
+nichtinteraktiven Launcher mit demselben MinGW GCC. Kein neuer Windows-Dialog.
+Das naechste eingefrorene Gate `python test/test_gui_font.py -v` scheitert:
+7 Tests/0,777 s, 1 Fehler und 1 fehlgeschlagene Assertion
+(`cpp-baseline-font.log`). Pillow 12.1.0 ist im verwendeten Python nicht
+installiert. Ausserdem stimmen zwei Lizenz-Hashes des vorhandenen Fontkatalogs
+nicht mit den unveraenderten eingecheckten Lizenzdateien ueberein:
+
+- Unifont `source/OFL-1.1.txt`: Katalog `4c69dde8...`, Git/Worktree
+  `ddd1809b...`; auch reine CRLF-Umsetzung ergibt nicht den Kataloghash.
+- Source Code Pro `source/source-code-pro/OFL.txt`: Katalog `7c940e28...`,
+  Git/Worktree `0b2c3168...`; hier entspricht der Kataloghash exakt CRLF,
+  waehrend `.gitattributes` LF verlangt.
+
+Alle fuenf Font-Quelldateien und die drei anderen Lizenzdateien entsprechen
+ihren Pins. Beide abweichenden Lizenzen sind seit mindestens `13bfa0dd`
+bytegleich im Git. Keine Benutzerdatei oder Fontdatei wurde ueberschrieben.
+Vor Korrektur des Katalogs muss dessen Originalherkunft geprueft werden;
+blosses Uebernehmen aktueller Hashes waere kein Integritaetsnachweis.
+Der Fontkatalog und sein Test/Generator liegen ausserhalb des freigegebenen
+Mess-/Desktop-Testscopes. Daher Stopp vor Erweiterung; keine weiteren Gates,
+kein Baseline-Abschlusscommit und keine Queue-Transition. Bereits gruene
+unveraenderte Gruppen behalten ihren Nachweis. Der nachfolgende Text erhaelt
+die bisherige Diagnosechronik einschliesslich der urspruenglichen Fehler.
+
+Vertragscommit `61932c14` besteht, Worktree war danach sauber. Die 13
+beabsichtigten Markdown-Hardbreaks in der Nutzerdatei wurden unveraendert
+erhalten (Gitblob `1851b3571c2b26ec664bb792a841af23b9739f4c`).
+Die neue Inventarmetrik besteht zunaechst 4 Hosttests/0,001 s.
+Desktop-Baseline mit vorhandenem MinGW GCC im prozesslokalen PATH:
+`python -m unittest discover -s test -p test_desktop_*source.py -v`
+FAIL, 81 Tests/36,395 s, zwei Fehler (`cpp-baseline-desktop.log`).
+Explorer-Hosttest endet mit Status 3 und zeigte einen Windows-Fataldialog;
+Startup-Testharness scheitert an GCC -Werror=old-style-declaration beim
+umbenannten main. Keine Produktionsquelle wurde geaendert; beide Fehler sind
+offen. Keine GUI-/Benchmark-/Gastabnahme und kein Baseline-Abschlusscommit.
+Nutzer untersagt solche Dialoge; betroffener Prozess ist bereits beendet.
+Weitere Hoststarts nur durch `scripts/measure_cpp_baseline.py --host-test`
+mit prozesslokaler Dialogsperre und verstecktem Python-Kind. Die eigentlichen
+Gateargumente, Assertions und Rueckgabecodes bleiben unveraendert. Der
+Messbenchmark setzt denselben Schutz vor jedem Start. Keine Registry- oder
+globale WER-Aenderung. Vererbung wird nur mit einem harmlosen Python-Kind
+geprueft, nicht durch einen weiteren absichtlich ausgeloesten Absturz.
+Referenz: [Microsoft SetErrorMode](https://learn.microsoft.com/en-us/windows/win32/api/errhandlingapi/nf-errhandlingapi-seterrormode).
+Die Desktop-Fehler bleiben bis zur sicheren gezielten Diagnose offen; kein
+erneuter Gesamtlauf und kein Abschwaechen des Baselinegates.
+Dialogsperre samt harmloser Kindvererbung nachgewiesen: 5 PASS/0,069 s
+(`cpp-baseline-noninteractive-verified.log`). Keine nativen Crashfaelle erneut
+gestartet. Der erste versteckte Python-Aufruf lieferte keine nutzbare
+Standardausgabe; der Launcher erfasst jetzt beide Streams explizit und gibt
+den unveraenderten Kindstatus weiter. Das leere Erstlog bleibt erhalten,
+wird aber nicht als Nachweis verwendet. Baseline und Migration bleiben offen;
+wegen der zwei Desktop-Gatefehler kein Kandidatencommit und keine Transition.
+
+Gezielte sichere Diagnose vom 6. September: Explorer kompiliert unveraendert
+mit demselben GCC, endet nach 0,531 s mit Status 3 und erfasstem Assertiontext
+ohne Dialog (`cpp-baseline-explorer-diagnosis.log`). Ursache ist die veraltete
+Operationsmaske in `test/test_desktop_explorer_host.c:544`: MOVE/COPY/LINK
+statt der seit `d53c421e` vorhandenen zusaetzlichen LAYOUT-Operation.
+Dieser Commit erweiterte den Drag-Vertrag und dessen eigenen Hosttest,
+nicht jedoch diese Explorer-Erwartung. LAYOUT ist nur lokale Iconpositionierung,
+keine zusaetzliche VFS-Move-Autoritaet. Der Startup-Harness verwendet
+`#define main static desktop_application_main`; aus `int main(...)` wird
+das von GCC mit -Werror abgewiesene `int static ...`. Eine vorangestellte
+statische Funktionsdeklaration plus reine Namensumbenennung erhaelt die
+interne Bindung ohne Warnungsabschaltung.
+Die gezielte Reparatur benoetigt ausschliesslich diese beiden bestehenden
+Testdateien; sie liegen ausserhalb von R3.16a.allowed_files. Daher noch keine
+Test- oder Produktionsaenderung, keine Scopeerweiterung, kein erneuter
+Gesamtgate-Lauf und kein Commit. Naechster erforderlicher Schritt ist die
+ausdrueckliche Freigabe dieser Testharness-Erweiterung. Die exakte
+Maskenpruefung und alle bisherigen Assertions/Fristen bleiben dabei Pflicht.
 
 ## R3.15 abgenommen: maxlength und native Formulargeometrie
 

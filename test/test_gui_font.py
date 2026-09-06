@@ -21,6 +21,37 @@ GENERATOR_SPEC.loader.exec_module(GENERATOR)
 
 
 class GuiFontTests(unittest.TestCase):
+    def test_normalized_licenses_retain_pinned_upstream_provenance(self) -> None:
+        catalog = tomllib.loads(
+            (ROOT / "assets/fonts/catalog.toml").read_text(encoding="utf-8"))
+        families = {family["id"]: family for family in catalog["families"]}
+        # Reconstruct only the two documented, independently checked upstream
+        # byte sequences. The ordinary integrity test still hashes raw files;
+        # it never normalizes a corrupted input into an accepted one.
+        for family_id in (1, 3):
+            with self.subTest(family_id=family_id):
+                family = families[family_id]
+                data = (ROOT / family["license_path"]).read_bytes()
+                self.assertNotIn(b"\r", data)
+                self.assertEqual(hashlib.sha256(data).hexdigest(),
+                                 family["license_sha256"])
+                if family_id == 1:
+                    self.assertEqual(family["license_normalization"],
+                                     "CRLF to LF; trim trailing spaces and tabs")
+                    line = b"fonts, including any derivative works, can be bundled, embedded,\n"
+                    self.assertEqual(data.count(line), 1)
+                    data = data.replace(line, line[:-1] + b" \n")
+                    expected = "869692af094c57fb7258c57fe26820c759319603321d0ffeb278de3651763ded"
+                    self.assertEqual(family["license_archive_member"],
+                                     "unifont-16.0.04/OFL-1.1.txt")
+                else:
+                    self.assertEqual(family["license_normalization"], "CRLF to LF")
+                    expected = "7c940e28a5388e9bba866cf0e408edda45fe0899ba98665b8f6ab31dc5e4b8ff"
+                self.assertTrue(family["license_upstream_url"].startswith("https://"))
+                self.assertEqual(family["license_upstream_sha256"], expected)
+                self.assertEqual(hashlib.sha256(data.replace(b"\n", b"\r\n")).hexdigest(),
+                                 expected)
+
     def test_generated_font_is_reproducible_and_standard_psf2(self) -> None:
         subprocess.run(
             ["python", "scripts/generate_psf2_font.py", "--check"],

@@ -46,7 +46,8 @@ versehen.
 
 Verbindliche Nutzervorgabe vom 6. September 2026:
 [selektiver C++-Migrationsplan](../REIST_CPP_MIGRATION_PLAN.md).
-Zuerst wird TASK-0001 als `R3.16a-cpp-migration-baseline` committed;
+TASK-0001 ist als `R3.16a-cpp-migration-baseline` abgenommen;
+[Baseline und Einschraenkungen](../development/CPP_MIGRATION_BASELINE.md).
 `R3.16-ring3-cpp-runtime` liefert danach TASK-1001/1002 als opt-in C++20-
 Profil ueber denselben Clang/LLD-/ELF32-/MYPR-Pfad. Noch nicht implementiert.
 Bestehende C-Verbraucher behalten Startcode und Defaults. Pflichtflags sind

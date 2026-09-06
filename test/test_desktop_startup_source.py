@@ -11,7 +11,8 @@ HOST = r'''
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#define main static desktop_application_main
+static int desktop_application_main(int argc, char **argv);
+#define main desktop_application_main
 #include "userspace/gui/compositor/desktop.c"
 #undef main
 

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.16a-cpp-migration-baseline"
+active_id = "R3.16-ring3-cpp-runtime"
 
 [policy]
 one_package_per_run = true
@@ -976,7 +976,10 @@ evidence = []
 
 [[packages]]
 id = "R3.16a-cpp-migration-baseline"
-status = "active"
+status = "done"
+font_repair_extension = "2026-09-06: User says mach weiter in direct response to the font-catalog provenance/repair request. Permit assets/fonts/catalog.toml and its README plus test/test_gui_font.py and scripts/generate_psf2_font.py only as needed to verify upstream license provenance and correct exact checked-in-byte pins. Install the already required Pillow 12.1.0 only under ignored build/codex-agent, with no global Python or Windows changes. Do not replace font/license payloads, silently normalize bytes during integrity checks, weaken assertions or repin rendered glyphs. Preserve the failed gate and accepted unchanged Desktop/GUI evidence; the final font gate must pass all existing checks. Catalog metadata does not change the measured executables; document its delta from reused image metadata. No C++ migration in this run."
+repair_extension = "2026-09-06: User says mach weiter in direct response to the explicit request to include test_desktop_explorer_host.c and test_desktop_startup_source.py. Resume the attributable in-place measurement candidate and repair only these two diagnosed harness defects: require the exact MOVE/COPY/LINK/LAYOUT mask already introduced in d53c421e, and retain internal linkage of the renamed desktop main using a conventional static prototype. No production changes, skipped tests, disabled warnings/assertions or relaxed deadlines. Preserve the failed evidence and every frozen gate; run the final desktop gate once after the focused repair."
+host_execution = "2026-09-06: User prohibits disruptive Windows host-test crash dialogs after desktop-explorer-test.exe aborted. No such process remains. Before any further host executable, establish process-local inherited SetErrorMode(FAILCRITICALERRORS|NOGPFAULTERRORBOX|NOOPENFILEERRORBOX) and WER NO_UI; do not change system/registry policy. Use measure_cpp_baseline.py --host-test as an execution prefix for the same Python gates, with unchanged arguments, assertions and exit status; abort launch if suppression cannot be established. Verify inheritance with a harmless Python child, never by intentionally opening another dialog. The failed desktop gate remains failed; no retry or baseline acceptance by suppressing its failure."
 phase = "post-s0"
 risk = "low"
 title = "Commit the user-directed pre-migration baseline and C++20 contract"
@@ -987,7 +990,10 @@ allowed_files = [
   "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "docs/development/CPP_MIGRATION_BASELINE.md", "docs/development/cpp_migration_baseline.json",
   "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
-  "scripts/measure_cpp_baseline.py", "test/test_cpp_baseline.py", "test/test_cpp_baseline_bench.c"
+  "scripts/measure_cpp_baseline.py", "test/test_cpp_baseline.py", "test/test_cpp_baseline_bench.c",
+  "test/test_desktop_explorer_host.c", "test/test_desktop_startup_source.py",
+  "assets/fonts/catalog.toml", "assets/fonts/README.md",
+  "test/test_gui_font.py", "scripts/generate_psf2_font.py"
 ]
 invariants = [
   "the user migration document is preserved verbatim; no production C/ASM source or public ABI changes",
@@ -1016,7 +1022,7 @@ evidence = []
 
 [[packages]]
 id = "R3.16-ring3-cpp-runtime"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Establish an opt-in C++20 SDK with explicit Ring-3 object lifetime"

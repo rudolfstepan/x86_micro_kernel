@@ -543,7 +543,8 @@ static void test_drag_object_is_bound_to_snapshot_generation(void) {
     assert(object.kind == DESKTOP_DRAG_OBJECT_FILE);
     assert(object.operations == (DESKTOP_DRAG_OPERATION_MOVE |
                                   DESKTOP_DRAG_OPERATION_COPY |
-                                  DESKTOP_DRAG_OPERATION_LINK));
+                                  DESKTOP_DRAG_OPERATION_LINK |
+                                  DESKTOP_DRAG_OPERATION_LAYOUT));
     assert(object.source_generation == generation);
     assert(desktop_explorer_drag_validate(
                &explorer, &object, &file) == DESKTOP_EXPLORER_OK);
