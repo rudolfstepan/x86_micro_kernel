@@ -2,6 +2,15 @@
 
 Candidate, not accepted until the frozen gates pass.
 
+User-approved extension, 2026-09-06: long HTTP(S) CSS/image resource URLs must
+actually load, not be skipped. Support up to 8192 URL bytes using versioned
+private metadata and a bounded shared resolver adapter, without enlarging the
+legacy semantic-document fields. Preserve legacy private wire decoding. CURL
+must stream a complete request across bounded transport writes. The existing
+spawn mechanism follows [the argument contract](PROCESS_ARGUMENT_CONTRACT.md);
+this is the only authorized Ring-0 change. HTTP URI sizes are guided by
+[RFC 9110 section 4.1](https://www.rfc-editor.org/rfc/rfc9110.html#section-4.1).
+
 The boundary is one generation-owned Ring-3 navigation, not full modern web
 compatibility. HTTP follows RFC 9110/9112, encoding follows the supported labels
 of the [WHATWG Encoding Standard](https://encoding.spec.whatwg.org/), HTML parsing

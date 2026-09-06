@@ -11,7 +11,29 @@ Intracom 16707 Byte plus Stylesheet mit 36-Pixel-Ueberschrift gegen maximal
 32 Pixel. VMware meldet ausserdem TCP-Timeout und generische Ladeablehnung.
 Der neue private Navigationsvertrag und die eingefrorenen Gates stehen in
 `automation/reist-s03b.toml` und `BROWSER_PUBLIC_NAVIGATION_CONTRACT.md`.
-Keine Implementierung oder neue Gastabnahme aus dieser Paketdefinition ableiten.
+Kandidat auf Vertragscommit `c285e903` liegt uncommitted im sichtbaren Worktree:
+private 1-MiB-Dokumentaufnahme, Charset-Adapter, 36/64-Pixel-Raster und begrenzte
+Transportdiagnostik/-wiederholung. Sieben eingefrorene Hostgruppen bestehen;
+CSS-Gate scheitert noch am neuen UTF-16-BOM-Fall. Keine Referenzbuild- oder
+Gastabnahme des Kandidaten, keine Queue-Transition, kein Implementierungscommit.
+Logs: `build/codex-agent/r314-*.log`.
+
+Neuer ausdruecklicher Nutzerauftrag: lange Ressourcen wirklich unterstuetzen,
+nicht bloss ueberspringen. Der bisherige Kandidaten-Fallback fuer lange URLs
+ist damit keine akzeptierte Loesung. Googles erfasste externe CSS-Adresse hat
+261 Zeichen. Neben privaten 256-Byte-Feldern begrenzen
+`kernel/syscall/syscall_table.c:3031` und `kernel/proc/process.c:724` jedes
+Startargument auf 256 Byte inklusive NUL. Eine durchgaengige normale CURL-
+Argumentuebergabe braucht deshalb einen begrenzten, getesteten Spawn-/Initial-
+Stack-Vertrag, nicht nur groessere Browserarrays. Beide Kerneldateien liegen
+ausserhalb R3.14.allowed_files. Umfangsfreigabe/Vertragsanpassung erforderlich;
+an dieser Paketgrenze gestoppt. Kein stilles Erweitern des Kernels und keine
+Abnahme der gespeicherten Seiten als erfolgreicher Live-Netzwerktest.
+
+Fortsetzung ausdruecklich freigegeben: Nutzer bestaetigt "ja mach alle noetigen
+anpassungen". Der R3.14-Vertrag wird um begrenzte Spawnargumente und echte lange
+Ressourcen-URLs erweitert. Der zuordenbare Kandidat bleibt erhalten, die alten
+Gates und ihre Ergebnisse bleiben nachvollziehbar. Keine neue Abnahme behauptet.
 
 ## R1.2d abgenommen: VMware-/QEMU-Standard auf 1 GiB RAM
 
