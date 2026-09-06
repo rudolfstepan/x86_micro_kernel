@@ -2,6 +2,16 @@
 
 Stand: 6. September 2026
 
+## R1.2d aktiv: VMware-/QEMU-Standard auf 1 GiB RAM
+
+Neuer ausdruecklicher Nutzerauftrag nach Browser-Abnahme `9d4635fa`:
+VMX `memsize=1024` und QEMU `-m 1024M` fuer die normalen Start-/Testpfade.
+Die virtuelle Festplatte bleibt 512 MiB. Keine Kernel-/Allocatoraenderung,
+keine gelockerte Prozessquote oder Reserve. Explizite kleine RAM-Profile
+bleiben erhalten. Der bereits nachgewiesene 1-GiB-Direct-Map-Vertrag gilt
+unveraendert; dies fuehrt keine Unterstuetzung oberhalb von 1 GiB ein.
+Die Queue definiert Umfang und Abnahme; R3.6b bleibt unabgenommen queued.
+
 ## R3.13 abgenommen: native statische GET-Formulare
 
 Alle eingefrorenen Paketgates bestehen. HTML5-Projektion, privates

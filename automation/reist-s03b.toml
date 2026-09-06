@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
+active_id = "R1.2d-vm-ram-default-1g"
 
 [policy]
 one_package_per_run = true
@@ -785,8 +785,56 @@ commit_message = "feat: integrate native HTML forms with validated GET navigatio
 evidence = []
 
 [[packages]]
-id = "R3.6b-vmware-pointer-pinned-mutex"
+id = "R1.2d-vm-ram-default-1g"
 status = "active"
+phase = "post-s0"
+risk = "low"
+title = "Use 1 GiB of guest RAM by default in VMware and QEMU"
+user_direction = "2026-09-06: New explicit user request raises VMware and QEMU guest RAM from 512 MiB to 1 GiB. Close the already accepted browser candidate first, then execute this configuration-only package in the clean main worktree. Defer R3.6b without changing its frozen gates. No agents or push."
+scope = "Set VMware VMX memsize to 1024 MiB and QEMU -m defaults to 1024M consistently across Windows, Makefile, common smoke, desktop and standalone reference runners. Preserve explicit low-memory overrides and the complete memory test matrix. Rebuild both reference packages, inspect both generated VMX files and prove the default QEMU boot and real-input browser forms at 1 GiB. Disk images remain 512 MiB; kernel direct-map ceiling, process heap quotas, physical rescue reserves, memory resilience, device configuration and runtime deadlines stay unchanged. This is a virtual-machine launch configuration, not high-memory support or new allocator policy."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md",
+  "Makefile", "scripts/run-windows.ps1", "scripts/create_native_boot_image.py",
+  "scripts/run_qemu_smoke.py", "scripts/run_qemu_desktop_smoke.py",
+  "scripts/run_qemu_runtime_desktop.py", "scripts/run_qemu_admin_maintenance.py",
+  "scripts/run_qemu_fdd_hotplug.py", "scripts/run_qemu_sata_hotplug.py",
+  "scripts/run_qemu_network_shell.py", "scripts/run_qemu_ps2_smoke.py",
+  "test/test_vm_memory_defaults.py", "test/test_native_boot_image.py",
+  "test/test_qemu_smoke.py"
+]
+invariants = [
+  "only VM launch RAM defaults change; disk sizes kernel ABI memory admission reserves and device configuration are unchanged",
+  "explicit low-memory overrides and all existing runtime assertions and deadlines remain unchanged",
+  "both generated VMware configurations use 1024 MiB and the normal QEMU command uses 1024M",
+  "a real default QEMU guest reaches ordered boot self-tests and successful browser form interaction without loss of containment"
+]
+targeted_tests = [
+  "python test/test_vm_memory_defaults.py -v",
+  "python test/test_native_boot_image.py -v",
+  "python test/test_qemu_smoke.py -v",
+  "python test/test_qemu_desktop_smoke.py -v",
+  "python test/test_browser_runtime_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga"
+]
+stop_conditions = [
+  "an unrelated writer overlaps the candidate or a required file lies outside allowed_files",
+  "success requires relaxing kernel memory resilience or a frozen runtime assertion or deadline",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "chore: default VMware and QEMU guests to 1 GiB RAM"
+evidence = []
+
+[[packages]]
+id = "R3.6b-vmware-pointer-pinned-mutex"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
