@@ -2,6 +2,276 @@
 
 Stand: 6. September 2026
 
+## R3.18 abgenommen: Response-C++ mit erhaltener C-Grenze
+
+Der echte Browser verwendet jetzt ausschliesslich die C++-Response-Admission.
+5793 C/C++-Vergleichsfaelle je O0/O2, negative Konstruktionstests und der
+Objekt-/Stacknachweis sichern vollstaendig validierte typisierte Erfolge ab.
+C-Fehlerdiagnosen, Rueckgabecodes, Wire-Layouts und Aufrufer bleiben erhalten.
+Vorher/nachher: null besessene externe Ressourcen, null Init/Destroy-Paare,
+keine Heapallokation und keine neue Bodykopie. Zwei begrenzte Metadatenkopien
+pro C-Admission. Der Gewinn ist die nicht ungeprueft konstruierbare Erfolgs-
+invariante; keine behauptete LOC-/Cleanup-Reduktion oder neue Webkompatibilitaet.
+
+Die Stackregression und die serielle Empfangsrace sind repariert. Die vom
+Nutzer gewuenschte Fortsetzung nach Fehlern ist in der Queue dokumentiert.
+Final bestehen 88 Hosttests in elf unveraenderten Gate-Befehlen, ohne Skips.
+Die zuletzt betroffene Runtime-Gruppe besteht mit 29 Tests/6,550 s;
+unveraenderte Gruppen behalten die unten aufgefuehrten Nachweise. Keine
+unnuetze Wiederholung der gepaarten Messung oder unveraenderter Compiler-Gates.
+
+Finale Referenzen (`test-reist-package.ps1 -Target ... -Video vga`):
+
+| Target | Ergebnis | Sekunden | Log unter build/codex-agent |
+|---|---|---:|---|
+| qemu | PASS | 64,127 | 20260906-212839-package-qemu-vga.log |
+| vmware | PASS | 60,379 | 20260906-213739-package-vmware-vga.log |
+
+Bootmanifest und SBOM bestehen. Die bekannte optionale FAT12-Warnung bleibt
+sichtbar und ist keine Diskettenabnahme. Finales `BROWSER.PRG`: 2801692 Byte,
+Loader-Payload 6178829 Byte (+16588 private BSS-Bytes), SHA-256
+`1a2ce8d42e89b2d7db901f941b688fea9b26d04ad246c20d4340de92bd2b85ab`.
+HTMLWORK, Desktop und CPPTEST bleiben binaer unveraendert. Kein Kernel-,
+Stackguard-, Quoten-, Prozessprioritaets- oder Timervertragswechsel.
+
+Finale Gastgates (`test-reist-runtime.ps1 -Mode ... -Target qemu -Video vga`):
+
+| Mode | Ergebnis | Sekunden |
+|---|---|---:|
+| cpp-client | PASS | 19,348 |
+| runtime-desktop-browser | PASS | 89,555 |
+| runtime-desktop-browser-resources | PASS | 77,770 |
+| runtime-desktop-browser-forms | PASS | 77,366 |
+| runtime-desktop-browser-public | PASS | 94,560 |
+
+Gastlogs: `r318/framing-repair/cpp-client.guest.log`, alle vier Browserlogs
+unter `r318/worker-diagnostic/`. Formularnachweis umfasst exakten GET,
+Ablehnung ohne Anfrage, Reflow/Reset, absichtlich fehlerhaften Worker,
+Recovery und Close. General prueft Links/Bilder/Scrollbar/Wheel, Resources
+Cancellation/Cleanup; Public lange CSS-/Bild-URLs, Encoding und Redirects.
+Public verwendet lokale deterministische HTTP-Fixtures, keinen Live-Google-
+oder JavaScript-Kompatibilitaetsnachweis.
+
+Unveraenderte quantitative Response-Messung: C 1994,843 ns, C++ 2180,436 ns
+(109,304 Prozent, Grenze 120 Prozent und 5000 ns). Boundary-Stackpeak
+8308 statt 8480 Byte; Factory 28 statt 16616 Byte des verworfenen Kandidaten.
+Compilerartefakte, Quellen-/Fixturehashes und alle fuenf Paare unter
+`r318/stack-repair/response/`; finale Artefaktgrenzen unter
+`r318/worker-diagnostic/artifact-bounds.log`.
+
+Verbleibendes Risiko: Der einzelne langsame Reflow-Abbruch im vorherigen
+Lauf wurde nach Instrumentierung nicht reproduziert. Die neue Diagnose
+weist im erfolgreichen Formularlauf nur den absichtlich ausgeloesten
+Worker-Fault als `css-ipc/-84` aus. Sie beweist keine Ursache oder Reparatur
+der vorherigen Laufzeitschwankung (Spawn dort 4586 ms, hier maximal 1520 ms).
+Fehlgeschlagene Logs bleiben erhalten; das 5000-ms-Budget und alle Assertions
+sind unveraendert. Keine generelle Performance-/WCET-Garantie behauptet.
+
+R3.18 ist done; R3.19 fuer gepruefte geliehene Ressourcen-Snapshots ist als
+naechstes Paket aktiv und vor Implementierung quantitativ eingefroren.
+Ressourcen-/Modelquellen wurden in diesem Lauf NICHT migriert. Die bereits
+abgeschobene VMware-Pointer-Abnahme bleibt mit ihren alten Gates queued.
+Abschliessender Read-only-Abgleich PASS/0,563 s: 20 erlaubte Pfade, erhaltene
+Parserlogik, unveraenderte Gate-Befehle, Quellen-/Artefakthashes, Grenzen und
+alle Gastmarker (`worker-diagnostic/final-verification.log`). Der vorher
+unbenutzte Pruefentwurf hatte Maxlength-/Wheel-Marker vertauscht; nur diese
+falsche Reihenfolge wurde an echten Code und Log angeglichen, kein Gastgate
+wiederholt oder abgeschwaecht. Sein Fehlprotokoll bleibt ebenfalls erhalten.
+
+### Verlauf: Empfangsrace und Worker-Diagnose
+
+Der Nutzer gibt die Runner-Dateierweiterung frei und weist nach dem folgenden
+Gastfehler ausdruecklich an, Fehler weiter zu korrigieren statt anzuhalten.
+Die Queue dokumentiert diese Abweichung von der Ein-Reparatur-Stoppregel nur
+fuer R3.18. Keine blinden Wiederholungen, Frist-/Assertion-/Schutzlockerungen
+oder stillen Dateierweiterungen. Kein Commit/Paketwechsel; R3.19 unimplementiert.
+
+Der Formular-Testtreiber wartet jetzt auf die vollstaendige Tastaturzeile,
+bevor er den unveraenderten exakten Tastencode prueft. Regression-first:
+LF/CRLF, alle Fragmentgrenzen, einzelne Zeichen, falsche Codes/Ordinals,
+fehlender Zeilenabschluss, Gastfehler und unveraenderte Gesamtfrist.
+Begrenzte Host-Exceptiontexte werden vor Cleanup im Gasttranskript gespeichert;
+Status und Reaping bleiben unveraendert. Vorherige Regression FAIL,
+danach alle 29 Runtime-Hosttests PASS/8,589 s, Logs
+`build/codex-agent/r318/framing-repair/`. Insgesamt 88 Hosttests in elf Gruppen;
+unveraenderte Nachweise der vorherigen Response-/Buildreparatur bleiben erhalten.
+
+Formulargast mit unveraendertem finalen Image: FAIL/72,824 s.
+Alle elf ersten Tasten, Edit-only, Maxlength und Wheel bestaetigt. Beim Reflow
+folgt `BROWSER_HTML5_REJECT exit=143 result=-5 cancelled=1`, dann Phase 3
+`BROWSER_PROBE_FAIL interaction`. Der neue gespeicherte Fehlertext ist
+`HOST_RUNTIME_FAILURE RuntimeError: Forms guest failure`. Kein Page-Fault-Marker;
+Kindprozess bereits gereapt, `loaded=1`, alte Seite bleibt. Das ist keine
+erfolgreiche Reflow-Abnahme. Der Spawn benoetigt hier 4586 ms, innerhalb eines
+unveraenderten 5000-ms-Gesamtbudgets; zuvor 747/1605 ms. Auch Desktop-Font-I/O
+liefert in diesem Lauf -110. Das Transkript beweist noch nicht, ob Deadline
+oder IPC den Worker-Abbruch ausgeloest hat; keine spekulative Fristerhoehung.
+`framing-repair/runtime-desktop-browser-forms.guest.log` bleibt erhalten.
+
+Unveraendertes cpp-client-Gastgate PASS/19,348 s, mit allen Runtime-/Reap-
+Markern und anschliessender Shell; `framing-repair/cpp-client.guest.log`.
+Nun begrenzte Probe-Diagnose an der echten Browser-Abbruchstelle: Grund,
+Rueckgabecode, Restbudget und IPC-Fortschritt, erst nach Fencing/Terminate und
+hoechstens einmal je Abbruch. Normale Browserausfuehrung gewinnt keine
+zusaetzliche Ausgabe. Reale Hostregression fuer Deadline und EPIPE zeigt
+weiterhin unveraendertes Budget, erhaltene Seite und genau einen Kill/Wait;
+vorher FAIL, danach Runtime-Hostgruppe 29 PASS/6,550 s
+(`r318/worker-diagnostic/`). Instrumentierter QEMU-Build/Gastlauf laufen noch;
+kein erneuter Formular-PASS und keine Vollabnahme behauptet.
+
+### Vorheriger Stopppunkt: Stackreparatur und Formular-Testtreiber
+
+Finaler Stand dieses Laufs: kein Commit/Paketwechsel. Alle elf Hostgruppen
+bestehen (83 Tests ohne Skips). Nach der unten beschriebenen Stackreparatur
+erneut geprueft: Response 10,268 s, Toolchain 157,854 s, Navigation 2,121 s,
+Browser-Runtime 4,728 s, Public-Admission 1,554 s; Logs
+`build/codex-agent/r318/stack-repair/gate-test_*.log`. Unveraenderte Gruppen:
+`r318/resumed/gate-test_{cpp_types,user_cpp,cpp_baseline}.log` und
+`r318/resumed/clang-test_{gui_browser_source,browser_resources,browser_forms}.log`.
+
+Finale Referenzen PASS: vmware 65,886 s
+(`20260906-205620-package-vmware-vga.log`), qemu 61,779 s
+(`20260906-205726-package-qemu-vga.log`), jeweils Bootmanifest/SBOM bestanden.
+BROWSER.PRG bleibt 2801692 Byte; Payload 6178829 Byte (+16588 private BSS-Bytes),
+beide festen Grenzen eingehalten. SHA-256
+`032d63496ef6b95bf639e853ac4e07b015f49c59d58f61c2831749904f5fcca5`,
+`r318/stack-repair/artifact-bounds.log`. Keine Kernel-/Stackguard-/Quotenaenderung.
+
+Das zuvor fehlgeschlagene Formular-Gate wurde auf diesem finalen Image zuerst
+erneut ausgefuehrt, mit unveraendertem Befehl und unveraenderten Fristen.
+FAIL/69,644 s; `r318/stack-repair/runtime-desktop-browser-forms.guest.log`.
+Jetzt kein Page-Fault-/Probe-Fail-Marker: Reflow, alle drei Ablehnungen und
+Reset bestehen; das Transkript endet bei Tastaturevent 20 (`code=108`), vor
+`BROWSER_FORMS_SEND_READY`. Der urspruengliche Stackfault wurde in diesem Lauf
+somit nicht erneut erreicht; seine Formular-Gastregression bleibt offen.
+Wegen des Stopppunkts nach dem Reparaturlauf wurden auf dem finalen Image die
+anderen vier Gastgates nicht ausgefuehrt. Fruehere Gast-PASS gelten nicht als
+Abnahme der reparierten Binaerdatei. Leeres PowerShell-stdout bleibt kein
+Nachweis fuer Fehlerfreiheit und lieferte hier keinen genauen Exceptiontext.
+
+Read-only Diagnose mit den unveraenderten AST-Funktionskoerpern `wait`/`key`
+aus `run_browser_forms_probe`: Vollstaendiges Event 20 wird akzeptiert;
+nur `BROWSER_FORMS_KEY ordinal=20 code=` fuehrt sofort zu
+`Forms keyboard event mismatch`, bevor restliche Bytes eintreffen koennen.
+Der echte Reader liefert einzelne Zeichen; `wait` kehrt schon beim Praefix
+zurueck, `key` verlangt danach aber eine vollstaendige Zeile. Dieser sicher
+reproduzierte Testtreiberfehler passt zum beobachteten Abbruch; mangels
+erhaltenem stderr ist die exakte Exception des Gastlaufs nicht bewiesen.
+
+Erforderliche, noch NICHT freigegebene Dateierweiterung:
+`scripts/run_qemu_runtime_desktop.py` fuer vollstaendige, weiterhin begrenzt
+empfangene Formular-Tastaturrecords und verlaessliche Fehlerdiagnose.
+Regressionen passen in das bereits erlaubte `test/test_browser_runtime_source.py`.
+Keine Fristverlaengerung, keine geaenderte Eingabe, abgeschwaechte Assertion
+oder Kernel-/Browserfunktion dafuer erforderlich. Die Runnerdatei wurde nicht
+geaendert; R3.18 bleibt allein active, R3.19 wurde nicht definiert/implementiert.
+Der ignorierte `r318/resumed/verify_candidate.py` ist ein unbenutzter Entwurf
+fuer spaetere Vollabnahme, kein ausgefuehrter oder bestandener Nachweis.
+
+### Wiederaufnahme und gezielte Stackreparatur
+
+Die 18 sichtbaren Aenderungen stammen aus dem vorherigen R3.18-Lauf; kein
+fremder Source-Writer. Der Nachweis verwendet jetzt direkte i386-Aufrufketten
+mit Relokationen und konservativen Tailcalls statt alternativer Wrapper-Summen.
+Unbekannte/indirekte/rekursive Kanten werden abgewiesen; eigene Regressionen
+sichern dies. Die feste 32768-Byte-Grenze bleibt unveraendert.
+
+Die erste Wiederaufnahme besteht mit 83 Hosttests in elf Gruppen. Ein durch
+meinen ergaenzten PATH ungewollt mit GCC ausgefuehrtes Navigationstest-Fixture
+scheiterte an dessen Warnungen. Der urspruengliche PATH/Zig-Clang besteht ohne
+Source-/Warnungs-/Fristaenderung. Logs `r318/resumed/gate-*.log`, letzte sechs
+Gruppen `clang-*.log`. Referenzen PASS: vmware 68,544 s
+(`20260906-203626-package-vmware-vga.log`), qemu 62,034 s
+(`20260906-203734-package-qemu-vga.log`), jeweils Manifest/SBOM. Die bekannte
+optionale FAT12-Warnung ist keine Diskettenabnahme. Gast: cpp-client 12,536 s,
+Browser 95,477 s, Resources 78,763 s PASS; `r318/resumed/*.guest.log`.
+
+Formulare FAIL/180,949 s nach `BROWSER_FORMS_SEND_READY`: EIP `0x4001B668`,
+CR2 `0xBFFF6420`. Das gesicherte `r318/resumed/failed-forms-BROWSER.PRG`
+(SHA-256 `6b04f18500113b4027224f6283f324f860ca7a2d389de82fb912801c9da797a0`)
+zeigt dort `push $0x2014` nach dem 16-KiB-Factoryframe. Der gesamte bewachte
+Userspace-Stack reicht nur von `0xBFFF7000` bis `0xBFFFF000` (32 KiB).
+Ein Modul-Delta allein schuetzt die bestehenden Aufrufer also nicht.
+Kein Public-Gate auf diesem fehlerhaften Image und kein Commit/Paketwechsel.
+
+Eine gezielte In-Scope-Reparatur verlegt feste Parser-Header/Metadaten in
+konstant initialisierte private BSS-Scratchfelder; sie zaehlen zum geprueften
+Loader-Payloadbudget. Serialisierung war bereits fuer den URL-Resolver Pflicht.
+Jeder Aufruf setzt/prueft seinen Zustand neu; Result kopiert unabhaengige
+Snapshots. Keine Scratch-/Bodyzeigerretention, Heapallokation, Destruktor-
+Registrierung, Kernel-/Quoten-/Guard-Aenderung. Weiterhin zwei Metadatenkopien
+je C-Admission, keine neue Bodykopie. Die Aufrufer bleiben unveraendert.
+
+Neue Guard-Regression: Response-Peak hoechstens akzeptierter C-Peak plus
+256 Byte ABI-Spielraum. Vor Reparatur FAIL (24912 > 8736),
+`r318/resumed/guard-regression-before.log`; danach PASS, konservative
+Zusatzstack-Obergrenze 8308 Byte. Factoryframe von 16616 auf 28 Byte reduziert.
+O0/O2 jetzt je 5793 Vergleichsfaelle inklusive unabhaengiger alter Ergebnisse
+nach spaeteren Admissions; gezielter Lauf 3,682 s (`stack-repair/focused.log`).
+Finales Response-Gate PASS/10,268 s: C 1994,843 ns, C++ 2180,436 ns
+(109,304 Prozent), feste Grenzen unveraendert. Betroffene Hostgruppen, beide
+Referenzen und alle fuenf Gastgates werden nach Reparatur erneut geprueft;
+unveraenderte Hostgruppen behalten ihre bestehenden Nachweise. Noch kein Commit.
+
+### Vorheriger Stopppunkt: Response-C++ und zu grober Stacknachweis
+
+Fortsetzung auf sauberem `2e17d5fb8eb414d4676d3a5fbd8592df8e5dd195`, direkt
+im sichtbaren Worktree. Noch kein Commit und kein Paketwechsel. Einzige aktive
+Queue bleibt R3.18; keine Umsetzung des Resources-/Model-Nachfolgers.
+
+Der bisherige Parser ist jetzt die einzige Produktionsimplementierung in
+`browser_response.cpp`. `ValidatedResponse::open` liefert ein allokationsfreies
+`Result<ValidatedResponse,ResponseError>`; der private Konstruktionsschluessel
+verhindert ungepruefte Erfolgskonstruktion. Eingaben werden nur waehrend des
+Aufrufs geliehen, keine Bodykopie/Pointerretention oder erfundener Destruktor.
+Die drei C-Einstiegspunkte behalten Struktur, Rueckgabecodes und auch partielle
+Fehlerdiagnosen (insbesondere HTTP-Status). Der reale `finish_fetch` verwendet
+diese Grenze weiterhin; nur Status wird vor der Fehlerpruefung gelesen.
+Gemischter Systembuild und betroffene Hostadapter uebersetzen nach TU-Sprache;
+der Browser aktiviert dieselbe bestehende C++-Objekt-/Archivzulassung.
+
+Regression-first-Fixture wurde vor dem noch fehlenden C++-Header angelegt.
+Gezielter O0/O2-Vorlauf besteht (30,143 s): je 5665 direkte Vergleiche mit dem
+committeten C-Original, inklusive Erfolg, Redirect, Encoding, allen Statuscodes
+200..599, Trunkierung, malformed/oversized und 4096 deterministischen Mutationen.
+Keine duplizierte Produktionsimplementierung. Alte C-Tests bleiben erhalten.
+
+Erstes eingefrorenes Gate:
+`python test/test_browser_response_cpp.py -v` FAIL/12,189 s,
+`build/codex-agent/r318/gate-test_browser_response_cpp.log`.
+Zig legt `-fstack-usage` im Cache statt neben dem Zielobjekt ab; das Gate fand
+seinen Nachweis nicht. Einzige gezielte Reparatur: explizite, lokal per
+Clang-cc1-Hilfe bestaetigte `-stack-usage-file`-Ausgabe. Kein Grenzwert geaendert.
+
+Erneutes Gate FAIL/9,822 s,
+`r318/final-test_browser_response_cpp.log`: vier Tests bestehen, Stacktest
+scheitert. Belege in `r318/response/stack-profile.json`, `target-c.su`,
+`target-cpp.su` und den zugehoerigen i386-Objekten. Der Test summiert konservativ
+alle C++-Frames einschliesslich drei alternativer C-Wrapper und subtrahiert
+nur den groessten C-Frame: 41404 - 8412 = 32992 Byte statt hoechstens 32768.
+Read-only Disassembly bestaetigt, dass jeder der drei 8232-Byte-Wrapper direkt
+die Factory ruft, nicht die anderen Wrapper. Das ist ein Fehler des zu groben
+Stacknachweises, kein belegter realer Stackueberlauf; der vertraglich geforderte
+Nachweis ist trotzdem nicht erbracht. Nach einem fehlgeschlagenen Reparaturlauf
+greift der eingefrorene Stopppunkt. Keine zweite Reparatur/weiteren Gates.
+
+Bereits bestandene Teilnachweise: O0/O2-Differentialfaelle, Compile-time-
+Ablehnung gefaelschter Erfolge/Temporaer-Borrows, echte C-Aufrufer sowie
+i386-Profil-/Undefined-Symbolpruefung ohne Allocator/C++-Runtime. Gepaarte
+Messung: C 2021,721 ns, C++ 2164,542 ns (107,064 Prozent); beide festen Grenzen
+(120 Prozent, 5000 ns) eingehalten. Fuenf frische alternierende Prozesspaare,
+200000 validierte Aufrufe, unveraendertes Fixture/C-Abhaengigkeiten, Zig 0.16,
+O2/UNDEBUG/fno-builtin/kein LTO, QPC und 15-s-Frist. Alle Samples/Hashes stehen
+in `r318/response/paired/paired-response.json`; erste Messung separat erhalten
+in `r318/first-paired-response.json`. Keine UI-/WCET-Aussage.
+
+Offen fuer einen neuen Lauf: Stacknachweis anhand tatsaechlicher Aufrufketten
+mit demselben 32768-Byte-Limit korrigieren und testen, danach restliche zehn
+Hostgruppen, beide Referenzen, finale PRG-/Payload-/Kopiergrenzen und alle fuenf
+Gastgates. Bisherige Images bleiben alte akzeptierte Artefakte, kein Nachweis
+dieses Kandidaten. VMware-Pointer und vollstaendige Browserkompatibilitaet
+bleiben offen. Keine globalen Windows-Einstellungen, Testdialoge, Agenten oder Push.
+
 ## R3.17 abgenommen: minimale allokationsfreie C++-Hilfstypen
 
 Alle zehn eingefrorenen Gates bestehen. Finale Hostabnahme: 80 Tests ohne

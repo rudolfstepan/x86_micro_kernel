@@ -12,6 +12,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOTS = {
@@ -112,11 +113,87 @@ def inventory(revision):
     return revision, components
 
 
+def compile_mixed_host(sources, executable, flags=(), source_flags=None, environment=None):
+    """Per-TU languages, C link without C++ runtime; 90s total compile deadline."""
+    suppress_windows_test_dialogs()
+    from build_user_program import find_zig, cpp_compile_flags
+    zig = str(find_zig())
+    env = os.environ.copy() if environment is None else environment.copy()
+    env.setdefault("ZIG_GLOBAL_CACHE_DIR", str(ROOT / "build/codex-agent/r318/zig-global"))
+    env.setdefault("ZIG_LOCAL_CACHE_DIR", str(ROOT / "build/codex-agent/r318/zig-local"))
+    deadline = time.monotonic() + 90
+    objects = []
+    for index, source in enumerate(sources):
+        obj = Path(executable).with_name(Path(executable).stem + f"-{index}.o")
+        language = cpp_compile_flags() if Path(source).suffix == ".cpp" else ["-std=c11"]
+        subprocess.run([zig, "cc", *language, "-Iuserspace/cpp/include", *flags,
+                        *(source_flags or {}).get(str(source), ()), "-c", str(source), "-o", str(obj)],
+                       cwd=ROOT, env=env, check=True, timeout=max(.01, deadline-time.monotonic()))
+        objects.append(str(obj))
+    subprocess.run([zig, "cc", *objects, "-o", str(executable)], cwd=ROOT, env=env,
+                   check=True, timeout=max(.01, deadline-time.monotonic()))
+    return objects
+
+
+RESPONSE_BASELINE = "2e17d5fb8eb414d4676d3a5fbd8592df8e5dd195"
+RESPONSE_C = "userspace/gui/apps/browser/browser_response.c"
+RESPONSE_CPP = "userspace/gui/apps/browser/browser_response.cpp"
+RESPONSE_FLAGS = ["-O2", "-UNDEBUG", "-fno-builtin", "-Wall", "-Wextra", "-Werror",
+                  "-I.", "-Iuserspace/gui/include", "-Iuserspace/gui/apps/browser"]
+BENCH_DEPENDENCIES = ["userspace/programs/curl_http.c", "userspace/gui/lib/html_document.c",
+                      "userspace/gui/lib/control.c", "userspace/gui/compositor/desktop_wm.c"]
+
+
+def paired_response_benchmark(directory):
+    """R3.18 frozen oracle and bounds; record all samples before checking limits."""
+    from build_user_program import find_zig, cpp_compile_flags
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    baseline = directory / "response-baseline.c"
+    baseline.write_bytes(git("show", RESPONSE_BASELINE + ":" + RESPONSE_C))
+    fixture = "test/test_cpp_baseline_bench.c"
+    digests = {}
+    for path in [fixture, *BENCH_DEPENDENCIES]:
+        data = (ROOT / path).read_bytes().replace(b"\r\n", b"\n")
+        if data != git("show", RESPONSE_BASELINE + ":" + path).replace(b"\r\n", b"\n"):
+            raise ValueError("paired fixture/dependency drift: " + path)
+        digests[path] = hashlib.sha256(data).hexdigest()
+    for path in [RESPONSE_CPP, "userspace/gui/apps/browser/browser_response.hpp",
+                 "userspace/gui/apps/browser/browser_response.h"]:
+        digests[path] = hashlib.sha256((ROOT/path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    executables = [directory / "baseline.exe", directory / "candidate.exe"]
+    for response, executable in zip([baseline, RESPONSE_CPP], executables):
+        compile_mixed_host([fixture, response, *BENCH_DEPENDENCIES], executable, RESPONSE_FLAGS)
+    pairs = []
+    for _ in range(5):
+        pairs.append([json.loads(subprocess.check_output([str(exe)], cwd=ROOT, timeout=15))
+                      for exe in executables])
+    medians = [statistics.median(pair[i]["browser_response_ns"] for pair in pairs) for i in range(2)]
+    result = {"baseline_commit": RESPONSE_BASELINE,
+              "baseline_sha256": hashlib.sha256(baseline.read_bytes()).hexdigest(),
+              "source_fixture_sha256_lf": digests, "platform": platform.platform(),
+              "processor": platform.processor(), "machine": platform.machine(),
+              "compiler": subprocess.check_output([str(find_zig()), "version"], timeout=10).decode().strip(),
+              "flags": RESPONSE_FLAGS, "cpp_flags": cpp_compile_flags(), "lto": False,
+              "iterations_per_sample": 200000, "process_deadline_seconds": 15,
+              "clock": "QueryPerformanceCounter outside loop", "pairs_c_cpp": pairs,
+              "median_c_ns": medians[0], "median_cpp_ns": medians[1],
+              "ratio": medians[1]/medians[0], "limits": {"ratio": 1.2, "cpp_ns": 5000}}
+    (directory / "paired-response.json").write_text(json.dumps(result, indent=2)+"\n", encoding="utf-8")
+    if os.name != "nt" or result["compiler"] != "0.16.0":
+        raise ValueError("frozen Windows/Zig 0.16 measurement profile unavailable")
+    if any(any(not 0 < s["browser_response_ns"] for s in pair) for pair in pairs):
+        raise ValueError("invalid response timing sample")
+    if result["ratio"] > 1.2 or medians[1] > 5000:
+        raise ValueError("frozen response timing bound exceeded: " + json.dumps(result))
+    return result
+
+
 def benchmark():
     suppress_windows_test_dialogs()
     from build_user_program import find_zig
     zig = str(find_zig())
-    sources = ["test/test_cpp_baseline_bench.c", "userspace/gui/apps/browser/browser_response.c",
+    sources = ["test/test_cpp_baseline_bench.c", RESPONSE_C if (ROOT/RESPONSE_C).exists() else RESPONSE_CPP,
                "userspace/programs/curl_http.c", "userspace/gui/lib/html_document.c",
                "userspace/gui/lib/control.c", "userspace/gui/compositor/desktop_wm.c"]
     with tempfile.TemporaryDirectory(prefix="reist-cpp-baseline-") as tmp:
@@ -125,7 +202,7 @@ def benchmark():
         env["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/cpp-baseline-cache")
         env["ZIG_LOCAL_CACHE_DIR"] = str(Path(tmp) / "cache")
         flags = ["cc", "-std=c11", "-O2", "-UNDEBUG", "-Wall", "-Wextra", "-Werror", "-I.", "-Iuserspace/gui/include"]
-        subprocess.run([zig, *flags, *sources, "-o", str(executable)], cwd=ROOT, env=env, check=True, timeout=90)
+        compile_mixed_host(sources, executable, flags[2:], environment=env)
         samples = [json.loads(subprocess.check_output([str(executable)], cwd=ROOT, timeout=15)) for _ in range(5)]
     keys = {"browser_response_ns", "gui_dispatch_ns", "wm_dispatch_ns"}
     if any(set(s) != keys or any(v <= 0 for v in s.values()) for s in samples):

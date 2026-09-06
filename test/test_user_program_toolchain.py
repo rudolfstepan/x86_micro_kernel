@@ -638,6 +638,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 for name in expected
             }
             gui_library = output.parent / "sdk/usr/lib/libreistgui.a"
+            browser_bytes = (output / "BROWSER.PRG").read_bytes()
             future = max(original_times.values()) + 2_000_000_000
             os.utime(gui_library, ns=(future, future))
             subprocess.run(
@@ -660,8 +661,12 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertEqual(
                 rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
                           "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG",
-                          "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG"}
+                          "SURFACEDEMO.PRG", "CONTROL.PRG"}
             )
+            # C++ admission recompiles/revalidates every object/archive, but the
+            # existing builder deliberately preserves byte-identical output's
+            # timestamp. A timestamp-only GUI change must not alter the PRG.
+            self.assertEqual((output / "BROWSER.PRG").read_bytes(), browser_bytes)
             # HTMLWORK shares a semantic struct, not the GUI archive/failure domain.
             self.assertNotIn("HTMLWORK.PRG", rebuilt)
 

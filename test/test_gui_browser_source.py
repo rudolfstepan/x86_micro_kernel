@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 
 
@@ -16,6 +17,18 @@ HEADER = ROOT / "userspace/gui/include/reist/gui/html_document.h"
 
 
 def run_host(sources, arguments=(), flags=()):
+    if any(Path(source).suffix == ".cpp" for source in sources):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from measure_cpp_baseline import compile_mixed_host
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "browser-host.exe"
+            compile_mixed_host(sources, executable,
+                ["-O1", "-UNDEBUG", "-Wall", "-Wextra", "-Werror",
+                 "-Iuserspace/gui/include", "-Iuserspace/image/include",
+                 "-Iuserspace/gui/apps/browser", *flags])
+            subprocess.run([str(executable), *map(str, arguments)], cwd=ROOT,
+                           check=True, timeout=40)
+        return
     compiler = shutil.which("gcc") or shutil.which("clang")
     command = [compiler] if compiler else [r"C:\tools\zig-x86_64-windows-0.16.0\zig.exe", "cc"]
     environment = os.environ.copy()

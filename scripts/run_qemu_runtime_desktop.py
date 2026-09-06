@@ -1296,13 +1296,15 @@ def run_browser_forms_probe(process, output, transcript, screenshot, deadline, m
     thread = threading.Thread(target=serve, daemon=True)
     thread.start()
 
-    def wait(marker, offset=0):
+    def wait(marker, offset=0, complete_line=False):
         while time.monotonic() < deadline:
             drain(output, transcript)
             section = "".join(transcript)[offset:]
             if any(bad in section for bad in ("BROWSER_PROBE_FAIL", "DESKTOP_BROWSER_FAIL", "KERNEL PANIC", "kernel panic")):
                 raise RuntimeError("Forms guest failure: " + section[-3000:])
-            if marker in section:
+            start = section.find(marker)
+            if start >= 0 and (not complete_line or
+                               section.find("\n", start + len(marker)) >= 0):
                 return section
             time.sleep(0.01)
         raise RuntimeError("Forms deadline: " + marker)
@@ -1359,7 +1361,9 @@ def run_browser_forms_probe(process, output, transcript, screenshot, deadline, m
             nonlocal ordinal
             ordinal += 1
             monitor.key(value)
-            section = wait(f"BROWSER_FORMS_KEY ordinal={ordinal} code=")
+            # Serial reads may end after any byte, including "code=". Validate
+            # the exact code only after its record ends, under the same deadline.
+            section = wait(f"BROWSER_FORMS_KEY ordinal={ordinal} code=", complete_line=True)
             match = re.search(rf"BROWSER_FORMS_KEY ordinal={ordinal} code=(\d+)\r?\n", section)
             wanted = 8 if value == "backspace" else ord(value)
             if match is None or int(match[1]) != wanted:
@@ -2401,6 +2405,11 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         drain(output, transcript)
         tail = "".join(transcript)[-8000:].replace("\r", "")
         raise RuntimeError(f"DESKTOP_OK marker not observed; guest tail:\n{tail}")
+    except (OSError, RuntimeError) as error:
+        # Keep a bounded host-side reason with the guest evidence even when an
+        # enclosing hidden process loses stderr. Preserve failure and cleanup.
+        transcript.append(f"\nHOST_RUNTIME_FAILURE {type(error).__name__}: {str(error)[:4096]}\n")
+        raise
     finally:
         try:
             if browser_probe:

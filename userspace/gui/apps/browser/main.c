@@ -405,6 +405,20 @@ static void cleanup_fetch_channel(browser_state_t *state) {
     if(state->fetch_endpoint) (void)x86os_ipc_close(state->fetch_endpoint);
     state->fetch_endpoint=state->fetch_received=state->fetch_total=0;
 }
+static void cancel_job(browser_state_t *state,const char *reason,int error,uint32_t now) {
+    int report=state->probe && state->child_pid>0 && !state->job_cancelled;
+    /* Fence/terminate before probe output, once per owned generation. Capture
+     * the trigger time, not time spent in cancellation/logging. No body data. */
+    cancel_fetch(state);
+    if(!report) return;
+    x86os_puts("BROWSER_JOB_CANCEL reason="); x86os_puts(reason);
+    x86os_puts(" status="); x86os_print_number(error);
+    x86os_puts(" kind="); x86os_print_number((int)state->job_kind);
+    x86os_puts(" remaining_ms="); x86os_print_number((int32_t)(state->job_deadline-now));
+    x86os_puts(" sent="); x86os_print_number((int)state->css_sent);
+    x86os_puts(" received="); x86os_print_number((int)state->css_received);
+    x86os_puts(" total="); x86os_print_number((int)state->css_total); x86os_puts("\n");
+}
 static void html_parent_phase(const char *name) {
     x86os_puts("BROWSER_HTML_PHASE "); x86os_puts(name); x86os_puts(" ms=");
     x86os_print_number((int)x86os_uptime_ms()); x86os_puts("\n");
@@ -802,6 +816,8 @@ static int finish_fetch(browser_state_t *state, reist_gui_surface_client_t *clie
     browser_response_t response = {0};
     result = document ? browser_response_open_document(bytes,length,state->job_url,&response) :
         browser_response_open_kind(bytes,length,state->job_url,state->job_kind==4U ? BROWSER_RESPONSE_CSS : BROWSER_RESPONSE_IMAGE,&response);
+    /* C++ admission returns legacy diagnostics on failure, not publishable
+     * metadata. Only the status may be consumed before checking the result. */
     state->response_status = response.status;
     if (result < 0) return result;
     if (response.body_length > limit) return -90;
@@ -879,9 +895,12 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
     if (state->child_pid > 0) {
         if ((int32_t)(now - state->job_deadline) >= 0) {
             if (state->job_kind==3U && !state->job_cancelled) ++state->parser_timeouts;
-            cancel_fetch(state);
+            cancel_job(state,"deadline",-110,now);
         }
-        if (state->job_kind==3U && !state->job_cancelled && service_css_ipc(state)) cancel_fetch(state);
+        if (state->job_kind==3U && !state->job_cancelled) {
+            int rc=service_css_ipc(state);
+            if(rc) cancel_job(state,"css-ipc",rc,x86os_uptime_ms());
+        }
         if (state->job_kind!=3U && !state->job_cancelled && service_fetch_ipc(state)) cancel_fetch(state);
         if (state->exit_requested) return;
         if ((int32_t)(now - state->poll_at) < 0) return;
@@ -895,7 +914,10 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
         }
         /* Exit may race the last send after this turn's first drain. The
          * endpoint has one bulk slot: drain that final packet before reaping. */
-        if (state->job_kind==3U && !state->job_cancelled && service_css_ipc(state)) cancel_fetch(state);
+        if (state->job_kind==3U && !state->job_cancelled) {
+            int rc=service_css_ipc(state);
+            if(rc) cancel_job(state,"css-ipc-final",rc,x86os_uptime_ms());
+        }
         if (state->job_kind!=3U && !state->job_cancelled && service_fetch_ipc(state)) cancel_fetch(state);
         int status = -1;
         uint32_t pid=(uint32_t)state->child_pid, generation=state->child_generation;

@@ -101,7 +101,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/apps/browser/browser_model.c",
         ROOT / "userspace/gui/apps/browser/browser_forms.c",
         ROOT / "userspace/gui/apps/browser/browser_images.c",
-        ROOT / "userspace/gui/apps/browser/browser_response.c",
+        ROOT / "userspace/gui/apps/browser/browser_response.cpp",
         ROOT / "userspace/gui/apps/browser/browser_scene.c",
         ROOT / "userspace/gui/apps/browser/browser_resources.c",
         ROOT / "userspace/gui/apps/browser/html_protocol.c",
@@ -373,6 +373,9 @@ def main() -> None:
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
             if name == "BROWSER.PRG":
+                includes.insert(0, sdk.cpp_include_dir)
+                dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_response.hpp")
+                dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
                 dependency_files.append(ROOT / "assets/fonts/reist-unicode.psf")
                 vendor = ROOT / "third_party/stb_image.h"
                 pin = ROOT / "third_party/stb_image.sha256"
@@ -391,7 +394,7 @@ def main() -> None:
                 runtime_libraries=runtime_libraries,
                 cache_directory=global_cache_directory,
                 dependency_files=dependency_files,
-                cpp=name == "CPPTEST.PRG",
+                cpp=name in ("CPPTEST.PRG", "BROWSER.PRG"),
                 compile_flags=(
                     (["-fno-inline-functions"]
                      if name == "STORAGE.PRG" else []) +

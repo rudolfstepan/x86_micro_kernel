@@ -2,6 +2,9 @@
 #define REIST_BROWSER_RESPONSE_H
 #include <stddef.h>
 #include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "../../../programs/curl_http.h"
 #include "html_protocol.h"
 
@@ -17,9 +20,14 @@ enum browser_response_kind { BROWSER_RESPONSE_HTML, BROWSER_RESPONSE_IMAGE, BROW
 int browser_response_open_kind(const uint8_t *bytes, size_t length, const char *url,
                                uint32_t kind, browser_response_t *result);
 /* CURL --include contract: original headers followed by an already decoded
- * body. Return 1 for a validated redirect, 0 for content, negative on error. */
+ * body. Return 1 for a validated redirect, 0 for content, negative on error.
+ * On failure output is diagnostic only (legacy partial status/metadata);
+ * no offset, redirect or encoding may be used for publication. */
 int browser_response_open(const uint8_t *bytes, size_t length, const char *url,
                            uint32_t image, browser_response_t *result);
 /* New document profile: expose a validated transport charset to the worker. */
 int browser_response_open_document(const uint8_t *,size_t,const char *,browser_response_t *);
+#ifdef __cplusplus
+}
+#endif
 #endif

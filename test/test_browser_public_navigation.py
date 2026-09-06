@@ -9,7 +9,7 @@ class PublicNavigationTests(unittest.TestCase):
 
     def test_real_response_and_private_worker_admission(self):
         run_host(["test/test_browser_public_host.c",
-                  "userspace/gui/apps/browser/browser_response.c",
+                  "userspace/gui/apps/browser/browser_response.cpp",
                   "userspace/gui/apps/browser/browser_scene.c",
                   "userspace/gui/apps/browser/browser_forms.c",
                   "userspace/gui/apps/browser/html_protocol.c",

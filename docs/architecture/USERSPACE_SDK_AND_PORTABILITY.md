@@ -448,6 +448,24 @@ Integration und CPPTEST mit echten IPC-Endpunkten, altem Handle und neuem
 Endpunkt. Alle bisherigen OOM/Fault/Kill/Reap-/Shellmarker bleiben erforderlich.
 Aktueller Abnahmestatus und Logs stehen in CURRENT_WORK; keine Browsermigration.
 
+## Abgenommener Response-Pilot R3.18
+
+R3.18 verwendet die bereits akzeptierten Hilfstypen erstmals im Browser:
+`browser_response.cpp` mit privatem `browser_response.hpp`. Das ist kein
+neues oeffentliches SDK-/Wire-API. Die benannte Factory liefert ausschliesslich
+vollstaendig validierte Metadaten als Erfolg; Fehler tragen getrennt die
+bisherigen C-Diagnosen. Die drei bestehenden C-Funktionen und Datenlayouts
+bleiben unveraendert. Keine Response-Heapallokation oder gespeicherten
+Bodyzeiger; Metadatenkopien sind auf Result-Konstruktion und C-Ausgabe begrenzt.
+Feste Parser-/Metadaten-Scratchfelder liegen konstant initialisiert in der
+privaten BSS und zaehlen zum Loader-Payloadbudget. Die bereits vom URL-Resolver
+geforderte Serialisierung bleibt Voraussetzung; zurueckgegebene Werte sind
+unabhaengige Kopien. So liegen keine zusaetzlichen grossen Parser-Scratchfelder
+auf dem weiterhin 32-KiB-grossen bewachten Userspace-Stack. Kein Schutzabbau.
+88 Hosttests, beide Referenzbuilds und alle fuenf Gastgates bestehen.
+Stack-/Laufzeit-/Groessennachweise und das verbleibende intermittierende
+Worker-Timingrisiko stehen in CURRENT_WORK. Profil 1 wird nicht gelockert.
+
 ## Dokumentationsvertrag
 
 Öffentliche Header sind die normative API-Referenz und verwenden

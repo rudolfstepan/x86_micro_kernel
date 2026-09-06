@@ -126,8 +126,14 @@ int x86os_kill(int pid) {
     process.state = X86OS_PROCESS_ZOMBIE;
     return kill_exit ? -13 : 0;
 }
-void x86os_puts(const char *text) { (void)text; }
-void x86os_print_number(int number) { (void)number; }
+static char host_log[4096];
+static size_t host_log_used;
+void x86os_puts(const char *text) {
+    size_t n=strlen(text), left=sizeof(host_log)-1-host_log_used;
+    if(n>left) n=left;
+    memcpy(host_log+host_log_used,text,n); host_log_used+=n; host_log[host_log_used]=0;
+}
+void x86os_print_number(int number) { char text[16]; snprintf(text,sizeof(text),"%d",number); x86os_puts(text); }
 int reist_gui_surface_client_set_title(reist_gui_surface_client_t *client, const char *title) {
     (void)client;
     assert(strlen(title) < REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY);
@@ -158,6 +164,7 @@ int browser_image_decode(const uint8_t *bytes, size_t length, uint32_t *pixels,
     info->width=info->height=info->stride_pixels=1; pixels[0]=0x123456; return 0;
 }
 static browser_state_t fresh(void) {
+    host_log_used=0; host_log[0]=0;
     browser_state_t state = {0};
     process = (x86os_process_info_t){81, 77, X86OS_PROCESS_RUNNING, 0, "curl"};
     exists = waits = kills = identity_exit = kill_exit = 0; generation = 23;
@@ -215,6 +222,34 @@ static void fault_cleanup_cases(void) {
             assert(!strcmp(state.active_url,"/htdocs/index.html"));
             assert(!navigate(&state,&client,"/htdocs/browser-html5-test.html") && state.pending);
         }
+    }
+}
+static void worker_cancel_diagnostics(void) {
+    for(unsigned mode=0;mode<4;++mode) {
+        browser_state_t state=fresh(); reist_gui_surface_client_t client={.width=800,.height=600};
+        state.probe=mode<2 ? 4 : 0;
+        memcpy(document_bytes,"<p>safe</p>",11);
+        assert(!publish_document_bytes(&state,&client,"/diagnostic.html",11));
+        service_loads(&state,&client);
+        assert(state.child_pid==81 && state.job_kind==3);
+        uint32_t original_deadline=state.job_deadline;
+        if(mode%2==0) clock_ms=original_deadline;
+        else {
+            for(unsigned i=0;i<40 && state.css_sent<css_input.request.header.size;++i) assert(!service_css_ipc(&state));
+            peer_closed=1;
+        }
+        service_loads(&state,&client);
+        assert(!state.child_pid && !state.exit_requested && !endpoint_live && kills==1 && waits==1);
+        assert(state.job_deadline==original_deadline && state.loaded && !state.active);
+        assert(state.parser_timeouts==(mode%2==0));
+        const char *marker=strstr(host_log,"BROWSER_JOB_CANCEL");
+        if(mode<2) {
+            assert(marker && strstr(marker,mode==0 ? "reason=deadline status=-110" : "reason=css-ipc status=-84"));
+            assert(strstr(marker,"kind=3") && strstr(marker,"sent=") && strstr(marker,"received="));
+        } else assert(!marker); // Normal operation gains no diagnostic overhead.
+        size_t logged=host_log_used;
+        service_loads(&state,&client);
+        assert(host_log_used==logged && kills==1 && waits==1);
     }
 }
 static void complete(browser_state_t *state, reist_gui_surface_client_t *client, const char *response) {
@@ -571,6 +606,7 @@ int main(int argc, char **argv) {
         assert(opens==old_opens && unlinks==old_unlinks);
     }
     fault_cleanup_cases();
+    worker_cancel_diagnostics();
     for (unsigned race = 0; race < 2; ++race) {
         browser_state_t state = fresh(); reist_gui_surface_client_t client = {0};
         assert(start_fetch(&state, "https://intracom.at/", 1, 0) == 0);
@@ -889,6 +925,104 @@ int main(void) {
 
 
 class BrowserRuntimeTests(unittest.TestCase):
+    @staticmethod
+    def forms_keyboard(chunks):
+        # Execute the production nested functions; only serial/QMP/time are fake.
+        tree = ast.parse((ROOT / "scripts/run_qemu_runtime_desktop.py").read_text())
+        probe = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                     and n.name == "run_browser_forms_probe")
+        functions = {n.name: n for n in ast.walk(probe)
+                     if isinstance(n, ast.FunctionDef)}
+        fixture = ast.parse("def fixture():\n    ordinal = 0\n    return key, wait\n")
+        fixture.body[0].body[1:1] = [functions["wait"], functions["key"]]
+        clock = [0.0]
+        pending = iter(chunks)
+        def sleep(interval):
+            clock[0] += interval
+        drain = mock.Mock(side_effect=lambda _, target: target.append(next(pending, "")))
+        namespace = dict(time=types.SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep),
+                         deadline=2.0, drain=drain, output=None, transcript=[], re=re,
+                         monitor=types.SimpleNamespace(key=mock.Mock()))
+        exec(compile(ast.fix_missing_locations(fixture), "real-forms-keyboard", "exec"), namespace)
+        key, wait = namespace["fixture"]()
+        return key, wait, namespace, clock
+
+    def test_forms_keyboard_waits_for_all_serial_fragment_boundaries(self):
+        for ending in ("\n", "\r\n"):
+            record = "BROWSER_FORMS_KEY ordinal=1 code=108" + ending
+            variants = [[record], list(record)]
+            variants += [[record[:i], record[i:]] for i in range(1, len(record))]
+            for chunks in variants:
+                with self.subTest(ending=repr(ending), chunks=chunks):
+                    key, _, state, _ = self.forms_keyboard(chunks)
+                    key("l")
+                    state["monitor"].key.assert_called_once_with("l")
+                    self.assertEqual(state["drain"].call_count, len(chunks))
+                    self.assertTrue("".join(state["transcript"]).endswith(ending))
+
+    def test_forms_keyboard_rejects_complete_invalid_records_without_retry(self):
+        for code in ("109", "", "-1", "108x"):
+            with self.subTest(code=code):
+                key, _, state, _ = self.forms_keyboard([
+                    "BROWSER_FORMS_KEY ordinal=1 code=" + code + "\n"])
+                with self.assertRaisesRegex(RuntimeError, "Forms keyboard event mismatch"):
+                    key("l")
+                self.assertEqual(state["drain"].call_count, 1)
+                state["monitor"].key.assert_called_once_with("l")
+
+    def test_forms_keyboard_truncation_and_wrong_ordinal_keep_original_deadline(self):
+        for record in ("BROWSER_FORMS_KEY ordinal=1 code=",
+                       "BROWSER_FORMS_KEY ordinal=1 code=108\r",
+                       "BROWSER_FORMS_KEY ordinal=2 code=108\n"):
+            with self.subTest(record=record):
+                key, _, state, clock = self.forms_keyboard([record])
+                with self.assertRaisesRegex(RuntimeError, "Forms deadline:"):
+                    key("l")
+                self.assertGreaterEqual(clock[0], state["deadline"])
+                self.assertLess(clock[0], state["deadline"] + 0.02)
+                state["monitor"].key.assert_called_once_with("l")
+
+    def test_forms_keyboard_keeps_ordinals_backspace_and_guest_failures(self):
+        key, _, state, _ = self.forms_keyboard([
+            "BROWSER_FORMS_KEY ordinal=1 code=108\n",
+            "BROWSER_FORMS_KEY ordinal=2 code=8\r", "\n"])
+        key("l")
+        key("backspace")
+        self.assertEqual(state["monitor"].key.call_args_list,
+                         [mock.call("l"), mock.call("backspace")])
+        key, _, _, _ = self.forms_keyboard([
+            "BROWSER_FORMS_KEY ordinal=1 code=", "BROWSER_PROBE_FAIL\n"])
+        with self.assertRaisesRegex(RuntimeError, "Forms guest failure:"):
+            key("l")
+
+    def test_runtime_failure_is_saved_bounded_and_cleanup_still_runs(self):
+        tree = ast.parse((ROOT / "scripts/run_qemu_runtime_desktop.py").read_text())
+        run = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "run")
+        guarded = next(n for n in run.body if isinstance(n, ast.Try) and n.finalbody)
+        # Keep the actual handlers/finally; replace only the QEMU workload.
+        guarded.body = ast.parse("raise failure").body
+        fixture = ast.fix_missing_locations(ast.Module(body=[guarded], type_ignores=[]))
+        for error_type in (RuntimeError, OSError):
+            with self.subTest(error_type=error_type), tempfile.TemporaryDirectory() as temp:
+                screenshot = Path(temp) / "guest.ppm"
+                failure = error_type("keyboard mismatch " + "x" * 9000)
+                process, monitor, dns = mock.Mock(), mock.Mock(), mock.Mock()
+                stop = mock.Mock()
+                state = dict(failure=failure, transcript=["GUEST_READY\n"], browser_probe=True,
+                             drain=mock.Mock(), output=None, screenshot=screenshot,
+                             browser_input=monitor, dns_connection=dns, process=process,
+                             stop_process=stop)
+                with self.assertRaises(error_type) as raised:
+                    exec(compile(fixture, "real-runtime-failure-cleanup", "exec"), state)
+                self.assertIs(raised.exception, failure)
+                saved = screenshot.with_suffix(".browser.log").read_text()
+                self.assertIn("GUEST_READY\n", saved)
+                self.assertIn("HOST_RUNTIME_FAILURE " + error_type.__name__ + ": keyboard mismatch", saved)
+                self.assertLess(len(saved), 4200)
+                monitor.peer.close.assert_called_once()
+                dns.close.assert_called_once()
+                stop.assert_called_once_with(process)
+
     def test_input_probe_keeps_overall_deadline_across_both_sessions(self):
         # Execute the real runner's deadline assignments and dispatch, with a
         # late first startup. No replacement deadline model or guest sleep.
@@ -1272,7 +1406,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
-                      "userspace/gui/apps/browser/browser_response.c", "userspace/programs/curl_http.c",
+                      "userspace/gui/apps/browser/browser_response.cpp", "userspace/programs/curl_http.c",
                       "userspace/gui/apps/browser/browser_resources.c", "userspace/gui/apps/browser/browser_forms.c",
                       "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/lib/font.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",

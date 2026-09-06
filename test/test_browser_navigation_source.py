@@ -41,7 +41,7 @@ class BrowserNavigationTests(unittest.TestCase):
 
     def test_response_metadata_redirects_and_representation(self):
         run_host(["test/test_browser_response_host.c",
-                  "userspace/gui/apps/browser/browser_response.c",
+                  "userspace/gui/apps/browser/browser_response.cpp",
                   "userspace/programs/curl_http.c",
                   "userspace/gui/lib/html_document.c"], flags=["-I."])
 

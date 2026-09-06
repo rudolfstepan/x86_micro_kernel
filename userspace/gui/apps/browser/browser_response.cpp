@@ -1,5 +1,6 @@
-#include "browser_response.h"
-#include "reist/gui/html_document.h"
+#include "browser_response.hpp"
+
+namespace {
 
 static char lower(char ch) { return ch >= 'A' && ch <= 'Z' ? ch + ('a' - 'A') : ch; }
 static int equal(const char *text, size_t length, const char *expected) {
@@ -68,13 +69,16 @@ static int supported_type(const char *value,uint32_t kind,uint32_t extended,uint
 static int response_open(const uint8_t *bytes,size_t length,const char *url,
                          uint32_t kind,browser_response_t *result,uint32_t extended) {
     if (!result) return -22;
-    *result = (browser_response_t){0};
+    *result = browser_response_t{};
     if (!bytes || !url || length > UINT32_MAX || kind>BROWSER_RESPONSE_CSS) return -22;
     size_t url_length = 0;
     while (url_length < REIST_CURL_LOCATION_CAPACITY && url[url_length]) ++url_length;
     if (url_length == REIST_CURL_LOCATION_CAPACITY || !network(url)) return -22;
     uint32_t offset = 0;
-    reist_curl_response_head_t head;
+    /* Serialized like the existing URL resolver below. The process has a
+     * guarded 32-KiB stack: keep bounded parser scratch in private BSS, not
+     * alongside caller metadata and Result's return slot on that stack. */
+    static reist_curl_response_head_t head;
     for (uint32_t interim = 0; interim <= 4; ++interim) {
         uint32_t head_length = 0;
         int status = reist_curl_find_header_end(bytes + offset, (uint32_t)length - offset, &head_length);
@@ -113,12 +117,42 @@ static int response_open(const uint8_t *bytes,size_t length,const char *url,
         !supported_type(head.content_type,kind,extended,&result->encoding)) return -95;
     return 0;
 }
+} // namespace
+
+namespace reist::browser {
+Result<ValidatedResponse,ResponseError> ValidatedResponse::open(
+    const uint8_t* bytes,size_t length,const char* url,uint32_t kind,bool document) noexcept {
+    // Cleared by response_open on every path. Result copies the snapshot;
+    // subsequent admissions cannot invalidate any previously returned value.
+    static browser_response_t metadata;
+    int code=response_open(bytes,length,url,document ? BROWSER_RESPONSE_HTML : kind,&metadata,document);
+    using Admission=Result<ValidatedResponse,ResponseError>;
+    if(code<0) return Admission::failure(code,metadata);
+    return Admission::success(Key{},metadata,code);
+}
+}
+
+/* Keep partial C diagnostics exactly as before, but never call them a typed
+ * success. Two bounded metadata copies: into Result, then to the C caller.
+ * Result factory returns are guaranteed elided prvalues; no body is copied. */
+static int response_adapter(const uint8_t* bytes,size_t length,const char* url,
+                            uint32_t kind,browser_response_t* result,bool document) {
+    if(!result) return -22;
+    auto admission=reist::browser::ValidatedResponse::open(bytes,length,url,kind,document);
+    if(const auto* value=admission.value_if()) {
+        *result=value->metadata();
+        return value->decision();
+    }
+    const auto* error=admission.error_if();
+    *result=error->diagnostic;
+    return error->code;
+}
 int browser_response_open_document(const uint8_t *bytes,size_t length,const char *url,browser_response_t *result) {
-    return response_open(bytes,length,url,BROWSER_RESPONSE_HTML,result,1);
+    return response_adapter(bytes,length,url,BROWSER_RESPONSE_HTML,result,true);
 }
 int browser_response_open_kind(const uint8_t *bytes,size_t length,const char *url,
                                uint32_t kind,browser_response_t *result) {
-    return response_open(bytes,length,url,kind,result,0);
+    return response_adapter(bytes,length,url,kind,result,false);
 }
 
 int browser_response_open(const uint8_t *bytes, size_t length, const char *url,
