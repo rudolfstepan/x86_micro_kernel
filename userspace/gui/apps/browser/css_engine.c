@@ -389,6 +389,29 @@ static uint32_t scalar_size(const char *s,size_t left) {
     uint8_t c=(uint8_t)*s; uint32_t n=c<0x80 ? 1 : c<0xe0 ? 2 : c<0xf0 ? 3 : 4;
     return n<=left ? n : (uint32_t)left;
 }
+/* HTML size/cols/rows affect intrinsic native geometry, never input quotas.
+ * Saturate at the viewport-scale bound while accounting every scanned byte. */
+static uint32_t control_size(node *n,const char *name,uint32_t fallback,uint32_t maximum) {
+    const char *p=attr(n,name); if(!p) return fallback;
+    while(space((uint8_t)*p)) { if(budget()) return fallback; ++p; }
+    if(*p=='+') ++p;
+    if(*p<'0' || *p>'9') return fallback;
+    uint32_t value=0;
+    while(*p>='0' && *p<='9') {
+        if(budget()) return fallback;
+        uint32_t digit=(uint32_t)(*p++-'0');
+        value=value>(maximum-digit)/10U ? maximum : value*10U+digit;
+    }
+    return value ? value : fallback;
+}
+static uint32_t control_cells(const char *text) {
+    uint32_t cells=0;
+    for(uint32_t i=0;text[i] && cells<128;++i) {
+        if(budget()) return cells;
+        if(((uint8_t)text[i]&192)!=128) ++cells;
+    }
+    return cells;
+}
 static int append_text(flow *f,css_computed_style *s,const char *text,size_t length,uint32_t link) {
     css_fixed fixed; css_unit unit; css_computed_font_size(s,&fixed,&unit);
     int32_t font=length_px(s,fixed,unit,16);
@@ -470,6 +493,12 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         link=doc->link_count++;
     }
     int block=display!=CSS_DISPLAY_INLINE && display!=CSS_DISPLAY_INLINE_BLOCK;
+    int native=n->control_index && scene->forms.controls[n->control_index-1].kind!=BROWSER_FORM_LABEL;
+    if(native && scene->forms.controls[n->control_index-1].kind==BROWSER_FORM_HIDDEN) return 0;
+    int control_block=native && block;
+    /* A native control is one replaced box. Generic block decorations would
+     * paint an unrelated full-width rectangle behind its intrinsic widget. */
+    if(native) { if(control_block) end_line(outer,0); block=0; }
     flow local=*outer, *f=outer;
     int32_t margins[4]={0},pads[4]={0},borders[4]={0},width=0,box_x=0,box_y=0,explicit_height=0;
     uint32_t border_colors[4]={0}, background=0, fill_index=UINT32_MAX;
@@ -538,15 +567,28 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         if(c->kind!=BROWSER_FORM_HIDDEN) {
             int aw=1,ah=1; int32_t w=dimension(s,css_computed_width,f->right-f->left,&aw);
             int32_t h=dimension(s,css_computed_height,containing_height,&ah);
-            if(aw) w=c->kind==BROWSER_FORM_CHECKBOX || c->kind==BROWSER_FORM_RADIO ? 20 :
-                c->kind==BROWSER_FORM_SUBMIT || c->kind==BROWSER_FORM_RESET || c->kind==BROWSER_FORM_BUTTON ? 96 : 200;
-            if(ah) h=c->kind==BROWSER_FORM_TEXTAREA ? 64 : 24;
+            int toggle=c->kind==BROWSER_FORM_CHECKBOX || c->kind==BROWSER_FORM_RADIO;
+            int button=c->kind==BROWSER_FORM_SUBMIT || c->kind==BROWSER_FORM_RESET || c->kind==BROWSER_FORM_BUTTON;
+            if(aw) {
+                if(toggle) w=18;
+                else if(button) w=(int32_t)control_cells(scene->forms.strings+c->label)*8+16;
+                else if(c->kind==BROWSER_FORM_SELECT) {
+                    uint32_t cells=1;
+                    for(uint32_t j=c->first_option;j<c->first_option+c->option_count;++j) {
+                        uint32_t count=control_cells(scene->forms.strings+scene->forms.options[j].label);
+                        if(count>cells) cells=count;
+                    }
+                    w=(int32_t)cells*8+24;
+                } else w=(int32_t)control_size(n,c->kind==BROWSER_FORM_TEXTAREA ? "cols" : "size",20,127)*8+8;
+            }
+            if(ah) h=toggle ? 18 : c->kind==BROWSER_FORM_TEXTAREA ? (int32_t)control_size(n,"rows",2,47)*16+8 : 24;
             if(w>f->right-f->left) w=f->right-f->left;
             if(w<0 || h<0 || w>1024 || h>768) return -28;
             if(w && h) {
                 if(f->content && f->x+w>f->right) end_line(f,0);
                 if(emit(BROWSER_SCENE_CONTROL,index,0,UINT32_MAX,f->x,f->y,(uint32_t)w,(uint32_t)h,0,0)) return -28;
                 f->x+=w+4; if(h+2>f->line) f->line=h+2; f->content=1;
+                if(control_block) end_line(f,0);
             }
         }
     } else if (tag(n,"img")) {

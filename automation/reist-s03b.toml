@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.15-browser-form-maxlength"
+active_id = "R3.16-ring3-cpp-runtime"
 
 [policy]
 one_package_per_run = true
@@ -915,10 +915,13 @@ evidence = []
 
 [[packages]]
 id = "R3.15-browser-form-maxlength"
-status = "active"
+status = "done"
+parser_extension = "2026-09-06: User explicitly approves the existing build_html_engine.py adapter and associated parser regression tests after the numeric-CR boundary stop. Remove only Hubbub 0.3.8's obsolete numeric CR-to-LF mapping after archive-pin validation, with an exact single-context guard that fails closed on drift. Preserve numeric CR in the retained tree; normalize textarea API newlines separately without collapsing legitimate LF pairs. Freeze actual-parser, patch-drift and pin checks in addition to all existing gates. Original archive, other mappings, quotas, isolation and deadlines remain unchanged."
 phase = "post-s0"
 risk = "medium"
 title = "Support bounded native HTML maxlength without rejecting search forms"
+approved_followups = "2026-09-06: User approves this order: finish and accept the current form repair, then establish a tested Ring-3 C++ SDK/runtime profile, then migrate browser components incrementally while retaining existing C parsers and process boundaries. Do not implement those later packages in this R3.15 run."
+ui_extension = "2026-09-06: During implementation the user additionally reports unfamiliar form appearance and missing elements. Extend the same native form projection/render lifetime to the existing CSS layout file: intrinsic label/size/rows metrics, no duplicate full-width block background behind a compact native control, distinct checkbox/radio/select affordances and matching focused rendering. Inventory existing and unsupported kinds, do not infer authority for credentials/uploads/POST or a script engine. Add geometry/raster regressions before UI edits and retain all frozen gates. The exact additional missing elements are requested asynchronously; this is no claim to implement every modern form type."
 user_direction = "2026-09-06: User reports Google search rejected with a screenshot after accepted commit 5214c019. Clean worktree verified. The captured Google form has maxlength=2048 on q; the existing unsupported_attributes function blocks the entire GET before transport. Prioritize this reproduced Ring-3 form repair; defer R3.6b with all gates unchanged. Direct main-worktree execution only, no agents or push."
 scope = "One static native text/search/textarea length-limit lifetime from retained Hubbub attributes through versioned private form metadata, native editing, reset/reflow and explicit GET submission. Apply WHATWG maxlength parsing and UTF-16 code-unit length, including LF-normalized textarea values, invalid/missing/zero/large attributes and overlong author defaults. Preserve existing byte quotas; large numerical limits saturate only at the stronger private value capacity, never overflow. Add an append-only version-2 form extension and explicit version-1 wire adapter, without changing legacy control layouts, public semantic/Surface/syscall ABI or scene-generation validation. Cache private edited-value lengths for constant extra work per key, track dirty edits for too-long submission rejection, preserve defaults and values on refused insertion, allow deletion and reset, and retain readonly/disabled semantics. Reuse the existing form GET and worker path; no Google-specific bypass, script execution, hidden-field rewriting, POST, cookies, credentials, new transport or kernel changes. Real-code projection/encoding/wire/edit tests must reproduce the search-field failure first. Tighten the existing real-input form fixture and probe to prove maxlength admission, rejected extra typing with retained value, reset/reflow, exact GET, unsupported-form rejection and worker recovery under unchanged deadlines. Preserve the other four browser guest gates. A controlled form proof is not live Google results-page compatibility."
 allowed_files = [
@@ -929,8 +932,11 @@ allowed_files = [
   "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md", "docs/architecture/REIST_ARCHITECTURE.md",
   "userspace/gui/apps/browser/browser_forms.c", "userspace/gui/apps/browser/browser_forms.h",
   "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/browser_scene.h",
+  "userspace/gui/apps/browser/css_engine.c",
   "userspace/gui/apps/browser/main.c", "htdocs/browser-forms-test.html",
   "scripts/run_qemu_runtime_desktop.py",
+  "scripts/build_html_engine.py", "test/test_html_engine.py",
+  "test/test_html_engine_host.c", "test/test_html_engine_build.py",
   "test/test_browser_forms.py", "test/test_browser_forms_host.c",
   "test/test_css_engine.py", "test/test_css_engine_host.c",
   "test/test_browser_runtime_source.py", "test/test_gui_browser_source.py",
@@ -946,7 +952,8 @@ invariants = [
 targeted_tests = [
   "python test/test_browser_forms.py -v", "python test/test_css_engine.py -v",
   "python test/test_gui_browser_source.py -v", "python test/test_browser_runtime_source.py -v",
-  "python test/test_browser_public_navigation.py -v", "python test/test_user_program_toolchain.py -v"
+  "python test/test_browser_public_navigation.py -v", "python test/test_user_program_toolchain.py -v",
+  "python test/test_html_engine.py -v", "python test/test_html_engine_build.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
@@ -965,6 +972,58 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "fix: support native form maxlength and search submission"
+evidence = []
+
+[[packages]]
+id = "R3.16-ring3-cpp-runtime"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Establish an opt-in bounded Ring-3 C++ SDK and object lifetime"
+user_direction = "2026-09-06: User approves completing the native form repair first, then a tested C++ SDK/runtime foundation, then incremental browser migration. Define this next package without implementing it in R3.15. Keep the incomplete VMware pointer acceptance queued with all its gates unchanged. Direct visible-main-worktree execution only; no nested agents or push."
+scope = "One opt-in freestanding C++17 program lifetime: conventional Clang/LLVM translation of mixed C/C++ sources, installed SDK headers/archive/startup, ELF32/MYPR validation, private allocator initialization, bounded static initialization/finalization and explicit allocation failure. Inventory existing startup, libc allocator, process-private backing and reaping before adding adapters; reuse them. Preserve the existing C startup and C consumer defaults. Provide constructors/destructors, deterministic RAII ownership, move-only objects, virtual interfaces and C ABI linkage through tested standard language/toolchain mechanisms, not a rewritten compiler or C parser. The initial single-execution-context profile excludes exceptions, RTTI, threads/TLS, dynamic libraries and a full standard library; unsupported runtime dependencies fail at build/link time instead of silently succeeding. Nothrow allocation reports exhaustion without publication; ordinary allocation failure terminates only the owning process under the documented no-exceptions profile. Bound initialization/termination registration and detect recursive/invalid runtime state without busy-wait. Prove zero-size, overflow, null delete, matching object/array destruction, private backing return and generation reap using actual runtime code. Package a C++ proof PRG on the userspace shell search path in both image layouts; execute normal lifetime, exhaustion and controlled process-fault cases in QEMU, followed by a responsive shell and a fresh healthy generation. No browser component conversion, new kernel mechanism, public syscall/Surface wire change, unrestricted heap or compatibility claim in this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md", "docs/architecture/REIST_ARCHITECTURE.md",
+  "scripts/build_user_program.py", "scripts/build_user_sdk.py", "scripts/build_system_programs.py",
+  "config/user_program.ld", "userspace/sdk/include/x86os.h",
+  "userspace/cpp/crt0.cpp", "userspace/cpp/runtime.cpp",
+  "userspace/cpp/include/new", "userspace/cpp/include/reist/cpp.h",
+  "userspace/programs/cpptest.cpp",
+  "scripts/build-windows.ps1", "Makefile", "scripts/test-reist-runtime.ps1",
+  "scripts/run_qemu_cpp.py", "test/test_user_cpp.py", "test/test_user_cpp_host.cpp",
+  "test/test_user_program_toolchain.py", "test/test_shell_source.py", "test/test_system_layout.py"
+]
+invariants = [
+  "C programs retain their existing startup and installed SDK defaults; C ABI linkage and MYPR segment validation are unchanged",
+  "all C++ allocation uses the existing private allocator and unchanged reserve/backing/reap rules; no new kernel or device authority",
+  "initialization finalization and registration have fixed capacities; recursive or corrupt runtime state fails locally without an unbounded wait",
+  "unsupported runtime features fail explicitly at compile/link or documented admission; no fake standard-library compatibility",
+  "normal destruction returns backing; forced termination relies on exact-generation OS reaping, never on a promise that destructors run after a crash",
+  "the real Ring-3 shell resolves the packaged proof program in Windows and Makefile layouts and remains usable after every fault case"
+]
+targeted_tests = [
+  "python test/test_user_cpp.py -v", "python test/test_user_program_toolchain.py -v",
+  "python test/test_libc_source.py -v", "python test/test_shell_source.py -v",
+  "python test/test_system_layout.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode cpp-client -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode memory-resilience -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production file lies outside allowed_files or an unrelated writer overlaps the candidate",
+  "progress requires weakened isolation C ABI or MYPR validation memory reserves or a frozen deadline",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: add bounded opt-in Ring-3 C++ runtime"
 evidence = []
 
 [[packages]]

@@ -17,6 +17,21 @@ PINS = {
 }
 
 
+def patch_hubbub_numeric_cr(data):
+    # REIST adapter v1, Hubbub 0.3.8: numeric CR must survive tokenisation.
+    # WHATWG parsing.html#numeric-character-reference-end-state; literal input
+    # CR/LF preprocessing and textarea API newline normalization are separate.
+    # Applied only after the unchanged archive pin; fail closed on source drift.
+    before = (b"\t\tif (0x80 <= cp && cp <= 0x9F) {\n"
+              b"\t\t\tcp = cp1252Table[cp - 0x80];\n"
+              b"\t\t} else if (cp == 0x0D) {\n\t\t\tcp = 0x000A;\n"
+              b"\t\t} else if (ctx->match_entity.overflow || \n")
+    if data.count(before) != 1:
+        raise ValueError("libhubbub: numeric-CR patch context mismatch")
+    after = before.replace(b"\t\t} else if (cp == 0x0D) {\n\t\t\tcp = 0x000A;\n", b"")
+    return data.replace(before, after, 1)
+
+
 def extract(destination, css=False):
     roots = []
     pins = dict(PINS)
@@ -46,6 +61,8 @@ def extract(destination, css=False):
                 if total > 8 * 1024 * 1024:
                     raise ValueError("parser archive extraction quota")
                 data = archive.extractfile(member).read()
+                if name == "libhubbub" and str(relative) == "src/tokeniser/tokeniser.c":
+                    data = patch_hubbub_numeric_cr(data)
                 # All stdio consumers are upstream debug-only code. NDEBUG is
                 # mandatory; removing the otherwise unused includes grants no
                 # fake FILE/API and changes no parser algorithm or table bytes.

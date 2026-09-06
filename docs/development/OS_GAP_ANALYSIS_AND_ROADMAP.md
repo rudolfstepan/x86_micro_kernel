@@ -2,6 +2,19 @@
 
 Stand: 3. September 2026
 
+Am 6. September ausdruecklich bestaetigte Browserreihenfolge: R3.15 fuer
+maxlength und native Formulardarstellung zuerst vollstaendig abnehmen und
+committen; anschliessend ein eigenes geprueftes C++-Userspace-SDK-/Runtimepaket,
+danach schrittweise Browsermigration mit weiterverwendeten C-Parsern und
+unveraenderten Ring-3-Prozessgrenzen. Noch keine C++-Implementierung oder
+-Kompatibilitaet behauptet. Der Nutzer hat die gezielte R3.15-Parserkorrektur
+im bestehenden Buildadapter samt Regressionstests nach dem Paketgrenzstopp
+freigegeben; keine Archiv-, Kernel- oder Fristlockerung (CURRENT_WORK).
+R3.15 ist jetzt mit acht Hostgruppen, beiden Referenzen und fuenf echten
+Browser-Gastgates abgenommen. R3.16 ist als naechstes aktives C++-SDK-/Runtime-
+Paket mit Scope und Gates definiert, noch nicht implementiert. Vollstaendige
+Formular-/JavaScript-Kompatibilitaet und die VMware-Pointerabnahme bleiben offen.
+
 Abnahme vom 5. September 2026: `R1.2c-private-process-memory` liefert vor
 dem weiteren Browserumbau die Grundlage fuer groessere private Ring-3-Heaps
 mit Rueckgabe leerer Regionen und generationstreuem Reaping. Performance und

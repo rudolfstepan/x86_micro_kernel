@@ -31,6 +31,8 @@ int browser_css_pack(const browser_html_reply_t *r,const browser_scene_t *s,uint
     uint32_t runs_size=20+s->count*sizeof(s->runs[0]);
     uint32_t form_size=20+f->form_count*sizeof(f->forms[0])+f->control_count*sizeof(f->controls[0])+
         f->option_count*sizeof(f->options[0])+f->used;
+    uint32_t limits_size=f->version==BROWSER_FORMS_VERSION ? f->control_count*sizeof(uint32_t) : 0;
+    form_size+=limits_size;
     uint32_t wide_size=s->version==BROWSER_SCENE_DOCUMENT_VERSION ? r->document.image_count*BROWSER_RESOURCE_URL_CAPACITY : 0;
     uint32_t scene_size=runs_size+form_size+wide_size;
     if (capacity<8+scene_size) return -28;
@@ -44,6 +46,7 @@ int browser_css_pack(const browser_html_reply_t *r,const browser_scene_t *s,uint
     memcpy(p,f->controls,f->control_count*sizeof(f->controls[0])); p+=f->control_count*sizeof(f->controls[0]);
     memcpy(p,f->options,f->option_count*sizeof(f->options[0])); p+=f->option_count*sizeof(f->options[0]);
     memcpy(p,f->strings,f->used); p+=f->used;
+    if(limits_size) { memcpy(p,f->max_length_plus_one,limits_size); p+=limits_size; }
     if(wide_size) memcpy(p,s->image_urls,wide_size);
     return 8+doc_size+(int)scene_size;
 }
@@ -62,16 +65,20 @@ int browser_css_unpack(const uint8_t *in,size_t length,const browser_css_request
     uint32_t runs_size=20U+prefix[4]*sizeof(s->runs[0]), counts[5];
     if(sizes[1]<runs_size+20) return -84;
     const uint8_t *p=in+8+sizes[0]+runs_size; memcpy(counts,p,20);
-    if(counts[1]>BROWSER_FORM_COUNT || counts[2]>BROWSER_FORM_CONTROLS ||
+    if(counts[0]>BROWSER_FORMS_VERSION || counts[1]>BROWSER_FORM_COUNT || counts[2]>BROWSER_FORM_CONTROLS ||
        counts[3]>BROWSER_FORM_OPTIONS || counts[4]>BROWSER_FORM_BYTES ||
        sizes[1]!=runs_size+20+counts[1]*sizeof(browser_form_t)+counts[2]*sizeof(browser_form_control_t)+
-           counts[3]*sizeof(browser_form_option_t)+counts[4]+wide_size) return -84;
+           counts[3]*sizeof(browser_form_option_t)+counts[4]+wide_size+
+           (counts[0]==BROWSER_FORMS_VERSION ? counts[2]*sizeof(uint32_t) : 0)) return -84;
     memset(s,0,sizeof(*s)); memcpy(s,in+8+sizes[0],runs_size);
     browser_forms_t *f=&s->forms; memcpy(f,counts,20); p+=20;
     memcpy(f->forms,p,counts[1]*sizeof(f->forms[0])); p+=counts[1]*sizeof(f->forms[0]);
     memcpy(f->controls,p,counts[2]*sizeof(f->controls[0])); p+=counts[2]*sizeof(f->controls[0]);
     memcpy(f->options,p,counts[3]*sizeof(f->options[0])); p+=counts[3]*sizeof(f->options[0]);
     memcpy(f->strings,p,counts[4]); p+=counts[4];
+    if(counts[0]==BROWSER_FORMS_VERSION) {
+        memcpy(f->max_length_plus_one,p,counts[2]*sizeof(uint32_t)); p+=counts[2]*sizeof(uint32_t);
+    }
     if(wide_size) memcpy(s->image_urls,p,wide_size);
     return browser_scene_validate(&r->document,s);
 }
@@ -230,10 +237,39 @@ int browser_scene_raster_forms(const reist_html_document_t *d,const browser_scen
             if(c->kind==BROWSER_FORM_LABEL) continue;
             uint32_t color=c->flags&BROWSER_FORM_DISABLED ? 0xff808080 : 0xff202020;
             int button=c->kind==BROWSER_FORM_SUBMIT || c->kind==BROWSER_FORM_RESET || c->kind==BROWSER_FORM_BUTTON;
+            if(c->kind==BROWSER_FORM_CHECKBOX || c->kind==BROWSER_FORM_RADIO) {
+                int32_t side=(int32_t)(r->width<r->height ? r->width : r->height); if(side>18) side=18;
+                int32_t ox=r->x+((int32_t)r->width-side)/2,oy=y+((int32_t)r->height-side)/2;
+                int checked=forms ? forms->checked[r->offset] : !!(c->flags&BROWSER_FORM_CHECKED);
+                for(int32_t yy=t;yy<end_y;++yy) for(int32_t xx=l;xx<end_x;++xx) {
+                    int32_t dx=xx-ox,dy=yy-oy;
+                    if(dx<0 || dy<0 || dx>=side || dy>=side) continue;
+                    uint32_t shade=0xffffff;
+                    if(c->kind==BROWSER_FORM_RADIO) {
+                        int32_t cx=2*dx-side+1,cy=2*dy-side+1,d=cx*cx+cy*cy;
+                        if(d>(side-1)*(side-1)) continue;
+                        if(d>(side-3)*(side-3)) shade=0x808080;
+                        else if(checked && d<=(side/3)*(side/3)) shade=color&0xffffff;
+                    } else {
+                        if(!dx || !dy) shade=0x808080;
+                        else if(dx==side-1 || dy==side-1) shade=0xd4d0c8;
+                        int32_t mid=side/2-1,target=dx<=mid ? side/2+dx-4 : side/2+2*mid-dx-4;
+                        if(checked && side>=12 && dx>=4 && dx<side-4 && dy>=target-1 && dy<=target+1) shade=color&0xffffff;
+                    }
+                    pixels[(uint32_t)yy*width+(uint32_t)xx]=shade;
+                }
+                continue;
+            }
             for(int32_t yy=t;yy<end_y;++yy) for(int32_t xx=l;xx<end_x;++xx) {
                 uint32_t shade=button ? 0xd4d0c8 : 0xffffff;
                 if(xx==r->x || yy==y) shade=button ? 0xffffff : 0x808080;
                 if(xx==r->x+(int32_t)r->width-1 || yy==y+(int32_t)r->height-1) shade=button ? 0x808080 : 0x404040;
+                if(c->kind==BROWSER_FORM_SELECT && r->width>=24 && xx>=r->x+(int32_t)r->width-18) {
+                    shade=0xd4d0c8;
+                    if(xx==r->x+(int32_t)r->width-18) shade=0x808080;
+                    int32_t dx=xx-(r->x+(int32_t)r->width-9),dy=yy-(y+(int32_t)r->height/2-2);
+                    if(dy>=0 && dy<5 && dx>=dy-4 && dx<=4-dy) shade=color&0xffffff;
+                }
                 pixels[(uint32_t)yy*width+(uint32_t)xx]=shade;
             }
             const char *v=forms ? browser_forms_value(&s->forms,forms,r->offset) : s->forms.strings+c->value;
@@ -246,13 +282,21 @@ int browser_scene_raster_forms(const reist_html_document_t *d,const browser_scen
                 for(uint32_t j=c->first_option;j<c->first_option+c->option_count;++j)
                     if(forms ? forms->selected[j] : !!(s->forms.options[j].flags&BROWSER_FORM_CHECKED)) { v=s->forms.strings+s->forms.options[j].label; break; }
             }
-            uint32_t at=0, row=0, cells=r->width>8 ? (r->width-8)/8 : 0;
+            uint32_t inset=c->kind==BROWSER_FORM_SELECT ? 24 : 8;
+            uint32_t at=0, row=0, cells=r->width>inset ? (r->width-inset)/8 : 0;
+            int32_t text_x=r->x+4,text_y=y+4;
+            if(button) {
+                uint32_t count=0;
+                for(uint32_t j=0;v[j] && count<=cells;++j) if(((uint8_t)v[j]&192)!=128) ++count;
+                if(count<=cells) text_x=r->x+((int32_t)r->width-(int32_t)count*8)/2;
+                if(r->height>=16) text_y=y+((int32_t)r->height-16)/2;
+            }
             while(v[at] && row*16+20<=r->height) {
                 uint32_t start=at,scalars=0;
                 while(v[at] && v[at]!='\n' && v[at]!='\r' && scalars<cells && at-start<124) {
                     ++at; while(((uint8_t)v[at]&192)==128) ++at; ++scalars;
                 }
-                if(at>start && font && text_pixels(font,v+start,at-start,r->x+4,y+4+(int32_t)row*16,16,color,0,pixels,width,end_x,t,end_y,scratch)) return -84;
+                if(at>start && font && text_pixels(font,v+start,at-start,text_x,text_y+(int32_t)row*16,16,color,0,pixels,width,end_x,t,end_y,scratch)) return -84;
                 if(!cells || at==start) { if(v[at]=='\r' && v[at+1]=='\n') ++at; if(v[at]) ++at; }
                 else if(v[at]=='\n' || v[at]=='\r') { if(v[at]=='\r' && v[at+1]=='\n') ++at; ++at; }
                 if(c->kind!=BROWSER_FORM_TEXTAREA) break;

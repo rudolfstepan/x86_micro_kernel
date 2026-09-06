@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "browser_forms.h"
+#include "html_engine.h"
 static browser_forms_t m;
 static browser_form_state_t s;
 static browser_forms_t other;
@@ -14,7 +15,76 @@ static void control(uint32_t kind,const char *name,const char *value,uint32_t fl
     c->kind=kind; c->owner=0; c->flags=flags; c->name=string(name);
     c->value=string(value); c->target=BROWSER_FORM_NONE;
 }
+static void search_maxlength(void) {
+    node nodes[4]={{.kind=9},{.kind=1,.ns=1,.name="form"},
+        {.kind=1,.ns=1,.name="input"},{.kind=1,.ns=1,.name="input"}};
+    attribute action={.name="action",.value="/search"};
+    attribute maximum={.name="maxlength",.value="2048"};
+    attribute name={.name="name",.value="q",.next=&maximum};
+    attribute type={.name="type",.value="submit"};
+    nodes[0].first=&nodes[1]; nodes[1].parent=&nodes[0]; nodes[1].first=&nodes[2];
+    nodes[1].attributes=&action; nodes[2].parent=nodes[3].parent=&nodes[1];
+    nodes[2].next=&nodes[3]; nodes[2].attributes=&name; nodes[3].attributes=&type;
+    assert(!browser_forms_project(nodes,&m));
+    assert(m.form_count==1 && m.control_count==2 && !m.forms[0].blocked);
+    assert(!(m.controls[0].flags&BROWSER_FORM_BLOCKED));
+    assert(m.version==2 && m.max_length_plus_one[0]==2049);
+    assert(!browser_forms_bind(&m,NULL,&s,1,0) && !browser_forms_focus(&m,&s,0));
+    const char query[]="rudolf stepan";
+    for(unsigned i=0;i<sizeof(query)-1;++i) assert(browser_forms_key(&m,&s,query[i])==1);
+    char url[256];
+    assert(!browser_forms_submit(&m,&s,1,1,"https://www.google.com/",url,sizeof(url)));
+    assert(!strcmp(url,"https://www.google.com/search?q=rudolf+stepan"));
+    char *attributes[]={"", "n/a", "-1", "-0", " +2rest", "\t0003 ", "99999999999999999999999999999"};
+    const uint32_t limits[]={0,0,0,1,3,4,BROWSER_FORM_BYTES+1};
+    for(unsigned i=0;i<sizeof(limits)/sizeof(limits[0]);++i) {
+        maximum.value=attributes[i]; assert(!browser_forms_project(nodes,&m));
+        assert(m.max_length_plus_one[0]==limits[i] && !(m.controls[0].flags&BROWSER_FORM_BLOCKED));
+    }
+    memset(&m,0,sizeof(m)); memset(&s,0,sizeof(s));
+}
+static void maxlength_edits(void) {
+    m.version=BROWSER_FORMS_VERSION; m.used=1; m.form_count=1;
+    m.forms[0].action=string("/search");
+    control(BROWSER_FORM_TEXT,"q","",0); control(BROWSER_FORM_SUBMIT,"go","yes",0);
+    m.max_length_plus_one[0]=3; /* two UTF-16 units, not two UTF-8 bytes */
+    assert(!browser_forms_bind(&m,NULL,&s,5,0) && !browser_forms_focus(&m,&s,0));
+    assert(browser_forms_key(&m,&s,0xe9)==1 && s.units[0]==1 && s.lengths[0]==2);
+    assert(browser_forms_key(&m,&s,0x1f600)==-75 && s.units[0]==1 && s.cursor==2);
+    assert(browser_forms_key(&m,&s,'x')==1 && s.units[0]==2);
+    assert(browser_forms_key(&m,&s,'y')==-75 && !strcmp(browser_forms_value(&m,&s,0),"\xc3\xa9x"));
+    assert(browser_forms_key(&m,&s,8)==1 && browser_forms_key(&m,&s,8)==1 && !s.units[0]);
+    assert(browser_forms_key(&m,&s,0x1f600)==1 && s.units[0]==2 && s.lengths[0]==4);
+    assert(!browser_forms_bind(&m,&m,&s,5,1) && s.units[0]==2 && s.dirty[0]);
+    ++s.units[0]; assert(browser_forms_bind(&m,&m,&s,5,1)<0); --s.units[0];
+    assert(!browser_forms_reset(&m,&s,0) && !s.units[0] && !s.dirty[0]);
+    m.max_length_plus_one[0]=1;
+    assert(browser_forms_key(&m,&s,'a')==-75 && !s.units[0] && !s.dirty[0]);
+    m.max_length_plus_one[0]=3; m.controls[0].value=string("abcd");
+    assert(!browser_forms_bind(&m,NULL,&s,6,0) && s.units[0]==4 && !s.dirty[0]);
+    char url[256]; assert(!browser_forms_submit(&m,&s,6,1,"https://example.test/",url,sizeof(url)));
+    assert(!browser_forms_focus(&m,&s,0) && browser_forms_key(&m,&s,8)==1);
+    strcpy(url,"unchanged");
+    assert(browser_forms_submit(&m,&s,6,1,"https://example.test/",url,sizeof(url))==-75 && !strcmp(url,"unchanged"));
+    m.controls[0].flags=BROWSER_FORM_READONLY;
+    assert(!browser_forms_submit(&m,&s,6,1,"https://example.test/",url,sizeof(url)));
+    m.controls[0].flags=BROWSER_FORM_DISABLED;
+    assert(!browser_forms_submit(&m,&s,6,1,"https://example.test/",url,sizeof(url)));
+    m.controls[0].flags=0;
+    assert(browser_forms_key(&m,&s,8)==1 && s.units[0]==2);
+    assert(!browser_forms_submit(&m,&s,6,1,"https://example.test/",url,sizeof(url)));
+    assert(!browser_forms_reset(&m,&s,0) && s.units[0]==4 && !s.dirty[0]);
+    assert(!browser_forms_submit(&m,&s,6,1,"https://example.test/",url,sizeof(url)));
+    m.max_length_plus_one[1]=1; assert(browser_forms_validate(&m)<0); m.max_length_plus_one[1]=0;
+    m.max_length_plus_one[0]=BROWSER_FORM_BYTES+2; assert(browser_forms_validate(&m)<0);
+    m.max_length_plus_one[0]=3; m.version=1; assert(browser_forms_validate(&m)<0);
+    m.max_length_plus_one[0]=0; assert(!browser_forms_validate(&m));
+    m.version=3; assert(browser_forms_validate(&m)<0);
+    memset(&m,0,sizeof(m)); memset(&s,0,sizeof(s));
+}
 int main(void) {
+    search_maxlength();
+    maxlength_edits();
     m.version=BROWSER_FORMS_VERSION; m.used=1; m.form_count=1;
     m.forms[0].action=string("/find?discard=yes#result");
     control(BROWSER_FORM_TEXT,"q","caf\xc3\xa9 &+",0);

@@ -98,7 +98,7 @@ typedef struct browser_workspace {
 _Static_assert(offsetof(browser_workspace_t,arena)%8U==0U,"decoder arena alignment");
 _Static_assert(sizeof(browser_workspace_t)<=36U*1024U*1024U,"private workspace quota");
 static browser_workspace_t *workspace;
-static struct { uint32_t generation,width,request,frames,rejected,resets,failures; } form_probe;
+static struct { uint32_t generation,width,request,frames,rejected,resets,failures,limit_refusals; } form_probe;
 #define decoded_pixels (workspace->decoded)
 #define surface_pixels (workspace->surface)
 #define image_cache (workspace->images)
@@ -1297,7 +1297,14 @@ static int render_form_focus(browser_state_t *state,reist_gui_surface_client_t *
         const browser_forms_t *m=&scenes[state->active].forms;
         const browser_form_control_t *c=&m->controls[fs->focus];
         reist_gui_rect_t rect={r->x,y,r->width,r->height};
-        uint32_t background=0xfffde0,foreground=c->flags&BROWSER_FORM_DISABLED ? 0x808080 : 0x202020;
+        uint32_t background=0xffffff,foreground=c->flags&BROWSER_FORM_DISABLED ? 0x808080 : 0x202020;
+        if(c->kind==BROWSER_FORM_CHECKBOX || c->kind==BROWSER_FORM_RADIO || c->kind==BROWSER_FORM_SELECT) {
+            /* Keep the native indicator from the current page raster. Focus
+             * must not replace a radio circle or select arrow with a textbox. */
+            if(reist_gui_surface_client_paint_fill(client,(reist_gui_rect_t){r->x,y,r->width,1},0x203070) ||
+               reist_gui_surface_client_paint_fill(client,(reist_gui_rect_t){r->x,y+(int32_t)r->height-1,r->width,1},0x203070)) return -1;
+            goto commit_form_focus;
+        }
         int button=c->kind>=BROWSER_FORM_SUBMIT && c->kind<=BROWSER_FORM_BUTTON;
         if(button) { if(paint_button(client,rect)) return -1; background=0xd4d0c8; }
         else if(reist_gui_surface_client_paint_fill(client,rect,0x203070) ||
@@ -1315,6 +1322,13 @@ static int render_form_focus(browser_state_t *state,reist_gui_surface_client_t *
         if(cells>32) cells=32; /* bounded native text-command budget */
         if(rows>8) rows=8;
         if(c->kind!=BROWSER_FORM_TEXTAREA && rows>1) rows=1;
+        int32_t text_x=r->x+4,text_y=y+4;
+        if(button) {
+            uint32_t count=0;
+            for(uint32_t j=0;v[j] && count<=cells;++j) if(((uint8_t)v[j]&192)!=128) ++count;
+            if(count<=cells) text_x=r->x+((int32_t)r->width-(int32_t)count*8)/2;
+            if(r->height>=16) text_y=y+((int32_t)r->height-16)/2;
+        }
         uint32_t at=0,cursor_row=0,cursor_col=0;
         int edit=c->kind==BROWSER_FORM_TEXT || c->kind==BROWSER_FORM_TEXTAREA;
         if(edit && cells) for(uint32_t j=0;j<fs->cursor;++j) {
@@ -1332,7 +1346,7 @@ static int render_form_focus(browser_state_t *state,reist_gui_surface_client_t *
                 while(part<at) {
                     uint32_t amount=at-part; if(amount>39) amount=39;
                     amount=(uint32_t)utf8_prefix_length(v+part,amount);
-                    if(!amount || paint_text(client,r->x+4+(int32_t)px*8,y+4+(int32_t)(row-first)*16,
+                    if(!amount || paint_text(client,text_x+(int32_t)px*8,text_y+(int32_t)(row-first)*16,
                         (cells-px)*8,v+part,amount,foreground,background,16)) return -1;
                     for(uint32_t j=0;j<amount;++j) if(((uint8_t)v[part+j]&192)!=128) ++px;
                     part+=amount;
@@ -1346,6 +1360,7 @@ static int render_form_focus(browser_state_t *state,reist_gui_surface_client_t *
             reist_gui_surface_client_paint_fill(client,(reist_gui_rect_t){r->x+4+(int32_t)cursor_col*8,
                 y+4+(int32_t)(cursor_row-first)*16,1,16},foreground)) return -1;
     }
+commit_form_focus:;
     int rc=reist_gui_surface_client_paint_commit_layer(client,REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
     if(!rc) workspace->forms_redraw=0;
     return rc;
@@ -1597,6 +1612,10 @@ static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *
             else set_status(state,"Formular: explizite Senden-Schaltflaeche fehlt");
         } else {
             int rc=browser_forms_key(fm,fs,key);
+            if(state->probe==4 && rc==-75) {
+                ++form_probe.limit_refusals;
+                x86os_puts("BROWSER_FORMS_MAXLENGTH_REFUSED\n");
+            }
             if(rc<0) set_status(state,browser_forms_error(rc));
             if(rc>0) { workspace->forms_redraw=1; if(kind!=BROWSER_FORM_TEXT && kind!=BROWSER_FORM_TEXTAREA) state->redraw=1; }
         }
@@ -1854,7 +1873,8 @@ static int forms_probe_step(browser_state_t *state,reist_gui_surface_client_t *c
         !strcmp(m->strings+m->controls[i].name,"q")) { query=i; break; }
     const char *value=browser_forms_value(m,fs,query);
     if(state->probe_phase==0) {
-        if(m->form_count!=4 || query==BROWSER_FORM_NONE) return -1;
+        if(m->form_count!=4 || query==BROWSER_FORM_NONE || m->version!=BROWSER_FORMS_VERSION ||
+            m->max_length_plus_one[query]!=6) return -1;
         form_probe.generation=fs->generation; form_probe.width=client->width;
         form_probe.request=state->html_request.request; form_probe.frames=state->body_frames;
         form_probe.failures=state->parser_failures;
@@ -1865,7 +1885,9 @@ static int forms_probe_step(browser_state_t *state,reist_gui_surface_client_t *c
         x86os_puts("BROWSER_FORMS_EDIT_ONLY_OK\n");
     } else if(state->probe_phase==2) {
         if(!state->probe_wheel_down || !state->probe_wheel_up) return 0;
-        if(strcmp(value,"hello") || fs->generation!=form_probe.generation || state->painted_scroll!=state->scroll_y) return -1;
+        if(strcmp(value,"hello") || fs->generation!=form_probe.generation || state->painted_scroll!=state->scroll_y ||
+            form_probe.limit_refusals!=1 || fs->units[query]!=5 || !fs->dirty[query]) return -1;
+        x86os_puts("BROWSER_FORMS_MAXLENGTH_STATE_OK\n");
         x86os_puts("BROWSER_FORMS_WHEEL_STATE_OK\n");
     } else if(state->probe_phase==3) {
         if(client->width==form_probe.width) return 0;
@@ -1878,7 +1900,7 @@ static int forms_probe_step(browser_state_t *state,reist_gui_surface_client_t *c
         x86os_puts("BROWSER_FORMS_REJECTED_OK\n");
     } else if(state->probe_phase==5) {
         if(!form_probe.resets) return 0;
-        if(strcmp(value,"start")) return -1;
+        if(strcmp(value,"start") || fs->dirty[query] || fs->units[query]!=5) return -1;
         x86os_puts("BROWSER_FORMS_RESET_OK\n");
     } else if(state->probe_phase==6) {
         if(strcmp(value,"hello")) return 0;

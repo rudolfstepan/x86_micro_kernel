@@ -2,7 +2,8 @@
 #define BROWSER_FORMS_H
 #include <stddef.h>
 #include <stdint.h>
-#define BROWSER_FORMS_VERSION 1U
+#define BROWSER_FORMS_LEGACY_VERSION 1U
+#define BROWSER_FORMS_VERSION 2U
 #define BROWSER_FORM_COUNT 16U
 #define BROWSER_FORM_CONTROLS 256U
 #define BROWSER_FORM_OPTIONS 512U
@@ -29,12 +30,18 @@ typedef struct browser_forms {
     browser_form_control_t controls[BROWSER_FORM_CONTROLS];
     browser_form_option_t options[BROWSER_FORM_OPTIONS];
     char strings[BROWSER_FORM_BYTES];
+    /* Version 2 compact wire appends one word per live control after strings.
+     * Zero is absent; otherwise the UTF-16 unit limit is this value minus one.
+     * Limits above the stronger private byte quota saturate at that quota. */
+    uint32_t max_length_plus_one[BROWSER_FORM_CONTROLS];
 } browser_forms_t;
 typedef struct browser_form_state {
     uint32_t generation, focus, capture, cursor, used;
     uint32_t offsets[BROWSER_FORM_CONTROLS], lengths[BROWSER_FORM_CONTROLS];
     uint8_t checked[BROWSER_FORM_CONTROLS], selected[BROWSER_FORM_OPTIONS];
     char values[BROWSER_FORM_BYTES];
+    uint32_t units[BROWSER_FORM_CONTROLS];
+    uint8_t dirty[BROWSER_FORM_CONTROLS];
 } browser_form_state_t;
 struct node;
 int browser_forms_project(struct node *, browser_forms_t *);

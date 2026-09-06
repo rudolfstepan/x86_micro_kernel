@@ -71,7 +71,7 @@ class CssEngineTests(unittest.TestCase):
                     print(args[0], "exit=", result.returncode, result.stdout, result.stderr, flush=True)
                     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                 return
-            for mode in ("public-document", "public-meta", "public-utf8-bom", "public-transport", "public-utf16", "public-opaque", "public-oom", "forms-fixture", "forms", "cascade", "geometry", "quota", "resources", "import", "worker", "bad-packet",
+            for mode in ("native-controls", "public-document", "public-meta", "public-utf8-bom", "public-transport", "public-utf16", "public-opaque", "public-oom", "forms-fixture", "forms", "cascade", "geometry", "quota", "resources", "import", "worker", "bad-packet",
                          "worker-eacces", "worker-missing", "worker-missing-eacces",
                          "worker-revoked", "worker-revoked-eacces", "worker-sleep-failure",
                          "resources-needed", "resources-cascade", "resources-cycle", "resources-depth",

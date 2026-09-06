@@ -1321,6 +1321,7 @@ def run_browser_forms_probe(process, output, transcript, screenshot, deadline, m
     try:
         controls = geometry(wait("BROWSER_FORMS_READY"))
         monitor.execute("screendump", {"filename": str(screenshot.resolve())})
+        monitor.execute("screendump", {"filename": str(screenshot.with_name(screenshot.stem+"-native-controls.ppm").resolve())})
         ppm = read_ppm(screenshot)
         if ppm is None:
             raise RuntimeError("Forms screenshot absent")
@@ -1373,10 +1374,13 @@ def run_browser_forms_probe(process, output, transcript, screenshot, deadline, m
 
         edit()
         wait("BROWSER_FORMS_EDIT_ONLY_OK")
+        key("x")
+        wait("BROWSER_FORMS_MAXLENGTH_REFUSED")
         monitor.mouse(process, "mouse_move 0 0 -1")
         time.sleep(0.15)
         monitor.mouse(process, "mouse_move 0 0 1")
         wait("BROWSER_FORMS_WHEEL_STATE_OK")
+        wait("BROWSER_FORMS_MAXLENGTH_STATE_OK")
         corner = (origin[0]+799, origin[1]+599)
         move(corner, "forms-grip")
         monitor.mouse(process, "mouse_button 1")

@@ -4,6 +4,16 @@
 #include <string.h>
 
 static int editable(uint32_t kind) { return kind==BROWSER_FORM_TEXT || kind==BROWSER_FORM_TEXTAREA; }
+/* Called over validated scalar strings; astral scalars occupy two HTML units.
+ * Full scans occur only at bind/reset/validation, not for each inserted key. */
+static uint32_t utf16_units(const char *s,uint32_t n) {
+    uint32_t units=0;
+    for(uint32_t i=0;i<n;++i) {
+        uint8_t b=(uint8_t)s[i];
+        if((b&192)!=128) units+=b>=240 ? 2U : 1U;
+    }
+    return units;
+}
 static int utf8(const char *s,size_t n) {
     for(size_t i=0;i<n;) {
         uint32_t c=(uint8_t)s[i++], more=0, minimum=0;
@@ -25,7 +35,7 @@ static int string_valid(const browser_forms_t *m,uint32_t o) {
 }
 int browser_forms_validate(const browser_forms_t *m) {
     if(m && !m->version && !m->form_count && !m->control_count && !m->option_count && !m->used) return 0;
-    if(!m || m->version!=BROWSER_FORMS_VERSION || m->form_count>BROWSER_FORM_COUNT ||
+    if(!m || (m->version!=BROWSER_FORMS_VERSION && m->version!=BROWSER_FORMS_LEGACY_VERSION) || m->form_count>BROWSER_FORM_COUNT ||
        m->control_count>BROWSER_FORM_CONTROLS || m->option_count>BROWSER_FORM_OPTIONS ||
        !m->used || m->used>BROWSER_FORM_BYTES || m->strings[0] || m->strings[m->used-1]) return -84;
     for(uint32_t o=0;o<m->used;) {
@@ -43,6 +53,8 @@ int browser_forms_validate(const browser_forms_t *m) {
            !string_valid(m,c->name) || !string_valid(m,c->value) || !string_valid(m,c->label) ||
            c->first_option!=options || c->option_count>m->option_count-options) return -84;
         if((c->flags&BROWSER_FORM_READONLY) && !editable(c->kind)) return -84;
+        if(m->max_length_plus_one[i] && (m->version!=BROWSER_FORMS_VERSION || !editable(c->kind) ||
+            m->max_length_plus_one[i]>BROWSER_FORM_BYTES+1U)) return -84;
         if((c->flags&BROWSER_FORM_CHECKED) && c->kind!=BROWSER_FORM_CHECKBOX && c->kind!=BROWSER_FORM_RADIO) return -84;
         if((c->flags&BROWSER_FORM_MULTIPLE || c->option_count) && c->kind!=BROWSER_FORM_SELECT) return -84;
         if(c->target!=BROWSER_FORM_NONE && (c->kind!=BROWSER_FORM_LABEL || c->target>=m->control_count ||
@@ -65,9 +77,11 @@ static int state_valid(const browser_forms_t *m,const browser_form_state_t *s) {
     uint32_t used=0;
     for(uint32_t i=0;i<m->control_count;++i) {
         if(s->checked[i]>1 || (s->checked[i] && m->controls[i].kind!=BROWSER_FORM_CHECKBOX && m->controls[i].kind!=BROWSER_FORM_RADIO)) return 0;
+        if(s->dirty[i]>1 || (!editable(m->controls[i].kind) && (s->dirty[i] || s->units[i]))) return 0;
         if(editable(m->controls[i].kind)) {
             if(used>s->used || s->offsets[i]!=used || s->lengths[i]>=s->used-used ||
-               s->values[used+s->lengths[i]] || !utf8(s->values+used,s->lengths[i])) return 0;
+               s->values[used+s->lengths[i]] || !utf8(s->values+used,s->lengths[i]) ||
+               s->units[i]!=utf16_units(s->values+used,s->lengths[i])) return 0;
             used+=s->lengths[i]+1;
         }
     }
@@ -110,6 +124,7 @@ int browser_forms_bind(const browser_forms_t *m,const browser_forms_t *old,brows
         if(editable(c->kind)) {
             const char *v=m->strings+c->value; uint32_t n=(uint32_t)strlen(v);
             s->offsets[i]=s->used; s->lengths[i]=n; memcpy(s->values+s->used,v,n+1); s->used+=n+1;
+            s->units[i]=utf16_units(v,n);
         }
         if(c->flags&BROWSER_FORM_CHECKED) {
             if(c->kind==BROWSER_FORM_RADIO) radio(m,s,i); else s->checked[i]=1;
@@ -120,6 +135,7 @@ int browser_forms_bind(const browser_forms_t *m,const browser_forms_t *old,brows
 }
 static void replace(const browser_forms_t *m,browser_form_state_t *s,uint32_t i,uint32_t at,uint32_t remove,const char *bytes,uint32_t n) {
     uint32_t pos=s->offsets[i]+at, end=pos+remove;
+    s->units[i]=s->units[i]-utf16_units(s->values+pos,remove)+utf16_units(bytes,n);
     memmove(s->values+pos+n,s->values+end,s->used-end); memcpy(s->values+pos,bytes,n);
     s->used=s->used-remove+n; s->lengths[i]=s->lengths[i]-remove+n;
     for(uint32_t j=i+1;j<m->control_count;++j) if(editable(m->controls[j].kind)) s->offsets[j]=s->offsets[j]-remove+n;
@@ -136,6 +152,7 @@ int browser_forms_reset(const browser_forms_t *m,browser_form_state_t *s,uint32_
         if(editable(c->kind)) {
             const char *v=m->strings+c->value; uint32_t n=(uint32_t)strlen(v);
             if((n<=s->lengths[i])==!pass) replace(m,s,i,0,s->lengths[i],v,n);
+            s->dirty[i]=0;
         }
         if(!pass) {
             s->checked[i]=!!(c->flags&BROWSER_FORM_CHECKED);
@@ -202,7 +219,9 @@ int browser_forms_key(const browser_forms_t *m,browser_form_state_t *s,uint32_t 
         else { bytes[0]=(char)(240|(key>>18)); bytes[1]=(char)(128|((key>>12)&63)); bytes[2]=(char)(128|((key>>6)&63)); bytes[3]=(char)(128|(key&63)); n=4; }
     } else return 0;
     if(n>BROWSER_FORM_BYTES-(s->used-remove)) return -28;
-    replace(m,s,i,cursor,remove,bytes,n); s->cursor=cursor+n; return 1;
+    uint32_t limit=m->max_length_plus_one[i];
+    if(n && limit && s->units[i]+utf16_units(bytes,n)>=limit) return -75;
+    replace(m,s,i,cursor,remove,bytes,n); s->cursor=cursor+n; s->dirty[i]=1; return 1;
 }
 static int put(char *out,size_t cap,size_t *used,char c) {
     if(*used+1>=cap) return -28; out[(*used)++]=c; return 0;
@@ -236,6 +255,11 @@ int browser_forms_submit(const browser_forms_t *m,const browser_form_state_t *s,
     if(m->forms[owner].blocked) return -95;
     for(uint32_t i=0;i<m->control_count;++i) if(m->controls[i].owner==owner &&
        !(m->controls[i].flags&BROWSER_FORM_DISABLED) && (m->controls[i].flags&BROWSER_FORM_BLOCKED)) return -95;
+    for(uint32_t i=0;i<m->control_count;++i) {
+        const browser_form_control_t *c=&m->controls[i];
+        if(c->owner==owner && editable(c->kind) && !(c->flags&(BROWSER_FORM_DISABLED|BROWSER_FORM_READONLY)) &&
+            s->dirty[i] && m->max_length_plus_one[i] && s->units[i]>=m->max_length_plus_one[i]) return -75;
+    }
     char action[256],candidate[256]; const char *a=m->strings+m->forms[owner].action;
     if(reist_html_url_resolve(base,*a ? a : base,action,sizeof(action))) return -22;
     const char *authority=!strncmp(action,"https://",8) ? action+8 : !strncmp(action,"http://",7) ? action+7 : NULL;
@@ -263,6 +287,7 @@ int browser_forms_submit(const browser_forms_t *m,const browser_form_state_t *s,
     candidate[used]=0; memcpy(url,candidate,used+1); return 0;
 }
 const char *browser_forms_error(int rc) {
+    if(rc==-75) return "Maximale Eingabelaenge erreicht - bitte kuerzen";
     return rc==-28 ? "Formulargrenze: Eingabe oder URL zu lang" : rc==-95 ?
         "Formular nicht unterstuetzt - nichts gesendet" : "Formular ungueltig - nichts gesendet";
 }
@@ -346,10 +371,22 @@ static int policy(node *n) {
         (target && *target && strcmp(target,"_self")) || (charset && !equal_ascii(charset,"utf-8"));
 }
 static int unsupported_attributes(node *n) {
-    static const char *names[]={"required","pattern","min","max","step","minlength","maxlength",
+    static const char *names[]={"required","pattern","min","max","step","minlength",
         "dirname","formaction","formmethod","formenctype","formtarget"};
     for(unsigned i=0;i<sizeof(names)/sizeof(names[0]);++i) if(attribute_value(n,names[i])) return 1;
     return 0;
+}
+static uint32_t maximum_length(const char *s) {
+    if(!s) return 0;
+    while(*s==' ' || *s=='\t' || *s=='\n' || *s=='\r' || *s=='\f') ++s;
+    int negative=*s=='-'; if(*s=='+' || *s=='-') ++s;
+    if(*s<'0' || *s>'9') return 0;
+    uint32_t n=0;
+    while(*s>='0' && *s<='9') {
+        uint32_t digit=(uint32_t)(*s++-'0');
+        n=n>(BROWSER_FORM_BYTES-digit)/10U ? BROWSER_FORM_BYTES : n*10U+digit;
+    }
+    return negative && n ? 0 : n+1U;
 }
 int browser_forms_project(node *root,browser_forms_t *m) {
     if(!root || !m) return -22;
@@ -393,13 +430,25 @@ int browser_forms_project(node *root,browser_forms_t *m) {
                     if(editable(kind) && attribute_value(n,"readonly")) c->flags|=BROWSER_FORM_READONLY;
                     if((kind==BROWSER_FORM_CHECKBOX || kind==BROWSER_FORM_RADIO) && attribute_value(n,"checked")) c->flags|=BROWSER_FORM_CHECKED;
                     if(unsupported_attributes(n) || kind==BROWSER_FORM_UNSUPPORTED) c->flags|=BROWSER_FORM_BLOCKED;
+                    if(editable(kind)) m->max_length_plus_one[m->control_count-1]=maximum_length(attribute_value(n,"maxlength"));
                     if(attribute_value(n,"multiple")) {
                         if(kind==BROWSER_FORM_SELECT) c->flags|=BROWSER_FORM_MULTIPLE; else c->flags|=BROWSER_FORM_BLOCKED;
                     }
                     const char *v=attribute_value(n,"value");
                     if(!v && (kind==BROWSER_FORM_CHECKBOX || kind==BROWSER_FORM_RADIO)) v="on";
                     if(add_string(m,attribute_value(n,"name"),&c->name,0)) return -28;
-                    if(kind==BROWSER_FORM_TEXTAREA) { if(text_content(n,m,&c->value,0)) return -28; }
+                    if(kind==BROWSER_FORM_TEXTAREA) {
+                        if(text_content(n,m,&c->value,0)) return -28;
+                        /* Character references may introduce CR after tokenization.
+                         * The textarea API value, including maxlength, uses LF. */
+                        uint32_t end=c->value;
+                        for(uint32_t j=c->value;j<m->used-1;++j) {
+                            char ch=m->strings[j];
+                            if(ch=='\r') { ch='\n'; if(m->strings[j+1]=='\n') ++j; }
+                            m->strings[end++]=ch;
+                        }
+                        m->strings[end]=0; m->used=end+1;
+                    }
                     else if(add_string(m,v,&c->value,kind==BROWSER_FORM_TEXT ? 1 : 0)) return -28;
                     if(element(n,"button") || kind==BROWSER_FORM_LABEL) {
                         if(text_content(n,m,&c->label,1)) return -28;

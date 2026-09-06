@@ -218,7 +218,7 @@ int main(int argc, char **argv) {
     }
     if(!strcmp(mode,"forms")) {
         const char html[]="<form id=f action='/search'><fieldset disabled><legend><input name=legend value=yes></legend>"
-            "<input name=skip value=no></fieldset><label for=q>Query</label><input id=q type=search name=q value='caf&#233;'>"
+            "<input name=skip value=no></fieldset><label for=q>Query</label><input id=q type=search name=q maxlength=2048 value='caf&#233;'>"
             "<input type=radio name=r value=a checked><input type=radio name=r value=b checked>"
             "<textarea name=t>\nfirst\nsecond</textarea><select name=s><option disabled>no<option value=a>A<option selected value=b>B</select>"
             "<input type=hidden name=h value=secret><button name=go value=yes>Send</button><button type=reset>Reset</button></form>"
@@ -226,6 +226,7 @@ int main(int argc, char **argv) {
         assert(!browser_css_render((const uint8_t *)html,sizeof(html)-1,800,500,NULL,"https://example.test/page",&document,&scene));
         browser_forms_t *m=&scene.forms; static browser_form_state_t values;
         assert(m->form_count==2 && m->control_count==13 && m->option_count==3);
+        assert(m->version==2 && m->max_length_plus_one[3]==2049 && !(m->controls[3].flags&BROWSER_FORM_BLOCKED));
         assert(!(m->controls[0].flags&BROWSER_FORM_DISABLED));
         assert(m->controls[1].flags&BROWSER_FORM_DISABLED);
         assert(m->controls[2].kind==BROWSER_FORM_LABEL && m->controls[2].target==3);
@@ -245,7 +246,53 @@ int main(int argc, char **argv) {
         assert(!memcmp(&copy,&scene,sizeof(scene)));
         assert(browser_css_unpack(transport,(uint32_t)n,&q,81,24,&decoded,&copy));
         assert(browser_css_unpack(transport,(uint32_t)n-1,&q,81,23,&decoded,&copy));
+        uint32_t bad_limit=BROWSER_FORM_BYTES+2;
+        memcpy(transport+n-m->control_count*4+3*4,&bad_limit,4);
+        assert(browser_css_unpack(transport,(uint32_t)n,&q,81,23,&decoded,&copy));
+        /* Old compact form records remain exact and have no appended limits. */
+        m->version=1; m->max_length_plus_one[3]=0;
+        int legacy=browser_css_pack(&reply,&scene,transport,sizeof(transport));
+        assert(legacy==n-(int)m->control_count*4);
+        assert(!browser_css_unpack(transport,(uint32_t)legacy,&q,81,23,&decoded,&copy));
+        assert(!memcmp(&copy,&scene,sizeof(scene)) && !copy.forms.max_length_plus_one[3]);
+        m->version=2; m->max_length_plus_one[3]=2049;
         m->controls[3].owner=99; assert(browser_scene_validate(&document,&scene));
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
+    if(!strcmp(mode,"native-controls")) {
+        const char html[]="<form action='/search'><input type=hidden name=h value=yes>"
+            "<input name=q size=57 maxlength=2048><input type=submit value='Google Suche'>"
+            "<button style='display:block;background:#abcdef;border:1px solid black'>Auf gut Glueck!</button>"
+            "<input type=checkbox checked><input type=radio checked>"
+            "<textarea rows=3 cols=24 maxlength=3>a&#13;&#10;b</textarea>"
+            "<select><option>Alpha<option>Longer option</select></form>";
+        assert(!browser_css_render((const uint8_t *)html,sizeof(html)-1,800,500,NULL,"https://example.test/",&document,&scene));
+        const browser_scene_run_t *controls[8]={0};
+        for(uint32_t i=0;i<scene.count;++i) {
+            const browser_scene_run_t *r=&scene.runs[i];
+            if(r->kind==BROWSER_SCENE_CONTROL) { assert(r->offset<8); controls[r->offset]=r; }
+            /* Native decoration must not leave a full-width CSS block behind. */
+            if(r->kind==BROWSER_SCENE_FILL && r->color==0xffabcdef) assert(r->width<200);
+        }
+        assert(!controls[0] && controls[1] && controls[7]);
+        assert(controls[1]->width==57*8+8);
+        assert(controls[2]->width>=12*8+16 && controls[2]->width<160);
+        assert(controls[3]->width>=14*8+16 && controls[3]->width<180);
+        assert(controls[4]->width==18 && controls[5]->width==18);
+        assert(controls[6]->width==24*8+8 && controls[6]->height==3*16+8);
+        assert(controls[7]->width>=13*8+24);
+        assert(!strcmp(scene.forms.strings+scene.forms.controls[6].value,"a\nb"));
+        static browser_form_state_t values;
+        assert(!browser_forms_bind(&scene.forms,NULL,&values,8,0) && !browser_forms_focus(&scene.forms,&values,6));
+        assert(values.units[6]==3 && browser_forms_key(&scene.forms,&values,'x')==-75);
+        static uint32_t pixels[800*500];
+        for(uint32_t i=0;i<800*500;++i) pixels[i]=0xffffff;
+        assert(!browser_scene_raster_forms(&document,&scene,NULL,NULL,&values,0,pixels,800,500,0,500));
+        const browser_scene_run_t *check=controls[4],*radio=controls[5],*select=controls[7];
+        assert(pixels[(uint32_t)check->y*800+(uint32_t)check->x]==0x808080);
+        assert(pixels[(uint32_t)radio->y*800+(uint32_t)radio->x]==0xffffff);
+        assert(pixels[((uint32_t)radio->y+9)*800+(uint32_t)radio->x+9]==0x202020);
+        assert(pixels[((uint32_t)select->y+select->height/2)*800+(uint32_t)select->x+select->width-9]==0x202020);
         puts("CSS_CASCADE_SCENE_OK"); return 0;
     }
     if(!strncmp(mode,"bundle-worker",13)) {

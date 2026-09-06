@@ -44,6 +44,21 @@ versehen.
 
 ## Grundentscheidung
 
+Geplanter naechster Schnitt `R3.16-ring3-cpp-runtime` (Nutzerfreigabe vom
+6. September 2026, noch nicht implementiert): opt-in freestanding C++17 ueber
+denselben Clang/LLD-/ELF32-/MYPR-Pfad, eigene C++-Startlaufzeit und installiertes
+SDK-Archiv. Bestehende C-Verbraucher behalten ihren Startcode und ihre Defaults.
+Konstruktoren, begrenzte Finalisierung, RAII, virtuelle Schnittstellen und
+C-Linkage werden gemeinsam mit dem vorhandenen privaten Allocator nachgewiesen.
+Das erste explizite Profil umfasst weder Exceptions/RTTI/Threads/TLS noch eine
+vollstaendige Standardbibliothek. Nicht unterstuetzte Abhaengigkeiten duerfen
+nicht als erfolgreiche Attrappen erscheinen. Nothrow-OOM erhaelt den alten
+Zustand; gewoehnliches new-OOM beendet im dokumentierten No-Exceptions-Profil
+nur den Prozess. Bei Crash ist OS-Reaping der Sicherheitsnachweis, nicht die
+Behauptung, dass C++-Destruktoren noch ausgefuehrt werden. Hosttests und ein
+aus der Ring-3-Shell gestartetes Gastprogramm sind vor Browsermigration Pflicht.
+Dateien und eingefrorene Abnahme stehen in `automation/reist-s03b.toml`.
+
 REIST übernimmt bewährte, frei verfügbare Buildbausteine, solange sie das
 freistehende i386-Ziel korrekt unterstützen. Eigener Code beginnt erst an der
 tatsächlichen Betriebssystemgrenze.

@@ -34,6 +34,38 @@ static const char *find(const char *text, const char *part) {
     return NULL;
 }
 int main(int argc, char **argv) {
+    if(argc>1 && !strcmp(argv[1],"numeric-cr")) {
+        const char html[]="<textarea>a&#13;&#10;b</textarea>"
+            "<textarea>a\r\nb</textarea><textarea>a\n\nb</textarea>"
+            "<textarea>a&#xD;b</textarea><textarea>a\rb</textarea>"
+            "<p title='&#13;&#10;&#128;&#0;'>&#13;&#10;&#128;&#0;</p>";
+        const char *expected[]={"a\r\nb","a\nb","a\n\nb","a\rb","a\nb",
+            "\r\n\xe2\x82\xac\xef\xbf\xbd"};
+        node *root=NULL; unsigned seen=0,visited=0;
+        assert(!browser_html5_tree((const uint8_t *)html,sizeof(html)-1,&root));
+        for(node *n=root;n;) {
+            assert(++visited<128);
+            if(n->name && (!strcmp(n->name,"textarea") || !strcmp(n->name,"p"))) {
+                char value[64]={0}; size_t used=0;
+                for(node *child=n->first;child;child=child->next) {
+                    assert(child->kind==3 && child->length<sizeof(value)-used);
+                    memcpy(value+used,child->text,child->length); used+=child->length;
+                }
+                assert(seen<sizeof(expected)/sizeof(expected[0]));
+                assert(!strcmp(value,expected[seen]));
+                if(!strcmp(n->name,"p")) {
+                    attribute *a=n->attributes;
+                    while(a && strcmp(a->name,"title")) a=a->next;
+                    assert(a && !strcmp(a->value,expected[seen]));
+                }
+                ++seen;
+            }
+            if(n->first) n=n->first;
+            else { while(n!=root && !n->next) n=n->parent; if(n==root) break; n=n->next; }
+        }
+        assert(seen==sizeof(expected)/sizeof(expected[0]));
+        puts("HTML5_NUMERIC_CR_PRESERVED_OK"); return 0;
+    }
     if(argc>1 && !strcmp(argv[1],"legacy-oom")) {
         legacy_oom=1;
         assert(browser_html5_parse((const uint8_t *)"<p>x</p>",8,&doc)<0);

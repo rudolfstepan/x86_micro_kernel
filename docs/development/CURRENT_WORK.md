@@ -2,7 +2,113 @@
 
 Stand: 6. September 2026
 
-## R3.15 aktiv: Google-Suchformular / maxlength
+## R3.15 abgenommen: maxlength und native Formulargeometrie
+
+Aktuell: **alle acht Hostgruppen, beide Referenzen und alle fuenf Gastgates
+bestanden** am finalen Kandidaten auf `34670757`. R3.15 ist done;
+`R3.16-ring3-cpp-runtime` ist als naechstes Paket active, noch nicht
+implementiert. Lokaler Implementierungscommit nach diesen Gates; kein Push.
+Der native Formularschnitt schliesst maxlength, passende intrinsische
+Controlmasse und getrennte Indikatoren. Vollstaendige Formular-/Google-
+Ergebnisseiten- oder JavaScript-Kompatibilitaet bleibt ausdruecklich offen.
+Toolchain: `python test/test_user_program_toolchain.py -v`, 21 PASS/132,033 s
+(`r315-toolchain.log`). Referenzen `test-reist-package.ps1 -Target vmware
+-Video vga` PASS/47 s (`20260906-170338-package-vmware-vga.log`) und
+`-Target qemu -Video vga` PASS/49 s
+(`20260906-170510-package-qemu-vga.log`). Alle Logs unter `build/codex-agent/`.
+Reale Forms-Gastprobe PASS (ca. 75 s laut Logzeitstempeln): zusaetzliche
+Maxlength-Refusal-/State-Marker, Mausrad, Reflow, Reset, drei Ablehnungen ohne
+HTTP-Abgabe, exakter GET, Workerfehler und Wiederherstellung bis Close.
+`r315-runtime-forms.log` und `.browser.log` bleiben separat erhalten.
+Die unveraenderten QEMU-Pixel wurden verlustfrei als
+`r315-native-controls.png` gespeichert und visuell geprueft: kompakte Buttons,
+Textarea, Checkboxhaken, Radiokreise und Selectpfeil. Kein echtes Dropdown.
+Public-Gastprobe PASS/91,206 s (`r315-runtime-public.log` und `.browser.log`).
+Input-Gastprobe PASS/130,368 s (`r315-runtime-input.log` und `.browser.log`),
+reale Tastatureingabe, Navigation, Crash/Restart und Konsole.
+Browser-Gastprobe PASS/87,924 s (`r315-runtime-browser.log` und `.browser.log`).
+Ressourcen-Gastprobe PASS/74,833 s (`r315-runtime-resources.log` und `.browser.log`).
+Alle Gastbefehle nutzen `test-reist-runtime.ps1 -Target qemu -Video vga -Mode`
+mit `runtime-desktop-browser-forms`, `runtime-desktop-browser-public`,
+`runtime-desktop-browser-input`, `runtime-desktop-browser` bzw.
+`runtime-desktop-browser-resources`, jeweils genau ein finaler Lauf nacheinander
+ohne parallele Builds. Die urspruenglichen Worker-/Ketten-/Probe-Fristen bleiben
+unveraendert. Alle bisherigen Fehlerlogs sind erhalten.
+R3.16 fuer den danach freigegebenen C++-SDK-/Runtime-Schnitt ist mit Scope und
+Host-/Referenz-/Gastgates definiert, nicht implementiert. R3.6b bleibt mit allen
+bisherigen Anforderungen queued, keine behauptete VMware-Pointerabnahme.
+Direkte Diffpruefung: 20 zuordenbare Dateien innerhalb des freigegebenen Scopes,
+kein Public-ABI-Drift, keine geloeschte Cleanup-/Ablehnungspruefung, keine
+Quoten-/TLS-/Kernel- oder Fristlockerung. Die Formwire-Erweiterung ist privat
+versioniert; alte Formdatensaetze bleiben ueber den getesteten v1-Adapter lesbar.
+
+Das nachfolgende Nutzer-Ja autorisiert den vorhandenen Buildadapter samt
+Parser-/Pin-/Patchtests. Nur die obsolete numerische CR->LF-Abbildung wird
+nach unveraenderter Archivpruefung mit exaktem Einzelkontext entfernt.
+Zusaetzliche Parsergates sind vor Implementierung eingefroren; alle bisherigen
+Gates, Fristen und Schutzgrenzen bleiben erhalten. Die 14 zuordenbaren
+Kandidatendateien auf `34670757` werden fortgesetzt; keine fremden Aenderungen.
+
+Gezielte Parserregression reproduziert den Fehler vor der Korrektur:
+`python test/test_html_engine.py -v`, FAIL/3,767 s
+(`r315-parser-before.log`). Danach derselbe vollstaendige Test inklusive
+numeric-cr, sonstiger C1-/NUL-Abbildung und bisheriger Fehlerpfade:
+PASS/3,407 s (`r315-parser-final.log`).
+`python test/test_html_engine_build.py -v`: 5 PASS/0,338 s
+(`r315-parser-patch.log`), unveraendertes Archiv, Einzelpatch, fehlender/
+doppelter/geaenderter Kontext sowie falscher Archiv-/Sidecarpin.
+`python test/test_css_engine.py -v`: PASS/32,638 s
+(`r315-native-parser-repair.log`), alle Modi einschliesslich neuer Geometrie-,
+Raster-, Textarea-Limit- und Legacy/v2-Wireassertionen. Alle urspruenglichen
+Gates bleiben erhalten; unveraenderte erfolgreiche Forms-/GUI-/Laufzeitquell-/
+Public-Hostgruppen werden nicht grundlos wiederholt. Der Parseradapter wird
+von diesen vier Gruppen nicht eingebunden.
+
+Die vier unveraenderten Hostgruppen sind konkret:
+`python test/test_browser_forms.py -v` (PASS/0,794 s,
+`r315-maxlength-host-repair.log`), `python test/test_gui_browser_source.py -v`
+(8 PASS/32,325 s, `r315-final-test_gui_browser_source.log`),
+`python test/test_browser_runtime_source.py -v` (24 PASS/3,135 s,
+`r315-final-test_browser_runtime_source.log`) und
+`python test/test_browser_public_navigation.py -v` (2 PASS/1,099 s,
+`r315-final-test_browser_public_navigation.log`). Ihre geprueften Produktions-
+und Testquellen wurden seit dem jeweiligen erfolgreichen Lauf nicht geaendert.
+
+### Erhaltene Vorgeschichte und negative Regressionen
+
+Vorheriger Zwischenstand: **an Parser-Paketgrenze blockiert, kein Commit**.
+Der Nutzer bestaetigt die Reihenfolge Formularreparatur -> abgenommenes C++-
+Userspace-SDK -> schrittweise Browsermigration. Die neun zuordenbaren Dateien
+auf `34670757` wurden fortgesetzt; keine fremden Aenderungen.
+Native Geometrie verwendet nun intrinsische Beschriftungs-/size-/rows-/cols-
+Masse ohne doppelten Vollbreitenhintergrund. Radio/Checkbox besitzen getrennte
+Indikatoren, Select einen Pfeil; Fokus ersetzt diese nicht mehr durch ein
+Textrechteck. Das ist weiterhin kein Dropdown-/neuer-Inputtyp-Nachweis.
+Die reale Formularprobe wurde fuer maxlength=5, verweigertes sechstes Zeichen,
+unveraenderten Wert und Reset erweitert; noch nicht ausgefuehrt.
+
+`python test/test_css_engine.py -v`: FAIL nach 33,915 s
+(`r315-native-host.log`). Alle neuen Geometrieassertionen bestehen, aber
+`a&#13;&#10;b` ergibt im Textarea-Modell `a\n\nb` statt `a\nb`.
+Die begrenzte getrennte Real-Code-Diagnose reproduziert bereits im rohen
+Hubbub-Baum `61 0a 0a 62`, vor jeder Formularprojektion
+(`r315-textarea-raw-diagnostic.log`, 3,680 s). Das gepinnte Archiv enthaelt in
+`libhubbub-0.3.8/src/tokeniser/tokeniser.c:3039` eine explizite Umwandlung von
+numerischem CR (0x0D) in LF (0x0A). Der WHATWG-Standard verlangt fuer diese
+Referenz den CR-Codepunkt; die Textarea-API normalisiert erst anschliessend.
+Beide legitimen LF und das urspruengliche CR/LF sind nach diesem Parserverlust
+nicht mehr unterscheidbar. Keine nachtraegliche Zusammenfassung von LF-Paaren,
+keine Testabschwaechung und kein zweiter HTML-Parser als Umgehung.
+
+Noetig waere eine eng begrenzte, gepruefte Upstream-Korrektur im vorhandenen
+Extraktions-/Buildadapter `scripts/build_html_engine.py`, samt Pin-/Patch-/
+Verhaltenstests. Dieser Produktionspfad liegt ausserhalb R3.15.allowed_files;
+vor Aenderung gestoppt und explizite Umfangsfreigabe erforderlich.
+Unabhaengige Gruppen bestehen: Laufzeitquelle 24 Tests/3,135 s, Public 2/1,099 s,
+GUI 8/32,325 s (`r315-final-test_*.log`). Der vorherige unveraenderte Forms-
+Hostnachweis bleibt 0,794 s PASS. Toolchain, Referenzen und Gastgates wurden
+nach dem CSS-Fehler nicht gestartet. 14 zuordenbare Paketdateien bleiben
+uncommitted; Diagnoseskripte/-logs unter ignored `build/codex-agent/` erhalten.
 
 Neuer Nutzerfehler nach sauberem Commit `5214c019`: Google startet, aber die
 Suchabgabe meldet "Formular nicht unterstuetzt". Die gespeicherte Antwort vom
@@ -13,6 +119,24 @@ Reset/Reflow und realem GET-Nachweis. Kein Google-Sonderfall und keine
 JavaScript-/Kernel-Erweiterung. Gates/Scope stehen vor Implementierung fest.
 R3.6b bleibt mit unveraenderter Abnahme zurueckgestellt. Noch kein neuer
 Implementierungs- oder Live-Suchergebnisnachweis.
+
+Der nachfolgende Nutzerauftrag verlangt zunaechst den vollstaendigen
+HTML-Formularinventar-Abgleich; er steht im
+`BROWSER_FORM_INTERACTION_CONTRACT.md` unter Formularinventar. Basis ist
+`5214c019`: acht von 22 input-Typen mit Teilfunktion, vierzehn fehlen, weitere
+Elemente besitzen nur Datenmodell oder Kindtext statt vertrauter Widgets.
+Der UI-Zusatzauftrag wurde sichtbar auf die vorhandene CSS-Layoutdatei
+erweitert; keine neuen Inputtypen oder Kernelautoritaeten stillschweigend
+freigegeben. Aktueller Kandidat auf Vertragscommit `34670757` bleibt erhalten:
+private Formversion 2, maxlength-Unitzaehlung, begrenzte Eingabe/Dirty/Reset und
+Legacy-Wire-Adapter. Der Ersttest reproduziert die Google-Ablehnung
+(`r315-maxlength-before.log`). Nach Korrektur eines const-Fehlers im Testdouble
+besteht der gezielte Formularhosttest in 0,794 s
+(`r315-maxlength-host.log`, `r315-maxlength-host-repair.log`).
+Der neue UI-Regressions-Erstlauf scheitert erwartbar am ueberbreiten Blockhintergrund
+(`r315-native-before.log`, 33,235 s); alle anderen CSS-Modi bestehen in diesem
+Lauf. Zum damaligen Erstlauf war die CSS-Produktionsdatei noch unveraendert.
+Der fortgesetzte Stand und die neue Abnahme stehen oben.
 
 ## R3.14 abgenommen: Dokumentaufnahme und Browser-Ladepfad
 
