@@ -278,10 +278,9 @@ stehen. Quittierte native Screendumps mit frischen Dateinamen liefern diesen
 beobachtbaren Gastnachweis; maximal eine Sekunde/16 Versuche pro Barriere,
 innerhalb der unveraenderten Gesamtfrist. Wire-ACK oder berechnete Position
 genuegen nicht. Abnahme und erhaltene Negativbelege stehen in CURRENT_WORK.
-Style-URLs werden rein syntaktisch aufgelöst, niemals geladen. Externe link-
-Stylesheets und CSS-Bilder sind inert; ausstehende `@import`-Abhängigkeiten
-führen zu einer begrenzten Ablehnung des Auftrags, nicht zu vorgetäuschtem
-Import-Erfolg. Das benötigt später einen eigenen Ressourcen-/Herkunftsvertrag.
+Im alten CSS1-Auftrag werden Style-URLs nur syntaktisch aufgeloest; externe
+Stylesheets bleiben dort inert und ausstehende Imports lehnen den Auftrag ab.
+Der nachfolgende CSS2-Ressourcenvertrag erweitert nur den privaten Auftrag.
 Unbekannte Deklarationen behandelt LibCSS nach seiner Parser-Fehlererholung.
 Formulare, Cookies, POST und JavaScript bleiben aus; es gibt keine implizite
 Netzwerk-, Datei- oder Skriptautorität durch einen CSS-Callback.
@@ -293,6 +292,99 @@ verifizierten Windows-11-Timer-Helper wie die Speicherabnahme, mit unveraenderte
 Prioritaet und Gastfrist. Konfigurationsfehler beenden/reapen das neue QEMU-Kind
 vor dem Readerstart. Der alte VFS-Schriftfehler bleibt als negative Evidenz
 erhalten, die aktuelle eingebettete Schrift benoetigt keinen Dateitransfer.
+
+### R3.11: navigationsgebundene Stylesheet-Ressourcen
+
+Am 6. September 2026 abgenommen, Nachweise siehe CURRENT_WORK. Referenzen sind
+[CSS 2.1 Import/Cascade](https://www.w3.org/TR/CSS2/cascade.html),
+[CSS Cascade 5](https://www.w3.org/TR/css-cascade-5/), RFC 3986 und RFC 9110.
+LibCSS liest Imports selbst ueber `next_pending_import`/`register_import`;
+es gibt keinen zweiten CSS-Parser. Links/embedded Sheets bleiben in Quellfolge,
+Imports stehen vor dem importierenden Sheet, Media-Bedingungen bleiben bei
+LibCSS. Alternate-/disabled-Links sind inert. Importzyklen liefern ein leeres
+zyklisches Teilsheet, ohne weitere Datei oder Endlosschleife. Gleiche Link-
+Vorkommen sind eigenstaendige Cascade-Eintraege, beziehen Bytes aber nur einmal.
+
+Der 444-Byte-Auftragskopf bleibt gleich; private Version 2 fuegt nach maximal
+64 KiB HTML ein pointerfreies Bundle hinzu: vier uint32-Felder (Version,
+Navigationgeneration, Anzahl, Bytezahl), nur die vorhandenen (maximal 64)
+528-Byte-Metadateneintraege und genau die verwendeten CSS-Bytes.
+Bundle-Version 2 unterscheidet dieses kompakte Wireformat vom nicht
+abgenommenen Kandidaten mit 64 festen Records. Ein leeres Bundle braucht
+16 statt 33808 Byte; die private Reserve und alle Quoten bleiben gleich.
+Offset, Laenge, ready, Importtiefe sowie
+angeforderte/effective URL (je 256 Byte) werden vor dem Parser geprueft.
+Ready-Eintraege sind ein dichter, lueckenloser Prefix. Kein Pending-Eintrag
+geht an den Parser. Maximum: 64 Ressourcen, acht Importkanten ab Root-Tiefe 0,
+256 KiB je Datei, 1 MiB CSS insgesamt. Bestehende Arbeits-/Szenenquoten gelten
+zusaetzlich; Ressourcenadmission verspricht keine beliebige CSS-Komplexitaet.
+
+Ein Worker ohne benoetigte Bytes gibt statt einer Szene eine versionierte
+NEEDS-Liste zurueck und endet. Chrome prueft exakte Request-/Parent-/Child-
+Identitaet und Navigationgeneration, reapet, laedt ueber bestehenden read-only
+VFS bzw. genau ein CURL-Kind nach und startet den naechsten einmaligen Worker.
+CSS-Callbacks erhalten weder Netzwerk-, Datei- noch Geraeteautoritaet.
+Alle Runden teilen eine absolute 30-Sekunden-Akquisitionsfrist. Jede Worker-
+Generation behaelt ihre fuenf Sekunden einschliesslich Spawn; Transportketten
+behalten ihre alte Grenze und werden zusaetzlich auf die Restfrist begrenzt.
+
+Der gemeinsame Antwortadapter hat einen additiven `CSS`-Modus fuer text/css,
+UTF-8/US-ASCII und identitaetskodierte Nutzdaten; kein Type-Sniffing, kein gzip.
+Fehlender Content-Type darf als CSS gelten; falscher Typ wird abgewiesen.
+Der alte HTML/Bild-Boolean-Wrapper bleibt unveraendert. Leere CSS-Dateien sind
+gueltig. Canonical URLs normalisieren Scheme/Host, Defaultport, unreserved
+Percent-Encoding und Dot-Segmente, entfernen Fragmente, bewahren aber Pfad-/
+Query-Grossschreibung und reservierte Octets. Netzwerkdokumente koennen keine
+lokalen Pfade erhalten, HTTPS keine HTTP-Weiterleitung. Redirect-Ziel und
+angeforderte URL bleiben getrennt; relative Imports nutzen die effective URL.
+
+Chrome haelt je ein aktives und privates Kandidatenbundle (zusammen rund
+2,1 MiB), plus einen begrenzten IPC-Snapshot. Reflow verwendet nur das aktive
+Bundle. Reload mit externem CSS durchlaeuft immer neue Ressourcenadmission,
+auch bei identischem frischem HTML; es gibt keinen persistenten CSS-Cache.
+Abbruch/Fehler verhindern neue Runden und behalten die vorherige Seite.
+Bundle-Speicher gehoert zum Browserworkspace und wird bei Close freigegeben;
+Worker-Heaps werden beim exakten Generation-Reap zurueckgegeben.
+Ein nichtleeres Bundle aktiviert den vorhandenen privaten Prozessprovider
+mit 32 MiB Budget, ohne Vorreservierung. CSS1/leere Bundles behalten 4 MiB.
+Das ist keine neue globale OS-Quote und keine Aufweichung der Resilienz.
+Der unabhaengige Transferworkspace (2230748 Byte fuer Eingabe plus dekodiertes
+Bundle) wird einmalig ueber vorhandenes `x86os_malloc` zugelassen, nicht mehr
+als statisches BSS in der 8-MiB-MYPR-Programmregion. Seine Frist beginnt vor
+der Allokation. Jeder normale Fehler-/Erfolgspfad gibt ihn frei; bei Fault/
+Kill reapet der bestehende Kernel die private Prozessgeneration. Die Parser-
+Heapinitialisierung darf diesen unabhaengigen Workspace nicht zuruecksetzen.
+Der Loadervertrag und alle globalen Speicher-/Reservegrenzen bleiben gleich.
+
+Die zusaetzliche Gastprobe wird im vorhandenen `--browser-probe`-Fenster mit
+einer echten USB-Mausrad-Raste aufwaerts gewaehlt (nur initiale Testphase,
+ohne Fristreset). Der Controller wartet auf Fenster- und Browserbereitschaft;
+der echte Gastmarker bestaetigt die Auswahl, nicht bloss der QMP-ACK.
+Der zuvor versuchte Tastaturselektor ist entfernt: Shell und abgekoppelter
+Desktop konkurrieren noch um dieselbe Terminal-Eingabequeue. Deren saubere
+Foreground-/Fokusautoritaet ist separate OS-Schuld, hier nicht repariert.
+Sie verwendet PID-gebundene temporaere HTML/CSS-Dateien und die paketierten
+Importfixtures. Nach echter Farb-/Pixelpruefung fehlen absichtlich CSS-Bytes;
+die alte Seite muss bleiben. Abbruch und Reload mit geaenderten Bytes muessen
+frische Generationen und neue Pixel liefern. Beide temporaeren Dateien werden
+vor `BROWSER_CLOSE_OK` entfernt. Die normale Gastprobe behaelt alle R3.10-
+Assertions. Hosttests pruefen auch HTTP-Status/MIME, Downgrade, OOM, kaputte
+Offsets und veraltete Antworten; der Ressourcen-Gast ist deterministisch
+NIC-los und behauptet keine zusaetzliche reale HTTPS-Gastabnahme.
+
+Worker-Exit kann seine IPC-Rechte bereits entziehen, waehrend der Kernel
+noch Ressourcen bereinigt und deshalb einen zweiten Kill ablehnt. Nach
+erneuter exakter Eigentuemer-/Generationspruefung bleibt nur dieser gepinnte
+Prozess bis zum bestehenden Ein-Sekunden-Reapbudget beobachtet. Der Browser
+fenced zuerst den Kanal, startet kein Ersatzkind und akzeptiert keine
+spaeten Bytes. Kill wird nicht wiederholt; Cleanup erneuert die Frist nicht.
+Identitaetsverlust oder ausbleibender Zombie-Commit bleiben Fatalfehler.
+Ein begrenzter First-Failure-Datensatz und ein nichtnull Exitcode bewahren
+den konkreten Abbruchgrund auch bei nachfolgenden Cleanupfehlern.
+
+CSS-Bilder/Fonts, Forms, Cookies, POST, JavaScript, Flexbox und Grid bleiben
+ausserhalb dieses Schnitts. Mehrere disposable Parse-Runden haben weiterhin
+messbare Spawnkosten; weder Workerpool noch OS-Dateicache werden behauptet.
 
 Die Engine-Portierung braucht einen eigenen Ring-3-Laufzeit-/Allocatoradapter,
 einen hostgeprüften und im Gast ausgeführten DOM/CSS-/Layoutpfad sowie feste
@@ -325,7 +417,9 @@ bestehende Browserprogramme werden nicht umgestellt. `CRTEST.PRG` prüft im Gast
 Speichermangel, Kindfehler, Reap und neue Generationen. Die R3.8-Abnahme steht in
 `CURRENT_WORK.md`; ein geplanter oder implementierter Test ist allein noch kein
 bestandener Gastnachweis. R3.9/R3.10 haben seither HTML5 und begrenztes CSS-Layout
-integriert und abgenommen; R3.11 ergaenzt als naechster separater Schnitt externe
-Stylesheets/Imports mit einem validierten Ressourcenbuendel. Formulare und
-JavaScript bleiben offen.
+integriert und abgenommen; R3.11 ergaenzt abgenommen externe Stylesheets/Imports
+mit einem validierten Ressourcenbuendel. Der naechste separate OS-Schnitt
+R3.12 soll die beim Gasttest beobachtete konkurrierende Terminal-Eingabe
+zwischen Shell und aktivem Desktop generationgebunden vermitteln. Das ist
+noch nicht implementiert. Formulare und JavaScript bleiben offen.
 Der genaue Speicher-/Fehlervertrag steht in `USERSPACE_SDK_AND_PORTABILITY.md`.

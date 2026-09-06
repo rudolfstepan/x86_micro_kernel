@@ -11,8 +11,13 @@ int browser_css_request_validate(const browser_css_request_t *q) {
     if (h->magic!=BROWSER_HTML_MAGIC || h->version!=BROWSER_HTML_VERSION || !h->request ||
         !h->parent_pid || !h->parent_generation || h->child_pid || h->child_generation ||
         !h->input_length || h->input_length>REIST_HTML_INPUT_CAPACITY ||
-        h->size!=sizeof(*q)+h->input_length || h->mode>2 || h->reserved[0] || h->reserved[1] ||
-        q->version!=BROWSER_SCENE_VERSION || !q->width || q->width>1024 || !q->height || q->height>768) return -84;
+        h->mode>2 || h->reserved[0] || h->reserved[1] ||
+        !q->width || q->width>1024 || !q->height || q->height>768) return -84;
+    uint32_t original=(uint32_t)sizeof(*q)+h->input_length;
+    if(q->version==BROWSER_SCENE_VERSION) { if(h->size!=original) return -84; }
+    else if(q->version==BROWSER_CSS_RESOURCE_VERSION) {
+        if(h->size<original+BROWSER_RESOURCE_HEADER_BYTES || h->size>original+BROWSER_RESOURCE_WIRE_CAPACITY) return -84;
+    } else return -84;
     uint32_t url_length=0;
     while (url_length<sizeof(q->document_url) && q->document_url[url_length]) ++url_length;
     if (!url_length || url_length==sizeof(q->document_url)) return -84;

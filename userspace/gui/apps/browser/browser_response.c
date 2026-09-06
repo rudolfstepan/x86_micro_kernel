@@ -20,18 +20,18 @@ static int network(const char *url) {
     while (prefix[i] && url[i] && lower(url[i]) == prefix[i]) ++i;
     return !prefix[i] || secure(url);
 }
-static int supported_type(const char *value, uint32_t image) {
+static int supported_type(const char *value, uint32_t kind) {
     if (!value[0]) return 1; /* Legacy servers: decode/parse still validates. */
     size_t end = 0; while (value[end] && value[end] != ';') ++end;
     size_t mime_end = end;
     while (mime_end && (value[mime_end-1] == ' ' || value[mime_end-1] == '\t')) --mime_end;
-    if (image) {
+    if (kind==BROWSER_RESPONSE_IMAGE) {
         static const char *const types[] = {"image/png", "image/jpeg", "image/gif", "image/bmp", "image/x-ms-bmp", "application/octet-stream"};
         for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); ++i)
             if (equal(value, mime_end, types[i])) return 1;
         return 0;
     }
-    if (!equal(value, mime_end, "text/html")) return 0;
+    if (!equal(value, mime_end, kind==BROWSER_RESPONSE_CSS ? "text/css" : "text/html")) return 0;
     uint32_t charset_seen = 0;
     while (value[end]) {
         ++end;
@@ -62,11 +62,11 @@ static int supported_type(const char *value, uint32_t image) {
     return 1;
 }
 
-int browser_response_open(const uint8_t *bytes, size_t length, const char *url,
-                           uint32_t image, browser_response_t *result) {
+int browser_response_open_kind(const uint8_t *bytes, size_t length, const char *url,
+                               uint32_t kind, browser_response_t *result) {
     if (!result) return -22;
     *result = (browser_response_t){0};
-    if (!bytes || !url || length > UINT32_MAX) return -22;
+    if (!bytes || !url || length > UINT32_MAX || kind>BROWSER_RESPONSE_CSS) return -22;
     size_t url_length = 0;
     while (url_length < REIST_CURL_LOCATION_CAPACITY && url[url_length]) ++url_length;
     if (url_length == REIST_CURL_LOCATION_CAPACITY || !network(url)) return -22;
@@ -106,6 +106,11 @@ int browser_response_open(const uint8_t *bytes, size_t length, const char *url,
     if (head.status < 200 || head.status >= 300 || head.status == 204 || head.status == 205) return -5;
     if (head.status == 206) return -95; /* No Range request was made. */
     if ((head.content_encoding[0] && !equal(head.content_encoding, length_of(head.content_encoding), "identity")) ||
-        !supported_type(head.content_type, image)) return -95;
+        !supported_type(head.content_type, kind)) return -95;
     return 0;
+}
+
+int browser_response_open(const uint8_t *bytes, size_t length, const char *url,
+                           uint32_t image, browser_response_t *result) {
+    return browser_response_open_kind(bytes,length,url,image ? BROWSER_RESPONSE_IMAGE : BROWSER_RESPONSE_HTML,result);
 }

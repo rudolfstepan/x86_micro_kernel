@@ -829,7 +829,13 @@ Seite. Native Chrome und Scrollbar bleiben bestehen; eine additive opt-in
 Surface-Erweiterung liefert Mausradwerte in v120-Einheiten bei unveraenderter
 Nachrichtengroesse. QEMU beweist CSS-Pixel, Resize, beide Rad-Richtungen und
 Fault-/Timeout-Recovery bis zum sauberen Close. Externe Stylesheets/Imports
-folgen als eigener R3.11-Ressourcenvertrag; Formulare und JavaScript sind
+werden im abgenommenen R3.11 als navigationsgebundene immutable Bundles ergaenzt:
+64 Ressourcen, acht Importkanten, 1 MiB CSS und 30 Sekunden Akquisition;
+Worker behalten fuenf Sekunden und erhalten nur Bytes. Nichtleere Bundles
+nutzen den bestehenden privaten Heapprovider mit 32 MiB Budget. Abnahme steht
+in CURRENT_WORK; kein globaler Cache und kein neuer Kernelpfad. R3.12 soll
+als separater OS-Schnitt konkurrierende Terminal-Eingabe zwischen Recovery-
+Shell und aktivem Desktop beseitigen; noch nicht implementiert. Formulare und JavaScript sind
 noch nicht implementiert. Kein neuer Kernelparser oder neue Geraeteautoritaet.
 
 R3.8 ergänzt als Engine-Voraussetzung eine opt-in Ring-3-C-Speicher-/Byte-Laufzeit

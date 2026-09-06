@@ -503,12 +503,12 @@ try {
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
-    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html')) {
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
-        if ($demoFile -notin @('index.html', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html')) {
+        if ($demoFile -notin @('index.html', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
             $floppyDataArguments += @(
                 '--data-file', "htdocs/$demoFile=$demoPath"
             )

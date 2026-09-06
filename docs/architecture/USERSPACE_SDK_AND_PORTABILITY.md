@@ -307,6 +307,12 @@ Builtins der ausgewählten Zig-Toolchain stehen separat in
 keine neue OS- oder Shared-Library-ABI hinzu. Der CSS-Adapter bleibt privat im
 Browser-Worker; seine Grenzen stehen in BROWSER_ENGINE_PORT_PLAN.md.
 
+R3.11 verwendet denselben privaten R1.2c-Prozessprovider fuer HTMLWORK mit
+32 MiB explizitem Heapbudget, sobald ein validiertes Stylesheetbundle vorliegt.
+Legacy-Auftraege behalten die 4-MiB-Arena. Keine neuen Syscalls, allgemeinen
+C-String-Stubs oder versteckten VFS-/Netzwerkcallbacks. Das private CSS2-Format
+und seine Prozess-/Navigationgenerationen sind kein oeffentliches SDK-ABI.
+
 - [ ] Öffentlicher Namensraum, Layer und Owner sind festgelegt.
 - [ ] Vorhandener Standard oder etablierte Bibliothekssemantik wurde geprüft.
 - [ ] Abweichungen sind begründet; es wird keine falsche Kompatibilität behauptet.

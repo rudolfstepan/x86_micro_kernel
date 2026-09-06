@@ -3,6 +3,9 @@
 #include "browser_model.h"
 #include "reist/gui/font.h"
 #include "html_protocol.h"
+#include "browser_resources.h"
+#define BROWSER_CSS_RESOURCE_VERSION 2U
+#define BROWSER_CSS_INPUT_BYTES (65536U+BROWSER_RESOURCE_WIRE_CAPACITY)
 #define BROWSER_SCENE_VERSION 1U
 #define BROWSER_SCENE_RUNS 2048U
 #define BROWSER_SCENE_COORD_LIMIT 262144

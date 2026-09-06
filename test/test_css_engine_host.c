@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <reist/libc.h>
 #include "userspace/gui/apps/browser/css_engine.h"
 #define REIST_CSS_WORKER
 #define main static html_worker_main
@@ -13,13 +14,49 @@ extern _Noreturn void _Exit(int);
 #undef assert
 #define assert(expr) do { if (!(expr)) { fprintf(stderr,"%s:%d: %s\n",__FILE__,__LINE__,#expr); _Exit(1); } } while (0)
 static reist_html_document_t document;
+static browser_resources_t resource_bundle;
+static browser_resource_needs_t resource_needs;
+static _Alignas(max_align_t) uint8_t private_heap[32U*1024U*1024U];
+static size_t private_used;
+static unsigned private_fail;
+static struct {
+    uint64_t before;
+    _Alignas(max_align_t) uint8_t bytes[sizeof(browser_css_request_t)+BROWSER_CSS_INPUT_BYTES+sizeof(browser_resources_t)];
+    uint64_t after;
+} transfer_memory;
+static unsigned transfer_allocs,transfer_frees,transfer_live,transfer_fail,transfer_delay;
+static void *private_acquire(void *unused,size_t size) {
+    (void)unused; if(private_fail || size>sizeof(private_heap)-private_used) return NULL;
+    void *p=private_heap+private_used; private_used+=size; return p;
+}
+static void private_release(void *unused,void *p,size_t size) {
+    (void)unused; assert((uint8_t *)p>=private_heap && (uint8_t *)p+size<=private_heap+private_used);
+}
+int reist_libc_init_process(size_t budget) {
+    assert(budget==sizeof(private_heap)); private_used=0;
+    reist_libc_backing_t backing={1,sizeof(backing),(uint32_t)budget,256U*1024U,NULL,private_acquire,private_release};
+    return reist_libc_init_backing(&backing);
+}
 static browser_scene_t scene;
-static uint8_t transport[BROWSER_CSS_WIRE_CAPACITY], request_wire[sizeof(browser_css_request_t)+65536];
+static uint8_t transport[BROWSER_CSS_WIRE_CAPACITY], request_wire[sizeof(browser_css_request_t)+BROWSER_CSS_INPUT_BYTES];
 static uint32_t sent, received, request_length, transport_length, time_ms, bad_packet;
 static uint32_t sleeps, no_delegation, revoke_after_packet, sleep_failure;
 static int startup_error=-9;
 int x86os_getpid(void) { return 81; }
 uint32_t x86os_uptime_ms(void) { return time_ms++; }
+void *x86os_malloc(size_t size) {
+    assert(!transfer_live && size && size<=sizeof(transfer_memory.bytes));
+    ++transfer_allocs; time_ms+=transfer_delay;
+    if(transfer_fail) return NULL;
+    transfer_live=1; transfer_memory.before=transfer_memory.after=0x123456789ABCDEF0ULL;
+    memset(transfer_memory.bytes,0xa5,sizeof(transfer_memory.bytes));
+    return transfer_memory.bytes;
+}
+void x86os_free(void *p) {
+    assert(transfer_live && p==transfer_memory.bytes);
+    assert(transfer_memory.before==0x123456789ABCDEF0ULL && transfer_memory.after==0x123456789ABCDEF0ULL);
+    ++transfer_frees; transfer_live=0;
+}
 void x86os_puts(const char *s) { (void)s; }
 void x86os_print_number(int n) { (void)n; }
 int x86os_process_identity_of(int pid,x86os_process_identity_t *id) {
@@ -54,6 +91,98 @@ static const browser_scene_run_t *text_run(const char *text) {
 }
 int main(int argc, char **argv) {
     const char *mode=argc==2 ? argv[1] : "cascade";
+    if(!strncmp(mode,"bundle-worker",13)) {
+        const char body[]="<link rel=stylesheet href='a.css'><p>External</p>";
+        browser_css_request_t q={.header={BROWSER_HTML_MAGIC,BROWSER_HTML_VERSION,sizeof(q)+sizeof(body)-1,12,77,19,0,0,sizeof(body)-1,0,{0,0}},
+            .version=BROWSER_CSS_RESOURCE_VERSION,.width=800,.height=500,.document_url="https://example.test/page.html"};
+        browser_resources_init(&resource_bundle,7);
+        unsigned missing=!strcmp(mode,"bundle-worker-needs");
+        if(!missing) {
+            const char style[]="p {color:#123456}";
+            assert(browser_resources_add(&resource_bundle,q.document_url,"https://example.test/a.css",0)==0);
+            assert(!browser_resources_store(&resource_bundle,0,"https://example.test/a.css",(const uint8_t *)style,sizeof(style)-1));
+        }
+        int packed=browser_resources_pack(&resource_bundle,q.document_url,request_wire+q.header.size,sizeof(request_wire)-q.header.size);
+        assert(packed>0); q.header.size+=(uint32_t)packed;
+        memcpy(request_wire,&q,sizeof(q)); memcpy(request_wire+sizeof(q),body,sizeof(body)-1); request_length=q.header.size;
+        if(!strcmp(mode,"bundle-worker-offset")) {
+            uint32_t invalid=UINT32_MAX;
+            memcpy(request_wire+sizeof(q)+sizeof(body)-1+offsetof(browser_resources_t,entries),&invalid,sizeof(invalid));
+        }
+        private_fail=!strcmp(mode,"bundle-worker-oom");
+        char *args[]={"htmlwork","--ipc","42"}; int rc=html_worker_main(3,args);
+        assert(transfer_allocs==1 && transfer_frees==1 && !transfer_live);
+        if(!strcmp(mode,"bundle-worker-offset")) assert(rc==74 && !received && !private_used);
+        else if(private_fail) assert(rc==65 && !received && !private_used);
+        else if(missing) {
+            static browser_resource_needs_t n;
+            assert(!rc && received==transport_length && received<=sizeof(n));
+            memcpy(&n,transport,received);
+            assert(!browser_resource_needs_validate(&n,received,&q.header,81,23,&resource_bundle,q.document_url));
+            assert(n.count==1 && n.items[0].depth==0 && !strcmp(n.items[0].url,"https://example.test/a.css"));
+            assert(browser_resource_needs_validate(&n,received,&q.header,81,24,&resource_bundle,q.document_url));
+        } else {
+            static browser_html_reply_t parsed;
+            assert(!rc && private_used && received==transport_length);
+            assert(!browser_css_unpack(transport,received,&q,81,23,&parsed,&scene));
+            document=parsed.document; const browser_scene_run_t *r=text_run("External");
+            assert(r && r->color==0xff123456);
+        }
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
+    if(!strncmp(mode,"chain-",6)) {
+        const char *url="https://example.test/page.html";
+        browser_resources_init(&resource_bundle,7);
+        for(unsigned i=0;i<=8;++i) {
+            char sheet_url[256],bytes[128]; snprintf(sheet_url,sizeof(sheet_url),"https://example.test/%u.css",i);
+            if(i<8 || !strcmp(mode,"chain-overflow")) snprintf(bytes,sizeof(bytes),"@import '%u.css';",i+1);
+            else memcpy(bytes,"p {color:#123456}",sizeof("p {color:#123456}"));
+            assert(browser_resources_add(&resource_bundle,url,sheet_url,i)==(int)i);
+            assert(!browser_resources_store(&resource_bundle,i,sheet_url,(const uint8_t *)bytes,(uint32_t)strlen(bytes)));
+        }
+        const char body[]="<link rel=stylesheet href='0.css'><p>External</p>";
+        int rc=browser_css_render_resources((const uint8_t *)body,sizeof(body)-1,800,500,NULL,url,
+            &resource_bundle,&resource_needs,&document,&scene);
+        if(!strcmp(mode,"chain-overflow")) assert(rc<0);
+        else { const browser_scene_run_t *r=text_run("External"); assert(!rc && r && r->color==0xff123456); }
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
+    if(!strncmp(mode,"resources-",10)) {
+        const char *url="https://example.test/document.html";
+        const char body[]="<style>p {color:#111111}</style><link rel=stylesheet href='a.css'>"
+            "<link rel=stylesheet href='a.css'><link rel='alternate stylesheet' href='unused.css'>"
+            "<link rel=stylesheet media=print href='print.css'><p>External</p>";
+        browser_resources_init(&resource_bundle,7);
+        if(strcmp(mode,"resources-needed")) {
+            const char *a=!strcmp(mode,"resources-cycle") ? "@import 'a.css'; p {color:#123456}" : "@import 'b.css'; p {font-size:20px}";
+            assert(browser_resources_add(&resource_bundle,url,"https://example.test/a.css",1)==0);
+            assert(!browser_resources_store(&resource_bundle,0,"https://example.test/a.css",(const uint8_t *)a,(uint32_t)strlen(a)));
+            const char b[]="p {color:#123456 !important}";
+            assert(browser_resources_add(&resource_bundle,url,"https://example.test/b.css",2)==1);
+            assert(!browser_resources_store(&resource_bundle,1,"https://example.test/b.css",(const uint8_t *)b,sizeof(b)-1));
+            const char print[]="p {color:red !important}";
+            assert(browser_resources_add(&resource_bundle,url,"https://example.test/print.css",1)==2);
+            assert(!browser_resources_store(&resource_bundle,2,"https://example.test/print.css",(const uint8_t *)print,sizeof(print)-1));
+        }
+        if(!strcmp(mode,"resources-depth")) {
+            resource_bundle.entries[0].depth=9;
+            assert(browser_css_render_resources((const uint8_t *)body,sizeof(body)-1,800,500,NULL,url,
+                &resource_bundle,&resource_needs,&document,&scene)<0);
+        } else {
+            int rc=browser_css_render_resources((const uint8_t *)body,sizeof(body)-1,800,500,NULL,url,
+                &resource_bundle,&resource_needs,&document,&scene);
+            if(!strcmp(mode,"resources-needed")) {
+                assert(rc==1 && resource_needs.count==2);
+                assert(!strcmp(resource_needs.items[0].url,"https://example.test/a.css"));
+            } else {
+                assert(rc==0 && !resource_needs.count);
+                const browser_scene_run_t *r=text_run("External");
+                assert(r && r->color==0xff123456);
+                if(!strcmp(mode,"resources-cascade")) assert(r->height==20);
+            }
+        }
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
     const char html[]="<title>CSS fixture</title><style>"
         "div {color: red; width:200px; padding:10px; border:2px solid #112233; margin:8px}"
         ".note {color:blue} #box {color:#008000} #box p > span {color:#123456 !important}"
@@ -70,15 +199,21 @@ int main(int argc, char **argv) {
         no_delegation=!strncmp(mode,"worker-missing",14);
         revoke_after_packet=!strncmp(mode,"worker-revoked",14);
         sleep_failure=!strcmp(mode,"worker-sleep-failure");
+        transfer_fail=!strcmp(mode,"worker-buffer-oom");
+        transfer_delay=!strcmp(mode,"worker-buffer-deadline") ? 5000 : 0;
         char *args[]={"htmlwork","--ipc","42"}; int rc=html_worker_main(3,args);
-        assert(sleeps);
-        if (bad_packet || no_delegation || revoke_after_packet || sleep_failure) {
+        assert(transfer_allocs==1 && transfer_frees==!transfer_fail && !transfer_live);
+        if(transfer_fail || transfer_delay) {
+            assert(rc==(transfer_fail ? 71 : 74) && !sent && !received && !sleeps);
+        } else if (bad_packet || no_delegation || revoke_after_packet || sleep_failure) {
+            assert(sleeps);
             assert(rc==74 && !received);
             if (no_delegation) assert(!sent && time_ms>=5000 && time_ms<=5002);
             if (revoke_after_packet) assert(sent==53 && sleeps==1 && time_ms<10);
             if (sleep_failure) assert(!sent && sleeps==1 && time_ms<10);
         }
         else {
+            assert(sleeps);
             assert(!rc && received==transport_length && received>0);
             static browser_html_reply_t parsed;
             assert(!browser_css_unpack(transport,transport_length,&q,81,23,&parsed,&scene));

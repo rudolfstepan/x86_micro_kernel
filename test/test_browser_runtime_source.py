@@ -29,6 +29,7 @@ TRANSPORT_HOST = r'''
 
 static x86os_process_info_t process;
 static unsigned exists, generation, identity_exit, kill_exit, waits, kills, clock_ms, clock_reads;
+static unsigned kill_pending, peer_closed;
 static const char *file_bytes = "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<title>Downloaded</title><p>Working page</p>";
 static size_t file_length, file_offset;
 static unsigned opens, closes;
@@ -52,6 +53,7 @@ int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t h,const x86os_ipc_bulk_messag
 }
 int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t h,x86os_ipc_bulk_message_t *m,uint32_t timeout) {
     assert(h==42 && endpoint_live && !timeout);
+    if(peer_closed) return -32;
     /* A reaped peer's last queued packet remains readable, then the real
      * kernel reports EPIPE, not EAGAIN. Never confuse stream EOF with OOM. */
     if(worker_offset==worker_length) return worker_length ? -32 : -11;
@@ -63,6 +65,9 @@ int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t h,x86os_ipc_bulk_message_t
 }
 
 int x86os_getpid(void) { return 77; }
+int x86os_create(const char *path) { (void)path; assert(0); return -5; }
+int x86os_write(int fd,const void *bytes,size_t size) { (void)fd; (void)bytes; (void)size; assert(0); return -5; }
+int x86os_close(int fd) { (void)fd; assert(0); return -5; }
 uint32_t x86os_uptime_ms(void) { ++clock_reads; return clock_ms; }
 int x86os_unlink(const char *path) { assert(path[0] && !exists); ++unlinks; return 0; }
 int x86os_spawnv(const char *path, int argc, const char *const *argv) {
@@ -97,7 +102,11 @@ int x86os_wait(int pid, int *status) {
 }
 int x86os_kill(int pid) {
     assert(exists && pid == process.pid && process.parent_pid == x86os_getpid());
-    ++kills; process.state = X86OS_PROCESS_ZOMBIE;
+    ++kills;
+    /* task_exit_status revokes IPC before publishing the zombie. During
+     * cleanup process_terminate refuses a second termination request. */
+    if(kill_pending) return -1;
+    process.state = X86OS_PROCESS_ZOMBIE;
     return kill_exit ? -13 : 0;
 }
 void x86os_puts(const char *text) { (void)text; }
@@ -135,9 +144,12 @@ static browser_state_t fresh(void) {
     browser_state_t state = {0};
     process = (x86os_process_info_t){81, 77, X86OS_PROCESS_RUNNING, 0, "curl"};
     exists = waits = kills = identity_exit = kill_exit = 0; generation = 23;
+    kill_pending=peer_closed=0;
     spawns = unlinks = image_decodes = 0;
     clock_ms = 100; state.loaded = 1; state.image_next = BROWSER_IMAGE_CACHE_COUNT;
     endpoint_live=0; memset(scenes,0,sizeof(scenes));
+    browser_resources_init(&workspace->resources[0],1);
+    browser_resources_init(&workspace->resources[1],1);
     copy_text(state.active_url, sizeof(state.active_url), "/htdocs/index.html");
     make_temporary_path(&state); return state;
 }
@@ -152,6 +164,40 @@ static void failed_load(int exited_before_identity, int race, uint32_t kind) {
     assert(state.loaded && !state.active && !strcmp(state.active_url, "/htdocs/index.html"));
     assert(state.status_redraw);
     service_loads(&state, &client); assert(waits == 1);
+}
+static void fault_cleanup_cases(void) {
+    reist_gui_surface_client_t client={.width=800,.height=600};
+    for(unsigned variant=0;variant<4;++variant) {
+        unsigned stuck=variant&1;
+        browser_state_t state=fresh();
+        if(variant>=2) clock_ms=UINT32_MAX-100;
+        exists=endpoint_live=kill_pending=peer_closed=1;
+        state.child_pid=81; state.child_generation=generation;
+        state.job_kind=3; state.css_endpoint=42;
+        state.poll_at=clock_ms; /* Same monotone origin as real spawn. */
+        css_input.request.header.size=state.css_sent=444;
+        state.job_deadline=clock_ms+5000;
+        /* Exact fault schedule: peer revoked, still live, duplicate kill
+         * rejected. Keep the old page and the same pinned child, no retry. */
+        service_loads(&state,&client);
+        assert(!state.exit_requested && state.child_pid==81 && exists);
+        assert(state.job_cancelled && !state.css_endpoint && !endpoint_live);
+        assert(kills==1 && !waits && state.loaded && !state.active);
+        clock_ms+=10; service_loads(&state,&client);
+        assert(!state.exit_requested && kills==1 && !waits);
+        if(stuck) {
+            clock_ms+=1000; service_loads(&state,&client);
+            assert(state.exit_requested && state.exit_error==-110 && kills==1 && !waits);
+            assert(!strcmp(state.exit_reason,"cancel-reap-timeout"));
+        } else {
+            process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=134;
+            clock_ms+=10; service_loads(&state,&client);
+            assert(!state.exit_requested && !state.child_pid && !exists);
+            assert(waits==1 && kills==1 && state.parser_failures==1);
+            assert(!strcmp(state.active_url,"/htdocs/index.html"));
+            assert(!navigate(&state,&client,"/htdocs/browser-html5-test.html") && state.pending);
+        }
+    }
 }
 static void complete(browser_state_t *state, reist_gui_surface_client_t *client, const char *response) {
     assert(exists); file_bytes=response; file_length=strlen(response);
@@ -224,6 +270,94 @@ static void wheel_cases(void) {
     handle_pointer(&state,&client,&input); assert(!state.scroll_y);
     state.scrollbar.state.captured=0; input.pressed=1;
     handle_pointer(&state,&client,&input); assert(!state.scroll_y);
+    /* Selection cannot alter normal browsing or the ordinary late wheel
+     * assertions; one initial upward detent is the trusted probe selector. */
+    input.pressed=0; input.delta_y=-120; state.address_focused=0;
+    assert(!resource_probe_selected(&state,&input));
+    state.probe=1; assert(resource_probe_selected(&state,&input));
+    state.probe_phase=10; assert(!resource_probe_selected(&state,&input));
+    state.probe_phase=0; state.address_focused=1;
+    assert(!resource_probe_selected(&state,&input));
+    state.address_focused=0; input.delta_y=120;
+    assert(!resource_probe_selected(&state,&input));
+    input.delta_y=-120; state.probe=2;
+    assert(!resource_probe_selected(&state,&input));
+}
+/* Discovery reply comes from an untrusted worker. Drive the real coordinator
+ * through reaping, immutable bundle assembly, redirects and cancellation. */
+static void complete_needs(browser_state_t *state,reist_gui_surface_client_t *client,const char *url,unsigned corrupt) {
+    assert(state->parse_pending && !exists);
+    process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
+    assert(state->child_pid && state->job_kind==3);
+    for(unsigned i=0;i<100 && state->css_sent<css_input.request.header.size;++i) assert(!service_css_ipc(state));
+    assert(state->css_sent==css_input.request.header.size);
+    browser_resource_needs_t n={.magic=BROWSER_RESOURCE_NEED_MAGIC,.version=BROWSER_RESOURCE_VERSION,
+        .generation=workspace->resources[state->active^1U].generation,.identity=state->html_request};
+    n.identity.child_pid=81; n.identity.child_generation=generation;
+    assert(!browser_resource_need_add(&n,url,1));
+    n.size=offsetof(browser_resource_needs_t,items)+sizeof(n.items[0]);
+    if(corrupt) ++n.generation;
+    memcpy(worker_wire,&n,n.size); worker_length=n.size; worker_offset=0;
+    for(unsigned i=0;i<40 && state->css_received<worker_length;++i) assert(!service_css_ipc(state));
+    clock_ms+=10; process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=0;
+    service_loads(state,client);
+    assert(!exists && !endpoint_live && !state->child_pid);
+}
+static void resource_cases(void) {
+    const char *css="HTTP/1.1 200 OK\r\nContent-Type: text/css\r\n\r\np {color:green}";
+    reist_gui_surface_client_t client={.width=800,.height=600};
+    for(unsigned mode=0;mode<8;++mode) {
+        browser_state_t state=fresh();
+        const char *url="https://example.test/page.html", *sheet="https://example.test/style.css";
+        memcpy(document_bytes,"<p>safe</p>",11);
+        assert(!publish_document_bytes(&state,&client,url,11));
+        uint32_t deadline=state.resource_deadline;
+        complete_needs(&state,&client,sheet,mode==1);
+        if(mode==1) { assert(!state.resource_loading && state.parser_failures==1); continue; }
+        assert(state.resource_loading && !state.active && state.loaded && waits==1);
+        browser_resources_t *b=&workspace->resources[1]; assert(b->count==1 && !b->entries[0].ready);
+        if(mode==2) {
+            clock_ms=deadline; service_loads(&state,&client);
+            assert(!state.resource_loading && spawns==1 && !b->entries[0].ready); continue;
+        }
+        process.state=X86OS_PROCESS_RUNNING; service_loads(&state,&client);
+        assert(state.child_pid && state.job_kind==4 && spawns==2 && !strcmp(spawned_url,sheet));
+        assert((int32_t)(state.job_deadline-deadline)<=0);
+        if(mode==3 || mode==4) {
+            if(mode==3) handle_keyboard(&state,&client,BROWSER_KEY_ESCAPE);
+            else assert(!navigate(&state,&client,"/replacement.html"));
+            service_loads(&state,&client);
+            assert(!state.resource_loading && !state.child_pid && kills==1 && waits==2 && !state.active);
+            assert(!state.parse_pending && !b->entries[0].ready); continue;
+        }
+        if(mode==5) {
+            complete(&state,&client,"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\nwrong");
+            assert(!state.resource_loading && !b->entries[0].ready && !state.active); continue;
+        }
+        if(mode==6) {
+            complete(&state,&client,"HTTP/1.1 302 Found\r\nLocation: http://insecure.test/a.css\r\n\r\n");
+            assert(!state.resource_loading && !state.follow_redirect && !b->entries[0].ready); continue;
+        }
+        if(mode==7) {
+            complete(&state,&client,"HTTP/1.1 302 Found\r\nLocation: /fresh.css\r\n\r\n");
+            follow(&state,&client); assert(!strcmp(spawned_url,"https://example.test/fresh.css"));
+        }
+        complete(&state,&client,css);
+        assert(b->entries[0].ready && !state.active && state.resource_loading && state.resource_deadline==deadline);
+        service_loads(&state,&client); assert(!state.resource_loading && state.parse_pending==11);
+        complete_html(&state,&client,0); assert(state.active==1 && !strcmp(state.active_url,url));
+        uint32_t old_generation=b->generation;
+        /* Same fresh HTML cannot reuse a scene whose external CSS may change. */
+        assert(!publish_document_bytes(&state,&client,url,11));
+        assert(state.parse_pending==11 && workspace->resources[0].generation>old_generation && !workspace->resources[0].count);
+        assert(b->count==1 && b->entries[0].ready); /* previous page remains immutable */
+    }
+    /* Zero-length local sheets are legitimate and have a paired close. */
+    browser_state_t state=fresh(); memcpy(document_bytes,"<p>safe</p>",11);
+    assert(!publish_document_bytes(&state,&client,"/page.html",11));
+    complete_needs(&state,&client,"/empty.css",0);
+    file_bytes=""; file_length=0; service_loads(&state,&client);
+    assert(workspace->resources[1].entries[0].ready && !workspace->resources[1].length && opens==closes);
 }
 static void redirect_cases(void) {
     reist_gui_surface_client_t client={0}; client.width=800; client.height=600;
@@ -293,6 +427,16 @@ static void redirect_cases(void) {
 }
 int main(int argc, char **argv) {
     workspace = &host_workspace; file_length = strlen(file_bytes);
+    /* Preserve the first fatal decision across later cleanup errors. A
+     * non-EIO failure must not turn into a successful process exit. */
+    browser_state_t diagnostic={0};
+    browser_runtime_failure(&diagnostic,"test-receive",-84);
+    browser_runtime_failure(&diagnostic,"test-cleanup",-9);
+    assert(diagnostic.exit_requested && diagnostic.exit_error==-84);
+    assert(!strcmp(diagnostic.exit_reason,"test-receive"));
+    assert(browser_runtime_result(&diagnostic,0)==1);
+    assert(browser_runtime_result(&(browser_state_t){0},-11)==0);
+    assert(browser_runtime_result(&(browser_state_t){0},-5)==1);
     /* Disabled counters add no clock syscalls. Enabled counters remain bounded
      * across uptime wrap and saturated totals, without changing any deadline. */
     clock_reads=0; assert(!timing_start()); timing_end(TIME_READ,0);
@@ -327,6 +471,7 @@ int main(int argc, char **argv) {
     endpoint_live=0;
     failed_load(0, 0, 1); failed_load(1, 0, 1); failed_load(0, 1, 1);
     failed_load(0, 0, 2); failed_load(1, 0, 2);
+    fault_cleanup_cases();
     for (unsigned race = 0; race < 2; ++race) {
         browser_state_t state = fresh(); reist_gui_surface_client_t client = {0};
         assert(start_fetch(&state, "https://intracom.at/", 1, 0) == 0);
@@ -362,6 +507,7 @@ int main(int argc, char **argv) {
         assert(state.exit_requested && !kills && !waits);
     }
     redirect_cases();
+    resource_cases();
     /* Exact document/URL/viewport reuse must not start another parser. Reload
      * still refreshes images; changed bytes, origin, geometry or fault mode do. */
     state=fresh(); client.width=800; client.height=600;
@@ -942,6 +1088,8 @@ class BrowserRuntimeTests(unittest.TestCase):
             self.run_browser_probe_transcript(["ALL_REQUIRED"])
 
     def test_real_renderer_scroll_clipping_and_image_pixels(self):
+        # Original renderer proof stays unchanged; resource lifecycle is a
+        # separate real coordinator/worker and guest verification boundary.
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "browser-render-host.c"
             source.write_text(RENDER_HOST, encoding="utf-8")
@@ -961,9 +1109,54 @@ class BrowserRuntimeTests(unittest.TestCase):
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/apps/browser/browser_response.c", "userspace/programs/curl_http.c",
+                      "userspace/gui/apps/browser/browser_resources.c",
                       "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/lib/font.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])
+
+    def test_resource_guest_requires_ordered_cleanup_and_close(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        markers = ["DESKTOP_BROWSER_OK\nBROWSER_PROBE_SELECTOR_READY", "BROWSER_RESOURCES_STARTED", "BROWSER_RESOURCES_CASCADE_PIXELS_OK",
+                   "BROWSER_RESOURCES_DEDUPE_CYCLE_OK", "BROWSER_RESOURCES_FAILURE_CONTAINED_OK",
+                   "BROWSER_RESOURCES_CANCEL_OK", "BROWSER_RESOURCES_RELOAD_FRESH_OK",
+                   "BROWSER_RESOURCES_RECOVERY_OK", "BROWSER_RESOURCES_CLEANUP_OK", "BROWSER_CLOSE_OK"]
+        for case in (markers, markers[:-1], markers[:-2]+markers[-1:],
+                     markers[:-1]+["BROWSER_PROBE_FAIL cleanup",markers[-1]],
+                     markers[:3]+list(reversed(markers[3:]))):
+            with self.subTest(case=case), mock.patch.object(desktop.time, "monotonic", side_effect=range(30)), \
+                 mock.patch.object(desktop.time, "sleep"), mock.patch.object(desktop, "send_key") as key, \
+                 mock.patch.object(desktop, "capture_screenshot") as capture, \
+                 mock.patch.object(desktop, "drain", side_effect=lambda _, text: text.extend(case)):
+                monitor = mock.Mock()
+                if case == markers:
+                    self.assertEqual(desktop.run_browser_resource_probe(None,None,[],None,20,monitor),0)
+                    monitor.mouse.assert_called_once_with(None,"mouse_move 0 0 1")
+                    capture.assert_called_once()
+                else:
+                    with self.assertRaises(RuntimeError):
+                        desktop.run_browser_resource_probe(None,None,[],None,20,monitor)
+                key.assert_not_called()
+
+    def test_resource_selector_waits_for_both_peers_and_guest_ack(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import run_qemu_runtime_desktop as desktop
+        for first, second in (("DESKTOP_BROWSER_OK", "BROWSER_PROBE_SELECTOR_READY"),
+                              ("BROWSER_PROBE_SELECTOR_READY", "DESKTOP_BROWSER_OK")):
+            monitor = mock.Mock()
+            def drain(_, transcript):
+                if not transcript:
+                    transcript.append(first)
+                elif len(transcript)==1:
+                    monitor.mouse.assert_not_called()
+                    transcript.append(second)
+                else:
+                    monitor.mouse.assert_called_once_with(None,"mouse_move 0 0 1")
+            with mock.patch.object(desktop, "drain", side_effect=drain), \
+                 mock.patch.object(desktop.time, "monotonic", side_effect=range(30)), \
+                 mock.patch.object(desktop.time, "sleep"):
+                with self.assertRaisesRegex(RuntimeError, "deadline.*BROWSER_RESOURCES_STARTED"):
+                    desktop.run_browser_resource_probe(None,None,[],None,20,monitor)
 
     def test_typing_does_not_repaint_document(self):
         source = APP.read_text()

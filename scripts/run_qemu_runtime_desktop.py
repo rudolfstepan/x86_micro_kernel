@@ -1115,6 +1115,48 @@ def require_svga2d_console_lifecycle(text: str) -> None:
         raise RuntimeError("SVGA2D console lifecycle markers are out of order")
 
 
+def run_browser_resource_probe(process, output, transcript, screenshot, deadline, input_monitor):
+    """Select the additional suite by real input on the existing probe surface.
+
+    No compositor test ABI, second launch authority or guest deadline reset.
+    The ordinary browser gate continues to require every R3.10 assertion.
+    """
+    required = (
+        "BROWSER_RESOURCES_STARTED", "BROWSER_RESOURCES_CASCADE_PIXELS_OK",
+        "BROWSER_RESOURCES_DEDUPE_CYCLE_OK", "BROWSER_RESOURCES_FAILURE_CONTAINED_OK",
+        "BROWSER_RESOURCES_CANCEL_OK", "BROWSER_RESOURCES_RELOAD_FRESH_OK",
+        "BROWSER_RESOURCES_RECOVERY_OK", "BROWSER_RESOURCES_CLEANUP_OK", "BROWSER_CLOSE_OK",
+    )
+    selected = captured = False
+    while time.monotonic() < deadline:
+        drain(output, transcript)
+        text = "".join(transcript)
+        if "DESKTOP_BROWSER_FAIL" in text or "BROWSER_PROBE_FAIL" in text:
+            raise RuntimeError("Browser resource probe failed")
+        if (not selected and "DESKTOP_BROWSER_OK" in text and
+                "BROWSER_PROBE_SELECTOR_READY" in text):
+            # Both pointer and the sole browser window start centered. Use
+            # the negotiated USB path, not the terminal queue shared by the
+            # detached desktop and shell. QMP ACK is not guest acceptance:
+            # BROWSER_RESOURCES_STARTED remains mandatory below.
+            input_monitor.mouse(process, "mouse_move 0 0 1")
+            selected = True
+        if not captured and "BROWSER_RESOURCES_CASCADE_PIXELS_OK" in text:
+            capture_screenshot(process, screenshot, deadline)
+            captured = True
+        if "BROWSER_CLOSE_OK" in text:
+            if not selected or not captured or not all(marker in text for marker in required):
+                raise RuntimeError("Browser resource probe closed without complete evidence")
+            positions = [text.index(marker) for marker in required]
+            if positions != sorted(positions):
+                raise RuntimeError("Browser resource probe evidence out of order")
+            print("runtime-desktop-browser-resources: PASS")
+            return 0
+        time.sleep(0.02)
+    missing = [marker for marker in required if marker not in "".join(transcript)]
+    raise RuntimeError(f"Browser resource probe deadline; missing={missing}")
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool, notepad_font_probe: bool,
@@ -1128,7 +1170,10 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         supervised_probe: bool,
         guidemo_click_probe: bool,
         sound_probe: bool, metrics_log: pathlib.Path | None,
-        vmware_vga: bool, smp: int, capture_only: bool = False) -> int:
+        vmware_vga: bool, smp: int, capture_only: bool = False,
+        browser_resource_probe: bool = False) -> int:
+    if browser_resource_probe:
+        browser_probe = True
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
         audio_capture.unlink()
@@ -1766,6 +1811,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     raise RuntimeError(
                         "Control Panel did not publish a visible window"
                     )
+                if browser_resource_probe:
+                    return run_browser_resource_probe(process, output, transcript, screenshot, deadline, browser_input)
                 if browser_probe:
                     browser_captured = False
                     css_resize_sent = False
@@ -2016,6 +2063,7 @@ def main() -> int:
     parser.add_argument("--notepad-font-probe", action="store_true")
     parser.add_argument("--control-probe", action="store_true")
     parser.add_argument("--browser-probe", action="store_true")
+    parser.add_argument("--browser-resource-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--trash-restore-probe", action="store_true")
@@ -2033,7 +2081,7 @@ def main() -> int:
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.notepad_font_probe, args.control_probe,
-            args.browser_probe,
+            args.browser_probe, args.browser_resource_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
@@ -2061,7 +2109,8 @@ def main() -> int:
                    args.hover_probe,
                    args.supervised_probe,
                    args.guidemo_click_probe, args.sound_probe,
-                   args.metrics_log, args.vmware_vga, args.smp)
+                   args.metrics_log, args.vmware_vga, args.smp,
+                   browser_resource_probe=args.browser_resource_probe)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

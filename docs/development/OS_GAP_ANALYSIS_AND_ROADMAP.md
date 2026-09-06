@@ -9,7 +9,12 @@ Speicherresilienz bestanden gemeinsam in den eingefrorenen Gastpruefungen.
 R3.10 ist am 6. September vollstaendig abgenommen: echte LibCSS-Kaskade,
 begrenztes Boxlayout, Bilder, native Scrollbar, USB-Maus-Resize und Mausrad
 sowie Worker-Fault-/Timeout-Recovery bis Close. Der nachfolgende externe
-Stylesheet-/Import-Ressourcenvertrag R3.11 ist definiert, noch nicht umgesetzt.
+Stylesheet-/Import-Ressourcenvertrag R3.11 ist ebenfalls vollstaendig
+abgenommen: navigationsgebundene Bundles, echte LibCSS-Imports, frischer
+Reload, Abbruch und 32-MiB-Worker-Heap ohne neue Kernelautoritaet. R3.12
+definiert als naechstes getrenntes Paket generationgebundene Terminal-
+Eingabezustaendigkeit: Shell und Desktop duerfen nicht um dieselben
+Browser-Tastendruecke konkurrieren. Noch keine R3.12-Implementierung.
 Der gemessene Worker-/Dateiladepfad bleibt Performance-Schuld. High-Memory oberhalb der
 heutigen 1-GiB-Direct-Map und freigebbare Anwendungs-/Dateicaches bleiben eigene
 Folgearbeiten. Einzelheiten und Nachweisgrenzen stehen im

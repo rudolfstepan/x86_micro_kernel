@@ -842,6 +842,9 @@ SYSTEM_IMAGE_FILES := \
 	htdocs/browser-test.html=htdocs/browser-test.html \
 	htdocs/browser-html5-test.html=htdocs/browser-html5-test.html \
 	htdocs/browser-css-test.html=htdocs/browser-css-test.html \
+	htdocs/browser-stylesheet-test.html=htdocs/browser-stylesheet-test.html \
+	htdocs/browser-stylesheet-main.css=htdocs/browser-stylesheet-main.css \
+	htdocs/browser-stylesheet-import.css=htdocs/browser-stylesheet-import.css \
 	sbin/mount.prg=$(SYSTEM_PROGRAM_DIR)/MOUNT.PRG \
 	sbin/umount.prg=$(SYSTEM_PROGRAM_DIR)/UMOUNT.PRG \
 	sbin/svcctl.prg=$(SYSTEM_PROGRAM_DIR)/SVCCTL.PRG \
@@ -887,6 +890,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
 	usr/gui/bin/browser.prg=% usr/bin/htmlwork.prg=% htdocs/index.html=% htdocs/browser-test.html=% htdocs/browser-html5-test.html=% htdocs/browser-css-test.html=% \
+	htdocs/browser-stylesheet-test.html=% htdocs/browser-stylesheet-main.css=% htdocs/browser-stylesheet-import.css=% \
 	usr/share/sounds/startup.wav=% \
 	usr/share/sounds/shutdown.wav=% \
 	usr/share/sounds/error.wav=% usr/share/sounds/notify.wav=% \

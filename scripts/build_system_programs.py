@@ -101,6 +101,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/apps/browser/browser_images.c",
         ROOT / "userspace/gui/apps/browser/browser_response.c",
         ROOT / "userspace/gui/apps/browser/browser_scene.c",
+        ROOT / "userspace/gui/apps/browser/browser_resources.c",
         ROOT / "userspace/gui/apps/browser/html_protocol.c",
         ROOT / "userspace/programs/curl_http.c",
         ROOT / "userspace/gui/lib/html_document.c",
@@ -238,6 +239,8 @@ PROGRAMS["HTMLWORK.PRG"] = (
     ROOT / "userspace/gui/apps/browser/html_engine.c",
     ROOT / "userspace/gui/apps/browser/css_engine.c",
     ROOT / "userspace/gui/apps/browser/browser_scene.c",
+    ROOT / "userspace/gui/apps/browser/browser_resources.c",
+    ROOT / "userspace/programs/curl_http.c",
     ROOT / "userspace/gui/apps/browser/html_protocol.c",
     ROOT / "userspace/gui/lib/html_document.c",
 )

@@ -8,18 +8,20 @@ static browser_html_reply_t reply;
 static uint8_t wire_reply[sizeof(reply)];
 #ifdef REIST_CSS_WORKER
 #include "css_engine.h"
-static struct { browser_css_request_t request; uint8_t bytes[65536]; } css_input;
+typedef struct css_worker_buffers {
+    struct { browser_css_request_t request; uint8_t bytes[BROWSER_CSS_INPUT_BYTES]; } input;
+    browser_resources_t resources;
+} css_worker_buffers_t;
+static browser_resource_needs_t css_needs;
 static browser_scene_t css_scene;
 static uint8_t css_wire[BROWSER_CSS_WIRE_CAPACITY];
-static int css_worker(const char *number) {
-    uint32_t endpoint=0;
-    for (uint32_t i=0;number[i];++i) {
-        if (i>=10 || number[i]<'0' || number[i]>'9' ||
-            endpoint>(UINT32_MAX-(uint32_t)(number[i]-'0'))/10) return 64;
-        endpoint=endpoint*10+(uint32_t)(number[i]-'0');
-    }
-    if (!endpoint) return 64;
-    uint32_t deadline=x86os_uptime_ms()+BROWSER_HTML_DEADLINE_MS;
+/* Fixed admission, but not static BSS in the 8-MiB MYPR region. Independent
+ * of libc's parser arenas: tree initialization must never invalidate IPC bytes.
+ * The wrapper frees every ordinary return; fault/kill cleanup belongs to the
+ * existing exact-generation process reaper. No extra resource authority. */
+static int css_worker_run(uint32_t endpoint,uint32_t deadline,css_worker_buffers_t *buffers) {
+#define css_input (buffers->input)
+#define css_resources (buffers->resources)
     uint32_t at=0,total=0,request=0;
     for (;;) {
         int32_t left=(int32_t)(deadline-x86os_uptime_ms()); if (left<=0) return 74;
@@ -42,13 +44,31 @@ static int css_worker(const char *number) {
     if (browser_css_request_validate(q) || q->header.size!=total || q->header.request!=request) return 74;
     if (q->header.mode==1) { __asm__ volatile("ud2"); return 70; }
     if (q->header.mode==2) { (void)x86os_sleep_ms(BROWSER_HTML_DEADLINE_MS+1000); return 70; }
-    if (browser_css_render(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,q->document_url,&reply.document,&css_scene)) return 65;
+    int rendered;
+    if(q->version==BROWSER_CSS_RESOURCE_VERSION) {
+        if(browser_resources_unpack(css_input.bytes+q->header.input_length,
+            total-(uint32_t)sizeof(*q)-q->header.input_length,q->document_url,&css_resources)) return 74;
+        for(uint32_t i=0;i<css_resources.count;++i) if(!css_resources.entries[i].ready) return 74;
+        rendered=browser_css_render_resources(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,
+            q->document_url,&css_resources,&css_needs,&reply.document,&css_scene);
+    } else rendered=browser_css_render(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,q->document_url,&reply.document,&css_scene);
+    if(rendered<0) return 65;
     x86os_process_identity_t identity;
     if (x86os_process_identity_of(x86os_getpid(),&identity) || identity.version!=1 ||
         identity.struct_size!=sizeof(identity) || identity.pid!=x86os_getpid() || !identity.generation) return 70;
     reply.header=q->header; reply.header.size=sizeof(reply);
     reply.header.child_pid=(uint32_t)identity.pid; reply.header.child_generation=identity.generation;
-    int size=browser_css_pack(&reply,&css_scene,css_wire,sizeof(css_wire)); if (size<0) return 65;
+    int size;
+    if(rendered==1) {
+        css_needs.magic=BROWSER_RESOURCE_NEED_MAGIC; css_needs.version=BROWSER_RESOURCE_VERSION;
+        css_needs.generation=css_resources.generation; css_needs.identity=q->header;
+        css_needs.identity.child_pid=(uint32_t)identity.pid; css_needs.identity.child_generation=identity.generation;
+        css_needs.size=offsetof(browser_resource_needs_t,items)+css_needs.count*sizeof(css_needs.items[0]);
+        if(browser_resource_needs_validate(&css_needs,css_needs.size,&q->header,(uint32_t)identity.pid,
+            identity.generation,&css_resources,q->document_url)) return 65;
+        size=(int)css_needs.size; memcpy(css_wire,&css_needs,(uint32_t)size);
+    } else size=browser_css_pack(&reply,&css_scene,css_wire,sizeof(css_wire));
+    if (size<0) return 65;
     for (at=0;at<(uint32_t)size;) {
         int32_t left=(int32_t)(deadline-x86os_uptime_ms()); if (left<=0) return 74;
         uint32_t n=(uint32_t)size-at; if (n>BROWSER_CSS_PACKET_DATA) n=BROWSER_CSS_PACKET_DATA;
@@ -62,6 +82,23 @@ static int css_worker(const char *number) {
     /* The owner retains the endpoint until the final packet is drained and this
      * exact generation has been reaped. Child exit revokes only its own rights. */
     return 0;
+}
+#undef css_input
+#undef css_resources
+static int css_worker(const char *number) {
+    uint32_t endpoint=0;
+    for (uint32_t i=0;number[i];++i) {
+        if (i>=10 || number[i]<'0' || number[i]>'9' ||
+            endpoint>(UINT32_MAX-(uint32_t)(number[i]-'0'))/10) return 64;
+        endpoint=endpoint*10+(uint32_t)(number[i]-'0');
+    }
+    if (!endpoint) return 64;
+    uint32_t deadline=x86os_uptime_ms()+BROWSER_HTML_DEADLINE_MS;
+    css_worker_buffers_t *buffers=x86os_malloc(sizeof(*buffers));
+    if(!buffers) return 71;
+    int status=css_worker_run(endpoint,deadline,buffers);
+    x86os_free(buffers);
+    return status;
 }
 #endif
 static void phase(const char *name) {

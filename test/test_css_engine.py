@@ -50,6 +50,7 @@ class CssEngineTests(unittest.TestCase):
                 "userspace/libc/lib/bytes.c", "userspace/libc/lib/heap.c",
                 "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/css_engine.c",
                 "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/html_protocol.c",
+                "userspace/gui/apps/browser/browser_resources.c", "userspace/programs/curl_http.c",
                 "userspace/gui/lib/html_document.c", "userspace/gui/lib/font.c")]
             executable = directory / "css-host.exe"
             response = directory / "compile.rsp"
@@ -60,7 +61,10 @@ class CssEngineTests(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stderr)
             for mode in ("cascade", "geometry", "quota", "resources", "import", "worker", "bad-packet",
                          "worker-eacces", "worker-missing", "worker-missing-eacces",
-                         "worker-revoked", "worker-revoked-eacces", "worker-sleep-failure"):
+                         "worker-revoked", "worker-revoked-eacces", "worker-sleep-failure",
+                         "resources-needed", "resources-cascade", "resources-cycle", "resources-depth",
+                         "bundle-worker-needs", "bundle-worker-scene", "bundle-worker-offset", "bundle-worker-oom",
+                         "chain-eight", "chain-overflow", "worker-buffer-oom", "worker-buffer-deadline"):
                 with self.subTest(mode=mode):
                     result = subprocess.run([str(executable),mode], capture_output=True,text=True,timeout=10)
                     self.assertEqual(result.returncode,0,result.stdout+result.stderr)

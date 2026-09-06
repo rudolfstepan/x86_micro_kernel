@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.11-browser-stylesheet-resources"
+active_id = "R3.12-terminal-input-ownership"
 
 [policy]
 one_package_per_run = true
@@ -549,7 +549,9 @@ evidence = []
 
 [[packages]]
 id = "R3.11-browser-stylesheet-resources"
-status = "active"
+status = "done"
+exit_repair_resume = "2026-09-06: User explicitly approves continuing the focused diagnosis and repair of the browser exit after the intentional worker fault. Resume only the attributable 35-path R3.11 candidate. Record bounded first-failure diagnostics for browser exit decisions, reproduce the cause with real-code host regression and repair only within existing allowed_files. Preserve all isolation, generation, cleanup and deadline checks and every frozen gate; retain failed evidence and do not retry until a lucky pass. No kernel/shared-library extension, nested agent or push."
+memory_repair_resume = "2026-09-06: User explicitly requests continuing after the repeated toolchain gate failure. Resume only the attributable in-place 34-path candidate. Move the oversized worker transfer buffers from static BSS to existing bounded private Ring-3 allocation with allocation-failure, deadline and cleanup regression. Keep the 8-MiB loader region, 32-MiB parser heap budget, resource capacities, original deadlines and every frozen gate unchanged. No kernel/loader expansion, unrelated edits, agent or push. Changed-source gates and both reference builds must verify the final candidate; retain previous failures as evidence."
 phase = "post-s0"
 risk = "high"
 title = "Load external and imported CSS through a generation-scoped resource bundle"
@@ -626,6 +628,78 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "feat: load bounded stylesheet bundles into isolated CSS workers"
+evidence = []
+
+[[packages]]
+id = "R3.12-terminal-input-ownership"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Keep terminal keystrokes with the active generation-scoped desktop session"
+user_direction = "Next separate prerequisite for the user-requested usable browser and missing OS foundations. R3.11 resource selection exposed real input theft: the detached desktop and the still-readable recovery shell consume one keyboard queue, and the shell echoed the browser selector. Define this package during R3.11 completion only; do not implement it in that run. Preserve the deferred VMware pointer acceptance and prioritize browser usability. No agent or push."
+scope = "One terminal-input ownership lifecycle: inventory every existing Ring-3 character-read path, display activation/deactivation, supervised compositor identity and process cleanup before selecting the smallest bounded mechanism. Use POSIX terminal foreground-session ownership as the reference model; document the supported REIST subset and deviations without claiming termios or POSIX compatibility. Keep focus/session policy in the Ring-3 shell/compositor; the microkernel mediates only exact-generation admission, transfer, revocation and wakeup before any keyboard dequeue. The active desktop receives real keyboard input and forwards it to its focused Surface; the detached recovery shell and unrelated applications cannot steal, duplicate or observe those bytes. Keep the shell available through the established recovery transition, not by globally disabling it or waiting on a detached compositor PID. Preserve blocking and nonblocking wrapper contracts with explicit adapters and append-only versioned ABI additions if necessary. Owner crash, restart, cancellation and stale generation must fence input and restore a valid console or newly self-tested desktop without replaying stale keys. All storage, waits and handoffs are capacity/deadline bounded; no busy poll, new kernel parser, mouse rewrite or hardware driver migration. Prove authorization before dequeue, competing readers, malformed requests, owner death, failed handoff, idempotent revoke, fresh restart and console return in real-code host tests and a QEMU guest using actual keyboard events for browser address editing and navigation. Keep browser stylesheet, image, scroll, worker-recovery and memory-resilience gates. Forms and JavaScript remain separate browser work."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/architecture/TERMINAL_INPUT_OWNERSHIP_CONTRACT.md",
+  "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "kernel/proc/terminal_input.c", "kernel/proc/terminal_input.h",
+  "kernel/proc/process.c", "kernel/proc/process.h",
+  "kernel/sched/scheduler.c", "kernel/sched/scheduler.h",
+  "kernel/syscall/syscall_table.c", "kernel/syscall/syscall.c",
+  "drivers/char/kb.c", "drivers/char/kb.h",
+  "drivers/video/display_control.c", "drivers/video/display_control.h",
+  "include/reist/abi/syscall.h", "lib/libc/stdlib.h",
+  "userspace/sdk/include/reist/abi/syscall.h",
+  "userspace/sdk/include/x86os.h", "userspace/sdk/x86os.c",
+  "userspace/bin/shell.c", "userspace/gui/compositor/desktop.c",
+  "userspace/gui/apps/browser/main.c",
+  "scripts/generate_syscall_abi.py", "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+  "scripts/run_qemu_runtime_desktop.py", "scripts/test-reist-runtime.ps1",
+  "test/test_terminal_input.py", "test/test_terminal_input_host.c",
+  "test/test_shell_source.py", "test/test_syscall_abi_source.py",
+  "test/test_desktop_source.py", "test/test_browser_runtime_source.py",
+  "test/test_user_program_toolchain.py", "test/test_process_memory.py",
+  "test/test_process_memory_host.c"
+]
+invariants = [
+  "input admission precedes dequeue and is bound to one exact live process generation; stale or unrelated readers cannot steal bytes",
+  "focus policy remains in Ring 3; Ring 0 adds only bounded ownership mediation and cleanup, not GUI or terminal parsing",
+  "owner transfer revocation and recovery use validated lifecycle state and never revive stale authority or replay queued keys to a new owner",
+  "blocking readers use the existing single intrusive wait-node contract; ownership changes wake eligible readers without busy waiting",
+  "public syscall numbers and old wrappers remain compatible; unsupported standard features and versioned deviations are explicit",
+  "recovery console browser worker isolation mouse input and memory resilience remain required, not traded for input performance"
+]
+targeted_tests = [
+  "python test/test_terminal_input.py -v",
+  "python test/test_shell_source.py -v",
+  "python test/test_syscall_abi_source.py -v",
+  "python test/test_desktop_source.py -v",
+  "python test/test_browser_runtime_source.py -v",
+  "python test/test_process_memory.py -v",
+  "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-resources -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode memory-resilience -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required source lies outside allowed_files or an unrelated writer overlaps the candidate",
+  "progress requires bypassing rescue recovery generation admission private memory isolation or a frozen deadline",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: mediate terminal input ownership across desktop generations"
 evidence = []
 
 [[packages]]

@@ -10,6 +10,7 @@
 static reist_html_document_t doc;
 extern _Noreturn void _Exit(int);
 _Noreturn void reist_libc_fail(unsigned code) { (void)code; _Exit(70); }
+int reist_libc_init_process(size_t budget) { (void)budget; assert(0); return -12; }
 static const char *find(const char *text, const char *part) {
     size_t length=strlen(part);
     for (; *text; ++text) if (!strncmp(text,part,length)) return text;

@@ -494,7 +494,7 @@ class UserProgramToolchainTests(unittest.TestCase):
     def test_standard_system_programs_build_as_mypr_images(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "programs"
-            subprocess.run(
+            result = subprocess.run(
                 [
                     sys.executable,
                     str(ROOT / "scripts" / "build_system_programs.py"),
@@ -502,7 +502,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                     "--zig", str(ZIG),
                 ],
                 cwd=ROOT,
-                check=True,
+                check=False,
                 capture_output=True,
                 # This is a correctness build, not a wall-clock benchmark.
                 # Windows antivirus and cold temporary Zig caches can create
@@ -510,6 +510,10 @@ class UserProgramToolchainTests(unittest.TestCase):
                 # the dedicated incremental tests below.
                 timeout=240,
             )
+            # Preserve the actual compiler failure, not only its wrapper's
+            # exit status after the temporary build directory has disappeared.
+            self.assertEqual(result.returncode, 0,
+                             (result.stdout + result.stderr).decode("utf-8", "replace"))
             expected = {
                 "HELLO.PRG", "SYSINFO.PRG", "USBINFO.PRG", "DMESG.PRG",
                 "REPEAT.PRG",

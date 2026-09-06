@@ -2,6 +2,223 @@
 
 Stand: 6. September 2026
 
+## R3.11 abgenommen: externe Stylesheets und isolierte Recovery
+
+Die gezielt reparierte R3.11-Implementierung besteht alle eingefrorenen
+Gates. Externe Stylesheets und verschachtelte Imports werden durch echte
+LibCSS-Kaskade verarbeitet; nur der Browserkoordinator beschafft Bytes.
+Native Bedienung, Bilder, Mausrad, alte Seite bei Fehlern und Workerisolation
+bleiben nachgewiesen. Kernel und globale Speichergrenzen sind unveraendert.
+
+Hostnachweis: neun Gruppen, 90 Tests, 88 PASS und zwei bestehende Shell-Skips.
+Die echte CSS-Gruppe enthaelt zusaetzlich 25 Engine-/Worker-Unterfaelle.
+Final geaenderte Gruppen: Browserlaufzeit 21 PASS (2,291 s), GUI-Browser
+8 PASS (32,061 s), Toolchain 21 PASS (112,037 s). Unveraenderte bestandene
+Gruppen bleiben gueltig: Ressourcen (0,688 s), CSS (31,793 s), HTML5
+(4,832 s), libc (1,315 s), Navigation (1,032 s), Shell (0,067 s).
+
+Referenzbuilds ueber `test-reist-package.ps1 -Target ... -Video vga`:
+VMware PASS (12 s), QEMU PASS (56 s). QEMU-Gastgates ueber
+`test-reist-runtime.ps1 -Target qemu -Video vga`:
+
+- `-Mode runtime-desktop-browser`: PASS (95,193 s), alle bisherigen
+  Render-/Bild-/Eingabe-/Link-/Scroll-/Resize-/Mausrad-Assertions sowie echter
+  Worker-UD2, Timeout, Recovery und Close.
+- `-Mode runtime-desktop-browser-resources`: PASS (80,776 s), echte USB-
+  Testauswahl, externe/importierte Cascade-Pixel, Dubletten/Zyklen, fehlende
+  CSS-Datei bei erhaltener alter Seite, Abbruch, frischer Reload mit neuen
+  Pixeln/Generation, beide temporaeren Dateien entfernt und Close.
+
+Finale Belege unter `build/codex-agent/r311-reap-*`, Laufzeit-Hostlog
+`r311-exit-race-host-final.log`; fruehere Fehlerbelege bleiben erhalten.
+Identisches QEMU-Image vor/nach beiden Gastgates:
+`C5CDFC593EA48CF67EAE41957B81F70E68843A89288024AE1274D0284C9C5E35`.
+Kernel `4F221764847917123DB817745008B7A4C0EAE184CDA7B2D4D8C6AF29A644348F`,
+Buildkonfiguration `0618FA93CD8CF57B055498C7D05531200AC9E9252E39DDB08628733C75AB80A7`.
+
+Nachweisgrenzen: Die Ressourcen-Gastprobe ist lokal/NIC-los; HTTP/CSS-MIME,
+Redirects, Downgradeabwehr und Quoten sind hostgeprueft, keine zusaetzliche
+oeffentliche HTTPS-Gastabnahme. Kein vollstaendiger moderner Browser, keine
+Formulare, Cookies, POST oder JavaScript. Worker-/Dateiladezeiten bleiben
+Performance-Schuld: acht Spawns im Ressourcenlauf benoetigen zusammen
+13293 ms, trotz nur 621 ms fuer dessen 13 Dateilesevorgaenge.
+
+R3.11 geht auf done. Als naechstes separates Paket ist R3.12 fuer
+generationgebundene Terminal-Eingabezustaendigkeit definiert und aktiv:
+Die Recovery-Shell darf dem fokussierten Browser keine Zeichen stehlen.
+Hier wurde nur der Paketvertrag angelegt, keine solche OS-Implementierung.
+VMware-Pointerabnahme bleibt mit allen offenen Gates bewusst zurueckgestellt.
+
+### Wiederaufnahme: Worker-Exit und Reaping
+
+Der Nutzer hat die gezielte Diagnose/Reparatur mit `mach weiter` freigegeben.
+Alle 35 vorhandenen Pfade sind dem eigenen R3.11-Kandidaten zugeordnet;
+Scope, Kernel, Schutzpruefungen und eingefrorene Gates bleiben unveraendert.
+Ein neuer First-Failure-Datensatz nennt einmalig Exitpfad, Fehlercode,
+Probephase, Kindidentitaet und fehlgeschlagene Beobachtung. Fehler ausser
+`-5` werden nicht mehr faelschlich als Prozess-Erfolg zurueckgegeben.
+
+Read-only-Inventur von `task_exit_status`, `process_begin_exit` und
+`process_terminate` sowie der reale Browser-Hosttest zeigen ein konkretes
+Rennen: IPC wird waehrend Exitbereinigung vor dem Zombie-Commit entzogen.
+Ein erneuter Kill wird dann abgewiesen, obwohl Prozess/PID/Generation noch
+korrekt gepinnt sind. Der bisherige Browser behandelt diesen Zwischenstand
+als Identitaetsverlust und beendet sich. `r311-exit-race-regression-before.log`
+reproduziert exakt dieses Browserende. Die Reparatur laesst nach erneuter
+Eigentuemer-/Generationspruefung nur den bestehenden Kindprozess bis zum
+festen Ein-Sekunden-Reapbudget auslaufen. Kanal bleibt gesperrt, keine
+weiteren Killversuche, keine neuen Kinder und keine spaeten Szenenbytes.
+Das Budget wird beim ersten Fence gesetzt und beim Browsercleanup nicht
+erneuert. Ein festhaengendes Kind bleibt ein expliziter Timeoutfehler.
+
+Hosttests decken normalen Abschluss, dauerhaft abgelehnten Kill,
+Uptime-Ueberlauf, erste Fehlerdiagnose und unveraenderte Fremdgenerations-
+Ablehnung ab. Der erste neue Wrap-Fixture fehlte die reale Spawn-Pollzeit;
+der Test initialisiert diese jetzt wie die Produktion. Final 21 PASS
+(2,291 s), `r311-exit-race-host-final.log`. Die anschliessende vollstaendige
+Abnahme ist oben dokumentiert.
+
+### Vorheriger Stopp: Browserende nach Worker-Fault
+
+Finaler Selektorstand: 21 Browserlaufzeit-Hosttests PASS (2,297 s),
+VMware-Referenzbuild PASS (51 s), QEMU PASS (44 s). Die neue USB-Testauswahl
+ist damit hostgeprueft, aber noch nicht im Ressourcengast nachgewiesen.
+Der zuerst auszufuehrende normale Browsergate scheitert nach 106,994 s:
+Rendern, Bilder, Adresse, Links, Scrollbar und Transport-Exit bestehen;
+nach dem beabsichtigten Ring-3-UD2 des dritten HTMLWORK folgt jedoch direkt
+`BROWSER_CLOSE_OK`, ohne `BROWSER_HTML5_FAULT_CONTAINED_OK`. Es fehlen die
+anschliessenden Timeout-/Recovery-/CSS-/Resize-/Mausradnachweise. Der
+Close-Marker allein ist ausdruecklich kein PASS. Kein Kernelpanic im Log.
+
+Belege: `r311-selector-browser-runtime.log`,
+`r311-selector-browser-guest.log`, `r311-selector-browser.ppm`.
+Image-SHA256 vor/nach Lauf unveraendert:
+`6FFCF48FFEC74161228B38E1B8B4A230A96C970B1737DDF024794ED07F9D2DFA`.
+Kernel und `.windows-build-config.json` behalten die vorherigen Digests.
+Es lief kein paralleler Build; QEMU ist beendet. Das Read-only-Inventar
+grenzt den noch unbewiesenen Ursprung auf Browser-Exitpfade bei Kindidentitaet,
+Wait bzw. Surface-Empfang/Rendern ein. Das vorhandene Log nennt deren
+konkreten Status nicht; keine unbelegte IPC- oder Kernelursache behaupten.
+
+Die eingefrorene Stop-Regel greift nach der fokussierten Reparatur und dem
+erneuten Gatefehler: keine weitere Source-Reparatur, kein Zufalls-Retry,
+kein anschliessender Ressourcenlauf, keine Queue-Transition und kein Commit.
+Alle 35 Kandidatenpfade bleiben sichtbar und dem R3.11-Scope zugeordnet.
+Zur Wiederaufnahme ist zunaechst eine begrenzte Diagnose genau dieser
+Exitentscheidung mit realem Hostregressionstest noetig; Schutzpruefungen und
+Fristen duerfen nicht ignoriert werden. Fremde Subsystemdateien bleiben
+ohne explizite Erweiterung ausgeschlossen.
+
+### Wiederaufnahme: private Worker-Transferpuffer
+
+Der Nutzer hat mit `mach weiter` die gezielte Speicherreparatur nach dem
+zweiten Toolchainfehler freigegeben. Die 34 vorhandenen Pfade wurden als
+eigener Kandidat wiedererkannt; kein neuer/fremder Source-Writer. Der neue
+Queue-Vermerk erweitert weder allowed_files noch Gates oder Schutzgrenzen.
+HTMLWORK haelt Eingabe und dekodiertes Bundle jetzt in einer festen,
+separat zugelassenen privaten Ring-3-Allokation von 2230748 Byte statt BSS.
+Der Beginn der Fuenf-Sekunden-Frist liegt vor der Allokation. Alle normalen
+Returns laufen durch dieselbe Freigabe; Fault/Kill bleibt Aufgabe des
+bestehenden generationstreuen Kernel-Reapers. Die C-Parserarena ist davon
+getrennt, damit deren Initialisierung keine Transferbytes entwertet.
+Tests fuer Allokationsfehler, Fristablauf, Guardbytes und paarige Freigabe
+sind ergaenzt. CSS-Gate PASS (38,375 s), Toolchain 21 PASS (128,886 s),
+VMware-Referenzbuild PASS (14 s), QEMU PASS (48 s). HTMLWORK belegt 6440292
+Byte Programmregion bei unveraenderten 8388608 Byte Loaderlimit.
+
+Der erste neue Browser-Gastgate erreicht CSS-Pixel und Resize, laeuft aber
+in Phase 10 kurz vor dem Mausradnachweis in die unveraenderte 30-Sekunden-
+Frist. Belege: `r311-memory-browser-runtime.log`,
+`r311-memory-browser-failed-guest.log` und `r311-memory-browser-failed.ppm`.
+1842/1890 ms Dokumentauftraege, 2902/3205 ms Reflows; sechs Spawns zusammen
+8403 ms. Kein vollstaendiger Gast-PASS und kein Kandidatencommit.
+
+Eine fokussierte in-scope Reparatur entfernt ungenutzte Metadaten vom
+privaten Wireformat: Bundle v2 uebertraegt nur header + count Records +
+length CSS-Bytes. Leere Bundles kosten 16 statt 33808 Byte und vermeiden
+17 unnoetige Bulkpakete je CSS-Auftrag. Kapazitaeten, Identitaetspruefung,
+private Reserven, Parser und Fristen bleiben unveraendert. Der reale
+Pack/Unpack-Test prueft exakte Groessen, abgeschnittene/zusaetzliche Bytes
+und Count-Ueberlauf. Ressourcen PASS (0,688 s), Browserlaufzeit 20 PASS
+(3,423 s), echte CSS/Worker-Faelle PASS (31,793 s). Referenzbuilds und beide
+Gastgates bestaetigen den kompakten Stand teilweise: VMware PASS (55 s),
+QEMU PASS (48 s), vollstaendige normale Browserprobe PASS (98,382 s),
+einschliesslich Resize, beider USB-Mausradrichtungen und Close.
+
+Der erste Ressourcen-Gastlauf scheitert nach 94,740 s schon an der Auswahl:
+`s` erscheint als Konsolenecho, kein `BROWSER_RESOURCES_STARTED`; stattdessen
+laeuft die normale Probe bis zur vom Ressourcencontroller nicht bedienten
+Resize-Phase. Codeinventur bestaetigt die konkurrierende Terminalqueue:
+shell.c wartet beim abgekoppelten Desktop bewusst nicht, beide lesen
+getchar. Kein CSS-Gastnachweis aus diesem Lauf. Belege bleiben als
+`r311-compact-resources-*` erhalten. Eine fokussierte Reparatur ersetzt nur
+den Testselektor durch die bestehende USB-Mausradstrecke nach Bereitschaft
+beider Teilnehmer, exklusiv in der initialen Probephase. Normale Nutzung und
+spaete Mausradassertions bleiben unveraendert; kein Fristreset, Retry oder
+Kernel-/Compositor-Edit. Hosttests pruefen Bereitschaftsreihenfolge, einmalige
+Injektion, zwingenden Gast-ACK und Selektorgrenzen. Die echte Terminal-
+Foregroundautoritaet muss ein eigenes OS-Paket korrigieren, nicht ein
+zufaellig wiederholter Tastendruck. Finale Builds/Gastabnahme noch offen.
+
+Unten bleibt der vorangegangene Stopp unveraendert als Historie erhalten.
+
+### Vorheriger Stopp: Worker-Programmregion beim Toolchain-Gate
+
+Baseline ist die abgenommene R3.10-Implementierung `a86d4948`; die vom Nutzer
+explizit freigegebene Antwortadapter-Erweiterung wurde vor dem sauberen
+Kandidatenstart als `018f7d17` separat committed. Keine fremden Aenderungen,
+Agenten, Worktrees oder Push. Aktiver Scope und eingefrorene Gates bleiben
+`R3.11-browser-stylesheet-resources`.
+
+Der Kandidat verwendet echte LibCSS-Imports mit privaten CSS2-Bundles,
+generationstreuer Discovery/Acquisition/Reap-Folge, CSS-MIME-Pruefung,
+Reload-Frische und Abbruch. Externe Bytes kommen nur ueber den bestehenden
+Browserkoordinator/VFS/CURL, nie aus Parsercallbacks. 64 Ressourcen, acht
+Importkanten, 256 KiB je Datei, 1 MiB CSS insgesamt, 32 MiB opt-in Workerheap;
+fuenf Sekunden je Worker und absolute 30 Sekunden Akquisition bleiben fest.
+Prozessspeicher-Resilienz und Kernel bleiben unveraendert.
+
+Die Abnahme ist am wiederholten Toolchain-Gate gestoppt. Kein Implementierungscommit
+und keine vollstaendige Browser- oder VMware-Abnahme behauptet. Erste echte
+CSS-, Ressourcen- und Koordinatortests bestanden. Der erweiterte CSS-Test
+hatte einen undeclared-`strcpy`-Compilerfehler; die fokussierte Korrektur
+benutzt bestehendes memcpy und der CSS-Gate besteht danach (31,367 s).
+Der erste Toolchain-Gate meldete einen gekapselten Compilerfehler ohne
+Compilerstderr; der Test bewahrt dieses jetzt bei unveraendertem Exit-/
+240-Sekunden-Vertrag. Fuer Chrome werden ausschliesslich seine vorhandenen
+bounded Text-/Byte-Operationen verwendet, keine neue libc nachgebildet.
+Alle Logs bleiben unter `build/codex-agent/r311-*` erhalten.
+
+Finale acht Hostgruppen bestehen: Ressourcen 1 (0,692 s), echte CSS/Worker-
+Engine 1 mit 23 Unterfaellen (31,367 s), HTML5 1 (4,832 s), libc 4 (1,315 s),
+GUI-Browser 8 (32,953 s), Browserlaufzeit 20 (3,502 s), Navigation 4 (1,032 s),
+Shell 29 (0,067 s, zwei unveraenderte Skips). Das sind 68 Tests, 66 PASS und
+zwei Skips; keine Gastbehauptung aus dem gemockten Runner-PASS ableiten.
+
+`python test/test_user_program_toolchain.py -v` scheitert nach der fokussierten
+Korrektur erneut (115,335 s, 20 PASS/1 FAIL):
+`ld.lld: error: user program exceeds the 8 MiB loader region`.
+Vollstaendiger Beleg `r311-toolchain-repaired-host.log`, erster Fehler weiterhin
+in `r311-user_program_toolchain-host.log`. Betroffen ist HTMLWORK mit den neuen
+statischen Eingabe-/Bundle-Puffern plus der erhaltenen 4-MiB-Legacyarena.
+`config/user_program.ld` zaehlt BSS zur 8-MiB-Programmregion. Die bereits
+implementierten privaten Laufzeitheaps sind davon unabhaengig.
+
+Gemaess Paket-Stop-Regel keine weitere Implementierung, keine Referenzbuilds,
+keine QEMU-Laeufe, keine Queue-Transition und kein Kandidatencommit. Alle
+34 geaenderten/neuen Pfade wurden gegen allowed_files geprueft. Der naechste
+gezielte Reparaturansatz ist, die grossen Worker-Transferpuffer ueber die
+vorhandene private Ring-3-Speicheradmission statt als statisches BSS zu halten,
+mit Fehler-/OOM-/Reap-Pruefung. Loader-, Kernel-, Heapbudget- und Zeitgrenzen
+muessen dafuer nicht angehoben werden. Erfordert die Freigabe zur Wiederaufnahme
+nach dem zweiten Gatefehler, nicht das Verschieben oder Abschwaechen des Gates.
+
+Die vorhandenen build-Artefakte werden nicht als Kandidatennachweis verwendet:
+aktuelles Image-SHA256 `7BE9EB89FDFA96B20EBD82B6B18DE1185F490B68486E957F92CF2CB77DFEFE16`,
+Kernel `DAEA0E46621168BD5044972CB920351589919D88BA63F7C6DD32E0A9722551BA`.
+Sie unterscheiden sich vom historischen R3.10-Abnahmeimage; kein stilles
+Wiederverwenden dieser alten Gastnachweise fuer den neuen Kandidaten.
+
 ## R3.10 abgeschlossen: echte CSS-Kaskade, Boxlayout und Mausrad
 
 Die vollstaendige eingefrorene Browser-Gastabnahme besteht am 6. September

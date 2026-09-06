@@ -1,0 +1,3 @@
+@import "browser-stylesheet-main.css";
+.external p { color:#135724 !important }
+@media print { .external p { color:#ff0000 !important } }

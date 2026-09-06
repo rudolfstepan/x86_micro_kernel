@@ -234,11 +234,11 @@ static int project(node *n, uint32_t depth) {
     return 0;
 }
 
-int browser_html5_tree(const uint8_t *input, size_t length, node **result) {
+int browser_html5_tree_with_heap(const uint8_t *input, size_t length, node **result,uint32_t private_heap) {
     if (!input || !result || !length || length>REIST_HTML_INPUT_CAPACITY) return -22;
     *result=NULL;
     memset(&tree,0,sizeof(tree));
-    if (reist_libc_init(arena,sizeof(arena))) return -12;
+    if (private_heap ? reist_libc_init_process(32U*1024U*1024U) : reist_libc_init(arena,sizeof(arena))) return -12;
     node *root=create(9);
     hubbub_parser *parser=NULL;
     hubbub_tree_handler handler={comment_node,doctype_node,element_node,text_node,
@@ -261,6 +261,9 @@ int browser_html5_tree(const uint8_t *input, size_t length, node **result) {
     if (error!=HUBBUB_OK || tree.failed) return -28;
     *result=root;
     return 0;
+}
+int browser_html5_tree(const uint8_t *input,size_t length,node **result) {
+    return browser_html5_tree_with_heap(input,length,result,0);
 }
 int browser_html5_parse(const uint8_t *input, size_t length, reist_html_document_t *document) {
     if (!document) return -22;

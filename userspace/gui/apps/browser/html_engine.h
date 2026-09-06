@@ -14,6 +14,7 @@ struct node {
     void *css_data, *css_style, *css_classes;
 };
 int browser_html5_tree(const uint8_t *input, size_t length, node **root);
+int browser_html5_tree_with_heap(const uint8_t *input,size_t length,node **root,uint32_t private_heap);
 /* Worker-local HTML5 tree and semantic projection. Not a public DOM API.
  * Single call per process generation; no network, file or device authority.
  * Input 64 KiB, arena 4 MiB, 2048 cumulative nodes, 4096 attributes, string

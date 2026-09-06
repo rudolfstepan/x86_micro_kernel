@@ -10,6 +10,10 @@ typedef struct browser_response {
     uint32_t status, body_offset, body_length;
     char redirect[REIST_CURL_LOCATION_CAPACITY];
 } browser_response_t;
+enum browser_response_kind { BROWSER_RESPONSE_HTML, BROWSER_RESPONSE_IMAGE, BROWSER_RESPONSE_CSS };
+/* Typed extension; the legacy boolean wrapper below retains its semantics. */
+int browser_response_open_kind(const uint8_t *bytes, size_t length, const char *url,
+                               uint32_t kind, browser_response_t *result);
 /* CURL --include contract: original headers followed by an already decoded
  * body. Return 1 for a validated redirect, 0 for content, negative on error. */
 int browser_response_open(const uint8_t *bytes, size_t length, const char *url,

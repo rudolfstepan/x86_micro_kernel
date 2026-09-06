@@ -11,6 +11,21 @@ static int open_response(const char *head, const char *url, uint32_t image) {
     return browser_response_open((const uint8_t *)head, strlen(head), url, image, &response);
 }
 int main(void) {
+    const char css[]="HTTP/1.1 200 OK\r\nContent-Type: text/css; charset=UTF-8\r\nContent-Length: 3\r\n\r\na{}";
+    assert(browser_response_open_kind((const uint8_t *)css,sizeof(css)-1,"https://example.test/a.css",BROWSER_RESPONSE_CSS,&response)==0);
+    assert(response.body_length==3);
+    assert(open_response(css,"https://example.test/a.css",0)==-95);
+    assert(open_response(css,"https://example.test/a.css",1)==-95);
+    const char *bad_css[]={"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\na{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/css-extra\r\n\r\na{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/css; charset=latin1\r\n\r\na{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/css\r\nContent-Encoding: gzip\r\n\r\na{}"};
+    for (unsigned i=0;i<sizeof(bad_css)/sizeof(bad_css[0]);++i)
+        assert(browser_response_open_kind((const uint8_t *)bad_css[i],strlen(bad_css[i]),"https://example.test/a.css",BROWSER_RESPONSE_CSS,&response)==-95);
+    const char empty_css[]="HTTP/1.1 200 OK\r\nContent-Type: text/css\r\nContent-Length: 0\r\n\r\n";
+    assert(!browser_response_open_kind((const uint8_t *)empty_css,sizeof(empty_css)-1,"https://example.test/a.css",BROWSER_RESPONSE_CSS,&response));
+    assert(!response.body_length);
+    assert(browser_response_open_kind((const uint8_t *)css,sizeof(css)-1,"https://example.test/a.css",99,&response)==-22);
     for (unsigned code = 301; code <= 308; ++code) {
         if (code == 304 || code == 305 || code == 306) continue;
         char head[256]; snprintf(head,sizeof(head),"HTTP/1.1 %u Redirect\r\nLocation: ../new?p=1\r\nContent-Length: 0\r\n\r\n",code);
