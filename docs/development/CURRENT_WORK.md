@@ -2,6 +2,143 @@
 
 Stand: 6. September 2026
 
+## R3.19 abgenommen: Ressourcen-C++, SDK- und Ladewartekorrektur
+
+Sauberer Start auf `864f869a`, direkt im sichtbaren Hauptworktree. Genau
+R3.19 ist umgesetzt und abgenommen; kein Kernel-/ABI-/Frist-/Quotenwechsel.
+R3.20-model ist als Nachfolger definiert und aktiv, aber nicht implementiert.
+Seine eingefrorenen Eingabe-/Scrollmessungen muessen vor Modellumbau am
+noch unveraenderten C-Code erhoben werden; VMware bleibt zurueckgestellt.
+Der einzelne zuvor nicht reproduzierte Reflow-
+Timingabbruch bleibt als Risiko im R3.18-Verlauf sichtbar.
+
+`browser_resources.cpp` ist die einzige Ressourcenimplementierung fuer
+Browser und HTMLWORK. `ValidatedResources::open` erstellt nach der bisherigen
+vollstaendigen Validierung eine kleine geliehene Ansicht oder einen Fehler.
+Pack verwendet nur deren geprueften Snapshot; Unpack wird vor erfolgreicher
+Rueckgabe ueber dieselbe C-Admission validiert. Die elf C-Symbole, Layouts,
+Rueckgabecodes, aktuelle Version 3 und Legacy-v2-Decoder bleiben unveraendert.
+Kein Bundle im Result oder auf dem Stack, keine neue Heapallokation oder
+Nutzdatenkopie. Der Besitzer muss den gesamten geliehenen Speicher lebend und
+unveraendert halten; Reset/Mutation/Navigation/Freigabe invalidieren Ansichten.
+Eine Generation prueft keine Zeigerlebensdauer. Null neue externe Besitzer,
+Destruktoren oder Cleanup-Pfade; kein erfundenes Ressourcen-RAII.
+
+Buildadapter aktivieren das bestehende Profil nun auch fuer HTMLWORK und
+verfolgen die private hpp-Abhaengigkeit in beiden Programmen. C-Aufrufer und
+alle Fremdbibliotheken bleiben C. Der CSS-Hostadapter uebersetzt nur diese
+eine TU separat als C++, bei gleicher Symbolumleitung und insgesamt weiter
+120 Sekunden fuer seinen bisherigen Compile-/Linkschritt. Keine Gate-Assertion
+oder Zeitgrenze entfernt.
+
+Regression zuerst angelegt: fehlender neuer Header abgewiesen.
+Gezielter Vorlauf: je 4278 C/C++-Vergleiche in O0/O2 bestehen; im i386-
+Stackfixture fehlte zunaechst der vorhandene libc-Includepfad fuer string.h.
+Nur dieser Test-Includepfad wurde ergaenzt. Logs `r319/regression-before.log`
+und `r319/focused.log` unter `build/codex-agent/` bleiben erhalten.
+
+Neues eingefrorenes Ressourcen-Gate PASS: 5 Tests/6,547 s, darunter
+je 4278 echte Vergleichsfaelle, private Konstruktion, temporaere Borrows,
+Generationen, falsche Offsets/Quoten, Teil-Ausgaben bei Fehler, aktuelle und
+alte Wireversion, voller Pool und 4096 deterministische URL-Mutationen.
+Gepaarte Validierung: C 387,239 ns, C++ 385,902 ns (99,655 Prozent), unter
+120 Prozent und 50000 ns. Elf i386-Einstiegspunkte: maximal +12 Byte eigener
+Stack, auch mit konservativer Differenz an gemeinsamen externen Callees
+innerhalb +256 Byte. Kein unbekannter/indirekter/rekursiver Aufruf und keine
+neue Runtime-/Allocatorabhaengigkeit. Messung, Source-/Fixturehashes,
+Compilerprofile und Disassemblies: `r319/resources/`.
+
+Im ersten Lauf bestanden zwoelf der dreizehn Hostgruppen (68 Tests), darunter
+die echten HTML-/CSS-Worker-Fixtures sowie Formular-, Navigations- und
+Laufzeit-Hosttests. Die Toolchaingruppe scheiterte mit einem Fehler und einer
+fehlgeschlagenen Assertion (21 Tests, 161,090 s). Ihr externer SDK-Neubau
+ueberschreitet 60 Sekunden; die Ursache dieses separaten Zeitfehlers ist noch
+nicht bewiesen. Beim Systemprogrammbau weist die nun auch fuer HTMLWORK
+aktive C++-Admission `.eh_frame` ab. Fehlerlog bleibt erhalten:
+`r319/gate-test_user_program_toolchain.log`. Keine Zeitgrenze oder Pruefung
+geweitet und kein blinder Wiederholungslauf.
+
+Read-only-Pruefung der installierten sechs HTMLWORK-Abhaengigkeiten grenzt
+die verbotene Sektion auf `libclang_rt.builtins-i386.a`, Mitglied `builtins.o`,
+ein; libhubbub, libcss, libwapcaplet, libparserutils und libreistc bestehen.
+Der gemeinsame SDK-Builder erzeugt die Zig-Compilerhilfen bisher ohne
+`-fno-unwind-tables`. Ein separater diagnostischer Neubau mit genau diesem
+zusaetzlichen Toolchain-Schalter besteht die unveraenderte vollstaendige
+Objekt-Admission (1,792 s; `r319/builtins-no-unwind-diagnostic.log`). Keine
+Sektionen nachtraeglich entfernt, installierte Bibliothek und SDK-Builder
+unveraendert geblieben. Die anschliessend angefragte Erweiterung um
+`scripts/build_user_sdk.py` ist durch die direkte Nutzerantwort
+"weiter machen" freigegeben und in der Queue dokumentiert. Der SDK-Builder
+verwendet jetzt denselben nachgewiesenen Schalter; der externe SDK-Test
+validiert additiv jedes Mitglied aller sechs HTMLWORK-Archive.
+
+Reparaturlauf der unveraendert befristeten Toolchaingruppe ohne parallele
+Compilerlast: 21 Tests PASS, 153,700 s; externer SDK-Neubau und kompletter
+Systemprogrammbau bestehen. Log `r319/gate-test_user_program_toolchain-repair.log`.
+Der separate SDK-Timeout ist in diesem kontrolliert isolierten Lauf nicht
+reproduziert; keine bewiesene allgemeine Timingursache oder Fristaenderung.
+Damit zunaechst alle 89 Hosttests gruen; unveraenderte Ressourcen-/Hosteingaben
+behalten ihre bereits bestandenen Nachweise.
+
+Erste Referenzen PASS: VMware 18,398 s, QEMU 58,806 s. Browser und HTMLWORK
+bleiben bei 2801692/845868 Dateibytes und 6178829/2752100 Ladebytes, alle
+R3.19-Grenzen eingehalten. Erster Gastlauf: cpp-client 11,605 s, browser
+88,779 s, resources 75,550 s und forms 76,104 s PASS. Die oeffentliche
+Navigation scheitert nach 93,838 s: Beide geforderten Rastermarker liegen
+vor, aber der unveraenderte globale 30-Sekunden-Browser-Selbsttest endet
+zu spaet. Kein Crash; alle Dokumente/Redirects waren verarbeitet.
+Fehler inklusive Abschlusszustand bleibt in
+`r319/runtime-desktop-browser-public.guest.log` und zugehoerigem JSON erhalten.
+
+Ein unabhaengig reproduzierbarer Wartefehler im schon freigegebenen main.c:
+`finish_load_turn` schlief auch ohne lebendes Kind vor bereits ausfuehrbaren
+lokalen Ressourcen-/Redirect-/Reflow-/Bildschritten. Neuer echter Hostfall
+scheitert zuerst exakt an diesem Timerwait (`r319/ready-turns-before.log`),
+ohne Windows-Fehlerdialog. Solche begrenzten lokalen Folgeschritte erhalten
+jetzt genau eine Scheduler-Uebergabe statt eines unnoetigen Timerwaits.
+Lebende/abzuerntende Kinder, blockierte Queues, unerfuellte Reflowbedingungen
+und ausgeschoepfte Bildslots behalten den Idlewait. Kein Retry-Spin,
+zusaetzlicher Worker, geaenderter Cache, erweitertes IPC-Turnbudget oder
+verschobene/erhoehte Frist. Runtime-Hostgruppe inklusive unveraenderter
+Fehler-/Reapfaelle und neuer Ready/Blocked-Regression: 29 Tests PASS,
+6,435 s (`r319/gate-test_browser_runtime_source-ready.log`). Betroffene
+Hostgruppen danach erneut PASS: Toolchain 21/152,543 s, GUI-Browser
+8/33,895 s und Public-Navigation 2/1,619 s. Keine geaenderten Assertions
+oder Fristen; zusammen mit unveraenderten Nachweisen weiter 89 Tests.
+
+Finale Referenzen mit dieser Reparatur: VMware 61,879 s und QEMU 58,076 s
+PASS. Alle sechs protokollierten SDK-/Programm-Artefakte sind zwischen
+beiden Referenzen identisch. BROWSER.PRG SHA-256
+`f5c6e4f50011aad1a1d610fd4cecd963fae0a2b661f851fbf9de82641e2a6002`,
+HTMLWORK.PRG `f346bff0934adc119e4b5c5f83f06c828b1c739a1b6d2f7ba7b148ce088f1f37`.
+Datei-/Ladegroessen bleiben exakt auf R3.18-Niveau, unter allen R3.19-Grenzen.
+Desktop, CPPTEST und libreistcpp sind gegenueber R3.18 unveraendert.
+Finale oeffentliche Navigation PASS, 93,013 s Hostlaufzeit: lange CSS-/Bild-
+URLs, exakte sieben HTTP-Anfragen inklusive Redirects/Import, Windows-1252,
+beide Rasterpruefungen und CLOSE_OK innerhalb der unveraenderten Gastfrist.
+Autoritative finale JSON-/Gastlogs liegen unter `r319/ready/`; alter Fehler
+bleibt daneben erhalten. Alle fuenf finalen Gastgates bestehen:
+
+| `test-reist-runtime.ps1 -Mode ... -Target qemu -Video vga` | Ergebnis | Hostsekunden |
+|---|---|---:|
+| `cpp-client` | PASS | 11,799 |
+| `runtime-desktop-browser` | PASS | 89,244 |
+| `runtime-desktop-browser-resources` | PASS | 74,344 |
+| `runtime-desktop-browser-forms` | PASS | 75,556 |
+| `runtime-desktop-browser-public` | PASS | 93,013 |
+
+Die Nachweise umfassen normale C++-Lebensdauer/OOM/Fault/Kill/Reap und
+Rueckkehr zur Shell, Browserlinks/Bilder/native Scrollbar/Mausrad,
+Worker-Fault/Timeout/Recovery, Ressourcen-Cancel/Fencing/Reload/Cleanup sowie
+Formularwerte nach Eingabe, Wheel, Reflow, Reset, Ablehnung und Wiederherstellung.
+Keine Abschwaechung der Gates oder Wiederholung unveraenderter Messquellen.
+Diff-/Scope-/Hash-/Gateaudit: `r319/candidate-audit.json`; keine Umsetzung
+des Nachfolgepakets und kein Push. Nutzen des C++-Piloten ist gepruefte
+Snapshot-Publikation ohne erfundene Ownership; keine behauptete Reduktion
+von Cleanup-Pfaden oder neue Webkompatibilitaet. Der beobachtete SDK-Timeout
+und das fruehere Reflow-Timingrisiko bleiben ohne bewiesene allgemeine Ursache
+dokumentiert. Kein allgemeiner Timing-/Live-Internet-/WCET-Claim.
+
 ## R3.18 abgenommen: Response-C++ mit erhaltener C-Grenze
 
 Der echte Browser verwendet jetzt ausschliesslich die C++-Response-Admission.

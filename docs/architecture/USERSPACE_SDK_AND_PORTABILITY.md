@@ -466,6 +466,33 @@ auf dem weiterhin 32-KiB-grossen bewachten Userspace-Stack. Kein Schutzabbau.
 Stack-/Laufzeit-/Groessennachweise und das verbleibende intermittierende
 Worker-Timingrisiko stehen in CURRENT_WORK. Profil 1 wird nicht gelockert.
 
+## Abgenommener Ressourcen-Pilot R3.19
+
+Browser und HTMLWORK verwenden dieselbe `browser_resources.cpp`-Admission
+hinter den elf unveraenderten C-Funktionen. Die private `ValidatedResources`-
+Factory liefert einen geprueften geliehenen Snapshot oder einen Fehler.
+Pack serialisiert nur einen zugelassenen Snapshot; Unpack behaelt beide alten
+Wireprofile und muss vor Erfolg erneut validieren. Fehlgeschlagene C-Ausgabe
+bleibt verwerfbare Teilausgabe, kein typisierter Erfolg.
+
+Die Ansicht haelt nur einen const-Zeiger, keinen Bundle-/Payloadbesitz und
+keine Datei-, Netzwerk- oder Prozessautoritaet. Ihre geprueften Entry-/Byte-
+Zugriffe bleiben an lebenden, unveraenderten Besitzerspeicher gebunden.
+Reset, Mutation, Navigation oder Freigabe invalidieren alle abgeleiteten
+Ansichten; Generationspruefungen ersetzen diese Lebensdauerpflicht nicht.
+Keine Whole-Bundle-Kopie, neue Allokation oder Destruktorregistrierung.
+Der bestehende serialisierte URL-Scratch-Vertrag bleibt erhalten.
+Auch die bestehende Zig-Compilerhilfsbibliothek wird im SDK mit
+`-fno-unwind-tables` erzeugt. Das passt ihre Erzeugung an das bereits geltende
+Profil an; keine nachtraegliche Abschnittsentfernung oder Ausnahme von der
+vollstaendigen Archiv-Admission. Der externe SDK-Test prueft alle Mitglieder
+der sechs HTMLWORK-Abhaengigkeiten, einschliesslich Compilerhilfen.
+Alle quantitativen Grenzen und die Browser-/Worker-Gastabnahme stehen in der
+Queue; 89 Hosttests, beide Referenzen und alle fuenf Gastgates bestehen.
+Die gezielte Ladewartekorrektur wartet nur bei noch nicht ausfuehrbarer Arbeit
+auf einen Timer; sie aendert keine Frist oder Kind-/IPC-Grenze.
+Ergebnisse, Messdaten und verbleibende Risiken siehe CURRENT_WORK.
+
 ## Dokumentationsvertrag
 
 Öffentliche Header sind die normative API-Referenz und verwenden

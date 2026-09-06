@@ -284,6 +284,10 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertTrue((include / "libwapcaplet/libwapcaplet.h").is_file())
             for archive in ("libreistc.a", "libwapcaplet.a", "libhubbub.a", "libparserutils.a", "libcss.a", "libclang_rt.builtins-i386.a"):
                 self.assertEqual((library / archive).read_bytes()[:8], b"!<arch>\n")
+                # HTMLWORK's mixed C/C++ boundary admits every input member,
+                # including upstream C and compiler arithmetic support.
+                with self.subTest(cpp_archive=archive):
+                    builder.validate_cpp_object((library / archive).read_bytes())
             for dependency in ("libhubbub", "libparserutils", "libcss"):
                 self.assertTrue((sdk / "usr/share/licenses" / dependency / "COPYING").is_file())
                 self.assertTrue((library / "pkgconfig" / (dependency + ".pc")).is_file())

@@ -3,13 +3,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from build_html_engine import extract
 from build_user_sdk import extract_wapcaplet
-from build_user_program import find_zig
+from build_user_program import find_zig, cpp_compile_flags
 DIAGNOSTIC = "--public-diagnostic" in sys.argv
 if DIAGNOSTIC:
     sys.argv.remove("--public-diagnostic")
@@ -54,14 +55,25 @@ class CssEngineTests(unittest.TestCase):
                 "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/css_engine.c",
                 "userspace/gui/apps/browser/browser_forms.c",
                 "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/html_protocol.c",
-                "userspace/gui/apps/browser/browser_resources.c", "userspace/programs/curl_http.c",
+                "userspace/programs/curl_http.c",
                 "userspace/gui/lib/html_document.c", "userspace/gui/lib/font.c")]
             executable = directory / "css-host.exe"
+            # One migrated TU, all upstream/host/worker sources remain C. Share
+            # the original 120-second compile/link budget and symbol adapters.
+            deadline = time.monotonic() + 120
+            resource = directory / "resources-cpp.o"
+            result = subprocess.run([*command[:2], *cpp_compile_flags(), *command[3:],
+                "-I"+str(ROOT / "userspace/cpp/include"), "-c",
+                str(ROOT / "userspace/gui/apps/browser/browser_resources.cpp"), "-o", str(resource)],
+                cwd=ROOT, env=environment, capture_output=True, text=True,
+                timeout=max(.01, deadline-time.monotonic()))
+            self.assertEqual(result.returncode,0,result.stderr)
+            objects.append(resource)
             response = directory / "compile.rsp"
             response.write_text("\n".join('"' + str(arg).replace('\\', '/') + '"'
                 for arg in [*command[2:], *sources, *objects, "-o", executable]), encoding="utf-8")
             result = subprocess.run([*command[:2], "@" + str(response)],
-                env=environment, capture_output=True, text=True, timeout=120)
+                env=environment, capture_output=True, text=True, timeout=max(.01, deadline-time.monotonic()))
             self.assertEqual(result.returncode,0,result.stderr)
             if DIAGNOSTIC:
                 for args in (("public-document",), ("public-meta",),

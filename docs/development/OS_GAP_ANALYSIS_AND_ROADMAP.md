@@ -12,8 +12,8 @@ reproduzierbaren Messdaten und QEMU-Renderprobe abgenommen; Details in
 C++20 ohne globale dynamische Initialisierung/Exit-Registrierung. `R3.17`
 ist mit 80 Hosttests, beiden Referenzbuilds und beiden Gastgates abgenommen:
 TASK-2001 liefert die sechs minimalen allokationsfreien Hilfstypen.
-`R3.18-browser-response-cpp` ist abgenommen; jetzt ist allein
-`R3.19-browser-resources-cpp` active, danach folgt model.
+`R3.18-browser-response-cpp` und `R3.19-browser-resources-cpp` sind abgenommen;
+jetzt ist allein `R3.20-browser-model-cpp` active, noch nicht implementiert.
 Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.
 
 Revision 1.1 richtet jeden Piloten am nachgewiesenen Besitz aus: gepruefte
@@ -32,8 +32,12 @@ Stackreparatur und ausdruecklich freigegebener Testtreiberkorrektur bestehen
 88 Hosttests, beide finalen Referenzen und alle fuenf Gastgates. Ein einzelner
 langsamer Reflow-Abbruch wurde nach Instrumentierung nicht reproduziert;
 seine Ursache bleibt offen, Schutz-/Zeitgrenzen unveraendert. Nachweise und
-Risiken in CURRENT_WORK. R3.19 friert als naechstes den Ressourcen-Piloten
-inklusive Browser- UND Worker-Grenze ein, ohne bereits Code zu migrieren.
+Risiken in CURRENT_WORK. R3.19 liefert gepruefte geliehene Ressourcen-Snapshots
+hinter unveraenderten Browser-/Worker-C-Aufrufen: 89 Hosttests, beide Referenzen
+und fuenf finale Gastgates bestanden. SDK-Unwind-Erzeugung und unnoetiger
+Lade-Idlewait sind ohne Schutzabbau korrigiert. Der Modelnachfolger friert
+gepaarte C-Laufzeit, Groesse, privaten Speicher/Stack und echte Eingabe-/Scroll-
+Metriken ein; die gemeinsame Probe muss zuerst am noch-C-Modell belegt werden.
 
 Am 6. September ausdruecklich bestaetigte Browserreihenfolge: R3.15 fuer
 maxlength und native Formulardarstellung zuerst vollstaendig abnehmen und

@@ -113,7 +113,20 @@ static void finish_load_turn(const browser_state_t *state,uint32_t processed,uin
     /* Successful bounded IPC packets already yield to the peer. Do not add an
      * idle timer wait just because no keyboard/mouse event accompanied them.
      * Empty/full queues make no progress and must still sleep, never spin. */
-    if(!processed && state->load_progress==progress) (void)x86os_sleep_ms(1U);
+    if(processed || state->load_progress!=progress) return;
+    uint32_t images=documents[state->active].image_count;
+    uint32_t images_done=state->image_next>=images || state->image_next>=BROWSER_IMAGE_CACHE_COUNT;
+    /* These local service_loads branches consume a queued transition or one
+     * bounded image slot on the next turn; they do not wait for a peer. Give
+     * other tasks one scheduling opportunity without an unnecessary timer
+     * delay. A live/cancelling child still takes the original idle path. */
+    if(!state->exit_requested && state->child_pid<=0 &&
+       (state->pending || state->parse_pending || state->follow_redirect || state->resource_loading ||
+        (state->loaded && (state->reflow_pending || !images_done)))) {
+        (void)x86os_yield();
+        return;
+    }
+    (void)x86os_sleep_ms(1U);
 }
 
 /* Probe-only counters; no extra clock syscalls in normal browser operation.

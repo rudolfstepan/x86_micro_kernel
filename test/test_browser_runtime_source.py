@@ -522,6 +522,38 @@ int main(int argc, char **argv) {
     assert(copy_reflow_assets(1,0)==-84 && image_cache[1][0].pixels[0]==0x987654);
     assert(copy_reflow_assets(0,0)==-84 && copy_reflow_assets(2,0)==-84);
     memset(workspace->resources,0,sizeof(workspace->resources)); memset(image_cache,0,sizeof(workspace->images));
+    /* Local follow-up work is already runnable after a resource/reap/reflow
+     * transition. Yield once, but never pay an idle timer tick before it.
+     * A still-live child remains a wait, even with queued navigation. */
+    browser_state_t ready={0};
+    uint32_t *queued[]={&ready.pending,&ready.parse_pending,&ready.follow_redirect,&ready.resource_loading};
+    unsigned expected_idle=idle_sleeps, expected_yields=handoff_yields;
+    for(unsigned i=0;i<4;++i) {
+        *queued[i]=1;
+        finish_load_turn(&ready,0,ready.load_progress);
+        assert(idle_sleeps==expected_idle && handoff_yields==++expected_yields);
+        ready.child_pid=81;
+        finish_load_turn(&ready,0,ready.load_progress);
+        assert(idle_sleeps==++expected_idle && handoff_yields==expected_yields);
+        ready.child_pid=0; *queued[i]=0;
+    }
+    uint32_t previous_images=documents[0].image_count;
+    documents[0].image_count=0; ready.reflow_pending=1;
+    finish_load_turn(&ready,0,ready.load_progress);
+    assert(idle_sleeps==++expected_idle && handoff_yields==expected_yields);
+    ready.loaded=1;
+    finish_load_turn(&ready,0,ready.load_progress);
+    assert(idle_sleeps==expected_idle && handoff_yields==++expected_yields);
+    ready.reflow_pending=0; documents[0].image_count=1;
+    finish_load_turn(&ready,0,ready.load_progress);
+    assert(idle_sleeps==expected_idle && handoff_yields==++expected_yields);
+    ready.image_next=1;
+    finish_load_turn(&ready,0,ready.load_progress);
+    assert(idle_sleeps==++expected_idle && handoff_yields==expected_yields);
+    documents[0].image_count=BROWSER_IMAGE_CACHE_COUNT+1; ready.image_next=BROWSER_IMAGE_CACHE_COUNT;
+    finish_load_turn(&ready,0,ready.load_progress);
+    assert(idle_sleeps==++expected_idle && handoff_yields==expected_yields);
+    documents[0].image_count=previous_images; idle_sleeps=handoff_yields=0;
     /* A single-slot peer can consume the next packet when given the CPU.
      * Bound each UI turn to eight actual packets; an empty/full queue is not
      * permission for a yield/retry spin. No timer tick per successful packet. */
@@ -1407,7 +1439,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/apps/browser/browser_response.cpp", "userspace/programs/curl_http.c",
-                      "userspace/gui/apps/browser/browser_resources.c", "userspace/gui/apps/browser/browser_forms.c",
+                      "userspace/gui/apps/browser/browser_resources.cpp", "userspace/gui/apps/browser/browser_forms.c",
                       "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/lib/font.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])

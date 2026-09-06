@@ -103,7 +103,7 @@ PROGRAMS = {
         ROOT / "userspace/gui/apps/browser/browser_images.c",
         ROOT / "userspace/gui/apps/browser/browser_response.cpp",
         ROOT / "userspace/gui/apps/browser/browser_scene.c",
-        ROOT / "userspace/gui/apps/browser/browser_resources.c",
+        ROOT / "userspace/gui/apps/browser/browser_resources.cpp",
         ROOT / "userspace/gui/apps/browser/html_protocol.c",
         ROOT / "userspace/programs/curl_http.c",
         ROOT / "userspace/gui/lib/html_document.c",
@@ -242,7 +242,7 @@ PROGRAMS["HTMLWORK.PRG"] = (
     ROOT / "userspace/gui/apps/browser/browser_forms.c",
     ROOT / "userspace/gui/apps/browser/css_engine.c",
     ROOT / "userspace/gui/apps/browser/browser_scene.c",
-    ROOT / "userspace/gui/apps/browser/browser_resources.c",
+    ROOT / "userspace/gui/apps/browser/browser_resources.cpp",
     ROOT / "userspace/programs/curl_http.c",
     ROOT / "userspace/gui/apps/browser/html_protocol.c",
     ROOT / "userspace/gui/lib/html_document.c",
@@ -372,10 +372,12 @@ def main() -> None:
                 link_libraries.extend([sdk.cpp_library, sdk.libc_library])
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
-            if name == "BROWSER.PRG":
+            if name in ("BROWSER.PRG", "HTMLWORK.PRG"):
                 includes.insert(0, sdk.cpp_include_dir)
-                dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_response.hpp")
+                dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_resources.hpp")
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
+            if name == "BROWSER.PRG":
+                dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_response.hpp")
                 dependency_files.append(ROOT / "assets/fonts/reist-unicode.psf")
                 vendor = ROOT / "third_party/stb_image.h"
                 pin = ROOT / "third_party/stb_image.sha256"
@@ -394,7 +396,7 @@ def main() -> None:
                 runtime_libraries=runtime_libraries,
                 cache_directory=global_cache_directory,
                 dependency_files=dependency_files,
-                cpp=name in ("CPPTEST.PRG", "BROWSER.PRG"),
+                cpp=name in ("CPPTEST.PRG", "BROWSER.PRG") or name == "HTMLWORK.PRG",
                 compile_flags=(
                     (["-fno-inline-functions"]
                      if name == "STORAGE.PRG" else []) +

@@ -16,8 +16,16 @@ die dafuer ausdruecklich freigegebenen Erweiterungen stehen in der Queue.
 Quantitative Messgrenzen und Gate-Befehle wurden nicht gelockert. Das einmalige,
 nach Instrumentierung nicht reproduzierte Worker-Timingproblem bleibt in
 CURRENT_WORK sichtbar; kein allgemeiner Performance-Fix behauptet.
-R3.19 fuer Ressourcen-Snapshots ist als naechstes Paket vorab eingefroren,
-aber noch nicht implementiert. Kein gesamter Browser-/main.c-Sprachwechsel.
+R3.19 fuer Ressourcen-Snapshots ist fuer Browser UND HTMLWORK abgenommen:
+89 Hosttests, beide Referenzen und alle fuenf Gastgates. Keine Whole-Bundle-
+Kopie oder erfundene Ownership: gepruefte geliehene Ansichten invalidieren
+bei Mutation, Reset, Navigation und Freigabe des Besitzers. Die bisherigen
+C-Aufrufe, beide Wireprofile und Ring-3-Grenzen bleiben erhalten.
+Kein gesamter Browser-/main.c-Sprachwechsel. Die SDK-Unwind-Erzeugung und
+ein unnoetiger Idlewait vor lokal ausfuehrbaren Ladeschritten sind korrigiert,
+ohne Pruefungen oder Fristen zu lockern. R3.20-model ist als naechstes Paket
+mit vorab festgelegter C-/UI-Baseline und quantitativen Grenzen aktiv;
+noch keine Modelimplementierung in diesem Lauf.
 Die spaeter hinzugefuegte [Nutzeranleitung](../REIST_CPP_MIGRATION_PLAN.md)
 praezisiert diese Reihenfolge: committete Baseline TASK-0001, gemischte Toolchain
 und eingeschraenktes C++20-Profil TASK-1001/1002, minimale `libreist++`-Typen

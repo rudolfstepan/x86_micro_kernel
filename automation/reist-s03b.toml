@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.19-browser-resources-cpp"
+active_id = "R3.20-browser-model-cpp"
 
 [policy]
 one_package_per_run = true
@@ -1188,10 +1188,12 @@ evidence = []
 
 [[packages]]
 id = "R3.19-browser-resources-cpp"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Encapsulate validated resource snapshots behind the existing C browser and worker boundary"
+runtime_repair = "The first public-navigation guest run renders both required documents but exceeds the unchanged 30-second browser probe budget. A real-main.c host regression reproduces unconditional idle sleep with already runnable local resource/redirect/reflow/image work. In the already allowed main.c, yield once instead of waiting for a timer only when no child is live and a bounded local service_loads transition is ready. Keep the single child, eight IPC packets per turn, peer/full-queue idle waits, all deadlines, probe assertions and cleanup unchanged; no cache policy or worker reuse. Preserve the failed public log, prove the ready/blocked distinction with actual code, and rerun affected final-candidate gates."
+repair_extension = "2026-09-06: User says weiter machen in direct response to the requested SDK-builder scope extension. Continue the attributable R3.19 candidate and add scripts/build_user_sdk.py solely to generate the existing compiler-rt archive without unwind tables, as already demonstrated by isolated full-object admission. Preserve the complete archive validator, upstream arithmetic implementations, all ABI/profile/size/deadline limits and failed evidence. Tighten the installed-SDK regression and diagnose the separate 60-second SDK-build timeout with bounded evidence; no silent scope growth or blind retries."
 user_direction = "Continue approved migration-plan revision 1.1 in response -> resources -> model order, ahead of deferred VMware and optional GUI migration. Direct visible-main-worktree execution, one cohesive package, no agents or push. The user's latest direction is to diagnose and correct encountered errors without routine confirmation; preserve failure evidence, repair demonstrated causes and rerun affected gates, never blindly retry or weaken acceptance."
 scope = "TASK-3002 first validated-snapshot slice. Inventory confirms browser_resources owns no heap, file, network or worker handle: its version-3 inline metadata and 1-MiB byte pool belong to the caller workspace. Migrate its sole implementation from .c to .cpp under the accepted ISO C++20 freestanding profile, preserving RFC 3986 URL identity, all C symbols/return codes/layouts, generation checks, dense-ready-prefix offsets, capacities, pack semantics and both current and legacy-v2 unpack cases in one package. A private named factory returns a checked borrowed view or an explicit error; validation, pack/unpack publication and actual Browser/HTMLWORK C callers must use this path, not a parallel model. Do not return or copy the approximately 2-MiB bundle by value or in Result. Document owner lifetime, immutable borrowing and invalidation on mutation/reset/navigation/free; generation validation is not memory safety for dangling pointers. No invented RAII/destructor, retained external authority, cache growth, policy changes, parser rewrite, worker reuse, browser_model/main.c language conversion, JavaScript or kernel change. Adapt both real BROWSER and HTMLWORK mixed-language builds and affected host compilers narrowly; pinned C dependencies remain C and workers remain separate Ring-3 processes. Preserve cancellation/fault/OOM/reap and last-valid-page behavior."
 measurement_contract = "Frozen before resource candidate implementation: Windows host, Zig 0.16 Clang, -O2 -UNDEBUG -fno-builtin, no LTO. Exact accepted C oracle from 2e17d5fb8eb414d4676d3a5fbd8592df8e5dd195:userspace/gui/apps/browser/browser_resources.c, Git blob 551b6cf59349c2bc7d6d6ee6af826b8d41479bb2 (unchanged through R3.18); identical C URL/HTTP dependencies and shared fixture for both candidates. Fixture initializes generation 7, document https://example.test/page, one ready resource/effective URL https://example.test/a.css with exactly three CSS bytes p{}, then times 200000 successful browser_resources_validate calls per fresh process using QueryPerformanceCounter outside the loop. Five alternating fresh C/C++ process pairs, 15-second per-process deadline; C++ median <= 120 percent of paired C AND <= 50000 ns/call. Record all samples, compiler/platform/flags and source/fixture digests. BROWSER.PRG <= 2867228 bytes and loader payload <= 6244365 bytes; HTMLWORK.PRG <= 911404 bytes and loader payload <= 2817636 bytes. No new heap allocation, whole-bundle temporary, payload copy during validation or increased pack/unpack copying; a typed borrowed result is at most 64 bytes. Compiler direct-call stack proof must reject unknown/indirect/recursive edges and keep each migrated C entrypoint's peak <= its paired C peak plus 256 bytes, respecting the existing 32-KiB total guest stack. UI input-to-paint/scroll delta is not applicable because event dispatch/rendering is unchanged; all existing interaction gates still apply. Cleanup inventory remains zero owned external resources and zero new destructor/close operations; demonstrate checked-publication invariants with compile-negative and real behavior tests. No post-failure limit changes, WCET claim or browser-compatibility claim from this microbenchmark."
@@ -1203,6 +1205,7 @@ allowed_files = [
   "userspace/gui/apps/browser/browser_resources.h", "userspace/gui/apps/browser/browser_resources.hpp",
   "userspace/gui/apps/browser/main.c", "userspace/gui/apps/browser/html_worker.c",
   "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/css_engine.c",
+  "scripts/build_user_sdk.py",
   "scripts/build_system_programs.py", "scripts/measure_cpp_baseline.py",
   "scripts/run_qemu_runtime_desktop.py",
   "test/test_browser_resources_cpp.py", "test/test_browser_resources_cpp_host.cpp",
@@ -1246,6 +1249,64 @@ stop_conditions = [
   "no safe in-scope correction or diagnostic remains and completion requires new authority"
 ]
 commit_message = "refactor: validate browser resource snapshots through bounded C++ views"
+evidence = []
+
+[[packages]]
+id = "R3.20-browser-model-cpp"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Encapsulate existing browser model values without moving navigation ownership"
+user_direction = "Continue approved migration-plan revision 1.1 in response -> resources -> model order, ahead of deferred VMware and optional GUI work. Direct visible-main-worktree execution, one cohesive package, no agents or push; repair demonstrated in-scope failures without blind retries or weaker gates. R3.19 only defines this successor; do not implement it in the resource run."
+scope = "TASK-3003: migrate the single browser_model.c implementation to the accepted C++20 profile, preserving its six C entrypoints, caller-owned layouts/image slots/scrollbar state, UTF-8 wrapping, anchor resolution, address editing, native range controls and return conventions. Introduce small private checked value/range adapters used by the real C entrypoints, not a parallel model, navigation owner or polymorphic hierarchy. No owned external resource exists here; no invented RAII or destructor. Preserve C callers and pinned C dependencies. main.c stays C and may receive only bounded probe-only timing instrumentation and narrow integration of the unchanged model boundary; do not migrate navigation/worker/cache lifetimes or parser/renderer algorithms. No GUI/compositor, SDK, allocator, transport, kernel, public ABI, quota, UI appearance or web-feature change. Preserve last-valid-page, cancellation, generation and bounded worker reap."
+measurement_contract = "Freeze before model implementation. C oracle: 864f869a7862af219eedd7e42dee1abba14ebfdf:userspace/gui/apps/browser/browser_model.c, blob 6b0de40d251a7c1ba70e2989cf361f3bb0a7b737, unchanged by R3.19. Same existing C html_document/value_controls dependencies. Windows Zig 0.16 Clang, -O2 -UNDEBUG -fno-builtin, no LTO, QueryPerformanceCounter outside loops, five alternating fresh C/C++ process pairs, 15 seconds per process. Two fixtures: 200000 address cycles with a 256-byte buffer initially https://example.test/, cursor/length at end and replace=0, insert x then backspace; 200000 scrollbar cycles from zero state configured width=800/view=502/total=1800/position=337, press thumb+4,+11, move +20, release at the moved coordinate, configure back to 337. Assert each state/return; C++ median for each fixture <=120 percent of paired C and <=50000 ns/cycle. Layout correctness uses the exact HTML/image fixture in test_browser_model_host.c and differential bounded edge cases; no layout throughput claim. BROWSER.PRG <=2867228 bytes and loader payload <=6244365 bytes; HTMLWORK.PRG remains exactly 845868 bytes/payload 2752100 and unchanged from accepted R3.19. No new heap allocation, layout/image payload copy or external owner/destructor; value/view Result <=64 bytes, each migrated C entrypoint stack peak <= paired C peak +256 bytes, unknown/indirect/recursive stack edges rejected, total guest stack remains 32768 bytes and browser workspace <=37748736 bytes. Record all source/fixture/compiler/profile digests and every sample."
+ui_measurement_contract = "UI metrics apply because model code participates in input and scrolling. Before model source conversion, implement and freeze only a shared probe-only timing harness against the still-C baseline; save its instrumented C image and source/fixture digests under ignored build/codex-agent/r320. No model candidate implementation until baseline evidence is recorded. Final comparison uses the same harness/fixture with one fresh baseline-C and one fresh candidate-C++ boot: Windows QEMU i386 TCG, one vCPU, 1024 MiB, qemu/vga, headless snapshot, unchanged timer policy, no concurrent compiler/VM load. Fixed local scrolling document, 32 acknowledged printable address-key edits and 32 acknowledged wheel scrolls alternating down/up, no network. Timestamp monotonic host input dispatch to correlated completed Surface paint acknowledgement, verify corresponding guest pixel/state change; report this bounded software input-to-paint/scroll latency, not physical-display scanout or WCET. Preserve raw samples: nearest-rank p95 for each stream <=250 ms and <=120 percent of paired C p95 +1 ms; every sample <=500 ms. Abort missing/duplicate/out-of-order acknowledgements or clock errors; 180-second per-boot deadline, no retries or tuned thresholds. The final model runtime gate must validate the saved baseline provenance, identical telemetry and fixture, both image digests and all quantitative bounds. Do not relabel a host microbenchmark or render submission alone as input-to-paint."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "userspace/gui/apps/browser/browser_model.c", "userspace/gui/apps/browser/browser_model.cpp",
+  "userspace/gui/apps/browser/browser_model.h", "userspace/gui/apps/browser/browser_model.hpp",
+  "userspace/gui/apps/browser/main.c", "scripts/build_system_programs.py",
+  "scripts/measure_cpp_baseline.py", "scripts/run_qemu_runtime_desktop.py", "scripts/test-reist-runtime.ps1",
+  "test/test_browser_model_cpp.py", "test/test_browser_model_cpp_host.cpp", "test/test_browser_model_cpp_bench.c",
+  "test/test_browser_model_host.c", "test/test_gui_browser_source.py",
+  "test/test_browser_runtime_source.py", "test/test_user_program_toolchain.py"
+]
+invariants = [
+  "one real model implementation and all six existing C symbols/layouts remain compatible",
+  "borrowed model values never imply navigation worker handle or heap ownership",
+  "no kernel public ABI runtime profile deadline or capacity weakening",
+  "all quantitative host and real guest interaction gates pass before commit",
+  "UI baseline and identical bounded telemetry precede any model conversion; no post-failure retuning"
+]
+targeted_tests = [
+  "python test/test_browser_model_cpp.py -v", "python test/test_cpp_types.py -v",
+  "python test/test_user_cpp.py -v", "python test/test_user_program_toolchain.py -v",
+  "python test/test_cpp_baseline.py -v", "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_navigation_source.py -v", "python test/test_browser_runtime_source.py -v",
+  "python test/test_browser_public_navigation.py -v", "python test/test_browser_forms.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode cpp-client -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-resources -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-public -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-model -Target qemu -Video vga"
+]
+stop_conditions = [
+  "required change leaves allowed_files or unrelated changes overlap the candidate",
+  "existing model behavior cannot be preserved without changing an independent failure boundary",
+  "missing or failed frozen UI baseline prevents model conversion; retain evidence and repair only demonstrated in-scope causes",
+  "completion requires weakening a frozen gate or new authority"
+]
+commit_message = "refactor: encapsulate browser model values behind the C boundary"
 evidence = []
 
 [[packages]]

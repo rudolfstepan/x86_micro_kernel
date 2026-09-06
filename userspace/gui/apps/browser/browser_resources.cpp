@@ -1,6 +1,8 @@
-#include "browser_resources.h"
+#include "browser_resources.hpp"
+extern "C" {
 #include "../../../programs/curl_http.h"
 #include <string.h>
+}
 
 static uint32_t url_length(const char *s) {
     if(s) for(unsigned i=0;i<BROWSER_RESOURCE_URL_CAPACITY;++i) if(!s[i]) return i;
@@ -110,7 +112,8 @@ int browser_resources_store(browser_resources_t *b,uint32_t i,const char *effect
     b->length+=length; r->ready=1;
     return 0;
 }
-int browser_resources_validate(const browser_resources_t *b,const char *document,uint32_t generation) {
+namespace {
+int validate_snapshot(const browser_resources_t *b,const char *document,uint32_t generation) {
     if(!b || b->version!=BROWSER_RESOURCE_VERSION || !generation || b->generation!=generation ||
         b->count>BROWSER_RESOURCE_COUNT || b->length>BROWSER_RESOURCE_BYTES) return -84;
     uint32_t end=0, pending=0;
@@ -126,13 +129,30 @@ int browser_resources_validate(const browser_resources_t *b,const char *document
     }
     return end==b->length ? 0 : -84;
 }
+} // namespace
+namespace reist::browser {
+Result<ValidatedResources,int> ValidatedResources::open(
+    const browser_resources_t *bundle,const char *document,uint32_t generation) noexcept {
+    using Admission=Result<ValidatedResources,int>;
+    int status=validate_snapshot(bundle,document,generation);
+    if(status) return Admission::failure(status);
+    return Admission::success(Key{},bundle);
+}
+}
+int browser_resources_validate(const browser_resources_t *b,const char *document,uint32_t generation) {
+    auto admitted=reist::browser::ValidatedResources::open(b,document,generation);
+    return admitted ? 0 : *admitted.error_if();
+}
 int browser_resources_pack(const browser_resources_t *b,const char *document,uint8_t *out,uint32_t capacity) {
-    if(!out || browser_resources_validate(b,document,b ? b->generation : 0)) return -84;
-    uint32_t prefix=BROWSER_RESOURCE_HEADER_BYTES+b->count*sizeof(b->entries[0]);
-    uint32_t size=prefix+b->length;
+    if(!out) return -84;
+    auto admitted=reist::browser::ValidatedResources::open(b,document,b ? b->generation : 0);
+    if(!admitted) return -84;
+    const auto& snapshot=admitted.value_if()->snapshot();
+    uint32_t prefix=BROWSER_RESOURCE_HEADER_BYTES+snapshot.count*sizeof(snapshot.entries[0]);
+    uint32_t size=prefix+snapshot.length;
     if(size>capacity) return -28;
-    memcpy(out,b,prefix);
-    memcpy(out+prefix,b->bytes,b->length);
+    memcpy(out,&snapshot,prefix);
+    memcpy(out+prefix,snapshot.bytes,snapshot.length);
     return (int)size;
 }
 int browser_resources_unpack(const uint8_t *in,uint32_t length,const char *document,browser_resources_t *out) {

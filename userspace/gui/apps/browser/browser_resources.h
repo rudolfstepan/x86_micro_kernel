@@ -1,5 +1,8 @@
 #ifndef BROWSER_RESOURCES_H
 #define BROWSER_RESOURCES_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "html_protocol.h"
 #define BROWSER_RESOURCE_VERSION 3U
 #define BROWSER_RESOURCE_URL_CAPACITY REIST_HTML_URL_CAPACITY
@@ -49,4 +52,7 @@ int browser_resource_need_add(browser_resource_needs_t *,const char *url,uint32_
 int browser_resource_needs_validate(const browser_resource_needs_t *,uint32_t length,
     const browser_html_header_t *,uint32_t pid,uint32_t child_generation,
     const browser_resources_t *,const char *document);
+#ifdef __cplusplus
+}
+#endif
 #endif

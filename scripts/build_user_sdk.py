@@ -373,7 +373,9 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
             obj = temporary / "builtins.o"
             subprocess.run([str(zig), "build-obj", str(compiler_source), "-target", "x86-freestanding-none",
                 "-mcpu=i386", "-O", "ReleaseSmall", "-fno-stack-check", "-fno-stack-protector",
-                "-fno-compiler-rt", "-femit-bin=" + str(obj)], env=environment, check=True, timeout=30)
+                # Match the C objects' no-unwind freestanding profile at
+                # generation, not by stripping sections after admission.
+                "-fno-compiler-rt", "-fno-unwind-tables", "-femit-bin=" + str(obj)], env=environment, check=True, timeout=30)
             create_archive(zig,builtins,[obj],temporary,environment)
         license_file = artifacts.root / "usr/share/licenses/zig-compiler-rt/LICENSE"
         license_file.parent.mkdir(parents=True,exist_ok=True)
