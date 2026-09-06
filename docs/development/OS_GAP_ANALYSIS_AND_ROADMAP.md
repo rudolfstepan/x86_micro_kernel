@@ -2,8 +2,9 @@
 
 Stand: 3. September 2026
 
-Neue Nutzervorgabe vom 6. September: `docs/REIST_CPP_MIGRATION_PLAN.md` wird
-unveraendert uebernommen. TASK-0001 erfordert zunaechst eine committete Baseline
+Nutzervorgabe vom 6. September: `docs/REIST_CPP_MIGRATION_PLAN.md` wurde
+zunaechst unveraendert uebernommen; inzwischen ist Revision 1.1 nach Review
+ausdruecklich freigegeben. TASK-0001 erfordert eine committete Baseline
 fuer Browser, GUI-Bibliothek und Compositor. `R3.16a` ist mit 169 Hosttests,
 reproduzierbaren Messdaten und QEMU-Renderprobe abgenommen; Details in
 [CPP_MIGRATION_BASELINE.md](CPP_MIGRATION_BASELINE.md). `R3.16` ist mit
@@ -12,6 +13,17 @@ C++20 ohne globale dynamische Initialisierung/Exit-Registrierung. `R3.17`
 ist active fuer TASK-2001 (minimale Hilfstypen), danach Browserpilot
 response -> resources -> model.
 Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.
+
+Revision 1.1 richtet jeden Piloten am nachgewiesenen Besitz aus: gepruefte
+Response-Ergebnisse statt erfundener Destruktoren; echte Ressourcenbesitzer in
+Browser/Worker nur innerhalb ausdruecklicher Paketgrenzen. RAII ersetzt keine
+OS-Absturzbehandlung und versteckt keine fehlerbehafteten Flush-/Stop-/Reap-
+Operationen. Grosse private Payloads bleiben explizit budgetierbar, unabhaengig
+von den sechs allokationsfreien Hilfstypen. Zukuenftige Migrationspakete brauchen
+vorab numerische Abnahmegrenzen nach Abschnitt 10 des Plans. Echte Browser-
+Aufrufpfade und danach separat gepruefte Funktionsluecken haben Vorrang vor
+allgemeiner Bibliotheks-, GUI- oder Compositorarbeit. R3.17 bleibt allein active;
+Dateiumfang, Abnahmebefehle und Fristen sind unveraendert.
 
 Am 6. September ausdruecklich bestaetigte Browserreihenfolge: R3.15 fuer
 maxlength und native Formulardarstellung zuerst vollstaendig abnehmen und
@@ -23,7 +35,8 @@ im bestehenden Buildadapter samt Regressionstests nach dem Paketgrenzstopp
 freigegeben; keine Archiv-, Kernel- oder Fristlockerung (CURRENT_WORK).
 R3.15 ist jetzt mit acht Hostgruppen, beiden Referenzen und fuenf echten
 Browser-Gastgates abgenommen. R3.16 ist ebenfalls abgenommen; Nachweise stehen
-in CURRENT_WORK.md. R3.17 ist definiert, noch nicht implementiert. Vollstaendige
+in CURRENT_WORK.md. R3.17 hat einen begonnenen Regressionstest, aber noch keine
+Hilfstyp-Implementierung oder Abnahme. Vollstaendige
 Formular-/JavaScript-Kompatibilitaet und die VMware-Pointerabnahme bleiben offen.
 
 Abnahme vom 5. September 2026: `R1.2c-private-process-memory` liefert vor
@@ -54,8 +67,9 @@ demand-backed Legacy-Worker und Kopieren nur belegter Ressourcen beseitigen
 gemessene Mehrarbeit bei unveraenderten Fristen und Schutzgrenzen. Der
 kontrollierte HTTP-Gasttest beweist lange CSS-/Import-/Bild- und Redirectketten;
 weder universelle Website-Kompatibilitaet noch erfolgreicher Live-Zugriff auf
-Intracom/Google wird daraus abgeleitet. R3.6b ist als naechstes Paket aktiv,
-seine unabhaengige VMware-Zeigerabnahme bleibt offen. High-Memory oberhalb der
+Intracom/Google wird daraus abgeleitet. R3.6b bleibt hinter der Browsermigration
+zurueckgestellt, seine unabhaengige VMware-Zeigerabnahme bleibt offen.
+High-Memory oberhalb der
 heutigen 1-GiB-Direct-Map und freigebbare Anwendungs-/Dateicaches bleiben eigene
 Folgearbeiten. Einzelheiten und Nachweisgrenzen stehen im
 [Prozessspeichervertrag](../architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md).

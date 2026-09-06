@@ -49,7 +49,7 @@ Verbindliche Nutzervorgabe vom 6. September 2026:
 TASK-0001 ist als `R3.16a-cpp-migration-baseline` abgenommen;
 [Baseline und Einschraenkungen](../development/CPP_MIGRATION_BASELINE.md).
 `R3.16-ring3-cpp-runtime` liefert danach TASK-1001/1002 als opt-in C++20-
-Profil ueber denselben Clang/LLD-/ELF32-/MYPR-Pfad. Noch nicht implementiert.
+Profil ueber denselben Clang/LLD-/ELF32-/MYPR-Pfad; abgenommen in `478289b7`.
 Bestehende C-Verbraucher behalten Startcode und Defaults. Pflichtflags sind
 `-ffreestanding -fno-exceptions -fno-rtti -fno-threadsafe-statics
 -fno-use-cxa-atexit`. Globale dynamische Initialisierung, dynamische lokale
@@ -66,6 +66,17 @@ Danach folgen die minimalen allokationsfreien `libreist++`-Typen (TASK-2001),
 erst dann der Browserpilot. Dateien und unveraenderte bisherige Gastgates stehen
 in `automation/reist-s03b.toml`. Der alte C++17-/Finalisierungstabellenentwurf
 ist vor Implementierung durch die neue Nutzervorgabe ersetzt.
+
+Planrevision 1.1 ist ausdruecklich freigegeben. Sie veraendert weder Profil 1
+noch die eingefrorenen R3.17-Gates: Die sechs Hilfstypen bleiben allokationsfrei,
+kein STL-Nachbau. Spaetere grosse Payloads nutzen ausdruecklich allokierte und
+budgetierte private Puffer statt pauschal kleiner Inline-Container. Eine
+geliehene Ansicht ist kein Lebensdauer- oder Autoritaetsnachweis.
+Fehlschlagende Erwerbsoperationen liefern einen Ergebnistyp mit Fehlerursache;
+Destruktoren sind nur begrenzter Cleanup, keine implizite Flush-/Stop-/Reap-
+Zustandsmaschine. Release-Adapter muessen Fehler und verbleibenden Besitz
+ausdruecklich definieren. OS-Fencing und generationstreues Reaping bleiben
+unveraendert. Die Beispiele im Migrationsplan sind keine implementierten SDK-APIs.
 
 REIST übernimmt bewährte, frei verfügbare Buildbausteine, solange sie das
 freistehende i386-Ziel korrekt unterstützen. Eigener Code beginnt erst an der

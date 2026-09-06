@@ -23,6 +23,27 @@ Hubbub, LibCSS und andere vorhandene C-Bibliotheken werden weiterverwendet.
 Keine In-Process-Zusammenlegung bisher isolierter Parser-/Transportprozesse und
 kein JavaScript-Vollbrowserclaim durch einen blossen Sprachwechsel.
 
+Die ausdruecklich freigegebene Planrevision 1.1 schaerft diese Reihenfolge:
+Nach den sechs minimalen Hilfstypen werden echte Browser-Aufrufpfade migriert,
+keine unbenutzte Parallelimplementierung und kein allgemeiner STL-Nachbau.
+Response-Erstellung liefert erst nach vollstaendiger Validierung einen
+geprueften Ergebnistyp. `browser_resources` besitzt heute inline Metadaten im
+Workspace, `browser_model` aufrufereigene Layout-/Scrollwerte; Ressourcen-RAII
+gehoert an die tatsaechlichen Erwerbsstellen in `main.c` beziehungsweise Worker,
+sofern der jeweilige Paketvertrag diese Dateien und Fehlergrenze einschliesst.
+Destruktoren ersetzen weder fehlerbehaftetes Close/Stop/Reap noch OS-Recovery.
+Grosse Dokument-/Bild-/Cachepuffer erhalten ausdrueckliche private Budgets und
+Freigaberegeln; feste Hilfscontainer schreiben ihnen keine kleine Inline-Grenze
+vor. Geliehene Ansichten erfordern dokumentierte Lebensdauer und Invalidierung.
+
+Zukuenftige Migrationspakete frieren vor Implementierung vergleichbare Fixtures,
+Zielprofil, Messverfahren und numerische Groessen-/Speichergrenzen sowie fuer
+betroffene UI-Pfade Eingabe-/Scrolllatenzen ein. Details in Abschnitt 10 des
+Migrationsplans. Vorhandene Abnahmen und R3.17-Gates bleiben unveraendert.
+Nach den Piloten haben nachgewiesene Browser-Funktionsluecken mit eigenen
+Host-/Gastabnahmen Vorrang vor breiter GUI-/Compositormigration; optionale
+C++-Kandidaten sind keine Voraussetzung fuer neue Browserfunktionen.
+
 Abgenommenes R3.12: Der Browser bekommt reale Tastatureingaben ueber den
 fokussierten Surface-Pfad, abgesichert durch den separaten
 [Terminal-Mediator](TERMINAL_INPUT_OWNERSHIP_CONTRACT.md). Dies schliesst die

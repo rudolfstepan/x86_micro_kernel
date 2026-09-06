@@ -2,6 +2,36 @@
 
 Stand: 6. September 2026
 
+## C++-Planrevision 1.1: freigegebene Praezisierung, keine Runtime-Abnahme
+
+Der Nutzer bestaetigt die sechs Review-Anpassungen. Der
+[Migrationsplan](../REIST_CPP_MIGRATION_PLAN.md) benennt jetzt die tatsaechlichen
+Ressourcenbesitzer, fallible Factories, begrenzten Destruktor-Cleanup gegenueber
+OS-Recovery, explizit budgetierte grosse private Payloads, Browserprioritaet
+und vorab numerisch festzulegende Grenzen fuer zukuenftige Migrationspakete.
+Die Zeichnung trennt Ring-3-Dienste/Treiber vom geschuetzten Microkernel.
+SDK-, Browservertrag, Roadmap und aktiver Queue-Verweis sind abgeglichen;
+veraltete SDK-/VMware-Prioritaetsangaben sind korrigiert.
+
+Nur Dokumentation und ein erklaerendes `plan_alignment`-Feld in R3.17 werden
+geaendert. Paketstatus/-reihenfolge, erlaubte Implementierungsdateien, Profile,
+eingefrorene Gates und bisherige Evidenz bleiben unveraendert. Es gibt keine
+neue Browserfunktion oder Performancezusage. Baseline `8ff162a3` und Runtime
+`478289b7` bleiben die abgenommenen Grundlagen.
+
+Der zuvor von dieser Sitzung angelegte Regressionstest `test/test_cpp_types.py`
+bleibt unveraendert und ausserhalb des Dokumentations-Commits. Sein gezielter
+Vorherlauf scheitert erwartungsgemaess an den noch fehlenden Headers
+(`build/codex-agent/r317/before.log`); kein finales R3.17-Gate wurde ausgefuehrt
+und R3.17 ist nicht abgenommen. Keine Produktionsaenderung in dieser Planrevision.
+
+Dokumentationspruefung: `python build/codex-agent/r317/verify_plan_revision.py`
+PASS/0,673 s. TOML-Vergleich gegen HEAD bestaetigt ausschliesslich das neue
+Erklaerungsfeld, keine Scope-/Gate-/Status-/Evidenzaenderung; Taskfolge,
+Markdown-Fences und acht neue lokale Links bestehen. Log:
+`build/codex-agent/r317/plan-revision-check.log`. Direkter Diff-Review und
+`git diff --check` vor Commit; keine Wiederholung bereits abgenommener VM-Gates.
+
 ## R3.16 abgenommen: opt-in C++20-SDK und explizite Objektlebensdauer
 
 Alle zehn eingefrorenen Gates bestehen. Finale Referenzen: vmware/vga

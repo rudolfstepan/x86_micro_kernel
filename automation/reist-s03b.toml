@@ -1076,6 +1076,7 @@ evidence = []
 [[packages]]
 id = "R3.17-cpp-bounded-types"
 status = "active"
+plan_alignment = "2026-09-06: User approves migration-plan revision 1.1 after the six-point review. Keep this package's six allocation-free helpers, allowed production files, profile and all frozen gates unchanged. Future browser pilots must integrate actual callers, use fallible validated-result factories, place RAII only at audited resource owners, distinguish bounded destructor fallback from OS recovery, and separate budgeted large private payloads from fixed control storage. Future migration packages freeze quantitative acceptance limits before implementation; GUI/compositor conversion stays behind browser delivery and feature acceptance remains separate from refactoring. This documentation alignment neither activates a later package nor changes already accepted evidence."
 phase = "post-s0"
 risk = "high"
 title = "Provide allocation-free C++ value and ownership types before the browser pilot"
