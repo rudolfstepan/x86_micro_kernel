@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.13-browser-native-get-forms"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 
 [policy]
 one_package_per_run = true
@@ -708,10 +708,11 @@ evidence = []
 
 [[packages]]
 id = "R3.13-browser-native-get-forms"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Integrate native HTML form interaction and bounded GET submission"
+repair_authorization = "2026-09-06: User approves resuming the attributable R3.13 candidate and adding browser_images.c to remove its duplicate freestanding byte helpers. Reuse the existing C runtime through the build configuration; keep decoder algorithms, fixed arena, kernel and Surface ABI unchanged. Repair the stale test scene version and rerun failed/affected gates, preserving prior evidence and all frozen assertions."
 user_direction = "Next cohesive browser slice for the user's standing request to finish the new browser automatically. Define its contract while closing R3.12; do not implement it in the R3.12 run. Keep R3.6b VMware acceptance deferred with every frozen requirement unchanged. No agents or push."
 scope = "One navigation-generation-bound form lifetime from the retained HTML5 tree through validated worker projection, CSS placement, native Surface interaction and user-triggered GET navigation to replacement or cleanup. Reference WHATWG HTML form ownership, entry-list construction, reset and submission, and WHATWG URL application/x-www-form-urlencoded; explicitly document the bounded static-document subset, not DOM or full HTML compatibility. Inventory Hubbub's existing form association and current native widgets before adding adapters. Support form, text/search input, hidden values, checkbox/radio groups, textarea, select/options, submit/reset buttons, labels, disabled/readonly controls and explicit form owners as one shared model. Preserve values and focus across scroll/image/CSS reflow within the same navigation generation, never across a replacement document. Carry only bounded indices/strings/rectangles through a versioned private worker projection; validate all counts, relationships, flags, UTF-8, geometry and generation before publication. Admission allows at most 16 forms, 256 controls, 512 options, 128 KiB immutable form strings and 128 KiB mutable values using the existing private Ring-3 allocator, without eager global RAM reservation or enlarged kernel authority. Honor document order, duplicate names, successful-control and activated-submitter rules, defaults/reset, UTF-8 percent encoding, spaces and newline normalization within existing URL admission capacity; reject overflow without truncation or partial navigation. Only explicit user submission reaches the established CURL GET/redirect/response lifecycle. Reject unsupported methods, password/file-bearing submissions, encodings, validation requirements, targets and schemes before side effects with a visible explanation; never silently turn POST into GET or send an incomplete unsupported form. Reuse standard input semantics and native widget drawing, with no worker spawn, network request or document reparse per keystroke. Add real-code host regressions and a bounded QEMU probe with actual pointer/keyboard input plus a controlled host HTTP fixture that observes the exact GET query, rejected submissions with no request, successful result navigation, reflow state, failure containment and clean close. Keep all existing browser/input/resource runtime assertions. Cookies, credentials, POST, JavaScript, file upload, persistent storage, global caches, Surface ABI and kernel/driver changes are separate authority boundaries."
 allowed_files = [
@@ -724,6 +725,7 @@ allowed_files = [
   "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "userspace/gui/apps/browser/main.c",
   "userspace/gui/apps/browser/browser_forms.c", "userspace/gui/apps/browser/browser_forms.h",
+  "userspace/gui/apps/browser/browser_images.c",
   "userspace/gui/apps/browser/browser_model.c", "userspace/gui/apps/browser/browser_model.h",
   "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/html_engine.h",
   "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/html_protocol.h",
@@ -784,7 +786,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

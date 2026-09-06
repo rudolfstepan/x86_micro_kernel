@@ -842,8 +842,15 @@ in CURRENT_WORK; kein globaler Cache und kein neuer Kernelpfad. R3.12
 vermittelt als abgenommener separater OS-Schnitt die konkurrierende Terminal-
 Eingabe zwischen Recovery-Shell und aktivem Desktop. Alle vier Desktop-/
 Browsergates sowie das Speicherresilienz-Gate einschliesslich GTEST-
-Kinduebergabe und Unicode-Raster bestehen. Formulare und JavaScript sind
-noch nicht implementiert. Kein neuer Kernelparser oder neue Geraeteautoritaet.
+Kinduebergabe und Unicode-Raster bestehen. R3.13 ergaenzt abgenommen native
+statische GET-Formulare: private validierte Projektion, 16 Formulare,
+256 Controls, 512 Optionen sowie je 128 KiB Strings und mutable Werte.
+Reflow erhaelt Eingaben nur innerhalb derselben Navigationsgeneration;
+Absendungen laufen ausschliesslich ueber CURL. Der spezielle QEMU-Formulartest
+belegt GET, Reflow, Ablehnung ohne Request und Worker-Recovery. Alle neun
+Hostgruppen, beide Referenzbuilds und vier Browser-Gastgates bestehen;
+die Paketabnahme steht in CURRENT_WORK. JavaScript und POST bleiben offen.
+Kein neuer Kernelparser oder neue Geraeteautoritaet.
 
 R3.8 ergänzt als Engine-Voraussetzung eine opt-in Ring-3-C-Speicher-/Byte-Laufzeit
 und die echte NetSurf-Bibliothek LibWapcaplet. Maximal 4 MiB caller-owned Arena

@@ -842,6 +842,7 @@ SYSTEM_IMAGE_FILES := \
 	htdocs/browser-test.html=htdocs/browser-test.html \
 	htdocs/browser-html5-test.html=htdocs/browser-html5-test.html \
 	htdocs/browser-css-test.html=htdocs/browser-css-test.html \
+	htdocs/browser-forms-test.html=htdocs/browser-forms-test.html \
 	htdocs/browser-stylesheet-test.html=htdocs/browser-stylesheet-test.html \
 	htdocs/browser-stylesheet-main.css=htdocs/browser-stylesheet-main.css \
 	htdocs/browser-stylesheet-import.css=htdocs/browser-stylesheet-import.css \
@@ -889,7 +890,7 @@ SYSTEM_IMAGE_FILES := \
 FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
-	usr/gui/bin/browser.prg=% usr/bin/htmlwork.prg=% htdocs/index.html=% htdocs/browser-test.html=% htdocs/browser-html5-test.html=% htdocs/browser-css-test.html=% \
+	usr/gui/bin/browser.prg=% usr/bin/htmlwork.prg=% htdocs/index.html=% htdocs/browser-test.html=% htdocs/browser-html5-test.html=% htdocs/browser-css-test.html=% htdocs/browser-forms-test.html=% \
 	htdocs/browser-stylesheet-test.html=% htdocs/browser-stylesheet-main.css=% htdocs/browser-stylesheet-import.css=% \
 	usr/share/sounds/startup.wav=% \
 	usr/share/sounds/shutdown.wav=% \

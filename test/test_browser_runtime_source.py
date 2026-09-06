@@ -222,7 +222,7 @@ static void complete_html(browser_state_t *state, reist_gui_surface_client_t *cl
     assert(!reist_html_document_parse(document_bytes,length,&worker_reply.document));
     static browser_layout_t layout;
     assert(!browser_build_layout(&worker_reply.document,client->width,NULL,&layout));
-    memset(&worker_scene,0,sizeof(worker_scene)); worker_scene.version=1;
+    memset(&worker_scene,0,sizeof(worker_scene)); worker_scene.version=BROWSER_SCENE_VERSION;
     worker_scene.width=css_input.request.width; worker_scene.height=css_input.request.height;
     worker_scene.total_height=layout.total_height;
     for(unsigned i=0;i<layout.run_count;++i) {
@@ -757,7 +757,7 @@ int main(void) {
     const char html[]="<p>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</p>";
     assert(!reist_html_document_parse((const uint8_t *)html,sizeof(html)-1,&doc));
     assert(doc.text_length>=32);
-    scene=(browser_scene_t){.version=1,.width=320,.height=256,.total_height=256,.count=8};
+    scene=(browser_scene_t){.version=BROWSER_SCENE_VERSION,.width=320,.height=256,.total_height=256,.count=8};
     for (unsigned i=0;i<8;++i) scene.runs[i]=(browser_scene_run_t){
         .kind=1,.length=32,.link=UINT32_MAX,.y=(int32_t)i*24,.width=256,.height=16,.color=0xff123456};
     assert(!browser_scene_raster(&doc,&scene,&font,NULL,0,pixels,320,256,0,256));
@@ -958,6 +958,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             source = Path(directory) / "browser-glyph-cache-host.c"
             source.write_text(RASTER_CACHE_HOST, encoding="utf-8")
             run_host([str(source), "userspace/gui/apps/browser/html_protocol.c",
+                      "userspace/gui/apps/browser/browser_forms.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/font.c"],
                      flags=["-I.", "-Iuserspace/sdk/include"])
 
@@ -1161,7 +1162,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/compositor/desktop_surface.c", "userspace/gui/lib/font_catalog.c",
-                      "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/lib/font.c"],
+                      "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/browser_forms.c", "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/lib/font.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])
 
@@ -1173,7 +1174,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/apps/browser/browser_response.c", "userspace/programs/curl_http.c",
-                      "userspace/gui/apps/browser/browser_resources.c",
+                      "userspace/gui/apps/browser/browser_resources.c", "userspace/gui/apps/browser/browser_forms.c",
                       "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/lib/font.c"],
                      arguments, ["-I.", "-Iuserspace/sdk/include", "-Iuserspace/storage/include",
                                  "-Wno-unused-function"])

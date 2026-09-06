@@ -16,8 +16,12 @@ liefert inzwischen abgenommen die generationgebundene Terminal-
 Eingabezustaendigkeit: Shell und Desktop konkurrieren nicht mehr um dieselben
 Browser-Tastendruecke. Alle Hostgruppen, beide Referenzbuilds und alle fuenf
 Gastgates bestehen, einschliesslich der expliziten GTEST-Kinduebergabe im
-Unicode-/Speicherresilienz-Gate. Naechstes aktives Browserpaket ist R3.13
-fuer native GET-Formulare; nur der Vertrag ist vorbereitet, keine Umsetzung.
+Unicode-/Speicherresilienz-Gate. R3.13 fuer native statische GET-Formulare ist
+ebenfalls abgenommen: Formularmodell, HTML5/CSS-Projektion, native Eingabe
+und begrenzte GET-Absendung. Alle neun Hostgruppen, beide Referenzbuilds und
+vier Browser-Gastgates bestehen; die gesamte Abnahme steht in CURRENT_WORK.
+POST und JavaScript bleiben getrennte
+Folgearbeiten, keine implizite Vollbrowser-Kompatibilitaet.
 Der gemessene Worker-/Dateiladepfad bleibt Performance-Schuld. High-Memory oberhalb der
 heutigen 1-GiB-Direct-Map und freigebbare Anwendungs-/Dateicaches bleiben eigene
 Folgearbeiten. Einzelheiten und Nachweisgrenzen stehen im

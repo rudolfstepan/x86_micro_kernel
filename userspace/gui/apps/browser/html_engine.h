@@ -12,6 +12,7 @@ struct node {
     node *parent, *first, *last, *next, *previous, *form;
     attribute *attributes;
     void *css_data, *css_style, *css_classes;
+    uint32_t form_index, control_index; /* worker-local index + 1; zero absent */
 };
 int browser_html5_tree(const uint8_t *input, size_t length, node **root);
 int browser_html5_tree_with_heap(const uint8_t *input,size_t length,node **root,uint32_t private_heap);

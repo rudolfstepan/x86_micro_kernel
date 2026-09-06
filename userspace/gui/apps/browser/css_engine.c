@@ -512,7 +512,24 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         if (doc->anchor_count==REIST_HTML_ANCHOR_CAPACITY || copy_field(doc->anchors[doc->anchor_count].name,128,id)) return -28;
         if (emit(6,doc->anchor_count++,0,UINT32_MAX,f->x,f->y,0,0,0,0)) return -28;
     }
-    if (tag(n,"img")) {
+    if (n->control_index && scene->forms.controls[n->control_index-1].kind!=BROWSER_FORM_LABEL) {
+        uint32_t index=n->control_index-1;
+        const browser_form_control_t *c=&scene->forms.controls[index];
+        if(c->kind!=BROWSER_FORM_HIDDEN) {
+            int aw=1,ah=1; int32_t w=dimension(s,css_computed_width,f->right-f->left,&aw);
+            int32_t h=dimension(s,css_computed_height,containing_height,&ah);
+            if(aw) w=c->kind==BROWSER_FORM_CHECKBOX || c->kind==BROWSER_FORM_RADIO ? 20 :
+                c->kind==BROWSER_FORM_SUBMIT || c->kind==BROWSER_FORM_RESET || c->kind==BROWSER_FORM_BUTTON ? 96 : 200;
+            if(ah) h=c->kind==BROWSER_FORM_TEXTAREA ? 64 : 24;
+            if(w>f->right-f->left) w=f->right-f->left;
+            if(w<0 || h<0 || w>1024 || h>768) return -28;
+            if(w && h) {
+                if(f->content && f->x+w>f->right) end_line(f,0);
+                if(emit(BROWSER_SCENE_CONTROL,index,0,UINT32_MAX,f->x,f->y,(uint32_t)w,(uint32_t)h,0,0)) return -28;
+                f->x+=w+4; if(h+2>f->line) f->line=h+2; f->content=1;
+            }
+        }
+    } else if (tag(n,"img")) {
         if (doc->image_count==16) return -28;
         uint32_t index=doc->image_count++;
         reist_html_image_t *image=&doc->images[index];
@@ -538,7 +555,14 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
             if (emit(5,index,0,link,f->x,f->y,(uint32_t)w,(uint32_t)h,0,link!=UINT32_MAX ? 64 : 0)) return -28;
             f->x+=w; if (h+2>f->line) f->line=h+2; f->content=1;
         }
-    } else if (children(n,s,f,link,depth,height_auto ? 0 : explicit_height)) return -28;
+    } else {
+        int32_t label_x=f->x,label_y=f->y; uint32_t label_start=scene->count;
+        if(children(n,s,f,link,depth,height_auto ? 0 : explicit_height)) return -28;
+        if(n->control_index && scene->count>label_start) {
+            int32_t w=f->y==label_y ? f->x-label_x : f->right-label_x;
+            if(w>0 && w<=1024 && emit(BROWSER_SCENE_CONTROL,n->control_index-1,0,UINT32_MAX,label_x,label_y,(uint32_t)w,18,0,0)) return -28;
+        }
+    }
     if (block) {
         end_line(f,0);
         int32_t content_height=f->y-(box_y+pads[0]+borders[0])+f->margin;
@@ -581,11 +605,12 @@ int browser_css_render_resources(const uint8_t *html,size_t length,uint32_t widt
     document_url=url ? url : "/document.html";
     memset(doc,0,sizeof(*doc)); memset(scene,0,sizeof(*scene));
     scene->version=BROWSER_SCENE_VERSION; scene->width=width; scene->height=height;
+    if(browser_forms_project(root,&scene->forms)) return -28;
     units.viewport_width=INTTOFIX(width); units.viewport_height=INTTOFIX(height);
     units.font_size_default=INTTOFIX(16); units.font_size_minimum=INTTOFIX(1);
     units.device_dpi=INTTOFIX(96); units.root_style=NULL;
     media=(css_media){.type=CSS_MEDIA_SCREEN,.width=INTTOFIX(width),.height=INTTOFIX(height)};
-    static const char ua[]="html,body,div,p,section,article,header,footer,main,nav,ul,ol,li,pre,table,tr,h1,h2,h3,h4,h5,h6 {display:block}"
+    static const char ua[]="html,body,div,p,form,fieldset,section,article,header,footer,main,nav,ul,ol,li,pre,table,tr,h1,h2,h3,h4,h5,h6 {display:block}"
         "head,script,style,template {display:none} body {margin:4px 16px} p,div,pre,ul,ol {margin-top:7px;margin-bottom:7px}"
         "h1 {font-size:24px;margin:7px 0;color:#203070} h2 {font-size:20px;margin:7px 0} h3 {font-size:18px;margin:7px 0}"
         "b,strong,h1,h2,h3,h4,h5,h6 {font-weight:bold} i,em {font-style:italic} a:link {color:#0000cc} pre {white-space:pre} img {display:block}";

@@ -65,7 +65,6 @@ typedef struct browser_state {
     const char *exit_reason;
 } browser_state_t;
 static uint8_t document_bytes[BROWSER_DOCUMENT_LIMIT + REIST_CURL_HEADER_CAPACITY];
-static uint8_t image_bytes[BROWSER_IMAGE_INPUT_LIMIT + REIST_CURL_HEADER_CAPACITY];
 static browser_html_reply_t html_reply;
 static struct { browser_css_request_t request; uint8_t bytes[BROWSER_CSS_INPUT_BYTES]; } css_input;
 static browser_resource_needs_t resource_needs;
@@ -73,7 +72,6 @@ static browser_resource_needs_t resource_needs;
 static char resource_probe_html[48], resource_probe_css[48];
 static uint32_t resource_probe_files, resource_probe_generation, resource_probe_failures;
 static uint8_t active_html[BROWSER_DOCUMENT_LIMIT];
-static browser_scene_t scenes[2];
 /* Conventional read-only asset embedding, as used by the desktop splash. */
 #if !__STDC_HOSTED__
 __asm__(".pushsection .rodata.browser_font,\"a\",@progbits\n"
@@ -83,6 +81,10 @@ __asm__(".pushsection .rodata.browser_font,\"a\",@progbits\n"
 #endif
 extern const uint8_t browser_font_data[], browser_font_end[];
 typedef struct browser_workspace {
+    uint8_t input_bytes[BROWSER_CSS_WIRE_CAPACITY+BROWSER_IMAGE_INPUT_LIMIT+REIST_CURL_HEADER_CAPACITY];
+    browser_scene_t scenes[2];
+    browser_form_state_t forms[2];
+    uint32_t forms_redraw;
     uint32_t decoded[BROWSER_IMAGE_PIXEL_LIMIT];
     uint32_t surface[REIST_GUI_SURFACE_MAX_WIDTH * REIST_GUI_SURFACE_MAX_HEIGHT];
     browser_image_slot_t images[2U][BROWSER_IMAGE_CACHE_COUNT];
@@ -92,9 +94,12 @@ typedef struct browser_workspace {
     browser_resources_t resources[2];
 } browser_workspace_t;
 static browser_workspace_t *workspace;
+static struct { uint32_t generation,width,request,frames,rejected,resets,failures; } form_probe;
 #define decoded_pixels (workspace->decoded)
 #define surface_pixels (workspace->surface)
 #define image_cache (workspace->images)
+#define image_bytes (workspace->input_bytes)
+#define scenes (workspace->scenes)
 static reist_html_document_t documents[2U];
 static browser_layout_t layouts[2U];
 
@@ -563,6 +568,15 @@ static int publish_html_reply(browser_state_t *state, reist_gui_surface_client_t
         return -11;
     }
     documents[candidate]=html_reply.document;
+    browser_form_state_t *form_state=&workspace->forms[candidate];
+    const browser_form_state_t *previous_forms=&workspace->forms[state->active];
+    uint32_t form_generation=previous_forms->generation;
+    if(state->reflow_job) *form_state=*previous_forms;
+    else if(form_generation==UINT32_MAX) return -28;
+    else ++form_generation;
+    result=browser_forms_bind(&scenes[candidate].forms,&scenes[state->active].forms,
+        form_state,form_generation,(int)state->reflow_job);
+    if(result) return result;
     const char *url=state->job_url;
     if (state->reflow_job) {
         memcpy(image_cache[candidate],image_cache[state->active],sizeof(image_cache[candidate]));
@@ -579,7 +593,7 @@ static int publish_html_reply(browser_state_t *state, reist_gui_surface_client_t
         layout->runs[layout->run_count++]=(browser_layout_run_t){r->kind,r->offset,r->length,r->flags,r->link,r->x,r->y,r->width,r->height};
     }
     for (uint32_t i=0;i<client->width*client->height;++i) surface_pixels[i]=0xffffff;
-    result=browser_scene_raster(&documents[candidate],&scenes[candidate],&workspace->font,image_cache[candidate],
+    result=browser_scene_raster_forms(&documents[candidate],&scenes[candidate],&workspace->font,image_cache[candidate],form_state,
         state->reflow_job ? state->scroll_y : 0,surface_pixels,client->width,client->height,BROWSER_CONTENT_TOP,viewport_height(client));
     if (result != 0) return result;
     x86os_puts(state->reflow_job ? "BROWSER_CSS_REFLOW_MS " : "BROWSER_CSS_DOCUMENT_MS ");
@@ -593,6 +607,7 @@ static int publish_html_reply(browser_state_t *state, reist_gui_surface_client_t
         state->address_cursor = state->address_length;
     }
     state->active = candidate; state->loaded = 1U;
+    workspace->forms_redraw=1;
     state->wheel_remainder=0;
     memcpy(state->scene_image_sizes,css_input.request.image_sizes,sizeof(state->scene_image_sizes));
     if (!state->reflow_job) state->scroll_y = 0U;
@@ -648,6 +663,9 @@ static int publish_document_bytes(browser_state_t *state, reist_gui_surface_clie
         scenes[state->active].width==client->width-BROWSER_SCROLLBAR_WIDTH &&
         scenes[state->active].height==viewport_height(client) && same_resource &&
         state->active_length==length && !memcmp(active_html,document_bytes,length)) {
+        browser_form_state_t *fs=&workspace->forms[state->active];
+        if(fs->generation==UINT32_MAX || browser_forms_bind(&scenes[state->active].forms,NULL,fs,fs->generation+1,0)) return -28;
+        workspace->forms_redraw=1;
         /* Reuse only our last fully validated immutable scene after a fresh
          * successful document read/transport. Never reuse an origin or guess a
          * changed document by hash. Images still refresh; stale pixels hide. */
@@ -956,8 +974,8 @@ static int publish_pixels(browser_state_t *state, reist_gui_surface_client_t *cl
     if (!width || !height || width > REIST_GUI_SURFACE_MAX_WIDTH || height > REIST_GUI_SURFACE_MAX_HEIGHT) return -22;
     for (uint32_t i = 0; i < width * height; ++i) surface_pixels[i] = 0x00FFFFFFU;
     if (state->loaded && scenes[state->active].version) {
-        int rc=browser_scene_raster(&documents[state->active],&scenes[state->active],&workspace->font,
-            image_cache[state->active],state->scroll_y,surface_pixels,width,height,BROWSER_CONTENT_TOP,viewport_height(client));
+        int rc=browser_scene_raster_forms(&documents[state->active],&scenes[state->active],&workspace->font,
+            image_cache[state->active],&workspace->forms[state->active],state->scroll_y,surface_pixels,width,height,BROWSER_CONTENT_TOP,viewport_height(client));
         if (rc) return -27; /* Scene quota/geometry never tears down chrome. */
     } else if (state->loaded) {
         const browser_layout_t *layout = &layouts[state->active];
@@ -1136,7 +1154,7 @@ static int render_body(browser_state_t *state, reist_gui_surface_client_t *clien
             paint_text(client, bar->bounds.x + 5, bar->bounds.y + (int32_t)view - 18, 12U, "v", 1U, dark, 0x00D4D0C8U, 16U) != 0) return -1;
     }
     int result = render_result("base-commit", reist_gui_surface_client_paint_commit(client));
-    if (result == 0) { state->redraw = 0U; state->painted_scroll=state->scroll_y; ++state->body_frames; }
+    if (result == 0) { state->redraw = 0U; state->painted_scroll=state->scroll_y; ++state->body_frames; workspace->forms_redraw=1; }
     timing_end(TIME_BODY,measured_at);
     return result;
 }
@@ -1185,12 +1203,84 @@ static int render_status(browser_state_t *state, reist_gui_surface_client_t *cli
     timing_end(TIME_STATUS,measured_at);
     return result;
 }
+static const browser_scene_run_t *form_run(const browser_state_t *state,uint32_t index) {
+    if(!state->loaded) return NULL;
+    const browser_scene_t *s=&scenes[state->active];
+    for(uint32_t i=0;i<s->count;++i) if(s->runs[i].kind==BROWSER_SCENE_CONTROL && s->runs[i].offset==index) return &s->runs[i];
+    return NULL;
+}
+/* Only the focused native control is a dynamic overlay. Typing never rebuilds
+ * the page buffer, its CSS scene, or the immutable resource generation. */
+static int render_form_focus(browser_state_t *state,reist_gui_surface_client_t *client) {
+    if(reist_gui_surface_client_paint_begin_layer(client,REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC)) return -1;
+    const browser_form_state_t *fs=&workspace->forms[state->active];
+    const browser_scene_run_t *r=state->address_focused ? NULL : form_run(state,fs->focus);
+    int32_t y=r ? (int32_t)BROWSER_CONTENT_TOP+r->y-(int32_t)state->scroll_y : 0;
+    if(r && r->x>=0 && r->x+(int32_t)r->width<=(int32_t)client->width-(int32_t)BROWSER_SCROLLBAR_WIDTH &&
+       y>=(int32_t)BROWSER_CONTENT_TOP && y+(int32_t)r->height<=(int32_t)(BROWSER_CONTENT_TOP+viewport_height(client))) {
+        const browser_forms_t *m=&scenes[state->active].forms;
+        const browser_form_control_t *c=&m->controls[fs->focus];
+        reist_gui_rect_t rect={r->x,y,r->width,r->height};
+        uint32_t background=0xfffde0,foreground=c->flags&BROWSER_FORM_DISABLED ? 0x808080 : 0x202020;
+        int button=c->kind>=BROWSER_FORM_SUBMIT && c->kind<=BROWSER_FORM_BUTTON;
+        if(button) { if(paint_button(client,rect)) return -1; background=0xd4d0c8; }
+        else if(reist_gui_surface_client_paint_fill(client,rect,0x203070) ||
+                (r->width>2 && r->height>2 && reist_gui_surface_client_paint_fill(client,
+                    (reist_gui_rect_t){rect.x+1,rect.y+1,rect.width-2,rect.height-2},background))) return -1;
+        const char *v=browser_forms_value(m,fs,fs->focus);
+        if(button) v=m->strings+c->label;
+        if(c->kind==BROWSER_FORM_UNSUPPORTED) v="[unsupported]";
+        if(c->kind==BROWSER_FORM_CHECKBOX || c->kind==BROWSER_FORM_RADIO) v=fs->checked[fs->focus] ? "x" : "";
+        if(c->kind==BROWSER_FORM_SELECT) {
+            v=""; for(uint32_t j=c->first_option;j<c->first_option+c->option_count;++j)
+                if(fs->selected[j]) { v=m->strings+m->options[j].label; break; }
+        }
+        uint32_t cells=r->width>8 ? (r->width-8)/8 : 0,rows=r->height>=20 ? (r->height-4)/16 : 0;
+        if(cells>32) cells=32; /* bounded native text-command budget */
+        if(rows>8) rows=8;
+        if(c->kind!=BROWSER_FORM_TEXTAREA && rows>1) rows=1;
+        uint32_t at=0,cursor_row=0,cursor_col=0;
+        int edit=c->kind==BROWSER_FORM_TEXT || c->kind==BROWSER_FORM_TEXTAREA;
+        if(edit && cells) for(uint32_t j=0;j<fs->cursor;++j) {
+            if(v[j]=='\n') { ++cursor_row; cursor_col=0; }
+            else if(((uint8_t)v[j]&192)!=128 && ++cursor_col==cells) { ++cursor_row; cursor_col=0; }
+        }
+        uint32_t first=cursor_row>=rows && rows ? cursor_row-rows+1 : 0,row=0;
+        while(cells && rows && row<first+rows) {
+            uint32_t start=at,count=0;
+            while(v[at] && v[at]!='\n' && v[at]!='\r' && count<cells) {
+                ++at; while(((uint8_t)v[at]&192)==128) ++at; ++count;
+            }
+            if(row>=first) {
+                uint32_t part=start,px=0;
+                while(part<at) {
+                    uint32_t amount=at-part; if(amount>39) amount=39;
+                    amount=(uint32_t)utf8_prefix_length(v+part,amount);
+                    if(!amount || paint_text(client,r->x+4+(int32_t)px*8,y+4+(int32_t)(row-first)*16,
+                        (cells-px)*8,v+part,amount,foreground,background,16)) return -1;
+                    for(uint32_t j=0;j<amount;++j) if(((uint8_t)v[part+j]&192)!=128) ++px;
+                    part+=amount;
+                }
+            }
+            if(v[at]=='\n' || v[at]=='\r') { if(v[at]=='\r' && v[at+1]=='\n') ++at; ++at; }
+            else if(!v[at]) break;
+            ++row;
+        }
+        if(edit && cells && rows && !(c->flags&BROWSER_FORM_READONLY) &&
+            reist_gui_surface_client_paint_fill(client,(reist_gui_rect_t){r->x+4+(int32_t)cursor_col*8,
+                y+4+(int32_t)(cursor_row-first)*16,1,16},foreground)) return -1;
+    }
+    int rc=reist_gui_surface_client_paint_commit_layer(client,REIST_GUI_SURFACE_PAINT_LAYER_DYNAMIC);
+    if(!rc) workspace->forms_redraw=0;
+    return rc;
+}
 static int render(browser_state_t *state, reist_gui_surface_client_t *client) {
     if (state->redraw && render_body(state, client) != 0) {
         x86os_puts("BROWSER_RENDER_STATE scroll="); x86os_print_number((int)state->scroll_y);
         x86os_puts(" frames="); x86os_print_number((int)state->body_frames); x86os_puts("\n");
         x86os_puts("BROWSER_PROBE_FAIL render-body\n"); return -1;
     }
+    if(workspace->forms_redraw && render_form_focus(state,client)) return -1;
     if (state->chrome_redraw && render_chrome(state, client) != 0) {
         x86os_puts("BROWSER_PROBE_FAIL render-chrome\n"); return -1;
     }
@@ -1216,6 +1306,29 @@ static void activate_link(browser_state_t *state, reist_gui_surface_client_t *cl
     if (navigate(state, client, resolved) == 0) x86os_puts("BROWSER_LINK_OK\n");
 }
 static int resource_probe_begin(browser_state_t *state,reist_gui_surface_client_t *client);
+static void form_submit(browser_state_t *state,reist_gui_surface_client_t *client,uint32_t index) {
+    char target[BROWSER_URL_CAPACITY]; browser_form_state_t *fs=&workspace->forms[state->active];
+    int rc=browser_forms_submit(&scenes[state->active].forms,fs,fs->generation,index,state->active_url,target,sizeof(target));
+    if(rc) {
+        set_status(state,browser_forms_error(rc));
+        if(state->probe==4) { ++form_probe.rejected; x86os_puts("BROWSER_FORMS_REJECT count=");
+            x86os_print_number((int)form_probe.rejected); x86os_puts("\n"); }
+    }
+    else (void)navigate(state,client,target);
+}
+static uint32_t form_at(browser_state_t *state,reist_gui_surface_client_t *client,int32_t x,int32_t y) {
+    if(!state->loaded || x<0 || x>=(int32_t)client->width-(int32_t)BROWSER_SCROLLBAR_WIDTH ||
+        y<(int32_t)BROWSER_CONTENT_TOP || y>=(int32_t)(BROWSER_CONTENT_TOP+viewport_height(client))) return BROWSER_FORM_NONE;
+    const browser_scene_t *s=&scenes[state->active]; uint32_t label=BROWSER_FORM_NONE;
+    for(uint32_t i=s->count;i>0;--i) {
+        const browser_scene_run_t *r=&s->runs[i-1];
+        if(r->kind!=BROWSER_SCENE_CONTROL || !browser_point_in_rect((reist_gui_rect_t){r->x,
+            (int32_t)BROWSER_CONTENT_TOP+r->y-(int32_t)state->scroll_y,r->width,r->height},x,y)) continue;
+        if(s->forms.controls[r->offset].kind!=BROWSER_FORM_LABEL) return r->offset;
+        label=r->offset;
+    }
+    return label;
+}
 static int resource_probe_selected(const browser_state_t *state,
                                   const reist_gui_surface_input_t *input) {
     /* Only the existing trusted probe's initial phase admits this selector.
@@ -1225,6 +1338,7 @@ static int resource_probe_selected(const browser_state_t *state,
 }
 static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *client,
                             const reist_gui_surface_input_t *input) {
+    browser_form_state_t *fs=&workspace->forms[state->active];
     if (input->type==REIST_GUI_SURFACE_INPUT_POINTER_SCROLL) {
         if (!reist_gui_surface_scroll_valid(input) ||
             state->scrollbar.state.captured || input->x<0 || (uint32_t)input->x>=client->width ||
@@ -1236,6 +1350,7 @@ static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *c
             return;
         }
         if (!state->loaded) return;
+        fs->capture=BROWSER_FORM_NONE;
         /* Quotient/remainder decomposition avoids a signed 64-bit division on
          * i386. abs(remainder)<120, abs(whole*48)<859 million: no int32 overflow. */
         int32_t whole=input->delta_y/REIST_GUI_SURFACE_SCROLL_STEP;
@@ -1252,6 +1367,7 @@ static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *c
     uint32_t motion = input->type == REIST_GUI_SURFACE_INPUT_POINTER_MOTION;
     if (!motion && (input->type != REIST_GUI_SURFACE_INPUT_POINTER_BUTTON || input->button != 1U)) return;
     if (browser_scrollbar_pointer(&state->scrollbar, motion, input->pressed, input->x, input->y)) {
+        fs->capture=BROWSER_FORM_NONE;
         state->armed_link = UINT32_MAX;
         set_scroll(state, client, state->scrollbar.state.value);
         return;
@@ -1262,6 +1378,8 @@ static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *c
     }
     if (input->pressed && browser_point_in_rect((reist_gui_rect_t){10, 10,
         client->width > 20U ? client->width - 20U : 1U, 32U}, input->x, input->y)) {
+        if(fs->focus<scenes[state->active].forms.control_count) state->redraw=1;
+        fs->capture=fs->focus=BROWSER_FORM_NONE; workspace->forms_redraw=1;
         if (!state->address_focused) {
             state->address_focused = 1U; state->address_replace_pending = 1U;
             state->address_cursor = state->address_length;
@@ -1273,6 +1391,36 @@ static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *c
         state->armed_link = UINT32_MAX;
         state->chrome_redraw = 1U; return;
     }
+    uint32_t control=form_at(state,client,input->x,input->y);
+    if(control!=BROWSER_FORM_NONE || fs->capture!=BROWSER_FORM_NONE) {
+        const browser_forms_t *m=&scenes[state->active].forms;
+        state->armed_link=UINT32_MAX;
+        if(input->pressed) {
+            if(fs->focus!=control && fs->focus<m->control_count) state->redraw=1;
+            fs->capture=control;
+            if(control!=BROWSER_FORM_NONE && !browser_forms_focus(m,fs,control)) {
+                state->address_focused=0; state->chrome_redraw=1; workspace->forms_redraw=1;
+            }
+        } else {
+            uint32_t armed=fs->capture; fs->capture=BROWSER_FORM_NONE;
+            if(armed!=BROWSER_FORM_NONE && armed==control) {
+                const browser_form_control_t *c=&m->controls[control];
+                if(c->flags&BROWSER_FORM_DISABLED) return;
+                if(c->kind==BROWSER_FORM_SUBMIT) form_submit(state,client,control);
+                else {
+                    int rc=browser_forms_activate(m,fs,control);
+                    if(state->probe==4 && c->kind==BROWSER_FORM_RESET && rc>0) ++form_probe.resets;
+                    if(c->kind==BROWSER_FORM_SELECT) rc=browser_forms_key(m,fs,259);
+                    if(rc<0) set_status(state,browser_forms_error(rc));
+                    if(rc>0) { state->address_focused=0; state->chrome_redraw=1; workspace->forms_redraw=1;
+                        if(c->kind!=BROWSER_FORM_TEXT && c->kind!=BROWSER_FORM_TEXTAREA) state->redraw=1; }
+                }
+            }
+        }
+        return;
+    }
+    if(input->pressed) { if(fs->focus<scenes[state->active].forms.control_count) state->redraw=1;
+        fs->focus=fs->capture=BROWSER_FORM_NONE; workspace->forms_redraw=1; }
     uint32_t hit = link_at(state, client, input->x, input->y);
     if (input->pressed) {
         if (state->address_focused) state->chrome_redraw = 1U;
@@ -1318,6 +1466,8 @@ static int resource_probe_begin(browser_state_t *state,reist_gui_surface_client_
     return navigate(state,client,resource_probe_html);
 }
 static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *client, uint32_t key) {
+    browser_form_state_t *fs=&workspace->forms[state->active];
+    const browser_forms_t *fm=&scenes[state->active].forms;
     if (key == BROWSER_KEY_ESCAPE || key == 27U) {
         if (state->child_pid > 0 || state->pending || state->follow_redirect || state->parse_pending || state->resource_loading) {
             state->pending = 0U; state->image_next = BROWSER_IMAGE_CACHE_COUNT;
@@ -1326,6 +1476,8 @@ static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *
             cancel_fetch(state); abandon_resources(state); set_status(state, "Laden abgebrochen");
         } else if (state->address_focused) {
             state->address_focused = 0U; state->chrome_redraw = 1U;
+        } else if(state->loaded && fs->focus<fm->control_count) {
+            fs->focus=fs->capture=BROWSER_FORM_NONE; workspace->forms_redraw=1; state->redraw=1;
         } else state->exit_requested = 1U;
         return;
     }
@@ -1338,6 +1490,40 @@ static void handle_keyboard(browser_state_t *state, reist_gui_surface_client_t *
         } else if (browser_address_edit(state->address, sizeof(state->address),
             &state->address_length, &state->address_cursor, &state->address_replace_pending, key) > 0)
             state->chrome_redraw = 1U;
+        return;
+    }
+    if(key=='\t' && state->loaded) {
+        if(fs->focus<fm->control_count) state->redraw=1;
+        uint32_t index=fs->focus;
+        for(uint32_t i=0;i<fm->control_count;++i) {
+            index=index==BROWSER_FORM_NONE || index+1>=fm->control_count ? 0 : index+1;
+            const browser_scene_run_t *r=form_run(state,index);
+            if(r && !browser_forms_focus(fm,fs,index)) {
+                if(r->y<(int32_t)state->scroll_y) set_scroll(state,client,r->y);
+                else if(r->y+(int32_t)r->height>(int32_t)(state->scroll_y+viewport_height(client)))
+                    set_scroll(state,client,(int64_t)r->y+r->height-viewport_height(client));
+                workspace->forms_redraw=1; break;
+            }
+        }
+        return;
+    }
+    if(state->loaded && fs->focus<fm->control_count) {
+        uint32_t kind=fm->controls[fs->focus].kind;
+        if((key=='\r' || key=='\n') && kind!=BROWSER_FORM_TEXTAREA) {
+            uint32_t submit=fs->focus;
+            if(kind==BROWSER_FORM_TEXT) {
+                submit=BROWSER_FORM_NONE;
+                for(uint32_t i=0;i<fm->control_count;++i) if(fm->controls[i].kind==BROWSER_FORM_SUBMIT &&
+                    fm->controls[i].owner==fm->controls[fs->focus].owner) { submit=i; break; }
+            }
+            if(submit<fm->control_count && fm->controls[submit].kind==BROWSER_FORM_SUBMIT) form_submit(state,client,submit);
+            else if(kind==BROWSER_FORM_RESET) { (void)browser_forms_activate(fm,fs,fs->focus); state->redraw=1; }
+            else set_status(state,"Formular: explizite Senden-Schaltflaeche fehlt");
+        } else {
+            int rc=browser_forms_key(fm,fs,key);
+            if(rc<0) set_status(state,browser_forms_error(rc));
+            if(rc>0) { workspace->forms_redraw=1; if(kind!=BROWSER_FORM_TEXT && kind!=BROWSER_FORM_TEXTAREA) state->redraw=1; }
+        }
         return;
     }
     uint32_t page = viewport_height(client);
@@ -1572,15 +1758,82 @@ static int input_probe_step(browser_state_t *state) {
     }
     return 0;
 }
+static void forms_probe_geometry(browser_state_t *state) {
+    const browser_scene_t *s=&scenes[state->active];
+    for(uint32_t i=0;i<s->count;++i) {
+        const browser_scene_run_t *r=&s->runs[i]; if(r->kind!=BROWSER_SCENE_CONTROL) continue;
+        x86os_puts("BROWSER_FORMS_CONTROL id="); x86os_print_number((int)r->offset);
+        x86os_puts(" kind="); x86os_print_number((int)s->forms.controls[r->offset].kind);
+        x86os_puts(" owner="); x86os_print_number((int)s->forms.controls[r->offset].owner);
+        x86os_puts(" x="); x86os_print_number(r->x); x86os_puts(" y="); x86os_print_number(r->y);
+        x86os_puts(" w="); x86os_print_number((int)r->width); x86os_puts(" h="); x86os_print_number((int)r->height); x86os_puts("\n");
+    }
+}
+static int forms_probe_step(browser_state_t *state,reist_gui_surface_client_t *client) {
+    if(!state->loaded || state->pending || state->parse_pending || state->resource_loading ||
+       state->reflow_pending || state->child_pid || state->follow_redirect) return 0;
+    const browser_forms_t *m=&scenes[state->active].forms; browser_form_state_t *fs=&workspace->forms[state->active];
+    uint32_t query=BROWSER_FORM_NONE;
+    for(uint32_t i=0;i<m->control_count;++i) if(m->controls[i].kind==BROWSER_FORM_TEXT &&
+        !strcmp(m->strings+m->controls[i].name,"q")) { query=i; break; }
+    const char *value=browser_forms_value(m,fs,query);
+    if(state->probe_phase==0) {
+        if(m->form_count!=4 || query==BROWSER_FORM_NONE) return -1;
+        form_probe.generation=fs->generation; form_probe.width=client->width;
+        form_probe.request=state->html_request.request; form_probe.frames=state->body_frames;
+        form_probe.failures=state->parser_failures;
+        forms_probe_geometry(state); x86os_puts("BROWSER_FORMS_READY\n");
+    } else if(state->probe_phase==1) {
+        if(strcmp(value,"hello")) return 0;
+        if(fs->generation!=form_probe.generation || state->html_request.request!=form_probe.request || state->body_frames!=form_probe.frames) return -1;
+        x86os_puts("BROWSER_FORMS_EDIT_ONLY_OK\n");
+    } else if(state->probe_phase==2) {
+        if(!state->probe_wheel_down || !state->probe_wheel_up) return 0;
+        if(strcmp(value,"hello") || fs->generation!=form_probe.generation || state->painted_scroll!=state->scroll_y) return -1;
+        x86os_puts("BROWSER_FORMS_WHEEL_STATE_OK\n");
+    } else if(state->probe_phase==3) {
+        if(client->width==form_probe.width) return 0;
+        if(strcmp(value,"hello") || fs->focus!=query || fs->generation!=form_probe.generation ||
+            scenes[state->active].width!=client->width-BROWSER_SCROLLBAR_WIDTH) return -1;
+        forms_probe_geometry(state); x86os_puts("BROWSER_FORMS_REFLOW_STATE_OK\n");
+    } else if(state->probe_phase==4) {
+        if(form_probe.rejected<3) return 0;
+        if(form_probe.rejected!=3 || strcmp(value,"hello")) return -1;
+        x86os_puts("BROWSER_FORMS_REJECTED_OK\n");
+    } else if(state->probe_phase==5) {
+        if(!form_probe.resets) return 0;
+        if(strcmp(value,"start")) return -1;
+        x86os_puts("BROWSER_FORMS_RESET_OK\n");
+    } else if(state->probe_phase==6) {
+        if(strcmp(value,"hello")) return 0;
+        x86os_puts("BROWSER_FORMS_SEND_READY\n");
+    } else if(state->probe_phase==7) {
+        if(strcmp(documents[state->active].title,"Forms result")) return 0;
+        if(m->control_count || fs->generation<=form_probe.generation || fs->focus!=BROWSER_FORM_NONE) return -1;
+        form_probe.generation=fs->generation; x86os_puts("BROWSER_FORMS_RESULT_OK\n");
+        state->parse_mode=1; if(navigate(state,client,"/htdocs/browser-forms-test.html")) return -1;
+    } else if(state->probe_phase==8) {
+        if(state->parser_failures==form_probe.failures) return 0;
+        if(state->parser_failures!=form_probe.failures+1 || strcmp(documents[state->active].title,"Forms result")) return -1;
+        x86os_puts("BROWSER_FORMS_FAILURE_CONTAINED_OK\n");
+        state->parse_mode=0; if(navigate(state,client,"/htdocs/browser-forms-test.html")) return -1;
+    } else if(state->probe_phase==9) {
+        if(query==BROWSER_FORM_NONE) return 0;
+        if(strcmp(value,"start") || fs->generation<=form_probe.generation || fs->focus!=BROWSER_FORM_NONE) return -1;
+        x86os_puts("BROWSER_FORMS_RECOVERY_OK\n"); state->exit_requested=1;
+    }
+    ++state->probe_phase; return 0;
+}
 static const char *initial_target(int argc, char **argv, uint32_t *probe) {
     const char *target = "/htdocs/index.html";
     for (int index = 1; index < argc; ++index) {
         if (text_equal(argv[index], "--browser-probe")) *probe = 1U;
         else if (text_equal(argv[index], "--browser-input-probe")) *probe = 3U;
+        else if (text_equal(argv[index], "--browser-forms-probe")) *probe = 4U;
         else if (!text_prefix(argv[index], "--reist-surface="))
             target = argv[index];
     }
-    return *probe ? "/htdocs/browser-test.html" : target;
+    return *probe==4 ? "/htdocs/browser-forms-test.html" : *probe ? "/htdocs/browser-test.html" : target;
 }
 
 int main(int argc, char **argv) {
@@ -1617,6 +1870,11 @@ int main(int argc, char **argv) {
         (void)x86os_ipc_release(endpoint);
         x86os_puts("browser: image workspace admission failed\n"); return 1;
     }
+    memset(scenes,0,sizeof(scenes));
+    memset(workspace->forms,0,sizeof(workspace->forms));
+    workspace->forms[0].focus=workspace->forms[0].capture=BROWSER_FORM_NONE;
+    workspace->forms[1].focus=workspace->forms[1].capture=BROWSER_FORM_NONE;
+    workspace->forms_redraw=1;
     size_t font_length=(size_t)((uintptr_t)browser_font_end-(uintptr_t)browser_font_data);
     if (font_length>REIST_GUI_FONT_MAX_FILE_BYTES ||
         reist_gui_font_open_psf2(&workspace->font,browser_font_data,font_length,workspace->font_map,262144,'?')) {
@@ -1663,6 +1921,8 @@ int main(int argc, char **argv) {
                     if (message.input.key == 0x105U) ++state.input_right;
                 }
                 handle_keyboard(&state, &client, message.input.key);
+                if(state.probe==4) { x86os_puts("BROWSER_FORMS_KEY ordinal="); x86os_print_number((int)++state.input_keys);
+                    x86os_puts(" code="); x86os_print_number((int)message.input.key); x86os_puts("\n"); }
             }
             else if (message.type == REIST_GUI_SURFACE_INPUT) handle_pointer(&state, &client, &message.input);
             if (state.exit_requested) break;
@@ -1671,7 +1931,7 @@ int main(int argc, char **argv) {
         int rendered=render(&state, &client);
         if (rendered != 0) { browser_runtime_failure(&state,"render",rendered); status = -5; break; }
         if (state.probe) {
-            int probe_status=state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
+            int probe_status=state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
             if (probe_status || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
                 timing_dump();
                 x86os_puts("BROWSER_PROBE_STATE phase="); x86os_print_number((int)state.probe_phase);

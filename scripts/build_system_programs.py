@@ -98,6 +98,7 @@ PROGRAMS = {
     "BROWSER.PRG": (
         ROOT / "userspace/gui/apps/browser/main.c",
         ROOT / "userspace/gui/apps/browser/browser_model.c",
+        ROOT / "userspace/gui/apps/browser/browser_forms.c",
         ROOT / "userspace/gui/apps/browser/browser_images.c",
         ROOT / "userspace/gui/apps/browser/browser_response.c",
         ROOT / "userspace/gui/apps/browser/browser_scene.c",
@@ -237,6 +238,7 @@ PROGRAMS = {
 PROGRAMS["HTMLWORK.PRG"] = (
     ROOT / "userspace/gui/apps/browser/html_worker.c",
     ROOT / "userspace/gui/apps/browser/html_engine.c",
+    ROOT / "userspace/gui/apps/browser/browser_forms.c",
     ROOT / "userspace/gui/apps/browser/css_engine.c",
     ROOT / "userspace/gui/apps/browser/browser_scene.c",
     ROOT / "userspace/gui/apps/browser/browser_resources.c",
@@ -372,9 +374,9 @@ def main() -> None:
                 digest = hashlib.sha256(vendor.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
                 if digest != pin.read_text(encoding="ascii").split()[0]:
                     raise RuntimeError("stb_image source checksum mismatch")
-                compat = ROOT / "userspace/gui/apps/browser/compat"
-                includes.insert(0, compat)
-                dependency_files.extend([vendor, pin, *compat.glob("*.h"), Path(__file__).resolve()])
+                includes.insert(0, sdk.libc_include_dir)
+                link_libraries.append(sdk.libc_library)
+                dependency_files.extend([vendor, pin, *sdk.libc_include_dir.rglob("*.h"), Path(__file__).resolve()])
             build(
                 sources, output, zig, incremental=program_incremental,
                 include_dirs=includes,

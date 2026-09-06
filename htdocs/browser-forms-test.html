@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="UTF-8"><title>Native GET forms</title>
+<style>body {margin:12px} form {margin:8px 0} p {margin:6px 0}
+input,button,select {height:24px} textarea {height:44px} .space {height:650px}</style></head><body>
+<div style="margin:0;width:3px;height:3px;background:#123456"></div>
+<form id="search" action="http://10.0.2.2:18083/find?old=discard#result">
+<label for="query">Query</label><input id="query" name="q" type="search" value="start">
+<input type="hidden" name="fixed" value="caf&#233; &amp;+">
+<p><label><input type="checkbox" name="check" value="yes" checked> Checked</label>
+<label><input type="radio" name="r" value="a" checked> A</label>
+<label><input type="radio" name="r" value="b"> B</label></p>
+<p><textarea name="text">one
+two</textarea><select name="choice"><option value="a">Alpha</option><option value="b" selected>Beta</option></select></p>
+<button name="go" value="yes">Send GET</button><button type="reset">Reset</button></form>
+<input form="search" name="external" value="kept" readonly>
+<form action="http://10.0.2.2:18083/forbidden-post" method="post"><input name="post" value="no"><button>Reject POST</button></form>
+<form action="http://10.0.2.2:18083/forbidden-password"><input type="password" name="secret"><button>Reject password</button></form>
+<form action="javascript:bad()"><button>Reject scheme</button></form>
+<div class="space">Wheel and resize must preserve the edited query.</div><a href="#query">Query again</a>
+</body></html>

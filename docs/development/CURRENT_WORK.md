@@ -2,6 +2,65 @@
 
 Stand: 6. September 2026
 
+## R3.13 abgenommen: native statische GET-Formulare
+
+Alle eingefrorenen Paketgates bestehen. HTML5-Projektion, privates
+CSS3-Formularmodell, Unicode-Wertespeicher,
+native Eingabeebene und explizite GET-Absendung sind verbunden. Kapazitaeten:
+16 Formulare, 256 Controls, 512 Optionen, je 128 KiB Strings/Werte. Reflow
+erhaelt Werte nur bei identischem Modell und Navigationsgeneration; ein neuer
+Dokumentstand setzt sie zurueck. Keine Kernel- oder Surface-ABI-Aenderung.
+
+Der neue QEMU-Formulartest bedient Felder, Mausrad, Resize, Ablehnung, Reset und
+Absendung ueber echte Geraeteeingaben. Ein lokaler HTTP-Server prueft die genaue
+GET-Query und ausbleibende Requests bei Ablehnung; danach Workerfehler und
+neue Generation. Der reale Gastnachweis besteht auf dem finalen Image.
+Vertrag: `../architecture/BROWSER_FORM_INTERACTION_CONTRACT.md`.
+Ausgangspunkt ist R3.12 (`13f01adb`). R3.13 geht auf done; das naechste
+Queuepaket R3.6b wird active, seine VMware-Pointerabnahme bleibt offen.
+POST, JavaScript und vollstaendige moderne Webkompatibilitaet bleiben offen.
+
+Wiederaufnahme vom Nutzer freigegeben, einschliesslich `browser_images.c`:
+Das reale Transportfixture verwendet jetzt die aktuelle private Szenenversion.
+Der Browser linkt die bestehende C-Laufzeit statt eigener doppelter Bytehelfer;
+Decoder-Pin, Algorithmen und feste Arena sind unveraendert. Keine neuen Stubs.
+
+Alle neun Hostgruppen bestehen: 149 Tests, 147 PASS, zwei bestehende SKIP.
+Der erste parallele Toolchain-Lauf traf beim SDK-Aufbau die unveraenderte
+60-Sekunden-Frist; exklusiv besteht die ganze Gruppe (21 Tests, 118,366 s).
+Die finalen VMware-/QEMU-Referenzbuilds bestehen in 50/46 s
+(`20260906-115849-package-vmware-vga.log`,
+`20260906-115939-package-qemu-vga.log`); Kernel-SHA256 bleibt
+`AB7639D9043E5D4EA3AECB35F1F2949974D69D57E14F4D36C6747FF0AF606E10`.
+
+Der erste Formular-Gastlauf (96,757 s) belegt echte Feldeingabe ohne neue
+Seitenbuffer und Werterhalt bei Mausrad-Scrollen. Resize blieb aus: Der
+Testmarker erbte sieben Pixel `div`-Abstand und leitete einen falschen
+Fenstergriff ab. Die gezielte Korrektur setzt `margin:0`; ein neuer echter
+LibCSS-Test prueft den Messpunkt der verpackten HTML-Datei (CSS-Gruppe:
+31,217 s, PASS). Die erneute Gastabnahme besteht; keine Frist oder Assertion
+wurde abgeschwaecht. Fehlgeschlagene Evidenz bleibt erhalten.
+
+Alle vier finalen Laufzeitgates bestehen in der eingefrorenen Reihenfolge.
+Befehl jeweils `scripts/test-reist-runtime.ps1 -Target qemu -Video vga` mit:
+
+- `-Mode runtime-desktop-browser-forms`: PASS (81,271 s), echte Feldeingabe,
+  Mausrad-/Resize-Werterhalt und Fokus, drei Ablehnungen ohne Request, Reset,
+  exakte GET-Query, neue Navigation, Workerfehler, Recovery und sauberes Close.
+- `-Mode runtime-desktop-browser-input`: PASS (138,629 s), bestaetigte
+  Einzeltasten, URL-Korrektur, lokale Navigation, Compositor-Absturz,
+  antwortende Shell und frischer Desktop; kein Burst-Latenznachweis.
+- `-Mode runtime-desktop-browser`: PASS (94,755 s), Bilder, Links, Scrollbar,
+  CSS, echtes Mausrad/Resize, Worker-Fault-/Timeout-Recovery und Close.
+- `-Mode runtime-desktop-browser-resources`: PASS (81,285 s), bestehende
+  externe/importierte Stylesheets und Ressourcen-Recovery unveraendert.
+
+Logs und Screenshots: `build/codex-agent/r313-final-runtime-desktop-browser*`.
+Finales QEMU-Image SHA256:
+`296064B028CDEDBF5C33F8EB4A15BB6D0C339D148E538D1FCDFCAF2BF9215113`.
+Alle 29 geaenderten Pfade liegen im freigegebenen Paketumfang. Keine neue
+Kernelautoritaet, keine abgeschwaechte Speicherresilienz und kein Push.
+
 ## R3.12 abgenommen: generationgebundene Eingabe und GTEST-Kinduebergabe
 
 Alle eingefrorenen Paketgates bestehen. Der begrenzte Terminal-Mediator

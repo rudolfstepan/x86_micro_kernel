@@ -21,7 +21,7 @@ static size_t private_used;
 static unsigned private_fail;
 static struct {
     uint64_t before;
-    _Alignas(max_align_t) uint8_t bytes[sizeof(browser_css_request_t)+BROWSER_CSS_INPUT_BYTES+sizeof(browser_resources_t)];
+    _Alignas(max_align_t) uint8_t bytes[sizeof(css_worker_buffers_t)];
     uint64_t after;
 } transfer_memory;
 static unsigned transfer_allocs,transfer_frees,transfer_live,transfer_fail,transfer_delay;
@@ -91,6 +91,54 @@ static const browser_scene_run_t *text_run(const char *text) {
 }
 int main(int argc, char **argv) {
     const char *mode=argc==2 ? argv[1] : "cascade";
+    if(!strcmp(mode,"forms-fixture")) {
+        static uint8_t html[65536];
+        FILE *fixture=fopen("htdocs/browser-forms-test.html","rb"); assert(fixture);
+        size_t length=fread(html,1,sizeof(html),fixture); assert(length && length<sizeof(html) && !ferror(fixture));
+        assert(!fclose(fixture));
+        assert(!browser_css_render(html,length,782,502,NULL,"/htdocs/browser-forms-test.html",&document,&scene));
+        unsigned marker=0;
+        for(uint32_t i=0;i<scene.count;++i) {
+            const browser_scene_run_t *r=&scene.runs[i];
+            if(r->kind==BROWSER_SCENE_FILL && r->color==0xff123456) {
+                assert(r->x==12 && r->y==12 && r->width==3 && r->height==3); ++marker;
+            }
+        }
+        assert(marker==1 && scene.forms.form_count==4);
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
+    if(!strcmp(mode,"forms")) {
+        const char html[]="<form id=f action='/search'><fieldset disabled><legend><input name=legend value=yes></legend>"
+            "<input name=skip value=no></fieldset><label for=q>Query</label><input id=q type=search name=q value='caf&#233;'>"
+            "<input type=radio name=r value=a checked><input type=radio name=r value=b checked>"
+            "<textarea name=t>\nfirst\nsecond</textarea><select name=s><option disabled>no<option value=a>A<option selected value=b>B</select>"
+            "<input type=hidden name=h value=secret><button name=go value=yes>Send</button><button type=reset>Reset</button></form>"
+            "<input form=f name=external value=ok><div id=wrong></div><form id=wrong></form><input form=wrong name=orphan>";
+        assert(!browser_css_render((const uint8_t *)html,sizeof(html)-1,800,500,NULL,"https://example.test/page",&document,&scene));
+        browser_forms_t *m=&scene.forms; static browser_form_state_t values;
+        assert(m->form_count==2 && m->control_count==13 && m->option_count==3);
+        assert(!(m->controls[0].flags&BROWSER_FORM_DISABLED));
+        assert(m->controls[1].flags&BROWSER_FORM_DISABLED);
+        assert(m->controls[2].kind==BROWSER_FORM_LABEL && m->controls[2].target==3);
+        assert(!strcmp(m->strings+m->controls[3].value,"caf\xc3\xa9"));
+        assert(!strcmp(m->strings+m->controls[6].value,"first\nsecond"));
+        assert(m->controls[11].owner==0 && m->controls[12].owner==BROWSER_FORM_NONE);
+        assert(!browser_forms_bind(m,NULL,&values,7,0));
+        assert(!values.checked[4] && values.checked[5] && values.selected[2]);
+        char url[256]; assert(!browser_forms_submit(m,&values,7,9,"https://example.test/page",url,sizeof(url)));
+        assert(!strcmp(url,"https://example.test/search?legend=yes&q=caf%C3%A9&r=b&t=first%0D%0Asecond&s=b&h=secret&go=yes&external=ok"));
+        static browser_html_reply_t reply,decoded; static browser_scene_t copy;
+        browser_css_request_t q={.header={BROWSER_HTML_MAGIC,BROWSER_HTML_VERSION,sizeof(q)+sizeof(html)-1,12,77,19,0,0,sizeof(html)-1,0,{0,0}},
+            .version=BROWSER_SCENE_VERSION,.width=800,.height=500,.document_url="https://example.test/page"};
+        reply.header=q.header; reply.header.size=sizeof(reply); reply.header.child_pid=81; reply.header.child_generation=23; reply.document=document;
+        int n=browser_css_pack(&reply,&scene,transport,sizeof(transport)); assert(n>0);
+        assert(!browser_css_unpack(transport,(uint32_t)n,&q,81,23,&decoded,&copy));
+        assert(!memcmp(&copy,&scene,sizeof(scene)));
+        assert(browser_css_unpack(transport,(uint32_t)n,&q,81,24,&decoded,&copy));
+        assert(browser_css_unpack(transport,(uint32_t)n-1,&q,81,23,&decoded,&copy));
+        m->controls[3].owner=99; assert(browser_scene_validate(&document,&scene));
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
     if(!strncmp(mode,"bundle-worker",13)) {
         const char body[]="<link rel=stylesheet href='a.css'><p>External</p>";
         browser_css_request_t q={.header={BROWSER_HTML_MAGIC,BROWSER_HTML_VERSION,sizeof(q)+sizeof(body)-1,12,77,19,0,0,sizeof(body)-1,0,{0,0}},

@@ -4,27 +4,8 @@
 #include "browser_images.h"
 #include <string.h>
 
-#if !__STDC_HOSTED__
-/* Browser-private ISO C byte operations for the freestanding toolchain.
- * The upstream decoder never receives the SDK allocator or device handles. */
-void *memcpy(void *destination, const void *source, size_t count) {
-    uint8_t *out = destination;
-    const uint8_t *in = source;
-    for (size_t i = 0; i < count; ++i) out[i] = in[i];
-    return destination;
-}
-void *memset(void *destination, int value, size_t count) {
-    uint8_t *out = destination;
-    for (size_t i = 0; i < count; ++i) out[i] = (uint8_t)value;
-    return destination;
-}
-int memcmp(const void *left, const void *right, size_t count) {
-    const uint8_t *a = left, *b = right;
-    for (size_t i = 0; i < count; ++i)
-        if (a[i] != b[i]) return (int)a[i] - (int)b[i];
-    return 0;
-}
-#endif
+/* ISO C byte operations come from the shared userspace C runtime. Decoder
+ * allocation remains routed exclusively through the fixed arena below. */
 
 static uint8_t *arena;
 static size_t arena_used;

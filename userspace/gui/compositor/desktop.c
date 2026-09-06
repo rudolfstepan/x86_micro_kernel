@@ -9131,6 +9131,7 @@ int main(int argc, char **argv) {
     uint32_t notepad_font_probe = 0U;
     uint32_t control_probe = 0U;
     uint32_t browser_probe = 0U;
+    uint32_t browser_forms_probe = 0U;
     uint32_t terminal_probe = 0U, terminal_probe_idle = 0U, terminal_probe_seen = 0U;
     uint32_t guidemo_probe = 0U;
     uint32_t sound_probe = 0U;
@@ -9186,6 +9187,9 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--browser-probe")) {
         browser_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--browser-forms-probe")) {
+        browser_probe = browser_forms_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--browser-input-probe")) {
         browser_probe = terminal_probe = 1U;
@@ -9715,7 +9719,7 @@ int main(int argc, char **argv) {
         } else if (browser_probe) {
             probe_status = launch_surface_probe_client(
                 &surface_runtime, &surfaces,
-                "/USR/GUI/BIN/BROWSER.PRG", terminal_probe
+                "/USR/GUI/BIN/BROWSER.PRG", browser_forms_probe ? "--browser-forms-probe" : terminal_probe
                     ? "--browser-input-probe" : "--browser-probe",
                 lifecycle_supervised, &lifecycle_sequence,
                 &lifecycle_heartbeat_ms);

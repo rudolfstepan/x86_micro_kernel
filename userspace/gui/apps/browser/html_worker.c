@@ -11,10 +11,10 @@ static uint8_t wire_reply[sizeof(reply)];
 typedef struct css_worker_buffers {
     struct { browser_css_request_t request; uint8_t bytes[BROWSER_CSS_INPUT_BYTES]; } input;
     browser_resources_t resources;
+    browser_scene_t scene;
+    uint8_t wire[BROWSER_CSS_WIRE_CAPACITY];
 } css_worker_buffers_t;
 static browser_resource_needs_t css_needs;
-static browser_scene_t css_scene;
-static uint8_t css_wire[BROWSER_CSS_WIRE_CAPACITY];
 /* Fixed admission, but not static BSS in the 8-MiB MYPR region. Independent
  * of libc's parser arenas: tree initialization must never invalidate IPC bytes.
  * The wrapper frees every ordinary return; fault/kill cleanup belongs to the
@@ -22,6 +22,8 @@ static uint8_t css_wire[BROWSER_CSS_WIRE_CAPACITY];
 static int css_worker_run(uint32_t endpoint,uint32_t deadline,css_worker_buffers_t *buffers) {
 #define css_input (buffers->input)
 #define css_resources (buffers->resources)
+#define css_scene (buffers->scene)
+#define css_wire (buffers->wire)
     uint32_t at=0,total=0,request=0;
     for (;;) {
         int32_t left=(int32_t)(deadline-x86os_uptime_ms()); if (left<=0) return 74;
@@ -85,6 +87,8 @@ static int css_worker_run(uint32_t endpoint,uint32_t deadline,css_worker_buffers
 }
 #undef css_input
 #undef css_resources
+#undef css_scene
+#undef css_wire
 static int css_worker(const char *number) {
     uint32_t endpoint=0;
     for (uint32_t i=0;number[i];++i) {

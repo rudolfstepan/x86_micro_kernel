@@ -413,6 +413,19 @@ Evidenz**.
 | Ein-/Mehrkern-Latenzevidenz | offen |
 | formale Zertifizierungsevidenz | offen |
 
+## R3.13: private native Formular-Eingabe
+
+Der Browser rendert statische Controls im Seitenbuffer und die aktuelle
+Feldbearbeitung in der vorhandenen DYNAMIC-Ebene. Tippen aktualisiert weder
+Seitenbuffer noch HTML/CSS-Worker oder Ressourcen; Blur/Scroll/Reset duerfen
+den Seitenstand neu zeichnen. Werte und Fokus bleiben beim Reflow nur fuer
+dieselbe Navigation und dasselbe validierte Formularmodell erhalten. Neue
+Dokumente setzen sie zurueck; Pointer-Capture wird bei Reflow verworfen.
+Die feste DYNAMIC-Kommandoquote und alle Surface-ABI-Versionen bleiben gleich.
+Der echte QEMU-Formulartest prueft diese Eingabe-/Reflow-Grenze samt GET und
+Fehler-Recovery; das ist keine Zielhardware-WCET- oder allgemeine Latenzgarantie.
+Details: `BROWSER_FORM_INTERACTION_CONTRACT.md`.
+
 ## Referenzen
 
 - Microsoft Learn: `SetCapture` und Mouse Capture,

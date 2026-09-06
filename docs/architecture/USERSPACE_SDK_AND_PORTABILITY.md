@@ -322,6 +322,13 @@ Legacy-Auftraege behalten die 4-MiB-Arena. Keine neuen Syscalls, allgemeinen
 C-String-Stubs oder versteckten VFS-/Netzwerkcallbacks. Das private CSS2-Format
 und seine Prozess-/Navigationgenerationen sind kein oeffentliches SDK-ABI.
 
+R3.13 linkt im Browser dieselbe opt-in C-Byte-/Stringlaufzeit, damit Formulare
+keine zweite Implementierung von memcpy/memmove/strcmp benoetigen. Browser-
+und Decoderallokationen behalten ihren privaten Prozessprovider bzw. ihre
+feste Decoderarena; das Einbinden der Bytefunktionen aktiviert keinen Heap.
+Das private CSS3-Szenenformat ergaenzt validierte Formulare, Controls, Optionen
+und Stringoffsets. Grenzen und Abnahme: `BROWSER_FORM_INTERACTION_CONTRACT.md`.
+
 - [ ] Öffentlicher Namensraum, Layer und Owner sind festgelegt.
 - [ ] Vorhandener Standard oder etablierte Bibliothekssemantik wurde geprüft.
 - [ ] Abweichungen sind begründet; es wird keine falsche Kompatibilität behauptet.

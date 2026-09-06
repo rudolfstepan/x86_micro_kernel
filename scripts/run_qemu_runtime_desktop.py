@@ -6,6 +6,7 @@ import argparse
 import array
 import binascii
 import json
+import http.server
 import pathlib
 import queue
 import re
@@ -1255,6 +1256,161 @@ def run_browser_input_probe(process, output, transcript, screenshot, deadline, m
     return 0
 
 
+def run_browser_forms_probe(process, output, transcript, screenshot, deadline, monitor):
+    """Observe a real bounded GET; all user interactions traverse QMP devices."""
+    expected = ("/find?q=hello&fixed=caf%C3%A9+%26%2B&check=yes&r=a&"
+                "text=one%0D%0Atwo&choice=b&go=yes&external=kept")
+    requests = []
+    stop = threading.Event()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(1.0)
+
+        def do_GET(self):
+            if len(requests) >= 8:
+                self.close_connection = True
+                return
+            requests.append((self.command, self.path))
+            payload = b"<!doctype html><title>Forms result</title><h1>GET accepted</h1>"
+            self.send_response(200 if self.path == expected else 400)
+            self.send_header("Content-Type", "text/html; charset=UTF-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        do_POST = do_GET
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 18083), Handler)
+    server.timeout = 0.2
+
+    def serve():
+        while not stop.is_set() and time.monotonic() < deadline:
+            server.handle_request()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+
+    def wait(marker, offset=0):
+        while time.monotonic() < deadline:
+            drain(output, transcript)
+            section = "".join(transcript)[offset:]
+            if any(bad in section for bad in ("BROWSER_PROBE_FAIL", "DESKTOP_BROWSER_FAIL", "KERNEL PANIC", "kernel panic")):
+                raise RuntimeError("Forms guest failure: " + section[-3000:])
+            if marker in section:
+                return section
+            time.sleep(0.01)
+        raise RuntimeError("Forms deadline: " + marker)
+
+    def geometry(text):
+        result = {}
+        for match in re.finditer(r"BROWSER_FORMS_CONTROL id=(\d+) kind=(\d+) owner=(-?\d+) x=(-?\d+) y=(-?\d+) w=(\d+) h=(\d+)", text):
+            index, kind, owner, x, y, w, h = map(int, match.groups())
+            if index >= 256 or not (0 < w <= 1024 and 0 < h <= 768):
+                raise RuntimeError("Forms invalid control geometry")
+            result[index] = (kind, owner, x, y, w, h)
+        if not result:
+            raise RuntimeError("Forms geometry absent")
+        return result
+
+    try:
+        controls = geometry(wait("BROWSER_FORMS_READY"))
+        monitor.execute("screendump", {"filename": str(screenshot.resolve())})
+        ppm = read_ppm(screenshot)
+        if ppm is None:
+            raise RuntimeError("Forms screenshot absent")
+        width, height, pixels = ppm
+        positions = [i for i in range(0, len(pixels), 3)
+                     if pixels[i:i+9] == b"\x12\x34\x56" * 3]
+        if len(positions) != 3:
+            raise RuntimeError("Forms native marker not painted")
+        pos = positions[0] // 3
+        origin = (pos % width - 12, pos // width - 76 - 12)
+        pointer = [0, 0]
+        for _ in range((max(width, height)+119)//120):
+            monitor.mouse(process, "mouse_move -120 -120")
+            time.sleep(0.01)
+        time.sleep(0.05)
+
+        def move(point, phase):
+            shortcut_probe_move_mouse(process, pointer, *point, monitor=monitor.mouse)
+            browser_probe_wait_pointer(monitor, screenshot, tuple(pointer), phase)
+
+        def click(kind, owner):
+            matches = [value for _, value in sorted(controls.items()) if value[:2] == (kind, owner)]
+            if not matches:
+                raise RuntimeError(f"Forms missing control {kind}/{owner}")
+            _, _, x, y, w, h = matches[0]
+            move((origin[0]+x+w//2, origin[1]+76+y+h//2), f"form-{kind}-{owner}")
+            monitor.mouse(process, "mouse_button 1")
+            time.sleep(0.06)
+            monitor.mouse(process, "mouse_button 0")
+            time.sleep(0.06)
+
+        ordinal = 0
+
+        def key(value):
+            nonlocal ordinal
+            ordinal += 1
+            monitor.key(value)
+            section = wait(f"BROWSER_FORMS_KEY ordinal={ordinal} code=")
+            match = re.search(rf"BROWSER_FORMS_KEY ordinal={ordinal} code=(\d+)\r?\n", section)
+            wanted = 8 if value == "backspace" else ord(value)
+            if match is None or int(match[1]) != wanted:
+                raise RuntimeError("Forms keyboard event mismatch")
+
+        def edit():
+            click(1, 0)
+            for _ in range(5):
+                key("backspace")
+            for value in "hello":
+                key(value)
+
+        edit()
+        wait("BROWSER_FORMS_EDIT_ONLY_OK")
+        monitor.mouse(process, "mouse_move 0 0 -1")
+        time.sleep(0.15)
+        monitor.mouse(process, "mouse_move 0 0 1")
+        wait("BROWSER_FORMS_WHEEL_STATE_OK")
+        corner = (origin[0]+799, origin[1]+599)
+        move(corner, "forms-grip")
+        monitor.mouse(process, "mouse_button 1")
+        time.sleep(0.12)
+        shortcut_probe_move_mouse(process, pointer, corner[0]-64, corner[1]-32, monitor=monitor.mouse)
+        time.sleep(0.12)
+        monitor.mouse(process, "mouse_button 0")
+        controls = geometry(wait("BROWSER_FORMS_REFLOW_STATE_OK"))
+        for count, owner in enumerate((1, 2, 3), 1):
+            click(7, owner)
+            wait(f"BROWSER_FORMS_REJECT count={count}")
+            if requests:
+                raise RuntimeError("Rejected form performed HTTP I/O")
+        wait("BROWSER_FORMS_REJECTED_OK")
+        click(8, 0)
+        wait("BROWSER_FORMS_RESET_OK")
+        edit()
+        wait("BROWSER_FORMS_SEND_READY")
+        click(7, 0)
+        wait("BROWSER_FORMS_RESULT_OK")
+        wait("BROWSER_FORMS_FAILURE_CONTAINED_OK")
+        wait("BROWSER_FORMS_RECOVERY_OK")
+        wait("BROWSER_CLOSE_OK")
+        if requests != [("GET", expected)]:
+            raise RuntimeError(f"Forms observed unexpected requests: {requests!r}")
+        transcript.append(f"HOST_FORMS_EXACT_GET_OK {expected}\nHOST_FORMS_REJECT_NO_REQUEST_OK\n")
+        print("runtime-desktop-browser-forms: PASS real-input-exact-GET-reflow-rejection-reset-recovery-close")
+        return 0
+    finally:
+        stop.set()
+        thread.join(timeout=1.5)
+        server.server_close()
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool, notepad_font_probe: bool,
@@ -1270,8 +1426,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         sound_probe: bool, metrics_log: pathlib.Path | None,
         vmware_vga: bool, smp: int, capture_only: bool = False,
         browser_resource_probe: bool = False,
-        browser_input_probe: bool = False) -> int:
-    if browser_resource_probe or browser_input_probe:
+        browser_input_probe: bool = False,
+        browser_forms_probe: bool = False) -> int:
+    if browser_resource_probe or browser_input_probe or browser_forms_probe:
         browser_probe = True
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
@@ -1284,7 +1441,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         dns_listener.settimeout(10.0)
     command = qemu_command(
         qemu, image, memory="512M", vmware_vga=vmware_vga, smp=smp,
-        nic="rtl8139" if notepad_probe else "none",
+        nic="rtl8139" if notepad_probe or browser_forms_probe else "none",
         injection_port=dns_port, hardware_entropy=notepad_probe,
         public_dns=notepad_probe)
     normal_lifecycle_probe = not any((
@@ -1445,7 +1602,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 elif control_probe:
                     command_name = "desktop.prg --control-probe"
                 elif browser_probe:
-                    command_name = ("desktop.prg --browser-input-probe" if browser_input_probe
+                    command_name = ("desktop.prg --browser-forms-probe" if browser_forms_probe else "desktop.prg --browser-input-probe" if browser_input_probe
                                     else "desktop.prg --browser-probe")
                 elif guidemo_click_probe:
                     command_name = "desktop.prg --guidemo-probe"
@@ -1916,6 +2073,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     # Both sessions share the original absolute budget. The
                     # first-start limit above must not replace that budget.
                     return run_browser_input_probe(process, output, transcript, screenshot, overall_deadline, browser_input)
+                if browser_forms_probe:
+                    return run_browser_forms_probe(process, output, transcript, screenshot, overall_deadline, browser_input)
                 if browser_resource_probe:
                     return run_browser_resource_probe(process, output, transcript, screenshot, deadline, browser_input)
                 if browser_probe:
@@ -2170,6 +2329,7 @@ def main() -> int:
     parser.add_argument("--browser-probe", action="store_true")
     parser.add_argument("--browser-resource-probe", action="store_true")
     parser.add_argument("--browser-input-probe", action="store_true")
+    parser.add_argument("--browser-forms-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--trash-restore-probe", action="store_true")
@@ -2187,7 +2347,7 @@ def main() -> int:
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.notepad_font_probe, args.control_probe,
-            args.browser_probe, args.browser_resource_probe, args.browser_input_probe,
+            args.browser_probe, args.browser_resource_probe, args.browser_input_probe, args.browser_forms_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
@@ -2217,7 +2377,7 @@ def main() -> int:
                    args.guidemo_click_probe, args.sound_probe,
                    args.metrics_log, args.vmware_vga, args.smp,
                    browser_resource_probe=args.browser_resource_probe,
-                   browser_input_probe=args.browser_input_probe)
+                   browser_input_probe=args.browser_input_probe, browser_forms_probe=args.browser_forms_probe)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

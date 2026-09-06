@@ -49,6 +49,7 @@ class CssEngineTests(unittest.TestCase):
             sources = [ROOT / name for name in ("test/test_css_engine_host.c",
                 "userspace/libc/lib/bytes.c", "userspace/libc/lib/heap.c",
                 "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/css_engine.c",
+                "userspace/gui/apps/browser/browser_forms.c",
                 "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/html_protocol.c",
                 "userspace/gui/apps/browser/browser_resources.c", "userspace/programs/curl_http.c",
                 "userspace/gui/lib/html_document.c", "userspace/gui/lib/font.c")]
@@ -59,7 +60,7 @@ class CssEngineTests(unittest.TestCase):
             result = subprocess.run([*command[:2], "@" + str(response)],
                 env=environment, capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode,0,result.stderr)
-            for mode in ("cascade", "geometry", "quota", "resources", "import", "worker", "bad-packet",
+            for mode in ("forms-fixture", "forms", "cascade", "geometry", "quota", "resources", "import", "worker", "bad-packet",
                          "worker-eacces", "worker-missing", "worker-missing-eacces",
                          "worker-revoked", "worker-revoked-eacces", "worker-sleep-failure",
                          "resources-needed", "resources-cascade", "resources-cycle", "resources-depth",

@@ -7,12 +7,11 @@ Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 Abgenommenes R3.12: Der Browser bekommt reale Tastatureingaben ueber den
 fokussierten Surface-Pfad, abgesichert durch den separaten
 [Terminal-Mediator](TERMINAL_INPUT_OWNERSHIP_CONTRACT.md). Dies schliesst die
-Shell/Compositor-Konkurrenz; Formulare und JavaScript sind damit noch nicht
-implementiert. R3.11 bleibt der letzte abgenommene Engine-Schnitt; R3.12
-ergaenzt die OS-Eingabegrundlage. Alle Hostgruppen, beide Referenzbuilds und
+Shell/Compositor-Konkurrenz; R3.12 ergaenzt die OS-Eingabegrundlage.
+Alle Hostgruppen, beide Referenzbuilds und
 alle fuenf Gastgates bestehen, auch GTEST-Unicode und Speicherresilienz.
-Die Nachweise und ihre Grenzen stehen in CURRENT_WORK. R3.13 ist nun als
-separater Formularvertrag aktiv, noch nicht implementiert.
+Die Nachweise und ihre Grenzen stehen in CURRENT_WORK. R3.13 ergaenzt nun
+abgenommen native statische GET-Formulare. JavaScript bleibt offen.
 
 NetSurf ist der bevorzugte **Portierungskandidat**, noch keine integrierte
 Engine. Es besitzt eine eigene in C geschriebene Layout-Engine, mehrere
@@ -441,6 +440,8 @@ bestandener Gastnachweis. R3.9/R3.10 haben seither HTML5 und begrenztes CSS-Layo
 integriert und abgenommen; R3.11 ergaenzt abgenommen externe Stylesheets/Imports
 mit einem validierten Ressourcenbuendel. Der abgenommene separate OS-Schnitt
 R3.12 vermittelt die beim Gasttest beobachtete konkurrierende Terminal-Eingabe
-zwischen Shell und aktivem Desktop generationgebunden. Das naechste aktive
-Paket R3.13 ist fuer Formulare definiert; Formulare und JavaScript bleiben offen.
+zwischen Shell und aktivem Desktop generationgebunden. R3.13 implementiert
+abgenommen native statische
+GET-Formulare; der genaue Umfang steht in `BROWSER_FORM_INTERACTION_CONTRACT.md`.
+JavaScript bleibt eine separate, noch offene Prozess-/DOM-Grenze.
 Der genaue Speicher-/Fehlervertrag steht in `USERSPACE_SDK_AND_PORTABILITY.md`.
