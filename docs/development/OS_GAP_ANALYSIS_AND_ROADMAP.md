@@ -6,23 +6,24 @@ Neue Nutzervorgabe vom 6. September: `docs/REIST_CPP_MIGRATION_PLAN.md` wird
 unveraendert uebernommen. TASK-0001 erfordert zunaechst eine committete Baseline
 fuer Browser, GUI-Bibliothek und Compositor. `R3.16a` ist mit 169 Hosttests,
 reproduzierbaren Messdaten und QEMU-Renderprobe abgenommen; Details in
-[CPP_MIGRATION_BASELINE.md](CPP_MIGRATION_BASELINE.md). Das noch nicht
-implementierte `R3.16` ist active und auf C++20 ohne globale dynamische
-Initialisierung/Exit-Registrierung umgestellt. Anschliessend TASK-2001 fuer
-minimale Hilfstypen, danach Browserpilot response -> resources -> model.
+[CPP_MIGRATION_BASELINE.md](CPP_MIGRATION_BASELINE.md). `R3.16` ist mit
+75 Hosttests, beiden Referenzbuilds und drei Gastgates abgenommen: opt-in
+C++20 ohne globale dynamische Initialisierung/Exit-Registrierung. `R3.17`
+ist active fuer TASK-2001 (minimale Hilfstypen), danach Browserpilot
+response -> resources -> model.
 Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.
 
 Am 6. September ausdruecklich bestaetigte Browserreihenfolge: R3.15 fuer
 maxlength und native Formulardarstellung zuerst vollstaendig abnehmen und
 committen; anschliessend ein eigenes geprueftes C++-Userspace-SDK-/Runtimepaket,
 danach schrittweise Browsermigration mit weiterverwendeten C-Parsern und
-unveraenderten Ring-3-Prozessgrenzen. Noch keine C++-Implementierung oder
--Kompatibilitaet behauptet. Der Nutzer hat die gezielte R3.15-Parserkorrektur
+unveraenderten Ring-3-Prozessgrenzen. Keine vollstaendige C++-Kompatibilitaet
+behauptet. Der Nutzer hat die gezielte R3.15-Parserkorrektur
 im bestehenden Buildadapter samt Regressionstests nach dem Paketgrenzstopp
 freigegeben; keine Archiv-, Kernel- oder Fristlockerung (CURRENT_WORK).
 R3.15 ist jetzt mit acht Hostgruppen, beiden Referenzen und fuenf echten
-Browser-Gastgates abgenommen. R3.16 ist als naechstes aktives C++-SDK-/Runtime-
-Paket mit Scope und Gates definiert, noch nicht implementiert. Vollstaendige
+Browser-Gastgates abgenommen. R3.16 ist ebenfalls abgenommen; Nachweise stehen
+in CURRENT_WORK.md. R3.17 ist definiert, noch nicht implementiert. Vollstaendige
 Formular-/JavaScript-Kompatibilitaet und die VMware-Pointerabnahme bleiben offen.
 
 Abnahme vom 5. September 2026: `R1.2c-private-process-memory` liefert vor

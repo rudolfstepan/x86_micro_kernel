@@ -303,6 +303,83 @@ gegen dasselbe installierte GUI-Archiv gelinkt und unter
 `/usr/gui/bin/guidemo.prg` paketiert. Sie zeigt alle derzeit freigegebenen
 Menü- und Dialogfunktionen, ohne private Compositorheader einzubinden.
 
+## Opt-in C++20-Profil 1 (R3.16)
+
+TASK-1001/1002 verwendet den vorhandenen Clang/LLVM-i386-Pfad, ELF32,
+gewoehnliche statische Archive und unveraendertes MYPR v1. Referenzen sind
+ISO C++20 (Objektlebensdauer, Placement-/nothrow-/aligned-new), die
+[Itanium C++ ABI](https://itanium-cxx-abi.github.io/cxx-abi/abi.html) fuer
+Clangs Namensbildung/Array-Cookies und die
+[Clang-Diagnostik](https://clang.llvm.org/docs/DiagnosticsReference.html)
+fuer `-Wglobal-constructors` und `-Wexit-time-destructors`.
+Das ist ein versioniertes freestanding Teilprofil, keine hosted C++-/STL-,
+POSIX- oder fremde Binaerkompatibilitaetszusage.
+
+`build_user_sdk.py` installiert additiv `usr/lib/libreistcpp.a`,
+`usr/include/reist/cpp/new`, `usr/include/reist/cpp/reist/cpp.h` und
+`reist-cpp.pc`. C-Programme bekommen weder diese Include-Pfade noch das Archiv
+automatisch. `build_user_program.py --cpp --sysroot build/sdk` aktiviert
+C++20, `-ffreestanding -fno-exceptions -fno-rtti -fno-threadsafe-statics
+-fno-use-cxa-atexit -nostdinc++` sowie beide genannten Diagnosen als Fehler.
+Gemischte `.c`-/`.cpp`-/Assemblerquellen werden getrennt uebersetzt.
+`reist-cpp.pc` beschreibt Includes/Flags/Archive; fuer dieselbe Zulassungspruefung
+ist weiterhin der PRG-Builder erforderlich, pkg-config allein ist kein Gate.
+
+Der vorhandene C-Startcode bleibt unveraendert: Einstieg ist ausdruecklich
+`extern "C" int main(int argc, char **argv)`. Das ist die dokumentierte
+freestanding-Startkonvention, keine neue C++-ABI ueber Prozessgrenzen.
+`x86os.h` kapselt Funktionen fuer C++ mit C-Linkage; Strukturfelder,
+Groessen, Syscalls, alte Wrapper und MYPR-Grenzen bleiben unveraendert.
+
+Vor Linker-GC, Strip und DISCARD werden alle ELF-Objekte und alle Mitglieder
+jedes Archivs untersucht, auch unreferenzierte. Nichtleere Init-/Fini-Arrays,
+Konstruktor-/Destruktortabellen, Unwind-/Exceptionabschnitte und TLS werden
+abgewiesen; Symbolpruefung erkennt insbesondere lokale dynamische Statics
+(`_ZGV` auch bei abgeschalteten thread-safe Guards), RTTI, Exit-Registrierung,
+Exception- und Threadlaufzeit. Binaereingaben sind auf 64 MiB, 4096 Abschnitte
+bzw. Archivmitglieder und 65536 Symbole je Tabelle begrenzt. Thin Archives,
+Bitcode/LTO und Nicht-i386-ELF sind nicht zugelassen. Zusaetzlich wird das
+gelinkte ELF vor der bisherigen MYPR-Segmentpruefung kontrolliert.
+Zeitstempel allein ueberspringen diese Pruefung bei C++ nicht.
+Dies verhindert unbeabsichtigte Laufzeitabhaengigkeiten, ist aber keine
+Sicherheitsgrenze gegen absichtlich handgeschriebenen Maschinencode:
+Speicher-/Autoritaetsisolation bleiben Aufgabe des Ring-3-Loaders und Kernels.
+
+Konstante Initialisierung, automatische Objekte, `noexcept`-Destruktoren,
+explizite Move-Uebergabe, virtuelle Rollen ohne RTTI und Placement-new sind
+moeglich. Globale dynamische Initialisierung, dynamische lokale Statics,
+Exit-Registrierung, Exceptions und TLS sind nicht Teil dieses Profils.
+Es gibt keine Konstruktorliste, keinen automatischen Heapstart und keinen
+globalen Garbage Collector. `Result`/`Optional`/`Span` und feste Container
+folgen erst in TASK-2001.
+
+Vor dynamischen Allokationen initialisiert die Anwendung ausdruecklich
+`reist_libc_init_process(budget)` oder einen vorhandenen caller-owned Provider.
+`new`/`new[]` und alle Delete-Varianten nutzen ausschliesslich diesen bereits
+begrenzten privaten C-Allocator. Ohne Initialisierung oder bei Erschoepfung
+liefert nothrow-new NULL; bereits lebende Objekte bleiben unveraendert.
+Null-Delete ist wirkungslos. Zero-new fordert mindestens ein Byte an;
+Array-Cookies verwaltet der Compiler. Aligned-new prueft Zweierpotenz,
+Groessenueberlauf und Platz fuer einen privaten Rohzeiger-Praefix vor malloc.
+Aligned-delete gibt exakt dessen urspruengliche Allocation zurueck. Ungueltige
+Delete-Zeiger bleiben C++-UB; das Profil verspricht weder Schutz vor gefaelschten
+Zeigern im selben Prozess noch Destruktoren nach einem Prozessabsturz.
+
+Explizite Profilabweichung: Gewoehnliches new wirft bei Erschoepfung kein
+`std::bad_alloc`, sondern beendet nur den aufrufenden Prozess mit Status 71,
+ohne Unwinding. Pure-/deleted-virtual-Aufrufe beenden ihn mit Status 72;
+keine erfolgreichen ABI-Stubs. Wiederherstellbare Aufrufer verwenden
+`new(std::nothrow)`. Normale Destruktion/free gibt leere Backingregionen zurueck;
+bei Fault, Kill oder fatalem new greift unveraendert das generationsgebundene
+OS-Reaping. Kein neuer Heap-Syscall, kein Reserveabbau, kein Ring-0-C++.
+
+`/usr/bin/cpptest.prg` ist in Windows- und Makefile-Layouts ueber `cpptest`
+aus der normalen Userspace-Shell erreichbar. Hosttests pruefen echte Runtime
+und echten C-Allocator, C-Linkage/Layout, Verbotserkennung sowie den externen
+SDK-Build. Das `cpp-client`-Gastgate prueft normale Objekt-/Arraylebensdauer,
+exakte Frame-Rueckgabe, OOM/Fault/Kill eines Kindes, Parent-Canary, frisches
+Kind und anschliessende Shellbedienung unter endlichen Fristen.
+
 ## Dokumentationsvertrag
 
 Öffentliche Header sind die normative API-Referenz und verwenden

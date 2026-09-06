@@ -4,6 +4,13 @@ Stand: 3. September 2026
 
 ## Standard-first-Kompatibilitätsregel
 
+R3.16 fuehrt ausschliesslich ein opt-in C++20-Teilprofil fuer Ring 3 ein;
+der [SDK-Vertrag](USERSPACE_SDK_AND_PORTABILITY.md) beschreibt dessen
+Startkonvention, verbotene Laufzeitabhaengigkeiten und versionierte
+no-exceptions-Allokationssemantik. C-Startcode, Prozessgrenzen, private
+Allocator-/Reap-Mechanismen und oeffentliche C-ABI bleiben erhalten.
+Kein Kernel-, Browser- oder Compositorumbau in diesem Grundlagenpaket.
+
 REIST verwendet etablierte Schnittstellen als Architekturgrundlage, statt
 unverwandte Gegenstücke neu zu erfinden. Öffentliche APIs, ABIs, Protokolle,
 Dateiformate, Gerätemodelle und Buildartefakte behalten Terminologie,

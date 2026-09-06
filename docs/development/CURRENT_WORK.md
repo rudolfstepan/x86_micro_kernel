@@ -2,6 +2,79 @@
 
 Stand: 6. September 2026
 
+## R3.16 abgenommen: opt-in C++20-SDK und explizite Objektlebensdauer
+
+Alle zehn eingefrorenen Gates bestehen. Finale Referenzen: vmware/vga
+53 s (`20260906-184558-package-vmware-vga.log`), qemu/vga 50 s
+(`20260906-184746-package-qemu-vga.log`), jeweils Bootmanifest und SBOM gueltig.
+75 Hosttests ohne Skips; Details und erhaltene Erstfehler unten.
+
+Gastnachweise:
+
+- `cpp-client`: PASS/11,354 s, `20260906-184852-cpp-client.log`.
+  Normale Objekt-/Array-/aligned-Lebensdauer, exakte Frame-Rueckgabe,
+  nothrow-OOM ohne Zustandsverlust, gewoehnliches new mit Prozessstatus 71,
+  Fault/134 und Kill/143, Parent-Canary, exaktes Reap, frisches Kind und Shell.
+- `memory-resilience`: PASS/209,829 s einschliesslich separatem Build;
+  Gastphase 72 s, `20260906-185204-runtime-guest-smoke-memory-resilience.log`,
+  endet nach den bestehenden Ausnahmepruefungen mit TEST_OK und Shell.
+- `runtime-desktop-browser-forms`: PASS/76,927 s,
+  `r316/gate-browser-forms.log`; echte Eingabe, exakter GET, Reflow,
+  Ablehnung, Reset, Recovery und Close bleiben funktional.
+
+`CPPTEST.PRG` hat 24580 Byte, SHA-256
+`5c28ec456e6d7b268553708a36db7fe97204e181beb349ab24aab375646f61ba`;
+`libreistcpp.a` 12196 Byte, SHA-256
+`8ef0d80b3132049643ee0b6cd82122b9d5ca302b37042603fb4607b5fbb37538`.
+Die neu gebauten BROWSER.PRG, HTMLWORK.PRG und DESKTOP.PRG stimmen bytegenau
+mit der committeten Baseline ueberein. Das GUI-Archiv bleibt gleich gross,
+hat nach der Header-Neuuebersetzung aber einen anderen Hash; keine Behauptung
+vollstaendiger Artefaktidentitaet. Keine neue Performance-/VMware-Pointerzusage.
+
+Bekannte, unveraenderte Nebenwarnung: Die optionale QEMU-FAT12-Rettungsdiskette
+passt nicht in ihre Tabelle; bereits im Vorlauf
+`20260906-140440-package-qemu-vga.log` dokumentiert. Die eingefrorenen
+HDD-/SDK-Gates bestehen; keine neue FAT12-Abnahme oder Lockerung des Limits.
+
+R3.16 ist done, R3.17 fuer die minimalen allokationsfreien Hilfstypen aus
+TASK-2001 active. Dieses Folgepaket ist nur definiert, noch nicht implementiert.
+Danach bleibt die Reihenfolge response -> resources -> model; die VMware-
+Pointerabnahme bleibt unveraendert zurueckgestellt. Kein Push oder Agentenlauf.
+
+### Umsetzung und Diagnosechronik
+
+Baseline-Commit ist `8ff162a3`. Implementiert sind das additive Runtime-Archiv,
+gemischter C/C++-PRG-Build, C-Linkage der bestehenden SDK-Funktionen und
+Zulassungspruefung aller ELF-/Archivinputs vor GC/Strip. Kein neuer Kernel-
+oder Allocatorpfad, kein C++-Browserumbau. Der C-Einstieg verlangt ausdruecklich
+`extern "C" int main(int,char**)`; keine implizite Heapinitialisierung.
+Der SDK-Vertrag dokumentiert Profil 1 und seine Grenzen.
+
+Die sechs C++-Host-/Objekt-/Linktests bestehen (4,770 s). Echte Runtime und
+C-Heap pruefen normale/Array-/aligned-Lebensdauer, Placement/Move, Zero/Null,
+Overflow, nichtveraenderndes nothrow-OOM, Backingrueckgabe sowie lokale
+Exitcodes 71/72. Windows-Tests laufen ausschliesslich durch den vorhandenen
+nichtinteraktiven Launcher; keine globalen Systemeinstellungen oder Agenten.
+
+Erster Toolchainlauf: 21 Tests/127,257 s, eine fehlende Soll-Listen-Ergaenzung
+fuer das neue CPPTEST.PRG. Compiler, externer C++-Sysroot-Link und MYPR-Build
+bestanden bereits. Gezielte Reparatur ergaenzt die exakte Programmliste und
+erhaelt fuer erneut validierte, bytegleiche C++-PRGs die inkrementellen
+Zeitstempel; keine Abschwaechung der Rebuild-Assertions oder Fristen.
+Logs unter `build/codex-agent/r316/`, einschliesslich Erstfehlern.
+Alle fuenf Hostgruppen bestehen: 6+21+4+31+13=75 Tests ohne Skips;
+Toolchain-Reparaturlauf 136,152 s, libc 25,251 s, Shell 0,798 s, Layout 0,010 s.
+Erste Referenzbuilds vmware/vga (46 s) und qemu/vga (49 s) bestehen.
+Erster cpp-client-Gastlauf bestaetigt Lebensdauer und exakte Backingrueckgabe,
+scheitert aber in der neuen Probe bei --oom: process_identity_of gibt fuer
+einen Zombie korrekt ESRCH zurueck. Die Probe hatte irrtuemlich weiterhin
+eine lebende Identitaet verlangt. Gezielte Reparatur erlaubt ESRCH ausschliesslich
+zum anschliessenden Zombie-/Parent-Wait; fremde lebende Generationen bleiben
+gesperrt. Kein OS-Vertrag wird geaendert. Beide Referenzen werden fuer diese
+geaenderte Gastprobe erneut gebaut, danach genau ein reparierter cpp-client-Lauf.
+Erstnachweis: `20260906-184423-cpp-client.log`. Kein Abnahmecommit vor den
+finalen Referenz-/Gastgates; diese sind inzwischen wie oben aufgefuehrt bestanden.
+
 ## R3.16a abgenommen: Baseline vor der C++-Migration
 
 Alle fuenf eingefrorenen Host-/Messgates und die QEMU-Renderprobe bestehen.
@@ -25,8 +98,8 @@ wurde fuer diese Messung in QEMU TCG gebootet. Die drei gemessenen PRGs
 stimmen exakt mit Image und SBOM ueberein; keine Behauptung einer kompletten
 aktuellen SBOM-Imageidentitaet oder neuen VMware-Pointerabnahme.
 
-R3.16a ist done, R3.16 active fuer TASK-1001/1002. Dessen C++-Implementierung
-beginnt erst nach dem lokalen Baseline-Commit im naechsten Paketlauf.
+Zum Baseline-Abschluss wurde R3.16a done und R3.16 active fuer TASK-1001/1002.
+Dessen C++-Implementierung begann erst nach dem lokalen Baseline-Commit.
 Keine Agenten und kein Push. Die folgende Diagnosechronik beschreibt die
 frueheren, inzwischen aufgeloesten Blocker.
 

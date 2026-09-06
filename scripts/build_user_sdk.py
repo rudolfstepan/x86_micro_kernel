@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from build_user_program import ROOT, find_zig, freestanding_compile_prefix
+from build_user_program import (ROOT, find_zig, freestanding_compile_prefix,
+                                cpp_compile_flags, validate_cpp_object)
 
 
 CORE_ROOT = ROOT / "userspace" / "sdk"
@@ -108,6 +109,8 @@ IMAGE_LIBRARY_SOURCES = (
 STARTUP_SOURCE = CORE_ROOT / "crt0.c"
 LIBC_ROOT = ROOT / "userspace/libc"
 LIBC_INCLUDE_ROOT = LIBC_ROOT / "include"
+CPP_ROOT = ROOT / "userspace/cpp"
+CPP_INCLUDE_ROOT = CPP_ROOT / "include"
 LIBC_SOURCES = tuple(LIBC_ROOT / "lib" / name for name in
                      ("heap.c", "bytes.c", "runtime.c", "process_heap.c"))
 WAPCAPLET_ARCHIVE = ROOT / "third_party/libwapcaplet.tar.gz"
@@ -161,6 +164,14 @@ class SdkArtifacts:
     libc_include_dir: Path
     libc_library: Path
     wapcaplet_library: Path
+
+    @property
+    def cpp_include_dir(self) -> Path:
+        return self.include_dir / "reist/cpp"
+
+    @property
+    def cpp_library(self) -> Path:
+        return self.library_dir / "libreistcpp.a"
 
 
 def sdk_artifacts(output: Path) -> SdkArtifacts:
@@ -435,6 +446,21 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
                     "Name: libwapcaplet\nDescription: NetSurf string interning for REIST\n"
                     "Version: 0.4.3\nRequires: reist-c\n"
                     "Cflags: -I${includedir}\nLibs: -L${libdir} -lwapcaplet\n")
+    cpp_headers = tuple(p for p in CPP_INCLUDE_ROOT.rglob("*") if p.is_file())
+    for header in cpp_headers:
+        destination = artifacts.cpp_include_dir / header.relative_to(CPP_INCLUDE_ROOT)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if not destination.is_file() or destination.read_bytes() != header.read_bytes():
+            shutil.copy2(header, destination)
+    write_if_changed(artifacts.library_dir / "pkgconfig/reist-cpp.pc", common +
+                    "Name: reist-cpp\nDescription: Opt-in freestanding C++20 profile 1\n"
+                    "Version: 1.0.0\nRequires: reist-c\n"
+                    "Cflags: -I${includedir}/reist/cpp " + " ".join(cpp_compile_flags()) + "\n"
+                    "Libs: -L${libdir} -lreistcpp -lreistc -lreistos\n")
+    cpp_stale = artifact_requires_rebuild(
+        artifacts.cpp_library,
+        (CPP_ROOT / "runtime.cpp", *cpp_headers, *libc_headers, *core_headers,
+         Path(__file__), ROOT / "scripts/build_user_program.py"), incremental)
 
     startup_stale = artifact_requires_rebuild(
         artifacts.startup_object,
@@ -466,7 +492,7 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         artifacts.wapcaplet_library,
         (WAPCAPLET_ARCHIVE, Path(__file__).resolve(), *libc_headers), incremental)
     if not (startup_stale or core_stale or parser_stale or gui_stale or
-            audio_stale or image_stale or tls_stale or libc_stale or wapcaplet_stale):
+            audio_stale or image_stale or tls_stale or libc_stale or wapcaplet_stale or cpp_stale):
         return artifacts
 
     with tempfile.TemporaryDirectory(prefix="reist-user-sdk-") as temporary:
@@ -482,6 +508,14 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
         prefix = freestanding_compile_prefix(
             zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
                   CONFIG_INCLUDE_ROOT, STORAGE_INCLUDE_ROOT])
+
+        if cpp_stale:
+            cpp_object = temporary_path / "cpp-runtime.o"
+            run([*freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT, CPP_INCLUDE_ROOT]),
+                 *cpp_compile_flags(), "-c", str(CPP_ROOT / "runtime.cpp"),
+                 "-o", str(cpp_object)], environment)
+            validate_cpp_object(cpp_object.read_bytes())
+            create_archive(zig, artifacts.cpp_library, [cpp_object], temporary_path, environment)
 
         if libc_stale:
             objects = compile_objects(LIBC_SOURCES,

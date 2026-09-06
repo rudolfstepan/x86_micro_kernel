@@ -18,6 +18,7 @@ from build_user_sdk import (
 
 
 PROGRAMS = {
+    "CPPTEST.PRG": ROOT / "userspace/programs/cpptest.cpp",
     "MEMTEST.PRG": ROOT / "userspace/programs/memtest.c",
     "CRTEST.PRG": ROOT / "userspace/programs/crtest.c",
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
@@ -366,6 +367,11 @@ def main() -> None:
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.append(sdk.libc_library)
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
+            if name == "CPPTEST.PRG":
+                includes[:0] = [sdk.cpp_include_dir, sdk.libc_include_dir]
+                link_libraries.extend([sdk.cpp_library, sdk.libc_library])
+                dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
+                dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
             if name == "BROWSER.PRG":
                 dependency_files.append(ROOT / "assets/fonts/reist-unicode.psf")
                 vendor = ROOT / "third_party/stb_image.h"
@@ -385,6 +391,7 @@ def main() -> None:
                 runtime_libraries=runtime_libraries,
                 cache_directory=global_cache_directory,
                 dependency_files=dependency_files,
+                cpp=name == "CPPTEST.PRG",
                 compile_flags=(
                     (["-fno-inline-functions"]
                      if name == "STORAGE.PRG" else []) +

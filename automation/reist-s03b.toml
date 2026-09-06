@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.16-ring3-cpp-runtime"
+active_id = "R3.17-cpp-bounded-types"
 
 [policy]
 one_package_per_run = true
@@ -1022,7 +1022,7 @@ evidence = []
 
 [[packages]]
 id = "R3.16-ring3-cpp-runtime"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Establish an opt-in C++20 SDK with explicit Ring-3 object lifetime"
@@ -1071,6 +1071,56 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "feat: add bounded opt-in Ring-3 C++ runtime"
+evidence = []
+
+[[packages]]
+id = "R3.17-cpp-bounded-types"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Provide allocation-free C++ value and ownership types before the browser pilot"
+user_direction = "2026-09-06: Continue automatically in the user's REIST_CPP_MIGRATION_PLAN.md order without routine confirmation. TASK-2001 follows accepted TASK-1001/1002; preserve the deferred VMware package and its gates. Direct visible-main-worktree implementation and local commits only; no agents or push."
+scope = "One bounded C++ object/value ownership model under accepted profile 1: implement reist::Result<T,E> including void success, Optional<T>, Span<T>, FixedString<N>, FixedVector<T,N> and move-only UniqueHandle<T> with explicit noexcept release traits. Use conventional C++ value/view/unique-owner semantics in the REIST namespace with documented bounded error adapters, not false std library compatibility. Reuse existing placement new and C SDK interfaces; no implicit allocation, global dynamic initialization, exceptions, RTTI, TLS or runtime profile relaxation. Store only live objects, check capacity/ranges before mutation, preserve state on rejected operations, destroy each owned object/handle exactly once, and define moved-from/self-move/reset/release behavior. Nonowning views never extend lifetime or acquire authority. Handle traits consume only existing generation-scoped C handles, never synthesize capabilities. Install ordinary headers through the existing SDK copier without a second runtime. Host tests execute real templates with nontrivial/move-only/over-aligned values, empty/full/overflow boundaries and counted release. Translation and object/link checks prove no hidden heap or forbidden lifetime machinery, and an external installed-SDK client calls the unchanged C API. Extend the existing CPPTEST shell proof with bounded value/container and real IPC-handle ownership checks, preserving all existing C++ fault/reap markers and deadlines. No browser, GUI, compositor or kernel conversion; browser_response follows in its own package."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "userspace/cpp/include/reist/result.h", "userspace/cpp/include/reist/optional.h",
+  "userspace/cpp/include/reist/span.h", "userspace/cpp/include/reist/fixed_string.h",
+  "userspace/cpp/include/reist/fixed_vector.h", "userspace/cpp/include/reist/unique_handle.h",
+  "userspace/cpp/include/reist/utility.h",
+  "userspace/programs/cpptest.cpp", "scripts/run_qemu_cpp.py",
+  "test/test_cpp_types.py", "test/test_cpp_types_host.cpp",
+  "test/test_user_program_toolchain.py"
+]
+invariants = [
+  "profile 1 startup, admission, allocator and C ABI remain unchanged; no hosted STL runtime or hidden allocation",
+  "capacity and range failures are explicit and occur before publishing mutation; nontrivial objects have exact lifetimes",
+  "unique ownership cannot be copied; move/reset/release are bounded and cannot double-close or restore stale authority",
+  "Span is borrowed storage with explicit bounds and lifetime; it never becomes an owner",
+  "all existing CPPTEST failure containment and fresh-generation proofs remain required; no deadline or assertion weakening"
+]
+targeted_tests = [
+  "python test/test_cpp_types.py -v", "python test/test_user_cpp.py -v",
+  "python test/test_user_program_toolchain.py -v",
+  "python test/test_libc_source.py -v", "python test/test_shell_source.py -v",
+  "python test/test_system_layout.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode cpp-client -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga"
+]
+stop_conditions = [
+  "required production changes leave allowed_files or an unrelated writer overlaps the candidate",
+  "progress requires weakening C++ profile 1, C ABI, generation isolation, capacity errors or frozen deadlines",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "feat: add allocation-free C++ value and ownership types"
 evidence = []
 
 [[packages]]

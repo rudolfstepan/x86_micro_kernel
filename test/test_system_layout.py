@@ -31,6 +31,14 @@ def directory_entries(data: bytes):
 
 
 class SystemLayoutContracts(unittest.TestCase):
+    def test_cpp_probe_uses_the_same_image_path_in_both_builds(self):
+        self.assertIn("'usr/bin/cpptest.prg' = 'CPPTEST.PRG'", self.read("scripts/build-windows.ps1"))
+        self.assertIn("usr/bin/cpptest.prg=$(SYSTEM_PROGRAM_DIR)/CPPTEST.PRG", self.read("Makefile"))
+        tree = build_tree({"usr/bin/cpptest.prg": b"MYPR"})
+        usr = next(item for item in tree.directories if item.name == "usr")
+        binary = next(item for item in usr.directories if item.name == "bin")
+        self.assertEqual([item.name for item in binary.files], ["cpptest.prg"])
+
     def read(self, relative: str) -> str:
         return (ROOT / relative).read_text(encoding="utf-8")
 

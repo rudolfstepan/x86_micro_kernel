@@ -13,6 +13,10 @@
 #include <stdint.h>
 #include "reist/abi/syscall.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum {
     X86OS_STDIN_FILENO = 0,
     X86OS_STDOUT_FILENO = 1,
@@ -1084,7 +1088,11 @@ typedef struct {
     uint32_t reserved[4];
 } x86os_display_driver_request_t;
 
+#ifdef __cplusplus
+static_assert(sizeof(x86os_display_driver_request_t) == 80U,
+#else
 _Static_assert(sizeof(x86os_display_driver_request_t) == 80U,
+#endif
                "display driver request ABI changed");
 
 #define X86OS_MOUSE_EVENT_VERSION 1U
@@ -2163,5 +2171,9 @@ void x86os_set_cursor(unsigned int column, unsigned int row);
 void x86os_draw_text(unsigned int column, unsigned int row,
                      const char* text, size_t length);
 void x86os_exit(int status) __attribute__((noreturn));
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

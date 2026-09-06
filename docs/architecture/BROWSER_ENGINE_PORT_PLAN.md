@@ -6,7 +6,9 @@ Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 
 Am 6. September 2026 bestaetigte Reihenfolge: R3.15-Formularreparatur abnehmen
 und committen, danach `R3.16-ring3-cpp-runtime`, erst dann schrittweise C++-
-Migration des Browsers. Das SDK-Paket ist definiert, noch nicht implementiert.
+Migration des Browsers. Das SDK-Paket ist als opt-in C++20-Profil 1 abgenommen;
+Nachweise stehen in [CURRENT_WORK.md](../development/CURRENT_WORK.md).
+R3.17 definiert als naechstes TASK-2001, ohne bereits Browserquellen zu migrieren.
 Die spaeter hinzugefuegte [Nutzeranleitung](../REIST_CPP_MIGRATION_PLAN.md)
 praezisiert diese Reihenfolge: committete Baseline TASK-0001, gemischte Toolchain
 und eingeschraenktes C++20-Profil TASK-1001/1002, minimale `libreist++`-Typen

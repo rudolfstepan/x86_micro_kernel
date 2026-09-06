@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build C/assembly sources with Zig/LLVM and package their ELF as MYPR.
+"""Build C/assembly or opt-in C++20 with Zig/LLVM and package ELF as MYPR.
 
 Compilation, assembly, static archives and ELF linking stay with the upstream
 toolchain. This script implements only the REIST-specific target profile and
@@ -25,6 +25,104 @@ PAYLOAD_BASE = PROGRAM_BASE + PROGRAM_HEADER.size
 ELF_HEADER = struct.Struct("<16sHHIIIIIHHHHHH")
 ELF_PROGRAM_HEADER = struct.Struct("<IIIIIIII")
 ELF_SECTION_HEADER = struct.Struct("<IIIIIIIIII")
+
+
+def cpp_compile_flags() -> list[str]:
+    """Clang's freestanding C++20 / Itanium C++ ABI subset; no startup work."""
+    return ["-std=c++20", "-fno-exceptions", "-fno-rtti",
+            "-fno-threadsafe-statics", "-fno-use-cxa-atexit", "-nostdinc++",
+            "-Werror=global-constructors", "-Werror=exit-time-destructors"]
+
+
+def validate_cpp_object(data: bytes) -> None:
+    """Reject forbidden runtime requirements BEFORE stripping/GC/discard.
+
+    This is a build-admission check, not a security boundary against hostile
+    hand-written machine code. The unchanged Ring-3 loader remains that boundary.
+    Inspect every archive member, including currently unreferenced members.
+    """
+    if len(data) > 64 * 1024 * 1024:
+        raise ValueError("C++ input exceeds admission capacity")
+    if data.startswith(b"!<arch>\n"):
+        offset = 8
+        members = 0
+        while offset < len(data):
+            if offset + 60 > len(data) or data[offset+58:offset+60] != b"`\n":
+                raise ValueError("invalid C++ archive header")
+            name = data[offset:offset+16].strip()
+            size = int(data[offset+48:offset+58])
+            offset += 60
+            if size < 0 or size > len(data) - offset or members >= 4096:
+                raise ValueError("invalid C++ archive member bounds")
+            member = data[offset:offset+size]
+            if name not in (b"/", b"//", b"/SYM64/"):
+                if not member.startswith(b"\x7fELF"):
+                    raise ValueError("C++ archives require ordinary ELF32 objects")
+                validate_cpp_object(member)
+            offset += size + (size & 1)
+            members += 1
+        if not members or offset != len(data):
+            raise ValueError("invalid C++ archive size")
+        return
+    if len(data) < ELF_HEADER.size:
+        raise ValueError("truncated C++ ELF input")
+    h = ELF_HEADER.unpack_from(data)
+    if h[0][:7] != b"\x7fELF\x01\x01\x01" or h[1] not in (1, 2) or h[2:4] != (3, 1):
+        raise ValueError("C++ input requires little-endian i386 ELF")
+    shoff, stride, count, strings = h[6], h[11], h[12], h[13]
+    if (h[8] != ELF_HEADER.size or stride != ELF_SECTION_HEADER.size or
+            not 0 < count <= 4096 or strings >= count or
+            shoff < ELF_HEADER.size or shoff + count * stride > len(data)):
+        raise ValueError("invalid C++ ELF section table")
+    sections = [ELF_SECTION_HEADER.unpack_from(data, shoff + i * stride) for i in range(count)]
+
+    def contents(section):
+        if section[4] > len(data) or section[5] > len(data) - section[4]:
+            raise ValueError("invalid C++ ELF section bounds")
+        return data[section[4]:section[4]+section[5]]
+
+    def name_at(table, offset):
+        if offset >= len(table):
+            raise ValueError("invalid C++ ELF name offset")
+        end = table.find(b"\0", offset)
+        if end < 0:
+            raise ValueError("unterminated C++ ELF name")
+        return table[offset:end]
+
+    if sections[strings][1] != 3:
+        raise ValueError("invalid C++ section-name table")
+    names = contents(sections[strings])
+    banned_sections = (b".init", b".fini", b".preinit_array", b".init_array",
+                       b".fini_array", b".ctors", b".dtors", b".eh_frame",
+                       b".gcc_except_table", b".tdata", b".tbss")
+    banned_symbols = (b"_ZGV", b"_ZTI", b"_ZTS", b"__cxx_global_var_init",
+                      b"_GLOBAL__sub_I", b"__cxa_guard", b"__cxa_throw",
+                      b"__cxa_allocate_exception", b"__cxa_atexit", b"__cxa_finalize",
+                      b"__gxx_personality", b"_Unwind_", b"__tls_get_addr", b"pthread_")
+    for section in sections:
+        name = name_at(names, section[0])
+        if section[5] and (section[2] & 0x400 or section[1] in (14, 15, 16) or any(
+                name == p or name.startswith(p + b".") for p in banned_sections)):
+            raise ValueError("forbidden C++ runtime section: " + name.decode("ascii", "replace"))
+        if section[1] != 8:
+            contents(section)
+        if section[1] not in (2, 11):
+            continue
+        if section[9] != 16 or section[5] % 16 or section[6] >= count or section[5] // 16 > 65536:
+            raise ValueError("invalid C++ ELF symbol table")
+        table = sections[section[6]]
+        if table[1] != 3:
+            raise ValueError("invalid C++ symbol-name table")
+        symbols = contents(section)
+        symbol_names = contents(table)
+        for start in range(0, len(symbols), 16):
+            symbol = struct.unpack_from("<IIIBBH", symbols, start)
+            name = name_at(symbol_names, symbol[0])
+            if ((symbol[3] & 15) == 6 or name in (b"atexit", b"at_quick_exit") or
+                    name.startswith(banned_symbols) or
+                    (name.startswith(b"__cxa_") and name not in (b"__cxa_pure_virtual", b"__cxa_deleted_virtual")) or
+                    name.startswith((b"thrd_", b"tss_", b"mtx_", b"cnd_"))):
+                raise ValueError("forbidden C++ runtime symbol: " + name.decode("ascii", "replace"))
 
 
 def freestanding_compile_prefix(
@@ -200,7 +298,7 @@ def build(sources: list[Path], output: Path, zig: Path,
           runtime_libraries: list[Path] | None = None,
           cache_directory: Path | None = None,
           dependency_files: list[Path] | None = None,
-          compile_flags: list[str] | None = None) -> None:
+          compile_flags: list[str] | None = None, cpp: bool = False) -> None:
     """Compile, statically link and package one fixed-address Ring-3 program."""
     sdk = ROOT / "userspace" / "sdk"
     linker_script = ROOT / "config" / "user_program.ld"
@@ -210,6 +308,8 @@ def build(sources: list[Path], output: Path, zig: Path,
     dependency_files = [
         dependency.resolve() for dependency in (dependency_files or [])]
     prebuilt_runtime = runtime_objects is not None or runtime_libraries is not None
+    if cpp and not prebuilt_runtime:
+        raise ValueError("C++ profile requires the installed opt-in SDK runtime")
     runtime_objects = [
         runtime_object.resolve()
         for runtime_object in (runtime_objects or [])
@@ -246,11 +346,11 @@ def build(sources: list[Path], output: Path, zig: Path,
     for source in all_sources:
         if not source.is_file():
             raise FileNotFoundError(source)
-        if source.suffix.lower() not in (".c", ".s"):
+        if source.suffix.lower() not in ((".c", ".s", ".cpp") if cpp else (".c", ".s")):
             raise ValueError(f"unsupported source type: {source}")
 
     dependencies = [
-        *all_sources, *runtime_objects, *runtime_libraries, linker_script]
+        *all_sources, *runtime_objects, *runtime_libraries, linker_script, Path(__file__)]
     for source in all_sources:
         dependencies.extend(source.parent.glob("*.h"))
     dependencies.extend((sdk / "include").glob("*.h"))
@@ -260,7 +360,9 @@ def build(sources: list[Path], output: Path, zig: Path,
         for directory in include_dirs:
             dependencies.extend(directory.rglob("*.h"))
     dependencies.extend(libraries)
-    if incremental and output.is_file() and all(
+    # C++ admission must inspect every input; a timestamp-only cache must never
+    # turn a previously linked C program into an unchecked C++ profile artifact.
+    if incremental and not cpp and output.is_file() and all(
             dependency.stat().st_mtime_ns <= output.stat().st_mtime_ns
             for dependency in dependencies):
         return
@@ -280,9 +382,16 @@ def build(sources: list[Path], output: Path, zig: Path,
         for index, source in enumerate(all_sources):
             object_path = temporary_path / f"source-{index}.o"
             language_flags = ["-std=c11"] if source.suffix.lower() == ".c" else []
+            if source.suffix.lower() == ".cpp":
+                language_flags = cpp_compile_flags()
             run([*common_flags, *language_flags, "-c", str(source),
                  "-o", str(object_path)], environment)
             objects.append(object_path)
+
+        if cpp:
+            for value in (*runtime_objects, *objects, *libraries, *runtime_libraries):
+                with value.open("rb") as stream:
+                    validate_cpp_object(stream.read(64 * 1024 * 1024 + 1))
 
         elf_path = temporary_path / "program.elf"
         run([
@@ -294,9 +403,14 @@ def build(sources: list[Path], output: Path, zig: Path,
             *(str(value) for value in runtime_libraries),
         ], environment)
         elf = elf_path.read_bytes()
+        if cpp:
+            validate_cpp_object(elf)
         program = elf_to_mypr(elf)
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(program)
+        # Revalidate C++ on every invocation, but do not invalidate downstream
+        # image builds when the validated output is byte-for-byte unchanged.
+        if not (cpp and incremental and output.is_file() and output.read_bytes() == program):
+            output.write_bytes(program)
         if elf_output:
             elf_output.parent.mkdir(parents=True, exist_ok=True)
             elf_output.write_bytes(elf)
@@ -311,6 +425,7 @@ def main() -> None:
     parser.add_argument("--elf-output", type=Path)
     parser.add_argument("--zig", type=Path)
     parser.add_argument("--sysroot", type=Path)
+    parser.add_argument("--cpp", action="store_true", help="opt in to the restricted C++20 runtime")
     parser.add_argument("--incremental", action="store_true")
     parser.add_argument("-I", dest="include_dirs", action="append",
                         default=[], type=Path)
@@ -333,10 +448,16 @@ def main() -> None:
         library_dirs.append(args.sysroot.resolve() / "usr" / "lib")
         runtime_objects = [startup]
     libraries = resolve_static_libraries(args.library_names, library_dirs)
+    if args.cpp:
+        if args.sysroot is None:
+            parser.error("--cpp requires --sysroot")
+        root = args.sysroot.resolve()
+        include_dirs[:0] = [root / "usr/include/reist/cpp", root / "usr/include/reist/libc"]
+        libraries += resolve_static_libraries(["reistcpp", "reistc"], [root / "usr/lib"])
     build([source.resolve() for source in args.sources], args.output.resolve(),
           zig, args.elf_output.resolve() if args.elf_output else None,
           args.incremental, include_dirs, libraries,
-          runtime_objects, runtime_libraries)
+          runtime_objects, runtime_libraries, cpp=args.cpp)
     print(f"User program: {args.output.resolve()}")
 
 

@@ -247,6 +247,23 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertTrue((include / "x86os.h").is_file())
             self.assertFalse((include / "stdlib.h").exists())
             self.assertTrue((include / "reist/libc/stdlib.h").is_file())
+            self.assertFalse((include / "new").exists())
+            self.assertTrue((include / "reist/cpp/new").is_file())
+            self.assertTrue((include / "reist/cpp/reist/cpp.h").is_file())
+            self.assertEqual((library / "libreistcpp.a").read_bytes()[:8], b"!<arch>\n")
+            self.assertIn("-std=c++20", (library / "pkgconfig/reist-cpp.pc").read_text())
+            cpp_source = temporary / "external.cpp"
+            cpp_source.write_text('#include <new>\n#include <reist/libc.h>\n#include <x86os.h>\n'
+                'struct A { int v=42; ~A() noexcept {v=0;} };\n'
+                'extern "C" int main(int,char**) { if(reist_libc_init_process(1048576)) return 1; '
+                'A *p=new(std::nothrow) A; if(!p) return 2; int v=p->v; delete p; '
+                'return v!=42 || reist_libc_reset(); }\n', encoding="ascii")
+            cpp_output = temporary / "EXTERNALCPP.PRG"
+            subprocess.run([sys.executable, str(ROOT / "scripts/build_user_program.py"),
+                str(cpp_source), "--cpp", "--sysroot", str(sdk), "--zig", str(ZIG),
+                "--output", str(cpp_output)], cwd=temporary,
+                check=True, capture_output=True, timeout=60)
+            self.assertEqual(cpp_output.read_bytes()[:4], b"MYPR")
             self.assertTrue((include / "libwapcaplet/libwapcaplet.h").is_file())
             for archive in ("libreistc.a", "libwapcaplet.a", "libhubbub.a", "libparserutils.a", "libcss.a", "libclang_rt.builtins-i386.a"):
                 self.assertEqual((library / archive).read_bytes()[:8], b"!<arch>\n")
@@ -572,6 +589,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "CURL.PRG",
                 "CRTEST.PRG",
                 "MEMTEST.PRG",
+                "CPPTEST.PRG",
                 "EDIT.PRG",
                 "CHILDEX.PRG",
                 "FAULTDE.PRG",
