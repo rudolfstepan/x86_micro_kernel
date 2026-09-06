@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
+active_id = "R3.15-browser-form-maxlength"
 
 [policy]
 one_package_per_run = true
@@ -914,8 +914,62 @@ commit_message = "fix: admit larger encoded web documents with bounded browser r
 evidence = []
 
 [[packages]]
-id = "R3.6b-vmware-pointer-pinned-mutex"
+id = "R3.15-browser-form-maxlength"
 status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Support bounded native HTML maxlength without rejecting search forms"
+user_direction = "2026-09-06: User reports Google search rejected with a screenshot after accepted commit 5214c019. Clean worktree verified. The captured Google form has maxlength=2048 on q; the existing unsupported_attributes function blocks the entire GET before transport. Prioritize this reproduced Ring-3 form repair; defer R3.6b with all gates unchanged. Direct main-worktree execution only, no agents or push."
+scope = "One static native text/search/textarea length-limit lifetime from retained Hubbub attributes through versioned private form metadata, native editing, reset/reflow and explicit GET submission. Apply WHATWG maxlength parsing and UTF-16 code-unit length, including LF-normalized textarea values, invalid/missing/zero/large attributes and overlong author defaults. Preserve existing byte quotas; large numerical limits saturate only at the stronger private value capacity, never overflow. Add an append-only version-2 form extension and explicit version-1 wire adapter, without changing legacy control layouts, public semantic/Surface/syscall ABI or scene-generation validation. Cache private edited-value lengths for constant extra work per key, track dirty edits for too-long submission rejection, preserve defaults and values on refused insertion, allow deletion and reset, and retain readonly/disabled semantics. Reuse the existing form GET and worker path; no Google-specific bypass, script execution, hidden-field rewriting, POST, cookies, credentials, new transport or kernel changes. Real-code projection/encoding/wire/edit tests must reproduce the search-field failure first. Tighten the existing real-input form fixture and probe to prove maxlength admission, rejected extra typing with retained value, reset/reflow, exact GET, unsupported-form rejection and worker recovery under unchanged deadlines. Preserve the other four browser guest gates. A controlled form proof is not live Google results-page compatibility."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/BROWSER_FORM_INTERACTION_CONTRACT.md",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md", "docs/architecture/REIST_ARCHITECTURE.md",
+  "userspace/gui/apps/browser/browser_forms.c", "userspace/gui/apps/browser/browser_forms.h",
+  "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/browser_scene.h",
+  "userspace/gui/apps/browser/main.c", "htdocs/browser-forms-test.html",
+  "scripts/run_qemu_runtime_desktop.py",
+  "test/test_browser_forms.py", "test/test_browser_forms_host.c",
+  "test/test_css_engine.py", "test/test_css_engine_host.c",
+  "test/test_browser_runtime_source.py", "test/test_gui_browser_source.py",
+  "test/test_browser_public_navigation.py"
+]
+invariants = [
+  "unsupported methods credentials files scripts and existing validation requirements remain rejected before transport; maxlength is implemented, not ignored",
+  "UTF-16 units are distinct from UTF-8 bytes; private byte quotas and bounded editing costs remain authoritative",
+  "version-1 form wire remains decodable; new limits are versioned validated and cannot silently change old field semantics",
+  "reflow preserves navigation-owned edits counts and dirty flags; reset clears them; failed admission never publishes a partial candidate",
+  "no kernel Surface syscall TLS reserve deadline or restart-budget change"
+]
+targeted_tests = [
+  "python test/test_browser_forms.py -v", "python test/test_css_engine.py -v",
+  "python test/test_gui_browser_source.py -v", "python test/test_browser_runtime_source.py -v",
+  "python test/test_browser_public_navigation.py -v", "python test/test_user_program_toolchain.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-public -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-resources -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production file lies outside allowed_files or an unrelated writer overlaps the candidate",
+  "progress requires weakened form or generation validation private isolation or frozen deadlines",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "fix: support native form maxlength and search submission"
+evidence = []
+
+[[packages]]
+id = "R3.6b-vmware-pointer-pinned-mutex"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

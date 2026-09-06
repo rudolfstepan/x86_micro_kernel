@@ -2,6 +2,18 @@
 
 Stand: 6. September 2026
 
+## R3.15 aktiv: Google-Suchformular / maxlength
+
+Neuer Nutzerfehler nach sauberem Commit `5214c019`: Google startet, aber die
+Suchabgabe meldet "Formular nicht unterstuetzt". Die gespeicherte Antwort vom
+6. September 10:37 UTC zeigt `maxlength=2048` am Feld `q`; der vorhandene
+Projektor blockiert damit das ganze Formular. R3.15 implementiert dieses
+normale Eingabelimit mit versioniertem privaten Modell, Unicode-Unitzaehlung,
+Reset/Reflow und realem GET-Nachweis. Kein Google-Sonderfall und keine
+JavaScript-/Kernel-Erweiterung. Gates/Scope stehen vor Implementierung fest.
+R3.6b bleibt mit unveraenderter Abnahme zurueckgestellt. Noch kein neuer
+Implementierungs- oder Live-Suchergebnisnachweis.
+
 ## R3.14 abgenommen: Dokumentaufnahme und Browser-Ladepfad
 
 Alle eingefrorenen Gates bestehen am finalen Kandidaten auf `a9229d14`.

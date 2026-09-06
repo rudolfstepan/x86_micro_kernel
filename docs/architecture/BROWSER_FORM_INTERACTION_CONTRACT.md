@@ -59,3 +59,35 @@ encoding, defaults, exhaustion and stale/reflow state. QEMU must receive actual
 pointer/keyboard input and a controlled HTTP fixture must observe the exact
 accepted GET and no requests for rejected submissions. Existing input, browser
 recovery and resource probes remain frozen. No runtime claim from source tests.
+
+## R3.15 candidate: native maxlength
+
+The 2026-09-06 Google screenshot and retained response identify the normal
+`maxlength=2048` search attribute as the local rejection cause. Implement it
+for text/search and textarea rather than treating the form as unsupported.
+Reference: [WHATWG maxlength](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#limiting-user-input-length)
+and [non-negative integer parsing](https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#rules-for-parsing-non-negative-integers).
+Measure UTF-16 code units, not UTF-8 bytes; textarea counts normalized LF.
+Missing/invalid limits are absent. Zero is valid. Numerical limits at or above
+the existing 128-KiB value capacity saturate there without overflow; that private
+byte bound remains stronger. Author defaults are not truncated. User insertion
+cannot exceed the limit; deletion remains possible. A dirty, still-overlong
+editable value blocks submission; reset restores the default and clears dirty
+state, and same-generation reflow preserves it. Readonly/disabled controls
+retain their constraint-validation exemptions.
+
+Private form version 2 appends one `max_length_plus_one` word per live control
+after the existing strings in the compact wire: zero means absent, otherwise
+subtract one for the unit limit. Version 1 remains explicitly decodable with
+no limit extension. Old control fields and scene envelope versions do not change.
+Validate version, exact length, applicable control kind and limit bounds before
+publication. Private editing state caches unit counts and dirty flags without
+network, allocation or parser work per key. No Google-specific field rewriting,
+JavaScript, POST, cookie or credential authority is added. Other unsupported
+constraints remain rejected. Original transport/worker deadlines stay frozen.
+
+Acceptance requires real projection and legacy/new wire tests, Unicode and
+boundary edit/reset/reflow cases, then all five browser guest gates. The native
+forms gate additionally proves a maximum-length field, refused extra typing
+without value loss and the exact successful GET. This is not a claim that
+Google's live results pages or every form work.
