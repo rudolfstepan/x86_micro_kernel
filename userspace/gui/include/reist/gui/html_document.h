@@ -87,6 +87,16 @@ int reist_html_document_parse(const uint8_t *input, size_t length,
  * HTTP(S) network URLs are publishable navigation targets. */
 int reist_html_url_resolve(const char *base, const char *reference,
                            char *output, size_t capacity);
+/* Append-only wide resolver adapter. Legacy document fields and resolver
+ * admission stay 256 bytes. Scratch is private, caller-owned and not shared
+ * between simultaneous calls; no allocation or implicit global storage. */
+#define REIST_HTML_URL_CAPACITY 8193U
+typedef struct reist_html_url_workspace {
+    char candidate[REIST_HTML_URL_CAPACITY], path[REIST_HTML_URL_CAPACITY];
+    uint16_t marks[REIST_HTML_URL_CAPACITY];
+} reist_html_url_workspace_t;
+int reist_html_url_resolve_wide(const char *base,const char *reference,
+    char *output,size_t capacity,reist_html_url_workspace_t *workspace);
 
 /** Normalize direct address-bar input. Explicit HTTP(S) and local absolute
  * paths are retained; a host/path without a scheme receives https://. */

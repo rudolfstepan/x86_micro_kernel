@@ -714,16 +714,24 @@ int create_process_for_file(const char *filename) {
 static int build_user_arguments(page_directory_t *page_directory, int argc,
                                 const char *const *argv,
                                 uint32_t *user_stack) {
-    if (argc < 0 || argc > 32 || (argc != 0 && argv == NULL)) return -1;
-    uint32_t addresses[32];
+    if (argc < 0 || (unsigned)argc > PROCESS_ARGUMENT_INTERNAL_COUNT ||
+        (argc != 0 && argv == NULL) || user_stack==NULL) return -22;
+    uint32_t addresses[PROCESS_ARGUMENT_INTERNAL_COUNT];
+    size_t lengths[PROCESS_ARGUMENT_INTERNAL_COUNT];
+    size_t used=((size_t)argc+4U)*sizeof(uint32_t)+3U;
+    /* Entire initial frame is admitted before any copyout. Preserve at least
+     * half the existing guarded user stack for execution, not argv storage. */
+    if(PROCESS_ARGUMENT_TOTAL_BYTES>(USER_STACK_TOP-USER_STACK_BOTTOM)/2U) return -7;
+    for(int i=0;i<argc;++i) {
+        if(!argv[i]) return -22;
+        size_t n=0; while(n<PROCESS_ARGUMENT_STRING_BYTES && argv[i][n]) ++n;
+        if(n==PROCESS_ARGUMENT_STRING_BYTES || n+1U>PROCESS_ARGUMENT_TOTAL_BYTES-used) return -7;
+        lengths[i]=n+1U; used+=n+1U;
+    }
     uint32_t stack = USER_STACK_TOP;
 
     for (int i = argc - 1; i >= 0; --i) {
-        if (argv[i] == NULL) return -1;
-        size_t length = strlen(argv[i]) + 1U;
-        if (length > 256U || stack < USER_STACK_BOTTOM + length) {
-            return -1;
-        }
+        size_t length=lengths[i];
         stack -= (uint32_t)length;
         if (copy_to_user_space(page_directory, stack, argv[i], length) != 0) {
             return -1;

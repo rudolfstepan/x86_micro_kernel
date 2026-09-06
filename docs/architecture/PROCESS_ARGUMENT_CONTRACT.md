@@ -1,7 +1,8 @@
 # Bounded process arguments (R3.14)
 
-Candidate, not accepted until host and guest gates pass. The 2026-09-06 user
-approval extends the current browser repair to the existing spawn mechanism.
+Accepted 2026-09-06: real-code host admission/rollback tests and the controlled
+long-resource browser guest gate pass. The explicit user approval extends
+the browser repair to the existing spawn mechanism. Evidence: CURRENT_WORK.md.
 
 Reference: POSIX exec/spawn argv strings and E2BIG/EFAULT/ENOMEM error categories.
 The existing REIST spawn syscall is an adapter, not a claim of POSIX execve

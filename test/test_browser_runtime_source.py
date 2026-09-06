@@ -40,20 +40,34 @@ static browser_workspace_t host_workspace;
 static browser_html_reply_t worker_reply;
 static uint8_t worker_wire[BROWSER_CSS_WIRE_CAPACITY];
 static unsigned request_written, worker_length, worker_offset, endpoint_live;
+static unsigned transport_peer,transport_offset,transport_live,transport_empty;
+static unsigned handoff_mode,handoff_slot,handoff_yields;
+static unsigned idle_sleeps;
+int x86os_sleep_ms(uint32_t ms) { assert(ms==1); ++idle_sleeps; return 0; }
+int x86os_yield(void) { ++handoff_yields; handoff_slot=0; return 0; }
 static browser_scene_t worker_scene;
-int x86os_ipc_create(x86os_ipc_handle_t *h) { assert(!endpoint_live); *h=42; endpoint_live=1; request_written=worker_length=worker_offset=0; return 0; }
+int x86os_ipc_create(x86os_ipc_handle_t *h) { assert(!endpoint_live); *h=42; endpoint_live=1; request_written=worker_length=worker_offset=transport_peer=transport_offset=0; return 0; }
 int x86os_ipc_close(x86os_ipc_handle_t h) { assert(h==42 && endpoint_live); endpoint_live=0; return 0; }
-int x86os_ipc_delegate(x86os_ipc_handle_t h,int pid,uint32_t rights) { assert(h==42 && endpoint_live && pid==81 && rights==3);return 0; }
+int x86os_ipc_delegate(x86os_ipc_handle_t h,int pid,uint32_t rights) { assert(h==42 && endpoint_live && pid==81 && rights==(transport_peer ? X86OS_IPC_RIGHT_SEND : 3U));return 0; }
 int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t h,const x86os_ipc_bulk_message_t *m,uint32_t timeout) {
     assert(h==42 && endpoint_live && !timeout && m->length>16);
+    if(handoff_mode && handoff_slot) return -11;
     browser_css_packet_t p; memcpy(&p,m->payload,sizeof(p));
     assert(p.offset==request_written && p.total==css_input.request.header.size);
     assert(!memcmp(p.bytes,(uint8_t *)&css_input+request_written,m->length-16));
-    request_written+=m->length-16; return 0;
+    request_written+=m->length-16; handoff_slot=1; return 0;
 }
 int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t h,x86os_ipc_bulk_message_t *m,uint32_t timeout) {
     assert(h==42 && endpoint_live && !timeout);
     if(peer_closed) return -32;
+    if(transport_peer) {
+        if(!transport_live && process.state!=X86OS_PROCESS_ZOMBIE && !identity_exit) return -11;
+        if(transport_empty || process.exit_status || transport_offset==file_length) return -32;
+        uint32_t n=(uint32_t)file_length-transport_offset; if(n>REIST_CURL_IPC_DATA) n=REIST_CURL_IPC_DATA;
+        reist_curl_ipc_packet_t p={REIST_CURL_IPC_MAGIC,h,transport_offset,(uint32_t)file_length,{0}};
+        memcpy(p.bytes,file_bytes+transport_offset,n); memcpy(m->payload,&p,16+n); m->length=16+n;
+        transport_offset+=n; return 0;
+    }
     /* A reaped peer's last queued packet remains readable, then the real
      * kernel reports EPIPE, not EAGAIN. Never confuse stream EOF with OOM. */
     if(worker_offset==worker_length) return worker_length ? -32 : -11;
@@ -77,8 +91,10 @@ int x86os_spawnv(const char *path, int argc, const char *const *argv) {
         exists=1; ++spawns; return process.pid;
     }
     assert(!strcmp(path, "/usr/bin/curl.prg") && argc == 7);
+    assert(!strcmp(argv[1],"--reist-ipc") && !strcmp(argv[2],"42") && endpoint_live);
+    transport_peer=1;
     assert(!strcmp(argv[3], "--max-bytes"));
-    assert(!strcmp(argv[4], "65536") || !strcmp(argv[4], "262144"));
+    assert(!strcmp(argv[4], "1048576") || !strcmp(argv[4], "262144"));
     assert(!strcmp(argv[5], "--include") && !strchr(argv[6], '#'));
     assert(!exists); ++spawns; strcpy(spawned_url,argv[6]);
     exists = 1; return process.pid;
@@ -102,6 +118,7 @@ int x86os_wait(int pid, int *status) {
 }
 int x86os_kill(int pid) {
     assert(exists && pid == process.pid && process.parent_pid == x86os_getpid());
+    assert(!endpoint_live); /* Fence the stream before child termination. */
     ++kills;
     /* task_exit_status revokes IPC before publishing the zombie. During
      * cleanup process_terminate refuses a second termination request. */
@@ -145,6 +162,7 @@ static browser_state_t fresh(void) {
     process = (x86os_process_info_t){81, 77, X86OS_PROCESS_RUNNING, 0, "curl"};
     exists = waits = kills = identity_exit = kill_exit = 0; generation = 23;
     kill_pending=peer_closed=0;
+    transport_live=transport_empty=0;
     spawns = unlinks = image_decodes = 0;
     clock_ms = 100; state.loaded = 1; state.image_next = BROWSER_IMAGE_CACHE_COUNT;
     endpoint_live=0; memset(scenes,0,sizeof(scenes));
@@ -361,6 +379,26 @@ static void resource_cases(void) {
 }
 static void redirect_cases(void) {
     reist_gui_surface_client_t client={0}; client.width=800; client.height=600;
+    for(unsigned mode=0;mode<7;++mode) {
+        browser_state_t retry=fresh();
+        assert(!start_fetch(&retry,"https://example.test/transient",1,0));
+        uint32_t end=retry.redirect_deadline;
+        assert(retry.job_deadline==end);
+        clock_ms+=11000; service_loads(&retry,&client); assert(!kills && exists);
+        if(mode==2) retry.job_cancelled=1;
+        if(mode==3) clock_ms=end;
+        process.state=X86OS_PROCESS_ZOMBIE;
+        process.exit_status=mode==4 ? 35 : mode==5 ? 63 : mode==6 ? 6 : mode==1 ? 28 : 7;
+        clock_ms+=12; service_loads(&retry,&client);
+        assert(waits==1 && !exists && !retry.child_pid);
+        if(mode>=2) { assert(!retry.follow_redirect && !retry.transport_retries); continue; }
+        assert(retry.follow_redirect && retry.transport_retries==1 && spawns==1);
+        follow(&retry,&client);
+        assert(spawns==2 && exists && retry.redirect_deadline==end && retry.job_deadline==end);
+        process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=7;
+        clock_ms+=12; service_loads(&retry,&client);
+        assert(waits==2 && !retry.follow_redirect && !exists && retry.transport_retries==1);
+    }
     browser_state_t state=fresh();
     assert(start_fetch(&state,"https://example.test/start#section",1,0)==0);
     uint32_t deadline=state.redirect_deadline;
@@ -370,7 +408,7 @@ static void redirect_cases(void) {
     state.address_focused=1; strcpy(state.address,"https://typed.test/");
     complete(&state,&client,"HTTP/1.1 301 Moved\r\nLocation: /new/index.html\r\nContent-Length: 0\r\n\r\n");
     assert(!state.active && !strcmp(state.active_url,"/htdocs/index.html"));
-    assert(spawns==1 && waits==1 && unlinks==2 && state.redirect_count==1);
+    assert(spawns==1 && waits==1 && !unlinks && state.redirect_count==1 && !endpoint_live);
     assert(!strcmp(state.job_url,"https://example.test/new/index.html#section"));
     assert(!strcmp(state.address,"https://typed.test/"));
     follow(&state,&client);
@@ -427,6 +465,51 @@ static void redirect_cases(void) {
 }
 int main(int argc, char **argv) {
     workspace = &host_workspace; file_length = strlen(file_bytes);
+    assert(!((uintptr_t)workspace->arena & 7U));
+    assert(sizeof(*workspace)<=36U*1024U*1024U);
+    /* Reflow copies live bytes, not unused maximum-capacity image/URL pools.
+     * Poisoned inactive bytes stay private; range failure changes nothing. */
+    memset(workspace->resources,0,sizeof(workspace->resources));
+    memset(image_cache,0,sizeof(workspace->images));
+    memset(&image_cache[1],0xa5,sizeof(image_cache[1]));
+    memset(&workspace->resources[1],0xa5,sizeof(workspace->resources[1]));
+    browser_resources_init(&workspace->resources[0],7);
+    assert(browser_resources_add(&workspace->resources[0],"https://example.test/","https://example.test/a.css",0)==0);
+    assert(!browser_resources_store(&workspace->resources[0],0,"https://example.test/a.css",(const uint8_t *)"p{}",3));
+    image_cache[0][0]=(browser_image_slot_t){.decoded=1,.width=1,.height=1,.source_width=1,.source_height=1,.pixels={0x123456}};
+    assert(!copy_reflow_assets(1,0));
+    assert(image_cache[1][0].decoded==1 && image_cache[1][0].pixels[0]==0x123456 && image_cache[1][0].pixels[1]==0xa5a5a5a5);
+    assert(!image_cache[1][1].decoded && image_cache[1][1].pixels[0]==0xa5a5a5a5);
+    assert(!browser_resources_validate(&workspace->resources[1],"https://example.test/",7));
+    assert(workspace->resources[1].bytes[3]==0xa5 && ((uint8_t *)&workspace->resources[1].entries[1])[0]==0xa5);
+    image_cache[0][0].width=BROWSER_IMAGE_CACHE_SIDE+1;
+    image_cache[1][0].pixels[0]=0x987654;
+    assert(copy_reflow_assets(1,0)==-84 && image_cache[1][0].pixels[0]==0x987654);
+    assert(copy_reflow_assets(0,0)==-84 && copy_reflow_assets(2,0)==-84);
+    memset(workspace->resources,0,sizeof(workspace->resources)); memset(image_cache,0,sizeof(workspace->images));
+    /* A single-slot peer can consume the next packet when given the CPU.
+     * Bound each UI turn to eight actual packets; an empty/full queue is not
+     * permission for a yield/retry spin. No timer tick per successful packet. */
+    browser_state_t paced={.css_endpoint=42}; endpoint_live=handoff_mode=1;
+    finish_load_turn(&paced,0,paced.load_progress); assert(idle_sleeps==1);
+    css_input.request.header.size=9U*BROWSER_CSS_PACKET_DATA;
+    uint32_t progress=paced.load_progress;
+    assert(!service_css_ipc(&paced));
+    assert(paced.css_sent==8U*BROWSER_CSS_PACKET_DATA && handoff_yields==8);
+    finish_load_turn(&paced,0,progress); assert(idle_sleeps==1);
+    progress=paced.load_progress;
+    assert(!service_css_ipc(&paced));
+    assert(paced.css_sent==css_input.request.header.size && handoff_yields==9);
+    finish_load_turn(&paced,0,progress); assert(idle_sleeps==1);
+    progress=paced.load_progress;
+    assert(!service_css_ipc(&paced) && handoff_yields==9);
+    finish_load_turn(&paced,0,progress); assert(idle_sleeps==2);
+    paced.css_sent=0; handoff_slot=1;
+    assert(!service_css_ipc(&paced) && !paced.css_sent && handoff_yields==9);
+    finish_load_turn(&paced,0,progress); assert(idle_sleeps==3);
+    finish_load_turn(&paced,1,progress); assert(idle_sleeps==3);
+    endpoint_live=handoff_mode=handoff_slot=handoff_yields=request_written=0;
+    memset(&css_input,0,sizeof(css_input));
     /* Preserve the first fatal decision across later cleanup errors. A
      * non-EIO failure must not turn into a successful process exit. */
     browser_state_t diagnostic={0};
@@ -454,7 +537,7 @@ int main(int argc, char **argv) {
     assert(bulk_calls==2 && bulk_length==sizeof(bulk_file) && !memcmp(image_bytes,bulk_file,bulk_length));
     file_bytes=saved_file; file_length=saved_length;
     browser_state_t clean=fresh();
-    cleanup_fetch_files(&clean); cleanup_fetch_files(&clean);
+    cleanup_fetch_channel(&clean); cleanup_fetch_channel(&clean);
     assert(!unlinks); /* No speculative VFS work at startup or after cleanup. */
     wheel_cases();
     static uint32_t font_data[13];
@@ -471,6 +554,22 @@ int main(int argc, char **argv) {
     endpoint_live=0;
     failed_load(0, 0, 1); failed_load(1, 0, 1); failed_load(0, 1, 1);
     failed_load(0, 0, 2); failed_load(1, 0, 2);
+    for(unsigned failure=0;failure<3;++failure) {
+        browser_state_t pending=fresh(); reist_gui_surface_client_t view={0};
+        unsigned old_opens=opens,old_unlinks=unlinks;
+        assert(!start_fetch(&pending,"https://example.test/",1,0));
+        transport_live=1; transport_empty=failure==2;
+        uint32_t before_progress=pending.load_progress;
+        service_loads(&pending,&view);
+        assert((pending.load_progress!=before_progress)==!transport_empty);
+        assert(!pending.parse_pending && !waits && !pending.active && pending.child_pid==81);
+        if(!transport_empty) assert(pending.fetch_received==file_length && pending.fetch_total==file_length);
+        process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=failure==1 ? 35 : 0;
+        clock_ms+=10; service_loads(&pending,&view);
+        assert(!pending.child_pid && !endpoint_live && waits==1 && !pending.active);
+        assert((pending.parse_pending!=0)==(failure==0));
+        assert(opens==old_opens && unlinks==old_unlinks);
+    }
     fault_cleanup_cases();
     for (unsigned race = 0; race < 2; ++race) {
         browser_state_t state = fresh(); reist_gui_surface_client_t client = {0};
@@ -1235,7 +1334,7 @@ class BrowserRuntimeTests(unittest.TestCase):
     def test_child_is_bounded_and_generation_checked(self):
         source = APP.read_text()
         for contract in ("identity.generation != state->child_generation", "info.parent_pid == x86os_getpid()",
-                         "X86OS_PROCESS_ZOMBIE", "BROWSER_FETCH_DEADLINE_MS", "BROWSER_PAGE_IMAGE_DEADLINE_MS",
+                         "X86OS_PROCESS_ZOMBIE", "state->job_deadline = state->redirect_deadline", "BROWSER_PAGE_IMAGE_DEADLINE_MS",
                          "cancel_fetch", "reap_deadline", "BROWSER_IMAGE_CACHE_COUNT"):
             self.assertIn(contract, source)
         self.assertNotIn("fetch_network", source)

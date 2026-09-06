@@ -613,10 +613,10 @@ typedef struct uri_parts {
     uint8_t network, has_authority, has_query, has_fragment;
 } uri_parts_t;
 
-static int split_uri(const char *text, uri_parts_t *parts) {
+static int split_uri(const char *text, uri_parts_t *parts,size_t limit) {
     zero_bytes(parts, sizeof(*parts));
-    size_t length = text_length(text, REIST_HTML_HREF_CAPACITY);
-    if (length >= REIST_HTML_HREF_CAPACITY) return REIST_HTML_CAPACITY;
+    size_t length = text_length(text, limit);
+    if (length >= limit) return REIST_HTML_CAPACITY;
     parts->length = length;
     for (size_t i = 0; i < length; ++i)
         if ((uint8_t)text[i] <= 0x20U || (uint8_t)text[i] == 0x7FU ||
@@ -666,10 +666,9 @@ static size_t query_end(const uri_parts_t *p) {
 }
 
 static int normalized_path(const char *path, size_t length,
-                            char *output, size_t capacity, size_t *used) {
+                            char *output, size_t capacity, size_t *used,uint16_t *marks) {
     /* RFC dot segments affect only the path, never query/fragment bytes.
      * Preserve empty segments (double slashes) and terminal directory slash. */
-    size_t marks[REIST_HTML_HREF_CAPACITY];
     size_t count = 0U, cursor = 0U;
     if (length == 0U) return 0;
     if (path[0] != '/') return REIST_HTML_INVALID;
@@ -684,7 +683,7 @@ static int normalized_path(const char *path, size_t length,
         } else if (n == 2U && path[cursor] == '.' && path[cursor + 1U] == '.') {
             if (count != 0U) { *used = marks[--count]; output[*used] = '\0'; }
         } else {
-            marks[count++] = *used;
+            marks[count++] = (uint16_t)*used;
             int status = url_copy(output, capacity, used, path + cursor, n);
             if (status != 0) return status;
             if (end < length && url_copy(output, capacity, used, "/", 1U) != 0)
@@ -696,19 +695,18 @@ static int normalized_path(const char *path, size_t length,
     return 0;
 }
 
-int reist_html_url_resolve(const char *base, const char *reference,
-                           char *output, size_t capacity) {
+static int resolve_work(const char *base,const char *reference,char *output,size_t capacity,
+    size_t limit,char *candidate,char *path,uint16_t *marks) {
     if (base == 0 || reference == 0 || output == 0 || capacity < 2U)
         return REIST_HTML_INVALID;
     uri_parts_t b, r;
-    int status = split_uri(base, &b);
-    if (status == 0) status = split_uri(reference, &r);
+    int status = split_uri(base, &b,limit);
+    if (status == 0) status = split_uri(reference, &r,limit);
     if (status != 0 || b.length == 0U ||
         (!b.network && (b.has_authority || base[0] != '/'))) {
         output[0] = '\0'; return status != 0 ? status : REIST_HTML_INVALID;
     }
-    char candidate[REIST_HTML_HREF_CAPACITY] = {0};
-    char path[REIST_HTML_HREF_CAPACITY] = {0};
+    candidate[0]=path[0]=0;
     size_t used = 0U, path_used = 0U;
     uint8_t network = r.network || b.network;
     if (r.has_authority && !network) { output[0] = '\0'; return REIST_HTML_INVALID; }
@@ -717,44 +715,44 @@ int reist_html_url_resolve(const char *base, const char *reference,
         size_t scheme_length = r.network ? r.scheme_end : b.scheme_end;
         const char *canonical = scheme_length == 6U ? "https:" : "http:";
         (void)scheme;
-        status = url_copy(candidate, sizeof(candidate), &used, canonical, scheme_length);
-        if (status == 0) status = url_copy(candidate, sizeof(candidate), &used, "//", 2U);
+        status = url_copy(candidate, limit, &used, canonical, scheme_length);
+        if (status == 0) status = url_copy(candidate, limit, &used, "//", 2U);
         const uri_parts_t *authority = r.has_authority ? &r : &b;
         const char *source = r.has_authority ? reference : base;
         if (status == 0)
-            status = url_copy(candidate, sizeof(candidate), &used,
+            status = url_copy(candidate, limit, &used,
                 source + authority->authority_start,
                 authority->authority_end - authority->authority_start);
     }
     const char *query_source = reference;
     const uri_parts_t *query = &r;
     if (r.path_start == r.path_end && !r.has_authority && !r.network) {
-        status = status == 0 ? url_copy(path, sizeof(path), &path_used,
+        status = status == 0 ? url_copy(path, limit, &path_used,
             base + b.path_start, b.path_end - b.path_start) : status;
         if (!r.has_query) { query_source = base; query = &b; }
     } else if (r.has_authority || reference[r.path_start] == '/') {
-        if (status == 0) status = url_copy(path, sizeof(path), &path_used,
+        if (status == 0) status = url_copy(path, limit, &path_used,
             reference + r.path_start, r.path_end - r.path_start);
     } else {
         size_t directory_end = b.path_end;
         while (directory_end > b.path_start && base[directory_end - 1U] != '/')
             --directory_end;
         if (directory_end == b.path_start && network)
-            status = status == 0 ? url_copy(path, sizeof(path), &path_used, "/", 1U) : status;
-        else if (status == 0) status = url_copy(path, sizeof(path), &path_used,
+            status = status == 0 ? url_copy(path, limit, &path_used, "/", 1U) : status;
+        else if (status == 0) status = url_copy(path, limit, &path_used,
             base + b.path_start, directory_end - b.path_start);
-        if (status == 0) status = url_copy(path, sizeof(path), &path_used,
+        if (status == 0) status = url_copy(path, limit, &path_used,
             reference + r.path_start, r.path_end - r.path_start);
     }
-    if (status == 0) status = normalized_path(path, path_used, candidate, sizeof(candidate), &used);
+    if (status == 0) status = normalized_path(path, path_used, candidate, limit, &used,marks);
     if (status == 0 && query->has_query) {
-        status = url_copy(candidate, sizeof(candidate), &used, "?", 1U);
-        if (status == 0) status = url_copy(candidate, sizeof(candidate), &used,
+        status = url_copy(candidate, limit, &used, "?", 1U);
+        if (status == 0) status = url_copy(candidate, limit, &used,
             query_source + query->query_start, query_end(query) - query->query_start);
     }
     if (status == 0 && r.has_fragment) {
-        status = url_copy(candidate, sizeof(candidate), &used, "#", 1U);
-        if (status == 0) status = url_copy(candidate, sizeof(candidate), &used,
+        status = url_copy(candidate, limit, &used, "#", 1U);
+        if (status == 0) status = url_copy(candidate, limit, &used,
             reference + r.fragment_start, r.length - r.fragment_start);
     }
     output[0] = '\0';
@@ -762,6 +760,17 @@ int reist_html_url_resolve(const char *base, const char *reference,
     if (status == 0) status = url_copy(output, capacity, &published, candidate, used);
     if (status != 0) output[0] = '\0';
     return status;
+}
+
+int reist_html_url_resolve(const char *base,const char *reference,char *out,size_t capacity) {
+    char candidate[REIST_HTML_HREF_CAPACITY],path[REIST_HTML_HREF_CAPACITY];
+    uint16_t marks[REIST_HTML_HREF_CAPACITY];
+    return resolve_work(base,reference,out,capacity,REIST_HTML_HREF_CAPACITY,candidate,path,marks);
+}
+int reist_html_url_resolve_wide(const char *base,const char *reference,char *out,
+    size_t capacity,reist_html_url_workspace_t *w) {
+    if(!w) return REIST_HTML_INVALID;
+    return resolve_work(base,reference,out,capacity,REIST_HTML_URL_CAPACITY,w->candidate,w->path,w->marks);
 }
 
 int reist_html_navigation_normalize(const char *input, char *output,
@@ -791,7 +800,7 @@ int reist_html_navigation_normalize(const char *input, char *output,
     if (status != 0) { output[0] = '\0'; return status; }
     if (input[0] == '#') {
         uri_parts_t parts;
-        status = split_uri(input, &parts);
+        status = split_uri(input, &parts,REIST_HTML_HREF_CAPACITY);
         used = 0U; output[0] = '\0';
         return status == 0 ? url_copy(output, capacity, &used, input, length) : status;
     }

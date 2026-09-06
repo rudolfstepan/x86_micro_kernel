@@ -445,3 +445,23 @@ abgenommen native statische
 GET-Formulare; der genaue Umfang steht in `BROWSER_FORM_INTERACTION_CONTRACT.md`.
 JavaScript bleibt eine separate, noch offene Prozess-/DOM-Grenze.
 Der genaue Speicher-/Fehlervertrag steht in `USERSPACE_SDK_AND_PORTABILITY.md`.
+
+R3.14 erweitert abgenommen die private Aufnahme:
+1 MiB HTML, 8192-Byte-Ressourcen-URLs, windows-1252/UTF-16-Decodierung und
+Schriftgroessen bis 64 CSS-Pixel. Alte semantische Strukturen sowie kompakte
+Worker-/Ressourcen-/Szenenformate behalten explizite Legacy-Adapter. Der neue
+Dokumentworker verwendet den vorhandenen 32-MiB-Prozessprovider; Legacy nutzt
+denselben demand-backed Provider mit unveraendertem 4-MiB-Budget statt einer
+statischen Arena in jedem Workerimage. Reflow kopiert nur belegte Ressourcen
+und Bildpixel nach vollstaendiger Bereichsvorpruefung. Der Browser
+reserviert einen festen privaten Arbeitsbereich von hoechstens 36 MiB.
+Die Decoderarena ist auch im i386-Layout explizit auf acht Bytes ausgerichtet.
+Freigegebene Kernelanpassungen betreffen die begrenzte Argumentaufnahme des
+bestehenden Spawnmechanismus und die getrennte 128-Sektor-PIO-Lesequote im
+bestehenden Loader-/FAT32-Pfad. Schreibjournal und AHCI bleiben bei 20 Sektoren;
+kein neuer Kernelcache oder Parser. Browserdownloads verwenden private Bulk-IPC
+statt temporaerer Dateien. Details, Grenzen und Abnahmestatus stehen in
+`BROWSER_PUBLIC_NAVIGATION_CONTRACT.md`, `PROCESS_ARGUMENT_CONTRACT.md` und
+`ATA_PIO_TRANSFER_CONTRACT.md` sowie `CURRENT_WORK.md`.
+Top-Level-URL-/Link-/Formfelder bleiben vorerst 256 Byte;
+lange CSS- und Bildadressen besitzen getrennte private Felder.

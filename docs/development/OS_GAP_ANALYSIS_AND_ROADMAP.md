@@ -22,7 +22,16 @@ und begrenzte GET-Absendung. Alle neun Hostgruppen, beide Referenzbuilds und
 vier Browser-Gastgates bestehen; die gesamte Abnahme steht in CURRENT_WORK.
 POST und JavaScript bleiben getrennte
 Folgearbeiten, keine implizite Vollbrowser-Kompatibilitaet.
-Der gemessene Worker-/Dateiladepfad bleibt Performance-Schuld. High-Memory oberhalb der
+R3.14 ist abgenommen: 1-MiB-Dokumentaufnahme, weitere Kodierungen,
+64-Pixel-Raster, 8192-Byte-Ressourcen-URLs und begrenzte Spawnargumente.
+Alle 15 Hostgruppen, beide Referenzen, der bytegepruefte Loaderbenchmark
+(755,16 KiB/s Lesen) und fuenf Browser-Gastgates bestehen. Private Bulk-IPC,
+demand-backed Legacy-Worker und Kopieren nur belegter Ressourcen beseitigen
+gemessene Mehrarbeit bei unveraenderten Fristen und Schutzgrenzen. Der
+kontrollierte HTTP-Gasttest beweist lange CSS-/Import-/Bild- und Redirectketten;
+weder universelle Website-Kompatibilitaet noch erfolgreicher Live-Zugriff auf
+Intracom/Google wird daraus abgeleitet. R3.6b ist als naechstes Paket aktiv,
+seine unabhaengige VMware-Zeigerabnahme bleibt offen. High-Memory oberhalb der
 heutigen 1-GiB-Direct-Map und freigebbare Anwendungs-/Dateicaches bleiben eigene
 Folgearbeiten. Einzelheiten und Nachweisgrenzen stehen im
 [Prozessspeichervertrag](../architecture/PRIVATE_PROCESS_MEMORY_CONTRACT.md).

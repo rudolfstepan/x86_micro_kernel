@@ -41,7 +41,7 @@ class HtmlEngineTests(unittest.TestCase):
             result = subprocess.run([str(executable)], capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("HTML5_TREE_PROJECTION_OK", result.stdout)
-            for case in ("quota", "worker", "bad-request", "truncated", "extra", "write-fail", "fixture", "charset"):
+            for case in ("quota", "worker", "bad-request", "truncated", "extra", "write-fail", "fixture", "charset", "legacy-oom"):
                 with self.subTest(case=case):
                     result = subprocess.run([str(executable), case], capture_output=True, text=True, timeout=10)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

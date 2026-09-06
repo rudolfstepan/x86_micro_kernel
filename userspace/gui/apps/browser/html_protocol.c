@@ -37,7 +37,7 @@ int browser_html_unpack(const uint8_t *wire, size_t length, browser_html_reply_t
     uint32_t counts[5];
     bytes_copy(&header,wire,sizeof(header));
     bytes_copy(counts,wire+sizeof(header)+REIST_HTML_TITLE_CAPACITY,sizeof(counts));
-    if (header.magic!=BROWSER_HTML_MAGIC || header.version!=BROWSER_HTML_VERSION ||
+    if (header.magic!=BROWSER_HTML_MAGIC || !browser_html_profile_valid(&header) ||
         header.size!=length || !counts_valid(counts) || packed_size(counts)!=length) return -84;
     /* Only a private candidate is modified; publication follows full semantic
      * and parent/request/generation validation in the caller. */
@@ -77,12 +77,12 @@ int browser_html_validate(const browser_html_reply_t *r, size_t length,
                           const browser_html_header_t *q, uint32_t pid, uint32_t generation) {
     if (!r || !q || length!=sizeof(*r)) return -84;
     const browser_html_header_t *h=&r->header;
-    if (h->magic!=BROWSER_HTML_MAGIC || h->version!=BROWSER_HTML_VERSION ||
+    if (h->magic!=BROWSER_HTML_MAGIC || !browser_html_profile_valid(h) || h->version!=q->version ||
         h->size!=sizeof(*r) || !h->request || h->request!=q->request ||
         h->parent_pid!=q->parent_pid || !h->parent_generation ||
         h->parent_generation!=q->parent_generation || !pid || h->child_pid!=pid ||
         !h->child_generation || (generation && h->child_generation!=generation) ||
-        h->input_length!=q->input_length || h->mode || h->reserved[0] || h->reserved[1]) return -84;
+        h->input_length!=q->input_length || h->mode || h->reserved[0]!=q->reserved[0] || h->reserved[1]) return -84;
     return browser_html_document_validate(&r->document);
 }
 int browser_html_document_validate(const reist_html_document_t *d) {

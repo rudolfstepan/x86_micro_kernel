@@ -6,7 +6,7 @@ static browser_resources_t bundle, decoded;
 static uint8_t wire[BROWSER_RESOURCE_WIRE_CAPACITY];
 static browser_resource_needs_t needs;
 int main(void) {
-    char url[256]; const char *base="https://example.test/dir/page.html";
+    static char url[BROWSER_RESOURCE_URL_CAPACITY]; const char *base="https://example.test/dir/page.html";
     assert(!browser_resource_url(base,"../a.css#fragment",url) && !strcmp(url,"https://example.test/a.css"));
     assert(!browser_resource_url(base,"HTTPS://EXAMPLE.TEST:443/a.css?q=Case",url));
     assert(!strcmp(url,"https://example.test/a.css?q=Case"));
@@ -17,7 +17,11 @@ int main(void) {
     assert(browser_resource_url(base,"data:text/css,p{}",url));
     assert(browser_resource_admit(base,"http://example.test/a.css"));
     assert(browser_resource_admit(base,"/etc/a.css"));
+    memset(&bundle,0xa5,sizeof(bundle));
     browser_resources_init(&bundle,7);
+    /* Reset work depends on admitted entries, not the maximum URL pool.
+     * Unused records must stay inaccessible, without touching a MiB of them. */
+    assert(((uint8_t *)bundle.entries)[0]==0xa5);
     assert(!browser_resources_validate(&bundle,base,7));
     assert(browser_resources_validate(&bundle,base,8));
     assert(browser_resources_pack(&bundle,base,wire,sizeof(wire))==16);
@@ -29,15 +33,26 @@ int main(void) {
     uint32_t bad_count=UINT32_MAX; memcpy(wire+8,&bad_count,4);
     assert(browser_resources_unpack(wire,16,base,&decoded));
     assert(browser_resources_add(&bundle,base,"https://example.test/a.css",1)==0);
+    for(unsigned i=(unsigned)strlen(bundle.entries[0].url)+1;i<sizeof(bundle.entries[0].url);++i)
+        assert(!bundle.entries[0].url[i]);
+    assert(!bundle.entries[0].effective[0] && ((uint8_t *)&bundle.entries[1])[0]==0xa5);
     assert(browser_resources_add(&bundle,base,"https://example.test/a.css",1)==0 && bundle.count==1);
     assert(browser_resources_add(&bundle,base,"https://example.test/b.css",9)<0);
     assert(browser_resources_store(&bundle,0,"http://example.test/a.css",(const uint8_t *)"p{}",3)<0 && !bundle.length);
     assert(!browser_resources_store(&bundle,0,"https://cdn.test/a.css",(const uint8_t *)"p{}",3));
     assert(browser_resources_find(&bundle,"https://cdn.test/a.css")==0);
-    int n=browser_resources_pack(&bundle,base,wire,sizeof(wire)); assert(n==16+528+3);
+    int n=browser_resources_pack(&bundle,base,wire,sizeof(wire)); assert(n==16+sizeof(browser_resource_t)+3);
     assert(!browser_resources_unpack(wire,(uint32_t)n,base,&decoded));
     assert(decoded.length==3 && !memcmp(decoded.bytes,"p{}",3));
     assert(browser_resources_unpack(wire,(uint32_t)n-1,base,&decoded));
+    /* The previous 528-byte resource records remain decodable. */
+    uint32_t old_header[]={2,7,1,3}; memset(wire,0,547); memcpy(wire,old_header,16);
+    uint32_t old_record[]={0,3,1,1}; memcpy(wire+16,old_record,16);
+    strcpy((char *)wire+32,"https://example.test/a.css"); strcpy((char *)wire+288,"https://cdn.test/a.css");
+    memcpy(wire+544,"p{}",3);
+    assert(!browser_resources_unpack(wire,547,base,&decoded) && decoded.version==BROWSER_RESOURCE_VERSION);
+    for(unsigned i=256;i<BROWSER_RESOURCE_URL_CAPACITY;++i)
+        assert(!decoded.entries[0].url[i] && !decoded.entries[0].effective[i]);
     bundle.entries[0].offset=1; assert(browser_resources_validate(&bundle,base,7)); bundle.entries[0].offset=0;
     needs=(browser_resource_needs_t){.magic=BROWSER_RESOURCE_NEED_MAGIC,.version=BROWSER_RESOURCE_VERSION,.generation=7,
         .identity={1,1,1,2,3,4,5,6,7,0,{0,0}}};

@@ -3,27 +3,35 @@
  * The complete pool is released with the worker address space. */
 #include "html_engine.h"
 #include <hubbub/parser.h>
+#include <parserutils/charset/utf16.h>
+#include <parserutils/charset/utf8.h>
 #include <reist/libc.h>
 #include <string.h>
 #include <strings.h>
+#include <stdlib.h>
 
 #define NODES 2048U
 #define ATTRS 4096U
 #define STRINGS (256U*1024U)
 #define DEPTH 128U
 #define WORK 262144U
+static node legacy_nodes[NODES];
+static attribute legacy_attributes[ATTRS];
+static char legacy_strings[STRINGS];
 static struct {
-    node nodes[NODES];
-    attribute attributes[ATTRS];
-    char strings[STRINGS];
+    node *nodes;
+    attribute *attributes;
+    char *strings;
+    uint8_t *converted;
+    uint32_t node_limit,attribute_limit,string_limit,work_limit;
+    uint32_t extended,encoding,encoding_fixed,encoding_requested;
     uint32_t count, attribute_count, used, work, failed, quirks;
     uint8_t projection[REIST_HTML_INPUT_CAPACITY];
     uint32_t projected;
 } tree;
-static _Alignas(max_align_t) uint8_t arena[REIST_LIBC_HEAP_LIMIT];
 
 static hubbub_error step(void) {
-    if (tree.failed || ++tree.work > WORK) { tree.failed=1; return HUBBUB_NOMEM; }
+    if (tree.failed || ++tree.work > tree.work_limit) { tree.failed=1; return HUBBUB_NOMEM; }
     return HUBBUB_OK;
 }
 static node *checked(void *value) {
@@ -33,13 +41,13 @@ static node *checked(void *value) {
     return value;
 }
 static char *copy(const uint8_t *text, size_t length) {
-    if (length>=STRINGS-tree.used) { tree.failed=1; return NULL; }
+    if (length>=tree.string_limit-tree.used) { tree.failed=1; return NULL; }
     char *out=tree.strings+tree.used;
     memcpy(out,text,length); out[length]=0;
     tree.used+=(uint32_t)length+1; return out;
 }
 static node *create(uint32_t kind) {
-    if (step()!=HUBBUB_OK || tree.count==NODES) { tree.failed=1; return NULL; }
+    if (step()!=HUBBUB_OK || tree.count==tree.node_limit) { tree.failed=1; return NULL; }
     node *n=&tree.nodes[tree.count++];
     *n=(node){.kind=kind,.refs=1}; return n;
 }
@@ -58,7 +66,7 @@ static hubbub_error doctype_node(void *ctx, const hubbub_doctype *data, void **o
 static hubbub_error add_attributes(void *ctx, void *value, const hubbub_attribute *attrs, uint32_t count) {
     (void)ctx;
     node *n=checked(value);
-    if (!n || step()!=HUBBUB_OK || count>ATTRS-tree.attribute_count) return HUBBUB_NOMEM;
+    if (!n || step()!=HUBBUB_OK || count>tree.attribute_limit-tree.attribute_count) return HUBBUB_NOMEM;
     for (uint32_t i=0; i<count; ++i) {
         attribute *existing=n->attributes;
         for (; existing; existing=existing->next) {
@@ -130,7 +138,7 @@ static hubbub_error clone_at(node *source, node **out, bool deep, uint32_t depth
     if (!n) return HUBBUB_NOMEM;
     n->name=source->name; n->text=source->text; n->length=source->length; n->ns=source->ns;
     for (attribute *a=source->attributes; a; a=a->next) {
-        if (tree.attribute_count==ATTRS || step()!=HUBBUB_OK) { tree.failed=1; return HUBBUB_NOMEM; }
+        if (tree.attribute_count==tree.attribute_limit || step()!=HUBBUB_OK) { tree.failed=1; return HUBBUB_NOMEM; }
         attribute *b=&tree.attributes[tree.attribute_count++];
         *b=*a; b->next=n->attributes; n->attributes=b;
     }
@@ -181,6 +189,15 @@ static hubbub_error quirks(void *ctx, hubbub_quirks_mode mode) {
 }
 static hubbub_error encoding(void *ctx, const char *name) {
     (void)ctx;
+    if(tree.extended) {
+        if(tree.encoding_fixed) return step(); /* transport/BOM wins over meta */
+        uint32_t selected=browser_encoding_label(name,name ? strlen(name) : 0);
+        /* HTML meta UTF-16 labels are interpreted as UTF-8. */
+        if(selected==BROWSER_ENCODING_UTF16LE || selected==BROWSER_ENCODING_UTF16BE) selected=BROWSER_ENCODING_UTF8;
+        if(selected==tree.encoding) { tree.encoding_fixed=1; return step(); }
+        tree.encoding_requested=selected;
+        return HUBBUB_ENCODINGCHANGE;
+    }
     /* Hubbub reports meta declarations even when the decoder is already fixed.
      * Confirming UTF-8 is not a request to restart/change that decoder. */
     if (name && strlen(name)==5U && !strncasecmp(name,"UTF-8",5U)) return step();
@@ -234,33 +251,102 @@ static int project(node *n, uint32_t depth) {
     return 0;
 }
 
-int browser_html5_tree_with_heap(const uint8_t *input, size_t length, node **result,uint32_t private_heap) {
-    if (!input || !result || !length || length>REIST_HTML_INPUT_CAPACITY) return -22;
+static int decode_utf16(const uint8_t *input,size_t length,uint32_t big,size_t *decoded) {
+    size_t capacity=length*2U+4U;
+    tree.converted=malloc(capacity); if(!tree.converted) return -12;
+    uint8_t *out=tree.converted; size_t left=capacity;
+    for(size_t i=0;i<length;) {
+        uint16_t units[2]={0,0}; size_t available=length-i>=4 ? 4 : length-i>=2 ? 2 : 0;
+        for(size_t j=0;j<available;j+=2)
+            units[j/2]=(uint16_t)(big ? ((uint16_t)input[i+j]<<8)|input[i+j+1] : input[i+j]|((uint16_t)input[i+j+1]<<8));
+        uint32_t scalar=0xfffd; size_t consumed=available ? 2 : 1;
+        if(available && parserutils_charset_utf16_to_ucs4((const uint8_t *)units,available,&scalar,&consumed)!=PARSERUTILS_OK)
+            { scalar=0xfffd; consumed=2; }
+        if(parserutils_charset_utf8_from_ucs4(scalar,&out,&left)!=PARSERUTILS_OK) return -84;
+        i+=consumed;
+    }
+    *decoded=(size_t)(out-tree.converted); return 0;
+}
+static int parse_tree(const uint8_t *input,size_t length,node **result,uint32_t private_heap,
+                      uint32_t extended,uint32_t selected) {
+    if (!input || !result || !length || length>(extended ? BROWSER_DOCUMENT_INPUT_CAPACITY : REIST_HTML_INPUT_CAPACITY) ||
+        selected>BROWSER_ENCODING_UTF16BE) return -22;
     *result=NULL;
     memset(&tree,0,sizeof(tree));
-    if (private_heap ? reist_libc_init_process(32U*1024U*1024U) : reist_libc_init(arena,sizeof(arena))) return -12;
+    /* Both profiles use the existing demand-backed private provider. Legacy
+     * admission still has its original 4-MiB heap budget; do not map/reap an
+     * unused 4-MiB BSS arena in every extended worker generation. */
+    if (reist_libc_init_process(private_heap ? 32U*1024U*1024U : REIST_LIBC_HEAP_LIMIT)) return -12;
+    tree.node_limit=extended ? 8192 : NODES; tree.attribute_limit=extended ? 16384 : ATTRS;
+    tree.string_limit=extended ? 4U*1024U*1024U : STRINGS; tree.work_limit=extended ? 1048576 : WORK;
+    tree.extended=extended;
+    tree.nodes=extended ? malloc(tree.node_limit*sizeof(node)) : legacy_nodes;
+    tree.attributes=extended ? malloc(tree.attribute_limit*sizeof(attribute)) : legacy_attributes;
+    tree.strings=extended ? malloc(tree.string_limit) : legacy_strings;
+    if(!tree.nodes || !tree.attributes || !tree.strings) return -12;
+    tree.extended=extended; tree.encoding_fixed=selected!=BROWSER_ENCODING_AUTO;
+    if(extended && length>=3 && input[0]==0xef && input[1]==0xbb && input[2]==0xbf)
+        { selected=BROWSER_ENCODING_UTF8; tree.encoding_fixed=1; }
+    else if(extended && length>=2 && input[0]==0xff && input[1]==0xfe)
+        { selected=BROWSER_ENCODING_UTF16LE; tree.encoding_fixed=1; }
+    else if(extended && length>=2 && input[0]==0xfe && input[1]==0xff)
+        { selected=BROWSER_ENCODING_UTF16BE; tree.encoding_fixed=1; }
+    tree.encoding=selected ? selected : BROWSER_ENCODING_UTF8;
+    /* Pinned ParserUtils supplies a native-endian UTF-16 scalar decoder, not
+     * UTF-16LE/BE named codecs. Adapt byte order before its existing UTF-8
+     * encoder, preserving BOM/transport authority and HTML replacement rules. */
+    if(tree.encoding==BROWSER_ENCODING_UTF16LE || tree.encoding==BROWSER_ENCODING_UTF16BE) {
+        size_t decoded=0;
+        int rc=decode_utf16(input,length,tree.encoding==BROWSER_ENCODING_UTF16BE,&decoded);
+        if(rc) return rc;
+        input=tree.converted; length=decoded; tree.encoding=BROWSER_ENCODING_UTF8;
+    }
+    for(unsigned attempt=0;attempt<(extended ? 2U : 1U);++attempt) {
+    tree.count=tree.attribute_count=tree.used=tree.work=tree.failed=tree.quirks=0;
+    tree.encoding_requested=0;
     node *root=create(9);
     hubbub_parser *parser=NULL;
     hubbub_tree_handler handler={comment_node,doctype_node,element_node,text_node,
         ref_node,unref_node,append,insert,remove_child,clone_node,reparent,
         get_parent,has_children,form_associate,add_attributes,quirks,encoding,script,NULL};
     hubbub_parser_optparams option={.tree_handler=&handler};
-    hubbub_error error=hubbub_parser_create("UTF-8",true,&parser);
+    const char *charset=tree.encoding==BROWSER_ENCODING_WINDOWS1252 ? "Windows-1252" :
+        tree.encoding==BROWSER_ENCODING_UTF16LE ? "UTF-16LE" : tree.encoding==BROWSER_ENCODING_UTF16BE ? "UTF-16BE" : "UTF-8";
+    hubbub_error error=hubbub_parser_create(charset,true,&parser);
     if (error==HUBBUB_OK) error=hubbub_parser_setopt(parser,HUBBUB_PARSER_TREE_HANDLER,&option);
     option.document_node=root;
     if (error==HUBBUB_OK) error=hubbub_parser_setopt(parser,HUBBUB_PARSER_DOCUMENT_NODE,&option);
     option.enable_scripting=false;
     if (error==HUBBUB_OK) error=hubbub_parser_setopt(parser,HUBBUB_PARSER_ENABLE_SCRIPTING,&option);
-    for (size_t offset=0; error==HUBBUB_OK && !tree.failed && offset<length; offset+=256) {
-        size_t amount=length-offset; if (amount>256) amount=256;
+    size_t chunk=extended ? 4096 : 256;
+    for (size_t offset=0; error==HUBBUB_OK && !tree.failed && offset<length; offset+=chunk) {
+        size_t amount=length-offset; if (amount>chunk) amount=chunk;
         error=hubbub_parser_parse_chunk(parser,input+offset,amount);
     }
     if (error==HUBBUB_OK && !tree.failed) error=hubbub_parser_completed(parser);
     if (parser) hubbub_parser_destroy(parser);
-    if (error==HUBBUB_ENCODINGCHANGE) return -84;
+    if (error==HUBBUB_ENCODINGCHANGE) {
+        if(!extended || attempt || !tree.encoding_requested || tree.encoding_requested>BROWSER_ENCODING_UTF16BE) return -84;
+        tree.encoding=tree.encoding_requested; tree.encoding_fixed=1; continue;
+    }
     if (error!=HUBBUB_OK || tree.failed) return -28;
     *result=root;
     return 0;
+    }
+    return -84;
+}
+int browser_html5_document_tree(const uint8_t *input,size_t length,uint32_t encoding,node **root) {
+    int rc=parse_tree(input,length,root,1,1,encoding);
+    if(rc) browser_html5_document_release();
+    return rc;
+}
+void browser_html5_document_release(void) {
+    if(!tree.extended) return;
+    free(tree.nodes); free(tree.attributes); free(tree.strings); free(tree.converted);
+    tree.nodes=NULL; tree.attributes=NULL; tree.strings=NULL; tree.extended=0;
+}
+int browser_html5_tree_with_heap(const uint8_t *input,size_t length,node **root,uint32_t private_heap) {
+    return parse_tree(input,length,root,private_heap,0,BROWSER_ENCODING_UTF8);
 }
 int browser_html5_tree(const uint8_t *input,size_t length,node **result) {
     return browser_html5_tree_with_heap(input,length,result,0);

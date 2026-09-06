@@ -20,7 +20,7 @@ static int network(const char *url) {
     while (prefix[i] && url[i] && lower(url[i]) == prefix[i]) ++i;
     return !prefix[i] || secure(url);
 }
-static int supported_type(const char *value, uint32_t kind) {
+static int supported_type(const char *value,uint32_t kind,uint32_t extended,uint32_t *encoding) {
     if (!value[0]) return 1; /* Legacy servers: decode/parse still validates. */
     size_t end = 0; while (value[end] && value[end] != ';') ++end;
     size_t mime_end = end;
@@ -55,15 +55,18 @@ static int supported_type(const char *value, uint32_t kind) {
             (value[parameter_end-1] == ' ' || value[parameter_end-1] == '\t')) --parameter_end;
         if (equal(value + key, key_end - key, "charset")) {
             if (charset_seen++) return 0;
-            if (!equal(value + start, parameter_end - start, "utf-8") &&
+            if(extended) {
+                *encoding=browser_encoding_label(value+start,parameter_end-start);
+                if(*encoding==UINT32_MAX) return 0;
+            } else if (!equal(value + start, parameter_end - start, "utf-8") &&
                 !equal(value + start, parameter_end - start, "us-ascii")) return 0;
         }
     }
     return 1;
 }
 
-int browser_response_open_kind(const uint8_t *bytes, size_t length, const char *url,
-                               uint32_t kind, browser_response_t *result) {
+static int response_open(const uint8_t *bytes,size_t length,const char *url,
+                         uint32_t kind,browser_response_t *result,uint32_t extended) {
     if (!result) return -22;
     *result = (browser_response_t){0};
     if (!bytes || !url || length > UINT32_MAX || kind>BROWSER_RESPONSE_CSS) return -22;
@@ -87,8 +90,9 @@ int browser_response_open_kind(const uint8_t *bytes, size_t length, const char *
     if (head.content_length_present && head.status != 304 &&
         head.content_length != result->body_length) return -84;
     if (head.status == 301 || head.status == 302 || head.status == 303 || head.status == 307 || head.status == 308) {
-        if (!head.location[0] || reist_html_url_resolve(url, head.location,
-            result->redirect, sizeof(result->redirect)) != 0 || !network(result->redirect) ||
+        static reist_html_url_workspace_t resolver;
+        if (!head.location[0] || reist_html_url_resolve_wide(url, head.location,
+            result->redirect, sizeof(result->redirect),&resolver) != 0 || !network(result->redirect) ||
             (secure(url) && !secure(result->redirect))) return -13;
         /* RFC 9110: an absent fragment inherits the original target fragment. */
         size_t location_length = length_of(head.location), i = 0;
@@ -106,8 +110,15 @@ int browser_response_open_kind(const uint8_t *bytes, size_t length, const char *
     if (head.status < 200 || head.status >= 300 || head.status == 204 || head.status == 205) return -5;
     if (head.status == 206) return -95; /* No Range request was made. */
     if ((head.content_encoding[0] && !equal(head.content_encoding, length_of(head.content_encoding), "identity")) ||
-        !supported_type(head.content_type, kind)) return -95;
+        !supported_type(head.content_type,kind,extended,&result->encoding)) return -95;
     return 0;
+}
+int browser_response_open_document(const uint8_t *bytes,size_t length,const char *url,browser_response_t *result) {
+    return response_open(bytes,length,url,BROWSER_RESPONSE_HTML,result,1);
+}
+int browser_response_open_kind(const uint8_t *bytes,size_t length,const char *url,
+                               uint32_t kind,browser_response_t *result) {
+    return response_open(bytes,length,url,kind,result,0);
 }
 
 int browser_response_open(const uint8_t *bytes, size_t length, const char *url,

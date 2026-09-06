@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.14-browser-public-document-admission"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 
 [policy]
 one_package_per_run = true
@@ -835,12 +835,16 @@ evidence = []
 
 [[packages]]
 id = "R3.14-browser-public-document-admission"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Repair public document admission, encoding, typography and transport diagnostics"
+pipeline_resumption = "2026-09-06: User explicitly requests correction of the remaining failures and a clean committable version after the loader/idle stop. Resume the attributable 49-file candidate on a9229d14 without losing prior failed evidence. Use a bounded instrumented pipeline reproduction to separate child receive, allocation, parsing, publication and reap costs before selecting the next repair. Diagnostics are not acceptance and cannot relax the original guest/worker deadlines. Preserve all frozen gates and scope; revalidate changed-source tests and final reference builds before the one final gate sequence. No new kernel cache, persistent worker authority or out-of-scope mechanism."
+loader_repair = "2026-09-06: User explicitly approves resuming the stopped candidate and extending repair to the process start/load path without relaxed protection or deadlines. Preserve the attributable 42-file candidate on a9229d14 and all failed evidence. First separate existing VFS read, image validation and private address-space setup with bounded diagnostics and a separate shell-driven guest experiment. Repair the measured mechanism within an explicitly documented loader lifetime; retain prepublication image validation, zeroing, frame reserves, rollback and exact generation cleanup. Do not add a kernel web/file cache, filesystem parser, new driver, implicit authority or alternative acceptance image. Existing frozen gates stay unchanged; append any loader-specific behavior/guest gates required by the measured fix before implementation."
+loader_measurement = "The isolated shell guest measures HTMLWORK read 1048/1026 ms versus private mapping 9/6 ms; CURL read 525/504 ms versus mapping 1/3 ms. Inventory finds the existing contiguous FAT32 read adapter reuses the 20-sector journal/write cap and repeats fresh ATA IDENTIFY per batch. Within the authorized loader read path, introduce a separate bounded 128-sector PIO read quota and a backend capacity hint. Preserve the old 20-sector write/AHCI/pending-journal limits, cold IDENTIFY, error fencing, no partial cache publication, public userspace ABI, loader validation/zeroing and all deadlines. No new cache, on-disk format, parser or driver. The legacy Ring-0 FAT/PIO path remains explicit migration debt. Add real-code host boundary/byte/fault checks and the unchanged byte-verified QEMU benchmark as extra acceptance before browser gates."
+transport_repair = "2026-09-06: Explicit user resumption requests a clean verified candidate for commit. Preserve attributable work on a9229d14. Isolated CURL/pcap diagnosis finds 90-KB response bytes received in 5.28 seconds, then 8.55 seconds before close. Remove the browser-only transient disk roundtrip through a versioned private CURL bulk-IPC output adapter on existing generation-scoped endpoints, bounded response storage and complete framing plus exact child reap before publication. Keep CLI file atomicity and streaming stdout, all original deadlines/gates and legacy HTTP adapters. Diagnose TCP limits read-only; do not expand the monolithic kernel protocol stack or silently alter public socket limits. This remains the same isolated navigation/resource lifetime, not a filesystem persistence or new kernel IPC package."
 user_direction = "2026-09-06: User explicitly requests fixing all reported browser load failures after the measured Google 83-KiB/ISO-8859-1 response, Intracom 36-pixel heading and VMware TCP timeout. Prioritize this cohesive browser repair over deferred VMware pointer acceptance. Direct main-worktree execution, no agents or push."
-scope = "One bounded document navigation from existing CURL transport through HTTP metadata, HTML decoding and private HTML5/CSS worker publication. Replace the browser-only 64-KiB input bottleneck with a versioned private 1-MiB document profile and demand-owned private buffers/tree storage, while retaining the legacy public semantic-document ABI and legacy worker admission. Use existing Hubbub/ParserUtils decoders with WHATWG UTF-8/windows-1252 label semantics, authoritative transport encoding and at most one prepublication meta restart. Support ordinary 36/48/64-pixel typography through layout, scene validation and bounded glyph scratch, preserving pathological-size rejection. Distinguish conventional curl DNS/connect/TLS/timeout/size/write exits in native browser status; allow at most one pure-GET transient retry after exact reap inside the original 30-second chain deadline. Remove the premature 10-second parent cancellation without extending the existing end-to-end chain or worker deadlines. Diagnose and repair further reproduced in-scope admission defects exposed by the two reported public documents. Validate actual retained trees and raster output for deterministic large/legacy-encoded documents and the captured public pages. Add a controlled HTTP QEMU browser navigation proof and preserve all existing input, image, resource, forms, fault, timeout and cleanup gates. Only the user-authorized bounded spawn-argument admission/initial-stack mechanism changes in Ring 0; drivers, public syscall numbers/Surface/semantic document ABI, TLS verification, memory reserves, JavaScript, credentials, cookies and POST remain unchanged. No claim that every website or unavailable remote server can work."
+scope = "One bounded document navigation from existing CURL transport through HTTP metadata, HTML decoding and private HTML5/CSS worker publication. Replace the browser-only 64-KiB input bottleneck with a versioned private 1-MiB document profile and demand-owned private buffers/tree storage, while retaining the legacy public semantic-document ABI and legacy worker admission. Use existing Hubbub/ParserUtils decoders with WHATWG UTF-8/windows-1252 label semantics, authoritative transport encoding and at most one prepublication meta restart. Support ordinary 36/48/64-pixel typography through layout, scene validation and bounded glyph scratch, preserving pathological-size rejection. Distinguish conventional curl DNS/connect/TLS/timeout/size/write exits in native browser status; allow at most one pure-GET transient retry after exact reap inside the original 30-second chain deadline. Remove the premature 10-second parent cancellation without extending the existing end-to-end chain or worker deadlines. Diagnose and repair further reproduced in-scope admission defects exposed by the two reported public documents. Validate actual retained trees and raster output for deterministic large/legacy-encoded documents and the captured public pages. Add a controlled HTTP QEMU browser navigation proof and preserve all existing input, image, resource, forms, fault, timeout and cleanup gates. Ring 0 changes are limited to the user-authorized bounded spawn-argument admission/initial-stack mechanism and the subsequently approved existing PIO/FAT32 read-quota adapter; no new driver, parser or kernel cache. Write/journal/AHCI limits, public syscall numbers/Surface/semantic document ABI, TLS verification, memory reserves, JavaScript, credentials, cookies and POST remain unchanged. No claim that every website or unavailable remote server can work."
 repair_extension = "2026-09-06: User explicitly approves all necessary changes after the exact 256-byte syscall/initial-stack bottleneck was reported. Continue the attributable uncommitted R3.14 candidate on c285e903; no foreign edits were found. Extend the same navigation repair to real 8-KiB resource URLs through private versioned metadata, shared bounded RFC3986 resolver, CURL HTTP request streaming and existing spawn/initial-stack admission. Preserve legacy semantic-document layouts and old private compact formats with explicit adapters. No silent URL truncation, skipping long HTTP resources, credential/scheme-policy relaxation, new syscall or kernel parser. Admit at most 16 KiB total initial arguments and 8193 bytes per string including NUL; retain 16 public argv slots, 32 internal slots, 32-KiB guarded user stack and at least 16-KiB runtime stack reserve. Add real-code host invalid-pointer, quota, copy failure and stack-layout tests and actual guest long CSS/image/redirect GET proof through spawn. Existing frozen gates and UTF-16 failure evidence remain; revalidate affected tests after focused repairs, not a lucky rerun."
 allowed_files = [
   "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
@@ -866,10 +870,13 @@ allowed_files = [
   "kernel/proc/process.c", "kernel/proc/process.h", "kernel/syscall/syscall_table.c",
   "test/test_process_arguments.py", "test/test_process_arguments_host.c",
   "userspace/gui/lib/html_document.c", "userspace/gui/include/reist/gui/html_document.h",
-  "test/test_browser_resources_host.c", "docs/architecture/PROCESS_ARGUMENT_CONTRACT.md"
+  "test/test_browser_resources_host.c", "docs/architecture/PROCESS_ARGUMENT_CONTRACT.md",
+  "drivers/block/ata.c", "drivers/block/ata.h", "fs/fat32/fat32_files.c",
+  "test/test_ata_multiple.py", "test/test_ata_multiple_host.c", "test/test_fat32_host.c",
+  "docs/architecture/ATA_PIO_TRANSFER_CONTRACT.md"
 ]
 invariants = [
-  "untrusted input and every expanded fixed capacity remain private Ring 3; exhaustion never publishes a partial or stale document",
+  "expanded browser parser resource and scene storage remains private Ring 3; only the authorized bounded spawn snapshot resides temporarily in Ring 0; exhaustion never publishes a partial or stale document",
   "legacy public ABI and old worker input semantics remain accepted; the larger/encoded profile is explicitly versioned",
   "no disabled TLS validation implicit credentials compression execution or scripting authority",
   "transient retries are at most one per navigation after exact child reap and within the original absolute chain deadline",
@@ -881,13 +888,17 @@ targeted_tests = [
   "python test/test_css_engine.py -v", "python test/test_browser_runtime_source.py -v",
   "python test/test_gui_browser_source.py -v", "python test/test_browser_forms.py -v",
   "python test/test_user_program_toolchain.py -v", "python test/test_browser_public_navigation.py -v",
-  "python test/test_process_arguments.py -v"
+  "python test/test_process_arguments.py -v",
+  "python test/test_ata_multiple.py -v", "python test/test_ata_source.py -v",
+  "python test/test_ata_lba48_source.py -v", "python test/test_ahci_source.py -v",
+  "python test/test_reist_undo_journal.py -v", "python test/test_fs_host.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
 ]
 runtime_tests = [
+  "python scripts/run_qemu_benchmark.py --image build/reist-os.img --min-read-kib-per-sec 400 --log build/codex-agent/r314-loader-benchmark.log",
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-public -Target qemu -Video vga",
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
@@ -904,7 +915,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

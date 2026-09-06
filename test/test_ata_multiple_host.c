@@ -16,7 +16,7 @@ static ata_cache_entry_t caches[32];
 static uint32_t consecutive_read_failures;
 static uint64_t now;
 static uint32_t sleeps, spins, commands, identifies, sets, transferred;
-static uint32_t blocks[20], block_count, busy, step, fail_block;
+static uint32_t blocks[128], block_count, busy, step, fail_block;
 static uint8_t command, count_register, last_read_command;
 static uint8_t reg_values[16];
 static unsigned reg_count;
@@ -56,8 +56,8 @@ static void insw(uint16_t port, void *buffer, unsigned words) {
         memset(data,0,512); data[0]=0x40; data[47]=max_word; data[59]=current_word;
         command=0; return;
     }
-    assert(words && words%256==0 && words<=20*256);
-    assert(block_count<20); blocks[block_count++]=words/256;
+    assert(words && words%256==0 && words<=128*256);
+    assert(block_count<128); blocks[block_count++]=words/256;
     for (unsigned i=0;i<words/256;i++)
         memset((uint8_t *)buffer+i*512,(int)(transferred+i+1),512);
     transferred+=words/256;
@@ -86,9 +86,42 @@ static ata_cache_entry_t *ata_cache_slot(uint16_t base, uint32_t lba, bool maste
     (void)base; (void)master; return &caches[lba%32];
 }
 /* PRODUCTION */
+static drive_t partition_drive;
+static unsigned partition_on,transactions,transaction_ends,ahci_calls,pending_calls;
+static bool journal_active,pending_view;
+static drive_t *ata_compat_partition_drive(uint16_t base) {
+    (void)base; return partition_on ? &partition_drive : NULL;
+}
+static drive_t *ata_partition_translate(drive_t *part,uint32_t lba,uint32_t *absolute) {
+    if(lba>=part->sectors || lba>UINT32_MAX-100U) return NULL;
+    *absolute=lba+100U; return &detected_drives[0];
+}
+static drive_t *ata_compat_ahci_drive(uint16_t base) {
+    return base==0x1f0 && detected_drives[0].type==DRIVE_TYPE_AHCI ? &detected_drives[0] : NULL;
+}
+static bool ata_transaction_begin(void) { ++transactions; return true; }
+static void ata_transaction_end(void) { ++transaction_ends; }
+bool ata_journal_transaction_active(void) { return journal_active; }
+static bool ata_journal_range_has_pending(uint16_t base,uint32_t lba,uint32_t count,bool master) {
+    (void)base; (void)lba; (void)count; (void)master; return pending_view;
+}
+static bool ata_read_pending_range(uint16_t base,uint32_t lba,uint32_t count,void *buffer,bool master) {
+    (void)base; (void)lba; (void)master; assert(count<=ATA_PIO_MAX_SECTORS);
+    ++pending_calls; memset(buffer,0xA5,count*512U); return true;
+}
+static bool ahci_read_sectors(drive_t *drive,uint32_t lba,uint32_t count,void *buffer) {
+    (void)drive; (void)lba; assert(count<=ATA_PIO_MAX_SECTORS);
+    ++ahci_calls; memset(buffer,0x5A,count*512U); return true;
+}
+/* ADAPTER */
 static void reset(void) {
     memset(caches,0,sizeof(caches)); memset(detected_drives,0,sizeof(detected_drives));
     detected_drives[0].sectors=UINT32_MAX; detected_drives[0].lba48_supported=true;
+    detected_drives[0].type=DRIVE_TYPE_ATA;
+    detected_drives[0].base=0x1f0; detected_drives[0].is_master=true;
+    partition_on=transactions=transaction_ends=ahci_calls=pending_calls=0;
+    journal_active=pending_view=false;
+    memset(&partition_drive,0,sizeof(partition_drive)); partition_drive.sectors=200;
     now=sleeps=spins=commands=identifies=sets=transferred=0;
     block_count=busy=step=fail_block=0; command=count_register=last_read_command=0;
     max_word=0x8010; current_word=0x110; frozen=sleep_fail=false;
@@ -100,7 +133,48 @@ static unsigned cache_count(void) {
     unsigned count=0; for(unsigned i=0;i<32;i++) count+=caches[i].valid; return count;
 }
 int main(void) {
-    uint8_t bytes[20*512+2];
+    uint8_t bytes[128*512+2];
+    for(unsigned part=0;part<2;++part) {
+        reset(); partition_on=part;
+        assert(ata_read_batch_capacity(0x1f0,true)==128);
+        assert(ata_read_sectors(0x1f0,12,128,bytes,true));
+        assert(transactions==1 && transaction_ends==1 && identifies==1 && !ahci_calls);
+        reset(); partition_on=part; detected_drives[0].type=DRIVE_TYPE_AHCI;
+        assert(ata_read_batch_capacity(0x1f0,true)==20);
+        assert(!ata_read_sectors(0x1f0,12,21,bytes,true) && !transactions);
+        assert(ata_read_sectors(0x1f0,12,20,bytes,true));
+        assert(ahci_calls==1 && transactions==1 && transaction_ends==1 && !commands);
+        reset(); partition_on=part; journal_active=pending_view=true;
+        assert(ata_read_batch_capacity(0x1f0,true)==20);
+        assert(!ata_read_sectors(0x1f0,12,128,bytes,true));
+        assert(transactions==transaction_ends && !commands && !pending_calls);
+        assert(ata_read_sectors(0x1f0,12,20,bytes,true));
+        assert(pending_calls==1 && bytes[0]==0xA5 && !commands);
+        reset(); partition_on=part; fail_final=true;
+        assert(!ata_read_sectors(0x1f0,12,128,bytes,true));
+        assert(transactions==1 && transaction_ends==1 && !cache_count());
+    }
+    reset(); partition_on=1;
+    assert(!ata_read_sectors(0x1f0,195,6,bytes,true) && !transactions);
+    reset(); assert(ata_read_batch_capacity(0x1f0,true)==128); journal_active=true;
+    assert(!ata_read_sectors(0x1f0,0,21,bytes,true) && !commands && transactions==transaction_ends);
+    reset(); assert(!ata_read_sectors(0x1f0,0,129,bytes,true) && !transactions);
+    assert(!ata_read_sectors(0x1f0,0,0,bytes,true) && !transactions);
+    assert(!ata_read_sectors(0x1f0,0,1,NULL,true) && !transactions);
+    reset(); memset(bytes,0xEE,sizeof(bytes));
+    assert(ata_read_sectors_pio_impl(0x1f0,12,128,bytes+1,true));
+    assert(identifies==1 && block_count==8 && transferred==128);
+    assert(bytes[0]==0xEE && bytes[sizeof(bytes)-1]==0xEE);
+    for(unsigned i=0;i<128*512;i++) assert(bytes[i+1]==i/512+1);
+    assert(!ata_pio_range_valid(&detected_drives[0],0,21)); /* Write quota unchanged. */
+    reset(); max_word=0;
+    assert(ata_read_sectors_pio_impl(0x1f0,12,128,bytes,true));
+    assert(last_read_command==ATA_READ_SECTORS && block_count==128);
+    reset(); fail_block=7;
+    assert(!ata_read_sectors_pio_impl(0x1f0,12,128,bytes,true));
+    assert(transferred==112 && !cache_count());
+    reset(); fail_final=true;
+    assert(!ata_read_sectors_pio_impl(0x1f0,12,128,bytes,true) && !cache_count());
     reset(); memset(bytes,0xEE,sizeof(bytes));
     assert(ata_read_sectors_pio_impl(0x1f0,12,20,bytes+1,true));
     assert(identifies==1 && sets==0 && block_count==2);
@@ -134,7 +208,7 @@ int main(void) {
     reset(); assert(ata_program_pio_batch(0x1f0,ATA_LBA28_LIMIT,3,true,true,true,false,0));
     assert(last_read_command==ATA_WRITE_SECTORS_EXT && count_register==3 && !identifies);
     reset(); assert(!ata_read_sectors_pio_impl(0x1f0,UINT32_MAX-1,3,bytes,true)); assert(!commands);
-    reset(); assert(!ata_read_sectors_pio_impl(0x1f0,0,21,bytes,true)); assert(!commands);
+    reset(); assert(!ata_read_sectors_pio_impl(0x1f0,0,129,bytes,true)); assert(!commands);
     reset(); assert(!ata_read_sectors_pio_impl(0x1f0,0,0,bytes,true)); assert(!commands);
     reset(); assert(!ata_read_sectors_pio_impl(0x1f0,0,1,NULL,true)); assert(!commands);
     for(unsigned i=0;i<4;i++) {

@@ -1,6 +1,18 @@
 /** @file curl_http.c @brief Bounded HTTP URL and response-head parser. */
 #include "curl_http.h"
 
+_Static_assert(sizeof(reist_curl_ipc_packet_t)==2048U,"private CURL packet ABI");
+int reist_curl_ipc_accept(const reist_curl_ipc_packet_t *p,uint32_t length,
+    uint32_t endpoint,uint8_t *output,uint32_t capacity,uint32_t *used,uint32_t *total) {
+    if(!p || !output || !used || !total || !endpoint || length<=16U || length>sizeof(*p) ||
+       p->magic!=REIST_CURL_IPC_MAGIC || p->endpoint!=endpoint || p->offset!=*used ||
+       !p->total || p->total>capacity || p->total>REIST_CURL_IPC_BODY_LIMIT+REIST_CURL_HEADER_CAPACITY ||
+       (*total && *total!=p->total) || *used>p->total || length-16U>p->total-*used) return -84;
+    for(uint32_t i=0;i<length-16U;++i) output[*used+i]=p->bytes[i];
+    *used+=length-16U; *total=p->total;
+    return 0;
+}
+
 static uint8_t lower_ascii(uint8_t value) {
     return value >= 'A' && value <= 'Z' ? (uint8_t)(value + ('a' - 'A'))
                                         : value;

@@ -58,6 +58,8 @@
 #define MAX_DRIVES          (MAX_ATA_DRIVES + MAX_FDD_DRIVES + MAX_PARTITION_DRIVES)
 #define ATA_LBA28_LIMIT     0x10000000u
 #define ATA_PIO_MAX_SECTORS 20U
+/* Read-only PIO admission; write journal and AHCI DMA remain at 20. */
+#define ATA_PIO_MAX_READ_SECTORS 128U
 #define ATA_UNPUBLISHED_MAX_SECTORS 128U
 #define SECTOR_SIZE 512
 
@@ -85,6 +87,8 @@ bool ata_read_sector_fresh(unsigned short base, unsigned int lba, void* buffer,
                            bool is_master);
 bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
                       void *buffer, bool is_master);
+/* Capacity hint only; read admission revalidates under the channel mutex. */
+uint32_t ata_read_batch_capacity(unsigned short base, bool is_master);
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer, bool is_master);
 bool ata_write_sectors(unsigned short base, uint32_t lba, uint32_t count,
                        const void *buffer, bool is_master);

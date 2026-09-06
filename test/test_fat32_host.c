@@ -39,6 +39,7 @@ static unsigned int fat_sector_reads;
 static unsigned int root_directory_reads;
 static unsigned int read_batch_calls;
 static uint32_t largest_read_batch;
+static uint32_t read_capacity_hint=ATA_PIO_MAX_READ_SECTORS;
 static unsigned int cache_flushes;
 static bool journal_volume_marked = true;
 static bool journal_attached;
@@ -225,10 +226,15 @@ bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,
         : host_raw_write(NULL, base, lba, buffer, is_master);
 }
 
+uint32_t ata_read_batch_capacity(unsigned short base,bool is_master) {
+    (void)base; (void)is_master;
+    return use_production_journal && host_journal.enabled && host_journal.transaction_depth
+        ? ATA_PIO_MAX_SECTORS : read_capacity_hint;
+}
 bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
                       void *buffer, bool is_master) {
     uint8_t *bytes = buffer;
-    if (count == 0U || count > ATA_PIO_MAX_SECTORS) return false;
+    if (count == 0U || count > ata_read_batch_capacity(base,is_master)) return false;
     ++read_batch_calls;
     if (count > largest_read_batch) largest_read_batch = count;
     for (uint32_t index = 0U; index < count; ++index) {
@@ -958,7 +964,7 @@ static int run_sequential_write_cache_test(void) {
     uint8_t* stream_readback = (uint8_t*)malloc(STREAM_BYTES);
     CHECK(stream_data != NULL && stream_readback != NULL);
     for (uint32_t index = 0U; index < STREAM_BYTES; ++index) {
-        stream_data[index] = (uint8_t)(index * 17U + 3U);
+        stream_data[index] = (uint8_t)(index * 17U + index/SECTOR_SIZE + 3U);
     }
 
     /* This is the exact syscall-facing rhythm: one copied 4096-byte page per
@@ -991,6 +997,38 @@ static int run_sequential_write_cache_test(void) {
     CHECK(read_batch_calls <= STREAM_CHUNKS);
     CHECK(largest_read_batch == STREAM_CHUNK_BYTES / SECTOR_SIZE);
     CHECK(memcmp(stream_readback, stream_data, STREAM_BYTES) == 0);
+
+    /* A loader-sized sequential read must not inherit the journal write cap. */
+    read_batch_calls=largest_read_batch=0;
+    memset(stream_readback,0,STREAM_BYTES);
+    CHECK(vfs_read(stream_node,0,STREAM_BYTES,stream_readback)==STREAM_BYTES);
+    CHECK(read_batch_calls==1 && largest_read_batch==STREAM_SECTORS);
+    CHECK(memcmp(stream_readback,stream_data,STREAM_BYTES)==0);
+    read_capacity_hint=ATA_PIO_MAX_SECTORS;
+    read_batch_calls=largest_read_batch=0;
+    CHECK(vfs_read(stream_node,0,STREAM_BYTES,stream_readback)==STREAM_BYTES);
+    CHECK(read_batch_calls==3 && largest_read_batch==ATA_PIO_MAX_SECTORS);
+    CHECK(memcmp(stream_readback,stream_data,STREAM_BYTES)==0);
+    read_capacity_hint=ATA_PIO_MAX_READ_SECTORS;
+
+    /* Swap two physical clusters while retaining the logical byte sequence.
+     * Larger batches must stop at each noncontiguous FAT link. */
+    CHECK(boot_sector.sectors_per_cluster==1);
+    uint32_t ca=stream_node->inode+16,cb=stream_node->inode+32;
+    uint32_t sa=cluster_to_sector(&boot_sector,ca),sb=cluster_to_sector(&boot_sector,cb);
+    CHECK(sa<TEST_SECTORS && sb<TEST_SECTORS);
+    uint8_t saved_sector[SECTOR_SIZE];
+    memcpy(saved_sector,test_disk[sa],SECTOR_SIZE);
+    memcpy(test_disk[sa],test_disk[sb],SECTOR_SIZE);
+    memcpy(test_disk[sb],saved_sector,SECTOR_SIZE);
+    CHECK(mark_cluster_in_fat(&boot_sector,ca-1,cb));
+    CHECK(mark_cluster_in_fat(&boot_sector,cb,ca+1));
+    CHECK(mark_cluster_in_fat(&boot_sector,cb-1,ca));
+    CHECK(mark_cluster_in_fat(&boot_sector,ca,cb+1));
+    read_batch_calls=largest_read_batch=0;
+    CHECK(vfs_read(stream_node,0,STREAM_BYTES,stream_readback)==STREAM_BYTES);
+    CHECK(read_batch_calls==5 && largest_read_batch==16);
+    CHECK(memcmp(stream_readback,stream_data,STREAM_BYTES)==0);
 
     /* Legacy FAT writes use the same volume-generation hook, so a cached VFS
      * cursor cannot survive an out-of-handle mutation. */

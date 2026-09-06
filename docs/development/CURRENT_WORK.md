@@ -2,7 +2,224 @@
 
 Stand: 6. September 2026
 
-## R3.14 aktiv: oeffentliche Webseiten laden
+## R3.14 abgenommen: Dokumentaufnahme und Browser-Ladepfad
+
+Alle eingefrorenen Gates bestehen am finalen Kandidaten auf `a9229d14`.
+R3.14 ist `done`; naechstes aktives Paket ist
+`R3.6b-vmware-pointer-pinned-mutex`. Dessen Implementierung/Abnahme wurde in
+diesem Lauf nicht begonnen. Kein Push. Alle frueheren Fehlerlogs bleiben erhalten.
+
+Ergebnis: private 1-MiB-Dokumente, weitere Zeichenkodierungen, Schriften bis
+64 CSS-Pixel und echte 8192-Byte-CSS-/Bildadressen mit begrenzter Spawnaufnahme.
+Browserdownloads vermeiden den temporaeren Dateiumweg durch private Bulk-IPC.
+Die unabhaengige 128-Sektor-PIO-Lesequote behaelt Schreib-/Journal-/AHCI-Grenzen.
+Demand-backed Legacy-Worker und Reflow nur belegter Ressourcen entfernen
+unnoetige Mapping-/Null-/Kopierarbeit: HTMLWORK-Mappingpayload von 6946468 auf
+2752100 Byte bei unveraenderten Dateibytes und Heapbudgets. Alle temporaeren
+Timingausgaben sind entfernt. Keine Frist-/Reserve-/TLS-Lockerung.
+
+### Finale Abnahme vom 6. September
+
+Die Befehle stehen unveraendert in `automation/reist-s03b.toml`; die sechs
+Loader-Hostbefehle und der Benchmark wurden vor der Loaderreparatur ergaenzt.
+Geaenderte Quellen wurden nach Reparatur neu geprueft; erfolgreiche Gates
+unveraenderter Quellen bleiben separat nachgewiesen, nicht redundant wiederholt.
+Alle Logs liegen unter `build/codex-agent/`.
+
+| Hostbefehl (`python test/<Name>.py -v`) | Ergebnis | Sekunden | Log |
+| --- | --- | ---: | --- |
+| test_browser_navigation_source | PASS 4 | 1,750 | r314-ipc-navigation.log |
+| test_html_engine | PASS 1 Gruppe inkl. Legacy-OOM | 3,817 | r314-lazy-legacy-host.log |
+| test_css_engine | PASS 1 Gruppe inkl. Raster/Workerfehler | 48,440 | r314-sparse-css-host.log |
+| test_browser_runtime_source | PASS 24 | 3,004 | r314-sparse-runtime-host.log |
+| test_gui_browser_source | PASS 8 | 40,795 | r314-sparse-gui-host.log |
+| test_browser_forms | PASS 1 Gruppe | 0,733 | r314-resumed-test_browser_forms.log |
+| test_user_program_toolchain | PASS 21 | 141,351 | r314-ipc-toolchain.log |
+| test_browser_public_navigation | PASS 2 | 1,214 | r314-sparse-public-host.log |
+| test_process_arguments | PASS 1 Gruppe | 0,457 | r314-loader-arguments-host.log |
+| test_ata_multiple | PASS 1 Gruppe | 0,611 | r314-loader-final-ata-host-repair.log |
+| test_ata_source | PASS 8 | 0,001 | r314-loader-test_ata_source.log |
+| test_ata_lba48_source | PASS 5 | 0,003 | r314-loader-test_ata_lba48_source.log |
+| test_ahci_source | PASS 7 | 0,003 | r314-loader-test_ahci_source.log |
+| test_reist_undo_journal | PASS 11 | 0,012 | r314-loader-test_reist_undo_journal.log |
+| test_fs_host | PASS 14, kein Skip | 6,651 | r314-loader-final-fs-host.log |
+
+Referenzbefehle: `.\scripts\test-reist-package.ps1 -Target <Target> -Video vga`.
+VMware PASS 57 s (`r314-sparse-package-vmware.log`,
+`20260906-160249-package-vmware-vga.log`); QEMU PASS 48 s
+(`r314-sparse-package-qemu.log`, `20260906-160405-package-qemu-vga.log`).
+Beide enthalten alle finalen Produktionsaenderungen.
+
+`python scripts/run_qemu_benchmark.py --image build/reist-os.img --min-read-kib-per-sec 400 --log build/codex-agent/r314-loader-benchmark.log`:
+PASS 34,490 s Hostzeit; 755,16 KiB/s Lesen, 17,40 KiB/s Schreiben, volle
+256-KiB-Bytepruefung, fsync, Cleanup und Shell. Unveraenderter Loaderstand.
+
+Gastbefehle: `.\scripts\test-reist-runtime.ps1 -Mode <Mode> -Target qemu -Video vga`.
+Die fuenf finalen Laeufe liefen einzeln ohne parallele Builds und alle bestehen.
+Jeweils separate Browserdetails unter dem gleichen Namen mit `.browser.log`.
+
+| Mode | Ergebnis | Hostsekunden | Log |
+| --- | --- | ---: | --- |
+| runtime-desktop-browser-public | PASS Encoding/lange Ressourcen/Redirect/Raster/Close | 94,449 | r314-sparse-runtime-public.log |
+| runtime-desktop-browser-input | PASS Eingabe/Navigation/Crash/Restart/Konsole | 129,445 | r314-sparse-runtime-input.log |
+| runtime-desktop-browser | PASS | 88,627 | r314-sparse-runtime-browser.log |
+| runtime-desktop-browser-resources | PASS | 77,282 | r314-sparse-runtime-browser-resources.log |
+| runtime-desktop-browser-forms | PASS echte Eingabe/GET/Reflow/Ablehnung/Reset/Recovery/Close | 75,106 | r314-sparse-runtime-browser-forms.log |
+
+Public beweist beide Rastermarker und exakt sieben HTTP-Requests inklusive
+langer CSS-Weiterleitung, Import und Bild, anschliessender Dokumentweiterleitung
+und sauberem Close innerhalb der unveraenderten 30-Sekunden-Gastprobe.
+Workerfristen bleiben fuenf Sekunden. Sieben Workerstarts brauchen 6077 ms;
+keine Quoten- oder Autoritaetserweiterung zur Umgehung der Abnahme.
+Das ist kontrollierte HTTP-Evidenz, kein Live-Website-Nachweis fuer Intracom
+oder Google. Erfasste Seiten bestehen getrennte Host-Rastertests. JavaScript,
+POST, Cookies und Kompression bleiben offen; Top-Level-URL-/Link-/Formfelder
+behalten ihre 256-Byte-Grenzen. Keine Vollbrowser-Kompatibilitaet behauptet.
+
+### Erhaltener Diagnose- und Reparaturverlauf (historischer Status)
+
+Aktuelle ausdrueckliche Wiederaufnahme: Nutzer fordert Fehlerkorrektur fuer
+eine sauber committbare Version. Die 49 zuordenbaren Dateien auf `a9229d14`
+bleiben erhalten; keine fremden Aenderungen. Die begrenzte instrumentierte
+Pipeline-Reproduktion misst 0,3-0,5 s Renderarbeit, bis 0,5 s IPC-Empfang und
+0,8-1,5 s Workerstart. Sie ist Diagnose, kein Abnahmeerfolg
+(`r314-pipeline-diagnostic.browser.log`, 93,306 s Hostzeit, unveraenderte Fristen).
+Ein isolierter -O2/-Os/-Oz-Buildvergleich spart nur 20480 Dateibytes und wird
+nicht als Produktionsaenderung uebernommen. Reparatur im vorhandenen Worker-
+Lebenszyklus: Die bisher in jedem neuen Worker unbenutzte 4-MiB-Legacy-BSS-Arena
+entfaellt. Auch Legacy nutzt den bestehenden demand-backed Prozessprovider
+mit weiterhin 4 MiB Budget; Input-/Knoten-/Attributgrenzen bleiben gleich.
+Ressourcen resetten nur den Header und nullen jeden neu aufgenommenen Record
+vollstaendig. Reflow kopiert nur belegte Records, CSS-Bytes und Bildpixel nach
+Bereichsvorpruefung. Alte Records/Pixeltails bleiben unzugaenglich und werden
+nicht ueber IPC publiziert. Alle temporaeren Pipeline-Ausgaben sind entfernt.
+Regressions-Erstlaeufe scheitern am unnoetigen Vollpool-Reset bzw. der alten
+statischen Arena. Nach Reparatur bestehen HTML (3,817 s, inklusive Legacy-OOM),
+Public/Legacy-Bundle (1,214 s), Browserlaufzeit (24 Tests/3,004 s), CSS inklusive
+Worker-Fault-/Quota-Faellen (48,440 s) und GUI (acht Tests/40,795 s).
+Logs: `r314-lazy-legacy-*.log`, `r314-sparse-*.log`. Die anschliessende finale
+Referenz-/Gastabnahme und Queue-Transition stehen oben.
+
+Vorheriger Abschluss der Loader-Wiederaufnahme: **blockiert, kein Commit**.
+Auch nach der einmaligen gezielten Idle-Reparatur scheitert
+`.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser-public -Target qemu -Video vga`
+nach 94,823 s Hostzeit am unveraenderten 30-Sekunden-Gastbudget. Die grosse
+Legacy-kodierte Seite mit langer CSS-Weiterleitung, Import, Bild und Raster
+besteht; auch die letzte Dokumentweiterleitung wird ausgefuehrt. Der letzte
+HTML/CSS-Worker ist am Gesamtlimit jedoch noch aktiv (`phase=3`, `child=22`).
+Sieben Worker-Spawns brauchen 6353 ms. Eine ausreichende Beschleunigung der
+Gesamtkette durch den entfallenen Idle-Sleep ist damit nicht nachgewiesen.
+Logs: `r314-idle-runtime-public.log` und `.browser.log` unter
+`build/codex-agent/`. Die Paket-Stoppregel greift: keine weitere Reparatur oder
+Gluecks-Wiederholung, keine Queue-Transition, keine erfolgreiche Live-Website-
+oder vollstaendige Browserabnahme behauptet. Die vier nachfolgenden Browser-
+Gastgates wurden nach dem Fehler nicht gestartet. Test-VM ist beendet.
+Alle 15 gezielten Hostgruppen bestehen (betroffene neu: 24 Laufzeittests in
+2,721 s, acht GUI-Tests in 34,266 s). Beide finalen Referenzen bestehen:
+VMware 70 s, QEMU 48 s (`r314-idle-package-*.log`). Der separate unveraenderte
+Loaderbenchmark bleibt mit 755,16 KiB/s, Bytepruefung, fsync und Cleanup PASS.
+49 zuordenbare geaenderte/neue Dateien liegen im freigegebenen Paketumfang;
+Diff-Whitespace-Pruefung besteht. Alle frueheren Fehlernachweise bleiben erhalten.
+
+Verlauf dieser Wiederaufnahme vor der abschliessenden Stopentscheidung:
+
+Die finalen Loader-Referenzen bestehen: VMware 51 s, QEMU 48 s
+(`r314-loader-package-*.log`). Der hinzugefuegte bytegepruefte QEMU-Benchmark
+besteht mit 755,16 KiB/s Lesen, fsync, Cleanup und Shell-Rueckkehr
+(`r314-loader-benchmark.log`, 34,490 s Hostzeit). Der anschliessende Browser-
+Public-Gast scheitert nach 94,104 s Hostzeit weiterhin am unveraenderten
+30-Sekunden-Probenbudget: grosse Seite, CSS/Import/Bild und abschliessende
+Weiterleitung gelingen, der letzte Parser ist aber noch aktiv. Sieben Spawns
+brauchen 6562 ms (`r314-loader-runtime-public.browser.log`). Einmalige gezielte
+Nachbesserung: Die Hauptschleife darf nach erfolgreich uebergebenen privaten
+IPC-Paketen nicht zusaetzlich auf einen Idle-Timer warten. Nur tatsaechlicher
+Paketfortschritt unterdrueckt diesen Sleep; bestehender Yield, Paketbudget,
+EAGAIN-Schlaf und absolute Fristen bleiben. Der reale Hosttest reproduziert
+den unnoetigen Sleep und besteht nach Reparatur mit allen 24 Laufzeittests
+(2,721 s; `r314-idle-regression-before.log`, `r314-idle-runtime-host.log`).
+Die anschliessende Reparatur-Gastabnahme ist oben dokumentiert.
+
+Erneute ausdrueckliche Freigabe des Nutzers ("ok") erweitert die Reparatur um
+Prozessstart-/Ladekosten. Die separate Shellmessung trennt HTMLWORK-Dateilesen
+1048/1026 ms von Speicheraufbau 9/6 ms; CURL 525/504 ms gegen 1/3 ms
+(`r314-loader-diagnostic.log`). Der vorhandene zusammenhaengende FAT32-Lesepfad
+uebernimmt bislang die 20-Sektor-Schreib-/Journalquote. Neue reine PIO-Lesequote:
+128 Sektoren; Backendhinweis, erneute Pruefung unter ATA-Mutex, AHCI und aktive
+Journaltransaktionen weiterhin 20. Keine groesseren Cache-/DMA-Puffer, keine
+geaenderten Schreibbefehle, Quoten der Undo-Records, Fristen oder Loader-
+Validierung. R3.14-Pfade und Gates wurden vor Implementierung explizit ergaenzt.
+Real-Code-Hosttests bestaetigen 128-Sektor-Bytes, unaligned Ziel/Guards,
+Restblock, LBA28/48, frische Identifikation, Fehler ohne Cachepublikation,
+Partitionen, AHCI, Journalprioritaet und veralteten Kapazitaetshinweis.
+Der neue Ersttest scheitert wie erwartet an der alten 20-Sektor-Grenze.
+Nach Korrektur fehlender Basis-/Masterwerte im neuen Adapter-Testdouble
+besteht das ATA-Gate (0,611 s). Die 14 Dateisystemtests bestehen mit echtem GCC
+ohne Skip (6,651 s), einschliesslich zusammenhaengender/gemappt fragmentierter
+Bytefolge sowie kleinerem Backendbudget. ATA/48-bit/AHCI/Journal-Quellgruppen:
+8/5/7/11 Tests PASS. Logs: `r314-loader-*.log`.
+Die erste instrumentierte Vergleichsmessung scheitert beim Storage-Start;
+die zusaetzliche Diagnoseausgabe hinter Prozessfreigabe wird vor diese verlegt.
+Der korrigierte Diagnosepfad erreicht die Shell und beide Wiederholungen:
+HTMLWORK liest 650/623 ms, CURL 289/269 ms
+(`r314-loader-batch-prepublish.log`). Alle temporaeren Kernel-Timingausgaben
+sind danach entfernt. Ergebnisse der folgenden Referenzbuilds und Gastabnahme
+stehen oben; dies ist noch kein Commit-/Live-Website-Nachweis.
+
+Vorheriger Abschluss vor der Loader-Freigabe: **blockiert, kein Commit**.
+Auch die einmalige gezielte IPC-Handoff-Reparatur verfehlt das eingefrorene
+30-Sekunden-Gastbudget. Abnahmebefehl:
+`.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser-public -Target qemu -Video vga`
+Ergebnis FAIL nach 98,052 s Hostzeit; Log
+`build/codex-agent/r314-ipc-handoff-runtime-public.browser.log`.
+Die grosse HTTP-Seite samt Legacy-Encoding, langer CSS-Weiterleitung, Import,
+langem Bild und echtem Raster erreicht `BROWSER_PUBLIC_LARGE_ENCODING_RASTER_OK`.
+Danach endet die Probe in Phase 3, bevor die abschliessende Dokumentweiterleitung
+abgenommen ist. Sechs gemessene Worker-Spawns brauchen insgesamt 8336 ms;
+eine ausreichende Verbesserung der gesamten Kette durch Yield ist nicht belegt.
+Die weitere Prozessstart-/Ladekostenanalyse bleibt offen. Nicht durch laengere
+Fristen, geaenderte Fixtures oder einen zusaetzlichen Glueckslauf kaschieren.
+Betroffene Hostgates nach Reparatur: 24 Laufzeittests/2,733 s und 8 GUI-Tests/
+29,618 s PASS. Referenzen: VMware 57 s
+(`20260906-150009-package-vmware-vga.log`), QEMU 49 s
+(`20260906-150118-package-qemu-vga.log`) PASS. Die zuvor bestehenden
+unveraenderten Hostgruppen bleiben als getrennte Nachweise erhalten.
+Die vier nachfolgenden Gastgates wurden nach dem Fehler nicht gestartet.
+Paket-Stoppregel greift; keine Queue-Transition, keine Implementierungsabnahme
+und kein Live-Website-Erfolg behauptet. 42 geaenderte/neue Dateien liegen alle
+innerhalb der freigegebenen Pfade; Diff-Whitespace-Pruefung besteht.
+
+Aktuelle Wiederaufnahme: Nutzer fordert die Fehlerkorrektur fuer einen sauber
+geprueften Commit. Der zuordenbare Kandidat auf `a9229d14` bleibt erhalten.
+Eine getrennte, begrenzte CURL-/Paketmitschnitt-Diagnose misst bei 90000 Byte
+5,28 s bis zum letzten Antwortbyte und weitere 8,55 s bis zum Verbindungsende
+(`r314-transport-diagnostic-summary.log`). Der Browser ersetzt deshalb seinen
+Datei-Schreib-/Lese-/Loeschumweg durch private CURL-Bulk-IPC. Vollstaendiges
+HTTP-Framing, Nachrichtengrenzen, exakte Kindidentitaet, erfolgreicher Exit und
+Reap bleiben Voraussetzung der Dokumentfreigabe. Abbruch sperrt zuerst den
+Endpunkt; jeder neue Hop bekommt einen neuen. Keine TCP-/Dateisystemerweiterung
+im Kernel, keine gelockerten Zeitlimits oder Quoten. CLI-Dateien behalten ihren
+atomaren Abschluss, stdout bleibt streamend.
+Betroffene Hostgruppen bestehen: Navigation 4 Tests/1,750 s, Browserlaufzeit
+24 Tests/2,671 s, GUI 8 Tests/28,342 s, oeffentliche Aufnahme 2 Tests/1,576 s
+(`r314-ipc-*.log`). Neue Verhaltensfaelle beweisen ungueltige Frames ohne
+Teilpublikation, endliche Delegationsrennen, Abbruch waehrend der Uebergabe,
+erfolgreiche Daten vor noch nicht erfolgtem Reap und spaeteren Kindfehler.
+Referenzbuild VMware besteht (95 s, `20260906-145006-package-vmware-vga.log`);
+weitere Abnahme laeuft. Noch kein Implementierungscommit/keine Queue-Transition.
+Toolchain: 21 Tests/141,351 s; QEMU-Referenz 49 s
+(`r314-ipc-toolchain.log`, `20260906-145202-package-qemu-vga.log`).
+Der erste IPC-Gastlauf beweist `BROWSER_PUBLIC_LARGE_ENCODING_RASTER_OK`,
+einschliesslich langer CSS-/Import-/Bildkette, scheitert aber am Gesamtbudget
+direkt beim Beginn der abschliessenden Weiterleitung, Phase 3. Sechs Worker-
+Spawns brauchen 7718 ms (`r314-ipc-runtime-public.browser.log`).
+Gezielte Reparatur: Nach einem erfolgreichen privaten IPC-Paket uebergibt der
+Browser die CPU an bereite Tasks, statt fuer jeden Ein-Slot-Paketwechsel einen
+Idle-Timertick zu bezahlen. Kein Yield bei EAGAIN, weiter hoechstens acht Pakete
+pro UI-Turn; normale Leerlaeufe schlafen. Der reale Hostregressionstest zeigt
+den vorherigen Ein-Paket-Stillstand (`r314-ipc-handoff-before.log`) und besteht
+danach zusammen mit allen 24 Laufzeithosttests (2,733 s,
+`r314-ipc-handoff-runtime-host.log`). Die gezielte Gast-Reparaturabnahme ist offen.
+Die folgenden Abschnitte erhalten die bisherigen Fehler- und Reparaturnachweise.
 
 Nutzerauftrag: die gemeldeten Browserfehler zusammen beheben. Sauberer
 Ausgangspunkt `3e94cf00`; R3.6b wird mit unveraenderten Gates zurueckgestellt.
@@ -34,6 +251,112 @@ Fortsetzung ausdruecklich freigegeben: Nutzer bestaetigt "ja mach alle noetigen
 anpassungen". Der R3.14-Vertrag wird um begrenzte Spawnargumente und echte lange
 Ressourcen-URLs erweitert. Der zuordenbare Kandidat bleibt erhalten, die alten
 Gates und ihre Ergebnisse bleiben nachvollziehbar. Keine neue Abnahme behauptet.
+
+Vertragserweiterung lokal committed als `a9229d14`; Implementierung weiter
+uncommitted. Kernel-Snapshot/Initial-Stack bestehen reale Hosttests inklusive
+8192-Zeichen-Argument, E2BIG, EFAULT, ENOMEM, Kopierfehler, exakt erhaltenen
+Argumentbytes und 16-KiB-Stackreserve (`r314-arguments-gate.log`). Der breite
+URL-Adapter besteht den 8192-Byte-Grenztest, alte 256-Byte-Resolversemantik bleibt
+erhalten (`r314-long-public-host-repair.log`). Ressourcen-Metadaten v3 lesen
+alte v2-Records, private Szene v4 transportiert lange Bildquellen getrennt vom
+unveraenderten semantischen Dokument. CURL-Request/Redirect-Puffer und der
+kontrollierte Lang-URL-Gasttest sind angepasst, aber noch nicht abgenommen.
+
+Erneuter Paketstopp: Das CSS-Gate nach gezielter Kompilierkorrektur scheitert
+am neuen `public-opaque`-Test, Zeile 128 (`r314-css-long-compile-repair.log`).
+Er erwartet die Farbe `#123456` der geladenen p-Regel fuer den enthaltenen Link;
+die vorhandene UA-Regel `a:link` setzt dessen eigene Farbe. UTF-16 und die
+anderen CSS-Teilfaelle melden in diesem Lauf keinen Fehler. Erwartung/Fixture
+bei ausdruecklicher Wiederaufnahme gezielt korrigieren, keine Gateabschwächung:
+die geladene lange CSS-Quelle muss an einem passend selektierten Element
+nachgewiesen werden. Keine Referenzbuilds, Gastabnahme, Queue-Transition oder
+Implementierungscommit. Aktueller Kandidat ist kein fertiger Browser-Release.
+
+Fortsetzung nach ausdruecklichem Nutzerauftrag: `public-opaque` selektiert nun
+das Linkelement selbst mit der geladenen Autorenregel. Kein abgeschwaechter
+Farbvergleich. Alle neun eingefrorenen Hostgruppen bestehen, einschliesslich
+UTF-16, 8192-Byte-URLs, alter Ressourcenformate und Kernel-Kopierfehlern.
+Logs: `r314-css-resumed.log`, `r314-public-final.log`,
+`r314-arguments-final.log`, `r314-resumed-test_*.log`.
+Gespeicherte Intracom-/Google-Antworten bestehen HTML/CSS und Rasterdiagnostik
+an drei Scrollpositionen (`r314-captures-final.log`); dies ist kein Live-
+Netzwerknachweis. Referenzbuilds bestehen: VMware 9 s
+(`20260906-140409-package-vmware-vga.log`), QEMU 48 s
+(`20260906-140440-package-qemu-vga.log`). Die fuenf Gastgates stehen noch aus.
+Kernel-SHA des alten Pakets ist wegen der freigegebenen Argumentreparatur
+keine Unveraendertheitsbehauptung fuer diesen Kandidaten.
+
+Erster kontrollierter Gastlauf scheitert bereits bei der Workspace-Aufnahme
+(`r314-runtime-public.log`, `r314-runtime-public-first.browser.log`). Das reale
+i386-Compilerlayout zeigt Decoderarena-Offset 17537516, also nur vierfach
+statt achtfach ausgerichtet. Kein Nachweis von Speichermangel. Gezielte
+Reparatur: explizites C11 `_Alignas(8)` samt Compile-Time-Layout-/36-MiB-
+Quotenpruefung und Hostassertion. Betroffene 24 Hosttests bestehen in 2,709 s
+(`r314-workspace-runtime-host.log`). Erneute Referenzen bestehen: VMware
+56 s (`20260906-141019-package-vmware-vga.log`), QEMU 48 s
+(`20260906-141115-package-qemu-vga.log`). Gast-Reparaturabnahme laeuft;
+Fristen, Decoder-Admission und Prozessreserven bleiben unveraendert.
+
+Erneuter eingefrorener Gastfehler nach dieser gezielten Reparatur (96 s
+Hostlauf, `r314-runtime-public-alignment-repair.log` und zugehoeriges
+`.browser.log`): Workspace, Font, Fenster, initiales HTML, Bild und Reflow
+bestehen; `BROWSER_PUBLIC_READY` wird erreicht. Die grosse HTTP-Antwort
+erreicht den Worker bei Gast-ms 57210, eine Ressourcen-Weiterleitung wird
+bestaetigt. Nach erneutem Workerstart bei ms 66616 endet das 30-Sekunden-
+Gesamtbudget der Browserprobe in Phase 2 mit noch lebendem Kind 15. Das ist
+kein nachgewiesener Worker-Crash und kein Argument-Admissionfehler; das
+eingefrorene Gesamt-Gate besteht trotzdem nicht. Die initialen Workerstarts
+liegen bei ms 36934/41035; vier gemessene Worker-Spawns brauchen zusammen
+6489 ms. Weitere serielle Lade-/Parsekosten sind gezielt zu untersuchen,
+ohne Fristen oder Assertions zu lockern. Die exakte lange HTTP-Kette samt
+neuem Bild ist noch nicht abgenommen; die vier nachfolgenden Gastgates
+wurden nach dem ersten fehlschlagenden Gate nicht gestartet.
+
+Paketregel `a frozen gate fails after one focused in-scope repair` greift:
+Implementierung hier gestoppt, kein Commit und keine Queue-Transition.
+Alle Aenderungen und Fehlerlogs bleiben sichtbar erhalten. Fortsetzung
+erfordert eine ausdrueckliche Wiederaufnahme; Live-Zugriff aus dem Browser
+auf Intracom/Google bleibt ebenfalls unbestaetigt.
+
+Ausdrueckliche Wiederaufnahme durch den Nutzer: gezielte Beschleunigung ohne
+gelockerte Fristen. Realer CURL-Hostregressionstest zeigt 62 Dateischreibaufrufe
+fuer 90000 Byte aus 1460-Byte-Netzfragmenten (`r314-buffer-before.log`).
+Ein fester privater 128-KiB-Puffer reduziert denselben Fall auf einen Aufruf;
+270000 Byte benoetigen drei. Unveraendert: vollstaendige Short Writes,
+HTTP-Framing-/Bytelimits, Close/Rename erst nach Erfolg und Unlink bei Fehler.
+Neue Regressionen pruefen partielle Writes, Fehler beim letzten Flush,
+Verwerfen unvollstaendiger Antworten, leeren Folgetransferzustand und weiterhin
+streamendes stdout. Nach einer gezielten Deklarationskorrektur besteht die
+betroffene Navigations-Hostgruppe (`r314-buffer-navigation-repair.log`,
+4 Tests/1,250 s). Beide Referenzbuilds bestehen: VMware 52 s
+(`20260906-142146-package-vmware-vga.log`), QEMU 61 s
+(`20260906-142238-package-qemu-vga.log`). Der erneut betroffene Toolchain-
+Nachweis besteht mit 21 Tests/132,315 s (`r314-buffer-toolchain.log`).
+Die neue Gastmessung startet erst nach Abschluss paralleler Builds.
+
+Gast-Reparaturgate bleibt rot (`r314-runtime-public-buffer.log`,
+`r314-runtime-public-buffer.browser.log`, Hostlauf 98,313 s). Nach lokaler
+Seite/Bild/Reflow erreicht die grosse HTTP-Antwort den Worker bei ms 56917;
+der nachfolgende Ressourcenworker startet bei ms 64032. Beim unveraenderten
+30-Sekunden-Probenende laeuft in Phase 2 Kind 16 mit Status `Lade Stylesheets`.
+Vier Worker-Spawns summieren sich auf 5452 ms. Der Schreibaufruf-Rueckgang
+ist hostseitig bewiesen, eine ausreichende End-to-End-Beschleunigung nicht.
+Keine weitere Gastabnahme, kein Commit und keine Queue-Transition nach dem
+erneuten Fehler der gezielten Reparatur.
+
+Read-only Folgeinventur: `drivers/net/tcp_socket.h` und der SDK-Vertrag
+begrenzen Sendeaufrufe auf 512 Byte und Empfang auf 2048 Byte. Der vorhandene
+`tcp_socket_send` wartet fuer jeden Aufruf auf ACK, bevor er die Bytezahl
+zurueckgibt. `CURL send_all` muss eine knapp 8-KiB-Adresse daher in mindestens
+16 nacheinander bestaetigte Segmente zerlegen. Das ist eine weitere konkrete
+strukturelle Grenze, noch kein gemessener Beweis ihres Anteils am Timeout.
+TCP-Produktion/SDK liegen ausserhalb R3.14.allowed_files und der freigegebenen
+Ring-0-Argumentreparatur. Keine stille Konstantenerhoehung und kein Ausbau
+des bestehenden monolithischen TCP-Pfades als Architekturvorbild. Ein separater
+OS-Schnitt braucht zuerst einen freigegebenen standardnahen Sende-/Empfangs-,
+Budget-, Generation-/Recoveryvertrag und passende Host-/Gastnachweise unter
+Erhalt der Ring-3-Zielgrenze. Implementierung hier nach Paketregel gestoppt;
+Quellstand und saemtliche Fehlevidenz bleiben erhalten.
 
 ## R1.2d abgenommen: VMware-/QEMU-Standard auf 1 GiB RAM
 

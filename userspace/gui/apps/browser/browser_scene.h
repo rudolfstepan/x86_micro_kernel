@@ -6,8 +6,11 @@
 #include "browser_resources.h"
 #include "browser_forms.h"
 #define BROWSER_CSS_RESOURCE_VERSION 2U
-#define BROWSER_CSS_INPUT_BYTES (65536U+BROWSER_RESOURCE_WIRE_CAPACITY)
+#define BROWSER_CSS_DOCUMENT_VERSION 4U
+#define BROWSER_CSS_INPUT_BYTES (BROWSER_DOCUMENT_INPUT_CAPACITY+BROWSER_RESOURCE_WIRE_CAPACITY)
+#define BROWSER_CSS_FONT_MAX 64U
 #define BROWSER_SCENE_VERSION 3U
+#define BROWSER_SCENE_DOCUMENT_VERSION 4U
 #define BROWSER_SCENE_RUNS 2048U
 #define BROWSER_SCENE_COORD_LIMIT 262144
 #define BROWSER_SCENE_FILL 7U
@@ -21,6 +24,7 @@ typedef struct browser_scene {
     uint32_t version, width, height, total_height, count;
     browser_scene_run_t runs[BROWSER_SCENE_RUNS];
     browser_forms_t forms;
+    char image_urls[REIST_HTML_IMAGE_CAPACITY][BROWSER_RESOURCE_URL_CAPACITY];
 } browser_scene_t;
 /* Private CSS1 envelope over generation-scoped bulk IPC, not a Surface ABI.
  * Input is this fixed prefix followed by exactly header.input_length bytes. */
@@ -29,7 +33,8 @@ typedef struct browser_css_request {
     uint32_t version, width, height, image_sizes[16][2];
     char document_url[256];
 } browser_css_request_t;
-#define BROWSER_CSS_WIRE_CAPACITY (8U+sizeof(browser_html_reply_t)+sizeof(browser_scene_t))
+#define BROWSER_CSS_SCENE_WIRE_CAPACITY (8U+sizeof(browser_html_reply_t)+sizeof(browser_scene_t))
+#define BROWSER_CSS_WIRE_CAPACITY (BROWSER_CSS_SCENE_WIRE_CAPACITY>sizeof(browser_resource_needs_t) ? BROWSER_CSS_SCENE_WIRE_CAPACITY : sizeof(browser_resource_needs_t))
 #define BROWSER_CSS_PACKET_MAGIC 0x31535343U
 #define BROWSER_CSS_PACKET_DATA 2032U
 typedef struct browser_css_packet {

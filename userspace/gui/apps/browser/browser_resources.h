@@ -1,7 +1,8 @@
 #ifndef BROWSER_RESOURCES_H
 #define BROWSER_RESOURCES_H
 #include "html_protocol.h"
-#define BROWSER_RESOURCE_VERSION 2U
+#define BROWSER_RESOURCE_VERSION 3U
+#define BROWSER_RESOURCE_URL_CAPACITY REIST_HTML_URL_CAPACITY
 #define BROWSER_RESOURCE_COUNT 64U
 #define BROWSER_RESOURCE_BYTES (1024U*1024U)
 #define BROWSER_RESOURCE_LIMIT (256U*1024U)
@@ -13,7 +14,7 @@
  * No file, socket, allocator or parser authority is implemented here. */
 typedef struct browser_resource {
     uint32_t offset, length, ready, depth;
-    char url[256], effective[256];
+    char url[BROWSER_RESOURCE_URL_CAPACITY], effective[BROWSER_RESOURCE_URL_CAPACITY];
 } browser_resource_t;
 typedef struct browser_resources {
     uint32_t version, generation, count, length;
@@ -25,7 +26,7 @@ typedef struct browser_resources {
 /* Bundle v2 sends only count metadata records, then exactly length CSS bytes.
  * The fixed-capacity private in-memory representation remains unchanged. */
 #define BROWSER_RESOURCE_WIRE_CAPACITY ((uint32_t)sizeof(browser_resources_t))
-typedef struct browser_resource_need_item { uint32_t depth; char url[256]; } browser_resource_need_item_t;
+typedef struct browser_resource_need_item { uint32_t depth; char url[BROWSER_RESOURCE_URL_CAPACITY]; } browser_resource_need_item_t;
 typedef struct browser_resource_needs {
     uint32_t magic, version, size, generation;
     browser_html_header_t identity;
@@ -34,7 +35,7 @@ typedef struct browser_resource_needs {
 } browser_resource_needs_t;
 /* RFC 3986 identity: lowercase scheme/host, remove default port and fragment,
  * retain path/query case and query order. Resolver normalizes dot segments. */
-int browser_resource_url(const char *base,const char *reference,char out[256]);
+int browser_resource_url(const char *base,const char *reference,char out[BROWSER_RESOURCE_URL_CAPACITY]);
 int browser_resource_admit(const char *document,const char *url);
 void browser_resources_init(browser_resources_t *,uint32_t generation);
 int browser_resources_find(const browser_resources_t *,const char *canonical);

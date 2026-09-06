@@ -4,9 +4,18 @@
 #include <stdint.h>
 
 #define REIST_CURL_HOST_CAPACITY 254U
-#define REIST_CURL_PATH_CAPACITY 256U
-#define REIST_CURL_HEADER_CAPACITY 8192U
-#define REIST_CURL_LOCATION_CAPACITY 256U
+#define REIST_CURL_PATH_CAPACITY 8193U
+#define REIST_CURL_HEADER_CAPACITY 16384U
+#define REIST_CURL_LOCATION_CAPACITY 8193U
+#define REIST_CURL_IPC_MAGIC 0x314C5243U /* private CRL1, not a socket ABI */
+#define REIST_CURL_IPC_BODY_LIMIT (1024U*1024U)
+#define REIST_CURL_IPC_DATA 2032U
+typedef struct reist_curl_ipc_packet {
+    uint32_t magic, endpoint, offset, total;
+    uint8_t bytes[REIST_CURL_IPC_DATA];
+} reist_curl_ipc_packet_t;
+int reist_curl_ipc_accept(const reist_curl_ipc_packet_t *,uint32_t length,
+    uint32_t endpoint,uint8_t *output,uint32_t capacity,uint32_t *used,uint32_t *total);
 
 typedef enum reist_curl_scheme {
     REIST_CURL_SCHEME_HTTP = 1,

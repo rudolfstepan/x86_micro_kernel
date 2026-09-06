@@ -3,16 +3,16 @@
 #include <string.h>
 
 static uint32_t url_length(const char *s) {
-    if(s) for(unsigned i=0;i<256;++i) if(!s[i]) return i;
-    return 256;
+    if(s) for(unsigned i=0;i<BROWSER_RESOURCE_URL_CAPACITY;++i) if(!s[i]) return i;
+    return BROWSER_RESOURCE_URL_CAPACITY;
 }
-static int terminated(const char *s) { return url_length(s)<256; }
+static int terminated(const char *s) { return url_length(s)<BROWSER_RESOURCE_URL_CAPACITY; }
 /* URL identity is always bounded, including malformed incoming fixed fields.
  * Use the shared byte contract supported by both legacy chrome and libc; do
  * not introduce another general C-string runtime into the browser. */
 static int url_equal(const char *a,const char *b) {
     uint32_t n=url_length(a);
-    return n<256 && n==url_length(b) && !memcmp(a,b,n);
+    return n<BROWSER_RESOURCE_URL_CAPACITY && n==url_length(b) && !memcmp(a,b,n);
 }
 static char lower(char c) { return c>='A' && c<='Z' ? (char)(c+'a'-'A') : c; }
 static int hex(char c) {
@@ -27,12 +27,12 @@ static int scheme(const char *s) {
     while (p[i] && s[i] && lower(s[i])==p[i]) ++i;
     return !p[i] ? 1 : 0;
 }
-int browser_resource_url(const char *base,const char *reference,char out[256]) {
+int browser_resource_url(const char *base,const char *reference,char out[BROWSER_RESOURCE_URL_CAPACITY]) {
     if (!base || !reference || !out) return -22;
-    size_t n=0; while(n<256 && reference[n]) ++n;
-    if(n==256) return -90;
+    size_t n=0; while(n<BROWSER_RESOURCE_URL_CAPACITY && reference[n]) ++n;
+    if(n==BROWSER_RESOURCE_URL_CAPACITY) return -90;
     for(size_t i=0;i<n;++i) if((uint8_t)reference[i]<=32 || reference[i]=='\\' || (uint8_t)reference[i]==127) return -22;
-    char normalized[256]; size_t used=0;
+    static char normalized[BROWSER_RESOURCE_URL_CAPACITY]; size_t used=0;
     for(size_t i=0;i<n;++i) {
         if(reference[i]!='%') { normalized[used++]=reference[i]; continue; }
         if(i+2>=n || hex(reference[i+1])<0 || hex(reference[i+2])<0) return -22;
@@ -49,11 +49,12 @@ int browser_resource_url(const char *base,const char *reference,char out[256]) {
         i+=2;
     }
     normalized[used]=0;
-    if(reist_html_url_resolve(base,normalized,out,256)) return -22;
+    static reist_html_url_workspace_t resolver;
+    if(reist_html_url_resolve_wide(base,normalized,out,BROWSER_RESOURCE_URL_CAPACITY,&resolver)) return -22;
     for(unsigned i=0;out[i];++i) if(out[i]=='#') { out[i]=0; break; }
     int network=scheme(out);
     if(network) {
-        reist_curl_url_t parsed;
+        static reist_curl_url_t parsed;
         if(reist_curl_parse_http_url(out,&parsed)) return -22;
         unsigned begin=network==2 ? 8U : 7U, end=begin;
         while(out[end] && out[end]!='/') ++end;
@@ -70,14 +71,16 @@ int browser_resource_url(const char *base,const char *reference,char out[256]) {
     return 0;
 }
 int browser_resource_admit(const char *document,const char *url) {
-    char canonical[256];
+    static char canonical[BROWSER_RESOURCE_URL_CAPACITY];
     if(!terminated(url) || browser_resource_url(document,url,canonical) || !url_equal(canonical,url)) return -13;
     int from=scheme(document), to=scheme(url);
     if((from && !to) || (from==2 && to!=2)) return -13;
     return 0;
 }
 void browser_resources_init(browser_resources_t *b,uint32_t generation) {
-    memset(b,0,BROWSER_RESOURCE_PREFIX);
+    /* Only count entries are live or serializable. Each new entry is cleared
+     * on admission; resetting an empty bundle need not touch its maximum pool. */
+    memset(b,0,BROWSER_RESOURCE_HEADER_BYTES);
     b->version=BROWSER_RESOURCE_VERSION; b->generation=generation;
 }
 int browser_resources_find(const browser_resources_t *b,const char *url) {
@@ -135,13 +138,20 @@ int browser_resources_pack(const browser_resources_t *b,const char *document,uin
 int browser_resources_unpack(const uint8_t *in,uint32_t length,const char *document,browser_resources_t *out) {
     if(!in || !out || length<BROWSER_RESOURCE_HEADER_BYTES || length>sizeof(*out)) return -84;
     uint32_t header[4]; memcpy(header,in,sizeof(header));
-    if(header[0]!=BROWSER_RESOURCE_VERSION || !header[1] || header[2]>BROWSER_RESOURCE_COUNT ||
+    if((header[0]!=2U && header[0]!=BROWSER_RESOURCE_VERSION) || !header[1] || header[2]>BROWSER_RESOURCE_COUNT ||
         header[3]>BROWSER_RESOURCE_BYTES) return -84;
-    uint32_t prefix=BROWSER_RESOURCE_HEADER_BYTES+header[2]*sizeof(out->entries[0]);
+    const uint32_t record=header[0]==2U ? 528U : sizeof(out->entries[0]);
+    uint32_t prefix=BROWSER_RESOURCE_HEADER_BYTES+header[2]*record;
     if(length!=prefix+header[3]) return -84;
     browser_resources_init(out,header[1]);
     out->count=header[2]; out->length=header[3];
-    memcpy(out->entries,in+BROWSER_RESOURCE_HEADER_BYTES,prefix-BROWSER_RESOURCE_HEADER_BYTES);
+    if(header[0]==2U) for(uint32_t i=0;i<header[2];++i) {
+        const uint8_t *p=in+BROWSER_RESOURCE_HEADER_BYTES+i*record;
+        if(!memchr(p+16,0,256) || !memchr(p+272,0,256)) return -84;
+        memset(&out->entries[i],0,sizeof(out->entries[i]));
+        memcpy(&out->entries[i],p,16);
+        memcpy(out->entries[i].url,p+16,256); memcpy(out->entries[i].effective,p+272,256);
+    } else memcpy(out->entries,in+BROWSER_RESOURCE_HEADER_BYTES,prefix-BROWSER_RESOURCE_HEADER_BYTES);
     memcpy(out->bytes,in+prefix,header[3]);
     return browser_resources_validate(out,document,out->generation);
 }
@@ -149,6 +159,7 @@ int browser_resource_need_add(browser_resource_needs_t *n,const char *url,uint32
     if(!n || !terminated(url) || depth>BROWSER_RESOURCE_DEPTH) return -28;
     for(uint32_t i=0;i<n->count && i<BROWSER_RESOURCE_COUNT;++i) if(url_equal(n->items[i].url,url)) return 0;
     if(n->count>=BROWSER_RESOURCE_COUNT) return -28;
+    memset(&n->items[n->count],0,sizeof(n->items[n->count]));
     n->items[n->count].depth=depth;
     memcpy(n->items[n->count++].url,url,url_length(url)+1); return 0;
 }

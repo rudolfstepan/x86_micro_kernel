@@ -173,7 +173,8 @@ unsigned int read_file_data_at_cursor(unsigned int start_cluster,
         }
 
         uint32_t wanted = remaining / SECTOR_SIZE;
-        if (wanted > ATA_PIO_MAX_SECTORS) wanted = ATA_PIO_MAX_SECTORS;
+        uint32_t capacity=ata_read_batch_capacity(ata_base_address,ata_is_master);
+        if (wanted > capacity) wanted = capacity;
         uint32_t run = 1U;
         uint32_t run_cluster = current_cluster;
         uint32_t run_cluster_index = current_index;

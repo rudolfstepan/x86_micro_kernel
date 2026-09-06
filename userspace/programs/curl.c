@@ -15,7 +15,7 @@ extern const uint8_t reist_tls_runtime_test_ca_pem[];
 extern const size_t reist_tls_runtime_test_ca_pem_size;
 #endif
 
-#define CURL_REQUEST_CAPACITY X86OS_TCP_MAX_SEGMENT
+#define CURL_REQUEST_CAPACITY (REIST_CURL_PATH_CAPACITY+1024U)
 #define CURL_DEFAULT_MAX_BYTES (1024U * 1024U)
 #define CURL_HARD_MAX_BYTES (16U * 1024U * 1024U)
 #define CURL_DNS_TIMEOUT_MS 3000U
@@ -25,12 +25,14 @@ extern const size_t reist_tls_runtime_test_ca_pem_size;
 #define CURL_TRANSFER_IDLE_TIMEOUT_MS 30000U
 #define CURL_TRANSFER_HARD_TIMEOUT_MS 300000U
 #define CURL_OUTPUT_PATH_CAPACITY 256U
+#define CURL_FILE_BUFFER_CAPACITY 131072U
 
 typedef struct curl_options {
     const char *url;
     const char *output;
     uint32_t maximum_bytes;
     uint32_t include_headers;
+    uint32_t ipc_endpoint;
 } curl_options_t;
 
 typedef int (*curl_stream_send_fn)(void *stream, const uint8_t *data,
@@ -50,6 +52,15 @@ typedef enum curl_failure_stage {
     CURL_STAGE_REQUEST = 4,
     CURL_STAGE_RESPONSE = 5
 } curl_failure_stage_t;
+/* Conventional curl process error categories; all remain nonzero on failure. */
+static int curl_exit_status(curl_failure_stage_t stage,int status) {
+    if(status==-110) return 28;
+    if(stage==CURL_STAGE_TCP) return 7;
+    if(stage==CURL_STAGE_TLS) return 35;
+    if(stage==CURL_STAGE_OUTPUT) return 23;
+    if(status==-90) return 63;
+    return stage==CURL_STAGE_REQUEST ? 55 : 56;
+}
 
 static reist_tls_context_t tls_context;
 
@@ -119,13 +130,16 @@ static int parse_positive(const char *text, uint32_t maximum,
 
 static int parse_options(int argc, char **argv, curl_options_t *options) {
     if (argc < 2 || argv == 0 || options == 0) return -1;
-    *options = (curl_options_t){0, 0, CURL_DEFAULT_MAX_BYTES, 0U};
+    *options = (curl_options_t){0, 0, CURL_DEFAULT_MAX_BYTES, 0U, 0U};
     for (int index = 1; index < argc; ++index) {
         if (text_equal(argv[index], "--include") || text_equal(argv[index], "-i")) {
             options->include_headers = 1U;
         } else if (text_equal(argv[index], "-o")) {
             if (++index >= argc || options->output != 0) return -1;
             options->output = argv[index];
+        } else if (text_equal(argv[index], "--reist-ipc")) {
+            if(++index>=argc || options->ipc_endpoint ||
+                parse_positive(argv[index],UINT32_MAX,&options->ipc_endpoint)) return -1;
         } else if (text_equal(argv[index], "--max-bytes")) {
             if (++index >= argc || parse_positive(
                     argv[index], CURL_HARD_MAX_BYTES,
@@ -138,7 +152,8 @@ static int parse_options(int argc, char **argv, curl_options_t *options) {
             options->url = argv[index];
         }
     }
-    return options->url == 0 ? -1 : 0;
+    return !options->url || (options->ipc_endpoint &&
+        (options->output || options->maximum_bytes>REIST_CURL_IPC_BODY_LIMIT)) ? -1 : 0;
 }
 
 static int append_text(char *buffer, uint32_t *used, uint32_t capacity,
@@ -256,7 +271,36 @@ static int send_all(const curl_stream_t *stream, const uint8_t *data,
     return 0;
 }
 
-static int write_all(int descriptor, const uint8_t *data, uint32_t length) {
+static struct {
+    uint8_t bytes[CURL_FILE_BUFFER_CAPACITY];
+    uint32_t used, enabled;
+    int descriptor, failed;
+} file_buffer;
+static struct { uint8_t *bytes; uint32_t used, capacity; } ipc_output;
+
+static int publish_ipc_output(uint32_t endpoint) {
+    if(!ipc_output.bytes || !ipc_output.used) return -84;
+    uint64_t started;
+    if(x86os_monotonic_ms(&started)) return -5;
+    for(uint32_t at=0;at<ipc_output.used;) {
+        uint64_t now;
+        if(x86os_monotonic_ms(&now) || now<started) return -5;
+        if(now-started>=CURL_IO_TIMEOUT_MS) return -110;
+        uint32_t n=ipc_output.used-at; if(n>REIST_CURL_IPC_DATA) n=REIST_CURL_IPC_DATA;
+        reist_curl_ipc_packet_t p={REIST_CURL_IPC_MAGIC,endpoint,at,ipc_output.used,{0}};
+        for(uint32_t i=0;i<n;++i) p.bytes[i]=ipc_output.bytes[at+i];
+        x86os_ipc_bulk_message_t m={X86OS_IPC_BULK_MESSAGE_VERSION,sizeof(m),16U+n,{0}};
+        for(uint32_t i=0;i<m.length;++i) m.payload[i]=((const uint8_t *)&p)[i];
+        int rc=x86os_ipc_send_bulk_timeout(endpoint,&m,(uint32_t)(CURL_IO_TIMEOUT_MS-(now-started)));
+        /* Delegation follows spawn. Only an untouched stream may wait for it. */
+        if(!at && (rc==-9 || rc==-13)) { if(x86os_sleep_ms(1U)) return -5; continue; }
+        if(rc) return rc;
+        at+=n;
+    }
+    return 0;
+}
+
+static int write_direct(int descriptor, const uint8_t *data, uint32_t length) {
     uint32_t written = 0U;
     while (written < length) {
         int result = x86os_write(
@@ -287,6 +331,8 @@ static int finish_output(const char *temporary, curl_options_t options, int outp
     if (result != 0) (void)x86os_unlink(temporary);
     return result;
 }
+
+static int write_all(int descriptor,const uint8_t *data,uint32_t length);
 
 typedef struct curl_body_reader {
     const curl_stream_t *stream;
@@ -342,6 +388,33 @@ static int reader_write(curl_body_reader_t *reader, int output, uint32_t amount)
         result = write_all(output, reader->bytes + reader->position, part);
         if (result != 0) return result;
         reader->position += part; amount -= part;
+    }
+    return 0;
+}
+static int flush_file_buffer(void) {
+    int result=write_direct(file_buffer.descriptor,file_buffer.bytes,file_buffer.used);
+    file_buffer.used=0;
+    if(result) file_buffer.failed=result;
+    return result;
+}
+static int write_all(int descriptor,const uint8_t *data,uint32_t length) {
+    if(ipc_output.bytes) {
+        if(length>ipc_output.capacity-ipc_output.used) return -90;
+        for(uint32_t i=0;i<length;++i) ipc_output.bytes[ipc_output.used+i]=data[i];
+        ipc_output.used+=length; return 0;
+    }
+    /* Only -o's private staging file is buffered. Terminal output stays
+     * streaming; no bytes survive this response or a failed transfer. */
+    if(!file_buffer.enabled) return write_direct(descriptor,data,length);
+    if(descriptor!=file_buffer.descriptor || file_buffer.failed) return -5;
+    while(length) {
+        uint32_t n=CURL_FILE_BUFFER_CAPACITY-file_buffer.used;
+        if(n>length) n=length;
+        for(uint32_t i=0;i<n;++i) file_buffer.bytes[file_buffer.used+i]=data[i];
+        file_buffer.used+=n; data+=n; length-=n;
+        if(file_buffer.used==CURL_FILE_BUFFER_CAPACITY) {
+            int result=flush_file_buffer(); if(result) return result;
+        }
     }
     return 0;
 }
@@ -445,11 +518,11 @@ static int receive_chunked(curl_body_reader_t *reader, int output, uint32_t maxi
     return -90;
 }
 
-static int receive_response(const curl_stream_t *stream, int output,
+static int receive_response_inner(const curl_stream_t *stream, int output,
                             uint32_t maximum_bytes, uint32_t include_headers) {
-    uint8_t header[REIST_CURL_HEADER_CAPACITY];
+    static uint8_t header[REIST_CURL_HEADER_CAPACITY];
     uint32_t header_used = 0U, body_offset = 0U;
-    reist_curl_response_head_t response;
+    static reist_curl_response_head_t response;
     uint64_t started = 0U;
     if (x86os_monotonic_ms(&started) != 0) return -5;
     uint32_t header_total = 0U;
@@ -501,6 +574,15 @@ static int receive_response(const curl_stream_t *stream, int output,
         total += amount;
     }
 }
+static int receive_response(const curl_stream_t *stream,int output,
+                             uint32_t maximum_bytes,uint32_t include_headers) {
+    file_buffer.used=0; file_buffer.failed=0; file_buffer.descriptor=output;
+    file_buffer.enabled=output!=X86OS_STDOUT_FILENO;
+    int result=receive_response_inner(stream,output,maximum_bytes,include_headers);
+    if(!result && file_buffer.enabled) result=flush_file_buffer();
+    file_buffer.used=file_buffer.enabled=0;
+    return result;
+}
 static int receive_body(const curl_stream_t *stream, int output, uint32_t maximum_bytes) {
     return receive_response(stream, output, maximum_bytes, 0U);
 }
@@ -517,13 +599,13 @@ int main(int argc, char **argv) {
         x86os_puts("curl: invalid arguments (try curl --help)\n");
         return 2;
     }
-    reist_curl_url_t url;
+    static reist_curl_url_t url;
     int result = reist_curl_parse_http_url(options.url, &url);
     if (result != 0) {
         x86os_puts("curl: invalid URL\n");
         return 2;
     }
-    char request[CURL_REQUEST_CAPACITY]; uint32_t request_length = 0U;
+    static char request[CURL_REQUEST_CAPACITY]; uint32_t request_length = 0U;
     if (build_request(&url, request, &request_length) != 0) {
         x86os_puts("curl: URL is too long for the bounded request\n");
         return 2;
@@ -540,7 +622,7 @@ int main(int argc, char **argv) {
         if (result != 0) {
             x86os_puts("curl: TLS clock or hardware entropy unavailable, status=");
             x86os_print_number(result); x86os_putchar('\n');
-            return 1;
+            return 35;
         }
     }
     uint32_t address = 0U;
@@ -551,7 +633,7 @@ int main(int argc, char **argv) {
         if (dns_status != 0) {
             x86os_puts("curl: name resolution failed, status=");
             x86os_print_number(dns_status); x86os_putchar('\n');
-            return 1;
+            return 6;
         }
         address = dns.address;
     }
@@ -612,12 +694,23 @@ int main(int argc, char **argv) {
         failure_stage = CURL_STAGE_REQUEST;
         result = send_all(&stream, (const uint8_t *)request, request_length);
     }
+    if(result==0 && options.ipc_endpoint) {
+        ipc_output.capacity=options.maximum_bytes+REIST_CURL_HEADER_CAPACITY;
+        ipc_output.used=0; ipc_output.bytes=x86os_malloc(ipc_output.capacity);
+        if(!ipc_output.bytes) { failure_stage=CURL_STAGE_OUTPUT; result=-12; }
+    }
     if (result == 0) {
         failure_stage = CURL_STAGE_RESPONSE;
         result = options.include_headers
             ? receive_response(&stream, output, options.maximum_bytes, 1U)
             : receive_body(&stream, output, options.maximum_bytes);
+        if(file_buffer.failed) failure_stage=CURL_STAGE_OUTPUT;
     }
+    if(!result && options.ipc_endpoint) {
+        failure_stage=CURL_STAGE_OUTPUT;
+        result=publish_ipc_output(options.ipc_endpoint);
+    }
+    if(ipc_output.bytes) { x86os_free(ipc_output.bytes); ipc_output.bytes=0; ipc_output.used=ipc_output.capacity=0; }
     if (tls_open) (void)reist_tls_client_close(&tls_context);
     if (socket != 0U) (void)x86os_tcp_socket_close(socket, 2000U);
 
@@ -632,7 +725,7 @@ int main(int argc, char **argv) {
             print_timeout(failure_stage);
         else
             print_failure(failure_stage, result);
-        return 1;
+        return curl_exit_status(failure_stage,result);
     }
     return 0;
 }

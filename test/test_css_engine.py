@@ -10,6 +10,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from build_html_engine import extract
 from build_user_sdk import extract_wapcaplet
 from build_user_program import find_zig
+DIAGNOSTIC = "--public-diagnostic" in sys.argv
+if DIAGNOSTIC:
+    sys.argv.remove("--public-diagnostic")
 
 
 class CssEngineTests(unittest.TestCase):
@@ -60,7 +63,15 @@ class CssEngineTests(unittest.TestCase):
             result = subprocess.run([*command[:2], "@" + str(response)],
                 env=environment, capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode,0,result.stderr)
-            for mode in ("forms-fixture", "forms", "cascade", "geometry", "quota", "resources", "import", "worker", "bad-packet",
+            if DIAGNOSTIC:
+                for args in (("public-document",), ("public-meta",),
+                             ("public-file", ROOT / "build/codex-agent/browser-intracom.html", ROOT / "build/codex-agent/browser-intracom.css"),
+                             ("public-file", ROOT / "build/codex-agent/browser-google.html")):
+                    result = subprocess.run([str(executable), *map(str,args)], capture_output=True,text=True,timeout=10)
+                    print(args[0], "exit=", result.returncode, result.stdout, result.stderr, flush=True)
+                    self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+                return
+            for mode in ("public-document", "public-meta", "public-utf8-bom", "public-transport", "public-utf16", "public-opaque", "public-oom", "forms-fixture", "forms", "cascade", "geometry", "quota", "resources", "import", "worker", "bad-packet",
                          "worker-eacces", "worker-missing", "worker-missing-eacces",
                          "worker-revoked", "worker-revoked-eacces", "worker-sleep-failure",
                          "resources-needed", "resources-cascade", "resources-cycle", "resources-depth",

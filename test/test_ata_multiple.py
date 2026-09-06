@@ -17,12 +17,14 @@ class AtaMultipleTests(unittest.TestCase):
         begin = source.index("static bool ata_pio_wait_status(")
         end = source.index("bool ata_read_sectors(", begin)
         implementation = source[begin:end]
+        adapters = source[end:source.index("bool ata_read_sector(", end)]
         harness = (ROOT / "test/test_ata_multiple_host.c").read_text(encoding="utf-8")
         self.assertEqual(harness.count("/* PRODUCTION */"), 1)
         with tempfile.TemporaryDirectory(prefix="reist-ata-multiple-") as directory:
             tmp = Path(directory)
             c = tmp / "host.c"
-            c.write_text(harness.replace("/* PRODUCTION */", implementation), encoding="utf-8")
+            c.write_text(harness.replace("/* PRODUCTION */", implementation)
+                .replace("/* ADAPTER */", adapters), encoding="utf-8")
             executable = tmp / "host.exe"
             env = os.environ.copy()
             env["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/ata-host-cache")

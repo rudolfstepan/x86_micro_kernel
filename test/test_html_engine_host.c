@@ -4,19 +4,42 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <reist/libc.h>
 #include "userspace/gui/apps/browser/html_engine.h"
 #include "test_html_worker_host.c"
 
 static reist_html_document_t doc;
 extern _Noreturn void _Exit(int);
 _Noreturn void reist_libc_fail(unsigned code) { (void)code; _Exit(70); }
-int reist_libc_init_process(size_t budget) { (void)budget; assert(0); return -12; }
+static _Alignas(max_align_t) uint8_t legacy_backing[REIST_LIBC_HEAP_LIMIT];
+static size_t legacy_used;
+static unsigned legacy_initializations,legacy_oom;
+static void *legacy_acquire(void *unused,size_t size) {
+    (void)unused;
+    if(legacy_oom || size>sizeof(legacy_backing)-legacy_used) return NULL;
+    void *p=legacy_backing+legacy_used; legacy_used+=size; return p;
+}
+static void legacy_release(void *unused,void *p,size_t size) {
+    (void)unused;
+    assert((uint8_t *)p>=legacy_backing && (uint8_t *)p+size<=legacy_backing+legacy_used);
+}
+int reist_libc_init_process(size_t budget) {
+    assert(budget==REIST_LIBC_HEAP_LIMIT); ++legacy_initializations;
+    reist_libc_backing_t backing={1,sizeof(backing),(uint32_t)budget,256U*1024U,NULL,legacy_acquire,legacy_release};
+    return reist_libc_init_backing(&backing);
+}
 static const char *find(const char *text, const char *part) {
     size_t length=strlen(part);
     for (; *text; ++text) if (!strncmp(text,part,length)) return text;
     return NULL;
 }
 int main(int argc, char **argv) {
+    if(argc>1 && !strcmp(argv[1],"legacy-oom")) {
+        legacy_oom=1;
+        assert(browser_html5_parse((const uint8_t *)"<p>x</p>",8,&doc)<0);
+        assert(legacy_initializations==1 && !legacy_used);
+        puts("HTML5_LAZY_LEGACY_OOM_OK"); return 0;
+    }
     if (argc>1 && !strcmp(argv[1],"fixture")) {
         uint8_t bytes[65536]; FILE *f=fopen("htdocs/browser-test.html","rb"); assert(f);
         size_t n=fread(bytes,1,sizeof(bytes),f); fclose(f);
@@ -55,6 +78,7 @@ int main(int argc, char **argv) {
     assert(find(doc.text,"outside") < find(doc.text,"cell"));
     assert(doc.link_count==1 && !strcmp(doc.links[0].href,"?q=a&b=2"));
     assert(doc.image_count==1 && !strcmp(doc.images[0].source,"x.png"));
+    assert(legacy_initializations==1 && legacy_used && legacy_used<=REIST_LIBC_HEAP_LIMIT);
     puts("HTML5_TREE_PROJECTION_OK");
     return 0;
 }

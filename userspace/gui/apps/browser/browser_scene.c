@@ -8,14 +8,14 @@ _Static_assert(sizeof(browser_css_request_t)==444U,"CSS request size");
 int browser_css_request_validate(const browser_css_request_t *q) {
     if (!q) return -84;
     const browser_html_header_t *h=&q->header;
-    if (h->magic!=BROWSER_HTML_MAGIC || h->version!=BROWSER_HTML_VERSION || !h->request ||
+    if (h->magic!=BROWSER_HTML_MAGIC || !browser_html_profile_valid(h) || !h->request ||
         !h->parent_pid || !h->parent_generation || h->child_pid || h->child_generation ||
-        !h->input_length || h->input_length>REIST_HTML_INPUT_CAPACITY ||
-        h->mode>2 || h->reserved[0] || h->reserved[1] ||
+        !h->input_length || h->mode>2 ||
+        (h->version==BROWSER_HTML_DOCUMENT_VERSION)!=(q->version==BROWSER_CSS_DOCUMENT_VERSION) ||
         !q->width || q->width>1024 || !q->height || q->height>768) return -84;
     uint32_t original=(uint32_t)sizeof(*q)+h->input_length;
     if(q->version==1U || q->version==BROWSER_SCENE_VERSION) { if(h->size!=original) return -84; }
-    else if(q->version==BROWSER_CSS_RESOURCE_VERSION) {
+    else if(q->version==BROWSER_CSS_RESOURCE_VERSION || q->version==BROWSER_CSS_DOCUMENT_VERSION) {
         if(h->size<original+BROWSER_RESOURCE_HEADER_BYTES || h->size>original+BROWSER_RESOURCE_WIRE_CAPACITY) return -84;
     } else return -84;
     uint32_t url_length=0;
@@ -31,7 +31,8 @@ int browser_css_pack(const browser_html_reply_t *r,const browser_scene_t *s,uint
     uint32_t runs_size=20+s->count*sizeof(s->runs[0]);
     uint32_t form_size=20+f->form_count*sizeof(f->forms[0])+f->control_count*sizeof(f->controls[0])+
         f->option_count*sizeof(f->options[0])+f->used;
-    uint32_t scene_size=runs_size+form_size;
+    uint32_t wide_size=s->version==BROWSER_SCENE_DOCUMENT_VERSION ? r->document.image_count*BROWSER_RESOURCE_URL_CAPACITY : 0;
+    uint32_t scene_size=runs_size+form_size+wide_size;
     if (capacity<8+scene_size) return -28;
     int doc_size=browser_html_pack(r,out+8,capacity-8-scene_size);
     if (doc_size<0) return doc_size;
@@ -42,7 +43,8 @@ int browser_css_pack(const browser_html_reply_t *r,const browser_scene_t *s,uint
     memcpy(p,f->forms,f->form_count*sizeof(f->forms[0])); p+=f->form_count*sizeof(f->forms[0]);
     memcpy(p,f->controls,f->control_count*sizeof(f->controls[0])); p+=f->control_count*sizeof(f->controls[0]);
     memcpy(p,f->options,f->option_count*sizeof(f->options[0])); p+=f->option_count*sizeof(f->options[0]);
-    memcpy(p,f->strings,f->used);
+    memcpy(p,f->strings,f->used); p+=f->used;
+    if(wide_size) memcpy(p,s->image_urls,wide_size);
     return 8+doc_size+(int)scene_size;
 }
 int browser_css_unpack(const uint8_t *in,size_t length,const browser_css_request_t *q,
@@ -51,23 +53,26 @@ int browser_css_unpack(const uint8_t *in,size_t length,const browser_css_request
     uint32_t sizes[2]; memcpy(sizes,in,8);
     if (sizes[0]>sizeof(*r) || sizes[1]<20 || sizes[1]>sizeof(*s) || 8U+sizes[0]+sizes[1]!=length) return -84;
     uint32_t prefix[5]; memcpy(prefix,in+8+sizes[0],20);
-    if (prefix[0]!=BROWSER_SCENE_VERSION || prefix[1]!=q->width || prefix[2]!=q->height ||
+    if ((prefix[0]!=BROWSER_SCENE_VERSION && prefix[0]!=BROWSER_SCENE_DOCUMENT_VERSION) ||
+        (prefix[0]==BROWSER_SCENE_DOCUMENT_VERSION && q->version!=BROWSER_CSS_DOCUMENT_VERSION) || prefix[1]!=q->width || prefix[2]!=q->height ||
         prefix[4]>BROWSER_SCENE_RUNS) return -84;
+    if (browser_html_unpack(in+8,sizes[0],r) ||
+        browser_html_validate(r,sizeof(*r),&q->header,pid,generation)) return -84;
+    uint32_t wide_size=prefix[0]==BROWSER_SCENE_DOCUMENT_VERSION ? r->document.image_count*BROWSER_RESOURCE_URL_CAPACITY : 0;
     uint32_t runs_size=20U+prefix[4]*sizeof(s->runs[0]), counts[5];
     if(sizes[1]<runs_size+20) return -84;
     const uint8_t *p=in+8+sizes[0]+runs_size; memcpy(counts,p,20);
     if(counts[1]>BROWSER_FORM_COUNT || counts[2]>BROWSER_FORM_CONTROLS ||
        counts[3]>BROWSER_FORM_OPTIONS || counts[4]>BROWSER_FORM_BYTES ||
        sizes[1]!=runs_size+20+counts[1]*sizeof(browser_form_t)+counts[2]*sizeof(browser_form_control_t)+
-           counts[3]*sizeof(browser_form_option_t)+counts[4]) return -84;
-    if (browser_html_unpack(in+8,sizes[0],r) ||
-        browser_html_validate(r,sizeof(*r),&q->header,pid,generation)) return -84;
+           counts[3]*sizeof(browser_form_option_t)+counts[4]+wide_size) return -84;
     memset(s,0,sizeof(*s)); memcpy(s,in+8+sizes[0],runs_size);
     browser_forms_t *f=&s->forms; memcpy(f,counts,20); p+=20;
     memcpy(f->forms,p,counts[1]*sizeof(f->forms[0])); p+=counts[1]*sizeof(f->forms[0]);
     memcpy(f->controls,p,counts[2]*sizeof(f->controls[0])); p+=counts[2]*sizeof(f->controls[0]);
     memcpy(f->options,p,counts[3]*sizeof(f->options[0])); p+=counts[3]*sizeof(f->options[0]);
-    memcpy(f->strings,p,counts[4]);
+    memcpy(f->strings,p,counts[4]); p+=counts[4];
+    if(wide_size) memcpy(s->image_urls,p,wide_size);
     return browser_scene_validate(&r->document,s);
 }
 int browser_css_packet_accept(const browser_css_packet_t *p,uint32_t length,uint32_t request,
@@ -83,9 +88,16 @@ static int boundary(const reist_html_document_t *d,uint32_t at) {
     return at==d->text_length || ((uint8_t)d->text[at]&0xc0)!=0x80;
 }
 int browser_scene_validate(const reist_html_document_t *d,const browser_scene_t *s) {
-    if (!s || browser_html_document_validate(d) || s->version!=BROWSER_SCENE_VERSION ||
+    if (!s || browser_html_document_validate(d) ||
+        (s->version!=BROWSER_SCENE_VERSION && s->version!=BROWSER_SCENE_DOCUMENT_VERSION) ||
         !s->width || s->width>1024 || !s->height || s->height>768 ||
         s->count>BROWSER_SCENE_RUNS || s->total_height>BROWSER_SCENE_COORD_LIMIT || browser_forms_validate(&s->forms)) return -84;
+    for(uint32_t i=0;i<REIST_HTML_IMAGE_CAPACITY;++i) {
+        const char *url=s->image_urls[i]; uint32_t n=0;
+        while(n<BROWSER_RESOURCE_URL_CAPACITY && url[n]) ++n;
+        if(n==BROWSER_RESOURCE_URL_CAPACITY || (n &&
+            (s->version!=BROWSER_SCENE_DOCUMENT_VERSION || i>=d->image_count || d->images[i].source[0] || n<256))) return -84;
+    }
     uint32_t text_bytes=0;
     for (uint32_t i=0;i<s->count;++i) {
         const browser_scene_run_t *r=&s->runs[i];
@@ -96,7 +108,7 @@ int browser_scene_validate(const reist_html_document_t *d,const browser_scene_t 
             (r->link!=UINT32_MAX && r->link>=d->link_count) ||
             (!!(r->flags&64U)!=(r->link!=UINT32_MAX))) return -84;
         if (r->kind==REIST_HTML_ELEMENT_TEXT) {
-            if (!r->height || r->height>32 || !r->length || r->length>128 || r->offset>d->text_length ||
+            if (!r->height || r->height>BROWSER_CSS_FONT_MAX || !r->length || r->length>128 || r->offset>d->text_length ||
                 r->length>d->text_length-r->offset || !boundary(d,r->offset) || !boundary(d,r->offset+r->length)) return -84;
             text_bytes+=r->length; if (text_bytes>REIST_HTML_TEXT_CAPACITY) return -84;
             uint32_t scalars=0;
@@ -134,11 +146,27 @@ static uint32_t decode(const char *text,uint32_t length,uint32_t *at) {
 }
 /* Private, single-threaded renderer scratch, not a font/resource cache across
  * frames. Each invocation invalidates the tags before using its current font.
- * 128 direct-mapped slots bound both memory (263168 bytes) and lookup work. */
+ * 128 direct-mapped slots bound memory and lookup work through 64px glyphs. */
 #define BROWSER_GLYPH_SLOTS 128U
 typedef struct browser_glyph_scratch {
-    uint32_t glyph, height, pixels[32*16];
+    uint32_t glyph, height, pixels[BROWSER_CSS_FONT_MAX*(BROWSER_CSS_FONT_MAX/2)];
 } browser_glyph_scratch_t;
+static int document_glyph(const reist_gui_font_t *font,uint32_t glyph,uint32_t cell,
+    uint32_t height,uint32_t *pixels) {
+    if(height<=REIST_GUI_FONT_MAX_HEIGHT)
+        return reist_gui_font_raster_scaled_xrgb(font,glyph,cell,height,0xffffff,0,
+            pixels,cell,BROWSER_CSS_FONT_MAX*(BROWSER_CSS_FONT_MAX/2));
+    /* The shared font decoder retains its 32px contract. Scale its validated
+     * native bitmap here; larger document typography grants no decoder input
+     * authority and remains bounded to 32x64 destination pixels. */
+    uint32_t native[REIST_GUI_FONT_MAX_WIDTH*REIST_GUI_FONT_MAX_HEIGHT];
+    if(height>BROWSER_CSS_FONT_MAX || cell>BROWSER_CSS_FONT_MAX/2 ||
+        reist_gui_font_raster_scaled_xrgb(font,glyph,font->width,font->height,
+            0xffffff,0,native,font->width,sizeof(native)/sizeof(native[0]))) return -84;
+    for(uint32_t y=0;y<height;++y) for(uint32_t x=0;x<cell;++x)
+        pixels[y*cell+x]=native[(y*font->height/height)*font->width+x*font->width/cell];
+    return 0;
+}
 static int text_pixels(const reist_gui_font_t *font,const char *text,uint32_t length,
     int32_t x,int32_t y,uint32_t h,uint32_t color,uint32_t flags,uint32_t *pixels,
     uint32_t stride,int32_t right,int32_t top,int32_t bottom,
@@ -152,7 +180,7 @@ static int text_pixels(const reist_gui_font_t *font,const char *text,uint32_t le
         browser_glyph_scratch_t *cached=&scratch[(glyph^h)%BROWSER_GLYPH_SLOTS];
         if (cached->height!=h || cached->glyph!=glyph) {
             cached->height=0;
-            if (reist_gui_font_raster_scaled_xrgb(font,glyph,cell,h,0xffffff,0,cached->pixels,cell,32*16)) return -84;
+            if (document_glyph(font,glyph,cell,h,cached->pixels)) return -84;
             cached->glyph=glyph; cached->height=h;
         }
         const uint32_t *glyph_pixels=cached->pixels;

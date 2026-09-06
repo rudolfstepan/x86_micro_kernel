@@ -33,7 +33,7 @@ static void private_release(void *unused,void *p,size_t size) {
     (void)unused; assert((uint8_t *)p>=private_heap && (uint8_t *)p+size<=private_heap+private_used);
 }
 int reist_libc_init_process(size_t budget) {
-    assert(budget==sizeof(private_heap)); private_used=0;
+    assert(budget==sizeof(private_heap) || budget==REIST_LIBC_HEAP_LIMIT); private_used=0;
     reist_libc_backing_t backing={1,sizeof(backing),(uint32_t)budget,256U*1024U,NULL,private_acquire,private_release};
     return reist_libc_init_backing(&backing);
 }
@@ -90,7 +90,116 @@ static const browser_scene_run_t *text_run(const char *text) {
     return NULL;
 }
 int main(int argc, char **argv) {
-    const char *mode=argc==2 ? argv[1] : "cascade";
+    const char *mode=argc>1 ? argv[1] : "cascade";
+    if(!strcmp(mode,"public-utf8-bom") || !strcmp(mode,"public-transport") || !strcmp(mode,"public-utf16") ||
+        !strcmp(mode,"public-opaque") || !strcmp(mode,"public-oom")) {
+        static uint8_t bytes[4096]; size_t n=0;
+        const char *html="<meta charset=ISO-8859-1><p>caf\xc3\xa9</p>";
+        uint32_t encoding=BROWSER_ENCODING_UTF8;
+        if(!strcmp(mode,"public-utf8-bom")) {
+            memcpy(bytes,"\xef\xbb\xbf",3); n=3; encoding=BROWSER_ENCODING_WINDOWS1252;
+        }
+        memcpy(bytes+n,html,strlen(html)); n+=strlen(html);
+        if(!strcmp(mode,"public-utf16")) {
+            html="<p>wide</p>"; n=2; bytes[0]=255; bytes[1]=254;
+            for(size_t i=0;html[i];++i) { bytes[n++]=(uint8_t)html[i]; bytes[n++]=0; }
+        }
+        if(!strcmp(mode,"public-opaque")) {
+            char long_url[401]; const char prefix_url[]="https://example.test/style?q=";
+            memcpy(long_url,prefix_url,sizeof(prefix_url));
+            size_t prefix=strlen(long_url); memset(long_url+prefix,'x',400-prefix); long_url[400]=0;
+            n=(size_t)snprintf((char *)bytes,sizeof(bytes),
+                "<link rel=stylesheet href='%s'><style>p{background-image:url(data:image/png,%s)}</style>"
+                "<p><a href='%s'>visible</a></p><img src='%s' alt='placeholder'>",
+                long_url,long_url,long_url,long_url);
+            browser_resources_init(&resource_bundle,1);
+            assert(browser_resources_add(&resource_bundle,"https://example.test/",long_url,0)==0);
+            /* Author rule targets the link itself: its UA color is a specified
+             * child value, not an inherited paragraph color. */
+            assert(!browser_resources_store(&resource_bundle,0,long_url,(const uint8_t *)"a{color:#123456}",16));
+        }
+        private_fail=!strcmp(mode,"public-oom");
+        int rc=browser_css_render_document(bytes,n,800,500,NULL,"https://example.test/",
+            !strcmp(mode,"public-opaque") ? &resource_bundle : NULL,&resource_needs,&document,&scene,encoding);
+        if(private_fail) assert(rc==-12);
+        else {
+            assert(!rc);
+            if(!strcmp(mode,"public-opaque")) {
+                assert(text_run("visible") && !document.link_count && document.image_count==1);
+                assert(!document.images[0].source[0] && !resource_needs.count);
+                assert(strlen(scene.image_urls[0])==400 && text_run("visible")->color==0xff123456);
+            } else assert(text_run(!strcmp(mode,"public-utf16") ? "wide" : "caf\xc3\xa9"));
+        }
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
+    if(!strcmp(mode,"public-file")) {
+        static uint8_t bytes[BROWSER_DOCUMENT_INPUT_CAPACITY],css[BROWSER_RESOURCE_LIMIT];
+        assert(argc>=3); FILE *f=fopen(argv[2],"rb"); assert(f);
+        size_t n=fread(bytes,1,sizeof(bytes),f); assert(!ferror(f) && feof(f)); fclose(f);
+        browser_resources_init(&resource_bundle,1);
+        const char *url=argc>=4 ? "https://intracom.at/" : "https://www.google.com/";
+        if(argc>=4) {
+            f=fopen(argv[3],"rb"); assert(f); size_t size=fread(css,1,sizeof(css),f); fclose(f);
+            assert(browser_resources_add(&resource_bundle,url,"https://intracom.at/assets/css/site.css",0)==0);
+            assert(!browser_resources_store(&resource_bundle,0,"https://intracom.at/assets/css/site.css",css,(uint32_t)size));
+            const char *font_css="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap";
+            int index=browser_resources_add(&resource_bundle,url,font_css,0); assert(index>=0);
+            assert(!browser_resources_store(&resource_bundle,(uint32_t)index,font_css,(const uint8_t *)"",0));
+        } else {
+            const char pattern[]="<link href=\"/xjs/"; const char *link=NULL;
+            for(size_t i=0;i+sizeof(pattern)-1<=n;++i)
+                if(!memcmp(bytes+i,pattern,sizeof(pattern)-1)) { link=(const char *)bytes+i+12; break; }
+            assert(link);
+            const char *end=strchr(link,'\"'); assert(end);
+            static char css_url[BROWSER_RESOURCE_URL_CAPACITY],reference[BROWSER_RESOURCE_URL_CAPACITY];
+            assert((size_t)(end-link)<sizeof(reference)); memcpy(reference,link,(size_t)(end-link)); reference[end-link]=0;
+            assert(!browser_resource_url(url,reference,css_url));
+            f=fopen("build/codex-agent/browser-google.css","rb"); assert(f);
+            size_t size=fread(css,1,sizeof(css),f); assert(!ferror(f) && feof(f)); fclose(f);
+            assert(browser_resources_add(&resource_bundle,url,css_url,0)==0);
+            assert(!browser_resources_store(&resource_bundle,0,css_url,css,(uint32_t)size));
+        }
+        /* One parse per address space, exactly like production workers. The
+         * uncaptured font sheet is empty, not live subresource acceptance. */
+        int rc=browser_css_render_document(bytes,n,800,500,NULL,url,&resource_bundle,&resource_needs,&document,&scene,
+            argc>=4 ? BROWSER_ENCODING_AUTO : BROWSER_ENCODING_WINDOWS1252);
+        printf("PUBLIC_CAPTURE bytes=%u result=%d text=%u runs=%u forms=%u controls=%u strings=%u\n",(unsigned)n,rc,document.text_length,scene.count,scene.forms.form_count,scene.forms.control_count,scene.forms.used);
+        assert(!rc && !resource_needs.count && scene.count && document.text_length);
+        static uint32_t pixels[800*500]; uint8_t bits[16]; memset(bits,255,sizeof(bits));
+        reist_gui_font_mapping_t map={0,REIST_GUI_FONT_EMPTY_GLYPH};
+        reist_gui_font_t font={.version=REIST_GUI_FONT_API_VERSION,.struct_size=sizeof(font),
+            .data=bits,.data_size=sizeof(bits),.glyph_count=1,.bytes_per_glyph=16,
+            .width=8,.height=16,.row_bytes=1,.fallback_glyph=0,.mappings=&map,.mapping_capacity=1};
+        for(unsigned i=0;i<3;++i)
+            assert(!browser_scene_raster(&document,&scene,&font,NULL,i*scene.total_height/3,pixels,800,500,0,500));
+        puts("PUBLIC_CAPTURE_RASTER_OK");
+        return rc!=0;
+    }
+    if(!strcmp(mode,"public-document") || !strcmp(mode,"public-meta")) {
+        static uint8_t bytes[90000]; size_t at=0;
+        const char prefix[]="<!--"; memcpy(bytes,prefix,4); at=4;
+        memset(bytes+at,'x',70000); at+=70000;
+        const char html[]="--><meta charset=ISO-8859-1><style>h1{font-size:36px}h2{font-size:64px}</style>"
+            "<h1>caf\xe9 \x80</h1><h2>large</h2><p>kept</p>";
+        memcpy(bytes+at,html,sizeof(html)-1); at+=sizeof(html)-1;
+        int rc=browser_css_render_document(bytes,at,800,500,NULL,"https://example.test/",NULL,NULL,&document,&scene,
+            !strcmp(mode,"public-meta") ? BROWSER_ENCODING_AUTO : BROWSER_ENCODING_WINDOWS1252);
+        printf("PUBLIC_DOCUMENT result=%d text=%u runs=%u\n",rc,document.text_length,scene.count);
+        assert(!rc && text_run("caf\xc3\xa9 \xe2\x82\xac"));
+        assert(text_run("caf\xc3\xa9 \xe2\x82\xac")->height==36 && text_run("large")->height==64);
+        static uint32_t pixels[800*500],font_header[13];
+        font_header[0]=REIST_GUI_FONT_PSF2_MAGIC; font_header[2]=32; font_header[3]=1; font_header[4]=1;
+        font_header[5]=16; font_header[6]=16; font_header[7]=8;
+        memset((uint8_t *)font_header+32,255,16);
+        ((uint8_t *)font_header)[48]='?'; ((uint8_t *)font_header)[49]=255;
+        reist_gui_font_t font; reist_gui_font_mapping_t map[128];
+        assert(!reist_gui_font_open_psf2(&font,(uint8_t *)font_header,50,map,128,'?'));
+        memset(pixels,0xff,sizeof(pixels));
+        assert(!browser_scene_raster(&document,&scene,&font,NULL,0,pixels,800,500,0,500));
+        unsigned changed=0; for(unsigned i=0;i<800*500;++i) changed+=pixels[i]!=UINT32_MAX;
+        assert(changed>1000);
+        puts("CSS_CASCADE_SCENE_OK"); return 0;
+    }
     if(!strcmp(mode,"forms-fixture")) {
         static uint8_t html[65536];
         FILE *fixture=fopen("htdocs/browser-forms-test.html","rb"); assert(fixture);

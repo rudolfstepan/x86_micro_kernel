@@ -852,6 +852,19 @@ Hostgruppen, beide Referenzbuilds und vier Browser-Gastgates bestehen;
 die Paketabnahme steht in CURRENT_WORK. JavaScript und POST bleiben offen.
 Kein neuer Kernelparser oder neue Geraeteautoritaet.
 
+R3.14 ist mit beiden Referenzen und fuenf Browser-Gastgates abgenommen: private 1-MiB-
+Dokumentaufnahme, weitere Zeichenkodierungen, 64-Pixel-Schriften und echte
+8192-Byte-CSS-/Bildadressen. Browser-Arbeitsbereich maximal 36 MiB, Workerheap
+weiterhin 32 MiB; alte semantische ABI und Prozessreserven bleiben erhalten.
+Der freigegebene Spawn-Argumentmechanismus aendert sich in Ring 0:
+8193 Byte je String inklusive NUL, 16 KiB Gesamtframe, weiterhin 32 KiB
+guarded Ring-3-Stack mit mindestens 16 KiB Laufzeitreserve. Hinzu kommt die
+explizit freigegebene 128-Sektor-PIO-Lesequote im bestehenden FAT32-/Loaderpfad;
+Schreibjournal und AHCI bleiben unveraendert. Keine neuen Webparser, Treiber
+oder Caches im Kernel. Vertraege: BROWSER_PUBLIC_NAVIGATION_CONTRACT.md,
+PROCESS_ARGUMENT_CONTRACT.md und ATA_PIO_TRANSFER_CONTRACT.md;
+aktuelle Nachweise: CURRENT_WORK.md.
+
 R3.8 ergänzt als Engine-Voraussetzung eine opt-in Ring-3-C-Speicher-/Byte-Laufzeit
 und die echte NetSurf-Bibliothek LibWapcaplet. Maximal 4 MiB caller-owned Arena
 und 4096 lebende Objekte je Prozess; keine neue Kernel-Allocation oder versteckte

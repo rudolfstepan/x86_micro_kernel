@@ -47,14 +47,17 @@ static int css_worker_run(uint32_t endpoint,uint32_t deadline,css_worker_buffers
     if (q->header.mode==1) { __asm__ volatile("ud2"); return 70; }
     if (q->header.mode==2) { (void)x86os_sleep_ms(BROWSER_HTML_DEADLINE_MS+1000); return 70; }
     int rendered;
-    if(q->version==BROWSER_CSS_RESOURCE_VERSION) {
+    if(q->version==BROWSER_CSS_RESOURCE_VERSION || q->version==BROWSER_CSS_DOCUMENT_VERSION) {
         if(browser_resources_unpack(css_input.bytes+q->header.input_length,
             total-(uint32_t)sizeof(*q)-q->header.input_length,q->document_url,&css_resources)) return 74;
         for(uint32_t i=0;i<css_resources.count;++i) if(!css_resources.entries[i].ready) return 74;
-        rendered=browser_css_render_resources(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,
-            q->document_url,&css_resources,&css_needs,&reply.document,&css_scene);
+        if(q->version==BROWSER_CSS_DOCUMENT_VERSION)
+            rendered=browser_css_render_document(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,
+                q->document_url,&css_resources,&css_needs,&reply.document,&css_scene,q->header.reserved[0]);
+        else rendered=browser_css_render_resources(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,
+                q->document_url,&css_resources,&css_needs,&reply.document,&css_scene);
     } else rendered=browser_css_render(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,q->document_url,&reply.document,&css_scene);
-    if(rendered<0) return 65;
+    if(rendered<0) { x86os_puts("HTMLWORK_RENDER_ERROR result="); x86os_print_number(rendered); x86os_puts("\n"); return 65; }
     x86os_process_identity_t identity;
     if (x86os_process_identity_of(x86os_getpid(),&identity) || identity.version!=1 ||
         identity.struct_size!=sizeof(identity) || identity.pid!=x86os_getpid() || !identity.generation) return 70;

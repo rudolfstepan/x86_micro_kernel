@@ -329,6 +329,19 @@ feste Decoderarena; das Einbinden der Bytefunktionen aktiviert keinen Heap.
 Das private CSS3-Szenenformat ergaenzt validierte Formulare, Controls, Optionen
 und Stringoffsets. Grenzen und Abnahme: `BROWSER_FORM_INTERACTION_CONTRACT.md`.
 
+R3.14 abgenommen: Der additive caller-owned URL-Arbeitsbereich und
+`reist_html_url_resolve_wide` erweitern nur den Resolver auf 8192 Byte;
+der bisherige Resolver und die semantischen HTML-Strukturen bleiben bei ihren
+bisherigen Grenzen. Keine implizite Allocation oder neue Transportautoritaet.
+Die bestehende Spawn-ABI erhaelt begrenzte 8193-Byte-Argumentstrings einschliesslich
+NUL und hoechstens 16 KiB fuer den gesamten Initial-Argumentframe, bei weiterhin
+16 oeffentlichen Argumenten und mindestens 16 KiB freier Laufzeit-Stackreserve.
+E2BIG/EFAULT/ENOMEM und Rollback vor Publikation stehen im
+`PROCESS_ARGUMENT_CONTRACT.md`; Host-/Gastnachweise stehen in CURRENT_WORK.
+Auch der Legacy-HTML-Worker nutzt jetzt den bestehenden demand-backed Provider
+mit unveraendertem 4-MiB-Budget; das caller-owned Arena-API bleibt erhalten.
+Damit wird keine unbenutzte 4-MiB-Arena mehr in jedes Workerimage eingebaut.
+
 - [ ] Öffentlicher Namensraum, Layer und Owner sind festgelegt.
 - [ ] Vorhandener Standard oder etablierte Bibliothekssemantik wurde geprüft.
 - [ ] Abweichungen sind begründet; es wird keine falsche Kompatibilität behauptet.

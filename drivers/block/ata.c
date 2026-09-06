@@ -797,6 +797,10 @@ static bool ata_pio_range_valid(drive_t *drive, uint32_t lba,
     return drive != NULL && count != 0U && count <= ATA_PIO_MAX_SECTORS &&
            lba < drive->sectors && count <= drive->sectors - lba;
 }
+static bool ata_pio_read_range_valid(drive_t *drive,uint32_t lba,uint32_t count) {
+    return drive != NULL && count != 0U && count <= ATA_PIO_MAX_READ_SECTORS &&
+        lba < drive->sectors && count <= drive->sectors-lba;
+}
 
 static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
                                   uint32_t count, bool is_master,
@@ -833,7 +837,7 @@ static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
                                       bool is_master) {
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
-    if (buffer == NULL || !ata_pio_range_valid(drive, lba, count))
+    if (buffer == NULL || !ata_pio_read_range_valid(drive, lba, count))
         return false;
     uint32_t last = lba + count - 1U;
     bool use_lba48 = last >= ATA_LBA28_LIMIT;
@@ -876,9 +880,12 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
         uint32_t absolute;
         drive_t *parent = ata_partition_translate(partition, lba, &absolute);
         if (parent == NULL || buffer == NULL || count == 0U ||
-            count > ATA_PIO_MAX_SECTORS ||
+            count > (parent->type==DRIVE_TYPE_AHCI ? ATA_PIO_MAX_SECTORS : ATA_PIO_MAX_READ_SECTORS) ||
             count > partition->sectors - lba) return false;
         if (!ata_transaction_begin()) return false;
+        if(count>ATA_PIO_MAX_SECTORS && ata_journal_transaction_active()) {
+            ata_transaction_end(); return false;
+        }
         bool result = ata_journal_range_has_pending(
                 parent->base, absolute, count, parent->is_master)
             ? ata_read_pending_range(parent->base, absolute, count, buffer,
@@ -905,14 +912,33 @@ bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
     }
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
-    if (buffer == NULL || !ata_pio_range_valid(drive, lba, count))
+    if (buffer == NULL || !ata_pio_read_range_valid(drive, lba, count))
         return false;
     if (!ata_transaction_begin()) return false;
+    if(count>ATA_PIO_MAX_SECTORS && ata_journal_transaction_active()) {
+        ata_transaction_end(); return false;
+    }
     bool result = ata_journal_range_has_pending(base, lba, count, is_master)
         ? ata_read_pending_range(base, lba, count, buffer, is_master)
         : ata_read_sectors_pio_impl(base, lba, count, buffer, is_master);
     ata_transaction_end();
     return result;
+}
+
+uint32_t ata_read_batch_capacity(unsigned short base,bool is_master) {
+    /* Pure hint, no hardware operation or cached volatile IDENTIFY state.
+     * A journal can become active after this hint: the wrapper rechecks it. */
+    if(ata_journal_transaction_active()) return ATA_PIO_MAX_SECTORS;
+    drive_t *partition=ata_compat_partition_drive(base);
+    drive_t *drive=NULL;
+    if(partition) {
+        uint32_t absolute;
+        drive=ata_partition_translate(partition,0,&absolute);
+    } else {
+        int resource=ata_resource_index(base,is_master);
+        if(resource>=0) drive=&detected_drives[resource];
+    }
+    return drive && drive->type==DRIVE_TYPE_ATA ? ATA_PIO_MAX_READ_SECTORS : ATA_PIO_MAX_SECTORS;
 }
 
 bool ata_read_sector(unsigned short base, unsigned int lba, void* buffer,

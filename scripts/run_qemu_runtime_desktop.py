@@ -1411,6 +1411,100 @@ def run_browser_forms_probe(process, output, transcript, screenshot, deadline, m
         server.server_close()
 
 
+def run_browser_public_probe(process, output, transcript, screenshot, deadline, monitor):
+    """Real CURL/HTTP/worker/raster proof; this is not a live-Internet claim."""
+    requests = []
+    stop = threading.Event()
+    css_url = "/sheet?q=" + "x" * 7900
+    final_css = "/style-final?q=" + "y" * 7890
+    import_url = "/import?q=" + "z" * 2000
+    image_url = "/image?q=" + "p" * 7890
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(1.0)
+
+        def do_GET(self):
+            if len(requests) >= 8:
+                self.close_connection = True
+                return
+            requests.append(self.path)
+            redirect = self.path in ("/redirect", css_url)
+            large = self.path == "/large"
+            payload = ((b"<!--" + b"x" * 70000 + b"-->") if large else b"")
+            payload += b"<!doctype html><title>Public navigation</title>"
+            payload += (("<link rel=stylesheet href='" + css_url + "'>").encode() if large else b"<style>h1{font-size:64px}</style>")
+            payload += b"<h1>caf\xe9 \x80</h1><p>retained</p>"
+            if large:
+                payload += ("<img src='" + image_url + "' alt=long-image>").encode()
+            content_type = "text/html; charset=ISO-8859-1"
+            if self.path == final_css:
+                payload = ("@import '" + import_url + "';").encode()
+                content_type = "text/css; charset=UTF-8"
+            elif self.path == import_url:
+                payload = b"h1{font-size:36px;color:#123456}"
+                content_type = "text/css; charset=UTF-8"
+            elif self.path == image_url:
+                # Conventional 1x1 24-bit BMP with a padded four-byte row.
+                payload = bytearray(58)
+                payload[:2] = b"BM"
+                for at, value, size in ((2,58,4),(10,54,4),(14,40,4),(18,1,4),(22,1,4),(26,1,2),(28,24,2),(34,4,4)):
+                    payload[at:at+size] = value.to_bytes(size,"little")
+                payload[54:58] = b"\x00\xff\x00\x00"
+                content_type = "image/bmp"
+            self.send_response(302 if redirect else 200 if self.path in ("/large", "/done", final_css, import_url, image_url) else 404)
+            if redirect:
+                self.send_header("Location", final_css if self.path == css_url else "/done")
+                payload = b""
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, *_args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 18084), Handler)
+    server.timeout = 0.2
+
+    def serve():
+        while not stop.is_set() and time.monotonic() < deadline:
+            server.handle_request()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+
+    def wait(marker):
+        while time.monotonic() < deadline:
+            drain(output, transcript)
+            text = "".join(transcript)
+            if any(bad in text for bad in ("BROWSER_PROBE_FAIL", "DESKTOP_BROWSER_FAIL", "KERNEL PANIC", "kernel panic")):
+                raise RuntimeError("Public navigation guest failure: " + text[-3000:])
+            if marker in text:
+                return
+            time.sleep(0.01)
+        raise RuntimeError("Public navigation deadline: " + marker)
+
+    try:
+        wait("BROWSER_PUBLIC_READY")
+        monitor.key("ret")
+        wait("BROWSER_PUBLIC_LARGE_ENCODING_RASTER_OK")
+        wait("BROWSER_PUBLIC_REDIRECT_RASTER_OK")
+        wait("BROWSER_CLOSE_OK")
+        if requests != ["/large", css_url, final_css, import_url, image_url, "/redirect", "/done"]:
+            raise RuntimeError(f"Unexpected document requests: {requests!r}")
+        transcript.append("HOST_PUBLIC_EXACT_HTTP_CHAIN_OK\nHOST_PUBLIC_LONG_CSS_IMPORT_IMAGE_REDIRECT_OK\n")
+        monitor.execute("screendump", {"filename": str(screenshot.resolve())})
+        print("runtime-desktop-browser-public: PASS large-encoded-HTTP-redirect-worker-raster-close")
+        return 0
+    finally:
+        stop.set()
+        thread.join(timeout=1.5)
+        server.server_close()
+
+
 def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         timeout: float, expect_failure: bool, render_probe: bool,
         surface_probe: bool, notepad_probe: bool, notepad_font_probe: bool,
@@ -1427,8 +1521,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         vmware_vga: bool, smp: int, capture_only: bool = False,
         browser_resource_probe: bool = False,
         browser_input_probe: bool = False,
-        browser_forms_probe: bool = False) -> int:
-    if browser_resource_probe or browser_input_probe or browser_forms_probe:
+        browser_forms_probe: bool = False,
+        browser_public_probe: bool = False) -> int:
+    if browser_resource_probe or browser_input_probe or browser_forms_probe or browser_public_probe:
         browser_probe = True
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
@@ -1441,7 +1536,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         dns_listener.settimeout(10.0)
     command = qemu_command(
         qemu, image, memory="1024M", vmware_vga=vmware_vga, smp=smp,
-        nic="rtl8139" if notepad_probe or browser_forms_probe else "none",
+        nic="rtl8139" if notepad_probe or browser_forms_probe or browser_public_probe else "none",
         injection_port=dns_port, hardware_entropy=notepad_probe,
         public_dns=notepad_probe)
     normal_lifecycle_probe = not any((
@@ -1602,7 +1697,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 elif control_probe:
                     command_name = "desktop.prg --control-probe"
                 elif browser_probe:
-                    command_name = ("desktop.prg --browser-forms-probe" if browser_forms_probe else "desktop.prg --browser-input-probe" if browser_input_probe
+                    command_name = ("desktop.prg --browser-public-probe" if browser_public_probe else "desktop.prg --browser-forms-probe" if browser_forms_probe else "desktop.prg --browser-input-probe" if browser_input_probe
                                     else "desktop.prg --browser-probe")
                 elif guidemo_click_probe:
                     command_name = "desktop.prg --guidemo-probe"
@@ -2075,6 +2170,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     return run_browser_input_probe(process, output, transcript, screenshot, overall_deadline, browser_input)
                 if browser_forms_probe:
                     return run_browser_forms_probe(process, output, transcript, screenshot, overall_deadline, browser_input)
+                if browser_public_probe:
+                    return run_browser_public_probe(process, output, transcript, screenshot, overall_deadline, browser_input)
                 if browser_resource_probe:
                     return run_browser_resource_probe(process, output, transcript, screenshot, deadline, browser_input)
                 if browser_probe:
@@ -2330,6 +2427,7 @@ def main() -> int:
     parser.add_argument("--browser-resource-probe", action="store_true")
     parser.add_argument("--browser-input-probe", action="store_true")
     parser.add_argument("--browser-forms-probe", action="store_true")
+    parser.add_argument("--browser-public-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--trash-restore-probe", action="store_true")
@@ -2347,7 +2445,7 @@ def main() -> int:
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.notepad_font_probe, args.control_probe,
-            args.browser_probe, args.browser_resource_probe, args.browser_input_probe, args.browser_forms_probe,
+            args.browser_probe, args.browser_resource_probe, args.browser_input_probe, args.browser_forms_probe, args.browser_public_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
@@ -2377,7 +2475,8 @@ def main() -> int:
                    args.guidemo_click_probe, args.sound_probe,
                    args.metrics_log, args.vmware_vga, args.smp,
                    browser_resource_probe=args.browser_resource_probe,
-                   browser_input_probe=args.browser_input_probe, browser_forms_probe=args.browser_forms_probe)
+                   browser_input_probe=args.browser_input_probe, browser_forms_probe=args.browser_forms_probe,
+                   browser_public_probe=args.browser_public_probe)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

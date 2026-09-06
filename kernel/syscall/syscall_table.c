@@ -3028,15 +3028,35 @@ static int syscall_spawn(const char *user_path) {
 }
 
 #define SYSCALL_MAX_ARGUMENTS 16
-#define SYSCALL_ARGUMENT_CAPACITY 256
+/* Page-bounded copying avoids a page walk per byte without touching the next
+ * page past a terminating NUL. No caller pointer survives the snapshot. */
+static int copy_spawn_argument(char *out, size_t capacity, const char *in) {
+    if(!in) return -14;
+    size_t used=0;
+    while(used<capacity) {
+        uintptr_t address=(uintptr_t)in;
+        if(used>UINTPTR_MAX-address) return -14;
+        address+=used;
+        size_t n=PAGE_SIZE-(address&(PAGE_SIZE-1U));
+        if(n>128U) n=128U;
+        if(n>capacity-used) n=capacity-used;
+        char bytes[128];
+        if(copy_from_user(bytes,(const void *)address,n)) return -14;
+        for(size_t i=0;i<n;++i) {
+            out[used++]=bytes[i];
+            if(!bytes[i]) return (int)used;
+        }
+    }
+    return -7; /* E2BIG, distinct from an invalid user mapping. */
+}
 static int syscall_spawnv(const char *user_path, const char *const *user_argv,
                           int argc) {
     if (argc < 1 || argc > SYSCALL_MAX_ARGUMENTS || user_argv == NULL) {
         return -22;
     }
+    if((uintptr_t)user_argv>UINTPTR_MAX-(size_t)argc*sizeof(*user_argv)) return -14;
     char path[PROCESS_PATH_MAX];
-    char *arguments = (char*)k_malloc(
-        (size_t)argc * SYSCALL_ARGUMENT_CAPACITY);
+    char *arguments = (char*)k_malloc(PROCESS_ARGUMENT_TOTAL_BYTES);
     const char *argument_list[SYSCALL_MAX_ARGUMENTS];
     if (arguments == NULL) return -12;
 
@@ -3047,17 +3067,21 @@ static int syscall_spawnv(const char *user_path, const char *const *user_argv,
         return -14;
     }
 
+    size_t used=0;
+    const size_t budget=PROCESS_ARGUMENT_TOTAL_BYTES-((size_t)argc+4U)*sizeof(uint32_t)-3U;
     for (int index = 0; index < argc; ++index) {
         const char *user_argument;
-        char *argument = arguments +
-                         (size_t)index * SYSCALL_ARGUMENT_CAPACITY;
+        char *argument = arguments + used;
         if (copy_from_user(&user_argument, user_argv + index,
-                           sizeof(user_argument)) != 0 ||
-            copy_string_from_user(argument, SYSCALL_ARGUMENT_CAPACITY,
-                                  user_argument) < 0) {
+                           sizeof(user_argument)) != 0) {
             k_free(arguments);
             return -14;
         }
+        size_t capacity=budget-used;
+        if(capacity>PROCESS_ARGUMENT_STRING_BYTES) capacity=PROCESS_ARGUMENT_STRING_BYTES;
+        int copied=copy_spawn_argument(argument,capacity,user_argument);
+        if(copied<0) { k_free(arguments); return copied; }
+        used+=(size_t)copied;
         argument_list[index] = argument;
     }
     if (argc == 1 &&

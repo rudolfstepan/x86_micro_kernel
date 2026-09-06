@@ -76,7 +76,7 @@ class GuiBrowserSourceTests(unittest.TestCase):
             "reist_gui_surface_client_create",
             "reist_gui_surface_client_paint_font_text",
             "REIST_GUI_SURFACE_INPUT_KEYBOARD",
-            "BROWSER_DOCUMENT_LIMIT 65536U",
+            "BROWSER_DOCUMENT_LIMIT BROWSER_DOCUMENT_INPUT_CAPACITY",
             "browser_model.h",
             "BROWSER_LINK_HIT_CAPACITY",
             "browser_css_unpack",
@@ -91,7 +91,7 @@ class GuiBrowserSourceTests(unittest.TestCase):
         source = APP.read_text(encoding="utf-8")
         self.assertIn('"/usr/bin/curl.prg"', source)
         self.assertIn('"--max-bytes"', source)
-        self.assertIn('"65536"', source)
+        self.assertIn('"1048576"', source)
         self.assertIn("x86os_spawnv", source)
         self.assertIn("x86os_wait", source)
         self.assertIn("reist_vfs_file_open_rights", source)

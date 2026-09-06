@@ -1,6 +1,23 @@
 # ATA-PIO-Lesetransfer: Performance und Resilienz
 
-Stand: 5. September 2026. Paket R7.1n abgenommen.
+Stand: 6. September 2026. Pakete R7.1n und R3.14 abgenommen.
+
+R3.14, 6. September: Der ausdruecklich freigegebene Loader-Lesepfad
+trennt die reine PIO-Lesequote (128 Sektoren / 64 KiB) von der bisherigen
+20-Sektor-Schreib-/Journalquote. FAT32 nutzt nur den validierten Backendhinweis;
+AHCI und aktive Journaltransaktionen behalten 20 Sektoren. Der ATA-Wrapper
+prueft unter seinem vorhandenen Mutex erneut, bevor Hardwarebefehle starten.
+Frisches IDENTIFY, LBA28/48, vollstaendige Bereichs-/Restblockpruefung,
+absolute PIO-Deadline und fehlende Cachepublikation bei Teilfehler bleiben.
+Kein neuer Cache, kein groesserer DMA-Puffer, keine neue Geraeteautoritaet.
+Der bestehende Kernel-FAT/PIO-Code bleibt Migrationsschuld. Der Loader validiert
+weiter jedes vollstaendig gelesene Image und baut private genullte Seiten auf.
+Hosttests bestehen fuer 128 Sektoren, Fragmentierung, Teilfehler und unveraenderte
+kleinere Backendgrenzen. Der unveraenderte bytegepruefte Gastbenchmark besteht
+mit 755,16 KiB/s Lesen, fsync, Cleanup und Shell-Rueckkehr (34,490 s Hostzeit,
+`build/codex-agent/r314-loader-benchmark.log`). Beide Referenzbuilds und alle
+fuenf Browsergates bestehen ebenfalls; vollstaendige R3.14-Evidenz: CURRENT_WORK.
+Die folgenden Ausgangsmessungen und Abnahmedetails dokumentieren R7.1n.
 
 Performance und Resilienz sind gleichwertige, gleichzeitig zu bestehende
 Abnahmekriterien. Ein unnötiger Bereitschaftswechsel je Sektor ist kein

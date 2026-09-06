@@ -12,4 +12,7 @@ int browser_css_render(const uint8_t *html, size_t length, uint32_t width,
 int browser_css_render_resources(const uint8_t *,size_t,uint32_t,uint32_t,
     const uint32_t [16][2],const char *,const browser_resources_t *,
     browser_resource_needs_t *,reist_html_document_t *,browser_scene_t *);
+int browser_css_render_document(const uint8_t *,size_t,uint32_t,uint32_t,
+    const uint32_t [16][2],const char *,const browser_resources_t *,
+    browser_resource_needs_t *,reist_html_document_t *,browser_scene_t *,uint32_t encoding);
 #endif

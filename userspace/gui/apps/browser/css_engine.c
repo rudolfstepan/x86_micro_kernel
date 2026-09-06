@@ -11,6 +11,7 @@
 #define CSS_WORK_LIMIT 262144U
 #define CSS_SHEETS 64U
 static uint32_t work, failed;
+static uint32_t document_profile;
 static css_select_handler handler;
 static css_select_ctx *context;
 static css_stylesheet *sheets[CSS_SHEETS];
@@ -27,6 +28,8 @@ static browser_resource_needs_t *resource_needs;
 static css_stylesheet *imported[128];
 static uint32_t imported_count;
 static const char *import_path[BROWSER_RESOURCE_DEPTH+1];
+static char import_reference[BROWSER_RESOURCE_DEPTH+1][BROWSER_RESOURCE_URL_CAPACITY];
+static char import_canonical[BROWSER_RESOURCE_DEPTH+1][BROWSER_RESOURCE_URL_CAPACITY];
 
 static css_error budget(void) {
     if (failed || ++work>CSS_WORK_LIMIT) { failed=1; return CSS_NOMEM; }
@@ -196,8 +199,20 @@ static css_select_handler handler={CSS_SELECT_HANDLER_VERSION_1,node_name,node_c
 static css_error resolve_url(void *pw,const char *base,lwc_string *rel,lwc_string **out) {
     (void)pw; *out=NULL;
     size_t size=lwc_string_length(rel);
-    if (budget() || size>=256 || memchr(lwc_string_data(rel),0,size)) return CSS_NOMEM;
-    char reference[256], absolute[256];
+    if (budget() || memchr(lwc_string_data(rel),0,size)) return CSS_NOMEM;
+    if(size>=BROWSER_RESOURCE_URL_CAPACITY) {
+        /* Long data/absolute CSS URLs are opaque interned values, not fetch
+         * requests. Import admission below still checks its own URL quota. */
+        if(!document_profile || size>BROWSER_DOCUMENT_INPUT_CAPACITY) return CSS_NOMEM;
+        const char *raw=lwc_string_data(rel);
+        for(size_t i=0;i<size;++i) {
+            if(raw[i]==':') return intern(raw,size,out);
+            if(raw[i]=='/' || raw[i]=='?' || raw[i]=='#') break;
+        }
+        return intern("about:invalid#reist-url-limit",28,out);
+    }
+    static char reference[BROWSER_RESOURCE_URL_CAPACITY], absolute[BROWSER_RESOURCE_URL_CAPACITY];
+    static reist_html_url_workspace_t resolver;
     memcpy(reference,lwc_string_data(rel),size); reference[size]=0;
     /* Pure URI handling, never fetching. Already absolute references remain
      * opaque: CSS URL resources have no consumer in this scene revision. */
@@ -205,7 +220,7 @@ static css_error resolve_url(void *pw,const char *base,lwc_string *rel,lwc_strin
         if (reference[i]==':') return intern(reference,size,out);
         if (reference[i]=='/' || reference[i]=='?' || reference[i]=='#') break;
     }
-    if (reist_html_url_resolve(base,reference,absolute,sizeof(absolute))) return CSS_BADPARM;
+    if (reist_html_url_resolve_wide(base,reference,absolute,sizeof(absolute),&resolver)) return CSS_BADPARM;
     return intern(absolute,strlen(absolute),out);
 }
 static int make_sheet_at(const char *bytes,size_t length,bool inlined,const char *url,uint32_t depth,css_stylesheet **result) {
@@ -224,9 +239,9 @@ static int make_sheet_at(const char *bytes,size_t length,bool inlined,const char
             /* LibCSS specifies CSS_INVALID when no pending import remains. */
             if(rc==CSS_INVALID) { rc=CSS_OK; break; }
             if(rc!=CSS_OK) break;
-            char reference[256], canonical[256];
+            char *reference=import_reference[depth], *canonical=import_canonical[depth];
             size_t n=lwc_string_length(relative);
-            if(n>=sizeof(reference) || memchr(lwc_string_data(relative),0,n)) {
+            if(n>=BROWSER_RESOURCE_URL_CAPACITY || memchr(lwc_string_data(relative),0,n)) {
                 lwc_string_unref(relative); rc=CSS_INVALID; break;
             }
             memcpy(reference,lwc_string_data(relative),n); reference[n]=0; lwc_string_unref(relative);
@@ -252,7 +267,9 @@ static int make_sheet_at(const char *bytes,size_t length,bool inlined,const char
             if(css_stylesheet_register_import(*result,child)!=CSS_OK) { rc=CSS_INVALID; break; }
         }
     }
-    if (rc!=CSS_OK) { if (*result) css_stylesheet_destroy(*result); *result=NULL; return -28; }
+    if (rc!=CSS_OK) {
+        if (*result) css_stylesheet_destroy(*result); *result=NULL; return -28;
+    }
     return 0;
 }
 static int make_sheet(const char *bytes,size_t length,bool inlined,css_stylesheet **result) {
@@ -287,7 +304,7 @@ static int collect_sheets(node *n,uint32_t depth) {
             if(i-start==9 && !strncasecmp(rel+start,"alternate",9)) alternate=1;
         }
         if(!style || alternate || !href || attr(n,"disabled") || (type && *type && strncasecmp(type,"text/css",9))) return 0;
-        char canonical[256];
+        static char canonical[BROWSER_RESOURCE_URL_CAPACITY];
         if(browser_resource_url(document_url,href,canonical) || browser_resource_admit(document_url,canonical)) return -13;
         int index=browser_resources_find(resources,canonical);
         if(index<0 || !resources->entries[index].ready) return browser_resource_need_add(resource_needs,canonical,0);
@@ -375,7 +392,7 @@ static uint32_t scalar_size(const char *s,size_t left) {
 static int append_text(flow *f,css_computed_style *s,const char *text,size_t length,uint32_t link) {
     css_fixed fixed; css_unit unit; css_computed_font_size(s,&fixed,&unit);
     int32_t font=length_px(s,fixed,unit,16);
-    if (font<1 || font>32) return -28;
+    if (font<1 || font>(int32_t)BROWSER_CSS_FONT_MAX) return -28;
     uint32_t cell=((uint32_t)font+1)/2, color;
     css_computed_color(s,&color);
     uint32_t weight=css_computed_font_weight(s), flags=0;
@@ -445,6 +462,9 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
     if (display==CSS_DISPLAY_NONE) return 0;
     if (tag(n,"br")) { end_line(outer,1); return 0; }
     const char *href=tag(n,"a") ? attr(n,"href") : NULL;
+    if(href && document_profile && strlen(href)>=sizeof(doc->links[0].href)) {
+        href=NULL; link=UINT32_MAX; /* Visible but inert; never navigate a truncated URL. */
+    }
     if (href) {
         if (doc->link_count==REIST_HTML_LINK_CAPACITY || copy_field(doc->links[doc->link_count].href,256,href)) return -28;
         link=doc->link_count++;
@@ -533,7 +553,13 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         if (doc->image_count==16) return -28;
         uint32_t index=doc->image_count++;
         reist_html_image_t *image=&doc->images[index];
-        if (copy_field(image->source,256,attr(n,"src")) || copy_field(image->alt,128,attr(n,"alt"))) return -28;
+        const char *source=attr(n,"src"),*alt=attr(n,"alt");
+        if(document_profile && source && strlen(source)>=sizeof(image->source)) {
+            if(copy_field(scene->image_urls[index],BROWSER_RESOURCE_URL_CAPACITY,source)) return -28;
+            source=""; /* Full address is carried by private scene v4. */
+        }
+        if(document_profile && alt && strlen(alt)>=sizeof(image->alt)) alt="[image]";
+        if (copy_field(image->source,256,source) || copy_field(image->alt,128,alt)) return -28;
         int aw=1,ah=1; int32_t w=dimension(s,css_computed_width,f->right-f->left,&aw);
         int32_t h=dimension(s,css_computed_height,containing_height,&ah);
         const char *dimensions[]={attr(n,"width"),attr(n,"height")}; uint32_t values[2]={0};
@@ -593,19 +619,21 @@ static void title_text(node *n) {
     }
     for (node *c=n->first;c;c=c->next) title_text(c);
 }
-int browser_css_render_resources(const uint8_t *html,size_t length,uint32_t width,uint32_t height,
+static int render_document(const uint8_t *html,size_t length,uint32_t width,uint32_t height,
     const uint32_t image_sizes[16][2],const char *url,const browser_resources_t *bundle,
-    browser_resource_needs_t *needs,reist_html_document_t *document,browser_scene_t *output) {
+    browser_resource_needs_t *needs,reist_html_document_t *document,browser_scene_t *output,
+    uint32_t extended,uint32_t encoding) {
     if (!document || !output || width<1 || width>1024 || !height || height>768) return -22;
     if(bundle && (!needs || browser_resources_validate(bundle,url,bundle->generation))) return -84;
-    resources=bundle; resource_needs=needs; imported_count=0;
-    if(needs) memset(needs,0,sizeof(*needs));
-    node *root; int result=browser_html5_tree_with_heap(html,length,&root,bundle && bundle->count); if (result) return result;
+    resources=bundle; resource_needs=needs; imported_count=0; document_profile=extended;
+    if(needs) memset(needs,0,offsetof(browser_resource_needs_t,items));
+    node *root; int result=extended ? browser_html5_document_tree(html,length,encoding,&root) :
+        browser_html5_tree_with_heap(html,length,&root,bundle && bundle->count); if (result) return result;
     work=failed=sheet_count=0; context=NULL; doc=document; scene=output; intrinsic=image_sizes;
     document_url=url ? url : "/document.html";
     memset(doc,0,sizeof(*doc)); memset(scene,0,sizeof(*scene));
-    scene->version=BROWSER_SCENE_VERSION; scene->width=width; scene->height=height;
-    if(browser_forms_project(root,&scene->forms)) return -28;
+    scene->version=extended ? BROWSER_SCENE_DOCUMENT_VERSION : BROWSER_SCENE_VERSION; scene->width=width; scene->height=height;
+    if(browser_forms_project(root,&scene->forms)) { if(extended) browser_html5_document_release(); return -28; }
     units.viewport_width=INTTOFIX(width); units.viewport_height=INTTOFIX(height);
     units.font_size_default=INTTOFIX(16); units.font_size_minimum=INTTOFIX(1);
     units.device_dpi=INTTOFIX(96); units.root_style=NULL;
@@ -629,7 +657,18 @@ int browser_css_render_resources(const uint8_t *html,size_t length,uint32_t widt
     if (context) css_select_ctx_destroy(context);
     while (sheet_count) css_stylesheet_destroy(sheets[--sheet_count]);
     while (imported_count) css_stylesheet_destroy(imported[--imported_count]);
+    if(extended) browser_html5_document_release();
     return result;
+}
+int browser_css_render_document(const uint8_t *html,size_t length,uint32_t width,uint32_t height,
+    const uint32_t image_sizes[16][2],const char *url,const browser_resources_t *bundle,
+    browser_resource_needs_t *needs,reist_html_document_t *document,browser_scene_t *output,uint32_t encoding) {
+    return render_document(html,length,width,height,image_sizes,url,bundle,needs,document,output,1,encoding);
+}
+int browser_css_render_resources(const uint8_t *html,size_t length,uint32_t width,uint32_t height,
+    const uint32_t image_sizes[16][2],const char *url,const browser_resources_t *bundle,
+    browser_resource_needs_t *needs,reist_html_document_t *document,browser_scene_t *output) {
+    return render_document(html,length,width,height,image_sizes,url,bundle,needs,document,output,0,0);
 }
 int browser_css_render(const uint8_t *html,size_t length,uint32_t width,uint32_t height,
     const uint32_t image_sizes[16][2],const char *url,reist_html_document_t *document,browser_scene_t *output) {
