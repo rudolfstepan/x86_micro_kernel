@@ -553,6 +553,7 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Load external and imported CSS through a generation-scoped resource bundle"
+response_adapter_extension = "2026-09-06: User explicitly approves adding browser_response.c, browser_response.h and test_browser_response_host.c to this package. Extend the existing status/MIME/redirect adapter for stylesheet responses and test it directly; do not duplicate or bypass HTTP validation. Kernel authority, memory isolation, original ABI semantics and all frozen gates/deadlines remain unchanged."
 user_direction = "Continue the user-requested real browser migration after accepted R3.10. Define this next cohesive resource-authority slice during R3.10 completion only; implement it in a separate run. Keep the incomplete VMware pointer acceptance deferred with all original gates. Performance and resilience remain simultaneous requirements; the measured synchronous worker/image load latency is visible OS debt, not solved by a faster host test controller."
 scope = "One stylesheet resource-bundle lifecycle from discovery and URL admission through bounded read-only GET/file acquisition, immutable snapshot delivery, real LibCSS cascade, failure isolation and generation cleanup. Inventory the existing curl metadata/redirect adapter, fresh-document scene cache, private process heap and worker protocol first. Follow HTML stylesheet-link semantics, CSS 2.1 import ordering/media/error recovery, RFC 3986 resolution and RFC 9110 status/MIME handling. Keep acquisition in the browser's bounded coordinator and existing disposable transport child; the CSS worker receives bytes only and gains no network/filesystem/font/script authority. Support external link stylesheets and nested imports in source order without double-fetching a canonical resource inside one navigation. Maximum 64 resources including imports, eight import levels, 256 KiB decoded bytes per resource and 1 MiB aggregate CSS. Use the existing private-memory provider with an explicit worker budget up to 32 MiB if the validated bundle cannot fit the legacy arena; no kernel or global quota change. Keep each parse/layout worker's original five-second deadline and existing transport-chain deadlines, add an absolute 30-second stylesheet-acquisition deadline, and fail closed on resource/heap/work exhaustion. Version the private bundle protocol; fully validate offsets, exact lengths, identities and generations before parse or publication. Preserve inline/embedded cascade order, native chrome, images, links, scroll, resize and prior-page recovery. Prove reload freshness, navigation cancellation, duplicate/cyclic imports, quota boundaries, transport/worker faults and complete cleanup with real-code host tests and deterministic guest resources. CSS image/font URLs, forms, cookies, POST and JavaScript remain inert and are not implemented in this slice. No permanent worker pool, hidden kernel parser or relaxation of R3.10 gates."
 allowed_files = [
@@ -565,6 +566,9 @@ allowed_files = [
   "userspace/gui/apps/browser/main.c",
   "userspace/gui/apps/browser/browser_resources.h",
   "userspace/gui/apps/browser/browser_resources.c",
+  "userspace/gui/apps/browser/browser_response.c",
+  "userspace/gui/apps/browser/browser_response.h",
+  "test/test_browser_response_host.c",
   "userspace/gui/apps/browser/browser_model.h",
   "userspace/gui/apps/browser/browser_model.c",
   "userspace/gui/apps/browser/browser_scene.h",
