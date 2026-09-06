@@ -2,6 +2,17 @@
 
 Stand: 6. September 2026
 
+## R3.14 aktiv: oeffentliche Webseiten laden
+
+Nutzerauftrag: die gemeldeten Browserfehler zusammen beheben. Sauberer
+Ausgangspunkt `3e94cf00`; R3.6b wird mit unveraenderten Gates zurueckgestellt.
+Gemessen: Google 83259 Byte und ISO-8859-1 gegen bisher 65536 Byte/UTF-8;
+Intracom 16707 Byte plus Stylesheet mit 36-Pixel-Ueberschrift gegen maximal
+32 Pixel. VMware meldet ausserdem TCP-Timeout und generische Ladeablehnung.
+Der neue private Navigationsvertrag und die eingefrorenen Gates stehen in
+`automation/reist-s03b.toml` und `BROWSER_PUBLIC_NAVIGATION_CONTRACT.md`.
+Keine Implementierung oder neue Gastabnahme aus dieser Paketdefinition ableiten.
+
 ## R1.2d abgenommen: VMware-/QEMU-Standard auf 1 GiB RAM
 
 Neuer ausdruecklicher Nutzerauftrag nach Browser-Abnahme `9d4635fa`:
