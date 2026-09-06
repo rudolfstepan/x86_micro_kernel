@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.17-cpp-bounded-types"
+active_id = "R3.18-browser-response-cpp"
 
 [policy]
 one_package_per_run = true
@@ -1075,7 +1075,7 @@ evidence = []
 
 [[packages]]
 id = "R3.17-cpp-bounded-types"
-status = "active"
+status = "done"
 plan_alignment = "2026-09-06: User approves migration-plan revision 1.1 after the six-point review. Keep this package's six allocation-free helpers, allowed production files, profile and all frozen gates unchanged. Future browser pilots must integrate actual callers, use fallible validated-result factories, place RAII only at audited resource owners, distinguish bounded destructor fallback from OS recovery, and separate budgeted large private payloads from fixed control storage. Future migration packages freeze quantitative acceptance limits before implementation; GUI/compositor conversion stays behind browser delivery and feature acceptance remains separate from refactoring. This documentation alignment neither activates a later package nor changes already accepted evidence."
 phase = "post-s0"
 risk = "high"
@@ -1122,6 +1122,65 @@ stop_conditions = [
   "a frozen gate fails after one focused in-scope repair"
 ]
 commit_message = "feat: add allocation-free C++ value and ownership types"
+evidence = []
+
+[[packages]]
+id = "R3.18-browser-response-cpp"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Integrate a validated C++ response result behind the existing browser C boundary"
+user_direction = "2026-09-06: Continue in approved migration-plan revision 1.1 order after accepted R3.17. TASK-3001 is an actual browser response-admission pilot, not an unused parallel implementation or a destructor for unowned data. Browser delivery retains priority over the deferred VMware pointer and optional GUI/compositor migration. Direct visible-main-worktree execution and local commits only; no agents or push."
+scope = "One HTTP response metadata validation/publication boundary in the existing browser. Migrate browser_response implementation to a conventional .cpp translation unit using the accepted profile and Result, keeping all existing C entrypoints, return codes, fixed structures, transport/encoding/redirect rules and callers interoperable. A named factory yields a ValidatedResponse or an explicit error; no successful typed result exposes partial metadata. Input bytes are borrowed under the caller's navigation/workspace lifetime, not copied into a new owner and not retained past invalidation. Preserve the C compatibility adapter without granting authority on failure. Inventory and integrate the real main.c response-admission callsites; no whole-main conversion, duplicated production parser, speculative inheritance, invented cleanup, hidden allocation or C++ object on the wire. Extend the existing mixed-language build and host-test adapter only enough to compile C and C++ separately with C linkage and the frozen no-runtime admission. Keep pinned C URL/HTTP/HTML dependencies and separate CURL/HTMLWORK processes. Compare against the committed pre-pilot C implementation with identical fixtures, including valid content, redirects, encodings, truncated/malformed metadata, oversized inputs and representation rejection. Preserve the last valid page and all old worker/cancel/reap behavior. Do not implement resource ownership, browser_model, cache growth, forms/features, JavaScript or kernel changes in this package."
+measurement_contract = "Freeze before candidate implementation: Windows host, existing Zig 0.16 Clang, -O2 -UNDEBUG -fno-builtin and no LTO; exact baseline C source from the accepted parent commit, same C dependencies and test_cpp_baseline_bench.c response fixture (HTTP 200 UTF-8 8-byte body). Five alternating fresh C/C++ process pairs, 200000 validated calls per sample, QueryPerformanceCounter outside the loop, 15-second process deadline. C++ median must be at most 120 percent of the paired C median AND at most 5000 ns/call; record all samples, host/profile and source/fixture digests. This is not UI latency or WCET. BROWSER.PRG <= 2867228 bytes and loader payload <= 6227777 bytes (each baseline plus 65536); no response-path heap allocation, no retained body copy, and at most 32768 additional stack bytes over paired baseline using compiler stack-usage evidence for the boundary. Additional response metadata copying is capped at two browser_response_t payloads per completed admission, independent of body length. Input-to-paint/scroll delta is not applicable to this response-only refactor: event dispatch, renderer and scrolling are unchanged and all existing guest interaction gates remain required. Do not tune these limits after a failed gate or treat baseline microbenchmarks as whole-browser performance."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "userspace/gui/apps/browser/browser_response.c", "userspace/gui/apps/browser/browser_response.cpp",
+  "userspace/gui/apps/browser/browser_response.h", "userspace/gui/apps/browser/browser_response.hpp",
+  "userspace/gui/apps/browser/main.c", "scripts/build_system_programs.py",
+  "scripts/measure_cpp_baseline.py", "test/test_cpp_baseline.py", "test/test_cpp_baseline_bench.c",
+  "test/test_browser_response_cpp.py", "test/test_browser_response_cpp_host.cpp",
+  "test/test_browser_response_host.c", "test/test_gui_browser_source.py",
+  "test/test_browser_navigation_source.py", "test/test_browser_runtime_source.py",
+  "test/test_browser_public_navigation.py", "test/test_browser_public_host.c",
+  "test/test_user_program_toolchain.py"
+]
+invariants = [
+  "C ABI return semantics public layouts transport limits and existing Ring-3 authority boundaries remain unchanged",
+  "typed success is fully validated; errors never publish a new valid page or confer resource authority",
+  "borrowed response data cannot outlive the existing navigation/workspace; no heap ownership or invented destructor",
+  "real browser callers use the migrated implementation; no parallel unused C++ pilot or parser rewrite",
+  "all predeclared quantitative bounds pass without weakening existing runtime or memory-resilience contracts"
+]
+targeted_tests = [
+  "python test/test_browser_response_cpp.py -v",
+  "python test/test_cpp_types.py -v", "python test/test_user_cpp.py -v",
+  "python test/test_user_program_toolchain.py -v", "python test/test_cpp_baseline.py -v",
+  "python test/test_browser_navigation_source.py -v", "python test/test_gui_browser_source.py -v",
+  "python test/test_browser_runtime_source.py -v", "python test/test_browser_public_navigation.py -v",
+  "python test/test_browser_resources.py -v", "python test/test_browser_forms.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  ".\\scripts\\test-reist-runtime.ps1 -Mode cpp-client -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-resources -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-public -Target qemu -Video vga"
+]
+stop_conditions = [
+  "a required production change leaves allowed_files or an unrelated writer overlaps the candidate",
+  "paired baseline or quantitative measurement evidence is missing or a declared limit is exceeded",
+  "progress requires changing C ABI, transport policy, process isolation, C++ profile or a frozen deadline",
+  "a frozen gate fails after one focused in-scope repair"
+]
+commit_message = "refactor: validate browser responses through bounded C++ results"
 evidence = []
 
 [[packages]]

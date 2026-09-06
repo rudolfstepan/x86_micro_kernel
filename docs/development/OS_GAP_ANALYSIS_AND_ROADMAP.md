@@ -10,8 +10,10 @@ reproduzierbaren Messdaten und QEMU-Renderprobe abgenommen; Details in
 [CPP_MIGRATION_BASELINE.md](CPP_MIGRATION_BASELINE.md). `R3.16` ist mit
 75 Hosttests, beiden Referenzbuilds und drei Gastgates abgenommen: opt-in
 C++20 ohne globale dynamische Initialisierung/Exit-Registrierung. `R3.17`
-ist active fuer TASK-2001 (minimale Hilfstypen), danach Browserpilot
-response -> resources -> model.
+ist mit 80 Hosttests, beiden Referenzbuilds und beiden Gastgates abgenommen:
+TASK-2001 liefert die sechs minimalen allokationsfreien Hilfstypen.
+`R3.18-browser-response-cpp` ist jetzt allein active fuer den ersten echten
+Browserpilot; danach resources -> model.
 Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.
 
 Revision 1.1 richtet jeden Piloten am nachgewiesenen Besitz aus: gepruefte
@@ -22,8 +24,11 @@ Operationen. Grosse private Payloads bleiben explizit budgetierbar, unabhaengig
 von den sechs allokationsfreien Hilfstypen. Zukuenftige Migrationspakete brauchen
 vorab numerische Abnahmegrenzen nach Abschnitt 10 des Plans. Echte Browser-
 Aufrufpfade und danach separat gepruefte Funktionsluecken haben Vorrang vor
-allgemeiner Bibliotheks-, GUI- oder Compositorarbeit. R3.17 bleibt allein active;
-Dateiumfang, Abnahmebefehle und Fristen sind unveraendert.
+allgemeiner Bibliotheks-, GUI- oder Compositorarbeit. R3.17 ist ohne Aenderung
+seines Dateiumfangs, seiner Abnahmebefehle oder Fristen abgeschlossen.
+R3.18 friert vor Implementierung gepaarte Response-Laufzeit, Binaer-/Payload-
+Groesse, Heapfreiheit, Stackdelta und Metadatenkopien numerisch ein. Es ist
+nur definiert, noch keine Browserquelle migriert; Nachweise in CURRENT_WORK.
 
 Am 6. September ausdruecklich bestaetigte Browserreihenfolge: R3.15 fuer
 maxlength und native Formulardarstellung zuerst vollstaendig abnehmen und
@@ -35,8 +40,8 @@ im bestehenden Buildadapter samt Regressionstests nach dem Paketgrenzstopp
 freigegeben; keine Archiv-, Kernel- oder Fristlockerung (CURRENT_WORK).
 R3.15 ist jetzt mit acht Hostgruppen, beiden Referenzen und fuenf echten
 Browser-Gastgates abgenommen. R3.16 ist ebenfalls abgenommen; Nachweise stehen
-in CURRENT_WORK.md. R3.17 hat einen begonnenen Regressionstest, aber noch keine
-Hilfstyp-Implementierung oder Abnahme. Vollstaendige
+in CURRENT_WORK.md. R3.17 ist ebenfalls abgenommen; R3.18 ist nur definiert.
+Vollstaendige
 Formular-/JavaScript-Kompatibilitaet und die VMware-Pointerabnahme bleiben offen.
 
 Abnahme vom 5. September 2026: `R1.2c-private-process-memory` liefert vor

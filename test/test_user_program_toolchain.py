@@ -250,12 +250,29 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertFalse((include / "new").exists())
             self.assertTrue((include / "reist/cpp/new").is_file())
             self.assertTrue((include / "reist/cpp/reist/cpp.h").is_file())
+            for header in ("result", "optional", "span", "fixed_string", "fixed_vector", "unique_handle", "utility"):
+                self.assertEqual((include / "reist/cpp/reist" / (header + ".h")).read_bytes(),
+                                 (ROOT / "userspace/cpp/include/reist" / (header + ".h")).read_bytes())
             self.assertEqual((library / "libreistcpp.a").read_bytes()[:8], b"!<arch>\n")
             self.assertIn("-std=c++20", (library / "pkgconfig/reist-cpp.pc").read_text())
             cpp_source = temporary / "external.cpp"
             cpp_source.write_text('#include <new>\n#include <reist/libc.h>\n#include <x86os.h>\n'
+                '#include <reist/result.h>\n#include <reist/optional.h>\n#include <reist/span.h>\n'
+                '#include <reist/fixed_string.h>\n#include <reist/fixed_vector.h>\n#include <reist/unique_handle.h>\n'
+                'struct EndpointTraits { static x86os_ipc_handle_t invalid() noexcept {return 0;} '
+                'static bool is_valid(x86os_ipc_handle_t h) noexcept {return h!=0;} '
+                'static bool equal(x86os_ipc_handle_t a,x86os_ipc_handle_t b) noexcept {return a==b;} '
+                'static void close(x86os_ipc_handle_t h) noexcept {if(x86os_ipc_close(h)) x86os_exit(73);} };\n'
                 'struct A { int v=42; ~A() noexcept {v=0;} };\n'
                 'extern "C" int main(int,char**) { if(reist_libc_init_process(1048576)) return 1; '
+                'reist::Optional<int> o; if(!o.try_emplace(7)) return 3; '
+                'auto r=reist::Result<int,int>::success(*o.get()); if(!r) return 4; '
+                'auto done=reist::Result<void,int>::success(); if(!done) return 5; '
+                'int values[2]={7,9}; reist::Span<const int> s(values); '
+                'reist::FixedVector<int,2> items; if(!items.try_emplace_back(*s.at(0))) return 6; '
+                'reist::FixedString<16> text; if(!text.assign("external-sdk")) return 7; '
+                'x86os_ipc_handle_t raw=0; if(x86os_ipc_create(&raw)) return 8; '
+                'reist::UniqueHandle<x86os_ipc_handle_t,EndpointTraits> endpoint(raw); '
                 'A *p=new(std::nothrow) A; if(!p) return 2; int v=p->v; delete p; '
                 'return v!=42 || reist_libc_reset(); }\n', encoding="ascii")
             cpp_output = temporary / "EXTERNALCPP.PRG"

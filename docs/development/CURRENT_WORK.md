@@ -2,6 +2,95 @@
 
 Stand: 6. September 2026
 
+## R3.17 abgenommen: minimale allokationsfreie C++-Hilfstypen
+
+Alle zehn eingefrorenen Gates bestehen. Finale Hostabnahme: 80 Tests ohne
+Skips (5+6+21+4+31+13). Typen 4,195 s, Toolchain 145,786 s; die unveraenderten
+Runtime-/libc-/Shell-/Layoutgruppen bestehen mit 4,905/0,822/0,755/0,012 s.
+Logs unter `build/codex-agent/r317/`: `final-test_cpp_types.log`,
+`final-test_user_program_toolchain.log` und die vier `gate-test_*.log`.
+
+Finale Referenzen und Gastnachweise nach der unten dokumentierten Probenreparatur:
+
+- vmware/vga PASS/55,090 s: `20260906-195321-package-vmware-vga.log`.
+- qemu/vga PASS/51,307 s: `20260906-195416-package-qemu-vga.log`.
+  Beide mit gueltigem Bootmanifest und SBOM. Die bekannte optionale FAT12-
+  Rescue-Warnung bleibt unveraendert, keine neue Diskettenabnahme.
+- `cpp-client` PASS/12,106 s: `20260906-195507-cpp-client.log`, geordnet
+  Typen-/Handlemarker plus alle alten OOM/Fault/Kill/Reap-/Shellmarker.
+- `runtime-desktop-browser-forms` PASS/76,468 s: gesichertes Gasttranskript
+  `r317/final-browser-forms.browser.log`, SHA-256
+  `76a0e3cf70e87aecc4fa47cb913922a48a10b1bc8bf50046b2834ebd8e5ea6ee`.
+  Reale Eingabe, exakter GET, Reflow, Ablehnung ohne Request, Reset,
+  Worker-Failure/Recovery und Close. Die aeusseren stdout-Dateien blieben wie
+  bei frueheren versteckten PowerShell-Kindern leer; sie sind kein Ersatz fuer
+  diese datierten Build-/Gastlogs und die beobachteten Exitcodes.
+
+CPPTEST bleibt 28676 Byte (+4096 gegen R3.16), SHA-256
+`9be0832515a90521b6db7a2a5240e24dd72e3c6853413691b9b37df25dd84f5d`.
+Runtime-Archiv unveraendert: 12196 Byte,
+`8ef0d80b3132049643ee0b6cd82122b9d5ca302b37042603fb4607b5fbb37538`.
+BROWSER.PRG, HTMLWORK.PRG und DESKTOP.PRG bleiben exakt baseline-bytegleich.
+Keine neue Browserfunktion, kein Heap-/Kernelumbau und keine pauschale
+Performancebehauptung. Header-Vertraege unterscheiden normale Lebensdauer,
+geliehene Ansichten und OS-Crash-Reaping ausdruecklich.
+
+R3.17 ist done. R3.18 ist als einziger Nachfolger active und definiert den
+response-Piloten mit echten C-Aufrufern, gleicher C-ABI und vorab festen
+Messgrenzen (gepaarter Median <=120 Prozent und <=5000 ns, PRG/Payload jeweils
+hoechstens +64 KiB, keine Response-Heapallokation, Stackdelta <=32 KiB).
+Nur der Vertrag wurde angelegt, keine R3.18-Produktionsdatei implementiert.
+Resources/Model folgen spaeter; VMware-Pointer bleibt unveraendert deferred.
+
+Abschliessender read-only Scope-/Queue-/Evidenzabgleich besteht (0,457 s),
+`r317/final-scope-evidence.log`: 17 erlaubte Dateien, nur der vorgeschriebene
+R3.17-Statuswechsel plus neuer R3.18-Vertrag, alle alten Gates/Vertraege
+unveraendert, Header im installierten SDK bytegleich. Direkter Diff-Review
+prueft Lebensdauer, Bounds, Cleanup und unveraenderte C-Grenzen;
+`git diff --check` besteht. Keine Agenten, globalen Hostaenderungen oder Push.
+
+### Umsetzung und erhaltene Erstfehler
+
+Die zurechenbare Regression-first-Arbeit wird nach Plancommit `0a8326f5`
+fortgesetzt; keine fremden Aenderungen im Worktree. Implementiert sind sieben
+Header fuer die sechs vereinbarten Typen plus interne Utility, ohne Aenderung
+an Runtime, Allocator, Buildskripten, Browser, GUI oder Kernel. Der vorhandene
+SDK-Kopierer installiert sie; der externe SDK-Test nutzt alle sechs Typen und
+unveraenderte C-Aufrufe. Details/Abweichungen stehen im SDK-Vertrag.
+
+CPPTEST ergaenzt Werte-/Kapazitaetspruefungen und echte IPC-Ownership:
+Factory-Erfolg, Move/Self-Move, Release/Adoption, genau einmal Close, altes
+Handle abgewiesen und frischer funktionsfaehiger Endpunkt. Die vorhandenen
+OOM/Fault/Kill/Reap-/Shellmarker und Fristen bleiben unveraendert. Abnahme
+inzwischen wie oben bestanden; keine neue Browserfunktion oder Performancebehauptung.
+
+Gezielte Vorlaeufe: fehlende Header erwartungsgemaess reproduziert. Die erste
+Host-Kompilation beanstandete den nur fuer freestanding erforderlichen
+`extern "C" main` im hosted Test; die Probe trennt beide Startkonventionen
+jetzt ohne Warnungsunterdrueckung. O0/O2-Lebensdauer und i386-Link ohne
+Allocator/C++-Runtime bestanden (2 Tests/41,092 s beim kalten Linkcache).
+Erstlogs bleiben unter `build/codex-agent/r317/`. Die finalen sechs Hostgruppen,
+beide Referenzbuilds und beide Gastgates wurden gemaess Queue ausgefuehrt;
+Paketwechsel und Implementierungscommit erfolgen erst nach deren Erfolg.
+
+Erste Abnahme: 79 Hosttests bestehen (4+6+21+4+31+13; Toolchain 144,722 s).
+Referenzbuilds bestehen: vmware 9,756 s, qemu 53,897 s, Logs
+`20260906-194109-package-vmware-vga.log` und
+`20260906-194118-package-qemu-vga.log`; Manifest und SBOM gueltig.
+CPPTEST 28676 Byte; Browser/HTMLWORK/Desktop weiterhin baseline-bytegleich.
+Der erste `cpp-client` scheitert nach 12,205 s bei `phase=types`, Log
+`20260906-194344-cpp-client.log`. Ursache ist die neue Probe, nicht der IPC-
+Vertrag: `receivable_offset` liefert keine Nachrichten derselben Sender-
+Prozessgeneration. Der echte neue Probenkoerper reproduziert dies im Hostmodell
+mit Exit 1 (`before-ipc-sender.log`), nachdem dessen fehlende Host-CRT-
+Deklaration korrigiert wurde. Eine gezielte Reparatur prueft den bestehenden
+Senderausschluss mit EAGAIN/Nullfrist und Queue-Cleanup bei Close. Der echte
+Kindprozess-Austausch verwendet jetzt dieselben UniqueHandle-Owner, weiterhin
+mit allen alten Canaries, Fehlerstatus und Reap-Fristen. Keine Kernel-/ABI-
+Aenderung oder abgeschwaechte Abnahme. Finale betroffene Typen-/Toolchaingates,
+beide Referenzbuilds und Gastabnahmen bestanden nach dieser Reparatur;
+unveraenderte Runtime-/libc-/Shell-/Layout-Hostnachweise bleiben erhalten.
+
 ## C++-Planrevision 1.1: freigegebene Praezisierung, keine Runtime-Abnahme
 
 Der Nutzer bestaetigt die sechs Review-Anpassungen. Der

@@ -13,6 +13,7 @@ from run_qemu_smoke import (qemu_command, configure_qemu_host_timers,
                             failure_marker)
 
 MARKERS = ("REIST_CPP_LIFETIME_OK", "REIST_CPP_BACKING_RETURN_OK",
+           "REIST_CPP_TYPES_OK", "REIST_CPP_HANDLE_OWNERSHIP_OK",
            "REIST_CPP_REAP_OK mode=--oom", "REIST_CPP_REAP_OK mode=--fault",
            "REIST_CPP_REAP_OK mode=--hold", "REIST_CPP_REAP_OK mode=--normal",
            "REIST_CPP_RUNTIME_OK")
@@ -99,7 +100,7 @@ def run(qemu: Path, image: Path, log: Path, timeout: float = 180) -> int:
     if error:
         print(f"CPP CLIENT FAIL: {error}; log={log}")
         return 1
-    print(f"CPP CLIENT PASS: C++ lifetime, backing return, OOM/fault/kill reap, fresh child, shell; log={log}")
+    print(f"CPP CLIENT PASS: C++ types/handle ownership, lifetime, backing return, OOM/fault/kill reap, fresh child, shell; log={log}")
     return 0
 
 

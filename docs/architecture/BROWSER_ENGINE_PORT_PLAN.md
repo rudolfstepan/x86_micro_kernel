@@ -8,7 +8,11 @@ Am 6. September 2026 bestaetigte Reihenfolge: R3.15-Formularreparatur abnehmen
 und committen, danach `R3.16-ring3-cpp-runtime`, erst dann schrittweise C++-
 Migration des Browsers. Das SDK-Paket ist als opt-in C++20-Profil 1 abgenommen;
 Nachweise stehen in [CURRENT_WORK.md](../development/CURRENT_WORK.md).
-R3.17 definiert als naechstes TASK-2001, ohne bereits Browserquellen zu migrieren.
+R3.17 ist fuer TASK-2001 mit 80 Hosttests, beiden Referenzen und beiden
+Gastgates abgenommen, ohne Browserquellen zu migrieren. R3.18 definiert als
+naechstes den Response-Piloten hinter der bestehenden C-Aufrufgrenze;
+Dateiumfang, quantitative Messgrenzen und Gates stehen vor Implementierung
+fest in der Queue. Kein gesamter Browser-/main.c-Sprachwechsel in diesem Pilot.
 Die spaeter hinzugefuegte [Nutzeranleitung](../REIST_CPP_MIGRATION_PLAN.md)
 praezisiert diese Reihenfolge: committete Baseline TASK-0001, gemischte Toolchain
 und eingeschraenktes C++20-Profil TASK-1001/1002, minimale `libreist++`-Typen

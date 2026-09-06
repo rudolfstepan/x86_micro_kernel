@@ -361,8 +361,8 @@ explizite Move-Uebergabe, virtuelle Rollen ohne RTTI und Placement-new sind
 moeglich. Globale dynamische Initialisierung, dynamische lokale Statics,
 Exit-Registrierung, Exceptions und TLS sind nicht Teil dieses Profils.
 Es gibt keine Konstruktorliste, keinen automatischen Heapstart und keinen
-globalen Garbage Collector. `Result`/`Optional`/`Span` und feste Container
-folgen erst in TASK-2001.
+globalen Garbage Collector. Die TASK-2001-Hilfstypen sind unten getrennt
+beschrieben; sie aendern weder dieses Runtime-Profil noch den C-Allocator.
 
 Vor dynamischen Allokationen initialisiert die Anwendung ausdruecklich
 `reist_libc_init_process(budget)` oder einen vorhandenen caller-owned Provider.
@@ -390,6 +390,63 @@ und echten C-Allocator, C-Linkage/Layout, Verbotserkennung sowie den externen
 SDK-Build. Das `cpp-client`-Gastgate prueft normale Objekt-/Arraylebensdauer,
 exakte Frame-Rueckgabe, OOM/Fault/Kill eines Kindes, Parent-Canary, frisches
 Kind und anschliessende Shellbedienung unter endlichen Fristen.
+
+## Allokationsfreie C++-Hilfstypen, Adapterprofil 1 (R3.17)
+
+Die Header unter `usr/include/reist/cpp/reist/` werden ueber den bestehenden
+SDK-Kopierer installiert; es gibt kein weiteres Runtime-Archiv. Referenzen sind
+die C++-Objektlebensdauer und die Wert-/View-/Unique-Owner-Modelle von
+[optional](https://eel.is/c++draft/optional),
+[expected](https://eel.is/c++draft/expected),
+[span](https://eel.is/c++draft/views.span) und
+[unique_ptr](https://eel.is/c++draft/unique.ptr).
+Dies sind explizite `reist`-Adapter im C++20-Teilprofil, kein `std`-Ersatz und
+keine Behauptung eines C++23-/spaeteren Standardbibliotheksumfangs.
+
+| Header / Typ | Vertrag und bewusste Einschraenkung |
+|---|---|
+| `result.h`: `Result<T,E>`, `Result<void,E>` | Nur `success(...)`/`failure(...)` erzeugen das Ergebnis; genau eine Alternative lebt, bei void-Erfolg keine Payload. `value_if()`/`error_if()` liefern null fuer die falsche Alternative. |
+| `optional.h`: `Optional<T>` | Leer ohne T-Konstruktion. `try_emplace` konstruiert nur im leeren Zustand und lehnt andernfalls vor Argumentverbrauch ab. `reset` ist idempotent. `get()` ist ein gepruefter Borrow. |
+| `span.h`: `Span<T>` | Geliehener Arraybereich mit const-korrekter Konversion, ohne Derived-Array-zu-Base-Array-Konversion. `try_from` prueft Null/Laenge, Alignment und Byte-/Adressueberlauf; `at` und `subspan` pruefen Bounds. Ablehnung laesst den Ausgabebereich unveraendert. |
+| `fixed_string.h`: `FixedString<N>` | N Nutzbytes plus NUL; `assign`/`append` pruefen Platz vor Mutation und unterstuetzen Ueberlappung. Array-Overloads verlangen abschliessendes NUL, Span-Inputs erlauben eingebettete NUL. Laenge ist in Bytes, nicht Unicode-Zeichen. |
+| `fixed_vector.h`: `FixedVector<T,N>` | N einzeln ausgerichtete Objektslots, nur der belegte Praefix lebt. `try_emplace_back` prueft Platz vor Konstruktion/Move. `pop_back`/`clear` zerstoeren rueckwaerts. Geprueftes `at`, kein Array-/Contiguous-Iterator-/`data()`-Versprechen ueber Union-Slots. N=0 ist zulaessig. |
+| `unique_handle.h`: `UniqueHandle<T,Traits>` | Move-only Besitz eines bereits erworbenen trivialen C-Handles. Traits definieren `invalid`, `is_valid`, `equal`, `close` explizit und noexcept. `equal` muss die ganze Identitaet einschliesslich Generation vergleichen. `release` uebertraegt Verantwortung; `reset` schliesst den alten gueltigen Besitz genau einmal, gleiche Identitaet bleibt unveraendert. Kein Default-Policy fuer rohe Handles. |
+| `utility.h` | Nur notwendige Move/Forward-/Objektslot- und Clang-Profiltraits; keine allgemeine Metaprogrammierungsbibliothek. |
+
+Besessene T/E sind unqualifizierte Nicht-Array-Objekte mit noexcept-Destruktor.
+Konstruktion/Copy/Move ist nur fuer passende nothrow-Konstruktoren verfuegbar;
+Move-only Payloads bleiben nicht kopierbar. Optional/Result-Moves erhalten den
+Quelldiskriminator und hinterlassen dessen Payload moved-from. Vector-/String-
+Moves leeren die Quelle; UniqueHandle-Moves entziehen ihr den Besitz.
+Selbstzuweisung/Self-Move ist wirkungslos. Zuweisung von Optional/Result/Vector
+rekonstruiert die Payload statt einen Zuweisungsoperator von T/E vorauszusetzen.
+
+Borrow-Zugriffe von temporaeren Besitzern sind abgewiesen. Zeiger/Views bleiben
+nur bei lebendem Besitzer und gueltigem Zustand benutzbar; Reset, Entfernung,
+Zuweisung, Move oder Navigation koennen sie invalidieren. Span selbst prueft
+keine Seitentabellen oder Objektlebensdauer. Echte Arrayausdehnung, gegenseitige
+Lebensdauer und bestehende Autoritaet bleiben Aufruferpflicht; numerisch
+gueltige fremde Zeiger werden dadurch nicht sicher. Keine Thread-/Reentry-Zusage.
+
+Kein Helper allokiert selbst Heap. Payload-Konstruktoren/-Destruktoren und
+Release-Traits muessen ebenfalls ihren dokumentierten begrenzten Vertrag
+erfuellen; `noexcept` beweist weder Heapfreiheit noch Terminierung beliebigen
+Nutzercodes. Handle-close konsumiert Cleanup-Verantwortung auch auf seinem
+ausdruecklich definierten Fehler-/Fencingpfad; der Wrapper ignoriert keinen
+Rueckgabefehler und erfindet weder Queue noch Retry. Er ersetzt keine fallible
+Flush-/Stop-/Reap-Schnittstelle oder OS-Crashbereinigung. Doppelte Adoption
+und gefaelschte Handles bleiben Vertragsverletzungen; der Kernel validiert
+weiterhin die eigentliche Autoritaet. Die Typen vergroessern keine RAM-Quote
+und erzwingen keine kleinen Inline-Puffer fuer spaetere grosse Browserpayloads.
+
+Verifikation: dieselben realen Templates mit nichttrivialen/move-only und
+64-Byte-ausgerichteten Werten in O0/O2-Hosttests; Kapazitaets-/Ueberlauf-/Alias-
+und 4096 deterministische Zustandswechsel, gezaehlte Freigaben einschliesslich
+voller Handleidentitaet und modelliertem Fencing. i386-Objektsymbole und Link
+ohne Allocator/C++-Runtime (nur C-Byteprimitiven), externe installierte SDK-
+Integration und CPPTEST mit echten IPC-Endpunkten, altem Handle und neuem
+Endpunkt. Alle bisherigen OOM/Fault/Kill/Reap-/Shellmarker bleiben erforderlich.
+Aktueller Abnahmestatus und Logs stehen in CURRENT_WORK; keine Browsermigration.
 
 ## Dokumentationsvertrag
 
