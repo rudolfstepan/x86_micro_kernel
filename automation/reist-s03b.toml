@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.20-browser-model-cpp"
+active_id = "R1.2e-probe-start-publication"
 
 [policy]
 one_package_per_run = true
@@ -9,6 +9,53 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R1.2e-probe-start-publication"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Publish probe generation before first Ring-3 execution"
+user_direction = "2026-09-06: User explicitly approves a separate prerequisite boot/supervisor repair after the C-model baseline hit a pre-browser kernel panic. Direct visible-main-worktree execution only, no agents or push. The attributable unaccepted R3.20 harness is preserved with its untracked test in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a; ignored evidence is untouched. Resume R3.20 afterwards with all frozen gates unchanged, not in this run."
+scope = "Repair the probe generation publication transaction shared by initial boot, automatic replacement and manual recovery. Current probe_spawn_next makes reist.prg runnable before obtaining and publishing its generation; an immediate legitimate startup report is rejected and the child can exit before process_get_identity, turning an ordinary Ring-3 timing race into boot panic. Use the already implemented PREPARED process/start mechanism, publish the complete protected control record before making the task runnable exactly once, and retain no post-start stale control overwrite or liveness requirement. Reject/clean up every failed preparation, identity, publication or start stage with bounded diagnostics and no leaked prepared process, stale authority or lost restart count. Preserve protected-state integrity handling and existing essential-service failure policy, all restart/fencing/generation/self-test budgets, process/SDK ABI, quotas and scheduling. No new scheduler mechanism, kernel parser/driver, broad supervisor redesign, artificial delay, extra retry, raised timeout or browser/renderer implementation."
+failure_evidence = "Identical saved 512-MiB disk SHA256 651346437c0011c11a7be68d8a8d7c3a1e8dd03bacaef2a37e1aedbc889d12ef booted for all 64 browser inputs, then another fresh boot panicked before the browser with Unable to start REIST Ring-3 probe. Last context validate image is not itself proof of corrupt bytes. Retain build/codex-agent/r320/ui-baseline-stages/initial-c/paint.browser.log. Deterministic real-code host scheduling injection must fail against the old start transaction before candidate repair."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md",
+  "kernel/init/supervisor.c", "test/test_probe_startup.py", "test/test_probe_startup_host.c",
+  "test/test_reist_supervisor.py", "test/test_boot_service_ready.py"
+]
+invariants = [
+  "existing PREPARED process remains non-runnable until protected identity and launch state are committed",
+  "immediate valid self-test and progress cannot see an absent generation or be overwritten after start",
+  "each rejected stage leaves no runnable or leaked candidate; generation-scoped fencing precedes cleanup",
+  "no ABI capacity deadline restart budget or protection weakening; no retry-until-pass",
+  "preserve unaccepted browser stash and measurements; do not claim R3.20 completion"
+]
+targeted_tests = [
+  "python test/test_probe_startup.py -v",
+  "python test/test_reist_supervisor.py -v",
+  "python test/test_boot_service_ready.py -v",
+  "python test/test_process_arguments.py -v",
+  "python test/test_smp.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_smoke.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --boot-only --expect-reist-probe --smp 1 --timeout 90 --log build/codex-agent/r12e/boot-1.log",
+  "python scripts/run_qemu_smoke.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --boot-only --expect-reist-probe --smp 4 --expect-smp --timeout 90 --log build/codex-agent/r12e/boot-4.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+stop_conditions = [
+  "required source change leaves allowed_files or unrelated changes overlap the candidate",
+  "evidence identifies an independent loader storage scheduler or memory failure requiring another package",
+  "repair would weaken a frozen gate or protected lifecycle invariant"
+]
+commit_message = "fix: publish probe identity before starting its prepared process"
+evidence = []
 
 [[packages]]
 id = "R1.2c-private-process-memory"
@@ -1253,7 +1300,8 @@ evidence = []
 
 [[packages]]
 id = "R3.20-browser-model-cpp"
-status = "active"
+status = "queued"
+deferral = "2026-09-06: User approves the prerequisite R1.2e boot/supervisor repair. Preserve unaccepted harness in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and all r320 evidence. Baseline scroll p95 450.5252 ms exceeds 250 ms; later boot panic blocks diagnosis. Do not migrate the C model before a passing baseline; resume unchanged gates after R1.2e."
 phase = "post-s0"
 risk = "high"
 title = "Encapsulate existing browser model values without moving navigation ownership"

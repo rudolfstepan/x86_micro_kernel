@@ -13,7 +13,11 @@ C++20 ohne globale dynamische Initialisierung/Exit-Registrierung. `R3.17`
 ist mit 80 Hosttests, beiden Referenzbuilds und beiden Gastgates abgenommen:
 TASK-2001 liefert die sechs minimalen allokationsfreien Hilfstypen.
 `R3.18-browser-response-cpp` und `R3.19-browser-resources-cpp` sind abgenommen;
-jetzt ist allein `R3.20-browser-model-cpp` active, noch nicht implementiert.
+`R3.20-browser-model-cpp` ist noch nicht implementiert. Nach ausdruecklicher
+Freigabe des Nutzers ist zuerst allein `R1.2e-probe-start-publication` aktiv:
+Der Ring-3-Probestart muss seine geschuetzte Generation veroeffentlichen,
+bevor der Prozess erstmals laufen darf. Browserentwurf und nicht bestandene
+UI-Baseline bleiben gesichert; alle Migrationsgrenzen bleiben unveraendert.
 Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.
 
 Revision 1.1 richtet jeden Piloten am nachgewiesenen Besitz aus: gepruefte

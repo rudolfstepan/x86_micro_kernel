@@ -2,6 +2,32 @@
 
 Stand: 6. September 2026
 
+## R1.2e freigegeben: Boot-/Probe-Starttransaktion
+
+Der Nutzer hat das vorgeschaltete Reparaturpaket ausdruecklich freigegeben.
+Der vollstaendig zuordenbare, nicht abgenommene R3.20-Probeentwurf samt
+ungetracktem Hosttest ist in lokalem Stash
+`5af103bac06f8a4e6b335f247ed4d89f42c4a59a` gesichert. Ignorierte Evidenz unter
+`build/codex-agent/r320/` bleibt unangetastet. Danach Worktree sauber auf
+`4132d88f`; kein Browserumbau und keine Browser-Abnahme in diesem Paket.
+
+Der C-Baselinelauf bestaetigte 32 Texteingaben und 32 Scrollereignisse, blieb
+mit Scroll-p95 450,5252 ms ueber 250 ms (Tippen 134,8426 ms). Ein spaeterer
+Boot desselben gesicherten Images scheiterte vor dem Browser mit
+`Unable to start REIST Ring-3 probe`; letzter Kontext `validate image`
+beweist keine Dateikorruption. Beide Imagehashes wurden gleich verifiziert:
+`651346437c0011c11a7be68d8a8d7c3a1e8dd03bacaef2a37e1aedbc889d12ef`.
+
+Inventar: Der Probe-Spawn macht das Kind bereits runnable und veroeffentlicht
+erst anschliessend PID/Generation. Dessen sofortiger Selbsttest wird bei
+fehlender Identitaet abgewiesen; sein Exit kann schon die nachfolgende
+Identitaetsabfrage scheitern lassen. Treiber, Audio und Compositor benutzen
+bereits den vorhandenen PREPARED-Start. R1.2e uebernimmt genau diese
+Publikationsreihenfolge fuer Boot-, automatische und manuelle Probe-Recovery,
+mit deterministischem Regressionstest vor der Reparatur. Keine neue
+Schedulerfunktion, Wartezeit, Wiederholung oder Lockerung von Schutzbudgets.
+Paket und Abnahmebefehle sind vor Implementierung in der Queue eingefroren.
+
 ## R3.19 abgenommen: Ressourcen-C++, SDK- und Ladewartekorrektur
 
 Sauberer Start auf `864f869a`, direkt im sichtbaren Hauptworktree. Genau
