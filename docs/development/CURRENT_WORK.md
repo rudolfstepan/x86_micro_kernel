@@ -2,6 +2,18 @@
 
 Stand: 7. September 2026
 
+## R3.21a aktiv: VMware-Kapazitaetskorrektur
+
+Nutzerfreigabe nach realem Workstation-Befund: 128 MiB VRAM, aber nur
+3.75 MiB aktueller FB_SIZE beim Start. R3.21 verwechselt diese Werte an
+Erkennung, Modusabfrage und Aktivierung; QEMU verdeckt dies durch identische
+Registerwerte. Saubere Baseline `638b5806`, Browserstash unveraendert.
+Das abgegrenzte Reparaturpaket und seine fuenf Host-, zwei Referenz- und
+drei Gastgates sind vor Implementierung in der Queue eingefroren.
+Keine Schutz-/Budgetlockerung, Live-Umschaltung oder Benutzer-VM-Aenderung.
+Neue Belege unter `build/codex-agent/r321a/`; R3.21-Belege bleiben erhalten.
+R3.20 ist bis zum Abschluss dieses Pakets wieder queued.
+
 ## R3.21 abgeschlossen: Anzeige-Applet und gespeicherte Desktopaufloesung
 
 Alle 14 eingefrorenen gezielten Gates, beide Referenzbuilds und alle vier

@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.20-browser-model-cpp"
-next_user_request = "2026-09-07: R3.21 Display applet/startup resolution package accepted after all frozen gates. Resume only R3.20 next, preserving its unaccepted stash and requiring its own passing baseline before C++ model migration. Live mode changes, new pixel formats and themes remain outside the completed Display package. No agents or push."
+active_id = "R3.21a-vmware-scanout-capacity"
+next_user_request = "2026-09-07: User approves repairing real VMware mode detection, mapping and activation before resuming R3.20. Direct main-worktree execution, frozen host/QEMU/Workstation gates, no agents or push. Preserve the browser stash and all R3.21 evidence."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,52 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.21a-vmware-scanout-capacity"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Distinguish VMware VRAM capacity from the current framebuffer extent"
+user_direction = "2026-09-07: User explicitly approves correcting capacity query, mapping and activation after the real Workstation screenshot/log diagnosis. Clean main worktree at 638b5806. Prioritize this bounded repair over R3.20; no browser implementation or stash restoration."
+scope = "One SVGA-II scanout admission transaction. Use standard VRAM_SIZE (15), not current FB_SIZE (16), validated against boot-sealed PCI BAR1 bounds. Seal BAR2 FIFO bounds at discovery too; reject stale bases, impossible capacities and overflow before mappings or publication. Bound initial WC/UC mapping to the existing shadow capacity, then validate actual post-enable pitch/offset/FB_SIZE/VRAM/BAR ranges before the existing framebuffer mapper publishes the visible span. Preserve the 16-MiB shadow/staged and 3-MiB Surface limits, no new mapping authority, budgets, public ABI, kernel driver, configuration format or live switching. Real-code O0/O2 tests must distinguish Workstation's current extent from large VRAM and retain the equal-register QEMU case. Extend the existing hidden Workstation harness with an isolated disposable package and explicit saved high-mode render/return proof. No changes to the user's VM settings or evidence."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/DISPLAY_SETTINGS_CONTRACT.md", "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "drivers/video/display_control.c", "test/test_display_settings.py", "test/test_display_mode_host.c",
+  "test/test_vmware_svga2d.py", "test/test_vmware_mouse.py",
+  "scripts/run_vmware_mouse.ps1", "scripts/run_vmware_display_settings.ps1"
+]
+invariants = [
+  "query remains non-mutating and returns only metadata; BAR probing occurs only at boot discovery",
+  "VRAM capacity and current framebuffer extent are different; validate both at their proper transaction stage",
+  "no mapping outside sealed PCI apertures, overflow, stale base, heap allocation or protection weakening",
+  "failed readback disables the candidate or latches the existing fault; no uncertain publication or fallback",
+  "preserve WC-first/UC fallback, fixed shadow limits, ABI and driver-generation recovery"
+]
+targeted_tests = [
+  "python test/test_display_settings.py -v", "python test/test_display_abi_minimal.py -v",
+  "python test/test_vmware_svga2d.py -v", "python test/test_bios_vbe_source.py -v",
+  "python test/test_vmware_mouse.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_display_settings.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --backend std --timeout 180 --evidence build/codex-agent/r321a/std",
+  "python scripts/run_qemu_display_settings.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --backend vmware --timeout 180 --evidence build/codex-agent/r321a/svga2d",
+  ".\\scripts\\run_vmware_display_settings.ps1 -Evidence build/codex-agent/r321a/workstation -TimeoutSeconds 120"
+]
+acceptance = "Regression fails on the old real mode query for 128-MiB VRAM / 3-MiB current framebuffer. O0/O2 tests cover boot preparation, mode hints, 1280x720/1920x1080 activation, growing/shrinking current FB_SIZE, actual padded pitch/offset, malformed BAR/VRAM/FIFO, mapping/readback/disable failure and no publication on rejection. Existing QEMU guests prove applet persistence, fault/replacement, fallback and shell return on both adapters. Workstation gate uses only a fresh evidence copy of the generated package, loopback RFB, one explicit injection per command, a 120-second guest deadline, saved 1280x720 and 1920x1080 with actual hardware readback/render/copy/disable and fresh shell responses. No visible UI, physical monitor qualification or claim that emulation substitutes for Workstation."
+stop_conditions = [
+  "required production source is outside allowed_files, unrelated writer overlaps or a user VM is running",
+  "correction requires relaxed isolation, mapping authority, shadow capacity or public ABI",
+  "a frozen gate fails after one focused in-scope repair; retain all failed evidence"
+]
+commit_message = "fix: validate VMware display modes against actual VRAM capacity"
+evidence = []
 
 [[packages]]
 id = "R3.21-desktop-display-settings"
@@ -1385,7 +1431,7 @@ evidence = []
 
 [[packages]]
 id = "R3.20-browser-model-cpp"
-status = "active"
+status = "queued"
 resumption = "2026-09-07: R1.2e and R3.21 accepted. Resume the preserved R3.20 baseline work with its original scope/gates; the passing R3.21 browser-input regression is not acceptance of the separate C-model/C++ migration baseline. Stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a remains unaccepted and untouched by the Display run."
 deferral = "2026-09-06: User approves the prerequisite R1.2e boot/supervisor repair. Preserve unaccepted harness in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and all r320 evidence. Baseline scroll p95 450.5252 ms exceeds 250 ms; later boot panic blocks diagnosis. Do not migrate the C model before a passing baseline; resume unchanged gates after R1.2e."
 phase = "post-s0"

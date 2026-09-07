@@ -65,6 +65,30 @@ proof, not physical VMware Workstation or monitor qualification.
 
 ## Adapter v1 and implementation bounds
 
+### Workstation capacity correction (R3.21a)
+
+SVGA-II `VRAM_SIZE` (register 15) is the device VRAM capacity; `FB_SIZE`
+(16) describes the current framebuffer extent and is not a limit on future
+modes. The [upstream vmwgfx driver](https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/vmwgfx/vmwgfx_drv.c)
+uses VRAM_SIZE independently of its PCI aperture. QEMU's legacy VMware
+emulation returns identical values for these registers, so it cannot alone
+prove this distinction. Real Workstation reported 128-MiB VRAM but only
+3.75 MiB for FB_SIZE at initial discovery on 2026-09-07.
+
+Seal 32-bit BAR1/BAR2 geometry at boot using existing bounded PCI probing.
+Mode queries do not re-probe PCI or enable the display. Live capacity must
+fit the sealed aperture; inconsistent capacity/bases fail closed. Initial
+WC-first mapping covers at most the existing 16-MiB shadow budget, not all
+advertised VRAM. After enable, validate current FB_SIZE, pitch and offset
+against VRAM and the BAR before the existing mapper maps the visible span.
+The shadow budget bounds each scene, independently of larger device memory.
+Preserve failed-disable latching and generation fencing. No ABI change.
+
+The additional Workstation gate runs only a fresh copied test package,
+without visible windows or modification of the user's VM. It must prove
+saved 1280x720 and 1920x1080 modes, real render/copy and console return.
+Until that gate passes, Workstation correction remains a candidate.
+
 `reist_display_mode_request_t` is exactly 64 bytes. Syscall 109 adds operations
 13 (query) and 14 (startup activation). Query input fields other than
 version/size/operation are zero. Activation input additionally supplies width,
