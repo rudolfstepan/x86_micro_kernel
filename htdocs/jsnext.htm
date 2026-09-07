@@ -1,0 +1,6 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Next document</title></head><body>
+<p id="result">Waiting</p><script>
+if(typeof executions!=='undefined' || typeof target!=='undefined') throw new Error('Stale realm');
+document.getElementById('result').textContent='Fresh JavaScript document OK';
+document.title='REIST fresh realm OK';
+</script><a href="javascript.htm">Back</a></body></html>

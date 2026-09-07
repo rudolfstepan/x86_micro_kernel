@@ -2,15 +2,67 @@
 
 Stand: 7. September 2026
 
-## R3.25 aktiv: JavaScript im tatsaechlichen Browser
+## R3.25 abgenommen: JavaScript im tatsaechlichen Browser
 
-Ausdruecklicher Nutzervorrang: schnell sichtbare Seitenskripte auf4b2b3302.
-Parsergeordnete klassische Inline-Skripte mit document.title/getElementById/
-textContent, beide Worker direkt vom Browser besessen, asynchroner Transport
-und quelltextgenaues Mutationsjournal fuer Reflow statt Skriptwiederholung.
-Vertrag/Gates vor Umsetzung eingefroren in BROWSER_SCRIPTING_CONTRACT.md und
-Queue. Keine neue unbenutzte Runtime-Grundlage; externe Skripte, Events und
-weitere Web-APIs bleiben nach diesem aktivierenden Schnitt offen.
+Auf4b2b3302, Vertragscommit f44400b9: klassische Inline-Skripte laufen jetzt
+an Hubbubs echter Parsergrenze im direkt vom Browser besessenen JSWORK.
+document.title/getElementById/body/textContent und persistente Globals zwischen
+Skripten sind aktiv. Die beiden Worker bleiben getrennte Ring3-Prozesse;
+der neue C++-Owner verarbeitet ausschliesslich begrenzte Nachrichten.
+Navigation verwirft alte Skriptarbeit, Reflow und CSS-Ressourcenpaesse spielen
+das quelltextgenaue Journal ab, ohne Skripte erneut auszufuehren. Fehlgeschlagene
+Kandidaten lassen die bisherige Seite samt Journal erhalten.
+
+Testseite: `/htdocs/javascript.htm`, Folgeseite `/htdocs/jsnext.htm`, in beiden
+Images enthalten. Der echte Gast zeigt geaenderten Text und Seitentitel in
+der Browserleiste; native Fensterdekorationsaktualisierung bleibt getrennt.
+Reihenfolge, fehlende zukuenftige Elemente, Objektidentitaet, Fortsetzung nach
+Autorenexception, echtes Resize ohne erneute Ausfuehrung, frisches Dokument,
+nichtkooperativer Hang, Page Fault, Fencing/Reap, Recovery und Neustart bestehen.
+Fuenf unterschiedliche JS-Workeridentitaeten; 2/2/3/5 Autoren-Ausfuehrungen
+nach Erstladung/Reflow/Folgedokument/Recovery. Der vorhandene Browsergast
+besteht unveraendert mit Tastatureditierung, Navigation, Crash und Neustart.
+
+58 verschiedene Hostfaelle bestanden. Finale Belege relativ zu
+`build/codex-agent/r325-browser-js/`; exakte Befehle im eingefrorenen Queueeintrag:
+
+| Gate | Ergebnis / Dauer | Beleg |
+|---|---|---|
+| QuickJS-Bindung und echter C++-Owner O0/O2 | 2 PASS / 43.597s | `scripting-gate-final.log` |
+| Fehlende/stale Gastbelege werden abgelehnt | 1 PASS / 0.054s | `title-guest-validator-host.log` |
+| HTML-Parser / CSS | 1/1 PASS / 4.554/41.394s | `html-gate-fixed.log`, `css-gate.log` |
+| Unveraenderte JS-Service-Regressionen | 3 PASS / 3.210s | `service-gate.log` |
+| Navigation / GUI / Benchmark | 4/8/9 PASS / 1.781/39.372/0.022s | `navigation-gate.log`, `gui-gate.log`, `benchmark-gate.log` |
+| Browser-Lifecycle/Rendering | 29 PASS / 7.982s, ergaenzter UTF-8-Titeltest 1.508s | `runtime-host-title.log`, `title-render-host.log` |
+| VMware / QEMU Referenz | PASS / 70/68s | `vmware-gate-title.log`, `qemu-gate-title.log` |
+| Tatsachliche Imagebytes | PASS / 1.032s | `artifacts-final.json` |
+| JavaScript im echten Browser, inklusive Titelpixel | PASS / 91.188s | `guest-final.log`, `guest-final-*.ppm`, `guest-final-dom.png` |
+| Bestehender Browser-Tastatur-/Crash-/Neustartgast | PASS; Wrapper ohne eigenen Dauerwert | `browser-input-gate.log`, `browser-input.browser.log`, `browser-input.ppm` |
+
+Beide Kernel sowie GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK sind in
+den tatsaechlichen Images bytegleich zu4b2b3302. BROWSER2826268Bytes,
+SHA25615ae9613ce1c16fc9b982457a38cf49a606ec7c84759bca6b1c890b0c5328458;
+HTMLWORK854060Bytes, SHA2568a8246200f08a77175bc038b5e5841f18f8eab926d933efa264eed2e44ff842f.
+Gepruefte Kopien unter `accepted-qemu/` und `accepted-vmware/`:
+QEMU9c3415c70143fc5e656f687389cd74e73d172d4ac48eee4a940f944efcb2348c,
+VMware65ec6836af6a3da2537525eee696196e497be574a513f9752ffa8d4ec8826097.
+
+Alle Fehlversuchslogs bleiben erhalten: tiefe DOM-Hilfsaufrufe wurden iterativ,
+C/C++-Linkage korrigiert, Hostfixtures um echte Links/OS-Mocks und den neuen
+Turnbudget-Reset ergaenzt (alte Assertions erhalten), fehlendes Host-strstr
+im Zielprobe durch begrenzten Vergleich ersetzt. Der Artefaktleser brauchte
+den bestehenden FAT-Kurznamen javasc~1.htm. Der erste Gast bestand die
+JS-Funktionen, scheiterte aber nach Resize an der falschen Ausgangskoordinate
+des Desktop-Exit-Helfers; feste Frist180s blieb erhalten, Pointer-Voraussetzung
+jetzt per Scanout nachgewiesen. Nur betroffene Gates wiederholt; finale Images
+kopiert, keine Agenten, sichtbaren VMs oder Pushes.
+
+Grenzen: [BROWSER_SCRIPTING_CONTRACT.md](../architecture/BROWSER_SCRIPTING_CONTRACT.md).
+Keine externen/module Skripte, Events/Timer, fetch/XHR, Cookies/Storage oder Date;
+kein Anspruch auf breite moderne Website-Kompatibilitaet. Enforcing CSP sperrt
+Inline-Skripte konservativ. Keine Kernel-/SDK-/Engine-/Quota-Aenderung und kein
+neuer Durchsatz-/WCET-Claim. Nur formaler Queuewechsel zum weiterhin fachlich
+zurueckgestellten R3.6b; dieses Paket wurde nicht angefasst.
 
 ## R3.24 abgeschlossen: persistenter JavaScript-Dienst
 

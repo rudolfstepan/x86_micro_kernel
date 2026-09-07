@@ -6,6 +6,7 @@
 #define BROWSER_HTML_MAGIC 0x354C5448U
 #define BROWSER_HTML_VERSION 2U
 #define BROWSER_HTML_DOCUMENT_VERSION 3U
+#define BROWSER_HTML_SCRIPT_VERSION 4U
 #define BROWSER_DOCUMENT_INPUT_CAPACITY (1024U*1024U)
 enum { BROWSER_ENCODING_AUTO, BROWSER_ENCODING_UTF8, BROWSER_ENCODING_WINDOWS1252,
        BROWSER_ENCODING_UTF16LE, BROWSER_ENCODING_UTF16BE };
@@ -34,6 +35,8 @@ typedef struct browser_html_header {
     uint32_t child_pid, child_generation, input_length, mode, reserved[2];
 } browser_html_header_t;
 static inline int browser_html_profile_valid(const browser_html_header_t *h) {
+    if(h && h->version==BROWSER_HTML_SCRIPT_VERSION)
+        return h->reserved[1] && h->input_length<=BROWSER_DOCUMENT_INPUT_CAPACITY && h->reserved[0]<=BROWSER_ENCODING_UTF16BE;
     return h && !h->reserved[1] && (h->version==BROWSER_HTML_VERSION ?
         !h->reserved[0] && h->input_length<=REIST_HTML_INPUT_CAPACITY :
         h->version==BROWSER_HTML_DOCUMENT_VERSION && h->input_length<=BROWSER_DOCUMENT_INPUT_CAPACITY &&

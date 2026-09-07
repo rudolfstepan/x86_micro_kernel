@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.25-browser-inline-javascript"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 next_user_request = "2026-09-07: User explicitly prioritizes JavaScript in the actual browser as quickly as possible after4b2b3302. Activate parser-ordered inline scripts and real document title/get-by-id/text mutations through the accepted isolated service, with direct browser ownership, bounded failures and source-exact reflow journal. No further standalone runtime prerequisite or broad C++ migration. R3.6b remains deferred; no agents/push."
 
 [policy]
@@ -13,7 +13,8 @@ push = false
 
 [[packages]]
 id = "R3.25-browser-inline-javascript"
-status = "active"
+status = "done"
+completion_summary = "2026-09-07: Direct visible-worktree implementation on4b2b3302, contract f44400b9. Actual Hubbub parser-ordered classic inline JS via directly browser-owned JSWORK, noncopyable asynchronous C++ DOM bridge, validated all-before-apply UTF8/hex journal, stable node wrappers, title/text/get-by-id/body, source-exact active/candidate replay without reexecution, fresh navigation and bounded failure/cleanup.58 distinct host cases pass, final VMware70s/QEMU68s, actual image guard1.032s, real browser scripting91.188s with visible text/title scanout,2/2/3/5 author evaluations across initial/reflow/navigation/recovery, ordinary exception continuation, noncooperative hang and actual fault, five distinct JS worker identities, old-page preservation and browser/desktop restart. Existing browser input/edit/navigation/crash/restart/console guest passes unchanged. Both actual kernels and GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK byte-identical4b2b3302. BROWSER2826268 bytes SHA25615ae9613ce1c16fc9b982457a38cf49a606ec7c84759bca6b1c890b0c5328458; HTMLWORK854060 bytes SHA2568a8246200f08a77175bc038b5e5841f18f8eab926d933efa264eed2e44ff842f. Final image copies/hashes, screenshots, all development failures and exact gate map under r325-browser-js and CURRENT_WORK. DOM native-stack depth flattened; C linkage/host links/turn-budget fixture corrected preserving assertions; artifact reader uses existing FAT alias; initial guest completed JS proof but failed its post-resize desktop-exit pointer precondition, fixed with observed pointer positioning without deadline relaxation. Native decoration can retain old caption; current scripted title is separately painted/tested in browser chrome, no shared compositor change. No kernel/SDK/engine/quota change, external/module scripts/events/timers/network APIs/Date or broad modern-site/WCET claim. Formal queue advances only to deferredR3.6b, not implemented."
 phase = "post-s0"
 risk = "high"
 title = "Actual browser inline JavaScript and bounded document mutations"
@@ -1899,7 +1900,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

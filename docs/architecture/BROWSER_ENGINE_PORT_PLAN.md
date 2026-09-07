@@ -2,6 +2,19 @@
 
 Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 
+Aktueller Stand 7. September, R3.25: JavaScript ist im Browser aktiviert,
+nicht nur als SDK verfuegbar. Klassische Inline-Skripte laufen parsergeordnet
+im direkt besessenen JSWORK; title/getElementById/body/textContent sind mit
+der echten Hubbub-Struktur verbunden. C++-Owner, begrenztes Mutationsjournal,
+quelltextgenauer Reflow ohne Wiederholung und Navigation/Fault/Hang/Recovery
+haben Host- und echten Browsergastnachweis. 58 Hostfaelle, beide Referenzen,
+Imageguard und beide Browsergaeste bestehen. Titelpixel in browser-eigener
+Leiste sind geprueft; gemeinsame Fensterdekoration wurde nicht umgebaut.
+Externe Skripte, Events/Timer und weitere Web-APIs sind weiterhin offen;
+kein allgemeiner Website-Kompatibilitaetsclaim. Details/Belege in CURRENT_WORK
+und [Scriptingvertrag](BROWSER_SCRIPTING_CONTRACT.md). Die folgenden
+R3.21--R3.24-Abschnitte beschreiben ihre historischen Paketgrenzen.
+
 Fortsetzung 7. September: Nach der abgenommenen FPU-Isolation liefert
 das abgenommene R3.21 ausschliesslich den opt-in numerischen SDK-Unterbau fuer den
 JavaScript-Port: 44 binary64-Funktionen aus musl1.2.6 und vier Ring-3-fenv-

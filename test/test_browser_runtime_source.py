@@ -27,6 +27,9 @@ TRANSPORT_HOST = r'''
 #include "userspace/gui/apps/browser/main.c"
 #undef main
 
+static int transport_css_turn(browser_state_t *s) {
+    s->css_calls=0; int rc=service_css_ipc(s); assert(s->css_calls<=8); return rc;
+}
 static x86os_process_info_t process;
 static unsigned exists, generation, identity_exit, kill_exit, waits, kills, clock_ms, clock_reads;
 static unsigned kill_pending, peer_closed;
@@ -43,6 +46,12 @@ static unsigned request_written, worker_length, worker_offset, endpoint_live;
 static unsigned transport_peer,transport_offset,transport_live,transport_empty;
 static unsigned handoff_mode,handoff_slot,handoff_yields;
 static unsigned idle_sleeps;
+int x86os_monotonic_ms(uint64_t *ms) { *ms=clock_ms; return 0; }
+extern void *malloc(size_t);
+extern void free(void *);
+void *x86os_malloc(size_t n) { return malloc(n); }
+void x86os_free(void *p) { free(p); }
+const char browser_dom_data[1]={0},browser_dom_end[1]={0};
 int x86os_sleep_ms(uint32_t ms) { assert(ms==1); ++idle_sleeps; return 0; }
 int x86os_yield(void) { ++handoff_yields; handoff_slot=0; return 0; }
 static browser_scene_t worker_scene;
@@ -235,7 +244,7 @@ static void worker_cancel_diagnostics(void) {
         uint32_t original_deadline=state.job_deadline;
         if(mode%2==0) clock_ms=original_deadline;
         else {
-            for(unsigned i=0;i<40 && state.css_sent<css_input.request.header.size;++i) assert(!service_css_ipc(&state));
+            for(unsigned i=0;i<40 && state.css_sent<css_input.request.header.size;++i) assert(!transport_css_turn(&state));
             peer_closed=1;
         }
         service_loads(&state,&client);
@@ -267,7 +276,7 @@ static void complete_html(browser_state_t *state, reist_gui_surface_client_t *cl
     uint32_t length=state->parse_pending;
     process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
     assert(exists && state->job_kind==3 && state->child_generation==generation && !state->parse_pending);
-    for(unsigned i=0;i<40 && state->css_sent<css_input.request.header.size;++i) assert(!service_css_ipc(state));
+    for(unsigned i=0;i<40 && state->css_sent<css_input.request.header.size;++i) assert(!transport_css_turn(state));
     assert(request_written==css_input.request.header.size);
     memset(&worker_reply,0,sizeof(worker_reply)); worker_reply.header=state->html_request;
     worker_reply.header.size=sizeof(worker_reply); worker_reply.header.child_pid=81;
@@ -287,7 +296,7 @@ static void complete_html(browser_state_t *state, reist_gui_surface_client_t *cl
     if (corrupt) ++worker_reply.header.request;
     int packed=browser_css_pack(&worker_reply,&worker_scene,worker_wire,sizeof(worker_wire)); assert(packed>0);
     worker_length=(unsigned)packed; worker_offset=0;
-    for(unsigned i=0;i<40 && state->css_received<worker_length;++i) assert(!service_css_ipc(state));
+    for(unsigned i=0;i<40 && state->css_received<worker_length;++i) assert(!transport_css_turn(state));
     clock_ms+=10; process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=0;
     service_loads(state,client);
     assert(!exists && !state->child_pid && !state->exit_requested && opens==closes);
@@ -342,7 +351,7 @@ static void complete_needs(browser_state_t *state,reist_gui_surface_client_t *cl
     assert(state->parse_pending && !exists);
     process.state=X86OS_PROCESS_RUNNING; service_loads(state,client);
     assert(state->child_pid && state->job_kind==3);
-    for(unsigned i=0;i<100 && state->css_sent<css_input.request.header.size;++i) assert(!service_css_ipc(state));
+    for(unsigned i=0;i<100 && state->css_sent<css_input.request.header.size;++i) assert(!transport_css_turn(state));
     assert(state->css_sent==css_input.request.header.size);
     browser_resource_needs_t n={.magic=BROWSER_RESOURCE_NEED_MAGIC,.version=BROWSER_RESOURCE_VERSION,
         .generation=workspace->resources[state->active^1U].generation,.identity=state->html_request};
@@ -351,7 +360,7 @@ static void complete_needs(browser_state_t *state,reist_gui_surface_client_t *cl
     n.size=offsetof(browser_resource_needs_t,items)+sizeof(n.items[0]);
     if(corrupt) ++n.generation;
     memcpy(worker_wire,&n,n.size); worker_length=n.size; worker_offset=0;
-    for(unsigned i=0;i<40 && state->css_received<worker_length;++i) assert(!service_css_ipc(state));
+    for(unsigned i=0;i<40 && state->css_received<worker_length;++i) assert(!transport_css_turn(state));
     clock_ms+=10; process.state=X86OS_PROCESS_ZOMBIE; process.exit_status=0;
     service_loads(state,client);
     assert(!exists && !endpoint_live && !state->child_pid);
@@ -561,18 +570,19 @@ int main(int argc, char **argv) {
     finish_load_turn(&paced,0,paced.load_progress); assert(idle_sleeps==1);
     css_input.request.header.size=9U*BROWSER_CSS_PACKET_DATA;
     uint32_t progress=paced.load_progress;
-    assert(!service_css_ipc(&paced));
+    assert(!transport_css_turn(&paced));
     assert(paced.css_sent==8U*BROWSER_CSS_PACKET_DATA && handoff_yields==8);
     finish_load_turn(&paced,0,progress); assert(idle_sleeps==1);
     progress=paced.load_progress;
-    assert(!service_css_ipc(&paced));
+    assert(!service_css_ipc(&paced) && paced.css_calls==8); /* same turn cannot reset its budget */
+    assert(!transport_css_turn(&paced));
     assert(paced.css_sent==css_input.request.header.size && handoff_yields==9);
     finish_load_turn(&paced,0,progress); assert(idle_sleeps==1);
     progress=paced.load_progress;
-    assert(!service_css_ipc(&paced) && handoff_yields==9);
+    assert(!transport_css_turn(&paced) && handoff_yields==9);
     finish_load_turn(&paced,0,progress); assert(idle_sleeps==2);
     paced.css_sent=0; handoff_slot=1;
-    assert(!service_css_ipc(&paced) && !paced.css_sent && handoff_yields==9);
+    assert(!transport_css_turn(&paced) && !paced.css_sent && handoff_yields==9);
     finish_load_turn(&paced,0,progress); assert(idle_sleeps==3);
     finish_load_turn(&paced,1,progress); assert(idle_sleeps==3);
     endpoint_live=handoff_mode=handoff_slot=handoff_yields=request_written=0;
@@ -873,6 +883,12 @@ static void render_scroll_cases(const char *html, size_t length, uint32_t width,
     /* Chrome-only updates must not allocate/upload another document buffer. */
     unsigned before = uploads; state.chrome_redraw = 1;
     assert(render(&state, &client) == 0 && uploads == before);
+    /* Scripted titles remain visible in chrome, including a multibyte
+     * scalar across the truncation edge; still no document upload. */
+    state.document_scripted=1; state.chrome_redraw=1;
+    for(unsigned i=0;i+3<sizeof(documents[0].title);i+=3) memcpy(documents[0].title+i,"\xe2\x82\xac",3);
+    documents[0].title[(sizeof(documents[0].title)-1)/3*3]=0;
+    assert(render(&state,&client)==0 && uploads==before);
     assert(desktop_surface_destroy(&manager, owner, client.surface) == 0);
     assert(x86os_display_surface_buffer_destroy(state.buffer_id, state.buffer_generation) == 0);
     assert(!live[0] && !live[1] && !paint_failures);
@@ -1444,6 +1460,8 @@ class BrowserRuntimeTests(unittest.TestCase):
             source.write_text(TRANSPORT_HOST, encoding="utf-8")
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
             run_host([str(source), "userspace/gui/apps/browser/browser_model.cpp",
+                      "userspace/gui/apps/browser/browser_script.cpp", "userspace/gui/apps/browser/script_protocol.c",
+                      "userspace/gui/apps/browser/js_session.cpp", "userspace/gui/apps/browser/js_protocol.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/apps/browser/browser_response.cpp", "userspace/programs/curl_http.c",
                       "userspace/gui/apps/browser/browser_resources.cpp", "userspace/gui/apps/browser/browser_forms.c",

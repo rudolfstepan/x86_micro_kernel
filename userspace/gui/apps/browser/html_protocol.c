@@ -82,7 +82,7 @@ int browser_html_validate(const browser_html_reply_t *r, size_t length,
         h->parent_pid!=q->parent_pid || !h->parent_generation ||
         h->parent_generation!=q->parent_generation || !pid || h->child_pid!=pid ||
         !h->child_generation || (generation && h->child_generation!=generation) ||
-        h->input_length!=q->input_length || h->mode || h->reserved[0]!=q->reserved[0] || h->reserved[1]) return -84;
+        h->input_length!=q->input_length || h->mode || h->reserved[0]!=q->reserved[0] || h->reserved[1]!=q->reserved[1]) return -84;
     return browser_html_document_validate(&r->document);
 }
 int browser_html_document_validate(const reist_html_document_t *d) {

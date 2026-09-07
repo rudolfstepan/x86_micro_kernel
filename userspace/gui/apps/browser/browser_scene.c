@@ -12,10 +12,11 @@ int browser_css_request_validate(const browser_css_request_t *q) {
         !h->parent_pid || !h->parent_generation || h->child_pid || h->child_generation ||
         !h->input_length || h->mode>2 ||
         (h->version==BROWSER_HTML_DOCUMENT_VERSION)!=(q->version==BROWSER_CSS_DOCUMENT_VERSION) ||
+        (h->version==BROWSER_HTML_SCRIPT_VERSION)!=(q->version==BROWSER_CSS_SCRIPT_VERSION) ||
         !q->width || q->width>1024 || !q->height || q->height>768) return -84;
     uint32_t original=(uint32_t)sizeof(*q)+h->input_length;
     if(q->version==1U || q->version==BROWSER_SCENE_VERSION) { if(h->size!=original) return -84; }
-    else if(q->version==BROWSER_CSS_RESOURCE_VERSION || q->version==BROWSER_CSS_DOCUMENT_VERSION) {
+    else if(q->version==BROWSER_CSS_RESOURCE_VERSION || q->version==BROWSER_CSS_DOCUMENT_VERSION || q->version==BROWSER_CSS_SCRIPT_VERSION) {
         if(h->size<original+BROWSER_RESOURCE_HEADER_BYTES || h->size>original+BROWSER_RESOURCE_WIRE_CAPACITY) return -84;
     } else return -84;
     uint32_t url_length=0;
@@ -57,7 +58,7 @@ int browser_css_unpack(const uint8_t *in,size_t length,const browser_css_request
     if (sizes[0]>sizeof(*r) || sizes[1]<20 || sizes[1]>sizeof(*s) || 8U+sizes[0]+sizes[1]!=length) return -84;
     uint32_t prefix[5]; memcpy(prefix,in+8+sizes[0],20);
     if ((prefix[0]!=BROWSER_SCENE_VERSION && prefix[0]!=BROWSER_SCENE_DOCUMENT_VERSION) ||
-        (prefix[0]==BROWSER_SCENE_DOCUMENT_VERSION && q->version!=BROWSER_CSS_DOCUMENT_VERSION) || prefix[1]!=q->width || prefix[2]!=q->height ||
+        (prefix[0]==BROWSER_SCENE_DOCUMENT_VERSION && q->version!=BROWSER_CSS_DOCUMENT_VERSION && q->version!=BROWSER_CSS_SCRIPT_VERSION) || prefix[1]!=q->width || prefix[2]!=q->height ||
         prefix[4]>BROWSER_SCENE_RUNS) return -84;
     if (browser_html_unpack(in+8,sizes[0],r) ||
         browser_html_validate(r,sizeof(*r),&q->header,pid,generation)) return -84;

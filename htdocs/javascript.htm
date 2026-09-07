@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><title>JavaScript test</title>
+<style>body { background:white; color:#101010; } p { font-size:24px; }</style></head><body>
+<h1>REIST JavaScript</h1><p id="result">JavaScript not executed</p>
+<script>
+var executions=1;
+var target=document.getElementById('result');
+var futureAbsent=document.getElementById('future')===null;
+target.textContent='First script';
+throw new Error('Expected ordinary author exception');
+</script>
+<script>
+if(window!==self || executions!==1 || !futureAbsent || target!==document.getElementById('result') || target.textContent!=='First script')
+    throw new Error('Parser order or identity');
+target.textContent='JavaScript works: order, DOM, exception OK';
+document.title='REIST JavaScript OK';
+executions++;
+</script>
+<p id="future">Future parser node</p>
+<script src="absent.js">document.title='BAD EXTERNAL';</script>
+<script type="module">document.title='BAD MODULE';</script>
+<noscript>BAD NOSCRIPT</noscript>
+<p><a href="jsnext.htm">Next JavaScript document</a></p>
+</body></html>

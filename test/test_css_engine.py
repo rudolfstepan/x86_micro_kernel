@@ -52,7 +52,7 @@ class CssEngineTests(unittest.TestCase):
                 list(pool.map(compile_one,jobs))
             sources = [ROOT / name for name in ("test/test_css_engine_host.c",
                 "userspace/libc/lib/bytes.c", "userspace/libc/lib/heap.c",
-                "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/css_engine.c",
+                "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/script_protocol.c", "userspace/gui/apps/browser/css_engine.c",
                 "userspace/gui/apps/browser/browser_forms.c",
                 "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/html_protocol.c",
                 "userspace/programs/curl_http.c",

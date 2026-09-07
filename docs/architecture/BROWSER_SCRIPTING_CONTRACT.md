@@ -82,3 +82,40 @@ Compiler bounds90s/four workers (existing HTML/CSS compilation120s unchanged),
 native execution30s, guest180s, headless only and suppress host crash dialogs.
 Frozen gate commands and file scope in the queue. Retain all failures/images;
 only repeat affected gates after a demonstrated in-scope fix. No agents/push.
+
+## Implemented adapter details
+
+The private HTML header remains48bytes and CSS request444bytes. Append-only
+HTML profile4 / CSS profile5 use the formerly zero second reserved word for
+the separate DOM response endpoint; earlier profiles retain their old checks.
+JSWORK and its engine/service protocol are unchanged. The browser owns a
+noncopyable C++ adapter and checks its explicit cleanup before destruction.
+An unreapable/unknown JS owner is a terminal browser diagnostic, not a silent
+infinite retry or a new child with borrowed old authority.
+
+The initial Element.id reflection is read-only (assignment throws); tagName is
+read-only. There is no Element constructor API or DOM event lifetime after
+parsing. The realm is gracefully shut down after a parse; reflow uses only
+the accepted journal. Local documents report their existing native VFS path
+as URL/documentURI; network documents report the admitted URL. The UTF-8 tree
+cannot contain embedded NUL: that journal is rejected, not truncated. DOM
+quota exhaustion poisons journal extraction even if author code catches the
+RangeError. Script completion values still share the accepted bounded EVAL
+result conversion; this is not a general browser execution compatibility claim.
+
+DOM traversal and title whitespace normalization are iterative, avoiding
+recursive helper/callback chains on the unchanged16KiB interpreter stack.
+The test uses the real QuickJS interpreter at both O0/O2 and the real Hubbub
+callback/tree with malformed-journal admission. Host owner tests use only
+OS-boundary mocks around the actual C++ owner, session and wire validators.
+The guest selector is a trusted keyboard action on the existing explicit
+input probe, never a URL/source pattern; faults reuse accepted JSWORK argv
+fixture modes, not a privileged API exposed to page scripts.
+
+On the reference desktop the native frame can retain its original REIST Web
+caption. The browser therefore also paints the current scripted document title
+in its own chrome, independently of compositor decoration caching. The guest
+requires actual title pixels to change on navigation, survive failed candidates
+and return on recovery. UTF-8 truncation at the chrome edge has a real renderer
+regression; it never triggers another document-buffer upload. This does not
+claim a repair of shared native-window decoration refresh.

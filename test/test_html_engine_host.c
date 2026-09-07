@@ -10,8 +10,10 @@
 
 static reist_html_document_t doc;
 extern _Noreturn void _Exit(int);
+#undef assert
+#define assert(expr) do { if (!(expr)) { fprintf(stderr,"%s:%d: %s\n",__FILE__,__LINE__,#expr); _Exit(1); } } while (0)
 _Noreturn void reist_libc_fail(unsigned code) { (void)code; _Exit(70); }
-static _Alignas(max_align_t) uint8_t legacy_backing[REIST_LIBC_HEAP_LIMIT];
+static _Alignas(max_align_t) uint8_t legacy_backing[32U*1024U*1024U];
 static size_t legacy_used;
 static unsigned legacy_initializations,legacy_oom;
 static void *legacy_acquire(void *unused,size_t size) {
@@ -24,7 +26,7 @@ static void legacy_release(void *unused,void *p,size_t size) {
     assert((uint8_t *)p>=legacy_backing && (uint8_t *)p+size<=legacy_backing+legacy_used);
 }
 int reist_libc_init_process(size_t budget) {
-    assert(budget==REIST_LIBC_HEAP_LIMIT); ++legacy_initializations;
+    assert(budget==REIST_LIBC_HEAP_LIMIT || budget==sizeof(legacy_backing)); ++legacy_initializations;
     reist_libc_backing_t backing={1,sizeof(backing),(uint32_t)budget,256U*1024U,NULL,legacy_acquire,legacy_release};
     return reist_libc_init_backing(&backing);
 }
@@ -33,7 +35,9 @@ static const char *find(const char *text, const char *part) {
     for (; *text; ++text) if (!strncmp(text,part,length)) return text;
     return NULL;
 }
+#include "browser_script_dom_host.c"
 int main(int argc, char **argv) {
+    if(argc>1 && !strcmp(argv[1],"scripted")) { script_dom_test(); return 0; }
     if(argc>1 && !strcmp(argv[1],"numeric-cr")) {
         const char html[]="<textarea>a&#13;&#10;b</textarea>"
             "<textarea>a\r\nb</textarea><textarea>a\n\nb</textarea>"

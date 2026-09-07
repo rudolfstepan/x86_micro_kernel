@@ -1,5 +1,5 @@
 /* Ring-3 browser: bounded semantic HTML, immutable image underlay and retained
- * text/chrome. CURL alone owns network/TLS authority. Scripts remain inert. */
+ * text/chrome. CURL alone owns network/TLS authority. JSWORK executes scripts. */
 #include "x86os.h"
 #include "reist/gui/font_catalog.h"
 #include "reist/gui/surface_client.h"
@@ -9,6 +9,7 @@
 #include "browser_response.h"
 #include "html_protocol.h"
 #include "browser_scene.h"
+#include "browser_script.h"
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -34,7 +35,8 @@ typedef struct browser_link_hit {
     uint32_t link_index;
 } browser_link_hit_t;
 typedef struct browser_state {
-    uint32_t active, loaded, redraw, chrome_redraw, status_redraw, exit_requested;
+    browser_script_owner *scripts;
+    uint32_t active, loaded, redraw, chrome_redraw, status_redraw, exit_requested, document_scripted;
     uint32_t address_focused, address_replace_pending, address_length, address_cursor, address_start;
     uint32_t scroll_y, painted_scroll, armed_link, probe, probe_phase;
     uint32_t buffer_id, buffer_generation, body_frames, chrome_frames;
@@ -45,7 +47,7 @@ typedef struct browser_state {
     uint32_t fetch_endpoint, fetch_received, fetch_total, load_progress;
     browser_html_header_t html_request;
     x86os_ipc_handle_t css_endpoint;
-    uint32_t css_sent, css_received, css_total, reflow_pending, reflow_job, active_length;
+    uint32_t css_sent, css_received, css_total, css_calls, reflow_pending, reflow_job, active_length;
     uint32_t probe_resize_width;
     int32_t wheel_remainder;
     uint32_t probe_wheel_down, probe_wheel_up;
@@ -391,6 +393,7 @@ static int child_info(browser_state_t *state, x86os_process_info_t *result) {
     state->child_check=3; return -84;
 }
 static void cancel_fetch(browser_state_t *state) {
+    browser_script_cancel(state->scripts);
     if (state->child_pid <= 0 || state->job_cancelled) return;
     x86os_process_info_t info;
     state->job_cancelled = 1U;
@@ -454,11 +457,17 @@ static int start_html_worker(browser_state_t *state, reist_gui_surface_client_t 
     state->html_request=(browser_html_header_t){BROWSER_HTML_MAGIC,BROWSER_HTML_DOCUMENT_VERSION,
         sizeof(browser_css_request_t)+length,sequence,(uint32_t)identity.pid,identity.generation,
         0,0,length,state->probe ? state->parse_mode : 0U,{state->document_encoding,0}};
+    uint32_t scripting=state->scripts && !state->parse_mode;
+    if(scripting) {
+        if(browser_script_prepare(state->scripts,&state->html_request,state->reflow_job)) return -84;
+        state->html_request.version=BROWSER_HTML_SCRIPT_VERSION;
+        state->html_request.reserved[1]=browser_script_endpoint(state->scripts);
+    }
     state->parse_mode=0U;
-    state->job_deadline=x86os_uptime_ms()+BROWSER_HTML_DEADLINE_MS;
+    state->job_deadline=x86os_uptime_ms()+(scripting?BROWSER_SCRIPT_DEADLINE:BROWSER_HTML_DEADLINE_MS);
     html_parent_phase("budget-start");
     cleanup_fetch_channel(state);
-    css_input.request=(browser_css_request_t){.header=state->html_request,.version=BROWSER_CSS_DOCUMENT_VERSION,
+    css_input.request=(browser_css_request_t){.header=state->html_request,.version=scripting?BROWSER_CSS_SCRIPT_VERSION:BROWSER_CSS_DOCUMENT_VERSION,
         .width=client->width>BROWSER_SCROLLBAR_WIDTH ? client->width-BROWSER_SCROLLBAR_WIDTH : 1,
         .height=viewport_height(client)};
     copy_text(css_input.request.document_url,sizeof(css_input.request.document_url),state->job_url);
@@ -492,17 +501,22 @@ static int start_html_worker(browser_state_t *state, reist_gui_surface_client_t 
     if (x86os_ipc_delegate(state->css_endpoint,pid,X86OS_IPC_RIGHT_SEND|X86OS_IPC_RIGHT_RECEIVE)) {
         cancel_fetch(state); return -84;
     }
+    if(scripting && browser_script_bind(state->scripts,(uint32_t)pid,state->child_generation)) {
+        cancel_fetch(state); return -84;
+    }
     set_status(state,"HTML5/CSS wird isoliert verarbeitet ...");
     return 0;
 }
 static int service_css_ipc(browser_state_t *state) {
+    if(browser_script_busy(state->scripts)) return 0;
     /* At most eight nonblocking packets per UI turn. Never wait for queue space
      * while withholding input or the child's replies. One half-duplex stream. */
-    for (unsigned i=0;i<8;++i) {
+    for (unsigned i=0;i<8 && state->css_calls<8;++i) {
         /* Successful final send may be followed immediately by child exit.
          * Do not read past the framed reply into the channel's normal EPIPE.
          * An incomplete reply still goes through receive/error validation. */
         if (state->css_total && state->css_received==state->css_total) return 0;
+        ++state->css_calls;
         x86os_ipc_bulk_message_t m={X86OS_IPC_BULK_MESSAGE_VERSION,sizeof(m),0,{0}};
         if (state->css_sent<css_input.request.header.size) {
             uint32_t n=css_input.request.header.size-state->css_sent;
@@ -518,7 +532,9 @@ static int service_css_ipc(browser_state_t *state) {
             if (rc==-11) return 0;
             if (rc || m.version!=X86OS_IPC_BULK_MESSAGE_VERSION || m.struct_size!=sizeof(m)) return -84;
             browser_css_packet_t packet; memcpy(&packet,m.payload,sizeof(packet));
-            if (browser_css_packet_accept(&packet,m.length,state->html_request.request,image_bytes,
+            int script=browser_script_receive(state->scripts,&packet,m.length);
+            if(script<0) return script;
+            if (!script && browser_css_packet_accept(&packet,m.length,state->html_request.request,image_bytes,
                 BROWSER_CSS_WIRE_CAPACITY,&state->css_received,&state->css_total)) return -84;
         }
         /* A successful packet wakes the peer. Hand it the CPU immediately
@@ -526,6 +542,7 @@ static int service_css_ipc(browser_state_t *state) {
          * No yield on EAGAIN; at most eight progress-linked handoffs per turn. */
         ++state->load_progress;
         if(x86os_yield()) return -5;
+        if(browser_script_busy(state->scripts)) return 0;
     }
     return 0;
 }
@@ -680,7 +697,8 @@ static int publish_html_reply(browser_state_t *state, reist_gui_surface_client_t
         state->reflow_job ? state->scroll_y : 0,surface_pixels,client->width,client->height,BROWSER_CONTENT_TOP,viewport_height(client));
     if (result != 0) return result;
     x86os_puts(state->reflow_job ? "BROWSER_CSS_REFLOW_MS " : "BROWSER_CSS_DOCUMENT_MS ");
-    x86os_print_number((int)(x86os_uptime_ms()-(state->job_deadline-BROWSER_HTML_DEADLINE_MS)));
+    x86os_print_number((int)(x86os_uptime_ms()-(state->job_deadline-
+        (css_input.request.version==BROWSER_CSS_SCRIPT_VERSION ? BROWSER_SCRIPT_DEADLINE : BROWSER_HTML_DEADLINE_MS))));
     x86os_puts("\n");
     copy_text(state->active_url, sizeof(state->active_url), url);
     /* Do not overwrite input typed while a previous navigation was loading. */
@@ -706,6 +724,8 @@ static int publish_html_reply(browser_state_t *state, reist_gui_surface_client_t
     state->redraw = state->chrome_redraw = 1U;
     if (!state->reflow_job) scroll_to_fragment(state, client);
     else set_scroll(state,client,state->scroll_y);
+    browser_script_commit(state->scripts,state->reflow_job);
+    state->document_scripted=browser_script_has_active(state->scripts);
     state->reflow_job=state->reflow_pending=0;
     state->resource_loading=state->resource_document_length=0;
     char title[REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY];
@@ -740,7 +760,7 @@ static int publish_document_bytes(browser_state_t *state, reist_gui_surface_clie
             (state->scene_image_sizes[i][0]!=slot->source_width ||
              state->scene_image_sizes[i][1]!=slot->source_height)) same_images=0;
     }
-    if (state->loaded && !workspace->resources[state->active].count &&
+    if (state->loaded && !browser_script_has_active(state->scripts) && !workspace->resources[state->active].count &&
         !state->parse_mode && !state->reflow_pending && same_images &&
         (state->image_next>=documents[state->active].image_count || state->image_next>=BROWSER_IMAGE_CACHE_COUNT) &&
         client->width>BROWSER_SCROLLBAR_WIDTH && (scenes[state->active].version==BROWSER_SCENE_VERSION ||
@@ -860,6 +880,20 @@ static int finish_fetch(browser_state_t *state, reist_gui_surface_client_t *clie
         set_status(state, "HTTP-Weiterleitung ... Esc: abbrechen");
         x86os_puts("BROWSER_REDIRECT_OK\n"); return 0;
     }
+    if(document && state->scripts) {
+        const char policy[]="content-security-policy:";
+        int denied=0;
+        for(uint32_t i=0;i+sizeof(policy)-1<=response.body_offset;++i) {
+            if(i && bytes[i-1]!='\n') continue;
+            uint32_t j=0;
+            for(;j<sizeof(policy)-1;++j) {
+                uint8_t c=bytes[i+j]; if(c>='A' && c<='Z') c=(uint8_t)(c+'a'-'A');
+                if(c!=(uint8_t)policy[j]) break;
+            }
+            if(j==sizeof(policy)-1) { denied=1; break; }
+        }
+        browser_script_deny(state->scripts,denied);
+    }
     for (uint32_t i = 0; i < response.body_length; ++i) bytes[i] = bytes[response.body_offset + i];
     if (state->job_kind==4U) {
         if ((int32_t)(x86os_uptime_ms()-state->resource_deadline)>=0) return -110;
@@ -894,6 +928,7 @@ static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, 
         return 0;
     }
     copy_text(state->pending_url, sizeof(state->pending_url), normalized);
+    browser_script_navigation(state->scripts);
     state->pending = 1U;
     state->document_encoding=BROWSER_ENCODING_AUTO;
     state->parse_pending = 0U;
@@ -909,6 +944,7 @@ static int navigate(browser_state_t *state, reist_gui_surface_client_t *client, 
 /* Poll only completed owned generations: x86os_wait never blocks the UI.
  * A single child and a single immutable temporary resource exist at a time. */
 static void service_loads(browser_state_t *state, reist_gui_surface_client_t *client) {
+    state->css_calls=0;
     uint32_t now = x86os_uptime_ms();
     if (state->child_pid > 0) {
         if ((int32_t)(now - state->job_deadline) >= 0) {
@@ -930,6 +966,7 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
                 browser_runtime_failure(state,"cancel-reap-timeout",-110);
             return;
         }
+        if(state->job_kind==3U && browser_script_busy(state->scripts)) cancel_fetch(state);
         /* Exit may race the last send after this turn's first drain. The
          * endpoint has one bulk slot: drain that final packet before reaping. */
         if (state->job_kind==3U && !state->job_cancelled) {
@@ -937,6 +974,8 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
             if(rc) cancel_job(state,"css-ipc-final",rc,x86os_uptime_ms());
         }
         if (state->job_kind!=3U && !state->job_cancelled && service_fetch_ipc(state)) cancel_fetch(state);
+        if(state->job_kind==3U && !state->job_cancelled && state->css_calls==8 &&
+            (!state->css_total || state->css_received!=state->css_total)) return;
         int status = -1;
         uint32_t pid=(uint32_t)state->child_pid, generation=state->child_generation;
         int waited=x86os_wait(state->child_pid, &status);
@@ -946,7 +985,12 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
         state->child_pid = 0;
         state->child_generation = 0U;
         int result = -5;
-        if (!state->job_cancelled && status == 0) result = state->job_kind==3U
+        int script_status=0;
+        if(state->job_kind==3U) {
+            if(!state->job_cancelled && status==0) script_status=browser_script_finish_parse(state->scripts);
+            else browser_script_cancel(state->scripts);
+        }
+        if (!script_status && !state->job_cancelled && status == 0) result = state->job_kind==3U
             ? publish_html_reply(state,client,pid,generation) : finish_fetch(state, client);
         if (state->css_endpoint) { (void)x86os_ipc_close(state->css_endpoint); state->css_endpoint=0; }
         if (state->job_kind==3U && result!=0 && result!=-11) {
@@ -991,8 +1035,10 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
         return;
     }
     if (state->parse_pending && !state->pending) {
+        if(!browser_script_ready(state->scripts)) return;
         int result=start_html_worker(state,client);
         if (result!=0) {
+            browser_script_cancel(state->scripts);
             abandon_resources(state);
             x86os_puts("BROWSER_HTML5_START_ERROR result="); x86os_print_number(result); x86os_puts("\n");
             set_status(state,"HTML5 nicht verfuegbar - Seite bleibt");
@@ -1311,6 +1357,16 @@ static int render_chrome(browser_state_t *state, reist_gui_surface_client_t *cli
     static const char help[] = "Enter: URL  R: neu laden  Esc: Abbruch";
     if (paint_text(client, 12, 51, client->width > 24U ? client->width - 24U : 1U,
         help, sizeof(help) - 1U, 0x00606060U, 0x00D4D0C8U, 14U) != 0) return -1;
+    /* Keep the scripting document title observable in browser-owned chrome;
+     * native window-decoration refresh is a separate compositor contract. */
+    if(state->document_scripted && client->width>420U) {
+        uint32_t width=client->width-400U;
+        uint32_t limit=width/8U;
+        if(limit>=REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY) limit=REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY-1;
+        size_t amount=utf8_prefix_length(documents[state->active].title,limit);
+        if(amount && paint_text(client,388,51,width,documents[state->active].title,(uint32_t)amount,
+            0x00202020U,0x00D4D0C8U,14U)) return -1;
+    }
     int result = reist_gui_surface_client_paint_commit_layer(client, REIST_GUI_SURFACE_PAINT_LAYER_HOVER);
     if (result == 0) { state->chrome_redraw = 0U; ++state->chrome_frames; }
     timing_end(TIME_CHROME,measured_at);
@@ -2050,6 +2106,34 @@ static int public_probe_step(browser_state_t *state,reist_gui_surface_client_t *
     if(strcmp(state->active_url,"http://10.0.2.2:18084/done")) return -1;
     x86os_puts("BROWSER_PUBLIC_REDIRECT_RASTER_OK\n"); state->exit_requested=1; return 0;
 }
+static int scripting_probe_step(browser_state_t *state,reist_gui_surface_client_t *client) {
+    static uint32_t executions,failures;
+    if(state->child_pid || state->pending || state->parse_pending || state->reflow_pending ||
+       state->resource_loading || !browser_script_ready(state->scripts) || state->redraw || !state->loaded) return 0;
+    uint32_t p=state->probe_phase;
+    if(p==1 || p==3 || p==5 || p==7 || p==9 || p==11) return 0;
+    const char *title=(p==4 || p==6 || p==8) ? "REIST fresh realm OK" : "REIST JavaScript OK";
+    const char *text=(p==4 || p==6 || p==8) ? "Fresh JavaScript document OK" : "JavaScript works: order, DOM, exception OK";
+    const reist_html_document_t *doc=&documents[state->active];
+    size_t length=strlen(text),available=bounded_length(doc->text,sizeof(doc->text));
+    uint32_t found=0;
+    for(size_t i=0;i+length<=available;++i) if(!memcmp(doc->text+i,text,length)) { found=1; break; }
+    if(!text_equal(doc->title,title) || !found) return -1;
+    if(p==0 || p==2 || p==4 || p==10) {
+        if(state->parser_failures!=failures || (p==2 && browser_script_executions(state->scripts)!=executions)) return -1;
+        executions=browser_script_executions(state->scripts);
+        x86os_puts(p==0 ? "BROWSER_SCRIPT_DOM_OK" : p==2 ? "BROWSER_SCRIPT_REFLOW_OK" :
+            p==4 ? "BROWSER_SCRIPT_NAVIGATION_OK" : "BROWSER_SCRIPT_RECOVERY_OK");
+        x86os_puts(" executions="); x86os_print_number((int)executions);
+        x86os_puts(" width="); x86os_print_number((int)client->width);
+        x86os_puts(" height="); x86os_print_number((int)client->height); x86os_puts("\n");
+    } else if(p==6 || p==8) {
+        if(state->parser_failures!=failures+1) return -1;
+        failures=state->parser_failures;
+        x86os_puts(p==6 ? "BROWSER_SCRIPT_HANG_CONTAINED_OK\n" : "BROWSER_SCRIPT_FAULT_CONTAINED_OK\n");
+    } else return -1;
+    ++state->probe_phase; return 0;
+}
 static const char *initial_target(int argc, char **argv, uint32_t *probe) {
     const char *target = "/htdocs/index.html";
     for (int index = 1; index < argc; ++index) {
@@ -2113,6 +2197,8 @@ int main(int argc, char **argv) {
     make_temporary_path(&state);
     state.armed_link = UINT32_MAX;
     const char *target = initial_target(argc, argv, &state.probe);
+    state.scripts=browser_script_create();
+    if(!state.scripts) browser_runtime_failure(&state,"script-owner",-12);
     timing_enabled=state.probe;
     state.redraw = state.chrome_redraw = state.status_redraw = 1U;
     if (state.probe==1) x86os_puts("BROWSER_PROBE_SELECTOR_READY\n");
@@ -2135,9 +2221,24 @@ int main(int argc, char **argv) {
                 if (state.loaded) {
                     state.reflow_pending=1;
                 }
+                if(state.probe==7 && state.probe_phase==1) state.probe_phase=2;
                 set_scroll(&state, &client, state.scroll_y);
                 state.redraw = state.chrome_redraw = state.status_redraw = 1U;
             } else if (message.type == REIST_GUI_SURFACE_INPUT && message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD && message.input.pressed) {
+                if(state.probe==3 && state.probe_phase==1 && !state.address_focused && message.input.key=='j') {
+                    state.probe=7; state.probe_phase=0;
+                    probe_deadline=x86os_uptime_ms()+120000U;
+                    x86os_puts("BROWSER_SCRIPT_SELECTED\n");
+                    (void)navigate(&state,&client,"/htdocs/javascript.htm"); continue;
+                }
+                if(state.probe==7 && !state.address_focused) {
+                    uint32_t key=message.input.key,p=state.probe_phase;
+                    if((p==3 && key=='n') || (p==5 && key=='h') || (p==7 && key=='f') || (p==9 && key=='r')) {
+                        browser_script_fixture(state.scripts,key=='h'?2:key=='f'?1:0);
+                        ++state.probe_phase;
+                        (void)navigate(&state,&client,key=='n'?"/htdocs/jsnext.htm":"/htdocs/javascript.htm"); continue;
+                    }
+                }
                 if (state.probe == 3U) {
                     x86os_puts("BROWSER_INPUT_KEY ordinal="); x86os_print_number((int)++state.input_keys);
                     x86os_puts(" code="); x86os_print_number((int)message.input.key); x86os_puts("\n");
@@ -2165,7 +2266,7 @@ int main(int argc, char **argv) {
         int rendered=render(&state, &client);
         if (rendered != 0) { browser_runtime_failure(&state,"render",rendered); status = -5; break; }
         if (state.probe) {
-            int probe_status=state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
+            int probe_status=state.probe==7 ? scripting_probe_step(&state,&client) : state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
             if (probe_status || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
                 timing_dump();
                 if (state.probe==6U) {
@@ -2190,13 +2291,21 @@ int main(int argc, char **argv) {
             }
         }
         uint32_t progress=state.load_progress;
+        uint32_t script_progress=browser_script_progress(state.scripts);
+        int script_status=browser_script_poll(state.scripts);
+        state.load_progress+=browser_script_progress(state.scripts)-script_progress;
+        if(script_status && state.child_pid>0 && state.job_kind==3U)
+            cancel_job(&state,"javascript",script_status,x86os_uptime_ms());
+        if(browser_script_stranded(state.scripts)) browser_runtime_failure(&state,"javascript-reap",-84);
         if (!state.exit_requested) service_loads(&state, &client);
         finish_load_turn(&state,processed,progress);
     }
     timing_dump();
     cancel_fetch(&state);
+    uint32_t script_reap_deadline=x86os_uptime_ms()+BROWSER_CHILD_REAP_MS;
     uint32_t reap_deadline = state.child_reap_deadline;
     while (state.child_pid > 0 && (int32_t)(x86os_uptime_ms() - reap_deadline) < 0) {
+        (void)browser_script_poll(state.scripts);
         x86os_process_info_t info;
         if (child_info(&state, &info) != 0) break;
         if (info.state == X86OS_PROCESS_ZOMBIE) {
@@ -2207,6 +2316,11 @@ int main(int argc, char **argv) {
         (void)x86os_sleep_ms(1U);
     }
     if (state.child_pid == 0) cleanup_fetch_channel(&state);
+    while(!browser_script_ready(state.scripts) && (int32_t)(x86os_uptime_ms()-script_reap_deadline)<0) {
+        (void)browser_script_poll(state.scripts); (void)x86os_sleep_ms(1);
+    }
+    int script_cleanup=browser_script_destroy(state.scripts);
+    if(!script_cleanup) state.scripts=NULL;
     int resource_cleanup=0;
     if(resource_probe_files&1U) resource_cleanup|=x86os_unlink(resource_probe_html);
     if(resource_probe_files&2U) resource_cleanup|=x86os_unlink(resource_probe_css);
@@ -2217,7 +2331,7 @@ int main(int argc, char **argv) {
     (void)x86os_ipc_release(endpoint);
     x86os_free(workspace);
     workspace = 0;
-    if (state.child_pid != 0 || destroyed != 0 || released != 0 || resource_cleanup != 0) {
+    if (state.child_pid != 0 || destroyed != 0 || released != 0 || resource_cleanup != 0 || script_cleanup != 0) {
         x86os_puts("BROWSER_CLEANUP_STATE child="); x86os_print_number(state.child_pid);
         x86os_puts(" surface="); x86os_print_number(destroyed);
         x86os_puts(" buffer="); x86os_print_number(released); x86os_puts("\n");

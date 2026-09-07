@@ -2,6 +2,16 @@
 
 Stand: 3. September 2026
 
+7. September, R3.25 abgenommen: echte Inline-JavaScript-Aktivierung im
+Browser auf der akzeptierten JSWORK-Grenze, parsergeordnete DOM-Text-/Titel-
+Aenderungen, gleichbleibende Objektidentitaeten, quelltextgenauer Reflow,
+frische Navigation und begrenztes Fault/Hang/Fencing/Reap/Recovery.
+58 Hostfaelle, VMware70s/QEMU68s, Imageguard1.032s, JS-Browsergast91.188s
+inklusive Titelpixel und unveraenderter Browser-Input-/Crash-/Neustartgast
+bestehen. Geschuetzte Kernel-/Benchmark-/Enginebytes unveraendert.
+Externe/module Skripte, Events/Timer und weitere Browser-APIs bleiben offen;
+Grenzen in BROWSER_SCRIPTING_CONTRACT.md, Belegkarte in CURRENT_WORK.
+
 7. September, R3.24 abgenommen: persistenter JSWORK mit gepruefter
 Nachrichtenverbindung und eigenem nichtblockierenden C++-Owner. Grosser
 Quelltext/Ergebnisse, persistentes Realm, Health/GC, Shutdown und

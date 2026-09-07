@@ -104,6 +104,10 @@ PROGRAMS = {
     ),
     "BROWSER.PRG": (
         ROOT / "userspace/gui/apps/browser/main.c",
+        ROOT / "userspace/gui/apps/browser/browser_script.cpp",
+        ROOT / "userspace/gui/apps/browser/script_protocol.c",
+        ROOT / "userspace/gui/apps/browser/js_session.cpp",
+        ROOT / "userspace/gui/apps/browser/js_protocol.c",
         ROOT / "userspace/gui/apps/browser/browser_model.cpp",
         ROOT / "userspace/gui/apps/browser/browser_forms.c",
         ROOT / "userspace/gui/apps/browser/browser_images.c",
@@ -250,6 +254,8 @@ PROGRAMS = {
 
 PROGRAMS["HTMLWORK.PRG"] = (
     ROOT / "userspace/gui/apps/browser/html_worker.c",
+    ROOT / "userspace/gui/apps/browser/html_script.c",
+    ROOT / "userspace/gui/apps/browser/script_protocol.c",
     ROOT / "userspace/gui/apps/browser/html_engine.c",
     ROOT / "userspace/gui/apps/browser/browser_forms.c",
     ROOT / "userspace/gui/apps/browser/css_engine.c",
@@ -424,9 +430,12 @@ def main() -> None:
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
             if name in ("BROWSER.PRG", "HTMLWORK.PRG"):
                 includes.insert(0, sdk.cpp_include_dir)
+                dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/*script*.h"))
+                dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/js_*.h*"))
                 dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_resources.hpp")
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
             if name == "BROWSER.PRG":
+                dependency_files.append(ROOT / "assets/browser/dom.js")
                 dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_response.hpp")
                 dependency_files.append(ROOT / "assets/fonts/reist-unicode.psf")
                 vendor = ROOT / "third_party/stb_image.h"
@@ -450,7 +459,7 @@ def main() -> None:
                 compile_flags=(
                     (["-fno-inline-functions"]
                      if name == "STORAGE.PRG" else []) +
-                    (["-DREIST_CSS_WORKER", "-ffunction-sections", "-fdata-sections"] if name == "HTMLWORK.PRG" else []) +
+                    (["-DREIST_CSS_WORKER", "-DREIST_SCRIPT_WORKER", "-ffunction-sections", "-fdata-sections"] if name == "HTMLWORK.PRG" else []) +
                     (["-DREIST_CURL_TLS_RUNTIME_PROBE"]
                      if args.curl_tls_runtime_probe and name == "CURL.PRG"
                      else [])) or None,

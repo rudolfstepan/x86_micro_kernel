@@ -2,6 +2,7 @@
  * retired slots are never recycled, so a stale pointer cannot alias a new node.
  * The complete pool is released with the worker address space. */
 #include "html_engine.h"
+#include "script_protocol.h"
 #include <hubbub/parser.h>
 #include <parserutils/charset/utf16.h>
 #include <parserutils/charset/utf8.h>
@@ -18,6 +19,12 @@
 static node legacy_nodes[NODES];
 static attribute legacy_attributes[ATTRS];
 static char legacy_strings[STRINGS];
+static browser_html_script_hook script_hook;
+static void *script_context;
+void browser_html_script_hook_set(browser_html_script_hook hook,void *context) {
+    script_hook=hook; script_context=context;
+}
+int browser_html_script_enabled(void) { return script_hook!=NULL; }
 static struct {
     node *nodes;
     attribute *attributes;
@@ -204,8 +211,36 @@ static hubbub_error encoding(void *ctx, const char *name) {
     /* Other declarations require an unsupported charset/restart adapter. */
     return HUBBUB_ENCODINGCHANGE;
 }
+static int equal_ascii(const char *a,const char *b) {
+    size_t n=strlen(b); return strlen(a)==n && !strncasecmp(a,b,n);
+}
 static hubbub_error script(void *ctx, void *value) {
-    (void)ctx; (void)value; return step(); /* Scripts are inert. */
+    (void)ctx; node *n=checked(value);
+    if(!n || step()!=HUBBUB_OK) return HUBBUB_NOMEM;
+    if(!script_hook || !tree.extended || n->ns!=HUBBUB_NS_HTML) return HUBBUB_OK;
+    for(node *p=n->parent;p;p=p->parent)
+        if(p->kind==1 && (p->ns!=HUBBUB_NS_HTML || !strcmp(p->name,"template"))) return HUBBUB_OK;
+    const char *type=NULL,*language=NULL;
+    for(attribute *a=n->attributes;a;a=a->next) {
+        if(!strcmp(a->name,"src")) return HUBBUB_OK;
+        if(!strcmp(a->name,"type")) type=a->value;
+        if(!strcmp(a->name,"language")) language=a->value;
+    }
+    if(type && *type && !equal_ascii(type,"text/javascript") && !equal_ascii(type,"application/javascript") &&
+       !equal_ascii(type,"text/ecmascript") && !equal_ascii(type,"application/ecmascript") &&
+       !equal_ascii(type,"application/x-javascript") && !equal_ascii(type,"text/jscript")) return HUBBUB_OK;
+    if(!type && language && *language && !equal_ascii(language,"javascript") && !equal_ascii(language,"ecmascript")) return HUBBUB_OK;
+    /* Unsupported enforcing meta policies conservatively disable scripting. */
+    for(uint32_t i=0;i<tree.count;++i) {
+        node *meta=&tree.nodes[i];
+        if(meta->kind!=1 || meta->ns!=HUBBUB_NS_HTML || strcmp(meta->name,"meta")) continue;
+        for(attribute *a=meta->attributes;a;a=a->next)
+            if(!strcmp(a->name,"http-equiv") && equal_ascii(a->value,"content-security-policy")) return HUBBUB_OK;
+    }
+    /* An executing script makes the current character encoding certain. */
+    tree.encoding_fixed=1;
+    if(script_hook(script_context,n)) { tree.failed=1; return HUBBUB_NOMEM; }
+    return HUBBUB_OK;
 }
 static int emit(const char *text, size_t length) {
     if (length>sizeof(tree.projection)-tree.projected) return -28;
@@ -316,7 +351,7 @@ static int parse_tree(const uint8_t *input,size_t length,node **result,uint32_t 
     if (error==HUBBUB_OK) error=hubbub_parser_setopt(parser,HUBBUB_PARSER_TREE_HANDLER,&option);
     option.document_node=root;
     if (error==HUBBUB_OK) error=hubbub_parser_setopt(parser,HUBBUB_PARSER_DOCUMENT_NODE,&option);
-    option.enable_scripting=false;
+    option.enable_scripting=extended && script_hook;
     if (error==HUBBUB_OK) error=hubbub_parser_setopt(parser,HUBBUB_PARSER_ENABLE_SCRIPTING,&option);
     size_t chunk=extended ? 4096 : 256;
     for (size_t offset=0; error==HUBBUB_OK && !tree.failed && offset<length; offset+=chunk) {
@@ -358,4 +393,103 @@ int browser_html5_parse(const uint8_t *input, size_t length, reist_html_document
     if (result) return result;
     if (project(root,0)) return -28;
     return reist_html_document_parse(tree.projection,tree.projected,document);
+}
+
+typedef struct script_writer { char *data; uint32_t at,capacity; } script_writer;
+static int script_bytes(script_writer *w,const char *data,size_t size) {
+    if(size>w->capacity-w->at) return -28;
+    memcpy(w->data+w->at,data,size); w->at+=(uint32_t)size; return 0;
+}
+static int script_number(script_writer *w,uint32_t value) {
+    char reversed[10],out[10]; uint32_t n=0;
+    do { reversed[n++]=(char)('0'+value%10); value/=10; } while(value);
+    for(uint32_t i=0;i<n;++i) out[i]=reversed[n-i-1];
+    return script_bytes(w,out,n);
+}
+static int script_string(script_writer *w,const char *data,size_t size) {
+    static const char hex[]="0123456789abcdef";
+    if(script_bytes(w,"\"",1)) return -28;
+    for(size_t i=0;i<size;++i) {
+        uint8_t c=(uint8_t)data[i];
+        if(c<32) {
+            char escaped[]={'\\','u','0','0',hex[c>>4],hex[c&15]};
+            if(script_bytes(w,escaped,sizeof(escaped))) return -28;
+        } else {
+            if((c=='"' || c=='\\') && script_bytes(w,"\\",1)) return -28;
+            if(script_bytes(w,data+i,1)) return -28;
+        }
+    }
+    return script_bytes(w,"\"",1);
+}
+static uint32_t script_id(node *n) { return n ? (uint32_t)(n-tree.nodes)+1 : 0; }
+int browser_html_script_snapshot(node *script_node,const char *url,char *output,uint32_t capacity,
+    uint32_t *snapshot_size,uint32_t *source_size) {
+    if(!tree.extended || !script_node || !url || !output || !snapshot_size || !source_size ||
+       capacity<BROWSER_SCRIPT_SNAPSHOT) return -22;
+    script_writer w={output,0,BROWSER_SCRIPT_SNAPSHOT};
+    if(script_bytes(&w,"__reistDOM.sync(",16) || script_string(&w,url,strlen(url)) || script_bytes(&w,",[",2)) return -28;
+    for(uint32_t i=0;i<tree.count;++i) {
+        node *n=&tree.nodes[i]; const char *id="";
+        for(attribute *a=n->attributes;a;a=a->next) if(!strcmp(a->name,"id")) { id=a->value; break; }
+        if((i && script_bytes(&w,",",1)) || script_bytes(&w,"[",1)) return -28;
+        uint32_t fields[]={n->kind,n->ns,script_id(n->parent),script_id(n->first),script_id(n->next)};
+        for(unsigned j=0;j<5;++j) if(script_number(&w,fields[j]) || script_bytes(&w,",",1)) return -28;
+        if(script_string(&w,n->name?n->name:"",n->name?strlen(n->name):0) || script_bytes(&w,",",1) ||
+           script_string(&w,id,strlen(id)) || script_bytes(&w,",",1) ||
+           script_string(&w,n->text?n->text:"",n->text?n->length:0) || script_bytes(&w,"]",1)) return -28;
+    }
+    if(script_bytes(&w,"]);",3)) return -28;
+    *snapshot_size=w.at; w.capacity=capacity;
+    for(node *n=script_node->first;n;n=n->next) {
+        if(n->kind!=3 || script_bytes(&w,n->text,n->length)) return -28;
+    }
+    *source_size=w.at-*snapshot_size;
+    return *source_size<=BROWSER_SCRIPT_SOURCE ? 0 : -28;
+}
+static node *script_find(node *root,const char *name) {
+    node *n=root; uint32_t visited=0;
+    while(n && ++visited<=tree.node_limit) {
+        if(n->kind==1 && n->ns==HUBBUB_NS_HTML && !strcmp(n->name,name)) return n;
+        if(n->first) { n=n->first; continue; }
+        while(n!=root && !n->next) n=n->parent;
+        if(n==root) break;
+        n=n->next;
+    }
+    return NULL;
+}
+int browser_html_script_apply(const char *journal,uint32_t size) {
+    browser_script_mutation_t items[BROWSER_SCRIPT_MUTATIONS]; uint32_t count=0,bytes=0;
+    if(!tree.extended || browser_script_journal(journal,size,items,&count,&bytes)) return -84;
+    /* Reserve all cumulative work, strings and retired-node slots before the
+     * first mutation. Detached nodes are never recycled into stale JS IDs. */
+    if(count>(tree.node_limit-tree.count)/3 || bytes+count*20>tree.string_limit-tree.used ||
+       (count && (tree.count*2+12)>(tree.work_limit-tree.work)/count)) return -28;
+    node *head=NULL;
+    for(uint32_t i=0;i<count;++i) {
+        if(items[i].node) {
+            if(items[i].node>tree.count || tree.nodes[items[i].node-1].kind!=1) return -84;
+        } else {
+            head=script_find(&tree.nodes[0],"head"); if(!head) return -84;
+        }
+    }
+    tree.work+=count*tree.count*2;
+    for(uint32_t i=0;i<count;++i) {
+        browser_script_mutation_t *item=&items[i];
+        node *target=item->node ? &tree.nodes[item->node-1] : script_find(&tree.nodes[0],"title");
+        if(!target) {
+            target=create(1); if(!target) return -28;
+            target->name=copy((const uint8_t *)"title",5); target->ns=HUBBUB_NS_HTML;
+            void *added; if(!target->name || append(NULL,head,target,&added)!=HUBBUB_OK) return -28;
+        }
+        node *replacement=NULL;
+        if(item->length) {
+            replacement=create(3); if(!replacement) return -28;
+            replacement->text=tree.strings+tree.used; replacement->length=item->length;
+            if(browser_script_unhex(journal+item->offset,item->length,replacement->text)) return -84;
+            replacement->text[item->length]=0; tree.used+=item->length+1;
+        }
+        while(target->first) detach(target->first);
+        if(replacement) { void *added; if(append(NULL,target,replacement,&added)!=HUBBUB_OK) return -28; }
+    }
+    return 0;
 }

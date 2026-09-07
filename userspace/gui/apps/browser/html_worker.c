@@ -8,6 +8,9 @@ static browser_html_reply_t reply;
 static uint8_t wire_reply[sizeof(reply)];
 #ifdef REIST_CSS_WORKER
 #include "css_engine.h"
+#ifdef REIST_SCRIPT_WORKER
+#include "script_protocol.h"
+#endif
 typedef struct css_worker_buffers {
     struct { browser_css_request_t request; uint8_t bytes[BROWSER_CSS_INPUT_BYTES]; } input;
     browser_resources_t resources;
@@ -44,14 +47,20 @@ static int css_worker_run(uint32_t endpoint,uint32_t deadline,css_worker_buffers
     }
     const browser_css_request_t *q=&css_input.request;
     if (browser_css_request_validate(q) || q->header.size!=total || q->header.request!=request) return 74;
+#ifdef REIST_SCRIPT_WORKER
+    if(q->version==BROWSER_CSS_SCRIPT_VERSION) {
+        deadline=deadline-BROWSER_HTML_DEADLINE_MS+BROWSER_SCRIPT_DEADLINE;
+        if(browser_html_script_setup(endpoint,q->header.reserved[1],&q->header,deadline,q->document_url)) return 74;
+    }
+#endif
     if (q->header.mode==1) { __asm__ volatile("ud2"); return 70; }
     if (q->header.mode==2) { (void)x86os_sleep_ms(BROWSER_HTML_DEADLINE_MS+1000); return 70; }
     int rendered;
-    if(q->version==BROWSER_CSS_RESOURCE_VERSION || q->version==BROWSER_CSS_DOCUMENT_VERSION) {
+    if(q->version==BROWSER_CSS_RESOURCE_VERSION || q->version==BROWSER_CSS_DOCUMENT_VERSION || q->version==BROWSER_CSS_SCRIPT_VERSION) {
         if(browser_resources_unpack(css_input.bytes+q->header.input_length,
             total-(uint32_t)sizeof(*q)-q->header.input_length,q->document_url,&css_resources)) return 74;
         for(uint32_t i=0;i<css_resources.count;++i) if(!css_resources.entries[i].ready) return 74;
-        if(q->version==BROWSER_CSS_DOCUMENT_VERSION)
+        if(q->version==BROWSER_CSS_DOCUMENT_VERSION || q->version==BROWSER_CSS_SCRIPT_VERSION)
             rendered=browser_css_render_document(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,
                 q->document_url,&css_resources,&css_needs,&reply.document,&css_scene,q->header.reserved[0]);
         else rendered=browser_css_render_resources(css_input.bytes,q->header.input_length,q->width,q->height,q->image_sizes,
@@ -104,6 +113,9 @@ static int css_worker(const char *number) {
     css_worker_buffers_t *buffers=x86os_malloc(sizeof(*buffers));
     if(!buffers) return 71;
     int status=css_worker_run(endpoint,deadline,buffers);
+#ifdef REIST_SCRIPT_WORKER
+    browser_html_script_finish();
+#endif
     x86os_free(buffers);
     return status;
 }

@@ -7,6 +7,7 @@
 #include "browser_forms.h"
 #define BROWSER_CSS_RESOURCE_VERSION 2U
 #define BROWSER_CSS_DOCUMENT_VERSION 4U
+#define BROWSER_CSS_SCRIPT_VERSION 5U
 #define BROWSER_CSS_INPUT_BYTES (BROWSER_DOCUMENT_INPUT_CAPACITY+BROWSER_RESOURCE_WIRE_CAPACITY)
 #define BROWSER_CSS_FONT_MAX 64U
 #define BROWSER_SCENE_VERSION 3U
@@ -41,6 +42,9 @@ typedef struct browser_css_packet {
     uint32_t magic, request, offset, total;
     uint8_t bytes[BROWSER_CSS_PACKET_DATA];
 } browser_css_packet_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 int browser_css_request_validate(const browser_css_request_t *);
 int browser_css_pack(const browser_html_reply_t *,const browser_scene_t *,uint8_t *,size_t);
 int browser_css_unpack(const uint8_t *,size_t,const browser_css_request_t *,uint32_t,uint32_t,
@@ -59,4 +63,7 @@ int browser_scene_raster(const reist_html_document_t *, const browser_scene_t *,
 int browser_scene_raster_forms(const reist_html_document_t *, const browser_scene_t *,
     const reist_gui_font_t *, const browser_image_slot_t *, const browser_form_state_t *, uint32_t scroll,
     uint32_t *pixels, uint32_t width, uint32_t height, uint32_t top, uint32_t view);
+#ifdef __cplusplus
+}
+#endif
 #endif

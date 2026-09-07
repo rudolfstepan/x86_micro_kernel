@@ -846,6 +846,8 @@ SYSTEM_IMAGE_FILES := \
 	htdocs/status.jsn=htdocs/status.jsn \
 	htdocs/index.html=htdocs/index.html \
 	htdocs/browser-test.html=htdocs/browser-test.html \
+	htdocs/javascript.htm=htdocs/javascript.htm \
+	htdocs/jsnext.htm=htdocs/jsnext.htm \
 	htdocs/browser-html5-test.html=htdocs/browser-html5-test.html \
 	htdocs/browser-css-test.html=htdocs/browser-css-test.html \
 	htdocs/browser-forms-test.html=htdocs/browser-forms-test.html \
@@ -898,6 +900,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	sbin/audioinfo.prg=% usr/bin/audiotest.prg=% usr/bin/wavplay.prg=% \
 	usr/gui/bin/soundplayer.prg=% usr/gui/bin/imageviewer.prg=% \
 	usr/gui/bin/browser.prg=% usr/bin/htmlwork.prg=% htdocs/index.html=% htdocs/browser-test.html=% htdocs/browser-html5-test.html=% htdocs/browser-css-test.html=% htdocs/browser-forms-test.html=% \
+	htdocs/javascript.htm=% htdocs/jsnext.htm=% \
 	htdocs/browser-stylesheet-test.html=% htdocs/browser-stylesheet-main.css=% htdocs/browser-stylesheet-import.css=% \
 	usr/share/sounds/startup.wav=% \
 	usr/share/sounds/shutdown.wav=% \

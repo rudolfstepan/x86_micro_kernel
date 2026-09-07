@@ -18,6 +18,12 @@ struct node {
 int browser_html5_tree(const uint8_t *input, size_t length, node **root);
 int browser_html5_tree_with_heap(const uint8_t *input,size_t length,node **root,uint32_t private_heap);
 int browser_html5_document_tree(const uint8_t *,size_t,uint32_t encoding,node **root);
+/* Private parser-boundary hook, unset for all existing inert profiles. */
+typedef int (*browser_html_script_hook)(void *,node *);
+void browser_html_script_hook_set(browser_html_script_hook,void *);
+int browser_html_script_enabled(void);
+int browser_html_script_snapshot(node *,const char *,char *,uint32_t,uint32_t *,uint32_t *);
+int browser_html_script_apply(const char *,uint32_t);
 void browser_html5_document_release(void);
 /* Worker-local HTML5 tree and semantic projection. Not a public DOM API.
  * Single call per process generation; no network, file or device authority.

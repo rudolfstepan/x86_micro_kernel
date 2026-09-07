@@ -686,6 +686,7 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
         "b,strong,h1,h2,h3,h4,h5,h6 {font-weight:bold} i,em {font-style:italic} a:link {color:#0000cc} pre {white-space:pre} img {display:block}";
     if (css_select_ctx_create(&context)!=CSS_OK) result=-28;
     if (!result) result=add_sheet(ua,sizeof(ua)-1,CSS_ORIGIN_UA,NULL);
+    if (!result && browser_html_script_enabled()) result=add_sheet("noscript{display:none}",22,CSS_ORIGIN_UA,NULL);
     if (!result) result=collect_sheets(root,0);
     if (!result && needs && needs->count) result=1;
     if (!result) result=select_tree(root,NULL,0);
