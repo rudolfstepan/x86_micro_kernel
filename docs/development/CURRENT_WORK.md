@@ -2,6 +2,16 @@
 
 Stand: 7. September 2026
 
+## R3.23 aktiv: isolierter JavaScript-Kern
+
+Fortsetzung auf sauberem 6bc51cbf: Der naechste zusammenhaengende Schnitt
+portiert die vorhandene QuickJS-Engine, ihre benoetigten SDK-Adapter und den
+echten Prozessfehler-/Hang-/Neustartnachweis. Vertrag und Gates sind vor
+Implementierung eingefroren: [JavaScript-Kern](../architecture/RING3_JAVASCRIPT_CORE_CONTRACT.md).
+Kein Kernel-/Benchmarkumbau oder Website-JavaScript-Claim. Date, Threads,
+Netz-/Dateiautoritaet und DOM bleiben getrennte offene Grenzen; R3.6b bleibt
+entsprechend dem dokumentierten Browservorrang zurueckgestellt.
+
 ## R3.22 abgeschlossen: formatierte Ring-3-Zeichenketten
 
 Generatorreparatur umgesetzt: zehn Hostfaelle (acht im Hauptlauf, zwei neue

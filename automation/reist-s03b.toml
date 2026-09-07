@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-07: R3.22 string formatting and the explicitly authorized reproducible HTML generator are accepted. R3.6b is only the formal remaining queue entry; its original open gates remain deferred behind the user's browser priority. Next browser work must define one cohesive isolated engine/runtime-adapter package against pinned QuickJS2026-06-04, reusing accepted memory/C/C++/FPU/math/text mechanisms and its existing dtoa/atod/rqsort. No speculative setjmp port, default-link change or JavaScript/DOM activation claim. Preserve accepted images, performance artifacts and stashes. Direct main worktree, no agents or push."
+active_id = "R3.23-isolated-javascript-core"
+next_user_request = "2026-09-07: User says mach weiter after accepted6bc51cbf. Execute R3.23 directly in the main worktree: one isolated QuickJS core/runtime-adapter package on the accepted memory/C/C++/FPU/math/text mechanisms. Preserve source-owned dtoa/rqsort and protected performance binaries; no speculative setjmp, fake OS/Date, default-link or DOM activation. R3.6b remains deferred with all open gates intact behind browser priority. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,50 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.23-isolated-javascript-core"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Isolated QuickJS core on the accepted Ring-3 runtime"
+scope = "Port the pinned QuickJS2026-06-04 core as one opt-in owned runtime/context facade with explicit source/result/memory/stack/job/deadline admission, JS exceptions, poison-on-resource-failure and full cleanup. Include parser/interpreter/Unicode/RegExp/BigInt/JSON/proxy/collections/typed arrays/promises/cycle GC, real ISO inttypes macros and musl lrint dependency. Actual separately spawned JSTEST workers prove fault, noncooperative hang, bounded kill/reap, fresh generation/self-test and parent survival. No default consumer, kernel, clock/Date, DOM/IPC integration, network/files/modules/bytecode loader or threads."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+ "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+ "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+ "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+ "docs/architecture/RING3_JAVASCRIPT_CORE_CONTRACT.md",
+ "docs/architecture/RING3_MATH_RUNTIME_CONTRACT.md",
+ "third_party/quickjs-2026-06-04.tar.xz", "third_party/quickjs-2026-06-04.sha256",
+ "third_party/quickjs-2026-06-04.README.md",
+ "userspace/quickjs/include/reist_js.h", "userspace/quickjs/lib/engine.c",
+ "userspace/quickjs/private/reist_js_port.h",
+ "userspace/libc/include/inttypes.h", "userspace/math/include/math.h",
+ "scripts/build_user_math.py", "scripts/build_user_js.py", "scripts/build_user_sdk.py",
+ "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+ "userspace/programs/jstest.c", "test/js_vectors.h", "test/js_host.c", "test/test_js.py",
+ "scripts/run_qemu_js.py"
+]
+invariants = [
+ "Ring3 only, one owned context, no authority or ABI expansion. Both actual kernels and BROWSER/HTMLWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST byte-identical to6bc51cbf; preserve all prior images/evidence/stashes.",
+ "Pinned source SHA256b376e839b322978313d929fd20663b11ba58b75df5a46c126dd19ea2fa70ad2a; regular exact members only, <=32 files, <=3MiB/member, <=8MiB total. Original licenses/sources retained, generated adapters reject drift. No fake FILE/time/OS/thread APIs or duplicate dtoa/rqsort.",
+ "Version/range admission before effects. Memory1..128MiB, stack4..16KiB under actual32KiB stack, source<=1MiB, result<=64KiB, pending jobs<=1024, monotonic deadline per execution. Checked allocation overhead, transactional realloc, explicit backing, no eager arena or silent output truncation.",
+ "Resource/deadline failure poisons context; later work rejected. Interpreter interrupts are not universal native-code deadlines: external owner must fence/kill/reap exact generation and self-test a fresh worker. No in-place corrupt-process recovery or broad browser-JavaScript claim.",
+ "Compiler<=90s each/four workers maximum, host executions<=30s, real QEMU1024MiB guest<=180s. No visible windows, agents, nested orchestration or push. Final frozen gates once; preserve failed evidence and rerun affected gates only after a focused in-scope repair."
+]
+targeted_tests = ["python test/test_js.py -v", "python test/test_math.py -v", "python test/test_text.py -v", "python test/test_libc_source.py -v", "python test/test_build_dependencies.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_js.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r323-js/artifacts.json",
+ "python scripts/run_qemu_js.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r323-js/guest.log",
+ "python scripts/run_qemu_math.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r323-js/math.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "RING3_JAVASCRIPT_CORE_CONTRACT.md frozen verification: actual i386 O0/O2 language/lifetime/error/large-resource/GC/timeout/job/OOM tests, lrint and inttypes admission, public C/C++ facade, archive closure and real target link. Guest twice ordinary jstest with actual fault142 and noncooperative kill143, exact generations/reap, fresh worker self-test and parent/shell survival. Both references and binary preservation guard plus existing math/browser guest. No thresholds, watchdogs or quotas relaxed after results."
+stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/authority/budget expansion", "Failed gate without a demonstrated focused in-scope correction"]
+commit_message = "feat: add isolated Ring-3 JavaScript core"
+evidence = []
 
 [[packages]]
 id = "R3.22-ring3-string-format"
@@ -1775,7 +1819,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
