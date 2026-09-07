@@ -11,6 +11,23 @@ in CURRENT_WORK. Browser, HTMLWORK und Benchmark bleiben bytegleich;
 QuickJS, Zahlen-/Textkonvertierung und die benoetigten Laufzeitadapter
 sowie DOM/Event-/Navigationsintegration sind damit noch nicht umgesetzt.
 
+R3.22 ergaenzt den opt-in Stringformatter fuer tatsaechliche QuickJS-Aufrufe:
+snprintf/vsnprintf aus gepinntem musl mit privatem Ring3-Speicherstream,
+standardnahen Zahlen-/Textformaten, echten Fehlercodes und effizienter
+Trunkierung. Status und Gastbelege in CURRENT_WORK; Vertrag:
+[String formatting](RING3_STRING_FORMAT_CONTRACT.md). QuickJS2026-06-04
+enthaelt bereits dtoa/atod und rqsort; kein zusaetzlicher setjmp-Port ist fuer
+diese Engine belegt. Die Engine selbst, Datum/Zeit und DOM/Event-Anbindung
+sind weiterhin offen. Diese Bibliothek aktiviert kein Website-JavaScript.
+
+R3.22 ist mit 38 Hostfaellen, beiden Referenzen, Artefaktvergleich und
+Text-/Math-/Browser-Gastbelegen abgenommen. Die genehmigte Reparatur des
+Hubbub-Tabellengenerators liefert zwei bytegleiche Cold-Builds des HTMLWORK;
+alle 2137 Entity-Werte und die HTML5-/CSS-Verhaltenstests bestehen, maximal
+sechs Suchschritte pro Zeichen. Dieser Worker ersetzt die bisher zufaellige
+Tabellenvariante. Kernel beider Profile, BROWSER/GTEST/BENCHMARK bleiben
+bytegleich; keine neue Leistungszusage oder Lockerung von Schutzgrenzen.
+
 ## Entscheidung und Grenzen
 
 Am 6. September 2026 bestaetigte Reihenfolge: R3.15-Formularreparatur abnehmen

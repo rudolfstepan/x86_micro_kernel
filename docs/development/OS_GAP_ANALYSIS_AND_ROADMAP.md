@@ -2,11 +2,20 @@
 
 Stand: 3. September 2026
 
-7. September: R3.22 friert als naechste Browser-Voraussetzung den echten
-SDK-Stringformatter ein (snprintf/vsnprintf, musl1.2.6, private Speicherstream-
-Adapter, keine allgemeine stdio-/POSIX-Fassade). QuickJS hat bereits dtoa/atod
-und rqsort; diese werden nicht dupliziert. Noch keine Abnahme; Grenzen und
-Gates in RING3_STRING_FORMAT_CONTRACT.md und der Queue.
+7. September, R3.22 abgenommen: opt-in SDK-Stringformatter mit
+snprintf/vsnprintf aus musl1.2.6, privatem Ring3-Speicherstream, effizienten
+grossen/trunkierten Feldern und echten Fehler-/Reap-Nachweisen. 38 Hostfaelle,
+VMware121s/QEMU67s, Artefaktguard1.119s, Textgast15.106s,
+Mathgast14.153s und Browser-Eingabe/Crash/Restart75.489s bestehen.
+Genehmigte Generatorreparatur: zwei identische Cold-Builds des HTMLWORK,
+alle 2137 Entity-Werte korrekt, maximal sechs Suchschritte pro Zeichen.
+Kernel/BROWSER/GTEST/BENCHMARK bleiben bytegleich; kein Performance-/WCET-
+Neunachweis und keine gelockerten Schutzgrenzen. QuickJS besitzt bereits
+dtoa/atod und rqsort; keine Duplikate, allgemeine stdio-/POSIX-Fassade oder
+JavaScript-Aktivierung. Naechster Browserschnitt bleibt die isolierte Engine-
+Portierung mit benoetigten Laufzeitadaptern. R3.6b wird nur formal aktiviert,
+nicht vor den dokumentierten Browservorrang gezogen. Grenzen und Gatebelege:
+RING3_STRING_FORMAT_CONTRACT.md, CURRENT_WORK.md und Queue.
 
 7. September, Browser-Voraussetzungsschnitt R3.21 abgenommen:
 opt-in binary64-libm/fenv im Ring3 aus musl1.2.6, normaler SDK-/PRG-Linkweg,

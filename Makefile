@@ -835,6 +835,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/bin/curl.prg=$(SYSTEM_PROGRAM_DIR)/CURL.PRG \
 	usr/bin/crtest.prg=$(SYSTEM_PROGRAM_DIR)/CRTEST.PRG \
 	usr/bin/mathtest.prg=$(SYSTEM_PROGRAM_DIR)/MATHTEST.PRG \
+	usr/bin/texttest.prg=$(SYSTEM_PROGRAM_DIR)/TEXTTEST.PRG \
 	usr/bin/memtest.prg=$(SYSTEM_PROGRAM_DIR)/MEMTEST.PRG \
 	usr/bin/cpptest.prg=$(SYSTEM_PROGRAM_DIR)/CPPTEST.PRG \
 	htdocs/about.txt=htdocs/about.txt \

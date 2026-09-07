@@ -654,6 +654,28 @@ Auch der Legacy-HTML-Worker nutzt jetzt den bestehenden demand-backed Provider
 mit unveraendertem 4-MiB-Budget; das caller-owned Arena-API bleibt erhalten.
 Damit wird keine unbenutzte 4-MiB-Arena mehr in jedes Workerimage eingebaut.
 
+### Opt-in Stringformatierung (R3.22)
+
+`usr/include/reist/text/stdio.h` bietet ausschliesslich snprintf/vsnprintf;
+kein FILE, stdout oder Dateizugriff. `usr/lib/libreisttext.a` und
+`usr/lib/pkgconfig/reisttext.pc` verwenden den gepinnten musl1.2.6-Formatter
+mit privatem, stackeigenem Speicherstream. Ganzzahlen, Gleitkomma einschliesslich
+long double, C-Locale-Wide-Zeichen, Laengenmodifikatoren, `%n`, Trunkierung und
+negative Fehlerresultate gehoeren zusammen zum Profil. Kein Heapstart.
+
+Konventioneller Linkweg: `-lreisttext -lm -lreistc`, danach das vorhandene
+explizite Archiv `usr/lib/libclang_rt.builtins-i386.a` fuer die 64-Bit-Division.
+Die Bytefunktionen muessen aus der starken libc-Implementierung stammen;
+ein realer Linkmap-/Bytegleichheitstest prueft dies. pkg-config liefert
+Reihenfolge und opt-in Include-Pfade. Keine Aenderung vorhandener SDK-Defaults
+oder des getrennten TLS-Formatters. errno bleibt prozesseigen; hinzu kommen
+die standardnahen Codes EOVERFLOW75 und EILSEQ84, keine neuen Syscalls.
+
+`texttest` liegt in beiden Image-Layouts unter `/usr/bin/texttest.prg` und
+ist ueber die normale Ring3-Shell erreichbar. Grenzen, Anpassungen und aktueller
+Abnahmestatus: [Stringvertrag](RING3_STRING_FORMAT_CONTRACT.md), CURRENT_WORK.
+Keine allgemeine stdio-/Locale-/POSIX- oder JavaScript-Kompatibilitaetsbehauptung.
+
 - [ ] Öffentlicher Namensraum, Layer und Owner sind festgelegt.
 - [ ] Vorhandener Standard oder etablierte Bibliothekssemantik wurde geprüft.
 - [ ] Abweichungen sind begründet; es wird keine falsche Kompatibilität behauptet.

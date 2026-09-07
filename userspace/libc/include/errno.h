@@ -4,5 +4,7 @@
 #define ENOMEM 12
 #define EBUSY 16
 #define EINVAL 22
+#define EOVERFLOW 75
+#define EILSEQ 84
 #define errno (*reist_libc_errno())
 #endif

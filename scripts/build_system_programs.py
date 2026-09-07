@@ -22,6 +22,7 @@ PROGRAMS = {
     "MEMTEST.PRG": ROOT / "userspace/programs/memtest.c",
     "CRTEST.PRG": ROOT / "userspace/programs/crtest.c",
     "MATHTEST.PRG": ROOT / "userspace/programs/mathtest.c",
+    "TEXTTEST.PRG": ROOT / "userspace/programs/texttest.c",
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
     "SYSINFO.PRG": ROOT / "userspace/programs/sysinfo.c",
     "USBINFO.PRG": ROOT / "userspace/programs/usbinfo.c",
@@ -379,6 +380,15 @@ def main() -> None:
                 link_libraries.extend([sdk.math_library, sdk.libc_library])
                 dependency_files.extend(sdk.math_include_dir.glob("*.h"))
                 dependency_files.extend([ROOT / "test/math_vectors.h", Path(__file__).resolve()])
+            if name == "TEXTTEST.PRG":
+                includes[:0] = [sdk.text_include_dir, sdk.math_include_dir, sdk.libc_include_dir]
+                # 64-bit integer decimal division needs the existing arithmetic
+                # runtime. Resolve its byte calls to strong libc definitions first.
+                link_libraries.extend([sdk.text_library, sdk.math_library, sdk.libc_library,
+                    sdk.library_dir / "libclang_rt.builtins-i386.a"])
+                dependency_files.extend([*sdk.text_include_dir.glob("*.h"),
+                    *sdk.math_include_dir.glob("*.h"), *sdk.libc_include_dir.rglob("*.h"),
+                    ROOT / "test/text_vectors.h", Path(__file__).resolve()])
             if name in {"MEMTEST.PRG", "DISPLAY.PRG"}:
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.append(sdk.libc_library)

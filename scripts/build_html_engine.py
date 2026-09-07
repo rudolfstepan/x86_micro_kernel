@@ -32,6 +32,40 @@ def patch_hubbub_numeric_cr(data):
     return data.replace(before, after, 1)
 
 
+def patch_hubbub_entity_order(data):
+    # Adapter v1: deterministic, prefix-balanced insertion into the unchanged
+    # upstream ternary trie. Never depend on Perl hash iteration or seed.
+    before = (b"foreach my $key (keys %entities) {\n"
+              b"   $trie = insert_node($trie, $key, $entities{$key});\n}\n")
+    if data.count(before) != 1:
+        raise ValueError("libhubbub: entity-order patch context mismatch")
+    after = b"""# REIST entity-order adapter v1: median distinct character per prefix.
+my @ordered = sort keys %entities;
+sub insert_balanced {
+   my ($lo, $hi, $depth) = @_;
+   return if $lo >= $hi;
+   my @groups = ($lo);
+   for (my $i = $lo + 1; $i < $hi; $i++) {
+      push @groups, $i if substr($ordered[$i], $depth, 1) ne
+                         substr($ordered[$i-1], $depth, 1);
+   }
+   push @groups, $hi;
+   my $middle = int(($#groups - 1) / 2);
+   my ($first, $last) = ($groups[$middle], $groups[$middle+1]);
+   if (substr($ordered[$first], $depth, 1) eq '') {
+      my $key = $ordered[$first];
+      $trie = insert_node($trie, $key, $entities{$key});
+   } else {
+      insert_balanced($first, $last, $depth + 1);
+   }
+   insert_balanced($lo, $first, $depth);
+   insert_balanced($last, $hi, $depth);
+}
+insert_balanced(0, scalar(@ordered), 0);
+"""
+    return data.replace(before, after, 1)
+
+
 def extract(destination, css=False):
     roots = []
     pins = dict(PINS)
@@ -63,6 +97,8 @@ def extract(destination, css=False):
                 data = archive.extractfile(member).read()
                 if name == "libhubbub" and str(relative) == "src/tokeniser/tokeniser.c":
                     data = patch_hubbub_numeric_cr(data)
+                if name == "libhubbub" and str(relative) == "build/make-entities.pl":
+                    data = patch_hubbub_entity_order(data)
                 # All stdio consumers are upstream debug-only code. NDEBUG is
                 # mandatory; removing the otherwise unused includes grants no
                 # fake FILE/API and changes no parser algorithm or table bytes.

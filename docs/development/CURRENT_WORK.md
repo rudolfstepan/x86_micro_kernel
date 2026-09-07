@@ -2,13 +2,109 @@
 
 Stand: 7. September 2026
 
-## R3.22 aktiv: formatierte Ring-3-Zeichenketten
+## R3.22 abgeschlossen: formatierte Ring-3-Zeichenketten
+
+Generatorreparatur umgesetzt: zehn Hostfaelle (acht im Hauptlauf, zwei neue
+gezielte Regressionen) sowie echte HTML5-/CSS-Verhaltenstests bestanden.
+Alle 2137 Entity-Eintraege liefern bei O0/O2 das Originalergebnis, maximal
+sechs laterale Suchschritte pro Zeichen statt der erlaubten sieben.
+Zwei finale unabhaengige Cold-Builds bestehen in 106.023s, drei Parserarchive
+und HTMLWORK sind jeweils bytegleich. Alle verbleibenden Gates bestehen.
+Die unveraenderten 26 Hostfaelle und TEXTTEST-Gast15.106s bleiben erhalten;
+der finale Image-Guard bestaetigt dazu die identischen Programmdigests.
+
+Das SDK liefert opt-in snprintf/vsnprintf, einschliesslich long double,
+Standard-Laengenmodifikatoren, Trunkierung und Fehlercodes, ohne Heap,
+Dateizugriff oder neue Autoritaet. INT_MAX verworfene Paddingzeichen werden
+nicht einzeln verarbeitet. TEXTTEST beweist zweimal normal37/echten
+Pagefault142/kill143/frisch37, exakte Freigabe und unveraenderten Parent.
+MATHTEST bestaetigt weiterhin Numerik, vier Rundungen, echten MF16/status144,
+kill143, frische Generation und Shell. Der Browsergast prueft echte Tasten,
+URL-Korrektur, Navigation und Konsole nach Prozessfehler und Neustart.
+
+Finale Belege relativ zu `build/codex-agent/r322-text/`; Befehle in der Queue:
+
+| Gate | Ergebnis / Dauer | Beleg |
+|---|---|---|
+| Text / libc / Build / Benchmark, unveraendert | 6/4/7/9 PASS; 5.432/1.092/0.017/0.002s | `host-text-final.log`, `host-libc_source-final.log`, `host-build_dependencies-final.log`, `host-benchmark_source-final.log` |
+| HTML-Build, unveraenderte acht Faelle | 8 PASS / 2.327s | `host-html-build-final.log` |
+| Neue Cold-C++- und Imagealias-Regression | je 1 PASS / 0.018s und 0.016s | `cold-cpp-final.log`, `image-alias-final.log` |
+| Echte HTML5-/CSS-Verhaltenstests | je 1 PASS / 4.341s und 40.628s | `host-html_engine-final.log`, `host-css_engine-final.log` |
+| Zwei unabhaengige Cold-Neubauten | PASS / 106.023s | `html-rebuild.json`, `html-rebuild-command.log` |
+| VMware/vga Referenz | PASS / 121s | `package-vmware-generator-final.log`, `../20260907-195316-package-vmware-vga.log` |
+| QEMU/vga Referenz | PASS / 67s | `package-qemu-generator-final.log`, `../20260907-195539-package-qemu-vga.log` |
+| Beide echten Images / verpackte Programme | PASS / 1.119s | `artifacts-final.json`, `artifacts-final-command.log` |
+| TEXTTEST, unveraenderter Test und Payload | PASS / 15.106s | `guest.log`, `guest-command.log` |
+| MATHTEST im finalen Image | PASS / 14.153s | `math.log`, `math-command.log` |
+| Browser-Eingabe/Navigation/Crash/Restart/Konsole | PASS / 75.489s | `browser-input-command.log`, `browser-input.log`, `browser-input.ppm` |
+
+Zusammen 38 Hostfaelle. Kernel beider Profile, BROWSER/GTEST/BENCHMARK und
+TEXTTEST/MATHTEST bleiben bytegleich; alle SHA256 in `artifacts-final.json`.
+HTMLWORK845868 Bytes ist neu abgenommen, SHA256
+`c40c114e593a1251ce803ac46e0a8639b87ff061dacfe52958a5faa1f3996da8`.
+QEMU-Image: `87df18f7b18bee171790044de8a3ada6d029a70184623968a2e8cb38b594bde1`.
+VMware-Flatdisk: `22c962ed168a596d43449adfa575e3f69b26dca52768b808dc7df11d0c8f22d7`.
+Kopien in `accepted-qemu/` und `accepted-vmware/`, Digests nach Kopieren
+bestaetigt. Beide unabhaengigen Cold-Worker und alle Vorher-/Fehlerbelege
+bleiben erhalten, ebenso alte FPU-/Benchmarkimages und Stashes.
+Keine laufenden Test-VMs/Compiler beim Abschluss, kein Push oder Agent.
+Keine Kernel-/ABI-/Budgetaenderung oder neue Performance-/WCET-Zusage;
+bytegleiche gemessene Artefakte behalten ihre bisherigen Leistungsbelege.
+
+Die Engine-/Zeit-/DOM-Integration bleibt offen: dieses Paket aktiviert kein
+Website-JavaScript. R3.6b geht nur formal auf active; dessen offene Abnahme
+bleibt unveraendert und wird nicht vor den Browser gezogen. Naechster
+Browser-Voraussetzungsschnitt: isolierte Engine-Portierung auf dem vorhandenen
+Speicher-, C/C++-, FPU-, Math- und Textunterbau, ohne doppelte Enginehilfen.
+
+Gezielte Korrekturen am neuen Pruefer: Der Cold-Worker braucht den vorhandenen
+C++-Include-Pfad; der Image-Leser muss den existierenden FAT-Kurznamen
+`benchm~1.prg` verwenden. Beide Regressionen zuerst fehlgeschlagen, nach
+Reparatur bestanden. Alte Cold-Builds/Fehler bleiben erhalten; der finale
+Cold-Nachweis bindet alle 168 Eingaben einschliesslich des Pruefers neu.
+
+### Historischer Ausgang und ausdrueckliche Umfangserweiterung
+
+Freigabe zur Fortsetzung: Der Benutzer bestaetigt die Aufnahme des
+HTML-Tabellengenerators samt Tests und neuer HTMLWORK-Abnahme. Die bisherige
+Blockermeldung unten bleibt als Historie erhalten. Nur dessen zufaellige
+Tabellenreihenfolge wird korrigiert; alle anderen Byte-/Resilienzgates bleiben.
+
+Implementiert, noch nicht commit-/abnahmefaehig: 26 Hostfaelle bestehen
+(text6/5.432s, libc4/1.092s, build7/0.017s, benchmark9/0.002s), ebenso
+VMware66s/QEMU62s und TEXTTEST-Gast15.106s. Der Gast prueft zweimal die
+Formate sowie normal37/Pagefault142/kill143/frisch37, exakte Generationen,
+Parent-errno/Rundung und frische Shell. TEXTTEST204800 Bytes,
+SHA25663776333af8e28e97e5a91196826194c471893d2fe3180f2d27f50ce202cf279.
+
+Urspruenglicher Blocker: Der Bytegleichheits-Guard lehnt HTMLWORK ab. Die neue libc-Header-
+Ergaenzung loest den vorhandenen HTML-Bibliotheksbuild aus; dessen gepinnter
+Hubbub-Generator verwendet `keys %entities` ohne feste Reihenfolge.
+Zwei identische Extraktionen belegen unterschiedliche entities.inc-Digests:
+c887645f6e20b71011ce21d25da33d32d54eb8b6fa958b9f10cf87ce0e8dcb9e und
+ea0bcf16b4d91846a357aa915537acaa55ea3f4ce936662f0c91e8f09953e52a.
+HTMLWORK ist gleich gross (845868 Bytes), aber 53002 Bytes unterscheiden sich;
+erste Abweichung0x87924 in der Tabellendarstellung. Keine behauptete semantische
+oder Performancegleichheit aufgrund der blossen Groesse.
+`scripts/build_html_engine.py` liegt ausserhalb des freigegebenen Pakets.
+Die Reparatur und eine neue HTMLWORK-Abnahme brauchen ausdrueckliche Freigabe;
+ein altes Binary zurueckzukopieren waere keine Buildreparatur.
+
+Belege unter `build/codex-agent/r322-text/`: host-*-final.log,
+package-*-final.log, guest.log/guest-command.log, artifacts.json,
+htmlwork-difference.log, generator-nondeterminism.log samt beiden erzeugten
+Quelldatensaetzen. Beide aktuellen Images und HTMLWORK/TEXTTEST liegen in
+before-html-generator/. R3.21-Sicherungen bleiben unangetastet. Kernel beider
+Profile, BROWSER, GTEST und BENCHMARK behalten ihre abgenommenen Digests.
+Math-Gast noch nicht ausgefuehrt; kein Implementierungscommit/Queuefortschritt.
+Paketvertrag-Commit: a484de23. Alle vorherigen Entwicklungsfehler bleiben
+erhalten, insbesondere der korrigierte INT_MAX-Precision-Integerueberlauf.
 
 Der naechste eingefrorene Browser-Voraussetzungsschnitt implementiert die
 tatsaechlich fehlenden snprintf/vsnprintf-Aufrufe von QuickJS, ohne dessen
 vorhandene dtoa/atod- und rqsort-Implementierungen zu duplizieren. Eigener
 opt-in SDK-Vertrag: [String formatting](../architecture/RING3_STRING_FORMAT_CONTRACT.md).
-Noch keine Implementierungs-/Gastabnahme oder JavaScript-Aktivierung.
+Noch keine vollstaendige Paketabnahme oder JavaScript-Aktivierung.
 R3.21 und alle gesicherten Leistungsartefakte bleiben erhalten; R3.6b wird
 mit unveraenderten offenen Gates entsprechend dem Browservorrang zurueckgestellt.
 

@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.22-ring3-string-format"
-next_user_request = "2026-09-07: Continue the explicitly prioritized browser work directly in the main worktree. Inventory of pinned QuickJS2026-06-04 shows its own dtoa/atod and rqsort; do not duplicate them or invent a setjmp dependency. Close the actual missing SDK string-formatting dependency as one opt-in allocation-free package. No engine/DOM/time/thread activation yet. Preserve accepted images, performance artifacts and stashes. No agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-07: R3.22 string formatting and the explicitly authorized reproducible HTML generator are accepted. R3.6b is only the formal remaining queue entry; its original open gates remain deferred behind the user's browser priority. Next browser work must define one cohesive isolated engine/runtime-adapter package against pinned QuickJS2026-06-04, reusing accepted memory/C/C++/FPU/math/text mechanisms and its existing dtoa/atod/rqsort. No speculative setjmp port, default-link change or JavaScript/DOM activation claim. Preserve accepted images, performance artifacts and stashes. Direct main worktree, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,11 @@ push = false
 
 [[packages]]
 id = "R3.22-ring3-string-format"
-status = "active"
+status = "done"
+completion_summary = "2026-09-07: Direct main-worktree acceptance complete: 38 host cases (26 unchanged formatter/libc/build/benchmark, 10 HTML-build including two focused added regressions, HTML1/CSS1), two final independent cold parser/HTMLWORK builds106.023s, VMware121s/QEMU67s references, actual image artifact guard1.119s, unchanged TEXTTEST guest15.106s, final math guest14.153s and browser keyboard/edit/navigation/crash/restart/console75.489s. All2137 pinned entity entries match actual O0/O2 C lookup, maximum6 lateral probes per byte under frozen7. Cold archives and HTMLWORK match byte-for-byte; final worker845868 bytes SHA256c40c114e593a1251ce803ac46e0a8639b87ff061dacfe52958a5faa1f3996da8. Both actual image kernels, BROWSER/GTEST/BENCHMARK and TEXTTEST/MATHTEST retain accepted hashes. QEMU image87df18f7b18bee171790044de8a3ada6d029a70184623968a2e8cb38b594bde1, VMware flat22c962ed168a596d43449adfa575e3f69b26dca52768b808dc7df11d0c8f22d7; verified copies, cold products and all historical failure evidence retained in r322-text. No kernel/ABI/quotas/default-link changes, no new performance/WCET or engine/DOM claim. Full commands, durations and evidence map in CURRENT_WORK."
+resolved_gate_failures = "Original formatter development errors, weak-byte link closure and INT_MAX precision intermediate overflow repaired with retained regression evidence. The blocked random HTMLWORK build is closed by the explicitly authorized exact-match balanced entity generator adapter, not by restoring an old binary or changing entity values/lookup code. New verifier initially omitted the existing C++ include profile; focused before/final regression proves the repair. Read-only image inspection exposed the BENCHMARK native short alias; a separate before/final mapping regression covers it. Preserve all failed/superseded logs and cold builds; the final cold report binds all168 inputs including the final verifier. Unaffected26 hosts and exact TEXTTEST payload/guest evidence retained, only affected references/artifact proof rebuilt and pending/added guests completed."
+scope_amendment = "2026-09-07: User says mach weiter after the explicit request to include the nondeterministic HTML generator, its tests and renewed HTMLWORK acceptance. Resume only the attributed candidate. Add build_html_engine.py, test_html_engine_build.py and verify_text_artifacts.py. Pin-match a deterministic balanced insertion order in the generated upstream entity builder, preserving every entity/value and runtime lookup code. Replace only old HTMLWORK hash equality with two cold independent worker rebuilds, exact entity coverage and <=7 horizontal lookup probes per byte, actual HTML/CSS host and browser input/crash/restart guest acceptance. Kernel/BROWSER/GTEST/BENCHMARK equality stays mandatory. Retain26 passed hosts and unchanged TEXTTEST guest15.106s; rerun both affected references and artifact guard, run pending math guest and added HTML gates. No default-link, kernel, numerical gate or watchdog-budget relaxation."
+historical_blocker = "2026-09-07, before the user-authorized generator extension: Candidate formatter passes26 host cases, VMware66s/QEMU62s references and real text guest15.106s. Artifact guard fails HTMLWORK: f3bf07c9f9962c8f89ff9dd0bdb04ff704a873ad9d9458312e2f14bce2873fb7 instead of20c4d026c264878aa70bacb9ec5f2865d9a4814968994dde80811a76cf42643d. Existing scripts/build_html_engine.py rebuilds on libc headers and runs upstream make-entities.pl with unsorted Perl hash iteration. Two read-only diagnostic extractions produce different entities.inc hashes with unchanged inputs (generator-nondeterminism.log); prior code/kernel/browser/benchmark were not edited. This generator source was outside allowed_files and restoring a copied old binary would not fix reproducibility. At that point no candidate commit, queue transition or gate relaxation; math guest pending. Explicit scope and HTMLWORK reacceptance direction needed, preserving kernel/benchmark equality. Resolved as recorded above; all images/logs retained."
 phase = "post-s0"
 risk = "medium"
 title = "Bounded-output Ring-3 string formatting for the JavaScript runtime"
@@ -30,22 +34,25 @@ allowed_files = [
   "scripts/build_user_text.py", "scripts/build_user_sdk.py",
   "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
   "userspace/programs/texttest.c", "test/text_vectors.h", "test/text_host.c",
-  "test/test_text.py", "scripts/run_qemu_text.py"
+  "test/test_text.py", "scripts/run_qemu_text.py",
+  "scripts/build_html_engine.py", "test/test_html_engine_build.py",
+  "scripts/verify_text_artifacts.py"
 ]
 invariants = [
-  "Ring3 only; no kernel, public ABI, authority, quota, TLS or existing consumer link change. Accepted QEMU/VMware kernels and BROWSER/HTMLWORK/GTEST/BENCHMARK must remain byte-identical.",
+  "Ring3 only; no kernel, public ABI, authority, quota, TLS or existing consumer link change. Accepted QEMU/VMware kernels and BROWSER/GTEST/BENCHMARK must remain byte-identical; HTMLWORK alone gets the explicitly authorized deterministic-table reacceptance.",
   "Reuse committed SHA256-pinned musl archive with complete licenses; exact regular members, <=32 files, <=256KiB/member, <=1MiB selected bytes. Validate metadata before writes; generated source transformations exact-match and documented, originals retained.",
   "No heap, file/console/network I/O, clock, locks, constructors or global stream state in the formatter. Output work proportional to retained padding, not discarded field width. Normal C caller pointer/vararg obligations remain explicit.",
   "C default locale only: narrow bytes unchanged, wide basic ASCII and EILSEQ on unrepresentable characters. No setlocale/general stdio/POSIX compatibility claim. EINVAL/EOVERFLOW/EILSEQ use existing process-local errno storage.",
   "Four bounded compiler workers maximum, 90s per compiler and 30s per host execution. Opt-in headers/archive/pkg-config, reproducible incremental inputs include recipes and all headers.",
   "Guest1024MiB <=180s: two normal shell invocations, each normal/fault142/kill143/fresh normal37 with exact identities, reaping, unchanged parent rounding/errno and fresh shell. Invalid pointers are contained process faults, not claimed recoverable C errors."
 ]
-targeted_tests = ["python test/test_text.py -v", "python test/test_libc_source.py -v", "python test/test_build_dependencies.py -v", "python test/test_benchmark_source.py -v"]
+targeted_tests = ["python test/test_text.py -v", "python test/test_libc_source.py -v", "python test/test_build_dependencies.py -v", "python test/test_benchmark_source.py -v", "python test/test_html_engine_build.py -v", "python test/test_html_engine.py -v", "python test/test_css_engine.py -v", "python scripts/verify_text_artifacts.py --rebuild --log build/codex-agent/r322-text/html-rebuild.json"]
 package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
 runtime_tests = [
-  "python scripts/run_qemu_math.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r322-text/artifacts.json",
+  "python scripts/verify_text_artifacts.py --image build/reist-os.img --log build/codex-agent/r322-text/artifacts-final.json",
   "python scripts/run_qemu_text.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r322-text/guest.log",
-  "python scripts/run_qemu_math.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r322-text/math.log"
+  "python scripts/run_qemu_math.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r322-text/math.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
 ]
 acceptance = "Regression first, actual i386 O0/O2 C/C++ and fixed formatting vectors; independent host snprintf comparisons across at least128 bounded samples. All standard integer lengths/conversions, floating f/e/g/a and long double, signed zero/Inf/NaN, rounding, wide-C-locale errors, n/count, null+zero capacity, exact/truncated buffers and canaries, large resources, malformed/overflow formats and INT_MIN width rejection. INT_MAX discarded padding must finish under the unchanged host30s/guest180s bounds. SDK archive dependency allowlist, real linker and ordinary userspace command dispatch, both Windows/Make layouts. Targeted and reference gates once on final candidate; affected rerun only after documented focused in-scope repair with failed logs preserved. Existing byte-identical kernel/browser/benchmark artifacts reuse their accepted runtime/performance evidence; no new performance/WCET/browser-JavaScript claim."
 stop_conditions = ["Needed source outside allowed_files or unattributed/overlapping edits", "Kernel/authority/budget expansion", "Failed gate without a demonstrated focused in-scope correction"]
@@ -1768,7 +1775,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
