@@ -1,6 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
 active_id = "R1.2e-probe-start-publication"
+next_user_request = "2026-09-07: Desktop resolution configuration and a separate Display PRG applet in Control Panel take feature priority after acceptance of active R1.2e and before resuming R3.20. Inventory and safety/acceptance requirements: docs/development/DESKTOP_DISPLAY_SETTINGS_PLAN.md. Define and freeze the implementation package before activation; this request does not change the active scope or gates, accept its candidate, authorize the pending SMP test extension, or claim display functionality is implemented. Optional color scheme versus color depth remains to be clarified."
 
 [policy]
 one_package_per_run = true
@@ -16,6 +17,7 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Publish probe generation before first Ring-3 execution"
+repair_extension = "2026-09-07: User approves the requested narrow test/test_smp.py scope extension and completing boot acceptance before Display applet implementation. Continue only the attributable in-place R1.2e candidate. Repair the stale source assertion to check free_page_directory delegation and the existing bounded free_page_directory_step lock around actual mutations; retain the other SMP assertions. No paging, scheduler, public ABI, resource-budget or gate-command changes. Preserve prior failed evidence and unaffected passed host evidence; run the repaired SMP gate and each outstanding reference/runtime gate once, with no retry-until-pass."
 user_direction = "2026-09-06: User explicitly approves a separate prerequisite boot/supervisor repair after the C-model baseline hit a pre-browser kernel panic. Direct visible-main-worktree execution only, no agents or push. The attributable unaccepted R3.20 harness is preserved with its untracked test in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a; ignored evidence is untouched. Resume R3.20 afterwards with all frozen gates unchanged, not in this run."
 scope = "Repair the probe generation publication transaction shared by initial boot, automatic replacement and manual recovery. Current probe_spawn_next makes reist.prg runnable before obtaining and publishing its generation; an immediate legitimate startup report is rejected and the child can exit before process_get_identity, turning an ordinary Ring-3 timing race into boot panic. Use the already implemented PREPARED process/start mechanism, publish the complete protected control record before making the task runnable exactly once, and retain no post-start stale control overwrite or liveness requirement. Reject/clean up every failed preparation, identity, publication or start stage with bounded diagnostics and no leaked prepared process, stale authority or lost restart count. Preserve protected-state integrity handling and existing essential-service failure policy, all restart/fencing/generation/self-test budgets, process/SDK ABI, quotas and scheduling. No new scheduler mechanism, kernel parser/driver, broad supervisor redesign, artificial delay, extra retry, raised timeout or browser/renderer implementation."
 failure_evidence = "Identical saved 512-MiB disk SHA256 651346437c0011c11a7be68d8a8d7c3a1e8dd03bacaef2a37e1aedbc889d12ef booted for all 64 browser inputs, then another fresh boot panicked before the browser with Unable to start REIST Ring-3 probe. Last context validate image is not itself proof of corrupt bytes. Retain build/codex-agent/r320/ui-baseline-stages/initial-c/paint.browser.log. Deterministic real-code host scheduling injection must fail against the old start transaction before candidate repair."
@@ -24,7 +26,7 @@ allowed_files = [
   "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
   "docs/architecture/RESILIENCE_AND_DEGRADATION_CONTRACT.md",
   "kernel/init/supervisor.c", "test/test_probe_startup.py", "test/test_probe_startup_host.c",
-  "test/test_reist_supervisor.py", "test/test_boot_service_ready.py"
+  "test/test_reist_supervisor.py", "test/test_boot_service_ready.py", "test/test_smp.py"
 ]
 invariants = [
   "existing PREPARED process remains non-runnable until protected identity and launch state are committed",

@@ -2,6 +2,14 @@
 
 Stand: 3. September 2026
 
+Neue Funktionsprioritaet vom 7. September: Nach Abnahme des aktiven
+Boot-Reparaturpakets folgt die konfigurierbare Desktopaufloesung mit eigenem
+Anzeige-PRG in der Systemsteuerung, vor Fortsetzung der Browsermigration.
+Inventar, Schutzgrenzen und erforderliche Nachweise stehen im
+[Anzeige-Applet-Plan](DESKTOP_DISPLAY_SETTINGS_PLAN.md). Noch nicht implementiert;
+Farbschema/Farbtiefe sind als optionale Nutzerentscheidung getrennt erfasst.
+Der aktive Paketumfang und seine offenen Abnahmegates bleiben unveraendert.
+
 Nutzervorgabe vom 6. September: `docs/REIST_CPP_MIGRATION_PLAN.md` wurde
 zunaechst unveraendert uebernommen; inzwischen ist Revision 1.1 nach Review
 ausdruecklich freigegeben. TASK-0001 erfordert eine committete Baseline
