@@ -129,6 +129,52 @@ class MyprV1BuilderContractTests(unittest.TestCase):
 
 @unittest.skipUnless(Path(ZIG).is_file(), "Zig is required for user programs")
 class UserProgramToolchainTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is required for native build checks")
+    def test_windows_kernel_build_rejects_failure_with_inherited_exit_code(self):
+        source = (ROOT / "scripts/build-windows.ps1").read_text(encoding="utf-8")
+        start = source.index("    & $Make @makeArguments")
+        check = source[start:source.index("    Set-Content -LiteralPath $BuildConfig", start)]
+        executable = str(Path(sys.executable)).replace("'", "''")
+        for inherited, actual in ((0, 2), (7, 0)):
+            with self.subTest(inherited=inherited, actual=actual):
+                script = ("$ErrorActionPreference = 'Stop'\nfunction Invoke-Outer {\n"
+                          f"$LASTEXITCODE = {inherited}\n$Make = '{executable}'\n"
+                          f"$makeArguments = @('-c', 'import sys;sys.exit({actual})')\n"
+                          "& {\n" + check + "Write-Output 'PUBLISHED'\n}\n}\nInvoke-Outer\n")
+                result = subprocess.run([shutil.which("pwsh"), "-NoProfile", "-Command", script],
+                    capture_output=True, text=True, timeout=10,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                if actual:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("PUBLISHED", result.stdout)
+                    self.assertIn("Kernel build failed with exit code 2", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("PUBLISHED", result.stdout)
+
+    def test_sdk_independent_sections_join_before_return_or_failure(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import build_user_sdk as sdk_builder
+        for failed in (None, "runtime", "html"):
+            with self.subTest(failed=failed):
+                barrier = threading.Barrier(2)
+                completed = set()
+                lock = threading.Lock()
+                def section(name):
+                    def run():
+                        barrier.wait(timeout=2)
+                        with lock:
+                            completed.add(name)
+                        if name == failed:
+                            raise ValueError(name)
+                    return run
+                if failed:
+                    with self.assertRaisesRegex(ValueError, failed):
+                        sdk_builder.build_sdk_sections(section("runtime"), section("html"))
+                else:
+                    sdk_builder.build_sdk_sections(section("runtime"), section("html"))
+                self.assertEqual(completed, {"runtime", "html"})
+
     def test_sdk_object_batch_is_parallel_ordered_and_fail_closed(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         import build_user_sdk as sdk_builder
@@ -579,6 +625,7 @@ class UserProgramToolchainTests(unittest.TestCase):
                 "IMAGEVIEWER.PRG",
                 "SURFACEDEMO.PRG",
                 "CONTROL.PRG",
+                "DISPLAY.PRG",
                 "CONFIG.PRG",
                 "MKDIR.PRG",
                 "RMDIR.PRG",
@@ -665,7 +712,7 @@ class UserProgramToolchainTests(unittest.TestCase):
             self.assertEqual(
                 rebuilt, {"DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG",
                           "SOUNDPLAYER.PRG", "IMAGEVIEWER.PRG",
-                          "SURFACEDEMO.PRG", "CONTROL.PRG"}
+                          "SURFACEDEMO.PRG", "CONTROL.PRG", "DISPLAY.PRG"}
             )
             # C++ admission recompiles/revalidates every object/archive, but the
             # existing builder deliberately preserves byte-identical output's

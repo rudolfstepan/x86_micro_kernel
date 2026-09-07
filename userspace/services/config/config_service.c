@@ -9,6 +9,7 @@
  */
 #include "x86os.h"
 #include "reist/config.h"
+#include "reist/display_settings.h"
 #include "config_service.h"
 
 #include <stddef.h>
@@ -124,6 +125,10 @@ static int validate_setting(const config_target_t *target,
         return -22;
     }
     if (text_equal(target->name, "desktop")) {
+        if (text_equal(key, "resolution")) {
+            uint32_t width, height;
+            return reist_display_setting_parse(value, &width, &height);
+        }
         if (text_equal(key, "theme"))
             return one_of(value, "classic", "contrast", 0) ? 0 : -22;
         if (text_equal(key, "show_hidden"))

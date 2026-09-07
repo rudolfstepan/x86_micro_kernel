@@ -17,6 +17,8 @@
 #define FB_WIDTH 1024
 #define FB_HEIGHT 768
 #define FB_BPP 32  // Bits per pixel (32-bit color)
+#include "include/reist/display_mode.h"
+#define FB_SHADOW_CAPACITY REIST_DISPLAY_MODE_SHADOW_BYTES
 
 // Multiboot framebuffer info structure
 typedef struct {

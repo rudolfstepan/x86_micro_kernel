@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define CONTROL_PANEL_APPLET_COUNT 4U
+#define CONTROL_PANEL_APPLET_COUNT 5U
 #define CONTROL_PANEL_READ_CAPACITY REIST_CONFIG_FILE_CAPACITY
 #define CONTROL_PANEL_CREATE_ATTEMPTS 250U
 #define CONTROL_PANEL_PAINT_ATTEMPTS 20U
@@ -38,6 +38,7 @@ typedef struct control_panel_applet {
 } control_panel_applet_t;
 
 typedef struct control_panel_state {
+    reist_gui_surface_client_t *client;
     uint32_t selected;
     uint32_t current_value[CONTROL_PANEL_APPLET_COUNT];
     uint32_t valid[CONTROL_PANEL_APPLET_COUNT];
@@ -55,6 +56,7 @@ static const control_panel_applet_t applets[CONTROL_PANEL_APPLET_COUNT] = {
      "reist.system/1", "locale", {"de_AT", "en_US", "de_DE"}, 3U},
     {"Desktop", "Oberflaechenthema", "desktop", "/etc/reist/desktop.conf",
      "reist.desktop/1", "theme", {"classic", "contrast", "classic"}, 2U},
+    {"Anzeige", "Aufloesung und Anzeigemodus", 0, 0, 0, 0, {"Oeffnen", 0, 0}, 1U},
 };
 
 static char config_buffer[CONTROL_PANEL_READ_CAPACITY];
@@ -124,6 +126,7 @@ static int read_config(const control_panel_applet_t *applet,
 
 static void load_applet(control_panel_state_t *state, uint32_t index) {
     if (index >= CONTROL_PANEL_APPLET_COUNT) return;
+    if (index == 4U) { state->valid[index] = 1U; state->current_value[index] = 0U; return; }
     const control_panel_applet_t *applet = &applets[index];
     state->valid[index] = 0U;
     if (read_config(applet, &config_document) != 0) return;
@@ -143,6 +146,12 @@ static void load_all(control_panel_state_t *state) {
 }
 
 static int apply_selected(control_panel_state_t *state, int32_t direction) {
+    if (state->selected == 4U) {
+        int status = reist_gui_surface_client_open_display(state->client);
+        set_status(state, status == 0 ? "Anzeige angefordert" : "Anzeige konnte nicht geoeffnet werden");
+        state->redraw = 1U;
+        return status;
+    }
     const control_panel_applet_t *applet = &applets[state->selected];
     if (!state->valid[state->selected]) {
         set_status(state, "Nur-Lese-Modus: Konfiguration ungueltig");
@@ -304,7 +313,7 @@ int main(int argc, char **argv) {
     for (uint32_t attempt = 0U; attempt < CONTROL_PANEL_CREATE_ATTEMPTS;
          ++attempt) {
         status = reist_gui_surface_client_create(
-            &client, REIST_GUI_SURFACE_ROLE_TOPLEVEL, 620U, 380U);
+            &client, REIST_GUI_SURFACE_ROLE_TOPLEVEL, 620U, 450U);
         if (status == 0 || (status != -9 && status != -13)) break;
         (void)x86os_sleep_ms(1U);
     }
@@ -316,6 +325,7 @@ int main(int argc, char **argv) {
     }
 
     control_panel_state_t state = {0};
+    state.client = &client;
     load_all(&state);
     set_status(&state, "Bereit");
     state.redraw = 1U;

@@ -16,7 +16,6 @@
 #include "lib/libc/string.h"
 
 // Framebuffer state
-#define FB_SHADOW_CAPACITY ((size_t)FB_WIDTH * FB_HEIGHT * (FB_BPP / 8U))
 
 static uint8_t framebuffer_shadow[FB_SHADOW_CAPACITY]
     __attribute__((aligned(16)));

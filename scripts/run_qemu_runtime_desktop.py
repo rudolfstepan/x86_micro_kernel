@@ -590,7 +590,7 @@ class BrowserInputMonitor:
     def key(self, key):
         # Native QMP InputKeyEvent, https://www.qemu.org/docs/master/interop/qemu-qmp-ref.html
         parts = key.split("-")
-        allowed = {"ret", "esc", "backspace", "left", "right", "shift",
+        allowed = {"ret", "esc", "backspace", "left", "right", "up", "down", "tab", "shift",
                    "ctrl", "semicolon", "slash", "dot", "minus", "spc"}
         if (not 1 <= len(parts) <= 2 or any(
                 part not in allowed and not re.fullmatch(r"[a-z0-9]", part)

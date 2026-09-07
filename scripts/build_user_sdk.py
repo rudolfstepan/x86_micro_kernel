@@ -68,6 +68,7 @@ CORE_LIBRARY_SOURCES = (
     CORE_ROOT / "reist_dhcp_state.c",
     CORE_ROOT / "reist_dns.c",
     ROOT / "userspace" / "config" / "lib" / "config.c",
+    ROOT / "userspace" / "config" / "lib" / "display_settings.c",
     STORAGE_LIBRARY_ROOT / "vfs_path.c",
     STORAGE_LIBRARY_ROOT / "vfs_file_client.c",
     STORAGE_LIBRARY_ROOT / "vfs_stat_client.c",
@@ -353,33 +354,35 @@ def artifact_requires_rebuild(
                for dependency in dependencies)
 
 
+def build_sdk_sections(runtime, html):
+    """Join both independent library groups, including on either failure.
+
+    Each group has an existing four-object compiler bound (eight total).
+    HTML installs disjoint archives/headers; runtime objects use source headers.
+    Consumers receive no successful SDK until both groups have completed.
+    """
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        future = worker.submit(html)
+        runtime()
+        future.result()
+
+
 def build_sdk(output: Path, zig: Path, incremental: bool = False,
               cache_directory: Path | None = None) -> SdkArtifacts:
     """Build headers, startup object and reusable static libraries once."""
     artifacts = sdk_artifacts(output)
+    mode_header = ROOT / "include/reist/display_mode.h"
+    mode_destination = artifacts.include_dir / "reist/display_mode.h"
+    mode_destination.parent.mkdir(parents=True, exist_ok=True)
+    if not mode_destination.is_file() or mode_destination.read_bytes() != mode_header.read_bytes():
+        shutil.copy2(mode_header, mode_destination)
     # Conventional freestanding compiler support, from the selected toolchain.
     # CSS uses signed 64-bit intermediates; do not couple it to TLS's private
     # arithmetic shim or provide incomplete compiler ABI stubs in the parser.
     builtins = artifacts.library_dir / "libclang_rt.builtins-i386.a"
     compiler_source = zig.parent / "lib/compiler_rt.zig"
     compiler_inputs = (zig, compiler_source, *compiler_source.with_suffix("").rglob("*.zig"), Path(__file__))
-    if artifact_requires_rebuild(builtins, compiler_inputs, incremental):
-        artifacts.library_dir.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="reist-builtins-") as temporary_name:
-            temporary = Path(temporary_name)
-            environment = os.environ.copy()
-            environment["ZIG_GLOBAL_CACHE_DIR"] = str(artifacts.root / "builtins-cache")
-            environment["ZIG_LOCAL_CACHE_DIR"] = str(temporary / "cache")
-            obj = temporary / "builtins.o"
-            subprocess.run([str(zig), "build-obj", str(compiler_source), "-target", "x86-freestanding-none",
-                "-mcpu=i386", "-O", "ReleaseSmall", "-fno-stack-check", "-fno-stack-protector",
-                # Match the C objects' no-unwind freestanding profile at
-                # generation, not by stripping sections after admission.
-                "-fno-compiler-rt", "-fno-unwind-tables", "-femit-bin=" + str(obj)], env=environment, check=True, timeout=30)
-            create_archive(zig,builtins,[obj],temporary,environment)
-        license_file = artifacts.root / "usr/share/licenses/zig-compiler-rt/LICENSE"
-        license_file.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copy2(zig.parent / "LICENSE",license_file)
+    builtins_stale = artifact_requires_rebuild(builtins, compiler_inputs, incremental)
     libc_headers = tuple(LIBC_INCLUDE_ROOT.rglob("*.h"))
     for header in libc_headers:
         destination = artifacts.libc_include_dir / header.relative_to(LIBC_INCLUDE_ROOT)
@@ -393,7 +396,7 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     )
     core_headers = tuple(
         header for root, header in public_headers
-        if root == CORE_INCLUDE_ROOT)
+        if root == CORE_INCLUDE_ROOT) + (mode_header,)
     gui_headers = tuple(
         header for root, header in public_headers
         if root == GUI_INCLUDE_ROOT)
@@ -437,7 +440,6 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     artifacts.library_dir.mkdir(parents=True, exist_ok=True)
     write_pkg_config(artifacts.library_dir)
     from build_html_engine import build as build_html_libraries
-    build_html_libraries(artifacts, zig, incremental)
     common = ("prefix=${pcfiledir}/../..\nincludedir=${prefix}/include\n"
               "libdir=${prefix}/lib\n\n")
     write_if_changed(artifacts.library_dir / "pkgconfig/reist-c.pc", common +
@@ -493,117 +495,139 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
     wapcaplet_stale = artifact_requires_rebuild(
         artifacts.wapcaplet_library,
         (WAPCAPLET_ARCHIVE, Path(__file__).resolve(), *libc_headers), incremental)
-    if not (startup_stale or core_stale or parser_stale or gui_stale or
+    if not (builtins_stale or startup_stale or core_stale or parser_stale or gui_stale or
             audio_stale or image_stale or tls_stale or libc_stale or wapcaplet_stale or cpp_stale):
+        build_html_libraries(artifacts, zig, incremental)
         return artifacts
 
-    with tempfile.TemporaryDirectory(prefix="reist-user-sdk-") as temporary:
-        temporary_path = Path(temporary)
-        cache_root = cache_directory.resolve() \
-            if cache_directory is not None else temporary_path
-        cache_root.mkdir(parents=True, exist_ok=True)
-        environment = os.environ.copy()
-        environment["ZIG_GLOBAL_CACHE_DIR"] = str(
-            cache_root / "zig-global")
-        environment["ZIG_LOCAL_CACHE_DIR"] = str(
-            temporary_path / "zig-local")
-        prefix = freestanding_compile_prefix(
-            zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
-                  CONFIG_INCLUDE_ROOT, STORAGE_INCLUDE_ROOT])
+    def build_runtime_sections():
+        if builtins_stale:
+            artifacts.library_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="reist-builtins-") as temporary_name:
+                temporary = Path(temporary_name)
+                environment = os.environ.copy()
+                environment["ZIG_GLOBAL_CACHE_DIR"] = str(artifacts.root / "builtins-cache")
+                environment["ZIG_LOCAL_CACHE_DIR"] = str(temporary / "cache")
+                obj = temporary / "builtins.o"
+                subprocess.run([str(zig), "build-obj", str(compiler_source), "-target", "x86-freestanding-none",
+                    "-mcpu=i386", "-O", "ReleaseSmall", "-fno-stack-check", "-fno-stack-protector",
+                    # Match the C objects' no-unwind freestanding profile at
+                    # generation, not by stripping sections after admission.
+                    "-fno-compiler-rt", "-fno-unwind-tables", "-femit-bin=" + str(obj)], env=environment, check=True, timeout=30)
+                create_archive(zig,builtins,[obj],temporary,environment)
+            license_file = artifacts.root / "usr/share/licenses/zig-compiler-rt/LICENSE"
+            license_file.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(zig.parent / "LICENSE",license_file)
+        with tempfile.TemporaryDirectory(prefix="reist-user-sdk-") as temporary:
+            temporary_path = Path(temporary)
+            cache_root = cache_directory.resolve() \
+                if cache_directory is not None else temporary_path
+            cache_root.mkdir(parents=True, exist_ok=True)
+            environment = os.environ.copy()
+            environment["ZIG_GLOBAL_CACHE_DIR"] = str(
+                cache_root / "zig-global")
+            environment["ZIG_LOCAL_CACHE_DIR"] = str(
+                temporary_path / "zig-local")
+            prefix = freestanding_compile_prefix(
+                zig, [GUI_INCLUDE_ROOT, AUDIO_INCLUDE_ROOT, IMAGE_INCLUDE_ROOT,
+                      CONFIG_INCLUDE_ROOT, STORAGE_INCLUDE_ROOT, ROOT / "include"])
 
-        if cpp_stale:
-            cpp_object = temporary_path / "cpp-runtime.o"
-            run([*freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT, CPP_INCLUDE_ROOT]),
-                 *cpp_compile_flags(), "-c", str(CPP_ROOT / "runtime.cpp"),
-                 "-o", str(cpp_object)], environment)
-            validate_cpp_object(cpp_object.read_bytes())
-            create_archive(zig, artifacts.cpp_library, [cpp_object], temporary_path, environment)
+            if cpp_stale:
+                cpp_object = temporary_path / "cpp-runtime.o"
+                run([*freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT, CPP_INCLUDE_ROOT]),
+                     *cpp_compile_flags(), "-c", str(CPP_ROOT / "runtime.cpp"),
+                     "-o", str(cpp_object)], environment)
+                validate_cpp_object(cpp_object.read_bytes())
+                create_archive(zig, artifacts.cpp_library, [cpp_object], temporary_path, environment)
 
-        if libc_stale:
-            objects = compile_objects(LIBC_SOURCES,
-                freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT]),
-                temporary_path, "libc", environment)
-            create_archive(zig, artifacts.libc_library, objects, temporary_path, environment)
-        if wapcaplet_stale:
-            vendor = extract_wapcaplet(temporary_path / "wapcaplet")
-            public = artifacts.include_dir / "libwapcaplet/libwapcaplet.h"
-            public.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(vendor / "include/libwapcaplet/libwapcaplet.h", public)
-            license_path = artifacts.root / "usr/share/licenses/libwapcaplet/COPYING"
-            license_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(vendor / "COPYING", license_path)
-            objects = compile_objects((vendor / "src/libwapcaplet.c",),
-                freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT, vendor / "include"]),
-                temporary_path, "wapcaplet", environment)
-            create_archive(zig, artifacts.wapcaplet_library, objects, temporary_path, environment)
+            if libc_stale:
+                objects = compile_objects(LIBC_SOURCES,
+                    freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT]),
+                    temporary_path, "libc", environment)
+                create_archive(zig, artifacts.libc_library, objects, temporary_path, environment)
+            if wapcaplet_stale:
+                vendor = extract_wapcaplet(temporary_path / "wapcaplet")
+                public = artifacts.include_dir / "libwapcaplet/libwapcaplet.h"
+                public.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(vendor / "include/libwapcaplet/libwapcaplet.h", public)
+                license_path = artifacts.root / "usr/share/licenses/libwapcaplet/COPYING"
+                license_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(vendor / "COPYING", license_path)
+                objects = compile_objects((vendor / "src/libwapcaplet.c",),
+                    freestanding_compile_prefix(zig, [LIBC_INCLUDE_ROOT, vendor / "include"]),
+                    temporary_path, "wapcaplet", environment)
+                create_archive(zig, artifacts.wapcaplet_library, objects, temporary_path, environment)
 
-        if startup_stale:
-            startup = compile_objects(
-                (STARTUP_SOURCE,), prefix, temporary_path, "startup",
-                environment)[0]
-            shutil.copy2(startup, artifacts.startup_object)
-        if core_stale:
-            core_objects = compile_objects(
-                CORE_LIBRARY_SOURCES, prefix, temporary_path, "core",
-                environment)
-            create_archive(
-                zig, artifacts.core_library, core_objects,
-                temporary_path, environment)
-        if parser_stale:
-            parser_objects = compile_objects(
-                NETWORK_PARSER_SOURCES, prefix, temporary_path, "parser",
-                environment)
-            create_archive(
-                zig, artifacts.network_parser_library, parser_objects,
-                temporary_path, environment)
-        if gui_stale:
-            gui_objects = compile_objects(
-                GUI_LIBRARY_SOURCES, prefix, temporary_path, "gui",
-                environment)
-            create_archive(
-                zig, artifacts.gui_library, gui_objects,
-                temporary_path, environment)
-        if audio_stale:
-            audio_objects = compile_objects(
-                AUDIO_LIBRARY_SOURCES, prefix, temporary_path, "audio",
-                environment)
-            create_archive(
-                zig, artifacts.audio_library, audio_objects,
-                temporary_path, environment)
-        if image_stale:
-            image_objects = compile_objects(
-                IMAGE_LIBRARY_SOURCES, prefix, temporary_path, "image",
-                environment)
-            create_archive(
-                zig, artifacts.image_library, image_objects,
-                temporary_path, environment)
-        if tls_stale:
-            vendor = extract_mbedtls(temporary_path / "mbedtls")
-            tls_includes = [
-                TLS_INCLUDE_ROOT, TLS_LIBRARY_ROOT,
-                TLS_LIBRARY_ROOT / "compat", vendor,
-                vendor / "include", vendor / "library",
-                vendor / "tf-psa-crypto/include",
-                vendor / "tf-psa-crypto/core",
-                vendor / "tf-psa-crypto/drivers/builtin/include",
-                vendor / "tf-psa-crypto/drivers/builtin/src",
-                vendor / "tf-psa-crypto/extras",
-                vendor / "tf-psa-crypto/utilities",
-                vendor / "tf-psa-crypto/dispatch",
-                vendor / "tf-psa-crypto/platform",
-            ]
-            tls_prefix = freestanding_compile_prefix(zig, tls_includes)
-            tls_flags = [
-                "-ffunction-sections", "-fdata-sections",
-                '-DMBEDTLS_CONFIG_FILE="reist_tls_config.h"',
-                '-DTF_PSA_CRYPTO_CONFIG_FILE="reist_tls_config.h"',
-            ]
-            tls_objects = compile_objects(
-                (*TLS_WRAPPER_SOURCES, *mbedtls_sources(vendor)), tls_prefix,
-                temporary_path, "tls", environment, tls_flags)
-            create_archive(
-                zig, artifacts.tls_library, tls_objects,
-                temporary_path, environment)
+            if startup_stale:
+                startup = compile_objects(
+                    (STARTUP_SOURCE,), prefix, temporary_path, "startup",
+                    environment)[0]
+                shutil.copy2(startup, artifacts.startup_object)
+            if core_stale:
+                core_objects = compile_objects(
+                    CORE_LIBRARY_SOURCES, prefix, temporary_path, "core",
+                    environment)
+                create_archive(
+                    zig, artifacts.core_library, core_objects,
+                    temporary_path, environment)
+            if parser_stale:
+                parser_objects = compile_objects(
+                    NETWORK_PARSER_SOURCES, prefix, temporary_path, "parser",
+                    environment)
+                create_archive(
+                    zig, artifacts.network_parser_library, parser_objects,
+                    temporary_path, environment)
+            if gui_stale:
+                gui_objects = compile_objects(
+                    GUI_LIBRARY_SOURCES, prefix, temporary_path, "gui",
+                    environment)
+                create_archive(
+                    zig, artifacts.gui_library, gui_objects,
+                    temporary_path, environment)
+            if audio_stale:
+                audio_objects = compile_objects(
+                    AUDIO_LIBRARY_SOURCES, prefix, temporary_path, "audio",
+                    environment)
+                create_archive(
+                    zig, artifacts.audio_library, audio_objects,
+                    temporary_path, environment)
+            if image_stale:
+                image_objects = compile_objects(
+                    IMAGE_LIBRARY_SOURCES, prefix, temporary_path, "image",
+                    environment)
+                create_archive(
+                    zig, artifacts.image_library, image_objects,
+                    temporary_path, environment)
+            if tls_stale:
+                vendor = extract_mbedtls(temporary_path / "mbedtls")
+                tls_includes = [
+                    TLS_INCLUDE_ROOT, TLS_LIBRARY_ROOT,
+                    TLS_LIBRARY_ROOT / "compat", vendor,
+                    vendor / "include", vendor / "library",
+                    vendor / "tf-psa-crypto/include",
+                    vendor / "tf-psa-crypto/core",
+                    vendor / "tf-psa-crypto/drivers/builtin/include",
+                    vendor / "tf-psa-crypto/drivers/builtin/src",
+                    vendor / "tf-psa-crypto/extras",
+                    vendor / "tf-psa-crypto/utilities",
+                    vendor / "tf-psa-crypto/dispatch",
+                    vendor / "tf-psa-crypto/platform",
+                ]
+                tls_prefix = freestanding_compile_prefix(zig, tls_includes)
+                tls_flags = [
+                    "-ffunction-sections", "-fdata-sections",
+                    '-DMBEDTLS_CONFIG_FILE="reist_tls_config.h"',
+                    '-DTF_PSA_CRYPTO_CONFIG_FILE="reist_tls_config.h"',
+                ]
+                tls_objects = compile_objects(
+                    (*TLS_WRAPPER_SOURCES, *mbedtls_sources(vendor)), tls_prefix,
+                    temporary_path, "tls", environment, tls_flags)
+                create_archive(
+                    zig, artifacts.tls_library, tls_objects,
+                    temporary_path, environment)
+
+    build_sdk_sections(build_runtime_sections,
+        lambda: build_html_libraries(artifacts, zig, incremental))
     return artifacts
 
 

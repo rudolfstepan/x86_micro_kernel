@@ -1,6 +1,16 @@
 # System- und Programmkonfiguration
 
-Stand: 27. August 2026.
+Stand: 7. September 2026 (R3.21-Anzeigekandidat noch in Abnahme).
+
+`reist.desktop/1` besitzt den optionalen Schluessel `resolution`: fehlend oder
+`auto` verwendet die bisherige automatische Geometrie; `1280x720` ist ein
+Beispiel fuer die strikt dezimale Schreibweise ohne Leerzeichen. Aenderbar mit
+`config set desktop resolution 1280x720` oder **Systemsteuerung > Anzeige**.
+Das separate `/usr/gui/bin/display.prg` zeigt aktiven und gespeicherten Modus
+getrennt. Erst ein neuer Desktopstart wendet die Wahl an; ein syntaktisch
+gueltiger, aber nicht verfuegbarer Modus faellt einmal auf `auto` zurueck.
+Farbtiefe bleibt 32 Bit (24 RGB-Bits); keine Live-Umschaltung oder neue Palette.
+Details und Fehlergrenzen: [Anzeigevertrag](DISPLAY_SETTINGS_CONTRACT.md).
 
 Die grafische Systemsteuerung liest ihre festen Konfigurationsdateien über
 generationgebundene Ring-3-Storage-Objekte mit ausschließlich `READ|STAT`.

@@ -315,8 +315,10 @@ try {
         $makeArguments += 'COMPOSITOR_HOVER_PROBE=1'
     }
     & $Make @makeArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "Kernel build failed with exit code $LASTEXITCODE."
+    # A caller's local LASTEXITCODE can shadow the global native-process code.
+    # Test the just-completed invocation before publishing or reusing a kernel.
+    if (-not $?) {
+        throw "Kernel build failed with exit code $global:LASTEXITCODE."
     }
     Set-Content -LiteralPath $BuildConfig -Value $configurationJson -NoNewline
 
@@ -404,6 +406,7 @@ try {
         'usr/gui/bin/imageviewer.prg' = 'IMAGEVIEWER.PRG'
         'usr/gui/bin/surfacedemo.prg' = 'SURFACEDEMO.PRG'
         'usr/gui/bin/control.prg' = 'CONTROL.PRG'
+        'usr/gui/bin/display.prg' = 'DISPLAY.PRG'
         'libexec/reist/childex.prg' = 'CHILDEX.PRG'
         'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
         'libexec/reist/faultud.prg' = 'FAULTUD.PRG'

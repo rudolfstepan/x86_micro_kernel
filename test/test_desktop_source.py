@@ -13,10 +13,91 @@ WM_HEADER = ROOT / "userspace" / "gui" / "compositor" / "desktop_wm.h"
 
 
 class DesktopSourceTests(unittest.TestCase):
+    def test_sampled_keyboard_precedes_later_pointer_focus_changes(self):
+        loop = self.source[self.source.index('int key = read_key();'):]
+        self.assertLess(loop.index('desktop_ui_keyboard_event(&ui,'),
+                        loop.index('for (; mouse_events < DESKTOP_MOUSE_BATCH_LIMIT;'))
+        self.assertLess(loop.index('enqueue_surface_keyboard(&manager,'),
+                        loop.index('for (; mouse_events < DESKTOP_MOUSE_BATCH_LIMIT;'))
+
+    def test_menu_escape_then_start_host_behavior(self):
+        # Real menu controller complements the dispatch-order source assertion;
+        # the full compositor/client lifecycle is proved in the guest gate.
+        compiler = shutil.which('gcc') or shutil.which('clang')
+        command = [compiler] if compiler else [shutil.which('zig'), 'cc']
+        self.assertIsNotNone(command[0])
+        fixture = r'''
+#include <assert.h>
+#include <reist/gui/menu.h>
+int main(void) {
+    const reist_gui_menu_item_t items[] = {{"Exit", 1U, 0U, 0U, 0U}};
+    const reist_gui_menu_t menus[] = {{"Start", items, 1U, 0U, 0U}};
+    const reist_gui_menu_model_t model = { .version=1U,
+        .struct_size=sizeof(model), .menus=menus, .menu_count=1U };
+    const reist_gui_menu_layout_t layout = { .version=1U,
+        .struct_size=sizeof(layout), .surface_width=1024U, .surface_height=768U,
+        .bar={4,741,1016U,24U}, .font_width=8U, .font_height=16U,
+        .title_padding_x=16U, .item_padding_x=8U, .item_padding_y=4U,
+        .popup_direction=REIST_GUI_MENU_POPUP_ABOVE };
+    reist_gui_menu_state_t state;
+    reist_gui_menu_event_t key, pointer;
+    reist_gui_menu_result_t result;
+    reist_gui_menu_event_initialize(&key);
+    key.type=REIST_GUI_MENU_EVENT_KEYBOARD;
+    key.key=REIST_GUI_MENU_KEY_ESCAPE;
+    reist_gui_menu_event_initialize(&pointer);
+    pointer.type=REIST_GUI_MENU_EVENT_POINTER_BUTTON;
+    pointer.x=40; pointer.y=753; pointer.button=REIST_GUI_MENU_BUTTON_LEFT;
+    for (unsigned reversed=0; reversed<2; ++reversed) {
+        reist_gui_menu_state_initialize(&state);
+        reist_gui_menu_result_initialize(&result);
+        if (!reversed) {
+            assert(reist_gui_menu_dispatch(&model,&layout,&state,&key,&result)==0);
+            assert(!result.consumed); /* Escape still belongs to the client. */
+        }
+        pointer.pressed=1;
+        assert(reist_gui_menu_dispatch(&model,&layout,&state,&pointer,&result)==0);
+        pointer.pressed=0;
+        assert(reist_gui_menu_dispatch(&model,&layout,&state,&pointer,&result)==0);
+        assert(state.open_menu==0U && state.capture_kind==REIST_GUI_MENU_CAPTURE_NONE);
+        if (reversed) {
+            assert(reist_gui_menu_dispatch(&model,&layout,&state,&key,&result)==0);
+            assert(result.consumed && state.open_menu==REIST_GUI_MENU_NO_INDEX);
+        }
+    }
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix='reist-menu-order-') as temp:
+            source = Path(temp) / 'menu-order.c'
+            source.write_text(fixture, encoding='utf-8')
+            for optimization in ('-O0', '-O2'):
+                executable = Path(temp) / ('menu-order' + optimization + '.exe')
+                build = subprocess.run(command + ['-std=c11', optimization,
+                    '-UNDEBUG', '-Wall', '-Wextra', '-Werror',
+                    '-Iuserspace/gui/include', str(source),
+                    'userspace/gui/lib/menu.c', '-o', str(executable)],
+                    cwd=ROOT, capture_output=True, text=True, timeout=60)
+                self.assertEqual(build.returncode, 0, build.stderr)
+                run = subprocess.run([str(executable)], capture_output=True,
+                                     text=True, timeout=5)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+
+    def test_display_close_waits_for_both_surface_retirements(self):
+        runner = (ROOT / 'scripts/run_qemu_display_settings.py').read_text()
+        close = runner[runner.index('    def close_desktop('):runner.index('    def run(')]
+        self.assertLess(close.index('DISPLAY_PROBE_APPLET_RETIRED'),
+                        close.index('DISPLAY_PROBE_CONTROL_RETIRED'))
+        self.assertLess(close.index('DISPLAY_PROBE_CONTROL_RETIRED'),
+                        close.index('self.click(*self.start_point)'))
+        self.assertIn('str(self.control_pid)', close)
+        self.assertIn('if (display_probe_control_live && !control_live)', self.source)
+
     def test_terminal_generation_admission_precedes_desktop_activation(self):
         source = (ROOT / "userspace/gui/compositor/desktop.c").read_text()
         self.assertLess(source.index("if (desktop_terminal_acquire()"),
-                        source.index("int activation_status = desktop_activate_with_fallback()"))
+                        source.index("int activation_status = desktop_activate_configured()"))
+        self.assertIn("return desktop_activate_with_fallback();", source)
         self.assertIn("REIST_TERMINAL_ACQUIRE_SERVICE", source)
         self.assertIn("REIST_TERMINAL_RELEASE", source)
         self.assertIn("now - start >= 1000U", source)
@@ -780,7 +861,8 @@ class DesktopSourceTests(unittest.TestCase):
             self.source.index("static int launch_program")
         ]
         self.assertNotIn("text_equal(program", surface_classifier)
-        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 7)
+        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 8)
+        self.assertIn('"/usr/gui/bin/display.prg"', surface_classifier)
         self.assertIn("desktop_surface_runtime_reserve", self.source)
         self.assertIn("desktop_surface_runtime_bind", self.source)
         self.assertIn("sync_surface_windows", self.source)

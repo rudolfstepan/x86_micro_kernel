@@ -123,6 +123,12 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "CONFIG.PRG": ROOT / "userspace/services/config/config_service.c",
+    "DISPLAY.PRG": (
+        ROOT / "userspace/gui/apps/display/main.c",
+        ROOT / "userspace/gui/apps/display/display_model.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "MKDIR.PRG": ROOT / "userspace/programs/mkdir.c",
     "RMDIR.PRG": ROOT / "userspace/programs/rmdir.c",
     "DEL.PRG": (
@@ -250,7 +256,7 @@ PROGRAMS["HTMLWORK.PRG"] = (
 
 GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
-    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG",
+    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG", "DISPLAY.PRG",
 }
 IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG", "BROWSER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
@@ -326,14 +332,16 @@ def main() -> None:
                 link_libraries.append(sdk.image_library)
             if name in TLS_PROGRAMS:
                 link_libraries.append(sdk.tls_library)
-            dependency_files = [*core_headers]
-            if name in {"DESKTOP.PRG", "CONTROL.PRG", "CONFIG.PRG"}:
+            dependency_files = [*core_headers, ROOT / "include/reist/display_mode.h"]
+            if name in {"DESKTOP.PRG", "CONTROL.PRG", "CONFIG.PRG", "DISPLAY.PRG"}:
                 dependency_files.extend(config_headers)
+            if name == "DISPLAY.PRG":
+                dependency_files.append(ROOT / "userspace/gui/apps/display/display_model.h")
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
                         "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG",
                         "LN.PRG", "READLINK.PRG", "DEL.PRG",
-                        "RENAME.PRG", "RM.PRG", "BROWSER.PRG"}:
+                        "RENAME.PRG", "RM.PRG", "BROWSER.PRG", "DISPLAY.PRG"}:
                 dependency_files.extend(storage_headers)
             if name == "STORAGE.PRG":
                 dependency_files.append(Path(__file__).resolve())
@@ -363,7 +371,7 @@ def main() -> None:
                 link_libraries.extend([sdk.wapcaplet_library, sdk.libc_library])
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.append(sdk.include_dir / "libwapcaplet/libwapcaplet.h")
-            if name == "MEMTEST.PRG":
+            if name in {"MEMTEST.PRG", "DISPLAY.PRG"}:
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.append(sdk.libc_library)
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))

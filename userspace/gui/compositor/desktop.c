@@ -20,6 +20,7 @@
 #include "desktop_surface_runtime.h"
 #include "reist/image.h"
 #include "reist/config.h"
+#include "reist/display_settings.h"
 #include "reist/vfs_file_client.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/font.h"
@@ -38,6 +39,7 @@
 #define DESKTOP_SVGA2D_REPLY_MS 100U
 #define DESKTOP_SVGA2D_ACTIVATE_REPLY_MS 500U
 #define DESKTOP_ARGUMENT_LIMIT 32U
+static uint32_t desktop_mode_width, desktop_mode_height;
 #define DESKTOP_MENU_FAST_FEEDBACK_WIDTH 4U
 #define DESKTOP_MENU_COUNT 1U
 #define DESKTOP_METRICS_VERSION 1U
@@ -277,7 +279,7 @@ static int desktop_svga2d_decode_response(
         response->struct_size != sizeof(*response) ||
         response->request_id == 0U ||
         response->operation < REIST_SVGA2D_ACTIVATE ||
-        response->operation > REIST_SVGA2D_INFO ||
+        response->operation > REIST_SVGA2D_ACTIVATE_MODE ||
         response->flags != REIST_SVGA2D_FLAG_RESPONSE)
         return -84;
     return 0;
@@ -374,6 +376,7 @@ static int desktop_svga2d_transact(reist_svga2d_message_t *wire) {
     }
     uint32_t reply_timeout_ms =
         operation == REIST_SVGA2D_ACTIVATE ||
+        operation == REIST_SVGA2D_ACTIVATE_MODE ||
         operation == REIST_SVGA2D_DEACTIVATE
             ? DESKTOP_SVGA2D_ACTIVATE_REPLY_MS : DESKTOP_SVGA2D_REPLY_MS;
     status = desktop_svga2d_receive_response(
@@ -402,6 +405,10 @@ static int desktop_svga2d_connect(uint32_t activate, uint32_t report_error) {
     reist_svga2d_message_t request = {0};
     request.operation = activate != 0U
         ? REIST_SVGA2D_ACTIVATE : REIST_SVGA2D_INFO;
+    if (activate && desktop_mode_width) {
+        request.operation = REIST_SVGA2D_ACTIVATE_MODE;
+        request.width = desktop_mode_width; request.height = desktop_mode_height;
+    }
     int status = desktop_svga2d_transact(&request);
     desktop_svga2d_last_transaction_status = status;
     desktop_svga2d_last_connect_status = status;
@@ -419,6 +426,8 @@ static int desktop_svga2d_activate_bounded(void) {
          attempt < DESKTOP_SVGA2D_CONNECT_ATTEMPTS; ++attempt) {
         status = desktop_svga2d_connect(1U, 1U);
         if (status == 0) return 0;
+        if (desktop_mode_width && status != -11 && status != -9 && status != -110)
+            return status;
         desktop_svga2d_forget_endpoint();
         if (attempt + 1U < DESKTOP_SVGA2D_CONNECT_ATTEMPTS)
             (void)x86os_sleep_ms(DESKTOP_SVGA2D_RETRY_MS);
@@ -6487,6 +6496,7 @@ static uint32_t program_uses_surface(const char *program) {
         path_equal_ascii_case(program, "/usr/gui/bin/imageviewer.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/soundplayer.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/control.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/display.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/browser.prg");
 }
 
@@ -6529,6 +6539,8 @@ static int launch_program(desktop_surface_runtime_t *surface_runtime,
         }
         int bound = desktop_surface_runtime_bind(
             surface_runtime, endpoint, pid);
+        if (bound == 0 && path_equal_ascii_case(program, "/usr/gui/bin/control.prg"))
+            bound = desktop_surface_runtime_allow_display(surface_runtime, pid);
         if (bound != 0) {
             (void)x86os_kill(pid);
             (void)x86os_wait(pid, &status);
@@ -7047,6 +7059,50 @@ static void apply_control_panel_activation(
         desktop_ui_open_error(
             ui, display, dirty,
             "Systemsteuerung konnte nicht gestartet werden.", path);
+}
+
+/* Configuration policy stays in Ring 3. These fixed buffers are not stacked
+ * on the startup call chain and are never consulted during live reconnect. */
+static int desktop_activate_configured(void) {
+    static uint8_t bytes[REIST_CONFIG_FILE_CAPACITY];
+    static reist_config_document_t document;
+    size_t size = 0U;
+    desktop_mode_width = desktop_mode_height = 0U;
+    int status = read_file_bounded("/etc/reist/desktop.conf", bytes, sizeof(bytes), &size);
+    if (status == 0)
+        status = reist_config_parse((const char *)bytes, size, "reist.desktop/1", &document);
+    if (status == 0)
+        status = reist_display_setting_parse(reist_config_get(&document, "resolution"),
+                                            &desktop_mode_width, &desktop_mode_height);
+    reist_display_mode_request_t caps;
+    if (status == 0 && desktop_mode_width) {
+        status = x86os_display_mode_query(&caps);
+        if (status == 0 && !reist_display_mode_supported(
+                desktop_mode_width, desktop_mode_height, &caps)) status = -95;
+        if (status == 0) {
+            desktop_low_latency_menu_feedback = 0U;
+            status = caps.backend == REIST_DISPLAY_BACKEND_SVGA2
+                ? desktop_svga2d_activate_bounded()
+                : x86os_display_activate_mode(desktop_mode_width, desktop_mode_height);
+            if (status == 0) {
+                desktop_low_latency_menu_feedback =
+                    (desktop_svga2d_capabilities & REIST_SVGA2D_CAP_RECT_COPY) != 0U;
+                return 0;
+            }
+            /* Uncertain completion (IPC timeout) must not replay a different
+             * mode. Query confirms no active publication; the mediator also
+             * fences any device whose disable readback failed. */
+            if (status == -110 || status == -9 || status == -11 ||
+                x86os_display_mode_query(&caps) != 0 ||
+                (caps.flags & REIST_DISPLAY_MODE_ACTIVE)) return status;
+        }
+    }
+    if (status != 0) {
+        x86os_puts("DESKTOP_MODE_FALLBACK status=");
+        x86os_print_number(status); x86os_putchar('\n');
+    }
+    desktop_mode_width = desktop_mode_height = 0U;
+    return desktop_activate_with_fallback();
 }
 
 static void apply_browser_activation(
@@ -9130,6 +9186,10 @@ int main(int argc, char **argv) {
     uint32_t notepad_probe = 0U;
     uint32_t notepad_font_probe = 0U;
     uint32_t control_probe = 0U;
+    uint32_t display_probe_control_pid = 0U, display_probe_applet_pid = 0U;
+    uint32_t display_probe_applet_live = 0U, display_probe_start_reported = 0U;
+    uint32_t display_probe_control_live = 0U;
+    uint32_t display_probe_menu_ready = 0U;
     uint32_t browser_probe = 0U;
     uint32_t browser_forms_probe = 0U;
     uint32_t browser_public_probe = 0U;
@@ -9252,7 +9312,7 @@ int main(int argc, char **argv) {
         x86os_puts("desktop: terminal ownership unavailable\n");
         return 1;
     }
-    int activation_status = desktop_activate_with_fallback();
+    int activation_status = desktop_activate_configured();
     if (activation_status == 0) runtime_activated = 1U;
     int display_status = x86os_display_info(&display);
     if (activation_status != 0 || display_status != 0 ||
@@ -9263,6 +9323,10 @@ int main(int argc, char **argv) {
         x86os_puts("desktop: Grafikmodus nicht verfuegbar\n");
         return 1;
     }
+    desktop_mode_width = display.width; desktop_mode_height = display.height;
+    x86os_puts("DESKTOP_MODE_ACTIVE width="); x86os_print_number((int)display.width);
+    x86os_puts(" height="); x86os_print_number((int)display.height);
+    x86os_puts(" bpp=32\n");
     /* Diagnostic modes are timing probes, not interactive desktop sessions;
      * keep their established runtime envelope free of presentation I/O. */
     uint64_t phase_started_ms = 0U;
@@ -9863,6 +9927,11 @@ int main(int argc, char **argv) {
         }
         int surface_poll_status = desktop_surface_runtime_poll(
             &surface_runtime, &surfaces);
+        if (desktop_surface_runtime_take_display(&surface_runtime)) {
+            int opened = launch_program(&surface_runtime, "/usr/gui/bin/display.prg",
+                                        control_probe ? "--fault-probe" : 0);
+            x86os_puts(opened == 0 ? "DISPLAY_APPLET_LAUNCHED\n" : "DISPLAY_APPLET_LAUNCH_FAILED\n");
+        }
         if ((surface_probe || sound_probe || notepad_probe ||
              notepad_font_probe || browser_probe) && surface_poll_status != 0) {
             x86os_puts(sound_probe
@@ -9910,6 +9979,55 @@ int main(int argc, char **argv) {
         desktop_clock_refresh(&display, &dirty, 0U);
         sync_surface_windows(
             &manager, &explorer, &surfaces, &surface_runtime, &dirty);
+        if (control_probe) {
+            uint32_t applet_live = 0U;
+            uint32_t control_live = 0U;
+            for (uint32_t i=0U;i<DESKTOP_SURFACE_CAPACITY;++i) {
+                desktop_surface_slot_t *slot=&surfaces.slots[i];
+                if (!slot->active || slot->window_index>=DESKTOP_WM_CAPACITY) continue;
+                uint32_t *seen=text_equal(slot->title,"Systemsteuerung") ? &display_probe_control_pid :
+                    text_equal(slot->title,"Anzeige") ? &display_probe_applet_pid : 0;
+                if (seen == &display_probe_applet_pid) applet_live = 1U;
+                if (seen == &display_probe_control_pid) control_live = 1U;
+                if (!seen || *seen==slot->owner.pid) continue;
+                *seen=slot->owner.pid;
+                desktop_rect_t rect=desktop_window_client_rect(&manager,slot->window_index);
+                x86os_puts(seen==&display_probe_control_pid ? "DISPLAY_PROBE_CONTROL" : "DISPLAY_PROBE_APPLET");
+                print_metric("pid",slot->owner.pid);
+                print_metric("x",(uint32_t)rect.x); print_metric("y",(uint32_t)rect.y);
+                print_metric("width",rect.width); print_metric("height",rect.height); x86os_putchar('\n');
+            }
+            if (display_probe_applet_live && !applet_live) {
+                x86os_puts("DISPLAY_PROBE_APPLET_RETIRED");
+                print_metric("pid", display_probe_applet_pid); x86os_putchar('\n');
+            }
+            display_probe_applet_live = applet_live;
+            if (display_probe_control_live && !control_live) {
+                x86os_puts("DISPLAY_PROBE_CONTROL_RETIRED");
+                print_metric("pid", display_probe_control_pid); x86os_putchar('\n');
+            }
+            display_probe_control_live = control_live;
+            reist_gui_menu_layout_t probe_layout = desktop_menu_layout(&display);
+            reist_gui_rect_t probe_rect;
+            if (!display_probe_start_reported && reist_gui_menu_title_rect(
+                    &desktop_menu_model, &probe_layout, 0U, &probe_rect) == 0) {
+                x86os_puts("DISPLAY_PROBE_START_POINT");
+                print_metric("x", (uint32_t)probe_rect.x + probe_rect.width / 2U);
+                print_metric("y", (uint32_t)probe_rect.y + probe_rect.height / 2U);
+                x86os_putchar('\n'); display_probe_start_reported = 1U;
+            }
+            uint32_t menu_ready = ui.menu.open_menu == 0U &&
+                ui.menu.capture_kind == REIST_GUI_MENU_CAPTURE_NONE;
+            if (menu_ready && !display_probe_menu_ready && reist_gui_menu_item_rect(
+                    &desktop_menu_model, &probe_layout, 0U,
+                    desktop_menus[0].item_count - 1U, &probe_rect) == 0) {
+                x86os_puts("DISPLAY_PROBE_MENU_READY");
+                print_metric("x", (uint32_t)probe_rect.x + probe_rect.width / 2U);
+                print_metric("y", (uint32_t)probe_rect.y + probe_rect.height / 2U);
+                x86os_putchar('\n');
+            }
+            display_probe_menu_ready = menu_ready;
+        }
         if (surface_probe && !surface_resize_requested) {
             for (uint32_t surface_index = 0U;
                  surface_index < DESKTOP_SURFACE_CAPACITY; ++surface_index) {
@@ -9979,6 +10097,75 @@ int main(int argc, char **argv) {
         uint64_t mouse_batch_started_ms = 0U;
         uint32_t mouse_batch_clock_valid = 0U;
         uint32_t surface_input_queued = 0U;
+        /* Dispatch the sampled key before later mouse reports can change
+         * menu capture or the focused client. Escape must not close a menu
+         * which was opened by a subsequently consumed Start click. */
+        uint32_t drag_key_consumed = 0U;
+        if (key == DESKTOP_KEY_ESCAPE &&
+            desktop_drag.phase != DESKTOP_DRAG_PHASE_IDLE) {
+            desktop_dirty_add(&dirty, desktop_drag_feedback_rect());
+            desktop_dirty_add(
+                &dirty, desktop_icon_rect(&display, &explorer, 2U));
+            if (desktop_drag.object.source_id < DESKTOP_WM_CAPACITY)
+                desktop_explorer_pointer_cancel(
+                    &explorer, desktop_drag.object.source_id);
+            desktop_drag_cancel(&desktop_drag);
+            desktop_layout_drag_source_index = UINT32_MAX;
+            desktop_layout_hover_valid = 0U;
+            drag_key_consumed = 1U;
+        }
+        desktop_ui_result_t ui_key = drag_key_consumed
+            ? desktop_ui_result_none()
+            : desktop_ui_keyboard_event(&ui, &display, &dirty, key);
+        if (drag_key_consumed) ui_key.consumed = 1U;
+        actions |= apply_desktop_ui_result(
+            &manager, &explorer, &ui, &display, &dirty,
+            &ui_key, &action_target);
+        if (!ui_key.consumed) {
+            uint32_t navigation_key_consumed = 0U;
+            if ((key == '\b' || key == 0x7F) &&
+                manager.keyboard_focus >= 0 &&
+                manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
+                uint32_t focused = (uint32_t)manager.keyboard_focus;
+                if (explorer.windows[focused].active) {
+                    navigation_key_consumed = 1U;
+                    if (desktop_explorer_can_back(
+                            &explorer.windows[focused])) {
+                        int navigation_status = desktop_explorer_back(
+                            &explorer, focused);
+                        if (navigation_status != DESKTOP_EXPLORER_OK)
+                            desktop_ui_open_error(
+                                &ui, &display, &dirty,
+                                "Zurueck-Navigation ist fehlgeschlagen.",
+                                explorer.windows[focused].path);
+                        desktop_dirty_add(
+                            &dirty, desktop_wm_window_bounds(
+                                &manager, focused));
+                    }
+                }
+            }
+            uint32_t surface_key_consumed = navigation_key_consumed ? 0U :
+                enqueue_surface_keyboard(&manager, &surfaces, key);
+            surface_input_queued |= surface_key_consumed;
+            uint32_t explorer_key = explorer_key_from_input(key);
+            if (!navigation_key_consumed && !surface_key_consumed &&
+                explorer_key != 0U &&
+                manager.keyboard_focus >= 0 &&
+                manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
+                uint32_t focused = (uint32_t)manager.keyboard_focus;
+                desktop_rect_t client = desktop_explorer_content_rect(
+                    &manager, &explorer, focused);
+                desktop_explorer_result_t explorer_result;
+                desktop_explorer_result_initialize(&explorer_result);
+                (void)desktop_explorer_keyboard(
+                    &explorer, focused, client, explorer_key,
+                    &explorer_result);
+                collect_explorer_pointer_result(
+                    &display, &manager, &dirty, &explorer_result, 0U,
+                    &activation);
+            }
+        }
+
         for (; mouse_events < DESKTOP_MOUSE_BATCH_LIMIT; ++mouse_events) {
             x86os_mouse_event_t mouse;
             uint32_t hover_transition = 0U;
@@ -10248,72 +10435,6 @@ int main(int argc, char **argv) {
                 REIST_GUI_SURFACE_INPUT_POINTER_MOTION,
                 pointer_x, pointer_y, pending_delta_x, pending_delta_y, 0U,
                 manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT, 0);
-        }
-
-        uint32_t drag_key_consumed = 0U;
-        if (key == DESKTOP_KEY_ESCAPE &&
-            desktop_drag.phase != DESKTOP_DRAG_PHASE_IDLE) {
-            desktop_dirty_add(&dirty, desktop_drag_feedback_rect());
-            desktop_dirty_add(
-                &dirty, desktop_icon_rect(&display, &explorer, 2U));
-            if (desktop_drag.object.source_id < DESKTOP_WM_CAPACITY)
-                desktop_explorer_pointer_cancel(
-                    &explorer, desktop_drag.object.source_id);
-            desktop_drag_cancel(&desktop_drag);
-            desktop_layout_drag_source_index = UINT32_MAX;
-            desktop_layout_hover_valid = 0U;
-            drag_key_consumed = 1U;
-        }
-        desktop_ui_result_t ui_key = drag_key_consumed
-            ? desktop_ui_result_none()
-            : desktop_ui_keyboard_event(&ui, &display, &dirty, key);
-        if (drag_key_consumed) ui_key.consumed = 1U;
-        actions |= apply_desktop_ui_result(
-            &manager, &explorer, &ui, &display, &dirty,
-            &ui_key, &action_target);
-        if (!ui_key.consumed) {
-            uint32_t navigation_key_consumed = 0U;
-            if ((key == '\b' || key == 0x7F) &&
-                manager.keyboard_focus >= 0 &&
-                manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
-                uint32_t focused = (uint32_t)manager.keyboard_focus;
-                if (explorer.windows[focused].active) {
-                    navigation_key_consumed = 1U;
-                    if (desktop_explorer_can_back(
-                            &explorer.windows[focused])) {
-                        int navigation_status = desktop_explorer_back(
-                            &explorer, focused);
-                        if (navigation_status != DESKTOP_EXPLORER_OK)
-                            desktop_ui_open_error(
-                                &ui, &display, &dirty,
-                                "Zurueck-Navigation ist fehlgeschlagen.",
-                                explorer.windows[focused].path);
-                        desktop_dirty_add(
-                            &dirty, desktop_wm_window_bounds(
-                                &manager, focused));
-                    }
-                }
-            }
-            uint32_t surface_key_consumed = navigation_key_consumed ? 0U :
-                enqueue_surface_keyboard(&manager, &surfaces, key);
-            surface_input_queued |= surface_key_consumed;
-            uint32_t explorer_key = explorer_key_from_input(key);
-            if (!navigation_key_consumed && !surface_key_consumed &&
-                explorer_key != 0U &&
-                manager.keyboard_focus >= 0 &&
-                manager.keyboard_focus < (int32_t)DESKTOP_WM_CAPACITY) {
-                uint32_t focused = (uint32_t)manager.keyboard_focus;
-                desktop_rect_t client = desktop_explorer_content_rect(
-                    &manager, &explorer, focused);
-                desktop_explorer_result_t explorer_result;
-                desktop_explorer_result_initialize(&explorer_result);
-                (void)desktop_explorer_keyboard(
-                    &explorer, focused, client, explorer_key,
-                    &explorer_result);
-                collect_explorer_pointer_result(
-                    &display, &manager, &dirty, &explorer_result, 0U,
-                    &activation);
-            }
         }
 
         if ((actions & DESKTOP_ACTION_OPEN_CONTROL_PANEL) != 0U) {

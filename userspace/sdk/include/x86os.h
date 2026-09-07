@@ -923,6 +923,13 @@ typedef struct {
 #define X86OS_DISPLAY_DRIVER_BUSY_QUERY 5U
 #define X86OS_DISPLAY_DRIVER_PROBE 6U
 #define X86OS_DISPLAY_DRIVER_ENGINE_PREFLIGHT 7U
+#define X86OS_DISPLAY_DRIVER_ACTIVATE_MODE 8U
+#if __has_include("reist/display_mode.h")
+#include "reist/display_mode.h"
+#else
+/* In-tree host clients also use this header without an installed SDK. */
+#include "../../../include/reist/display_mode.h"
+#endif
 #define X86OS_DISPLAY_DRIVER_CAP_RECT_FILL (1U << 0U)
 #define X86OS_DISPLAY_DRIVER_CAP_RECT_COPY (1U << 1U)
 
@@ -1967,6 +1974,8 @@ int x86os_reist_report(uint32_t report_type, uint32_t value);
 int x86os_service_connect(uint32_t service_id,
                           x86os_ipc_handle_t* handle);
 int x86os_display_info(x86os_display_info_t* info);
+int x86os_display_mode_query(reist_display_mode_request_t *info);
+int x86os_display_activate_mode(uint32_t width, uint32_t height);
 int x86os_display_activate(void);
 int x86os_display_deactivate(void);
 int x86os_display_frame_begin(uint32_t* serial);

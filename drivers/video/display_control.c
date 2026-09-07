@@ -93,6 +93,9 @@ static bool vbe_prepared;
 static vbe_runtime_info_t vbe_runtime_info;
 static uint32_t vbe_reject_reason;
 static display_backend_t active_backend;
+/* Unconfirmed device disable is not an inactive, reusable display. */
+static display_backend_t mode_fault_backend;
+static uint16_t mode_fault_index, mode_fault_value;
 static volatile uint32_t *vmware_fifo;
 static uint16_t vmware_index_port;
 static uint16_t vmware_value_port;
@@ -592,7 +595,9 @@ static int activate_vbe(void) {
 }
 
 #ifndef REIST_VBE_RUNTIME_TEST
-static int activate_vmware(pci_device_t *device) {
+static int activate_vmware(pci_device_t *device, uint32_t requested_width,
+                           uint32_t requested_height) {
+    if (mode_fault_backend != DISPLAY_BACKEND_NONE) return -5;
     if (!vmware_prepared) return -19;
     uint32_t index_bar = device->bar[0];
     uint32_t framebuffer_bar = device->bar[1];
@@ -615,15 +620,19 @@ static int activate_vmware(pci_device_t *device) {
     if (id != SVGA_ID_1 && id != SVGA_ID_2) return -19;
     uint32_t max_width = svga_read(index_port, value_port, SVGA_REG_MAX_WIDTH);
     uint32_t max_height = svga_read(index_port, value_port, SVGA_REG_MAX_HEIGHT);
-    uint32_t width = max_width >= 1024U ? 1024U : 800U;
-    uint32_t height = max_height >= 768U ? 768U : 600U;
+    uint32_t width = requested_width ? requested_width : max_width >= 1024U ? 1024U : 800U;
+    uint32_t height = requested_height ? requested_height : max_height >= 768U ? 768U : 600U;
     uint64_t required = (uint64_t)width * height * 4U;
     uint32_t fb_size = svga_read(index_port, value_port, SVGA_REG_FB_SIZE);
     printf("REIST_VIDEO SVGA2D_MODE max=%ux%u fbsize=%u\n",
            (unsigned)max_width, (unsigned)max_height, (unsigned)fb_size);
-    if (max_width < 800U || max_height < 600U || required > fb_size) return -19;
+    if (max_width < 800U || max_height < 600U || required > fb_size ||
+        !reist_display_geometry_fits(width, height, width * 4U,
+            max_width, max_height, fb_size, FB_SHADOW_CAPACITY)) return -19;
     pci_enable_device(device);
     svga_write(index_port, value_port, SVGA_REG_ENABLE, 0U);
+    if (svga_read(index_port, value_port, SVGA_REG_ENABLE) & SVGA_ENABLE)
+        goto vmware_disable;
     svga_write(index_port, value_port, SVGA_REG_WIDTH, width);
     svga_write(index_port, value_port, SVGA_REG_HEIGHT, height);
     svga_write(index_port, value_port, SVGA_REG_BITS_PER_PIXEL, 32U);
@@ -644,9 +653,11 @@ static int activate_vmware(pci_device_t *device) {
     printf("REIST_VIDEO SVGA2D_SCANOUT pitch=%u start=%08X offset=%u\n",
            (unsigned)pitch, framebuffer_start, (unsigned)framebuffer_offset);
     if (pitch < width * 4U || framebuffer_start == 0U ||
+        framebuffer_start != (framebuffer_bar & 0xFFFFFFF0U) ||
         framebuffer_address > UINT32_MAX ||
         framebuffer_offset > fb_size ||
-        visible_bytes > (uint64_t)fb_size - framebuffer_offset)
+        visible_bytes > (uint64_t)fb_size - framebuffer_offset ||
+        visible_bytes > FB_SHADOW_CAPACITY)
         goto vmware_disable;
     uint32_t fifo_start = svga_read(index_port, value_port, SVGA_REG_MEM_START);
     uint32_t fifo_size = svga_read(index_port, value_port, SVGA_REG_MEM_SIZE);
@@ -659,7 +670,8 @@ static int activate_vmware(pci_device_t *device) {
     printf("REIST_VIDEO SVGA2D_FIFO start=%08X size=%u regs=%u\n",
            fifo_start, (unsigned)fifo_size, (unsigned)fifo_registers);
     if (fifo_start == 0U) fifo_start = fifo_bar & 0xFFFFFFF0U;
-    if (fifo_size < 4096U || fifo_registers < 4U ||
+    if (fifo_start != (fifo_bar & 0xFFFFFFF0U) ||
+        fifo_size < 4096U || fifo_size > 16U*1024U*1024U || fifo_registers < 4U ||
         fifo_registers > fifo_size / sizeof(uint32_t) ||
         fifo_minimum > fifo_size - 5U * sizeof(uint32_t))
         goto vmware_disable;
@@ -700,11 +712,17 @@ vmware_disable_fifo:
     svga_write(index_port, value_port, SVGA_REG_CONFIG_DONE, 0U);
 vmware_disable:
     svga_write(index_port, value_port, SVGA_REG_ENABLE, 0U);
+    if ((svga_read(index_port, value_port, SVGA_REG_ENABLE) & SVGA_ENABLE) != 0U) {
+        mode_fault_backend = DISPLAY_BACKEND_VMWARE;
+        mode_fault_index = index_port; mode_fault_value = value_port;
+        return -5;
+    }
     return -19;
 }
 #endif
 
-static int display_control_activate_locked(void) {
+static int display_control_activate_locked(uint32_t requested_width, uint32_t requested_height) {
+    if (mode_fault_backend != DISPLAY_BACKEND_NONE) return -5;
     /* A framebuffer published by the BIOS loader does not prove that its
      * graphics mode is still the visible hardware mode.  In particular the
      * rescue shell may have restored VGA text while the bounded framebuffer
@@ -736,7 +754,7 @@ static int display_control_activate_locked(void) {
                        "supervised svga2d-ring3\n");
                 result = -13;
             } else {
-                result = activate_vmware(candidate);
+                result = activate_vmware(candidate, requested_width, requested_height);
             }
             goto activation_done;
         }
@@ -756,17 +774,25 @@ static int display_control_activate_locked(void) {
            device != NULL ? 1U : 0U, qemu_prepared ? 1U : 0U,
            (unsigned)id, (unsigned)memory_64k);
     bool supported_id = id >= 0xB0C0U && id <= 0xB0C5U;
-    uint32_t width = memory_64k >= 48U ? 1024U : 800U;
-    uint32_t height = memory_64k >= 48U ? 768U : 600U;
+    uint32_t width = requested_width ? requested_width : memory_64k >= 48U ? 1024U : 800U;
+    uint32_t height = requested_height ? requested_height : memory_64k >= 48U ? 768U : 600U;
     uint64_t required = (uint64_t)width * height * 4U;
     bool valid = device != NULL && qemu_prepared && supported_id &&
                  memory_64k != 0U &&
                  required <= (uint64_t)memory_64k * 65536U &&
-                 lfb_address != 0U;
+                 lfb_address != 0U && (width & 7U) == 0U &&
+                 reist_display_geometry_fits(width, height, width * 4U,
+                    REIST_DISPLAY_MODE_MAX_DIMENSION, REIST_DISPLAY_MODE_MAX_DIMENSION,
+                    (uint32_t)memory_64k * 65536U, FB_SHADOW_CAPACITY);
     if (valid) {
         printf("DISPLAY_CONTROL: QEMU DISPI transition\n");
         pci_enable_device(device);
         dispi_write(DISPI_ENABLE, 0U);
+        if (dispi_read(DISPI_ENABLE) & DISPI_ENABLED) {
+            mode_fault_backend = DISPLAY_BACKEND_QEMU;
+            result = -5;
+            goto activation_finished;
+        }
         dispi_write(DISPI_XRES, (uint16_t)width);
         dispi_write(DISPI_YRES, (uint16_t)height);
         dispi_write(DISPI_BPP, 32U);
@@ -778,6 +804,8 @@ static int display_control_activate_locked(void) {
         valid = dispi_read(DISPI_XRES) == width &&
                 dispi_read(DISPI_YRES) == height &&
                 dispi_read(DISPI_BPP) == 32U &&
+                dispi_read(DISPI_VIRT_WIDTH) == width &&
+                dispi_read(DISPI_X_OFFSET) == 0U && dispi_read(DISPI_Y_OFFSET) == 0U &&
                 (dispi_read(DISPI_ENABLE) &
                  (DISPI_ENABLED | DISPI_LFB_ENABLED)) ==
                     (DISPI_ENABLED | DISPI_LFB_ENABLED);
@@ -800,12 +828,22 @@ static int display_control_activate_locked(void) {
                 printf("DISPLAY_CONTROL: QEMU framebuffer ready\n");
             }
         }
-        if (result != 0) dispi_write(DISPI_ENABLE, 0U);
+        if (result != 0) {
+            dispi_write(DISPI_ENABLE, 0U);
+            if ((dispi_read(DISPI_ENABLE) & DISPI_ENABLED) != 0U) {
+                mode_fault_backend = DISPLAY_BACKEND_QEMU;
+                result = -5;
+            }
+        }
     }
-    if (result != 0 && vbe_prepared) result = activate_vbe();
+    if (result != 0 && mode_fault_backend == DISPLAY_BACKEND_NONE && vbe_prepared &&
+        (!requested_width || (requested_width == vbe_runtime_info.width &&
+                              requested_height == vbe_runtime_info.height)))
+        result = activate_vbe();
 #ifndef REIST_VBE_RUNTIME_TEST
 activation_done:
 #endif
+activation_finished:
     if (result != 0) {
         if (!vbe_prepared) {
             printf("DISPLAY_CONTROL: VBE rejected reason=%u "
@@ -831,11 +869,100 @@ activation_done:
     return result;
 }
 
+/* Pure metadata query under the display mutex. Indexed-register selection
+ * does not enable an engine, alter mode or grant a raw device mapping. */
+static int display_control_mode_query_locked(reist_display_mode_request_t *out) {
+    reist_display_mode_request_t result = {0};
+    result.version = REIST_DISPLAY_MODE_VERSION;
+    result.struct_size = sizeof(result);
+    result.operation = REIST_DISPLAY_MODE_QUERY;
+    result.bpp = 32U;
+    result.shadow_bytes = FB_SHADOW_CAPACITY;
+    uint32_t address = 0U;
+#ifndef REIST_VBE_RUNTIME_TEST
+    pci_device_t *device = find_qemu_vga(&address);
+    if (device && qemu_prepared) {
+        uint16_t id = dispi_read(DISPI_ID);
+        uint32_t bytes = (uint32_t)dispi_read(DISPI_VIDEO_MEMORY_64K) * 65536U;
+        if (id < 0xB0C0U || id > 0xB0C5U || !address || !bytes || bytes > 64U*1024U*1024U)
+            return -19;
+        result.backend = REIST_DISPLAY_BACKEND_DISPI;
+        result.max_width = result.max_height = REIST_DISPLAY_MODE_MAX_DIMENSION;
+        result.scanout_bytes = bytes;
+    } else if ((device = find_vmware_vga()) != NULL && vmware_prepared) {
+        uint16_t index = (uint16_t)(device->bar[0] & 0xFFFCU);
+        uint16_t value = (uint16_t)(index + 1U);
+        result.backend = REIST_DISPLAY_BACKEND_SVGA2;
+        result.max_width = svga_read(index, value, SVGA_REG_MAX_WIDTH);
+        result.max_height = svga_read(index, value, SVGA_REG_MAX_HEIGHT);
+        result.scanout_bytes = svga_read(index, value, SVGA_REG_FB_SIZE);
+        if (!result.scanout_bytes || result.scanout_bytes > 64U*1024U*1024U) return -19;
+    } else if (find_vmware_display() != NULL) return -19;
+    else
+#else
+    (void)address;
+#endif
+    if (vbe_prepared) {
+        uint64_t bytes = (uint64_t)vbe_runtime_info.pitch * vbe_runtime_info.height;
+        if (!bytes || bytes > FB_SHADOW_CAPACITY) return -19;
+        result.backend = REIST_DISPLAY_BACKEND_VBE;
+        result.fixed_width = result.max_width = vbe_runtime_info.width;
+        result.fixed_height = result.max_height = vbe_runtime_info.height;
+        result.scanout_bytes = (uint32_t)bytes;
+    } else return -19;
+    if (result.max_width > REIST_DISPLAY_MODE_MAX_DIMENSION)
+        result.max_width = REIST_DISPLAY_MODE_MAX_DIMENSION;
+    if (result.max_height > REIST_DISPLAY_MODE_MAX_DIMENSION)
+        result.max_height = REIST_DISPLAY_MODE_MAX_DIMENSION;
+    framebuffer_display_info_t current;
+    if (active_backend != DISPLAY_BACKEND_NONE && framebuffer_get_display_info(&current)) {
+        result.flags = REIST_DISPLAY_MODE_ACTIVE;
+        result.width = current.width; result.height = current.height;
+    }
+    *out = result;
+    return 0;
+}
+
+int display_control_mode_query(reist_display_mode_request_t *request) {
+    if (!request) return -22;
+    int status = kernel_mutex_lock_for(&display_state_mutex, DISPLAY_STATE_TIMEOUT_MS);
+    if (status != 0) return status;
+    status = display_control_mode_query_locked(request);
+    kernel_mutex_unlock(&display_state_mutex);
+    return status;
+}
+
+/* Caller already owns the display authority. A new mode is startup-only;
+ * not even a valid request can resize a live session behind its consumers. */
+static int display_control_mode_admit_locked(uint32_t width, uint32_t height,
+                                            reist_display_mode_request_t *caps) {
+    if (mode_fault_backend != DISPLAY_BACKEND_NONE) return -5;
+    int status = display_control_mode_query_locked(caps);
+    if (status != 0) return status;
+    if (!reist_display_mode_supported(width, height, caps)) return -95;
+    if (caps->flags & REIST_DISPLAY_MODE_ACTIVE)
+        return caps->width == width && caps->height == height ? 1 : -16;
+    return 0;
+}
+
+int display_control_activate_mode(uint32_t width, uint32_t height) {
+    int status = kernel_mutex_lock_for(&display_state_mutex, DISPLAY_STATE_TIMEOUT_MS);
+    if (status != 0) return status;
+    reist_display_mode_request_t caps;
+    status = display_control_mode_admit_locked(width, height, &caps);
+    if (status == 0) {
+        status = caps.backend == REIST_DISPLAY_BACKEND_SVGA2 ? -13 :
+            display_control_activate_locked(width, height);
+    } else if (status == 1) status = 0;
+    kernel_mutex_unlock(&display_state_mutex);
+    return status;
+}
+
 int display_control_activate(void) {
     int lock_result = kernel_mutex_lock_for(&display_state_mutex,
                                             DISPLAY_STATE_TIMEOUT_MS);
     if (lock_result != 0) return lock_result;
-    int result = display_control_activate_locked();
+    int result = display_control_activate_locked(0U, 0U);
     kernel_mutex_unlock(&display_state_mutex);
     return result;
 }
@@ -853,7 +980,12 @@ static int display_control_deactivate_locked(void) {
     int result = -19;
     bool was_vmware = active_backend == DISPLAY_BACKEND_VMWARE;
     (void)framebuffer_cursor_update(0, 0, false);
-    if (active_backend == DISPLAY_BACKEND_QEMU) {
+    if (mode_fault_backend == DISPLAY_BACKEND_VMWARE) {
+        svga_write(mode_fault_index, mode_fault_value, SVGA_REG_ENABLE, 0U);
+        if ((svga_read(mode_fault_index, mode_fault_value,
+                       SVGA_REG_ENABLE) & SVGA_ENABLE) == 0U) result = 0;
+    } else if (active_backend == DISPLAY_BACKEND_QEMU ||
+               mode_fault_backend == DISPLAY_BACKEND_QEMU) {
         dispi_write(DISPI_ENABLE, 0U);
         if ((dispi_read(DISPI_ENABLE) & DISPI_ENABLED) == 0U) result = 0;
     } else if (active_backend == DISPLAY_BACKEND_VMWARE &&
@@ -875,6 +1007,8 @@ static int display_control_deactivate_locked(void) {
         vmware_height = 0U;
         vmware_rect_copy_reported = false;
         active_backend = DISPLAY_BACKEND_NONE;
+        mode_fault_backend = DISPLAY_BACKEND_NONE;
+        mode_fault_index = mode_fault_value = 0U;
         if (was_vmware) printf("REIST_VIDEO SVGA2D_INACTIVE\n");
     }
     __asm__ __volatile__("cli" ::: "memory");
@@ -896,8 +1030,8 @@ bool display_control_graphics_active(void) {
     if (kernel_mutex_lock_for(&display_state_mutex,
                               DISPLAY_STATE_TIMEOUT_MS) != 0) return false;
     scheduler_preempt_disable();
-    bool active = active_backend != DISPLAY_BACKEND_NONE &&
-        framebuffer_available();
+    bool active = mode_fault_backend != DISPLAY_BACKEND_NONE ||
+        (active_backend != DISPLAY_BACKEND_NONE && framebuffer_available());
     kernel_mutex_unlock(&display_state_mutex);
     scheduler_preempt_enable();
     return active;
@@ -981,10 +1115,21 @@ static int display_control_driver_command_locked(
                 result = 0;
             }
         }
-    } else if (request->command == DISPLAY_DRIVER_ACTIVATE) {
+    } else if (request->command == DISPLAY_DRIVER_ACTIVATE ||
+               request->command == DISPLAY_DRIVER_ACTIVATE_MODE) {
         pci_device_t *device = find_vmware_vga();
-        result = active_backend == DISPLAY_BACKEND_VMWARE
-            ? 0 : device != NULL ? activate_vmware(device) : -19;
+        uint32_t width = 0U, height = 0U;
+        result = 0;
+        if (request->command == DISPLAY_DRIVER_ACTIVATE_MODE) {
+            reist_display_mode_request_t caps;
+            if (request->source_x || request->source_y || request->destination_x ||
+                request->destination_y || request->color) return -22;
+            width = request->width; height = request->height;
+            result = display_control_mode_admit_locked(width, height, &caps);
+            if (result >= 0 && caps.backend != REIST_DISPLAY_BACKEND_SVGA2) result = -95;
+        }
+        if (result >= 0) result = active_backend == DISPLAY_BACKEND_VMWARE
+            ? 0 : device != NULL ? activate_vmware(device, width, height) : -19;
     } else if (request->command == DISPLAY_DRIVER_DEACTIVATE) {
         result = active_backend == DISPLAY_BACKEND_VMWARE
             ? display_control_deactivate() : -19;
@@ -1064,6 +1209,7 @@ int display_control_driver_command(display_driver_request_t *request) {
     if (request == NULL) return -22;
     bool bounded_command =
         request->command != DISPLAY_DRIVER_ACTIVATE &&
+        request->command != DISPLAY_DRIVER_ACTIVATE_MODE &&
         request->command != DISPLAY_DRIVER_DEACTIVATE;
     int lock_result = kernel_mutex_lock_for(&display_state_mutex,
                                             DISPLAY_STATE_TIMEOUT_MS);

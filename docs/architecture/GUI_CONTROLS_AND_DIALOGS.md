@@ -14,6 +14,14 @@ Occlusion-Culling, atomare Frames und messbare Interaktionslatenz steht in
 
 ## Ziel und Schichten
 
+R3.21-Anzeigekandidat: `DISPLAY.PRG` verwendet den vorhandenen Listen-Controller
+und Push-Button-Controller, lokale Koordinaten, Tab/Pfeile/Enter, Maus-Capture
+und opt-in Wheel-Ereignisse. Die Malfunktionen stellen diese Controller im
+klassischen Surface-Stil dar; die Fenstertitelleiste bleibt beim Compositor.
+Zu kleine Clientflaechen zeigen einen vergroesserbaren Hinweis statt negativer
+Geometrien. Konfigurationsschreiben ist ein asynchroner eigener CONFIG-Prozess,
+keine blockierende Warteoperation im Eingabepfad.
+
 REIST übernimmt etablierte Interaktionsmodelle, aber behauptet keine
 Binärkompatibilität zu Win32, Qt, GTK oder Wayland. Wiederverwendbare Controls
 sind rendererunabhängige, versionierte C11-Zustandsautomaten in
@@ -64,6 +72,14 @@ begrenzt mit Button-Up, Abbruch oder Zerstörung. Keyboardnavigation verwendet
 eine deterministische Fokusreihenfolge. Zustandsänderungen liefern eine feste
 Anzahl lokaler Damage-Rechtecke; Überlauf fordert einen vollständigen Redraw
 der betroffenen Surface an.
+
+Der Desktop stellt eine bereits gelesene Taste vor dem folgenden Mausbatch
+an das aktuelle Tastaturziel zu. Spaeter abgeholte Mausklicks duerfen diese
+Taste nicht nachtraeglich einem anderen Fenster oder einem neu geoeffneten
+Menue zuordnen. Die getrennten Geraetewarteschlangen garantieren damit keine
+globale Hardwarezeitordnung; innerhalb eines Dispatch-Durchlaufs bleibt die
+Abholreihenfolge jedoch erhalten. Diagnose-Gasttests warten beim Schliessen
+auf das tatsaechliche Surface-Retirement, nicht auf eine pauschale Pause.
 
 Retained-Command-Surfaces besitzen zusätzlich zur kompatiblen Basisliste
 append-only Protokollerweiterungen fuer Overlay, dynamischen Inhalt und Hover.

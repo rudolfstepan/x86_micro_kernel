@@ -90,7 +90,7 @@ class DesktopStartupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "startup.c"
             source.write_text(HOST, encoding="utf-8")
-            run_host([str(source)], flags=["-I.", "-Iuserspace/sdk/include",
+            run_host([str(source)], flags=["-I.", "-Iinclude", "-Iuserspace/sdk/include",
                      "-Iuserspace/storage/include", "-Iuserspace/config/include",
                      "-Wno-unused-function"])
 

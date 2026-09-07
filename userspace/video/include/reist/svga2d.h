@@ -22,6 +22,7 @@ enum {
     REIST_SVGA2D_RECT_FILL = 3U,
     REIST_SVGA2D_RECT_COPY = 4U,
     REIST_SVGA2D_INFO = 5U,
+    REIST_SVGA2D_ACTIVATE_MODE = 6U,
 };
 
 typedef struct {

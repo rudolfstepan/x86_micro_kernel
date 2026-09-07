@@ -424,6 +424,17 @@ int reist_gui_surface_client_enable_scroll(reist_gui_surface_client_t *client) {
     return response.serial==REIST_GUI_SURFACE_SCROLL_VERSION ? 0 : -84;
 }
 
+int reist_gui_surface_client_open_display(reist_gui_surface_client_t *client) {
+    if (!client || !client->connected || !client->surface.id) return -22;
+    reist_gui_surface_message_t request;
+    clear_bytes(&request, sizeof(request));
+    request.protocol_version = REIST_GUI_SURFACE_PROTOCOL_VERSION;
+    request.message_size = sizeof(request);
+    request.type = REIST_GUI_SURFACE_OPEN_DISPLAY;
+    request.surface = client->surface;
+    return transact(client, &request, REIST_GUI_SURFACE_OPEN_DISPLAY);
+}
+
 int reist_gui_surface_client_paint_begin(reist_gui_surface_client_t *client) {
     return reist_gui_surface_client_paint_begin_layer(
         client, REIST_GUI_SURFACE_PAINT_LAYER_BASE);

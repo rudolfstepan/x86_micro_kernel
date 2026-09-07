@@ -1,9 +1,21 @@
 # Anzeige-Einstellungen und eigenes PRG-Applet
 
-Stand: 7. September 2026. Nutzerauftrag, noch nicht implementiert oder
-abgenommen. Naechste Funktionsarbeit nach Abschluss des aktiven
-`R1.2e-probe-start-publication`, vor Fortsetzung der Browsermigration.
-Das laufende Reparaturpaket und seine eingefrorenen Gates bleiben unveraendert.
+Stand: 7. September 2026. R1.2e ist mit `732b2930` abgenommen; R3.21 ist als
+zusammenhaengendes Anzeige-Paket mit allen eingefrorenen Gates abgenommen. Die
+nachfolgende Bestandsaufnahme beschreibt den Ausgangspunkt vor R3.21.
+Verbindlicher aktueller Vertrag: `docs/architecture/DISPLAY_SETTINGS_CONTRACT.md`.
+Farbtiefe bleibt bewusst unveraendert; Farbschemata sind nicht Teil dieses Pakets.
+Die Speicherlayout-Erweiterung ist inzwischen ausdruecklich freigegeben:
+Linkerfenster an die bestehende Loadergrenze 64 MiB angepasst, veraltete
+eingebettete Userregion abgewiesen, keine Paging-/Reservenlockerung.
+Reale ELF-/PMM-Schutztests, alle weiteren Hostgates und beide Referenzbuilds
+bestanden. Standard-VGA und emuliertes VMware-SVGA beweisen gespeicherte
+800x600/1280x720 nach Neustart, echte Eingaben/Listendarstellung, Applet-Fault
+und Wiedereroeffnung, sicheren Fallback und Shellrueckkehr. 128-MiB-Boot und
+bestehendes Browser-Eingabegate ebenfalls PASS. Die Auswahl wird vor dem
+Speicherklick jetzt anhand des akzeptierten Paints bestaetigt; die erwartete
+Boot-Probe wird getrennt vom bewaffneten Applet-Fault validiert.
+Ergebnisse und unveraendert erhaltene Fehlerbelege in CURRENT_WORK.
 
 ## Gewuenschtes Ergebnis
 
@@ -78,12 +90,11 @@ Backendgrenzen, Pitch, Scanout-/Shadowbedarf und bestehenden Speicherbudgets.
 Keine pauschale Garantie fuer 1080p/4K, Monitorfrequenzen oder andere Farbtiefen.
 32-Bit-Pixelablage ist insbesondere keine Zusage von 32 sichtbaren Farbbits.
 
-## Abnahme vor Freigabe
+## Urspruengliche Abnahmeanforderungen (in R3.21 erfuellt, ausser expliziten Nichtzielen)
 
-Die Implementierungspakete werden nach Abschluss von R1.2e mit exakten
-`allowed_files` und ausfuehrbaren Gates eingefroren. Dies ist bewusst noch
-kein aktivierbares Kandidatenpaket: Modus-/Hardwaregrenze und gegebenenfalls
-Live-Recovery muessen vor Implementierung feststehen. Zusammengehoerige
+Das Implementierungspaket wurde nach Abschluss von R1.2e mit exakten
+`allowed_files` und ausfuehrbaren Gates eingefroren. Modus-/Hardwaregrenze
+stand vor Implementierung fest; Live-Recovery bleibt ausserhalb. Zusammengehoerige
 Feldfaelle nicht in Kleinstpakete aufteilen; unabhaengige Hardware-Abnahmen
 und ein neuer Live-Recovery-Vertrag bleiben eigene Grenzen.
 
@@ -106,6 +117,6 @@ Erforderliche Nachweise:
   und veraltete Bestaetigung pruefen. Keine sichtbaren Windows-Testdialoge oder
   VMware-Fenster ungefragt oeffnen.
 
-Bestehende Belege, das uncommittete Boot-Reparaturergebnis und der gesicherte
-Browserentwurf bleiben erhalten. Dieser Auftrag genehmigt weder eine
-SMP-Test-Scope-Erweiterung noch das Ueberspringen der offenen Boot-Abnahme.
+Bestehende Belege und der gesicherte Browserentwurf bleiben erhalten.
+Die vorgeschaltete Boot-Reparatur ist separat abgenommen. Nach R3.21 folgt
+wieder R3.20 mit seinen eigenen unveraenderten Baseline-/Migrationsgates.

@@ -88,6 +88,60 @@ int desktop_surface_runtime_open_for_process(
     *client_endpoint = endpoint;
     return 0;
 }
+int desktop_surface_runtime_allow_display(desktop_surface_runtime_t *runtime, int pid) {
+    if (!runtime || pid <= 0) return -22;
+    for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
+        desktop_surface_runtime_client_t *client = &runtime->clients[i];
+        if (client->active == DESKTOP_SURFACE_RUNTIME_BOUND && client->owner.pid == (uint32_t)pid) {
+            client->allow_display_applet = 1U;
+            return 0;
+        }
+    }
+    return -3;
+}
+
+int desktop_surface_runtime_take_display(desktop_surface_runtime_t *runtime) {
+    if (!runtime) return 0;
+    for (uint32_t i = 0U; i < DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
+        desktop_surface_runtime_client_t *client = &runtime->clients[i];
+        if (!client->display_applet_pending) continue;
+        client->display_applet_pending = 0U;
+        x86os_process_identity_t identity;
+        if (client->active == DESKTOP_SURFACE_RUNTIME_BOUND && client->allow_display_applet &&
+            x86os_process_identity_of((int)client->owner.pid, &identity) == 0 &&
+            identity.version == 1U && identity.struct_size == sizeof(identity) &&
+            identity.pid == (int)client->owner.pid &&
+            identity.generation == client->owner.process_generation) return 1;
+    }
+    return 0;
+}
+
+static int queue_display_applet(desktop_surface_runtime_client_t *client,
+        desktop_surface_manager_t *manager, const reist_gui_surface_message_t *request,
+        reist_gui_surface_message_t *response) {
+    reist_gui_surface_message_t expected;
+    clear_bytes(&expected, sizeof(expected));
+    expected.protocol_version = REIST_GUI_SURFACE_PROTOCOL_VERSION;
+    expected.message_size = sizeof(expected);
+    expected.type = REIST_GUI_SURFACE_OPEN_DISPLAY;
+    expected.surface = request->surface;
+    *response = expected;
+    const uint8_t *a = (const uint8_t *)request, *b = (const uint8_t *)&expected;
+    for (uint32_t i = 0U; i < sizeof(expected); ++i) if (a[i] != b[i]) return -22;
+    if (!client->allow_display_applet) return -13;
+    for (uint32_t i = 0U; i < DESKTOP_SURFACE_CAPACITY; ++i) {
+        desktop_surface_slot_t *slot = &manager->slots[i];
+        if (slot->active && slot->handle.id == request->surface.id &&
+            slot->handle.generation == request->surface.generation &&
+            slot->owner.pid == client->owner.pid &&
+            slot->owner.process_generation == client->owner.process_generation) {
+            client->display_applet_pending = 1U;
+            return 0;
+        }
+    }
+    return -3;
+}
+
 static int poll_client(desktop_surface_runtime_client_t *client, desktop_surface_manager_t *manager) {
     x86os_ipc_message_t ipc;
     clear_bytes(&ipc, sizeof(ipc));
@@ -99,7 +153,10 @@ static int poll_client(desktop_surface_runtime_client_t *client, desktop_surface
     if (status != 0) return status;
     if (ipc.version!=X86OS_IPC_MESSAGE_VERSION || ipc.struct_size!=sizeof(ipc) || ipc.length!=sizeof(reist_gui_surface_message_t)) return DESKTOP_SURFACE_EINVAL;
     reist_gui_surface_message_t request,response; uint8_t *d=(uint8_t *)&request; for (uint32_t i=0;i<sizeof(request);++i) d[i]=ipc.payload[i]; clear_bytes(&response,sizeof(response));
-    status=desktop_surface_dispatch_message(manager,client->owner,&request,&response); response.flags=(uint32_t)status;
+    status = request.type == REIST_GUI_SURFACE_OPEN_DISPLAY
+        ? queue_display_applet(client, manager, &request, &response)
+        : desktop_surface_dispatch_message(manager,client->owner,&request,&response);
+    response.flags=(uint32_t)status;
     if ((request.type != REIST_GUI_SURFACE_PAINT_FILL &&
          request.type != REIST_GUI_SURFACE_PAINT_TEXT &&
          request.type != REIST_GUI_SURFACE_PAINT_FONT_TEXT) || status != 0) {
@@ -166,12 +223,12 @@ static void poll_retiring_client(desktop_surface_runtime_client_t *client) {
         client->owner.pid, &identity);
     if (identity_status != 0) {
         int child_status = 0;
-        if (x86os_wait(client->owner.pid, &child_status) == client->owner.pid)
+        if (x86os_wait(client->owner.pid, &child_status) == (int)client->owner.pid)
             clear_bytes(client, sizeof(*client));
         return;
     }
     if (identity.version != 1U || identity.struct_size != sizeof(identity) ||
-        identity.pid != client->owner.pid ||
+        identity.pid != (int)client->owner.pid ||
         identity.generation != client->owner.process_generation)
         return;
     uint64_t now_ms = 0U;

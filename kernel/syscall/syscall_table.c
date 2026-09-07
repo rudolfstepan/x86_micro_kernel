@@ -2292,6 +2292,26 @@ static int syscall_pointer_update(int32_t x, int32_t y, uint32_t visible) {
     return display_control_cursor_update(x, y, visible != 0U);
 }
 
+static int syscall_display_mode(reist_display_mode_request_t *user_request) {
+    reist_display_mode_request_t request;
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0) return -14;
+    if (request.version != REIST_DISPLAY_MODE_VERSION || request.struct_size != sizeof(request) ||
+        (request.operation != REIST_DISPLAY_MODE_QUERY && request.operation != REIST_DISPLAY_MODE_ACTIVATE) ||
+        request.reserved || request.reserved2 || request.backend || request.max_width ||
+        request.max_height || request.scanout_bytes || request.shadow_bytes ||
+        request.fixed_width || request.fixed_height || request.flags) return -22;
+    if (request.operation == REIST_DISPLAY_MODE_QUERY) {
+        if (request.width || request.height || request.bpp) return -22;
+        int status = display_control_mode_query(&request);
+        if (status == 0 && copy_to_user(user_request, &request, sizeof(request)) != 0) return -14;
+        return status;
+    }
+    Process *desktop = scheduler_current_process();
+    if (!desktop || strcmp(desktop->image_path, "/usr/gui/bin/desktop.prg") != 0) return -13;
+    if (request.bpp != 32U) return -22;
+    return display_control_activate_mode(request.width, request.height);
+}
+
 static int syscall_display_control(display_control_request_t *user_request) {
     display_control_request_t base;
     if (copy_from_user(&base, user_request, sizeof(base)) != 0) return -14;
@@ -2301,6 +2321,11 @@ static int syscall_display_control(display_control_request_t *user_request) {
         return display_control_activate();
     if (base.operation == DISPLAY_CONTROL_DEACTIVATE)
         return display_control_deactivate();
+    if (base.operation == REIST_DISPLAY_MODE_QUERY ||
+        base.operation == REIST_DISPLAY_MODE_ACTIVATE) {
+        if (base.struct_size != sizeof(reist_display_mode_request_t)) return -22;
+        return syscall_display_mode((reist_display_mode_request_t *)user_request);
+    }
     if (base.operation == DISPLAY_CONTROL_DRIVER_COMMAND) {
         display_driver_request_t request;
         if (base.struct_size < sizeof(request) ||

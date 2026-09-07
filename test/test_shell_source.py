@@ -11,6 +11,24 @@ COMMAND_SOURCE = ROOT / "kernel" / "shell" / "command.c"
 
 
 class ShellSourceRegressionTests(unittest.TestCase):
+    def test_display_applet_is_reached_by_userspace_search(self):
+        for path in ("Makefile", "scripts/build-windows.ps1"):
+            self.assertIn("usr/gui/bin/display.prg", (ROOT / path).read_text())
+        shell = (ROOT / "userspace/bin/shell.c").read_text()
+        self.assertIn('"/usr/gui/bin"', shell)
+        self.assertIn("join_program_path(search_paths[index], program,", shell)
+        self.assertIn("x86os_spawnv(executable", shell)
+        self.assertIn('"DISPLAY.PRG"', (ROOT / "scripts/build_system_programs.py").read_text())
+        self.assertIn('"display --list"', (ROOT / "scripts/run_qemu_display_settings.py").read_text())
+        runner = (ROOT / "scripts/run_qemu_display_settings.py").read_text()
+        desktop = (ROOT / "userspace/gui/compositor/desktop.c").read_text()
+        for marker in ("DISPLAY_PROBE_APPLET_RETIRED", "DISPLAY_PROBE_START_POINT",
+                       "DISPLAY_PROBE_MENU_READY"):
+            self.assertIn(marker, runner)
+            self.assertIn(marker, desktop)
+        self.assertIn("self.wait('DESKTOP_EXIT_OK',offset)\n", runner)
+        self.assertIn("self.command('help',SHELL_HELP_MARKER)", runner)
+
     def test_cpp_probe_is_reached_by_userspace_search(self):
         for path in ("Makefile", "scripts/build-windows.ps1"):
             self.assertIn("usr/bin/cpptest.prg", (ROOT / path).read_text())

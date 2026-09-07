@@ -2,7 +2,352 @@
 
 Stand: 7. September 2026
 
-## R3.21 freigegeben: Anzeige-Applet und Aufloesung beim Desktopstart
+## R3.21 abgeschlossen: Anzeige-Applet und gespeicherte Desktopaufloesung
+
+Alle 14 eingefrorenen gezielten Gates, beide Referenzbuilds und alle vier
+Gastgates bestehen. Commit-Betreff:
+`feat: configure validated desktop modes through a Display applet`.
+Queue: R3.21 done, R3.20 active; keine Browsermigration in diesem Lauf,
+Stash `5af103bac06f8a4e6b335f247ed4d89f42c4a59a` unveraendert. Kein Push.
+
+Benutzung: **Systemsteuerung -> Anzeige**, Modus auswaehlen und speichern.
+Die Aenderung gilt erst beim naechsten Desktopstart. Alternativ
+`config set desktop resolution 1280x720` oder `auto`; Datei
+`/etc/reist/desktop.conf`. `display --list` ist aus der Ring-3-Shell erreichbar.
+Farbtiefe bleibt 32 Bit Ablage / 24 RGB; Live-Umschaltung und Farbschemata sind
+nicht Bestandteil dieser Freigabe. Gebaute VMware-Abbilder sind vorhanden;
+die neuen Modi sind bisher in QEMU-VGA und emuliertem VMware-SVGA geprueft,
+nicht fuer physische Monitore oder VMware Workstation hardwarequalifiziert.
+
+Finale Belege unter `build/codex-agent/r321/`; unveraenderte Hostbelege werden
+wiederverwendet, keine Wiederholung ganzer Suiten fuer jede Grafikvariante:
+
+| Gate | Ergebnis / Dauer | Log |
+|---|---|---|
+| Display Host | 6 Tests PASS, 2.448 s, reale C-Pfade O0/O2 | `gate-display_settings-fault-accounting.log` |
+| Desktop Host | 62 Tests PASS, 2.114 s | `gate-desktop_source-selection.log` |
+| Toolchain | 23 Tests PASS, 140.379 s | `gate-user_program_toolchain-selection.log` |
+| VMware-Referenz | PASS, 63 s | `package-vmware-selection.log` |
+| QEMU-Referenz | PASS, 60 s | `package-qemu-selection.log` |
+| Display Standard-VGA | PASS, 54.653 s | `runtime-std-final.log`, `std/status.json` |
+| Display VMware-SVGA | PASS, 52.386 s | `runtime-svga2d-final.log`, `svga2d/status.json` |
+| Boot 128 MiB | PASS, ca. 9.5 s Toollauf | `runtime-boot-128-final.log`, `boot-128.log` |
+| Browser-Eingabe | PASS, ca. 132 s Logzeit | `runtime-browser-input-final.log`, `browser-input-final/` |
+
+Die exakten unveraenderten Kommandos stehen im R3.21-Queueeintrag. Weitere elf
+Hostgates: `gate-display_abi_minimal.log`, `gate-vmware_svga2d.log`,
+`gate-reist_config_source.log`, `gate-gui_control_panel_source-gui.log`,
+`gate-desktop_surface_runtime_source-gui.log`, `gate-gui_surface_source-gui.log`,
+`gate-desktop_startup_source-gui.log`, `gate-shell_source-gui.log`,
+`gate-memory_resilience.log`, `gate-kernel_memory_layout-layout.log`,
+`gate-memory_r12-layout-final.log`. Die Surface-Runtime-Quellpruefung ist bei
+Erfolg still (Exit 0); die anderen Logs enthalten das jeweilige PASS/OK.
+Referenzdetails: `20260907-111504-package-vmware-vga.log` und
+`20260907-111635-package-qemu-vga.log` eine Verzeichnisebene darueber.
+
+Beide Display-Gaeste beweisen echte Tastatur-/Mausbedienung, native Listenpixel,
+unveraenderten Scanout vor Neustart, gespeicherte 800x600 und 1280x720 nach
+Neustart sowie einen sicheren Rueckfall von 4096x4096 auf 1024x768.
+Absichtlicher Applet-Fault und neues Applet: PID 14 -> 16 (Standard),
+15 -> 17 (SVGA). Jeweils frische Shellantwort nach dem Desktopende.
+Die etablierte absichtliche Boot-Probe wird vollstaendig und getrennt von
+genau einem spaeter bewaffneten Applet-Fault validiert; Zusatzfehler bleiben
+verboten. Der 128-MiB-Gast meldet 74 MiB frei nach Boot und bestandene
+Probe-Reintegration. Der Browserlauf bestaetigt Keyboard/Edit/Navigation,
+Crash/Restart und `HOST_TERMINAL_FRESH_RESTART_CONSOLE_OK`.
+
+Finaler SHA256 Kernel:
+`8664294004add1c939e83623c675c03cfa4ab11d3f13608e28a37beb3e1997e3`;
+Image: `1945b9269fb67675974213e4961654ad9e5952438a8a9bbe9a0bf7f0a77e1e48`.
+Alle fehlgeschlagenen Laeufe und Diagnosebilder bleiben erhalten. Die folgenden
+Abschnitte dokumentieren ausschliesslich die historische Entwicklung.
+
+### Historisch: Freigegebene Auswahl-/Speicher-Handshake-Reparatur
+
+Die erneute Freigabe ist als `selection_repair_extension` eingefroren.
+Der reale Applet-Hosttest verarbeitet vom gespeicherten 800x600 aus alle drei
+Down-Eingaben, rendert jede Auswahl und speichert exakt 1280x720.
+Ein einzelner begrenzter Diagnosegast (35.924 s, absichtlich kein Gate-PASS)
+korreliert tatsaechliche Ereignisse, Fokus und Speichersnapshot: Serien 6/7/8
+sind Down, Indizes 1 -> 2 -> 3 -> 4, danach erst Save-Down/Up 9/10,
+Snapshot 4 und bestaetigte 1280x720. Belege `selection-diagnosis.log` und
+`selection-diagnosis/` unter `build/codex-agent/r321`. Kein nachgewiesener
+Treiberverlust; die alte Abweichung ist damit nicht deterministisch reproduziert.
+
+Ein deterministischer Test des echten Runners mit verzoegerter Anwendung der
+letzten Taste reproduziert jedoch dessen fehlende Synchronisation vor Save
+(`selection-runner-before.log`: FAIL). Der Runner wartet jetzt auf den exakten
+ausgewaehlten Wert nach erfolgreich bestaetigtem Paint, bevor er den Fokus zum
+Speicherknopf verschiebt. Weiterhin genau drei Tasten, ein Klick, eine Deadline;
+bei ausbleibender Auswahl keine Wiederholung und kein Speichern. Das Applet
+meldet nur im Diagnosemodus geaenderte, vollstaendig akzeptierte Auswahl-Paints;
+Normalbetrieb bleibt ohne Zusatzlog. Die umfangreichere Diagnoseaufzeichnung
+wurde nach Auswertung wieder entfernt, ihre Belege bleiben erhalten.
+
+Das erweiterte Display-Gate besteht mit fuenf Tests in 2.753 s, einschliesslich
+echtem Applet O0/O2, fehlgeschlagenem Paint ohne falsche Meldung, normalem
+Silent-Betrieb und verzoegertem/fehlendem Auswahl-ACK. Betroffene weitere Gates
+und finale Referenzen/Gastgates sind in Arbeit; noch keine Abnahme/kein Commit.
+Der letzte fehlgeschlagene std-Lauf liegt unveraendert unter
+`std-before-selection-repair/`. Alle alten Befunde folgen historisch.
+
+Erster Gastlauf dieses erneuten Auswahlkandidaten: alle GUI-Schritte bestanden,
+aber 64.710 s Gesamt-FAIL wegen falscher abschliessender Exceptionzaehlung.
+Die zwei echten Invalid-Opcode-Berichte stammen aus der vorhandenen absichtlichen
+Boot-Probe und dem spaeter ausdruecklich ausgeloesten Display-Applet-Fault.
+Die Probe ist vor `BOOT_OK` vollstaendig reintegriert. Ein fokussierter
+In-Scope-Gatereparaturschritt (`selection_gate_repair`) prueft jetzt beide
+Phasen strikt getrennt und geordnet, mit genau einem Fault je Phase und allen
+Boot-Recovery-Markern. Zusatzausnahmen, Pagefaults, falsche Exceptionarten,
+fehlende/ungeordnete Bootmarker und fehlende Applet-Arming-Meldung bleiben FAIL.
+Sechs Display-Tests PASS in 2.448 s, vorherige Entwicklung
+`fault-accounting-before.log` FAIL. Unveraenderte Fehlerbelege unter
+`std-before-fault-accounting/`, kein nachtraeglich umgeschriebenes Gate-PASS.
+Es wurde ausschliesslich Runner/Test/Dokumentation repariert, kein Gastcode;
+die finalen Referenzbuilds (VMware 63 s, QEMU 60 s) bleiben identisch.
+Der eine reparierte Standard-Gastlauf wird neu ausgefuehrt, danach die drei
+offenen Gastgates. Bei weiterem Fehler gilt wieder die Stoppbedingung.
+
+### Historisch: GUI-Uebergang repariert; Auswahlabweichung blockiert Abnahme
+
+Erneute ausdrueckliche Freigabe des Nutzers fuer einen begrenzten Lauf ist in
+`gui_repair_extension` eingefroren. Die Reihenfolge im Compositor ist repariert:
+eine gelesene Taste wird vor dem folgenden Mausbatch zugestellt. Der vorher
+fehlschlagende Ordnungsregressionstest und echte Menue-Verhaltenstests O0/O2
+bestaetigen Escape/Start-Semantik; 62 Desktop-Tests bestehen in 1.257 s.
+Der Runner wartet nun auch auf das tatsaechliche PID-bezogene Retirement der
+Systemsteuerung, bevor er Start klickt. Keine feste Zusatzpause, kein neues
+Timeout, keine ABI-/Speicher-/Recovery-Aenderung.
+
+Betroffene Startup-/Surface-/Control-/Shellgates bestanden, ebenso das ganze
+Toolchaingate mit 23 Tests in 142.482 s (`gate-*-gui.log`). Die finalen
+Referenzbuilds bestehen: VMware 18 s (`20260907-105117-package-vmware-vga.log`),
+QEMU 60 s (`20260907-105202-package-qemu-vga.log`). Der Standardgast beweist
+jetzt beide Fenster-Retirements, Startmenue, `DESKTOP_EXIT_OK`, frische
+Shellantwort und den Desktop-Neustart mit den gespeicherten 800x600.
+
+Der Gesamtgatelauf scheitert nach 180.034 s am naechsten Speicherschritt:
+`DISPLAY_SETTINGS_SAVED 1152x864` statt angefordertem `1280x720`. Der Runner
+sendet drei Down-Ereignisse vom bestaetigten 800x600-Eintrag, beobachtet wird
+jedoch der nur zwei Eintraege spaetere Wert. Keine Ursache im Eingabetreiber,
+Desktop-Dispatch oder Runner allein ist damit bewiesen. Eine QMP-Bestaetigung
+belegt Einspeisung, nicht Verarbeitung durch das Applet. Naechste begrenzte
+Diagnose muss Eingabe, ausgewaehlten Modellindex und Speichersnapshot korrelieren;
+kein laengerer Sleep und keine Wahl eines falschen Erwartungswertes.
+
+Belege unter `build/codex-agent/r321/`: `runtime-std-gui.log`, `std/status.json`,
+`std/serial.log`, `std/active-800.ppm`. Vorherige std-Belege unveraendert nach
+`std-before-gui-repair` verschoben. Browser-Gastgate wurde nicht ausgefuehrt;
+die vier potentiell ueberschriebenen alten Bild-/Logdateien sind vorsorglich
+unter `browser-input-before-gui` kopiert. QEMU ist beendet. Gemaess erneuter
+begrenzter Freigabe ist die Stoppbedingung erreicht: keine weitere
+Kandidatenreparatur/Gate-Wiederholung ohne Richtung, kein Commit/Push.
+R3.21 bleibt aktiv, R3.20 queued; Browserstash unveraendert.
+SVGA2D-, 128-MiB-Boot- und Browser-Input-Gate bleiben offen, ebenso der noch
+nicht erreichte absichtliche Applet-Fault-/Reintegrationsnachweis.
+
+Aktueller SHA256 Kernel:
+`8664294004add1c939e83623c675c03cfa4ab11d3f13608e28a37beb3e1997e3`;
+Image: `7b698602f2219c913681258e83d277383ac804fb3cc4a2073cc3efee713f2389`.
+Konsistente Referenzartefakte, aber keine vollstaendige GUI-Abnahme.
+
+### Aufbewahrter Fehlerstand vor erneuter Freigabe
+
+Vorheriger Stopp: Auch der eine reparierte Standard-VGA-Gatelauf scheitert
+nach 180.022 s, diesmal am exakten Zustand
+`DISPLAY_PROBE_MENU_READY x=(\d+) y=(\d+)`. Belege:
+`build/codex-agent/r321/runtime-std-exit-repair.log` sowie
+`std-before-gui-repair/status.json` und `std-before-gui-repair/serial.log`.
+Bestaetigt sind Boot, DISPLAY-Shellauflösung, Start des
+Applets aus der Systemsteuerung, native Listenpixel, Speichern 800x600 bei
+unveraendertem 1024x768-Scanout, Applet-Close und Surface-Retirement von PID 10.
+Keine Kernelpanic/Exception gemeldet; kein nachgewiesener Modusneustart,
+1280x720, Fault-/Reintegrationstest oder endgueltiger Shell-Rueckweg.
+
+Die finalen Referenzbuilds nach Diagnostikreparatur bestehen: VMware 67 s
+(`package-vmware-exit.log`, Detail `20260907-103206-package-vmware-vga.log`),
+QEMU 58 s (`package-qemu-exit.log`, Detail `20260907-103351-package-qemu-vga.log`).
+Das aktuelle Image ist kein Mischimage mehr, aber **nicht GUI-abgenommen**.
+SHA256 Kernel: `8664294004add1c939e83623c675c03cfa4ab11d3f13608e28a37beb3e1997e3`;
+Image: `f6056115447d4a6bf6dfd3bd140b1246b8428e82ad0e213ad78782b801efc30c`.
+
+Gemaess eingefrorener Stoppbedingung keine zweite Kandidatenreparatur oder
+Gate-Wiederholung ohne erneute Freigabe. QEMU-Prozess ist beendet. SVGA2D-Gate,
+128-MiB-Boot und bestehendes Browser-Input-Gate bleiben offen. Alle gezielten
+Layout-/PMM-/Toolchain- und betroffenen GUI-Hostgates bestehen wie unten belegt.
+Queue unveraendert: R3.21 aktiv, R3.20 queued. Kein Commit, kein Push.
+
+Naechste begrenzte Diagnose: Der Runner sendet nach Applet-Retirement noch
+ESC an die Systemsteuerung, wartet aber nicht auf deren Retirement, bevor er
+Start klickt. Im Desktop wird ein zuvor gelesenes Tastaturereignis erst nach
+dem Mausbatch an die UI zugestellt. Dass diese Reihenfolge ESC auf ein gerade
+geoeffnetes Menue statt auf das alte Fenster wirken laesst, ist eine konkrete
+Hypothese, noch kein Gastnachweis. Native Menue-/Capture-/Fokuszustand und
+Control-Panel-Retirement gezielt erfassen; keine weitere blinde Pause und kein
+Wiederholen bis zu einem zufaelligen PASS. Die separate Diagnose mit Bildern
+hatte einen Exit gezeigt, ersetzt aber diese fehlende Abnahme nicht.
+
+### Umgesetzte und gepruefte Speicherlayout-Erweiterung
+
+Der Nutzer hat die Linker-/Boot-Speicherlayout-Erweiterung samt Schutztests
+ausdruecklich freigegeben. Der gesamte vorhandene Kandidat bleibt eindeutig
+zuordenbar; keine fremden Aenderungen, keine Stash-Wiederherstellung.
+Inventar: Beide nativen ELF-Loader akzeptieren bereits [1 MiB, 64 MiB),
+der PMM reserviert bis hinter den gelinkten Stack und seine Bitmaps/Initialheap.
+Paging nutzt supervisor-only Abbildungen unter unveraenderten 1 GiB USER_BASE.
+Es ist keine Erweiterung von Bootadmission, Paging oder Allocator notwendig.
+
+`config/klink.ld` bildet jetzt genau dieses bestehende 63-MiB-Fenster ab.
+Die unbenutzte eingebettete `.user_*`-Region bei 33 MiB wird nicht verschoben,
+sondern einschliesslich Untersektionen explizit abgewiesen. `_kernel_end` bleibt
+das tatsaechliche `_stack_end`; 4-KiB-Guard und 8-KiB-Stack werden per Assertion
+geschuetzt. Kein pauschales Reservieren des ganzen Linkerfensters, keine
+dynamischen Grafikpuffer, kein kleineres Grafikbudget, keine ABI-Aenderung.
+
+Vor Reparatur reproduzierten reale ELF-Links den Ueberlauf. Das neue Gate
+`python test/test_kernel_memory_layout.py -v` besteht danach mit vier Tests
+in 4.095 s, einschliesslich echter PMM-Verhaltenstests O0/O2 fuer 128/1024 MiB:
+geschuetzte Frames nicht freigebbar, Firmwareausschluss, exakte Rueckgewinnung,
+unveraenderte 1/16-Recoveryreserve und Ablehnung vor Bitmap-Schreibzugriff bei
+reserviertem Metadatenbereich. Linktest prueft beide realen 16-MiB-Puffer,
+Nichtueberlappung, NOBITS-Dateigroesse, Guard-/Stacksymbole, Linkerueberlauf und
+abgewiesene eingebettete Usersektionen. Beleg `gate-kernel_memory_layout-layout.log`
+unter `build/codex-agent/r321/`; negative Entwicklung `layout-before*.log`.
+
+Das zusaetzliche eingefrorene R1.2-Speichergate enthielt eine alte Annahme
+`argc * SYSCALL_ARGUMENT_CAPACITY`. Im Rahmen der freigegebenen Schutztests
+erwartet es jetzt den schon bestehenden festen `PROCESS_ARGUMENT_TOTAL_BYTES`-
+Heap mit abgezogenem argv-/Alignmentbudget und Einzelargumentgrenze. Alle
+vorhandenen Cleanup-/Stack-/ABI-Assertions bleiben bestehen; kein Spawncode
+geaendert. Ein fokussierter Reparaturlauf: 28 Tests PASS, 0.015 s,
+`gate-memory_r12-layout-final.log`; initialer Fehler bleibt erhalten.
+
+Der erweiterte Toolchain-Lauf besteht mit 23 Tests in 137.371 s
+(`gate-user_program_toolchain-layout-final.log`). Erste echte Referenzbuilds
+nach Layoutreparatur bestanden: VMware 20 s, QEMU 65 s
+(`package-vmware-layout.log`, `package-qemu-layout.log`), jeweils frisch
+gelinkter Kernel, Manifest-/Signatur- und SBOM-Validierung.
+
+Der erste Standard-VGA-Gast beweist Boot, Shell-DISPLAY-Aufloesung,
+Control-Panel-Start, native Listenpixel, Speichern 800x600 ohne Live-Wechsel
+und Applet-Schliessen. Er endet nach 180.027 s ohne bestaetigten Desktop-Exit;
+Belege unveraendert verschoben nach `std-before-exit-repair/`, keine Abnahme.
+Ein separater 60-s-Diagnoseboot (22.389 s, absichtlich kein PASS) zeigt mit
+einzelnen Zustandsaufnahmen die funktionierende Exitaktion und fehlenden
+Folgeprompt: GUI-Programme starten in der Shell im Hintergrund. Die starre
+Klickfolge/Promptannahme des neuen Runners war nicht verlaesslich.
+
+Ein fokussierter in-scope Reparaturschritt ersetzt diese Annahmen: Nur der
+vorhandene `--control-probe` meldet jetzt tatsaechliche Applet-Surface-Retirement,
+native Start-/Exit-Rechteckzentren und freigegebene Menue-Capture. Der Runner
+wartet auf diese Zustaende (auch nach dem absichtlichen Applet-Fault), klickt
+erst danach und verlangt nach `DESKTOP_EXIT_OK` eine frische `help`-Antwort.
+Keine pauschale Fristerhoehung, keine weiteren Klickversuche, kein alternativer
+Exit-/Kill-Pfad. Betroffene Desktop-/Startup-/Shell-Gates erneut PASS mit
+59/2/32 Tests in 1.366/0.640/0.828 s (`gate-*-exit.log`). Beide Referenzbuilds
+werden fuer diesen endgueltigen Diagnostikkandidaten erneut ausgefuehrt,
+danach der eine reparierte Standardlauf und die drei offenen Gastgates.
+Keine Abnahme oder Commitbehauptung vor ihrem tatsaechlichen Bestehen.
+
+### Historischer Referenzbuild-Stopp (durch obige Freigabe fortgesetzt)
+
+Die ausdruecklich freigegebene Toolchain-Fortsetzung ist umgesetzt. Ein
+begrenzter Diagnosebuild mass 74.285 s, davon 50.773 s im bislang seriell
+vorgeschalteten HTML/CSS-Teil. Der SDK-Builder fuehrt nun die unabhaengigen
+HTML- und Runtime-Gruppen parallel aus (bestehende vier Objektarbeiter je
+Gruppe, maximal acht insgesamt). Beide Gruppen werden auch bei Fehlern
+vollstaendig gejoint; keine Hintergrundschreiber nach Rueckkehr. Der
+erfolglose globale Cache-Versuch ist entfernt. DISPLAY.PRG ist auch in der
+inkrementellen erwarteten GUI-Abhaengigkeitsmenge enthalten. Keine Frist,
+Laufzeitquote oder alte Assertion wurde abgeschwaecht.
+
+`python test/test_user_program_toolchain.py -v`: 22 Tests PASS, 156.711 s,
+`build/codex-agent/r321/gate-user_program_toolchain-resumed.log`.
+`python test/test_memory_resilience.py -v`: vier Tests PASS, 2.020 s,
+`build/codex-agent/r321/gate-memory_resilience.log`. Die zuvor bestandenen
+zehn gezielten Gates bleiben als unveraenderte Belege erhalten.
+
+Der anschliessende VMware-Referenzbuild ist **nicht bestanden**, trotz
+irrefuehrendem Wrappertext `PACKAGE PASS elapsed=68s`. Vollstaendiger Beleg:
+`build/codex-agent/20260907-095447-package-vmware-vga.log`. Der Linker meldet:
+
+```
+section '.bss' will not fit in region 'kernel_ram': overflowed by 18211020 bytes
+section '.stack' will not fit in region 'kernel_ram': overflowed by 18227200 bytes
+```
+
+Die beiden 16-MiB-BSS-Grafikpuffer passen nicht in den durch
+`config/klink.ld` festgelegten 32-MiB-Kernelbereich. Diese Quelldatei liegt
+ausserhalb des freigegebenen Pakets. Kein stilles Hochsetzen der Grenze,
+Verschieben von Boot-/Userregionen, Wechsel auf unbewiesene dynamische
+Grafikallokation oder Reduzieren des Modusbudgets allein fuer einen gruenen
+Link. Vor Fortsetzung ist eine explizit eingefrorene Speicherlayout-Erweiterung
+mit Reservierungs-/Isolations- und 128-MiB-Bootnachweis erforderlich.
+
+Zusaetzlich reproduziert: Der lokale `$LASTEXITCODE=0` des aufrufenden
+Paketwrappers verdeckt im Buildskript den globalen nativen Fehlercode. Der
+Kernel-Build prueft jetzt unmittelbar `$?` und benutzt den globalen Code nur
+fuer die Fehlermeldung; bei Fehlern wird kein alter Kernel weiterverpackt.
+Der neue Verhaltenstest fuehrt den echten Pruefblock mit nativen Exitcodes
+2/0 und geerbten Codes 0/7 aus. Vorher beide Faelle FAIL, danach PASS in
+0.823 s; `native-exit-before.log` / `native-exit-after.log` unter
+`build/codex-agent/r321/`. Das ist eine gezielte Entwicklungsregression,
+kein wiederholtes Paketgate oder vollstaendiger neuer Toolchain-Gatelauf.
+
+**Das erzeugte Hauptimage ist ein nicht abgenommenes Mischimage aus altem
+Kernel und neuen PRGs; nicht als funktionierende Anzeigeversion starten.**
+Es und die Belege bleiben erhalten, keine unaufgeforderte Wiederherstellung.
+SHA256 Kernel: `5fc6982b09df641473aadce0cff3f4963a7795cf36a4baafe81bb71bad7a2219`;
+Image: `9a446109cdef9a96d7540931beb82777cfa241bfe5fa6c206f7ccf9ac5ec931a`.
+Kein QEMU-Referenzbuild und keines der vier Gastgates ausgefuehrt. Nach
+Speicherreparatur muessen beide Referenzbuilds und alle Laufzeitgates den
+endgueltigen Kandidaten pruefen; die erweiterte Toolchain-Pruefung ebenfalls.
+R3.21 bleibt aktiv/uncommittet, R3.20 queued, Stashes unveraendert. Kein Push.
+
+### Historischer Toolchain-Stopp (durch obige Freigabe fortgesetzt)
+
+Implementierung liegt uncommittet im sichtbaren Hauptworktree auf
+`38c1556c` (Paketdefinition auf akzeptiertem `732b2930`). DISPLAY.PRG,
+Konfigurationsparser, Startmodusaufnahme, vorhandene Display-/SVGA-Mediation
+und Control-Panel-Aufruf sind implementiert; noch keine Gast-/Hardwareabnahme.
+Keine Browser-Stash-Wiederherstellung, keine Agenten oder sichtbaren Hostfenster.
+
+Zehn der zwoelf gezielten Gates bestanden. Der neue reale Verhaltenstest
+`python test/test_display_settings.py -v` besteht mit vier Tests jeweils bei
+O0/O2: native Applet-Eingaben/asynchroner CONFIG-Besitz, Modusprogrammierung
+mit fehlerhaftem Readback/Mapping/Disable, Ring-3-Treiber/Broker/Syscall-Grenzen
+und Setting-/Kapazitaetspruefung. Alte Desktop-Quellannahmen (Startwrapper und
+sieben statt acht Surface-Programme) wurden einmal gezielt repariert; das
+Desktop-Gate besteht danach mit 59 Tests. Alle Belege unter
+`build/codex-agent/r321/gate-*.log`; Entwicklungsregressionen sind separat
+`build/codex-agent/r321-*-development*.log` und zaehlen nicht als Abnahme.
+
+Stop: `python test/test_user_program_toolchain.py -v` scheitert nach einem
+fokussierten Reparaturversuch erneut. Erster Lauf: 149.313 s,
+`gate-user_program_toolchain.log`; nach Reparatur: 160.908 s,
+`gate-user_program_toolchain-repair.log`. DISPLAY.PRG wird nach Einbindung der
+vorhandenen libc erfolgreich mitgebaut. Offen bleiben:
+
+- Der frische installierte GUI-SDK-Build ueberschreitet unveraendert seine
+  60-s-Grenze. Der versuchte persistente globale Compiler-Cache im SDK-Builder
+  hat den Fehler nicht geschlossen; keine erfolgreiche Performancebehauptung.
+- Der inkrementelle GUI-Neubau liefert korrekt auch DISPLAY.PRG; die zweite
+  erwartete Programmenge in `test/test_user_program_toolchain.py` (um Zeile 666)
+  wurde noch nicht aktualisiert. Diesen nachfolgenden Fehler nicht kaschieren.
+
+Zum damaligen Stopp gemaess eingefrorener Stoppbedingung keine Kandidatenreparatur oder
+Gate-Wiederholung ohne neue Freigabe. Memory-Resilience-Gate, beide
+Referenzpakete und alle vier Laufzeitgates sind noch offen. Der neue
+`run_qemu_display_settings.py` ist geschrieben, aber nicht ausgefuehrt;
+insbesondere Aufloesung, Bildpixel, Persistenz und echte Applet-Exception sind
+noch nicht im Gast nachgewiesen. Das vorhandene Hauptabbild wurde durch diese
+Arbeit nicht neu gebaut. Keine Queue-Transition, kein Implementierungscommit,
+kein Push. R3.21 bleibt aktiv, R3.20 queued; der gesicherte Browserentwurf bleibt
+unveraendert. Naechster notwendiger Auftrag: begrenzte Toolchain-Reparatur und
+Abnahmefortsetzung mit unveraenderten Fristen/Assertions ausser der expliziten
+DISPLAY-Erweiterung der GUI-Abhaengigkeitsmenge freigeben.
+
+### Freigegebener Umfang
 
 Nach Nutzerbestaetigung sauberer Start auf `732b2930`. Das neue Paket friert
 Modusaufnahme, vorhandene Display-/SVGA-Mediation, Konfiguration und eigenes

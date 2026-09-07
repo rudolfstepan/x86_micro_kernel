@@ -1167,6 +1167,26 @@ int x86os_terminal_input(uint32_t operation, int target_pid,
                               (uint32_t)(uintptr_t)&request, 0U, 0U);
 }
 
+int x86os_display_mode_query(reist_display_mode_request_t *info) {
+    if (info == 0) return -22;
+    reist_display_mode_request_t request = {0};
+    request.version = REIST_DISPLAY_MODE_VERSION;
+    request.struct_size = sizeof(request);
+    request.operation = REIST_DISPLAY_MODE_QUERY;
+    int status = (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL, (uintptr_t)&request, 0, 0);
+    if (status == 0) *info = request;
+    return status;
+}
+
+int x86os_display_activate_mode(uint32_t width, uint32_t height) {
+    reist_display_mode_request_t request = {0};
+    request.version = REIST_DISPLAY_MODE_VERSION;
+    request.struct_size = sizeof(request);
+    request.operation = REIST_DISPLAY_MODE_ACTIVATE;
+    request.width = width; request.height = height; request.bpp = 32U;
+    return (int)x86os_syscall(X86OS_SYS_DISPLAY_CONTROL, (uintptr_t)&request, 0, 0);
+}
+
 int x86os_process_identity(x86os_process_identity_t* identity) {
     if (identity == NULL) return -22;
     return (int)x86os_syscall(X86OS_SYS_PROCESS_IDENTITY,

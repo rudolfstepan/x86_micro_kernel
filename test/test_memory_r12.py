@@ -570,7 +570,12 @@ class SpawnvAndMemoryStatsAbiTests(unittest.TestCase):
     def test_spawnv_copies_argument_storage_to_the_kernel_heap(self):
         spawnv = function_block(self.syscalls, "static int syscall_spawnv(")
         self.assertIn("char *arguments = (char*)k_malloc(", spawnv)
-        self.assertIn("(size_t)argc * SYSCALL_ARGUMENT_CAPACITY", spawnv)
+        self.assertIn("k_malloc(PROCESS_ARGUMENT_TOTAL_BYTES)", spawnv)
+        compact = re.sub(r"\s+", "", spawnv)
+        self.assertIn("budget=PROCESS_ARGUMENT_TOTAL_BYTES-((size_t)argc+4U)*sizeof(uint32_t)-3U", compact)
+        self.assertIn("capacity=budget-used", compact)
+        self.assertIn("if(capacity>PROCESS_ARGUMENT_STRING_BYTES)capacity=PROCESS_ARGUMENT_STRING_BYTES", compact)
+        self.assertIn("copy_spawn_argument(argument,capacity,user_argument)", compact)
         self.assertNotRegex(
             spawnv,
             r"char\s+arguments\s*\[\s*SYSCALL_MAX_ARGUMENTS\s*\]",

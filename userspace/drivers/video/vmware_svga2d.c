@@ -88,6 +88,24 @@ static int activate(svga2d_driver_t *driver) {
     return 0;
 }
 
+static int activate_mode(svga2d_driver_t *driver, uint32_t width, uint32_t height) {
+    if (driver->active) return driver->width == width && driver->height == height ? 0 : -16;
+    x86os_display_driver_request_t response;
+    int status = driver_command(driver, X86OS_DISPLAY_DRIVER_ACTIVATE_MODE,
+        0U, 0U, 0U, 0U, width, height, 0U, &response);
+    if (status != 0) return status;
+    if (response.width != width || response.height != height) {
+        (void)driver_command(driver, X86OS_DISPLAY_DRIVER_DEACTIVATE,
+            0U, 0U, 0U, 0U, 0U, 0U, 0U, NULL);
+        return -84;
+    }
+    driver->width = width; driver->height = height;
+    driver->capabilities = response.capabilities &
+        (REIST_SVGA2D_CAP_RECT_FILL | REIST_SVGA2D_CAP_RECT_COPY);
+    driver->active = 1U;
+    return 0;
+}
+
 static int deactivate(svga2d_driver_t *driver) {
     if (driver->active == 0U) return 0;
     int status = driver_command(
@@ -118,8 +136,12 @@ static int request_valid(const reist_svga2d_message_t *request) {
         request->flags != 0U || request->reserved[0] != 0U ||
         request->reserved[1] != 0U ||
         request->operation < REIST_SVGA2D_ACTIVATE ||
-        request->operation > REIST_SVGA2D_INFO)
+        request->operation > REIST_SVGA2D_ACTIVATE_MODE)
         return -84;
+    if (request->operation == REIST_SVGA2D_ACTIVATE_MODE &&
+        (!request->width || !request->height || request->source_x || request->source_y ||
+         request->destination_x || request->destination_y || request->color ||
+         request->capabilities || request->status)) return -84;
     return 0;
 }
 
@@ -133,6 +155,8 @@ static int handle_request(svga2d_driver_t *driver,
     if (response->status != 0) return response->status;
     if (request->operation == REIST_SVGA2D_ACTIVATE) {
         response->status = driver->active != 0U ? 0 : activate(driver);
+    } else if (request->operation == REIST_SVGA2D_ACTIVATE_MODE) {
+        response->status = activate_mode(driver, request->width, request->height);
     } else if (request->operation == REIST_SVGA2D_DEACTIVATE) {
         response->status = deactivate(driver);
     } else if (request->operation == REIST_SVGA2D_RECT_FILL ||

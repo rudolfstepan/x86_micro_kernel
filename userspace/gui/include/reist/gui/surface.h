@@ -65,6 +65,9 @@ enum reist_gui_surface_message_type {
     /* Version 6: catalog family in format and pixel height in stride_bytes. */
     REIST_GUI_SURFACE_PAINT_FONT_TEXT,
     REIST_GUI_SURFACE_ENABLE_SCROLL,
+    /* Additive fixed-applet request; only a compositor-authorized panel can
+     * enqueue it. Success acknowledges queuing, not child readiness. */
+    REIST_GUI_SURFACE_OPEN_DISPLAY,
     REIST_GUI_SURFACE_CONFIGURE = 0x80U,
     REIST_GUI_SURFACE_INPUT,
     REIST_GUI_SURFACE_CLOSE,

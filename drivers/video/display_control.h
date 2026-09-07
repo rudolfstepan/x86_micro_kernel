@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "include/reist/display_mode.h"
 
 #define DISPLAY_CONTROL_ABI_VERSION 1U
 #define DISPLAY_CONTROL_ACTIVATE 1U
@@ -28,6 +29,7 @@
 #define DISPLAY_DRIVER_PROBE 6U
 /** Live read-only engine snapshot used for bounded Ring-3 preflight. */
 #define DISPLAY_DRIVER_ENGINE_PREFLIGHT 7U
+#define DISPLAY_DRIVER_ACTIVATE_MODE 8U
 #define DISPLAY_DRIVER_CAP_RECT_FILL (1U << 0U)
 #define DISPLAY_DRIVER_CAP_RECT_COPY (1U << 1U)
 
@@ -149,6 +151,8 @@ typedef struct {
 } display_control_rect_t;
 
 int display_control_activate(void);
+int display_control_mode_query(reist_display_mode_request_t *request);
+int display_control_activate_mode(uint32_t width, uint32_t height);
 int display_control_deactivate(void);
 void display_control_prepare(void);
 void display_control_present_rect(uint32_t x, uint32_t y,

@@ -23,10 +23,11 @@ class GuiControlPanelSourceTests(unittest.TestCase):
         self.assertNotIn("x86os_display_activate", self.source)
         self.assertNotRegex(self.source, r"\b(malloc|calloc|realloc|free)\s*\(")
 
-    def test_four_applets_support_pointer_and_keyboard(self):
-        for label in ("Tastatur", "Maus", "System", "Desktop"):
+    def test_five_applets_support_pointer_and_keyboard(self):
+        for label in ("Tastatur", "Maus", "System", "Desktop", "Anzeige"):
             self.assertIn(label, self.source)
-        self.assertIn("CONTROL_PANEL_APPLET_COUNT 4U", self.source)
+        self.assertIn("CONTROL_PANEL_APPLET_COUNT 5U", self.source)
+        self.assertIn("reist_gui_surface_client_open_display", self.source)
         self.assertIn("handle_pointer", self.source)
         self.assertIn("handle_keyboard", self.source)
         self.assertIn("CONTROL_PANEL_KEY_LEFT", self.source)
@@ -82,10 +83,12 @@ class GuiControlPanelSourceTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         windows = (ROOT / "scripts/build-windows.ps1").read_text(
             encoding="utf-8")
-        for program in ("CONTROL.PRG", "CONFIG.PRG"):
+        for program in ("CONTROL.PRG", "CONFIG.PRG", "DISPLAY.PRG"):
             self.assertIn(f'"{program}"', programs)
         self.assertIn("vfs_file_client.c", programs)
         self.assertIn("usr/gui/bin/control.prg=", makefile)
+        self.assertIn("usr/gui/bin/display.prg=", makefile)
+        self.assertIn("'usr/gui/bin/display.prg'", windows)
         self.assertIn("sbin/config.prg=", makefile)
         self.assertIn("'usr/gui/bin/control.prg'", windows)
         self.assertIn("'sbin/config.prg'", windows)

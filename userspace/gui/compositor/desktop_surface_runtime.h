@@ -19,11 +19,15 @@ typedef struct desktop_surface_runtime_client {
     uint32_t active;
     uint32_t terminate_requested;
     uint64_t retire_deadline_ms;
+    uint32_t allow_display_applet;
+    uint32_t display_applet_pending;
 } desktop_surface_runtime_client_t;
 typedef struct desktop_surface_runtime {
     desktop_surface_runtime_client_t clients[DESKTOP_SURFACE_RUNTIME_CAPACITY];
 } desktop_surface_runtime_t;
 int desktop_surface_runtime_initialize(desktop_surface_runtime_t *runtime);
+int desktop_surface_runtime_allow_display(desktop_surface_runtime_t *runtime, int pid);
+int desktop_surface_runtime_take_display(desktop_surface_runtime_t *runtime);
 int desktop_surface_runtime_reserve(desktop_surface_runtime_t *runtime,
                                     x86os_ipc_handle_t *client_endpoint);
 int desktop_surface_runtime_bind(desktop_surface_runtime_t *runtime,

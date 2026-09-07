@@ -6,8 +6,20 @@ Neue Funktionsprioritaet vom 7. September: Nach dem inzwischen abgenommenen
 Boot-Reparaturpaket folgt die konfigurierbare Desktopaufloesung mit eigenem
 Anzeige-PRG in der Systemsteuerung, vor Fortsetzung der Browsermigration.
 Inventar, Schutzgrenzen und erforderliche Nachweise stehen im
-[Anzeige-Applet-Plan](DESKTOP_DISPLAY_SETTINGS_PLAN.md). Noch nicht implementiert;
-Farbschema/Farbtiefe sind als optionale Nutzerentscheidung getrennt erfasst.
+[Anzeige-Applet-Plan](DESKTOP_DISPLAY_SETTINGS_PLAN.md). R3.21 ist mit allen
+14 gezielten Gates, beiden Referenzbuilds und vier Gastgates abgenommen.
+DISPLAY.PRG bietet die gepruefte Modusauswahl in der Systemsteuerung;
+CONFIG.PRG speichert `desktop resolution`, wirksam beim naechsten Desktopstart.
+Die explizit freigegebene Speicherlayout-Anpassung nutzt die bestehende
+64-MiB-Loadergrenze, ohne Paging/Reserven zu lockern. Reale ELF-/PMM-Tests
+und der 128-MiB-Boot bestaetigen die Reservierung und Schutzgrenzen.
+Standard-VGA (54.653 s) und emuliertes VMware-SVGA (52.386 s) beweisen
+800x600/1280x720, native Eingaben/Paints, Applet-Absturz/Wiedereroeffnung,
+Fallback und Shellrueckkehr. Die Browser-Eingabepruefung besteht ebenfalls.
+Toolchain-/GUI-/Auswahl-Handshake- und Fehlerzaehlungsreparaturen sowie alle
+vorherigen Fehlerbelege sind in CURRENT_WORK dokumentiert. R3.20 ist wieder
+aktiv, aber noch nicht migriert/abgenommen. Farbtiefe bleibt unveraendert;
+Farbschema, Live-Umschaltung und neue physische Modusqualifikation sind Nichtziele.
 R1.2e ist mit 52 Hosttestfaellen, beiden Referenzbuilds und allen drei
 Gastgates abgeschlossen; keine Schutz-/Budgetlockerung. Details in CURRENT_WORK.
 
@@ -25,8 +37,8 @@ TASK-2001 liefert die sechs minimalen allokationsfreien Hilfstypen.
 `R3.20-browser-model-cpp` ist noch nicht implementiert. Das vorgeschaltete
 `R1.2e-probe-start-publication` ist abgenommen: Der Ring-3-Probestart
 veroeffentlicht seine geschuetzte Generation, bevor der Prozess erstmals
-laufen darf. Die Queue aktiviert formal wieder R3.20; vor dessen Umsetzung
-ist jedoch der oben priorisierte Anzeige-Auftrag als Paket einzufrieren.
+laufen darf. Nach Abnahme von R3.21 fuehrt die Queue wieder R3.20 als aktiv;
+dessen eigene Baseline- und Migrationsgates sind weiterhin erforderlich.
 Browserentwurf und nicht bestandene
 UI-Baseline bleiben gesichert; alle Migrationsgrenzen bleiben unveraendert.
 Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.

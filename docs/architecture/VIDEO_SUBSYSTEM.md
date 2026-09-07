@@ -1,5 +1,15 @@
 # Video subsystem
 
+## Startup mode selection (R3.21 candidate)
+
+The Display applet/configuration consumer and append-only mode envelope are
+specified in [DISPLAY_SETTINGS_CONTRACT.md](DISPLAY_SETTINGS_CONTRACT.md).
+The existing DISPI/SVGA-II mediators admit explicit startup geometry within
+device and 16-MiB shadow/staged limits. Per-window Surface buffers remain at
+1024x768 / 3 MiB. VBE is restricted to the validated boot handoff; neither
+live resize nor new pixel formats are implemented. Acceptance evidence, not
+this code inventory, determines platform qualification.
+
 ## VMware SVGA-II 2D profile
 
 REIST implements the VMware SVGA-II identities `15ad:0405` and `15ad:0710`

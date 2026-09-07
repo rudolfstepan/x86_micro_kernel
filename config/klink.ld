@@ -3,8 +3,10 @@ ENTRY(start)
 
 MEMORY
 {
-  kernel_ram (rw) : ORIGIN = 0x00100000, LENGTH = 32M  /* Kernel memory region, 32 MB (increased for network drivers) */
-  user_programs (rw) : ORIGIN = 0x02100000, LENGTH = 8M  /* User programs memory region, 8 MB */
+  /* Existing BIOS ELF32 PT_LOAD envelope: [1 MiB, 64 MiB).
+     This is an admission ceiling, not an eager reservation of 63 MiB.
+     The PMM reserves the actual image/guard/stack through _stack_end. */
+  kernel_ram (rw) : ORIGIN = 0x00100000, LENGTH = 63M
 }
 
 SECTIONS
@@ -44,6 +46,14 @@ SECTIONS
     _kernel_bss_end = .;
   } > kernel_ram
 
+  /* Ring-3 executables are separately loaded into private address spaces.
+     Do not silently revive the obsolete embedded-user area at 33 MiB. */
+  .legacy_user : {
+    *(.user_text .user_text.* .user_rodata .user_rodata.*)
+    *(.user_data .user_data.* .user_bss .user_bss.*)
+  } > kernel_ram
+  ASSERT(SIZEOF(.legacy_user) == 0, "Embedded userspace sections are not supported")
+
   /* Boot/rescue kernel stack: full guard page + 8 KiB stack. */
   .stack ALIGN(4096) (NOLOAD) : {
     _stack_guard_start = .;
@@ -54,27 +64,11 @@ SECTIONS
     _stack_end = .;
   } > kernel_ram
 
-  /* User program code */
-  .user_text ALIGN(4096) : {
-    user_code = .;
-    *(.user_text)
-    *(.user_rodata)
-  } > user_programs
-
-  /* User program initialized data */
-  .user_data ALIGN(4096) : {
-    user_data = .;
-    *(.user_data)
-  } > user_programs
-
-  /* User program uninitialized data (BSS) */
-  .user_bss ALIGN(4096) : {
-    user_bss = .;
-    *(.user_bss)
-  } > user_programs
-
-  _kernel_end = .;
+  _kernel_end = _stack_end;
 
   /* Ensure kernel fits within kernel_ram */
   ASSERT(_kernel_end <= ORIGIN(kernel_ram) + LENGTH(kernel_ram), "Kernel exceeds kernel_ram region!")
+  ASSERT(ORIGIN(kernel_ram) + LENGTH(kernel_ram) == 0x04000000, "Native ELF32 loader limit changed")
+  ASSERT(_stack_guard_end - _stack_guard_start == 4096, "Boot stack guard must remain one page")
+  ASSERT(_stack_end - _stack_start == 8192, "Boot stack capacity changed")
 }
