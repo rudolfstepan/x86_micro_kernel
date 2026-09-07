@@ -21,6 +21,7 @@ PROGRAMS = {
     "CPPTEST.PRG": ROOT / "userspace/programs/cpptest.cpp",
     "MEMTEST.PRG": ROOT / "userspace/programs/memtest.c",
     "CRTEST.PRG": ROOT / "userspace/programs/crtest.c",
+    "MATHTEST.PRG": ROOT / "userspace/programs/mathtest.c",
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
     "SYSINFO.PRG": ROOT / "userspace/programs/sysinfo.c",
     "USBINFO.PRG": ROOT / "userspace/programs/usbinfo.c",
@@ -371,6 +372,13 @@ def main() -> None:
                 link_libraries.extend([sdk.wapcaplet_library, sdk.libc_library])
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.append(sdk.include_dir / "libwapcaplet/libwapcaplet.h")
+            if name == "MATHTEST.PRG":
+                includes.insert(0, sdk.math_include_dir)
+                # libm is self-contained. Aggregate IPC initialization needs
+                # the actual byte runtime, not compiler-rt's weak fallback.
+                link_libraries.extend([sdk.math_library, sdk.libc_library])
+                dependency_files.extend(sdk.math_include_dir.glob("*.h"))
+                dependency_files.extend([ROOT / "test/math_vectors.h", Path(__file__).resolve()])
             if name in {"MEMTEST.PRG", "DISPLAY.PRG"}:
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.append(sdk.libc_library)

@@ -579,6 +579,45 @@ versionierten Vertrag im Repository.
 
 ## Definition of Done für ein neues SDK-Modul
 
+### Opt-in binary64-Mathematikprofil 1
+
+R3.21 ergaenzt `usr/include/reist/math/{math,fenv}.h`, `usr/lib/libm.a`
+und `usr/lib/pkgconfig/reistmath.pc`. Die 44 ISO-C11-Funktionen und vier
+fenv-Operationen sind im [Mathematikvertrag](RING3_MATH_RUNTIME_CONTRACT.md)
+abschliessend aufgefuehrt. Gepinnte musl1.2.6-Algorithmen, keine Heap-/OS-
+Abhaengigkeit; der fenv-Adapter veraendert nur den eigenen x87/MXCSR-Zustand
+unter R1.3. Domain-/Rangefehler liefern Sonderwerte und Ausnahmeflags,
+nicht errno. Keine vollstaendige libm-/POSIX-/ECMAScript-Zusage.
+
+Ein externer C- oder C++-Aufrufer inkludiert `<math.h>` und bei Bedarf
+`<fenv.h>` aus dem opt-in Verzeichnis. Beispielsweise:
+
+```c
+#include <math.h>
+int main(void) { return hypot(3.0, 4.0) == 5.0 ? 0 : 1; }
+```
+
+Mit erzeugtem SDK in `build/sdk`:
+
+```text
+python scripts/build_user_program.py math_example.c --sysroot build/sdk -I build/sdk/usr/include/reist/math -l m -l reistc -o build/MATHEX.PRG
+```
+
+Das numerische Archiv hat keine offenen externen Abhaengigkeiten.
+Bei compilererzeugter Byteinitialisierung, etwa fuer IPC-Nachrichten, wird
+wie bei anderen C-Verbrauchern explizit `libreistc.a` verwendet. Dessen
+Bytefunktionen aktivieren keinen Heap. Das arithmetische Compilerarchiv ist
+kein Ersatz fuer diese Laufzeit und wird hier nicht benoetigt.
+`reistmath.pc` beschreibt ausschliesslich Include- und libm-Linkflags.
+Bestehende Include-/Linkdefaults bleiben unveraendert. COPYRIGHT
+und alle ausgewaehlten unveraenderten Quellen liegen unter
+`usr/share/licenses/musl-math`. Kein Parser-/Thread-/Linux-Teil von musl.
+
+`MATHTEST.PRG` ist der reale SDK-Verbraucher in beiden Image-Layouts,
+aufrufbar als `mathtest` aus der normalen Shell. Abnahmestand und Belege
+stehen in CURRENT_WORK; das Vorhandensein der Schnittstelle aktiviert
+noch keine JavaScript-Engine im Browser.
+
 R3.10 ergänzt `abs` (ISO C11; nur wenn der positive Wert als int darstellbar
 ist) und `strdup` (POSIX, Allocation aus derselben begrenzten Prozessarena,
 NULL/ENOMEM bei Erschöpfung). Es gibt keine globale Host-libc-Allokation.

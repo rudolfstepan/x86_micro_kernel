@@ -2,6 +2,15 @@
 
 Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 
+Fortsetzung 7. September: Nach der abgenommenen FPU-Isolation liefert
+das abgenommene R3.21 ausschliesslich den opt-in numerischen SDK-Unterbau fuer den
+JavaScript-Port: 44 binary64-Funktionen aus musl1.2.6 und vier Ring-3-fenv-
+Operationen. Grenze, Pin und Abnahme im
+[Mathematikvertrag](RING3_MATH_RUNTIME_CONTRACT.md), aktueller Gatezustand
+in CURRENT_WORK. Browser, HTMLWORK und Benchmark bleiben bytegleich;
+QuickJS, Zahlen-/Textkonvertierung und die benoetigten Laufzeitadapter
+sowie DOM/Event-/Navigationsintegration sind damit noch nicht umgesetzt.
+
 ## Entscheidung und Grenzen
 
 Am 6. September 2026 bestaetigte Reihenfolge: R3.15-Formularreparatur abnehmen

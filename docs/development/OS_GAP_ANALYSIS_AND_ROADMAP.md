@@ -2,11 +2,17 @@
 
 Stand: 3. September 2026
 
-7. September, naechster Browser-Voraussetzungsschnitt R3.21 eingefroren:
+7. September, Browser-Voraussetzungsschnitt R3.21 abgenommen:
 opt-in binary64-libm/fenv im Ring3 aus musl1.2.6, normaler SDK-/PRG-Linkweg,
 numerische Sonderwerte und Prozessfehler-/Reuse-Nachweis. FPU und gemessene
 Kernel-/Browser-/Benchmarkartefakte bleiben unveraendert. Keine JavaScript-
-Engine oder DOM in diesem Paket; R3.6b mit allen offenen Gates zurueckgestellt.
+Engine oder DOM in diesem Paket. 28 Hostfaelle, beide Referenzen, beide
+Math-Gaeste (1/4 CPUs), libc und Browser-Eingabe/Crash/Restart bestehen.
+Kernel beider Profile und vier vorhandene Programme sind SHA256-bytegleich
+zu0301d708. Falscher Byte-Linkweg und fehlende Rezeptabhaengigkeit des neuen
+Testprogramms sind mit erhaltenen Vorherbelegen repariert. Queue geht nur
+formal auf R3.6b weiter; kein Vorziehen vor dokumentiertem Browservorrang.
+Details und Grenzen: CURRENT_WORK.md.
 
 7. September, R1.3 abgeschlossen: Vor der JavaScript-Portierung wurde die
 fehlende x87/MMX/SSE-Kontextisolation als separates Kernelpaket geschlossen.

@@ -43,12 +43,19 @@ class BuildDependencyTests(unittest.TestCase):
         script = (ROOT / "scripts/build-windows.ps1").read_text(
             encoding="utf-8")
         self.assertIn(
-            "$systemProgramExitCode = Invoke-PythonProcess -Arguments @(",
+            "$systemProgramExitCode = Invoke-PythonProcess -Arguments $systemProgramArguments",
             script)
+        arguments = script.split("$systemProgramArguments = @(", 1)[1].split(")", 1)[0]
+        self.assertIn("'scripts/build_system_programs.py'", arguments)
+        self.assertIn("'--output-dir', $UserProgramDir", arguments)
         self.assertIn("if ($systemProgramExitCode -ne 0)", script)
         self.assertIn(
             "$exampleProgramExitCode = Invoke-PythonProcess", script)
         self.assertIn("if ($exampleProgramExitCode -ne 0)", script)
+        for variable in ("systemProgramExitCode", "exampleProgramExitCode"):
+            failure = script.split("if ($" + variable + " -ne 0)", 1)[1].split("}", 1)[0]
+            self.assertIn("throw ", failure)
+            self.assertIn("$" + variable, failure)
         system_build = script[
             script.index("$systemProgramExitCode ="):
             script.index("$systemLayout =")

@@ -1,10 +1,13 @@
 # Ring-3-Mathematikprofil 1 (R3.21)
 
-Stand: 7. September 2026. Vor Implementierung eingefroren, noch nicht abgenommen.
+Stand: 7. September 2026. Vor Implementierung eingefroren, jetzt abgenommen.
+28 Hostfaelle, beide Referenzen, Math-Gaeste mit einer/vier CPUs, bestehende
+libc-/Browsergaeste und unveraenderte Kernel-/Programmhashes bestehen.
+Vollstaendige Belegkarte und erhaltene Fehler: CURRENT_WORK.md.
 
 ## Grenze und Quellen
 
-Nach FPU-Abnahme `0301d708` fehlt im opt-in SDK noch `math.h`/`libm`.
+Nach FPU-Abnahme `0301d708` fehlte im opt-in SDK noch `math.h`/`libm`.
 Das bereits inventarisierte QuickJS 2026-06-04 nutzt unter anderem sqrt,
 pow, exp/log und trigonometrische/hyperbolische Funktionen. Dieser Schnitt
 liefert ausschliesslich ihre numerische Ring-3-Grundlage. Engine, DOM,
@@ -16,7 +19,10 @@ Abschnitte 7.6/7.12, IEEE-754 binary64 und i386 SysV-C-Aufrufkonvention.
 [musl 1.2.6, offizielle Freigabe](https://www.openwall.com/lists/musl/2026/03/20/1):
 Originalarchiv SHA256 `d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a`.
 Es werden nur unveraenderte generische numerische Quellen, Hilfstabellen,
-private Header und Lizenztexte extrahiert. Keine Linux-, Thread-, Allocator-
+private Header, der originale i386-fsqrt-Helfer und Lizenztexte extrahiert.
+Der Helfer dient ausschliesslich acosh bei erweiterter x87-Auswertung und
+wird intern umbenannt, ohne oeffentliche sqrtl-Familie. Der veraltete drem-
+Alias wird nicht exportiert. Keine Linux-, Thread-, Allocator-
 oder Signalimplementierung. Kleine REIST-Header begrenzen die angebotene API;
 der separate x87/MXCSR-Adapter arbeitet ausschliesslich im aufrufenden Ring-3-
 Prozess unter der abgenommenen FPU-Isolation. Keine neuen Syscalls.
@@ -52,6 +58,11 @@ exakte Member, regulare Dateien, 128-Datei-/256-KiB-Member-/2-MiB-Gesamtgrenze.
 Vier parallele Objektcompiler maximal, begrenzte Prozesse, unveraenderte
 Artefaktzeitstempel bei unveraenderten Inputs. COPYRIGHT und einzelne
 Quelllizenzen werden mitgeliefert.
+Das finale Archiv besitzt keine offenen externen Symbole. MATHTEST linkt
+fuer seine IPC-Byteinitialisierung die bestehende libreistc, ohne Heapstart;
+ein arithmetisches Compilerarchiv ersetzt diese Byte-Laufzeit nicht. Sein
+Build-Rezept ist ausdruecklicher inkrementeller Input, damit Linkaenderungen
+nicht an einem alten Programm vorbeigehen.
 
 `/usr/bin/mathtest.prg` ist ueber `mathtest` in der normalen Ring-3-Shell
 erreichbar, identisch in Windows- und Make-Layout. Normale mathematische

@@ -2,18 +2,134 @@
 
 Stand: 7. September 2026
 
-## R3.21 aktiv: mathematische Ring-3-Grundlage fuer JavaScript
+## R3.21 abgeschlossen: mathematische Ring-3-Grundlage fuer JavaScript
 
-Fortsetzung nach `0301d708`: sauberer Worktree, FPU und VMware-Leistungsschutz
-abgenommen. Die Bestandsaufnahme bestaetigt fehlendes math.h/libm bei realen
-QuickJS-2026-06-04-Aufrufen. R3.21 friert die komplette benoetigte binary64-
-Funktionsgruppe samt fenv-Teilprofil, SDK-Linkweg und MATHTEST-Gastnachweis
-vor Implementierung ein. Wiederverwendung: offizielle musl1.2.6-Numerik,
-keine Linux-/Allocator-/Threadteile; Pin und Grenzen im
-[Mathematikvertrag](../architecture/RING3_MATH_RUNTIME_CONTRACT.md).
-Noch keine Umsetzung oder Abnahme. R3.6b wird mit unveraenderten offenen
-Gates wieder queued; Browser/JavaScript-Voraussetzungen haben Benutzervorrang.
-Keine Engine/DOM, Kernel-, Scheduler-, Benchmark- oder Budgetaenderung.
+Alle eingefrorenen Gates bestehen nach den unten belegten gezielten
+Korrekturen. Das opt-in SDK bietet 44 binary64-Funktionen aus unveraenderter
+gepinnten musl1.2.6-Numerik sowie vier prozesseigene fenv-Operationen.
+Keine Heapallokation oder externe Laufzeitabhaengigkeit in libm; keine
+Linux-/Allocator-/Threadteile. MATHTEST verwendet fuer seine IPC-Nachrichten
+die vorhandene Byte-Laufzeit ohne Heapstart und ist in beiden normalen
+Image-Layouts ueber die Userspace-Shell erreichbar. Vertrag:
+[Mathematikprofil 1](../architecture/RING3_MATH_RUNTIME_CONTRACT.md).
+
+Finale Belege relativ zu `build/codex-agent/r321-math/`; vollstaendige
+eingefrorene Befehle in `automation/reist-s03b.toml`:
+
+| Gate / Kommando | Ergebnis / Dauer | Beleg |
+|---|---|---|
+| `python test/test_math.py -v` | 8 PASS / 30.013s | `host-math-link-dependency-final.log` |
+| `python test/test_libc_source.py -v` | 4 PASS / 1.851s, unveraendert | `host-libc_source-final.log` |
+| `python test/test_build_dependencies.py -v` | 7 PASS / 0.013s | `host-build_dependencies-object-final.log` |
+| `python test/test_benchmark_source.py -v` | 9 PASS / 0.003s | `host-benchmark_source-object-final.log` |
+| Referenz VMware/vga | PASS / 67s | `package-vmware-link-final.log`, `../20260907-183930-package-vmware-vga.log` |
+| Referenz QEMU/vga | PASS / 63s | `package-qemu-link-final.log`, `../20260907-184037-package-qemu-vga.log` |
+| `run_qemu_math.py --verify-artifacts` | PASS / 0.869s | `artifacts.json`, `artifacts-link-final-time.log` |
+| `run_qemu_math.py`, eine CPU | PASS / 13.228s | `guest.log`, `guest-link-final-command.log` |
+| `run_qemu_math.py --smp 4` | PASS / 13.511s | `smp.log`, `smp-command.log` |
+| Runtime `libc-client` QEMU/vga | PASS / 45s | `runtime-libc-client.log`, `../20260907-184412-runtime-guest-smoke-libc-client.log` |
+| Runtime `runtime-desktop-browser-input` QEMU/vga | PASS, 180s-Gastgrenze eingehalten | `runtime-runtime-desktop-browser-input.log`, `browser-input.log` |
+
+Zusammen 28 Hostfaelle. Beide echten Math-Gaeste fuehren zweimal `mathtest`
+aus: Numerik/Fenv, frische Kindgeneration, echter #MF16 mit Status144,
+schlafendes Kind mit anderer Rundung und Kill143, normales Ende37,
+generationstreue Freigabe, unveraenderte Elternkontrollen und frische
+HELP-Antwort der Shell. SMP4 bestaetigt alle drei AP-FPU-Kontexte.
+Bestehende libc- und Browser-Eingabe/Navigation/Crash/Restart/Konsolentests
+sind unveraendert bestanden. Keine neue Performance-/WCET-Zusage aus diesen
+Funktionstests und keine Wiederholung des unveraenderten VMware-Benchmarks.
+
+Beide Kernelprofile sowie BROWSER/HTMLWORK/GTEST/BENCHMARK bleiben bytegleich
+zur abgenommenen Baseline `0301d708`; alle SHA256 in `artifacts.json`.
+Finales QEMU-Image `a5a1397973751486345ffd47ef0698fb99877360a6ce143e8e257614eae28309`,
+VMware-Flatdisk `dac34c84613373f5b8f80dd058b047a58de677ae4a5bcd21bfc01d3b967277e1`.
+MATHTEST65536 Bytes, SHA256
+`0bee6c4057aac105bb7eb87f63869902ccde11078fc40c69f258430b77c467c6`.
+Finale Kopien in `accepted-qemu/` und `accepted-vmware/`; alte schnelle
+FPU-/Benchmarkimages, Messungen, Stashes und alle Fehler bleiben erhalten.
+Keine laufenden Test-VMs/Compiler beim Abschluss. Kein Push oder Agent.
+
+Keine JavaScript-Engine/DOM-, Kernel-, Scheduler-, Benchmark- oder
+Budgetaenderung. Der numerische Unterbau ersetzt nicht die noch fehlenden
+Interpreter-/Laufzeitadapter und Browserintegration. Nur die Queue geht
+auf R3.6b weiter; dessen offene Abnahme bleibt offen und wird in diesem
+Paket nicht implementiert oder vor den dokumentierten Browservorrang gezogen.
+
+### Umsetzung und Fehlerkorrekturen (historischer Verlauf)
+
+Fortsetzung nach ausdruecklicher Benutzerfreigabe: genau
+`test/test_build_dependencies.py` wurde in den Paketumfang aufgenommen.
+Die alte Aufrufassertion kontrolliert jetzt das vorhandene Argumentarray
+und weiterhin beide Throw-Zweige bei Fehlercodes. Die neuen Headerchecks
+kompilieren echte C/C++-Objekte: Zig meldete mit -fsyntax-only auch bei
+vorhandener Eingabedatei FileNotFound. Der Shellcheck prueft den wirklichen
+POSIX-Suchpfad. Alle alten Fehlbelege bleiben erhalten.
+
+Erster echter Math-Gast: Numerik und Fenv bestanden, danach zwei enthaltene
+Stack-Pagefaults an EIP40006afe/40006b0f, Shell weiterhin vorhanden. Der
+bytegleiche Diagnoseneubau (SHA054df84c...) und die Disassemblierung beweisen
+direkte Rekursion in der schwachen memset-Ersatzfunktion des unnoetig
+gelinkten Compilerarchivs. MATHTEST verwendet jetzt explizit die vorhandene
+libreistc-Bytefunktion, ohne Heapinitialisierung; das numerische Archiv hat
+ueberhaupt keine offenen externen Symbole. Neues Vorher-Regressionsbeispiel
+`before-byte-link.log`, finaler Math-Hostgate 8 PASS / 28.436s in
+`host-math-byte-final.log`. Bestehende unveraenderte libc-/Build-/Benchmark-
+Gates bestehen mit 4/7/9 Faellen. Beide Referenzen und betroffene Gast-/
+Artefaktgates werden auf dem korrigierten Verbraucher wiederholt.
+Gasttreiber verwirft unerwartete Pagefaults jetzt sofort; dieselben
+Erfolgsmarker, Fehlervektoren und 180s-Deadline bleiben vorgeschrieben.
+
+Der fehlgeschlagene Gast liegt unveraendert in
+`guest-before-byte-runtime.log` (180.018s), der erste bestandene Hashvergleich
+in `artifacts-before-byte-runtime.json`. Diagnostik:
+`mathtest-diagnostic.elf`, `MATHTEST-diagnostic.PRG`,
+`recursive-memset-disassembly.log`; nichts geloescht. Ein fehlgeschlagener
+CLI-Diagnoseversuch wird ebenfalls behalten; Bibliotheksnamen mit Punkt
+sind im bestehenden CLI absichtlich ausgeschlossen. Der dokumentierte
+Verbraucher benoetigt nur die normal aufloesbaren Namen m und reistc.
+
+Zusaetzlich nachgewiesener Kandidatenfehler: Der anschliessende
+VMware-Build meldete MATHTEST Reused; Datei225280 Bytes und SHA054df84c...
+blieben trotz korrigierter Linkliste gleich. Der neue Verbraucher fehlte
+noch als Abhaengiger seines eigenen Build-Rezepts. MATHTEST nimmt jetzt
+scripts/build_system_programs.py in seine inkrementellen Inputs auf,
+analog zu den bestehenden Browserverbrauchern. Regression davor:
+`before-link-dependency.log`. Zwischenreferenzen `package-*-byte-final.log`
+sind erhalten, aber wegen des alten Verbrauchers keine finale Abnahme.
+
+### Historischer Stopp vor Benutzerfreigabe
+
+`test/test_build_dependencies.py:45`
+erwartet den alten Inline-Array-Aufruf von Invoke-PythonProcess. Bereits
+`git show HEAD:scripts/build-windows.ps1` belegt stattdessen den bestehenden
+Aufruf mit `$systemProgramArguments` und unveraendertem Throw bei Fehlercode.
+Die Korrektur gehoert in den Regressionstest, nicht als Scheinreparatur in
+den funktionierenden Buildaufruf. Diese Testdatei fehlt in allowed_files;
+genau diese Ergaenzung benoetigt Freigabe. Kein Implementierungscommit,
+kein Image-Neubau, keine Gate-/Queue-/Schwellenlockerung.
+
+Belege unter `build/codex-agent/r321-math/`:
+
+- `host-math-final.log`: 7 Tests / 30.647s, 5 PASS und 2 Fixturefehler.
+  Echte i386-Numerik/Fenv O0/O2 einschliesslich 768 unabhaengiger Samples,
+  44 Funktionen, vier Rundungsrichtungen, selektive Flags, Pin-/Metadaten-
+  Ablehnung, Gastlog-Negativtests und ELF-Archivabschluss bestehen.
+  Offen: Zig stdin-Cache meldet FileNotFound im Headercheck; dafuer einen
+  eigenen erzeugten Fixturepfad statt stdin verwenden. Shellquelltest
+  erwartet faelschlich DOS-Escapes; bestehende Suchpfade sind /usr/bin usw.
+  Beide Reparaturen bleiben in test/test_math.py innerhalb des Pakets.
+- `host-libc_source-final.log`: 4 PASS / 1.851s.
+- `host-build_dependencies-final.log`: 6 PASS, 1 veraltete Assertion / 0.022s.
+- Benchmarkgate, beide Referenzen und alle Gast-/Artefaktgates noch nicht
+  ausgefuehrt; keine Laufzeit- oder Leistungsschutzabnahme fuer R3.21 behauptet.
+- Vorher- und Entwicklungsfehler samt erfolgreichen numerischen Zwischen-
+  pruefungen bleiben erhalten. Keine laufenden Compiler/QEMU-Prozesse beim Stopp.
+
+Kandidat: unveraenderte gepinnte musl-Algorithmen, opt-in libm/fenv und
+SDK-Metadaten, MATHTEST in beiden Image-Layouts. Der interne unveraenderte
+i386-fsqrt-Helfer deckt acosh mit erweiterter x87-Auswertung ab; kein sqrtl-
+API oder drem-Kompatibilitaetsalias. MATHTEST und sein begrenzter Gasttreiber
+sind angelegt, aber noch nicht im echten Gast abgenommen.
 
 ## R1.3 abgeschlossen: FPU-Isolation und VMware-Leistungsschutz
 

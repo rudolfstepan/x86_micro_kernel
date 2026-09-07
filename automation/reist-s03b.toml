@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.21-ring3-math-runtime"
-next_user_request = "2026-09-07: Continue the browser/JavaScript prerequisites after accepted FPU0301d708. Inventory confirms no math.h/libm in the opt-in SDK and actual QuickJS2026-06-04 math consumers. Implement only the cohesive Ring-3 binary64 numeric library prerequisite R3.21 directly in the visible worktree; defer R3.6b with unchanged open gates. Preserve accepted FPU, fast VMware images/measurements, browser C++ evidence and stashes. No engine/DOM, kernel, scheduler, benchmark or resource-budget change, no agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-07: R3.21 math prerequisite accepted after user-authorized buildtest correction and focused consumer-link repairs. Advance only the queue to existing R3.6b; do not implement it in this run or override documented browser priority. Further JavaScript/runtime/DOM work requires its own cohesive frozen package. Preserve all accepted FPU/performance/math images, measurements, browser C++ evidence and stashes. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,11 @@ push = false
 
 [[packages]]
 id = "R3.21-ring3-math-runtime"
-status = "active"
+status = "done"
+completion_summary = "2026-09-07: Direct visible-worktree acceptance complete: 28 host cases (math8 actual i386 O0/O2, libc4, build7, benchmark9), final VMware67s/QEMU63s references, artifact guard0.869s, QEMU math13.228s and SMP4 math13.511s, libc45s and existing browser keyboard/edit/navigation/crash/restart/console pass. Both math guests run the normal shell command twice with all44 functions, four roundings, actual MF16/status144, kill143, exact reap/fresh generations, unchanged parent controls and fresh help; SMP all AP contexts ready. Final math consumer65536 bytes, opt-in archive has zero external undefined symbols. Both actual image kernel profiles plus BROWSER/HTMLWORK/GTEST/BENCHMARK remain byte-identical to0301d708. QEMU imagea5a1397973751486345ffd47ef0698fb99877360a6ce143e8e257614eae28309, VMware flatdac34c84613373f5b8f80dd058b047a58de677ae4a5bcd21bfc01d3b967277e1; copies and full evidence in r321-math, map in CURRENT_WORK. No engine/DOM or new performance/WCET claim."
+resolved_gate_failures = "Retain all before/failure logs. User-authorized stale Build test now checks actual argument array and unchanged throw branches. Header syntax-only Zig FileNotFound persists for an existing input; compile actual C/C++ objects instead. Shell expectation uses real POSIX search paths. Initial guest math passed then failed at recursive weak memset in unnecessarily linked arithmetic compiler archive, proved by byte-identical ELF at40006afe/40006b0f; use existing libreistc bytes and no compiler archive, tighten libm closure to zero external dependencies. Initial link correction was not rebuilt because MATHTEST lacked its recipe dependency: add only build_system_programs.py to this consumer's incremental inputs, regression first, then rerun math and both references. Unexpected guest pagefault now fails immediately; all success markers, numeric limits, generations, fault statuses, snapshots and deadlines unchanged. Final affected artifact/math gates pass; unaffected libc/build/benchmark host gates retained."
+scope_amendment = "2026-09-07: User authorizes continuing after the explicit request to add test/test_build_dependencies.py. Add only that test path and repair its stale inline-array assertion to cover the actual argument variable and unchanged failure exit handling. Resume attributed candidate in place, preserve failed evidence and passed unaffected libc gate; no scope/gate/threshold/kernel change otherwise."
+historical_blocker = "Before user-approved continuation: build_dependencies failed its pre-existing line45 exact-string assertion; HEAD already passed $systemProgramArguments, not an inline @( array. Math final gate retained cached-stdin FileNotFound and incorrect DOS-vs-POSIX shell source expectation. Actual numeric/fenv O0/O2, 768 reference samples, archive closure and libc passed. All prior evidence retained."
 phase = "post-s0"
 risk = "medium"
 title = "Opt-in bounded binary64 libm for the isolated JavaScript port"
@@ -31,7 +35,7 @@ allowed_files = [
   "scripts/build_user_math.py", "scripts/build_user_sdk.py",
   "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
   "userspace/programs/mathtest.c", "test/math_vectors.h", "test/math_host.c",
-  "test/test_math.py", "scripts/run_qemu_math.py"
+  "test/test_math.py", "scripts/run_qemu_math.py", "test/test_build_dependencies.py"
 ]
 invariants = [
   "Numerical code and fenv execute only in Ring3 under accepted eager FPU ownership. No kernel, driver, scheduler, syscall, quota or default SDK/link profile change.",
@@ -1723,7 +1727,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

@@ -19,6 +19,7 @@ import tempfile
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from build_user_math import build_math
 
 from build_user_program import (ROOT, find_zig, freestanding_compile_prefix,
                                 cpp_compile_flags, validate_cpp_object)
@@ -173,6 +174,14 @@ class SdkArtifacts:
     @property
     def cpp_library(self) -> Path:
         return self.library_dir / "libreistcpp.a"
+
+    @property
+    def math_include_dir(self) -> Path:
+        return self.include_dir / "reist/math"
+
+    @property
+    def math_library(self) -> Path:
+        return self.library_dir / "libm.a"
 
 
 def sdk_artifacts(output: Path) -> SdkArtifacts:
@@ -371,6 +380,8 @@ def build_sdk(output: Path, zig: Path, incremental: bool = False,
               cache_directory: Path | None = None) -> SdkArtifacts:
     """Build headers, startup object and reusable static libraries once."""
     artifacts = sdk_artifacts(output)
+    # Opt-in numerical archive; no existing consumer gains implicit linkage.
+    build_math(artifacts.root, zig, incremental)
     mode_header = ROOT / "include/reist/display_mode.h"
     mode_destination = artifacts.include_dir / "reist/display_mode.h"
     mode_destination.parent.mkdir(parents=True, exist_ok=True)

@@ -387,6 +387,7 @@ try {
         'sbin/httpd.prg' = 'HTTPD.PRG'
         'usr/bin/curl.prg' = 'CURL.PRG'
         'usr/bin/crtest.prg' = 'CRTEST.PRG'
+        'usr/bin/mathtest.prg' = 'MATHTEST.PRG'
         'usr/bin/memtest.prg' = 'MEMTEST.PRG'
         'usr/bin/cpptest.prg' = 'CPPTEST.PRG'
         'sbin/config.prg' = 'CONFIG.PRG'
