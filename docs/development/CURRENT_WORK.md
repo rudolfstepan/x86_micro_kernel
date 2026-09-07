@@ -2,6 +2,17 @@
 
 Stand: 7. September 2026
 
+## R3.24 aktiv: persistenter JavaScript-Dienst
+
+Fortsetzung auf sauberem a09d8841. Ein zusammenhaengendes Paket schliesst
+die separate Worker-/IPC-/Ownergrenze: persistente Engine, HELLO/Selbsttest,
+grosse Skript-/Ergebnisuebertragung, Health/GC, nichtblockierender C++-Parent,
+generationstreues Fencing/Reap und begrenzte frische Recovery. Vertrag und
+Gates vor Umsetzung eingefroren in JAVASCRIPT_SERVICE_CONTRACT.md und Queue.
+Keine Engine-, Kernel-, DOM- oder Browseraktivierung in diesem Schnitt;
+Dokument-/Eventtransaktionen bleiben die naechste eigene Fehlergrenze.
+Bestehende Kernel-/UI-/Benchmarkprogramme bleiben bytegleich geschuetzt.
+
 ## R3.23 abgeschlossen: isolierter JavaScript-Kern
 
 Auf sauberem 6bc51cbf, eingefrorener Paketvertrag ee754e42: QuickJS2026-06-04

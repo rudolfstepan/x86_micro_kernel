@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-07: R3.23 isolated JavaScript core accepted directly in the main worktree; 40 hosts, both references, image preservation and JS/math/browser guests pass. Browser JavaScript still needs a separately frozen generation-scoped IPC/document/DOM/event adapter, not implicit activation of this SDK library. R3.6b is formally next but remains deferred with its open gates intact behind standing browser priority. No later package implemented in this run, agents or push."
+active_id = "R3.24-javascript-service-lifecycle"
+next_user_request = "2026-09-07: User says mach weiter after a09d8841. Execute the next complete browser prerequisite: a persistent separately owned JSWORK process, framed IPC and nonblocking C++ parent lifecycle with self-test, resource admission, cancellation, exact-generation fencing/reap and bounded recovery. DOM ownership/events and browser activation remain the next independent document-semantics boundary. Preserve accepted core and UI/benchmark binaries. R3.6b remains deferred; no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,43 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.24-javascript-service-lifecycle"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Persistent isolated JavaScript service and owned nonblocking IPC session"
+scope = "One complete Ring3 process/IPC failure domain: persistent JSWORK runtime, HELLO/self-test, EVAL with retained realm, GC/health, graceful shutdown, framed large request/reply, native fault/hang/malformed reply, fenced cancellation and exact-generation reap/recovery in a noncopyable C++ session. Normal shell JSIPCTST consumer proves the actual boundary. No engine/kernel/DOM/Date/network authority or existing browser activation."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+ "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+ "docs/architecture/JAVASCRIPT_SERVICE_CONTRACT.md",
+ "userspace/gui/apps/browser/js_protocol.h", "userspace/gui/apps/browser/js_protocol.c",
+ "userspace/gui/apps/browser/js_session.hpp", "userspace/gui/apps/browser/js_session.cpp",
+ "userspace/gui/apps/browser/js_worker.c", "userspace/programs/jsipctst.cpp",
+ "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+ "test/js_service_host.cpp", "test/test_js_service.py", "scripts/run_qemu_js_service.py"
+]
+invariants = [
+ "Separate Ring3 worker only; no kernel/syscall/quota/engine/default-link change. Both kernels and all accepted BROWSER/HTMLWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST actual image payloads byte-identical to a09d8841.",
+ "Private versioned little-endian framing; no pointers or fake JSON-RPC/DOM compatibility. Validate complete header, expected PID/generations/document/sequence/operation/deadline/status/offset/total before any copy. Source<=1MiB, result<=65535 data bytes plus NUL, bulk<=2048. One half-duplex request per owned session, two least-rights delegated endpoints.",
+ "Worker explicit64MiB process heap, accepted32MiB engine and16KiB stack, seed from owner. Self-test before HELLO acknowledgement. Per-command absolute monotonic deadline<=5000ms, bounded1000ms idle owner checks without realm churn. Parent poll<=8 zero-timeout IPC calls, no UI-facing busy wait; terminal cleanup<=1000ms with at most one kill.",
+ "Close endpoints before forced termination, no kill of an unknown/reused generation, wait only on an observed owned zombie. No reintegration before complete validated HELLO or replacement before reap. At most two explicit fresh-runtime recoveries per document; never silently replay scripts or pretend lost JS state survives. Lost ownership/reap deadline is a terminal diagnostic, not success.",
+ "Fault probes are explicit argv-only fixture modes, never inferred from scripts/URLs/wire opcodes. Ordinary syntax exceptions preserve the context; OOM/deadline/capacity fail closed. Parent death/channel loss releases worker state. Constructor/destructor never hide blocking OS recovery.",
+ "Host commands<=90s compiler/four compiler workers maximum, executions<=30s. QEMU1024MiB snapshot<=180s; no visible windows, agents, pushed commits or destroyed evidence. Final gates once; retain failures, repair only demonstrated in-scope causes and rerun affected gates."
+]
+targeted_tests = ["python test/test_js_service.py -v", "python test/test_js.py -v", "python test/test_build_dependencies.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_js_service.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r324-js-service/artifacts.json",
+ "python scripts/run_qemu_js_service.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r324-js-service/guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "JAVASCRIPT_SERVICE_CONTRACT.md: actual i386 O0/O2 framing and C++ lifecycle behavior, hostile/truncated/stale/overlap/header and queue-full cases, nonblocking poll/monotonic regression, bounded cleanup/unknown identity/restart exhaustion. Actual guest twice normal shell jsipctst: retained realm and promise jobs,1MiB request/60000-byte reply/GC/health, graceful shutdown, actual fault142/noncooperative kill143/malformed reply/cancellation, no stale result publication, exact identities/reap and fresh self-test. Both references, all protected byte hashes and browser input/crash/restart pass."
+stop_conditions = ["Source needed outside allowed_files", "Unattributed changes", "Kernel/authority/engine/budget expansion", "Failed gate without demonstrated focused in-scope correction"]
+commit_message = "feat: add isolated JavaScript service lifecycle"
+evidence = []
 
 [[packages]]
 id = "R3.23-isolated-javascript-core"
@@ -1820,7 +1857,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
