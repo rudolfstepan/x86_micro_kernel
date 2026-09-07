@@ -2,6 +2,16 @@
 
 Stand: 28. August 2026
 
+R1.3-Kandidat vom 7. September (Abnahme noch offen): CPU-lokales internes
+Layout Version7 mit 544-Byte-Schedulerkontext; 512 Bytes davon sind ein
+16-Byte-ausgerichtetes Intel-FXSAVE-Abbild. BSP und jeder AP initialisieren
+das gleiche FPU/FXSR/SSE-Profil mit CR0/CR4-Readback und gleicher MXCSR-Maske
+vor Taskzulassung bzw. ONLINE. Kein globaler Lazy-FPU-Owner; jeder reale
+Wechsel restauriert eager auch beim Null-old-Exit. Die vorhandenen affinen
+AP-Probetasks pruefen Defaults und CPU-eigenen XMM-Zustand ueber Sleep/Resume
+ohne Erweiterung ihrer Fristen oder Autoritaet. Vertrags- und Nachweisgrenze:
+[FPU-Kontextisolation](FPU_CONTEXT_ISOLATION_CONTRACT.md).
+
 ## Abnahmegrenze der ersten Stufe
 
 REIST erkennt aktivierbare Prozessoren über die ACPI-MADT nach ACPI 6.x und

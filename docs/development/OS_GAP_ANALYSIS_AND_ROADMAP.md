@@ -13,8 +13,13 @@ R1.3-Zwischenstand: Kandidat implementiert, 62 Hosttests und beide Referenzen
 PASS; Gastabnahme offen, weil installiertes QEMU-TCG beim entmaskierten
 SSE-Fehler keinen #XM liefert. Keine Implementierungsfreigabe oder Queue-
 Fortschaltung; Details und erhaltene Fehlbelege in CURRENT_WORK.md.
-Der schnelle VMware-Vorherstand ist gesichert, die gepaarte Leistungsmessung
-steht noch aus. Eingefrorene Gateplattformen bleiben unveraendert.
+Fortsetzung nach ausdruecklicher Freigabe der #XM-Verlagerung: VMware besteht
+den vollstaendigen FPU-Fehler-/Reuse-Nachweis und den gepaarten CPU-Vergleich
+(Single +3.82 Prozent, Multi +1.52 Prozent der Mediane; kein signifikanter
+Mehrleistungsclaim). 67 Hostfaelle und beide aktualisierten Referenzen PASS.
+QEMU liefert aber auch beim ungueltigen MXCSR keinen #GP; diese weitere
+Plattformgrenze ist noch nicht zur Aenderung freigegeben. Gesamt-Abnahme und
+Implementierungscommit bleiben offen; alte Fehlbelege werden nicht entfernt.
 
 7. September, R3.20 abgeschlossen: eine C++-Modellimplementierung hinter sechs
 unveraenderten C-Einstiegen, ohne neuen Navigations-/Worker-/Heapbesitz.

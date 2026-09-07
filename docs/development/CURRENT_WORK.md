@@ -23,7 +23,7 @@ Zusatzgate: drei echte Workstation-Paare mit unveraendertem Benchmark, CPU-
 Mediane >=95 Prozent; RAM/HDD-Rohwerte diagnostisch, nicht tickgenau genug
 fuer dieselbe Prozentgrenze. Noch keine eigene Leistungsabnahme.
 
-### R1.3 Kandidat: Abnahme am SSE-Fehlernachweis offen
+### R1.3 Kandidat: Teilnachweise und erhaltene Historie
 
 Setup-Commits `1ab441ac` und `3cd44a44`; Implementierung im sichtbaren
 Worktree, nicht committet. Task-/Idle-Kontexte sichern jetzt eager alle
@@ -83,6 +83,101 @@ Die Queue friert nur diese Plattformkorrektur ein: QEMU behält #MF/#GP und
 alle Zustands-/Reuse-Pruefungen, Workstation verlangt zweimal das volle
 Profil plus frische Shell und Stabilitaet. Kein Benchmark-/Grenzwertumbau.
 Umsetzung und neue Abnahme noch offen; vorheriger Befund bleibt historisch.
+
+### R1.3 Fortsetzung: VMware-FPU und Leistung bestanden
+
+Vertragscommit `433d321c` friert die ausdruecklich genehmigte Verlagerung
+des #XM-Nachweises auf echte Workstation ein. Der Kandidat bleibt bis zum
+Bestehen aller anderen eingefrorenen Gates uncommittet und R1.3 aktiv.
+
+Gezielte, durch Fehlbelege abgegrenzte Korrekturen:
+
+- PowerShell lieferte bei nicht vorhandenen Compilerprozessen trotz leerer
+  Prozessliste Exit1. Expliziter Erfolg erst nach der unveraenderten
+  Busy-Pruefung; Regression prueft sowohl Abwesenheit als auch einen echten
+  laufenden Prozess. `preflight-before.log`, `host-platform-preflight-fixed.log`,
+  `workstation-fpu-preflight-failure.json` bleiben erhalten.
+- Sandboxstart scheiterte vor dem Gast am VMware-Autorisierungsdienst
+  (`W32AuthConnectionLaunch: WriteFile failed`, Zugriff verweigert).
+  `workstation-fpu-sandbox-failure.json` und `workstation-sandbox-ui.log` bleiben;
+  folgende eigene versteckte Testkopien liefen mit freigegebenen Hostrechten.
+- Echter Ryzen-Workstation-Boot wies die gueltige AMD-MXCSR-Maske `0002ffff`
+  ab. AMD-APM-Bit17 wird vom gleichen Legacy-FXSAVE gesichert und bleibt im
+  frischen Kontext null. Die Korrektur akzeptiert dieses definierte Bit,
+  nicht beliebige hohe Bits oder gemischte CPUs. O0/O2-Vorher-/Nachher-
+  Regression: `amd-mask-before.log`, `amd-mask-after.log`; Bootfehler:
+  `workstation-fpu-amd-mask-failure.json`, `diagnostic-workstation-boot-stage.json`.
+- Danach bestanden beide vollstaendigen Ring-3-Fehlerlaeufe; drei parallele
+  AP-Ausgaben waren aber ineinandergeschrieben. Der BSP publiziert sie jetzt
+  erst nach geprueftem AP-Ruecklauf und Reap; keine Masken-/Fristlockerung.
+  `workstation-fpu-ap-evidence-failure.json` und `ap-evidence-before.log` bleiben.
+- Im zweiten Vorher-Benchmarkboot ueberlagerte bereits das alte Image den
+  ersten Shellprompt mit AP-Meldungen; Benchmark wurde nicht gestartet.
+  Nur bei fehlendem Prompt nach allen anderen Bereitschaftsmarkern fordert
+  das Benchmark-Preflight einmalig durch eine Leerzeichenzeile einen neuen
+  Prompt an. Kein Benchmarkretry, keine geaenderte Messung/Frist/Schwelle.
+  Echte PowerShell-Funktion hostgeprueft. Ganze drei Paare neu gemessen;
+  `vmware-paired-prompt-failure.json` und `workstation-c18cc4df6c404f3a866accb7748b55a0/`
+  erhalten die erste Messreihe einschliesslich beider vorhandenen Rohmessungen.
+
+Aktuelle Hostbelege: FPU 11 PASS / 5.397 s (`host-prompt-final.log`), SMP
+31 PASS / 1.700 s (`host-smp-ap-final.log`), unbeeinflusste Schedulergruppen
+3/18/4 PASS weiter gueltig: zusammen 67 Faelle. Alle Zwischenlaeufe bleiben.
+Letzte VMware-Referenz PASS / 15 s (`package-ap-vmware.log`), Detail
+`../20260907-164809-package-vmware-vga.log`.
+
+Vollstaendiger Workstation-FPU-Gast PASS / 29 s, Wrapper 31.466 s:
+`workstation-fpu.json`, Rohbeleg
+`fpu-workstation-50804ac667f546eb9655ac6ceb1168f2/serial.log`.
+Zweimal echte #MF16/#XM19/#GP13 mit Status144/147/141, alle Register und
+Controls bei Eltern-/Kind-Preemption, Sleep/Yield, Dirty-Exit, Kill/Reuse,
+alle drei AP-Kontexte, frische Shellantworten und zehn Sekunden Stabilitaet.
+Der spaetere Prompt-Fix ist ausschliesslich im Benchmark-Modus aktiv.
+
+Gepaarter unveraenderter Benchmark PASS: `vmware-paired.json` und
+`workstation-9e03478b70914af8930181e5c055ae2a/`; sechs frische Laeufe
+je 31/32 s, vier CPUs und 1024 MiB. CPU-Single-Median 3947.58 ->4098.25
+MOp/s (103.8168 Prozent), Multi-Median 4013.98 ->4074.92 MOp/s
+(101.5182 Prozent), jeweils >=95 Prozent. RAM/HDD-Rohwerte vollstaendig
+im JSON, weiterhin kurze tickquantisierte Diagnostik. Kein statistisch
+gesicherter Mehrleistungs- oder WCET-Claim und keine gesicherte 10x-Ursache.
+Beide Ausgangsdisks/VMX wurden unveraendert rueckgeprueft. Nachher-Flatdisk
+SHA256 `e852018af1f7d275130c318a4d49d1dee181e4b5d9a65b5369c746c1fd037d61`,
+Kernel `49a2a5defc545c9687add43418f47b5cd1db03e4f93ac6a9fc5ead4086681a2c`,
+BENCHMARK.PRG unveraendert `b001fb18597e4122dc1dad928649c8c281c71bea0cee7b19887074e13facbfb3`.
+QEMU-Referenz PASS / 61 s (`package-ap-qemu.log`, Detail
+`../20260907-165940-package-qemu-vga.log`); QEMU-Laufzeitabnahme noch offen.
+
+### Aktueller Stopp: QEMU liefert auch den invalid-MXCSR-#GP nicht
+
+Der eingefrorene APIC-Teilprofilaufruf
+`python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r13-fpu/apic-tcg.log`
+endet nach 13.499 s mit FAIL. Beide Preemption-Marker und echte #MF-Beendigung
+sind vorhanden; `fpu-gp` liefert aber Rueckfallstatus94 statt141,
+`fault_index=3`, `stage=97`, `TEST_FAIL FPU`. Kein #GP-Interrupt wird geliefert.
+Der gleiche unveraenderte invalid-MXCSR-Code lieferte auf Workstation zweimal
+den echten #GP13 und Status141. QEMU wurde vom Harness beendet.
+
+Die bereits gelesenen offiziellen QEMU-Quellen zeigen fuer `gen_LDMXCSR`
+und `helper_ldmxcsr` nur den Aufruf von `cpu_set_mxcsr`, das die Bits ohne
+Reserved-Bit-Validierung uebernimmt. Der genaue installierte Development-
+Commit bleibt nicht abgleichbar; der konkrete Gastbefund ist unabhaengig
+davon belegt. Kein Kernelworkaround oder vermeintlicher PASS bei Status94.
+
+Die letzte Freigabe verlaegerte ausschliesslich #XM und liess invalid-MXCSR
+unter QEMU verbindlich. Diese neue Plattformgrenze wird nicht still geaendert.
+Vorgeschlagene weitere Zuordnung: invalid-MXCSR ebenfalls verpflichtend auf
+Workstation (Nachweis vorhanden), QEMU behaelt einen echten #GP ueber
+fehl-ausgerichtetes FXRSTOR samt Prozess-/Reuse-Pruefung. Noch nicht umgesetzt
+oder freigegeben. PIT/SMP/Unsupported/Normal/Browser-Gastgates sind noch nicht
+ausgefuehrt. Queue bleibt aktiv; kein Implementierungscommit, keine
+JavaScript-Freigabe, keine abgeschlossene Gesamt-Abnahme.
+
+Anschliessende ausdrueckliche Benutzerfreigabe: invalid-MXCSR verbindlich
+unter Workstation pruefen und QEMU-#GP ueber fehl-ausgerichtetes FXRSTOR
+erhalten. Queue und FPU-Vertrag frieren diese Zuordnung vor Umsetzung ein.
+Alle Fehler-/Reuse-Anforderungen und Leistungsgrenzen bleiben unveraendert;
+neue finale Lognamen erhalten die vorigen Fehl- und PASS-Belege.
 
 ## R3.20 abgeschlossen: Browsermodell hinter der C-Grenze
 

@@ -41,6 +41,13 @@ CR4.OSFXSR/OSXMMEXCPT an, OSXSAVE aus. Bereits aktiviertes OSXSAVE wird vor
 Aenderungen abgewiesen, nicht mit unbekanntem erweiterten Zustand abgeschaltet.
 Kontrollregister werden rueckgelesen; MXCSR-Masken muessen CPU-uebergreifend
 uebereinstimmen (Intel-Fallback `0xffbf`, wenn die Hardware null meldet).
+Die bekannten Bits umfassen auch AMDs Legacy-SSE Misaligned Exception Mask
+(Bit17, [AMD APM](https://docs.amd.com/api/khub/documents/68GKiN0gMEd6bMddsmhPwg/content)).
+Das Bit gehoert bereits zum FXSAVE-MXCSR, nicht zu XSAVE, und bleibt im
+frischen Zustand null; unbekannte Bits bleiben verboten. Ein echter Ryzen-
+Workstation-Boot stoppte mit der zu engen 16-Bit-Pruefung in Stufe5.
+Die O0/O2-Regression prueft Standard-/AMD-Masken, ungueltige Bits, fehlende
+Defaultkontrollen und gemischte CPUs ohne stillen Maskenschnitt.
 Kein AVX-/XSAVE- oder SIMD-Compilerprofil fuer Anwendungen in diesem Paket.
 Nicht unterstuetzte BSP-Hardware stoppt vor Taskausfuehrung diagnostiziert;
 ein unpassender AP erreicht nicht ONLINE. Kein stiller unsicherer Fallback.
@@ -109,6 +116,32 @@ und seine Grenzen bleiben unveraendert. Betroffene FPU-Host-/Referenzgates
 werden erneut geprueft; vorhandene Fehler und unbeeinflusste PASS-Belege
 bleiben bestehen. Die Queue friert diese Aenderung vor Umsetzung ein.
 
+Aktueller Nachweisstand nach Umsetzung: Workstation besteht beide vollen
+Fehler-/Reuse-Laeufe, alle APs, Shell und Stabilitaet (29 Sekunden).
+Der QEMU-Teilprofiltest scheitert jetzt beim invalid-MXCSR-#GP: Status94 statt
+141, waehrend Workstation denselben Code korrekt abfaengt. In den gelesenen
+offiziellen Quellen ruft
+[`gen_LDMXCSR`](https://raw.githubusercontent.com/qemu/qemu/master/target/i386/tcg/emit.c.inc)
+den Helper auf; [`cpu_set_mxcsr`](https://raw.githubusercontent.com/qemu/qemu/master/target/i386/cpu.h)
+uebernimmt die Bits ohne entsprechende Validierung. Keine behauptete
+Gleichheit zum nicht abrufbaren installierten Development-Commit.
+Die genehmigte Zuordnung umfasst bisher nur #XM; diese zweite Grenze bleibt
+offen und die Gesamt-Abnahme stoppt. Keine stille Gateaenderung oder
+Implementierungsfreigabe. Vollstaendige Befunde in CURRENT_WORK.md.
+
+### Zusaetzlich freigegebene invalid-MXCSR-Zuordnung
+
+Der Benutzer genehmigt anschliessend auch den verpflichtenden Nachweis des
+invalid-MXCSR-#GP auf Workstation. Dort bleiben alle drei urspruenglichen
+Fehlerausloeser unveraendert. QEMU behaelt einen echten #GP13 mit Status141,
+ausgeloest durch ein fehl-ausgerichtetes FXRSTOR-Abbild, weiterhin gefolgt von
+Pruefung des Elternzustands und einer frischen Kindgeneration. TCG-Marker
+benennen ausdruecklich `gp_align=141` und `sse=workstation-required`.
+Keine Ausnahmesimulation, keine automatische Erfolgs-/Fallback-Erkennung
+und kein Kernelworkaround. Alle anderen Pruefungen bleiben verbindlich.
+Betroffene Host-/Referenz-/Workstation-Gates werden mit den endgueltigen
+Artefakten erneut ausgefuehrt; alle vorhandenen Fehl- und PASS-Belege bleiben.
+
 ## Zusaetzlicher VMware-Leistungsschutz (Benutzerauftrag waehrend Umsetzung)
 
 Den beobachteten schnellen Stand vor einem neuen Build separat sichern.
@@ -123,3 +156,13 @@ Laufzeiten keine 5-Prozent-Praezision behaupten. Benchmark und seine bisherigen
 Mindestwerte unveraendert lassen. Das Screenshot-Ergebnis (Single 4194.30,
 Multi 4051.85 MOp/s; RAM je 16000 MiB/s; HDD 12800/42666.66 KiB/s) ist eine
 Benutzerbeobachtung, noch keine eigene Messung oder gesicherte 10x-Ursache.
+
+Der verpflichtende Vergleich besteht inzwischen: Single-Median
+3947.58/4098.25 MOp/s (vorher/nachher), Multi-Median 4013.98/4074.92 MOp/s,
+jeweils ueber 95 Prozent. Sechs frische Workstation-Laeufe, keine parallelen
+VMs/Compiler; Ausgangsdisks und VMX rueckgeprueft unveraendert. Artefakt
+`build/codex-agent/r13-fpu/vmware-paired.json` enthaelt alle Rohwerte und
+Digests. Die einzige Benchmark-Harness-Korrektur fordert bei ueberlagertem
+Bootprompt nach den anderen Bereitschaftsmarkern einmalig eine leere
+Shellzeile an; Benchmarkpfad, Messung, Fristen und Grenzwerte unveraendert.
+Die vorherige an fehlendem Prompt gescheiterte Reihe bleibt separat erhalten.
