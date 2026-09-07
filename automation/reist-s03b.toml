@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.20-browser-model-cpp"
+active_id = "R3.21-desktop-display-settings"
 next_user_request = "2026-09-07: Desktop resolution configuration and a separate Display PRG applet in Control Panel take feature priority after acceptance of active R1.2e and before resuming R3.20. Inventory and safety/acceptance requirements: docs/development/DESKTOP_DISPLAY_SETTINGS_PLAN.md. Define and freeze the implementation package before activation; this request does not change the active scope or gates, accept its candidate, authorize the pending SMP test extension, or claim display functionality is implemented. Optional color scheme versus color depth remains to be clarified."
 
 [policy]
@@ -10,6 +10,77 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.21-desktop-display-settings"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Select validated desktop modes through configuration and a separate Display applet"
+user_direction = "2026-09-07: User requests and now approves implementing the Display applet after accepted boot repair 732b2930. Clean visible main worktree confirmed. Prioritize this package over R3.20 without restoring its unaccepted stash. Direct interactive execution, no agents, visible VM windows or push."
+scope = "One startup display selection transaction with its configuration and Ring-3 UI consumer. Add append-only bounded mode query/activation through existing display authority and the existing supervised SVGA-II driver, not a new kernel driver or configuration parser. Validate backend, exact geometry, XRGB8888 layout, pitch and scanout/shadow capacities before publication, read back the programmed mode and preserve legacy automatic activation. Extend the existing fixed shadow/staged storage to at most 16 MiB each without changing per-window Surface limits, memory isolation or restart budgets. Native VBE exposes only the sealed boot mode. Parse an optional resolution=auto or WIDTHxHEIGHT in the existing desktop schema; atomic CONFIG.PRG writes and startup validation/fallback use the same bounded Ring-3 setting parser. Add DISPLAY.PRG using native list/button controllers, read-only available-mode/setting display, bounded asynchronous CONFIG child ownership, and an explicit fixed-app launch request from Control Panel through its compositor-bound generation. Package both image layouts and prove userspace shell resolution. Apply saved settings only at next desktop start, with one safe automatic fallback; no live mode change, confirmation/persistent trial format, palette/theme implementation, new DMA/IRQ/port authority, browser/C++ migration, or claimed physical VMware/monitor qualification."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/development/DESKTOP_DISPLAY_SETTINGS_PLAN.md",
+  "docs/architecture/DISPLAY_SETTINGS_CONTRACT.md", "docs/architecture/VIDEO_SUBSYSTEM.md",
+  "docs/architecture/SYSTEM_CONFIGURATION.md", "docs/architecture/GUI_CONTROLS_AND_DIALOGS.md",
+  "include/reist/display_mode.h", "drivers/video/display_control.c", "drivers/video/display_control.h",
+  "drivers/video/framebuffer.c", "drivers/video/framebuffer.h", "kernel/syscall/syscall_table.c",
+  "userspace/sdk/include/x86os.h", "userspace/sdk/x86os.c",
+  "userspace/video/include/reist/svga2d.h", "userspace/drivers/video/vmware_svga2d.c",
+  "userspace/config/include/reist/display_settings.h", "userspace/config/lib/display_settings.c",
+  "userspace/services/config/config_service.c", "config/etc/reist/desktop.conf",
+  "userspace/gui/apps/display/main.c", "userspace/gui/apps/display/display_model.h",
+  "userspace/gui/apps/display/display_model.c", "userspace/gui/apps/control_panel/main.c",
+  "userspace/gui/compositor/desktop.c", "userspace/gui/compositor/desktop_surface_runtime.c",
+  "userspace/gui/compositor/desktop_surface_runtime.h", "userspace/gui/include/reist/gui/surface.h",
+  "userspace/gui/include/reist/gui/surface_client.h", "userspace/gui/lib/surface_client.c",
+  "scripts/build_user_sdk.py", "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+  "scripts/run_qemu_display_settings.py", "scripts/run_qemu_runtime_desktop.py",
+  "test/test_display_settings.py", "test/test_display_settings_host.c", "test/test_display_mode_host.c",
+  "test/test_display_applet_host.c", "test/test_display_abi_minimal.py",
+  "test/test_vmware_svga2d.py", "test/test_vmware_svga2d_host.c",
+  "test/test_reist_config_source.py", "test/test_reist_config_host.c",
+  "test/test_gui_control_panel_source.py", "test/test_desktop_surface_runtime_source.py",
+  "test/test_desktop_source.py", "test/test_desktop_startup_source.py",
+  "test/test_gui_surface_source.py", "test/test_gui_surface_client_host.c",
+  "test/test_shell_source.py", "test/test_user_program_toolchain.py"
+]
+invariants = [
+  "legacy syscall and wire values/layouts remain unchanged; new forms are explicit append-only",
+  "query grants no device or display mutation authority; activation remains desktop/driver-generation scoped",
+  "configuration policy parsers UI and child lifecycles stay Ring 3; no raw mappings DMA or new kernel driver",
+  "invalid modes and stale replies cannot publish partial geometry or corrupt live frame state",
+  "per-window limits remain independent of scanout size; no silent loss of shadow rendering at larger modes",
+  "one automatic startup fallback only; no live resize or retry until pass",
+  "applet crash/hang and config denial leave desktop and last complete configuration usable"
+]
+targeted_tests = [
+  "python test/test_display_settings.py -v", "python test/test_display_abi_minimal.py -v",
+  "python test/test_vmware_svga2d.py -v", "python test/test_reist_config_source.py -v",
+  "python test/test_gui_control_panel_source.py -v", "python test/test_desktop_surface_runtime_source.py -v",
+  "python test/test_gui_surface_source.py -v", "python test/test_desktop_source.py -v",
+  "python test/test_desktop_startup_source.py -v", "python test/test_shell_source.py -v",
+  "python test/test_user_program_toolchain.py -v", "python test/test_memory_resilience.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_display_settings.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --backend std --timeout 180 --evidence build/codex-agent/r321/std",
+  "python scripts/run_qemu_display_settings.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --backend vmware --timeout 180 --evidence build/codex-agent/r321/svga2d",
+  "python scripts/run_qemu_smoke.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --memory 128M --boot-only --expect-reist-probe --timeout 90 --log build/codex-agent/r321/boot-128.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "Real-code host tests cover parser/defaults, filtered modes, integer and capacity boundaries, side-effect-free rejection, stale owner, driver readback failure, unchanged old activation, config failures and child cleanup; source tests only supplement them. New runtime runner uses headless snapshots, 1024 MiB, one vCPU and existing host timer policy, no concurrent heavy builds. Within one 180-second boot per backend prove shell DISPLAY command resolution, actual Control Panel applet launch, pointer/keyboard selection and unchanged active geometry before restart, persisted 800x600 and 1280x720 or higher after desktop restarts, screenshot dimensions and painted pixels, unsupported setting fallback, close/crash containment and final shell return. Preserve exact serial/screenshots and statuses, not screenshot-only success. Actual VMware Workstation and native monitor qualification remain separate hardware acceptance."
+stop_conditions = [
+  "a required production source is outside allowed_files or an unrelated writer overlaps",
+  "implementation requires live-mode recovery new persistent format device authority or weakened memory protection",
+  "a frozen gate fails after one focused in-scope repair; retain failed evidence"
+]
+commit_message = "feat: configure validated desktop modes through a Display applet"
+evidence = []
 
 [[packages]]
 id = "R1.2e-probe-start-publication"
@@ -1302,7 +1373,7 @@ evidence = []
 
 [[packages]]
 id = "R3.20-browser-model-cpp"
-status = "active"
+status = "queued"
 deferral = "2026-09-06: User approves the prerequisite R1.2e boot/supervisor repair. Preserve unaccepted harness in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and all r320 evidence. Baseline scroll p95 450.5252 ms exceeds 250 ms; later boot panic blocks diagnosis. Do not migrate the C model before a passing baseline; resume unchanged gates after R1.2e."
 phase = "post-s0"
 risk = "high"

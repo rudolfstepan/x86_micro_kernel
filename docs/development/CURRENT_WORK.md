@@ -2,6 +2,16 @@
 
 Stand: 7. September 2026
 
+## R3.21 freigegeben: Anzeige-Applet und Aufloesung beim Desktopstart
+
+Nach Nutzerbestaetigung sauberer Start auf `732b2930`. Das neue Paket friert
+Modusaufnahme, vorhandene Display-/SVGA-Mediation, Konfiguration und eigenes
+Surface-Applet als zusammenhaengenden Startmodus-Verbraucher ein. Kein
+Live-Wechsel, Farbschema, weiterer Pixelformatpfad oder Browserumbau. R3.20
+wieder queued, sein Entwurf und saemtliche Belege unveraendert gesichert.
+Vertrag: `docs/architecture/DISPLAY_SETTINGS_CONTRACT.md`; genaue Dateien und
+Gates in der Queue vor Implementierung festgelegt. Noch keine Abnahme.
+
 ## R1.2e abgenommen: Boot-/Probe-Starttransaktion
 
 Die folgende Startreparatur ist mit allen fuenf gezielten Hostgates (zusammen
