@@ -2,6 +2,16 @@
 
 Stand: 3. September 2026
 
+7. September, R3.23 abgenommen: 40 Hostfaelle, VMware146s/QEMU64s,
+Imageguard0.866s, JS-Gast33.552s, Math13.078s und Browser73.255s bestanden.
+Isolierter QuickJS-Kern samt begrenzter
+Runtime-/Context-Fassade, echten i386-Sprachtests und eigenem JSTEST fuer
+Crash/Hang/Freigabe/frische Generation. Bestehende Kernel-/Browser-/Benchmark-
+Programme bleiben geschuetzt. Keine Website-JavaScript-Zusage: DOM/Event-/
+Navigation-IPC und ein echter Date-/Zeitvertrag sind noch offen. Eingefrorene
+Grenzen und aktueller Gatezustand in RING3_JAVASCRIPT_CORE_CONTRACT.md,
+CURRENT_WORK.md und der Queue; keine Umsetzung von R3.6b in diesem Schnitt.
+
 7. September, R3.22 abgenommen: opt-in SDK-Stringformatter mit
 snprintf/vsnprintf aus musl1.2.6, privatem Ring3-Speicherstream, effizienten
 grossen/trunkierten Feldern und echten Fehler-/Reap-Nachweisen. 38 Hostfaelle,

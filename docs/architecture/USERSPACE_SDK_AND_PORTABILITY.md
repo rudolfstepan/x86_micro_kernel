@@ -654,6 +654,36 @@ Auch der Legacy-HTML-Worker nutzt jetzt den bestehenden demand-backed Provider
 mit unveraendertem 4-MiB-Budget; das caller-owned Arena-API bleibt erhalten.
 Damit wird keine unbenutzte 4-MiB-Arena mehr in jedes Workerimage eingebaut.
 
+### Opt-in JavaScript-Kern (R3.23)
+
+`usr/include/reist/js/reist_js.h`, `usr/lib/libreistjs.a` und `reistjs.pc`
+stellen einen opaken, einzeln besessenen QuickJS-Runtime-/Context-Adapter
+bereit. Das Upstream-C-API wird nicht als SDK-Header installiert. Linkfolge:
+`-lreistjs -lreisttext -lm -lreistc`, danach das vorhandene Compiler-Builtins-
+Archiv. Keine Aenderung der Defaultlinks vorhandener Anwendungen.
+
+Der Aufrufer initialisiert zuerst den bestehenden privaten libc-Prozessheap,
+liefert einen nichtblockierenden monotonen Millisekunden-Callback und einen
+expliziten Seed und haelt FE_TONEAREST ein. Version, Groesse und Grenzen
+werden vor Anlage geprueft: 1..128 MiB Enginebudget, 4..16 KiB Stackbudget,
+maximal 1 MiB Quelltext, 64 KiB Ergebnis und 1024 Promise-Jobs. Eval nimmt eine
+absolute Frist; Ausgabe wird nicht still gekuerzt. Speicher-, Kapazitaets-
+und Fristfehler sperren weitere Ausfuehrung bis Destroy/Neuanlage. Refcounts
+und Zyklus-GC ersetzen keinen externen Prozesswatchdog.
+
+Parser/Interpreter, Unicode/RegExp, BigInt, JSON, Collections, TypedArrays,
+Promises und WeakRef sind enthalten. Date, Atomics/SharedArrayBuffer, Threads,
+Dateien, Netz, Module-/Bytecodelader und DOM bleiben absichtlich unangeboten.
+Die libc ergaenzt ISO-inttypes-Formatmakros fuer die echten Clang-Targettypen;
+kein scanf-/strtoimax-Implementierungsclaim. Libm ergaenzt echtes i386-lrint.
+
+`jstest` ist in beiden normalen Shell-Layouts `/usr/bin/jstest.prg`. Es
+prueft echte Sprach-/GC-Arbeit und Kindprozesse mit lebendem JS-Heap bei
+Pagefault und nichtkooperativem Hanger, generationstreuem Kill/Reap und
+frischem Selbsttest. Grenzen und Abnahmestatus:
+[JavaScript-Vertrag](RING3_JAVASCRIPT_CORE_CONTRACT.md), CURRENT_WORK.md.
+Das aktiviert noch kein JavaScript auf Webseiten.
+
 ### Opt-in Stringformatierung (R3.22)
 
 `usr/include/reist/text/stdio.h` bietet ausschliesslich snprintf/vsnprintf;

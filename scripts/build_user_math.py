@@ -22,9 +22,11 @@ SUPPORT=tuple("__sin __cos __tan __rem_pio2 __rem_pio2_large __expo2 "
     "__math_divzero __math_invalid __math_oflow __math_uflow __math_xflow "
     "exp_data log_data log2_data pow_data sqrt_data".split())
 HEADERS=tuple("exp_data log_data log2_data pow_data sqrt_data".split())
+INTEGER_FUNCTIONS=("lrint",)
 MEMBERS=("COPYRIGHT","src/internal/libm.h","arch/generic/fp_arch.h","include/features.h",
     "src/math/i386/sqrtl.c",
     *("src/math/"+name+".c" for name in FUNCTIONS+SUPPORT),
+    *("src/math/i386/"+name+".c" for name in INTEGER_FUNCTIONS),
     *("src/math/"+name+".h" for name in HEADERS))
 
 
@@ -56,7 +58,9 @@ def extract(destination, archive=ARCHIVE):
 
 
 def source_files(vendor):
-    return tuple(vendor/("src/math/"+name+".c") for name in FUNCTIONS+SUPPORT)+(vendor/"src/math/i386/sqrtl.c", MATH_ROOT/"lib/fenv.c")
+    return tuple(vendor/("src/math/"+name+".c") for name in FUNCTIONS)+tuple(
+        vendor/("src/math/i386/"+name+".c") for name in INTEGER_FUNCTIONS)+tuple(
+        vendor/("src/math/"+name+".c") for name in SUPPORT)+(vendor/"src/math/i386/sqrtl.c", MATH_ROOT/"lib/fenv.c")
 
 
 def includes(vendor):
@@ -67,7 +71,7 @@ def compile_math(zig,vendor,destination,environment,host=False,opt="-O2"):
     prefix=freestanding_compile_prefix(zig,includes(vendor),include_repository_sdk=False)
     if host:
         prefix[prefix.index("x86-freestanding")]="x86-windows-gnu"
-        prefix += ["-D"+name+"=reist_math_"+name for name in FUNCTIONS+
+        prefix += ["-D"+name+"=reist_math_"+name for name in FUNCTIONS+INTEGER_FUNCTIONS+
                    ("fegetround","fesetround","feclearexcept","fetestexcept")]
     # acosh's generic x87 evaluation path needs extended sqrt internally,
     # not a public long-double API. Keep the upstream i386 helper unchanged.

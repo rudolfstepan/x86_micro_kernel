@@ -30,6 +30,19 @@ bytegleich; keine neue Leistungszusage oder Lockerung von Schutzgrenzen.
 
 ## Entscheidung und Grenzen
 
+R3.23 ist mit 40 Hostfaellen, beiden Referenzen und den JS-/Math-/Browser-
+Gastgates abgenommen. Es liefert den isolierten, opt-in QuickJS-Kern mit
+eigener Runtime-/Context-Ownership auf den vorhandenen Ring3-Speicher-,
+FPU-, Math- und Formattervertraegen. Sprachtests laufen gegen den echten
+i386-Kern O0/O2, nicht gegen ein Ersatzmodell. Der separate JSTEST-Gast
+beweist Crash/Hang/Reap/Neuanlage; Belegkarte in CURRENT_WORK.
+[Vertrag und bewusste Luecken](RING3_JAVASCRIPT_CORE_CONTRACT.md):
+kein Date ohne Zeitvertrag, kein DOM/Event-/Navigationsanschluss, keine
+neue Netz-/Dateiautoritaet. Der Browser selbst bleibt in diesem Schnitt
+bytegleich. Als weiterer Browserschnitt bleiben der generationengebundene
+IPC-/Dokumentadapter und seine DOM-/Event-Abnahme offen. Der Kern allein
+macht heutige Webseiten noch nicht JavaScript-kompatibel.
+
 Am 6. September 2026 bestaetigte Reihenfolge: R3.15-Formularreparatur abnehmen
 und committen, danach `R3.16-ring3-cpp-runtime`, erst dann schrittweise C++-
 Migration des Browsers. Das SDK-Paket ist als opt-in C++20-Profil 1 abgenommen;

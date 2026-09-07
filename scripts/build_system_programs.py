@@ -23,6 +23,7 @@ PROGRAMS = {
     "CRTEST.PRG": ROOT / "userspace/programs/crtest.c",
     "MATHTEST.PRG": ROOT / "userspace/programs/mathtest.c",
     "TEXTTEST.PRG": ROOT / "userspace/programs/texttest.c",
+    "JSTEST.PRG": ROOT / "userspace/programs/jstest.c",
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
     "SYSINFO.PRG": ROOT / "userspace/programs/sysinfo.c",
     "USBINFO.PRG": ROOT / "userspace/programs/usbinfo.c",
@@ -373,13 +374,6 @@ def main() -> None:
                 link_libraries.extend([sdk.wapcaplet_library, sdk.libc_library])
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.append(sdk.include_dir / "libwapcaplet/libwapcaplet.h")
-            if name == "MATHTEST.PRG":
-                includes.insert(0, sdk.math_include_dir)
-                # libm is self-contained. Aggregate IPC initialization needs
-                # the actual byte runtime, not compiler-rt's weak fallback.
-                link_libraries.extend([sdk.math_library, sdk.libc_library])
-                dependency_files.extend(sdk.math_include_dir.glob("*.h"))
-                dependency_files.extend([ROOT / "test/math_vectors.h", Path(__file__).resolve()])
             if name == "TEXTTEST.PRG":
                 includes[:0] = [sdk.text_include_dir, sdk.math_include_dir, sdk.libc_include_dir]
                 # 64-bit integer decimal division needs the existing arithmetic
@@ -389,6 +383,21 @@ def main() -> None:
                 dependency_files.extend([*sdk.text_include_dir.glob("*.h"),
                     *sdk.math_include_dir.glob("*.h"), *sdk.libc_include_dir.rglob("*.h"),
                     ROOT / "test/text_vectors.h", Path(__file__).resolve()])
+            if name == "JSTEST.PRG":
+                includes[:0] = [sdk.js_include_dir, sdk.text_include_dir, sdk.math_include_dir, sdk.libc_include_dir]
+                link_libraries.extend([sdk.js_library, sdk.text_library, sdk.math_library, sdk.libc_library,
+                    sdk.library_dir / "libclang_rt.builtins-i386.a"])
+                dependency_files.extend([*sdk.js_include_dir.glob("*.h"),
+                    *sdk.math_include_dir.glob("*.h"), *sdk.libc_include_dir.rglob("*.h"),
+                    ROOT / "test/js_vectors.h", Path(__file__).resolve()])
+            if name == "MATHTEST.PRG":
+                includes.insert(0, sdk.math_include_dir)
+                # Keep the self-contained libm recipe separate from consumers
+                # of compiler-rt. The frozen source gate ends at the next set
+                # dispatch; the link recipe itself remains unchanged.
+                link_libraries.extend([sdk.math_library, sdk.libc_library])
+                dependency_files.extend(sdk.math_include_dir.glob("*.h"))
+                dependency_files.extend([ROOT / "test/math_vectors.h", Path(__file__).resolve()])
             if name in {"MEMTEST.PRG", "DISPLAY.PRG"}:
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.append(sdk.libc_library)

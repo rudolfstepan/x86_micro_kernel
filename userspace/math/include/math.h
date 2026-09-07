@@ -48,6 +48,7 @@ double ceil(double);
 double trunc(double);
 double round(double);
 double rint(double);
+long lrint(double);
 double nearbyint(double);
 double sin(double);
 double cos(double);

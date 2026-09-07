@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.23-isolated-javascript-core"
-next_user_request = "2026-09-07: User says mach weiter after accepted6bc51cbf. Execute R3.23 directly in the main worktree: one isolated QuickJS core/runtime-adapter package on the accepted memory/C/C++/FPU/math/text mechanisms. Preserve source-owned dtoa/rqsort and protected performance binaries; no speculative setjmp, fake OS/Date, default-link or DOM activation. R3.6b remains deferred with all open gates intact behind browser priority. No agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-07: R3.23 isolated JavaScript core accepted directly in the main worktree; 40 hosts, both references, image preservation and JS/math/browser guests pass. Browser JavaScript still needs a separately frozen generation-scoped IPC/document/DOM/event adapter, not implicit activation of this SDK library. R3.6b is formally next but remains deferred with its open gates intact behind standing browser priority. No later package implemented in this run, agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,8 @@ push = false
 
 [[packages]]
 id = "R3.23-isolated-javascript-core"
-status = "active"
+status = "done"
+completion_summary = "2026-09-07: Direct visible-worktree acceptance on6bc51cbf, contract ee754e42. Pinned QuickJS2026-06-04 opt-in opaque runtime/context, bounded private allocator and complete cleanup, parser/interpreter/Unicode/RegExp/BigInt/JSON/collections/typedarrays/promises/WeakRef/cycle GC; real inttypes and i386-musl lrint. All40 host cases pass, plus focused unchanged JS dispatch0.016s after independent builder rule regrouping; original math gate unchanged. VMware146s/QEMU64s, actual image guard0.866s, JS guest33.552s, math13.078s and browser input/navigation/crash/restart/console73.255s pass. Twice actual JS work and normal37/fault142/noncooperative kill143/fresh37, eight identities/reap and surviving parent/shell with live8MiB buffer at failure. Both actual kernels and BROWSER/HTMLWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST byte-identical to6bc51cbf. JSTEST1015808 bytes SHA256723765e1e695274750366d36858b1c5812239033c6e9847616fca2357904d440; QEMU imagef7f57f531abec20136d0b7b5ad2d691ceb561a13504f69b6150c16b5f05f0cb6, VMware flat5bd8677236e7c3412b20adfab31e981dc03aa87bc0deda72f3032672f3ce47dc. Final copies and all prior/development failure evidence preserved in r323-js; command/duration map in CURRENT_WORK. No quota/stack/deadline/gate relaxation, kernel/default consumer/ABI change or website-JS/performance/WCET claim. Date/DOM/IPC remain open. Advance only formal queue to deferredR3.6b."
 phase = "post-s0"
 risk = "high"
 title = "Isolated QuickJS core on the accepted Ring-3 runtime"
@@ -1819,7 +1820,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

@@ -2,15 +2,70 @@
 
 Stand: 7. September 2026
 
-## R3.23 aktiv: isolierter JavaScript-Kern
+## R3.23 abgeschlossen: isolierter JavaScript-Kern
 
-Fortsetzung auf sauberem 6bc51cbf: Der naechste zusammenhaengende Schnitt
-portiert die vorhandene QuickJS-Engine, ihre benoetigten SDK-Adapter und den
-echten Prozessfehler-/Hang-/Neustartnachweis. Vertrag und Gates sind vor
-Implementierung eingefroren: [JavaScript-Kern](../architecture/RING3_JAVASCRIPT_CORE_CONTRACT.md).
-Kein Kernel-/Benchmarkumbau oder Website-JavaScript-Claim. Date, Threads,
-Netz-/Dateiautoritaet und DOM bleiben getrennte offene Grenzen; R3.6b bleibt
-entsprechend dem dokumentierten Browservorrang zurueckgestellt.
+Auf sauberem 6bc51cbf, eingefrorener Paketvertrag ee754e42: QuickJS2026-06-04
+als opt-in Ring3-SDK-Archiv und opake Runtime-/Context-Fassade umgesetzt.
+Echte i386-O0/O2-Sprachtests, 40 Hostfaelle, beide Referenzen und alle
+Gast-/Artefaktgates bestehen. [Grenzen](../architecture/RING3_JAVASCRIPT_CORE_CONTRACT.md).
+
+Enthalten: Parser/Interpreter, Unicode/RegExp, BigInt, JSON, Proxy,
+Collections, TypedArrays, Promises, WeakRef und Zyklus-GC. Bestehender
+privater Prozessheap statt statischem Riesenpuffer; Budget vor Allocation,
+transaktionales Realloc und vollstaendige Enginefreigabe. Skripte bis 1 MiB,
+begrenzte Ergebnisse/Jobs/monotone Fristen. OOM/Kapazitaet/Frist sperren
+weitere Arbeit; normale Skriptfehler bleiben im lebenden Kontext auffangbar.
+Eigene dtoa/atod/rqsort bleiben upstream, inttypes-Makros verwenden echte
+Clang-Targettypen und lrint den unveraenderten i386-musl-fistpl-Pfad.
+
+JSTEST wird in beiden normalen Ring3-Shell-Layouts verpackt. Zweimal echte
+Sprach-/GC-Arbeit und normal37/Pagefault142/nichtkooperativer Kill143/frisch37,
+acht verschiedene PID-/Generationspaare, Reap und frischer Selbsttest.
+Bei Fault/Hang bleiben Engine und 8 MiB ArrayBuffer bis zur OS-Freigabe live;
+Parent-FPU/errno und Shell ueberleben. Interrupts sind kein universeller
+Native-/GC-Watchdog: der externe Prozesseigentuemer bleibt erforderlich.
+
+Finale Belege relativ zu `build/codex-agent/r323-js/`, exakte Befehle in Queue:
+
+| Gate | Ergebnis / Dauer | Beleg |
+|---|---|---|
+| JavaScript i386 O0/O2, Allocator, Pins, C/C++, SDK/Link/Dispatch | 6 PASS / 66.516s | `host-js-final.log` |
+| Math / Text / libc / Build / Benchmark | 8/6/4/7/9 PASS / 30.702/5.948/1.007/0.022/0.002s | `host-{math,text,libc_source,build_dependencies,benchmark_source}-accepted.log` |
+| Gezielte Dispatchpruefung nach Linkregel-Gruppierung | 1 PASS / 0.016s | `js-link-regroup-final.log` |
+| VMware/vga Referenz | PASS / 146s | `package-vmware-final.log`, `../20260907-205723-package-vmware-vga.log` |
+| QEMU/vga Referenz | PASS / 64s | `package-qemu-final.log`, `../20260907-210018-package-qemu-vga.log` |
+| Beide echten Imagekernel und verpackte Programme | PASS / 0.866s | `artifacts.json`, `artifacts-command.log` |
+| JSTEST mit echtem Fault/Hang/Neustart | PASS / 33.552s | `guest.log`, `guest-command.log` |
+| Unveraenderter MATHTEST im finalen Gast | PASS / 13.078s | `math.log`, `math-command.log` |
+| Browser-Eingabe/Navigation/Crash/Restart/Konsole | PASS / 73.255s | `browser-input-command.log`, `browser-input.log`, `browser-input.ppm` |
+
+Beide Kernel und BROWSER/HTMLWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST sind
+bytegleich zu6bc51cbf, auch in den tatsaechlichen Image-Dateisystemen.
+JSTEST1015808 Bytes, SHA256
+`723765e1e695274750366d36858b1c5812239033c6e9847616fca2357904d440`.
+QEMU-Image: `f7f57f531abec20136d0b7b5ad2d691ceb561a13504f69b6150c16b5f05f0cb6`.
+VMware-Flatdisk: `5bd8677236e7c3412b20adfab31e981dc03aa87bc0deda72f3032672f3ce47dc`.
+Verifizierte Kopien in `accepted-qemu/`, `accepted-vmware/`; vorherige
+Browserbelege in `before-browser-gate/`. Alle alten Images/Stashes bleiben.
+
+Erhaltene Entwicklungsfehler: fehlendes echtes alloca-Mapping, unselektierte
+stdio-/Date-Diagnoseverweise, implizite Windows-Debug-UBSan-Frames (29824
+Bytes Interpreterstack), generischer out-of-range-lrint-C-Cast, fehlendes
+errno-Include im neuen Gast und nicht schreibbarer Standard-Compiler-Cache.
+Jeweils gezielt repariert, keine Stack-/Heap-/Frist-/Gategrenze gelockert.
+Der erste finale Math-Quelltextgate erfasste nach MATHTEST auch benachbarte
+TEXTTEST-/JSTEST-Regeln. Gruppierung der unabhaengigen Buildregeln im
+freigegebenen Builder korrigiert, MATHTEST-Linkliste unveraendert; originaler
+Math-Gate unveraendert wiederholt, JS-Dispatch gezielt nachgeprueft. Belege
+in `*-development.log`, `host-math-final.log` und den finalen Logs bleiben
+erhalten. Keine Wiederholung unveraenderter JS-Sprachtests nach diesem
+reinen Builder-Fix; reale Programme und Imagehashes wurden danach geprueft.
+
+Kein Kernel-/ABI-/Quota-/Benchmarkumbau oder neuer Performance-/WCET-Claim.
+Date, Threads, Netz-/Dateiautoritaet und DOM/Event-/Navigation-IPC bleiben
+offen; das aktiviert noch kein Website-JavaScript. Queue geht nur formal
+auf R3.6b, dessen offene Abnahme bleibt hinter dem Browservorrang; kein
+spaeteres Paket in diesem Lauf. Keine Agents, sichtbare VM oder Push.
 
 ## R3.22 abgeschlossen: formatierte Ring-3-Zeichenketten
 

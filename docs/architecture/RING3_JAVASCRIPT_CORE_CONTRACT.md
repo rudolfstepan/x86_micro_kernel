@@ -1,6 +1,8 @@
 # Isolated JavaScript core, profile 1 (R3.23)
 
-Frozen before implementation, 7 September 2026; not yet accepted.
+Frozen before implementation, 7 September 2026; accepted after 40 host cases,
+both references, actual image preservation and JS/math/browser guest gates.
+Exact evidence, elapsed times and retained development failures: CURRENT_WORK.md.
 
 ## Reference and boundary
 
@@ -27,6 +29,22 @@ Disable only CONFIG_ATOMICS, keep actual stack checks and interrupt hooks.
 Remove unselected default allocator/context, Date and stdio dump entry points
 from generated sources, never replace them with empty success functions.
 Any transform must match the pinned input exactly and reject drift.
+
+The private alloca spelling maps to the compiler's actual stack allocation
+builtin; upstream stack admission remains enabled. Each evaluation/collection
+refreshes the upstream stack top at the embedding boundary. Both O0 and O2
+compile with explicit `-fno-sanitize=all`, matching the freestanding runtime,
+not Zig's implicit Windows Debug UBSan runtime. The latter enlarged the i386
+interpreter frame to 29824 bytes before its stack check; that development
+failure is retained. No optimization or stack-budget bypass is used in the O0
+language test. This is not a sanitizer acceptance claim.
+
+Omissions also cover the Date branch in the private object dumper and unused
+RegExp/Unicode/dtoa stdio diagnostics. No public FILE facade is introduced;
+the formatter is the accepted bounded memory-only implementation. The pinned
+engine retains its own dtoa/atod and rqsort. The actual upstream i386 lrint
+implementation uses x87 fistpl, preserving rounding and FE_INVALID without
+an out-of-range C floating-to-integer cast.
 
 Reuse the accepted process-backed libc allocator, libm and string formatter.
 Needed standard additions are the ISO C integer formatting macros and musl's

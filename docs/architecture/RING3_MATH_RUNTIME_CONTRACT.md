@@ -5,6 +5,16 @@ Stand: 7. September 2026. Vor Implementierung eingefroren, jetzt abgenommen.
 libc-/Browsergaeste und unveraenderte Kernel-/Programmhashes bestehen.
 Vollstaendige Belegkarte und erhaltene Fehler: CURRENT_WORK.md.
 
+Additive R3.23-Erweiterung: `long lrint(double)` aus dem unveraenderten
+musl-1.2.6-Member `src/math/i386/lrint.c`. Die 44 binary64-Funktionen bleiben
+unveraendert; hinzu kommt eine ISO-C-7.12.9.5-Konversion fuer den JS-Kern.
+Der echte x87-fistpl-Pfad beruecksichtigt alle vier Rundungen und meldet
+inexact/invalid ueber fenv; NaN/Inf/ausserhalb long sind keine definierten
+numerischen Erfolgswerte. Keine generische C-Konversion ausserhalb ihres
+darstellbaren Bereichs. JSTEST und der i386-O0/O2-Host pruefen positive und
+negative Halbwerte, LONG_MIN, NaN und Inf. Bestehende MATHTEST-Marker und
+Abnahmegrenzen bleiben unveraendert. R3.23-Abnahmestatus: CURRENT_WORK.md.
+
 ## Grenze und Quellen
 
 Nach FPU-Abnahme `0301d708` fehlte im opt-in SDK noch `math.h`/`libm`.
