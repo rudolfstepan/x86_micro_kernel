@@ -14,6 +14,7 @@ push = false
 [[packages]]
 id = "R1.3-fpu-context-isolation"
 status = "active"
+platform_amendment = "2026-09-07: User explicitly approves moving the required SSE #XM fault proof to real VMware Workstation and extending its harness. Preserve failed apic.log and diagnostic evidence. QEMU APIC/PIT/SMP keep all register, preemption, #MF, invalid-MXCSR #GP, kill/reuse and shell checks; an explicit fpu-tcg mode omits only #XM and emits distinct partial-profile markers, never full FPU_OK. Mandatory hidden Workstation gate on a fresh disposable 4-CPU/1024-MiB clone runs the complete unmodified-strength fpu fault profile twice, requires actual #MF/#XM/#GP vectors and statuses, all AP contexts, fresh shell and 10-second stability within 180-second guest deadline. Add only scripts/run_vmware_mouse.ps1 to scope; preserve its benchmark path and all thresholds. Rerun affected FPU host and both reference gates after implementation, retain prior evidence; other passed host gates remain valid. No kernel behavior or safety relaxation."
 performance_amendment = "2026-09-07: During implementation the user reports a roughly tenfold VMware benchmark improvement and requires preserving it. Before any FPU reference build, preserve the existing raw image/kernel and complete VMware package under r13-fpu/observed-before (not claimed identical to a particular accepted image). Add one frozen paired real-Workstation gate using the unchanged existing hidden Benchmark harness: three fresh disposable before/after pairs, same 4 CPUs/1024 MiB, no other VM/compiler, median Single/Multi CPU >=95 percent of paired baseline. Report all CPU/RAM/HDD rows and source/image digests. RAM/HDD short millisecond-quantized samples are diagnostic only, not a precise nonregression guarantee. Existing harness thresholds, all original gates and scope remain unchanged. No benchmark implementation, scheduler policy or measured workload edits."
 phase = "post-s0"
 risk = "high"
@@ -27,7 +28,7 @@ allowed_files = [
   "Makefile", "arch/x86/include/fpu.h", "arch/x86/cpu/fpu.c",
   "arch/x86/include/cpu_local.h", "arch/x86/cpu/smp.c", "kernel/init/kernel.c",
   "kernel/sched/scheduler.c", "kernel/sched/scheduler.h", "kernel/sched/switch.asm",
-  "userspace/programs/guest_test.c", "scripts/run_qemu_fpu.py",
+  "userspace/programs/guest_test.c", "scripts/run_qemu_fpu.py", "scripts/run_vmware_mouse.ps1",
   "test/test_fpu_context.py", "test/test_fpu_context_host.c", "test/test_fpu_boot_host.c",
   "test/test_smp.py", "test/test_scheduler_slack.py", "test/test_scheduler_slack_host.c",
   "test/test_scheduler_time.py", "test/test_scheduler_resource_stats.py"
@@ -50,10 +51,11 @@ package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
 ]
 runtime_tests = [
-  "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r13-fpu/apic.log",
+  "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r13-fpu/apic-tcg.log",
   "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --no-apic --log build/codex-agent/r13-fpu/pit.log",
   "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --smp 4 --log build/codex-agent/r13-fpu/smp.log",
   "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --unsupported --log build/codex-agent/r13-fpu/unsupported.log",
+  "python scripts/run_qemu_fpu.py --vmware-fpu-package build/vmware/reist-os --log build/codex-agent/r13-fpu/workstation-fpu.json",
   ".\\scripts\\test-reist-runtime.ps1 -Mode normal -Target qemu -Video vga",
   ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
   "python scripts/run_qemu_fpu.py --vmware-benchmark-before build/codex-agent/r13-fpu/observed-before/vmware --vmware-benchmark-after build/vmware/reist-os --log build/codex-agent/r13-fpu/vmware-paired.json"

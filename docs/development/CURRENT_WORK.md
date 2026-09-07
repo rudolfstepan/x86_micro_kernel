@@ -23,6 +23,67 @@ Zusatzgate: drei echte Workstation-Paare mit unveraendertem Benchmark, CPU-
 Mediane >=95 Prozent; RAM/HDD-Rohwerte diagnostisch, nicht tickgenau genug
 fuer dieselbe Prozentgrenze. Noch keine eigene Leistungsabnahme.
 
+### R1.3 Kandidat: Abnahme am SSE-Fehlernachweis offen
+
+Setup-Commits `1ab441ac` und `3cd44a44`; Implementierung im sichtbaren
+Worktree, nicht committet. Task-/Idle-Kontexte sichern jetzt eager alle
+x87/XMM-Register und Controls; BSP/AP-Profilpruefung und Generationreset
+sind implementiert. Keine Aenderung an Benchmark, Schedulerpolicy, Quoten
+oder oeffentlicher ABI. JavaScript bleibt unimplementiert.
+
+Hostregression gegen das alte echte i386-`switch.asm`: O0/O2 jeweils
+384 Zustandsfehler bei 128 Wiederaufnahmen; Vorherbeleg
+`build/codex-agent/js-inventory/fpu-before.log`. Die fuenf eingefrorenen
+Hostgates bestehen danach mit insgesamt 62 Tests. Logs relativ zu
+`build/codex-agent/r13-fpu/`:
+
+| Kommando | Ergebnis / Dauer | Log |
+|---|---|---|
+| `python test/test_fpu_context.py -v` | 6 PASS / 2.058 s | `host-final.log` |
+| `python test/test_smp.py -v` | 31 PASS / 2.362 s | `host-smp.log` |
+| `python test/test_scheduler_slack.py -v` | 3 PASS / 1.014 s | `host-scheduler_slack.log` |
+| `python test/test_scheduler_time.py -v` | 18 PASS / 0.362 s | `host-scheduler_time.log` |
+| `python test/test_scheduler_resource_stats.py -v` | 4 PASS / 0.005 s | `host-scheduler_resource_stats.log` |
+| `.\scripts\test-reist-package.ps1 -Target vmware -Video vga` | PASS / 38 s | `package-vmware.log` |
+| `.\scripts\test-reist-package.ps1 -Target qemu -Video vga` | PASS / 61 s | `package-qemu.log` |
+
+Der erste eingefrorene APIC-Aufruf von `scripts/run_qemu_fpu.py` scheitert
+nach 180.039 s an fehlendem `FPU_OK` (`apic.log`). Ein gezielter Diagnosebuild
+ergaenzt ausschliesslich begrenzte Fehlerausgaben in GTEST; der Kernel bleibt
+bytegleich (SHA256
+`ec1b5e794331593e0430deed5fb327f337bb6fc1dee466180799dda3ea60c1e8`).
+Diagnoselauf mit demselben Aufruf und eigenem
+`--log build/codex-agent/r13-fpu/diagnostic-fault-status.log`: FAIL / 13.223 s.
+Eltern- und Kind-Preemption bestehen, echter Ring-3-#MF endet mit Status144.
+Der nachfolgende `fpu-xm`-Prozess liefert dagegen den Rueckfallstatus94 statt
+des erwarteten #XM-Exitstatus147; `fault_index=2`, `stage=97`, `TEST_FAIL FPU`.
+Die disassemblierten Instruktionen entmaskieren korrekt MXCSR.Invalid und
+fuehren `divps xmm0,xmm0` nach `xorps` aus. Kein Kernelpanic beobachtet.
+
+Installiertes QEMU meldet `11.1.0 (v11.1.0-12130-ge470268ff4)` und nur
+TCG als Accelerator. Die QEMU-Quellen dokumentieren fehlende SSE-Traps;
+Quellen und Abgrenzung im FPU-Vertrag. Der genaue installierte Commit war
+online nicht abrufbar; keine Behauptung eines vollstaendigen Sourceabgleichs.
+Der beobachtete fehlende Trap verhindert den eingefrorenen Nachweis.
+Keine Umdeutung von Status94 zu PASS, kein simulierter Ersatzinterrupt.
+
+PIT, SMP4, Unsupported-CPU, Normal-, Browser- und gepaarte Workstation-Gates
+sind **noch nicht ausgefuehrt**. Die Referenzbuilds/Hostgates liegen vor den
+abschliessenden GTEST-Diagnoseausgaben; `build/reist-os.img` enthaelt jetzt
+den Diagnosebuild (`diagnostic-build.log`), das VMware-Paket noch den ersten
+Referenzkandidaten. Diese Artefakte sind keine abgeschlossene Freigabe.
+Saemtliche Vorher-/Fehlbelege bleiben erhalten, Queue bleibt R1.3 aktiv.
+Eine Verlagerung der erforderlichen FP-Fehlerabnahme auf echte Workstation
+benoetigt eine ausdrueckliche Aenderung des eingefrorenen Hardware-Gates;
+noch keine solche Aenderung oder Erweiterung des Dateiscopes vorgenommen.
+
+Anschliessende ausdrueckliche Benutzerfreigabe: verpflichtenden #XM-Nachweis
+auf echte VMware Workstation verlagern und deren Testskript erweitern.
+Die Queue friert nur diese Plattformkorrektur ein: QEMU behält #MF/#GP und
+alle Zustands-/Reuse-Pruefungen, Workstation verlangt zweimal das volle
+Profil plus frische Shell und Stabilitaet. Kein Benchmark-/Grenzwertumbau.
+Umsetzung und neue Abnahme noch offen; vorheriger Befund bleibt historisch.
+
 ## R3.20 abgeschlossen: Browsermodell hinter der C-Grenze
 
 Alle zehn Hostgruppen / 93 Faelle, beide Referenzbuilds und sieben Gastgates

@@ -65,6 +65,50 @@ Ready. Zusaetzlich beide Referenzbuilds, Normal- und Browser-Input-Gastgate.
 Keine Laufzeitbehauptung allein aus Quellmustern/Hosttests; kein Nachweis
 tatsaechlicher Ring-3-Migration zwischen CPUs oder von Hardware-WCET.
 
+### Offener Abnahmebefund vom 7. September
+
+62 Hosttests und beide Referenzbuilds bestehen. Der erste APIC-Gastlauf
+erreicht Registererhalt und echte #MF-Prozessbeendigung, aber nicht #XM:
+unmaskiertes SSE-0/0 kehrt im installierten reinen QEMU-TCG zurueck
+(GTEST-Status94 statt147). Das Gate bleibt fehlgeschlagen; die weiteren
+Gastgates und der Workstation-Leistungsvergleich sind noch offen.
+
+Ein [offizieller QEMU-Commit](https://github.com/qemu/qemu/commit/418b0f93d12a1589d5031405de857844f32e9ccc)
+unterscheidet ausdruecklich SSE-Statusflags von nicht implementierten Traps.
+Auch die am 7. September gelesenen offiziellen Quellen
+[`ops_sse.h`](https://raw.githubusercontent.com/qemu/qemu/master/target/i386/ops_sse.h)
+und [`fpu_helper.c`](https://raw.githubusercontent.com/qemu/qemu/master/target/i386/tcg/fpu_helper.c)
+fuehren SSE-Divisionen ueber Softfloat-Status und dessen MXCSR-Abbildung aus.
+Dies stuetzt die Emulatorlimitierung als Ursache; der genaue installierte
+Development-Commit war nicht abrufbar. Keine pauschale Behauptung ueber alle
+QEMU-Versionen oder Hardware-Acceleratoren.
+
+Keine Kernelumgehung, Trap-Simulation, Erfolg bei fehlender Ausnahme oder
+stille Abschwaechung der Abnahme. Eine verpflichtende echte Workstation-
+Fehlerabnahme als Ersatz fuer den nicht erbrachten TCG-Nachweis ist erst
+nach ausdruecklicher Aenderung der eingefrorenen Plattformzuordnung erlaubt.
+Bis zur vollstaendigen Abnahme bleibt der Kandidat uncommittet und JavaScript
+nicht freigegeben.
+
+### Freigegebene Plattformzuordnung nach dem Befund
+
+Der Benutzer genehmigt den Wechsel des verpflichtenden #XM-Nachweises zu
+echter VMware Workstation und die Erweiterung von `run_vmware_mouse.ps1`.
+QEMU APIC/PIT/SMP behalten alle anderen Pruefungen einschliesslich #MF und
+ungueltigem MXCSR (#GP). Nur der nicht gelieferte #XM wird im expliziten
+`fpu-tcg`-Profil ausgelassen; eigene Teilprofilmarker verhindern Verwechslung
+mit dem vollstaendigen `fpu`-Nachweis. Keine automatische Emulatorerkennung
+oder Erfolgsmeldung beim Ausbleiben einer erwarteten Ausnahme.
+
+Das verpflichtende Workstation-Gate startet eine frische private Paketkopie
+mit vier CPUs/1024 MiB versteckt, injiziert zweimal das volle `fpu`-Programm
+und prueft echte #MF/#XM/#GP-Vektoren samt Status144/147/141, alle AP-Probes,
+Kill/Reuse, neue Shellantworten und zehn Sekunden Stabilitaet. Gastdeadline
+180 Sekunden; keine fremden VMs oder parallelen Compiler. Der Benchmarkpfad
+und seine Grenzen bleiben unveraendert. Betroffene FPU-Host-/Referenzgates
+werden erneut geprueft; vorhandene Fehler und unbeeinflusste PASS-Belege
+bleiben bestehen. Die Queue friert diese Aenderung vor Umsetzung ein.
+
 ## Zusaetzlicher VMware-Leistungsschutz (Benutzerauftrag waehrend Umsetzung)
 
 Den beobachteten schnellen Stand vor einem neuen Build separat sichern.

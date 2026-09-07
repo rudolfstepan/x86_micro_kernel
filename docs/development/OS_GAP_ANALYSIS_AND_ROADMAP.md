@@ -9,6 +9,13 @@ Admission und echte Prozessfehler-/Reuse-Gates; keine Quoten-/ABI-Lockerung.
 Vertrag: FPU_CONTEXT_ISOLATION_CONTRACT.md. JavaScript/DOM und libc bleiben
 spaetere Pakete; R3.6b bleibt mit allen offenen VMware-Gates zurueckgestellt.
 
+R1.3-Zwischenstand: Kandidat implementiert, 62 Hosttests und beide Referenzen
+PASS; Gastabnahme offen, weil installiertes QEMU-TCG beim entmaskierten
+SSE-Fehler keinen #XM liefert. Keine Implementierungsfreigabe oder Queue-
+Fortschaltung; Details und erhaltene Fehlbelege in CURRENT_WORK.md.
+Der schnelle VMware-Vorherstand ist gesichert, die gepaarte Leistungsmessung
+steht noch aus. Eingefrorene Gateplattformen bleiben unveraendert.
+
 7. September, R3.20 abgeschlossen: eine C++-Modellimplementierung hinter sechs
 unveraenderten C-Einstiegen, ohne neuen Navigations-/Worker-/Heapbesitz.
 93 Hostfaelle, beide Referenzbuilds und sieben Gastgates bestehen. Die
