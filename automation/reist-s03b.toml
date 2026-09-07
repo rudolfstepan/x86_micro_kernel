@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.24-javascript-service-lifecycle"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 next_user_request = "2026-09-07: User says mach weiter after a09d8841. Execute the next complete browser prerequisite: a persistent separately owned JSWORK process, framed IPC and nonblocking C++ parent lifecycle with self-test, resource admission, cancellation, exact-generation fencing/reap and bounded recovery. DOM ownership/events and browser activation remain the next independent document-semantics boundary. Preserve accepted core and UI/benchmark binaries. R3.6b remains deferred; no agents or push."
 
 [policy]
@@ -13,7 +13,8 @@ push = false
 
 [[packages]]
 id = "R3.24-javascript-service-lifecycle"
-status = "active"
+status = "done"
+completion_summary = "2026-09-07: Direct visible-worktree acceptance on a09d8841, contract90a51376. Persistent separate JSWORK and noncopyable asynchronous C++ session, private framed IPC/HELLO/self-test/EVAL/health/GC/shutdown, strict identities and partial-result fencing, bounded cancellation/kill/reap and fresh recovery. All25 host cases pass (service3/core6/build7/benchmark9). Final VMware74s/QEMU65s, actual image guard0.942s, twice actual JS-service guest39.786s and unchanged browser keyboard/edit/navigation/crash/restart/console72.880s pass. Persistent closures/globals/promise jobs,1MiB source/60000-byte output, real GC, fault142/noncooperative kill143/stale143/cancel143/fresh0 with12 distinct worker identities. Owner-death twice proves retired74/no live identity, ordinary slot reuse and old PID disappearance, plus witness reap and surviving shell. Both kernels and all protected BROWSER/HTMLWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST actual payloads byte-identical to a09d8841. JSWORK1007616 bytes SHA2564bc4bd9d4f2913e00adbaa04e39b61f5f0888f93f0c5272889a8b6064b3516d0; JSIPCTST32768 bytes SHA2561e5f06e3f6e30f4766487570db4cb5425cfbc743c02e61a1a2fd9273cdd38aa2. QEMU imagee4f29fd47f1f7d291f1ac78981e4934457ea5606efe6f2a6fb9db8afd07c2dcb, VMware flat4a7657e3bcfb4eeb09368f7c30928987b4d1ced0ff5bb637ee319f2da21e7d40. Evidence/copies under r324-js-service, command/duration map in CURRENT_WORK. Main linkage and published-buffer cleanup repaired with retained regressions. Initial orphan fixture wrongly required immediate removal of retained exit metadata; corrected to prove ordinary slot reuse and still require disappearance, no kernel or deadline/gate weakening. Original guest30.605s failure and both images preserved; only affected gates rerun. No kernel/engine/ABI/default-browser/quota change, website JS or new performance/WCET claim. DOM/events/navigation remain next separate boundary; formal queue advances only to deferredR3.6b."
 phase = "post-s0"
 risk = "high"
 title = "Persistent isolated JavaScript service and owned nonblocking IPC session"
@@ -1857,7 +1858,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

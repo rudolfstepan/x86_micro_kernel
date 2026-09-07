@@ -2,6 +2,16 @@
 
 Stand: 3. September 2026
 
+7. September, R3.24 abgenommen: persistenter JSWORK mit gepruefter
+Nachrichtenverbindung und eigenem nichtblockierenden C++-Owner. Grosser
+Quelltext/Ergebnisse, persistentes Realm, Health/GC, Shutdown und
+Fault/Hang/Fencing/Reap/frische Recovery bilden ein gemeinsames Paket.
+Bestehender JS-Kern, Browser, Parser und Benchmark bleiben unveraendert.
+25 Hostfaelle, VMware74s/QEMU65s, Imageguard0.942s, Dienstgast39.786s und
+Browsergast72.880s bestehen; auch Besitzerverlust mit echter Slotfreigabe.
+Noch keine DOM-/Event-/Navigationsintegration oder Webseitenaktivierung;
+Status und exakte Grenzen: JAVASCRIPT_SERVICE_CONTRACT.md, CURRENT_WORK.
+
 7. September, R3.23 abgenommen: 40 Hostfaelle, VMware146s/QEMU64s,
 Imageguard0.866s, JS-Gast33.552s, Math13.078s und Browser73.255s bestanden.
 Isolierter QuickJS-Kern samt begrenzter

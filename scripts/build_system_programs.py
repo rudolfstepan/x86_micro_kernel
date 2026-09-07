@@ -24,6 +24,9 @@ PROGRAMS = {
     "MATHTEST.PRG": ROOT / "userspace/programs/mathtest.c",
     "TEXTTEST.PRG": ROOT / "userspace/programs/texttest.c",
     "JSTEST.PRG": ROOT / "userspace/programs/jstest.c",
+    "JSWORK.PRG": (ROOT / "userspace/gui/apps/browser/js_worker.c", ROOT / "userspace/gui/apps/browser/js_protocol.c"),
+    "JSIPCTST.PRG": (ROOT / "userspace/programs/jsipctst.cpp", ROOT / "userspace/gui/apps/browser/js_session.cpp",
+                     ROOT / "userspace/gui/apps/browser/js_protocol.c"),
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
     "SYSINFO.PRG": ROOT / "userspace/programs/sysinfo.c",
     "USBINFO.PRG": ROOT / "userspace/programs/usbinfo.c",
@@ -374,6 +377,18 @@ def main() -> None:
                 link_libraries.extend([sdk.wapcaplet_library, sdk.libc_library])
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.append(sdk.include_dir / "libwapcaplet/libwapcaplet.h")
+            if name in ("JSWORK.PRG", "JSIPCTST.PRG"):
+                includes[:0] = [ROOT / "userspace/gui/apps/browser", sdk.libc_include_dir]
+                dependency_files.extend([ROOT / "userspace/gui/apps/browser/js_protocol.h",
+                    ROOT / "userspace/gui/apps/browser/js_session.hpp", Path(__file__).resolve()])
+                if name == "JSWORK.PRG":
+                    includes[:0] = [sdk.js_include_dir, sdk.math_include_dir, sdk.text_include_dir]
+                    link_libraries.extend([sdk.js_library, sdk.text_library, sdk.math_library])
+                else:
+                    includes.insert(0, sdk.cpp_include_dir)
+                    link_libraries.append(sdk.cpp_library)
+                link_libraries.extend([sdk.libc_library, sdk.library_dir / "libclang_rt.builtins-i386.a"])
+                dependency_files.extend([*sdk.js_include_dir.glob("*.h"), *sdk.libc_include_dir.rglob("*.h")])
             if name == "TEXTTEST.PRG":
                 includes[:0] = [sdk.text_include_dir, sdk.math_include_dir, sdk.libc_include_dir]
                 # 64-bit integer decimal division needs the existing arithmetic
@@ -431,7 +446,7 @@ def main() -> None:
                 runtime_libraries=runtime_libraries,
                 cache_directory=global_cache_directory,
                 dependency_files=dependency_files,
-                cpp=name in ("CPPTEST.PRG", "BROWSER.PRG") or name == "HTMLWORK.PRG",
+                cpp=name in ("CPPTEST.PRG", "BROWSER.PRG", "JSIPCTST.PRG") or name == "HTMLWORK.PRG",
                 compile_flags=(
                     (["-fno-inline-functions"]
                      if name == "STORAGE.PRG" else []) +

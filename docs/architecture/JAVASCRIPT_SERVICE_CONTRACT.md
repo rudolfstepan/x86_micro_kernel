@@ -38,6 +38,11 @@ Partial reply bytes remain private staging, never a published result. GC and
 HEALTH return versioned engine statistics; SHUTDOWN destroys the context,
 checks complete heap release and exits normally. No transparent script replay.
 
+The C++ interface borrows source and writable staging only while a command is
+in flight. A completed result is a read-only view of caller-owned storage;
+later cancellation or destruction invalidates the view without writing into
+that storage. A targeted before/after regression covers this lifetime rule.
+
 Every command shares one absolute deadline, at most 5000ms including transfer,
 execution and reply. Parent poll performs at most eight zero-timeout IPC calls.
 Queue saturation yields control rather than busy-waiting or blocking input.
@@ -60,6 +65,18 @@ Fault/hang/malformed-reply fixtures are explicit bounded argv selectors, not
 wire operations and never inferred from scripts, URLs or HTML. Real fault and
 noncooperative-loop fixtures run only in the child, with a live engine. Parent
 death/channel loss releases worker state; no destructor repairs corruption.
+For cancellation or malformed replies, fencing can cause the cooperative
+worker to exit74 before kill wins the race; both74 and143 mean a fenced/reaped
+worker, not a successful reply. Only the noncooperative fixture requires143;
+the actual native fault requires142. The orphan fixture abruptly exits its
+owner and observes the worker disappear without unauthorized grandchild wait.
+The kernel's fixed process table retains an orphan's retired exit record until
+ordinary slot reuse (process_get_info includes has_exited even with parent0).
+The guest first requires exit74, parent0 and no live identity, then performs
+two normal, separately reaped child allocations and still requires the old
+worker PID to disappear. This corrects the original fixture's assumption of
+immediate metadata removal; it does not accept a live worker or an uncleared
+record as success, change the deadline, or modify kernel lifecycle behavior.
 
 ## Frozen proof
 

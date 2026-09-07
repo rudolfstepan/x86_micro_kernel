@@ -43,6 +43,21 @@ bytegleich. Als weiterer Browserschnitt bleiben der generationengebundene
 IPC-/Dokumentadapter und seine DOM-/Event-Abnahme offen. Der Kern allein
 macht heutige Webseiten noch nicht JavaScript-kompatibel.
 
+R3.24 ist abgenommen: getrennte persistente JSWORK-Prozessgrenze mit
+generationengeprueftem Bulk-IPC, HELLO/Selbsttest, Eval, Health/GC und
+Shutdown. Der nicht kopierbare C++-Owner besitzt zwei richtungsgebundene
+Endpoints und maximal einen Auftrag, uebertraegt hoechstens acht
+nichtblockierende Pakete pro Poll und publiziert keine Teilantworten.
+Fencing, Kill/Reap und frische Recovery sind explizit und begrenzt;
+ein Destruktor kann ihren Erfolg nicht vortaeuschen. JSIPCTST ist der reale
+Shell-/Gastverbraucher; der Browser wird noch nicht umgeschaltet.
+25 Hostfaelle, VMware74s/QEMU65s, Imageguard0.942s, Dienstgast39.786s und
+Browsergast72.880s bestanden; beide Kernel und geschuetzte Programme bytegleich.
+Status und Belege in CURRENT_WORK, Grenzen im
+[Dienstvertrag](JAVASCRIPT_SERVICE_CONTRACT.md). DOM-Objektidentitaet,
+Mutations-/Eventtransaktionen und Navigation bleiben die naechste eigene
+Dokumentgrenze. Es wird kein Ersatz-DOM oder HTML-Skriptzeitmodell erfunden.
+
 Am 6. September 2026 bestaetigte Reihenfolge: R3.15-Formularreparatur abnehmen
 und committen, danach `R3.16-ring3-cpp-runtime`, erst dann schrittweise C++-
 Migration des Browsers. Das SDK-Paket ist als opt-in C++20-Profil 1 abgenommen;

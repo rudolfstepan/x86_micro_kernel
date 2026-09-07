@@ -2,16 +2,77 @@
 
 Stand: 7. September 2026
 
-## R3.24 aktiv: persistenter JavaScript-Dienst
+## R3.24 abgeschlossen: persistenter JavaScript-Dienst
 
-Fortsetzung auf sauberem a09d8841. Ein zusammenhaengendes Paket schliesst
-die separate Worker-/IPC-/Ownergrenze: persistente Engine, HELLO/Selbsttest,
-grosse Skript-/Ergebnisuebertragung, Health/GC, nichtblockierender C++-Parent,
-generationstreues Fencing/Reap und begrenzte frische Recovery. Vertrag und
-Gates vor Umsetzung eingefroren in JAVASCRIPT_SERVICE_CONTRACT.md und Queue.
-Keine Engine-, Kernel-, DOM- oder Browseraktivierung in diesem Schnitt;
-Dokument-/Eventtransaktionen bleiben die naechste eigene Fehlergrenze.
-Bestehende Kernel-/UI-/Benchmarkprogramme bleiben bytegleich geschuetzt.
+Auf sauberem a09d8841, Paketvertrag90a51376: separate JSWORK-Prozessgrenze
+mit persistenter Engine, geprueftem Bulk-IPC, HELLO/Selbsttest, Eval, Health/GC,
+Shutdown und nicht kopierbarem C++-Owner. 25 Hostfaelle, beide Referenzbauten,
+Imageguard, echter Dienstgast und unveraenderter Browsergast bestehen.
+[Dienstvertrag](../architecture/JAVASCRIPT_SERVICE_CONTRACT.md).
+
+Zwei richtungsgebundene Endpoints, maximal ein Auftrag, hoechstens acht
+Timeout-null-IPC-Operationen pro Poll. Quelltext bis1MiB, Ergebnis bis65535
+Bytes plus NUL, absolute5000ms fuer Transfer/Ausfuehrung/Antwort. Keine
+Teilantwortpublikation; bereits publizierte Callerbuffer werden beim
+spaeteren Fencing nicht mehr beschrieben. Enginebudget32MiB im expliziten
+64MiB-Prozessheap; Core und16KiB-Stackprofil bleiben unveraendert.
+Endpunkte vor Kill schliessen, exakte Kindidentitaet, beobachteter Zombie
+vor Wait, Reapfrist1000ms und hoechstens ein Kill; maximal zwei explizite
+frische Recoveries pro Dokument. Keine stille Skriptwiederholung oder
+blockierende Aufraeumarbeit im Destruktor.
+
+JSIPCTST laeuft aus beiden normalen Ring3-Shell-Layouts. Zweimal persistente
+Globals/Closures/Promisejobs, Syntaxfehler mit erhaltenem Realm,1MiB-Quelle,
+60000-Byte-Antwort, Health/GC und normal0/Fault142/Hang143/Stale143/Cancel143/
+frisch0: zwoelf unterschiedliche Workeridentitaeten. Die Fehlerproben
+halten echte Engine und8MiB-Buffer live bis zur Prozessfreigabe. Zweimal
+abrupter Besitzertod mit Worker-Ende74, fehlender Liveidentitaet, normaler
+Slot-Wiederverwendung, verschwundenem alten PID und aufgeraeumten eigenen
+Zeugenprozessen. Die Ring3-Shell beantwortet danach jeweils HELP.
+
+Finale Belege relativ zu `build/codex-agent/r324-js-service/`, exakte Befehle
+im eingefrorenen R3.24-Queueeintrag:
+
+| Gate | Ergebnis / Dauer | Beleg |
+|---|---|---|
+| Service i386 O0/O2, Ziel-Link/Layout und Gastvalidator | 3 PASS / 10.535s | `host-orphan-accepted.log` |
+| Unveraenderter JavaScript-Kern | 6 PASS / 67.323s | `host-js-final.log` |
+| Buildabhaengigkeiten / Benchmark | 7/9 PASS / 0.020/0.002s | `host-{build_dependencies,benchmark_source}-final.log` |
+| VMware/vga Referenz | PASS / 74s | `package-vmware-orphan.log`, `../20260907-215218-package-vmware-vga.log` |
+| QEMU/vga Referenz | PASS / 65s | `package-qemu-orphan.log`, `../20260907-215358-package-qemu-vga.log` |
+| Beide echten Imagekernel und verpackte Programme | PASS / 0.942s | `artifacts.json`, `artifacts-command.log` |
+| JS-Dienst inkl. Fault/Hang/Besitzertod/frischem Realm | PASS / 39.786s | `guest.log`, `guest-command.log` |
+| Browser-Eingabe/Navigation/Crash/Restart/Konsole | PASS / 72.880s | `browser-input-command.log`, `browser-input.log`, `browser-input.ppm` |
+
+Beide Kernel sowie BROWSER/HTMLWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST
+sind auch in den Image-Dateisystemen bytegleich zu a09d8841. JSWORK1007616
+Bytes, SHA256`4bc4bd9d4f2913e00adbaa04e39b61f5f0888f93f0c5272889a8b6064b3516d0`;
+JSIPCTST32768 Bytes,
+SHA256`1e5f06e3f6e30f4766487570db4cb5425cfbc743c02e61a1a2fd9273cdd38aa2`.
+QEMU-Image: `e4f29fd47f1f7d291f1ac78981e4934457ea5606efe6f2a6fb9db8afd07c2dcb`.
+VMware-Flatdisk: `4a7657e3bcfb4eeb09368f7c30928987b4d1ced0ff5bb637ee319f2da21e7d40`.
+Verifizierte Kopien in `accepted-qemu/` und `accepted-vmware/`.
+
+Erhaltene Vorher-Belege: fehlender C-Linkname fuer den neuen C++-main,
+publizierter Ergebnisbuffer beim spaeteren Cancel faelschlich beschrieben
+(`published-output-before.log`, danach `host-service-accepted.log`3 PASS),
+und falsche Gastannahme zur sofortigen Entfernung verwaister Exitmetadaten
+(`guest-before-orphan.log`, FAIL30.605s, Zeile124). Der existierende Kernel
+haelt feste verwaiste Exit-Eintraege bis Slot-Wiederverwendung sichtbar;
+der korrigierte Gast beweist jetzt diese Wiederverwendung und weiterhin
+das Verschwinden des alten PID. Kein Akzeptieren eines verbleibenden
+Eintrags als Erfolg, kein fremdes Wait/Kill und keine Fristlockerung.
+Vorherige Images in `orphan-before-{qemu,vmware}/`, ihr Guard in
+`artifacts-before-orphan.json`; alle Entwicklungs-/Host-/Buildlogs und
+vorherige Browserbelege in `before-browser-gate/` bleiben erhalten.
+Nur betroffene Service-/Referenz-/Image-/Gastgates nach Reparatur wiederholt;
+unveraenderte Core-, Build- und Benchmarktests nicht nochmals ausgefuehrt.
+
+Keine Kernel-, Engine-, ABI-, Quota- oder Browseraktivierungsaenderung und
+kein neuer Performance-/WCET-Claim. Website-JavaScript braucht weiterhin
+DOM-Objektidentitaet, Mutations-/Eventtransaktionen und Navigationsgrenzen.
+Queue geht nur formal auf R3.6b, dessen offene Abnahme hinter Browservorrang
+bleibt. Kein spaeteres Paket, keine Agents, sichtbare VM oder Push.
 
 ## R3.23 abgeschlossen: isolierter JavaScript-Kern
 
