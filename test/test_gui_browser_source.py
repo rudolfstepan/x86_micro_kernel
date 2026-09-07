@@ -116,7 +116,7 @@ class GuiBrowserSourceTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
 
     def test_model_host_behavior(self):
-        run_host(["userspace/gui/apps/browser/browser_model.c",
+        run_host(["userspace/gui/apps/browser/browser_model.cpp",
                   "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                   "test/test_browser_model_host.c"])
 

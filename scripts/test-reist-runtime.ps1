@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-[ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'cpp-client', 'libc-client', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'vfs-symbolic-links', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-browser', 'runtime-desktop-browser-resources', 'runtime-desktop-browser-input', 'runtime-desktop-browser-forms', 'runtime-desktop-browser-public', 'runtime-desktop-trash-restore', 'runtime-desktop-explorer-scroll', 'runtime-desktop-explorer-views', 'runtime-desktop-shortcuts', 'runtime-desktop-icon-layout', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
+[ValidateSet('normal', 'boot-integrity', 'boot-control', 'boot-success', 'pit', 'watchdog', 'memory', 'memory-resilience', 'arp-reply', 'arp-resolution', 'icmp-echo', 'udp-echo', 'udp-bindings', 'dhcp-config', 'dhcp-expiry', 'dhcp-renewal', 'network-frame', 'network-ipv4-parser', 'network-icmp-parser', 'network-udp-parser', 'network-dhcp-parser', 'network-udp-ingress', 'cpp-client', 'libc-client', 'curl-client', 'curl-https-client', 'curl-https-public-client', 'http-server', 'storage-recovery', 'storage-service-restart', 'storage-io-failure', 'storage-maintenance', 'storage-reconnect', 'wcet-baseline', 'fdd-hotplug', 'ext2-stat', 'vfs-symbolic-links', 'sata-hotplug', 'admin-maintenance', 'component-control', 'driver-domain', 'system-layout', 'editor-load', 'chkdsk-readonly', 'chkdsk-fat12', 'pci-audio', 'partition-provisioning', 'partition-full-format', 'handover', 'vmware-svga2d', 'vmware-svga2d-lifecycle', 'vmware-mouse', 'vmware-hover-cadence', 'vmware-compositor-restart', 'vmware-benchmark', 'vmware-rename', 'runtime-desktop', 'runtime-desktop-notepad', 'runtime-desktop-notepad-fonts', 'runtime-desktop-control', 'runtime-desktop-browser', 'runtime-desktop-browser-resources', 'runtime-desktop-browser-input', 'runtime-desktop-browser-forms', 'runtime-desktop-browser-public', 'runtime-desktop-browser-model', 'runtime-desktop-trash-restore', 'runtime-desktop-explorer-scroll', 'runtime-desktop-explorer-views', 'runtime-desktop-shortcuts', 'runtime-desktop-icon-layout', 'runtime-desktop-metrics', 'runtime-desktop-surface', 'runtime-desktop-hover-cadence', 'runtime-desktop-audio', 'runtime-desktop-guidemo-click', 'runtime-desktop-vbe', 'runtime-desktop-vbe-failure')]
     [string]$Mode = 'normal',
     [ValidateSet('qemu', 'vmware')]
     [string]$Target = 'qemu',
@@ -1351,6 +1351,14 @@ switch ($Mode) {
     }
     'runtime-desktop-browser-public' {
         Invoke-RuntimeDesktop -BrowserPublicProbe $true
+    }
+    'runtime-desktop-browser-model' {
+        if ($Target -ne 'qemu' -or $Video -ne 'vga') {
+            throw 'Model paired acceptance requires the frozen qemu/vga profile.'
+        }
+        & $Python (Join-Path $RepoRoot 'scripts/measure_cpp_baseline.py') --model-ui-pair `
+            (Join-Path $RepoRoot 'build/codex-agent/r320a/accepted-c')
+        if ($LASTEXITCODE -ne 0) { throw 'Browser model paired UI acceptance failed.' }
     }
     'runtime-desktop-trash-restore' {
         Invoke-RuntimeDesktop -TrashRestoreProbe $true

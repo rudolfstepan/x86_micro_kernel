@@ -466,6 +466,55 @@ auf dem weiterhin 32-KiB-grossen bewachten Userspace-Stack. Kein Schutzabbau.
 Stack-/Laufzeit-/Groessennachweise und das verbleibende intermittierende
 Worker-Timingrisiko stehen in CURRENT_WORK. Profil 1 wird nicht gelockert.
 
+## Abgenommener Modell-Pilot R3.20: private Werte hinter der C-Grenze
+
+Die sechs bisherigen Modellfunktionen werden aus einer einzigen
+`browser_model.cpp` gebaut; `browser_model.h` behaelt alle C-Layouts und
+Signaturen mit expliziter C-Linkage. Parser und native Range-Controls bleiben
+C. `main.c`, dessen Navigations-/Workerbesitz, private Speicherbudgets und
+das eingefrorene UI-Messverfahren bleiben unveraendert.
+
+Die privaten ISO-C++20-Profil-1-Adapter in `browser_model.hpp` kapseln:
+
+- `AddressEdit`: erst nach geprueften Zeigern und `cursor <= length < capacity`
+  zulaessiger kurzlebiger Borrow fuer genau eine serialisierte Bearbeitung;
+- `TextRange`: ueberlauffrei gepruefter Offset-/Laengenwert im bereits
+  zugelassenen Dokument, ohne Textkopie oder neue Unicode-/Layoutalgorithmen;
+- `ScrollExtent`: gemeinsame Normalisierung der bestehenden View-/Dokument-
+  und Positionsgrenzen, ohne vergroesserte Kapazitaet oder neue Scrollpolicy.
+
+Result/Werte bleiben jeweils <=64 Bytes. Keine Heap-/Handleownership,
+virtuelle Hierarchie, Runtimeinitialisierung oder Cleanup-Operation wird
+erfunden. Externe Mutation, Navigation oder Freigabe invalidiert Adress-Borrows;
+numerische Bereichspruefung beweist weder Speicherlebensdauer noch Autoritaet.
+Die standardmaessigen C++-Wert-/View-/Result-Semantiken entsprechen den oben
+dokumentierten privaten `reist`-Adaptern, nicht einem neuen SDK-/Wirestandard.
+
+Ein messbar unnoetiger Methodenaufruf materialisierte den kurzlebigen Borrow
+im Eingabepfad. Das lokale Clang-Attribut `gnu::always_inline` beseitigt diesen
+Aufruf, ohne globale Compilerflags, ABI, Fehlerpruefungen oder Testgrenzen zu
+aendern. Es ist kein allgemeiner Durchsatz-/WCET-Claim. Typisierte Zulassung
+ist der Nutzen; bestehende manuelle Cleanup-Pfade werden hier nicht reduziert,
+weil das Modul keine externen Ressourcen besitzt.
+
+Der aktuelle CSS-Pfad projiziert bereits Szenengeometrie in C statt den
+alten `browser_build_layout` aufzurufen. Dessen sechster C-Einstieg bleibt
+kompatibel und wird gegen den Original-C-Oracle geprueft; es wird kein neuer
+Produktionsaufruf oder zweiter Layoutalgorithmus fuer die Migration erfunden.
+Die anderen fuenf Funktionen bleiben im echten Browserpfad.
+
+93 Hostfaelle, beide Referenzbuilds und alle sieben Gastgates bestehen.
+Datei-/Loadergroessen bleiben gleich, Stackdelta maximal 12 Bytes. Der
+gepaarte QEMU-Gast misst C/C++-p95 60.0902/60.4288 ms beim Tippen und
+114.6334/125.0032 ms beim Scrollen; alle absoluten und relativen Grenzen
+bleiben eingehalten. Rohdaten und Abnahmezuordnung stehen in CURRENT_WORK. Der
+Stacknachweis untersucht echte i386-Objekte mit unveraenderten Profilflags.
+Compiler-Switches gelten nur nach Bounds-/Relokationspruefung aller Ziele
+innerhalb derselben Funktion als lokale Spruenge ohne Stackkante. Unbekannte
+oder indirekte Aufrufe, externe Sprungziele und Rekursion bleiben abgewiesen;
+mutierte Sprungtabellen muessen scheitern. Keine abgesenkten Laufzeit-,
+Stack-, Binaer-, UI- oder Resilienzgrenzen.
+
 ## Abgenommener Ressourcen-Pilot R3.19
 
 Browser und HTMLWORK verwenden dieselbe `browser_resources.cpp`-Admission

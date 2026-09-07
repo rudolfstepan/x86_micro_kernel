@@ -2,8 +2,135 @@
 
 Stand: 7. September 2026
 
-Aktuell abgeschlossen: R3.20a Browser-/Surface-Latenz, siehe Abnahme unten.
-Als einziges Folgepaket ist R3.20 Browser-Modell-C++ aktiv; noch nicht umgesetzt.
+## R3.20 abgeschlossen: Browsermodell hinter der C-Grenze
+
+Alle zehn Hostgruppen / 93 Faelle, beide Referenzbuilds und sieben Gastgates
+bestehen. C++-Modellpilot beibehalten: dieselben C-Aufrufe und beobachtbaren
+Werte hinter geprueften privaten Typen, ohne neue Ressourcenownership.
+Die Vergleichsmessung bleibt innerhalb aller eingefrorenen Grenzen;
+kein JavaScript-/Webfeature-, Hardware-WCET- oder allgemeiner Webseitenclaim.
+
+Ausgangscommit `a7d27aa6`, Worktree vor Kandidatenarbeit sauber. Die
+abgenommene C-UI-Baseline unter `build/codex-agent/r320a/accepted-c` wurde
+vor Modellkonvertierung samt Image-, Oracle- und Harness-Digests geprueft.
+Unveraenderter Oracle `864f869a7862af219eedd7e42dee1abba14ebfdf`, Blob
+`6b0de40d251a7c1ba70e2989cf361f3bb0a7b737`. Keine erneute Baselineerfindung,
+kein Eingriff in main.c oder die eingefrorenen Mess-/Surface-/Compositorpfade.
+
+Eine echte C++-Implementierung ersetzt `browser_model.c`; alle sechs C-
+Signaturen/Layouts bleiben. Kleine private Adress-/Textbereichs-/Scrollwerte
+kapseln Zulassungsinvarianten, besitzen aber weder Heap noch Navigation oder
+Worker. Die fuenf weiter aktiven Modellaufrufe bleiben im Browser; der bereits
+durch CSS-Szenenprojektion ersetzte Legacy-Layout-Einstieg bleibt erhalten und
+differentiell geprueft. Kein erfundener neuer Layoutcaller, keine neue Web-
+oder JavaScript-Funktion. Vertrag: USERSPACE_SDK_AND_PORTABILITY.md.
+
+Finale Nachweise: Originale C-Layout-/Bildfixture unveraendert; zusaetzlich
+54138 differentielle Checks je O0/O2 fuer Adressen, Pointer/Scroll, Anker,
+UTF-8, schmale Layouts und Bereiche. Hostmediane bei je 200000 Zyklen in
+fuenf frischen C/C++-Paaren: Adresse 5.878/6.298 ns, Scrollbar 134.262/134.695 ns.
+Keine UI-Latenzen; Grenzen weiterhin C++ <=120 Prozent des gepaarten C und
+<=50000 ns/Zyklus. Typisierte Ergebnisse <=64 Bytes, keine neue Allokation
+oder Kopie von Layout-/Bildpayloads. i386-Stackspitzen C/C++ je Einstieg:
+Layout 100/112, Rechteck 4/4, Anker 156/156, Adresse 16/16, Scrollconfigure
+164/168, Scrollpointer 156/156 Bytes; alle Deltas <=256. Unveraenderte externe
+C-Callees werden separat als gleiche Blattkante abgeglichen.
+
+Finaler eingefrorener Modellaufruf `python test/test_browser_model_cpp.py -v`:
+10 PASS / 5.650 s, `build/codex-agent/r320/gate-model-final.log`.
+Verhalten, alle Rohzeiten und Stack-/Korruptionsnachweise liegen in
+`model-e4c85074cc074756ab7f6af8e212e4a3/`. Der komplette betroffene Gateaufruf
+wurde nach der gezielten Stackreparatur erneut abgenommen, nicht nur ein
+ausgewaehlter Testfall; die neun anderen Hostgates blieben einmalig.
+Vorheriger 9-PASS/1-Stackfehler in `gate-model-cpp.log` und `model-zkzpck09/`
+bleibt erhalten; isolierter Reparaturnachweis `gate-model-stack-final.log`
+(0.774 s), `model-60ad7025b099481e8eaab22e6781cce0/` ebenfalls.
+
+Alle zehn Hostgruppen / 93 Faelle bestehen inzwischen, einschliesslich des
+separat korrigierten Stackfalls. Weitere Logs relativ zu `r320/`:
+
+| Eingefrorener Hostaufruf (je `python test/... -v`) | PASS / Suite-Dauer | Log |
+|---|---|---|
+| `test_cpp_types.py` | 5 / 4.764 s | `gate-cpp_types.log` |
+| `test_user_cpp.py` | 6 / 5.693 s | `gate-user_cpp.log` |
+| `test_user_program_toolchain.py` | 23 / 147.527 s | `gate-user_program_toolchain.log` |
+| `test_cpp_baseline.py` | 5 / 0.075 s | `gate-cpp_baseline.log` |
+| `test_gui_browser_source.py` | 8 / 37.459 s | `gate-gui_browser_source.log` |
+| `test_browser_navigation_source.py` | 4 / 2.950 s | `gate-browser_navigation_source.log` |
+| `test_browser_runtime_source.py` | 29 / 8.219 s | `gate-browser_runtime_source.log` |
+| `test_browser_public_navigation.py` | 2 / 3.564 s | `gate-browser_public_navigation.log` |
+| `test_browser_forms.py` | 1 / 0.364 s | `gate-browser_forms.log` |
+
+Beide eingefrorenen Referenzen bestehen: VMware 65 s (`package-vmware.log`,
+Detail `../20260907-151523-package-vmware-vga.log`), QEMU 61 s
+(`package-qemu.log`, Detail `../20260907-151701-package-qemu-vga.log`).
+Browser unveraendert 2805788 Datei-/6182953 Loaderbytes, neuer SHA256
+`e52aaa1c502993ff729c54d31eed5cd7330ecb3208e45fedac6596473fb271e0`.
+HTMLWORK bytegleich zur abgenommenen Basis: 845868/2752100 Bytes, SHA256
+`20c4d026c264878aa70bacb9ec5f2865d9a4814968994dde80811a76cf42643d`.
+Quellzeilen (keine semantische Komplexitaetsmetrik): vorher 314 C, nachher
+326 C++ plus 74 private Headerzeilen. Sechs C-Funktionen, keine Owned-
+Ressource, kein neues init/destroy-Paar oder Cleanup-Pfad. Der Gewinn ist die
+explizit gepruefte, nicht frei konstruierbare Zustandsdarstellung; keine
+behauptete LOC-/Cleanup-Reduktion oder neue Browsing-Kompatibilitaet.
+
+Alle folgenden eingefrorenen Gastgates bestehen beim ersten Lauf. Aufruf
+jeweils `.\scripts\test-reist-runtime.ps1 -Mode MODE -Target qemu -Video vga`;
+Logs relativ zu `build/codex-agent/r320/model-acceptance/`:
+
+| MODE | PASS / Wrapper-Dauer | Log / zusaetzliche Belege |
+|---|---|---|
+| `cpp-client` | 11.325 s | `cpp-client.log`, `../../20260907-151900-cpp-client.log` |
+| `runtime-desktop-browser` | 51.936 s | `runtime-desktop-browser.log`, gleichnamige `.browser.log`/`.ppm` |
+| `runtime-desktop-browser-resources` | 42.861 s | `runtime-desktop-browser-resources.log`, `.browser.log`/`.ppm` |
+| `runtime-desktop-browser-input` | 73.699 s | `runtime-desktop-browser-input.log`, `.browser.log`/`.ppm` |
+| `runtime-desktop-browser-forms` | 44.483 s | `runtime-desktop-browser-forms.log`, `.browser.log`/`.ppm` |
+| `runtime-desktop-browser-public` | 55.398 s | `runtime-desktop-browser-public.log`, `.browser.log`/`.ppm` |
+| `runtime-desktop-browser-model` | 85.479 s | `runtime-desktop-browser-model.log`, C/C++-Paar unten |
+
+CPPTEST bestaetigt Lebensdauer, Backing-Freigabe, OOM/Fault/Kill/Reap, frisches
+Kind und Shell. Browser-/Ressourcengates pruefen CSS-Pixel, Resize, Wheel,
+Ressourcenfehler, Abbruch, frisches Nachladen, Recovery und Cleanup. Input
+bestaetigt echte Eingaben/Navigation, Crash, Neustart und frische Konsole;
+Formulare beweisen exaktes GET, Reflow, Ablehnung ohne Request, Reset und
+Recovery. Public prueft grosse kodierte HTTP-Dokumente, Weiterleitung,
+Worker-Raster und Close, keine beliebige reale Website oder Skriptausfuehrung.
+
+Gepaartes Modellgate verwendet unveraendert `--model-ui-pair` mit der bereits
+abgenommenen `build/codex-agent/r320a/accepted-c/`-Basis. `paired.json` ist
+`passed=true`; `paired-c/` und `paired-cpp/` bewahren je alle 64 Rohmessungen,
+Pixelreadbacks, Commitbestaetigungen, Gastlogs und `boot.json`. C/C++:
+Tipp-p95 60.0902/60.4288 ms, Scroll-p95 114.6334/125.0032 ms, Maxima
+119.1616/127.7303 ms; Gastzeiten 40.811/42.624 s. Absolute 250/500-ms-
+Grenzen und relative 120 Prozent +1 ms bleiben gleich; beide Browser
+schliessen sauber und geben das Terminal zurueck. Keine Wiederholung oder
+konkurrierende VM-/Compilerlast. Alle QEMU-Prozesse beendet.
+Kandidatenimage-SHA256
+`b9609822de2ccbc67aa6112d6d7559d6d03765bdfe89ddf81c124df8e479c3ec`;
+C-Image, Modell-Oracle und saemtliche Harness-/Fixture-Digests unveraendert.
+Originale fehlgeschlagene Baselines und alle Stashes bleiben erhalten.
+
+R3.20 ist done, das einzige verbleibende queued-Paket R3.6b wird active;
+keine Umsetzung oder Abnahmebehauptung dieses Nachfolgers in diesem Lauf.
+Neue Browser-Funktionen haben weiterhin Vorrang vor breiter optionaler
+C++-Migration, brauchen aber einen eigenen eingefrorenen Paketvertrag.
+
+Erhaltene Regressionen/Reparaturen, keine stillen Wiederholungen:
+`model-regression-before.log` zeigt den noch fehlenden C++-Adapter vor der
+Konvertierung. `gate-model-cpp-before-fixture-repair.log` und
+`model-before-fixture-repair/` enthalten den ersten Gatefehler: URL-Zeichen
+falsch gezaehlt, Host-Struct-Padding als Wert verglichen und veralteten
+Layoutcaller verlangt. Alle benannten Modellfelder und die echte URL bleiben
+nun explizit geprueft. `gate-model-cpp-before-inline-repair.log` zeigt die
+messbare Adressregression (6.269/10.985 ns); Disassembly belegt einen
+unnoetigen View-/Methodenaufruf, der gezielt inline gestellt wurde.
+Die leere HTML-Fixture erwartet nun korrekt Parserfehler, waehrend das leere
+Layout weiterhin gegen C geprueft wird. Der Stackpruefer unterscheidet
+relokationsgepruefte lokale Switches von weiterhin verbotenen indirekten
+Aufrufen und erkennt flag-erhaltende MOVs zwischen CMP/JA. Eindeutige
+Artefaktpfade verhindern verlorene .su-Nebenausgaben bei Zig-Cachehits.
+Nur die von diesem Lauf erzeugte Python-Temp-ACL wurde auf geerbte Workspace-
+Leserechte zurueckgestellt; Inhalte/Fehlerbelege und alte Stashes bleiben.
 
 ## R1.1a abgeschlossen: CPU-Abrechnung und sichere Hintergrundzeit
 

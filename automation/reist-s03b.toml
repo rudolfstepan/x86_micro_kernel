@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.20-browser-model-cpp"
-next_user_request = "2026-09-07: R3.20a passes all frozen gates on accepted scheduler 5ee7c11d. Next run implements only R3.20 with its unchanged scope and paired C/C++ gates. Accepted C UI baseline is build/codex-agent/r320a/accepted-c; preserve its frozen image/model/harness digests, all stashes and failed evidence including accepted-c-before-scheduler. No JavaScript or later package in this run. Direct execution, no agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-07: R3.20 model pilot is accepted; response/resources/model pilots are complete. Queue advances to the remaining queued R3.6b without implementing it in this run or claiming its old VMware failures resolved. Browser functional gaps, including JavaScript, remain separate deliverables with browser priority over broad optional C++ migration; any new browser feature needs its own frozen contract before implementation. Preserve accepted-c baseline and paired C/C++ evidence, all stashes and failures. Direct execution, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -1545,7 +1545,8 @@ evidence = []
 
 [[packages]]
 id = "R3.20-browser-model-cpp"
-status = "active"
+status = "done"
+completion_summary = "2026-09-07: One production model.cpp preserves all six C symbols/layouts; five live browser calls and the retained legacy layout boundary are proved without inventing a new renderer caller. Private checked AddressEdit/TextRange/ScrollExtent values, no new allocation, resource ownership, navigation or worker lifecycle. Ten host groups / 93 cases pass, including 54138 differential checks per O0/O2 and five paired200000-cycle C/C++ samples: address5.878/6.298ns, scrollbar134.262/134.695ns; unchanged1.2x/50000ns limits. Actual i386 stack deltas0..12bytes, no new runtime/heap dependency, bounded relocated local switch tables distinguished from forbidden indirect stack edges. Focused test-fixture, compiler-cache/stack-diagnostic and inline-call repairs plus all failures retained in r320, full map in CURRENT_WORK. VMware65s/QEMU61s references and all seven guest gates pass, including OOM/fault/kill/reap, browser/resources/input/forms/public navigation and fresh paired C/C++ UI. C/C++ p95 typing60.0902/60.4288ms, scroll114.6334/125.0032ms; maxima119.1616/127.7303ms, both64 exact-pixel events and clean close, unchanged250ms/500ms/1.2x+1ms limits. Browser file2805788/payload6182953bytes unchanged; HTMLWORK845868/2752100bytes byte-identical. Candidate image SHA256 b9609822de2ccbc67aa6112d6d7559d6d03765bdfe89ddf81c124df8e479c3ec. Frozen UI harness/main/fixtures and all isolation/resource limits unchanged. C source314lines becomes326Cpp+74privateheaderlines; benefit is checked state representation, not a claimed LOC/cleanup reduction. Keep the scoped C++ pilot; no JavaScript/new web feature or general website/WCET claim. Queue advances only; no later implementation or push."
 prerequisite_completion = "2026-09-07: R3.20a is accepted after scheduler 5ee7c11d, with an exact-pixel C UI baseline at build/codex-agent/r320a/accepted-c (passed=true, typing/scroll p95 62.8166/117.1034 ms). Historical failed baselines and stashes remain preserved. The original model C oracle is unchanged; no model conversion in the prerequisite run. R3.20 must retain its own frozen paired runtime, UI, size, stack and behavior gates, using the accepted image/model/harness digests."
 baseline_status = "2026-09-07: Resumed attributed probe harness on clean accepted 475dc3c1, preserving stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and newer input-monitor keys. Fixed demonstrated setup-only Surface-ACK versus composed-focus observation race within the existing deadline and bounded readback cap; five telemetry tests pass. Fresh C baseline ui-baseline-ready records all 64 real edits/wheel steps and matching pixels but raw scroll p95 455.7574 ms exceeds unchanged 250 ms (typing 139.2513 ms, max 473.6693 ms); subsequent guest interaction probe fails during close. No panic and no model conversion. Preserve failed evidence under build/codex-agent/r320/resumed-20260907; renderer/Surface/compositor repairs require a separate authorized package, not silent R3.20 expansion."
 resumption = "2026-09-07: R1.2e and R3.21 accepted. Resume the preserved R3.20 baseline work with its original scope/gates; the passing R3.21 browser-input regression is not acceptance of the separate C-model/C++ migration baseline. Stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a remains unaccepted and untouched by the Display run."
@@ -1607,7 +1608,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

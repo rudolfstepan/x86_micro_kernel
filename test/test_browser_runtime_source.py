@@ -1431,7 +1431,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             source = Path(directory) / "browser-render-host.c"
             source.write_text(RENDER_HOST, encoding="utf-8")
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
-            run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
+            run_host([str(source), "userspace/gui/apps/browser/browser_model.cpp",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/compositor/desktop_surface.c", "userspace/gui/lib/font_catalog.c",
                       "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/browser_forms.c", "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/lib/font.c"],
@@ -1443,7 +1443,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             source = Path(directory) / "browser-transport-host.c"
             source.write_text(TRANSPORT_HOST, encoding="utf-8")
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
-            run_host([str(source), "userspace/gui/apps/browser/browser_model.c",
+            run_host([str(source), "userspace/gui/apps/browser/browser_model.cpp",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/apps/browser/browser_response.cpp", "userspace/programs/curl_http.c",
                       "userspace/gui/apps/browser/browser_resources.cpp", "userspace/gui/apps/browser/browser_forms.c",

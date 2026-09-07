@@ -98,7 +98,7 @@ PROGRAMS = {
     ),
     "BROWSER.PRG": (
         ROOT / "userspace/gui/apps/browser/main.c",
-        ROOT / "userspace/gui/apps/browser/browser_model.c",
+        ROOT / "userspace/gui/apps/browser/browser_model.cpp",
         ROOT / "userspace/gui/apps/browser/browser_forms.c",
         ROOT / "userspace/gui/apps/browser/browser_images.c",
         ROOT / "userspace/gui/apps/browser/browser_response.cpp",

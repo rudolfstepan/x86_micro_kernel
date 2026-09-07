@@ -1,4 +1,7 @@
-#include "browser_model.h"
+#include "browser_model.hpp"
+using reist::browser::AddressEdit;
+using reist::browser::TextRange;
+using reist::browser::ScrollExtent;
 
 static uint32_t utf8_length(const char *text, uint32_t remaining) {
     if (remaining == 0U) return 0U;
@@ -38,8 +41,8 @@ static int add_run(browser_layout_t *layout, uint32_t kind,
             return 0;
         }
     }
-    layout->runs[layout->run_count++] = (browser_layout_run_t){
-        kind, offset, length, style, link_index, x, y, width, height};
+    layout->runs[layout->run_count++] = browser_layout_run_t{
+        kind, offset, length, style, link_index, x, (int32_t)y, width, height};
     return 0;
 }
 
@@ -116,32 +119,35 @@ int browser_build_layout(const reist_html_document_t *document,
             has_content = 1U;
             continue;
         }
-        if (element->kind != REIST_HTML_ELEMENT_TEXT ||
-            element->text_offset + element->text_length >
-                document->text_length) return -22;
+        if (element->kind != REIST_HTML_ELEMENT_TEXT) return -22;
+        auto range = TextRange::open(element->text_offset, element->text_length,
+                                    document->text_length);
+        if (!range) return *range.error_if();
+        const uint32_t text_offset = range.value_if()->offset();
+        const uint32_t text_length = range.value_if()->length();
         uint32_t height = font_height(element->style);
         uint32_t cell = font_cell(height);
         if (x == 16U && indent != 0U) x += indent;
         if (height + 2U > line_height) line_height = height + 2U;
         uint32_t consumed = 0U;
-        while (consumed < element->text_length) {
+        while (consumed < text_length) {
             /* Keep words together when they fit; long words still wrap at a
              * complete UTF-8 scalar. All lookahead is within this element. */
             if (!(element->style & REIST_HTML_STYLE_PREFORMATTED) &&
-                (consumed == 0U || document->text[element->text_offset + consumed - 1U] == ' ')) {
+                (consumed == 0U || document->text[text_offset + consumed - 1U] == ' ')) {
                 uint32_t word = 0U, look = consumed;
-                while (look < element->text_length &&
-                       document->text[element->text_offset + look] != ' ') {
-                    look += utf8_length(document->text + element->text_offset + look,
-                                        element->text_length - look);
+                while (look < text_length &&
+                       document->text[text_offset + look] != ' ') {
+                    look += utf8_length(document->text + text_offset + look,
+                                        text_length - look);
                     word += cell;
                 }
                 if (word <= right - 16U - indent && x > 16U + indent &&
                     x + word > right) next_line(&x, &y, &line_height, indent);
             }
-            const char *scalar = document->text + element->text_offset + consumed;
+            const char *scalar = document->text + text_offset + consumed;
             uint32_t scalar_length = utf8_length(
-                scalar, element->text_length - consumed);
+                scalar, text_length - consumed);
             if ((element->style & REIST_HTML_STYLE_PREFORMATTED) &&
                 scalar_length == 1U && scalar[0U] == '\n') {
                 next_line(&x, &y, &line_height, indent);
@@ -152,7 +158,7 @@ int browser_build_layout(const reist_html_document_t *document,
                 next_line(&x, &y, &line_height, indent);
             if (height + 2U > line_height) line_height = height + 2U;
             if (add_run(layout, element->kind,
-                        element->text_offset + consumed, scalar_length,
+                        text_offset + consumed, scalar_length,
                         element->style, element->link_index, (int32_t)x, y,
                         cell, height) != 0) return -28;
             x += cell;
@@ -200,7 +206,14 @@ int browser_anchor_y(const reist_html_document_t *document,
 
 int browser_address_edit(char *text, uint32_t capacity, uint32_t *length,
                           uint32_t *cursor, uint32_t *replace, uint32_t key) {
-    if (capacity < 2U || *length >= capacity || *cursor > *length) return -22;
+    auto edit = AddressEdit::open(text,capacity,length,cursor,replace);
+    return edit ? edit.value_if()->edit(key) : *edit.error_if();
+}
+
+int AddressEdit::edit(uint32_t key) & noexcept {
+    char* text = text_;
+    const uint32_t capacity = capacity_;
+    uint32_t *length = length_, *cursor = cursor_, *replace = replace_;
     /* Surface keyboard constants: left/right/home/end/delete. */
     if (key == 0x104U || key == 0x105U || key == 0x106U || key == 0x107U) {
         if (key == 0x104U && *cursor) --*cursor;
@@ -236,26 +249,25 @@ static void scrollbar_geometry(browser_scrollbar_t *bar) {
     if (thumb > bar->track.height) thumb = bar->track.height;
     uint32_t travel = bar->track.height - thumb;
     uint32_t offset = maximum ? (uint32_t)bar->state.value * travel / maximum : 0U;
-    bar->thumb = (reist_gui_rect_t){bar->track.x, bar->track.y + (int32_t)offset,
+    bar->thumb = reist_gui_rect_t{bar->track.x, bar->track.y + (int32_t)offset,
                                    bar->track.width, thumb};
 }
 void browser_scrollbar_configure(browser_scrollbar_t *bar, uint32_t width,
                                  uint32_t view, uint32_t total, uint32_t position) {
     /* Surface and document capacities bound all products below 2^31. */
-    if (view > 768U) view = 768U;
-    if (view == 0U) view = 1U;
-    if (total > 262144U) total = 262144U;
+    const auto extent = ScrollExtent::clamp(view,total,position);
+    view = extent.view();
     bar->view = view;
-    bar->bounds = (reist_gui_rect_t){(int32_t)width - (int32_t)BROWSER_SCROLLBAR_WIDTH,
+    bar->bounds = reist_gui_rect_t{(int32_t)width - (int32_t)BROWSER_SCROLLBAR_WIDTH,
         BROWSER_CONTENT_TOP, BROWSER_SCROLLBAR_WIDTH, view};
     uint32_t arrows = view > 36U ? 18U : 0U;
-    bar->track = (reist_gui_rect_t){bar->bounds.x, bar->bounds.y + (int32_t)arrows,
+    bar->track = reist_gui_rect_t{bar->bounds.x, bar->bounds.y + (int32_t)arrows,
         bar->bounds.width, view - arrows * 2U};
-    uint32_t maximum = total > view ? total - view : 0U;
+    uint32_t maximum = extent.maximum();
     uint32_t was_captured = bar->state.captured;
     uint32_t was_focused = bar->state.focused;
     reist_gui_range_state_initialize(&bar->state);
-    bar->model = (reist_gui_range_model_t){REIST_GUI_VALUE_API_VERSION,
+    bar->model = reist_gui_range_model_t{REIST_GUI_VALUE_API_VERSION,
         sizeof(bar->model), 1U, "Browser document scroll", bar->track,
         0, (int32_t)(maximum ? maximum : 1U), 24U, view, REIST_GUI_RANGE_SCROLLBAR,
         REIST_GUI_VERTICAL, REIST_GUI_VALUE_VISIBLE |
@@ -263,7 +275,7 @@ void browser_scrollbar_configure(browser_scrollbar_t *bar, uint32_t width,
     reist_gui_value_result_t result;
     reist_gui_value_result_initialize(&result);
     (void)reist_gui_range_configure(&bar->model, &bar->state,
-        (int32_t)(position > maximum ? maximum : position), &result);
+        (int32_t)extent.position(), &result);
     bar->state.focused = maximum ? was_focused : 0U;
     bar->state.captured = maximum && was_focused ? was_captured : 0U;
     scrollbar_geometry(bar);

@@ -2,6 +2,19 @@
 
 Stand: 3. September 2026
 
+7. September, R3.20 abgeschlossen: eine C++-Modellimplementierung hinter sechs
+unveraenderten C-Einstiegen, ohne neuen Navigations-/Worker-/Heapbesitz.
+93 Hostfaelle, beide Referenzbuilds und sieben Gastgates bestehen. Die
+gepaarte C/C++-Abnahme mit unveraendertem Harness misst Tipp-p95
+60.0902/60.4288 ms und Scroll-p95 114.6334/125.0032 ms; alle absoluten und
+relativen Grenzen eingehalten. Browser-Datei-/Loadergroesse unveraendert,
+HTMLWORK bytegleich, Stackdelta maximal 12 Bytes. Response-/Ressourcen-/
+Modellpiloten sind damit abgeschlossen; keine JavaScript- oder neue Web-
+Funktion geliefert. Funktionsluecken behalten Vorrang vor breiter optionaler
+C++-Migration und benoetigen eigene Pakete. Die Queue aktiviert regelgemaess
+das verbleibende R3.6b, ohne dessen offene VMware-Abnahme vorwegzunehmen oder
+es in diesem Lauf zu implementieren. Fehlerbelege und Details in CURRENT_WORK.
+
 7. September, R3.20a abgeschlossen: gezielte Viewport-Invalidierung,
 einmalige Surface-Broker-Uebergabe und verlustfreier Escape-Lookahead sind
 auf Scheduler `5ee7c11d` abgenommen. 119 Hostfaelle, VMware/QEMU-Referenzen

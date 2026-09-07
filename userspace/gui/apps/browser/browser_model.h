@@ -1,5 +1,8 @@
 #ifndef REIST_BROWSER_MODEL_H
 #define REIST_BROWSER_MODEL_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "reist/gui/html_document.h"
 #include "reist/gui/value_controls.h"
 #define BROWSER_LAYOUT_LINE_CAPACITY 2048U
@@ -42,4 +45,7 @@ void browser_scrollbar_configure(browser_scrollbar_t *, uint32_t width,
                                  uint32_t view, uint32_t total, uint32_t position);
 int browser_scrollbar_pointer(browser_scrollbar_t *, uint32_t motion,
                                uint32_t pressed, int32_t x, int32_t y);
+#ifdef __cplusplus
+}
+#endif
 #endif

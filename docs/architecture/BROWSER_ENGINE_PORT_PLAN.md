@@ -23,9 +23,20 @@ bei Mutation, Reset, Navigation und Freigabe des Besitzers. Die bisherigen
 C-Aufrufe, beide Wireprofile und Ring-3-Grenzen bleiben erhalten.
 Kein gesamter Browser-/main.c-Sprachwechsel. Die SDK-Unwind-Erzeugung und
 ein unnoetiger Idlewait vor lokal ausfuehrbaren Ladeschritten sind korrigiert,
-ohne Pruefungen oder Fristen zu lockern. R3.20-model ist als naechstes Paket
-mit vorab festgelegter C-/UI-Baseline und quantitativen Grenzen aktiv;
-noch keine Modelimplementierung in diesem Lauf.
+ohne Pruefungen oder Fristen zu lockern. R3.20-model ist ebenfalls abgenommen:
+93 Hostfaelle, beide Referenzen und sieben Gastgates. Die sechs C-Einstiege
+und Datenlayouts bleiben erhalten; kleine private C++-Werte kapseln Adress-,
+Textbereichs- und Scrollinvarianten ohne neue Navigation/Workerownership.
+Der bestehende CSS-Szenenpfad bleibt C; der Legacy-Layout-Einstieg wird
+kompatibel erhalten, nicht erneut zum Renderer gemacht. Browsergroesse und
+Loaderpayload bleiben unveraendert, HTMLWORK bytegleich. Die echte gepaarte
+C/C++-UI-Messung besteht mit 60.0902/60.4288 ms Tipp-p95 und
+114.6334/125.0032 ms Scroll-p95, unveraenderten absoluten/relativen Grenzen
+und je 64 exakten Eingabe-/Pixelbelegen. Fehlerreparaturen und Nachweise in
+CURRENT_WORK; keine nachtraegliche Lockerung des eingefrorenen Messverfahrens.
+Damit sind Response-/Ressourcen-/Modellpiloten abgeschlossen. Neue Browser-
+Funktionen einschliesslich JavaScript bleiben eigene, noch nicht implementierte
+Pakete; ein Sprachwechsel ersetzt diese Kompatibilitaetsarbeit nicht.
 Die spaeter hinzugefuegte [Nutzeranleitung](../REIST_CPP_MIGRATION_PLAN.md)
 praezisiert diese Reihenfolge: committete Baseline TASK-0001, gemischte Toolchain
 und eingeschraenktes C++20-Profil TASK-1001/1002, minimale `libreist++`-Typen
