@@ -2,17 +2,71 @@
 
 Stand: 7. September 2026
 
-## R3.21a aktiv: VMware-Kapazitaetskorrektur
+## R3.21a abgeschlossen: echte VMware-Aufloesungen
 
-Nutzerfreigabe nach realem Workstation-Befund: 128 MiB VRAM, aber nur
-3.75 MiB aktueller FB_SIZE beim Start. R3.21 verwechselt diese Werte an
-Erkennung, Modusabfrage und Aktivierung; QEMU verdeckt dies durch identische
-Registerwerte. Saubere Baseline `638b5806`, Browserstash unveraendert.
-Das abgegrenzte Reparaturpaket und seine fuenf Host-, zwei Referenz- und
-drei Gastgates sind vor Implementierung in der Queue eingefroren.
-Keine Schutz-/Budgetlockerung, Live-Umschaltung oder Benutzer-VM-Aenderung.
-Neue Belege unter `build/codex-agent/r321a/`; R3.21-Belege bleiben erhalten.
-R3.20 ist bis zum Abschluss dieses Pakets wieder queued.
+Die Kapazitaetskorrektur besteht alle fuenf finalen Hostgates (74 Tests),
+beide Referenzbuilds und drei Gastgates, einschliesslich echtem Workstation.
+Ausgangsbefund: 128 MiB VRAM gegen 3.75 MiB aktuellen FB_SIZE; QEMU meldet
+beide Werte identisch und konnte diesen Fehler nicht zeigen. VRAM_SIZE ist
+jetzt gegen boot-versiegelte BAR1-Grenzen validiert, FIFO gegen BAR2.
+Initial werden hoechstens die bestehenden 16 MiB WC/UC abgebildet; nach
+Aktivierung werden Bildumfang, Pitch und Offset erneut geprueft. Keine
+ABI-/Autoritaets-/Speicherbudgetlockerung oder Aenderung an der Benutzer-VM.
+
+Umfang/Gates vor Implementierung lokal eingefroren in `db4346ac`, saubere
+Codebaseline `638b5806`. Queue jetzt R3.21a done, R3.20 active, Browserstash
+`5af103bac06f8a4e6b335f247ed4d89f42c4a59a` unveraendert. Kein Push.
+Benutzung: neues VMware-Image starten, Systemsteuerung -> Anzeige;
+gespeicherte Aufloesung gilt weiterhin erst beim naechsten Desktopstart.
+
+Alle neuen Belege unter `build/codex-agent/r321a/`:
+
+| Unveraendertes Gate-Kommando (Queue) | Ergebnis / Dauer | Beleg |
+|---|---|---|
+| `python test/test_display_settings.py -v` | 6 PASS, 2.617 s, reale C-Pfade O0/O2 | `gate-display_settings.log` |
+| `python test/test_display_abi_minimal.py -v` | 20 PASS, 0.363 s | `gate-display_abi_minimal.log` |
+| `python test/test_vmware_svga2d.py -v` | 22 PASS, 0.768 s | `gate-vmware_svga2d.log` |
+| `python test/test_bios_vbe_source.py -v` | 11 PASS, 0.002 s | `gate-bios_vbe_source.log` |
+| `python test/test_vmware_mouse.py -v` | final 15 PASS, 0.005 s | `gate-vmware_mouse-sequence.log` |
+| `test-reist-package.ps1 -Target vmware -Video vga` | PASS, 14 s | `package-vmware.log`; Detail `../20260907-115230-package-vmware-vga.log` |
+| `test-reist-package.ps1 -Target qemu -Video vga` | PASS, 59 s | `package-qemu.log`; Detail `../20260907-115329-package-qemu-vga.log` |
+| `run_qemu_display_settings.py --backend std` (volle Argumente Queue) | PASS, 55.356 s | `runtime-std.log`, `std/status.json`, `std/serial.log`, PPMs |
+| `run_qemu_display_settings.py --backend vmware` (volle Argumente Queue) | PASS, 52.213 s | `runtime-svga2d.log`, `svga2d/status.json`, `svga2d/serial.log`, PPMs |
+| `run_vmware_display_settings.ps1 -Evidence build/codex-agent/r321a/workstation -TimeoutSeconds 120` | PASS, beide Modi/Shell bis 21.283 s, Exit 0 | `workstation/gate.log`, `workstation/vmware-serial.log` |
+
+Hostkommandos liefen ueber den bestehenden WER-unterdrueckenden Wrapper
+`python scripts/measure_cpp_baseline.py --host-test <Testdatei> -v`.
+Referenzen/Workstation liefen versteckt ueber PowerShell 7. Die aeusseren
+Workstation-Umleitungsdateien blieben leer; der massgebliche erfolgreiche
+Beleg ist das erst nach allen Pruefungen angehaengte vollstaendige Gastlog
+in `workstation/gate.log` samt zwei modusbezogenen PASS-Zeilen und Exit 0.
+
+Workstation liest fuer 1280x720 Pitch 5120 und FB_SIZE 3686400, fuer
+1920x1080 Pitch 7680 und FB_SIZE 8294400 zurueck. VRAM/BAR bleiben beide
+134217728, initiales Mapping 16777216. Pro Modus acht beschleunigte
+Verschiebungen, acht Resize-Frames, null Probe-/Clockfehler und keine
+Beschleunigungs-Fallbacks; danach deaktiviertes SVGA und frische Shellhilfe.
+QEMU beweist weiterhin Applet-Speichern, unveraenderten aktiven Modus bis
+Neustart, Applet-Exception/Replacement, ungueltigen Modus und Shellrueckkehr.
+Keine Qualifikation physischer Monitore oder saemtlicher angebotener Modi.
+
+Fehlerbelege bleiben erhalten: `regression-before.log` reproduziert die
+falsche Kapazitaet vor Produktionsreparatur, `regression-after.log` besteht.
+Der erste Workstation-Lauf (`workstation-before-sequence/`, Exit 1) erreichte
+1280x720 und fehlerfreies Rendering, wartete aber bis zur 120-s-Grenze auf
+`DESKTOP_ACCELERATION_READY`, das nur der automatische Startpfad ausgibt.
+`workstation-sequence-before.log` reproduziert die falsche Testannahme.
+Eine fokussierte Harness-Reparatur verlangt stattdessen `DESKTOP_OK`, weiterhin
+die echte SVGA-Geometrie, RECT_COPY, acht Drag/Resize-Frames, null Fehler,
+Deaktivierung und frische Shellantwort. Unveraenderte Produktions-/QEMU-
+Nachweise wurden nicht wiederholt; finale Fehlerdiagnose-Ergaenzung am Wrapper
+aendert keine Akzeptanzbedingung. Alte R3.21-Belege bleiben unveraendert.
+
+Finales Hauptimage SHA256:
+`b6edaf1033f43c8c88982b559b48732e5e62de173d96df073dc2b2b60c383ea3`.
+Kernel: `499019d217d39cc713070a0118f8e7d677d1a3a5be79493276b5dcc91e6413be`.
+Unveraendertes portables VMware-Quellimage:
+`92b3bcae33d6990222c5f2a2852f5cf85126fed5dea6c93f2f3bca947f1397d7`.
 
 ## R3.21 abgeschlossen: Anzeige-Applet und gespeicherte Desktopaufloesung
 

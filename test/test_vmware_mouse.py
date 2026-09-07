@@ -1,4 +1,5 @@
 import pathlib
+import re
 import unittest
 
 
@@ -6,6 +7,46 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class VmwareMouseTests(unittest.TestCase):
+    def test_saved_mode_sequence_accepts_explicit_activation_without_auto_banner(self):
+        # Actual explicit-mode Workstation sequence. ACCELERATION_READY belongs
+        # to desktop_activate_with_fallback(), not the saved-mode activation.
+        text = ('REIST_VIDEO SVGA2D_ACTIVE caps=2 geometry=1280x720\n'
+                'DESKTOP_MODE_ACTIVE width=1280 height=720 bpp=32\n'
+                'DESKTOP_OK\nREIST_VIDEO SVGA2D_RECT_COPY_OK\n'
+                'REIST_VIDEO SVGA2D_INACTIVE\nDESKTOP_EXIT_OK\n')
+        source = (ROOT / 'scripts/run_vmware_mouse.ps1').read_text()
+        sequence = source.split("Send-DisplayCommand 'desktop.prg --render-probe' @(", 1)[1].split(')\n', 1)[0]
+        patterns = re.findall(r'''["']([^"']*)["']''', sequence)
+        self.assertGreaterEqual(len(patterns), 6)
+        position = 0
+        for pattern in patterns:
+            pattern = pattern.replace('$mode', '1280x720').replace('$width', '1280').replace('$height', '720')
+            match = re.search(pattern, text[position:])
+            self.assertIsNotNone(match, 'Explicit-mode transcript lacks: ' + pattern)
+            position += match.end()
+
+    def test_display_gate_uses_fresh_copy_and_real_high_mode_readback(self):
+        wrapper = (ROOT / 'scripts/run_vmware_display_settings.ps1').read_text()
+        runner = (ROOT / 'scripts/run_vmware_mouse.ps1').read_text()
+        for marker in ('Test-Path -LiteralPath $destination', '$destination.StartsWith($evidenceRoot',
+                       'Copy-Item -LiteralPath', '-DisplayModes', 'reist-os-flat.vmdk'):
+            self.assertIn(marker, wrapper)
+        self.assertNotIn('Remove-Item', wrapper)
+        mode = runner[runner.index('    if ($DisplayModes) {\n        #'):runner.index('    if ($Benchmark) {\n        $commandSent')]
+        for marker in ('1280x720', '1920x1080', 'SVGA2D_ACTIVE caps=',
+                       'DESKTOP_MODE_ACTIVE width=', 'SVGA2D_RECT_COPY_OK',
+                       'SVGA2D_INACTIVE', 'DESKTOP_EXIT_OK', 'Send-DisplayCommand \'help\'',
+                       'USER PROCESS EXCEPTION', 'DESKTOP_MODE_FALLBACK',
+                       'Wait-DisplaySequence $offset', 'return'):
+            self.assertIn(marker, mode)
+        for marker in ('drag_frames=8', 'resize_frames=8', 'clock_errors=0', 'probe_errors=0', '$metrics.Count -ne 2'):
+            self.assertIn(marker, mode)
+        command = runner[runner.index('public static bool SendCommand('):runner.index('public static bool SendPointer(')]
+        self.assertIn('command.Length > 64', command)
+        self.assertLessEqual(len('config set desktop resolution 1920x1080'), 64)
+        self.assertNotIn('$attempt', mode)
+        self.assertIn('$deadline = [TimeSpan]::FromSeconds($TimeoutSeconds)', runner)
+
     def test_runtime_mode_dispatches_dedicated_runner(self):
         source = (ROOT / "scripts/test-reist-runtime.ps1").read_text(
             encoding="utf-8"

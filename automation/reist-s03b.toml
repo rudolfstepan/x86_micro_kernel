@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.21a-vmware-scanout-capacity"
-next_user_request = "2026-09-07: User approves repairing real VMware mode detection, mapping and activation before resuming R3.20. Direct main-worktree execution, frozen host/QEMU/Workstation gates, no agents or push. Preserve the browser stash and all R3.21 evidence."
+active_id = "R3.20-browser-model-cpp"
+next_user_request = "2026-09-07: R3.21a VMware scanout repair accepted: 74 targeted tests, both references, both QEMU Display guests and real Workstation 1280x720/1920x1080 proof pass. Resume only R3.20 with its untouched stash and original baseline/gates; no browser implementation in the display repair run. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,9 @@ push = false
 
 [[packages]]
 id = "R3.21a-vmware-scanout-capacity"
-status = "active"
+status = "done"
+completion_summary = "2026-09-07: Five final host gates / 74 tests pass, real admission/preparation/readback O0/O2. VMware/QEMU reference builds pass in 14/59s. QEMU Standard/VMware Display guests pass in 55.356/52.213s, preserving configuration, applet-fault replacement, fallback and console proof. Real Workstation passes both saved high modes and fresh shell returns by 21.283s: VRAM/BAR 134217728, bounded initial map 16777216, 1280x720 pitch5120/extent3686400, 1920x1080 pitch7680/extent8294400; each has eight accelerated drag/eight resize frames, zero clock/probe errors and no fallback. One focused harness repair replaces an automatic-path-only banner with explicit-mode DESKTOP_OK, retaining actual mode/copy/disable/render evidence; its failing regression and first failed guest evidence are preserved. Main image SHA256 b6edaf1033f43c8c88982b559b48732e5e62de173d96df073dc2b2b60c383ea3. Full evidence map in CURRENT_WORK. No ABI, authority, memory budget or user-VM setting changes. Queue returns to R3.20; no push."
+focused_gate_repair = "2026-09-07: Host regression, 73 targeted tests, both references and both QEMU Display guests pass. First Workstation run proves actual 1280x720, eight accelerated drag and eight resize frames with zero probe/clock errors and console release, then reaches the unchanged 120-second deadline waiting for DESKTOP_ACCELERATION_READY. That banner is emitted only by automatic activation, not the explicit saved-mode path. Preserve workstation as workstation-before-sequence plus runtime-workstation.log; real transcript-derived sequence regression fails before repair. Replace only that automatic-path banner expectation with DESKTOP_OK, retaining actual SVGA mode readback, RECT_COPY, eight drag/resize frames, zero errors, disable and fresh shell proof. Rerun affected mouse host gate (15 tests) and Workstation gate once; production and previously passing host/reference/QEMU evidence remain unchanged."
 phase = "post-s0"
 risk = "high"
 title = "Distinguish VMware VRAM capacity from the current framebuffer extent"
@@ -1431,7 +1433,7 @@ evidence = []
 
 [[packages]]
 id = "R3.20-browser-model-cpp"
-status = "queued"
+status = "active"
 resumption = "2026-09-07: R1.2e and R3.21 accepted. Resume the preserved R3.20 baseline work with its original scope/gates; the passing R3.21 browser-input regression is not acceptance of the separate C-model/C++ migration baseline. Stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a remains unaccepted and untouched by the Display run."
 deferral = "2026-09-06: User approves the prerequisite R1.2e boot/supervisor repair. Preserve unaccepted harness in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and all r320 evidence. Baseline scroll p95 450.5252 ms exceeds 250 ms; later boot panic blocks diagnosis. Do not migrate the C model before a passing baseline; resume unchanged gates after R1.2e."
 phase = "post-s0"

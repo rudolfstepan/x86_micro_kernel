@@ -2,12 +2,15 @@
 
 Stand: 3. September 2026
 
-Prioritaetskorrektur 7. September: R3.21a repariert nach Nutzerfreigabe die
-Verwechslung von VMware VRAM_SIZE und aktuellem FB_SIZE vor R3.20.
-Boot-versiegelte BAR-Grenzen, unveraenderte Speicherisolation und ein echter
-Workstation-Hochmodusnachweis ergaenzen die bisherigen QEMU-Nachweise.
-R3.21 bleibt mit seinem damaligen, explizit emulierten Nachweis abgeschlossen;
-R3.20 ist waehrend der separaten Reparatur queued, Browserstash unveraendert.
+Prioritaetskorrektur 7. September abgeschlossen: R3.21a trennt VMware
+VRAM_SIZE vom aktuellen FB_SIZE. Boot-versiegelte BAR-Grenzen bewahren
+Speicherisolation und feste Mapping-/Shadowgrenzen. 74 Hosttests, beide
+Referenzen und beide QEMU-Displaygaeste bestehen; echtes Workstation beweist
+1280x720 und 1920x1080, je acht beschleunigte Verschiebe-/Resize-Frames,
+null Probe-/Clockfehler und Shellrueckkehr. Die erste Harness-Fehlannahme
+und ihre einmalige Reparatur sind in CURRENT_WORK belegt, Fehlerlogs bleiben.
+R3.20 ist wieder active, Browserstash unveraendert; keine Browsermigration
+in diesem Reparaturlauf, kein Push oder native Monitorqualifikation.
 
 Neue Funktionsprioritaet vom 7. September: Nach dem inzwischen abgenommenen
 Boot-Reparaturpaket folgt die konfigurierbare Desktopaufloesung mit eigenem

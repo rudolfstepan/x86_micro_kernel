@@ -9,7 +9,8 @@ applet fault/replacement, unsupported-mode fallback and shell return. The
 128-MiB boot and existing browser-input regression also pass. Earlier failures
 and their focused repairs remain documented in CURRENT_WORK; no failed evidence
 was relabeled as passing. Native monitor/VMware Workstation mode qualification
-and live switching remain outside this acceptance.
+and live switching remain outside the original R3.21 acceptance; the separate
+R3.21a Workstation correction and its narrower platform proof are below.
 
 References: [QEMU Standard VGA](https://www.qemu.org/docs/master/specs/standard-vga.html)
 for the Bochs DISPI/PCI aperture and the
@@ -84,10 +85,17 @@ against VRAM and the BAR before the existing mapper maps the visible span.
 The shadow budget bounds each scene, independently of larger device memory.
 Preserve failed-disable latching and generation fencing. No ABI change.
 
-The additional Workstation gate runs only a fresh copied test package,
-without visible windows or modification of the user's VM. It must prove
-saved 1280x720 and 1920x1080 modes, real render/copy and console return.
-Until that gate passes, Workstation correction remains a candidate.
+The additional Workstation gate passed on 2026-09-07 using only a fresh copied
+test package, without visible windows or modification of the user's VM. It
+proved saved 1280x720 and 1920x1080, exact live pitch/extent, eight accelerated
+drag and eight resize frames per mode with zero probe/clock errors, and a
+fresh shell response after each disable. Both original QEMU Display guests
+still pass, including applet fault/replacement and unsupported-mode fallback.
+The first Workstation run's obsolete automatic-activation banner expectation
+was repaired after a failing transcript-derived regression; it now requires
+DESKTOP_OK plus the real hardware mode/copy/render/disable evidence. Raw failed
+and passed evidence remain separate in CURRENT_WORK. This is not native-monitor,
+all-mode or new Workstation driver-fault qualification.
 
 `reist_display_mode_request_t` is exactly 64 bytes. Syscall 109 adds operations
 13 (query) and 14 (startup activation). Query input fields other than

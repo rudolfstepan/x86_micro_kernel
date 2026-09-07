@@ -45,6 +45,7 @@
 #define SVGA_REG_BYTES_PER_LINE 12U
 #define SVGA_REG_FB_START 13U
 #define SVGA_REG_FB_OFFSET 14U
+#define SVGA_REG_VRAM_SIZE 15U
 #define SVGA_REG_FB_SIZE 16U
 #define SVGA_REG_CAPABILITIES 17U
 #define SVGA_REG_MEM_START 18U
@@ -88,6 +89,9 @@ static volatile bool activation_busy;
 static bool qemu_prepared;
 static bool vmware_prepared;
 static bool vmware_supervised;
+/* Boot-sealed device apertures. Queries must never size-probe live PCI BARs. */
+static uint32_t vmware_bars[3];
+static uint32_t vmware_aperture_bytes, vmware_fifo_aperture_bytes;
 static bool nvidia_prepared;
 static bool vbe_prepared;
 static vbe_runtime_info_t vbe_runtime_info;
@@ -438,6 +442,46 @@ static bool vbe_address_matches_display_bar(uint32_t address,
     return false;
 }
 
+static bool vmware_probe_apertures(pci_device_t *device) {
+    uint64_t fb_base, fb_bytes, fifo_base, fifo_bytes;
+    uint32_t port = device->bar[0] & ~3U;
+    if (!(device->bar[0] & 1U) || !port || port > 0xFFFEU ||
+        (device->bar[1] & 7U) || (device->bar[2] & 7U) ||
+        !pci_memory_bar_size(device, 1U, &fb_base, &fb_bytes) ||
+        !pci_memory_bar_size(device, 2U, &fifo_base, &fifo_bytes) ||
+        !fb_base || !fifo_base || fb_bytes < 800U * 600U * 4U ||
+        fb_bytes > UINT32_MAX || fifo_bytes < 4096U || fifo_bytes > UINT32_MAX ||
+        fb_base + fb_bytes > 0x100000000ULL ||
+        fifo_base + fifo_bytes > 0x100000000ULL ||
+        (fb_base < fifo_base + fifo_bytes && fifo_base < fb_base + fb_bytes))
+        return false;
+    memcpy(vmware_bars, device->bar, sizeof(vmware_bars));
+    vmware_aperture_bytes = (uint32_t)fb_bytes;
+    vmware_fifo_aperture_bytes = (uint32_t)fifo_bytes;
+    return true;
+}
+
+/* VRAM_SIZE is capacity; FB_SIZE is a mode-dependent extent. Validate live
+ * resource metadata against the boot seal without new PCI/config writes. */
+static bool vmware_memory_limits(pci_device_t *device, uint16_t index,
+                                  uint16_t value, uint32_t *vram_out) {
+    if (!vmware_aperture_bytes || !vmware_fifo_aperture_bytes ||
+        memcmp(device->bar, vmware_bars, sizeof(vmware_bars)) != 0)
+        return false;
+    uint32_t vram = svga_read(index, value, SVGA_REG_VRAM_SIZE);
+    uint32_t fb = svga_read(index, value, SVGA_REG_FB_START);
+    uint32_t fifo = svga_read(index, value, SVGA_REG_MEM_START);
+    uint32_t fifo_bytes = svga_read(index, value, SVGA_REG_MEM_SIZE);
+    if (vram < 800U * 600U * 4U || vram > vmware_aperture_bytes ||
+        (fb && fb != (vmware_bars[1] & ~15U)) ||
+        (fifo && fifo != (vmware_bars[2] & ~15U)) ||
+        fifo_bytes < 4096U || fifo_bytes > 16U * 1024U * 1024U ||
+        fifo_bytes > vmware_fifo_aperture_bytes)
+        return false;
+    *vram_out = vram;
+    return true;
+}
+
 static void prepare_vbe_handoff(void) {
     vbe_runtime_info_t info;
     memcpy(&info, (const void *)(uintptr_t)VBE_RUNTIME_INFO_ADDRESS,
@@ -507,8 +551,7 @@ void display_control_prepare(void) {
     if (vmware) {
         vmware_supervised = true;
         uint32_t index_bar = vmware->bar[0];
-        if ((index_bar & 1U) != 0U &&
-            (index_bar & 0xFFFFFFFCU) != 0U) {
+        if (vmware_probe_apertures(vmware)) {
             uint16_t index_port = (uint16_t)(index_bar & 0xFFFCU);
             uint16_t value_port = (uint16_t)(index_port + 1U);
             pci_enable_device(vmware);
@@ -521,24 +564,30 @@ void display_control_prepare(void) {
             if (id == SVGA_ID_1 || id == SVGA_ID_2) {
                 uint32_t framebuffer_start =
                     svga_read(index_port, value_port, SVGA_REG_FB_START);
-                uint32_t framebuffer_size =
+                uint32_t current_fb_size =
                     svga_read(index_port, value_port, SVGA_REG_FB_SIZE);
+                uint32_t vram_size = 0U;
+                bool memory_valid = vmware_memory_limits(
+                    vmware, index_port, value_port, &vram_size);
+                uint32_t framebuffer_size = vram_size < FB_SHADOW_CAPACITY
+                    ? vram_size : FB_SHADOW_CAPACITY;
                 uint32_t fifo_start =
                     svga_read(index_port, value_port, SVGA_REG_MEM_START);
                 uint32_t fifo_size =
                     svga_read(index_port, value_port, SVGA_REG_MEM_SIZE);
                 printf("REIST_VIDEO SVGA2D_PROBE id=%08X "
-                       "fb=%08X/%u fifo=%08X/%u bars=%08X,%08X,%08X\n",
-                       id, framebuffer_start, framebuffer_size,
+                       "fb=%08X/%u fifo=%08X/%u bars=%08X,%08X,%08X "
+                       "vram=%u aperture=%u map=%u\n",
+                       id, framebuffer_start, current_fb_size,
                        fifo_start, fifo_size, vmware->bar[0],
-                       vmware->bar[1], vmware->bar[2]);
+                       vmware->bar[1], vmware->bar[2], vram_size,
+                       vmware_aperture_bytes, framebuffer_size);
                 if (framebuffer_start == 0U)
                     framebuffer_start = vmware->bar[1] & 0xFFFFFFF0U;
                 if (fifo_start == 0U)
                     fifo_start = vmware->bar[2] & 0xFFFFFFF0U;
-                if (framebuffer_start != 0U &&
+                if (memory_valid && framebuffer_start != 0U &&
                     framebuffer_size >= 800U * 600U * 4U &&
-                    framebuffer_size <= 64U * 1024U * 1024U &&
                     fifo_start != 0U && fifo_size >= 4096U &&
                     fifo_size <= 16U * 1024U * 1024U &&
                     /* Establish the scanout cache type on its FIRST mapping.
@@ -609,6 +658,9 @@ static int activate_vmware(pci_device_t *device, uint32_t requested_width,
         (fifo_bar & 0xFFFFFFF0U) == 0U) return -19;
     uint16_t index_port = (uint16_t)(index_bar & 0xFFFCU);
     uint16_t value_port = (uint16_t)(index_port + 1U);
+    uint32_t vram_size;
+    if (!vmware_memory_limits(device, index_port, value_port, &vram_size))
+        return -19;
     /* SVGA-II negotiates the register protocol by writing the requested
      * version first; a read of the reset value is not a capability probe. */
     svga_write(index_port, value_port, SVGA_REG_ID, SVGA_ID_2);
@@ -622,13 +674,12 @@ static int activate_vmware(pci_device_t *device, uint32_t requested_width,
     uint32_t max_height = svga_read(index_port, value_port, SVGA_REG_MAX_HEIGHT);
     uint32_t width = requested_width ? requested_width : max_width >= 1024U ? 1024U : 800U;
     uint32_t height = requested_height ? requested_height : max_height >= 768U ? 768U : 600U;
-    uint64_t required = (uint64_t)width * height * 4U;
-    uint32_t fb_size = svga_read(index_port, value_port, SVGA_REG_FB_SIZE);
-    printf("REIST_VIDEO SVGA2D_MODE max=%ux%u fbsize=%u\n",
-           (unsigned)max_width, (unsigned)max_height, (unsigned)fb_size);
-    if (max_width < 800U || max_height < 600U || required > fb_size ||
+    printf("REIST_VIDEO SVGA2D_MODE max=%ux%u vram=%u aperture=%u\n",
+           (unsigned)max_width, (unsigned)max_height, vram_size,
+           vmware_aperture_bytes);
+    if (max_width < 800U || max_height < 600U ||
         !reist_display_geometry_fits(width, height, width * 4U,
-            max_width, max_height, fb_size, FB_SHADOW_CAPACITY)) return -19;
+            max_width, max_height, vram_size, FB_SHADOW_CAPACITY)) return -19;
     pci_enable_device(device);
     svga_write(index_port, value_port, SVGA_REG_ENABLE, 0U);
     if (svga_read(index_port, value_port, SVGA_REG_ENABLE) & SVGA_ENABLE)
@@ -647,16 +698,18 @@ static int activate_vmware(pci_device_t *device, uint32_t requested_width,
         svga_read(index_port, value_port, SVGA_REG_FB_START);
     uint32_t framebuffer_offset =
         svga_read(index_port, value_port, SVGA_REG_FB_OFFSET);
+    uint32_t fb_size = svga_read(index_port, value_port, SVGA_REG_FB_SIZE);
     uint64_t visible_bytes = (uint64_t)pitch * height;
     uint64_t framebuffer_address =
         (uint64_t)framebuffer_start + framebuffer_offset;
-    printf("REIST_VIDEO SVGA2D_SCANOUT pitch=%u start=%08X offset=%u\n",
-           (unsigned)pitch, framebuffer_start, (unsigned)framebuffer_offset);
-    if (pitch < width * 4U || framebuffer_start == 0U ||
+    printf("REIST_VIDEO SVGA2D_SCANOUT pitch=%u start=%08X offset=%u fbsize=%u\n",
+           (unsigned)pitch, framebuffer_start, (unsigned)framebuffer_offset, fb_size);
+    if (!vmware_memory_limits(device, index_port, value_port, &vram_size) ||
+        pitch < width * 4U || framebuffer_start == 0U ||
         framebuffer_start != (framebuffer_bar & 0xFFFFFFF0U) ||
         framebuffer_address > UINT32_MAX ||
-        framebuffer_offset > fb_size ||
-        visible_bytes > (uint64_t)fb_size - framebuffer_offset ||
+        framebuffer_offset > vram_size ||
+        fb_size > vram_size - framebuffer_offset || visible_bytes > fb_size ||
         visible_bytes > FB_SHADOW_CAPACITY)
         goto vmware_disable;
     uint32_t fifo_start = svga_read(index_port, value_port, SVGA_REG_MEM_START);
@@ -671,7 +724,8 @@ static int activate_vmware(pci_device_t *device, uint32_t requested_width,
            fifo_start, (unsigned)fifo_size, (unsigned)fifo_registers);
     if (fifo_start == 0U) fifo_start = fifo_bar & 0xFFFFFFF0U;
     if (fifo_start != (fifo_bar & 0xFFFFFFF0U) ||
-        fifo_size < 4096U || fifo_size > 16U*1024U*1024U || fifo_registers < 4U ||
+        fifo_size < 4096U || fifo_size > 16U*1024U*1024U ||
+        fifo_size > vmware_fifo_aperture_bytes || fifo_registers < 4U ||
         fifo_registers > fifo_size / sizeof(uint32_t) ||
         fifo_minimum > fifo_size - 5U * sizeof(uint32_t))
         goto vmware_disable;
@@ -895,8 +949,8 @@ static int display_control_mode_query_locked(reist_display_mode_request_t *out) 
         result.backend = REIST_DISPLAY_BACKEND_SVGA2;
         result.max_width = svga_read(index, value, SVGA_REG_MAX_WIDTH);
         result.max_height = svga_read(index, value, SVGA_REG_MAX_HEIGHT);
-        result.scanout_bytes = svga_read(index, value, SVGA_REG_FB_SIZE);
-        if (!result.scanout_bytes || result.scanout_bytes > 64U*1024U*1024U) return -19;
+        if (!vmware_memory_limits(device, index, value, &result.scanout_bytes))
+            return -19;
     } else if (find_vmware_display() != NULL) return -19;
     else
 #else

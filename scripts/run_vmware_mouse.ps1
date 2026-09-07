@@ -11,6 +11,7 @@ param(
     [switch]$Benchmark,
     [switch]$Rename,
     [switch]$SvgaLifecycle,
+    [switch]$DisplayModes,
     [switch]$HoverCadence,
     [switch]$Visible
 )
@@ -23,6 +24,10 @@ $minimumBenchmarkCpuRatio = 0.90
 $maximumHoverFrameMs = 17
 $maximumPointerGapMs = 34
 $maximumMouseBatchReports = 4
+if ($DisplayModes -and ($Benchmark -or $Rename -or $SvgaLifecycle -or
+        $HoverCadence -or $ExpectCompositorRestart -or $Visible)) {
+    throw 'Display modes require an exclusive hidden Workstation run.'
+}
 if ($Benchmark -and $ExpectCompositorRestart) {
     throw 'Benchmark and compositor-restart modes are exclusive.'
 }
@@ -392,7 +397,8 @@ public static class ReistRfbInput {
     }
 
     public static bool SendCommand(int port, string command) {
-        if (String.IsNullOrEmpty(command) || command.Length > 32) return false;
+        // The explicit display-setting command is longer than 32 characters.
+        if (String.IsNullOrEmpty(command) || command.Length > 64) return false;
         try {
             using (TcpClient client = new TcpClient()) {
                 IAsyncResult pending = client.BeginConnect("127.0.0.1", port,
@@ -675,6 +681,7 @@ try {
         $TimeoutSeconds
     }
     $deadline = $watch.Elapsed.Add([TimeSpan]::FromSeconds($modeTimeout))
+    if ($DisplayModes) { $deadline = [TimeSpan]::FromSeconds($TimeoutSeconds) }
     $missing = $requiredBeforeInput
     while ($watch.Elapsed -lt $deadline) {
         $text = Read-SerialText
@@ -704,6 +711,79 @@ try {
         if ($preShell.Contains($unexpected)) {
             throw "Desktop marker appeared before explicit shell command: $unexpected"
         }
+    }
+
+    if ($DisplayModes) {
+        # One injection per command. Ordered hardware and fresh shell evidence,
+        # never success inferred solely from the requested configuration.
+        function Wait-DisplaySequence([int]$Offset, [string[]]$Patterns) {
+            while ($watch.Elapsed -lt $deadline) {
+                $raw = Read-SerialText
+                Assert-NoForbiddenMarker $raw
+                if ($raw.Length -gt 4MB) { throw 'Display serial quota exceeded.' }
+                $tail = $raw.Substring($Offset)
+                if ($tail.Contains('USER PROCESS EXCEPTION') -or
+                    $tail.Contains('USER PROCESS PAGE FAULT') -or
+                    $tail.Contains('DESKTOP_MODE_FALLBACK')) {
+                    throw 'Display mode run faulted or used fallback.'
+                }
+                $position = 0
+                $complete = $true
+                foreach ($pattern in $Patterns) {
+                    $found = [regex]::Match($tail.Substring($position), $pattern)
+                    if (!$found.Success) { $complete = $false; break }
+                    $position += $found.Index + $found.Length
+                }
+                if ($complete) { return }
+                Start-Sleep -Milliseconds 50
+            }
+            throw "Display mode deadline waiting for: $pattern"
+        }
+        function Send-DisplayCommand([string]$Command, [string[]]$Patterns) {
+            $offset = (Read-SerialText).Length
+            if (![ReistRfbInput]::SendCommand($vncPort, $Command)) {
+                throw "Display RFB injection failed: $Command"
+            }
+            Wait-DisplaySequence $offset $Patterns
+        }
+        $probe = [regex]::Match($text,
+            'SVGA2D_PROBE[^\r\n]*fb=[0-9A-F]+/(\d+)[^\r\n]*vram=(\d+) aperture=(\d+) map=(\d+)')
+        if (!$probe.Success -or [uint64]$probe.Groups[2].Value -le [uint64]$probe.Groups[1].Value -or
+            [uint64]$probe.Groups[2].Value -gt [uint64]$probe.Groups[3].Value -or
+            [uint64]$probe.Groups[4].Value -gt 16MB) {
+            throw 'Workstation did not prove distinct current extent and admitted VRAM.'
+        }
+        $promptPattern = [regex]::Escape($shellMarker)
+        Send-DisplayCommand 'display --list' @('DISPLAY_COMMAND_READY', 'Maximale Achsen', $promptPattern)
+        foreach ($mode in @('1280x720', '1920x1080')) {
+            $width, $height = $mode.Split('x')
+            Send-DisplayCommand "config set desktop resolution $mode" @('CONFIG_UPDATE_OK', $promptPattern)
+            Send-DisplayCommand 'desktop.prg --render-probe' @(
+                "REIST_VIDEO SVGA2D_ACTIVE caps=[0-9A-F]+ geometry=$mode",
+                "DESKTOP_MODE_ACTIVE width=$width height=$height bpp=32",
+                'DESKTOP_OK', 'REIST_VIDEO SVGA2D_RECT_COPY_OK',
+                'REIST_VIDEO SVGA2D_INACTIVE', 'DESKTOP_EXIT_OK')
+            Send-DisplayCommand 'help' @('Built-ins: cd path pwd history help exit', $promptPattern)
+            "VMWARE DISPLAY MODE PASS mode=$mode elapsed=$($watch.Elapsed.TotalSeconds)" |
+                Add-Content -LiteralPath $GateLog -Encoding utf8
+        }
+        $text = Read-SerialText
+        $metrics = [regex]::Matches($text, 'DESKTOP_METRICS[^\r\n]+')
+        if (([regex]::Matches($text, '(?m)^BOOT_OK\r?$')).Count -ne 1 -or
+            $metrics.Count -ne 2) {
+            throw 'Workstation display run lacks single boot and rendered-frame evidence.'
+        }
+        foreach ($metric in $metrics) {
+            foreach ($field in @('drag_frames=8', 'resize_frames=8', 'clock_errors=0', 'probe_errors=0')) {
+                if ($metric.Value -notmatch ('(?:^| )' + $field + '(?: |$)')) {
+                    throw "Workstation display render proof failed: $field"
+                }
+            }
+        }
+        $text | Add-Content -LiteralPath $GateLog -Encoding utf8
+        $passed = $true
+        Write-Output "VMWARE DISPLAY MODES PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$GateLog"
+        return
     }
 
     if ($Benchmark) {

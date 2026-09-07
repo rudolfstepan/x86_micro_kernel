@@ -15,6 +15,17 @@ static unsigned writes, enables, published, shutdowns;
 static int hardware, wrong_readback, bad_pitch, stuck_disable, map_fail, init_fail;
 static pci_device_t device;
 static multiboot_framebuffer_info_t frame;
+static uint32_t bar_bytes[3];
+static unsigned probes, wc_maps, uc_maps;
+static int probe_fail, wc_fail, current_extent;
+static uint32_t extent_override, pitch_extra, shrink_on_enable;
+static uint32_t last_scanout_map;
+static bool pci_memory_bar_size(pci_device_t *d,uint32_t b,uint64_t *base,uint64_t *size) {
+    assert(d==&device && (b==1 || b==2));++probes;
+    *base=d->bar[b]&~15U;*size=bar_bytes[b];return !probe_fail;
+}
+static void prepare_nvidia_gk208(void) {}
+static void prepare_vbe_handoff(void) {}
 static int kernel_mutex_lock_for(int *mutex,uint32_t timeout) { (void)mutex;assert(timeout==1000U);return lock_error; }
 static void kernel_mutex_unlock(int *mutex) { (void)mutex; }
 static pci_device_t *find_qemu_vga(uint32_t *address) { *address=hardware==1 ? 0xE0000000U : 0;return hardware==1 ? &device : NULL; }
@@ -32,21 +43,40 @@ static void dispi_write(uint16_t index,uint16_t value) {
 static uint32_t svga_read(uint16_t i,uint16_t v,uint32_t index) {
     (void)i;(void)v;
     if (index==SVGA_REG_WIDTH && wrong_readback && registers[SVGA_REG_ENABLE]) return 800;
-    if (index==SVGA_REG_BYTES_PER_LINE) return bad_pitch ? UINT32_MAX : registers[SVGA_REG_WIDTH]*4U;
+    if (index==SVGA_REG_BYTES_PER_LINE) return bad_pitch ? UINT32_MAX : registers[SVGA_REG_WIDTH]*4U+pitch_extra;
+    if (index==SVGA_REG_FB_SIZE && current_extent && registers[SVGA_REG_ENABLE])
+        return extent_override ? extent_override :
+            (registers[SVGA_REG_WIDTH]*4U+pitch_extra)*registers[SVGA_REG_HEIGHT];
     return registers[index];
 }
 static void svga_write(uint16_t i,uint16_t v,uint32_t index,uint32_t value) {
     (void)i;(void)v;++writes;
     if (index==SVGA_REG_ENABLE && !value && stuck_disable) return;
     registers[index]=value;
+    if (index==SVGA_REG_ENABLE && value && shrink_on_enable)
+        registers[SVGA_REG_VRAM_SIZE]=shrink_on_enable;
 }
 void pci_enable_device(pci_device_t *d) { assert(d==&device);++enables; }
-volatile uint32_t *map_mmio_region(uint64_t base,size_t size) { assert(base && size==4096);return map_fail ? NULL : fifo_storage; }
+volatile uint32_t *map_mmio_region(uint64_t base,size_t size) {
+    assert(base);++uc_maps;
+    if (base==(device.bar[2]&~15U)) assert(size==4096);
+    else { assert(size<=FB_SHADOW_CAPACITY);last_scanout_map=(uint32_t)size; }
+    return map_fail ? NULL : fifo_storage;
+}
+static void *map_kernel_write_combining(uint32_t base,size_t size) {
+    assert(base==(device.bar[1]&~15U) && size<=FB_SHADOW_CAPACITY);
+    ++wc_maps;last_scanout_map=(uint32_t)size;
+    return map_fail || wc_fail ? NULL : fifo_storage;
+}
 bool framebuffer_available(void) { return published!=0 && !init_fail; }
 void framebuffer_init_runtime(multiboot_framebuffer_info_t *info) {
     assert(reist_display_geometry_fits(info->framebuffer_width,info->framebuffer_height,
         info->framebuffer_pitch,4096,4096,16U*1024U*1024U,FB_SHADOW_CAPACITY));
     frame=*info;if (!init_fail) ++published;
+    if (hardware==2) {
+        uint64_t offset=info->framebuffer_addr-(device.bar[1]&~15U);
+        assert(offset+(uint64_t)info->framebuffer_pitch*info->framebuffer_height<=registers[SVGA_REG_VRAM_SIZE]);
+    }
 }
 void framebuffer_shutdown(void) { ++shutdowns;published=0; }
 bool framebuffer_get_display_info(framebuffer_display_info_t *info) {
@@ -62,6 +92,11 @@ static void reset(int backend) {
     memset(registers,0,sizeof(registers));memset(&device,0,sizeof(device));
     hardware=backend;writes=enables=published=shutdowns=0;
     wrong_readback=bad_pitch=stuck_disable=map_fail=init_fail=lock_error=0;
+    probes=wc_maps=uc_maps=last_scanout_map=0;
+    probe_fail=wc_fail=current_extent=0;
+    extent_override=pitch_extra=shrink_on_enable=0;
+    memset(bar_bytes,0,sizeof(bar_bytes));memset(vmware_bars,0,sizeof(vmware_bars));
+    vmware_aperture_bytes=vmware_fifo_aperture_bytes=0;
     qemu_prepared=vmware_prepared=true;vbe_prepared=vmware_supervised=false;
     active_backend=mode_fault_backend=DISPLAY_BACKEND_NONE;activation_busy=false;
     nvidia_prepared=false;(void)nvidia_prepared;(void)vmware_rect_copy_reported;
@@ -72,10 +107,89 @@ static void reset(int backend) {
         registers[SVGA_REG_MAX_HEIGHT]=1600;registers[SVGA_REG_FB_SIZE]=16U*1024U*1024U;
         registers[SVGA_REG_FB_START]=0xE0000000U;registers[SVGA_REG_MEM_START]=0xF0000000U;
         registers[SVGA_REG_MEM_SIZE]=4096;registers[SVGA_REG_MEM_REGS]=4;
+        registers[SVGA_REG_VRAM_SIZE]=16U*1024U*1024U;
+        bar_bytes[1]=128U*1024U*1024U;bar_bytes[2]=4096;
+        assert(vmware_probe_apertures(&device));probes=0;
     }
 }
 int main(void) {
     reist_display_mode_request_t caps;
+    /* Workstation, unlike QEMU, reports only the CURRENT extent in FB_SIZE. */
+    reset(2);registers[15]=128U*1024U*1024U;
+    registers[SVGA_REG_FB_SIZE]=1024U*768U*4U;
+    assert(!display_control_mode_query(&caps) && !writes && !published);
+    assert(caps.scanout_bytes==128U*1024U*1024U);
+    assert(reist_display_mode_supported(1920,1080,&caps));
+    current_extent=1;
+    assert(!activate_vmware(&device,1920,1080) && published==1);
+    assert(frame.framebuffer_width==1920 && frame.framebuffer_height==1080);
+    assert(!display_control_deactivate());
+    assert(!activate_vmware(&device,800,600));
+    /* A smaller current extent must not shrink the choices. */
+    unsigned query_writes=writes;
+    assert(!display_control_mode_query(&caps) && writes==query_writes && !probes);
+    assert(reist_display_mode_supported(1920,1080,&caps));
+    assert(!display_control_deactivate());
+    assert(!activate_vmware(&device,1280,720));
+    assert(!display_control_deactivate());
+    /* Preparation maps a bounded WC span, even with large or absent FB_SIZE. */
+    for (unsigned fallback=0;fallback<2;++fallback) {
+        reset(2);vmware_prepared=false;wc_fail=(int)fallback;
+        registers[SVGA_REG_VRAM_SIZE]=128U*1024U*1024U;
+        registers[SVGA_REG_FB_SIZE]=0;
+        display_control_prepare();
+        assert(vmware_prepared && probes==2 && wc_maps==1 && uc_maps==1+fallback);
+        assert(last_scanout_map==FB_SHADOW_CAPACITY && !published);
+    }
+    for (unsigned invalid=0;invalid<11;++invalid) {
+        reset(2);vmware_prepared=false;
+        switch (invalid) {
+        case 0: probe_fail=1;break;
+        case 1: registers[SVGA_REG_VRAM_SIZE]=0;break;
+        case 2: registers[SVGA_REG_VRAM_SIZE]=256U*1024U*1024U;break;
+        case 3: device.bar[1]|=1U;break;
+        case 4: device.bar[1]=0xFC000000U;break; /* aperture end exceeds 4 GiB */
+        case 5: device.bar[2]=device.bar[1];break;
+        case 6: registers[SVGA_REG_FB_START]=0x100000U;break;
+        case 7: registers[SVGA_REG_MEM_START]=0x100000U;break;
+        case 8: registers[SVGA_REG_MEM_SIZE]=8192U;break;
+        case 9: device.bar[0]=0x10001U;break;
+        case 10: bar_bytes[1]=1024U*1024U;break;
+        }
+        display_control_prepare();assert(!vmware_prepared && !wc_maps && !uc_maps && !published);
+    }
+    reset(2);vmware_prepared=false;map_fail=1;display_control_prepare();
+    assert(!vmware_prepared && !published);
+    for (unsigned invalid=0;invalid<5;++invalid) {
+        reset(2);
+        switch (invalid) {
+        case 0: device.bar[1]+=0x1000;break;
+        case 1: registers[SVGA_REG_VRAM_SIZE]=0;break;
+        case 2: registers[SVGA_REG_VRAM_SIZE]=UINT32_MAX;break;
+        case 3: registers[SVGA_REG_MEM_SIZE]=8192;break;
+        case 4: device.bar[0]+=4;break;
+        }
+        memset(&caps,0xA5,sizeof(caps));reist_display_mode_request_t saved=caps;
+        assert(display_control_mode_query(&caps)==-19 && !memcmp(&caps,&saved,sizeof(caps)));
+        assert(activate_vmware(&device,1920,1080)<0 && !writes && !enables && !published && !probes);
+    }
+    /* Current extent is checked only AFTER enable; include padding and offset. */
+    reset(2);current_extent=1;pitch_extra=64;registers[SVGA_REG_FB_OFFSET]=4096;
+    assert(!activate_vmware(&device,1920,1080));
+    assert(frame.framebuffer_pitch==7744 && frame.framebuffer_addr==0xE0001000U);
+    for (unsigned invalid=0;invalid<7;++invalid) {
+        reset(2);current_extent=1;
+        switch (invalid) {
+        case 0: extent_override=1;break;
+        case 1: extent_override=UINT32_MAX;break;
+        case 2: registers[SVGA_REG_FB_OFFSET]=UINT32_MAX;break;
+        case 3: registers[SVGA_REG_FB_OFFSET]=15U*1024U*1024U;break;
+        case 4: pitch_extra=16384;break;
+        case 5: shrink_on_enable=4U*1024U*1024U;break;
+        case 6: init_fail=1;break;
+        }
+        assert(activate_vmware(&device,1920,1080)<0 && !published && !registers[SVGA_REG_ENABLE]);
+    }
     reset(1);assert(!display_control_mode_query(&caps) && !writes && !published);
     assert(display_control_activate_mode(4096,4096)==-95 && !writes && !enables);
     assert(display_control_activate_mode(1366,768)==-95 && !writes);

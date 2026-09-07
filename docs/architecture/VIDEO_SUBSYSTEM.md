@@ -1,6 +1,6 @@
 # Video subsystem
 
-## Startup mode selection (R3.21 candidate)
+## Startup mode selection (R3.21)
 
 The Display applet/configuration consumer and append-only mode envelope are
 specified in [DISPLAY_SETTINGS_CONTRACT.md](DISPLAY_SETTINGS_CONTRACT.md).
@@ -9,6 +9,15 @@ device and 16-MiB shadow/staged limits. Per-window Surface buffers remain at
 1024x768 / 3 MiB. VBE is restricted to the validated boot handoff; neither
 live resize nor new pixel formats are implemented. Acceptance evidence, not
 this code inventory, determines platform qualification.
+
+R3.21a corrects the Workstation-specific capacity interpretation: mode hints
+and admission use VRAM_SIZE, bounded by boot-sealed BAR1, not the current
+FB_SIZE. Initial WC-first/UC-fallback mapping is capped at 16 MiB; larger
+VRAM does not allocate or map that entire capacity. The post-enable visible
+span must fit its current FB_SIZE, VRAM and BAR including pitch and offset;
+FIFO metadata independently stays within boot-sealed BAR2. No new Ring-3
+mapping authority, storage budget or ABI. Workstation and emulated evidence
+are recorded separately in CURRENT_WORK.
 
 ## VMware SVGA-II 2D profile
 

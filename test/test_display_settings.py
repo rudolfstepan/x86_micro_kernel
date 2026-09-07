@@ -103,7 +103,9 @@ class DisplaySettingsTests(unittest.TestCase):
     def test_real_mode_programming_readback_and_cleanup(self):
         source = (ROOT / 'drivers/video/display_control.c').read_text()
         declarations = source[source.index('#define DISPI_INDEX'):source.index('static kernel_mutex_t')]
-        names = ['static int activate_vmware(', 'static int display_control_activate_locked(',
+        names = ['static bool vmware_probe_apertures(', 'static bool vmware_memory_limits(',
+            'void display_control_prepare(',
+            'static int activate_vmware(', 'static int display_control_activate_locked(',
             'static int display_control_mode_query_locked(', 'int display_control_mode_query(',
             'static int display_control_mode_admit_locked(', 'int display_control_activate_mode(',
             'int display_control_activate(', 'static int display_control_deactivate_locked(',
