@@ -2,7 +2,89 @@
 
 Stand: 7. September 2026
 
+## R1.1a freigegeben: CPU-Abrechnung und sichere Hintergrundzeit
+
+Separates Scheduler-Paket vor R3.20a, ausdruecklich vom Nutzer freigegeben.
+Der noch nicht abgenommene Browser-/Surface-Kandidat ist dateigenau in
+`d9370608c5849bbae36663d515c7accd24930005` gesichert; beide aelteren Stashes
+und alle R3.20a-Fehlerbelege bleiben erhalten. Keine Browserquelle in diesem
+Paket. Abnahme und Grenzen stehen im
+[Schedulervertrag](../architecture/SCHEDULER_BACKGROUND_SLACK_CONTRACT.md).
+Setup wird vor Implementierung committet. Hintergrundzeit bleibt hinter
+jedem bereiten Kandidaten mit Restbudget; keine Budget-/Timer-/ABI-Erhoehung.
+Nach erfolgreicher Abnahme wird nur R3.20a reaktiviert, nicht mitimplementiert.
+
 ## R3.20a freigegeben: Browser-Bilduebergabe vor Sprachumbau reparieren
+
+Aktueller Blocker: Die finale Gastmessung scheitert nach 82.999 s trotz
+vollstaendiger 32+32 Eingabe-/Commit-/Pixelbelege. Tippen-p95 171.2849 ms,
+Scroll-p95 490.8986 ms, Maximum 504.9288 ms; die Grenzen 250/500 ms bleiben
+unveraendert. Beide Escape-Zustaende sowie `BROWSER_CLOSE_OK` und
+`TERMINAL_INPUT_IDLE` sind jetzt bestaetigt. Kein Panic. Der Verzeichnisname
+`accepted-c` bedeutet keine Abnahme: `baseline.json` und `paint.model.json`
+enthalten ausdruecklich `passed=false`. Belege: `runtime-model.log`,
+`accepted-c/initial-c/host.log`, `paint.browser.log`, `paint.model.json`,
+`boot.json` und alle PPMs. Image-SHA256
+`59588c7ba1aecfc25242dee5c0059ed92ec5f4f56a3a031fa7451f21b2b24899`.
+Browser 2805788 Datei-/6182953 Loaderbytes, HTMLWORK unveraendert
+845868/2752100 Bytes. C-Modelblob unveraendert.
+
+Readonly-Eingrenzung nach dem Gate: `kernel/sched/scheduling_policy.h`
+definiert pro CPU und 100-ms-Fenster feste Klassenlimits von 15 ms AMBIENT,
+25 ms SERVICE und 60 ms SAFETY. `find_next_runnable` filtert gedrosselte
+Klassen vor der Auswahl; `scheduler_yield` gibt bei fehlendem erlaubten
+Nachfolger an den Kernel zurueck. Ungenutztes Budget anderer Klassen wird
+hier nicht als Restzeit vergeben. Das kann etwa 85-ms-Pausen verursachen
+und passt zu den beobachteten Spruengen auch bei kleinen Arbeitsschritten;
+eine genaue Zuordnung der Gastlatenz zu diesen Zaehlern ist noch nicht
+bewiesen. Scheduler-Abrechnung und sichere Restzeitnutzung liegen ausserhalb
+dieses Pakets. Kein Kernel-/Klassenbudget-/Testgrenzen-Eingriff ohne eigene
+Freigabe. Restliche vier Gastgates nicht gestartet, QEMU beendet; R3.20a
+bleibt active/blockiert, R3.20 queued. Nur Setupcommit `474b6ce9`, kein
+Implementierungscommit/Push, beide Stashes und alle Fehlerbelege erhalten.
+
+Kandidat: gleiche Browsergeometrie invalidiert nur noch den Viewport;
+Surface-Backpressure gibt einem bereiten Broker einmal die CPU vor dem
+bisherigen Sleep-Fallback; Desktop-Escape behaelt Nicht-CSI-Lookahead.
+Keine Wire-ABI, Kernelquelle oder Kapazitaet geaendert. Drei echte C-
+Regressionen scheitern vorher und bestehen nachher mit O0/O2.
+
+Gezielte Fehlereingrenzung bleibt unter `build/codex-agent/r320a/` erhalten:
+`damage-before/after.log`, `escape-before/after.log`, `handoff-before/after.log`.
+`diagnostic-damage` scheitert beim Pixelreadback von Schritt 34 (71.921 s);
+kleinere Damage allein reicht nicht. `diagnostic-stages` zeigt meist 1-5 ms
+Komposition, aber 65-82 ms Chrome-Transaktionen, und scheitert an einer durch
+zwei parallel druckende Prozesse zerteilten Commitzeile. Diese temporaeren
+Desktop-/Browser-Stagenachrichten sind entfernt, der Fehlerbeleg bleibt.
+Die Testschluss-Ursache Escape/Escape ist separat mit der echten Decoder-
+Funktion reproduziert; keine neue Test-Escape-Verzoegerung hinzugefuegt.
+
+Finale Hostgates bestehen (119 Faelle einschliesslich zwei Brokerchecks):
+
+| Gate | Ergebnis / Dauer | Log unter r320a |
+|---|---|---|
+| `test_browser_surface_latency.py -v` | 3 PASS, O0/O2, 4.273 s | `gate-clang-browser_surface_latency.log` |
+| `test_browser_model_cpp.py -v` | 5 PASS, nur Telemetrie, 0.003 s | `gate-browser_model_cpp.log` |
+| `test_gui_surface_source.py -v` | 10 PASS, 2.083 s | `gate-gui_surface_source.log` |
+| `test_desktop_surface_runtime_source.py` | 2 Brokerchecks PASS | `gate-broker-final.log` |
+| `test_gui_browser_source.py -v` | 8 PASS, 4.946 s | `gate-gui_browser_source.log` |
+| `test_browser_runtime_source.py -v` | 29 PASS, 7.802 s | `gate-clang-browser_runtime_source.log` |
+| `test_desktop_source.py -v` | 62 PASS, 38.107 s | `gate-desktop-final.log` |
+
+Die zuerst versehentlich gewaehlte GCC-Umgebung trifft alte Warnungen in
+unveraenderten Renderer/Formularquellen; der akzeptierte Zig-Clang-Pfad
+besteht ohne abgeschaltete Warnung. Der erste Desktoplauf scheitert am
+gesperrten globalen Zig-Cache und einer Source-Assertion, die ausgerechnet
+das Verschlucken des Escape-Lookahead verlangt. Workspace-Cache und die
+durch O0/O2-Verhalten gedeckte neue Assertion korrigieren genau diese
+Ursachen; alle anderen Assertions bleiben. Fehlerlogs bleiben erhalten.
+Der reine Tippfehler `test_desktop.py` im Setup ist vor Ausfuehrung auf die
+tatsaechliche komplette Suite `test_desktop_source.py` korrigiert.
+
+Beide Referenzen PASS: VMware 79 s (`package-vmware.log`, Detail
+`../20260907-134348-package-vmware-vga.log`), QEMU 67 s (`package-qemu.log`,
+Detail `../20260907-134531-package-qemu-vga.log`). Die oben dokumentierte
+Gastabnahme besteht nicht; kein Implementierungscommit oder Performanceclaim.
 
 Der Nutzer erlaubt ausdruecklich das separate Reparaturpaket fuer Browser,
 Shared Surface und Ring-3-Compositor. Queue: R3.20a active, R3.20 queued;

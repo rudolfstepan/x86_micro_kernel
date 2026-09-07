@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.20a-browser-surface-latency"
-next_user_request = "2026-09-07: User explicitly authorizes a prerequisite repair of browser image handoff and the shared Surface/compositor path without weakening protection or latency gates. Execute only R3.20a directly in the main worktree; defer R3.20 conversion and JavaScript/features until this repair passes. Preserve both attributed telemetry stashes and failed evidence. No agents or push."
+active_id = "R1.1a-scheduler-background-slack"
+next_user_request = "2026-09-07: Explicit yes to a separate scheduler prerequisite correcting CPU accounting and safe unused-time execution while preserving reservations. Direct main-worktree execution only; no agents or push. R3.20a candidate preserved in d9370608c5849bbae36663d515c7accd24930005; both older stashes and all failed evidence remain."
 
 [policy]
 one_package_per_run = true
@@ -12,11 +12,63 @@ external_writes = false
 push = false
 
 [[packages]]
-id = "R3.20a-browser-surface-latency"
+id = "R1.1a-scheduler-background-slack"
 status = "active"
 phase = "post-s0"
 risk = "high"
+title = "Charge the dispatched class and use background CPU time behind funded work"
+scope = "One bounded per-CPU scheduling/accounting mechanism. Retain 100-ms windows, 60/25/15-ms normal class limits, fixed class cycle, 10-ms quantum, affinity/ownership and generation-scoped IPC inheritance. Snapshot the actual dispatched class so later inheritance changes cannot rebill elapsed time. Only when no funded compatible ready task exists may Ambient/Service run beyond their own limit, never Safety, never on clock fault/uninitialized window or Safety depletion. Charge all execution to its actual class, not a donor; no transferable reservation, replenishment, public ABI, supervisor policy or capacity change. Preserve kernel idle/recovery behavior on faults. Add real implementation O0/O2 tests and a bounded Ring-3 GTEST workload through existing packaging/shell paths. Browser candidate remains stashed, no browser changes in this package."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/architecture/REIST_ARCHITECTURE.md",
+  "docs/architecture/SCHEDULER_BACKGROUND_SLACK_CONTRACT.md",
+  "kernel/sched/scheduler.c", "kernel/sched/scheduling_policy.c", "kernel/sched/scheduling_policy.h",
+  "test/test_scheduler_slack.py", "test/test_scheduler_slack_host.c",
+  "test/test_reist_scheduling_policy.py", "test/test_scheduler_time.py",
+  "userspace/programs/guest_test.c", "scripts/run_qemu_scheduler_slack.py"
+]
+invariants = [
+  "Funded-first selection preserves the exact existing class cycle; no background candidate can hide an eligible funded peer.",
+  "No borrowed Safety execution; Safety depletion and latched clock faults deny all background execution.",
+  "Class usage remains real elapsed execution, including excess; no donor debit, quota raise, new timer or reset on yield.",
+  "Per-CPU dispatch class is changed only on actual successful claim; idle time is not charged to a stale task.",
+  "Fixed candidate storage, bounded scans, no heap/logging/I/O or additional IRQ lock waits; ownership, affinity, task generation and wait nodes unchanged.",
+  "No EDF/CBS/GRUB, hard real-time, WCET or hardware isolation claim; this is versioned internal background-only scheduling, not a standard ABI."
+]
+targeted_tests = [
+  "python test/test_scheduler_slack.py -v",
+  "python test/test_reist_scheduling_policy.py -v",
+  "python test/test_scheduler_time.py -v",
+  "python test/test_scheduler_resource_stats.py -v",
+  "python test/test_runtime_degradation.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_scheduler_slack.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r11a/slack-apic.log",
+  "python scripts/run_qemu_scheduler_slack.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --no-apic --log build/codex-agent/r11a/slack-pit.log",
+  "python scripts/run_qemu_scheduler_slack.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --smp 2 --log build/codex-agent/r11a/slack-smp.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "Regression first on actual scheduler selection/accounting functions at O0/O2. Exhaustive ready/class-throttle combinations must preserve funded selection and fail closed; prove class inheritance change, same-task yield, CPU affinity/ownership, idle, rollover, saturation and clock regression. Real Ring-3 GTEST SCHED_SLACK: fixed 1000-ms CPU workload, at most 4000000 samples, at least 400 observed adjacent 1-ms ticks (not a CPU-usage ABI or WCET metric), then existing sleep/yield/kill/reuse checks and clean shell return; fresh shell command after deliberate Ring-3 exception and another workload prove isolation/reuse. Each guest <=180 seconds, headless QEMU TCG snapshot 1024 MiB, APIC/PIT/2-vCPU runs, no concurrent VM/compiler. Existing normal and browser input gates retain all limits and failure checks. Run final frozen gates once; only a demonstrated focused in-scope repair permits affected rerun; preserve all failed evidence. No browser latency acceptance claimed here."
+stop_conditions = [
+  "Required source outside allowed_files, unrelated writer or new authority needed",
+  "Reservation/clock/ownership invariant weakened, or failed gate without demonstrated in-scope repair"
+]
+commit_message = "fix: reclaim idle scheduler time behind reserved execution"
+evidence = []
+
+[[packages]]
+id = "R3.20a-browser-surface-latency"
+status = "queued"
+phase = "post-s0"
+risk = "high"
 title = "Bound browser input-to-paint latency without redundant Surface presentation"
+runtime_blocker = "2026-09-07: Three real C regressions fail before/pass O0/O2 after viewport-only repeated damage, one ready-broker handoff before bounded sleep, and lossless Escape lookahead. Seven final host gates / 119 cases and both references (VMware79s/QEMU67s) pass. Final C UI gate completes all 64 real edits/wheels, pixel matches, both Escape transitions, BROWSER_CLOSE_OK and TERMINAL_INPUT_IDLE, but fails unchanged absolute latency: p95 typing171.2849/scroll490.8986 ms, max504.9288 ms, boot82.999s. Preserve accepted-c with passed=false and all diagnostic failures. Remaining four guest gates not run; no implementation commit/queue advancement. Read-only inventory finds hard per-CPU class windows (AMBIENT15/SERVICE25/SAFETY60 ms per100 ms), throttled classes excluded even with no other ready candidate; this can explain approximately85-ms stalls but exact guest attribution remains unproved. Scheduler accounting/slack policy is outside scope and needs a separate authorization; do not silently raise budgets or modify kernel. QEMU reaped, model C blob and both stashes unchanged."
+gate_spelling_correction = "Before any final gate execution: the intended existing Desktop suite is test/test_desktop_source.py, not nonexistent test/test_desktop.py. Correct only this path spelling in allowed_files and targeted_tests; retain the complete suite and every other frozen command/invariant."
 user_direction = "2026-09-07: Explicit yes to the separate browser image-handoff and shared Surface/compositor repair. Source baseline 475dc3c1. Attributed unaccepted C telemetry preserved in stash b314cd2b7132d7a7593be09e1acf257cbefa422a, earlier stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a untouched. Commit only package/docs setup before restoring those five candidate files."
 scope = "One Ring-3 image publication/observation failure model: diagnose and remove redundant browser full-window damage, serialized handoff or compositor repaint work using existing validated Surface messages, buffer identities, release semantics and fixed queues. Preserve pixel-correct last committed state, clipping, legacy clients, input ordering, configure acknowledgement, owner generations and bounded close/reap. Probe-only diagnostics may distinguish guest interaction invariant failure from its existing 30-second deadline; fix demonstrated close/input handshake errors without extending that deadline. No kernel, scheduler, SDK, display driver, timer policy, allocation/quota, wire ABI, C++ model conversion, parser/layout algorithm or new web feature changes. Restore existing telemetry as attributed candidate work only after clean setup; retain all prior failure evidence."
 allowed_files = [
@@ -32,7 +84,7 @@ allowed_files = [
   "test/test_gui_browser_source.py", "test/test_gui_surface_source.py",
   "test/test_gui_surface_client_host.c", "test/test_desktop_surface_host.c",
   "test/test_desktop_surface_dispatch.c", "test/test_desktop_surface_runtime_source.py",
-  "test/test_desktop.py"
+  "test/test_desktop_source.py"
 ]
 invariants = [
   "all existing C model and wire ABI values/layouts remain unchanged; use existing generation-scoped validated buffer authority",
@@ -45,7 +97,7 @@ targeted_tests = [
   "python test/test_browser_surface_latency.py -v", "python test/test_browser_model_cpp.py -v",
   "python test/test_gui_surface_source.py -v", "python test/test_desktop_surface_runtime_source.py",
   "python test/test_gui_browser_source.py -v", "python test/test_browser_runtime_source.py -v",
-  "python test/test_desktop.py -v"
+  "python test/test_desktop_source.py -v"
 ]
 package_tests = [
   ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",

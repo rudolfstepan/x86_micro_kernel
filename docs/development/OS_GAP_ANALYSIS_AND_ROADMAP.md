@@ -2,6 +2,13 @@
 
 Stand: 3. September 2026
 
+7. September, Scheduler-Voraussetzung ausdruecklich freigegeben: R1.1a
+korrigiert die Zuordnung vergangener CPU-Zeit und erlaubt begrenzte
+Hintergrundausfuehrung nur ohne bereite budgetierte Arbeit. Reservierungen,
+Clock-Fail-Closed und Isolation bleiben erhalten. R3.20a ist mit allen
+Fehlerbelegen und Kandidatenstash zurueckgestellt; danach erst Browser-
+Abnahme und C++-Migration. Details: SCHEDULER_BACKGROUND_SLACK_CONTRACT.md.
+
 7. September, neue Freigabe: R3.20a repariert zuerst den gemessenen Browser-
 Bilduebergabe-/Surface-/Compositorpfad. Die erneute C-Baseline verfehlt mit
 Scroll-p95 455.7574 ms die unveraenderten 250 ms; der Testabschluss scheitert
