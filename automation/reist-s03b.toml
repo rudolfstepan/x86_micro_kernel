@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-07: User explicitly authorizes the separate FPU prerequisite after the JavaScript inventory found x87 compiler output without scheduler preservation. Implement only R1.3 directly in the main worktree, with frozen host/guest isolation gates and a local commit after success. Browser JavaScript/DOM and libc prerequisites remain separate later packages, prioritized over deferred R3.6b. Preserve all accepted C/C++ evidence, stashes and failures. No agents or push."
+active_id = "R3.21-ring3-math-runtime"
+next_user_request = "2026-09-07: Continue the browser/JavaScript prerequisites after accepted FPU0301d708. Inventory confirms no math.h/libm in the opt-in SDK and actual QuickJS2026-06-04 math consumers. Implement only the cohesive Ring-3 binary64 numeric library prerequisite R3.21 directly in the visible worktree; defer R3.6b with unchanged open gates. Preserve accepted FPU, fast VMware images/measurements, browser C++ evidence and stashes. No engine/DOM, kernel, scheduler, benchmark or resource-budget change, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,60 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.21-ring3-math-runtime"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Opt-in bounded binary64 libm for the isolated JavaScript port"
+scope = "One allocation-free Ring-3 numerical execution-state contract after the accepted FPU prerequisite. Pin musl1.2.6 and reuse its unmodified generic binary64 algorithms/tables through a minimal freestanding adapter, never its Linux/allocator/thread/runtime layers. Publish opt-in math.h/fenv.h, conventional libm.a and pkg-config integration; preserve existing link defaults. Cover the complete listed binary64 function set as one package, including classification, signed zero, infinities/NaNs, subnormal/range/domain behavior and the rounding/exception operations needed by nearbyint and the future interpreter. Public fenv subset is fegetround/fesetround/feclearexcept/fetestexcept only, controlling this Ring-3 thread's saved x87/MXCSR, no privileged instructions or new ABI. Add MATHTEST.PRG through both normal shell/image layouts with normal/fault/kill/reap/fresh-generation tests. No QuickJS engine or DOM activation, numeric text/stdio/setjmp/time/POSIX stubs, float/long-double function family, kernel or benchmark change. Kernel, BROWSER/HTMLWORK/GTEST/BENCHMARK programs must retain accepted binary hashes."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/RING3_MATH_RUNTIME_CONTRACT.md",
+  "third_party/musl-1.2.6.tar.gz", "third_party/musl-1.2.6.sha256",
+  "third_party/musl-1.2.6.README.md",
+  "userspace/math/include/math.h", "userspace/math/include/fenv.h",
+  "userspace/math/private/endian.h", "userspace/math/lib/fenv.c",
+  "scripts/build_user_math.py", "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+  "userspace/programs/mathtest.c", "test/math_vectors.h", "test/math_host.c",
+  "test/test_math.py", "scripts/run_qemu_math.py"
+]
+invariants = [
+  "Numerical code and fenv execute only in Ring3 under accepted eager FPU ownership. No kernel, driver, scheduler, syscall, quota or default SDK/link profile change.",
+  "Unmodified hash-pinned musl numerical sources, complete COPYRIGHT and selected source licenses. Exact regular-file extraction with bounded count/member/total sizes, no archive links/path traversal.",
+  "No heap, VFS, clock, network, threads, global constructor or hidden OS authority in libm. Finite binary64 exponent/precision bounds numerical loops; no fast-math or compiler-generated SSE/MMX.",
+  "ISO C11 7.12/7.6 subset with MATH_ERREXCEPT; no errno claim, fake standard stubs, full libm/POSIX/ECMAScript or correctly-rounded-all-inputs claim. Invalid rounding enums leave both controls unchanged.",
+  "Four object build workers maximum; bounded subprocesses, incremental archive unchanged when inputs unchanged. Opt-in headers and libm must not alter existing consumer artifacts.",
+  "Fresh process defaults, exact child generation/reap and parent rounding/state survive normal child, contained MF fault and killed sleeping child. Preserve all previous failure/evidence/images/stashes."
+]
+targeted_tests = [
+  "python test/test_math.py -v", "python test/test_libc_source.py -v",
+  "python test/test_build_dependencies.py -v", "python test/test_benchmark_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_math.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r321-math/artifacts.json",
+  "python scripts/run_qemu_math.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r321-math/guest.log",
+  "python scripts/run_qemu_math.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --smp 4 --log build/codex-agent/r321-math/smp.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode libc-client -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "Regression before implementation where practical, then actual pinned algorithms and i386 fenv at O0/O2, C/C++ public headers, exhaustive supported rounding enums, rejected invalid modes, all44 binary64 functions with fixed reference vectors plus special values and exponent extremes. Exact bit checks for exact results/signs/classification, at most4ULP on declared nearest-rounding transcendental vectors; independent host-library comparisons across deterministic bounded samples, no threshold revision after result. No missing/unexpected unresolved archive dependencies; i386 SDK caller links normal libm.a without host libc. Each new host execution <=30s, build command <=90s, four workers max. Every real guest snapshot1024MiB <=180s: two normal mathtest shell commands, numeric/fenv markers, fresh child, real MF16/status144, dirty sleep/kill143, exact generation/reap, unchanged parent controls and fresh shell response. SMP4 retains all AP readiness. Reference builds install same command/license/library paths in Make and Windows. Verify QEMU and VMware kernels and existing browser/HTMLWORK/GTEST/benchmark bytes against accepted0301d708 baseline captured before implementation; no new performance claim or rerun of unchanged benchmark workload is needed for byte-identical measured artifacts. Existing libc and browser runtime gates unchanged. Final frozen gates once, affected rerun only after documented focused in-scope repair; preserve failures."
+stop_conditions = [
+  "Needed source outside allowed_files or unattributed overlapping edits",
+  "Kernel/ABI/authority/budget expansion or numerics require weakening fixed accuracy/exception/resource proof",
+  "Failed gate without a demonstrated focused in-scope correction"
+]
+commit_message = "feat: add isolated Ring-3 math runtime for JavaScript ports"
+evidence = []
 
 [[packages]]
 id = "R1.3-fpu-context-isolation"
@@ -1669,7 +1723,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

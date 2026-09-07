@@ -2,6 +2,19 @@
 
 Stand: 7. September 2026
 
+## R3.21 aktiv: mathematische Ring-3-Grundlage fuer JavaScript
+
+Fortsetzung nach `0301d708`: sauberer Worktree, FPU und VMware-Leistungsschutz
+abgenommen. Die Bestandsaufnahme bestaetigt fehlendes math.h/libm bei realen
+QuickJS-2026-06-04-Aufrufen. R3.21 friert die komplette benoetigte binary64-
+Funktionsgruppe samt fenv-Teilprofil, SDK-Linkweg und MATHTEST-Gastnachweis
+vor Implementierung ein. Wiederverwendung: offizielle musl1.2.6-Numerik,
+keine Linux-/Allocator-/Threadteile; Pin und Grenzen im
+[Mathematikvertrag](../architecture/RING3_MATH_RUNTIME_CONTRACT.md).
+Noch keine Umsetzung oder Abnahme. R3.6b wird mit unveraenderten offenen
+Gates wieder queued; Browser/JavaScript-Voraussetzungen haben Benutzervorrang.
+Keine Engine/DOM, Kernel-, Scheduler-, Benchmark- oder Budgetaenderung.
+
 ## R1.3 abgeschlossen: FPU-Isolation und VMware-Leistungsschutz
 
 Alle eingefrorenen Gates bestehen nach den unten belegten gezielten
