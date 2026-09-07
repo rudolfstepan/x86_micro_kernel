@@ -64,3 +64,18 @@ ueber ihre bestehenden blockierenden Pfade. Unsupported-CPU-Gast stoppt vor
 Ready. Zusaetzlich beide Referenzbuilds, Normal- und Browser-Input-Gastgate.
 Keine Laufzeitbehauptung allein aus Quellmustern/Hosttests; kein Nachweis
 tatsaechlicher Ring-3-Migration zwischen CPUs oder von Hardware-WCET.
+
+## Zusaetzlicher VMware-Leistungsschutz (Benutzerauftrag waehrend Umsetzung)
+
+Den beobachteten schnellen Stand vor einem neuen Build separat sichern.
+Eingefrorener Zusatz: drei frische, abwechselnde Vorher/Nachher-Workstation-
+Paare mit unveraendertem `run_vmware_mouse.ps1 -Benchmark`, vier CPUs,
+1024 MiB, versteckten eigenen VM-Kopien und ohne parallele Compiler/VMs.
+CPU-Single-/Multi-Median jeweils mindestens 95 Prozent des Vorhermedians;
+alle Rohwerte, Image-/Harness-Digests und alte Fehlbelege bleiben erhalten.
+Vorher-Nachher ist ein Regressionsindikator, kein statistischer WCET-Nachweis.
+RAM/HDD-Zeilen ebenfalls festhalten; wegen kurzer, millisekundenquantisierter
+Laufzeiten keine 5-Prozent-Praezision behaupten. Benchmark und seine bisherigen
+Mindestwerte unveraendert lassen. Das Screenshot-Ergebnis (Single 4194.30,
+Multi 4051.85 MOp/s; RAM je 16000 MiB/s; HDD 12800/42666.66 KiB/s) ist eine
+Benutzerbeobachtung, noch keine eigene Messung oder gesicherte 10x-Ursache.

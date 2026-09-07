@@ -14,6 +14,7 @@ push = false
 [[packages]]
 id = "R1.3-fpu-context-isolation"
 status = "active"
+performance_amendment = "2026-09-07: During implementation the user reports a roughly tenfold VMware benchmark improvement and requires preserving it. Before any FPU reference build, preserve the existing raw image/kernel and complete VMware package under r13-fpu/observed-before (not claimed identical to a particular accepted image). Add one frozen paired real-Workstation gate using the unchanged existing hidden Benchmark harness: three fresh disposable before/after pairs, same 4 CPUs/1024 MiB, no other VM/compiler, median Single/Multi CPU >=95 percent of paired baseline. Report all CPU/RAM/HDD rows and source/image digests. RAM/HDD short millisecond-quantized samples are diagnostic only, not a precise nonregression guarantee. Existing harness thresholds, all original gates and scope remain unchanged. No benchmark implementation, scheduler policy or measured workload edits."
 phase = "post-s0"
 risk = "high"
 title = "Eager generation-owned i386 x87/MMX/SSE context isolation"
@@ -54,7 +55,8 @@ runtime_tests = [
   "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --smp 4 --log build/codex-agent/r13-fpu/smp.log",
   "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --unsupported --log build/codex-agent/r13-fpu/unsupported.log",
   ".\\scripts\\test-reist-runtime.ps1 -Mode normal -Target qemu -Video vga",
-  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
+  "python scripts/run_qemu_fpu.py --vmware-benchmark-before build/codex-agent/r13-fpu/observed-before/vmware --vmware-benchmark-after build/vmware/reist-os --log build/codex-agent/r13-fpu/vmware-paired.json"
 ]
 acceptance = "First reproduce missing FP preservation with the real switch.asm in an i386 host fixture, then O0/O2 actual assembly and boot-policy tests. Check defaults, all x87/XMM payloads and controls, yield/resume/null-old exit, alignment, rejection of unsupported/mixed CPUs and failed control readback before ready. Compile internal C/assembly layout assertions; verify kernel uses no compiler-generated FP. Every real guest is headless snapshot 1024 MiB, <=180 seconds (unsupported <=60), no concurrent compiler/VM; require two full Ring-3 runs with distinct live parent/child states across timer preemption and blocked/yield switches, unmasked #MF/#XM and invalid MXCSR #GP contained with exact exit statuses, killed dirty child, fresh default state after reuse and a responsive userspace shell. SMP also requires all three AP probe tasks to preserve private state and return/reap under existing deadlines. Existing normal and browser input/crash/restart gates unchanged. Reference builds cover existing Windows/Make GTEST packaging. Final frozen gates once; only demonstrated in-scope repair permits affected rerun, preserve failures. No full JavaScript, hardware certification, cross-CPU Ring-3 migration or WCET claim."
 stop_conditions = [

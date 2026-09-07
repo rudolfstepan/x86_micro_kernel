@@ -12,6 +12,17 @@ FPU_CONTEXT_ISOLATION_CONTRACT.md und automation/reist-s03b.toml.
 Noch keine Implementierungs-/Gastabnahme und kein JavaScript-Featureclaim.
 Alle bisherigen Browserbelege, Stashes und Fehler bleiben erhalten.
 
+Zusaetzlicher Benutzerauftrag: den deutlich schnelleren VMware-Benchmarkstand
+bewahren. Noch vor dem FPU-Build wurden Rawimage, Kernel und komplettes
+VMware-Paket nach `build/codex-agent/r13-fpu/observed-before` kopiert.
+SHA256 Rawimage `59f19889e2014a8b68228e1b4ee448bf12690c5dfaaefd69bc50106304189ad3`,
+Kernel `0b9470d2b1fd1f0551702af6d72f113ab8794f505d42687d7a3ce9055fe182ee`,
+VMware-Flatdisk `f4f9c947ebc407071a44146bbc0b432d0015de330c6ccdd559b999dfd54d3dc1`.
+Keine Behauptung einer bestimmten Commitprovenienz dieser benutzten Images.
+Zusatzgate: drei echte Workstation-Paare mit unveraendertem Benchmark, CPU-
+Mediane >=95 Prozent; RAM/HDD-Rohwerte diagnostisch, nicht tickgenau genug
+fuer dieselbe Prozentgrenze. Noch keine eigene Leistungsabnahme.
+
 ## R3.20 abgeschlossen: Browsermodell hinter der C-Grenze
 
 Alle zehn Hostgruppen / 93 Faelle, beide Referenzbuilds und sieben Gastgates
