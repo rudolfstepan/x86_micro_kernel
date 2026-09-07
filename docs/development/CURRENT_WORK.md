@@ -4,6 +4,44 @@ Stand: 7. September 2026
 
 ## R1.1a freigegeben: CPU-Abrechnung und sichere Hintergrundzeit
 
+Fortsetzung: Der Nutzer hat die Aufnahme von
+`test/test_scheduler_resource_stats.py` ausdruecklich freigegeben. Nur die
+veraltete positive Sourceform wird auf den tatsaechlichen Fehlerzweig
+abgeglichen; Reclaim-/Peak-Anforderungen und alle eingefrorenen Gates bleiben.
+Die drei bereits bestandenen, unveraenderten Hostgates werden nicht wiederholt.
+
+Setupcommit `5cfc0416`, noch kein Implementierungscommit. Die drei ersten
+finalen Hostgates bestehen: Scheduler-Slack 3 Tests / 1.236 s (vier echte
+Scheduler-Verhaltensgruppen jeweils O0/O2), bestehende Policy 6 / 0.420 s,
+Scheduler-Time 18 / 0.466 s. Logs: `build/codex-agent/r11a/gate-*.log`.
+Vorher-Nachher-Belege zeigen den Ausschluss eines allein bereiten Ambient-
+Tasks nach 15 ms sowie rueckwirkende Fehlabrechnung nach IPC-Vererbung.
+Kandidat: budgetierter erster Auswahlpass, begrenzter Hintergrundpass,
+CPU-lokale Dispatchklasse und Yield ohne vorzeitige READY-Publikation.
+Eine neue Ring-3-GTEST-Diagnose und der versteckte Gastpruefer sind angelegt,
+aber noch nicht gebaut oder im Gast ausgefuehrt.
+
+Abnahmeblocker: `test_scheduler_resource_stats.py` scheitert an einem bereits
+in HEAD veralteten Source-Vergleich. Der Test sucht
+`reclaimed.active_tasks < exhausted.active_tasks` und Peak `>=`; der
+unveraenderte Gast prueft stattdessen im Fehlerzweig Active `>=` und Peak `<`.
+Die Bedeutung ist gleich, die gesuchte Schreibweise falsch. Die drei anderen
+Ressourcenchecks bestehen. Diese Testdatei liegt ausserhalb `allowed_files`;
+keine Aenderung oder Gate-Auslassung ohne ausdrueckliche Umfangsfreigabe.
+Runtime-Degradation, Referenzbuilds und alle Gastgates deshalb nicht gestartet.
+Kein Abnahme-/Performanceclaim, R1.1a bleibt aktiv. Quellenkandidat bleibt
+sichtbar und uncommittet, alle Stashes bleiben erhalten.
+
+Weitere erhaltene Diagnosebelege: `regression-before.log` und
+`regressions-before-all.log` (vier Gruppen scheitern O0/O2). In
+`regressions-after.log` war nur eine falsche Testfixture-Erwartung uebrig:
+nach Service-Auswahl folgt im vorhandenen Zyklus Ambient; Idle muss den
+vorher laufenden Testtask tatsaechlich schlafen legen. Beides korrigiert,
+ohne Produktionszyklus oder Grenzwerte zu aendern. Der erste finale
+Slack-Gate fand ausserdem den irrtuemlich im neuen Sourcecheck benannten
+SDK-Wrapper; auf den realen `x86os_spawnv` korrigiert. Fehlerlog bleibt als
+`gate-scheduler_slack-before-dispatch-spelling.log` erhalten.
+
 Separates Scheduler-Paket vor R3.20a, ausdruecklich vom Nutzer freigegeben.
 Der noch nicht abgenommene Browser-/Surface-Kandidat ist dateigenau in
 `d9370608c5849bbae36663d515c7accd24930005` gesichert; beide aelteren Stashes

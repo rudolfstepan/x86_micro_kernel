@@ -17,6 +17,8 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Charge the dispatched class and use background CPU time behind funded work"
+scope_amendment = "2026-09-07: User explicitly approves adding only test/test_scheduler_resource_stats.py to correct its pre-existing stale positive-form source assertion. Require the equivalent fail-closed rejection branch, unchanged reclaim/peak meaning and all frozen gates. Resume the attributed in-place candidate; retain prior failures and passed unaffected gates."
+runtime_blocker = "2026-09-07: Setup committed 5cfc0416; candidate uncommitted. Actual scheduler O0/O2 regressions demonstrate exclusion at15ms and retroactive inheritance billing before repair; all four behavior groups now pass. Final host gates scheduler_slack3 (1.236s), scheduling_policy6 (0.420s), scheduler_time18 (0.466s) pass. Next frozen scheduler_resource_stats gate fails its pre-existing source predicate: expects reclaimed.active_tasks < exhausted.active_tasks and peak >=, whereas unchanged HEAD guest uses the logically equivalent fail branch active >= / peak <. Three other resource tests pass. test/test_scheduler_resource_stats.py is deliberately not in allowed_files, so no test edit, skip or subsequent gates. Requires explicit scope addition for this stale source test (preserve behavioral meaning and every gate), then focused rerun. Runtime-degradation, both references and all guest gates not started. All failed logs preserved under build/codex-agent/r11a; no implementation commit, queue advancement or browser runtime/latency claim."
 scope = "One bounded per-CPU scheduling/accounting mechanism. Retain 100-ms windows, 60/25/15-ms normal class limits, fixed class cycle, 10-ms quantum, affinity/ownership and generation-scoped IPC inheritance. Snapshot the actual dispatched class so later inheritance changes cannot rebill elapsed time. Only when no funded compatible ready task exists may Ambient/Service run beyond their own limit, never Safety, never on clock fault/uninitialized window or Safety depletion. Charge all execution to its actual class, not a donor; no transferable reservation, replenishment, public ABI, supervisor policy or capacity change. Preserve kernel idle/recovery behavior on faults. Add real implementation O0/O2 tests and a bounded Ring-3 GTEST workload through existing packaging/shell paths. Browser candidate remains stashed, no browser changes in this package."
 allowed_files = [
   "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
@@ -25,6 +27,7 @@ allowed_files = [
   "kernel/sched/scheduler.c", "kernel/sched/scheduling_policy.c", "kernel/sched/scheduling_policy.h",
   "test/test_scheduler_slack.py", "test/test_scheduler_slack_host.c",
   "test/test_reist_scheduling_policy.py", "test/test_scheduler_time.py",
+  "test/test_scheduler_resource_stats.py",
   "userspace/programs/guest_test.c", "scripts/run_qemu_scheduler_slack.py"
 ]
 invariants = [
