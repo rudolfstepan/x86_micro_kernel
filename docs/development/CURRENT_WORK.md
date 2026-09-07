@@ -2,6 +2,73 @@
 
 Stand: 7. September 2026
 
+## R3.20a freigegeben: Browser-Bilduebergabe vor Sprachumbau reparieren
+
+Der Nutzer erlaubt ausdruecklich das separate Reparaturpaket fuer Browser,
+Shared Surface und Ring-3-Compositor. Queue: R3.20a active, R3.20 queued;
+kein JavaScript-/Modellumbau in diesem Lauf. Umfang und sieben Hostgates,
+beide Referenzbuilds sowie fuenf Gastgates sind vor Implementierung eingefroren.
+Latenzgrenzen (p95 250 ms, jeder Schritt 500 ms), 64 echte Eingaben samt
+Pixelnachweis, 180-s-Bootfrist und bestehende 30-s-Browserprobe bleiben gleich.
+Keine Kernel-/SDK-/Treiber-/Wire-ABI- oder Quotenlockerung.
+
+Zuordenbarer Messentwurf gesichert in neuem Stash
+`b314cd2b7132d7a7593be09e1acf257cbefa422a`; beide alten Fehlerbelege und der
+aeltere Stash bleiben erhalten. Nur Queue/Dokumentation werden als Setup
+committet. Erst vom sauberen Setup aus werden die fuenf Messdateien als
+Kandidatenarbeit wieder eingebunden. Keine unabgenommenen Quellen im
+Setupcommit, kein Push. Neue Belege unter `build/codex-agent/r320a/`.
+
+## R3.20 wieder aufgenommen: C-Baseline bleibt vor Modellumbau gesperrt
+
+Ausgangscommit `475dc3c1`, Worktree vor Wiederaufnahme sauber. Die vier
+zuordenbaren Probe-/Messdateien und `test/test_browser_model_cpp.py` wurden
+aus Stash `5af103bac06f8a4e6b335f247ed4d89f42c4a59a` wieder eingebunden;
+neuere Desktop-Testtasten bleiben erhalten, der Stash selbst unveraendert.
+`browser_model.c` ist weiterhin der unveraenderte C-Oracle-Blob
+`6b0de40d251a7c1ba70e2989cf361f3bb0a7b737`. Keine Modellkonvertierung,
+JavaScript-Engine oder neue Webfunktion in diesem Lauf.
+
+Belege unter `build/codex-agent/r320/resumed-20260907/`:
+
+- Instrumentierter C-QEMU-Build PASS, `baseline-build-captured.log`;
+  Kernel-SHA256 `499019d217d39cc713070a0118f8e7d677d1a3a5be79493276b5dcc91e6413be`,
+  Image-SHA256 `a3b5701243908b0d9205175522aa6910266eb4f735dd50abcef1b5560e10f4f8`.
+- Erster Lauf `ui-baseline/` FAIL: READY bestaetigt die Surface-Transaktion,
+  nicht die bereits komponierten Fokus-Pixel. Regression und begrenztes
+  Warten auf tatsaechliche Setup-Pixel hinzugefuegt (32 Readbacks, bestehende
+  Gesamtfrist, keine erneute Eingabe). Die 64 gemessenen Interaktionen und
+  alle absoluten/relativen Latenzgrenzen bleiben unveraendert.
+- `python test/test_browser_model_cpp.py -v`: 5 Telemetrietests PASS,
+  0.003 s, `telemetry-ready.log`. Noch keine C++-Modellabnahme.
+- `python scripts/measure_cpp_baseline.py --model-ui-baseline
+  build/codex-agent/r320/resumed-20260907/ui-baseline-ready`:
+  FAIL, Gastlauf 95.099 s. Alle 32 Texteingaben und 32 Wheel-Schritte
+  bestaetigt, einschliesslich passender Gastpixel. Unveraenderte Rohdaten
+  ergeben Tippen-p95 139.2513 ms, Scroll-p95 455.7574 ms, Maximum
+  473.6693 ms; Scroll-p95 verletzt 250 ms. Danach meldet der Browser
+  `BROWSER_PROBE_FAIL interaction` statt sauberem Close. Ob dabei seine
+  bestehende 30-s-Probe-Frist ablaeuft, ist noch nicht bewiesen. Kein Panic.
+  `initial-c/paint.model.json`, `boot.json`, `paint.browser.log`, PPMs und
+  `baseline.json` bleiben als fehlgeschlagene Belege erhalten.
+
+Eingrenzung: Gast-Rasterisierung maximal 3 ms, Buffer-Erzeugung maximal
+4 ms, Pixel-IPC maximal 172 ms, kompletter Body-Pfad maximal 257 ms.
+Einige Wheel-Schritte erreichen bereits den Commit erst nach 165-281 ms;
+sichtbare Komposition folgt bei diesen Schritten nochmals etwa 160-205 ms
+spaeter. Einzelne QMP-Pixelreadbacks dauern etwa 13-18 ms. Der Modellumbau
+allein adressiert diese gemessene Bilduebergabe-/Ausgabeverzoegerung nicht.
+`publish_pixels` uebergibt pro Scroll einen neuen Vollbildbuffer ueber
+mehrere synchrone Surface-Transaktionen, anschliessend folgt der separate
+Base-Paint-Commit. Shared Surface-Client und Compositor wurden nur gelesen.
+Die genaue Optimierung und der Close-Fehler bleiben offen.
+
+R3.20 bleibt aktiv, aber vor Konvertierung blockiert: Renderer-Aenderungen
+in `main.c` sowie Shared-Surface-/Compositor-Reparaturen liegen ausserhalb
+seines eingefrorenen Umfangs. Ein eigenes freigegebenes Reparaturpaket ist
+vorzuziehen; keine stille Scope-/Gate-/Fristlockerung. Keine finale
+Gate-Serie, kein Commit, kein Push; Testprozesse beendet.
+
 ## R3.21a abgeschlossen: echte VMware-Aufloesungen
 
 Die Kapazitaetskorrektur besteht alle fuenf finalen Hostgates (74 Tests),

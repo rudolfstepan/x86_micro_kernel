@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.20-browser-model-cpp"
-next_user_request = "2026-09-07: R3.21a VMware scanout repair accepted: 74 targeted tests, both references, both QEMU Display guests and real Workstation 1280x720/1920x1080 proof pass. Resume only R3.20 with its untouched stash and original baseline/gates; no browser implementation in the display repair run. No agents or push."
+active_id = "R3.20a-browser-surface-latency"
+next_user_request = "2026-09-07: User explicitly authorizes a prerequisite repair of browser image handoff and the shared Surface/compositor path without weakening protection or latency gates. Execute only R3.20a directly in the main worktree; defer R3.20 conversion and JavaScript/features until this repair passes. Preserve both attributed telemetry stashes and failed evidence. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,61 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.20a-browser-surface-latency"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bound browser input-to-paint latency without redundant Surface presentation"
+user_direction = "2026-09-07: Explicit yes to the separate browser image-handoff and shared Surface/compositor repair. Source baseline 475dc3c1. Attributed unaccepted C telemetry preserved in stash b314cd2b7132d7a7593be09e1acf257cbefa422a, earlier stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a untouched. Commit only package/docs setup before restoring those five candidate files."
+scope = "One Ring-3 image publication/observation failure model: diagnose and remove redundant browser full-window damage, serialized handoff or compositor repaint work using existing validated Surface messages, buffer identities, release semantics and fixed queues. Preserve pixel-correct last committed state, clipping, legacy clients, input ordering, configure acknowledgement, owner generations and bounded close/reap. Probe-only diagnostics may distinguish guest interaction invariant failure from its existing 30-second deadline; fix demonstrated close/input handshake errors without extending that deadline. No kernel, scheduler, SDK, display driver, timer policy, allocation/quota, wire ABI, C++ model conversion, parser/layout algorithm or new web feature changes. Restore existing telemetry as attributed candidate work only after clean setup; retain all prior failure evidence."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md",
+  "userspace/gui/apps/browser/main.c", "userspace/gui/lib/surface_client.c",
+  "userspace/gui/include/reist/gui/surface_client.h", "userspace/gui/compositor/desktop.c",
+  "userspace/gui/compositor/desktop_surface.c", "userspace/gui/compositor/desktop_surface.h",
+  "userspace/gui/compositor/desktop_surface_runtime.c", "userspace/gui/compositor/desktop_surface_runtime.h",
+  "scripts/measure_cpp_baseline.py", "scripts/run_qemu_runtime_desktop.py",
+  "test/test_browser_surface_latency.py", "test/test_browser_surface_latency_host.c",
+  "test/test_browser_model_cpp.py", "test/test_browser_runtime_source.py",
+  "test/test_gui_browser_source.py", "test/test_gui_surface_source.py",
+  "test/test_gui_surface_client_host.c", "test/test_desktop_surface_host.c",
+  "test/test_desktop_surface_dispatch.c", "test/test_desktop_surface_runtime_source.py",
+  "test/test_desktop.py"
+]
+invariants = [
+  "all existing C model and wire ABI values/layouts remain unchanged; use existing generation-scoped validated buffer authority",
+  "no new heap, buffer reuse before release, unbounded polling, dropped input or weakened fencing/reap",
+  "damage matches actual changed pixels; retain correct resize, initial paint, legacy layers and overflow fallback",
+  "Surface admission is not presentation: exact guest framebuffer observation remains mandatory",
+  "no latency threshold, per-sample deadline, guest probe budget, resource capacity or isolation relaxation"
+]
+targeted_tests = [
+  "python test/test_browser_surface_latency.py -v", "python test/test_browser_model_cpp.py -v",
+  "python test/test_gui_surface_source.py -v", "python test/test_desktop_surface_runtime_source.py",
+  "python test/test_gui_browser_source.py -v", "python test/test_browser_runtime_source.py -v",
+  "python test/test_desktop.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/measure_cpp_baseline.py --model-ui-baseline build/codex-agent/r320a/accepted-c",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-surface -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-forms -Target qemu -Video vga"
+]
+acceptance = "Regression before production repair using actual C implementation with O0/O2 host behavior and simulated IPC/display faults. Exact corrected paths must prove cleanup and no stale authority, damage omission or unsolicited side effects. All targeted gates and both reference builds pass. C-model UI proof retains the same fixed local document, 32 acknowledged x edits and 32 alternating wheel steps, one event in flight, complete ordered state/Surface records plus matching guest pixels, Windows QEMU i386 TCG one vCPU 1024 MiB headless snapshot, no concurrent VM/compiler, unchanged timer policy, 180 seconds/boot, nearest-rank p95 <=250 ms for both streams and every sample <=500 ms, no omitted samples/retries/threshold tuning. Require clean browser close and Surface retirement as well as unchanged input-probe crash/restart/fresh shell proof. Freeze final harness/source/image digests for subsequent R3.20, which still needs its own paired C/C++ acceptance. Preserve all failed diagnostic/gate artifacts. Run each final frozen gate once; only a demonstrated in-scope cause permits focused repair and affected-gate rerun, never blind repetition."
+stop_conditions = [
+  "required production repair lies outside allowed files or needs new authority/wire ABI/kernel scheduling changes",
+  "unattributed overlapping changes, weakened budgets/limits or no demonstrated cause for another failed-gate retry"
+]
+commit_message = "fix: avoid redundant browser Surface presentation work"
+evidence = []
 
 [[packages]]
 id = "R3.21a-vmware-scanout-capacity"
@@ -1433,7 +1488,8 @@ evidence = []
 
 [[packages]]
 id = "R3.20-browser-model-cpp"
-status = "active"
+status = "queued"
+baseline_status = "2026-09-07: Resumed attributed probe harness on clean accepted 475dc3c1, preserving stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and newer input-monitor keys. Fixed demonstrated setup-only Surface-ACK versus composed-focus observation race within the existing deadline and bounded readback cap; five telemetry tests pass. Fresh C baseline ui-baseline-ready records all 64 real edits/wheel steps and matching pixels but raw scroll p95 455.7574 ms exceeds unchanged 250 ms (typing 139.2513 ms, max 473.6693 ms); subsequent guest interaction probe fails during close. No panic and no model conversion. Preserve failed evidence under build/codex-agent/r320/resumed-20260907; renderer/Surface/compositor repairs require a separate authorized package, not silent R3.20 expansion."
 resumption = "2026-09-07: R1.2e and R3.21 accepted. Resume the preserved R3.20 baseline work with its original scope/gates; the passing R3.21 browser-input regression is not acceptance of the separate C-model/C++ migration baseline. Stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a remains unaccepted and untouched by the Display run."
 deferral = "2026-09-06: User approves the prerequisite R1.2e boot/supervisor repair. Preserve unaccepted harness in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and all r320 evidence. Baseline scroll p95 450.5252 ms exceeds 250 ms; later boot panic blocks diagnosis. Do not migrate the C model before a passing baseline; resume unchanged gates after R1.2e."
 phase = "post-s0"

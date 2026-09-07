@@ -2,6 +2,13 @@
 
 Stand: 3. September 2026
 
+7. September, neue Freigabe: R3.20a repariert zuerst den gemessenen Browser-
+Bilduebergabe-/Surface-/Compositorpfad. Die erneute C-Baseline verfehlt mit
+Scroll-p95 455.7574 ms die unveraenderten 250 ms; der Testabschluss scheitert
+ebenfalls. R3.20 bleibt bis zur bestandenen Reparatur queued. Kein weiterer
+Sprachumbau oder JavaScript in diesem Reparaturpaket; keine gelockerten
+Schutzmechanismen, Queues, Fristen oder Latenzgrenzen. Details: CURRENT_WORK.
+
 Prioritaetskorrektur 7. September abgeschlossen: R3.21a trennt VMware
 VRAM_SIZE vom aktuellen FB_SIZE. Boot-versiegelte BAR-Grenzen bewahren
 Speicherisolation und feste Mapping-/Shadowgrenzen. 74 Hosttests, beide
