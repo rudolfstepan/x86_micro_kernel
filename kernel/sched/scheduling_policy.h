@@ -59,6 +59,9 @@ bool scheduler_policy_window_charge(scheduler_window_t *window,
                                     uint64_t now_ms);
 bool scheduler_policy_class_allowed(const scheduler_window_t *window,
                                     uint8_t scheduling_class);
+/* Internal background contract v1, not a reservation transfer or new ABI. */
+bool scheduler_policy_background_allowed(const scheduler_window_t *window,
+                                         uint8_t scheduling_class);
 uint32_t scheduler_policy_window_limit(uint8_t scheduling_class);
 void scheduler_policy_inherit(uint8_t *effective_classes,
                               const uint8_t *base_classes,

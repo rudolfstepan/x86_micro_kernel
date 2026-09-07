@@ -179,7 +179,8 @@ class SchedulerTimeSourceTests(unittest.TestCase):
     def test_yield_selects_another_ready_task_without_polling(self) -> None:
         yield_block = function_block(self.scheduler, "int scheduler_yield(")
         self.assertIn("claim_next_runnable(", yield_block)
-        self.assertIn("TASK_READY", yield_block)
+        self.assertIn("SCHEDULER_HANDOFF_READY", yield_block)
+        self.assertNotIn("tasks[previous].status = TASK_READY;", yield_block)
         self.assertIn("swtch(", yield_block)
         self.assertNotRegex(yield_block, r"\bwhile\s*\(")
 

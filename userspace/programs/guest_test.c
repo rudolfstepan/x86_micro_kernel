@@ -1455,6 +1455,33 @@ static int test_diagnostic_service(void) {
     return 0;
 }
 
+static int test_scheduler_slack_work(void) {
+    uint64_t start, previous, now;
+    uint32_t adjacent_ms = 0U;
+    if (x86os_monotonic_ms(&start) != 0) return -1;
+    previous = now = start;
+    /* Explicit diagnostic CPU workload, not a wait in a production safety
+     * path. Both elapsed guest time and iteration capacity bound execution.
+     * Adjacent 1-ms samples are an observation, not a CPU-time syscall. */
+    for (uint32_t sample = 0U; sample < 4000000U; ++sample) {
+        if (x86os_monotonic_ms(&now) != 0 || now < previous) return -1;
+        if (now - previous == 1U) ++adjacent_ms;
+        previous = now;
+        if (now - start >= 1000U) break;
+    }
+    /* Static process-private storage avoids an implicit compiler memcpy;
+     * this minimal freestanding GTEST does not link the full libc adapter. */
+    static char metric[] = "SCHED_SLACK_METRIC adjacent_ms=0000\n";
+    uint32_t digits = adjacent_ms;
+    for (size_t index = sizeof(metric) - 3U, count = 0U; count < 4U;
+         --index, ++count) {
+        metric[index] = (char)('0' + digits % 10U);
+        digits /= 10U;
+    }
+    x86os_puts(metric);
+    return now - start >= 1000U && adjacent_ms >= 400U ? 0 : -1;
+}
+
 static int test_scheduler_time(void) {
     uint64_t start;
     uint64_t now;
@@ -1860,6 +1887,17 @@ static int fdd_hotplug_main(void) {
 }
 
 int main(int argc, char **argv) {
+    if (argc == 2 && text_equal(argv[1], "sched-slack")) {
+        x86os_puts("SCHED_SLACK_BEGIN\n");
+        if (test_scheduler_slack_work() != 0 || test_scheduler_time() != 0 ||
+            wait_for_expected("FAULTUD.PRG", 134) != 0 ||
+            wait_for_expected("CHILDEX.PRG", 37) != 0) {
+            x86os_puts("TEST_FAIL SCHED_SLACK\n");
+            return 90;
+        }
+        x86os_puts("SCHED_SLACK_OK\n");
+        return 0;
+    }
     if (argc == 2 && text_equal(argv[1], "FDD_HOTPLUG"))
         return fdd_hotplug_main();
     if (argc == 3 && text_equal(argv[1], "IPC_ECHO"))

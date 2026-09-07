@@ -112,10 +112,21 @@ bool scheduler_policy_window_charge(scheduler_window_t *window,
 
 bool scheduler_policy_class_allowed(const scheduler_window_t *window,
                                     uint8_t scheduling_class) {
-    if (window == NULL || scheduling_class >= SCHEDULER_CLASS_COUNT)
+    if (window == NULL || !window->initialized ||
+        scheduling_class >= SCHEDULER_CLASS_COUNT)
         return false;
     if (window->fault_flags != 0U) return false;
     return (window->throttled_mask & (1U << scheduling_class)) == 0U;
+}
+
+bool scheduler_policy_background_allowed(const scheduler_window_t *window,
+                                         uint8_t scheduling_class) {
+    /* Only the selection fallback may use this predicate. Funded work must
+     * have been exhausted first; no donor budget is changed or transferred.
+     * Safety overload and clock faults retain the kernel recovery interval. */
+    return scheduling_class < SCHEDULER_CLASS_SAFETY &&
+        scheduler_policy_class_allowed(window, SCHEDULER_CLASS_SAFETY) &&
+        !scheduler_policy_class_allowed(window, scheduling_class);
 }
 
 #ifdef REIST_RUNTIME_DEGRADATION_FAULT_INJECTION

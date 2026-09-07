@@ -1326,6 +1326,14 @@ Kernelkontext für Diagnose und Recovery weiterläuft. Eine rückläufige
 Clocksource sperrt alle Klassen fail-closed. Priority Inheritance sowie
 vollständige WCET-, Speicher- und Queue-Nachweise folgen in S0.4c.
 
+R1.1a ergaenzt diesen Normalbudgetpfad durch den versionierten internen
+[Hintergrundzeitvertrag](SCHEDULER_BACKGROUND_SLACK_CONTRACT.md): erst wenn
+kein bereiter Kandidat mit Budget existiert, darf Ambient/Service ansonsten
+ungenutzte CPU-Zeit verwenden. Safety erschoepft oder Clock fehlerhaft sperrt
+diesen Zusatzpfad. Alle Laufzeit bleibt der wirklich dispatchten Klasse
+belastet, auch bei spaeterer IPC-Vererbung durch eine andere CPU. Keine
+Budgetuebertragung, kein neuer Timer und kein harter Echtzeitnachweis.
+
 S0.4c-1 ergänzt Priority Inheritance ausschließlich für IPC-Wartebeziehungen
 mit eindeutigem Gegenprozess. Der Wartende speichert Taskslot und
 Prozessgeneration des Owners; der Scheduler berechnet die effektiven Klassen

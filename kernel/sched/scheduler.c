@@ -62,6 +62,8 @@ static spinlock_t runtime_timing_lock = SPINLOCK_INIT;
 static uint32_t pit_scheduler_ticks;
 static wait_queue_t sleep_waiters = WAIT_QUEUE_INIT;
 static scheduler_window_t cpu_windows[X86_CPU_LOCAL_MAX];
+/* Accounting only: the CPU/task claim remains the execution authority. */
+static uint8_t dispatched_classes[X86_CPU_LOCAL_MAX];
 static int8_t
     scheduling_class_cursors[X86_CPU_LOCAL_MAX][SCHEDULER_CLASS_COUNT];
 static uint8_t scheduling_class_cycle_cursors[X86_CPU_LOCAL_MAX];
@@ -108,6 +110,7 @@ static uint32_t scheduler_cpu_policy_index_locked(void) {
     uint32_t cpu = scheduler_cpu_local()->cpu_index;
     KASSERT(cpu < X86_CPU_LOCAL_MAX);
     if (!scheduler_cpu_policy_initialized[cpu]) {
+        dispatched_classes[cpu] = SCHEDULER_CLASS_NONE;
         for (uint32_t scheduling_class = 0U;
              scheduling_class < SCHEDULER_CLASS_COUNT; ++scheduling_class)
             scheduling_class_cursors[cpu][scheduling_class] = -1;
@@ -436,11 +439,13 @@ static void refresh_effective_classes_locked(void) {
 
 static void account_current_runtime_locked(uint64_t now_ms) {
     assert_task_table_locked();
-    refresh_effective_classes_locked();
     uint32_t cpu = scheduler_cpu_policy_index_locked();
     uint8_t charged_class = current_task >= 0 && current_task < num_tasks
-        ? tasks[current_task].effective_scheduling_class
+        ? dispatched_classes[cpu]
         : SCHEDULER_CLASS_NONE;
+    /* Effective classes may already have changed on another CPU. Bill the
+     * class actually dispatched, including its excess background execution. */
+    KASSERT(current_task < 0 || charged_class < SCHEDULER_CLASS_COUNT);
     if (scheduler_policy_window_charge(
             &cpu_windows[cpu], charged_class, now_ms)) {
         for (int index = 0; index < num_tasks; ++index) {
@@ -448,6 +453,7 @@ static void account_current_runtime_locked(uint64_t now_ms) {
                 tasks[index].effective_scheduling_class);
         }
     }
+    refresh_effective_classes_locked();
 }
 
 static int find_next_runnable(int after, uint64_t now_ms) {
@@ -461,14 +467,17 @@ static int find_next_runnable(int after, uint64_t now_ms) {
     int32_t cpu = (int32_t)scheduler_cpu_local()->cpu_index;
     uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
     uint32_t cpu_bit = 1U << (uint32_t)cpu;
+    uint32_t runnable_mask = 0U;
     for (int index = 0; index < num_tasks; ++index) {
         bool ready_unowned = tasks[index].status == TASK_READY &&
             tasks[index].running_cpu == TASK_CPU_NONE;
         bool running_here = tasks[index].status == TASK_RUNNING &&
             tasks[index].running_cpu == cpu;
-        candidates[index].runnable =
+        bool runnable =
             (ready_unowned || running_here) &&
-            (tasks[index].cpu_affinity_mask & cpu_bit) != 0U &&
+            (tasks[index].cpu_affinity_mask & cpu_bit) != 0U;
+        if (runnable) runnable_mask |= 1U << (uint32_t)index;
+        candidates[index].runnable = runnable &&
             scheduler_policy_class_allowed(&cpu_windows[policy_cpu],
                 tasks[index].effective_scheduling_class);
         candidates[index].scheduling_class =
@@ -478,6 +487,19 @@ static int find_next_runnable(int after, uint64_t now_ms) {
     int selected = scheduler_policy_select_cycle(
         candidates, num_tasks, scheduling_class_cursors[policy_cpu],
         &scheduling_class_cycle_cursors[policy_cpu]);
+    if (selected < 0) {
+        /* A second fixed-capacity pass can only consume otherwise idle time.
+         * Funded candidates always win; affinity/ownership never change. */
+        for (int index = 0; index < num_tasks; ++index) {
+            candidates[index].runnable =
+                (runnable_mask & (1U << (uint32_t)index)) != 0U &&
+                scheduler_policy_background_allowed(&cpu_windows[policy_cpu],
+                    candidates[index].scheduling_class);
+        }
+        selected = scheduler_policy_select_cycle(
+            candidates, num_tasks, scheduling_class_cursors[policy_cpu],
+            &scheduling_class_cycle_cursors[policy_cpu]);
+    }
     for (int index = 0; index < num_tasks; ++index)
         tasks[index].budget_remaining = candidates[index].budget_remaining;
     return selected;
@@ -510,7 +532,11 @@ static int claim_next_runnable(int after, uint64_t now_ms) {
     for (uint32_t attempt = 0U; attempt < MAX_TASKS; ++attempt) {
         int next = find_next_runnable(after, now_ms);
         if (next < 0) return -1;
-        if (claim_task_for_current_cpu(next)) return next;
+        if (claim_task_for_current_cpu(next)) {
+            dispatched_classes[scheduler_cpu_policy_index_locked()] =
+                tasks[next].effective_scheduling_class;
+            return next;
+        }
     }
     return -1;
 }
@@ -1250,13 +1276,15 @@ int scheduler_yield(void) {
     uint64_t now_ms = pit_monotonic_ms();
 
     spinlock_acquire(&task_table_lock);
-    tasks[previous].status = TASK_READY;
+    /* Keep the current CPU-owned task eligible. Marking it READY here hides
+     * it from both unowned-ready and running-here selection on a lone yield.
+     * The handoff below publishes READY only when execution really moves. */
     int next = claim_next_runnable(previous, now_ms);
     uint32_t policy_cpu = scheduler_cpu_policy_index_locked();
     bool previous_allowed = scheduler_policy_class_allowed(
         &cpu_windows[policy_cpu],
         tasks[previous].effective_scheduling_class);
-    if ((next < 0 || next == previous) && !previous_allowed &&
+    if (next < 0 && !previous_allowed &&
         kernel_context_saved) {
         prepare_task_handoff(previous, SCHEDULER_HANDOFF_READY);
         current_task = -1;

@@ -1,6 +1,7 @@
 # Scheduler background execution, internal contract v1
 
-Status: frozen R1.1a candidate contract, 2026-09-07; not yet accepted.
+Status: R1.1a accepted on 2026-09-07; all five host gates, both reference
+builds and all five guest gates pass. Evidence: CURRENT_WORK.md, R1.1a.
 
 The existing REIST class-window mechanism is not POSIX SCHED_FIFO/RR or
 SCHED_DEADLINE. The established reference for runtime accounting and bandwidth
@@ -51,3 +52,10 @@ Ring-3 exception remain required. APIC, PIT and two-vCPU guests have independent
 The browser Surface candidate remains separately unaccepted in stash
 `d9370608c5849bbae36663d515c7accd24930005`. Its 250/500-ms pixel-observed input
 gates are not changed or accepted by this scheduler package.
+
+The accepted QEMU image is preserved at
+`build/codex-agent/r11a/accepted-scheduler.img`, SHA256
+`ab1f5cdb55e1e12ee8834e66ee2b49e7bbd16fedb18e3c687a4222bbf27a25d3`.
+APIC/PIT/two-vCPU workloads observe respectively 964/952, 861/870 and 980/966
+adjacent ticks per 1000-ms phase. These are bounded guest workload observations,
+not a utilization percentage, hardware qualification or browser latency result.

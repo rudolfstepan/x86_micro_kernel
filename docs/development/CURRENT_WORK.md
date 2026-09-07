@@ -2,7 +2,65 @@
 
 Stand: 7. September 2026
 
-## R1.1a freigegeben: CPU-Abrechnung und sichere Hintergrundzeit
+## R1.1a abgeschlossen: CPU-Abrechnung und sichere Hintergrundzeit
+
+Alle eingefrorenen Gates bestehen. Der Scheduler rechnet die wirklich
+dispatchte Klasse ab und vergibt zusaetzliche Ambient-/Service-Zeit nur hinter
+jedem bereiten Kandidaten mit Normalbudget. Safety-Depletion und Clockfehler
+sperren diesen Zusatzpfad. Keine Budget-/Timer-/ABI-/Kapazitaetserhoehung;
+CPU-Besitz, Affinitaet und generationsgebundene Vererbung bleiben erhalten.
+
+Abnahmebelege unter `build/codex-agent/r11a/`; vollstaendige, unveraenderte
+Kommandos stehen in `automation/reist-s03b.toml`, Paket R1.1a.
+
+| Gate | Ergebnis / Dauer | Log |
+|---|---|---|
+| `test_scheduler_slack.py -v` | 3 PASS, echte O0/O2-Funktionen, 1.204 s | `gate-scheduler_slack-static-metric.log` |
+| `test_reist_scheduling_policy.py -v` | 6 PASS, 0.420 s | `gate-reist_scheduling_policy.log` |
+| `test_scheduler_time.py -v` | 18 PASS, 0.466 s | `gate-scheduler_time.log` |
+| `test_scheduler_resource_stats.py -v` | 4 PASS, 0.004 s | `gate-scheduler_resource_stats-final.log` |
+| `test_runtime_degradation.py -v` | 3 PASS, 0.023 s | `gate-runtime_degradation-final.log` |
+| `test-reist-package.ps1 -Target vmware -Video vga` | PASS, 15 s | `package-vmware-static-metric.log` |
+| `test-reist-package.ps1 -Target qemu -Video vga` | PASS, 66 s | `package-qemu.log` |
+| `run_qemu_scheduler_slack.py`, APIC | PASS, 41.523 s | `runtime-slack-apic.log`, `slack-apic.log` |
+| gleicher Gast mit `--no-apic` | PASS, 20.743 s | `runtime-slack-pit.log`, `slack-pit.log` |
+| gleicher Gast mit `--smp 2` | PASS, 92.012 s | `runtime-slack-smp.log`, `slack-smp.log` |
+| `test-reist-runtime.ps1 -Mode normal -Target qemu -Video vga` | PASS, 51 s | `runtime-normal.log`, `normal.guest.log` |
+| gleicher Runtime-Aufruf mit `-Mode runtime-desktop-browser-input` | PASS, ca. 81 s (Logzeitfenster) | `runtime-browser-input.log`, `browser-input.guest.log`, `browser-input.ppm` |
+
+Die drei neuen Gaeste pruefen je zwei echte 1000-ms-Lastphasen, danach
+Sleep/Yield/Kill/Reuse, Ring-3-Invalid-Opcode mit erwartetem Exitstatus und
+anschliessende frische Shell-Kommandos. Beobachtete angrenzende 1-ms-Ticks:
+APIC 964/952, PIT 861/870, SMP 980/966 (Grenze unveraendert mindestens 400).
+Das ist keine CPU-Auslastungs- oder WCET-Messung. APIC-Kalibrierung und
+PIT-Fallback sind in den jeweiligen Bootlogs bestaetigt. Der SMP-Gast meldet
+online=2, failed=0, Scheduler-Probe-Maske 2 sowie einen erfolgreich reapten
+AP-Worker. Normale Systempruefung: alle Gaststufen einschliesslich
+Kapazitaetserschoepfung/Freigabe und Exceptions bestehen. Browserpruefung:
+Tastatureingabe, Editieren, Navigation, Crash, Neustart und frische Konsole
+bestaetigt. Alle QEMU-Prozesse sind beendet.
+
+Abgenommenes Image gesichert als `accepted-scheduler.img`, SHA256
+`ab1f5cdb55e1e12ee8834e66ee2b49e7bbd16fedb18e3c687a4222bbf27a25d3`.
+Referenzdetails: `../20260907-142215-package-vmware-vga.log`,
+`../20260907-142258-package-qemu-vga.log`; Normalgast:
+`../20260907-142743-runtime-guest-smoke.log`.
+
+Gezielte Reparaturen, ohne abgesenkte Gates: Die ausdruecklich freigegebene
+Ressourcen-Testdatei prueft nun den bestehenden Fehlerzweig samt Rueckgabe.
+Der erste VMware-Build (`package-vmware.log`, 80 s;
+`../20260907-141952-package-vmware-vga.log`) scheiterte am vom Compiler
+erzeugten `memcpy` fuer den neuen GTEST-Diagnosepuffer. Statischer
+prozessprivater Speicher beseitigt diese unnoetige Linkabhaengigkeit;
+alle vier Ziffern werden pro Aufruf neu gesetzt. Betroffene Slack-Hostpruefung
+und VMware-Build einmal gezielt wiederholt und bestanden. QEMU und alle
+fuenf Gastgates bestehen beim ersten Lauf. Alle vorherigen Fehlerlogs bleiben.
+
+Queue geht nur an R3.20a zurueck. Browserquellen/-stash wurden nicht angefasst;
+keine C++-Migration oder JavaScript-Implementierung in diesem Paket. Die
+pixelgepruefte Browser-Latenzabnahme bleibt unveraendert erforderlich.
+
+### Historischer Zwischenstand und erhaltene Fehlerbelege
 
 Fortsetzung: Der Nutzer hat die Aufnahme von
 `test/test_scheduler_resource_stats.py` ausdruecklich freigegeben. Nur die

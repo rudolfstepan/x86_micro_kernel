@@ -46,9 +46,16 @@ class SchedulerResourceStatsTests(unittest.TestCase):
         self.assertIn("x86os_scheduler_stats(&before)", self.guest)
         self.assertIn("exhausted.capacity_rejections <= before.capacity_rejections",
                       self.guest)
-        self.assertIn("reclaimed.active_tasks < exhausted.active_tasks", self.guest)
-        self.assertIn("reclaimed.peak_active_tasks >= exhausted.peak_active_tasks",
-                      self.guest)
+        # The guest rejects violations, rather than returning a conjunction
+        # of positive predicates. Bind the comparisons to the actual failure
+        # return: unchanged slot count must fail, unchanged historical peak
+        # must pass, and a regressing rejection counter must fail too.
+        self.assertRegex(re.sub(r"\s+", " ", self.guest),
+            r"if \(x86os_scheduler_stats\(&reclaimed\) != 0 \|\| "
+            r"reclaimed\.active_tasks >= exhausted\.active_tasks \|\| "
+            r"reclaimed\.peak_active_tasks < exhausted\.peak_active_tasks \|\| "
+            r"reclaimed\.capacity_rejections < exhausted\.capacity_rejections\) "
+            r"return task_capacity_fail\(11U, &reclaimed, 0\);")
 
 
 if __name__ == "__main__":

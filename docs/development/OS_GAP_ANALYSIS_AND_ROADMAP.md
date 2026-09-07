@@ -2,6 +2,14 @@
 
 Stand: 3. September 2026
 
+7. September, R1.1a abgeschlossen: Abrechnung der wirklich dispatchten
+Klasse und Hintergrundausfuehrung hinter budgetierter Arbeit sind abgenommen.
+34 Hosttests, VMware/QEMU-Referenzen und fuenf Gastgates bestehen: APIC, PIT,
+zwei CPUs, regulare Systempruefung sowie Browser-Eingabe/Crash/Neustart/Shell.
+Keine erhoehten Budgets, Timer- oder ABI-Aenderungen. Belege in CURRENT_WORK.
+R3.20a ist wieder aktiv; seine eigene pixelgepruefte 250/500-ms-Abnahme muss
+auf diesem Scheduler neu erfolgen. Browserstash und Fehlerbelege erhalten.
+
 7. September, Scheduler-Voraussetzung ausdruecklich freigegeben: R1.1a
 korrigiert die Zuordnung vergangener CPU-Zeit und erlaubt begrenzte
 Hintergrundausfuehrung nur ohne bereite budgetierte Arbeit. Reservierungen,
