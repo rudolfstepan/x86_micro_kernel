@@ -2,6 +2,16 @@
 
 Stand: 7. September 2026
 
+## R1.3 freigegeben: FPU-Isolation vor JavaScript
+
+Benutzerfreigabe nach konkreter Vorpruefung: i386-Compiler erzeugt `fldl`/
+`faddl`, der bisherige Scheduler bewahrt diesen Zustand nicht. Sauberer
+Ausgangsstand `28973dcb`. Ausschliesslich R1.3 aktiv, R3.6b mit unveraenderten
+offenen Gates queued. Vertrag und eingefrorene Abnahme:
+FPU_CONTEXT_ISOLATION_CONTRACT.md und automation/reist-s03b.toml.
+Noch keine Implementierungs-/Gastabnahme und kein JavaScript-Featureclaim.
+Alle bisherigen Browserbelege, Stashes und Fehler bleiben erhalten.
+
 ## R3.20 abgeschlossen: Browsermodell hinter der C-Grenze
 
 Alle zehn Hostgruppen / 93 Faelle, beide Referenzbuilds und sieben Gastgates

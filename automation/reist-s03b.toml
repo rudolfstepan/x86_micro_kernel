@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-07: R3.20 model pilot is accepted; response/resources/model pilots are complete. Queue advances to the remaining queued R3.6b without implementing it in this run or claiming its old VMware failures resolved. Browser functional gaps, including JavaScript, remain separate deliverables with browser priority over broad optional C++ migration; any new browser feature needs its own frozen contract before implementation. Preserve accepted-c baseline and paired C/C++ evidence, all stashes and failures. Direct execution, no agents or push."
+active_id = "R1.3-fpu-context-isolation"
+next_user_request = "2026-09-07: User explicitly authorizes the separate FPU prerequisite after the JavaScript inventory found x87 compiler output without scheduler preservation. Implement only R1.3 directly in the main worktree, with frozen host/guest isolation gates and a local commit after success. Browser JavaScript/DOM and libc prerequisites remain separate later packages, prioritized over deferred R3.6b. Preserve all accepted C/C++ evidence, stashes and failures. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,60 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R1.3-fpu-context-isolation"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Eager generation-owned i386 x87/MMX/SSE context isolation"
+scope = "One fixed CPU execution-state ownership mechanism, explicitly authorized as a JavaScript prerequisite. Initialize and read back an FPU/FXSR/SSE profile on BSP and every AP before scheduling; reject unsupported or inconsistent hardware before admission. Each private task and per-CPU idle context owns an aligned 512-byte Intel FXSAVE image, reset before new-generation publication and scrubbed by reap. Extend only the internal switch layout, preserve existing GPR offsets/calls, eagerly save before outgoing ownership release and restore even on exit's null-old switch. Disable unowned extended XSAVE state; keep kernel C integer-only. Prove actual assembly behavior and real Ring-3 preemption/yield/sleep/normal exit/kill/FP faults/reuse, plus AP context initialization/preservation. No public ABI, quota, timer, driver, browser, JavaScript engine or libc feature change."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/FPU_CONTEXT_ISOLATION_CONTRACT.md",
+  "docs/architecture/SMP_SUBSYSTEM.md", "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "Makefile", "arch/x86/include/fpu.h", "arch/x86/cpu/fpu.c",
+  "arch/x86/include/cpu_local.h", "arch/x86/cpu/smp.c", "kernel/init/kernel.c",
+  "kernel/sched/scheduler.c", "kernel/sched/scheduler.h", "kernel/sched/switch.asm",
+  "userspace/programs/guest_test.c", "scripts/run_qemu_fpu.py",
+  "test/test_fpu_context.py", "test/test_fpu_context_host.c", "test/test_fpu_boot_host.c",
+  "test/test_smp.py", "test/test_scheduler_slack.py", "test/test_scheduler_slack_host.c",
+  "test/test_scheduler_time.py", "test/test_scheduler_resource_stats.py"
+]
+invariants = [
+  "Fixed kernel-owned aligned images only; no allocation, user save/restore pointer, public ABI or additional task/CPU capacity.",
+  "No lazy #NM ownership; every actual switch restores before the destination executes or releases the outgoing handoff, including null-old exit.",
+  "Fresh task generations start with empty zeroed registers and standard masked round-to-nearest controls; reap scrubs the whole context.",
+  "Boot CPU capabilities/control readback and homogeneous MXCSR masks precede admission. AVX/XSAVE remains disabled and unsupported CPUs fail closed.",
+  "Kernel C remains integer-only; ordinary Ring-3 #MF/#XM/#GP failures use existing bounded process termination, never kernel recovery-in-place.",
+  "Existing scheduling budgets, deadlines, affinity, wait-node, fencing/reap and browser/GUI limits remain unchanged."
+]
+targeted_tests = [
+  "python test/test_fpu_context.py -v", "python test/test_smp.py -v",
+  "python test/test_scheduler_slack.py -v", "python test/test_scheduler_time.py -v",
+  "python test/test_scheduler_resource_stats.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r13-fpu/apic.log",
+  "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --no-apic --log build/codex-agent/r13-fpu/pit.log",
+  "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --smp 4 --log build/codex-agent/r13-fpu/smp.log",
+  "python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --unsupported --log build/codex-agent/r13-fpu/unsupported.log",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode normal -Target qemu -Video vga",
+  ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "First reproduce missing FP preservation with the real switch.asm in an i386 host fixture, then O0/O2 actual assembly and boot-policy tests. Check defaults, all x87/XMM payloads and controls, yield/resume/null-old exit, alignment, rejection of unsupported/mixed CPUs and failed control readback before ready. Compile internal C/assembly layout assertions; verify kernel uses no compiler-generated FP. Every real guest is headless snapshot 1024 MiB, <=180 seconds (unsupported <=60), no concurrent compiler/VM; require two full Ring-3 runs with distinct live parent/child states across timer preemption and blocked/yield switches, unmasked #MF/#XM and invalid MXCSR #GP contained with exact exit statuses, killed dirty child, fresh default state after reuse and a responsive userspace shell. SMP also requires all three AP probe tasks to preserve private state and return/reap under existing deadlines. Existing normal and browser input/crash/restart gates unchanged. Reference builds cover existing Windows/Make GTEST packaging. Final frozen gates once; only demonstrated in-scope repair permits affected rerun, preserve failures. No full JavaScript, hardware certification, cross-CPU Ring-3 migration or WCET claim."
+stop_conditions = [
+  "Required source outside allowed_files or unattributed overlapping change",
+  "Unsupported state enabled, loss of generation/CPU ownership, public ABI or protection/budget relaxation",
+  "Failed gate without a demonstrated focused in-scope cause"
+]
+commit_message = "fix: isolate floating-point state across i386 task switches"
+evidence = []
 
 [[packages]]
 id = "R1.1a-scheduler-background-slack"
@@ -1608,7 +1662,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

@@ -2,6 +2,13 @@
 
 Stand: 3. September 2026
 
+7. September, R1.3 ausdruecklich freigegeben: Vor der JavaScript-Portierung
+wird die fehlende x87/MMX/SSE-Kontextisolation als separates Kernelpaket
+geschlossen. Feste private FXSAVE-Abbilder, eager Save/Restore, CPU-Profil-
+Admission und echte Prozessfehler-/Reuse-Gates; keine Quoten-/ABI-Lockerung.
+Vertrag: FPU_CONTEXT_ISOLATION_CONTRACT.md. JavaScript/DOM und libc bleiben
+spaetere Pakete; R3.6b bleibt mit allen offenen VMware-Gates zurueckgestellt.
+
 7. September, R3.20 abgeschlossen: eine C++-Modellimplementierung hinter sechs
 unveraenderten C-Einstiegen, ohne neuen Navigations-/Worker-/Heapbesitz.
 93 Hostfaelle, beide Referenzbuilds und sieben Gastgates bestehen. Die
