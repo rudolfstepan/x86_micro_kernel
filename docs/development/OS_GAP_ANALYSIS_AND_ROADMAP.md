@@ -2,6 +2,12 @@
 
 Stand: 3. September 2026
 
+7. September: R3.22 friert als naechste Browser-Voraussetzung den echten
+SDK-Stringformatter ein (snprintf/vsnprintf, musl1.2.6, private Speicherstream-
+Adapter, keine allgemeine stdio-/POSIX-Fassade). QuickJS hat bereits dtoa/atod
+und rqsort; diese werden nicht dupliziert. Noch keine Abnahme; Grenzen und
+Gates in RING3_STRING_FORMAT_CONTRACT.md und der Queue.
+
 7. September, Browser-Voraussetzungsschnitt R3.21 abgenommen:
 opt-in binary64-libm/fenv im Ring3 aus musl1.2.6, normaler SDK-/PRG-Linkweg,
 numerische Sonderwerte und Prozessfehler-/Reuse-Nachweis. FPU und gemessene

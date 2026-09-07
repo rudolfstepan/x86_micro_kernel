@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-07: R3.21 math prerequisite accepted after user-authorized buildtest correction and focused consumer-link repairs. Advance only the queue to existing R3.6b; do not implement it in this run or override documented browser priority. Further JavaScript/runtime/DOM work requires its own cohesive frozen package. Preserve all accepted FPU/performance/math images, measurements, browser C++ evidence and stashes. No agents or push."
+active_id = "R3.22-ring3-string-format"
+next_user_request = "2026-09-07: Continue the explicitly prioritized browser work directly in the main worktree. Inventory of pinned QuickJS2026-06-04 shows its own dtoa/atod and rqsort; do not duplicate them or invent a setjmp dependency. Close the actual missing SDK string-formatting dependency as one opt-in allocation-free package. No engine/DOM/time/thread activation yet. Preserve accepted images, performance artifacts and stashes. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,47 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.22-ring3-string-format"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Bounded-output Ring-3 string formatting for the JavaScript runtime"
+scope = "Opt-in ISO C snprintf/vsnprintf with the pinned musl1.2.6 formatter, including all C integer lengths, floating/long-double formats, strings/chars/wide C-locale conversion, count writes, truncation and overflow/error semantics. Private stack-owned memory stream only, no public FILE or fake OS/POSIX layer. Reuse accepted libm and byte/errno runtime; preserve all existing default links. One capacity-bounded allocation-free formatting failure domain, with efficient discarded padding and explicit pinned adapter transformations. Package TEXTTEST.PRG in both normal shell layouts, prove invalid-pointer fault containment, kill/reap/fresh generation and parent survival. No strtod/qsort duplication, engine/DOM, locale switching, clock, threads, kernel or benchmark changes."
+allowed_files = [
+  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+  "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+  "docs/architecture/USERSPACE_SDK_AND_PORTABILITY.md",
+  "docs/architecture/RING3_STRING_FORMAT_CONTRACT.md",
+  "userspace/text/include/stdio.h", "userspace/text/private/stdio_impl.h",
+  "userspace/text/private/wchar.h", "userspace/text/private/math.h",
+  "userspace/text/lib/stream.c", "userspace/libc/include/errno.h",
+  "scripts/build_user_text.py", "scripts/build_user_sdk.py",
+  "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+  "userspace/programs/texttest.c", "test/text_vectors.h", "test/text_host.c",
+  "test/test_text.py", "scripts/run_qemu_text.py"
+]
+invariants = [
+  "Ring3 only; no kernel, public ABI, authority, quota, TLS or existing consumer link change. Accepted QEMU/VMware kernels and BROWSER/HTMLWORK/GTEST/BENCHMARK must remain byte-identical.",
+  "Reuse committed SHA256-pinned musl archive with complete licenses; exact regular members, <=32 files, <=256KiB/member, <=1MiB selected bytes. Validate metadata before writes; generated source transformations exact-match and documented, originals retained.",
+  "No heap, file/console/network I/O, clock, locks, constructors or global stream state in the formatter. Output work proportional to retained padding, not discarded field width. Normal C caller pointer/vararg obligations remain explicit.",
+  "C default locale only: narrow bytes unchanged, wide basic ASCII and EILSEQ on unrepresentable characters. No setlocale/general stdio/POSIX compatibility claim. EINVAL/EOVERFLOW/EILSEQ use existing process-local errno storage.",
+  "Four bounded compiler workers maximum, 90s per compiler and 30s per host execution. Opt-in headers/archive/pkg-config, reproducible incremental inputs include recipes and all headers.",
+  "Guest1024MiB <=180s: two normal shell invocations, each normal/fault142/kill143/fresh normal37 with exact identities, reaping, unchanged parent rounding/errno and fresh shell. Invalid pointers are contained process faults, not claimed recoverable C errors."
+]
+targeted_tests = ["python test/test_text.py -v", "python test/test_libc_source.py -v", "python test/test_build_dependencies.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+  "python scripts/run_qemu_math.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r322-text/artifacts.json",
+  "python scripts/run_qemu_text.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r322-text/guest.log",
+  "python scripts/run_qemu_math.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r322-text/math.log"
+]
+acceptance = "Regression first, actual i386 O0/O2 C/C++ and fixed formatting vectors; independent host snprintf comparisons across at least128 bounded samples. All standard integer lengths/conversions, floating f/e/g/a and long double, signed zero/Inf/NaN, rounding, wide-C-locale errors, n/count, null+zero capacity, exact/truncated buffers and canaries, large resources, malformed/overflow formats and INT_MIN width rejection. INT_MAX discarded padding must finish under the unchanged host30s/guest180s bounds. SDK archive dependency allowlist, real linker and ordinary userspace command dispatch, both Windows/Make layouts. Targeted and reference gates once on final candidate; affected rerun only after documented focused in-scope repair with failed logs preserved. Existing byte-identical kernel/browser/benchmark artifacts reuse their accepted runtime/performance evidence; no new performance/WCET/browser-JavaScript claim."
+stop_conditions = ["Needed source outside allowed_files or unattributed/overlapping edits", "Kernel/authority/budget expansion", "Failed gate without a demonstrated focused in-scope correction"]
+commit_message = "feat: add bounded Ring-3 string formatting for JavaScript ports"
+evidence = []
 
 [[packages]]
 id = "R3.21-ring3-math-runtime"
@@ -1727,7 +1768,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

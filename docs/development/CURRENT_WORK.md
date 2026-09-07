@@ -2,6 +2,16 @@
 
 Stand: 7. September 2026
 
+## R3.22 aktiv: formatierte Ring-3-Zeichenketten
+
+Der naechste eingefrorene Browser-Voraussetzungsschnitt implementiert die
+tatsaechlich fehlenden snprintf/vsnprintf-Aufrufe von QuickJS, ohne dessen
+vorhandene dtoa/atod- und rqsort-Implementierungen zu duplizieren. Eigener
+opt-in SDK-Vertrag: [String formatting](../architecture/RING3_STRING_FORMAT_CONTRACT.md).
+Noch keine Implementierungs-/Gastabnahme oder JavaScript-Aktivierung.
+R3.21 und alle gesicherten Leistungsartefakte bleiben erhalten; R3.6b wird
+mit unveraenderten offenen Gates entsprechend dem Browservorrang zurueckgestellt.
+
 ## R3.21 abgeschlossen: mathematische Ring-3-Grundlage fuer JavaScript
 
 Alle eingefrorenen Gates bestehen nach den unten belegten gezielten
