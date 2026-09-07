@@ -2402,12 +2402,33 @@ static bool probe_fence_verify(void *context) {
         !process_identity_alive(control.pid, control.process_generation);
 }
 
+static void probe_abort_prepared_spawn(
+        const supervisor_probe_control_t *previous, int pid,
+        uint32_t generation, bool published, const char *stage) {
+    /* Only an unstarted private candidate reaches this path. Its PID cannot
+     * be recycled while it is PREPARED. Restore the non-running previous
+     * generation before reaping; never erase the successful-launch history.
+     * A failed protected rollback/termination fences outputs, not a retry or
+     * an attempt to repair untrusted kernel state in place. */
+    int restored = published ? supervisor_protected_probe_control_write(
+        &probe_runtime.control, previous) : 0;
+    int stopped = pid > 0 ? process_terminate(pid) : 0;
+    if (restored != 0 || stopped != 0) output_fence_all();
+    printf("REIST_PROBE START_FAILED stage=%s pid=%d generation=%u "
+           "rollback=%d stop=%d\n", stage, pid, generation, restored, stopped);
+}
+
 static bool probe_spawn_next(void) {
     static const char *const modes[] = {"crash", "hang", "invalid", "healthy"};
     supervisor_probe_control_t control;
     if (supervisor_protected_probe_control_read(
             &probe_runtime.control, &control) != 0 || control.active == 0U)
         return false;
+    if (control.launch_count == UINT32_MAX ||
+        (control.pid > 0 && (control.fenced == 0U ||
+         process_identity_alive(control.pid, control.process_generation))))
+        return false;
+    const supervisor_probe_control_t previous = control;
     uint32_t mode_index = control.launch_count;
     if (mode_index >= sizeof(modes) / sizeof(modes[0])) mode_index = 3U;
     const char *arguments[] = {"reist.prg", modes[mode_index]};
@@ -2432,20 +2453,34 @@ static bool probe_spawn_next(void) {
     probe_runtime.dhcp_delivery_crc32 = 0U;
     probe_runtime.dhcp_delivery_pending = 0U;
     if (icmp_delivery_clear() != 0 || udp_delivery_clear() != 0) return false;
-    int pid = supervisor_spawn_service("/libexec/reist/reist.prg", 2, arguments,
-                                       PROCESS_DOMAIN_PROBE);
+    /* Like driver/audio/compositor startup, the probe may not execute until
+     * the complete protected generation is visible to its first SELF_TEST.
+     * PREPARED admission keeps VFS/page work sleepable without a long global
+     * preemption guard. Initial and replacement launches share this path. */
+    int pid = process_spawn_supervised_prepared(
+        "/libexec/reist/reist.prg", 2, arguments, PROCESS_DOMAIN_PROBE);
     uint32_t generation = 0U;
-    if (pid <= 0 || process_get_identity(pid, &generation) != 0) return false;
+    if (pid <= 0 || process_get_identity(pid, &generation) != 0) {
+        probe_abort_prepared_spawn(&previous, pid, generation, false, "prepare-identity");
+        return false;
+    }
     control.pid = pid;
     control.process_generation = generation;
+    control.fenced = 1U;
     control.healthy = 0U;
     control.service_ready = 0U;
     ++control.launch_count;
     if (supervisor_protected_probe_control_write(
             &probe_runtime.control, &control) != 0) {
-        (void)process_terminate(pid);
+        probe_abort_prepared_spawn(&previous, pid, generation, false, "publish");
         return false;
     }
+    if (process_start_prepared_supervised(pid, generation) != 0) {
+        probe_abort_prepared_spawn(&previous, pid, generation, true, "start");
+        return false;
+    }
+    /* The child can already have reported, crashed or exited here. Do not
+     * re-read liveness or overwrite its newer protected state after start. */
     return true;
 }
 

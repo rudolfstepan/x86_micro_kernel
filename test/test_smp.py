@@ -225,12 +225,33 @@ class SmpTests(unittest.TestCase):
         paging = (ROOT / "arch/x86/mm/paging.c").read_text(encoding="utf-8")
         self.assertIn("page_table_lock = SPINLOCK_INIT", paging)
         for signature in ("page_directory_t *create_page_directory(",
-                          "void free_page_directory(",
+                          "bool free_page_directory_step(",
                           "int unmap_page(", "int map_page("):
             start = paging.index(signature)
             body = paging[start:paging.index("\n}", start) + 2]
             self.assertIn("page_table_lock_acquire_irq()", body)
             self.assertIn("page_table_lock_release_irq(", body)
+
+        # Directory teardown releases the lock between bounded steps. Check
+        # the actual mutator and its delegate, not a long outer IRQ exclusion.
+        start = paging.index("void free_page_directory(")
+        wrapper = paging[start:paging.index("\n}", start) + 2]
+        self.assertIn("free_page_directory_step(pd, &cursor)", wrapper)
+        self.assertIn("PAGE_TABLE_ENTRIES / 64U", wrapper)
+        self.assertNotIn("page_table_lock_acquire_irq()", wrapper)
+        self.assertNotIn("free_page(", wrapper)
+        start = paging.index("bool free_page_directory_step(")
+        step = paging[start:paging.index("\n}", start) + 2]
+        self.assertIn("work < 64U", step)
+        acquired = step.index("page_table_lock_acquire_irq()")
+        released = step.index("page_table_lock_release_irq(flags)")
+        for mutation in ("table[j] = 0U;", "entries[i] = 0U;",
+                         "free_page(table)", "free_page(pd)",
+                         "free_page((void*)(uintptr_t)(entry & 0xFFFFF000U))"):
+            with self.subTest(mutation=mutation):
+                self.assertLess(acquired, step.index(mutation))
+                self.assertLess(step.index(mutation), released)
+        self.assertLess(released, step.index("return complete;"))
 
     def test_tlb_shootdown_is_generation_scoped_and_bounded(self):
         paging = (ROOT / "arch/x86/mm/paging.c").read_text(encoding="utf-8")

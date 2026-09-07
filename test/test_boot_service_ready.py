@@ -43,7 +43,10 @@ class BootServiceReadyContractTests(unittest.TestCase):
 
     def test_readiness_is_protected_and_generation_reset(self):
         self.assertIn("uint32_t service_ready;", self.supervisor_h)
-        self.assertIn("SUPERVISOR_PROBE_CONTROL_VERSION 2U", self.supervisor_h)
+        # Version 3 already added protected post-ready CPU affinity; do not
+        # regress the production contract to the old readiness-only version.
+        self.assertIn("SUPERVISOR_PROBE_CONTROL_VERSION 3U", self.supervisor_h)
+        self.assertIn("uint32_t post_ready_cpu_affinity_mask;", self.supervisor_h)
         ready = function(self.supervisor, "bool supervisor_probe_ready(")
         self.assertIn("control.service_ready != 0U", ready)
         report = function(self.supervisor, "int supervisor_probe_report(")

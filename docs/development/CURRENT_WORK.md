@@ -1,8 +1,20 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 6. September 2026
+Stand: 7. September 2026
 
-## R1.2e freigegeben: Boot-/Probe-Starttransaktion
+## R1.2e abgenommen: Boot-/Probe-Starttransaktion
+
+Die folgende Startreparatur ist mit allen fuenf gezielten Hostgates (zusammen
+52 Testfaelle, einschliesslich gezielt reparierter Altannahmen), beiden
+Referenzbuilds und allen drei Gastgates abgenommen. Genau dieses Paket ist
+abgeschlossen; keine Paging-/ABI-/Frist-/Quotenlockerung und kein Browserumbau.
+Die unten beschriebenen Zwischenfehler und Belege bleiben sichtbar.
+
+Die vorgeschriebene Queue-Transition aktiviert formal den bisherigen
+Nachfolger R3.20. Dessen Implementierung und Stash-Wiederherstellung starten
+hier nicht: Vor weiterer Funktionsarbeit ist gemaess neuer Nutzerprioritaet
+zuerst das Anzeige-Paket nach `DESKTOP_DISPLAY_SETTINGS_PLAN.md` einzufrieren
+und vorzuziehen. Das Anzeige-Applet ist nicht implementiert.
 
 Der Nutzer hat das vorgeschaltete Reparaturpaket ausdruecklich freigegeben.
 Der vollstaendig zuordenbare, nicht abgenommene R3.20-Probeentwurf samt
@@ -27,6 +39,90 @@ Publikationsreihenfolge fuer Boot-, automatische und manuelle Probe-Recovery,
 mit deterministischem Regressionstest vor der Reparatur. Keine neue
 Schedulerfunktion, Wartezeit, Wiederholung oder Lockerung von Schutzbudgets.
 Paket und Abnahmebefehle sind vor Implementierung in der Queue eingefroren.
+
+Paketdefinition lokal committet als `b3b6f52b`; danach sauberer
+Implementierungsstart. Der neue reale Hosttest extrahiert die vollstaendige
+Spawnfunktion, die Ring-3-Startupfunktion sowie unveraenderte zusammenhaengende
+Startup-Reportfaelle. Er erzwingt Kind-Ausfuehrung vor Rueckkehr des Starters.
+Nach Korrektur einer uint64_t-Teststub-Signatur scheitert der alte Code
+deterministisch an `assert(probe_spawn_next())`: der fruehe Selbsttest wird
+abgewiesen und das Kind beendet sich vor der Identitaetsaufnahme. Beide
+Fehllogs bleiben unter `build/codex-agent/r12e/regression-before*.log`.
+
+Der Kandidat benutzt PREPARED, veroeffentlicht dann PID/Generation und den
+gefenceten Kontrollzustand und gibt erst danach die Ausfuehrung frei. Kein
+Stale-Write oder Liveness-Recheck nach erfolgreichem Start. Fehlgeschlagener
+Start restauriert vor Beenden den vorherigen nicht laufenden Kontrollzustand,
+einschliesslich Launch-Historie. Gescheiterte Ruecknahme/Bereinigung fencet
+Ausgaben; keine Wiederholung. Laufende/ungefencete Altgeneration und
+Zaehlerueberlauf werden vor dem Spawn abgewiesen. Kein Scheduler-, Prozess-,
+ABI-, Frist-, Quoten- oder Browserwechsel.
+
+Targeted: Probe O0/O2 PASS (1 Test, 1,015 s), sofortige/verzoegerte Reports,
+Sofort-Exit, vier Modi/Generationen, alte Identitaeten, sieben Ablehnungsstellen,
+Rollback-/Bereinigungsfehler und Aufnahmegrenzen. Supervisor 15 Tests PASS
+(2,263 s), Argumentpfad 1 Test PASS (0,549 s). Boot-Readiness: 3/4 PASS;
+alter Test erwartete Version 2, der unveraenderte Header hat seit `9a4bd883`
+Version 3 mit geschuetzter Post-ready-Affinitaet. Exakt diese Testannahme
+korrigiert und additiv das bestehende Feld geprueft; betroffener Test PASS
+(0,002 s). Keine Produktionsversion geaendert.
+
+Das SMP-Gate erreicht 30/31 PASS (2,351 s). Sein alter Pattern-Test erwartet
+`page_table_lock_acquire_irq()` unmittelbar in `free_page_directory`.
+Seit `8eb525d0` delegiert dieser begrenzte Wrapper jedoch an
+`free_page_directory_step`; dort umschliesst dieselbe Sperre weiterhin alle
+Mutationen. Kein durch diesen Kandidaten veraenderter Pagingpfad. Erforderlich
+ist eine eng begrenzte Testkorrektur, die Delegation UND Erwerb/Freigabe im
+Schritt prueft, statt eine globale Sperre um den ganzen Wrapper einzubauen.
+`test/test_smp.py` ist nicht im eingefrorenen erlaubten Dateiumfang;
+deshalb nicht veraendert, keine Gate-Abschwaechung und keine blinde Wiederholung.
+Freigabe fuer diese einzelne Testdatei ist angefragt. Referenz-/Gastgates
+stehen noch aus; Kandidat nicht committet, R1.2e weiterhin aktiv. Alle Logs
+liegen unter `build/codex-agent/r12e/gate-*.log`.
+
+Fortsetzung am 7. September: Nutzerfreigabe fuer genau `test/test_smp.py`
+liegt jetzt vor. Paket-/Planungscommit `3b905422` friert diese Erweiterung ein
+und haelt das Anzeige-Applet als naechste Funktionsprioritaet fest; vorhandene
+Kandidatenquellen blieben dabei uncommittet und unveraendert. Der SMP-Test
+prueft nun die Wrapper-Delegation und die bestehende Sperre im 64er-Schritt,
+einschliesslich Reihenfolge vor/nach allen Freigabe-/PTE-Mutationen. Die
+uebrigen SMP-Pruefungen bleiben erhalten; Pagingcode unveraendert.
+Repariertes SMP-Gate: 31 Tests PASS (1,852 s),
+`build/codex-agent/r12e/gate-smp-repair.log`. Unveraenderte bereits bestandene
+Hostgates wurden nicht wiederholt.
+
+Finale Referenz-/Gastabnahme, jeweils ein Lauf ohne Wiederholung:
+
+- `test-reist-package.ps1 -Target vmware -Video vga`: Exit 0,
+  vollstaendige Pflichtartefakte; Buildlog
+  `build/codex-agent/20260907-075738-package-vmware-vga.log` (ca. 18 s).
+  Der versteckte Kindprozess lieferte keinen stdout-Text an die aeussere
+  Umleitung; das innere Buildlog und die Artefakte sind vorhanden.
+- `test-reist-package.ps1 -Target qemu -Video vga`: PASS, 61 s;
+  `build/codex-agent/r12e/gate-package-qemu.log` und
+  `build/codex-agent/20260907-075850-package-qemu-vga.log`.
+- Beide eingefrorenen `run_qemu_smoke.py --boot-only --expect-reist-probe`
+  Aufrufe mit einer/vier CPUs: PASS (ca. 10 s / 9,984 s),
+  `build/codex-agent/r12e/boot-1.log`, `boot-4.log` und `gate-boot-*.log`.
+  Beide zeigen Crash-/Hang-/Invalid-Reply-Recovery und Reintegration;
+  SMP zusaetzlich `SCHEDULER_READY cpus=4 probe_mask=0000000E`.
+- `test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu
+  -Video vga`: PASS, 139,316 s unter der unveraenderten 180-s-Gastfrist;
+  `build/codex-agent/r12e/gate-browser-input.log`. Zwei echte Eingabe-/
+  Navigationssitzungen, absichtlicher Ring-3-Terminalbesitzer-Absturz,
+  funktionierende Konsole danach sowie frische Sitzung und erneuter
+  Konsolenrueckweg. Keine Behauptung einer R3.20-Latenzabnahme.
+
+Die finalen Screenshot-/Gastlogs liegen ebenfalls in
+`build/codex-agent/r12e/`; zuvor belegte gleichnamige Standard-Ausgaben sind
+unter `prior-desktop-evidence/` kopiert, nicht geloescht. Alle Testprozesse
+beendet, keine sichtbaren Windows-/VMware-Testfenster gestartet.
+QEMU-Image SHA256:
+`01e82ac54230f95763ad9c399bca74dc1d3c8305344739af9e3f5122c20f7e34`;
+Kernel SHA256:
+`2f1d5d134ec00b43473b3fdb286d6f685a07c1048de6412764d8f18c4d2c2d85`.
+Direkte Diff-/Scopepruefung bestaetigt ausschliesslich freigegebene Dateien;
+urspruengliche Gates, Stopbedingungen und Invarianten unveraendert.
 
 ## R3.19 abgenommen: Ressourcen-C++, SDK- und Ladewartekorrektur
 

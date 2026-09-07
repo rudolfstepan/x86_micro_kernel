@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R1.2e-probe-start-publication"
+active_id = "R3.20-browser-model-cpp"
 next_user_request = "2026-09-07: Desktop resolution configuration and a separate Display PRG applet in Control Panel take feature priority after acceptance of active R1.2e and before resuming R3.20. Inventory and safety/acceptance requirements: docs/development/DESKTOP_DISPLAY_SETTINGS_PLAN.md. Define and freeze the implementation package before activation; this request does not change the active scope or gates, accept its candidate, authorize the pending SMP test extension, or claim display functionality is implemented. Optional color scheme versus color depth remains to be clarified."
 
 [policy]
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R1.2e-probe-start-publication"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Publish probe generation before first Ring-3 execution"
@@ -1302,7 +1302,7 @@ evidence = []
 
 [[packages]]
 id = "R3.20-browser-model-cpp"
-status = "queued"
+status = "active"
 deferral = "2026-09-06: User approves the prerequisite R1.2e boot/supervisor repair. Preserve unaccepted harness in stash 5af103bac06f8a4e6b335f247ed4d89f42c4a59a and all r320 evidence. Baseline scroll p95 450.5252 ms exceeds 250 ms; later boot panic blocks diagnosis. Do not migrate the C model before a passing baseline; resume unchanged gates after R1.2e."
 phase = "post-s0"
 risk = "high"

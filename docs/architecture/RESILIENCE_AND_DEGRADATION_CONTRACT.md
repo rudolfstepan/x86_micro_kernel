@@ -104,6 +104,32 @@ Jeder Übergang besitzt eine monotone Frist und einen terminalen Fehler. Cleanup
 und Fencing sind idempotent, sodass ein zweiter Fehler während der Recovery
 keinen veralteten Zustand erneut autorisiert.
 
+### Veroeffentlichung der Probe-Startgeneration (R1.2e)
+
+Der vorhandene interne PREPARED-Prozessvertrag gilt auch fuer `reist.prg`:
+Admitieren und Laden erzeugen zuerst einen nicht ausfuehrbaren Prozess.
+PID, Prozessgeneration, Startzaehler und gesperrter Gesundheitszustand werden
+im bestehenden geschuetzten Kontrollobjekt veroeffentlicht. Erst danach
+gibt genau ein generationgepruefter Start den Task frei. Die erste Ring-3-
+Selbsttestmeldung darf unmittelbar eintreffen, sogar bevor die Startfunktion
+zum Supervisor zurueckkehrt. Danach darf der Starter weder eine veraltete
+Kopie zurueckschreiben noch einen inzwischen erfolgten Prozess-Exit als
+fehlgeschlagene Erstellung umdeuten; Exit/Crash gehoeren in die bestehende
+begrenzte Recovery, nicht in einen Start-Retry oder einen Boot-Panic.
+
+Boot, automatische Ersetzung und administratives `up` benutzen dieselbe
+Transaktion. Eine noch lebende beziehungsweise nicht gefencete alte
+Generation und ein ueberlaufender Startzaehler werden vor dem Spawn abgewiesen.
+Fehlgeschlagene Vorbereitung, Identitaetsaufnahme oder Veroeffentlichung
+beenden den noch nicht gestarteten Kandidaten. Bei fehlgeschlagener
+Startfreigabe wird zuerst der vorherige nicht laufende Kontrollzustand
+wiederhergestellt; dadurch bleiben Startanzahl und alte Generation sichtbar,
+ohne alte Autoritaet zurueckzugeben. Scheitern diese Ruecknahme oder das
+Beenden, werden Ausgaben gefencet und die bestehende terminale Behandlung
+greift. Kein Heilen unbekannter Kernkorruption, neuer Versuch oder
+veraendertes Recoverybudget. VFS-/Mappingarbeit bleibt sleepable; keine
+lange globale Preemptionssperre und keine neue Scheduler-/Syscall-ABI.
+
 ## Automatische und manuelle Recovery
 
 Automatischer Neustart ist nur erlaubt, solange Versuchs- und Gesamtzeitbudget

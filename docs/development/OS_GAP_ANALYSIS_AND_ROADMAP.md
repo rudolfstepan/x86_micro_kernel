@@ -2,13 +2,14 @@
 
 Stand: 3. September 2026
 
-Neue Funktionsprioritaet vom 7. September: Nach Abnahme des aktiven
-Boot-Reparaturpakets folgt die konfigurierbare Desktopaufloesung mit eigenem
+Neue Funktionsprioritaet vom 7. September: Nach dem inzwischen abgenommenen
+Boot-Reparaturpaket folgt die konfigurierbare Desktopaufloesung mit eigenem
 Anzeige-PRG in der Systemsteuerung, vor Fortsetzung der Browsermigration.
 Inventar, Schutzgrenzen und erforderliche Nachweise stehen im
 [Anzeige-Applet-Plan](DESKTOP_DISPLAY_SETTINGS_PLAN.md). Noch nicht implementiert;
 Farbschema/Farbtiefe sind als optionale Nutzerentscheidung getrennt erfasst.
-Der aktive Paketumfang und seine offenen Abnahmegates bleiben unveraendert.
+R1.2e ist mit 52 Hosttestfaellen, beiden Referenzbuilds und allen drei
+Gastgates abgeschlossen; keine Schutz-/Budgetlockerung. Details in CURRENT_WORK.
 
 Nutzervorgabe vom 6. September: `docs/REIST_CPP_MIGRATION_PLAN.md` wurde
 zunaechst unveraendert uebernommen; inzwischen ist Revision 1.1 nach Review
@@ -21,10 +22,12 @@ C++20 ohne globale dynamische Initialisierung/Exit-Registrierung. `R3.17`
 ist mit 80 Hosttests, beiden Referenzbuilds und beiden Gastgates abgenommen:
 TASK-2001 liefert die sechs minimalen allokationsfreien Hilfstypen.
 `R3.18-browser-response-cpp` und `R3.19-browser-resources-cpp` sind abgenommen;
-`R3.20-browser-model-cpp` ist noch nicht implementiert. Nach ausdruecklicher
-Freigabe des Nutzers ist zuerst allein `R1.2e-probe-start-publication` aktiv:
-Der Ring-3-Probestart muss seine geschuetzte Generation veroeffentlichen,
-bevor der Prozess erstmals laufen darf. Browserentwurf und nicht bestandene
+`R3.20-browser-model-cpp` ist noch nicht implementiert. Das vorgeschaltete
+`R1.2e-probe-start-publication` ist abgenommen: Der Ring-3-Probestart
+veroeffentlicht seine geschuetzte Generation, bevor der Prozess erstmals
+laufen darf. Die Queue aktiviert formal wieder R3.20; vor dessen Umsetzung
+ist jedoch der oben priorisierte Anzeige-Auftrag als Paket einzufrieren.
+Browserentwurf und nicht bestandene
 UI-Baseline bleiben gesichert; alle Migrationsgrenzen bleiben unveraendert.
 Keine Whole-OS-Migration oder Umgehung der bestehenden Ring-3-Architektur.
 
