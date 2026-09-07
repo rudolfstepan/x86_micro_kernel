@@ -2,7 +2,7 @@
 
 Stand: 28. August 2026
 
-R1.3-Kandidat vom 7. September (Abnahme noch offen): CPU-lokales internes
+R1.3 abgenommen am 7. September: CPU-lokales internes
 Layout Version7 mit 544-Byte-Schedulerkontext; 512 Bytes davon sind ein
 16-Byte-ausgerichtetes Intel-FXSAVE-Abbild. BSP und jeder AP initialisieren
 das gleiche FPU/FXSR/SSE-Profil mit CR0/CR4-Readback und gleicher MXCSR-Maske
@@ -11,6 +11,9 @@ Wechsel restauriert eager auch beim Null-old-Exit. Die vorhandenen affinen
 AP-Probetasks pruefen Defaults und CPU-eigenen XMM-Zustand ueber Sleep/Resume
 ohne Erweiterung ihrer Fristen oder Autoritaet. Vertrags- und Nachweisgrenze:
 [FPU-Kontextisolation](FPU_CONTEXT_ISOLATION_CONTRACT.md).
+QEMU-SMP4 und echte Workstation pruefen alle drei AP-Kontexte; der BSP
+publiziert deren Erfolg erst nach validiertem Ruecklauf und Reap. Kein
+Nachweis beliebiger Cross-CPU-Ring-3-Migration oder von Hardware-WCET.
 
 ## Abnahmegrenze der ersten Stufe
 

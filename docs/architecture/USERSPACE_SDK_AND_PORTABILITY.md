@@ -316,7 +316,7 @@ Menü- und Dialogfunktionen, ohne private Compositorheader einzubinden.
 
 ## Opt-in C++20-Profil 1 (R3.16)
 
-FP-Voraussetzung, R1.3-Kandidat vom 7. September (noch nicht abgenommen):
+FP-Voraussetzung, R1.3 abgenommen am 7. September:
 Der i386-Compiler verwendet fuer `double` bereits x87. Die neue kernelprivate
 Kontextisolation bewahrt x87/MMX/SSE-Daten und Controls generationsgebunden
 bei Taskwechseln. Frische Prozesse erhalten leere genullte Register,
@@ -324,7 +324,8 @@ x87-Control `0x037f` und MXCSR `0x1f80`; Fault/Kill/Exit behalten das normale
 Prozess-Reaping. Keine neue Startkonvention, oeffentliche ABI, Math/libc-
 Implementierung oder AVX-/XSAVE-/JavaScript-Freigabe. Der
 [FPU-Vertrag](FPU_CONTEXT_ISOLATION_CONTRACT.md) trennt Registerisolation
-von noch zu portierender Ring-3-Laufzeit und verpflichtender Gastabnahme.
+von noch zu portierender Ring-3-Laufzeit und dokumentiert die erbrachte
+QEMU-/Workstation-Gastabnahme. Keine allgemeine Math-/JavaScript-Zusage.
 
 TASK-1001/1002 verwendet den vorhandenen Clang/LLVM-i386-Pfad, ELF32,
 gewoehnliche statische Archive und unveraendertes MYPR v1. Referenzen sind

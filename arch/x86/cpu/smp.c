@@ -10,6 +10,7 @@
 
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/cpu_local.h"
+#include "arch/x86/include/fpu.h"
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/tss.h"
 #include "arch/x86/mm/paging.h"
@@ -90,6 +91,19 @@ static void smp_scheduler_probe_task(void) {
     uint32_t cpu_index = x86_cpu_current_index();
     KASSERT(cpu_index > 0U && cpu_index < X86_SMP_MAX_CPUS);
     KASSERT((smp_scheduler_release_mask & (1U << cpu_index)) != 0U);
+    uint32_t fp_before[128] __attribute__((aligned(16)));
+    uint32_t fp_after[128] __attribute__((aligned(16)));
+    KASSERT(x86_fpu_state_reset(fp_before));
+    KASSERT(x86_fpu_state_reset(fp_after));
+    __asm__ volatile("fxsave %0" : "=m"(fp_before));
+    KASSERT(fp_before[0]==0x037fU && !(fp_before[1]&0xffU) &&
+            fp_before[6]==0x1f80U);
+    for (unsigned i=8; i<72; ++i) KASSERT(fp_before[i]==0U);
+    /* A CPU-specific XMM payload survives a real task -> idle -> task switch.
+     * This bounded architecture probe is not a kernel math service. */
+    fp_before[40]=cpu_index;
+    __asm__ volatile("fxrstor %0" : : "m"(fp_before) : "memory");
+    KASSERT(scheduler_sleep_ms(1U)==0);
     KASSERT(kernel_mutex_lock_for(&smp_scheduler_mutex, 500U) == 0);
     uint32_t before = smp_mutex_probe_count;
     pit_delay(1U);
@@ -110,6 +124,9 @@ static void smp_scheduler_probe_task(void) {
             smp_scheduler_release_mask &&
         smp_parallel_probe != NULL && smp_parallel_probe(cpu_index))
         __sync_fetch_and_or(&smp_parallel_probe_passed_mask, cpu_bit);
+    __asm__ volatile("fxsave %0" : "=m"(fp_after));
+    KASSERT(fp_after[0]==fp_before[0] && fp_after[6]==fp_before[6]);
+    for (unsigned i=8; i<72; ++i) KASSERT(fp_after[i]==fp_before[i]);
     __sync_fetch_and_or(&smp_scheduler_entered_mask, 1U << cpu_index);
     __sync_synchronize();
 }
@@ -285,7 +302,8 @@ __attribute__((noreturn)) void x86_smp_ap_entry(uint32_t cpu_index) {
         timer_ticks == 0U ||
         !tss_init_cpu(cpu_index, shared->stack_top, 0x10U) ||
         !gdt_install_cpu(cpu_index) ||
-        !paging_prepare_cpu_memory_types()) {
+        !paging_prepare_cpu_memory_types() ||
+        !x86_fpu_initialize_cpu()) {
         shared->state = SMP_AP_STATE_FAILED;
         cpu_halt_forever();
     }
@@ -513,6 +531,10 @@ bool x86_smp_scheduler_probe(void) {
            smp_parallel_probe_passed_mask);
     printf("REIST_SMP REAP_READY workers=%u reaped=%u\n",
            smp_status.online_cpu_count - 1U, (uint32_t)reaped);
+    /* entered -> settled -> reap proves each AP's FP checks completed.
+     * Publish from the BSP so parallel serial writes cannot corrupt evidence. */
+    for (uint32_t cpu = 1U; cpu < smp_status.online_cpu_count; ++cpu)
+        printf("REIST_FPU AP_CONTEXT_OK cpu=%u\n", cpu);
     printf("REIST_SMP SCHEDULER_READY cpus=%u probe_mask=%08X\n",
            smp_status.online_cpu_count, smp_scheduler_settled_mask);
     return true;

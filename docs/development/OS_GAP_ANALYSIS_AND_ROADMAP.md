@@ -2,24 +2,23 @@
 
 Stand: 3. September 2026
 
-7. September, R1.3 ausdruecklich freigegeben: Vor der JavaScript-Portierung
-wird die fehlende x87/MMX/SSE-Kontextisolation als separates Kernelpaket
-geschlossen. Feste private FXSAVE-Abbilder, eager Save/Restore, CPU-Profil-
+7. September, R1.3 abgeschlossen: Vor der JavaScript-Portierung wurde die
+fehlende x87/MMX/SSE-Kontextisolation als separates Kernelpaket geschlossen.
+Feste private FXSAVE-Abbilder, eager Save/Restore, CPU-Profil-
 Admission und echte Prozessfehler-/Reuse-Gates; keine Quoten-/ABI-Lockerung.
 Vertrag: FPU_CONTEXT_ISOLATION_CONTRACT.md. JavaScript/DOM und libc bleiben
-spaetere Pakete; R3.6b bleibt mit allen offenen VMware-Gates zurueckgestellt.
+spaetere Pakete mit Benutzer-Vorrang; die Queue schaltet regelgemaess auf
+R3.6b, ohne dessen offene VMware-Gates vorwegzunehmen oder es hier umzusetzen.
 
-R1.3-Zwischenstand: Kandidat implementiert, 62 Hosttests und beide Referenzen
-PASS; Gastabnahme offen, weil installiertes QEMU-TCG beim entmaskierten
-SSE-Fehler keinen #XM liefert. Keine Implementierungsfreigabe oder Queue-
-Fortschaltung; Details und erhaltene Fehlbelege in CURRENT_WORK.md.
-Fortsetzung nach ausdruecklicher Freigabe der #XM-Verlagerung: VMware besteht
-den vollstaendigen FPU-Fehler-/Reuse-Nachweis und den gepaarten CPU-Vergleich
-(Single +3.82 Prozent, Multi +1.52 Prozent der Mediane; kein signifikanter
-Mehrleistungsclaim). 67 Hostfaelle und beide aktualisierten Referenzen PASS.
-QEMU liefert aber auch beim ungueltigen MXCSR keinen #GP; diese weitere
-Plattformgrenze ist noch nicht zur Aenderung freigegeben. Gesamt-Abnahme und
-Implementierungscommit bleiben offen; alte Fehlbelege werden nicht entfernt.
+R1.3-Abnahme: 71 Hostfaelle, beide Referenzen, APIC/PIT/SMP4, fehlende-SSE-
+Admission, Normal-/Browser-Eingabe und volle Workstation-Fehler-/Reuse-Proofs
+PASS. Explizit genehmigte Plattformzuordnung: echte #XM/invalid-MXCSR-#GP
+verpflichtend auf Workstation, TCG behaelt echten Alignment-#GP und alle
+Register-/Preemption-/Reuse-Pruefungen. Drei finale Workstation-Benchmarkpaare
+bestehen den 95-Prozent-Leistungsschutz: Single-Median +3.05 Prozent, Multi
++1.14 Prozent; keine statistisch gesicherte Mehrleistung oder 10x-Ursache
+behauptet. Keine Benchmark-/Budget-/ABI-Lockerung. Chronologie, alle alten
+Fehlbelege und finale Image-/Messdigests in CURRENT_WORK.md.
 
 7. September, R3.20 abgeschlossen: eine C++-Modellimplementierung hinter sechs
 unveraenderten C-Einstiegen, ohne neuen Navigations-/Worker-/Heapbesitz.

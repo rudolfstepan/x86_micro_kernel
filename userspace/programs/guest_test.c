@@ -1886,7 +1886,171 @@ static int fdd_hotplug_main(void) {
     return 0;
 }
 
+/* Private architecture regression, not a new FP or restore syscall. */
+static uint8_t fpu_expected[512] __attribute__((aligned(16)));
+static uint8_t fpu_observed[512] __attribute__((aligned(16)));
+static void fpu_diagnostic(const char *name,int value) {
+    char digits[11];
+    format_ipc_handle((uint32_t)value,digits);
+    x86os_puts("FPU_DIAG "); x86os_puts(name);
+    x86os_puts("="); x86os_puts(digits); x86os_puts("\n");
+}
+static void fpu_save(void) {
+    __asm__ volatile("fxsave %0" : "=m"(fpu_observed));
+}
+static void fpu_pattern(unsigned seed) {
+    for (unsigned i=0;i<512;++i) fpu_expected[i]=0;
+    fpu_expected[0]=0x7f;
+    fpu_expected[1]=(uint8_t)(3U|((seed&3U)<<2));
+    fpu_expected[4]=0xff;
+    fpu_expected[24]=0x80;
+    fpu_expected[25]=(uint8_t)(0x1fU|((seed&3U)<<5));
+    for (unsigned reg=0;reg<8;++reg) {
+        unsigned pos=32+16*reg;
+        fpu_expected[pos]=(uint8_t)(seed+reg);
+        fpu_expected[pos+7]=0x80;
+        fpu_expected[pos+8]=0xff;
+        fpu_expected[pos+9]=0x3f;
+    }
+    for (unsigned i=160;i<288;++i) fpu_expected[i]=(uint8_t)(i*17U+seed);
+    __asm__ volatile("fxrstor %0" : : "m"(fpu_expected) : "memory");
+}
+static int fpu_same(void) {
+    fpu_save();
+    for (unsigned i=0;i<5;++i) if(fpu_observed[i]!=fpu_expected[i]) return -1;
+    for (unsigned i=24;i<28;++i) if(fpu_observed[i]!=fpu_expected[i]) return -1;
+    for (unsigned reg=0;reg<8;++reg)
+        for (unsigned j=0;j<10;++j)
+            if(fpu_observed[32+16*reg+j]!=fpu_expected[32+16*reg+j]) return -1;
+    for (unsigned i=160;i<288;++i) if(fpu_observed[i]!=fpu_expected[i]) return -1;
+    return 0;
+}
+static int fpu_fresh(void) {
+    fpu_save();
+    if(fpu_observed[0]!=0x7f || fpu_observed[1]!=3 || fpu_observed[2] ||
+       fpu_observed[3] || fpu_observed[4] || fpu_observed[24]!=0x80 ||
+       fpu_observed[25]!=0x1f || fpu_observed[26] || fpu_observed[27]) return -1;
+    for (unsigned i=32;i<288;++i) {
+        if (i<160 && (i-32)%16>=10) continue;
+        if(fpu_observed[i]) return -1;
+    }
+    /* Volatile operands force the installed compiler's actual x87 arithmetic. */
+    volatile double a=1.25, b=2.5;
+    return a+b==3.75 && a*b==3.125 && b/a==2.0 ? 0 : -1;
+}
+static int fpu_work(unsigned seed) {
+    fpu_pattern(seed);
+    uint64_t start,now;
+    if(x86os_monotonic_ms(&start)!=0) return -1;
+    now=start;
+    /* Diagnostic CPU work: timer preemption, no voluntary yield in this phase. */
+    for(unsigned sample=0;sample<2000000U;++sample) {
+        if(fpu_same()!=0 || x86os_monotonic_ms(&now)!=0 || now<start) return -1;
+        if(now-start>=500U) break;
+    }
+    if(now-start<500U) return -1;
+    for(unsigned i=0;i<64;++i) {
+        if((i&1U ? x86os_yield() : x86os_sleep_ms(1U))!=0 || fpu_same()!=0)
+            return -1;
+    }
+    return 0;
+}
+static int fpu_child(const char *mode) {
+    if(fpu_fresh()!=0) return 91;
+    if(text_equal(mode,"fpu-fresh")) return 37;
+    if(text_equal(mode,"fpu-child")) return fpu_work(202)==0 ? 38 : 92;
+    fpu_pattern(203);
+    if(text_equal(mode,"fpu-dirty")) return 39;
+    if(text_equal(mode,"fpu-wait")) {
+        return x86os_sleep_ms(5000U)==0 ? 40 : 93;
+    }
+    if(text_equal(mode,"fpu-mf")) {
+        uint16_t control=0x037e;
+        __asm__ volatile("fninit; fldcw %0; fldz; fldz; fdivp; fwait"
+                         : : "m"(control) : "memory");
+    } else if(text_equal(mode,"fpu-xm")) {
+        uint32_t control=0x1f00;
+        __asm__ volatile("ldmxcsr %0; xorps %%xmm0,%%xmm0; divps %%xmm0,%%xmm0"
+                         : : "m"(control) : "memory");
+    } else if(text_equal(mode,"fpu-gp")) {
+        uint32_t invalid=0xffffffff;
+        __asm__ volatile("ldmxcsr %0" : : "m"(invalid) : "memory");
+    } else if(text_equal(mode,"fpu-gp-align")) {
+        /* Architectural #GP before the operand is restored. No INT surrogate. */
+        __asm__ volatile("fxrstor (%0)" : : "r"(fpu_expected+1) : "memory");
+    }
+    return 94; /* Expected exception was not delivered. */
+}
+static int fpu_spawn(const char *mode) {
+    const char *args[]={"/libexec/reist/gtest.prg",mode};
+    return x86os_spawnv(args[0],2,args);
+}
+static int fpu_reap(int pid,int expected) {
+    if(pid<=0) return -1;
+    int status=-1;
+    if(wait_for_process_state(pid,X86OS_PROCESS_ZOMBIE,5000U)!=0) {
+        if(x86os_kill(pid)==0) (void)x86os_wait(pid,&status);
+        return -1;
+    }
+    int waited=x86os_wait(pid,&status);
+    if(waited!=pid || status!=expected) {
+        fpu_diagnostic("waited",waited);
+        fpu_diagnostic("status",status);
+        fpu_diagnostic("expected",expected);
+        return -1;
+    }
+    return 0;
+}
+static int fpu_main(int tcg_profile) {
+    x86os_puts("FPU_BEGIN\n");
+    if(fpu_fresh()!=0) return 95;
+    fpu_pattern(31);
+    int child=fpu_spawn("fpu-child");
+    int worked=child>0 ? fpu_work(31) : -1;
+    int reaped=fpu_reap(child,38);
+    if(worked || reaped || fpu_same()!=0) return 96;
+    /* Both workloads passed and the child is reaped. A single reporter avoids
+     * interleaved console bytes without serializing the preemption workload. */
+    x86os_puts("FPU_PREEMPT_OK parent\nFPU_PREEMPT_OK child\n");
+    static const char *const modes[]={"fpu-dirty","fpu-mf","fpu-xm","fpu-gp"};
+    static const int statuses[]={39,144,147,141};
+    for(unsigned i=0;i<4;++i) {
+        /* Explicit test-platform contract, never runtime fault auto-detection. */
+        if(tcg_profile && i==2) continue;
+        const char *mode=tcg_profile && i==3 ? "fpu-gp-align" : modes[i];
+        if(fpu_reap(fpu_spawn(mode),statuses[i])!=0 || fpu_same()!=0) {
+            fpu_diagnostic("fault_index",(int)i); return 97;
+        }
+        if(fpu_reap(fpu_spawn("fpu-fresh"),37)!=0 || fpu_same()!=0) {
+            fpu_diagnostic("fresh_index",(int)i); return 98;
+        }
+    }
+    x86os_puts(tcg_profile ? "FPU_TCG_FAULTS_OK mf=144 gp_align=141 sse=workstation-required\n" :
+                           "FPU_FAULTS_OK mf=144 xm=147 gp=141\n");
+    child=fpu_spawn("fpu-wait");
+    if(child<=0) return 99;
+    if(wait_for_process_state(child,X86OS_PROCESS_SLEEPING,1000U)!=0 ||
+       x86os_kill(child)!=0) {
+        if(x86os_kill(child)==0) { int status; (void)x86os_wait(child,&status); }
+        return 100;
+    }
+    if(fpu_reap(child,143)!=0 || fpu_same()!=0 ||
+       fpu_reap(fpu_spawn("fpu-fresh"),37)!=0 || fpu_same()!=0) return 101;
+    x86os_puts(tcg_profile ? "FPU_REUSE_OK\nFPU_TCG_OK\n" : "FPU_REUSE_OK\nFPU_OK\n");
+    return 0;
+}
+
 int main(int argc, char **argv) {
+    if(argc==2 && (text_equal(argv[1],"fpu") || text_equal(argv[1],"fpu-tcg"))) {
+        int result=fpu_main(text_equal(argv[1],"fpu-tcg"));
+        if(result) { fpu_diagnostic("stage",result); x86os_puts("TEST_FAIL FPU\n"); }
+        return result;
+    }
+    if(argc==2 && (text_equal(argv[1],"fpu-child") || text_equal(argv[1],"fpu-fresh") ||
+       text_equal(argv[1],"fpu-dirty") || text_equal(argv[1],"fpu-wait") ||
+       text_equal(argv[1],"fpu-mf") || text_equal(argv[1],"fpu-xm") ||
+       text_equal(argv[1],"fpu-gp") || text_equal(argv[1],"fpu-gp-align")))
+        return fpu_child(argv[1]);
     if (argc == 2 && text_equal(argv[1], "sched-slack")) {
         x86os_puts("SCHED_SLACK_BEGIN\n");
         if (test_scheduler_slack_work() != 0 || test_scheduler_time() != 0 ||

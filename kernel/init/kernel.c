@@ -21,6 +21,7 @@
 #include "arch/x86/platform/acpi.h"
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/cpu_local.h"
+#include "arch/x86/include/fpu.h"
 #include "arch/x86/include/smp.h"
 #include "arch/x86/include/tss.h"
 #include "kernel/init/banner.h"
@@ -274,6 +275,13 @@ static void early_init(void) {
     idt_install();  // Interrupt Descriptor Table
     isr_install();  // CPU exception handlers (0-31)
     irq_install();  // Hardware interrupt handlers (32-47)
+    if (!x86_fpu_initialize_cpu()) {
+        printf("REIST_FPU UNSUPPORTED cpu=0\n");
+        printf("REIST_FPU BOOT_STAGE=%u\n", x86_fpu_boot_stage(0));
+        panic("Unsupported or inconsistent FPU context profile");
+    }
+    printf("REIST_FPU READY cpu=0 profile=fxsave-eager\n");
+    printf("REIST_FPU MXCSR_MASK=%08x\n", x86_fpu_mxcsr_mask(0));
     if (!serial_default_present()) {
         printf("COM1 unavailable; serial diagnostics disabled\n");
     }

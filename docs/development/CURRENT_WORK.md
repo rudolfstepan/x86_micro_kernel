@@ -2,7 +2,69 @@
 
 Stand: 7. September 2026
 
-## R1.3 freigegeben: FPU-Isolation vor JavaScript
+## R1.3 abgeschlossen: FPU-Isolation und VMware-Leistungsschutz
+
+Alle eingefrorenen Gates bestehen nach den unten belegten gezielten
+Testaufbau-Korrekturen. x87/MMX/SSE-Zustand ist nun kernelprivat pro Task-
+generation und CPU-Idle-Kontext gesichert, inklusive Null-old-Exit. Frische
+Generationen erhalten Standardkontrollen und genullte Register. Keine neue
+oeffentliche ABI, keine Quoten-/Schedulerpolicy-/Benchmarkaenderung.
+JavaScript, Math/libc und DOM bleiben separate, noch nicht umgesetzte Pakete.
+Die Queue schaltet regelgemaess auf R3.6b; dessen offene VMware-Abnahme wird
+weder vorweggenommen noch hier implementiert. Browser-Funktionsarbeit bleibt
+der dokumentierte Benutzer-Vorrang. Kein Agent, zusaetzlicher Worktree oder Push.
+
+Finale Belege relativ zu `build/codex-agent/r13-fpu/`; Kommandos vollstaendig
+im eingefrorenen Paket in `automation/reist-s03b.toml`:
+
+| Gate / Kommando | Ergebnis / Dauer | Finaler Beleg |
+|---|---|---|
+| `python test/test_fpu_context.py -v` | 15 PASS / 4.654 s | `host-fpu-prompt-final.log` |
+| `python test/test_smp.py -v` | 31 PASS / 1.700 s | `host-smp-ap-final.log` |
+| `python test/test_scheduler_slack.py -v` | 3 PASS / 1.014 s | `host-scheduler_slack.log` |
+| `python test/test_scheduler_time.py -v` | 18 PASS / 0.362 s | `host-scheduler_time.log` |
+| `python test/test_scheduler_resource_stats.py -v` | 4 PASS / 0.005 s | `host-scheduler_resource_stats.log` |
+| Referenz `test-reist-package.ps1 -Target vmware -Video vga` | PASS / 14 s | `package-preemption-vmware.log`, `../20260907-172414-package-vmware-vga.log` |
+| Referenz `test-reist-package.ps1 -Target qemu -Video vga` | PASS / 61 s | `package-preemption-qemu.log`, `../20260907-173333-package-qemu-vga.log` |
+| `run_qemu_fpu.py`, APIC | PASS / 18.995 s | `apic-alignment.log` |
+| `run_qemu_fpu.py --no-apic`, PIT | PASS / 18.861 s | `pit.log` |
+| `run_qemu_fpu.py --smp 4` | PASS / 20.113 s | `smp.log` |
+| `run_qemu_fpu.py --unsupported` | PASS / 4.416 s | `unsupported.log` |
+| `run_qemu_fpu.py --vmware-fpu-package build/vmware/reist-os` | PASS / 29 s Gast, 31.271 s Wrapper | `workstation-final-fpu.json`, `fpu-workstation-005ec0087e80488897a14bb505d2c53e/serial.log` |
+| Runtime `-Mode normal -Target qemu -Video vga` | PASS / 42 s | `runtime-normal.log`, `../20260907-171817-runtime-guest-smoke.log` |
+| Runtime `-Mode runtime-desktop-browser-input -Target qemu -Video vga` | PASS, 180-s-Gastdeadline eingehalten | `runtime-browser-input.log`, `accepted-qemu/runtime-desktop.browser.log` |
+| `run_qemu_fpu.py --vmware-benchmark-before ... --vmware-benchmark-after ...` | PASS, sechs Gaeste je 31/32 s | `vmware-final-paired.json`, `workstation-63a0dad8718f4823991429e54c8d5a19/` |
+
+Zusammen 71 Hostfaelle. Der Workstation-Gast prueft zweimal echte #MF16,
+#XM19 und invalid-MXCSR-#GP13 mit Status144/147/141, Eltern-/Kindzustand,
+Preemption/Sleep/Yield, Dirty-Exit, Kill/Reuse, alle APs, frische Shell und
+zehn Sekunden Stabilitaet. TCG prueft zweimal das ausdrueckliche Teilprofil
+mit echtem Alignment-#GP, keine simulierten Ausnahmen oder Erfolg bei Status94.
+
+Leistungsschutz: drei frische abwechselnde Workstation-Paare, vier CPUs,
+1024 MiB, keine parallelen Compiler/VMs. Single-Median 3976.82 ->4098.25
+MOp/s (103.0534 Prozent), Multi-Median 4036.62 ->4082.66 (101.1406 Prozent),
+beide oberhalb der eingefrorenen 95-Prozent-Grenze. Alle sieben CPU/RAM/HDD-
+Rohzeilen je Lauf sowie Ausgangsdisk-/VMX-/Harness-Digests im JSON. Keine
+statistisch gesicherte Mehrleistung, exakte 10x-Ursache oder WCET behauptet;
+kurze RAM/HDD-Messungen bleiben tickquantisierte Diagnostik. Ausgangsimages
+und VMX nach den Messungen unveraendert rueckgeprueft.
+
+Finales VMware-Paket in `build/vmware/reist-os` und separat `accepted-vmware/`:
+Raw-/Flatdisk SHA256 `d946ad6301d948104b0d40e18b6e2341129c2663268497cec9e596c694ed5c25`,
+Kernel `49a2a5defc545c9687add43418f47b5cd1db03e4f93ac6a9fc5ead4086681a2c`.
+Finales gemeinsames `build/reist-os.img` ist QEMU-Profil, separat in
+`accepted-qemu-final/`: SHA256
+`2979767396f0b9febd7da1584dc8ecfe7ff9a7fa0f7817de504a846f27405ee8`,
+Kernel `360739585ff3c46ac6ca097fab8fa86911b7e6f7037fa4c4030e083ade950cdd`.
+BENCHMARK.PRG bleibt 28672 Bytes, SHA256
+`b001fb18597e4122dc1dad928649c8c281c71bea0cee7b19887074e13facbfb3`;
+finales GTEST `48de1c2e41255309083ba67d3649e218c2a15a3ce12622237be2c4f52026d6c0`.
+Alle beobachteten Vorherimages, Stashes, Zwischen-PASS- und Fehlbelege bleiben
+erhalten. Die folgende Chronologie beschreibt fruehere Zustaende, nicht die
+aktuelle Abnahme; insbesondere sind ihre damaligen Stopps jetzt aufgeloest.
+
+### Historie: R1.3 freigegeben, FPU-Isolation vor JavaScript
 
 Benutzerfreigabe nach konkreter Vorpruefung: i386-Compiler erzeugt `fldl`/
 `faddl`, der bisherige Scheduler bewahrt diesen Zustand nicht. Sauberer
@@ -148,7 +210,7 @@ BENCHMARK.PRG unveraendert `b001fb18597e4122dc1dad928649c8c281c71bea0cee7b198870
 QEMU-Referenz PASS / 61 s (`package-ap-qemu.log`, Detail
 `../20260907-165940-package-qemu-vga.log`); QEMU-Laufzeitabnahme noch offen.
 
-### Aktueller Stopp: QEMU liefert auch den invalid-MXCSR-#GP nicht
+### Historischer Stopp: QEMU liefert auch den invalid-MXCSR-#GP nicht
 
 Der eingefrorene APIC-Teilprofilaufruf
 `python scripts/run_qemu_fpu.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r13-fpu/apic-tcg.log`
@@ -178,6 +240,52 @@ unter Workstation pruefen und QEMU-#GP ueber fehl-ausgerichtetes FXRSTOR
 erhalten. Queue und FPU-Vertrag frieren diese Zuordnung vor Umsetzung ein.
 Alle Fehler-/Reuse-Anforderungen und Leistungsgrenzen bleiben unveraendert;
 neue finale Lognamen erhalten die vorigen Fehl- und PASS-Belege.
+
+### R1.3 Abschlusslauf: gezielte Testaufbau-Korrekturen
+
+Vertragscommit `7815e89a` friert den echten Alignment-#GP fuer TCG ein.
+APIC/PIT/SMP4 bestehen danach in 19.024/19.053/20.313 s. Der erste negative
+CPU-Gast scheitert nach 60.040 s vor der FPU-Pruefung: das Pentium-Modell
+kennt das vom bestehenden Kernel verwendete `cmovb` nicht. Interrupttrace
+`diagnostic-pentium-interrupts.log` zeigt #UD bei EIP `001a5376`, dann Triple
+Fault; Disassembly bestaetigt exakt diese Instruktion. `unsupported-pentium-failure.log`
+bleibt erhalten. Die negative Fixture verwendet nun dieselbe Integer-Basis
+`qemu32` ohne SSE/SSE2, unveraenderte 60-Sekunden-Grenze und ausdrueckliche
+FPU-Profilablehnung vor READY/BOOT_OK/Shell: PASS / 4.416 s (`unsupported.log`).
+Keine Aenderung am Kernel und keine Pentium-/i586-Kompatibilitaetszusage.
+
+Normalgast PASS / 42 s (`runtime-normal.log`, Detail
+`../20260907-171817-runtime-guest-smoke.log`); Browser-Input PASS
+(`runtime-browser-input.log`) einschliesslich Tastatur/Edit/Navigation,
+Crash/Restart und neuer Konsolenantwort. Geprueftes QEMU-Rawimage, Kernel,
+GTEST, Benchmark und Browser-Rohlog/Screenshot liegen in `accepted-qemu/`;
+dieser Zwischenstand bleibt auch nach der letzten reinen Testausgabekorrektur
+erhalten. Rawimage SHA256
+`1b882eae26ccc8c30396fe711b9a7d5d3eee60a4150e8cdb605ca11e4e802d8b`,
+Kernel `360739585ff3c46ac6ca097fab8fa86911b7e6f7037fa4c4030e083ade950cdd`.
+
+Der Workstation-Abschlusslauf liefert alle Fehlervektoren und Reuse-Erfolge,
+aber Eltern-/Kindausgabe ueberlagert sich zu `FPU_PREEFPU_PREEMPT_OK parent`.
+`workstation-final-fpu-preemption-failure.json` und Rohlog bleiben erhalten.
+Nun meldet ausschliesslich der Elternprozess nach erfolgreichem Kindstatus38,
+Reap und Zustandsvergleich beide Erfolge. Die beiden 500-ms-Workloads, ihre
+gleichzeitige Ausfuehrung, Sleep/Yield, Faults und Statuspruefungen bleiben
+unveraendert. Vorherregression `preemption-evidence-before.log`.
+
+Im naechsten Workstation-Start zerstoeren Hintergrundmeldungen den ersten
+Shellprompt; kein GTEST wurde gestartet. `workstation-final-fpu-prompt-failure.json`
+bewahrt diesen vollstaendig bis zur 180-Sekunden-Deadline fehlgeschlagenen Lauf.
+Die bereits verhaltensgepruefte einmalige Leerzeilenanforderung des Benchmark-
+Preflight gilt jetzt auch fuer FPU, erst nach den anderen Bereitschaftsmarkern.
+Keine Fristlockerung, keine Wiederholung mehrdeutiger Test-/Benchmarkbefehle.
+Vorherregression `fpu-prompt-before.log`; final 15 FPU-Hosttests PASS / 4.654 s
+(`host-fpu-prompt-final.log`). Kernel und BENCHMARK.PRG bleiben bytegleich.
+
+Betroffen erneut zu pruefen: FPU-Host, beide Referenzen fuer das endgueltige
+GTEST, APIC/PIT/SMP4 mit neuen Erfolgsausgaben und volle Workstation-FPU-Abnahme.
+Normal-/Browser-/Unsupported- und die vier anderen Hostgates bleiben gueltig:
+deren Kernel und ausgefuehrte Programmpfade wurden nicht geaendert. Der finale
+Leistungsvergleich bleibt verpflichtend; keine Gesamtfreigabe aus Teilbelegen.
 
 ## R3.20 abgeschlossen: Browsermodell hinter der C-Grenze
 

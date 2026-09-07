@@ -75,6 +75,9 @@ typedef struct {
     uint32_t esi;  // Callee-saved Register
     uint32_t edi;  // Callee-saved Register
     uint32_t eip;  // Instruction Pointer
+    /* Intel FXSAVE image at internal assembly offset 32, including padding.
+     * Same generation and kernel-only lifetime as the surrounding context. */
+    uint32_t fpu_state[128] __attribute__((aligned(16)));
 } context_t;
 
 typedef struct task {

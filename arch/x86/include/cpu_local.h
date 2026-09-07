@@ -8,10 +8,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define X86_CPU_LOCAL_VERSION 6U
+#define X86_CPU_LOCAL_VERSION 7U
 #define X86_CPU_LOCAL_MAX 16U
 #define X86_CPU_INDEX_INVALID UINT32_MAX
-#define X86_SCHEDULER_CONTEXT_WORDS 6U
+#define X86_SCHEDULER_CONTEXT_WORDS 136U
 
 struct page_directory;
 
@@ -34,7 +34,8 @@ typedef struct {
     volatile uint32_t lapic_timer_calibrated;
     uint32_t kernel_idle_stack_low;
     uint32_t kernel_idle_stack_high;
-    uint32_t scheduler_context[X86_SCHEDULER_CONTEXT_WORDS];
+    uint32_t scheduler_context[X86_SCHEDULER_CONTEXT_WORDS]
+        __attribute__((aligned(16)));
     struct page_directory *current_page_directory;
 } x86_cpu_local_t;
 

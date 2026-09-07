@@ -1,11 +1,19 @@
 # i386 FPU-Kontextisolation (R1.3)
 
-Stand: 7. September 2026. Freigegebenes Voraussetzungspaket, noch nicht abgenommen.
+Stand: 7. September 2026. R1.3 auf den eingefrorenen Referenzprofilen abgenommen.
+
+71 Hostfaelle, beide Referenzen, QEMU APIC/PIT/SMP4 und negative CPU-Admission,
+Normal-/Browser-Input sowie echte Workstation-FPU- und Leistungsgates bestehen.
+Workstation liefert zweimal #MF/#XM/invalid-MXCSR-#GP; TCG verwendet die unten
+ausdruecklich freigegebene Teilprofilzuordnung. Drei Benchmarkpaare halten die
+CPU-Mediane oberhalb der eingefrorenen 95-Prozent-Grenze. Finale Kommandos,
+Laufzeiten, Images, Digests und erhaltene Fehlbelege stehen in
+[CURRENT_WORK](../development/CURRENT_WORK.md). Keine JavaScript-Freigabe.
 
 ## Fehler und Grenze
 
 Der installierte i386-Compiler erzeugt fuer `double` x87-Instruktionen.
-Der bisherige `swtch` sichert nur GPR/Stack, keine FP-Register oder Rundungs-
+Der vorherige `swtch` sicherte nur GPR/Stack, keine FP-Register oder Rundungs-
 und Fehlerkontrollen. JavaScript darf auf dieser Grundlage nicht aktiviert
 werden. Der Benutzer gibt die separate Kernelkorrektur ausdruecklich frei.
 Nur der minimale CPU-Kontextmechanismus gehoert in Ring 0; Engine, Math/libc,
@@ -72,7 +80,25 @@ Ready. Zusaetzlich beide Referenzbuilds, Normal- und Browser-Input-Gastgate.
 Keine Laufzeitbehauptung allein aus Quellmustern/Hosttests; kein Nachweis
 tatsaechlicher Ring-3-Migration zwischen CPUs oder von Hardware-WCET.
 
-### Offener Abnahmebefund vom 7. September
+Der negative Gast behaelt die Integer-ISA-Basis `qemu32` und entzieht gezielt
+SSE/SSE2. Das zuerst verwendete Pentium-Modell hat auch kein CMOV und
+scheitert nachweislich schon an `cmovb` bei EIP `001a5376` vor der IDT-/FPU-
+Initialisierung; der Triple-Fault-Fehlbeleg bleibt erhalten. Die korrigierte
+Fixture verlangt weiterhin die ausdrueckliche Profilablehnung vor READY,
+BOOT_OK und Shell innerhalb 60 Sekunden. Keine neue Pentium-/i586-Zusage.
+
+Eltern- und Kind-Preemption bleiben gleichzeitig aktiv. Erst nach erfolgreichem
+Kindstatus38, Reap und erneutem Elternzustandsvergleich publiziert der Eltern-
+prozess beide Marker; parallele Konsolenschreiber duerfen den Nachweis nicht
+zerstueckeln. Ein echter Workstation-Fehllauf dokumentiert dieses Interleaving.
+Der FPU-Harness darf wie das Benchmark-Preflight bei nachgewiesener uebriger
+Bereitschaft genau eine Leerzeichenzeile fuer einen frischen Shellprompt
+senden. Keine Testwiederholung bei mehrdeutiger Zustellung, keine neue Deadline.
+
+### Historischer Abnahmebefund vom 7. September
+
+Die folgenden Befunde und Freigaben sind die erhaltene Chronologie. Fuer den
+aktuellen Abschluss gelten die finale Zuordnung und die Abnahme oben.
 
 62 Hosttests und beide Referenzbuilds bestehen. Der erste APIC-Gastlauf
 erreicht Registererhalt und echte #MF-Prozessbeendigung, aber nicht #XM:
@@ -157,7 +183,7 @@ Mindestwerte unveraendert lassen. Das Screenshot-Ergebnis (Single 4194.30,
 Multi 4051.85 MOp/s; RAM je 16000 MiB/s; HDD 12800/42666.66 KiB/s) ist eine
 Benutzerbeobachtung, noch keine eigene Messung oder gesicherte 10x-Ursache.
 
-Der verpflichtende Vergleich besteht inzwischen: Single-Median
+Ein vorheriger verpflichtender Vergleich bestand bereits: Single-Median
 3947.58/4098.25 MOp/s (vorher/nachher), Multi-Median 4013.98/4074.92 MOp/s,
 jeweils ueber 95 Prozent. Sechs frische Workstation-Laeufe, keine parallelen
 VMs/Compiler; Ausgangsdisks und VMX rueckgeprueft unveraendert. Artefakt
@@ -166,3 +192,10 @@ Digests. Die einzige Benchmark-Harness-Korrektur fordert bei ueberlagertem
 Bootprompt nach den anderen Bereitschaftsmarkern einmalig eine leere
 Shellzeile an; Benchmarkpfad, Messung, Fristen und Grenzwerte unveraendert.
 Die vorherige an fehlendem Prompt gescheiterte Reihe bleibt separat erhalten.
+
+Die finale Reihe mit endgueltigem GTEST und Harness besteht ebenfalls:
+Single-Median 3976.82/4098.25 MOp/s, Multi-Median 4036.62/4082.66 MOp/s,
+entsprechend 103.0534 bzw. 101.1406 Prozent. Sechs frische Laeufe mit den
+unveraenderten Bedingungen, Rohwerte und Digests in `vmware-final-paired.json`.
+Kein signifikanter Mehrleistungsclaim; der 95-Prozent-Regressionsschutz ist
+fuer diese Referenzmessung erbracht, nicht fuer beliebige zukuenftige Builds.

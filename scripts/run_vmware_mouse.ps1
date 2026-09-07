@@ -9,6 +9,7 @@ param(
     [ValidateRange(10, 60)] [int]$PostSuccessStabilitySeconds = 10,
     [switch]$ExpectCompositorRestart,
     [switch]$Benchmark,
+    [switch]$FpuIsolation,
     [switch]$Rename,
     [switch]$SvgaLifecycle,
     [switch]$DisplayModes,
@@ -24,6 +25,10 @@ $minimumBenchmarkCpuRatio = 0.90
 $maximumHoverFrameMs = 17
 $maximumPointerGapMs = 34
 $maximumMouseBatchReports = 4
+if ($FpuIsolation -and ($Benchmark -or $Rename -or $SvgaLifecycle -or
+        $DisplayModes -or $HoverCadence -or $ExpectCompositorRestart -or $Visible)) {
+    throw 'FPU isolation requires an exclusive hidden Workstation run.'
+}
 if ($DisplayModes -and ($Benchmark -or $Rename -or $SvgaLifecycle -or
         $HoverCadence -or $ExpectCompositorRestart -or $Visible)) {
     throw 'Display modes require an exclusive hidden Workstation run.'
@@ -152,6 +157,7 @@ if ($Rename) {
         'VFAT_LFN_FAIL'
     )
 }
+if ($FpuIsolation) { $forbidden += 'TEST_FAIL' }
 $running = & $vmrun -T ws list 2>$null
 $runningVms = @($running | Where-Object {
     $_.Trim() -and $_.Trim() -notmatch '^Total running VMs:'
@@ -538,6 +544,14 @@ function Assert-NoForbiddenMarker([string]$Text) {
     }
 }
 
+function Test-FreshShellPromptNeeded([string]$Text, [bool]$Attempted) {
+    if ($Attempted -or $Text.Contains($shellMarker)) { return $false }
+    foreach ($marker in $requiredBeforeInput) {
+        if ($marker -ne $shellMarker -and !$Text.Contains($marker)) { return $false }
+    }
+    return $true
+}
+
 function Wait-PostSuccessStability([string]$Mode, [int]$BaselineBootCount,
                                    [int]$BaselineLoaderCount) {
     $stabilityDeadline = (Get-Date).AddSeconds($PostSuccessStabilitySeconds)
@@ -682,13 +696,27 @@ try {
     }
     $deadline = $watch.Elapsed.Add([TimeSpan]::FromSeconds($modeTimeout))
     if ($DisplayModes) { $deadline = [TimeSpan]::FromSeconds($TimeoutSeconds) }
+    if ($FpuIsolation) { $deadline = [TimeSpan]::FromSeconds(180) }
     $missing = $requiredBeforeInput
+    $freshPromptAttempted = $false
     while ($watch.Elapsed -lt $deadline) {
         $text = Read-SerialText
         Assert-NoForbiddenMarker $text
         $missing = @($requiredBeforeInput |
             Where-Object { !$text.Contains($_) })
         if ($missing.Count -eq 0) { break }
+        if (($Benchmark -or $FpuIsolation) -and (Test-FreshShellPromptNeeded $text $freshPromptAttempted)) {
+            # A baseline AP can interleave the boot prompt. One whitespace-only
+            # command requests a fresh prompt; it never runs the benchmark or
+            # retries ambiguous benchmark delivery. The same deadline remains.
+            $freshPromptAttempted = $true
+            if (![ReistRfbInput]::SendCommand($vncPort, ' ')) {
+                throw 'Fresh shell prompt request could not be delivered.'
+            }
+            $promptMode = if ($FpuIsolation) { 'fpu' } else { 'benchmark' }
+            "$promptMode preflight fresh-prompt request=1 transport=rfb-loopback" |
+                Add-Content -LiteralPath $GateLog -Encoding utf8
+        }
         Start-Sleep -Milliseconds 250
     }
     if ($missing.Count -ne 0) {
@@ -783,6 +811,42 @@ try {
         $text | Add-Content -LiteralPath $GateLog -Encoding utf8
         $passed = $true
         Write-Output "VMWARE DISPLAY MODES PASS elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$GateLog"
+        return
+    }
+
+    if ($FpuIsolation) {
+        function Send-FpuCommand([string]$Command, [string[]]$Markers) {
+            $offset = (Read-SerialText).Length
+            # One injection per command; ambiguous partial delivery fails.
+            if (![ReistRfbInput]::SendCommand($vncPort, $Command)) {
+                throw "FPU RFB command delivery failed: $Command"
+            }
+            foreach ($marker in $Markers) {
+                $found = -1
+                while ($watch.Elapsed -lt $deadline) {
+                    $current = Read-SerialText
+                    Assert-NoForbiddenMarker $current
+                    $found = $current.IndexOf($marker, $offset, [StringComparison]::Ordinal)
+                    if ($found -ge 0) { break }
+                    Start-Sleep -Milliseconds 100
+                }
+                if ($found -lt 0) { throw "FPU deadline waiting for: $marker" }
+                $offset = $found + $marker.Length
+            }
+        }
+        for ($iteration = 0; $iteration -lt 2; ++$iteration) {
+            Send-FpuCommand '/libexec/reist/gtest.prg fpu' @('FPU_BEGIN', 'FPU_OK', $shellMarker)
+            Send-FpuCommand 'help' @('Built-ins: cd path pwd history help exit', $shellMarker)
+        }
+        $text = Read-SerialText
+        $bootCount = ([regex]::Matches($text, 'BOOT_OK')).Count
+        $loaderCount = ([regex]::Matches($text, 'x86 native BIOS loader')).Count
+        $text = Wait-PostSuccessStability 'fpu' $bootCount $loaderCount
+        if ($watch.Elapsed -ge $deadline) { throw 'FPU stability exceeded guest deadline.' }
+        $text | Set-Content -LiteralPath $GateLog -Encoding utf8
+        # The outer FPU runner validates exact vectors, statuses, APs and counts.
+        $passed = $true
+        Write-Output "VMWARE FPU TRANSCRIPT READY elapsed=$([int]$watch.Elapsed.TotalSeconds)s log=$GateLog"
         return
     }
 
@@ -1325,6 +1389,10 @@ try {
     }
 }
 finally {
+    if ($FpuIsolation -and !$passed) {
+        try { Read-SerialText | Add-Content -LiteralPath $GateLog -Encoding utf8 }
+        catch { Write-Warning "FPU evidence write failed: $_" }
+    }
     if ($null -ne $script:hoverSession) {
         try {
             $script:hoverSession.Dispose()

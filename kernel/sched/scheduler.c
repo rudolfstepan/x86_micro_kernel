@@ -10,6 +10,7 @@
 
 #include "arch/x86/include/interrupt.h"
 #include "arch/x86/include/cpu_local.h"
+#include "arch/x86/include/fpu.h"
 #include "arch/x86/include/smp.h"
 #include "arch/x86/include/sys.h"
 #include "arch/x86/include/tss.h"
@@ -84,6 +85,10 @@ _Static_assert(sizeof(runtime_timing_stats_t) == 72U,
 _Static_assert(sizeof(context_t) ==
                    X86_SCHEDULER_CONTEXT_WORDS * sizeof(uint32_t),
                "per-CPU scheduler context layout changed");
+_Static_assert(offsetof(context_t,fpu_state)==X86_FPU_CONTEXT_OFFSET &&
+               sizeof(((context_t *)0)->fpu_state)==X86_FPU_STATE_BYTES &&
+               _Alignof(context_t)==16 && offsetof(task_t,context)%16==0,
+               "FXSAVE switch layout/alignment changed");
 
 #define SCHEDULER_QUANTUM_MS 10U
 #define KERNEL_STACK_GUARD 0x4B535447U /* "KSTG" */
@@ -753,7 +758,8 @@ static int create_task_with_affinity(void (*entry_point)(void),
     for (uint32_t cpu = 0U; cpu < X86_CPU_LOCAL_MAX; ++cpu) {
         if ((cpu_affinity_mask & (1U << cpu)) == 0U) continue;
         x86_cpu_local_t *local = x86_cpu_local_by_index(cpu);
-        if (local == NULL || local->online == 0U) return -1;
+        if (local == NULL || local->online == 0U ||
+            !x86_fpu_cpu_ready(cpu)) return -1;
     }
 
     bool process_locked = process != NULL;
@@ -786,6 +792,7 @@ static int create_task_with_affinity(void (*entry_point)(void),
     task_t *task = &tasks[task_id];
     memset(task, 0, sizeof(*task));
     KASSERT(next_task_generation != UINT32_MAX);
+    KASSERT(x86_fpu_state_reset(task->context.fpu_state));
     ++next_task_generation;
     task->task_generation = next_task_generation;
     task->status = TASK_FINISHED;

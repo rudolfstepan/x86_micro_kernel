@@ -186,7 +186,7 @@ FRAME_WARNING_FLAGS ?= -Wframe-larger-than=4096 -Werror=frame-larger-than=4096
 CFLAGS := -m32 -std=gnu11 -c -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
           -fno-builtin -fno-pic -fno-pie -fno-stack-protector \
           -Werror=vla $(FRAME_WARNING_FLAGS) \
-          -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-sse -mno-sse2 -mno-mmx \
+          -fno-asynchronous-unwind-tables -fno-unwind-tables -mno-sse -mno-sse2 -mno-mmx -msoft-float \
           -O2 -DNDEBUG -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable -U_FORTIFY_SOURCE \
           -Werror=implicit-function-declaration -Werror=incompatible-pointer-types \
           -Werror=int-conversion -Werror=return-type \
