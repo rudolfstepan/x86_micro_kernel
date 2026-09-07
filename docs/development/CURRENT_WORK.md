@@ -2,6 +2,16 @@
 
 Stand: 7. September 2026
 
+## R3.25 aktiv: JavaScript im tatsaechlichen Browser
+
+Ausdruecklicher Nutzervorrang: schnell sichtbare Seitenskripte auf4b2b3302.
+Parsergeordnete klassische Inline-Skripte mit document.title/getElementById/
+textContent, beide Worker direkt vom Browser besessen, asynchroner Transport
+und quelltextgenaues Mutationsjournal fuer Reflow statt Skriptwiederholung.
+Vertrag/Gates vor Umsetzung eingefroren in BROWSER_SCRIPTING_CONTRACT.md und
+Queue. Keine neue unbenutzte Runtime-Grundlage; externe Skripte, Events und
+weitere Web-APIs bleiben nach diesem aktivierenden Schnitt offen.
+
 ## R3.24 abgeschlossen: persistenter JavaScript-Dienst
 
 Auf sauberem a09d8841, Paketvertrag90a51376: separate JSWORK-Prozessgrenze

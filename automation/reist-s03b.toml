@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-07: User says mach weiter after a09d8841. Execute the next complete browser prerequisite: a persistent separately owned JSWORK process, framed IPC and nonblocking C++ parent lifecycle with self-test, resource admission, cancellation, exact-generation fencing/reap and bounded recovery. DOM ownership/events and browser activation remain the next independent document-semantics boundary. Preserve accepted core and UI/benchmark binaries. R3.6b remains deferred; no agents or push."
+active_id = "R3.25-browser-inline-javascript"
+next_user_request = "2026-09-07: User explicitly prioritizes JavaScript in the actual browser as quickly as possible after4b2b3302. Activate parser-ordered inline scripts and real document title/get-by-id/text mutations through the accepted isolated service, with direct browser ownership, bounded failures and source-exact reflow journal. No further standalone runtime prerequisite or broad C++ migration. R3.6b remains deferred; no agents/push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,47 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.25-browser-inline-javascript"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Actual browser inline JavaScript and bounded document mutations"
+scope = "One document-publication boundary: Hubbub parser-ordered classic inline scripts, shared JS realm in directly browser-owned JSWORK, bounded tree snapshot and transactional text/title mutation journal, source-exact reflow without reexecution, navigation fencing and actual visible browser acceptance. No external scripts/events/network APIs or kernel/SDK/core changes."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+ "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md", "docs/architecture/BROWSER_SCRIPTING_CONTRACT.md",
+ "userspace/gui/apps/browser/main.c", "userspace/gui/apps/browser/html_engine.h", "userspace/gui/apps/browser/html_engine.c",
+ "userspace/gui/apps/browser/html_worker.c", "userspace/gui/apps/browser/html_protocol.h", "userspace/gui/apps/browser/html_protocol.c",
+ "userspace/gui/apps/browser/css_engine.c", "userspace/gui/apps/browser/browser_scene.h", "userspace/gui/apps/browser/browser_scene.c",
+ "userspace/gui/apps/browser/browser_script.h", "userspace/gui/apps/browser/browser_script.cpp",
+ "userspace/gui/apps/browser/script_protocol.h", "userspace/gui/apps/browser/script_protocol.c",
+ "userspace/gui/apps/browser/html_script.c", "assets/browser/dom.js",
+ "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+ "test/test_browser_scripting.py", "test/browser_scripting_host.cpp", "test/browser_script_dom_host.c",
+ "test/test_html_engine.py", "test/test_html_engine_host.c", "test/test_css_engine.py", "test/test_css_engine_host.c",
+ "test/test_browser_navigation_source.py", "test/test_browser_runtime_source.py", "test/test_gui_browser_source.py",
+ "scripts/run_qemu_browser_scripting.py", "htdocs/javascript.htm", "htdocs/jsnext.htm"
+]
+invariants = [
+ "BROWSER_SCRIPTING_CONTRACT.md frozen document/DOM/publication boundary. BROWSER directly owns both workers; no parser/JS in chrome, no kernel/SDK/core/JS service changes or new worker authority.",
+ "Classic inline scripts at actual parser callback, DOM wrappers preserve identity and connected tree order; exact source and ordinal bind replay. No reexecution on CSS-resource pass or resize, no stale publication after navigation. No fake unsupported APIs or broad browser compatibility claim. HTTP/meta enforcing CSP conservatively blocks inline scripts.",
+ "Existing JS budgets unchanged. Snapshot1MiB,source1MiB aggregate,32 scripts,256KiB journal,128 mutations/callback,adapter<=6MiB demand backed. Scripted parse20s aggregate, inert profiles5s; bridge/service<=16 zero-timeout IPC calls/UI turn, no synchronous UI wait. Parent fences/reaps both direct children on failure/navigation.",
+ "All mutations admitted before candidate tree changes; failed candidate preserves old page/journal. Actual kernel/GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK payloads byte-identical to4b2b3302. Preserve evidence and no new throughput/WCET claim.",
+ "Main visible worktree only; no agents, visible VMs/dialogs or push. Frozen gates once, retain failures and repeat only affected gates after demonstrated in-scope corrections."
+]
+targeted_tests = ["python test/test_browser_scripting.py -v", "python test/test_html_engine.py -v", "python test/test_css_engine.py -v", "python test/test_js_service.py -v", "python test/test_browser_navigation_source.py -v", "python test/test_browser_runtime_source.py -v", "python test/test_gui_browser_source.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_browser_scripting.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r325-browser-js/artifacts.json",
+ "python scripts/run_qemu_browser_scripting.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r325-browser-js/guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "BROWSER_SCRIPTING_CONTRACT.md frozen proof: actual QuickJS binding and parser behavior/journal admission/replay host tests, existing regressions, both references, protected payload hashes, real browser visible title/text/parser order/exception continuation/reflow/navigation/failure containment and unchanged browser input/crash/restart."
+stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/authority/engine expansion", "Failed gate without demonstrated focused in-scope correction"]
+commit_message = "feat: execute inline JavaScript in the isolated browser"
+evidence = []
 
 [[packages]]
 id = "R3.24-javascript-service-lifecycle"
@@ -1858,7 +1899,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
