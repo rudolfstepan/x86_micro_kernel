@@ -179,6 +179,7 @@ static int send_message(reist_gui_surface_client_t *client,
     uint64_t started_ms = 0U;
     result = x86os_monotonic_ms(&started_ms);
     if (result != 0) return result;
+    uint32_t handed_off = 0U;
     for (uint32_t attempt = 0U;
          attempt < 500U + REIST_GUI_SURFACE_MAX_PENDING_EVENTS; ++attempt) {
         uint64_t now_ms = 0U;
@@ -198,8 +199,14 @@ static int send_message(reist_gui_surface_client_t *client,
             result = defer_message(client, &incoming);
             if (result != 0) return result;
         } else if (result == -11) {
-            /* Queue contains our requests, so let the broker consume them. */
-            result = x86os_sleep_ms(1U);
+            /* Queue contains our requests: give the ready broker one turn
+             * before paying an idle timer tick. If it still cannot progress,
+             * all subsequent waits sleep under the unchanged deadline/cap.
+             * Never turn a stalled peer into a yield/retry busy loop. */
+            if (!handed_off) {
+                handed_off = 1U;
+                result = x86os_yield();
+            } else result = x86os_sleep_ms(1U);
             if (result != 0) return result;
         } else return result;
         result = x86os_monotonic_ms(&now_ms);

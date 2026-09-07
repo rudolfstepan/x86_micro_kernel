@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import statistics
 import struct
 import subprocess
@@ -213,7 +214,116 @@ def benchmark():
             "median_ns_per_operation": {k: statistics.median(s[k] for s in samples) for k in sorted(keys)}}
 
 
+MODEL_ORACLE = '864f869a7862af219eedd7e42dee1abba14ebfdf'
+MODEL_C = 'userspace/gui/apps/browser/browser_model.c'
+MODEL_UI_FILES = ('userspace/gui/apps/browser/main.c', 'scripts/run_qemu_runtime_desktop.py',
+                  'scripts/measure_cpp_baseline.py',
+                  'userspace/gui/lib/surface_client.c', 'userspace/gui/compositor/desktop.c',
+                  'userspace/gui/compositor/desktop_surface.c', 'userspace/gui/compositor/desktop_surface_runtime.c',
+                  'htdocs/browser-test.html', 'assets/fonts/reist-unicode.psf',
+                  'assets/images/demo-colors.gif', 'scripts/run_qemu_smoke.py')
+
+
+def file_sha256(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def model_ui_digests():
+    return {name: file_sha256(ROOT/name) for name in MODEL_UI_FILES}
+
+
+def model_ui_boot(image, directory):
+    """One fresh hidden snapshot boot; never retry or overlap VM/compiler load."""
+    suppress_windows_test_dialogs()
+    from run_qemu_runtime_desktop import browser_model_latency
+    directory.mkdir(parents=True, exist_ok=False)
+    screenshot = directory/'paint.ppm'
+    start = time.time()
+    image_hash = file_sha256(image)
+    qemu = shutil.which('qemu-system-i386') or r'C:\Program Files\qemu\qemu-system-i386.exe'
+    command = [sys.executable, str(ROOT/'scripts/run_qemu_runtime_desktop.py'),
+               '--qemu', qemu, '--image', str(image), '--screenshot', str(screenshot),
+               '--smp', '1', '--timeout', '180', '--browser-model-probe']
+    with (directory/'host.log').open('x', encoding='utf-8') as log:
+        result = subprocess.run(command, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT,
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0), timeout=185)
+    shared = screenshot.with_suffix('.browser.log')
+    if shared.exists() and shared.stat().st_mtime >= start-1:
+        shutil.copy2(shared, directory/'guest.log')
+    record = {'command': command, 'image_sha256': image_hash, 'exit': result.returncode,
+              'elapsed_seconds': time.time()-start, 'profile': 'Windows QEMU i386 TCG qemu/vga 1 vCPU 1024 MiB headless snapshot, unchanged timers'}
+    (directory/'boot.json').write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')
+    if result.returncode or not (directory/'guest.log').exists():
+        raise RuntimeError('model UI boot failed: '+str(directory))
+    metrics = json.loads(screenshot.with_suffix('.model.json').read_text())
+    if not metrics['passed'] or file_sha256(image) != image_hash:
+        raise RuntimeError('model UI proof/image changed')
+    browser_model_latency(metrics['samples'])
+    return metrics
+
+
+def model_ui_baseline(directory):
+    """This precondition must complete while the production model is still C."""
+    directory = Path(directory).resolve()
+    directory.mkdir(parents=True,exist_ok=False)
+    data = (ROOT/MODEL_C).read_bytes().replace(b'\r\n',b'\n')
+    oracle = git('show', MODEL_ORACLE+':'+MODEL_C).replace(b'\r\n',b'\n')
+    if data != oracle or (ROOT/MODEL_C).with_suffix('.cpp').exists():
+        raise RuntimeError('model conversion before C UI baseline')
+    browser = ROOT/'build/programs/BROWSER.PRG'
+    image = ROOT/'build/reist-os.img'
+    if not (image.stat().st_mtime >= browser.stat().st_mtime >= (ROOT/MODEL_UI_FILES[0]).stat().st_mtime):
+        raise RuntimeError('instrumented C build is stale')
+    record = {'schema':1, 'baseline_commit':git('rev-parse','HEAD').decode().strip(),
+              'model_oracle':MODEL_ORACLE, 'model_sha256_lf':hashlib.sha256(data).hexdigest(),
+              'harness_fixture_sha256':model_ui_digests(), 'passed':False,
+              'artifacts':[artifact_info(p,(ROOT/'build/programs'/p).read_bytes()) for p in ('BROWSER.PRG','HTMLWORK.PRG')]}
+    shutil.copy2(image, directory/'baseline.img')
+    (directory/'model.c').write_bytes(data)
+    (directory/'source.patch').write_bytes(git('diff','--binary'))
+    record['image_sha256'] = file_sha256(directory/'baseline.img')
+    manifest = directory/'baseline.json'
+    manifest.write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')
+    metrics = model_ui_boot(directory/'baseline.img',directory/'initial-c')
+    record.update(passed=True,p95_ms=metrics['p95_ms'],completed_epoch=time.time())
+    manifest.write_text(json.dumps(record,indent=2)+'\n',encoding='utf-8')
+    print('MODEL_C_UI_BASELINE_PASS',metrics['p95_ms'])
+
+
+def model_ui_pair(directory):
+    from run_qemu_runtime_desktop import browser_model_latency
+    directory = Path(directory).resolve()
+    saved = json.loads((directory/'baseline.json').read_text())
+    if (not saved['passed'] or saved['model_oracle'] != MODEL_ORACLE or
+        saved['harness_fixture_sha256'] != model_ui_digests() or
+        saved['image_sha256'] != file_sha256(directory/'baseline.img') or
+        saved['model_sha256_lf'] != file_sha256(directory/'model.c') or
+        saved['model_sha256_lf'] != hashlib.sha256(git('show',MODEL_ORACLE+':'+MODEL_C).replace(b'\r\n',b'\n')).hexdigest()):
+        raise RuntimeError('model C baseline provenance/harness mismatch')
+    initial = json.loads((directory/'initial-c/paint.model.json').read_text())
+    if not initial['passed']: raise RuntimeError('model initial C baseline failed')
+    browser_model_latency(initial['samples'])
+    current = [artifact_info(p,(ROOT/'build/programs'/p).read_bytes()) for p in ('BROWSER.PRG','HTMLWORK.PRG')]
+    if (current[0]['file_bytes']>2867228 or current[0]['loader_payload_bytes']>6244365 or
+        current[1] != saved['artifacts'][1] or current[1]['file_bytes']!=845868 or current[1]['loader_payload_bytes']!=2752100):
+        raise RuntimeError('model artifact limits or HTMLWORK drift')
+    baseline = model_ui_boot(directory/'baseline.img',directory/'paired-c')
+    candidate = model_ui_boot(ROOT/'build/reist-os.img',directory/'paired-cpp')
+    p95 = browser_model_latency(candidate['samples'],baseline['samples'])
+    result = dict(passed=True, baseline_p95_ms=baseline['p95_ms'], candidate_p95_ms=p95,
+                  baseline_image_sha256=saved['image_sha256'],
+                  candidate_image_sha256=file_sha256(ROOT/'build/reist-os.img'), artifacts=current,
+                  harness_fixture_sha256=model_ui_digests())
+    (directory/'paired.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
+    print('MODEL_UI_PAIRED_PASS',result)
+
+
 def main():
+    if sys.argv[1:2] in (["--model-ui-baseline"],["--model-ui-pair"]):
+        if len(sys.argv)!=3: raise ValueError('model UI evidence directory required')
+        (model_ui_baseline if sys.argv[1]=='--model-ui-baseline' else model_ui_pair)(sys.argv[2])
+        return
     if sys.argv[1:2] == ["--host-test"]:
         # Execute the unchanged Python gate with inherited noninteractive mode.
         # Assertions/errors/status stay authoritative; only UI is suppressed.

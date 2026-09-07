@@ -11,6 +11,8 @@
 static x86os_ipc_message_t queue[X86OS_IPC_QUEUE_DEPTH];
 static unsigned count, outbound_full, refill, drain_after_sleeps;
 static unsigned sends, receives, published, sleeps, clock_calls, blocking_sends;
+static unsigned yields, handoff_drains;
+static int yield_error;
 static uint64_t now_ms;
 static int send_error, clock_error, sleep_error, frozen_clock, backwards_clock;
 static reist_gui_surface_client_t owner, dialog;
@@ -19,6 +21,7 @@ static void reset(void) {
     memset(queue, 0, sizeof(queue));
     count = outbound_full = refill = drain_after_sleeps = 0;
     sends = receives = published = sleeps = clock_calls = blocking_sends = 0;
+    yields = handoff_drains = 0; yield_error = 0;
     send_error = clock_error = sleep_error = frozen_clock = backwards_clock = 0;
     now_ms = 5000;
     assert(reist_gui_surface_client_init(&owner, 17) == 0);
@@ -82,6 +85,12 @@ int x86os_sleep_ms(uint32_t duration) {
     }
     return 0;
 }
+int x86os_yield(void) {
+    ++yields;
+    if (yield_error) return yield_error;
+    if (handoff_drains) { count=0; outbound_full=0; }
+    return 0;
+}
 static int unregister(reist_gui_surface_client_t *client) {
     return reist_gui_surface_client_buffer_destroy(client, 7, 8);
 }
@@ -96,6 +105,12 @@ static void expect_events(unsigned amount) {
     assert(owner.deferred_count == 0);
 }
 int main(void) {
+    /* Queue holds our requests and a ready broker needs a CPU turn, not an
+     * idle timer. A non-progressing peer gets only one such handoff. */
+    reset(); full_input(); outbound_full=1; handoff_drains=1;
+    assert(unregister(&owner)==0 && yields==1 && !sleeps && published==1 && now_ms==5000);
+    reset(); full_input(); outbound_full=1; yield_error=-5;
+    assert(unregister(&owner)==-5 && yields==1 && !sleeps && !published);
     _Static_assert(X86OS_IPC_QUEUE_DEPTH == 4, "recheck shared IPC contract");
     _Static_assert(REIST_GUI_SURFACE_PROTOCOL_VERSION == 6 &&
         REIST_GUI_SURFACE_INPUT_KEYBOARD == 3 && REIST_GUI_SURFACE_PAINT_FONT_TEXT == 20,
@@ -137,7 +152,7 @@ int main(void) {
 
     reset(); full_input(); outbound_full = 1;
     assert(unregister(&owner) == -110 && !published && !blocking_sends);
-    assert(sleeps > 0 && sleeps <= 500 && sends <= 630 && now_ms <= 5500);
+    assert(yields==1 && sleeps > 0 && sleeps <= 500 && sends <= 630 && now_ms <= 5500);
 
     reset(); full_input(); outbound_full = 1; drain_after_sleeps = 500;
     assert(unregister(&owner) == -110 && !published && sleeps == 500);

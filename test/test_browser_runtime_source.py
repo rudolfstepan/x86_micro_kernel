@@ -1068,16 +1068,23 @@ class BrowserRuntimeTests(unittest.TestCase):
         bounded = next(n for n in ast.walk(run) if isinstance(n, ast.Assign)
                        and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "deadline"
                        and isinstance(n.value, ast.IfExp))
-        dispatch = next(n for n in ast.walk(run) if isinstance(n, ast.If)
-                        and isinstance(n.test, ast.Name) and n.test.id == "browser_input_probe")
+        dispatches = {name: next(n for n in ast.walk(run) if isinstance(n, ast.If)
+                        and isinstance(n.test, ast.Name) and n.test.id == name)
+                      for name in ("browser_input_probe", "browser_model_probe")}
+        # The model flag also has an early health check; select its actual
+        # dispatch branch, not the boot observation branch.
+        dispatches["browser_model_probe"] = next(n for n in ast.walk(run) if isinstance(n, ast.If)
+            and isinstance(n.test, ast.Name) and n.test.id == "browser_model_probe"
+            and any(isinstance(child, ast.Return) for child in n.body))
         for now in (60.0, 170.0, 205.0):
-            for selected in (False, True):
+            for input_selected, model_selected in ((False,False),(True,False),(False,True)):
+                selected = input_selected or model_selected
                 clock = mock.Mock(side_effect=(10.0, now))
                 capture = mock.Mock(return_value=0)
                 namespace = dict(time=types.SimpleNamespace(monotonic=clock), timeout=180.0,
-                    font_catalog_start=True, browser_input_probe=selected,
+                    font_catalog_start=True, browser_input_probe=input_selected, browser_model_probe=model_selected,
                     process=None, output=None, transcript=[], screenshot=None, browser_input=None,
-                    run_browser_input_probe=capture)
+                    run_browser_input_probe=capture, run_browser_model_probe=capture)
                 body = [start, *sorted(assignments, key=lambda n:n.lineno), bounded,
                         ast.parse("first_deadline = deadline").body[0]]
                 exec(compile(ast.fix_missing_locations(ast.Module(body=body,type_ignores=[])),
@@ -1086,7 +1093,7 @@ class BrowserRuntimeTests(unittest.TestCase):
                 self.assertEqual(namespace["first_deadline"], min(190.0,now+90.0) if selected else now+90.0)
                 if selected:
                     function = ast.parse("def dispatch_probe():\n    pass\n")
-                    function.body[0].body = dispatch.body
+                    function.body[0].body = dispatches["browser_model_probe" if model_selected else "browser_input_probe"].body
                     exec(compile(ast.fix_missing_locations(function), "real-input-dispatch", "exec"), namespace)
                     namespace["dispatch_probe"]()
                     self.assertEqual(capture.call_args.args[4], 190.0)

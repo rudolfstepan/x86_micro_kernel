@@ -2,6 +2,19 @@
 
 Stand: 3. September 2026
 
+7. September, R3.20a abgeschlossen: gezielte Viewport-Invalidierung,
+einmalige Surface-Broker-Uebergabe und verlustfreier Escape-Lookahead sind
+auf Scheduler `5ee7c11d` abgenommen. 119 Hostfaelle, VMware/QEMU-Referenzen
+und alle fuenf Gastgates bestehen. 64 echte Eingaben mit exakten Pixeln:
+Tippen-p95 62.8166 ms, Scroll-p95 117.1034 ms, Maximum 118.5195 ms bei
+unveraenderten 250/500-ms-Grenzen. Angenommene C-Baseline: `r320a/accepted-c`;
+alte Fehlmessung erhalten unter `r320a/accepted-c-before-scheduler`.
+R3.20 ist als einziges Folgepaket aktiv und braucht seine eigene gepaarte
+C/C++-Abnahme. Noch keine Modellmigration oder neue JavaScript-/Webfunktion;
+keine Schutz-/Kapazitaetslockerung. Vollstaendige Belege in CURRENT_WORK.
+
+Die folgenden datierten Eintraege dokumentieren die vorherigen Schritte.
+
 7. September, R1.1a abgeschlossen: Abrechnung der wirklich dispatchten
 Klasse und Hintergrundausfuehrung hinter budgetierter Arbeit sind abgenommen.
 34 Hosttests, VMware/QEMU-Referenzen und fuenf Gastgates bestehen: APIC, PIT,

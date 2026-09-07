@@ -1180,6 +1180,192 @@ def run_browser_resource_probe(process, output, transcript, screenshot, deadline
     raise RuntimeError(f"Browser resource probe deadline; missing={missing}")
 
 
+MODEL_COMMIT = re.compile(r"BROWSER_MODEL_COMMIT ordinal=(\d+) length=(\d+) scroll=(\d+) body=(\d+) chrome=(\d+)\r?\n")
+
+
+def browser_model_guest_health(text):
+    for bad in ('BROWSER_PROBE_FAIL', 'DESKTOP_BROWSER_FAIL', 'KERNEL PANIC', 'kernel panic'):
+        offset = text.find(bad)
+        if offset >= 0:
+            raise RuntimeError('model guest failure: '+text[offset:offset+700])
+
+
+def browser_model_commits(text, ordinal):
+    """Only complete records count. Reject duplicates, gaps and unsolicited input."""
+    records = [tuple(map(int, item)) for item in MODEL_COMMIT.findall(text)]
+    if len(records) > ordinal or any(item[0] != i+1 for i, item in enumerate(records)):
+        raise RuntimeError("model commit sequence")
+    for n, length, scroll, body, chrome in records:
+        if length != min(n, 32) or scroll != (48 if n > 32 and n % 2 else 0) or not body or not chrome:
+            raise RuntimeError("model commit state")
+    if len(records) > 1:
+        for a, b in zip(records, records[1:]):
+            if b[3]-a[3] != int(b[0] > 32) or b[4]-a[4] != int(b[0] <= 32):
+                raise RuntimeError("model commit frame sequence")
+    return records
+
+
+def browser_model_latency(samples, baseline=None):
+    """Nearest-rank p95, frozen absolute/paired bounds; no discarded samples."""
+    if len(samples) != 64 or [s['ordinal'] for s in samples] != list(range(1, 65)):
+        raise RuntimeError("model sample sequence")
+    values = []
+    for sample in samples:
+        start, end = sample['dispatch_ns'], sample['paint_observed_ns']
+        if not isinstance(start, int) or not isinstance(end, int) or start <= 0 or end <= start:
+            raise RuntimeError("model monotonic clock")
+        if values and start <= samples[len(values)-1]['paint_observed_ns']:
+            raise RuntimeError("model overlapping samples")
+        values.append((end-start)/1_000_000)
+    p95 = [sorted(values[i:i+32])[30] for i in (0, 32)]
+    if max(values) > 500 or max(p95) > 250:
+        raise RuntimeError(f"model absolute latency bound: p95={p95}, max={max(values)}")
+    if baseline is not None and any(c > b*1.2+1 for c, b in zip(p95, browser_model_latency(baseline))):
+        raise RuntimeError("model paired latency bound")
+    return p95
+
+
+def browser_model_crop(ppm, x, y, width, height):
+    w, h, pixels = ppm
+    if not (0 <= x < x+width <= w and 0 <= y < y+height <= h):
+        raise RuntimeError("model pixel bounds")
+    return b''.join(pixels[((y+row)*w+x)*3:((y+row)*w+x+width)*3] for row in range(height))
+
+
+def browser_model_initial(capture, width, height, deadline):
+    # READY acknowledges the browser's Surface transaction, not composition.
+    # Observe setup pixels within the original deadline; never reinject input.
+    for attempt in range(32):
+        if time.monotonic() >= deadline:
+            break
+        initial, path = capture('initial-'+str(attempt), deadline)
+        offset = initial[2].find(b'\xff\xfd\xe0')
+        if offset >= 0 and offset % 3 == 0:
+            origin = (offset//3 % initial[0]-10, offset//3//initial[0]-10)
+            ox, oy = origin
+            if (0 <= ox and 0 <= oy and ox+width <= initial[0] and oy+height <= initial[1] and
+                browser_model_crop(initial, ox+10, oy+10, width-20, 1) == b'\xff\xfd\xe0'*(width-20)):
+                return initial, path, origin
+        time.sleep(.005)
+    raise RuntimeError('model address focus pixels not composed before setup limit')
+
+
+def run_browser_model_probe(process, output, transcript, screenshot, deadline, monitor):
+    """Commit ACK plus matching QEMU framebuffer readback, on one host clock.
+
+    Readback/serial overhead is INCLUDED: a conservative software paint
+    observation latency, not submission-only timing or physical-display WCET.
+    The existing input probe's private upward-wheel selector changes no launch
+    authority, fixture, production input behavior or guest deadline.
+    """
+    samples = []
+    evidence = screenshot.with_suffix('.model.json')
+    result = {'schema': 1, 'samples': samples, 'passed': False,
+              'clock': 'perf_counter_ns dispatch through commit ACK AND framebuffer observation',
+              'fixture': '/htdocs/browser-test.html', 'edits': 'x'*32,
+              'wheel_v120': [120, -120]*16}
+
+    def observed_text():
+        drain(output, transcript)
+        text = ''.join(transcript)
+        browser_model_guest_health(text)
+        return text
+
+    def wait(pattern):
+        while time.monotonic() < deadline:
+            match = re.search(pattern, observed_text())
+            if match:
+                return match
+            time.sleep(.01)
+        raise RuntimeError('model setup/close deadline: '+pattern)
+
+    def capture(label, limit):
+        path = screenshot.with_name(screenshot.stem+'-model-'+label+'.ppm')
+        if path.exists():
+            raise RuntimeError('model evidence already exists: '+str(path))
+        monitor.execute('screendump', {'filename': str(path.resolve())}, limit)
+        ppm = read_ppm(path)
+        if ppm is None or not (0 < ppm[0] <= 4096 and 0 < ppm[1] <= 4096):
+            raise RuntimeError('model framebuffer readback')
+        return ppm, path
+
+    try:
+        wait(r'BROWSER_INPUT_READY\r?\n')
+        monitor.mouse(process, 'mouse_move 0 0 1')
+        wait(r'BROWSER_MODEL_SELECTED\r?\n')
+        monitor.key('ret')
+        ready = wait(r'BROWSER_MODEL_READY width=(\d+) height=(\d+)\r?\n')
+        width, height = map(int, ready.groups())
+        # Locate the address focus rectangle by its actual pixels. No assumed
+        # compositor window placement or test-side mutation of guest geometry.
+        initial, initial_path, origin = browser_model_initial(capture,width,height,deadline)
+        ox, oy = origin
+        body = [browser_model_crop(initial, ox+16, oy+100+shift, 320, 160) for shift in (0, 48)]
+        if body[0] == body[1]:
+            raise RuntimeError('model fixture has no distinguishable scroll pixels')
+        result.update(client=[width, height], origin=list(origin), initial_pixels=str(initial_path))
+        glyph = None
+        for ordinal in range(1, 65):
+            if len(browser_model_commits(observed_text(), ordinal-1)) != ordinal-1:
+                raise RuntimeError('model previous acknowledgement missing')
+            start = time.perf_counter_ns()
+            limit = min(deadline, time.monotonic()+.5)
+            if ordinal <= 32:
+                monitor.key('x')
+            else:
+                monitor.mouse(process, 'mouse_move 0 0 '+('-1' if ordinal % 2 else '1'))
+            sample = {'ordinal': ordinal, 'dispatch_ns': start, 'observations': []}
+            samples.append(sample)
+            attempt = 0
+            while time.monotonic() < limit and attempt < 32:
+                records = browser_model_commits(observed_text(), ordinal)
+                if len(records) != ordinal:
+                    time.sleep(.005)
+                    continue
+                if 'commit_observed_ns' not in sample:
+                    sample['commit_observed_ns'] = time.perf_counter_ns()
+                readback_started = time.perf_counter_ns()
+                ppm, path = capture(f'{ordinal:02}-{attempt:02}', limit)
+                attempt += 1
+                sample['observations'].append(str(path))
+                sample.setdefault('readback_intervals_ns', []).append(
+                    [readback_started, time.perf_counter_ns()])
+                if ordinal <= 32:
+                    tile = browser_model_crop(ppm, ox+16, oy+18, 8, 16)
+                    if glyph is None and tile.count(b'\x20\x20\x20') >= 6:
+                        glyph = tile
+                    painted = glyph is not None and all(
+                        browser_model_crop(ppm, ox+16+8*i, oy+18, 8, 16) == glyph for i in range(ordinal))
+                    # The glyph after the expected string must be blank apart
+                    # from its first-column caret; cursor movement alone fails.
+                    painted = painted and browser_model_crop(ppm, ox+17+8*ordinal, oy+18, 7, 16) == b'\xff\xfd\xe0'*(7*16)
+                else:
+                    painted = browser_model_crop(ppm, ox+16, oy+100, 320, 160) == body[ordinal % 2]
+                if painted:
+                    sample.update(paint_observed_ns=time.perf_counter_ns(), commit=list(records[-1]))
+                    break
+                time.sleep(.005)
+            if 'paint_observed_ns' not in sample:
+                sample['failed_ns'] = time.perf_counter_ns()
+                raise RuntimeError(f'model paint observation deadline ordinal={ordinal}')
+        monitor.key('esc')
+        monitor.key('esc')
+        wait(r'BROWSER_CLOSE_OK\r?\n')
+        wait(r'TERMINAL_INPUT_IDLE\r?\n')
+        browser_model_commits(observed_text(), 64)
+        # Close/reap even when all samples arrived but violate the limits;
+        # retain the existing guest stage totals to diagnose that failure.
+        result['p95_ms'] = browser_model_latency(samples)
+        result['passed'] = True
+        print('runtime-desktop-browser-model: PASS p95_ms='+str(result['p95_ms']))
+        return 0
+    except (OSError, RuntimeError) as error:
+        result['error'] = str(error)
+        raise
+    finally:
+        evidence.write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
+
+
 def run_browser_input_probe(process, output, transcript, screenshot, deadline, monitor):
     """Real PS/2 -> admission -> focused Surface, then crash and fresh session."""
     def wait(marker, offset=0, pattern=None):
@@ -1530,8 +1716,9 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         browser_resource_probe: bool = False,
         browser_input_probe: bool = False,
         browser_forms_probe: bool = False,
-        browser_public_probe: bool = False) -> int:
-    if browser_resource_probe or browser_input_probe or browser_forms_probe or browser_public_probe:
+        browser_public_probe: bool = False,
+        browser_model_probe: bool = False) -> int:
+    if browser_resource_probe or browser_input_probe or browser_forms_probe or browser_public_probe or browser_model_probe:
         browser_probe = True
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
     if sound_probe and audio_capture.exists():
@@ -1630,6 +1817,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         while time.monotonic() < deadline:
             drain(output, transcript)
             text = "".join(transcript)
+            if browser_model_probe:
+                browser_model_guest_health(text)
             if ("REIST_GUI COMPOSITOR_READY" in text and
                     "DESKTOP_OK" in text):
                 supervised_boot_detected = True
@@ -1705,7 +1894,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                 elif control_probe:
                     command_name = "desktop.prg --control-probe"
                 elif browser_probe:
-                    command_name = ("desktop.prg --browser-public-probe" if browser_public_probe else "desktop.prg --browser-forms-probe" if browser_forms_probe else "desktop.prg --browser-input-probe" if browser_input_probe
+                    command_name = ("desktop.prg --browser-public-probe" if browser_public_probe else "desktop.prg --browser-forms-probe" if browser_forms_probe else "desktop.prg --browser-input-probe" if browser_input_probe or browser_model_probe
                                     else "desktop.prg --browser-probe")
                 elif guidemo_click_probe:
                     command_name = "desktop.prg --guidemo-probe"
@@ -1767,7 +1956,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
             sound_probe))
         desktop_deadline = time.monotonic() + (
             90.0 if font_catalog_start else 30.0)
-        deadline = min(overall_deadline, desktop_deadline) if browser_input_probe else desktop_deadline
+        deadline = min(overall_deadline, desktop_deadline) if browser_input_probe or browser_model_probe else desktop_deadline
         while time.monotonic() < deadline:
             drain(output, transcript)
             text = "".join(transcript)
@@ -2172,6 +2361,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
                     raise RuntimeError(
                         "Control Panel did not publish a visible window"
                     )
+                if browser_model_probe:
+                    return run_browser_model_probe(process, output, transcript, screenshot, overall_deadline, browser_input)
                 if browser_input_probe:
                     # Both sessions share the original absolute budget. The
                     # first-start limit above must not replace that budget.
@@ -2441,6 +2632,7 @@ def main() -> int:
     parser.add_argument("--browser-input-probe", action="store_true")
     parser.add_argument("--browser-forms-probe", action="store_true")
     parser.add_argument("--browser-public-probe", action="store_true")
+    parser.add_argument("--browser-model-probe", action="store_true")
     parser.add_argument("--trash-context-probe", action="store_true")
     parser.add_argument("--trash-confirm-probe", action="store_true")
     parser.add_argument("--trash-restore-probe", action="store_true")
@@ -2458,7 +2650,7 @@ def main() -> int:
     args = parser.parse_args()
     if sum((args.expect_failure, args.render_probe, args.surface_probe,
             args.notepad_probe, args.notepad_font_probe, args.control_probe,
-            args.browser_probe, args.browser_resource_probe, args.browser_input_probe, args.browser_forms_probe, args.browser_public_probe,
+            args.browser_probe, args.browser_resource_probe, args.browser_input_probe, args.browser_forms_probe, args.browser_public_probe, args.browser_model_probe,
             args.trash_context_probe, args.trash_confirm_probe,
             args.trash_restore_probe,
             args.explorer_scroll_probe, args.explorer_views_probe,
@@ -2489,7 +2681,7 @@ def main() -> int:
                    args.metrics_log, args.vmware_vga, args.smp,
                    browser_resource_probe=args.browser_resource_probe,
                    browser_input_probe=args.browser_input_probe, browser_forms_probe=args.browser_forms_probe,
-                   browser_public_probe=args.browser_public_probe)
+                   browser_public_probe=args.browser_public_probe, browser_model_probe=args.browser_model_probe)
     except (OSError, RuntimeError) as error:
         print(f"runtime-desktop: FAIL: {error}", file=sys.stderr)
         return 1

@@ -569,10 +569,15 @@ int main(void) {
         decoder = self.source[self.source.index("static int read_key") :]
         decoder = decoder[: decoder.index("\n}") + 2]
         self.assertIn("if (prefix == 0) return DESKTOP_KEY_ESCAPE;", decoder)
-        self.assertIn("if (prefix != '[') return DESKTOP_KEY_NONE;", decoder)
+        # Non-CSI lookahead is another key, not a reason to drop both keys.
+        # Real O0/O2 Escape/Escape and Escape/text behavior is covered by
+        # test_browser_surface_latency.py; local cancel remains the invariant.
+        self.assertIn("if (prefix != '[') { pending = prefix; return DESKTOP_KEY_ESCAPE; }", decoder)
+        self.assertIn("int value = pending ? pending : x86os_getchar_nonblocking();", decoder)
+        self.assertIn("pending = 0;", decoder)
         self.assertIn("value < 0x40 || value > 0x7E", decoder)
         self.assertGreaterEqual(decoder.count("return DESKTOP_KEY_NONE;"), 3)
-        self.assertEqual(decoder.count("return DESKTOP_KEY_ESCAPE;"), 1)
+        self.assertEqual(decoder.count("return DESKTOP_KEY_ESCAPE;"), 2)
         main_loop = self.source[self.source.index("for (;;) {") :]
         self.assertNotIn(".key = DESKTOP_WM_KEY_ESCAPE", main_loop)
         self.assertIn("desktop_ui_keyboard_event", main_loop)

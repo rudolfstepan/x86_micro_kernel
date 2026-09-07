@@ -38,6 +38,7 @@ typedef struct browser_state {
     uint32_t address_focused, address_replace_pending, address_length, address_cursor, address_start;
     uint32_t scroll_y, painted_scroll, armed_link, probe, probe_phase;
     uint32_t buffer_id, buffer_generation, body_frames, chrome_frames;
+    uint32_t buffer_width, buffer_height;
     browser_scrollbar_t scrollbar;
     char address[BROWSER_URL_CAPACITY], active_url[BROWSER_URL_CAPACITY];
     char temporary_path[40U], status[64U];
@@ -99,6 +100,10 @@ _Static_assert(offsetof(browser_workspace_t,arena)%8U==0U,"decoder arena alignme
 _Static_assert(sizeof(browser_workspace_t)<=36U*1024U*1024U,"private workspace quota");
 static browser_workspace_t *workspace;
 static struct { uint32_t generation,width,request,frames,rejected,resets,failures,limit_refusals; } form_probe;
+/* Private measurement selector on the existing input probe. A commit reply
+ * confirms Surface admission, NOT scanout; the host must also observe pixels.
+ * One real device event in flight, no synthesized edits or scroll operations. */
+static struct { uint32_t ordinal,pending,kind,body,chrome; } model_probe;
 #define decoded_pixels (workspace->decoded)
 #define surface_pixels (workspace->surface)
 #define image_cache (workspace->images)
@@ -1120,7 +1125,16 @@ static int publish_pixels(browser_state_t *state, reist_gui_surface_client_t *cl
     result = render_result("buffer-register", reist_gui_surface_client_buffer_create(client, &descriptor));
     if (result == 0) registered = 1U;
     if (result == 0) result = render_result("buffer-attach", reist_gui_surface_client_attach(client, id, generation));
-    if (result == 0) result = render_result("buffer-damage", reist_gui_surface_client_damage(client, (reist_gui_rect_t){0, 0, width, height}));
+    /* Every underlay is white outside the page viewport. Replacing it at the
+     * same geometry cannot change chrome/status pixels; their retained layers
+     * publish their own damage. Initial upload and resize still cover all. */
+    reist_gui_rect_t damage = {0, 0, width, height};
+    if (state->buffer_id && state->buffer_width == width && state->buffer_height == height &&
+        height > BROWSER_CONTENT_TOP + BROWSER_STATUS_HEIGHT) {
+        damage.y = BROWSER_CONTENT_TOP;
+        damage.height = viewport_height(client);
+    }
+    if (result == 0) result = render_result("buffer-damage", reist_gui_surface_client_damage(client, damage));
     uint32_t released = 0U, released_generation = 0U;
     if (result == 0) result = render_result("buffer-commit", reist_gui_surface_client_commit_with_release(client, &released, &released_generation));
     if (result != 0) {
@@ -1130,6 +1144,7 @@ static int publish_pixels(browser_state_t *state, reist_gui_surface_client_t *cl
     }
     uint32_t old_id = state->buffer_id, old_generation = state->buffer_generation;
     state->buffer_id = id; state->buffer_generation = generation;
+    state->buffer_width = width; state->buffer_height = height;
     if (released != 0U) {
         if (released != old_id || released_generation != old_generation) return render_result("buffer-release-identity", -84);
         result = render_result("buffer-unregister", reist_gui_surface_client_buffer_destroy(client, released, released_generation));
@@ -1475,7 +1490,18 @@ static void handle_pointer(browser_state_t *state, reist_gui_surface_client_t *c
             }
             return;
         }
+        if (state->probe==3U && state->probe_phase==1U && !state->address_focused &&
+            input->delta_y==-REIST_GUI_SURFACE_SCROLL_STEP) {
+            state->probe=6U; state->probe_phase=0U;
+            x86os_puts("BROWSER_MODEL_SELECTED\n");
+            return;
+        }
         if (!state->loaded) return;
+        if (state->probe==6U) {
+            ++model_probe.pending;
+            model_probe.kind=input->delta_y==REIST_GUI_SURFACE_SCROLL_STEP ? 2U :
+                input->delta_y==-REIST_GUI_SURFACE_SCROLL_STEP ? 3U : 0U;
+        }
         fs->capture=BROWSER_FORM_NONE;
         /* Quotient/remainder decomposition avoids a signed 64-bit division on
          * i386. abs(remainder)<120, abs(whole*48)<859 million: no int32 overflow. */
@@ -1861,6 +1887,37 @@ static int probe_step(browser_state_t *state, reist_gui_surface_client_t *client
     ++state->probe_phase;
     return 0;
 }
+static int model_probe_step(browser_state_t *state,reist_gui_surface_client_t *client) {
+    if (!state->loaded || state->child_pid || state->pending || state->parse_pending ||
+        state->resource_loading || state->reflow_pending || state->follow_redirect ||
+        maximum_scroll(state,client)<48U) return -1;
+    if (!state->probe_phase) {
+        if (!state->address_focused) return 0;
+        if (state->scroll_y || state->painted_scroll || model_probe.pending) return -1;
+        model_probe.body=state->body_frames; model_probe.chrome=state->chrome_frames;
+        x86os_puts("BROWSER_MODEL_READY width="); x86os_print_number((int)client->width);
+        x86os_puts(" height="); x86os_print_number((int)client->height); x86os_puts("\n");
+        state->probe_phase=1U;
+        return 0;
+    }
+    if (!model_probe.pending) return 0;
+    if (model_probe.pending!=1U || model_probe.ordinal>=64U) return -1;
+    uint32_t n=model_probe.ordinal+1U;
+    uint32_t y=n>32U && (n&1U) ? 48U : 0U;
+    if (!state->address_focused || state->address_length!=(n<=32U ? n : 32U) ||
+        state->address_cursor!=state->address_length || state->scroll_y!=y || state->painted_scroll!=y) return -1;
+    for (uint32_t i=0;i<state->address_length;++i) if(state->address[i]!='x') return -1;
+    if (n<=32U ? (model_probe.kind!=1U || state->chrome_frames!=model_probe.chrome+1U || state->body_frames!=model_probe.body) :
+        (model_probe.kind!=((n&1U) ? 2U : 3U) || state->body_frames!=model_probe.body+1U || state->chrome_frames!=model_probe.chrome)) return -1;
+    model_probe.ordinal=n; model_probe.pending=0U;
+    model_probe.body=state->body_frames; model_probe.chrome=state->chrome_frames;
+    x86os_puts("BROWSER_MODEL_COMMIT ordinal="); x86os_print_number((int)n);
+    x86os_puts(" length="); x86os_print_number((int)state->address_length);
+    x86os_puts(" scroll="); x86os_print_number((int)y);
+    x86os_puts(" body="); x86os_print_number((int)model_probe.body);
+    x86os_puts(" chrome="); x86os_print_number((int)model_probe.chrome); x86os_puts("\n");
+    return 0;
+}
 static int input_probe_step(browser_state_t *state) {
     /* Assertions only: every edit/navigation originates in a real Surface
      * keyboard message. Do not synthesize calls to handle_keyboard here. */
@@ -2090,7 +2147,14 @@ int main(int argc, char **argv) {
                     if (message.input.key == 0x104U) ++state.input_left;
                     if (message.input.key == 0x105U) ++state.input_right;
                 }
+                if(state.probe==6U && message.input.key=='x') {
+                    ++model_probe.pending; model_probe.kind=1U;
+                }
                 handle_keyboard(&state, &client, message.input.key);
+                if (state.probe==6U && message.input.key==BROWSER_KEY_ESCAPE) {
+                    x86os_puts("BROWSER_MODEL_ESCAPE focused="); x86os_print_number((int)state.address_focused);
+                    x86os_puts(" exit="); x86os_print_number((int)state.exit_requested); x86os_puts("\n");
+                }
                 if(state.probe==4) { x86os_puts("BROWSER_FORMS_KEY ordinal="); x86os_print_number((int)++state.input_keys);
                     x86os_puts(" code="); x86os_print_number((int)message.input.key); x86os_puts("\n"); }
             }
@@ -2101,9 +2165,15 @@ int main(int argc, char **argv) {
         int rendered=render(&state, &client);
         if (rendered != 0) { browser_runtime_failure(&state,"render",rendered); status = -5; break; }
         if (state.probe) {
-            int probe_status=state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
+            int probe_status=state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
             if (probe_status || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
                 timing_dump();
+                if (state.probe==6U) {
+                    x86os_puts("BROWSER_MODEL_FAILURE result="); x86os_print_number(probe_status);
+                    x86os_puts(" expired="); x86os_print_number((int32_t)(x86os_uptime_ms()-probe_deadline)>=0);
+                    x86os_puts(" ordinal="); x86os_print_number((int)model_probe.ordinal);
+                    x86os_puts(" pending="); x86os_print_number((int)model_probe.pending); x86os_puts("\n");
+                }
                 x86os_puts("BROWSER_PROBE_STATE phase="); x86os_print_number((int)state.probe_phase);
                 x86os_puts(" loaded="); x86os_print_number((int)state.loaded);
                 x86os_puts(" child="); x86os_print_number(state.child_pid);

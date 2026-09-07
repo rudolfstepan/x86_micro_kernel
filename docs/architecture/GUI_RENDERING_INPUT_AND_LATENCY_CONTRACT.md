@@ -399,6 +399,42 @@ Evidenz**.
 
 ## Implementierungsstatus
 
+### R3.20a: gezielte Browser-Schadensregion und Escape-Lookahead
+
+Ist die gemeinsame IPC-Queue mit eigenen Requests gefuellt, gibt der
+Surface-Client dem bereits adressierten Broker einmal einen CPU-Turn,
+bevor er einen Idle-Timer bezahlt. Pro Send-Aufruf ist genau ein solcher
+Handoff erlaubt; bleibt die Queue voll, folgen nur noch die bisherigen
+1-ms-Sleeps. Die absolute 500-ms-Frist, feste Versuchskapazitaet und
+geordnete Deferred-Eingaben bleiben unveraendert; kein Yield-Retry-Spin.
+Fehler beim Handoff brechen wie bisherige Sleep-/Clockfehler begrenzt ab.
+
+Der Browser ersetzt weiterhin immutable, generationgepruefte Pixelbuffer.
+Bei unveraenderter bestaetigter Buffergeometrie ist ausserhalb des Viewports
+der Untergrund immer weiss. Deshalb meldet ein weiterer Seitenbuffer nur
+den Viewport als Schaden; Adress-/Status-Layer liefern ihren eigenen Schaden.
+Erstaufbau, geaenderte Breite/Hoehe und zu kleine Geometrien bleiben volle
+Invalidierungen. Buffergeometrie wird erst nach erfolgreichem Commit uebernommen;
+Fehler und ungepruefte Release-Identitaeten erteilen keine Freigabeautoritaet.
+
+Der Desktop behaelt ein Nicht-CSI-Zeichen nach Escape in genau einem lokalen
+Lookahead-Slot. Er liefert zuerst Escape und im naechsten Umlauf das folgende
+Zeichen. Zwei aufeinanderfolgende Escape-Tasten duerfen einander nicht
+verschlucken. Bestehende CSI-Laengen-/Wartekapazitaeten und Ring-3-Generation
+bleiben unveraendert. Host-Regressionen verwenden die echten C-Funktionen
+mit O0/O2. R3.20a ist am 7. September 2026 auf dem separat abgenommenen
+Scheduler `5ee7c11d` abgenommen: 32 echte Adress-Edits und 32 Mausradschritte
+mit geordnetem Commit-ACK und exakten Gastpixeln. Tippen-p95 62.8166 ms,
+Scroll-p95 117.1034 ms, Maximum 118.5195 ms; Grenzen weiterhin 250/500 ms.
+Beide Escape-Zustaende und sauberes Close sind bestaetigt. Auch die vier
+bestehenden Surface-/Browser-/Eingabe-/Formulargaeste bestehen einschliesslich
+Crash, Neustart, Reflow, Fehler-Recovery und frischer Konsole.
+Die angenommene C-Baseline samt Image-/Modell-/Harness-Digests liegt unter
+`build/codex-agent/r320a/accepted-c`; Befehle und Belegzuordnung in CURRENT_WORK.
+Das gilt fuer den festen Ein-vCPU-QEMU-TCG-Prueffall, nicht als allgemeine
+Webseiten-, Hardware-WCET- oder Erfuellung aller GUI-Latenzziele. R3.20 braucht
+weiterhin seine eigene gepaarte C/C++-Abnahme.
+
 | Bestandteil | Status am 30. August 2026 |
 |---|---|
 | serverseitige Fensterdekorationen | vorhanden |

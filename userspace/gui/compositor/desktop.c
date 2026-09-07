@@ -5450,13 +5450,18 @@ static int read_escape_byte(void) {
 }
 
 static int read_key(void) {
-    int value = x86os_getchar_nonblocking();
+    /* One-byte lookahead belongs to this compositor generation. A second
+     * Escape or printable key is not a CSI prefix and must not be consumed
+     * as one: return the first Escape now, dispatch the saved key next turn. */
+    static int pending = 0;
+    int value = pending ? pending : x86os_getchar_nonblocking();
+    pending = 0;
     if (value == 0) return DESKTOP_KEY_NONE;
     if (value != 0x1B) return value;
 
     int prefix = read_escape_byte();
     if (prefix == 0) return DESKTOP_KEY_ESCAPE;
-    if (prefix != '[') return DESKTOP_KEY_NONE;
+    if (prefix != '[') { pending = prefix; return DESKTOP_KEY_ESCAPE; }
 
     /* Consume a complete ANSI CSI sequence. A bare Escape is a local cancel. */
     for (unsigned int byte = 0U; byte < 16U; ++byte) {

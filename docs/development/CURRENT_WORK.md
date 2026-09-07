@@ -2,6 +2,9 @@
 
 Stand: 7. September 2026
 
+Aktuell abgeschlossen: R3.20a Browser-/Surface-Latenz, siehe Abnahme unten.
+Als einziges Folgepaket ist R3.20 Browser-Modell-C++ aktiv; noch nicht umgesetzt.
+
 ## R1.1a abgeschlossen: CPU-Abrechnung und sichere Hintergrundzeit
 
 Alle eingefrorenen Gates bestehen. Der Scheduler rechnet die wirklich
@@ -110,9 +113,83 @@ Setup wird vor Implementierung committet. Hintergrundzeit bleibt hinter
 jedem bereiten Kandidaten mit Restbudget; keine Budget-/Timer-/ABI-Erhoehung.
 Nach erfolgreicher Abnahme wird nur R3.20a reaktiviert, nicht mitimplementiert.
 
-## R3.20a freigegeben: Browser-Bilduebergabe vor Sprachumbau reparieren
+## R3.20a abgeschlossen: Browser-Bilduebergabe vor Sprachumbau
 
-Aktueller Blocker: Die finale Gastmessung scheitert nach 82.999 s trotz
+Alle eingefrorenen Gates bestehen auf dem separat abgenommenen Scheduler
+`5ee7c11d`. Vom sauberen Worktree wurden genau die zwoelf zugeordneten
+Kandidatendateien aus `d9370608c5849bbae36663d515c7accd24930005` wiederhergestellt;
+keine weitere Produktionsreparatur in diesem Lauf. Viewport-only-Damage,
+einmalige Broker-Uebergabe und Escape-Lookahead behalten alle bestehenden
+Generations-, Freigabe-, Eingabe-, Frist- und Kapazitaetsgrenzen bei.
+
+Abnahme: 32 echte Adress-Edits und 32 echte alternierende Mausradschritte,
+jeweils geordnete Commit-Bestaetigung und exakte Gastpixel. Tippen-p95
+62.8166 ms, Scroll-p95 117.1034 ms, Maximum 118.5195 ms. Die unveraenderten
+Grenzen sind p95 <=250 ms je Strom und jeder Schritt <=500 ms. Gastlauf
+41.635 s bei weiterhin 180-s-Bootfrist und bestehender 30-s-Browserprobe.
+Beide Escape-Zustaende, `BROWSER_CLOSE_OK` und `TERMINAL_INPUT_IDLE` bestaetigt.
+Kein ausgelassener Messwert, keine Wiederholung oder gelockerte Grenze.
+
+Alle folgenden Gates bestehen beim ersten Lauf der wiederaufgenommenen
+Abnahme. Vollstaendige eingefrorene Kommandos: `automation/reist-s03b.toml`,
+Paket R3.20a. Logs relativ zu `build/codex-agent/r320a/resume-scheduler/`:
+
+| Gate | Ergebnis / Dauer | Log |
+|---|---|---|
+| `python test/test_browser_surface_latency.py -v` | 3 PASS, echte C-Funktionen O0/O2, 3.308 s | `host-browser_surface_latency.log` |
+| `python test/test_browser_model_cpp.py -v` | 5 PASS, Telemetrie, 0.003 s | `host-browser_model_cpp.log` |
+| `python test/test_gui_surface_source.py -v` | 10 PASS, 1.925 s | `host-gui_surface_source.log` |
+| `python test/test_desktop_surface_runtime_source.py` | 2 Brokerchecks PASS, Exit 0 | `host-desktop_surface_runtime_source.log` |
+| `python test/test_gui_browser_source.py -v` | 8 PASS, 33.904 s | `host-gui_browser_source.log` |
+| `python test/test_browser_runtime_source.py -v` | 29 PASS, 9.945 s | `host-browser_runtime_source.log` |
+| `python test/test_desktop_source.py -v` | 62 PASS, 1.491 s | `host-desktop_source.log` |
+| `test-reist-package.ps1 -Target vmware -Video vga` | PASS, 73 s | `package-vmware.log` |
+| `test-reist-package.ps1 -Target qemu -Video vga` | PASS, 60 s | `package-qemu.log` |
+| `python scripts/measure_cpp_baseline.py --model-ui-baseline build/codex-agent/r320a/accepted-c` | PASS, Gast 41.635 s | `runtime-model.log`, `../accepted-c/initial-c/boot.json` |
+| `test-reist-runtime.ps1 -Mode runtime-desktop-surface -Target qemu -Video vga` | PASS, ca. 29 s | `runtime-surface.log` |
+| gleicher Runtime-Aufruf mit `-Mode runtime-desktop-browser` | PASS, ca. 51 s | `runtime-browser.log`, `browser.guest.log`, `browser.ppm` |
+| gleicher Runtime-Aufruf mit `-Mode runtime-desktop-browser-input` | PASS, ca. 73 s | `runtime-browser-input.log`, `browser-input.guest.log`, `browser-input.ppm` |
+| gleicher Runtime-Aufruf mit `-Mode runtime-desktop-browser-forms` | PASS, ca. 44 s | `runtime-browser-forms.log`, `browser-forms.guest.log`, `browser-forms.ppm` |
+
+Die letzten vier Dauern sind Logzeitfenster, keine Latenzmessungen.
+Hostpruefungen laufen ueber den bestehenden `--host-test`-Wrapper ohne
+Windows-Fehlerdialoge, mit akzeptiertem Zig-Clang und Workspace-Caches;
+alle 119 Faelle eingeschlossen. Referenzdetails unter `build/codex-agent/`:
+`20260907-143851-package-vmware-vga.log` und
+`20260907-144028-package-qemu-vga.log`. Die vier bestehenden Gaeste bestaetigen
+Surface, HTML5-/CSS-Pixel, Worker-Recovery, Resize, Wheel auf/ab, echte Eingabe,
+Navigation, Crash/Neustart/frische Shell sowie exaktes Formular-GET, Reflow,
+Ablehnung, Reset, Fehlercontainment und Recovery. Alle QEMU-Prozesse beendet.
+
+Angenommene C-Baseline unter `build/codex-agent/r320a/accepted-c/`:
+`baseline.json` und `initial-c/paint.model.json` enthalten `passed=true`;
+alle 64 Rohmessungen, Commitzeilen, Pixelreadbacks und Abschlussbelege bleiben
+in `initial-c/`. `baseline.img`, `model.c`, `source.patch` und die Manifest-
+Digests sind fuer die folgende eigene C/C++-Paarabnahme eingefroren.
+Image-SHA256 `7d03752905700cf115807a7b7dbc4714b87a5bde2ddafe7c55ce24104eadcc42`.
+Browser weiterhin 2805788 Datei-/6182953 Loaderbytes, SHA256
+`774c97c00682e42c17dd43e44410184d8d922d55cb722ffa1dfeba4146e5c9f4`;
+bytegleich zum zuvor gescheiterten Browserkandidaten. HTMLWORK weiterhin
+845868/2752100 Bytes, SHA256
+`20c4d026c264878aa70bacb9ec5f2865d9a4814968994dde80811a76cf42643d`.
+Model-C-Oracle-Blob unveraendert `6b0de40d251a7c1ba70e2989cf361f3bb0a7b737`.
+
+Das alte fehlgeschlagene `accepted-c` wurde vor der neuen Messung ohne
+Ueberschreiben nach `accepted-c-before-scheduler` verschoben. Seine beiden
+`passed=false`-Ergebnisse, Images und alle anderen Fehlbelege sowie saemtliche
+Stashes bleiben erhalten. Keine Kernel-/SDK-/ABI-/Budgetaenderung in R3.20a;
+keine C++-Modellkonvertierung oder neue JavaScript-/Webfunktion. Die Messung
+gilt fuer den festen Ein-vCPU-QEMU-TCG-Prueffall, nicht als allgemeine
+Website-/Zielhardware- oder WCET-Zusage. Nur R3.20 wird als Nachfolger aktiv;
+seine eigenen gepaarten C/C++-Gates bleiben unveraendert erforderlich.
+
+### Historischer Zwischenstand vor der Scheduler-Reparatur
+
+Alle `accepted-c`-Verweise in diesem historischen Unterabschnitt beziehen
+sich nun auf das erhaltene `accepted-c-before-scheduler`, nicht auf die neue
+bestandene Baseline. Die damaligen Blocker sind durch obige Abnahme abgeloest.
+
+Damals aktueller Blocker: Die finale Gastmessung scheitert nach 82.999 s trotz
 vollstaendiger 32+32 Eingabe-/Commit-/Pixelbelege. Tippen-p95 171.2849 ms,
 Scroll-p95 490.8986 ms, Maximum 504.9288 ms; die Grenzen 250/500 ms bleiben
 unveraendert. Beide Escape-Zustaende sowie `BROWSER_CLOSE_OK` und
