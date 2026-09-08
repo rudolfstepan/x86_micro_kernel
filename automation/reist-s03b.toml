@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-07: User explicitly prioritizes JavaScript in the actual browser as quickly as possible after4b2b3302. Activate parser-ordered inline scripts and real document title/get-by-id/text mutations through the accepted isolated service, with direct browser ownership, bounded failures and source-exact reflow journal. No further standalone runtime prerequisite or broad C++ migration. R3.6b remains deferred; no agents/push."
+active_id = "R3.26-browser-dom-attributes"
+next_user_request = "2026-09-08: Continue useful browser JavaScript after2d6aba16. Extend the accepted document mutation boundary with real HTML attributes, id/className/classList and CSS-visible changes, preserving parser order, source-exact replay and worker containment. R3.6b remains deferred. Main interactive worktree only; no agents/push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,40 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.26-browser-dom-attributes"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "JavaScript HTML attributes and live CSS classes"
+scope = "One existing document-publication boundary: HTML attribute reads/writes/removal/toggle, reflected id/className and live classList methods, validated versioned attribute journal, real parser/CSS changes, source/profile-exact replay and full failure containment. No new lifetime, network, kernel or JS engine authority."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+ "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md", "docs/architecture/BROWSER_SCRIPTING_CONTRACT.md",
+ "userspace/gui/apps/browser/html_engine.h", "userspace/gui/apps/browser/html_engine.c",
+ "userspace/gui/apps/browser/script_protocol.h", "userspace/gui/apps/browser/script_protocol.c",
+ "userspace/gui/apps/browser/html_script.c", "userspace/gui/apps/browser/browser_script.cpp",
+ "assets/browser/dom.js", "htdocs/javascript.htm", "test/browser_scripting_host.cpp",
+ "test/browser_script_dom_host.c", "test/test_browser_scripting.py", "scripts/run_qemu_browser_scripting.py"
+]
+invariants = [
+ "R3.26 extension in BROWSER_SCRIPTING_CONTRACT.md frozen before implementation; preserve profile1 wire and all existing budgets. New private message/journal profile2 explicit, replay binds exact profile/source/ordinal; no silent reinterpretation.",
+ "All records, node kinds, attribute names and cumulative strings/attributes/nodes/work admitted before mutation. Snapshot and journal storage stay within existing caps; no recycled attribute/node slots or stale wrapper authority. HTML-only nonnamespace adapter and named-error deviations documented/tested.",
+ "Existing isolated workers, CSP denial, fresh navigation and bounded fault/hang/reap unchanged. No external scripts/events/timers/selector parser/CSSOM or kernel/SDK/JSWORK/core change. Protected kernels and GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK remain byte-identical2d6aba16.",
+ "Host actual QuickJS O0/O2 plus real parser and owner tests before guest. Both reference builds and real browser visible CSS change, exact reflow, navigation/fault/hang/recovery. No visible VM/dialogs/agents/push, preserve failures and repeat only affected gates after focused corrections."
+]
+targeted_tests = ["python test/test_browser_scripting.py -v", "python test/test_html_engine.py -v", "python test/test_css_engine.py -v", "python test/test_js_service.py -v", "python test/test_browser_navigation_source.py -v", "python test/test_browser_runtime_source.py -v", "python test/test_gui_browser_source.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_browser_scripting.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r326-dom-attributes/artifacts.json",
+ "python scripts/run_qemu_browser_scripting.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r326-dom-attributes/guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "R3.26 frozen contract: real attribute/class semantics and identity across snapshot, malformed journal admission-before-side-effects, quotas and old profile regression; actual CSS-coloured document in guest, preserved reflow/navigation/fault/hang/recovery and unchanged input/crash/restart; both images and protected hashes."
+stop_conditions = ["Source required outside allowed_files", "Unattributed or overlapping changes", "Kernel/engine/authority expansion", "Failed gate without demonstrated focused in-scope correction"]
+commit_message = "feat: support JavaScript DOM attributes and CSS classes"
+evidence = []
 
 [[packages]]
 id = "R3.25-browser-inline-javascript"
@@ -1900,7 +1934,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

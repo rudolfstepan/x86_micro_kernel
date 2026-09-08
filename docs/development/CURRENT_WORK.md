@@ -1,6 +1,15 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 7. September 2026
+Stand: 8. September 2026
+
+## R3.26 aktiv: JavaScript-Attribute und CSS-Klassen
+
+Fortsetzung auf2d6aba16 im sichtbaren Hauptworktree. Eingefrorene Erweiterung
+des bestehenden Dokument-/Mutationsvertrags: HTML-Attribute, id/className,
+live classList, versioniertes Journal und echte CSS-Darstellung. Keine neue
+Worker-/Netzautoritaet, keine Kernel-/Engineaenderung und keine Agenten.
+Scope/Gates in der Queue, Grenzen in BROWSER_SCRIPTING_CONTRACT.md.
+R3.6b bleibt mit unveraenderten Anforderungen zurueckgestellt.
 
 ## R3.25 abgenommen: JavaScript im tatsaechlichen Browser
 

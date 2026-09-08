@@ -1,5 +1,54 @@
 # Browser scripting profile 1 — R3.25
 
+## R3.26 frozen extension — HTML attributes and classes
+
+Frozen8 September2026 on2d6aba16 before implementation. One extension of
+the existing candidate-tree publication boundary, not a new event lifetime.
+Reference: [WHATWG Element attributes](https://dom.spec.whatwg.org/#interface-element)
+and [DOMTokenList](https://dom.spec.whatwg.org/#interface-domtokenlist).
+Implement getAttribute/getAttributeNames/hasAttribute/hasAttributes,
+setAttribute/removeAttribute/toggleAttribute, writable id/className and live
+classList length/item/contains/add/remove/toggle/replace/value/stringification
+and iteration. Class wrapper identity persists across snapshots and reflected
+updates. Validate all variadic tokens before any class mutation. Preserve
+ordered-set semantics, absent versus empty attributes, ASCII case folding for
+HTML, null/Symbol conversions and detached wrapper identity. CSS uses the real
+mutated attributes (including style strings); no private styling bypass.
+
+Deliberate bounded adapter: HTML elements only for attribute operations,
+no namespace APIs/SVGAnimatedString/NamedNodeMap, CSSOM or selector engine.
+New attribute names use the ASCII XML Name subset, at most255 bytes; unsupported
+non-ASCII names throw a named NotSupportedError, malformed names an
+InvalidCharacterError. Errors are ordinary Error instances with standard error
+names, not a claimed DOMException implementation. Class token count<=1024,
+mutation and string limits unchanged; capacity failure poisons the journal even
+when caught. Indexed exotic properties on classList are outside this profile;
+use item() or iteration. No unsupported API reported as successful.
+
+Append private script message/journal version2; version1 remains accepted with
+its original text/title grammar and read-only id. Version2 records are ASCII
+hex: operation,node,name_length,value_length (8 hex digits each), then name
+and value UTF-8 bytes as hex. Operations0=text/title,1=set attribute,2=remove.
+No implicit namespace or pointers. Snapshots explicitly select the profile
+and include ordered attribute pairs. Replay binds exact profile/source/ordinal;
+mixed profiles within a parse fail closed. Whole journals validate operation,
+existing node kind/namespace, strict UTF-8/name grammar and cumulative node,
+attribute,string,work reserve before applying any record. Retired storage is
+never recycled into a stale reference. Existing fixed caps,20s parse,16KiB
+engine stack,32MiB engine and adapter<=6MiB remain unchanged.
+
+No kernel/SDK/JSWORK/engine or network authority changes. Existing CSP denial,
+source-exact reflow, fresh navigation and direct-worker ownership remain.
+External/module scripts, events/timers, dynamic script insertion remain open.
+Frozen gates in R3.26: real QuickJS O0/O2 binding, real Hubbub all-before-apply
+journals and owner replay tests, all existing browser/JS/benchmark regressions,
+both reference builds, protected image payload hashes and real headless guest
+with CSS-visible attribute change (including resize replay and recovery),
+ordinary exception continuation and fault/hang/old-page/restart preservation.
+No performance/WCET claim or visible VM/native crash dialogs.
+
+The following R3.25 sections record the previously accepted profile1 boundary.
+
 Frozen 7 September 2026 on4b2b3302, before implementation. User priority:
 JavaScript in the actual browser as quickly as possible, not another unused
 runtime foundation. One document-publication/DOM-mutation vertical slice.
