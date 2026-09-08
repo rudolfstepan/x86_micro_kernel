@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from build_user_program import ROOT, build, find_zig
+from build_browser_fonts import build as build_fonts
 from build_user_sdk import (
     AUDIO_INCLUDE_ROOT, CONFIG_INCLUDE_ROOT, CORE_INCLUDE_ROOT, GUI_INCLUDE_ROOT,
     IMAGE_INCLUDE_ROOT, TLS_INCLUDE_ROOT, build_sdk,
@@ -263,6 +264,7 @@ PROGRAMS["HTMLWORK.PRG"] = (
     ROOT / "userspace/gui/apps/browser/css_engine.c",
     ROOT / "userspace/gui/apps/browser/css_values.cpp",
     ROOT / "userspace/gui/apps/browser/css_layout.cpp",
+    ROOT / "userspace/gui/apps/browser/font_engine.cpp",
     ROOT / "userspace/gui/apps/browser/browser_scene.c",
     ROOT / "userspace/gui/apps/browser/browser_resources.cpp",
     ROOT / "userspace/programs/curl_http.c",
@@ -314,6 +316,7 @@ def main() -> None:
         sdk = build_sdk(
             output_dir.parent / "sdk", zig, incremental=args.incremental,
             cache_directory=global_cache_directory)
+        build_fonts(sdk,zig,args.incremental)
         core_headers = list(CORE_INCLUDE_ROOT.rglob("*.h"))
         storage_headers = list(STORAGE_INCLUDE_ROOT.rglob("*.h"))
         gui_headers = list(GUI_INCLUDE_ROOT.rglob("*.h"))
@@ -378,6 +381,7 @@ def main() -> None:
             if name == "HTMLWORK.PRG":
                 includes[:0] = [sdk.libc_include_dir, GUI_INCLUDE_ROOT]
                 link_libraries.extend([sdk.library_dir / "libhubbub.a",
+                    sdk.library_dir / "libreistfont.a",
                     sdk.library_dir / "libcss.a", sdk.wapcaplet_library,
                     sdk.library_dir / "libparserutils.a", sdk.libc_library,
                     sdk.library_dir / "libclang_rt.builtins-i386.a"])
@@ -436,6 +440,7 @@ def main() -> None:
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
             if name in ("BROWSER.PRG", "HTMLWORK.PRG"):
                 includes.insert(0, sdk.cpp_include_dir)
+                dependency_files.append(ROOT / "userspace/gui/apps/browser/font_engine.hpp")
                 dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/*script*.h"))
                 dependency_files.append(ROOT / "userspace/gui/apps/browser/script_fetch.hpp")
                 dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/js_*.h*"))

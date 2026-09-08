@@ -2,6 +2,16 @@
 
 Stand: 3. September 2026
 
+8. September, R3.29 nach `f2dbc2d5` abgenommen: echte FreeType2.14.3-
+TrueType-Glyphen aus gepinnten Liberation2.1.5-Faces im HTMLWORK, Serif/Sans
+mit echten Schnitten, proportionale Metriken und gepruefter Graustufenatlas.
+Alle16 Abnahmegruppen, beide Images, zwei Gastbreiten/-groessen, Mausrad/
+Fault/Hang/Recovery und bestehende CSS-/JS-/Inputgaeste bestehen. Keine
+erweiterten Kernel-/Speicher-/Zeitquoten; geschuetzte Programme bytegleich.
+Webfonts, allgemeine Desktop-TTF, Shaping/Bidi/Kerning und dynamische
+DOM-/Event-/fetch-APIs bleiben eigene Folgegrenzen. Umfang/Tradeoffs und
+Belege: BROWSER_ENGINE_PORT_PLAN.md und CURRENT_WORK.md.
+
 8.September, Prerequisite R3.27a abgenommen als361beac4: TCP-Empfang von
 ABI-Kopiergrenze entkoppelt, aktive Ring3-Netzarbeit zeitnah bedient und
 RTL8139-64KiB-Ringkopie korrigiert. Beide NIC-Gaeste und Recovery/Scheduler/

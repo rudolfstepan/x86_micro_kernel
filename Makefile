@@ -851,6 +851,9 @@ SYSTEM_IMAGE_FILES := \
 	htdocs/jsnext.htm=htdocs/jsnext.htm \
 	htdocs/jsext.htm=htdocs/jsext.htm htdocs/ext.js=htdocs/ext.js \
 	htdocs/layout.htm=htdocs/layout.htm htdocs/layout.css=htdocs/layout.css \
+	htdocs/fonts.htm=htdocs/fonts.htm htdocs/fonts.css=htdocs/fonts.css \
+	usr/share/fonts/freetype.txt=$(USER_SDK_DIR)/usr/share/licenses/browser-fonts/freetype.txt \
+	usr/share/fonts/liberation.txt=$(USER_SDK_DIR)/usr/share/licenses/browser-fonts/liberation.txt \
 	htdocs/browser-html5-test.html=htdocs/browser-html5-test.html \
 	htdocs/browser-css-test.html=htdocs/browser-css-test.html \
 	htdocs/browser-forms-test.html=htdocs/browser-forms-test.html \
@@ -906,6 +909,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	htdocs/javascript.htm=% htdocs/jsnext.htm=% \
 	htdocs/jsext.htm=% htdocs/ext.js=% \
 	htdocs/layout.htm=% htdocs/layout.css=% \
+	htdocs/fonts.htm=% htdocs/fonts.css=% usr/share/fonts/freetype.txt=% usr/share/fonts/liberation.txt=% \
 	htdocs/browser-stylesheet-test.html=% htdocs/browser-stylesheet-main.css=% htdocs/browser-stylesheet-import.css=% \
 	usr/share/sounds/startup.wav=% \
 	usr/share/sounds/shutdown.wav=% \

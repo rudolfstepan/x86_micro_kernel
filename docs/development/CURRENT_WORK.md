@@ -2,7 +2,7 @@
 
 Stand: 8. September 2026
 
-## R3.29 gestartet: echte TTF-Rasterisierung
+## R3.29 abgenommen: echte TTF-Rasterisierung
 
 Sauberer Ausgang `f2dbc2d5`. Nutzer fordert Fortsetzung und konkretisiert
 fehlende TTF-/Antialiasing-Unterstuetzung. Inventar: Browser skaliert aktuell
@@ -10,9 +10,128 @@ PSF-Bitmapzeichen; vorhandene Editor-TTFs werden nur offline vorgerastert.
 Freigabe wird deshalb als echter Runtime-FreeType-Schnitt umgesetzt, nicht
 als weiterer Bitmapfont. Neue gefrorene R3.29-Grenze/Gates im Browserplan und
 Queue; altes VMware-Mauspaket wieder mit unveraenderter Deferral queued.
-Zuerst nur diesen Vertrag committen, danach genau R3.29 implementieren.
-Gepinnte offizielle FreeType-/Liberation-Archive zur Inspektion unter
-`build/codex-agent/r329-fonts/`, keine Quellimplementierung bisher.
+Vertragscommit `a555af1f`, danach genau R3.29 im sichtbaren Worktree.
+Echter FreeType2.14.3-TrueType/sfnt/smooth-Pfad im HTMLWORK mit acht originalen
+Liberation2.1.5-Faces; keine offline vorgerasterten Ersatzfonts. CSS-Familie,
+Groesse und echte Schnitte steuern gemeinsame proportionale Advances und
+Graustufen. Privates Szenenprofil6 uebertraegt gepruefte, dicht sortierte
+Glyphen/Alpha-Daten, nie Fontdateien oder Parserautoritaet ins Browser-UI.
+PSF-/Unicode-Fallback bleibt erhalten; Webfonts/Shaping/Bidi/Kerning und
+allgemeine Desktop-TTF bleiben ausserhalb dieses Browserpakets.
+
+Auditkorrekturen: private FreeType-Allokationsquote zaehlt auch die eigene
+Allokationsmetadatenstruktur; partielle Initialisierung wird vollstaendig
+aufgeraeumt. Rasterquote zaehlt jede sichtbare Glyphen-Ueberlappung separat,
+auch Zeichen mit Advance0, plus Linkunterstreichung vor jeder Pixelmutation.
+Der schon bisher alternative HTML-/Bild-/Stylesheet-Empfangspuffer benoetigt
+das Maximum, nicht die Summe seiner Kapazitaeten. Kein Verbraucher nutzt
+einen angehaengten Bereich; ein Kind/Job bleibt exklusiv. Dadurch bleibt das
+Workspace unter36MiB, ohne eine Empfangs-/Atlasquote zu verringern. Host und
+i386-Compile pruefen alle Kapazitaeten.32MiB Worker/4MiB FreeType/5s/4M bleiben.
+
+Belege und Fehlversuche erhalten unter `build/codex-agent/r329-fonts/`.
+Gezielte Wiederholungen nach nachgewiesener lokaler Korrektur:
+
+- `font-host-initial.log`: private FreeType-Standardadapter fehlten.
+  `font-host-platform.log`: COFF statt ELF-Section fuer native Windows-Tests.
+  `font-host-coff.log`: Include auf existierendes `ftdrv.h` korrigiert.
+  Danach `font-host-header.log` PASS43.643s.
+- `layout-initial.log` PASS98.726s; nach separater Overlap-Admission
+  `layout-overlap.log` PASS98.644s. Original25 Vektoren erhalten, drei neue
+  TTF-/Fallback-/Wire-/Pixel-/Overlap-Vektoren jeweils O0/O2.
+- `package-vmware-initial.log`: Symbolkollision mit bestehendem PSF-Endsymbol
+  und36MiB-Compilegrenze. Neue Worker-Cleanupfunktion umbenannt und redundante
+  Pufferkapazitaet korrigiert. `package-vmware-workspace.log`: Imagepfad zu
+  tief; Lizenzen in vorhandenes `/usr/share/fonts` gelegt. Keine VFS-Grenze
+  aufgeweicht. `package-vmware-license.log` PASS20s.
+- Nach Metadaten-Quotenkorrektur und erweitertem echten kaputten cmap-Test:
+  `test_browser_fonts-allocation.log` PASS20.987s;
+  `test_browser_layout-allocation.log` PASS106.859s;
+  `test_css_engine-allocation.log` PASS58.225s.
+  `package-vmware-allocation.log` PASS29s. Die drei betroffenen
+  FreeType/CSS-Hostgates sind auf genau diesem Quellstand erneut geprueft;
+  andere gruen gebliebene Gates werden nicht pauschal wiederholt.
+
+Die Testhost-Prozesse nutzen unter Windows den bestehenden Zig-Fallback und
+prozesslokale Fehlerdialog-Unterdrueckung, keine systemweite WER-Aenderung.
+Keine Agenten, sichtbaren VMs, SDK-/Kernel-Quellaenderungen oder Pushes.
+
+Gefrorene Abnahmekarte (Kommandooptionen unveraendert, nur benoetigte
+Wiederholungspfade wie unten angegeben; alle Pfade relativ zum Belegordner):
+
+- `python test/test_browser_fonts.py -v`: `test_browser_fonts-allocation.log`,
+  PASS20.987s, echte FreeType-Glyphen in8 Faces/5 Groessen, Graustufen,
+  Originalfont vs. abgeschnittener/kaputter cmap,96 Allokationsfehlerstellen,
+  Atlaserschoepfung und Cache, alles O0/O2 und vollstaendiges Cleanup.
+- `python test/test_browser_layout.py -v`: `test_browser_layout-allocation.log`,
+  PASS106.859s,28 Vektoren O0/O2, darunter genau die bisherigen25.
+- `python test/test_css_engine.py -v`: `test_css_engine-allocation.log`,
+  PASS58.225s, unveraenderte Bestandsfaelle am echten FreeType/CSS-Build.
+- `python test/test_html_engine.py -v`: `test_html_engine-final.log`, PASS,
+  Kommando5.36s.
+- `python test/test_browser_scripting.py -v`: `test_browser_scripting-final.log`,
+  PASS3 Tests/50.762s.
+- `python test/test_browser_external_scripts.py -v`:
+  `test_browser_external_scripts-final.log`, PASS, Kommando2.48s.
+- `python test/test_browser_runtime_source.py -v`:
+  `test_browser_runtime_source-final.log`, PASS29 Tests/8.713s.
+- `python test/test_gui_browser_source.py -v`:
+  `test_gui_browser_source-final.log`, PASS8 Tests/44.686s.
+- `python test/test_benchmark_source.py -v`: `test_benchmark_source-final.log`,
+  PASS, Kommando0.20s.
+- `.\scripts\test-reist-package.ps1 -Target vmware -Video vga`:
+  `package-vmware-allocation.log`, PASS29s.
+- `.\scripts\test-reist-package.ps1 -Target qemu -Video vga`:
+  `package-qemu.log`, PASS107s. Wrapper verweisen auf volle Buildlogs.
+- `python scripts/run_qemu_browser_fonts.py --verify-artifacts --image
+  build/reist-os.img --log build/codex-agent/r329-fonts/artifacts.json`:
+  erster Lauf erkennt Lizenz nicht, weil der bestehende unabhaengige Leser
+  LFN absichtlich ueberspringt. Nur neuen Guard auf tatsaechlichen8.3-Alias
+  `libera~1.txt` korrigiert; keine Image-/Verifier-/Gastquellen geaendert.
+  Wiederholung `--log build/codex-agent/r329-fonts/artifacts-alias.json`:
+  PASS1.959s Kommando. Beide tatsaechlichen FAT-Images: originale8 TTF-Faces
+  nur im HTMLWORK, Lizenzbytes/Fixtures korrekt; beide Kernel und7
+  geschuetzte Programme bytegleich akzeptiertem `f2dbc2d5`.
+- `python scripts/run_qemu_browser_fonts.py --qemu
+  'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img
+  --log build/codex-agent/r329-fonts/guest.log`: PASS83.667s.
+  Reale800/480px Fensterbreiten,24/40px TTF; `iiii`28/44px und `WWWW`92/152px,
+  alle vier Glyphenbilder mit echten Graustufen.161 Glyphen/34799 Alphabytes,
+  identische Glyphenpixel nach Resize/Wheel192/zurueck. Sieben eindeutige
+  Worker-Generationen vollstaendig gereapt, Fault134/Hang143 mit identischen
+  alten Seitenpixeln, frische Recovery und Ring3-shell help. Kein JavaScript
+  in der Fixture. PPMs unveraendert erhalten; `guest-wide.png` ist nur eine
+  verlustfreie Formatkonvertierung des echten Scanouts, visuell kontrolliert.
+- `python scripts/run_qemu_browser_layout.py --qemu
+  'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img
+  --log build/codex-agent/r329-fonts/layout-guest.log`: PASS82.766s,
+  unveraenderte bisherige CSS-Geometrie-/Pixel-/Wheel-/Fault-/Recovery-Abnahme.
+- `python scripts/run_qemu_browser_external.py --qemu
+  'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img
+  --log build/codex-agent/r329-fonts/external-guest.log`: PASS100.576s,
+  unveraenderte lokale/grosse HTTP-Script-/Redirect-/Cache-/Resize-/Abbruch-
+  und Recovery-Abnahme samt Pixeln/HTTP-Beleg.
+- `.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input
+  -Target qemu -Video vga`: `input-guest-command.log`, PASS,
+  rund99.3s (UTC-Erzeugungs-/Schreibzeitfenster des Kommandologs, kein
+  Benchmark). Bestehende Keyboard/Edit/Navigation/Crash/Restart/Console-
+  Abnahme unveraendert. Voller Gastlog `build/runtime-desktop.browser.log`.
+
+Vorhandene188 kanonische Desktop-Belegdateien vor dem Inputlauf nach
+`previous-input-evidence/` kopiert; alte R3.28-Referenzen bleiben erhalten.
+Nach allen16 Gate-Gruppen Image-SHA256 nochmals unveraendert zum Byteguard.
+Neue Referenzen/Inputbelege unter `accepted-reference/` gesichert.
+Direkte Scope-/Diff-/ABI-/Cleanuppruefung; nur aktive R3.29-Dateien.
+Queue: R3.29 done, naechstes altes VMware-Paket formal active mit unveraendertem
+Deferral; kein Folgepaket implementiert. Lokaler Implementierungscommit als
+direktes Kind von `a555af1f`, kein Push.
+
+Offene Grenze/Tradeoff: HTMLWORK enthaelt die acht originalen Schriften und
+waechst von890924 auf4143168 Bytes; BROWSER bleibt2854940 Bytes gross und
+enthaelt keinen FreeType-Parser. Cache vermeidet Fontberechnung beim Paint/
+Scroll, nicht das erstmalige Laden des groesseren Workers. Keine Zusage
+unveraenderter Kaltstartlatenz und kein neuer VMware-Performancebeleg;
+geschuetzte Kernel-/Benchmarkprogramme sind nachweislich bytegleich.
 
 ## R3.28 abgenommen: statisches CSS-Layout
 

@@ -158,6 +158,53 @@ extern "C" int browser_layout_host_main(const char *mode) {
         CHECK(scene.version==BROWSER_SCENE_LAYOUT_VERSION);
         CHECK(!browser_scene_raster(&doc,&scene,nullptr,nullptr,0,pixels,800,600,0,600));
         CHECK(pixels[0]==0xffffff && pixels[40*800+40]==0xcccccc);
+    } else if(!strcmp(mode,"layout-fonts")) {
+        render("<style>body,p{margin:0}body{font-family:serif}p{font-size:32px}.sans{font-family:Missing, sans-serif}.bi{font-weight:bold;font-style:italic}</style>"
+            "<p>iiii</p><p>WWWW</p><p class=sans>Sans</p><p class=bi>BoldItalic</p>");
+        CHECK(scene.version==BROWSER_SCENE_FONT_VERSION && text("iiii").width<text("WWWW").width);
+        CHECK((text("Sans").flags&BROWSER_FONT_FACE_MASK)==(5U<<BROWSER_FONT_FACE_SHIFT));
+        CHECK((text("BoldItalic").flags&BROWSER_FONT_FACE_MASK)==(4U<<BROWSER_FONT_FACE_SHIFT));
+        bool gray=false;for(uint32_t i=0;i<scene.fonts.used;++i) if(scene.fonts.alpha[i] && scene.fonts.alpha[i]!=255)gray=true;CHECK(gray);
+        static uint32_t pixels[800*600];for(auto &p:pixels)p=0xffffff;
+        CHECK(!browser_scene_raster(&doc,&scene,nullptr,nullptr,0,pixels,800,600,0,600));
+        gray=false;for(auto p:pixels)if(p && p!=0xffffff)gray=true;CHECK(gray);
+    } else if(!strcmp(mode,"layout-font-fallback")) {
+        render("<style>body,p{margin:0}body{font-family:'Liberation Serif'}"
+            ".mono{font-family:Missing,monospace}.small{font-family:serif;font-size:24px;width:25px}</style>"
+            "<p>Serif</p><p class=mono>Mono</p><p>\xf0\x9f\x9a\x80</p><p class=small>WW</p>");
+        CHECK(text("Serif").flags&BROWSER_FONT_FLAG);CHECK(!(text("Mono").flags&BROWSER_FONT_FLAG) && text("Mono").width==32);
+        CHECK(!(text("\xf0\x9f\x9a\x80").flags&BROWSER_FONT_FLAG));
+        uint32_t rows=0;int32_t previous=-1;for(uint32_t i=0;i<scene.count;++i) {
+            const auto &r=scene.runs[i];if(r.kind==1 && r.height==24 && r.length==1 && doc.text[r.offset]=='W') {CHECK(r.y>previous);previous=r.y;++rows;}
+        }CHECK(rows==2);
+    } else if(!strcmp(mode,"layout-font-scene")) {
+        render("<style>body{font-family:serif}</style><p>Glyph validation</p>");
+        static browser_html_reply_t reply;static browser_scene_t decoded;static uint8_t wire[BROWSER_CSS_WIRE_CAPACITY];
+        browser_css_request_t q={};q.header=(browser_html_header_t){BROWSER_HTML_MAGIC,BROWSER_HTML_DOCUMENT_VERSION,sizeof(q)+1+BROWSER_RESOURCE_HEADER_BYTES,1,2,3,0,0,1,0,{0,0}};
+        q.version=BROWSER_CSS_DOCUMENT_VERSION;q.width=800;q.height=600;memcpy(q.document_url,"/layout",8);
+        reply.header=q.header;reply.header.size=sizeof(reply);reply.header.child_pid=4;reply.header.child_generation=5;reply.document=doc;
+        int size=browser_css_pack(&reply,&scene,wire,sizeof(wire));CHECK(size>0);
+        CHECK(!browser_css_unpack(wire,(size_t)size,&q,4,5,&reply,&decoded));CHECK(decoded.fonts.used==scene.fonts.used && !memcmp(decoded.fonts.alpha,scene.fonts.alpha,scene.fonts.used));
+        static uint32_t pixels[800*600];for(auto &p:pixels)p=0x123456;
+        scene.fonts.glyphs[0].offset=1;CHECK(browser_scene_raster(&doc,&scene,nullptr,nullptr,0,pixels,800,600,0,600)==-84);
+        for(auto p:pixels)CHECK(p==0x123456);
+        scene=decoded;scene.fonts.glyphs[0].key=0;CHECK(browser_scene_validate(&doc,&scene)==-84);
+        scene=decoded;scene.fonts.used--;CHECK(browser_scene_validate(&doc,&scene)==-84);
+        scene=decoded;scene.version=BROWSER_SCENE_LAYOUT_VERSION;CHECK(browser_scene_validate(&doc,&scene)==-84);
+        scene=decoded;for(uint32_t i=0;i<scene.count;++i)if(scene.runs[i].flags&BROWSER_FONT_FLAG) {++scene.runs[i].width;break;}
+        CHECK(browser_scene_validate(&doc,&scene)==-84);
+        scene=decoded;
+        browser_scene_run_t repeated={};
+        for(uint32_t i=0;i<scene.count;++i)if(scene.runs[i].flags&BROWSER_FONT_FLAG) {repeated=scene.runs[i];break;}
+        repeated.width=0;repeated.x=repeated.y=100;
+        scene.count=64;for(uint32_t i=0;i<scene.count;++i)scene.runs[i]=repeated;
+        for(uint32_t i=0;i<scene.fonts.count;++i) {
+            auto &g=scene.fonts.glyphs[i];g.offset=i*96*96;g.width=g.height=96;g.left=g.top=g.advance=0;
+        }
+        scene.fonts.used=scene.fonts.count*96*96;CHECK(scene.fonts.used<=BROWSER_FONT_ALPHA);
+        CHECK(!browser_scene_validate(&doc,&scene));
+        CHECK(browser_scene_raster(&doc,&scene,nullptr,nullptr,0,pixels,800,600,0,600)==-28);
+        for(auto p:pixels)CHECK(p==0x123456);
     } else if(!strcmp(mode,"layout-fixture") || !strcmp(mode,"layout-fixture-narrow")) {
         static char html[16384],css[16384],joined[32768];
         size_t h=read_file("htdocs/layout.htm",html,sizeof(html)),c=read_file("htdocs/layout.css",css,sizeof(css));

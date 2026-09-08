@@ -433,11 +433,44 @@ static uint32_t control_cells(const char *text) {
     }
     return cells;
 }
+static uint32_t font_scalar(const char *s,size_t left) {
+    uint32_t n=scalar_size(s,left),v=(uint8_t)*s;
+    if(n>1) { v&=(1U<<(7-n))-1;for(uint32_t i=1;i<n;++i)v=(v<<6)|((uint8_t)s[i]&63U); }
+    return v;
+}
+static uint32_t font_face(css_computed_style *s) {
+    if(!document_profile)return 0;
+    lwc_string **names=NULL;uint8_t generic=css_computed_font_family(s,&names);uint32_t family=0;
+    for(uint32_t i=0;names && names[i];++i) {
+        if(i==256 || budget()) { failed=1;return 0; }
+        const char *name=lwc_string_data(names[i]);size_t n=lwc_string_length(names[i]);
+        if(n==16 && !strncasecmp(name,"Liberation Serif",n)) {family=1;break;}
+        if(n==15 && !strncasecmp(name,"Liberation Sans",n)) {family=5;break;}
+    }
+    if(!family)family=generic==CSS_FONT_FAMILY_SERIF ? 1 : generic==CSS_FONT_FAMILY_SANS_SERIF ? 5 : 0;
+    if(!family)return 0;
+    uint32_t weight=css_computed_font_weight(s);
+    if(weight==CSS_FONT_WEIGHT_BOLD || weight==CSS_FONT_WEIGHT_BOLDER || weight>=CSS_FONT_WEIGHT_600)++family;
+    if(css_computed_font_style(s)!=CSS_FONT_STYLE_NORMAL)family+=2;
+    return family;
+}
+static uint32_t glyph_advance(uint32_t face,uint32_t height,uint32_t scalar,uint32_t *flags) {
+    if(flags)*flags&=~(BROWSER_FONT_FLAG|BROWSER_FONT_FACE_MASK);
+    if(face) {
+        const browser_font_glyph *glyph=NULL;int rc=browser_font_get(face,height,scalar,&glyph);
+        if(rc<0) { failed=1;return 0; }
+        if(!rc) {
+            if(flags)*flags=(*flags&~3U)|BROWSER_FONT_FLAG|(face<<BROWSER_FONT_FACE_SHIFT);
+            return (uint32_t)glyph->advance;
+        }
+    }
+    return (height+1)/2;
+}
 static int append_text(flow *f,css_computed_style *s,const char *text,size_t length,uint32_t link) {
     css_fixed fixed; css_unit unit; css_computed_font_size(s,&fixed,&unit);
     int32_t font=length_px(s,fixed,unit,16);
     if (font<1 || font>(int32_t)BROWSER_CSS_FONT_MAX) return -28;
-    uint32_t cell=((uint32_t)font+1)/2, color;
+    uint32_t face=font_face(s),cell=glyph_advance(face,(uint32_t)font,' ',NULL),color;
     css_computed_color(s,&color);
     uint32_t weight=css_computed_font_weight(s), flags=0;
     if (weight==CSS_FONT_WEIGHT_BOLD || weight==CSS_FONT_WEIGHT_BOLDER || weight>=CSS_FONT_WEIGHT_600) flags|=1;
@@ -458,7 +491,7 @@ static int append_text(flow *f,css_computed_style *s,const char *text,size_t len
         if (!pre && (i==0 || space((uint8_t)text[i-1]))) {
             uint32_t width=0;
             for (size_t j=i;j<length && !space((uint8_t)text[j]);j+=scalar_size(text+j,length-j)) {
-                if (budget()) return -28; width+=cell;
+                if (budget()) return -28; width+=glyph_advance(face,(uint32_t)font,font_scalar(text+j,length-j),NULL);
             }
             if ((int32_t)width<=f->right-f->left && f->content && f->x+(int32_t)width+(f->pending_space ? (int32_t)cell : 0)>f->right) end_line(f,0);
         }
@@ -467,18 +500,20 @@ static int append_text(flow *f,css_computed_style *s,const char *text,size_t len
             else {
                 if (doc->text_length==sizeof(doc->text)) return -28;
                 uint32_t at=doc->text_length; doc->text[doc->text_length++]=' ';
-                if (emit(1,at,1,link,f->x,f->y,cell,(uint32_t)font,color,flags)) return -28;
+                uint32_t glyph_flags=flags;glyph_advance(face,(uint32_t)font,' ',&glyph_flags);
+                if (emit(1,at,1,link,f->x,f->y,cell,(uint32_t)font,color,glyph_flags)) return -28;
                 f->x+=(int32_t)cell;
             }
         }
         f->pending_space=0;
         uint32_t n=scalar_size(text+i,length-i);
+        uint32_t glyph_flags=flags,advance=glyph_advance(face,(uint32_t)font,font_scalar(text+i,length-i),&glyph_flags);
         if (doc->text_length+n>sizeof(doc->text)) return -28;
-        if (f->content && f->x+(int32_t)cell>f->right) end_line(f,0);
+        if (f->content && f->x+(int32_t)advance>f->right) end_line(f,0);
         uint32_t at=doc->text_length;
         memcpy(doc->text+at,text+i,n); doc->text_length+=n;
-        if (emit(1,at,n,link,f->x,f->y,cell,(uint32_t)font,color,flags)) return -28;
-        f->x+=(int32_t)cell; if (line>f->line) f->line=line;
+        if (emit(1,at,n,link,f->x,f->y,advance,(uint32_t)font,color,glyph_flags)) return -28;
+        f->x+=(int32_t)advance; if (line>f->line) f->line=line;
         f->content=1; i+=n;
     }
     return failed ? -28 : 0;
@@ -778,7 +813,8 @@ static int32_t intrinsic_width(node *n,css_computed_style *inherited,int32_t ava
     if(!s || (n->kind==1 && css_computed_display_static(s)==CSS_DISPLAY_NONE)) return 0;
     if(n->kind==3) {
         css_fixed value; css_unit unit; css_computed_font_size(s,&value,&unit);
-        int32_t cell=(length_px(s,value,unit,16)+1)/2,width=0,max=0; int pending=0;
+        int32_t height=length_px(s,value,unit,16),width=0,max=0;int pending=0;
+        uint32_t face=font_face(s),cell=glyph_advance(face,(uint32_t)height,' ',NULL);
         for(size_t i=0;i<n->length;) {
             if(budget()) return 0;
             if(space((uint8_t)n->text[i])) {
@@ -786,7 +822,7 @@ static int32_t intrinsic_width(node *n,css_computed_style *inherited,int32_t ava
                 ++i; continue;
             }
             if(pending) { width+=cell; pending=0; }
-            width+=cell; i+=scalar_size(n->text+i,n->length-i);
+            width+=(int32_t)glyph_advance(face,(uint32_t)height,font_scalar(n->text+i,n->length-i),NULL); i+=scalar_size(n->text+i,n->length-i);
             if(width>BROWSER_SCENE_COORD_LIMIT) { failed=1; return 0; }
         }
         return width>max ? width : max;
@@ -1020,8 +1056,9 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
     browser_css_values_reset(css_value_budget);
     document_url=url ? url : "/document.html";
     memset(doc,0,sizeof(*doc)); memset(scene,0,sizeof(*scene));
+    if(browser_font_begin(&scene->fonts,css_value_budget)) { browser_css_values_release();if(extended)browser_html5_document_release();return -28; }
     scene->version=extended ? BROWSER_SCENE_DOCUMENT_VERSION : BROWSER_SCENE_VERSION; scene->width=width; scene->height=height;
-    if(browser_forms_project(root,&scene->forms)) { browser_css_values_release(); if(extended) browser_html5_document_release(); return -28; }
+    if(browser_forms_project(root,&scene->forms)) { browser_font_finish();browser_css_values_release(); if(extended) browser_html5_document_release(); return -28; }
     units.viewport_width=INTTOFIX(width); units.viewport_height=INTTOFIX(height);
     units.font_size_default=INTTOFIX(16); units.font_size_minimum=INTTOFIX(1);
     units.device_dpi=INTTOFIX(96); units.root_style=NULL;
@@ -1040,6 +1077,7 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
         title_text(root);
         flow f={.right=(int32_t)width};
         result=layout_node(root,NULL,&f,UINT32_MAX,0,(int32_t)height);
+        if(scene->fonts.count)scene->version=BROWSER_SCENE_FONT_VERSION;
         if (!result) result=browser_scene_validate(doc,scene);
     }
     cleanup_tree(root);
@@ -1047,6 +1085,7 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
     while (sheet_count) css_stylesheet_destroy(sheets[--sheet_count]);
     while (imported_count) css_stylesheet_destroy(imported[--imported_count]);
     browser_css_values_release();
+    browser_font_finish();
     if(extended) browser_html5_document_release();
     return result;
 }

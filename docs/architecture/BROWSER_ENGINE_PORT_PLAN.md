@@ -14,7 +14,13 @@ berechnete CSS-Variablen, Boxmodell, Flex/Grid und begrenzte Dekoration,
 25 O0/O2-Vektoren und alle14 Gate-Gruppen bestanden. Echte Gastpixel bei
 zwei Breiten, Mausrad, Worker-Fault/Hang/Recovery, bestehende externe JS-
 und Inputgaeste; geschuetzte Kernel-/Benchmarkbytes unveraendert.
-Schrift-/Event-/fetch-Implementierung bleibt offen. Belege: CURRENT_WORK.
+R3.29 ist auf `f2dbc2d5` ebenfalls abgenommen: echte TrueType-Serif/Sans-
+Rasterisierung im isolierten HTMLWORK, proportionaler CSS-Zeichenpfad und
+validierter Graustufenatlas,28 O0/O2-Layoutvektoren und alle16 Gate-Gruppen.
+Reale24/40px-Glyphen bei800/480px Fensterbreite, Cache/Scroll und
+Fault/Hang/Recovery samt unveraenderten JS-/Inputgaesten nachgewiesen.
+Webfonts, systemweiter Desktop-TTF-Pfad, Shaping/Bidi/Kerning sowie
+Event-/fetch-Implementierung bleiben offen. Belege: CURRENT_WORK.
 
 ## Nutzerziel 8. September: intracom.at als Darstellungsreferenz
 
@@ -32,7 +38,8 @@ Die Bestandsaufnahme trennt vier zusammenhaengende Umsetzungsschritte:
    Abstaende sind im unten abgegrenzten, tatsaechlich getesteten Teilumfang
    implementiert. Keine allgemeine CSS-Kompatibilitaetszusage.
 3. Schrift-/Zeichenpfad: proportionale Serif-/Sans-Schriften, gleiche Metriken
-   beim Messen und Zeichnen, Raster-/Glyphcache; danach externe Webfonts mit
+   beim Messen und Zeichnen, Raster-/Glyphcache sind in R3.29 umgesetzt;
+   danach externe Webfonts mit
    eigenem Decoder-/Ressourcenvertrag. Die feste PSF2-Schrift reicht nicht
    fuer die Sollansicht. Kein unvalidierter Fontparser im UI oder Kernel.
 4. Dynamische Dokumentlebensdauer und Web-APIs: DOMContentLoaded/Ereignisse,

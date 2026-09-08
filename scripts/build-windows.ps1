@@ -450,6 +450,8 @@ try {
         '--data-file', "usr/share/fonts/iosevka-ofl.txt=$(Join-Path $RepoRoot 'assets\fonts\source\iosevka\OFL.txt')"
         '--data-file', "usr/share/fonts/fira-code-ofl.txt=$(Join-Path $RepoRoot 'assets\fonts\source\fira-code\OFL.txt')"
         '--data-file', "usr/share/fonts/readme.txt=$(Join-Path $RepoRoot 'assets\fonts\README.md')"
+        '--data-file', "usr/share/fonts/freetype.txt=$(Join-Path $BuildDir 'sdk\usr\share\licenses\browser-fonts\freetype.txt')"
+        '--data-file', "usr/share/fonts/liberation.txt=$(Join-Path $BuildDir 'sdk\usr\share\licenses\browser-fonts\liberation.txt')"
         '--data-file', "usr/share/fonts/unicode.txt=$(Join-Path $RepoRoot 'assets\fonts\unicode.txt')"
     )
     foreach ($fontFamily in @(
@@ -513,12 +515,12 @@ try {
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
-    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'fonts.htm', 'fonts.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
-        if ($demoFile -notin @('index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
+        if ($demoFile -notin @('index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'fonts.htm', 'fonts.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
             $floppyDataArguments += @(
                 '--data-file', "htdocs/$demoFile=$demoPath"
             )

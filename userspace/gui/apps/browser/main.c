@@ -84,7 +84,10 @@ typedef struct browser_workspace {
     uint8_t page_bytes[BROWSER_DOCUMENT_LIMIT+REIST_CURL_HEADER_CAPACITY];
     uint8_t page_active[BROWSER_DOCUMENT_LIMIT];
     struct { browser_css_request_t request; uint8_t bytes[BROWSER_CSS_INPUT_BYTES]; } css_request;
-    uint8_t input_bytes[BROWSER_CSS_WIRE_CAPACITY+BROWSER_IMAGE_INPUT_LIMIT+REIST_CURL_HEADER_CAPACITY];
+    /* One owned child/job at a time, all consumers start at byte zero. These
+     * capacities are alternatives, not concatenated live buffers. */
+    uint8_t input_bytes[BROWSER_CSS_WIRE_CAPACITY>(BROWSER_IMAGE_INPUT_LIMIT+REIST_CURL_HEADER_CAPACITY)
+        ? BROWSER_CSS_WIRE_CAPACITY : BROWSER_IMAGE_INPUT_LIMIT+REIST_CURL_HEADER_CAPACITY];
     browser_scene_t scenes[2];
     browser_form_state_t forms[2];
     uint32_t forms_redraw;
@@ -100,6 +103,7 @@ typedef struct browser_workspace {
  * Keep the requirement explicit as private document buffers change size. */
 _Static_assert(offsetof(browser_workspace_t,arena)%8U==0U,"decoder arena alignment");
 _Static_assert(sizeof(browser_workspace_t)<=36U*1024U*1024U,"private workspace quota");
+_Static_assert(sizeof(((browser_workspace_t *)0)->input_bytes)>=BROWSER_RESOURCE_LIMIT,"resource receive quota");
 static browser_workspace_t *workspace;
 static struct { uint32_t generation,width,request,frames,rejected,resets,failures,limit_refusals; } form_probe;
 /* Private measurement selector on the existing input probe. A commit reply
@@ -499,8 +503,8 @@ static int start_html_worker(browser_state_t *state, reist_gui_surface_client_t 
     state->job_cancelled=0U; state->response_status=0U; state->poll_at=x86os_uptime_ms();
     x86os_process_info_t info;
     if (child_info(state,&info)!=0) { browser_runtime_failure(state,"spawn-worker",-84); return -84; }
-    if(state->probe==9) {
-        x86os_puts("BROWSER_LAYOUT_WORKER pid="); x86os_print_number(pid);
+    if(state->probe==9 || state->probe==10) {
+        x86os_puts(state->probe==10 ? "BROWSER_FONT_WORKER pid=" : "BROWSER_LAYOUT_WORKER pid="); x86os_print_number(pid);
         x86os_puts(" generation="); x86os_print_number((int)state->child_generation);
         x86os_puts(" mode="); x86os_print_number((int)state->html_request.mode); x86os_puts("\n");
     }
@@ -770,7 +774,7 @@ static int publish_document_bytes(browser_state_t *state, reist_gui_surface_clie
         !state->parse_mode && !state->reflow_pending && same_images &&
         (state->image_next>=documents[state->active].image_count || state->image_next>=BROWSER_IMAGE_CACHE_COUNT) &&
         client->width>BROWSER_SCROLLBAR_WIDTH && (scenes[state->active].version==BROWSER_SCENE_VERSION ||
-        scenes[state->active].version==BROWSER_SCENE_DOCUMENT_VERSION || scenes[state->active].version==BROWSER_SCENE_LAYOUT_VERSION) &&
+        scenes[state->active].version==BROWSER_SCENE_DOCUMENT_VERSION || scenes[state->active].version==BROWSER_SCENE_LAYOUT_VERSION || scenes[state->active].version==BROWSER_SCENE_FONT_VERSION) &&
         scenes[state->active].width==client->width-BROWSER_SCROLLBAR_WIDTH &&
         scenes[state->active].height==viewport_height(client) && same_resource &&
         state->active_encoding==state->document_encoding && state->active_length==length && !memcmp(active_html,document_bytes,length)) {
@@ -988,8 +992,8 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
         if (waited != state->child_pid) {
             browser_runtime_failure(state,"wait-child",waited); return;
         }
-        if(state->probe==9 && state->job_kind==3U) {
-            x86os_puts("BROWSER_LAYOUT_REAP pid="); x86os_print_number((int)pid);
+        if((state->probe==9 || state->probe==10) && state->job_kind==3U) {
+            x86os_puts(state->probe==10 ? "BROWSER_FONT_REAP pid=" : "BROWSER_LAYOUT_REAP pid="); x86os_print_number((int)pid);
             x86os_puts(" generation="); x86os_print_number((int)generation);
             x86os_puts(" status="); x86os_print_number(status); x86os_puts("\n");
         }
@@ -2169,20 +2173,48 @@ static int external_script_probe_step(browser_state_t *state,reist_gui_surface_c
     ++state->probe_phase;return 0;
 }
 static int layout_probe_step(browser_state_t *state,reist_gui_surface_client_t *client) {
-    static uint32_t failures,active,request;
+    static uint32_t failures,active,request,atlas_hash;
+    int fonts=state->probe==10;
     uint32_t p=state->probe_phase;
     if(p==1 || p==5 || p==7 || p==9 || p==11) return 0;
+    if((p==3 && (!state->probe_wheel_down || state->scroll_y<192)) ||
+       (p==4 && (!state->probe_wheel_up || state->scroll_y))) return 0;
     if(state->child_pid || state->pending || state->parse_pending || state->reflow_pending || state->resource_loading ||
        !browser_script_ready(state->scripts) || state->redraw || !state->loaded) return 0;
     const browser_scene_t *scene=&scenes[state->active];
-    if(!text_equal(documents[state->active].title,"REIST Static Layout") || browser_script_executions(state->scripts) ||
+    if(!text_equal(documents[state->active].title,fonts ? "REIST TrueType" : "REIST Static Layout") || browser_script_executions(state->scripts) ||
        browser_scene_validate(&documents[state->active],scene)) return -1;
+    uint32_t hash=2166136261U;
+    if(fonts) {
+        if(scene->version!=BROWSER_SCENE_FONT_VERSION || !scene->fonts.count || !scene->fonts.used) return -1;
+        for(uint32_t i=0;i<scene->fonts.used;++i) hash=(hash^scene->fonts.alpha[i])*16777619U;
+        if(p!=0 && p!=2 && p!=10 && hash!=atlas_hash) return -1;
+    }
     if(p==0 || p==2 || p==10) {
         if(state->parser_failures!=failures || (p==2 && state->html_request.request<=request)) return -1;
         active=state->active; request=state->html_request.request;
-        x86os_puts(p==0 ? "BROWSER_LAYOUT_INITIAL_OK" : p==2 ? "BROWSER_LAYOUT_REFLOW_OK" : "BROWSER_LAYOUT_RECOVERY_OK");
+        atlas_hash=hash;
+        x86os_puts(fonts ? "BROWSER_FONT_" : "BROWSER_LAYOUT_");
+        x86os_puts(p==0 ? "INITIAL_OK" : p==2 ? "REFLOW_OK" : "RECOVERY_OK");
         x86os_puts(" width="); x86os_print_number((int)client->width); x86os_puts(" height="); x86os_print_number((int)client->height);
         x86os_puts(" scene="); x86os_print_number((int)scene->width); x86os_puts(" total="); x86os_print_number((int)scene->total_height); x86os_puts("\n");
+        if(fonts) {
+            uint32_t found=0;
+            for(uint32_t i=0;i<scene->count;++i) {
+                const browser_scene_run_t *r=&scene->runs[i];
+                if(r->kind!=1 || r->length!=4 || (r->height!=24 && r->height!=40)) continue;
+                const char *s=documents[state->active].text+r->offset;
+                if(memcmp(s,"iiii",4) && memcmp(s,"WWWW",4)) continue;
+                if(!(r->flags&BROWSER_FONT_FLAG)) return -1;
+                ++found; x86os_puts("BROWSER_FONT_SAMPLE kind="); x86os_print_number(s[0]=='W' ? 1 : 0);
+                x86os_puts(" size="); x86os_print_number((int)r->height);
+                x86os_puts(" x="); x86os_print_number(r->x); x86os_puts(" y="); x86os_print_number(r->y);
+                x86os_puts(" w="); x86os_print_number((int)r->width); x86os_puts("\n");
+            }
+            if(found!=4) return -1;
+            x86os_puts("BROWSER_FONT_ATLAS count="); x86os_print_number((int)scene->fonts.count);
+            x86os_puts(" bytes="); x86os_print_number((int)scene->fonts.used); x86os_puts("\n");
+        } else {
         for(uint32_t color=0;color<2;++color) {
             uint32_t found=0;
             for(uint32_t i=0;i<scene->count;++i) {
@@ -2206,18 +2238,20 @@ static int layout_probe_step(browser_state_t *state,reist_gui_surface_client_t *
             x86os_puts(" w="); x86os_print_number((int)r->width); x86os_puts(" h="); x86os_print_number((int)r->height); x86os_puts("\n");
         }
         if(details!=3) return -1;
+        }
     } else if(p==3) {
         if(!state->probe_wheel_down || state->scroll_y<192) return 0;
         if(state->active!=active || state->html_request.request!=request) return -1;
-        x86os_puts("BROWSER_LAYOUT_WHEEL_DOWN_OK scroll="); x86os_print_number((int)state->scroll_y); x86os_puts("\n");
+        x86os_puts(fonts ? "BROWSER_FONT_WHEEL_DOWN_OK scroll=" : "BROWSER_LAYOUT_WHEEL_DOWN_OK scroll="); x86os_print_number((int)state->scroll_y); x86os_puts("\n");
     } else if(p==4) {
         if(!state->probe_wheel_up || state->scroll_y) return 0;
         if(state->active!=active || state->html_request.request!=request) return -1;
-        x86os_puts("BROWSER_LAYOUT_WHEEL_UP_OK\n");
+        x86os_puts(fonts ? "BROWSER_FONT_WHEEL_UP_OK\n" : "BROWSER_LAYOUT_WHEEL_UP_OK\n");
     } else if(p==6 || p==8) {
         if(state->parser_failures!=failures+1 || state->active!=active) return -1;
         failures=state->parser_failures;
-        x86os_puts(p==6 ? "BROWSER_LAYOUT_FAULT_CONTAINED_OK\n" : "BROWSER_LAYOUT_HANG_CONTAINED_OK\n");
+        x86os_puts(fonts ? "BROWSER_FONT_" : "BROWSER_LAYOUT_");
+        x86os_puts(p==6 ? "FAULT_CONTAINED_OK\n" : "HANG_CONTAINED_OK\n");
     } else return -1;
     ++state->probe_phase; return 0;
 }
@@ -2310,20 +2344,20 @@ int main(int argc, char **argv) {
                 }
                 if(state.probe==7 && state.probe_phase==1) state.probe_phase=2;
                 if(state.probe==8 && state.probe_phase==1) state.probe_phase=2;
-                if(state.probe==9 && state.probe_phase==1) state.probe_phase=2;
+                if((state.probe==9 || state.probe==10) && state.probe_phase==1) state.probe_phase=2;
                 set_scroll(&state, &client, state.scroll_y);
                 state.redraw = state.chrome_redraw = state.status_redraw = 1U;
             } else if (message.type == REIST_GUI_SURFACE_INPUT && message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD && message.input.pressed) {
-                if(state.probe==3 && state.probe_phase==1 && !state.address_focused && message.input.key=='l') {
-                    state.probe=9; state.probe_phase=0; probe_deadline=x86os_uptime_ms()+120000U;
+                if(state.probe==3 && state.probe_phase==1 && !state.address_focused && (message.input.key=='l' || message.input.key=='t')) {
+                    state.probe=message.input.key=='t' ? 10 : 9; state.probe_phase=0; probe_deadline=x86os_uptime_ms()+120000U;
                     state.probe_wheel_down=state.probe_wheel_up=0;
-                    (void)navigate(&state,&client,"/htdocs/layout.htm"); continue;
+                    (void)navigate(&state,&client,state.probe==10 ? "/htdocs/fonts.htm" : "/htdocs/layout.htm"); continue;
                 }
-                if(state.probe==9 && !state.address_focused) {
+                if((state.probe==9 || state.probe==10) && !state.address_focused) {
                     uint32_t key=message.input.key,p=state.probe_phase;
                     if((p==5 && key=='f') || (p==7 && key=='h') || (p==9 && key=='r')) {
                         state.parse_mode=key=='f' ? 1 : key=='h' ? 2 : 0; ++state.probe_phase;
-                        (void)navigate(&state,&client,"/htdocs/layout.htm"); continue;
+                        (void)navigate(&state,&client,state.probe==10 ? "/htdocs/fonts.htm" : "/htdocs/layout.htm"); continue;
                     }
                 }
                 if(state.probe==3 && state.probe_phase==1 && !state.address_focused && (message.input.key=='j' || message.input.key=='e')) {
@@ -2379,7 +2413,7 @@ int main(int argc, char **argv) {
         int rendered=render(&state, &client);
         if (rendered != 0) { browser_runtime_failure(&state,"render",rendered); status = -5; break; }
         if (state.probe) {
-            int probe_status=state.probe==9 ? layout_probe_step(&state,&client) : state.probe==8 ? external_script_probe_step(&state,&client) : state.probe==7 ? scripting_probe_step(&state,&client) : state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
+            int probe_status=(state.probe==9 || state.probe==10) ? layout_probe_step(&state,&client) : state.probe==8 ? external_script_probe_step(&state,&client) : state.probe==7 ? scripting_probe_step(&state,&client) : state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
             if (probe_status || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
                 timing_dump();
                 if (state.probe==6U) {

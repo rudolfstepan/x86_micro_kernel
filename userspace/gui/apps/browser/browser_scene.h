@@ -5,6 +5,7 @@
 #include "html_protocol.h"
 #include "browser_resources.h"
 #include "browser_forms.h"
+#include "font_engine.hpp"
 #define BROWSER_CSS_RESOURCE_VERSION 2U
 #define BROWSER_CSS_DOCUMENT_VERSION 4U
 #define BROWSER_CSS_SCRIPT_VERSION 5U
@@ -13,6 +14,7 @@
 #define BROWSER_SCENE_VERSION 3U
 #define BROWSER_SCENE_DOCUMENT_VERSION 4U
 #define BROWSER_SCENE_LAYOUT_VERSION 5U
+#define BROWSER_SCENE_FONT_VERSION 6U
 #define BROWSER_SCENE_ROUND 9U
 #define BROWSER_SCENE_SHADOW 10U
 #define BROWSER_SCENE_NO_UNDERLINE 128U
@@ -30,6 +32,7 @@ typedef struct browser_scene {
     browser_scene_run_t runs[BROWSER_SCENE_RUNS];
     browser_forms_t forms;
     char image_urls[REIST_HTML_IMAGE_CAPACITY][BROWSER_RESOURCE_URL_CAPACITY];
+    browser_font_atlas fonts;
 } browser_scene_t;
 /* Private CSS1 envelope over generation-scoped bulk IPC, not a Surface ABI.
  * Input is this fixed prefix followed by exactly header.input_length bytes. */

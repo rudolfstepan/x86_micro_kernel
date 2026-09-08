@@ -1,5 +1,40 @@
 # REIST font assets
 
+## Runtime TrueType in the browser
+
+The browser's isolated HTMLWORK process uses FreeType 2.14.3 to rasterize the
+unmodified Liberation 2.1.5 TrueType Serif and Sans faces (regular, bold,
+italic and bold italic) at runtime. Grayscale coverage and proportional
+advances are retained in a validated, bounded scene cache; the browser UI
+does not parse font files or rerasterize fonts while scrolling.
+
+This software is based in part on the work of the FreeType Team.
+Portions of this software are copyright (C) 2026 The FreeType Project
+(https://freetype.org). All rights reserved. Upstream source remains
+unmodified; `scripts/build_browser_fonts.py` selects the memory-only
+TrueType/sfnt/smooth modules and disables optional interpreters and decoders
+through FreeType's documented build configuration.
+
+Pinned source archives (SHA-256 sidecars are verified before extraction):
+
+- `third_party/freetype-2.14.3.tar.gz`:
+  https://codeload.github.com/freetype/freetype/tar.gz/refs/tags/VER-2-14-3
+- `source/liberation-2.1.5.tar.gz`:
+  https://github.com/liberationfonts/liberation-fonts/releases/tag/2.1.5
+
+Both full images ship the exact upstream `FTL.TXT` and Liberation `LICENSE`
+as `/usr/share/fonts/freetype.txt` and `/usr/share/fonts/liberation.txt`.
+Liberation is distributed under the SIL Open Font License 1.1; the original
+font data, names, copyright and license notices are preserved.
+
+CSS `serif`, `sans-serif`, `Liberation Serif` and `Liberation Sans` select
+these faces. Missing glyphs use the existing Unicode PSF fallback. The
+implicit/explicit monospace default remains the legacy PSF path for metric
+compatibility. Webfonts, shaping, bidi, kerning and variable fonts are not
+implemented by this package. `/htdocs/fonts.htm` is the script-free demo.
+
+## Existing desktop PSF fonts
+
 `reist-vga.psf` is generated from REIST's existing IBM-PC 8x16 kernel font by
 `scripts/generate_psf2_font.py`.
 

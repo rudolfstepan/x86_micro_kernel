@@ -12,6 +12,7 @@ from build_html_engine import extract
 from build_user_sdk import extract_wapcaplet
 from build_user_program import find_zig, cpp_compile_flags
 from measure_cpp_baseline import suppress_windows_test_dialogs
+from build_browser_fonts import extract as extract_fonts, flags as font_flags, sources as font_sources
 DIAGNOSTIC = "--public-diagnostic" in sys.argv
 if DIAGNOSTIC:
     sys.argv.remove("--public-diagnostic")
@@ -23,6 +24,7 @@ class CssEngineTests(unittest.TestCase):
             directory = Path(directory)
             roots = extract(directory, css=True)
             roots.append(extract_wapcaplet(directory / "wapcaplet"))
+            font_root,_=extract_fonts(directory/'fonts')
             symbols = ("malloc calloc realloc free memcpy memmove memset memcmp "
                        "memchr strlen strcmp strncmp strchr strrchr strncpy bsearch tolower strncasecmp strdup abs").split()
             command = [str(find_zig()), "cc", "-std=c11", optimization, "-fno-builtin", "-DNDEBUG",
@@ -35,6 +37,7 @@ class CssEngineTests(unittest.TestCase):
                 command.append("-I" + str(include))
             for root in roots:
                 command += ["-I" + str(root / "include")]
+            command += ["-I"+str(font_root/'include')]
             environment = os.environ.copy()
             environment["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/codex-agent/css-host-cache")
             environment["ZIG_LOCAL_CACHE_DIR"] = str(directory / "cache")
@@ -51,6 +54,10 @@ class CssEngineTests(unittest.TestCase):
             def compile_one(args):
                 result = subprocess.run(args, env=environment,capture_output=True,text=True,timeout=60)
                 self.assertEqual(result.returncode,0,result.stderr)
+            for source in font_sources(font_root):
+                obj=directory/("vendor-font"+str(len(objects))+".o")
+                jobs.append([*command,*font_flags(font_root),"-c",str(source),"-o",str(obj)])
+                objects.append(obj)
             with ThreadPoolExecutor(max_workers=4) as pool:
                 list(pool.map(compile_one,jobs))
             sources = [ROOT / name for name in ("test/test_css_engine_host.c",
@@ -66,7 +73,8 @@ class CssEngineTests(unittest.TestCase):
             deadline = time.monotonic() + 120
             cpp_sources=["userspace/gui/apps/browser/browser_resources.cpp",
                          "userspace/gui/apps/browser/css_values.cpp",
-                         "userspace/gui/apps/browser/css_layout.cpp"]
+                         "userspace/gui/apps/browser/css_layout.cpp",
+                         "userspace/gui/apps/browser/font_engine.cpp"]
             if layout:
                 cpp_sources.append("test/browser_layout_host.cpp")
             for name in cpp_sources:
