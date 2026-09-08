@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
+active_id = "R3.31-mouse-settings"
 next_user_request = "2026-09-08: R3.30 complete resize-corner repair accepted, all7 groups. User explicitly requests a dedicated Mouse applet in Control Panel as the next priority before deferred VMware/browser work. Existing reist.input/1 keys: primary_button, speed_percent, acceleration, natural_scroll, double_click_ms; inventory runtime consumers and freeze a separate settings/persistence package before implementing it. Applet not implemented yet. No repeated routine confirmation, no agents or push."
 
 [policy]
@@ -10,6 +10,28 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.31-mouse-settings"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Dedicated Mouse applet and effective bounded session settings"
+scope = "One Ring3 saved-mouse-profile boundary: native applet, fixed authorized launch, existing CONFIG atomic batch, next-start effective input policy. No kernel/driver/live-input authority expansion. Frozen MOUSE_SETTINGS_CONTRACT on e5255931."
+allowed_files = ["automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/architecture/MOUSE_SETTINGS_CONTRACT.md", "config/etc/reist/input.conf", "userspace/config/include/reist/mouse_settings.h", "userspace/config/lib/mouse_settings.c", "userspace/gui/apps/mouse/main.c", "userspace/gui/apps/mouse/mouse_model.h", "userspace/gui/apps/mouse/mouse_model.c", "userspace/gui/apps/control_panel/main.c", "userspace/gui/compositor/desktop.c", "userspace/gui/compositor/desktop_explorer.c", "userspace/gui/compositor/desktop_explorer.h", "userspace/gui/compositor/desktop_surface_runtime.c", "userspace/gui/compositor/desktop_surface_runtime.h", "userspace/gui/include/reist/gui/surface.h", "userspace/gui/include/reist/gui/surface_client.h", "userspace/gui/lib/surface_client.c", "userspace/services/config/config_service.c", "scripts/build_user_sdk.py", "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile", "test/test_mouse_settings.py", "test/test_mouse_settings_host.c", "test/test_mouse_applet_host.c", "test/test_mouse_config_host.c", "test/test_mouse_broker_host.c", "test/test_desktop_explorer_host.c", "test/test_shell_source.py", "scripts/run_qemu_mouse_settings.py"]
+invariants = [
+ "Read frozen MOUSE_SETTINGS_CONTRACT completely. Five existing keys/ranges, defaults flat100/left/normal/500 preserve previously effective1:1. Fixed versioned settings, checked arithmetic/fractional state, generation reset; normalized primary/wheel and all compositor double-click consumers. One startup read, no config I/O or allocation in motion/paint. No public existing layouts or kernel/driver changes.",
+ "Native range/button applet with draft/defaults/save/close/local double-click test. One owned CONFIG child,5s deadline, generation-checked cancel/reap, full readback before success. Existing atomic CONFIG replacement once for <=5 validated distinct pairs; all admission precedes file access. Existing single-key CLI preserved, 13 arguments fit16-entry ABI. Preserve keyboard/unknown fields. No simultaneous-writer or live-apply promise.",
+ "Append fixed OPEN_MOUSE to existingv6 envelope; only bound Control Panel generation with live Surface and zero-reserved frame, bounded coalescing and stale/cancel/retirement rejection. Preserve Display authority and tests. Applet Ring3 fault/replacement and shell recovery, no host error dialogs/visible VMs/agents.",
+ "Host real code O0/O2 including negative and persistence/lifecycle/controls/broker cases; both images; actual QEMU UI input/save/readback/restart/motion/buttons/wheel/fault/default restore and shell command resolution. Existing browser input and R3.30 inner-corner guests unchanged. Independent image reader protects kernel plus9 programs at e5255931; only intended applet/config/compositor/Control payload changes. Keep evidence and only focused retries."
+]
+targeted_tests = ["python test/test_mouse_settings.py -v", "python scripts/measure_cpp_baseline.py --host-test test/test_reist_config_source.py -v", "python scripts/measure_cpp_baseline.py --host-test test/test_desktop_source.py -v", "python scripts/measure_cpp_baseline.py --host-test test/test_desktop_explorer_source.py -v", "python scripts/measure_cpp_baseline.py --host-test test/test_gui_surface_source.py -v", "python scripts/measure_cpp_baseline.py --host-test test/test_desktop_surface_runtime_source.py", "python scripts/measure_cpp_baseline.py --host-test test/test_shell_source.py -v", "python test/test_display_settings.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/run_qemu_mouse_settings.py --verify-artifacts --image build/reist-os.img --evidence build/codex-agent/r331-mouse/artifacts", "python scripts/run_qemu_mouse_settings.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r331-mouse/guest", "python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r331-mouse/resize.log", ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"]
+acceptance = "All14 frozen groups; real saved settings become effective in next session and applet fault is contained; no protected kernel/browser/benchmark drift, scope/queue/diff review then local commit."
+stop_conditions = ["Source outside allowed_files needed", "Unattributed changes", "Kernel/driver ABI or live-input authority expansion", "Failed gate without demonstrated focused correction"]
+commit_message = "feat: add Mouse applet and bounded desktop input settings"
+evidence = []
 
 [[packages]]
 id = "R3.30-desktop-resize-corner"
@@ -2184,7 +2206,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

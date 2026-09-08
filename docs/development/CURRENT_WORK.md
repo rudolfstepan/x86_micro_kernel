@@ -2,6 +2,19 @@
 
 Stand: 8. September 2026
 
+## R3.31 begonnen: eigenes Maus-Applet und wirksame Einstellungen
+
+Sauberer Ausgang `e5255931`. Nutzer verlangt Fortsetzung mit dem Maus-Applet.
+Inventar: alle5 Keys bereits vorhanden, aber nur generische Geschwindigkeits-
+Umschaltung in Control Panel; keine Desktopverbraucher, Doppelklick fest500ms.
+R3.31 friert den gesamten zusammenhaengenden Einstellungs-/Persistenzschnitt
+einschliesslich nativer UI, bestehendem atomarem CONFIG-Writer, autorisiertem
+Appletstart und naechstem Desktopstart ein. Details und Grenzen im
+`MOUSE_SETTINGS_CONTRACT.md`;14 feste Gruppen. Default flat100 entspricht
+vorherigem effektiv unskaliertem Verhalten, adaptive war bisher wirkungslos.
+Kein Livewechsel, Kernelumbau oder allgemeiner VMware-Abschluss. Zuerst
+Vertragscheckpoint, danach genau dieses Paket im sichtbaren Worktree.
+
 ## R3.30 abgenommen: ganze Resize-Ecke; Maus-Applet als Naechstes
 
 Neuer Nutzerauftrag auf sauberem `814fc7b7`: ganze sichtbare Resize-Ecke
