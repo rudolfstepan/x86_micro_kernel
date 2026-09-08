@@ -2,6 +2,16 @@
 
 Stand: 8. September 2026
 
+## R3.37 aktiv: EXT2-Commit-Recovery vor JS3-Schreibrechten
+
+Sauberer Ausgang eb4dcc12. Die Inventur und verbindliche Reihenfolge stehen in
+[RING3_FILE_WRITE_CONTRACT.md](../architecture/RING3_FILE_WRITE_CONTRACT.md).
+Konkreter Befund: ext2_journal_recover laesst widerspruechliche COMMITTED-
+Zielsektoren in den ACTIVE-Undo-Pfad fallen. Dieses eigenstaendige
+Persistenzproblem wird mit Regression zuerst behoben; kein neuer JS-/VFS-
+Schreibzugriff, kein Format-/Kernelwechsel. Elf Gategruppen sind eingefroren.
+Belege: build/codex-agent/r337-ext2-commit/. Noch keine Abnahmebehauptung.
+
 ## R3.36 / JS3 abgenommen: explizite Lese-Capabilities
 
 Sauberer Ausgang c9bf94ba, Vertragscheckpoint fcd0a84c:

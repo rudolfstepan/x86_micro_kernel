@@ -273,3 +273,11 @@ open/write oder pauschale OS-Autorität. Nächster Schritt: den fehlenden
 Ring-3-Vertrag für stabile schreibbare Dateiobjekte einschließlich persistenter
 Commit-/Recovery-Evidenz einfrieren. Keine Kernel-VFS-Abkürzung und kein JS4
 vor dieser JS3-Persistenzgrenze.
+
+Die Schreib-Inventur auf eb4dcc12 ist jetzt in
+[RING3_FILE_WRITE_CONTRACT.md](../architecture/RING3_FILE_WRITE_CONTRACT.md)
+festgehalten. Vor neuen Rechten ist R3.37 als eigenstaendige Persistenzreparatur
+eingefroren: Widerspruechliche COMMITTED-Evidenz darf nicht wie ACTIVE durch
+Zurueckschreiben alter EXT2-Sektoren behandelt werden. Gezielte O0/O2- und
+Gastbeweise, unveraenderte Kernel-/JS-Rechte; erst danach die dort dokumentierte
+stabile Schreibobjekt-/Backendmigration. Kein allgemeiner Schreibpfad behauptet.

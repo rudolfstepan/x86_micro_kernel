@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: R3.36 read-only JavaScript file capabilities accepted, all12 groups. Continue JS3 by inventorying/freezing the missing stable Ring-3 writable file-object and persistence/recovery contract, then explicit write capabilities. No kernel VFS write shortcut, no directory-prefix authority, no JS4 yet. R3.6b stays explicitly deferred; no agents or push."
+active_id = "R3.37-ext2-commit-recovery"
+next_user_request = "2026-09-08: JS3 write inventory found that EXT2 recovery can roll back contradictory COMMITTED evidence. Repair this independent persistence prerequisite as R3.37 before enabling writable objects. Follow RING3_FILE_WRITE_CONTRACT; no kernel VFS write shortcut, directory-prefix authority or JS4. R3.6b stays explicitly deferred; no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,22 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.37-ext2-commit-recovery"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Preserve durable EXT2 commits during bounded Ring-3 recovery"
+scope = "Independent persistence prerequisite discovered during JS3 write inventory on eb4dcc12. Freeze future object-write requirements; repair only existing journal terminal-state handling and prove refusal without media effects. No new write authority or persistent format."
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/development/OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md","docs/architecture/RING3_FILE_WRITE_CONTRACT.md","userspace/storage/lib/vfs_shadow_ext2.c","test/test_ext2_commit_recovery_host.c","test/test_ext2_commit_recovery.py","scripts/run_qemu_ext2_commit_recovery.py"]
+invariants = ["Read RING3_FILE_WRITE_CONTRACT fully. Only ACTIVE may restore before-images. Contradictory COMMITTED evidence returns EIO with zero writes/flushes; coherent COMMITTED only cleans headers. Keep v1 format, bounds, existing parser/client/kernel ABI and JS rights unchanged.", "Main worktree, no agents, visible VMs, native crash dialogs, unrelated edits or push; preserve prior evidence."]
+targeted_tests = ["python test/test_ext2_commit_recovery.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_symlink.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_namespace.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_shadow_ext2.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_file_client.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/verify_js_runner_artifacts.py --baseline c9bf94ba --evidence build/codex-agent/r337-ext2-commit/artifacts","python scripts/run_qemu_ext2_commit_recovery.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r337-ext2-commit/guest","python scripts/run_qemu_ext2_symlink.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --disk build/codex-agent/r337-ext2-commit/namespace.img --log build/codex-agent/r337-ext2-commit/namespace.log","python scripts/run_qemu_js_runner.py --file-capabilities --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r337-ext2-commit/js-runner.log"]
+acceptance = "All11 frozen groups. Real O0/O2 journal capture, terminal-state contradictions, cleanup interruption and idempotence; real guest refusal across service restart with exact unchanged disk and live normal shell, plus valid committed cleanup. Existing namespace and JS file guests pass. Kernels/five protected programs unchanged against inherited c9bf94ba pins. Scope/diff check and archive before local commit."
+stop_conditions = ["Unattributed changes", "Source outside allowed_files needed", "Failed gate without focused correction", "New write authority or persistent format required"]
+commit_message = "fix: reject contradictory committed EXT2 recovery evidence"
 
 [[packages]]
 id = "R3.36-js-file-capabilities"
