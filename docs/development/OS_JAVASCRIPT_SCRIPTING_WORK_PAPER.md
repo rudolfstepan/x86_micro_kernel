@@ -217,7 +217,9 @@ Korrekturen wiederholt; alte Belege wurden weder überschrieben noch als
 abschließende Abnahme verwendet. Keine allgemeine System-Scripting- oder neue
 VMware-Laufzeit-/Performancezusage aus diesen Teilbelegen.
 
-Nächste Etappe: JS2-Vertrag für den allgemeinen Shell-Runner und gemeinsame
-Host-Transport-Bausteine vorbereiten und einfrieren; erst danach implementieren.
-Die nächste Etappe wurde in diesem Paket nicht begonnen. R3.6b behält trotz
-formalem Queue-Rücksprung seine ausdrückliche VMware-Zurückstellung.
+Nächste Etappe JS2 ist als R3.35 auf ef9fb2de eingefroren:
+[OS_JAVASCRIPT_RUNNER_CONTRACT.md](../architecture/OS_JAVASCRIPT_RUNNER_CONTRACT.md).
+Gemeinsamer Dienst außerhalb des Browsers, JS.PRG, native speichergebundene
+Konsole/Argumente, validiertes IPC und getrennte Realms; keine OS-Brokerrechte.
+Implementierung und zehn Gates folgen erst nach dem Vertragscheckpoint.
+R3.6b behält seine ausdrückliche VMware-Zurückstellung.

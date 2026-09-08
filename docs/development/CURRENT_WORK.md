@@ -2,6 +2,14 @@
 
 Stand: 8. September 2026
 
+## Aktiv: R3.35 / JS2 – allgemeiner JavaScript-Runner
+
+Vertrag auf ef9fb2de vor Implementierung eingefroren:
+[OS_JAVASCRIPT_RUNNER_CONTRACT.md](../architecture/OS_JAVASCRIPT_RUNNER_CONTRACT.md).
+Gemeinsamer isolierter Dienst, JS.PRG, Datei/-e, Argumente und validierte
+stdout/stderr-Journale. Keine neuen Kernel- oder Skript-OS-Rechte. Zehn Gates
+in der Queue; R3.6b bleibt unverändert zurückgestellt. Noch keine Abnahme.
+
 ## R3.34 abgenommen: Script-Prozessdomäne und OS-Scripting-Arbeitspapier
 
 [OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md](OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md)

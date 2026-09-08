@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: R3.34 accepted. Continue the approved OS_JAVASCRIPT_SCRIPTING_WORK_PAPER with JS2: first freeze the general JS.PRG runner and reusable host transport contract, then implement that one package. R3.6b retains its explicit VMware deferral; do not resume it ahead of this scripting priority. No agents or push."
+active_id = "R3.35-js-runner"
+next_user_request = "2026-09-08: Execute only the frozen JS2/R3.35 package directly in the main worktree. R3.6b retains its explicit deferral; later capability brokers follow separately. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,22 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.35-js-runner"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Reusable isolated JavaScript service and bounded user shell runner"
+scope = "JS2 on ef9fb2de; frozen OS_JAVASCRIPT_RUNNER_CONTRACT. Common transport, opt-in memory-only console adapter, JS.PRG, CLI source admission, output validation, lifecycle and separated-realm proof. No new OS bindings or kernel changes."
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/development/OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md","docs/architecture/OS_JAVASCRIPT_RUNNER_CONTRACT.md","userspace/js/js_protocol.h","userspace/js/js_protocol.c","userspace/js/js_session.hpp","userspace/js/js_session.cpp","userspace/js/js_worker.c","userspace/js/script_protocol.h","userspace/js/script_protocol.c","userspace/js/runner.hpp","userspace/js/runner.cpp","userspace/programs/js.cpp","userspace/programs/jsruntst.cpp","userspace/gui/apps/browser/js_protocol.h","userspace/gui/apps/browser/js_protocol.c","userspace/gui/apps/browser/js_session.hpp","userspace/gui/apps/browser/js_session.cpp","userspace/gui/apps/browser/js_worker.c","userspace/quickjs/private/engine_internal.h","userspace/quickjs/lib/engine.c","userspace/quickjs/lib/script.c","userspace/quickjs/include/reist_js_script.h","scripts/build_user_js.py","scripts/build_system_programs.py","scripts/build-windows.ps1","Makefile","htdocs/hello.js","test/test_js.py","test/js_host.c","test/js_script_vectors.h","test/test_js_runner.py","test/js_runner_host.cpp","test/test_js_service.py","test/js_service_host.cpp","test/test_script_domain.py","scripts/run_qemu_js_runner.py","scripts/verify_js_runner_artifacts.py"]
+invariants = ["Read OS_JAVASCRIPT_RUNNER_CONTRACT fully. Preserve native Script restriction, browser EVAL semantics, bounded publication/reap and source/heap/time quotas.", "Only trusted runner opens source and writes validated console records. No agents, visible VMs, crash dialogs, unrelated edits or push."]
+targeted_tests = ["python test/test_js.py -v","python test/test_js_runner.py -v","python test/test_js_service.py -v","python test/test_script_domain.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/verify_js_runner_artifacts.py --evidence build/codex-agent/r335-js-runner/artifacts","python scripts/run_qemu_js_runner.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r335-js-runner/runner.log","python scripts/run_qemu_js_service.py --restricted-worker --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r335-js-runner/service.log","python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r335-js-runner/browser.log"]
+acceptance = "All10 frozen groups; engine/service target links after fresh SDK, both actual image kernels and five protected payloads identical to ef9fb2de. Direct diff/scope/queue review before local commit."
+stop_conditions = ["Source outside allowed_files needed", "Unattributed edits", "Failed gate without focused correction", "New broker/persistence authority needed"]
+commit_message = "feat: add an isolated JavaScript shell runner"
 
 [[packages]]
 id = "R3.34-script-process-domain"
@@ -2300,7 +2316,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
