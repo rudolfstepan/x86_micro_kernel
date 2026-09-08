@@ -93,6 +93,39 @@ Fenster DARF kein neues Capture erhalten.
 
 ### Capture-Zustandsautomat
 
+#### R3.30: vollstaendige Resize-Ecken (8. September 2026)
+
+Der Nutzer meldet einen schwer treffbaren unteren rechten Groessengriff.
+Der vorhandene16px-Griff und der bisherige Hit-Test sind inkonsistent:
+Diagonalresize entsteht nur im Schnitt zweier6px-Randstreifen, waehrend
+Teile der sichtbaren Ecke als einfache Kante oder Clientflaeche gelten.
+
+Die vier inneren16x16px-Eckrechtecke waehlen deshalb jeweils beide
+benachbarten Resize-Kanten. Ein gemeinsamer privater Extent definiert
+Zeichen- und Treffergeometrie. Bei winzigen Fenstern wird jede Achse auf
+hoechstens ihre halbe Fensterabmessung begrenzt, damit keine gegenueberliegenden
+Kanten gleichzeitig gewaehlt werden. Randstreifen ausserhalb der Ecken
+bleiben6px breit; Margin0 deaktiviert Resize. Halboffene Fensteraussenkanten
+und der nichtinteraktive Schatten bleiben unveraendert.
+
+Close behaelt Vorrang, nur das oberste sichtbare Fenster erhaelt Capture.
+Druecken und Motion0 duerfen die Geometrie nicht versetzen. Resize bleibt am
+urspruenglichen Zeigerpixel verankert, auch nach Verlassen der Ecke, bis zum
+vorhandenen Release/Cancel/Destroy. Mindestgroessen, Arbeitsflaeche und
+Damage-/Cache-/Queue-/ABI-Regeln werden nicht geaendert. Keine neue
+Kernel-/Treiberautoritaet, keine Allokation oder I/O im Hit-Test.
+
+Gefrorene Abnahme: jeder Pixel aller vier Ecken, unmittelbar benachbarte
+Client-/Kantenpixel, unsichtbar/verdeckt/Close, kleine/extreme/verschobene
+Geometrie und Capture/Anker/Abbruch nativ O0/O2. Reale QEMU-Eingabe an der
+innersten unteren rechten Ecke (12px weiter innen als der bestehende
+Client-Corner-Probe), Resize/Scanout und unveraenderte Wheel-/Fault-/Recovery-
+und Eingabegaeste. Beide Images und geschuetzte Kernel-/Browser-/Benchmark-
+Programme bleiben ausser DESKTOP bytegleich814fc7b7.
+
+Das zusaetzlich gewuenschte Maus-Applet ist ein eigener naechster
+Einstellungs-/Persistenzschnitt; es wird nicht in diesen Hit-Test-Fix gemischt.
+
 ```text
 NONE --Button-Down im Client--> CLIENT_CAPTURE
 CLIENT_CAPTURE --Motion--> CLIENT_CAPTURE

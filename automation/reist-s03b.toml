@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: Continue browser after f2dbc2d5. User explicitly identifies missing TTF and pixelated text: actual runtime TrueType with antialiasing in isolated HTMLWORK, shared metrics and validated cached glyph publication. Keep deferred VMware package unchanged, no kernel/SDK authority or dynamic webfont/event/network expansion. Direct visible-worktree implementation and gates, no agents or push."
+active_id = "R3.30-desktop-resize-corner"
+next_user_request = "2026-09-08: User interrupts browser work to repair the complete resize-corner hit area. Then explicitly requests a dedicated Mouse applet in Control Panel. Finish only R3.30 here; Mouse applet is the next user priority before deferred VMware/browser work. Existing reist.input/1 keys: primary_button, speed_percent, acceleration, natural_scroll, double_click_ms; inventory runtime consumers and freeze a separate settings/persistence package before implementing it. No repeated routine confirmation, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,32 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.30-desktop-resize-corner"
+status = "active"
+phase = "post-s0"
+risk = "medium"
+title = "Hit the complete window resize corner"
+scope = "One compositor-local non-client hit/capture boundary. Existing grip occupies16px while diagonal hit testing only intersects6px edge strips. Complete bounded16x16 corner regions, shared private extent with decoration; edge strips remain6px, close and frontmost-window precedence remain intact. User's Mouse Control Panel applet is a separate next settings/persistence boundary, not part of this repair."
+allowed_files = ["automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md", "userspace/gui/compositor/desktop_wm.c", "userspace/gui/compositor/desktop_wm.h", "userspace/gui/compositor/desktop.c", "test/test_desktop_wm_host.c", "test/test_desktop_source.py", "scripts/run_qemu_browser_layout.py"]
+invariants = [
+ "R3.30 extension of GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT is frozen. Entire16x16 in-window corners select both adjacent resize edges, not just ink or6px intersections; clamp each axis to half of tiny window dimensions. Zero resize margin remains disabled; normal edge margins unchanged. Renderer and hit test share one private extent. No enlarged shadow/outside-window hit region.",
+ "Close precedes resize, resize precedes title/client; only topmost visible window may acquire capture. Press and zero motion never change geometry; captured pointer delta drives exact anchored resize until release/cancel/destroy. Existing min/work-area bounds, damage caching, queues, event batching and public layouts unchanged. Constant-work arithmetic only; no heap/I/O/kernel/input-driver/per-motion redraw additions.",
+ "Red regression first where practical. Exhaustive native O0/O2 corner pixel grid plus adjacent boundaries, zero/tiny/translated/extreme geometry, close/client/occlusion, anchor/capture/release/cancel and old damage cases. Headless real QEMU mouse starts16px inside decorated bottom-right corner, actual resize/reflow and scanout, wheel/fault/hang/recovery/input regression. Existing guest default unchanged; opt-in inset selects the new proof. No fake input/forged probe success, no visible windows/dialogs.",
+ "Both reference images; existing independent FAT/kernel reader binds protected kernel and7 program bytes, plus BROWSER60a8b3a7cd955a19287ee9989b762101373419206613417ceec095714d7f6f3d and HTMLWORK88121b6cd91bf379489f0756ce2aeccfdfdbcad17e80de306d5fa0706c3bfee1 to814fc7b7. Only DESKTOP program changes. Preserve old VMware deferral/gates and all evidence. Repeat only affected gates after demonstrated in-scope repair."
+]
+targeted_tests = ["python scripts/measure_cpp_baseline.py --host-test test/test_desktop_source.py -v", "python scripts/measure_cpp_baseline.py --host-test test/test_browser_runtime_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_browser_layout.py --verify-artifacts --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r330-resize/artifacts.json",
+ "python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r330-resize/guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "All7 frozen groups pass; actual inner-corner resize and preserved native hit/capture/damage behavior, no ABI/kernel/protected application drift. Local direct implementation commit only after exact scope/queue/diff review."
+stop_conditions = ["Source outside allowed_files required", "Unattributed changes", "Kernel/driver/public ABI or settings-persistence expansion", "Failed gate without demonstrated focused repair"]
+commit_message = "fix: use the complete window corner for resizing"
+evidence = []
 
 [[packages]]
 id = "R3.29-browser-truetype"
@@ -2150,7 +2176,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

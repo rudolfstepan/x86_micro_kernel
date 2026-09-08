@@ -2,6 +2,22 @@
 
 Stand: 8. September 2026
 
+## R3.30 gestartet: Resize-Ecke, danach Maus-Applet
+
+Neuer Nutzerauftrag auf sauberem `814fc7b7`: ganze sichtbare Resize-Ecke
+benutzbar machen. Ursache im Ring3-WM bestaetigt:16px-Griff, aber nur6px-
+Randstreifen im Hit-Test. Eigenes begrenztes R3.30 mit eingefrorenen7 Gates;
+alte VMware-Abnahme bleibt mit allen Gates und Deferral unveraendert queued.
+Zuerst Vertragscheckpoint, danach native rote Regression und Implementierung.
+
+Zusaetzlicher Nutzerauftrag waehrenddessen: eigenes Maus-Widget/Applet in der
+Systemsteuerung. Direkte naechste Prioritaet nach diesem Fix, vor dem alten
+VMware-Paket. Vorhandenes `reist.input/1` hat bereits Geschwindigkeit,
+Primaertaste, Beschleunigung, Scrollrichtung und Doppelklickzeit. Das Applet
+und die tatsaechliche Anwendung dieser Werte benoetigen einen eigenen
+Einstellungs-/Persistenzvertrag nach Bestandsaufnahme der Verbraucher;
+kein blosses Speichern wirkungsloser Optionen. Noch nicht implementiert.
+
 ## R3.29 abgenommen: echte TTF-Rasterisierung
 
 Sauberer Ausgang `f2dbc2d5`. Nutzer fordert Fortsetzung und konkretisiert
