@@ -167,7 +167,8 @@ uint32_t desktop_wm_resize_edges_at(const desktop_wm_t *manager,
                                     uint32_t window_index,
                                     int32_t x, int32_t y) {
     if (manager == 0 || window_index >= DESKTOP_WM_CAPACITY ||
-        manager->windows[window_index].visible == 0U) return 0U;
+        manager->windows[window_index].visible == 0U ||
+        manager->windows[window_index].maximized) return 0U;
     const desktop_window_t *window = &manager->windows[window_index];
     desktop_rect_t bounds = window_rect(window);
     if (!point_in_rect(bounds, x, y)) return 0U;
@@ -241,6 +242,60 @@ static void clamp_window(desktop_wm_t *manager, desktop_window_t *window) {
     if (window->y < manager->work_top) window->y = manager->work_top;
     if (window->x > maximum_x) window->x = maximum_x;
     if (window->y > maximum_y) window->y = maximum_y;
+}
+
+desktop_rect_t desktop_wm_caption_rect(const desktop_wm_t *manager,
+    uint32_t index, uint32_t kind) {
+    desktop_rect_t empty={0,0,0,0};
+    if (!manager || index>=DESKTOP_WM_CAPACITY ||
+        (kind!=DESKTOP_WM_CAPTURE_MINIMIZE && kind!=DESKTOP_WM_CAPTURE_MAXIMIZE)) return empty;
+    const desktop_window_t *w=&manager->windows[index];
+    uint64_t border=manager->frame_border, title=manager->title_height;
+    if ((w->flags&DESKTOP_WM_WINDOW_DIALOG) || title<20 || title>64 ||
+        w->height<border*2+title || w->width<border*2+title*3+12) return empty;
+    uint32_t size=(uint32_t)title-6;
+    int64_t x=(int64_t)w->x+w->width-(int64_t)border-3-size;
+    if (kind==DESKTOP_WM_CAPTURE_MINIMIZE) x-=size+3;
+    int64_t y=(int64_t)w->y+(int64_t)border+3;
+    if (x<INT32_MIN || x+size>INT32_MAX || y<INT32_MIN || y+size>INT32_MAX) return empty;
+    return (desktop_rect_t){(int32_t)x,(int32_t)y,size,size};
+}
+
+static void cancel_window_capture(desktop_wm_t *m,uint32_t index) {
+    if (m->capture_window!=(int32_t)index) return;
+    m->capture_kind=DESKTOP_WM_CAPTURE_NONE;
+    m->capture_window=DESKTOP_WM_NO_WINDOW;
+    m->resize_edges=m->caption_armed=0;
+}
+
+static void restore_normal_bounds(desktop_wm_t *m,desktop_window_t *w) {
+    if (!w->maximized) return;
+    w->x=w->normal_bounds.x; w->y=w->normal_bounds.y;
+    w->width=w->normal_bounds.width; w->height=w->normal_bounds.height;
+    uint32_t width=(uint32_t)(m->work_right-m->work_left);
+    uint32_t height=(uint32_t)(m->work_bottom-m->work_top);
+    if (w->width>width) w->width=width;
+    if (w->height>height) w->height=height;
+    clamp_window(m,w);
+    w->maximized=0;
+    w->normal_bounds=(desktop_rect_t){0};
+}
+
+uint32_t desktop_wm_toggle_maximize(desktop_wm_t *m,uint32_t index) {
+    if (!m || index>=DESKTOP_WM_CAPACITY) return 0;
+    desktop_window_t *w=&m->windows[index];
+    if (!w->visible || (w->flags&(DESKTOP_WM_WINDOW_DIALOG|DESKTOP_WM_WINDOW_STATE_BLOCKED)) ||
+        m->work_right<=m->work_left || m->work_bottom<=m->work_top ||
+        !w->width || !w->height || w->width>INT32_MAX || w->height>INT32_MAX) return 0;
+    cancel_window_capture(m,index);
+    if (w->maximized) restore_normal_bounds(m,w);
+    else {
+        w->normal_bounds=window_rect(w); w->maximized=1;
+        w->x=m->work_left; w->y=m->work_top;
+        w->width=(uint32_t)(m->work_right-m->work_left);
+        w->height=(uint32_t)(m->work_bottom-m->work_top);
+    }
+    return 1;
 }
 
 static uint32_t resize_window(desktop_wm_t *manager,
@@ -349,6 +404,8 @@ void desktop_wm_initialize(desktop_wm_t *manager, uint32_t screen_width,
     manager->selected = 0U;
     manager->capture_kind = DESKTOP_WM_CAPTURE_NONE;
     manager->capture_window = DESKTOP_WM_NO_WINDOW;
+    manager->caption_armed = 0;
+    manager->next_generation = 0;
     manager->drag_offset_x = 0;
     manager->drag_offset_y = 0;
     manager->resize_edges = 0U;
@@ -393,6 +450,9 @@ void desktop_wm_initialize(desktop_wm_t *manager, uint32_t screen_width,
          * content and explicitly opens one.  This prevents placeholder
          * windows from becoming visible without a backing application. */
         window->visible = 0U;
+        window->minimized = window->maximized = 0U;
+        window->normal_bounds = (desktop_rect_t){0};
+        window->generation = 0;
         manager->z_order[index] = index;
         clamp_window(manager, window);
     }
@@ -414,13 +474,22 @@ int desktop_wm_window_at(const desktop_wm_t *manager, int32_t x, int32_t y) {
 uint32_t desktop_wm_open(desktop_wm_t *manager, uint32_t window_index) {
     if (manager == 0 || window_index >= DESKTOP_WM_CAPACITY) return 0U;
     uint32_t changed = manager->windows[window_index].visible == 0U;
+    if (changed && !manager->windows[window_index].minimized) {
+        if (++manager->next_generation==0U) ++manager->next_generation;
+        manager->windows[window_index].generation=manager->next_generation;
+    }
     manager->windows[window_index].visible = 1U;
+    manager->windows[window_index].minimized = 0U;
     return changed | focus_window(manager, window_index);
 }
 
 uint32_t desktop_wm_close(desktop_wm_t *manager, uint32_t window_index) {
     if (manager == 0 || window_index >= DESKTOP_WM_CAPACITY ||
-        manager->windows[window_index].visible == 0U) return 0U;
+        (!manager->windows[window_index].visible &&
+         !manager->windows[window_index].minimized)) return 0U;
+    cancel_window_capture(manager,window_index);
+    restore_normal_bounds(manager,&manager->windows[window_index]);
+    manager->windows[window_index].minimized = 0U;
     manager->windows[window_index].visible = 0U;
     if (manager->keyboard_focus == (int32_t)window_index)
         focus_top_visible(manager);
@@ -429,8 +498,21 @@ uint32_t desktop_wm_close(desktop_wm_t *manager, uint32_t window_index) {
     return 1U;
 }
 
+uint32_t desktop_wm_minimize(desktop_wm_t *m,uint32_t index) {
+    if (!m || index>=DESKTOP_WM_CAPACITY) return 0;
+    desktop_window_t *w=&m->windows[index];
+    if (!w->visible || (w->flags&(DESKTOP_WM_WINDOW_DIALOG|DESKTOP_WM_WINDOW_STATE_BLOCKED))) return 0;
+    cancel_window_capture(m,index);
+    w->visible=0; w->minimized=1;
+    if (m->keyboard_focus==(int32_t)index) focus_top_visible(m);
+    if (m->pointer_focus==(int32_t)index) m->pointer_focus=DESKTOP_WM_NO_WINDOW;
+    return 1;
+}
+
 uint32_t desktop_wm_select(desktop_wm_t *manager, uint32_t window_index) {
     if (manager == 0 || window_index >= DESKTOP_WM_CAPACITY) return 0U;
+    if (manager->windows[window_index].minimized)
+        return desktop_wm_open(manager,window_index);
     uint32_t changed = manager->selected != window_index;
     manager->selected = window_index;
     if (manager->windows[window_index].visible)
@@ -443,14 +525,26 @@ uint32_t desktop_wm_pointer_press(desktop_wm_t *manager,
     if (manager == 0 || manager->capture_kind != DESKTOP_WM_CAPTURE_NONE)
         return 0U;
     int window_index = desktop_wm_window_at(manager, x, y);
+    if (window_index>=0 && (manager->windows[window_index].flags&DESKTOP_WM_WINDOW_STATE_BLOCKED) &&
+        (point_in_rect(desktop_wm_caption_rect(manager,(uint32_t)window_index,DESKTOP_WM_CAPTURE_MINIMIZE),x,y) ||
+         point_in_rect(desktop_wm_caption_rect(manager,(uint32_t)window_index,DESKTOP_WM_CAPTURE_MAXIMIZE),x,y)))
+        return 0U;
     manager->pointer_focus = window_index;
     if (window_index == DESKTOP_WM_NO_WINDOW) return 0U;
     uint32_t index = (uint32_t)window_index;
     uint32_t changed = focus_window(manager, index);
-    /* Hit-test precedence is close, resize edge, title, then client area. */
+    /* Hit-test precedence is close, state buttons, resize, title, client. */
     if (point_in_rect(desktop_wm_close_rect(manager, index), x, y)) {
         manager->capture_kind = DESKTOP_WM_CAPTURE_CLOSE;
         manager->capture_window = window_index;
+        manager->caption_armed = 1;
+    } else if (point_in_rect(desktop_wm_caption_rect(manager,index,DESKTOP_WM_CAPTURE_MINIMIZE),x,y) ||
+               point_in_rect(desktop_wm_caption_rect(manager,index,DESKTOP_WM_CAPTURE_MAXIMIZE),x,y)) {
+        if (!(manager->windows[index].flags&DESKTOP_WM_WINDOW_STATE_BLOCKED)) {
+            manager->capture_kind=point_in_rect(desktop_wm_caption_rect(manager,index,DESKTOP_WM_CAPTURE_MINIMIZE),x,y)
+                ? DESKTOP_WM_CAPTURE_MINIMIZE : DESKTOP_WM_CAPTURE_MAXIMIZE;
+            manager->capture_window=window_index; manager->caption_armed=1;
+        }
     } else if ((manager->resize_edges = desktop_wm_resize_edges_at(
                     manager, index, x, y)) != 0U) {
         const desktop_window_t *window = &manager->windows[index];
@@ -463,6 +557,7 @@ uint32_t desktop_wm_pointer_press(desktop_wm_t *manager,
         manager->resize_window_width = window->width;
         manager->resize_window_height = window->height;
     } else if (point_in_rect(title_rect(manager, index), x, y)) {
+        if (manager->windows[index].maximized) return changed;
         manager->capture_kind = DESKTOP_WM_CAPTURE_MOVE;
         manager->capture_window = window_index;
         manager->drag_offset_x = x - manager->windows[index].x;
@@ -487,6 +582,16 @@ uint32_t desktop_wm_pointer_motion(desktop_wm_t *manager,
     if (manager->capture_window < 0 ||
         manager->capture_window >= (int32_t)DESKTOP_WM_CAPACITY) return 0U;
     desktop_window_t *window = &manager->windows[manager->capture_window];
+    if (!window->visible) { cancel_window_capture(manager,(uint32_t)manager->capture_window); return 0; }
+    if (manager->capture_kind==DESKTOP_WM_CAPTURE_CLOSE ||
+        manager->capture_kind==DESKTOP_WM_CAPTURE_MINIMIZE ||
+        manager->capture_kind==DESKTOP_WM_CAPTURE_MAXIMIZE) {
+        desktop_rect_t r=manager->capture_kind==DESKTOP_WM_CAPTURE_CLOSE
+            ? desktop_wm_close_rect(manager,(uint32_t)manager->capture_window)
+            : desktop_wm_caption_rect(manager,(uint32_t)manager->capture_window,manager->capture_kind);
+        manager->caption_armed=point_in_rect(r,x,y);
+        return 0;
+    }
     if (manager->capture_kind == DESKTOP_WM_CAPTURE_RESIZE)
         return resize_window(manager, window, x, y);
     if (manager->capture_kind != DESKTOP_WM_CAPTURE_MOVE) return 0U;
@@ -512,6 +617,7 @@ uint32_t desktop_wm_pointer_release(desktop_wm_t *manager,
     manager->capture_kind = DESKTOP_WM_CAPTURE_NONE;
     manager->capture_window = DESKTOP_WM_NO_WINDOW;
     manager->resize_edges = 0U;
+    manager->caption_armed = 0U;
     if (capture_kind == DESKTOP_WM_CAPTURE_CLOSE && captured >= 0 &&
         captured < (int32_t)DESKTOP_WM_CAPACITY &&
         manager->windows[captured].visible &&
@@ -519,6 +625,14 @@ uint32_t desktop_wm_pointer_release(desktop_wm_t *manager,
                       x, y)) {
         changed = desktop_wm_close(manager, (uint32_t)captured);
     }
+    if ((capture_kind==DESKTOP_WM_CAPTURE_MINIMIZE || capture_kind==DESKTOP_WM_CAPTURE_MAXIMIZE) &&
+        captured>=0 && captured<(int32_t)DESKTOP_WM_CAPACITY &&
+        manager->windows[captured].visible &&
+        desktop_wm_window_at(manager,x,y)==captured &&
+        point_in_rect(desktop_wm_caption_rect(manager,(uint32_t)captured,capture_kind),x,y))
+        changed=capture_kind==DESKTOP_WM_CAPTURE_MINIMIZE
+            ? desktop_wm_minimize(manager,(uint32_t)captured)
+            : desktop_wm_toggle_maximize(manager,(uint32_t)captured);
     manager->pointer_focus = desktop_wm_window_at(manager, x, y);
     return changed;
 }
@@ -528,6 +642,8 @@ typedef struct {
     uint32_t z_order[DESKTOP_WM_CAPACITY];
     int32_t keyboard_focus;
     uint32_t selected;
+    uint32_t capture_kind,caption_armed;
+    int32_t capture_window;
 } desktop_wm_snapshot_t;
 
 static void take_snapshot(const desktop_wm_t *manager,
@@ -538,6 +654,9 @@ static void take_snapshot(const desktop_wm_t *manager,
     }
     snapshot->keyboard_focus = manager->keyboard_focus;
     snapshot->selected = manager->selected;
+    snapshot->capture_kind=manager->capture_kind;
+    snapshot->capture_window=manager->capture_window;
+    snapshot->caption_armed=manager->caption_armed;
 }
 
 static uint32_t z_position(const uint32_t *z_order, uint32_t window_index) {
@@ -580,6 +699,12 @@ static void collect_right_bottom_resize_damage(
     int32_t minimum_x = old_bounds.x < new_bounds.x
         ? old_bounds.x : new_bounds.x;
     uint32_t damage_inset = manager->frame_border;
+    if (before->width!=after->width) {
+        /* Right-anchored controls move across the title, beyond edge strips. */
+        desktop_dirty_add(dirty,(desktop_rect_t){before->x,before->y,
+            before->width>after->width ? before->width : after->width,
+            manager->title_height+manager->frame_border});
+    }
     if (manager->resize_margin <= UINT32_MAX / 2U &&
         manager->resize_margin * 2U > damage_inset)
         damage_inset = manager->resize_margin * 2U;
@@ -612,6 +737,17 @@ static void collect_right_bottom_resize_damage(
 static void collect_state_damage(const desktop_wm_t *manager,
                                  const desktop_wm_snapshot_t *before,
                                  desktop_wm_dispatch_result_t *result) {
+    if (before->capture_kind!=manager->capture_kind || before->capture_window!=manager->capture_window ||
+        before->caption_armed!=manager->caption_armed) {
+        if (before->capture_window>=0 && before->capture_window<(int32_t)DESKTOP_WM_CAPACITY &&
+            (before->capture_kind==DESKTOP_WM_CAPTURE_CLOSE || before->capture_kind==DESKTOP_WM_CAPTURE_MINIMIZE ||
+             before->capture_kind==DESKTOP_WM_CAPTURE_MAXIMIZE))
+            desktop_dirty_add(&result->dirty,title_rect(manager,(uint32_t)before->capture_window));
+        if (manager->capture_window>=0 && manager->capture_window<(int32_t)DESKTOP_WM_CAPACITY &&
+            (manager->capture_kind==DESKTOP_WM_CAPTURE_CLOSE || manager->capture_kind==DESKTOP_WM_CAPTURE_MINIMIZE ||
+             manager->capture_kind==DESKTOP_WM_CAPTURE_MAXIMIZE))
+            desktop_dirty_add(&result->dirty,title_rect(manager,(uint32_t)manager->capture_window));
+    }
     for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
         const desktop_window_t *old_window = &before->windows[index];
         const desktop_window_t *new_window = &manager->windows[index];
@@ -693,6 +829,11 @@ int desktop_wm_dispatch(desktop_wm_t *manager,
     } else if (event->type == DESKTOP_WM_EVENT_CLOSE) {
         if (event->target >= DESKTOP_WM_CAPACITY) return -22;
         (void)desktop_wm_close(manager, event->target);
+    } else if (event->type == DESKTOP_WM_EVENT_MINIMIZE ||
+               event->type == DESKTOP_WM_EVENT_TOGGLE_MAXIMIZE) {
+        if (event->target>=DESKTOP_WM_CAPACITY) return -22;
+        if (event->type==DESKTOP_WM_EVENT_MINIMIZE) (void)desktop_wm_minimize(manager,event->target);
+        else (void)desktop_wm_toggle_maximize(manager,event->target);
     } else if (event->type == DESKTOP_WM_EVENT_KEYBOARD) {
         uint32_t next = manager->selected;
         if (event->key == DESKTOP_WM_KEY_TAB ||

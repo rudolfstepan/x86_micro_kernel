@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.32-window-state-controls"
-next_user_request = "2026-09-08: User requests right-side window minimize/maximize/normal buttons, including taskbar minimization. Freeze and implement one complete window-state package before the unchanged deferred VMware work. No repeated routine confirmation, no agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-08: Right-side window minimize/maximize/normal controls accepted in R3.32 after all10 frozen groups. Formal queue returns to R3.6b with its original deferral, browser priority and gates unchanged; no later package implemented. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.32-window-state-controls"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Server caption minimize/maximize/restore and retained taskbar windows"
@@ -26,7 +26,18 @@ runtime_tests = ["python scripts/run_qemu_window_controls.py --verify-artifacts 
 acceptance = "All10 groups, final diff/scope and unchanged protected artifacts, then direct local implementation commit. No later package work."
 stop_conditions = ["Source outside allowed_files required", "Unattributed changes", "Kernel/driver/public ABI or independent policy expansion", "Failed gate without demonstrated focused correction"]
 commit_message = "feat: add window minimize maximize and restore controls"
-evidence = []
+evidence = [
+ "python scripts/measure_cpp_baseline.py --host-test test/test_desktop_source.py -v",
+ "python scripts/measure_cpp_baseline.py --host-test test/test_gui_surface_source.py -v",
+ "python scripts/measure_cpp_baseline.py --host-test test/test_desktop_surface_runtime_source.py",
+ ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+ ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+ "python scripts/run_qemu_window_controls.py --verify-artifacts --image build/reist-os.img --evidence build/codex-agent/r332-window/artifacts",
+ "python scripts/run_qemu_window_controls.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r332-window/guest",
+ "python scripts/run_qemu_mouse_settings.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r332-window/mouse",
+ "python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r332-window/resize.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
 
 
 [[packages]]
@@ -2239,7 +2250,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

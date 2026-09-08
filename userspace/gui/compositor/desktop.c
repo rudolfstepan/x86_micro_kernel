@@ -954,6 +954,7 @@ typedef struct {
     reist_gui_menu_state_t shortcut_menu;
     reist_gui_dialog_state_t dialog;
     uint32_t taskbar_capture_slot;
+    uint32_t taskbar_capture_generation;
     uint32_t dialog_kind;
     uint32_t trash_menu_can_empty;
     uint32_t error_sequence;
@@ -1931,13 +1932,14 @@ static desktop_rect_t desktop_task_button_rect(
     desktop_rect_t empty = {0, 0, 0U, 0U};
     if (display == 0 || manager == 0 ||
         window_index >= DESKTOP_WM_CAPACITY ||
-        !manager->windows[window_index].visible) return empty;
+        (!manager->windows[window_index].visible &&
+         !manager->windows[window_index].minimized)) return empty;
     reist_gui_menu_layout_t menu = desktop_menu_layout(display);
     desktop_rect_t clock = desktop_clock_rect(display);
     uint32_t visible = 0U;
     uint32_t ordinal = 0U;
     for (uint32_t index = 0U; index < DESKTOP_WM_CAPACITY; ++index) {
-        if (!manager->windows[index].visible) continue;
+        if (!manager->windows[index].visible && !manager->windows[index].minimized) continue;
         if (index == window_index) ordinal = visible;
         ++visible;
     }
@@ -4383,7 +4385,9 @@ static void render_window(const desktop_render_context_t *context,
     fill_rect_clipped(context, client, color_client);
 
     desktop_rect_t close = desktop_wm_close_rect(manager, window_index);
-    draw_bevel(context, close, color_face, 1U);
+    draw_bevel(context, close, color_face,
+        manager->capture_window==(int32_t)window_index &&
+        manager->capture_kind==DESKTOP_WM_CAPTURE_CLOSE && manager->caption_armed ? 0U : 1U);
     if (close.width > 8U && close.height > 8U) {
         fill_rect_clipped(
             context,
@@ -4392,15 +4396,44 @@ static void render_window(const desktop_render_context_t *context,
             color_dark);
     }
 
+    desktop_rect_t minimize=desktop_wm_caption_rect(manager,window_index,DESKTOP_WM_CAPTURE_MINIMIZE);
+    desktop_rect_t maximize=desktop_wm_caption_rect(manager,window_index,DESKTOP_WM_CAPTURE_MAXIMIZE);
+    for (uint32_t control=0;control<2;++control) {
+        desktop_rect_t r=control ? maximize : minimize;
+        if (!r.width) continue;
+        uint32_t kind=control ? DESKTOP_WM_CAPTURE_MAXIMIZE : DESKTOP_WM_CAPTURE_MINIMIZE;
+        uint32_t down=manager->capture_kind==kind &&
+            manager->capture_window==(int32_t)window_index && manager->caption_armed;
+        uint32_t ink=window->flags&DESKTOP_WM_WINDOW_STATE_BLOCKED ? color_inactive : color_dark;
+        draw_bevel(context,r,color_face,down ? 0U : 1U);
+        int32_t x=r.x+4+(int32_t)down,y=r.y+4+(int32_t)down;
+        uint32_t size=r.width-8;
+        if (!control) fill_rect_clipped(context,(desktop_rect_t){x,y+(int32_t)size-2,size,2},ink);
+        else {
+            if (window->maximized) {
+                fill_rect_clipped(context,(desktop_rect_t){x+2,y,size-2,size-2},ink);
+                fill_rect_clipped(context,(desktop_rect_t){x+3,y+2,size-4,size-5},color_face);
+                y+=2; size-=2;
+                fill_rect_clipped(context,(desktop_rect_t){x,y,size,size},color_face);
+            }
+            fill_rect_clipped(context,(desktop_rect_t){x,y,size,2},ink);
+            fill_rect_clipped(context,(desktop_rect_t){x,y,1,size},ink);
+            fill_rect_clipped(context,(desktop_rect_t){x+(int32_t)size-1,y,1,size},ink);
+            fill_rect_clipped(context,(desktop_rect_t){x,y+(int32_t)size-1,size,1},ink);
+        }
+    }
+
     uint32_t title_x = (uint32_t)(close.x - title.x) + close.width + 6U;
+    uint32_t title_end=minimize.width ? (uint32_t)(minimize.x-title.x)-3U :
+        (title.width>3U ? title.width-3U : 0U);
     uint32_t title_y = title.height > display->font_height
         ? (title.height - display->font_height) / 2U : 0U;
-    if (title_x + 3U < title.width) {
+    if (title_x < title_end) {
         draw_text_clipped(context, title.x + (int32_t)title_x,
                           title.y + (int32_t)title_y,
                           explorer_window != 0 ? explorer_window->path
                                                : surface->title,
-                          title.width - title_x - 3U, color_title_text,
+                          title_end - title_x, color_title_text,
                           title_color);
     }
 
@@ -4493,7 +4526,7 @@ static void render_window(const desktop_render_context_t *context,
             context, label_x, label_y, label, action.width,
             enabled ? color_text : color_shadow, color_face);
     }
-    render_resize_grip(context, window);
+    if (!window->maximized) render_resize_grip(context, window);
 }
 
 static const char *desktop_task_title(
@@ -5614,7 +5647,8 @@ static void sync_surface_windows(
                 desktop_dirty_full(dirty);
             }
             if (surface->window_index < DESKTOP_WM_CAPACITY &&
-                manager->windows[surface->window_index].visible &&
+                (manager->windows[surface->window_index].visible ||
+                 manager->windows[surface->window_index].minimized) &&
                 !surface->close_sent) {
                 desktop_rect_t client = desktop_window_client_rect(
                     manager, surface->window_index);
@@ -5663,17 +5697,20 @@ static void sync_surface_windows(
                         local_damage.width,
                         local_damage.height,
                     };
-                    desktop_dirty_add(dirty, presentation_damage);
+                    if (manager->windows[surface->window_index].visible)
+                        desktop_dirty_add(dirty, presentation_damage);
                 } else if (damage_status != DESKTOP_SURFACE_ESTATE) {
                     desktop_rect_t presentation_damage =
                         desktop_wm_window_bounds(
                             manager, surface->window_index);
-                    desktop_dirty_add(dirty, presentation_damage);
+                    if (manager->windows[surface->window_index].visible)
+                        desktop_dirty_add(dirty, presentation_damage);
                 }
                 surface->presented_generation = surface->paint_generation;
             }
             if (surface->window_index < DESKTOP_WM_CAPACITY &&
                 !manager->windows[surface->window_index].visible &&
+                !manager->windows[surface->window_index].minimized &&
                 !surface->close_sent) {
                 if (desktop_surface_runtime_send_close(
                         runtime, surface->owner, surface->handle) == 0) {
@@ -5698,6 +5735,7 @@ static void sync_surface_windows(
         for (uint32_t candidate = 0U;
              candidate < DESKTOP_WM_CAPACITY; ++candidate) {
             if (!manager->windows[candidate].visible &&
+                !manager->windows[candidate].minimized &&
                 !explorer->windows[candidate].active &&
                 !surface_uses_window(surfaces, candidate)) {
                 chosen = candidate;
@@ -5751,6 +5789,9 @@ static void sync_surface_windows(
         }
         window->content_id = DESKTOP_SURFACE_CONTENT_TAG | surface->handle.id;
         window->flags = DESKTOP_WM_WINDOW_RETAINED_RESIZE;
+        if (surface->role==REIST_GUI_SURFACE_ROLE_DIALOG) window->flags|=DESKTOP_WM_WINDOW_DIALOG;
+        window->minimized=window->maximized=0;
+        window->normal_bounds=(desktop_rect_t){0};
         surface->window_index = chosen;
         (void)desktop_wm_open(manager, chosen);
         if (desktop_shortcut_probe_enabled &&
@@ -5760,6 +5801,29 @@ static void sync_surface_windows(
                 desktop_wm_close_rect(manager, chosen));
         }
         desktop_dirty_full(dirty);
+    }
+    /* Also cover parent/dialog slots first published during this pass,
+     * before the compositor dispatches another physical input event. */
+    /* Existing modal ownership gates new state actions, not an ABI change. */
+    uint32_t was_blocked[DESKTOP_WM_CAPACITY];
+    for (uint32_t i=0;i<DESKTOP_WM_CAPACITY;++i) {
+        was_blocked[i]=manager->windows[i].flags&DESKTOP_WM_WINDOW_STATE_BLOCKED;
+        manager->windows[i].flags&=~DESKTOP_WM_WINDOW_STATE_BLOCKED;
+    }
+    for (uint32_t i=0;i<DESKTOP_SURFACE_CAPACITY;++i) {
+        desktop_surface_slot_t *dialog=&surfaces->slots[i];
+        if (!dialog->active || dialog->role!=REIST_GUI_SURFACE_ROLE_DIALOG) continue;
+        if (!dialog->parent.id || dialog->parent.id>DESKTOP_SURFACE_CAPACITY) continue;
+        desktop_surface_slot_t *parent=&surfaces->slots[dialog->parent.id-1U];
+        if (parent->active && parent->handle.generation==dialog->parent.generation &&
+            parent->owner.pid==dialog->owner.pid && parent->owner.process_generation==dialog->owner.process_generation &&
+            parent->window_index<DESKTOP_WM_CAPACITY)
+            manager->windows[parent->window_index].flags|=DESKTOP_WM_WINDOW_STATE_BLOCKED;
+    }
+    for (uint32_t i=0;i<DESKTOP_WM_CAPACITY;++i) {
+        desktop_window_t *w=&manager->windows[i];
+        if (w->visible && was_blocked[i]!=(w->flags&DESKTOP_WM_WINDOW_STATE_BLOCKED))
+            desktop_dirty_add(dirty,(desktop_rect_t){w->x,w->y,w->width,manager->title_height+manager->frame_border});
     }
 }
 
@@ -5778,6 +5842,46 @@ static void print_metric(const char *name, uint32_t value) {
     x86os_puts(name);
     x86os_putchar('=');
     print_unsigned(value);
+}
+
+/* Opt-in observer only: never inject events or change window/client state. */
+static void report_window_controls(const desktop_wm_t *m,
+    const desktop_surface_manager_t *surfaces,const x86os_display_info_t *display) {
+    static uint32_t previous[DESKTOP_WM_CAPACITY][24],work_reported;
+    static const char *const names[]={"slot","gen","pid","visible","min","max","x","y","w","h",
+        "focus","minx","miny","maxx","maxy","taskx","tasky","cw","ch","configured","acked","paint","capture","armed"};
+    if (!work_reported) {
+        x86os_puts("WINDOW_WORK");
+        print_metric("x",(uint32_t)m->work_left); print_metric("y",(uint32_t)m->work_top);
+        print_metric("w",(uint32_t)(m->work_right-m->work_left));
+        print_metric("h",(uint32_t)(m->work_bottom-m->work_top));
+        x86os_putchar('\n'); work_reported=1;
+    }
+    for (uint32_t i=0;i<DESKTOP_WM_CAPACITY;++i) {
+        const desktop_window_t *w=&m->windows[i];
+        if (!w->generation) continue;
+        const desktop_surface_slot_t *s=0;
+        for (uint32_t j=0;j<DESKTOP_SURFACE_CAPACITY;++j)
+            if (surfaces->slots[j].active && surfaces->slots[j].window_index==i) { s=&surfaces->slots[j]; break; }
+        desktop_rect_t a=desktop_wm_caption_rect(m,i,DESKTOP_WM_CAPTURE_MINIMIZE);
+        desktop_rect_t b=desktop_wm_caption_rect(m,i,DESKTOP_WM_CAPTURE_MAXIMIZE);
+        desktop_rect_t t=desktop_task_button_rect(display,m,i);
+        desktop_rect_t client=desktop_window_client_rect(m,i);
+        uint32_t row[24]={i,w->generation,s ? s->owner.pid : 0,w->visible,w->minimized,w->maximized,
+            (uint32_t)w->x,(uint32_t)w->y,w->width,w->height,m->keyboard_focus==(int32_t)i,
+            (uint32_t)a.x+a.width/2,(uint32_t)a.y+a.height/2,
+            (uint32_t)b.x+b.width/2,(uint32_t)b.y+b.height/2,
+            (uint32_t)t.x+t.width/2,(uint32_t)t.y+t.height/2,
+            s ? s->width : client.width,s ? s->height : client.height,
+            s ? s->configured_serial : 0,s ? s->acknowledged_serial : 0,s ? s->paint_generation : 0,
+            m->capture_window==(int32_t)i ? m->capture_kind : 0,m->capture_window==(int32_t)i ? m->caption_armed : 0};
+        uint32_t changed=0;
+        for (uint32_t j=0;j<24;++j) if (row[j]!=previous[i][j]) changed=1;
+        if (!changed) continue;
+        x86os_puts("WINDOW_STATE");
+        for (uint32_t j=0;j<24;++j) { print_metric(names[j],row[j]); previous[i][j]=row[j]; }
+        x86os_putchar('\n');
+    }
 }
 
 static desktop_pointer_present_result_t desktop_pointer_present(
@@ -6757,6 +6861,8 @@ static uint32_t dispatch_desktop_event(
         (event->type == DESKTOP_WM_EVENT_OPEN ||
          event->type == DESKTOP_WM_EVENT_CLOSE ||
          event->type == DESKTOP_WM_EVENT_SELECT ||
+         event->type == DESKTOP_WM_EVENT_MINIMIZE ||
+         event->type == DESKTOP_WM_EVENT_TOGGLE_MAXIMIZE ||
          event->type == DESKTOP_WM_EVENT_POINTER_BUTTON))
         desktop_dirty_add(dirty, desktop_taskbar_rect(display));
     if ((result.flags & DESKTOP_WM_RESULT_LAUNCH) != 0U && target != 0)
@@ -7591,6 +7697,7 @@ static uint32_t desktop_taskbar_pointer_button(
         uint32_t slot = desktop_taskbar_window_at(display, manager, x, y);
         ui->taskbar_capture_slot = slot == DESKTOP_WM_NO_TARGET
             ? DESKTOP_TASKBAR_CAPTURE_BACKGROUND : slot;
+        ui->taskbar_capture_generation=slot<DESKTOP_WM_CAPACITY ? manager->windows[slot].generation : 0U;
         if (slot != DESKTOP_WM_NO_TARGET)
             desktop_dirty_add(
                 dirty, desktop_task_button_rect(display, manager, slot));
@@ -7602,9 +7709,11 @@ static uint32_t desktop_taskbar_pointer_button(
     uint32_t released = desktop_taskbar_window_at(display, manager, x, y);
     desktop_dirty_add(dirty, desktop_taskbar_rect(display));
     if (released == captured && captured < DESKTOP_WM_CAPACITY &&
-        manager->windows[captured].visible) {
+        manager->windows[captured].generation==ui->taskbar_capture_generation &&
+        (manager->windows[captured].visible || manager->windows[captured].minimized)) {
         desktop_wm_event_t select = {
-            .type = DESKTOP_WM_EVENT_SELECT,
+            .type = manager->windows[captured].visible && manager->keyboard_focus==(int32_t)captured
+                ? DESKTOP_WM_EVENT_MINIMIZE : DESKTOP_WM_EVENT_SELECT,
             .target = captured,
         };
         *actions |= dispatch_desktop_event(
@@ -9219,6 +9328,7 @@ int main(int argc, char **argv) {
     uint32_t notepad_font_probe = 0U;
     uint32_t control_probe = 0U;
     uint32_t mouse_probe = 0U;
+    uint32_t window_controls_probe = 0U;
     uint32_t display_probe_control_pid = 0U, display_probe_applet_pid = 0U;
     uint32_t display_probe_applet_live = 0U, display_probe_start_reported = 0U;
     uint32_t display_probe_control_live = 0U;
@@ -9281,6 +9391,9 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--mouse-probe")) {
         control_probe = mouse_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--window-probe")) {
+        control_probe = mouse_probe = window_controls_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--browser-probe")) {
         browser_probe = 1U;
@@ -10658,6 +10771,7 @@ int main(int argc, char **argv) {
         } else {
             (void)x86os_sleep_ms(DESKTOP_IDLE_POLL_MS);
         }
+        if (window_controls_probe) report_window_controls(&manager,&surfaces,&display);
         hover_probe_record_transition(
             &hover_probe_state, &ui, &dirty, &metrics,
             hover_full_frames_before, hover_full_total_before,

@@ -28,7 +28,9 @@ enum desktop_wm_capture_kind {
     DESKTOP_WM_CAPTURE_MOVE,      /**< Move a top-level window. */
     DESKTOP_WM_CAPTURE_CLOSE,     /**< Close-button press. */
     DESKTOP_WM_CAPTURE_CLIENT,    /**< Client-area press. */
-    DESKTOP_WM_CAPTURE_RESIZE     /**< Resize from captured edges. */
+    DESKTOP_WM_CAPTURE_RESIZE,    /**< Resize from captured edges. */
+    DESKTOP_WM_CAPTURE_MINIMIZE,
+    DESKTOP_WM_CAPTURE_MAXIMIZE
 };
 
 /** Resize-edge bit mask; corner resizes combine one horizontal and vertical. */
@@ -41,6 +43,9 @@ enum desktop_wm_capture_kind {
 
 /** Client pixels remain at the same origin during right/bottom live resize. */
 #define DESKTOP_WM_WINDOW_RETAINED_RESIZE (1U << 0)
+/** Dialogs omit state controls; live modal children block their parent. */
+#define DESKTOP_WM_WINDOW_DIALOG (1U << 1)
+#define DESKTOP_WM_WINDOW_STATE_BLOCKED (1U << 2)
 
 /** Normalized event kinds accepted by desktop_wm_dispatch(). */
 enum desktop_wm_event_type {
@@ -49,7 +54,9 @@ enum desktop_wm_event_type {
     DESKTOP_WM_EVENT_KEYBOARD,           /**< Focused keyboard action. */
     DESKTOP_WM_EVENT_OPEN,               /**< Show one indexed window. */
     DESKTOP_WM_EVENT_SELECT,             /**< Select one indexed window. */
-    DESKTOP_WM_EVENT_CLOSE               /**< Hide one indexed window. */
+    DESKTOP_WM_EVENT_CLOSE,              /**< Close one indexed window. */
+    DESKTOP_WM_EVENT_MINIMIZE,
+    DESKTOP_WM_EVENT_TOGGLE_MAXIMIZE
 };
 
 /** Renderer-neutral keyboard actions understood by the desktop policy. */
@@ -121,6 +128,10 @@ typedef struct desktop_window {
     uint32_t content_id; /**< Compositor-owned content-slot identity. */
     uint32_t flags;    /**< DESKTOP_WM_WINDOW_* rendering capabilities. */
     uint32_t visible;  /**< Nonzero while included in composition. */
+    uint32_t minimized; /**< Occupied and retained, but not composed. */
+    uint32_t maximized; /**< Geometry fills work area, even when minimized. */
+    desktop_rect_t normal_bounds; /**< Saved once on normal -> maximized. */
+    uint32_t generation; /**< Private slot incarnation, not a Surface handle. */
 } desktop_window_t;
 
 /**
@@ -158,6 +169,8 @@ typedef struct desktop_wm {
     uint32_t minimum_height; /**< Smallest decorated window height. */
     uint32_t screen_width;   /**< Composition surface width. */
     uint32_t screen_height;  /**< Composition surface height. */
+    uint32_t caption_armed; /**< Down owner still under pointer. */
+    uint32_t next_generation;
 } desktop_wm_t;
 
 /** Initialize an empty bounded damage set for one screen geometry. */
@@ -186,6 +199,11 @@ int desktop_wm_window_at(const desktop_wm_t *manager, int32_t x, int32_t y);
 /** Return local compositor bounds of one server-side close button. */
 desktop_rect_t desktop_wm_close_rect(const desktop_wm_t *manager,
                                      uint32_t window_index);
+/** capture_kind is MINIMIZE or MAXIMIZE; empty when unsupported/too small. */
+desktop_rect_t desktop_wm_caption_rect(const desktop_wm_t *manager,
+                                      uint32_t window_index, uint32_t capture_kind);
+uint32_t desktop_wm_minimize(desktop_wm_t *manager, uint32_t window_index);
+uint32_t desktop_wm_toggle_maximize(desktop_wm_t *manager, uint32_t window_index);
 /** Return decorated bounds including the fixed drop shadow. */
 desktop_rect_t desktop_wm_window_bounds(const desktop_wm_t *manager,
                                         uint32_t window_index);

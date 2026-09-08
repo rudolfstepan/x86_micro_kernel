@@ -13,6 +13,20 @@ WM_HEADER = ROOT / "userspace" / "gui" / "compositor" / "desktop_wm.h"
 
 
 class DesktopSourceTests(unittest.TestCase):
+    def test_minimized_surface_is_retained_not_closed(self):
+        sync=self.source[self.source.index("static void sync_surface_windows"):self.source.index("static void print_unsigned")]
+        close=sync[sync.index("!manager->windows[surface->window_index].visible &&"): ]
+        self.assertLess(close.index("!manager->windows[surface->window_index].minimized"),
+                        close.index("desktop_surface_runtime_send_close"))
+        self.assertIn("manager->windows[surface->window_index].minimized) &&",sync)
+        self.assertEqual(sync.count("if (manager->windows[surface->window_index].visible)"),2)
+        task=self.source[self.source.index("static uint32_t desktop_taskbar_pointer_button"):self.source.index("static uint32_t desktop_explorer_navigation_action_at")]
+        self.assertIn("DESKTOP_WM_EVENT_MINIMIZE",task)
+        self.assertIn("taskbar_capture_generation",task)
+        self.assertIn("DESKTOP_WM_WINDOW_STATE_BLOCKED",sync)
+        self.assertLess(sync.index("surface->window_index = chosen;"),
+                        sync.index("uint32_t was_blocked"))
+
     def test_sampled_keyboard_precedes_later_pointer_focus_changes(self):
         loop = self.source[self.source.index('int key = read_key();'):]
         self.assertLess(loop.index('desktop_ui_keyboard_event(&ui,'),

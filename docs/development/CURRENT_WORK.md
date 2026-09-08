@@ -2,15 +2,75 @@
 
 Stand: 8. September 2026
 
-## R3.32 begonnen: rechte Fensterknöpfe und Taskleisten-Minimierung
+## R3.32 abgenommen: rechte Fensterknöpfe und Taskleisten-Minimierung
 
-Nutzer priorisiert Min/Max/Wiederherstellen auf sauberem ef7f7d2f.
-Vorhandener WM kennt nur sichtbar/geschlossen; Surface-Sync interpretiert
-Unsichtbarkeit als CLOSE. R3.32 ergänzt einen separaten Minimiert-Zustand,
-gespeicherte Normalgeometrie und den zugehörigen Caption-/Taskleistenpfad.
-Inventar und zehn feste Prüfgruppen im WINDOW_STATE_CONTROLS_CONTRACT.
-Vorheriger VMware-Auftrag bleibt mit unveränderter Zurückstellung/Gates
-queued. Zuerst Vertragscheckpoint, danach genau dieses Paket.
+Sauberer Ausgang `ef7f7d2f`, Vertragscheckpoint `343b4782`. Genau ein
+privater Ring3-Compositor-Zustands-/Capture-/Geometriepfad; keine Agenten,
+sichtbaren VMs, Hostfehlerdialoge, öffentlichen ABI- oder Kerneländerungen.
+
+Rechts stehen Minimieren und Maximieren/Wiederherstellen mit wechselndem
+Fenstersymbol. Schließen bleibt links. Die komplette Knopffläche erfasst
+die Maus; außerhalb oder auf einem anderen Knopf loslassen bricht ab.
+Maximieren nutzt den Arbeitsbereich oberhalb der Taskleiste, Wiederherstellen
+die gespeicherte Normalgeometrie. Maximierte Fenster werden nicht gezogen
+oder über ihre Kanten vergrößert. Dialoge haben keine Zustandsknöpfe;
+lebende Dialoge sperren diese Aktionen am zugehörigen Elternfenster.
+
+Minimieren erhält Prozess, Surface, Inhalte, Geometrie und Taskleistenknopf,
+entzieht aber Kompositions-/Eingabefokus. Kein CLOSE oder Neustart;
+Configure/ACK läuft begrenzt weiter, versteckte Paint-Schäden werden ohne
+Desktop-Neuzeichnen konsumiert. Taskleistenklick stellt den vorherigen
+Normal-/Maximiert-Zustand wieder her; Klick auf das fokussierte sichtbare
+Fenster minimiert. Instanzgebundener Capture und idempotentes Schließen/
+Retirement verhindern Zustandsübernahme durch wiederverwendete Fensterslots.
+Rechter Live-Resize beschädigt zusätzlich nur den überstrichenen Titelbereich
+für die mitwandernden Knöpfe, nicht pauschal den ganzen Client.
+
+Alle10 eingefrorenen Gruppen bestanden; Belege inklusive Fehlversuchen unter
+`build/codex-agent/r332-window/`:
+
+- Desktop-Host64 Tests/O0+O2: `desktop-host-focus-corrected.log`, PASS2.136s.
+  Alle Knopfpixel, Abbruch/Überdeckung, winzige/extreme Geometrie, acht Slots,
+  Fokus, wiederholte Zustandswechsel, Dialogsperre, Reuse und Damage.
+- Unveränderte Surface-Hostgruppe10: `surface-host.log`, PASS1.949s;
+  Surface-Runtime-Host: `surface-runtime-host.log`, Exit0.
+- Referenzpakete: `package-vmware-focus-corrected.log`, PASS78s;
+  danach `package-qemu-focus-corrected.log`, PASS69s.
+- Imageprüfung: `artifact-hash-corrected.log`, PASS;
+  `artifacts-hash-corrected/protected.json` vergleicht beide tatsächlichen
+  Kernel und13 Programme bytegenau mit der akzeptierten Referenz.
+- Neuer Fenster-Gast: `window-title-corrected.log` und
+  `guest-title-corrected/status.json`, PASS28.389s. Reale Knopf-/Taskleisten-
+  Eingaben, Paint/Configure/ACK, gleiche PID9 und privater Bearbeitungsstand
+  nach Min/Max/Normal; echter maximierter Applet-UD2, saubere Ersatz-PID10
+  mit neuer Fensterinstanz, Explorer-Wechsel und frische Shellantwort.
+  Normal-/Maximiert-Screenshots visuell geprüft; Glyphenwechsel und exakte
+  Wiederherstellung werden zusätzlich aus dem tatsächlichen Scanout geprüft.
+- Unveränderter Maus-Applet-Gast: `mouse-gate.log`, PASS36.913s.
+- Unveränderter innerer Resize-/Layout-/Rad-/Fault-/Hang-/Recoverygast:
+  `resize-gate.log`, PASS89.192s.
+- Unveränderter Browser-Input-/Navigation-/Crash-/Restart-/Konsolengast:
+  `browser-input-gate.log`, PASS; Wrapper106.694s.
+
+Gezielte Korrekturen mit erhaltenem roten Beleg: ursprünglicher Caption-
+Treffer war Move/Resize; Dialogsperre wird nun erst nach Veröffentlichung
+aller neuen Eltern-/Dialogfenster berechnet, aber vor der nächsten Eingabe.
+Ein gesperrter Knopf darf bereits beim Drücken keinen Fokus stehlen.
+Kleine Titel werden ohne unsigned-Unterlauf geclippt. Der neue Image-Harness
+enthielt beim CONFIG-Referenzhash ein zusätzliches Zeichen: anhand beider
+archivierter Images und des archivierten PRG korrigiert, keine Byteänderung.
+Der neue Gast-Harness nahm zunächst22 statt der tatsächlichen24 Titelpixel
+an; korrigierte Client-Geometrie, unveränderte ACK-/Pixelanforderungen.
+Nur betroffene Gates gezielt wiederholt, vorherige Fehlschläge nicht gelöscht.
+
+`accepted-reference/` sichert beide Images, QEMU-Kernel,14 PRGs, VMware-
+Deskriptor/VMX und ausschließlich die zwei frisch erzeugten kanonischen
+Browser-Inputbelege (21 Dateien); Kopierhashes und Imagehashes gegen das
+bestandene Gate geprüft. Vorherige Referenzen bleiben erhalten. Formaler
+Queueübergang auf R3.6b mit unveränderter Zurückstellung, Browserpriorität
+und Gates; kein weiteres Paket implementiert. Keine neue VMware-Laufzeit-
+oder Benchmarkmessung behauptet. Doppelklick-Maximierung, Snap und
+Drag-to-Restore sind nicht Teil dieses Pakets.
 
 ## R3.31 abgenommen: eigenes Maus-Applet in der Systemsteuerung
 

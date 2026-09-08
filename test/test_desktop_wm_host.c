@@ -1,6 +1,17 @@
 #include "userspace/gui/compositor/desktop_wm.h"
 
 #include <assert.h>
+#include <string.h>
+
+static void test_caption_is_not_drag_or_resize(void) {
+    desktop_wm_t m;
+    desktop_wm_initialize(&m,1024,768,4,740,22);
+    desktop_wm_open(&m,0);
+    desktop_window_t *w=&m.windows[0];
+    desktop_wm_pointer_press(&m,w->x+(int32_t)w->width-14,w->y+14);
+    assert(m.capture_kind!=DESKTOP_WM_CAPTURE_MOVE &&
+           m.capture_kind!=DESKTOP_WM_CAPTURE_RESIZE);
+}
 
 static void arrange_overlap(desktop_wm_t *manager) {
     manager->windows[0].x = 100;
@@ -349,6 +360,14 @@ static void test_corner_capture_and_precedence(void) {
                 }
                 uint32_t edges = (corner & 1U ? DESKTOP_WM_RESIZE_RIGHT : DESKTOP_WM_RESIZE_LEFT) |
                                  (corner & 2U ? DESKTOP_WM_RESIZE_BOTTOM : DESKTOP_WM_RESIZE_TOP);
+                desktop_rect_t maximize=desktop_wm_caption_rect(&manager,0,DESKTOP_WM_CAPTURE_MAXIMIZE);
+                if (x>=maximize.x && (int64_t)x<(int64_t)maximize.x+maximize.width &&
+                    y>=maximize.y && (int64_t)y<(int64_t)maximize.y+maximize.height) {
+                    assert(manager.capture_kind==DESKTOP_WM_CAPTURE_MAXIMIZE);
+                    desktop_wm_pointer_release(&manager,0,0);
+                    assert(!window->maximized && window->visible);
+                    continue;
+                }
                 assert(manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE);
                 assert(manager.resize_edges == edges);
                 assert(manager.resize_start_x == x && manager.resize_start_y == y);
@@ -440,6 +459,8 @@ static void test_shrink_invalidates_only_current_resize_sweep(void) {
             result.dirty.rects[index].height;
     assert(damage_area <
            (uint64_t)window->width * (uint64_t)window->height);
+    desktop_rect_t max=desktop_wm_caption_rect(&manager,0,DESKTOP_WM_CAPTURE_MAXIMIZE);
+    assert(dirty_contains(&result.dirty,max.x+2,max.y+2));
 }
 
 static void test_layout_dependent_content_gets_full_resize_damage(void) {
@@ -463,7 +484,136 @@ static void test_layout_dependent_content_gets_full_resize_damage(void) {
         &result.dirty, window->x + 24, window->y + 48));
 }
 
+static desktop_rect_t normal_rect(const desktop_window_t *w) {
+    return (desktop_rect_t){w->x,w->y,w->width,w->height};
+}
+static void same_rect(desktop_rect_t a,desktop_rect_t b) {
+    assert(a.x==b.x && a.y==b.y && a.width==b.width && a.height==b.height);
+}
+static void test_window_states_and_lifecycle(void) {
+    desktop_wm_t m;
+    arrange_single(&m);
+    desktop_window_t *w=&m.windows[0];
+    desktop_rect_t original=normal_rect(w);
+    for (unsigned repeat=0;repeat<40;++repeat) {
+        assert(desktop_wm_toggle_maximize(&m,0));
+        assert(w->maximized && w->x==m.work_left && w->y==m.work_top);
+        assert(w->width==(uint32_t)(m.work_right-m.work_left));
+        assert(w->height==(uint32_t)(m.work_bottom-m.work_top));
+        same_rect(w->normal_bounds,original);
+        desktop_rect_t maximum=normal_rect(w);
+        assert(!desktop_wm_resize_edges_at(&m,0,w->x,w->y));
+        desktop_wm_pointer_press(&m,w->x+100,w->y+12);
+        assert(m.capture_kind==DESKTOP_WM_CAPTURE_NONE);
+        desktop_wm_pointer_motion(&m,INT32_MAX,INT32_MIN);
+        desktop_wm_pointer_release(&m,0,0);
+        same_rect(normal_rect(w),maximum);
+        assert(desktop_wm_minimize(&m,0));
+        assert(w->minimized && !w->visible && w->maximized);
+        assert(m.keyboard_focus!=0 && desktop_wm_window_at(&m,w->x+20,w->y+20)!=0);
+        assert(!desktop_wm_minimize(&m,0)); /* idempotent */
+        assert(!desktop_wm_toggle_maximize(&m,0)); /* hidden cannot maximize */
+        assert(desktop_wm_select(&m,0));
+        assert(!w->minimized && w->visible && w->maximized);
+        same_rect(normal_rect(w),maximum);
+        assert(desktop_wm_toggle_maximize(&m,0));
+        assert(!w->maximized); same_rect(normal_rect(w),original);
+    }
+    for (uint32_t flag=DESKTOP_WM_WINDOW_DIALOG;flag<=DESKTOP_WM_WINDOW_STATE_BLOCKED;flag<<=1) {
+        w->flags=flag; desktop_wm_t before=m;
+        assert(!desktop_wm_minimize(&m,0) && !desktop_wm_toggle_maximize(&m,0));
+        assert(!memcmp(&before,&m,sizeof(m)));
+        if (flag==DESKTOP_WM_WINDOW_DIALOG)
+            assert(!desktop_wm_caption_rect(&m,0,DESKTOP_WM_CAPTURE_MINIMIZE).width);
+    }
+    w->flags=DESKTOP_WM_WINDOW_STATE_BLOCKED;
+    m.pointer_focus=m.keyboard_focus=DESKTOP_WM_NO_WINDOW;
+    desktop_wm_t blocked=m;
+    desktop_rect_t denied=desktop_wm_caption_rect(&m,0,DESKTOP_WM_CAPTURE_MAXIMIZE);
+    desktop_wm_pointer_press(&m,denied.x+1,denied.y+1);
+    assert(!memcmp(&blocked,&m,sizeof(m))); /* Disabled caption cannot steal dialog focus. */
+    w->flags=0;
+    for (unsigned i=0;i<DESKTOP_WM_CAPACITY;++i) desktop_wm_open(&m,i);
+    for (unsigned i=0;i<DESKTOP_WM_CAPACITY;++i) {
+        uint32_t generation=m.windows[i].generation;
+        desktop_wm_minimize(&m,i);
+        assert(m.windows[i].generation==generation && m.windows[i].minimized);
+    }
+    assert(m.keyboard_focus==DESKTOP_WM_NO_WINDOW);
+    uint32_t generation=w->generation;
+    desktop_wm_open(&m,0); assert(w->generation==generation);
+    desktop_rect_t r=desktop_wm_caption_rect(&m,0,DESKTOP_WM_CAPTURE_MAXIMIZE);
+    desktop_wm_pointer_press(&m,r.x+2,r.y+2);
+    desktop_wm_close(&m,0); assert(m.capture_kind==DESKTOP_WM_CAPTURE_NONE);
+    desktop_wm_open(&m,0); assert(w->generation!=generation);
+    desktop_wm_pointer_release(&m,r.x+2,r.y+2); assert(!w->maximized);
+    desktop_wm_toggle_maximize(&m,0); desktop_wm_minimize(&m,0);
+    desktop_wm_close(&m,0); assert(!w->minimized && !w->maximized && !w->visible);
+    same_rect(normal_rect(w),original); assert(!desktop_wm_close(&m,0));
+    desktop_wm_t before=m;
+    desktop_wm_event_t bad={.type=DESKTOP_WM_EVENT_MINIMIZE,.target=DESKTOP_WM_CAPACITY};
+    desktop_wm_dispatch_result_t result;
+    assert(desktop_wm_dispatch(&m,&bad,&result)==-22 && !memcmp(&before,&m,sizeof(m)));
+}
+static void test_every_caption_pixel_and_cancellation(void) {
+    desktop_wm_t m;
+    for (uint32_t kind=DESKTOP_WM_CAPTURE_MINIMIZE;kind<=DESKTOP_WM_CAPTURE_MAXIMIZE;++kind) {
+        arrange_single(&m);
+        desktop_rect_t r=desktop_wm_caption_rect(&m,0,kind);
+        assert(r.width && r.height);
+        for (uint32_t x=0;x<r.width;++x) for (uint32_t y=0;y<r.height;++y) {
+            for (uint32_t cancel=0;cancel<2;++cancel) {
+                arrange_single(&m);
+                desktop_rect_t original=normal_rect(&m.windows[0]);
+                desktop_wm_event_t e={.type=DESKTOP_WM_EVENT_POINTER_BUTTON,
+                    .button=DESKTOP_WM_BUTTON_LEFT,.pressed=1,.x=r.x+(int32_t)x,.y=r.y+(int32_t)y};
+                desktop_wm_dispatch_result_t result;
+                assert(!desktop_wm_dispatch(&m,&e,&result));
+                assert(m.capture_kind==kind && m.capture_window==0 && m.caption_armed);
+                assert(result.flags&DESKTOP_WM_RESULT_REDRAW);
+                same_rect(normal_rect(&m.windows[0]),original);
+                if (cancel) {
+                    e.type=DESKTOP_WM_EVENT_POINTER_MOTION; e.x=r.x-1;
+                    assert(!desktop_wm_dispatch(&m,&e,&result));
+                    assert(!m.caption_armed && (result.flags&DESKTOP_WM_RESULT_REDRAW));
+                }
+                e.type=DESKTOP_WM_EVENT_POINTER_BUTTON; e.pressed=0;
+                assert(!desktop_wm_dispatch(&m,&e,&result));
+                assert(m.capture_kind==DESKTOP_WM_CAPTURE_NONE);
+                assert(m.windows[0].minimized==(!cancel && kind==DESKTOP_WM_CAPTURE_MINIMIZE));
+                assert(m.windows[0].maximized==(!cancel && kind==DESKTOP_WM_CAPTURE_MAXIMIZE));
+            }
+        }
+        arrange_single(&m);
+        desktop_wm_pointer_press(&m,r.x+1,r.y+1);
+        desktop_rect_t other=desktop_wm_caption_rect(&m,0,kind==DESKTOP_WM_CAPTURE_MINIMIZE
+            ? DESKTOP_WM_CAPTURE_MAXIMIZE : DESKTOP_WM_CAPTURE_MINIMIZE);
+        desktop_wm_pointer_release(&m,other.x+1,other.y+1);
+        assert(!m.windows[0].minimized && !m.windows[0].maximized);
+        /* A newly raised occluder must not turn release into a hidden action. */
+        desktop_wm_pointer_press(&m,r.x+1,r.y+1);
+        m.windows[1]=(desktop_window_t){.x=r.x,.y=r.y,.width=100,.height=100};
+        desktop_wm_open(&m,1);
+        desktop_wm_pointer_release(&m,r.x+1,r.y+1);
+        assert(!m.windows[0].minimized && !m.windows[0].maximized);
+    }
+    for (unsigned width=0;width<180;++width) for (unsigned height=0;height<80;++height) {
+        arrange_single(&m); m.windows[0].width=width; m.windows[0].height=height;
+        desktop_rect_t r=desktop_wm_caption_rect(&m,0,DESKTOP_WM_CAPTURE_MAXIMIZE);
+        if (r.width) {
+            assert(r.x>=m.windows[0].x && r.y>=m.windows[0].y);
+            assert((int64_t)r.x+r.width<=(int64_t)m.windows[0].x+width);
+            assert((int64_t)r.y+r.height<=(int64_t)m.windows[0].y+height);
+        }
+    }
+    m.windows[0].x=INT32_MAX; m.windows[0].y=INT32_MAX;
+    assert(!desktop_wm_caption_rect(&m,0,DESKTOP_WM_CAPTURE_MAXIMIZE).width);
+}
+
 int main(void) {
+    test_window_states_and_lifecycle();
+    test_every_caption_pixel_and_cancellation();
+    test_caption_is_not_drag_or_resize();
     test_dirty_regions_and_event_dispatch();
     test_edge_and_corner_resize();
     test_complete_corner_pixels();
