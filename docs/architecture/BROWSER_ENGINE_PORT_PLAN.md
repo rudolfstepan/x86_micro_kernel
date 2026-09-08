@@ -46,7 +46,57 @@ Quoten-/Abbruch-/Fault-/Recovery-Proof und unveraenderte geschuetzte
 Kernel-/Benchmarkbytes. Keine sitespezifischen URL-/CSS-Sonderfaelle,
 keine globale Text-Ersetzung von var(), keine gezeichnete Attrappe.
 
-## R3.28 eingefrorener Folgeschnitt: statische CSS-Werte und Boxlayout
+## R3.29 eingefroren: echte TrueType-Schriften im HTMLWORK
+
+Fortsetzungsauftrag nach `f2dbc2d5`, vom Nutzer konkretisiert: fehlende TTF-
+Unterstuetzung verursacht pixelige Schrift. Deshalb keine weitere skalierte
+PSF- oder offline gerasterte Bitmap-Loesung als Ersatz fuer TTF. Dieser Schnitt
+portiert die echte [FreeType2.14.3](https://freetype.org/)-Bibliothek in den
+bestehenden isolierten HTMLWORK. Referenzen: [FreeType Memory Faces](https://freetype.org/freetype2/docs/reference/ft2-face_creation.html),
+[CSS Fonts](https://www.w3.org/TR/css-fonts-4/) und das OpenType/TrueType-sfnt-
+Format. Die [Liberation2.1.5-Schriften](https://github.com/liberationfonts/liberation-fonts/releases/tag/2.1.5)
+liefern Serif/Sans mit vier echten Schnitten unter OFL1.1; FreeType wird unter
+seiner FTL genutzt. Gepinnte Archive/Hashpruefung, Lizenzen im Quell- und Image-
+Paket. FreeType-SHA256 `dc49de6b01a266eef4876a4dd34d9842c475d3e28ff2eff63bd2fb760ab56261`
+(offizieller GitHub-Spiegel, Tag VER-2-14-3), Liberation-Releasearchiv
+`7191c669bf38899f73a2094ed00f7b800553364f90e2637010a69c0e268f25d0`.
+
+Runtime: ausschliesslich Speicherfaces mit sfnt/TrueType und Graustufen-
+Rasterizer, keine Dateioeffnung, Webfonts, Plugins, SVG, komprimierte Fonts
+oder TTF-Hint-Bytecode-Ausfuehrung. Bibliotheksallokation bleibt in der
+32MiB-HTMLWORK-Arena, zusaetzlich4MiB live; bestehender5s-Prozessdeadline und
+exaktes Reap begrenzen auch einen defekten Parser. Nichtkopierbare C++-
+Lebensdauer, vollstaendiges Cleanup bei jedem normalen Fehlerpfad.
+
+LibCSS bestimmt Familie/Vererbung/Weight/Style. Installierte Liberation-Namen
+und generische serif/sans-serif nutzen echte TTF-Glyphen; unbekannte Namen
+folgen der Fallbackliste. Die bisherige implizite/angeforderte monospace-
+PSF-Darstellung bleibt als dokumentierter Kompatibilitaetsstandard bestehen,
+ebenso Unicode-Fallback fuer nicht abgedeckte Glyphen. Kein vollstaendiges
+Shaping/Bidi/Kerning/Variable-Font-Profil. Gemeinsame gemessene Advances fuer
+Wortumbruch, intrinsische Flex/Grid-Breiten und Zeichnen; echte Baselines,
+Unter-/Oberlaengen und Ueberhaenge. Keine synthetische TTF-Fettung/Schraeglage.
+
+Append-only privates Szenenprofil6 ergaenzt maximal1024 Glypheneintraege und
+512KiB Alpha-Abdeckung, em1..64px, Bitmapseiten<=96px. Die aktuelle/kandidierte
+Seite besitzt ihren jeweiligen Atlas; keine Face-Pointer oder Fontbytes im UI.
+Version/Laengen/Schluessel/Sortierung/Advances/Bearings/Pixelbereiche und alle
+Textreferenzen werden vor Veroeffentlichung geprueft. Alte Profile3/4/5 bleiben
+unveraendert. Glyphen werden innerhalb einer Worker-Generation einmal pro
+Face/Groesse/Skalar gerastert und bleiben zum Scrollen/Neuzeichnen erhalten;
+keine Font-I/O, Allokation oder Rasterizerarbeit im Paint-/Mauspfad.
+Die36MiB-UI-,4M-Pixel-,Baum-/Szenenbudgets werden nicht erweitert.
+
+Abnahme: echte FreeType/CSS-Hostverhaltenstests O0/O2 fuer Proportionalitaet,
+Familie/Viererschnitte, Groessen, Fallback, metrisch identisches Messen/Zeichnen,
+Ueberhaenge, Graustufen, Cache, kaputte/abgeschnittene TTF, OOM und malformed
+Szenen vor Side Effects. Lokale skriptfreie Gastfixture prueft echte TTF-Pixel
+bei zwei Breiten/Groessen, Scroll ohne Reparse, Worker-Fault/Hang mit alter
+Seite und frische Recovery. Unveraenderte R3.28-,externe-JS- und Inputgaeste,
+beide Referenzimages samt geschuetzten Kernel-/Benchmark-/JSWORK-/CURL-Bytes.
+VMware-Maus-Deferral bleibt bestehen. Kein spaeteres Paket in diesem Lauf.
+
+## R3.28 eingefrorener Umfang (abgenommen)
 
 Eine gemeinsame HTMLWORK-Layout-/Szenenpublikationsgrenze, keine neue
 Geraete-/VFS-/Netzwerkautoritaet und keine Ereignislebensdauer. Referenzen:

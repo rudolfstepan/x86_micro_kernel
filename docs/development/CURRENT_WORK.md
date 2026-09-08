@@ -2,6 +2,18 @@
 
 Stand: 8. September 2026
 
+## R3.29 gestartet: echte TTF-Rasterisierung
+
+Sauberer Ausgang `f2dbc2d5`. Nutzer fordert Fortsetzung und konkretisiert
+fehlende TTF-/Antialiasing-Unterstuetzung. Inventar: Browser skaliert aktuell
+PSF-Bitmapzeichen; vorhandene Editor-TTFs werden nur offline vorgerastert.
+Freigabe wird deshalb als echter Runtime-FreeType-Schnitt umgesetzt, nicht
+als weiterer Bitmapfont. Neue gefrorene R3.29-Grenze/Gates im Browserplan und
+Queue; altes VMware-Mauspaket wieder mit unveraenderter Deferral queued.
+Zuerst nur diesen Vertrag committen, danach genau R3.29 implementieren.
+Gepinnte offizielle FreeType-/Liberation-Archive zur Inspektion unter
+`build/codex-agent/r329-fonts/`, keine Quellimplementierung bisher.
+
 ## R3.28 abgenommen: statisches CSS-Layout
 
 Direkt im sichtbaren, anfangs sauberen Worktree auf `bbeffe56`, genau das

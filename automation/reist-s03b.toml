@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: Continue R3.27 directly after accepted network prerequisite361beac4. Rebase only its protected kernel reference to361beac4, restore attributed browser stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2, retain other gates/quotas/program baselines. No later package implementation, agents or push."
+active_id = "R3.29-browser-truetype"
+next_user_request = "2026-09-08: Continue browser after f2dbc2d5. User explicitly identifies missing TTF and pixelated text: actual runtime TrueType with antialiasing in isolated HTMLWORK, shared metrics and validated cached glyph publication. Keep deferred VMware package unchanged, no kernel/SDK authority or dynamic webfont/event/network expansion. Direct visible-worktree implementation and gates, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,43 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.29-browser-truetype"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Actual isolated TrueType rasterization and proportional browser typography"
+scope = "One HTMLWORK font/layout to validated scene-publication boundary. Pinned FreeType2.14.3 memory-only TrueType renderer, packaged Liberation2.1.5 serif/sans faces, CSS family/style/weight selection, same glyph advances for wrapping/intrinsic layout and drawing, grayscale glyph atlas retained with accepted page. No build-time bitmap substitute, no runtime parser in browser/UI/kernel. Frozen R3.29 extension in BROWSER_ENGINE_PORT_PLAN."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+ "third_party/freetype-2.14.3.tar.gz", "third_party/freetype-2.14.3.sha256", "assets/fonts/source/liberation-2.1.5.tar.gz", "assets/fonts/source/liberation-2.1.5.sha256", "assets/fonts/README.md",
+ "scripts/build_browser_fonts.py", "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+ "userspace/gui/apps/browser/font_engine.cpp", "userspace/gui/apps/browser/font_engine.hpp", "userspace/gui/apps/browser/font_stdlib.h", "userspace/gui/apps/browser/font_platform.c",
+ "userspace/gui/apps/browser/css_engine.c", "userspace/gui/apps/browser/css_engine.h", "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/browser_scene.h", "userspace/gui/apps/browser/main.c", "userspace/gui/apps/browser/html_worker.c",
+ "test/test_browser_fonts.py", "test/browser_fonts_host.cpp", "test/test_css_engine.py", "test/test_css_engine_host.c", "test/browser_layout_host.cpp", "test/test_browser_layout.py", "test/test_browser_runtime_source.py", "test/test_gui_browser_source.py",
+ "scripts/run_qemu_browser_fonts.py", "htdocs/fonts.htm", "htdocs/fonts.css"
+]
+invariants = [
+ "Read frozen R3.29 extension. Actual pinned upstream FreeType TrueType/sfnt/smooth code executes only in disposable HTMLWORK; memory-only faces, no TTF hint bytecode/SVG/compression/network/filesystem/font discovery in runtime library. No public libc/SDK/kernel/driver modifications. Preserve copyright/license notices and exact archive verification.",
+ "CSS generic serif/sans-serif and installed family names use real regular/bold/italic/bold-italic faces. Unknown families follow CSS fallback. Existing implicit/explicit monospace PSF and old scene profiles remain byte-semantically unchanged, documented compatibility default; no fake bold/slant for TTF. No broad shaping/bidi/kerning/variable-font/webfont claim.",
+ "Existing32MiB HTMLWORK allocator,36MiB browser workspace,5s worker deadline,4M raster-work and tree/depth/scene limits unchanged. Fixed <=1024 glyph records and512KiB alpha bytes per candidate,<=64px em and96px bitmap dimensions. Font memory callbacks charge existing bounded arena plus private4MiB live ceiling. Untrusted font/atlas failure cannot publish partial page; fault/hang/reap/recovery preserve accepted page. No heap/I/O/TTF decode on paint/scroll, no per-frame glyph rebuild.",
+ "Private scene profile6 append-only with explicit bounded glyph metadata and alpha payload. Validate versions/counts/ranges/ordering/metrics/text-to-glyph references before rendering or publication; no serialized pointers, old profiles3/4/5 unchanged. Shared advances for linebreaks and intrinsic widths; baseline/overhang handled and clipped.",
+ "Real O0/O2 font/metrics/negative tests, actual font parser failure and allocation quota/cleanup; actual no-script guest at two sizes/widths, grayscale pixels and variable advance, scroll cache/no reparse, fault/hang/old page/recovery. Existing CSS/layout and JS/input gates unchanged. Both images verify kernel and7 protected program bytes equal f2dbc2d5. No visible VMs/dialogs, agents or push; preserve failures, repeat only affected gates after scoped corrections."
+]
+targeted_tests = ["python test/test_browser_fonts.py -v", "python test/test_browser_layout.py -v", "python test/test_css_engine.py -v", "python test/test_html_engine.py -v", "python test/test_browser_scripting.py -v", "python test/test_browser_external_scripts.py -v", "python test/test_browser_runtime_source.py -v", "python test/test_gui_browser_source.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_browser_fonts.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r329-fonts/artifacts.json",
+ "python scripts/run_qemu_browser_fonts.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r329-fonts/guest.log",
+ "python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r329-fonts/layout-guest.log",
+ "python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r329-fonts/external-guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "Actual runtime TTF glyphs and matching proportional metrics, antialiased guest scanout, two widths and sizes, family/style/fallback, bounded invalid-font/atlas/quota cases and cache/fault/hang/recovery. All frozen gates; protected actual image bytes unchanged. Webfonts and event/fetch are separate packages."
+stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/SDK/network/event authority expansion", "Failed gate without demonstrated focused in-scope correction"]
+commit_message = "feat: render TrueType fonts in isolated browser worker"
+evidence = []
 
 [[packages]]
 id = "R3.27a-network-receive-progress"
@@ -2096,7 +2133,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
