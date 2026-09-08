@@ -530,6 +530,10 @@ try {
         }
     }
 
+    $readFileExample = Join-Path $RepoRoot 'htdocs\read-file.js'
+    $imageDataArguments += @('--data-file', "htdocs/readfile.js=$readFileExample")
+    $floppyDataArguments += @('--data-file', "htdocs/readfile.js=$readFileExample")
+
     $signingExitCode = Invoke-PythonProcess -Arguments @(
         'scripts/sign_boot_artifact.py', '--artifact', $Kernel,
         '--signature', $KernelSignature, '--private-key', $BootPrivateKey,

@@ -20,7 +20,7 @@ def inject(process,text):
     finally:
         process.stdin.write(smoke.QEMU_MUX_SWITCH); process.stdin.flush()
 
-def validate_transcript(text):
+def validate_transcript(text,file_capabilities=False):
     for marker in ("JS_RUNNER_RUNTIME_OK","JS_RUNNER_REALMS_OK","JS_RUNNER_CANCEL_OK","JS_RUNNER_SOURCE_OK",
                    "JS_RUNNER_STDOUT_OK","JS_RUNNER_STDERR_OK","JS_RUNNER_ARGV_OK"):
         if len(re.findall(r"(?m)^"+marker+r"\r?$",text))!=2: raise ValueError("missing/duplicate "+marker)
@@ -37,6 +37,14 @@ def validate_transcript(text):
         raise ValueError("normal shell or VFS argv missing")
     if "JS_RUNNER_TEST_FAIL" in text or "*** USER PROCESS PAGE FAULT ***" in text or smoke.failure_marker(text):
         raise ValueError("guest failure")
+    if file_capabilities:
+        rows=re.findall(r"(?m)^JS_FILES_CASE index=(\d+) status=(\d+)\r?$",text)
+        if rows!=[(str(i),str(code)) for i,code in enumerate((0,1,71,124,0))]*2:
+            raise ValueError("missing/wrong file capability results")
+        if len(re.findall(r"(?m)^JS_FILES_CANCEL_REUSE_OK\r?$",text))!=2:
+            raise ValueError("missing file cancellation/slot reuse")
+        if len(re.findall(r"(?m)^JS_FILE_SHELL_OK [1-9]\d* 64\r?$",text))!=2:
+            raise ValueError("normal shell file grant missing")
 
 def run(args):
     subprocess.run(["C:/Program Files/PowerShell/7/pwsh.exe","-NoProfile","-Command",
@@ -83,8 +91,11 @@ def run(args):
             inject(process,"js -e print(42)"); at=wait("\n42\n",at); at=wait(smoke.SHELL_PROMPT,at)
             inject(process,"js /htdocs/hello.js shell 42"); at=wait("Arguments: shell 42\n",at); at=wait(smoke.SHELL_PROMPT,at)
             inject(process,"js --help"); at=wait("js: usage:",at); at=wait(smoke.SHELL_PROMPT,at)
+            if args.file_capabilities:
+                inject(process,"js --read /htdocs/hello.js /htdocs/readfile.js")
+                at=wait("JS_FILE_SHELL_OK ",at);at=wait(smoke.SHELL_PROMPT,at)
             inject(process,"help"); at=wait("Built-ins: cd path pwd history help exit",at); at=wait(smoke.SHELL_PROMPT,at)
-        validate_transcript(transcript)
+        validate_transcript(transcript,args.file_capabilities)
     except (OSError,ValueError,RuntimeError,TimeoutError) as caught: error=str(caught)
     finally:
         stopped.set(); smoke.stop_process(process); thread.join(timeout=2)
@@ -101,6 +112,7 @@ def main():
     parser.add_argument("--qemu",type=Path,required=True)
     parser.add_argument("--image",type=Path,required=True)
     parser.add_argument("--log",type=Path,required=True)
+    parser.add_argument("--file-capabilities",action="store_true")
     args=parser.parse_args()
     if args.log.exists(): parser.error("refusing to overwrite evidence")
     if not args.qemu.is_file() or not args.image.is_file(): parser.error("existing QEMU/image required")

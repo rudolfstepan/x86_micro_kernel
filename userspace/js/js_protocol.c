@@ -3,7 +3,7 @@
 int js_service_header_valid(const js_service_header *h,const js_service_header *q,int reply) {
     if(!h || !q || h->magic!=JS_SERVICE_MAGIC || h->version!=JS_SERVICE_VERSION ||
        h->size!=JS_SERVICE_HEADER || h->reserved[0] || h->reserved[1] ||
-       h->operation<JS_OP_HELLO || h->operation>JS_OP_SCRIPT ||
+       h->operation<JS_OP_HELLO || h->operation>JS_OP_FILE ||
        !h->parent_pid || !h->parent_generation || !h->child_pid || !h->child_generation ||
        h->parent_pid==h->child_pid || !h->document || !h->sequence || !h->deadline ||
        h->parent_pid!=q->parent_pid || h->parent_generation!=q->parent_generation ||
@@ -16,13 +16,16 @@ int js_service_header_valid(const js_service_header *h,const js_service_header *
         if(h->operation==JS_OP_HELLO) return h->total==8 ? 0 : -84;
         if(h->operation==JS_OP_EVAL) return h->total<=JS_SERVICE_SOURCE ? 0 : -84;
         if(h->operation==JS_OP_SCRIPT) return h->total>=24 && h->total<=JS_SERVICE_SCRIPT_SOURCE ? 0 : -84;
+        if(h->operation==JS_OP_CAP_SCRIPT) return h->total>=104 && h->total<=JS_SERVICE_CAP_SOURCE ? 0:-84;
+        if(h->operation==JS_OP_FILE) return h->total==32 ? 0:-84;
         return h->total ? -84 : 0;
     }
     if(h->status>6 || (h->status && h->total)) return -84;
     if(h->status) return 0;
     if(h->operation==JS_OP_HELLO) return h->total==16 ? 0 : -84;
     if(h->operation==JS_OP_EVAL) return h->total<JS_SERVICE_RESULT ? 0 : -84;
-    if(h->operation==JS_OP_SCRIPT) return h->total>=24 && h->total<=24+60U*1024U ? 0 : -84;
+    if(h->operation==JS_OP_SCRIPT || h->operation==JS_OP_CAP_SCRIPT) return h->total>=24 && h->total<=24+60U*1024U ? 0 : -84;
+    if(h->operation==JS_OP_FILE) return h->total>=32 && h->total<=32+128U*1024U ? 0:-84;
     if(h->operation==JS_OP_GC || h->operation==JS_OP_HEALTH) return h->total==24 ? 0 : -84;
     return h->total ? -84 : 0;
 }

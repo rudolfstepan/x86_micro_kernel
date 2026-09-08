@@ -32,8 +32,8 @@ class RunnerTests(unittest.TestCase):
                 '-fno-sanitize=all','-fno-exceptions','-fno-rtti',
                 '-I',ROOT/'userspace/js','-I',ROOT/'userspace/sdk/include',
                 '-I',ROOT/'userspace/storage/include',ROOT/'test/js_runner_host.cpp',
-                ROOT/'userspace/js/runner.cpp',ROOT/'userspace/js/js_session.cpp',
-                '-x','c++',ROOT/'userspace/js/script_protocol.c',ROOT/'userspace/js/js_protocol.c','-o',exe]
+                ROOT/'userspace/js/runner.cpp',ROOT/'userspace/js/js_session.cpp',ROOT/'userspace/js/file_broker.cpp',
+                '-x','c++',ROOT/'userspace/js/file_protocol.c',ROOT/'userspace/js/script_protocol.c',ROOT/'userspace/js/js_protocol.c','-o',exe]
             for cmd,timeout in ((command,90),([exe],30)):
                 result=subprocess.run(list(map(str,cmd)),env=env,capture_output=True,text=True,timeout=timeout,
                     creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -57,6 +57,14 @@ class RunnerTests(unittest.TestCase):
                         ('JS_RUNNER_CANCEL_OK',''),('mode=fresh','mode=script')):
             with self.assertRaises(ValueError): validate_transcript(text.replace(old,new))
         with self.assertRaises(ValueError): validate_transcript(text+'JS_RUNNER_TEST_FAIL\n')
+        file_lines=[]
+        for run in range(2):
+            file_lines += [f'JS_FILES_CASE index={i} status={s}' for i,s in enumerate((0,1,71,124,0))]
+            file_lines += ['JS_FILES_CANCEL_REUSE_OK','JS_FILE_SHELL_OK 230 64']
+        complete=text+'\n'.join(file_lines)+'\n';validate_transcript(complete,True)
+        for old,new in (('JS_FILES_CASE index=3 status=124','JS_FILES_CASE index=3 status=0'),
+                        ('JS_FILES_CANCEL_REUSE_OK',''),('JS_FILE_SHELL_OK','MISSING')):
+            with self.assertRaises(ValueError):validate_transcript(complete.replace(old,new),True)
 
     def test_external_browser_interleaved_trace_remains_strict(self):
         from run_qemu_browser_external import validate_transcript

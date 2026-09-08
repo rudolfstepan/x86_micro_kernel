@@ -14,6 +14,8 @@ static struct {
     uint32_t response_status=0;
     uint32_t response_size=2,response_offset=0;
     js_service_header last{};
+    bool file_call=false,file_sent=false;
+    uint32_t file_request[8]={1,32,1,1,1,1,3,0};
 } os;
 extern "C" {
 int x86os_getpid() { return 7; }
@@ -51,6 +53,12 @@ int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t,const x86os_ipc_bulk_message_
     REQUIRE(timeout==0); ++os.calls;
     if(os.blocked) return -11;
     js_service_packet p; std::memcpy(&p,m->payload,sizeof(p));
+    if(p.header.operation==JS_OP_FILE) {
+        js_service_header expected=os.last;expected.operation=JS_OP_FILE;
+        REQUIRE(!js_service_header_valid(&p.header,&expected,1));
+        if(p.header.offset+p.header.length==p.header.total){os.file_call=false;os.waiting=true;os.response_offset=0;}
+        return 0;
+    }
     REQUIRE(js_service_header_valid(&p.header,&p.header,0)==0);
     os.last=p.header;
     os.waiting=p.header.offset+p.header.length==p.header.total;
@@ -64,12 +72,18 @@ int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t,x86os_ipc_bulk_message_t *
     const void *data=os.response_size==2 ? (const void *)"42" : big; uint32_t size=os.response_size;
     uint32_t hello[]={1,JS_SERVICE_HEAP,16384,0},stats[]={1,24,10,4096,8192,0};
     uint32_t script[]={1,24,0,7,0,0};
-    if(os.last.operation==JS_OP_SCRIPT) { data=script; size=sizeof(script); }
+    if(os.last.operation==JS_OP_SCRIPT || os.last.operation==JS_OP_CAP_SCRIPT) { data=script; size=sizeof(script); }
     if(os.last.operation==JS_OP_HELLO) { data=hello; size=sizeof(hello); }
     if(os.last.operation==JS_OP_GC || os.last.operation==JS_OP_HEALTH) { data=stats; size=sizeof(stats); }
     if(os.last.operation==JS_OP_SHUTDOWN) { data=nullptr; size=0; os.state=X86OS_PROCESS_ZOMBIE; }
     if(os.response_status) { data=nullptr; size=0; }
     js_service_packet p; js_service_packet_make(&p,&os.last,os.response_status,data,size,os.response_offset);
+    if(os.file_call) {
+        if(os.file_sent)return -11;
+        js_service_header h=os.last;h.operation=JS_OP_FILE;
+        js_service_packet_make(&p,&h,JS_SERVICE_REQUEST,os.file_request,sizeof(os.file_request),0);
+        os.file_sent=true;
+    }
     if(os.stale) ++p.header.child_generation;
     m->version=X86OS_IPC_BULK_MESSAGE_VERSION; m->struct_size=sizeof(*m);
     m->length=JS_SERVICE_HEADER+p.header.length; std::memcpy(m->payload,&p,m->length);

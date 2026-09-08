@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.36-js-file-capabilities"
-next_user_request = "2026-09-08: Execute R3.36 read-only file capabilities directly under the frozen contract. Persistent object writes need a separate JS3 protocol before JS4; no kernel write shortcut or directory-prefix authority. R3.6b remains explicitly deferred. No agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-08: R3.36 read-only JavaScript file capabilities accepted, all12 groups. Continue JS3 by inventorying/freezing the missing stable Ring-3 writable file-object and persistence/recovery contract, then explicit write capabilities. No kernel VFS write shortcut, no directory-prefix authority, no JS4 yet. R3.6b stays explicitly deferred; no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.36-js-file-capabilities"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Explicit isolated JavaScript file capabilities and read-only broker"
@@ -26,6 +26,8 @@ runtime_tests = ["python scripts/verify_js_runner_artifacts.py --baseline c9bf94
 acceptance = "All12 frozen groups, actual reference kernel/protected payload hashes, direct ABI/cleanup/scope review, final archive and local commit. JS3 writes not accepted by this read-only proof."
 stop_conditions = ["Source outside allowed_files needed", "Unattributed changes", "Failed gate without focused correction", "Persistent write or directory-root authority needed"]
 commit_message = "feat: delegate explicit read-only file capabilities to JavaScript"
+evidence = ["python test/test_js.py -v","python test/test_js_files.py -v","python test/test_js_runner.py -v","python test/test_js_service.py -v","python test/test_script_domain.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_file_client.py -v",".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga","python scripts/verify_js_runner_artifacts.py --baseline c9bf94ba --evidence build/codex-agent/r336-js-files/artifacts","python scripts/run_qemu_js_runner.py --file-capabilities --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r336-js-files/runner.log","python scripts/run_qemu_js_service.py --restricted-worker --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r336-js-files/service.log","python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r336-js-files/browser.log"]
+evidence_note = "All12 groups passed. Final log names/times and preserved focused test/build corrections in CURRENT_WORK R3.36; accepted-reference contains101 hash-verified files. Protected program/kernel hashes unchanged from c9bf94ba. No persistent write acceptance."
 
 [[packages]]
 id = "R3.35-js-runner"
@@ -2335,7 +2337,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

@@ -86,6 +86,48 @@ static int runner_cases(Source &source) {
     CHECK(!admitted); CHECK(execute(source,false)==0); release(source);
     x86os_puts("JS_RUNNER_SOURCE_OK\n"); return 0;
 }
+static int file_cases(Source &source) {
+    static const char *codes[]={
+        "let f=reist.files[0];if(f.size()<100||f.readText(14)!=='// JS2 example')throw 1;"
+        "f.seek(0);if(new Uint8Array(f.read(2)).join(',')!=='47,47')throw 2;"
+        "f.seek(f.size());if(f.read(1).byteLength)throw 3;f.close();f.close();let closed=false;"
+        "try{f.read(1)}catch(e){closed=true}if(!closed||typeof f.write!=='undefined'||typeof reist.open!=='undefined')throw 4",
+        "reist.files[0].read(1);throw Error('expected')",
+        "try{for(let i=0;i<257;i++)reist.files[0].seek(0)}catch(e){};42",
+        "reist.files[0].read(1);while(true){}",
+        "for(let f of reist.files){if(f.size()<100||f.readText(2)!=='//')throw 5;f.close()}"
+    };
+    const int expected[]={0,1,71,124,0};
+    for(unsigned i=0;i<5;++i) {
+        const char *args[]={"js","--read","/htdocs/hello.js","-e",codes[i]};
+        const char *four[]={"js","--read","/htdocs/hello.js","--read","/htdocs/hello.js",
+            "--read","/htdocs/hello.js","--read","/htdocs/hello.js","-e",codes[i]};
+        CHECK(!prepare(i==4?11:5,i==4?four:args,source));
+        int actual=execute(source,false);release(source);CHECK(actual==expected[i]);
+        x86os_puts("JS_FILES_CASE index=");number(i);x86os_puts(" status=");number(actual);x86os_puts("\n");
+    }
+    // Cancel while the worker is awaiting a real host call, then close/reuse all slots.
+    const char *args[]={"js","-e","reist.files[0].read(1)"};CHECK(!prepare(3,args,source));
+    FileBroker broker;char paths[4][192]{};
+    for(unsigned i=0;i<4;++i)memcpy(paths[i],"/htdocs/hello.js",sizeof("/htdocs/hello.js"));
+    CHECK(!broker.admit(paths,4));
+    char *packet=(char *)malloc(source.length+80),*output=(char *)malloc(JS_SERVICE_RESULT);
+    CHECK(packet && output);memcpy(packet,&broker.manifest(),80);memcpy(packet+80,source.packet,source.length);
+    JsSession session;int line=0;
+    if(session.start(1,42) || settle(session) || !session.ready() ||
+       session.script_capabilities(packet,source.length+80,output,JS_SERVICE_RESULT))line=__LINE__;
+    for(unsigned i=0;!line && i<10000 && session.busy() && !session.host_request();++i) {
+        session.poll();x86os_sleep_ms(1);
+    }
+    if(!session.host_request())line=__LINE__;
+    session.cancel();if(settle(session) || session.pid())x86os_exit(70);
+    if(session.exit_status()!=74 && session.exit_status()!=143)line=__LINE__;
+    if(broker.close())x86os_exit(70);
+    free(packet);free(output);release(source);CHECK(!line);
+    CHECK(!broker.admit(paths,4));CHECK(!broker.close());
+    x86os_puts("JS_FILES_CANCEL_REUSE_OK\n");
+    return 0;
+}
 extern "C" int main() {
     if(reist_libc_init_process(8U*1024U*1024U)) return 71;
     Source source; JsSession a,b;
@@ -93,6 +135,7 @@ extern "C" int main() {
     char *other=static_cast<char *>(malloc(JS_SERVICE_RESULT));
     int line=output && other?realms(a,b,source,output,other):__LINE__;
     if(!line) line=runner_cases(source);
+    if(!line) line=file_cases(source);
     a.cancel(); b.cancel(); (void)settle(a); (void)settle(b);
     if(a.pid() || b.pid()) { x86os_puts("JS_RUNNER_TEST_FAIL cleanup\n"); x86os_exit(70); }
     release(source); free(output); free(other);

@@ -2,6 +2,91 @@
 
 Stand: 8. September 2026
 
+## R3.36 / JS3 abgenommen: explizite Lese-Capabilities
+
+Sauberer Ausgang c9bf94ba, Vertragscheckpoint fcd0a84c:
+[OS_JAVASCRIPT_FILE_CAPABILITY_CONTRACT.md](../architecture/OS_JAVASCRIPT_FILE_CAPABILITY_CONTRACT.md).
+Eine vollständige Lese-Autoritätsgrenze, kein allgemeiner Schreib- oder
+Verzeichnisbroker. Die Inventur fand nur READ/SEEK/STAT/DELEGATE im vorhandenen
+Ring-3-Objektclient. Persistente reguläre Dateiobjekt-Schreiboperationen benötigen
+ein eigenes JS3-Paket mit Crash-/Commit-/Quarantänenachweis, bevor JS4 beginnt.
+
+`js --read /htdocs/hello.js /htdocs/readfile.js` delegiert genau die ausgewählte
+reguläre Datei. Bis zu vier explizite Grants; Quelltext-/Argumentprüfung vor
+Grant-Open, O_NOFOLLOW für den letzten Pfadteil, keine dot-dot-Komponenten.
+Intermediate Symlinks können beim vertrauenswürdigen Open aufgelöst werden;
+dies ist ausdrücklich keine Verzeichnis-/Subtree-Sandbox. Danach folgen keine
+Pfadauflösung und kein automatisches Reopen: Der Host hält generationsgebundene
+VFS-Objekte; Worker erhalten weder Pfade noch VFS-Deskriptoren als Autorität.
+
+`reist.files[0]` ist ein natives opakes Objekt: `read(n)` -> ArrayBuffer,
+`readText(n)` -> separat UTF-8-dekodierter Chunk, `seek(offset)`, `size()` und
+idempotentes `close()`. Kein allgemeiner Decoder, Node fs, open/write, Prozess-,
+Netzwerk- oder Adminrecht. Zahlenargumente ohne implizite Konvertierung;
+Prototypkopien, Proxy, JSON und fremde Receiver können kein Objekt fälschen.
+Browser EVAL und SCRIPT ohne Grants erhalten keinerlei Datei-Binding.
+
+Append-only private Operationen7/8 mit voller Eltern-/Kind-/Dokument-/Anfrage-
+Identität:80-Byte-Manifest,32-Byte-Hostanfrage/-Antwort, monotone innere Sequenz.
+Slot/Lease sind nur Selektoren innerhalb des autorisierten, generationgeprüften
+Endpoints und der expliziten Granttabelle, keine geheimen Bearertokens.
+JsSession.poll bleibt auf acht nichtblockierende IPC-Operationen begrenzt;
+VFS arbeitet ausschließlich im vertrauenswürdigen CLI-Host außerhalb von poll.
+128KiB je Read,16MiB Gesamtdaten,256 Aufrufe, vier Capabilities, unveränderte
+5s Ausführungs-/32MiB Engine-/64MiB Worker-Grenzen. Gewöhnliche Dateifehler sind
+fangbar; Quoten-/Protokoll-/Zeitfehler vergiften die Ausführung unwiderruflich.
+Explizites Close nach Reap vor Konsolenpublikation; GC schließt keine OS-Objekte.
+Unklare Freigabe beendet den Host für den vorhandenen Owner-Reap-Pfad.
+
+Alle zwölf Gruppen bestanden. Befehle stehen in der Queue, abschließende Belege relativ zu
+`build/codex-agent/r336-js-files/`:
+
+| Gruppe | Ergebnis / Sekunden | Beleg |
+| --- | --- | --- |
+| Engine/SDK |6 Tests; bestehende Sprache/Konsole und15 Datei-Vektoren je O0/O2 /76.407 | host-engine.log |
+| Broker/nativer Worker-Bridge/Transport |O0/O2 mit gefälschten Frames/Leases/Receivern, Quoten und Cleanup /1.874 | host-files-bridge-version.log |
+| CLI/Admission/Validator |4 Tests /3.091 | host-runner-grants.log |
+| Owner/Transport/4 echte Ziellinks |3 Tests /9.650 | host-service.log |
+| Native Script-Domäne |2 Tests /1.282 | host-domain.log |
+| Vorhandener VFS-Objektclient |6 Tests /1.533 | host-vfs.log |
+| VMware-Referenz |PASS /22.741 | package-vmware-fixture.log |
+| QEMU-Referenz |PASS /73.990 | package-qemu.log |
+| Tatsächliche Image-Inhalte |92 PRGs je Image, beide Beispiele/Kernel /1.351 | artifacts/protected.json |
+| Runner-/Datei-Gast |zweimal vollständige Fälle /122.062 | runner.log, runner-gate.log |
+| Eingeschränkter Dienstgast |zweimal Fault/Hang/Orphan/Recovery /39.570 | service.log, service-gate.log |
+| Browserregression |externe Skripte/Redirect/Cache/Reflow/Cancel/Recovery /97.464 | browser.log, browser-gate.log |
+
+Der neue Gast prüft je Runde die exakten Dateifall-Status0/1/71/124/0,
+Read-/Seek-/Stat-/EOF-Inhalt, fehlende Schreib-/Open-APIs, vier gleichzeitige
+Dateiobjekte, Abbruch während einer echten Hostanfrage und erneute Vergabe aller
+vier Slots. Normale Shell meldet zweimal JS_FILE_SHELL_OK238/64. Die bisherigen
+Runner-/Realm-/Source-/Console-Fälle bleiben verpflichtend und bestehen.
+
+Beide Kernel sowie BENCHMARK, MATHTEST, TEXTTEST, CURL und JSTEST sind bytegleich
+zu c9bf94ba. Kein neuer VMware-Leistungs-/WCET- oder vollständiger OS-Scripting-
+Nachweis. QEMU-Image:
+`78ceb876b7114741fedf0e4e734b28f2169ecd4d6a2965cb36c5e9c7e05d3a29`.
+VMware-Image:
+`7448e05d3abfb324f8c203223c5ebe6524a4b314e8878997c934840b69d1e1cb`.
+`accepted-reference/` sichert101 Dateien: beide Images/Kernel,92 Programme,
+VMware-Descriptor/VMX, beide JS-Beispiele und den unabhängigen Imagebericht.
+Alle Kopien hashgeprüft; frühere Referenzen und Fehlerbelege unverändert erhalten.
+
+Erhaltene rote Belege: r336-js-files-red.log im Elternordner (Broker zunächst
+nicht implementiert); host-files-bridge.log (C-Bridge im C++-Fixture brauchte
+expliziten void*-Cast); host-files-bridge-cast.log (falscher negativer Manifest-
+Vektor: jede Nichtnull-Lease ist strukturell gültig, Bindung prüft erst Broker);
+host-files-bridge-lease.log (Fixture verwendete v1 statt Bulk-IPC-Version2);
+package-vmware.log (Gastfixture nutzte im SDK nicht deklariertes strcpy).
+Gezielte Korrekturen, verschärfte Host-Bridge-/CLI-Vektoren und nur betroffene
+Wiederholungen; keine gelockerten Rechte, Quoten oder Prüferanforderungen.
+
+Nächster fachlicher Schritt ist weiterhin JS3: stabile schreibbare Ring-3-
+Dateiobjekte mit explizitem Persistenz-/Recoveryvertrag inventarisieren und
+einfrieren, dann Schreib-Capabilities anbinden. Kein späteres Paket in diesem
+Lauf implementiert. Der formale Rücksprung auf R3.6b erhält dessen ausdrückliche
+VMware-Zurückstellung; Scripting bleibt priorisiert. Kein Push/Agent.
+
 ## R3.35 / JS2 abgenommen: allgemeiner isolierter JavaScript-Runner
 
 Ausgang ef9fb2de, Vertragscheckpoint23fce927, ausdrücklich genehmigte

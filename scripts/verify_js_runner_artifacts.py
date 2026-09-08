@@ -17,8 +17,9 @@ KERNELS={'qemu':'c5aa2d2b57103a376a27d2c075528cb86cd875c9d94d46aa5208997fcc3d098
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence',type=Path,required=True)
+    parser.add_argument('--baseline',choices=('ef9fb2de','c9bf94ba'),default='ef9fb2de')
     args=parser.parse_args(); args.evidence.mkdir(parents=True,exist_ok=False)
-    report={'baseline':'ef9fb2de','passed':False,'images':{},'programs':{}}
+    report={'baseline':args.baseline,'passed':False,'images':{},'programs':{}}
     start=time.monotonic()
     try:
         for name,wanted in PINNED.items():
@@ -43,7 +44,7 @@ def main():
         for target,image,kernel in (
             ('qemu',ROOT/'build/reist-os.img',ROOT/'build/kernel.bin'),
             ('vmware',ROOT/'build/vmware/reist-os/reist-os-flat.vmdk',
-             ROOT/'build/codex-agent/r335-js-runner/kernel-vmware.bin')):
+             ROOT/('build/codex-agent/'+('r336-js-files' if args.baseline=='c9bf94ba' else 'r335-js-runner')+'/kernel-vmware.bin'))):
             actual=kernel_digest(image)
             if actual!=KERNELS[target] or actual!=digest(kernel): raise ValueError('Kernel/image mismatch '+target)
             for name,wanted in report['programs'].items():
@@ -53,6 +54,11 @@ def main():
                 if hashlib.sha256(content).hexdigest()!=wanted: raise ValueError('Stale image '+target+'/'+name)
             if read_fat_file(image,'htdocs/hello.js')!=(ROOT/'htdocs/hello.js').read_bytes():
                 raise ValueError('Stale JS example '+target)
+            if args.baseline=='c9bf94ba':
+                if read_fat_file(image,'htdocs/readfile.js')!=(ROOT/'htdocs/read-file.js').read_bytes():
+                    raise ValueError('Stale file-capability example '+target)
+                if 'htdocs/readfile.js=htdocs/read-file.js' not in makefile or 'htdocs/readfile.js=$readFileExample' not in windows:
+                    raise ValueError('File-capability example layout')
             report['images'][target]={'sha256':digest(image),'kernel_sha256':actual}
         report['passed']=True
     except (OSError,ValueError) as error: report['error']=str(error)

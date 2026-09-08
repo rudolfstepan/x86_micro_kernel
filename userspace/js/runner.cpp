@@ -41,8 +41,21 @@ static int read_source(const char *path,char *target,uint32_t &length) {
     return result;
 }
 int prepare(int argc,const char *const *argv,Source &output) {
-    if(output.packet || argc<2 || argc>19 || !argv) return 64;
+    if(output.packet || argc<2 || argc>27 || !argv) return 64;
     int index=1; bool expression=false;
+    char files[4][192]{};uint32_t file_count=0;
+    while(index<argc && argv[index] && !strcmp(argv[index],"--read")) {
+        if(file_count==4 || index+1>=argc || !argv[index+1])return 64;
+        size_t n=bounded_length(argv[index+1],192);if(!n || n>=192)return 64;
+        const char *path=argv[index+1];
+        for(size_t at=0;at<n;) {
+            if(path[at]=='/' || path[at]=='\\'){++at;continue;}
+            size_t start=at;while(at<n && path[at]!='/' && path[at]!='\\')++at;
+            if(at-start==2 && path[start]=='.' && path[start+1]=='.')return 64;
+        }
+        memcpy(files[file_count++],path,n+1);index+=2;
+    }
+    if(index>=argc)return 64;
     if(!argv[index]) return 64;
     if(!strcmp(argv[index],"-e")) { expression=true; ++index; }
     else if(!strcmp(argv[index],"--")) ++index;
@@ -74,7 +87,8 @@ int prepare(int argc,const char *const *argv,Source &output) {
     memcpy(packet,&header,sizeof(header));
     js_script_source checked;
     if(js_script_decode(packet,offset+source_bytes,&checked)) { free(packet); return 64; }
-    output.packet=packet; output.length=offset+source_bytes; return 0;
+    output.packet=packet; output.length=offset+source_bytes;output.file_count=file_count;
+    memcpy(output.files,files,sizeof(files));return 0;
 }
 static int write_text(int stream,const char *bytes,uint32_t length,uint64_t &last,uint64_t deadline) {
     uint32_t offset=0;
@@ -92,7 +106,7 @@ static int write_text(int stream,const char *bytes,uint32_t length,uint64_t &las
     return 0;
 }
 int diagnostic(int code) {
-    const char *message=code==64?"js: usage: js FILE [args...] | js -e SOURCE [args...]\n":
+    const char *message=code==64?"js: usage: js [--read FILE]... FILE [args...] | js [--read FILE]... -e SOURCE [args...]\n":
         code==66?"js: source unavailable or invalid\n":code==71?"js: resource limit\n":
         code==74?"js: output error\n":code==124?"js: execution timeout\n":
         code==125?"js: cancelled\n":code==1?"js: script exception\n":"js: worker/protocol failure\n";
@@ -117,12 +131,18 @@ int publish(const void *input,uint32_t length) {
     if(h.status) diagnostic(1);
     return (int)h.exit_code;
 }
-int settle(JsSession &session,bool keyboard) {
+int settle(JsSession &session,bool keyboard,FileBroker *broker) {
     uint64_t start=0,now=0,last=0;
     if(clock(last,start)) { session.cancel(); return 70; }
     for(unsigned i=0;i<20000 && session.busy();++i) {
         if(keyboard && x86os_getchar_nonblocking()==27) { session.cancel(); keyboard=false; }
         uint32_t progress=session.progress(); session.poll();
+        if(session.host_request()) {
+            int rc=broker?broker->serve(session.host_request(),32,session.deadline()):-84;
+            if(rc || session.host_reply(broker->data(),broker->size())) {
+                session.cancel();return rc==-28?71:rc==-110?124:70;
+            }
+        }
         if(clock(last,now) || now-start>6500) { session.cancel(); return 70; }
         if(session.busy() && (session.progress()==progress?x86os_sleep_ms(1):x86os_yield())) {
             session.cancel(); return 70;
@@ -142,24 +162,38 @@ static int close(JsSession &session) {
 int execute(const Source &source,bool keyboard) {
     js_script_source checked;
     if(js_script_decode(source.packet,source.length,&checked)) return diagnostic(64);
+    if(source.file_count>4)return diagnostic(64);
+    FileBroker broker;
+    char *packet=nullptr;
+    if(source.file_count) {
+        int rc=broker.admit(source.files,source.file_count);
+        if(rc) {if(broker.uncertain())x86os_exit(70);return diagnostic(rc==-12?71:66);}
+        packet=(char *)malloc(source.length+80);
+        if(!packet){if(broker.close())x86os_exit(70);return diagnostic(71);}
+        memcpy(packet,&broker.manifest(),80);memcpy(packet+80,source.packet,source.length);
+    }
     char *output=static_cast<char *>(malloc(JS_SERVICE_RESULT));
-    if(!output) return diagnostic(71);
+    if(!output) {free(packet);if(broker.close())x86os_exit(70);return diagnostic(71);}
     JsSession session;
     uint64_t seed=0; int code=70;
     if(!x86os_monotonic_ms(&seed)) {
         seed^=((uint64_t)(uint32_t)x86os_getpid()<<32); if(!seed) seed=1;
+        int run=0;
         if(!session.start(1,seed) && !settle(session,keyboard) && session.ready() &&
-           !session.script(source.packet,source.length,output,JS_SERVICE_RESULT) &&
-           !settle(session,keyboard) && session.script_result()) {
+           !(packet?session.script_capabilities(packet,source.length+80,output,JS_SERVICE_RESULT):
+               session.script(source.packet,source.length,output,JS_SERVICE_RESULT)) &&
+           !(run=settle(session,keyboard,packet?&broker:nullptr)) && session.script_result()) {
             uint32_t length=session.script_result_length();
             int closed=close(session);
+            free(packet);if(broker.close()){free(output);x86os_exit(70);}
             code=closed || session.error()?70:publish(output,length);
             free(output); return code;
         }
         if(session.error()==-110 || session.engine_status()==3) code=124;
         else if(session.engine_status()==2 || session.engine_status()==4) code=71;
         else if(session.error()==-125 && !session.engine_status()) code=125;
+        if(run)code=run;
     }
-    (void)close(session); free(output); return diagnostic(code);
+    (void)close(session); free(output);free(packet);if(broker.close())x86os_exit(70);return diagnostic(code);
 }
 }

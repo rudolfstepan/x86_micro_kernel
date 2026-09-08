@@ -6,6 +6,11 @@ umgesetzt und mit allen10 Prüfgruppen abgenommen: allgemeiner isolierter Runner
 mit Argumenten/Konsole, noch ohne Datei-/Prozess-/Admin-Bindings. Dieses Papier
 ersetzt keine vorhandene Browser-Abnahme.
 
+JS3-Lesegrenze R3.36 ist ebenfalls abgenommen: explizite Datei-Capabilities,
+Ring-3-Objektbroker und alle zwölf Prüfgruppen. Nur ausdrücklich gewählte
+reguläre Dateien sind lesbar; persistente Schreib-/Verzeichnisrechte fehlen
+weiterhin und bleiben zwingende JS3-Folgearbeit vor JS4.
+
 ## Ziel und Sicherheitsgrenze
 
 Eine gemeinsame QuickJS-Sprachimplementierung dient Browser-, Benutzer- und
@@ -249,3 +254,22 @@ dateigebundener Benutzer-Broker. Autorität, Revocation, Pfad-/Handle-Reuse und
 sichere Schreibtransaktionen zuerst inventarisieren und einfrieren; kein
 `isSystemScript`-Schalter oder ungeprüfter Pfadstring als Recht. Diese Etappe
 wurde in R3.35 nicht begonnen. R3.6b behält seine VMware-Zurückstellung.
+
+R3.36 auf c9bf94ba, Vertragscheckpoint fcd0a84c: Die oben inventarisierte
+Lesegrenze ist implementiert und nach zwölf Gruppen abgenommen. Native
+O0/O2-Objekt-/Broker-/Bridge-Negativfälle, normale Shell-Grants, echte Datei-
+Inhalte/Seek/EOF/Close, Fehler-/Quoten-/Deadlinepfade und Vier-Slot-Reuse nach
+Cancel sind bestanden. Bestehende Dienst-/Browsergaeste bleiben grün. Kein
+Kernel-/Storage-ABI-Ausbau; fünf Schutzprogramme und beide Kernel bytegleich.
+101 Referenzdateien sind archiviert; Zeiten und rote Entwicklungsbelege stehen
+in CURRENT_WORK.md. Beispiel:
+
+```text
+js --read /htdocs/hello.js /htdocs/readfile.js
+```
+
+Die unverfälschbaren JS-Objekte bieten read/readText/seek/size/close, nicht
+open/write oder pauschale OS-Autorität. Nächster Schritt: den fehlenden
+Ring-3-Vertrag für stabile schreibbare Dateiobjekte einschließlich persistenter
+Commit-/Recovery-Evidenz einfrieren. Keine Kernel-VFS-Abkürzung und kein JS4
+vor dieser JS3-Persistenzgrenze.

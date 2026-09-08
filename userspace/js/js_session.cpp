@@ -32,8 +32,9 @@ void JsSession::fence() {
     if(reply_) { (void)x86os_ipc_close(reply_); reply_=0; }
     // Only incomplete staging is still borrowed for writes. Once published,
     // the caller may have consumed/freed its buffer; invalidate the view only.
-    if((phase_==State::sending || phase_==State::receiving) && output_ && capacity_) output_[0]=0;
+    if((phase_==State::sending || phase_==State::receiving || phase_==State::host_call || phase_==State::host_sending) && output_ && capacity_) output_[0]=0;
     input_=nullptr; output_=nullptr; input_size_=capacity_=0;
+    host_output_=nullptr;host_size_=host_sent_=0;
 }
 void JsSession::fail(int reason) {
     if(phase_==State::stranded || phase_==State::reaping) return;
@@ -71,6 +72,7 @@ int JsSession::begin(uint32_t op,const void *data,uint32_t size,void *output,uin
     output_=static_cast<char *>(output); capacity_=cap;
     if(output_ && cap) output_[0]=0;
     sent_=0; sent_empty_=false; receive_={0,UINT32_MAX,UINT32_MAX};
+    host_calls_=0;
     engine_status_=0; phase_=State::sending; return 0;
 }
 int JsSession::start(uint32_t document,uint64_t seed,uint32_t probe) {
@@ -115,7 +117,17 @@ int JsSession::script(const void *data,uint32_t size,void *out,uint32_t cap,uint
     return begin(JS_OP_SCRIPT,data,size,out,cap,budget);
 }
 const void *JsSession::script_result() const {
-    return ready() && header_.operation==JS_OP_SCRIPT && !engine_status_ ? output_ : nullptr;
+    return ready() && (header_.operation==JS_OP_SCRIPT || header_.operation==JS_OP_CAP_SCRIPT) && !engine_status_ ? output_ : nullptr;
+}
+int JsSession::script_capabilities(const void *data,uint32_t size,void *out,uint32_t cap,uint32_t budget) {
+    if(!ready() || header_.operation!=JS_OP_HELLO || !data || size<104 ||
+       size>JS_SERVICE_CAP_SOURCE || !out || cap<24 || cap>JS_SERVICE_RESULT) return -22;
+    return begin(JS_OP_CAP_SCRIPT,data,size,out,cap,budget);
+}
+int JsSession::host_reply(const void *data,uint32_t size) {
+    if(phase_!=State::host_call || !data || size<32 || size>32+128U*1024U) return -22;
+    host_output_=static_cast<const char *>(data);host_size_=size;host_sent_=0;
+    phase_=State::host_sending;return 0;
 }
 /* Existing browser API stays independent of script console/result parsing. */
 int JsSession::shutdown() {
@@ -139,6 +151,7 @@ void JsSession::poll() {
     int state=peer(); if(state<0) { fail(-84); return; }
     if(ready()) { if(state==X86OS_PROCESS_ZOMBIE) fail(-84); return; }
     if(now>=header_.deadline) { fail(-110); return; }
+    if(phase_==State::host_call)return;
     for(unsigned i=0;i<8;++i) {
         x86os_ipc_bulk_message_t message={X86OS_IPC_BULK_MESSAGE_VERSION,sizeof(message),0,{0}};
         if(phase_==State::sending) {
@@ -150,11 +163,27 @@ void JsSession::poll() {
             if(rc==-11) return; if(rc) { fail(rc); return; }
             sent_+=packet.header.length; sent_empty_=true; ++progress_;
             if(sent_==input_size_ && sent_empty_) phase_=State::receiving;
+        } else if(phase_==State::host_sending) {
+            js_service_header h=header_;h.operation=JS_OP_FILE;
+            js_service_packet packet;js_service_packet_make(&packet,&h,0,host_output_,host_size_,host_sent_);
+            message.length=JS_SERVICE_HEADER+packet.header.length;memcpy(message.payload,&packet,message.length);
+            int rc=x86os_ipc_send_bulk_timeout(request_,&message,0);
+            if(rc==-11)return;if(rc){fail(rc);return;}
+            host_sent_+=packet.header.length;++progress_;
+            if(host_sent_==host_size_){host_output_=nullptr;host_size_=host_sent_=0;phase_=State::receiving;}
         } else {
             int rc=x86os_ipc_receive_bulk_timeout(reply_,&message,0);
             if(rc==-11) { if(state==X86OS_PROCESS_ZOMBIE) fail(-84); return; }
             if(rc || message.version!=X86OS_IPC_BULK_MESSAGE_VERSION || message.struct_size!=sizeof(message)) { fail(-84); return; }
             js_service_packet packet; memcpy(&packet,message.payload,sizeof(packet));
+            if(packet.header.operation==JS_OP_FILE) {
+                if(header_.operation!=JS_OP_CAP_SCRIPT || receive_.offset || receive_.total!=UINT32_MAX || host_calls_>=256) {fail(-84);return;}
+                js_service_header h=header_;h.operation=JS_OP_FILE;
+                js_service_receive call{0,UINT32_MAX,UINT32_MAX};
+                if(js_service_accept(&packet,message.length,&h,0,host_request_,sizeof(host_request_),&call) ||
+                   call.offset!=32){fail(-84);return;}
+                ++host_calls_;++progress_;phase_=State::host_call;return;
+            }
             uint32_t cap=header_.operation==JS_OP_EVAL ? capacity_-1 : capacity_;
             if(js_service_accept(&packet,message.length,&header_,1,output_,cap,&receive_)) { fail(-84); return; }
             ++progress_;

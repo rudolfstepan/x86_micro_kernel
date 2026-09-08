@@ -843,6 +843,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/bin/js.prg=$(SYSTEM_PROGRAM_DIR)/JS.PRG \
 	usr/bin/jsruntst.prg=$(SYSTEM_PROGRAM_DIR)/JSRUNTST.PRG \
 	htdocs/hello.js=htdocs/hello.js \
+	htdocs/readfile.js=htdocs/read-file.js \
 	usr/bin/memtest.prg=$(SYSTEM_PROGRAM_DIR)/MEMTEST.PRG \
 	usr/bin/cpptest.prg=$(SYSTEM_PROGRAM_DIR)/CPPTEST.PRG \
 	htdocs/about.txt=htdocs/about.txt \

@@ -5,7 +5,7 @@
 namespace reist::script {
 class JsSession final {
 public:
-    enum class State { closed,sending,receiving,idle,reaping,failed,stranded };
+    enum class State { closed,sending,receiving,idle,reaping,failed,stranded,host_call,host_sending };
     JsSession() = default;
     JsSession(const JsSession&)=delete;
     JsSession& operator=(const JsSession&)=delete;
@@ -16,6 +16,10 @@ public:
     // invalidates the view without touching that already published buffer.
     int evaluate(const char *,uint32_t length,char *staging,uint32_t capacity,uint32_t budget_ms=5000);
     int script(const void *,uint32_t length,void *staging,uint32_t capacity,uint32_t budget_ms=5000);
+    int script_capabilities(const void *,uint32_t,void *,uint32_t,uint32_t budget_ms=5000);
+    const void *host_request() const {return phase_==State::host_call?host_request_:nullptr;}
+    uint64_t deadline() const {return header_.deadline;}
+    int host_reply(const void *,uint32_t); // Borrowed until next call/final result/fence.
     const void *script_result() const;
     uint32_t script_result_length() const { return script_result()?receive_.total:0; }
     int health(bool collect=false);
@@ -23,7 +27,7 @@ public:
     void cancel();
     void poll(); // <=8 timeout-zero IPC operations; caller yields on no progress.
     State state() const { return phase_; }
-    bool busy() const { return phase_==State::sending || phase_==State::receiving || phase_==State::reaping; }
+    bool busy() const { return phase_==State::sending || phase_==State::receiving || phase_==State::reaping || phase_==State::host_call || phase_==State::host_sending; }
     bool ready() const { return phase_==State::idle; }
     int error() const { return error_; }
     int exit_status() const { return exit_status_; }
@@ -44,6 +48,9 @@ private:
     const char *input_=nullptr;
     char *output_=nullptr;
     uint32_t internal_[6]{};
+    uint32_t host_request_[8]{};
+    const char *host_output_=nullptr;
+    uint32_t host_size_=0,host_sent_=0,host_calls_=0;
     js_service_header header_{};
     js_service_receive receive_{0,UINT32_MAX,UINT32_MAX};
     int clock(uint64_t &);

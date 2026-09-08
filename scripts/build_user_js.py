@@ -115,7 +115,7 @@ def compile_core(zig,generated,destination,env,host=False,opt="-O2"):
         prefix += ["-D"+n+"=reist_math_"+n for n in FUNCTIONS+INTEGER_FUNCTIONS+
                    ("fegetround","fesetround","feclearexcept","fetestexcept")]
         prefix += ["-Dsnprintf=reist_text_snprintf","-Dvsnprintf=reist_text_vsnprintf"]
-    sources=[generated/name for name in SOURCES]+[JS/"lib/script.c",JS/"lib/engine.c"]
+    sources=[generated/name for name in SOURCES]+[JS/"lib/script.c",JS/"lib/files.c",JS/"lib/engine.c"]
     def one(item):
         index,source=item; output=destination/(str(index)+(".obj" if host else ".o"))
         environment=env.copy(); environment["ZIG_LOCAL_CACHE_DIR"]=str(destination/("cache-"+str(index)))
@@ -135,6 +135,7 @@ def build_js(root,zig,incremental=False):
         *ROOT.joinpath("userspace/math/include").glob("*.h"),*ROOT.joinpath("userspace/text/include").glob("*.h"))
     copy_changed(JS/"include/reist_js.h",root/"usr/include/reist/js/reist_js.h")
     copy_changed(JS/"include/reist_js_script.h",root/"usr/include/reist/js/reist_js_script.h")
+    copy_changed(JS/"include/reist_js_files.h",root/"usr/include/reist/js/reist_js_files.h")
     metadata=root/"usr/lib/pkgconfig/reistjs.pc"
     content=("prefix=${pcfiledir}/../..\nlibdir=${prefix}/lib\nincludedir=${prefix}/include\n"
         "Name: reistjs\nDescription: isolated REIST JavaScript core profile 1\nVersion: 1.0.0\n"

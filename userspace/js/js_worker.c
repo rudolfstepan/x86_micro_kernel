@@ -1,6 +1,7 @@
 /* Shared isolated worker. No ambient VFS, network, GUI or DOM authority. */
 #include "js_protocol.h"
 #include "script_protocol.h"
+#include "file_worker.h"
 #include "x86os.h"
 #include <reist_js.h>
 #include <reist_js_script.h>
@@ -88,10 +89,11 @@ static int run(uint32_t incoming,uint32_t outgoing,js_service_header identity,ui
     uint64_t last=0,now=0;
     if(monotonic(&last,&now) || now>UINT64_MAX-JS_SERVICE_DEADLINE) return 74;
     uint64_t startup_deadline=now+JS_SERVICE_DEADLINE;
-    char *input=malloc(JS_SERVICE_SCRIPT_SOURCE),*output=malloc(JS_SERVICE_RESULT);
+    char *input=malloc(JS_SERVICE_CAP_SOURCE),*output=malloc(JS_SERVICE_RESULT);
     char *console=malloc(JS_SCRIPT_CONSOLE+JS_SCRIPT_HEADER);
     reist_js_script_host host={1,sizeof(host),console?console+JS_SCRIPT_HEADER:NULL,
         JS_SCRIPT_CONSOLE,0,0,0,0,0};
+    js_file_bridge bridge={0};reist_js_files_host files={0};
     reist_js_engine *engine=NULL;
     int result=74; uint32_t sequence=0,document=0,evaluations=0;
     if(!input || !output || !console) { result=71; goto done; }
@@ -119,14 +121,14 @@ static int run(uint32_t incoming,uint32_t outgoing,js_service_header identity,ui
             if(received.total==UINT32_MAX) {
                 if(sequence==UINT32_MAX || packet.header.sequence!=sequence+1 ||
                    (!engine && packet.header.operation!=JS_OP_HELLO) ||
-                   (engine && packet.header.operation==JS_OP_HELLO) ||
+                   (engine && packet.header.operation==JS_OP_HELLO) || packet.header.operation==JS_OP_FILE ||
                    (engine && packet.header.document!=document) || monotonic(&last,&now) ||
                    packet.header.deadline<=now || packet.header.deadline-now>JS_SERVICE_DEADLINE) goto done;
                 request.operation=packet.header.operation; request.sequence=sequence+1;
                 request.document=engine ? document : packet.header.document;
                 request.deadline=packet.header.deadline;
             }
-            if(js_service_accept(&packet,message.length,&request,0,input,JS_SERVICE_SCRIPT_SOURCE,&received)) goto done;
+            if(js_service_accept(&packet,message.length,&request,0,input,JS_SERVICE_CAP_SOURCE,&received)) goto done;
             if(received.offset==received.total) break;
         }
         ++sequence; document=request.document;
@@ -164,12 +166,25 @@ static int run(uint32_t incoming,uint32_t outgoing,js_service_header identity,ui
             if(!status) { reply=output; size=(uint32_t)required; }
             if(evaluations==1 && probe==3) ++request.child_generation;
             ++evaluations;
-        } else if(request.operation==JS_OP_SCRIPT) {
-            js_script_source source;
-            if(evaluations || js_script_decode(input,received.total,&source)) goto done;
+        } else if(request.operation==JS_OP_SCRIPT || request.operation==JS_OP_CAP_SCRIPT) {
+            js_script_source source;js_file_manifest manifest={0};
+            int capability=request.operation==JS_OP_CAP_SCRIPT;
+            if(evaluations || (capability?js_file_source_decode(input,received.total,&manifest,&source):
+                js_script_decode(input,received.total,&source))) goto done;
             /* Never mix CLI host state with browser EVAL on this generation. */
             evaluations=UINT32_MAX;
             status=reist_js_script_attach(engine,&host,source.argc,source.argv);
+            if(!status && capability) {
+                bridge.incoming=incoming;bridge.outgoing=outgoing;bridge.header=request;bridge.last=last;
+                bridge.staging=malloc(JS_FILE_RESPONSE);files.bytes=malloc(JS_FILE_CHUNK);
+                files.version=1;files.struct_size=sizeof(files);files.count=manifest.count;
+                files.context=&bridge;files.call=js_file_worker_call;
+                for(unsigned i=0;i<manifest.count;++i) {
+                    files.files[i].slot=manifest.files[i].slot;files.files[i].lease=manifest.files[i].lease;
+                    files.files[i].rights=manifest.files[i].rights;
+                }
+                status=bridge.staging && files.bytes?reist_js_files_attach(engine,&files):REIST_JS_OOM;
+            }
             size_t required=0;
             if(!status) status=reist_js_eval(engine,source.source,source.source_bytes,
                 request.deadline,output,JS_SERVICE_RESULT,&required);
@@ -187,7 +202,7 @@ static int run(uint32_t incoming,uint32_t outgoing,js_service_header identity,ui
         if(request.operation==JS_OP_SHUTDOWN || status>REIST_JS_EXCEPTION) { result=0; break; }
     }
 done:
-    reist_js_destroy(&engine); free(input); free(output); free(console);
+    reist_js_destroy(&engine); free(input); free(output); free(console);free(bridge.staging);free(files.bytes);
     if(reist_libc_reset()) result=70;
     return result;
 }

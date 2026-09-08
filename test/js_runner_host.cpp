@@ -36,6 +36,9 @@ int reist_vfs_file_read_bulk(uint32_t handle,void *output,size_t capacity) {
     memcpy(output,file_bytes.data()+file_offset,n); file_offset+=(uint32_t)n; return (int)n;
 }
 int reist_vfs_file_close(uint32_t handle) { REQUIRE(handle==1); ++closes; return close_error; }
+int reist_vfs_file_open_flags(const char *,uint32_t,uint32_t,uint32_t,uint32_t *) {REQUIRE(false);return -13;}
+int reist_vfs_file_seek(uint32_t,int64_t,uint32_t,uint32_t *) {REQUIRE(false);return -13;}
+int reist_vfs_file_fstat(uint32_t,x86os_file_info_t *) {REQUIRE(false);return -13;}
 
 static void admission() {
     Source source;
@@ -61,6 +64,15 @@ static void admission() {
     REQUIRE(prepare(1,args,source)==64 && !source.packet);
     REQUIRE(prepare(2,args,source)==64);
     const char *bad[]={"js","--system","sample.js"}; REQUIRE(prepare(3,bad,source)==64 && !opens);
+    const char *grant[]={"js","--read","data.txt","-e","1","--read"};
+    REQUIRE(!prepare(6,grant,source) && source.file_count==1 && !strcmp(source.files[0],"data.txt") && !opens);
+    REQUIRE(!js_script_decode(source.packet,source.length,&decoded) && decoded.argc==2 && !strcmp(decoded.argv[1],"--read"));
+    release(source);REQUIRE(!source.file_count);
+    const char *missing_grant[]={"js","--read"};REQUIRE(prepare(2,missing_grant,source)==64 && !opens);
+    const char *traversal[]={"js","--read","a/../outside","-e","1"};REQUIRE(prepare(5,traversal,source)==64 && !opens);
+    const char *backslash[]={"js","--read","a\\..\\outside","-e","1"};REQUIRE(prepare(5,backslash,source)==64 && !opens);
+    const char *too_many[]={"js","--read","a","--read","b","--read","c","--read","d","--read","e","-e","1"};
+    REQUIRE(prepare(13,too_many,source)==64 && !opens);
     std::string big(4096,'a'); const char *large[]={"js","-e","1",big.c_str()};
     REQUIRE(prepare(4,large,source)==64);
     const char *file[]={"js","sample.js","one"};
