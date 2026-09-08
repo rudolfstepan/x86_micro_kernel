@@ -6,8 +6,10 @@ No browser implementation or gate is accepted by this package.
 
 Extension frozen before driver changes, 2026-09-08: user approved repairing
 the demonstrated RTL8139 RX-wrap defect within this same receive-progress
-boundary. E1000 guest passes; failed RTL8139 evidence remains preserved.
-No implementation acceptance; throughput limits and remaining gates unchanged.
+boundary. Failed RTL8139 evidence remains preserved.
+Accepted 2026-09-08 after all frozen gates: both NIC profiles, service recovery,
+scheduler slack, browser input/crash/restart and protected reference payloads.
+Final evidence mapping in CURRENT_WORK.md; no limits or gates relaxed.
 
 ## Cause and architecture
 

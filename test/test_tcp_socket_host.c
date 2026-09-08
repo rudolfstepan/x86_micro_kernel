@@ -16,6 +16,7 @@ static uint16_t sent_source_port, sent_destination_port, sent_length,
 static uint8_t sent_flags;
 static bool pending_reply;
 static int reply_result;
+static uint32_t reply_sequence = 1000U;
 
 uint64_t pit_monotonic_ms(void) { return now_ms; }
 uint32_t netstack_get_ip_address(void) { return 0x0a000001U; }
@@ -49,7 +50,7 @@ int wait_queue_block_until_locked(wait_queue_t *queue,
             .destination_port = sent_source_port, .window = 4096U,
         };
         if ((sent_flags & TCP_FLAG_SYN) != 0U) {
-            reply.sequence = 1000U; reply.acknowledgement = sent_sequence + 1U;
+            reply.sequence = reply_sequence; reply.acknowledgement = sent_sequence + 1U;
             reply.flags = TCP_FLAG_SYN | TCP_FLAG_ACK;
         } else {
             reply.sequence = sent_acknowledgement;
@@ -91,7 +92,7 @@ int main(void) {
     CHECK(received[0] == 'O' && received[1] == 'K');
     CHECK(sent_flags == TCP_FLAG_ACK && sent_length == 0U &&
           sent_acknowledgement == 1003U &&
-          sent_window == TCP_SOCKET_RECEIVE_CAPACITY);
+          sent_window == TCP_SOCKET_RECEIVE_STORAGE);
     CHECK(tcp_socket_close(7, 2U, socket, 2000U) == 0);
     CHECK(tcp_socket_receive(7, 2U, socket, received, sizeof(received), 0U) == -9);
 

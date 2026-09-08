@@ -13,7 +13,10 @@
 #include "include/lib/spinlock.h"
 #include "lib/libc/string.h"
 
-#define TCP_RECEIVE_WINDOW TCP_SOCKET_RECEIVE_CAPACITY
+#define TCP_RECEIVE_WINDOW TCP_SOCKET_RECEIVE_STORAGE
+_Static_assert(TCP_RECEIVE_WINDOW <= UINT16_MAX, "unscaled wire window");
+_Static_assert(TCP_RECEIVE_WINDOW >= TCP_SOCKET_RECEIVE_CAPACITY,
+               "receive storage must cover one public copy");
 #define TCP_INITIAL_RTO_MS 250U
 #define TCP_MAX_RETRIES 4U
 #define TCP_PASSIVE_HANDSHAKE_MS 5000U
@@ -42,7 +45,7 @@ typedef struct {
      * descriptor. Until then the listener closes and deadline sweeps own it. */
     bool accepted;
     uint64_t passive_deadline;
-    uint8_t receive_buffer[TCP_SOCKET_RECEIVE_CAPACITY];
+    uint8_t receive_buffer[TCP_SOCKET_RECEIVE_STORAGE];
     wait_queue_t state_waiters;
     wait_queue_t receive_waiters;
 } tcp_control_block_t;
@@ -378,7 +381,7 @@ int tcp_socket_receive(int pid, uint32_t process_generation,
             for (uint32_t index = 0U; index < amount; ++index) {
                 data[index] = control->receive_buffer[control->receive_head];
                 control->receive_head = (uint16_t)((control->receive_head + 1U) %
-                    TCP_SOCKET_RECEIVE_CAPACITY);
+                    TCP_SOCKET_RECEIVE_STORAGE);
             }
             control->receive_count = (uint16_t)(control->receive_count - amount);
             tcp_wire_context_t snapshot = wire_context(control);
@@ -626,10 +629,10 @@ int tcp_socket_ingress(const tcp_socket_segment_t *segment,
          * accept/receive instead of requiring a separate empty ACK frame. */
         if (segment->length != 0U) {
             uint32_t tail = (control->receive_head + control->receive_count) %
-                            TCP_SOCKET_RECEIVE_CAPACITY;
+                            TCP_SOCKET_RECEIVE_STORAGE;
             for (uint32_t index = 0U; index < segment->length; ++index) {
                 control->receive_buffer[tail] = data[index];
-                tail = (tail + 1U) % TCP_SOCKET_RECEIVE_CAPACITY;
+                tail = (tail + 1U) % TCP_SOCKET_RECEIVE_STORAGE;
             }
             control->receive_count = (uint16_t)(
                 control->receive_count + segment->length);
@@ -661,16 +664,16 @@ int tcp_socket_ingress(const tcp_socket_segment_t *segment,
         }
         if (segment->length != 0U) {
             if (segment->sequence != control->receive_next ||
-                segment->length > TCP_SOCKET_RECEIVE_CAPACITY -
+                segment->length > TCP_SOCKET_RECEIVE_STORAGE -
                                   control->receive_count) {
                 if (dropped_segments != UINT32_MAX) ++dropped_segments;
                 send_ack = true;
             } else {
                 uint32_t tail = (control->receive_head + control->receive_count) %
-                                TCP_SOCKET_RECEIVE_CAPACITY;
+                                TCP_SOCKET_RECEIVE_STORAGE;
                 for (uint32_t index = 0U; index < segment->length; ++index) {
                     control->receive_buffer[tail] = data[index];
-                    tail = (tail + 1U) % TCP_SOCKET_RECEIVE_CAPACITY;
+                    tail = (tail + 1U) % TCP_SOCKET_RECEIVE_STORAGE;
                 }
                 control->receive_count = (uint16_t)(
                     control->receive_count + segment->length);

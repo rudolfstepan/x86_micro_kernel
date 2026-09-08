@@ -2,6 +2,30 @@
 
 Stand: 30. August 2026.
 
+R3.27a,8.September (abgenommen): vier feste32KiB-TCP-Empfangsringe statt
+der Kopplung an die2048-Byte-Anwendungskopie. Die oeffentliche512-Byte-
+Ingress-/2048-Byte-Receive-ABI und Kernelstacks bleiben unveraendert.
+Der Ring3-Dienst bedient aktive RX-Bursts mit1ms statt40ms Steuerungswartezeit
+fuer maximal100ms nach dem letzten Empfang, weiter8 Frames pro Durchlauf.
+Danach gilt wieder die alte Idle-Wartezeit. Kein Busy-Wait oder neuer
+Scheduler-/IRQ-Mechanismus. Der noch vorhandene Ring0-TCP-Zustandsautomat
+bleibt ausdrueckliche Migrationsschuld, keine vollstaendige Microkernel-
+Netzwerkisolation. Details/Abnahme: NETWORK_RECEIVE_PROGRESS_CONTRACT.md.
+
+RTL8139: Der64KiB-DMA-Ring bricht auch mit RCR_WRAP am Ringende um.
+Der bisher lineare Zugriff auf solche Payloads ist durch eine validierte
+Kopie in einen festen1518-Byte-Puffer im serialisierten RX-Bottom-Half ersetzt.
+Nicht umgebrochene Pakete behalten den bisherigen kopiefreien Pfad;
+FCS-Auslassung, CAPR,64er-Batch und IRQ-/DMA-Autoritaet sind unveraendert.
+QEMU-Gastnachweis:1MiB bytegenau E1000 in946ms, RTL8139 in781ms,
+jeweils auch langsamer Leser, Timeout/RST, Owner-Kill/Reap und Wiederverwendung;
+CURL-Datei ebenfalls bytegeprueft. Kein VMware-Laufzeit-/Benchmarkversprechen.
+
+`nettest stream|slow|timeout|reset|cancel|file` ist ein begrenztes Ring3-
+Diagnoseprogramm unter `/sbin` fuer den lokalen Abnahmepeer, kein allgemeiner
+Netzwerkdienst. Es prueft1MiB bytegenau, Fortschritt und Freigabe aller vier
+Sockets; `file` prueft die vorher von CURL erzeugte `/tmp/nettest.bin`.
+
 Der verifizierte VMware-Weg verwendet einen Intel-E1000-Adapter und VMware
 NAT-DHCP. Der überwachte Ring-3-Dienst `REIST.PRG` führt die
 begrenzten DHCP-/Netzwerkentscheidungen aus; der Kernel vermittelt Hardware,

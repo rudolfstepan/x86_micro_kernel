@@ -11,6 +11,8 @@
 #define TCP_SOCKET_MAX_SOCKETS 4U
 #define TCP_SOCKET_MAX_SEGMENT 512U
 #define TCP_SOCKET_RECEIVE_CAPACITY 2048U
+/* Internal fixed staging, NOT the public syscall copy/stack bound above. */
+#define TCP_SOCKET_RECEIVE_STORAGE 32768U
 #define TCP_SOCKET_MAX_TIMEOUT_MS 30000U
 #define TCP_SOCKET_MAX_BACKLOG 2U
 

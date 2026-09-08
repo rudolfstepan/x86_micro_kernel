@@ -15,6 +15,7 @@
 #include "reist_ipv4_parser.h"
 #include "reist_udp_parser.h"
 #include "reist_tcp_parser.h"
+#include "network_cadence.h"
 
 #define REIST_DHCP_BOOT_MAX_ATTEMPTS 3U
 #define REIST_DHCP_BOOT_RETRY_MS 1600U
@@ -426,6 +427,7 @@ int main(int argc, char **argv) {
         return 43;
 
     uint32_t sequence = 2U;
+    network_cadence_t network_cadence = {0};
     uint32_t pending_network_request = 0U;
     uint32_t pending_network_probe_id = 0U;
     bool network_frame_reported = false;
@@ -496,11 +498,13 @@ int main(int argc, char **argv) {
          * fill the bounded RX queue with broadcasts much faster than QEMU's
          * quiet user network; one frame per 40 ms could otherwise starve a
          * DHCP OFFER behind unrelated traffic. */
+        bool received_frame = false;
         for (uint32_t rx_index = 0U; rx_index < REIST_NETWORK_RX_BATCH;
              ++rx_index) {
             int frame_result =
                 x86os_reist_receive_network_frame(&network_frame);
             if (frame_result == 0) {
+            received_frame = true;
             if (network_frame.version != X86OS_REIST_NETWORK_FRAME_VERSION ||
                 network_frame.struct_size != sizeof(network_frame) ||
                 network_frame.length < 14U ||
@@ -786,7 +790,13 @@ int main(int argc, char **argv) {
         }
         x86os_ipc_message_t request;
         message_init(&request, "");
-        int receive = x86os_ipc_receive_timeout(endpoint, &request, 40U);
+        /* Keep control/health work between every bounded RX batch. Active
+         * traffic must not pay the idle poll delay on every flight. */
+        uint32_t control_wait = network_control_wait(
+            &network_cadence, now_ms, received_frame);
+        int receive = control_wait < 40U
+            ? x86os_ipc_receive_timeout(endpoint, &request, control_wait)
+            : x86os_ipc_receive_timeout(endpoint, &request, 40U);
         if (receive == 0) {
             x86os_ipc_message_t response;
             uint32_t request_id = message_request_id(&request);

@@ -78,6 +78,8 @@ static uint8_t rtl8139_tx_buffers[RTL_TX_COUNT][RTL_TX_BUFFER_SIZE]
     __attribute__((aligned(16)));
 static uint8_t rtl8139_rx_buffer[RTL_RX_RING_SIZE + RTL_RX_WRAP_SLACK]
     __attribute__((aligned(16)));
+/* Serialized by rx_busy; netdev copies the frame before returning. */
+static uint8_t rtl8139_rx_wrapped_frame[RTL_MAX_FRAME_SIZE];
 
 static bool rtl8139_wait_reset(uint16_t base) {
     for (uint32_t timeout = 0; timeout < 1000000u; ++timeout) {
@@ -224,7 +226,18 @@ static void rtl8139_drain_rx(void) {
 
         /* The DMA length includes the four-byte Ethernet FCS. */
         uint16_t frame_length = (uint16_t)(dma_length - 4u);
-        netdev_deliver_rx(entry + 4, frame_length);
+        const uint8_t *frame = entry + 4;
+        uint32_t contiguous = RTL_RX_RING_SIZE - offset - 4u;
+        if (frame_length > contiguous) {
+            /* At 64KiB RCR_WRAP does not enable linear overflow into slack:
+             * DMA continues at the ring start. Copy only the validated payload
+             * before advancing CAPR, leaving the usual path zero-copy. */
+            memcpy(rtl8139_rx_wrapped_frame, frame, contiguous);
+            memcpy(rtl8139_rx_wrapped_frame + contiguous, rtl8139_rx_buffer,
+                   frame_length - contiguous);
+            frame = rtl8139_rx_wrapped_frame;
+        }
+        netdev_deliver_rx(frame, frame_length);
 
         offset = (offset + dma_length + 4u + 3u) & ~3u;
         if (offset >= RTL_RX_RING_SIZE) offset -= RTL_RX_RING_SIZE;

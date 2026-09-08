@@ -2,21 +2,75 @@
 
 Stand: 8. September 2026
 
-## R3.27a aktiv: genehmigte Netzwerk-Voraussetzung
+## R3.27a abgenommen: Netzwerk-Fortschritt und RTL-RX-Ringkorrektur
 
 Nutzerfreigabe vom8.September: alle erforderlichen Schritte einschliesslich
 des gemeldeten Netzwerk-Prerequisites. Der nicht abgenommene R3.27-Code liegt
 wiederherstellbar in Stash `cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2`;
 25 explizite Quell-/Test-/Fixturepfade, keine fremden Aenderungen entfernt.
-Alle bisherigen Images/Logs bleiben erhalten. R3.27 und R3.28 sind queued.
-Nur das neue R3.27a wird in diesem Lauf umgesetzt. Vertrag:
-NETWORK_RECEIVE_PROGRESS_CONTRACT.md, eingefrorene Gates in der Queue.
+Alle bisherigen Images/Logs bleiben erhalten. Ausschliesslich R3.27a wurde
+in diesem Lauf umgesetzt. Alle gefrorenen Gates bestanden; Queue wechselt
+R3.27a auf done und R3.27 auf active. R3.28 bleibt queued. Vertrag:
+NETWORK_RECEIVE_PROGRESS_CONTRACT.md. Kein Agent, Push oder sichtbares VM-Fenster.
 
-**RTL-RX-Erweiterung am8.September vom Nutzer freigegeben; Umsetzung aktiv.**
-Queue/Vertrag werden vor dem Treibereingriff eng um `rtl8139.c` und einen
-echten O0/O2-Hosttest erweitert. Keine Gate-/Durchsatzlockerung, kein neues
-Treiber-/DMA-Recht. Der folgende fehlgeschlagene Zwischenstand bleibt erhalten.
-Noch kein Implementierungscommit oder Paketabschluss.
+Abschliessende Belege unter `build/codex-agent/r327a-network/`:
+
+- 43 verschiedene Hostmethoden kumulativ PASS: echtes TCP/Parser/Cadence O0/O2,
+  RTL-Drain O0/O2 mit aktivierten Assertions, Packaging/negative Evidenztests,
+  Legacy-TCP, Frame-Handoff, Netzwerk-/Service-Domain und Benchmark-Guard.
+  Bestehende erfolgreiche Methoden nicht unnoetig wiederholt; gezielte
+  Reparaturen und ihre fehlgeschlagenen Vorlaeufe sind unten dokumentiert.
+- Referenzgates VMware89s (`vmware-rtl-wrap.log`), QEMU76s
+  (`qemu-rtl-wrap.log`) PASS; deren vollstaendige Logs im uebergeordneten
+  Logordner mit Zeitstempeln100044 bzw.100214. Beidseitiger Imageguard
+  `artifacts-rtl-wrap.json` PASS1.285s: alle9 geschuetzten Programme bytegleich
+  3eab01ab; neue NETTEST/REIST-Payloads in beiden Images identisch zum Build.
+- Netzgate `guest-rtl-wrap.log` PASS130.111s, E1000/RTL jeweils eigene
+  `.log/.json/.pcap`: E1000 1MiB946ms/Slow1331ms/Timeout255ms/RST184ms/
+  Fresh994ms; RTL8139 781/1062/251/152/856ms. Jedes Datenbyte geprueft,
+  alle vier Socket-Slots wiederverwendbar, echtes blockiertes Kind mit
+  generationgeprueftem Kill/Reap143, unveraendertes CURL schreibt1MiB,
+  NETTEST verifiziert die Datei. Peersequenz jeweils swtrcsG, keine Fehler;
+  Fenster32768 bis32 bzw.256Bytes, je ein Peer-RST. Keine Peer-Drosselung.
+- `recovery.log`/`recovery-gate.log` PASS: Queue-Druck, Bindungswiderruf,
+  Netzwerk-Service-Crash und erneute Frame-Uebergabe in geforderter Reihenfolge.
+- `slack.log`/`slack-gate.log` PASS22.863s:814/869 benachbarte1ms-Ticks,
+  jeweils >=400, echte Userexception/Reap und funktionierende Shell.
+- `browser-input-gate.log` PASS82.476s: Tastatureingabe, Bearbeitung,
+  Navigation, echter Browserabsturz, Neustart und Konsole. Serial-/Bildbeleg
+  `browser-input.log/.ppm`; vorherige Desktopbelege in `pre-input-evidence/`.
+
+Die Queue-Evidence nennt unveraendert die eingefrorenen Gate-Identitaeten;
+gezielte Wiederholungen schreiben die obigen neuen Suffixe, damit fruehere
+`guest.log`/`artifacts.json`-Vorstaende nicht ueberschrieben werden.
+Direkte Diff-/Scope-/ABI-/Cleanup-Pruefung, keine fremden Aenderungen.
+Gepruefte Images/Kernel/Programme in `accepted-reference/` gesichert;
+`interim-reference/` und der Browser-Stash bleiben unveraendert erhalten.
+Kein VMware-Runtimenachweis fuer das10x-Benchmarkergebnis; geschuetzte
+Programme sind bytegleich, der echte Scheduler-Gasttest besteht.
+
+Naechster aktiver Schritt ist R3.27: vor Wiederaufnahme den Kernelguard
+explizit auf die unten dokumentierten abgenommenen R3.27a-Hashes umstellen,
+sonst alle bisherigen Browser-Gates/Quoten unveraendert lassen. Stash erst
+dann paketweise wiederherstellen. Externe Scripts und statisches CSS-Layout
+sind mit diesem Netzwerkabschluss ausdruecklich noch nicht abgenommen.
+
+### Erhaltener Verlauf und negative Vorlaeufe
+
+**Zwischenstand vor erfolgreicher Laufzeitabnahme:**
+Vertragscommit `54bc08ee` friert die Nutzerfreigabe vor dem Treibereingriff
+ein. Der echte Hosttest reproduziert den Defekt bei Offset65520/Laenge14,
+Byte12 (`rtl-wrap-regression.log`,6.897s). Jetzt werden nur umgebrochene
+Payloads vor CAPR-Freigabe in einen statischen1518-Byte-Puffer kopiert.
+Normalpfad ohne Zusatzkopie,64er-Batch, FCS, IRQ/DMA-Rechte unveraendert.
+O0/O2-Grenz-/Negativ-/Pendingtest besteht in1.273s; O2-Assertions explizit
+aktiv (erster O2-Build hatte NDEBUG und scheiterte geschlossen an Werror).
+43 verschiedene Hostmethoden bestehen kumulativ. Referenzbuilds VMware89s,
+QEMU76s pass; beide Image-Payloadguards1.285s pass. Neuer QEMU-Kernel:
+`b8add76174cb003e06383079285af61c4b707e892cef9b65f1c5aaf13332b49d`,
+VMware: `2f561825a91362f357f019d1e1a770e53b9fabfb8e3306ed923d8a679393b810`.
+Keine Gate-/Durchsatzlockerung. Noch kein Implementierungscommit oder
+Paketabschluss. Der folgende fehlgeschlagene Zwischenstand bleibt erhalten.
 E1000 besteht die vollstaendige neue Abnahme (`guest-output-dir-e1000.json`,
 62.489s):1MiB964ms, langsamer Leser1226ms, Timeout250ms, RST194ms,
 generationgepruefter Parent-Kill/Reap143, alle vier Slots frei und frischer
@@ -47,18 +101,18 @@ Ring0-Protokollverarbeitung, kein geringeres TCP-Fenster als Workaround.
 die gezielte Reparatur ist jetzt autorisiert. Weitere Ursache nicht
 ausgeschlossen; erster konkreter Treiberdefekt ist eindeutig.
 
-Noch offen: RTL-RX-Reparatur mit negativem Hostnachweis,
-danach Wiederholung des betroffenen Netzgates und Netzwerk-Service-Recovery,
-Scheduler-Slack, Browser-Input/Fault/Restart. Diese Restgates noch nicht
-ausgefuehrt; Queue bleibt R3.27a active. R3.27 bleibt im genannten Stash.
+Damals noch offen: Wiederholung des betroffenen Netzgates und Netzwerk-Service-
+Recovery, Scheduler-Slack, Browser-Input/Fault/Restart. Diese Restgates waren
+noch nicht ausgefuehrt; Queue blieb R3.27a active. R3.27 blieb im genannten Stash.
 Zwischenimages/Programme werden unter `r327a-network/interim-reference/`
 gesichert, ausdruecklich nicht als abgenommen bezeichnet.
 
 Vertragscommit `2e686e71`. Implementiert: feste32KiB-Ringe jeTCP-Slot,
 unveraenderte2048/512-Byte-ABI-/Kopiergrenzen, traffic-sensitive1/40ms-
 Steuerungswartezeit mit100ms Aktivitaetsfenster im Ring3-Dienst. Alte
-Idle-Operation bleibt explizit; keine Scheduler-/NIC-/Supervisorquelle
-geaendert. NETTEST prueft die echte Socket-ABI und CURL-Datei bytegenau.
+Idle-Operation bleibt explizit; keine Scheduler-/Supervisorquelle geaendert;
+NIC-Ausnahme ausschliesslich die jetzt freigegebene RTL-RX-Kopie.
+NETTEST prueft die echte Socket-ABI und CURL-Datei bytegenau.
 
 Zwischenstand Abnahme unter `build/codex-agent/r327a-network/`:
 Host-TCP/Parser O0/O2 pass4.563s; Erweiterungs-/Evidenztests pass.
@@ -97,12 +151,12 @@ Fehler in `guest-cancel-owner`31.517s: /tmp fehlte im Referenzimage; der Runner
 legt es jetzt per normalem mkdir nur im Snapshot an. Keine CURL-Aenderung.
 Alle Fehlerlogs bleiben erhalten, Restgates oben offen.
 
-## R3.27 zurueckgestellt: externe klassische JavaScript-Dateien
+## R3.27 als naechstes aktiv: externe klassische JavaScript-Dateien
 
 **Noch nicht abgenommen, kein Implementierungscommit.** Gesicherte R3.27-
 Aenderungen gehoeren dieser interaktiven Umsetzung auf040ed90f/3eab01ab.
 Die gefrorenen Gates/Allowed-Files wurden nicht gelockert. R3.28 ist nur
-vorbereitet; wegen des folgenden Netzwerk-Prerequisites noch nicht beginnen.
+vorbereitet und bleibt bis zum erfolgreichen R3.27-Abschluss zurueckgestellt.
 
 Implementiert: privates Script-Profil3, echte parsergeordnete src-Auftraege,
 lokaler/HTTP-Lader mit direkt besessenem CURL, MIME/UTF8-/URL-/Redirect-

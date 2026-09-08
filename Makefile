@@ -831,6 +831,7 @@ SYSTEM_IMAGE_FILES := \
 	sbin/udp.prg=$(SYSTEM_PROGRAM_DIR)/UDP.PRG \
 	sbin/nslookup.prg=$(SYSTEM_PROGRAM_DIR)/NSLOOKUP.PRG \
 	sbin/nc.prg=$(SYSTEM_PROGRAM_DIR)/NC.PRG \
+	sbin/nettest.prg=$(SYSTEM_PROGRAM_DIR)/NETTEST.PRG \
 	sbin/httpd.prg=$(SYSTEM_PROGRAM_DIR)/HTTPD.PRG \
 	usr/bin/curl.prg=$(SYSTEM_PROGRAM_DIR)/CURL.PRG \
 	usr/bin/crtest.prg=$(SYSTEM_PROGRAM_DIR)/CRTEST.PRG \

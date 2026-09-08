@@ -205,6 +205,7 @@ PROGRAMS = {
     "UDP.PRG": ROOT / "userspace/programs/udp.c",
     "NSLOOKUP.PRG": ROOT / "userspace/programs/nslookup.c",
     "NC.PRG": ROOT / "userspace/programs/nc.c",
+    "NETTEST.PRG": ROOT / "userspace/programs/nettest.c",
     "HTTPD.PRG": (
         ROOT / "userspace/programs/httpd.c",
         ROOT / "userspace/storage/lib/vfs_file_client.c",
@@ -345,6 +346,8 @@ def main() -> None:
             if name in TLS_PROGRAMS:
                 link_libraries.append(sdk.tls_library)
             dependency_files = [*core_headers, ROOT / "include/reist/display_mode.h"]
+            if name == "REIST.PRG":
+                dependency_files.append(ROOT / "userspace/programs/network_cadence.h")
             if name in {"DESKTOP.PRG", "CONTROL.PRG", "CONFIG.PRG", "DISPLAY.PRG"}:
                 dependency_files.extend(config_headers)
             if name == "DISPLAY.PRG":

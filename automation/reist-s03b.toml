@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.27a-network-receive-progress"
+active_id = "R3.27-browser-external-scripts"
 next_user_request = "2026-09-08: User approves narrow R3.27a extension for demonstrated RTL8139 64KiB receive-wrap defect and real host regression. Preserve unaccepted R3.27 in stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2; accept R3.27a first. No relaxed browser/throughput gates, agents or push."
 
 [policy]
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.27a-network-receive-progress"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Bounded TCP receive progress independent of syscall copy size"
@@ -45,11 +45,25 @@ runtime_tests = [
 acceptance = "All frozen host, reference and runtime gates pass; direct final diff/scope review; preserve all evidence and previous browser stash. No acceptance by buffer-size/source-pattern assertion alone; throughput every-byte guest plus service fault recovery and protected application performance paths required."
 stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "New kernel protocol/driver/scheduler authority", "Failed gate without demonstrated focused in-scope correction"]
 commit_message = "fix: remove bounded TCP receive progress bottlenecks"
-evidence = []
+evidence = [
+ "python test/test_network_progress.py -v",
+ "python test/test_network_tools.py NetworkToolsSourceTests.test_tcp_connect_stream_and_close_behavior -v",
+ "python test/test_reist_network_frame_handoff.py -v",
+ "python test/test_reist_network_domain.py -v",
+ "python test/test_reist_service_domain.py -v",
+ "python test/test_benchmark_source.py -v",
+ ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+ ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+ "python scripts/run_qemu_network_progress.py --verify-artifacts --log build/codex-agent/r327a-network/artifacts.json",
+ "python scripts/run_qemu_network_progress.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327a-network/guest.log",
+ "python scripts/run_qemu_smoke.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --nic e1000 --expect-network-handoff --timeout 90 --log build/codex-agent/r327a-network/recovery.log",
+ "python scripts/run_qemu_scheduler_slack.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327a-network/slack.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
 
 [[packages]]
 id = "R3.27-browser-external-scripts"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "External classic JavaScript with owned asynchronous loading"

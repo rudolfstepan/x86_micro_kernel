@@ -384,6 +384,7 @@ try {
         'sbin/udp.prg' = 'UDP.PRG'
         'sbin/nslookup.prg' = 'NSLOOKUP.PRG'
         'sbin/nc.prg' = 'NC.PRG'
+        'sbin/nettest.prg' = 'NETTEST.PRG'
         'sbin/httpd.prg' = 'HTTPD.PRG'
         'usr/bin/curl.prg' = 'CURL.PRG'
         'usr/bin/crtest.prg' = 'CRTEST.PRG'
