@@ -692,7 +692,7 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
             }
             if(ah) h=toggle ? 18 : c->kind==BROWSER_FORM_TEXTAREA ? (int32_t)control_size(n,"rows",2,47)*16+8 : 24;
             if(w>f->right-f->left) w=f->right-f->left;
-            if(w<0 || h<0 || w>1024 || h>768) return -28;
+            if(w<0 || h<0 || (w && h && !reist_gui_surface_geometry_valid((uint32_t)w,(uint32_t)h))) return -28;
             if(w && h) {
                 if(f->content && f->x+w>f->right) end_line(f,0);
                 if(emit(BROWSER_SCENE_CONTROL,index,0,UINT32_MAX,f->x,f->y,(uint32_t)w,(uint32_t)h,0,0)) return -28;
@@ -1046,7 +1046,7 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
     const uint32_t image_sizes[16][2],const char *url,const browser_resources_t *bundle,
     browser_resource_needs_t *needs,reist_html_document_t *document,browser_scene_t *output,
     uint32_t extended,uint32_t encoding) {
-    if (!document || !output || width<1 || width>1024 || !height || height>768) return -22;
+    if (!document || !output || !reist_gui_surface_geometry_valid(width,height)) return -22;
     if(bundle && (!needs || browser_resources_validate(bundle,url,bundle->generation))) return -84;
     resources=bundle; resource_needs=needs; imported_count=0; document_profile=extended;
     if(needs) memset(needs,0,offsetof(browser_resource_needs_t,items));

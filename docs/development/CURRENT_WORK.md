@@ -2,14 +2,98 @@
 
 Stand: 8. September 2026
 
-## R3.33 begonnen: Browserinhalt auf großen Desktops
+## R3.33 abgenommen: Browserinhalt auf großen Desktops
 
-Neuer Screenshot auf sauberem bd421a50: Fenster größer als Inhalt. Inventar
-belegt1024x768-Grenzen in Surface, Kernelpuffer und CSS/Raster sowie nur8MiB
-gemeinsamen Pufferspeicher. Ein zusammenhängendes Geometrie-/Publikations-
-und Speicherpaket gemäß HIGH_RESOLUTION_SURFACE_CONTRACT;15 feste Gruppen.
-Kerneländerung ausschließlich vorhandener Puffer-Mediator, kein Parser,
-neuer Treiber, Allocator- oder Loaderumbau. Alte VMware-Zurückstellung bleibt.
+Sauberer Ausgang `bd421a50`, Vertragscheckpoint `4ef25ec5`. Der größere
+Fensterrahmen traf auf unabhängige1024x768-Grenzen in Surface-Konfiguration,
+Kernelpuffer und CSS/Layout/Raster sowie nur8MiB gemeinsamen Pufferspeicher.
+Ein zusammenhängendes Paket gemäß HIGH_RESOLUTION_SURFACE_CONTRACT;
+direkte Hauptworktree-Ausführung, keine Agenten, sichtbaren VMs oder Pushes.
+
+Geometrieprofil2 erlaubt positive Dimensionen bis4096 je Achse UND maximal
+4.194.304 XRGB8888-Pixel/16MiB, entsprechend der vorhandenen Displaygrenze.
+Wire-Strukturen, Opcodes und Configure/ACK-/Generationsprotokoll bleiben
+unverändert. Das ist keine3840x2160-Unterstützung und keine Zusage für
+gemischte alte Clients. Beide Images enthalten passend neu gebaute Clients.
+
+Der vorhandene Kernel-Puffer-Mediator reserviert einmalig bei erster Nutzung
+einen begrenzten64MiB-Cache über den bestehenden Heap, nach Prüfung des
+freien physischen Speichers einschließlich1/16 Recoveryreserve. Keine64MiB
+zusätzliche ELF-BSS; Loadergrenze bleibt64MiB. Acht Slots, Bitmap, unveränderliche
+Publikation, Generationen und Referenzfreigabe bleiben erhalten. Der globale
+Cache behält sein Backing; Reap gibt die instanzgebundenen Blöcke zur
+Wiederverwendung frei. Kein neuer Treiber/Parser oder Allocator-/Schedulerumbau.
+
+Browserpixel werden separat im privaten Prozessspeicher bedarfsgerecht auf
+höchstens16MiB erweitert, bei gleicher/kleinerer Fläche wiederverwendet und
+beim Beenden freigegeben. Fehlgeschlagenes Wachstum erhält den alten Puffer.
+Der feste Dokument-/Bild-/Font-Workspace bleibt unter36MiB. CSS-Anfrage,
+Szene, Formulare und Raster verwenden dieselbe Flächengrenze. Rasterarbeit
+bleibt vor Schreibzugriff begrenzt: vier Viewport-Pässe,4Mi-Untergrenze und
+16Mi-Obergrenze. Keine Erhöhung der DOM-, Skript-, Font- oder Bildquoten;
+Tippen verursacht weiterhin keine zusätzliche Seitenrasterung/Allokation.
+
+Belege und sämtliche Fehlversuche: `build/codex-agent/r333-resolution/`.
+Alle15 eingefrorenen Gruppen bestanden:
+
+- Neue Geometrie-/Mediatorgruppe4 Tests, echte C-Pfade O0/O2:
+  `geometry-query-corrected.log`,2.236s. Configure/ACK, Größenwechsel,
+  OOM/Reserve,64MiB-Auslastung, ungültige Pixel/Stride/Fläche, Owner-/Consumer-
+  Fencing, Referenzfreigabe, Generation-Reuse und Diagnoseparser.
+- Browser-Publikation3 Tests: `browser-publication-query-corrected.log`,3.052s;
+  alte Eingabe-/Damage-/Fehlerfälle sowie große Pixelpuffer, Wiederverwendung
+  und fehlgeschlagenes Wachstum. Surface10: `surface.log`,2.530s;
+  Surface-Runtime: `surface-runtime.log`, Exit0; Desktop64:
+  `desktop-record-corrected.log`,1.645s.
+- CSS/Layout32 Fälle jeweils O0/O2, einschließlich echter TrueType-Glyphen
+  bei1600x900,2560x1440,4096x1024 und800x600:
+  `css-layout-truetype-corrected.log`,107.221s. Kernel-Link-/Memorygruppe4:
+  `memory-layout.log`,6.030s.
+- VMware-Referenzpaket `package-vmware-query-corrected.log`,71s;
+  QEMU danach `package-qemu-query-corrected.log`,68s. Tatsächliche Imageprüfung
+  `artifact-query-corrected-gate.log` / `artifacts-query-corrected/protected.json`:
+  aktuelle Kernel und reparierte Payloads; BENCHMARK, MATHTEST, TEXTTEST, CURL,
+  JSTEST und JSWORK bleiben byteidentisch. Keine neue VMware-Performancezusage.
+- Gast1600x900: `guest1600-query-corrected/status.json`,152.693s. Drei echte
+  Max/Normal-Zyklen, volle rechte/untere Browserfläche und CSS-Zentrierung aus
+  Scanout, breites Eck-Resize, zwei Radzyklen, echter Browser-UD2, bedienbarer
+  Desktop/frische Shell und anschließend neuer Browser mit erneutem Maximieren.
+
+- Gast2560x1440: `guest2560/status.json`,159.010s, dieselben vollständigen
+  Größen-/Pixel-/Rad-/Fault-/Shell-/Ersatzbrowserprüfungen. Beide Modi verwenden
+  echte Eingaben, akzeptierte Szenen UND konfigurierte/ACK-bestätigte Fenster;
+  Browser-PID9 wird nach isoliertem Abbruch durch PID22 ersetzt. Die Normal-/
+  Max-/Ersatzbrowserbilder sind erhalten; maximierter Scanout visuell geprüft.
+- Unveränderter kleiner Layout-/Resize-/Fault-/Hang-/Recoverygast:
+  `resize-gate.log` / `resize.log`,81.944s.
+- Unveränderter Browser-Eingabegast: `browser-input-gate.log`,102.525s;
+  URL-Bearbeitung, Navigation, Crash, Neustart und Konsole. Nur die beiden
+  frisch erzeugten kanonischen Eingabebelege wurden nach `input-final/` kopiert.
+- Memory-Resilience: `memory-resilience-gate.log`,216.577s einschließlich
+  separatem Beweisimage-Build; eigentlicher Gast44s. Bestehende injizierte
+  Speicherschutz-/Recoveryfälle enden mit EXCEPTIONS_OK, TEST_OK und Shell.
+  Frühere Speicherbelege vom6. September unter `prior-memory/` erhalten.
+
+`accepted-reference/` enthält26 Dateien: beide geprüften Images und Kernel,
+VMware-Descriptor/VMX,14 Programme, aktuelle Eingabebelege, separates
+Memory-Beweisimage/-Kernel/-Log und den Imageprüfbericht. Archivkopien wurden
+gegen die akzeptierten Image-/Kernelhashes geprüft:
+QEMU `76004365078092f46c43dd319399e22a8c87bcbd1e37d7b8a4a271d39a877b6b`,
+VMware `62f8dd472f61ae54d6cc382d60fcbf321af7e17adffa52421ac98934c3ef763c`.
+Vorherige R3.31/R3.32-Referenzen und sämtliche roten Belege bleiben erhalten.
+Formaler Queueübergang nur auf R3.6b mit unveränderter Zurückstellung und
+Browserpriorität; keine Implementierung dieses späteren Pakets.
+
+Gezielte Testkorrekturen mit erhaltenem roten Beleg: Hostpfade/Stub-Linkage;
+CSS-Host hat wie HTMLWORK genau eine Dokumentlebensdauer je Prozess, nicht
+mehrere Renderings auf demselben verworfenen Testheap. Serielle Ausgaben
+können auch bei einem einzigen Schreibaufruf ineinanderlaufen. Der neue
+Gast akzeptiert nur vollständige Datensätze und kann eine rein lesende
+Viewport-Abfrage wiederholen. Separater opt-in Beobachter für wiederholtes
+Resize statt des alten Einmal-Reflow-Testzustands; dessen Gate bleibt
+unverändert. Testannahmen zu18px-Scrollbar, sechs Geometriefeldern und
+ausreichender Scrollstrecke korrigiert. Keine Produktionsgeometrie oder
+Erfolgsmeldung wird vom Host erfunden. Alte VMware-Zurückstellung bleibt.
 
 ## R3.32 abgenommen: rechte Fensterknöpfe und Taskleisten-Minimierung
 

@@ -235,9 +235,8 @@ static int create_surface(desktop_surface_manager_t *manager,
     if (!manager || !valid_owner(owner) ||
         (role != REIST_GUI_SURFACE_ROLE_TOPLEVEL &&
          role != REIST_GUI_SURFACE_ROLE_DIALOG) ||
-        !handle || !configure || width == 0U || height == 0U ||
-        width > REIST_GUI_SURFACE_MAX_WIDTH ||
-        height > REIST_GUI_SURFACE_MAX_HEIGHT) return DESKTOP_SURFACE_EINVAL;
+        !handle || !configure || !reist_gui_surface_geometry_valid(width,height))
+        return DESKTOP_SURFACE_EINVAL;
     if (role == REIST_GUI_SURFACE_ROLE_TOPLEVEL) {
         if (parent.id != 0U || parent.generation != 0U)
             return DESKTOP_SURFACE_EINVAL;
@@ -348,9 +347,7 @@ int desktop_surface_reconfigure(desktop_surface_manager_t *manager,
                                 uint32_t width, uint32_t height,
                                 reist_gui_surface_configure_t *configure) {
     int index = find_slot(manager, owner, handle);
-    if (index < 0 || configure == 0 || width == 0U || height == 0U ||
-        width > REIST_GUI_SURFACE_MAX_WIDTH ||
-        height > REIST_GUI_SURFACE_MAX_HEIGHT)
+    if (index < 0 || configure == 0 || !reist_gui_surface_geometry_valid(width,height))
         return DESKTOP_SURFACE_EINVAL;
     desktop_surface_slot_t *slot = &manager->slots[index];
     if (slot->acknowledged_serial != slot->configured_serial)

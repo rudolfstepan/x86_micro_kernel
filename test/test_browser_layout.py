@@ -16,7 +16,8 @@ class BrowserLayoutTests(unittest.TestCase):
                 executable = build_css_host(self, Path(temp), optimization, layout=True)
                 for mode in ("variables", "cascade", "cycles", "tokens", "inheritance", "malformed", "limits", "expansion", "overflow", "boxes",
                              "flex", "flex-wrap", "flex-column", "flex-align", "flex-reverse", "flex-shrink", "grid", "grid-wide", "grid-narrow", "grid-minimum", "nested",
-                             "decoration", "shadow", "fixture", "fixture-narrow", "fonts", "font-fallback", "font-scene"):
+                             "decoration", "shadow", "fixture", "fixture-narrow", "fonts", "font-fallback", "font-scene",
+                             "high-resolution-0", "high-resolution-1", "high-resolution-2", "high-resolution-3"):
                     with self.subTest(mode=mode):
                         result = subprocess.run([str(executable), "layout-"+mode], cwd=ROOT,
                                                 capture_output=True, text=True, timeout=15)

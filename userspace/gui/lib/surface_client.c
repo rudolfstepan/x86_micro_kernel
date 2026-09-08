@@ -285,9 +285,8 @@ static int create_surface(reist_gui_surface_client_t *client, uint32_t role,
                           uint32_t width, uint32_t height) {
     if (!valid_client(client) ||
         (role != REIST_GUI_SURFACE_ROLE_TOPLEVEL &&
-         role != REIST_GUI_SURFACE_ROLE_DIALOG) || width == 0U ||
-        height == 0U || width > REIST_GUI_SURFACE_MAX_WIDTH ||
-        height > REIST_GUI_SURFACE_MAX_HEIGHT ||
+         role != REIST_GUI_SURFACE_ROLE_DIALOG) ||
+        !reist_gui_surface_geometry_valid(width,height) ||
         (role == REIST_GUI_SURFACE_ROLE_TOPLEVEL &&
          (parent.id != 0U || parent.generation != 0U)) ||
         (role == REIST_GUI_SURFACE_ROLE_DIALOG &&
@@ -386,8 +385,7 @@ int reist_gui_surface_client_accept_configure(
         configure->surface.generation != client->surface.generation ||
         configure->serial == 0U || configure->width == 0U ||
         configure->height == 0U ||
-        configure->width > REIST_GUI_SURFACE_MAX_WIDTH ||
-        configure->height > REIST_GUI_SURFACE_MAX_HEIGHT)
+        !reist_gui_surface_geometry_valid(configure->width,configure->height))
         return -22;
     uint32_t old_serial = client->configured_serial;
     uint32_t old_width = client->width;

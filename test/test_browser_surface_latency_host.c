@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 @REAL@
 
 static browser_workspace_t arena;
@@ -12,7 +13,12 @@ static reist_gui_surface_client_t client;
 static uint32_t live[2], generations[2], committed, registered[2];
 static unsigned calls, fail_at, raster_fail, malformed_release;
 static reist_gui_rect_t damage;
-static uint32_t old_pixels[REIST_GUI_SURFACE_MAX_WIDTH * REIST_GUI_SURFACE_MAX_HEIGHT];
+static uint32_t old_pixels[REIST_GUI_SURFACE_MAX_BUFFER_BYTES/4U];
+static unsigned allocation_fail,allocations;
+void *x86os_realloc(void *p,size_t n) {
+    assert(n<=REIST_GUI_SURFACE_MAX_BUFFER_BYTES); ++allocations;
+    return allocation_fail ? NULL : realloc(p,n);
+}
 static unsigned old_width, old_height;
 static int fault(void) { return ++calls == fail_at ? -5 : 0; }
 uint32_t x86os_uptime_ms(void) { return 1; }
@@ -62,6 +68,7 @@ int reist_gui_surface_client_commit_with_release(reist_gui_surface_client_t *c,u
     committed=committed==1 ? 2 : 1; return 0;
 }
 static void reset(void) {
+    free(arena.surface); arena.surface=NULL; allocations=allocation_fail=0;
     memset(&state,0,sizeof(state)); memset(live,0,sizeof(live)); memset(registered,0,sizeof(registered));
     workspace=&arena; memset(workspace,0,sizeof(*workspace));
     client.width=800;client.height=600; committed=0;
@@ -86,6 +93,13 @@ static void paint(unsigned w,unsigned h,unsigned scroll) {
 int main(void) {
     reset();paint(800,600,0);paint(800,600,48);paint(800,600,0);
     paint(900,600,0);paint(900,650,48);paint(800,600,0);
+    paint(1600,900,0);paint(1600,900,48);paint(2560,1440,0);paint(2560,1440,48);
+    unsigned previous_allocations=allocations;
+    paint(800,600,0);paint(2560,1440,0);
+    assert(allocations==previous_allocations);
+    allocation_fail=1;uint32_t *old_pointer=surface_pixels;
+    assert(reserve_surface_pixels(4096,1024)==-12 && surface_pixels==old_pointer);
+    allocation_fail=0;paint(4096,1024,0);paint(800,600,0);
     for(unsigned failure=1;failure<=5;++failure) {
         reset();paint(800,600,0);uint32_t old=state.buffer_id, generation=state.buffer_generation;
         calls=0;fail_at=failure;state.scroll_y=48;

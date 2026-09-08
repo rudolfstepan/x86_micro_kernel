@@ -28,9 +28,16 @@ extern "C" {
 #define REIST_GUI_SURFACE_MAX_DYNAMIC_PAINT_COMMANDS 192U
 #define REIST_GUI_SURFACE_MAX_HOVER_PAINT_COMMANDS 16U
 #define REIST_GUI_SURFACE_PAINT_TEXT_CAPACITY 40U
-#define REIST_GUI_SURFACE_MAX_WIDTH 1024U
-#define REIST_GUI_SURFACE_MAX_HEIGHT 768U
-#define REIST_GUI_SURFACE_MAX_BUFFER_BYTES (1024U * 768U * 4U)
+/* Geometry profile2; unchanged wire layouts and XRGB8888 units. */
+#define REIST_GUI_SURFACE_GEOMETRY_PROFILE 2U
+#define REIST_GUI_SURFACE_MAX_WIDTH 4096U
+#define REIST_GUI_SURFACE_MAX_HEIGHT 4096U
+#define REIST_GUI_SURFACE_MAX_BUFFER_BYTES (16U * 1024U * 1024U)
+static inline int reist_gui_surface_geometry_valid(uint32_t width,uint32_t height) {
+    return width && height && width<=REIST_GUI_SURFACE_MAX_WIDTH &&
+        height<=REIST_GUI_SURFACE_MAX_HEIGHT &&
+        (uint64_t)width*height<=REIST_GUI_SURFACE_MAX_BUFFER_BYTES/4U;
+}
 #define REIST_GUI_SURFACE_BUFFER_API_VERSION 1U
 /* Additive opt-in to the existing v6 envelope. Legacy clients get no scroll. */
 #define REIST_GUI_SURFACE_SCROLL_VERSION 1U

@@ -5844,6 +5844,20 @@ static void print_metric(const char *name, uint32_t value) {
     print_unsigned(value);
 }
 
+static void emit_probe_record(const char *label,const char *const *names,
+    const uint32_t *values,uint32_t count) {
+    char line[768],digits[10]; uint32_t used=0;
+    for(uint32_t i=0;label[i];++i) { if(used>=sizeof(line)-2) return;line[used++]=label[i]; }
+    for(uint32_t i=0;i<count;++i) {
+        if(used>=sizeof(line)-2) return;line[used++]=' ';
+        for(uint32_t j=0;names[i][j];++j) { if(used>=sizeof(line)-2) return;line[used++]=names[i][j]; }
+        if(used>=sizeof(line)-2) return;line[used++]='=';
+        uint32_t value=values[i],n=0;
+        do { digits[n++]=(char)('0'+value%10U);value/=10U; } while(value && n<sizeof(digits));
+        while(n) { if(used>=sizeof(line)-2) return;line[used++]=digits[--n]; }
+    }
+    line[used++]='\n';line[used]=0;x86os_puts(line);
+}
 /* Opt-in observer only: never inject events or change window/client state. */
 static void report_window_controls(const desktop_wm_t *m,
     const desktop_surface_manager_t *surfaces,const x86os_display_info_t *display) {
@@ -5878,9 +5892,8 @@ static void report_window_controls(const desktop_wm_t *m,
         uint32_t changed=0;
         for (uint32_t j=0;j<24;++j) if (row[j]!=previous[i][j]) changed=1;
         if (!changed) continue;
-        x86os_puts("WINDOW_STATE");
-        for (uint32_t j=0;j<24;++j) { print_metric(names[j],row[j]); previous[i][j]=row[j]; }
-        x86os_putchar('\n');
+        emit_probe_record("WINDOW_STATE",names,row,24);
+        for (uint32_t j=0;j<24;++j) previous[i][j]=row[j];
     }
 }
 
@@ -9403,6 +9416,9 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--browser-forms-probe")) {
         browser_probe = browser_forms_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--browser-window-probe")) {
+        browser_probe = terminal_probe = window_controls_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--browser-input-probe")) {
         browser_probe = terminal_probe = 1U;

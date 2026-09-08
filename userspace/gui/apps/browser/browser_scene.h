@@ -1,5 +1,6 @@
 #ifndef BROWSER_SCENE_H
 #define BROWSER_SCENE_H
+#include "reist/gui/surface.h"
 #include "browser_model.h"
 #include "reist/gui/font.h"
 #include "html_protocol.h"

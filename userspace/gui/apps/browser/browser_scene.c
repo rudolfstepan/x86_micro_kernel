@@ -14,7 +14,7 @@ int browser_css_request_validate(const browser_css_request_t *q) {
         !h->input_length || h->mode>2 ||
         (h->version==BROWSER_HTML_DOCUMENT_VERSION)!=(q->version==BROWSER_CSS_DOCUMENT_VERSION) ||
         (h->version==BROWSER_HTML_SCRIPT_VERSION)!=(q->version==BROWSER_CSS_SCRIPT_VERSION) ||
-        !q->width || q->width>1024 || !q->height || q->height>768) return -84;
+        !reist_gui_surface_geometry_valid(q->width,q->height)) return -84;
     uint32_t original=(uint32_t)sizeof(*q)+h->input_length;
     if(q->version==1U || q->version==BROWSER_SCENE_VERSION) { if(h->size!=original) return -84; }
     else if(q->version==BROWSER_CSS_RESOURCE_VERSION || q->version==BROWSER_CSS_DOCUMENT_VERSION || q->version==BROWSER_CSS_SCRIPT_VERSION) {
@@ -142,7 +142,7 @@ static int font_run(const reist_html_document_t *d,const browser_scene_t *s,cons
 int browser_scene_validate(const reist_html_document_t *d,const browser_scene_t *s) {
     if (!s || browser_html_document_validate(d) ||
         (s->version!=BROWSER_SCENE_VERSION && s->version!=BROWSER_SCENE_DOCUMENT_VERSION && s->version!=BROWSER_SCENE_LAYOUT_VERSION && s->version!=BROWSER_SCENE_FONT_VERSION) ||
-        !s->width || s->width>1024 || !s->height || s->height>768 ||
+        !reist_gui_surface_geometry_valid(s->width,s->height) ||
         s->count>BROWSER_SCENE_RUNS || s->total_height>BROWSER_SCENE_COORD_LIMIT || browser_forms_validate(&s->forms)) return -84;
     if(s->fonts.count>BROWSER_FONT_GLYPHS || s->fonts.used>BROWSER_FONT_ALPHA ||
        (s->version!=BROWSER_SCENE_FONT_VERSION && (s->fonts.count || s->fonts.used)))return -84;
@@ -186,7 +186,7 @@ int browser_scene_validate(const reist_html_document_t *d,const browser_scene_t 
         } else if (r->kind==REIST_HTML_ELEMENT_ANCHOR) {
             if (r->offset>=d->anchor_count || r->length || r->width || r->height || r->flags || r->link!=UINT32_MAX) return -84;
         } else if (r->kind==BROWSER_SCENE_CONTROL) {
-            if(r->offset>=s->forms.control_count || !r->width || !r->height || r->width>1024 || r->height>768 ||
+            if(r->offset>=s->forms.control_count || !reist_gui_surface_geometry_valid(r->width,r->height) ||
                r->length || r->flags || r->link!=UINT32_MAX || s->forms.controls[r->offset].kind==BROWSER_FORM_HIDDEN) return -84;
             for(uint32_t j=0;j<i;++j) if(s->runs[j].kind==BROWSER_SCENE_CONTROL && s->runs[j].offset==r->offset) return -84;
         } else if (r->kind==BROWSER_SCENE_FILL) {
@@ -334,14 +334,16 @@ static uint64_t font_pixels(const reist_html_document_t *d,const browser_scene_t
 int browser_scene_raster_forms(const reist_html_document_t *d,const browser_scene_t *s,
     const reist_gui_font_t *font,const browser_image_slot_t *images,const browser_form_state_t *forms,uint32_t scroll,
     uint32_t *pixels,uint32_t width,uint32_t height,uint32_t top,uint32_t view) {
-    if (!pixels || browser_scene_validate(d,s) || !width || width>1024 || height>768 ||
+    if (!pixels || browser_scene_validate(d,s) || !reist_gui_surface_geometry_valid(width,height) ||
         top>height || view>height-top || scroll>BROWSER_SCENE_COORD_LIMIT) return -84;
     static browser_glyph_scratch_t scratch[BROWSER_GLYPH_SLOTS];
     for (unsigned i=0;i<BROWSER_GLYPH_SLOTS;++i) scratch[i].height=0;
     const int32_t right=(int32_t)(s->width<width ? s->width : width),bottom=(int32_t)(top+view);
     uint64_t work=0;
-    /* Admission before mutation: overlapping visible boxes cannot make raster
-     * work unbounded. Four million pixel operations is a per-frame quota. */
+    uint64_t budget=(uint64_t)width*height*4U;
+    if(budget<4U*1024U*1024U) budget=4U*1024U*1024U;
+    if(budget>16U*1024U*1024U) budget=16U*1024U*1024U;
+    /* Admission before mutation; viewport-proportional bounded overdraw. */
     for (uint32_t i=0;i<s->count;++i) {
         const browser_scene_run_t *r=&s->runs[i];
         int32_t y=(int32_t)top+r->y-(int32_t)scroll;
@@ -349,12 +351,12 @@ int browser_scene_raster_forms(const reist_html_document_t *d,const browser_scen
         int32_t end_x=r->x+(int32_t)r->width+8,end_y=y+(int32_t)r->height;
         if(r->flags&BROWSER_FONT_FLAG) {
             work+=font_pixels(d,s,r,y,NULL,width,right,(int32_t)top,bottom);
-            if(work>4U*1024U*1024U)return -28;
+            if(work>budget)return -28;
             continue;
         }
         if (end_x>right) end_x=right; if (end_y>bottom) end_y=bottom;
         if (end_x>l && end_y>t) work+=(uint64_t)(end_x-l)*(uint32_t)(end_y-t)*(r->kind==1 ? 2U : 1U);
-        if (work>4U*1024U*1024U) return -28;
+        if (work>budget) return -28;
     }
     for (uint32_t i=0;i<s->count;++i) {
         const browser_scene_run_t *r=&s->runs[i]; int32_t y=(int32_t)top+r->y-(int32_t)scroll;

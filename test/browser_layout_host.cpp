@@ -31,7 +31,30 @@ static const char *find_text(const char *input,size_t size,const char *needle) {
     return nullptr;
 }
 extern "C" int browser_layout_host_main(const char *mode) {
-    if(!strcmp(mode,"layout-variables")) {
+    if(!strncmp(mode,"layout-high-resolution-",23)) {
+        const char *html="<style>html,body{margin:0;padding:0}body{background:#eeddcc;font-family:sans-serif}p{width:100%;margin:0;background:#123456}input{width:100%}</style><p>Large viewport</p><input value='wide'>";
+        unsigned sizes[][2]={{1600,900},{2560,1440},{4096,1024},{800,600}};
+        unsigned index=(unsigned)(mode[23]-'0');CHECK(index<4 && !mode[24]);
+        /* HTMLWORK owns one document per process; its host backing is also
+         * reinitialized once, not while interned CSS objects remain live. */
+        {
+            auto &size=sizes[index];
+            int rc=browser_css_render_document((const uint8_t *)html,strlen(html),size[0],size[1],nullptr,
+                "/htdocs/layout.htm",nullptr,nullptr,&doc,&scene,0);
+            if(rc) fprintf(stderr,"large viewport %u x %u rc=%d runs=%u\n",size[0],size[1],rc,scene.count);
+            CHECK(!rc);
+            CHECK(!browser_scene_validate(&doc,&scene));
+            CHECK(scene.width==size[0] && scene.height==size[1]);
+            CHECK(scene.version==BROWSER_SCENE_FONT_VERSION && scene.fonts.count && scene.fonts.used);
+            bool wide=false;
+            for(unsigned i=0;i<scene.count;++i) if(scene.runs[i].color==0xff123456) {
+                CHECK(scene.runs[i].width==size[0]);wide=true;
+            }
+            CHECK(wide);
+        }
+        CHECK(browser_css_render_document((const uint8_t *)html,strlen(html),4096,4096,nullptr,
+            "/htdocs/layout.htm",nullptr,nullptr,&doc,&scene,0)!=0);
+    } else if(!strcmp(mode,"layout-variables")) {
         render("<style>:root{--Ink:#123456;--ink:#abcdef;--size:80px}body{margin:0}"
             "p{margin:0;color:var(--Ink);width:var(--size);background:var(--ink)}"
             "span{color:var(--missing,var(--Ink))}</style><p><span>VALUE</span></p>");

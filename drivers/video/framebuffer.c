@@ -14,6 +14,8 @@
 #include "include/reist/utf.h"
 #include "include/reist/unicode_vga_font.h"
 #include "lib/libc/string.h"
+#include "mm/kmalloc.h"
+#include "kernel/sched/scheduler.h"
 
 // Framebuffer state
 
@@ -40,7 +42,7 @@ static int terminal_cols = 0;
 static int terminal_rows = 0;
 
 #define FB_SURFACE_BUFFER_CAPACITY 8U
-#define FB_SURFACE_BUFFER_TOTAL_BYTES (8U * 1024U * 1024U)
+#define FB_SURFACE_BUFFER_TOTAL_BYTES (64U * 1024U * 1024U)
 #define FB_SURFACE_BUFFER_BLOCK_BYTES 4096U
 #define FB_SURFACE_BUFFER_BLOCK_COUNT \
     (FB_SURFACE_BUFFER_TOTAL_BYTES / FB_SURFACE_BUFFER_BLOCK_BYTES)
@@ -68,11 +70,11 @@ typedef struct {
 
 static framebuffer_surface_buffer_t
     surface_buffers[FB_SURFACE_BUFFER_CAPACITY];
-static uint32_t surface_buffer_storage[
-    FB_SURFACE_BUFFER_TOTAL_BYTES / sizeof(uint32_t)]
-    __attribute__((aligned(FB_SURFACE_BUFFER_BLOCK_BYTES)));
+/* Bounded kernel-owned cache, not loadable BSS or client-owned authority. */
+static uint32_t *surface_buffer_storage;
 static uint32_t surface_buffer_block_bitmap[FB_SURFACE_BUFFER_BITMAP_WORDS];
 static spinlock_t surface_buffer_lock = SPINLOCK_INIT;
+static bool surface_buffer_storage_pending;
 
 // Terminal state
 static int cursor_x = 0;
@@ -5726,6 +5728,30 @@ bool framebuffer_present_pixels(uint32_t x, uint32_t y,
     return true;
 }
 
+static int surface_buffer_prepare_storage(void) {
+    /* An interrupted allocating task must never be the last owner. No pixel
+     * copy or zeroing occurs in this short allocation/publication boundary. */
+    scheduler_preempt_disable();
+    uint32_t flags=spinlock_acquire_irq(&surface_buffer_lock);
+    if (surface_buffer_storage || surface_buffer_storage_pending) {
+        int result=surface_buffer_storage ? 0 : -11;
+        spinlock_release_irq(&surface_buffer_lock,flags);
+        scheduler_preempt_enable(); return result;
+    }
+    surface_buffer_storage_pending=true;
+    spinlock_release_irq(&surface_buffer_lock,flags);
+    memory_stats_t stats;
+    memory_get_stats(&stats);
+    uint64_t needed=FB_SURFACE_BUFFER_TOTAL_BYTES+4096ULL+stats.managed_bytes/16U;
+    uint32_t *storage=stats.free_frame_bytes>=needed ? k_malloc(FB_SURFACE_BUFFER_TOTAL_BYTES) : NULL;
+    flags=spinlock_acquire_irq(&surface_buffer_lock);
+    surface_buffer_storage=storage;
+    surface_buffer_storage_pending=false;
+    spinlock_release_irq(&surface_buffer_lock,flags);
+    scheduler_preempt_enable();
+    return storage ? 0 : -12;
+}
+
 static bool surface_buffer_block_used(uint32_t block) {
     return (surface_buffer_block_bitmap[block / 32U] &
             (1U << (block % 32U))) != 0U;
@@ -5801,11 +5827,13 @@ int framebuffer_surface_buffer_create(
     uint32_t *buffer_id, uint32_t *buffer_generation) {
     if (owner_pid <= 0 || owner_generation == 0U || consumer_pid <= 0 ||
         consumer_generation == 0U || width == 0U || height == 0U ||
-        width > FB_WIDTH || height > FB_HEIGHT || stride_pixels < width ||
+        width > REIST_DISPLAY_MODE_MAX_DIMENSION || height > REIST_DISPLAY_MODE_MAX_DIMENSION || stride_pixels < width ||
         pixels == NULL || buffer_id == NULL || buffer_generation == NULL ||
         height > UINT32_MAX / stride_pixels ||
         pixel_count != stride_pixels * height ||
         pixel_count > FB_SHADOW_CAPACITY / sizeof(uint32_t)) return -22;
+    int prepared=surface_buffer_prepare_storage();
+    if (prepared) return prepared;
     uint32_t byte_size = pixel_count * sizeof(uint32_t);
     int selected = -1;
     uint32_t first_block = 0U;

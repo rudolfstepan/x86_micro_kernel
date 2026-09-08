@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.33-high-resolution-surface"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 next_user_request = "2026-09-08: Repair browser content staying at old dimensions on larger desktops. Execute one bounded Surface geometry and buffer-admission package; retain prior VMware deferral. No agents or push."
 
 [policy]
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.33-high-resolution-surface"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "High-resolution browser configure, raster and bounded buffer admission"
@@ -26,7 +26,23 @@ runtime_tests = ["python scripts/run_qemu_browser_resolution.py --verify-artifac
 acceptance = "All15 groups, direct diff/scope/queue review, then local commit. Existing VMware deferral unchanged; no next package work."
 stop_conditions = ["Source outside allowed_files required", "Unattributed edits", "Failed gate without focused correction", "Allocator/boot/public layout changes required"]
 commit_message = "fix: resize browser content on high resolution desktops"
-evidence = []
+evidence = [
+ "python test/test_high_resolution_surface.py -v",
+ "python scripts/measure_cpp_baseline.py --host-test test/test_browser_surface_latency.py -v",
+ "python scripts/measure_cpp_baseline.py --host-test test/test_gui_surface_source.py -v",
+ "python scripts/measure_cpp_baseline.py --host-test test/test_desktop_surface_runtime_source.py",
+ "python scripts/measure_cpp_baseline.py --host-test test/test_desktop_source.py -v",
+ "python test/test_browser_layout.py -v",
+ "python test/test_kernel_memory_layout.py -v",
+ ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+ ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+ "python scripts/run_qemu_browser_resolution.py --verify-artifacts --image build/reist-os.img --evidence build/codex-agent/r333-resolution/artifacts",
+ "python scripts/run_qemu_browser_resolution.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --mode 1600x900 --image build/reist-os.img --evidence build/codex-agent/r333-resolution/guest1600",
+ "python scripts/run_qemu_browser_resolution.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --mode 2560x1440 --image build/reist-os.img --evidence build/codex-agent/r333-resolution/guest2560",
+ "python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r333-resolution/resize.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode memory-resilience -Target qemu -Video vga"
+]
 
 [[packages]]
 id = "R3.32-window-state-controls"
@@ -2267,7 +2283,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

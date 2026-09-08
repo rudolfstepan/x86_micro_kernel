@@ -92,7 +92,8 @@ typedef struct browser_workspace {
     browser_form_state_t forms[2];
     uint32_t forms_redraw;
     uint32_t decoded[BROWSER_IMAGE_PIXEL_LIMIT];
-    uint32_t surface[REIST_GUI_SURFACE_MAX_WIDTH * REIST_GUI_SURFACE_MAX_HEIGHT];
+    uint32_t *surface;
+    uint32_t surface_capacity;
     browser_image_slot_t images[2U][BROWSER_IMAGE_CACHE_COUNT];
     _Alignas(8) uint64_t arena[BROWSER_DECODE_ARENA_BYTES / sizeof(uint64_t)];
     reist_gui_font_mapping_t font_map[262144];
@@ -110,8 +111,32 @@ static struct { uint32_t generation,width,request,frames,rejected,resets,failure
  * confirms Surface admission, NOT scanout; the host must also observe pixels.
  * One real device event in flight, no synthesized edits or scroll operations. */
 static struct { uint32_t ordinal,pending,kind,body,chrome; } model_probe;
+static uint32_t viewport_probe_frame;
+static void emit_probe_record(const char *label,const char *const *names,
+    const uint32_t *values,uint32_t count) {
+    char line[768],digits[10]; uint32_t used=0;
+    for(uint32_t i=0;label[i];++i) { if(used>=sizeof(line)-2) return;line[used++]=label[i]; }
+    for(uint32_t i=0;i<count;++i) {
+        if(used>=sizeof(line)-2) return;line[used++]=' ';
+        for(uint32_t j=0;names[i][j];++j) { if(used>=sizeof(line)-2) return;line[used++]=names[i][j]; }
+        if(used>=sizeof(line)-2) return;line[used++]='=';
+        uint32_t value=values[i],n=0;
+        do { digits[n++]=(char)('0'+value%10U);value/=10U; } while(value && n<sizeof(digits));
+        while(n) { if(used>=sizeof(line)-2) return;line[used++]=digits[--n]; }
+    }
+    line[used++]='\n';line[used]=0;x86os_puts(line);
+}
 #define decoded_pixels (workspace->decoded)
 #define surface_pixels (workspace->surface)
+static int reserve_surface_pixels(uint32_t width,uint32_t height) {
+    if (!workspace || !reist_gui_surface_geometry_valid(width,height)) return -22;
+    uint32_t count=width*height;
+    if (count<=workspace->surface_capacity) return 0;
+    uint32_t *replacement=x86os_realloc(workspace->surface,count*sizeof(uint32_t));
+    if (!replacement) return -12;
+    workspace->surface=replacement; workspace->surface_capacity=count;
+    return 0;
+}
 #define image_cache (workspace->images)
 #define image_bytes (workspace->input_bytes)
 #define scenes (workspace->scenes)
@@ -702,6 +727,8 @@ static int publish_html_reply(browser_state_t *state, reist_gui_surface_client_t
         if (r->kind==BROWSER_SCENE_FILL || r->kind==BROWSER_SCENE_ROUND || r->kind==BROWSER_SCENE_SHADOW) continue;
         layout->runs[layout->run_count++]=(browser_layout_run_t){r->kind,r->offset,r->length,r->flags,r->link,r->x,r->y,r->width,r->height};
     }
+    result=reserve_surface_pixels(client->width,client->height);
+    if (result) return result;
     for (uint32_t i=0;i<client->width*client->height;++i) surface_pixels[i]=0xffffff;
     result=browser_scene_raster_forms(&documents[candidate],&scenes[candidate],&workspace->font,image_cache[candidate],form_state,
         state->reflow_job ? state->scroll_y : 0,surface_pixels,client->width,client->height,BROWSER_CONTENT_TOP,viewport_height(client));
@@ -1148,7 +1175,8 @@ static void service_loads(browser_state_t *state, reist_gui_surface_client_t *cl
 static int publish_pixels(browser_state_t *state, reist_gui_surface_client_t *client) {
     uint32_t measured_at=timing_start();
     uint32_t width = client->width, height = client->height;
-    if (!width || !height || width > REIST_GUI_SURFACE_MAX_WIDTH || height > REIST_GUI_SURFACE_MAX_HEIGHT) return -22;
+    int admission=reserve_surface_pixels(width,height);
+    if (admission) return admission;
     for (uint32_t i = 0; i < width * height; ++i) surface_pixels[i] = 0x00FFFFFFU;
     if (state->loaded && scenes[state->active].version) {
         int rc=browser_scene_raster_forms(&documents[state->active],&scenes[state->active],&workspace->font,
@@ -2302,6 +2330,7 @@ int main(int argc, char **argv) {
         (void)x86os_ipc_release(endpoint);
         x86os_puts("browser: image workspace admission failed\n"); return 1;
     }
+    workspace->surface=0; workspace->surface_capacity=0;
     memset(scenes,0,sizeof(scenes));
     memset(workspace->forms,0,sizeof(workspace->forms));
     workspace->forms[0].focus=workspace->forms[0].capture=BROWSER_FORM_NONE;
@@ -2348,10 +2377,19 @@ int main(int argc, char **argv) {
                 set_scroll(&state, &client, state.scroll_y);
                 state.redraw = state.chrome_redraw = state.status_redraw = 1U;
             } else if (message.type == REIST_GUI_SURFACE_INPUT && message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD && message.input.pressed) {
-                if(state.probe==3 && state.probe_phase==1 && !state.address_focused && (message.input.key=='l' || message.input.key=='t')) {
-                    state.probe=message.input.key=='t' ? 10 : 9; state.probe_phase=0; probe_deadline=x86os_uptime_ms()+120000U;
+                if(state.probe==3 && state.probe_phase==1 && !state.address_focused && (message.input.key=='l' || message.input.key=='t' || message.input.key=='v')) {
+                    state.probe=message.input.key=='v' ? 11 : message.input.key=='t' ? 10 : 9; state.probe_phase=0; probe_deadline=x86os_uptime_ms()+120000U;
                     state.probe_wheel_down=state.probe_wheel_up=0;
                     (void)navigate(&state,&client,state.probe==10 ? "/htdocs/fonts.htm" : "/htdocs/layout.htm"); continue;
+                }
+                if(state.probe==11 && !state.address_focused) {
+                    if(message.input.key==7) {
+                        x86os_puts("BROWSER_RESOLUTION_FAULT\n");
+                        __asm__ __volatile__("ud2");
+                    }
+                    /* Read-only query: no repaint, configure or page mutation.
+                     * The host can retry a serial record interrupted by WM. */
+                    if(message.input.key==16) { viewport_probe_frame=UINT32_MAX; continue; }
                 }
                 if((state.probe==9 || state.probe==10) && !state.address_focused) {
                     uint32_t key=message.input.key,p=state.probe_phase;
@@ -2412,8 +2450,19 @@ int main(int argc, char **argv) {
         if (state.exit_requested) break;
         int rendered=render(&state, &client);
         if (rendered != 0) { browser_runtime_failure(&state,"render",rendered); status = -5; break; }
+        if(state.probe==11 && state.loaded && !state.pending && !state.parse_pending && !state.resource_loading &&
+            !state.reflow_pending && !state.child_pid &&
+            text_equal(state.active_url,"/htdocs/layout.htm") &&
+            state.body_frames!=viewport_probe_frame && scenes[state.active].width==client.width-BROWSER_SCROLLBAR_WIDTH &&
+            scenes[state.active].height==viewport_height(&client)) {
+            viewport_probe_frame=state.body_frames;
+            static const char *const names[]={"width","height","scene","view","bufferw","bufferh","scroll","frames"};
+            uint32_t row[]={client.width,client.height,scenes[state.active].width,scenes[state.active].height,
+                state.buffer_width,state.buffer_height,state.scroll_y,state.body_frames};
+            emit_probe_record("BROWSER_VIEWPORT",names,row,8);
+        }
         if (state.probe) {
-            int probe_status=(state.probe==9 || state.probe==10) ? layout_probe_step(&state,&client) : state.probe==8 ? external_script_probe_step(&state,&client) : state.probe==7 ? scripting_probe_step(&state,&client) : state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
+            int probe_status=state.probe==11 ? 0 : (state.probe==9 || state.probe==10) ? layout_probe_step(&state,&client) : state.probe==8 ? external_script_probe_step(&state,&client) : state.probe==7 ? scripting_probe_step(&state,&client) : state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
             if (probe_status || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
                 timing_dump();
                 if (state.probe==6U) {
@@ -2476,6 +2525,7 @@ int main(int argc, char **argv) {
     int destroyed = reist_gui_surface_client_destroy(&client);
     int released = state.buffer_id ? x86os_display_surface_buffer_destroy(state.buffer_id, state.buffer_generation) : 0;
     (void)x86os_ipc_release(endpoint);
+    x86os_free(workspace->surface);
     x86os_free(workspace);
     workspace = 0;
     if (state.child_pid != 0 || destroyed != 0 || released != 0 || resource_cleanup != 0 || script_cleanup != 0) {

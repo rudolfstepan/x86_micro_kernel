@@ -266,20 +266,20 @@ int main(void) {
     reist_gui_surface_configure_t bounded_configure;
     assert(desktop_surface_create(&manager, owner,
         REIST_GUI_SURFACE_ROLE_TOPLEVEL, REIST_GUI_SURFACE_MAX_WIDTH,
-        REIST_GUI_SURFACE_MAX_HEIGHT, &bounded_handle,
+        REIST_GUI_SURFACE_MAX_BUFFER_BYTES / (4U * REIST_GUI_SURFACE_MAX_WIDTH), &bounded_handle,
         &bounded_configure) == 0);
     assert(desktop_surface_ack_configure(&manager, owner, bounded_handle,
         bounded_configure.serial) == 0);
     buffer = (reist_gui_surface_buffer_t){
         REIST_GUI_SURFACE_BUFFER_API_VERSION, sizeof(buffer), 2U, 1U,
-        REIST_GUI_SURFACE_MAX_WIDTH, REIST_GUI_SURFACE_MAX_HEIGHT,
+        REIST_GUI_SURFACE_MAX_WIDTH, REIST_GUI_SURFACE_MAX_BUFFER_BYTES / (4U * REIST_GUI_SURFACE_MAX_WIDTH),
         REIST_GUI_SURFACE_MAX_WIDTH * 4U,
         REIST_GUI_SURFACE_BUFFER_FORMAT_XRGB8888,
         REIST_GUI_SURFACE_MAX_BUFFER_BYTES, 0U};
     assert(desktop_surface_buffer_create(&manager, owner, &buffer) == 0);
     assert(desktop_surface_attach(&manager, owner, bounded_handle,
         2U, 1U, REIST_GUI_SURFACE_MAX_WIDTH,
-        REIST_GUI_SURFACE_MAX_HEIGHT) == 0);
+        REIST_GUI_SURFACE_MAX_BUFFER_BYTES / (4U * REIST_GUI_SURFACE_MAX_WIDTH)) == 0);
     assert(desktop_surface_create(&manager, owner,
         REIST_GUI_SURFACE_ROLE_TOPLEVEL, REIST_GUI_SURFACE_MAX_WIDTH + 1U,
         1U, &bounded_handle, &bounded_configure) < 0);
