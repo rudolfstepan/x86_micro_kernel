@@ -2,6 +2,16 @@
 
 Stand: 8. September 2026
 
+## R3.32 begonnen: rechte Fensterknöpfe und Taskleisten-Minimierung
+
+Nutzer priorisiert Min/Max/Wiederherstellen auf sauberem ef7f7d2f.
+Vorhandener WM kennt nur sichtbar/geschlossen; Surface-Sync interpretiert
+Unsichtbarkeit als CLOSE. R3.32 ergänzt einen separaten Minimiert-Zustand,
+gespeicherte Normalgeometrie und den zugehörigen Caption-/Taskleistenpfad.
+Inventar und zehn feste Prüfgruppen im WINDOW_STATE_CONTROLS_CONTRACT.
+Vorheriger VMware-Auftrag bleibt mit unveränderter Zurückstellung/Gates
+queued. Zuerst Vertragscheckpoint, danach genau dieses Paket.
+
 ## R3.31 abgenommen: eigenes Maus-Applet in der Systemsteuerung
 
 Sauberer Ausgang `e5255931`, Vertragscheckpoint `7d1d6504`; freigegebene

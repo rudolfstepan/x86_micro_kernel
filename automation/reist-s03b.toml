@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: R3.31 Mouse applet accepted, all14 frozen groups after documented focused repairs. Five settings saved atomically and effective next desktop start, actual input/fault/replacement/default restoration and shell proof. Browser/HTMLWORK plus7 protected programs and both kernels byte-identical to e5255931. Both images archived. Queue transition only; deferred VMware acceptance and its browser-priority instructions remain unchanged. No agents or push."
+active_id = "R3.32-window-state-controls"
+next_user_request = "2026-09-08: User requests right-side window minimize/maximize/normal buttons, including taskbar minimization. Freeze and implement one complete window-state package before the unchanged deferred VMware work. No repeated routine confirmation, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,24 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.32-window-state-controls"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Server caption minimize/maximize/restore and retained taskbar windows"
+scope = "One private Ring3 window state/capture/geometry boundary; WINDOW_STATE_CONTROLS_CONTRACT frozen on ef7f7d2f. No public ABI or application changes."
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/architecture/WINDOW_STATE_CONTROLS_CONTRACT.md","docs/architecture/GUI_RENDERING_INPUT_AND_LATENCY_CONTRACT.md","userspace/gui/compositor/desktop_wm.c","userspace/gui/compositor/desktop_wm.h","userspace/gui/compositor/desktop.c","test/test_desktop_wm_host.c","test/test_desktop_source.py","scripts/run_qemu_window_controls.py"]
+invariants = ["Read WINDOW_STATE_CONTROLS_CONTRACT completely. Distinct minimized/closed, exact normal bounds, fixed slots, existing work area, full caption hit/capture/cancel, dialog/parent denial, hidden close/reuse cleanup.", "Existing Surface lifecycle/configure/ACK stays bounded; minimize sends no CLOSE, hidden paint does not dirty desktop, restore uses retained content. Correct right-caption damage without client repaint; no heap/I/O/kernel/driver/ABI changes.", "Real O0/O2 and headless guest proof, all10 frozen groups. Thirteen established program payloads and both kernels remain byte-identical to ef7f7d2f. Preserve prior failures/VMware deferral; only focused retries. No agents/visible VMs/dialogs or push."]
+targeted_tests = ["python scripts/measure_cpp_baseline.py --host-test test/test_desktop_source.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_gui_surface_source.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_desktop_surface_runtime_source.py"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/run_qemu_window_controls.py --verify-artifacts --image build/reist-os.img --evidence build/codex-agent/r332-window/artifacts","python scripts/run_qemu_window_controls.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r332-window/guest","python scripts/run_qemu_mouse_settings.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r332-window/mouse","python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r332-window/resize.log",".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"]
+acceptance = "All10 groups, final diff/scope and unchanged protected artifacts, then direct local implementation commit. No later package work."
+stop_conditions = ["Source outside allowed_files required", "Unattributed changes", "Kernel/driver/public ABI or independent policy expansion", "Failed gate without demonstrated focused correction"]
+commit_message = "feat: add window minimize maximize and restore controls"
+evidence = []
+
 
 [[packages]]
 id = "R3.31-mouse-settings"
@@ -2221,7 +2239,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

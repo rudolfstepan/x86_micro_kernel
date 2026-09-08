@@ -86,6 +86,11 @@ sichtbare Surface aus. Fensterdekorationen haben Vorrang vor der Clientfläche:
 Close, Resize, Titel/Move und danach Client. Nur ein Client-Hit DARF ein
 Client-Capture erzeugen.
 
+R3.32 erweitert diese Reihenfolge um die rechten Zustandsknöpfe zwischen
+Close und Resize. Minimiert ist nicht geschlossen; Normalgeometrie,
+Taskleistenplatz und Client-Lebenszyklus bleiben erhalten. Verbindliche
+Details und Abnahme: [Fensterzustandsvertrag](WINDOW_STATE_CONTROLS_CONTRACT.md).
+
 Ein Pointer-Ereignis für eine Client-Surface enthält ausschließlich lokale,
 auf die aktuelle Clientgröße begrenzte Koordinaten. Keyboardereignisse gehen
 an genau eine fokussierte Surface. Ein verdecktes oder nicht fokussiertes
