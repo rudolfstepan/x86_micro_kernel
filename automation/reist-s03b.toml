@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
 active_id = "R3.27-browser-external-scripts"
-next_user_request = "2026-09-08: User approves narrow R3.27a extension for demonstrated RTL8139 64KiB receive-wrap defect and real host regression. Preserve unaccepted R3.27 in stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2; accept R3.27a first. No relaxed browser/throughput gates, agents or push."
+next_user_request = "2026-09-08: Continue R3.27 directly after accepted network prerequisite361beac4. Rebase only its protected kernel reference to361beac4, restore attributed browser stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2, retain other gates/quotas/program baselines. No later package implementation, agents or push."
 
 [policy]
 one_package_per_run = true
@@ -87,7 +87,7 @@ invariants = [
  "BROWSER directly owns HTMLWORK, JSWORK and at most one additional CURL. No parser/JS network or VFS authority. Existing CURL binary/TLS checks unchanged. Fetch5s aggregate including <=5 redirects, one kill/reap1s, no retry/unknown-generation kill/wait on live child. Per-turn <=16 timeout-zero IPC calls including original chrome path. Local reads<=4KiB/turn. Failed candidate preserves old page.",
  "Existing engine/parse/journal budgets unchanged. Extra loader storage<=3MiB demand allocated, total script adapter<=9MiB; individual external source<=1MiB and cache aggregate<=1MiB/32 entries. Cache only explicit positive max-age admitted without no-store/no-cache/Age/Vary, expiry bounded; source-exact resize replay never refetches or reexecutes. Fresh navigation resets cache.",
  "HTTP/meta CSP conservatively blocks all scripting. HTTPS downgrade/network-to-local/credentials invalid URL denied at each hop. Enforce JS MIME and UTF8/ASCII; ordinary missing/HTTP/MIME failure skips resource and continues; deadline/protocol/child failure fences candidate. Unsupported async/defer/module/CORS/integrity/referrer attributes remain inert, never falsely parser-ordered.",
- "Both actual kernels and GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK/CURL byte-identical3eab01ab. Main visible worktree, no agents/visible VMs/native dialogs/push; retain failures, repeat only affected gates after focused repair."
+ "Both actual kernels byte-identical accepted361beac4: QEMU b8add76174cb003e06383079285af61c4b707e892cef9b65f1c5aaf13332b49d, VMware 2f561825a91362f357f019d1e1a770e53b9fabfb8e3306ed923d8a679393b810. GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK/CURL remain byte-identical3eab01ab. Main visible worktree, no agents/visible VMs/native dialogs/push; retain failures, repeat only affected gates after focused repair."
 ]
 targeted_tests = ["python test/test_browser_external_scripts.py -v", "python test/test_browser_scripting.py -v", "python test/test_html_engine.py -v", "python test/test_css_engine.py -v", "python test/test_js_service.py -v", "python test/test_browser_navigation_source.py -v", "python test/test_browser_runtime_source.py -v", "python test/test_gui_browser_source.py -v", "python test/test_benchmark_source.py -v"]
 package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]

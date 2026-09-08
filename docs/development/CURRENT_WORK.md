@@ -2,6 +2,16 @@
 
 Stand: 8. September 2026
 
+## R3.27 aktiv: Wiederaufnahme auf geprueftem Netzwerkstand
+
+Nutzerauftrag zur Fortsetzung nach `361beac4`. Sauberer Worktree vor Beginn.
+Nur der geschuetzte Kernelguard wird vor der Umsetzung explizit auf die
+abgenommenen R3.27a-Hashes umgestellt; Programme bleiben3eab01ab-bytegleich.
+Quoten/Gates unveraendert, insbesondere5s Fetch und >256KiB HTTP-Skript.
+Der zugeordnete Stash `cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2` wird
+verlustfrei wiederhergestellt, nicht geloescht. Alle alten Belege bleiben.
+In diesem Lauf ausschliesslich R3.27, keine R3.28-Implementierung.
+
 ## R3.27a abgenommen: Netzwerk-Fortschritt und RTL-RX-Ringkorrektur
 
 Nutzerfreigabe vom8.September: alle erforderlichen Schritte einschliesslich

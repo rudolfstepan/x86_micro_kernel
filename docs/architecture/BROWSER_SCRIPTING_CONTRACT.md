@@ -2,6 +2,15 @@
 
 ## R3.27 frozen extension — parser-blocking external classic scripts
 
+Kernel reference update frozen before resuming implementation,8 September2026:
+user requested continuation after accepted prerequisite361beac4. Only the
+protected kernel baseline advances: QEMU
+`b8add76174cb003e06383079285af61c4b707e892cef9b65f1c5aaf13332b49d`, VMware
+`2f561825a91362f357f019d1e1a770e53b9fabfb8e3306ed923d8a679393b810`.
+Actual preserved R3.27a images must match. Protected programs remain3eab01ab;
+no kernel/CURL/engine change in R3.27, no relaxed5s fetch/20s parse budget,
+smaller fixture or removed runtime gate. Previous failure evidence is retained.
+
 Frozen8 September2026 on3eab01ab. Reference [HTML classic-script fetching](https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-script),
 [script processing](https://html.spec.whatwg.org/multipage/scripting.html#the-script-element),
 [JavaScript MIME essence](https://mimesniff.spec.whatwg.org/#javascript-mime-type)

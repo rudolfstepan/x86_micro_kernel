@@ -2,11 +2,13 @@
 
 Stand: 3. September 2026
 
-8.September, genehmigtes Prerequisite R3.27a: begrenzten TCP-Empfang von
-der ABI-Kopiergrenze entkoppeln und aktive Ring3-Netzarbeit zeitnah bedienen.
-Browser-R3.27 bleibt gesichert und unabgenommen; danach R3.28. Kein Lockern
-der Browser-Gates oder Ausbau von Ring0-Protokollautoritaet. Vertrag:
-NETWORK_RECEIVE_PROGRESS_CONTRACT.md.
+8.September, Prerequisite R3.27a abgenommen als361beac4: TCP-Empfang von
+ABI-Kopiergrenze entkoppelt, aktive Ring3-Netzarbeit zeitnah bedient und
+RTL8139-64KiB-Ringkopie korrigiert. Beide NIC-Gaeste und Recovery/Scheduler/
+Browser-Regressionen bestanden. Browser-R3.27 wird jetzt auf diesem explizit
+eingefrorenen Kernelstand fortgesetzt; alle Programme/Quoten/Gates bleiben
+geschuetzt. Danach R3.28, kein Ausbau von Ring0-Protokollautoritaet. Vertraege:
+NETWORK_RECEIVE_PROGRESS_CONTRACT.md und BROWSER_SCRIPTING_CONTRACT.md.
 
 8. September, neuer Nutzerauftrag: intracom.at soll nicht nur laden, sondern
 korrekt dargestellt und bedienbar werden. R3.27 externe Skripte zuerst
