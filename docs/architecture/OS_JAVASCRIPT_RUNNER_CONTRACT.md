@@ -121,3 +121,12 @@ Raw logs remain untouched; fatal markers in raw or derived views still fail.
 Negative regression covers partial/unknown noise, duplicates, missing reaps,
 stale generations, bad cancellation and fatal text. Then rerun the same browser
 gate on the unchanged images. Other passed runtime/build gates stay valid.
+
+Final fixture audit: process generations are slot-scoped. Simultaneously live
+workers require different PIDs and nonzero generations, not different generation
+numbers. JSRUNTST checks the actual identity contract; the runner guest starts
+it directly from a fresh shell before the first CLI example. Rebuild both
+references, compare every packaged program against the prior passed candidate
+(only JSRUNTST may differ), and rerun the runner/image gates. Existing service
+and browser proofs remain applicable only if all their exact program/kernel
+bytes remain unchanged. No production owner/engine code or budget is changed.

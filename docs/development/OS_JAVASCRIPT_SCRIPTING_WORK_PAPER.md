@@ -1,9 +1,10 @@
 # Work Paper: gemeinsame JavaScript-Laufzeit, getrennte Host-Autorität
 
 Stand: 8. September 2026. Ausgangspunkt: `270754bd`.
-Status: Architektur und Reihenfolge festgelegt; R3.34 ist umgesetzt und mit
-allen11 Prüfgruppen abgenommen. Die allgemeine Shell-Scripting-Umgebung ist noch nicht
-implementiert. Dieses Papier ersetzt keine vorhandene Browser-Abnahme.
+Status: R3.34 ist mit allen11 Prüfgruppen abgenommen. JS2 / R3.35 ist ebenfalls
+umgesetzt und mit allen10 Prüfgruppen abgenommen: allgemeiner isolierter Runner
+mit Argumenten/Konsole, noch ohne Datei-/Prozess-/Admin-Bindings. Dieses Papier
+ersetzt keine vorhandene Browser-Abnahme.
 
 ## Ziel und Sicherheitsgrenze
 
@@ -43,8 +44,8 @@ vorhandenen errno-Teilumfang. Bestehende Syscallnummern bleiben unverändert.
 
 - `userspace/quickjs/`: explizite Sprach-Intrinsics, eigener Allocator,
   Speicher-/Stack-/Quelltext-/Ergebnis-/Jobbudgets und Deadline-Hook.
-- `JSWORK.PRG`: persistente isolierte Dokument-Runtime; bisher allerdings
-  natives Compatibility-Syscallprofil. Genau diese Lücke schließt R3.34.
+- `JSWORK.PRG`: persistente isolierte Runtime im irreversiblen nativen
+  Script-Syscallprofil seit R3.34; gemeinsame Implementierung in `userspace/js`.
 - `JsSession` und `js_protocol`: feste Nachrichten, gerichtete delegierte
   Endpoints, PID und Generation, eine laufende Anfrage, absolute Deadlines,
   begrenztes Abbrechen/Reap und Wiederanlauf mit leerer Runtime.
@@ -217,9 +218,25 @@ Korrekturen wiederholt; alte Belege wurden weder überschrieben noch als
 abschließende Abnahme verwendet. Keine allgemeine System-Scripting- oder neue
 VMware-Laufzeit-/Performancezusage aus diesen Teilbelegen.
 
-Nächste Etappe JS2 ist als R3.35 auf ef9fb2de eingefroren:
+JS2 wurde als R3.35 auf ef9fb2de eingefroren:
 [OS_JAVASCRIPT_RUNNER_CONTRACT.md](../architecture/OS_JAVASCRIPT_RUNNER_CONTRACT.md).
 Gemeinsamer Dienst außerhalb des Browsers, JS.PRG, native speichergebundene
 Konsole/Argumente, validiertes IPC und getrennte Realms; keine OS-Brokerrechte.
-Implementierung und zehn Gates folgen erst nach dem Vertragscheckpoint.
-R3.6b behält seine ausdrückliche VMware-Zurückstellung.
+Vertragscheckpoint23fce927, genehmigte reine Prüferreparatur888ab9ab; alle zehn
+Gates bestanden. `js -e print(42)` oder `js /htdocs/hello.js test` sind in beiden
+Image-Layouts verfügbar. `scriptArgs`, `print`, `console.log/error` und
+`reist.setExitCode` werden ausschließlich im Script-Host installiert.
+Begrenztes IPC, vollständige Journalprüfung, Esc/Deadline und generationengebundenes
+Reap schützen die Grenze; auch parallele Browser-/Script-Realms sind im Gast
+geprüft. GC ersetzt keine explizite Prozess-/Objektfreigabe.
+
+Belege und erhaltene Fehler stehen in CURRENT_WORK.md. Kernel und fünf
+geschützte Programme bleiben bytegleich zu ef9fb2de;100 geprüfte Referenzdateien
+sind archiviert. Keine allgemeine OS-API oder vollständige Console-/Node-/qjs-
+Kompatibilität. Shell-Quoting, REPL, Module und spätere Brokerrechte bleiben offen.
+
+Nächste Etappe JS3: opake, generationengebundene Capabilities und stabil
+dateigebundener Benutzer-Broker. Autorität, Revocation, Pfad-/Handle-Reuse und
+sichere Schreibtransaktionen zuerst inventarisieren und einfrieren; kein
+`isSystemScript`-Schalter oder ungeprüfter Pfadstring als Recht. Diese Etappe
+wurde in R3.35 nicht begonnen. R3.6b behält seine VMware-Zurückstellung.

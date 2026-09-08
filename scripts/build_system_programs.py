@@ -25,7 +25,14 @@ PROGRAMS = {
     "MATHTEST.PRG": ROOT / "userspace/programs/mathtest.c",
     "TEXTTEST.PRG": ROOT / "userspace/programs/texttest.c",
     "JSTEST.PRG": ROOT / "userspace/programs/jstest.c",
-    "JSWORK.PRG": (ROOT / "userspace/gui/apps/browser/js_worker.c", ROOT / "userspace/gui/apps/browser/js_protocol.c"),
+    "JSWORK.PRG": (ROOT / "userspace/js/js_worker.c", ROOT / "userspace/js/js_protocol.c",
+                   ROOT / "userspace/js/script_protocol.c"),
+    "JS.PRG": (ROOT / "userspace/programs/js.cpp", ROOT / "userspace/js/runner.cpp",
+        ROOT / "userspace/js/js_session.cpp", ROOT / "userspace/js/js_protocol.c", ROOT / "userspace/js/script_protocol.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c", ROOT / "userspace/storage/lib/vfs_path.c"),
+    "JSRUNTST.PRG": (ROOT / "userspace/programs/jsruntst.cpp", ROOT / "userspace/js/runner.cpp",
+        ROOT / "userspace/js/js_session.cpp", ROOT / "userspace/js/js_protocol.c", ROOT / "userspace/js/script_protocol.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c", ROOT / "userspace/storage/lib/vfs_path.c"),
     "JSIPCTST.PRG": (ROOT / "userspace/programs/jsipctst.cpp", ROOT / "userspace/gui/apps/browser/js_session.cpp",
                      ROOT / "userspace/gui/apps/browser/js_protocol.c"),
     "HELLO.PRG": ROOT / "userspace/programs/hello.c",
@@ -370,7 +377,7 @@ def main() -> None:
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
                         "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG",
                         "LN.PRG", "READLINK.PRG", "DEL.PRG",
-                        "RENAME.PRG", "RM.PRG", "BROWSER.PRG", "DISPLAY.PRG", "MOUSE.PRG"}:
+                        "RENAME.PRG", "RM.PRG", "BROWSER.PRG", "DISPLAY.PRG", "MOUSE.PRG", "JS.PRG", "JSRUNTST.PRG"}:
                 dependency_files.extend(storage_headers)
             if name == "STORAGE.PRG":
                 dependency_files.append(Path(__file__).resolve())
@@ -401,10 +408,13 @@ def main() -> None:
                 link_libraries.extend([sdk.wapcaplet_library, sdk.libc_library])
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))
                 dependency_files.append(sdk.include_dir / "libwapcaplet/libwapcaplet.h")
-            if name in ("JSWORK.PRG", "JSIPCTST.PRG"):
+            if name in ("JSWORK.PRG", "JSIPCTST.PRG", "JS.PRG", "JSRUNTST.PRG"):
                 includes[:0] = [ROOT / "userspace/gui/apps/browser", sdk.libc_include_dir]
+                if name in ("JS.PRG", "JSRUNTST.PRG"):
+                    includes.insert(0,ROOT / "userspace/js")
                 dependency_files.extend([ROOT / "userspace/gui/apps/browser/js_protocol.h",
                     ROOT / "userspace/gui/apps/browser/js_session.hpp", Path(__file__).resolve()])
+                dependency_files.extend(ROOT.glob("userspace/js/*"))
                 if name == "JSWORK.PRG":
                     includes[:0] = [sdk.js_include_dir, sdk.math_include_dir, sdk.text_include_dir]
                     link_libraries.extend([sdk.js_library, sdk.text_library, sdk.math_library])
@@ -456,6 +466,7 @@ def main() -> None:
                 dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/css_*.hpp"))
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
             if name == "BROWSER.PRG":
+                dependency_files.extend(ROOT.glob("userspace/js/*"))
                 dependency_files.append(ROOT / "assets/browser/dom.js")
                 dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_response.hpp")
                 dependency_files.append(ROOT / "assets/fonts/reist-unicode.psf")
@@ -476,7 +487,7 @@ def main() -> None:
                 runtime_libraries=runtime_libraries,
                 cache_directory=global_cache_directory,
                 dependency_files=dependency_files,
-                cpp=name in ("CPPTEST.PRG", "BROWSER.PRG", "JSIPCTST.PRG") or name == "HTMLWORK.PRG",
+                cpp=name in ("CPPTEST.PRG", "BROWSER.PRG", "JSIPCTST.PRG", "JS.PRG", "JSRUNTST.PRG") or name == "HTMLWORK.PRG",
                 compile_flags=(
                     (["-fno-inline-functions"]
                      if name == "STORAGE.PRG" else []) +

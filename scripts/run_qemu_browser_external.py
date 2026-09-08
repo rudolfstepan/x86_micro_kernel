@@ -86,14 +86,23 @@ def validate_transcript(text):
         found=text.find(marker,at)
         if found<0:raise ValueError('missing ordered proof '+marker)
         at=found+len(marker)
-    workers=re.findall(r'BROWSER_SCRIPT_FETCH_WORKER pid=(\d+) generation=(\d+)',text)
-    reaps=re.findall(r'BROWSER_SCRIPT_FETCH_REAP pid=(\d+) generation=(\d+) status=(\d+)',text)
+    # Serial output is not a record-atomic channel. These two complete native
+    # ARP diagnostics were observed between WORK and ER in an otherwise exact
+    # worker record. Remove only the known asynchronous records in a derived
+    # identity view; never guess fields or alter the retained raw transcript.
+    if len(text)>4*1024*1024: raise ValueError('external transcript capacity')
+    noise=r'REIST_NETWORK (?:ARP_RESOLUTION_QUEUED|ARP_RESOLUTION_MEDIATED)\r?\n'
+    for count,_ in enumerate(re.finditer(noise,text),1):
+        if count>128: raise ValueError('external diagnostic capacity')
+    identities=re.sub(noise,'',text)
+    workers=re.findall(r'BROWSER_SCRIPT_FETCH_WORKER pid=(\d+) generation=(\d+)',identities)
+    reaps=re.findall(r'BROWSER_SCRIPT_FETCH_REAP pid=(\d+) generation=(\d+) status=(\d+)',identities)
     if len(workers)!=14 or len(set(workers))!=14 or Counter(workers)!=Counter(r[:2] for r in reaps):
         raise ValueError('missing/stale external worker reap')
     cancel=re.search(r'BROWSER_EXTERNAL_CANCEL_SENT pid=(\d+)',text)
     if not cancel or sum(r[2]=='143' and r[0]==cancel[1] for r in reaps)!=1 or sum(r[2]!='0' for r in reaps)!=1:
         raise ValueError('missing actual CURL cancellation')
-    if any(s in text for s in ('BROWSER_PROBE_FAIL','DESKTOP_BROWSER_FAIL','KERNEL PANIC','kernel panic','*** USER PROCESS PAGE FAULT ***')):
+    if any(s in text or s in identities for s in ('BROWSER_PROBE_FAIL','DESKTOP_BROWSER_FAIL','KERNEL PANIC','kernel panic','*** USER PROCESS PAGE FAULT ***')):
         raise ValueError('guest failure')
 
 def probe(resources,process,output,transcript,screenshot,deadline,monitor):

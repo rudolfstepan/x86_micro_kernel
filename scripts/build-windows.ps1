@@ -393,6 +393,8 @@ try {
         'usr/bin/jstest.prg' = 'JSTEST.PRG'
         'usr/bin/jswork.prg' = 'JSWORK.PRG'
         'usr/bin/jsipctst.prg' = 'JSIPCTST.PRG'
+        'usr/bin/js.prg' = 'JS.PRG'
+        'usr/bin/jsruntst.prg' = 'JSRUNTST.PRG'
         'usr/bin/memtest.prg' = 'MEMTEST.PRG'
         'usr/bin/cpptest.prg' = 'CPPTEST.PRG'
         'sbin/config.prg' = 'CONFIG.PRG'
@@ -516,7 +518,7 @@ try {
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
-    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'fonts.htm', 'fonts.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'hello.js', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'fonts.htm', 'fonts.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"

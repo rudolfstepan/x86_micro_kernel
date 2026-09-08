@@ -63,6 +63,8 @@ int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t,x86os_ipc_bulk_message_t *
     static char big[60000]; std::memset(big,'x',sizeof(big));
     const void *data=os.response_size==2 ? (const void *)"42" : big; uint32_t size=os.response_size;
     uint32_t hello[]={1,JS_SERVICE_HEAP,16384,0},stats[]={1,24,10,4096,8192,0};
+    uint32_t script[]={1,24,0,7,0,0};
+    if(os.last.operation==JS_OP_SCRIPT) { data=script; size=sizeof(script); }
     if(os.last.operation==JS_OP_HELLO) { data=hello; size=sizeof(hello); }
     if(os.last.operation==JS_OP_GC || os.last.operation==JS_OP_HEALTH) { data=stats; size=sizeof(stats); }
     if(os.last.operation==JS_OP_SHUTDOWN) { data=nullptr; size=0; os.state=X86OS_PROCESS_ZOMBIE; }

@@ -233,7 +233,7 @@ int main(void) {
         directory.mkdir(parents=True); fixture=directory/"public.c"
         # Real target types + printf/scanf compiler format checking for every
         # ISO integer family, not just string existence or guessed LP64 types.
-        code=['#include <inttypes.h>','#include <reist_js.h>',
+        code=['#include <inttypes.h>','#include <reist_js.h>','#include <reist_js_script.h>',
               'int print(const char *,...) __attribute__((format(printf,1,2)));',
               'int scan(const char *,...) __attribute__((format(scanf,1,2)));',
               'int f(reist_js_engine **p) { reist_js_destroy(p); return 0; }',

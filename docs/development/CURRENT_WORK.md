@@ -2,18 +2,89 @@
 
 Stand: 8. September 2026
 
-## Aktiv: R3.35 / JS2 – allgemeiner JavaScript-Runner
+## R3.35 / JS2 abgenommen: allgemeiner isolierter JavaScript-Runner
 
-Vertrag auf ef9fb2de vor Implementierung eingefroren:
+Ausgang ef9fb2de, Vertragscheckpoint23fce927, ausdrücklich genehmigte
+Prüferkorrektur888ab9ab. Vertrag:
 [OS_JAVASCRIPT_RUNNER_CONTRACT.md](../architecture/OS_JAVASCRIPT_RUNNER_CONTRACT.md).
-Gemeinsamer isolierter Dienst, JS.PRG, Datei/-e, Argumente und validierte
-stdout/stderr-Journale. Keine neuen Kernel- oder Skript-OS-Rechte. Zehn Gates
-in der Queue; R3.6b bleibt unverändert zurückgestellt. Noch keine Abnahme.
-Neun Gruppen bestehen bereits einschließlich echter JS-/Service-Gäste. Der
-letzte Browserlauf endet nur an einer durch ARP-Logs unterbrochenen Startzeile
-(pid30,generation11); alle14 Reaps und übrigen Browserprüfungen liegen vor.
-Nutzer hat die gezielte Prüferkorrektur ausdrücklich freigegeben. Rohbeleg
-`build/codex-agent/r335-js-runner/browser.log` bleibt als fehlgeschlagen erhalten.
+Protokoll, nichtcopybarer C++-Owner und Worker liegen jetzt in `userspace/js`;
+dünne Browseradapter erhalten bestehende Verbraucher. JS.PRG und JSRUNTST.PRG
+sind in beiden Images unter `/usr/bin` aus der normalen Ring-3-Shell erreichbar.
+
+`js -e print(42)` und `js /htdocs/hello.js test` führen Skripte in einem eigenen,
+nativ eingeschränkten JSWORK aus. Argumente über `scriptArgs`, `print`,
+`console.log/error` und `reist.setExitCode(0..125)`. Nur der Host liest die
+angeforderte Quelldatei und schreibt vollständig validierte Konsolenjournale
+an seine stdout/stderr-Deskriptoren. Keine Datei-, Netzwerk-, Prozess-, GUI-
+oder administrativen Skriptrechte. Keine neue Kernel-/SDK-Core-Autorität.
+Browser und CLI teilen Code, niemals Realm, Heap oder implizite Hostrechte.
+
+Alle10 Gruppen bestanden, einschließlich der abschließenden Fixturekorrektur
+und der betroffenen Referenz-/Runner-/Image-Gates. Logs relativ zu
+`build/codex-agent/r335-js-runner/`:
+
+| Gruppe | Ergebnis / Sekunden | Beleg |
+| --- | --- | --- |
+| Engine/Console/SDK |6 Tests, Sprache und11 neue Konsolenfälle je O0/O2 /75.288 | host-engine.log |
+| Runner/Admission/Output |2 Tests mit echten O0/O2-Pfaden /21.076 | host-runner-cpp.log |
+| ergänzende Runner-/Browser-Validatorfälle |0.018/0.066/0.061 | host-validator.log, host-browser-trace-identity.log, host-browser-legacy.log |
+| Transport/Owner/4 Ziel-Links |3 Tests /16.432 | host-service.log |
+| Native Script-Domäne |2 Tests /7.932 | host-domain.log |
+| VMware-Referenz |PASS /86.304 | package-vmware-identity.log |
+| QEMU-Referenz |PASS /84.450 | package-qemu-identity.log |
+| Tatsächliche Image-Inhalte |92 PRGs je Image, Beispiel, beide Kernel /1.401 | artifacts-final/protected.json |
+| Neuer Runner-Gast |zweimal vollständig /77.566 | runner-identity.log, runner-identity-gate.log |
+| Eingeschränkter Dienst-Gast |zweimal Fault/Hang/Orphan/Recovery /50.161 | service.log, service-gate.log |
+| Browserregression |PASS /103.094 | browser-trace-fixed.log, browser-trace-fixed-gate.log |
+
+Die ergänzenden Validatorfälle gehören zur Runner-/freigegebenen Prüfergruppe,
+nicht zu einem weiteren Paket. Nachträglich ergänzte reine Validatorfälle
+liefen gezielt einzeln; unveränderte Kompilier-/Gastgruppen wurden nicht wiederholt.
+Der erste Ziel-Linkbeleg enthält noch eine harmlose fehlende Nullinitialisierer-
+Warnung; beide abschließenden Referenzen enthalten die explizite Null.
+
+Die Schlussprüfung korrigiert eine falsche Testannahme: Generationen sind
+slotgebunden, nicht global eindeutig. Direkt aus einer frischen Shell bestehen
+zwei gleichzeitig lebende Worker mit PID8/9 und jeweils Generation1. Nur
+JSRUNTST.PRG änderte sich gegenüber dem ersten bestandenen Kandidaten; alle91
+anderen Programme und beide Kernel sind hashgleich. Damit bleiben dessen
+Dienst-/Browser-Gastbelege gültig. Referenzen, Imageprüfung und Runnergast wurden
+für die korrigierte Testversion erneut bestanden; frühere Belege bleiben erhalten.
+
+Der neue Gast prüft parallele Script-/Browser-Realms, fehlende Fremdglobals,
+frischen Worker, tatsächliche Deadline/Cancel und Reap, stdout/stderr, normale
+Exit7, Syntax-/Scriptfehler1, nicht wegfangbares Konsolenlimit71, Argumente als
+Daten und1MiB Quelle. Bestehender Dienstgast bestätigt zweimal alle nativen
+Verbote, Fault142, bestätigten Hang/Reap143, Stale/Cancel, frische Generationen
+und Orphan-Freigabe. Browser prüft lokale/große HTTP-Skripte, Redirect, Cache,
+Reflow, echte CURL-Terminierung143, Recovery, Titelpixel und lebende Shell.
+
+Kernel beider Profile sowie BENCHMARK, MATHTEST, TEXTTEST, CURL und JSTEST
+sind exakt bytegleich zu ef9fb2de. Kein neuer VMware-Durchsatz-/WCET-Nachweis.
+`accepted-reference-final/` sichert100 Dateien: beide Images/Kernel,92 PRGs, VMware-
+Descriptor/VMX, hello.js und Imagebericht; Kopien vollständig hashgeprüft.
+Das erste Archiv `accepted-reference/` bleibt ebenfalls unverändert erhalten.
+QEMU-Image: `28bd70edc7fc685d9958e44456cd3de6e51013cd9c4996b62c9818ec6b299903`.
+VMware-Image: `29eeca0afbac0b5e322f94fcf35efe08b0b91085a69fda7a231098555e3da64e`.
+
+Erhaltene Entwicklungsfehler: red.log (Runner fehlt zunächst), host-runner.log
+(Host-Zig-Cache außerhalb Workspace), host-runner-cache.log (C++-memchr-Cast),
+package-vmware.log (fehlendes extern-C an beiden neuen main-Einstiegen),
+browser.log (vollständiger Browserlauf mit durch zwei ARP-Diagnosen unterbrochener
+Worker-Startzeile). Der Rohbeleg bleibt fehlgeschlagen und unverändert.
+red-browser-trace.log reproduziert dies. host-browser-trace.log enthielt einen
+falschen Negativvektor, der Start UND Reap gemeinsam umnummerierte; der
+korrigierte Vektor verändert nur die Reap-Generation und wird sicher abgelehnt.
+Die genehmigte Auswertung entfernt höchstens128 vollständige Instanzen genau
+zweier bekannter Diagnosen nur in einer abgeleiteten Identitätssicht; alle14
+Identitäten/Reaps, Status-/Fehler-/Zeit- und Browseranforderungen bleiben erhalten.
+
+Grenzen: Shell hat noch kein Quoting; längere Quellen aus Dateien laden.
+Konsole ist begrenzte, verzögert publizierte Textausgabe, keine Streaming-/
+Binärkonsole. Kein REPL, Modulloader, Node/qjs/std/os oder administrativer Host.
+Nächste Etappe JS3: explizite Capability-Objekte und dateigebundener Broker;
+vor Umsetzung dessen Autoritäts-/Persistenzvertrag einfrieren. R3.6b bleibt
+trotz formalem Queue-Rücksprung ausdrücklich zurückgestellt. Kein Push/Agent.
 
 ## R3.34 abgenommen: Script-Prozessdomäne und OS-Scripting-Arbeitspapier
 

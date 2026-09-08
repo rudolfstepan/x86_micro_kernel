@@ -6,15 +6,7 @@
 #include <string.h>
 #include <fenv.h>
 
-struct reist_js_engine {
-    reist_js_config config;
-    JSRuntime *runtime;
-    JSContext *context;
-    size_t used,peak,count;
-    uint64_t last,deadline;
-    reist_js_status poisoned;
-    unsigned running,oom;
-};
+#include "engine_internal.h"
 typedef union {
     max_align_t align;
     struct {size_t bytes; uint32_t magic; reist_js_engine *owner;} data;

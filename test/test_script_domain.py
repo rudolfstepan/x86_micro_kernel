@@ -10,7 +10,7 @@ from test_reist_probe_domain import function
 
 class ScriptDomainTests(unittest.TestCase):
     def test_worker_restricts_before_engine_or_script(self):
-        worker = (ROOT / 'userspace/gui/apps/browser/js_worker.c').read_text()
+        worker = (ROOT / 'userspace/js/js_worker.c').read_text()
         main = function(worker, 'int main(')
         self.assertIn('if(x86os_process_restrict_script()) return 70;', main)
         self.assertLess(main.index('x86os_process_restrict_script'), main.index('reist_libc_init_process'))

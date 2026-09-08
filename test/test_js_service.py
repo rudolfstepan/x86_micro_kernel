@@ -34,14 +34,15 @@ class ServiceTests(unittest.TestCase):
         from build_user_sdk import sdk_artifacts
         from build_user_program import build
         sdk=sdk_artifacts(ROOT/"build/sdk")
-        for name in ("JSWORK.PRG","JSIPCTST.PRG"):
+        for name in ("JSWORK.PRG","JSIPCTST.PRG","JS.PRG","JSRUNTST.PRG"):
             libraries=[sdk.js_library,sdk.text_library,sdk.math_library] if name=="JSWORK.PRG" else [sdk.cpp_library]
             build(list(programs.PROGRAMS[name]),self.directory/name,find_zig(),
-                include_dirs=[ROOT/"userspace/gui/apps/browser",sdk.js_include_dir,sdk.math_include_dir,
+                include_dirs=[ROOT/('userspace/js' if name in ('JS.PRG','JSRUNTST.PRG') else 'userspace/gui/apps/browser'),
+                    ROOT/'userspace/storage/include',sdk.js_include_dir,sdk.math_include_dir,
                     sdk.text_include_dir,sdk.cpp_include_dir,sdk.libc_include_dir,sdk.include_dir],
                 libraries=[*libraries,sdk.libc_library,sdk.library_dir/"libclang_rt.builtins-i386.a"],
                 runtime_objects=[sdk.startup_object],runtime_libraries=[sdk.core_library],
-                cpp=name=="JSIPCTST.PRG",cache_directory=self.directory/"link-cache")
+                cpp=name!="JSWORK.PRG",cache_directory=self.directory/"link-cache")
             self.assertGreater((self.directory/name).stat().st_size,0)
             path="usr/bin/"+name.lower()
             self.assertIn(f"'{path}' = '{name}'",(ROOT/"scripts/build-windows.ps1").read_text())
