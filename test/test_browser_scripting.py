@@ -12,7 +12,7 @@ class BrowserScriptingTests(unittest.TestCase):
         markers=['BROWSER_SCRIPT_DOM_OK','BROWSER_SCRIPT_REFLOW_OK','BROWSER_SCRIPT_NAVIGATION_OK',
             'JS_SERVICE_HANG_ENTERED','BROWSER_SCRIPT_HANG_CONTAINED_OK','JS_SERVICE_FAULT_ENTERED',
             'BROWSER_SCRIPT_FAULT_CONTAINED_OK','BROWSER_SCRIPT_RECOVERY_OK','HOST_BROWSER_SCRIPT_TITLE_PIXELS_OK','BROWSER_CLOSE_OK',
-            'HOST_BROWSER_SCRIPT_RESTART_OK']
+            'HOST_BROWSER_SCRIPT_RESTART_OK','HOST_BROWSER_SCRIPT_ATTRIBUTE_PIXELS_OK']
         text='\n'.join(markers)+ '\n*** USER PROCESS PAGE FAULT ***\nFaulting address: 0x00000004\n'
         text+='\n'.join(f'BROWSER_JS_WORKER pid={11+i} generation={i+1} fixture={mode}' for i,mode in enumerate((0,0,2,1,0)))
         validate_transcript(text)
@@ -23,7 +23,7 @@ class BrowserScriptingTests(unittest.TestCase):
         with self.assertRaises(ValueError): validate_transcript(text.replace('pid=15 generation=5','pid=11 generation=1'))
     def test_owned_bridge_replay_and_cancellation(self):
         from measure_cpp_baseline import compile_mixed_host
-        directory=ROOT/"build/codex-agent/r325-browser-js"/("owner-"+uuid.uuid4().hex)
+        directory=ROOT/"build/codex-agent/r326-dom-attributes"/("owner-"+uuid.uuid4().hex)
         directory.mkdir(parents=True)
         sources=[ROOT/"test/browser_scripting_host.cpp",*[ROOT/p for p in (
             "userspace/gui/apps/browser/js_session.cpp", "userspace/gui/apps/browser/js_protocol.c",
@@ -41,7 +41,7 @@ class BrowserScriptingTests(unittest.TestCase):
         self.assertTrue((ROOT/"assets/browser/dom.js").is_file(),"browser DOM binding missing")
         import build_user_js as js, build_user_math as math, build_user_text as text
         suppress_windows_test_dialogs()
-        directory=ROOT/"build/codex-agent/r325-browser-js"/("host-"+uuid.uuid4().hex)
+        directory=ROOT/"build/codex-agent/r326-dom-attributes"/("host-"+uuid.uuid4().hex)
         _,generated=js.extract(directory)
         mv=math.extract(directory/"math-upstream"); tv=text.extract(directory/"text-upstream")
         env=os.environ.copy(); env["ZIG_GLOBAL_CACHE_DIR"]=str(ROOT/"build/codex-agent/r323-js/host-cache")

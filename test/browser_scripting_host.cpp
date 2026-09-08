@@ -11,6 +11,7 @@ static bool waiting=false,blocked=false;
 static char evaluated[1024];
 static char dom_reply[65536];
 static uint32_t dom_size;
+static uint32_t mock_profile=1;
 extern "C" {
 const char browser_dom_data[1]={0},browser_dom_end[1]={0};
 void *x86os_malloc(size_t n) { void *p=std::malloc(n); if(p) ++allocations; return p; }
@@ -45,7 +46,7 @@ int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t h,const x86os_ipc_bulk_messag
 int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t,x86os_ipc_bulk_message_t *m,uint32_t timeout) {
     ++calls; if(timeout) std::abort(); if(!waiting || blocked) return -11;
     uint32_t hello[]={1,JS_SERVICE_HEAP,16384,0};
-    const char *patch="000000010000000141";
+    const char *patch=mock_profile==1 ? "000000010000000141" : "00000001000000040000000500000001636c61737361";
     const void *data=""; uint32_t size=0;
     if(request.operation==JS_OP_HELLO) { data=hello; size=sizeof(hello); }
     else if(!std::strcmp(evaluated,"__reistDOM.take()")) { data=patch; size=(uint32_t)std::strlen(patch); }
@@ -60,9 +61,9 @@ static void pump(browser_script_owner *s) {
         unsigned before=calls; browser_script_poll(s); if(calls-before>8) std::abort();
     }
 }
-static int send_script(browser_script_owner *s,const char *source) {
+static int send_script(browser_script_owner *s,const char *source,uint32_t version=1) {
     browser_css_packet_t p={BROWSER_CSS_PACKET_MAGIC,s->parser.request,0,0,{0}};
-    browser_script_message_t h={BROWSER_SCRIPT_MAGIC,1,0,s->parser.request,7,3,81,4,1,1,(uint32_t)std::strlen(source),0};
+    browser_script_message_t h={BROWSER_SCRIPT_MAGIC,version,0,s->parser.request,7,3,81,4,1,1,(uint32_t)std::strlen(source),0};
     h.size=sizeof(h)+1+h.source_length; p.total=h.size;
     std::memcpy(p.bytes,&h,sizeof(h)); p.bytes[sizeof(h)]='0'; std::memcpy(p.bytes+sizeof(h)+1,source,h.source_length);
     return browser_script_receive(s,&p,16+p.total);
@@ -98,6 +99,23 @@ int main() {
         CHECK(browser_script_message_valid(&bad,50,&h,81,4,1,0)<0);
     }
     for(unsigned size=0;size<50;++size) CHECK(browser_script_message_valid(&valid,size,&h,81,4,1,0)<0);
+    const char *attribute="00000001000000040000000500000001636c61737361";
+    CHECK(!browser_script_journal_version(attribute,std::strlen(attribute),2,items,&count,&bytes));
+    CHECK(count==1 && bytes==6 && items[0].node==4 && items[0].operation==1 && items[0].name_length==5);
+    for(unsigned size=1;size<std::strlen(attribute);++size)
+        CHECK(browser_script_journal_version(attribute,size,2,items,&count,&bytes)<0);
+    CHECK(browser_script_journal(attribute,std::strlen(attribute),items,&count,&bytes)<0);
+    CHECK(browser_script_journal_version("000000020000000400000001000000016161",36,2,items,&count,&bytes)<0);
+    s=browser_script_create(); CHECK(s); mock_profile=2; ++h.request;
+    CHECK(!browser_script_prepare(s,&h,0)); CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_script(s,"attrs()",2)==1); pump(s); CHECK(!s->error && s->candidate->records[0].version==2);
+    CHECK(!browser_script_finish_parse(s)); pump(s); browser_script_commit(s,0);
+    ++h.request; CHECK(!browser_script_prepare(s,&h,1)); CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_script(s,"attrs()",2)==1); pump(s); CHECK(!live && s->executions==1);
+    CHECK(!browser_script_finish_parse(s));
+    ++h.request; CHECK(!browser_script_prepare(s,&h,1)); CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_script(s,"attrs()",1)<0 && s->active->count==1);
+    browser_script_cancel(s); CHECK(!browser_script_destroy(s) && !allocations);
     std::puts("BROWSER_OWNER_REPLAY_CANCEL_OK"); return 0;
 }
 #else
@@ -114,9 +132,9 @@ static int eval(reist_js_engine *e,const char *code,char *out) {
     int status=reist_js_eval(e,code,std::strlen(code),t+5000,out,65536,&size);
     if(status) {
         std::printf("eval status=%d\n",status);
-        const char *probe="try { document.getElementById('target'); 'lookup-ok' } catch(e) { String(e) }";
-        size_t n=0; char detail[256];
-        if(!reist_js_eval(e,probe,std::strlen(probe),t+5000,detail,sizeof(detail),&n)) std::printf("lookup diagnostic=%s\n",detail);
+        char probe[8192]; std::snprintf(probe,sizeof(probe),"try {%s} catch(e) { String(e)+'|'+e.stack }",code);
+        size_t n=0; char detail[2048];
+        if(!reist_js_eval(e,probe,std::strlen(probe),t+5000,detail,sizeof(detail),&n)) std::printf("eval diagnostic=%s\n",detail);
     }
     return status;
 }
@@ -142,6 +160,40 @@ int main(int argc,char **argv) {
     CHECK(eval(e,"throw new Error('author')",out)==REIST_JS_EXCEPTION);
     CHECK(!eval(e,"document.title='After'; document.title",out)); CHECK(!std::strcmp(out,"After"));
     CHECK(!eval(e,"typeof document.write+'|'+typeof fetch+'|'+typeof setTimeout",out)); CHECK(!std::strcmp(out,"undefined|undefined|undefined"));
+    CHECK(!eval(e,"__reistDOM.take(); __reistDOM.sync('https://example.test/',[[9,0,0,2,0,'','','',undefined,[]],[1,1,1,3,0,'html','','',undefined,[]],[1,1,2,4,0,'body','','',undefined,[]],[1,1,3,0,0,'p','target','',undefined,[['id','target'],['class',' old  old\\tsecond '],['data-x','']]]],2); globalThis.el=document.getElementById('target'); globalThis.classes=el.classList; el.getAttribute('CLASS')",out));
+    CHECK(!std::strcmp(out," old  old\tsecond "));
+    CHECK(!eval(e,"[classes===el.classList,classes.length,classes.item(0),classes.item(9),el.hasAttribute('DATA-X'),el.getAttribute('absent')===null,el.getAttributeNames().join(','),el.hasAttributes()].join('|')",out));
+    CHECK(!std::strcmp(out,"true|2|old||true|true|id,class,data-x|true"));
+    CHECK(!eval(e,"classes.add('new','new'); classes.remove('old'); classes.replace('second','new'); [classes.value,...classes].join('|')",out));
+    CHECK(!std::strcmp(out,"new|new"));
+    CHECK(!eval(e,"[classes.toggle('on'),classes.toggle('on',true),classes.toggle('on',false),classes.toggle('off',false),classes.replace('absent','x')].join('|')",out));
+    CHECK(!std::strcmp(out,"true|true|false|false|false"));
+    CHECK(!eval(e,"el.className=' a b a '; classes.value+'|'+classes.length+'|'+Array.from(classes.entries()).join(';')",out));
+    CHECK(!std::strcmp(out," a b a |2|0,a;1,b"));
+    CHECK(!eval(e,"var unchanged=classes.value, errors=[]; try {classes.add('good','bad token')} catch(e) {errors.push(e.name)}; try {classes.remove('')} catch(e) {errors.push(e.name)}; try {classes.supports('a')} catch(e) {errors.push(e.name)}; errors.join('|')+'|'+(classes.value===unchanged)",out));
+    CHECK(!std::strcmp(out,"InvalidCharacterError|SyntaxError|TypeError|true"));
+    CHECK(!eval(e,"el.id='renamed'; el.setAttribute('DATA-Y',null); el.removeAttribute('data-x'); [document.getElementById('target')===null,document.getElementById('renamed')===el,el.getAttribute('data-y'),el.hasAttribute('data-x'),el.toggleAttribute('hidden'),el.toggleAttribute('hidden',false)].join('|')",out));
+    CHECK(!std::strcmp(out,"true|true|null|false|true|false"));
+    CHECK(!eval(e,"var errors=[]; for (var name of ['', '9bad', 'a b', '\\u00e4']) {try {el.setAttribute(name,'x')} catch(e) {errors.push(e.name)}}; try {el.setAttribute('data-s',Symbol())} catch(e) {errors.push(e.name)}; errors.join('|')",out));
+    CHECK(!std::strcmp(out,"InvalidCharacterError|InvalidCharacterError|InvalidCharacterError|NotSupportedError|TypeError"));
+    CHECK(!eval(e,"__reistDOM.take()",out)); CHECK(std::strstr(out,"0000000100000004") && std::strstr(out,"0000000200000004"));
+    CHECK(!eval(e,"__reistDOM.sync('https://example.test/',[[9,0,0,2,0,'','','',undefined,[]],[1,1,1,3,0,'html','','',undefined,[]],[1,1,2,4,0,'body','','',undefined,[]],[1,1,3,0,0,'p','renamed','',undefined,[['id','renamed'],['class','next']]]],2); classes===el.classList && classes.item(0)==='next' && el===document.getElementById('renamed')",out));
+    CHECK(!std::strcmp(out,"true"));
+    CHECK(!eval(e,"document.body.textContent='detached'; el.classList.add('still-detached'); document.getElementById('renamed')===null && el.className==='next still-detached'",out));
+    CHECK(!std::strcmp(out,"true"));
+    CHECK(!eval(e,"el.removeAttribute('class'); classes.remove('absent'); var absent=!el.hasAttribute('class'); classes.add(); var emptyAbsent=!el.hasAttribute('class'); classes.value='a b'; var it=classes.values(); var a=it.next().value; classes.value='a c'; var c=it.next().value; it.next(); classes.add('d'); [absent,emptyAbsent,a,c,it.next().done,classes.contains('')].join('|')",out));
+    CHECK(!std::strcmp(out,"true|true|a|c|true|false"));
+    CHECK(!eval(e,"el.classList='x y'; var seen=''; classes.forEach(function(v,i,l) {seen+=v+i+(l===classes)}); seen+'|'+String(classes)",out));
+    CHECK(!std::strcmp(out,"x0truey1true|x y"));
+    CHECK(!eval(e,"[classes.toggle('z',undefined),classes.toggle('z',undefined),el.toggleAttribute('hidden',undefined),el.toggleAttribute('hidden',undefined)].join('|')",out));
+    CHECK(!std::strcmp(out,"true|false|true|false"));
+    CHECK(!eval(e,"var arity=[]; try {el.setAttribute('bad')} catch(e) {arity.push(e.name)}; try {classes.item(1n)} catch(e) {arity.push(e.name)}; try {classes.replace('x')} catch(e) {arity.push(e.name)}; arity.join('|')+'|'+el.hasAttribute('bad')",out));
+    CHECK(!std::strcmp(out,"TypeError|TypeError|TypeError|false"));
+    CHECK(!eval(e,"__reistDOM.take(); try { el.className=Array.from({length:1025},function(_,i){return 'x'+i}).join(' '); classes.length } catch(e) {}",out));
+    CHECK(eval(e,"__reistDOM.take()",out)==REIST_JS_EXCEPTION);
+    reist_js_destroy(&e); CHECK(!e); e=reist_js_create(&cfg,&status); CHECK(e && !status);
+    CHECK(!eval(e,source,out));
+    CHECK(!eval(e,"__reistDOM.sync('',[[9,0,0,2,0,'','',''],[1,1,1,0,0,'p','target','']]); globalThis.saved=document.getElementById('target')",out));
     CHECK(!eval(e,"__reistDOM.take(); try { saved.textContent='x'.repeat(40000) } catch(e) {}",out));
     CHECK(eval(e,"__reistDOM.take()",out)==REIST_JS_EXCEPTION);
     reist_js_destroy(&e); CHECK(!e); std::puts("BROWSER_BINDING_OK"); return 0;

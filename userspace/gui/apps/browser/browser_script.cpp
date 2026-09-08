@@ -9,7 +9,7 @@ __asm__(".pushsection .rodata.browser_dom,\"a\",@progbits\n"
         ".global browser_dom_end\nbrowser_dom_end:\n.popsection\n");
 #endif
 extern "C" const char browser_dom_data[],browser_dom_end[];
-struct script_record { uint32_t source_offset,source_length,patch_offset,patch_length; };
+struct script_record { uint32_t source_offset,source_length,patch_offset,patch_length,version; };
 struct script_journal {
     uint32_t count,source_bytes,patch_bytes,complete;
     script_record records[BROWSER_SCRIPT_COUNT];
@@ -26,6 +26,7 @@ struct browser_script_owner {
     // 5 author script, 6 journal, 7 response transfer.
     unsigned phase=0;
     uint32_t fixture=0,executions=0;
+    uint32_t profile=0;
     int error=0,reflow=0,deny=0;
     static void clear(script_journal *j) { if(j) j->count=j->source_bytes=j->patch_bytes=j->complete=0; }
     void cancel() {
@@ -53,10 +54,13 @@ struct browser_script_owner {
     int admitted() {
         memcpy(&message,wire,sizeof(message));
         if(browser_script_message_valid(&message,total,&parser,pid,generation,ordinal+1,0)) return fail(-84);
+        if(profile && profile!=message.version) return fail(-84);
+        profile=message.version;
         const char *source=wire+sizeof(message)+message.snapshot_length;
         if(current && ordinal<current->count) {
             const script_record &r=current->records[ordinal];
-            if(r.source_length!=message.source_length || memcmp(current->source+r.source_offset,source,r.source_length)) return fail(-84);
+            if(r.version!=message.version || r.source_length!=message.source_length ||
+               memcmp(current->source+r.source_offset,source,r.source_length)) return fail(-84);
             return reply(current->patches+r.patch_offset,r.patch_length);
         }
         if(reflow || (current && current->complete)) return fail(-84);
@@ -78,10 +82,10 @@ struct browser_script_owner {
     }
     int save(uint32_t size) {
         browser_script_mutation_t mutations[BROWSER_SCRIPT_MUTATIONS]; uint32_t count=0,bytes=0;
-        if(browser_script_journal(output,size,mutations,&count,&bytes) || !current ||
+        if(browser_script_journal_version(output,size,message.version,mutations,&count,&bytes) || !current ||
             ordinal!=current->count || size>BROWSER_SCRIPT_JOURNAL-current->patch_bytes) return fail(-84);
         script_record &r=current->records[ordinal];
-        r={current->source_bytes,message.source_length,current->patch_bytes,size};
+        r={current->source_bytes,message.source_length,current->patch_bytes,size,message.version};
         memcpy(current->source+r.source_offset,wire+sizeof(message)+message.snapshot_length,r.source_length);
         if(size) memcpy(current->patches+r.patch_offset,output,size);
         current->source_bytes+=r.source_length; current->patch_bytes+=size; ++current->count;
@@ -115,7 +119,7 @@ extern "C" int browser_script_has_active(const browser_script_owner *s) { return
 extern "C" int browser_script_prepare(browser_script_owner *s,const browser_html_header_t *request,int reflow) {
     if(!s || !request || s->phase || s->endpoint || s->js.busy() || s->js.state()==JsSession::State::stranded) return -84;
     s->parser=*request; s->reflow=!!reflow; s->current=reflow?s->active:s->candidate;
-    s->pid=s->generation=s->ordinal=s->received=s->total=0; s->error=0;
+    s->pid=s->generation=s->ordinal=s->received=s->total=s->profile=0; s->error=0;
     return x86os_ipc_create(&s->endpoint);
 }
 extern "C" int browser_script_bind(browser_script_owner *s,uint32_t pid,uint32_t generation) {

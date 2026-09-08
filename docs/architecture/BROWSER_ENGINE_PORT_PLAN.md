@@ -2,6 +2,16 @@
 
 Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 
+Fortsetzung8 September, R3.26 abgenommen: HTML-Attribute mit get/set/remove/
+toggle, id/className und live classList sind an den echten Baum gebunden.
+Version2-Journal erweitert die bestehende Dokumentgrenze; CSS sieht reale
+Attribute, Reflow fuehrt keine Skripte erneut aus.58 Hostfaelle, beide Images,
+sichtbarer CSS-Wechsel samt Fault/Hang/Recovery und unveraenderter Inputgast
+bestehen. Kein Kernel-/Engine-/Budgetumbau. Externe Skripte, Events/Timer,
+Selektoren/CSSOM und weitere Web-APIs bleiben die offenen Browserschnitte;
+kein allgemeiner Website-Kompatibilitaetsclaim. Grenzen/Belege in
+BROWSER_SCRIPTING_CONTRACT.md und CURRENT_WORK.
+
 Aktueller Stand 7. September, R3.25: JavaScript ist im Browser aktiviert,
 nicht nur als SDK verfuegbar. Klassische Inline-Skripte laufen parsergeordnet
 im direkt besessenen JSWORK; title/getElementById/body/textContent sind mit

@@ -23,10 +23,10 @@ static int execute(void *unused,node *element) {
     if(!scripting.buffer) return -12;
     browser_script_message_t *h=(browser_script_message_t *)scripting.buffer;
     char *data=scripting.buffer+sizeof(*h); uint32_t snapshot=0,source=0;
-    int rc=browser_html_script_snapshot(element,scripting.url,data,
-        BROWSER_SCRIPT_SNAPSHOT+BROWSER_SCRIPT_SOURCE,&snapshot,&source);
+    int rc=browser_html_script_snapshot_version(element,scripting.url,data,
+        BROWSER_SCRIPT_SNAPSHOT+BROWSER_SCRIPT_SOURCE,&snapshot,&source,BROWSER_SCRIPT_ATTRIBUTE_VERSION);
     if(rc) return rc;
-    *h=(browser_script_message_t){BROWSER_SCRIPT_MAGIC,1,sizeof(*h)+snapshot+source,
+    *h=(browser_script_message_t){BROWSER_SCRIPT_MAGIC,BROWSER_SCRIPT_ATTRIBUTE_VERSION,sizeof(*h)+snapshot+source,
         scripting.request.request,scripting.request.parent_pid,scripting.request.parent_generation,
         (uint32_t)scripting.identity.pid,scripting.identity.generation,++scripting.ordinal,snapshot,source,0};
     for(uint32_t offset=0;offset<h->size;) {
@@ -50,8 +50,8 @@ static int execute(void *unused,node *element) {
             sizeof(*h)+BROWSER_SCRIPT_RESULT-1,&offset,&total)) return -84;
     } while(offset<total);
     if(browser_script_message_valid(h,total,&scripting.request,(uint32_t)scripting.identity.pid,
-        scripting.identity.generation,scripting.ordinal,1)) return -84;
-    return browser_html_script_apply(data,h->source_length);
+        scripting.identity.generation,scripting.ordinal,1) || h->version!=BROWSER_SCRIPT_ATTRIBUTE_VERSION) return -84;
+    return browser_html_script_apply_version(data,h->source_length,h->version);
 }
 int browser_html_script_setup(uint32_t outgoing,uint32_t incoming,const browser_html_header_t *h,uint32_t deadline,const char *url) {
     if(!h || !outgoing || !incoming || outgoing==incoming || !url || scripting.buffer ||

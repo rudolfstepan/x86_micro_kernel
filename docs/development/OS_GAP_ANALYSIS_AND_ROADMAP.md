@@ -2,6 +2,15 @@
 
 Stand: 3. September 2026
 
+8. September, R3.26 abgenommen: JavaScript liest/aendert HTML-Attribute,
+id/className und live classList; Profil2-Journal wird vollstaendig vor
+Baumaenderungen validiert und profil-/quelltextgenau wiedergegeben.
+58 Hostfaelle, VMware18s/QEMU71s, Imageguard0.998s, echter CSS-/JavaScript-
+Gast92.664s und unveraenderter Browser-Inputgast76.276s bestehen.
+Kernel-/Benchmark-/JSWORK-Bytes und Schutzbudgets unveraendert. Externe
+Skripte, Events/Timer und weitere DOM-/Web-APIs sind weiterhin offen.
+Grenzen in BROWSER_SCRIPTING_CONTRACT.md, Belegkarte in CURRENT_WORK.
+
 7. September, R3.25 abgenommen: echte Inline-JavaScript-Aktivierung im
 Browser auf der akzeptierten JSWORK-Grenze, parsergeordnete DOM-Text-/Titel-
 Aenderungen, gleichbleibende Objektidentitaeten, quelltextgenauer Reflow,

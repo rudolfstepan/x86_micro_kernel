@@ -149,6 +149,11 @@ static hubbub_error clone_at(node *source, node **out, bool deep, uint32_t depth
         attribute *b=&tree.attributes[tree.attribute_count++];
         *b=*a; b->next=n->attributes; n->attributes=b;
     }
+    if(script_hook) { /* Script-visible clones retain attribute order. */
+        attribute *a=n->attributes,*previous=NULL;
+        while(a) { attribute *next=a->next; a->next=previous; previous=a; a=next; }
+        n->attributes=previous;
+    }
     if (deep) for (node *child=source->first; child; child=child->next) {
         node *cloned; void *added;
         if (clone_at(child,&cloned,true,depth+1)!=HUBBUB_OK ||
@@ -422,10 +427,10 @@ static int script_string(script_writer *w,const char *data,size_t size) {
     return script_bytes(w,"\"",1);
 }
 static uint32_t script_id(node *n) { return n ? (uint32_t)(n-tree.nodes)+1 : 0; }
-int browser_html_script_snapshot(node *script_node,const char *url,char *output,uint32_t capacity,
-    uint32_t *snapshot_size,uint32_t *source_size) {
+int browser_html_script_snapshot_version(node *script_node,const char *url,char *output,uint32_t capacity,
+    uint32_t *snapshot_size,uint32_t *source_size,uint32_t version) {
     if(!tree.extended || !script_node || !url || !output || !snapshot_size || !source_size ||
-       capacity<BROWSER_SCRIPT_SNAPSHOT) return -22;
+       capacity<BROWSER_SCRIPT_SNAPSHOT || (version!=1 && version!=2)) return -22;
     script_writer w={output,0,BROWSER_SCRIPT_SNAPSHOT};
     if(script_bytes(&w,"__reistDOM.sync(",16) || script_string(&w,url,strlen(url)) || script_bytes(&w,",[",2)) return -28;
     for(uint32_t i=0;i<tree.count;++i) {
@@ -436,15 +441,38 @@ int browser_html_script_snapshot(node *script_node,const char *url,char *output,
         for(unsigned j=0;j<5;++j) if(script_number(&w,fields[j]) || script_bytes(&w,",",1)) return -28;
         if(script_string(&w,n->name?n->name:"",n->name?strlen(n->name):0) || script_bytes(&w,",",1) ||
            script_string(&w,id,strlen(id)) || script_bytes(&w,",",1) ||
-           script_string(&w,n->text?n->text:"",n->text?n->length:0) || script_bytes(&w,"]",1)) return -28;
+           script_string(&w,n->text?n->text:"",n->text?n->length:0)) return -28;
+        if(version==2) {
+            if(script_bytes(&w,",void 0,[",9)) return -28;
+            /* Attribute links are newest-first; emit source/insertion order.
+             * Pool allocation order is stable, including removed slots. No
+             * quadratic reverse traversal or large native stack allocation. */
+            uint32_t first=w.at;
+            for(attribute *a=n->attributes;a;a=a->next) {
+                uint32_t start=w.at;
+                if(script_bytes(&w,"[",1) || script_string(&w,a->name,strlen(a->name)) || script_bytes(&w,",",1) ||
+                   script_string(&w,a->value,strlen(a->value)) || script_bytes(&w,"],",2)) return -28;
+                /* Reverse bytes of each record, then reverse the whole group. */
+                for(uint32_t lo=start,hi=w.at-2;lo<hi;++lo,--hi) { char c=w.data[lo];w.data[lo]=w.data[hi];w.data[hi]=c; }
+            }
+            if(w.at>first) {
+                --w.at;
+                for(uint32_t lo=first,hi=w.at-1;lo<hi;++lo,--hi) { char c=w.data[lo];w.data[lo]=w.data[hi];w.data[hi]=c; }
+            }
+            if(script_bytes(&w,"]",1)) return -28;
+        }
+        if(script_bytes(&w,"]",1)) return -28;
     }
-    if(script_bytes(&w,"]);",3)) return -28;
+    if(script_bytes(&w,version==2?"],2);":"]);",version==2?5:3)) return -28;
     *snapshot_size=w.at; w.capacity=capacity;
     for(node *n=script_node->first;n;n=n->next) {
         if(n->kind!=3 || script_bytes(&w,n->text,n->length)) return -28;
     }
     *source_size=w.at-*snapshot_size;
     return *source_size<=BROWSER_SCRIPT_SOURCE ? 0 : -28;
+}
+int browser_html_script_snapshot(node *n,const char *url,char *output,uint32_t capacity,uint32_t *snapshot,uint32_t *source) {
+    return browser_html_script_snapshot_version(n,url,output,capacity,snapshot,source,1);
 }
 static node *script_find(node *root,const char *name) {
     node *n=root; uint32_t visited=0;
@@ -457,24 +485,47 @@ static node *script_find(node *root,const char *name) {
     }
     return NULL;
 }
-int browser_html_script_apply(const char *journal,uint32_t size) {
+int browser_html_script_apply_version(const char *journal,uint32_t size,uint32_t version) {
     browser_script_mutation_t items[BROWSER_SCRIPT_MUTATIONS]; uint32_t count=0,bytes=0;
-    if(!tree.extended || browser_script_journal(journal,size,items,&count,&bytes)) return -84;
+    if(!tree.extended || browser_script_journal_version(journal,size,version,items,&count,&bytes)) return -84;
     /* Reserve all cumulative work, strings and retired-node slots before the
      * first mutation. Detached nodes are never recycled into stale JS IDs. */
-    if(count>(tree.node_limit-tree.count)/3 || bytes+count*20>tree.string_limit-tree.used ||
-       (count && (tree.count*2+12)>(tree.work_limit-tree.work)/count)) return -28;
+    uint32_t text_count=0,attribute_count=0;
+    for(uint32_t i=0;i<count;++i) { if(!items[i].operation) ++text_count; else ++attribute_count; }
+    uint32_t work=tree.count*2+12+(attribute_count?tree.attribute_count+count:0);
+    if(text_count>(tree.node_limit-tree.count)/3 || bytes+count*20>tree.string_limit-tree.used ||
+       attribute_count>tree.attribute_limit-tree.attribute_count ||
+       (count && work>(tree.work_limit-tree.work)/count)) return -28;
     node *head=NULL;
     for(uint32_t i=0;i<count;++i) {
         if(items[i].node) {
             if(items[i].node>tree.count || tree.nodes[items[i].node-1].kind!=1) return -84;
+            if(items[i].operation && tree.nodes[items[i].node-1].ns!=HUBBUB_NS_HTML) return -84;
         } else {
             head=script_find(&tree.nodes[0],"head"); if(!head) return -84;
         }
     }
-    tree.work+=count*tree.count*2;
+    tree.work+=count*(work-12);
     for(uint32_t i=0;i<count;++i) {
         browser_script_mutation_t *item=&items[i];
+        if(item->operation) {
+            node *target=&tree.nodes[item->node-1];
+            char name[BROWSER_SCRIPT_ATTRIBUTE_NAME+1];
+            (void)browser_script_unhex(journal+item->name_offset,item->name_length,name); name[item->name_length]=0;
+            attribute **link=&target->attributes;
+            while(*link && strcmp((*link)->name,name)) link=&(*link)->next;
+            if(item->operation==2) { if(*link) *link=(*link)->next; continue; }
+            attribute *a=*link;
+            if(!a) {
+                a=&tree.attributes[tree.attribute_count++];
+                a->name=copy((const uint8_t *)name,item->name_length);
+                a->next=target->attributes; target->attributes=a;
+            }
+            a->value=tree.strings+tree.used;
+            (void)browser_script_unhex(journal+item->offset,item->length,a->value);
+            a->value[item->length]=0; tree.used+=item->length+1;
+            continue;
+        }
         node *target=item->node ? &tree.nodes[item->node-1] : script_find(&tree.nodes[0],"title");
         if(!target) {
             target=create(1); if(!target) return -28;
@@ -493,3 +544,4 @@ int browser_html_script_apply(const char *journal,uint32_t size) {
     }
     return 0;
 }
+int browser_html_script_apply(const char *journal,uint32_t size) { return browser_html_script_apply_version(journal,size,1); }

@@ -2,6 +2,10 @@
 static unsigned script_calls;
 static char script_snapshot[2U*1024U*1024U];
 static node *script_target,*script_root;
+static const char *script_attribute(node *n,const char *name) {
+    for(attribute *a=n->attributes;a;a=a->next) if(!strcmp(a->name,name)) return a->value;
+    return NULL;
+}
 static node *script_by_id(node *n,const char *id) {
     if(n->kind==1) for(attribute *a=n->attributes;a;a=a->next)
         if(!strcmp(a->name,"id") && !strcmp(a->value,id)) return n;
@@ -30,6 +34,26 @@ static int script_test_hook(void *unused,node *n) {
         assert(script_target->first!=before && !before->parent);
         assert(!strcmp(script_target->first->text,"<&>A") && !script_target->first->next);
     } else assert(!strcmp(script_target->first->text,"<&>A"));
+    if(!script_calls) {
+        uint32_t id=(uint32_t)(script_target-script_root)+1;
+        char valid[256],bad[512];
+        snprintf(valid,sizeof(valid),"00000001%08x0000000500000004636c617373676f6f64"
+            "00000001%08x0000000200000005637376616c7565",id,id); /* class=good, cs=value */
+        snprintf(bad,sizeof(bad),"%s00000003000000010000000000000000",valid);
+        assert(browser_html_script_apply_version(bad,(uint32_t)strlen(bad),2)<0);
+        assert(!script_attribute(script_target,"class"));
+        assert(!browser_html_script_apply_version(valid,(uint32_t)strlen(valid),2));
+        assert(!strcmp(script_attribute(script_target,"class"),"good") && !strcmp(script_attribute(script_target,"cs"),"value"));
+        snprintf(valid,sizeof(valid),"00000002%08x00000002000000006373",id);
+        assert(!browser_html_script_apply_version(valid,(uint32_t)strlen(valid),2));
+        assert(!script_attribute(script_target,"cs"));
+        assert(!browser_html_script_snapshot_version(n,"https://example.test/",script_snapshot,sizeof(script_snapshot),&snapshot,&source,2));
+        script_snapshot[snapshot]=0;
+        assert(find(script_snapshot,"[\"id\",\"target\"],[\"class\",\"good\"]"));
+        snprintf(valid,sizeof(valid),"00000001%08x00000002000000056f4e76616c7565",id); /* uppercase wire name */
+        assert(browser_html_script_apply_version(valid,(uint32_t)strlen(valid),2)<0);
+        assert(!script_attribute(script_target,"oN"));
+    } else assert(!strcmp(script_attribute(script_target,"class"),"good"));
     ++script_calls; return 0;
 }
 static void script_dom_test(void) {

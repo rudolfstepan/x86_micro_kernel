@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.26-browser-dom-attributes"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 next_user_request = "2026-09-08: Continue useful browser JavaScript after2d6aba16. Extend the accepted document mutation boundary with real HTML attributes, id/className/classList and CSS-visible changes, preserving parser order, source-exact replay and worker containment. R3.6b remains deferred. Main interactive worktree only; no agents/push."
 
 [policy]
@@ -13,7 +13,8 @@ push = false
 
 [[packages]]
 id = "R3.26-browser-dom-attributes"
-status = "active"
+status = "done"
+completion_summary = "2026-09-08: Direct visible-worktree acceptance on2d6aba16, contract b6bb3d6b. Real HTML attribute reads/set/remove/toggle, writable id/className and live classList methods/iteration, profile2 ordered attribute snapshots and all-before-apply UTF8/name/node/namespace/quota journal, source/profile-exact replay.58 distinct host cases pass; final binding O0/O2 including WebIDL undefined/arity/BigInt and poison quotas40.329s, parser5.305s,CSS58.612s, service/navigation/runtime/GUI/benchmark all pass. VMware18s/QEMU71s, actual image guard0.998s, real JS browser92.664s with CSS green scanout on initial/reflow/recovery, no extra author evaluation, fresh navigation and native fault/noncooperative hang containment; unchanged input/edit/navigation/crash/restart/console76.276s passes. Both kernels and GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK byte-identical to baseline. BROWSER2838556 bytes bcf3c72462b9965605fe252a5f0c78eac42c806f310d71a554b07489d999b3db, HTMLWORK854060 bytes ceefae4746a906e48aae4c3ababd7d39f47a22525b385f6014a87ea851956658. Reference image copies/hashes, actual screenshots and all development failures retained under r326-dom-attributes; gate map in CURRENT_WORK. Deep helper/native-iterator chains flattened to preserve16KiB stack; parser host uses existing find helper instead of unavailable strstr; cached diagnostic link corrected to omit duplicate cache objects. No gates/quotas/authority relaxed, no kernel/SDK/engine changes, external scripts/events/timers/CSSOM/selector or broad compatibility/performance claim. Formal queue advances only to deferredR3.6b, not implemented."
 phase = "post-s0"
 risk = "high"
 title = "JavaScript HTML attributes and live CSS classes"
@@ -1934,7 +1935,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

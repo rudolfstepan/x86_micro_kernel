@@ -2,14 +2,84 @@
 
 Stand: 8. September 2026
 
-## R3.26 aktiv: JavaScript-Attribute und CSS-Klassen
+## R3.26 abgenommen: JavaScript-Attribute und CSS-Klassen
 
 Fortsetzung auf2d6aba16 im sichtbaren Hauptworktree. Eingefrorene Erweiterung
 des bestehenden Dokument-/Mutationsvertrags: HTML-Attribute, id/className,
 live classList, versioniertes Journal und echte CSS-Darstellung. Keine neue
 Worker-/Netzautoritaet, keine Kernel-/Engineaenderung und keine Agenten.
 Scope/Gates in der Queue, Grenzen in BROWSER_SCRIPTING_CONTRACT.md.
-R3.6b bleibt mit unveraenderten Anforderungen zurueckgestellt.
+Vertragscommit: `b6bb3d6b`. Alle eingefrorenen Gates bestehen; die Queue
+schaltet nur formal auf R3.6b weiter. Dessen offene VMware-Abnahme wird nicht
+vorgezogen; der Browser behaelt den dokumentierten Benutzervorrang.
+
+Neu: getAttribute/getAttributeNames/hasAttribute/hasAttributes,
+setAttribute/removeAttribute/toggleAttribute, schreibbare id/className und
+live classList mit add/remove/toggle/replace/value/item/length/Iteration.
+Die private Nachricht bleibt48Bytes, ihr explizites Profil2 transportiert
+versionierte Attributjournale; Profil1 behaelt Text/Titel-Grammatik und
+read-only id. Parser prueft das gesamte Journal und die kumulierten Reserven
+vor der ersten Aenderung. Das Replay bindet Profil, Quelltext und Reihenfolge.
+Entfernte Knoten und Klassenwrapper bleiben identitaetsstabil; keine neue
+Skript-, Netz-, Kernel- oder Geraeteautoritaet.
+
+Der echte Gast zeigt auf `/htdocs/javascript.htm` jetzt gruenen Text durch
+eine per JavaScript gesetzte CSS-Klasse. ID und data-Attribut wechseln zwischen
+zwei Parser-Callbacks; eine gesetzte style-Eigenschaft wird wieder entfernt.
+Fuenf verschiedene JSWORK-Identitaeten,2/2/3/5 Auswertungen bei Erstaufruf,
+Reflow, Navigation und Recovery; echte Fault-Adresse4 und nichtkooperativer
+Hang, alte Seite/Titel bei Fehlern und Browser-/Desktop-Neustart bestehen.
+Der Screenshot `guest-dom.png` wurde auch visuell geprueft. Kein neuer
+Durchsatz-/WCET-Nachweis; geschuetzte Binaerdateien bleiben bytegleich.
+
+### Abnahmekarte R3.26
+
+Logs unter `build/codex-agent/r326-dom-attributes/`; Kommandos exakt wie in
+der Queue, Hosttests jeweils `python test/<Name>.py -v`:
+
+| Gate | Ergebnis / Zeit | Beleg |
+| --- | --- | --- |
+| test_browser_scripting |3 PASS /52.722s; betroffener finaler Bindingfall O0/O2 PASS /40.329s | scripting-gate-final.log, binding-webidl-final.log |
+| test_html_engine |1 PASS /5.305s | html-gate-fixed.log |
+| test_css_engine |1 PASS /58.612s | css-gate.log |
+| test_js_service |3 PASS /3.802s | test_js_service.log |
+| test_browser_navigation_source |4 PASS /1.497s | test_browser_navigation_source.log |
+| test_browser_runtime_source |29 PASS /9.192s | test_browser_runtime_source.log |
+| test_gui_browser_source |8 PASS /37.732s | test_gui_browser_source.log |
+| test_benchmark_source |9 PASS /0.011s | test_benchmark_source.log |
+| test-reist-package vmware/vga |PASS /18s | vmware-gate.log, ../20260908-074854-package-vmware-vga.log |
+| test-reist-package qemu/vga |PASS /71s | qemu-gate.log, ../20260908-075003-package-qemu-vga.log |
+| run_qemu_browser_scripting --verify-artifacts |PASS /0.998s | artifacts.json |
+| run_qemu_browser_scripting Gast |PASS /92.664s | guest-gate.log, guest.log, guest-*.ppm |
+| test-reist-runtime runtime-desktop-browser-input |PASS /76.276s (Wrapper) | input-gate.log, input.browser.log |
+
+58 verschiedene Hostfaelle, keine Mehrfachzaehlung korrigierter Wiederholungen.
+Erstfehler bleiben erhalten: `html-gate.log` verwendete im neuen Test ein
+nicht deklariertes strstr; auf vorhandenes find umgestellt. `scripting-gate.log`
+und `binding-flat-*.log` zeigen zu tiefe Helfer-/native Iterator-Aufrufketten.
+Die Adapter wurden abgeflacht;16KiB Engine-Stack und alle bestehenden
+Assertions bleiben erhalten. `binding-diagnostic.log` ist ein gescheiterter
+beschleunigter Diagnoselink mit doppelt ausgewaehlten Cache-Objekten, korrigiert
+durch Auswahl nur der fertigen Objektdateien. Kein Hostdialog/Agent/Push und
+keine Lockerung eines Gates. Web-IDL-Regressionen fuer optionales undefined,
+fehlende Argumente und BigInt-Index sind zusaetzlich abgedeckt.
+
+Akzeptierte Images samt BROWSER/HTMLWORK-Kopien liegen in `reference-qemu/`
+und `reference-vmware/`. SHA256 wurde nach dem Kopieren verglichen:
+
+- QEMU: `e88224a7b6ca9cac30e3506cd9090abf76c7efc78f10941299e3e5a6e37b2878`.
+- VMware flat: `d0eecc31314ab717362dc01c05c8197df29f7a903f8322963989f7577f255f08`.
+- BROWSER2838556Bytes: `bcf3c72462b9965605fe252a5f0c78eac42c806f310d71a554b07489d999b3db`.
+- HTMLWORK854060Bytes: `ceefae4746a906e48aae4c3ababd7d39f47a22525b385f6014a87ea851956658`.
+
+Der Imageguard verwendet die weiter gueltigen geschuetzten SHA256-Werte aus
+4b2b3302, die auch im unmittelbaren Elternstand2d6aba16 identisch sind:
+beide Kernel, GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK unveraendert.
+Die vorherigen R3.25-Images und Fehlerbelege bleiben erhalten.
+Grenzen: HTML-only Attributadapter, ASCII-XML-Namen bis255Bytes, benannte
+Error-Instanzen statt voller DOMException, item()/Iteration statt numerischer
+classList-Exoten. Externe/module Skripte, Events/Timer, Selektoren und CSSOM
+bleiben offen; keine Zusage allgemeiner moderner Website-Kompatibilitaet.
 
 ## R3.25 abgenommen: JavaScript im tatsaechlichen Browser
 

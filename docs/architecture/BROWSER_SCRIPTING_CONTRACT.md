@@ -4,8 +4,9 @@
 
 Frozen8 September2026 on2d6aba16 before implementation. One extension of
 the existing candidate-tree publication boundary, not a new event lifetime.
-Reference: [WHATWG Element attributes](https://dom.spec.whatwg.org/#interface-element)
-and [DOMTokenList](https://dom.spec.whatwg.org/#interface-domtokenlist).
+Reference: [WHATWG Element attributes](https://dom.spec.whatwg.org/#interface-element),
+[DOMTokenList](https://dom.spec.whatwg.org/#interface-domtokenlist) and
+[Web IDL argument conversion](https://webidl.spec.whatwg.org/#es-overloads).
 Implement getAttribute/getAttributeNames/hasAttribute/hasAttributes,
 setAttribute/removeAttribute/toggleAttribute, writable id/className and live
 classList length/item/contains/add/remove/toggle/replace/value/stringification
@@ -17,7 +18,7 @@ mutated attributes (including style strings); no private styling bypass.
 
 Deliberate bounded adapter: HTML elements only for attribute operations,
 no namespace APIs/SVGAnimatedString/NamedNodeMap, CSSOM or selector engine.
-New attribute names use the ASCII XML Name subset, at most255 bytes; unsupported
+Attribute writes/removal use the ASCII XML Name subset, at most255 bytes; unsupported
 non-ASCII names throw a named NotSupportedError, malformed names an
 InvalidCharacterError. Errors are ordinary Error instances with standard error
 names, not a claimed DOMException implementation. Class token count<=1024,

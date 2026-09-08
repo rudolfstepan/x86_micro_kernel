@@ -9,7 +9,7 @@ def validate_transcript(text):
     markers=['BROWSER_SCRIPT_DOM_OK','BROWSER_SCRIPT_REFLOW_OK','BROWSER_SCRIPT_NAVIGATION_OK',
         'JS_SERVICE_HANG_ENTERED','BROWSER_SCRIPT_HANG_CONTAINED_OK','JS_SERVICE_FAULT_ENTERED',
         'BROWSER_SCRIPT_FAULT_CONTAINED_OK','BROWSER_SCRIPT_RECOVERY_OK','HOST_BROWSER_SCRIPT_TITLE_PIXELS_OK','BROWSER_CLOSE_OK',
-        'HOST_BROWSER_SCRIPT_RESTART_OK']
+        'HOST_BROWSER_SCRIPT_RESTART_OK','HOST_BROWSER_SCRIPT_ATTRIBUTE_PIXELS_OK']
     at=0
     for marker in markers:
         found=text.find(marker,at)
@@ -54,7 +54,11 @@ def probe(process,output,transcript,screenshot,deadline,monitor):
     wait(r'BROWSER_INPUT_READY\r?\n'); monitor.key('j')
     ready=wait(r'BROWSER_SCRIPT_DOM_OK executions=2 width=(\d+) height=(\d+)\r?\n')
     width,height=map(int,ready.groups())
-    capture('dom',deadline)
+    def attribute_pixels(ppm,expected):
+        green=ppm[2].count(bytes.fromhex('127a31'))
+        if (green>=64)!=expected or ppm[2].count(bytes.fromhex('b21b25')):
+            raise RuntimeError('scripted CSS attribute pixels mismatch')
+    ppm,_=capture('dom',deadline); attribute_pixels(ppm,True)
     # Focus pixels identify the actual client origin; real PS/2 drag then
     # crosses compositor configure -> isolated parser -> accepted replay.
     monitor.key('ret')
@@ -75,7 +79,7 @@ def probe(process,output,transcript,screenshot,deadline,monitor):
     monitor.mouse(process,'mouse_button 1'); time.sleep(.12)
     desktop.shortcut_probe_move_mouse(process,pointer,corner[0]-64,corner[1]-32,monitor=monitor.mouse)
     time.sleep(.12); monitor.mouse(process,'mouse_button 0')
-    wait(r'BROWSER_SCRIPT_REFLOW_OK executions=2'); capture('reflow',deadline)
+    wait(r'BROWSER_SCRIPT_REFLOW_OK executions=2'); ppm,_=capture('reflow',deadline); attribute_pixels(ppm,True)
     fresh_title=None
     for key,marker in [('n','NAVIGATION_OK executions=3'),('h','HANG_CONTAINED_OK'),
                        ('f','FAULT_CONTAINED_OK'),('r','RECOVERY_OK executions=5')]:
@@ -88,6 +92,7 @@ def probe(process,output,transcript,screenshot,deadline,monitor):
             time.sleep(.01)
         else: raise RuntimeError('script title scanout mismatch '+key)
         if key=='n': fresh_title=current_title
+        attribute_pixels(ppm,key=='r')
     transcript.append('HOST_BROWSER_SCRIPT_TITLE_PIXELS_OK\n')
     monitor.key('esc'); wait('BROWSER_CLOSE_OK'); wait('TERMINAL_INPUT_IDLE')
     exit_desktop('exit-first'); wait('DESKTOP_EXIT_OK')
@@ -96,7 +101,8 @@ def probe(process,output,transcript,screenshot,deadline,monitor):
     offset=len(''.join(transcript)); desktop.send_command(process,'desktop.prg --browser-input-probe')
     wait('BROWSER_INPUT_READY',offset); monitor.key('esc'); wait('BROWSER_CLOSE_OK',offset)
     exit_desktop('exit-second'); wait('DESKTOP_EXIT_OK',offset)
-    transcript.append('HOST_BROWSER_SCRIPT_RESTART_OK\n'); validate_transcript(''.join(transcript))
+    transcript.append('HOST_BROWSER_SCRIPT_RESTART_OK\nHOST_BROWSER_SCRIPT_ATTRIBUTE_PIXELS_OK\n')
+    validate_transcript(''.join(transcript))
     print('BROWSER_SCRIPT_RUNTIME PASS DOM-reflow-navigation-hang-fault-recovery-restart')
     return 0
 

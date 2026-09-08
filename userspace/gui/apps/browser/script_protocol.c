@@ -2,7 +2,8 @@
 int browser_script_message_valid(const browser_script_message_t *m,size_t size,const browser_html_header_t *h,
     uint32_t pid,uint32_t generation,uint32_t ordinal,int reply) {
     if(!m || !h || size<sizeof(*m) || (reply!=0 && reply!=1) ||
-       m->magic!=(reply?BROWSER_SCRIPT_REPLY:BROWSER_SCRIPT_MAGIC) || m->version!=1 || m->size!=size ||
+       m->magic!=(reply?BROWSER_SCRIPT_REPLY:BROWSER_SCRIPT_MAGIC) ||
+       (m->version!=1 && m->version!=BROWSER_SCRIPT_ATTRIBUTE_VERSION) || m->size!=size ||
        m->request!=h->request || !m->request || m->parent_pid!=h->parent_pid ||
        m->parent_generation!=h->parent_generation || !m->parent_pid || !m->parent_generation ||
        m->child_pid!=pid || m->child_generation!=generation || !pid || !generation || pid==m->parent_pid ||
@@ -24,14 +25,39 @@ int browser_script_unhex(const char *s,uint32_t length,char *out) {
     }
     return 0;
 }
-int browser_script_journal(const char *data,size_t size,browser_script_mutation_t *items,uint32_t *count,uint32_t *bytes) {
-    if(!data || !items || !count || !bytes || size>=BROWSER_SCRIPT_RESULT) return -84;
+int browser_script_attribute_name(const char *s,uint32_t length) {
+    if(!s || !length || length>BROWSER_SCRIPT_ATTRIBUTE_NAME) return -84;
+    for(uint32_t i=0;i<length;++i) {
+        unsigned char c=(unsigned char)s[i];
+        if(!((c>='a' && c<='z') || c=='_' || c==':' ||
+             (i && ((c>='0' && c<='9') || c=='-' || c=='.')))) return -84;
+    }
+    return 0;
+}
+int browser_script_journal_version(const char *data,size_t size,uint32_t version,
+    browser_script_mutation_t *items,uint32_t *count,uint32_t *bytes) {
+    if(!data || !items || !count || !bytes || size>=BROWSER_SCRIPT_RESULT || (version!=1 && version!=2)) return -84;
     uint32_t at=0,n=0,total=0;
     while(at<size) {
-        uint32_t id,length;
-        if(n==BROWSER_SCRIPT_MUTATIONS || size-at<16 || word(data+at,&id) || word(data+at+8,&length) ||
-           id>8192 || length>(size-at-16)/2) return -84;
-        at+=16;
+        uint32_t id,length,operation=0,name_length=0,header=version==1?16:32;
+        if(n==BROWSER_SCRIPT_MUTATIONS || size-at<header) return -84;
+        if(version==1) {
+            if(word(data+at,&id) || word(data+at+8,&length)) return -84;
+        } else {
+            if(word(data+at,&operation) || word(data+at+8,&id) || word(data+at+16,&name_length) ||
+               word(data+at+24,&length) || operation>2 ||
+               (!operation && name_length) || (operation && (!id || !name_length)) ||
+               (operation==2 && length)) return -84;
+        }
+        if(id>8192 || name_length>BROWSER_SCRIPT_ATTRIBUTE_NAME ||
+           name_length>(size-at-header)/2 || length>(size-at-header)/2-name_length) return -84;
+        at+=header;
+        uint32_t name_offset=at;
+        if(name_length) {
+            char name[BROWSER_SCRIPT_ATTRIBUTE_NAME];
+            if(browser_script_unhex(data+at,name_length,name) || browser_script_attribute_name(name,name_length)) return -84;
+            at+=name_length*2;
+        }
         /* Strict UTF-8, including rejection of embedded NUL, overlong forms,
          * surrogate scalars, truncated continuation and out-of-range values. */
         uint32_t scalar=0,minimum=0,left=0;
@@ -52,7 +78,11 @@ int browser_script_journal(const char *data,size_t size,browser_script_mutation_
             }
         }
         if(left) return -84;
-        items[n++]=(browser_script_mutation_t){id,length,at}; at+=length*2; total+=length;
+        items[n++]=(browser_script_mutation_t){id,length,at,operation,name_length,name_offset};
+        at+=length*2; total+=length+name_length;
     }
     *count=n; *bytes=total; return 0;
+}
+int browser_script_journal(const char *data,size_t size,browser_script_mutation_t *items,uint32_t *count,uint32_t *bytes) {
+    return browser_script_journal_version(data,size,1,items,count,bytes);
 }
