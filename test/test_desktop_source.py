@@ -115,15 +115,20 @@ int main(void) {
         environment["ZIG_GLOBAL_CACHE_DIR"] = str(ROOT / "build/zig-global-cache")
         environment["ZIG_LOCAL_CACHE_DIR"] = str(ROOT / "build/zig-cache")
         with tempfile.TemporaryDirectory(prefix="reist-desktop-wm-") as temp:
-            executable = Path(temp) / "desktop-wm-test.exe"
-            subprocess.run(
-                 command + ["-std=c11", "-Wall", "-Wextra", "-Werror",
-                 "-I.", "test/test_desktop_wm_host.c",
-                 "userspace/gui/compositor/desktop_wm.c", "-o", str(executable)],
-                cwd=ROOT, env=environment, check=True, capture_output=True,
-                text=True, timeout=60)
-            subprocess.run([str(executable)], cwd=ROOT, check=True,
-                           capture_output=True, text=True, timeout=5)
+            for optimization in ("-O0", "-O2"):
+                with self.subTest(optimization=optimization):
+                    executable = Path(temp) / ("desktop-wm" + optimization + ".exe")
+                    build = subprocess.run(
+                        command + ["-std=c11", optimization, "-UNDEBUG",
+                        "-Wall", "-Wextra", "-Werror", "-I.",
+                        "test/test_desktop_wm_host.c",
+                        "userspace/gui/compositor/desktop_wm.c", "-o", str(executable)],
+                        cwd=ROOT, env=environment, capture_output=True,
+                        text=True, timeout=60)
+                    self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
+                    run = subprocess.run([str(executable)], cwd=ROOT,
+                                         capture_output=True, text=True, timeout=5)
+                    self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
 
     def test_desktop_is_part_of_the_system_program_image(self):
         programs = (ROOT / "scripts" / "build_system_programs.py").read_text(
@@ -145,6 +150,15 @@ int main(void) {
         self.assertIn("vfs_file_client.c", desktop_build)
         self.assertIn('#include "desktop_surface.h"', self.source)
         self.assertIn("desktop_surface_initialize(&surfaces)", self.source)
+
+    def test_resize_grip_and_hit_test_share_private_corner_extent(self):
+        header = WM_HEADER.read_text(encoding="utf-8")
+        wm = WM_SOURCE.read_text(encoding="utf-8")
+        grip = self.source[self.source.index("static void render_resize_grip("):
+                           self.source.index("static desktop_rect_t desktop_window_client_rect(")]
+        self.assertIn("#define DESKTOP_WM_RESIZE_CORNER_EXTENT 16U", header)
+        self.assertIn("DESKTOP_WM_RESIZE_CORNER_EXTENT", wm)
+        self.assertIn("DESKTOP_WM_RESIZE_CORNER_EXTENT / 4U - 1U", grip)
 
     def test_launcher_requires_the_pixel_display_abi(self):
         self.assertIn("x86os_display_info(&display)", self.source)

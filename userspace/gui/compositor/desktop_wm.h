@@ -36,6 +36,8 @@ enum desktop_wm_capture_kind {
 #define DESKTOP_WM_RESIZE_RIGHT (1U << 1)
 #define DESKTOP_WM_RESIZE_TOP (1U << 2)
 #define DESKTOP_WM_RESIZE_BOTTOM (1U << 3)
+/** Inner corner square shared by resize hit testing and the decoration. */
+#define DESKTOP_WM_RESIZE_CORNER_EXTENT 16U
 
 /** Client pixels remain at the same origin during right/bottom live resize. */
 #define DESKTOP_WM_WINDOW_RETAINED_RESIZE (1U << 0)
@@ -151,7 +153,7 @@ typedef struct desktop_wm {
     int32_t work_bottom; /**< Exclusive bottom work-area edge. */
     uint32_t title_height;  /**< Server decoration title height. */
     uint32_t frame_border;  /**< Server decoration border width. */
-    uint32_t resize_margin; /**< Edge hit-test width. */
+    uint32_t resize_margin; /**< Edge hit-test width; zero disables resize. */
     uint32_t minimum_width;  /**< Smallest decorated window width. */
     uint32_t minimum_height; /**< Smallest decorated window height. */
     uint32_t screen_width;   /**< Composition surface width. */

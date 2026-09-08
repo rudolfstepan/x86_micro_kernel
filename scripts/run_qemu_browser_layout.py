@@ -6,6 +6,7 @@ import inspect
 import json
 import re
 import time
+from functools import partial
 from pathlib import Path
 import run_qemu_runtime_desktop as desktop
 from measure_cpp_baseline import suppress_windows_test_dialogs
@@ -21,8 +22,21 @@ def artifacts(args):
     if protected(args): return 1
     report=json.loads(args.log.read_text(encoding="utf-8"))
     report.update(baseline="bbeffe56",fixture={})
+    # Opt-in R3.30 must change only the compositor, not either browser process.
+    # Keep imported/default R3.28/R3.29 acceptance semantics unchanged.
+    pinned = {}
+    if getattr(args, "resize_inset", 0):
+        report.update(baseline="814fc7b7", resize_protected={})
+        pinned = {
+            "usr/gui/bin/browser.prg": "60a8b3a7cd955a19287ee9989b762101373419206613417ceec095714d7f6f3d",
+            "usr/bin/htmlwork.prg": "88121b6cd91bf379489f0756ce2aeccfdfdbcad17e80de306d5fa0706c3bfee1",
+        }
     try:
         for profile,path in (("qemu",args.image),("vmware",ROOT/"build/vmware/reist-os/reist-os-flat.vmdk")):
+            for name, expected in pinned.items():
+                actual = hashlib.sha256(read_fat_file(path, name)).hexdigest()
+                if actual != expected: raise ValueError("protected resize payload differs " + profile + " " + name)
+                report["resize_protected"][profile + "/" + name] = actual
             for name in ("layout.htm","layout.css"):
                 actual=read_fat_file(path,"htdocs/"+name)
                 if actual!=(ROOT/"htdocs"/name).read_bytes(): raise ValueError("fixture differs "+profile+" "+name)
@@ -33,7 +47,7 @@ def artifacts(args):
     return 0 if report["passed"] else 1
 
 
-def probe(process,output,transcript,screenshot,deadline,monitor):
+def probe(process,output,transcript,screenshot,deadline,monitor,resize_inset=0):
     captures={}
     details={}
     def wait(pattern,offset=0):
@@ -106,9 +120,11 @@ def probe(process,output,transcript,screenshot,deadline,monitor):
     for _ in range((max(initial[0],initial[1])+119)//120):
         monitor.mouse(process,"mouse_move -120 -120");time.sleep(.01)
     desktop.browser_probe_wait_pointer(monitor,screenshot,(0,0),"layout-home")
-    pointer=[0,0];corner=(origin[0]+width-1,origin[1]+height-1)
+    pointer=[0,0];corner=(origin[0]+width-1-resize_inset,origin[1]+height-1-resize_inset)
     desktop.shortcut_probe_move_mouse(process,pointer,*corner,monitor=monitor.mouse)
     desktop.browser_probe_wait_pointer(monitor,screenshot,corner,"layout-grip")
+    if resize_inset:
+        transcript.append(f"HOST_LAYOUT_RESIZE_INSET={resize_inset} x={corner[0]} y={corner[1]}\n")
     offset=len("".join(transcript));monitor.mouse(process,"mouse_button 1");time.sleep(.12)
     desktop.shortcut_probe_move_mouse(process,pointer,corner[0]-(width-480),corner[1],monitor=monitor.mouse)
     time.sleep(.12);monitor.mouse(process,"mouse_button 0")
@@ -159,6 +175,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("--verify-artifacts",action="store_true");p.add_argument("--qemu",type=Path)
     p.add_argument("--image",required=True,type=Path);p.add_argument("--log",required=True,type=Path)
+    p.add_argument("--resize-inset",type=int,choices=range(13),default=0,
+                   help="move inside the client corner; 12 tests the inner 16px decorated corner boundary")
     args=p.parse_args()
     if args.log.exists():p.error("refusing to overwrite evidence")
     args.log.parent.mkdir(parents=True,exist_ok=True);suppress_windows_test_dialogs()
@@ -166,7 +184,9 @@ def main():
     options={name:False for name,value in inspect.signature(desktop.run).parameters.items() if value.default is inspect.Parameter.empty}
     screenshot=args.log.with_suffix(".ppm")
     options.update(qemu=args.qemu,image=args.image,screenshot=screenshot,timeout=180.0,metrics_log=None,smp=1,browser_input_probe=True)
-    original=desktop.run_browser_input_probe;desktop.run_browser_input_probe=probe;start=time.monotonic()
+    original=desktop.run_browser_input_probe
+    desktop.run_browser_input_probe=partial(probe,resize_inset=args.resize_inset)
+    start=time.monotonic()
     try:return desktop.run(**options)
     except (OSError,RuntimeError,ValueError) as e:print("BROWSER_LAYOUT_RUNTIME FAIL "+str(e));return 1
     finally:

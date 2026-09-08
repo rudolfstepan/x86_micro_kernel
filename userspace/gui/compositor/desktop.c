@@ -3793,10 +3793,12 @@ static void render_drag_feedback(
 
 static void render_resize_grip(const desktop_render_context_t *context,
                                const desktop_window_t *window) {
-    if (window == 0 || window->width < 16U || window->height < 16U) return;
+    if (window == 0 || window->width < DESKTOP_WM_RESIZE_CORNER_EXTENT ||
+        window->height < DESKTOP_WM_RESIZE_CORNER_EXTENT) return;
     int32_t right = window->x + (int32_t)window->width;
     int32_t bottom = window->y + (int32_t)window->height;
-    for (uint32_t row = 0U; row < 3U; ++row) {
+    for (uint32_t row = 0U;
+         row < DESKTOP_WM_RESIZE_CORNER_EXTENT / 4U - 1U; ++row) {
         for (uint32_t column = 0U; column <= row; ++column) {
             fill_rect_clipped(
                 context,

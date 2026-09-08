@@ -229,6 +229,172 @@ static void test_edge_and_corner_resize(void) {
     assert(manager.resize_edges == 0U);
 }
 
+static void arrange_single(desktop_wm_t *manager) {
+    desktop_wm_initialize(manager, 1024U, 768U, 36, 736, 24U);
+    manager->windows[0] = (desktop_window_t){
+        .x = 200, .y = 150, .width = 300U, .height = 220U, .visible = 1U};
+    (void)desktop_wm_open(manager, 0U);
+}
+
+static void test_complete_corner_pixels(void) {
+    desktop_wm_t manager;
+    arrange_single(&manager);
+    desktop_window_t *window = &manager.windows[0];
+    const int32_t origins[][2] = {
+        {200, 150}, {-400, -300}, {INT32_MIN, INT32_MIN},
+        {INT32_MAX - 299, INT32_MAX - 219}};
+    /* Literal 16 freezes the user-visible target independently of production
+     * constants. Include each neighbouring pixel, edge strip and shadow. */
+    for (uint32_t origin = 0; origin < sizeof(origins) / sizeof(origins[0]); ++origin) {
+        window->x = origins[origin][0]; window->y = origins[origin][1];
+        for (uint32_t corner = 0; corner < 4U; ++corner) {
+            uint32_t horizontal = corner & 1U ? DESKTOP_WM_RESIZE_RIGHT : DESKTOP_WM_RESIZE_LEFT;
+            uint32_t vertical = corner & 2U ? DESKTOP_WM_RESIZE_BOTTOM : DESKTOP_WM_RESIZE_TOP;
+            for (int32_t dx = -1; dx <= 17; ++dx) {
+                for (int32_t dy = -1; dy <= 17; ++dy) {
+                    int64_t x = (int64_t)window->x + (corner & 1U ? 299 - dx : dx);
+                    int64_t y = (int64_t)window->y + (corner & 2U ? 219 - dy : dy);
+                    if (x < INT32_MIN || x > INT32_MAX || y < INT32_MIN || y > INT32_MAX) continue;
+                    uint32_t expected = 0U;
+                    if (dx >= 0 && dy >= 0) {
+                        if (dx < 16 && dy < 16) expected = horizontal | vertical;
+                        else expected = (dx < 6 ? horizontal : 0U) | (dy < 6 ? vertical : 0U);
+                    }
+                    manager.resize_margin = 6U;
+                    assert(desktop_wm_resize_edges_at(&manager, 0U, (int32_t)x, (int32_t)y) == expected);
+                    manager.resize_margin = 0U;
+                    assert(desktop_wm_resize_edges_at(&manager, 0U, (int32_t)x, (int32_t)y) == 0U);
+                }
+            }
+        }
+    }
+    manager.resize_margin = 6U;
+    /* right/bottom may exceed INT32_MAX; no wrapped opposite-edge hits. */
+    window->x = INT32_MAX - 100; window->y = INT32_MAX - 100;
+    window->width = UINT32_MAX; window->height = UINT32_MAX;
+    assert(desktop_wm_resize_edges_at(&manager, 0U, INT32_MAX, INT32_MAX) == 0U);
+    assert(desktop_wm_resize_edges_at(&manager, 0U, window->x + 15, window->y + 15) ==
+           (DESKTOP_WM_RESIZE_LEFT | DESKTOP_WM_RESIZE_TOP));
+    assert(desktop_wm_resize_edges_at(&manager, 0U, INT32_MIN, INT32_MIN) == 0U);
+    window->visible = 0U;
+    assert(desktop_wm_resize_edges_at(&manager, 0U, window->x, window->y) == 0U);
+    assert(desktop_wm_resize_edges_at(0, 0U, 0, 0) == 0U);
+    assert(desktop_wm_resize_edges_at(&manager, DESKTOP_WM_CAPACITY, 0, 0) == 0U);
+    assert(desktop_wm_resize_edges_at(&manager, UINT32_MAX, 0, 0) == 0U);
+}
+
+static void test_tiny_corner_partition(void) {
+    desktop_wm_t manager;
+    arrange_single(&manager);
+    desktop_window_t *window = &manager.windows[0];
+    manager.resize_margin = 1U;
+    /* Odd dimensions have a centre gap, not overlapping opposite corners.
+     * Margin 1 distinguishes the clipped corners from ordinary edge strips. */
+    for (uint32_t width = 0; width <= 33U; ++width) {
+        for (uint32_t height = 0; height <= 33U; ++height) {
+            window->width = width; window->height = height;
+            uint32_t cx = width < 32U ? width / 2U : 16U;
+            uint32_t cy = height < 32U ? height / 2U : 16U;
+            for (uint32_t x = 0; x <= width; ++x) {
+                for (uint32_t y = 0; y <= height; ++y) {
+                    uint32_t expected = 0U;
+                    if (x < width && y < height) {
+                        uint32_t h = x < cx ? DESKTOP_WM_RESIZE_LEFT :
+                            (x >= width - cx ? DESKTOP_WM_RESIZE_RIGHT : 0U);
+                        uint32_t v = y < cy ? DESKTOP_WM_RESIZE_TOP :
+                            (y >= height - cy ? DESKTOP_WM_RESIZE_BOTTOM : 0U);
+                        if (h && v) expected = h | v;
+                        else expected = (x == 0U ? DESKTOP_WM_RESIZE_LEFT :
+                            (x == width - 1U ? DESKTOP_WM_RESIZE_RIGHT : 0U)) |
+                            (y == 0U ? DESKTOP_WM_RESIZE_TOP :
+                            (y == height - 1U ? DESKTOP_WM_RESIZE_BOTTOM : 0U));
+                    }
+                    uint32_t actual = desktop_wm_resize_edges_at(
+                        &manager, 0U, window->x + (int32_t)x, window->y + (int32_t)y);
+                    assert(actual == expected);
+                    assert((actual & (DESKTOP_WM_RESIZE_LEFT | DESKTOP_WM_RESIZE_RIGHT)) !=
+                           (DESKTOP_WM_RESIZE_LEFT | DESKTOP_WM_RESIZE_RIGHT));
+                    assert((actual & (DESKTOP_WM_RESIZE_TOP | DESKTOP_WM_RESIZE_BOTTOM)) !=
+                           (DESKTOP_WM_RESIZE_TOP | DESKTOP_WM_RESIZE_BOTTOM));
+                }
+            }
+        }
+    }
+}
+
+static void test_corner_capture_and_precedence(void) {
+    desktop_wm_t manager;
+    for (uint32_t corner = 0; corner < 4U; ++corner) {
+        for (int32_t dx = 0; dx < 16; ++dx) {
+            for (int32_t dy = 0; dy < 16; ++dy) {
+                arrange_single(&manager);
+                desktop_window_t *window = &manager.windows[0];
+                int32_t x = window->x + (corner & 1U ? 299 - dx : dx);
+                int32_t y = window->y + (corner & 2U ? 219 - dy : dy);
+                desktop_wm_event_t press = {
+                    .type = DESKTOP_WM_EVENT_POINTER_BUTTON, .x = x, .y = y,
+                    .button = DESKTOP_WM_BUTTON_LEFT, .pressed = 1U};
+                desktop_wm_dispatch_result_t result;
+                assert(desktop_wm_dispatch(&manager, &press, &result) == 0);
+                assert(manager.capture_window == 0);
+                assert(window->x == 200 && window->y == 150);
+                assert(window->width == 300U && window->height == 220U);
+                desktop_rect_t close = desktop_wm_close_rect(&manager, 0U);
+                if (x >= close.x && x < close.x + (int32_t)close.width &&
+                    y >= close.y && y < close.y + (int32_t)close.height) {
+                    assert(manager.capture_kind == DESKTOP_WM_CAPTURE_CLOSE);
+                    (void)desktop_wm_pointer_release(&manager, 0, 0);
+                    assert(window->visible); /* Cancel a close, never resize. */
+                    continue;
+                }
+                uint32_t edges = (corner & 1U ? DESKTOP_WM_RESIZE_RIGHT : DESKTOP_WM_RESIZE_LEFT) |
+                                 (corner & 2U ? DESKTOP_WM_RESIZE_BOTTOM : DESKTOP_WM_RESIZE_TOP);
+                assert(manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE);
+                assert(manager.resize_edges == edges);
+                assert(manager.resize_start_x == x && manager.resize_start_y == y);
+                desktop_wm_event_t motion = {.type = DESKTOP_WM_EVENT_POINTER_MOTION, .x = x, .y = y};
+                assert(desktop_wm_dispatch(&manager, &motion, &result) == 0);
+                assert(result.flags == 0U && result.dirty.count == 0U);
+                motion.x += 17; motion.y += 11;
+                assert(desktop_wm_dispatch(&manager, &motion, &result) == 0);
+                assert(window->x == (corner & 1U ? 200 : 217));
+                assert(window->y == (corner & 2U ? 150 : 161));
+                assert(window->width == (corner & 1U ? 317U : 283U));
+                assert(window->height == (corner & 2U ? 231U : 209U));
+                assert(result.flags & DESKTOP_WM_RESULT_REDRAW);
+                assert(desktop_wm_pointer_press(&manager, 350, 260) == 0U);
+                assert(manager.resize_edges == edges); /* No recapture. */
+                assert(desktop_wm_pointer_motion(&manager, x, y) != 0U);
+                assert(window->x == 200 && window->y == 150);
+                assert(window->width == 300U && window->height == 220U);
+                press.pressed = 0U; press.x = 0; press.y = 0;
+                assert(desktop_wm_dispatch(&manager, &press, &result) == 0);
+                assert(manager.capture_kind == DESKTOP_WM_CAPTURE_NONE);
+                assert(manager.capture_window == DESKTOP_WM_NO_WINDOW && manager.resize_edges == 0U);
+                assert(desktop_wm_pointer_motion(&manager, x + 17, y + 11) == 0U);
+            }
+        }
+    }
+    arrange_single(&manager);
+    (void)desktop_wm_pointer_press(&manager, 483, 353); /* One pixel beyond corner. */
+    assert(manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT);
+    (void)desktop_wm_pointer_release(&manager, 483, 353);
+    /* An overlying client owns the press, not the covered resize corner. */
+    manager.windows[1] = (desktop_window_t){
+        .x = 450, .y = 300, .width = 300U, .height = 220U, .visible = 1U};
+    (void)desktop_wm_open(&manager, 1U);
+    (void)desktop_wm_pointer_press(&manager, 484, 354);
+    assert(manager.capture_window == 1 && manager.capture_kind == DESKTOP_WM_CAPTURE_CLIENT);
+    (void)desktop_wm_pointer_release(&manager, 0, 0);
+    (void)desktop_wm_close(&manager, 1U);
+    (void)desktop_wm_pointer_press(&manager, 484, 354);
+    assert(manager.capture_window == 0 && manager.capture_kind == DESKTOP_WM_CAPTURE_RESIZE);
+    (void)desktop_wm_pointer_release(&manager, 0, 0);
+    (void)desktop_wm_close(&manager, 0U);
+    (void)desktop_wm_pointer_press(&manager, 484, 354);
+    assert(manager.capture_kind == DESKTOP_WM_CAPTURE_NONE);
+}
+
 static uint32_t dirty_contains(const desktop_dirty_region_t *dirty,
                                int32_t x, int32_t y) {
     for (uint32_t index = 0U; index < dirty->count; ++index) {
@@ -300,6 +466,9 @@ static void test_layout_dependent_content_gets_full_resize_damage(void) {
 int main(void) {
     test_dirty_regions_and_event_dispatch();
     test_edge_and_corner_resize();
+    test_complete_corner_pixels();
+    test_tiny_corner_partition();
+    test_corner_capture_and_precedence();
     test_shrink_invalidates_only_current_resize_sweep();
     test_layout_dependent_content_gets_full_resize_damage();
     desktop_wm_t manager;

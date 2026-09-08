@@ -176,6 +176,22 @@ uint32_t desktop_wm_resize_edges_at(const desktop_wm_t *manager,
     int64_t right = left + window->width;
     int64_t bottom = top + window->height;
     uint32_t margin = manager->resize_margin;
+    if (margin == 0U) return 0U;
+    /* The entire grip square is interactive, not just the intersection of
+     * the thin edge strips. Half-dimension limits keep tiny corners disjoint. */
+    uint32_t corner_width = window->width / 2U;
+    uint32_t corner_height = window->height / 2U;
+    if (corner_width > DESKTOP_WM_RESIZE_CORNER_EXTENT)
+        corner_width = DESKTOP_WM_RESIZE_CORNER_EXTENT;
+    if (corner_height > DESKTOP_WM_RESIZE_CORNER_EXTENT)
+        corner_height = DESKTOP_WM_RESIZE_CORNER_EXTENT;
+    uint32_t horizontal = (int64_t)x < left + corner_width ?
+        DESKTOP_WM_RESIZE_LEFT : ((int64_t)x >= right - corner_width ?
+        DESKTOP_WM_RESIZE_RIGHT : 0U);
+    uint32_t vertical = (int64_t)y < top + corner_height ?
+        DESKTOP_WM_RESIZE_TOP : ((int64_t)y >= bottom - corner_height ?
+        DESKTOP_WM_RESIZE_BOTTOM : 0U);
+    if (horizontal && vertical) return horizontal | vertical;
     uint32_t edges = 0U;
     if ((int64_t)x < left + margin)
         edges |= DESKTOP_WM_RESIZE_LEFT;

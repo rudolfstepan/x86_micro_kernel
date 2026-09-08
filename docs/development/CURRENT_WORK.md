@@ -2,13 +2,58 @@
 
 Stand: 8. September 2026
 
-## R3.30 gestartet: Resize-Ecke, danach Maus-Applet
+## R3.30 abgenommen: ganze Resize-Ecke; Maus-Applet als Naechstes
 
 Neuer Nutzerauftrag auf sauberem `814fc7b7`: ganze sichtbare Resize-Ecke
 benutzbar machen. Ursache im Ring3-WM bestaetigt:16px-Griff, aber nur6px-
-Randstreifen im Hit-Test. Eigenes begrenztes R3.30 mit eingefrorenen7 Gates;
-alte VMware-Abnahme bleibt mit allen Gates und Deferral unveraendert queued.
-Zuerst Vertragscheckpoint, danach native rote Regression und Implementierung.
+Randstreifen im Hit-Test. Vertragscheckpoint `aa43fce7`, danach genau R3.30
+im sichtbaren Worktree. Gemeinsamer privater16px-Extent fuer Dekoration und
+Hit-Test: komplette innere Ecken waehlen beide Kanten, winzige Abmessungen
+werden je Achse auf die halbe Groesse begrenzt. Margin0 bleibt deaktiviert,
+Randstreifen6px und Vorrang Close/oberstes Fenster bleiben erhalten.
+Keine neue Allokation, I/O, oeffentliche Struktur, Kernel-/Treiber-Aenderung
+oder zusaetzliche Arbeit im Motion-/Renderloop; Grip-Pixel unveraendert.
+
+Gefrorene7 Gruppen bestanden. Belege, einschliesslich Fehlversuchen,
+unter `build/codex-agent/r330-resize/`:
+
+- `python scripts/measure_cpp_baseline.py --host-test test/test_desktop_source.py -v`:
+  `desktop-host-cache-corrected.log`, PASS63 Tests/2.124s. Vollstaendige
+  Eckpixel und Nachbarpixel in4 verschobenen/extremen Geometrien, kleine
+  Dimensionen0..33, unsichtbar/verdeckt/Close/Client, Capture und exakter
+  Anker ohne Sprung sowie bestehende Damagefaelle, nativ O0/O2.
+- `python scripts/measure_cpp_baseline.py --host-test test/test_browser_runtime_source.py -v`:
+  `browser-runtime-host.log`, PASS29 Tests/8.163s.
+- `.\scripts\test-reist-package.ps1 -Target vmware -Video vga`:
+  `package-vmware.log`, PASS26s.
+- `.\scripts\test-reist-package.ps1 -Target qemu -Video vga`:
+  `package-qemu.log`, PASS74s.
+- `python scripts/run_qemu_browser_layout.py --verify-artifacts --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r330-resize/artifacts.json`:
+  PASS, Kommando1.892s. Unabhaengig extrahierte Kernel und9 geschuetzte
+  Programme beider Images, einschliesslich BROWSER/HTMLWORK/BENCHMARK,
+  bytegleich `814fc7b7`.
+- `python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --resize-inset 12 --image build/reist-os.img --log build/codex-agent/r330-resize/guest.log`:
+  PASS83.530s. Tatsachlicher Zeiger(899,668),16px innerhalb dekorierter
+  rechter/unterer Aussenkante, Client800x600 ->480x600 mit korrektem Reflow
+  und Scanout. Wheel192px und zurueck, Workerfault134/Hang143 korrekt
+  gereapt, alte Seitenpixel erhalten, Recovery, Close und Shell intakt.
+- `.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga`:
+  `browser-input-command.log`, PASS102.145s; bestehender Gast fuer
+  Tastatureditierung/Navigation/Crash/Restart/Konsole unveraendert.
+
+Rote Regression `wm-red.log` bestaetigt vor der Korrektur den Eckfehler
+in O0/O2. Erster Desktop-Gatelauf `desktop-host.log` scheitert nur am
+Zugriff des vorhandenen Menu-Tests auf den Standard-Zig-Cache ausserhalb
+des Workspace; eigener neuer WM-Test bereits gruen. Beide Zig-Cachepfade
+explizit nach `build/` gesetzt und nur diese betroffene Gruppe wiederholt.
+Keine Assertion abgeschwaecht, keine Fehlerdialoge/sichtbaren VMs/Agenten.
+
+Getestete Images, Kernel,10 Programme und188 Eingabebelege sind unter
+`accepted-reference/` gesichert. Vorherige188 Eingabebelege wurden vor
+dem Lauf bytegleich mit dem R3.29-Archiv abgeglichen und bleiben dort erhalten.
+Die alte VMware-Abnahme wird nur formal als naechstes queued Paket aktiv;
+ihre Gates/Deferral bleiben unveraendert, keine neue VMware-Laufzeitabnahme
+oder Benchmarkmessung behauptet. Nutzerprioritaet bleibt das Maus-Applet.
 
 Zusaetzlicher Nutzerauftrag waehrenddessen: eigenes Maus-Widget/Applet in der
 Systemsteuerung. Direkte naechste Prioritaet nach diesem Fix, vor dem alten
@@ -16,7 +61,9 @@ VMware-Paket. Vorhandenes `reist.input/1` hat bereits Geschwindigkeit,
 Primaertaste, Beschleunigung, Scrollrichtung und Doppelklickzeit. Das Applet
 und die tatsaechliche Anwendung dieser Werte benoetigen einen eigenen
 Einstellungs-/Persistenzvertrag nach Bestandsaufnahme der Verbraucher;
-kein blosses Speichern wirkungsloser Optionen. Noch nicht implementiert.
+kein blosses Speichern wirkungsloser Optionen. Noch nicht implementiert;
+separater Folgeschnitt entsprechend Ein-Paket-Regel, ohne erneute
+routinemaessige Bestaetigung.
 
 ## R3.29 abgenommen: echte TTF-Rasterisierung
 
