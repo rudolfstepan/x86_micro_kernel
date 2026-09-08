@@ -58,6 +58,7 @@ int reist_gui_surface_client_accept_configure(
 int reist_gui_surface_client_set_title(reist_gui_surface_client_t *client,
                                        const char *title);
 int reist_gui_surface_client_open_display(reist_gui_surface_client_t *client);
+int reist_gui_surface_client_open_mouse(reist_gui_surface_client_t *client);
 /** Start an atomic retained paint frame, replacing no visible content yet. */
 int reist_gui_surface_client_paint_begin(reist_gui_surface_client_t *client);
 /** Start an atomic frame for BASE or the bounded later-rendered OVERLAY. */

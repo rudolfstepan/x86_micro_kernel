@@ -599,7 +599,31 @@ static void test_desktop_directory_snapshot_and_drag_identity(void) {
     desktop_path_type = X86OS_DIRECTORY;
 }
 
+static void test_configured_double_click_interval(void) {
+    for (uint32_t interval=200; interval<=1000; interval+=50) {
+        for (uint32_t outside=0; outside<2; ++outside) {
+            desktop_explorer_t explorer;
+            desktop_explorer_result_t result;
+            desktop_rect_t client={20,40,320U,180U};
+            desktop_explorer_initialize(&explorer);
+            assert(explorer.double_click_ms==500);
+            explorer.double_click_ms=interval;
+            assert(!desktop_explorer_open(&explorer,0U,"/"));
+            desktop_rect_t icon=desktop_explorer_entry_rect(&explorer.windows[0],client,1U);
+            for (uint32_t click=0;click<2;++click) {
+                desktop_explorer_result_initialize(&result);
+                assert(!desktop_explorer_pointer_press(&explorer,0U,client,icon.x+4,icon.y+4,&result));
+                desktop_explorer_result_initialize(&result);
+                assert(!desktop_explorer_pointer_release(&explorer,0U,client,icon.x+4,icon.y+4,
+                    1000U+click*(interval+outside),&result));
+                assert((result.activated!=0)==(click && !outside));
+            }
+        }
+    }
+}
+
 int main(void) {
+    test_configured_double_click_interval();
     test_directory_snapshot_is_sorted_and_atomic();
     test_deadline_failure_keeps_published_snapshot();
     test_extension_icons_are_case_insensitive();

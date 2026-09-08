@@ -72,6 +72,7 @@ CORE_LIBRARY_SOURCES = (
     CORE_ROOT / "reist_dns.c",
     ROOT / "userspace" / "config" / "lib" / "config.c",
     ROOT / "userspace" / "config" / "lib" / "display_settings.c",
+    ROOT / "userspace" / "config" / "lib" / "mouse_settings.c",
     STORAGE_LIBRARY_ROOT / "vfs_path.c",
     STORAGE_LIBRARY_ROOT / "vfs_file_client.c",
     STORAGE_LIBRARY_ROOT / "vfs_stat_client.c",

@@ -142,6 +142,53 @@ static int queue_display_applet(desktop_surface_runtime_client_t *client,
     return -3;
 }
 
+int desktop_surface_runtime_allow_mouse(desktop_surface_runtime_t *runtime, int pid) {
+    if (!runtime || pid <= 0) return -22;
+    for (uint32_t i=0; i<DESKTOP_SURFACE_RUNTIME_CAPACITY; ++i) {
+        desktop_surface_runtime_client_t *client=&runtime->clients[i];
+        if (client->active==DESKTOP_SURFACE_RUNTIME_BOUND && client->owner.pid==(uint32_t)pid) {
+            client->allow_mouse_applet=1U; return 0;
+        }
+    }
+    return -3;
+}
+static int mouse_surface_owned(desktop_surface_runtime_client_t *client,
+    desktop_surface_manager_t *manager,reist_gui_surface_handle_t handle) {
+    for (uint32_t i=0;i<DESKTOP_SURFACE_CAPACITY;++i) {
+        desktop_surface_slot_t *slot=&manager->slots[i];
+        if (slot->active && slot->handle.id==handle.id && slot->handle.generation==handle.generation &&
+            slot->owner.pid==client->owner.pid && slot->owner.process_generation==client->owner.process_generation) return 1;
+    }
+    return 0;
+}
+int desktop_surface_runtime_take_mouse(desktop_surface_runtime_t *runtime, desktop_surface_manager_t *manager) {
+    if (!runtime || !manager) return 0;
+    for (uint32_t i=0;i<DESKTOP_SURFACE_RUNTIME_CAPACITY;++i) {
+        desktop_surface_runtime_client_t *client=&runtime->clients[i];
+        reist_gui_surface_handle_t pending=client->mouse_applet_pending;
+        if (!pending.id) continue;
+        clear_bytes(&client->mouse_applet_pending,sizeof(client->mouse_applet_pending));
+        x86os_process_identity_t id;
+        if (client->active==DESKTOP_SURFACE_RUNTIME_BOUND && client->allow_mouse_applet &&
+            x86os_process_identity_of((int)client->owner.pid,&id)==0 && id.version==1U &&
+            id.struct_size==sizeof(id) && id.pid==(int)client->owner.pid &&
+            id.generation==client->owner.process_generation && mouse_surface_owned(client,manager,pending)) return 1;
+    }
+    return 0;
+}
+static int queue_mouse_applet(desktop_surface_runtime_client_t *client,
+    desktop_surface_manager_t *manager,const reist_gui_surface_message_t *request,reist_gui_surface_message_t *response) {
+    reist_gui_surface_message_t expected;
+    clear_bytes(&expected,sizeof(expected));
+    expected.protocol_version=REIST_GUI_SURFACE_PROTOCOL_VERSION; expected.message_size=sizeof(expected);
+    expected.type=REIST_GUI_SURFACE_OPEN_MOUSE; expected.surface=request->surface; *response=expected;
+    const uint8_t *a=(const uint8_t *)request,*b=(const uint8_t *)&expected;
+    for (uint32_t i=0;i<sizeof(expected);++i) if (a[i]!=b[i]) return -22;
+    if (client->active!=DESKTOP_SURFACE_RUNTIME_BOUND || !client->allow_mouse_applet) return -13;
+    if (!mouse_surface_owned(client,manager,request->surface)) return -3;
+    client->mouse_applet_pending=request->surface; return 0;
+}
+
 static int poll_client(desktop_surface_runtime_client_t *client, desktop_surface_manager_t *manager) {
     x86os_ipc_message_t ipc;
     clear_bytes(&ipc, sizeof(ipc));
@@ -155,6 +202,8 @@ static int poll_client(desktop_surface_runtime_client_t *client, desktop_surface
     reist_gui_surface_message_t request,response; uint8_t *d=(uint8_t *)&request; for (uint32_t i=0;i<sizeof(request);++i) d[i]=ipc.payload[i]; clear_bytes(&response,sizeof(response));
     status = request.type == REIST_GUI_SURFACE_OPEN_DISPLAY
         ? queue_display_applet(client, manager, &request, &response)
+        : request.type == REIST_GUI_SURFACE_OPEN_MOUSE
+        ? queue_mouse_applet(client, manager, &request, &response)
         : desktop_surface_dispatch_message(manager,client->owner,&request,&response);
     response.flags=(uint32_t)status;
     if ((request.type != REIST_GUI_SURFACE_PAINT_FILL &&

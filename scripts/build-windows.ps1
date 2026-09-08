@@ -413,6 +413,7 @@ try {
         'usr/gui/bin/surfacedemo.prg' = 'SURFACEDEMO.PRG'
         'usr/gui/bin/control.prg' = 'CONTROL.PRG'
         'usr/gui/bin/display.prg' = 'DISPLAY.PRG'
+        'usr/gui/bin/mouse.prg' = 'MOUSE.PRG'
         'libexec/reist/childex.prg' = 'CHILDEX.PRG'
         'libexec/reist/faultde.prg' = 'FAULTDE.PRG'
         'libexec/reist/faultud.prg' = 'FAULTUD.PRG'

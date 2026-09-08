@@ -2,7 +2,77 @@
 
 Stand: 8. September 2026
 
-## R3.31 begonnen: eigenes Maus-Applet und wirksame Einstellungen
+## R3.31 abgenommen: eigenes Maus-Applet in der Systemsteuerung
+
+Sauberer Ausgang `e5255931`, Vertragscheckpoint `7d1d6504`; freigegebene
+Inventartest-Ergaenzung `3f1f7dfa`. Direkte Umsetzung, keine Agenten,
+sichtbaren VMs, Fehlerdialoge oder Pushes.
+
+MOUSE.PRG bietet native Schieberegler, Tasten-/Profilwahl, natuerliches
+Scrollen, Doppelklicktest, Standard/Speichern/Schliessen und Tastaturbedienung.
+Alle5 vorhandenen Keys werden in einer validierten CONFIG-Transaktion
+gespeichert. Ein eigener Kindprozess mit Identitaetskontrolle, begrenztem
+Abbruch und vollstaendigem Ruecklesen verhindert falsche Erfolgsmeldungen.
+Start ueber den generationgebundenen Control-Panel-Broker; Shell `mouse --list`
+und beide Image-Layouts sind eingebunden. Bestehender Display-Aufruf bleibt.
+
+Wirksam beim naechsten Desktopstart, ausdruecklich kein Livewechsel. Einmaliges
+Konfigurationslesen, keine neue Allokation/Dateizugriffe im Eingabepfad.
+Flat100/links/normal/500ms erhaelt das bisherige effektive 1:1-Verhalten;
+adaptive war zuvor ein unbenutzter Konfigurationswert. Fraktionale Skalierung,
+Generationreset, begrenzte adaptive Verstaerkung, Tasten-/Radabbildung und alle
+Desktop-/Explorer-Doppelklickverbraucher nutzen das validierte Profil.
+Keine Kernel-/Treiber-Aenderung oder Behauptung einer VMware-Hardwareabnahme.
+
+Alle14 eingefrorenen Gruppen bestanden. Vollstaendige Belege einschliesslich
+Fehlversuchen unter `build/codex-agent/r331-mouse/`:
+
+- Maus-Host: `mouse-host-i386-corrected.log`,4 Tests/O0+O2,4.293s.
+  Reale UI/Controller, CONFIG-Writer/Fehler, Kindprozess-/Broker-Grenzen sowie
+  34.496 Vergleiche pro Optimierung fuer Skalierung/Rest/Saettigung.
+- Bestehende Hostgruppen: Config3/0.803s, Desktop63/2.820s,
+  Explorer2/0.824s, Surface10/2.049s, Surface-Runtime PASS,
+  Shell33/1.139s, Display6/4.303s. Finaler Desktopbeleg
+  `desktop-host-inventory-corrected.log`, Surfacebeleg
+  `surface-host-section-corrected.log`; uebrige `test_*.py.log`.
+- VMware-Paket91s und QEMU-Paket75s:
+  `package-vmware-section-corrected.log`,
+  `package-qemu-section-corrected.log`.
+- Image-Gate: `artifact-fat-alias-corrected.log`, PASS; unabhaengiger
+  FAT-/Kernelvergleich `artifacts-fat-alias-corrected/protected.json`.
+  BROWSER/HTMLWORK plus7 geschuetzte Programme und beide Kernel bytegleich
+  mit der akzeptierten R3.30-Referenz. Auch MOUSE/CONTROL und gespeicherte
+  Defaultbytes stimmen in beiden Images mit ihren Buildquellen ueberein.
+- Echter Mausgast: `guest-right-button-corrected/status.json`,
+  PASS36.582s. Native Eingabe/Paint, Save/Close/Reopen, isolierter UD2-Absturz,
+  neue Instanz, Desktopneustart; 20/12 HID-Schritte ergeben anhand der Pixel
+  30/18 Zeigerpixel, rechte physische Primaertaste, Rad -120,750ms-Profil,
+  Defaultwiederherstellung und frische Shellantwort. Screenshot visuell geprueft.
+- Unveraenderter innerer Resize-/Layout-/Rad-/Fault-/Hang-/Recoverygast:
+  `resize-gate.log`, PASS84.641s.
+- Unveraenderter Browser-Inputgast: `browser-input-gate.log`,
+  PASS keyboard-edit-navigation-crash-restart-console, ca.100.204s
+  einschliesslich Wrapper, gemessen ueber dessen Logzeitstempel.
+
+Gezielte Reparaturen nach belegten Fehlschlaegen, keine Gateabsenkung:
+normalisierte Tastaturereignisse ohne Pointer-Pressed-Flag, kleiner Paintclip,
+neunter GUI-Pfad im freigegebenen Inventartest; Core ohne optionale libc und
+ohne i386-64bit-Divisionshelfer (gleichwertige native Division mit breitem
+Produkt). Der optionale Maus-Clientaufruf liegt angehaengt in eigener
+ELF-Section: GC entfernt ihn aus unbeteiligten Clients, statt deren Browser-
+Bytes mitzuveraendern. Image-Harness verwendet den bestehenden FAT-Alias
+INPUT~1.CON; echter Gast liest weiterhin input.conf. Der unveraenderte
+Browser-Testhelfer erlaubt nur links, daher sendet ausschliesslich der neue
+Maus-Harness rechte Tasten direkt als native QMP-Ereignisse.
+
+Akzeptierte Referenz unter `accepted-reference/`: beide Images,
+QEMU-Kernel,14 PRGs sowie die beiden frisch erzeugten kanonischen
+Browser-Inputbelege. Kopierte Image-/Kernel-/Programmhashes nachgeprueft.
+Alte R3.30-Belege bleiben erhalten. Queueuebergang auf R3.6b ausschliesslich
+nach Paketprotokoll; dessen Zurueckstellung/Prioritaeten/Gates bleiben
+unveraendert, keine Umsetzung eines weiteren Pakets in diesem Lauf.
+
+### Historie vor der Abnahme
 
 Freigegebene Umfangsergaenzung nach expliziter Rueckfrage: der bestehende
 `test/test_desktop_source.py` zaehlt exakt acht GUI-Programme. MOUSE ist das

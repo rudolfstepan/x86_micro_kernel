@@ -11,6 +11,15 @@ COMMAND_SOURCE = ROOT / "kernel" / "shell" / "command.c"
 
 
 class ShellSourceRegressionTests(unittest.TestCase):
+    def test_mouse_applet_is_reached_by_userspace_search(self):
+        for path in ("Makefile", "scripts/build-windows.ps1"):
+            self.assertIn("usr/gui/bin/mouse.prg", (ROOT / path).read_text())
+        shell = (ROOT / "userspace/bin/shell.c").read_text()
+        self.assertIn('"/usr/gui/bin"', shell)
+        self.assertIn("join_program_path(search_paths[index], program,", shell)
+        self.assertIn('"MOUSE.PRG"', (ROOT / "scripts/build_system_programs.py").read_text())
+        self.assertIn("mouse --list", (ROOT / "scripts/run_qemu_mouse_settings.py").read_text())
+
     def test_display_applet_is_reached_by_userspace_search(self):
         for path in ("Makefile", "scripts/build-windows.ps1"):
             self.assertIn("usr/gui/bin/display.prg", (ROOT / path).read_text())

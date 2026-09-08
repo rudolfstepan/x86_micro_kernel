@@ -233,18 +233,23 @@ static int persist_document(const config_target_t *target) {
 }
 
 int reist_config_service_main(int argc, char **argv) {
-    if (argc != 5 || argv == 0 || !text_equal(argv[1], "set")) {
+    if (argc < 5 || argc > 13 || !(argc & 1) || argv == 0 || !text_equal(argv[1], "set")) {
         x86os_puts(
-            "Usage: config set <system|input|desktop|sounds> <key> <value>\n");
+            "Usage: config set <system|input|desktop|sounds> <key> <value> [<key> <value> ...] (max 5)\n");
         return 2;
     }
     const config_target_t *target = find_target(argv[2]);
-    if (target == 0 || validate_setting(target, argv[3], argv[4]) != 0) {
-        x86os_puts("config: setting rejected\n");
-        return 2;
+    for (int pair = 3; pair < argc; pair += 2) {
+        if (target == 0 || validate_setting(target, argv[pair], argv[pair + 1]) != 0) {
+            x86os_puts("config: setting rejected\n");
+            return 2;
+        }
+        for (int previous = 3; previous < pair; previous += 2)
+            if (text_equal(argv[previous], argv[pair])) return 2;
     }
     int status = read_document(target);
-    if (status == 0) status = reist_config_set(&document, argv[3], argv[4]);
+    for (int pair = 3; status == 0 && pair < argc; pair += 2)
+        status = reist_config_set(&document, argv[pair], argv[pair + 1]);
     if (status == 0) status = persist_document(target);
     if (status != 0) {
         x86os_puts("config: update failed\n");

@@ -21,6 +21,10 @@
 #include "reist/image.h"
 #include "reist/config.h"
 #include "reist/display_settings.h"
+#include "reist/mouse_settings.h"
+
+static reist_mouse_settings_t desktop_mouse_settings;
+static reist_mouse_motion_t desktop_mouse_motion;
 #include "reist/vfs_file_client.h"
 #include "reist/gui/dialog.h"
 #include "reist/gui/font.h"
@@ -6504,6 +6508,7 @@ static uint32_t program_uses_surface(const char *program) {
         path_equal_ascii_case(program, "/usr/gui/bin/soundplayer.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/control.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/display.prg") ||
+        path_equal_ascii_case(program, "/usr/gui/bin/mouse.prg") ||
         path_equal_ascii_case(program, "/usr/gui/bin/browser.prg");
 }
 
@@ -6548,6 +6553,8 @@ static int launch_program(desktop_surface_runtime_t *surface_runtime,
             surface_runtime, endpoint, pid);
         if (bound == 0 && path_equal_ascii_case(program, "/usr/gui/bin/control.prg"))
             bound = desktop_surface_runtime_allow_display(surface_runtime, pid);
+        if (bound == 0 && path_equal_ascii_case(program, "/usr/gui/bin/control.prg"))
+            bound = desktop_surface_runtime_allow_mouse(surface_runtime, pid);
         if (bound != 0) {
             (void)x86os_kill(pid);
             (void)x86os_wait(pid, &status);
@@ -7070,6 +7077,24 @@ static void apply_control_panel_activation(
 
 /* Configuration policy stays in Ring 3. These fixed buffers are not stacked
  * on the startup call chain and are never consulted during live reconnect. */
+static void desktop_load_mouse_settings(void) {
+    static uint8_t bytes[REIST_CONFIG_FILE_CAPACITY];
+    static reist_config_document_t document;
+    size_t size=0U;
+    reist_mouse_settings_defaults(&desktop_mouse_settings);
+    int status=read_file_bounded("/etc/reist/input.conf",bytes,sizeof(bytes),&size);
+    if (!status) status=reist_config_parse((const char *)bytes,size,"reist.input/1",&document);
+    if (!status) status=reist_mouse_settings_parse(&document,&desktop_mouse_settings);
+    if (status) x86os_puts("MOUSE_SETTINGS_FALLBACK\n");
+    x86os_puts("MOUSE_SETTINGS_ACTIVE");
+    print_metric("speed",desktop_mouse_settings.speed_percent);
+    print_metric("profile",desktop_mouse_settings.acceleration);
+    print_metric("right",desktop_mouse_settings.primary_right);
+    print_metric("natural",desktop_mouse_settings.natural_scroll);
+    print_metric("double",desktop_mouse_settings.double_click_ms);
+    x86os_putchar('\n');
+}
+
 static int desktop_activate_configured(void) {
     static uint8_t bytes[REIST_CONFIG_FILE_CAPACITY];
     static reist_config_document_t document;
@@ -7967,7 +7992,7 @@ static uint32_t control_panel_pointer_button(
                 control_panel_last_click_ms != 0U &&
                 now_ms >= control_panel_last_click_ms &&
                 now_ms - control_panel_last_click_ms <=
-                    DESKTOP_EXPLORER_DOUBLE_CLICK_MS)
+                    explorer->double_click_ms)
                 activate = 1U;
             control_panel_last_click_ms = now_ms;
         }
@@ -8020,7 +8045,7 @@ static uint32_t trash_pointer_button(
                 trash_last_click_ms != 0U &&
                 now_ms >= trash_last_click_ms &&
                 now_ms - trash_last_click_ms <=
-                    DESKTOP_EXPLORER_DOUBLE_CLICK_MS)
+                    explorer->double_click_ms)
                 activate = 1U;
             trash_last_click_ms = now_ms;
         }
@@ -8129,7 +8154,7 @@ static uint32_t desktop_shortcut_pointer_button(
             desktop_shortcut_last_click_ms != 0U &&
             now_ms >= desktop_shortcut_last_click_ms &&
             now_ms - desktop_shortcut_last_click_ms <=
-                DESKTOP_EXPLORER_DOUBLE_CLICK_MS) {
+                explorer->double_click_ms) {
             if (activation_index != 0 && activation_generation != 0) {
                 *activation_index = hit;
                 *activation_generation =
@@ -9193,6 +9218,7 @@ int main(int argc, char **argv) {
     uint32_t notepad_probe = 0U;
     uint32_t notepad_font_probe = 0U;
     uint32_t control_probe = 0U;
+    uint32_t mouse_probe = 0U;
     uint32_t display_probe_control_pid = 0U, display_probe_applet_pid = 0U;
     uint32_t display_probe_applet_live = 0U, display_probe_start_reported = 0U;
     uint32_t display_probe_control_live = 0U;
@@ -9252,6 +9278,9 @@ int main(int argc, char **argv) {
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--control-probe")) {
         control_probe = 1U;
+    } else if (argc == 2 && argv != 0 &&
+               text_equal(argv[1], "--mouse-probe")) {
+        control_probe = mouse_probe = 1U;
     } else if (argc == 2 && argv != 0 &&
                text_equal(argv[1], "--browser-probe")) {
         browser_probe = 1U;
@@ -9520,6 +9549,8 @@ int main(int argc, char **argv) {
     }
     desktop_explorer_initialize(&explorer);
     desktop_drag_state_initialize(&desktop_drag);
+    desktop_load_mouse_settings();
+    explorer.double_click_ms = desktop_mouse_settings.double_click_ms;
     desktop_layout_document_initialize(&desktop_layout_document);
     desktop_layout_view_initialize(&desktop_layout_view);
     desktop_layout_drag_source_index = UINT32_MAX;
@@ -9939,6 +9970,10 @@ int main(int argc, char **argv) {
                                         control_probe ? "--fault-probe" : 0);
             x86os_puts(opened == 0 ? "DISPLAY_APPLET_LAUNCHED\n" : "DISPLAY_APPLET_LAUNCH_FAILED\n");
         }
+        if (desktop_surface_runtime_take_mouse(&surface_runtime,&surfaces)) {
+            int opened=launch_program(&surface_runtime,"/usr/gui/bin/mouse.prg",mouse_probe ? "--fault-probe" : 0);
+            x86os_puts(opened==0 ? "MOUSE_APPLET_LAUNCHED\n" : "MOUSE_APPLET_LAUNCH_FAILED\n");
+        }
         if ((surface_probe || sound_probe || notepad_probe ||
              notepad_font_probe || browser_probe) && surface_poll_status != 0) {
             x86os_puts(sound_probe
@@ -9993,7 +10028,8 @@ int main(int argc, char **argv) {
                 desktop_surface_slot_t *slot=&surfaces.slots[i];
                 if (!slot->active || slot->window_index>=DESKTOP_WM_CAPACITY) continue;
                 uint32_t *seen=text_equal(slot->title,"Systemsteuerung") ? &display_probe_control_pid :
-                    text_equal(slot->title,"Anzeige") ? &display_probe_applet_pid : 0;
+                    (text_equal(slot->title,"Anzeige") ||
+                     (mouse_probe && text_equal(slot->title,"Maus"))) ? &display_probe_applet_pid : 0;
                 if (seen == &display_probe_applet_pid) applet_live = 1U;
                 if (seen == &display_probe_control_pid) control_live = 1U;
                 if (!seen || *seen==slot->owner.pid) continue;
@@ -10177,6 +10213,17 @@ int main(int argc, char **argv) {
             x86os_mouse_event_t mouse;
             uint32_t hover_transition = 0U;
             if (x86os_mouse_event(&mouse) != 0) break;
+            /* Normalize once before batching, hit tests, capture and clients.
+             * Default flat100 adds no clock query and keeps exact raw deltas. */
+            uint64_t mouse_now=0U;
+            uint32_t mouse_clock=0U;
+            if (desktop_mouse_settings.acceleration==REIST_MOUSE_ADAPTIVE &&
+                (mouse.delta_x || mouse.delta_y))
+                mouse_clock=x86os_monotonic_ms(&mouse_now)==0;
+            reist_mouse_motion_apply(&desktop_mouse_settings,&desktop_mouse_motion,
+                mouse.generation,mouse_now,mouse_clock,&mouse.delta_x,&mouse.delta_y);
+            mouse.buttons=reist_mouse_buttons(&desktop_mouse_settings,mouse.buttons);
+            mouse.wheel=reist_mouse_wheel(&desktop_mouse_settings,mouse.wheel);
             static uint32_t mouse_ready_reported;
             if (!mouse_ready_reported) {
                 x86os_puts("DESKTOP_MOUSE_OK\n");

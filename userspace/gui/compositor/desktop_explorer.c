@@ -282,6 +282,7 @@ static uint8_t probe_directory_nonempty(const char *parent,
 void desktop_explorer_initialize(desktop_explorer_t *explorer) {
     if (explorer == 0) return;
     clear_bytes(explorer, sizeof(*explorer));
+    explorer->double_click_ms = DESKTOP_EXPLORER_DOUBLE_CLICK_MS;
     for (uint32_t index = 0U;
          index < DESKTOP_EXPLORER_WINDOW_CAPACITY; ++index) {
         explorer->windows[index].selected = DESKTOP_EXPLORER_NO_ENTRY;
@@ -326,7 +327,7 @@ void desktop_explorer_desktop_release(desktop_explorer_t *explorer,
     if (explorer->desktop_last_click_ms != 0U &&
         now_ms >= explorer->desktop_last_click_ms &&
         now_ms - explorer->desktop_last_click_ms <=
-            DESKTOP_EXPLORER_DOUBLE_CLICK_MS) {
+            explorer->double_click_ms) {
         result->activated = 1U;
         explorer->desktop_last_click_ms = 0U;
     } else explorer->desktop_last_click_ms = now_ms;
@@ -1041,7 +1042,7 @@ int desktop_explorer_pointer_release(
     }
     uint32_t double_click = window->last_click == released &&
         now_ms >= window->last_click_ms &&
-        now_ms - window->last_click_ms <= DESKTOP_EXPLORER_DOUBLE_CLICK_MS;
+        now_ms - window->last_click_ms <= explorer->double_click_ms;
     if (double_click) {
         result->activated = 1U;
         window->last_click = DESKTOP_EXPLORER_NO_ENTRY;

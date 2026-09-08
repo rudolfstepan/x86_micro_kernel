@@ -68,6 +68,8 @@ enum reist_gui_surface_message_type {
     /* Additive fixed-applet request; only a compositor-authorized panel can
      * enqueue it. Success acknowledges queuing, not child readiness. */
     REIST_GUI_SURFACE_OPEN_DISPLAY,
+    /* Opt-in fixed Mouse applet; v6 envelope and all earlier IDs unchanged. */
+    REIST_GUI_SURFACE_OPEN_MOUSE,
     REIST_GUI_SURFACE_CONFIGURE = 0x80U,
     REIST_GUI_SURFACE_INPUT,
     REIST_GUI_SURFACE_CLOSE,

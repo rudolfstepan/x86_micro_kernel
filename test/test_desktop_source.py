@@ -880,8 +880,9 @@ int main(void) {
             self.source.index("static int launch_program")
         ]
         self.assertNotIn("text_equal(program", surface_classifier)
-        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 8)
+        self.assertEqual(surface_classifier.count("path_equal_ascii_case"), 9)
         self.assertIn('"/usr/gui/bin/display.prg"', surface_classifier)
+        self.assertIn('"/usr/gui/bin/mouse.prg"', surface_classifier)
         self.assertIn("desktop_surface_runtime_reserve", self.source)
         self.assertIn("desktop_surface_runtime_bind", self.source)
         self.assertIn("sync_surface_windows", self.source)

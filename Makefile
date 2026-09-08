@@ -883,6 +883,7 @@ SYSTEM_IMAGE_FILES := \
 	usr/gui/bin/imageviewer.prg=$(SYSTEM_PROGRAM_DIR)/IMAGEVIEWER.PRG \
 	usr/gui/bin/control.prg=$(SYSTEM_PROGRAM_DIR)/CONTROL.PRG \
 	usr/gui/bin/display.prg=$(SYSTEM_PROGRAM_DIR)/DISPLAY.PRG \
+	usr/gui/bin/mouse.prg=$(SYSTEM_PROGRAM_DIR)/MOUSE.PRG \
 	libexec/reist/childex.prg=$(SYSTEM_PROGRAM_DIR)/CHILDEX.PRG \
 	libexec/reist/faultde.prg=$(SYSTEM_PROGRAM_DIR)/FAULTDE.PRG \
 	libexec/reist/faultud.prg=$(SYSTEM_PROGRAM_DIR)/FAULTUD.PRG \

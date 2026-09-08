@@ -141,6 +141,7 @@ typedef struct desktop_explorer {
     uint32_t desktop_selected;
     uint32_t desktop_pressed;
     uint64_t desktop_last_click_ms;
+    uint32_t double_click_ms; /* Validated per-session policy; default 500ms. */
 } desktop_explorer_t;
 
 typedef struct desktop_explorer_drag_file {

@@ -135,6 +135,12 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
     "CONFIG.PRG": ROOT / "userspace/services/config/config_service.c",
+    "MOUSE.PRG": (
+        ROOT / "userspace/gui/apps/mouse/main.c",
+        ROOT / "userspace/gui/apps/mouse/mouse_model.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "DISPLAY.PRG": (
         ROOT / "userspace/gui/apps/display/main.c",
         ROOT / "userspace/gui/apps/display/display_model.c",
@@ -274,7 +280,7 @@ PROGRAMS["HTMLWORK.PRG"] = (
 
 GUI_PROGRAMS = {
     "DESKTOP.PRG", "GUIDEMO.PRG", "NOTEPAD.PRG", "SOUNDPLAYER.PRG",
-    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG", "DISPLAY.PRG",
+    "IMAGEVIEWER.PRG", "SURFACEDEMO.PRG", "CONTROL.PRG", "BROWSER.PRG", "DISPLAY.PRG", "MOUSE.PRG",
 }
 IMAGE_PROGRAMS = {"DESKTOP.PRG", "IMAGEVIEWER.PRG", "BROWSER.PRG"}
 NETWORK_PARSER_PROGRAMS = {"REIST.PRG"}
@@ -354,15 +360,17 @@ def main() -> None:
             dependency_files = [*core_headers, ROOT / "include/reist/display_mode.h"]
             if name == "REIST.PRG":
                 dependency_files.append(ROOT / "userspace/programs/network_cadence.h")
-            if name in {"DESKTOP.PRG", "CONTROL.PRG", "CONFIG.PRG", "DISPLAY.PRG"}:
+            if name in {"DESKTOP.PRG", "CONTROL.PRG", "CONFIG.PRG", "DISPLAY.PRG", "MOUSE.PRG"}:
                 dependency_files.extend(config_headers)
+            if name == "MOUSE.PRG":
+                dependency_files.append(ROOT / "userspace/gui/apps/mouse/mouse_model.h")
             if name == "DISPLAY.PRG":
                 dependency_files.append(ROOT / "userspace/gui/apps/display/display_model.h")
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
                         "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG",
                         "LN.PRG", "READLINK.PRG", "DEL.PRG",
-                        "RENAME.PRG", "RM.PRG", "BROWSER.PRG", "DISPLAY.PRG"}:
+                        "RENAME.PRG", "RM.PRG", "BROWSER.PRG", "DISPLAY.PRG", "MOUSE.PRG"}:
                 dependency_files.extend(storage_headers)
             if name == "STORAGE.PRG":
                 dependency_files.append(Path(__file__).resolve())
@@ -429,7 +437,7 @@ def main() -> None:
                 link_libraries.extend([sdk.math_library, sdk.libc_library])
                 dependency_files.extend(sdk.math_include_dir.glob("*.h"))
                 dependency_files.extend([ROOT / "test/math_vectors.h", Path(__file__).resolve()])
-            if name in {"MEMTEST.PRG", "DISPLAY.PRG"}:
+            if name in {"MEMTEST.PRG", "DISPLAY.PRG", "MOUSE.PRG"}:
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.append(sdk.libc_library)
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))

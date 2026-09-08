@@ -668,3 +668,18 @@ int reist_gui_surface_client_destroy(reist_gui_surface_client_t *client) {
     if (result == 0) client->connected = 0U;
     return result;
 }
+
+/* Append the optional entry point in its own ELF section. Existing clients
+ * neither retain this code nor move their established .text layout; normal
+ * --gc-sections removes it when the Mouse launch capability is unused. */
+__attribute__((section(".text.reist_surface_open_mouse")))
+int reist_gui_surface_client_open_mouse(reist_gui_surface_client_t *client) {
+    if (!client || !client->connected || !client->surface.id) return -22;
+    reist_gui_surface_message_t request;
+    clear_bytes(&request, sizeof(request));
+    request.protocol_version = REIST_GUI_SURFACE_PROTOCOL_VERSION;
+    request.message_size = sizeof(request);
+    request.type = REIST_GUI_SURFACE_OPEN_MOUSE;
+    request.surface = client->surface;
+    return transact(client, &request, REIST_GUI_SURFACE_OPEN_MOUSE);
+}
