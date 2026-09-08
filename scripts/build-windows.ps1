@@ -513,12 +513,12 @@ try {
             '--data-file', "etc/reist/$configFile=$configPath"
         )
     }
-    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
+    foreach ($demoFile in @('about.txt', 'readme.txt', 'status.jsn', 'index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
         $demoPath = Join-Path $RepoRoot "htdocs\$demoFile"
         $imageDataArguments += @(
             '--data-file', "htdocs/$demoFile=$demoPath"
         )
-        if ($demoFile -notin @('index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
+        if ($demoFile -notin @('index.html', 'javascript.htm', 'jsnext.htm', 'jsext.htm', 'ext.js', 'layout.htm', 'layout.css', 'browser-test.html', 'browser-html5-test.html', 'browser-css-test.html', 'browser-forms-test.html', 'browser-stylesheet-test.html', 'browser-stylesheet-main.css', 'browser-stylesheet-import.css')) {
             $floppyDataArguments += @(
                 '--data-file', "htdocs/$demoFile=$demoPath"
             )

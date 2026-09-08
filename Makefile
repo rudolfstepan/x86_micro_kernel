@@ -850,6 +850,7 @@ SYSTEM_IMAGE_FILES := \
 	htdocs/javascript.htm=htdocs/javascript.htm \
 	htdocs/jsnext.htm=htdocs/jsnext.htm \
 	htdocs/jsext.htm=htdocs/jsext.htm htdocs/ext.js=htdocs/ext.js \
+	htdocs/layout.htm=htdocs/layout.htm htdocs/layout.css=htdocs/layout.css \
 	htdocs/browser-html5-test.html=htdocs/browser-html5-test.html \
 	htdocs/browser-css-test.html=htdocs/browser-css-test.html \
 	htdocs/browser-forms-test.html=htdocs/browser-forms-test.html \
@@ -904,6 +905,7 @@ FLOPPY_IMAGE_FILES := $(filter-out \
 	usr/gui/bin/browser.prg=% usr/bin/htmlwork.prg=% htdocs/index.html=% htdocs/browser-test.html=% htdocs/browser-html5-test.html=% htdocs/browser-css-test.html=% htdocs/browser-forms-test.html=% \
 	htdocs/javascript.htm=% htdocs/jsnext.htm=% \
 	htdocs/jsext.htm=% htdocs/ext.js=% \
+	htdocs/layout.htm=% htdocs/layout.css=% \
 	htdocs/browser-stylesheet-test.html=% htdocs/browser-stylesheet-main.css=% htdocs/browser-stylesheet-import.css=% \
 	usr/share/sounds/startup.wav=% \
 	usr/share/sounds/shutdown.wav=% \

@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.28-browser-static-css-layout"
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
 next_user_request = "2026-09-08: Continue R3.27 directly after accepted network prerequisite361beac4. Rebase only its protected kernel reference to361beac4, restore attributed browser stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2, retain other gates/quotas/program baselines. No later package implementation, agents or push."
 
 [policy]
@@ -120,7 +120,7 @@ evidence = [
 
 [[packages]]
 id = "R3.28-browser-static-css-layout"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Standards-based static CSS values and box layout"
@@ -155,7 +155,22 @@ runtime_tests = [
 acceptance = "Frozen R3.28 BROWSER_ENGINE_PORT_PLAN: real custom-property/cascade/used-value and nested box/Flex/Grid behavior, malformed/cycle/quota tests O0/O2; actual local static reference scanout/nav/button/card geometry/colors at two guest widths, preserved fault/hang/old-page/recovery, external JS and original input guests, protected actual image payloads. Proportional/webfonts and dynamic navigation APIs explicitly remain next separate boundaries."
 stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/font/event/network authority expansion", "Failed gate without demonstrated focused in-scope correction"]
 commit_message = "feat: improve static browser CSS layout"
-evidence = []
+evidence = [
+ "python test/test_browser_layout.py -v",
+ "python test/test_css_engine.py -v",
+ "python test/test_html_engine.py -v",
+ "python test/test_browser_scripting.py -v",
+ "python test/test_browser_external_scripts.py -v",
+ "python test/test_browser_runtime_source.py -v",
+ "python test/test_gui_browser_source.py -v",
+ "python test/test_benchmark_source.py -v",
+ ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+ ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+ "python scripts/run_qemu_browser_layout.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r328-css-layout/artifacts.json",
+ "python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r328-css-layout/guest.log",
+ "python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r328-css-layout/external-guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
 
 [[packages]]
 id = "R3.26-browser-dom-attributes"
@@ -2081,7 +2096,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

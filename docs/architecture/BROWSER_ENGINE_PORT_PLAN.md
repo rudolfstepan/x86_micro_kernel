@@ -9,8 +9,12 @@ Replay. Der echte Gast beweist lokale und325231-Byte-HTTP-Quellen,
 Cache/Resize ohne Refetch, Inflight-Abbruch/Reap und sichtbare DOM-Ergebnisse.
 60 Hostfaelle, beide Referenzen, geschuetzte Imagebytes und drei Browsergaeste
 bestanden; bestehende JS-Hang-/Fault-Grenzen bleiben erhalten. Keine breite
-Website-Kompatibilitaetszusage. R3.28 ist als naechstes aktiv; in diesem
-Abschluss keine CSS-/Schrift-/Event-/fetch-Implementierung.
+Website-Kompatibilitaetszusage. Danach ist R3.28 auf `bbeffe56` abgenommen:
+berechnete CSS-Variablen, Boxmodell, Flex/Grid und begrenzte Dekoration,
+25 O0/O2-Vektoren und alle14 Gate-Gruppen bestanden. Echte Gastpixel bei
+zwei Breiten, Mausrad, Worker-Fault/Hang/Recovery, bestehende externe JS-
+und Inputgaeste; geschuetzte Kernel-/Benchmarkbytes unveraendert.
+Schrift-/Event-/fetch-Implementierung bleibt offen. Belege: CURRENT_WORK.
 
 ## Nutzerziel 8. September: intracom.at als Darstellungsreferenz
 
@@ -25,8 +29,8 @@ Die Bestandsaufnahme trennt vier zusammenhaengende Umsetzungsschritte:
 1. Externe klassische Skripte: R3.27, vorhandener CURL und isolierter JSWORK.
 2. Statische CSS-Darstellung: R3.28, berechnete Werte und echtes Boxlayout.
    CSS-Variablen, min/max-Groessen, border-box, Zentrierung, Flex/Grid und
-   Abstaende fehlen heute im wirksamen Layoutpfad. LibCSS erkennt bereits
-   mehrere dieser Properties; Erkennen allein ist keine Layoutunterstuetzung.
+   Abstaende sind im unten abgegrenzten, tatsaechlich getesteten Teilumfang
+   implementiert. Keine allgemeine CSS-Kompatibilitaetszusage.
 3. Schrift-/Zeichenpfad: proportionale Serif-/Sans-Schriften, gleiche Metriken
    beim Messen und Zeichnen, Raster-/Glyphcache; danach externe Webfonts mit
    eigenem Decoder-/Ressourcenvertrag. Die feste PSF2-Schrift reicht nicht
@@ -83,6 +87,57 @@ HTMLWORK-Fault/Hang/Recovery bleiben wirksam. Beide Images und tatsaechliche
 Kernel-, Benchmark-, JSWORK- und CURL-Hashes werden geprueft; weder allgemeine
 CSS-Kompatibilitaet noch neue Performancezahlen werden daraus abgeleitet.
 R3.28 darf erst nach R3.27-Commit begonnen werden; Scope/Gates stehen in der Queue.
+
+### R3.28 implementierter, begrenzter CSS-Adapter
+
+Auf Basis `bbeffe56`: `css_values.cpp` verwaltet berechnete Tokenwerte,
+`css_layout.cpp` gepruefte Flex-/Grid-Geometrie. HTMLWORK bleibt alleiniger
+Parser-/Layoutbesitzer. LibCSS0.9.2 samt Archivhash bleibt gepinnt; der
+exakte Quelladapter `scripts/libcss_layout_adapter.py` erweitert dessen
+Lexer, Deklarations- und Kaskadenpfad. Keine Textsubstitution/zweite CSS-Lexik.
+Er repariert auch vorzeichenbehaftete Bloom-Bitshifts und die Freigabe eines
+nur geliehenen Eltern-Bloomfilters beim Auswahlfehler. Leere Custom Properties
+sind gueltige Tokenwerte, keine fehlenden Deklarationen.
+
+Getesteter Umfang: case-sensitive vererbte Custom Properties, echte Selektoren,
+Reihenfolge/important, verschachtelte Fallbacks, Zyklenerkennung einschliesslich
+Fallback-Abhaengigkeiten, invalid-at-computed-value; min/max-Boxgroessen,
+border-box, zentrierende Block-Automargins; Flex/inline-flex mit Richtung,
+wrap/reverse, gap, justify/align, grow/shrink und Min-/Max-Freeze; Grid mit
+expliziten Laengen/fr-Spalten, minmax(Laenge,fr), begrenztem repeat und
+auto-fit(minmax(positive px,fr)), zeilenweiser automatischer Belegung.
+Messlaeufe publizieren nichts und rollen Text/Link/Bild/Anker/Szenenstaende
+zurueck. Nichtvariable Dokumente benoetigen nur einen Kaskadendurchlauf.
+
+Weitere Grenzen sind explizit: keine vollstaendige intrinsische Grid-
+Trackgroessenberechnung, festen minmax-Obergrenzen, benannten Linien/Spans,
+subgrid, Flex-order/Baseline-/Auto-Margin-Vollsemantik oder allgemeine
+Positionierungsengine. Nur leere absolute/fixed clip:rect-Hilfsboxen werden
+aus dem Normalfluss genommen. Keine Pseudoelemente, Cascade Layers,
+registrierten Custom Properties, revert/revert-layer oder CSSOM. CSS-weite
+Keywords fuer die neuen Dekorations-/Grid-/Gap-Erweiterungen sind noch nicht
+vollstaendig implementiert; Custom Properties unterstuetzen initial/inherit/
+unset. Nicht unterstuetzte unmittelbare Erweiterungswerte werden ignoriert;
+ungueltige substituierte Werte setzen die betroffene Erweiterung auf initial.
+
+Private Szenenversion5 ergaenzt abgerundete Fuell-/Randboxen, einen Schatten
+und die Unterdrueckung des Link-Unterstrichs. Die 40-Byte-Runs, Request-/IPC-
+Strukturen und alten Profile3/4 bleiben erhalten. Version5 wird nur von
+gemeinsam ausgeliefertem Browser/HTMLWORK fuer Dokumentrequests4/5 verwendet.
+Rundungen: einheitliche Kreisradien aus Laengen, auf64px und die halbe Box
+begrenzt, keine elliptischen Prozentwerte. Schatten: ein nicht-inset Schatten,
+Offsets bis64px, Blur/Spread bis32px, begrenzte achtstufige Deckungsapproximation
+statt CSS-pixelidentischem Gaussian-Blur. Ganze Link-Buttonboxen bleiben
+anklickbar. Proportionale Schriften und Webfonts bleiben ein anderer Schnitt.
+
+Keine neuen Budgets: HTMLWORK32MiB, Baumtiefe<128, CSS-Arbeit262144,
+Szenen2048 und bestehende Rasterarbeit bleiben verbindlich. Neue interne
+Obergrenzen:4096 Deklarationen,32768 gehaltene Tokens,512 Tokens je Wert,
+64 Variablen je Knoten/Abhaengigkeitstiefe,128 Items je Container,16 Gridspalten.
+Grenzverletzungen werden vor Veroeffentlichung abgelehnt; Paint nutzt keinen
+Heap und keine Dateien. Keine Kernel-/Geraete-/Netzwerkautoritaet hinzugefuegt.
+`htdocs/layout.htm`/`.css` sind eine lokale skriptfreie Abnahmereferenz,
+keine behauptete Nachbildung einer bereits kompatiblen Live-Website.
 
 Fortsetzung8 September, R3.26 abgenommen: HTML-Attribute mit get/set/remove/
 toggle, id/className und live classList sind an den echten Baum gebunden.

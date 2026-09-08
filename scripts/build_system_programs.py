@@ -261,6 +261,8 @@ PROGRAMS["HTMLWORK.PRG"] = (
     ROOT / "userspace/gui/apps/browser/html_engine.c",
     ROOT / "userspace/gui/apps/browser/browser_forms.c",
     ROOT / "userspace/gui/apps/browser/css_engine.c",
+    ROOT / "userspace/gui/apps/browser/css_values.cpp",
+    ROOT / "userspace/gui/apps/browser/css_layout.cpp",
     ROOT / "userspace/gui/apps/browser/browser_scene.c",
     ROOT / "userspace/gui/apps/browser/browser_resources.cpp",
     ROOT / "userspace/programs/curl_http.c",
@@ -438,6 +440,7 @@ def main() -> None:
                 dependency_files.append(ROOT / "userspace/gui/apps/browser/script_fetch.hpp")
                 dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/js_*.h*"))
                 dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_resources.hpp")
+                dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/css_*.hpp"))
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())
             if name == "BROWSER.PRG":
                 dependency_files.append(ROOT / "assets/browser/dom.js")

@@ -11,22 +11,25 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from build_html_engine import extract
 from build_user_sdk import extract_wapcaplet
 from build_user_program import find_zig, cpp_compile_flags
+from measure_cpp_baseline import suppress_windows_test_dialogs
 DIAGNOSTIC = "--public-diagnostic" in sys.argv
 if DIAGNOSTIC:
     sys.argv.remove("--public-diagnostic")
 
 
 class CssEngineTests(unittest.TestCase):
-    def test_real_cascade_layout_scene(self):
-        with tempfile.TemporaryDirectory(prefix="reist-css-host-") as directory:
+    def compile_host(self, directory, optimization="-O1", layout=False):
+        if True:  # Common bounded build, also used by the O0/O2 layout gate.
             directory = Path(directory)
             roots = extract(directory, css=True)
             roots.append(extract_wapcaplet(directory / "wapcaplet"))
             symbols = ("malloc calloc realloc free memcpy memmove memset memcmp "
                        "memchr strlen strcmp strncmp strchr strrchr strncpy bsearch tolower strncasecmp strdup abs").split()
-            command = [str(find_zig()), "cc", "-std=c11", "-O1", "-fno-builtin", "-DNDEBUG",
+            command = [str(find_zig()), "cc", "-std=c11", optimization, "-fno-builtin", "-DNDEBUG",
                        "-DWITHOUT_ICONV_FILTER", "-D_ALIGNED=__attribute__((aligned))",
                        *["-D"+n+"=r310_"+n for n in symbols]]
+            if layout:
+                command.append("-DBROWSER_LAYOUT_HOST")
             for include in (ROOT, ROOT / "userspace/libc/include", ROOT / "userspace/gui/include",
                             ROOT / "userspace/sdk/include"):
                 command.append("-I" + str(include))
@@ -61,20 +64,31 @@ class CssEngineTests(unittest.TestCase):
             # One migrated TU, all upstream/host/worker sources remain C. Share
             # the original 120-second compile/link budget and symbol adapters.
             deadline = time.monotonic() + 120
-            resource = directory / "resources-cpp.o"
-            result = subprocess.run([*command[:2], *cpp_compile_flags(), *command[3:],
-                "-I"+str(ROOT / "userspace/cpp/include"), "-c",
-                str(ROOT / "userspace/gui/apps/browser/browser_resources.cpp"), "-o", str(resource)],
-                cwd=ROOT, env=environment, capture_output=True, text=True,
-                timeout=max(.01, deadline-time.monotonic()))
-            self.assertEqual(result.returncode,0,result.stderr)
-            objects.append(resource)
+            cpp_sources=["userspace/gui/apps/browser/browser_resources.cpp",
+                         "userspace/gui/apps/browser/css_values.cpp",
+                         "userspace/gui/apps/browser/css_layout.cpp"]
+            if layout:
+                cpp_sources.append("test/browser_layout_host.cpp")
+            for name in cpp_sources:
+                obj = directory / (Path(name).stem+"-cpp.o")
+                result = subprocess.run([*command[:2], *cpp_compile_flags(), *command[3:],
+                    "-I"+str(ROOT / "userspace/cpp/include"), "-c", str(ROOT/name), "-o", str(obj)],
+                    cwd=ROOT, env=environment, capture_output=True, text=True,
+                    timeout=max(.01, deadline-time.monotonic()))
+                self.assertEqual(result.returncode,0,result.stderr)
+                objects.append(obj)
             response = directory / "compile.rsp"
             response.write_text("\n".join('"' + str(arg).replace('\\', '/') + '"'
                 for arg in [*command[2:], *sources, *objects, "-o", executable]), encoding="utf-8")
             result = subprocess.run([*command[:2], "@" + str(response)],
                 env=environment, capture_output=True, text=True, timeout=max(.01, deadline-time.monotonic()))
             self.assertEqual(result.returncode,0,result.stderr)
+            return executable
+
+    def test_real_cascade_layout_scene(self):
+        suppress_windows_test_dialogs()
+        with tempfile.TemporaryDirectory(prefix="reist-css-host-") as directory:
+            executable = self.compile_host(Path(directory))
             if DIAGNOSTIC:
                 for args in (("public-document",), ("public-meta",),
                              ("public-file", ROOT / "build/codex-agent/browser-intracom.html", ROOT / "build/codex-agent/browser-intracom.css"),
@@ -93,6 +107,10 @@ class CssEngineTests(unittest.TestCase):
                     result = subprocess.run([str(executable),mode], capture_output=True,text=True,timeout=10)
                     self.assertEqual(result.returncode,0,result.stdout+result.stderr)
                     self.assertIn("CSS_CASCADE_SCENE_OK", result.stdout)
+
+
+def build_css_host(case, directory, optimization, layout=False):
+    return CssEngineTests.compile_host(case, directory, optimization, layout)
 
 
 if __name__ == "__main__":

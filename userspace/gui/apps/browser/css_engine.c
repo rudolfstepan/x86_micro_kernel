@@ -1,6 +1,8 @@
 /* CSS policy and normal-flow layout live exclusively in the disposable worker.
  * LibCSS owns tokenization, selectors and cascade. No resource callbacks fetch. */
 #include "css_engine.h"
+#include "css_values.hpp"
+#include "css_layout.hpp"
 #include "html_engine.h"
 #include <libcss/libcss.h>
 #include <hubbub/types.h>
@@ -35,6 +37,7 @@ static css_error budget(void) {
     if (failed || ++work>CSS_WORK_LIMIT) { failed=1; return CSS_NOMEM; }
     return CSS_OK;
 }
+static int css_value_budget(void) { return (int)budget(); }
 static int tag(const node *n, const char *name) {
     return n && n->kind==1 && n->ns==HUBBUB_NS_HTML && !strcmp(n->name,name);
 }
@@ -325,7 +328,22 @@ static int select_tree(node *n,css_computed_style *inherited,uint32_t depth) {
         css_stylesheet *inlined=NULL; const char *style=attr(n,"style");
         if (style && make_sheet(style,strlen(style),true,&inlined)) return -28;
         css_select_results *selected=NULL;
+        if(browser_css_values_begin((browser_css_values **)&n->css_values,
+                n->parent ? n->parent->css_values : NULL)) {
+            if(inlined) css_stylesheet_destroy(inlined);
+            return -28;
+        }
         css_error rc=css_select_style(context,n,&units,&media,inlined,&handler,NULL,&selected);
+        if(browser_css_values_collecting()) {
+            if(rc==CSS_OK && browser_css_values_resolve()) rc=CSS_NOMEM;
+            if(selected) { css_select_results_destroy(selected); selected=NULL; }
+            if(n->css_data) {
+                css_libcss_node_data_handler(&handler,CSS_NODE_DELETED,NULL,n,NULL,n->css_data);
+                n->css_data=NULL;
+            }
+            free(n->css_classes); n->css_classes=NULL;
+            if(rc==CSS_OK) rc=css_select_style(context,n,&units,&media,inlined,&handler,NULL,&selected);
+        }
         if (inlined) css_stylesheet_destroy(inlined);
         if (rc==CSS_OK) {
             if (inherited) rc=css_computed_style_compose(inherited,selected->styles[0],&units,(css_computed_style **)&n->css_style);
@@ -339,10 +357,11 @@ static int select_tree(node *n,css_computed_style *inherited,uint32_t depth) {
     return 0;
 }
 static void cleanup_tree(node *n) {
-    /* The admitted HTML tree has <=2048 nodes and depth <128. No allocations. */
+    /* The admitted extended HTML tree has <=8192 nodes and depth <128. No allocations. */
     for (node *c=n->first;c;c=c->next) cleanup_tree(c);
     if (n->css_data) css_libcss_node_data_handler(&handler,CSS_NODE_DELETED,NULL,n,NULL,n->css_data);
     if (n->css_style) css_computed_style_destroy(n->css_style);
+    browser_css_values_destroy(n->css_values); n->css_values=NULL;
     free(n->css_classes); n->css_classes=NULL;
     n->css_style=n->css_data=NULL;
 }
@@ -350,6 +369,8 @@ typedef struct flow {
     int32_t left,right,x,y,line,margin;
     uint32_t line_start,align;
     int pending_space,content;
+    node *forced_node;
+    int32_t forced_width,forced_height;
 } flow;
 static int32_t length_px(css_computed_style *s,css_fixed value,css_unit unit,int32_t reference) {
     int64_t result=unit==CSS_UNIT_PCT ? (int64_t)value*reference/(100*1024) :
@@ -422,6 +443,9 @@ static int append_text(flow *f,css_computed_style *s,const char *text,size_t len
     if (weight==CSS_FONT_WEIGHT_BOLD || weight==CSS_FONT_WEIGHT_BOLDER || weight>=CSS_FONT_WEIGHT_600) flags|=1;
     if (css_computed_font_style(s)!=CSS_FONT_STYLE_NORMAL) flags|=2;
     if (link!=UINT32_MAX) flags|=REIST_HTML_STYLE_LINK;
+    if(document_profile && link!=UINT32_MAX && !(css_computed_text_decoration(s)&CSS_TEXT_DECORATION_UNDERLINE)) {
+        flags|=BROWSER_SCENE_NO_UNDERLINE; scene->version=BROWSER_SCENE_LAYOUT_VERSION;
+    }
     int pre=css_computed_white_space(s)==CSS_WHITE_SPACE_PRE || css_computed_white_space(s)==CSS_WHITE_SPACE_PRE_WRAP;
     uint8_t line_type=css_computed_line_height(s,&fixed,&unit);
     int32_t line=line_type==CSS_LINE_HEIGHT_NUMBER ? (int32_t)((int64_t)fixed*font/1024) :
@@ -471,6 +495,9 @@ static int32_t collapse(int32_t a,int32_t b) {
     return a+b;
 }
 static int layout_node(node *,css_computed_style *,flow *,uint32_t,uint32_t,int32_t);
+static int layout_container(node *,css_computed_style *,flow *,uint32_t,uint32_t,int32_t);
+static int32_t intrinsic_width(node *,css_computed_style *,int32_t,uint32_t,int);
+static int32_t extra_length(css_computed_style *,browser_css_length,int32_t);
 static int children(node *n,css_computed_style *s,flow *f,uint32_t link,uint32_t depth,int32_t definite_height) {
     for (node *c=n->first;c;c=c->next) if (layout_node(c,s,f,link,depth+1,definite_height)) return -28;
     return 0;
@@ -483,6 +510,14 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
     css_computed_style *s=n->css_style;
     uint8_t display=css_computed_display_static(s);
     if (display==CSS_DISPLAY_NONE) return 0;
+    /* Empty absolute clip rectangles are commonly used for accessible helper
+     * text. They neither paint nor occupy normal flow. No class-name heuristic. */
+    if(css_computed_position(s)==CSS_POSITION_ABSOLUTE || css_computed_position(s)==CSS_POSITION_FIXED) {
+        css_computed_clip_rect clip;
+        if(css_computed_clip(s,&clip)==CSS_CLIP_RECT && !clip.top_auto && !clip.right_auto && !clip.bottom_auto && !clip.left_auto &&
+            (length_px(s,clip.right,clip.runit,outer->right-outer->left)<=length_px(s,clip.left,clip.lunit,outer->right-outer->left) ||
+             length_px(s,clip.bottom,clip.bunit,containing_height)<=length_px(s,clip.top,clip.tunit,containing_height))) return failed ? -28 : 0;
+    }
     if (tag(n,"br")) { end_line(outer,1); return 0; }
     const char *href=tag(n,"a") ? attr(n,"href") : NULL;
     if(href && document_profile && strlen(href)>=sizeof(doc->links[0].href)) {
@@ -492,7 +527,9 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         if (doc->link_count==REIST_HTML_LINK_CAPACITY || copy_field(doc->links[doc->link_count].href,256,href)) return -28;
         link=doc->link_count++;
     }
-    int block=display!=CSS_DISPLAY_INLINE && display!=CSS_DISPLAY_INLINE_BLOCK;
+    int forced=n==outer->forced_node;
+    int inline_box=!forced && (display==CSS_DISPLAY_INLINE_BLOCK || display==CSS_DISPLAY_INLINE_FLEX);
+    int block=forced || inline_box || display!=CSS_DISPLAY_INLINE;
     int native=n->control_index && scene->forms.controls[n->control_index-1].kind!=BROWSER_FORM_LABEL;
     if(native && scene->forms.controls[n->control_index-1].kind==BROWSER_FORM_HIDDEN) return 0;
     int control_block=native && block;
@@ -503,9 +540,14 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
     int32_t margins[4]={0},pads[4]={0},borders[4]={0},width=0,box_x=0,box_y=0,explicit_height=0;
     uint32_t border_colors[4]={0}, background=0, fill_index=UINT32_MAX;
     uint32_t border_index[4]={UINT32_MAX,UINT32_MAX,UINT32_MAX,UINT32_MAX};
+    const browser_css_extra *decoration=browser_css_values_extra(n->css_values);
+    int32_t radius=extra_length(s,decoration->radius,outer->right-outer->left);
+    uint32_t shadow_index=UINT32_MAX,round_border=UINT32_MAX;
+    if(radius<0) return -28;
+    if(radius>64) radius=64; /* Used radius is further limited by the box. */
     int width_auto=1,height_auto=1;
     if (block) {
-        end_line(outer,0);
+        if(!inline_box) end_line(outer,0);
         dimension_fn margin_fn[]={css_computed_margin_top,css_computed_margin_right,css_computed_margin_bottom,css_computed_margin_left};
         dimension_fn padding_fn[]={css_computed_padding_top,css_computed_padding_right,css_computed_padding_bottom,css_computed_padding_left};
         dimension_fn border_fn[]={css_computed_border_top_width,css_computed_border_right_width,css_computed_border_bottom_width,css_computed_border_left_width};
@@ -526,8 +568,18 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         }
         width=dimension(s,css_computed_width,available,&width_auto);
         int32_t extra=pads[1]+pads[3]+borders[1]+borders[3];
+        if(forced) { memset(margins,0,sizeof(margins)); auto_left=auto_right=0; }
         if (width_auto) width=available-margins[1]-margins[3]-extra;
-        else {
+        if(inline_box && width_auto) width=intrinsic_width(n,s,available,depth,0)-extra;
+        int32_t minimum=dimension(s,css_computed_min_width,available,NULL);
+        int max_auto=0; int32_t maximum=dimension(s,css_computed_max_width,available,&max_auto);
+        int border_box=css_computed_box_sizing(s)==CSS_BOX_SIZING_BORDER_BOX;
+        if(width<0) width=0;
+        if(width_auto && border_box) width+=extra;
+        if(browser_css_box_size(width,minimum,max_auto ? BROWSER_SCENE_COORD_LIMIT : maximum,extra,border_box,&width)) return -28;
+        if(forced) { if(outer->forced_width<extra) width=0; else width=outer->forced_width-extra; }
+        if(inline_box && outer->content && outer->x+width+extra+margins[1]+margins[3]>outer->right) end_line(outer,0);
+        {
             int32_t free=available-width-extra-margins[1]-margins[3];
             if (free>0 && (auto_left || auto_right)) {
                 if (auto_left) margins[3]=auto_right ? free/2 : free;
@@ -539,18 +591,40 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         css_fixed height_value=0; css_unit height_unit=CSS_UNIT_PX;
         css_computed_height(s,&height_value,&height_unit);
         if (height_unit==CSS_UNIT_PCT && !containing_height) height_auto=1;
+        if(forced && outer->forced_height>=0) {
+            explicit_height=outer->forced_height-pads[0]-pads[2]-borders[0]-borders[2];
+            if(explicit_height<0) explicit_height=0;
+            /* This override is already a content-box used height. */
+            if(border_box) explicit_height+=pads[0]+pads[2]+borders[0]+borders[2];
+            height_auto=0;
+        }
         if (explicit_height<0) return -28;
-        box_x=outer->left+margins[3]; box_y=outer->y+collapse(outer->margin,margins[0]);
+        box_x=(inline_box ? outer->x : outer->left)+margins[3];
+        box_y=outer->y+(inline_box ? margins[0] : collapse(outer->margin,margins[0]));
         local=(flow){.left=box_x+pads[3]+borders[3],.right=box_x+pads[3]+borders[3]+width,
             .x=box_x+pads[3]+borders[3],.y=box_y+pads[0]+borders[0],.align=css_computed_text_align(s)};
         f=&local;
         css_computed_background_color(s,&background);
         /* Reserve block decorations before descendants to retain paint order. */
-        if (background>>24) {
-            fill_index=scene->count;
-            if (emit(BROWSER_SCENE_FILL,0,0,UINT32_MAX,box_x,box_y,(uint32_t)(width+extra),0,background,0)) return -28;
+        if(document_profile && decoration->shadow_color) {
+            scene->version=BROWSER_SCENE_LAYOUT_VERSION; shadow_index=scene->count;
+            if(emit(BROWSER_SCENE_SHADOW,(uint32_t)radius,(uint32_t)decoration->shadow_blur,UINT32_MAX,box_x,box_y,0,0,decoration->shadow_color,0)) return -28;
         }
-        for (unsigned i=0;i<4;++i) if (borders[i]) {
+        if ((background>>24) || (document_profile && link!=UINT32_MAX)) {
+            fill_index=scene->count;
+            int rounded=document_profile && (radius || link!=UINT32_MAX);
+            if(rounded) scene->version=BROWSER_SCENE_LAYOUT_VERSION;
+            if (emit(rounded ? BROWSER_SCENE_ROUND : BROWSER_SCENE_FILL,rounded ? (uint32_t)radius : 0,0,
+                    rounded ? link : UINT32_MAX,box_x,box_y,(uint32_t)(width+extra),0,background,
+                    rounded && link!=UINT32_MAX ? 64 : 0)) return -28;
+        }
+        int uniform=document_profile && radius && borders[0] && borders[0]<=32;
+        for(unsigned i=1;i<4;++i) if(borders[i]!=borders[0] || border_colors[i]!=border_colors[0]) uniform=0;
+        if(uniform) {
+            scene->version=BROWSER_SCENE_LAYOUT_VERSION; round_border=scene->count;
+            if(emit(BROWSER_SCENE_ROUND,(uint32_t)radius,(uint32_t)borders[0],UINT32_MAX,box_x,box_y,(uint32_t)(width+extra),0,border_colors[0],0)) return -28;
+        }
+        for (unsigned i=0;i<4;++i) if (borders[i] && !uniform) {
             border_index[i]=scene->count;
             if (emit(BROWSER_SCENE_FILL,0,0,UINT32_MAX,box_x,box_y,0,0,border_colors[i],0)) return -28;
         }
@@ -625,7 +699,13 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         }
     } else {
         int32_t label_x=f->x,label_y=f->y; uint32_t label_start=scene->count;
-        if(children(n,s,f,link,depth,height_auto ? 0 : explicit_height)) return -28;
+        int32_t definite=height_auto ? 0 : explicit_height;
+        if(!height_auto && css_computed_box_sizing(s)==CSS_BOX_SIZING_BORDER_BOX) {
+            definite-=pads[0]+pads[2]+borders[0]+borders[2]; if(definite<0) definite=0;
+        }
+        if(display==CSS_DISPLAY_FLEX || display==CSS_DISPLAY_INLINE_FLEX || browser_css_values_extra(n->css_values)->grid) {
+            if(layout_container(n,s,f,link,depth,definite)) return -28;
+        } else if(children(n,s,f,link,depth,definite)) return -28;
         if(n->control_index && scene->count>label_start) {
             int32_t w=f->y==label_y ? f->x-label_x : f->right-label_x;
             if(w>0 && w<=1024 && emit(BROWSER_SCENE_CONTROL,n->control_index-1,0,UINT32_MAX,label_x,label_y,(uint32_t)w,18,0,0)) return -28;
@@ -636,9 +716,28 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
         int32_t content_height=f->y-(box_y+pads[0]+borders[0])+f->margin;
         if (!height_auto) content_height=explicit_height;
         if (content_height<0) content_height=0;
+        int max_auto=0;
+        int32_t minimum=dimension(s,css_computed_min_height,containing_height,NULL);
+        int32_t maximum=dimension(s,css_computed_max_height,containing_height,&max_auto);
+        int32_t extra=pads[0]+pads[2]+borders[0]+borders[2];
+        int border_box=css_computed_box_sizing(s)==CSS_BOX_SIZING_BORDER_BOX;
+        if(height_auto && border_box) content_height+=extra;
+        if(browser_css_box_size(content_height,minimum,max_auto ? BROWSER_SCENE_COORD_LIMIT : maximum,extra,border_box,&content_height)) return -28;
         int32_t box_height=content_height+pads[0]+pads[2]+borders[0]+borders[2];
         uint32_t box_width=(uint32_t)(width+pads[1]+pads[3]+borders[1]+borders[3]);
+        if(radius>(int32_t)box_width/2) radius=(int32_t)box_width/2;
+        if(radius>box_height/2) radius=box_height/2;
         if (fill_index!=UINT32_MAX) scene->runs[fill_index].height=(uint32_t)box_height;
+        if(fill_index!=UINT32_MAX && scene->runs[fill_index].kind==BROWSER_SCENE_ROUND) scene->runs[fill_index].offset=(uint32_t)radius;
+        if(round_border!=UINT32_MAX) { scene->runs[round_border].height=(uint32_t)box_height; scene->runs[round_border].offset=(uint32_t)radius; }
+        if(shadow_index!=UINT32_MAX) {
+            browser_scene_run_t *r=&scene->runs[shadow_index];
+            int32_t expand=decoration->shadow_blur+decoration->shadow_spread;
+            int32_t w=(int32_t)box_width+2*expand,h=box_height+2*expand;
+            r->x=box_x+decoration->shadow_x-expand; r->y=box_y+decoration->shadow_y-expand;
+            r->width=(uint32_t)(w<0 ? 0 : w); r->height=(uint32_t)(h<0 ? 0 : h);
+            int32_t sr=radius+decoration->shadow_spread; r->offset=(uint32_t)(sr<0 ? 0 : sr>64 ? 64 : sr);
+        }
         for (unsigned i=0;i<4;++i) if (border_index[i]!=UINT32_MAX) {
             browser_scene_run_t *border=&scene->runs[border_index[i]];
             border->width=(i==0 || i==2) ? box_width : (uint32_t)borders[i];
@@ -646,10 +745,256 @@ static int layout_node(node *n,css_computed_style *inherited,flow *outer,uint32_
             if (i==1) border->x=box_x+(int32_t)box_width-borders[1];
             if (i==2) border->y=box_y+box_height-borders[2];
         }
-        outer->y=box_y+box_height; outer->margin=margins[2]; outer->line_start=scene->count;
+        if(inline_box) {
+            outer->x=box_x+(int32_t)box_width+margins[1];
+            int32_t line=box_height+margins[0]+margins[2]; if(line>outer->line) outer->line=line;
+            outer->content=1; outer->pending_space=0;
+        } else { outer->y=box_y+box_height; outer->margin=margins[2]; outer->line_start=scene->count; }
         if (outer->y>0 && (uint32_t)outer->y>scene->total_height) scene->total_height=(uint32_t)outer->y;
     }
     return failed ? -28 : 0;
+}
+static int32_t extra_length(css_computed_style *s,browser_css_length v,int32_t reference) {
+    css_unit u=v.unit==BC_EM ? CSS_UNIT_EM : v.unit==BC_REM ? CSS_UNIT_REM :
+        v.unit==BC_PERCENT_UNIT ? CSS_UNIT_PCT : v.unit==BC_VW ? CSS_UNIT_VW : v.unit==BC_VH ? CSS_UNIT_VH : CSS_UNIT_PX;
+    return length_px(s,v.value,u,reference);
+}
+static int32_t box_extra(css_computed_style *s,int32_t reference,int vertical) {
+    int32_t result=dimension(s,vertical ? css_computed_padding_top : css_computed_padding_left,reference,NULL)+
+        dimension(s,vertical ? css_computed_padding_bottom : css_computed_padding_right,reference,NULL);
+    dimension_fn fn[]={vertical ? css_computed_border_top_width : css_computed_border_left_width,
+                       vertical ? css_computed_border_bottom_width : css_computed_border_right_width};
+    uint8_t styles[]={vertical ? css_computed_border_top_style(s) : css_computed_border_left_style(s),
+                      vertical ? css_computed_border_bottom_style(s) : css_computed_border_right_style(s)};
+    for(unsigned i=0;i<2;++i) if(styles[i]!=CSS_BORDER_STYLE_NONE && styles[i]!=CSS_BORDER_STYLE_HIDDEN) {
+        css_fixed value; css_unit unit; uint8_t type=fn[i](s,&value,&unit);
+        result+=type==CSS_BORDER_WIDTH_THIN ? 1 : type==CSS_BORDER_WIDTH_MEDIUM ? 2 : type==CSS_BORDER_WIDTH_THICK ? 4 : length_px(s,value,unit,reference);
+    }
+    if(result<0 || result>BROWSER_SCENE_COORD_LIMIT) { failed=1; return 0; } return result;
+}
+static int32_t intrinsic_width(node *n,css_computed_style *inherited,int32_t available,uint32_t depth,int minimum) {
+    if(depth>=128 || budget()) return 0;
+    css_computed_style *s=n->css_style ? n->css_style : inherited;
+    if(!s || (n->kind==1 && css_computed_display_static(s)==CSS_DISPLAY_NONE)) return 0;
+    if(n->kind==3) {
+        css_fixed value; css_unit unit; css_computed_font_size(s,&value,&unit);
+        int32_t cell=(length_px(s,value,unit,16)+1)/2,width=0,max=0; int pending=0;
+        for(size_t i=0;i<n->length;) {
+            if(budget()) return 0;
+            if(space((uint8_t)n->text[i])) {
+                if(minimum) { if(width>max) max=width; width=0; } else pending=width!=0;
+                ++i; continue;
+            }
+            if(pending) { width+=cell; pending=0; }
+            width+=cell; i+=scalar_size(n->text+i,n->length-i);
+            if(width>BROWSER_SCENE_COORD_LIMIT) { failed=1; return 0; }
+        }
+        return width>max ? width : max;
+    }
+    if(n->kind!=1) return 0;
+    int automatic=0; int32_t explicit=dimension(s,css_computed_width,available,&automatic);
+    int32_t extra=box_extra(s,available,0);
+    if(!automatic) return explicit+(css_computed_box_sizing(s)==CSS_BOX_SIZING_BORDER_BOX ? 0 : extra);
+    if(tag(n,"img")) return 160+extra;
+    if(n->control_index) {
+        const browser_form_control_t *c=&scene->forms.controls[n->control_index-1];
+        if(c->kind==BROWSER_FORM_HIDDEN) return 0;
+        if(c->kind==BROWSER_FORM_SUBMIT || c->kind==BROWSER_FORM_BUTTON || c->kind==BROWSER_FORM_RESET)
+            return (int32_t)control_cells(scene->forms.strings+c->label)*8+16;
+        return 168;
+    }
+    int32_t width=0,line=0; uint32_t count=0;
+    uint8_t display=css_computed_display_static(s);
+    int flex=display==CSS_DISPLAY_FLEX || display==CSS_DISPLAY_INLINE_FLEX;
+    for(node *c=n->first;c;c=c->next) {
+        int32_t w=intrinsic_width(c,s,available,depth+1,minimum); ++count;
+        uint8_t d=c->css_style ? css_computed_display_static(c->css_style) : CSS_DISPLAY_INLINE;
+        if(!flex && d!=CSS_DISPLAY_INLINE && d!=CSS_DISPLAY_INLINE_BLOCK && d!=CSS_DISPLAY_INLINE_FLEX) {
+            if(line>width) width=line; if(w>width) width=w; line=0;
+        } else { line+=w; if(line>BROWSER_SCENE_COORD_LIMIT) { failed=1; return 0; } }
+    }
+    if(flex && count>1) line+=(int32_t)(count-1)*extra_length(s,browser_css_values_extra(n->css_values)->column_gap,available);
+    if(line>width) width=line;
+    return width+extra;
+}
+typedef struct layout_checkpoint { uint32_t text,links,images,anchors,runs,height; } layout_checkpoint;
+static layout_checkpoint checkpoint(void) {
+    return (layout_checkpoint){doc->text_length,doc->link_count,doc->image_count,doc->anchor_count,scene->count,scene->total_height};
+}
+static void restore(layout_checkpoint c) {
+    doc->text_length=c.text; doc->link_count=c.links; doc->image_count=c.images; doc->anchor_count=c.anchors;
+    scene->count=c.runs; scene->total_height=c.height;
+    for(uint32_t i=c.images;i<16;++i) memset(scene->image_urls[i],0,sizeof(scene->image_urls[i]));
+}
+static int item_layout(node *n,css_computed_style *s,uint32_t link,uint32_t depth,int32_t x,int32_t y,int32_t width,int32_t height,int32_t *used_height) {
+    if(width<0 || width>BROWSER_SCENE_COORD_LIMIT || height>BROWSER_SCENE_COORD_LIMIT) return -28;
+    flow f={.left=x,.right=x+width,.x=x,.y=y,.line_start=scene->count,.forced_node=n,.forced_width=width,.forced_height=height};
+    int rc=layout_node(n,s,&f,link,depth+1,height<0 ? 0 : height);
+    end_line(&f,0); *used_height=f.y-y;
+    return rc || failed ? -28 : 0;
+}
+typedef struct layout_item {
+    node *n;
+    int32_t cross,cross_before,cross_after;
+    uint32_t align;
+    int cross_auto;
+} layout_item;
+typedef struct container_plan {
+    layout_item items[BROWSER_CSS_ITEMS];
+    browser_css_flex_item flex[BROWSER_CSS_ITEMS];
+    uint32_t start[BROWSER_CSS_ITEMS],end[BROWSER_CSS_ITEMS],lines,count;
+    int32_t cross[BROWSER_CSS_ITEMS],cross_position[BROWSER_CSS_ITEMS];
+} container_plan;
+static int container_run(node *n,css_computed_style *s,flow *f,uint32_t link,uint32_t depth,int32_t definite,container_plan *p) {
+    const browser_css_extra *ext=browser_css_values_extra(n->css_values);
+    int grid=ext->grid!=0;
+    uint8_t direction=css_computed_flex_direction(s);
+    int column=!grid && (direction==CSS_FLEX_DIRECTION_COLUMN || direction==CSS_FLEX_DIRECTION_COLUMN_REVERSE);
+    int reverse=!grid && (direction==CSS_FLEX_DIRECTION_ROW_REVERSE || direction==CSS_FLEX_DIRECTION_COLUMN_REVERSE);
+    int32_t available=f->right-f->left,main=column ? definite : available;
+    int32_t gap=extra_length(s,column ? ext->row_gap : ext->column_gap,available);
+    int32_t cross_gap=extra_length(s,column ? ext->column_gap : ext->row_gap,available);
+    if(gap<0 || cross_gap<0) return -28;
+    for(node *c=n->first;c;c=c->next) {
+        if(budget()) return -28;
+        if(c->kind==3) { size_t i=0; while(i<c->length && space((uint8_t)c->text[i])) { if(budget()) return -28; ++i; } if(i==c->length) continue; }
+        else if(c->kind!=1 || !c->css_style || css_computed_display_static(c->css_style)==CSS_DISPLAY_NONE) continue;
+        if(p->count==BROWSER_CSS_ITEMS) return -28;
+        uint32_t i=p->count++; layout_item *item=&p->items[i]; browser_css_flex_item *v=&p->flex[i]; item->n=c;
+        css_computed_style *cs=c->css_style ? c->css_style : s;
+        int anonymous=c->kind==3;
+        int auto_width=0;
+        int32_t width=dimension(cs,css_computed_width,available,&auto_width),extra=box_extra(cs,available,0);
+        if(anonymous) { auto_width=1; extra=0; }
+        if(auto_width) width=intrinsic_width(c,s,available,depth+1,0);
+        else if(css_computed_box_sizing(cs)==CSS_BOX_SIZING_CONTENT_BOX) width+=extra;
+        if(width>available && auto_width) width=available;
+        if(width<extra) width=extra;
+        item->align=c->kind==3 ? CSS_ALIGN_ITEMS_STRETCH : css_computed_align_self(cs);
+        if(item->align==CSS_ALIGN_SELF_AUTO) item->align=css_computed_align_items(s);
+        item->cross_auto=anonymous || (column ? auto_width : css_computed_height(cs,&(css_fixed){0},&(css_unit){0})==CSS_HEIGHT_AUTO);
+        if(column && auto_width && item->align==CSS_ALIGN_ITEMS_STRETCH) width=available;
+        if(column) {
+            layout_checkpoint saved=checkpoint(); int32_t measured=0;
+            int rc=item_layout(c,s,link,depth,0,0,width,-1,&measured); restore(saved); if(rc) return rc;
+            item->cross=width; v->basis=measured;
+        } else v->basis=width;
+        css_fixed fixed=0; css_unit unit=CSS_UNIT_PX;
+        if(!anonymous && !grid && css_computed_flex_basis(cs,&fixed,&unit)==CSS_FLEX_BASIS_SET && (!column || definite || unit!=CSS_UNIT_PCT))
+            v->basis=length_px(cs,fixed,unit,main)+box_extra(cs,available,column);
+        v->before=dimension(cs,column ? css_computed_margin_top : css_computed_margin_left,available,NULL);
+        v->after=dimension(cs,column ? css_computed_margin_bottom : css_computed_margin_right,available,NULL);
+        item->cross_before=dimension(cs,column ? css_computed_margin_left : css_computed_margin_top,available,NULL);
+        item->cross_after=dimension(cs,column ? css_computed_margin_right : css_computed_margin_bottom,available,NULL);
+        int min_auto=0,max_auto=0; int32_t axis_extra=box_extra(cs,available,column);
+        v->minimum=dimension(cs,column ? css_computed_min_height : css_computed_min_width,main,&min_auto);
+        if(min_auto && !column) v->minimum=intrinsic_width(c,s,available,depth+1,1);
+        else if(css_computed_box_sizing(cs)==CSS_BOX_SIZING_CONTENT_BOX) v->minimum+=axis_extra;
+        v->maximum=dimension(cs,column ? css_computed_max_height : css_computed_max_width,main,&max_auto);
+        if(max_auto) v->maximum=BROWSER_SCENE_COORD_LIMIT;
+        else if(css_computed_box_sizing(cs)==CSS_BOX_SIZING_CONTENT_BOX) v->maximum+=axis_extra;
+        if(v->maximum<v->minimum) v->maximum=v->minimum;
+        css_computed_flex_grow(cs,&fixed); v->grow=fixed;
+        css_computed_flex_shrink(cs,&fixed); v->shrink=fixed;
+        if(anonymous) {
+            v->before=v->after=item->cross_before=item->cross_after=0;
+            v->minimum=column ? 0 : intrinsic_width(c,s,available,depth+1,1);
+            v->maximum=BROWSER_SCENE_COORD_LIMIT; v->grow=0; v->shrink=1024;
+        }
+    }
+    if(!p->count) return 0;
+    int32_t columns[16]={0}; uint32_t tracks=ext->tracks;
+    if(grid) {
+        if(!tracks) { tracks=1; columns[0]=available; }
+        else {
+            if(ext->auto_fit) {
+                int32_t minimum=extra_length(s,ext->columns[0].minimum,available);
+                if(minimum<=0 || minimum> BROWSER_SCENE_COORD_LIMIT-gap) return -28;
+                tracks=(uint32_t)((available+gap)/(minimum+gap)); if(!tracks) tracks=1;
+                if(tracks>p->count) tracks=p->count; if(tracks>16) return -28;
+            }
+            int32_t minima[16],fractions[16];
+            for(uint32_t i=0;i<tracks;++i) {
+                const browser_css_track *t=&ext->columns[ext->auto_fit ? 0 : i];
+                minima[i]=extra_length(s,t->minimum,available);
+                fractions[i]=t->maximum.unit==BC_FR ? t->maximum.value : 0;
+                if(!fractions[i]) { int32_t maximum=extra_length(s,t->maximum,available); if(maximum>minima[i]) minima[i]=maximum; }
+            }
+            if(browser_css_grid_columns(columns,minima,fractions,tracks,available,gap)) return -28;
+        }
+    }
+    if(column && !main) {
+        int64_t total=(int64_t)(p->count-1)*gap;
+        for(uint32_t i=0;i<p->count;++i) total+=(int64_t)p->flex[i].basis+p->flex[i].before+p->flex[i].after;
+        if(total<0 || total>BROWSER_SCENE_COORD_LIMIT) return -28; main=(int32_t)total;
+    }
+    uint8_t wrap=css_computed_flex_wrap(s); uint32_t start=0;
+    while(start<p->count) {
+        uint32_t end=start; int64_t used=0;
+        while(end<p->count) {
+            browser_css_flex_item *v=&p->flex[end];
+            int32_t hypothetical=v->basis<v->minimum ? v->minimum : v->basis>v->maximum ? v->maximum : v->basis;
+            int64_t next=(int64_t)hypothetical+v->before+v->after+(end>start ? gap : 0);
+            if(end>start && (grid ? end-start==tracks : wrap!=CSS_FLEX_WRAP_NOWRAP && used+next>main)) break;
+            used+=next; ++end;
+        }
+        uint32_t line=p->lines++; p->start[line]=start; p->end[line]=end;
+        if(grid) {
+            int32_t x=0;
+            for(uint32_t i=start;i<end;++i) { p->flex[i].position=x+p->flex[i].before; p->flex[i].size=columns[i-start]-p->flex[i].before-p->flex[i].after; x+=columns[i-start]+gap; }
+        } else {
+            uint8_t j=css_computed_justify_content(s);
+            uint32_t justify=j==CSS_JUSTIFY_CONTENT_FLEX_END ? 1 : j==CSS_JUSTIFY_CONTENT_CENTER ? 2 :
+                j==CSS_JUSTIFY_CONTENT_SPACE_BETWEEN ? 3 : j==CSS_JUSTIFY_CONTENT_SPACE_AROUND ? 4 : j==CSS_JUSTIFY_CONTENT_SPACE_EVENLY ? 5 : 0;
+            if(browser_css_flex_line(p->flex+start,end-start,main,gap,justify,reverse)) return -28;
+        }
+        for(uint32_t i=start;i<end;++i) {
+            layout_item *item=&p->items[i]; browser_css_flex_item *v=&p->flex[i];
+            if(!column) {
+                layout_checkpoint saved=checkpoint(); int32_t measured=0;
+                int rc=item_layout(item->n,s,link,depth,0,0,v->size,-1,&measured); restore(saved); if(rc) return rc;
+                item->cross=measured;
+            }
+            int32_t cross=item->cross+item->cross_before+item->cross_after;
+            if(cross>p->cross[line]) p->cross[line]=cross;
+        }
+        start=end;
+    }
+    int32_t total_cross=(int32_t)(p->lines-1)*cross_gap;
+    for(uint32_t l=0;l<p->lines;++l) total_cross+=p->cross[l];
+    int32_t cross_available=column ? available : definite;
+    int32_t free=cross_available>total_cross ? cross_available-total_cross : 0;
+    uint8_t align=css_computed_align_content(s);
+    int32_t cross_at=align==CSS_ALIGN_CONTENT_FLEX_END ? free : align==CSS_ALIGN_CONTENT_CENTER ? free/2 : 0;
+    if(!grid && wrap==CSS_FLEX_WRAP_NOWRAP && p->lines==1 && free) { p->cross[0]+=free; cross_at=0; free=0; }
+    for(uint32_t l=0;l<p->lines;++l) {
+        if(align==CSS_ALIGN_CONTENT_STRETCH) p->cross[l]+=free/(int32_t)p->lines;
+        int32_t spacing=align==CSS_ALIGN_CONTENT_SPACE_BETWEEN && p->lines>1 ? free*(int32_t)l/(int32_t)(p->lines-1) :
+            align==CSS_ALIGN_CONTENT_SPACE_AROUND ? free*(int32_t)(2*l+1)/(int32_t)(2*p->lines) :
+            align==CSS_ALIGN_CONTENT_SPACE_EVENLY ? free*(int32_t)(l+1)/(int32_t)(p->lines+1) : 0;
+        p->cross_position[l]=cross_at+spacing; cross_at+=p->cross[l]+cross_gap;
+    }
+    int32_t cross_extent=cross_available>total_cross ? cross_available : total_cross;
+    for(uint32_t l=0;l<p->lines;++l) {
+        int32_t line_at=p->cross_position[l];
+        if(!grid && wrap==CSS_FLEX_WRAP_WRAP_REVERSE) line_at=cross_extent-line_at-p->cross[l];
+        for(uint32_t i=p->start[l];i<p->end[l];++i) {
+            layout_item *item=&p->items[i]; browser_css_flex_item *v=&p->flex[i];
+            int32_t free_cross=p->cross[l]-item->cross-item->cross_before-item->cross_after;
+            int32_t shift=item->align==CSS_ALIGN_ITEMS_FLEX_END ? free_cross : item->align==CSS_ALIGN_ITEMS_CENTER ? free_cross/2 : 0;
+            int32_t cross_size=item->cross;
+            if(item->cross_auto && (grid || item->align==CSS_ALIGN_ITEMS_STRETCH)) cross_size+=free_cross;
+            int32_t x=f->left+(column ? line_at+item->cross_before+shift : v->position);
+            int32_t y=f->y+(column ? v->position : line_at+item->cross_before+shift),height=0;
+            if(item_layout(item->n,s,link,depth,x,y,column ? cross_size : v->size,column ? v->size : cross_size,&height)) return -28;
+        }
+    }
+    f->y+=column ? main : cross_extent; f->x=f->left; f->line_start=scene->count; f->margin=0;
+    return failed ? -28 : 0;
+}
+static int layout_container(node *n,css_computed_style *s,flow *f,uint32_t link,uint32_t depth,int32_t definite) {
+    container_plan *p=calloc(1,sizeof(*p)); if(!p) return -28;
+    int rc=container_run(n,s,f,link,depth,definite,p); free(p); return rc;
 }
 static void title_text(node *n) {
     if (tag(n,"title")) {
@@ -672,10 +1017,11 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
     node *root; int result=extended ? browser_html5_document_tree(html,length,encoding,&root) :
         browser_html5_tree_with_heap(html,length,&root,bundle && bundle->count); if (result) return result;
     work=failed=sheet_count=0; context=NULL; doc=document; scene=output; intrinsic=image_sizes;
+    browser_css_values_reset(css_value_budget);
     document_url=url ? url : "/document.html";
     memset(doc,0,sizeof(*doc)); memset(scene,0,sizeof(*scene));
     scene->version=extended ? BROWSER_SCENE_DOCUMENT_VERSION : BROWSER_SCENE_VERSION; scene->width=width; scene->height=height;
-    if(browser_forms_project(root,&scene->forms)) { if(extended) browser_html5_document_release(); return -28; }
+    if(browser_forms_project(root,&scene->forms)) { browser_css_values_release(); if(extended) browser_html5_document_release(); return -28; }
     units.viewport_width=INTTOFIX(width); units.viewport_height=INTTOFIX(height);
     units.font_size_default=INTTOFIX(16); units.font_size_minimum=INTTOFIX(1);
     units.device_dpi=INTTOFIX(96); units.root_style=NULL;
@@ -683,7 +1029,7 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
     static const char ua[]="html,body,div,p,form,fieldset,section,article,header,footer,main,nav,ul,ol,li,pre,table,tr,h1,h2,h3,h4,h5,h6 {display:block}"
         "head,script,style,template {display:none} body {margin:4px 16px} p,div,pre,ul,ol {margin-top:7px;margin-bottom:7px}"
         "h1 {font-size:24px;margin:7px 0;color:#203070} h2 {font-size:20px;margin:7px 0} h3 {font-size:18px;margin:7px 0}"
-        "b,strong,h1,h2,h3,h4,h5,h6 {font-weight:bold} i,em {font-style:italic} a:link {color:#0000cc} pre {white-space:pre} img {display:block}";
+        "b,strong,h1,h2,h3,h4,h5,h6 {font-weight:bold} i,em {font-style:italic} a:link {color:#0000cc;text-decoration:underline} pre {white-space:pre} img {display:block}";
     if (css_select_ctx_create(&context)!=CSS_OK) result=-28;
     if (!result) result=add_sheet(ua,sizeof(ua)-1,CSS_ORIGIN_UA,NULL);
     if (!result && browser_html_script_enabled()) result=add_sheet("noscript{display:none}",22,CSS_ORIGIN_UA,NULL);
@@ -700,6 +1046,7 @@ static int render_document(const uint8_t *html,size_t length,uint32_t width,uint
     if (context) css_select_ctx_destroy(context);
     while (sheet_count) css_stylesheet_destroy(sheets[--sheet_count]);
     while (imported_count) css_stylesheet_destroy(imported[--imported_count]);
+    browser_css_values_release();
     if(extended) browser_html5_document_release();
     return result;
 }

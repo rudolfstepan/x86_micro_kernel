@@ -81,7 +81,7 @@ int x86os_ipc_send_bulk_timeout(x86os_ipc_handle_t h,const x86os_ipc_bulk_messag
     browser_css_packet_t p; memcpy(&p,m->payload,sizeof(p));
     assert(!browser_css_packet_accept(&p,m->length,12,transport,sizeof(transport),&received,&transport_length)); return 0;
 }
-_Noreturn void reist_libc_fail(unsigned code) { (void)code; _Exit(70); }
+_Noreturn void reist_libc_fail(unsigned code) { fprintf(stderr,"libc fault %u\n",code); _Exit(70); }
 static const browser_scene_run_t *text_run(const char *text) {
     for (uint32_t i=0;i<scene.count;++i) {
         const browser_scene_run_t *r=&scene.runs[i];
@@ -91,6 +91,10 @@ static const browser_scene_run_t *text_run(const char *text) {
 }
 int main(int argc, char **argv) {
     const char *mode=argc>1 ? argv[1] : "cascade";
+#ifdef BROWSER_LAYOUT_HOST
+    extern int browser_layout_host_main(const char *);
+    if(!strncmp(mode,"layout-",7)) return browser_layout_host_main(mode);
+#endif
     if(!strcmp(mode,"public-utf8-bom") || !strcmp(mode,"public-transport") || !strcmp(mode,"public-utf16") ||
         !strcmp(mode,"public-opaque") || !strcmp(mode,"public-oom")) {
         static uint8_t bytes[4096]; size_t n=0;

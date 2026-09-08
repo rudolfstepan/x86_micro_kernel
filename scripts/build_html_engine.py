@@ -7,6 +7,7 @@ import subprocess
 import tarfile
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+import libcss_layout_adapter
 
 CSS_PIN = ("0.9.2", "2df215bbec34d51d60c1a04b01b2df4d5d18f510f1f3a7af4b80cddb5671154e")
 
@@ -95,6 +96,8 @@ def extract(destination, css=False):
                 if total > 8 * 1024 * 1024:
                     raise ValueError("parser archive extraction quota")
                 data = archive.extractfile(member).read()
+                if name == "libcss":
+                    data = libcss_layout_adapter.patch(str(relative), data)
                 if name == "libhubbub" and str(relative) == "src/tokeniser/tokeniser.c":
                     data = patch_hubbub_numeric_cr(data)
                 if name == "libhubbub" and str(relative) == "build/make-entities.pl":
@@ -113,6 +116,8 @@ def extract(destination, css=False):
                 target = root.joinpath(*relative.parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(data)
+        if name == "libcss":
+            libcss_layout_adapter.install(root)
         if name != "libcss":
             perl = shutil.which("perl") or "C:/msys64/usr/bin/perl.exe"
             generator = "make-aliases.pl" if name == "libparserutils" else "make-entities.pl"
@@ -150,7 +155,8 @@ def extract(destination, css=False):
 def build(artifacts, zig, incremental):
     from build_user_program import freestanding_compile_prefix
     headers = list((ROOT / "userspace/libc/include").rglob("*.h"))
-    dependencies = [Path(__file__), *headers]
+    dependencies = [Path(__file__), Path(libcss_layout_adapter.__file__),
+                    ROOT / "userspace/gui/apps/browser/css_values.hpp", *headers]
     for name in (*PINS, "libcss"):
         dependencies.extend(ROOT / "third_party" / (name + suffix) for suffix in (".tar.gz", ".sha256"))
     outputs = [artifacts.library_dir / (name + ".a") for name in (*PINS, "libcss")]

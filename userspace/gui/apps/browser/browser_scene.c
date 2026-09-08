@@ -34,7 +34,7 @@ int browser_css_pack(const browser_html_reply_t *r,const browser_scene_t *s,uint
         f->option_count*sizeof(f->options[0])+f->used;
     uint32_t limits_size=f->version==BROWSER_FORMS_VERSION ? f->control_count*sizeof(uint32_t) : 0;
     form_size+=limits_size;
-    uint32_t wide_size=s->version==BROWSER_SCENE_DOCUMENT_VERSION ? r->document.image_count*BROWSER_RESOURCE_URL_CAPACITY : 0;
+    uint32_t wide_size=s->version>=BROWSER_SCENE_DOCUMENT_VERSION ? r->document.image_count*BROWSER_RESOURCE_URL_CAPACITY : 0;
     uint32_t scene_size=runs_size+form_size+wide_size;
     if (capacity<8+scene_size) return -28;
     int doc_size=browser_html_pack(r,out+8,capacity-8-scene_size);
@@ -57,12 +57,12 @@ int browser_css_unpack(const uint8_t *in,size_t length,const browser_css_request
     uint32_t sizes[2]; memcpy(sizes,in,8);
     if (sizes[0]>sizeof(*r) || sizes[1]<20 || sizes[1]>sizeof(*s) || 8U+sizes[0]+sizes[1]!=length) return -84;
     uint32_t prefix[5]; memcpy(prefix,in+8+sizes[0],20);
-    if ((prefix[0]!=BROWSER_SCENE_VERSION && prefix[0]!=BROWSER_SCENE_DOCUMENT_VERSION) ||
-        (prefix[0]==BROWSER_SCENE_DOCUMENT_VERSION && q->version!=BROWSER_CSS_DOCUMENT_VERSION && q->version!=BROWSER_CSS_SCRIPT_VERSION) || prefix[1]!=q->width || prefix[2]!=q->height ||
+    if ((prefix[0]!=BROWSER_SCENE_VERSION && prefix[0]!=BROWSER_SCENE_DOCUMENT_VERSION && prefix[0]!=BROWSER_SCENE_LAYOUT_VERSION) ||
+        (prefix[0]>=BROWSER_SCENE_DOCUMENT_VERSION && q->version!=BROWSER_CSS_DOCUMENT_VERSION && q->version!=BROWSER_CSS_SCRIPT_VERSION) || prefix[1]!=q->width || prefix[2]!=q->height ||
         prefix[4]>BROWSER_SCENE_RUNS) return -84;
     if (browser_html_unpack(in+8,sizes[0],r) ||
         browser_html_validate(r,sizeof(*r),&q->header,pid,generation)) return -84;
-    uint32_t wide_size=prefix[0]==BROWSER_SCENE_DOCUMENT_VERSION ? r->document.image_count*BROWSER_RESOURCE_URL_CAPACITY : 0;
+    uint32_t wide_size=prefix[0]>=BROWSER_SCENE_DOCUMENT_VERSION ? r->document.image_count*BROWSER_RESOURCE_URL_CAPACITY : 0;
     uint32_t runs_size=20U+prefix[4]*sizeof(s->runs[0]), counts[5];
     if(sizes[1]<runs_size+20) return -84;
     const uint8_t *p=in+8+sizes[0]+runs_size; memcpy(counts,p,20);
@@ -97,14 +97,14 @@ static int boundary(const reist_html_document_t *d,uint32_t at) {
 }
 int browser_scene_validate(const reist_html_document_t *d,const browser_scene_t *s) {
     if (!s || browser_html_document_validate(d) ||
-        (s->version!=BROWSER_SCENE_VERSION && s->version!=BROWSER_SCENE_DOCUMENT_VERSION) ||
+        (s->version!=BROWSER_SCENE_VERSION && s->version!=BROWSER_SCENE_DOCUMENT_VERSION && s->version!=BROWSER_SCENE_LAYOUT_VERSION) ||
         !s->width || s->width>1024 || !s->height || s->height>768 ||
         s->count>BROWSER_SCENE_RUNS || s->total_height>BROWSER_SCENE_COORD_LIMIT || browser_forms_validate(&s->forms)) return -84;
     for(uint32_t i=0;i<REIST_HTML_IMAGE_CAPACITY;++i) {
         const char *url=s->image_urls[i]; uint32_t n=0;
         while(n<BROWSER_RESOURCE_URL_CAPACITY && url[n]) ++n;
         if(n==BROWSER_RESOURCE_URL_CAPACITY || (n &&
-            (s->version!=BROWSER_SCENE_DOCUMENT_VERSION || i>=d->image_count || d->images[i].source[0] || n<256))) return -84;
+            (s->version<BROWSER_SCENE_DOCUMENT_VERSION || i>=d->image_count || d->images[i].source[0] || n<256))) return -84;
     }
     uint32_t text_bytes=0;
     for (uint32_t i=0;i<s->count;++i) {
@@ -112,7 +112,8 @@ int browser_scene_validate(const reist_html_document_t *d,const browser_scene_t 
         if (r->x<-BROWSER_SCENE_COORD_LIMIT || r->x>BROWSER_SCENE_COORD_LIMIT ||
             r->y<-BROWSER_SCENE_COORD_LIMIT || r->y>BROWSER_SCENE_COORD_LIMIT ||
             r->width>BROWSER_SCENE_COORD_LIMIT || r->height>BROWSER_SCENE_COORD_LIMIT ||
-            (int64_t)r->y+r->height>BROWSER_SCENE_COORD_LIMIT || (r->flags&~67U) ||
+            (int64_t)r->y+r->height>BROWSER_SCENE_COORD_LIMIT || (int64_t)r->x+r->width>BROWSER_SCENE_COORD_LIMIT ||
+            (r->flags&~(s->version==BROWSER_SCENE_LAYOUT_VERSION ? 195U : 67U)) ||
             (r->link!=UINT32_MAX && r->link>=d->link_count) ||
             (!!(r->flags&64U)!=(r->link!=UINT32_MAX))) return -84;
         if (r->kind==REIST_HTML_ELEMENT_TEXT) {
@@ -132,6 +133,9 @@ int browser_scene_validate(const reist_html_document_t *d,const browser_scene_t 
             for(uint32_t j=0;j<i;++j) if(s->runs[j].kind==BROWSER_SCENE_CONTROL && s->runs[j].offset==r->offset) return -84;
         } else if (r->kind==BROWSER_SCENE_FILL) {
             if (r->offset || r->length || r->flags || r->link!=UINT32_MAX) return -84;
+        } else if(r->kind==BROWSER_SCENE_ROUND || r->kind==BROWSER_SCENE_SHADOW) {
+            if(s->version!=BROWSER_SCENE_LAYOUT_VERSION || r->offset>64 || r->length>32 ||
+               (r->flags&~64U) || (r->kind==BROWSER_SCENE_SHADOW && (r->flags || r->link!=UINT32_MAX))) return -84;
         } else return -84;
     }
     return 0;
@@ -144,6 +148,35 @@ static uint32_t blend(uint32_t background,uint32_t foreground,uint32_t coverage)
     uint32_t green=(((foreground>>8)&255)*alpha+((background>>8)&255)*(255-alpha))/255;
     uint32_t blue=((foreground&255)*alpha+(background&255)*(255-alpha))/255;
     return (red<<16)|(green<<8)|blue;
+}
+static int round_inside(int32_t x,int32_t y,int32_t width,int32_t height,int32_t radius) {
+    if(x<0 || y<0 || x>=width || y>=height) return 0;
+    if(radius>width/2) radius=width/2;
+    if(radius>height/2) radius=height/2;
+    int32_t dx=x<radius ? 2*(radius-x)-1 : x>=width-radius ? 2*(x-(width-radius))+1 : 0;
+    int32_t dy=y<radius ? 2*(radius-y)-1 : y>=height-radius ? 2*(y-(height-radius))+1 : 0;
+    return !dx || !dy || dx*dx+dy*dy<=4*radius*radius;
+}
+/* One bounded rounded fill/stroke or soft shadow run. No scratch allocation,
+ * style lookup or I/O in paint. Radius <=64, blur <=32; eight coverage samples. */
+static uint32_t round_coverage(const browser_scene_run_t *r,int32_t x,int32_t y) {
+    int32_t width=(int32_t)r->width,height=(int32_t)r->height,radius=(int32_t)r->offset;
+    if(r->kind==BROWSER_SCENE_ROUND) {
+        int32_t stroke=(int32_t)r->length;
+        if(!round_inside(x,y,width,height,radius)) return 0;
+        if(stroke && round_inside(x-stroke,y-stroke,width-2*stroke,height-2*stroke,radius>stroke ? radius-stroke : 0)) return 0;
+        return 255;
+    }
+    int32_t blur=(int32_t)r->length;
+    if(!blur) return round_inside(x,y,width,height,radius) ? 255 : 0;
+    if(!round_inside(x,y,width,height,radius+blur)) return 0;
+    if(round_inside(x-2*blur,y-2*blur,width-4*blur,height-4*blur,radius>blur ? radius-blur : 0)) return 255;
+    uint32_t coverage=1;
+    for(int32_t i=1;i<7;++i) {
+        int32_t inset=2*blur*i/7;
+        coverage+=round_inside(x-inset,y-inset,width-2*inset,height-2*inset,radius+blur-inset>0 ? radius+blur-inset : 0) ? 1 : 0;
+    }
+    return coverage*255/8;
 }
 static uint32_t decode(const char *text,uint32_t length,uint32_t *at) {
     uint32_t c=(uint8_t)text[(*at)++];
@@ -303,10 +336,11 @@ int browser_scene_raster_forms(const reist_html_document_t *d,const browser_scen
                 if(c->kind!=BROWSER_FORM_TEXTAREA) break;
                 ++row;
             }
-        } else if (r->kind==BROWSER_SCENE_FILL) {
+        } else if (r->kind==BROWSER_SCENE_FILL || r->kind==BROWSER_SCENE_ROUND || r->kind==BROWSER_SCENE_SHADOW) {
             if (!(r->color>>24)) continue;
             for (int32_t yy=t;yy<end_y;++yy) for (int32_t xx=l;xx<end_x;++xx) {
-                uint32_t *p=&pixels[(uint32_t)yy*width+(uint32_t)xx]; *p=blend(*p,r->color,255);
+                uint32_t *p=&pixels[(uint32_t)yy*width+(uint32_t)xx];
+                *p=blend(*p,r->color,r->kind==BROWSER_SCENE_FILL ? 255 : round_coverage(r,xx-r->x,yy-y));
             }
         } else if (r->kind==1) {
             if (text_pixels(font,d->text+r->offset,r->length,r->x,y,r->height,r->color,r->flags,pixels,width,right,(int32_t)top,bottom,scratch)) return -84;
@@ -323,7 +357,7 @@ int browser_scene_raster_forms(const reist_html_document_t *d,const browser_scen
                 if (n && font && text_pixels(font,alt,n,r->x,y,16,0xff606060,0,pixels,width,right,(int32_t)top,bottom,scratch)) return -84;
             }
         }
-        if ((r->flags&64U) && r->height>=2 && y+(int32_t)r->height-2>=(int32_t)top && y+(int32_t)r->height-2<bottom)
+        if ((r->flags&64U) && !(r->flags&BROWSER_SCENE_NO_UNDERLINE) && (r->kind==1 || r->kind==5) && r->height>=2 && y+(int32_t)r->height-2>=(int32_t)top && y+(int32_t)r->height-2<bottom)
             for (int32_t xx=l;xx<end_x;++xx) pixels[(uint32_t)(y+(int32_t)r->height-2)*width+(uint32_t)xx]=r->kind==1 ? r->color&0xffffff : 0xcc;
     }
     return 0;

@@ -10,7 +10,13 @@ eingefrorenen Kernelstand abgenommen: externe klassische Scriptquellen,
 URL-/MIME-/Redirect-Admission, Cache, quelltextgenaues Replay und begrenzter
 CURL-Abbruch/Reap.60 Hostfaelle, beide Images/Guards und drei Browsergaeste
 bestanden. Alle geschuetzten Programme/Quoten bleiben unveraendert.
-R3.28 ist als naechstes aktiv, kein Ausbau von Ring0-Protokollautoritaet. Vertraege:
+R3.28 ist anschliessend auf `bbeffe56` abgenommen: berechnete CSS-Variablen,
+Boxmodell, Flex/Grid und begrenzte Karten-/Linkbuttondekoration.25 echte
+O0/O2-Vektoren,14 Gate-Gruppen samt beiden Images, geschuetztem Byteguard,
+zwei Gastbreiten/Scanouts, Wheel/Fault/Hang/Recovery und unveraenderten
+JavaScript-/Inputgaesten bestanden. Getesteter Teilumfang und offene Grenzen
+stehen in BROWSER_ENGINE_PORT_PLAN.md; Belege in CURRENT_WORK.md.
+Kein Ausbau von Ring0-Protokollautoritaet. Vertraege:
 NETWORK_RECEIVE_PROGRESS_CONTRACT.md und BROWSER_SCRIPTING_CONTRACT.md.
 
 8. September, neuer Nutzerauftrag: intracom.at soll nicht nur laden, sondern

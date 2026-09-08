@@ -2,6 +2,96 @@
 
 Stand: 8. September 2026
 
+## R3.28 abgenommen: statisches CSS-Layout
+
+Direkt im sichtbaren, anfangs sauberen Worktree auf `bbeffe56`, genau das
+aktive Paket; keine Agenten, sichtbaren VMs oder nativen Fehlerdialoge.
+Neue C++-Werte-/Geometrieadapter hinter der bestehenden C-Grenze, echte
+LibCSS-Tokens/Kaskade, Boxmodell, Flex/Grid, Link-Buttonboxen und begrenzte
+Rundungen/Schatten. Privates append-only Szenenprofil5, alte Profile erhalten.
+Getesteter Teilumfang und bewusste Grenzen: BROWSER_ENGINE_PORT_PLAN.md,
+Abschnitt R3.28-Adapter. Kein Kernel-/JSWORK-/CURL-/Schrift-/Eventumbau.
+
+Belege ausschliesslich unter `build/codex-agent/r328-css-layout/`:
+
+- `python test/test_browser_layout.py -v`: PASS,25 echte Vektoren jeweils
+  O0/O2, `host-layout-subset.log`,115.855s. Parser/Kaskade/Tokenfallbacks,
+  Vererbung/Zyklen/leere Werte, Quoten/Overflow, Box/Flex/Grid-Verschachtelung,
+  Geometrie, Raster und atomare Szenenannahme, skriptfreie Referenz800/480px.
+- `python test/test_css_engine.py -v`: PASS, vorhandene34 Modi,
+  `css-final.log`,63.487s.
+- `python test/test_html_engine.py -v`: PASS, `test_html_engine-gate.log`,4.327s.
+- `python test/test_browser_scripting.py -v`: PASS3,
+  `test_browser_scripting-gate.log`,51.233s.
+- `python test/test_browser_external_scripts.py -v`: PASS2,
+  `test_browser_external_scripts-gate.log`,3.626s.
+- `python test/test_browser_runtime_source.py -v`: PASS29,
+  `runtime-source-final.log`,11.501s.
+- `python test/test_gui_browser_source.py -v`: PASS8,
+  `gui-source-final.log`,45.738s.
+- `python test/test_benchmark_source.py -v`: PASS9,
+  `test_benchmark_source-zig-gate.log`,0.031s.
+- VMware-Referenzpaket: PASS77s, `package-vmware.log` verweist auf den
+  vollstaendigen unverkuerzten Buildlog.
+- QEMU-Referenzpaket: PASS67s, `package-qemu.log`; beide Builds nacheinander.
+- `python scripts/run_qemu_browser_layout.py --verify-artifacts --image
+  build/reist-os.img --log build/codex-agent/r328-css-layout/artifacts.json`:
+  PASS,1.344s Kommando; beide echten FAT-Images und Kernel/Programme/Fixtures
+  geprueft. Alle7 geschuetzten Programme sowie beide Kernel bytegleich zum
+  akzeptierten Stand; BROWSER/HTMLWORK identisch zu den neuen Buildartefakten.
+- Gefrorener Layout-Gast: erster `guest.log` nach44.221s an ungueltigem
+  Host-QMP-Radwert gestoppt, beide echten Breiten/Nav-/Button-/Gridgeometrien
+  bereits korrekt. QMP erwartet einzelne +/-1-Impulse, nicht +/-4; nur die
+  Hostinjektion korrigiert, keine Gast-/Produkt-/Deadlineaenderung.
+  Betroffener Wiederholungslauf mit ansonsten gleichem Kommando und neuem
+  `--log build/codex-agent/r328-css-layout/guest-wheel-fixed.log`:
+  PASS58.136s.800/480px echte Fensterbreiten (Szenen782/462px), zwei Spalten
+  zu einer Spalte,162x44px Linkbutton, Nav-Rechtskante, beide Kartenfarben.
+  Rad+192/zurueck ohne Reparse; nativer Invalid-Opcode-Workerstatus134,
+  Hang nach bestehender5s-Grenze mit Status143 gereapt, alte Seitenpixel
+  exakt erhalten, frisches Laden erfolgreich. Alle7 HTMLWORK-Generationen
+  exakt gereapt, kein Kernel-/Desktopausfall, anschliessend Ring3-shell help.
+  Unveraenderte PPM-Scanouts und SHA256-Liste `.scanout.json` erhalten.
+- `python scripts/run_qemu_browser_external.py --qemu
+  'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img
+  --log build/codex-agent/r328-css-layout/external-guest.log`:
+  PASS74.531s, unveraendertes Gate fuer lokale/grosse HTTP-Skripte, Redirect,
+  Cache/Reflow ohne Refetch, laufenden CURL-Abbruch und Recovery; echte
+  Scanouts und `.http.json` erhalten.
+- `.\scripts\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input
+  -Target qemu -Video vga`: PASS75.281s, `input-guest-command.log`,
+  unveraenderte Tastatur-/Edit-/Navigations-/Crash-/Restart-/Konsolenabnahme.
+  Vorherige188 kanonische Belege vor dem Lauf nach `previous-input-evidence/`
+  kopiert; aktuelle Inputbelege nach `accepted-reference/input/` gesichert.
+
+Alle14 gefrorenen Gate-Gruppen bestanden. Queue nur status/evidence/active_id
+fortgeschaltet: R3.28 done, formal naechstes R3.6b active; dessen dokumentierte
+VMware-Deferral-/Abnahmebedingungen unveraendert, kein spaeteres Paket in
+diesem Lauf umgesetzt. Verbleibende Browsergrenzen sind proportionale Fonts
+und die dynamischen DOM-/Event-/fetch-APIs, keine Vollbrowser-Zusage.
+Referenzimages/Kernel/neun Programme unter `accepted-reference/` erhalten,
+Imagekopien SHA256-identisch zum Artefaktgate. BROWSER2854940 Bytes SHA256
+`faaeeadbc63005115ee4c320416c3ee57bca42897df937d23ad91a1a5610085d`,
+HTMLWORK890924 Bytes SHA256
+`50aaabfe640dde417ca2b4dd9e0f442f05dfe09c6e0ac7a578c8234394a2976a`.
+Geschuetzte Kernel-/Benchmarkbytes sind unveraendert; daraus wird kein neuer
+VMware-Performance- oder Vollkompatibilitaetsnachweis abgeleitet.
+
+Entwicklungsfehler sind erhalten, nicht als Abnahme umgedeutet: erste
+Hostlaeufe fanden den alten Double-Dash-Lexer, undefinierte Bloom-Bitshifts
+(O0 Selektoren), geliehenen Bloomfilter bei Quotenabbruch, anonyme Flex-
+Textmetriken, sequenzielles statt simultanes Grid-Minimum-Freeze sowie leere
+Custom-Property-Werte. Exakte In-Scope-Korrekturen und negative Regressionen;
+alle `host-layout-*.log` und `geometry-/values-diagnostic*` bleiben erhalten.
+Testfehler (fehlendes Host-strstr, falsch erwartete weisse Schattenecke,
+zunaechst falsch platzierter Reap-Probelog) wurden gezielt berichtigt.
+Der erste Runtime-Source-Lauf erfasste zudem unveraenderte GCC-
+misleading-indentation-Diagnosen in Altcode. Wie die angenommene Referenz
+verwenden die finalen Runtime-/GUI-/Benchmark-Hostgates den vorhandenen
+Zig/Clang-Fallback (gcc/clang-Verzeichnisse nur aus dem Gate-PATH entfernt),
+ohne Warnungen/Assertions abzuschalten oder browser_forms.c zu veraendern.
+Nur betroffene Gates nach Korrektur wiederholt; keine Evidenz ueberschrieben.
+
 ## R3.27 abgenommen: externe klassische JavaScript-Dateien
 
 Nutzerauftrag zur Fortsetzung nach `361beac4`. Sauberer Worktree vor Beginn.
