@@ -1583,12 +1583,16 @@ static int ext2_journal_recover(ext2_request_t *request,
             current_crc != header->final_crc[index]) return -5;
         if (current_crc != header->final_crc[index]) complete = 0U;
     }
-    if (header->state == EXT2_JOURNAL_STATE_COMMITTED && complete != 0U) {
-            status = ext2_journal_clean(
-                request, volume, &journal, header->sequence);
-            if (status == 0 && journal_out != 0)
-                ext2_journal_publish(journal_out, &journal);
-            return status;
+    if (header->state == EXT2_JOURNAL_STATE_COMMITTED) {
+        /* COMMITTED follows final-sector flush and readback. Contradictory
+         * target evidence is corruption, never renewed undo authority. Only
+         * ACTIVE may restore before-images; refuse before any media write. */
+        if (complete == 0U) return -5;
+        status = ext2_journal_clean(
+            request, volume, &journal, header->sequence);
+        if (status == 0 && journal_out != 0)
+            ext2_journal_publish(journal_out, &journal);
+        return status;
     }
     status = ext2_journal_restore(
         request, volume, &journal, header, before);

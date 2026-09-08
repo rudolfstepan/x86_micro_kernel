@@ -45,7 +45,8 @@ sector validation, ABI, parser budgets, kernel, JS or authority:
 - ACTIVE retains the existing bounded undo path.
 - COMMITTED with all final target CRCs may only clean the journal headers.
 - COMMITTED with any non-final target, missing/corrupt before-image or
-  contradictory valid header returns EIO; no write or flush is permitted.
+  conflicting valid headers at the same sequence/state returns EIO; no write
+  or flush is permitted. Different legal cleanup states retain v1 selection.
 - CLEAN remains a no-op. Repeated cleanup and interrupted header cleanup
   remain bounded and idempotent. No hidden retry of the original mutation.
 
@@ -68,6 +69,13 @@ system image. Only private evidence disks may be changed by the guest.
 Both reference images and inherited protected hashes must pass. Preserve
 failed runs, archive final evidence, inspect exact scope, then commit locally.
 No later implementation package in the same run.
+
+R3.37 acceptance: all11 groups passed; contract checkpoint868ca285, exact
+commands/times and red-before-green evidence in CURRENT_WORK.md. Both real
+guest cases pass across service restart; contradictory disk unchanged,
+coherent cleanup changes only two headers.105 reference files archived.
+Only STORAGE.PRG changed among92 programs; both kernels unchanged. The next
+section remains future requirements, not an implemented write API.
 
 ## Next cohesive write slice (requirements, not an active package)
 

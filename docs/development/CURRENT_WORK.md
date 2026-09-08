@@ -2,15 +2,75 @@
 
 Stand: 8. September 2026
 
-## R3.37 aktiv: EXT2-Commit-Recovery vor JS3-Schreibrechten
+## R3.37 abgenommen: EXT2-Commit-Recovery vor JS3-Schreibrechten
 
-Sauberer Ausgang eb4dcc12. Die Inventur und verbindliche Reihenfolge stehen in
+Sauberer Ausgang eb4dcc12, Vertragscheckpoint868ca285. Inventur und Reihenfolge:
 [RING3_FILE_WRITE_CONTRACT.md](../architecture/RING3_FILE_WRITE_CONTRACT.md).
-Konkreter Befund: ext2_journal_recover laesst widerspruechliche COMMITTED-
-Zielsektoren in den ACTIVE-Undo-Pfad fallen. Dieses eigenstaendige
-Persistenzproblem wird mit Regression zuerst behoben; kein neuer JS-/VFS-
-Schreibzugriff, kein Format-/Kernelwechsel. Elf Gategruppen sind eingefroren.
-Belege: build/codex-agent/r337-ext2-commit/. Noch keine Abnahmebehauptung.
+Der reale Fehler ist behoben: Widerspruechliche COMMITTED-Zielsektoren duerfen
+nicht in den ACTIVE-Undo-Pfad fallen. Die einzige Produktionsaenderung liegt
+in ext2_journal_recover: COMMITTED mit nicht finalen Daten liefert EIO vor
+jedem Write/Flush. Vollstaendige Commits bereinigen nur die Journalheader;
+ACTIVE behaelt seine Undo-Autoritaet. Formatv1, Auswahl redundanter Header,
+Quoten, ABI, Kernel und JS-Rechte sind unveraendert.
+
+Alle elf eingefrorenen Gruppen bestanden. Exakte Befehle stehen in der Queue;
+abschliessende Belege relativ zu `build/codex-agent/r337-ext2-commit/`:
+
+| Gruppe | Ergebnis / Sekunden | Beleg |
+| --- | --- | --- |
+| test_ext2_commit_recovery.py |2 Tests, echte Journalpfade O0/O2 und Gastpruefer-Negativfaelle /3.023 |host-commit-final.log |
+| test_reist_vfs_symlink.py |4 Tests inkl. bestehender Unterbrechungsmatrix /1.049 |host-symlink.log |
+| test_reist_vfs_namespace.py |5 Tests /0.770 |host-namespace.log |
+| test_reist_vfs_shadow_ext2.py |2 Tests /0.988 |host-ext2.log |
+| test_reist_vfs_file_client.py |6 Tests /0.721 |host-vfs.log |
+| test-reist-package.ps1 -Target vmware -Video vga |PASS /79.984 |package-vmware.log |
+| test-reist-package.ps1 -Target qemu -Video vga |PASS /75.776 |package-qemu.log |
+| verify_js_runner_artifacts.py |92 Programme je Image, Kernel/Beispiele/Schutzhashes /1.517 |artifact-gate.log, artifacts/protected.json |
+| run_qemu_ext2_commit_recovery.py |beide echte Gastfaelle,16 Shellbefehle /48.990 |commit-guest-gate.log, guest/result.json |
+| run_qemu_ext2_symlink.py |bestehende Namespace-/Restart-Pruefung /88.044 |namespace-gate.log, namespace.log |
+| run_qemu_js_runner.py --file-capabilities |bestehende volle JS-/Datei-/Cleanup-Pruefung /119.926 |js-runner-gate.log, js-runner.log |
+
+Die vier bestehenden Hostgruppen laufen ueber measure_cpp_baseline.py mit
+unterdrueckten nativen Windows-Fehlerdialogen. Die neue Gruppe setzt denselben
+Prozessmodus selbst, mit90s Compiler-/30s Laufzeitgrenzen. Buildvolltexte:
+20260908-202909-package-vmware-vga.log und20260908-203029-package-qemu-vga.log.
+
+O0/O2 faengt die tatsaechlich geschriebenen COMMITTED-Header der Produktions-
+transaktion vor CLEAN ab. Fuenf geaenderte Zielsektoren werden einzeln und
+zusammen auf alte Bytes gesetzt: zweimalige Recovery liefert EIO bei null
+Writes/Flushes und identischem Abbild. Korrupte Before-Images, widerspruechliche
+gueltige Header, gueltige redundante Einzelkopien, alle drei CLEAN-Write-/Flush-
+Unterbrechungen, zweite Recovery, ACTIVE-Rollback und Deadline sind geprueft.
+
+Im echten1024MiB-QEMU-Gast bleibt das widerspruechliche Commit-Abbild nach
+Lesen, abgelehnter Mutation und svcctl restart5 bytegleich. Der gueltige Commit
+erhaelt alle Nichtheaderbytes und wird zu zwei exakten CLEAN-Headern. Normale
+Userspace-Shell und unabhaengige FAT-Datei bleiben vor/nach Restart benutzbar.
+Systemimage ist jeweils ein Snapshot. Keine sichtbaren VMs oder Hostdialoge.
+
+Nur STORAGE.PRG unterscheidet sich unter den92 Programmpayloads gegen R3.36;
+beide Kernel und die fuenf eingefrorenen Schutzprogramme bleiben bytegleich.
+Artefaktpruefer verwendet dieselben geerbten c9bf94ba-Hashpins; auch die neu
+gesicherten beiden Kernel sind separat dagegen geprueft. Kein neuer VMware-
+Benchmark-/WCET-Nachweis. Images:
+
+- QEMU: d355e963e81db46ab6e74824e3bed1f52e69756896a8c1a67d026ca2f45ab5aa
+- VMware: ff4cc0237d524247f9683647d0e038912a490ed50ba05925e95d29a1c6960d33
+
+accepted-reference/ enthaelt105 hashgepruefte Dateien: beide Images/Kernel,
+92 Programme, VMware-Descriptor/VMX, JS-Beispiele/Artefaktbericht und drei
+EXT2-Beweisimages samt Gastbericht. Hashindex: archive-sha256.json.
+Fruehere Belege bleiben unveraendert. host-red.log reproduziert den Fehler vor
+der Korrektur in O0/O2; host-commit.log ist der erste erfolgreiche reine
+C-Nachweis, host-commit-final.log ergaenzt den Gastpruefer. Keine gelockerten
+Anforderungen und keine weiteren fehlgeschlagenen Abnahmegates.
+
+Dies schliesst nur die eigenstaendige Persistenzreparatur. Keine neue
+Schreib-Capability, kein allgemeiner Ring-3-Dateischreibpfad, kein persistentes
+Kernel-Quarantaenebit und kein Hardware-Power-Loss-Claim. Die dokumentierte
+Backend-/Objekt-/Namespace-Grenze ist der naechste JS3-Schritt; kein JS4 und
+keine Kernel-VFS-Abkuerzung. Formaler Queueruecksprung auf R3.6b erhaelt dessen
+explizite Zurueckstellung; Scripting bleibt priorisiert. Kein Push/Agent.
 
 ## R3.36 / JS3 abgenommen: explizite Lese-Capabilities
 

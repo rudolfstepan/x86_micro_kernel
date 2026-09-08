@@ -281,3 +281,12 @@ eingefroren: Widerspruechliche COMMITTED-Evidenz darf nicht wie ACTIVE durch
 Zurueckschreiben alter EXT2-Sektoren behandelt werden. Gezielte O0/O2- und
 Gastbeweise, unveraenderte Kernel-/JS-Rechte; erst danach die dort dokumentierte
 stabile Schreibobjekt-/Backendmigration. Kein allgemeiner Schreibpfad behauptet.
+
+R3.37 ist nach allen elf Gruppen abgenommen (Vertragscheckpoint868ca285):
+reale COMMITTED-Transaktionen O0/O2, Fehler ohne Medienwirkung, Cleanup-Cuts,
+gueltige und widerspruechliche Gast-Commits samt Dienstneustart sowie bestehende
+Namespace-/JS-Dateipruefungen.105 Referenzdateien archiviert. Ausschliesslich
+STORAGE.PRG geaendert; beide Kernel und alle anderen Programmpayloads bytegleich.
+Zeiten/Belege in CURRENT_WORK.md. Naechster Schritt bleibt der stabile
+schreibbare Ring-3-Objektpfad mit Backend-/Persistenz-/Lifetime-Vertrag, danach
+erst die explizite JS-Schreibdelegation. Kein Schreibfeature vorweggenommen.

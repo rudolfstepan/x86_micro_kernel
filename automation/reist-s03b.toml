@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.37-ext2-commit-recovery"
-next_user_request = "2026-09-08: JS3 write inventory found that EXT2 recovery can roll back contradictory COMMITTED evidence. Repair this independent persistence prerequisite as R3.37 before enabling writable objects. Follow RING3_FILE_WRITE_CONTRACT; no kernel VFS write shortcut, directory-prefix authority or JS4. R3.6b stays explicitly deferred; no agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-08: R3.37 EXT2 committed-recovery prerequisite accepted, all11 groups. Continue JS3 with the writable regular-object/backend migration described in RING3_FILE_WRITE_CONTRACT: inventory shared FAT journal/ownership and namespace exclusion, freeze the complete cohesive write slice, then implement. No kernel VFS write shortcut, directory-prefix authority or JS4. Writable JS capabilities remain unimplemented. R3.6b stays explicitly deferred; no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.37-ext2-commit-recovery"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Preserve durable EXT2 commits during bounded Ring-3 recovery"
@@ -26,6 +26,7 @@ runtime_tests = ["python scripts/verify_js_runner_artifacts.py --baseline c9bf94
 acceptance = "All11 frozen groups. Real O0/O2 journal capture, terminal-state contradictions, cleanup interruption and idempotence; real guest refusal across service restart with exact unchanged disk and live normal shell, plus valid committed cleanup. Existing namespace and JS file guests pass. Kernels/five protected programs unchanged against inherited c9bf94ba pins. Scope/diff check and archive before local commit."
 stop_conditions = ["Unattributed changes", "Source outside allowed_files needed", "Failed gate without focused correction", "New write authority or persistent format required"]
 commit_message = "fix: reject contradictory committed EXT2 recovery evidence"
+evidence_note = "All11 groups passed; exact logs/times in CURRENT_WORK R3.37. Real production journal captured in O0/O2; both committed guest cases pass across restart, contradictory disk byte-identical. Existing namespace and JS file guests pass. Only STORAGE.PRG changed among92 packaged programs; both kernels and five protected hashes unchanged.105 hash-verified archive files; original red regression retained. No new write capability/format or hardware power-loss claim."
 
 [[packages]]
 id = "R3.36-js-file-capabilities"
