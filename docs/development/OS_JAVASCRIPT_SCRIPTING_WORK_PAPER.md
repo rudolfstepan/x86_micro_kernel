@@ -290,3 +290,13 @@ STORAGE.PRG geaendert; beide Kernel und alle anderen Programmpayloads bytegleich
 Zeiten/Belege in CURRENT_WORK.md. Naechster Schritt bleibt der stabile
 schreibbare Ring-3-Objektpfad mit Backend-/Persistenz-/Lifetime-Vertrag, danach
 erst die explizite JS-Schreibdelegation. Kein Schreibfeature vorweggenommen.
+
+Die Nachinventur auf024e4ce7 konkretisiert diese Voraussetzung:256 Legacy-
+Open-Nodes und16 Serviceobjekte besitzen bisher keine gemeinsame Lebensdauer-
+Admission. Der naechste zusammenhaengende Schnitt ist R3.38 gemaess
+[FILE_OBJECT_LIFETIME_CONTRACT.md](../architecture/FILE_OBJECT_LIFETIME_CONTRACT.md).
+FAT12/FAT32/EXT2, beide Besitzer, Aliasidentitaet, atomare Open-Verifikation,
+Widerruf sowie Recovery mit unbekanntem Ausgang gehoeren gemeinsam in dieses
+Paket. Die anschliessende Daten-/Journalmigration und JS-Schreibbindung bleiben
+separate Autoritaets-/Persistenzschritte. R3.38 ist eingefroren, nicht umgesetzt
+oder als Laufzeitverhalten abgenommen; die15 Gates stehen in der Queue.

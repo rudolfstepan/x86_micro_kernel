@@ -127,3 +127,15 @@ Queue/capacity limits protect failure containment, not an excuse for silent
 short resources. Keep CPU-local, scheduler and framebuffer hotpaths untouched;
 compare protected binaries and run existing benchmark proof if these paths
 must change. JS4 process/admin rights remain later independent authority.
+
+## Folgeinventur auf024e4ce7
+
+Die beiden bisherigen Open-Tabellen sind nicht gemeinsam wirksam. Darum ist
+R3.38 als ein zusammenhaengender Lebensdauer-/Admission-Schnitt ueber FAT12,
+FAT32 und EXT2 eingefroren:
+[FILE_OBJECT_LIFETIME_CONTRACT.md](FILE_OBJECT_LIFETIME_CONTRACT.md).
+Er schliesst die gemeinsame Autoritaetsgrenze vor der danach separaten
+persistenten Backendmigration. Keine Aufteilung nach kleinen Flagvarianten.
+Vorhandene15s-Wartungs-Leases und ein zweiter paralleler Journalbesitzer werden
+nicht als Dateischreib-Abkuerzung verwendet. Vertrag/Queue sind vorbereitet;
+Produktionscode und Laufzeitabnahme von R3.38 stehen noch aus.

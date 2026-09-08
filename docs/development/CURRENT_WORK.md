@@ -2,6 +2,33 @@
 
 Stand: 8. September 2026
 
+## R3.38 vorbereitet: gemeinsame Dateiobjekt-Lebensdauer
+
+Sauberer Ausgang024e4ce7. Die weitergefuehrte FAT-/Ownership-Inventur findet
+zwei getrennte Tabellen:256 Legacy-VFS-Nodes versus16 Ring-3-Serviceobjekte.
+Der vorhandene aliasfeste BUSY-Schutz erfasst nur die erste Tabelle. Aus einer
+erneuten Directory-/Inode-Signaturpruefung folgt kein Schutz gegen vollstaendige
+Wiederverwendung. Auch lesende EXT2-Einstiege koennen Recovery-Writes ausloesen.
+
+Der vollstaendige Folgevertrag steht in
+[FILE_OBJECT_LIFETIME_CONTRACT.md](../architecture/FILE_OBJECT_LIFETIME_CONTRACT.md).
+Er konkretisiert feste Identitaetsschluessel, atomare Open-Admission, beide
+Besitzer, generationengebundenen Widerruf, kurze Mutationsreservationen und
+Fencing beim Verlust des Besitzers. Keine volumeweite Langzeitsperre; keine
+neue Kernel-Pfad-/Dateisystempolitik. Der vorhandene FAT32-Journalkern bleibt
+vorerst beim aktuellen Besitzer; FAT12-Remaps/Replikate werden nicht umgangen.
+
+Queue und15 Abnahmegruppen sind eingefroren. Es ist genau R3.38 aktiv;
+R3.6b bleibt ausdruecklich zurueckgestellt. In diesem Vertragscheckpoint wurden
+nur diese Dokumentation und die Queue geaendert. Kein Produktionscode, keine
+Images und keine JS-Rechte geaendert. Struktur/Dateiliste/Queue,32-/112-Byte-
+Layoutrechnung und git diff --check sind geprueft; Laufzeitgates
+wurden nicht ausgefuehrt und werden nicht als bestanden gebucht.
+
+Naechster Arbeitsschritt: Regression zuerst, dann R3.38 direkt im Hauptworktree
+implementieren und alle eingefrorenen Gates ausfuehren. Die Schreibbackend-
+migration und JS-Schreibdelegation sind damit weiterhin nicht abgeschlossen.
+
 ## R3.37 abgenommen: EXT2-Commit-Recovery vor JS3-Schreibrechten
 
 Sauberer Ausgang eb4dcc12, Vertragscheckpoint868ca285. Inventur und Reihenfolge:

@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: R3.37 EXT2 committed-recovery prerequisite accepted, all11 groups. Continue JS3 with the writable regular-object/backend migration described in RING3_FILE_WRITE_CONTRACT: inventory shared FAT journal/ownership and namespace exclusion, freeze the complete cohesive write slice, then implement. No kernel VFS write shortcut, directory-prefix authority or JS4. Writable JS capabilities remain unimplemented. R3.6b stays explicitly deferred; no agents or push."
+active_id = "R3.38-file-object-lifetime"
+next_user_request = "2026-09-08: R3.38 FILE_OBJECT_LIFETIME_CONTRACT freezes the missing common Ring-3/legacy open-object lifetime and admission boundary on024e4ce7. Implement this active cohesive mechanism package next, regression first; contract checkpoint is not runtime acceptance. Then return to the Ring-3 write-backend migration and explicit JS grants. No VFS write shortcut, new persistent format or JS4. R3.6b stays explicitly deferred; no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,22 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.38-file-object-lifetime"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Common generation-scoped lifetime for Ring-3 and legacy open file objects"
+scope = "Read FILE_OBJECT_LIFETIME_CONTRACT fully. One cohesive lifetime/authority mechanism across FAT12/FAT32/EXT2 and both object owners. Atomic open admission, alias-safe namespace exclusion, generation cleanup and bounded uncertain-owner fencing; no JS write capability or new persistent format."
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/development/OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md","docs/architecture/RING3_FILE_WRITE_CONTRACT.md","docs/architecture/FILE_OBJECT_LIFETIME_CONTRACT.md","docs/architecture/REIST_ARCHITECTURE.md","include/reist/abi/syscall.h","userspace/sdk/include/reist/abi/syscall.h","lib/libc/stdlib.h","userspace/sdk/include/x86os.h","scripts/generate_syscall_abi.py","include/kernel/file_object_guard.h","kernel/init/file_object_guard.c","kernel/syscall/syscall_table.c","kernel/proc/process.c","kernel/proc/process.h","kernel/init/storage_service.c","fs/vfs/vfs.c","fs/vfs/vfs.h","fs/fat12/fat12_vfs_adapter.c","fs/fat32/fat32_vfs_adapter.c","fs/ext2/ext2_vfs_adapter.c","userspace/storage/include/reist/vfs_shadow_fat32.h","userspace/storage/lib/vfs_shadow_fat32.c","userspace/storage/include/reist/vfs_shadow_ext2.h","userspace/storage/lib/vfs_shadow_ext2.c","userspace/programs/storage_service.c","userspace/programs/objgdtst.c","scripts/build_system_programs.py","scripts/build-windows.ps1","Makefile","test/test_file_object_guard.py","test/file_object_guard_host.c","test/test_open_namespace_locks.py","test/test_syscall_abi_source.py","test/test_script_domain.py","test/test_script_domain_host.c","scripts/run_qemu_file_object_guard.py","scripts/verify_file_object_guard_artifacts.py"]
+invariants = ["No new kernel pathname/filesystem parser or journal ownership. Use bounded deny-only identity metadata and existing projections. No implicit WRITE in old ALL/DATA masks. Syscalls0..128 unchanged; append129 only for current Storage service, native Script remains default deny.", "No whole-volume long-lived file lease, invalidation of unrelated existing handles, lookup/publication race, unbounded retry or stale generation reuse. Include read-triggered EXT2 recovery and unknown mutation-owner fencing.", "Main worktree only, clean candidate baseline, no agents, visible VMs, host error dialogs, unrelated edits or push. Preserve kernel performance hotpaths and old evidence."]
+targeted_tests = ["python test/test_file_object_guard.py -v","python scripts/generate_syscall_abi.py --check","python test/test_syscall_abi_source.py -v","python test/test_script_domain.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_open_namespace_locks.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_file_client.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_symlink.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_namespace.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/verify_file_object_guard_artifacts.py --evidence build/codex-agent/r338-file-lifetime/artifacts","python scripts/run_qemu_file_object_guard.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r338-file-lifetime/guest","python scripts/run_qemu_js_runner.py --file-capabilities --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r338-file-lifetime/js-runner.log","python scripts/run_qemu_js_service.py --restricted-worker --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r338-file-lifetime/js-service.log","python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r338-file-lifetime/browser.log"]
+acceptance = "All15 frozen groups, real O0/O2 shared-owner/epoch/cleanup/fence behavior and actual FAT12/FAT32/EXT2 guest proof including owner/service loss. Both reference kernels match newly built bytes; inherited five protected program hashes unchanged. No implicit file writes or performance claim. Archive and inspect scope/ABI/cleanup before queue transition and local implementation commit."
+stop_conditions = ["Unattributed or overlapping user changes", "Source outside allowed_files required", "Unresolved lock/authority or media-identity ambiguity", "Failed gate without focused correction", "New persistent format or writable JS binding needed"]
+commit_message = "feat: unify generation-scoped file object lifetime guards"
 
 [[packages]]
 id = "R3.37-ext2-commit-recovery"
@@ -2354,7 +2370,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
