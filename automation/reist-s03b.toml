@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.27-browser-external-scripts"
-next_user_request = "2026-09-08: Continue browser JavaScript after3eab01ab. Implement bounded parser-blocking external classic scripts through existing CURL with direct browser ownership, real resource admission, replay and containment. Keep R3.6b deferred. No agents/push."
+active_id = "R3.27a-network-receive-progress"
+next_user_request = "2026-09-08: User approves network prerequisite after measured external-script TCP timeout. Preserve unaccepted R3.27 in stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2; accept R3.27a first, then resume R3.27 and R3.28. No relaxed browser gates, agents, push or routine confirmation."
 
 [policy]
 one_package_per_run = true
@@ -12,8 +12,43 @@ external_writes = false
 push = false
 
 [[packages]]
-id = "R3.27-browser-external-scripts"
+id = "R3.27a-network-receive-progress"
 status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bounded TCP receive progress independent of syscall copy size"
+scope = "One existing network receive-progress boundary: decouple legacy fixed TCP staging capacity from public copy ABI, bounded traffic-sensitive Ring-3 control wait, unchanged frame admission/fencing, real throughput and lifecycle proof. No new Ring-0 parser, protocol feature, NIC or scheduling mechanism."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+ "docs/networking/NETWORK.md", "docs/architecture/NETWORK_RECEIVE_PROGRESS_CONTRACT.md",
+ "drivers/net/tcp_socket.c", "drivers/net/tcp_socket.h", "userspace/programs/reist_probe.c", "userspace/programs/network_cadence.h",
+ "userspace/programs/nettest.c", "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+ "test/test_tcp_socket_host.c", "test/test_network_progress.py", "test/network_progress_host.c", "scripts/run_qemu_network_progress.py"
+]
+invariants = [
+ "Frozen NETWORK_RECEIVE_PROGRESS_CONTRACT: RFC9293 receive-window terminology, legacy TCB remains explicit migration debt. Fixed32KiB/socket, four slots (128KiB), unchanged2048-byte syscall and512-byte ingress, old public structs/numbers/wrappers unchanged. No heap, new locks, IRQ work or syscall-stack growth.",
+ "Ring3 parses frames with existing8-frame batch; traffic-sensitive bounded control IPC wait, idle40ms retained, no timeout-zero busy loop or additional wait node. DHCP, heartbeat, generation/fencing/restart budgets unchanged. Scheduler/PIT/supervisor/NIC sources unchanged.",
+ "Real host O0/O2 covers full/overflow/window reopen/ring wrap/sequence wrap/EOF/RST/deadline/owner cleanup and stale handles plus cadence quiet/burst/expiry/clock wrap. Real guest verifies every byte of1MiB under5s, slow reader, timeout/reset/reopen/cancel with fresh stream; E1000 and RTL8139, fixed server payload and no pacing workaround.",
+ "Both reference artifacts preserve baseline3eab01ab BROWSER/HTMLWORK/CURL/JSWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST payloads. Kernel changes restricted to legacy TCP storage correction. Real scheduler slack and unchanged browser input/crash/restart gates; network service crash/recovery smoke. No VMware runtime/10x-performance claim.",
+ "R3.27 implementation remains shelved, not accepted here. After prerequisite acceptance only its protected kernel baseline may advance to this accepted package by explicit documented follow-up; no other R3.27 gates or quotas weakened. No later package implementation in this run."
+]
+targeted_tests = ["python test/test_network_progress.py -v", "python test/test_network_tools.py NetworkToolsSourceTests.test_tcp_connect_stream_and_close_behavior -v", "python test/test_reist_network_frame_handoff.py -v", "python test/test_reist_network_domain.py -v", "python test/test_reist_service_domain.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_network_progress.py --verify-artifacts --log build/codex-agent/r327a-network/artifacts.json",
+ "python scripts/run_qemu_network_progress.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327a-network/guest.log",
+ "python scripts/run_qemu_smoke.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --nic e1000 --expect-network-handoff --timeout 90 --log build/codex-agent/r327a-network/recovery.log",
+ "python scripts/run_qemu_scheduler_slack.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327a-network/slack.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "All frozen host, reference and runtime gates pass; direct final diff/scope review; preserve all evidence and previous browser stash. No acceptance by buffer-size/source-pattern assertion alone; throughput every-byte guest plus service fault recovery and protected application performance paths required."
+stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "New kernel protocol/driver/scheduler authority", "Failed gate without demonstrated focused in-scope correction"]
+commit_message = "fix: remove bounded TCP receive progress bottlenecks"
+evidence = []
+
+[[packages]]
+id = "R3.27-browser-external-scripts"
+status = "queued"
 phase = "post-s0"
 risk = "high"
 title = "External classic JavaScript with owned asynchronous loading"
@@ -50,6 +85,45 @@ runtime_tests = [
 acceptance = "Actual C++ fetch/response/owner host with OS-only mocks, truncated/stale/cap/deadline/kill/reap/no-copy/no-publication failures, legacy profiles; actual parser callback ordering/admission. Headless real browser local plus >256KiB HTTP script, redirect, cache/no-refetch replay, missing/MIME errors continue, real in-flight CURL cancellation and recovery; existing JS fault/hang and input/crash/restart preserved. Both references and protected hashes."
 stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/engine/CURL authority expansion", "Failed gate without demonstrated focused in-scope correction"]
 commit_message = "feat: load external classic scripts in the browser"
+evidence = []
+
+[[packages]]
+id = "R3.28-browser-static-css-layout"
+status = "queued"
+phase = "post-s0"
+risk = "high"
+title = "Standards-based static CSS values and box layout"
+scope = "One HTMLWORK computed-style/layout and validated scene-publication boundary: real custom-property cascade and substitution, min/max and box sizing, Flex/Grid reference layout, hidden helper positioning/clipping and bounded card/button decoration. No fonts, event/document lifetime, network authority or kernel change. Frozen R3.28 extension in BROWSER_ENGINE_PORT_PLAN.md; only after R3.27 acceptance."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
+ "userspace/gui/apps/browser/css_engine.c", "userspace/gui/apps/browser/css_engine.h",
+ "userspace/gui/apps/browser/css_values.cpp", "userspace/gui/apps/browser/css_values.hpp",
+ "userspace/gui/apps/browser/css_layout.cpp", "userspace/gui/apps/browser/css_layout.hpp",
+ "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/html_engine.h",
+ "userspace/gui/apps/browser/browser_scene.c", "userspace/gui/apps/browser/browser_scene.h",
+ "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/html_protocol.h", "userspace/gui/apps/browser/main.c",
+ "scripts/build_html_engine.py", "scripts/libcss_layout_adapter.py", "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+ "test/test_browser_layout.py", "test/browser_layout_host.cpp", "test/test_css_engine.py", "test/test_css_engine_host.c",
+ "test/test_html_engine.py", "test/test_browser_runtime_source.py", "test/test_gui_browser_source.py",
+ "scripts/run_qemu_runtime_desktop.py", "scripts/run_qemu_browser_layout.py", "htdocs/layout.htm", "htdocs/layout.css"
+]
+invariants = [
+ "Read frozen R3.28 extension and inventory existing LibCSS computed properties first. Preserve actual upstream tokenization/cascade; versioned exact-source adapter on pinned archive if needed, never regex/global var replacement or site-specific bypass. Define tested subset without claiming full CSS compatibility.",
+ "All style/layout work stays in disposable HTMLWORK. Existing32MiB/tree/depth/work/scene budgets, bounded expansion/cycle detection, checked geometry and all-before-publication scene admission; old page survives malformed/quota/deadline/native fault. No paint/input heap or I/O, no kernel/driver/ABI change. Private scene extension append-only, old profiles preserved.",
+ "No new font/network/event authority. Existing scripting source-exact replay and navigation fencing preserved. Kernel and protected benchmarks/JSWORK/CURL bytes identical accepted R3.27; actual artifacts verified in both images, not just build-output hashes.",
+ "Real host values/geometry/negative O0/O2 plus actual headless guest scanout at two widths, no-script reference, reflow/scroll/input/fault/hang/recovery. No visible VMs/native dialogs/agents/push. Preserve failure evidence; only affected gates repeated after demonstrated scoped repair."
+]
+targeted_tests = ["python test/test_browser_layout.py -v", "python test/test_css_engine.py -v", "python test/test_html_engine.py -v", "python test/test_browser_scripting.py -v", "python test/test_browser_external_scripts.py -v", "python test/test_browser_runtime_source.py -v", "python test/test_gui_browser_source.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_browser_layout.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r328-css-layout/artifacts.json",
+ "python scripts/run_qemu_browser_layout.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r328-css-layout/guest.log",
+ "python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r328-css-layout/external-guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "Frozen R3.28 BROWSER_ENGINE_PORT_PLAN: real custom-property/cascade/used-value and nested box/Flex/Grid behavior, malformed/cycle/quota tests O0/O2; actual local static reference scanout/nav/button/card geometry/colors at two guest widths, preserved fault/hang/old-page/recovery, external JS and original input guests, protected actual image payloads. Proportional/webfonts and dynamic navigation APIs explicitly remain next separate boundaries."
+stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/font/event/network authority expansion", "Failed gate without demonstrated focused in-scope correction"]
+commit_message = "feat: improve static browser CSS layout"
 evidence = []
 
 [[packages]]

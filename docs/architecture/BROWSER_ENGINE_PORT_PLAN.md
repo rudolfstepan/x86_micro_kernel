@@ -2,6 +2,78 @@
 
 Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
 
+## Nutzerziel 8. September: intracom.at als Darstellungsreferenz
+
+Der Nutzer hat den vollstaendigen Ausbau freigegeben. R3.27 wird zuerst
+abgenommen; Folgepakete werden nicht in dessen eingefrorenen Scope gemischt.
+Die gelesenen oeffentlichen Quellen sind [site.css](https://intracom.at/assets/css/site.css)
+und [include-fragments.js](https://intracom.at/assets/js/include-fragments.js).
+Die Sollansicht ist kein Nachweis heutiger Browser-Kompatibilitaet.
+
+Die Bestandsaufnahme trennt vier zusammenhaengende Umsetzungsschritte:
+
+1. Externe klassische Skripte: R3.27, vorhandener CURL und isolierter JSWORK.
+2. Statische CSS-Darstellung: R3.28, berechnete Werte und echtes Boxlayout.
+   CSS-Variablen, min/max-Groessen, border-box, Zentrierung, Flex/Grid und
+   Abstaende fehlen heute im wirksamen Layoutpfad. LibCSS erkennt bereits
+   mehrere dieser Properties; Erkennen allein ist keine Layoutunterstuetzung.
+3. Schrift-/Zeichenpfad: proportionale Serif-/Sans-Schriften, gleiche Metriken
+   beim Messen und Zeichnen, Raster-/Glyphcache; danach externe Webfonts mit
+   eigenem Decoder-/Ressourcenvertrag. Die feste PSF2-Schrift reicht nicht
+   fuer die Sollansicht. Kein unvalidierter Fontparser im UI oder Kernel.
+4. Dynamische Dokumentlebensdauer und Web-APIs: DOMContentLoaded/Ereignisse,
+   querySelector(All), sichere HTML-Fragmente/innerHTML/Elementeinfuegung,
+   anschliessend browservermitteltes asynchrones fetch samt Response.text,
+   Origin/CSP/Redirect-Admission und Navigation-Abbruch. Das Seitenskript
+   benoetigt diese APIs; Laden einer JS-Datei allein baut die Navigation nicht.
+
+Nach jedem Schnitt: reale Host-Verhaltenstests und Gastpixel/-Interaktion,
+Quoten-/Abbruch-/Fault-/Recovery-Proof und unveraenderte geschuetzte
+Kernel-/Benchmarkbytes. Keine sitespezifischen URL-/CSS-Sonderfaelle,
+keine globale Text-Ersetzung von var(), keine gezeichnete Attrappe.
+
+## R3.28 eingefrorener Folgeschnitt: statische CSS-Werte und Boxlayout
+
+Eine gemeinsame HTMLWORK-Layout-/Szenenpublikationsgrenze, keine neue
+Geraete-/VFS-/Netzwerkautoritaet und keine Ereignislebensdauer. Referenzen:
+[CSS Custom Properties 1](https://www.w3.org/TR/css-variables-1/),
+[CSS Sizing 3](https://www.w3.org/TR/css-sizing-3/),
+[Flexbox 1](https://www.w3.org/TR/css-flexbox-1/),
+[Grid 1](https://www.w3.org/TR/css-grid-1/) und CSS2.1 Boxmodell.
+LibCSS/Hubbub bleiben die echten Parser-/Kaskadenbausteine. Falls eine
+Quellanpassung noetig ist: versionierter, exakt gepruefter Adapter auf dem
+unveraenderten gepinnten Archiv, kein zweiter Regex-/String-CSS-Parser.
+
+DoD ist ein zusammenhaengender statischer Darstellungsdurchlauf:
+Custom Properties mit case-sensitiven Namen, Vererbung, Selektorkaskade,
+Quellreihenfolge/important, tokengetreuen verschachtelten Fallbacks, Zyklen und
+invalid-at-computed-value-Behandlung; min/max-width/height, content-/border-box
+und auto-Margins; normale/inline Flexbox mit Richtung, Umbruch, gap,
+justify/align und grow/shrink; explizite Grid-Spalten (px/fr/minmax/repeat und
+auto-fit fuer das Referenzraster) samt gap. Versteckte Hilfstexte duerfen
+durch fehlende Positionierungs-/Clipauswertung nicht den Hauptfluss zerlegen.
+Karten und Link-Buttons erhalten ihre echte Boxdekoration, einschliesslich
+begrenzter Rundungen/Schatten. Nicht abgedeckte Grid-/Positionierungsdetails,
+Animationen, Fontfaces oder CSSOM werden ausdruecklich abgegrenzt.
+
+Vor jeder Szenenpublikation werden alle Koordinaten/Laengen/Indizes und ein
+gegebenenfalls append-only versioniertes privates Szenenprofil validiert;
+alte Profile bleiben unveraendert. Vorhandene HTMLWORK-32MiB-, Baum-, Tiefen-,
+Arbeits- und Szenenbudgets bleiben Grenzen, keine Heap-/Dateioperation im
+Paint-/Mauspfad. Bounded Token-/Abhaengigkeitsarbeit statt rekursiver
+unkontrollierter Variablenexpansion. Fehler bewahren die bisherige Seite.
+
+Abnahme: echte Parser/Kaskade/Geometrie-Hosttests mit O0/O2, Auswahl/Werte/
+Zyklen/Boxtype/verschachtelte Flex/Grid-Faelle, negative Quoten und
+atomare Szenenannahme. Eigenstaendige lokale Referenzfixture (keine vom Netz
+abhaengige Sollpixelbasis) prueft zentrierten Inhalt, Nav-/Buttonreihen,
+Kartenfarben/Abstaende und Umbruch in mindestens zwei echten Gastbreiten.
+Dieselbe Fixture ohne Skripte trennt CSS von JS. Reflow/Scroll/Eingabe,
+HTMLWORK-Fault/Hang/Recovery bleiben wirksam. Beide Images und tatsaechliche
+Kernel-, Benchmark-, JSWORK- und CURL-Hashes werden geprueft; weder allgemeine
+CSS-Kompatibilitaet noch neue Performancezahlen werden daraus abgeleitet.
+R3.28 darf erst nach R3.27-Commit begonnen werden; Scope/Gates stehen in der Queue.
+
 Fortsetzung8 September, R3.26 abgenommen: HTML-Attribute mit get/set/remove/
 toggle, id/className und live classList sind an den echten Baum gebunden.
 Version2-Journal erweitert die bestehende Dokumentgrenze; CSS sieht reale

@@ -2,6 +2,20 @@
 
 Stand: 3. September 2026
 
+8.September, genehmigtes Prerequisite R3.27a: begrenzten TCP-Empfang von
+der ABI-Kopiergrenze entkoppeln und aktive Ring3-Netzarbeit zeitnah bedienen.
+Browser-R3.27 bleibt gesichert und unabgenommen; danach R3.28. Kein Lockern
+der Browser-Gates oder Ausbau von Ring0-Protokollautoritaet. Vertrag:
+NETWORK_RECEIVE_PROGRESS_CONTRACT.md.
+
+8. September, neuer Nutzerauftrag: intracom.at soll nicht nur laden, sondern
+korrekt dargestellt und bedienbar werden. R3.27 externe Skripte zuerst
+abschliessen; danach R3.28 statische CSS-Werte/Boxlayout. Proportionale
+Schriften/Webfonts sowie dynamische DOM-/Event-/fetch-APIs bleiben eigene
+Folgegrenzen. Konkrete Sollfunktionen und eingefrorene R3.28-Abnahme stehen
+in BROWSER_ENGINE_PORT_PLAN.md und der Queue; keine Layoutkorrektur durch
+JavaScript allein und keine heutige Vollbrowser-Kompatibilitaetszusage.
+
 8. September, R3.26 abgenommen: JavaScript liest/aendert HTML-Attribute,
 id/className und live classList; Profil2-Journal wird vollstaendig vor
 Baumaenderungen validiert und profil-/quelltextgenau wiedergegeben.

@@ -2,7 +2,82 @@
 
 Stand: 8. September 2026
 
-## R3.27 aktiv: externe klassische JavaScript-Dateien
+## R3.27a aktiv: genehmigte Netzwerk-Voraussetzung
+
+Nutzerfreigabe vom8.September: alle erforderlichen Schritte einschliesslich
+des gemeldeten Netzwerk-Prerequisites. Der nicht abgenommene R3.27-Code liegt
+wiederherstellbar in Stash `cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2`;
+25 explizite Quell-/Test-/Fixturepfade, keine fremden Aenderungen entfernt.
+Alle bisherigen Images/Logs bleiben erhalten. R3.27 und R3.28 sind queued.
+Nur das neue R3.27a wird in diesem Lauf umgesetzt. Vertrag:
+NETWORK_RECEIVE_PROGRESS_CONTRACT.md, eingefrorene Gates in der Queue.
+
+## R3.27 zurueckgestellt: externe klassische JavaScript-Dateien
+
+**Noch nicht abgenommen, kein Implementierungscommit.** Gesicherte R3.27-
+Aenderungen gehoeren dieser interaktiven Umsetzung auf040ed90f/3eab01ab.
+Die gefrorenen Gates/Allowed-Files wurden nicht gelockert. R3.28 ist nur
+vorbereitet; wegen des folgenden Netzwerk-Prerequisites noch nicht beginnen.
+
+Implementiert: privates Script-Profil3, echte parsergeordnete src-Auftraege,
+lokaler/HTTP-Lader mit direkt besessenem CURL, MIME/UTF8-/URL-/Redirect-
+Admission, Dokumentcache, gleiche JS-Umgebung und exakte Journalwiedergabe.
+Der alte Kernel, SDK, CURL und JSWORK wurden nicht geaendert.
+
+Hoststand:60 verschiedene Testmethoden bestehen, einschliesslich echter
+QuickJS-O0/O2-, Parser-, Owner-/Transport- und Cache-Fehlerfaelle. Die
+fehlgeschlagenen Entwicklungslaeufe bleiben unter
+`build/codex-agent/r327-external-js/` erhalten; nur betroffene Methoden wurden
+nach konkreten Korrekturen wiederholt:
+
+- external-gate6.457s; quote/cache regression1.724s -> external-fixed4.469s;
+  redirect alias regression1.258s -> redirect-cache-fixed3.315s;
+  neuer Gast-Evidenzvalidator besteht im Cache-Regressionslauf.
+- scripting-gate40.562s: QuickJS/Validator bestanden, Host-Narrowing korrigiert
+  -> owner-fixed6.569s; verlorene Realm regression1.957s -> realm-loss-fixed4.182s.
+- html-gate5.151s, css-gate56.292s, js-service6.172s, navigation2.932s,
+  GUI59.522s, benchmark0.004s. runtime-source12.508s:28 Methoden bestanden,
+  fehlende OS-Dateimocks im Host ergaenzt -> transport-fixed2.745s besteht.
+- VMware20s/QEMU72s, nach Cache/Realm-Fix VMware77s/QEMU70s.
+  Die beiden letzten Nachbuilds ueberlappten kurz; `artifacts.json`1.056s
+  prueft anschliessend erfolgreich **beide tatsaechlichen Image-Inhalte**,
+  nicht nur gemeinsame Builddateien. Alle geschuetzten Kernel-/Programm-
+  Hashes stimmen mit3eab01ab ueberein; CURL wurde auch aus dem erhaltenen
+  R3.26-QEMU-Image gegengeprueft.
+
+Offenes Pflichtgate: `run_qemu_browser_external.py` scheitert dreimal beim
+325231-Byte-HTTP-Skript nach erfolgreichem Redirect, nicht beim lokalen Script.
+`guest.log`47.108s, `guest-diagnostic.log`48.538s und
+`guest-network.log`48.539s samt .http.json/.pcap sind erhalten.
+Die Diagnoseversion (nur zusaetzliche Lader-Fehlerzaehler) wurde fuer QEMU
+in15s gebaut (`qemu-diagnostic.log`); diese neue BROWSER-Datei hat noch keine
+beidseitige Artefaktabnahme. `first-guest-image/reist-os.img` sichert das
+vorherige getestete Image. R3.26-Referenzen bleiben unberuehrt.
+
+Gesicherte Beobachtung: Der lokale HTTP-Peer liefert das gesamte325231-Byte-
+Skript ohne Serverfehler ab. Bis zum begrenzten Abbruch bestaetigt der Gast
+nur103873 TCP-Bytes in5.653 Hostsekunden. Das angebotene Empfangsfenster
+betraegt durchgehend maximal2048 Bytes; ~1440-Byte-Netzsegmente werden im
+mediierten Empfang in512-Byte-Schritten quittiert, neue Daten folgen vielfach
+erst nach50--70ms. Der Browser-Lader meldet `received=0 total=0`: CURL
+publiziert erst die vollstaendige HTTP-Antwort, die IPC-Uebergabe ist noch
+nicht begonnen. Redirect und Worker-Reap funktionieren. Timeout endet
+fenced mit Exit143; die bisherige Seite bleibt erhalten.
+
+Read-only Quellbefund ausserhalb des Pakets: `drivers/net/tcp_socket.h`
+setzt RECEIVE_CAPACITY=2048/MAX_SEGMENT=512; der TCP-Empfangspuffer und das
+beworbene Fenster sind daran gekoppelt. `kernel/init/supervisor.c` ruft
+`netdev_poll()` im gemeinsamen Supervisor-Durchlauf auf, mit anschliessendem
+10ms-Sleep plus anderer Supervisorarbeit. Der Mitschnitt belegt einen
+Engpass im Netzwerkpfad, keine erfolgreiche grosse JS-Uebertragung.
+
+Stopgrund: weitere Korrektur erfordert ein gesondert eingefrorenes
+Netzwerk-/TCP-/Bottom-Half-Paket ausserhalb R3.27 und damit eine neue
+Abnahme des bisher geschuetzten Kernelbestands. Kein Erhoehen der5s-Grenze,
+keine kleinere Gastfixture und kein langsamer gepaceter Testserver als
+Gate-Umgehung. Keine Netzwerk-/Kernelquelle geaendert. Inline-/Input-
+Gastgates der aktuellen Version wurden deshalb noch nicht ausgefuehrt;
+kein Queue-Uebergang zu done, kein Implementierungscommit oder Push.
 
 Fortsetzung auf3eab01ab. Eingefrorener Ressourcen-/Skriptschnitt: echter
 Parser-src-Callback, direkt besessener asynchroner CURL-Auftrag, lokale
@@ -10,6 +85,12 @@ Dateien, URL-/MIME-Admission, begrenzter Dokumentcache und quelltextgenaues
 Replay. Kernel, JSWORK und CURL bleiben unveraendert; keine Agenten.
 Scope/Gates in der Queue, Grenzen in BROWSER_SCRIPTING_CONTRACT.md.
 R3.6b bleibt zurueckgestellt.
+
+Der Nutzer hat inzwischen alle erforderlichen Umsetzungsschritte fuer die
+intracom.at-Sollansicht freigegeben. R3.28 CSS-Werte/Boxlayout ist als naechstes
+Paket eingefroren und queued; noch keine R3.28-Quellimplementierung.
+Schrift-/Rasterpfad und dynamische DOM-/Event-/fetch-Lebensdauer folgen danach.
+Details und Bestandsabgleich in BROWSER_ENGINE_PORT_PLAN.md.
 
 ## R3.26 abgenommen: JavaScript-Attribute und CSS-Klassen
 
