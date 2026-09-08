@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: Continue useful browser JavaScript after2d6aba16. Extend the accepted document mutation boundary with real HTML attributes, id/className/classList and CSS-visible changes, preserving parser order, source-exact replay and worker containment. R3.6b remains deferred. Main interactive worktree only; no agents/push."
+active_id = "R3.27-browser-external-scripts"
+next_user_request = "2026-09-08: Continue browser JavaScript after3eab01ab. Implement bounded parser-blocking external classic scripts through existing CURL with direct browser ownership, real resource admission, replay and containment. Keep R3.6b deferred. No agents/push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,47 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.27-browser-external-scripts"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "External classic JavaScript with owned asynchronous loading"
+scope = "One external-script fetch/execution/publication boundary: actual parser src callbacks, direct BROWSER-owned CURL transport, local scripts, canonical base/redirect admission, JS MIME/UTF8 policy, bounded private document cache and exact replay, error/cancel/reap proof. No module/async/defer/event lifetime or kernel/engine/CURL authority changes."
+allowed_files = [
+ "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md",
+ "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md", "docs/architecture/BROWSER_SCRIPTING_CONTRACT.md",
+ "userspace/gui/apps/browser/main.c", "userspace/gui/apps/browser/browser_script.h", "userspace/gui/apps/browser/browser_script.cpp",
+ "userspace/gui/apps/browser/script_fetch.hpp", "userspace/gui/apps/browser/script_fetch.cpp",
+ "userspace/gui/apps/browser/script_protocol.h", "userspace/gui/apps/browser/script_protocol.c",
+ "userspace/gui/apps/browser/html_engine.h", "userspace/gui/apps/browser/html_engine.c", "userspace/gui/apps/browser/html_script.c",
+ "userspace/gui/apps/browser/browser_response.h", "userspace/gui/apps/browser/browser_response.cpp",
+ "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
+ "test/browser_scripting_host.cpp", "test/browser_script_dom_host.c", "test/test_browser_scripting.py",
+ "test/script_fetch_host.cpp", "test/test_browser_external_scripts.py", "test/test_browser_runtime_source.py",
+ "scripts/run_qemu_runtime_desktop.py", "scripts/run_qemu_browser_external.py",
+ "htdocs/jsext.htm", "htdocs/ext.js"
+]
+invariants = [
+ "R3.27 extension in BROWSER_SCRIPTING_CONTRACT.md frozen before code. Private script profile3 explicit src discriminator, profiles1/2 unchanged. Whole identity/reference/body admission before copy/evaluation, journal/profile/source-kind/source/ordinal exact replay.",
+ "BROWSER directly owns HTMLWORK, JSWORK and at most one additional CURL. No parser/JS network or VFS authority. Existing CURL binary/TLS checks unchanged. Fetch5s aggregate including <=5 redirects, one kill/reap1s, no retry/unknown-generation kill/wait on live child. Per-turn <=16 timeout-zero IPC calls including original chrome path. Local reads<=4KiB/turn. Failed candidate preserves old page.",
+ "Existing engine/parse/journal budgets unchanged. Extra loader storage<=3MiB demand allocated, total script adapter<=9MiB; individual external source<=1MiB and cache aggregate<=1MiB/32 entries. Cache only explicit positive max-age admitted without no-store/no-cache/Age/Vary, expiry bounded; source-exact resize replay never refetches or reexecutes. Fresh navigation resets cache.",
+ "HTTP/meta CSP conservatively blocks all scripting. HTTPS downgrade/network-to-local/credentials invalid URL denied at each hop. Enforce JS MIME and UTF8/ASCII; ordinary missing/HTTP/MIME failure skips resource and continues; deadline/protocol/child failure fences candidate. Unsupported async/defer/module/CORS/integrity/referrer attributes remain inert, never falsely parser-ordered.",
+ "Both actual kernels and GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST/JSWORK/CURL byte-identical3eab01ab. Main visible worktree, no agents/visible VMs/native dialogs/push; retain failures, repeat only affected gates after focused repair."
+]
+targeted_tests = ["python test/test_browser_external_scripts.py -v", "python test/test_browser_scripting.py -v", "python test/test_html_engine.py -v", "python test/test_css_engine.py -v", "python test/test_js_service.py -v", "python test/test_browser_navigation_source.py -v", "python test/test_browser_runtime_source.py -v", "python test/test_gui_browser_source.py -v", "python test/test_benchmark_source.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga", ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = [
+ "python scripts/run_qemu_browser_external.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r327-external-js/artifacts.json",
+ "python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327-external-js/guest.log",
+ "python scripts/run_qemu_browser_scripting.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327-external-js/inline-guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
+acceptance = "Actual C++ fetch/response/owner host with OS-only mocks, truncated/stale/cap/deadline/kill/reap/no-copy/no-publication failures, legacy profiles; actual parser callback ordering/admission. Headless real browser local plus >256KiB HTTP script, redirect, cache/no-refetch replay, missing/MIME errors continue, real in-flight CURL cancellation and recovery; existing JS fault/hang and input/crash/restart preserved. Both references and protected hashes."
+stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/engine/CURL authority expansion", "Failed gate without demonstrated focused in-scope correction"]
+commit_message = "feat: load external classic scripts in the browser"
+evidence = []
 
 [[packages]]
 id = "R3.26-browser-dom-attributes"
@@ -1935,7 +1976,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

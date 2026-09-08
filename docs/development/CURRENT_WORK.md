@@ -2,6 +2,15 @@
 
 Stand: 8. September 2026
 
+## R3.27 aktiv: externe klassische JavaScript-Dateien
+
+Fortsetzung auf3eab01ab. Eingefrorener Ressourcen-/Skriptschnitt: echter
+Parser-src-Callback, direkt besessener asynchroner CURL-Auftrag, lokale
+Dateien, URL-/MIME-Admission, begrenzter Dokumentcache und quelltextgenaues
+Replay. Kernel, JSWORK und CURL bleiben unveraendert; keine Agenten.
+Scope/Gates in der Queue, Grenzen in BROWSER_SCRIPTING_CONTRACT.md.
+R3.6b bleibt zurueckgestellt.
+
 ## R3.26 abgenommen: JavaScript-Attribute und CSS-Klassen
 
 Fortsetzung auf2d6aba16 im sichtbaren Hauptworktree. Eingefrorene Erweiterung

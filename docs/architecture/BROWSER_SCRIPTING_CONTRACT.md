@@ -1,5 +1,67 @@
 # Browser scripting profile 1 — R3.25
 
+## R3.27 frozen extension — parser-blocking external classic scripts
+
+Frozen8 September2026 on3eab01ab. Reference [HTML classic-script fetching](https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-classic-script),
+[script processing](https://html.spec.whatwg.org/multipage/scripting.html#the-script-element),
+[JavaScript MIME essence](https://mimesniff.spec.whatwg.org/#javascript-mime-type)
+and RFC9110/9111 redirect/cache terminology. One resource/execution/publication
+boundary, no new event lifetime. Inline and external classic scripts execute
+at the real parser callback in the same realm; future nodes remain absent.
+External src body text is never interpreted as a fallback script. async,
+defer, modules, explicit crossorigin/integrity/referrerpolicy remain inert in
+this bounded subset, not run with a false order or security policy.
+
+Append private script profile3 (48-byte header unchanged), reserved word0
+means inline source and1 means external reference. Profiles1/2 keep zero.
+External payload is first parsed base href (or empty), NUL, raw src bytes;
+each reference<8193 bytes, exactly one separator. Snapshot uses DOM profile2;
+journal remains its profile2 grammar. Replay binds profile, source kind,
+exact source/reference and ordinal. Browser binds the actual document URL,
+resolves base/src with the existing canonical resolver, and admits the final
+URL and every redirect. No HTTPS downgrade, remote-to-local transition,
+credentials, unsupported scheme or invalid URI escapes the existing policy.
+Conservatively deny all execution/fetch under enforcing HTTP/meta CSP.
+
+BROWSER directly owns a separate CURL while HTMLWORK waits for the script;
+JSWORK receives no VFS/network/IPC authority beyond its existing service.
+No changes to CURL or TLS verification. HTTP resources require a supported
+JavaScript MIME essence and UTF8/ASCII charset; missing MIME, non-JS content,
+unsupported charset and non-success status skip the script, continuing later
+scripts without executing error bodies. This deliberately stricter policy is
+not full legacy MIME sniffing or charset/CORS compatibility. Local source is
+UTF8, read in at most4KiB per UI turn. Missing local files skip; native worker,
+protocol, quota or deadline failures reject the candidate and preserve the old
+page. No unvalidated partial source or mutation publication.
+
+One noncopyable loader owns its endpoint, exact spawned PID/generation and
+borrowed source lifetime. Fresh least-rights SEND-only CURL endpoint per hop;
+<=5 redirects, absolute5s fetch budget, no retry. Close before cancellation,
+at most one kill, <=1s reap, no wait on live/unowned children or replacement
+before reap. Unknown identity/reap failure is terminal, not silent success.
+Navigation/close fence JS before invalidating borrowed source. All three owned
+workers participate in readiness/cleanup; UI remains nonblocking, total<=16
+timeout-zero IPC calls/turn including existing CSS path. Old parse20s,
+engine32MiB/16KiB stack, source1MiB/result64KiB and journal caps unchanged.
+
+Loader private storage<=3MiB demand-backed; total scripting adapter<=9MiB.
+Individual external source<=1MiB, cache aggregate<=1MiB/32 entries. Cache is
+document-private, not persisted or shared. Network reuse requires explicit
+positive Cache-Control max-age without no-cache/no-store, Age or Vary;
+expiry is monotonic and capped to the document parse budget. Other responses
+are not reused. Local sources may be reused within the same navigation.
+Journal-only CSS passes/resize never fetch or execute again; a fresh navigation
+invalidates the loader cache. No general HTTP cache-compatibility claim.
+
+Frozen gates in R3.27: actual fetch/response/owner OS-mock behavior O0/O2,
+real parser callbacks, legacy regressions, both reference images and real
+headless browser HTTP/local scripts, >256KiB source, redirect, cache/reflow,
+missing/MIME failure continuation, actual in-flight CURL cancellation and
+recovery. Existing JS native fault/noncooperative hang and browser input/
+crash/restart guests remain mandatory. Both kernels and protected benchmark,
+JSWORK and CURL payloads unchanged. No agents, visible VMs/dialogs or push.
+Later R3.26/R3.25 sections describe their historical accepted boundaries.
+
 ## R3.26 frozen extension — HTML attributes and classes
 
 Frozen8 September2026 on2d6aba16 before implementation. One extension of
