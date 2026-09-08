@@ -5,6 +5,11 @@ session-input boundary: dedicated Control Panel applet, atomic saved profile,
 startup application before input, no live-policy switch or kernel change.
 Execute directly in the visible worktree, no agents or push.
 
+Scope amendment authorized by the user's continuation after the explicit
+scope question: include `test/test_desktop_source.py`. Its exact GUI-program
+inventory must admit the ninth program, MOUSE, with an explicit path check.
+All fourteen gate commands and all invariants remain frozen and unchanged.
+
 ## Reference and deliberate adapter
 
 Use established primary/secondary buttons, natural scrolling, milliseconds

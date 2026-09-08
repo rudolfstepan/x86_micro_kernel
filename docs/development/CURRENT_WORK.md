@@ -4,6 +4,13 @@ Stand: 8. September 2026
 
 ## R3.31 begonnen: eigenes Maus-Applet und wirksame Einstellungen
 
+Freigegebene Umfangsergaenzung nach expliziter Rueckfrage: der bestehende
+`test/test_desktop_source.py` zaehlt exakt acht GUI-Programme. MOUSE ist das
+neunte; der Test wird um dessen konkreten Pfad ergaenzt. Alle14 Gates bleiben
+unveraendert. Implementierung sichtbar, aber noch nicht abgenommen: neue
+Maus-Hosttests bestehen; SDK-Buildfehler (`string.h` im freestanding Core)
+und Desktop-Inventartest werden gezielt korrigiert, Gastgates stehen noch aus.
+
 Sauberer Ausgang `e5255931`. Nutzer verlangt Fortsetzung mit dem Maus-Applet.
 Inventar: alle5 Keys bereits vorhanden, aber nur generische Geschwindigkeits-
 Umschaltung in Control Panel; keine Desktopverbraucher, Doppelklick fest500ms.
