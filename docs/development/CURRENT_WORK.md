@@ -2,6 +2,15 @@
 
 Stand: 8. September 2026
 
+## R3.33 begonnen: Browserinhalt auf großen Desktops
+
+Neuer Screenshot auf sauberem bd421a50: Fenster größer als Inhalt. Inventar
+belegt1024x768-Grenzen in Surface, Kernelpuffer und CSS/Raster sowie nur8MiB
+gemeinsamen Pufferspeicher. Ein zusammenhängendes Geometrie-/Publikations-
+und Speicherpaket gemäß HIGH_RESOLUTION_SURFACE_CONTRACT;15 feste Gruppen.
+Kerneländerung ausschließlich vorhandener Puffer-Mediator, kein Parser,
+neuer Treiber, Allocator- oder Loaderumbau. Alte VMware-Zurückstellung bleibt.
+
 ## R3.32 abgenommen: rechte Fensterknöpfe und Taskleisten-Minimierung
 
 Sauberer Ausgang `ef7f7d2f`, Vertragscheckpoint `343b4782`. Genau ein
