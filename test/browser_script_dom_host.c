@@ -1,5 +1,6 @@
 /* Included by the real parser host; no alternate parser or DOM model. */
 static unsigned script_calls;
+static unsigned external_calls;
 static char script_snapshot[2U*1024U*1024U];
 static node *script_target,*script_root;
 static const char *script_attribute(node *n,const char *name) {
@@ -56,6 +57,17 @@ static int script_test_hook(void *unused,node *n) {
     } else assert(!strcmp(script_attribute(script_target,"class"),"good"));
     ++script_calls; return 0;
 }
+static int external_test_hook(void *unused,node *n) {
+    (void)unused; uint32_t snapshot=0,source=0;
+    assert(!browser_html_script_snapshot_version(n,"https://example.test/page",script_snapshot,sizeof(script_snapshot),&snapshot,&source,3));
+    const char *ref=script_snapshot+snapshot;
+    assert(!strcmp(ref,"/assets/") && source==9+strlen("relative.js"));
+    assert(!memcmp(ref+9,"relative.js",strlen("relative.js")));
+    node *root=n;while(root->parent)root=root->parent;
+    assert(!script_by_id(root,"future"));
+    assert(!memcmp(script_snapshot+snapshot-5,"],2);",5));
+    ++external_calls;return 0;
+}
 static void script_dom_test(void) {
     const char html[]="<!doctype html><title>old</title><body><p id=target>old</p>"
         "<script>one()</script><script src=''>inert</script><script type=module>inert</script>"
@@ -70,6 +82,17 @@ static void script_dom_test(void) {
     const char csp[]="<meta http-equiv=Content-Security-Policy content=default-src><script>inert</script>";
     assert(!browser_html5_document_tree((const uint8_t *)csp,sizeof(csp)-1,BROWSER_ENCODING_UTF8,&root));
     assert(script_calls==2); browser_html5_document_release();
+    assert(!reist_libc_reset()); legacy_used=0;
+    browser_html_script_external_enable(1); browser_html_script_hook_set(external_test_hook,NULL);
+    const char ext[]="<base><base href='/assets/'><base href='/ignored/'><body>"
+        "<script src='relative.js' type='TEXT/JAVASCRIPT1.5'>not fallback</script>"
+        "<script src=x async></script><script src=x defer></script><script src=x type=module></script>"
+        "<script src=x crossorigin></script><script src=x integrity=''></script><script src=x referrerpolicy=''></script>"
+        "<script src=x type='text/javascript;charset=utf-8'></script><script src=''></script>"
+        "<template><script src=x></script></template><svg><script src=x></script></svg><p id=future>future";
+    assert(!browser_html5_document_tree((const uint8_t *)ext,sizeof(ext)-1,BROWSER_ENCODING_UTF8,&root));
+    assert(external_calls==1); browser_html5_document_release();
+    browser_html_script_external_enable(0); browser_html_script_hook_set(NULL,NULL);
     assert(!reist_libc_reset()); legacy_used=0;
     browser_html_script_hook_set(NULL,NULL);
     assert(!browser_html5_document_tree((const uint8_t *)html,sizeof(html)-1,BROWSER_ENCODING_UTF8,&root));

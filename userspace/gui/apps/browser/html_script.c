@@ -24,11 +24,12 @@ static int execute(void *unused,node *element) {
     browser_script_message_t *h=(browser_script_message_t *)scripting.buffer;
     char *data=scripting.buffer+sizeof(*h); uint32_t snapshot=0,source=0;
     int rc=browser_html_script_snapshot_version(element,scripting.url,data,
-        BROWSER_SCRIPT_SNAPSHOT+BROWSER_SCRIPT_SOURCE,&snapshot,&source,BROWSER_SCRIPT_ATTRIBUTE_VERSION);
+        BROWSER_SCRIPT_SNAPSHOT+BROWSER_SCRIPT_SOURCE,&snapshot,&source,BROWSER_SCRIPT_EXTERNAL_VERSION);
     if(rc) return rc;
-    *h=(browser_script_message_t){BROWSER_SCRIPT_MAGIC,BROWSER_SCRIPT_ATTRIBUTE_VERSION,sizeof(*h)+snapshot+source,
+    uint32_t kind=browser_html_script_source(element)!=NULL;
+    *h=(browser_script_message_t){BROWSER_SCRIPT_MAGIC,BROWSER_SCRIPT_EXTERNAL_VERSION,sizeof(*h)+snapshot+source,
         scripting.request.request,scripting.request.parent_pid,scripting.request.parent_generation,
-        (uint32_t)scripting.identity.pid,scripting.identity.generation,++scripting.ordinal,snapshot,source,0};
+        (uint32_t)scripting.identity.pid,scripting.identity.generation,++scripting.ordinal,snapshot,source,kind};
     for(uint32_t offset=0;offset<h->size;) {
         uint32_t left=0; if(remaining(&left)) return -110;
         browser_css_packet_t p={BROWSER_CSS_PACKET_MAGIC,h->request,offset,h->size,{0}};
@@ -50,8 +51,8 @@ static int execute(void *unused,node *element) {
             sizeof(*h)+BROWSER_SCRIPT_RESULT-1,&offset,&total)) return -84;
     } while(offset<total);
     if(browser_script_message_valid(h,total,&scripting.request,(uint32_t)scripting.identity.pid,
-        scripting.identity.generation,scripting.ordinal,1) || h->version!=BROWSER_SCRIPT_ATTRIBUTE_VERSION) return -84;
-    return browser_html_script_apply_version(data,h->source_length,h->version);
+        scripting.identity.generation,scripting.ordinal,1) || h->version!=BROWSER_SCRIPT_EXTERNAL_VERSION || h->reserved!=kind) return -84;
+    return browser_html_script_apply_version(data,h->source_length,BROWSER_SCRIPT_ATTRIBUTE_VERSION);
 }
 int browser_html_script_setup(uint32_t outgoing,uint32_t incoming,const browser_html_header_t *h,uint32_t deadline,const char *url) {
     if(!h || !outgoing || !incoming || outgoing==incoming || !url || scripting.buffer ||
@@ -62,10 +63,11 @@ int browser_html_script_setup(uint32_t outgoing,uint32_t incoming,const browser_
        scripting.identity.pid!=x86os_getpid() || !scripting.identity.generation) return -84;
     scripting.outgoing=outgoing; scripting.incoming=incoming; scripting.request=*h;
     scripting.deadline=deadline; scripting.url=url;
-    browser_html_script_hook_set(execute,NULL); return 0;
+    browser_html_script_external_enable(1); browser_html_script_hook_set(execute,NULL); return 0;
 }
 void browser_html_script_finish(void) {
     browser_html_script_hook_set(NULL,NULL);
+    browser_html_script_external_enable(0);
     if(scripting.buffer) x86os_free(scripting.buffer);
     memset(&scripting,0,sizeof(scripting));
 }

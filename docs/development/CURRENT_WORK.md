@@ -2,15 +2,64 @@
 
 Stand: 8. September 2026
 
-## R3.27 aktiv: Wiederaufnahme auf geprueftem Netzwerkstand
+## R3.27 abgenommen: externe klassische JavaScript-Dateien
 
 Nutzerauftrag zur Fortsetzung nach `361beac4`. Sauberer Worktree vor Beginn.
-Nur der geschuetzte Kernelguard wird vor der Umsetzung explizit auf die
-abgenommenen R3.27a-Hashes umgestellt; Programme bleiben3eab01ab-bytegleich.
+Vertragscommit `c8ff5e54`: ausschliesslich den geschuetzten Kernelguard vor
+der Umsetzung explizit auf abgenommene R3.27a-Hashes umgestellt;
+geschuetzte Programme bleiben3eab01ab-bytegleich.
 Quoten/Gates unveraendert, insbesondere5s Fetch und >256KiB HTTP-Skript.
-Der zugeordnete Stash `cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2` wird
-verlustfrei wiederhergestellt, nicht geloescht. Alle alten Belege bleiben.
+Der zugeordnete Stash `cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2` ist
+verlustfrei wiederhergestellt und nicht geloescht. Alle alten Belege bleiben.
 In diesem Lauf ausschliesslich R3.27, keine R3.28-Implementierung.
+Alle15 gefrorenen Gate-Gruppen bestanden, Queue R3.27 done/R3.28 active.
+Direkte Diff-/ABI-/Cleanup-/Scope-/Queue-Pruefung; keine Kernel-, SDK-,
+Engine- oder CURL-Aenderung. Keine Agenten, sichtbaren VMs/Dialoge oder Push.
+
+Referenzgates VMware19s/QEMU67s PASS, nacheinander gebaut. Beidseitige
+Artefaktguard `r327-external-js/artifacts-network-baseline.json` PASS0.971s:
+beide echten Kernel und erhaltenen R3.27a-Referenzen stimmen ueberein,
+alle7 geschuetzten Programme bytegleich; BROWSER/HTMLWORK und lokale
+Script-Fixtures in beiden Images exakt zum gemeinsamen Build.
+Externer Browsergast `guest-network-baseline.log` PASS78.169s samt
+`.http.json/.pcap` und echten Scanoutbildern.325231-Byte-HTTP-Quelle nach
+Redirect erfolgreich, lokale/externe Skripte im selben Realm parsergeordnet;
+fuenf Ausfuehrungen, beim Reflow weiterhin fuenf ohne neue HTTP-Anfrage.
+Reload zehn, echter laufender CURL mit PID27/Generation10 beendet und
+Status143 gereapt, alte Seite erhalten; frische Recovery siebzehn.
+Alle14 CURL-Generationen exakt gereapt, dreizehn Status0/eine Status143.
+404/HTML-MIME uebersprungen, keine Fehlerkoerper-/inert-Script-Ausfuehrung,
+gruene Ergebnispixel, Schliessen und Shell bestaetigt. Kein groesseres Timeout.
+
+Die21 Browser-/Parser-/Test-/Fixturedateien sind nach Normalisierung exakt
+zum bereits hostgeprueften Stash identisch; nur drei Image-/Buildlisten mit
+dem abgenommenen NETTEST zusammengefuehrt und der Gast-Artefaktkernelguard
+wie vorab eingefroren angepasst. Die60 verschiedenen Hostmethoden bleiben
+deshalb mit den unten kartierten erfolgreichen Nachweisen gueltig; keine
+wiederholte Vollkompilierung unveraenderter Hostfaelle.
+`inline-guest.log`/`inline-guest-gate.log` PASS91.224s: DOM, Attribute,
+quelltextgenauer Reflow, frische Navigation, echter JS-Hang und Pagefault,
+Fencing/Reap/alte Seite/Recovery, Titel-/Attributpixel und Browserneustart.
+`browser-input-gate.log` PASS80.604s: echte Tastatureingabe/Bearbeitung,
+Navigation, Browserabsturz, Neustart und funktionierende Konsole.
+Endgueltige `.img/.vmdk/.vmx`, Kernel und9 Programme unter
+`r327-external-js/accepted-reference/`, Inputserial/-bild als
+`browser-input.log/.ppm`. Beide vorherigen Netzwerk- und R3.26-Referenzen
+sowie alle Fehlversuchslogs und der Browser-Stash bleiben erhalten.
+Die Gate-Identitaeten bleiben in der Queue unveraendert; die Wiederholungen
+des Artefakt-/Extern-Gates tragen `-network-baseline`, letzteres zusaetzlich
+mit begrenztem96-Byte-PCAP-Praefix. Keine Timeout-/Fixturelockerung.
+
+Abgenommene BROWSER.PRG:
+`528e407075bb32dab2e8c4d9f5d792b29c3f172cdfea03a16587d62e21571fa1`,
+HTMLWORK.PRG:
+`ed527d1cae294c5f708f9b0676cc64d07e2e6c5689ad09c4601a87d255ccfe07`.
+Kernel unveraendert361beac4, geschuetzte Programme3eab01ab.
+HTTP(S)-Lader verwendet unveraendertes CURL/TLS; der neue echte Netzgast
+beweist HTTP, kein neuer oeffentlicher HTTPS-/VMware-Laufzeitnachweis.
+Modul-/async-/defer-Skripte, Events/Timer, dynamische DOM-Lebensdauer und
+fetch bleiben ausdruecklich offen. Naechstes Paket R3.28: statisches CSS-Layout;
+intracom.at wird durch externe Scriptquellen allein noch nicht voll kompatibel.
 
 ## R3.27a abgenommen: Netzwerk-Fortschritt und RTL-RX-Ringkorrektur
 
@@ -161,7 +210,7 @@ Fehler in `guest-cancel-owner`31.517s: /tmp fehlte im Referenzimage; der Runner
 legt es jetzt per normalem mkdir nur im Snapshot an. Keine CURL-Aenderung.
 Alle Fehlerlogs bleiben erhalten, Restgates oben offen.
 
-## R3.27 als naechstes aktiv: externe klassische JavaScript-Dateien
+## Erhaltener R3.27-Verlauf vor dem Netzwerk-Prerequisite
 
 **Noch nicht abgenommen, kein Implementierungscommit.** Gesicherte R3.27-
 Aenderungen gehoeren dieser interaktiven Umsetzung auf040ed90f/3eab01ab.
@@ -194,7 +243,7 @@ nach konkreten Korrekturen wiederholt:
   Hashes stimmen mit3eab01ab ueberein; CURL wurde auch aus dem erhaltenen
   R3.26-QEMU-Image gegengeprueft.
 
-Offenes Pflichtgate: `run_qemu_browser_external.py` scheitert dreimal beim
+Historisches offenes Pflichtgate vor R3.27a: `run_qemu_browser_external.py` scheiterte dreimal beim
 325231-Byte-HTTP-Skript nach erfolgreichem Redirect, nicht beim lokalen Script.
 `guest.log`47.108s, `guest-diagnostic.log`48.538s und
 `guest-network.log`48.539s samt .http.json/.pcap sind erhalten.
@@ -220,7 +269,7 @@ beworbene Fenster sind daran gekoppelt. `kernel/init/supervisor.c` ruft
 10ms-Sleep plus anderer Supervisorarbeit. Der Mitschnitt belegt einen
 Engpass im Netzwerkpfad, keine erfolgreiche grosse JS-Uebertragung.
 
-Stopgrund: weitere Korrektur erfordert ein gesondert eingefrorenes
+Damals geltender Stopgrund: weitere Korrektur erforderte ein gesondert eingefrorenes
 Netzwerk-/TCP-/Bottom-Half-Paket ausserhalb R3.27 und damit eine neue
 Abnahme des bisher geschuetzten Kernelbestands. Kein Erhoehen der5s-Grenze,
 keine kleinere Gastfixture und kein langsamer gepaceter Testserver als

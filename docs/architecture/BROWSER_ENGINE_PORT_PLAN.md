@@ -1,11 +1,21 @@
 # Browser-Engine-Umbau
 
-Stand: 6. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
+Stand: 8. September 2026. Ausgangspunkt: Checkpoint `cd7025a2`.
+
+R3.27 ist nach dem Netzwerk-Prerequisite361beac4 abgenommen: externe lokale
+und HTTP(S)-klassische Scriptquellen ueber direkt besessenes CURL, gepruefte
+MIME-/URL-/Redirect-Admission, dokumentprivater Cache und quelltextgenaues
+Replay. Der echte Gast beweist lokale und325231-Byte-HTTP-Quellen,
+Cache/Resize ohne Refetch, Inflight-Abbruch/Reap und sichtbare DOM-Ergebnisse.
+60 Hostfaelle, beide Referenzen, geschuetzte Imagebytes und drei Browsergaeste
+bestanden; bestehende JS-Hang-/Fault-Grenzen bleiben erhalten. Keine breite
+Website-Kompatibilitaetszusage. R3.28 ist als naechstes aktiv; in diesem
+Abschluss keine CSS-/Schrift-/Event-/fetch-Implementierung.
 
 ## Nutzerziel 8. September: intracom.at als Darstellungsreferenz
 
-Der Nutzer hat den vollstaendigen Ausbau freigegeben. R3.27 wird zuerst
-abgenommen; Folgepakete werden nicht in dessen eingefrorenen Scope gemischt.
+Der Nutzer hat den vollstaendigen Ausbau freigegeben. R3.27 ist abgenommen;
+Folgepakete werden nicht in dessen eingefrorenen Scope gemischt.
 Die gelesenen oeffentlichen Quellen sind [site.css](https://intracom.at/assets/css/site.css)
 und [include-fragments.js](https://intracom.at/assets/js/include-fragments.js).
 Die Sollansicht ist kein Nachweis heutiger Browser-Kompatibilitaet.

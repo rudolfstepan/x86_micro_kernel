@@ -3,13 +3,15 @@ int browser_script_message_valid(const browser_script_message_t *m,size_t size,c
     uint32_t pid,uint32_t generation,uint32_t ordinal,int reply) {
     if(!m || !h || size<sizeof(*m) || (reply!=0 && reply!=1) ||
        m->magic!=(reply?BROWSER_SCRIPT_REPLY:BROWSER_SCRIPT_MAGIC) ||
-       (m->version!=1 && m->version!=BROWSER_SCRIPT_ATTRIBUTE_VERSION) || m->size!=size ||
+       (m->version!=1 && m->version!=BROWSER_SCRIPT_ATTRIBUTE_VERSION && m->version!=BROWSER_SCRIPT_EXTERNAL_VERSION) || m->size!=size ||
        m->request!=h->request || !m->request || m->parent_pid!=h->parent_pid ||
        m->parent_generation!=h->parent_generation || !m->parent_pid || !m->parent_generation ||
        m->child_pid!=pid || m->child_generation!=generation || !pid || !generation || pid==m->parent_pid ||
-       m->ordinal!=ordinal || !ordinal || ordinal>BROWSER_SCRIPT_COUNT || m->reserved) return -84;
+       m->ordinal!=ordinal || !ordinal || ordinal>BROWSER_SCRIPT_COUNT ||
+       m->reserved>(m->version==BROWSER_SCRIPT_EXTERNAL_VERSION ? 1U : 0U)) return -84;
     if(reply) return !m->snapshot_length && m->source_length<BROWSER_SCRIPT_RESULT &&
         size==sizeof(*m)+m->source_length ? 0 : -84;
+    if(m->reserved && (!m->source_length || m->source_length>2*BROWSER_SCRIPT_REFERENCE-1)) return -84;
     return m->snapshot_length && m->snapshot_length<=BROWSER_SCRIPT_SNAPSHOT &&
         m->source_length<=BROWSER_SCRIPT_SOURCE && size==sizeof(*m)+m->snapshot_length+m->source_length ? 0 : -84;
 }

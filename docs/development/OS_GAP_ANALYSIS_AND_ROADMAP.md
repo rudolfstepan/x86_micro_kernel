@@ -5,9 +5,12 @@ Stand: 3. September 2026
 8.September, Prerequisite R3.27a abgenommen als361beac4: TCP-Empfang von
 ABI-Kopiergrenze entkoppelt, aktive Ring3-Netzarbeit zeitnah bedient und
 RTL8139-64KiB-Ringkopie korrigiert. Beide NIC-Gaeste und Recovery/Scheduler/
-Browser-Regressionen bestanden. Browser-R3.27 wird jetzt auf diesem explizit
-eingefrorenen Kernelstand fortgesetzt; alle Programme/Quoten/Gates bleiben
-geschuetzt. Danach R3.28, kein Ausbau von Ring0-Protokollautoritaet. Vertraege:
+Browser-Regressionen bestanden. Browser-R3.27 ist auf diesem explizit
+eingefrorenen Kernelstand abgenommen: externe klassische Scriptquellen,
+URL-/MIME-/Redirect-Admission, Cache, quelltextgenaues Replay und begrenzter
+CURL-Abbruch/Reap.60 Hostfaelle, beide Images/Guards und drei Browsergaeste
+bestanden. Alle geschuetzten Programme/Quoten bleiben unveraendert.
+R3.28 ist als naechstes aktiv, kein Ausbau von Ring0-Protokollautoritaet. Vertraege:
 NETWORK_RECEIVE_PROGRESS_CONTRACT.md und BROWSER_SCRIPTING_CONTRACT.md.
 
 8. September, neuer Nutzerauftrag: intracom.at soll nicht nur laden, sondern

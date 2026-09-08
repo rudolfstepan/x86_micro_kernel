@@ -459,6 +459,7 @@ static int start_html_worker(browser_state_t *state, reist_gui_surface_client_t 
         0,0,length,state->probe ? state->parse_mode : 0U,{state->document_encoding,0}};
     uint32_t scripting=state->scripts && !state->parse_mode;
     if(scripting) {
+        if(browser_script_document(state->scripts,state->job_url)) return -84;
         if(browser_script_prepare(state->scripts,&state->html_request,state->reflow_job)) return -84;
         state->html_request.version=BROWSER_HTML_SCRIPT_VERSION;
         state->html_request.reserved[1]=browser_script_endpoint(state->scripts);
@@ -2134,6 +2135,29 @@ static int scripting_probe_step(browser_state_t *state,reist_gui_surface_client_
     } else return -1;
     ++state->probe_phase; return 0;
 }
+static int external_script_probe_step(browser_state_t *state,reist_gui_surface_client_t *client) {
+    static uint32_t executions,failures;
+    uint32_t p=state->probe_phase;
+    if(p==1 || p==3 || p==5 || p==6 || p==8 || p==10) return 0;
+    if(state->child_pid || state->pending || state->parse_pending || state->reflow_pending ||
+       state->resource_loading || !browser_script_ready(state->scripts) || state->redraw || !state->loaded) return 0;
+    const reist_html_document_t *doc=&documents[state->active];
+    const char *text="External JavaScript works: local, HTTP, cache";
+    size_t length=strlen(text),available=bounded_length(doc->text,sizeof(doc->text));
+    uint32_t found=0;
+    for(size_t i=0;i+length<=available;++i) if(!memcmp(doc->text+i,text,length)) {found=1;break;}
+    uint32_t count=browser_script_executions(state->scripts);
+    uint32_t wanted=p==0 ? 5 : p==2 ? executions : p==7 ? executions+2 : executions+5;
+    if(!found || !text_equal(doc->title,"REIST External JavaScript OK") || count!=wanted ||
+       state->parser_failures!=failures+(p==7?1U:0U) || browser_script_fetch_pid(state->scripts)) return -1;
+    executions=count;failures=state->parser_failures;
+    x86os_puts(p==0?"BROWSER_EXTERNAL_INITIAL_OK":p==2?"BROWSER_EXTERNAL_REFLOW_OK":
+        p==4?"BROWSER_EXTERNAL_RELOAD_OK":p==7?"BROWSER_EXTERNAL_CANCEL_OK":"BROWSER_EXTERNAL_RECOVERY_OK");
+    x86os_puts(" executions=");x86os_print_number((int)count);
+    x86os_puts(" width=");x86os_print_number((int)client->width);
+    x86os_puts(" height=");x86os_print_number((int)client->height);x86os_puts("\n");
+    ++state->probe_phase;return 0;
+}
 static const char *initial_target(int argc, char **argv, uint32_t *probe) {
     const char *target = "/htdocs/index.html";
     for (int index = 1; index < argc; ++index) {
@@ -2222,14 +2246,27 @@ int main(int argc, char **argv) {
                     state.reflow_pending=1;
                 }
                 if(state.probe==7 && state.probe_phase==1) state.probe_phase=2;
+                if(state.probe==8 && state.probe_phase==1) state.probe_phase=2;
                 set_scroll(&state, &client, state.scroll_y);
                 state.redraw = state.chrome_redraw = state.status_redraw = 1U;
             } else if (message.type == REIST_GUI_SURFACE_INPUT && message.input.type == REIST_GUI_SURFACE_INPUT_KEYBOARD && message.input.pressed) {
-                if(state.probe==3 && state.probe_phase==1 && !state.address_focused && message.input.key=='j') {
-                    state.probe=7; state.probe_phase=0;
+                if(state.probe==3 && state.probe_phase==1 && !state.address_focused && (message.input.key=='j' || message.input.key=='e')) {
+                    state.probe=message.input.key=='e'?8:7; state.probe_phase=0;
                     probe_deadline=x86os_uptime_ms()+120000U;
                     x86os_puts("BROWSER_SCRIPT_SELECTED\n");
-                    (void)navigate(&state,&client,"/htdocs/javascript.htm"); continue;
+                    (void)navigate(&state,&client,state.probe==8?"/htdocs/jsext.htm":"/htdocs/javascript.htm"); continue;
+                }
+                if(state.probe==8 && !state.address_focused) {
+                    uint32_t key=message.input.key,p=state.probe_phase;
+                    if(key=='r' && (p==3 || p==5 || p==8)) {
+                        ++state.probe_phase;(void)navigate(&state,&client,"/htdocs/jsext.htm");continue;
+                    }
+                    if(p==6 && (key==BROWSER_KEY_ESCAPE || key==27U)) {
+                        int pid=browser_script_fetch_pid(state.scripts);
+                        if(pid<=0) {x86os_puts("BROWSER_PROBE_FAIL external cancellation not live\n");state.exit_requested=1;break;}
+                        x86os_puts("BROWSER_EXTERNAL_CANCEL_SENT pid=");x86os_print_number(pid);x86os_puts("\n");
+                        state.probe_phase=7;
+                    }
                 }
                 if(state.probe==7 && !state.address_focused) {
                     uint32_t key=message.input.key,p=state.probe_phase;
@@ -2266,7 +2303,7 @@ int main(int argc, char **argv) {
         int rendered=render(&state, &client);
         if (rendered != 0) { browser_runtime_failure(&state,"render",rendered); status = -5; break; }
         if (state.probe) {
-            int probe_status=state.probe==7 ? scripting_probe_step(&state,&client) : state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
+            int probe_status=state.probe==8 ? external_script_probe_step(&state,&client) : state.probe==7 ? scripting_probe_step(&state,&client) : state.probe==6 ? model_probe_step(&state,&client) : state.probe==5 ? public_probe_step(&state,&client) : state.probe==4 ? forms_probe_step(&state,&client) : state.probe==3 ? input_probe_step(&state) : state.probe==2 ? resource_probe_step(&state,&client) : state.loaded ? probe_step(&state,&client) : 0;
             if (probe_status || (int32_t)(x86os_uptime_ms() - probe_deadline) >= 0) {
                 timing_dump();
                 if (state.probe==6U) {

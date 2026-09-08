@@ -27,6 +27,8 @@ class BrowserScriptingTests(unittest.TestCase):
         directory.mkdir(parents=True)
         sources=[ROOT/"test/browser_scripting_host.cpp",*[ROOT/p for p in (
             "userspace/gui/apps/browser/js_session.cpp", "userspace/gui/apps/browser/js_protocol.c",
+            "userspace/gui/apps/browser/script_fetch.cpp", "userspace/gui/apps/browser/browser_response.cpp",
+            "userspace/gui/apps/browser/browser_resources.cpp", "userspace/programs/curl_http.c",
             "userspace/gui/apps/browser/script_protocol.c", "userspace/gui/apps/browser/browser_scene.c",
             "userspace/gui/apps/browser/html_protocol.c", "userspace/gui/apps/browser/browser_forms.c",
             "userspace/gui/lib/font.c", "userspace/gui/lib/html_document.c")]]

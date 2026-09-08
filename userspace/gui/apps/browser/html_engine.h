@@ -21,6 +21,8 @@ int browser_html5_document_tree(const uint8_t *,size_t,uint32_t encoding,node **
 /* Private parser-boundary hook, unset for all existing inert profiles. */
 typedef int (*browser_html_script_hook)(void *,node *);
 void browser_html_script_hook_set(browser_html_script_hook,void *);
+void browser_html_script_external_enable(int);
+const char *browser_html_script_source(node *);
 int browser_html_script_enabled(void);
 int browser_html_script_snapshot(node *,const char *,char *,uint32_t,uint32_t *,uint32_t *);
 int browser_html_script_apply(const char *,uint32_t);

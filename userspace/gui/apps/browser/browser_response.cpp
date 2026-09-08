@@ -1,4 +1,5 @@
 #include "browser_response.hpp"
+#include "script_protocol.h"
 
 namespace {
 
@@ -22,7 +23,7 @@ static int network(const char *url) {
     return !prefix[i] || secure(url);
 }
 static int supported_type(const char *value,uint32_t kind,uint32_t extended,uint32_t *encoding) {
-    if (!value[0]) return 1; /* Legacy servers: decode/parse still validates. */
+    if (!value[0]) return kind!=BROWSER_RESPONSE_SCRIPT; /* Scripts require explicit MIME. */
     size_t end = 0; while (value[end] && value[end] != ';') ++end;
     size_t mime_end = end;
     while (mime_end && (value[mime_end-1] == ' ' || value[mime_end-1] == '\t')) --mime_end;
@@ -32,7 +33,8 @@ static int supported_type(const char *value,uint32_t kind,uint32_t extended,uint
             if (equal(value, mime_end, types[i])) return 1;
         return 0;
     }
-    if (!equal(value, mime_end, kind==BROWSER_RESPONSE_CSS ? "text/css" : "text/html")) return 0;
+    if(kind==BROWSER_RESPONSE_SCRIPT) { if(!browser_script_mime(value,(uint32_t)mime_end))return 0; }
+    else if (!equal(value, mime_end, kind==BROWSER_RESPONSE_CSS ? "text/css" : "text/html")) return 0;
     uint32_t charset_seen = 0;
     while (value[end]) {
         ++end;
@@ -70,7 +72,7 @@ static int response_open(const uint8_t *bytes,size_t length,const char *url,
                          uint32_t kind,browser_response_t *result,uint32_t extended) {
     if (!result) return -22;
     *result = browser_response_t{};
-    if (!bytes || !url || length > UINT32_MAX || kind>BROWSER_RESPONSE_CSS) return -22;
+    if (!bytes || !url || length > UINT32_MAX || kind>BROWSER_RESPONSE_SCRIPT) return -22;
     size_t url_length = 0;
     while (url_length < REIST_CURL_LOCATION_CAPACITY && url[url_length]) ++url_length;
     if (url_length == REIST_CURL_LOCATION_CAPACITY || !network(url)) return -22;
@@ -118,6 +120,45 @@ static int response_open(const uint8_t *bytes,size_t length,const char *url,
     return 0;
 }
 } // namespace
+
+uint32_t browser_response_script_max_age(const uint8_t *data,uint32_t size) {
+    if(!data||size>REIST_CURL_HEADER_CAPACITY)return 0;
+    uint32_t age=0,seen=0;
+    for(uint32_t at=0;at<size;){
+        uint32_t end=at;while(end<size&&data[end]!='\n')++end;
+        uint32_t colon=at;while(colon<end&&data[colon]!=':')++colon;
+        if(colon<end){
+            if(equal((const char *)data+at,colon-at,"age")||equal((const char *)data+at,colon-at,"vary"))return 0;
+            if(equal((const char *)data+at,colon-at,"cache-control")){
+                for(uint32_t p=colon+1;p<end;){
+                    while(p<end&&(data[p]==' '||data[p]=='\t'||data[p]==','))++p;
+                    uint32_t next=p;bool quoted=false;
+                    while(next<end) {
+                        if(quoted && data[next]=='\\') {if(++next==end)return 0;}
+                        else if(data[next]=='"') quoted=!quoted;
+                        else if(!quoted && data[next]==',') break;
+                        ++next;
+                    }
+                    if(quoted)return 0;
+                    uint32_t stop=next;while(stop>p&&(data[stop-1]==' '||data[stop-1]=='\t'||data[stop-1]=='\r'))--stop;
+                    uint32_t key=p;while(key<stop&&data[key]!='='&&data[key]!=' '&&data[key]!='\t')++key;
+                    if(equal((const char *)data+p,key-p,"no-store")||equal((const char *)data+p,key-p,"no-cache"))return 0;
+                    if(equal((const char *)data+p,key-p,"max-age")){
+                        if(seen++)return 0;
+                        while(key<stop&&(data[key]==' '||data[key]=='\t'))++key;
+                        if(key==stop||data[key++]!='=')return 0;
+                        while(key<stop&&(data[key]==' '||data[key]=='\t'))++key;
+                        if(key==stop)return 0;
+                        for(;key<stop;++key){if(data[key]<'0'||data[key]>'9')return 0;age=age*10+data[key]-'0';if(age>20)age=20;}
+                    }
+                    p=next+1;
+                }
+            }
+        }
+        at=end+1;
+    }
+    return age*1000;
+}
 
 namespace reist::browser {
 Result<ValidatedResponse,ResponseError> ValidatedResponse::open(

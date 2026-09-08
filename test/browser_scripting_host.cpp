@@ -12,11 +12,20 @@ static char evaluated[1024];
 static char dom_reply[65536];
 static uint32_t dom_size;
 static uint32_t mock_profile=1;
+static const char *local_script=nullptr;
+static uint32_t local_at,local_opens;
 extern "C" {
 const char browser_dom_data[1]={0},browser_dom_end[1]={0};
 void *x86os_malloc(size_t n) { void *p=std::malloc(n); if(p) ++allocations; return p; }
 void x86os_free(void *p) { if(p) { --allocations; std::free(p); } }
 int x86os_getpid() { return 7; }
+int x86os_open(const char *) { ++local_opens; local_at=0; return local_script?5:-2; }
+int x86os_read(int fd,void *out,size_t n) {
+    if(fd!=5 || n>4096) std::abort();
+    size_t left=std::strlen(local_script)-local_at;if(n>left)n=left;
+    std::memcpy(out,local_script+local_at,n);local_at+=(uint32_t)n;return (int)n;
+}
+int x86os_close(int) { return 0; }
 int x86os_monotonic_ms(uint64_t *n) { *n=ticks; return 0; }
 void x86os_puts(const char *) {}
 void x86os_print_number(int) {}
@@ -57,7 +66,7 @@ int x86os_ipc_receive_bulk_timeout(x86os_ipc_handle_t,x86os_ipc_bulk_message_t *
 }
 #define CHECK(x) do { if(!(x)) { std::printf("BROWSER_OWNER_FAIL line=%u\n",__LINE__); return 1; } } while(0)
 static void pump(browser_script_owner *s) {
-    for(unsigned i=0;i<100 && (browser_script_busy(s) || s->js.busy());++i) {
+    for(unsigned i=0;i<100 && (browser_script_busy(s) || s->js.busy() || s->fetch.busy());++i) {
         unsigned before=calls; browser_script_poll(s); if(calls-before>8) std::abort();
     }
 }
@@ -67,6 +76,12 @@ static int send_script(browser_script_owner *s,const char *source,uint32_t versi
     h.size=sizeof(h)+1+h.source_length; p.total=h.size;
     std::memcpy(p.bytes,&h,sizeof(h)); p.bytes[sizeof(h)]='0'; std::memcpy(p.bytes+sizeof(h)+1,source,h.source_length);
     return browser_script_receive(s,&p,16+p.total);
+}
+static int send_external(browser_script_owner *s,const char *data,uint32_t size,uint32_t kind=1) {
+    browser_css_packet_t p={BROWSER_CSS_PACKET_MAGIC,s->parser.request,0,0,{0}};
+    browser_script_message_t h={BROWSER_SCRIPT_MAGIC,3,(uint32_t)sizeof(h)+1+size,s->parser.request,7,3,81,4,s->ordinal+1,1,size,kind};
+    p.total=h.size;std::memcpy(p.bytes,&h,sizeof(h));p.bytes[sizeof(h)]='0';
+    std::memcpy(p.bytes+sizeof(h)+1,data,size);return browser_script_receive(s,&p,16+p.total);
 }
 int main() {
     auto *s=browser_script_create(); CHECK(s && allocations==1);
@@ -116,6 +131,39 @@ int main() {
     ++h.request; CHECK(!browser_script_prepare(s,&h,1)); CHECK(!browser_script_bind(s,81,4));
     CHECK(send_script(s,"attrs()",1)<0 && s->active->count==1);
     browser_script_cancel(s); CHECK(!browser_script_destroy(s) && !allocations);
+    s=browser_script_create();CHECK(s);local_script="external()";mock_profile=2;
+    CHECK(!browser_script_document(s,"/htdocs/page.htm"));++h.request;
+    CHECK(!browser_script_prepare(s,&h,0));CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_external(s,"\0ext.js",7)==1);pump(s);
+    CHECK(!s->error&&s->executions==1&&local_opens==1&&s->candidate->records[0].kind==1);
+    CHECK(!browser_script_finish_parse(s));pump(s);browser_script_commit(s,0);
+    ++h.request;CHECK(!browser_script_prepare(s,&h,1));CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_external(s,"\0ext.js",7)==1);pump(s);CHECK(!live&&s->executions==1&&local_opens==1);
+    CHECK(!browser_script_finish_parse(s));
+    ++h.request;CHECK(!browser_script_prepare(s,&h,1));CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_external(s,"\0ext.js",7,0)<0&&s->active->count==1);
+    browser_script_navigation(s);++h.request;
+    CHECK(!browser_script_prepare(s,&h,0));CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_external(s,"no separator",12)<0&&local_opens==1);
+    browser_script_navigation(s);++h.request;local_script=nullptr;
+    CHECK(!browser_script_prepare(s,&h,0));CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_external(s,"\0missing.js",11)==1);pump(s);
+    CHECK(!s->error&&s->executions==1&&s->candidate->count==1&&s->candidate->records[0].patch_length==0);
+    CHECK(!browser_script_finish_parse(s));browser_script_navigation(s);++h.request;
+    CHECK(!browser_script_document(s,"https://a.test/page"));
+    CHECK(!browser_script_prepare(s,&h,0));CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_external(s,"\0code.js",8)==1&&s->fetch.pid());
+    unsigned before=kills;browser_script_cancel(s);pump(s);
+    CHECK(kills==before+1&&!s->fetch.pid()&&browser_script_ready(s));
+    CHECK(!browser_script_destroy(s)&&!allocations);
+    s=browser_script_create();CHECK(s);++h.request;local_script="external()";
+    CHECK(!browser_script_document(s,"/htdocs/page.htm"));
+    CHECK(!browser_script_prepare(s,&h,0));CHECK(!browser_script_bind(s,81,4));
+    CHECK(send_script(s,"author()",3)==1);pump(s);CHECK(s->js.ready());
+    CHECK(send_external(s,"\0ext.js",7)==1&&s->fetch.busy());
+    live=X86OS_PROCESS_ZOMBIE;pump(s);
+    CHECK(s->error<0&&s->executions==1&&s->candidate->count==1); // Never replace a lost realm mid-document.
+    CHECK(!browser_script_destroy(s)&&!allocations);
     std::puts("BROWSER_OWNER_REPLAY_CANCEL_OK"); return 0;
 }
 #else

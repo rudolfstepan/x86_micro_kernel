@@ -2,6 +2,14 @@
 
 ## R3.27 frozen extension — parser-blocking external classic scripts
 
+Accepted8 September2026: all60 host cases and final reference/artifact/runtime
+gates pass. Actual325231-byte HTTP source, local sources, redirect, cache and
+source-exact reflow, missing/MIME skips, exact CURL cancel/reap/recovery and
+visible pixels demonstrated; previous JS hang/fault and browser input/restart
+preserved. Evidence and immutable image references in CURRENT_WORK.md.
+This completes external parser-blocking classic sources, not module/async/defer,
+events, post-parse DOM lifetime, fetch or full modern-site compatibility.
+
 Kernel reference update frozen before resuming implementation,8 September2026:
 user requested continuation after accepted prerequisite361beac4. Only the
 protected kernel baseline advances: QEMU

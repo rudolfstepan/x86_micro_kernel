@@ -1717,7 +1717,8 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         browser_input_probe: bool = False,
         browser_forms_probe: bool = False,
         browser_public_probe: bool = False,
-        browser_model_probe: bool = False) -> int:
+        browser_model_probe: bool = False,
+        browser_external_scripts: bool = False) -> int:
     if browser_resource_probe or browser_input_probe or browser_forms_probe or browser_public_probe or browser_model_probe:
         browser_probe = True
     audio_capture = screenshot.with_name("runtime-desktop-audio.wav")
@@ -1731,7 +1732,7 @@ def run(qemu: pathlib.Path, image: pathlib.Path, screenshot: pathlib.Path,
         dns_listener.settimeout(10.0)
     command = qemu_command(
         qemu, image, memory="1024M", vmware_vga=vmware_vga, smp=smp,
-        nic="rtl8139" if notepad_probe or browser_forms_probe or browser_public_probe else "none",
+        nic="rtl8139" if notepad_probe or browser_forms_probe or browser_public_probe or browser_external_scripts else "none",
         injection_port=dns_port, hardware_entropy=notepad_probe,
         public_dns=notepad_probe)
     normal_lifecycle_probe = not any((

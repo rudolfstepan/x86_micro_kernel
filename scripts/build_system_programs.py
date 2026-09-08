@@ -105,6 +105,7 @@ PROGRAMS = {
     "BROWSER.PRG": (
         ROOT / "userspace/gui/apps/browser/main.c",
         ROOT / "userspace/gui/apps/browser/browser_script.cpp",
+        ROOT / "userspace/gui/apps/browser/script_fetch.cpp",
         ROOT / "userspace/gui/apps/browser/script_protocol.c",
         ROOT / "userspace/gui/apps/browser/js_session.cpp",
         ROOT / "userspace/gui/apps/browser/js_protocol.c",
@@ -434,6 +435,7 @@ def main() -> None:
             if name in ("BROWSER.PRG", "HTMLWORK.PRG"):
                 includes.insert(0, sdk.cpp_include_dir)
                 dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/*script*.h"))
+                dependency_files.append(ROOT / "userspace/gui/apps/browser/script_fetch.hpp")
                 dependency_files.extend(ROOT.glob("userspace/gui/apps/browser/js_*.h*"))
                 dependency_files.append(ROOT / "userspace/gui/apps/browser/browser_resources.hpp")
                 dependency_files.extend(p for p in sdk.cpp_include_dir.rglob("*") if p.is_file())

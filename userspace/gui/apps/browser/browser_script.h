@@ -24,9 +24,11 @@ int browser_script_finish_parse(browser_script_owner *);
 void browser_script_commit(browser_script_owner *,int reflow);
 int browser_script_has_active(const browser_script_owner *);
 void browser_script_deny(browser_script_owner *,int);
+int browser_script_document(browser_script_owner *,const char *);
 /* Trusted test selector only; never derived from document/source/IPC. */
 void browser_script_fixture(browser_script_owner *,uint32_t);
 uint32_t browser_script_executions(const browser_script_owner *);
+int browser_script_fetch_pid(const browser_script_owner *);
 #ifdef __cplusplus
 }
 #endif

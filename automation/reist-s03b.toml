@@ -1,6 +1,6 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.27-browser-external-scripts"
+active_id = "R3.28-browser-static-css-layout"
 next_user_request = "2026-09-08: Continue R3.27 directly after accepted network prerequisite361beac4. Rebase only its protected kernel reference to361beac4, restore attributed browser stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2, retain other gates/quotas/program baselines. No later package implementation, agents or push."
 
 [policy]
@@ -63,7 +63,7 @@ evidence = [
 
 [[packages]]
 id = "R3.27-browser-external-scripts"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "External classic JavaScript with owned asynchronous loading"
@@ -100,11 +100,27 @@ runtime_tests = [
 acceptance = "Actual C++ fetch/response/owner host with OS-only mocks, truncated/stale/cap/deadline/kill/reap/no-copy/no-publication failures, legacy profiles; actual parser callback ordering/admission. Headless real browser local plus >256KiB HTTP script, redirect, cache/no-refetch replay, missing/MIME errors continue, real in-flight CURL cancellation and recovery; existing JS fault/hang and input/crash/restart preserved. Both references and protected hashes."
 stop_conditions = ["Source needed outside allowed_files", "Unattributed or overlapping changes", "Kernel/engine/CURL authority expansion", "Failed gate without demonstrated focused in-scope correction"]
 commit_message = "feat: load external classic scripts in the browser"
-evidence = []
+evidence = [
+ "python test/test_browser_external_scripts.py -v",
+ "python test/test_browser_scripting.py -v",
+ "python test/test_html_engine.py -v",
+ "python test/test_css_engine.py -v",
+ "python test/test_js_service.py -v",
+ "python test/test_browser_navigation_source.py -v",
+ "python test/test_browser_runtime_source.py -v",
+ "python test/test_gui_browser_source.py -v",
+ "python test/test_benchmark_source.py -v",
+ ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+ ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga",
+ "python scripts/run_qemu_browser_external.py --verify-artifacts --image build/reist-os.img --log build/codex-agent/r327-external-js/artifacts.json",
+ "python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327-external-js/guest.log",
+ "python scripts/run_qemu_browser_scripting.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r327-external-js/inline-guest.log",
+ ".\\scripts\\test-reist-runtime.ps1 -Mode runtime-desktop-browser-input -Target qemu -Video vga"
+]
 
 [[packages]]
 id = "R3.28-browser-static-css-layout"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Standards-based static CSS values and box layout"

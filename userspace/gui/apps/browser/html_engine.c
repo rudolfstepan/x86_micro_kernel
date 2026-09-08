@@ -21,6 +21,12 @@ static attribute legacy_attributes[ATTRS];
 static char legacy_strings[STRINGS];
 static browser_html_script_hook script_hook;
 static void *script_context;
+static int external_scripts;
+void browser_html_script_external_enable(int enable) { external_scripts=!!enable; }
+const char *browser_html_script_source(node *n) {
+    for(attribute *a=n->attributes;a;a=a->next) if(!strcmp(a->name,"src")) return a->value;
+    return NULL;
+}
 void browser_html_script_hook_set(browser_html_script_hook hook,void *context) {
     script_hook=hook; script_context=context;
 }
@@ -225,15 +231,16 @@ static hubbub_error script(void *ctx, void *value) {
     if(!script_hook || !tree.extended || n->ns!=HUBBUB_NS_HTML) return HUBBUB_OK;
     for(node *p=n->parent;p;p=p->parent)
         if(p->kind==1 && (p->ns!=HUBBUB_NS_HTML || !strcmp(p->name,"template"))) return HUBBUB_OK;
-    const char *type=NULL,*language=NULL;
+    const char *type=NULL,*language=NULL,*source=browser_html_script_source(n);
+    if(source && (!external_scripts || !*source)) return HUBBUB_OK;
     for(attribute *a=n->attributes;a;a=a->next) {
-        if(!strcmp(a->name,"src")) return HUBBUB_OK;
+        if(source && (!strcmp(a->name,"async") || !strcmp(a->name,"defer") ||
+           !strcmp(a->name,"crossorigin") || !strcmp(a->name,"integrity") ||
+           !strcmp(a->name,"referrerpolicy"))) return HUBBUB_OK;
         if(!strcmp(a->name,"type")) type=a->value;
         if(!strcmp(a->name,"language")) language=a->value;
     }
-    if(type && *type && !equal_ascii(type,"text/javascript") && !equal_ascii(type,"application/javascript") &&
-       !equal_ascii(type,"text/ecmascript") && !equal_ascii(type,"application/ecmascript") &&
-       !equal_ascii(type,"application/x-javascript") && !equal_ascii(type,"text/jscript")) return HUBBUB_OK;
+    if(type && *type && !browser_script_mime(type,(uint32_t)strlen(type))) return HUBBUB_OK;
     if(!type && language && *language && !equal_ascii(language,"javascript") && !equal_ascii(language,"ecmascript")) return HUBBUB_OK;
     /* Unsupported enforcing meta policies conservatively disable scripting. */
     for(uint32_t i=0;i<tree.count;++i) {
@@ -430,7 +437,7 @@ static uint32_t script_id(node *n) { return n ? (uint32_t)(n-tree.nodes)+1 : 0; 
 int browser_html_script_snapshot_version(node *script_node,const char *url,char *output,uint32_t capacity,
     uint32_t *snapshot_size,uint32_t *source_size,uint32_t version) {
     if(!tree.extended || !script_node || !url || !output || !snapshot_size || !source_size ||
-       capacity<BROWSER_SCRIPT_SNAPSHOT || (version!=1 && version!=2)) return -22;
+       capacity<BROWSER_SCRIPT_SNAPSHOT || (version!=1 && version!=2 && version!=3)) return -22;
     script_writer w={output,0,BROWSER_SCRIPT_SNAPSHOT};
     if(script_bytes(&w,"__reistDOM.sync(",16) || script_string(&w,url,strlen(url)) || script_bytes(&w,",[",2)) return -28;
     for(uint32_t i=0;i<tree.count;++i) {
@@ -442,7 +449,7 @@ int browser_html_script_snapshot_version(node *script_node,const char *url,char 
         if(script_string(&w,n->name?n->name:"",n->name?strlen(n->name):0) || script_bytes(&w,",",1) ||
            script_string(&w,id,strlen(id)) || script_bytes(&w,",",1) ||
            script_string(&w,n->text?n->text:"",n->text?n->length:0)) return -28;
-        if(version==2) {
+        if(version>=2) {
             if(script_bytes(&w,",void 0,[",9)) return -28;
             /* Attribute links are newest-first; emit source/insertion order.
              * Pool allocation order is stable, including removed slots. No
@@ -463,9 +470,27 @@ int browser_html_script_snapshot_version(node *script_node,const char *url,char 
         }
         if(script_bytes(&w,"]",1)) return -28;
     }
-    if(script_bytes(&w,version==2?"],2);":"]);",version==2?5:3)) return -28;
+    if(script_bytes(&w,version>=2?"],2);":"]);",version>=2?5:3)) return -28;
     *snapshot_size=w.at; w.capacity=capacity;
-    for(node *n=script_node->first;n;n=n->next) {
+    const char *source=version==3 ? browser_html_script_source(script_node) : NULL;
+    if(source) {
+        const char *base=""; node *n=&tree.nodes[0]; uint32_t visited=0;
+        /* First connected HTML base with href, in document order. */
+        while(n && ++visited<=tree.node_limit) {
+            if(n->kind==1 && n->ns==HUBBUB_NS_HTML && !strcmp(n->name,"base")) {
+                int found=0;
+                for(attribute *a=n->attributes;a;a=a->next) if(!strcmp(a->name,"href")) {base=a->value;found=1;break;}
+                if(found) break;
+            }
+            if(n->first) {n=n->first;continue;}
+            while(n->parent && !n->next) n=n->parent;
+            if(!n->parent) break;
+            n=n->next;
+        }
+        size_t b=strlen(base),s=strlen(source);
+        if(b>=BROWSER_SCRIPT_REFERENCE || s>=BROWSER_SCRIPT_REFERENCE ||
+           script_bytes(&w,base,b+1) || script_bytes(&w,source,s)) return -28;
+    } else for(node *n=script_node->first;n;n=n->next) {
         if(n->kind!=3 || script_bytes(&w,n->text,n->length)) return -28;
     }
     *source_size=w.at-*snapshot_size;

@@ -91,6 +91,8 @@ int x86os_getpid(void) { return 77; }
 int x86os_create(const char *path) { (void)path; assert(0); return -5; }
 int x86os_write(int fd,const void *bytes,size_t size) { (void)fd; (void)bytes; (void)size; assert(0); return -5; }
 int x86os_close(int fd) { (void)fd; assert(0); return -5; }
+int x86os_open(const char *path) { (void)path; assert(0); return -5; }
+int x86os_read(int fd,void *out,size_t size) { (void)fd;(void)out;(void)size;assert(0);return -5; }
 uint32_t x86os_uptime_ms(void) { ++clock_reads; return clock_ms; }
 int x86os_unlink(const char *path) { assert(path[0] && !exists); ++unlinks; return 0; }
 int x86os_spawnv(const char *path, int argc, const char *const *argv) {
@@ -1461,6 +1463,7 @@ class BrowserRuntimeTests(unittest.TestCase):
             arguments = [os.environ["REIST_BROWSER_HTML_REPRO"]] if "REIST_BROWSER_HTML_REPRO" in os.environ else []
             run_host([str(source), "userspace/gui/apps/browser/browser_model.cpp",
                       "userspace/gui/apps/browser/browser_script.cpp", "userspace/gui/apps/browser/script_protocol.c",
+                      "userspace/gui/apps/browser/script_fetch.cpp",
                       "userspace/gui/apps/browser/js_session.cpp", "userspace/gui/apps/browser/js_protocol.c",
                       "userspace/gui/lib/html_document.c", "userspace/gui/lib/value_controls.c",
                       "userspace/gui/apps/browser/browser_response.cpp", "userspace/programs/curl_http.c",

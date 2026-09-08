@@ -1,15 +1,17 @@
 #include "browser_script.h"
 #include "js_session.hpp"
+#include "script_fetch.hpp"
 #include <new>
 #include <string.h>
 using reist::browser::JsSession;
+using reist::browser::ScriptFetch;
 #if !__STDC_HOSTED__
 __asm__(".pushsection .rodata.browser_dom,\"a\",@progbits\n"
         ".global browser_dom_data\nbrowser_dom_data:\n.incbin \"assets/browser/dom.js\"\n"
         ".global browser_dom_end\nbrowser_dom_end:\n.popsection\n");
 #endif
 extern "C" const char browser_dom_data[],browser_dom_end[];
-struct script_record { uint32_t source_offset,source_length,patch_offset,patch_length,version; };
+struct script_record { uint32_t source_offset,source_length,patch_offset,patch_length,version,kind; };
 struct script_journal {
     uint32_t count,source_bytes,patch_bytes,complete;
     script_record records[BROWSER_SCRIPT_COUNT];
@@ -17,21 +19,23 @@ struct script_journal {
 };
 struct browser_script_owner {
     JsSession js;
+    ScriptFetch fetch;
+    char document[BROWSER_SCRIPT_REFERENCE]{};
     script_journal *active=nullptr,*candidate=nullptr,*current=nullptr;
     char *wire=nullptr,*output=nullptr;
     browser_html_header_t parser{};
     browser_script_message_t message{};
     uint32_t endpoint=0,pid=0,generation=0,epoch=0,ordinal=0,received=0,total=0,sent=0,progress=0;
     // 0 idle, 1 receiving snapshot, 2 HELLO, 3 binding, 4 sync,
-    // 5 author script, 6 journal, 7 response transfer.
+    // 5 author script, 6 journal, 7 response transfer, 8 external fetch.
     unsigned phase=0;
     uint32_t fixture=0,executions=0;
     uint32_t profile=0;
-    int error=0,reflow=0,deny=0;
+    int error=0,reflow=0,deny=0,realm=0;
     static void clear(script_journal *j) { if(j) j->count=j->source_bytes=j->patch_bytes=j->complete=0; }
     void cancel() {
         if(endpoint) { (void)x86os_ipc_close(endpoint); endpoint=0; }
-        js.cancel(); phase=0; received=total=sent=0;
+        js.cancel(); fetch.cancel(); phase=0; received=total=sent=0;
     }
     int fail(int rc) { error=rc; cancel(); return rc; }
     int buffers() {
@@ -57,9 +61,16 @@ struct browser_script_owner {
         if(profile && profile!=message.version) return fail(-84);
         profile=message.version;
         const char *source=wire+sizeof(message)+message.snapshot_length;
+        uint32_t split=0;
+        if(message.reserved) {
+            while(split<message.source_length && source[split]) ++split;
+            uint32_t length=message.source_length;
+            if(split==length || split>=BROWSER_SCRIPT_REFERENCE || length-split-1>=BROWSER_SCRIPT_REFERENCE ||
+               memchr(source+split+1,0,length-split-1) || !document[0]) return fail(-84);
+        }
         if(current && ordinal<current->count) {
             const script_record &r=current->records[ordinal];
-            if(r.version!=message.version || r.source_length!=message.source_length ||
+            if(r.version!=message.version || r.kind!=message.reserved || r.source_length!=message.source_length ||
                memcmp(current->source+r.source_offset,source,r.source_length)) return fail(-84);
             return reply(current->patches+r.patch_offset,r.patch_length);
         }
@@ -70,11 +81,26 @@ struct browser_script_owner {
         }
         if(current->count!=ordinal || message.source_length>BROWSER_SCRIPT_SOURCE-current->source_bytes) return fail(-28);
         if(deny) return save(0);
+        if(message.reserved) {
+            uint32_t length=message.source_length;
+            // Private UI-thread scratch, never shared with either worker.
+            static char base[BROWSER_SCRIPT_REFERENCE],reference[BROWSER_SCRIPT_REFERENCE],url[BROWSER_SCRIPT_REFERENCE];
+            memcpy(reference,source+split+1,length-split-1); reference[length-split-1]=0;
+            if(!reference[0] || browser_resource_url(document,source,base) ||
+               browser_resource_admit(document,base) || browser_resource_url(base,reference,url) ||
+               browser_resource_admit(document,url)) return save(0);
+            int rc=fetch.start(document,url); if(rc) return fail(rc);
+            phase=8; return 0;
+        }
+        return begin_script();
+    }
+    int begin_script() {
         if(js.ready()) return evaluate(wire+sizeof(message),message.snapshot_length,4);
         if(js.busy() || js.pid() || epoch==UINT32_MAX) return fail(-84);
         uint64_t seed=0; if(x86os_monotonic_ms(&seed)) return fail(-84);
         seed^=(uint64_t)parser.parent_generation<<32; seed^=++epoch; if(!seed) seed=1;
         if(js.start(epoch,seed,fixture)) return fail(-84);
+        realm=1;
         x86os_puts("BROWSER_JS_WORKER pid="); x86os_print_number(js.pid());
         x86os_puts(" generation="); x86os_print_number((int)js.generation());
         x86os_puts(" fixture="); x86os_print_number((int)fixture); x86os_puts("\n");
@@ -82,10 +108,10 @@ struct browser_script_owner {
     }
     int save(uint32_t size) {
         browser_script_mutation_t mutations[BROWSER_SCRIPT_MUTATIONS]; uint32_t count=0,bytes=0;
-        if(browser_script_journal_version(output,size,message.version,mutations,&count,&bytes) || !current ||
+        if(browser_script_journal_version(output,size,message.version>=2?2:1,mutations,&count,&bytes) || !current ||
             ordinal!=current->count || size>BROWSER_SCRIPT_JOURNAL-current->patch_bytes) return fail(-84);
         script_record &r=current->records[ordinal];
-        r={current->source_bytes,message.source_length,current->patch_bytes,size,message.version};
+        r={current->source_bytes,message.source_length,current->patch_bytes,size,message.version,message.reserved};
         memcpy(current->source+r.source_offset,wire+sizeof(message)+message.snapshot_length,r.source_length);
         if(size) memcpy(current->patches+r.patch_offset,output,size);
         current->source_bytes+=r.source_length; current->patch_bytes+=size; ++current->count;
@@ -99,27 +125,34 @@ extern "C" browser_script_owner *browser_script_create() {
 }
 extern "C" int browser_script_destroy(browser_script_owner *s) {
     if(!s) return 0;
-    if(s->js.pid() || s->js.busy() || s->endpoint || s->phase) return -84;
+    if(s->js.pid() || s->js.busy() || s->endpoint || s->phase || s->fetch.release()) return -84;
     x86os_free(s->wire); x86os_free(s->output); x86os_free(s->active); x86os_free(s->candidate);
     s->~browser_script_owner(); x86os_free(s); return 0;
 }
 extern "C" void browser_script_cancel(browser_script_owner *s) { if(s) s->cancel(); }
 extern "C" void browser_script_navigation(browser_script_owner *s) {
-    if(!s) return; s->cancel(); s->clear(s->candidate); s->current=nullptr; s->error=0; s->deny=0;
+    if(!s) return; s->cancel(); s->fetch.reset_cache(); s->clear(s->candidate); s->current=nullptr; s->error=0; s->deny=0;
 }
 extern "C" void browser_script_deny(browser_script_owner *s,int deny) { if(s) s->deny=!!deny; }
+extern "C" int browser_script_document(browser_script_owner *s,const char *url) {
+    if(!s || !url || s->phase || s->endpoint) return -84;
+    uint32_t n=0; while(n<BROWSER_SCRIPT_REFERENCE && url[n]) ++n;
+    if(!n || n==BROWSER_SCRIPT_REFERENCE) return -22;
+    memcpy(s->document,url,n+1); return 0;
+}
 extern "C" void browser_script_fixture(browser_script_owner *s,uint32_t mode) { if(s && mode<=2) s->fixture=mode; }
 extern "C" uint32_t browser_script_executions(const browser_script_owner *s) { return s?s->executions:0; }
+extern "C" int browser_script_fetch_pid(const browser_script_owner *s) { return s?s->fetch.pid():0; }
 extern "C" int browser_script_busy(const browser_script_owner *s) { return s && s->phase>=2; }
-extern "C" int browser_script_ready(const browser_script_owner *s) { return !s || (!s->js.pid() && !s->js.busy()); }
-extern "C" int browser_script_stranded(const browser_script_owner *s) { return s && s->js.state()==JsSession::State::stranded; }
-extern "C" uint32_t browser_script_progress(const browser_script_owner *s) { return s ? s->progress+s->js.progress() : 0; }
+extern "C" int browser_script_ready(const browser_script_owner *s) { return !s || (!s->js.pid() && !s->js.busy() && !s->fetch.pid() && !s->fetch.busy() && !s->fetch.stranded()); }
+extern "C" int browser_script_stranded(const browser_script_owner *s) { return s && (s->js.state()==JsSession::State::stranded || s->fetch.stranded()); }
+extern "C" uint32_t browser_script_progress(const browser_script_owner *s) { return s ? s->progress+s->js.progress()+s->fetch.progress() : 0; }
 extern "C" uint32_t browser_script_endpoint(const browser_script_owner *s) { return s ? s->endpoint : 0; }
 extern "C" int browser_script_has_active(const browser_script_owner *s) { return s && s->active && s->active->count; }
 extern "C" int browser_script_prepare(browser_script_owner *s,const browser_html_header_t *request,int reflow) {
-    if(!s || !request || s->phase || s->endpoint || s->js.busy() || s->js.state()==JsSession::State::stranded) return -84;
+    if(!s || !request || s->phase || s->endpoint || s->js.busy() || s->fetch.busy() || s->fetch.pid() || browser_script_stranded(s)) return -84;
     s->parser=*request; s->reflow=!!reflow; s->current=reflow?s->active:s->candidate;
-    s->pid=s->generation=s->ordinal=s->received=s->total=s->profile=0; s->error=0;
+    s->pid=s->generation=s->ordinal=s->received=s->total=s->profile=0; s->error=s->realm=0;
     return x86os_ipc_create(&s->endpoint);
 }
 extern "C" int browser_script_bind(browser_script_owner *s,uint32_t pid,uint32_t generation) {
@@ -147,8 +180,15 @@ extern "C" int browser_script_receive(browser_script_owner *s,const browser_css_
 }
 extern "C" int browser_script_poll(browser_script_owner *s) {
     if(!s) return 0;
-    s->js.poll();
-    if(s->js.state()==JsSession::State::stranded) return s->fail(-84);
+    s->js.poll(); s->fetch.poll();
+    if(browser_script_stranded(s)) return s->fail(-84);
+    if(s->realm && s->endpoint && (s->js.state()==JsSession::State::failed || s->js.state()==JsSession::State::reaping))
+        return s->fail(-84); // A lost document realm is never silently recreated.
+    if(s->phase==8) {
+        if(s->fetch.error()) return s->fail(s->fetch.error());
+        if(!s->fetch.ready()) return 0;
+        return s->fetch.skipped() ? s->save(0) : s->begin_script();
+    }
     if(s->phase>=2 && s->phase<=6) {
         if(s->js.busy()) return 0;
         if(!s->js.ready()) return s->fail(s->js.error()?s->js.error():-84);
@@ -156,7 +196,8 @@ extern "C" int browser_script_poll(browser_script_owner *s) {
         switch(s->phase) {
         case 2: return s->evaluate(browser_dom_data,(uint32_t)(browser_dom_end-browser_dom_data),3);
         case 3: return s->evaluate(s->wire+sizeof(s->message),s->message.snapshot_length,4);
-        case 4: ++s->executions; return s->evaluate(s->wire+sizeof(s->message)+s->message.snapshot_length,s->message.source_length,5);
+        case 4: ++s->executions; return s->message.reserved ? s->evaluate(s->fetch.data(),s->fetch.length(),5) :
+            s->evaluate(s->wire+sizeof(s->message)+s->message.snapshot_length,s->message.source_length,5);
         case 5:
             if(s->js.engine_status()) x86os_puts("BROWSER_JS_EXCEPTION\n");
             return s->evaluate("__reistDOM.take()",17,6);

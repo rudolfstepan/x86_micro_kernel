@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><base href="/htdocs/">
+<title>External scripts not executed</title>
+<style>body {font-size:18px} .passed {color:#127a31} .failed {color:#b21b25}</style>
+</head><body><h1>External classic JavaScript</h1>
+<p id="result" class="failed">Waiting for external JavaScript</p>
+<script>
+globalThis.order='inline'; globalThis.saved=document.getElementById('result');
+</script>
+<script src="ext.js">throw new Error('external fallback executed');</script>
+<script src="http://10.0.2.2:18765/redirect.js"></script>
+<script src="http://10.0.2.2:18765/big.js"></script>
+<script src="missing.js">throw new Error('missing fallback executed');</script>
+<script src="http://10.0.2.2:18765/missing.js"></script>
+<script src="http://10.0.2.2:18765/html.js"></script>
+<script src="http://10.0.2.2:18765/inert.js" async></script>
+<script src="http://10.0.2.2:18765/inert.js" defer></script>
+<script src="http://10.0.2.2:18765/inert.js" type="module"></script>
+<script src="http://10.0.2.2:18765/inert.js" crossorigin></script>
+<script src="http://10.0.2.2:18765/inert.js" integrity=""></script>
+<script>
+if(order!=='inline|local|http|http' || remoteCount!==2 || globalThis.badMime ||
+   document.getElementById('future')!==null || saved!==document.getElementById('result'))
+    throw new Error('external order, MIME, future DOM or identity');
+saved.textContent='External JavaScript works: local, HTTP, cache';
+saved.className='passed'; document.title='REIST External JavaScript OK';
+</script>
+<p id="future">Future parser node, absent during all preceding scripts.</p>
+</body></html>
