@@ -1,8 +1,8 @@
 # Work Paper: gemeinsame JavaScript-Laufzeit, getrennte Host-Autorität
 
 Stand: 8. September 2026. Ausgangspunkt: `270754bd`.
-Status: Architektur und Reihenfolge festgelegt; R3.34 ist das erste
-Implementierungspaket. Die allgemeine Shell-Scripting-Umgebung ist noch nicht
+Status: Architektur und Reihenfolge festgelegt; R3.34 ist umgesetzt und mit
+allen11 Prüfgruppen abgenommen. Die allgemeine Shell-Scripting-Umgebung ist noch nicht
 implementiert. Dieses Papier ersetzt keine vorhandene Browser-Abnahme.
 
 ## Ziel und Sicherheitsgrenze
@@ -141,6 +141,11 @@ Terminalberechtigung. Fault/Hang/Stale-Fixtures dürfen keine direkten Worker-
 Terminalmarker mehr liefern; der neue eingeschränkte Validator verlangt deren
 Abwesenheit UND weiter echte Faultdaten, Exitstatus, geordnete Reaps und
 frische Generationen. Legacy-Validator bleibt nur für alte Belege verfügbar.
+Der native Hang-Zweig bestätigt seinen Eintritt als reguläres EVAL-Ergebnis
+über den bereits delegierten Kanal und hängt danach. Erst nach validierter
+Bestätigung sendet der Elternprozess die nächste Anfrage; diese muss mit
+ETIMEDOUT und Reap143 enden. Das ersetzt den alten direkten Terminalmarker,
+ohne dem Worker Konsolenrechte oder dem privaten Protokoll neue Opcodes zu geben.
 
 ### Scope und eingefrorene Gates
 
@@ -174,5 +179,45 @@ stoppt dieses Paket mit konkretem Grund; keine stille Scopeerweiterung.
 
 ## Abnahmeprotokoll
 
-Noch nicht abgenommen. Hier werden Ergebnis, Einschränkungen, Belegpfade und
-der danach nächste Schritt ergänzt; Planformulierungen sind kein Laufzeitbeweis.
+Vertragscheckpoint `3a0a3148`. R3.34 ist nach allen11 eingefrorenen Gruppen
+abgenommen. Hostprüfungen, beide Referenzbuilds, tatsächliche Image-Inhalte,
+eingeschränkte native/JS-Gäste, externer Browser-JavaScript-Lauf,2560x1440-
+Browser-Recovery und Memory-Resilience sind erfolgreich. Einzelzeiten und
+abschließende Belegnamen stehen in [CURRENT_WORK.md](CURRENT_WORK.md).
+
+Der eingeschränkte Gast bestätigt zweimal alle nativen Verbote, Heap und IPC,
+persistente Werte/GC, echte PF142, bestätigten Hang/Timeout/Reap143, Stale/Cancel,
+frische Generationen und Elternverlust. Beide Images enthalten90 passende
+Programmpayloads und die jeweils neu gebauten Kernel. Alle fünf geschützten
+Programmhashes bleiben unverändert.100 archivierte Referenzdateien einschließlich
+separatem Speicher-Beweisimage; frühere Abnahmen bleiben unangetastet.
+
+Erhaltene Korrekturbelege unter `build/codex-agent/r334-script-domain/`:
+
+- `red-worker-corrected.log`: vor der Änderung fehlende native Einschränkung;
+  vorheriger Test-Syntaxfehler bleibt in `red-worker.log` sichtbar.
+- `domain.log`: Namenskollision mit Windows-CRT-Konstante SYS_OPEN im Host-
+  Fixture; explizit entkoppelt, danach echte Kernelpfade O0/O2 erfolgreich.
+- `artifact-gate.log`: zusätzlicher Out-of-line-SDK-Wrapper verschob auch
+  unbeteiligte Programme. Inline-Wrapper beseitigt dies; die fünf eingefrorenen
+  Hashes wurden nicht geändert und stimmen wieder exakt.
+- `artifact-gate-sdk-corrected.log`: Imageprüfer forderte zusätzlich globale
+  Makefile-Parität auch für das fremde Windows-GUI-Fixture SURFACEDEMO.
+  Auf die vertraglich benötigte Shell-Parität von JSWORK/JSIPCTST eingegrenzt;
+  alle tatsächlich verpackten Programme bleiben in beiden Images bytegeprüft.
+  Keine Änderung/Abnahme der fremden Surface-Demo-Integration.
+- `js-runtime.log`: erster echter Gast scheitert im neuen Diagnosemodus.
+  Dessen Erwartung für IPC_RELEASE(0) widersprach dem bestehenden EINVAL-
+  Vertrag. Erwartung korrigiert und nichtnull Fake-Handle auf EBADF ergänzt;
+  keine Lockerung des Kernel-/IPC-Vertrags.
+
+Der neue Hang-Nachweis nutzt bestätigtes IPC statt unzulässiger direkter
+Worker-Konsolenausgabe. Betroffene Builds/Prüfungen wurden nach diesen gezielten
+Korrekturen wiederholt; alte Belege wurden weder überschrieben noch als
+abschließende Abnahme verwendet. Keine allgemeine System-Scripting- oder neue
+VMware-Laufzeit-/Performancezusage aus diesen Teilbelegen.
+
+Nächste Etappe: JS2-Vertrag für den allgemeinen Shell-Runner und gemeinsame
+Host-Transport-Bausteine vorbereiten und einfrieren; erst danach implementieren.
+Die nächste Etappe wurde in diesem Paket nicht begonnen. R3.6b behält trotz
+formalem Queue-Rücksprung seine ausdrückliche VMware-Zurückstellung.

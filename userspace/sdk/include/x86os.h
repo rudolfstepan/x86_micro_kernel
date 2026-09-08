@@ -152,7 +152,8 @@ enum {
     X86OS_SYS_STORAGE_BULK = 124,
     X86OS_SYS_KERNEL_LOG_READ = 125,
     X86OS_SYS_CPU_TOPOLOGY = 126,
-    X86OS_SYS_TERMINAL_INPUT = 127
+    X86OS_SYS_TERMINAL_INPUT = 127,
+    X86OS_SYS_PROCESS_RESTRICT = 128
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -2068,6 +2069,15 @@ int x86os_spawnv(const char* path, int argc, const char* const* argv);
 int x86os_wait(int pid, int* status);
 int x86os_cpu_topology(x86os_cpu_topology_t* topology);
 int x86os_process_info(uint32_t index, x86os_process_info_t* info);
+/* Irreversible self-restriction. Fails closed on unsupported kernels; no
+ * implicit file, network, process, terminal or GUI authority afterwards. */
+static inline int x86os_process_restrict_script(void) {
+    const reist_process_restrict_request_t request = {
+        REIST_PROCESS_RESTRICT_VERSION, sizeof(request),
+        REIST_PROCESS_RESTRICT_SCRIPT, 0U
+    };
+    return (int)x86os_syscall(X86OS_SYS_PROCESS_RESTRICT, (uintptr_t)&request, 0, 0);
+}
 int x86os_process_identity(x86os_process_identity_t* identity);
 /* Foreground terminal adapter; -EAGAIN from CHECK means no input authority. */
 int x86os_terminal_input(uint32_t operation, int target_pid,

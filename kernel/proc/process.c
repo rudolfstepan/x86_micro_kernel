@@ -408,6 +408,17 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
         }
         return true;
     }
+    if (kind == PROCESS_DOMAIN_SCRIPT) {
+        static const uint8_t script_syscalls[] = {
+            SYS_MALLOC, SYS_FREE, SYS_REALLOC, SYS_EXIT, SYS_GETPID,
+            SYS_PROCESS_INFO, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
+            SYS_IPC_SEND_TIMEOUT, SYS_IPC_RECEIVE_TIMEOUT, SYS_IPC_RELEASE,
+            SYS_PROCESS_IDENTITY, SYS_PROCESS_RESTRICT
+        };
+        for (size_t index = 0; index < sizeof(script_syscalls); ++index)
+            profile_allow(profile, script_syscalls[index]);
+        return true;
+    }
     if (kind == PROCESS_DOMAIN_STORAGE) {
         static const uint8_t storage_syscalls[] = {
             SYS_EXIT, SYS_GETPID, SYS_YIELD, SYS_SLEEP_MS, SYS_MONOTONIC_MS,
@@ -561,9 +572,39 @@ bool process_syscall_allowed(const Process *process, uint32_t syscall_index) {
          profile->kind != PROCESS_DOMAIN_DRIVER &&
          profile->kind != PROCESS_DOMAIN_AUDIO_SERVICE &&
          profile->kind != PROCESS_DOMAIN_COMPOSITOR &&
+         profile->kind != PROCESS_DOMAIN_SCRIPT &&
          profile->kind != PROCESS_DOMAIN_MAINTENANCE)) return false;
     return (profile->allowed_syscalls[syscall_index / 32U] &
             (1U << (syscall_index % 32U))) != 0U;
+}
+
+int process_restrict_script(Process *process) {
+    if (process == NULL) return -13;
+    process_domain_profile_t reduced;
+    if (!initialize_domain_profile(&reduced, PROCESS_DOMAIN_SCRIPT)) return -13;
+    uint32_t flags = process_table_lock_irqsave();
+    int result = -13;
+    if (!process->is_running || process->has_exited || process->terminating ||
+        !process->generation ||
+        !process_syscall_allowed(process, SYS_PROCESS_RESTRICT) ||
+        (process->domain_profile.kind != PROCESS_DOMAIN_COMPATIBILITY &&
+         process->domain_profile.kind != PROCESS_DOMAIN_SCRIPT)) goto done;
+    for (unsigned i = 0; i < PROCESS_DOMAIN_SYSCALL_WORDS; ++i)
+        if (reduced.allowed_syscalls[i] &
+            ~process->domain_profile.allowed_syscalls[i]) goto done;
+    if (process->heap_bytes > PROCESS_SCRIPT_HEAP_MAX_BYTES) {
+        result = -12;
+        goto done;
+    }
+    /* Zero remains lazy: the allocator must still derive the physical-RAM
+     * budget. A pre-existing lower budget never grows during attenuation. */
+    if (process->heap_budget > PROCESS_SCRIPT_HEAP_MAX_BYTES)
+        process->heap_budget = PROCESS_SCRIPT_HEAP_MAX_BYTES;
+    process->domain_profile = reduced;
+    result = 0;
+done:
+    process_table_unlock_irqrestore(flags);
+    return result;
 }
 
 static int allocate_pid_locked(void) {
@@ -1647,13 +1688,16 @@ void process_orphan_children(int parent_pid) {
     process_table_unlock_irqrestore(flags);
 }
 
-int process_get_info(uint32_t index, process_info_t* info) {
+int process_get_info_for(const Process *viewer, uint32_t index,
+                         process_info_t *info) {
     if (info == NULL) return -1;
     uint32_t flags = process_table_lock_irqsave();
     uint32_t visible = 0;
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         Process* process = &process_list[i];
         if (!process->is_running && !process->has_exited) continue;
+        if (viewer && viewer->domain_profile.kind == PROCESS_DOMAIN_SCRIPT &&
+            process != viewer) continue;
         if (visible++ != index) continue;
 
         memset(info, 0, sizeof(*info));
@@ -1682,6 +1726,10 @@ int process_get_info(uint32_t index, process_info_t* info) {
     }
     process_table_unlock_irqrestore(flags);
     return 0;
+}
+
+int process_get_info(uint32_t index, process_info_t *info) {
+    return process_get_info_for(NULL, index, info);
 }
 
 int process_terminate(int pid) {

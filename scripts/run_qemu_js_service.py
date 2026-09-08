@@ -6,9 +6,15 @@ import run_qemu_smoke as smoke
 from run_qemu_system_layout import inject
 from measure_cpp_baseline import suppress_windows_test_dialogs
 
-def validate_transcript(text):
-    for marker in ("JS_SERVICE_RUNTIME_OK","JS_SERVICE_ORPHAN_OK","JS_SERVICE_FAULT_ENTERED",
-                   "JS_SERVICE_HANG_ENTERED","JS_SERVICE_STALE_ENTERED"):
+def validate_transcript(text,restricted_worker=False):
+    worker_markers=("JS_SERVICE_FAULT_ENTERED","JS_SERVICE_HANG_ENTERED","JS_SERVICE_STALE_ENTERED")
+    markers=("JS_SERVICE_RUNTIME_OK","JS_SERVICE_ORPHAN_OK")
+    if restricted_worker:
+        markers+=("JS_SERVICE_DOMAIN_OK","JS_SERVICE_HANG_CONFIRMED")
+        if any(marker in text for marker in worker_markers):
+            raise ValueError("restricted worker acquired terminal authority")
+    else: markers+=worker_markers
+    for marker in markers:
         if len(re.findall(r"(?m)^"+marker+r"\r?$",text))!=2: raise ValueError("missing/duplicate "+marker)
     rows=re.findall(r"(?m)^JS_SERVICE_REAP mode=(\w+) status=(\d+) pid=(\d+) generation=(\d+)\r?$",text)
     modes=["normal","fault","hang","stale","cancel","fresh"]*2
@@ -62,7 +68,7 @@ def run(args):
         for _ in range(2):
             inject(process,"jsipctst"); at=wait("JS_SERVICE_RUNTIME_OK\n",at); at=wait(smoke.SHELL_PROMPT,at)
             inject(process,"help"); at=wait("Built-ins: cd path pwd history help exit",at); at=wait(smoke.SHELL_PROMPT,at)
-        validate_transcript(transcript)
+        validate_transcript(transcript,args.restricted_worker)
     except (OSError,ValueError,RuntimeError,TimeoutError) as caught: error=str(caught)
     finally:
         stopped.set(); smoke.stop_process(process); thread.join(timeout=2)
@@ -106,6 +112,7 @@ def artifacts(args):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--qemu",type=Path); parser.add_argument("--verify-artifacts",action="store_true")
+    parser.add_argument("--restricted-worker",action="store_true")
     parser.add_argument("--image",type=Path,required=True); parser.add_argument("--log",type=Path,required=True)
     args=parser.parse_args()
     if args.log.exists(): parser.error("refusing to overwrite evidence")

@@ -62,4 +62,15 @@ class ServiceTests(unittest.TestCase):
                         ("JS_SERVICE_ORPHAN_OK",""),("0x00000004","0x00000008"),("JS_SERVICE_HANG_ENTERED","")):
             with self.assertRaises(ValueError): validate_transcript(text.replace(old,new))
         with self.assertRaises(ValueError): validate_transcript(text+"JS_SERVICE_TEST_FAIL\n")
+        restricted=text
+        for marker in ("JS_SERVICE_FAULT_ENTERED","JS_SERVICE_HANG_ENTERED","JS_SERVICE_STALE_ENTERED"):
+            restricted=restricted.replace(marker+"\n","")
+        restricted=restricted.replace("JS_SERVICE_RUNTIME_OK", "JS_SERVICE_DOMAIN_OK\nJS_SERVICE_HANG_CONFIRMED\nJS_SERVICE_RUNTIME_OK")
+        validate_transcript(restricted,True)
+        for old,new in (("JS_SERVICE_DOMAIN_OK",""),("JS_SERVICE_HANG_CONFIRMED",""),("status=142","status=0"),
+                        ("generation=12","generation=1"),("JS_SERVICE_ORPHAN_OK",""),
+                        ("Faulting address: 0x00000004","")):
+            with self.assertRaises(ValueError): validate_transcript(restricted.replace(old,new),True)
+        for marker in ("JS_SERVICE_FAULT_ENTERED","JS_SERVICE_HANG_ENTERED","JS_SERVICE_STALE_ENTERED"):
+            with self.assertRaises(ValueError): validate_transcript(restricted+marker+"\n",True)
 if __name__=="__main__": unittest.main()

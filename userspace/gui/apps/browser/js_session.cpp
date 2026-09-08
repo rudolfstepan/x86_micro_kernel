@@ -74,7 +74,7 @@ int JsSession::begin(uint32_t op,const void *data,uint32_t size,void *output,uin
     engine_status_=0; phase_=State::sending; return 0;
 }
 int JsSession::start(uint32_t document,uint64_t seed,uint32_t probe) {
-    if(pid_ || request_ || reply_ || busy() || phase_==State::stranded || !document || !seed || probe>3) return -22;
+    if(pid_ || request_ || reply_ || busy() || phase_==State::stranded || !document || !seed || probe>4) return -22;
     if(document<document_ || (document==document_ && phase_!=State::failed)) return -22;
     if(document==document_) { if(recoveries_==2) return -28; ++recoveries_; }
     else recoveries_=0;

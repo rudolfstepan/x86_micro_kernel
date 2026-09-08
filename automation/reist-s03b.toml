@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.34-script-process-domain"
-next_user_request = "2026-09-08: Build a shared language runtime with separate capability-scoped browser/user/system hosts. New sequenced work paper; execute only the first irreversible native script-domain package. Retain VMware deferral; no agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-08: R3.34 accepted. Continue the approved OS_JAVASCRIPT_SCRIPTING_WORK_PAPER with JS2: first freeze the general JS.PRG runner and reusable host transport contract, then implement that one package. R3.6b retains its explicit VMware deferral; do not resume it ahead of this scripting priority. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.34-script-process-domain"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Irreversible native Script domain and restricted JSWORK lifecycle"
@@ -26,6 +26,7 @@ runtime_tests = ["python scripts/verify_script_domain_artifacts.py --evidence bu
 acceptance = "All11 groups, actual kernel/program image identity, five protected program hashes, direct diff/scope/queue review, then local commit. JS service link gate after fresh SDK builds. No later package work."
 stop_conditions = ["Source outside allowed_files needed", "Unattributed changes", "Failed gate without focused correction", "Broader host/persistence/hardware authority required"]
 commit_message = "feat: enforce a restricted process domain for JavaScript workers"
+evidence = ["python test/test_syscall_abi_source.py -v","python test/test_script_domain.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_process_memory.py -v","python test/test_js_service.py -v",".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga","python scripts/verify_script_domain_artifacts.py --evidence build/codex-agent/r334-script-domain/artifacts","python scripts/run_qemu_js_service.py --restricted-worker --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r334-script-domain/js-runtime.log","python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r334-script-domain/browser-external.log","python scripts/run_qemu_browser_resolution.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --mode 2560x1440 --image build/reist-os.img --evidence build/codex-agent/r334-script-domain/guest2560",".\\scripts\\test-reist-runtime.ps1 -Mode memory-resilience -Target qemu -Video vga"]
 
 [[packages]]
 id = "R3.33-high-resolution-surface"
@@ -2299,7 +2300,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

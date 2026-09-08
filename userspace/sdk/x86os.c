@@ -15,6 +15,8 @@ static void x86os_zero_bytes(void *memory, size_t length) {
 
 _Static_assert(sizeof(x86os_memory_stats_t) == 120U,
                "memory statistics ABI size changed");
+_Static_assert(sizeof(reist_process_restrict_request_t) == 16U,
+               "process restriction ABI size changed");
 _Static_assert(sizeof(x86os_scheduler_stats_t) == 32U,
                "scheduler statistics ABI size changed");
 _Static_assert(sizeof(x86os_runtime_timing_t) == 72U,

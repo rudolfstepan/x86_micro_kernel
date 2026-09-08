@@ -3157,9 +3157,19 @@ static int syscall_wait(int pid, int *user_status) {
     }
 }
 
+static int syscall_process_restrict(const void *user_request) {
+    reist_process_restrict_request_t request;
+    _Static_assert(sizeof(request) == 16U, "process restriction ABI drift");
+    if (copy_from_user(&request, user_request, sizeof(request)) != 0) return -14;
+    if (request.version != REIST_PROCESS_RESTRICT_VERSION ||
+        request.struct_size != sizeof(request) || request.reserved != 0U ||
+        request.profile != REIST_PROCESS_RESTRICT_SCRIPT) return -22;
+    return process_restrict_script(scheduler_current_process());
+}
+
 static int syscall_process_info(uint32_t index, void *user_info) {
     process_info_t info;
-    int result = process_get_info(index, &info);
+    int result = process_get_info_for(scheduler_current_process(), index, &info);
     if (result <= 0) return result;
     return copy_to_user(user_info, &info, sizeof(info)) == 0 ? 1 : -14;
 }
@@ -3185,9 +3195,16 @@ static int syscall_process_identity(void *user_identity) {
 
 static int syscall_process_identity_of(int pid, void *user_identity) {
     if (pid <= 0 || user_identity == NULL) return -22;
+    Process *caller = scheduler_current_process();
+    bool restricted = caller &&
+        caller->domain_profile.kind == PROCESS_DOMAIN_SCRIPT;
+    if (restricted && pid != caller->pid && pid != caller->parent_pid)
+        return -13;
     uint32_t generation = 0U;
     if (process_get_identity(pid, &generation) != 0 || generation == 0U)
         return -3;
+    if (restricted && generation != (pid == caller->pid
+            ? caller->generation : caller->parent_generation)) return -3;
     struct {
         uint32_t version;
         uint32_t struct_size;
@@ -3881,6 +3898,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_kernel_log_read,     // Syscall 125: Bounded kernel log
     (void*)&syscall_cpu_topology,        // Syscall 126: Read CPU topology
     (void*)&syscall_terminal_input,      // Syscall 127: Foreground input lifecycle
+    (void*)&syscall_process_restrict,    // Syscall 128: Irreversible self restriction
     // Add more syscalls here as needed
 };
 
@@ -3901,8 +3919,6 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
  */
 void syscall_handler(Registers* regs) {
     const uint32_t syscall_index = regs->eax;
-    const uint64_t timing_start = syscall_index == SYS_RUNTIME_TIMING
-        ? runtime_timing_begin() : 0U;
     const uint32_t arg1 = regs->ebx;
     const uint32_t arg2 = regs->ecx;
     const uint32_t arg3 = regs->edx;
@@ -3915,6 +3931,9 @@ void syscall_handler(Registers* regs) {
         regs->eax = (uint32_t)-13;
         return;
     }
+
+    const uint64_t timing_start = syscall_index == SYS_RUNTIME_TIMING
+        ? runtime_timing_begin() : 0U;
 
     // Validate syscall index
     if (syscall_index >= 512 || syscall_table[syscall_index] == 0) {
@@ -4030,6 +4049,9 @@ void syscall_handler(Registers* regs) {
             result = (uint32_t)syscall_readdir_batch(
                 (const char*)(uintptr_t)arg1, arg2,
                 (void*)(uintptr_t)arg3);
+            break;
+        case SYS_PROCESS_RESTRICT:
+            result = (uint32_t)syscall_process_restrict((const void *)(uintptr_t)arg1);
             break;
         case SYS_PROCESS_INFO:
             scheduler_preempt_disable();

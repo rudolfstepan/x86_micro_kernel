@@ -29,10 +29,12 @@ static int evaluate(JsSession &s,const char *code,char *output,const char *expec
 }
 static const char *hold="globalThis.counter=40; globalThis.add=()=>++counter; globalThis.held=new ArrayBuffer(8*1024*1024); 'seeded'";
 static int exercise(JsSession &s,char *input,char *output) {
-    CHECK(!s.start(1,42)); CHECK(!settle(s)); CHECK(s.ready());
+    // HELLO is accepted only after the native raw-syscall denial fixture.
+    CHECK(!s.start(1,42,4)); CHECK(!settle(s)); CHECK(s.ready());
     int pid=s.pid(); uint32_t generation=s.generation();
     CHECK(!evaluate(s,hold,output,"seeded"));
     CHECK(!evaluate(s,"add()+1",output,"42"));
+    x86os_puts("JS_SERVICE_DOMAIN_OK\n");
     CHECK(!evaluate(s,"Promise.resolve().then(()=>counter=43); 'queued'",output,"queued"));
     CHECK(!evaluate(s,"counter",output,"43"));
     CHECK(!s.evaluate("let = ;",7,output,JS_SERVICE_RESULT)); CHECK(!settle(s));
@@ -55,9 +57,17 @@ static int exercise(JsSession &s,char *input,char *output) {
         CHECK(!s.start(mode+1,42,mode==4?0:mode)); CHECK(!settle(s)); CHECK(s.ready());
         pid=s.pid(); generation=s.generation();
         CHECK(!evaluate(s,hold,output,"seeded"));
-        CHECK(!s.evaluate("'reply'",7,output,JS_SERVICE_RESULT,mode==2?200:5000));
+        CHECK(!s.evaluate("'reply'",7,output,JS_SERVICE_RESULT));
+        if(mode==2) {
+            CHECK(!settle(s));
+            CHECK(s.ready() && s.result() && !strcmp(s.result(),"native-hang"));
+            x86os_puts("JS_SERVICE_HANG_CONFIRMED\n");
+            CHECK(!s.evaluate("'reply'",7,output,JS_SERVICE_RESULT,200));
+        }
         if(mode==4) s.cancel();
         CHECK(!settle(s)); CHECK(s.state()==JsSession::State::failed && !s.result());
+        if(mode==2) CHECK(s.error()==-110);
+        if(mode==3) CHECK(s.error()==-84);
         CHECK(mode==1 ? s.exit_status()==142 : mode==2 ? s.exit_status()==143 :
               (s.exit_status()==143 || s.exit_status()==74));
         record(mode==1?"fault":mode==2?"hang":mode==3?"stale":"cancel",pid,generation,s.exit_status());

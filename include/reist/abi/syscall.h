@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 #define REIST_SYSCALL_ABI_VERSION 1U
-#define REIST_SYSCALL_COUNT 128U
+#define REIST_SYSCALL_COUNT 129U
 
 #define REIST_SYSCALL_LIST(X) \
     X(TERMINAL_PUTCHAR, PUTCHAR, 0U) \
@@ -141,7 +141,8 @@
     X(STORAGE_BULK, STORAGE_BULK, 124U) \
     X(KERNEL_LOG_READ, KERNEL_LOG_READ, 125U) \
     X(CPU_TOPOLOGY, CPU_TOPOLOGY, 126U) \
-    X(TERMINAL_INPUT, TERMINAL_INPUT, 127U)
+    X(TERMINAL_INPUT, TERMINAL_INPUT, 127U) \
+    X(PROCESS_RESTRICT, PROCESS_RESTRICT, 128U)
 
 /* REIST single-terminal foreground adapter, not POSIX termios/job control. */
 #define REIST_TERMINAL_INPUT_VERSION 1U
@@ -155,6 +156,14 @@ typedef struct {
     int32_t target_pid;
     uint32_t target_generation;
 } reist_terminal_input_request_t;
+
+/* Irreversible attenuation of the calling process; no target PID or grants.
+ * Only profile SCRIPT is defined. Reserved must be zero. */
+#define REIST_PROCESS_RESTRICT_VERSION 1U
+#define REIST_PROCESS_RESTRICT_SCRIPT 1U
+typedef struct {
+    uint32_t version, struct_size, profile, reserved;
+} reist_process_restrict_request_t;
 
 #define REIST_DECLARE_SYSCALL(kernel_name, sdk_name, number) \
     REIST_SYS_##sdk_name = number,

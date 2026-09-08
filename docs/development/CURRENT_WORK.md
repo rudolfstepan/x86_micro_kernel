@@ -2,15 +2,71 @@
 
 Stand: 8. September 2026
 
-## Aktiv: R3.34 Script-Prozessdomäne
+## R3.34 abgenommen: Script-Prozessdomäne und OS-Scripting-Arbeitspapier
 
-Der Benutzer beauftragt eine gemeinsame JS-Sprachlaufzeit mit getrennten
-Browser-/Benutzer-/System-Hosts und ein neues sequenzielles Arbeitspapier:
-[OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md](OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md).
-Ausgang270754bd, zunächst nur R3.34: irreversible native Rechtebeschränkung,
-JSWORK-Integration und reale Negativ-/Lifecycle-Abnahme. Spätere Host-/Broker-
-Etappen sind geplant, nicht implementiert. Direkte Ausführung im Hauptworktree,
-keine Agenten oder Pushes; R3.6b bleibt unverändert zurückgestellt.
+[OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md](OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md)
+legt die sechs Etappen für gemeinsame Sprachimplementierung und getrennte
+Browser-/Benutzer-/System-Hosts fest. Ausgang270754bd, Vertragscommit3a0a3148.
+Nur die erste Etappe R3.34 ist umgesetzt und abgenommen; noch kein allgemeines
+JS.PRG und keine administrativen JS-Bindings. Direkte Hauptworktree-Ausführung,
+keine Agenten, sichtbaren Test-VMs, Windows-Fehlerdialoge oder Pushes.
+
+Syscall128 PROCESS_RESTRICT entzieht dem aufrufenden Prozess unwiderruflich
+Ambient-Rechte. Versionierter16-Byte-Request, Profil SCRIPT; nur Compatibility
+-> Script und idempotente erneute Einschränkung. Ungültige Anfragen oder ein
+bereits zu großer Heap verändern nichts. Interne Profilversion2 mit fünf
+Bitmapwörtern; bisherige öffentliche Nummern und neun Profile bleiben erhalten.
+Nur14 Syscalls: privater Heap, eigene Lebensdauer, monotone Zeit, begrenztes
+gerichtetes IPC auf delegierten Handles, eigene Prozessinfo sowie eigene/
+generationengeprüfte Elternidentität. Kein VFS, Netzwerk, Spawn/Kill, Geräte,
+GUI, Terminal, Service-Connect oder selbständige IPC-Erzeugung/-Delegation.
+
+JSWORK beschränkt sich vor dem Engine-Start, scheitert ohne Kernelunterstützung
+geschlossen und gibt delegierte Endpoints mit IPC_RELEASE frei.64MiB privater
+Workerheap/32MiB Engine wie bisher; niedrigeres RAM-abhängiges Budget und
+physische Recoveryreserve bleiben wirksam. Keine neue Allokation im
+Rechteübergang, keine Änderung der Scheduler-/Framebuffer-Hotpaths. Der neue
+SDK-Wrapper ist inline: BENCHMARK, MATHTEST, TEXTTEST, CURL und JSTEST bleiben
+byteidentisch. Dies ist kein neuer VMware-Durchsatz- oder Zertifizierungsnachweis.
+
+Alle11 eingefrorenen Gruppen bestanden. Belege relativ zu
+`build/codex-agent/r334-script-domain/`:
+
+| Gruppe | Ergebnis / Sekunden | Abschließender Beleg |
+| --- | --- | --- |
+| ABI/Projektionen | 5 Tests /0.117 | abi-inline-sdk.log |
+| Native Domäne | 2 Tests, echte C-Pfade O0/O2 /47.635 | domain-crt-corrected.log |
+| Private Speicherpfade | 10 Tests /57.025 | memory-host.log |
+| JS-Protokoll/Owner/Ziel-Link | 3 Tests /3.993 | js-host-ipc-errno.log |
+| VMware-Referenzpaket | PASS /83.951 | package-vmware-ipc-errno.log |
+| QEMU-Referenzpaket | PASS /79.881 | package-qemu-ipc-errno.log |
+| Tatsächliche Image-Inhalte | 90 Programme je Image, beide Kernel /1.662 | artifacts-final/protected.json |
+| Eingeschränkte JS-Prozesse | zweimal vollständiger Zyklus /48.430 | js-runtime-ipc-errno.log |
+| Externe Browser-Skripte | große Ressourcen, Redirect/Cache/Reflow/Cancel/Recovery /99.848 | browser-external.log |
+|2560x1440 Browser | drei Max/Normal-, zwei Radzyklen, Fault/Ersatz/Shell /157.981 | guest2560/status.json |
+| Memory-Resilience | PASS /143.833 einschließlich Build; Gast46s | memory-resilience-gate.log |
+
+Der native Test versucht alle verbotenen Syscallnummern einschließlich
+ungültiger Pointer, Profilaufweitung, fremder Identität, falscher IPC-Richtung
+und Fake-Handles. Beide Gästezyklen erhalten DOMAIN_OK, echte PF142 an Adresse4,
+IPC-bestätigten Hang mit Timeout/Reap143, stale/cancel-Reap143, frische leere
+Realms und vollständiges Orphan-Reap.12 unterschiedliche Workeridentitäten;
+keine unerlaubten direkten Worker-Terminalmarker. Der Browser-Gast ersetzt
+PID9 nach isoliertem Fehler durch PID22, Desktop und Shell bleiben nutzbar.
+
+`accepted-reference/` sichert100 Dateien: beide Images/Kernel,90 Programme,
+VMware-Descriptor/VMX, unabhängigen Imagebericht und separates Memory-
+Beweisimage/-Kernel/-Log. Archivkopien gegen alle90 Programmhashes und beide
+Image-/Kernelhashes geprüft; R3.33 und frühere Belege bleiben unberührt.
+QEMU-Image: `d03cd7eb6c498f21f0657881121fdb254cb6bb1723c62c18a6b5dd3f6ae7062b`.
+VMware-Image: `362e699ea4665066b6889a59ec9e29001666125abc43022743896826d561c844`.
+Fehlversuche, Testkorrekturen und SDK-Codeverschiebung sind im Arbeitspapier
+offengelegt und als rote Belege erhalten; keine Schutz-Hashes gelockert.
+
+Nächster fachlicher Schritt: JS2-Vertrag für allgemeinen Shell-Runner und
+wiederverwendbaren Host-Transport einfrieren. Keine spätere Etappe in diesem
+Lauf implementiert. Formaler Queue-Rücksprung auf R3.6b erhält dessen bisherige
+Zurückstellung und sämtliche offenen VMware-Gates; Scripting hat weiter Vorrang.
 
 ## R3.33 abgenommen: Browserinhalt auf großen Desktops
 

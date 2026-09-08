@@ -21,11 +21,14 @@
 #define USER_HEAP_TOP 0xBF000000U
 #define MAX_USER_ALLOCATIONS 128
 #define PROCESS_HEAP_MAX_BYTES (512U*1024U*1024U)
+#define PROCESS_SCRIPT_HEAP_MAX_BYTES (64U*1024U*1024U)
+#define PROCESS_DOMAIN_SCRIPT 10U
 #define PROCESS_MEMORY_BATCH_PAGES 64U
 typedef struct { uint32_t address, requested_size, mapped_size; bool allocated; } user_allocation_t;
 typedef struct {
     int pid; uint32_t generation, heap_next, heap_bytes, heap_budget;
     user_allocation_t user_allocations[MAX_USER_ALLOCATIONS];
+    struct { uint32_t kind; } domain_profile;
 } Process;
 typedef struct { uint64_t managed_bytes, free_frame_bytes; } memory_stats_t;
 typedef struct { uint32_t entries[1024]; } page_directory_t;
@@ -133,6 +136,20 @@ int main(void) {
     for (unsigned i=0;i<32;++i) { p[i]=process_user_malloc(PAGE_SIZE); assert(p[i]); }
     for (unsigned i=0;i<32;++i) assert(!process_user_free(p[i]));
     assert(allocations==frees);
+    owner->domain_profile.kind=PROCESS_DOMAIN_SCRIPT;
+    owner->heap_budget=0;
+    void *restricted=process_user_malloc(PAGE_SIZE);
+    assert(restricted && owner->heap_budget<=PROCESS_SCRIPT_HEAP_MAX_BYTES);
+    assert(owner->heap_budget==32U*1024U*1024U); /* low-RAM adaptive bound survives */
+    unsigned before=allocations;
+    assert(!process_user_malloc(PROCESS_SCRIPT_HEAP_MAX_BYTES+PAGE_SIZE));
+    assert(allocations==before && !process_user_free(restricted));
+    owner->heap_budget=PROCESS_HEAP_MAX_BYTES;
+    restricted=process_user_malloc(PAGE_SIZE);
+    assert(restricted && owner->heap_budget==PROCESS_SCRIPT_HEAP_MAX_BYTES);
+    assert(!process_user_free(restricted));
+    owner->domain_profile.kind=0;
+    owner->heap_budget=0;
     for (int fail=0;fail<6;++fail) {
         fail_after=fail;
         assert(!process_user_malloc(8U*PAGE_SIZE));

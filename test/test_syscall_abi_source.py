@@ -26,14 +26,14 @@ class SyscallAbiSourceTests(unittest.TestCase):
 
     def test_common_list_is_complete_append_only_v1(self) -> None:
         self.assertIn("REIST_SYSCALL_ABI_VERSION 1U", self.common)
-        self.assertIn("REIST_SYSCALL_COUNT 128U", self.common)
+        self.assertIn("REIST_SYSCALL_COUNT 129U", self.common)
         entries = re.findall(
             r"^\s*X\(([A-Z][A-Z0-9_]*), ([A-Z][A-Z0-9_]*), "
             r"([0-9]+)U\)", self.common, re.MULTILINE)
-        self.assertEqual(len(entries), 128)
-        self.assertEqual([int(item[2]) for item in entries], list(range(128)))
-        self.assertEqual(len({item[0] for item in entries}), 128)
-        self.assertEqual(len({item[1] for item in entries}), 128)
+        self.assertEqual(len(entries), 129)
+        self.assertEqual([int(item[2]) for item in entries], list(range(129)))
+        self.assertEqual(len({item[0] for item in entries}), 129)
+        self.assertEqual(len({item[1] for item in entries}), 129)
         self.assertEqual(entries[8],
                          ("INSTALL_IRQ", "RESERVED_INSTALL_IRQ", "8"))
         self.assertEqual(entries[90], ("ADMIN_STORAGE", "ADMIN_STORAGE", "90"))
@@ -51,8 +51,9 @@ class SyscallAbiSourceTests(unittest.TestCase):
         self.assertEqual(entries[126],
                          ("CPU_TOPOLOGY", "CPU_TOPOLOGY", "126"))
         self.assertEqual(entries[127], ("TERMINAL_INPUT", "TERMINAL_INPUT", "127"))
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 128U", self.process)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_WORDS 4U", self.process)
+        self.assertEqual(entries[128], ("PROCESS_RESTRICT", "PROCESS_RESTRICT", "128"))
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 129U", self.process)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_WORDS 5U", self.process)
 
     def test_generated_compatibility_names_remain_exact(self) -> None:
         entries = re.findall(
@@ -76,7 +77,7 @@ class SyscallAbiSourceTests(unittest.TestCase):
             [sys.executable, "scripts/generate_syscall_abi.py", "--check"],
             cwd=ROOT, capture_output=True, text=True, timeout=10, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("SYSCALL_ABI_CHECK_OK count=128", result.stdout)
+        self.assertIn("SYSCALL_ABI_CHECK_OK count=129", result.stdout)
         after = [hashlib.sha256(path.read_bytes()).digest() for path in paths]
         self.assertEqual(after, before)
         self.assertIn("replacements != 1", self.generator)

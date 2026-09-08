@@ -22,6 +22,7 @@
 #define MAX_PROGRAMS 256 // Maximum number of running programs
 #define MAX_USER_ALLOCATIONS 128
 #define PROCESS_HEAP_MAX_BYTES (512U * 1024U * 1024U)
+#define PROCESS_SCRIPT_HEAP_MAX_BYTES (64U * 1024U * 1024U)
 #define PROCESS_MEMORY_BATCH_PAGES 64U
 #define MAX_PROCESS_FILES 8
 #define PROCESS_STANDARD_DESCRIPTOR_COUNT 3
@@ -34,10 +35,10 @@
 #define PROCESS_ARGUMENT_INTERNAL_COUNT 32U
 #define SUPERVISED_PROCESS_RESERVE 1U
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
-#define PROCESS_DOMAIN_PROFILE_VERSION 1U
-#define PROCESS_DOMAIN_SYSCALL_WORDS 4U
-/* Exclusive upper bound; syscall 127 is append-only TERMINAL_INPUT. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 128U
+#define PROCESS_DOMAIN_PROFILE_VERSION 2U
+#define PROCESS_DOMAIN_SYSCALL_WORDS 5U
+/* Exclusive upper bound; syscall 128 is append-only PROCESS_RESTRICT. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 129U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -49,6 +50,7 @@ typedef enum {
     PROCESS_DOMAIN_AUDIO_SERVICE = 7,
     PROCESS_DOMAIN_MAINTENANCE = 8,
     PROCESS_DOMAIN_COMPOSITOR = 9,
+    PROCESS_DOMAIN_SCRIPT = 10,
 } process_domain_kind_t;
 
 typedef struct {
@@ -166,6 +168,7 @@ int process_start_prepared_supervised(int pid, uint32_t generation);
 int process_set_supervised_affinity(int pid, uint32_t generation,
                                     uint32_t cpu_affinity_mask);
 bool process_syscall_allowed(const Process *process, uint32_t syscall_index);
+int process_restrict_script(Process *process);
 int process_terminate_authorized(Process *requester, int pid);
 int process_get_identity(int pid, uint32_t *generation_out);
 bool process_identity_alive(int pid, uint32_t generation);
@@ -214,6 +217,8 @@ int process_get_working_directory(const Process* process, char* buffer,
                                   size_t size);
 int process_set_working_directory(Process* process, const char* path);
 int process_get_info(uint32_t index, process_info_t* info);
+int process_get_info_for(const Process *viewer, uint32_t index,
+                         process_info_t *info);
 int process_terminate(int pid);
 
 /* Internal SMP lifecycle transaction. Lock order is Process -> Scheduler. */

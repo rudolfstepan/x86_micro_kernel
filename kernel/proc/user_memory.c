@@ -89,6 +89,9 @@ void *process_user_malloc(size_t size) {
         if (budget > PROCESS_HEAP_MAX_BYTES) budget = PROCESS_HEAP_MAX_BYTES;
         process->heap_budget = (uint32_t)budget & ~(PAGE_SIZE - 1U);
     }
+    if (process->domain_profile.kind == PROCESS_DOMAIN_SCRIPT &&
+        process->heap_budget > PROCESS_SCRIPT_HEAP_MAX_BYTES)
+        process->heap_budget = PROCESS_SCRIPT_HEAP_MAX_BYTES;
     if (process->heap_bytes > process->heap_budget ||
         length > process->heap_budget - process->heap_bytes) return NULL;
     user_allocation_t *slot = NULL;
