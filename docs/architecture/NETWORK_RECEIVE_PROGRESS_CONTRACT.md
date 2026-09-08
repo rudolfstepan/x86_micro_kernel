@@ -4,6 +4,11 @@ Frozen 2026-09-08, R3.27a. User-approved prerequisite for the unaccepted
 external-script candidate in stash `cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2`.
 No browser implementation or gate is accepted by this package.
 
+Extension frozen before driver changes, 2026-09-08: user approved repairing
+the demonstrated RTL8139 RX-wrap defect within this same receive-progress
+boundary. E1000 guest passes; failed RTL8139 evidence remains preserved.
+No implementation acceptance; throughput limits and remaining gates unchanged.
+
 ## Cause and architecture
 
 R3.27's real325231-byte HTTP source timed out within its unchanged5s budget.
@@ -21,7 +26,31 @@ out-of-order reassembly and TCP state migration remain separate debt.
 This is a correction to existing bounded storage/servicing, not permission
 to add a new kernel protocol stack. Existing `tcp_socket.c` TCB state in
 Ring0 is explicit migration debt. Parsers and traffic-sensitive waiting
-remain Ring3. No NIC, DMA, scheduler, supervisor, IRQ or capability changes.
+remain Ring3. The RTL8139 extension below is the only NIC-source exception.
+No DMA authority, scheduler, supervisor, IRQ or capability changes.
+
+### Approved RTL8139 receive-wrap correction
+
+The existing64KiB DMA ring follows the controller descriptor/FCS/CAPR layout;
+Ethernet frame/FCS terminology is IEEE802.3. The
+[QEMU RTL8139 model](https://github.com/qemu/qemu/blob/master/hw/net/rtl8139.c)
+in `rtl8139_write_buffer` wraps at65536 even with RCR_WRAP set: linear
+overflow into extra memory only applies to smaller rings. The driver wrongly
+publishes a linear `entry + 4` across that boundary. Unused slack is not the
+packet remainder. This explains corrupted wrapped frames, not a new TCP limit.
+
+Repair only the existing serialized RX bottom half: validate before copying,
+copy at most1518 bytes into one static scratch frame only when payload wraps,
+preserve normal zero-copy, four-byte FCS exclusion, aligned CAPR advancement,
+64-descriptor batch and pending notification. No heap/stack growth in the
+copy path, extra IRQ work, DMA permissions, checksum bypass or new recovery
+policy. Existing legacy Ring0 driver remains migration debt, not an isolation
+claim. Invalid descriptors retain the existing bounded reject/reset path.
+Host O0/O2 executes actual driver declarations and drain function with only
+PIO/delivery mocks: byte-exact normal and all aligned wrap offsets, FCS-only
+wrap, maximum/short frames, invalid status/length, guarded storage, no-access
+when uninitialized/empty, batch exhaustion/pending and continued progress.
+Both1MiB guest profiles and original fault/performance gates remain mandatory.
 
 ## Fixed limits and behavior
 

@@ -12,6 +12,91 @@ Alle bisherigen Images/Logs bleiben erhalten. R3.27 und R3.28 sind queued.
 Nur das neue R3.27a wird in diesem Lauf umgesetzt. Vertrag:
 NETWORK_RECEIVE_PROGRESS_CONTRACT.md, eingefrorene Gates in der Queue.
 
+**RTL-RX-Erweiterung am8.September vom Nutzer freigegeben; Umsetzung aktiv.**
+Queue/Vertrag werden vor dem Treibereingriff eng um `rtl8139.c` und einen
+echten O0/O2-Hosttest erweitert. Keine Gate-/Durchsatzlockerung, kein neues
+Treiber-/DMA-Recht. Der folgende fehlgeschlagene Zwischenstand bleibt erhalten.
+Noch kein Implementierungscommit oder Paketabschluss.
+E1000 besteht die vollstaendige neue Abnahme (`guest-output-dir-e1000.json`,
+62.489s):1MiB964ms, langsamer Leser1226ms, Timeout250ms, RST194ms,
+generationgepruefter Parent-Kill/Reap143, alle vier Slots frei und frischer
+1MiB-Transfer986ms. Unveraendertes CURL laedt1MiB ueber HTTP in eine Datei,
+NETTEST prueft jedes Byte. Tatsaechliches Fenster32768 bis32Bytes,1 Peer-RST,
+11003 beobachtete TCP-Ausgaben. Das ist ein QEMU-E1000-Nachweis, kein
+VMware-Runtimenachweis oder Vollbrowserabschluss.
+
+Zweites Pflichtprofil RTL8139 scheitert in19.479s:118541Bodybytes bis zum
+unveraenderten5s-Abbruch; Gesamtgate81.980s FAIL. Peer liefert1MiB ohne Fehler.
+PCAP: nach0.2s ACK64801, dann Luecke bis1.5s; weitere Retransmissionsluecke
+1.7--4.5s; zuletztACK118542 inklusive SYN. Keine ueberlappenden, noch teilweise
+neuen TCP-Segmente im Mitschnitt; normales Zurueckweisen von TCP-Fragmenten
+nicht als Loesung umgehen. RTL-RX-Ring ist bereits64KiB, also kein8KiB-Limit.
+
+Read-only Quellbefund ausserhalb allowed_files: `drivers/net/rtl8139.c`
+konfiguriert64KiB mitRCR_WRAP. `rtl8139_drain_rx` liest `entry + 4` linear,
+auch wenn `offset + 4 + frame_length > 65536`. Im
+[QEMU-RTL8139-Modell](https://github.com/qemu/qemu/blob/master/hw/net/rtl8139.c)
+teilt `rtl8139_write_buffer` einen DMA-Write am Ringende: lineares Ueberlaufen
+bei gesetztemWRAP gilt ausdruecklich nur fuer Ringe kleiner65536. REISTs
+Slackbereich ist bei64KiB daher nicht der Paketrest. Erforderlich ist eine
+begrenzte, validierte Ring-zu-Frame-Kopie im vorhandenen RX-Bottom-Half mit
+echtem Hosttest fuer normalen/umgebrochenen/ungueltigen Descriptor und dem
+unveraenderten1MiB-RTL-Gast. Keine neue DMA-Autoritaet, keine komplexere
+Ring0-Protokollverarbeitung, kein geringeres TCP-Fenster als Workaround.
+`rtl8139.c` war beim Fehlbefund noch nicht freigegeben und nicht geaendert;
+die gezielte Reparatur ist jetzt autorisiert. Weitere Ursache nicht
+ausgeschlossen; erster konkreter Treiberdefekt ist eindeutig.
+
+Noch offen: RTL-RX-Reparatur mit negativem Hostnachweis,
+danach Wiederholung des betroffenen Netzgates und Netzwerk-Service-Recovery,
+Scheduler-Slack, Browser-Input/Fault/Restart. Diese Restgates noch nicht
+ausgefuehrt; Queue bleibt R3.27a active. R3.27 bleibt im genannten Stash.
+Zwischenimages/Programme werden unter `r327a-network/interim-reference/`
+gesichert, ausdruecklich nicht als abgenommen bezeichnet.
+
+Vertragscommit `2e686e71`. Implementiert: feste32KiB-Ringe jeTCP-Slot,
+unveraenderte2048/512-Byte-ABI-/Kopiergrenzen, traffic-sensitive1/40ms-
+Steuerungswartezeit mit100ms Aktivitaetsfenster im Ring3-Dienst. Alte
+Idle-Operation bleibt explizit; keine Scheduler-/NIC-/Supervisorquelle
+geaendert. NETTEST prueft die echte Socket-ABI und CURL-Datei bytegenau.
+
+Zwischenstand Abnahme unter `build/codex-agent/r327a-network/`:
+Host-TCP/Parser O0/O2 pass4.563s; Erweiterungs-/Evidenztests pass.
+Legacy-TCP1.094s, Frame-Handoff4, Netdomain4, Service19 (zunaechst alte
+40ms-Quellassertion; expliziter Idle-Zweig erhalten, betroffene Methode
+pass0.013s), Benchmark9 pass. Erste Regression scheitert wie erwartet am
+2048-Byte-Fenster; zuvor behobener lokaler Zig-Cachezugriff dokumentiert.
+VMware98s/24s, QEMU71s, tatsaechliche beidseitige Imageguard1.167s pass:
+alle9 geschuetzten Programme bytegleich3eab01ab. Neu:
+QEMU-Kernel fd72353fd1a205b76f3cae36b9561f8b111d10516269e00fe23a34a54ee610cc,
+VMware-Kernel0254d70d3abe5d2967f7344f44bfc3b588eef07b298595f716abed77f3c4faa5.
+
+Erste echte E1000-Gaeste:1MiB bytegenau830/796ms; langsamer Leser919/1082ms,
+Timeout312/252ms. Noch keine Gesamtabnahme. Fehler des neuen Testablaufs:
+sofortiger Peer-RST konnte bereits den Trigger-Send treffen (28.567s Lauf);
+Reset nun gezielt in Receive-Phase. Zweiter Lauf110.521s erreichte den
+Abbruchtest: die Shell bietet keine automatische Ctrl-C-Kindbeendigung.
+Ersetzt durch expliziten generationgeprueften Parent-Kill, begrenzte
+Zombie-Beobachtung/Reap143 und frischen Vier-Slot-/Transfernachweis.
+Die vorhandene verifizierte Windows-QEMU-Timerpolicy wird wiederverwendet;
+kein Gastclock-/Timeoutwechsel. Der waehrend des Laufs noch24Byte grosse
+PCAP war gepuffert, kein Beleg eines Bootstillstands.
+
+Der neue PCAP-Validator verlangte zuerst unnoetig ein exakt auf0 gefuelltes
+Fenster. Der echte Peer liess6848Byte frei; ein Sender muss den letzten
+Teil nicht fuellen. Korrektur innerhalb unveraenderter eingefrorener DoD:
+reale Fensterbelegung unterhalb der Haelfte, echte RSTs und bytegenaue
+Recovery; Zero/Overflow/Reopen bleiben verpflichtend im echten TCB-Hosttest.
+Negative Validatorfaelle erweitert, keine Quelldateigrenze oder Laufzeitgate
+entfernt. NETTEST-Nachbuild VMware74s/QEMU71s, aktualisierte beidseitige
+Artefaktguard1.090s pass (`artifacts-cancel-owner.json`), identische Kernel.
+Neuer Diagnosecode NETTEST aeb97e9e9223c9dac5f18d677cf42ed8623c96f0e78487f7333f39f3b816e2c0,
+REIST7d33f0eacdacb30e34769ff12e4933dd3780f7ca82d36625f33a0fca81055735.
+42 verschiedene Hostmethoden bestehen kumulativ. Zusaetzlicher Testfixture-
+Fehler in `guest-cancel-owner`31.517s: /tmp fehlte im Referenzimage; der Runner
+legt es jetzt per normalem mkdir nur im Snapshot an. Keine CURL-Aenderung.
+Alle Fehlerlogs bleiben erhalten, Restgates oben offen.
+
 ## R3.27 zurueckgestellt: externe klassische JavaScript-Dateien
 
 **Noch nicht abgenommen, kein Implementierungscommit.** Gesicherte R3.27-

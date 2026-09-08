@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
 active_id = "R3.27a-network-receive-progress"
-next_user_request = "2026-09-08: User approves network prerequisite after measured external-script TCP timeout. Preserve unaccepted R3.27 in stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2; accept R3.27a first, then resume R3.27 and R3.28. No relaxed browser gates, agents, push or routine confirmation."
+next_user_request = "2026-09-08: User approves narrow R3.27a extension for demonstrated RTL8139 64KiB receive-wrap defect and real host regression. Preserve unaccepted R3.27 in stash cb130c7b1b777e2f0e2c2afd7b42348b4c2713e2; accept R3.27a first. No relaxed browser/throughput gates, agents or push."
 
 [policy]
 one_package_per_run = true
@@ -17,19 +17,20 @@ status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Bounded TCP receive progress independent of syscall copy size"
-scope = "One existing network receive-progress boundary: decouple legacy fixed TCP staging capacity from public copy ABI, bounded traffic-sensitive Ring-3 control wait, unchanged frame admission/fencing, real throughput and lifecycle proof. No new Ring-0 parser, protocol feature, NIC or scheduling mechanism."
+scope = "One existing network receive-progress boundary: decouple legacy fixed TCP staging capacity from public copy ABI, bounded traffic-sensitive Ring-3 control wait, repair existing RTL8139 64KiB RX wrap copy, unchanged frame admission/fencing, real throughput and lifecycle proof. No new Ring-0 parser, protocol feature, NIC or scheduling mechanism."
 allowed_files = [
  "automation/reist-s03b.toml", "docs/development/CURRENT_WORK.md", "docs/development/OS_GAP_ANALYSIS_AND_ROADMAP.md", "docs/architecture/BROWSER_ENGINE_PORT_PLAN.md",
  "docs/networking/NETWORK.md", "docs/architecture/NETWORK_RECEIVE_PROGRESS_CONTRACT.md",
- "drivers/net/tcp_socket.c", "drivers/net/tcp_socket.h", "userspace/programs/reist_probe.c", "userspace/programs/network_cadence.h",
+ "drivers/net/tcp_socket.c", "drivers/net/tcp_socket.h", "drivers/net/rtl8139.c", "userspace/programs/reist_probe.c", "userspace/programs/network_cadence.h",
  "userspace/programs/nettest.c", "scripts/build_system_programs.py", "scripts/build-windows.ps1", "Makefile",
- "test/test_tcp_socket_host.c", "test/test_network_progress.py", "test/network_progress_host.c", "scripts/run_qemu_network_progress.py"
+ "test/test_tcp_socket_host.c", "test/test_network_progress.py", "test/network_progress_host.c", "test/rtl8139_receive_host.c", "scripts/run_qemu_network_progress.py"
 ]
 invariants = [
  "Frozen NETWORK_RECEIVE_PROGRESS_CONTRACT: RFC9293 receive-window terminology, legacy TCB remains explicit migration debt. Fixed32KiB/socket, four slots (128KiB), unchanged2048-byte syscall and512-byte ingress, old public structs/numbers/wrappers unchanged. No heap, new locks, IRQ work or syscall-stack growth.",
- "Ring3 parses frames with existing8-frame batch; traffic-sensitive bounded control IPC wait, idle40ms retained, no timeout-zero busy loop or additional wait node. DHCP, heartbeat, generation/fencing/restart budgets unchanged. Scheduler/PIT/supervisor/NIC sources unchanged.",
+ "Ring3 parses frames with existing8-frame batch; traffic-sensitive bounded control IPC wait, idle40ms retained, no timeout-zero busy loop or additional wait node. DHCP, heartbeat, generation/fencing/restart budgets unchanged. Scheduler/PIT/supervisor and NIC sources unchanged except bounded RTL8139 RX ring copy described below.",
+ "User-approved RTL extension: existing64KiB DMA ring/FCS/CAPR semantics, validated wrapped frame copied into fixed <=1518-byte scratch in existing serialized bottom half. Nonwrapped zero-copy and64-descriptor batch retained; no allocation, new IRQ work, DMA authority, driver recovery policy or checksum bypass. Actual driver host O0/O2: normal, every aligned wrap boundary, FCS-only wrap, invalid descriptors, byte integrity, guard bytes and batch/pending progress.",
  "Real host O0/O2 covers full/overflow/window reopen/ring wrap/sequence wrap/EOF/RST/deadline/owner cleanup and stale handles plus cadence quiet/burst/expiry/clock wrap. Real guest verifies every byte of1MiB under5s, slow reader, timeout/reset/reopen/cancel with fresh stream; E1000 and RTL8139, fixed server payload and no pacing workaround.",
- "Both reference artifacts preserve baseline3eab01ab BROWSER/HTMLWORK/CURL/JSWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST payloads. Kernel changes restricted to legacy TCP storage correction. Real scheduler slack and unchanged browser input/crash/restart gates; network service crash/recovery smoke. No VMware runtime/10x-performance claim.",
+ "Both reference artifacts preserve baseline3eab01ab BROWSER/HTMLWORK/CURL/JSWORK/GTEST/BENCHMARK/MATHTEST/TEXTTEST/JSTEST payloads. Kernel changes restricted to legacy TCP storage and RTL8139 RX copy corrections. Real scheduler slack and unchanged browser input/crash/restart gates; network service crash/recovery smoke. No VMware runtime/10x-performance claim.",
  "R3.27 implementation remains shelved, not accepted here. After prerequisite acceptance only its protected kernel baseline may advance to this accepted package by explicit documented follow-up; no other R3.27 gates or quotas weakened. No later package implementation in this run."
 ]
 targeted_tests = ["python test/test_network_progress.py -v", "python test/test_network_tools.py NetworkToolsSourceTests.test_tcp_connect_stream_and_close_behavior -v", "python test/test_reist_network_frame_handoff.py -v", "python test/test_reist_network_domain.py -v", "python test/test_reist_service_domain.py -v", "python test/test_benchmark_source.py -v"]
