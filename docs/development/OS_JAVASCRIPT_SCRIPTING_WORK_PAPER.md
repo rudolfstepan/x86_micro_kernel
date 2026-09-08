@@ -56,6 +56,15 @@ vorhandenen errno-Teilumfang. Bestehende Syscallnummern bleiben unverändert.
 
 ## Reihenfolge und Definition of Done
 
+JS3-Inventur auf c9bf94ba: Der Ring-3-Objektclient besitzt stabile Leserechte,
+aber keinen allgemeinen Schreibpfad für reguläre Dateiobjekte. R3.36 schließt
+daher zuerst die zusammenhängende Lese-Capability-Grenze einschließlich echter
+CLI-/Worker-/VFS-Integration und Revoke/Cleanup. Persistente Schreibautorität
+bleibt ein eigenes zwingendes JS3-Paket, bevor JS4 beginnt; keine Umleitung in
+Kernel-VFS-Schreibaufrufe. Ebenso noch keine Verzeichnisrechte per Pfadpräfix.
+Eingefrorener Vertrag:
+[OS_JAVASCRIPT_FILE_CAPABILITY_CONTRACT.md](../architecture/OS_JAVASCRIPT_FILE_CAPABILITY_CONTRACT.md).
+
 | Paket | Zusammenhängender Schritt | Erforderliche Abnahme |
 | --- | --- | --- |
 | R3.34 | Irreversible native Script-Prozessdomäne; JSWORK vor Skriptannahme einschränken | Native Negativtests, Heapreserve, echte eingeschränkte JS-Lebenszyklen, Browserregression |

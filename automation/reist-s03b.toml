@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-08: R3.35/JS2 accepted. Continue the approved OS_JAVASCRIPT_SCRIPTING_WORK_PAPER with JS3: inventory and freeze explicit capability objects and the scoped file broker authority/persistence contract before implementation. R3.6b retains its VMware deferral; no ambient JS OS API, agents or push."
+active_id = "R3.36-js-file-capabilities"
+next_user_request = "2026-09-08: Execute R3.36 read-only file capabilities directly under the frozen contract. Persistent object writes need a separate JS3 protocol before JS4; no kernel write shortcut or directory-prefix authority. R3.6b remains explicitly deferred. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,22 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.36-js-file-capabilities"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Explicit isolated JavaScript file capabilities and read-only broker"
+scope = "JS3 read-authority boundary on c9bf94ba; frozen OS_JAVASCRIPT_FILE_CAPABILITY_CONTRACT. Native opaque objects, bounded nested host IPC, trusted pinned VFS object broker, CLI grants and actual isolation/cleanup proof. Persistent writes remain separate."
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/development/OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md","docs/architecture/OS_JAVASCRIPT_FILE_CAPABILITY_CONTRACT.md","userspace/js/js_protocol.h","userspace/js/js_protocol.c","userspace/js/js_session.hpp","userspace/js/js_session.cpp","userspace/js/js_worker.c","userspace/js/file_protocol.h","userspace/js/file_protocol.c","userspace/js/file_broker.hpp","userspace/js/file_broker.cpp","userspace/js/file_worker.h","userspace/js/file_worker.c","userspace/js/runner.hpp","userspace/js/runner.cpp","userspace/programs/js.cpp","userspace/programs/jsruntst.cpp","userspace/quickjs/include/reist_js_files.h","userspace/quickjs/lib/files.c","scripts/build_user_js.py","scripts/build_system_programs.py","scripts/build-windows.ps1","Makefile","htdocs/read-file.js","test/js_file_vectors.h","test/js_host.c","test/js_files_host.cpp","test/js_runner_host.cpp","test/js_service_host.cpp","test/test_js_files.py","test/test_js.py","test/test_js_runner.py","scripts/run_qemu_js_runner.py","scripts/verify_js_runner_artifacts.py"]
+invariants = ["Read the full file-capability contract. No kernel/storage ABI changes, ambient JS authority, path reopen or implicit regrant. Preserve native Script profile, existing browser semantics and resource/reap budgets.", "Main worktree only, no agents, visible VMs, crash dialogs, unrelated changes or push."]
+targeted_tests = ["python test/test_js.py -v","python test/test_js_files.py -v","python test/test_js_runner.py -v","python test/test_js_service.py -v","python test/test_script_domain.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_file_client.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/verify_js_runner_artifacts.py --baseline c9bf94ba --evidence build/codex-agent/r336-js-files/artifacts","python scripts/run_qemu_js_runner.py --file-capabilities --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r336-js-files/runner.log","python scripts/run_qemu_js_service.py --restricted-worker --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r336-js-files/service.log","python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r336-js-files/browser.log"]
+acceptance = "All12 frozen groups, actual reference kernel/protected payload hashes, direct ABI/cleanup/scope review, final archive and local commit. JS3 writes not accepted by this read-only proof."
+stop_conditions = ["Source outside allowed_files needed", "Unattributed changes", "Failed gate without focused correction", "Persistent write or directory-root authority needed"]
+commit_message = "feat: delegate explicit read-only file capabilities to JavaScript"
 
 [[packages]]
 id = "R3.35-js-runner"
@@ -2319,7 +2335,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"
