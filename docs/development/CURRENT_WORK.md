@@ -2,6 +2,16 @@
 
 Stand: 8. September 2026
 
+## Aktiv: R3.34 Script-Prozessdomäne
+
+Der Benutzer beauftragt eine gemeinsame JS-Sprachlaufzeit mit getrennten
+Browser-/Benutzer-/System-Hosts und ein neues sequenzielles Arbeitspapier:
+[OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md](OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md).
+Ausgang270754bd, zunächst nur R3.34: irreversible native Rechtebeschränkung,
+JSWORK-Integration und reale Negativ-/Lifecycle-Abnahme. Spätere Host-/Broker-
+Etappen sind geplant, nicht implementiert. Direkte Ausführung im Hauptworktree,
+keine Agenten oder Pushes; R3.6b bleibt unverändert zurückgestellt.
+
 ## R3.33 abgenommen: Browserinhalt auf großen Desktops
 
 Sauberer Ausgang `bd421a50`, Vertragscheckpoint `4ef25ec5`. Der größere
