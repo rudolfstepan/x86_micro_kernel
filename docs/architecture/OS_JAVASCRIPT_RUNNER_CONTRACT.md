@@ -35,7 +35,9 @@ At most16 script arguments including name,4096 total NUL-terminated argument
 bytes,1MiB exact source without embedded NUL. Unknown/missing options reject
 before spawning. Source reads use the existing generation-bound Ring-3 VFS
 object client, at most5s aggregate with bounded requests, one stable open,
-exact EOF and close on every path. No path or file descriptor reaches JS code.
+exact EOF and close on every path. scriptArgs[0] is only a descriptive string;
+no path authority or file descriptor reaches JS code. Expired admission never
+starts a worker; mandatory object cleanup retains the existing bounded1s close.
 
 Parent uses bounded existing private allocation,8MiB ceiling on demand; worker
 64MiB process/32MiB engine/16KiB stack/1024 jobs remain unchanged. No eager
@@ -59,6 +61,8 @@ Console callbacks stage ordered records in worker-private memory: uint32 stream
 (1 stdout/2 stderr),uint32 byte length,UTF-8 bytes. At most256 records and60KiB
 including record headers. Conversions share the engine deadline and heap;
 catching a quota error cannot clear failure or publish a successful prefix.
+Recursive console calls during argument conversion fail closed in this profile
+(same poisoned-context limit), rather than overwrite an in-progress record.
 No callback performs OS I/O. Arguments are installed as data, never eval text.
 Ordinary completion/exception replies contain a versioned24-byte header
 (version,size,engine status,exit code,record count,record bytes) followed by the
@@ -99,3 +103,21 @@ references. Each frozen gate once, only affected retries after documented
 in-scope corrections. No agents, visible windows, Windows crash dialogs or push.
 After all gates inspect diff/scope, archive references, transition queue and
 commit locally. File/process/admin capability brokers remain later packages.
+
+## Explicitly approved verifier repair, 8 September 2026
+
+The first external browser guest completed all ordered browser/pixel/cache/
+cancel/recovery/shell checks, but failed its final worker count. Raw lines327..329
+in r335-js-runner/browser.log contain two complete asynchronous diagnostics
+inside BROWSER_SCRIPT_FETCH_WORKER: REIST_NETWORK ARP_RESOLUTION_QUEUED and
+ARP_RESOLUTION_MEDIATED. All14 actual reaps exist; the broken start is pid30,
+generation11. This run is retained as failed evidence, not accepted by retry.
+
+User explicitly authorizes scripts/run_qemu_browser_external.py in scope.
+Only these two exact, complete newline-terminated diagnostic strings may be
+removed in a bounded derived view for fetch identity/reap matching. No guessed
+PID/generation, arbitrary fragment joining, status/count or timeout relaxation.
+Raw logs remain untouched; fatal markers in raw or derived views still fail.
+Negative regression covers partial/unknown noise, duplicates, missing reaps,
+stale generations, bad cancellation and fatal text. Then rerun the same browser
+gate on the unchanged images. Other passed runtime/build gates stay valid.

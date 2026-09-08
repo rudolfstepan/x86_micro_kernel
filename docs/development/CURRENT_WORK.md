@@ -9,6 +9,11 @@ Vertrag auf ef9fb2de vor Implementierung eingefroren:
 Gemeinsamer isolierter Dienst, JS.PRG, Datei/-e, Argumente und validierte
 stdout/stderr-Journale. Keine neuen Kernel- oder Skript-OS-Rechte. Zehn Gates
 in der Queue; R3.6b bleibt unverändert zurückgestellt. Noch keine Abnahme.
+Neun Gruppen bestehen bereits einschließlich echter JS-/Service-Gäste. Der
+letzte Browserlauf endet nur an einer durch ARP-Logs unterbrochenen Startzeile
+(pid30,generation11); alle14 Reaps und übrigen Browserprüfungen liegen vor.
+Nutzer hat die gezielte Prüferkorrektur ausdrücklich freigegeben. Rohbeleg
+`build/codex-agent/r335-js-runner/browser.log` bleibt als fehlgeschlagen erhalten.
 
 ## R3.34 abgenommen: Script-Prozessdomäne und OS-Scripting-Arbeitspapier
 
