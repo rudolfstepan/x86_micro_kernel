@@ -24,6 +24,13 @@ Ablehnung. Native O0/O2, beide Images, fuenf echte FAT32-Gastfaelle und bestehen
 JS-Datei-/Browsergaeste bestehen. Kein neuer Puffer/Schreib-Hotpath. Dies ist noch
 kein Ring-3-Schreibbackend; dessen exklusive Journalhoheit bleibt notwendig.
 
+Die anschliessende Journal-Uebergabe ist im FAT32_RING3_HANDOFF_CONTRACT
+konkretisiert: vorhandene5s-Reservation statt Langzeit-Volume-Lease, expliziter
+Journalmodus, tokengenaue Rohvermittlung, Cacheinvalidierung und Ring-3-Adapter.
+Die Kernelgrenze vermittelt ausschliesslich Bereiche/Generationen und IO;
+Dateisystem- und Transaktionspolitik wandert in den Ring-3-Backend. Das Papier
+unterscheidet diesen Mechanismus weiterhin von fertigen Schreibobjekten/JS-APIs.
+
 ## Ziel und Sicherheitsgrenze
 
 Eine gemeinsame QuickJS-Sprachimplementierung dient Browser-, Benutzer- und

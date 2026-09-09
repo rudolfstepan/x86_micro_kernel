@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-09: R3.40 FAT32 recovery admission accepted, all10 groups. Continue the cohesive default-FAT32 Ring-3 writable backend contract/implementation: exclusive journal ownership handoff, raw mediation/cache invalidation and writable object admission must precede JS write grants. Do not add a second journal owner or substitute EXT2-only writes for default FAT images. R3.6b remains execution-deferred despite formal queue transition. Direct main worktree, no agents or push."
+active_id = "R3.41-fat32-ring3-handoff"
+next_user_request = "2026-09-09: R3.41 definition checkpoint on7d87119c. Implement the frozen FAT32 Ring-3 journal handoff package directly in the main worktree: existing short mutation reservation, explicit mode, token-bound128KiB deferred IO, four durability barriers, cache invalidation and actual Ring-3 adapter. Definition is not implementation/acceptance. No further broad inventory or another prerequisite package without a demonstrated blocker. Default writable objects/JS grants follow only after this authority boundary. R3.6b stays execution-deferred. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,23 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.41-fat32-ring3-handoff"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Bounded journal ownership handoff from legacy FAT32 to Ring-3 Storage"
+scope = "Read FAT32_RING3_HANDOFF_CONTRACT fully. One short transaction authority boundary: explicit guard mode, generations/token/extent, legacy exclusion, deferred verified128KiB IO and four flush barriers, hint invalidation and actual Ring-3 journal adapter. No generic writable object/JS grant or long-lived volume lease. Definition only until all17 frozen groups pass."
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/development/OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md","docs/architecture/RING3_FILE_WRITE_CONTRACT.md","docs/architecture/FAT32_RING3_HANDOFF_CONTRACT.md","docs/architecture/FILE_OBJECT_LIFETIME_CONTRACT.md","include/reist/abi/syscall.h","userspace/sdk/include/reist/abi/syscall.h","lib/libc/stdlib.h","userspace/sdk/include/x86os.h","scripts/generate_syscall_abi.py","kernel/proc/process.h","kernel/syscall/syscall_table.c","include/kernel/file_object_guard.h","kernel/init/file_object_guard.c","fs/vfs/vfs.c","fs/vfs/vfs.h","fs/fat32/fat32_vfs_adapter.c","drivers/block/ata.c","drivers/block/ata.h","userspace/storage/include/reist/fat32_transaction.h","userspace/storage/lib/fat32_transaction.c","userspace/programs/storage_service.c","scripts/build_system_programs.py","Makefile","scripts/build-windows.ps1","test/test_journal_handoff.py","test/journal_handoff_host.c","test/test_file_object_guard.py","test/file_object_guard_host.c","test/test_syscall_abi_source.py","test/test_script_domain.py","test/test_script_domain_host.c","test/test_reist_storage_service.py","test/test_reist_storage_recovery.py","scripts/run_qemu_journal_handoff.py","scripts/verify_journal_handoff_artifacts.py"]
+invariants = ["Preserve old0..129 ABI and wrappers, old ALL/DATA/READ rights and default Script denial. Append130 only for the live Storage generation. No new filesystem parser/journal policy in Ring0; reuse existing RSTJ core in Ring3, preserve v1/v2 formats and20-entry capacity.","Reuse5000ms mutation reservation, not maintenance fallback or a new long-lived volume lease. Explicit journal mode denies old raw APIs; token/resource/generation/ranges checked before every effect. No NO_EFFECT after attempted write, no DURABLE with pending unflushed batches, no lost pending legacy state or mutex held across userspace returns.","Bulk1..256 sectors/128KiB, fixed staging and full readback, four durability barriers; no per-sector implicit-flush implementation. Keep normal ATA/journal/scheduler/CPU-local hotpaths unchanged. Initial new mediator is ATA-PIO only; existing AHCI/FDD untouched and new calls ENOTSUP pending separate hardware acceptance.","Visible main worktree, clean candidate after definition checkpoint. No agents, visible VMs, native error dialogs, unrelated changes or push. Private fault probes only; preserve prior evidence. No false writable-backend or JS completion claim."]
+targeted_tests = ["python test/test_journal_handoff.py -v","python test/test_file_object_guard.py -v","python scripts/generate_syscall_abi.py --check","python test/test_syscall_abi_source.py -v","python test/test_script_domain.py -v","python test/test_fat32_recovery_admission.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v","python test/test_reist_storage_service.py -v","python test/test_reist_storage_recovery.py -v","python test/test_reist_undo_journal.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/verify_journal_handoff_artifacts.py --evidence build/codex-agent/r341-journal-handoff/artifacts","python scripts/run_qemu_journal_handoff.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r341-journal-handoff/guest","python scripts/run_qemu_fat32_recovery_admission.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r340-fat32-recovery/r341-compatibility","python scripts/run_qemu_js_runner.py --file-capabilities --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r341-journal-handoff/js-runner.log","python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r341-journal-handoff/browser.log"]
+acceptance = "All17 frozen groups. Actual native O0/O2 guard/VFS/syscall/adapter/core, bulk/barrier counts and every recovery cut; actual token/mixed-API/stale/fault/hang media proof and independent shell/root survival in headless1024MiB guest. Legacy read/write before/after handoff; UNKNOWN stays fenced across reap/replacement. Both reference builds/new matching kernels/all93 payloads inventoried, protected benchmarks/CURL/JSTEST/BROWSER unchanged, normal journal/scheduler hotpaths unchanged. Existing FAT32 recovery and JS/browser guests. No hardware power-loss, AHCI/FDD handoff, new throughput or generic JS write claim. Archive/review, then done/next queue transition and local commit."
+stop_conditions = ["Unattributed or overlapping change", "Source outside allowed_files required", "Failed gate without focused correction", "New filesystem policy/parser in kernel or a second journal owner required", "Bulk implementation weakens the existing durability barriers", "Immutable mount metadata can change without safe cache invalidation/fencing"]
+commit_message = "feat: mediate bounded FAT32 journal handoff to Ring 3"
+definition_note = "Contract/queue preparation only. Source7d87119c remains the last accepted runtime. No candidate source, build or runtime acceptance in the definition checkpoint. Exact code anchors,32-byte request, bulk semantics, failure states and sequencing are in FAT32_RING3_HANDOFF_CONTRACT. Keep deferred R3.6b gates unchanged."
 
 [[packages]]
 id = "R3.40-fat32-recovery-admission"
@@ -2407,7 +2424,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

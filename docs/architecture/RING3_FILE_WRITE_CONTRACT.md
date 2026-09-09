@@ -173,3 +173,12 @@ Owner. Native O0/O2 und echte FAT32-Gaeste beweisen Recovery/Retry sowie exakt
 unveraenderte abgelehnte Medien auch ueber Mount-Wiederholung/Storage-Neustart.
 Normale Journal-Schreibpfade/alle93 PRGs bleiben unveraendert. Das implementiert
 weder Ring-3-Journalhoheit noch Schreibobjekte oder JS-Schreibrechte.
+
+Inventur auf7d87119c: Die vorhandene5s-Mutationsreservation wird fuer die
+Journal-Uebergabe wiederverwendet; keine zweite langfristige Volume-Lease.
+BLOCK_WRITE85 kann den alten Journalowner nicht ersetzen. Legacy-FAT32 behaelt
+zudem FSInfo-/Clusterhinweise, die bei externen Transaktionen explizit verfallen
+muessen. Der zusammenhaengende Mechanismus ist im
+[FAT32_RING3_HANDOFF_CONTRACT.md](FAT32_RING3_HANDOFF_CONTRACT.md) spezifiziert.
+Er benoetigt generations-/tokengenaue Rohvermittlung und einen eigenen
+Ring-3-Transaktionsadapter; schreibbare Dateiobjekte/JS bleiben davon getrennt.

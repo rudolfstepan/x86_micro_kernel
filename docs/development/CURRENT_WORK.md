@@ -2,6 +2,21 @@
 
 Stand: 9. September 2026
 
+## R3.41 definiert, noch nicht implementiert: Ring-3-Journal-Uebergabe
+
+Sauberer Ausgangspunkt7d87119c. Inventur bestaetigt die bestehende5s-Reservation
+als Wiederverwendungsgrenze; BLOCK_WRITE85 journalisiert aber weiterhin durch
+den Legacy-Owner. FAT32 haelt FSInfo-/Clusterhinweise ueber Aktivierungen hinweg.
+FAT32_RING3_HANDOFF_CONTRACT beschreibt den zusammenhaengenden naechsten Schnitt:
+expliziter Journalmodus, tokengenaue Rohvermittlung, sichere Legacy-Rueckgabe,
+Cacheinvalidierung und Ring-3-Transaktionsadapter. Noch keine neue Autoritaet
+oder Laufzeitfunktion implementiert/abgenommen. Die37 erlaubten Dateien und17
+Abnahmegruppen sind jetzt in der Queue eingefroren. Fuer Performance von Beginn
+an gebundene128KiB-Batches und vier explizite Persistenzbarrieren, kein
+512-Byte-Einzelaufruf mit Flush pro Sektor. Die letzte abgenommene Laufzeit bleibt
+7d87119c. Als Naechstes direkt die native Regression und diesen Schnitt umsetzen;
+keine weitere breite Inventurrunde. R3.6b bleibt zurueckgestellt.
+
 ## R3.40 abgenommen: gesamte FAT32-Recovery vor Schreibwirkungen pruefen
 
 Alle zehn eingefrorenen Gruppen bestanden; sauberer Ausgangspunkt c1130a39,
