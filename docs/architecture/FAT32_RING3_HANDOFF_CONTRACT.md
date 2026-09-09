@@ -110,6 +110,13 @@ bounded execution and ignored evidence; no nested agents, visible VMs or push.
 
 ## Direct implementation order and code anchors
 
+Scope correction explicitly approved by the user after the native failing
+syscall130 profile regression: include kernel/proc/process.c solely for the
+initialize_domain_profile allowlists (Storage allow; Compatibility deny).
+The38-file scope retains all17 frozen gates; no dispatcher exception, scheduler
+change, or wider domain authority. Existing candidate changes are owned edits
+from the clean4f16b53c implementation baseline, not unrelated user changes.
+
 1. Actual native guard regression, then protected mode/effect/barrier state in
    kernel/init/file_object_guard.c and include/kernel/file_object_guard.h.
    Preserve old entry wrappers; vfs_file_object_guard_request/io_begin are the
