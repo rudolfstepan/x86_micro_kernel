@@ -117,6 +117,15 @@ The38-file scope retains all17 frozen gates; no dispatcher exception, scheduler
 change, or wider domain authority. Existing candidate changes are owned edits
 from the clean4f16b53c implementation baseline, not unrelated user changes.
 
+Second scope correction approved by the user on9 September2026 after the
+R3.40 compatibility guest rejected the actual concatenated shell startup:
+include scripts/run_qemu_fat32_recovery_admission.py and
+test/test_fat32_recovery_admission.py solely for exact startup-log admission
+and its regression. Preserve all17 gates, whole-disk oracles, time limits and
+the original failed evidence. The scope is now40 files; this is not approval
+for network/supervisor changes or acceptance of the intermittent browser
+download failure. Existing candidate edits remain owned, uncommitted work.
+
 1. Actual native guard regression, then protected mode/effect/barrier state in
    kernel/init/file_object_guard.c and include/kernel/file_object_guard.h.
    Preserve old entry wrappers; vfs_file_object_guard_request/io_begin are the
