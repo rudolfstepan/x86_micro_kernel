@@ -2,6 +2,22 @@
 
 Stand: 9. September 2026
 
+## R3.41a aktiv: eigenstaendige ARP-Lifecycle-Reparatur
+
+Vom Benutzer freigegebene Netzwerkvoraussetzung. R3.41 bleibt mit16/17
+bestandenen Gruppen unabgenommen; alle31 eigenen Dateiaenderungen sind
+reversibel im Stash c8cd59ea26548e97ad1a7e9ef69a9a4d4421f22a gesichert.
+Manifest/Hashes, Kandidatenimages, korrigierte FAT32-Gastpruefung und alle
+Fehlbelege unter build/codex-agent/r341-journal-handoff/ bleiben erhalten.
+Kein Implementierungscommit fuer R3.41. Der Arbeitsbaum ist vor der neuen
+Definition sauber auf e44215a9; akzeptierte Laufzeit ist weiterhin7d87119c.
+
+NETWORK_ARP_LIFECYCLE_CONTRACT friert ausschliesslich die Ring-3-Korrelation
+abgelaufener/verweigerter ARP-Anfragen ein, mit13 nativen/Build-/Gastgruppen.
+Neue Kernel-, Treiber-, ABI- oder Quotenanpassungen sind nicht freigegeben.
+Nach separater Abnahme zur R3.41-Queue zurueckkehren, dessen Stash nicht
+loeschen und dieses spaetere Paket nicht im selben Lauf implementieren.
+
 ## R3.41 definiert, noch nicht implementiert: Ring-3-Journal-Uebergabe
 
 Sauberer Ausgangspunkt7d87119c. Inventur bestaetigt die bestehende5s-Reservation
