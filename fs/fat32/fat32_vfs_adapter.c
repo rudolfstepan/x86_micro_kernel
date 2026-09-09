@@ -14,6 +14,11 @@
 #include "lib/libc/stdlib.h"
 #include "drivers/bus/drives.h"
 #include "drivers/block/ata.h"
+#ifdef KERNEL_HOST_TEST
+/* Legacy filesystem-only harnesses do not link a hardware transport. Extended
+ * handoff harnesses may supply it; absence denies the new operation. */
+extern int ata_external_journal_handoff(unsigned short, bool, uint64_t) __attribute__((weak));
+#endif
 
 // ===========================================================================
 // FAT32 VFS Adapter
@@ -1701,7 +1706,48 @@ static int fat32_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
 // VFS Operations Table
 // ===========================================================================
 
+static int fat32_vfs_journal_handoff(vfs_filesystem_t* fs, uint64_t deadline_ms) {
+    if (!fs || !fs->fs_data || fs->open_nodes) return -REIST_EBUSY;
+    fat32_vfs_context_t* context = fs->fs_data;
+#ifdef KERNEL_HOST_TEST
+    if (!ata_external_journal_handoff) return -REIST_ENOTSUP;
+#endif
+    int result = ata_external_journal_handoff(context->ata_base, context->ata_master, deadline_ms);
+    if (result) return result;
+    /* Activation must never restore stale free-space/cursor hints. */
+    for (unsigned i = 0; i < FAT32_CONTEXT_REGISTRY_SIZE; ++i) {
+        fat32_vfs_context_t* other = fat32_context_registry[i];
+        if (!other || other->ata_base != context->ata_base ||
+            other->ata_master != context->ata_master ||
+            other->partition_lba != context->partition_lba) continue;
+        other->fsinfo_valid = false;
+        other->current_directory_cluster = other->boot.root_cluster;
+        fat32_advance_context_generation(other);
+    }
+    fat32_fat_cache_invalidate();
+    if (ata_base_address == context->ata_base && ata_is_master == context->ata_master &&
+        partition_lba_offset == context->partition_lba) {
+        fsinfo_valid = false;
+        current_directory_cluster = context->boot.root_cluster;
+    }
+    return 0;
+}
+
+static bool fat32_vfs_journal_write_range(const vfs_filesystem_t* fs,
+                                          uint32_t sector, uint32_t count) {
+    if (!fs || !fs->fs_data || !count) return false;
+    const fat32_vfs_context_t* context = fs->fs_data;
+    uint32_t first = context->partition_lba;
+    if (sector < first || sector - first == 0) return false;
+    uint32_t relative = sector - first;
+    uint32_t backup = context->boot.backup_boot_sector;
+    /* Geometry changes require unmount/requalification, not a cached BPB. */
+    return !backup || backup == UINT16_MAX || backup < relative || backup - relative >= count;
+}
+
 vfs_filesystem_ops_t fat32_vfs_ops = {
+    .journal_handoff = fat32_vfs_journal_handoff,
+    .journal_write_range = fat32_vfs_journal_write_range,
     .object_key = fat32_vfs_object_key,
     .volume_extent = fat32_vfs_volume_extent,
     .mount = fat32_vfs_mount,

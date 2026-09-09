@@ -481,6 +481,10 @@ static int process_file_close(Process* process, int fd) {
 static page_directory_t syscall_directory;
 static unsigned syscall_ranges, syscall_reads, syscall_writes, syscall_terminations;
 static bool syscall_readable = true, syscall_writable = true, syscall_copyout_fault;
+static bool syscall_data_copy_fault, syscall_buffer_readable = true;
+static unsigned journal_io_calls, journal_handoffs;
+static int journal_handoff_error;
+static uint8_t storage_journal_staging[REIST_STORAGE_JOURNAL_MAX_SECTORS * 512U];
 static Process* scheduler_current_process(void) { return &syscall_process; }
 static bool storage_service_authorized(int pid, uint32_t generation) {
     return pid == 5 && generation == guard_service_generation && guard_service_live;
@@ -489,11 +493,15 @@ static page_directory_t* paging_current_directory(void) { return &syscall_direct
 static bool user_range_accessible(page_directory_t* directory, uint32_t address,
                                    size_t size, bool writable) {
     ++syscall_ranges;
-    return directory == &syscall_directory && address && size == 112 &&
+    return directory == &syscall_directory && address &&
+        (size == 112 || size == 32 ||
+         (size <= sizeof(storage_journal_staging) && syscall_buffer_readable)) &&
         (writable ? syscall_writable : syscall_readable);
 }
 static int copy_from_user(void* target, const void* source, size_t size) {
-    ++syscall_reads; memcpy(target, source, size); return 0;
+    ++syscall_reads;
+    if (syscall_data_copy_fault && size != 112 && size != 32) return -1;
+    memcpy(target, source, size); return 0;
 }
 static int copy_to_user(void* target, const void* source, size_t size) {
     ++syscall_writes;
@@ -502,6 +510,25 @@ static int copy_to_user(void* target, const void* source, size_t size) {
 }
 static int process_terminate(int pid) { (void)pid; ++syscall_terminations; return 0; }
 #include "syscall_guard.inc"
+static bool storage_service_resource_available(uint32_t resource) {
+    return vfs_guard_platform_available(resource);
+}
+static bool storage_service_resource_read_only(uint32_t resource) {
+    (void)resource; return false;
+}
+static bool storage_service_report_media_failure(uint32_t resource, bool uncertain) {
+    (void)uncertain; return vfs_guard_platform_fence(resource);
+}
+static int ata_external_journal_io(uint32_t resource, uint32_t operation,
+    uint32_t sector, uint32_t count, void* data, bool pending, uint64_t deadline_ms) {
+    (void)pending;
+    CHECK(deadline_ms == guard_test_time + 500);
+    CHECK(resource == 2 && (operation == REIST_STORAGE_JOURNAL_FLUSH ||
+        (sector == 64 && count == 256 && data == storage_journal_staging)));
+    ++journal_io_calls;
+    return 0;
+}
+#include "syscall_journal.inc"
 
 static int integration_key(const vfs_node_t* node, reist_file_object_key_t* key) {
     memset(key, 0, sizeof(*key));
@@ -526,6 +553,72 @@ static uint64_t integration_epoch(void) {
     reist_file_object_guard_request_t request = integration_request(REIST_FILE_OBJECT_SNAPSHOT);
     if (vfs_file_object_guard_request(&request, 5, 3) != 0) return 0;
     return request.epoch;
+}
+
+static int integration_handoff(vfs_filesystem_t* fs, uint64_t deadline_ms) {
+    CHECK(!fs->open_nodes);
+    CHECK(deadline_ms == guard_test_time + 500);
+    ++journal_handoffs;
+    return journal_handoff_error;
+}
+static bool integration_journal_range(const vfs_filesystem_t* fs, uint32_t sector, uint32_t count) {
+    (void)fs; (void)count; return sector >= 32;
+}
+static int integration_journal(void) {
+    vfs_filesystem_ops_t ops = fake_ops;
+    ops.journal_handoff = integration_handoff;
+    ops.journal_write_range = integration_journal_range;
+    CHECK(vfs_register_filesystem("fat32", &ops) == VFS_OK);
+    CHECK(vfs_mount(&guard_test_drives[2], "fat32", "/fat") == VFS_OK);
+    reist_file_object_guard_request_t begin = integration_request(REIST_FILE_OBJECT_MUTATION_BEGIN);
+    begin.flags = REIST_FILE_OBJECT_EXCLUSIVE | REIST_FILE_OBJECT_EXTERNAL_JOURNAL;
+    begin.keys[0] = (reist_file_object_key_t){.kind=REIST_FILE_OBJECT_FAT32, .resource=2, .object_a=2};
+    memcpy(begin.keys[0].alias, "TARGET  TXT", 11);
+    begin.epoch = integration_epoch(); begin.deadline_ms = guard_test_time+500;
+    journal_handoff_error = -REIST_EBUSY;
+    CHECK(vfs_file_object_guard_request(&begin, 5, 3) == -REIST_EBUSY && !begin.token);
+    CHECK(integration_epoch()); /* failed handoff cancelled its reservation */
+    journal_handoff_error = 0;
+    begin.epoch = integration_epoch();
+    CHECK(vfs_file_object_guard_request(&begin, 5, 3) == 0 && begin.token);
+    CHECK(journal_handoffs == 2);
+    CHECK(vfs_file_object_guard_io_begin(2, 64, false, 5, 3) == -REIST_EBUSY);
+    CHECK(vfs_file_object_guard_io_begin(2, 0, true, 5, 3) == -REIST_EBUSY);
+    reist_storage_journal_request_t request = {1, sizeof(request), REIST_STORAGE_JOURNAL_WRITE_DEFERRED,
+        begin.token, 2, 64, 256, 0};
+    static uint8_t bulk[256*512];
+    syscall_process.pid = 9;
+    CHECK(syscall_storage_journal_io(NULL, NULL) == -REIST_EACCES);
+    syscall_process.pid = 5;
+    syscall_buffer_readable = false;
+    CHECK(syscall_storage_journal_io(&request, bulk) == -REIST_EFAULT && !journal_io_calls);
+    syscall_buffer_readable = true;
+    syscall_data_copy_fault = true;
+    CHECK(syscall_storage_journal_io(&request, bulk) == -REIST_EFAULT && !journal_io_calls);
+    syscall_data_copy_fault = false;
+    ++request.token;
+    CHECK(syscall_storage_journal_io(&request, bulk) == -REIST_ESTALE && !journal_io_calls);
+    --request.token;
+    request.resource = 0;
+    CHECK(syscall_storage_journal_io(&request, bulk) < 0 && !journal_io_calls);
+    request.resource = 2; request.sector = 999;
+    CHECK(syscall_storage_journal_io(&request, bulk) == -REIST_EINVAL && !journal_io_calls);
+    request.sector = 0;
+    CHECK(syscall_storage_journal_io(&request, bulk) == -REIST_EACCES && !journal_io_calls);
+    request.sector = 64;
+    CHECK(!syscall_storage_journal_io(&request, bulk) && journal_io_calls == 1);
+    reist_file_object_guard_request_t end = integration_request(REIST_FILE_OBJECT_MUTATION_END);
+    end.token = begin.token; end.flags = REIST_FILE_OBJECT_DURABLE_COMMIT;
+    CHECK(vfs_file_object_guard_request(&end, 5, 3) == -REIST_EINVAL);
+    request.operation = REIST_STORAGE_JOURNAL_FLUSH;
+    request.sector = request.count = 0;
+    CHECK(!syscall_storage_journal_io(&request, NULL) && journal_io_calls == 2);
+    CHECK(!vfs_file_object_guard_request(&end, 5, 3));
+    CHECK(syscall_storage_journal_io(&request, NULL) == -REIST_ESTALE && journal_io_calls == 2);
+    CHECK(vfs_unmount("/fat") == VFS_OK);
+    syscall_ranges = syscall_reads = syscall_writes = 0;
+    puts("JOURNAL_HANDOFF_VFS_SYSCALL_OK bulk=128KiB mixed stale partition pointer rollback durability");
+    return 0;
 }
 
 static int integration_syscall_boundaries(void) {
@@ -663,6 +756,7 @@ int main(void) {
     partition_end.token = partition_mutation.token; partition_end.flags = REIST_FILE_OBJECT_NO_EFFECT;
     CHECK(vfs_file_object_guard_request(&partition_end, 5, 3) == 0);
     CHECK(vfs_unmount("/part") == VFS_OK);
+    CHECK(integration_journal() == 0);
     guard_test_drives[2] = guard_test_drives[0];
     CHECK(vfs_mount(&guard_test_drives[0], "ext2", "/") == VFS_OK);
     CHECK(vfs_mount(&guard_test_drives[1], "ext2", "/other") == VFS_OK);

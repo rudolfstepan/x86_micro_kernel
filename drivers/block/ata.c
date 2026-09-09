@@ -386,6 +386,20 @@ static void ata_transaction_end(void) {
     kernel_mutex_unlock(&ata_transaction_mutex);
 }
 
+static bool ata_transaction_begin_until(uint64_t deadline_ms) {
+    /* Journal authority is absolute, not another relative device timeout. */
+    KASSERT_NOT_IRQ();
+    uint64_t now = pit_monotonic_ms();
+    if (!deadline_ms || now >= deadline_ms ||
+        deadline_ms - now > ATA_TRANSACTION_LOCK_TIMEOUT_MS) return false;
+    if (kernel_mutex_lock_until(&ata_transaction_mutex, deadline_ms) != 0) return false;
+    if (pit_monotonic_ms() >= deadline_ms) {
+        ata_transaction_end();
+        return false;
+    }
+    return true;
+}
+
 static void ata_selection_delay(uint16_t base) {
     for (volatile int delay = 0; delay < 4; ++delay)
         (void)inb(ATA_ALT_STATUS(base));
@@ -759,6 +773,7 @@ static bool ata_pio_wait_status(uint16_t base, uint8_t wanted,
 }
 
 static bool ata_pio_select_read(uint16_t base, uint8_t head, uint64_t deadline) {
+    if (pit_monotonic_ms() >= deadline) return false;
     outb(ATA_DRIVE_HEAD(base), head);
     ata_selection_delay(base);
     return ata_pio_wait_status(base, 0U, 0x08U, true, deadline);
@@ -767,6 +782,7 @@ static bool ata_pio_select_read(uint16_t base, uint8_t head, uint64_t deadline) 
 static int ata_pio_read_block_size(uint16_t base, bool master, uint64_t deadline) {
     uint16_t identify[256];
     if (!ata_pio_select_read(base, master ? 0xA0U : 0xB0U, deadline)) return -1;
+    if (pit_monotonic_ms() >= deadline) return -1;
     outb(ATA_COMMAND(base), ATA_IDENTIFY);
     ata_selection_delay(base);
     if (!ata_pio_wait_status(base, 0x08U, 0U, false, deadline)) return -1;
@@ -785,7 +801,9 @@ static int ata_pio_read_block_size(uint16_t base, bool master, uint64_t deadline
         return (int)current;
     }
     uint32_t chosen = maximum > 16U ? 16U : maximum;
+    if (pit_monotonic_ms() >= deadline) return -1;
     outb(ATA_SECTOR_CNT(base), (uint8_t)chosen);
+    if (pit_monotonic_ms() >= deadline) return -1;
     outb(ATA_COMMAND(base), ATA_SET_MULTIPLE_MODE);
     ata_selection_delay(base);
     if (!ata_pio_wait_status(base, 0x40U, 0x08U, false, deadline)) return -1;
@@ -809,9 +827,10 @@ static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
     uint8_t head = use_lba48 ? 0x40U :
         (uint8_t)(0xE0U | ((lba >> 24U) & 0x0FU));
     head |= is_master ? 0U : 0x10U;
-    if (write) {
+    if (write && !deadline) {
         if (!ata_select_target(base, head, ATA_WAIT_TIMEOUT_MS)) return false;
     } else if (!ata_pio_select_read(base, head, deadline)) return false;
+    if (deadline && pit_monotonic_ms() >= deadline) return false;
     if (use_lba48) {
         outb(ATA_SECTOR_CNT(base), 0U);
         outb(ATA_LBA_LOW(base), (uint8_t)(lba >> 24U));
@@ -822,6 +841,7 @@ static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
     outb(ATA_LBA_LOW(base), (uint8_t)lba);
     outb(ATA_LBA_MID(base), (uint8_t)(lba >> 8U));
     outb(ATA_LBA_HIGH(base), (uint8_t)(lba >> 16U));
+    if (deadline && pit_monotonic_ms() >= deadline) return false;
     outb(ATA_COMMAND(base), use_lba48
         ? (write ? ATA_WRITE_SECTORS_EXT :
             (multiple ? ATA_READ_MULTIPLE_EXT : ATA_READ_SECTORS_EXT))
@@ -832,9 +852,9 @@ static bool ata_program_pio_batch(unsigned short base, uint32_t lba,
     return true;
 }
 
-static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
+static bool ata_read_sectors_pio_until(unsigned short base, uint32_t lba,
                                       uint32_t count, void *buffer,
-                                      bool is_master) {
+                                      bool is_master, uint64_t reserved_until) {
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
     if (buffer == NULL || !ata_pio_read_range_valid(drive, lba, count))
@@ -845,6 +865,7 @@ static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
     uint64_t now = pit_monotonic_ms();
     uint64_t deadline = UINT64_MAX - now < ATA_WAIT_TIMEOUT_MS
         ? UINT64_MAX : now + ATA_WAIT_TIMEOUT_MS;
+    if (reserved_until && reserved_until < deadline) deadline = reserved_until;
     int block = count > 1U ? ata_pio_read_block_size(base, is_master, deadline) : 1;
     if (block < 1) return false;
     if (!ata_program_pio_batch(base, lba, count, is_master, false,
@@ -871,6 +892,12 @@ static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
     }
     consecutive_read_failures = 0U;
     return true;
+}
+
+static bool ata_read_sectors_pio_impl(unsigned short base, uint32_t lba,
+                                      uint32_t count, void *buffer,
+                                      bool is_master) {
+    return ata_read_sectors_pio_until(base, lba, count, buffer, is_master, 0);
 }
 
 bool ata_read_sectors(unsigned short base, uint32_t lba, uint32_t count,
@@ -1072,21 +1099,34 @@ static uint8_t ata_flush_command_for_drive(const drive_t *drive) {
     return 0U;
 }
 
-static bool ata_flush_cache_impl(unsigned short base, bool is_master,
-                                 const drive_t *drive) {
+static bool ata_flush_cache_until(unsigned short base, bool is_master,
+                                 const drive_t *drive, uint64_t deadline) {
     uint8_t command = ata_flush_command_for_drive(drive);
     if (command == 0U)
         return ata_flush_failure(base, is_master, command, 0U,
                                  "unsupported");
     unsigned char drive_head = is_master ? 0xE0U : 0xF0U;
-    if (!ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS))
+    if (deadline) {
+        uint64_t now = pit_monotonic_ms();
+        if (now >= deadline) return false;
+        if (deadline - now > ATA_WAIT_TIMEOUT_MS) deadline = now + ATA_WAIT_TIMEOUT_MS;
+    }
+    if (deadline ? !ata_pio_select_read(base, drive_head, deadline) :
+                   !ata_select_target(base, drive_head, ATA_WAIT_TIMEOUT_MS))
         return ata_flush_failure(base, is_master, command,
                                  inb(ATA_STATUS(base)), "select");
+    if (deadline && pit_monotonic_ms() >= deadline) return false;
     outb(ATA_COMMAND(base), command);
     /* ATA requires at least 400 ns before command-status inspection. */
     ata_selection_delay(base);
+    if (deadline) return ata_pio_wait_status(base, 0U, ATA_STATUS_DRQ, false, deadline);
     return ata_wait_flush_complete(base, is_master, command,
                                    ATA_WAIT_TIMEOUT_MS);
+}
+
+static bool ata_flush_cache_impl(unsigned short base, bool is_master,
+                                 const drive_t *drive) {
+    return ata_flush_cache_until(base, is_master, drive, 0);
 }
 
 static bool ata_write_sector_impl(unsigned short base, unsigned int lba,
@@ -1180,11 +1220,11 @@ static bool ata_journal_write_deferred_transport(unsigned short base,
         : ata_write_sector_impl(base, lba, (void *)buffer, is_master, false);
 }
 
-static bool ata_write_sectors_pio_deferred_impl(unsigned short base,
+static bool ata_write_sectors_pio_deferred_until(unsigned short base,
                                                 uint32_t lba,
                                                 uint32_t count,
                                                 const void *buffer,
-                                                bool is_master) {
+                                                bool is_master, uint64_t deadline) {
     int resource = ata_resource_index(base, is_master);
     drive_t *drive = resource >= 0 ? &detected_drives[resource] : NULL;
     if (buffer == NULL || !ata_pio_range_valid(drive, lba, count))
@@ -1192,17 +1232,29 @@ static bool ata_write_sectors_pio_deferred_impl(unsigned short base,
     uint32_t last = lba + count - 1U;
     bool use_lba48 = last >= ATA_LBA28_LIMIT;
     if (use_lba48 && !drive->lba48_supported) return false;
+    if (deadline) {
+        uint64_t now = pit_monotonic_ms();
+        if (now >= deadline) return false;
+        if (deadline - now > ATA_WAIT_TIMEOUT_MS) deadline = now + ATA_WAIT_TIMEOUT_MS;
+    }
     for (uint32_t index = 0U; index < count; ++index)
         ata_cache_slot(base, lba + index, is_master)->valid = false;
     if (!ata_program_pio_batch(base, lba, count, is_master, true,
-                               use_lba48, false, 0U)) return false;
+                               use_lba48, false, deadline)) return false;
     const uint8_t *bytes = buffer;
     for (uint32_t index = 0U; index < count; ++index) {
-        if (!wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
+        if (deadline ? !ata_pio_wait_status(base, 0x08U, 0U, false, deadline) :
+                       !wait_for_drive_data_ready(base, ATA_WAIT_TIMEOUT_MS)) return false;
         outsw(ATA_DATA(base), bytes + index * SECTOR_SIZE,
               SECTOR_SIZE / 2U);
     }
-    return wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+    return deadline ? ata_pio_wait_status(base, 0x40U, 0x08U, false, deadline) :
+                      wait_for_drive_ready(base, ATA_WAIT_TIMEOUT_MS);
+}
+
+static bool ata_write_sectors_pio_deferred_impl(unsigned short base,
+        uint32_t lba, uint32_t count, const void *buffer, bool is_master) {
+    return ata_write_sectors_pio_deferred_until(base, lba, count, buffer, is_master, 0);
 }
 
 static bool ata_journal_write_sectors_deferred_transport(
@@ -1573,6 +1625,95 @@ bool ata_journal_recover_resource(uint32_t resource) {
         ata_journal.volume_start_lba,
         ata_journal.volume_end_lba - ata_journal.volume_start_lba,
         (uint16_t)reserved);
+}
+
+int ata_external_journal_handoff(unsigned short base, bool is_master, uint64_t deadline_ms) {
+    drive_t* partition = ata_compat_partition_drive(base);
+    if (partition) {
+        uint32_t absolute;
+        drive_t* parent = ata_partition_translate(partition, 0, &absolute);
+        if (!parent || parent->type != DRIVE_TYPE_ATA) return -REIST_ENOTSUP;
+        base = parent->base;
+        is_master = parent->is_master;
+    }
+    int resource = ata_resource_index(base, is_master);
+    if (resource < 0 || detected_drives[resource].type != DRIVE_TYPE_ATA)
+        return -REIST_ENOTSUP;
+    if (!ata_transaction_begin_until(deadline_ms)) return -REIST_EBUSY;
+    ata_journal_ensure_initialized();
+    int result = ata_journal.transaction_depth || ata_journal.entry_count ? -REIST_EBUSY : 0;
+    if (!result) ata_journal.enabled = false;
+    ata_transaction_end();
+    return result;
+}
+
+int ata_external_journal_io(uint32_t resource, uint32_t operation,
+    uint32_t sector, uint32_t count, void* buffer, bool pending, uint64_t deadline_ms) {
+    if (resource >= (uint32_t)drive_count || resource >= MAX_DRIVES ||
+        operation < REIST_STORAGE_JOURNAL_READ || operation > REIST_STORAGE_JOURNAL_FLUSH)
+        return -REIST_EINVAL;
+    bool flush = operation == REIST_STORAGE_JOURNAL_FLUSH;
+    if (flush ? (sector || count || buffer != NULL) :
+        (!buffer || !count || count > REIST_STORAGE_JOURNAL_MAX_SECTORS)) return -REIST_EINVAL;
+    drive_t* drive = &detected_drives[resource];
+    uint32_t absolute = sector;
+    if (!flush && (sector >= drive->sectors || count > drive->sectors - sector))
+        return -REIST_EINVAL;
+    if (drive->type == DRIVE_TYPE_PARTITION)
+        drive = ata_partition_translate(drive, sector, &absolute);
+    if (!drive || drive->type != DRIVE_TYPE_ATA) return -REIST_ENOTSUP;
+    if (!flush && (absolute >= drive->sectors || count > drive->sectors-absolute))
+        return -REIST_EINVAL;
+    if (!ata_transaction_begin_until(deadline_ms)) return -REIST_EBUSY;
+    if (ata_write_fenced || storage_writes_fenced() || ata_journal.enabled ||
+        ata_journal.transaction_depth || ata_journal.entry_count) {
+        ata_transaction_end();
+        return -REIST_EIO;
+    }
+    bool ok = true;
+    bool supervised = pending;
+    if (operation == REIST_STORAGE_JOURNAL_WRITE_DEFERRED) {
+        if (!supervised) supervised = storage_write_begin(resource, pit_monotonic_ms());
+        ok = supervised;
+        for (uint32_t i = 0; ok && i < count;) {
+            uint32_t batch = count-i > ATA_PIO_MAX_SECTORS ? ATA_PIO_MAX_SECTORS : count-i;
+            ok = !ata_write_fenced && !storage_writes_fenced() &&
+                pit_monotonic_ms() < deadline_ms &&
+                ata_write_sectors_pio_deferred_until(drive->base,
+                absolute+i, batch, (uint8_t*)buffer+i*SECTOR_SIZE, drive->is_master, deadline_ms);
+            i += batch;
+        }
+        /* Respect the existing controller's write-command cap without turning
+         * it into a userspace/flush cap. Fresh readback uses bounded bulk PIO. */
+        static uint8_t verified[ATA_PIO_MAX_READ_SECTORS * SECTOR_SIZE];
+        for (uint32_t i = 0; ok && i < count;) {
+            uint32_t batch = count-i > ATA_PIO_MAX_READ_SECTORS ? ATA_PIO_MAX_READ_SECTORS : count-i;
+            ok = !ata_write_fenced && !storage_writes_fenced() &&
+                pit_monotonic_ms() < deadline_ms &&
+                ata_read_sectors_pio_until(drive->base, absolute+i, batch, verified, drive->is_master, deadline_ms) &&
+                !memcmp(verified, (uint8_t*)buffer+i*SECTOR_SIZE, batch*SECTOR_SIZE);
+            i += batch;
+        }
+    } else if (flush) {
+        if (!supervised) supervised = storage_write_begin(resource, pit_monotonic_ms());
+        ok = supervised && pit_monotonic_ms() < deadline_ms &&
+            ata_flush_cache_until(drive->base, drive->is_master, drive, deadline_ms);
+    } else {
+        for (uint32_t i = 0; ok && i < count;) {
+            uint32_t batch = count-i > ATA_PIO_MAX_READ_SECTORS ? ATA_PIO_MAX_READ_SECTORS : count-i;
+            ok = pit_monotonic_ms() < deadline_ms &&
+                ata_read_sectors_pio_until(drive->base, absolute+i, batch,
+                    (uint8_t*)buffer+i*SECTOR_SIZE, drive->is_master, deadline_ms);
+            i += batch;
+        }
+    }
+    /* A deferred successful write intentionally leaves the existing bounded
+     * supervisor armed. Only FLUSH may publish durability; failure is fenced.
+     * This retains no transport mutex across the userspace interval. */
+    ok = ok && pit_monotonic_ms() < deadline_ms;
+    if (supervised && (flush || !ok)) ok = storage_write_end(ok && flush) && ok;
+    ata_transaction_end();
+    return ok ? 0 : -REIST_EIO;
 }
 
 bool ata_write_sector(unsigned short base, unsigned int lba, void* buffer,

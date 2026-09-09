@@ -2,6 +2,370 @@
 
 Stand: 9. September 2026
 
+## R3.41 abgenommen mit ausdruecklich offenen Altrisiken
+
+Die Ring-3-Journalhoheit und durchgaengige Guard/VFS/ATA-Deadline sind umgesetzt.
+Alle17 aktuellen Pruefgruppen und neun Zusatzgruppen bestehen. Nach expliziter
+Benutzerfreigabe gilt die Abnahme trotz der zwei weiterhin ungeklaerten Altfalle:
+R341-H1 (Stufe5-Leseablehnung) und R341-H2 (fehlender Post-STAT-Prompt).
+Die genaue Risikoentscheidung und Wiedereroeffnungskriterien stehen im
+[Handoff-Vertrag](../architecture/FAT32_RING3_HANDOFF_CONTRACT.md).
+Das ist keine Bestaetigung ihrer Behebung; alte Fehlbelege bleiben FAIL.
+
+Nur Queue/Dokumentation aendern sich gegen historical-audit/owned-checkpoint;
+Laufzeitquellen, Tests und100 Referenzartefakte bleiben hashgleich. Daher keine
+wiederholten Build-/Gastkampagnen. accepted-final/ unter
+build/codex-agent/r341-journal-handoff/ bindet die vorhandenen17+9 Gruppen,
+Quellen, Artefakte und Risikofreigabe fuer den lokalen Implementierungscommit.
+Der gesicherte Ausgangsstash und alle alten Belege bleiben erhalten; kein Push.
+
+R3.6b ist nur formal als naechster Queueeintrag aktiv; seine bisherige
+VMware-Zurueckstellung zugunsten des Browsers bleibt bestehen. Naechster
+fachlicher JS3-Schritt ist die separate Definition des zusammenhaengenden
+Ring-3-FAT32-Schreibobjekt-/Requalifikationspakets, danach erst JS-Schreibrechte.
+Keine Umsetzung dieses Folgepakets im R3.41-Abschlusslauf.
+
+### Vorherige Implementierungs- und Diagnosechronologie
+
+Die folgenden zeitlichen Zwischenstaende bleiben als Fehlerspur erhalten;
+ihre damalige Abnahmesperre wird ausschliesslich durch die obige explizite
+Risikofreigabe aufgehoben. Kernel/Images: deadline-repair/corrected-reference/.
+
+Gezielte Offline-Nachpruefung, ohne weitere VM-/Gatewiederholung:
+historical-audit/result.json vergleicht die erhaltenen ganzen Medien mit dem
+AST-identischen urspruenglichen Handoff-Orakel (0.472s). Normal/Fault-Kontrollen
+passen. Beim alten Stufe5-Fehler ist das Medium vollstaendig unveraendert;
+Quarantaene und Shellprompt sind vorhanden. Beim alten Promptausfall stimmen
+beide CLEAN-Header und alle20 Zielsektoren exakt mit dem erfolgreichen
+Transaktionszustand ueberein. Live-/Rohprotokoll sind identisch und enthalten
+tatsaechlich keinen nachfolgenden Prompt; die Prefixkorrektur erklaert das nicht.
+Das belegt gespeicherte Bytes, keine Hardwaredurabilitaet oder spaetere Liveness.
+IO-Errno, Exit-/Wait-/UART-Zustand und Beobachterkontinuitaet fehlen fuer genau
+diese Altfalle weiterhin. Keine Produktionsaenderung, Ursachenzuschreibung,
+Abnahme oder Commit. Weiterarbeit bis Abnahme benoetigt entweder neue
+ursachenbezogene Fehlerdaten oder eine ausdrueckliche Entscheidung zum Umgang
+mit diesen offenen Altrisiken; die eingefrorene Sperre wird nicht stillschweigend
+aufgehoben. Neuer Dokumentationscheckpoint: historical-audit/owned-checkpoint/;
+Quellen, Queue, Gates und Referenzartefakte bleiben auf deadline-repair.
+
+Sauberer Ausgangspunkt996cff15. Die30 Paketdateien des eigenen Stashs
+c8cd59ea26548e97ad1a7e9ef69a9a4d4421f22a sind wieder aufgenommen; CURRENT_WORK
+wird separat abgeglichen. Stash, vorherige Kandidatenimages und Fehlbelege
+bleiben erhalten. Gemischte Windows-Zeilenenden sind anhand der archivierten
+Originalhashes und zeilenendennormalisierter Stash-Inhalte abgeglichen.
+ARP-Produktionscode und Queue blieben bei der Wiederaufnahme unveraendert.
+Der Artefaktpruefer bindet ausschliesslich REIST.PRG an996cff15; alle anderen
+Schutzregeln sowie die17 Gruppen bleiben bestehen. Neue Belege unter
+build/codex-agent/r341-journal-handoff/resume-arp/.
+
+Der vorherige Kandidat umfasst den geschuetzten Journalmodus, Syscall130 mit
+128KiB-Staging, tokengenaue VFS-/ATA-Uebergabe, FAT32-Cacheinvalidierung und
+den Ring-3-Adapter des vorhandenen Journalcores. Vorherige16/17 Gruppen:
+acceptance-status-after-parser.json;68629 native Checks je O0/O2 mit98
+Unterbrechungsfaellen, Normal/Fault/Hang-Gast sowie FAT32-/JS-Dateirechte
+bestanden. Der dort offene Browser-Netzwerkfehler wurde separat durch R3.41a
+repariert. Nun finale Builds und Gastbelege erneuern, nicht den alten
+Diagnose-PASS nachtraeglich als Abnahme umdeuten.
+
+Zusaetzliche gezielte Scopefreigabe erteilt: test/test_reist_probe_domain.py
+an die zentrale ABI-Anzahl binden. R3.41 erhoeht regulaer auf131; sein bisher
+festgeschriebener130-Grenzwert ist im gesicherten Rotlauf veraltet. Profil2,
+Bitmap5 und alle Rechtepruefungen bleiben erhalten. Original17 Gruppen plus
+zusaetzlicher Domaenentest; neue Belege unter resume-domain/.
+
+Wiederaufnahme-Belege: zehn gezielte Gruppen bestanden, VMware104.793s und
+QEMU59.190s bestanden; Artefaktpruefung2.215s bestanden. Beide Kernel sind
+bytegleich zum vorigen R3.41-Kandidaten, REIST.PRG bleibt auf996cff15 und
+JSWORK aendert weiterhin nur die zwei Selbsttestgrenzen. Keine Produktions-
+aenderung nach diesen Builds; temporaere private Diagnosefelder wurden unter
+read-diagnostic/storage_service.c gesichert und aus der Quelldatei entfernt.
+
+Gastabnahme weiterhin offen, keine Wiederholung als Erfolg umdeuten:
+guest/ scheiterte vor Uebergabe an zweizeiligem Konsolentext. Eigener Pruefer
+akzeptiert jetzt nur exakte benachbarte Fragmente fester Erwartungszeilen;
+Negativtests bewahren Fremdtext-/Generationsablehnung. guest-wrap/ bestaetigt
+Normal/Fault, scheitert aber im Hangfall vor Fehlerinjektion: HANDOFF_FAILED
+Stufe5 (128KiB-Read), Volume anschliessend gesperrt. Der einzelne read-diagnostic-
+Lauf bestand und reproduziert daher nicht den konkreten Fehlercode.
+Die neue Fixture verwendet jetzt die vorhandene per-child Windows-Timerpolicy
+des Referenz-Smokes, mit Start-/Cleanup-Regressionsnachweis. guest-timer/
+scheitert trotzdem: Transaktion meldet Erfolg, anschliessend fehlt bis120s der
+Shellprompt. Die Timerkorrektur ist ausdruecklich kein Nachweis der Ursache.
+stall-diagnostic/ bestand wiederum; keine Registersampels mangels Stillstand.
+Finaler gezielter Teststand gate-0-timer.log:7 Tests,68629 Checks je O0/O2.
+Auch bounded-diagnostic/ mit privat instrumentierter Storage-Quelle besteht
+Normal/Hang (27.643s/32.677s), ohne den Fehler zu reproduzieren; kein Ersatz
+fuer die fehlgeschlagene Abnahme und kein Beleg fuer einen Timer-/Wait-Fehler.
+
+Die drei verbleibenden Kompatibilitaetsgruppen sind nun bestanden:
+FAT32-Wiederherstellung98.298s, JS-Dateirechte131.438s und Browser105.679s.
+Browser deckt lokale grosse HTTP-Ressourcen, Redirect, Cache, Reflow, Abbruch
+und Recovery ab; kein Nachweis allgemeiner Website-Kompatibilitaet. Damit
+stehen16/17 Gruppen auf PASS; der Journal-Handoff-Gast bleibt FAIL.
+independent-results.json enthaelt die drei neuen Kommandos und Ergebnisse.
+
+Keine Abnahme/Queue-Weiterschaltung/Commit: sporadische Raw-Read-Ablehnung
+vor der Fehlerinjektion und ausbleibender Shellprompt sind noch ungeklaert.
+Keine unveraenderte Gate-Wiederholung bis Gruen. Fuer den naechsten gezielten
+Diagnoseschritt sind echter IO-Rueckgabecode und/oder CPU-/Wait-Zustand beim
+Fehler erforderlich; Scheduler/Wait-/PIO-Hotpaths bleiben ausserhalb des
+freigegebenen Reparaturumfangs. Die Test-Scopefreigabe ist inzwischen erteilt
+und umgesetzt. Alle eigenen Quellen, beide Referenzimages und93 Programme sind
+unter resume-arp/unaccepted-checkpoint/ mit Hashmanifest gesichert. Der sichtbare
+Arbeitsbaum bleibt fuer die Fortsetzung erhalten; der alte Stash bleibt bestehen.
+
+Fortsetzung nach Testfreigabe, Belege in resume-domain/: Anfangs32 eigene Pfade
+hashgenau gegen den vorherigen Checkpoint verifiziert. Domaenen-Rotlauf1/9
+fehlgeschlagen wegen130; final9/9 bestanden in0.129s. Profil2/Bitmap5 sowie
+Rechtepruefungen unveraendert, zentrale ABI bleibt131. Keine Gateabschwaechung.
+
+Privater Storage-Pruefbau bewahrt jetzt den ersten Raw-IO-Fehlercode im
+STAT-create_time-Feld, ohne weitere Zeitsyscalls innerhalb der Transaktion.
+Der Gastpruefer sichert bei einer20s-Verzoegerung CPU-/PIC-/Blockstatistik ueber
+rein lesende HMP-Kommandos und wartet danach unter derselben absoluten Deadline.
+Prompt, Fehlerzeichen, Generationen und Datentraegerorakel bleiben verbindlich.
+Gezielter Test9/9 in4.258s mit68629 Checks je O0/O2 plus nativer Fehlercode-
+Retention bestanden. Die zwei neuen Diagnosetests scheitern wie erwartet am
+gesicherten vorherigen Code; diagnostics-reference-red.log bleibt erhalten.
+
+Begrenzte Diagnose, ausdruecklich keine Abnahme: vier neue Gaeste
+(Normal/Hang/Normal/Hang,128.787s gesamt) und16 aufeinanderfolgende Uebergaben
+in einem Gast (67.224s) bestehen alle Datentraegerorakel; abschliessend sind
+Legacy-Schreiben und Root-Lesen verfuegbar. Keine neuen Fehlercodes/Register-
+Samples, weil die frueheren Fehler nicht reproduziert wurden. Keine Ursache
+oder Reparatur fuer sie nachgewiesen; Gate13 bleibt offen. Keine weiteren
+unveraenderten Wiederholungskampagnen und kein Implementierungscommit.
+Neue eigene Quellen unter resume-domain/owned-checkpoint/ gesichert; die
+Referenzartefakte bleiben hashgebunden am vorherigen unaccepted-checkpoint.
+
+Weitere read-only Eingrenzung in wait-diagnostic/: Anfangs34 eigene Pfade
+hashgenau gegen resume-domain/owned-checkpoint verifiziert. Aus den121
+vorhandenen Objekten wurde mit derselben expliziten ELF-i386-Toolchain eine
+Linkerkarte erzeugt; der Kontrollkernel ist bytegleich zu build/kernel.bin
+(SHA2561dadc3c4fa101d7ed761c81417e75b2f92640fdb1924d2231b0c74c620b679e6).
+Compile-only Layoutpruefung bestaetigt704 Bytes je Task und2988 je Prozess.
+Kein Referenzbuild, Kernelquelltext oder Produktivprogramm wurde veraendert.
+
+Die unveraenderten privaten Images der zwei fehlgeschlagenen Laeufe wurden
+direkt verwendet, ohne die spaeteren Diagnosevariablen im Gast. Vier Faelle
+(Normal/Hang/Normal/Hang) bestanden in118.085s. Rein lesende RAM-Auslese der
+kernel-eigenen Tabellen (unter1MiB je Snapshot) zeigt im Normalzustand:
+stat beendet/aufgeraeumt, keine Exit-Waiter und VFS-/ATA-Mutex jeweils frei.
+Ein weiterer einzelner Gast mit16 Enter-Verzoegerungen0..15ms bestand in
+66.864s samt ganzen Datentraegerorakeln und abschliessendem Legacy-/Root-Zugriff.
+Auch das reproduziert den alten Fehler nicht und ersetzt kein Gate.
+
+Originalimages unveraendert; keine ursachenbezogene Reparatur und keine neue
+Abnahme. Der fehlende serielle Prompt beweist allein keinen Kernelstillstand:
+Exit-/Wait-Aufraeumen, Promptausgabe und begrenztes Verwerfen serieller Zeichen
+muessen unterschieden werden. Der alte Lauf besitzt dazu keine Zustandsspur.
+Die gezielte Freigabe fuer private Exit-/Wait-/Serial-Diagnose ist inzwischen
+erteilt und umgesetzt; Scope43, weiterhin17 Originalgates plus Domaenentest.
+Die Produktionsquelldateien bleiben unangetastet: private_trace_source erzeugt
+nur ignorierte Testkopien, prueft eindeutige Anker und bewahrt Originalzeilen.
+Feste32 Taskdatensaetze je Exit/Wait,9 UART-Worte, keine neue API/Rechte,
+Zeitbudgets, Logausgabe oder reparierende Eingriffe. Modulo32-Zaehler und
+Generationsfelder dienen ausschliesslich der Beobachtung, nicht der Autoritaet.
+
+Belege in wait-diagnostic/trace-*: Sechs gezielt kompilierte Objekte und zwei
+Links in2.789s; der Kernel ohne Testdefine ist bytegleich zum Referenzkernel
+1dadc3c4...679e6. Der private Kernel c045d8ad...00abe2 ist neu signiert und
+verifiziert, seine RAM-Symbole sind an den ELF-Linkerplan gebunden. Alle
+Produktivprogramme sind im privaten Basisimage unveraendert. Kein Build oder
+Schreibzugriff auf produktive Objekte/Referenzimages; keine Performanceaenderung.
+
+Gezieltes Gate erneut11/11 in5.029s:68629 Checks je O0/O2 plus echte UART-
+Polling-/Wait-Rueckgabefaelle und begrenzte Generationsfelder. Quellenanker-
+Negativtests lehnen fehlende/doppelte Signaturen sowie veraenderte Anker ab.
+Das Entfernen der privaten Bloecke stellt den Originalquelltext wieder her.
+
+Privater Normal-/Hang-Gast bestanden in70.231s inklusive Build/Signierung.
+Zwei RAM-Snapshots zeigen Exit bis Kontextwechsel, Wait bis Copyout und freie
+VFS-/ATA-Mutexe; Hang-Reap/Replacement und unabhaengige Shell/Root bleiben
+erhalten. Anschliessend ein begrenzter Gast mit16 Uebergaben, allen ganzen
+Datentraegerorakeln und Legacy-/Root-Rueckkehr in73.529s. UART-Zaehler vor/nach:
+4800->8307 gesendet,0 Timeouts,1206 Auslassungen konstant (bereits vor dem
+ersten Handoff vorhanden), letzte gesendete Ausgabe jeweils Promptzeichen '>'.
+Diese Diagnoseerfolge ersetzen keine ursachenbezogene Reparatur:
+alle16 aktuellen Zyklen bestanden, die zwei alten sporadischen Fehler sind
+weiterhin nicht reproduziert oder ursachenbezogen behoben. Kein weiteres
+blindes Wiederholen bis Gruen; Gate13 bleibt FAIL, Gesamtstand16/17. Keine
+Queue-Weiterschaltung, kein Implementierungscommit und kein JS-Schreibrecht.
+
+Host-Unterbrechung gezielt geprueft: Der Benutzer vermutet Standby waehrend
+der alten Laeufe. Die lokalen Windows-Kernel-Power-Ereignisse506/507 zeigen
+jedoch Standby11:42:10--13:40:37,13:41:09--13:44:36 und15:23:17--15:28:20,
+nicht waehrend der Fehler13:59--14:07. Die zeitlich relevante Auslese ist in
+wait-diagnostic/continuity-verification/host-power-events.json gesichert.
+Standby ist damit keine nachgewiesene Ursache dieser beiden Fehler.
+
+Neue Prueferkorrektur ohne Produktionsaenderung: HostContinuity beobachtet
+monotone und Wanduhr alle100ms, lehnt Luecken ueber1s, Uhrspruenge oder
+Beobachterfehler dauerhaft ab. Fester4096-Sample-Horizont, Join hoechstens1s;
+zusaetzliche Pruefung im koordinierenden Thread vor/nach Wartevorgaengen
+verhindert Erfolg durch einen erst nach Wiederaufnahme gelesenen Prompt.
+Keine groesseren Gastdeadlines, Wiederholungen, Gastrechte oder abgeschwaechten
+Datentraeger-/Generationspruefungen. Der Fehler wird als Host-Unterbrechung
+ausgewiesen, nicht als nachgewiesener Kernelstillstand.
+
+Gezielter Hosttest:13/13 Tests in4.781s bestanden, weiterhin68629 native Checks
+je O0/O2. Zwei neue Regressionen scheitern am gesicherten vorherigen Pruefer;
+reference-red.log bleibt erhalten. Separater Negativgast mit7s angehaltenem
+eigenem QEMU-Prozess und blockiertem Diagnose-Python-Beobachter wird nach25.900s
+korrekt als ungueltiger Lauf abgelehnt: Beobachtungsluecke7.046s. Kein Standby
+des Rechners oder Eingriff in andere Prozesse. Positiver Normal-/Hang-Kontrolllauf
+auf unveraenderten privaten Images besteht in62.933s, maximale Beobachtungsluecken
+115/136ms; ganze Datentraegerorakel, Reap/Replacement und Root/Shell erhalten.
+Belege: host-interruption-0.05/, continuity-control/ und continuity-verification/.
+
+Weitere begrenzte Gegenproben:3s blockierter Ausgabepipe-Leser mit zwei
+read-only HMP-help-Ausgaben bestanden in29.552s; allein7s angehaltenes QEMU
+bestanden in33.502s. Beides reproduziert die historischen Fehler nicht und
+ist nicht mit echtem Host-Standby gleichzusetzen. Keine neue Abnahme:
+Gate13 bleibt FAIL,16/17 akzeptierte Gruppen. Der alten fehlgeschlagenen
+Ausfuehrung fehlen Fehlercode und Zustandsspur; spaetere erfolgreiche
+Kontrollen koennen diese Ursache nicht nachtraeglich belegen. Keine weiteren
+unveraenderten Wiederholungskampagnen. Eigene Aenderungen und unveraenderte
+Referenzartefakte unter wait-diagnostic/continuity-owned-checkpoint/ sichern;
+der Ausgangsstash und alle Fehlbelege bleiben erhalten. Kein Commit.
+
+Fortsetzung:34 eigene Pfade stimmen hashgenau mit continuity-owned-checkpoint
+ueberein. Die direkte Pruefung der Raw-IO-/VFS-/ATA-Admission, Wait-/Exit-
+Reihenfolge und Promptausgabe erbrachte keine nachgewiesene Kernelursache.
+Ein separater Prueferfehler ist dagegen reproduziert: Ein bereits beendeter
+serieller Leser bei weiter laufendem QEMU wurde als Gasttimeout gemeldet;
+die Wartefunktion beachtete dessen Abschlussereignis nicht. Der Rotbeleg
+reader-verification/red.log zeigt diesen konkreten falschen Rueckgabewert.
+
+Gezielt korrigiert in run_qemu_journal_handoff.py: unerwartetes EOF, Lese-/
+Logfehler, volle Queue und die bestehende2MiB-Grenze werden mit begrenztem
+Fehlertext festgehalten. Vor/nach hoechstens250ms Wartescheiben sowie vor
+weiteren Eingaben wird der Leserstatus geprueft. Auch bereits gepufferte
+Prompts koennen einen beendeten Leser nicht zum Erfolg machen. Absichtliches
+Cleanup-EOF bleibt erlaubt;20s-Diagnosepunkt, absolute Deadlines, Generationen,
+ganze Datentraegerorakel und notwendige Root-/Shell-Rueckkehr bleiben gleich.
+
+Finaler gezielter Hosttest15/15 in4.590s bestanden,68629 echte Corechecks je
+O0/O2 unveraendert. Neues Negativgast-Experiment bricht ausschliesslich den
+eigenen Host-Leser direkt nach den STAT-Metadaten ab:19.694s bis Testende,
+0.518s von Injektion bis Cleanup. Datentraegerbytes belegen den abgeschlossenen
+Commit, der Lauf bleibt dennoch korrekt FAIL und meldet den injizierten
+Transportfehler statt einen Kernelstillstand. Keine weitere Testeingabe nach
+der Unterbrechung. Gesunder Fault-/Restart-Kontrollgast bestanden in24.542s
+mit Reap, neuen Generationen, erhaltenem Fence und unabhaengiger Shell/Root.
+Beide zusammen45.855s; Belege in wait-diagnostic/reader-guest/.
+
+Die alten Laeufe enthalten keinen Nachweis eines Leserabbruchs; auch diese
+Prueferkorrektur klaert deren Ursache nicht rueckwirkend. Gate13 bleibt FAIL,
+Gesamtstand16/17. Keine weitere unveraenderte Wiederholungskampagne, kein
+Implementierungscommit und kein neues JS-Schreibrecht. Neue eigene Aenderungen
+unter wait-diagnostic/reader-owned-checkpoint/ sichern; produktive Quellen,
+Referenzimages und Programme gegen die100 archivierten Artefakte abgleichen.
+
+Neuer konkreter Vertragsfehler nachgewiesen (nicht nur Prueferdiagnose): Die
+Journal-Reservation wird vor ata_external_journal_io geprueft, dessen API
+uebernimmt jedoch keine Deadline. Die ATA-Mutexwartezeit darf10000ms betragen;
+zwischen weiteren Batches erfolgt ebenfalls keine Reservationsfristpruefung.
+Der VFS-Guard sperrt bei spaeter Completion, verhindert damit aber keine
+bereits nach Ablauf neu gestartete IO. Der getrennte Write-Supervisor kennt
+die Journalfrist nicht und beginnt seine eigene Frist erst beim Write-Beginn.
+
+Begrenzter nativer Rotnachweis unter wait-diagnostic/deadline-probe-2/:
+echter Guard/critical-object-Code und exakt extrahierte kalte ATA-Funktionen;
+nur Mutexwartezeit, monotone Zeitfortschritte und physischer Transport sind
+modelliert. O0/O2, jeweils ein rechtzeitiger Kontrollfall und vier gezielte
+Zeitpunktfaelle. Nach Lockverzoegerung werden256 Schreibsektoren plus256
+Readback-Sektoren erst nach Deadline5010ms ausgefuehrt; nach dem ersten
+rechtzeitigen20-Sektor-Batch folgen noch236 verspaetete Schreibsektoren.
+Reiner Read und Flush werden ebenfalls zu spaet gestartet. Transport meldet0,
+erst der echte Guard liefert anschliessend EIO/Fence2. Lauf1.522s. Ein zuvor
+vom Compiler abgelehnter Diagnose-Formatierungsfehler bleibt in deadline-probe/
+gesichert; keine Compilerwarnung wurde unterdrueckt.
+
+Zweiter unterscheidender Grenzfall in deadline-probe-short/: Die API erlaubt
+auch1ms Reservation (Beginn10, Deadline11); derselbe Fehler tritt schon bei
+Fortsetzung12ms auf. Damit benoetigt die native Gegenprobe keinen angenommenen
+mehrsekundigen Ausfall des Schedulers oder Write-Watchdogs. Beide Optimierungen
+zeigen wieder vier Rotfaelle und eine gruene rechtzeitige Kontrolle. Keine
+Hardware-/Gastursache behauptet und kein produktives Image veraendert.
+
+Diese Fristenluecke muss vor der Paketabnahme geschlossen werden; alte
+16/17-Gatebelege genuegen nicht. Die historische Raw-Read-Ablehnung koennte
+einen spaeten Guardabschluss enthalten, ihr alter Fehlercode fehlt jedoch;
+die Ursache beider alten Ausfaelle bleibt daher weiterhin offen. Keine weitere
+unveraenderte Gastkampagne. Freigabe fuer die gezielte Erweiterung der bisher
+geschuetzten gemeinsamen ATA-PIO-Helfer ist angefragt, noch nicht erteilt.
+Bis dahin keine Produktionsaenderung, Scope-/Gateabschwaechung oder Commit.
+Naechster Schritt nach Freigabe: dieselbe absolute Frist bis vor die realen
+Kommandos fuehren, inklusive Mutex/Readiness/Batches/Readback/Flush; alte
+Vertraege und Performance erhalten, native/Gast-Regression plus Originalgates.
+Neuer eigener Stand unter wait-diagnostic/deadline-owned-checkpoint/ gesichert:
+34 eigene Dateien und100 unveraenderte Referenzartefakte geprueft (1.452s).
+
+Benutzerfreigabe fuer die gezielte gemeinsame ATA-PIO-Fristenkorrektur liegt
+nun vor. Alle34 Checkpointdateien vor Wiederaufnahme hashgleich. Scope43,
+Original17 Gates und Domain-Zusatztest bleiben erhalten; weitere bestehende
+ATA-/Benchmark-Pruefungen sowie native Kommando-/Gast-Fristfaelle sind in
+deadline_scope_amendment eingefroren. Keine Scheduler-/UART-/Journalpolitik-
+Aenderung, keine neuen JS-Rechte und kein Commit vor vollstaendiger Abnahme.
+
+Umsetzung und Abgleich dieser Freigabe unter
+build/codex-agent/r341-journal-handoff/deadline-repair/:
+Die geschuetzte absolute Frist wird ohne neue User-ABI ueber Guard-Snapshot,
+VFS-Lock/Admission, Syscall, ATA-Lock, Auswahl/Readiness, Registervorbereitung,
+PIO-Batches, Readback und Flush getragen. Revalidation nach Wartezeiten und
+unmittelbar vor neuen Kommandos; nie ein neues relatives Reservationsbudget.
+Alte Legacy-Wrapper, Limits, Journalpolitik, Scheduler/UART/AHCI/FDD bleiben
+erhalten.16 der34 bereits eigenen Paketdateien wurden gezielt weiterbearbeitet.
+
+Native Abnahme:19 Journaltests einschliesslich O0/O2,68629 bestehende Corechecks
+je Optimierung, neue1/5000ms-Fristfaelle und LBA28/LBA48-Kommandoproben. Final
+gate0-monitor-fixed6.331s; acht Guardtests15.757s; restliche Hostgruppen
+gate2-final bis gate9-final zusammen6.078s. Zusatz-Domaene und vier bestehende
+ATA-Pruefgruppen plus Benchmark-Source bestanden. Alle exakten Befehle und
+Zeiten stehen in den jeweiligen JSON-Dateien; keine stillen Gateaenderungen.
+
+Finale Builds: VMware53.808s, QEMU51.685s nach dem nativen Rotnachweis fuer
+Fristablauf waehrend der Registervorbereitung. Artefaktpruefung1.873s:
+beide Images enthalten die richtigen neuen Kernel, alle93 Programme und drei
+SDK-Artefakte bleiben gegen den vorigen Checkpoint bytegleich. Der Pruefer
+erlaubt nur die einzeln aufgelisteten Deadline-Helfer; Negativtests erkennen
+Drift in anderen ATA-/Schedulerpfaden. Vorige Kernelkopien bleiben erhalten;
+der neue VMware-Kernel wird explizit per --vmware-kernel verifiziert.
+
+Erneuerte Runtimegruppen: Normal/Fault/Hang95.733s, FAT32-Recovery-
+Kompatibilitaet92.953s, JS-Dateicapabilities127.436s, Browser100.587s: PASS.
+Zusaetzlicher signierter Fristgast31.656s (Fall selbst24.370s):100ms gueltige
+Testreservation, Sleep unter gehaltenem ATA-Lock bis zur realen Frist.
+Fester HMP-Witness active=0/fired=1/expired=1/commands=0/failed=1; das ganze
+Testmedium bleibt unveraendert, Quarantaene und exakter Reap/Generationswechsel
+sind belegt, manueller Neustart hebt die Sperre nicht auf, Root/Shell leben.
+No-define-Kontrollkernel bytegleich; produktive Quellen/Images unveraendert
+durch die privaten Probes. Keine Loesung der alten Gastursachen behauptet.
+
+Vergleich des unveraenderten BENCHMARK.PRG in identischen1GiB-QEMU-Laeufen:
+Schreiben71.60 ->72.33KiB/s, Lesen941.17 ->955.22KiB/s; Benchmarklauf7155 ->
+6713ms. Kein beobachteter Rueckschritt, aber nur je eine Messung und keinerlei
+VMware-Durchsatz- oder WCET-Aussage. Produktive Zeitbudgets nicht vergroessert.
+
+Fehlbelege behalten: erste native Testfixture verwendete faelschlich256 statt
+128 Sektoren pro PIO-Read und initialisierte einen aktiven Guard nochmals;
+beide Testfehler gezielt korrigiert. Der erste Buildaufruf unter Windows
+PowerShell5 scheiterte vor dem Compiler an ArgumentList; unter vorhandener
+PowerShell7 bestanden. Der zusaetzliche Register-Rotlauf fuehrte zur letzten
+Produktionskorrektur. Die5000ms-Gastinjektion kollidierte vermutlich mit der
+aeusseren STAT-Frist; kein Abnahmebeleg. Der erste kurze Privatbuild brauchte
+seinen originalen Quote-Include-Pfad. Anschliessend war der PIO-Witness korrekt,
+aber ein exaktes QEMU-Monitorpraefix vor der Quarantaenemeldung blieb unerkannt;
+spaeter machte ein Ruecksprung der Host-Wanduhr den ganzen Lauf ungueltig.
+Nur die belegte Praefixauswertung wurde samt Negativtest korrigiert; keinerlei
+Lockerung von Hostkontinuitaet, Timeouts, Medien- oder Lebenszyklusorakeln.
+
+Die neue Fristenluecke ist damit geschlossen. Die historische Stufe5-Ablehnung
+und der damalige fehlende Post-STAT-Prompt bleiben ursachenmaessig offen; die
+aktuellen17/17 Gruppen heben diese gesonderte Vertragsbedingung nicht auf.
+Keine weiteren unveraenderten Wiederholungskampagnen und kein Commit/Push.
+
 ## R3.41a abgenommen: eigenstaendige ARP-Lifecycle-Reparatur
 
 Vom Benutzer freigegebene Netzwerkvoraussetzung. R3.41 bleibt mit16/17

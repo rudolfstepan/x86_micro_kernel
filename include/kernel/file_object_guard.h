@@ -59,6 +59,24 @@ int file_object_guard_begin(file_object_guard_t *guard,
     const reist_file_object_key_t *keys, uint32_t count, bool exclusive,
     file_object_owner_t owner, uint64_t epoch, uint64_t now_ms,
     uint64_t deadline_ms, uint32_t *token);
+int file_object_guard_begin_mode(file_object_guard_t *guard,
+    const reist_file_object_key_t *keys, uint32_t count, uint32_t mode,
+    file_object_owner_t owner, uint64_t epoch, uint64_t now_ms,
+    uint64_t deadline_ms, uint32_t *token);
+/* The VFS mutex orders check -> device operation -> completion. WRITE marks
+ * possible effects BEFORE entering the transport. FLUSHED is kernel-only,
+ * used solely after a verified successful physical flush. */
+#define FILE_OBJECT_JOURNAL_CHECK 0U
+#define FILE_OBJECT_JOURNAL_WRITE 1U
+#define FILE_OBJECT_JOURNAL_FLUSHED 2U
+int file_object_guard_journal_io(file_object_guard_t *guard,
+    file_object_owner_t owner, uint32_t token, uint32_t resource,
+    uint32_t event, uint64_t now_ms, bool *was_pending);
+/* Internal admission snapshot; zero outputs on refusal, no new authority. */
+int file_object_guard_journal_io_deadline(file_object_guard_t *guard,
+    file_object_owner_t owner, uint32_t token, uint32_t resource,
+    uint32_t event, uint64_t now_ms, bool *was_pending, uint64_t *deadline_ms);
+bool file_object_guard_journal_request_valid(const reist_storage_journal_request_t *request);
 int file_object_guard_end(file_object_guard_t *guard, uint32_t token,
     file_object_owner_t owner, uint32_t outcome, uint64_t now_ms);
 /* Per-device-effect check; the VFS mutex orders it with expiry/media revoke. */

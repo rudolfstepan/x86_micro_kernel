@@ -154,7 +154,8 @@ enum {
     X86OS_SYS_CPU_TOPOLOGY = 126,
     X86OS_SYS_TERMINAL_INPUT = 127,
     X86OS_SYS_PROCESS_RESTRICT = 128,
-    X86OS_SYS_FILE_OBJECT_GUARD = 129
+    X86OS_SYS_FILE_OBJECT_GUARD = 129,
+    X86OS_SYS_STORAGE_JOURNAL_IO = 130
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -2082,6 +2083,10 @@ static inline int x86os_process_restrict_script(void) {
 /* Storage service only; no file-access rights are granted by this syscall. */
 static inline int x86os_file_object_guard(reist_file_object_guard_request_t* request) {
     return (int)x86os_syscall(X86OS_SYS_FILE_OBJECT_GUARD, (uintptr_t)request, 0, 0);
+}
+static inline int x86os_storage_journal_io(const reist_storage_journal_request_t* request,
+                                           void* data) {
+    return (int)x86os_syscall(X86OS_SYS_STORAGE_JOURNAL_IO, (uintptr_t)request, (uintptr_t)data, 0);
 }
 int x86os_process_identity(x86os_process_identity_t* identity);
 /* Foreground terminal adapter; -EAGAIN from CHECK means no input authority. */

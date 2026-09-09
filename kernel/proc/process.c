@@ -404,7 +404,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
     profile->kind = (uint32_t)kind;
     if (kind == PROCESS_DOMAIN_COMPATIBILITY) {
         for (uint32_t index = 0; index < PROCESS_DOMAIN_SYSCALL_LIMIT; ++index) {
-            if (index != SYS_FILE_OBJECT_GUARD) profile_allow(profile, index);
+            if (index != SYS_FILE_OBJECT_GUARD && index != SYS_STORAGE_JOURNAL_IO)
+                profile_allow(profile, index);
         }
         return true;
     }
@@ -429,7 +430,8 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             SYS_STORAGE_COMPLETE, SYS_STORAGE_BLOCK_FLUSH,
             SYS_STORAGE_MEDIA_COMMIT, SYS_STORAGE_FORMAT_PROBE,
             SYS_BOOT_STATUS, SYS_STAT, SYS_PROCESS_IDENTITY,
-            SYS_STORAGE_CLAIM_IDENTITY, SYS_STORAGE_BULK, SYS_FILE_OBJECT_GUARD
+            SYS_STORAGE_CLAIM_IDENTITY, SYS_STORAGE_BULK, SYS_FILE_OBJECT_GUARD,
+            SYS_STORAGE_JOURNAL_IO
         };
         for (size_t index = 0;
              index < sizeof(storage_syscalls) / sizeof(storage_syscalls[0]);

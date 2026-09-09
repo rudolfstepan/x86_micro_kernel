@@ -34,7 +34,19 @@ class ReistProbeDomainContractTests(unittest.TestCase):
 
     def test_profile_is_versioned_fixed_and_attached_before_publication(self):
         self.assertIn("PROCESS_DOMAIN_PROFILE_VERSION 2U", self.process_h)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 130U", self.process_h)
+        # Append-only ABI growth must not leave the authorization bitmap's
+        # dispatch bound behind. The ABI gate separately freezes its entries.
+        abi_counts = re.findall(
+            r"(?m)^#define[ \t]+REIST_SYSCALL_COUNT[ \t]+([1-9][0-9]*)U[ \t]*$",
+            read("include/reist/abi/syscall.h"),
+        )
+        domain_limits = re.findall(
+            r"(?m)^#define[ \t]+PROCESS_DOMAIN_SYSCALL_LIMIT[ \t]+([1-9][0-9]*)U[ \t]*$",
+            self.process_h,
+        )
+        self.assertEqual(len(abi_counts), 1)
+        self.assertEqual(domain_limits, abi_counts)
+        self.assertLessEqual(int(abi_counts[0]), 5 * 32)
         self.assertIn("PROCESS_DOMAIN_SYSCALL_WORDS 5U", self.process_h)
         for field in ("version", "struct_size", "kind", "allowed_syscalls"):
             self.assertIn(field, self.process_h)

@@ -260,6 +260,8 @@ PROGRAMS = {
         ROOT / "userspace/programs/storage_service.c",
         ROOT / "userspace/storage/lib/vfs_shadow_fat32.c",
         ROOT / "userspace/storage/lib/vfs_shadow_ext2.c",
+        ROOT / "userspace/storage/lib/fat32_transaction.c",
+        ROOT / "drivers/block/ata_journal.c",
     ),
     "HDA.PRG": ROOT / "userspace/drivers/audio/hda_driver.c",
     "SVGA2D.PRG": ROOT / "userspace/drivers/video/vmware_svga2d.c",
@@ -389,6 +391,7 @@ def main() -> None:
                 dependency_files.extend(storage_headers)
             if name == "STORAGE.PRG":
                 dependency_files.append(Path(__file__).resolve())
+                dependency_files.append(ROOT / "drivers/block/ata_journal.h")
             if name in GUI_PROGRAMS:
                 dependency_files.extend(gui_headers)
             if name in AUDIO_PROGRAMS:
@@ -401,6 +404,9 @@ def main() -> None:
                 dependency_files.append(
                     ROOT / "assets/images/reist-splash.bmp")
             includes = [sdk.include_dir, STORAGE_INCLUDE_ROOT]
+            if name == "STORAGE.PRG":
+                includes.append(ROOT)
+                link_libraries.append(sdk.libc_library)
             if name == "HTMLWORK.PRG":
                 includes[:0] = [sdk.libc_include_dir, GUI_INCLUDE_ROOT]
                 link_libraries.extend([sdk.library_dir / "libhubbub.a",

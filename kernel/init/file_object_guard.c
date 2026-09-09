@@ -20,6 +20,7 @@ typedef struct {
     uint64_t epoch, deadline_ms;
     file_object_owner_t owner;
     uint32_t generation, resource, active, fenced;
+    uint32_t mode, attempted, pending;
 } guard_control_t;
 
 typedef struct { uint32_t generation; } guard_media_t;
@@ -88,7 +89,11 @@ bool file_object_guard_request_valid(const reist_file_object_guard_request_t *re
             (second_empty || (file_object_guard_key_valid(&request->keys[1]) &&
                 request->keys[1].kind == request->keys[0].kind &&
                 request->keys[1].resource == request->keys[0].resource)) &&
-            client_empty && !(request->flags & ~REIST_FILE_OBJECT_EXCLUSIVE) &&
+            client_empty && !(request->flags & ~(REIST_FILE_OBJECT_EXCLUSIVE |
+                REIST_FILE_OBJECT_EXTERNAL_JOURNAL)) &&
+            (!(request->flags & REIST_FILE_OBJECT_EXTERNAL_JOURNAL) ||
+                ((request->flags & REIST_FILE_OBJECT_EXCLUSIVE) && second_empty &&
+                 request->keys[0].kind == REIST_FILE_OBJECT_FAT32)) &&
             request->epoch && request->deadline_ms && !request->token;
     case REIST_FILE_OBJECT_MUTATION_END:
         return first_empty && second_empty && client_empty &&
@@ -120,10 +125,14 @@ static bool guard_pin_valid(const void *data, size_t size) {
 static bool guard_control_valid(const void *data, size_t size) {
     if (!data || size != sizeof(guard_control_t)) return false;
     const guard_control_t *control = data;
-    if (!control->epoch || control->active > 1) return false;
+    if (!control->epoch || control->active > 1 || control->attempted > 1 ||
+        control->pending > control->attempted ||
+        (control->mode != 0 && control->mode != REIST_FILE_OBJECT_EXTERNAL_JOURNAL) ||
+        (!control->mode && (control->attempted || control->pending))) return false;
     if (!control->active)
         return !control->deadline_ms && !control->owner.pid &&
-            !control->owner.generation && !control->resource;
+            !control->owner.generation && !control->resource && !control->mode &&
+            !control->attempted && !control->pending;
     return guard_owner_valid(control->owner) && control->generation &&
         control->deadline_ms && control->resource < FILE_OBJECT_GUARD_RESOURCES;
 }
@@ -207,6 +216,7 @@ static int guard_finish(file_object_guard_t *guard, guard_control_t *control,
     control->deadline_ms = 0;
     control->owner = (file_object_owner_t){0};
     control->resource = 0;
+    control->mode = control->attempted = control->pending = 0;
     int result = guard_epoch_advance(guard, control);
     return result ? result : guard_control_write(guard, control);
 }
@@ -433,9 +443,22 @@ int file_object_guard_begin(file_object_guard_t *guard,
     const reist_file_object_key_t *keys, uint32_t count, bool exclusive,
     file_object_owner_t owner, uint64_t epoch, uint64_t now_ms,
     uint64_t deadline_ms, uint32_t *token) {
+    return file_object_guard_begin_mode(guard, keys, count,
+        exclusive ? REIST_FILE_OBJECT_EXCLUSIVE : 0, owner, epoch, now_ms,
+        deadline_ms, token);
+}
+
+int file_object_guard_begin_mode(file_object_guard_t *guard,
+    const reist_file_object_key_t *keys, uint32_t count, uint32_t mode,
+    file_object_owner_t owner, uint64_t epoch, uint64_t now_ms,
+    uint64_t deadline_ms, uint32_t *token) {
     if (!keys || !count || count > 2 || !guard_owner_valid(owner) || !epoch ||
         !token || deadline_ms <= now_ms || deadline_ms - now_ms > FILE_OBJECT_GUARD_MAX_MS)
         return -REIST_EINVAL;
+    if ((mode & ~(REIST_FILE_OBJECT_EXCLUSIVE | REIST_FILE_OBJECT_EXTERNAL_JOURNAL)) ||
+        ((mode & REIST_FILE_OBJECT_EXTERNAL_JOURNAL) &&
+         (!(mode & REIST_FILE_OBJECT_EXCLUSIVE) || count != 1 ||
+          keys[0].kind != REIST_FILE_OBJECT_FAT32))) return -REIST_EINVAL;
     for (unsigned i = 0; i < count; ++i)
         if (!file_object_guard_key_valid(&keys[i]) ||
             keys[i].kind != keys[0].kind || keys[i].resource != keys[0].resource)
@@ -449,7 +472,8 @@ int file_object_guard_begin(file_object_guard_t *guard,
         guard_pin_t pin;
         result = guard_read(guard, &guard->pins[i], &pin, sizeof(pin), guard_pin_valid);
         if (result || !pin.active) continue;
-        if (exclusive && pin.key.resource == keys[0].resource) result = -REIST_EBUSY;
+        if ((mode & REIST_FILE_OBJECT_EXCLUSIVE) && pin.key.resource == keys[0].resource)
+            result = -REIST_EBUSY;
         for (unsigned j = 0; !result && j < count; ++j)
             if (!memcmp(&pin.key, &keys[j], sizeof(pin.key))) result = -REIST_EBUSY;
     }
@@ -460,6 +484,7 @@ int file_object_guard_begin(file_object_guard_t *guard,
         control.resource = keys[0].resource;
         control.deadline_ms = deadline_ms;
         control.active = 1;
+        control.mode = mode & REIST_FILE_OBJECT_EXTERNAL_JOURNAL;
         ++control.generation;
         result = guard_control_write(guard, &control);
         if (!result) *token = control.generation;
@@ -479,6 +504,10 @@ int file_object_guard_end(file_object_guard_t *guard, uint32_t token,
     if (!result) result = guard_expire(guard, &control, now_ms);
     if (!result && (!control.active || control.generation != token)) result = -REIST_ESTALE;
     if (!result && !guard_same_owner(control.owner, owner)) result = -REIST_EACCES;
+    if (!result && control.mode &&
+        ((outcome == REIST_FILE_OBJECT_NO_EFFECT && control.attempted) ||
+         (outcome == REIST_FILE_OBJECT_DURABLE_COMMIT && control.pending)))
+        result = -REIST_EINVAL;
     if (!result) result = guard_finish(guard, &control, outcome == REIST_FILE_OBJECT_UNKNOWN);
     return guard_unlock(guard, flags, result);
 }
@@ -497,7 +526,60 @@ int file_object_guard_mutation_authorized(file_object_guard_t *guard,
     if (!result && !control.active) result = -REIST_EACCES;
     if (!result && (control.resource != resource || !guard_same_owner(control.owner, owner)))
         result = -REIST_EBUSY;
+    if (!result && control.mode) result = -REIST_EBUSY;
     return guard_unlock(guard, flags, result);
+}
+
+bool file_object_guard_journal_request_valid(const reist_storage_journal_request_t *request) {
+    if (!request || request->version != REIST_STORAGE_JOURNAL_VERSION ||
+        request->struct_size != sizeof(*request) || !request->token ||
+        request->resource >= FILE_OBJECT_GUARD_RESOURCES || request->reserved)
+        return false;
+    if (request->operation == REIST_STORAGE_JOURNAL_FLUSH)
+        return !request->sector && !request->count;
+    return (request->operation == REIST_STORAGE_JOURNAL_READ ||
+            request->operation == REIST_STORAGE_JOURNAL_WRITE_DEFERRED) &&
+        request->count && request->count <= REIST_STORAGE_JOURNAL_MAX_SECTORS &&
+        request->sector <= UINT32_MAX - (request->count - 1U);
+}
+
+int file_object_guard_journal_io_deadline(file_object_guard_t *guard,
+    file_object_owner_t owner, uint32_t token, uint32_t resource,
+    uint32_t event, uint64_t now_ms, bool *was_pending, uint64_t *deadline_ms) {
+    if (was_pending) *was_pending = false;
+    if (deadline_ms) *deadline_ms = 0;
+    if (!guard_owner_valid(owner) || !token || resource >= FILE_OBJECT_GUARD_RESOURCES ||
+        event > FILE_OBJECT_JOURNAL_FLUSHED) return -REIST_EINVAL;
+    uint32_t flags;
+    int result = guard_lock(guard, &flags);
+    if (result) return result;
+    guard_control_t control;
+    result = guard_control_read(guard, &control);
+    if (!result) result = guard_expire(guard, &control, now_ms);
+    if (!result && (control.fenced & (1U << resource))) result = -REIST_EIO;
+    if (!result && (!control.active || control.generation != token)) result = -REIST_ESTALE;
+    if (!result && (!guard_same_owner(control.owner, owner) ||
+        control.resource != resource || control.mode != REIST_FILE_OBJECT_EXTERNAL_JOURNAL))
+        result = -REIST_EACCES;
+    bool pending = !result && control.pending != 0;
+    if (!result && event) {
+        if (event == FILE_OBJECT_JOURNAL_WRITE) control.attempted = control.pending = 1;
+        else control.pending = 0;
+        result = guard_control_write(guard, &control);
+    }
+    result = guard_unlock(guard, flags, result);
+    if (!result) {
+        if (was_pending) *was_pending = pending;
+        if (deadline_ms) *deadline_ms = control.deadline_ms;
+    }
+    return result;
+}
+
+int file_object_guard_journal_io(file_object_guard_t *guard,
+    file_object_owner_t owner, uint32_t token, uint32_t resource,
+    uint32_t event, uint64_t now_ms, bool *was_pending) {
+    return file_object_guard_journal_io_deadline(guard, owner, token, resource,
+        event, now_ms, was_pending, NULL);
 }
 
 int file_object_guard_cancel_undelivered(file_object_guard_t *guard,
@@ -517,6 +599,7 @@ int file_object_guard_cancel_undelivered(file_object_guard_t *guard,
     /* Do not turn a known-undelivered reservation into an uncertain write just
      * because the copyout fault was descheduled past its deadline. Existing
      * fences from another observer are never removed. */
+    if (!result && control.attempted) result = -REIST_EINVAL;
     if (!result) result = guard_finish(guard, &control, false);
     return guard_unlock(guard, flags, result);
 }

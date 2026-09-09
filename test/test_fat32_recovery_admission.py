@@ -13,6 +13,19 @@ from measure_cpp_baseline import suppress_windows_test_dialogs
 
 
 class Fat32RecoveryAdmissionTests(unittest.TestCase):
+    def test_guest_shell_start_accepts_only_exact_serial_records(self):
+        import run_qemu_fat32_recovery_admission as guest
+        shell = "REIST OS userspace shell"
+        kernel = "Starting userspace command interpreter"
+        for text in (shell+"\n", kernel+"\n"+shell+"\r\n",
+                     kernel+shell+"\n", "BOOT_OK\n"+kernel+shell+"\r\nC:\\>"):
+            self.assertTrue(guest.shell_started(text), repr(text))
+        for text in ("", kernel+"\n", shell, kernel+shell,
+                     "noise "+shell+"\n", "noise "+kernel+shell+"\n",
+                     kernel+" "+shell+"\n", shell+" suffix\n",
+                     kernel+shell+" suffix\n", shell.replace("userspace", "rescue")+"\n"):
+            self.assertFalse(guest.shell_started(text), repr(text))
+
     def test_guest_fixtures_and_whole_disk_oracle(self):
         import run_qemu_fat32_recovery_admission as guest
         self.assertEqual(guest.MOUNT, guest.transport.MOUNT)

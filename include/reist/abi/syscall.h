@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 #define REIST_SYSCALL_ABI_VERSION 1U
-#define REIST_SYSCALL_COUNT 130U
+#define REIST_SYSCALL_COUNT 131U
 
 #define REIST_SYSCALL_LIST(X) \
     X(TERMINAL_PUTCHAR, PUTCHAR, 0U) \
@@ -143,7 +143,8 @@
     X(CPU_TOPOLOGY, CPU_TOPOLOGY, 126U) \
     X(TERMINAL_INPUT, TERMINAL_INPUT, 127U) \
     X(PROCESS_RESTRICT, PROCESS_RESTRICT, 128U) \
-    X(FILE_OBJECT_GUARD, FILE_OBJECT_GUARD, 129U)
+    X(FILE_OBJECT_GUARD, FILE_OBJECT_GUARD, 129U) \
+    X(STORAGE_JOURNAL_IO, STORAGE_JOURNAL_IO, 130U)
 
 /* REIST single-terminal foreground adapter, not POSIX termios/job control. */
 #define REIST_TERMINAL_INPUT_VERSION 1U
@@ -178,6 +179,19 @@ typedef struct {
 #define REIST_FILE_OBJECT_MUTATION_END 5U
 #define REIST_FILE_OBJECT_VERIFY 6U
 #define REIST_FILE_OBJECT_EXCLUSIVE 1U
+#define REIST_FILE_OBJECT_EXTERNAL_JOURNAL 2U
+
+/* Versioned capability mediator, not a POSIX raw-device interface. Sectors
+ * are relative to the canonical resource; deferred writes are NOT durable. */
+#define REIST_STORAGE_JOURNAL_VERSION 1U
+#define REIST_STORAGE_JOURNAL_READ 1U
+#define REIST_STORAGE_JOURNAL_WRITE_DEFERRED 2U
+#define REIST_STORAGE_JOURNAL_FLUSH 3U
+#define REIST_STORAGE_JOURNAL_MAX_SECTORS 256U
+typedef struct {
+    uint32_t version, struct_size, operation, token;
+    uint32_t resource, sector, count, reserved;
+} reist_storage_journal_request_t;
 #define REIST_FILE_OBJECT_NO_EFFECT 1U
 #define REIST_FILE_OBJECT_DURABLE_COMMIT 2U
 #define REIST_FILE_OBJECT_UNKNOWN 3U

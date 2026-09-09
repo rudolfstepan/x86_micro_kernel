@@ -79,6 +79,7 @@ static void profiles(void) {
             CHECK(process_syscall_allowed(current,call)==process_syscall_allowed(&old,call));
         CHECK(process_syscall_allowed(current,128)==(kind==1));
         CHECK(process_syscall_allowed(current,129)==(kind==PROCESS_DOMAIN_STORAGE));
+        CHECK(process_syscall_allowed(current,130)==(kind==PROCESS_DOMAIN_STORAGE));
         if(kind!=1) unchanged(*current,-13);
     }
     init(current,PROCESS_DOMAIN_COMPATIBILITY);

@@ -181,6 +181,9 @@ class FileObjectGuardTests(unittest.TestCase):
         syscall = function((ROOT / "kernel/syscall/syscall_table.c").read_text(encoding="utf-8"),
                            "static int syscall_file_object_guard(")
         (evidence / "syscall_guard.inc").write_text(syscall, encoding="utf-8")
+        journal = function((ROOT / "kernel/syscall/syscall_table.c").read_text(encoding="utf-8"),
+                           "static int syscall_storage_journal_io(")
+        (evidence / "syscall_journal.inc").write_text(journal, encoding="utf-8")
         cleanup = function((ROOT / "kernel/proc/process.c").read_text(encoding="utf-8"),
                            "void process_close_all_files(")
         (evidence / "process_cleanup.inc").write_text(cleanup, encoding="utf-8")

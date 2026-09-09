@@ -11,6 +11,9 @@
 #include "x86os.h"
 #include "../storage/include/reist/vfs_shadow_ext2.h"
 #include "../storage/include/reist/vfs_shadow_fat32.h"
+#ifdef REIST_JOURNAL_HANDOFF_TEST
+#include "../storage/include/reist/fat32_transaction.h"
+#endif
 
 #define FORMAT32_RESERVED 32U
 #define FORMAT32_BACKUP_BOOT 6U
@@ -5717,6 +5720,105 @@ static int vfs_shadow_authoritative_filesystem_stat(
     return 0;
 }
 
+#ifdef REIST_JOURNAL_HANDOFF_TEST
+/* Private acceptance fixture only; absent from release images. Requests still
+ * enter through the ordinary userspace STAT service envelope and the actual
+ * guarded syscall. No new rights are granted to the requesting program. */
+static reist_fat32_transaction_t handoff_transaction;
+static uint8_t handoff_bulk[256U*512U];
+static uint32_t handoff_flushes;
+static bool handoff_inject;
+static int handoff_raw_error;
+static int handoff_guard(void* context, reist_file_object_guard_request_t* request) {
+    (void)context; return x86os_file_object_guard(request);
+}
+static int handoff_transfer(void* context, const reist_storage_journal_request_t* request, void* data) {
+    (void)context;
+    int result = x86os_storage_journal_io(request, data);
+    if (!result && request->operation == REIST_STORAGE_JOURNAL_FLUSH && handoff_inject &&
+        ++handoff_flushes == 2) {
+#if REIST_JOURNAL_HANDOFF_TEST == 1
+        __asm__ volatile("ud2" : : "a"(0x341fa017U));
+#elif REIST_JOURNAL_HANDOFF_TEST == 2
+        /* Intentional noncooperative Ring-3 adversary, not a production wait. */
+        for (;;) __asm__ volatile("pause");
+#endif
+    }
+    return result;
+}
+static int handoff_raw(uint32_t operation, uint32_t sector, uint32_t count, void* data) {
+    reist_storage_journal_request_t request = {1, sizeof(request), operation,
+        handoff_transaction.token, 1, sector, count, 0};
+    int result = x86os_storage_journal_io(&request, data);
+    if (result < 0 && !handoff_raw_error) handoff_raw_error = result;
+    return result;
+}
+static int handoff_probe(void) {
+    handoff_raw_error = 0;
+    reist_file_object_key_t key = {.kind=REIST_FILE_OBJECT_FAT32, .resource=1, .object_a=2};
+    const char alias[] = "TARGET  TXT";
+    for (unsigned i = 0; i < 11; ++i) key.alias[i] = (uint8_t)alias[i];
+    uint64_t now = 0;
+    if (x86os_monotonic_ms(&now) || now > UINT64_MAX-5000) return 1;
+    reist_fat32_transaction_io_t io = {0, handoff_guard, handoff_transfer};
+    if (reist_fat32_transaction_begin(&handoff_transaction, &io, &key,
+                                      0, 66581, 32, now+5000)) return 2;
+    int stage = 3;
+    uint32_t outcome;
+    if (x86os_storage_block_write(1, 60000, handoff_bulk) != -REIST_EBUSY ||
+        x86os_storage_block_flush(1) != -REIST_EBUSY) goto failed;
+    reist_storage_journal_request_t invalid = {1, sizeof(invalid), REIST_STORAGE_JOURNAL_READ,
+        handoff_transaction.token+1, 1, 60000, 1, 0};
+    stage = 4;
+    if (x86os_storage_journal_io(&invalid, handoff_bulk) != -REIST_ESTALE) goto failed;
+    invalid.token = handoff_transaction.token; invalid.resource = 0;
+    if (x86os_storage_journal_io(&invalid, handoff_bulk) >= 0) goto failed;
+    stage = 5;
+    if (handoff_raw(REIST_STORAGE_JOURNAL_READ, 60000, 256, handoff_bulk)) goto failed;
+#if REIST_JOURNAL_HANDOFF_TEST == 0
+    /* Seed an ACTIVE recovery fixture only AFTER legacy handoff, under this
+     * same exact token. The real Ring-3 core must restore it; boot-time legacy
+     * recovery cannot satisfy this witness. Do not clear an UNKNOWN fence. */
+    ata_journal_record_t active;
+    ata_undo_journal_make_clean(&active, handoff_transaction.journal.sequence);
+    active.state = ATA_JOURNAL_ACTIVE; active.entry_count = 1;
+    active.entries[0].target_lba = 60000;
+    active.entries[0].data_crc32 = format_crc32(handoff_bulk, 512);
+    active.header_crc32 = 0;
+    active.header_crc32 = format_crc32(&active, sizeof(active));
+    stage = 6;
+    if (handoff_raw(REIST_STORAGE_JOURNAL_WRITE_DEFERRED, 9, 1, handoff_bulk) ||
+        handoff_raw(REIST_STORAGE_JOURNAL_FLUSH, 0, 0, 0) ||
+        handoff_raw(REIST_STORAGE_JOURNAL_WRITE_DEFERRED, 8, 1, &active) ||
+        handoff_raw(REIST_STORAGE_JOURNAL_WRITE_DEFERRED, 31, 1, &active) ||
+        handoff_raw(REIST_STORAGE_JOURNAL_FLUSH, 0, 0, 0)) goto failed;
+    format_fill(handoff_bulk+512, 0xa5, 512);
+    if (handoff_raw(REIST_STORAGE_JOURNAL_WRITE_DEFERRED, 60000, 1, handoff_bulk+512) ||
+        handoff_raw(REIST_STORAGE_JOURNAL_FLUSH, 0, 0, 0)) goto failed;
+    stage = 7;
+    if (!ata_undo_journal_attach(&handoff_transaction.journal, 0, true, 0, 66581, 32) ||
+        handoff_raw(REIST_STORAGE_JOURNAL_READ, 60000, 1, handoff_bulk+512) ||
+        !format_equal(handoff_bulk, handoff_bulk+512, 512)) goto failed;
+    handoff_transaction.attempted = true;
+#endif
+    handoff_flushes = 0; handoff_inject = true;
+    stage = 8;
+    for (uint32_t i = 0; i < 20; ++i) {
+        format_fill(handoff_bulk, (uint8_t)(0xa0+i), 512);
+        if (reist_fat32_transaction_stage(&handoff_transaction, 60000+i, handoff_bulk)) goto failed;
+    }
+    stage = 9;
+    if (reist_fat32_transaction_finish(&handoff_transaction, true, &outcome) ||
+        outcome != REIST_FILE_OBJECT_DURABLE_COMMIT || handoff_flushes != 4) return stage;
+    invalid.resource = 1;
+    if (x86os_storage_journal_io(&invalid, handoff_bulk) != -REIST_ESTALE) return 10;
+    return 0;
+failed:
+    (void)reist_fat32_transaction_finish(&handoff_transaction, false, &outcome);
+    return stage;
+}
+#endif
+
 static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
     if (frame == 0 || frame->version != X86OS_VFS_SHADOW_FRAME_VERSION ||
         frame->struct_size != sizeof(*frame) ||
@@ -5735,6 +5837,23 @@ static int vfs_shadow_stat(x86os_vfs_shadow_frame_t *frame) {
         if (frame->path[index] == '\0') return -22;
     for (uint32_t index = 0U; index < 5U; ++index)
         if (frame->reserved[index] != 0U) return -22;
+
+#ifdef REIST_JOURNAL_HANDOFF_TEST
+    static const char probe_path[] = "/mnt/hdd1/__handoff";
+    if (frame->path_length == sizeof(probe_path)-1 &&
+        format_equal(frame->path, probe_path, sizeof(probe_path))) {
+        int stage = handoff_probe();
+        x86os_file_info_t info = {0};
+        const char* name = stage ? "HANDOFF_FAILED" : "HANDOFF_RECOVERY_COMMIT_OK";
+        for (unsigned i = 0; name[i] && i+1 < sizeof(info.name); ++i) info.name[i] = name[i];
+        info.type = X86OS_FILE; info.size = (uint32_t)stage;
+        /* Private STAT witness: retain errno without adding a timing syscall
+         * inside the transaction. The normal file ABI remains unchanged. */
+        info.create_time = 0U - (uint32_t)handoff_raw_error;
+        vfs_shadow_publish(frame, 0, &info);
+        return 0;
+    }
+#endif
 
     if (frame->operation == X86OS_VFS_SHADOW_FAT_STAT_AUTHORITY)
         return vfs_shadow_authoritative_fat_stat(frame);

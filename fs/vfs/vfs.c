@@ -474,11 +474,126 @@ int vfs_file_object_guard_io_begin(uint32_t resource, uint32_t sector,
 
 void vfs_file_object_guard_io_end(void) { vfs_operation_end(); }
 
+#ifdef VFS_FILE_OBJECT_GUARD
+/* Preflight never owns the metadata lock while waiting for VFS. Recheck the
+ * exact token afterwards; the snapshot cannot renew the reservation. */
+static bool vfs_journal_operation_begin(uint64_t deadline_ms) {
+    uint64_t now = vfs_guard_platform_now();
+    if (!deadline_ms || now >= deadline_ms ||
+        deadline_ms - now > FILE_OBJECT_GUARD_MAX_MS) return false;
+#ifndef KERNEL_HOST_TEST
+    KASSERT_NOT_IRQ();
+    if (kernel_mutex_lock_until(&vfs_operation_mutex, deadline_ms) != 0) return false;
+#endif
+    if (vfs_guard_platform_now() >= deadline_ms || vfs_guard_apply_media_changes()) {
+        vfs_operation_end();
+        return false;
+    }
+    return true;
+}
+
+/* No maintenance/parent alias fallback. The selected mount must name the
+ * canonical resource, and all aliases must agree on extent and filesystem. */
+static int vfs_journal_mount(uint32_t resource, vfs_filesystem_t** selected) {
+    drive_t* drive = vfs_guard_platform_drive(resource);
+    const drive_t* physical = vfs_guard_physical(drive);
+    if (!physical || physical->type != DRIVE_TYPE_ATA) return -REIST_ENOTSUP;
+    *selected = NULL;
+    for (vfs_mount_t* m = mount_list; m; m = m->next) {
+        if (m->fs->drive != drive) continue;
+        uint32_t canonical;
+        int result = vfs_guard_resource(m->fs, &canonical);
+        if (result) return result;
+        if (canonical != resource || !vfs_guard_kind(m->fs, REIST_FILE_OBJECT_FAT32))
+            return -REIST_EINVAL;
+        if (m->fs->object_media_revoked || !vfs_guard_platform_available(resource))
+            return -REIST_EIO;
+        if (m->fs->maintenance_blocked || m->fs->open_nodes) return -REIST_EBUSY;
+        if (!m->fs->ops->journal_handoff || !m->fs->ops->journal_write_range)
+            return -REIST_ENOTSUP;
+        *selected = m->fs;
+    }
+    return *selected ? 0 : -REIST_ENOTSUP;
+}
+#endif
+
+int vfs_storage_journal_io_begin(const reist_storage_journal_request_t* request,
+    int pid, uint32_t generation, bool* was_pending, uint64_t* deadline_ms) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (was_pending) *was_pending = false;
+    if (deadline_ms) *deadline_ms = 0;
+    if (!was_pending || !deadline_ms || !file_object_guard_journal_request_valid(request))
+        return -REIST_EINVAL;
+    if (!vfs_guard_platform_live(pid, generation)) return -REIST_EACCES;
+    uint64_t reserved_until = 0;
+    int result = file_object_guard_journal_io_deadline(&vfs_object_guards,
+        (file_object_owner_t){pid, generation}, request->token, request->resource,
+        FILE_OBJECT_JOURNAL_CHECK, vfs_guard_platform_now(), NULL, &reserved_until);
+    if (result) return result;
+    if (!vfs_journal_operation_begin(reserved_until)) return -REIST_EBUSY;
+    result = vfs_guard_platform_live(pid, generation) ? 0 : -REIST_EACCES;
+    vfs_filesystem_t* fs = NULL;
+    if (!result) result = vfs_journal_mount(request->resource, &fs);
+    if (!result && request->operation != REIST_STORAGE_JOURNAL_FLUSH) {
+        uint32_t first, count;
+        result = fs->ops->volume_extent(fs, &first, &count);
+        if (result || request->sector < first || request->sector - first >= count ||
+            request->count > count - (request->sector - first)) result = -REIST_EINVAL;
+        if (!result && request->operation == REIST_STORAGE_JOURNAL_WRITE_DEFERRED &&
+            !fs->ops->journal_write_range(fs, request->sector, request->count))
+            result = -REIST_EACCES;
+    }
+    if (!result) result = file_object_guard_journal_io_deadline(&vfs_object_guards,
+        (file_object_owner_t){pid, generation}, request->token, request->resource,
+        FILE_OBJECT_JOURNAL_CHECK, vfs_guard_platform_now(), was_pending, deadline_ms);
+    if (result) vfs_operation_end();
+    return result;
+#else
+    (void)request; (void)pid; (void)generation; (void)was_pending; (void)deadline_ms;
+    return -REIST_ENOTSUP;
+#endif
+}
+
+int vfs_storage_journal_io_complete(const reist_storage_journal_request_t* request,
+    int pid, uint32_t generation, bool success) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    /* VFS lock is still held. A failed or late operation retires UNKNOWN;
+     * failure cannot be converted to NO_EFFECT by a later userspace finish. */
+    if (!success) return file_object_guard_end(&vfs_object_guards, request->token,
+        (file_object_owner_t){pid, generation}, REIST_FILE_OBJECT_UNKNOWN,
+        vfs_guard_platform_now());
+    return file_object_guard_journal_io(&vfs_object_guards,
+        (file_object_owner_t){pid, generation}, request->token, request->resource,
+        request->operation == REIST_STORAGE_JOURNAL_FLUSH ?
+            FILE_OBJECT_JOURNAL_FLUSHED : FILE_OBJECT_JOURNAL_CHECK,
+        vfs_guard_platform_now(), NULL);
+#else
+    (void)request; (void)pid; (void)generation; (void)success;
+    return -REIST_ENOTSUP;
+#endif
+}
+
+/* Called after the entire input was staged, before the first device effect. */
+int vfs_storage_journal_io_mark_write(const reist_storage_journal_request_t* request,
+    int pid, uint32_t generation) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    return file_object_guard_journal_io(&vfs_object_guards,
+        (file_object_owner_t){pid, generation}, request->token, request->resource,
+        FILE_OBJECT_JOURNAL_WRITE, vfs_guard_platform_now(), NULL);
+#else
+    (void)request; (void)pid; (void)generation;
+    return -REIST_ENOTSUP;
+#endif
+}
+
 int vfs_file_object_guard_request(reist_file_object_guard_request_t* request,
                                   int service_pid, uint32_t service_generation) {
 #ifdef VFS_FILE_OBJECT_GUARD
     if (!file_object_guard_request_valid(request)) return -REIST_EINVAL;
-    if (!vfs_operation_begin()) return -REIST_EBUSY;
+    bool journal_begin = request->operation == REIST_FILE_OBJECT_MUTATION_BEGIN &&
+                         (request->flags & REIST_FILE_OBJECT_EXTERNAL_JOURNAL);
+    if (journal_begin ? !vfs_journal_operation_begin(request->deadline_ms) :
+                       !vfs_operation_begin()) return -REIST_EBUSY;
     int result = 0;
     uint64_t now = vfs_guard_platform_now();
     file_object_owner_t service = {service_pid, service_generation};
@@ -535,9 +650,32 @@ int vfs_file_object_guard_request(reist_file_object_guard_request_t* request,
         if (!result && !vfs_guard_platform_available(keys[0].resource)) result = -REIST_EIO;
         break;
     case REIST_FILE_OBJECT_MUTATION_BEGIN:
-        result = file_object_guard_begin(&vfs_object_guards, keys, count,
-            (request->flags & REIST_FILE_OBJECT_EXCLUSIVE) != 0, service,
+        result = file_object_guard_begin_mode(&vfs_object_guards, keys, count,
+            request->flags, service,
             request->epoch, now, request->deadline_ms, &request->token);
+        if (!result && (request->flags & REIST_FILE_OBJECT_EXTERNAL_JOURNAL)) {
+            vfs_filesystem_t* selected = NULL;
+            result = vfs_journal_mount(keys[0].resource, &selected);
+            if (!result && request->keys[0].resource != keys[0].resource) result = -REIST_EINVAL;
+            if (!result) result = selected->ops->journal_handoff(selected, request->deadline_ms);
+            for (vfs_mount_t* m = mount_list; !result && m; m = m->next) {
+                if (m->fs == selected || !vfs_guard_same_physical(selected->drive, m->fs->drive)) continue;
+                uint32_t canonical;
+                result = vfs_guard_resource(m->fs, &canonical);
+                if (!result && canonical == keys[0].resource)
+                    result = m->fs->ops->journal_handoff ?
+                        m->fs->ops->journal_handoff(m->fs, request->deadline_ms) : -REIST_ENOTSUP;
+            }
+            if (!result) result = file_object_guard_journal_io(&vfs_object_guards,
+                service, request->token, keys[0].resource, FILE_OBJECT_JOURNAL_CHECK,
+                vfs_guard_platform_now(), NULL);
+            if (result) {
+                int cancelled = file_object_guard_cancel_undelivered(&vfs_object_guards,
+                    operation, request->token, service, client);
+                if (cancelled) result = cancelled;
+                request->token = 0;
+            }
+        }
         break;
     case REIST_FILE_OBJECT_MUTATION_END:
         result = file_object_guard_end(&vfs_object_guards, request->token, service, request->flags, now);

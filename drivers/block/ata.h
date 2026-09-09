@@ -117,6 +117,11 @@ bool ata_write_unpublished_sectors_verified(
     uint32_t volume_sectors, uint32_t data_start_lba, uint32_t lba,
     uint32_t count, const void *buffer);
 bool ata_journal_recover_resource(uint32_t resource);
+/* Cold Ring-3 mediator hooks. Caller holds VFS reservation/mutex and has
+ * validated the complete extent. No ATA mutex survives either return. */
+int ata_external_journal_handoff(unsigned short base, bool is_master, uint64_t deadline_ms);
+int ata_external_journal_io(uint32_t resource, uint32_t operation,
+    uint32_t sector, uint32_t count, void* buffer, bool pending, uint64_t deadline_ms);
 void ata_fence_writes(void);
 void ata_restore_writes_after_recovery(void);
 bool ata_writes_quiescent(void);

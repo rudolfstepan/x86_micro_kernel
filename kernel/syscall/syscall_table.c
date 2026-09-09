@@ -35,6 +35,7 @@
 #include "include/kernel/supervisor.h"
 #include "include/kernel/storage_request_pool.h"
 #include "include/kernel/storage_service.h"
+#include "include/kernel/file_object_guard.h"
 #include "include/kernel/storage_maintenance.h"
 #include "include/kernel/admin_maintenance.h"
 #include "include/kernel/component_control.h"
@@ -1657,6 +1658,50 @@ static int syscall_storage_block_write(uint32_t resource, uint32_t block,
     }
     vfs_file_object_guard_io_end();
     return 0;
+}
+
+/* Serialized by the VFS operation mutex, not the task stack. Input is copied
+ * completely before marking possible effects; no user pointer reaches ATA. */
+static uint8_t storage_journal_staging[REIST_STORAGE_JOURNAL_MAX_SECTORS * 512U];
+static int syscall_storage_journal_io(const reist_storage_journal_request_t* user_request,
+                                      void* user_data) {
+    Process* process = scheduler_current_process();
+    if (!process || !storage_service_authorized(process->pid, process->generation)) return -REIST_EACCES;
+    page_directory_t* directory = paging_current_directory();
+    if (!user_request || !user_range_accessible(directory, (uint32_t)(uintptr_t)user_request,
+                                               sizeof(*user_request), false)) return -REIST_EFAULT;
+    reist_storage_journal_request_t request;
+    _Static_assert(sizeof(request) == 32U, "journal IO ABI");
+    if (copy_from_user(&request, user_request, sizeof(request))) return -REIST_EFAULT;
+    if (!file_object_guard_journal_request_valid(&request)) return -REIST_EINVAL;
+    bool flush = request.operation == REIST_STORAGE_JOURNAL_FLUSH;
+    bool write = request.operation == REIST_STORAGE_JOURNAL_WRITE_DEFERRED;
+    uint32_t size = request.count * 512U; /* count already bounded to256 */
+    if (flush ? user_data != NULL : (!user_data ||
+        !user_range_accessible(directory, (uint32_t)(uintptr_t)user_data, size, !write)))
+        return -REIST_EFAULT;
+    if (!storage_service_resource_available(request.resource) ||
+        storage_service_resource_read_only(request.resource)) return -REIST_EROFS;
+    bool pending = false;
+    uint64_t deadline_ms = 0;
+    int result = vfs_storage_journal_io_begin(&request, process->pid, process->generation,
+                                             &pending, &deadline_ms);
+    if (result) return result;
+    if (write && copy_from_user(storage_journal_staging, user_data, size)) {
+        vfs_file_object_guard_io_end();
+        return -REIST_EFAULT;
+    }
+    if (write) result = vfs_storage_journal_io_mark_write(&request, process->pid, process->generation);
+    if (!result) result = ata_external_journal_io(request.resource, request.operation,
+        request.sector, request.count, flush ? NULL : storage_journal_staging, pending, deadline_ms);
+    int completion = vfs_storage_journal_io_complete(&request, process->pid, process->generation,
+                                                     result == 0);
+    if (!result) result = completion;
+    if (result) (void)storage_service_report_media_failure(request.resource, true);
+    if (!result && !write && !flush && copy_to_user(user_data, storage_journal_staging, size))
+        result = -REIST_EFAULT;
+    vfs_file_object_guard_io_end();
+    return result;
 }
 
 static int syscall_storage_block_flush(uint32_t resource) {
@@ -3942,6 +3987,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_terminal_input,      // Syscall 127: Foreground input lifecycle
     (void*)&syscall_process_restrict,    // Syscall 128: Irreversible self restriction
     (void*)&syscall_file_object_guard,   // Syscall 129: Storage-only lifetime guard
+    (void*)&syscall_storage_journal_io,  // Syscall 130: Token-bound deferred IO
     // Add more syscalls here as needed
 };
 
@@ -4095,6 +4141,10 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_PROCESS_RESTRICT:
             result = (uint32_t)syscall_process_restrict((const void *)(uintptr_t)arg1);
+            break;
+        case SYS_STORAGE_JOURNAL_IO:
+            result = (uint32_t)syscall_storage_journal_io(
+                (const reist_storage_journal_request_t*)arg1, (void*)arg2);
             break;
         case SYS_FILE_OBJECT_GUARD:
             result = (uint32_t)syscall_file_object_guard(

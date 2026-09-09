@@ -112,6 +112,11 @@ typedef struct vfs_filesystem_ops {
     int (*object_key)(const vfs_node_t* node, reist_file_object_key_t* key);
     int (*volume_extent)(const struct vfs_filesystem* fs,
                           uint32_t* first_sector, uint32_t* sector_count);
+    /* Cold external-owner transition; called only under the VFS mutex and
+     * an exclusive reservation. Returns a REIST errno, not a VFS error. */
+    int (*journal_handoff)(struct vfs_filesystem* fs, uint64_t deadline_ms);
+    bool (*journal_write_range)(const struct vfs_filesystem* fs,
+                                 uint32_t sector, uint32_t count);
 } vfs_filesystem_ops_t;
 
 // ===========================================================================
@@ -194,6 +199,12 @@ int vfs_file_object_guard_io_begin(uint32_t resource, uint32_t sector,
                                   bool flush, int service_pid,
                                   uint32_t service_generation);
 void vfs_file_object_guard_io_end(void);
+int vfs_storage_journal_io_begin(const reist_storage_journal_request_t* request,
+    int pid, uint32_t generation, bool* was_pending, uint64_t* deadline_ms);
+int vfs_storage_journal_io_complete(const reist_storage_journal_request_t* request,
+    int pid, uint32_t generation, bool success);
+int vfs_storage_journal_io_mark_write(const reist_storage_journal_request_t* request,
+    int pid, uint32_t generation);
 
 // Filesystem registration
 int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops);

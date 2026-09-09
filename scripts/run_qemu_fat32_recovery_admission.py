@@ -132,6 +132,14 @@ def validate_command(output: str, required: tuple[str, ...], forbidden: tuple[st
         raise ValueError("unexpected command output: " + repr(diagnostic[-1400:]))
 
 
+def shell_started(text: str) -> bool:
+    # Kernel and Ring-3 serial writes are not record-atomic. Admit only the
+    # two exact observed startup records, optionally concatenated; never a
+    # substring, incomplete line, rescue-shell banner or arbitrary prefix.
+    return re.search(r"(?:^|\n)(?:Starting userspace command interpreter)?"
+                     r"REIST OS userspace shell\r?\n", text) is not None
+
+
 def run_case(qemu: Path, image: Path, evidence: Path, name: str, deadline: float) -> dict:
     disk, log = evidence / (name + ".img"), evidence / (name + ".log")
     initial = create_disk(disk, name)
@@ -182,7 +190,7 @@ def run_case(qemu: Path, image: Path, evidence: Path, name: str, deadline: float
             smoke.SHELL_PROMPT, deadline, after=boot)
         if problem:
             raise ValueError(problem)
-        if "REIST OS userspace shell" not in "".join(transcript).splitlines():
+        if not shell_started("".join(transcript)):
             raise ValueError("normal userspace shell did not start")
         valid = name in ("v1", "v2")
         if not valid and REFUSAL not in "".join(transcript).splitlines():

@@ -250,3 +250,13 @@ keine Agents/Pushes. Fehlende Scope-Datei, unabgeklaerte Autoritaet oder fremde
 Aenderung stoppen vor weiterer Wirkung. Erst alle Gates, Scope-/Diffpruefung,
 Archiv und Queueuebergang, dann Implementierungscommit. Vertragscommit allein
 ist ausdruecklich keine Laufzeitabnahme.
+
+R3.41 ergaenzt im unveraenderten112-Byte-Guardrequest den expliziten Modus
+EXTERNAL_JOURNAL(2), nur zusammen mit EXCLUSIVE(1), genau einem FAT32-Schluessel
+und derselben maximal5s-Reservation. Die alte Begin-Funktion bleibt erhalten.
+Protected Control ergaenzt Modus/Schreibversuch/ausstehende Barriere innerhalb
+64Byte. NO_EFFECT nach einem Schreibversuch und DURABLE_COMMIT vor Flush werden
+abgelehnt, ohne den Besitzer zu verlieren; UNKNOWN/Expiry/Reap behalten Fences.
+Syscall130 STORAGE_JOURNAL_IO(version1,32Byte) verlangt exakten Token und aktuelle
+Storage-Generation. Alte raw Write/Flush-Aufrufe sind im externen Modus gesperrt.
+Die Details und separate Laufzeitabnahme stehen im FAT32_RING3_HANDOFF_CONTRACT.
